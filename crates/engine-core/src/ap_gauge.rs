@@ -66,6 +66,41 @@ pub const SPIRIT_AP_BONUS: u8 = 5;
 /// (`see ghidra/scripts/funcs/overlay_battle_action_801eed1c.txt`).
 const ART_SPIRIT_MULTIPLIERS: [u16; 3] = [11, 10, 6];
 
+/// **Where the Spirit price's halving flag comes from.**
+///
+/// The builder does not read anything on the battle *actor*. It resolves the
+/// acting slot's roster character id through `DAT_8007BD10` and indexes the
+/// live character record:
+///
+/// ```text
+/// 801ef340  lbu v0,0x0(t6)     ; t6 = 0x8007BD10 + slot  -> character id
+/// 801ef344  addiu t7,t7,0x4140 ;              t7 = 0x80084140
+/// 801ef348  addiu v0,v0,-0x1   ; index = id - 1
+/// 801ef34c..801ef35c           ; * 0x414
+/// 801ef364  lw  v0,0x6c0(v1)   ; 0x80084140 + i*0x414 + 0x6C0
+/// 801ef368  andi v0,v0,0x800
+/// 801ef370  beq  v0,zero,0x801ef37c
+/// 801ef378  _srl t4,t4,0x1     ;   half price
+/// ```
+///
+/// `0x80084140 + 0x6C0` is `0x80084800`, and the character record base is
+/// `0x80084708`, so the word read is record **`+0xF8`** - word 1 of the
+/// 4-word accessory-passive ability bitfield (`docs/formats/accessory-passive-table.md`),
+/// not the actor's `+0x16E` flag bank. Bit `0x800` of word 1 is passive index
+/// `32 + 11 = 0x2B`, [`AP_USED_DOWN_PASSIVE`] - "AP Used Down", the Mettle
+/// Gem accessory. So the halved price is an **equipment** state, live for as
+/// long as the accessory is worn, not a per-turn or per-charge condition.
+///
+/// The sibling word 0 (`+0xF4`, `lw v0,0x6bc(v0)` at `0x801E39FC`) is what
+/// the Attack x2 refill's War God Icon test reads; the two are one 64-bit
+/// field split across two `lw`s.
+///
+/// REF: FUN_801EED1C (`0x801EF340..0x801EF378`)
+pub const AP_USED_DOWN_BIT: u32 = 0x800;
+
+/// Accessory-passive index behind [`AP_USED_DOWN_BIT`]: word 1, bit 11.
+pub const AP_USED_DOWN_PASSIVE: u8 = 0x2B;
+
 /// **What an art body costs, in Spirit.** This is a different currency from
 /// the rest of this module: the direction commands are spent out of the
 /// per-turn command pool (`ctx+0x6DC`, seeded from AGL), while the *art* is
@@ -83,10 +118,11 @@ const ART_SPIRIT_MULTIPLIERS: [u16; 3] = [11, 10, 6];
 /// and not `6 x 5`.
 ///
 /// The multiplier is halved first (`srl t4,t4,0x1` at `0x801EF378`, an
-/// integer shift - so `11` and `10` both become `5`) when the actor's `0x800`
-/// flag is set, and only then multiplied by the art's command count
-/// (`mult t4,s1` / `mflo t7` at `0x801EF40C` for the affordability gate,
-/// `mult t4,v0` / `mflo a2` at `0x801EF474` for the charge).
+/// integer shift - so `11` and `10` both become `5`) when the caster carries
+/// the [`AP_USED_DOWN_BIT`] passive, and only then multiplied by the art's
+/// command count (`mult t4,s1` / `mflo t7` at `0x801EF40C` for the
+/// affordability gate, `mult t4,v0` / `mflo a2` at `0x801EF474` for the
+/// charge).
 ///
 /// PORT: FUN_801EED1C (`0x801EF328`..`0x801EF474`, the Spirit-cost half)
 pub fn art_spirit_cost(rows_visited: usize, command_count: u8, halved: bool) -> u16 {

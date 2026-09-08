@@ -105,6 +105,41 @@ straight out of the encoding (primary opcode `0x12`) instead of asking capstone.
 It moves 17 dumps out of `NOT_FOUND` (66 → 49) - 16 to `MATCH` and one, a `0896`
 window, to `SHIFTED`.
 
+That fold keys on the primary opcode `0x12` and on the five mnemonics
+`cop2`/`mtc2`/`mfc2`/`ctc2`/`cfc2`, and the COP2 **load/store** pair matches
+neither test, so it survived the first pass and kept the whole geometry family
+in `NOT_FOUND` anyway:
+
+| Word | Ghidra | capstone |
+|---|---|---|
+| `0xCAA20000` | `lwc2 v0,0x0(s5)` | `lwc2 $2, ($s5)` |
+
+`lwc2` is opcode `0x32` and `swc2` is `0x3A`, and their `rt` field is a COP2
+*data* register that Ghidra spells with the GPR ABI name of the same number
+while capstone prints the number. The generic path then reads `v0` as a
+register on one side and `2` as an *immediate* on the other, so the two tokens
+disagree in both fields at once. Every GTE routine loads its vertices this way,
+so the whole world-map render family read as "no extracted image holds these
+bytes" - a claim about the disc - when it was a claim about the comparison. The
+fix folds `rt` out on both sides and canonicalises only `offset(base)`, which
+the two disassemblers do spell the same way. Over a 4372-file corpus it moves
+13 dumps out of `NOT_FOUND` (52 → 39), all to `MATCH`, and six of those are the
+`overlay_world_map_top_ext_*` leaves, which the byte attribution then places in
+`world_map_render` (PROT 0901) - the image whose span they print inside.
+
+A third divergence in the same family survived both COP2 folds because it is
+not a COP2 instruction at all. `sub $rd, $zero, $rt` is what the compiler emits
+to negate a register, and capstone renders it through the `neg`/`negu` alias
+while Ghidra prints `sub`. `negu` was folded to `SUBU` and `sub` was not, so a
+window carrying one negation matched nothing - and unlike a mis-based dump, that
+failure has no tell. PROT 0900's own head window, dumped out of PROT 0900's own
+image at PROT 0900's own base, read as "no extracted image holds these bytes at
+this VA or anywhere". Folding `sub` alongside `subu` (as `add` already sits with
+`addu`) moves twelve more dumps to a 0-token match, and with them the finding
+that the minigame RAM captures - baka_fighter, dance, debug_menu, fishing,
+slot_machine, muscle_dome - all caught **summon_render (PROT 0900)** resident in
+slot B.
+
 The generalisable point: **a resolver's negative class is where its own bugs
 accumulate**, because a false negative there looks like missing data rather
 than a broken comparison. Validate any change to `canon()` against a dump known

@@ -291,6 +291,24 @@ if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/port-catalog.py" ]]; 
     fi
 fi
 
+# Landing-page metric freshness (warn-only). scripts/ci/progress-metrics.json is
+# a committed BUILD INPUT: the site builds without disc data, so the homepage
+# tiles render whatever was last committed and nothing compares it to the tree.
+# A stale file is invisible -- well-formed JSON, plausible numbers -- and the
+# tiles once showed 840 ported / 0 on the worklist while the ratchet baseline
+# beside them said 847 / 93.
+#
+# Warn, never fail: refreshing the JSON needs the disc and the dump corpus, so a
+# contributor without them could not clear a failure, and a hook that rewrote it
+# would put an unreviewed number on the public site. The comparison itself is
+# between two COMMITTED files, so it costs milliseconds and runs the same with
+# or without disc data -- which is why it is not gated on the corpus the way the
+# ratchets above are.
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-progress-metrics-freshness.py" ]]; then
+    python3 scripts/ci/check-progress-metrics-freshness.py || true
+fi
+
 # Shipped-bundle freshness (warn-only, and only when the commit could have
 # invalidated the bundle). site/wasm/ is untracked build output that CI rebuilds
 # at deploy, so a stale local bundle is not a repository defect and must not

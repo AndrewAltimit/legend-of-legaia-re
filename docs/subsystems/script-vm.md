@@ -464,14 +464,50 @@ at PC). Otherwise bit 15 of `sel` picks the arm:
 | bit 15 clear, `sel & 0x7FFF != 0` | `func_0x8003D53C(arg >> 3, arg & 7, sel)` - start a CD-XA voice clip `(clip, channel)` out of the `0x801C6ED8` clip table. |
 | bit 15 clear, `sel & 0x7FFF == 0` | `func_0x80019794(arg >> 3)` - the clip-idle query; a non-zero answer halts at PC. |
 | bit 15 set, sub `0` | `func_0x80035B50(arg)` - enqueue SFX cue `arg` into the four-slot pending ring, parking its slot at `gp+0x15A`. |
-| bit 15 set, sub `1` | `_DAT_8007BABC = arg`. |
+| bit 15 set, sub `1` | `_DAT_8007BABC = arg` - **guarded**, see below. |
 | bit 15 set, sub `2` | Gate only: halt unless `_DAT_8007BABC == _DAT_8007BAA0`. |
-| bit 15 set, sub `3` | `FUN_801D8450()`. |
-| bit 15 set, sub `4` | `func_0x80035BAC(arg)` - store `arg` as the parked slot's delay, scheduling the cue instead of firing it. Port: `engine-core::scus_leaf_kernels::SfxCueDelays`. |
+| bit 15 set, sub `3` | `FUN_801D8450()` - the side-band stream **teardown**: `FUN_800653C8(0x17)` then `(0x16)`, `FUN_8001FF58(6)` (release SEQ slot 6), then `_DAT_8007BA88 = 0` and `_DAT_8007BAFC = 0`. Ungated, and it *yields the frame* rather than falling through. |
+| bit 15 set, sub `4` | `func_0x80035BAC(arg)` - store `arg` as the parked slot's delay, scheduling the cue instead of firing it. Ungated. Port: `engine-core::scus_leaf_kernels::SfxCueDelays`. |
 
-Two gates the port does not model: the whole bit-15-set arm is skipped when the dual-mode
-global `_DAT_8007B868` is non-zero, and subs `0`/`2`/`3` additionally halt at PC unless
-`_DAT_8007BABC == _DAT_8007BAA0`.
+#### The stream gates on op 0x36
+
+Two globals ride on top of that sub-switch, and both arms consult them - which is
+what an earlier reading of this section got wrong on both halves. It said the gate
+covered subs `0`/`2`/`3` and that `_DAT_8007B868` only skipped the bit-15-**set**
+arm. The disassembly at `0x801E030C..0x801E0444` says subs `0`/`1`/`2`, with sub
+`3` ungated, and puts the same gate on the bit-15-**clear** arm.
+
+`_DAT_8007BABC` / `_DAT_8007BAA0` are a **request / acknowledge pair** for the
+variable `vab_01` side-band bank ([audio.md](audio.md#vab-slots---one-installer-twelve-records)
+slot `3`, installed by `FUN_800243F0`, which is also the routine that latches the
+acknowledge cell from the request at `0x8002448C` / `0x800244F0`). `-1` on the
+acknowledge cell is the *idle* sentinel: the field overlay seeds the pair `(8, -1)`
+at `0x801D6880..0x801D688C` and tears it down to `(-1, -1)` at
+`0x801D74AC..0x801D74B8`, and a busy-wait around a direct `FUN_800243F0` call at
+`0x801D72E4..0x801D7300` spins on the same equality. Sub `3`'s teardown clears
+`_DAT_8007BA88` - the cell `FUN_800243F0` reads at `0x800244C0` to force the
+latch - so the three subs are one small protocol: request, wait, tear down.
+
+| Arm | Gate |
+|---|---|
+| bit 15 set, `_DAT_8007B868 != 0` | The whole sub-switch is skipped and the op advances (`bnez v0,0x801DF898` at `0x801E031C`). |
+| bit 15 set, sub `0` | Halt at PC unless `_DAT_8007BABC == _DAT_8007BAA0` (`0x801E0340`). |
+| bit 15 set, sub `1` | Store only when the pair is equal **or** `_DAT_8007BAA0 == -1`; otherwise halt at PC (`0x801E0374..0x801E037C`). |
+| bit 15 set, sub `2` | Halt at PC unless the pair is equal (`0x801E03A8`). |
+| bit 15 clear | Halt at PC unless the pair is equal - **unless** `_DAT_8007B868 != 0`, which bypasses the test (`0x801E03E8..0x801E0410`). |
+
+So `_DAT_8007B868` points the two halves in opposite directions: it removes the
+bit-15-set arm and it opens the bit-15-clear one. Retail boots that word `0` and no
+static writer ever sets it non-zero (it is the dev/dual-mode flag - see the op-`0x35`
+sub-op `0xA` note above), so in play the sub-switch always runs and the XA arm always
+waits on the bank.
+
+The port models the pair as `engine-core::scus_leaf_kernels::SoundStreamRequest` on
+`World::sound_stream`, with `World::dual_mode_gate` pinned at `0`; the arms live in
+the field host's op-`0x36` handler and the gates are covered by
+`engine-core::world::tests::sound_stream_gates`. Because the engine's bank loads are
+synchronous the pair is born settled and a sub-`1` settles in the same call, so no
+script parks - the same "satisfied on arrival" shape the BGM barrier has.
 
 ### 0x37-0x42 (yield, sound, RPG state, dialog, jump)
 
@@ -647,8 +683,8 @@ invocation's entry PC (`s4`) instead of advancing.
 | 3..6 | 10 bytes (`[43, sub, x_lo, z_lo, x_hi, z_hi, start:i16, end:i16]`) | **Camera-register zone ramp** into `_DAT_8007B610` (sub-6) / `B614` (sub-4) / `B60C` (sub-5) / `B618` (sub-3) - see below. |
 | 7 | 17 bytes | Face / body rotation setup. Writes a 12-byte struct at `&DAT_80087E68 + face_id * 12`, schedules a `func_0x8003C5F0` ramp. |
 | 8 | 2 bytes | Face / rotation reset: clears `+0x6D` and `+0x7A`. |
-| 9 | 10 bytes (`[43, 9, x, y, z, ticks]`) | Explicit position with optional collision tween via `FUN_801DE698`. When `ticks == 0`, immediate writes (skipping `0xFFFF` sentinel). |
-| 0xC | 5 bytes | Allocate scripted actor via `FUN_801DE754` → `FUN_80020DE0(&DAT_801F2858, _DAT_8007C34C)`. |
+| 9 | 10 bytes (`[43, 9, x, y, z, ticks]`) | Explicit position. `ticks == 0` writes immediately (skipping the `0xFFFF` sentinel); otherwise `FUN_801DE698` spawns a `0x801F2840` actor whose tick `FUN_801DD4C4` eases the target from its **live** position by `t^2/d^2`. Port `legaia_engine_vm::field_actor_timers::EasedMove`. |
+| 0xC | 5 bytes `[43, 0C, close, hold, open]` | **Shutter blackout.** `FUN_801DE754` → `FUN_80020DE0(&DAT_801F2858, _DAT_8007C34C)`, whose tick `FUN_801DD784` emits two black quads whose height envelope closes / holds / opens over the three operands. At full envelope the two bars cover the whole 320x224 screen, so the beat is a shutter blackout rather than a letterbox crop. 31 sites land at real opcode boundaries disc-wide, in two flavours - see [`runtime-libs.md`](../reference/functions/runtime-libs.md#fun_801dd784---the-shutter-blackout). Port `legaia_engine_vm::field_actor_timers::ShutterBars`. |
 | 0xD / 0xF | 6 bytes | Allocate actor via `FUN_801DE7BC` with mode (3 for 0xD, 0 for 0xF). |
 | 0xE | 2 bytes | Mark currently-iterating actor with flag bit 0x8 (`*(int *)(actor + 0x10) \|= 0x8`). |
 | 0x16+ | - | No `case` arm in the original `case 0x43` inner switch; falls through with `iVar45 = param_2` (the dispatcher-default initialiser at line 4511 of the dump) - halts at PC. |
@@ -1206,12 +1242,16 @@ whole vocabulary, and they differ only in their tail:
 
 That matters for the ops long labelled "register callback" - `4C 9F` and
 `4C 87`, both `func_0x8003CF40(_DAT_8007C34C, LAB_801DA930)`. `LAB_801DA930`
-is the handler on spawn descriptor `0x801F27EC`, the one the fade spawner
-`FUN_801DDE34` allocates from, so those ops **cancel a running fade**. Nothing
-is registered and nothing waits: with no fade live the sweep is entirely
-inert, which is exactly what a live opening-chain probe measured (zero hits on
-the "callback"). The scene MAN loader `FUN_8003AEB0` inlines the same sweep
-twice at `0x8003B3C8` and `0x8003B414`, against `LAB_801DA930` and
+is the handler on spawn descriptor `0x801F27EC`, the one `FUN_801DDE34`
+allocates from, so those ops **retire every live floor-height-ladder
+oscillator** - see
+[`runtime-libs.md`](../reference/functions/runtime-libs.md#three-timer-driven-templates-0x801f27ec--0x801f2840--0x801f2858)
+for what that tick drives (it is not a fade: it animates one rung of the
+scene's 16-entry elevation LUT at `0x1F80035C`, the array `4C 9E` installs).
+Nothing is registered and nothing waits: with no rung running the sweep is
+entirely inert, which is exactly what a live opening-chain probe measured
+(zero hits on the "callback"). The scene MAN loader `FUN_8003AEB0` inlines the
+same sweep twice at `0x8003B3C8` and `0x8003B414`, against `LAB_801DA930` and
 `FUN_80037018`, immediately before it opens the submode - so a driver actor
 either sweep marked is invisible to the open's find.
 
@@ -1438,7 +1478,7 @@ A survey of the high-reference `0x801F` VA band the field overlay shares with th
 | `0x801D30B8` | INTERIOR | No prologue; reads `s1..s8` + a caller stack slot it never writes - a tail fragment reaching the parent's epilogue. | `overlay_0897_801d30b8.txt` |
 | `0x801D84C0` | REAL, aliased | ≤6-slot name/label assembler: walks `&DAT_801F29F0` at stride `0xE`, skipping `0x7C` (`\|`) separators + a skip-char, into the `+0x2AF8` draw buffer. The field body (212 insn) VA-aliases a distinct 259-insn `battle_action(898)` body - confirm the image before porting. | `overlay_0897_801d84c0.txt` |
 | `0x801D32BC` | REAL (small) | Field opcode-arm helper: `if ((v0 >> 16) == 0x100) func_0x800430AC(*(u8*)(s6+1)); return pc + 3`. Aliases a 98-insn `battle_action(898)` body. | `overlay_0897_801d32bc.txt` |
-| `0x801DBC30` / `0x801DBB8C` | REAL (C-only) | Text-cell table init pair - see [§ below](#text-cell-table-init). Field bodies alias 53-/41-insn battle bodies. | dumps as named |
+| `0x801DBC30` / `0x801DBB8C` | WRONG IMAGE | Real entries, but in PROT 0898 (the party-panel pair). The `overlay_0897_*` dumps at these VAs list PROT 0897's `0x801EA448` / `0x801EA3A4` (the `0xE818` re-key) and then a PROT 0898 loop. See [§ below](#the-overlay_0897_801dbc30-dump-is-a-chimera-of-two-prot-entries). | dumps as named |
 | `0x801D0D38` | REAL, render-track | Party-roster panel renderer (op-`0x49` submode family) - see [§ below](#party-roster-panel-renderers). Its direct `overlay_0897_801d0d38` dump is a truncated alias; the full body is in the cutscene-dialogue / mapview field captures. | `overlay_cutscene_dialogue_801d0d38.txt` |
 | `0x801D095C` | REAL, render-track | Passive-ability indicator HUD above the player - **not** a roster panel; see [§ below](#the-passive-ability-indicator-hud-fun_801d095c). Ported: `legaia_engine_vm::field_passive_hud`. | `overlay_cutscene_dialogue_801d095c.txt` |
 | `0x801E4470` | REAL, render-track | Attached-sprite projection tick - documented in [`actor-vm.md`](actor-vm.md). Ported: `legaia_engine_vm::field_actor_billboard`. | `overlay_cutscene_dialogue_801e4470.txt` |
@@ -1539,7 +1579,9 @@ from disassembly and from the entry's own bytes.
 
 ### The actor-band command loops (`FUN_801F71E0` / `FUN_801F5748`)
 
-`FUN_801F71E0` (1070 instr) and `FUN_801F5748` (2777 instr, overlay base `0x801CE818`, contains `switchD_801D2830`) iterate the per-actor pointer band based at `0x801C9370` (`= 0x801D0000 - 0x6C90`), touching command fields `+0x1D9`, `+0x1DF` (the [move-power](../formats/move-power.md) action id), `+0x249`, `+0x24D` and the HP field `+0x14C`. They are large, global-entangled queue/command processors, and because the `0x801Fxxxx` VA aliases across the field (0897) and battle (0898) overlays their owning overlay must be confirmed before any port; documented, not ported.
+`FUN_801F71E0` (1070 instr) and `FUN_801F5748` (2777 instr, overlay base `0x801CE818`, contains `switchD_801D2830`) iterate the per-actor pointer band based at `0x801C9370` (`= 0x801D0000 - 0x6C90`), touching command fields `+0x1D9`, `+0x1DF` (the [move-power](../formats/move-power.md) action id), `+0x249`, `+0x24D` and the HP field `+0x14C`. They are large, global-entangled queue/command processors.
+
+**Neither is a portable entry, and "documented, not ported" was the wrong verdict for both.** The "confirm the owning overlay first" caveat was answered, and the answer removes the addresses rather than assigning them: `0x801F71E0` is a `bne` target inside PROT 0967's tutorial-message routine (scope row `worklist_interior`), and `0x801F5748` is a phantom VA of PROT 0897's own `0x25000` over-read - file `+0x26F30` is PROT 0898's battle dispatcher `FUN_801D0748` printed at the field base (scope row `worklist_misbased_print`). What the *body* above describes is real code; what is not real is the pair of entry points it was filed under.
 
 `0x801F71E0` is exactly that alias. The body above is the field-overlay
 occupant, with its own `addiu sp,sp,-0x40` prologue. In **PROT 0967** loaded at
@@ -1577,23 +1619,74 @@ number-draw arms. The classifier marks all three UNCERTAIN because the dumped
 window ends at the `jal` with no `jr ra` - the window is truncated, not the
 function. `see ghidra/scripts/funcs/overlay_0897_801da0f0.txt`.
 
-### Text-cell table init
+### The `overlay_0897_801dbc30` dump is a chimera of two PROT entries
 
-`801DBC30` seeds a 46-record table in PSX scratchpad at `0x1F800314` (stride
-`0x18`): each record takes the colour word `param_1` at `+4`/`+0xC`, `param_3` at
-`+0xA`, and a per-record depth counter (decremented from `DAT_1F8003E9`, chained
-through each record's `+0x22`) at `+2`. It then sets `_DAT_80077024 = 0xE` /
-`_DAT_80077022 = 0x44`, calls `FUN_801D99BC` / `FUN_801D8DE8(0x1A,1)` /
-`FUN_801D32BC(1)`, and finds the narration-crawl roller
-(`func_0x8003CF04(_DAT_8007C34C, 0x80037174)`) to adjust its flag word by the mode
-in `s6` (2 → clear `0x80000`; 3 → clear the parked caller's `0x400` and set bit
-`8`). `801DBB8C` is an alternate entry into the same routine, entering with the
-counter (`v0`) and table base (`v1`) already in registers - it skips the
-`DAT_1F8003E9` setup. Both are referenced by the actor-band command loops
-`801F5748` / `801F747C`. The field slices are decompiled-C only (the disassembly at
-these VAs belongs to distinct 53- / 41-instruction `battle_action(898)` bodies),
-so store order is unverified; documented, not ported.
-`see ghidra/scripts/funcs/overlay_0897_801dbc30.txt`.
+`0x801DBC30` and `0x801DBB8C` are real entries - in **PROT 0898**, where they
+are the party-name panel's cross-out blit and its open half, ported as
+`engine-vm::battle_party_panel` ([`functions/battle.md`](../reference/functions/battle.md)).
+What is not real is the *routine the `overlay_0897_*` dumps print at those
+addresses*. Resolved from the bytes, that listing is stitched out of two
+different PROT entries and neither piece is a field-VM entry:
+
+| Printed VA | Where those bytes live | What is there |
+|---|---|---|
+| `801DBB8C` | PROT 0897 `0x801EA3A4` (file `0x1BB8C`) | `nop` / `addiu v0,v0,-1` / `j 0x801EA7AC` / `sb v0,0xd4(v1)` - an interior fragment, no prologue |
+| `801DBC30` | PROT 0897 `0x801EA448` (file `0x1BC30`) | `lui v1,0x1f80` / `ori v1,v1,0x314` / `lbu v0,0xd5(v1)` / `addiu v0,v0,-1` / `j 0x801EA7AC` / `sb v0,0xd5(v1)` |
+| `801EA7A8..801EA7C8` | PROT 0898 `0x801D3FC0..0x801D3FE0` | the seeding loop below |
+
+`0x801EA448 - 0x801DBC30 = 0xE818` is exactly the re-key delta
+[`phantom-print-index.md`](../tooling/phantom-print-index.md) records for the
+`overlay_0897_*` dump program, so the two heads are that program's own offsets.
+The **loop** is a second, independent failure of the same dump. A `j` target is
+encoded absolutely in the bytes, so `0x801EA7AC` is resolved correctly - but in
+a program based at `0x801C0000` that address lands at file `0x2A7AC`, past PROT
+0897's own `0x25000` of content and therefore inside its over-read of PROT 0898.
+Everything the dump lists after the jump is **0898's** code at 0898's own
+`0x801D3FC0`. In PROT 0897 itself `0x801EA7AC` is a shared continuation label a
+dozen arms of the enclosing routine branch to, and the two fragments above do
+nothing but step a scratchpad byte before jumping to it: `0x1F8003E8` /
+`0x1F8003E9`, two cells of the camera's visible-tile window (op `0x46` above),
+not a table pointer.
+
+#### The seeding loop, and what it really seeds
+
+The loop is real and its store order was transcribed correctly; only its owner
+and its destination were wrong. It belongs to PROT 0898's `FUN_801D3894`
+(prologue `addiu sp,sp,-0x38`), which carries thirteen loops of this family -
+one per HUD layout it installs - of which `0x801D3FC0` is the one the dump
+picked up:
+
+```text
+0x801D3FAC  addiu a0,zero,0xaa
+0x801D3FB0  addiu a2,zero,0x148
+0x801D3FB4  lui   v0,0x8007
+0x801D3FB8  addiu v0,v0,0x6c10
+0x801D3FBC  addiu v1,v0,0x408      ; 0x408 / 0x18 = record 43
+0x801D3FC0  lhu   v0,0xa(v1)       ; the record's PREVIOUS +0xA, before it is overwritten
+0x801D3FC4  addiu a1,a1,0x1
+0x801D3FC8  sh    a0,0x4(v1)
+0x801D3FCC  sh    a0,0xc(v1)
+0x801D3FD0  sh    a2,0xa(v1)
+0x801D3FD4  sh    v0,0x2(v1)
+0x801D3FD8  sltiu v0,a1,0x2e
+0x801D3FDC  bne   v0,zero,0x801D3FC0
+0x801D3FE0  _addiu v1,v1,0x18      ; delay slot: next record
+```
+
+The destination is **not** PSX scratchpad. The base is `0x80076C10` - the
+battle placement / window-descriptor table
+[`battle-action.md`](battle-action.md#what-each-halfword-is-read-off-the-draw-site)
+documents, `0x18` stride - entered at record `43`, and `a1` is seeded `0x2B`
+(43) by the `beq` delay slot at `0x801D3F38`. So `sltiu 0x2e` is the table's
+index bound (46) and each pass walks records **43, 44 and 45** - three records,
+not forty-six.
+
+Read against that table's own field map the loop is a slide-in, not an
+initialiser: `+0x04` / `+0x0C` take the seat pair's y (`0xAA`), `+0x0A` re-parks
+seat B at x `0x148` (328, off the right edge), and `+0x02` - seat A's x -
+receives whatever seat B's x was on the previous frame. The twelve sibling loops
+differ only in which of those halfwords they write, and one variant biases the
+captured value by `-0x140` instead of re-parking.
 
 ### Party-roster panel renderers
 
@@ -1603,9 +1696,15 @@ walks the live roster - member count `DAT_80084594`, records `DAT_800845C4`,
 player context `_DAT_8007C364` - and the cursor context `DAT_801F3488..348C`,
 drawing per-member numerics through `func_0x80034B78` and screen-projecting
 cell anchors through the GTE wrapper `func_0x800195A8`. It builds GPU
-primitives, so it is **render-track** - documented, not ported. Its direct
-`overlay_0897_801d0d38` dump is a truncated alias; the full body is in the
-cutscene-dialogue / cutscene-mapview field captures.
+primitives, so its packet half is **render-track** - but the routine is
+**ported**, split across the two crates that own its halves:
+`engine-vm::world_map_panel_actors::HudDecision` carries the
+suppress / rearm / count-down / draw decision, and
+`engine-ui::field_party_hud::field_party_hud_draws_for` carries the layout.
+(`locate-entry-image.py 801d0d38` confirms the entry is PROT 0897's, so the
+field reading of the address holds.) Its direct `overlay_0897_801d0d38` dump is
+a truncated alias; the full body is in the cutscene-dialogue / cutscene-mapview
+field captures.
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_801d0d38.txt`.
 
 ### The passive-ability indicator HUD (`FUN_801D095C`)

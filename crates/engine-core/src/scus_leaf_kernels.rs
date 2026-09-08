@@ -147,6 +147,97 @@ impl SfxCueDelays {
     }
 }
 
+/// The side-band sound-bank request / acknowledge pair
+/// `_DAT_8007BABC` / `_DAT_8007BAA0`.
+///
+/// `_DAT_8007BABC` is the **requested** bank id for the variable `vab_01`
+/// side-band slot (audio slot `3`, installed by `FUN_800243F0` - see
+/// `docs/subsystems/audio.md`); `_DAT_8007BAA0` is the id that driver has
+/// **acknowledged**, which it latches from the request inside `FUN_800243F0`
+/// (`0x8002448C` on the dev shortcut, `0x800244F0` on the retail arm). The
+/// sentinel `-1` on the acknowledge cell means *idle*: the field overlay
+/// seeds the pair `(8, -1)` at init (`0x801D6880..0x801D688C`) and tears it
+/// down to `(-1, -1)` (`0x801D74AC..0x801D74B8`).
+///
+/// Three field-side consumers share one protocol, all read off the
+/// disassembly:
+///
+/// * **request** - store the new id only while the previous one is settled
+///   or the driver is idle, else halt at PC (`0x801E0360..0x801E0388`, the
+///   field VM's op-`0x36` sub-`1`; the identical guard is inlined at
+///   `0x801D4B58..0x801D4B90`).
+/// * **barrier** - halt at PC until `request == acked` (op-`0x36` sub-`2`,
+///   `0x801E0394..0x801E03B4`; a synchronous busy-wait around a
+///   `FUN_800243F0` call at `0x801D72E4..0x801D7300`).
+/// * **precondition** - the SFX enqueue (sub-`0`) and the whole bit-15-clear
+///   XA arm refuse to run while the pair is unsettled.
+///
+/// The engine's bank loads are synchronous, so [`Self::settle`] is applied in
+/// the same host call that takes a request; the guard shapes still matter
+/// because a script that re-requests without a settle is what retail parks
+/// on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SoundStreamRequest {
+    /// `_DAT_8007BABC` - the requested side-band bank id.
+    pub requested: i32,
+    /// `_DAT_8007BAA0` - the id the driver acknowledged; [`Self::IDLE`]
+    /// while nothing is in flight.
+    pub acked: i32,
+}
+
+impl Default for SoundStreamRequest {
+    fn default() -> Self {
+        Self::IDLE_PAIR
+    }
+}
+
+impl SoundStreamRequest {
+    /// The `-1` sentinel both cells carry when no bank is in flight.
+    pub const IDLE: i32 = -1;
+
+    /// The teardown state `(-1, -1)` retail writes at `0x801D74AC`.
+    pub const IDLE_PAIR: Self = Self {
+        requested: Self::IDLE,
+        acked: Self::IDLE,
+    };
+
+    /// The field overlay's init state `(8, -1)` (`0x801D6880`).
+    pub const FIELD_INIT: Self = Self {
+        requested: 8,
+        acked: Self::IDLE,
+    };
+
+    /// `request == acked` - the barrier op-`0x36` sub-`2` waits on.
+    pub fn is_settled(self) -> bool {
+        self.requested == self.acked
+    }
+
+    /// Whether a new request may be stored: settled, or the driver idle.
+    ///
+    /// Retail tests `acked == -1` as the escape, **not** `requested == -1`
+    /// (`beq v1,a0` then `bne a0,-1` at `0x801E0374..0x801E037C`), so a
+    /// pending request cannot be replaced just because it was itself the
+    /// sentinel.
+    pub fn accepts_request(self) -> bool {
+        self.is_settled() || self.acked == Self::IDLE
+    }
+
+    /// Store a new request. Returns `false` (and changes nothing) when the
+    /// previous one is still in flight - retail halts the script at PC there.
+    pub fn request(&mut self, id: i32) -> bool {
+        if !self.accepts_request() {
+            return false;
+        }
+        self.requested = id;
+        true
+    }
+
+    /// The driver's latch `acked = requested` (`FUN_800243F0`).
+    pub fn settle(&mut self) {
+        self.acked = self.requested;
+    }
+}
+
 /// The staged-character selector pair (`FUN_80035C00`, file offset `0x26400`,
 /// four instructions).
 ///
@@ -306,12 +397,18 @@ pub const BOOT_ENABLE_FLAG_ADDRS: [u32; 3] = [0x8007_0520, 0x8007_0580, 0x8007_0
 /// [`legaia_asset::sfx_table::spu_base_for_slot`] word for word (see
 /// [`docs/formats/sfx-table.md`](../../../docs/formats/sfx-table.md)).
 ///
-/// What is missing is the boot path, not the reader: the engine's audio host
-/// asks `spu_base_for_slot` directly, so no code ever builds the twelve-word
-/// image and there is nothing to seed. Wiring this means making that helper
-/// read a seeded table instead of returning literals, which is a refactor of
-/// one source of truth rather than a call insertion - the equality is guarded
-/// by `crates/engine-core/tests/infra_boot_offset_table.rs`.
+/// What is missing is the boot path, not the reader - but the reason recorded
+/// here for *why* used to be wrong, and the correction narrows it rather than
+/// changing the verdict. The claim was "the engine's audio host asks
+/// `spu_base_for_slot` directly". It does not: grep the workspace and that
+/// helper's only references outside its own module are in the guard test
+/// `crates/engine-core/tests/infra_boot_offset_table.rs`. Nothing in
+/// `engine-audio`, `engine-shell` or `web-viewer` consults a per-slot SPU
+/// base at all - the mixer owns one flat `SpuRam` and places a bank at the
+/// transfer address it is handed, so retail's twelve-word slot map has no
+/// consumer on either side of it. Wiring this means giving the audio host a
+/// slot-addressed SPU layout first, which is a representation the port does
+/// not have, not a call it has not made.
 ///
 /// That test is also what makes a call site here **provably** unobservable
 /// rather than merely uninteresting: it asserts the seeded table and
@@ -457,17 +554,22 @@ pub const TEXT_ESCAPE_LEAD: u8 = 0xC0;
 /// REF: FUN_801F747C - the tutorial text-box helper that measures with it.
 /// REF: FUN_80035F04 - the pixel-width half of the same measurement pair.
 ///
-/// NOT WIRED: nothing calls this yet, and the prerequisite is a decode change
-/// in another crate rather than a call insertion. Both consumers of the
-/// measurement - `legaia_engine_core::battle_tutorial::TutorialPrompts`, which
-/// folds `0x7C` to `'\n'` while it decodes, and
-/// `legaia_engine_ui::battle_tutorial_box`, which then counts with
-/// `str::lines()` - measure a *decoded* `String`, so neither has the retail
-/// byte string this kernel walks. Wiring it means moving the line count to the
-/// raw prompt bytes at decode time and carrying it beside the text, which also
-/// closes the escape-walk divergence those two files already disclose. Until
-/// then the two agree for every prompt in the PROT 0967 corpus, none of which
-/// carries a `0xC0..=0xCF` byte.
+/// REPLACED-BY: `str::lines()` over the decoded prompt - the representation
+/// the port measures in. `legaia_engine_core::battle_tutorial::TutorialPrompts`
+/// folds `0x7C` to `'\n'` while it decodes and
+/// `legaia_engine_ui::battle_tutorial_box` counts and lays out with
+/// `str::lines()`, live on both hosts (`World::battle_tutorial_box` reaches
+/// the native window's HUD pass and the browser play page's battle draws). So
+/// the measurement retail takes over raw bytes is already produced, over a
+/// `String`, by code a player's frame runs.
+///
+/// No host is owed rather than none has got round to it: this kernel walks the
+/// retail byte string, which no engine type holds any more, so a call site
+/// would have to un-decode the prompt first. The one place the two could
+/// disagree is the `0xC0..=0xCF` escape lead, and **no prompt in the PROT 0967
+/// corpus carries one**, so the difference is not observable on this disc
+/// either. The kernel stays as the byte-exact reference the divergence note
+/// above is measured against.
 pub fn text_line_count(s: &[u8]) -> u32 {
     let mut count = 1u32;
     let mut i = 0usize;

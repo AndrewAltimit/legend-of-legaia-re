@@ -819,15 +819,15 @@ struct PlayWindowApp {
     baka_chrome_frame: Vec<ResolvedChromeDraw>,
     /// Muscle Dome hub-screen atlas + sprite table (see [`MuscleHubAssets`]).
     muscle_hub: Option<MuscleHubAssets>,
-    /// Frames left on the "Welcome to the Muscle Dome!" intro card, armed
-    /// when a leg opens on a freshly staged contest.
-    muscle_intro_timer: i32,
-    /// The ROUND banner: `(displayed round number, frames left)`, armed on
+    /// The "Welcome to the Muscle Dome!" intro card's retail fade / hold
+    /// envelope, armed when a leg opens on a freshly staged contest.
+    muscle_intro_card: Option<legaia_engine_core::muscle_dome::HubScreen>,
+    /// The ROUND banner: `(displayed round number, envelope)`, armed on
     /// every leg entry (after the intro card on a fresh contest).
-    muscle_round_banner: Option<(i32, i32)>,
-    /// Frames left on the between-legs INTERVAL + score-tally screen, armed
-    /// when a leg closes while its contest is (or just was) open.
-    muscle_interval_timer: i32,
+    muscle_round_banner: Option<(i32, legaia_engine_core::muscle_dome::HubScreen)>,
+    /// The between-legs INTERVAL + score-tally screen's envelope, armed when
+    /// a leg closes while its contest is (or just was) open.
+    muscle_interval: Option<legaia_engine_core::muscle_dome::HubScreen>,
     /// Last frame's `world.muscle_dome.is_some()`, for the leg edges above.
     muscle_prev_leg_open: bool,
     /// Last frame's `world.muscle_contest.is_some()`, distinguishing a fresh

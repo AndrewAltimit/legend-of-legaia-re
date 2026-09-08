@@ -251,7 +251,7 @@ fn menu_ctrl_high_nibble_widths_match_the_retail_dispatcher() {
     // VM's menu_ctrl port (retail `param_2 + N` advances). Each entry is
     // (op0, total_size_without_ext_header).
     let cases: &[(u8, usize)] = &[
-        // nibble 9: fade family 9 total, sub-E 16-word table copy, sub-F.
+        // nibble 9: floor-ladder rung 9 total, sub-E 16-word table copy, sub-F.
         (0x90, 9),
         (0x92, 9),
         (0x9E, 34),

@@ -253,6 +253,16 @@ pub struct FieldBgmPlan {
 /// live logic in retail's slot frame rather than a missing step - which is
 /// also why wiring it wants a merge with the live resolver, not a new
 /// caller.
+///
+/// That last sentence is why this row is worth a second look before it is
+/// reclassified. The *slot arithmetic* is replaced; the two-part arm is not,
+/// and it is a scene's second streaming asset failing to load, which a player
+/// hears. A residual that the substitution does not cover keeps the row a
+/// wiring gap, so this stays a disclosure and does not take the
+/// `REPLACED-BY:` marker its file-mate
+/// [`field_prim_buffer_bytes`] carries - see
+/// `docs/tooling/port-catalog.md`. The owner is the BGM director's
+/// scene-entry path, alongside `SceneHost::bgm_seq_bytes`.
 pub fn field_bgm_plan(
     bgm_id: u32,
     seq_base: u32,
@@ -292,14 +302,17 @@ pub const FIELD_PRIM_BUFFER_FIXED: u32 = 0x2800;
 /// the TMD count. Retail encodes the scale as `(count << 16) >> 6`, i.e. 1 KB
 /// per TMD on the sign-extended `s16` count.
 ///
-/// NOT WIRED: the engine allocates no GPU primitive buffer. Retail sizes one
-/// arena up front because the PSX ordering table is a fixed block the frame
-/// builder fills; `engine-render` builds draw lists on wgpu and lets the
-/// backend own the allocation, so there is no consumer for a byte count and no
-/// `FUN_8001E3B8` counterpart to hand it to. The kernel is kept because the
-/// **ratio** is a fidelity datum - it says a retail scene budgets 1 KB of
-/// primitive space per parsed TMD - which a future faithful-mode arena would
-/// need.
+/// REPLACED-BY: `engine-render`'s wgpu draw lists, where the backend owns
+/// the allocation.
+///
+/// The engine allocates no GPU primitive buffer at all. Retail sizes one arena
+/// up front because the PSX ordering table is a fixed block the frame builder
+/// fills; a draw list is grown by the backend, so there is no consumer for a
+/// byte count and no `FUN_8001E3B8` counterpart to hand it to. The kernel is
+/// kept because the **ratio** is a fidelity datum - it says a retail scene
+/// budgets 1 KB of primitive space per parsed TMD - which a future
+/// faithful-mode arena would need; that arena would be a second allocator,
+/// not a caller this one is waiting for.
 pub fn field_prim_buffer_bytes(tmd_count: i16, fixed: bool) -> u32 {
     if fixed {
         FIELD_PRIM_BUFFER_FIXED

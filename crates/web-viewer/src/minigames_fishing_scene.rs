@@ -5,7 +5,10 @@
 //! Retail hosts the fishing minigame inside the `other1` scene bundle (raw
 //! CDNAME `#define other1 1195` - the block directly carrying the fishing
 //! overlay's dev name `data\OTHER1`; the overlay's own scene stager writes the
-//! `other1` scene name, see `engine-core::dance::DANCE_SCENE_NAME` provenance
+//! `other1` scene name on teardown - the string literal lives in this
+//! overlay and nowhere else, which is what pins the venue to fishing rather
+//! than to the dance hall (`other7`); see the note on
+//! `engine-core::dance::DANCE_SCENE_BLOCK_BASE`
 //! and `docs/subsystems/minigame-fishing.md`). The pond, the wooden pier, the
 //! shore props and the water sheets are that scene's environment mesh pack
 //! instanced by its `.MAP` placement + terrain layers - the same
@@ -61,17 +64,23 @@ impl FishingEnv {
     /// Append one env-pack mesh instanced at an [`field_env::EnvDraw`] - the
     /// authored yaw about Y, then the world translation (the same placement
     /// composition as the dance-hall bake, in world space).
-    fn append_draw(&mut self, mesh: &VramMesh, flat: &[u8], draw: &field_env::EnvDraw) {
+    fn append_draw(
+        &mut self,
+        mesh: &VramMesh,
+        flat: &[u8],
+        draw: &field_env::EnvDraw,
+        lift: [f32; 3],
+    ) {
         let theta = (draw.rot_y & 0xFFF) as f32 * (std::f32::consts::TAU / 4096.0);
         let (sin, cos) = theta.sin_cos();
         let base = (self.positions.len() / 3) as u32;
         for p in &mesh.positions {
             let (vx, vy, vz) = (p[0], p[1], p[2]);
             self.positions
-                .push(vx * cos + vz * sin + draw.world_x as f32);
-            self.positions.push(vy + draw.world_y as f32);
+                .push(vx * cos + vz * sin + draw.world_x as f32 + lift[0]);
+            self.positions.push(vy + draw.world_y as f32 + lift[1]);
             self.positions
-                .push(-vx * sin + vz * cos + draw.world_z as f32);
+                .push(-vx * sin + vz * cos + draw.world_z as f32 + lift[2]);
         }
         for uv in &mesh.uvs {
             self.uvs.push(uv[0] as i32);
@@ -82,8 +91,19 @@ impl FishingEnv {
             self.cba_tsb.push(ct[1] as u32);
         }
         if flat.is_empty() {
+            // The neutral modulation byte, not white: the shader reads
+            // `a_flat_rgba` as `texel * rgb * 255/128`, so a white stream
+            // doubles the texel. (Unreachable in practice - `flat` is
+            // `packet_color::textured`'s walk of `mesh.colors`, parallel to
+            // `mesh.positions`.)
+            let neutral = [
+                legaia_engine_core::packet_color::NEUTRAL,
+                legaia_engine_core::packet_color::NEUTRAL,
+                legaia_engine_core::packet_color::NEUTRAL,
+                255,
+            ];
             self.flat
-                .extend(std::iter::repeat_n([255u8; 4], mesh.positions.len()).flatten());
+                .extend(std::iter::repeat_n(neutral, mesh.positions.len()).flatten());
         } else {
             self.flat.extend_from_slice(flat);
         }
@@ -180,6 +200,15 @@ fn bake_env(
     );
     let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &terrain_records, floor_lut);
 
+    // Coplanar ranking across both layers, terrain first then placements -
+    // the same order the play page and the native window feed the kernel, so
+    // the venue lifts the same member of each coplanar pair they do.
+    let mut ranked: Vec<field_env::EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
+    ranked.extend(terrain.iter().copied());
+    ranked.extend(placements.iter().copied());
+    let planes = legaia_engine_core::coplanar_draws::draw_plane_summaries(&ranked, res);
+    let lifts = legaia_engine_core::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
+
     let mut out = FishingEnv::default();
     let mut built: HashMap<(usize, u8), (VramMesh, Vec<u8>)> = HashMap::new();
     for draw in placements.iter().chain(terrain.iter()) {
@@ -199,7 +228,8 @@ fn bake_env(
             }
         });
         let (mesh, flat) = (&entry.0, &entry.1);
-        out.append_draw(mesh, flat, draw);
+        let lift = lifts.get(draw).copied().unwrap_or([0.0; 3]);
+        out.append_draw(mesh, flat, draw, lift);
     }
 
     // The walk-ground heightfield is already world-space.
@@ -211,7 +241,16 @@ fn bake_env(
     if let Some(hf) = ground.as_ref() {
         let base = (out.positions.len() / 3) as u32;
         for p in &hf.positions {
-            out.positions.extend_from_slice(p);
+            // Sink the drawn grid below the env pack's authored floor art -
+            // both share one plane, so an un-sunk grid draws wedge streaks
+            // along its cell diagonals. Render-site only: `ground` below keeps
+            // the authored heights, which is what the shore-anchor queries
+            // (`fishing_scene_height_at`, `fishing_scene_ground_json`) read.
+            out.positions.extend_from_slice(&[
+                p[0],
+                p[1] + legaia_engine_core::coplanar_draws::GROUND_SINK,
+                p[2],
+            ]);
         }
         for uv in &hf.uvs {
             out.uvs.push(uv[0] as i32);
@@ -221,8 +260,11 @@ fn bake_env(
             out.cba_tsb.push(ct[0] as u32);
             out.cba_tsb.push(ct[1] as u32);
         }
-        out.flat
-            .extend(std::iter::repeat_n([255u8; 4], hf.positions.len()).flatten());
+        // The heightfield's own per-vertex modulation triple
+        // (`field_objects::GROUND_PRIM_COLOR` = the neutral byte).
+        for c in &hf.colors {
+            out.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
+        }
         out.indices.extend(hf.indices.iter().map(|i| i + base));
     }
     (out, ground)

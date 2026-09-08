@@ -22,7 +22,7 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 | 6 | 0x60..0x6F | 6-word emitter (`func_0x80058490`) + 16-byte halt-acquire |
 | 7 | 0x70..0x7F | **Collision-grid rectangular wall paint** (handler `0x801e1c64`); writes the per-scene walkability grid at `_DAT_1f8003ec + 0x4000`. Full body: [nibble-7 wall paint](#0x4c-nibble-0x700x7f---collision-grid-rectangular-wall-paint). |
 | 8 | 0x80..0x8F | Large multi-purpose dispatcher (party-slot full heal, conditional jump on `+0x68`, actor model/anim set, actor-search jumps, …). Full body: [nibble-8 multi-purpose dispatcher](#0x4c-nibble-0x800x8f---large-multi-purpose-dispatcher). |
-| 9 | 0x90..0x9F | Fade family (sub-0..2 via `FUN_801DDE34`), 16-word table copy (sub-0xE), **fade cancel** (sub-0xF: `func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)` then halt at PC - a retire sweep over the fade handler, not a callback registration; see [`script-vm.md`](script-vm.md#the-two-actor-list-leaves-the-vm-keys-on-0x0c)). |
+| 9 | 0x90..0x9F | **Floor-height ladder.** Sub-`0xE` installs all sixteen rungs (`-words[i]` into `0x1F80035C + i*2`); sub-`0..2` sets one rung oscillating via `FUN_801DDE34`; sub-`0xF` retires every oscillator (`func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)` then halt at PC - a retire sweep, not a callback registration). See [the detail below](#nibble-9-is-the-floor-height-ladder-not-a-fade). |
 | A | 0xA0..0xAF | Conditional jump on flag bit. Sub-0 reads `ctx.flags`, sub-1 reads `ctx.local_flags`, sub-2 reads the global story flag word. Bit SET → take absolute jump from operand[2..4]; bit CLEAR (or sub-3..=0xF) → skip 5 bytes. (The asm dispatches on sub-op first at 0x801e2568, so sub-3..=0xF skip both the per-bank check and the take-jump path.) |
 | C | 0xC0..0xCF | Small per-actor / per-scene writes (slot table, sub-tile broadcast, sound trigger, `field_74` XOR). **All 16 sub-ops are now ported.** Full body: [nibble-C small per-actor / per-scene writes](#0x4c-nibble-0xc00xcf---small-per-actor--per-scene-writes). |
 | D | 0xD0..0xDF | Party state + inverted-Y mirror cluster (field SE trigger, linked-list lookup gate, synchronous-spawn actor allocator, party-record search). Full body: [nibble-D party state + inverted-Y mirror cluster](#0x4c-nibble-0xd00xdf---party-state--inverted-y-mirror-cluster). |
@@ -282,3 +282,30 @@ return iVar47 + 6;
 ```
 
 `FUN_8005842c` / `FUN_800583c8` / `FUN_80058104` carry the string constants `s_StoreImage` / `s_LoadImage` / `s_DrawSync` respectively. The 16-element u16 buffer lives on the dispatcher's stack and is *not* present in the bytecode - it's pixels read from VRAM at runtime. The host hooks `op4c_n_d_sub_4_vram_stp_set(x, y)` / `op4c_n_d_sub_5_vram_stp_clear(x, y)` receive only the rect origin; a from-scratch renderer that maintains its own framebuffer can emulate the read-modify-write itself.
+
+## Nibble 9 is the floor-height ladder, not a fade
+
+The whole `4C 9x` family was filed as a "fade family" because the sub-`0..2`
+tick's output was never resolved to its destination. It is
+`0x1F800314 + 0x48 + rung * 2` = `0x1F80035C + rung * 2`, and that array is the
+scene's 16-entry `i16` floor-elevation ladder - the one `FUN_8003AEB0` fills
+from the MAN header, `FUN_80019278` interpolates for ground height, and
+`FUN_8003A55C` adds to every placed object's Y
+([`field-locomotion.md`](field-locomotion.md#where-the-collision-grid-comes-from)).
+Sub-`0xE` writes the same sixteen entries directly, which is what makes the
+three sub-ops one family rather than three.
+
+`jou`'s scene-entry script is the clean example. `P1[0]` installs the linear
+ramp `i * 0x20` with `4C 9E`, sweeps with `4C 9F`, re-installs a second ramp,
+then issues a run of `4C 90 <rung> 50 00 16 00 <phase> 80` over consecutive
+rungs - period `0x50`, amplitude `0x16`, and a burst-arm word whose count rises
+by ten per rung. That is a travelling wave across the elevation ladder: the
+floor of the organic Seru interior undulates. `jou` carries 57 such sites and
+`concnow` 34.
+
+Two sub-ops of the three are dead. `FUN_801DA930` seeds its phase from
+`+0x6C + 1`, so sub-`1` and sub-`2` land on phases 2 and 3 - and only the
+phase-1 arm decrements the tick's outer loop counter, so those phases spin
+forever. Nothing ships them: `4C 91` and `4C 92` do not occur as a byte pair
+in any of the 101 extractable scene MANs, while `4C 90` occurs 180 times
+across 19 scenes.

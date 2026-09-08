@@ -1007,11 +1007,7 @@ pub(super) fn cmd_play_window_with_record(
         } else {
             let snapshots = scan_save_dir(save_dir);
             let any_present = snapshots.iter().any(|s| s.present);
-            if any_present {
-                BootUiState::Title(legaia_engine_core::title::TitleSession::new())
-            } else {
-                BootUiState::Title(legaia_engine_core::title::TitleSession::without_save_data())
-            }
+            BootUiState::Title(super::boot_cutscene::title_session(any_present))
         }
     } else {
         BootUiState::Inactive
@@ -1087,9 +1083,9 @@ pub(super) fn cmd_play_window_with_record(
         baka_hud_widgets: None,
         baka_chrome_frame: Vec::new(),
         muscle_hub: None,
-        muscle_intro_timer: 0,
+        muscle_intro_card: None,
         muscle_round_banner: None,
-        muscle_interval_timer: 0,
+        muscle_interval: None,
         muscle_prev_leg_open: false,
         muscle_prev_contest_open: false,
         summon_actor_slot: None,

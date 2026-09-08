@@ -30,6 +30,12 @@ The dispatcher and its JT live in **PROT 0897 alone**. The earlier "many overlay
 
 Since the SCUS opcode arm calls the **fixed VA** `0x801D362C`, op `0x2F` is only executable while the field overlay is resident - in any other overlay generation it would jump into unrelated code. Battle-side move records (monster archive, summon stagers) therefore cannot use op `0x2F`; the extension sub-ops are a field/world-map/dialog-mode vocabulary.
 
+### One caller, and it is ported
+
+A five-form reference scan over `SCUS_942.54`, every based overlay image and every raw PROT entry (`scripts/ghidra-analysis/find-address-word-refs.py 0x801D362C`) finds **one** reference to the dispatcher: `jal` at SCUS `+0x13AE0` (VA `0x80023AE0`), which is `FUN_80023070`'s `0x2F` arm. No word reference, no `lui`/`addiu` pair, no `j`. (The scan's second hit is a plain branch inside a PROT 0898 function that happens to land on the aliased VA, not a call.)
+
+That closes a question about the port. The engine hosts exactly that one caller: `move_vm::dispatch`'s `0x2F` arm calls `MoveHost::ext_dispatch`, whose default body is `move_vm::ext::ext_default_dispatch`, and `engine-core::world::vm_hosts` inherits the default - so the dispatcher runs for every actor the world ticks. `move_vm_overlay_ext`'s standalone `step` / `walk` walker is a second surface over the same routine with no retail caller of its own to be wired at. Its `canonical_size` table is live on its own account.
+
 Each sub-handler returns the size in u16 units. Sub-handlers at `0x801D31B0` (per-scanline POLY_FT4 strip emitter), `0x801D32F8`, `0x801D3444`, `0x801D3748`, `0x801D52D0`, etc. are members of the 0897 table.
 
 ## Instruction widths

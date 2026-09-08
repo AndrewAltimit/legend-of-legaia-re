@@ -38,12 +38,16 @@
 //! halfwords). Out-of-range opcodes (`>= 0x3D`) advance by 1 halfword
 //! so the dispatcher can resync after a corrupt instruction.
 //!
-//! Note: when the dispatcher is invoked through the move-VM op 0x2F
-//! escape, the outer move-VM op byte sits at `s3 + 0x0` (so `word_0`
-//! = `[0x2F, 0x00]`). When the world-map controller calls
-//! `FUN_801D362C` directly, `word_0` is just whatever the caller put
-//! there - typically a default-next branch hint used by ops 0x13 /
-//! 0x14 (the conditional-skip ops that `j 0x801d4838`).
+//! Note: the dispatcher is invoked through the move-VM op 0x2F escape,
+//! so the outer move-VM op byte sits at `s3 + 0x0` (`word_0` =
+//! `[0x2F, 0x00]`). The claim that "the world-map controller calls
+//! `FUN_801D362C` directly" is **falsified**: a five-form reference
+//! scan over SCUS, the based overlay images and every raw PROT entry
+//! finds one `jal` to the address (SCUS `0x80023AE0`, the move VM's
+//! `0x2F` arm) and no other reference of any form. `word_0` is
+//! therefore always the escape's own opcode word, and the ops that
+//! read it as a default-next branch hint (0x13 / 0x14, which
+//! `j 0x801d4838`) read it out of the move program itself.
 //!
 //! ## Scrolling-strip opcodes (sub-ops 0x2B..0x2E)
 //!
@@ -275,6 +279,20 @@ pub fn peek_word0(bytecode: &[u8]) -> Option<u16> {
 /// Dispatch a single sub-opcode against the host. Returns the advance
 /// count to feed back to the move-VM.
 ///
+/// This walker is the **second** Rust surface over `FUN_801D362C`; the one an
+/// executing move program reaches is `move_vm::ext::ext_default_dispatch`, on
+/// the VM's own host trait. It deliberately carries no `PORT:` /
+/// `NOT WIRED:` tag of its own: the module blanket above already anchors the
+/// address, and no host is owed this surface. Retail
+/// reaches `FUN_801D362C` from exactly one site - a disc-wide five-form
+/// reference scan finds a single `jal` at SCUS `0x80023AE0`, the move VM's
+/// `0x2F` arm, and no `lui`/`addiu` or word reference anywhere - and the port
+/// already hosts that site live through `MoveHost::ext_dispatch`. Wiring this
+/// walker as well would give the engine two interpreters for one opcode, not
+/// one more reachable behaviour. What the module keeps carrying its own weight
+/// for is [`canonical_size`], the disassembly-sourced width table the live arm
+/// is tested against and the VDF-pulse scanner skips `0x2F` instructions with.
+///
 /// `bytecode` is the full move-VM bytecode buffer starting at the
 /// current move-VM PC (i.e. the outer `0x2F` byte is at `bytecode[0]`).
 /// Sub-op handlers read args from `+4(s3), +6(s3), ...` in the
@@ -357,6 +375,10 @@ pub fn step<H: MoveVmExtHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> StepRes
 /// Useful for "does this buffer parse end-to-end" validation and for
 /// counting render-class ops. For real execution the engine should
 /// model branch flow + the move-VM bridge.
+///
+/// The executing VM does its own PC walk through
+/// `move_vm::ext::ext_default_dispatch` - see [`step`] for why no host is
+/// owed a linear walker on top of it.
 pub fn walk<H: MoveVmExtHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> WalkSummary {
     walk_with_limit(host, bytecode, bytecode.len())
 }

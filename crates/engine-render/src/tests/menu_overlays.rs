@@ -158,6 +158,7 @@ fn status_screen_draws_pack_panel() {
         ap_max: 4,
         stat_rows: &stat_rows,
         equip_rows: &equip_rows,
+        status: 0,
     };
     let draws = status_screen_draws_for(&font, &panel, Some("L1/R1: Switch"), (16, 32), false);
     assert!(!draws.is_empty());
@@ -270,6 +271,7 @@ fn status_screen_label_icons_suppresses_ap_text_and_empty_equips() {
         ap_max: 100,
         stat_rows: &[],
         equip_rows: &equip_rows,
+        status: 0,
     };
     let with_icons = status_screen_draws_for(&font, &panel, None, (90, 16), true);
     let without = status_screen_draws_for(&font, &panel, None, (90, 16), false);
@@ -1011,6 +1013,7 @@ fn status_screen_hp_row_uses_retail_digit_cells_and_teal_parens() {
             growth: 24,
         }],
         equip_rows: &[],
+        status: 0,
     };
     let draws = status_screen_draws_for(&font, &panel, None, (90, 16), true);
     let hp_y = 16 + 0x13;

@@ -226,6 +226,8 @@ fn derive_battle_cam(
     // computed. `battle_over` is `DAT_8007BD71 == 0xFE`, the battle-end
     // signal - `0xFF` for the whole of a running fight, so `false` here
     // (same as the native host; the victory-pose arm is not modelled).
+    // `style` is the live `ctx[+0xD]` framing variant - the same byte, from
+    // the same place, as the native host's `battle_action_framing`.
     let party = usize::from(acting_slot) < pc;
     script::BattleCamInputs {
         phase,
@@ -237,7 +239,7 @@ fn derive_battle_cam(
             battle_over: false,
             depth_raw: world.battle_camera_frame_height as i32,
             yaw_base: 0,
-            style: 0,
+            style: world.battle_ctx.camera_variant,
             char_id: if party { acting_slot + 1 } else { 0 },
         },
         // `_DAT_8007B792` is one global shared with the field camera, and

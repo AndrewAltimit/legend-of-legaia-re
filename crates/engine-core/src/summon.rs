@@ -18,9 +18,13 @@
 //! rendered summon is an **ordinary battle actor**, not this move-VM scene-graph:
 //! across all three phases `FUN_801F7088` fired **0×**, the move VM
 //! `FUN_80023070` fired only **2-3×** (trace noise, not a per-part driver), and
-//! the **battle per-actor draw `FUN_80048A08` fired 35-64×/frame** → the
-//! per-object rigid-TRS keyframe decoder `FUN_8004998C` → cluster-A
-//! `FUN_80043390`. So the player summon is posed exactly like an enemy monster
+//! the **battle per-actor draw `FUN_80048A08` ran once per live actor per
+//! rendered frame** → the per-object rigid-TRS keyframe decoder `FUN_8004998C`
+//! → cluster-A `FUN_80043390`. (The earlier "35-64×/frame" magnitude for the
+//! same address does not reproduce: a 400-vsync re-measurement on the
+//! catalogued `gimard_burning_attack` state counts 213 calls and never more
+//! than 2 per rendered frame - `docs/subsystems/effect-vm.md`.) So the player
+//! summon is posed exactly like an enemy monster
 //! body (per-object rigid TRS keyframes), and the **faithful render path is the
 //! battle TRS-keyframe draw already ported in
 //! [`legaia_engine_vm::anim_vm`]** (`FUN_80048A08` / `FUN_8004998C`), *not* this
@@ -91,8 +95,11 @@ pub const SUMMON_PART_BUDGET: usize = 256;
 
 /// Player Seru-magic spell-id range that resolves to a per-summon overlay at
 /// the battle-action cast band (`FUN_801E295C` state `0x29`: `actor[+0x1DF] >=
-/// 0x81`). Gimard *Burning Attack* = `0x81` (the enemy boss *Fire Tail* is a
-/// different, non-stager path). The `0x82..=0x8B` legs each carry a committed
+/// 0x81`). Gimard *Burning Attack* = `0x81`; the SCUS spell-name table
+/// (`DAT_800754D0 + id*12`) calls that id plainly `Gimard`, and `Tail Fire` is
+/// spell `0x27` - the enemy Gimard's move, a different id on a different,
+/// non-stager path (this tree's long-standing nickname for it is *Fire Tail*,
+/// disclosed in `docs/subsystems/battle-action.md`). The `0x82..=0x8B` legs each carry a committed
 /// regression oracle (mid-cast loader-B id + slot-B-resident stager;
 /// disc+library-gated `summon_binding_base_high`); `0x81` is PCSX-side.
 pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;

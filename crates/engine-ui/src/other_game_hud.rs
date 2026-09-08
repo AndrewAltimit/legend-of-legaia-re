@@ -491,7 +491,10 @@ pub struct HubDraw {
 
 /// The **intro card**: the "Welcome to the Muscle Dome!" cursive strip
 /// (record 3) dead-centre of the frame. `FUN_801CF870`'s opening arm; its
-/// brightness argument is that arm's own fade counter (`DAT_801D1A80`).
+/// brightness argument is that arm's own envelope level (`DAT_801D1A80`), a
+/// `0..0x80` modulation level rather than a tick count - the emitter
+/// `FUN_801D050C` scales each channel `c * a3 / 256`
+/// (`docs/subsystems/minigame-muscle-dome.md`).
 pub const HUB_INTRO_CARD: &[HubDraw] = &[HubDraw {
     sel: 3,
     x: 0xA0,

@@ -299,9 +299,23 @@ impl DomeDamageModel {
     /// [`MuscleDomeSession::resolve_turn`] takes as its damage closure.
     pub fn damage(&mut self, attacker: usize, cmd: u8) -> i32 {
         let defender = attacker ^ 1;
-        let power = move_power::record_for_move_id(&self.move_power, &self.move_map, cmd)
-            .map(|r| r.power())
-            .unwrap_or(0);
+        // The kernel's `a0` is `map[actor+0x1DF]`, the move-power table
+        // index (`FUN_801E09F8` `0x801E1874..0x801E188C`, then the 26-byte
+        // stride at `0x801DD1A0`), and the power is that row's `+0` word
+        // arithmetic-shifted right by two.
+        //
+        // The four **direction** ids map to index 0, and the disc ships row 0
+        // as 26 zero bytes - so a plain swing carries no power through this
+        // table at all. Its tier is the melee kernel's per-command scalar
+        // `0x801F64EC[(id - 0x0C) % 5]` instead
+        // ([`vm::battle_formulas::command_power_scalar`]), which is the same
+        // 12 / 18 / 20 / 22 / 28 scale an art record's power byte decodes to.
+        // Falling back to it is what stops every dome swing resolving at
+        // power zero.
+        let power = match move_power::record_for_move_id(&self.move_power, &self.move_map, cmd) {
+            Some(r) => r.power(),
+            None => legaia_engine_vm::battle_formulas::command_power_scalar(cmd) as i32,
+        };
         let hp = self.hp;
         let combatants = self.combatants;
         let actor = |slot: usize| SummonRollActor {
@@ -364,6 +378,64 @@ impl DomeDamageModel {
             hp_after: self.hp,
         });
         damage
+    }
+}
+
+/// One fighter's **normal-art catalog** for [`MuscleDomeSession::install_art_catalog`],
+/// filtered out of a world's art records the way the retail queue builder's
+/// inner loop filters them: this character's rows only, the **normal** arts
+/// only, and combos of two arrows or more.
+///
+/// "Normal" is the constant band `>= 0x1F`. The builder routes ordinals
+/// `0..=3` - the Miracle Art and the three Hyper Arts - through a different
+/// arm (`sltiu a1,a0,0x4` at `0x801EF330`) that, with the slot's `+0x25F`
+/// marker clear, writes nothing, so their combo bytes never tokenize as arts.
+/// The two-arrow floor is the builder's `s1 == 1` exit
+/// (`0x801EF420..0x801EF434`): a fully matched one-arrow string is left
+/// unrewritten, and letting one match would steal an arrow from every art
+/// containing it. Sorted by constant, the grid order the loop walks.
+///
+/// Both dome hosts build their catalog through this one filter so neither can
+/// grow a rule of its own.
+///
+/// REF: FUN_801EED1C (`0x801EF330`, `0x801EF420..0x801EF434`)
+/// Lowest action constant that is a **normal** art - the band the queue
+/// builder's inner loop tokenizes. Below it sit the Miracle Art and the three
+/// Hyper Arts, which the builder routes elsewhere. The battle command flow's
+/// own queue builder holds the same bound for the same reason.
+const NORMAL_ART_MIN_CONSTANT: u8 = 0x1F;
+
+pub fn art_catalog_for(
+    records: &std::collections::HashMap<
+        (legaia_art::Character, legaia_art::ActionConstant),
+        legaia_art::ArtRecord,
+    >,
+    character: legaia_art::Character,
+) -> Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)> {
+    let mut rows: Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)> = records
+        .iter()
+        .filter(|((ch, action), rec)| {
+            *ch == character
+                && action.is_art()
+                && action.as_byte() >= NORMAL_ART_MIN_CONSTANT
+                && rec.commands.len() >= 2
+        })
+        .map(|((_, action), rec)| (*action, rec.commands.clone()))
+        .collect();
+    rows.sort_by_key(|(a, _)| a.as_byte());
+    rows
+}
+
+/// Map a dealt direction's action byte (`0x0C` Left, `0x0D` Right, `0x0E`
+/// Down, `0x0F` Up - the deck table `DAT_801f4b8c`'s ids) onto the arrow the
+/// tokenizer reads. `None` for anything outside that band.
+fn dome_command_of_action_byte(b: u8) -> Option<legaia_art::Command> {
+    match b {
+        0x0C => Some(legaia_art::Command::Left),
+        0x0D => Some(legaia_art::Command::Right),
+        0x0E => Some(legaia_art::Command::Down),
+        0x0F => Some(legaia_art::Command::Up),
+        _ => None,
     }
 }
 
@@ -481,6 +553,11 @@ pub struct MuscleDomeSession {
     time_meter: u8,
     /// The meter bar sprite's Y offset for the current counter value.
     time_meter_bar_y: i16,
+    /// Per-fighter **normal-art catalog** in grid order (ascending action
+    /// constant), when the host has the character's art records. Empty =
+    /// "this fighter knows no arts", which is retail's own answer for an
+    /// unmatched string.
+    art_catalog: [Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)>; 2],
 }
 
 impl MuscleDomeSession {
@@ -506,6 +583,7 @@ impl MuscleDomeSession {
             damage: None,
             time_meter: 0,
             time_meter_bar_y: time_meter_step(0, 0, false, false).1,
+            art_catalog: [Vec::new(), Vec::new()],
         }
     }
 
@@ -756,8 +834,10 @@ impl MuscleDomeSession {
         self.last_turn_damage = [0, 0];
         'play: for attacker in 0..2usize {
             let defender = attacker ^ 1;
-            for i in 0..self.f[attacker].queue.len() {
-                let cmd = self.f[attacker].queue[i];
+            // The bytes retail actually plays: the tokenizer's action queue
+            // when the fighter has an art catalog, the raw string otherwise.
+            let queue = self.tokenized_queue(attacker);
+            for &cmd in &queue {
                 let d = damage(attacker, cmd).max(0);
                 self.last_turn_damage[defender] += d;
                 self.f[defender].hp = (self.f[defender].hp - d).max(0);
@@ -772,6 +852,66 @@ impl MuscleDomeSession {
             (false, true) => MusclePhase::Won,
             (false, false) => MusclePhase::TurnOver,
         };
+    }
+
+    /// Install fighter `slot`'s **normal-art catalog** - the rows the retail
+    /// queue builder's inner loop walks, in grid order: `(action constant,
+    /// its command bytes)`. Rows are sorted by constant here, so a host may
+    /// pass them in any order.
+    ///
+    /// Without a catalog a queued string resolves as four plain swings, which
+    /// is what the port did before and what retail does for a character with
+    /// no arts. With one, the queue the turn resolves is the tokenizer's -
+    /// arts overlap, leading arrows stay, and each matched art contributes
+    /// its **own** move-power row instead of the swings it consumed.
+    pub fn install_art_catalog(
+        &mut self,
+        slot: usize,
+        mut rows: Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)>,
+    ) {
+        if slot >= 2 {
+            return;
+        }
+        // Only real arts, and only combos of two arrows or more: the
+        // builder's `s1 == 1` exit refuses a fully matched one-arrow string,
+        // and letting one match would steal an arrow from every art
+        // containing it.
+        rows.retain(|(a, c)| a.is_art() && c.len() >= 2);
+        rows.sort_by_key(|(a, _)| a.as_byte());
+        self.art_catalog[slot] = rows;
+    }
+
+    /// Fighter `slot`'s committed string as the retail **action queue** -
+    /// the tokenizer's output over the installed catalog, or the raw
+    /// direction string when the fighter has no catalog.
+    ///
+    /// This is the byte stream `actor[+0x1DF..]` holds when the turn plays
+    /// out, so it is what the damage kernel must be walked over: an art's
+    /// constant indexes a real move-power row, while a plain direction byte
+    /// indexes row 0, which the disc ships as 26 zero bytes.
+    ///
+    /// PORT: FUN_801EED1C (the tokenizer pass only - the dome input has no
+    /// Miracle / Super tail and no learn-on-use check, both of which live in
+    /// the battle command flow's own builder)
+    pub fn tokenized_queue(&self, slot: usize) -> Vec<u8> {
+        let Some(f) = self.f.get(slot) else {
+            return Vec::new();
+        };
+        let catalog = &self.art_catalog[slot];
+        if catalog.is_empty() {
+            return f.queue.clone();
+        }
+        let entries: Vec<legaia_art::tokenize::ArtEntry<'_>> =
+            catalog.iter().map(|(a, c)| (*a, c.as_slice())).collect();
+        // The committed string is action bytes `0x0C..=0x0F`; the tokenizer
+        // reads the arrow space `1..=4` (Left / Right / Down / Up).
+        let input: Vec<legaia_art::Command> = f
+            .queue
+            .iter()
+            .filter_map(|b| dome_command_of_action_byte(*b))
+            .collect();
+        let tokens = legaia_art::tokenize(&entries, &input);
+        legaia_art::tokenize::populated(&tokens).to_vec()
     }
 
     /// Install the shared [`DomeDamageModel`] so the turn can resolve through
@@ -1249,6 +1389,67 @@ pub fn restore_hp(hp_cur: u16, hp_max: u16, amount: i32) -> u16 {
     if sum > hp_max { hp_max } else { sum }
 }
 
+/// The [`legaia_save::EquipmentSlots`] indices the arena strips when a
+/// contest opens on a course above Beginner - body armour (record `+0x196`),
+/// head gear (`+0x197`), the weapon byte (`+0x198`) and leg gear (`+0x19A`).
+///
+/// Index `3` is the Seru-lock byte `+0x199` and indices `5..=7` are the three
+/// accessory bytes `+0x19B..+0x19D`; retail writes **none** of those four, so
+/// a stripped fighter keeps its accessories and its summon access. The four
+/// stores are `sb zero` at `0x801D0F24` / `0x801D0F28` / `0x801D0F2C` and the
+/// `jal`'s delay slot `0x801D0F34`.
+///
+/// PORT: FUN_801d0ed8 (the gear-strip arm)
+pub const CONTEST_STRIPPED_EQUIP_SLOTS: [usize; 4] = [0, 1, 2, 4];
+
+/// What opening a contest does to the fighter's record.
+///
+/// Retail's arena entry decodes the course into `DAT_801D1A90` in the delay
+/// slot of its `jal 0x801D0ED8` (`0x801CEBF0`), and the callee's first test
+/// is `bnez` on that byte - so "no equipment" is a **course** rule, not a
+/// round rule, and the Beginner course (`0`) keeps its gear.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContestStartRestore {
+    /// Zero the four [`CONTEST_STRIPPED_EQUIP_SLOTS`] bytes before the
+    /// refill. Set for every course but Beginner.
+    pub strip_gear: bool,
+}
+
+/// Apply the contest-start restore to one character record.
+///
+/// The body is three `(max, cur)` halfword pairs copied max-to-cur on the
+/// live game-state window at `0x80084140 + 0x6CC / 0x6D0 / 0x6D4`, which is
+/// the **lead** party record's `+0x104` / `+0x108` / `+0x10C` (`0x80084708 -
+/// 0x80084140 = 0x5C8`): HP, MP and SP all come back full. There is no
+/// per-character stride in the instruction stream, so the arena restores
+/// party slot 0 and nobody else.
+///
+/// Retail runs the per-character stat aggregator `FUN_80042558` **between**
+/// the gear strip and the refill, so the maxima the refill copies are the
+/// ones recomputed under the stripped equipment. The port's equivalent
+/// recompute is the caller's; this function copies whatever maxima the
+/// record holds when it is called, which is why the strip happens here too
+/// rather than in the host.
+///
+/// PORT: FUN_801d0ed8
+pub fn apply_contest_start_restore(
+    record: &mut legaia_save::CharacterRecord,
+    restore: ContestStartRestore,
+) {
+    if restore.strip_gear {
+        let mut eq = record.equipment();
+        for &slot in CONTEST_STRIPPED_EQUIP_SLOTS.iter() {
+            eq.slots[slot] = 0;
+        }
+        record.set_equipment(eq);
+    }
+    let mut hms = record.hp_mp_sp();
+    hms.hp_cur = hms.hp_max;
+    hms.mp_cur = hms.mp_max;
+    hms.sp_cur = hms.sp_max;
+    record.set_hp_mp_sp(hms);
+}
+
 /// Credit a settled tally into the casino coin bank, saturating at
 /// [`COIN_BANK_MAX`].
 ///
@@ -1337,6 +1538,12 @@ pub struct DomeContest {
     state: ContestState,
     rows: LegScoreRows,
     hp_restore: i32,
+    /// The one-shot contest-start restore, pending until a host consumes it
+    /// ([`DomeContest::take_start_restore`]). Retail runs it in the arena
+    /// entry's **first-entry** arm only - the `_DAT_8007BAC0 == 0` side of
+    /// the `bnez` at `0x801CEB58` - so a re-entered arena (every later leg)
+    /// never reaches the `jal 0x801D0ED8` at `0x801CEBF0`.
+    start_restore: Option<ContestStartRestore>,
 }
 
 impl DomeContest {
@@ -1350,8 +1557,9 @@ impl DomeContest {
         lengths: [u32; COURSE_COUNT],
         score: [ScoreRow; COURSE_COUNT],
     ) -> Self {
+        let word = contest_entry_word(flags);
         Self {
-            word: contest_entry_word(flags),
+            word,
             lengths,
             score,
             tally: 0,
@@ -1360,7 +1568,23 @@ impl DomeContest {
             state: ContestState::Fight,
             rows: LegScoreRows::default(),
             hp_restore: 0,
+            start_restore: Some(ContestStartRestore {
+                strip_gear: cursor_course(word).min(COURSE_COUNT - 1) != 0,
+            }),
         }
+    }
+
+    /// Consume the one-shot contest-start restore, if it has not run yet.
+    ///
+    /// Retail's arena entry decodes `(course, round)` into `DAT_801D1A90` /
+    /// `DAT_801D1A94` and calls `FUN_801D0ED8` in the same breath, but only
+    /// on the first entry - the re-entry arm at `0x801CEC00` jumps past it.
+    /// So this returns `Some` exactly once per contest, and the caller
+    /// applies it with [`apply_contest_start_restore`].
+    ///
+    /// PORT: FUN_801cea6c (`0x801CEBEC..0x801CEBF4`)
+    pub fn take_start_restore(&mut self) -> Option<ContestStartRestore> {
+        self.start_restore.take()
     }
 
     /// Open a contest straight off a raw PROT 0977 entry, taking both the
@@ -1740,6 +1964,241 @@ pub fn time_meter_step(counter: u8, dt: u8, in_select_phase: bool, ramp_up: bool
     (new, bar_y)
 }
 
+// ------------------------------------------------------- hub screen timing
+
+/// The value every hub fade counter clamps at (`slti v0,v0,0x81` at
+/// `0x801CF944` / `0x801CFA14` / `0x801CFB34` / `0x801CFD08` / `0x801CFF90`).
+///
+/// It is also the emitter's **neutral** brightness: the sprite emitter scales
+/// each stored channel by `c * brightness / 256` (`mult`/`sra 8` inside
+/// `FUN_801D050C`), so `0x80` reproduces the record's own colour as a PSX
+/// textured primitive's neutral modulation. A host that draws a hub screen at
+/// `0x100` draws it at twice retail's brightness.
+pub const HUB_FADE_FULL: i32 = 0x80;
+
+/// The fast fade rate: `counter += dt * 4` (`sll v1,v1,0x2`, `0x801CF938`).
+/// 32 ticks from black to [`HUB_FADE_FULL`] at `dt == 1`.
+pub const HUB_FADE_STEP_FAST: i32 = 4;
+
+/// The slow fade rate: `counter += dt * 2` (`0x801CFA78`, `0x801CFB28`,
+/// `0x801CFF64`). 64 ticks at `dt == 1`.
+pub const HUB_FADE_STEP_SLOW: i32 = 2;
+
+/// The half-brightness floor the INTERVAL arm dims its backdrop to while the
+/// score tally rolls (`slti v0,v0,0x40` at `0x801CFDAC`).
+pub const HUB_BACKDROP_HALF: i32 = 0x40;
+
+/// Ticks the "Welcome to the Muscle Dome!" strip holds at full brightness -
+/// the phase-1 arm counts `DAT_801D1A84` up by `dt` and leaves at
+/// `slti v0,v0,0x7b` (`0x801CF9A0`).
+pub const HUB_INTRO_HOLD_TICKS: i32 = 0x7B;
+
+/// Ticks the ROUND banner holds - the phase-4 arm seeds `DAT_801D1A70` with
+/// `0xB4` (`li v1,0xb4` at `0x801CFB68`) and phase 5 counts it down by `dt`,
+/// leaving on `bgez` (`0x801CFBEC`).
+pub const HUB_ROUND_BANNER_HOLD_TICKS: i32 = 0xB4;
+
+/// Ticks the opponent / ROUND-n card holds - `DAT_801D1A8C` counts up by `dt`
+/// and leaves at `slti v0,v0,0x3d` (`0x801CFFB8`).
+pub const HUB_OPPONENT_CARD_HOLD_TICKS: i32 = 0x3D;
+
+/// Pad mask a hold arm tests to let the player skip the rest of it
+/// (`andi v0,v0,0xf4` at `0x801CFBE0` / `0x801CFFE4`, over the edge snapshot
+/// `DAT_801D1A9C = _DAT_8007B874 | _DAT_8007B938`).
+///
+/// Only the two card holds are skippable; the intro strip's hold is not.
+pub const HUB_SKIP_PAD_MASK: u16 = 0xF4;
+
+/// Lead-in ticks before the score tally's four roll-up lanes start stepping
+/// (`slti 0x11` at `0x801CF0CC` / `0x801CF144` / `0x801CF1BC` / `0x801CF234`,
+/// each reseeding to `0x10`).
+pub const HUB_TALLY_ROLL_LEAD_TICKS: i32 = 0x11;
+
+/// Value each roll-up lane's tick counter reseeds to after a step.
+pub const HUB_TALLY_ROLL_RESEED: i32 = 0x10;
+
+/// Per-lane vsync delay of the tally's four "ka-ching" cues - the INTERVAL
+/// arm writes the cue ring `DAT_8007B6D8 = [0x202, 0x202, 0x202, 0x203]` and
+/// this parallel countdown array `DAT_8007C338` at
+/// `0x801CFCAC..0x801CFCEC`.
+pub const HUB_TALLY_CUE_STAGGER: [u8; 4] = [0, 0x1E, 0x3C, 0x5A];
+
+/// Which stage of its envelope a hub screen is in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HubScreenStage {
+    /// The fade counter is climbing toward [`HUB_FADE_FULL`].
+    FadeIn,
+    /// The counter is parked at full and the hold counter is running.
+    Hold,
+    /// The fade counter is draining back toward the screen's floor.
+    FadeOut,
+    /// The screen is finished; the hub arm has advanced past it.
+    Done,
+}
+
+/// One hub screen's retail fade / hold envelope: the counter arms of
+/// `FUN_801CF870` reduced to the three stages every screen shares.
+///
+/// Retail does not hold a screen for one fixed frame count - the count the
+/// two host timelines used to invent. Each screen is a fade-in at its own
+/// rate, a hold at full, and a fade-out, and two of the four holds end early
+/// on a pad press. This carries the measured literals so neither host has to
+/// pick a number.
+///
+/// PORT: FUN_801cf870 (arms `0`..`6`, `0x0A`..`0x0C`, `0x14`..`0x16` - the
+/// `DAT_801D1A70` / `1A7C` / `1A80` / `1A84` / `1A8C` counter family)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HubScreen {
+    stage: HubScreenStage,
+    level: i32,
+    hold: i32,
+    fade_in_step: i32,
+    fade_out_step: i32,
+    hold_ticks: i32,
+    /// Level the fade-out drains to - `0` for a screen that leaves, or
+    /// [`HUB_BACKDROP_HALF`] for the INTERVAL backdrop, which dims to half
+    /// and stays there while the tally rolls.
+    floor: i32,
+    skippable: bool,
+}
+
+impl HubScreen {
+    const fn new(
+        fade_in_step: i32,
+        hold_ticks: i32,
+        fade_out_step: i32,
+        floor: i32,
+        skippable: bool,
+    ) -> Self {
+        Self {
+            stage: HubScreenStage::FadeIn,
+            level: 0,
+            hold: 0,
+            fade_in_step,
+            fade_out_step,
+            hold_ticks,
+            floor,
+            skippable,
+        }
+    }
+
+    /// The "Welcome to the Muscle Dome!" strip: arm `0` fades it in at the
+    /// fast rate, arm `1` holds it [`HUB_INTRO_HOLD_TICKS`] ticks (no skip),
+    /// arm `2` cross-fades it out at the fast rate.
+    pub const fn intro_card() -> Self {
+        Self::new(
+            HUB_FADE_STEP_FAST,
+            HUB_INTRO_HOLD_TICKS,
+            HUB_FADE_STEP_FAST,
+            0,
+            false,
+        )
+    }
+
+    /// The ROUND banner: arm `4` fades it in at the slow rate, arm `5` holds
+    /// it [`HUB_ROUND_BANNER_HOLD_TICKS`] ticks (pad-skippable), arm `6`
+    /// fades out at the fast rate.
+    pub const fn round_banner() -> Self {
+        Self::new(
+            HUB_FADE_STEP_SLOW,
+            HUB_ROUND_BANNER_HOLD_TICKS,
+            HUB_FADE_STEP_FAST,
+            0,
+            true,
+        )
+    }
+
+    /// The opponent / ROUND-n card: arm `0x15` fades in at the slow rate and
+    /// holds [`HUB_OPPONENT_CARD_HOLD_TICKS`] ticks (pad-skippable); arm
+    /// `0x16` fades out at the slow rate.
+    pub const fn opponent_card() -> Self {
+        Self::new(
+            HUB_FADE_STEP_SLOW,
+            HUB_OPPONENT_CARD_HOLD_TICKS,
+            HUB_FADE_STEP_SLOW,
+            0,
+            true,
+        )
+    }
+
+    /// The between-legs INTERVAL + score tally: arm `0x0A` fades it in at the
+    /// fast rate, arm `0x0B` dims the backdrop toward
+    /// [`HUB_BACKDROP_HALF`] at the slow rate while the tally rolls, and arm
+    /// `0x0C` drains the rest. Those last two are one fade-out here, at the
+    /// slow rate, since nothing between them changes what is drawn.
+    ///
+    /// Its "hold" is the tally roll, which is data-dependent (the four lanes
+    /// step one row per tick after a [`HUB_TALLY_ROLL_LEAD_TICKS`] lead-in),
+    /// so the hold length is the caller's: pass the roll length in ticks.
+    pub const fn interval(roll_ticks: i32) -> Self {
+        Self::new(HUB_FADE_STEP_FAST, roll_ticks, HUB_FADE_STEP_SLOW, 0, false)
+    }
+
+    /// Advance one hub tick. `dt` is the adaptive frame-skip factor
+    /// `_DAT_1F800393` every counter step is scaled by (`1` at the normal
+    /// cadence); `pad` is the arm's edge snapshot `DAT_801D1A9C`, which ends
+    /// a skippable hold when it carries any [`HUB_SKIP_PAD_MASK`] bit.
+    pub fn tick(&mut self, dt: u8, pad: u16) {
+        let dt = dt.max(1) as i32;
+        match self.stage {
+            HubScreenStage::FadeIn => {
+                self.level += dt * self.fade_in_step;
+                if self.level >= HUB_FADE_FULL {
+                    self.level = HUB_FADE_FULL;
+                    self.stage = HubScreenStage::Hold;
+                }
+            }
+            HubScreenStage::Hold => {
+                self.hold += dt;
+                let skipped = self.skippable && pad & HUB_SKIP_PAD_MASK != 0;
+                if skipped || self.hold >= self.hold_ticks {
+                    self.stage = HubScreenStage::FadeOut;
+                }
+            }
+            HubScreenStage::FadeOut => {
+                self.level -= dt * self.fade_out_step;
+                if self.level <= self.floor {
+                    self.level = self.floor;
+                    self.stage = HubScreenStage::Done;
+                }
+            }
+            HubScreenStage::Done => {}
+        }
+    }
+
+    /// The brightness argument to pass the hub sprite emitters
+    /// (`0 ..= `[`HUB_FADE_FULL`]).
+    pub fn brightness(&self) -> i32 {
+        self.level
+    }
+
+    /// Which stage the envelope is in.
+    pub fn stage(&self) -> HubScreenStage {
+        self.stage
+    }
+
+    /// Whether the screen still draws - anything but [`HubScreenStage::Done`]
+    /// at a zero floor.
+    pub fn visible(&self) -> bool {
+        self.stage != HubScreenStage::Done || self.floor > 0
+    }
+
+    /// Whether the hub arm has advanced past this screen.
+    pub fn done(&self) -> bool {
+        self.stage == HubScreenStage::Done
+    }
+
+    /// Total ticks this screen runs for at `dt == 1` with no skip - what a
+    /// host that wants a single number should ask for instead of inventing
+    /// one. Fade-in + hold + fade-out.
+    pub fn total_ticks(&self) -> i32 {
+        let ceil_div = |n: i32, d: i32| (n + d - 1) / d.max(1);
+        let up = ceil_div(HUB_FADE_FULL, self.fade_in_step);
+        let down = ceil_div(HUB_FADE_FULL - self.floor, self.fade_out_step);
+        up + self.hold_ticks + down
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1955,6 +2414,179 @@ mod tests {
         // The model's HP mirror tracks the session's own HP.
         assert_eq!(plays.last().unwrap().hp_after, [s.hp(0), s.hp(1)]);
         assert_eq!(s.turn(), 1);
+    }
+
+    #[test]
+    fn a_matched_art_replaces_its_swings_in_the_resolved_queue() {
+        use legaia_art::{ActionConstant, Command};
+        let mut s = session();
+        // Right, Left, Right - three 30-cost cards inside the 100 budget,
+        // the shape a two-arrow art overlaps into.
+        for card in [3usize, 0, 3] {
+            assert!(s.commit_card(0, card), "card {card} fits the budget");
+        }
+        let raw = s.queue(0).to_vec();
+        assert_eq!(
+            s.tokenized_queue(0),
+            raw,
+            "no catalog: the raw direction string is the queue"
+        );
+
+        // `Up, Down` is an art. The tokenizer writes the starter over the
+        // art's LAST arrow and inserts the constant after it, leaving the
+        // leading arrow in place.
+        s.install_art_catalog(
+            0,
+            vec![(
+                ActionConstant::from_byte(0x1F).unwrap(),
+                vec![Command::Right, Command::Left],
+            )],
+        );
+        let tokens = s.tokenized_queue(0);
+        assert!(
+            tokens.contains(&ActionConstant::RegularStarter.as_byte()),
+            "the art starter is in the queue: {tokens:02x?}"
+        );
+        assert!(tokens.contains(&0x1F), "the art constant is: {tokens:02x?}");
+
+        // A one-arrow row is refused, and a non-art constant never enters.
+        let mut t = session();
+        t.install_art_catalog(
+            0,
+            vec![
+                (
+                    ActionConstant::from_byte(0x1F).unwrap(),
+                    vec![Command::Right],
+                ),
+                (
+                    ActionConstant::RegularStarter,
+                    vec![Command::Right, Command::Right],
+                ),
+            ],
+        );
+        t.commit_card(0, 3);
+        t.commit_card(0, 3);
+        assert_eq!(
+            t.tokenized_queue(0),
+            t.queue(0).to_vec(),
+            "a one-arrow row and a starter row are both refused"
+        );
+    }
+
+    #[test]
+    fn a_direction_swing_does_not_resolve_at_power_zero() {
+        // The four direction ids map to move-power index 0, and the disc
+        // ships row 0 as 26 zero bytes - so the table cannot be a swing's
+        // power source. The kernel falls back to the melee scalar.
+        let map = [0u8; move_power::MOVE_ID_INDEX_MAP_LEN];
+        let mut m = DomeDamageModel::new(
+            Vec::new(),
+            map,
+            None,
+            [
+                DomeCombatant {
+                    hp_max: 500,
+                    int: 60,
+                    udf: 20,
+                    ldf: 20,
+                    element: 0,
+                },
+                DomeCombatant {
+                    hp_max: 400,
+                    int: 50,
+                    udf: 15,
+                    ldf: 15,
+                    element: 0,
+                },
+            ],
+            [500, 400],
+            0x1234_5678,
+        );
+        m.begin_turn([500, 400]);
+        m.damage(0, 0x0F);
+        let play = m.plays().last().copied().expect("one play logged");
+        assert_eq!(
+            play.power,
+            legaia_engine_vm::battle_formulas::command_power_scalar(0x0F) as i32,
+            "the swing's tier is the melee scalar, not the empty table row"
+        );
+        assert!(play.power > 0);
+    }
+
+    #[test]
+    fn hub_screens_fade_hold_and_fade_at_the_measured_literals() {
+        // The intro strip: 32 ticks up at the fast rate, 123 held, 32 down.
+        let mut c = HubScreen::intro_card();
+        assert_eq!(c.brightness(), 0);
+        for _ in 0..32 {
+            c.tick(1, 0);
+        }
+        assert_eq!(c.brightness(), HUB_FADE_FULL, "clamps at the neutral byte");
+        assert_eq!(c.stage(), HubScreenStage::Hold);
+        // Its hold is NOT skippable - a full pad word does not shorten it.
+        for _ in 0..HUB_INTRO_HOLD_TICKS - 1 {
+            c.tick(1, 0xFFFF);
+        }
+        assert_eq!(c.stage(), HubScreenStage::Hold, "123 ticks, no skip");
+        c.tick(1, 0);
+        assert_eq!(c.stage(), HubScreenStage::FadeOut);
+        assert_eq!(
+            c.total_ticks(),
+            32 + HUB_INTRO_HOLD_TICKS + 32,
+            "187 ticks unskipped"
+        );
+
+        // The ROUND banner: slow fade-in (64), a 180-tick hold that a pad
+        // press ends early.
+        let mut b = HubScreen::round_banner();
+        for _ in 0..64 {
+            b.tick(1, 0);
+        }
+        assert_eq!(b.stage(), HubScreenStage::Hold);
+        b.tick(1, HUB_SKIP_PAD_MASK);
+        assert_eq!(b.stage(), HubScreenStage::FadeOut, "the & 0xF4 skip");
+        // A pad word with no mask bit does not skip.
+        let mut b2 = HubScreen::round_banner();
+        for _ in 0..64 {
+            b2.tick(1, 0);
+        }
+        b2.tick(1, !HUB_SKIP_PAD_MASK);
+        assert_eq!(b2.stage(), HubScreenStage::Hold);
+
+        // The frame delta scales every step, so a dropped frame halves the
+        // tick count rather than stretching the screen.
+        let mut d = HubScreen::intro_card();
+        for _ in 0..16 {
+            d.tick(2, 0);
+        }
+        assert_eq!(d.brightness(), HUB_FADE_FULL);
+
+        // The opponent card's hold is the short one, and also skippable.
+        let mut o = HubScreen::opponent_card();
+        while o.stage() == HubScreenStage::FadeIn {
+            o.tick(1, 0);
+        }
+        for _ in 0..HUB_OPPONENT_CARD_HOLD_TICKS - 1 {
+            o.tick(1, 0);
+        }
+        assert_eq!(o.stage(), HubScreenStage::Hold);
+        o.tick(1, 0);
+        assert_eq!(o.stage(), HubScreenStage::FadeOut);
+
+        // Every screen terminates within its own advertised length.
+        for mut e in [
+            HubScreen::intro_card(),
+            HubScreen::round_banner(),
+            HubScreen::opponent_card(),
+            HubScreen::interval(HUB_TALLY_ROLL_LEAD_TICKS),
+        ] {
+            let total = e.total_ticks();
+            for _ in 0..total {
+                e.tick(1, 0);
+            }
+            assert!(e.done(), "finished within {total} ticks");
+            assert_eq!(e.brightness(), 0);
+        }
     }
 
     #[test]
@@ -2401,5 +3033,92 @@ mod tests {
         // One-shot: the 0x6CB flag suppresses the re-award.
         let s = settle_contest(100, true, false, 2, 13, 40, true);
         assert!(!s.award_prize);
+    }
+}
+
+#[cfg(test)]
+mod contest_start_restore_tests {
+    use super::*;
+
+    fn score_rows() -> [ScoreRow; COURSE_COUNT] {
+        [[0i32; MAX_ROUNDS_PER_COURSE]; COURSE_COUNT]
+    }
+
+    fn unlocked(courses: [bool; COURSE_COUNT]) -> ContestFlags {
+        ContestFlags {
+            course_unlock: courses,
+            ..ContestFlags::default()
+        }
+    }
+
+    /// The Beginner course keeps its gear; the restore still refills.
+    #[test]
+    fn beginner_course_does_not_strip_gear() {
+        let mut c = DomeContest::enter(&unlocked([true, false, false]), [8, 8, 13], score_rows());
+        assert_eq!(c.course(), 0);
+        let r = c.take_start_restore().expect("the first entry restores");
+        assert!(!r.strip_gear);
+    }
+
+    /// Every course above Beginner strips - the `bnez DAT_801D1A90` arm.
+    #[test]
+    fn higher_courses_strip_gear() {
+        let mut c = DomeContest::enter(&unlocked([true, true, false]), [8, 8, 13], score_rows());
+        assert!(c.course() > 0);
+        assert!(c.take_start_restore().expect("first entry").strip_gear);
+    }
+
+    /// Retail's re-entry arm jumps past the `jal`, so the restore is a
+    /// one-shot: a later leg never refills.
+    #[test]
+    fn restore_is_one_shot() {
+        let mut c = DomeContest::enter(&unlocked([true, false, false]), [8, 8, 13], score_rows());
+        assert!(c.take_start_restore().is_some());
+        assert!(c.take_start_restore().is_none());
+    }
+
+    /// HP / MP / SP all come back full, and only the four gear bytes go -
+    /// the Seru lock `+0x199` and the three accessories `+0x19B..+0x19D`
+    /// survive a stripped entry.
+    #[test]
+    fn refills_all_three_pools_and_strips_only_gear() {
+        let mut rec = legaia_save::CharacterRecord::zeroed();
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_max = 400;
+        hms.hp_cur = 12;
+        hms.mp_max = 90;
+        hms.mp_cur = 0;
+        hms.sp_max = 60;
+        hms.sp_cur = 3;
+        rec.set_hp_mp_sp(hms);
+        rec.set_equipment(legaia_save::EquipmentSlots {
+            slots: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88],
+        });
+
+        apply_contest_start_restore(&mut rec, ContestStartRestore { strip_gear: true });
+
+        let out = rec.hp_mp_sp();
+        assert_eq!((out.hp_cur, out.mp_cur, out.sp_cur), (400, 90, 60));
+        assert_eq!(
+            rec.equipment().slots,
+            [0, 0, 0, 0x44, 0, 0x66, 0x77, 0x88],
+            "only armour / head / weapon / leg gear are zeroed"
+        );
+    }
+
+    /// The un-stripped arm leaves every equipment byte alone.
+    #[test]
+    fn beginner_refill_leaves_equipment_untouched() {
+        let mut rec = legaia_save::CharacterRecord::zeroed();
+        let slots = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+        rec.set_equipment(legaia_save::EquipmentSlots { slots });
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_max = 250;
+        rec.set_hp_mp_sp(hms);
+
+        apply_contest_start_restore(&mut rec, ContestStartRestore { strip_gear: false });
+
+        assert_eq!(rec.equipment().slots, slots);
+        assert_eq!(rec.hp_mp_sp().hp_cur, 250);
     }
 }

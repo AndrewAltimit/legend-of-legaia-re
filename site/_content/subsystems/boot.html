@@ -163,7 +163,7 @@
       <tr><td>path-based</td><td>dev-style path &rarr; CDNAME index &rarr; the index resolver</td><td>most retail code paths (<code>data\battle\efect.dat</code>, scene paths)</td></tr>
     </tbody>
   </table>
-  <p>Every load ends as &ldquo;seek to a sector, DMA bytes into RAM&rdquo; through Legaia&rsquo;s own layered CD driver - hardware registers and callbacks, not the PsyQ <code>libcd</code> path. The stack is <em>documented, not ported</em>: the engine reads a disc image directly. Every loader is dual-mode, keyed on the dev/retail flag: the retail branch takes the TOC-index path, the dev branch opens a host path through a <code>break</code> trap real hardware cannot service.</p>
+  <p>Every load ends as &ldquo;seek to a sector, DMA bytes into RAM&rdquo; through Legaia&rsquo;s own layered CD driver - hardware registers and callbacks, not the PsyQ <code>libcd</code> path. The stack splits: the register / interrupt / transport tier is <em>documented, not ported</em> - the engine reads a disc image directly and has no drive to command - while the tier above it, the async loaders and the streaming queue&rsquo;s enqueue arithmetic over the PROT TOC, is ported. Every loader is dual-mode, keyed on the dev/retail flag: the retail branch takes the TOC-index path, the dev branch opens a host path through a <code>break</code> trap real hardware cannot service.</p>
   <details class="disclosure" id="cd-read-stack">
     <summary>Details: the CD-read API stack, bottom-up</summary>
     <div class="disclosure-body">
@@ -199,11 +199,11 @@
       <tr><td>tick function</td><td><code>FUN_801DD35C</code>, in the overlay</td><td>3,026 instructions; the first ~250 fan out through a 25-entry sub-mode jump table</td></tr>
       <tr><td>state struct</td><td><code>0x801F0000</code> (+ a sibling block at <code>0x801EF014..0x801EF200</code>)</td><td>sub-mode selector at <code>+0x204</code>; cursor grid at <code>+0x1F4</code> / <code>+0x1F8</code>; linear cursor at <code>+0x1FC</code></td></tr>
       <tr><td>attract countdown</td><td><code>0x801EF16C</code></td><td>starts at <code>0x8000</code> (a disc byte, not computed), minus the per-frame scalar each tick; underflow writes mode <code>0x1A</code> and FMV id 0 &rarr; <code>MV1.STR</code> (<a href="cutscene.html">cutscene</a>)</td></tr>
-      <tr><td>menu sub-mode</td><td><code>0x10</code></td><td>two rows, cursor <code>_DAT_8007B820</code>; confirm stashes the row and enters <code>0x14</code></td></tr>
+      <tr><td>menu sub-mode</td><td><code>0x10</code></td><td>the Press-Start wait; confirm fades through <code>0x18</code> into the two-row cursor state <code>0x14</code> (cursor <code>_DAT_8007B820</code>). A cold boot always arrives here, never at the alternative <code>0x02</code> menu: the boot <code>init.pak</code> raises the entry word <code>_DAT_8007BB00</code> unconditionally at <code>0x801CEB84</code>, which routes <code>Init</code> to <code>0x11</code> and then <code>0x10</code>.</td></tr>
       <tr><td>launch</td><td>sub-modes <code>0x16</code> fade &rarr; <code>0x06</code> init_game</td><td>writes mode word <code>2</code> at <code>0x801DFC00</code> and scene id <code>opdeene</code> into <code>0x8007050C</code>; CONTINUE detours through the card-load path first</td></tr>
     </tbody>
   </table>
-  <p>Four sub-modes carry names in <code>legaia_engine_vm::title_overlay</code> (<code>Init</code>, <code>Idle</code>, <code>AttractIdle</code>, <code>AttractDelay</code>); the other 21 are <code>Phase0xNN</code> placeholders with traced transitions. The whole sub-mode machine is the front-end menu, memory-card manager and launcher - not an opening narration or name-entry sequence.</p>
+  <p>All 25 sub-modes carry the role their handler body shows in <code>legaia_engine_vm::title_overlay</code>, and <code>TitleTickState::step</code> executes the graph - one arm per sub-mode plus the shared epilogue, driven by the 56 <code>state[+0x204]</code> stores. The whole sub-mode machine is the front-end menu, memory-card manager and launcher - not an opening narration or name-entry sequence. Master game mode <code>2</code> has two writers: <code>LaunchGame</code> (<code>0x06</code>) at <code>0x801DFC00</code> on the NEW GAME route and <code>LaunchFade</code> (<code>0x16</code>) at <code>0x801DFAFC</code> on the load route.</p>
   <details class="disclosure">
     <summary>Details: pad-mask layout the title tick reads</summary>
     <div class="disclosure-body">
@@ -238,7 +238,7 @@ _sw   v0, -0xe94(a0)    ; pc 0x801DDCCC - the watchpoint hit
       <table class="data-table">
         <thead><tr><th>Address</th><th>Offset</th><th>Use</th></tr></thead>
         <tbody>
-          <tr><td><code>0x801EF14C</code></td><td><code>-0xEB4</code></td><td>slider X, clamped <code>[0, 0x2C]</code>; step = scalar &times; 8</td></tr>
+          <tr><td><code>0x801EF14C</code></td><td><code>-0xEB4</code></td><td>slider X; step = scalar &times; 8. Both arms clamp at <code>0x2C</code> (floor <code>slti 0x2c</code> at <code>0x801DFC88</code>, ceiling <code>slti 0x2d</code> at <code>0x801DFCB4</code>), so it converges on <code>0x2C</code> from either side - not a <code>[0, 0x2C]</code> range</td></tr>
           <tr><td><code>0x801EF160</code></td><td><code>-0xEA0</code></td><td>fade / sweep accumulator, clamp <code>0x1000</code></td></tr>
           <tr><td><code>0x801EF170</code></td><td><code>-0xE90</code></td><td>frame counter, incremented every tick</td></tr>
           <tr><td><code>0x801EF190</code> / <code>194</code> / <code>1A0</code></td><td><code>-0xE70..</code></td><td>alpha A / B / C, clamp <code>0x1000</code></td></tr>
@@ -335,10 +335,11 @@ _sw   v0, -0xe94(a0)    ; pc 0x801DDCCC - the watchpoint hit
       <tr><td><code>+0x021C4</code></td><td>PROKION</td><td>8 bpp</td><td>176&times;256</td><td>two 176&times;126 quads, (144, 165) and (320, 165)</td></tr>
       <tr><td><code>+0x0D3E4</code></td><td>Contrail</td><td>8 bpp</td><td>184&times;256</td><td>one 184&times;254 quad at (228, 105)</td></tr>
       <tr><td><code>+0x18E04</code></td><td>SCEA Presents</td><td>4 bpp</td><td>256&times;128</td><td>two 252&times;64 quads, (68, 192) and (320, 192)</td></tr>
-      <tr><td><code>+0x1CE44</code></td><td>WARNING</td><td>4 bpp</td><td>256&times;256</td><td>uploaded, but PROT 0895 never draws it</td></tr>
+      <tr><td><code>+0x1CE44</code></td><td>WARNING</td><td>4 bpp</td><td>256&times;256</td><td>uploaded, and drawn by nothing - see below</td></tr>
     </tbody>
   </table>
   <p>The fade is not alpha: the quads are opaque, and the sequencer scales each vertex colour so the PSX texture blend <code>texel &times; colour / 128</code> darkens them - level <code>0</code> is black and <code>0x80</code> leaves the texel alone. Per-logo pacing: SCEA 16 / 131 / 32 frames, Contrail 16 / 121 / 16, PROKION 16 / 91 then a 65-frame ramp to a white screen.</p>
+  <p>The epilepsy warning is <strong>never shown</strong>. Its sprite descriptor (record 1, <code>tpage 0x000B</code> / <code>clut 0x7E80</code>) is the one id none of the five emit calls passes, and a cold-boot capture carried through the logo chain, the title screen, the attract movie and the return to the title logs 857 quad emits with zero for that descriptor and finds no primitive anywhere in RAM carrying its CLUT - while the three logo CLUTs, swept in the same pass as a control, each land on their documented screen rect. Later in the same boot the menu overlay parks the memory-card kanji page on top of the warning&rsquo;s VRAM rect, so its pixels do not survive to the title either.</p>
   <p>Parser <code>legaia_asset::init_pak</code>; sequencer, quad table and pacing in <code>engine_core::publisher_logos</code>; shown by the asset viewer&rsquo;s &ldquo;Boot publisher logos&rdquo; panel and <code>play-window --boot-ui</code>. The entry&rsquo;s <code>bat_back_dat</code> filename label is the <a href="../formats/cdname.html#numbering-space">+2 shift</a>, not a mislabel. There is no single <code>title.pak</code> entry: that dev-tree bundle is split between PROT 0890 (wordmark) and PROT 0899 (options bundle + title code).</p>
   <h3 id="title-tim">Title wordmark - PROT 0890</h3>
   <p>One 256&times;256 8-bpp sheet at file offset <code>0x14228</code> (66,080 bytes with its CLUT) carries the orb, wordmark, prompt and copyright lines. Retail samples it in bands rather than blitting the quad; the engine (<code>title_screen_atlas</code>) emits one sprite per active band.</p>

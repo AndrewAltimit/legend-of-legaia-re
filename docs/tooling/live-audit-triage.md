@@ -24,10 +24,17 @@ python3 scripts/ci/port-catalog.py --live-audit   # -> target/port-catalog/live-
 | `DISCLOSE` | Genuinely unreached for a structural reason. The row supplies the exact `// NOT WIRED:` text to paste. |
 | `DELETE` | Redundant with an existing symbol that already covers the same retail routine. |
 | `VERIFY` | Inertness could not be settled here, usually because a concurrent lane held the file. The row says what was checked and what is still open. Do not paste a tag on these. No row carries it now. |
+| `REPLACE` | Genuinely unreached, and no host is owed: the engine does the routine's job through a named different mechanism. The row supplies the `// REPLACED-BY:` text. |
 
 A `DISCLOSE` reason must say *why* there is no caller. "No caller" restates the
 audit. The useful form names what must exist first - a host screen, a state
 shape, an id space the engine does not carry.
+
+A `REPLACE` reason must name the **mechanism**, not the absence. It is the
+stronger claim: not "nothing calls this" but "nothing will, because the port
+does this differently". The marker is defined in
+[`port-catalog.md`](port-catalog.md#replaced-by), which also carries the two
+worked near-misses that stayed `DISCLOSE`.
 
 **A verdict here is a hypothesis with evidence attached, not a settled fact.** Several
 have since been overturned by work that held the disassembly: the `minigame_return_warp`
@@ -1591,6 +1598,193 @@ The wire's own limits, stated so the next reader does not re-derive them:
   keyed on the latched art constant of a party slot), so status flows party ->
   monster and never monster -> party, and rows `481..=483` are the party's. Reachable
   and non-trivial is not the same as exercised; both are worth saying.
+
+## The boot / CD / card / menu-infra drain
+
+One sweep over the disclosed-inert rows of `cd_dma`, `stream_file`,
+`overlay_loader`, `card_bu_io`, `card_flow`, `mdec_dma_sync`, `float_tween`,
+`menu_list_rows`, `mode_entry_init`, `scus_core_helpers`, `title_prim`,
+`menu_actor_seed`, `vram_rect_copy`, `panel_backread_loader`, `fade_ramp`,
+`camera_ease`, `mode` and `save_subscreen`. The point of the sweep was the
+class, not the wiring: most of these disclosures were already precise about
+their blocker and wrong only about what *kind* of thing that blocker is.
+
+### The per-file verdict is the trap
+
+Two files carry both classes, and a file-level reading gets each of them
+backwards in one direction:
+
+- `engine-vm::scus_core_helpers` - the actor node pool and `copy_blocks_32` are
+  `REPLACE` (`Vec`-backed generational pool; borrow-in-place chunk walk in
+  `legaia_asset::parse_streaming_with`), but `list_append_u16` is `DISCLOSE`:
+  its retail producer `FUN_8003F3FC` is simply not ported, and porting it is
+  what closes the row.
+- `engine-core::menu_list_rows` - three families, two `REPLACE` and one
+  `DISCLOSE`. The module doc already split them three ways; what it did not do
+  was say that the split is a split of *class*.
+
+### What each file settled on
+
+| File | Class | Mechanism, or the owner that is owed |
+|---|---|---|
+| `cd_dma`, `stream_file` | `REPLACE` | `crate::scene::ProtIndex` reads a whole PROT entry synchronously; no libcd handle, no DMA channel, no completion to poll, no cursor to position |
+| `overlay_loader` | `REPLACE` | on-demand PROT resolution - the port has no RAM windows to page overlays into, so the cache pair has nothing to cache |
+| `card_bu_io`, `card_flow` | `REPLACE` | `legaia_save::emu::CardView` + `legaia_save::card`, driven synchronously by `web-viewer::cards::write_session_into_card` |
+| `mdec_dma_sync` | `REPLACE` | the `legaia_mdec` software decoder; a decoded frame is finished when the call returns |
+| `float_tween`, `title_prim` | `REPLACE` | the `engine-ui` draw-list builders, which rebuild screen state each frame instead of tweening or queueing GPU packets |
+| `menu_actor_seed` | `REPLACE` | `World::open_field_submode_screen`'s side `SubmodeScreen` struct - and both entries are retail-unreachable besides |
+| `mode_entry_init::field_prim_buffer_bytes` | `REPLACE` | `engine-render`'s wgpu draw lists; the backend owns the allocation, so an arena size has no consumer |
+| `fade_ramp` | `DISCLOSE` | the battle-teardown owner: substituting `FadeRamp` for `FadeState` moves the fade's lifetime, which is a behaviour change, not a call |
+| `camera_ease` | `DISCLOSE` | `World`, whose `FieldHost::op4c_n4_sub9_*` hooks keep their no-op defaults, so no zone angle is posted |
+| `vram_rect_copy` | `DISCLOSE` | `engine-render`, which implements no `FieldHost::op43_vram_rect_copy`; the software VRAM it would blit inside already exists |
+| `panel_backread_loader` | `DISCLOSE` | its only retail caller `FUN_80025358` is unported |
+| `mode::mode_init_bare` | `DISCLOSE` | a production owner of `ModeDriver` - `engine-shell`'s `BootSession::tick` handing frame sequencing to the driver |
+| `mode_entry_init::field_bgm_plan` | `DISCLOSE` | the two-part BGM arm has no engine analogue; the slot arithmetic itself is already live in `SceneHost::bgm_seq_bytes` |
+| `mode_entry_init::duel_overlay_init` | `DISCLOSE` | the duel's engine entry is the `baka_fighter` rules engine, which starts from a match state and not an overlay load |
+| `save_subscreen::sub15_*` | `DISCLOSE` | no engine screen offers the per-character list reorder; the backing array is the character record and does permute the Magic screen |
+
+### One disclosure described a defect that is fixed
+
+`card_flow`'s heading said the save-block composer stamps only the two magic
+bytes, leaves the icon-frame descriptor and block count as found, and writes no
+title - so a block "reads wrong on a real card's Load screen". Neither half
+holds: `SaveFile::write_into_retail_sc_block` copies the whole four-byte
+`SAVE_BLOCK_HEADER`, and `legaia_save::card::write_retail_block_identity` -
+called immediately after by `web-viewer::cards::write_session_into_card` -
+writes the title digits and the portrait. `engine-core`'s
+`the_composer_writes_the_whole_magic_and_leaves_identity_to_its_owner` pins the
+division. The stale text is what made the module read as a wiring gap; with it
+corrected the whole file is a substitution.
+
+The general shape, worth carrying: **a disclosure ages against the code it
+describes, and nothing re-reads it.** A tag is checked for existing, never for
+being true, so the sentence that justifies a row can go stale for as long as
+the row stays inert - and the row stays inert precisely because nobody is
+looking at it.
+
+## The battle / field prim-and-helper drain
+
+A pass over the `engine-vm` battle and field leaves, the `engine-core` leaf
+kernels and the `engine-ui` GTE / window painters. Three things came out of it
+that are worth keeping separately from the per-row verdicts: a claim about the
+audit that does not hold, two reasons that had gone stale against their own
+code, and five rows whose covering mechanism is named and live, so they are
+`REPLACE`, not `DISCLOSE`.
+
+### A module tag with no disclosure marker is not a stale tag
+
+`ambient_motion.rs`'s module line is `//! PORT: FUN_80038158, FUN_80036d80,
+FUN_8003c5f0`, and it carries neither `NOT WIRED` nor `REPLACED-BY`. Reading
+that as "three stale disclosures" gets the direction backwards: the audit's
+"tagged `NOT WIRED` / `REPLACED-BY` but analysed live" section is **empty**,
+none of the three appears in any inert section, and all three are reachable -
+`World::tick_field_npc_ambient` from `frame_tick`, `World::seed_field_npc_ambient`
+from `field_carriers`, and `zone_ramp_tick` from `register_ramp`. The file's one
+inert anchor is `reset_pool`, whose `//` item block is the only disclosure text
+in it. The general point: a module tag with no marker is a *live* module tag,
+and the only thing that can be stale is a marker that exists.
+
+### Five rows where the mechanism is named and live
+
+| Anchor | Verdict | `REPLACED-BY:` mechanism |
+|---|---|---|
+| `scus_leaf_kernels::text_line_count` (`8003CBA8`) | `REPLACE` | `str::lines()` over the decoded prompt - `battle_tutorial::TutorialPrompts` folds `0x7C` to `'\n'` at decode and `engine-ui::battle_tutorial_box` counts with it, live on both hosts. The one divergence, the `0xC0..=0xCF` escape lead, appears in no PROT 0967 prompt. |
+| `ambient_motion::reset_pool` (`8003CDA8`) | `REPLACE` | per-scene reconstruction in `World::seed_field_npc_ambient`, which drops and rebuilds each `AmbientMotion` on scene entry. `RampScheduler::new` and the reset leave byte-identical state, so a scene-entry call site would certify itself and measure nothing. |
+| `scus_battle_helpers::copy_nested_records` (`80055854`) | `REPLACE` | `legaia_asset::battle_char_palette`, the port of the one retail caller `FUN_80052FA0`, which parses to typed records; no engine type holds the `&mut [u32]` staging buffer this advances. |
+| `scus_battle_helpers::scale_rgb24` (`80046978`) | `REPLACE` | `engine-ui::battle_intro::wash_prim` and its two arm constants, the same ABR-2 full-screen quad, live on both hosts. The scale input is the adaptive frame-skip cadence `0x1F800393`; every host ticks at 1, where the function is the identity. |
+| `battle_party_panel::LabelState::opened` (`801DBB8C`) | `REPLACE` | `engine-ui::battle_hud_draws_for`'s immediate-mode rebuild - every battle `TextDraw` is built afresh per frame, so no handle exists to open or tear down. |
+
+Two neighbours were checked against the same bar and stay `DISCLOSE`.
+`depth_cue_scale_channel` (`8004A908`) has live siblings - `engine-render::psx_light::depth_cue`
+and the `psx_depth_cue` WGSL helper - but they compute a *different* formula
+(a lerp toward a far colour, against retail's `raw*num/den` with a floor of 4),
+and a difference in observable output is a gap, not a substitution.
+`equip_compare_panel_fields` (`801D1290`) likewise: the live
+`equip_screen_draws_for` prints a fixed ATK/UDF/LDF triple where retail selects
+the fields by category, so the player sees the wrong rows today.
+
+### Two disclosures had gone stale against their own code
+
+- `scus_leaf_kernels::seed_boot_offset_table` (`800265E8`) said "the engine's
+  audio host asks `spu_base_for_slot` directly". It does not - that helper's
+  only references outside its own module are in the guard test
+  `infra_boot_offset_table.rs`, and nothing in `engine-audio`, `engine-shell`
+  or `web-viewer` consults a per-slot SPU base at all. The verdict survives
+  (the mixer owns one flat `SpuRam` and places a bank at the transfer address
+  it is handed), but the blocker is a representation the port does not have,
+  not a helper that beat the seeder to the job.
+- `gte/math.rs`'s `rot_x` / `rot_z` / `camera_view_rotation` (`800461A4`,
+  `8004638C`, `8001CF50`) named two live hosts composing `Rx * Ry * Rz` in
+  `glam`. Only one is live: `engine_render::window::cutscene_camera_mvp` has no
+  production caller left, and `docs/subsystems/cutscene.md` already records it
+  as a unit-tested reference. The play window's `psx_camera_mvp` is the whole
+  host set.
+
+### Rows settled by a reference sweep rather than by reading source
+
+- `queue_applier::miracle_command_position` (`801E91E8`) is **not
+  dead-in-retail**. A five-form sweep finds exactly one reference corpus-wide:
+  a single `jal` from battle overlay 0898 at `0x801EE2C0`, inside the arms
+  resolver `FUN_801EC3E4`; zero data words, so it is in no dispatch table. The
+  per-slot Miracle marker it reads is a guard *inside* the routine, not a
+  precondition for entering it, which is why "the marker has no input
+  recognizer" does not make it unreachable. The applicability decision it
+  gates is live in the port (`World::miracle_marker_armed_for` and the
+  whole-string match in `finish_action_queue`); what is unconsumed is its
+  **return value**, a 1-based command position its caller stages into
+  `ctx[+0x269]`, which no engine type models. So: replaced for the decision,
+  inert for the value - and a row that would have been mis-filed as dead.
+- `move_vm/spawn.rs::spawn_move_actor` (`80021B04`) is not a move-VM leaf but a
+  move-VM *producer*: its own tail is `jal FUN_80023070`, the dispatcher. The
+  sweep finds 815 `jal` sites, all in the summon / cast band and the script-VM
+  and world-map spawn paths. Calling it from inside an opcode arm would invert
+  the retail relationship, so "no opcode arm calls it" is the correct state,
+  not the gap. The gap is that `SummonRuntime::seed_part` seats parts directly
+  into its own `Vec` and no host constructs a `SummonRuntime` at all.
+
+### `pool_ops`: two of four are duplicates of a live picker, two are not
+
+The live target picker is `TargetPickerSession::step_within_row` over
+`is_valid` / `first_valid_in`, and the live turn advance is
+`World::next_living_combatant`; the ailment half of retail's `+0x16E & 0xF84`
+predicate is answered separately and typed by `World::actor_blocked_from_acting`.
+So `first_selectable_target` (`801DBA04`) and `next_selectable_actor`
+(`801DB81C`) have both halves of their predicate already live, in two places.
+They stay `DISCLOSE` rather than `REPLACE` on one point: retail's AI-companion
+arm (`DAT_8007BD10[i] != 4`, a fifth roster seat) has no engine analogue, and a
+disclosure may not claim a substitution for behaviour that is still missing.
+`normalize_formation_span` (`801DB318`) and `clear_pool_flag_words`
+(`801DB9C4`) are not duplicated at all: the first is a flow-SM case body with a
+camera-focus side effect the engine's per-action camera snap has no slot for,
+and the second needs the pool `+0x8` flag word, which `BattleActor` does not
+carry (it has `+0x1DC` `flag_bits` and `+0x16E` `field_flags`, neither of them
+this).
+
+### The field rows are chained, and one is unwireable on purpose
+
+`spawn_arc_helper` (`801D5780`) has **zero** references in retail - no `jal`,
+no `j`, no address word - and one in-tree production caller,
+`spawn_arc_with_emitter`. It therefore goes live transitively the moment that
+row is wired and must never be given a direct call site of its own. Its parent
+`spawn_arc_with_emitter` (`801D25EC`) has a live call chain to a host
+(field VM op `0x43` -> `FieldHost::field_halt_acquire_apply`) but that hook is
+a no-op default that `engine-core`'s `FieldHostImpl` does not override, and the
+operand decode is unsettled: `field_ledge_hop_arc` reads two tile bytes plus
+apex and frames where `op_43` reads two `i16` coordinates and forwards neither
+apex nor frames. Those are incompatible readings of the same bytes and whoever
+wires this settles that first. `attached_sprite_tick` (`801E4470`) is chained
+behind it - its only retail filler is that same routine.
+
+`passive_hud_icons` / `hud_anchor_offsets` (`801D095C`) is the one field row
+with a host that could take it today, and only on one host. `engine-shell`'s
+`Window::field_party_hud_draws` is live and `Window::field_hud_projected_player_y`
+already projects the player head; what it hard-codes is the `-128.0` lift that
+`hud_anchor_offsets` supplies, and the bit source `World::party_has_ability` is
+the live port of retail's own `FUN_800431D0`. The browser has no projector at
+this seam at all - `play_field_hud.rs` reads a `NO_PROJECTION_STAND_IN`
+literal - so wiring the native side alone would create exactly the host drift
+`host-drift.md` exists to catch. The prerequisite is the browser's projector,
+not the icons.
 
 ## See also
 

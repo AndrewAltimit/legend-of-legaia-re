@@ -56,11 +56,12 @@
 //! image, so it is not a reference to the field-overlay routine.
 //! `--home field` marks it.
 //!
-//! That changes what the two `NOT WIRED` notes below mean. The missing
-//! pooled-actor fields they name are real gaps in the engine's `Actor`, but
-//! filling them would not make these two run, because retail does not run them
-//! either. Both are decoded provenance for the actor layout and the row-count
-//! arithmetic, not pending wiring work.
+//! That is why the two notes below read `REPLACED-BY:` and not `NOT WIRED:`.
+//! The missing pooled-actor fields they name are real gaps in the engine's
+//! `Actor`, but filling them would not make these two run, because retail does
+//! not run them either - and the state they would hold is already held, on the
+//! side `SubmodeScreen` struct. Both are decoded provenance for the actor
+//! layout and the row-count arithmetic, not pending wiring work.
 
 /// The `base == 99` special case in the row-count seed.
 pub const BASE_SENTINEL: u16 = 99;
@@ -95,11 +96,15 @@ pub struct MenuActorSeed {
 ///
 /// PORT: FUN_801e5834
 ///
-/// NOT WIRED: **retail-unreachable** - nothing on the disc reaches
-/// `FUN_801E5834` in any reference form, so no wiring pass can close this
-/// row (see the module's "Neither one runs in retail"). What follows is why
-/// the port could not run it *either*, kept because it names a real gap in
-/// the engine's pooled `Actor`.
+/// REPLACED-BY: `World::open_field_submode_screen`'s side `SubmodeScreen`
+/// struct, which holds the handler id, cursor and panel pen this seed would
+/// write onto the pooled actor.
+///
+/// Additionally **retail-unreachable** - nothing on the disc reaches
+/// `FUN_801E5834` in any reference form, so no wiring pass could close this
+/// row even if the fields existed (see the module's "Neither one runs in
+/// retail"). What follows is why the port could not run it *either*, kept
+/// because it names a real gap in the engine's pooled `Actor`.
 ///
 /// The engine has the pool but not the write set. Its one
 /// spawner of a handler actor is
@@ -138,7 +143,10 @@ pub struct RowCountSeed {
 ///
 /// PORT: FUN_801e58a8
 ///
-/// NOT WIRED: **retail-unreachable** - `FUN_801E58A8`'s only scan hit is a
+/// REPLACED-BY: the typed `Vec` each engine list counts itself - the pause
+/// menu's, the dev menu's, the save rack's.
+///
+/// Additionally **retail-unreachable** - `FUN_801E58A8`'s only scan hit is a
 /// branch from another overlay at the same VA, which cannot reach it (see
 /// the module's "Neither one runs in retail"), so this row does not close by
 /// wiring. The port-side gap below stands on its own.

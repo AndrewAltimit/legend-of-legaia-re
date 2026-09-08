@@ -190,6 +190,27 @@ pub trait BattleActionHost {
         false
     }
 
+    /// Equivalent of `FUN_801F2160()` - one tick of the **capture band's**
+    /// paged cast module, the twin of [`Self::summon_stager_tick`] for the
+    /// other of PROT 0898's two cast dispatchers.
+    ///
+    /// Called every frame of state `0x70`
+    /// ([`ActionState::MagicCapturePhase2`]), where the SM **holds while it
+    /// returns busy**: `jal 0x801f2160` at `0x801E50C8` and
+    /// `bne v0,zero,<exit>` at `0x801E50D0`. `FUN_801F2160` resolves the
+    /// acting actor's queued action id through the spell record's `+0x01`
+    /// effect-class byte into one of 32 slot-B module ticks
+    /// ([`crate::battle_cast_dispatch::spell_class_emitter`]) and returns
+    /// whatever that tick returned, so "busy" means the module's own phase
+    /// machine has not finished staging.
+    ///
+    /// Default: never busy, so a host with no resident module passes
+    /// straight through - the behaviour every host had before the hold
+    /// existed.
+    fn capture_stager_tick(&mut self) -> bool {
+        false
+    }
+
     /// Equivalent of `func_0x800402F4(class, tier, target_slot, party_index)` -
     /// the item / restore **applier**, retail's damage-and-effect primitive.
     ///

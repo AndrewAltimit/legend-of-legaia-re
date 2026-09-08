@@ -192,16 +192,17 @@ these images, and it is data: PROT 0934's is `0x801F9C08..0x801FA9D8`, and
 the `lui 0x8020` + negative-displacement operands its stager passes as `a2`
 resolve into exactly that span.
 
-### The three entries with no dump
+### The three entries that nearly lost their base row
 
 All 64 entries carry a
 [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) row and an
-extracted image; three carry no dump - **0915** (spell `0x8D` Mushura), **0926**
-(spell `0x98`, the id with no tick arm and no spell-table record) and **0935**
-(capture sub-id `0x00`, Earthquake).
+extracted image. **0915** (spell `0x8D` Mushura), **0926** (spell `0x98`, the id
+with no tick arm and no spell-table record) and **0935** (capture sub-id `0x00`,
+Earthquake) were the last three to get a row, and 0926 - the 1-sector null stub -
+is still the one entry whose own content is eight bytes.
 
-They were the last three to get a row, because the slot-B base cross-check in
-`crates/asset/tests/static_overlay_extract.rs` used to reject them. That check
+The reason they were last is the slot-B base cross-check in
+`crates/asset/tests/static_overlay_extract.rs`, which used to reject them. That check
 counts each image's `lui 0x801f`/`0x8020` + `addiu` pairs and asks how many
 resolve **inside** the image, and in its one-sided form it counted every
 reference that leaves the image as evidence against the base - which a module
@@ -267,23 +268,121 @@ stages).
 
 ## Damage shape
 
-Each hit is one call into the guard-bypassing roll wrapper `FUN_801DD6B4`
-with a **baked per-hit power constant** in `a0` (958 escalates
-`0x30, 0x38, 0x38, 0x38, 0x40, ..`; 960 lands one `0x1C0` burst), then the
-same apply shape every time: load the victim, clamp the roll against HP
-`+0x14C`, accumulate into the victim's damage-popup word `+0x10`, load the
+Each hit is one call into a roll wrapper with a **baked per-hit power
+constant** in `a0`, then an apply shape: clamp the roll against the victim's
+HP `+0x14C`, accumulate into the victim's damage-popup word `+0x10`, load the
 victim again, write HP back. Which wrapper a module calls - and the
 per-module call census - is
-[battle-formulas.md](battle-formulas.md)'s table.
+[battle-formulas.md](battle-formulas.md)'s table; the constants are
+[below](#the-baked-power-constants).
 
-**The victim load is hardcoded to seat 0.** Every apply site loads
-`actor_table[0]` (`lw rX, 0x9370(base)`) instead of the derived victim:
-twelve sites in 958 (six clamp/write pairs), five in 959, two in 960
-(`+0x17AC`/`+0x17DC`). Retail never notices because a boss cinematic's
-victim is always the party - seat 0 - but any reuse that points the cast at
-a monster (or any multi-target future) inherits friendly fire from these
-sites. The same seat-0 assumption shapes the finale: a dead-victim arm
-declares game over on the spot, correct only while the victim is a hero.
+The apply shape is **two** shapes, not one, and which one a module uses
+decides whether its hit can kill - see
+[the two clamp shapes](#the-two-clamp-shapes). Both are ported at
+`legaia_engine_vm::cast_module_ticks`.
+
+### The baked power constants
+
+Read off the `a0` set at each `jal` into `0x801DD0AC` / `0x801DD4B0` /
+`0x801DD6B4`, in call-site order:
+
+| Module | Wrapper | Powers (call-site order) |
+|---|---|---|
+| 927 (Juggernaut) | `FUN_801DD0AC` with `a1 = 7` - the shared kernel's summon branch | `0x12` |
+| 945 (Water Column) | `FUN_801DD4B0` | `0x30` |
+| 957 tick A `0x801F6A14` | `FUN_801DD4B0` | `0x100` |
+| 958 (Blazing Slash) | `FUN_801DD6B4` | `0x30, 0x38, 0x38, 0x38, 0x40, 0x30` |
+| 960 (Plasma Strike) | `FUN_801DD6B4` | `0x1C0` |
+| 966 (Evil Seru Magic) stager `0x801F8D64` | `FUN_801DD4B0` | `0x100` |
+| 966 tick body (the image's other function) | `FUN_801DD4B0` | `0x327` |
+
+The 966 rows are two different routines in one image, and the split matters:
+the module's stager bakes `0x100` and clamps shape B, while its tick body bakes
+`0x327` at `0x801F8610` and clamps shape A at `0x801F863C`. PROT 0927 is the
+same arrangement with the same constant on both sides (`0x12` at the stager's
+`0x801F8758` and the tick's `0x801F7E0C`), so only the clamp differs there.
+Ask a module's **entry number** what it hits for and you get its stager.
+
+This page previously gave 958's run as "`0x30, 0x38, 0x38, 0x38, 0x40, ..`".
+The sixth site (`0x801F88D8`) is `0x30`, so the escalation does not continue -
+the run ends where it started.
+
+Every one of these is an immediate compiled into the module image, so a
+capture-class cast never reads the move-power table for its magnitude. The
+engine seeds the wrappers from this table instead
+(`World::baked_module_power`, feeding `capture_bypass_predamage` /
+`capture_respect_predamage`).
+
+### The two clamp shapes
+
+**Shape A - clamp to HP, floor 0.** PROT 0945, 0957 (both tick bodies), 0958,
+0960:
+
+```text
+a0 = victim[+0x14C]
+sltu v0, a0, dmg        ; UNSIGNED
+if v0 { dmg = a0 }
+victim[+0x10]  += dmg
+victim[+0x14C] -= dmg
+```
+
+The comparison is **unsigned** while the wrapper's return is a signed word, so
+a negative net damage - which the bonus arm makes rare but not impossible -
+compares above any HP, the clamp rewrites it to the victim's whole bar, and
+the victim dies. A negative roll on these modules kills outright rather than
+healing.
+
+**Shape B - clamp to `HP - 1`, floor 1.** The band's two AoE sweeps - and only
+those two sites, `0x801F8758` in PROT 0927 and `0x801F8F08` in PROT 0966. Both
+are the module's **stager**; both images' tick bodies clamp shape A, so "0927 /
+0966 never kill" is true of the sweep and false of the tick:
+
+```text
+v0 = victim[+0x14C]
+v1 = v0 - 1
+slt v0, v1, dmg         ; SIGNED
+if v0 { dmg = v1 }
+victim[+0x10]  += dmg
+victim[+0x14C] -= dmg
+```
+
+Here the comparison is **signed**, so a negative roll passes unclamped and the
+subtract raises HP; and the cap is `HP - 1`, so neither sweep can kill - a
+live seat is left at 1 HP at worst.
+
+### The two AoE sweeps
+
+Those same two routines are the band's only whole-row appliers, and they are
+`0x801F6734` **stagers**, not tick bodies - the move script drives them
+through move-VM opcode `0x20`, so the damage lands from the spawn stager and
+not from the `ctx+0x279` machine:
+
+| | PROT 0927 (Juggernaut) | PROT 0966 (Evil Seru Magic) |
+|---|---|---|
+| seats swept | `actor_table[3 ..]`, the enemy row | `actor_table[0 ..]`, the whole table |
+| bound | `ctx[+1]` (monster count) | `ctx[+0]` (actor count) |
+| skips | `+0x14C == 0`, `+0x16E & 4` | the same two |
+| wrapper | `FUN_801DD0AC(0x12, 7, seat)` | `FUN_801DD4B0(0x100, ctx[+0x13], seat)` |
+| also writes | - | `+0x1DA = +0x1F1`, `+0x1DC += 1`, `+0x21D = 2` |
+
+So Cort's ESM hits the party *and* the monsters, stages each victim's own
+knockdown reaction, and drops every hit seat into slow motion.
+
+### The seat-0 hardcode, and where it does not hold
+
+**The victim load is hardcoded to seat 0 in the three decoded exemplars.**
+Every apply site in them loads `actor_table[0]` (`lw rX, 0x9370(base)`)
+instead of the derived victim: twelve sites in 958 (six clamp/write pairs),
+five in 959, two in 960 (`+0x17AC`/`+0x17DC`). Retail never notices, because a
+boss cinematic's victim is always the party - seat 0 - but any reuse that
+points the cast at a monster (or any multi-target future) inherits friendly
+fire from these sites. The same seat-0 assumption shapes the finale: a
+dead-victim arm declares game over on the spot, correct only while the victim
+is a hero.
+
+It is **not** a band-wide rule, though, and the sweeps above are the
+counter-example: both index the actor table by their own loop counter and pass
+that seat to the wrapper as `a2`.
 
 ## What of the choreography is data, and what is code
 
@@ -347,11 +446,13 @@ reskin is a module edit, not a data edit.
 
 Every address the port catalog still lists in this band is one of the two
 routines PROT 0898 names per module, a body one of those two reaches, or an
-artefact. There is no third population: the 65 worklist addresses resolve
-into 58 `0x801F6734` stager entries, 6 tick bodies reached from a module's
-own trampoline, and one framed routine nothing references.
+artefact. There is no third population: the worklist addresses resolve into
+`0x801F6734` stager entries, six tick bodies reached from a module's own
+trampoline, and one framed routine nothing references.
 
-The verdict column says what a port owes each one. **DATA** means the routine
+The verdict column says what a port owes each one, and the port has now
+acted on every row - see [what the port runs](#what-the-port-runs) for where
+each verdict landed. **DATA** means the routine
 is an arm switch on the move-VM operand `a1` whose arms do nothing but call
 `FUN_80021B04` / `FUN_80050ED4` / `FUN_801DFDF0` / `FUN_80024E80` with a
 module-resident record pointer and a scale literal - the spawn-record data
@@ -374,7 +475,7 @@ column says so; those copies are residue (below), not second call sites.
 | `801F798C` | 957 (`summon_effect_table`) | cast tick body, reached from the module trampoline; writes `+0x0C`, HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC`, phase `ctx+0x279` | - | **PORT** |
 | `801F81DC` | 951 (`cast_chaos_flare`) | spawn stager, 4 spawn calls | also in 910 | **DATA** |
 | `801F8EAC` | 904 (`summon_theeder`) | spawn stager, 1 spawn call | also in 908,910 | **DATA** |
-| `801F6A0C` | 952 (`cast_bloody_horns`) | cast tick body, reached from the module trampoline; writes staged `+0x1DA`, restage `+0x1DC` | - | **PORT** |
+| `801F6A0C` | 952 (`cast_bloody_horns`) | cast tick body, 5 phase arms; writes staged `+0x1DA`, restage `+0x1DC`, anim rate `+0x21D`, phase `ctx+0x279` | - | **PORT** |
 | `801F6DD8` | 958 (`cast_blazing_slash`) | cast tick body, reached from the module trampoline; damage roll (bypass); writes HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC`, `ctx+0x278` | - | **PORT** |
 | `801F6EDC` | 945 (`cast_water_column`) | cast tick body, reached from the module trampoline; damage roll (resist); writes HP `+0x14C`, status `+0x16E`, staged `+0x1DA`, restage `+0x1DC` | - | **PORT** |
 | `801F7F2C` | 944 (`cast_guilty_cross`) | spawn stager, 3 spawn calls | also in 945 | **DATA** |
@@ -383,7 +484,7 @@ column says so; those copies are residue (below), not second call sites.
 | `801F8578` | 919 (`summon_spoon`) | spawn stager, 4 spawn calls | also in 920 | **DATA** |
 | `801F86B0` | 960 (`cast_plasma_strike`) | spawn stager, 2 spawn calls | also in 961 | **DATA** |
 | `801F74B4` | 939 (`cast_spore_gas`) | null stager - `jr ra` + `nop`, the whole routine | - | **SCOPE-IGNORE** |
-| `801F75BC` | 949 (`cast_water_crystals`) | spawn stager, `sltiu a1, 8`, 0 spawn calls; writes `+0x0C` | - | **PORT** |
+| `801F75BC` | 949 (`cast_water_crystals`) | spawn stager, `sltiu a1, 8`, 0 spawn calls; writes the **victim**'s `+0x0C` and anim rate `+0x21D` | - | **PORT** |
 | `801F769C` | 943 (`cast_curse`) | spawn stager, 3 spawn calls | - | **DATA** |
 | `801F76C4` | 946 (`cast_call_wave`) | spawn stager, 5 spawn calls | - | **DATA** |
 | `801F7740` | 906 (`summon_gizam`) | spawn stager, `sltiu a1, 7`, 3 spawn calls; writes `+0x0C`, phase `ctx+0x279` | - | **PORT** |
@@ -432,6 +533,8 @@ column says so; those copies are residue (below), not second call sites.
 | `801F8E68` | 928 (`summon_palma`) | spawn stager, `sltiu a1, 7`, 12 spawn calls | - | **DATA** |
 | `801F90E4` | 922 (`summon_puera`) | spawn stager, 0 spawn calls; writes `ctx+0x278` | - | **PORT** |
 | `801F92AC` | 934 (`summon_ozma`) | spawn stager, 11 spawn calls | - | **DATA** |
+| `801F7F34` | 915 (`summon_mushura`) | spawn stager, two arms sharing one `jal` and two record pointers | - | **DATA** |
+| `801F7FF0` | 935 (`cast_earthquake`) | spawn stager, arm 0 only, 1 spawn call | - | **DATA** |
 | `801F9370` | 955 (`cast_white_shield`) | spawn stager, 1 spawn call | - | **DATA** |
 | `801F99F4` | 957 (`summon_effect_table`) | spawn stager, `sltiu a1, 5`, 3 spawn calls | - | **DATA** |
 
@@ -454,6 +557,49 @@ sweep (`scripts/ghidra-analysis/find-address-word-refs.py`) reports no word, no
 `jal`, no `j`, no PC-relative branch and no `lui`+`addiu` pair for any of them
 in any image, and PROT 0909 holds no jump table that could reach them. Only
 `0x801F7948` is on the worklist, because only it has a dump.
+
+### SCUS calls into slot B at one fixed VA - and only PROT 0920 arms it
+
+`FUN_800480D8`, the per-actor battle draw tick, ends its scene-teardown
+preamble with `jal 0x801F7B88` under `_DAT_8007BDC0 != 0`
+(`lui v0,0x8008` / `lw v0,-0x4240(v0)` / `beq` at `0x8004818C..0x800481A0`,
+`see ghidra/scripts/funcs/800480d8.txt`). The target is in the slot-B band, so
+the `jal` alone names no image - sixty-five of the sixty-eight slot-B rows in
+[`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) are long
+enough to hold a routine at base `+0x11B0`.
+
+**The gate names the image.** `_DAT_8007BDC0` is `gp+0xAA8`, and a sweep for
+every form that reaches it (`find-gp-relative-refs.py --va 0x8007BDC0`, which
+covers the `lui`+load pair the five-form address scan cannot see) finds it in
+exactly two images across `SCUS_942.54` and all 83 mapped overlays: SCUS, which
+only ever stores zero to it (`0x80055BBC`), and **PROT 0920**
+(`summon_slippery`, the Slippery / "Deadly Rain" evolved-Seru module), which
+owns it end to end:
+
+| Site | Instruction | Meaning |
+|---|---|---|
+| `0x801F6FEC` | `addiu v0,zero,0x204` ; `sw v0,-0x4240(v1)` | seeds the word to `0x204` inside the module's 64-iteration spawn loop |
+| `0x801F70CC` | `sw v0,-0x4240(t0)` after `subu v0,v0,a0` | drains it per frame by `2 * byte[s0+0x7F]` |
+| `0x801F7B4C` | `sw zero,-0x4240(v0)` | clears it, in the epilogue of the function that ends at `0x801F7B84` |
+
+So the word is a live **budget**, not a boolean, and the routine SCUS calls
+begins at the very next instruction after the function that clears it -
+`0x801F7B88` is a 1632-byte framed routine at PROT 0920 file `+0x11B0`
+(`addiu sp,sp,-0x60`, 408 instructions, reading the per-frame scalar
+`_DAT_1F800393`). The reading that closes the loop: while Slippery's effect is
+still draining, a battle scene that starts tearing down hands the module one
+more tick before the teardown proceeds. Only the identity is measured; the
+purpose is `inference`.
+
+**Nothing in the save-state corpus has the gate up.** `_DAT_8007BDC0` reads
+zero in all 176 catalogued states - every mednafen and PCSX-Redux backup in
+[`scripts/scenarios.toml`](../../scripts/scenarios.toml), including
+`slippery_summon_mid_cast`, the mid-cast capture of the very module that owns
+the word. In that state PROT 0920 is byte-resident at slot B (8183 of 8192
+bytes) and the sixteen bytes live at `0x801F7B88` are byte-equal to the image's
+`+0x11B0`, so the target is pinned even though the call was not caught firing.
+A live hit needs a battle that ends while a Slippery cast is still animating;
+no state in the library is at that point.
 
 ### A module image ends in another image's bytes
 
@@ -489,7 +635,8 @@ repo:
   137 `ambiguous = no` runs of 64 bytes or more this band still carries, 103
   are the module's own data tail, 24 are byte-identical residue of a sibling
   module's real function, 4 are the PROT 0899 tail above, and 6 are interior
-  to the tick body of an image that carries no dump at all (PROT 0915, 0935).
+  to a tick body (PROT 0915, 0935 - the two images whose Ghidra import landed
+  last, which is why the runs read as un-dumped rather than as interiors).
   Not one is an un-dumped function of the image it is filed under.
 
 ## What the port runs
@@ -518,15 +665,157 @@ change. It fires at the two seams retail uses: the capture band's pager
 (`load_capture_archive`, the `0x6E` arm, ahead of the `0x801E50C8` tick loop)
 and the summon stager's first tick (`0x801E4B1C`).
 
-**What is still not run.** Every **PORT** row above - the six tick bodies and
-the seven state-touching stagers. They write things a spawn record cannot express -
-the staged-clip bytes `+0x1DA` / `+0x1DC` (the lift), the module phase
-`ctx+0x279` and `ctx+0x278` (the phase machine and its camera arms), the HP
-write `+0x14C` and the status byte `+0x16E` (the damage shape). The engine
-folds a cast's HP outcome at its own band seam
-(`World::cast_spell_on_slots_prepaid`) instead, so no outcome is lost - what is
-lost is retail's per-phase *timing* of it, and the choreography around it. The
-**SCOPE-IGNORE** rows stage nothing in retail either.
+**The code half.** The **PORT** rows - the six tick bodies and the seven
+state-touching stagers - are `legaia_engine_vm::cast_module_ticks`, one
+function per VA. Each carries its routine's dispatch bound, its
+simulation-state writes, its damage step (baked power, wrapper, clamp shape,
+`+0x10` accumulate, HP write, reaction stage, anim-rate write) and the phase
+advance. `World::run_cast_module_code` drives them from the same seam retail
+re-enters the paged module at - the stager tick the action SM calls at states
+`0x34` / `0x35` / `0x36` - so a live cast in `play-window` or on the browser
+play page reaches them.
+
+What those functions deliberately leave out, and say so per item: the
+GPU-packet arms, the camera arms, and - for the five tick bodies whose arm map
+is a `beq` chain or a 256-entry table - the per-arm frame gating that decides
+*when* each step fires. That gating is per-phase timing, pinned by capture and
+not by the static window. Of the thirteen, four have a byte-recovered arm map
+because their head is a word table: PROT 0906, 0909, 0949 (stagers) and 0952
+(the Astral Slash tick, whose five arms are enumerated in the port).
+
+The **damage** half is wired as a substitution rather than a second
+application. For most of the band the engine still folds a cast's HP outcome
+once, at `World::cast_spell_on_slots_prepaid`, but the magnitude that reaches
+the wrapper is the module's own baked constant
+(`cast_module_ticks::baked_power_for`, read by `World::baked_module_power`)
+instead of the move-power table's scalar. PROT 0927 and PROT 0966 are the
+exception, because their damage is not a per-target fold at all: those two
+casts fold through `World::run_cast_module_aoe` and the generic path is
+skipped, so the seat range and the `HP - 1` clamp are the module's.
+
+PROT 0957 needs one more split: it carries **two** whole tick bodies, and its
+trampoline `0x801F9BA8` picks between them on the caster's queued action id -
+`0x76` to `0x801F798C`, `0x77` to `0x801F6A14`, anything else to the epilogue.
+The port routes on the same two ids.
+
+### The trampolines are their own port, and one cell holds six spells
+
+The capture-class arm shape above is a routine in its own right, and six of
+them are named by nothing else in the corpus. Each is 88 to 204 bytes, opens
+`addiu sp, sp, -0x18`, materialises the battle ctx `*0x8007BD24`, loads the
+caster `actor_table[ctx+0x13]` out of `0x801C9370` and reads its queued action
+byte `caster[+0x1DF]`; an id the routine does not name returns `a0 = 0`, so the
+module ticks nothing and the drive loop proceeds. The port carries the map as
+data (`cast_module_ticks::CAPTURE_TRAMPOLINES` / `capture_tick_body`), and
+`crates/asset/tests/cast_module_data_rows_real.rs` re-derives each row off the
+disc from PROT 0898's `0x801CF56C` arm and the trampoline's own `jal` set.
+
+| Owner | Trampoline | Action id -> tick body |
+|---|---|---|
+| 938 (`cast_chaos_breath`) | `0x801F7A40` | `0x4E` -> `0x801F726C`, `0xB7` -> `0x801F69EC` |
+| 951 (`cast_chaos_flare`) | `0x801F816C` | `0x36` -> `0x801F6A20`, `0x5B` -> `0x801F77E8` |
+| 952 (`cast_bloody_horns`) | `0x801F7B28` | `0x5C` -> `0x801F7118`, `0xB8` -> `0x801F6A0C` |
+| 955 (`cast_white_shield`) | `0x801F92A4` | six ids, [below](#prot-0955-is-a-six-spell-cell) |
+| 958 (`cast_blazing_slash`) | `0x801F8E60` | `0x79` -> `0x801F6DD8` |
+| 965 (`cast_doomsday`) | `0x801F7B1C` | `0xB6` -> `0x801F69D8` |
+
+#### PROT 0955 is a six-spell cell
+
+`0x801F92A4` is the one trampoline in the band that dispatches through a jump
+table rather than a `beq` chain: it bounds `id - 0x60` with `sltiu 0x14` and
+indexes the module's **head table**, twenty words filling file `0x00..0x50`.
+Fourteen of the twenty point at the shared epilogue `0x801F9360` and tick
+nothing; the other six are whole choreographies - `0x60` -> `0x801F8F0C`,
+`0x6E` -> `0x801F86A4`, `0x6F` -> `0x801F7FA4`, `0x70` -> `0x801F767C`,
+`0x72` -> `0x801F7158`, `0x73` -> `0x801F6A28`.
+
+That makes 0955 a **third** owner for a band head table. The rule
+[above](#image-anatomy-recovered-from-the-bytes) resolves a head table as the
+tick's or the stager's by reading the `sltiu` immediate; 0955's belongs to
+neither, and its first function opens at file `+0x50` immediately past the
+table.
+
+### The six tick bodies PROT 0898's tables name and the worklist listed
+
+Both arm tables reach bodies this page's verdict table did not cover, because
+that table was built from the routines the dumps already printed at. Read off
+each owning image's own bytes:
+
+| Tick | Owner | Reached from | Phase arms | Damage |
+|---|---|---|---|---|
+| `0x801F6A00` | 925 (`summon_spikefish`) | `0x801CF4EC` row 22 | `sltiu a0, 0x0A` -> 10, table at file `+0` | none |
+| `0x801F6A18` | 924 (`stager_ultimate_rave`) | row 21 | `sltiu a1, 0x0C` -> 12, table at `0x801F69E8` | none; the finale arm zeroes `+0x14C` outright |
+| `0x801F6A3C` | 922 (`summon_puera`) | row 19 | `sltiu a0, 0x19` -> 25 | `FUN_801DD0AC(0x12, 7)` at `0x801F8E1C`, **shape A** |
+| `0x801F6A84` | 927 (`summon_juggernaut`) | row 24 | `sltiu a1, 0x1D` -> 29 | `FUN_801DD0AC(0x12, 7)` at `0x801F7E0C`, **shape A** |
+| `0x801F6C70` | 918 (`summon_kemaro`) | row 15 | `beq`/`slti` chain, literals `1 ..= 0x14` + `0xFF` | `FUN_801DD0AC` at `0x801F87A4`, **shape A** |
+| `0x801F6A10` | 949 (`cast_water_crystals`) | `0x801CF56C` row 14 | `sltiu v1, 6` -> 6 | `FUN_801DD4B0(0xC0)` at `0x801F7318`, **shape A** |
+
+Three of those refine claims elsewhere on this page.
+
+- **`0xC0` is a baked power the table above does not carry.** PROT 0949's tick
+  bakes it at `0x801F72F8`; the
+  [baked-constant table](#the-baked-power-constants) was read off the routines
+  already on the verdict table and this tick was not one of them.
+- **PROT 0918 does not load its power as its own literal.** The arm gate
+  `addiu v0, zero, 0x12; bne v1, v0` compares the module phase byte against
+  `0x12` and the call then reuses the same register as `a0`
+  (`move a0, v0` at `0x801F8798`), so the phase number and the baked power are
+  one constant. Read `move a0, v0` at face value and the power is lost.
+- **"PROT 0927 never kills" is true of its sweep only.** Its move-VM stager
+  `0x801F85A8` clamps to `HP - 1` ([shape B](#the-two-clamp-shapes)), but its
+  *tick* `0x801F6A84` calls the same wrapper with the same baked `0x12` and
+  then clamps `sltu a0, s1` - shape A, kill-capable, and a negative wrapper
+  return there kills outright. The same `FUN_801DD0AC(0x12, 7)` + shape-A pair
+  is PROT 0922's, so the summon-branch wrapper is not itself a never-kill
+  shape.
+
+PROT 0918's damage arm also credits a kill: past the clamp it increments the
+word at `+0x664` of the caster's per-character record in the
+`0x80084140 + n * 0x414` block (`0x801F87D4..0x801F881C`).
+
+### The ten bodies the trampoline map names and nothing ports
+
+Naming a trampoline's arms names ten more routines, each a whole choreography
+in an image whose *trampoline* is now ported. They are real, un-ported work,
+and these are the facts a port needs, read off each owning image's bytes:
+
+| Body | Owner | Action id | Size | Phase bound | Damage |
+|---|---|---|---|---|---|
+| `0x801F726C` | 938 | `0x4E` Chaos Breath | 2004 B | `beq`/`slti` chain | `FUN_801DD4B0(0x274)` at `0x801F77C0` |
+| `0x801F6A20` | 951 | `0x36` Chaos Flare | 3528 B | `sltiu 0x0C` | `FUN_801DD4B0(0x3A0)` at `0x801F7414` |
+| `0x801F77E8` | 951 | `0x5B` Scythe Wind | 2436 B | `sltiu 6` | `FUN_801DD4B0(0x80)` at `0x801F7F88` |
+| `0x801F7118` | 952 | `0x5C` Bloody Horns | 2576 B | `sltiu 7` | `FUN_801DD6B4(0x1D0)` at `0x801F7948` |
+| `0x801F8F0C` | 955 | `0x60` White Shield | 920 B | `beq`/`slti` chain | none |
+| `0x801F86A4` | 955 | `0x6E` Kiss of Death | 2152 B | `beq`/`slti` chain | none |
+| `0x801F7FA4` | 955 | `0x6F` Melt Spray | 1792 B | `beq`/`slti` chain | none |
+| `0x801F767C` | 955 | `0x70` Terror Scream | 2344 B | `beq`/`slti` chain | none |
+| `0x801F7158` | 955 | `0x72` Power Charge | 1316 B | `beq`/`slti` chain | none |
+| `0x801F6A28` | 955 | `0x73` Void Accessories | 1840 B | `beq`/`slti` chain | none |
+
+Two more bodies the same maps name are not on the port worklist only because
+no dump prints at their VAs: `0x801F69EC` (938, `0xB7` Mystic Circle,
+`FUN_801DD4B0(0x309)`) and `0x801F69D8` (965, `0xB6` Doomsday,
+`FUN_801DD4B0(0x600)` at `0x801F77B4`).
+
+**Read the delay slot when you take a baked power.** PROT 0951's `0x5B` body
+sets `a0` *after* the call word - `jal 0x801DD4B0` at `0x801F7F88` with
+`addiu a0, zero, 0x80` in its delay slot - so a scan that only looks backwards
+from the `jal` reports no constant for it. None of the sites on the tables
+above uses that form, which is exactly why it is easy to miss.
+
+**The rows that leave the worklist without a port.** The **DATA** rows are
+scope rows in `scripts/ci/port-catalog-ignore.toml` under
+`[slot_b_spawn_stagers]`, because the pool above already produces their whole
+output; `crates/asset/tests/cast_module_data_rows_real.rs` re-derives per row,
+off the disc, that the routine frame-matches in its **owning** image, that its
+spawn count is the one this page's table quotes, and that it calls no damage
+wrapper. The **SCOPE-IGNORE** rows are in `[slot_b_cast_module]` - six null
+stagers, one routine nothing references, and PROT 0920's per-frame effect
+updater `0x801F7B88`, the one slot-B routine SCUS calls
+([above](#scus-calls-into-slot-b-at-one-fixed-va---and-only-prot-0920-arms-it)):
+it reads the `0x8007BDC0` budget it never writes, walks the module's own
+particle records and hands them to `FUN_80021B04`, so the pool produces its
+whole output too.
 
 Two band entries carry no record at all and stage nothing: PROT 0926, the
 1-sector null stub, and PROT 0952, whose two spawn sites both load `a2` out of

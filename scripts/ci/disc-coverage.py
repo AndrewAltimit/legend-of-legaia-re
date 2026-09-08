@@ -100,6 +100,11 @@ CODE_PTR_MAX = 0.03
 # Gaps shorter than this are inter-function alignment padding, not a finding.
 TINY_GAP_WORDS = 8
 
+# How many unattributed extents the lag report names before it
+# summarises. The list is a worklist for one CSV re-run, not a
+# census, and the pre-commit hook prints it with --quiet.
+LAG_EXTENTS_SHOWN = 20
+
 # PROT classes that are placeholders or absence rather than an unparsed format.
 # `pochi_filler` is a DOCUMENTED class (docs/formats/pochi.md), so it counts as
 # explained; it is broken out separately because calling reserved dev filler
@@ -137,8 +142,13 @@ def read_dump_extents(funcs_dir):
 CREDIT_NOBODY = {"misbased", "data", "gapped"}
 # Classes that name the owning image(s) by bytes. `identical` names several
 # because they hold byte-identical code there, and each of them really does
-# contain those bytes, so each is credited.
-CREDIT_NAMED = {"unique", "identical"}
+# contain those bytes, so each is credited. `divergent` names several for the
+# opposite reason and is credited for the same one: it is several DUMPS at one
+# extent key, each of which the bytes place in a different image, so every named
+# image really does have that byte range dumped - from its own dump. Reading it
+# as residue withheld `battle_action`'s largest un-credited run
+# (`0x801DABA4..0x801DB124`) from its own floor and kept it on the worklist.
+CREDIT_NAMED = {"unique", "identical", "divergent", "resolved_by_table"}
 # Everything else (`short`, `unresolved`, `no_disassembly`) is residue: the
 # bytes could not place the extent, so it stays ambiguous for every image whose
 # span contains it.
@@ -191,6 +201,12 @@ MIPS_JR_RA = 0x03E00008
 # long body is not demoted by it. A demoted run is not hidden - it stays in
 # `undumped-runs.csv` under its shape, it only leaves the ranked worklist.
 NO_EXIT_MIN_BYTES = 1024
+# `addiu $sp, $sp, -F` - the only way a MIPS I routine opens a stack frame, and
+# therefore the word a function ENTRY is recognised by. Paired with `jr ra`
+# (the only way one ends) it bounds every framed body in the corpus; the
+# frame-matched partition in `ghidra/scripts/dump_static_overlay.py` is built
+# out of exactly these two words. See the `no_boundary` shape.
+_ADDIU_SP_NEG = 0x27BD0000
 # `addiu $t2, $zero, imm` - the register a PSX BIOS-call thunk loads its jump
 # vector into before `jr $t2`.
 _ADDIU_T2_ZERO = 0x240A0000
@@ -273,6 +289,39 @@ def in_data_segment(image, base_va, a, b, floor=None):
     return not _has_ram_page_lui(image, base_va, a, b)
 
 
+def has_no_function_boundary(words):
+    """True when `words` holds neither word a function body is delimited by.
+
+    A MIPS I routine opens with `addiu $sp, $sp, -F` (or is a frameless leaf)
+    and every one of them ends with `jr ra`. A run carrying **neither** word
+    therefore contains no function ENTRY - the only thing a dump can be keyed
+    on - and no EXIT for a dump's `size=` to be measured to. Dumping cannot
+    close such a run, because a dumper is driven from an address list and this
+    run supplies no address.
+
+    This is the length-free form of `no_exit`. That shape needs its
+    `NO_EXIT_MIN_BYTES` floor because it tests one word only: a *short* run
+    with no `jr ra` is routinely the head of a routine whose exit is past the
+    window, and that head is real work. Adding the prologue leg is what
+    removes the need for the floor - a run holding a prologue stays `code` at
+    any length.
+
+    The residual case, stated rather than papered over: the INTERIOR of one
+    long body carries neither word either, so a gap that falls wholly inside
+    an un-dumped routine lands here. That is not a lost worklist row. The
+    routine's own prologue sits in some adjacent run, which keeps its `code`
+    shape and names the entry - and the entry, not its interior, is the
+    address a dump is asked for. A demoted run is also not hidden: it stays in
+    `undumped-runs.csv` under its shape, it only leaves the ranked worklist.
+    """
+    for w in words:
+        if w == MIPS_JR_RA:
+            return False
+        if (w & 0xFFFF0000) == _ADDIU_SP_NEG and (w & 0x8000):
+            return False
+    return True
+
+
 def gap_shape(image, base_va, a, b, floor=None, data_seg=None):
     """Why a code gap is a gap. Six shapes, and only one of them is work.
 
@@ -289,7 +338,8 @@ def gap_shape(image, base_va, a, b, floor=None, data_seg=None):
     | `constant_table` | every word one repeated non-`nop` constant: a data table resident in text (`crt0`'s stack-pointer table at `0x80026CD4`, four words of the 2 MB RAM size). |
     | `mostly_padding` | at least half the words are zero. A word of zeros is a plausible opcode with no pointer density, so the statistical test scores a zero-dominated region as code; a function body is not half `nop`. |
     | `data_segment` | at or above the image's last `jr ra` and holding no `lui $rt, 0x80xx`. See `in_data_segment`: leg one is that no complete body can end there, leg two is what keeps a body the entry boundary cut short out of the shape. |
-    | `no_exit` | 2048 bytes or more with no `jr ra` in them. Every MIPS body ends in one, and known code carries one per ~500-750 bytes, so a run this long with none is a data table the opcode statistic scored as code. |
+    | `no_exit` | `NO_EXIT_MIN_BYTES` or more with no `jr ra` in them. Every MIPS body ends in one, and known code carries one per ~500-750 bytes, so a run this long with none is a data table the opcode statistic scored as code. |
+    | `no_boundary` | neither boundary word: no `addiu $sp, $sp, -F` and no `jr ra`, at any length. See `has_no_function_boundary`. |
     | `code` | genuinely un-dumped instructions. |
 
     The non-`code` shapes are properties of where a function *body* ends or of
@@ -354,6 +404,11 @@ def gap_shape(image, base_va, a, b, floor=None, data_seg=None):
     # long enough that a gap holding one partial body is not caught by it.
     if n * 4 >= NO_EXIT_MIN_BYTES and not any(w == MIPS_JR_RA for w in words):
         return "no_exit"
+    # `no_boundary`: neither delimiter word, at any length - see
+    # `has_no_function_boundary`. Tested last so every shape above keeps its
+    # own, more specific name.
+    if has_no_function_boundary(words):
+        return "no_boundary"
     return "code"
 
 
@@ -441,18 +496,30 @@ def split_gap(image, base_va, a, b, floor=None):
     return out
 
 
-def cover_image(name, image, base_va, span, extents, attrib=None):
+def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()):
     """Coverage of one loaded image. `span` is its byte length.
 
     `attrib` is the byte-attribution map. Where it places an extent in some
     other image - or in none - the extent is dropped from this image rather
     than counted for it. Pass `None` for an image with no VA aliasing
     (`SCUS_942.54`): the filter must not touch a row that is already exact.
+
+    `unambiguous` is the set of extent keys exactly ONE measured span contains.
+    Those need no attribution to belong here - address arithmetic already
+    answers it, which is why the attribution sweep does not write a row for
+    them - so they count toward the floor as well as toward the upper bound.
+    Without that set the floor silently punished an image for every extent
+    only its own span reaches, which is the opposite of what the number means.
     """
     lo, hi = base_va, base_va + span
     # One `jr ra` scan per image, threaded into every gap test below.
     seg_floor = data_floor(image, base_va)
     mine, floor, dropped = [], [], 0
+    # Extents this image counts toward its UPPER bound but not toward its
+    # floor, because the byte-attribution CSV has no row for them. They are the
+    # difference between the two numbers, and when the CSV lags the corpus they
+    # are also the whole of an apparent floor regression - see `--check`.
+    unattributed = []
     for a, b in extents:
         if not lo <= a < hi:
             continue
@@ -461,11 +528,15 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
             dropped += 1
             continue
         mine.append((a, min(b, hi)))
-        # The floor takes only extents the bytes NAME for this image. An
-        # unambiguous image (`attrib is None`, i.e. SCUS) has nothing to
-        # attribute, so its floor is its numerator.
-        if attrib is None or (owners != "residue" and name in owners):
+        # The floor takes the extents the bytes NAME for this image, plus the
+        # ones no other measured span reaches. An unambiguous image
+        # (`attrib is None`, i.e. SCUS) has nothing to attribute, so its floor
+        # is its numerator.
+        if (attrib is None or (owners != "residue" and name in owners)
+                or (a, b) in unambiguous):
             floor.append((a, min(b, hi)))
+        else:
+            unattributed.append((a, b))
     merged = merge(mine)
     covered = sum(b - a for a, b in merged)
 
@@ -568,6 +639,7 @@ def cover_image(name, image, base_va, span, extents, attrib=None):
         "pct_floor": (100.0 * floor_cov / denom) if denom else 0.0,
         "gap_shapes": shapes,
         "runs": runs,
+        "unattributed": sorted(set(unattributed)),
         "top_code_gaps": sorted(code_gaps, key=lambda g: g[0] - g[1])[:8],
     }
 
@@ -592,6 +664,22 @@ def overlay_reports(extracted, extents, attrib=None):
     rows = tomllib.load(open(OVERLAY_MAP, "rb")).get("overlays", [])
     out = []
     spans = []
+    # The measured spans have to be known BEFORE the first row is covered: an
+    # extent's floor membership depends on how many spans contain it, which is
+    # a property of the whole map rather than of the row being measured.
+    for row in rows:
+        base, label = row.get("base_va"), row.get("label")
+        span = row.get("content_bytes") or row.get("clean_copy_bytes")
+        if not base or not span or not label:
+            continue
+        candidates = sorted(glob.glob(
+            os.path.join(extracted, "overlays", "overlay_%s_*.bin" % label)))
+        if not candidates:
+            continue
+        spans.append((base, base + min(span, os.path.getsize(candidates[0])), label))
+    unambiguous = {k for k in set(extents)
+                   if sum(1 for lo, hi, _ in spans if lo <= k[0] < hi) == 1}
+    spans = []
     for row in rows:
         base = row.get("base_va")
         # `content_bytes` is the overlay's OWN content length - its PROT entry's
@@ -615,8 +703,12 @@ def overlay_reports(extracted, extents, attrib=None):
         image = open(candidates[0], "rb").read()[:span]
         if len(image) < span:
             span = len(image)
-        row = cover_image(label, image, base, span, extents, attrib=attrib)
+        row = cover_image(label, image, base, span, extents, attrib=attrib,
+                          unambiguous=unambiguous)
         row["_image_span"] = (base, base + span)
+        # Kept so `--check` can re-measure the row against the corpus the
+        # attribution CSV knows about, without re-reading every overlay.
+        row["_image"] = image
         out.append(row)
         spans.append((base, base + span, label))
 
@@ -644,7 +736,7 @@ def overlay_reports(extracted, extents, attrib=None):
     # defensible number at all, and the table says so ON the row rather than in
     # prose underneath it.
     for row in out:
-        lo, hi = row.pop("_image_span")
+        lo, hi = row["_image_span"]
         mine = [k for k in distinct if lo <= k[0] < hi]
         resid = dropped = 0
         for k in mine:
@@ -658,7 +750,24 @@ def overlay_reports(extracted, extents, attrib=None):
         kept = len(mine) - dropped
         row["ambiguous"] = resid
         row["ambiguous_pct"] = (100.0 * resid / kept) if kept else 0.0
-    return out, totals
+        # The share of this image's CREDITED BYTES that rests on an extent the
+        # attribution could not place - which is the same question the extent
+        # count above asks, in the unit the coverage figure is actually stated
+        # in. The two answers are not close: the corpus is full of 4-to-36-byte
+        # Ghidra fragments (a `halt_baddata` stub over a data word, a tail the
+        # dumper resolved as its own body), and each of those counts once in
+        # `ambiguous_pct` against a 6-KB module that counts once as well. On
+        # the slot-B modules that reads as ~90% ambiguity over ~0.2% of the
+        # bytes. `covered - covered_attributed` is exactly the byte span the
+        # upper bound rests on and the floor does not, so it is the honest
+        # discount on the upper bound, and it still reads 100% for the two
+        # images (`summon_mushura`, `cast_earthquake`) that really have no
+        # attributed byte at all.
+        cov = row["covered"]
+        row["ambiguous_bytes"] = cov - row["covered_attributed"]
+        row["ambiguous_bytes_pct"] = (
+            100.0 * row["ambiguous_bytes"] / cov) if cov else 0.0
+    return out, totals, unambiguous
 
 
 def data_report(extracted):
@@ -877,16 +986,19 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
         "as data - a zero word decodes to `nop`, so the statistic scores it as "
         "perfect code.")
     add("")
-    add("| image | base | span | dumps | in a dump | code gap | data gap | code denom | covered | at least | VA-ambiguous |")
-    add("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    add("| image | base | span | dumps | in a dump | code gap | data gap | code denom | covered | at least | VA-ambiguous | by extent |")
+    add("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     rows = ([scus] if scus else []) + overlays
     for r in rows:
-        amb = r.get("ambiguous_pct")
-        # An image whose dumps are mostly claimable by a sibling overlay has no
-        # defensible UPPER bound. Say that ON THE ROW - a caveat in prose
-        # underneath does not travel when the table is quoted on its own. The
-        # floor is still reported there, because "no defensible upper bound"
-        # and "unmeasured" are different states and a blank cell conflates them.
+        amb = r.get("ambiguous_bytes_pct")
+        # An image whose credited bytes are mostly claimable by a sibling
+        # overlay has no defensible UPPER bound. Say that ON THE ROW - a caveat
+        # in prose underneath does not travel when the table is quoted on its
+        # own. The floor is still reported there, because "no defensible upper
+        # bound" and "unmeasured" are different states and a blank cell
+        # conflates them.
+        extcell = ("-" if r.get("ambiguous_pct") is None
+                   else "%.1f%%" % r["ambiguous_pct"])
         if amb is None:
             cover, ambcell = "**%.1f%%**" % r["pct"], "-"
         elif amb >= 50.0:
@@ -895,10 +1007,10 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
             cover, ambcell = "<= %.1f%%" % r["pct"], "%.1f%%" % amb
         else:
             cover, ambcell = "**%.1f%%**" % r["pct"], "0%"
-        add("| `%s` | `0x%08X` | %d | %d | %d | %d | %d | %d | %s | %.1f%% | %s |" % (
+        add("| `%s` | `0x%08X` | %d | %d | %d | %d | %d | %d | %s | %.1f%% | %s | %s |" % (
             r["name"], r["base_va"], r["span"], r["dumps"], r["covered"],
             r["code_gap"], r["data_gap"], r["code_denominator"], cover,
-            r["pct_floor"], ambcell))
+            r["pct_floor"], ambcell, extcell))
     add("")
     add("**span** is the overlay's own content length - its PROT entry's sector "
         "extent, `(toc[p+3] - toc[p+2]) * 2048`, which is exactly the slice the "
@@ -915,19 +1027,30 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
         "never hides one overlay's gap behind a sibling's dump.")
     add("")
     if attributed:
-        add("**VA-ambiguous** is the share of an image's extents that the *bytes* "
-            "could not place: extents whose entry address lands in more than one "
-            "mapped overlay span and which byte attribution left unresolved. An "
-            "extent the bytes assign to another image leaves this row entirely - "
-            "it is not this image's, so it is neither ambiguous for it nor "
-            "counted against it.")
+        add("**VA-ambiguous** is the share of an image's *covered bytes* that "
+            "the bytes could not place: the span the upper bound credits and the "
+            "floor does not, i.e. `covered - at least` over `covered`. An extent "
+            "the bytes assign to another image leaves this row entirely - it is "
+            "not this image's, so it is neither ambiguous for it nor counted "
+            "against it.")
     else:
-        add("**VA-ambiguous** is the share of an image's extents whose entry "
-            "address also lands inside another mapped overlay's span.")
+        add("**VA-ambiguous** is the share of an image's covered bytes whose "
+            "extent's entry address also lands inside another mapped overlay's "
+            "span.")
     add("At 50% or more the coverage figure is not reported, because what is "
         "left cannot support one.")
     add("")
-    add("The share counts **distinct extents**, not dump files: one extent can "
+    add("**by extent** is the same question counted in whole extents rather "
+        "than bytes, and it is kept beside the byte share because the two "
+        "diverge by two orders of magnitude on the slot-B modules. The corpus "
+        "carries many 4-to-36-byte dumps - a `halt_baddata` stub Ghidra made "
+        "out of a data word, a function tail the dumper resolved as its own "
+        "body - and an extent count weighs each of those the same as a 6 KB "
+        "module. Reading the extent share as the discount on a *byte* coverage "
+        "figure withheld an upper bound from most of the slot-B band over "
+        "fractions of a percent of its bytes.")
+    add("")
+    add("Both shares count **distinct extents**, not dump files: one extent can "
         "back many dumps, and weighting by how often the same bytes were dumped "
         "would measure the corpus rather than the image. It is the same "
         "denominator `dump-extent-attribution.csv` is keyed on, so the two can "
@@ -1098,14 +1221,68 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
     return "\n".join(L) + "\n"
 
 
+def dump_names_by_extent(funcs_dir):
+    """`{(entry_va, end_va): [dump stem, ...]}` over the corpus.
+
+    Built only when the ratchet has something to explain: the point of the
+    report is to hand back file names a reader can open, and an extent key on
+    its own is not that.
+    """
+    out = {}
+    for path in sorted(glob.glob(os.path.join(funcs_dir, "*.txt"))):
+        dump, _ = dump_header.parse_file(path)
+        if dump is not None:
+            out.setdefault(dump.extent, []).append(
+                os.path.basename(path)[:-4])
+    return out
+
+
+def attribution_lag(row, extents, attrib, unambiguous, was, tolerance):
+    """Is this image's floor drop an attribution lag rather than lost coverage?
+
+    A `code_floor` figure is `floor_bytes / (covered_bytes + code_gap_bytes)`.
+    A dump that lands with no row in `dump-extent-attribution.csv` is residue:
+    it joins the image's UPPER bound - and so the denominator - while the floor,
+    which only counts extents the bytes name for this image, does not move. The
+    ratio therefore falls, and the ratchet reads a *new dump* as lost coverage.
+    That is backwards, and it is not a worktree artifact: the committed CSV lags
+    the local corpus in the main checkout too, because the corpus is gitignored
+    and the CSV is not regenerated per dump.
+
+    So the test is direct rather than inferred: re-measure the image over the
+    corpus **the CSV knows about** - every extent minus this image's
+    unattributed ones - and see whether the floor clears its baseline there. If
+    it does, the drop is entirely the lag, and what the reader needs is the list
+    of dumps to attribute, not a coverage failure. Returns `None` when the drop
+    survives that removal, i.e. when it is a real regression.
+    """
+    missing = set(row.get("unattributed") or ())
+    if not missing:
+        return None
+    kept = [k for k in extents if k not in missing]
+    base_va, end_va = row["_image_span"]
+    alt = cover_image(row["name"], row["_image"], base_va, end_va - base_va,
+                      kept, attrib=attrib, unambiguous=unambiguous)
+    if alt["pct_floor"] < was - tolerance:
+        return None
+    return {
+        "extents": sorted(missing),
+        "bytes": sum(b - a for a, b in missing),
+        "pct_floor_without": alt["pct_floor"],
+    }
+
+
 def snapshot(scus, overlays, data):
     out = {"code": {}, "code_floor": {}, "data": {}}
     for r in ([scus] if scus else []) + overlays:
         # `code` only ratchets figures that mean something as an UPPER bound. A
-        # row most of whose extents are claimable by a sibling overlay moves
-        # with dump attribution rather than with real coverage, so baselining
-        # its upper bound would produce failures nobody can act on.
-        if r.get("ambiguous_pct", 0.0) < 50.0:
+        # row most of whose covered BYTES are claimable by a sibling overlay
+        # moves with dump attribution rather than with real coverage, so
+        # baselining its upper bound would produce failures nobody can act on.
+        # The gate reads the byte share rather than the extent count for the
+        # reason the report gives: an extent count weighs a 4-byte Ghidra stub
+        # the same as a 6 KB module.
+        if r.get("ambiguous_bytes_pct", 0.0) < 50.0:
             out["code"][r["name"]] = round(r["pct"], 2)
         # `code_floor` ratchets every image, including the ones with no
         # defensible upper bound. The floor counts only extents the bytes NAME
@@ -1157,7 +1334,8 @@ def main():
     attrib = read_attribution(args.attribution)
 
     scus = scus_report(args.extracted, extents)
-    overlays, amb_totals = overlay_reports(args.extracted, extents, attrib)
+    overlays, amb_totals, unambiguous = overlay_reports(
+        args.extracted, extents, attrib)
     data = data_report(args.extracted)
 
     if scus is None and not overlays:
@@ -1182,10 +1360,10 @@ def main():
             print("[disc-coverage] SCUS_942.54 code: %.1f%% (%d/%d bytes)" % (
                 scus["pct"], scus["covered"], scus["code_denominator"]))
         for r in overlays:
-            amb = r.get("ambiguous_pct", 0.0)
+            amb = r.get("ambiguous_bytes_pct", 0.0)
             if amb >= 50.0:
                 print("[disc-coverage] overlay %-22s >= %5.1f%%, no upper bound "
-                      "(%.1f%% of its extents are VA-ambiguous)"
+                      "(%.1f%% of its covered bytes are VA-ambiguous)"
                       % (r["name"], r["pct_floor"], amb))
             else:
                 print("[disc-coverage] overlay %-22s %5.1f%%%s" % (
@@ -1219,6 +1397,8 @@ def main():
         base = json.load(open(BASELINE))
         bad = []
         absent = []
+        lagged = []
+        by_name = {r["name"]: r for r in overlays}
         for section in ("code", "code_floor", "data"):
             for key, was in base.get(section, {}).items():
                 now = current.get(section, {}).get(key)
@@ -1230,11 +1410,48 @@ def main():
                     absent.append("%s/%s (baselined at %.2f%%)"
                                   % (section, key, was))
                     continue
-                if now < was - args.tolerance:
+                if now >= was - args.tolerance:
+                    continue
+                # A floor drop is the one figure a *new dump* can cause, so it
+                # is triaged before it is failed: if the drop disappears once
+                # the image's unattributed extents are removed, the corpus grew
+                # and the attribution CSV did not.
+                lag = (attribution_lag(by_name[key], extents, attrib,
+                                       unambiguous, was, args.tolerance)
+                       if section == "code_floor" and key in by_name else None)
+                if lag:
+                    lagged.append((key, was, now, lag))
+                else:
                     bad.append("%s/%s: %.2f%% -> %.2f%%" % (section, key, was, now))
         for a in absent:
             print("[disc-coverage] NOT MEASURED THIS RUN: %s - the image is "
                   "absent from this tree, so the ratchet skipped it" % a)
+        if lagged:
+            names = dump_names_by_extent(args.funcs)
+            todo = sorted({k for _, _, _, l in lagged for k in l["extents"]},
+                          key=lambda k: k[0] - k[1])
+            print("[disc-coverage] ATTRIBUTION LAG - not a coverage loss. %d "
+                  "distinct dumped extent(s) have no row in %s, so they raise "
+                  "an image's denominator without raising its floor:"
+                  % (len(todo), os.path.relpath(args.attribution, REPO)))
+            for key, was, now, lag in lagged:
+                print("   %-22s floor %.2f%% -> %.2f%%, but %.2f%% over the "
+                      "corpus the CSV knows (%d extent(s), %d B)"
+                      % (key, was, now, lag["pct_floor_without"],
+                         len(lag["extents"]), lag["bytes"]))
+            print("[disc-coverage] extents to attribute, largest first "
+                  "(VA-aliased ones count once here and land in several "
+                  "images' spans above):")
+            for a, b in todo[:LAG_EXTENTS_SHOWN]:
+                stems = names.get((a, b)) or ["(no dump name)"]
+                tail = (" +%d more" % (len(stems) - 3)) if len(stems) > 3 else ""
+                print("   0x%08x..0x%08x %6d B  %s"
+                      % (a, b, b - a, ", ".join(stems[:3]) + tail))
+            if len(todo) > LAG_EXTENTS_SHOWN:
+                print("   ... and %d more" % (len(todo) - LAG_EXTENTS_SHOWN))
+            print("[disc-coverage] re-run "
+                  "scripts/ghidra-analysis/attribute-dump-extents.py and commit "
+                  "the CSV; the baseline needs no change.")
         if bad:
             print("[disc-coverage] REGRESSION:")
             for b in bad:
@@ -1246,8 +1463,10 @@ def main():
         total_keys = sum(len(base.get(s, {}))
                          for s in ("code", "code_floor", "data"))
         print("[disc-coverage] OK - %d/%d baselined figure(s) compared, none "
-              "regressed beyond %.2f pp."
-              % (total_keys - len(absent), total_keys, args.tolerance))
+              "regressed beyond %.2f pp.%s"
+              % (total_keys - len(absent), total_keys, args.tolerance,
+                 " %d floor figure(s) moved only with the attribution lag "
+                 "above." % len(lagged) if lagged else ""))
     return 0
 
 

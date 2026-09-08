@@ -169,7 +169,7 @@ impl LegaiaViewer {
                     uv,
                     clut,
                 } => {
-                    sprite_to_quad(&mut verts, cmd, color, pos, uv, clut, 16);
+                    sprite_to_quad(&mut verts, cmd, color, pos, uv, clut, (16, 16));
                 }
                 legaia_mednafen::prim_pool::Prim::Sprt8 {
                     cmd,
@@ -178,7 +178,28 @@ impl LegaiaViewer {
                     uv,
                     clut,
                 } => {
-                    sprite_to_quad(&mut verts, cmd, color, pos, uv, clut, 8);
+                    sprite_to_quad(&mut verts, cmd, color, pos, uv, clut, (8, 8));
+                }
+                // Free-size sprite (GP0 0x64): the window-chrome opcode. Its
+                // extent is a packet field rather than the opcode's, so it is
+                // the one sprite kind that needs the size passed through.
+                legaia_mednafen::prim_pool::Prim::Sprt {
+                    cmd,
+                    color,
+                    pos,
+                    uv,
+                    clut,
+                    size,
+                } => {
+                    sprite_to_quad(
+                        &mut verts,
+                        cmd,
+                        color,
+                        pos,
+                        uv,
+                        clut,
+                        (size.0 as i16, size.1 as i16),
+                    );
                 }
                 // Untextured flat / Gouraud polygons. The decoder learned these
                 // for the display-list reader (a field frame is largely made of

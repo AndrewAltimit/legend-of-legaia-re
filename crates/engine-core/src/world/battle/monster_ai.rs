@@ -529,6 +529,12 @@ impl World {
             // being cleared - keeping it would re-key the next action's
             // strikes to the previous turn's art.
             a.battle.clear_art_profile();
+            // Retail clears the side array `0x801F6990` at the queue
+            // builder's own head (the 16-word `sw zero` loop at
+            // `0x801EED5C..0x801EED74`), i.e. exactly when the stream it
+            // describes is replaced. This is that seam: every armer runs it
+            // and the arts armer re-installs the marks straight after.
+            a.battle.starter_marks = None;
         }
     }
 

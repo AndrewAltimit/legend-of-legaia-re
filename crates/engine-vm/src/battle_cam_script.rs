@@ -985,12 +985,13 @@ pub fn recover_framing(
 /// `TR.y = 0x400` by subtracting `0x100` from the `0x500` seed rather than
 /// storing it, which is the same value) and the `-0x600` one-way yaw unwrap.
 ///
-/// **Not ported:** the long per-liveness tail from `0x801D69A8`, which
-/// re-frames on the target's death animation, the counter-attack flags
-/// (`ctx[+0x287]` / `ctx[+0x288]`), the per-character height table and the
-/// `ctx[+0x270]` ramp. Every one of those reads a channel the engine's
-/// battle actor does not carry yet; the base pose is what a plain resolved
-/// action reaches, and the tail only tightens it.
+/// The per-liveness tail from `0x801D69A8` splits in two. The **death
+/// re-frame** - the arm a dead target takes, with the `ctx[+0x270]` ramp - is
+/// ported as [`apply_death_reframe`] and applied by
+/// [`BattleCamera::action_end_pose`]. What stays out is the counter-attack
+/// fork (`ctx[+0x287]` / `ctx[+0x288]` / `_DAT_8007BD0D`, `0x801D6AC8`) and
+/// the live-target arm's own re-aim at `0x801D6BFC`, both of which read
+/// channels the engine's battle actor does not carry.
 ///
 /// REF: FUN_801D5854 (case 8)
 pub fn action_end_framing(
@@ -1021,6 +1022,76 @@ pub fn action_end_framing(
         // is pinned to the stage floor, not to the framed actor's own Y.
         focus: [framed[0], 0.0, framed[2]],
     }
+}
+
+/// `TR.y` the death re-frame seeds before the ramp (`li v0,0x300`).
+pub const DEATH_TR_Y: i32 = 0x300;
+/// Pitch the death re-frame seeds before the ramp (`li v0,0x140`).
+pub const DEATH_PITCH_FLAT: i32 = 0x140;
+/// Pitch the ramp counts **down** from (`li v0,0x180`), which is why a ramped
+/// re-frame starts steeper than the flat one and settles below it.
+pub const DEATH_PITCH_BASE: i32 = 0x180;
+
+/// Case 8's **death re-frame** (`0x801D6AF8..0x801D6B98`): the pose retail
+/// swaps in once the framed target's HP has reached zero.
+///
+/// PORT: FUN_801D5854 (case 8's dead-target arm)
+///
+/// Three constants land first, unconditionally:
+///
+/// ```text
+/// TR.y  = 0x300          pitch = 0x140          TR.z = ctx[+0x6D0]
+/// ```
+///
+/// and `ctx[+0x6DA]` - the per-action yaw ladder - is zeroed alongside them
+/// (`sh zero,0x4(t0)`, `t0 = ctx + 0x6D6`), so a death shot does not inherit
+/// the swing's accumulated orbit. The port's ladder lives on
+/// [`BattleCamera::action_yaw`], which is why the reset is the caller's half
+/// of this and not this function's.
+///
+/// Then the fork on the target's own anchor height `+0x36`
+/// (`lh v0,0x36(v0)` at `0x801D6B38`), which is the Y of the same world
+/// triple case 7 takes its focus midpoint from:
+///
+/// - **height `0`** - the body is on the stage floor. The flat pose above is
+///   final and `ctx[+0x270]` is re-zeroed (`sb zero,0x270(a0)`). Returns
+///   `true`, the caller's cue to clear the ramp.
+/// - **height non-zero** - the body is still falling, and the ramp `r =
+///   ctx[+0x270]` tightens all three components at once:
+///
+/// ```text
+/// TR.z   = ctx[+0x6D0] - 4 * r
+/// TR.y   = 0x300 - r
+/// pitch  = 0x180 - (3 * r >> 1)
+/// ```
+///
+/// At the saturated `r = 0xC8` that is `TR.z - 0x320`, `TR.y = 0x238` and
+/// `pitch = 0x54` - the camera drops, levels off and pushes in on the falling
+/// body. Retail does the three subtractions in 16-bit stack slots
+/// (`lhu` / `subu` / `sh`); the port keeps them in `i32` because every live
+/// input is far enough from the wrap for the two to agree, and a wrapped
+/// depth would be a garbage pose either way.
+///
+/// `depth_raw` is retail's `ctx[+0x6D0]` in world units - the same space
+/// [`ActionFraming::depth_raw`] carries - so the `4 * r` comes off *before*
+/// [`prescale_tr_z`], exactly as retail subtracts before `FUN_801D829C`.
+pub fn apply_death_reframe(
+    pose: &mut BattleCamPose,
+    depth_raw: i32,
+    ramp: u8,
+    target_height: f32,
+) -> bool {
+    pose.tr[1] = DEATH_TR_Y as f32;
+    pose.pitch = DEATH_PITCH_FLAT as f32;
+    pose.tr[2] = prescale_tr_z(depth_raw);
+    if target_height == 0.0 {
+        return true;
+    }
+    let r = i32::from(ramp);
+    pose.tr[2] = prescale_tr_z(depth_raw - 4 * r);
+    pose.tr[1] = (DEATH_TR_Y - r) as f32;
+    pose.pitch = (DEATH_PITCH_BASE - ((3 * r) >> 1)) as f32;
+    false
 }
 
 /// Both post-action cases' one-way yaw unwrap (`0x801D6700` / `0x801D6930`):
@@ -1208,6 +1279,18 @@ pub struct BattleCamera {
     /// counter's per-action seeds fire on the state **edges** the way
     /// retail's arms store them once on entry.
     last_action_state: u8,
+    /// Latch for the swing-clip commit's `ctx[+0xD] = 0`
+    /// (`sb zero,0xd(v1)` at `0x8004E2B4`, in `FUN_8004E13C`'s party arm
+    /// beside the `ctx[+0x6DA]` seed).
+    ///
+    /// It is a **latch** rather than a write because retail's is a write to
+    /// the shared context byte, which then stands until the next action
+    /// seed re-rolls it - while the host re-supplies
+    /// [`Self::action`] every frame from the live byte. Setting
+    /// `self.action.style = 0` on the edge alone would be overwritten on the
+    /// very next frame; this survives instead, and clears on the edge out of
+    /// the action bands, which is where the next seed happens.
+    strike_style_zeroed: bool,
     /// Live screen shake (`FUN_801D9D30`), held beside the pose.
     shake: ShakeState,
     /// The per-art attack camera's channel: the disc track table, the battle
@@ -1407,6 +1490,7 @@ impl BattleCamera {
             action,
             action_yaw: 0,
             last_action_state: 0,
+            strike_style_zeroed: false,
             shake: ShakeState {
                 seed: SHAKE_SEED,
                 ..Default::default()
@@ -1516,10 +1600,15 @@ impl BattleCamera {
         } else if in_action(state) && !in_action(prev) {
             self.action_yaw = 0x800;
         }
+        if !in_action(state) {
+            // The next action's seed re-rolls `ctx[+0xD]`, so the commit's
+            // zero stops applying once the band is left.
+            self.strike_style_zeroed = false;
+        }
         if state == STRIKE_LOOP_STATE && self.action.party_slot {
             let coin = crate::battle_formulas::psyq_rand_step(&mut self.attack.seed) & 1;
             self.action_yaw = i32::from(coin) * 0x800 + 0x280;
-            self.action.style = 0;
+            self.strike_style_zeroed = true;
         }
     }
 
@@ -1607,14 +1696,32 @@ impl BattleCamera {
         )
     }
 
-    /// Case 8's framing for the live pair.
-    fn action_end_pose(&self) -> BattleCamPose {
-        action_end_framing(
-            self.actor,
-            self.target,
-            self.live_action_framing(),
-            self.pose.yaw,
-        )
+    /// Case 8's framing for the live pair, plus the eye-space Z **in world
+    /// units** the glide has to converge on - the death re-frame moves TR.z
+    /// by `4 * ctx[+0x270]` in that space, so a caller that re-derived the
+    /// depth from [`ActionFraming::depth_raw`] would walk to the wrong place.
+    ///
+    /// Retail's dead-target arm (`0x801D6A20`, taken when the framed target's
+    /// live-HP halfword is zero) is reached here through
+    /// [`PostActionTarget::live`]. The port conflates retail's two separate
+    /// tests - the node test `actor_table[target][+4] != 0` that picks the
+    /// focus, and `target[+0x14C] == 0` that opens this arm - into that one
+    /// flag, which is the same conflation the focus fork already documents.
+    fn action_end_pose(&mut self) -> (BattleCamPose, i32) {
+        let f = self.live_action_framing();
+        let mut pose = action_end_framing(self.actor, self.target, f, self.pose.yaw);
+        let Some(t) = self.target.filter(|t| !t.live) else {
+            return (pose, f.depth_raw);
+        };
+        // The death re-frame owns the yaw ladder too: `sh zero,0x4(t0)` with
+        // `t0 = ctx + 0x6D6` zeroes `ctx[+0x6DA]` before the fork.
+        self.action_yaw = 0;
+        let ramp = self.attack.ctx.death_ramp;
+        if apply_death_reframe(&mut pose, f.depth_raw, ramp, t.world[1]) {
+            self.attack.ctx.death_ramp = 0;
+            return (pose, f.depth_raw);
+        }
+        (pose, f.depth_raw - 4 * i32::from(ramp))
     }
 
     /// Which framing owns the camera this frame. Hosts export it so what the
@@ -1651,10 +1758,16 @@ impl BattleCamera {
         action_framing(self.actor, self.live_action_framing())
     }
 
-    /// [`Self::action`] with the live yaw counter substituted in.
+    /// [`Self::action`] with the live yaw counter substituted in, and the
+    /// swing-clip commit's `ctx[+0xD] = 0` applied while it is latched.
     fn live_action_framing(&self) -> ActionFraming {
         ActionFraming {
             yaw_base: self.action_yaw,
+            style: if self.strike_style_zeroed {
+                0
+            } else {
+                self.action.style
+            },
             ..self.action
         }
     }
@@ -1702,8 +1815,7 @@ impl BattleCamera {
             }
             BattleCamPhase::ActionEnd => {
                 // Case 8's own `a3 = 0xC` (`0x801D6EEC`).
-                let target = self.action_end_pose();
-                let raw_z = self.live_action_framing().depth_raw;
+                let (target, raw_z) = self.action_end_pose();
                 self.glides.push_back(Glide::linear(
                     &mut from,
                     target,
@@ -2016,7 +2128,7 @@ impl BattleCamera {
                 self.retarget_post_action_glide(target);
             }
             BattleCamPhase::ActionEnd => {
-                let target = self.action_end_pose();
+                let (target, _raw_z) = self.action_end_pose();
                 self.retarget_post_action_glide(target);
             }
             BattleCamPhase::Menu => self.retarget_menu_glide(),
@@ -3894,6 +4006,96 @@ mod tests {
         assert_ne!(far.pitch, pose.pitch, "32 vs 0");
         assert_ne!(far.tr[2], pose.tr[2], "formation-sized vs ctx[+0x6D0]");
         assert_ne!(far.focus, pose.focus, "bbox centre vs the caster");
+    }
+
+    /// The case-8 **death re-frame** is a different pose on every component,
+    /// and the `ctx[+0x270]` ramp is what separates its two ends.
+    ///
+    /// Retail literals: `TR.y = 0x300`, `pitch = 0x140`, `TR.z = ctx[+0x6D0]`
+    /// on the floor arm (`0x801D6B00..0x801D6B14`); `TR.y = 0x300 - r`,
+    /// `pitch = 0x180 - 3r/2`, `TR.z = ctx[+0x6D0] - 4r` on the ramped one
+    /// (`0x801D6B50..0x801D6B98`).
+    #[test]
+    fn the_death_reframe_ramp_drops_levels_and_pushes_in() {
+        let base = BattleCamPose {
+            pitch: 0.0,
+            yaw: 100.0,
+            tr: [0.0, POST_TR_Y, prescale_tr_z(0xC00)],
+            focus: [1.0, 2.0, 3.0],
+        };
+
+        // Body on the stage floor: the flat pose, and the caller is told to
+        // clear the ramp.
+        let mut floor = base;
+        assert!(apply_death_reframe(&mut floor, 0xC00, 0xC8, 0.0));
+        assert_eq!(floor.pitch, DEATH_PITCH_FLAT as f32);
+        assert_eq!(floor.tr[1], DEATH_TR_Y as f32);
+        assert_eq!(floor.tr[2], prescale_tr_z(0xC00));
+        // Yaw and focus are the base pose's - the tail rewrites neither.
+        assert_eq!((floor.yaw, floor.focus), (base.yaw, base.focus));
+
+        // Body still falling, ramp at zero: the pitch seed is the *other*
+        // constant. `0x180`, not `0x140` - the one place the two arms of the
+        // fork disagree at r = 0.
+        let mut fresh = base;
+        assert!(!apply_death_reframe(&mut fresh, 0xC00, 0, 1.0));
+        assert_eq!(fresh.pitch, DEATH_PITCH_BASE as f32);
+        assert_eq!(fresh.tr[1], DEATH_TR_Y as f32);
+        assert_eq!(fresh.tr[2], prescale_tr_z(0xC00));
+
+        // Saturated ramp: all three tighten together.
+        let mut deep = base;
+        assert!(!apply_death_reframe(&mut deep, 0xC00, 0xC8, 1.0));
+        assert_eq!(deep.pitch, 0x54 as f32, "0x180 - (3 * 0xC8 >> 1)");
+        assert_eq!(deep.tr[1], 0x238 as f32, "0x300 - 0xC8");
+        assert_eq!(deep.tr[2], prescale_tr_z(0xC00 - 4 * 0xC8));
+        assert!(deep.tr[2] < fresh.tr[2], "the camera pushes in");
+        assert!(deep.tr[1] < fresh.tr[1], "and drops");
+        assert!(deep.pitch < fresh.pitch, "and levels off");
+    }
+
+    /// The ramp reaches the camera only through a **dead** target, and taking
+    /// it zeroes the yaw ladder - so a death shot does not inherit the
+    /// swing's accumulated orbit (`sh zero,0x4(t0)`, `t0 = ctx + 0x6D6`).
+    #[test]
+    fn only_a_dead_target_reaches_the_death_reframe() {
+        let mut cam = BattleCamera::new(BattleCamPhase::ActionEnd, 0);
+        cam.set_actor(BattleCamActor::default());
+        cam.action_yaw = 0x321;
+        cam.attack.ctx.death_ramp = 0xC8;
+
+        // A live target keeps the base framing and the yaw ladder.
+        cam.target = Some(PostActionTarget {
+            world: [200.0, 400.0, 600.0],
+            live: true,
+        });
+        let (live_pose, live_z) = cam.action_end_pose();
+        assert_eq!(cam.action_yaw, 0x321, "the ladder survives a live target");
+        assert_eq!(live_z, cam.live_action_framing().depth_raw);
+        assert_ne!(live_pose.tr[1], (DEATH_TR_Y - 0xC8) as f32);
+
+        // The same target dead, still above the floor: the ramped pose, and
+        // the glide's raw depth follows the `4 * r` the pose took off.
+        cam.target = Some(PostActionTarget {
+            world: [200.0, 400.0, 600.0],
+            live: false,
+        });
+        let raw = cam.live_action_framing().depth_raw;
+        let (dead_pose, dead_z) = cam.action_end_pose();
+        assert_eq!(cam.action_yaw, 0, "the death re-frame zeroes the ladder");
+        assert_eq!(dead_pose.tr[1], (DEATH_TR_Y - 0xC8) as f32);
+        assert_eq!(dead_z, raw - 4 * 0xC8, "glide target follows the pose");
+        assert_eq!(cam.attack.ctx.death_ramp, 0xC8, "still falling, not reset");
+
+        // Dropped to the floor: the flat pose, and the ramp is re-zeroed.
+        cam.target = Some(PostActionTarget {
+            world: [200.0, 0.0, 600.0],
+            live: false,
+        });
+        let (floor_pose, floor_z) = cam.action_end_pose();
+        assert_eq!(floor_pose.pitch, DEATH_PITCH_FLAT as f32);
+        assert_eq!(floor_z, raw);
+        assert_eq!(cam.attack.ctx.death_ramp, 0);
     }
 
     /// **Case 7 orbits the midpoint, and that is what keeps both combatants

@@ -140,7 +140,15 @@ MCLASS = {
     "nop": "SHIFT", "sll": "SHIFT",
     "b": "BR", "beq": "BR", "beqz": "BR", "bnez": "BR", "bne": "BR",
     "bal": "BAL", "bgezal": "BAL",
-    "negu": "SUBU", "subu": "SUBU", "not": "NOR", "nor": "NOR",
+    # `sub` belongs here for the same reason `add` sits with `addu` above, and
+    # its absence was a real false negative rather than a nicety: the word
+    # `sub rd, zero, rt` is what a compiler emits to negate a register, and
+    # capstone renders it through the `neg`/`negu` alias while Ghidra prints
+    # `sub`. `negu` was folded and `sub` was not, so a window carrying one
+    # negation matched nothing - which is how PROT 0900's own head window, at
+    # its own base, out of its own image, read as "no extracted image holds
+    # these bytes at this VA or anywhere".
+    "negu": "SUBU", "subu": "SUBU", "sub": "SUBU", "not": "NOR", "nor": "NOR",
     "neg": "SUBU",
 }
 
@@ -199,6 +207,26 @@ NO_IMM = frozenset(("break", "syscall"))
 # on BOTH sides. `cop2 <func>` keeps no operand at all.
 COP2_MNEMONICS = frozenset(("cop2", "mtc2", "mfc2", "ctc2", "cfc2"))
 
+# The COP2 LOAD/STORE pair is the same disagreement in a third spelling, and it
+# is the one that survived the fold above because its primary opcode is not
+# `COP2_OPCODE` and its mnemonic is not in `COP2_MNEMONICS`:
+#
+#   word 0xCAA20000   Ghidra `lwc2 v0,0x0(s5)`    capstone `lwc2 $2, ($s5)`
+#
+# `rt` here is a COP2 DATA register, and Ghidra spells it with the GPR ABI name
+# for the same number (`v0` for 2) while capstone prints the number. The generic
+# path then reads Ghidra's `v0` as a register and capstone's `2` as an
+# immediate, so the two tokens disagree in both fields at once.
+#
+# Every GTE geometry routine loads its vertices through `lwc2`, so an unfolded
+# pair puts the whole render family in the class that reads as "no extracted
+# image holds these bytes" - `overlay_world_map_render_0901`'s own bulk-terrain
+# leaves resolve against their own image only once this fold is applied.
+#
+# The fold keeps the two fields both sides do spell the same way - the base GPR
+# and the offset - and drops `rt` on BOTH sides.
+COP2_LS_MNEMONICS = frozenset(("lwc2", "swc2"))
+
 # MIPS primary opcode of the whole COP2 family, and the ABI register names the
 # byte side needs to spell `rt` the way the text side does.
 COP2_OPCODE = 0x12
@@ -235,6 +263,12 @@ def canon(mnem, ops):
         first = next((RCLASS.get(t, t) for t in TOK.findall(ops)
                       if t in REGS and t != "zero"), "")
         return "COP2|%s|" % first
+    if mnem in COP2_LS_MNEMONICS:
+        # `rt` is a COP2 data register spelled as a GPR name on one side and as
+        # a bare number on the other, and it is always the first operand. Drop
+        # it and canonicalise the `offset(base)` half, which both sides agree on.
+        ops = ops.split(",", 1)[1] if "," in ops else ops
+        mnem = "cop2ls"
     cls = MCLASS.get(mnem, mnem.upper())
     regs = [RCLASS.get(t, t) for t in TOK.findall(ops) if t in REGS and t != "zero"]
     # Strip register names before reading immediates: `s8` and `a1` carry

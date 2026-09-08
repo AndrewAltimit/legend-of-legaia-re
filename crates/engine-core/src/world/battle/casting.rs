@@ -316,9 +316,11 @@ impl World {
         };
 
         if CAPTURE_BYPASS_MOVE_IDS.contains(&move_id) {
+            let power = self.baked_module_power(move_id).unwrap_or(power);
             return self.capture_bypass_predamage(attacker, target, power);
         }
         if self.is_capture_class_move(move_id) {
+            let power = self.baked_module_power(move_id).unwrap_or(power);
             return self.capture_respect_predamage(attacker, target, power);
         }
 
@@ -570,6 +572,25 @@ impl World {
     ///
     /// PORT: FUN_801DD4B0 (live wiring; pure kernel in
     /// `battle_damage_wrappers::physical_wrapper_predamage`)
+    /// The **baked** per-hit power the resident slot-B module hands its
+    /// damage wrapper, when the cast's module is one of the six the band's
+    /// PORT rows decode ([`legaia_engine_vm::cast_module_ticks`]).
+    ///
+    /// Retail's capture-class modules do not read the move-power table at
+    /// all: each `jal` into `FUN_801DD4B0` / `FUN_801DD6B4` / `FUN_801DD0AC`
+    /// sets `a0` from an immediate compiled into the module image
+    /// (`addiu a0, zero, 0x1C0` at `0x801F8168` for Plasma Strike, and so on
+    /// for the rest). So the table's scalar is not the magnitude the wrapper
+    /// sees, and this is the byte-exact substitute; a module with no decoded
+    /// shape keeps the table's number.
+    ///
+    /// REF: FUN_801F74E4, FUN_801F6DD8, FUN_801F6EDC, FUN_801F6A14,
+    /// REF: FUN_801F85A8, FUN_801F8D64 (the sites the constants come from)
+    fn baked_module_power(&self, move_id: u8) -> Option<i32> {
+        let entry = self.cast_module_for(move_id)?;
+        vm::cast_module_ticks::baked_power_for(entry).map(i32::from)
+    }
+
     fn capture_respect_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
         use legaia_engine_vm::battle_damage_wrappers::{
             PHYSICAL_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender,
@@ -646,7 +667,10 @@ impl World {
     /// defense terms (`+0x15c`/`+0x160`) = the [`Self::battle_defense_split`]
     /// (UDF, LDF) pair, falling back to the single [`Self::battle_defense`];
     /// status-weaken (`+0x16e`) and the guard byte (`+0x1de`) default to none.
-    fn summon_roll_defender(&self, slot: u8) -> Option<vm::battle_formulas::SummonRollActor> {
+    pub(in crate::world::battle) fn summon_roll_defender(
+        &self,
+        slot: u8,
+    ) -> Option<vm::battle_formulas::SummonRollActor> {
         let t = self.actors.get(slot as usize)?;
         let (stat_a, stat_b) = self
             .battle_defense_split
@@ -825,7 +849,7 @@ impl World {
     /// PORT: FUN_801dd864 (element resolution + affinity-matrix lookup, the
     /// enemy→party direction; the status-weaken / guard-double / slot-7 summon
     /// stages of the full retail function are not part of this scalar)
-    fn enemy_affinity_pct(&self, attacker: u8, target: u8) -> u8 {
+    pub(in crate::world::battle) fn enemy_affinity_pct(&self, attacker: u8, target: u8) -> u8 {
         let Some(aff) = self.element_affinity.as_ref() else {
             return 100;
         };

@@ -94,7 +94,15 @@ Per plane the glyph grid is a 12-pixel pitch with an 11x11 ink box: columns and 
 
 ### Which routine samples the page
 
-Still **open**, but narrowed to a shape. A sampler has to carry two constants,
+**Nothing does** - the page is loaded, parked and never drawn in this build.
+The GPU-FIFO watch this section asked for was run at card-screen entry (mode
+`0x16 -> 0x17`) and no primitive samples it
+([settled](../reference/re-settled-threads.md#text--fonts--dialog),
+body in [`save-screen.md`](../subsystems/save-screen.md#the-card-screens-kanji-page-is-never-sampled)).
+The narrowing that got there is kept below, because it is what makes the
+negative worth trusting.
+
+A sampler would have to carry two constants,
 and both are now pinned by the members' own headers: the pages are 4bpp at
 `(320, 256)` and `(384, 256)`, so their **tpage ids are `0x15` and `0x16`**
 (`(y >> 8) << 4 | x >> 6`, texture mode `0`), and a glyph draw has to pick its
@@ -121,15 +129,11 @@ rect straight from the TIM header and calls `LoadImage`; it records no CBA or
 tpage anywhere for a later draw to read
 (`see ghidra/scripts/funcs/800198e0.txt`).
 
-So the consumer, if this build has one, must compose the CBA at runtime from a
-value that is itself not a constant. What would close it is a capture rather
-than another sweep: enter the card screen under PCSX-Redux and watch the GPU
-FIFO for any primitive whose CBA halfword lands in `0x76C0..=0x7880` or whose
-tpage is `0x15` / `0x16`. If none appears, the page is loaded, parked and never
-drawn in this build - which the surrounding code already makes plausible, since
-the live path parks it into the world-map texture region `(704, 0)` on the way
-out, and the save/load screen's own text is pinned to the
-[dialog font](dialog-font.md) page at `(896, 0)`, not to this one
+So a consumer would have had to compose the CBA at runtime from a value that is
+itself not a constant, and the capture found none doing so. The surrounding code
+already made that plausible: the live path parks the page into the world-map
+texture region `(704, 0)` on the way out, and the save/load screen's own text is
+pinned to the [dialog font](dialog-font.md) page at `(896, 0)`, not to this one
 ([`save-screen.md`](../subsystems/save-screen.md)).
 
 ## Per-scene field bundles - what's still open

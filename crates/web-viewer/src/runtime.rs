@@ -129,6 +129,11 @@ pub struct LegaiaRuntime {
     /// Boot-chain title-screen session; `Some` while the title runs before a
     /// scene is entered ([`crate::boot_title`]).
     pub(crate) boot_title: Option<legaia_engine_core::title::TitleSession>,
+    /// How many attract hand-offs the title has skipped this session. The
+    /// countdown fires the same way it does natively, but this page has no
+    /// STR/MDEC playback on the play path, so the movie is skipped and the
+    /// count is what the page discloses instead of showing it.
+    pub(crate) boot_title_attract_skips: u32,
     /// Disc-sourced title-screen art (PROT 0888), built with the title flow.
     pub(crate) title_atlas: Option<legaia_engine_core::title_screen_atlas::TitleScreenAtlas>,
     /// Disc-sourced **menu-glyph** atlas (`legaia_asset::menu_glyph_atlas`) -
@@ -314,6 +319,7 @@ impl LegaiaRuntime {
             menu_assets: None,
             play_menu: None,
             boot_title: None,
+            boot_title_attract_skips: 0,
             title_atlas: None,
             menu_glyph_atlas: None,
             cards: [const { None }; crate::cards::CARD_SLOTS],

@@ -29,6 +29,7 @@ native equivalents rather than porting line-by-line):
 | **documented** | The address is cited from at least one file under `docs/` (`FUN_<addr>` or `0x<addr>`, case-insensitive). |
 | **ported** | A Rust source under `crates/` carries a `// PORT: FUN_<addr>` tag for that address. |
 | **live** | The Rust symbol carrying that tag is reachable, through non-test code, from a host entry point. Opt-in (`--live`); see [Reachability](#reachability-the-live-axis). |
+| **replaced** | Not live, and no host is owed: the port carries a `REPLACED-BY:` marker naming the Rust mechanism that does the routine's job. Emitted in `catalog.csv` and in `--live-audit`, and excluded from the wiring worklist and its denominator; see [`REPLACED-BY`](#replaced-by). |
 | **ignored** | The address is listed in `scripts/ci/port-catalog-ignore.toml` as a non-port-site (BIOS thunk / libc shim / libgte / libgs / libgpu / libcd / libsnd / libspu / libapi / libetc). Excluded from `--missing-ports` by default. |
 
 **`ported` and `live` are different axes.** A `// PORT:` tag is a provenance
@@ -218,6 +219,71 @@ Both resolutions carry a control suite: `port-catalog.py --selftest` runs the
 anchor-kind and disclosure-precedence cases on a synthetic in-memory corpus and
 exits non-zero if the resolver stops distinguishing them.
 
+#### `REPLACED-BY`
+
+The third class. `live` and inert-with-`NOT WIRED:` are not the whole space. A third kind of
+port exists: one whose *job* the engine performs by construction through a
+different mechanism, so no host will ever call it and none is owed. Counting
+those as "implemented but not yet hosted" states a gap that will never close,
+which is a lie pointing the other way from the disclosure gap.
+
+`REPLACED-BY: <mechanism>` opening a comment line in a tag's own block moves
+that anchor into a third column, `replaced`: neither live nor a wiring gap,
+reported by `--live-audit` in its own section and excluded from the wiring
+denominator. A `//! REPLACED-BY:` opening the module doc is the blanket form,
+resolved like the `NOT WIRED` blanket. Precedence at one granularity is
+`REPLACED-BY:` > `NOT WIRED` > `WIRED:`, because the replaced claim is the
+strongest thing an anchor can say about itself - not "no host calls me" but
+"no host is owed".
+
+Two strictnesses keep the class from becoming an escape hatch:
+
+- the marker must **open** the comment line, so prose that mentions one thing
+  being replaced by another is not a class change;
+- the mechanism text must be **non-empty**, and it is printed beside the row in
+  `--live-audit`'s table. A bare `REPLACED-BY:` claims an exemption while
+  naming nothing, so it does not count and the anchor stays in whatever class
+  it was already in.
+
+##### What may carry it
+
+The test is not "no caller exists" - that is what `NOT WIRED:` says. The test
+is that the *behaviour* is either produced already by a named live Rust
+mechanism, or unobservable in the port's output because the port has no such
+layer at all. Wiring such a port would re-host retail plumbing rather than add
+anything a player or a test could see. Three shapes qualify, and the boot / CD
+/ card / menu-infra drain carries all three:
+
+| Shape | Retail | The port instead |
+|---|---|---|
+| Device / BIOS layer the port does not model | libcd sector DMA, MDEC channel status, the PSX kernel `bu` memory-card device | reads the disc image synchronously, decodes MDEC in software, patches card blocks in place |
+| Retail memory management the Rust types do by construction | fixed-arena node pools, free-stack allocators, `0x20`-block copiers | `Vec`, slices, ownership, borrow-in-place walks |
+| Retail residency / representation the port replaced | mode-table overlay cache pairs, GPU packet queues, the `gp+0x148` drawable node list | on-demand PROT resolution, typed draw lists, per-screen window models |
+
+##### What may *not*
+
+Anything whose retail behaviour is still missing from the port stays
+`NOT WIRED:`, even when a different engine mechanism covers most of it. Two
+worked examples from the same files, both a hair from the line:
+
+- `engine-core::camera_ease` (`FUN_801DA390`). `crate::camera` does ease the
+  camera, in floats, against a typed zone record - but the per-frame yaw is
+  *observable output* and the two disagree frame by frame, so a retail-faithful
+  camera mode genuinely wants this kernel. The owner is `World`, which leaves
+  the field VM's op `0x4C` n4 sub-9 host hooks unimplemented, so nothing posts
+  the zone angle it eases toward.
+- `engine-core::menu_list_rows`'s three `FUN_80030628` builders. The pause
+  menu does list items - but not in retail's three-buffer order and with none
+  of its dim gates, because `World::inventory` is keyed by item id with no slot
+  space. The order a player sees is wrong today, so this is a gap, not a
+  substitution. Its file-mates *are* replaced, and each says which of the
+  three families it belongs to - a per-file verdict would have been wrong in
+  both directions.
+
+The rule of thumb the sweep settled on: read what the existing disclosure says
+wiring would *take*. "Adopting X as the representation, not adding a call" is a
+replacement. "Implementing hook H" or "porting routine R first" is a gap.
+
 ### Precision
 
 The graph resolves calls by **name**, not by type. Qualified calls (`Type::f`,
@@ -271,14 +337,21 @@ weaker than it looks:
 ### The audit
 
 `--live-audit` writes `target/port-catalog/live-audit.md`, comparing the
-reachability verdict against the `NOT WIRED:` disclosures written in the source.
-Three sections, in the order they want acting on:
+reachability verdict against the class markers written in the source. Four
+sections, in the order they want acting on:
 
 | Section | Meaning |
 |---|---|
-| Tagged `NOT WIRED` but analysed live | The tag and the analysis disagree. Needs a human - see the four causes below. |
+| Tagged `NOT WIRED` / `REPLACED-BY` but analysed live | The tag and the analysis disagree. Needs a human - see the four causes below. |
 | Undisclosed inert ports | Unreachable, no tag. Either a wiring gap or a missing disclosure - the disclosure gap, and the reason this mode exists. |
-| Disclosed inert ports | Unreachable, and the source says so. The declared wiring worklist, working as intended. |
+| Disclosed inert ports | Unreachable, `NOT WIRED:` present. The declared wiring worklist, working as intended. |
+| Infra-replaced ports | Unreachable, `REPLACED-BY:` present. Not a worklist - each row prints the mechanism it names, so the exemption can be argued with. |
+
+The summary block splits the same way: `ported, NOT live (inert)` keeps its
+meaning and gains two lines under it, `of which infra-replaced` and
+`wiring worklist (inert, a host is owed)`. The second is the number to steer
+by; `scripts/ci/update-progress-metrics.py` feeds it, not the raw inert count,
+into the site's wiring track.
 
 A row in the first section has one of four causes, and only the first is a
 stale tag:
@@ -362,7 +435,7 @@ python3 scripts/ci/port-catalog.py --feature title-screen   # BFS from a feature
 python3 scripts/ci/port-catalog.py --dashboard           # open-work rollup -> open-work.md
 python3 scripts/ci/port-catalog.py --live                # add the reachability column
 python3 scripts/ci/port-catalog.py --not-live            # ported but unreachable from any host root
-python3 scripts/ci/port-catalog.py --live-audit          # reachability vs `NOT WIRED:` disclosures
+python3 scripts/ci/port-catalog.py --live-audit          # reachability vs the source's class markers
 python3 scripts/ci/port-catalog.py --check --live        # ratchet every baselined figure
 python3 scripts/ci/port-catalog.py --check --allow-uncompared   # fast pass, skips the disclosure gap
 python3 scripts/ci/port-catalog.py --live --update-baseline
@@ -373,7 +446,7 @@ Output is written to `target/port-catalog/` (gitignored):
 - `catalog.csv` / `catalog.md` - every tracked address, machine-readable + markdown.
 - `<feature>.csv` / `<feature>.md` - per-feature subset when `--feature` is used.
 - `open-work.md` - single-page dashboard combining per-feature port % + top-N missing-ports per feature + ignore-list summary (see "Open-work dashboard" below).
-- `live-audit.md` - reachability verdicts checked against the source's own `NOT WIRED:` disclosures, when `--live-audit` is used.
+- `live-audit.md` - reachability verdicts checked against the source's own `NOT WIRED:` / `REPLACED-BY:` markers, when `--live-audit` is used. The infra-replaced section prints each row's mechanism.
 
 ## The ratchet
 

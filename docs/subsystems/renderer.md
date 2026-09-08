@@ -320,21 +320,47 @@ so the fill is a smooth two-axis gradient rather than a flat tint. `param_4
 (`0x3E800000` vs `0x3C800000`). It is a pure primitive-buffer writer with no
 GTE transform.
 
-## Other SCUS-band emitters (documented, not ported)
+## Other SCUS-band emitters
 
 Beyond the two 3D TMD renderers and the gradient-tile primitive, the SCUS render
-band carries a set of smaller GTE/GPU emitters. The from-scratch engine reproduces
-all of these through its own wgpu path, so they are **documented, not ported** -
-their per-address roles live in
-[`reference/functions.md` § Renderer / GPU primitives](../reference/functions/renderer.md#renderer--gpu-primitives):
+band carries a set of smaller GTE/GPU emitters. Their per-address roles live in
+[`reference/functions.md` § Renderer / GPU primitives](../reference/functions/renderer.md#renderer--gpu-primitives).
+
+The set does **not** share one verdict, and calling it "documented, not ported"
+wholesale was wrong: two of the six carry a live `// PORT:` tag today, and the
+sentence outlived them. Each row below says which of the two it is - reproduced
+by the wgpu path (a scope row in `scripts/ci/port-catalog-ignore.toml`, so the
+address leaves the port worklist without a Rust item), or ported behind its
+render half.
+
+| Routine | Verdict |
+|---|---|
+| `FUN_80028158` | Scope row (`render_pipeline`): procedural POLY_FT4 builder, no game state. |
+| `FUN_8002A5A4` | Scope row (`render_pipeline`): billboard quad packet builder over a caller buffer. |
+| `FUN_801CFA48` | **Ported** - `legaia_engine_core::effect_ribbon` carries the random-walk geometry; only the GPU packet chain is render-track. |
+| `FUN_80019D50` | **Ported** - `legaia_engine_core::clut_cell_fx`, live through `world::ambient`. |
+| `FUN_800351C0` | Scope row (`render_pipeline`): one full-screen backdrop packet. |
+| `FUN_8001B73C` | Scope row (`libgte`): a cull probe, not an emitter. |
+| `FUN_80029DD8` | Scope row (`render_pipeline`): 39-`cop2`-op primitive emitter, sibling of `FUN_8002735C` / `FUN_80029888`. |
 
 - **`FUN_80028158` / `FUN_8002A5A4` / `FUN_801CFA48`** - the three multi-target
   primitive emitters the per-actor RENDER dispatcher `FUN_8001ADA4` case 4 picks
   on `actor[+0x9e]`. Each is a GPU packet builder over a caller buffer, unpacking
   a primitive count from the high byte of its packed param (`801CFA48` OR-s the
-  GT4 command base `0x3C000000`).
-- **`FUN_80019D50`** - a BGR555 cell-grid emitter: one coloured quad per non-zero
-  `u16` cell (5-5-5 + `0x8000` STP bit) into the OT cursor `_DAT_1F800314+0x8c`.
+  GT4 command base `0x3C000000`). The third of them is the lightning
+  **effect-ribbon** emitter, and its geometry is not a packet layout at all but a
+  random walk - which is why it is ported and its two siblings are not. See
+  [`battle-action.md`](battle-action.md#overlay-local-prng-fun_801d0290).
+- **`FUN_80019D50`** - not a quad emitter. It is the **CLUT-cell HSV cycler**:
+  it walks a captured VRAM rect's 15-bit texels through `FUN_8001A78C` /
+  `FUN_8001A6C8` (RGB->HSV and back, `jal` at `0x80019E30` / `0x80019F2C`),
+  repacks them, and enqueues **one** `LoadImage` packet of the whole rect on
+  the cursor at `_DAT_1F800314+0x8C` (`FUN_800583C8`, `0x8001A030`). The
+  earlier reading here - "one coloured quad per non-zero `u16` cell" - read
+  that texel loop as a per-cell primitive emit; the packet count is one, and
+  its payload is the recoloured image. Decode in
+  [`field-ambient-fx.md`](field-ambient-fx.md), port
+  `legaia_engine_core::clut_cell_fx`.
 - **`FUN_800351C0`** - the full-screen `320×224` backdrop quad (tag `0x08000000`).
 - **`FUN_8001B73C`** - a GTE on-screen visibility test (RTPT the four corners of
   an actor box, accept if any projects inside the `320×240` screen), not an

@@ -34,30 +34,24 @@
 //! which one the completion sets, and which state the step machine leaves
 //! behind.
 //!
-//! ## What has to exist first
+//! ## REPLACED-BY: `legaia_save::emu::CardView` + `legaia_save::card`
 //!
-//! One thing, shared by every routine below: an **asynchronous card backend
-//! behind [`crate::save_select::CardIoMachine`]**. The ten anchors in this
-//! module each carry their own `NOT WIRED:` line because the audit compares
-//! per anchor, but they are one gap, not ten - the repetition is the
-//! worklist item.
+//! Applies to every routine below. The port already reads and writes real
+//! `0x2000`-byte card blocks - `web-viewer::cards::write_session_into_card`
+//! mounts a card image, patches the SC block through `legaia_save`, stamps
+//! the block identity and claims the directory frame - and it does all of it
+//! **synchronously**, against bytes it owns. There is no PSX kernel in the
+//! port, so there is no `bu` device to open, no `fd` for a [`CardOp`] to
+//! name, and no BIOS event handle for the two arrays to wait on. The native
+//! save path is LGSF files on disk and never forms a `bu` path at all.
 //!
-//! Neither existing save path supplies it. The browser card rack
-//! (`web-viewer::cards`) does mount real card images, but it patches the
-//! container bytes synchronously through `legaia_save`, so there is no
-//! issue-then-poll beat for the event arrays to wait on and no `fd` for a
-//! [`CardOp`] to name. The native saves are LGSF files on disk and never
-//! form a `bu` path at all. A backend that answers a [`CardOp`] with a
-//! completion code closes all ten at once, and
-//! [`crate::save_select::card_frame_tick`] is the frame hook it would be
-//! ticked from.
-//!
-//! The *bytes* half of that backend already exists and is not the gap:
-//! `legaia_save::emu::CardView` addresses a real card's blocks and
-//! directory frames, and `legaia_save::card` keeps the block checksum the
-//! retail loader compares. What is missing is the asynchronous shape
-//! around it - an issue, a per-frame poll, and a completion the step
-//! machine can consume.
+//! So this is not a backend waiting to be written. Writing one would add an
+//! issue-then-poll beat around a byte edit that already succeeds, which is
+//! re-hosting the device layer rather than adding behaviour. The anchors here
+//! are kept as the decoded spec of retail's ordering - which flag is cleared
+//! before the call, which one the completion sets - and
+//! [`crate::save_select::card_frame_tick`] remains the frame hook a
+//! retail-shaped backend would tick, should one ever be wanted.
 //!
 //! Evidence: `ghidra/scripts/funcs/overlay_menu_801e37cc.txt`,
 //! `overlay_menu_801e3a00.txt`, `overlay_menu_801e3a98.txt`,
@@ -283,7 +277,8 @@ impl CardIoState {
     /// there is nothing to re-point here.
     ///
     /// PORT: FUN_801E0598
-    /// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
+    /// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the
+    /// module heading; nothing services a [`CardOp`] because nothing needs to.
     pub fn reset(&mut self, keep_directory: bool) {
         self.phase = CardPhase::Idle;
         self.write_failed = false;
@@ -311,7 +306,8 @@ impl CardIoState {
     /// length" is a state retail cannot reach.
     ///
     /// PORT: FUN_801E3C90
-    /// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
+    /// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the
+    /// module heading; nothing services a [`CardOp`] because nothing needs to.
     pub fn read_file(&mut self, port: u8, unit: u8, name: &str, len: u32) -> CardIssue {
         self.read_failed = false;
         let path = bu_path(port, unit, Some(name));
@@ -339,7 +335,8 @@ impl CardIoState {
     /// `0x2000`-byte block, checksum word included.
     ///
     /// PORT: FUN_801E3D68
-    /// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
+    /// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the
+    /// module heading; nothing services a [`CardOp`] because nothing needs to.
     pub fn write_file(
         &mut self,
         port: u8,
@@ -383,7 +380,8 @@ impl CardIoState {
     /// Either way the phase drops back to idle.
     ///
     /// PORT: FUN_801E380C
-    /// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
+    /// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the
+    /// module heading; nothing services a [`CardOp`] because nothing needs to.
     pub fn step(&mut self, events: [bool; CARD_EVENTS]) -> CardStep {
         let phase = self.phase;
         if phase == CardPhase::Idle {
@@ -419,7 +417,8 @@ impl CardIoState {
     /// which is the artifact the repo's Ghidra notes warn about.
     ///
     /// PORT: FUN_801E3BEC
-    /// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
+    /// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the
+    /// module heading; nothing services a [`CardOp`] because nothing needs to.
     pub fn find_directory_name(&self, count: usize, name: &str) -> bool {
         self.dir_names.iter().take(count).any(|n| n == name)
     }
@@ -436,7 +435,8 @@ impl CardIoState {
 /// whenever more than one handle fires in the same frame.
 ///
 /// PORT: FUN_801E435C
-/// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
+/// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the
+/// module heading; nothing services a [`CardOp`] because nothing needs to.
 pub fn poll_events_a(events: [bool; CARD_EVENTS]) -> u32 {
     for (i, fired) in events.iter().enumerate() {
         if *fired {
@@ -454,7 +454,8 @@ pub fn poll_events_a(events: [bool; CARD_EVENTS]) -> u32 {
 /// ([`card_events_drain`](crate::save_select::card_events_drain)).
 ///
 /// PORT: FUN_801E3A98
-/// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
+/// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the
+/// module heading; nothing services a [`CardOp`] because nothing needs to.
 pub fn drain_events_b(events: &mut [bool; CARD_EVENTS]) {
     *events = [false; CARD_EVENTS];
 }
@@ -469,7 +470,8 @@ pub fn drain_events_b(events: &mut [bool; CARD_EVENTS]) {
 /// spin, so a host-side deadlock is a choice rather than a translation.
 ///
 /// PORT: FUN_801E3A00
-/// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
+/// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the
+/// module heading; nothing services a [`CardOp`] because nothing needs to.
 pub fn wait_events_b(events: [bool; CARD_EVENTS]) -> Option<u32> {
     let fired = poll_events_a(events);
     (fired != 0).then_some(fired)
@@ -496,7 +498,8 @@ pub fn format_card_result(handle: u32) -> FormatResult {
 /// resolves the handle through [`format_card_result`].
 ///
 /// PORT: FUN_801E3E7C
-/// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
+/// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the
+/// module heading; nothing services a [`CardOp`] because nothing needs to.
 pub fn format_card(port: u8, unit: u8, events: &mut [bool; CARD_EVENTS]) -> CardOp {
     drain_events_b(events);
     CardOp::Format {
@@ -511,7 +514,8 @@ pub fn format_card(port: u8, unit: u8, events: &mut [bool; CARD_EVENTS]) -> Card
 /// completion beat at all.
 ///
 /// PORT: FUN_801E37CC
-/// NOT WIRED: nothing services a [`CardOp`] - see the module's "What has to exist first"
+/// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the
+/// module heading; nothing services a [`CardOp`] because nothing needs to.
 pub fn erase_file(port: u8, unit: u8, name: &str) -> CardOp {
     CardOp::Erase {
         path: bu_path(port, unit, Some(name)),

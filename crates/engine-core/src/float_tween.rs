@@ -5,9 +5,10 @@
 //! PORT: FUN_8003C110 - the one-line mode setter the reset calls.
 //! REF: FUN_800355F0, FUN_80032434, FUN_80031D00, FUN_80030628
 //!
-//! ## NOT WIRED
+//! ## REPLACED-BY: the `engine-ui` per-frame draw-list builders
 //!
-//! Nothing in the engine owns the `gp+0x148` node list these passes walk.
+//! Nothing in the engine owns the `gp+0x148` node list these passes walk,
+//! and nothing will: the representation is the substitution.
 //! On-screen text and labels are rebuilt every frame by the `engine-ui`
 //! draw-list builders from the state that produces them, so no allocation
 //! path ever hands out a `0x34`-byte node, and nothing writes the `+0x24`
@@ -24,8 +25,9 @@
 //! of them carries across is the `0x34`-byte node with a descriptor hanging
 //! off `+0x24`: the port keeps the same information as typed row and draw
 //! state, and a tween has nowhere to write an interpolated `+0x0A`/`+0x0C`
-//! back to. Wiring these means adopting the node pool as the representation,
-//! not adding a call.
+//! back to. Adopting the node pool would be a change of representation, not
+//! a call insertion, which is why these are recorded as replaced rather than
+//! as a wiring gap - see `docs/tooling/port-catalog.md#replaced-by`.
 //!
 //! `gp+0x148` (`0x8007B460`) is **one** sentinel-circular doubly-linked list of
 //! `0x34`-byte nodes, not several. The text/label producer `FUN_80032434`

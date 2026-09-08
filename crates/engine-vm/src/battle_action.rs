@@ -46,6 +46,7 @@ use attack::*;
 pub mod motion;
 
 mod magic;
+pub use magic::CAPTURE_CAMERA_VARIANT;
 use magic::*;
 
 mod summon;

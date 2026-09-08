@@ -448,8 +448,20 @@ The SCUS-side CD I/O is layered. Bottom-up:
 #### Low-level CD driver + async load queue
 
 Beneath the API stack above sits Legaia's own CD driver - hardware-register and
-callback code, not the PsyQ `libcd` BIOS path, so **documented, not ported**. The
-async loaders (`FUN_8003E800` / `FUN_8003F128`) feed a two-part queue engine:
+callback code, not the PsyQ `libcd` BIOS path. **The cluster does not share one
+verdict**, and the blanket "documented, not ported" that used to open this
+section was wrong about its own first bullet.
+
+The register / interrupt tier in the table below is documented only, and leaves
+the port worklist through scope rows in `scripts/ci/port-catalog-ignore.toml` -
+`libcd` for the driver and its re-arm / init / mixer entries,
+`worklist_phantom` for the BIOS trampolines, `cd_transport_shims` for
+`FUN_8003DAA8`. The engine reads a disc image directly and has no drive to
+command, so wiring any of them would re-host plumbing nothing can observe.
+
+The tier above it is a different thing: `FUN_8003E800` / `FUN_8003F128` and the
+queue's enqueue half are arithmetic over the PROT TOC, and all three are ported
+in `legaia_engine_core::cd_dma`. The async loaders feed a two-part queue engine:
 
 - **`FUN_8003DDA0`** - index-based streaming **enqueue**. Reads the in-RAM TOC at
   `0x801C70F0`: `start = toc[idx+2]`, `size_sectors = toc[idx+3] - toc[idx+2]`
@@ -459,12 +471,17 @@ async loaders (`FUN_8003E800` / `FUN_8003F128`) feed a two-part queue engine:
   `gp+0x984` by `size_sectors << 11` (= ×2048 bytes). Each append is bracketed by
   the XA-control toggles `FUN_8003EE7C` / `FUN_8003DE7C` / `FUN_8003ED04`. This is
   the size-aware sibling of the plain LBA resolver `FUN_8003E8A8`.
+  Ported: `legaia_engine_core::cd_dma::StreamLoadQueue`, which holds the
+  descriptor table and the cursor arithmetic and leaves the XA toggles to the
+  hardware side-band. Disclosed `NOT WIRED` - every engine host resolves assets
+  through `Scene` / `SceneAssets` synchronously, so nothing enqueues.
   `see ghidra/scripts/funcs/8003dda0.txt`.
 - **`FUN_8003DAA8`** - the load-kick / completion driver the queue drains
   through. Reads the in-progress flag `_DAT_8007B876 & 1`, converts the pending
   LBA (`gp+0x97C`) to BCD-MSF via `FUN_8005C42C`, issues the drive read
   (`FUN_8005FB84`, `FUN_8005C034`) into the destination `gp+0x894`, and maintains
-  the load counters `gp+0x8E8` / `gp+0x964`. `see ghidra/scripts/funcs/8003daa8.txt`.
+  the load counters `gp+0x8E8` / `gp+0x964`. Drive transport - scope row
+  (`cd_transport_shims`), not ported. `see ghidra/scripts/funcs/8003daa8.txt`.
 
 The interrupt / register side:
 
@@ -628,7 +645,9 @@ bgez  v0, 0x801dfc3c    ; if signed >= 0, branch to "still counting"
 _sw   v0, -0xe94(a0)    ; <-- captured pc: store decremented value
 ```
 
-The "still counting" path branches to `0x801DFC3C` (the normal per-frame attract loop: rendering, input, cursor logic). The "underflow" path falls through past `0x801DDCCC` into a block that prepares draw primitives via `0x80058490` and writes the master game-mode index `_DAT_8007B83C = 0x1A`, zeroing `_DAT_8007BA78` (FMV id slot) → `MV1.STR`.
+The "still counting" path branches to `0x801DFC3C`, the tick's **shared epilogue** - not an attract-specific loop. Every handler ends there, and it carries the panel slider, the alpha ramps, the cursor stepping the menu states rely on, and six of the function's 56 sub-mode stores. The "underflow" path falls through past `0x801DDCCC` into a block that prepares draw primitives via `0x80058490` and writes the master game-mode index `_DAT_8007B83C = 0x1A`, zeroing `_DAT_8007BA78` (FMV id slot) → `MV1.STR`.
+
+The countdown is not the only timer on the way in. Sub-mode `0x11` `AttractDelay` spends a second accumulator, `_DAT_8007BAB4`, at `8 * frame_scalar` per frame before it hands to `0x10`. The tick never seeds that word - the SCUS routine that stages the title overlay does, with `0x100` at `0x8002579C` (`addiu s0,zero,0x100` / `sw s0,0x79c(gp)`), which is its only writer outside this function. The test is `bgtz` on the value it just loaded, so the hand-off fires on the frame that reads it already at zero: 33 frames of hold before the menu comes up.
 
 ### Sub-mode dispatcher
 
@@ -662,7 +681,7 @@ The first ~250 instructions of `FUN_801DD35C` set up per-frame state (input read
 | `0x07` | `0x801de134` | `0x10` | `0x801ddb0c` | | |
 | `0x08` | `0x801de4a4` | `0x11` | `0x801dda90` | | |
 
-Mode `0x01` jumps directly to the post-dispatch tail (no-op for that frame). The eligible attract-fire mode is the one whose handler runs through the countdown decrement at `0x801DDCCC` (mode `0x10` per the cutscene-trigger watchpoint capture).
+Mode `0x01` jumps directly to the shared epilogue (no-op for that frame), and nothing in the function ever stores `1` to the selector, so it is the out-of-range slot rather than a state the graph enters. The attract-fire mode is `0x10` and only `0x10`: the countdown decrement at `0x801DDCC8` and the two attract stores below it sit inside that handler's extent (`0x801DDB0C..0x801DDD94`), and no branch or jump from outside that range targets the block. The earlier reading placed the decrement in the tick's preamble, which would have made the fire reachable from any handler that did not first re-route past it.
 
 **This sub-mode SM is the front-end title-menu + memory-card manager + new-game/continue launcher** - not an opening-narration/name-entry sequence.
 
@@ -681,7 +700,39 @@ The retail opening (pinned by a PCSX-Redux cold-boot pixel capture; earlier anch
 
 The whole chain runs in master mode `0x03` (field RUN) with **zero input**; each leg chains by its own script (see below). The new-game data-init (`FUN_80034A6C`, gold/flags/stats) runs before this. The `FUN_801D1344` scene-change packet described below is the **intro skip**; the name-entry is the menu overlay described below. Full chain + narration mechanics: [`cutscene.md`](cutscene.md#in-engine-3d-opening-the-five-scene-new-game-chain).
 
-The JT, state-struct field offsets, and observed `state[+0x204] = N` transitions are pinned in [`legaia_engine_vm::title_overlay`](../../crates/engine-vm/src/title_overlay.rs). Four modes are semantically labelled: `Init` (`0x00` - entry init that routes to `Phase02` or `AttractDelay`), `Idle` (`0x01` - body-tail no-op), `AttractIdle` (`0x10` - Press-Start poll), `AttractDelay` (`0x11` - pre-attract delay). The other 21 carry `Phase0xNN` placeholders with traced-transition docstrings; the module's `STATE_204_WRITES` table holds the full graph. Notably, **Phase06 writes `_DAT_8007B83C = 0x02` at `0x801DFC00`** - the title-screen → main-game master-mode transition (exported as `MASTER_GAME_MODE_FIELD_LAUNCH` + `PHASE06_LAUNCH_GAME_PC`).
+The JT, state-struct field offsets, every handler body and all 56 `state[+0x204] = N` stores are pinned in [`legaia_engine_vm::title_overlay`](../../crates/engine-vm/src/title_overlay.rs), whose `TitleTickState::step` executes the graph one arm per sub-mode plus the shared epilogue. Every sub-mode carries the role its disassembly shows - `Init`, `Idle`, `TextMenu`, `AttractIdle`, `AttractDelay`, `MainMenu`, the `CardOpStage` / `CardCheck` / `ScanSetup` / `BlockScan` / `SlotGrid` / `SlotConfirm` card path, its `SaveWrite` / `SaveResult` and `BlockTransfer` / `LoadVerify` / `CardOpResult` commit legs, the `CardOpPrompt` / `CardOpRun` operation, and the `LaunchFade` / `LaunchGame` exits.
+
+**There are two master-mode-`2` writers, not one.** `LaunchGame` (`0x06`) writes it at `0x801DFC00` on the NEW GAME route, and `LaunchFade` (`0x16`) writes it at `0x801DFAFC` on the load route (`state[-0xea8] == 1`); both clear `_DAT_8007BB00` as they go. The single-writer reading missed the load route. Exported as `MASTER_GAME_MODE_FIELD_LAUNCH` + `PHASE06_LAUNCH_GAME_PC` + `PHASE16_LOAD_LAUNCH_PC`.
+
+Three stores are reached from two sub-modes each, because one handler `j`s into the middle of another's body: `0x15` into `0x0A` at `0x801DE838` and into `0x0F` at `0x801DEF2C`, and `0x0E` into `0x13` at `0x801DF47C`. Without that last one the `0x04` / `0x05` / `0x13` cluster has no entry from the rest of the graph at all.
+
+#### A cold boot always shows sub-mode `0x10`, never `0x02`
+
+`Init` (`0x00`) writes `state[+0x204] = 0x02` and then overwrites it with `0x11`
+when the entry word `_DAT_8007BB00` reads non-zero. On retail that overwrite
+always happens, so the `0x02` two-row menu is unreachable from a cold boot:
+
+- **`_DAT_8007BB00` is raised unconditionally by the boot `init.pak` itself.**
+  `FUN_801CE9C0` does `li s2,0x1` / `sw s2,-0x4500(s0)` at `0x801CEB84` with
+  `s0 = 0x80080000`, in the mode-16 body, before it hands off - no branch
+  between the function head and that store, so nothing can skip it. Two later
+  sites store zero back (`0x801CEBC0` behind `_DAT_8007B98C != 0` **and**
+  `_DAT_8007B8C2 == 0`; `0x801CEBF8` behind the dev/dual-mode word
+  `_DAT_8007B868 != 0`), and one re-raises it (`0x801CEBD8` stores `s2`, i.e.
+  `1`, when `_DAT_8007B850 & 1`) - all dev-flag or pad-hold arms.
+- **Capture agrees.** Polling the word and the sub-mode per vsync across a cold
+  boot: `_DAT_8007BB00` goes `0 -> 1` in the same frame the master mode steps
+  `0x10 -> 0x11`, holds `1` through `CARD INIT` (`0x16`) and the title (`0x17`),
+  and the sub-mode is written `0x11` on the frame after the title mode is
+  entered, then `0x10` about 75 vsyncs later - the `AttractDelay` -> `AttractIdle`
+  hand-off. `0x02` is never observed. Coming back to the title from the attract
+  FMV the word reads `2`, so the overwrite holds on the second entry too.
+
+**The sub-mode word is at `0x801F0204`, not `0x801DD920`.** `0x801DD920` is the
+*instruction* address of the `sw v0,0x204(a2)` that writes it, with
+`a2 = 0x801F0000` from the `lui a2,0x801f` four instructions earlier. Reading a
+dump's printed line address as the data address is the mistake; the switch this
+page already documents is over `DAT_801f0204`, which is the same word.
 
 ### The opening scene chain + the `FUN_801D1344` intro skip
 
@@ -770,7 +821,7 @@ Base `0x801F0000` (the `a0` arg). Sibling region at `0x801EF014..0x801EF200` rea
 
 | Address | Off | Use |
 |---|---|---|
-| `0x801EF14C` | `-0xeb4` | Horizontal slider X, clamped `[0, 0x2c]`. Direction in `state[+0x1e0]` (`1`=left, `2`=right, else idle). Step per frame = `frame_scalar * 8`. |
+| `0x801EF14C` | `-0xeb4` | Horizontal slider X. Direction in `state[+0x1e0]` (`1`=left, `2`=right, else idle); step per frame = `frame_scalar * 8`. Both arms clamp at `0x2c` - the decreasing arm floors there (`slti 0x2c`, `0x801DFC88`) and the increasing arm ceils there (`slti 0x2d`, `0x801DFCB4`) - so the value converges on `0x2c` from either side rather than sweeping a `[0, 0x2c]` range. |
 | `0x801EF160` | `-0xea0` | Fade/sweep accumulator (clamped `[0, 0x1000]`). |
 | `0x801EF16C` | `-0xe94` | Attract countdown (u32, init `0x8000`). |
 | `0x801EF170` | `-0xe90` | Tick counter (unconditional increment). |
@@ -899,7 +950,48 @@ Matching each record's `tpage`/`clut` against the upload table above assigns eve
 
 So PROKION and SCEA are **vertically packed**: the top half and the bottom half of the TIM are drawn side by side, meeting on the stage centre `x = 320`. PROKION's two halves complete a single sun in the middle; SCEA's two 64-row halves read `Sony Computer Entertainment America` beside `Presents`. Contrail draws whole. `FUN_801D0868` emits the SCEA pair and `FUN_801D08F0` the PROKION pair, each taking the level as its only argument and reading the centre offsets out of the records' own `w` byte.
 
-**WARNING is uploaded but never drawn by this overlay.** Descriptor 1 exists and its TIM reaches VRAM, but all five `FUN_801CFBB8` call sites in PROT 0895 pass descriptor ids 0, 2, 3, 4 and 5 - none passes 1 - and no other reference to the descriptor table exists in the image (`find-address-word-refs.py 0x801F369C` finds exactly the two `lui`/`addiu` pairs inside `FUN_801CFBB8` and `FUN_801D0868`). Whatever shows the health warning, it is not this code.
+**WARNING is uploaded and never drawn - by this overlay or by any other.**
+Descriptor 1 exists and its TIM reaches VRAM, but all five `FUN_801CFBB8` call
+sites in PROT 0895 pass descriptor ids 0, 2, 3, 4 and 5 - none passes 1 - and no
+other reference to the descriptor table exists in the image
+(`find-address-word-refs.py 0x801F369C` finds exactly the two `lui`/`addiu`
+pairs inside `FUN_801CFBB8` and `FUN_801D0868`).
+
+A cold-boot capture closes the remaining "some other image draws it" arm. See
+[The health warning is never drawn](#the-health-warning-is-never-drawn).
+
+### The health warning is never drawn
+
+Retail never puts the health-warning screen on the display. Two independent
+observations over one cold boot carried through the logo chain, the title
+screen, the attract FMV and the return to the title
+(`scripts/pcsx-redux/autorun_boot_warning_screen.lua`):
+
+- **The descriptor is never requested.** An exec breakpoint on `FUN_801CFBB8`
+  logs every `(z, cx, cy, desc, level, scale)` the boot issues. Descriptor 1
+  draws zero times; descriptors 0, 2, 3, 4 and 5 all draw, in the order the
+  sequencer prescribes - SCEA (descriptors 2 + 3) first, then Contrail
+  (descriptor 4), then PROKION (descriptors 0 + 5).
+- **No primitive anywhere carries its CLUT.** A textured-primitive sweep of
+  main RAM (the CLUT id lives in the high halfword of packet word 3, so it
+  exists in RAM even though no image spells it out) finds no packet at all
+  bearing descriptor 1's CLUT `0x7E80`. The three logo CLUTs are swept in the
+  same pass as a positive control and every one of them lands on its documented
+  screen rect: SCEA at `(68, 192)` + `(320, 192)` with `tpage 0x2A`, PROKION at
+  `(144, 165)` + `(320, 165)` with `0xBA`, Contrail at `(228, 105)` with
+  `0xBC`. Each logo packet appears in both halves of the double-buffered
+  ordering table; the handful of raw `0x7E80` byte matches decode to
+  five-digit screen coordinates and never land in the packet pool.
+
+Read descriptor 1's own pair from the bytes at PROT 0895 file `+0x24E84`, not
+from the upload table above: it is `tpage 0x000B` / `clut 0x7E80`. `0x9A` /
+`0x7ED4` is PROKION's pair, carried by descriptors 0 and 5.
+
+The screen the WARNING TIM would show is also destroyed later in the same boot:
+the menu overlay's park pass moves the card-screen kanji page from
+`(320, 256)` onto `(704, 0)` on the way into game mode `0x1A`
+([`data-field.md`](../formats/data-field.md)), which is exactly the rect the
+WARNING pixels occupy.
 
 ### The logo sequencer
 

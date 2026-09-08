@@ -415,7 +415,7 @@ fn sprite_to_quad(
     pos: (i16, i16),
     uv: (u8, u8),
     clut: u16,
-    size: i16,
+    size: (i16, i16),
 ) {
     let mut flags = 0u8;
     if cmd & 0x02 != 0 {
@@ -432,10 +432,11 @@ fn sprite_to_quad(
     let tsb = 0u16;
     let (x, y) = pos;
     let (u, v) = uv;
-    let x1 = x.saturating_add(size);
-    let y1 = y.saturating_add(size);
-    let u1 = u.saturating_add(size as u8);
-    let v1 = v.saturating_add(size as u8);
+    let (sw, sh) = size;
+    let x1 = x.saturating_add(sw);
+    let y1 = y.saturating_add(sh);
+    let u1 = u.saturating_add(sw as u8);
+    let v1 = v.saturating_add(sh as u8);
     // Two tris: (x0,y0)(x1,y0)(x0,y1) + (x1,y0)(x1,y1)(x0,y1)
     let push = |verts: &mut Vec<u8>, x: i16, y: i16, u: u8, v: u8| {
         verts.extend_from_slice(&x.to_le_bytes());

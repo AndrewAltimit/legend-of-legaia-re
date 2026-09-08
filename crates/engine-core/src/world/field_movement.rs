@@ -2509,13 +2509,48 @@ impl World {
         // derives height from the continent grid) is unaffected. No-op height
         // 0 until a scene supplies a floor LUT.
         if self.follow_terrain_height {
-            let (x, z) = {
-                let ms = &self.actors[slot].move_state;
-                (ms.world_x as i32, ms.world_z as i32)
+            let y = match self.field_actor_mirrored_y(slot) {
+                Some(mirror) => i32::from(mirror),
+                None => {
+                    let (x, z) = {
+                        let ms = &self.actors[slot].move_state;
+                        (ms.world_x as i32, ms.world_z as i32)
+                    };
+                    self.sample_field_floor_height(x, z)
+                }
             };
-            let y = self.sample_field_floor_height(x, z);
             self.actors[slot].move_state.world_y = y as i16;
         }
+    }
+
+    /// The `+0x8E` inverted-Y override for `slot`, if one is armed.
+    ///
+    /// Retail's field-actor driver `FUN_8003BC08` picks one of three height
+    /// laws per frame off the actor flag word `+0x10`, and this is the first
+    /// of them (`0x8003BC4C..0x8003BC64`):
+    ///
+    /// ```text
+    /// 8003bc4c  lui  v0,0x2000        ; flags & 0x20000000
+    /// 8003bc54  beq  v0,zero,...      ;   clear -> the two ground arms
+    /// 8003bc5c  lhu  v0,0x8e(s1)      ; the mirror halfword
+    /// 8003bc60  j    0x8003bcf4
+    /// 8003bc64  _subu v0,zero,v0      ; ...negated
+    /// 8003bcf4  sh   v0,0x16(s1)      ; -> the actor's Y position
+    /// ```
+    ///
+    /// The branch jumps **past** both ground arms, so an armed mirror is an
+    /// override and not a bias: the floor is not sampled at all that frame.
+    /// [`World::field_eased_mirror_y`] is where the eased-move tick publishes
+    /// the halfword; the double negation (`-Y` stored, `-(+0x8E)` read back)
+    /// is retail's, and it lands the actor on the eased Y.
+    ///
+    /// PORT: FUN_8003BC08 (`0x8003BC4C..0x8003BC64` + `0x8003BCF4`, the
+    /// mirror arm of the height dispatch)
+    fn field_actor_mirrored_y(&self, slot: usize) -> Option<i16> {
+        if self.player_actor_slot? as usize != slot {
+            return None;
+        }
+        self.field_eased_mirror_y.map(|m| m.wrapping_neg())
     }
 
     /// The height retail's ledge classifier measures its rise **from**: the
@@ -2838,7 +2873,12 @@ impl World {
         if flags & 0x2000 != 0 {
             rate >>= 1;
         }
-        if self.field_vertical_settle && !self.follow_terrain_height {
+        // The `+0x8E` mirror arm comes first and jumps past both ground arms
+        // - see [`Self::field_actor_mirrored_y`]. A scripted eased move that
+        // carries the flag holds the actor's Y outright; no glide, no sample.
+        if let Some(mirror) = self.field_actor_mirrored_y(slot) {
+            self.actors[slot].move_state.world_y = mirror;
+        } else if self.field_vertical_settle && !self.follow_terrain_height {
             let (x, z, y) = {
                 let ms = &self.actors[slot].move_state;
                 (ms.world_x as i32, ms.world_z as i32, ms.world_y as i32)

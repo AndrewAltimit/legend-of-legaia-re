@@ -294,8 +294,11 @@ FUN_8003541C(1 + waits, 0xD, str, x, y, width, lines*14 - 4, 0x44 - waits)
 ```
 
 `FUN_8003541C` links the node into a list sorted on its `+0x08` key and stores
-the rect at `+0x0A..+0x10`, the kind byte at `+0x1C` and the priority at
-`+0x1D`, then draws it (`FUN_80030628`). So the box's *size* is measured, and
+the rect at `+0x0A..+0x10`, the kind byte at `+0x1C` and the frame style at
+`+0x1D`, then calls `FUN_80030628` - a per-kind **content** builder, not the
+draw: its table at `0x80010D38` sends kind `0x0D` straight to the epilogue
+`0x80031978`, because a measured text box needs no build step. The drawing is
+the per-frame list walk `FUN_80031D00`. So the box's *size* is measured, and
 only its *corner* comes from the style table.
 
 **Box placement.** The style index `0..=9` selects a jump table at
@@ -323,8 +326,28 @@ therefore frames the prompt with the reading box's own chrome builder at
 [`engine-ui::battle_tutorial_box`](../../crates/engine-ui/src/battle_tutorial_box.rs),
 drawn by both hosts through the 320x240 stage transform (the rect is in retail
 framebuffer pixels, not surface pixels). The confirm hand on a waiting box is
-a port affordance borrowed from the dialog pager: what retail's slot-`2` actor
-draws to signal the wait is not decoded.
+a port affordance borrowed from the dialog pager - **retail draws nothing extra
+for the wait**, see below.
+
+**The waiting box and the self-dismissing one are the same drawing.** `s4` only
+reaches two of the registrar's arguments, and neither is visual. The emitter's
+tail passes `a1 = 0xD` unconditionally (`li a1,0xd` at `0x801F75F0`), so both
+boxes register under the same widget kind, and `FUN_80031D00` - the per-frame
+walker that actually draws a registered node - dispatches on that kind byte
+alone (`lbu v0,0x1c(s4)` at `0x80032170`, jump table `0x80010DC0`), never on the
+node's `+0x08` sort key. The two arguments `s4` does move are the key itself
+(`1 + waits`, list position only: `FUN_8003541C` compares it at `0x80035520` to
+decide whether to reuse an existing node, and `FUN_800319A8` unregisters by it)
+and the `0x44 - waits` byte at node `+0x1D`, which the draw tail hands to
+`gp+0x14C` as the frame-style selector - and `FUN_8002C69C` only branches on
+`0x31` / `0x33` / `0x34` / `0x35` (`0x8002C6E4..0x8002C768`), so `0x43` and
+`0x44` both take the same default chrome. Two further consequences fall out of
+the same read: kind `0x0D` is one of the three kinds `FUN_800319A8` refuses to
+free `+0x18` for (`0x80031A30..0x80031A44`, alongside kinds `< 2` and `0x11`),
+because the string is the overlay's own, not heap; and kind `0x0D`'s slot in the
+*registration*-time table at `0x80010D38` points at `0x80031978`, which is
+`FUN_80030628`'s epilogue - so registering a prompt draws nothing that frame,
+and the box first appears on the next walk.
 
 Engine port: [`engine-core::battle_tutorial`](../../crates/engine-core/src/battle_tutorial.rs).
 The prompt **text is Sony data living in the overlay**, so the port commits only
@@ -1171,6 +1194,17 @@ melee is therefore filmed from the `0x200` base and a party member's from
 `BattleCamera::observe_action_state` applies the ladder on the action-state
 edges, standing the swing-clip commit in with the edge into `0x1E`.
 
+The style byte itself reaches all three framings live. Both hosts read
+`World::battle_ctx.camera_variant` into `ActionFraming::style` - the native
+window's `battle_action_framing` and the browser page's
+`play_battle_render`'s `BattleCamInputs` builder - where each of them used to
+pass a hard-coded `0`, which pinned every action to variant `0` of four. The
+action SM writes the byte at its seed and narrows it per category arm, per
+[`ctx[+0xD]`](battle-action.md#ctx0xd---the-per-action-camera-angle-variant).
+The commit's own `ctx[+0xD] = 0` is the one part still standing in as a latch
+on `BattleCamera`, because the host re-supplies the framing inputs every frame
+and a local write would not survive the next one.
+
 **The framing-case table.** `FUN_801D5854`'s mode argument indexes a
 ten-entry jump table at `0x801CEA00` (PROT 0898 file `0x1E8`), and modes `4`
 and `5` are the same no-op tail slot:
@@ -1203,10 +1237,41 @@ and the acting actor's anim state.
 Case `8` is the same shape aimed at the target alone: an extra `-0x100` on the
 yaw base, `focus.y` forced to the stage floor, a `-0x600` unwrap, and a focus
 fork that falls back to the acting actor when `actor[+0x1DD] >= 8` or the
-target's node is dead (`0x801D6870`). Its long per-liveness tail from
-`0x801D69A8` - the death-clip re-frame, the counter-attack flags, the
-`ctx[+0x270]` ramp - is decoded but not ported; every branch reads a channel
-the engine's battle actor does not carry.
+target's node is dead (`0x801D6870`).
+
+#### The death re-frame and its `ctx[+0x270]` ramp
+
+Case 8's tail from `0x801D69A8` forks on the framed target's live-HP halfword
+`+0x14C`. The **dead** arm (`0x801D6A20`) is the death re-frame, and it is
+ported: `battle_cam_script::apply_death_reframe`, applied by
+`BattleCamera::action_end_pose` whenever the post-action target reads dead.
+
+Three literals land unconditionally at `0x801D6AF8` - `TR.y = 0x300`,
+`pitch = 0x140`, `TR.z = ctx[+0x6D0]` - and the per-action yaw ladder is zeroed
+beside them (`sh zero,0x4(t0)`, `t0 = ctx + 0x6D6`, so the store is
+`ctx[+0x6DA]`), which is why a death shot does not inherit the swing's orbit.
+Then the fork on the target's own anchor height `+0x36` (`lh v0,0x36(v0)` at
+`0x801D6B38`), the Y of the same world triple case 7 takes its focus midpoint
+from:
+
+| target `+0x36` | pose | `ctx[+0x270]` |
+|---|---|---|
+| `0` (body on the stage floor) | the three literals above, unchanged | re-zeroed (`sb zero,0x270(a0)`, `0x801D6B4C`) |
+| non-zero (still falling) | `TR.z = ctx[+0x6D0] - 4r`, `TR.y = 0x300 - r`, `pitch = 0x180 - (3r >> 1)` | left to ramp |
+
+`r` is `ctx[+0x270]`, the second byte ramp `FUN_801D5854`'s own prologue
+advances beside `ctx[+0x26E]` on every call - same `8 x frame_step` increment,
+same `0xC8` ceiling (`0x801D5960..0x801D59B8`), and no per-action reset, so a
+fight's second death reads a ramp already at the cap. At the cap the re-frame
+is `TR.z - 0x320`, `TR.y = 0x238`, `pitch = 0x54`: the camera drops, levels off
+and pushes in on the falling body, then snaps to the flat pose the frame the
+body lands. Engine side the ramp lives on
+`battle_attack_camera::AttackCamCtx::death_ramp`.
+
+What stays out of the port is the counter-attack fork above it (`ctx[+0x287]` /
+`ctx[+0x288]` / `_DAT_8007BD0D` at `0x801D6AC8`) and the live-target arm's own
+re-aim at `0x801D6BFC` - those read channels the engine's battle actor does not
+carry.
 
 Which states arm them is `FUN_801E295C`'s own fork, not an inference. The
 attack chain's recovery-wait and return (`0x1F`, `0x20`) share one arm at
@@ -1884,9 +1949,12 @@ in the fixed order `^A`=Fire, `^B`=Thunder, `^C`=Wind, `^D`=Water, `^E`=Earth,
 `^F`=Light, `^G`=Dark, `^H`=Evil (the icon-glyph row `0x1D..0x24` in the same
 order - **not** the element-id order of the [`+0x1D` element byte](#monster-record-source-layout)).
 Across the roster every carrying monster's caret letter agrees with its
-element byte, with one deliberate exception: `^H Cort` (the final boss) wears
-the Evil icon over element byte `7` - the no-affinity id whose matrix row and
-column are all-100. Boss-tier `$2`/`$3` name suffixes are literal ASCII, not
+element byte, with **no** exceptions - `^H` maps to element byte `7` (the
+no-affinity id whose matrix row and column are all-100) exactly as the other
+seven letters map to theirs; only 64 of the 186 populated records carry an
+escape at all. The
+[per-letter census](#the-element-badges-and-their-per-badge-palette) has the
+counts. Boss-tier `$2`/`$3` name suffixes are literal ASCII, not
 markup.
 
 The mesh's primitives are textured: they reference a CLUT + a 4bpp texture page
@@ -3682,13 +3750,41 @@ Each of the four CLUT rows `498..501` is a whole sibling TIM of its own -
 (`save_menu_atlas::add_element_badge_sprites`); the winged four on row 500
 are already baked as the status screen's ATR icons, which is the same art.
 
-**Port + what is inferred.** The plaque wears badge `element` for a monster
-whose record `+0x1D` names one (`battle_hud::battle_plaque_element_badge`),
-and the plaque widens by `20 + 5` exactly as `name_plaque` lays out. The
-geometry, the palette decode and the plaque law are all disc-read; **the
-selector is not** - no dumped caller computes the badge id, so "badge index
-= element id" is an inference from the two eights lining up, and whether a
-neutral (id 7) actor draws a badge at all is unverified.
+**The selector is not code - it is markup in the monster's own name.** No
+dumped caller computes a badge id because nothing computes one: the badge is
+the `^`-plus-letter escape the archive name carries
+([above](#monster-record-source-layout)), so the plaque draws whatever badge its
+string names and nothing at all when the string has none. A census of the
+decoded blocks (`asset monster-archive --dump-block`, all 186 populated slots)
+settles both halves:
+
+- **64 of 186** names begin with `5E` (`^`) plus a letter; the other **122** do
+  not, and those actors wear no badge.
+- The caret letter is a **bijection** onto the record's element byte `+0x1D`
+  with **zero** exceptions - `^A`→2 (Fire, n=9), `^B`→4 (Thunder, 9), `^C`→3
+  (Wind, 9), `^D`→1 (Water, 9), `^E`→0 (Earth, 9), `^F`→5 (Light, 12), `^G`→6
+  (Dark, 6), `^H`→7 (Neutral, 1). So the earlier "`^H` over element byte `7` is
+  a deliberate exception" reading is wrong: element `7` *is* the letter's
+  element, exactly like the other seven.
+- **A neutral (id 7) actor does draw a badge - if its name says so.** Thirteen
+  records carry element `7`; exactly one of them carries `^H`, and the other
+  twelve carry no escape and draw nothing.
+
+Two escape encodings coexist and are easy to confuse. The **archive name's**
+badge prefix is plain ASCII `^` (`5E`) plus a letter, verbatim in the decoded
+block and copied verbatim into the actor's display-name buffer `+0x1BC`. The
+`0xCE`-lead form is the *runtime-composed* HUD label string (actor `+0x29`, an
+icon index then the text) - a different producer, not this one.
+
+**Port + what is still off.** The plaque widens by `20 + 5` exactly as
+`name_plaque` lays out, and the geometry and palette decode are disc-read. The
+port's selector (`battle_hud::battle_plaque_element_badge`) is **not** retail:
+it returns the record's element byte for every monster with a valid element, so
+it (a) badges all 186 instead of the 64 whose name carries the escape, and (b)
+indexes the strip in element order where the escape orders it `A..H`, a
+different permutation (`element -> caret index` is `4, 3, 0, 2, 1, 5, 6, 7`).
+Retail's rule is one line: badge only when the name starts `^X`, at strip index
+`X - 'A'`.
 
 ### Four ids are not on this sheet at all - they are the save-slot portraits
 
@@ -4453,7 +4549,7 @@ stated by the concrete writes.
 |---|---|
 | `FUN_80055B6C` | Battle scene initializer: clears the actor/effect pools, resolves the party-slot composition (dedup + fill from `DAT_8007BD0C..`), sizes the LZS scratch, allocates the `0x7A34`-word monster-object arena at `_DAT_801C9370`, and programs the disp/draw environment. |
 | `FUN_80055B20` | Seeds the fallback party-slot id table `DAT_8007BD10 = {1, 2, 3}` (Vahn/Noa/Gala); `FUN_80055B6C` overwrites it from the live party. Slot bytes index character records as `(id-1)*0x414`. |
-| `FUN_80054A6C` | Battle party-file loader: builds the `data\battle\` filename (`s_data_battle_800153B8`), then streams each live party member's player battle file keyed on the party-id table `DAT_8007BD0C` at file stride `(id-1)*0x14000`. Dual-mode on `_DAT_8007B8C2`: retail ISO9660 (`FUN_800608F0`/`FUN_80060920`/`FUN_80060944` async CD reads) vs dev PROT-TOC (`FUN_8003E8A8`/`FUN_8003E964`/`FUN_8003E800`, entry `0x365`); bumps the loaded-count `DAT_8007B649`. CD/loader I/O infra - documented, not ported. |
+| `FUN_80054A6C` | Battle party-file loader: builds the `data\battle\` filename (`s_data_battle_800153B8`), then streams each live party member's player battle file keyed on the party-id table `DAT_8007BD0C` at file stride `(id-1)*0x14000`. Dual-mode on `_DAT_8007B8C2`: retail ISO9660 (`FUN_800608F0`/`FUN_80060920`/`FUN_80060944` async CD reads) vs dev PROT-TOC (`FUN_8003E8A8`/`FUN_8003E964`/`FUN_8003E800`, entry `0x365`); bumps the loaded-count `DAT_8007B649`. CD/loader I/O infra: scope row in `asset_load_plumbing` - the port streams the same four files through `SceneAssets`, from the disc image, with no drive command sequence. |
 | `FUN_800480D8` | Per-actor battle tick / teardown: on the scene-clear byte `gp[0xA0C]+0x272` (guarded by `DAT_8007BD71 == -1`) runs the four overlay shutdowns and voids the effect-node table `DAT_801C90F0`, else forwards to the tint pass `FUN_8004A908` and the death / `0x808080` greyscale path. |
 | `FUN_8004A908` | Battle-actor tint: writes the colour word `+0x74` and blink halfword `+0x78` from the actor's transformed depth vs the monster-object depth threshold, with hard overrides for the `+0x16E` status bits (`0x01`→red, `0x02`→red-violet, `0x380`→magenta) and a greyscale-invert path gated on `DAT_8007BDA8`. The two arithmetic cores are ported (with tests): the per-channel depth-brightness ramp as `scus_battle_helpers::depth_cue_scale_channel` (min-4 dim floor, clamp-to-base), the negative-colour recolour as `scus_battle_helpers::invert_bgr24`. The GTE transform (`FUN_8003D344`) and colour-word packing stay render-track. |
 | `FUN_80046A20` | **Not a small helper** - this is the battle-scene per-frame tick (2576 bytes, 644 instructions), listed here only because the rows below are the routines it drives. It calls the scene loader `FUN_800520F0`, the seat stager `FUN_800513F0`, the party-file loader `FUN_80054A6C`, the main dispatcher `FUN_801D0748`, the action SM `FUN_801E295C`, the separation driver `FUN_80051078` and the actor-presentation tick `FUN_80050120`. Its one self-contained kernel is the HP/MP gauge-fill colour selector keyed on `+0x172`/`+0x174` vs `+0x14E>>1`/`>>2` and the status word `+0x16E`, ported as `battle_gauge::gauge_colors`. Full row in [`functions/battle.md`](../reference/functions/battle.md). |
@@ -4465,7 +4561,7 @@ stated by the concrete writes.
 | `FUN_80050F30` | 3×10-bit packed approach-to-target step: eases each 10-bit channel of a packed `u32` toward an 8-bit target (widened `<<2`) by at most `step_scale * DAT_1f800393 * 8` per call, clamping on the target without overshoot; only differing channels are rewritten (the byte-exact masking is why the top two bits survive an unchanged Z channel). A pure closed-form kernel with no table/hardware dependency; **ported** (with tests) as `battle_formulas::packed3_approach_target` / `approach_channel_clamped`. |
 | `FUN_80050BB8` | Pairwise battle-actor separation (push-apart): reads two actors' body radii `+0x22C→+0x58` and positions `+0x3C`/`+0x40`, projects the between-actor distance onto the angle from `FUN_80019B28` via the sin/cos LUTs `_DAT_8007B81C`/`DAT_8007B7F8`, and if the projected gap is below `(r1+r2)/6` nudges both actors' **live** position pairs `+0x34`/`+0x38` apart by `sin/cos >> 10` (the `+0x3C`/`+0x40` pair it measures is the seat). Ported as a faithful fixed-point mirror in `engine-vm::battle_separation::push_apart` (trig samples lifted to caller parameters, no Sony table bytes); driven every live battle frame by `World::tick_battle_separation`, on the line after the action-SM step - retail's `FUN_80046A20` call order. |
 | `FUN_80051078` | Separation driver: the 7×7 double loop over the actor table that calls `FUN_80050BB8(i, j)` for every ordered pair of living actors (`i != j`, both `+4 != 0`), so every actor is pushed off every other once per pass. Its caller is `FUN_80046A20`, which runs it **every battle frame** immediately after the action SM (`jal 0x801E295C` then `jal 0x80051078`), gated only on "battle live and not tearing down". Not a movement-only pass. |
-| `FUN_8005133C` | Per-actor status-marker + display-list primitive spawn: allocates a primitive on the ordered list `_DAT_1F8003A0` (type tag `0x1E1 + slot`, size `0xF0`, priority 1), fills it from `gp[0xA0C] + slot*0x1E0 + 0x894` via `FUN_800583C8`, then sets the four actor status-marker bytes `+0x220..+0x223 = 1` (the lingering-status visual flags near the `+0x21F` marker). Render + status write - documented, not ported. |
+| `FUN_8005133C` | Per-actor status-marker + display-list primitive spawn: allocates a primitive on the ordered list `_DAT_1F8003A0` (type tag `0x1E1 + slot`, size `0xF0`, priority 1), fills it from `gp[0xA0C] + slot*0x1E0 + 0x894` via `FUN_800583C8`, then sets the four actor status-marker bytes `+0x220..+0x223 = 1` (the lingering-status visual flags near the `+0x21F` marker). Render + status write: scope row in `render_pipeline` - the primitive is a wgpu draw in the port, and the four status-marker bytes it sets ride the actor's status flags. |
 
 The animation pair `FUN_800495C8` / `FUN_80049858` (pose→vertex blend) is
 documented in [`monster-animation.md`](../formats/monster-animation.md#vertex-blend-variants-fun_800495c8--fun_80049858).

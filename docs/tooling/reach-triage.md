@@ -388,11 +388,47 @@ The reading to resist is that a disclosure retires the row. It does the
 opposite: it moves the address into `--live-audit`'s *disclosed inert ports*
 list, which **is** the declared wiring worklist, and each disclosure names the
 one prerequisite that would let a wire be real rather than synthesised. For
-`cd_dma` and `stream_file` that prerequisite is the same shape twice - a
-production owner of the trait / host type, which means routing the engine's
-loaders through them instead of through `ProtIndex` whole-entry reads. For
 `mode` it is a seat for `ModeDriver`, the port of the 28-entry mode table,
 which the engine's hosts currently bypass entirely.
+
+`cd_dma` and `stream_file` were read the same way here - "a production owner of
+the trait / host type, which means routing the engine's loaders through them
+instead of through `ProtIndex` whole-entry reads" - and the tree has since
+answered that differently. Most of both clusters now carries `REPLACED-BY:
+crate::scene::ProtIndex` rather than a `NOT WIRED:` disclosure: `ProtIndex` is
+declared the *replacement* for the sector-DMA and streaming-read paths, not the
+thing to route around. A `REPLACED-BY:` row is in neither half of the wiring
+ratio ([`port-catalog.md`](port-catalog.md)), so those addresses are not owed a
+host and are not reach work. The rows that keep a `NOT WIRED:` disclosure inside
+those two files - the CD-DMA entry point, and `read` / `close` in
+`stream_file.rs` - still are.
+
+### A row can leave this page without a ladder reaching it
+
+The page's own framing is that "a row leaves when a ladder reaches it or the
+wiring lands", and there is a third exit that is neither: the **static verdict
+moves**. Bucket (c) exists because a host-dead address still reads `live` in the
+permissive graph, so `--live-audit` cannot see it; the moment a re-key, a
+disclosure or a `REPLACED-BY:` makes the same address read *inert*, it becomes
+`--live-audit`'s row and stops being this page's. Nothing about the runtime
+changed - no ladder ran - and the row is still work, just filed where the
+instrument that can see it lives.
+
+Checking that exit needs no coverage export at all, which is worth knowing when
+one is unaffordable - an export is a full instrumented build per ladder, and
+there are dozens of ladders:
+
+```bash
+python3 scripts/ci/port-catalog.py --live          # writes target/port-catalog/catalog.csv
+python3 scripts/ci/replay-port-coverage.py --page-audit
+```
+
+`--page-audit` joins every address this page cites against that CSV and names
+the rows whose `live` column is now `0`, with the reason (`REPLACED-BY:` or a
+`NOT WIRED:` disclosure). Run it *before* spending an export: a row that has
+already taken this exit is not work a ladder can convert. The whole `cd_dma` /
+`stream_file` replacement above shows up that way, as do the `sound_state` /
+`scene_bundle` pair and the party-panel trio below.
 
 ### The mode-driver seat, and why `scene_mode` cannot be the bridge
 
@@ -765,8 +801,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `battle_intro_styles.rs` | 1 | (a) | battle-render | `801d11d0` |
 | `battle_intro_swirl.rs` | 2 | (a) | battle-render | `801d1564` `801d1888` |
 | `battle_intro_transition.rs` | 1 | (a) | battle-render | `801cf1b0` |
-| `battle_party_panel.rs` | 1 | (a) | wired - `party_panel_stage_x` reads `panel_anchors` on every battle-HUD frame | `801d84c0` |
-| `battle_party_panel.rs` | 2 | (c) | disclosed (the label-actor lifecycle + cross-out mark) | `801dbb8c` `801dbc30` |
+| `battle_party_panel.rs` | 3 | (c) | disclosed (`panel_labels`, the label-actor lifecycle, the cross-out mark) - see the [anchor note](#the-address-is-wired-and-its-anchor-is-not) | `801d84c0` `801dbb8c` `801dbc30` |
 | `battle_stream_slot.rs` | 2 | (c) | disclosed | `80055b4c` `801f17f8` |
 | `battle_target_group.rs` | 1 | (a) | battle-target | `801dceac` |
 | `camera_mover.rs` | 1 | (a) | field-render | `801dd310` |
@@ -1147,7 +1182,7 @@ gates:
 | address | why it stayed |
 |---|---|
 | `801f44a0` | resolved: `engine-core`'s `BattleHud::push_popup` delegates every popup push to `DamagePopupRing::push`, so simultaneous popups are ring-bounded on both battle-HUD hosts |
-| `801d84c0` `801dbb8c` `801dbc30` | `panel_anchors` is production-called (`engine-ui`'s `party_panel_stage_x` reads it for the roster name pens); the rest of `battle_party_panel.rs` (`panel_labels`, the label-actor lifecycle, `cross_out_mark`) stays disclosed `NOT WIRED` |
+| `801d84c0` `801dbb8c` `801dbc30` | `panel_anchors` is production-called (`engine-ui`'s `party_panel_stage_x` reads it for the roster name pens); the rest of `battle_party_panel.rs` (`panel_labels`, the label-actor lifecycle, `cross_out_mark`) stays disclosed `NOT WIRED` - and the address follows the *anchor*, see below |
 | `801e1ab0` | content-gated: the streak needs a move-FX scene whose move-power record carries a non-zero trail texture page (`+0x0b`) |
 
 The party-panel row was the sharper finding: `engine-ui` reproduced
@@ -1167,6 +1202,33 @@ they name (`pick_channel`, `build_afterimage_quad`, `LabelState::opened`,
 under the anchor fallback above, to an unrelated neighbouring function -
 `ArtsShoutBank::new`, `streak_half_width`, `name_field_ptr` - so constructing
 a bank would have read as "the arts-voice selector ran".
+
+### The address is wired and its anchor is not
+
+`801d84c0` sat in the per-crate table as an `(a)` row reading *wired -
+`party_panel_stage_x` reads `panel_anchors` on every battle-HUD frame*. The
+sentence is true and the row was wrong, because a bucket is a property of the
+**anchor**, not of the retail routine. `FUN_801D84C0` is retail's panel build +
+teardown; this workspace splits it in two, and the halves have opposite
+verdicts:
+
+- `panel_anchors` - the per-party-size X anchors - is production-called from
+  `engine-ui`, and carries **no** `PORT:` tag. It is a section comment.
+- `panel_labels` - the two build arms - carries `PORT: FUN_801D84C0` plus a
+  `NOT WIRED:` disclosure naming its own prerequisite (`engine-ui` does not
+  model the four label buffers at all).
+
+So every instrument that keys on the address answers for `panel_labels`, and
+the catalog reads `801d84c0` inert with a disclosure. Crediting the row as
+wired credited the *unported* half. The row is filed `(c) disclosed` with its
+two siblings.
+
+The shape generalises, and it is the reason a `reach` cell should never be
+written from a prose claim about the retail routine: **when one retail routine
+is ported as two Rust items, the address belongs to whichever item wears the
+tag.** Check `target/port-catalog/catalog.csv` before writing a verdict; if the
+wired half is the one that deserves the address, move the tag rather than the
+row.
 
 ## Gates behind the (b) rows
 

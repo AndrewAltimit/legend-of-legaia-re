@@ -1274,6 +1274,54 @@ pub struct World {
     /// [`crate::camera::Camera::tick`].
     pub camera_registers: crate::register_ramp::CameraRegisterFile,
 
+    /// The live cinematic bar emitter (field-VM op `0x43` sub-`0xC`, retail
+    /// template `0x801F2858` / tick `FUN_801DD784`). One at a time, because
+    /// its spawner is the one op that allocates it and its envelope retires
+    /// itself; [`World::tick_field_timer_actors`] steps it and
+    /// [`Self::cinematic_bar`] is what the two hosts draw from.
+    pub cinematic_bars: Option<legaia_engine_vm::field_actor_timers::ShutterBars>,
+
+    /// This frame's bar height in scanlines, republished every tick so a
+    /// renderer reads a value rather than re-stepping the envelope.
+    pub cinematic_bar: i16,
+
+    /// Live eased-move records (field-VM op `0x43` sub-9 with a non-zero
+    /// tick count, retail template `0x801F2840` / tick `FUN_801DD4C4`), each
+    /// paired with the actor whose position triple it writes.
+    pub eased_moves: Vec<crate::world::FieldEasedMove>,
+
+    /// The player actor's `+0x8E` **inverted-Y latch** - retail's third
+    /// height arm, and the one thing an eased move over the player publishes
+    /// besides the position triple.
+    ///
+    /// `FUN_801DD4C4` stores `-Y` here on every frame of a move whose target
+    /// carries [`EASE_TARGET_INVERT_Y`](legaia_engine_vm::field_actor_timers::EASE_TARGET_INVERT_Y)
+    /// (`0x801DD6A4..0x801DD6B8`: `lw v0,0x10(a2)` / `lui v1,0x2000` / `and` /
+    /// `subu v0,zero,a1` / `sh v0,0x8e(a2)`). The consumer is the field-actor
+    /// driver `FUN_8003BC08`, whose height arm tests the same flag **first**
+    /// (`0x8003BC4C..0x8003BC64`) and writes `-(+0x8E)` into the actor's
+    /// `+0x16` in place of the ground height its other two arms would sample -
+    /// so the latch is not decoration, it is what stops the floor controllers
+    /// dragging an airborne scripted move back down to the terrain.
+    ///
+    /// The engine's two height controllers are exactly those other two arms
+    /// ([`World::field_vertical_settle`] is the glide, and
+    /// [`World::follow_terrain_height`] the snap), so both read this and step
+    /// aside while it is armed. `None` is the no-mirror case, which is every
+    /// ordinary frame.
+    ///
+    /// Player-only, and that is a real limit rather than a simplification:
+    /// retail's `+0x8E` is per-actor, but a scene NPC in this engine is a
+    /// placement slot with an `(x, z)` pair and a scene-build Y from
+    /// [`legaia_asset::field_objects::Placement::world_y`] - it has no
+    /// per-frame height controller for a mirror to override.
+    pub field_eased_mirror_y: Option<i16>,
+
+    /// Live floor-height-ladder oscillators (field-VM op `0x4C` nibble-9
+    /// sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`). Each
+    /// drives one rung of [`Self::field_floor_height_lut`].
+    pub floor_tier_bobs: Vec<legaia_engine_vm::field_actor_timers::FloorTierBob>,
+
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
     /// [`crate::dance::DanceGame`] and [`World::enter_dance`].
@@ -1824,6 +1872,25 @@ pub struct World {
     /// strike).
     pub pending_cast: Option<PendingCast>,
 
+    /// The resident slot-B module's **phase byte** (`ctx+0x279`) - the second
+    /// phase space riding under battle phase `0x70`, driven by the module
+    /// code kernels ([`legaia_engine_vm::cast_module_ticks`]) from
+    /// [`World::run_cast_module_code`]. Zeroed when a cast is armed, exactly
+    /// as retail's `0x801E4B1C` does.
+    pub cast_module_phase: u8,
+    /// The resident slot-B module's `ctx+0x278` scratch byte, written by
+    /// three of the band's stagers.
+    pub cast_module_ctx_278: u8,
+    /// The action id whose **capture-band** module is resident, i.e. the one
+    /// battle phase `0x70` re-enters every frame through `FUN_801F2160`.
+    ///
+    /// Armed at the pager seam (`BattleActionHost::load_capture_archive`,
+    /// retail's `0x6E` arm) and cleared when the band's hold ends. `None`
+    /// means no capture module is paged in and
+    /// [`World::capture_stager_tick`] reports "not busy" - which is what a
+    /// disc-free host, or any cast that is not capture-class, sees.
+    pub capture_cast_spell: Option<u8>,
+
     /// Production battle-FX request for a **non-summon** move: a spell cast or
     /// enemy special whose move-power record carries a spawnable effect list
     /// sets `(move_id, target world pos)` here (see [`World::request_move_fx_spawn`]).
@@ -1991,6 +2058,18 @@ pub struct World {
     /// The enqueue's round-robin write cursor (`gp+0x158`), wrapping at
     /// [`crate::scus_leaf_kernels::SFX_CUE_SLOTS`].
     pub sfx_cue_cursor: i16,
+    /// The side-band sound-bank request / acknowledge pair
+    /// `_DAT_8007BABC` / `_DAT_8007BAA0`, which op `0x36`'s bit-15 subs
+    /// `1` and `2` drive and whose settled state gates sub `0` and the
+    /// whole bit-15-clear XA arm.
+    ///
+    /// REF: FUN_800243F0
+    pub sound_stream: crate::scus_leaf_kernels::SoundStreamRequest,
+    /// `_DAT_8007B868` - the dev/dual-mode gate. Retail boots it `0` and no
+    /// static writer ever sets it non-zero, so the engine keeps it `0`; the
+    /// field applies it as retail does (it *skips* op `0x36`'s whole
+    /// bit-15-set arm and *bypasses* the bit-15-clear arm's stream barrier).
+    pub dual_mode_gate: i32,
     /// The scene control block `_DAT_801C6EA4` (`0x64` bytes), re-allocated
     /// and reset on every scene load.
     ///
@@ -2868,6 +2947,9 @@ impl World {
             summon_stager: None,
             summon_actor_slot: None,
             pending_cast: None,
+            cast_module_phase: 0,
+            cast_module_ctx_278: 0,
+            capture_cast_spell: None,
             pending_move_fx_spawn: None,
             sin_lut: Vec::new(),
             cos_lut: Vec::new(),
@@ -2977,6 +3059,11 @@ impl World {
             screen_fx: Default::default(),
             screen_fx_frame: Default::default(),
             register_ramps: Vec::new(),
+            cinematic_bars: None,
+            cinematic_bar: 0,
+            eased_moves: Vec::new(),
+            field_eased_mirror_y: None,
+            floor_tier_bobs: Vec::new(),
             camera_registers: Default::default(),
             dance: None,
             dance_return_mode: SceneMode::Field,
@@ -3061,6 +3148,13 @@ impl World {
             ),
             sfx_parked_slot: 0,
             sfx_cue_cursor: 0,
+            // Retail's field init writes `(8, -1)` (`0x801D6880`) and
+            // `FUN_800243F0` latches it settled on the next frame. The
+            // engine's bank loads are synchronous - there is no in-flight
+            // window - so the pair is born settled instead, the same way the
+            // BGM barrier is satisfied on arrival.
+            sound_stream: crate::scus_leaf_kernels::SoundStreamRequest::IDLE_PAIR,
+            dual_mode_gate: 0,
             scene_control_block: crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET,
             battle_intro: None,
             battle_intro_effects: Vec::new(),
@@ -3339,6 +3433,14 @@ impl World {
         // by `FUN_801DBE9C`. Both happen on scene entry.
         self.register_ramps.clear();
         self.camera_registers = Default::default();
+        // The three frame-delta timer templates are scene content too: the
+        // MAN loader's retire sweep drops every pool actor, and a bar
+        // envelope or a floor-rung bob left running across a scene change
+        // would keep writing into the new scene's ladder.
+        self.cinematic_bars = None;
+        self.cinematic_bar = 0;
+        self.eased_moves.clear();
+        self.floor_tier_bobs.clear();
         self.prologue_naming_pending = false;
         self.prologue_naming_armed = false;
         self.entering_town01_opening = false;

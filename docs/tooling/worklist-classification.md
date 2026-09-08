@@ -34,11 +34,12 @@ directory is gitignored, so a fresh worktree has none and `port-catalog.py` run
 inside one reports `dumped: 0` - point both `--repo` and `--catalog` at the
 checkout that produced the dumps.
 
-`--repo`, `--catalog` and `--out` are **required in every mode**, including the
-two drill-downs below: the script parses its arguments before it decides what to
-do, so `--explain` or `--audit-ignored` on its own exits on an argparse error
-rather than running. Pass the same three, and send `--out` at a scratch path
-when you only want the drill-down.
+`--repo`, `--catalog` and `--out` all default to this checkout, so from the
+repo root a drill-down needs no path at all - `--audit-ignored` on its own runs.
+They used to be required in every mode, which made an audit that writes nothing
+demand a destination to write it to, and made the two drill-downs exit on an
+argparse error rather than running. Pass them explicitly when the dumps live in
+a different checkout from the one the script sits in.
 
 `--explain <addr>` prints the per-dump evidence for a single address: which dump
 files cover the VA, each one's resolved `entry=`, image, instruction count,
@@ -597,12 +598,29 @@ evidence the merged reason cannot already contain, in this order:
 | Test | Outcome |
 |---|---|
 | Classifier returns a non-portable class | Row stands - classifier and row agree outright. |
+| Classifier returns the class the row is already filed under | Row stands - see below. |
 | A covering image starts a routine at this VA at its mapped base | **Re-raise.** The row deletes a real port site whatever the dumps say. |
 | The merged reason names a true VA the dumped bytes do not resolve to | **Re-raise.** The verdict may survive, but the reason misdirects the reader. |
 | A covering image exists and starts no routine here | Row stands. |
 | The VA lies between the executable and the overlay slots | Row stands - no image maps it, so no routine can begin there. |
 | Classifier returns `UNCERTAIN` | Row stands. No verdict is not evidence the row is wrong. |
 | Nothing above applies | Re-raise, flagged as unverifiable rather than refuted. |
+
+### A row filed under the classifier's own class is not contradicted
+
+`VA_ALIASED` is not in the non-portable set - the address really does cover
+code, in several images - so an ignore row that says exactly that used to
+re-raise on every run. That trains a reader to stop reading the audit, which
+costs more than the row does. The audit therefore also stands down when the
+class it computes is the section the row already sits in, which is what
+`[worklist_va_aliased]` says: several slot-B modules hold different routines at
+one VA, so the bare address is not one port site and a `// PORT:` tag over it
+would name whichever module the tagger happened to read.
+
+That section exists because fifteen slot-B rows were filed under a *shape*
+(`interior`, `data`, `shared_tail`) before the modules that alias them were
+mapped. Re-run against the mapped set, the verdict "do not port the bare VA"
+survived every one and the stated shape survived none.
 
 ### The entry-boundary test
 
@@ -649,6 +667,15 @@ a transfer out, which rejects the shape that otherwise reads as a boundary: a
 body's *second* `jr ra` exit, whose predecessor pair is the first exit and its
 delay slot. A window carrying the data signature at the VA itself is refused for
 the same reason it is refused elsewhere - the image is answering with a table.
+
+The third signature needs a guard of its own, and for the mirror-image reason.
+Above an overlay's FIRST routine there is always a data run, so "code opening
+after a data run" fires hardest on exactly the address most likely to be that
+routine's *second* instruction. `boot_init_pak` (PROT 0895) is the case:
+`0x801CE9C0` opens `addiu sp,sp,-0x230` and its frame closes 784 bytes later, so
+`0x801CE9C4` is interior - yet the data run above `0x801CE9C0` outweighed the one
+instruction between it and the VA and the tell fired. The signature is now
+refused when the word immediately before the VA is itself a non-leaf prologue.
 
 ### Limits
 

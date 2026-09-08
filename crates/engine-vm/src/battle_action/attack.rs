@@ -4,8 +4,15 @@ use super::*;
 
 // --- attack band ------------------------------------------------------------
 
-/// Per-frame facing recompute the attack band's states share (`0x14` at
-/// `0x801E32EC..0x801E3318`, `0x15`/`0x16`/`0x19` siblings): `facing =
+/// What survives of the camera variant `ctx[+0xD]` when state `0x14` takes
+/// its in-range shortcut into the strike loop: `andi v0,v0,0x1` at
+/// `0x801E3224`.
+pub const STRIKE_CAMERA_VARIANT_MASK: u8 = 1;
+
+/// Per-frame facing recompute the attack band's states share (`0x15` at
+/// `0x801E32EC..0x801E3318`, with `0x14` / `0x16` / `0x19` siblings at
+/// `0x801E3068`, `0x801E336C` and `0x801E3568`; the outer `switch`'s entries
+/// for `0x14` and `0x15` are `0x801E305C` and `0x801E32E0`): `facing =
 /// (bearing(target_live -> attacker_live) + 0x800) & 0xFFF`, stored into
 /// `actor[+0x46]`. The half-turn flips the target-to-attacker bearing into
 /// the attacker-to-target heading the trig consumers (root motion, arrival
@@ -33,6 +40,16 @@ pub(super) fn attack_face<H: BattleActionHost + ?Sized>(
     let range = host.range_check(actor_slot, target_slot);
     let party_count = host.party_count();
     let next = if range == 0 {
+        // The in-range shortcut is the **only** one of the three
+        // `ctx[7] = 0x1E` stores that narrows the camera variant:
+        // `lbu v0,0xd(v1)` / `andi v0,v0,0x1` / `sb v0,0xd(v1)` at
+        // `0x801E321C..0x801E322C`, in state `0x14`'s own body (jump-table
+        // entry `0x14` is `0x801E305C`; the `0x18` and `0x19` stores at
+        // `0x801E3550` / `0x801E35AC` carry no such write). Only bit 0 - the
+        // half-turn - survives, so a swing entered this way is never framed
+        // with the style-2 pitch tilt. The mask is `& 1`, not `= 0`: variant
+        // `3` enters the loop as `1` and keeps its mirrored side.
+        ctx.camera_variant &= STRIKE_CAMERA_VARIANT_MASK;
         ActionState::AttackChain
     } else if actor_slot < party_count {
         // Retail stages the approach anim for the party short-step: literal
@@ -270,26 +287,30 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
 /// 801e3a54  _sb   a0,0x1df(v0)     ;   queue[i] = 0x19
 /// ```
 ///
-/// So the *whole* action stream replays once, with every marked starter
-/// demoted from the newly-learned `0x1A` to the plain `0x19` - the learn
-/// verdict fires on the first pass only. The marks are the queue builder's
-/// side array, reconstructed here by
+/// So the *whole* action stream replays once, with every **build-loop** marked
+/// starter demoted from the newly-learned `0x1A` to the plain `0x19` - the
+/// learn verdict fires on the first pass only.
+///
+/// The compare at `0x801E3A4C` is against `1`, not against "non-zero", and
+/// that is the whole point: the builder's own accept loop writes
+/// [`BUILD_STARTER_MARK`] at `0x801EF788`, while the Super tail-replace
+/// (`FUN_801EF9E4`) writes [`SUPER_STARTER_MARK`] at every `0x1A` it stamps
+/// (`0x801EFBA8`), *after* the reorder. So a Super Art's starter survives the
+/// refill at `0x1A` and the second pass performs the Super, not a plain swing.
+///
+/// The marks come off the acting actor ([`BattleActor::starter_marks`], the
+/// engine's carrier for retail's `0x801F6990`). A queue no builder produced -
+/// a monster, a synthetic host - carries none, and then the build-loop marks
+/// are reconstructed from the queue bytes by
 /// [`crate::battle_action::build_starter_marks`] exactly as the reorder pass
-/// reads them.
+/// reads them; a reconstruction can only ever yield `BUILD_STARTER_MARK`, so
+/// that fallback is the pre-carrier behaviour and nothing else.
 ///
 /// Returns `true` when the refill ran, in which case the band stays in
 /// `AttackChain` and walks the stream again from byte 0.
 ///
 /// This arm was previously read as a "Miracle continuation"; the guard chain
 /// above is what settles it.
-///
-/// One named deviation. Retail's marks survive from the build loop, where an
-/// accepted art writes `1`, while the Super tail-replace writes `4` at its own
-/// `0x1A` starters afterwards - so a Super-written starter is **not** demoted
-/// on the second pass. The engine reconstructs the marks from the queue bytes
-/// and cannot tell the two apart, so it demotes a Super's starter too. Closing
-/// it means carrying the side array on the actor from the builder to the
-/// strike loop, which nothing else needs yet.
 fn attack_x2_refill<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) -> bool {
     // Retail's literal is `ctx[+0x13] < 3`; the engine asks the host for the
     // seated party width instead, which is the same set of ordinals for a
@@ -308,11 +329,19 @@ fn attack_x2_refill<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut Battle
     let Some(actor) = host.actor_mut(slot) else {
         return false;
     };
-    let mut queue = [0u8; ACTION_QUEUE_CAP];
-    let n = actor.params.len().min(queue.len());
-    queue[..n].copy_from_slice(&actor.params[..n]);
-    let marks = build_starter_marks(&queue);
+    let marks = match actor.starter_marks {
+        Some(marks) => marks,
+        None => {
+            let mut queue = [0u8; ACTION_QUEUE_CAP];
+            let n = actor.params.len().min(queue.len());
+            queue[..n].copy_from_slice(&actor.params[..n]);
+            build_starter_marks(&queue)
+        }
+    };
+    let n = actor.params.len().min(marks.len());
     for (i, m) in marks.iter().enumerate().take(n) {
+        // `bne v0,a1,0x801E3A58` with `a1 = 1`: an exact compare, so the
+        // Super applier's `4` is skipped and its `0x1A` starter stands.
         if *m == BUILD_STARTER_MARK {
             actor.params[i] = REGULAR_STARTER;
         }

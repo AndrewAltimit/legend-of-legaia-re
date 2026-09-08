@@ -478,6 +478,7 @@ impl LegaiaRuntime {
         let frame = ai::ArtsInputFrame {
             buffer: view.buffer,
             spent: view.spent,
+            chip_costs: view.costs,
             pool: view.pool,
             pool_max: view.pool_max,
             plate_value: view.plate_value,
@@ -1703,6 +1704,16 @@ impl LegaiaRuntime {
             .and_then(|h| h.world.screen_fade_draw())
         {
             prims.push(legaia_engine_ui::screen_prim::fade_prim(rgb, abr, ot));
+        }
+        // The field overlay's cinematic wipe (`0x43 0C` -> `FUN_801DD784`).
+        // Same shared emitter as the native window's screen-prim pass, so
+        // the two bars are one kernel across the two hosts rather than two
+        // rect calculations that can drift.
+        if let Some(host) = self.scene_host.as_ref() {
+            prims.extend(legaia_engine_ui::screen_prim::cinematic_bar_prims(
+                host.world.cinematic_bar,
+                legaia_engine_ui::screen_prim::PSX_DISPLAY_H,
+            ));
         }
         self.battle_intro_geom = (!prims.is_empty()).then(|| {
             (

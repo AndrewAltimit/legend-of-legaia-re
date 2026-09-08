@@ -58,6 +58,14 @@ pub struct StatusSnapshot {
     pub stat_labels: [&'static str; 6],
     pub equip: Vec<EquipSlotView>,
     pub elements: Vec<ElementRankView>,
+    /// The member's packed battle-status halfword - char record `+0x12E`,
+    /// the mirror of battle actor `+0x16E` that retail's `FUN_80047430`
+    /// re-copies every frame a party actor ticks
+    /// (`docs/formats/save-record.md`). The pause menu's HP number inks
+    /// gold while this is non-zero: it is the `status` argument of
+    /// `FUN_800349EC` (`legaia_engine_ui::menu_hp_ink_with_status`,
+    /// which reads it at `0x6f6(0x80084140 + slot*0x414)`).
+    pub status_flags: u16,
 }
 
 /// The retail derived-stat grid labels, in the panel's draw order (left

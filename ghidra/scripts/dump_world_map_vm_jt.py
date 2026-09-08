@@ -1,13 +1,19 @@
 # @category Legaia
 # @runtime Jython
 #
-# Dump the FUN_801D362C world-map drawing-script VM jump table at
-# 0x801D1E94 (= 0x801D362C - 0x1798). The table has 0x3D u32 entries
-# (case-start addresses). For each case-start, walk forward up to ~40
-# instructions and capture the prelude so we can identify the opcode's
-# bytecode args and side effects.
+# Dump the FUN_801D362C move-VM extension jump table at 0x801CE868.
+# The table has 0x3D u32 entries (case-start addresses). For each
+# case-start, walk forward up to ~40 instructions and capture the prelude
+# so we can identify the opcode's bytecode args and side effects.
+#
+# FUN_801D362C is NOT the world map's own drawing-script VM: it is the
+# overlay-resident extension the move VM's opcode 0x2F escapes to, and a
+# five-form reference scan finds exactly one caller disc-wide, the
+# `jal 0x801d362c` at SCUS 0x80023AE0 in FUN_80023070.
+# See docs/subsystems/move-vm-overlay-ext.md.
 #
 # FUN_801D362C dispatches via:
+#   801d3654  sltiu v0,v1,0x3d        ; 61 sub-opcodes
 #   801d3660  lui v0,0x801d
 #   801d3664  addiu v0,v0,-0x1798     ; v0 = 0x801D0000 - 0x1798 = 0x801CE868
 #   801d3668  sll v1,v1,0x2           ; v1 = opcode * 4

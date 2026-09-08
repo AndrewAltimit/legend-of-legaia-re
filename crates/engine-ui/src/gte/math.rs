@@ -100,8 +100,12 @@ impl GteMat3 {
     // `camera_view_rotation`, the port of retail's own composition pass
     // `FUN_8001CF50` - and *it* is the routine with no host. The hosts do
     // build retail's `Rx * Ry * Rz` product now, roll included, but they build
-    // it with `glam` in f32 (`window::cutscene_camera_mvp`, the play window's
-    // `psx_camera_mvp`), and they carry neither the render node's `+0x52`
+    // it with `glam` in f32 - the live one is the play window's
+    // `psx_camera_mvp`, reached from the winit redraw pass; the sibling
+    // `engine_render::window::cutscene_camera_mvp` this note used to name
+    // beside it has no production caller at all any more (see
+    // docs/subsystems/cutscene.md, which records it as a unit-tested
+    // reference no render path uses). They carry neither the node's `+0x52`
     // skip-flag halfword nor a saved GTE control block. So what has to exist
     // first is a camera that wants the q3.12 product, not a call to these.
     // (The GTE register oracle in `gte/tests.rs` also drives them, which is
@@ -226,10 +230,13 @@ pub mod view_rot_flags {
 /// NOT WIRED, and the reason is now narrow: **all three angle factors reach
 /// the shot**, but the hosts compose them in `glam` floating point rather than
 /// through this q3.12 rendition. The cutscene camera multiplies
-/// `Rx(pitch) * Ry(yaw) * Rz(roll)` in the same order this function does
-/// (`crate::window::cutscene_camera_mvp`, and the play window's
-/// `psx_camera_mvp`), so there is no dropped term left - what is missing is a
-/// caller that wants the *fixed-point* product. The earlier note here, that
+/// `Rx(pitch) * Ry(yaw) * Rz(roll)` in the same order this function does -
+/// live in the play window's `psx_camera_mvp`, which the winit redraw pass
+/// calls every frame - so there is no dropped term left; what is missing is a
+/// caller that wants the *fixed-point* product. (The sibling
+/// `engine_render::window::cutscene_camera_mvp` this note used to name here
+/// as a second host is no longer one: it has no production caller, only unit
+/// tests - `docs/subsystems/cutscene.md` records it as a retained reference.) The earlier note here, that
 /// the roll factor is "decoded, stored, compared by the trace channel, and
 /// then never applied", was true when written and is not any more.
 ///

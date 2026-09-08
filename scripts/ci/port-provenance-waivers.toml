@@ -10,6 +10,19 @@
 # What a waiver may NOT say: "probably fine", "pre-existing", or anything that
 # would be equally true of a real defect. Those are unreviewed rows, and an
 # unreviewed row belongs in the report where it can still be seen.
+#
+# One whole class used to live here and no longer does: a row citing its
+# routine's CALLER - the `jal` site, the `beq` ladder above a join label, the
+# switch table an arm hangs off. Nineteen of those had a waiver each, all saying
+# the same thing, because a callee's dump structurally cannot carry an address
+# in its caller's body. The checker now reads the extracted images and decodes
+# the word at the cited address instead (`site_relation`), so those rows pass on
+# the bytes. Do not re-add a waiver of that shape: if it is really a caller site
+# the test will say so, and if the test does not say so, the citation is worth
+# looking at.
+#
+# A waiver that matches no current finding is reported by every run. Delete it
+# rather than carry it - it excuses something that no longer exists.
 
 [[waiver]]
 key = "dual-label:801d5de0"
@@ -21,22 +34,6 @@ remaining defining sites now say so - docs/reference/functions/menus.md's row
 and the correction section in docs/subsystems/world-map.md, which is kept
 deliberately so the falsified world-map reading stays findable. The signal is
 structural and cannot tell agreement from contradiction, so it still fires.
-"""
-
-[[waiver]]
-key = "absent-citation:crates/engine-core/src/muscle_dome.rs:801cf870:801d00b8+801d00e4"
-reason = """
-The corpus cannot answer this one, and the gap is in the dump rather than in the
-tag. overlay_0977_slotA_801cf870.txt reports 437 instructions / 1748 bytes but
-prints across 2088, so its body already has holes, and its printed disassembly
-stops at 0x801D0094 - below the cited 0x801D00B8..0x801D00E4. Its own decompiled
-tail nevertheless carries the repack this port implements, `_DAT_8007bac0 =
-DAT_801d1a90 * 0x10 + DAT_801d1a94 + (_DAT_8007bac0 & 0xffffff00) + 1`, and the
-string `bac0` appears nowhere in the print - so the decompilation covers code the
-disassembly does not, and the routine attribution stands while the byte range
-cannot be checked. No dump of the same image (0977_other_game.BIN) owns
-0x801D00B8; every other owner found is a VA-aliased routine in a different
-overlay. Re-dumping the routine would settle it. See dump-corpus-integrity.md.
 """
 
 [[waiver]]
@@ -459,23 +456,6 @@ and cleared by PadInitDirect (FUN_8006E2B4), which this routine calls.
 """
 
 [[waiver]]
-key = "doc-citation:docs/reference/functions/audio.md:800267a8:801e01b4"
-reason = """
-0x801E01B4 is the caller's call site, and it is there: the field-VM dumps carry
-`801e01b4  jal 0x800267a8` (overlay_world_map_801de840.txt line 1634, identical
-in the dialog_typing / dialog_mc4 prints). An instruction address inside
-FUN_801DE840 cannot appear in FUN_800267A8's own bytes.
-"""
-
-[[waiver]]
-key = "doc-citation:docs/reference/functions/audio.md:80035bac:801e03d8"
-reason = """
-Same shape, same verification: `801e03d8  jal 0x80035bac` at line 1771 of
-overlay_world_map_801de840.txt. The row cites the field VM's op-0x36 call site,
-not a global of its own.
-"""
-
-[[waiver]]
 key = "doc-citation:docs/reference/functions/battle.md:801d0f60:801ce818+801c0000"
 reason = """
 Both are load bases the row names as provenance, not operands. 0x801CE818 is
@@ -507,24 +487,6 @@ dispatch is `sltiu v0,v1,0x50` over 0x801CEB68, which every dump carries.
 """
 
 [[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801e1d98:801e0ca0+801e0cd0"
-reason = """
-Both are call sites in the move-FX draw dispatcher, one level up. The pair is
-what the row is about: 0x801E0CA0 reaches FUN_801E1AB0 and 0x801E0CD0 reaches
-this routine (docs/subsystems/battle.md and docs/formats/move-power.md both
-record the `jal 0x801e1ab0 at 0x801e0ca4`). A caller's instruction address is
-not an operand of the callee.
-"""
-
-[[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801f3990:801e3e04"
-reason = """
-The caller's call site, verified: overlay_muscle_dome_801e295c.txt line 1327 is
-`801e3e04  jal 0x801f3990`. The row cites it precisely because there is only
-one - "one jal at 0x801E3E04 in FUN_801E295C".
-"""
-
-[[waiver]]
 key = "doc-citation:docs/reference/functions/battle.md:801f452c:801c0000"
 reason = """
 0x801C0000 is named as an import base, not an operand: the row records that the
@@ -532,61 +494,6 @@ overlay_0896 / 0897 programs are 0x801C0000-band imports carrying 0898's image
 shifted, so their "801f452c" fragments are interiors of FUN_801D388C /
 FUN_801DDB30. That is the dump-corpus-integrity law being applied, and the base
 of an import cannot appear in the imported bytes.
-"""
-
-[[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801f8004:801df918"
-reason = """
-Field-VM caller call site, verified: `801df918  jal 0x801f8004` at line 1083 of
-overlay_world_map_801de840.txt (identical in dialog_typing / dialog_mc4). The
-row labels it "Field-VM caller: op 0x43 sub-0x10".
-"""
-
-[[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801f8d4c:801df974"
-reason = """
-Same, one op along: `801df974  jal 0x801f8d4c` at line 1106 of the same field-VM
-dumps. Cited as the caller's site, not as an operand.
-"""
-
-[[waiver]]
-key = "doc-citation:docs/reference/functions/game-modes.md:801d362c:801d52d0"
-reason = """
-A jump-table target, and the table is outside the body. The row states the JT is
-at 0x801CE868 (PROT 0897 file +0x50), so the 61 sub-opcode entries live in data,
-not in the dispatcher's 1293 instructions. Two of the sub-handlers the same
-sentence lists - 0x801D31B0 and 0x801D3748 - do appear in the print as branch
-targets, which is why only 0x801D52D0 is flagged; that is an artifact of where
-Ghidra stopped following, not a claim about the routine.
-"""
-
-[[waiver]]
-key = "doc-citation:docs/reference/functions/minigames-debug.md:801cf870:801d00b8"
-reason = """
-The corpus cannot answer it: the same gap already waived for
-absent-citation:crates/engine-core/src/muscle_dome.rs:801cf870. Its one dump,
-overlay_0977_slotA_801cf870.txt, reports 437 instructions / 1748 bytes but
-prints across 2088 and stops at 0x801D0094, below the cited 0x801D00B8. A
-re-dump of the routine from 0977_other_game.BIN would settle it.
-"""
-
-[[waiver]]
-key = "doc-citation:docs/reference/functions/minigames-debug.md:801d1184:801d1ac8"
-reason = """
-DAT_801D1AC8 is the downstream accumulator, written by the hub state and not by
-this routine, which is what the row says ("the first three drain into"). Read
-overlay_0977_slotA_801d1184.txt: the 65 instructions store DAT_801D1ACC,
-DAT_801D1AD0, DAT_801D1AD4 and DAT_801D1AAC and read DAT_801D1A90 /
-DAT_801D1A94 / &DAT_801D1860 / &LAB_801D1A5C - the three-row table further down
-minigames-debug.md is where 0x801D1AC8 collects them.
-"""
-
-[[waiver]]
-key = "doc-citation:docs/reference/functions/runtime-libs.md:801d9c3c:8003b444"
-reason = """
-The caller's call site, verified in the caller's own dump: 8003aeb0.txt line 362
-is `8003b444  jal 0x801d9c3c`. The row reads "called from the SCUS MAN decoder
-FUN_8003AEB0 at 0x8003B444", which is exactly that instruction.
 """
 
 [[waiver]]
@@ -735,20 +642,6 @@ FUN_801E295C and the target resolver FUN_801E7320 never touch.
 """
 
 [[waiver]]
-key = "doc-citation:docs/reference/functions/minigames-debug.md:801cef54:80025ae0+80010ae4"
-reason = """
-Both are SCUS addresses the row names as the routine's *caller*, and both are
-there. Disassembling FUN_80025980 out of extracted/SCUS_942.54 at base
-0x80010000 (header 0x800) gives `80025A64 addiu v0,v0,0xae4` under
-`lui v0,0x8001` - the jump-table base 0x80010AE4 - bounded by
-`sltiu v0,v1,7` at 0x80025A58, and the seventh arm at 0x80025AE0 is
-`jal 0x801cef54`. Reading the seven words at 0x80010AE4 gives
-0x80025A80/0x80025A90/0x80025AA0/0x80025AB0/0x80025AC0/0x80025AD0/0x80025AE0,
-so arm 6 is this routine's. Neither address is an operand of FUN_801CEF54
-itself, which is why no dump of it carries them.
-"""
-
-[[waiver]]
 key = "doc-citation:docs/reference/functions/game-modes.md:801ceb50:801ce818"
 reason = """
 0x801CE818 is the slot-A overlay load base the row names as provenance, not an
@@ -761,44 +654,37 @@ matching the row's 244 bytes. The body was re-read at the same time and the
 row corrected: the sub-state switch on `+0x5A` is two switches, not one.
 """
 
+
 [[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801f1ed4:801e4b1c+801e4c7c+801e4ca8"
+key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f7740"
 reason = """
-All three are the routine's CALLER sites, named as such by the row: each word is
-`jal 0x801F1ED4` (0x0C07C7B5) inside FUN_801E295C's bytes in
-extracted/overlays/overlay_battle_action_0898.bin at base 0x801CE818. A caller's
-jal site is never an operand of the callee, so no dump of it carries them.
+PROT 0906 (summon_gizam)'s move-VM spawn stager, 0x801F6734 row: `sltiu a1,7`
+arm bound, three FUN_80021B04 spawn calls, writes actor +0x0C and the phase
+byte ctx+0x279 (cast-module.md verdict table, PORT). Slot-B modules are
+separate images loaded at one base with NO internal jal, so a stager shares no
+callee with any sibling by construction, and its distinctive data words are its
+own module-resident spawn records - the corroboration test cannot apply inside
+this band.
 """
 
 [[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801f2410:801f2144+801f23f4"
+key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f8b90"
 reason = """
-Both are caller sites: each word is `jal 0x801F2410` (0x0C07C904), in the two
-cast dispatchers' epilogues (FUN_801F1ED4 / FUN_801F2160) in
-overlay_battle_action_0898.bin. Same shape as the 801f1ed4 waiver.
+PROT 0923 (summon_gilium)'s move-VM spawn stager, 0x801F6734 row: three spawn
+calls and a write to ctx+0x278 (cast-module.md verdict table, PORT). Same
+band-structural reason as the 801f7740 waiver above: separate image, no
+internal jal, module-private record pointers.
 """
 
 [[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801f2160:801f2128+801e50c8"
+key = "module-orphan:crates/engine-core/src/scene/host/scene_entry.rs:801d1ec4"
 reason = """
-0x801E50C8 holds `jal 0x801F2160` (a caller site in FUN_801E295C). 0x801F2128
-is FUN_801F1ED4's own epilogue - `lui v0,0x8008; lw v0,-0x42DC(v0); lbu v0,0x27A(v0)`
-- which the row names as the shared tail both dispatchers converge on. Neither
-is an operand of FUN_801F2160.
-"""
-
-[[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801d5718:801d4458"
-reason = """
-0x801D4458 holds `jal 0x801D5718` (0x0C0755C6) in overlay_battle_action_0898.bin
-- the caller site the row cites as provenance, not an operand of the routine.
-"""
-
-[[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801f69f4:80056498+800562e8+8005640c"
-reason = """
-0x80056498 holds `jal 0x801F69F4` in FUN_80056208 (extracted/SCUS_942.54, base
-0x80010000, header 0x800); 0x800562E8 / 0x8005640C are the `sb rt,0x289(rs)`
-phase-byte stores in the same caller that the row describes. All three are
-caller-side addresses; the callee's dumps cannot carry them.
+The finding appeared when overlay_cutscene_str_0970_801cea3c.txt was dumped: the
+sibling tag 801cea3c now has a corroborating dump from PROT 0970 (cutscene_str),
+a different image at the same 0x801CE818 base, so the sibling set spans two
+images. FUN_801D1EC4's identity is the field image's kind-0 intra-scene
+teleport arm (0x801D21C0..0x801D2268): it reads 0x8007BDC8..0x8007BDD4 and
+0x8007B5FC and calls the spawn evaluator FUN_8003BDE0 plus 0x801D5630 /
+0x801D58F0 / 0x801DDF48. The checker corroborates by module, not by image;
+the image-keyed form is the open checker gap.
 """

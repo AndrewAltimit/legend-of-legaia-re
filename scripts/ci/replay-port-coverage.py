@@ -163,8 +163,10 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import csv
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from collections import defaultdict
@@ -749,7 +751,12 @@ def join_anchor_coverage(
         if entered_site is not None:
             if addr in not_live:
                 inert_entered.append((addr, entered_site))
-            if entered_site.get("not_wired_tag"):
+            # `REPLACED-BY:` disclaims at least as hard as `NOT WIRED:` does -
+            # it says no host is owed, not merely that none exists - so an
+            # oracle that runs one is the same finding. Reading only
+            # `not_wired_tag` here would have hidden every replaced anchor from
+            # this bucket the moment the third class landed.
+            if entered_site.get("not_wired_tag") or entered_site.get("replaced_tag"):
                 disclosed_entered.append((addr, entered_site))
             if addr in live:
                 live_entered.add(addr)
@@ -999,6 +1006,76 @@ def run_selftest() -> int:
     return 0
 
 
+def page_audit() -> int:
+    """Which addresses on `reach-triage.md` have left it without a ladder.
+
+    This page is the per-row verdict for the *live but never entered* set, so a
+    row belongs on it only while its address is `live`. There are three ways off
+    it: a ladder enters the address (this script's own report), the wiring lands
+    (`port-catalog.py --live-audit`), and a third that neither instrument
+    announces - **the static verdict moves**. A re-key, a `NOT WIRED:`
+    disclosure or a `REPLACED-BY:` declaration can make an address read *inert*,
+    at which point `--live-audit` owns the row and this page does not.
+
+    Answering that needs no coverage export, which is the point: an export is a
+    full instrumented build per ladder, and this is a join between one committed
+    page and `target/port-catalog/catalog.csv`. Run it before spending the
+    export - a row that has already left is not work the ladders can convert.
+    """
+    page = REPO / "docs" / "tooling" / "reach-triage.md"
+    csv_path = REPO / "target" / "port-catalog" / "catalog.csv"
+    if not page.is_file():
+        print(f"[skip] {page} missing")
+        return 0
+    if not csv_path.is_file():
+        print(f"[skip] {csv_path} missing - run "
+              "`python3 scripts/ci/port-catalog.py --live` first")
+        return 0
+    cited = sorted({m.lower() for m in
+                    re.findall(r"`(80[0-9a-fA-F]{6})`", page.read_text())})
+    rows = {}
+    with csv_path.open() as fh:
+        for row in csv.DictReader(fh):
+            rows[row["addr"].lower()] = row
+
+    left: list[tuple[str, str]] = []
+    unported: list[str] = []
+    absent: list[str] = []
+    for a in cited:
+        row = rows.get(a)
+        if row is None:
+            absent.append(a)
+        elif row.get("ported") != "1":
+            unported.append(a)
+        elif row.get("live") != "1":
+            why = ("REPLACED-BY" if row.get("replaced_tag") == "1"
+                   else "NOT WIRED" if row.get("not_wired_tag") == "1"
+                   else "no disclosure")
+            left.append((a, why))
+
+    print(f"reach-triage.md cites {len(cited)} address(es); "
+          f"{len(cited) - len(left) - len(unported) - len(absent)} are still "
+          f"live ports.")
+    if left:
+        print(f"\n{len(left)} address(es) are ported but NO LONGER live - the "
+              "row belongs to --live-audit, not to this page:")
+        for a, why in left:
+            print(f"  {a}  ({why})")
+    if unported:
+        print(f"\n{len(unported)} address(es) carry no PORT tag any more:")
+        for a in unported:
+            print(f"  {a}")
+    if absent:
+        print(f"\n{len(absent)} address(es) are in no catalog row at all "
+              "(cited as retail addresses, never ported):")
+        print("  " + " ".join(absent[:24])
+              + (f" ... +{len(absent) - 24}" if len(absent) > 24 else ""))
+    if not (left or unported):
+        print("\nEvery cited address is still a live port; nothing has taken "
+              "the static-verdict exit.")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument(
@@ -1025,6 +1102,13 @@ def main() -> int:
         "export recipe reads this, so it cannot drift from the list)",
     )
     ap.add_argument(
+        "--page-audit",
+        action="store_true",
+        help="join docs/tooling/reach-triage.md's cited addresses against "
+        "target/port-catalog/catalog.csv and report the rows that are no "
+        "longer live (needs no coverage export)",
+    )
+    ap.add_argument(
         "--selftest",
         action="store_true",
         help="run the item-verdict resolver self-test on a synthetic corpus "
@@ -1034,6 +1118,9 @@ def main() -> int:
 
     if args.selftest:
         return run_selftest()
+
+    if args.page_audit:
+        return page_audit()
 
     if args.list_ladders:
         for name, pkg in CANONICAL_LADDERS:
@@ -1094,7 +1181,10 @@ def main() -> int:
     w(f"- ported addresses with anchors: **{len(anchors)}**")
     w(f"- statically live: **{len(live)}**, of which entered by a run: **{len(live_entered)}**")
     w(f"- statically not-live: **{len(not_live)}**, of which entered anyway: **{len(inert_entered)}**")
-    w(f"- `NOT WIRED`-disclosed anchors executed: **{len(disclosed_entered)}**")
+    w(
+        "- `NOT WIRED` / `REPLACED-BY`-disclosed anchors executed: "
+        f"**{len(disclosed_entered)}**"
+    )
     w(f"- not observable (const anchors, no executed reference): **{len(not_observable_const)}**")
     w(f"- not observable in any of these binaries (excluded above): **{len(unobservable)}**")
     w("")
@@ -1165,7 +1255,7 @@ def main() -> int:
         "wrong symbol - each row is a finding, not a metric.",
     )
     table(
-        "Disclosed `NOT WIRED` anchors executed",
+        "Disclosed `NOT WIRED` / `REPLACED-BY` anchors executed",
         disclosed_entered,
         "The source disclaims these as unreached, and a **passing** oracle ran "
         "them anyway. Highest-priority rows: an oracle that traverses "

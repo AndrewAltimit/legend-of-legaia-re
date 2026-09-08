@@ -602,11 +602,63 @@ one battle:
   `<leader>'s team won the battle!` and `Gained N Experience and M G.` with
   both figures right-aligned inside the sentence, plus a line per drop.
 
-  Retail's **emitter** is still not in the dumped corpus; what is pinned is
-  its output. The two window rects, the text pen and the two numeral columns
-  come from the `noa_levelup_banner` framebuffer at 320x240, measured off the
-  gold frame band - so the geometry is a capture citation, not an engine
-  invention, even though the code that produced it is untraced.
+  The two window rects, the text pen and the two numeral columns come from
+  the `noa_levelup_banner` capture at 320x240, measured off the gold frame
+  band - a capture citation, not an engine invention. What produced that band
+  is settled below, and the earlier reading of it was wrong in both halves.
+
+### The gold frame band is a nine-slice off the system-UI atlas
+
+  The band is **36 `SPRT` packets**, all CLUT `0x7FC2` on texture page `0x1E`
+  - the system-UI page - laid out as an ordinary nine-slice over the report
+  rect `x 8..312, y 152..210` (`engine-ui`'s `SPOILS_REPORT_RECT`, which the
+  packets reproduce exactly). Read out of the live primitive pool of the
+  `noa_levelup_banner` state, the tile set is:
+
+  | Piece | Size | Atlas `(u, v)` | Placement |
+  |---|---|---|---|
+  | corners | `4 x 4` | `(160, 0)` `(188, 0)` `(160, 28)` `(188, 28)` | the four rect corners |
+  | horizontal edge | `24 x 4` | `(164, 0)` top, `(164, 28)` bottom | repeated across, last tile clipped to `8` |
+  | vertical edge | `4 x 24` | `(160, 4)` left, `(188, 4)` right | repeated down, last tile clipped to `2` |
+
+  So the band is the same chrome the port already draws
+  (`menu_window_chrome_draws_for`, "nine-slice over the blue fill, off the
+  system-UI atlas"), at the same cells - and the port's outset-by-2 rule for
+  the two `SPOILS_*` constants is what makes its rect land on these pixels.
+
+### `FUN_8002C69C` does run in battle - the `jal` sweep was blind to its caller
+
+  The superseded reading was: a `jal`-target sweep over the extracted overlay
+  images finds callers of the SCUS window emitter `FUN_8002C69C` in the field
+  overlay, the menu overlay and three minigame overlays, and battle overlay
+  0898 is not one of them - therefore these windows are not the menu's skin
+  drawn from battle code and "whatever emits them builds its own primitives".
+
+  The sweep is right and the inference is wrong. `FUN_8002C69C` has a **SCUS**
+  caller as well as the overlay ones - `FUN_80031D00`, `jal 0x8002C69C` at
+  `0x800323E4` - and that path does not need a battle-overlay `jal` at all: it
+  runs off the per-frame retained widget list, which battle code writes into
+  rather than draws from. A breakpoint on the OT linker `AddPrim`
+  (`FUN_8003D2C4`; every emitter in the engine links through it) across a
+  whole battle plus its end sequence records **three** `AddPrim` sites inside
+  `FUN_8002C69C` live throughout, from the first captured vsync to the last -
+  `0x8002E558` (left cap), `0x8002E76C` (repeated middle) and `0x8002E620`
+  (right cap) - together with three inside the text kernel `FUN_80036888`. The battle HUD's own name
+  plaques are that same three-part strip at a different tile size
+  (`8 x 20` caps, `16 x 20` middles) on the same page `0x1E`, one CLUT row
+  over at `0x7FC4` / `0x7FCC`.
+
+  What a jal sweep cannot see is a caller reached through a list, and that is
+  the whole distance between the two readings.
+
+  One caveat on the emitter, stated as measured: the live capture is the Rim
+  Elm Gimard fight, a **story battle that returns to the field without a
+  results report at all** - across its end sequence no packet anywhere in the
+  frame carries the `304`-wide band, so it pins `FUN_8002C69C`'s in-battle
+  liveness and the strip family, not which of that routine's arms lays the
+  nine-slice. Pinning the arm needs the same `AddPrim` capture over a *random*
+  encounter's victory, which needs a pad-driven ladder rather than a state
+  that resolves on its own.
 
 One thing the pair still gets wrong:
 

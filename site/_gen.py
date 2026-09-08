@@ -604,6 +604,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/translation.html",   "Translation / language packs",  "tooling/translation",        "tooling/translation.html"),
     ("tooling/port-catalog.html",  "Port catalog",                  "tooling/port-catalog",       "tooling/port-catalog.html"),
     ("tooling/disc-coverage.html","Disc coverage",                 "tooling/disc-coverage",      "tooling/disc-coverage.html"),
+    ("tooling/byte-accounting.html","Byte accounting",              "tooling/byte-accounting",    "tooling/byte-accounting.html"),
     ("tooling/address-reference-scan.html","Address-reference scan","tooling/address-reference-scan","tooling/address-reference-scan.html"),
     ("tooling/rom-patcher.html",   "ROM patcher (in browser)",      "tooling/rom-patcher",        "tooling/rom-patcher.html"),
     ("reference/index.html",       "Reference",                     "reference/index",            "reference/index.html"),
@@ -1258,7 +1259,7 @@ def build_progress_meter() -> str:
         "decompilation": ("{pct:.1f}<small>%</small>", "of the executable's code traced in Ghidra"),
         "formats": ("{pct:.1f}<small>%</small>", "of disc bytes resolve to a documented format"),
         "port": ("{count}", "retail functions reimplemented in Rust"),
-        "wiring": ("{pct:.1f}<small>%</small>", "of ported code wired into the live engine"),
+        "wiring": ("{pct:.1f}<small>%</small>", "of ported code a host is owed for, wired"),
     }
     rows = []
     for t in tracks:

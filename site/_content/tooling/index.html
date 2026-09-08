@@ -116,7 +116,7 @@
 
 <section class="doc-section" id="measure">
   <h2>Measure the port</h2>
-  <p>Three questions, three instruments: how much of the game is understood and reimplemented (port catalog, disc coverage), whether the port matches retail frame for frame (differential oracle), and whether it matches <em>itself</em> run twice (determinism).</p>
+  <p>Four questions, four instruments: how much of the game is understood and reimplemented (port catalog, disc coverage), how much of one entry's bytes a parser really consumes (byte accounting), whether the port matches retail frame for frame (differential oracle), and whether it matches <em>itself</em> run twice (determinism).</p>
   <div class="card-grid">
     <a class="card" href="port-catalog.html">
       <div class="card-title">Port catalog</div>
@@ -125,6 +125,10 @@
     <a class="card" href="disc-coverage.html">
       <div class="card-title">Disc coverage</div>
       <div class="card-body">The same question with the denominator taken from the <em>disc</em>: byte-exact coverage of each code image by dumped functions, plus PROT format recognition by bytes.</div>
+    </a>
+    <a class="card" href="byte-accounting.html">
+      <div class="card-title">Byte accounting</div>
+      <div class="card-body">One entry at a time, and then all 1233: which bytes any parser here actually consumes, and what shape the rest has - so an unwalked format is a run at the top of a list.</div>
     </a>
     <a class="card" href="recomp-differential.html">
       <div class="card-title">Recomp differential oracle</div>

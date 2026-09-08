@@ -114,15 +114,26 @@
 //! swings. `FUN_801D5854` clears it to
 //! `0` when the acting character id is `3` (`0x801D6A5C`).
 //!
-//! ## The two ramp counters
+//! ## The three ramp counters
 //!
-//! `ctx[+0x26E]` and `ctx[+0x87C]` are advanced by `FUN_801D5854`'s own
-//! prologue, on every call, by `8 * frame_step` - the ramp saturating at
-//! `0xC8` ([`AttackCamCtx::advance`], `0x801D58F8..0x801D5960`). Several arms
-//! re-zero them through the `ctx[+0x26F]` latch when the swing crosses an
-//! animation-frame threshold ([`AttackCamCtx::latch_reset`]). Both are ported,
-//! so the arms carry their literals and ramps rather than only their table
-//! folds.
+//! `ctx[+0x26E]`, `ctx[+0x270]` and `ctx[+0x87C]` are advanced by
+//! `FUN_801D5854`'s own prologue, on every call, by `8 * frame_step` - the two
+//! byte ramps saturating at `0xC8` ([`AttackCamCtx::advance`],
+//! `0x801D58F8..0x801D59B8`). Several arms re-zero `ctx[+0x26E]` through the
+//! `ctx[+0x26F]` latch when the swing crosses an animation-frame threshold
+//! ([`AttackCamCtx::latch_reset`]). All three are ported, so the arms carry
+//! their literals and ramps rather than only their table folds.
+//!
+//! `ctx[+0x270]` is the odd one out: nothing in the per-art arms reads it.
+//! Its only consumer is the case-8 **death re-frame** in the same function
+//! (`0x801D6B50..0x801D6B98`, `battle_cam_script::apply_death_reframe`), which
+//! is why the two byte ramps share an increment law but not a reset - the
+//! death re-frame zeroes `ctx[+0x270]` itself the moment its own gate opens.
+//!
+//! Both byte ramps step through [`AttackCamCtx::ramp_step`], which models the
+//! `sb` **before** the ceiling test: retail stores the sum into a byte and
+//! then compares the *truncated* value against `0xC9`, so a frame step big
+//! enough to carry past `0xFF` lands the ramp low rather than at the cap.
 
 /// Action category the gate demands (`actor[+0x1DE] == 3`, Attack).
 pub const CATEGORY_ATTACK: u8 = 3;
@@ -612,6 +623,11 @@ pub struct AttackCamCtx {
     pub phase_cursor: u8,
     /// `ctx[+0x26E]` - the `0..=`[`AttackCamCtx::RAMP_CAP`] ramp.
     pub ramp: u8,
+    /// `ctx[+0x270]` - the second byte ramp the same prologue advances
+    /// (`0x801D5960..0x801D59B8`), on the same law and the same cap. Read
+    /// only by the case-8 death re-frame
+    /// (`battle_cam_script::apply_death_reframe`).
+    pub death_ramp: u8,
     /// `ctx[+0x87C]` - the free-running 32-bit accumulator advanced beside
     /// the ramp. Unlike the ramp it does not saturate; the arms read it whole
     /// (`lw` + shift) or truncated (`lhu`).
@@ -638,13 +654,31 @@ impl AttackCamCtx {
     pub fn advance(&mut self, frame_step: u32) {
         let d = frame_step.wrapping_mul(Self::RAMP_SCALE);
         self.accum = self.accum.wrapping_add(d);
-        if self.ramp < Self::RAMP_CAP {
-            let next = u32::from(self.ramp).wrapping_add(d);
-            self.ramp = if next > u32::from(Self::RAMP_CAP) {
-                Self::RAMP_CAP
-            } else {
-                next as u8
-            };
+        self.ramp = Self::ramp_step(self.ramp, d);
+        self.death_ramp = Self::ramp_step(self.death_ramp, d);
+    }
+
+    /// One byte ramp's step, shared by `ctx[+0x26E]` and `ctx[+0x270]`
+    /// because retail spells the two out as byte-identical code
+    /// (`0x801D5910..0x801D595C` and `0x801D5968..0x801D59B8`).
+    ///
+    /// The order matters: retail tests `ramp < 0xC8` *before* adding, stores
+    /// the sum with `sb` - which truncates to 8 bits - and only then compares
+    /// the stored byte against `0xC9`. So the clamp sees the truncated value,
+    /// not the true sum, and a step of `>= 0x20` display frames wraps the ramp
+    /// low instead of pinning it at the cap. Retail's own frame step is `1..4`
+    /// so the wrap never fires in play; the port models it anyway because the
+    /// alternative is an arithmetic that only agrees on the inputs it was
+    /// tested with.
+    fn ramp_step(cur: u8, d: u32) -> u8 {
+        if cur >= Self::RAMP_CAP {
+            return cur;
+        }
+        let stored = u32::from(cur).wrapping_add(d) as u8;
+        if stored > Self::RAMP_CAP {
+            Self::RAMP_CAP
+        } else {
+            stored
         }
     }
 
@@ -670,9 +704,19 @@ impl AttackCamCtx {
     /// `coin` is the caller's `rand() % 2` - retail's `FUN_8004E13C` rolls it
     /// at action seed, and the port's battle camera rolls it on entry into
     /// the Action phase.
+    ///
+    /// [`Self::death_ramp`] is **carried across** the seed. `FUN_8004E13C`
+    /// writes exactly one byte of this quartet - `sb v0,0x26d(a0)` at
+    /// `0x8004E2DC` - and nothing else in the action seed touches
+    /// `ctx[+0x270]`; its only zeroing site is the death re-frame's own gate
+    /// (`sb zero,0x270(a0)` at `0x801D6B4C`). Since the prologue ramp saturates
+    /// in ~25 display frames, a fight's second death therefore reads a ramp
+    /// already at the cap, which is what makes the re-frame a *recovery* from
+    /// the corpse-on-the-floor pose rather than a pull-in from scratch.
     pub fn begin_action(&mut self, coin: bool) {
         *self = AttackCamCtx {
             phase_cursor: u8::from(coin),
+            death_ramp: self.death_ramp,
             ..AttackCamCtx::default()
         };
     }
@@ -1345,6 +1389,7 @@ mod tests {
             accum: 400,
             latch: 0,
             phase_cursor: 0,
+            death_ramp: 0,
         };
         ctx.latch_reset(1, false);
         assert_eq!(ctx.ramp, 40, "a latch of 0 does not answer to `expect = 1`");
@@ -1366,6 +1411,7 @@ mod tests {
             accum: 9999,
             latch: 2,
             phase_cursor: 1,
+            death_ramp: 0,
         };
         ctx.begin_action(false);
         assert_eq!(ctx, AttackCamCtx::default());
@@ -1404,6 +1450,7 @@ mod tests {
                         ramp: 24,
                         accum: 240,
                         latch: 0,
+                        death_ramp: 0,
                     };
                     let mut a = probe_actor(c, art);
                     a.anim_frame = anim;

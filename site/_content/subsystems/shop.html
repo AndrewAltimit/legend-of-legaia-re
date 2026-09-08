@@ -116,12 +116,13 @@
     <thead><tr><th>Window</th><th>Rect</th><th>Content</th></tr></thead>
     <tbody>
       <tr><td><code>0x2A</code> mode panel</td><td>(42, 46, 80&times;38)</td><td>Buy / Sell / Quit rows; bobbing cursor on the selected row</td></tr>
-      <tr><td>buy list</td><td>list window</td><td>content-builder list (case <code>0x0B</code>), priced against gold; row layout untraced</td></tr>
+      <tr><td>buy list</td><td>list window</td><td>content-builder list (case <code>0x0B</code>), priced against gold; the row words are <code>[class][0x800 dim][item id]</code> and the record&rsquo;s last entries are hoisted to the top</td></tr>
       <tr><td>35 quantity</td><td>(138, 100, 168&times;50)</td><td>&ldquo;Have N&rdquo;, &ldquo;How many will you buy?&rdquo;, quantity &times; price at +34 px; digit-field width from the <em>unit</em> price</td></tr>
       <tr><td>39 sell detail</td><td>(14, 95, 144&times;53)</td><td>name, description, price row (5-digit, half price), accessory passive name + description</td></tr>
       <tr><td>31 Point Card toast</td><td>-</td><td>8-digit balance between a heading and a &ldquo;point(s)&rdquo; label</td></tr>
     </tbody>
   </table>
+  <p><strong>The last rows come first.</strong> The buy list is built by the SCUS content builder&rsquo;s case <code>0x0B</code>, which splits the record at <code>count &minus; 3</code>: entries at or past the split go into the row buffer first and are staged with the accent ink, and the rest follow. Every shop record reserves three tail slots for that band and pads the unused ones with unsellable template ids, so the highlighted strip is 0, 2 or 3 rows wide - and it lines up one-for-one with the &ldquo;new in this town&rdquo; markers the walkthrough tables carry.</p>
   <p><strong>Row ink is last-rule-wins.</strong> Three tests run in order and each overwrites the last: a full stack greys the row; the record&rsquo;s &ldquo;owned / restricted&rdquo; marker re-inks it to the accent pen even so; an unaffordable price greys it again even so. On the mode panel, an empty bag dims Sell - and Quit with it, because nothing restores the ink between the two draws.</p>
   <details class="disclosure">
     <summary>Details: cursor word bits and the window choreography</summary>
@@ -171,7 +172,7 @@
   </table>
   <details class="disclosure">
     <summary>History: the casino list filed as the shop list</summary>
-    <div class="disclosure-body"><p>The 8-row, 14 px layout of <code>FUN_801D5DE0</code> was once filed as the shop buy list on the strength of its dump filename, <code>overlay_shop_save.bin</code>. That name identifies the image the routine came from, which carries casino code too; the routine itself never reads the gold purse. The shop&rsquo;s real buy-list row layout is untraced.</p></div>
+    <div class="disclosure-body"><p>The 8-row, 14 px layout of <code>FUN_801D5DE0</code> was once filed as the shop buy list on the strength of its dump filename, <code>overlay_shop_save.bin</code>. That name identifies the image the routine came from, which carries casino code too; the routine itself never reads the gold purse. The shop&rsquo;s own row layout is the content builder&rsquo;s (case <code>0x0B</code>), traced separately above.</p></div>
   </details>
 </section>
 

@@ -2,20 +2,27 @@
 //!
 //! PORT: FUN_8003EBE4, FUN_8003EC70
 //!
-//! ## NOT WIRED
+//! ## REPLACED-BY: on-demand PROT resolution through `crate::scene::ProtIndex`
 //!
-//! Applies to every anchor in this file. The host trait side is finished -
-//! `OverlayLoaderHost for ProtCdDmaHost` lives in [`crate::cd_dma`] - what
-//! is missing is a caller. The engine has no mode-table overlay-residency
-//! model: it resolves PROT entries on demand through the scene host and
-//! keeps no `gp+0x924` / `gp+0x934` cache pair, so there is no dispatcher to
-//! route a paired parallel load through. Wiring [`load_overlay_a`] /
-//! [`load_overlay_b`] needs that residency model first.
+//! Applies to every anchor in this file, and it is a replacement rather than a
+//! wiring gap because the thing these loaders exist to manage does not exist
+//! in the port. Retail holds two overlay images resident in fixed RAM windows
+//! and keeps a `gp+0x924` / `gp+0x934` cache pair so a mode bounce does not
+//! re-read them; the engine has no RAM windows to page into and no residency
+//! model, because it resolves a PROT entry from the disc image at the moment
+//! it needs the bytes. There is therefore no dispatcher a paired parallel load
+//! could hang off, and standing one up would re-host retail's memory budget
+//! rather than add behaviour. The host trait side is finished -
+//! `OverlayLoaderHost for ProtCdDmaHost` lives in [`crate::cd_dma`] - and
+//! stays as the decoded spec of the caching rule.
 //!
-//! [`battle_stage_overlay_entry`] is inert for a narrower reason: the engine
-//! carries no per-formation stage id, so nothing produces the
-//! `_DAT_8007B64A` value it maps. The one battle that pages a stage overlay
-//! is primed by the host instead, through `World::prime_battle_tutorial`.
+//! [`battle_stage_overlay_entry`] and [`boss_transition_stage_id`] are
+//! replaced by the same substitution one layer up: nothing produces the
+//! `_DAT_8007B64A` stage id because nothing pages a stage overlay. The one
+//! battle that does is primed by the host directly, through
+//! `World::prime_battle_tutorial`, and the stage *geometry* the player sees
+//! comes from the resident scene bundle
+//! (`ProtIndex::battle_stage_entry_for_scene`), not from these ids.
 //!
 //! Two SCUS-resident wrappers around [`crate::cd_dma::CdDmaHost::prot_one_shot_load`]
 //! that the mode-table dispatcher uses to stream the active scene's pair of

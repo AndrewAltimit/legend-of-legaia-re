@@ -123,14 +123,23 @@
 //!   spinning; the tick ends as a yield with no facing change, which is the
 //!   correct facing-channel answer for that frame.
 //!
-//!   NOT WIRED: the stepped-over set, by op number, is `0x02`, `0x06`,
-//!   `0x07`, `0x08`, `0x09`, `0x0A`, `0x0B`, `0x0C`, `0x0E`, `0x0F`, `0x10`,
-//!   `0x11`, `0x12`, `0x13`, `0x14`, `0x15` and `0x16` - every remaining
-//!   entry in [`legaia_asset::man_motion::op_width`]'s space. Their widths
-//!   are known (that is what lets the walk stay in sync) and `0x07` / `0x08`
-//!   are separately decoded as the story-flag writers by the static census
-//!   `legaia-engine man-scripts --motion-flag-census`, but no body here
+//!   **Not executed here**: the stepped-over set, by op number, is `0x02`,
+//!   `0x06`, `0x07`, `0x08`, `0x09`, `0x0A`, `0x0B`, `0x0C`, `0x0E`, `0x0F`,
+//!   `0x10`, `0x11`, `0x12`, `0x13`, `0x14`, `0x15` and `0x16` - every
+//!   remaining entry in [`legaia_asset::man_motion::op_width`]'s space. Their
+//!   widths are known (that is what lets the walk stay in sync) and `0x07` /
+//!   `0x08` are separately decoded as the story-flag writers by the static
+//!   census `legaia-engine man-scripts --motion-flag-census`, but no body here
 //!   executes any of them.
+//!
+//!   This sentence used to open with the port-catalog's module-wide
+//!   inert-disclosure marker. It is a statement about retail *opcodes*, not
+//!   about this module's wiring - the module is live, driven per frame from
+//!   `World`'s field actor tick - and as a blanket it declared every anchor
+//!   in the file inert, which is what put four rows in `--live-audit`'s
+//!   stale section. The marker is matched anywhere in a doc block, so it
+//!   cannot appear in prose here. See
+//!   `docs/tooling/stale-not-wired-triage.md`.
 //!
 //! ## The `0x05` wait is interruptible
 //!
@@ -356,17 +365,20 @@ impl RampScheduler {
         }
     }
 
-    // NOT WIRED, and a call site would be provably unobservable. The pool is
-    // per-channel ([`AmbientMotion::ramps`]) and every channel is rebuilt from
-    // scratch on scene entry (`World::seed_field_npc_ambient` clears the map
-    // and constructs a fresh `AmbientMotion` per placement), so no pool ever
-    // crosses a scene boundary. [`RampScheduler::new`] and this reset leave
-    // **byte-identical** state - `slots = [None; RAMP_SLOTS]`, `overflow = 0` -
-    // so adding a scene-entry call would change nothing at all: the definition
-    // of a fake wire. It exists so a host that does keep a long-lived pool
-    // re-arms the header slot the way retail does instead of clearing all 64
-    // and handing out slot 0. What would make it load-bearing is a host that
-    // recycles schedulers across scenes, not a caller.
+    // REPLACED-BY: per-scene reconstruction in `World::seed_field_npc_ambient`,
+    // which clears the ambient map and constructs a fresh `AmbientMotion` -
+    // and so a fresh [`RampScheduler`] - per placement on every scene entry.
+    // The pool is per-channel ([`AmbientMotion::ramps`]) and never crosses a
+    // scene boundary, so retail's arena reset has no boundary left to sit on:
+    // the engine drops the arena instead of clearing it.
+    //
+    // No host is owed rather than none has got round to it. [`RampScheduler::new`]
+    // and this reset leave **byte-identical** state - `slots = [None; RAMP_SLOTS]`,
+    // `overflow = 0` - so a scene-entry call site would change nothing a player
+    // or a test could see: the definition of a fake wire. The body stays because
+    // it is the byte-exact record of retail's asymmetric last store (see below),
+    // and a host that ever does recycle schedulers across scenes needs exactly
+    // it - that would be a representation change, not a call insertion.
     /// PORT: FUN_8003CDA8 - the scene-entry pool reset.
     ///
     /// Retail zeroes the busy word `+0x1E` of all **64** raw slots, clears

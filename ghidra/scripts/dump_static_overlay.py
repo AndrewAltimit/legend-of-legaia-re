@@ -53,6 +53,17 @@ from ghidra.util.task import ConsoleTaskMonitor
 # entry (VA - base); the base is 0x801F69D8 for every row here.
 RANGES = {
     "overlay_summon_gimard_0903": [("801f69d8", "801f7724")],
+    # PROT 0915 / 0926 / 0935 read `0.0%` and `98.0%` FLOOR in disc-coverage
+    # not because their bytes resist frame matching but because their images
+    # were never imported into the Ghidra project at all - the band was
+    # imported before those three map rows existed, and nothing since re-ran
+    # the import. Frame matching partitions them exactly like the rest of the
+    # band. 0926 is the null module: its `0x801F6734` row is `jr ra; nop` and
+    # its tick arm points straight at 0898's shared epilogue `0x801F2410`, so
+    # eight bytes really is the whole of its code.
+    "overlay_summon_mushura_0915": [("801f69d8", "801f7f34"), ("801f7f34", "801f7f98")],
+    "overlay_summon_stager_x98_0926": [("801f69d8", "801f69e0")],
+    "overlay_cast_earthquake_0935": [("801f69d8", "801f7ff0"), ("801f7ff0", "801f8028")],
     "overlay_summon_stager_x83_0905": [("801f69d8", "801f8078"), ("801f8078", "801f81e4")],
     "overlay_summon_nighto_0907": [("801f69e8", "801f7fa8"), ("801f7fa8", "801f81d0")],
     "overlay_stager_ultimate_rave_0924": [("801f6a18", "801f7820"), ("801f7820", "801f787c")],
@@ -287,11 +298,34 @@ RANGES = {
     "overlay_battle_tutorial_0967": [("801f747c", "801f7628")],
     # PROT 0901's middle band is a SHARED-TAIL leaf family, not a sequence of
     # ordinary functions: 0x801F7644..0x801F8EB4 carries frameless draw leaves
-    # with six `jal`s and NOT ONE `jr ra` - each leaf `j`s to the common exit at
-    # 0x801F8EB4. Neither a prologue partition nor `walk_range`'s cut-at-`jr ra`
-    # can split that, so the family is dumped as one range up to the next real
-    # prologue. Treat the dump as the family, not as one routine.
-    "overlay_world_map_render_0901": [("801f7644", "801f8f28")],
+    # with NOT ONE `jr ra` and no prologue. Neither a frame partition nor
+    # `walk_range`'s cut-at-`jr ra` can split it, so it used to be dumped as one
+    # 6256-byte range - a claim its own control flow contradicts.
+    #
+    # The cut is the `j` that leaves the band. Each leaf tail-jumps into the
+    # SCUS packet emitter `0x80043580` and the next leaf starts at that jump's
+    # delay slot + 4; there are eight such sites, so the band is eight leaves,
+    # six of which also `jal 0x80044798`. The other twelve `j` sites are LOCAL
+    # early-outs whose targets are inside the same leaf, and cutting on those
+    # over-splits by nine. Partition recovered by
+    # `scripts/ghidra-analysis/split-tail-call-band.py`.
+    #
+    # Between the family and the routine above it sits the DISPATCH TABLE the
+    # family is selected through: eight zero words at 0x801F8968, then twelve
+    # words at 0x801F8988 - four SCUS emitters (0x8004409C, 0x8004423C,
+    # 0x80044434, 0x800445B0) and then the eight leaf VAs, in the order 7644,
+    # 7838, 7F78, 8198, 7AA4, 7CCC, 8454, 8690. So the range must resume at
+    # 0x801F89B8, not at 0x801F8968: the table is data and belongs to no body.
+    # The last range is a frameless routine of the same shape as the leaves -
+    # four local `j`s to its own tail - returning through the `jr ra` at
+    # 0x801F8EB4. Above it, 0x801F8EBC..0x801F8F28 is a `nop` field plus an
+    # orphan epilogue (`lw ra,0x20(sp) ... jr ra; addiu sp,sp,0x28`), so it is
+    # not a body and is deliberately outside the partition.
+    "overlay_world_map_render_0901": [
+        ("801f7644", "801f7838"), ("801f7838", "801f7aa4"), ("801f7aa4", "801f7ccc"),
+        ("801f7ccc", "801f7f78"), ("801f7f78", "801f8198"), ("801f8198", "801f8454"),
+        ("801f8454", "801f8690"), ("801f8690", "801f8968"), ("801f89b8", "801f8ebc")
+    ],  # 9 fn, 6180/10240 B code
     # SCUS: a two-instruction `jr ra; nop` null leaf that PROT 0895's
     # FUN_801CEFD4 calls. Nothing else in the corpus dumps it, and a cited
     # address with no dump is exactly what `port-catalog.py --missing-dumps`
@@ -328,7 +362,38 @@ WALK_RANGES = {
     # from the mode-16 entry `FUN_801CE9C0` to the last frame-matched `jr ra`.
     # Everything above that is the logo TIM payload (first TIM at file 0x21C4).
     "overlay_boot_init_pak_0895": [("801ce9c0", "801d0984")],
+    # PROT 0900's head window, below its first frame at 0x801F7088: the summon
+    # renderer's frameless dispatch prologue. Ten framed bodies sit above it and
+    # are already dumped; this run is the part a frame partition cannot reach.
+    "overlay_summon_render_0900": [("801f69ec", "801f7088")],
+    # PROT 0970's `0x801CF02C` leaf. A run with a `jr ra` in it is NOT by itself
+    # a reason to walk it - see the warning below - and this one qualifies for a
+    # different reason: a pointer table in its own image (0970 file `+0x11C`,
+    # VA `0x801CE934`) holds its address, so it is a table-named frameless leaf
+    # of the same shape as PROT 0901's draw family.
+    "overlay_cutscene_str_0970": [("801cf02c", "801cf098")],
 }
+
+# `walk_range` FABRICATES AN ENTRY POINT when the run it is given does not start
+# at one. Its fallback - force-disassemble, cut at the first `jr ra`, call the
+# result a function - always produces a body, and the body always looks
+# plausible, so a run picked purely because `disc-coverage.py` calls it
+# un-dumped code yields a dump asserting a function head that does not exist.
+# That is the exact defect docs/tooling/dump-corpus-integrity.md is about,
+# manufactured rather than inherited.
+#
+# Four such runs were walked and their dumps deleted again once the bytes were
+# read: `0x801CE918` (0971) and `0x801DDAE8` / `0x801DDB00` / `0x801DDB44`
+# (0897) sit mid-instruction-stream, and `0x801CFF44` (0977) is the loop tail of
+# `FUN_801CF870`, whose prologue is 0x6D4 bytes above it. None is a prologue,
+# none follows a `jr ra` + delay slot, and the five-form scan finds no reference
+# to any of them in any image.
+#
+# So before adding a WALK_RANGES row, check the run's START, not its contents:
+# it must open `addiu sp, sp, -N`, or follow a `jr ra` + delay slot, or be
+# named by a table or a `jal` somewhere in its own image. A run that satisfies
+# none of those is bytes without an entry, and the honest record of it is the
+# worklist row, not a dump.
 
 # Runs `disc-coverage.py` ranks as `code` that the bytes say are DATA, so no
 # dump belongs there. Kept as a list rather than deleted, because the next

@@ -45,6 +45,7 @@ fn gaza_record() -> MonsterRecord {
         magic_count: 0,
         spells: vec![],
         magic_attacks: vec![],
+        plaque_badge: None,
     }
 }
 

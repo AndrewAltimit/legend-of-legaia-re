@@ -227,6 +227,7 @@ shape is work:
 | `mostly_padding` | at least half the words are zero | no |
 | `data_segment` | at or above the image's last `jr ra`, and holding no `lui $rt, 0x80xx` | no |
 | `no_exit` | 1024 bytes or more with no `jr ra` in them | if the statistic passes it |
+| `no_boundary` | neither delimiter word: no `addiu $sp, $sp, -F` and no `jr ra`, at any length | if the statistic passes it |
 | `return_tail` | a `jr ra` (+ `nop`) the preceding routine's analysed body stops short of | if the statistic passes it |
 | `bios_thunk_slot` | the delay slot of a `jr $t2` PSX BIOS-call thunk | yes (tiny-gap fiat) |
 | `psyq_lib_stamp` | an 8-byte `Ps` + id + word record: the PSY-Q librarian's version stamp between link modules | yes (tiny-gap fiat) |
@@ -296,6 +297,37 @@ The floor for `no_exit` is set above one function's worth of bytes so a gap
 holding the *interior* of one long body is not demoted by it, and a demoted run
 is not hidden: it stays in `undumped-runs.csv` under its shape, and only leaves
 the ranked worklist.
+
+#### `no_boundary`: neither word a body is delimited by
+
+`no_exit` tests one word, which is why it needs a length floor. A MIPS I body is
+bounded by **two**: it opens with `addiu $sp, $sp, -F` (or is a frameless leaf)
+and every one of them closes with `jr ra`. A run holding neither carries no
+function **entry** - the only thing a dump can be keyed on - and no **exit** for
+a dump's `size=` to be measured to, so dumping cannot close it: a dumper is
+driven from an address list and this run supplies no address.
+
+Adding the prologue leg is what removes the need for the floor. A short run with
+no `jr ra` is routinely the head of a routine whose exit is past the window, and
+that head is real work - but it holds a prologue, so it stays `code` at any
+length. The same two words are what
+`ghidra/scripts/dump_static_overlay.py`'s frame-matched partition is built out
+of, so this shape and that partition draw the code/data boundary with the same
+test.
+
+The residual case is stated rather than papered over: the **interior** of one
+long body carries neither word either, so a gap falling wholly inside an
+un-dumped routine lands here. That is not a lost worklist row - the routine's
+own prologue sits in some adjacent run, which keeps its `code` shape and names
+the entry, and the entry rather than its interior is the address a dump is asked
+for. As with `no_exit`, a demoted run stays in `undumped-runs.csv` under its
+shape and only leaves the ranked worklist.
+
+The shape is deliberately confined to the **census and the worklist**: it does
+not enter `classify_gap`, so the code denominator and the ratcheted percentages
+are byte-identical across the change. That is the same seam `no_exit` sits on,
+and for the same reason - the denominator's calibration is controlled and moving
+it is a separate claim about each image's rodata.
 
 #### `data_segment`: the bytes past an image's last `jr ra`
 
@@ -419,10 +451,36 @@ overlay and the field overlay at different moments. Attributing by address alone
 counts a dump for every image whose span contains it.
 
 Rather than publish a number that quietly double-counts, each overlay row
-carries the share of its extents that could not be placed. Above 50% the *upper
+carries the share of its coverage that could not be placed. Above 50% the *upper
 bound* is replaced by **not meaningful**, and such rows are excluded from the
 `code` ratchet - a figure that moves with attribution rather than with real
 coverage would produce failures nobody can act on.
+
+### The discount has to be in the unit the figure is stated in
+
+That share was counted in **extents** while the figure it discounts is counted
+in **bytes**, and the two answers differ by two orders of magnitude. The corpus
+carries a long tail of 4-to-36-byte dumps - a `halt_baddata` stub Ghidra minted
+over a data word, a function tail the dumper resolved as a body of its own - and
+an extent count weighs each of those exactly as much as a 6 KB module. On the
+slot-B band that read as ~90% ambiguity over ~0.2% of the bytes, and it withheld
+the upper bound from most of the band on that basis.
+
+The byte share is `covered - at least` over `covered`: precisely the span the
+upper bound credits and the floor does not. It is not a looser test - it is the
+same test in the right unit, and it still reads **100%** for the two images
+(`summon_mushura`, `cast_earthquake`) that genuinely have no attributed byte, so
+it separates the real cases from the artefacts rather than passing everything.
+The extent count stays on the table as its own column, because the divergence
+between the two is itself the signal that a row's residue is fragments.
+
+A second defect sat underneath it. An extent that only ONE measured span
+contains needs no attribution - address arithmetic already answers it, which is
+why the attribution sweep writes no row for it - but the floor read "absent from
+the CSV" as "unplaced" and left it out. Every extent past the end of an image's
+VA-alias siblings was therefore counted against the image that unambiguously
+owns it. `battle_action`'s floor was 93.0% for that reason and is 99.7% once
+those extents count.
 
 ### Two bounds, because one of them is defined for every row
 
@@ -459,9 +517,19 @@ reads and applies:
 |---|---|---|
 | `unique` | one image holds those bytes there | credit only that image |
 | `identical` | several hold byte-identical code there | credit each of them |
+| `divergent` | several dumps at one extent, each placed in a different image | credit each of them - see below |
 | `misbased` | the bytes live at another VA entirely | credit nobody |
 | `gapped` / `data` | not a coherent function body at that VA | credit nobody |
 | `short` / `unresolved` / `no_disassembly` | the window cannot sign it | residue: stays ambiguous |
+
+`divergent` used to be residue, and that reading was wrong in a way worth
+naming: the class does not mean "we could not tell", it means *every* named
+image was told, positively, by a dump of its own. Two dumps sharing an
+`(entry, bytes)` key while resolving to different images is two images each
+holding a dumped body at that range, so each is credited exactly as `identical`
+is. Read as residue it withheld `battle_action`'s largest un-credited run,
+`0x801DABA4..0x801DB124`, from that overlay's own floor and kept 1408 bytes it
+has a dump of on the worklist.
 
 The key is `(entry, bytes)` - the **extent**, not the dump filename - so the file
 does not rot when a dump lands, is renamed, or is re-dumped at the same address.
@@ -502,23 +570,27 @@ The middle row is the one with a route forward, and it is the
 [static overlay pipeline](static-overlay-pipeline.md)'s job rather than this
 page's.
 
-There is a fourth shape, and it is a **defect in the comparison, not a fact
-about the corpus**: a dump whose opening window contains GTE (COP2) ops lands in
-that middle row no matter which image it came from. The canonicaliser both sides
-share (`canon` in `check-dump-base-integrity.py`) reads the dump's *printed*
-disassembly on one side and re-decodes the image's bytes with capstone on the
-other, and the two spell COP2 differently: Ghidra prints `mtc2 t7, 0x800`
-(register + control-register number) where capstone prints `mtc2 $t7, $at`, and
-a raw `cop2` op decodes to `.byte` under capstone and to `COP2` under Ghidra. Any
-window carrying one of those cannot match, so the extent is classed `unresolved`
-- "no extracted image holds these bytes at this VA or anywhere" - about bytes
-that demonstrably do. This is the same failure mode the `break 0x1c00`
-division-guard fold already fixes for one op; GTE is the unfolded case, and it
-bites the GPU/GTE emitters hardest, which is exactly where the remaining
-un-dumped runs are. The world-map render image (PROT 0901) is the visible
-casualty: its 6372-byte draw-leaf family is dumped, from that image, at that
-base, and still scores as residue, which drags the row's `code` floor **down**
-when the dump lands.
+There was a fourth shape, and it was a **defect in the comparison, not a fact
+about the corpus**: a dump whose opening window contains GTE (COP2) ops landed
+in that middle row no matter which image it came from. The canonicaliser both
+sides share (`canon` in `check-dump-base-integrity.py`) reads the dump's
+*printed* disassembly on one side and re-decodes the image's bytes with capstone
+on the other, and the two spell COP2 differently. The move/control half of the
+family was folded first; the **load/store** half (`lwc2` / `swc2`) survived that
+fold because its primary opcode is `0x32`/`0x3A` rather than `0x12` and its
+mnemonic is not in the folded set. There Ghidra spells the COP2 data register
+with a GPR ABI name (`lwc2 v0,0x0(s5)`) and capstone prints its number
+(`lwc2 $2, ($s5)`), so one side reads a register where the other reads an
+immediate. Any window carrying one of those could not match, and the extent was
+classed `unresolved` - "no extracted image holds these bytes at this VA or
+anywhere" - about bytes that demonstrably do.
+
+The world-map render image (PROT 0901) was the visible casualty: its draw-leaf
+family is dumped, from that image, at that base, and scored as residue, which
+dragged the row's `code` floor **down** when the dump landed. Folding `rt` out
+of `lwc2`/`swc2` on both sides places all five of those leaves plus one
+`summon_render` body, and the row goes from a withheld upper bound to
+`100.0%`. The remaining residue is the three shapes in the table above.
 
 ### The signature floor guards one question, not both
 
@@ -589,7 +661,7 @@ in that image covers. Columns:
 
 | Column | Meaning |
 |---|---|
-| `shape` | `code` is work; `padding` / `return_tail` / `bios_thunk_slot` / `psyq_lib_stamp` / `constant_table` / `data` are structural, and persist however much is dumped |
+| `shape` | `code` is work; `padding` / `return_tail` / `bios_thunk_slot` / `psyq_lib_stamp` / `constant_table` / `data` / `no_exit` / `no_boundary` / `data_segment` / `mostly_padding` are structural, and persist however much is dumped |
 | `ambiguous` | some dump does print at that VA, but the bytes could not place it in this image - a sibling overlay at the same base is the other candidate |
 | `spans_at_start` | how many measured images map the run's start VA |
 
@@ -627,9 +699,9 @@ that way: PROT 0897 `0x801F23B4` / `0x801F2EB4` / `0x801F30D4`, PROT 0980
 `jr ra`. The same is true of every `SCUS_942.54` run above `0x80074000`, which is
 the static-table band ([`item-table.md`](../formats/item-table.md),
 [`spell-table.md`](../formats/spell-table.md) and neighbours). Runs that reach a
-verdict this way and sit past their image's last `jr ra` are now the
-`data_segment` shape and leave the ranked worklist by rule rather than by
-footnote.
+verdict this way and sit past their image's last `jr ra` are the `data_segment`
+shape; the rest are `no_boundary`, and either way they leave the ranked worklist
+by rule rather than by footnote.
 
 Two runs this section previously listed under that verdict do not belong to it,
 and the corrections matter because each was an instruction to skip real work.
@@ -651,22 +723,37 @@ and the corrections matter because each was an instruction to skip real work.
   non-target, but for the ordinary `INTERIOR` reason of
   [`worklist-classification.md`](worklist-classification.md).
 
-### Data the shape rules still do not reach
+### The two regions the shape rules used to miss
 
-Two regions classify as `code` and are not. Both sit *below* their image's data
+Two regions classified as `code` and are not. Both sit *below* their image's data
 floor, so `data_segment` cannot claim them, and both are broken into runs shorter
 than the `no_exit` floor by VA-ambiguous dumps that print at those addresses from
-other programs. They are recorded here so nobody dumps them:
+other programs:
 
-- **PROT 0970 `0x801D0E94`..`0x801D1978`** - the cutscene overlay's MDEC decode
+- **PROT 0970 `0x801D0E94`..`0x801D199C`** - the cutscene overlay's MDEC decode
   tables. The region opens with the hardware-port words `0x1F801824` and
-  `0x1F8010F0`, and the rest is 16-bit `(bucket, value)` pairs whose high
-  halfword walks `0x14`, `0x18`, `0x1C`, `0x20`, `0x2C` - bit-length buckets, not
-  opcodes. It scores as code because those high halfwords decode to `bne`,
-  `blez`, `bgtz` and `sltiu`.
+  `0x1F8010F0`, and the rest is 640 words of 16-bit `(bucket, value)` pairs
+  whose high byte walks `0x10`, `0x14`, `0x18`, `0x1C`, `0x20`, `0x24`, `0x2C`,
+  `0x34`, `0x38` - bit-length buckets, not opcodes. It scores as code because
+  those high halfwords decode to `bne`, `blez`, `bgtz` and `sltiu`. (The end
+  used to be quoted as `0x801D1978`. The bytes run one bucket further: the last
+  non-zero word of the region is at `0x801D1998` and the zero fill starts at
+  `0x801D199C`. `0x801D1978` is also a VA whose *dumps* are fishing-image
+  (PROT 0972) bytes, so it is the wrong address to end a 0970 range on -
+  see [`phantom-print-index.md`](phantom-print-index.md).)
 - **PROT 0980 `0x801D43A4` / `0x801D4AA4` / `0x801D4EA4`** - the dance minigame's
   step-chart and choreography records
   ([`minigame-dance.md`](../subsystems/minigame-dance.md)).
+
+Both are now the `no_boundary` shape and leave the ranked worklist by rule
+rather than by footnote: neither holds a prologue or a `jr ra`. They are kept
+here because the *reason* is worth having in prose - the shape rule says only
+that no body is delimited there, while these entries say what the bytes are.
+
+The same rule reaches the largest single class of the same defect, the slot-B
+band's parameter tails: a cast module's spawn records sit above its last
+function and hold neither delimiter word, and they were ranked as work across
+27 of the band's images.
 
 **Do not sum the worklist across images.** Nineteen overlays load at
 `0x801CE818` and thirteen at `0x801F69D8`, so the same VA appears under several
@@ -720,3 +807,82 @@ A useful side effect: the run emits a dump worklist for **every** measured image
 (see [the per-overlay dump worklist](#the-per-overlay-dump-worklist)), derived
 from the bytes rather than from what anyone happened to cite - the one worklist
 the citation graph structurally cannot produce.
+
+### A new dump can look exactly like lost coverage
+
+`code_floor` is `floor_bytes / (covered_bytes + code_gap_bytes)`. The floor
+counts only the extents the byte attribution **names** for this image, while the
+denominator counts everything the image's span credits. A dump that lands with
+no row in `dump-extent-attribution.csv` is *residue*: it joins the upper bound,
+and so the denominator, while the floor does not move. The ratio falls, and a
+ratchet reading the ratio alone reports a **new dump** as lost coverage.
+
+That is not a worktree artifact and it is not rare. Both files are committed and
+the corpus is not, so the CSV lags the corpus in the main checkout too - nobody
+regenerates the attribution per dump - and any tree whose dumps have moved ahead
+of its CSV shows the same thing across every image the new dumps' VAs land in.
+A slot-A dump lands in nineteen spans at once, so one dump can push nine rows
+below their baselines together.
+
+So `--check` triages a floor drop before it fails it. For each regressed
+`code_floor` key it re-measures that image over the corpus the CSV *does* know
+about - every extent minus this image's unattributed ones - and if the floor
+clears its baseline there, the drop is entirely the lag. The run then prints an
+**ATTRIBUTION LAG** section naming the unattributed extents and the dumps that
+carry them, and passes:
+
+```
+[disc-coverage] ATTRIBUTION LAG - not a coverage loss. N distinct dumped
+extent(s) have no row in scripts/ghidra-analysis/dump-extent-attribution.csv ...
+   gameover               floor 98.13% -> 83.63%, but 99.52% over the corpus
+                          the CSV knows (4 extent(s), 1984 B)
+```
+
+The fix it names is one command - re-run
+`scripts/ghidra-analysis/attribute-dump-extents.py` and commit the CSV - and the
+baseline needs no change, which is the point: the coverage did not move.
+
+What still fails, unchanged: a `code` (upper-bound) regression, a `data`
+regression, and a floor drop that **survives** the removal. The last one is the
+discriminating case - an image whose floor is still short after every
+unattributed extent is taken out has lost attributed coverage, and no amount of
+CSV lag explains it.
+
+## Refreshing the landing-page tiles
+
+The site's homepage tiles are rendered from `scripts/ci/progress-metrics.json`,
+which is a committed **build input** rather than a measurement. The site builds
+where the disc is not: `extracted/` and the dump corpus are both gitignored, so
+`site/_gen.py` cannot compute a byte-denominated figure at deploy time and
+renders whatever was last committed.
+
+That makes a stale file invisible. It is well-formed JSON with plausible
+numbers, every gate passes, and the tiles keep rendering - the observed failure
+was a homepage showing `840 ported / 0 on the worklist` while
+`scripts/ci/port-catalog-baseline.json`, committed beside it, said `847` and
+`93`.
+
+The refresh rule:
+
+- **Refresh on a machine with the disc**, with `python3
+  scripts/ci/update-progress-metrics.py`, and commit the JSON. It reads the
+  disc-denominated figures straight out of this script's own report and the
+  corpus-denominated ones out of `port-catalog.py --live-audit`.
+- **Refresh whenever a wave lands ports**, not only when the site changes. The
+  tiles move with `crates/`, and nothing in a site diff reveals that.
+- **Never let a hook rewrite it.** The number goes on a public page, so it is
+  committed deliberately; a hook that regenerated it would publish an unreviewed
+  figure from whatever local corpus happened to be present.
+
+`scripts/ci/check-progress-metrics-freshness.py` is the warning. It compares the
+tiles' own rendered strings against `port-catalog-baseline.json` - two committed
+files, so it needs no disc, no corpus and no catalog pass, and runs everywhere in
+milliseconds. The pre-commit hook runs it **warn-only**: a contributor without
+the disc cannot clear a failure, so failing them would only teach the bypass.
+`--live` adds the expensive comparison against a real `port-catalog.py` pass for
+a closeout run, and `--strict` turns any mismatch into exit 1.
+
+Read a warning as "the published number is behind this tree", never as "the
+number is wrong": the tiles were correct when they were written, and the drift
+is the interval since.
+

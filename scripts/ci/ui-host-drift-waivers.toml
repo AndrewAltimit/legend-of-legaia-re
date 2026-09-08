@@ -295,3 +295,28 @@ moving the whole screen onto the descriptor-table layout - which is also what
 would give window 24 the item-info rect it needs - not adding a draw call to
 the screen as it stands.
 """
+
+[[waiver]]
+builder = "guarded_box_rect"
+kind = "orphan"
+reason = """
+`FUN_801E4140`, the bottom-clip guard the menu overlay wraps every box emit
+in: `y <= 0xF0` passes the rect through, otherwise nothing is drawn. Unreached
+on BOTH hosts, and it was not merely unwired - until the rect return shape was
+added to the gate's `DRAW_RET_RE` it was not even a *builder* here, so the gate
+neither counted it nor would have accepted this waiver. That silence is the
+reason the entry exists: the port's disclosure and the gate now agree on the
+same set.
+
+Two things block a call site, and neither is a missing draw call. First,
+nothing can produce an out-of-range `y`: `0xF0` is the 320x240 stage's own
+height, every rect in the disc window table passes, and the one rect retail
+stamps per open - the options value popup, window 47 - is already flipped up by
+its own rule when its bottom would pass `0xB0`
+(`engine-core::options::options_popup_content_rect`). Gating a host on this
+adds a branch nothing can take. Second, the guard is only half of a pair: the
+fill it gates is `FUN_80034B6C`'s mode selector plus packed RGB word, which has
+no port, so the engine's boxes are UI-atlas sprites whose colour comes from the
+atlas rather than from a caller's word. Wiring the guard alone would claim a
+guard over a fill the port does not perform.
+"""

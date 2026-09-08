@@ -182,6 +182,19 @@ pub const REGULAR_STARTER: u8 = 0x19;
 /// so only this value is ever observed by it.
 pub const BUILD_STARTER_MARK: u32 = 1;
 
+/// The mark value the **Super tail-replace** writes at each starter it stamps
+/// (`li v1,0x4` / `sw v1,0x0(v0)` at `0x801EFB8C..0x801EFBA8` in
+/// `FUN_801EF9E4`), and only where the byte it just wrote is
+/// [`SPECIAL_STARTER`] (`li v0,0x1a` / `bne v1,v0` at `0x801EFB84`).
+///
+/// It exists to be *unequal* to [`BUILD_STARTER_MARK`]: the Attack x2 refill
+/// (`0x801E3A44..0x801E3A64`) rewrites a queue slot only when its mark reads
+/// exactly `1` (`bne v0,a1` at `0x801E3A4C`, `a1 = 1`), so a Super's starter
+/// is the one starter the second pass leaves at `0x1A`.
+///
+/// REF: FUN_801EF9E4 (`0x801EFB84..0x801EFBA8`)
+pub const SUPER_STARTER_MARK: u32 = 4;
+
 /// The reorder's outer bound: `sltiu v0,v0,0xf` at `0x801EF960` - the sweep
 /// visits indices `0..=14`, one short of the 16-byte scan window, because
 /// index `i` always reads `queue[i + 1]`.
@@ -449,8 +462,8 @@ pub fn apply_super_tail_replace(
                     break;
                 }
                 queue[start + k] = b;
-                if b == 0x1A {
-                    starter_marks[start + k] = 4;
+                if b == SPECIAL_STARTER {
+                    starter_marks[start + k] = SUPER_STARTER_MARK;
                 }
                 written = k + 1;
             }
@@ -662,12 +675,23 @@ pub fn check_and_learn_art(
 /// a dump's printed addresses are a property of its load base, so counting
 /// caller *sites* across differently-based dumps of one image inflates them.
 ///
+/// A five-form reference sweep over SCUS plus every based overlay image
+/// reproduces that independently: `jal = 1`, `word = 0`, `j = 0`, `branch = 0`,
+/// `lui = 0`. Zero data-word references means the address sits in **no**
+/// dispatch or handler table, and the one `jal` is the site above.
+///
+/// So this is neither replaced nor dead in retail, and both readings have been
+/// offered. It is reached once per resolved strike; the per-slot Miracle marker
+/// it consults is a guard *inside* the body, not a precondition for entering
+/// it, which is why "the marker has no input recognizer" does not make the
+/// routine unreachable.
+///
 /// The engine's Miracle gate is now both halves of retail's: the per-slot
 /// marker `ctx[+0x25F + slot]` ([`miracle_marker_armed`]) and the whole-string
 /// match in [`finish_action_queue`](super::finish_action_queue). What still
 /// has no consumer is `ctx[+0x269]` - the reward byte this lookup's single
 /// caller stages a zero-position token into - so the per-token position itself
-/// remains unconsumed.
+/// remains unconsumed, and that byte is the host this row is owed.
 ///
 /// PORT: FUN_801E91E8 - Miracle-command token position lookup.
 ///

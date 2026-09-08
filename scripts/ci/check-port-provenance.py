@@ -103,6 +103,7 @@ import hashlib
 import re
 import sys
 from collections import defaultdict
+from functools import lru_cache
 from pathlib import Path
 
 try:  # py311+
@@ -115,6 +116,8 @@ FUNCS_DIR = REPO / "ghidra" / "scripts" / "funcs"
 CRATES_DIR = REPO / "crates"
 WAIVERS = Path(__file__).resolve().parent / "port-provenance-waivers.toml"
 LIVE_CSV = REPO / "target" / "port-catalog" / "catalog.csv"
+EXTRACTED = REPO / "extracted"
+OVERLAY_MAP = CRATES_DIR / "asset" / "data" / "static-overlays.toml"
 
 # ---------------------------------------------------------------------------
 # Tuning. Every threshold here is a precision/recall dial; the defaults were
@@ -787,7 +790,9 @@ def find_doc_row_citations(by_addr: dict[str, list[Dump]]) -> list[Finding]:
             dumps = by_addr.get(subject)
             if not dumps:
                 continue
-            missing = _unsupported(m.group(2), {subject}, dumps, set(by_addr))
+            missing = _unsupported(
+                m.group(2), {subject}, dumps, set(by_addr), subject
+            )
             if not missing:
                 continue
             out.append(
@@ -930,8 +935,264 @@ def find_dual_labels(by_addr: dict[str, list[Dump]]) -> list[Finding]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Site citations, read off the extracted images
+# ---------------------------------------------------------------------------
+#
+# `absent-citation` / `doc-citation` ask one question: does the row cite an
+# address the routine does not touch? The dump corpus can only ever answer half
+# of it, because a dump holds the *callee's* bytes. A row that says "called from
+# the `jal` at 0x801E4B1C" is citing evidence that by construction lives in
+# somebody else's body, and the checker read every such row as unsupported -
+# seven of them were waived by hand, one waiver each, and the reasons all said
+# the same thing in different words.
+#
+# What settles those rows is not a waiver but the disc: the word at the cited
+# address either is a `jal` to the subject or it is not. So the checker reads
+# the extracted images directly, at the bases the static-overlay map records,
+# and accepts three byte-derived relations between a cited address `c` and the
+# row's subject `s`:
+#
+#   reaches       the word at `c` is a `jal` / `j` / conditional branch whose
+#                 target is `s`, or a `lui`+`addiu`/`ori` pair at `c` forms `s`
+#   adjacent-body `c` and `s` sit in the same, or in two touching, byte-derived
+#                 bodies - the span between `jr ra` boundaries, the boundary
+#                 words included, which is what makes "this address is interior
+#                 to that body" and "this is the nearest boundary above it"
+#                 checkable claims rather than prose
+#   co-sited      `c` shares a body with another address the same row cites
+#                 that *does* reach `s` - the shape of a row naming a caller's
+#                 `jal` site and, in the same breath, the stores next to it
+#   jump-table    the words at `c` hold `s`, or hold a co-cited address that
+#                 reaches `s` - a row pinning a routine as arm N of a switch
+#                 cites the table, and a table is data the callee never forms
+#
+# All three are properties of the bytes, not of a dump header, so they hold
+# where the printed VAs do not (docs/tooling/dump-corpus-integrity.md). The
+# cost is VA aliasing: several overlays link over one base, so a relation found
+# in *an* image covering the address is reported with that image's name and is
+# not by itself proof the row meant that image.
+#
+# Without `extracted/` the test is silent and the rows read as they did before.
+
+# `jr ra`. The only function boundary visible in raw bytes without a symbol
+# table, and the delimiter every body walk here uses.
+JR_RA = 0x03E00008
+
+# How far a body walk may run before the region stops looking like delimited
+# code. Nothing keeps a `jr ra` from being absent for the length of a `.rodata`
+# block, and an unbounded walk would then swallow the whole image and call
+# every address in it "adjacent". The largest real body this has to admit is
+# the battle SM's 0x2940-byte span at 0x801EC3DC..0x801EED1C.
+BODY_SPAN_MAX = 0x4000
+
+# How far into a cited jump table to look for the arm the row claims. A
+# switch small enough to be cited by arm number is small; widening this
+# only buys coincidental 32-bit matches.
+TABLE_WORDS_MAX = 16
+
+# Every citation this test rescued, for the report's own accounting: a
+# silent acceptance is indistinguishable from a signal that stopped
+# working, which is the failure mode a checker in this repo has already
+# had (`check-port-tags.py`'s "0 warnings across 0 files").
+SITE_ACCEPTED: list[tuple[str, str, str]] = []
+
+
+class Image:
+    """One extracted retail image, with the base its bytes are linked at."""
+
+    __slots__ = ("label", "base", "data", "off")
+
+    def __init__(self, label: str, base: int, data: bytes, off: int = 0):
+        self.label = label
+        self.base = base
+        self.data = data
+        # File offset of `base`. Non-zero only for the PS-EXE, whose 0x800-byte
+        # header is not part of the loaded image.
+        self.off = off
+
+    def covers(self, va: int) -> bool:
+        i = va - self.base + self.off
+        return 0 <= i <= len(self.data) - 4
+
+    def word(self, va: int) -> int | None:
+        if not self.covers(va):
+            return None
+        i = va - self.base + self.off
+        return int.from_bytes(self.data[i:i + 4], "little")
+
+
+_IMAGES: list[Image] | None = None
+
+
+def images() -> list[Image]:
+    """Every extracted image, keyed by the base `static-overlays.toml` records.
+
+    Bases are never guessed: the PS-EXE carries its own `t_addr`, and each
+    overlay's base is the statically recovered one the map holds. An overlay
+    with no row in the map contributes nothing, which is the conservative
+    direction - a wrong base would decode a call to a wrong target.
+    """
+    global _IMAGES
+    if _IMAGES is not None:
+        return _IMAGES
+    out: list[Image] = []
+    scus = EXTRACTED / "SCUS_942.54"
+    if scus.is_file():
+        raw = scus.read_bytes()
+        if raw[:8] == b"PS-X EXE" and len(raw) > 0x800:
+            t_addr = int.from_bytes(raw[0x18:0x1C], "little")
+            out.append(Image(scus.name, t_addr, raw, 0x800))
+    if tomllib is not None and OVERLAY_MAP.is_file():
+        with OVERLAY_MAP.open("rb") as fh:
+            rows = tomllib.load(fh).get("overlays", [])
+        for row in rows:
+            label, base = row.get("label"), row.get("base_va")
+            idx = row.get("prot_index")
+            if not label or not base or idx is None:
+                continue
+            path = EXTRACTED / "overlays" / f"overlay_{label}_{idx:04d}.bin"
+            if path.is_file():
+                out.append(Image(path.stem, int(base), path.read_bytes()))
+    _IMAGES = out
+    return out
+
+
+def _branch_target(va: int, w: int) -> int | None:
+    """The address this word transfers control to, or None if it does not."""
+    op = w >> 26
+    if op in (2, 3):  # j / jal
+        return ((w & 0x03FFFFFF) << 2) | ((va + 4) & 0xF0000000)
+    # beq / bne / blez / bgtz, REGIMM (bltz, bgez, ...) and the coprocessor
+    # branches. Register-indirect transfers resolve to nothing here on purpose.
+    if op in (1, 4, 5, 6, 7) or (op in (0x10, 0x11, 0x12) and ((w >> 21) & 0x1F) == 8):
+        imm = w & 0xFFFF
+        return va + 4 + ((imm - 0x10000 if imm & 0x8000 else imm) << 2)
+    return None
+
+
+def _pair_forms(img: Image, at: int, target: int) -> bool:
+    """A `lui`+`addiu`/`ori` pair starting at (or ending at) `at` forms `target`."""
+    for lui_at in (at, at - 4):
+        w0, w1 = img.word(lui_at), img.word(lui_at + 4)
+        if w0 is None or w1 is None or (w0 >> 26) != 0x0F:
+            continue
+        rt = (w0 >> 16) & 0x1F
+        op1 = w1 >> 26
+        if op1 not in (0x09, 0x0D) or ((w1 >> 21) & 0x1F) != rt:
+            continue
+        imm = w1 & 0xFFFF
+        hi = (w0 & 0xFFFF) << 16
+        if op1 == 0x09:
+            val = (hi + (imm - 0x10000 if imm & 0x8000 else imm)) & 0xFFFFFFFF
+        else:
+            val = hi | imm
+        if val == target:
+            return True
+    return False
+
+
+# Memoised because a row cites several addresses in one body and the
+# subject is walked once per citation: without it the same 16 KB window
+# is re-scanned for every address on the row, in every aliased image.
+@lru_cache(maxsize=None)
+def _body(img: Image, va: int) -> tuple[int, int] | None:
+    """The `jr ra`-delimited span `va` sits in, both boundary words included.
+
+    Inclusive on purpose. A row that pins an interior address by naming the
+    nearest boundary above it is citing the boundary *as* the evidence, and an
+    exclusive walk would read that citation as unsupported. It also makes two
+    consecutive bodies overlap by the `jr ra` and its delay slot, which is what
+    "touching" means below.
+    """
+    if not img.covers(va):
+        return None
+    lo = va
+    while img.word(lo) != JR_RA:
+        lo -= 4
+        if va - lo > BODY_SPAN_MAX or not img.covers(lo):
+            return None
+    hi = va
+    while img.word(hi) != JR_RA:
+        hi += 4
+        if hi - va > BODY_SPAN_MAX or not img.covers(hi):
+            return None
+    return lo, hi + 8
+
+
+def site_relation(cited: int, subject: int, co_cited: set[int]) -> str | None:
+    """Why `cited` is evidence *about* `subject` rather than a claim it owns.
+
+    Returns a one-line reason naming the image and the relation, or None when
+    no extracted image puts the two in any of the three relations above.
+    """
+    if not (RAM_LO <= cited <= RAM_HI and RAM_LO <= subject <= RAM_HI):
+        return None
+    for img in images():
+        w = img.word(cited)
+        if w is None:
+            continue
+        if _branch_target(cited, w) == subject:
+            kind = {2: "j", 3: "jal"}.get(w >> 26, "branch")
+            return f"{kind} to 0x{subject:08x} at 0x{cited:08x} in {img.label}"
+        if _pair_forms(img, cited, subject):
+            return (
+                f"lui/addiu pair forming 0x{subject:08x} at 0x{cited:08x} "
+                f"in {img.label}"
+            )
+    for img in images():
+        bc, bs = _body(img, cited), _body(img, subject)
+        if bc and bs and bc[0] < bs[1] and bs[0] < bc[1]:
+            return (
+                f"0x{cited:08x} and 0x{subject:08x} sit in the same or touching "
+                f"jr-ra-delimited bodies (0x{bc[0]:08x}..0x{bc[1]:08x} / "
+                f"0x{bs[0]:08x}..0x{bs[1]:08x}) in {img.label}"
+            )
+    reaching = {
+        other
+        for other in co_cited
+        if other != cited
+        and any(
+            (w := img.word(other)) is not None
+            and _branch_target(other, w) == subject
+            for img in images()
+        )
+    }
+    for other in sorted(reaching):
+        for img in images():
+            w = img.word(other)
+            if w is None or _branch_target(other, w) != subject:
+                continue
+            bc, bo = _body(img, cited), _body(img, other)
+            if bc and bo and bc == bo:
+                return (
+                    f"0x{cited:08x} shares a body with 0x{other:08x}, which "
+                    f"reaches 0x{subject:08x}, in {img.label}"
+                )
+    # A switch's jump table. `c` is data, so no body walk reaches it and the
+    # callee never forms it - but the table's own words say whether the row's
+    # "arm N of that switch" is true. Bounded to `TABLE_WORDS_MAX` words and to
+    # targets the row itself names, so an unrelated global cannot match by
+    # accident.
+    for img in images():
+        for k in range(TABLE_WORDS_MAX):
+            w = img.word(cited + 4 * k)
+            if w is None:
+                break
+            if w == subject or w in reaching:
+                return (
+                    f"the word at 0x{cited + 4 * k:08x} (0x{cited:08x} + {k}) is "
+                    f"0x{w:08x}, which reaches 0x{subject:08x}, in {img.label}"
+                )
+    return None
+
+
 def _unsupported(
-    text: str, claimed: set[str], dumps: list[Dump], entries: set[str]
+    text: str,
+    claimed: set[str],
+    dumps: list[Dump],
+    entries: set[str],
+    subject: str = "",
 ) -> list[str]:
     """Cited retail addresses in `text` that no dump of the routine carries.
 
@@ -955,8 +1216,22 @@ def _unsupported(
     read as unsupported evidence. Two thirds of this signal's output was that
     shape - `FUN_8003D53C`, `FUN_80021B04`, `FUN_8004998C`, all correctly named
     as somebody else's routine, none of them in the corpus.
+
+    What the dumps cannot answer, `site_relation` answers from the extracted
+    images: a citation the subject's own bytes do not carry is still supported
+    when the bytes at the cited address reach the subject, or sit in its body.
+    That is a **caller-side** citation, and the corpus is structurally blind to
+    it - which is why every one of them had to be waived by hand before.
     """
     func_refs = {m.group(1).lower() for m in FUNC_REF_RE.finditer(text)}
+    # Every retail address the same row names, unfiltered: a co-cited `jal`
+    # site is evidence for its neighbours whether or not it is itself checkable.
+    co_cited = {
+        int(m.group(1), 16)
+        for m in CITED_ADDR_RE.finditer(text)
+        if re.fullmatch(CODE_ADDR, m.group(1), re.IGNORECASE)
+    }
+    subj = int(subject, 16) if subject else 0
     missing: list[str] = []
     for m in CITED_ADDR_RE.finditer(text):
         c = m.group(1).lower()
@@ -978,8 +1253,13 @@ def _unsupported(
             ):
                 ok = True
                 break
-        if not ok:
-            missing.append(c)
+        if ok:
+            continue
+        rel = site_relation(ci, subj, co_cited) if subj else None
+        if rel:
+            SITE_ACCEPTED.append((subject, c, rel))
+            continue
+        missing.append(c)
     return missing
 
 
@@ -1140,7 +1420,7 @@ def find_absent_citations(
             continue
         claimed = {t.addr}
         claimed |= {m.group(1).lower() for m in PORT_ADDR_RE.finditer(t.tail)}
-        missing = _unsupported(t.seg, claimed, dumps, set(by_addr))
+        missing = _unsupported(t.seg, claimed, dumps, set(by_addr), t.addr)
         if missing:
             lines = [
                 f"tag cites {', '.join('0x' + x for x in missing)}, absent from "
@@ -1290,12 +1570,39 @@ def main() -> int:
         f"address(es); {len(by_addr)} dumped address(es) parsed; "
         f"{len(df)} distinct data addresses formed corpus-wide."
     )
+    imgs = images()
+    if not imgs:
+        print(
+            "  no extracted images under extracted/ - the caller/branch-site "
+            "test is OFF, so rows citing a caller's jal site read as "
+            "unsupported. Run legaia-extract, or read this run as partial."
+        )
+    else:
+        print(
+            f"  {len(imgs)} extracted image(s) read; "
+            f"{len(SITE_ACCEPTED)} citation(s) accepted as caller / branch / "
+            f"in-body sites off the bytes."
+        )
+        for subj, cited, why in SITE_ACCEPTED:
+            print(f"    FUN_{subj} <- 0x{cited}: {why}")
     for f in shown:
         mark = " [LIVE]" if f.addr and f.addr in live else ""
         waived = " [waived]" if f.key in waivers else ""
         print(f"\n{f.signal}  {f.where}{mark}{waived}")
         for line in f.lines:
             print("  " + line)
+    # A waiver that matches nothing is a claim nobody can check any more: the
+    # finding it excused is gone, or its key drifted when a neighbouring
+    # citation started passing. Either way it should be deleted, not carried.
+    unused = sorted(set(waivers) - {f.key for f in findings})
+    if unused:
+        print(
+            f"\n{len(unused)} waiver(s) in {WAIVERS.name} match no current "
+            "finding - delete them, or check why the finding stopped firing:"
+        )
+        for key in unused:
+            print(f"  {key}")
+
     by_signal = defaultdict(int)
     for f in unwaived:
         by_signal[f.signal] += 1

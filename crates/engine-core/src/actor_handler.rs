@@ -40,7 +40,7 @@
 //! | descriptor VA | file | `+8` handler | who allocates from it |
 //! |---|---|---|---|
 //! | `0x801F2760` | `0x023F48` | `0x801D84D0` | `FUN_801D9C3C` (submode open) |
-//! | `0x801F27EC` | `0x023FD4` | `0x801DA930` | `FUN_801DDE34` (fade family) |
+//! | `0x801F27EC` | `0x023FD4` | `0x801DA930` | `FUN_801DDE34` (floor-ladder rung) |
 //! | `0x801F2810` | `0x023FF8` | `0x801DBE9C` | `FUN_801DE478` (scene actor) |
 //! | `0x801F2888` | `0x024070` | `0x801DDC20` | `FUN_801DE2B0` (colour tween) |
 //! | `0x801F26D8` | `0x023EC0` | `0x801D4A60` | `FUN_801D5A24` (scripted scene) |
@@ -82,16 +82,26 @@ pub const VA_COLOUR_TWEEN: u32 = 0x801D_DC20;
 /// `FUN_801D84D0` - the op-`0x49` submode driver actor.
 pub const VA_SUBMODE_DRIVER: u32 = crate::field_submode::SUBMODE_DRIVER_HANDLER;
 
-/// `LAB_801DA930` - the **fade-family** actor handler. Spawn descriptor
-/// `0x801F27EC` (field `0x023FD4`) carries it at `+8`, and `FUN_801DDE34` -
-/// the `4C 90..92` fade ops' spawner - allocates from exactly that descriptor.
+/// `LAB_801DA930` - the **floor-height-ladder oscillator** handler. Spawn
+/// descriptor `0x801F27EC` (field `0x023FD4`) carries it at `+8`, and
+/// `FUN_801DDE34` - the `4C 90..92` spawner - allocates from exactly that
+/// descriptor.
 ///
-/// That closes a long-standing mislabel: the field VM's `4C 9F` and `4C 87`
+/// It is not a fade. The tick stores `pos >> 16` into
+/// `0x1F800314 + 0x48 + slot * 2` = `0x1F80035C + slot * 2`, the scene's
+/// 16-entry `i16` floor-elevation LUT (`sh v1,0x48(v0)` at `0x801DAA2C`,
+/// with `t1 = 0x1F800314` from the `lui`/`ori` pair at `0x801DA96C`), so
+/// `4C 9x` animates one rung of the ground the field walks on. See
+/// [`legaia_engine_vm::field_actor_timers`] and
+/// `docs/subsystems/script-vm-menuctrl.md`.
+///
+/// Two mislabels fall out together: the field VM's `4C 9F` and `4C 87`
 /// "register callback" ops call `FUN_8003CF40(_DAT_8007C34C, LAB_801DA930)`,
-/// and `FUN_8003CF40` **retires** rather than registers, so those ops cancel
-/// the running fade. The MAN loader's first inlined sweep (`FUN_8003AEB0` at
-/// `0x8003B3C8..0x8003B3F0`) is the same cancel on scene load.
-pub const VA_FADE_FAMILY: u32 = 0x801D_A930;
+/// and `FUN_8003CF40` **retires** rather than registers, so those ops stop
+/// every running rung oscillator. The MAN loader's first inlined sweep
+/// (`FUN_8003AEB0` at `0x8003B3C8..0x8003B3F0`) is the same sweep on scene
+/// load.
+pub const VA_FLOOR_LADDER: u32 = 0x801D_A930;
 
 /// `FUN_801D4A60` - the four-program **scripted-scene** actor. Spawn
 /// descriptor `0x801F26D8` (field `0x023EC0`), allocated by `FUN_801D5A24`.
@@ -141,8 +151,8 @@ pub enum ActorHandler {
     ColourTween,
     /// [`VA_SUBMODE_DRIVER`].
     SubmodeDriver,
-    /// [`VA_FADE_FAMILY`].
-    FadeFamily,
+    /// [`VA_FLOOR_LADDER`].
+    FloorLadder,
     /// [`VA_SCENE_ACTOR`].
     SceneActor,
     /// [`VA_SCRIPTED_SCENE`].
@@ -217,7 +227,7 @@ impl ActorHandler {
             VA_CAMERA_MOVER => ActorHandler::CameraMover,
             VA_COLOUR_TWEEN => ActorHandler::ColourTween,
             VA_SUBMODE_DRIVER => ActorHandler::SubmodeDriver,
-            VA_FADE_FAMILY => ActorHandler::FadeFamily,
+            VA_FLOOR_LADDER => ActorHandler::FloorLadder,
             VA_SCENE_ACTOR => ActorHandler::SceneActor,
             VA_SCRIPTED_SCENE => ActorHandler::ScriptedScene,
             VA_SCREEN_SPRITE => ActorHandler::ScreenSprite,
@@ -243,7 +253,7 @@ impl ActorHandler {
             ActorHandler::CameraMover => VA_CAMERA_MOVER,
             ActorHandler::ColourTween => VA_COLOUR_TWEEN,
             ActorHandler::SubmodeDriver => VA_SUBMODE_DRIVER,
-            ActorHandler::FadeFamily => VA_FADE_FAMILY,
+            ActorHandler::FloorLadder => VA_FLOOR_LADDER,
             ActorHandler::SceneActor => VA_SCENE_ACTOR,
             ActorHandler::ScriptedScene => VA_SCRIPTED_SCENE,
             ActorHandler::ScreenSprite => VA_SCREEN_SPRITE,
@@ -270,7 +280,7 @@ impl ActorHandler {
             ActorHandler::None
             | ActorHandler::MorphWeights
             | ActorHandler::SubmodeDriver
-            | ActorHandler::FadeFamily
+            | ActorHandler::FloorLadder
             | ActorHandler::SceneActor
             | ActorHandler::Retail(_) => HandlerKernel::Unported,
         }
@@ -299,7 +309,7 @@ impl ActorHandler {
 /// them the load-bearing consumers of the handler field rather than a
 /// curiosity - see [`crate::world::World::man_load_actor_reset`].
 pub const MAN_LOAD_RETIRED_HANDLERS: [ActorHandler; 2] = [
-    ActorHandler::FadeFamily,
+    ActorHandler::FloorLadder,
     ActorHandler::Retail(VA_MAN_LOAD_RETIRE_B),
 ];
 
@@ -318,7 +328,7 @@ mod tests {
             ActorHandler::CameraMover,
             ActorHandler::ColourTween,
             ActorHandler::SubmodeDriver,
-            ActorHandler::FadeFamily,
+            ActorHandler::FloorLadder,
             ActorHandler::SceneActor,
             ActorHandler::ScriptedScene,
             ActorHandler::ScreenSprite,

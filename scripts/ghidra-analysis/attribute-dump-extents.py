@@ -375,7 +375,79 @@ class Relocator:
         return out
 
 
-def attribute_dump(images, reloc, entry, insns):
+# --- the link-time entry tables -------------------------------------------
+
+# Three tables in PROT 0898 name an entry point in every slot-B module
+# (docs/subsystems/cast-module.md#the-entry-tables-and-where-the-addresses-live).
+# `0x801F6734` holds 64 module entry VAs directly, row `i` = PROT `903 + i`;
+# `0x801CF4EC` (row `i` = PROT `903 + i`) and `0x801CF56C` (row `i` = PROT
+# `935 + i`) hold the address of a short arm in 0898 whose first `jal` is the
+# module entry. They are a SECOND, link-time signal about which module owns a
+# VA, independent of any window comparison.
+#
+# What that signal is worth here is small and worth stating rather than
+# assuming, because it is not the direction it looks like from the outside:
+#
+# * it does NOT discriminate. Every extent the rule resolves is one the short
+#   at-VA byte test already names a single image for; the table agrees and adds
+#   provenance, not separation.
+# * it CANNOT be used alone. A table VA frequently names several modules (many
+#   modules put their entry at the same offset), and where a residue extent came
+#   from a RAM capture the table names the module whose entry sits at that VA
+#   while the bytes are some other module's - `0x801F69EC` is the entry of
+#   PROT 0910 and the five capture dumps printed there hold neither 0910's bytes
+#   nor any other extracted image's.
+# * it does NOT override `identical`. Byte-identical content in several modules
+#   really is present in each of them, and a coverage figure has to credit each;
+#   the table names only the one whose ENTRY the VA is.
+#
+# So the rule is corroboration on the weakest class only: a residue extent whose
+# printed VA is a table entry for exactly one module, and whose window that
+# module's own content reproduces at that VA.
+SLOTB_TABLES = (
+    (0x801F6734, 64, 903, False),
+    (0x801CF4EC, 32, 903, True),
+    (0x801CF56C, 32, 935, True),
+)
+TABLE_IMAGE_PROT = 898
+ARM_JAL_SPAN = 0x40
+
+
+def load_entry_tables(images):
+    """`{entry_va: {prot, ...}}` decoded from the three PROT 0898 tables."""
+    host = next((i for i in images if i.prot == TABLE_IMAGE_PROT), None)
+    if host is None:
+        return {}
+
+    def word(va):
+        off = host.offset_of(va)
+        if off is None or off + 4 > host.own_end:
+            return None
+        import struct as _s
+        return _s.unpack_from("<I", host.data, off)[0]
+
+    def first_jal(va):
+        for k in range(0, ARM_JAL_SPAN, 4):
+            w = word(va + k)
+            if w is None:
+                return None
+            if (w >> 26) == 3:  # jal
+                return 0x80000000 | ((w & 0x03FFFFFF) << 2)
+        return None
+
+    out = collections.defaultdict(set)
+    for base, count, first_prot, via_arm in SLOTB_TABLES:
+        for i in range(count):
+            w = word(base + 4 * i)
+            if not w:
+                continue
+            target = first_jal(w) if via_arm else w
+            if target:
+                out[target].add(first_prot + i)
+    return out
+
+
+def attribute_dump(images, reloc, entry, insns, tables=None):
     """(class, [image names], reason) for one dump at one VA."""
     if not insns:
         return ("no_disassembly", [], "dump carries no instruction stream")
@@ -386,6 +458,20 @@ def attribute_dump(images, reloc, entry, insns):
         return ("gapped", [], "printed addresses are non-contiguous, so the "
                               "window matches no image as a contiguous run")
     toks = dump_tokens(insns)
+    # The link-time tables sign a VA below the window floor, and only there:
+    # above it the window is its own evidence, and where several images hold the
+    # bytes each of them holds them (see `SLOTB_TABLES`).
+    if toks and len(toks) < SHORT_VA_FLOOR and tables:
+        named = tables.get(entry) or ()
+        if len(named) == 1:
+            prot = next(iter(named))
+            img = next((i for i in images if i.prot == prot), None)
+            if img is not None and img.window_at(entry, len(toks)) == toks:
+                return ("resolved_by_table", [img.name],
+                        "PROT 0898's link-time entry table names this VA as the "
+                        "entry of %s alone, and that image's own content "
+                        "reproduces the %d-instruction window here"
+                        % (img.name, len(toks)))
     if len(toks) < MIN_SIGNABLE:
         # A short window can still answer the AT-VA question, and that is a
         # different question from the one the floor guards. `MIN_SIGNABLE` is
@@ -449,8 +535,8 @@ def attribute_dump(images, reloc, entry, insns):
 # Ordered worst-to-best: when several dumps share an extent, the weakest verdict
 # is the one the extent can support.
 CLASS_RANK = {
-    "unique": 0, "identical": 1, "misbased": 2, "unresolved": 3,
-    "gapped": 4, "short": 5, "data": 6, "no_disassembly": 7,
+    "unique": 0, "resolved_by_table": 1, "identical": 2, "misbased": 3,
+    "unresolved": 4, "gapped": 5, "short": 6, "data": 7, "no_disassembly": 8,
 }
 
 
@@ -593,6 +679,7 @@ def main():
         by_extent[(entry, nbytes)].append((stem, insns))
 
     reloc = Relocator(images)
+    tables = load_entry_tables(images)
 
     if args.explain:
         va = int(args.explain, 16)
@@ -608,9 +695,11 @@ def main():
                 continue
             print("extent 0x%08x +0x%x:" % (entry, nbytes))
             for stem, insns in members:
-                cls, names, reason = attribute_dump(images, reloc, entry, insns)
+                cls, names, reason = attribute_dump(images, reloc, entry,
+                                                   insns, tables)
                 print("  %-52s %-12s %s" % (stem, cls, reason))
-            print("  => %s" % (combine([attribute_dump(images, reloc, entry, i)
+            print("  => %s" % (combine([attribute_dump(images, reloc, entry, i,
+                                                        tables)
                                         for _, i in members]),))
         return 0
 
@@ -621,14 +710,16 @@ def main():
         print("# dump\tentry\tbytes\timage\tclass")
         for (entry, nbytes), members in sorted(by_extent.items()):
             for stem, insns in sorted(members):
-                cls, names, _ = attribute_dump(images, reloc, entry, insns)
+                cls, names, _ = attribute_dump(images, reloc, entry, insns,
+                                               tables)
                 print("%s\t%08x\t%d\t%s\t%s"
                       % (stem, entry, nbytes, "|".join(names) or "-", cls))
         return 0
 
     rows = []
     for (entry, nbytes), members in sorted(by_extent.items()):
-        per = [attribute_dump(images, reloc, entry, insns) for _, insns in members]
+        per = [attribute_dump(images, reloc, entry, insns, tables)
+               for _, insns in members]
         cls, names, reason = combine(per)
         rows.append(("%08x" % entry, nbytes, "|".join(names) or "-", cls, reason))
 

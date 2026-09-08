@@ -254,10 +254,16 @@ impl World {
     /// against a [`vm::battle_action::LOW_SWING_TARGET_CLASS`] target. The
     /// engine's Attack command is exactly that situation - it resolves a
     /// target with no direction input - so it is the retail kernel that
-    /// applies, and the alternative (the player's own recorded chain, retail
-    /// `FUN_801DA34C` /
-    /// [`vm::battle_action::preseed_action_queue`]) still has no engine-side
-    /// carrier to read from.
+    /// applies. The alternative - the player's own recorded chain, retail
+    /// `FUN_801DA34C` / [`vm::battle_action::preseed_action_queue`] - is
+    /// closer than this note used to say: the chains themselves *are* carried
+    /// live, as `World::saved_chains` (LGSF v2, edited by
+    /// `tactical_arts_editor`, read by the battle arts path). What is missing
+    /// is the **record projection** retail preseeds from: the pair of 16-byte
+    /// slots at record-relative `+0x1A7` / `+0x1B7` that its
+    /// `u16[+0x156] < u16[+0x154]` preference predicate chooses between, and
+    /// `legaia_save::CharacterRecord` declares no accessor at either offset.
+    /// So the arm has a source and no addressing, not no source.
     ///
     /// **Disclosed stand-in.** Retail picks between the two shapes on the
     /// target monster record's `+0x1E` byte, which
@@ -595,10 +601,12 @@ impl World {
     ///    Miracle replacement, the MSB-clear sweep and the Super
     ///    tail-replace, in that order.
     ///
-    /// Returns the 19-byte stream window and the art constants it performs,
-    /// in order (the shout-cue list). A character with no art catalog gets
-    /// its arrows as plain swings, which is retail's own answer for an
-    /// unmatched string.
+    /// Returns the 19-byte stream window, the art constants it performs in
+    /// order (the shout-cue list), and the builder's per-token side array
+    /// `0x801F6990` - the marks the Attack x2 refill reads a whole action
+    /// later, which is why they are carried onto the actor rather than
+    /// dropped here. A character with no art catalog gets its arrows as plain
+    /// swings, which is retail's own answer for an unmatched string.
     ///
     /// PORT: FUN_801EED1C (the player path: normalise + learn + finish;
     /// the tokenizer body is `legaia_art::tokenize`, the finish passes
@@ -610,6 +618,7 @@ impl World {
     ) -> (
         [u8; vm::battle_action::ACTION_QUEUE_CAP],
         Vec<legaia_art::ActionConstant>,
+        [u32; vm::battle_action::ACTION_QUEUE_CAP],
     ) {
         use legaia_art::ActionConstant;
         use vm::battle_action::ACTION_QUEUE_CAP;
@@ -677,14 +686,15 @@ impl World {
             }
         }
         let miracle_armed = self.miracle_marker_armed_for(roster);
-        vm::battle_action::finish_action_queue(character, commands, miracle_armed, &mut bytes);
+        let marks =
+            vm::battle_action::finish_action_queue(character, commands, miracle_armed, &mut bytes);
         let actions: Vec<ActionConstant> = bytes
             .iter()
             .take_while(|&&b| b != 0)
             .filter_map(|&b| ActionConstant::from_byte(b))
             .filter(|a| a.is_art())
             .collect();
-        (bytes, actions)
+        (bytes, actions, marks)
     }
 
     /// Commit an entered Tactical-Arts string (`sequence` = the direction
@@ -732,9 +742,26 @@ impl World {
             .iter()
             .filter_map(|&b| legaia_art::Command::from_byte(b))
             .collect();
-        let (queue, actions) = self.build_arts_action_queue(caster, &commands);
+        let (queue, actions, marks) = self.build_arts_action_queue(caster, &commands);
         self.charge_art_spirit(caster, &actions);
-        self.arm_battle_art_action(caster, &queue, &actions, target_row, target_slot);
+        self.arm_battle_art_action(caster, &queue, &actions, marks, target_row, target_slot);
+    }
+
+    /// Word 1 (`+0xF8`) of a **roster** member's 4-word accessory-passive
+    /// ability bitfield - passive indices `0x20..=0x3F`.
+    ///
+    /// The battle-action host's `character_ability_bits_high` is the same
+    /// word reached through a battle ordinal; this one takes the roster slot,
+    /// which is what the arts paths already carry.
+    pub(in crate::world) fn character_ability_bits_word1(&self, roster: u8) -> u32 {
+        self.roster
+            .members
+            .get(roster as usize)
+            .map(|m| {
+                let b = m.ability_bits();
+                u32::from_le_bytes([b[4], b[5], b[6], b[7]])
+            })
+            .unwrap_or(0)
     }
 
     /// Charge the turn's **art bodies** out of the caster's Spirit gauge
@@ -762,10 +789,15 @@ impl World {
         let roster = self.party_roster_slot(caster as usize) as u8;
         let character = self.caster_character(roster);
         let catalog = crate::battle_arts::spirit_catalog(&self.art_records, character);
-        // Retail's halving gate is the acting actor's `0x800` flag
-        // (`srl t4,t4,0x1` at `0x801EF378`); the port has no carrier for it
-        // yet, so the full-price arm is the one that runs.
-        let cost = crate::ap_gauge::arts_turn_spirit_cost(&catalog, actions, false);
+        // Retail's halving gate (`srl t4,t4,0x1` at `0x801EF378`) reads the
+        // **character record's** `+0xF8` - word 1 of the accessory-passive
+        // ability bitfield - and tests bit `0x800`, i.e. passive `0x2B`
+        // "AP Used Down" (the Mettle Gem). See `ap_gauge::AP_USED_DOWN_BIT`
+        // for the address arithmetic; it is not an actor flag and not a
+        // per-turn condition, so it reads live off the equipped accessory.
+        let halved =
+            self.character_ability_bits_word1(roster) & crate::ap_gauge::AP_USED_DOWN_BIT != 0;
+        let cost = crate::ap_gauge::arts_turn_spirit_cost(&catalog, actions, halved);
         if let Some(a) = self.actors.get_mut(caster as usize) {
             a.battle.spirit_gauge = a.battle.spirit_gauge.saturating_sub(cost);
         }
@@ -786,6 +818,7 @@ impl World {
         caster: u8,
         queue: &[u8],
         actions: &[legaia_art::ActionConstant],
+        starter_marks: [u32; vm::battle_action::ACTION_QUEUE_CAP],
         target_row: crate::target_picker::CursorRow,
         target_slot: u8,
     ) {
@@ -815,6 +848,11 @@ impl World {
         let n = queue.len().min(a.battle.params.len().saturating_sub(1));
         a.battle.params[..n].copy_from_slice(&queue[..n]);
         a.battle.params[n] = 0;
+        // The builder's side array travels with the queue it describes:
+        // retail's `0x801F6990` is still standing when the Attack x2 refill
+        // reads it, and only it can tell a Super's `0x1A` starter from a
+        // newly-learned art's.
+        a.battle.starter_marks = Some(starter_marks);
         a.battle.strike_index = 0;
         a.battle.active_target = target;
         a.battle.action_category = 3;
@@ -1434,5 +1472,74 @@ impl World {
             is_heal,
             is_crit: false,
         });
+    }
+}
+
+#[cfg(test)]
+mod ap_used_down_tests {
+    use crate::world::World;
+
+    /// A one-member battle world with `bits` installed as the character
+    /// record's `+0xF4..` ability bitfield, ready for an arts commit.
+    fn world_with_ability_bits(bits: [u8; legaia_save::ABILITY_BITS_LEN]) -> World {
+        let mut w = World::new();
+        while w.actors.len() < 4 {
+            w.actors.push(crate::world::Actor::default());
+        }
+        w.party_count = 1;
+        let mut party = legaia_save::Party::zeroed(1);
+        party.members[0].set_ability_bits(bits);
+        w.load_party(party);
+        for a in w.actors.iter_mut().take(4) {
+            a.active = true;
+            a.battle.hp = 500;
+            a.battle.max_hp = 500;
+            a.battle.liveness = 1;
+            a.battle.spirit_gauge = 100;
+        }
+        w
+    }
+
+    /// Word 1 (`+0xF8`) is where the halving flag lives, not word 0
+    /// (`+0xF4`, the War God Icon's word) and not the battle actor.
+    #[test]
+    fn the_halving_flag_reads_record_word_one() {
+        let mut bits = [0u8; legaia_save::ABILITY_BITS_LEN];
+        bits[4..8].copy_from_slice(&crate::ap_gauge::AP_USED_DOWN_BIT.to_le_bytes());
+        let w = world_with_ability_bits(bits);
+        assert_eq!(
+            w.character_ability_bits_word1(0) & crate::ap_gauge::AP_USED_DOWN_BIT,
+            crate::ap_gauge::AP_USED_DOWN_BIT
+        );
+
+        // The same value in word 0 is a different passive entirely.
+        let mut wrong = [0u8; legaia_save::ABILITY_BITS_LEN];
+        wrong[0..4].copy_from_slice(&crate::ap_gauge::AP_USED_DOWN_BIT.to_le_bytes());
+        let w = world_with_ability_bits(wrong);
+        assert_eq!(w.character_ability_bits_word1(0), 0);
+    }
+
+    /// The passive bit is index `0x2B` of the accessory-passive space -
+    /// word `index >> 5`, bit `1 << (index & 0x1F)`.
+    #[test]
+    fn the_passive_index_and_the_bit_agree() {
+        let (word, mask) =
+            legaia_asset::accessory_passive::bit_location(crate::ap_gauge::AP_USED_DOWN_PASSIVE);
+        assert_eq!(word, 1);
+        assert_eq!(mask, crate::ap_gauge::AP_USED_DOWN_BIT);
+    }
+
+    /// End to end: the same committed arts turn costs half the Spirit when
+    /// the caster carries the passive, because the *multiplier* is shifted
+    /// before the command-count multiply (`srl t4,t4,0x1` at `0x801EF378`).
+    #[test]
+    fn the_passive_halves_a_committed_turns_spirit_charge() {
+        let catalog = [(legaia_art::ActionConstant::Art1B, 3u8)];
+        let performed = [legaia_art::ActionConstant::Art1B];
+        let full = crate::ap_gauge::arts_turn_spirit_cost(&catalog, &performed, false);
+        let half = crate::ap_gauge::arts_turn_spirit_cost(&catalog, &performed, true);
+        assert_eq!(full, 33, "11 x 3");
+        assert_eq!(half, 15, "(11 >> 1) x 3 - the shift is on the multiplier");
+        assert_ne!(full, half * 2, "which is why it is not simply half");
     }
 }

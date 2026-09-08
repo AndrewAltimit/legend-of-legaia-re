@@ -19,6 +19,10 @@ numbers, because the two families are not comparable:
     for steering work; structurally unable to see a subsystem nobody has cited.
     Never present one of these as "percent of the game".
 
+    The wiring track's denominator is narrower still: it excludes the ports
+    the engine replaces by construction (`REPLACED-BY:`), because a routine
+    no host can ever call is not a wiring gap in either direction.
+
 Usage:
     python3 scripts/ci/update-progress-metrics.py          # refresh + write
     python3 scripts/ci/update-progress-metrics.py --print  # show, don't write
@@ -71,6 +75,12 @@ def run_port_catalog():
         "worklist": grab(r"remaining port worklist\s*:\s*(\d+)"),
         "live": grab(r"ported \+ live.*?:\s*(\d+)"),
         "inert": grab(r"ported, NOT live \(inert\)\s*:\s*(\d+)"),
+        # Ports whose job the engine does by construction (CD DMA, card BU
+        # I/O, MDEC channel sync, GPU packet queues, retail node pools). They
+        # can never have a host, so counting them against the wiring track
+        # states a gap that will never close. See
+        # docs/tooling/port-catalog.md#replaced-by.
+        "replaced": grab(r"of which infra-replaced.*?:\s*(\d+)"),
         "documented_gap": grab(r"ported but NOT documented \(provenance gap\)\s*:\s*(\d+)"),
         "dump_worklist": grab(r"cited but NOT dumped\s+\(dump worklist\)\s*:\s*(\d+)"),
     }
@@ -124,17 +134,29 @@ def build(scus, data, cat):
         })
 
         live, inert = cat.get("live"), cat.get("inert")
-        if live is not None and inert is not None and (live + inert):
+        # A port the engine replaces by construction leaves BOTH sides of this
+        # ratio: it is not wired and it never will be, so it is neither a
+        # numerator nor a denominator. An older version of this track counted
+        # every one of them as "not yet hosted", which overstated the wiring
+        # worklist by everything PsyQ-shaped in the tree.
+        replaced = cat.get("replaced") or 0
+        owed = (inert - replaced) if inert is not None else None
+        if live is not None and owed is not None and (live + owed):
             tracks.append({
                 "key": "wiring",
                 "label": "Port wiring",
-                "pct": round(100.0 * live / (live + inert), 1),
-                "headline": "%d of %d ported functions reachable" % (live, live + inert),
+                "pct": round(100.0 * live / (live + owed), 1),
+                "headline": "%d of %d ported functions reachable" % (live, live + owed),
                 "detail": "A ported function still needs a host that calls it. This "
                           "is the share reachable from a real entry point; the "
                           "remaining %d are implemented but not yet hosted, and each "
-                          "one says so in its source." % inert,
-                "denominator": "ported functions",
+                          "one says so in its source. %d further ports are excluded "
+                          "from the denominator entirely: the engine does their job "
+                          "by construction (CD DMA, memory-card device I/O, MDEC "
+                          "channel sync, GPU packet queues), so no host will ever "
+                          "call them and each says which mechanism replaced it."
+                          % (owed, replaced),
+                "denominator": "ported functions a host is owed for",
                 "href": "subsystems/engine.html",
             })
 

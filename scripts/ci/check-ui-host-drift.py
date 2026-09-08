@@ -254,8 +254,27 @@ HOSTS = {
 # than from a single-line pattern.
 DRAW_RECORDS = "TextDraw|SpriteDraw|HudDraw|HudQuad|DigitCell|BarFrame|ComparePanelField"
 
+# One more return shape, and it is a shape rather than a named record: a
+# builder whose projection stops at a **screen rect**. Two live in engine-ui -
+# `painter_rect` (descriptor -> `PainterRect`) and `guarded_box_rect`
+# (`FUN_801E4140`'s bottom-clip guard, `-> Option<(i32, i32, i32, i32)>`) -
+# and neither was watched: the record-name rule never matches a bare tuple,
+# and `PainterRect` was not on the list, so the gate would not count them as
+# screens and would not accept a waiver for them either. That is the worst of
+# the three outcomes - not "wired", not "waived", but *silent*: a rect builder
+# could lose its only host caller with no line of output changing, which is
+# the exact failure the orphan naming above was added to stop.
+#
+# Kept out of [`DRAW_RECORDS`] on purpose. That constant also feeds
+# [`TRANSFORM_PARAM_RE`], whose job is "this fn consumes what screens
+# produce", and a rect is the commonest *model* a real screen takes - the
+# module docstring says so ("every real screen takes a model (a session, a row
+# list, a rect, a font layout)"). Folding rects into the transform test would
+# reclassify most of the pause-menu painter chain as plumbing.
+RECT_RETURNS = r"PainterRect|\(\s*i32\s*,\s*i32\s*,\s*i32\s*,\s*i32\s*\)"
+
 BUILDER_RE = re.compile(r"^pub fn (?P<name>[a-z0-9_]+)\s*[<(]", re.MULTILINE)
-DRAW_RET_RE = re.compile(rf"->[^;{{]*(?:{DRAW_RECORDS})")
+DRAW_RET_RE = re.compile(rf"->[^;{{]*(?:{DRAW_RECORDS}|{RECT_RETURNS})")
 
 # Every `fn` engine-ui defines, at any indentation: free functions, `impl`
 # methods and private helpers alike. These are the nodes of the internal call
@@ -425,6 +444,7 @@ NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/bin/legaia-engine/window/boot_cu
 NATIVE_REDRAW = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw.rs"
 NATIVE_FIELD_RENDER = "crates/engine-shell/src/bin/legaia-engine/window/field_render.rs"
 NATIVE_GEOMETRY = "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs"
+WEB_BOOT_TITLE = "crates/web-viewer/src/boot_title.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle.rs"
 WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
 WEB_PLAY = "crates/web-viewer/src/play.rs"
@@ -467,6 +487,23 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["draw_plane_summaries", "coplanar_draw_offsets"],
+    },
+    {
+        "what": "title attract hand-off, native vs play page - retail's "
+        "`AttractIdle` (`0x10`) arm hands the screen to `fmv_id 0` and comes "
+        "back to the menu, so a host that arms the countdown must also drive "
+        "the session out of `TitlePhase::Attract` or the title freezes there "
+        "forever. Both hosts go through the same three session calls; what "
+        "they do between `mark_attract_started` and `finish_attract` is "
+        "theirs (the window decodes the movie, the play page has no "
+        "STR/MDEC playback and says so), and pinning the calls is what stops "
+        "one host arming a countdown it cannot return from",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "service_title_attract"),
+            "web": (WEB_BOOT_TITLE, "boot_title_step"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["attract_pending", "mark_attract_started", "finish_attract"],
     },
     {
         "what": "ground-heightfield sink, native vs play page - the walk-ground "
@@ -1219,6 +1256,15 @@ SELFTEST_SCREENS: list[tuple[str, str]] = [
     ("equip_compare_panel_fields",
      "pub fn equip_compare_panel_fields(view: &EquipComparePanelView<'_>, "
      "pen: (i32, i32)) -> Vec<ComparePanelField>"),
+    # Rect returns are screens: the projection stops one step earlier than a
+    # quad, at the rect a caller then paints into. Both shapes are here
+    # because the record-name rule matches neither, which is how the two below
+    # went unwatched - not counted, and not waivable either.
+    ("painter_rect",
+     "pub fn painter_rect(descriptor: &MenuWindowDescriptor) -> PainterRect"),
+    ("guarded_box_rect",
+     "pub fn guarded_box_rect(x: i32, y: i32, w: i32, h: i32) "
+     "-> Option<(i32, i32, i32, i32)>"),
 ]
 
 SELFTEST_TRANSFORMS: list[tuple[str, str]] = [
@@ -1236,6 +1282,11 @@ SELFTEST_TRANSFORMS: list[tuple[str, str]] = [
     ("scale_stage_text_draws",
      "pub fn scale_stage_text_draws(draws: &mut [TextDraw], stage_origin: (i32, i32), "
      "stage_scale: u32)"),
+    # A rect in the PARAMETER list is a model, not a transform input: rects
+    # are deliberately kept out of `TRANSFORM_PARAM_RE`, so this stays a
+    # screen-shaped signature that simply returns no geometry.
+    ("enemy_target_menu_rows_y",
+     "pub fn enemy_target_menu_rows_y(host_box: Option<(i32, i32, i32, i32)>) -> i32"),
     # The intermediate-record renderer: HudDraw list in, TextDraw list out.
     # A projection of a screen it did not build - the screens are
     # `persistent_hud_draws` / `catch_hud_draws` above.
@@ -1871,14 +1922,6 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "diff and any single screenshot taken from the lucky angle",
         "trigger": r"\bresolve_(?:placed_)?env_draws\b",
         "requires": [r"\bdraw_plane_summaries\b", r"\bcoplanar_draw_offsets\b"],
-        "blocked_on": {
-            "crates/web-viewer/src/minigames_dance.rs":
-                "the dance-hall venue baker resolves the same two EnvDraw "
-                "layers and instances them itself; it needs the lift map "
-                "threaded through DanceEnv::append_draw",
-            "crates/web-viewer/src/minigames_fishing_scene.rs":
-                "same shape in FishingEnv::append_draw",
-        },
     },
     {
         "kernel": "walk-ground heightfield sink",
@@ -1892,11 +1935,6 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         # triggered on the type name reported four files that only pass it on.
         "trigger": r"for\s+\w+\s+in\s+&(?:mut\s+)?hf\.positions\b|\bhf\.positions\.clone\(\)",
         "requires": [r"\bGROUND_SINK\b"],
-        "blocked_on": {
-            "crates/web-viewer/src/minigames_fishing_scene.rs":
-                "the fishing venue splices the heightfield into the same "
-                "vertex buffer as the env meshes, at its authored height",
-        },
     },
     {
         "kernel": "packet-colour stream fill",
@@ -1908,14 +1946,6 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "constant (`packet_color::NEUTRAL` / `MODULATION_NEUTRAL` = 0x80)",
         "trigger": r"\bflat_rgba\b|\bpacket_color\b",
         "forbids": r"\bflat\b[\s\S]{0,140}?\[\s*(?:255u8|255|0x[fF][fF]u8|0x[fF][fF])\s*[;,]",
-        "blocked_on": {
-            "crates/web-viewer/src/minigames_dance.rs":
-                "the dance hall fills both its no-colour-word streams (the "
-                "pure-textured env fallback and the ground heightfield) with "
-                "white; both want NEUTRAL",
-            "crates/web-viewer/src/minigames_fishing_scene.rs":
-                "same two streams in the fishing venue baker",
-        },
     },
     {
         "kernel": "placement tilt composition (Rx*Ry*Rz)",

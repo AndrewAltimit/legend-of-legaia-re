@@ -143,6 +143,15 @@
 /// `FUN_80055854`.
 ///
 /// PORT: FUN_80055854
+/// REPLACED-BY: `legaia_asset::battle_char_palette`, the port of this
+/// routine's one retail caller `FUN_80052FA0`, which parses the nested block
+/// into typed records instead of staging it word-wise between two raw `u32`
+/// buffers. Nothing in the engine holds a `&mut [u32]` destination for this
+/// to advance, because the destination it would fill does not exist as a
+/// representation - the same substitution the rest of this module's
+/// "Clean-room boundary" note describes, and a call site would have to
+/// re-introduce retail's staging buffer purely so the kernel had something
+/// to chew.
 ///
 /// The retail routine takes a source and destination `u32*` and walks a
 /// nested table, returning the advanced destination pointer (i.e. the
@@ -245,6 +254,17 @@ pub fn copy_nested_records(src: &[u32], dst: &mut [u32]) -> usize {
 /// `FUN_80046978`.
 ///
 /// PORT: FUN_80046978
+/// REPLACED-BY: `legaia_engine_ui::battle_intro::wash_prim` plus its two arm
+/// constants (`PARTICLE_WASH_RGB`, `battle_intro_swirl::LATE_WASH_RGB`),
+/// which push the same farthest-bucket ABR-2 full-screen quad retail's
+/// submit `FUN_80024EE4(otlen - 1, 2, rgb)` builds, once per frame on both
+/// hosts. Every part of the armed-wash protocol therefore has a live engine
+/// form except the *scale*, and that one has no layer to come from: the
+/// factor is `0x1F800393`, the adaptive frame-skip cadence, and every port
+/// host ticks at cadence 1, where this function is the identity on a 24-bit
+/// colour. A call from `wash_prim` would move the reachability graph and
+/// change no pixel. It becomes a real wire only if a host ever runs a
+/// cadence above 1 - a scheduling change, not a missing call site.
 ///
 /// Retail unpacks the stored colour word into its low three bytes, and for
 /// each channel computes `channel * scale` (an 8-bit `* 8-bit` product, at

@@ -123,8 +123,21 @@ impl LegaiaRuntime {
         } else {
             TitleSession::without_save_data()
         };
+        // The attract hand-off is armed on this host too, so the idle
+        // countdown reaches the same state the native window reaches. What
+        // the page cannot do is decode the movie - see `boot_title_step`.
+        session.attract_enabled = true;
         session.skip_fade_in();
         self.boot_title = Some(session);
+        self.boot_title_attract_skips = 0;
+    }
+
+    /// How many times the attract countdown fired on this page since the
+    /// title opened, each of which skipped a movie the page cannot decode.
+    /// The page reads it to disclose the deviation rather than silently
+    /// looping the menu.
+    pub fn boot_title_attract_skips(&self) -> u32 {
+        self.boot_title_attract_skips
     }
 
     /// Whether the page holds any loadable save - the browser twin of the
@@ -139,6 +152,16 @@ impl LegaiaRuntime {
         self.boot_title.is_some()
     }
 
+    /// The retail sub-mode of `FUN_801DD35C` the title is in, or `0xFF` when
+    /// no title is open. A cold boot reports `0x10` (`AttractIdle`), the
+    /// value a cold-boot capture sees - the `0x02` text menu is unreachable.
+    /// The native window logs the same value on the same transitions.
+    pub fn boot_title_submode(&self) -> u8 {
+        self.boot_title
+            .as_ref()
+            .map_or(0xFF, |s| s.retail_submode())
+    }
+
     /// `true` once the disc title art resolved (else the card renders text-only).
     pub fn boot_title_has_atlas(&self) -> bool {
         self.title_atlas.is_some()
@@ -150,9 +173,6 @@ impl LegaiaRuntime {
     /// the outcome (seed + enter the opening scene for New Game) and the title
     /// clears itself.
     pub fn boot_title_step(&mut self, edge: u16) -> String {
-        let Some(session) = self.boot_title.as_mut() else {
-            return String::new();
-        };
         let input = TitleInput {
             up: hit(edge, 0x0010),
             down: hit(edge, 0x0040),
@@ -160,7 +180,41 @@ impl LegaiaRuntime {
             start: hit(edge, 0x0008),
             circle: hit(edge, 0x2000),
         };
-        let _ = session.tick(input);
+        // The attract hand-off, browser side. Retail's `AttractIdle` arm
+        // gives the screen to `fmv_id 0` and returns to the title; the
+        // native window plays that movie through its MDEC path. **This page
+        // has no STR/MDEC playback on the play path** (the deviation
+        // `crate::play_cutscene` already documents for field-VM FMV
+        // triggers), so it enters the same state, claims it, discloses the
+        // skip, and returns to the menu on the same frame.
+        let attract_fmv = {
+            let Some(session) = self.boot_title.as_mut() else {
+                return String::new();
+            };
+            let _ = session.tick(input);
+            match session.attract_pending() {
+                Some(fmv_id) => {
+                    session.mark_attract_started();
+                    session.finish_attract();
+                    Some(fmv_id)
+                }
+                None => None,
+            }
+        };
+        if let Some(fmv_id) = attract_fmv {
+            self.boot_title_attract_skips = self.boot_title_attract_skips.saturating_add(1);
+            web_sys::console::log_1(
+                &format!(
+                    "title attract: fmv_id={fmv_id} - the play page has no STR/MDEC playback; \
+                     returning to the title"
+                )
+                .into(),
+            );
+            return String::new();
+        }
+        let Some(session) = self.boot_title.as_mut() else {
+            return String::new();
+        };
         use legaia_engine_core::title::TitleOutcome;
         match session.outcome() {
             Some(o) => {
@@ -261,6 +315,9 @@ impl LegaiaRuntime {
             let (phase, cursor) = match session.phase() {
                 TitlePhase::FadeIn { .. } | TitlePhase::PressStart { .. } => (1u8, 0u8),
                 TitlePhase::MainMenu { cursor } => (2u8, cursor),
+                // The attract state is entered and left on the same frame
+                // on this host (no STR/MDEC playback), so it never draws.
+                TitlePhase::Attract { .. } => (2u8, 0u8),
                 TitlePhase::Done(_) => (2u8, 0u8),
             };
             // The menu rows are the glyph layer's job whenever that atlas

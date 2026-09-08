@@ -1013,7 +1013,16 @@ pub(super) fn battle_attack_channels(
 /// `DAT_8007BD71 == 0xFE`, the **battle-end signal**, which reads `0xFF` for
 /// the whole of a running fight; the engine only runs this camera while a
 /// battle is live and does not model the victory-pose sequence that arm
-/// frames, so it is `false` here. `style` (`ctx[+0xD]`) is unmodelled.
+/// frames, so it is `false` here.
+///
+/// `style` is `ctx[+0xD]`, the per-action framing variant the action SM rolls
+/// at its seed and each category arm then narrows
+/// (`BattleActionCtx::camera_variant`). All three of `FUN_801D5854`'s framing
+/// cases fork on it - `0x801D6510`, `0x801D6698`, `0x801D689C` - and the port
+/// carries the fork in `action_framing` / `recover_framing` /
+/// `action_end_framing`, so passing the live byte is the whole wiring: bit 0
+/// swings the camera half a turn, bit 1 drops TR.y and tilts the pitch. It
+/// used to be hard-coded `0`, which pinned every action to one of the four.
 pub(super) fn battle_action_framing(
     world: &legaia_engine_core::world::World,
     acting_slot: u8,
@@ -1024,7 +1033,7 @@ pub(super) fn battle_action_framing(
         battle_over: false,
         depth_raw: world.battle_camera_frame_height as i32,
         yaw_base: 0,
-        style: 0,
+        style: world.battle_ctx.camera_variant,
         char_id: if party { acting_slot + 1 } else { 0 },
     }
 }

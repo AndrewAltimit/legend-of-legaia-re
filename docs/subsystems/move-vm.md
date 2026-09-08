@@ -559,8 +559,13 @@ Two details do not follow from the "particle" label:
   `~c & 0xFF` is `255 - c`, the lerp target is `255 - c`. At full weight
   the image is a photographic negative.
 
-Not ported - its only caller is the mode dispatch below, which is a
-deliberate non-port, so the leaf would be unreachable.
+**Ported**, and the "its only caller is a deliberate non-port, so the leaf
+would be unreachable" reading that stood here is falsified: the leaf has a
+second host. `engine-core::clut_cell_fx` carries the texel kernel
+(`apply_hsv_cell`) and `world::ambient` drives it from the field scenes'
+CLUT-cell effect tree, which reaches it without going through the mode
+dispatch at all. The RGB/HSV conversions are `move_vm::color`. See
+[`field-ambient-fx.md`](field-ambient-fx.md).
 
 **Port boundary (deliberate).** `FUN_80021DF4` is a host-emission-heavy
 dispatcher (GP0 packets, SPU SE triggers, libgpu VRAM copies, and ~30 part-struct

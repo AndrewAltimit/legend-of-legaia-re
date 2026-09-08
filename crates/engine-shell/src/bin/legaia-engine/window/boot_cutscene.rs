@@ -5,6 +5,36 @@ use super::*;
 // hand-offs below stop the score through it.
 use legaia_engine_core::scene::BgmDirector as _;
 
+/// What [`PlayWindowApp::service_title_attract`] wants done with the title
+/// screen's attract hand-off this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TitleAttractAction {
+    /// Nothing pending - run the ordinary title tick.
+    Idle,
+    /// The countdown fired: start this `fmv_id` and freeze the title.
+    Start(i16),
+    /// The movie is up; the title stays frozen.
+    Playing,
+    /// The movie drained and the session is back on the menu.
+    Finished,
+}
+
+/// Build the window's title session with the attract hand-off armed.
+///
+/// `attract_enabled` is a per-host opt-in because a host with no movie
+/// destination would freeze input for the last sixteen frames of every idle
+/// period and then do nothing. This host has one: the windowed MDEC path
+/// below plays retail's `fmv_id 0` and returns to the menu.
+pub(super) fn title_session(continue_enabled: bool) -> legaia_engine_core::title::TitleSession {
+    let mut session = if continue_enabled {
+        legaia_engine_core::title::TitleSession::new()
+    } else {
+        legaia_engine_core::title::TitleSession::without_save_data()
+    };
+    session.attract_enabled = true;
+    session
+}
+
 impl PlayWindowApp {
     /// Drive [`legaia_engine_core::save_screen::SaveScreenFlow`] for whichever
     /// save screen is open this frame, and return the edge the session should
@@ -113,8 +143,12 @@ impl PlayWindowApp {
         let down = pressed & 0x0040 != 0;
         let left = pressed & 0x0080 != 0;
         let right = pressed & 0x0020 != 0;
+        // Read before the match: it borrows `self.boot_ui`, so the title
+        // arm cannot call back into `self`.
+        let cutscene_live = self.cutscene.is_some();
+        let mut start_attract: Option<i16> = None;
 
-        match &mut self.boot_ui {
+        let boot_ui_active = match &mut self.boot_ui {
             BootUiState::Inactive => false,
             BootUiState::PublisherLogos(session) => {
                 // Start (or Cross) skips the boot sequence.
@@ -127,18 +161,26 @@ impl PlayWindowApp {
                     // continue-enabled flag set per save-slot scan.
                     let snapshots = scan_save_dir(&self.save_dir);
                     let any_present = snapshots.iter().any(|s| s.present);
-                    self.boot_ui = if any_present {
-                        BootUiState::Title(legaia_engine_core::title::TitleSession::new())
-                    } else {
-                        BootUiState::Title(
-                            legaia_engine_core::title::TitleSession::without_save_data(),
-                        )
-                    };
+                    self.boot_ui = BootUiState::Title(title_session(any_present));
                     self.start_title_bgm();
                 }
                 true
             }
-            BootUiState::Title(session) => {
+            BootUiState::Title(session) => 'title: {
+                // The attract hand-off runs ahead of the tick: while the
+                // movie owns the screen the title is frozen, exactly as
+                // retail's master mode 0x1A takes the front-end off the
+                // dispatcher until the STR overlay unloads.
+                let attract = Self::service_title_attract(session, cutscene_live);
+                if let TitleAttractAction::Start(id) = attract {
+                    start_attract = Some(id);
+                }
+                if matches!(
+                    attract,
+                    TitleAttractAction::Start(_) | TitleAttractAction::Playing
+                ) {
+                    break 'title true;
+                }
                 use legaia_engine_core::title::{TitleEvent, TitleInput, TitleOutcome};
                 let input = TitleInput {
                     up,
@@ -151,10 +193,26 @@ impl PlayWindowApp {
                 for ev in &events {
                     match ev {
                         TitleEvent::NewGameSelected => {
-                            log::info!("title: New Game");
+                            // The retail sub-mode the row moved to: NEW GAME
+                            // is 0x16 (LaunchFade), CONTINUE is 0x18
+                            // (ContinueFadeIn). The browser page reads the
+                            // same value through `boot_title_submode`.
+                            log::info!(
+                                "title: New Game (retail sub-mode 0x{:02X})",
+                                session.retail_submode()
+                            );
                         }
                         TitleEvent::ContinueSelected => {
-                            log::info!("title: Continue");
+                            log::info!(
+                                "title: Continue (retail sub-mode 0x{:02X})",
+                                session.retail_submode()
+                            );
+                        }
+                        TitleEvent::AttractTimeout => {
+                            log::info!(
+                                "title: attract countdown fired (retail sub-mode 0x{:02X})",
+                                session.retail_submode()
+                            );
                         }
                         TitleEvent::OptionsSelected => {
                             // The selection event is informational; the Options
@@ -259,8 +317,7 @@ impl PlayWindowApp {
                         SelectOutcome::Cancelled => {
                             // Back to title (the theme is already up; the
                             // director suppresses the same-id restart).
-                            self.boot_ui =
-                                BootUiState::Title(legaia_engine_core::title::TitleSession::new());
+                            self.boot_ui = BootUiState::Title(title_session(true));
                             self.start_title_bgm();
                         }
                         _ => {
@@ -300,8 +357,7 @@ impl PlayWindowApp {
                     self.persist_and_apply_options();
                     // After options, route back to Title so the player can
                     // pick New Game / Continue (matches retail flow).
-                    self.boot_ui =
-                        BootUiState::Title(legaia_engine_core::title::TitleSession::new());
+                    self.boot_ui = BootUiState::Title(title_session(true));
                     self.start_title_bgm();
                 }
                 true
@@ -487,12 +543,46 @@ impl PlayWindowApp {
                     if let Some(bgm) = self.session.bgm.as_mut() {
                         bgm.stop();
                     }
-                    self.boot_ui =
-                        BootUiState::Title(legaia_engine_core::title::TitleSession::new());
+                    self.boot_ui = BootUiState::Title(title_session(true));
                     self.start_title_bgm();
                 }
                 true
             }
+        };
+        // The title arm cannot reach back into `self`, so the attract's
+        // decode + stage happens here, once the match's borrow is dead.
+        if let Some(fmv_id) = start_attract {
+            self.start_title_attract(fmv_id);
+        }
+        boot_ui_active
+    }
+
+    /// Play the title screen's attract movie in-window.
+    ///
+    /// Retail's `AttractIdle` arm hands the screen to `fmv_id 0`
+    /// (`_DAT_8007BA78 = 0` at `0x801DDCE8`, master mode `0x1A` at
+    /// `0x801DDCF0`); this decodes that movie through the same kernel the
+    /// field-VM cutscene path uses and stages it as the in-window video.
+    /// The title theme pauses with the rest of the sequencer while it runs
+    /// and the redraw handler's drain resumes it.
+    ///
+    /// A slot that will not decode leaves `self.cutscene` empty, which the
+    /// next `tick_boot_ui` reads as "the movie drained" and returns the
+    /// session to the menu - the same place a played-out movie lands.
+    // REF: FUN_801DD35C
+    fn start_title_attract(&mut self, fmv_id: i16) {
+        let Some(rel) = legaia_engine_core::cutscene::fmv_index_to_str_filename(fmv_id) else {
+            log::info!("title attract: fmv_id={fmv_id} (cut/unmapped slot); skipping");
+            return;
+        };
+        match self.decode_fmv(fmv_id, rel) {
+            Some(decoded) => {
+                if let Some(out) = self.session.audio.as_ref() {
+                    out.set_sequencer_paused(true);
+                }
+                self.stage_windowed_cutscene(decoded);
+            }
+            None => log::info!("title attract: fmv_id={fmv_id} did not decode; staying on title"),
         }
     }
 
@@ -511,6 +601,9 @@ impl PlayWindowApp {
                     TitlePhase::FadeIn { .. } => (0, 0),
                     TitlePhase::PressStart { .. } => (1, 0),
                     TitlePhase::MainMenu { cursor } => (2, cursor),
+                    // The attract movie owns the screen; the window
+                    // renders its frames, not the title's text.
+                    TitlePhase::Attract { .. } => return Vec::new(),
                     TitlePhase::Done(_) => return Vec::new(),
                 };
                 // When the title-screen atlas is uploaded, the
@@ -767,23 +860,28 @@ impl PlayWindowApp {
         )
     }
 
-    pub(super) fn try_start_windowed_cutscene(&mut self) {
+    /// Decode one `fmv_id`'s `MV*.STR` into frames + timing + audio, from the
+    /// disc image when one booted this session (raw 2352-byte sectors, so the
+    /// interleaved XA plays in sync) and otherwise from the video-only Form-1
+    /// extract. `None` when the slot is cut, the path does not resolve, or the
+    /// decode yields no frames.
+    ///
+    /// Shared by the in-flow field-VM cutscene
+    /// ([`Self::try_start_windowed_cutscene`]) and the title attract
+    /// ([`Self::service_title_attract`]) so both hosts of the FMV path decode
+    /// through one kernel.
+    pub(super) fn decode_fmv(
+        &self,
+        fmv_id: i16,
+        rel: &str,
+    ) -> Option<(
+        Vec<legaia_mdec::VideoFrame>,
+        std::time::Duration,
+        Option<legaia_engine_shell::cutscene_av::CutsceneAudio>,
+    )> {
         use legaia_engine_shell::cutscene_av::{decode_str_av_from_disc, decode_str_video_only};
-        let Some(fmv_id) = self.session.host.world.active_fmv() else {
-            return;
-        };
-        let Some(rel) = self.session.host.world.active_fmv_str_filename() else {
-            log::info!("cutscene: fmv_id={fmv_id} (cut/unmapped slot); skipping");
-            self.session.host.world.finish_cutscene();
-            return;
-        };
-
-        let decoded: Option<(Vec<legaia_mdec::VideoFrame>, std::time::Duration, _)> = if let Some(
-            disc_path,
-        ) =
-            self.disc_path.as_ref()
-        {
-            match resolve_iso_file(disc_path, Path::new(&rel)) {
+        if let Some(disc_path) = self.disc_path.as_ref() {
+            match resolve_iso_file(disc_path, Path::new(rel)) {
                 Ok((lba, size)) => {
                     let total = size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
                     // Narrow to the fmv_id's frame-range segment (multi-cutscene
@@ -793,7 +891,7 @@ impl PlayWindowApp {
                         Ok(av) if !av.frames.is_empty() => {
                             log::info!(
                                 "cutscene: playing fmv_id={fmv_id} {rel} from disc \
-                                     ({} frames, {:.2} fps, audio: {})",
+                                 ({} frames, {:.2} fps, audio: {})",
                                 av.frames.len(),
                                 av.timing.fps,
                                 if av.audio.is_some() { "yes" } else { "no" }
@@ -843,20 +941,73 @@ impl PlayWindowApp {
         } else {
             log::info!("cutscene: fmv_id={fmv_id} (no disc / extracted root); skipping");
             None
-        };
+        }
+    }
 
-        match decoded {
-            Some((frames, frame_period, audio)) => {
-                self.cutscene = Some(WindowedCutscene {
-                    frames,
-                    idx: 0,
-                    uploaded: None,
-                    frame_period,
-                    clock: None,
-                    pending_audio: audio,
-                    has_audio: false,
-                });
-            }
+    /// Stage decoded frames as the in-window movie.
+    fn stage_windowed_cutscene(
+        &mut self,
+        decoded: (
+            Vec<legaia_mdec::VideoFrame>,
+            std::time::Duration,
+            Option<legaia_engine_shell::cutscene_av::CutsceneAudio>,
+        ),
+    ) {
+        let (frames, frame_period, audio) = decoded;
+        self.cutscene = Some(WindowedCutscene {
+            frames,
+            idx: 0,
+            uploaded: None,
+            frame_period,
+            clock: None,
+            pending_audio: audio,
+            has_audio: false,
+        });
+    }
+
+    /// The title screen's attract hand-off, native side.
+    ///
+    /// Retail's `AttractIdle` (`0x10`) arm zeroes the FMV index and writes
+    /// master game mode `0x1A`, i.e. hands the screen to `fmv_id 0`
+    /// (`MV1.STR`) and comes back to the title afterwards
+    /// (`legaia_engine_vm::title_overlay::ATTRACT_FMV_ID`;
+    /// `cutscene_trigger::TITLE_TICK_INLINE`). This runs the same movie
+    /// through the window's own MDEC path and calls `finish_attract` once its
+    /// frames drain - the drain itself is the redraw handler's, which clears
+    /// `self.cutscene`.
+    ///
+    /// Returns `true` while the attract owns the screen, so the caller skips
+    /// the rest of the title tick.
+    // REF: FUN_801DD35C
+    fn service_title_attract(
+        session: &mut legaia_engine_core::title::TitleSession,
+        cutscene_live: bool,
+    ) -> TitleAttractAction {
+        if let Some(fmv_id) = session.attract_pending() {
+            session.mark_attract_started();
+            return TitleAttractAction::Start(fmv_id);
+        }
+        if session.attract_playing() && !cutscene_live {
+            session.finish_attract();
+            return TitleAttractAction::Finished;
+        }
+        if session.attract_playing() {
+            return TitleAttractAction::Playing;
+        }
+        TitleAttractAction::Idle
+    }
+
+    pub(super) fn try_start_windowed_cutscene(&mut self) {
+        let Some(fmv_id) = self.session.host.world.active_fmv() else {
+            return;
+        };
+        let Some(rel) = self.session.host.world.active_fmv_str_filename() else {
+            log::info!("cutscene: fmv_id={fmv_id} (cut/unmapped slot); skipping");
+            self.session.host.world.finish_cutscene();
+            return;
+        };
+        match self.decode_fmv(fmv_id, rel) {
+            Some(decoded) => self.stage_windowed_cutscene(decoded),
             None => {
                 // Drain the trigger so the field resumes next frame.
                 self.session.host.world.finish_cutscene();

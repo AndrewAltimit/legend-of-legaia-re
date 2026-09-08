@@ -124,6 +124,9 @@ impl PlayWindowApp {
                 mp: s.mp,
                 mp_max: s.mp_max,
                 ap: s.ap as u16,
+                // Record `+0x12E`: non-zero re-inks the HP number gold
+                // (`FUN_800349EC`'s ailment arm).
+                status: s.status_flags,
             })
             .collect();
         let party_ap: Vec<u16> = snaps.iter().map(|s| s.ap as u16).collect();
@@ -187,6 +190,7 @@ impl PlayWindowApp {
                     ap_max: snap.ap_max,
                     stat_rows: &stat_rows,
                     equip_rows: &equip_rows,
+                    status: snap.status_flags,
                 };
                 let names: Vec<&str> = s.snapshots().iter().map(|m| m.name.as_str()).collect();
                 let satellite = legaia_engine_render::StatusSatelliteView {

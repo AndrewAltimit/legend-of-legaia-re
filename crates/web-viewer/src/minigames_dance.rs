@@ -94,6 +94,7 @@ impl DanceEnv {
         flat: &[u8],
         draw: &field_env::EnvDraw,
         origin: (f32, f32, f32),
+        lift: [f32; 3],
     ) {
         let theta = (draw.rot_y & 0xFFF) as f32 * (std::f32::consts::TAU / 4096.0);
         let (sin, cos) = theta.sin_cos();
@@ -101,10 +102,11 @@ impl DanceEnv {
         for p in &mesh.positions {
             let (vx, vy, vz) = (p[0], p[1], p[2]);
             self.positions
-                .push(vx * cos + vz * sin + draw.world_x as f32 - origin.0);
-            self.positions.push(vy + draw.world_y as f32 - origin.1);
+                .push(vx * cos + vz * sin + draw.world_x as f32 + lift[0] - origin.0);
             self.positions
-                .push(-vx * sin + vz * cos + draw.world_z as f32 - origin.2);
+                .push(vy + draw.world_y as f32 + lift[1] - origin.1);
+            self.positions
+                .push(-vx * sin + vz * cos + draw.world_z as f32 + lift[2] - origin.2);
         }
         for uv in &mesh.uvs {
             self.uvs.push(uv[0] as i32);
@@ -115,9 +117,21 @@ impl DanceEnv {
             self.cba_tsb.push(ct[1] as u32);
         }
         if flat.is_empty() {
-            // Pure-textured mesh: every vertex samples VRAM.
+            // Pure-textured mesh: every vertex samples VRAM. The modulation
+            // triple is the **neutral** byte, not white - the shader reads
+            // `a_flat_rgba` as `texel * rgb * 255/128`, so a white stream is
+            // `texel * 2` and the mesh reads over-lit rather than as having
+            // lost its colour word. (In practice this branch is unreachable:
+            // `packet_color::textured` walks `mesh.colors`, which is parallel
+            // to `mesh.positions`, so an empty `flat` means an empty mesh.)
+            let neutral = [
+                legaia_engine_core::packet_color::NEUTRAL,
+                legaia_engine_core::packet_color::NEUTRAL,
+                legaia_engine_core::packet_color::NEUTRAL,
+                255,
+            ];
             self.flat
-                .extend(std::iter::repeat_n([255u8; 4], mesh.positions.len()).flatten());
+                .extend(std::iter::repeat_n(neutral, mesh.positions.len()).flatten());
         } else {
             self.flat.extend_from_slice(flat);
         }
@@ -193,6 +207,17 @@ fn bake_dance_env(
     );
     let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &terrain_records, floor_lut);
 
+    // Rank the coplanar clusters across **both** layers, exactly as the play
+    // page and the native window do: terrain first, then placements - the
+    // ranking order decides which of a coplanar pair wins, so a baker that
+    // fed them in the other order would lift the opposite mesh and the venue
+    // would z-fight where every other host is clean.
+    let mut ranked: Vec<field_env::EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
+    ranked.extend(terrain.iter().copied());
+    ranked.extend(placements.iter().copied());
+    let planes = legaia_engine_core::coplanar_draws::draw_plane_summaries(&ranked, res);
+    let lifts = legaia_engine_core::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
+
     let mut out = DanceEnv::default();
     let mut built: HashMap<(usize, u8), (VramMesh, Vec<u8>)> = HashMap::new();
     for draw in placements.iter().chain(terrain.iter()) {
@@ -210,7 +235,8 @@ fn bake_dance_env(
             }
         });
         let (mesh, flat) = (&entry.0, &entry.1);
-        out.append_draw(mesh, flat, draw, origin);
+        let lift = lifts.get(draw).copied().unwrap_or([0.0; 3]);
+        out.append_draw(mesh, flat, draw, origin, lift);
     }
 
     // The walk-ground heightfield: already world-space (Y-down), so only the
@@ -238,8 +264,13 @@ fn bake_dance_env(
             out.cba_tsb.push(ct[0] as u32);
             out.cba_tsb.push(ct[1] as u32);
         }
-        out.flat
-            .extend(std::iter::repeat_n([255u8; 4], hf.positions.len()).flatten());
+        // The heightfield carries its own per-vertex modulation triple
+        // (`field_objects::GROUND_PRIM_COLOR`, the neutral byte), parallel to
+        // its positions - use it rather than fabricating a stream, so the one
+        // disc-derived fact has one home.
+        for c in &hf.colors {
+            out.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
+        }
         out.indices.extend(hf.indices.iter().map(|i| i + base));
     }
     out

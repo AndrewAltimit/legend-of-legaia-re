@@ -44,9 +44,12 @@
 //! Caveat on the second of those: `FUN_801D5DE0` is the **casino prize list's**
 //! row renderer - it indexes the prize table `0x801E4518` and gates on the coin
 //! bank `_DAT_800845A4`, never on the gold purse. Both hosts reuse the kernel
-//! for shop rows with the purse passed in and `marker` fixed at `0`; the shop's
-//! own retail builder (`FUN_80030628` case `0x0B`) is disclosed inert and the
-//! two are not yet verified to agree. See `shop_stock_row_ink`'s own docs.
+//! for shop rows with the purse passed in and `marker` fixed at `0`, and the
+//! shop's own retail builder (`FUN_80030628` case `0x0B`) is now read: its dim
+//! bit is an OR of those same two tests with no marker tier, so the reuse
+//! agrees row for row. See `shop_stock_row_ink`'s own docs. The builder's row
+//! **order** is a separate thing this page inherits from the catalog - the
+//! record's last entries are hoisted to the top of the list.
 //!
 //! # The retail descriptor windows
 //!

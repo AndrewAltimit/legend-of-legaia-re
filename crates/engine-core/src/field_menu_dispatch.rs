@@ -658,6 +658,15 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
             stat_labels: crate::status_screen::RETAIL_STAT_LABELS,
             equip: equip_views,
             elements: default_element_views(),
+            // Record `+0x12E` - the packed ailment word. Retail keeps it as
+            // a per-frame mirror of the battle actor's `+0x16E`
+            // (`FUN_80047430`), so out of battle the record still carries
+            // whatever condition the party walked away with; the engine's
+            // equivalent latch is the never-cleared `World::status_effects`
+            // tracker, whose `display_flags` packs the same bit word. Party
+            // seats and roster indices coincide for `i < party_count`
+            // (`World::enter_battle` seats the roster in order).
+            status_flags: world.status_effects.display_flags(i as u8),
         });
     }
     out

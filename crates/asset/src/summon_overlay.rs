@@ -1,6 +1,7 @@
 //! Seru-magic **summon scene-graph** part-record parser.
 //!
-//! A player Seru-magic cast (spell id `0x81..=0x8B`, e.g. Gimard's *Tail Fire*)
+//! A player Seru-magic cast (spell id `0x81..=0x8B`, e.g. Gimard's *Burning
+//! Attack*)
 //! is staged by a per-summon code overlay, loaded into the shared overlay buffer
 //! at link base [`SUMMON_OVERLAY_LINK_BASE`]. The overlay is a **move-VM
 //! scene-graph**: its init function calls the SCUS actor-spawn helper
@@ -131,7 +132,11 @@ pub const POOL_SPAWN_HELPER: u32 = 0x8005_0ED4;
 /// for the player Seru-magic block `spell_id 0x81..=0x8B`: `FUN_8003EC70(id -
 /// 0x79)` resolves `FUN_8003E8A8(id - 0x79 + 0x381)` against the raw in-RAM
 /// TOC, which in extraction index space is entry `(id - 0x81) + 903`, i.e.
-/// `903..=913` (Gimard *Tail Fire* = `0x81` → 903). The historical `905..=915`
+/// `903..=913` (Gimard = `0x81` → 903). Its attack title is *Burning Attack*,
+/// from `summon.dat`'s attack-name records; the SCUS spell-name table
+/// (`DAT_800754D0 + id*12`) calls `0x81` plainly **Gimard**. *Tail Fire* is
+/// spell **`0x27`**, the enemy-Gimard move, and is not in this block at all.
+/// The historical `905..=915`
 /// range (Gimard → 905) carried the loader-math off-by-2 - the resolver indexes
 /// the raw `PROT.DAT` head, 2 entries above extraction indexing (see
 /// `docs/formats/prot.md` § In-RAM TOC).

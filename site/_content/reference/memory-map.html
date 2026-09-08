@@ -267,7 +267,7 @@ const DETAILS = {
 <li><code>0x8007BC3C</code> - submode register. SCUS <code>FUN_80016444</code> gates its direct <code>jal 0x801D7EA0</code> on this being <code>2</code>. Six SCUS writers; <code>FUN_80016230</code> is the two-write set/clear path.</li>
 <li><code>0x8007BCD0/_D4/_D8</code> - source globals for the gate-arm scale / step / OT-layer params (<code>FUN_801D1344</code> forwards these to <code>FUN_801D8258</code>).</li>
 <li><code>0x801F351C</code> - one-shot self-clearing gate flag for the emitter. Lives in the persistent <code>0x801F0000+</code> region so survives overlay swaps; shared between the world-map overlay's <code>FUN_801D7EA0</code> and the 0897 field overlay's sibling <code>FUN_801C9688</code>.</li>
-<li><code>0x801F3518/3520/3524/3528</code> - running camera angle / scale / step / OT-layer state consumed by the emitter on its next run. Angle indexes the cos LUT at <code>0x8007B81C</code>.</li>
+<li><code>0x801F3518/3520/3524/3528</code> - running camera angle / scale / step / OT-layer state consumed by the emitter on its next run. Angle indexes the <strong>sine</strong> LUT at <code>0x8007B81C</code> (<code>0x8007B7F8</code> is the cosine view - it points a quarter turn, <code>0x800</code> bytes, into the same table).</li>
 </ul>`
   },
   'actor-list-slots': {

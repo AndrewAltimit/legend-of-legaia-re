@@ -30,7 +30,7 @@ disassembly (`sltiu` immediate before the `jr`), not off the port.
 |---|---|---|---|---|---|
 | [Actor / sprite VM](actor-vm.md) | `FUN_801D6628` | 13 opcodes, JT `0x801CED70` | resolved | yes - `legaia_engine_vm` root | yes - shop widget choreography (`engine-core::menu_widget`) |
 | [Move VM](move-vm.md) | `FUN_80023070` | 71 opcodes `0x00..0x46`, JT `0x80010778` | resolved | yes - `move_vm` | yes |
-| [Move-VM `0x2F` extension](move-vm-overlay-ext.md) | `FUN_801D362C` | 61 sub-opcodes `0x00..0x3C`, JT `0x801CE868` | resolved | yes - `move_vm_overlay_ext` | **inert** |
+| [Move-VM `0x2F` extension](move-vm-overlay-ext.md) | `FUN_801D362C` | 61 sub-opcodes `0x00..0x3C`, JT `0x801CE868` | resolved | yes - `move_vm::ext` (live) + `move_vm_overlay_ext` (replaced) | **live** |
 | [Motion VM - pursue / patrol](motion-vm.md) | `FUN_8003774C` | 22-slot JT `0x80010EE0`, index `(op & 0x7F) - 0x37` | resolved | yes - `motion_vm` | yes |
 | [Motion VM - scripted](motion-vm.md#the-second-motion-vm---fun_80038158) | `FUN_80038158` | 32-slot JT `0x80010FE8`, ops `0x01..=0x20` | partial | split - see [below](#the-scripted-motion-vm-is-ported-in-three-pieces) | yes |
 | [Field / event VM](script-vm.md) | `FUN_801DE840` | 43 opcodes `0x21..0x4F` with gaps | resolved | yes - `field` | yes |
@@ -119,22 +119,25 @@ the title menu lives:
 
 `engine-core::title::TitleSession` owns one and steps it every frame, so the
 native window and the browser play page share it without either host
-changing. Two things around it are still the port's own and say so in the
-module docs: the `FadeIn` / `PressStart` staging (`Init` writes sub-mode
-`0x02` at `0x801DD920` and overwrites it with `0x11` only when the entry word
-`_DAT_8007BB00` is non-zero at `0x801DD97C`, so `0x02 -> 0x14` is the default
-graph and `0x11 -> 0x10` the re-entry one), and the `continue_enabled` row
-skip, which retail does not have.
+changing. One thing around it is still the port's own and says so in the
+module docs: the `continue_enabled` row skip, which retail does not have.
 
-The attract fire arm is modelled but **off by default**: retail hands the
-screen to master game mode `0x1A`, the opening movie, and neither host has an
-attract-movie destination in its boot UI, so a countdown that fires would
-freeze input for sixteen frames and then do nothing. Turning it on is
-`TitleSession::attract_enabled`.
+The whole dispatcher is ported alongside it as
+`title_overlay::TitleTickState::step` - one arm per sub-mode plus the shared
+epilogue, over the state fields the handlers read. Its graph is the
+`STATE_204_WRITES` table, all 56 `state[+0x204]` stores with the handler and
+guard each belongs to, and `cold_boot_reachable_modes` walks it.
 
-What is still unported is the dispatcher: 25 handler bodies, 56 sub-mode
-writes, and the mode-graph question of which of `0x02` and `0x10` a cold boot
-puts on screen.
+The attract fire arm is wired on **both** hosts behind
+`TitleSession::attract_enabled`, which each host sets for itself because a
+host with no movie destination would freeze input for the last sixteen frames
+of every idle period and then do nothing. The native window plays retail's
+`fmv_id 0` through the same MDEC path the field-VM FMV trigger uses; the
+browser play page enters the same `TitlePhase::Attract`, discloses that it has
+no STR/MDEC playback, and returns to the menu.
+
+The mode-graph question of which sub-mode a cold boot shows is settled: `0x10`
+always. See [`boot.md`](boot.md#a-cold-boot-always-shows-sub-mode-0x10-never-0x02).
 
 `menu.rs` remains the engine's own pause / shop / inn screen graph
 - state bytes engine-chosen, per-screen behaviour sourced from
@@ -157,11 +160,29 @@ calls them. Inert is a reachability statement, not a correctness one.
   `FieldDemoHandler` edge remains the demo-only field-actor host, still
   constructed nowhere outside a `#[cfg(test)]` module. History + triage:
   [`reach-triage.md`](../tooling/reach-triage.md#the-actor-vm-a-resolved-bytecode-source).
-- **Move-VM `0x2F` extension** (`move_vm_overlay_ext`) - its `step` / `walk`
-  walker has no caller. The module is not wholly inert, though: its
-  `canonical_size` width table is the disassembly-sourced mirror that
-  `move_vm::ext` is tested against, and `engine-core`'s VDF-pulse scanner
-  reads it to skip `0x2F` instructions.
+- **Move-VM `0x2F` extension** - **no longer inert, and the "inert" framing
+  was measuring the wrong surface.** There are two Rust surfaces over
+  `FUN_801D362C`. The one an executing move program reaches is
+  `move_vm::ext::ext_default_dispatch`, the default body of
+  `MoveHost::ext_dispatch`, which `move_vm::dispatch`'s `0x2F` arm calls and
+  which `engine-core::world::vm_hosts` inherits - so every actor the world
+  ticks runs its `0x2F` instructions through it. That surface had no `PORT:`
+  tag, which is why the address read as inert; it has one now.
+
+  The other surface is `move_vm_overlay_ext`'s standalone `step` / `walk`
+  walker, and **no host is owed it**: a disc-wide five-form reference scan
+  for `0x801D362C` finds exactly one caller, the SCUS move-VM arm at
+  `0x80023AE0`, and the port already hosts that caller live. A second
+  interpreter for one opcode is not one more reachable behaviour. Its
+  `canonical_size` width table stays live on its own account - it is the
+  disassembly-sourced mirror `move_vm::ext` is tested against, and
+  `engine-core`'s VDF-pulse scanner reads it to skip `0x2F` instructions.
+
+  Note for anyone reading `--live-audit`: `step` and `walk` show as *live*
+  there, and they are not. Both names collide with live free functions in
+  the same crate (`motion_vm::step` among them), which is why neither
+  carries a `NOT WIRED:` tag - tagging them would put two name-collision
+  rows into the stale-tag triage list rather than disclose anything.
 - **`title_overlay`** - **no longer wholly inert.** Its menu half
   ([`TitleMenuState`](#what-of-the-tick-runs-on-both-hosts)) runs on both
   hosts. What stays disclosed is the 25-mode dispatcher itself: the sub-mode

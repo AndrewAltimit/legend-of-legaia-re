@@ -164,7 +164,7 @@
   <h2>The port</h2>
   <ul>
     <li><code>SaveSelectSession</code> models the phases; the host's <code>SaveRack</code> decides the id space - <code>CardPorts</code> (both shipped hosts) or a flat <code>Blocks</code> list for headless drivers. The browser mounts the player's own card images; the native shell mounts its save directory as port 1.</li>
-    <li><code>CardIoMachine</code>, <code>card_status_poll</code>, <code>classify_card_directory</code> and <code>save_block_checksum</code> are line-for-line ports of the retail routines above; the BIOS card-hardware sequencer is documented, not ported.</li>
+    <li><code>CardIoMachine</code>, <code>card_status_poll</code>, <code>classify_card_directory</code> and <code>save_block_checksum</code> are line-for-line ports of the retail routines above; the write / format sequencer <code>FUN_801E13B8</code> is ported too, as <code>card_flow::CardWriteMachine</code>, and classed <em>replaced-by</em> rather than unwired - the port&rsquo;s one card backend patches block bytes synchronously, so there is no asynchronous BIOS beat for it to sequence.</li>
     <li><code>legaia_save::SaveFile</code> (LGSF) is the engine's own container; <code>write_into_retail_sc_block</code> patches a real block in place and restamps the checksum, so an edited retail save still loads.</li>
     <li>Chrome and the slide animations are rebuilt from the pinned geometry in a canonical 320x240 stage (<code>save_menu_atlas</code>, <code>save_select_chrome_draws_for</code>).</li>
   </ul>

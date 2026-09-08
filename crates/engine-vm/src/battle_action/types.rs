@@ -518,6 +518,23 @@ pub struct BattleActor {
     /// band. Read sequentially via `params[strike_index]`. Pre-sized to
     /// [`ACTION_PARAM_BYTES`].
     pub params: [u8; ACTION_PARAM_BYTES],
+    /// The arts queue-builder's per-token **side array** `0x801F6990`, as the
+    /// builder left it for this actor's staged queue.
+    ///
+    /// Retail keeps it as one 16-word global rather than per actor, because
+    /// only one queue is ever under construction and only one actor is ever
+    /// mid-action. The values are
+    /// [`BUILD_STARTER_MARK`](crate::battle_action::BUILD_STARTER_MARK) at
+    /// each art the build loop accepted (`0x801EF788`) and
+    /// [`SUPER_STARTER_MARK`](crate::battle_action::SUPER_STARTER_MARK) at
+    /// each `0x1A` the Super tail-replace wrote (`0x801EFBA8`) - and the
+    /// difference is load-bearing exactly once, at the Attack x2 refill
+    /// (`0x801E3A4C`), which demotes only the former.
+    ///
+    /// `None` means no builder ran for this actor's queue (a monster, a
+    /// synthetic host); the refill then reconstructs the build-loop marks
+    /// from the queue bytes, which is what it did before this field existed.
+    pub starter_marks: Option<[u32; crate::battle_action::ACTION_QUEUE_CAP]>,
     /// `+0x15` - per-strike index used to walk `params` during attack-chain
     /// and magic-anim-chain. Each strike bumps it.
     pub strike_index: u8,
@@ -841,6 +858,40 @@ pub struct BattleActionCtx {
     ///
     /// REF: FUN_801E295C (`0x801E3A20`), FUN_801EC3E4 (`0x801EE0C0`)
     pub attack_x2_pass: u8,
+    /// `[+0x19]` - the **Spirit-action counter**, bumped once per Spirit
+    /// action at the action seed (`lbu v0,0x8(s5)` / `addiu v0,v0,0x1` /
+    /// `sb v0,0x8(s5)` at `0x801E2FF0..0x801E3000`, in the `jal 0x80056798`
+    /// delay slot).
+    ///
+    /// It is a **latch**, not a per-action flag: nothing in `FUN_801E295C`
+    /// clears it, and its one reader is the Done band's UI teardown
+    /// (`lbu v0,0x8(s5)` at `0x801E61CC`), which tears down the two
+    /// Spirit-only HUD elements `0x0F` and `0x52`
+    /// (`FUN_801D8DE8(id, 1)` at `0x801E61DC` / `0x801E61E8`) once the
+    /// battle has seen at least one Spirit action. So the elements are
+    /// unloaded on every later action too, which is harmless and is what
+    /// retail does.
+    ///
+    /// REF: FUN_801E295C (`0x801E2FF0`, `0x801E61CC`)
+    pub spirit_action_count: u8,
+    /// `[+0x17]` - the Done band's **UI-teardown latch**. Cleared by state
+    /// `0x50` (`sb zero,0x6(s5)` at `0x801E5F60`) and bumped by the `0x51`
+    /// tail once it has run (`0x801E6208..0x801E6214`), so the unload block
+    /// fires exactly once per action however many passes the band takes.
+    pub done_ui_torn_down: u8,
+    /// `[+0x18]` - the **action's own HUD element id**, the one the Done
+    /// band's teardown unloads first (`lbu v0,0x7(s5)` at `0x801E6178`).
+    ///
+    /// Written by the action seed's Attack arm (`li v0,0x7` /
+    /// `sb v0,0x7(s5)` at `0x801E2F48..0x801E2F50`), which is why a party
+    /// attack's weapon-slash element `7` is torn down with the action.
+    /// Element `6` is the one value that drags a pair with it.
+    ///
+    /// This is a **context** byte. `BattleActor::ui_element_id` carries the
+    /// same `7` on the acting actor and is the port's own field - retail's
+    /// `0x801E2F44` writes the acting *slot* to `ctx[+0x20]` there, not an
+    /// element id to the actor.
+    pub action_ui_element: u8,
     /// `[+0x276]` - menu-open flag (gates the `QueuedFromMenu`/`PreActionWait`
     /// transition). Non-zero while a menu is still drawing.
     pub menu_open: u8,
@@ -956,6 +1007,25 @@ pub struct BattleActionCtx {
     ///
     /// REF: FUN_801E295C (`0x801E2D30`, `0x801E2E60`, `0x801E2E94`)
     pub camera_variant: u8,
+
+    /// `[+0x6D0]` - the battle camera's framing height / distance.
+    ///
+    /// Seeded at [`ActionState::ActionSeed`] by `FUN_801F0348`
+    /// ([`crate::battle_formulas::camera_height_for_frame`], `jal` at
+    /// `0x801E2D2C`), and then **not** constant for the action: the capture
+    /// band's `0x6F` arm ramps it down by `frame_scalar * 16` every frame
+    /// (`0x801E4FFC..0x801E5014`, `lhu` / `subu` / `sh`, so it wraps as a
+    /// u16), and the `0x70` arm re-runs `FUN_801F0348` in the same breath as
+    /// the `0x71` store (`jal 0x801F0348` at `0x801E50DC`, whose delay slot
+    /// is `sb v0,0x7(v1)` = the state write). The re-seed is what makes the
+    /// ramp a pull-in: the camera closes on the target through the fade and
+    /// snaps back to the size-derived framing when the module finishes.
+    ///
+    /// Published to the host through
+    /// [`crate::battle_action::BattleActionHost::camera_frame_height`]
+    /// wherever it changes, so a host that draws a camera sees the ramp and
+    /// not only the seed.
+    pub camera_frame_height: i16,
     /// `[+0x26]` - the **level-up banner** UI element id, or `0` when no
     /// banner is up.
     ///

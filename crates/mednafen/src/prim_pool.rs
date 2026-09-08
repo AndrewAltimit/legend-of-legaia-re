@@ -98,6 +98,20 @@ pub enum Prim {
         uv: (u8, u8),
         clut: u16,
     },
+    /// Free-size textured sprite (libgpu `SPRT`). Cmd **0x64..0x67**, 5 u32
+    /// words - the fixed-size arms above plus a trailing `w | h<<16`.
+    ///
+    /// Retail draws every window nine-slice with this opcode (4x4 corners,
+    /// 24x4 / 4x24 edges), so a decoder without this arm reports a frame with
+    /// no chrome at all rather than an error.
+    Sprt {
+        cmd: u8,
+        color: [u8; 3],
+        pos: (i16, i16),
+        uv: (u8, u8),
+        clut: u16,
+        size: (u16, u16),
+    },
     /// Flat-shaded untextured triangle. Cmd 0x20..0x23. 4 payload words.
     PolyF3 {
         cmd: u8,
@@ -134,6 +148,7 @@ impl Prim {
             | Prim::PolyGt3 { cmd, .. }
             | Prim::Sprt16 { cmd, .. }
             | Prim::Sprt8 { cmd, .. }
+            | Prim::Sprt { cmd, .. }
             | Prim::PolyF3 { cmd, .. }
             | Prim::PolyF4 { cmd, .. }
             | Prim::PolyG3 { cmd, .. }
@@ -150,6 +165,7 @@ impl Prim {
             Prim::PolyGt3 { .. } => "POLY_GT3",
             Prim::Sprt16 { .. } => "SPRT_16",
             Prim::Sprt8 { .. } => "SPRT_8",
+            Prim::Sprt { .. } => "SPRT",
             Prim::PolyF3 { .. } => "POLY_F3",
             Prim::PolyF4 { .. } => "POLY_F4",
             Prim::PolyG3 { .. } => "POLY_G3",
@@ -168,6 +184,7 @@ impl Prim {
                 | Prim::PolyGt3 { .. }
                 | Prim::Sprt16 { .. }
                 | Prim::Sprt8 { .. }
+                | Prim::Sprt { .. }
         )
     }
 
@@ -179,7 +196,9 @@ impl Prim {
             | Prim::PolyGt4 { clut, tpage, .. }
             | Prim::PolyFt3 { clut, tpage, .. }
             | Prim::PolyGt3 { clut, tpage, .. } => Some((*clut, Some(*tpage))),
-            Prim::Sprt16 { clut, .. } | Prim::Sprt8 { clut, .. } => Some((*clut, None)),
+            Prim::Sprt16 { clut, .. } | Prim::Sprt8 { clut, .. } | Prim::Sprt { clut, .. } => {
+                Some((*clut, None))
+            }
             _ => None,
         }
     }
@@ -198,6 +217,13 @@ impl Prim {
             | Prim::PolyG3 { verts, .. } => verts.to_vec(),
             Prim::Sprt16 { pos, .. } => vec![*pos, (pos.0 + 16, pos.1 + 16)],
             Prim::Sprt8 { pos, .. } => vec![*pos, (pos.0 + 8, pos.1 + 8)],
+            Prim::Sprt { pos, size, .. } => vec![
+                *pos,
+                (
+                    pos.0.saturating_add(size.0 as i16),
+                    pos.1.saturating_add(size.1 as i16),
+                ),
+            ],
         }
     }
 
@@ -859,6 +885,23 @@ fn decode_packet(pool: &[u8], i: usize, cmd: u8, length: usize) -> (bool, Option
                 }),
             )
         }
+        // SPRT (free size): 4 payload words - the fixed-size layout plus
+        // `w | h<<16`. Retail's window chrome is built entirely from these.
+        0x64..=0x67 if length == 4 => {
+            let (color, pos, uv, clut) = decode_sprt(pool, i);
+            let wh = read_u32(pool, i + 4 + 12);
+            (
+                true,
+                Some(Prim::Sprt {
+                    cmd,
+                    color,
+                    pos,
+                    uv,
+                    clut,
+                    size: ((wh & 0xFFFF) as u16, ((wh >> 16) & 0xFFFF) as u16),
+                }),
+            )
+        }
         // SPRT_16 (fixed 16x16): 3 payload words.
         0x7C..=0x7F if length == 3 => {
             let (color, pos, uv, clut) = decode_sprt(pool, i);
@@ -1081,7 +1124,8 @@ fn decode_gt3(pool: &[u8], i: usize) -> Gt3Fields {
     ([c0, c1, c2], [v0, v1, v2], uvs, clut, tpage)
 }
 
-/// Sprite (SPRT_8 / SPRT_16) layout (3 payload words):
+/// Sprite (`SPRT_8` / `SPRT_16`, and the first three words of the free-size
+/// `SPRT`) layout:
 ///
 /// ```text
 /// +0 [cmd | R | G | B]
@@ -1132,6 +1176,36 @@ mod tests {
             decode(&buf, 0x8000_0000).as_slice(),
             [Prim::Sprt16 { .. }]
         ));
+    }
+
+    /// The free-size `SPRT` (GP0 `0x64`, 4 payload words) is the opcode
+    /// retail builds every window nine-slice out of - a 4x4 corner off the
+    /// system-UI page. Without this arm the decoder walks straight past the
+    /// whole frame chrome and reports a window with no border.
+    #[test]
+    fn free_size_sprite_carries_its_own_extent() {
+        let buf = packet(
+            4,
+            0xFFFFFF,
+            &[0x6480_8080, xy(8, 152), 0x7FC2_00A0, 0x0004_0004],
+        );
+        match decode(&buf, 0x8000_0000).as_slice() {
+            [
+                Prim::Sprt {
+                    pos,
+                    uv,
+                    clut,
+                    size,
+                    ..
+                },
+            ] => {
+                assert_eq!(*pos, (8, 152));
+                assert_eq!(*uv, (0xA0, 0));
+                assert_eq!(*clut, 0x7FC2);
+                assert_eq!(*size, (4, 4));
+            }
+            other => panic!("free-size SPRT not decoded: {other:?}"),
+        }
     }
 
     #[test]

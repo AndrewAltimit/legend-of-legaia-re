@@ -518,7 +518,9 @@ overlay's play loop selects from, decoded straight from the overlay bytes.
 `summon_overlay` - Seru-magic **summon scene-graph** part records:
 
 - A per-summon stager overlay (player extraction PROT 0903..=0913 - Gimard
-  *Tail Fire* `0x81` arithmetics to 0903 under the corrected loader index math
+  (`0x81`, attack title *Burning Attack*; *Tail Fire* is the enemy move `0x27`,
+  a different id space entry) arithmetics to 0903 under the corrected loader
+  index math
   - the evolved-Seru block `EVOLVED_SUMMON_STAGER_PROT` (0914..=0923,
   `spell_id 0x8C..=0x95`, the same arithmetic run), high-summon 0927..=0934, and
   the six Cort enemy boss stagers `ENEMY_BOSS_STAGER_PROT`) stages each summon

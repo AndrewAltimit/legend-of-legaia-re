@@ -60,6 +60,8 @@ MIRRORS = [
      "site/_content/reference/re-settled-threads.html"),
     ("docs/reference/re-do-not-re-walk.md",
      "site/_content/reference/re-do-not-re-walk.html"),
+    ("docs/tooling/byte-accounting.md",
+     "site/_content/tooling/byte-accounting.html"),
 ]
 
 # Headings a mirror is allowed not to carry, with the reason. Keep this list

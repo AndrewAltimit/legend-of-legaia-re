@@ -359,6 +359,12 @@ pub(super) fn magic_exit<H: BattleActionHost + ?Sized>(
 
 // --- magic-capture branch ---------------------------------------------------
 
+/// The framing style (`ctx[+0xD]`) the capture band pins for the whole cast:
+/// `li v0,0x1` at `0x801E50C4`, stored in the `jal`'s delay slot at
+/// `0x801E50CC`. Style `1` is the half-turn arm of the shared `ctx[+0xD]`
+/// fork in `FUN_801D5854` (see [`crate::battle_cam_script::ActionFraming`]).
+pub const CAPTURE_CAMERA_VARIANT: u8 = 1;
+
 pub(super) fn magic_capture_branch<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -373,6 +379,35 @@ pub(super) fn magic_capture_branch<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::MagicCaptureFade)
 }
 
+/// Per-frame decrement of the capture band's camera framing, in `+0x6D0`
+/// units. `lbu v1,0x393(0x1F80)` / `sll v1,v1,0x4` at
+/// `0x801E5000..0x801E500C`: the scratchpad frame scalar times sixteen.
+pub const CAPTURE_FADE_CAMERA_STEP: i16 = 16;
+
+/// State `0x6F` - the capture band's **fade-in hold**
+/// (`0x801E4F88..0x801E5048`).
+///
+/// Four things, in retail's order:
+///
+/// * the audio duck, gated on `ctx[+0x287]` (`lbu v0,0x287(v0)` /
+///   `beq v0,zero,0x801E4FF8` at `0x801E4F94..0x801E4F9C`) - the same 75%
+///   ramp and the same gate state `0x70` runs;
+/// * the camera pull-in: `ctx[+0x6D0] -= frame_scalar * 16`, an unsigned
+///   halfword subtract with no floor (`0x801E4FFC..0x801E5014`);
+/// * `FUN_801D5854(ctx[+0x13], 6)` (`0x801E5018..0x801E5020`) - the framing
+///   program re-armed **every frame** of the hold, not once on entry. Pose
+///   `6` is [`Pose::Idle`], which is also what the band's neighbours stage,
+///   so what this call carries here is the camera half: `FUN_801D5854`'s
+///   prologue advances the attack-camera ramp by `8 * frame_step` on every
+///   call, so dropping it does not merely skip a pose - it stalls the ramp
+///   for the length of the fade;
+/// * the exit. `FUN_8003F2B8(1)` non-zero holds; a zero return stores state
+///   `0x70` and clears the module phase `ctx[+0x279]` (`sb zero,0x279(v0)`
+///   at `0x801E5048`), which is what [`arm_capture_cast_module`] mirrors.
+///
+/// PORT: FUN_801E295C (`0x801E4F88..0x801E5048`)
+///
+/// [`arm_capture_cast_module`]: crate::battle_action::BattleActionHost::capture_stager_tick
 pub(super) fn magic_capture_fade<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -380,17 +415,81 @@ pub(super) fn magic_capture_fade<H: BattleActionHost + ?Sized>(
     if ctx.counter_attack_a != 0 {
         host.duck_audio_level(75);
     }
+    // The camera pull-in. Unsigned in retail, so a long hold wraps rather
+    // than clamping; `wrapping_sub` on the same bits reproduces it.
+    let step = CAPTURE_FADE_CAMERA_STEP.wrapping_mul(host.frame_dt().max(0));
+    ctx.camera_frame_height = ctx.camera_frame_height.wrapping_sub(step);
+    host.camera_frame_height(ctx.camera_frame_height);
+    // Re-armed every frame, ahead of the exit test.
+    host.pose(ctx.active_actor, Pose::Idle);
     if !host.previous_action_cleared(1) {
         return stay(ctx);
     }
     transition(ctx, ActionState::MagicCapturePhase2)
 }
 
+/// State `0x70` - the capture band's **per-frame module tick**
+/// (`0x801E504C..0x801E50E4`).
+///
+/// Three things happen here, in retail's order:
+///
+/// * the audio duck, gated on `ctx[+0x287]` (`lbu v0,0x287(v0)` /
+///   `beq v0,zero,0x801E50BC` at `0x801E5058..0x801E5060`) - the same 75%
+///   ramp state `0x6F` runs, and the same gate. The port used to duck
+///   unconditionally;
+/// * `ctx[+0xD] = 1` (`li v0,0x1` / `sb v0,0xd(v1)` at
+///   `0x801E50C4..0x801E50CC`, the `jal`'s delay slot): the framing style is
+///   pinned to the half-turn variant for the whole capture, so a capture is
+///   always framed from the mirrored side whatever the action seed rolled;
+/// * the hold. `jal 0x801f2160` at `0x801E50C8` re-enters the resident
+///   slot-B cast module every frame and `bne v0,zero,0x801e6814` at
+///   `0x801E50D0` **stays in `0x70`** while it reports busy. Only a zero
+///   return advances to `0x71`.
+///
+/// The port used to transition on the first frame, which collapsed every
+/// capture-class cast's staging to a single tick. The tick itself is the
+/// host's ([`BattleActionHost::capture_stager_tick`]); a host with none is
+/// never busy and still passes straight through.
+///
+/// The depth re-seed `jal 0x801f0348` at `0x801E50DC` runs in the same breath
+/// as the `0x71` store - its delay slot *is* `sb v0,0x7(v1)` - so it is part
+/// of this transition and not of the next state. It is ported here.
+///
+/// Re-seeding matters because `0x6F` spent the whole fade ramping
+/// `ctx[+0x6D0]` down ([`CAPTURE_FADE_CAMERA_STEP`]): without it the camera
+/// would stay wherever the pull-in left it for the rest of the action. The
+/// earlier note here said the port "re-derives `ctx[+0x6D0]` at the action
+/// seed instead", which was true and beside the point - the seed ran long
+/// before the ramp did.
+///
+/// PORT: FUN_801E295C (`0x801E504C..0x801E50E4`)
+/// PORT: FUN_801f0348 (the `0x801E50DC` re-seed call site)
 pub(super) fn magic_capture_phase2<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
-    host.duck_audio_level(75);
+    if ctx.counter_attack_a != 0 {
+        host.duck_audio_level(75);
+    }
+    ctx.camera_variant = CAPTURE_CAMERA_VARIANT;
+    // PORT: FUN_801F2160 (call site; the tick body is the host's resident
+    // cast module)
+    if host.capture_stager_tick() {
+        return stay(ctx);
+    }
+    // The re-seed, in the transition's own breath. Retail reads the live
+    // `+0x1DD` here exactly as the action seed did, so the port asks the host
+    // for the same two inputs rather than reusing the seed's answer.
+    let target_slot = host.actor(ctx.active_actor).map_or(8, |a| a.active_target);
+    let party_count = host.party_count();
+    let frame_height = crate::battle_formulas::camera_height_for_frame(
+        ctx.active_actor,
+        target_slot,
+        party_count,
+        |slot| host.monster_size_class(slot),
+    );
+    ctx.camera_frame_height = frame_height;
+    host.camera_frame_height(frame_height);
     transition(ctx, ActionState::MagicCaptureFinalize)
 }
 

@@ -772,9 +772,12 @@ pub(super) fn decode_menu_ctrl(
         // a timed flag writer). First seen live on jouinc's P2 J-family
         // records (`CC 06 A1 0A 1D 00` at body +0xE).
         //
-        // Nibble 9 - fade family. Sub-0/1/2 = 9 total, sub-E = 34-byte
-        // 16-word table copy, sub-F = 2-byte callback registration (halts at
-        // PC until the callback fires; linear walk uses the footprint).
+        // Nibble 9 - the scene floor-height ladder. Sub-0/1/2 (set one
+        // rung oscillating) = 9 total, sub-E (install all sixteen rungs at
+        // 0x1F80035C) = 34-byte 16-word table copy, sub-F = 2-byte retire
+        // sweep over LAB_801DA930 (halts at PC; linear walk uses the
+        // footprint). Not a fade family - see
+        // docs/subsystems/script-vm-menuctrl.md.
         // Sub-3..=0xD have no `case` arm in retail (dispatcher returns
         // `param_2`) - genuinely undefined, kept as UnknownSubOp.
         9 => {

@@ -215,6 +215,39 @@ Per cell, both passes: read the cell word, take its tile record, require the rec
 
 `FUN_801d2a10`'s two extras are the ramp and the marker template. Before the walk it writes the 16-entry ramp `ramp[i] = i * 0x20` into scratchpad at `0x1f80035c` - the *same* table `FUN_801d6028` and both floor passes later index by the terrain nibble, so the "per-column Y-offset table" reading of it was wrong: it is the terrain height ladder. Per cell it then calls `FUN_801d3ec0` for a step marker and turns its `rec[2] + 1` into a template choice: clip indices `6 ..= 9` take the marker template with `clip - 6` stamped into the spawned actor's `+0x50`, anything else non-zero takes the plain floor template, and `0` skips the cell.
 
+Each spawned **marker** actor then runs its own per-frame tick,
+`FUN_801d0640`, which is a mesh flipbook rather than a step read: it counts
+`+0x54` down by the frame delta and, on expiry, stages the next `[mesh,
+duration]` pair from `0x801D44CC + class * 0x80` through the set-model
+primitive `FUN_80024E08` (biased by the field actor pack base
+`_DAT_8007B6F8`). Four `0x80`-byte rows, 25 pairs each, `[-1, -1]`-terminated,
+and the four rows are the same loop at four phase offsets - so the four marker
+clips flip out of step with each other. Port
+`legaia_engine_vm::dance_marker::step_marker`, driven by `DanceGame::advance`;
+the full read is in
+[`minigames-debug.md`](../reference/functions/minigames-debug.md#801d0640-is-a-mesh-flipbook-on-the-marker-tiles).
+
+### Which pool the spawned tiles land in
+
+`FUN_80024C88(&pos, template, list)` is called with `list` read from
+`0x8007C348 + 0xC` (`lw a2,0xc(t0)` at `0x801D2C1C` / `0x801D2C3C`, with
+`t0 = 0x8007C348`), i.e. **`_DAT_8007C354`** - the field-actor list whose
+per-node tick is `FUN_8003BC08`. So a marker tile is an ordinary field actor:
+the pass fills `+0x50` (the clip sub-index), `+0x74` and `+0x10` from the tile
+record, and the driver then runs it like any other node in that list.
+
+That names the port's blocker exactly, and it is one blocker rather than two.
+`legaia_engine_core::minigame_floor`'s `floor_tile_spawns` / `marker_template`
+resolve every field of these spawns; what neither host has is the *pool* -
+`engine-core` keys field entities by typed per-slot maps rather than by actor
+records, which is the same gap `legaia_engine_vm::motion_vm::field_actor_plan`
+discloses for `FUN_8003BC08` itself. Native minigame frames
+(`window/minigames.rs`) carry no tile-actor list, and the browser page bakes
+the whole venue into one static world-space mesh
+(`web-viewer::minigames_dance`'s `bake_dance_env`), so it has no per-cell draw
+to attach a flipbook to at all. Drawing the marker meshes means giving both
+hosts a per-cell tile-actor pass, not adding a call.
+
 The step marker is **not a marker-specific record**. The call is
 `FUN_801d3ec0(1, x, z)`, so the sub-table it reads is kind **1** of the `.MAP`
 region block - the same 4-byte `[tile_x, tile_z, record, gate]` tile-trigger
@@ -312,9 +345,9 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d0190` | Dancer spawner: per-mode spawn table + kind descriptor table → actor list (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables)). `overlay_dance_801d0190.txt` |
 | `FUN_801d1358` | Per-dancer actor handler: binds idle / the dance loop, applies the judge-returned move clip + translucency bit, then hands to the shared clip driver `FUN_800204F8`. `overlay_dance_801d1358.txt` |
 | `FUN_801d2f38` | Textured-quad sprite emitter (HUD digits / banners / gauge); the id's upper bits carry a per-draw blend mode. See [HUD widget table](#hud-widget-table-dat_801d46cc--emitter-geometry). `overlay_dance_801d2f38.txt` |
-| `FUN_801d73b8` | **Centred text/number draw** (render-track): measures the string (`func_0x80056768`), shifts x left by half its pixel width (13-unit/glyph pitch), draws via `func_0x80036888` at `(x, y + 7)`; skipped when `y >= 0xf1` (off-screen guard); returns a half-length metric. `overlay_dance_801d73b8.txt` |
-| `FUN_801d7dd8` | **Single small-digit glyph emit** (render-track): sets the glyph source column `DAT_801d8610 = digit*8 + 0x28`, then draws one sprite (tile id `6`) via the shared quad emitter `FUN_801d63b0` at `(x, y)`. Called per digit by the number renderer `FUN_801d76e0` when its style arg is 0. `overlay_dance_801d7dd8.txt` |
-| `FUN_801d7d44` | **Single large-digit glyph emit** (render-track): sets `DAT_801d8778 = (digit & 0x3ff) << 4`, then draws two overlaid layers (tile ids `0x418` + `0x818`) via `FUN_801d63b0` at `(x, y)`. Called per digit by `FUN_801d76e0` when its style arg is non-zero. `overlay_dance_801d7d44.txt` |
+| `FUN_801d73b8` | **Centred text/number draw** (render-track): measures the string (`func_0x80056768`), shifts x left by half its pixel width (13-unit/glyph pitch), draws via `func_0x80036888` at `(x, y + 7)`; skipped when `y >= 0xf1` (off-screen guard); returns a half-length metric. **not in this overlay** - see the alias note below. `overlay_dance_801d73b8.txt` |
+| `FUN_801d7dd8` | **Single small-digit glyph emit** (render-track): sets the glyph source column `DAT_801d8610 = digit*8 + 0x28`, then draws one sprite (tile id `6`) via the shared quad emitter `FUN_801d63b0` at `(x, y)`. Called per digit by the number renderer `FUN_801d76e0` when its style arg is 0. **not in this overlay** - see the alias note below. `overlay_dance_801d7dd8.txt` |
+| `FUN_801d7d44` | **Single large-digit glyph emit** (render-track): sets `DAT_801d8778 = (digit & 0x3ff) << 4`, then draws two overlaid layers (tile ids `0x418` + `0x818`) via `FUN_801d63b0` at `(x, y)`. Called per digit by `FUN_801d76e0` when its style arg is non-zero. **not in this overlay** - see the alias note below. `overlay_dance_801d7d44.txt` |
 | `FUN_801d3a2c` | Per-frame dance-floor draw pass (actor list + tile-grid sweep). See [Dance-floor rendering](#dance-floor-rendering). `overlay_dance_801d3a2c.txt` |
 | `FUN_801d2a10` | Height-ramp install + the step-marker floor pass over a `(x, y, w, h)` rect. `overlay_dance_801d2a10.txt` |
 | `FUN_801d3ec0` | Two-layer step-marker lookup wrapper (scene-data `+0x10000` / `+0x12000`). `overlay_dance_801d3ec0.txt` |
@@ -328,7 +361,19 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d40dc` | Sequence-clear ("Good!") banner + two flanking stars carrying the accuracy weight (`+0x72`). `overlay_dance_801d40dc.txt` |
 | `FUN_801d4098` | Actor clip-driver gate: runs the shared clip driver `FUN_800204f8` only when the actor's bound clip id `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. Predicate ported as [`dance_clip_driver_gate`]; see [The dancer actor record](#the-dancer-actor-record). `overlay_dance_801d4098.txt` |
 | `FUN_801d387c` | Sprite-part / shadow emit dispatch: fade weight off the part's `+0x78`, then a five-arm draw-mode jump table. See [The sprite-part emit dispatch](#the-sprite-part-emit-dispatch). `overlay_dance_801d387c.txt` |
-| `FUN_801d414c` | Dance scene-name stager / teardown: stages the `other1` scene name and three field-subsystem globals, one of which is the pad latch. Ported as `dance::dance_scene_stage`; see [Entering and leaving the hall](#entering-and-leaving-the-hall). `overlay_dance_801d414c.txt` |
+| `FUN_801d414c` | Dance **teardown** (the only caller is the results-state fade tail): restores the caller's scene name + PROT block base and arms the BGM reload. Ported as `dance::dance_scene_stage`; see [Entering and leaving the hall](#entering-and-leaving-the-hall). `overlay_dance_801d414c.txt` |
+
+**The three "render-track" rows above are not dance code.** PROT 0980 loads at
+`0x801CE818` and is `0x8000` bytes, so the image ends at `0x801D6818` -
+`FUN_801D73B8`, `FUN_801D7D44`, `FUN_801D7DD8` and the globals `DAT_801D8610` /
+`DAT_801D8778` are all past it, and the `overlay_dance_<addr>.txt` filenames
+carry a base the bytes do not support. The bytes at those VAs belong to
+`overlay_fishing_0972.bin` (`0x801D73B8` = file `0x8BA0`, whose `slti v0,s1,0xf1`
+/ `jal 0x80056768` / 13-unit pitch / `jal 0x80036888` / `y + 7` sequence is
+exactly what the row describes). Fishing and dance are both slot-A overlays at
+the same base, so they can never be co-resident: whatever draws the dance HUD's
+numbers, it is not these. Kept here with the correction rather than deleted,
+because the *descriptions* are accurate reads of real fishing routines.
 
 Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) decodes the baked [step chart](#step--rhythm-state-machine) (3 rows × `0x20` beats) from the disc.
 
@@ -381,20 +426,52 @@ The `U` key starts the how-to floor with the Disco King tutorial runner
 
 ### Entering and leaving the hall
 
-`FUN_801D414C` runs on both edges of the minigame, and one of the three
-globals it pokes has a direct engine equivalent: it zeroes the pad latch
-`_DAT_8007B880`. That is what stops the confirm press which opened the hall
-from also being read as the run's first judged note, and stops the press that
-leaves from leaking into the restored field mode. `World::enter_dance` and
-`World::exit_dance` apply it through `InputState::clear_edges`, which drops
-the frame's press *edges* while leaving held buttons held.
+**The two edges are two different routines, and `FUN_801D414C` is only the
+exit.** `find-address-word-refs.py 801d414c` over `SCUS_942.54` and the 83
+mapped overlay images returns `word=0 jal=1`: the one call is `0x801CFF44`, in
+the results-state (`0x14`) fade tail, gated on the fade accumulator
+`DAT_801D515C` reaching `0x100` (`0x801CFF34`). The **entry** edge is the
+overlay's own init `FUN_801CEF54`, which does the inverse of everything the
+exit does. So the pair is a save / restore, not a stage / re-stage:
 
-The other three fields of the ported record - the `other1` scene name, the
-scene-kind word and the `_DAT_8007BA9C` arm - stay unconsumed: the port
-suspends the current scene mode rather than staging a new scene bundle, so
-there is no scene-name buffer to write. The stager's own ordering (the arm
-happens *after* the scene-setup call, so a re-entrant setup cannot observe it)
-is recorded in the port's doc comment.
+| Cell | `FUN_801CEF54` (entry) | `FUN_801D414C` (exit) |
+|---|---|---|
+| scene-name buffer `0x80084548` | copied **out** to `0x801D518C` (`0x801CF0B0`) | copied **back in** from it (`0x801D416C`) |
+| scene PROT-block base `0x80084540` | saved to `0x801D5180` (`0x801CF0D8`), then set to `0x4CC` (`0x801CF100`) | restored from `0x801D5180` (`0x801D4184`) |
+| `_DAT_8007BA9C` | - | set to `-1` (`0x801D4198`) |
+| `_DAT_8007B880` | - | zeroed (`0x801D417C`) |
+
+Two corrections fall out of that table. The saved string is **not** the literal
+`other1`: `0x801D518C` is BSS in the static PROT 0980 image (all zeros at file
+`0x6974`), and the only image in the corpus containing that literal is
+`overlay_fishing_0972.bin`. What the buffer holds is whatever field scene the
+player walked in from, and the exit restores it. And `0x80084540` is not a
+"scene-kind word" - it is the scene's **PROT block base index**, which is why
+the entry writes the literal `0x4CC` into it and the SCUS BGM resolver reads
+`*(0x80084540) + 6 + bgm_id` at `0x8002443C`.
+
+**`_DAT_8007BA9C` is not unconsumed - it is the force-reload arm of the BGM
+swap.** `FUN_800243F0` loads it at `0x8002457C`, XORs it against
+`_DAT_8007BAB8`, and skips the whole seven-stage swap machine when the two are
+equal (`sltiu` / `bnez` at `0x80024588`..`0x8002458C`); stage 6 latches them
+back together at `0x800247C4`. Writing an impossible value is the standard
+"reload the track" idiom, and the field overlay uses the same one two
+instructions from its own reader (`-0x64` at `0x801D70DC`, reader at
+`0x801D70AC`, plus a blocking wait loop at `0x801D7314`). The consumer runs on
+the *next* image in slot A - the field overlay, which is what
+`FUN_800243F0`'s only two callers live in (`0x801D72E4`, `0x801DA548`) - which
+is the correct shape for a teardown poke.
+
+`_DAT_8007B880` is likewise not a pad latch. Its writers define it: field-VM op
+`0x35` sub-op 7 stores `-1` for an operand byte of `0xFF` (`0x801E01F4`) and the
+u16 operand otherwise (`0x801E0208`), and every reader tests it for negative
+(`0x8002453C`, `0x801D6B48`) or for `== -1` (overlay 0979, `0x801CF618`). That
+is the **script-set sound-set id with `-1` = none** that
+[`script-vm.md`](script-vm.md) and [`battle.md`](battle.md) already call it; the
+dance's own pad word is `_DAT_8007B874`, and no input or judging code reads
+`0x8007B880` at all. The dance writes `0`, the same value `baka_fighter` and
+`arena_init` write. The port's `InputState::clear_edges` on the dance edges is
+therefore a port affordance, not this store.
 
 `DanceGame::press` returns the full event (Miss / Hit / Sequence with its
 points / **Groovy** with its landed flag, lock frames and remaining stock /
@@ -666,7 +743,8 @@ groovy move's, one per difficulty lane (`iVar8 = lane + 3`), and only fire when
 
 **Confirmed** (the banner-per-tier map closes the "which on-screen label each
 tier spawns" question; the `Chicken!!` cell on the HUD page has no widget
-record and no traced spawner - grading-screen use is **Inferred**).
+record and no spawner anywhere in the overlay - see
+[the negatives](#two-descriptor--atlas-questions-that-are-closed-as-negatives)).
 
 ### The dancer face stamp (`FUN_801d03c4`)
 
@@ -747,6 +825,40 @@ ordinary cue uses. The level and the program are the two arguments the engine
 port used to drop; the program is what makes the browser page's `tones[1]` bank
 lookup the right one rather than a guess.
 
+### Two descriptor / atlas questions that are closed as negatives
+
+**`desc+0x20` has no reader.** The kind-descriptor table is
+`0x801D4E1C`, five records of `0x80`, and the spawner `FUN_801D0190` writes a
+record's address into the dancer actor's `+0x48` and nowhere else (`sll a0,
+s0, 7` at `0x801D02D0`, `sw a0, 0x48(a1)` at `0x801D02F8`). Two byte scans
+close the field. A materialised-base + runtime-index taint scan of that table
+over `SCUS_942.54` and all 83 mapped overlays touches only `+0x0C`, `+0x10`
+and `+0x14`, all inside `FUN_801D0190`. A pointer scan - taint every
+`lw rX, 0x48(rY)` and record each displacement subsequently loaded off `rX` -
+sees `0x00 / 0x04 / 0x10 / 0x14 / 0x18 / 0x1C` in this overlay and nothing at
+`0x20`; the sole consumer `FUN_801D1358` derives `s5 = desc + 0x28`
+(`0x801D140C`) and both of its indexed reads are floored at or above that
+(`bltz` guard at `0x801D16BC`; the other path's minimum is `s5 + 0x10`). The
+data reads as reserved-and-copied rather than live: four of the five records
+repeat a neighbouring clip id at `+0x20`, and only kind 2's value names a
+record no other slot does. Consumer absence is `disassembly`; "dead data" is
+`inference`.
+
+**The `Chicken!!` cell has no spawner.** The cell is real - PROT 1230
+(`prot::timpack`, 31 entries) entry 6 at file `0x30D44` is the 4bpp HUD page,
+image rect `(512, 0, 64, 256)` / CLUT `(0, 500, 256, 1)`, and decoding its
+pixels puts `Chicken!!` on the same row and height as `Good!` and `Cool!`,
+inked at `u = 0x74..0xF6`. Nothing selects it. The widget table `0x801D46CC`
+(stride 20; record 33 at `0x801D4960` is the last, record 34's slot is the head
+of a pointer table) has no record whose `u0` lands in that range on that row.
+And a constant-propagating census of every `jal` into the two emitters -
+`FUN_801D2F38` (widget id = `a2 & 0x3FF`, blend = `a2 >> 10`, `0x801D2F5C`) and
+`FUN_801D3FD0` - shows the complete producible id set tops out at `0x21`, with
+the only two non-constant sites being the beat-track note cells (`addiu a2, a2,
+0xd` at `0x801D289C`) and a re-emit of a part's own id (`0x801D3980`). So the
+banner is art with no drawer in this overlay; a results-screen drawer elsewhere
+stays possible and unevidenced.
+
 ## Open
 
 - The exact SCUS mode-24 entry-path call sites that stage the art pack (1230)
@@ -762,9 +874,6 @@ lookup the right one rather than a guess.
   position
   (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables))
   but not the facing, and the actor records are not RAM-pinned live.
-- The kind descriptor's third header clip slot (`desc+0x20`; present for every
-  kind, consumer untraced - a results/outro pose is the natural guess).
-- The `Chicken!!` banner cell's spawner (no widget record names it).
 - The exact **length** of each judge-triggered move clip: it is what retail
   really gates re-judging on (the award routine is only called while the dancer
   is on its idle / dance loop), and the port times the window off the dancer's

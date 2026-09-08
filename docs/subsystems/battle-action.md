@@ -85,8 +85,8 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x47` | Spirit-arts - sustain | `FUN_801D5854(actor, 6)`. When `actor[+0x1D9] != 0`, clears `actor[+0x1DA]`. Decrements `ctx[+0x6D8]`. While running: ramps damage-popup HP/widget; when expired and `actor[+0x1F9] == 0` (no spirit-shield), advances HP-bar at `ctx[+0x1074]+0xE`. | `0x48` once exit-flag (`actor[+0x1DC] == 0`) and timers settle. |
 | `0x48` | Spirit-arts - flush | Final ramp of HP-bar / damage-popup. When all targets read zero AND timer expired AND anim flags clear → done. | `0x50`. |
 | `0x50` | **Done - cleanup phase** | The universal "action concluded, clean up" arm. Calls `FUN_801E6968` (the Lost Grail **Final Heal** auto-revive; engine `World::apply_final_heal_revives`), counts living party + monster actors (`+0x14C != 0 && (+0x16E & 4) == 0`); if any survivors → `FUN_801DABA4` (recompute battle ordering). Resets `actor[+0x224] = 8` (or `0x20` for spirits/`+0x1DE == 4`). Adjusts `actor[+0x170]` (HP-bar target) by ability-flag bits `0x100`/`0x200`. Clamps `actor[+0x170]` at 100. OR's `actor[+0x1DC] |= 4`. Per category: `+0x1DE == 5` (run) → screen-shake; `+0x1DE == 3` (attack) or party with dead s8 → pose 8; otherwise pose 6. Sets `ctx[+0x6D8] = 0x3C` (or `0x96` when the level-up banner byte `ctx[+0x26]` is set). If `ctx[7] == 0x50`, advances to `0x51`. | `0x51`. |
-| `0x51` | Done - fade-down | Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (the configured [audio level](#the-_dat_8007b910-ramps-are-an-audio-duck)). Per-category pose updates. Calls `FUN_801E7250` (?); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: if `ctx[+0x269] == 0` → `0x5A` (next-actor / end-of-action); else → `0x52` (continue queue). When timer < 0xC, calls `FUN_801D99BC` and unloads all UI elements: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `ctx[+0x26]` (the level-up banner), `+0xF/+0x52` (damage), `+0x44`, `+0x59` (queue marker), `+0x51`/`+0x50` (banner). For multi-cast (`_DAT_801F6974 != 0`), iterates queue at `((+0x6974)-1)*4 + -0x7FE097CC` firing every queued effect's terminate marker. | `0x52` or `0x5A`. |
-| `0x52` | Done - multi-cast continuation | `FUN_801D5854(actor, 8)` (action-end pose). Decrements `ctx[+0x6D8]`. If timer > 0x13 and screen-shake active (`_DAT_8007B874 != 0`), clamps timer at 0x13. When < 0: clears `ctx[+0x269]`, advances to `0x5A`. When < 0x14 and `actor[+0x17] != 0` (was running), unloads the queue marker. | `0x5A`. |
+| `0x51` | Done - fade-down | Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (the configured [audio level](#the-_dat_8007b910-ramps-are-an-audio-duck)). Per-category pose updates. Calls `FUN_801E7250` (?); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: `ctx[+0x269] == 0` → `0x5A`, else `0x52`. Under `timer < 0xC`, calls `FUN_801D99BC` and unloads: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `ctx[+0x26]` (the level-up banner), `+0xF/+0x52` (damage), `+0x44`; then **raises** `+0x59` (the capture banner) and unloads `+0x51` / `+0x50`, plus the multi-cast `(id, id-4)` loop off `_DAT_801F6974` - see [the sweep section](#the-sweep-the-teardown-falls-into-0x801e62180x801e6368). | `0x52` or `0x5A`. |
+| `0x52` | Done - multi-cast continuation | `FUN_801D5854(actor, 8)` (action-end pose). Decrements `ctx[+0x6D8]`. If timer > 0x13 and screen-shake active (`_DAT_8007B874 != 0`), clamps timer at 0x13. When < 0: clears `ctx[+0x269]`, advances to `0x5A`. When < 0x14 and **`ctx[+0x17]`** (the `0x51` block's own latch, not an actor byte) is non-zero: `FUN_801D99BC`, unload `0x59`, clear the latch - the close of the banner the `0x51` sweep raised. Port `done::done_multi_cast`. | `0x5A`. |
 | `0x5A` | **End-of-action gate** | Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). Resets dead/inactive actors' `+0x36 = 0`, `+0x21C = 0`, `+0x225 = 0`. Counts living actors per side: if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps the [turn cursor](#the-turn-cursor-ctx0x1a) `ctx[+0x1A]++`; if it is `< (party_count + monster_count - ctx[+0x25])`, advances to `0x0A` (next action); else → `0xFF` (round boundary - see below). | `0x0A` (next actor) / `0xFF` (round ends). |
 | `0x64` (100) | **Run - flee anim begin** | Calls `FUN_801E791C` ([the escape roll](#the-escape-roll-fun_801e791c) - decides the flee, writes `_DAT_8007726C`). Sets `ctx[+0x6D8] = 0x3C`. Fires `FUN_801D8DE8(0x43, 0)` (run UI). Advances the [turn cursor](#the-turn-cursor-ctx0x1a) past each monster with a rotation trigger (`+0x16C != 0`) that isn't immune (`(&DAT_8007BD10)[i] != 4`). If party-side ran (`_DAT_8007726C != ctx + 0x189`, the run roll succeeded): screen-shake, and **floors every party actor's live HP at 1** (`+0x14C == 0` → `1`, loop bound = party count) - the mechanism behind "escape restores a Stoned member". Ported: `RunBegin` + `StatusEffectTracker::cure_stone_on_escape`. Else screen-shake only. | `0x65`. |
 | `0x65` | Run - wait | If the run failed (`_DAT_8007726C == ctx + 0x189`) → screen-shake `_DAT_8007B792` rotates. Decrements `ctx[+0x6D8]`. When < 0: **failed run** → `0x50` (Done band - the action is consumed, the battle continues); **successful escape** → `0x66`. | `0x50` (failed) or `0x66` (escaped). |
@@ -97,7 +97,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x6B` | Capture - end | `FUN_801D5854(0, 9)`; screen rotates; decrements timer. When < 0 → `0x5A` (end-of-action). | `0x5A`. |
 | `0x6E` | **Magic-capture branch** | `FUN_801D5854(actor, 6)`; waits on `func_0x8003DE7C(1)` (CD ready). When ready: calls `func_0x8003EAE4(0, capture_index)` (load capture archive); sets `_DAT_8007BDB0` to capture-monster index. | `0x6F`. |
 | `0x6F` | Magic-capture - fade | If `ctx[+0x287] != 0`: duck the audio level `_DAT_8007B910 -= DAT_1F800393`, clamp to `(_DAT_8008457C * 0x4B) / 100`. Adjusts ctx-buffer X position. Waits on `func_0x8003F2B8(1)`. | `0x70`. |
-| `0x70` | Magic-capture - phase 2 | Same audio duck as `0x6F`. Runs `func_0x801F2160` (the [magic effect-class dispatcher](#battle-helper-functions), keyed on the spell's effect-class byte) - for a capture-class action this is the drive loop of the paged **cast module**: the module tick re-enters every frame and the state advances only on a zero return, with no timer and no bail-out ([cast-module.md](cast-module.md)). When done, calls `func_0x801F0348` (the [target-size camera framing](#battle-helper-functions)). | `0x71`. |
+| `0x70` | Magic-capture - phase 2 | Same audio duck as `0x6F`, behind the same `ctx[+0x287]` gate. Pins `ctx[+0xD] = 1` in the call's delay slot. Runs `func_0x801F2160` (the [magic effect-class dispatcher](#battle-helper-functions), keyed on the spell's effect-class byte) - for a capture-class action this is the drive loop of the paged **cast module**: the module tick re-enters every frame and the state advances only on a zero return, with no timer and no bail-out ([cast-module.md](cast-module.md)). When done, calls `func_0x801F0348` (the [target-size camera framing](#battle-helper-functions)). Ported as `magic::magic_capture_phase2` over `BattleActionHost::capture_stager_tick`. | `0x71`. |
 | `0x71` | Magic-capture - finalize | `FUN_801D5854(actor, 6)`; checks all 8 slots are settled (alive with non-zero `+0x4`, or non-`8` `+0x1D9`). Once stable: clears ctx buffers, writes the 4-byte fade sentinel (`84 10 42 08`), iterates resetting per-actor `+0x21C = 0` and `+0x8 = 0x81000000`. | `0x50`. |
 | `0xFD` | Idle hold (battle paused?) | `FUN_801D5854(actor, 8)`. No state change. | (stays). |
 | `0xFF` | **End of round** (not battle end - see below) | Sets `ctx[+0x6] = 0x14`, increments `ctx[+0x28A]` (round counter), calls `func_0x801F45A4` (the [end-of-action damage/HP-bar settle](#battle-helper-functions)). | round boundary; the next round's actor selection follows. |
@@ -275,11 +275,24 @@ including the draw and both stores.
 `ctx[+0xD]` is not a spare byte. Three sites read it as a four-way switch
 (`0x801D6510`, `0x801D6698`, `0x801D689C`), all three inside the **battle
 camera** `FUN_801D5854` - the only prologue in `0x801D5854..0x801D6A00` is its
-own: variants
-`1` and `3` add `0x800` - a half-turn - to the staged yaw, variant `2` raises
-the staged pitch by `0x80` and stamps roll `0x400`, variant `0` leaves the
-framing alone. So the byte is what makes two runs of the same action frame
-from different sides.
+own. The switch is really two independent bits: bit `0` (variants `1` and `3`)
+adds `0x800` - a half-turn - to the staged yaw, and bit `1` (variants `2` and
+`3`) raises the staged pitch by `0x80` and drops the staged `sp+0x1A` by
+`0x100`. So the byte is what makes two runs of the same action frame from
+different sides, at two heights.
+
+The three sites spell the same rule three ways: `0x801D6510` reaches the
+bit-1 body by **falling out** of the `== 3` arm into the `== 2` arm and stores
+`0x1A` as the literal `0x400` (its seed was `0x500`), `0x801D6698` does the
+same, and `0x801D689C` gives variant `3` its own arm and subtracts `0x100`
+instead - the same value by a different route.
+
+`sp+0x1A` is the **middle component of the translation vector**, not a roll: it
+is the second halfword of the `a1 = sp + 0x18` triple `FUN_801D7130` takes
+alongside `a0 = sp + 0x10` (pitch / yaw) and `a2 = sp + 0x20` (the negated
+focus position), and its neighbour `sp+0x1C` carries the depth `ctx[+0x6D0]`.
+An earlier revision of this page called it "roll `0x400`", which is what the
+constant looks like read on its own.
 
 `ActionSeed` rolls it `rand() % 4` before the category dispatch
 (`jal 0x80056798` / `sb v0,0xd(a0)` at `0x801E2D04..0x801E2D30`), and each
@@ -295,15 +308,34 @@ category arm then narrows it:
 Attack (`3`) and Run (`5`) make no store of their own, so they keep the seed
 roll. (The arm addresses come from the seed's own category jump table at
 `0x801CF144`, six words indexed by `+0x1DE`, guard `sltiu v0,v1,0x6` at
-`0x801E2D68`.) A later band masks the byte to bit 0 (`lbu` / `andi 1` / `sb`
-at `0x801E321C..0x801E322C`).
+`0x801E2D68`.)
 
-**Port.** `BattleActionCtx::camera_variant`. The seed roll, the Item arm's
-draw and its two stores, and the Tactical-Arts / Magic zeroes are carried; the
-Spirit arm's draw at `0x801E2FFC` and the bit-0 mask are not, so the port's
-shared `rand()` cursor still falls one draw behind retail's per Spirit action.
-Nothing in the port reads the variant yet - the battle camera does not fork on
-it - so the value is currently modelled, not consumed.
+Two later bands narrow it again. State `0x14` masks it to bit 0 on its
+**in-range shortcut** into the strike loop (`lbu` / `andi 1` / `sb` at
+`0x801E321C..0x801E322C`) - the outer `switch`'s entry for `0x14` is
+`0x801E305C`, so that block is `0x14`'s own body, and it is the only one of
+the dispatcher's three `ctx[7] = 0x1E` stores that carries the write (the
+`0x18` and `0x19` stores at `0x801E3550` / `0x801E35AC` do not). The capture
+band's `0x70` pins it to `1` outright (`0x801E50CC`).
+
+**Port.** `BattleActionCtx::camera_variant`, and every writer above is
+carried: the seed roll, the Item arm's draw and its two stores, the
+Tactical-Arts / Magic zeroes, the Spirit arm's draw at `0x801E2FFC`
+(`battle_action::dispatch`'s `spirit_seed_band`), state `0x14`'s bit-0 mask
+at `0x801E3224` (`attack_face`'s in-range arm) and the capture band's `= 1` at
+`0x801E50CC` (`magic_capture_phase2`). The consumer is
+`legaia_engine_vm::battle_cam_script` - `action_framing`, `recover_framing`
+and `action_end_framing` each carry the two-bit fork of their own site - and
+both hosts feed it the live byte, so the four variants produce four framings.
+
+One writer stays a stand-in. `FUN_8004E13C` zeroes the byte at the first
+swing-clip commit (`sb zero,0xd(v1)` at `0x8004E2B4`, beside the
+`ctx[+0x6DA]` yaw seed, gated on `ctx[+0x13] < 3`); the engine's animation
+player does not expose the clip-header byte that gates it, so `BattleCamera`
+latches the zero on the edge into the strike loop instead. It is a latch and
+not a write because retail's is a write to the shared context byte, which
+stands until the next action seed - while the host re-supplies the framing
+inputs every frame.
 
 ### Magic in the port: which half of the cast the SM owns
 
@@ -1222,17 +1254,113 @@ The seed and the skip together are what make the tail read as a banner rather
 than a fudge factor: `0x96 - 0x5B` = 59 frames the player cannot skip, then
 the press ends it.
 
-What the `0x801E6D3C` **increment** is for is not settled by any of the three
-readers - to them it is just "non-zero", so on that boss arm it lengthens the
-fade-down and unloads element `1`. Reading the byte as a boss phase counter
-does not survive the unload site, and reading the increment as intentional
-element selection does not survive `0x65` being the only assignment.
+What the `0x801E6D3C` **increment** counts is nothing: it is a make-non-zero
+idiom on a byte its readers only test against zero. Three things fix that.
+`ActionSeed` clears the byte at the head of every action (`0x801E2CFC`), so
+the value the increment reads is `0` unless the magic level-up arm stamped
+`0x65` first, which makes the result `1` or `0x66` - neither an element retail
+ever raises. The arm it sits in is a one-shot: it is gated on the first
+monster slot being dead **and** `first_monster_id == 0xB5`
+(`0x801E6CFC..0x801E6D0C`), so it runs once per battle at most. And the two
+stores beside it are the same shape - `_DAT_8007B64A = 3` and
+`ctx[+0x07] = 0xFD`, a state byte outside the SM's own range. What the arm
+wants from `ctx[+0x26]` is the `0x50` seed's long hold (`0x96` frames instead
+of `0x3C`) plus the skip window, which "non-zero" is sufficient for; the
+unload that follows is then `FUN_801D8DE8(1, 1)` on an element that was never
+raised.
+
+The earlier note here left this "not settled by any of the three readers".
+What settles it is the *writer* side rather than the readers: the increment
+cannot be intentional element selection, because the byte it increments is
+known-zero at that point and `0x65` is the only id ever assigned.
 
 **Port.** `legaia_engine_vm::battle_action::done`'s `DONE_LEVELUP_BANNER_FRAMES` /
 `DONE_BANNER_SKIP_BELOW`, over `BattleActionHost::pad_word`. The writer is
 `World::accrue_summon_spell_xp` (`engine-core`), the port of `FUN_801E70BC`.
-The `0x801E61B4` unload is **not** ported: the port's Done band models no part
-of the `< 0xC` UI-element teardown block that store sits in.
+The `0x801E61B4` unload is ported with the rest of its block as
+`done::done_band_ui_teardown`, so the id round-trips: raised with the element,
+carried through the `0x50` seed, unloaded here at the id it was staged with,
+cleared by the next `ActionSeed`. See
+[the `0x51` teardown block](#the-0x51-teardown-block) for the latch that makes
+it once-per-action.
+
+### The `0x51` teardown block
+
+Everything the `0x51` arm does after its exit test is one straight line
+(`0x801E614C..0x801E6214`) behind two gates: the countdown must have fallen
+below `0xC`, and the latch `ctx[+0x17]` must be clear. The latch is bumped at
+the end of the block and cleared by the `0x50` entry (`sb zero,0x6(s5)` at
+`0x801E5F60`), so the block runs exactly once per action however many passes
+the band takes - and it runs on **every** pass, including the ones that store
+a new state, because the exit branch at `0x801E610C` jumps to the head of this
+block rather than to the epilogue.
+
+| step | site | condition |
+|---|---|---|
+| sprite-handle table reset `FUN_801D99BC` | `0x801E6170` | unconditional |
+| unload `ctx[+0x18]`, the action's own element | `0x801E6188` | byte non-zero |
+| unload `0x4E` and `0x4F` | `0x801E61A0` / `0x801E61AC` | `ctx[+0x18] == 6` |
+| unload `ctx[+0x26]`, the level-up banner | `0x801E61C4` | byte non-zero |
+| unload `0x0F` and `0x52` | `0x801E61DC` / `0x801E61E8` | `ctx[+0x19]` non-zero |
+| unload `0x44` | `0x801E6200` | `actor[+0x1DE] != 5` (not Run) |
+
+### The sweep the teardown falls into (`0x801E6218..0x801E6368`)
+
+The tail past the latch increment, and it is **inside** the latch: nothing
+branches to `0x801E6218`, and both of the block's gates
+(`beq v0,zero` at `0x801E6158`, `bne v0,zero` at `0x801E6168`) jump to
+`0x801E6814` - past the whole tail. An earlier reading here called it "the
+unlatched multi-cast sweep"; the two branch targets refute that.
+
+| step | site | condition |
+|---|---|---|
+| `FUN_801E92DC(ctx[+0x269])` then **raise** `0x59` (`a1 = 0`) | `0x801E6234` / `0x801E6240` | `ctx[+0x269]` non-zero |
+| unload `(id, id - 4)` for each queued entry, row `_DAT_801F6834 + (count-1)*4` | `0x801E62CC` / `0x801E62F0` | any of the four `0x801F6980` value slots non-zero, and `_DAT_801F6974` non-zero |
+| unload `0x51` | `0x801E6344` | all four value slots zero, `actor[+0x1DD] - 3 < 5`, `0 < actor[+0x1DE] < 4` |
+| unload `0x50` | `0x801E6360` | all four value slots zero, `_DAT_8007BD14` non-zero |
+
+Two corrections fall out of the table. `0x59` is **raised** here, not
+unloaded - `a1 = 0` where every unload in the block passes `1`; the `0x52`
+continuation band is what closes it. And the whole multi-cast half is
+`FUN_801E805C`'s teardown inlined: same `(id, id - 4)` pair, same
+`(count - 1) * 4 + i` row, same `_DAT_8007BD14` gate on `0x50`, all of which
+`engine-vm::battle_value_readout` already ports.
+
+`ctx[+0x269]`'s reading follows from its second reader. `FUN_801E92DC` takes a
+**spell id**: it resolves the acting slot through `_DAT_8007BD10`, indexes the
+live game-state window at `0x80084140 + char*0x414 + 0x704` and prepends there
+(ported as `engine-core::magic_xp::learn_spell_prepend`). So the byte the Done
+band's exit test routes on is the spell a capture granted, and element `0x59`
+raised beside it is that grant's banner.
+
+The capture arm's window is narrower than the table suggests. A non-zero
+`ctx[+0x269]` on the band's *exit* pass re-seeds the countdown to `0xB4`
+(`sh v0,0x2(s7)` at `0x801E6138`) before the teardown reloads it at
+`0x801E614C`, so that pass fails the `< 0xC` gate; and the menu-flag floor
+writes `0xC` exactly, which fails it too. The frames that see both a live
+capture byte and a running teardown are therefore the last twelve of the
+countdown, before it crosses zero - once, behind the latch.
+
+**Port.** `done::done_band_capture_and_banner_sweep` carries the `0x59` raise
+and the `0x51` close; the loop stays with `battle_value_readout`, whose state
+(the value window and the queued count) is the readout's rather than the
+action's.
+
+`ctx[+0x18]` is a **context** byte, written by the seed's Attack arm
+(`li v0,0x7` / `sb v0,0x7(s5)` at `0x801E2F48..0x801E2F50`) - the same arm's
+`sb t2,0xf(s5)` at `0x801E2F44` writes the acting *slot* to `ctx[+0x20]`, not
+an element id to the actor. `ctx[+0x19]` is the Spirit-action latch the seed's
+Spirit arm bumps at `0x801E2FF0`; nothing clears it, so once a battle has seen
+one Spirit action the `0x0F` / `0x52` pair is dropped at the end of every
+later action too.
+
+**Port.** `done::done_band_ui_teardown`, over `BattleActionCtx`'s
+`done_ui_torn_down` / `action_ui_element` / `spirit_action_count` /
+`levelup_banner_element`. `FUN_801D99BC` - the per-actor UI-element array
+zeroing the teardown calls - carries a scope row in `render_pipeline` instead:
+the engine's HUD is rebuilt from state each frame, so there is no element array
+to clear. The unlatched multi-cast sweep that follows at `0x801E6218` is a real
+gap, still unported.
 
 ## The `0x19` attack-approach park - a second, distinct softlock class
 
@@ -1804,7 +1932,21 @@ The summon overlay carries **no embedded TMD geometry** (no `0x80000002` magic).
 - Three staging functions drive the spawn: **`FUN_801F16A0`** (phase 0 = a `do { FUN_80021B04(...) } while(< 8)` loop spawning **8** flame parts, each with `rand()`-seeded actor params - `actor[+0x84]`, `actor[+0xb4] = rng%15 + 16`, `actor[+0xb6] = rng%255 + 512`, `actor[+0x28]`; phase 1 = 1 more part), **`FUN_801F36A0`**, **`FUN_801F4DD0`**. The per-frame motion is the standard actor-tick consuming those RNG-seeded fields.
 - **Part records ARE in-file and move-VM bytecode (corrected link base).** Under the correct link base `0x801F69D8` (not `0x801F0000`), each `FUN_80021B04` call's record pointer resolves to PROT 905 **file `0x180C..0x1E00`** - a contiguous table of `[i16 model_sel][u16 flags][move-VM bytecode @+4]` records, recovered by `legaia_asset::summon_overlay` (disc-gated `summon_overlay_real`). This **supersedes** the two earlier wrong-link-base "FALSIFIED" readings - "the records are beyond the `0x5800` file / `0x180C` is only coincidentally record-shaped / parser reverted" and "there is no move VM here." The records *are* move-VM bytecode;
   the reason PROT 905 has zero `jal 0x80023070` *inside the overlay* is simply that the `jal` lives in the SCUS stager `FUN_80021B04` (which seats `actor[+0x70] = 2` PC → bytecode at `record+4`, then ticks `FUN_80023070`), not in the overlay image.
-- **But the move-VM scene-graph is NOT how retail renders the player summon (live trace).** A PCSX-Redux trace of a player Gimard *Burning Attack* cast shows `FUN_801F7088` = **0×**, the move VM `FUN_80023070` = **2-3×** (noise), and the **battle per-actor draw `FUN_80048A08` = 35-64×/frame** → the per-object rigid-TRS keyframe decoder `FUN_8004998C` → cluster-A `FUN_80043390`. So the **player** summon is drawn as an ordinary battle actor (per-object TRS keyframes), the faithful path being `engine-vm/anim_vm.rs` (`FUN_80048A08` / `FUN_8004998C`). The move-VM stager records still exist (and the engine drives them in `summon::SummonScene` as a stand-in), but they aren't the player summon's per-frame render path. SCOPE: the trace covers the **player** "Burning Attack" only;
+- **But the move-VM scene-graph is NOT how retail renders the player summon
+  (live trace).** A PCSX-Redux trace of a player Gimard *Burning Attack* cast
+  shows `FUN_801F7088` = **0×**, the move VM `FUN_80023070` = **2-3×** (noise),
+  and the **battle per-actor draw `FUN_80048A08`** in exact lockstep with the
+  per-object rigid-TRS keyframe decoder `FUN_8004998C` → cluster-A
+  `FUN_80043390`. Re-measured on `gimard_burning_attack` (400 vsyncs,
+  `scripts/pcsx-redux/autorun_enemy_move_render_path.lua`): 213 hits each, never
+  more than one per live actor per rendered frame - the "35-64×/frame" magnitude
+  an earlier revision quoted does not reproduce. So the **player** summon is
+  drawn as an ordinary battle actor (per-object TRS keyframes), the faithful
+  path being `engine-vm/anim_vm.rs` (`FUN_80048A08` / `FUN_8004998C`). The
+  move-VM stager records still exist (and the engine drives them in
+  `summon::SummonScene` as a stand-in), but they aren't the player summon's
+  per-frame render path. SCOPE: the trace covers the **player** "Burning Attack"
+  only;
   the **enemy** Gimard *Fire Tail* boss move is a distinct path - see the Fire-Tail note below.
 
 The flame renders as Gouraud-textured (`POLY_GT3`/`POLY_GT4`) prims sampling the resident `etim` page (832,256) 4bpp; `cba`/`tsb` are applied at render.
@@ -1815,6 +1957,13 @@ The flame renders as Gouraud-textured (`POLY_GT3`/`POLY_GT4`) prims sampling the
 - **Residual:** the part records are now recovered (`legaia_asset::summon_overlay`) and driven as a stand-in; what's open is the faithful **player** render - the battle TRS-keyframe path (`FUN_80048A08` / `FUN_8004998C`, ported) needs the summon's per-object keyframe source wired in place of the move-VM stand-in. See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ##### Enemy "Fire Tail" - move-VM part, not the widget path
+
+**The retail string is `Tail Fire`.** Spell id `0x27` in the static SCUS spell
+table reads `Tail Fire` (`asset spell-names`), and the monster archive names the
+same move that way in the enemy Gimard's spell list; "Fire Tail" is this
+section's own long-standing nickname, kept here only because other pages link
+its anchor. Do not confuse it with the *player* summon `0x81` (`Gimard`), whose
+attack is `Burning Attack` - a different move on a different path.
 
 The **enemy** Gimard *Fire Tail* boss move is the distinct path the player-summon
 trace did not cover, and it is now characterized from the two catalogued
@@ -2252,9 +2401,14 @@ byte** - `*(DAT_800754C8 + actor[+0x1DF]*0xC + 1)`, i.e. `+1` of the SCUS
 spell-table record ([spell-table.md](../formats/spell-table.md)); `sltiu` bound
 `0x20`, table at `0x801D5A6C` - into per-effect-class routines
 (`FUN_801F69D8`..`FUN_801F9BA8`); after the routine, if `ctx[+0x27A] != 0` calls
-`FUN_801F2410`. Effect/render-track (each target routine drives that class's
-visual sequence), documented not ported. See
-`ghidra/scripts/funcs/overlay_muscle_dome_801f2160.txt`.
+`FUN_801F2410`. **Ported** - `engine-vm::battle_cast_dispatch` carries the dispatcher itself
+(the `+1` effect-class read, the `0x20` bound and the arm table). "Documented
+not ported" described only the *targets*: the per-effect-class routines
+`FUN_801F69D8..FUN_801F9BA8` are the slot-B cast modules, which each drive that
+class's visual sequence and carry their own scope rows in the
+`slot_b_cast_module` section of `scripts/ci/port-catalog-ignore.toml`. See
+`ghidra/scripts/funcs/overlay_muscle_dome_801f2160.txt` and
+[`cast-module.md`](cast-module.md).
 
 **`FUN_801F3990` - cast audio-cue dispatcher.** Pinned from battle-resident bytes (the aliased
 `overlay_0897_801f3990.txt` dump surfaces a different function - really `FUN_801DD0AC` - at this
@@ -2428,7 +2582,12 @@ they are documented here rather than lifted whole into `engine-vm`.
   via `FUN_801DFDF0`; on arrival it calls the damage kernel `FUN_801DD0AC`
   (indexed through the `0x801F4E64` map) and applies the roll to the target's HP
   (`+0x14C`), death anim (`+0x1DA`), and the accumulated-damage queue
-  (`ctx[+0x83C]`). GTE + effect + damage-application; not ported. See
+  (`ctx[+0x83C]`). **The two halves have different verdicts.** The census head
+  (`0x801E0A44..0x801E0BF0`), including the `+0x24D` early-out ordering, is
+  ported as `engine-vm::battle_cast_census::cast_census`; the flight/impact
+  tail - GTE homing, per-effect spawn and the damage application - is not, and
+  it is what strands `battle_hp_bar::clamp_damage_against_live_hp` (tagged
+  `NOT WIRED` on exactly this prerequisite). See
   `overlay_battle_action_801e09f8.txt`.
 - **`FUN_801E0080` - battle particle/sprite-cloud animator.** Gated on
   `DAT_8007BD58 != 0 && DAT_8007BD71 == 0xFF` (battle live, no end signal).
@@ -2452,15 +2611,22 @@ they are documented here rather than lifted whole into `engine-vm`.
   glyph atlas at `0x801F6..` (`-0x7FE09BA4`), and builds one `0x09`-code sprite
   quad per digit into the OT, ramp-scaling the rect by the per-frame timer
   `ctx[+0x85C]`. Reads actor screen position `+0x3C/+0x3E/+0x40`. Pure
-  GPU-primitive build; not ported. See `overlay_battle_action_801df6b8.txt`.
+  GPU-primitive build: scope row in the `render_pipeline` section of
+  `scripts/ci/port-catalog-ignore.toml`, because the port draws its damage
+  numbers as `engine-ui` text sprites off the same accumulator rather than as
+  per-digit `0x09` quads. See `overlay_battle_action_801df6b8.txt`.
 - **`FUN_8005112C` - per-character signature effect trigger.** SCUS-resident
   (`8005112c.txt`), gated on `actor[+0x68] != 0 && actor[+0x5A] < 3` (a party
   slot). Reads the roster char id `DAT_8007BD10[actor[+0x5A]]` (`1`/`2`/`3` =
   Vahn/Noa/Gala) and, when the actor's current anim id (`*(actor[+0x4C]) + 0x77`)
   hits that character's hard-coded frame value (`0x29`/`0x1E`/`0x2A`/`0x64`),
   fires `FUN_80048310(actor, effect_id, 3, rgb)` with a per-character effect id +
-  RGB tint - a hand-authored visual accent on a specific animation frame. Effect
-  spawn, not a formula; not ported.
+  RGB tint - a hand-authored visual accent on a specific animation frame.
+  **Ported**, and the "effect spawn, not a formula; not ported" verdict here is
+  stale: the accent is the weapon trail, and `engine-vm::battle_trail` carries
+  the trigger's per-character identity-byte table together with
+  `FUN_80048310`'s sweep schedule and band colour ladder. Only the projected
+  quad emission is render-track (`engine-ui::battle_trail`).
 - **`FUN_801F17F8` - summon / readef side-band streamer.** A three-phase
   (`ctx[+0x26C]`) CD loader gated on `ctx[+0x26B]`: opens `data\battle\summon`
   (arg `0x37F`) or `data\battle\readef` (arg `0x380`) via `FUN_800558FC`, reads
@@ -2594,13 +2760,26 @@ it: the acting slot must be a party one (`sltiu v0,v0,0x3` on `0x2(s5)` =
 `ctx[+0x13]` at `0x801E39BC`), the acting character's record `+0xF4` must carry
 bit `0x2000` (`0x801E39FC..0x801E3A08`) and `0x5(s5)` = `ctx[+0x16]` must still
 read zero (`0x801E3A18`). It then rewinds the strike cursor
-(`sb zero,0x4(s5)` = `ctx[+0x15]`), bumps `ctx[+0x16]`, and rewrites every
-queue slot the builder's side array `0x801F6990` marked to `0x19` - so the
-whole action stream replays once with the newly-learned starters demoted, and
-the learn verdict fires on the first pass only. `ctx[+0x16]` is the counter the
-damage kernel's carry arm reads (`s2 = 0xFF` while it is `< 2`). Port:
-`legaia_engine_vm::battle_action`'s `attack_chain` (`attack_x2_refill`), with
-the counter on `BattleActionCtx::attack_x2_pass`.
+(`sb zero,0x4(s5)` = `ctx[+0x15]`), bumps `ctx[+0x16]`, and rewrites to `0x19`
+every queue slot whose mark in the builder's side array `0x801F6990` reads
+**exactly `1`** - so the whole action stream replays once with the
+newly-learned starters demoted, and the learn verdict fires on the first pass
+only. `ctx[+0x16]` is the counter the damage kernel's carry arm reads
+(`s2 = 0xFF` while it is `< 2`).
+
+The compare is `bne v0,a1,0x801E3A58` with `a1 = 1`, and the exactness is
+load-bearing. The build loop writes `1` at each art it accepts
+(`0x801EF788`); the Super tail-replace `FUN_801EF9E4` writes `4` at each
+`0x1A` it stamps (`0x801EFBA8`), *after* the reorder. So a Super Art's starter
+is the one starter the second pass leaves alone, and the War God Icon's extra
+pass performs the Super again rather than a plain swing. A port that
+reconstructs the marks from the finished queue bytes cannot tell the two apart
+- both starters read `0x1A`.
+
+Port: `legaia_engine_vm::battle_action`'s `attack_chain` (`attack_x2_refill`),
+with the counter on `BattleActionCtx::attack_x2_pass` and the marks carried
+from the builder on `BattleActor::starter_marks`
+(`BUILD_STARTER_MARK` / `SUPER_STARTER_MARK`).
 
 ### 3. Damage is one power byte per animation hit event
 
@@ -3528,7 +3707,7 @@ three fields, which is what makes the record a *pair*:
 |---|---|---|
 | element id | `+0x00` (`lbu a0, 0(rec)`) | `+0x01` (`lbu a0, 1(rec)`) |
 | x / y | `+0x02` / `+0x04` | `+0x0A` / `+0x0C` |
-| widget kind | `+0x0E` (`0x801D9288`) | `+0x0F` (`0x801D92A8`) when `mode & 3 == 1`, else `+0x0E` |
+| frame style | `+0x0E` (`0x801D9288`) | `+0x0F` (`0x801D92A8`) when `mode & 3 == 1`, else `+0x0E` |
 
 Everything else is shared, and both arms read it the same way:
 
@@ -3536,8 +3715,42 @@ Everything else is shared, and both arms read it the same way:
 |---|---|---|
 | `+0x06` | content width | `lh v0, 6(rec)` at `0x801D92FC` / `0x801D9370` |
 | `+0x08` | box height | `lh v0, 8(rec)` at `0x801D9308` / `0x801D937C` |
+| `+0x10` | **widget kind** | `lbu s4, 0x10(rec)` at `0x801D8E8C`, once per call before the seat branch (so both seats share it) - see below |
 | `+0x14` | content **string** pointer | `lw a2, 0x14(rec)` at `0x801D9314` / `0x801D9388`; the guard at `0x801D92C4` nulls the field when its first byte is `0` |
-| `+0x10` / `+0x12` | neither arm loads them | - |
+| `+0x11` / `+0x12` | no image loads them | - |
+
+#### `+0x0E`/`+0x0F` is the frame style, and `+0x10` is the kind
+
+Both of those follow from the spawner's argument order rather than from the
+record. `FUN_8003541C(key, kind, str, x, y, w, h, style)` stores `a1` as the
+node's kind byte (`sb s6,0x1c` at `0x80035594`) and the eighth argument as the
+node's `+0x1D` (`sb v0,0x1d` at `0x800355C0`) - and the walker passes the
+record's `+0x0E`/`+0x0F` byte as that **eighth** argument (`sw a2,0x1c(sp)` at
+`0x801D930C` / `0x801D9380`, `a2` having been loaded from `+0x0E`/`+0x0F`),
+while `a1` comes from `$s4`, loaded once from `+0x10` at `0x801D8E8C`.
+
+What `+0x1D` then selects is the window **frame style**, not a draw order: the
+per-frame walker's shared tail writes it into `gp+0x14C` (`0x800323E0`) and the
+frame emitter `FUN_8002C69C` opens by comparing that cell against `0x31`, `0x33`,
+`0x34` and `0x35`, each arm calling a different chrome builder
+(`0x8002C6E4..0x8002C768`), with every other value falling through to the plain
+frame. So a record whose style byte is outside that set draws the ordinary
+gold-framed box - which is why the battle tutorial box's `0x44 - waits` (`0x44`
+or `0x43`, neither in the set) wears the reading box's own chrome either way.
+
+The initialised table agrees with both readings: `+0x0E`/`+0x0F` spread over
+`1..0x44`, while `+0x10` takes only two values across all 103 records, `0` (85
+records) and `13` (18), the two kinds the per-frame draw dispatcher
+`FUN_80031D00` has arms for at `0x80010DC0`. `+0x11` and `+0x12`/`+0x13` are zero
+in every record and no image reads them - a taint scan for a materialised
+`0x80076C10` plus a runtime index, over `SCUS_942.54` and all 83 mapped overlay
+images, finds accesses at `+0x00`/`+0x01`/`+0x02`/`+0x04`/`+0x06`/`+0x08`/`+0x0A`/
+`+0x0C`/`+0x0E`/`+0x0F`/`+0x10`/`+0x14` and none at `+0x11`/`+0x12`/`+0x13`.
+Some jump-table arms of `FUN_801D8DE8` override the loaded kind before the seat
+branch (`addiu s4, s2, -0x13` at `0x801D8FAC`; the literal `6` / `7` / `9` /
+`0x1E` stores at `0x801D9504`..`0x801D95F8`), so `+0x10` is the record's
+**default** kind, not an unconditional one. `minigame-muscle-dome.md` already
+called `+0x10` a kind byte; this section's "Unknown" was the stale side.
 
 Both arms subtract 2 from the seat's y before passing it (`0x801D92F4` /
 `0x801D9368`), which is retail's documented `pen = (x, y - 2)`. Each arm then
@@ -3634,10 +3847,14 @@ seats are mirror images (41 is `328` at A and `200` at B, 42 is `200` at A and
 
 Evidence grade: **Confirmed** for every field above, for the three movers and
 for the call sites - disassembled from PROT entry 0898 at base `0x801CE818` and
-cross-read against the table's own initialised bytes in `SCUS_942.54`. One field
-stays **Unknown**: `+0x10`, which the disc sets to `13` on the framed-window and
-roster-panel rows (kinds `0x03` / `0x07` / `0x44`) and `0` on the plate run, and
-which neither spawn arm loads. `+0x12` is zero in all 103 records.
+cross-read against the table's own initialised bytes in `SCUS_942.54`. No field
+is Unknown any more: `+0x10` - the byte the disc sets to `13` on the
+framed-window and roster-panel rows and `0` on the plate run - is the **widget
+kind**, loaded once per call at `0x801D8E8C` and handed to `FUN_8003541C` as its
+`a1` (see [the field decode above](#0x0e0x0f-is-the-frame-style-and-0x10-is-the-kind)).
+The `0x03` / `0x07` / `0x44` values quoted against those rows are their
+`+0x0E`/`+0x0F` **frame style**, not their kind. `+0x11` and `+0x12` are zero in
+all 103 records and no image reads them.
 
 ## Overlay-local PRNG `FUN_801D0290`
 

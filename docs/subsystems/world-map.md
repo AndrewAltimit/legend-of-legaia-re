@@ -1169,9 +1169,20 @@ first such segment directly (the field-VM walk can't be trusted inside text - it
 desyncs on glyph bytes that look like opcodes). `OwnedDialogPanel::from_inline_dialog`
 skips to that `0x1F` lead and decodes the segment through the standard MES
 interpreter; `SceneHost::open_pending_dialog` prefers this inline path and falls
-back to a `text_id` -> scene-MES lookup for the message-table dialogue paths. The
-geometry-header layout and multi-segment (full menu) rendering are not yet pinned
-- the first segment renders today.
+back to a `text_id` -> scene-MES lookup for the message-table dialogue paths.
+
+There is **no geometry header** on the `0x1F` lead to pin: the byte is the
+line-start marker of a MES glyph run and nothing follows it but glyphs
+([mes.md](../formats/mes.md#dialog-window-pager---fun_801d84d0)). The box's geometry belongs to
+the pager, not to the text - the reading box's rect, pens and advance hand are
+pinned in [field-menu.md](field-menu.md#dialog-reading-box-fun_801d84d0), and
+the row capacity is the pager's own `_DAT_801F2740 = 3`. Multi-segment
+rendering is likewise **not** a gap: consecutive `0x1F` lines pack into one
+window and the port does it - `legaia_mes::pack_box` groups up to three rows,
+`OwnedDialogPanel::seed_box_at_lead` types them as one box and
+`advance_page` pages the chain (pinned by `field_dialog_boxpack_disc`). What
+picks *which* segment a talk lands on is the record's own field-VM prologue,
+also not a header.
 
 > **Not the `0x3F` op - and not any opcode.** Earlier notes attributed this
 > inline text to a `0x3F` "Dialog" opcode; `0x3F` is actually the **named
@@ -2565,6 +2576,14 @@ if (_DAT_801F351C != 0) {
 (`docs/reference/memory-map.md`), indexed `(angle & 0xFFF)` - the same
 pointer the [move VM](move-vm.md) and [effect VM](effect-vm.md) index.
 
+Which of the pair is which is settled by the table bytes, not by a caller's
+variable names. `FUN_80026BE0` stores `&DAT_80070A2C` into `_DAT_8007B81C` and
+that address `+0x800` (`&DAT_8007122C`) into `_DAT_8007B7F8`; entry `0` of the
+first is `0` and entry `1024` is `4096`, entry `0` of the second is `4096` and
+entry `1024` is `0`. So `_DAT_8007B81C` is the **sine** view and
+`_DAT_8007B7F8` the **cosine** view of one `4096 * sin` table - `0x800` bytes
+is 1024 halfwords, a quarter turn of the 4096-entry revolution.
+
 #### Per-iteration packets
 
 Each of the 224 iterations emits a **one-pixel-tall horizontal band** at
@@ -2631,7 +2650,15 @@ function-pointer tables based on `_DAT_1F800394 & 1`:
 
 The overlay path skips the alpha offset (`_DAT_1F800028` is not added
 on the overlay branch), so only the first row of the overlay table is
-meaningful. Slots 8..11 of row 0 share the same low-mode dispatchers
+meaningful. `0x801F8968` is the base the dispatcher materialises
+(`lui s4,0x8020` / `addiu s4,s4,-0x7698` at `0x800435F4..F8`), **not** the
+first populated word: slots `0..7` are eight zero words and the twelve live
+entries begin at `0x801F8988`. The SCUS table is the same shape - `0x8007657C`
+also opens with eight zero words and puts the same four low-mode dispatchers at
+slots `8..11` - so the leading gap is the index space, not padding, and the
+index is the prim group's flag halfword `>> 1` (`srl s5,s7,0x11` at
+`0x800435A4`, `sll s5,s5,2` at `0x800435C4`).
+Slots 8..11 of row 0 share the same low-mode dispatchers
 as SCUS (`0x8004409C, 0x8004423C, 0x80044434, 0x800445B0`); slots
 12..19 carry the eight overlay-resident high-mode renderers. The slot is the
 group header's `flags >> 1` (`0x80043614`; `legaia_tmd::descriptor` decodes
@@ -2786,8 +2813,11 @@ runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
     `tpage`/`clut` `0x3C`/`0x9`) when `(param_2 >> 3) & 7 == 0`, otherwise a
     shorter semi-transparent gouraud `POLY_G4`-class quad (GP0 `0x22`, 6-word
     stride, `0x2C`); colour comes from record `+0xC..+0x12`. Ends by zeroing a
-    `0x14`-word tail. A pure record→packet transform; not ported (raw GP0
-    packet layout belongs to `engine-render`, not `engine-vm`).
+    `0x14`-word tail. A pure record→packet transform, and the one row of this
+    dispatcher with no Rust behind it: raw GP0 packet layout belongs to
+    `engine-render`, which builds a quad from a rect and a texture rather than
+    from a POLY_GT4 word stride, so the address carries a scope row in the
+    `render_pipeline` section of `scripts/ci/port-catalog-ignore.toml`.
   - bit `0x2000` → `FUN_801CFA48` (overlay-resident). It is a function entry
     (`addiu sp,sp,-0x70`) in the **battle-action** overlay PROT 0898 and in no
     other image on the disc - probing that VA across every extracted overlay
@@ -2861,7 +2891,7 @@ overlay's `FUN_801D7EA0` and the 0897 field overlay's
 | `_DAT_80083808` | World-map entity activation gate. |
 | `_DAT_8007BC3C` | World-map submode register. `FUN_80016444` gates its `jal 0x801D7EA0` on this being `2`. Six SCUS writers (`FUN_80016230` / `FUN_80025980` / `FUN_80025DA0` / `FUN_8001D424`). |
 | `_DAT_801F351C` | One-shot gate flag for the POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` (and the 0897 sibling `FUN_801C9688`) clear it after one emission. Lives in the persistent `0x801F0000+` region and survives overlay swaps. |
-| `_DAT_801F3518` | Running camera angle. Advanced by `DAT_1F800393 * _DAT_801F3524` per `FUN_801D7EA0` call; masked to 4096 entries when indexing the cos LUT at `0x8007B81C`. |
+| `_DAT_801F3518` | Running camera angle. Advanced by `DAT_1F800393 * _DAT_801F3524` per `FUN_801D7EA0` call; masked to 4096 entries when indexing the **sine** LUT at `0x8007B81C`. |
 | `_DAT_801F3520` | Render scale / range. Sourced from `_DAT_8007BCD4` via `FUN_801D8258`'s `param_2`. The emitter uses it both as `local_3c` and `local_3c / 5`. |
 | `_DAT_801F3524` | Angle step per frame tick. Sourced from `_DAT_8007BCD8` via `FUN_801D8258`'s `param_3`. |
 | `_DAT_801F3528` | OT layer / draw priority. Sourced from `_DAT_8007BCDC` via `FUN_801D8258`'s `param_4`. |

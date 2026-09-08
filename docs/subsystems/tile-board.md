@@ -46,7 +46,9 @@ The cells are filled at install by the procedural fill at **`0x801EF334`** (see 
 
 Two corrections this table carries against an earlier reading of these bytes: the four animated tiles are **not** all value `0xB`, and only the *event* tiles use the half-height modulus - the animated ones scatter over the full board. `legaia_engine_core::tile_board::procedural_fill` already implements both correctly; it was the prose that drifted.
 
-Whether the cell buffer is `malloc`'d at install is **unverified** - the cells are reached through a pointer at `DAT_801f35c0`, which is consistent with a heap allocation, but no allocation site has been traced. (`func_0x800204f8`, called on the install path, is the move-table consumer, not an allocator.)
+The cell buffer **is** heap-allocated at install: `DAT_801F35C0 = FUN_80017888(0, width * height)` at `0x801EF3E8..0x801EF3F4`, immediately before the base fill, with `width` and `height` re-read from the header (`_DAT_8007B450[3]` / `[4]`) and multiplied - so the buffer is exactly one byte per cell and nothing pads it. `FUN_80017888` is the logging wrapper over the game's allocator `FUN_8002B468` (a best-fit walk of a doubly-linked free list, `(size + 3) & ~3` alignment, heap index in `a0`); its failure arm prints `malloc err size %d` and bumps a byte counter at `gp+0x510`. Nothing frees it - the per-scene control-block reset zeroes `_DAT_8007B450`, not this pointer.
+
+The pointer has exactly **one** writer in the whole disc corpus (`find-gp-relative-refs.py --va 0x801f35c0`: 12 references across 84 images, one store), so the install site above is the allocation, not one of several. (`func_0x800204f8`, also called on the install path, is the move-table consumer, not an allocator.)
 
 #### Address note: there is no `FUN_801e0b1c`
 

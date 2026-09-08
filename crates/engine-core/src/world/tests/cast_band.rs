@@ -311,3 +311,126 @@ fn a_party_cast_raises_no_spell_name_label() {
         "0x801E43D0: the label block is skipped for a party id"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The band's PORT half: the slot-B module code kernels reached from the
+// stager tick the action SM drives (`World::run_cast_module_code`).
+// ---------------------------------------------------------------------------
+
+/// A minimal battle world with the summon seat live, so the module kernels
+/// that pose `actor_table[7]` have something to write.
+fn module_code_world() -> World {
+    let mut world = World {
+        party_count: 1,
+        ..World::default()
+    };
+    while world.actors.len() < 12 {
+        world.actors.push(Actor::default());
+    }
+    world.mode = SceneMode::Battle;
+    for i in 0..8 {
+        world.actors[i].active = true;
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+        world.actors[i].battle.liveness = 1;
+        world.actors[i].battle.anim_rate = legaia_engine_vm::battle_anim_rate::AnimRate(8);
+    }
+    world.battle_ctx.active_actor = 0;
+    world
+}
+
+/// PROT 0909 (Viguro) is spell id `0x87` through the action-id dispatcher's
+/// own arithmetic (`903 + (id - 0x81)`), so this resolves with no disc: the
+/// stager's arm 0 poses the summon seat and advances the module phase.
+#[test]
+fn the_viguro_stager_runs_from_the_cast_band_seam() {
+    let mut world = module_code_world();
+    assert_eq!(world.cast_module_for(0x87), Some(909));
+    world.summon_actor_slot = Some(7);
+    world.actors[7].battle.active_target = 2;
+    world.actors[7].battle.render_flag = 0xFF;
+
+    let run = world
+        .run_cast_module_code(0x87, 0)
+        .expect("PROT 0909 is a band entry");
+    assert_eq!(run.prot_entry, 909);
+    assert_eq!(
+        world.actors[7].battle.active_target,
+        legaia_engine_vm::cast_module_ticks::TARGET_CODE_ENEMY_ROW,
+        "arm 0 retargets the summon seat to the enemy row"
+    );
+    assert_eq!(
+        world.actors[7].battle.render_flag, 0,
+        "and makes it visible"
+    );
+    assert_eq!(world.cast_module_phase, 1, "arm 0 advances ctx+0x279");
+}
+
+/// PROT 0922 (Puera, spell `0x94`) writes one byte and nothing else, and only
+/// on arm 0 - the `bnez a1` at the routine's head.
+#[test]
+fn the_puera_stager_writes_ctx_278_only_on_arm_zero() {
+    let mut world = module_code_world();
+    assert_eq!(world.cast_module_for(0x94), Some(922));
+    world.run_cast_module_code(0x94, 1).unwrap();
+    assert_eq!(world.cast_module_ctx_278, 0);
+    world.run_cast_module_code(0x94, 0).unwrap();
+    assert_eq!(world.cast_module_ctx_278, 3);
+}
+
+/// PROT 0927 (Juggernaut, spell `0x99`) sweeps the enemy row with the
+/// never-kill clamp: the party is untouched and no monster drops below 1 HP.
+#[test]
+fn the_juggernaut_sweep_spares_the_party_and_never_kills() {
+    let mut world = module_code_world();
+    assert_eq!(world.cast_module_for(0x99), Some(927));
+    for i in 3..8 {
+        world.actors[i].battle.hp = 40;
+    }
+    world.set_battle_attack(0, 400);
+    let run = world
+        .run_cast_module_aoe(0x99, 0)
+        .expect("PROT 0927 has a never-kill damage shape");
+    assert_eq!(run.prot_entry, 927);
+    assert!(
+        !run.aoe_hits.is_empty(),
+        "the sweep reached at least one seat"
+    );
+    assert!(
+        run.aoe_hits.iter().all(|h| h.seat >= 3),
+        "the party row is not swept"
+    );
+    for i in 0..3 {
+        assert_eq!(world.actors[i].battle.hp, 100, "party seat {i} untouched");
+    }
+    for h in &run.aoe_hits {
+        assert!(
+            world.actors[h.seat as usize].battle.hp >= 1,
+            "seat {} was killed by a HP-1 clamp",
+            h.seat
+        );
+    }
+    // A spell whose module has no never-kill shape takes the ordinary fold.
+    assert!(world.run_cast_module_aoe(0x87, 0).is_none());
+}
+
+/// The tick seam the action SM already drives: arming the stager zeroes the
+/// module phase (retail's `0x801E4B1C`) and each tick re-enters the module.
+#[test]
+fn arming_the_stager_zeroes_the_module_phase() {
+    let mut world = module_code_world();
+    world.cast_module_phase = 9;
+    world.cast_module_ctx_278 = 7;
+    world.arm_summon_stager(0, 0x87);
+    assert_eq!(world.cast_module_phase, 0);
+    assert_eq!(world.cast_module_ctx_278, 0);
+    world.summon_actor_slot = Some(7);
+    assert!(
+        world.summon_stager_tick(),
+        "the stager is busy from tick one"
+    );
+    assert_eq!(
+        world.cast_module_phase, 1,
+        "the stager tick re-entered PROT 0909's module code"
+    );
+}
