@@ -819,6 +819,7 @@ family - is wrong the same way: it is the retail branch, and `0x37A` is
 [`re-settled-threads.md`](re-settled-threads.md#audio).
 
 ## Title / boot / overlays
+
 ### The title sub-mode word lives at `0x801DD920`, and `0x02` is a screen a player can see
 
 *Falsified by disassembly, with a cold-boot capture agreeing.*
