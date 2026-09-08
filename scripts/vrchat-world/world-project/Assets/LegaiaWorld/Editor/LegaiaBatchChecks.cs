@@ -416,7 +416,6 @@ namespace LegaiaWorld
                 Fail("btn_npcs does not send ToggleNpcs");
             CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seats");
             CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seatChairs");
-            CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "seatHands");
             CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "deckAnchor");
             CheckVar(container, "LegaiaWorld.LegaiaCardTableHost", "cards");
             CheckVar(container, "LegaiaWorld.LegaiaEventButton", "target");

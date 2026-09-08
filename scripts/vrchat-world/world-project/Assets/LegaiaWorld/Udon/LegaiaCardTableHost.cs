@@ -1,7 +1,7 @@
 // The card table's NPC host: the single handler behind the four stool
-// LegaiaNpcStations (kind 2). Villagers drift over, sit down and hold a
-// fanned pair of cards - and a player sitting down is an INVITATION, not
-// an eviction: the free stools stay available while people play, and the
+// LegaiaNpcStations (kind 2). Villagers drift over and sit down (their
+// cards are the game's real deal on the felt) - and a player sitting down
+// is an INVITATION, not an eviction: the free stools stay available while people play, and the
 // card game (LegaiaCardGame) summons villagers into them.
 //
 // That is the one rule that changed when the table got a game. The host
@@ -59,9 +59,6 @@ namespace LegaiaWorld
 
         [Tooltip("The LegaiaSeat on each stool, same order as `seats` - polled for player occupancy.")]
         public LegaiaSeat[] seatChairs;
-
-        [Tooltip("Per-seat fanned card-back props, same order - shown while an NPC sits.")]
-        public GameObject[] seatHands;
 
         [Tooltip("The deck's stack anchor - cards further out than cardAwayRadius mean a game is on.")]
         public Transform deckAnchor;
@@ -202,16 +199,12 @@ namespace LegaiaWorld
             seated[i] = npc;
             // What StandUp adds back (negative: the rig was lifted).
             drops[i] = p.y - y;
-            if (seatHands != null && i < seatHands.Length && seatHands[i] != null)
-                seatHands[i].SetActive(true);
         }
 
         void StandUp(int i)
         {
             Transform npc = seated[i];
             seated[i] = null;
-            if (seatHands != null && i < seatHands.Length && seatHands[i] != null)
-                seatHands[i].SetActive(false);
             if (npc == null)
                 return;
             LegaiaNpcWander w = npc.GetComponent<LegaiaNpcWander>();

@@ -842,10 +842,9 @@ namespace LegaiaWorld
             // nobody is playing - the host below arbitrates between them.
             var seatStations = new List<Component>();
             var seatChairs = new List<Component>();
-            var seatHands = new List<GameObject>();
             for (int i = 0; i < seats; i++)
-                BuildStool(root.transform, i, seats, wood, dark, cardMat, meshes,
-                    seatStations, seatChairs, seatHands);
+                BuildStool(root.transform, i, seats, wood, dark,
+                    seatStations, seatChairs);
 
             // Deck: 52 pickups stacked face-down at the anchor.
             var anchor = new GameObject("deck_anchor");
@@ -877,7 +876,6 @@ namespace LegaiaWorld
                 ToTypedArray(seatStations, "LegaiaNpcStation"));
             LegaiaWorldBuilder.SetUdonField(host, "seatChairs",
                 ToTypedArray(seatChairs, "LegaiaSeat"));
-            LegaiaWorldBuilder.SetUdonField(host, "seatHands", seatHands.ToArray());
             LegaiaWorldBuilder.SetUdonField(host, "deckAnchor", anchor.transform);
             LegaiaWorldBuilder.SetUdonField(host, "cards", cardTransforms.ToArray());
             LegaiaWorldBuilder.SyncUdonProxy(host);
@@ -921,8 +919,7 @@ namespace LegaiaWorld
         }
 
         static void BuildStool(Transform root, int i, int n, Material wood, Material dark,
-            Material cardMat, Mesh[] cardMeshes, List<Component> seatStations,
-            List<Component> seatChairs, List<GameObject> seatHands)
+            List<Component> seatStations, List<Component> seatChairs)
         {
             float a = (i + 0.5f) / n * Mathf.PI * 2f;
             Vector3 local = new Vector3(Mathf.Sin(a) * 0.98f, 0f, Mathf.Cos(a) * 0.98f);
@@ -969,30 +966,14 @@ namespace LegaiaWorld
             LegaiaWorldBuilder.SetUdonField(npcSeat, "indoors", false);
             LegaiaWorldBuilder.SyncUdonProxy(npcSeat);
 
-            // Cosmetic hand: two card backs fanned in front of a seated
-            // villager (the rigs have no hand bone, so the fan hangs off
-            // the stool - see LegaiaCardTableHost's pose note).
-            var hand = new GameObject("npc_hand");
-            hand.transform.SetParent(stool.transform, false);
-            hand.transform.localPosition = new Vector3(0f, 0.95f, 0.16f);
-            for (int c = 0; c < 2; c++)
-            {
-                var q = new GameObject("held_" + c);
-                q.transform.SetParent(hand.transform, false);
-                q.transform.localPosition = new Vector3((c - 0.5f) * 0.035f, 0f, 0f);
-                q.transform.localRotation =
-                    Quaternion.Euler(70f, 0f, (c - 0.5f) * 26f);
-                q.AddComponent<MeshFilter>().sharedMesh =
-                    cardMeshes[(i * 7 + c) % cardMeshes.Length];
-                var mr = q.AddComponent<MeshRenderer>();
-                mr.sharedMaterial = cardMat;
-                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            }
-            hand.SetActive(false);
+            // No cosmetic card fan on the stool: the rigs have no hand
+            // bone, so a fan hung off the stool at hand height landed on the
+            // FOREHEAD of a seated villager (they are about a metre tall).
+            // The villager's real hand is the LegaiaCardGame deal onto the
+            // felt in front of it.
 
             seatStations.Add(npcSeat);
             seatChairs.Add(seat);
-            seatHands.Add(hand);
         }
 
         static Component BuildCard(Transform parent, int index, Mesh mesh, Material mat,
