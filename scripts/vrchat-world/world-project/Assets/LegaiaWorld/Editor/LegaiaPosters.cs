@@ -62,8 +62,9 @@ namespace LegaiaWorld
     {
         internal const string PREFIX = "poster_";
 
-        // Search shape: 24 bearings, 7 m reach, eye height, and the
-        // vertical run a surface must have to count as a wall.
+        // Search shape: 24 bearings fired from eye height, the two reach
+        // radii below, and the vertical run a surface must have to count
+        // as a wall at all.
         const int RAYS = 24;
         /// The radius a poster WANTS to stay inside of its anchor.
         const float REACH = 7f;
