@@ -1300,8 +1300,11 @@ later action too.
 
 **Port.** `done::done_band_ui_teardown`, over `BattleActionCtx`'s
 `done_ui_torn_down` / `action_ui_element` / `spirit_action_count` /
-`levelup_banner_element`. `FUN_801D99BC` and the unlatched multi-cast sweep
-that follows at `0x801E6218` are not ported.
+`levelup_banner_element`. `FUN_801D99BC` - the per-actor UI-element array
+zeroing the teardown calls - carries a scope row in `render_pipeline` instead:
+the engine's HUD is rebuilt from state each frame, so there is no element array
+to clear. The unlatched multi-cast sweep that follows at `0x801E6218` is a real
+gap, still unported.
 
 ## The `0x19` attack-approach park - a second, distinct softlock class
 
@@ -2342,9 +2345,14 @@ byte** - `*(DAT_800754C8 + actor[+0x1DF]*0xC + 1)`, i.e. `+1` of the SCUS
 spell-table record ([spell-table.md](../formats/spell-table.md)); `sltiu` bound
 `0x20`, table at `0x801D5A6C` - into per-effect-class routines
 (`FUN_801F69D8`..`FUN_801F9BA8`); after the routine, if `ctx[+0x27A] != 0` calls
-`FUN_801F2410`. Effect/render-track (each target routine drives that class's
-visual sequence), documented not ported. See
-`ghidra/scripts/funcs/overlay_muscle_dome_801f2160.txt`.
+`FUN_801F2410`. **Ported** - `engine-vm::battle_cast_dispatch` carries the dispatcher itself
+(the `+1` effect-class read, the `0x20` bound and the arm table). "Documented
+not ported" described only the *targets*: the per-effect-class routines
+`FUN_801F69D8..FUN_801F9BA8` are the slot-B cast modules, which each drive that
+class's visual sequence and carry their own scope rows in the
+`slot_b_cast_module` section of `scripts/ci/port-catalog-ignore.toml`. See
+`ghidra/scripts/funcs/overlay_muscle_dome_801f2160.txt` and
+[`cast-module.md`](cast-module.md).
 
 **`FUN_801F3990` - cast audio-cue dispatcher.** Pinned from battle-resident bytes (the aliased
 `overlay_0897_801f3990.txt` dump surfaces a different function - really `FUN_801DD0AC` - at this
@@ -2518,7 +2526,12 @@ they are documented here rather than lifted whole into `engine-vm`.
   via `FUN_801DFDF0`; on arrival it calls the damage kernel `FUN_801DD0AC`
   (indexed through the `0x801F4E64` map) and applies the roll to the target's HP
   (`+0x14C`), death anim (`+0x1DA`), and the accumulated-damage queue
-  (`ctx[+0x83C]`). GTE + effect + damage-application; not ported. See
+  (`ctx[+0x83C]`). **The two halves have different verdicts.** The census head
+  (`0x801E0A44..0x801E0BF0`), including the `+0x24D` early-out ordering, is
+  ported as `engine-vm::battle_cast_census::cast_census`; the flight/impact
+  tail - GTE homing, per-effect spawn and the damage application - is not, and
+  it is what strands `battle_hp_bar::clamp_damage_against_live_hp` (tagged
+  `NOT WIRED` on exactly this prerequisite). See
   `overlay_battle_action_801e09f8.txt`.
 - **`FUN_801E0080` - battle particle/sprite-cloud animator.** Gated on
   `DAT_8007BD58 != 0 && DAT_8007BD71 == 0xFF` (battle live, no end signal).
@@ -2542,15 +2555,22 @@ they are documented here rather than lifted whole into `engine-vm`.
   glyph atlas at `0x801F6..` (`-0x7FE09BA4`), and builds one `0x09`-code sprite
   quad per digit into the OT, ramp-scaling the rect by the per-frame timer
   `ctx[+0x85C]`. Reads actor screen position `+0x3C/+0x3E/+0x40`. Pure
-  GPU-primitive build; not ported. See `overlay_battle_action_801df6b8.txt`.
+  GPU-primitive build: scope row in the `render_pipeline` section of
+  `scripts/ci/port-catalog-ignore.toml`, because the port draws its damage
+  numbers as `engine-ui` text sprites off the same accumulator rather than as
+  per-digit `0x09` quads. See `overlay_battle_action_801df6b8.txt`.
 - **`FUN_8005112C` - per-character signature effect trigger.** SCUS-resident
   (`8005112c.txt`), gated on `actor[+0x68] != 0 && actor[+0x5A] < 3` (a party
   slot). Reads the roster char id `DAT_8007BD10[actor[+0x5A]]` (`1`/`2`/`3` =
   Vahn/Noa/Gala) and, when the actor's current anim id (`*(actor[+0x4C]) + 0x77`)
   hits that character's hard-coded frame value (`0x29`/`0x1E`/`0x2A`/`0x64`),
   fires `FUN_80048310(actor, effect_id, 3, rgb)` with a per-character effect id +
-  RGB tint - a hand-authored visual accent on a specific animation frame. Effect
-  spawn, not a formula; not ported.
+  RGB tint - a hand-authored visual accent on a specific animation frame.
+  **Ported**, and the "effect spawn, not a formula; not ported" verdict here is
+  stale: the accent is the weapon trail, and `engine-vm::battle_trail` carries
+  the trigger's per-character identity-byte table together with
+  `FUN_80048310`'s sweep schedule and band colour ladder. Only the projected
+  quad emission is render-track (`engine-ui::battle_trail`).
 - **`FUN_801F17F8` - summon / readef side-band streamer.** A three-phase
   (`ctx[+0x26C]`) CD loader gated on `ctx[+0x26B]`: opens `data\battle\summon`
   (arg `0x37F`) or `data\battle\readef` (arg `0x380`) via `FUN_800558FC`, reads

@@ -505,10 +505,17 @@ op word `_DAT_801F329C`, sitting above the libcd I/O machine
 
 The message strings live contiguously at `0x801CF3B4..`
 (`write error` / `open ok` / `Format End` / `Format No Card` /
-`Format Error`). This is memory-card-hardware orchestration - it drives
-the libcd read / write / format lifecycle through `FUN_801E3294` - so it
-is documented, not ported: the from-scratch engine persists through the
-`legaia_save` LGSF path, not a PSX card op sequencer.
+`Format Error`).
+
+The machine **is** ported - `engine-core::card_flow::CardWriteMachine`,
+state-for-state over `DAT_801F329C` - and it is classed `REPLACED-BY:` rather
+than `NOT WIRED`, naming `legaia_save`'s synchronous card writer as the
+mechanism. The distinction matters: no host is *owed* here. The one card-image
+backend the port has (the browser card rack) patches the container bytes
+synchronously, so there is no asynchronous BIOS beat for an issue-then-poll
+machine to sequence; wiring one would re-host the device layer rather than add
+behaviour. The `bu` layer below it is likewise ported, as
+[`engine-core::card_bu_io`](../../crates/engine-core/src/card_bu_io.rs).
 
 ### The `bu` file-I/O layer under the sequencer
 

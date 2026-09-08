@@ -682,7 +682,7 @@ Sits underneath the SsAPI sequencer and drives the SPU hardware directly. PsyQ `
 
 ### SPU init / reset / key registers
 
-The bottom of the libspu stack: cold init, the SPU-RAM transfer reset, and the raw KON/KOFF register writer. All are direct SPU MMIO or global-state resets - documented, not ported (the from-scratch `Spu` models the KON/KOFF masks and the reset at the register-value level, never the hardware poke).
+The bottom of the libspu stack: cold init, the SPU-RAM transfer reset, and the raw KON/KOFF register writer. All are direct SPU MMIO or global-state resets, and all five leave the port worklist through scope rows in the `libspu` section of `scripts/ci/port-catalog-ignore.toml` rather than through Rust. The mechanism that covers them is `engine-audio`'s from-scratch `Spu`, which models the KON/KOFF masks and the reset at the **register-value** level - it has no MMIO window to poke and no DMA channel to settle, so a port of these would be a write into nothing.
 
 | Function | PsyQ shape | Notes |
 |---|---|---|

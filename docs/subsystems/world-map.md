@@ -2797,8 +2797,11 @@ runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
     `tpage`/`clut` `0x3C`/`0x9`) when `(param_2 >> 3) & 7 == 0`, otherwise a
     shorter semi-transparent gouraud `POLY_G4`-class quad (GP0 `0x22`, 6-word
     stride, `0x2C`); colour comes from record `+0xC..+0x12`. Ends by zeroing a
-    `0x14`-word tail. A pure record→packet transform; not ported (raw GP0
-    packet layout belongs to `engine-render`, not `engine-vm`).
+    `0x14`-word tail. A pure record→packet transform, and the one row of this
+    dispatcher with no Rust behind it: raw GP0 packet layout belongs to
+    `engine-render`, which builds a quad from a rect and a texture rather than
+    from a POLY_GT4 word stride, so the address carries a scope row in the
+    `render_pipeline` section of `scripts/ci/port-catalog-ignore.toml`.
   - bit `0x2000` → `FUN_801CFA48` (overlay-resident). It is a function entry
     (`addiu sp,sp,-0x70`) in the **battle-action** overlay PROT 0898 and in no
     other image on the disc - probing that VA across every extracted overlay

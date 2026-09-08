@@ -2247,12 +2247,24 @@ screens' retail window sets and content layouts live in
 rect fallbacks in the same module): the command / caster / info windows
 at the decompile-pinned pens above, the list pages at the
 capture-pinned rows with the white-to-grey focus drop, hand cursors and
-page arrows from the system-UI atlas. The spell element-icon plates and
-the "PAGE" small-cap tag are not yet ported as sprites - the builders
-hold their measured gaps / text stand-ins. Hosts still frame these
-screens generically pending the play-window / web wiring; the
-HP / MP health-tier inks on the status page remain the other open
-fidelity item.
+page arrows from the system-UI atlas.
+
+Two pieces of that art are still text stand-ins, and they are blocked on
+different things - worth keeping apart, because one of them is not a
+`pause_lists` change at all:
+
+| Piece | Retail source | What is missing |
+|---|---|---|
+| Spell element-icon plates (the `0xCE` escape leading every spell-name row) | widget records `0x8B..=0x92`, already baked into the menu atlas as `save_menu_atlas::band_element_badges` and consumed by the battle HUD | the **element id per row**: `PauseMagicRow` carries only `name` + `ra_seru`, and `engine-core::pause_screens` does not resolve a spell's element into the view. The sprite side is a few lines once the row carries the index. |
+| The "PAGE" small-cap tag and its fraction | UI-icon records `0x76` (tag), `0x79` (slash), `0x7A..=0x83` (digits) | those records are **not in the baked atlas**. `save_menu_atlas` blits a fixed record set out of the system-UI TIM and none of these three is in it, so the sprite cannot be addressed until the atlas grows them - an `engine-core` / `legaia_asset::title_pak` change, not a draw-builder one. |
+
+Meanwhile `list_page_header_draws` holds the measured columns with
+dialog-font glyphs (label at `x + 0x4D`, fraction cells at
+`x + 0x68 / 0x74 / 0x78`), so the header lands where retail's does even
+though the glyphs are the wrong ones. Hosts still frame these screens
+generically pending the play-window / web wiring; the HP / MP
+health-tier inks on the status page remain the other open fidelity
+item.
 
 
 ### Tactical Arts chain editor (engine extension)

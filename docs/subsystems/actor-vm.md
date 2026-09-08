@@ -291,10 +291,14 @@ per-frame step `+0x9E = 0x1000 / duration` (fixed-point `1.0` over the duration)
 `+0x90`, adds the parent's world position to its own, screen-projects through the
 GTE wrapper `func_0x800195A8` (using the actor's `+0x3C/+0x3E` bbox), computes the
 projected midpoint + span, and draws via `FUN_801E3984` (control word `+0x74`,
-`+0x88`, byte `+0x5A`). Because it calls the GTE projection and builds a draw
-primitive it is render-track - documented, not ported. Its direct `overlay_0897`
-dump is a truncated alias; the real 83-instruction body is in the
-cutscene-dialogue field capture.
+`+0x88`, byte `+0x5A`). It calls the GTE projection and builds a draw
+primitive, so the packet half is render-track - but the routine as a whole is
+**ported**, not merely documented: `engine-vm::field_actor_billboard` carries
+the parent-relative position fold and the projected span, and `engine-render`
+turns that into a draw. (`locate-entry-image.py 801e4470` puts the entry in
+PROT 0897 with a clean frame, so the field reading of the address is the right
+one.) Its direct `overlay_0897` dump is a truncated alias; the real
+83-instruction body is in the cutscene-dialogue field capture.
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_801e4470.txt`.
 
 ### The arc apex, and `FUN_801D5780`

@@ -448,8 +448,20 @@ The SCUS-side CD I/O is layered. Bottom-up:
 #### Low-level CD driver + async load queue
 
 Beneath the API stack above sits Legaia's own CD driver - hardware-register and
-callback code, not the PsyQ `libcd` BIOS path, so **documented, not ported**. The
-async loaders (`FUN_8003E800` / `FUN_8003F128`) feed a two-part queue engine:
+callback code, not the PsyQ `libcd` BIOS path. **The cluster does not share one
+verdict**, and the blanket "documented, not ported" that used to open this
+section was wrong about its own first bullet.
+
+The register / interrupt tier in the table below is documented only, and leaves
+the port worklist through scope rows in `scripts/ci/port-catalog-ignore.toml` -
+`libcd` for the driver and its re-arm / init / mixer entries,
+`worklist_phantom` for the BIOS trampolines, `cd_transport_shims` for
+`FUN_8003DAA8`. The engine reads a disc image directly and has no drive to
+command, so wiring any of them would re-host plumbing nothing can observe.
+
+The tier above it is a different thing: `FUN_8003E800` / `FUN_8003F128` and the
+queue's enqueue half are arithmetic over the PROT TOC, and all three are ported
+in `legaia_engine_core::cd_dma`. The async loaders feed a two-part queue engine:
 
 - **`FUN_8003DDA0`** - index-based streaming **enqueue**. Reads the in-RAM TOC at
   `0x801C70F0`: `start = toc[idx+2]`, `size_sectors = toc[idx+3] - toc[idx+2]`
@@ -459,12 +471,17 @@ async loaders (`FUN_8003E800` / `FUN_8003F128`) feed a two-part queue engine:
   `gp+0x984` by `size_sectors << 11` (= ×2048 bytes). Each append is bracketed by
   the XA-control toggles `FUN_8003EE7C` / `FUN_8003DE7C` / `FUN_8003ED04`. This is
   the size-aware sibling of the plain LBA resolver `FUN_8003E8A8`.
+  Ported: `legaia_engine_core::cd_dma::StreamLoadQueue`, which holds the
+  descriptor table and the cursor arithmetic and leaves the XA toggles to the
+  hardware side-band. Disclosed `NOT WIRED` - every engine host resolves assets
+  through `Scene` / `SceneAssets` synchronously, so nothing enqueues.
   `see ghidra/scripts/funcs/8003dda0.txt`.
 - **`FUN_8003DAA8`** - the load-kick / completion driver the queue drains
   through. Reads the in-progress flag `_DAT_8007B876 & 1`, converts the pending
   LBA (`gp+0x97C`) to BCD-MSF via `FUN_8005C42C`, issues the drive read
   (`FUN_8005FB84`, `FUN_8005C034`) into the destination `gp+0x894`, and maintains
-  the load counters `gp+0x8E8` / `gp+0x964`. `see ghidra/scripts/funcs/8003daa8.txt`.
+  the load counters `gp+0x8E8` / `gp+0x964`. Drive transport - scope row
+  (`cd_transport_shims`), not ported. `see ghidra/scripts/funcs/8003daa8.txt`.
 
 The interrupt / register side:
 

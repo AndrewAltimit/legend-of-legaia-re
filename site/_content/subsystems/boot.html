@@ -163,7 +163,7 @@
       <tr><td>path-based</td><td>dev-style path &rarr; CDNAME index &rarr; the index resolver</td><td>most retail code paths (<code>data\battle\efect.dat</code>, scene paths)</td></tr>
     </tbody>
   </table>
-  <p>Every load ends as &ldquo;seek to a sector, DMA bytes into RAM&rdquo; through Legaia&rsquo;s own layered CD driver - hardware registers and callbacks, not the PsyQ <code>libcd</code> path. The stack is <em>documented, not ported</em>: the engine reads a disc image directly. Every loader is dual-mode, keyed on the dev/retail flag: the retail branch takes the TOC-index path, the dev branch opens a host path through a <code>break</code> trap real hardware cannot service.</p>
+  <p>Every load ends as &ldquo;seek to a sector, DMA bytes into RAM&rdquo; through Legaia&rsquo;s own layered CD driver - hardware registers and callbacks, not the PsyQ <code>libcd</code> path. The stack splits: the register / interrupt / transport tier is <em>documented, not ported</em> - the engine reads a disc image directly and has no drive to command - while the tier above it, the async loaders and the streaming queue&rsquo;s enqueue arithmetic over the PROT TOC, is ported. Every loader is dual-mode, keyed on the dev/retail flag: the retail branch takes the TOC-index path, the dev branch opens a host path through a <code>break</code> trap real hardware cannot service.</p>
   <details class="disclosure" id="cd-read-stack">
     <summary>Details: the CD-read API stack, bottom-up</summary>
     <div class="disclosure-body">

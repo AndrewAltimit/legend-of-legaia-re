@@ -1579,7 +1579,9 @@ from disassembly and from the entry's own bytes.
 
 ### The actor-band command loops (`FUN_801F71E0` / `FUN_801F5748`)
 
-`FUN_801F71E0` (1070 instr) and `FUN_801F5748` (2777 instr, overlay base `0x801CE818`, contains `switchD_801D2830`) iterate the per-actor pointer band based at `0x801C9370` (`= 0x801D0000 - 0x6C90`), touching command fields `+0x1D9`, `+0x1DF` (the [move-power](../formats/move-power.md) action id), `+0x249`, `+0x24D` and the HP field `+0x14C`. They are large, global-entangled queue/command processors, and because the `0x801Fxxxx` VA aliases across the field (0897) and battle (0898) overlays their owning overlay must be confirmed before any port; documented, not ported.
+`FUN_801F71E0` (1070 instr) and `FUN_801F5748` (2777 instr, overlay base `0x801CE818`, contains `switchD_801D2830`) iterate the per-actor pointer band based at `0x801C9370` (`= 0x801D0000 - 0x6C90`), touching command fields `+0x1D9`, `+0x1DF` (the [move-power](../formats/move-power.md) action id), `+0x249`, `+0x24D` and the HP field `+0x14C`. They are large, global-entangled queue/command processors.
+
+**Neither is a portable entry, and "documented, not ported" was the wrong verdict for both.** The "confirm the owning overlay first" caveat was answered, and the answer removes the addresses rather than assigning them: `0x801F71E0` is a `bne` target inside PROT 0967's tutorial-message routine (scope row `worklist_interior`), and `0x801F5748` is a phantom VA of PROT 0897's own `0x25000` over-read - file `+0x26F30` is PROT 0898's battle dispatcher `FUN_801D0748` printed at the field base (scope row `worklist_misbased_print`). What the *body* above describes is real code; what is not real is the pair of entry points it was filed under.
 
 `0x801F71E0` is exactly that alias. The body above is the field-overlay
 occupant, with its own `addiu sp,sp,-0x40` prologue. In **PROT 0967** loaded at
@@ -1630,9 +1632,39 @@ in `s6` (2 → clear `0x80000`; 3 → clear the parked caller's `0x400` and set 
 `8`). `801DBB8C` is an alternate entry into the same routine, entering with the
 counter (`v0`) and table base (`v1`) already in registers - it skips the
 `DAT_1F8003E9` setup. Both are referenced by the actor-band command loops
-`801F5748` / `801F747C`. The field slices are decompiled-C only (the disassembly at
-these VAs belongs to distinct 53- / 41-instruction `battle_action(898)` bodies),
-so store order is unverified; documented, not ported.
+`801F5748` / `801F747C`.
+
+**The store order is verified, and the field attribution is not.** The seeding
+loop's own instructions are `0x801EA7A8..0x801EA7C8` in
+`overlay_0897_801dbc30.txt`'s disassembly section, and they run in this order
+per record:
+
+```text
+lhu v0,0xa(v1)     ; the record's PREVIOUS +0xA, read before it is overwritten
+sh  a0,0x4(v1)     ; colour word
+sh  a0,0xc(v1)     ; colour word again
+sh  a2,0xa(v1)     ; param_3 -> +0xA
+sh  v0,0x2(v1)     ; the value captured above -> +2
+sltiu v0,a1,0x2e   ; 46 records
+bne v0,zero,...    ; delay slot: addiu v1,v1,0x18
+```
+
+So `+2` receives each record's *own* prior `+0xA`, captured before the `+0xA`
+store lands - which is the same value as the previous record's `+0x22`, the
+stride being `0x18`. `801DBC30`'s seven-instruction head decrements the
+scratchpad depth byte `DAT_1F8003E9` and jumps to `0x801EA7AC`, i.e. **into**
+the loop past that first `lhu`, so record 0's `+2` is the decremented byte and
+every later record chains off its neighbour.
+
+What is *not* settled is which image those printed VAs belong to.
+`locate-entry-image.py 801dbc30 801dbb8c` puts both entries in PROT **0898**
+with clean frames and in no other statically-based image, and the 0898 bodies
+(53 / 41 instructions) are a one-packet HUD blit ported as
+`engine-vm::battle_party_panel` - not this loop. The field image at
+`0x801DBC30` is an interior address (`sw s1,0x14(sp)`, no prologue) and the
+loop's bytes are at neither VA in any of the 83 based images, so the dump is
+capture-derived and its base is unresolved. Read the loop as *behaviour whose
+address is open*, not as a field-VM entry.
 `see ghidra/scripts/funcs/overlay_0897_801dbc30.txt`.
 
 ### Party-roster panel renderers
@@ -1643,9 +1675,15 @@ walks the live roster - member count `DAT_80084594`, records `DAT_800845C4`,
 player context `_DAT_8007C364` - and the cursor context `DAT_801F3488..348C`,
 drawing per-member numerics through `func_0x80034B78` and screen-projecting
 cell anchors through the GTE wrapper `func_0x800195A8`. It builds GPU
-primitives, so it is **render-track** - documented, not ported. Its direct
-`overlay_0897_801d0d38` dump is a truncated alias; the full body is in the
-cutscene-dialogue / cutscene-mapview field captures.
+primitives, so its packet half is **render-track** - but the routine is
+**ported**, split across the two crates that own its halves:
+`engine-vm::world_map_panel_actors::HudDecision` carries the
+suppress / rearm / count-down / draw decision, and
+`engine-ui::field_party_hud::field_party_hud_draws_for` carries the layout.
+(`locate-entry-image.py 801d0d38` confirms the entry is PROT 0897's, so the
+field reading of the address holds.) Its direct `overlay_0897_801d0d38` dump is
+a truncated alias; the full body is in the cutscene-dialogue / cutscene-mapview
+field captures.
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_801d0d38.txt`.
 
 ### The passive-ability indicator HUD (`FUN_801D095C`)

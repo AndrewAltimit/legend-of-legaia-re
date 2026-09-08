@@ -45,6 +45,22 @@
 
 use super::*;
 
+/// The **live** `FUN_801D362C` dispatcher - the one an executing move
+/// program reaches.
+///
+/// PORT: FUN_801D362C
+///
+/// Host chain: `move_vm::dispatch` decodes outer opcode `0x2F` and calls
+/// `MoveHost::ext_dispatch`, whose default impl is this function;
+/// `engine-core::world::vm_hosts` takes that default, so every actor the
+/// world ticks runs its `0x2F` instructions through here. Retail's own
+/// caller set is the same size: a disc-wide five-form reference scan for
+/// `0x801D362C` finds exactly one `jal`, at SCUS `0x80023AE0` - the move-VM
+/// `FUN_80023070`'s `0x2F` arm.
+///
+/// The standalone walker in [`crate::move_vm_overlay_ext`] is the *other*
+/// surface over the same routine; it is the one with no host, and it says
+/// so.
 pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
     host: &mut H,
     state: &mut ActorState,

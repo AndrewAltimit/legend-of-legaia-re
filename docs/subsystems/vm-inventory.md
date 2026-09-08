@@ -30,7 +30,7 @@ disassembly (`sltiu` immediate before the `jr`), not off the port.
 |---|---|---|---|---|---|
 | [Actor / sprite VM](actor-vm.md) | `FUN_801D6628` | 13 opcodes, JT `0x801CED70` | resolved | yes - `legaia_engine_vm` root | yes - shop widget choreography (`engine-core::menu_widget`) |
 | [Move VM](move-vm.md) | `FUN_80023070` | 71 opcodes `0x00..0x46`, JT `0x80010778` | resolved | yes - `move_vm` | yes |
-| [Move-VM `0x2F` extension](move-vm-overlay-ext.md) | `FUN_801D362C` | 61 sub-opcodes `0x00..0x3C`, JT `0x801CE868` | resolved | yes - `move_vm_overlay_ext` | **inert** |
+| [Move-VM `0x2F` extension](move-vm-overlay-ext.md) | `FUN_801D362C` | 61 sub-opcodes `0x00..0x3C`, JT `0x801CE868` | resolved | yes - `move_vm::ext` (live) + `move_vm_overlay_ext` (replaced) | **live** |
 | [Motion VM - pursue / patrol](motion-vm.md) | `FUN_8003774C` | 22-slot JT `0x80010EE0`, index `(op & 0x7F) - 0x37` | resolved | yes - `motion_vm` | yes |
 | [Motion VM - scripted](motion-vm.md#the-second-motion-vm---fun_80038158) | `FUN_80038158` | 32-slot JT `0x80010FE8`, ops `0x01..=0x20` | partial | split - see [below](#the-scripted-motion-vm-is-ported-in-three-pieces) | yes |
 | [Field / event VM](script-vm.md) | `FUN_801DE840` | 43 opcodes `0x21..0x4F` with gaps | resolved | yes - `field` | yes |
@@ -160,11 +160,29 @@ calls them. Inert is a reachability statement, not a correctness one.
   `FieldDemoHandler` edge remains the demo-only field-actor host, still
   constructed nowhere outside a `#[cfg(test)]` module. History + triage:
   [`reach-triage.md`](../tooling/reach-triage.md#the-actor-vm-a-resolved-bytecode-source).
-- **Move-VM `0x2F` extension** (`move_vm_overlay_ext`) - its `step` / `walk`
-  walker has no caller. The module is not wholly inert, though: its
-  `canonical_size` width table is the disassembly-sourced mirror that
-  `move_vm::ext` is tested against, and `engine-core`'s VDF-pulse scanner
-  reads it to skip `0x2F` instructions.
+- **Move-VM `0x2F` extension** - **no longer inert, and the "inert" framing
+  was measuring the wrong surface.** There are two Rust surfaces over
+  `FUN_801D362C`. The one an executing move program reaches is
+  `move_vm::ext::ext_default_dispatch`, the default body of
+  `MoveHost::ext_dispatch`, which `move_vm::dispatch`'s `0x2F` arm calls and
+  which `engine-core::world::vm_hosts` inherits - so every actor the world
+  ticks runs its `0x2F` instructions through it. That surface had no `PORT:`
+  tag, which is why the address read as inert; it has one now.
+
+  The other surface is `move_vm_overlay_ext`'s standalone `step` / `walk`
+  walker, and **no host is owed it**: a disc-wide five-form reference scan
+  for `0x801D362C` finds exactly one caller, the SCUS move-VM arm at
+  `0x80023AE0`, and the port already hosts that caller live. A second
+  interpreter for one opcode is not one more reachable behaviour. Its
+  `canonical_size` width table stays live on its own account - it is the
+  disassembly-sourced mirror `move_vm::ext` is tested against, and
+  `engine-core`'s VDF-pulse scanner reads it to skip `0x2F` instructions.
+
+  Note for anyone reading `--live-audit`: `step` and `walk` show as *live*
+  there, and they are not. Both names collide with live free functions in
+  the same crate (`motion_vm::step` among them), which is why neither
+  carries a `NOT WIRED:` tag - tagging them would put two name-collision
+  rows into the stale-tag triage list rather than disclose anything.
 - **`title_overlay`** - **no longer wholly inert.** Its menu half
   ([`TitleMenuState`](#what-of-the-tick-runs-on-both-hosts)) runs on both
   hosts. What stays disclosed is the 25-mode dispatcher itself: the sub-mode
