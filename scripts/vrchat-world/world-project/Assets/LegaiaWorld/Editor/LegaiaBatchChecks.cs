@@ -286,8 +286,189 @@ namespace LegaiaWorld
                 call.FindPropertyRelative("m_Target").objectReferenceValue == null)
                 Fail("URL field listener is not SendCustomEvent(OnURLChanged) on a target");
 
+            CheckCardAtlas("Assets/LegaiaGenerated/" + sceneName, table);
+
             Debug.Log("[Legaia] SELFTEST OK: " + proxies + " U# proxies wired under " +
                       container.name + " (scene " + sceneName + ", not saved).");
+        }
+
+        /// The card faces are DRAWN, not authored, so nothing short of
+        /// counting ink proves a ten of hearts carries ten hearts. For
+        /// every numbered cell this counts the connected ink blobs in the
+        /// cell interior (the two corner-index blocks excluded) and
+        /// asserts the count is the rank; the ace must have exactly one
+        /// and each court card its frame plus letter plus pip.
+        ///
+        /// It reads the PNG off disk with ImageConversion rather than
+        /// GetPixels on the imported asset: that needs no isReadable, and
+        /// it sees the pixels that were written instead of a compressed,
+        /// possibly rescaled import of them. The import IS checked - the
+        /// asset's own width/height must still be the full grid, which is
+        /// what catches the importer silently resampling to a power of two.
+        static void CheckCardAtlas(string genDir, GameObject table)
+        {
+            string path = LegaiaCommonPrefabs.CardAtlasPath(genDir);
+            LegaiaCommonPrefabs.CardAtlasLayout(out int cw, out int ch, out int cols, out int rows);
+
+            string projectRoot = System.IO.Path.GetFullPath(
+                System.IO.Path.Combine(Application.dataPath, ".."));
+            string name = path.Substring(path.LastIndexOf('/') + 1);
+            foreach (string stale in System.IO.Directory.GetFiles(
+                         System.IO.Path.Combine(projectRoot, genDir), "cards_atlas*.png"))
+            {
+                string p = stale.Replace('\\', '/');
+                if (!p.EndsWith(name))
+                    Fail("stale card atlas left behind: " + p);
+            }
+
+            var asset = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            if (asset == null)
+                Fail("no card atlas at " + path);
+            if (asset.width != cw * cols || asset.height != ch * rows)
+                Fail("imported card atlas is " + asset.width + "x" + asset.height +
+                     ", drawn as " + (cw * cols) + "x" + (ch * rows) +
+                     " (importer npotScale / maxTextureSize resampled it)");
+
+            // Every card renderer must sample THIS atlas: the faces are
+            // only redrawn when the file is missing, so a project holding
+            // an older atlas would keep it under a different name.
+            int faces = 0;
+            foreach (var mr in table.GetComponentsInChildren<MeshRenderer>(true))
+                foreach (var m in mr.sharedMaterials)
+                {
+                    var tex = m != null ? m.mainTexture : null;
+                    string tp = tex != null ? AssetDatabase.GetAssetPath(tex) : "";
+                    if (tp.Contains("cards_atlas") && tp != path)
+                        Fail(Path(mr.transform) + " samples " + tp + ", not " + path);
+                    if (tp == path)
+                        faces++;
+                }
+            if (faces < 52)
+                Fail("only " + faces + " card renderer(s) sample " + path + ", expected 52");
+
+            var probe = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            byte[] bytes = System.IO.File.ReadAllBytes(
+                System.IO.Path.Combine(projectRoot, path));
+            if (!ImageConversion.LoadImage(probe, bytes, false))
+                Fail("could not decode " + path);
+            if (probe.width != cw * cols || probe.height != ch * rows)
+                Fail("card atlas PNG is " + probe.width + "x" + probe.height +
+                     ", expected " + (cw * cols) + "x" + (ch * rows));
+            var px = probe.GetPixels();
+
+            var idx = LegaiaCommonPrefabs.CardIndexRegion();
+            string[] suits = { "spades", "hearts", "diamonds", "clubs" };
+            string[] ranks = { "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K" };
+            for (int r = 0; r < 4; r++)
+            {
+                var line = new System.Text.StringBuilder();
+                for (int c = 0; c < cols; c++)
+                {
+                    int blobs = InkBlobs(px, probe.width, probe.height, c, r, cw, ch, idx);
+                    int want = c == 0 ? 1 : c <= 9 ? c + 1 : 3;
+                    line.Append(c > 0 ? " " : "").Append(ranks[c]).Append(':').Append(blobs);
+                    if (blobs != want)
+                        Fail(ranks[c] + " of " + suits[r] + " draws " + blobs +
+                             " pip blob(s) in the card body, expected " + want +
+                             (c >= 10 ? " (frame + letter + pip)" : ""));
+                    // Both corner indices must carry ink, or the face reads
+                    // as blank from a fanned hand.
+                    for (int corner = 0; corner < 2; corner++)
+                    {
+                        int ink = 0;
+                        for (int y = 0; y < idx.height; y++)
+                            for (int x = 0; x < idx.width; x++)
+                            {
+                                int cx = corner == 0 ? x : cw - 1 - x;
+                                int cy = corner == 0 ? y : ch - 1 - y;
+                                if (LegaiaCommonPrefabs.CardIsInk(LegaiaCommonPrefabs.CardPixel(
+                                        px, probe.width, probe.height, c, r, cx, cy)))
+                                    ink++;
+                            }
+                        if (ink < 100)
+                            Fail(ranks[c] + " of " + suits[r] + " corner index " + corner +
+                                 " has " + ink + " ink pixels");
+                    }
+                    if (c >= 10)
+                        CheckCourtFrame(px, probe.width, probe.height, c, r,
+                            ranks[c] + " of " + suits[r]);
+                }
+                Debug.Log("[Legaia] cards " + suits[r] + " pip blobs: " + line);
+            }
+            int pw = probe.width, phh = probe.height;
+            Object.DestroyImmediate(probe);
+            Debug.Log("[Legaia] card atlas " + path + " " + pw + "x" + phh +
+                      " (" + cw + "x" + ch + " cells, " + cols + "x" + rows + " grid), " +
+                      faces + " renderers sampling it");
+        }
+
+        /// The court frame is a closed rectangle: every pixel of its four
+        /// border strokes must be ink.
+        static void CheckCourtFrame(Color[] px, int w, int h, int c, int r, string what)
+        {
+            var f = LegaiaCommonPrefabs.CardCourtFrame();
+            int t = LegaiaCommonPrefabs.CardCourtStroke();
+            bool Ink(int x, int y) => LegaiaCommonPrefabs.CardIsInk(
+                LegaiaCommonPrefabs.CardPixel(px, w, h, c, r, x, y));
+            for (int x = f.xMin; x < f.xMax; x++)
+                if (!Ink(x, f.yMin + t / 2) || !Ink(x, f.yMax - 1 - t / 2))
+                    Fail(what + " frame is open along the top/bottom at x=" + x);
+            for (int y = f.yMin; y < f.yMax; y++)
+                if (!Ink(f.xMin + t / 2, y) || !Ink(f.xMax - 1 - t / 2, y))
+                    Fail(what + " frame is open along the sides at y=" + y);
+        }
+
+        /// Connected ink blobs (8-connected) inside one atlas cell, with
+        /// the two corner-index rectangles masked out. Specks below a few
+        /// pixels are ignored so an anti-aliased edge cannot invent a pip.
+        static int InkBlobs(Color[] px, int w, int h, int c, int r, int cw, int ch,
+            RectInt idx)
+        {
+            var ink = new bool[cw * ch];
+            for (int y = 0; y < ch; y++)
+                for (int x = 0; x < cw; x++)
+                {
+                    bool corner = (x < idx.width && y < idx.height) ||
+                                  (x >= cw - idx.width && y >= ch - idx.height);
+                    if (corner)
+                        continue;
+                    if (LegaiaCommonPrefabs.CardIsInk(
+                            LegaiaCommonPrefabs.CardPixel(px, w, h, c, r, x, y)))
+                        ink[y * cw + x] = true;
+                }
+            var seen = new bool[cw * ch];
+            var stack = new Stack<int>();
+            int blobs = 0;
+            for (int i = 0; i < ink.Length; i++)
+            {
+                if (!ink[i] || seen[i])
+                    continue;
+                int size = 0;
+                stack.Push(i);
+                seen[i] = true;
+                while (stack.Count > 0)
+                {
+                    int p = stack.Pop();
+                    size++;
+                    int x0 = p % cw, y0 = p / cw;
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int nx = x0 + dx, ny = y0 + dy;
+                            if (nx < 0 || ny < 0 || nx >= cw || ny >= ch)
+                                continue;
+                            int q = ny * cw + nx;
+                            if (ink[q] && !seen[q])
+                            {
+                                seen[q] = true;
+                                stack.Push(q);
+                            }
+                        }
+                }
+                if (size >= 20)
+                    blobs++;
+            }
+            return blobs;
         }
 
         /// Weather + living props + card-table NPC seating, applied to the
