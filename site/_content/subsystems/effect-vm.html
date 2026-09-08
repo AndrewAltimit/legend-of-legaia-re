@@ -180,7 +180,7 @@
       <tr><td>spawn caller</td><td><code>FUN_8004998C</code> effect arm</td><td>spawns at the actor&rsquo;s position (<code>actor+0x34</code>) and facing (<code>actor+0x46</code>)</td><td><code>funcs/8004998c.txt</code></td></tr>
       <tr><td>list dispatch / cue groups</td><td><code>FUN_801E09F8</code>, <code>FUN_801E22C8</code>, <code>FUN_800402F4</code></td><td>the two producers of the spawn wrapper <code>FUN_801DFDF0</code></td><td>battle overlay dumps</td></tr>
       <tr><td>streaming handler</td><td><code>0x801F17F8</code> via <code>FUN_800558FC</code></td><td>raw-TOC-index load of summon / readef; byte-verified RAM&harr;disc in a mid-cast state</td><td>-</td></tr>
-      <tr><td>summon render path</td><td><code>FUN_80048A08</code> &rarr; <code>FUN_8004998C</code></td><td>live trace: 35-64 hits per frame during Burning Attack; move VM near-zero</td><td>PCSX-Redux probe</td></tr>
+      <tr><td>summon render path</td><td><code>FUN_80048A08</code> &rarr; <code>FUN_8004998C</code></td><td>live trace: the two run in lockstep, once per live actor per frame; move VM near-zero</td><td>PCSX-Redux probe</td></tr>
       <tr><td>sprite projector</td><td><code>FUN_800195A8</code></td><td>corners offset after the centre transform</td><td><code>funcs/800195a8.txt</code></td></tr>
     </tbody>
   </table>

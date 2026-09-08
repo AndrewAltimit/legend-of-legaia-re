@@ -253,7 +253,7 @@ whose module header carries the display-list measurements.
 
    **Where the battle flame model comes from.**
 
-   - A player Seru-magic cast pages in a **per-summon code overlay** (`FUN_8003EC70(id - 0x79)` → extraction PROT 903..913 under the corrected loader index math; Gimard *Tail Fire* `0x81` → PROT 903), and that overlay supplies the summon's spawn logic.
+   - A player Seru-magic cast pages in a **per-summon code overlay** (`FUN_8003EC70(id - 0x79)` → extraction PROT 903..913 under the corrected loader index math; Gimard `0x81` (the summon whose attack is *Burning Attack*) → PROT 903), and that overlay supplies the summon's spawn logic.
    - Confirmed against the live Tail-Fire RAM: the `player_data` §2 texels are resident in VRAM, yet **none of 874 §0's five TMDs are resident in main RAM** - 874 §0 is the *field* character pack (Vahn / Noa / Gala / savepoint / auxiliary; [`character-mesh.md` § On-disc layout](character-mesh.md#on-disc-layout)), not an effect-model pack. Its 5th/smallest TMD (2 objects / 18 verts / 25 prims) *does* bake `cba=0x778E@(224,478)` / `tsb=0x001D@(832,256)` and looks flame-like; the engine keeps it only as a preview fallback (`engine-core::scene::ETMD_TAIL_FIRE_MODEL_INDEX`).
    - See [`subsystems/battle-action.md`](../subsystems/battle-action.md#seru-magic-summon-overlay-dispatch).
 
@@ -266,11 +266,35 @@ whose module header carries the display-list measurements.
    **Animation is geometric, not CLUT cycling (earlier reading falsified).**
 
    - Two animation-distinct Tail Fire capture frames (catalogued `battle_gimard_tail_fire_a`/`_b`) have a **byte-identical CLUT band** (VRAM rows 470..499) while their framebuffers differ ~21% - so *no* per-frame CLUT/CBA cycling occurs. The visible flame motion is **geometric**.
-   - A live PCSX-Redux trace of a player Gimard *Burning Attack* cast pins the render path: the **battle per-actor draw `FUN_80048A08` fires 35-64×/frame** → the per-object rigid-TRS keyframe decoder `FUN_8004998C` → cluster-A `FUN_80043390`, while `FUN_801F7088` fires **0×** and the move VM `FUN_80023070` only **2-3×** (noise).
+   - A live PCSX-Redux trace of a player Gimard *Burning Attack* cast pins the
+     render path: the **battle per-actor draw `FUN_80048A08`** runs in exact
+     lockstep with the per-object rigid-TRS keyframe decoder `FUN_8004998C` →
+     cluster-A `FUN_80043390`, while `FUN_801F7088` fires **0×** and the move VM
+     `FUN_80023070` stays at noise level. Re-measured on the catalogued
+     `gimard_burning_attack` state
+     (`scripts/pcsx-redux/autorun_enemy_move_render_path.lua`, 400 vsyncs):
+     `FUN_80048A08` = 213 hits and `FUN_8004998C` = 213, **never more than one per
+     live actor per game frame** (the cast is Vahn solo vs one monster, so 2 per
+     rendered frame); `FUN_80023070` = 11, `FUN_801F7088` = 0. The rate scales with
+     the actor count and nothing else - 6 per frame in a 3-vs-3 encounter
+     (`rim_elm_queen_bee_battle`, 1006 hits over 900 vsyncs), 2 in a 1-vs-1
+     (`rim_elm_gimard_victory`, 420 over 700). An earlier revision here quoted
+     "35-64×/frame" for the same address; that magnitude does not reproduce.
    - So the **player** summon is posed like an enemy monster body (per-object rigid TRS keyframes), and the faithful render is the battle TRS-keyframe draw ported in `engine-vm/anim_vm.rs` (`FUN_80048A08` / `FUN_8004998C`).
    - The summon stager overlays (extraction 903..913) *do* carry real move-VM part records - recovered under the corrected link base `0x801F69D8` by `legaia_asset::summon_overlay`, which supersedes the earlier wrong-link-base "PROT 905 has zero `jal 0x80023070` → no move VM" reading (the `jal` is in the SCUS stager `FUN_80021B04`, not inside the overlay); the engine drives them as a stand-in (`summon::SummonScene`), but the trace shows that scene-graph is not the player summon's per-frame render path.
    - The overlay's 3 conditional `LoadImage` (`0x800583C8`) CLUT uploads - `RECT = {x=0, y=481+s5, w=240, h=1}`, source `a2 + s5*480 + 0x894` - target VRAM row **481+** (the character/party-CLUT region), not the flame's row 478, and that region is byte-identical across the two frames.
-   - SCOPE: the trace covers the **player** "Burning Attack"; the **enemy** Gimard *Fire Tail* boss move is untraced. The engine renders the static flame mesh with the correct row-478 CLUT.
+   - The **enemy** Gimard move is a different move with a different path, and it is
+     no longer untraced: *Tail Fire* (spell id `0x27`, the SCUS spell table's own
+     name; "Burning Attack" is what the *player* summon `0x81` performs) seats the
+     move-FX module PROT 0900 in slot B and renders as a single move-VM part-actor
+     in the pool `DAT_801C90F0`, ticked by `FUN_80021DF4` → `FUN_80023070` - see
+     [`battle-action.md` § Enemy "Fire
+     Tail"](../subsystems/battle-action.md#enemy-fire-tail---move-vm-part-not-the-widget-path).
+     That pooled-part tick chain is directly measurable: across the two battle
+     captures above, `FUN_80023070`'s per-frame hit count tracks the pool's
+     live-slot count exactly (13 parts → 12-14 hits; pool drained → 0), with
+     `FUN_80021DF4` 1:1 alongside it. The engine renders the static flame mesh with
+     the correct row-478 CLUT.
 
 2. **2D sprite billboards.** The `efect.dat` sprite atlas (entry 873) drives the per-frame billboard emit in `FUN_801E0088` pass 2.
 
