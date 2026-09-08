@@ -8,10 +8,16 @@
 // Captured: LegaiaSpawn (spawn_position, root-local as before) and every
 // direct child of the common-prefab container plus the camp settings
 // panel (prefab_transforms, keyed as the builder reads them: mirror /
-// tv / card_table / pens / <prefab name> / menu). Positions are the
-// objects' Inspector values - those containers sit at the origin, so
-// local == world - and rotations are Inspector-style Euler degrees in
-// (-180, 180]. Other keys in the file are preserved.
+// tv / card_table / pens / poster_<name> / <prefab name> / menu).
+// Positions are the objects' Inspector values - those containers sit at
+// the origin, so local == world - and rotations are Inspector-style
+// Euler degrees in (-180, 180]. Other keys in the file are preserved.
+//
+// "Every direct child" is why nothing here knows what a poster is: a
+// wall poster is one more child of that container under its own name
+// (LegaiaPosters), so hanging it by hand and snapshotting pins it the
+// same way the TV and the mirror are pinned, and the next build stops
+// searching for a wall.
 //
 // The file written is the Unity project's copy; the kit's copy under
 // scripts/vrchat-world/world-project/ is the source of truth, so port

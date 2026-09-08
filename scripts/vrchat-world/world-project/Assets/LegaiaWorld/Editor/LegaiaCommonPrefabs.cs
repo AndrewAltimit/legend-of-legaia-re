@@ -104,7 +104,7 @@ namespace LegaiaWorld
         /// spawn-relative offset per item with an absolute world position.
         internal static GameObject Build(string genDir, Vector3 spawnW,
             LegaiaCommonPrefabOptions o, Dictionary<string, LegaiaPrefabTransform> placements,
-            LegaiaSlotPlacement slot = null)
+            LegaiaSlotPlacement slot = null, List<LegaiaPosterRef> posters = null)
         {
             Remove();
             var container = new GameObject(CONTAINER);
@@ -190,6 +190,18 @@ namespace LegaiaWorld
                     built.Add("slot machine");
             }
 
+            // Posters LAST of the kit-built things: the wall search needs
+            // the object each poster hangs near (the card table) to stand
+            // already, and the print materials must exist before the lit
+            // conversion sweeps the container. `posters` is optional so
+            // every existing caller keeps its signature - when it is null
+            // the list is read from the same scene settings file the
+            // caller loaded, keyed by the scene name genDir ends with.
+            int hung = LegaiaPosters.Build(container, genDir, placements,
+                posters ?? LegaiaSceneSettings.Load(SceneNameOf(genDir)).posters);
+            if (hung > 0)
+                built.Add(hung + " poster(s)");
+
             // Spawned prefabs (the SDK pens, a QvPen, a ProTV) keep their
             // authored materials - only the kit-built furniture converts.
             LegaiaRealism.ConvertPropToLit(container, genDir,
@@ -199,6 +211,13 @@ namespace LegaiaWorld
             Debug.Log("[Legaia] common prefabs: " + string.Join(", ", built) +
                       " placed near spawn.");
             return container;
+        }
+
+        /// Every caller builds `genDir` as "Assets/LegaiaGenerated/<scene>",
+        /// so its last segment is the scene the settings file is named for.
+        static string SceneNameOf(string genDir)
+        {
+            return Path.GetFileName(genDir.Replace("\\", "/").TrimEnd('/'));
         }
 
         const string PENS_NAME = "sdk_pens";
