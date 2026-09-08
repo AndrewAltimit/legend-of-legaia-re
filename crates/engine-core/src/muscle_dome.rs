@@ -837,8 +837,7 @@ impl MuscleDomeSession {
             // The bytes retail actually plays: the tokenizer's action queue
             // when the fighter has an art catalog, the raw string otherwise.
             let queue = self.tokenized_queue(attacker);
-            for i in 0..queue.len() {
-                let cmd = queue[i];
+            for &cmd in &queue {
                 let d = damage(attacker, cmd).max(0);
                 self.last_turn_damage[defender] += d;
                 self.f[defender].hp = (self.f[defender].hp - d).max(0);
@@ -2544,14 +2543,14 @@ mod tests {
             b.tick(1, 0);
         }
         assert_eq!(b.stage(), HubScreenStage::Hold);
-        b.tick(1, u16::from(HUB_SKIP_PAD_MASK));
+        b.tick(1, HUB_SKIP_PAD_MASK);
         assert_eq!(b.stage(), HubScreenStage::FadeOut, "the & 0xF4 skip");
         // A pad word with no mask bit does not skip.
         let mut b2 = HubScreen::round_banner();
         for _ in 0..64 {
             b2.tick(1, 0);
         }
-        b2.tick(1, !u16::from(HUB_SKIP_PAD_MASK));
+        b2.tick(1, !HUB_SKIP_PAD_MASK);
         assert_eq!(b2.stage(), HubScreenStage::Hold);
 
         // The frame delta scales every step, so a dropped frame halves the
