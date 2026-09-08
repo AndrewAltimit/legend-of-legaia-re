@@ -192,6 +192,22 @@ namespace LegaiaWorld
                         Fail(r.name + " still shades with " + sh);
                 }
             }
+            // No UI control anywhere in the container may be reachable by
+            // keyboard navigation: Unity's Automatic default lets the
+            // input module select one from movement keys, and a selected
+            // input field swallows everything the player types after
+            // that. Covers the card table's panel as well as the TV's.
+            int navigable = 0;
+            foreach (var sel in container.GetComponentsInChildren<UnityEngine.UI.Selectable>(true))
+                if (sel.navigation.mode != UnityEngine.UI.Navigation.Mode.None)
+                {
+                    navigable++;
+                    Debug.LogError("[Legaia] " + Path(sel.transform) + " is on " +
+                        sel.navigation.mode + " navigation");
+                }
+            if (navigable > 0)
+                Fail(navigable + " UI control(s) can be selected by the keyboard");
+
             // The mirror's runtime material swap must reference converted
             // (lit) materials, not the Standard originals.
             CheckVar(container, "LegaiaWorld.LegaiaMirror", "idleMaterial");

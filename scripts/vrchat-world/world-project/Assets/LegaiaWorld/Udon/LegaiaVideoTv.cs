@@ -159,6 +159,9 @@ namespace LegaiaWorld
         [Tooltip("Seconds a load may take to become ready before the TV gives up on it.")]
         public float loadWatchdogSeconds = 18f;
 
+        [Tooltip("Take the keyboard back off the URL field once the player is this far away (metres).")]
+        public float keyboardReleaseDistance = 3f;
+
         [UdonSynced] private VRCUrl syncedUrl = VRCUrl.Empty;
         [UdonSynced] private int loadSerial;
         [UdonSynced] private bool syncedPlaying;
@@ -218,6 +221,7 @@ namespace LegaiaWorld
             SetStatus(PlaylistLength() > 0
                 ? "Starting the playlist..."
                 : "No playlist - rebuild the common prefabs");
+            SendCustomEventDelayedSeconds(nameof(KeyboardGuard), 1f);
             // Late joiners get the running state through OnDeserialization;
             // the first client in the instance is the one that has to start
             // it, after a beat for ownership and the video player to settle.
@@ -294,6 +298,30 @@ namespace LegaiaWorld
             if (PlaylistLength() == 0 || !string.IsNullOrEmpty(UrlText(syncedUrl)))
                 return;
             PlayPlaylistAt(listIndex);
+        }
+
+        /// The URL field must never keep the keyboard once the player has
+        /// walked off. Unity's navigation can hand a field the selection
+        /// on its own (the builder switches that off), and a player who
+        /// clicks in and then walks away has no obvious way to get their
+        /// keys back - so the set takes them back on their behalf.
+        public void KeyboardGuard()
+        {
+            if (urlField != null)
+            {
+                VRCPlayerApi me = Networking.LocalPlayer;
+                if (me != null && Vector3.Distance(me.GetPosition(),
+                        urlField.transform.position) > keyboardReleaseDistance)
+                    ReleaseKeyboard();
+            }
+            SendCustomEventDelayedSeconds(nameof(KeyboardGuard), 0.5f);
+        }
+
+        /// Drop the text cursor, if the field is holding it.
+        public void ReleaseKeyboard()
+        {
+            if (urlField != null)
+                urlField.DeactivateInputField();
         }
 
         // --- Arbitration ----------------------------------------------------
@@ -498,6 +526,9 @@ namespace LegaiaWorld
             showIndex = -1;
             showItem = 0;
             PlayUrl(url);
+            // Submitting is leaving: hand the keys back rather than making
+            // the player find the way out of a text box.
+            ReleaseKeyboard();
         }
 
         /// Panel button: hand the set back to the default playlist. The way

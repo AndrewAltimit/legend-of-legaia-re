@@ -212,6 +212,14 @@ namespace LegaiaWorld
                 r => !PrefabUtility.IsPartOfPrefabInstance(r.gameObject));
             RewireMirrorMaterials(container);
 
+            // Every panel built above, off keyboard navigation: otherwise
+            // walking around hands the TV's URL field the keyboard and it
+            // eats the lot. See LegaiaWorldBuilder.DisableUiNavigation.
+            int offNav = LegaiaWorldBuilder.DisableUiNavigation(container);
+            if (offNav > 0)
+                Debug.Log("[Legaia] common prefabs: " + offNav +
+                          " UI control(s) taken off keyboard navigation.");
+
             Debug.Log("[Legaia] common prefabs: " + string.Join(", ", built) +
                       " placed near spawn.");
             return container;

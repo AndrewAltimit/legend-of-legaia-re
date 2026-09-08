@@ -1887,6 +1887,38 @@ namespace LegaiaWorld
             return go.AddComponent(t);
         }
 
+        /// Take every UI control under `root` OFF keyboard navigation.
+        ///
+        /// Unity's default is Navigation.Mode.Automatic, and the input
+        /// module reads movement keys as navigation axes: with nothing
+        /// selected, walking around picks the first selectable in the
+        /// scene and gives it the keyboard. On a world with a URL field
+        /// that means the field silently eats every keystroke - the
+        /// player never clicked it and has no idea why typing vanished,
+        /// or why W is now a letter in a URL. None of the kit's panels
+        /// wants arrow-key navigation in the first place: they are
+        /// pointed at, in world space, with a hand or a cursor.
+        ///
+        /// Call it on a container AFTER its panels are built - it walks
+        /// inactive children too, so a panel that starts hidden is
+        /// covered.
+        internal static int DisableUiNavigation(GameObject root)
+        {
+            if (root == null)
+                return 0;
+            int n = 0;
+            var none = new UnityEngine.UI.Navigation { mode = UnityEngine.UI.Navigation.Mode.None };
+            foreach (var sel in root.GetComponentsInChildren<UnityEngine.UI.Selectable>(true))
+            {
+                if (sel.navigation.mode == UnityEngine.UI.Navigation.Mode.None)
+                    continue;
+                sel.navigation = none;
+                EditorUtility.SetDirty(sel);
+                n++;
+            }
+            return n;
+        }
+
         /// Set a public field on an attached Udon behaviour via reflection
         /// (keeps this file free of compile-time VRC SDK references). Fields
         /// land on the U# PROXY component only - call SyncUdonProxy once all

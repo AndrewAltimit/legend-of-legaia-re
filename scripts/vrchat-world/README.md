@@ -960,6 +960,19 @@ and the SDK's own components - no third-party package, no game data:
   spot is not on the director (the builder's own pass order does this,
   and so does the LivingTown check).
 
+  **The URL field does not take your keyboard.** Every UI control the
+  kit builds is switched to `Navigation.Mode.None`
+  (`LegaiaWorldBuilder.DisableUiNavigation`, run over both top-level
+  containers after their panels are built). Unity's default is
+  `Automatic`, and the input module reads movement keys as navigation
+  axes - so with nothing selected, walking around hands the first
+  selectable in the scene the keyboard, and on this world that is the
+  TV's URL field. Every keystroke after that goes into a text box the
+  player never clicked, which reads as "the TV ate my input" and is
+  invisible in the scene. The TV also drops the text cursor when the URL
+  is submitted and when the player walks more than 3 m from the panel,
+  and both checks fail on any control left navigable.
+
   **Editing the playlist** means editing
   `Assets/LegaiaWorld/Settings/video.settings.json` and rebuilding the
   common prefabs - a `VRCUrl` cannot be constructed at runtime in Udon,

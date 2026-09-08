@@ -569,6 +569,24 @@ namespace LegaiaWorld
                 Fail("the watch spot faces " + off.ToString("0") +
                      " degrees away from the set");
 
+            // KEYBOARD NAVIGATION. Unity's default (Automatic) lets the
+            // input module select a control from movement keys alone, and
+            // the first selectable a walking player lands on here is the
+            // URL field - which then swallows every keystroke with nobody
+            // having clicked it. Nothing about that is visible in the
+            // scene; it only shows up as "the TV ate my keyboard".
+            int navigable = 0;
+            foreach (var sel in tvT.GetComponentsInChildren<UnityEngine.UI.Selectable>(true))
+                if (sel.navigation.mode != UnityEngine.UI.Navigation.Mode.None)
+                {
+                    navigable++;
+                    Debug.LogError("[Legaia] " + sel.name + " is on " +
+                        sel.navigation.mode + " navigation");
+                }
+            if (navigable > 0)
+                Fail(navigable + " UI control(s) on the TV can be selected by the " +
+                     "keyboard - the URL field will eat the player's input");
+
             // The speaker: a TV is something a room listens to together,
             // so its field is deliberately wide. Four places carry these
             // numbers (both AudioSource radii and the VRC spatial

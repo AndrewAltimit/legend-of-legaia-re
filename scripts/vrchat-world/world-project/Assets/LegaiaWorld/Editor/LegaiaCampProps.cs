@@ -75,6 +75,8 @@ namespace LegaiaWorld
             BuildMenu(container, spawnW, sceneName, music, dark,
                 pickupType, syncType, placements);
 
+            LegaiaWorldBuilder.DisableUiNavigation(container);
+
             Debug.Log("[Legaia] camp props: settings panel, 2 torches and " +
                 "2 campfires placed near spawn (hold + Use toggles a fire).");
         }
