@@ -425,6 +425,7 @@ NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/bin/legaia-engine/window/boot_cu
 NATIVE_REDRAW = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw.rs"
 NATIVE_FIELD_RENDER = "crates/engine-shell/src/bin/legaia-engine/window/field_render.rs"
 NATIVE_GEOMETRY = "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs"
+WEB_BOOT_TITLE = "crates/web-viewer/src/boot_title.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle.rs"
 WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
 WEB_PLAY = "crates/web-viewer/src/play.rs"
@@ -467,6 +468,23 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["draw_plane_summaries", "coplanar_draw_offsets"],
+    },
+    {
+        "what": "title attract hand-off, native vs play page - retail's "
+        "`AttractIdle` (`0x10`) arm hands the screen to `fmv_id 0` and comes "
+        "back to the menu, so a host that arms the countdown must also drive "
+        "the session out of `TitlePhase::Attract` or the title freezes there "
+        "forever. Both hosts go through the same three session calls; what "
+        "they do between `mark_attract_started` and `finish_attract` is "
+        "theirs (the window decodes the movie, the play page has no "
+        "STR/MDEC playback and says so), and pinning the calls is what stops "
+        "one host arming a countdown it cannot return from",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "service_title_attract"),
+            "web": (WEB_BOOT_TITLE, "boot_title_step"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["attract_pending", "mark_attract_started", "finish_attract"],
     },
     {
         "what": "ground-heightfield sink, native vs play page - the walk-ground "

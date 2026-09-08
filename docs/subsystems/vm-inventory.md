@@ -119,22 +119,25 @@ the title menu lives:
 
 `engine-core::title::TitleSession` owns one and steps it every frame, so the
 native window and the browser play page share it without either host
-changing. Two things around it are still the port's own and say so in the
-module docs: the `FadeIn` / `PressStart` staging (`Init` writes sub-mode
-`0x02` at `0x801DD920` and overwrites it with `0x11` only when the entry word
-`_DAT_8007BB00` is non-zero at `0x801DD97C`, so `0x02 -> 0x14` is the default
-graph and `0x11 -> 0x10` the re-entry one), and the `continue_enabled` row
-skip, which retail does not have.
+changing. One thing around it is still the port's own and says so in the
+module docs: the `continue_enabled` row skip, which retail does not have.
 
-The attract fire arm is modelled but **off by default**: retail hands the
-screen to master game mode `0x1A`, the opening movie, and neither host has an
-attract-movie destination in its boot UI, so a countdown that fires would
-freeze input for sixteen frames and then do nothing. Turning it on is
-`TitleSession::attract_enabled`.
+The whole dispatcher is ported alongside it as
+`title_overlay::TitleTickState::step` - one arm per sub-mode plus the shared
+epilogue, over the state fields the handlers read. Its graph is the
+`STATE_204_WRITES` table, all 56 `state[+0x204]` stores with the handler and
+guard each belongs to, and `cold_boot_reachable_modes` walks it.
 
-What is still unported is the dispatcher: 25 handler bodies, 56 sub-mode
-writes, and the mode-graph question of which of `0x02` and `0x10` a cold boot
-puts on screen.
+The attract fire arm is wired on **both** hosts behind
+`TitleSession::attract_enabled`, which each host sets for itself because a
+host with no movie destination would freeze input for the last sixteen frames
+of every idle period and then do nothing. The native window plays retail's
+`fmv_id 0` through the same MDEC path the field-VM FMV trigger uses; the
+browser play page enters the same `TitlePhase::Attract`, discloses that it has
+no STR/MDEC playback, and returns to the menu.
+
+The mode-graph question of which sub-mode a cold boot shows is settled: `0x10`
+always. See [`boot.md`](boot.md#a-cold-boot-always-shows-sub-mode-0x10-never-0x02).
 
 `menu.rs` remains the engine's own pause / shop / inn screen graph
 - state bytes engine-chosen, per-screen behaviour sourced from

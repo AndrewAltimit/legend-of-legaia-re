@@ -628,7 +628,9 @@ bgez  v0, 0x801dfc3c    ; if signed >= 0, branch to "still counting"
 _sw   v0, -0xe94(a0)    ; <-- captured pc: store decremented value
 ```
 
-The "still counting" path branches to `0x801DFC3C` (the normal per-frame attract loop: rendering, input, cursor logic). The "underflow" path falls through past `0x801DDCCC` into a block that prepares draw primitives via `0x80058490` and writes the master game-mode index `_DAT_8007B83C = 0x1A`, zeroing `_DAT_8007BA78` (FMV id slot) → `MV1.STR`.
+The "still counting" path branches to `0x801DFC3C`, the tick's **shared epilogue** - not an attract-specific loop. Every handler ends there, and it carries the panel slider, the alpha ramps, the cursor stepping the menu states rely on, and six of the function's 56 sub-mode stores. The "underflow" path falls through past `0x801DDCCC` into a block that prepares draw primitives via `0x80058490` and writes the master game-mode index `_DAT_8007B83C = 0x1A`, zeroing `_DAT_8007BA78` (FMV id slot) → `MV1.STR`.
+
+The countdown is not the only timer on the way in. Sub-mode `0x11` `AttractDelay` spends a second accumulator, `_DAT_8007BAB4`, at `8 * frame_scalar` per frame before it hands to `0x10`. The tick never seeds that word - the SCUS routine that stages the title overlay does, with `0x100` at `0x8002579C` (`addiu s0,zero,0x100` / `sw s0,0x79c(gp)`), which is its only writer outside this function. The test is `bgtz` on the value it just loaded, so the hand-off fires on the frame that reads it already at zero: 33 frames of hold before the menu comes up.
 
 ### Sub-mode dispatcher
 
@@ -662,7 +664,7 @@ The first ~250 instructions of `FUN_801DD35C` set up per-frame state (input read
 | `0x07` | `0x801de134` | `0x10` | `0x801ddb0c` | | |
 | `0x08` | `0x801de4a4` | `0x11` | `0x801dda90` | | |
 
-Mode `0x01` jumps directly to the post-dispatch tail (no-op for that frame). The eligible attract-fire mode is the one whose handler runs through the countdown decrement at `0x801DDCCC` (mode `0x10` per the cutscene-trigger watchpoint capture).
+Mode `0x01` jumps directly to the shared epilogue (no-op for that frame), and nothing in the function ever stores `1` to the selector, so it is the out-of-range slot rather than a state the graph enters. The attract-fire mode is `0x10` and only `0x10`: the countdown decrement at `0x801DDCC8` and the two attract stores below it sit inside that handler's extent (`0x801DDB0C..0x801DDD94`), and no branch or jump from outside that range targets the block. The earlier reading placed the decrement in the tick's preamble, which would have made the fire reachable from any handler that did not first re-route past it.
 
 **This sub-mode SM is the front-end title-menu + memory-card manager + new-game/continue launcher** - not an opening-narration/name-entry sequence.
 
@@ -681,7 +683,11 @@ The retail opening (pinned by a PCSX-Redux cold-boot pixel capture; earlier anch
 
 The whole chain runs in master mode `0x03` (field RUN) with **zero input**; each leg chains by its own script (see below). The new-game data-init (`FUN_80034A6C`, gold/flags/stats) runs before this. The `FUN_801D1344` scene-change packet described below is the **intro skip**; the name-entry is the menu overlay described below. Full chain + narration mechanics: [`cutscene.md`](cutscene.md#in-engine-3d-opening-the-five-scene-new-game-chain).
 
-The JT, state-struct field offsets, and observed `state[+0x204] = N` transitions are pinned in [`legaia_engine_vm::title_overlay`](../../crates/engine-vm/src/title_overlay.rs). Four modes are semantically labelled: `Init` (`0x00` - entry init that routes to `Phase02` or `AttractDelay`), `Idle` (`0x01` - body-tail no-op), `AttractIdle` (`0x10` - Press-Start poll), `AttractDelay` (`0x11` - pre-attract delay). The other 21 carry `Phase0xNN` placeholders with traced-transition docstrings; the module's `STATE_204_WRITES` table holds the full graph. Notably, **Phase06 writes `_DAT_8007B83C = 0x02` at `0x801DFC00`** - the title-screen → main-game master-mode transition (exported as `MASTER_GAME_MODE_FIELD_LAUNCH` + `PHASE06_LAUNCH_GAME_PC`).
+The JT, state-struct field offsets, every handler body and all 56 `state[+0x204] = N` stores are pinned in [`legaia_engine_vm::title_overlay`](../../crates/engine-vm/src/title_overlay.rs), whose `TitleTickState::step` executes the graph one arm per sub-mode plus the shared epilogue. Every sub-mode carries the role its disassembly shows - `Init`, `Idle`, `TextMenu`, `AttractIdle`, `AttractDelay`, `MainMenu`, the `CardOpStage` / `CardCheck` / `ScanSetup` / `BlockScan` / `SlotGrid` / `SlotConfirm` card path, its `SaveWrite` / `SaveResult` and `BlockTransfer` / `LoadVerify` / `CardOpResult` commit legs, the `CardOpPrompt` / `CardOpRun` operation, and the `LaunchFade` / `LaunchGame` exits.
+
+**There are two master-mode-`2` writers, not one.** `LaunchGame` (`0x06`) writes it at `0x801DFC00` on the NEW GAME route, and `LaunchFade` (`0x16`) writes it at `0x801DFAFC` on the load route (`state[-0xea8] == 1`); both clear `_DAT_8007BB00` as they go. The single-writer reading missed the load route. Exported as `MASTER_GAME_MODE_FIELD_LAUNCH` + `PHASE06_LAUNCH_GAME_PC` + `PHASE16_LOAD_LAUNCH_PC`.
+
+Three stores are reached from two sub-modes each, because one handler `j`s into the middle of another's body: `0x15` into `0x0A` at `0x801DE838` and into `0x0F` at `0x801DEF2C`, and `0x0E` into `0x13` at `0x801DF47C`. Without that last one the `0x04` / `0x05` / `0x13` cluster has no entry from the rest of the graph at all.
 
 #### A cold boot always shows sub-mode `0x10`, never `0x02`
 

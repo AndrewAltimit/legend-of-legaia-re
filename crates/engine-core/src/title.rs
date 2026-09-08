@@ -34,31 +34,53 @@
 //! Three things around it are the port's own and are named as such:
 //!
 //! - [`TitlePhase::FadeIn`] / [`TitlePhase::PressStart`] are the port's
-//!   staging. `Init` writes sub-mode `0x02` at `0x801DD920` and overwrites
-//!   it with `0x11` only when the entry word `_DAT_8007BB00` is non-zero
-//!   (`0x801DD97C`), so `0x02 -> 0x14` is the default graph and
-//!   `0x11 -> 0x10` the re-entry one; which of the two a player sees is a
-//!   mode-graph question this session does not answer. What both share,
-//!   and what is ported here, is the menu law.
+//!   staging. Retail's own entry is `Init` -> `0x11` `AttractDelay` ->
+//!   `0x10` `AttractIdle`: the sub-mode **word** is `0x801F0204`
+//!   (`0x801DD920` / `0x801DD97C` are the *instruction* addresses of the
+//!   two stores), and the `0x02` arm is unreachable on retail because
+//!   `init.pak` raises the entry word `_DAT_8007BB00` at `0x801CEB84`
+//!   and the tick's shared epilogue rewrites `0x02` to `0x10` again at
+//!   `0x801DFEF8`. The "`0x02 -> 0x14` is the default graph" reading is
+//!   falsified; the executable graph is
+//!   [`legaia_engine_vm::title_overlay::TitleTickState`].
 //! - `continue_enabled` skipping the CONTINUE row has no retail
 //!   counterpart - retail always lets the row be picked and lets the
 //!   save screen say "No data". It is a port guard, applied on top of the
 //!   retail step.
-//! - The attract countdown is **off by default**
-//!   ([`TitleSession::attract_enabled`]). The kernel is ported and
-//!   tested, but retail's fire arm writes master game mode `0x1A` (the
-//!   opening movie) and neither shipped host has an attract-movie
-//!   destination in its boot UI, so leaving it on would freeze input for
-//!   the last sixteen frames of every idle period and then do nothing.
-//!   With it off the session is bit-identical to a session with no
+//! - The attract countdown is **opt-in per host**
+//!   ([`TitleSession::attract_enabled`]), because a host with no movie
+//!   destination would freeze input for the last sixteen frames of every
+//!   idle period and then do nothing. Both shipped hosts now set it: the
+//!   native window plays `fmv_id 0` through its windowed MDEC path, and
+//!   the browser play page enters the same [`TitlePhase::Attract`] and
+//!   finishes it immediately (the play page has no STR/MDEC playback -
+//!   the deviation its `play_cutscene` module already documents). With
+//!   the flag off the session is bit-identical to a session with no
 //!   countdown at all.
 
 /// Phase of the title state machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TitlePhase {
-    FadeIn { frames_remaining: u16 },
-    PressStart { blink_phase: u16 },
-    MainMenu { cursor: u8 },
+    FadeIn {
+        frames_remaining: u16,
+    },
+    PressStart {
+        blink_phase: u16,
+    },
+    MainMenu {
+        cursor: u8,
+    },
+    /// The attract countdown underflowed and the screen belongs to the
+    /// opening movie. Retail's `AttractIdle` arm zeroes `_DAT_8007BA78`
+    /// and writes master game mode `0x1A` (`0x801DDCE8` / `0x801DDCF0`),
+    /// so `fmv_id` is always `0`. `playing` is set once a host has picked
+    /// the movie up; [`TitleSession::finish_attract`] returns to the menu
+    /// the way retail's re-entry does (`Init` with the entry word at
+    /// `2`, which still takes the `0x11` -> `0x10` arm).
+    Attract {
+        fmv_id: i16,
+        playing: bool,
+    },
     Done(TitleOutcome),
 }
 
@@ -125,9 +147,18 @@ pub struct TitleSession {
     /// Retail's title-menu state: the row counter, the attract countdown
     /// and the last cue. Stepped once per frame in [`Self::tick`].
     menu: legaia_engine_vm::title_overlay::TitleMenuState,
-    /// Whether the attract countdown may fire. Off by default - see the
-    /// module docs.
+    /// Whether the attract countdown may fire. Off by default and set by
+    /// each host for itself; both shipped hosts set it. See the module
+    /// docs for why it is not on by default.
     pub attract_enabled: bool,
+    /// Retail's own front-end tick state, stepped alongside the session so
+    /// the host can ask which sub-mode of `FUN_801DD35C` the title is in.
+    ///
+    /// It is seeded the way retail seeds it - by **raising the entry word**
+    /// `_DAT_8007BB00` and running `Init`, not by writing a sub-mode - so
+    /// the boot lands in `0x11` `AttractDelay` and then `0x10`
+    /// `AttractIdle`, which is what a cold-boot capture sees.
+    tick: legaia_engine_vm::title_overlay::TitleTickState,
 }
 
 impl TitleSession {
@@ -142,7 +173,38 @@ impl TitleSession {
             continue_enabled: true,
             menu: legaia_engine_vm::title_overlay::TitleMenuState::new(),
             attract_enabled: false,
+            tick: Self::cold_boot_tick(),
         }
+    }
+
+    /// Run retail's front-end entry: `Init` with the boot entry word raised,
+    /// then the `AttractDelay` hand-off, leaving the state in `AttractIdle`.
+    ///
+    /// This is the whole point of keeping the tick state around - the entry
+    /// sub-mode is *derived* from `_DAT_8007BB00` by executing `Init`
+    /// (`0x801DD820`), never written by hand, so the port cannot drift into
+    /// the `0x02` graph retail's `init.pak` makes unreachable.
+    fn cold_boot_tick() -> legaia_engine_vm::title_overlay::TitleTickState {
+        use legaia_engine_vm::title_overlay::{
+            ATTRACT_DELAY_SEED, TitleCardStatus, TitleTickPad, TitleTickState,
+        };
+        let mut tick = TitleTickState::cold_boot();
+        // Init -> AttractDelay, then the hold the SCUS stager seeded
+        // (`0x100` at `0x8002579C`, spent at 8 a frame) -> AttractIdle.
+        for _ in 0..=(2 + ATTRACT_DELAY_SEED / 8) {
+            let _ = tick.step(TitleTickPad::from_edge(0), TitleCardStatus::default());
+        }
+        tick
+    }
+
+    /// The retail sub-mode of `FUN_801DD35C` this session's title is in.
+    ///
+    /// A cold boot reports `0x10` (`AttractIdle`) - never `0x02`, whose
+    /// handler `init.pak`'s entry word makes unreachable. Confirming NEW GAME
+    /// moves it to `0x16` (`LaunchFade`) and CONTINUE to `0x18`
+    /// (`ContinueFadeIn`), the two rows' real retail destinations.
+    pub fn retail_submode(&self) -> u8 {
+        self.tick.submode
     }
 
     /// The attract countdown's current value, in frames. Retail seeds it
@@ -240,6 +302,18 @@ impl TitleSession {
                             }
                         }
                         Vm::Confirmed { row } => {
+                            // The retail graph picks the row's destination,
+                            // not this session: `AttractIdle`'s confirm arm
+                            // sends row 0 to `0x16` `LaunchFade`
+                            // (`0x801DDC3C`) and row 1 to `0x18`
+                            // `ContinueFadeIn` (`0x801DDC5C`).
+                            self.tick.row_counter = row as i32;
+                            let _ = self.tick.step(
+                                legaia_engine_vm::title_overlay::TitleTickPad::from_edge(
+                                    legaia_engine_vm::title_overlay::PADMASK_START_L1_CROSS,
+                                ),
+                                legaia_engine_vm::title_overlay::TitleCardStatus::default(),
+                            );
                             let outcome = match row {
                                 0 => TitleOutcome::NewGame,
                                 1 => TitleOutcome::Continue,
@@ -257,18 +331,79 @@ impl TitleSession {
                         Vm::AttractFired => {
                             if self.attract_enabled {
                                 events.push(TitleEvent::AttractTimeout);
+                                // Retail's arm hands the screen to the
+                                // opening movie: `_DAT_8007BA78 = 0` then
+                                // master game mode `0x1A`.
+                                self.phase = TitlePhase::Attract {
+                                    fmv_id: legaia_engine_vm::title_overlay::ATTRACT_FMV_ID,
+                                    playing: false,
+                                };
                             }
-                            // Nothing to hand the screen to, so re-arm
-                            // rather than sit under the input freeze.
+                            // Re-arm either way; with the flag off there
+                            // is nothing to hand the screen to and the
+                            // session must not sit under the input freeze.
                             self.menu.countdown =
                                 legaia_engine_vm::title_overlay::COUNTDOWN_RESET_VALUE as i32;
                         }
                     }
                 }
             }
+            // The movie owns the screen; the session freezes until the
+            // host calls `finish_attract`.
+            TitlePhase::Attract { .. } => {}
             TitlePhase::Done(_) => {}
         }
         events
+    }
+
+    /// The `fmv_id` waiting for a host to pick up, or `None` when the
+    /// session is not in [`TitlePhase::Attract`] or a host already took
+    /// it. Always [`ATTRACT_FMV_ID`] on retail.
+    ///
+    /// [`ATTRACT_FMV_ID`]: legaia_engine_vm::title_overlay::ATTRACT_FMV_ID
+    pub fn attract_pending(&self) -> Option<i16> {
+        match self.phase {
+            TitlePhase::Attract {
+                fmv_id,
+                playing: false,
+            } => Some(fmv_id),
+            _ => None,
+        }
+    }
+
+    /// Whether a host has picked the attract movie up and not yet
+    /// finished it. Hosts poll this to know when their own playback
+    /// drained and it is time to call [`Self::finish_attract`].
+    pub fn attract_playing(&self) -> bool {
+        matches!(self.phase, TitlePhase::Attract { playing: true, .. })
+    }
+
+    /// Claim the pending attract movie. A host calls this once it has
+    /// started (or decided it cannot start) playback, so the session
+    /// stops re-offering the same `fmv_id` every frame.
+    pub fn mark_attract_started(&mut self) {
+        if let TitlePhase::Attract { fmv_id, .. } = self.phase {
+            self.phase = TitlePhase::Attract {
+                fmv_id,
+                playing: true,
+            };
+        }
+    }
+
+    /// Return from the attract movie to the menu, the way retail does:
+    /// the front-end re-enters through `Init` with the entry word at
+    /// `2`, which still takes the `0x11` -> `0x10` arm, so the player
+    /// lands back on the live menu with the countdown re-armed and the
+    /// cursor on row 0.
+    pub fn finish_attract(&mut self) {
+        if matches!(self.phase, TitlePhase::Attract { .. }) {
+            self.menu = legaia_engine_vm::title_overlay::TitleMenuState::new();
+            // Retail re-enters the front-end through `Init` with the entry
+            // word still non-zero, so the sub-mode walks `0x11` -> `0x10`
+            // again rather than resuming where the movie interrupted it.
+            self.tick = Self::cold_boot_tick();
+            self.phase = TitlePhase::MainMenu { cursor: 0 };
+        }
     }
 
     /// Pack a [`TitleInput`] into the two pad words the ported menu

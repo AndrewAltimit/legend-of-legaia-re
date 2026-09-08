@@ -203,7 +203,7 @@
       <tr><td>launch</td><td>sub-modes <code>0x16</code> fade &rarr; <code>0x06</code> init_game</td><td>writes mode word <code>2</code> at <code>0x801DFC00</code> and scene id <code>opdeene</code> into <code>0x8007050C</code>; CONTINUE detours through the card-load path first</td></tr>
     </tbody>
   </table>
-  <p>Four sub-modes carry names in <code>legaia_engine_vm::title_overlay</code> (<code>Init</code>, <code>Idle</code>, <code>AttractIdle</code>, <code>AttractDelay</code>); the other 21 are <code>Phase0xNN</code> placeholders with traced transitions. The whole sub-mode machine is the front-end menu, memory-card manager and launcher - not an opening narration or name-entry sequence.</p>
+  <p>All 25 sub-modes carry the role their handler body shows in <code>legaia_engine_vm::title_overlay</code>, and <code>TitleTickState::step</code> executes the graph - one arm per sub-mode plus the shared epilogue, driven by the 56 <code>state[+0x204]</code> stores. The whole sub-mode machine is the front-end menu, memory-card manager and launcher - not an opening narration or name-entry sequence. Master game mode <code>2</code> has two writers: <code>LaunchGame</code> (<code>0x06</code>) at <code>0x801DFC00</code> on the NEW GAME route and <code>LaunchFade</code> (<code>0x16</code>) at <code>0x801DFAFC</code> on the load route.</p>
   <details class="disclosure">
     <summary>Details: pad-mask layout the title tick reads</summary>
     <div class="disclosure-body">
