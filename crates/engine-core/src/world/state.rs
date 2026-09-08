@@ -1290,6 +1290,33 @@ pub struct World {
     /// paired with the actor whose position triple it writes.
     pub eased_moves: Vec<crate::world::FieldEasedMove>,
 
+    /// The player actor's `+0x8E` **inverted-Y latch** - retail's third
+    /// height arm, and the one thing an eased move over the player publishes
+    /// besides the position triple.
+    ///
+    /// `FUN_801DD4C4` stores `-Y` here on every frame of a move whose target
+    /// carries [`EASE_TARGET_INVERT_Y`](legaia_engine_vm::field_actor_timers::EASE_TARGET_INVERT_Y)
+    /// (`0x801DD6A4..0x801DD6B8`: `lw v0,0x10(a2)` / `lui v1,0x2000` / `and` /
+    /// `subu v0,zero,a1` / `sh v0,0x8e(a2)`). The consumer is the field-actor
+    /// driver `FUN_8003BC08`, whose height arm tests the same flag **first**
+    /// (`0x8003BC4C..0x8003BC64`) and writes `-(+0x8E)` into the actor's
+    /// `+0x16` in place of the ground height its other two arms would sample -
+    /// so the latch is not decoration, it is what stops the floor controllers
+    /// dragging an airborne scripted move back down to the terrain.
+    ///
+    /// The engine's two height controllers are exactly those other two arms
+    /// ([`World::field_vertical_settle`] is the glide, and
+    /// [`World::follow_terrain_height`] the snap), so both read this and step
+    /// aside while it is armed. `None` is the no-mirror case, which is every
+    /// ordinary frame.
+    ///
+    /// Player-only, and that is a real limit rather than a simplification:
+    /// retail's `+0x8E` is per-actor, but a scene NPC in this engine is a
+    /// placement slot with an `(x, z)` pair and a scene-build Y from
+    /// [`legaia_asset::field_objects::Placement::world_y`] - it has no
+    /// per-frame height controller for a mirror to override.
+    pub field_eased_mirror_y: Option<i16>,
+
     /// Live floor-height-ladder oscillators (field-VM op `0x4C` nibble-9
     /// sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`). Each
     /// drives one rung of [`Self::field_floor_height_lut`].
@@ -3035,6 +3062,7 @@ impl World {
             cinematic_bars: None,
             cinematic_bar: 0,
             eased_moves: Vec::new(),
+            field_eased_mirror_y: None,
             floor_tier_bobs: Vec::new(),
             camera_registers: Default::default(),
             dance: None,

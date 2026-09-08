@@ -227,6 +227,27 @@ clips flip out of step with each other. Port
 the full read is in
 [`minigames-debug.md`](../reference/functions/minigames-debug.md#801d0640-is-a-mesh-flipbook-on-the-marker-tiles).
 
+### Which pool the spawned tiles land in
+
+`FUN_80024C88(&pos, template, list)` is called with `list` read from
+`0x8007C348 + 0xC` (`lw a2,0xc(t0)` at `0x801D2C1C` / `0x801D2C3C`, with
+`t0 = 0x8007C348`), i.e. **`_DAT_8007C354`** - the field-actor list whose
+per-node tick is `FUN_8003BC08`. So a marker tile is an ordinary field actor:
+the pass fills `+0x50` (the clip sub-index), `+0x74` and `+0x10` from the tile
+record, and the driver then runs it like any other node in that list.
+
+That names the port's blocker exactly, and it is one blocker rather than two.
+`legaia_engine_core::minigame_floor`'s `floor_tile_spawns` / `marker_template`
+resolve every field of these spawns; what neither host has is the *pool* -
+`engine-core` keys field entities by typed per-slot maps rather than by actor
+records, which is the same gap `legaia_engine_vm::motion_vm::field_actor_plan`
+discloses for `FUN_8003BC08` itself. Native minigame frames
+(`window/minigames.rs`) carry no tile-actor list, and the browser page bakes
+the whole venue into one static world-space mesh
+(`web-viewer::minigames_dance`'s `bake_dance_env`), so it has no per-cell draw
+to attach a flipbook to at all. Drawing the marker meshes means giving both
+hosts a per-cell tile-actor pass, not adding a call.
+
 The step marker is **not a marker-specific record**. The call is
 `FUN_801d3ec0(1, x, z)`, so the sub-table it reads is kind **1** of the `.MAP`
 region block - the same 4-byte `[tile_x, tile_z, record, gate]` tile-trigger

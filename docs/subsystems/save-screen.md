@@ -210,6 +210,26 @@ The table ends at `0x20`; slot `0x21` reads `0` and everything past it is the
 start of the Shift-JIS string section (`0x85826B82` etc.), not function
 pointers.
 
+### How the port splits the same 33 ids
+
+`legaia_engine_core::save_subscreen::SaveSubScreen` is the id space above, and
+it classifies every slot rather than leaving a remainder. Three kinds:
+
+| kind | count | what it means |
+|---|---|---|
+| named | 14 | the module decodes the screen; ten of them also carry its step machine |
+| `FrameFlushTick` | 1 | id `0x16` - `FUN_801DD310` is a bare `jal 0x80031D00` wrapper |
+| `Routed(id)` | 18 | another `engine-core` module ports the screen; `SaveSubScreen::routed_port` names the routine, the module and the entry item |
+
+`Unpinned(id)` still exists so the id space is total for a byte past the end
+of the table, but no live slot reaches it. That matters because the variant
+used to hold 19 of the 33 and so read as "this much of the save UI is
+unknown", when in fact every one of those ids had a live port under a
+different module - the Items flow, the Magic flow, the Equip flow, the shop,
+and this module's own `0x15` list helpers. Dispatching a routed id now emits
+`SubScreenEffect::Route`, so a host is handed the module rather than watching
+the flow park on an empty effect list.
+
 ### Root command picker (`FUN_801D6B20`)
 
 Sub-screen `0x01` is the menu overlay's own top level, and the earlier

@@ -25,7 +25,7 @@
   <h2>The driver: one tick, two arms</h2>
   <figure class="overlay-strip">
     <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mv-drv-title" width="100%" style="max-width: 880px;">
-      <title id="mv-drv-title">Per-actor tick: the facing arm picks one facing law, then the dispatch arm fires up to four routines on their own flag guards</title>
+      <title id="mv-drv-title">Per-actor tick: the height arm picks one law for the actor's Y, then the dispatch arm fires up to four routines on their own flag guards</title>
       <style>
         .mv-box { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.2; }
         .mv-hi  { fill: var(--bg-card); stroke: var(--accent); stroke-width: 1.4; }
@@ -38,7 +38,7 @@
       <text x="95" y="120" class="mv-t">field actor tick</text>
       <text x="95" y="138" class="mv-t">FUN_8003BC08</text>
       <rect x="230" y="20" width="200" height="62" class="mv-box"/>
-      <text x="330" y="44" class="mv-l">facing arm</text>
+      <text x="330" y="44" class="mv-l">height arm</text>
       <text x="330" y="62" class="mv-t">snap / hold / clamped turn</text>
       <rect x="230" y="150" width="200" height="62" class="mv-box"/>
       <text x="330" y="174" class="mv-l">dispatch arm</text>
@@ -62,14 +62,14 @@
       <path d="M430,181 L500,151" class="mv-e"/>
       <path d="M430,181 L500,211" class="mv-e"/>
     </svg>
-    <figcaption>One actor, one frame. The facing arm picks a facing law; the dispatch arm then fires any of four routines whose flag guards pass. The highlighted boxes are the two motion VMs.</figcaption>
+    <figcaption>One actor, one frame. The height arm picks a law for the actor's Y at <code>+0x16</code>; the dispatch arm then fires any of four routines whose flag guards pass. The highlighted boxes are the two motion VMs.</figcaption>
   </figure>
-  <p>The <strong>facing arm</strong> runs first, for any live, non-frozen actor, and picks one law from the flag word: snap the heading to a stored value, hold it, turn toward the target bearing with a per-frame clamp, or snap straight to the bearing. The <strong>dispatch arm</strong> then fires the routines in the figure - unless a global suppress bit skips it wholesale.</p>
+  <p>The <strong>height arm</strong> runs first, for any live, non-frozen actor, and picks one law for its Y from the flag word: write a stored override, hold, step toward the sampled floor with a per-frame clamp, or snap straight onto it. The <strong>dispatch arm</strong> then fires the routines in the figure - unless a global suppress bit skips it wholesale.</p>
   <p>The first routine, the cutscene pump, is <em>not</em> a motion VM: it steps a field/event-VM script one authored beat per cutscene phase tick. Any motion it causes is issued by the field-VM ops inside the script.</p>
   <details class="disclosure">
     <summary>Deep dive: facing-arm flag bits and the cutscene pump</summary>
     <div class="disclosure-body">
-      <p>Facing arm (live = <code>+0x5C &ge; 0</code>, not self-frozen = <code>+0x10 &amp; 2</code> clear): bit <code>0x20000000</code> snaps the heading to <code>-(+0x8E)</code>; else if neither a target bit (<code>0x20200</code>) nor the ambient enable <code>_DAT_8007B6A8</code> is set, the heading holds; else bit <code>0x2000</code> selects the clamped turn (<code>rate = pad-held &times; 6</code>, a raw signed-difference clamp distinct from the frame-budget ramp below) and its absence snaps to the bearing via <code>FUN_80019278</code>. The dispatch arm's suppress bit is <code>_DAT_1F800394 &amp; 0x400</code>.</p>
+      <p>Height arm (live = <code>+0x5C &ge; 0</code>, not self-frozen = <code>+0x10 &amp; 2</code> clear). It writes the actor&rsquo;s <strong>Y position</strong> <code>+0x16</code>, not a heading &mdash; <code>FUN_80019278</code> is the bilinear ground-height sampler (it reads <code>+0x14</code>/<code>+0x18</code> as X/Z and averages four <code>.MAP</code> corner nibbles through the <code>0x1F80035C</code> ramp), and this VM&rsquo;s real facing writes all land at <code>+0x26</code>. Bit <code>0x20000000</code> writes <code>-(+0x8E)</code> outright, skipping both floor arms; else if neither a target bit (<code>0x20200</code>) nor the ambient enable <code>_DAT_8007B6A8</code> is set, <code>+0x16</code> holds; else bit <code>0x2000</code> selects the clamped step toward the sample (<code>rate = pad-held &times; 6</code>, a raw signed-difference clamp distinct from the frame-budget ramp below) and its absence snaps to it. The dispatch arm&rsquo;s suppress bit is <code>_DAT_1F800394 &amp; 0x400</code>.</p>
       <p>The pump <code>FUN_80039B7C</code> reads the script at <code>*(actor+0x90) + *(actor+0x9E)</code> - the same <code>0x21</code>-terminated format the <a href="script-vm.html">field VM</a> reads - in lock-step with the global cutscene phase <code>_DAT_801F2734</code>. Its helper <code>FUN_80038050</code> skips the structural ops (<code>0x21</code> stop; <code>0x24/0x25/0x48</code> one byte; <code>0x27..0x2A</code> multi-way jump by modal depth; <code>0x4C</code> two or three bytes).</p>
     </div>
   </details>
@@ -166,7 +166,7 @@
   <table>
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
-      <tr><td>Field actor tick</td><td><code>FUN_8003BC08</code></td><td>Facing-arm law selection; the four dispatch guards; the global suppress bit.</td><td><code>ghidra/scripts/funcs/8003bc08.txt</code></td></tr>
+      <tr><td>Field actor tick</td><td><code>FUN_8003BC08</code></td><td>Height-arm law selection (Y at <code>+0x16</code>, not facing); the four dispatch guards; the global suppress bit.</td><td><code>ghidra/scripts/funcs/8003bc08.txt</code></td></tr>
       <tr><td>Pursue VM</td><td><code>FUN_8003774C</code></td><td>Op set, target-select idiom (<code>0xF8/0xFB</code>), bind-index match at <code>+0x50</code>, compass LUT at <code>0x80073F04</code>.</td><td><code>8003774c.txt</code></td></tr>
       <tr><td>Scripted VM</td><td><code>FUN_80038158</code></td><td>32-entry JT at <code>0x80010FE8</code>; op-7/op-8 flag writes; walk / wander case bodies.</td><td><code>80038158.txt</code></td></tr>
       <tr><td>Stream binder</td><td><code>FUN_8003A9D4</code> / <code>FUN_8003AEB0</code></td><td>MAN tail-section-1 record chain; the <code>N0 + placement_index</code> bind law.</td><td><code>8003a9d4.txt</code></td></tr>

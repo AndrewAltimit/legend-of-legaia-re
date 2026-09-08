@@ -3001,6 +3001,179 @@ fn capture_phase2_ducks_only_behind_the_counter_flag() {
 }
 
 // ---------------------------------------------------------------------------
+// The capture band's camera - `0x6F` ramp (`0x801E4FFC..0x801E5020`) and the
+// `0x70` -> `0x71` re-seed (`0x801E50DC`)
+// ---------------------------------------------------------------------------
+
+/// The `0x6F` hold does two things per frame the port used to drop: it ramps
+/// `ctx[+0x6D0]` down by `frame_scalar * 16` (`lhu`/`subu`/`sh` at
+/// `0x801E4FFC..0x801E5014`) and re-arms the framing program for the acting
+/// slot (`FUN_801D5854(ctx[+0x13], 6)` at `0x801E5018`). Both are inside the
+/// hold, so they repeat for as long as `FUN_8003F2B8(1)` reports busy.
+#[test]
+fn capture_fade_ramps_the_camera_and_rearms_the_framing_every_frame() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::MagicCaptureFade.as_byte();
+    ctx.camera_frame_height = crate::battle_formulas::CAMERA_HEIGHT_MIN;
+    host.prev_cleared = false;
+
+    for frame in 1..=4i16 {
+        step(&mut host, &mut ctx);
+        assert_eq!(
+            ctx.action_state,
+            ActionState::MagicCaptureFade.as_byte(),
+            "the hold holds while the previous action has not cleared"
+        );
+        assert_eq!(
+            ctx.camera_frame_height,
+            crate::battle_formulas::CAMERA_HEIGHT_MIN - frame * CAPTURE_FADE_CAMERA_STEP,
+            "frame {frame}: 16 units per frame, no floor"
+        );
+        let events = host.take();
+        assert!(
+            events.contains(&Event::Pose(1, Pose::Idle)),
+            "frame {frame}: the framing program is re-armed"
+        );
+    }
+}
+
+/// The `0x71` store's own `jal 0x801f0348` (`0x801E50DC`, whose delay slot is
+/// the state write) puts the framing back where the size class says it
+/// belongs. Without it the pull-in above would leak into the rest of the
+/// action.
+#[test]
+fn capture_phase2_reseeds_the_camera_on_the_way_to_0x71() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::MagicCapturePhase2.as_byte();
+    // Wherever the 0x6F ramp left it - deliberately not the seed value.
+    ctx.camera_frame_height = 0x0100;
+    *host.capture_busy_frames.borrow_mut() = 2;
+
+    // The holding frames leave it alone: retail's re-seed is in the exit's
+    // delay slot, not in the body.
+    for _ in 0..2 {
+        step(&mut host, &mut ctx);
+        assert_eq!(
+            ctx.camera_frame_height, 0x0100,
+            "held frames do not re-seed"
+        );
+    }
+    step(&mut host, &mut ctx);
+    assert_eq!(
+        ctx.action_state,
+        ActionState::MagicCaptureFinalize.as_byte()
+    );
+    assert_eq!(
+        ctx.camera_frame_height,
+        crate::battle_formulas::CAMERA_HEIGHT_MIN,
+        "the exit re-runs FUN_801F0348; a party caster frames at the floor"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The `0x51` teardown's tail sweep - `0x801E6218..0x801E6368`
+// ---------------------------------------------------------------------------
+
+/// `ctx[+0x269]` non-zero **raises** `0x59` (`a1 = 0` at `0x801E6244`), and
+/// the target-banner close is gated on the acting actor's own two bytes:
+/// `+0x1DD` in `3..=7` and `+0x1DE` in `1..=3`.
+///
+/// The window matters and it is narrow. `ctx[+0x269]` non-zero on the *exit*
+/// pass re-seeds the countdown to `0xB4` before the teardown reloads it
+/// (`sh v0,0x2(s7)` at `0x801E6138`, reload at `0x801E614C`), which fails the
+/// `< 0xC` gate - so the only frames that see both a live capture byte and a
+/// running teardown are the last twelve of the countdown, before it goes
+/// negative. The tests below sit in that window deliberately.
+#[test]
+fn the_done_band_sweep_raises_the_capture_banner_and_closes_the_target_one() {
+    // Category 2 (Magic), target slot 3: both gates pass, and a non-zero
+    // capture byte raises 0x59.
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 5;
+    ctx.multi_cast_gate = 0x8B;
+    host.actors[1].active_target = 3;
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    let events = host.take();
+    assert!(
+        events.contains(&Event::Ui(0x59, 0)),
+        "the capture banner is RAISED, not unloaded: {events:?}"
+    );
+    assert!(
+        events.contains(&Event::Ui(0x51, 1)),
+        "the target banner is closed: {events:?}"
+    );
+
+    // A party-wide target (8) fails the slot gate, and a zero capture byte
+    // raises nothing - while the rest of the teardown still runs, so this is
+    // not vacuously asserting that nothing happened.
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 5;
+    ctx.multi_cast_gate = 0;
+    host.actors[1].active_target = 8;
+    step(&mut host, &mut ctx);
+    let events = host.take();
+    assert!(
+        events.contains(&Event::Ui(0x44, 1)),
+        "the teardown block itself ran: {events:?}"
+    );
+    assert!(!events.contains(&Event::Ui(0x59, 0)), "{events:?}");
+    assert!(!events.contains(&Event::Ui(0x51, 1)), "{events:?}");
+
+    // The tail is behind the same latch as the block above it: the next pass
+    // of the band re-runs neither.
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 5;
+    ctx.multi_cast_gate = 0x8B;
+    host.actors[1].active_target = 3;
+    step(&mut host, &mut ctx);
+    let _ = host.take();
+    step(&mut host, &mut ctx);
+    let events = host.take();
+    assert!(
+        !events.contains(&Event::Ui(0x59, 0)),
+        "the latch makes the tail once-per-action: {events:?}"
+    );
+    assert!(!events.contains(&Event::Ui(0x51, 1)), "{events:?}");
+}
+
+/// The raise has a close. The `0x52` band's own tail
+/// (`0x801E63F4..0x801E6424`) unloads `0x59` behind the same `ctx[+0x17]`
+/// latch the `0x51` block set, and clears it - so a capture that raised the
+/// banner in the fade-down cannot leave it standing.
+#[test]
+fn the_multi_cast_band_closes_the_capture_banner_and_clears_the_latch() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::DoneMultiCast.as_byte();
+    ctx.frame_timer = 4;
+    ctx.done_ui_torn_down = 1;
+    step(&mut host, &mut ctx);
+    let events = host.take();
+    assert!(
+        events.contains(&Event::Ui(0x59, 1)),
+        "the capture banner is closed: {events:?}"
+    );
+    assert_eq!(ctx.done_ui_torn_down, 0, "and the latch is cleared");
+
+    // Once only: the next pass finds the latch clear.
+    step(&mut host, &mut ctx);
+    let events = host.take();
+    assert!(!events.contains(&Event::Ui(0x59, 1)), "{events:?}");
+
+    // Above the window the tail does not run at all, even with the latch set.
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::DoneMultiCast.as_byte();
+    ctx.frame_timer = 0x40;
+    ctx.done_ui_torn_down = 1;
+    step(&mut host, &mut ctx);
+    let events = host.take();
+    assert!(!events.contains(&Event::Ui(0x59, 1)), "{events:?}");
+    assert_eq!(ctx.done_ui_torn_down, 1);
+}
+
+// ---------------------------------------------------------------------------
 // The Attack x2 refill's mark compare - `0x801E3A44..0x801E3A64`
 // ---------------------------------------------------------------------------
 

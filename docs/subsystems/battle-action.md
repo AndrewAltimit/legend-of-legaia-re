@@ -85,8 +85,8 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x47` | Spirit-arts - sustain | `FUN_801D5854(actor, 6)`. When `actor[+0x1D9] != 0`, clears `actor[+0x1DA]`. Decrements `ctx[+0x6D8]`. While running: ramps damage-popup HP/widget; when expired and `actor[+0x1F9] == 0` (no spirit-shield), advances HP-bar at `ctx[+0x1074]+0xE`. | `0x48` once exit-flag (`actor[+0x1DC] == 0`) and timers settle. |
 | `0x48` | Spirit-arts - flush | Final ramp of HP-bar / damage-popup. When all targets read zero AND timer expired AND anim flags clear → done. | `0x50`. |
 | `0x50` | **Done - cleanup phase** | The universal "action concluded, clean up" arm. Calls `FUN_801E6968` (the Lost Grail **Final Heal** auto-revive; engine `World::apply_final_heal_revives`), counts living party + monster actors (`+0x14C != 0 && (+0x16E & 4) == 0`); if any survivors → `FUN_801DABA4` (recompute battle ordering). Resets `actor[+0x224] = 8` (or `0x20` for spirits/`+0x1DE == 4`). Adjusts `actor[+0x170]` (HP-bar target) by ability-flag bits `0x100`/`0x200`. Clamps `actor[+0x170]` at 100. OR's `actor[+0x1DC] |= 4`. Per category: `+0x1DE == 5` (run) → screen-shake; `+0x1DE == 3` (attack) or party with dead s8 → pose 8; otherwise pose 6. Sets `ctx[+0x6D8] = 0x3C` (or `0x96` when the level-up banner byte `ctx[+0x26]` is set). If `ctx[7] == 0x50`, advances to `0x51`. | `0x51`. |
-| `0x51` | Done - fade-down | Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (the configured [audio level](#the-_dat_8007b910-ramps-are-an-audio-duck)). Per-category pose updates. Calls `FUN_801E7250` (?); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: if `ctx[+0x269] == 0` → `0x5A` (next-actor / end-of-action); else → `0x52` (continue queue). When timer < 0xC, calls `FUN_801D99BC` and unloads all UI elements: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `ctx[+0x26]` (the level-up banner), `+0xF/+0x52` (damage), `+0x44`, `+0x59` (queue marker), `+0x51`/`+0x50` (banner). For multi-cast (`_DAT_801F6974 != 0`), iterates queue at `((+0x6974)-1)*4 + -0x7FE097CC` firing every queued effect's terminate marker. | `0x52` or `0x5A`. |
-| `0x52` | Done - multi-cast continuation | `FUN_801D5854(actor, 8)` (action-end pose). Decrements `ctx[+0x6D8]`. If timer > 0x13 and screen-shake active (`_DAT_8007B874 != 0`), clamps timer at 0x13. When < 0: clears `ctx[+0x269]`, advances to `0x5A`. When < 0x14 and `actor[+0x17] != 0` (was running), unloads the queue marker. | `0x5A`. |
+| `0x51` | Done - fade-down | Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (the configured [audio level](#the-_dat_8007b910-ramps-are-an-audio-duck)). Per-category pose updates. Calls `FUN_801E7250` (?); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: `ctx[+0x269] == 0` → `0x5A`, else `0x52`. Under `timer < 0xC`, calls `FUN_801D99BC` and unloads: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `ctx[+0x26]` (the level-up banner), `+0xF/+0x52` (damage), `+0x44`; then **raises** `+0x59` (the capture banner) and unloads `+0x51` / `+0x50`, plus the multi-cast `(id, id-4)` loop off `_DAT_801F6974` - see [the sweep section](#the-sweep-the-teardown-falls-into-0x801e62180x801e6368). | `0x52` or `0x5A`. |
+| `0x52` | Done - multi-cast continuation | `FUN_801D5854(actor, 8)` (action-end pose). Decrements `ctx[+0x6D8]`. If timer > 0x13 and screen-shake active (`_DAT_8007B874 != 0`), clamps timer at 0x13. When < 0: clears `ctx[+0x269]`, advances to `0x5A`. When < 0x14 and **`ctx[+0x17]`** (the `0x51` block's own latch, not an actor byte) is non-zero: `FUN_801D99BC`, unload `0x59`, clear the latch - the close of the banner the `0x51` sweep raised. Port `done::done_multi_cast`. | `0x5A`. |
 | `0x5A` | **End-of-action gate** | Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). Resets dead/inactive actors' `+0x36 = 0`, `+0x21C = 0`, `+0x225 = 0`. Counts living actors per side: if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps the [turn cursor](#the-turn-cursor-ctx0x1a) `ctx[+0x1A]++`; if it is `< (party_count + monster_count - ctx[+0x25])`, advances to `0x0A` (next action); else → `0xFF` (round boundary - see below). | `0x0A` (next actor) / `0xFF` (round ends). |
 | `0x64` (100) | **Run - flee anim begin** | Calls `FUN_801E791C` ([the escape roll](#the-escape-roll-fun_801e791c) - decides the flee, writes `_DAT_8007726C`). Sets `ctx[+0x6D8] = 0x3C`. Fires `FUN_801D8DE8(0x43, 0)` (run UI). Advances the [turn cursor](#the-turn-cursor-ctx0x1a) past each monster with a rotation trigger (`+0x16C != 0`) that isn't immune (`(&DAT_8007BD10)[i] != 4`). If party-side ran (`_DAT_8007726C != ctx + 0x189`, the run roll succeeded): screen-shake, and **floors every party actor's live HP at 1** (`+0x14C == 0` → `1`, loop bound = party count) - the mechanism behind "escape restores a Stoned member". Ported: `RunBegin` + `StatusEffectTracker::cure_stone_on_escape`. Else screen-shake only. | `0x65`. |
 | `0x65` | Run - wait | If the run failed (`_DAT_8007726C == ctx + 0x189`) → screen-shake `_DAT_8007B792` rotates. Decrements `ctx[+0x6D8]`. When < 0: **failed run** → `0x50` (Done band - the action is consumed, the battle continues); **successful escape** → `0x66`. | `0x50` (failed) or `0x66` (escaped). |
@@ -1254,11 +1254,25 @@ The seed and the skip together are what make the tail read as a banner rather
 than a fudge factor: `0x96 - 0x5B` = 59 frames the player cannot skip, then
 the press ends it.
 
-What the `0x801E6D3C` **increment** is for is not settled by any of the three
-readers - to them it is just "non-zero", so on that boss arm it lengthens the
-fade-down and unloads element `1`. Reading the byte as a boss phase counter
-does not survive the unload site, and reading the increment as intentional
-element selection does not survive `0x65` being the only assignment.
+What the `0x801E6D3C` **increment** counts is nothing: it is a make-non-zero
+idiom on a byte its readers only test against zero. Three things fix that.
+`ActionSeed` clears the byte at the head of every action (`0x801E2CFC`), so
+the value the increment reads is `0` unless the magic level-up arm stamped
+`0x65` first, which makes the result `1` or `0x66` - neither an element retail
+ever raises. The arm it sits in is a one-shot: it is gated on the first
+monster slot being dead **and** `first_monster_id == 0xB5`
+(`0x801E6CFC..0x801E6D0C`), so it runs once per battle at most. And the two
+stores beside it are the same shape - `_DAT_8007B64A = 3` and
+`ctx[+0x07] = 0xFD`, a state byte outside the SM's own range. What the arm
+wants from `ctx[+0x26]` is the `0x50` seed's long hold (`0x96` frames instead
+of `0x3C`) plus the skip window, which "non-zero" is sufficient for; the
+unload that follows is then `FUN_801D8DE8(1, 1)` on an element that was never
+raised.
+
+The earlier note here left this "not settled by any of the three readers".
+What settles it is the *writer* side rather than the readers: the increment
+cannot be intentional element selection, because the byte it increments is
+known-zero at that point and `0x65` is the only id ever assigned.
 
 **Port.** `legaia_engine_vm::battle_action::done`'s `DONE_LEVELUP_BANNER_FRAMES` /
 `DONE_BANNER_SKIP_BELOW`, over `BattleActionHost::pad_word`. The writer is
@@ -1289,6 +1303,48 @@ block rather than to the epilogue.
 | unload `ctx[+0x26]`, the level-up banner | `0x801E61C4` | byte non-zero |
 | unload `0x0F` and `0x52` | `0x801E61DC` / `0x801E61E8` | `ctx[+0x19]` non-zero |
 | unload `0x44` | `0x801E6200` | `actor[+0x1DE] != 5` (not Run) |
+
+### The sweep the teardown falls into (`0x801E6218..0x801E6368`)
+
+The tail past the latch increment, and it is **inside** the latch: nothing
+branches to `0x801E6218`, and both of the block's gates
+(`beq v0,zero` at `0x801E6158`, `bne v0,zero` at `0x801E6168`) jump to
+`0x801E6814` - past the whole tail. An earlier reading here called it "the
+unlatched multi-cast sweep"; the two branch targets refute that.
+
+| step | site | condition |
+|---|---|---|
+| `FUN_801E92DC(ctx[+0x269])` then **raise** `0x59` (`a1 = 0`) | `0x801E6234` / `0x801E6240` | `ctx[+0x269]` non-zero |
+| unload `(id, id - 4)` for each queued entry, row `_DAT_801F6834 + (count-1)*4` | `0x801E62CC` / `0x801E62F0` | any of the four `0x801F6980` value slots non-zero, and `_DAT_801F6974` non-zero |
+| unload `0x51` | `0x801E6344` | all four value slots zero, `actor[+0x1DD] - 3 < 5`, `0 < actor[+0x1DE] < 4` |
+| unload `0x50` | `0x801E6360` | all four value slots zero, `_DAT_8007BD14` non-zero |
+
+Two corrections fall out of the table. `0x59` is **raised** here, not
+unloaded - `a1 = 0` where every unload in the block passes `1`; the `0x52`
+continuation band is what closes it. And the whole multi-cast half is
+`FUN_801E805C`'s teardown inlined: same `(id, id - 4)` pair, same
+`(count - 1) * 4 + i` row, same `_DAT_8007BD14` gate on `0x50`, all of which
+`engine-vm::battle_value_readout` already ports.
+
+`ctx[+0x269]`'s reading follows from its second reader. `FUN_801E92DC` takes a
+**spell id**: it resolves the acting slot through `_DAT_8007BD10`, indexes the
+live game-state window at `0x80084140 + char*0x414 + 0x704` and prepends there
+(ported as `engine-core::magic_xp::learn_spell_prepend`). So the byte the Done
+band's exit test routes on is the spell a capture granted, and element `0x59`
+raised beside it is that grant's banner.
+
+The capture arm's window is narrower than the table suggests. A non-zero
+`ctx[+0x269]` on the band's *exit* pass re-seeds the countdown to `0xB4`
+(`sh v0,0x2(s7)` at `0x801E6138`) before the teardown reloads it at
+`0x801E614C`, so that pass fails the `< 0xC` gate; and the menu-flag floor
+writes `0xC` exactly, which fails it too. The frames that see both a live
+capture byte and a running teardown are therefore the last twelve of the
+countdown, before it crosses zero - once, behind the latch.
+
+**Port.** `done::done_band_capture_and_banner_sweep` carries the `0x59` raise
+and the `0x51` close; the loop stays with `battle_value_readout`, whose state
+(the value window and the queued count) is the readout's rather than the
+action's.
 
 `ctx[+0x18]` is a **context** byte, written by the seed's Attack arm
 (`li v0,0x7` / `sb v0,0x7(s5)` at `0x801E2F48..0x801E2F50`) - the same arm's

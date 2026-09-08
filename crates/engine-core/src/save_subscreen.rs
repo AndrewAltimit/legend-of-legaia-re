@@ -33,10 +33,15 @@
 //! ids. The two are complementary: a host drives the session for content
 //! and can key retail-exact chrome off [`SaveSubScreen`].
 //!
-//! Sub-screens whose retail behaviour is not yet pinned are represented
-//! in [`SaveSubScreen`] (so the id space stays complete and a transition
-//! into one is expressible) but have no step machine here; ticking one
-//! parks. See `docs/subsystems/save-screen.md` for the table.
+//! A sub-screen this module carries no step machine for is not therefore
+//! unknown, and [`SaveSubScreen`] says which of the two it is. Of the
+//! table's 33 ids, 14 are stepped here, `0x16` is a bare frame-flush
+//! wrapper ([`SaveSubScreen::FrameFlushTick`]), and the remaining 18 are
+//! [`SaveSubScreen::Routed`] - screens another `engine-core` module already
+//! ports, named per id by [`SaveSubScreen::routed_port`] and handed to the
+//! host as [`SubScreenEffect::Route`]. [`SaveSubScreen::Unpinned`] survives
+//! only for an id past the end of the retail table. See
+//! `docs/subsystems/save-screen.md` for the per-id table.
 //!
 //! NOT WIRED: nothing constructs a [`SaveScreenMachine`] outside this
 //! module's own tests. The engine's save UI runs on
@@ -124,9 +129,211 @@ pub enum SaveSubScreen {
     /// else. `docs/subsystems/field-menu.md` pins the same id to window
     /// 46 from the widget-script sweep, independently.
     CasinoPrizeConfirm,
+    /// `0x16` - a bare frame-flush tick. `FUN_801DD310` is eight
+    /// instructions - prologue, `jal 0x80031D00`, epilogue - so the slot
+    /// exists to keep the table dense and does nothing else; the flush it
+    /// tail-calls is the frame-end / actor-tick one every dispatch pass
+    /// already runs. Pinned, not unknown: there is nothing further to learn
+    /// from the bytes.
+    FrameFlushTick,
+    /// A table slot whose screen **another `engine-core` module ports**.
+    /// Carries its retail id; [`SaveSubScreen::routed_port`] names the
+    /// routine and the module.
+    ///
+    /// This is not a softer spelling of [`Self::Unpinned`]. Every id here
+    /// has a `// PORT:` tag on live engine code reached from a host - the
+    /// pause-menu Items flow, the Magic flow, the Equip flow, the shop, and
+    /// this module's own `0x15` list helpers. What the id lacks is a step
+    /// machine *in this module*, which is a statement about where the port
+    /// lives rather than about whether the screen is understood.
+    Routed(u8),
     /// A table slot whose screen is not yet pinned. Carries its id so a
     /// transition into one round-trips.
+    ///
+    /// After the [`Self::Routed`] split this covers **no live table slot**:
+    /// the retail table is `0x00..=0x20` and every one of those 33 ids is
+    /// either pinned above or routed. It remains so the id space stays
+    /// total for an out-of-range byte, which retail itself reads as `0`
+    /// past the end of the table.
     Unpinned(u8),
+}
+
+/// Where a [`SaveSubScreen::Routed`] id's port lives.
+///
+/// The `engine_module` / `engine_item` pair is the chain a reader follows to
+/// the code that runs the screen; `retail_fn` is the entry the sub-screen
+/// pointer table holds for the id. All three are `&'static str` rather than
+/// typed handles on purpose - this is a map from one id space to another, and
+/// the modules it names have no common session trait to hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RoutedPort {
+    /// The retail table entry for the id.
+    pub retail_fn: &'static str,
+    /// The `engine-core` module that ports it.
+    pub engine_module: &'static str,
+    /// The item in that module a host enters the screen through.
+    pub engine_item: &'static str,
+}
+
+/// The routed ids, in table order: `(id, retail fn, module, item)`.
+///
+/// Each row's `retail_fn` is the entry `docs/subsystems/save-screen.md`'s
+/// pointer-table section lists for the id, and each `engine_module` carries a
+/// `// PORT:` tag naming that same routine - so a row that drifts is
+/// detectable by grepping for the address, which
+/// [`tests::every_routed_id_names_a_distinct_port`] does structurally.
+const ROUTED_PORTS: &[(u8, RoutedPort)] = &[
+    (
+        0x05,
+        RoutedPort {
+            retail_fn: "FUN_801D7C00",
+            engine_module: "crate::pause_screens",
+            engine_item: "PauseItemsSession (the Use / Throw Out / Arrange command window)",
+        },
+    ),
+    (
+        0x06,
+        RoutedPort {
+            retail_fn: "FUN_801D7E50",
+            engine_module: "crate::pause_screens",
+            engine_item: "PauseItemsSession (the Use list + effect-class dispatch)",
+        },
+    ),
+    (
+        0x07,
+        RoutedPort {
+            retail_fn: "FUN_801D8734",
+            engine_module: "crate::pause_screens",
+            engine_item: "PauseItemsSession (the Throw Out list + confirm)",
+        },
+    ),
+    (
+        0x09,
+        RoutedPort {
+            retail_fn: "FUN_801D7FF8",
+            engine_module: "crate::pause_screens",
+            engine_item: "PauseItemsSession (the ApplyAll route)",
+        },
+    ),
+    (
+        0x0A,
+        RoutedPort {
+            retail_fn: "FUN_801D8308",
+            engine_module: "crate::pause_screens",
+            engine_item: "PauseItemsSession (the ApplySingle route)",
+        },
+    ),
+    (
+        0x0C,
+        RoutedPort {
+            retail_fn: "FUN_801D8B90",
+            engine_module: "crate::pause_screens",
+            engine_item: "SpecialUseSession (the Door of Wind destination list)",
+        },
+    ),
+    (
+        0x0D,
+        RoutedPort {
+            retail_fn: "FUN_801D8D94",
+            engine_module: "crate::pause_screens",
+            engine_item: "SpecialUseSession (the Incense confirm + class-0x82 apply)",
+        },
+    ),
+    (
+        0x0E,
+        RoutedPort {
+            retail_fn: "FUN_801D8F10",
+            engine_module: "crate::spell_menu",
+            engine_item: "SpellMenuSession (the CharSelect phase)",
+        },
+    ),
+    (
+        0x0F,
+        RoutedPort {
+            retail_fn: "FUN_801D9110",
+            engine_module: "crate::spell_menu",
+            engine_item: "SpellMenuSession (the SpellSelect phase + spell_targets_group)",
+        },
+    ),
+    (
+        0x10,
+        RoutedPort {
+            retail_fn: "FUN_801D9280",
+            engine_module: "crate::spell_menu",
+            engine_item: "SpellMenuSession (the group-cast confirm)",
+        },
+    ),
+    (
+        0x11,
+        RoutedPort {
+            retail_fn: "FUN_801D9594",
+            engine_module: "crate::spell_menu",
+            engine_item: "SpellMenuSession (the TargetSelect phase + resolve)",
+        },
+    ),
+    (
+        0x13,
+        RoutedPort {
+            retail_fn: "FUN_801D99F0",
+            engine_module: "crate::equip_session",
+            engine_item: "EquipSession (the slot browse + Best Equipment row)",
+        },
+    ),
+    (
+        0x14,
+        RoutedPort {
+            retail_fn: "FUN_801D9C14",
+            engine_module: "crate::equip_session",
+            engine_item: "EquipSession (the candidate list + trial-equip commit)",
+        },
+    ),
+    (
+        0x15,
+        RoutedPort {
+            retail_fn: "FUN_801DA2A0",
+            engine_module: "crate::save_subscreen",
+            engine_item: "sub15_list_source / sub15_list_len / sub15_list_frame",
+        },
+    ),
+    (
+        0x1B,
+        RoutedPort {
+            retail_fn: "FUN_801DB21C",
+            engine_module: "crate::shop",
+            engine_item: "shop::buy_list_confirm_route",
+        },
+    ),
+    (
+        0x1C,
+        RoutedPort {
+            retail_fn: "FUN_801DB380",
+            engine_module: "crate::shop",
+            engine_item: "shop (the buy recipient picker)",
+        },
+    ),
+    (
+        0x1D,
+        RoutedPort {
+            retail_fn: "FUN_801DB7F4",
+            engine_module: "crate::shop",
+            engine_item: "shop::BuyQuantitySession",
+        },
+    ),
+    (
+        0x1F,
+        RoutedPort {
+            retail_fn: "FUN_801DBD94",
+            engine_module: "crate::shop",
+            engine_item: "shop (the sell-quantity input + commit)",
+        },
+    ),
+];
+
+/// The [`RoutedPort`] for a retail sub-screen id, if another module ports it.
+pub fn routed_port(id: u8) -> Option<RoutedPort> {
+    ROUTED_PORTS
+        .iter()
+        .find_map(|(k, port)| (*k == id).then_some(*port))
 }
 
 impl SaveSubScreen {
@@ -147,7 +354,8 @@ impl SaveSubScreen {
             Self::ShopModeSelect => 0x1A,
             Self::QuantitySpinner => 0x1E,
             Self::CasinoPrizeConfirm => 0x20,
-            Self::Unpinned(id) => id,
+            Self::FrameFlushTick => 0x16,
+            Self::Routed(id) | Self::Unpinned(id) => id,
         }
     }
 
@@ -168,13 +376,28 @@ impl SaveSubScreen {
             0x1A => Self::ShopModeSelect,
             0x1E => Self::QuantitySpinner,
             0x20 => Self::CasinoPrizeConfirm,
+            0x16 => Self::FrameFlushTick,
+            other if routed_port(other).is_some() => Self::Routed(other),
             other => Self::Unpinned(other),
         }
     }
 
     /// Whether this module carries a step machine for the screen.
+    ///
+    /// A [`Self::Routed`] id is **not** pinned by this predicate and that is
+    /// deliberate: the question it answers is "does [`SaveScreenMachine`]
+    /// step it", and for a routed id the answer is no - the owning module
+    /// does. Use [`Self::routed_port`] to ask the other question.
     pub fn is_pinned(self) -> bool {
-        !matches!(self, Self::Unpinned(_))
+        !matches!(self, Self::Unpinned(_) | Self::Routed(_))
+    }
+
+    /// Where this screen's port lives, for an id another module owns.
+    pub fn routed_port(self) -> Option<RoutedPort> {
+        match self {
+            Self::Routed(id) => routed_port(id),
+            _ => None,
+        }
     }
 }
 
@@ -318,6 +541,17 @@ pub enum SubScreenEffect {
     ReadInventoryEntry,
     /// Zero the screen's staging cells and reset the list parameter.
     ClearStaging,
+    /// The current sub-screen is one another `engine-core` module ports:
+    /// hand the frame to [`RoutedPort::engine_module`] rather than stepping
+    /// it here.
+    ///
+    /// Retail has no counterpart - its dispatcher just indirects through the
+    /// pointer table - so this is the port's seam, not a retail effect. It
+    /// exists because the alternative is what this module used to do: return
+    /// an empty effect list, which is indistinguishable from "this screen had
+    /// nothing to do this frame" and let 19 of the table's 33 ids read as
+    /// unknown.
+    Route(RoutedPort),
 }
 
 /// Direction of a card transfer.
@@ -462,9 +696,29 @@ impl SaveScreenMachine {
             SaveSubScreen::CardLoad => self.tick_card_driver(input, CardOp::Load),
             SaveSubScreen::ShopModeSelect => self.tick_shop_mode_select(input),
             SaveSubScreen::QuantitySpinner => self.tick_quantity_spinner(input),
-            // Screens with no step machine here park rather than
-            // transitioning; a host drives them through `goto`.
-            _ => Vec::new(),
+            // `FUN_801DD310` is a bare flush wrapper: no step, no transition,
+            // nothing for a host to do.
+            SaveSubScreen::FrameFlushTick => Vec::new(),
+            // A screen another module ports. Retail indirects into it through
+            // the pointer table; the engine names the module instead, so a
+            // host can hand the frame on rather than watch the flow park.
+            SaveSubScreen::Routed(id) => routed_port(id)
+                .map(|port| vec![SubScreenEffect::Route(port)])
+                .unwrap_or_default(),
+            // Named here but not stepped here: each is a screen this module
+            // decodes (its entry-context route, its exit code, its id) whose
+            // per-frame body belongs to another module - the slot grid and
+            // the info panel to `crate::save_select`, the character-parameter
+            // editor and the generic picker to no host at all, the casino
+            // confirm to `crate::prize_exchange`. A host drives them through
+            // `goto`, as it always has.
+            SaveSubScreen::SlotSelect
+            | SaveSubScreen::CharParamEditor
+            | SaveSubScreen::GenericPicker
+            | SaveSubScreen::CasinoPrizeConfirm => Vec::new(),
+            // An id outside the retail table (`>= 0x21`). Retail reads `0`
+            // there; the port parks rather than inventing a transition.
+            SaveSubScreen::Unpinned(_) => Vec::new(),
         }
     }
 
@@ -556,7 +810,7 @@ impl SaveScreenMachine {
                 vec![SubScreenEffect::RunScript]
             }
             1 if !input.script_busy && !input.any_button_held => {
-                self.goto(SaveSubScreen::Unpinned(0x05));
+                self.goto(SaveSubScreen::Routed(0x05));
                 Vec::new()
             }
             _ => Vec::new(),
@@ -581,7 +835,7 @@ impl SaveScreenMachine {
                     vec![SubScreenEffect::RunScript, SubScreenEffect::Sfx(0x88)]
                 }
                 1 | 2 => {
-                    self.goto(SaveSubScreen::Unpinned(0x06));
+                    self.goto(SaveSubScreen::Routed(0x06));
                     Vec::new()
                 }
                 _ => Vec::new(),
@@ -607,7 +861,7 @@ impl SaveScreenMachine {
             }
             1 if !input.script_busy => match input.nav {
                 1 => {
-                    self.goto(SaveSubScreen::Unpinned(0x13));
+                    self.goto(SaveSubScreen::Routed(0x13));
                     vec![SubScreenEffect::Sfx(0x20)]
                 }
                 2 => {
@@ -691,7 +945,7 @@ impl SaveScreenMachine {
             }
             1 if !input.script_busy => match (input.nav, input.cursor & 0xFFF) {
                 (1, 0) => {
-                    self.goto(SaveSubScreen::Unpinned(0x1B));
+                    self.goto(SaveSubScreen::Routed(0x1B));
                     vec![SubScreenEffect::ClearStaging]
                 }
                 (1, 1) => {
@@ -754,7 +1008,7 @@ impl SaveScreenMachine {
                 self.step = 3;
                 effects.push(SubScreenEffect::RunScript);
             }
-            2 => self.goto(SaveSubScreen::Unpinned(0x1F)),
+            2 => self.goto(SaveSubScreen::Routed(0x1F)),
             _ => {}
         }
         effects
@@ -1144,7 +1398,7 @@ mod tests {
         );
         assert_eq!(release.screen(), SaveSubScreen::PadReleaseWait);
         release.tick(idle(), 0);
-        assert_eq!(release.screen(), SaveSubScreen::Unpinned(0x05));
+        assert_eq!(release.screen(), SaveSubScreen::Routed(0x05));
     }
 
     /// The Yes branch of the confirm-exit screen does not leave: it runs
@@ -1189,7 +1443,7 @@ mod tests {
                 },
                 0,
             );
-            assert_eq!(m.screen(), SaveSubScreen::Unpinned(0x06), "nav {nav}");
+            assert_eq!(m.screen(), SaveSubScreen::Routed(0x06), "nav {nav}");
             assert!(m.exit_code().is_none());
         }
     }
@@ -1264,7 +1518,7 @@ mod tests {
     #[test]
     fn shop_mode_select_rows_have_distinct_exits() {
         let cases = [
-            (0u16, SaveSubScreen::Unpinned(0x1B)),
+            (0u16, SaveSubScreen::Routed(0x1B)),
             (2, SaveSubScreen::FinalExit),
         ];
         for (cursor, expected) in cases {
@@ -1337,7 +1591,7 @@ mod tests {
             0,
         );
         assert!(fx.contains(&SubScreenEffect::ReadInventoryEntry));
-        assert_eq!(m.screen(), SaveSubScreen::Unpinned(0x1F));
+        assert_eq!(m.screen(), SaveSubScreen::Routed(0x1F));
     }
 
     /// Result `3` re-runs the second display script and parks on the
@@ -1470,6 +1724,107 @@ mod tests {
             "not monotonic: {seen:?}"
         );
         assert_eq!(m.fade(), FADE_OPAQUE);
+    }
+
+    // -----------------------------------------------------------------
+    // The routed half of the id space
+    // -----------------------------------------------------------------
+
+    /// The retail sub-screen pointer table is `0x00..=0x20`, and after the
+    /// `Routed` split every one of those 33 ids resolves to a screen this
+    /// crate can name. `Unpinned` is left holding nothing, which is the
+    /// whole point: the enum no longer claims a live table slot is unknown.
+    #[test]
+    fn no_live_table_id_is_unpinned() {
+        for id in 0x00u8..=0x20 {
+            let screen = SaveSubScreen::from_id(id);
+            assert!(
+                !matches!(screen, SaveSubScreen::Unpinned(_)),
+                "id {id:#04x} still reads as Unpinned"
+            );
+            assert_eq!(screen.id(), id, "id {id:#04x} does not round-trip");
+        }
+        // ...and the variant is still reachable for a byte past the table,
+        // which is what keeps the id space total.
+        assert_eq!(SaveSubScreen::from_id(0x21), SaveSubScreen::Unpinned(0x21));
+        assert_eq!(SaveSubScreen::from_id(0xFF), SaveSubScreen::Unpinned(0xFF));
+    }
+
+    /// Exactly 14 named + 1 flush + 18 routed = 33. Asserting the split
+    /// rather than only the total: a routed id silently promoted to
+    /// `Unpinned`, or a named one demoted to `Routed`, keeps the sum right
+    /// and breaks the claim. "Named" is not "stepped" - four of the fourteen
+    /// (`0x01`, `0x02`, `0x17`, `0x20`) are decoded here and driven
+    /// elsewhere; see the dispatch arm that lists them.
+    #[test]
+    fn the_table_splits_fourteen_named_one_flush_eighteen_routed() {
+        let mut stepped = 0;
+        let mut flush = 0;
+        let mut routed = 0;
+        for id in 0x00u8..=0x20 {
+            match SaveSubScreen::from_id(id) {
+                SaveSubScreen::FrameFlushTick => flush += 1,
+                SaveSubScreen::Routed(_) => routed += 1,
+                SaveSubScreen::Unpinned(_) => unreachable!(),
+                _ => stepped += 1,
+            }
+        }
+        assert_eq!((stepped, flush, routed), (14, 1, 18));
+    }
+
+    /// Every routed id names a port, each row names a distinct retail
+    /// routine, and the routine name is the `FUN_801D....` form the
+    /// `// PORT:` tags use - so a row that drifts from the code it points at
+    /// is findable by grepping the address.
+    #[test]
+    fn every_routed_id_names_a_distinct_port() {
+        let mut seen_fns = std::collections::BTreeSet::new();
+        let mut seen_ids = std::collections::BTreeSet::new();
+        for (id, port) in ROUTED_PORTS {
+            assert!(seen_ids.insert(*id), "duplicate routed id {id:#04x}");
+            assert!(
+                seen_fns.insert(port.retail_fn),
+                "two ids claim {}",
+                port.retail_fn
+            );
+            assert!(
+                port.retail_fn.starts_with("FUN_801D") && port.retail_fn.len() == 12,
+                "{} is not a FUN_801Dxxxx address",
+                port.retail_fn
+            );
+            assert!(port.engine_module.starts_with("crate::"));
+            assert!(!port.engine_item.is_empty());
+            assert_eq!(SaveSubScreen::from_id(*id).routed_port(), Some(*port));
+        }
+        // A pinned screen has no routed port, and neither does an id past
+        // the table.
+        assert_eq!(SaveSubScreen::SlotSelect.routed_port(), None);
+        assert_eq!(SaveSubScreen::FrameFlushTick.routed_port(), None);
+        assert_eq!(SaveSubScreen::from_id(0x21).routed_port(), None);
+    }
+
+    /// Dispatching a routed screen emits the route rather than an empty
+    /// list. The empty list was the defect: it is what "this screen had
+    /// nothing to do this frame" looks like too, so a parked flow and a
+    /// handed-off one were indistinguishable to a host.
+    #[test]
+    fn a_routed_screen_dispatches_its_route() {
+        let mut m = dispatching(SaveEntryContext::ShopEntry);
+        m.goto(SaveSubScreen::Routed(0x1B));
+        let effects = m.tick(SubScreenInput::default(), 0);
+        assert_eq!(
+            effects,
+            vec![SubScreenEffect::Route(RoutedPort {
+                retail_fn: "FUN_801DB21C",
+                engine_module: "crate::shop",
+                engine_item: "shop::buy_list_confirm_route",
+            })]
+        );
+        // The flush slot really does nothing, and an out-of-table id parks.
+        m.goto(SaveSubScreen::FrameFlushTick);
+        assert!(m.tick(SubScreenInput::default(), 0).is_empty());
+        m.goto(SaveSubScreen::Unpinned(0x30));
+        assert!(m.tick(SubScreenInput::default(), 0).is_empty());
     }
 }
 

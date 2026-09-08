@@ -741,6 +741,7 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
         party_count,
         |slot| host.monster_size_class(slot),
     );
+    ctx.camera_frame_height = frame_height;
     host.camera_frame_height(frame_height);
 
     // Camera bounds (skipped for run actions per docs).

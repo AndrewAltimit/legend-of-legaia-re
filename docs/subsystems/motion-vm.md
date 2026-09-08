@@ -38,15 +38,35 @@ independently-gated halves (see `ghidra/scripts/funcs/8003bc08.txt`; ported
 as `field_actor_plan` in
 [`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs)).
 
-**Facing arm** - runs only when the actor is live (`+0x5C >= 0`, which also
+**Height arm** - runs only when the actor is live (`+0x5C >= 0`, which also
 gates the `FUN_801D79E8` pre-update) and not self-frozen (`+0x10 & 2` clear).
-It picks one facing law from the flag word `+0x10`: bit `0x20000000` snaps the
-heading to `-(+0x8E)`; else if neither a target bit (`0x20200`) nor the
-ambient enable `_DAT_8007B6A8` is set the heading holds; else bit `0x2000`
-selects a per-frame clamped turn toward the target bearing (`rate = pad-held
-* 6`, `rotate_toward_clamped` - a raw signed-difference clamp, distinct from
-the frame-budget ramp `rotate_step`), and its absence snaps straight to the
-bearing (`FUN_80019278`).
+It picks one law for the actor's **Y position** `+0x16` from the flag word
+`+0x10`: bit `0x20000000` writes `-(+0x8E)` outright and skips the rest; else
+if neither a target bit (`0x20200`) nor the ambient enable `_DAT_8007B6A8` is
+set, `+0x16` holds; else bit `0x2000` selects a per-frame clamped step toward
+the sampled ground height (`rate = pad-held * 6`, `rotate_toward_clamped` - a
+raw signed-difference clamp, distinct from the frame-budget ramp
+`rotate_step`), and its absence snaps straight to that sample
+(`FUN_80019278`).
+
+This arm was documented as a **facing** arm, and it is not one.
+`FUN_80019278` is the bilinear ground-height sampler - it reads `+0x14` /
+`+0x18` as X / Z, shifts each right by six to index the `.MAP` `+0x4000`
+collision grid, looks four corner nibbles up in the sixteen-rung scratchpad
+ramp at `0x1F80035C` and averages them (`0x800193DC..0x80019438`) - so what
+lands in `+0x16` is a floor elevation, and `+0x16` between the two horizontal
+axes is Y. Every other page here already reads it that way
+([`field-map.md`](../formats/field-map.md),
+[`field-locomotion.md`](field-locomotion.md)); this section was the outlier,
+and the port's `FieldActorFacing` enum inherited the error before it was
+renamed `FieldActorHeight`. The section below settles it from the other side
+too: every heading write in this VM lands at `+0x26`, not `+0x16`.
+
+The three arms line up one-to-one with what the engine runs: the `0x20000000`
+override is `World::field_eased_mirror_y` (an eased move publishes `-Y` into
+`+0x8E` and the arm writes it back), the snap is
+`World::follow_terrain_height`, and the clamped step is
+`World::field_vertical_settle`.
 
 **Dispatch arm** - skipped whole when the global suppress bit
 `_DAT_1F800394 & 0x400` is set. Otherwise four routines fire on their own

@@ -155,6 +155,20 @@ impl World {
             // live list, so splice rather than overwrite.
             records.append(&mut self.eased_moves);
             self.eased_moves = records;
+            // Drop the `+0x8E` latch once the last mirrored player move has
+            // retired. Retail's byte is sticky and its reader gates on the
+            // actor flag `+0x10 & 0x20000000` instead, which a script clears;
+            // the engine has no writer for that bit on a pool actor, so a
+            // sticky latch here would pin the player's Y for the rest of the
+            // scene - a softlock class, not a fidelity gain. The armed window
+            // is otherwise identical: every frame of the move, and no other.
+            if !self
+                .eased_moves
+                .iter()
+                .any(|r| matches!(r.target, crate::world::EasedMoveTarget::Player))
+            {
+                self.field_eased_mirror_y = None;
+            }
         }
 
         // The floor-height ladder. Each record owns one rung; a rung index
@@ -178,9 +192,27 @@ impl World {
     ///
     /// The engine's two addressable targets are the player's pool slot and a
     /// scene NPC placement, which is exactly the pair the neighbouring
-    /// `move_to` host resolves - see [`crate::world::EasedMoveTarget`]. The
-    /// `+0x8E` inverted-Y mirror has no engine consumer yet, so it is
-    /// dropped rather than written somewhere it would not be read.
+    /// `move_to` host resolves - see [`crate::world::EasedMoveTarget`].
+    ///
+    /// The `+0x8E` **inverted-Y mirror** is published too, into
+    /// [`crate::world::World::field_eased_mirror_y`]. It used to be dropped
+    /// here for want of a consumer; the consumer is retail's own, and it was
+    /// mis-read rather than missing. `FUN_8003BC08`'s height arm tests the
+    /// same `0x20000000` flag before either of its ground-height arms
+    /// (`0x8003BC4C..0x8003BC64`) and writes `-(+0x8E)` into the actor's
+    /// `+0x16`, which is the Y **position** the eased move itself writes - so
+    /// the mirror is a hold: it re-asserts the scripted Y against the
+    /// per-frame floor follow. The engine's two height controllers
+    /// (`World::field_vertical_settle` and `World::follow_terrain_height`)
+    /// are the ports of that routine's other two arms and both stand down
+    /// while the latch is armed.
+    ///
+    /// Only the player half is published. A scene NPC placement has no
+    /// per-frame height controller in this engine (its Y is baked at scene
+    /// build by [`legaia_asset::field_objects::Placement::world_y`]), so a
+    /// mirror on one would be a write with no reader - the same reason the
+    /// whole field was withheld before, now true of one target instead of
+    /// both.
     fn apply_eased_move(
         &mut self,
         target: crate::world::EasedMoveTarget,
@@ -188,6 +220,10 @@ impl World {
     ) {
         match target {
             crate::world::EasedMoveTarget::Player => {
+                // Published whether or not a seat resolves: the latch is a
+                // property of the move, and retail's store goes through the
+                // back-link ahead of anything that reads the seat.
+                self.field_eased_mirror_y = frame.mirror_y;
                 let Some(slot) = self.player_actor_slot else {
                     return;
                 };

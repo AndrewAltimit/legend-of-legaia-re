@@ -562,28 +562,35 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
     }
 }
 
-/// Rotate a facing toward a target by at most `rate`, clamped - the facing
-/// ramp in `FUN_8003BC08` (`ghidra/scripts/funcs/8003bc08.txt`,
+/// Step a value toward a target by at most `rate`, clamped - the ramp in
+/// `FUN_8003BC08` (`ghidra/scripts/funcs/8003bc08.txt`,
 /// `0x8003BCA8..0x8003BCF4`).
 ///
+/// The name says "rotate" and the arithmetic is not rotation-specific; what
+/// it clamps at this call site is a **height** delta, not an angle. The arm
+/// reads `FUN_80019278`'s ground sample, subtracts the actor's current
+/// `+0x16`, clamps the difference to `[-rate, rate]` and stores the sum back
+/// to `+0x16` - the glide half of [`FieldActorHeight::GlideToFloor`]. The
+/// heading reading came from the same mis-identification of `FUN_80019278`
+/// the enum's own doc now records.
+///
 /// Unlike [`rotate_step`] (which distributes an arc over a frame budget and
-/// wraps the write-back), this is the field NPC's per-frame *pursue* turn:
-/// take the raw signed difference `target - current`, clamp it to
-/// `[-rate, rate]`, and add it back. `rate` is `_DAT_1F800393 * 6` (the
-/// per-frame pad-held magnitude times six) at the retail call site. The
-/// arithmetic is 16-bit truncating, matching the halfword store to `+0x16`;
-/// there is no `& 0xFFF` normalisation - a heading is held raw and the
-/// renderer masks.
+/// wraps the write-back), this takes the raw signed difference
+/// `target - current`, clamps it, and adds it back. `rate` is
+/// `_DAT_1F800393 * 6` (the per-frame pad-held magnitude times six) at the
+/// retail call site. The arithmetic is 16-bit truncating, matching the
+/// halfword store to `+0x16`; there is no `& 0xFFF` normalisation, which is
+/// consistent with a height and was the loose end under the heading reading.
 ///
-/// PORT: FUN_8003BC08 (the `0x8003BCA8..0x8003BCF4` facing-clamp arm)
+/// PORT: FUN_8003BC08 (the `0x8003BCA8..0x8003BCF4` height-clamp arm)
 ///
-/// NOT WIRED: this is the applier for [`FieldActorFacing::RotateToward`], and
-/// nothing selects that arm - see the disclosure on [`field_actor_plan`] for
-/// the missing prerequisite (field NPCs are typed per-slot maps rather than
-/// actor records, so they carry no `+0x10` flag word to select on, even
-/// though pool actors do). The engine's field NPCs turn through the bytecode
-/// laws in [`step`] instead, so no caller has a `(current, target, rate)`
-/// triple to clamp.
+/// NOT WIRED: nothing calls **this function**, and that is now a naming
+/// artefact rather than a gap in the behaviour. The law it implements is
+/// live: `World::step_field_vertical` runs the same clamped step against
+/// `World::sample_field_floor_height` (the port of `FUN_80019278`) for the
+/// player every field frame, at retail's own `scalar * 12` rate. What is
+/// still unwired is [`field_actor_plan`] selecting the arm *per NPC*, which
+/// needs the flag word field NPCs do not carry - see the disclosure there.
 pub fn rotate_toward_clamped(current: i16, target: i16, rate: i32) -> i16 {
     let mut delta = i32::from(target) - i32::from(current);
     if delta > rate {
@@ -595,24 +602,49 @@ pub fn rotate_toward_clamped(current: i16, target: i16, rate: i32) -> i16 {
     (i32::from(current) + delta) as i16
 }
 
-/// How `FUN_8003BC08`'s facing arm updates a field actor's heading `+0x16`
-/// this frame, selected from the flag word `+0x10`. Only reached when the
-/// actor's lifetime halfword `+0x5C` is non-negative and `flags & 2` is
-/// clear; otherwise the facing is left untouched ([`FieldActorFacing::Hold`]).
+/// How `FUN_8003BC08`'s height arm updates a field actor's **Y position**
+/// `+0x16` this frame, selected from the flag word `+0x10`. Only reached when
+/// the actor's lifetime halfword `+0x5C` is non-negative and `flags & 2` is
+/// clear; otherwise `+0x16` is left untouched ([`FieldActorHeight::Hold`]).
+///
+/// This arm was documented here as a *facing* arm, and it is not one. Two
+/// things fix it, both from the disassembly. `+0x14` / `+0x18` are the
+/// actor's X / Z - `FUN_80019278` reads them at `0x8001929C` / `0x800192A0`,
+/// shifts each right by six and indexes the per-scene collision grid with the
+/// result, the same tiling `docs/subsystems/field-locomotion.md` pins from a
+/// runtime watchpoint - so `+0x16` between them is Y, not a heading. And
+/// `FUN_80019278` itself is the **bilinear ground-height sampler**: it reads
+/// four corner nibbles out of the `.MAP` `+0x4000` region, looks each up in
+/// the sixteen-rung scratchpad ramp at `0x1F80035C`, sums them and shifts
+/// right by two (`0x800193DC..0x80019438`). It returns a floor elevation.
+/// Every other citation of it in this repo already says so -
+/// `legaia_asset::field_objects`, `legaia_asset::field_map`,
+/// `World::sample_field_floor_height` - and this one line was the outlier.
+///
+/// So the three live arms are a Y **override**, a Y **snap to floor**, and a
+/// Y **glide to floor**, in that priority. The engine's two field height
+/// controllers are the second and third (`World::follow_terrain_height` and
+/// `World::field_vertical_settle`); `World::field_eased_mirror_y` is the
+/// first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FieldActorFacing {
-    /// Leave the current heading standing (the `flags & 2` guard, or the
+pub enum FieldActorHeight {
+    /// Leave the current Y standing (the `flags & 2` guard, or the
     /// `(flags & 0x20200) == 0 && ambient_gate == false` early-out).
     Hold,
-    /// `flags & 0x20000000`: snap the heading to `-(+0x8E)` outright.
-    Snap(i16),
-    /// Snap to the live bearing toward the actor's target (retail
-    /// `FUN_80019278`); taken when `flags & 0x2000` is clear.
-    FaceTarget,
-    /// `flags & 0x2000`: ramp toward the target bearing, at most `rate` per
-    /// frame - feed the bearing and the current heading to
-    /// [`rotate_toward_clamped`]. `rate = pad_held * 6`.
-    RotateToward { rate: i32 },
+    /// `flags & 0x20000000`: write `-(+0x8E)` into `+0x16` outright, skipping
+    /// both floor arms below - the branch at `0x8003BC60` jumps straight to
+    /// the shared store. The halfword is the inverted-Y mirror an eased move
+    /// publishes (`FUN_801DD4C4` at `0x801DD6B8`), so a scripted move holds
+    /// its own height against the terrain follow.
+    Mirror(i16),
+    /// Snap `+0x16` to the sampled ground height (`FUN_80019278`); taken when
+    /// `flags & 0x2000` is clear.
+    SnapToFloor,
+    /// `flags & 0x2000`: glide toward the sampled ground height, at most
+    /// `rate` per frame - feed the sample and the current `+0x16` to
+    /// [`rotate_toward_clamped`], whose clamped-delta step applies unchanged.
+    /// `rate = pad_held * 6`.
+    GlideToFloor { rate: i32 },
 }
 
 /// Which of the per-actor motion routines `FUN_8003BC08` dispatches this
@@ -647,11 +679,11 @@ pub struct FieldMotionDispatch {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldActorPlan {
     /// `true` when `lifetime (+0x5C) >= 0`: retail runs the `FUN_801D79E8`
-    /// pre-update and then the facing arm. When `false`, neither runs and
-    /// `facing` is [`FieldActorFacing::Hold`].
+    /// pre-update and then the height arm. When `false`, neither runs and
+    /// `height` is [`FieldActorHeight::Hold`].
     pub pre_update: bool,
-    /// The facing arm's outcome.
-    pub facing: FieldActorFacing,
+    /// The height arm's outcome - what this frame writes to `+0x16`.
+    pub height: FieldActorHeight,
     /// The motion dispatch that follows.
     pub dispatch: FieldMotionDispatch,
 }
@@ -664,7 +696,7 @@ pub struct FieldActorInputs {
     pub lifetime: i16,
     /// `+0x10` flag word.
     pub flags: u32,
-    /// `+0x8E` - the snap target is its negation.
+    /// `+0x8E` - the inverted-Y mirror; the override target is its negation.
     pub field_8e: i16,
     /// `+0x90 != 0` - path / emitter target present.
     pub path_target_present: bool,
@@ -687,10 +719,10 @@ pub struct FieldActorInputs {
 /// engine globals into a [`FieldActorPlan`]: which facing law to apply and
 /// which of the four motion routines to run.
 ///
-/// The two halves are independently gated. The facing arm runs only for a
+/// The two halves are independently gated. The height arm runs only for a
 /// live actor (`lifetime >= 0`) that is not itself frozen (`flags & 2`
 /// clear); the dispatch block runs unless the global suppress bit is set,
-/// regardless of lifetime. Retail runs `FUN_801D79E8` before the facing arm
+/// regardless of lifetime. Retail runs `FUN_801D79E8` before the height arm
 /// and always increments a frame counter - see [`FieldActorPlan::pre_update`].
 ///
 /// PORT: FUN_8003BC08
@@ -713,21 +745,22 @@ pub struct FieldActorInputs {
 /// NPCs move on a given frame, so it lands with the field oracles, not as a
 /// call insertion.
 ///
-/// REF: FUN_80019278 (bearing-to-target, feeds `FaceTarget` / `RotateToward`),
+/// REF: FUN_80019278 (the bilinear ground-height sampler both floor arms
+/// write; **not** a bearing-to-target - see [`FieldActorHeight`]),
 /// FUN_80039B7C, FUN_80038158, FUN_800204F8
 pub fn field_actor_plan(inp: FieldActorInputs) -> FieldActorPlan {
     let pre_update = inp.lifetime >= 0;
 
-    let facing = if !pre_update || inp.flags & 2 != 0 {
-        FieldActorFacing::Hold
+    let height = if !pre_update || inp.flags & 2 != 0 {
+        FieldActorHeight::Hold
     } else if inp.flags & 0x2000_0000 != 0 {
-        FieldActorFacing::Snap(inp.field_8e.wrapping_neg())
+        FieldActorHeight::Mirror(inp.field_8e.wrapping_neg())
     } else if inp.flags & 0x0002_0200 == 0 && !inp.ambient_gate {
-        FieldActorFacing::Hold
+        FieldActorHeight::Hold
     } else if inp.flags & 0x2000 == 0 {
-        FieldActorFacing::FaceTarget
+        FieldActorHeight::SnapToFloor
     } else {
-        FieldActorFacing::RotateToward {
+        FieldActorHeight::GlideToFloor {
             rate: i32::from(inp.pad_held) * 6,
         }
     };
@@ -745,7 +778,7 @@ pub fn field_actor_plan(inp: FieldActorInputs) -> FieldActorPlan {
 
     FieldActorPlan {
         pre_update,
-        facing,
+        height,
         dispatch,
     }
 }
@@ -789,60 +822,60 @@ mod tests {
         assert_eq!(rotate_toward_clamped(100, 400, 50), 150);
         // Delta below -rate: clamped the other way.
         assert_eq!(rotate_toward_clamped(400, 100, 50), 350);
-        // Zero rate freezes the heading.
+        // Zero rate freezes the value.
         assert_eq!(rotate_toward_clamped(400, 100, 0), 400);
     }
 
     #[test]
-    fn facing_hold_when_dead_or_frozen() {
-        // lifetime < 0: no facing arm at all.
+    fn height_arm_holds_when_dead_or_frozen() {
+        // lifetime < 0: no height arm at all.
         let plan = field_actor_plan(FieldActorInputs {
             lifetime: -1,
             flags: 0x2000_0000,
             ..inputs()
         });
         assert!(!plan.pre_update);
-        assert_eq!(plan.facing, FieldActorFacing::Hold);
-        // flags & 2 freezes the facing even for a live actor.
+        assert_eq!(plan.height, FieldActorHeight::Hold);
+        // flags & 2 freezes the height even for a live actor.
         let plan = field_actor_plan(FieldActorInputs {
             flags: 0x2000_0002,
             ..inputs()
         });
         assert!(plan.pre_update);
-        assert_eq!(plan.facing, FieldActorFacing::Hold);
+        assert_eq!(plan.height, FieldActorHeight::Hold);
     }
 
     #[test]
-    fn facing_arm_selects_by_flag_priority() {
-        // 0x20000000 snaps to -(+0x8E).
+    fn height_arm_selects_by_flag_priority() {
+        // 0x20000000 overrides Y with -(+0x8E).
         assert_eq!(
             field_actor_plan(FieldActorInputs {
                 flags: 0x2000_0000,
                 field_8e: 7,
                 ..inputs()
             })
-            .facing,
-            FieldActorFacing::Snap(-7)
+            .height,
+            FieldActorHeight::Mirror(-7)
         );
         // No target/ambient bits and gate off -> Hold.
-        assert_eq!(field_actor_plan(inputs()).facing, FieldActorFacing::Hold);
-        // Ambient gate alone re-enables the face-target arm.
+        assert_eq!(field_actor_plan(inputs()).height, FieldActorHeight::Hold);
+        // Ambient gate alone re-enables the floor-snap arm.
         assert_eq!(
             field_actor_plan(FieldActorInputs {
                 ambient_gate: true,
                 ..inputs()
             })
-            .facing,
-            FieldActorFacing::FaceTarget
+            .height,
+            FieldActorHeight::SnapToFloor
         );
-        // A target bit (0x200) selects face-target without the ambient gate.
+        // A target bit (0x200) selects the floor snap without the ambient gate.
         assert_eq!(
             field_actor_plan(FieldActorInputs {
                 flags: 0x200,
                 ..inputs()
             })
-            .facing,
-            FieldActorFacing::FaceTarget
+            .height,
+            FieldActorHeight::SnapToFloor
         );
         // 0x2000 alone does not pass the 0x20200 target gate: still Hold.
         assert_eq!(
@@ -850,8 +883,8 @@ mod tests {
                 flags: 0x2000,
                 ..inputs()
             })
-            .facing,
-            FieldActorFacing::Hold
+            .height,
+            FieldActorHeight::Hold
         );
         // 0x2000 with a target bit (0x200) switches to the clamped ramp;
         // rate = pad_held * 6.
@@ -861,8 +894,8 @@ mod tests {
                 pad_held: 4,
                 ..inputs()
             })
-            .facing,
-            FieldActorFacing::RotateToward { rate: 24 }
+            .height,
+            FieldActorHeight::GlideToFloor { rate: 24 }
         );
     }
 
@@ -914,7 +947,7 @@ mod tests {
         });
         assert_eq!(plan.dispatch, FieldMotionDispatch::default());
         // The facing arm is not part of the suppress gate - it still runs.
-        assert_eq!(plan.facing, FieldActorFacing::Hold);
+        assert_eq!(plan.height, FieldActorHeight::Hold);
     }
 
     #[test]

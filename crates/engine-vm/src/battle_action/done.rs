@@ -217,6 +217,11 @@ pub fn tick_cast_census<H: BattleActionHost + ?Sized>(host: &H, ctx: &mut Battle
 /// fires. When the flag clears, the last twelve frames still have to run.
 pub const DONE_MENU_HOLD_FRAMES: i16 = 0xC;
 
+/// Countdown value the `0x52` band's teardown arm opens below (`slti
+/// v0,v0,0x14` at `0x801E63F0`); the pad clamp in that band pins the
+/// countdown one below it (`li v0,0x13` at `0x801E63B4`).
+pub const DONE_MULTI_CAST_TEARDOWN_BELOW: i16 = 0x14;
+
 /// The timer retail re-seeds when the Done band routes to
 /// [`ActionState::DoneMultiCast`] instead of ending the action
 /// (`li v0,0xb4` / `sh v0,0x2(s7)` at `0x801E6134`/`0x801E6138`, the arm
@@ -246,6 +251,10 @@ pub const DONE_BANNER_SKIP_BELOW: i16 = 0x5B;
 /// `0x51` tail). `0` is the spawn / reset half.
 pub const UI_UNLOAD: u8 = 1;
 
+/// The mode byte the element scheduler's **raise** half takes (`a1 = 0`), the
+/// sibling of [`UI_UNLOAD`].
+pub const UI_RAISE: u8 = 0;
+
 /// The one action element whose teardown drags two more with it
 /// (`li v0,0x6` / `bne v1,v0,0x801E61B4` at `0x801E6194..0x801E6198`).
 pub const DONE_PAIRED_ELEMENT: u8 = 6;
@@ -261,6 +270,24 @@ pub const DONE_SPIRIT_ELEMENT_B: u8 = 0x52;
 /// Dropped for every action whose category is not Run (`li a0,0x44` at
 /// `0x801E61FC`).
 pub const DONE_ACTION_ELEMENT: u8 = 0x44;
+
+/// The element the capture grant **raises** (`li a0,0x59` /
+/// `jal 0x801d8de8` / `_clear a1` at `0x801E623C..0x801E6244`).
+///
+/// `a1 = 0` is the raise half, not the unload half, and the argument order
+/// is what settles it: every unload in this block passes `1`. The
+/// battle-action table row that read this as "unloads ... `+0x59` (queue
+/// marker)" had the direction backwards - nothing in the `0x51` band closes
+/// `0x59`; the `0x52` continuation band does, at `0x801E6418`, and those two
+/// are the only sites in the whole routine that name the id.
+pub const DONE_CAPTURE_BANNER_ELEMENT: u8 = 0x59;
+
+/// The single-target banner the sweep closes (`li a0,0x51` at `0x801E6340`).
+pub const DONE_TARGET_BANNER_ELEMENT: u8 = 0x51;
+
+/// Target-slot band the `0x51` close is gated on: `addiu v0,t2,-0x3` /
+/// `sltiu v0,v0,0x5` at `0x801E631C`, i.e. `target - 3 < 5`.
+pub const DONE_TARGET_BANNER_SLOTS: std::ops::RangeInclusive<u8> = 3..=7;
 
 pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
     host: &mut H,
@@ -361,9 +388,24 @@ pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
 /// reads it to stretch the countdown to `0x96`, this arm unloads it, and the
 /// next [`ActionState::ActionSeed`] clears the byte (`0x801E2CFC`).
 ///
+/// The block does **not** end at the latch. `0x801E6218` falls straight
+/// through from the `sb v0,0x6(s5)` at `0x801E6214`, and nothing branches
+/// into it: both of the gates above jump to `0x801E6814`, past the whole
+/// tail. So the sweep that follows is inside the same once-per-action latch,
+/// not outside it. It was recorded here (and in `battle-action.md`) as
+/// "unlatched", which is refuted by the two branch targets.
+///
+/// That tail is [`done_band_capture_and_banner_sweep`], and its multi-cast
+/// half turns out to be code this crate already ports: retail's
+/// `(id, id - 4)` pairing off the `(count - 1) * 4 + i` row is
+/// `battle_value_readout`'s `teardown_pair` / `teardown_row_offset`, because
+/// `0x801E6218..0x801E6368` is `FUN_801E805C`'s teardown half inlined into
+/// the action SM. `battle_value_readout` already cites `0x801E6360` - inside
+/// this range - as where element `0x50` closes.
+///
 /// **Not ported:** the sprite-table reset `FUN_801D99BC` at `0x801E6170` (a
-/// whole-table rebuild the engine's HUD does not model as handles) and the
-/// unlatched multi-cast sweep that follows at `0x801E6218`.
+/// whole-table rebuild the engine's HUD does not model as handles; it carries
+/// a scope row instead).
 fn done_band_ui_teardown<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) {
     if ctx.frame_timer >= DONE_MENU_HOLD_FRAMES || ctx.done_ui_torn_down != 0 {
         return;
@@ -390,6 +432,74 @@ fn done_band_ui_teardown<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut B
         host.ui_element(DONE_ACTION_ELEMENT, UI_UNLOAD);
     }
     ctx.done_ui_torn_down = ctx.done_ui_torn_down.wrapping_add(1);
+    done_band_capture_and_banner_sweep(host, ctx);
+}
+
+/// PORT: FUN_801E295C (`0x801E6218..0x801E6368`) - the tail the teardown
+/// block falls into, under the same latch.
+///
+/// ```text
+/// 801e6224  lbu   v0,0x269(v1)     ; the capture byte
+/// 801e6234  jal   0x801e92dc       ;   FUN_801E92DC(byte)
+/// 801e6240  jal   0x801d8de8       ;   raise 0x59   (a1 = 0)
+/// 801e624c  lhu   v1,0x6980(...)   ; the four-slot value window
+/// 801e6284  beq   v0,zero,0x801e6314 ;   all zero -> the banner arm
+/// 801e62ac  ...                    ; else the (id, id-4) unload loop
+/// 801e6314  lw    t2,0x20(sp)      ; the acting actor's +0x1DD target
+/// 801e6320  sltiu v0,v0,0x5        ;   target - 3 < 5
+/// 801e6334  ...                    ;   and 0 < category < 4
+/// 801e6344  jal   0x801d8de8       ;     unload 0x51
+/// 801e6360  jal   0x801d8de8       ;   unload 0x50 if _DAT_8007BD14
+/// ```
+///
+/// Three arms, and the port covers the two whose inputs the action context
+/// already carries.
+///
+/// **The capture grant.** `ctx[+0x269]` is the byte the Done band's exit test
+/// routes on, and this is its *other* reader: it is passed to
+/// `FUN_801E92DC`, whose parameter is a **spell id** - the routine walks
+/// `0x80084140 + char*0x414 + 0x704` for the acting character and prepends
+/// there (`legaia_engine_core::magic_xp::learn_spell_prepend`). Element
+/// `0x59` raised in the same breath is the banner that announces it. The
+/// grant itself needs a host hook this trait does not have, so the port
+/// raises the banner and leaves the record write to `engine-core`'s own
+/// capture path, which already performs it.
+///
+/// **The multi-cast unload loop** is gated on the readout value window
+/// `0x801F6980` and driven by `_DAT_801F6974` / `_DAT_801F6834`. Its kernels
+/// are ported - `battle_value_readout::teardown_pair` and
+/// `teardown_row_offset` - but neither the window nor the count is carried on
+/// the action context, so the loop is driven from `FUN_801E805C`'s own port
+/// rather than from here. Wiring it in this block would need the readout
+/// window on `BattleActionCtx`, which is the readout's state and not the
+/// action's.
+///
+/// **The single-target banner close** is ported: both of its gates are actor
+/// bytes this block already reads.
+///
+/// One consequence of the two gates above worth stating, because it bounds
+/// when the capture arm can fire at all: a non-zero `ctx[+0x269]` on the
+/// band's *exit* pass re-seeds the countdown to `0xB4` (`sh v0,0x2(s7)` at
+/// `0x801E6138`) **before** the teardown reloads it at `0x801E614C`, which
+/// fails the `< 0xC` gate. So the only frames that see a live capture byte
+/// and a running teardown are the last twelve of the countdown, before it
+/// crosses zero - and the latch then makes it once.
+fn done_band_capture_and_banner_sweep<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    ctx: &mut BattleActionCtx,
+) {
+    if ctx.multi_cast_gate != 0 {
+        host.ui_element(DONE_CAPTURE_BANNER_ELEMENT, UI_RAISE);
+    }
+    let Some(actor) = host.actor(ctx.active_actor) else {
+        return;
+    };
+    let (target, category) = (actor.active_target, actor.action_category);
+    // `0 < category < 4` - two branches, `beq v0,zero` then `sltiu v0,v0,0x4`
+    // at `0x801E6334..0x801E633C`.
+    if DONE_TARGET_BANNER_SLOTS.contains(&target) && (1..4).contains(&category) {
+        host.ui_element(DONE_TARGET_BANNER_ELEMENT, UI_UNLOAD);
+    }
 }
 
 pub(super) fn done_multi_cast<H: BattleActionHost + ?Sized>(
@@ -404,11 +514,27 @@ pub(super) fn done_multi_cast<H: BattleActionHost + ?Sized>(
     if ctx.frame_timer >= 0 {
         ctx.frame_timer = ctx.frame_timer.saturating_sub(host.frame_dt());
     }
-    if ctx.frame_timer >= 0 {
-        return stay(ctx);
+    let outcome = if ctx.frame_timer >= 0 {
+        stay(ctx)
+    } else {
+        ctx.multi_cast_gate = 0;
+        transition(ctx, ActionState::EndOfAction)
+    };
+    // The band's own teardown tail (`0x801E63F4..0x801E6424`), which runs on
+    // the way out of *every* pass the way the `0x51` block's does - the exit
+    // arm above falls into it rather than jumping to the epilogue. It closes
+    // the capture banner the `0x51` sweep raised
+    // ([`DONE_CAPTURE_BANNER_ELEMENT`]) behind the same `ctx[+0x17]` latch,
+    // and clears the latch, so a raise cannot leave a banner standing.
+    //
+    // `FUN_801D99BC` at `0x801E640C` is the same per-actor UI-element array
+    // wipe the `0x51` block calls, and carries the same scope row: the
+    // engine's HUD is rebuilt from state each frame.
+    if ctx.frame_timer < DONE_MULTI_CAST_TEARDOWN_BELOW && ctx.done_ui_torn_down != 0 {
+        host.ui_element(DONE_CAPTURE_BANNER_ELEMENT, UI_UNLOAD);
+        ctx.done_ui_torn_down = 0;
     }
-    ctx.multi_cast_gate = 0;
-    transition(ctx, ActionState::EndOfAction)
+    outcome
 }
 
 /// Monster-wipe victory arm of the end-of-action gate.

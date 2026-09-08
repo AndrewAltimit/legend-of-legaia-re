@@ -207,3 +207,75 @@ fn the_man_load_sweep_drops_every_live_timer_record() {
     assert!(world.floor_tier_bobs.is_empty());
     assert!(world.eased_moves.is_empty());
 }
+
+/// The `+0x8E` inverted-Y mirror reaches a consumer.
+///
+/// `FUN_801DD4C4` stores `-Y` into the target's `+0x8E` when the target
+/// carries `0x20000000` (`0x801DD6A4..0x801DD6B8`), and `FUN_8003BC08`'s
+/// height arm reads it back negated into `+0x16` **instead of** sampling the
+/// ground (`0x8003BC4C..0x8003BC64` branches past both floor arms). So the
+/// property is not "the byte is stored" - it is that an armed mirror wins
+/// over the terrain follow, and that the eased Y is what survives.
+///
+/// The script is `43 09` with a live Y axis and a tick count; the world runs
+/// with `follow_terrain_height` on and a floor the player is nowhere near, so
+/// an unmirrored move would be dragged onto it every frame.
+#[test]
+fn op_43_09_mirror_flag_holds_the_eased_y_against_the_terrain_follow() {
+    use legaia_engine_vm::field_actor_timers::EASE_TARGET_INVERT_Y;
+
+    let script = vec![0x43, 0x09, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x08, 0x00];
+
+    // Control: no mirror flag. The terrain follow owns Y, and the tween's own
+    // Y write (into the physics seat) does not reach `move_state`.
+    let mut plain = field_world();
+    plain.player_actor_slot = Some(1);
+    plain.follow_terrain_height = true;
+    plain.spawn_actor(1);
+    plain.load_field_script(script.clone());
+    plain.field_ctx.flags |= 0x0100_0000;
+    for _ in 0..4 {
+        let _ = plain.tick();
+    }
+    assert_eq!(plain.field_eased_mirror_y, None, "no flag, no latch");
+    let floor = plain.sample_field_floor_height(
+        plain.actors[1].move_state.world_x as i32,
+        plain.actors[1].move_state.world_z as i32,
+    ) as i16;
+    assert_eq!(
+        plain.actors[1].move_state.world_y, floor,
+        "without the mirror the follow owns Y"
+    );
+
+    // With the flag: the latch carries `-Y` and the height arm writes `Y`.
+    let mut mirrored = field_world();
+    mirrored.player_actor_slot = Some(1);
+    mirrored.follow_terrain_height = true;
+    mirrored.spawn_actor(1);
+    mirrored.load_field_script(script);
+    mirrored.field_ctx.flags |= 0x0100_0000 | EASE_TARGET_INVERT_Y;
+    for _ in 0..4 {
+        let _ = mirrored.tick();
+    }
+    let latch = mirrored
+        .field_eased_mirror_y
+        .expect("the mirror flag arms the latch");
+    let eased_y = mirrored.actors[1].physics.world_y;
+    assert_eq!(latch, eased_y.wrapping_neg(), "the latch is the negated Y");
+    assert_eq!(
+        mirrored.actors[1].move_state.world_y, eased_y,
+        "the height arm writes -(+0x8E) = the eased Y, not the floor"
+    );
+
+    // ...and the ease really moved Y off the floor, so the assertion above is
+    // not accidentally comparing two zeros.
+    assert_ne!(eased_y, 0, "the Y axis is live in this script");
+
+    // The latch drops with the record: nothing left to hold Y once the move
+    // has retired, so the follow takes over again.
+    for _ in 0..16 {
+        let _ = mirrored.tick();
+    }
+    assert!(mirrored.eased_moves.is_empty(), "the tween retired");
+    assert_eq!(mirrored.field_eased_mirror_y, None, "the latch retired too");
+}

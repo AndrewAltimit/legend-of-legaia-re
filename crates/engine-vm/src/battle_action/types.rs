@@ -1007,6 +1007,25 @@ pub struct BattleActionCtx {
     ///
     /// REF: FUN_801E295C (`0x801E2D30`, `0x801E2E60`, `0x801E2E94`)
     pub camera_variant: u8,
+
+    /// `[+0x6D0]` - the battle camera's framing height / distance.
+    ///
+    /// Seeded at [`ActionState::ActionSeed`] by `FUN_801F0348`
+    /// ([`crate::battle_formulas::camera_height_for_frame`], `jal` at
+    /// `0x801E2D2C`), and then **not** constant for the action: the capture
+    /// band's `0x6F` arm ramps it down by `frame_scalar * 16` every frame
+    /// (`0x801E4FFC..0x801E5014`, `lhu` / `subu` / `sh`, so it wraps as a
+    /// u16), and the `0x70` arm re-runs `FUN_801F0348` in the same breath as
+    /// the `0x71` store (`jal 0x801F0348` at `0x801E50DC`, whose delay slot
+    /// is `sb v0,0x7(v1)` = the state write). The re-seed is what makes the
+    /// ramp a pull-in: the camera closes on the target through the fade and
+    /// snaps back to the size-derived framing when the module finishes.
+    ///
+    /// Published to the host through
+    /// [`crate::battle_action::BattleActionHost::camera_frame_height`]
+    /// wherever it changes, so a host that draws a camera sees the ramp and
+    /// not only the seed.
+    pub camera_frame_height: i16,
     /// `[+0x26]` - the **level-up banner** UI element id, or `0` when no
     /// banner is up.
     ///
