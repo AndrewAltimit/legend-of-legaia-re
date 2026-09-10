@@ -1566,7 +1566,7 @@ def main():
     # asserts that NO ROUTINE BEGINS at the VA, which `entry_boundary` can
     # refute from the images. Every unprefixed section - `libgte`, `bios`,
     # `prim_builder`, `mesh_submit`, `noop_frame`, ... - asserts only that the
-    # clean-room port covers a real, described body another way, and no image
+    # port covers a real, described body another way, and no image
     # test can speak to that: such a row already says the routine is there, so
     # auditing it re-raises on every run and the exit code stops meaning
     # anything. Keep scope claims out of the `worklist_*` namespace.

@@ -27,7 +27,7 @@
 //!   that want to drop per-actor allocator metadata on free override
 //!   this; the default implementation is a no-op (matching SCUS).
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No bytes from `SCUS_942.54` live in this crate. The three
 //! reference dumps (`ghidra/scripts/funcs/80024c88.txt`,

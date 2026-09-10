@@ -57,7 +57,7 @@
 //! `DAT_8007B610`. Both endpoints come through `FUN_8003CE9C`, which
 //! **sign-extends** its halfword, so a ramp may run downward.
 //!
-//! Clean-room boundary: `ghidra/scripts/funcs/8003c6a4.txt` plus the
+//! Port boundary: `ghidra/scripts/funcs/8003c6a4.txt` plus the
 //! disassembly of `0x80037018` and of the op-0x43 arm at `0x801DF628` are the
 //! spec; no Sony bytes live here.
 

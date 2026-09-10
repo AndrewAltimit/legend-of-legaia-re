@@ -1,4 +1,4 @@
-//! PSX MDEC clean-room decoder for Legend of Legaia FMV.
+//! PSX MDEC from-scratch decoder for Legend of Legaia FMV.
 //!
 //! Legaia's `MV*.STR` movies use the PSX **"Iki"** bitstream variant (the same
 //! family jPSXdec decodes for a handful of titles), *not* the common STRv2

@@ -3,7 +3,7 @@
 //! case 6](../../../ghidra/scripts/funcs/8001f05c.txt)).
 //!
 //! REF: FUN_8001B964 - the runtime per-actor animated-mesh renderer that
-//! consumes this layout. The clean-room engine reproduces it via wgpu plus
+//! consumes this layout. The engine reproduces it via wgpu plus
 //! the ported [`BoneTransform::decode`] (`FUN_8001BE80`), so the GTE/OT draw
 //! loop of `FUN_8001B964` itself is not ported; this file owns the data side.
 //!

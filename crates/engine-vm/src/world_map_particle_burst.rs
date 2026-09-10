@@ -1,4 +1,4 @@
-//! World-map actor particle-burst emitter, ported clean-room from
+//! World-map actor particle-burst emitter, ported from
 //! `FUN_801E5338` (field/world-map overlay band, `0x801E5338`, 201
 //! instructions).
 //!
@@ -43,7 +43,7 @@
 //! mode `2` keeps draining for as long as any particle is still on screen; the
 //! `finished` report lands the frame after the last one expires.
 //!
-//! ## Clean-room boundaries
+//! ## Port boundaries
 //!
 //! The palette source is the Sony table at `0x801F2960` (stride 8 bytes per
 //! `anim_row`); per the project's no-baked-data rule it is **not** reproduced

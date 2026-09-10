@@ -67,7 +67,7 @@
 //!
 //! The descriptor lookup and the SPU programming that follow a drain hit are
 //! [`CueVoicePlan`] below - the data side is `legaia_asset::sfx_table`, and
-//! `FUN_80065034` itself is libsnd, out of clean-room scope.
+//! `FUN_80065034` itself is libsnd, out of the port's scope.
 
 /// Slots in the retail ring (`slti v0,a2,0x4`).
 pub const RING_SLOTS: usize = 4;

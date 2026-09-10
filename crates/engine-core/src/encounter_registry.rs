@@ -12,7 +12,7 @@
 //! `crates/mednafen` toolkit and `scripts/scenarios.toml`.
 //!
 //! Until the disc-side resolver lands, this registry lets engines compose
-//! per-scene tables in *clean-room* form: keyed by CDNAME label, with
+//! per-scene tables in the port's own form: keyed by CDNAME label, with
 //! pattern-based fallbacks (substring matches like "outskirts" / "forest" /
 //! "town" / "cave" / "world") and a global default. The `World::install_encounter_for_scene`
 //! helper consults the registry on every scene transition.

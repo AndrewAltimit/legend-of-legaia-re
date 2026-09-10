@@ -38,7 +38,7 @@ This script confirms that structure directly from the data:
                  tile / page / clut equal the record's `+0x14` / `+0x15` /
                  `+0x16..+0x18` - i.e. it re-derives the rule from scratch.
 
-The clean-room engine bakes the same per-cell tile + page + palette in
+The engine bakes the same per-cell tile + page + palette in
 `legaia_asset::field_objects::build_walk_heightfield`
 (`WalkHeightfield::uvs` + `::cba_tsb`).
 

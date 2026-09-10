@@ -1,4 +1,4 @@
-//! World-map horizon / sky band emitter, ported clean-room from
+//! World-map horizon / sky band emitter, ported from
 //! `FUN_801D7EA0` (world-map overlay) and its byte-identical 0897
 //! field-overlay relocation copy `FUN_801C9688`.
 //!

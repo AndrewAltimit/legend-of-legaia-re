@@ -62,7 +62,7 @@ impl SeqResourceTable {
     ///
     /// Retail takes the index as a sign-extended byte (the caller passes a
     /// record's own `+0x8` id byte back in); the out-of-range guard is
-    /// clean-room hardening over the unchecked retail indexing.
+    /// port-side hardening over the unchecked retail indexing.
     pub fn release<F: FnOnce(i8)>(&mut self, index: usize, close: F) -> bool {
         let Some(slot) = self.slots.get_mut(index) else {
             return false;

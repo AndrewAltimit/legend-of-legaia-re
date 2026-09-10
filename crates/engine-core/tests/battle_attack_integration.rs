@@ -11,7 +11,7 @@
 //!  - The world's pending battle events queue captures the damage event
 //!    so a UI layer can pick it up.
 //!
-//! Stays clean-room: no disc data, no Sony bytes, no PROT lookups.
+//! Stays disc-free: no disc data, no Sony bytes, no PROT lookups.
 
 use legaia_engine_core::battle_events::BattleEvent;
 use legaia_engine_core::world::{SceneMode, World};

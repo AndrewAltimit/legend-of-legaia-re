@@ -547,7 +547,7 @@ pub const TEXT_ESCAPE_LEAD: u8 = 0xC0;
 ///
 /// Retail's escape skip has no bounds test: a lead byte immediately before the
 /// terminator steps the cursor *past* the NUL and the walk keeps reading. The
-/// port stops at the end of the slice instead - a clean-room tightening, and
+/// port stops at the end of the slice instead - a port-side tightening, and
 /// the only place this diverges from the retail arithmetic.
 ///
 /// PORT: FUN_8003CBA8

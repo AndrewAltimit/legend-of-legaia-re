@@ -1411,7 +1411,7 @@ pub trait FieldHost {
     /// `FUN_801D5630` itself (`ghidra/scripts/funcs/overlay_0897_801d5630.txt`)
     /// is the tile-resolver helper: 9-instruction body that on hit returns
     /// a tile-record pointer and on miss sets `ctx.flags |= 0x8` and
-    /// re-enters the dispatcher wait loop. The clean-room port exposes the
+    /// re-enters the dispatcher wait loop. The port exposes the
     /// rectangle via the host hook and lets the engine implement its tile
     /// pool however it wants.
     ///

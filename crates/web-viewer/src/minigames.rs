@@ -1802,7 +1802,7 @@ pub(crate) fn music01_pair_ok(buf: &[u8]) -> bool {
     buf[vab..].windows(4).any(|w| w == b"pQES")
 }
 
-/// Stage one `music_01` entry's `[VAB][SEQ]` pair through the clean-room SPU:
+/// Stage one `music_01` entry's `[VAB][SEQ]` pair through the from-scratch SPU:
 /// find the `pBAV`/`pQES` bodies, upload the VAB into SPU RAM, and build a
 /// [`Sequencer`] over it - the exact path the engine's BGM director takes.
 /// `None` when the pair doesn't decode. The returned sequencer has a

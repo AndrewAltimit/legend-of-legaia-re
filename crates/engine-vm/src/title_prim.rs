@@ -30,7 +30,7 @@
 //!
 //! ## Why this lives in `engine-vm` rather than `engine-render`
 //!
-//! Clean-room boundary: the *protocol* (descriptor struct shape, tag
+//! Port boundary: the *protocol* (descriptor struct shape, tag
 //! routing, alpha-OR pass) is a faithful port of the disassembled
 //! control flow; the *implementation* (real wgpu draws) lives in the
 //! engine layer that owns VRAM. Same pattern as
@@ -379,7 +379,7 @@ pub trait PrimHost {
     /// PORT: FUN_801E373C
     ///
     /// The retail body is a flat sequence of opaque global writes; the
-    /// clean-room engine owns the UI state and rewires whatever
+    /// engine owns the UI state and rewires whatever
     /// representation it uses for the "card init" lifecycle. The trait
     /// method captures the spec; engine impls are free to map the
     /// sub-helpers (FUN_801E0598 / FUN_801E435C) to their own card

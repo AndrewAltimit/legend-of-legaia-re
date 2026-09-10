@@ -452,7 +452,7 @@ fn a_delayed_sfx_cue_reaches_the_output_on_its_own_frame() {
 }
 
 /// The retail `SsSeqCalc` transport tier walks the **same real SEQ** the
-/// clean-room parser decodes, and the two agree event-for-event up to the
+/// port's parser decodes, and the two agree event-for-event up to the
 /// first end-of-track.
 ///
 /// This is the differential the transport rung owes: `pump_delta_time` /
@@ -467,7 +467,7 @@ fn a_delayed_sfx_cue_reaches_the_output_on_its_own_frame() {
 /// retail frame walks: raising `STOP` / `START` on the record is exactly what
 /// `SsSeqStop` / `SsSeqPlay` do, and the tail dispatch consumes the bit.
 #[test]
-fn the_retail_transport_tier_agrees_with_the_clean_room_parser() {
+fn the_retail_transport_tier_agrees_with_the_port_parser() {
     let Some(extracted) = disc_gate() else { return };
     let mut archive = Archive::open(&extracted.join("PROT.DAT")).expect("open PROT");
     let Some(entry) = first_bgm_entry(&mut archive, &extracted) else {
@@ -475,9 +475,9 @@ fn the_retail_transport_tier_agrees_with_the_clean_room_parser() {
         return;
     };
 
-    // Clean-room reference over the same bytes.
+    // Port-side reference over the same bytes.
     let raw = &entry.bytes[entry.seq_off..];
-    let seq = Seq::parse(raw).expect("clean-room parse of the real SEQ");
+    let seq = Seq::parse(raw).expect("port-side parse of the real SEQ");
     let summary = seq.event_summary();
 
     // Retail-record seeding, the SEQ-open shape (`FUN_80062410`): resolution

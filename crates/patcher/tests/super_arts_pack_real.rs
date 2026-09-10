@@ -19,8 +19,8 @@
 //!   * the planner refuses an unrecognized build or a claimed arena instead of
 //!     corrupting either.
 //!
-//! Gates on `LEGAIA_DISC_BIN`; skips and passes when unset. The clean-room
-//! engine cannot execute injected MIPS, so the runtime half of the proof lives
+//! Gates on `LEGAIA_DISC_BIN`; skips and passes when unset. The port
+//! cannot execute injected MIPS, so the runtime half of the proof lives
 //! in the crate's own disc-gated unit tests, which run the patched retail
 //! applier over the block in the in-crate interpreter.
 

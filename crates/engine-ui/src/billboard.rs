@@ -5,7 +5,7 @@
 //! mapping so the helpers can cite it.
 //!
 //! **Wiring status.** Split, so read it per item. [`psx_sin`] / [`psx_cos`]
-//! (the clean-room trig LUT) are live: the disc-gated oracle
+//! (the from-scratch trig LUT) are live: the disc-gated oracle
 //! `crates/engine-shell/tests/gte_sin_lut_real.rs` pins them entry-for-entry
 //! against the retail table, and the GTE matrix builders - including the
 //! battle-intro transition's rotation chain - reuse them. The projector
@@ -82,7 +82,7 @@
 //!   vertex-behind-the-lens smear. Consumers drop the quad on
 //!   [`BillboardCorners::behind`] rather than on a sentinel coordinate.
 //!
-//! ## Clean-room boundary: the trig LUT
+//! ## Port boundary: the trig LUT
 //!
 //! Retail reads sine values from an in-image LUT (Sony bytes, never
 //! committed). [`psx_sin`] / [`psx_cos`] compute the same q3.12 values
@@ -95,7 +95,7 @@ use crate::gte::{
     GteMat3, GteVec3, ROT_ONE, SXY_MAX, SXY_MIN, ScreenXY, gte_divide, gte_persp_term, rot_trans,
 };
 
-// The clean-room trig LUT lives with the rest of the GTE arithmetic in the
+// The from-scratch trig LUT lives with the rest of the GTE arithmetic in the
 // wgpu-free `gte` module (see `gte::trig`); re-exported here because this
 // module is where its consumers historically found it.
 pub use crate::gte::{PSX_ANGLE_TURN, psx_cos, psx_sin};

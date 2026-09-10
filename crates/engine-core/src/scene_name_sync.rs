@@ -21,7 +21,7 @@
 //! (no match leaves it untouched), then strcpy the staged name into the
 //! active buffer.
 //!
-//! Clean-room boundary: `ghidra/scripts/funcs/8001d7f8.txt` is the spec; the
+//! Port boundary: `ghidra/scripts/funcs/8001d7f8.txt` is the spec; the
 //! name table itself is built from the user's disc at runtime (CDNAME), so
 //! no Sony bytes live here. Tests use synthetic tables.
 //!

@@ -16,7 +16,7 @@
 //! A patched drop is only observed after a *fresh battle load* re-reads the
 //! monster record off the (patched) disc.
 //!
-//! The clean-room engine sidesteps that cache entirely: it decodes the monster
+//! The engine sidesteps that cache entirely: it decodes the monster
 //! record straight from disc bytes (`legaia_asset::monster_archive`) and runs
 //! the very victory-spoils path the randomizer's edit feeds - the drop roll in
 //! [`World::apply_battle_loot`] (ported from the reward resolver `FUN_8004E568`

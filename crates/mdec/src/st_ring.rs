@@ -7,7 +7,7 @@
 //! sector ring** shared with the CD DMA engine, and the ring bookkeeping is
 //! observable: it decides when a frame is dropped, when the stream is declared
 //! finished, and which sectors are skipped while seeking to a mid-file segment.
-//! This module is the clean-room port of that ring, minus the hardware pokes.
+//! This module is the port of that ring, minus the hardware pokes.
 //!
 //! ## Ring layout
 //!

@@ -28,7 +28,7 @@
 //! (rate-roll on `_DAT_8007B5F8`) may populate the formation cell via a
 //! different path that bypasses `actor[+0x94]` - that's an open thread.
 //! The [`EncounterRegistry`](crate::encounter_registry) abstraction is a
-//! clean-room composition layer that lets engines synthesize per-scene
+//! port-side composition layer that lets engines synthesize per-scene
 //! tables until disc-side decoding catches up.
 //!
 //! ## Layout (4-byte minimum, monster-count-dependent total)
@@ -121,7 +121,7 @@ pub const RIM_ELM_SPARRING_CARRIER_MODEL: u8 = 0x6A;
 /// tile) with `x_enc=21, z_enc=14`, i.e. tile `(21, 14)` → world
 /// `(21*128+64, 14*128+64)` = `(2752, 1856)`. The two consecutive identical ops
 /// are the story-flag two-branch scene-entry prologue that hops the carrier
-/// next to the spawn. The clean-room cold boot enters town01 free-roam without
+/// next to the spawn. The port's cold boot enters town01 free-roam without
 /// replaying that reposition, so a driver that needs the partner where retail's
 /// tutorial puts it uses this position. Cross-check: the live actor at this
 /// position resolves (via `actor[+0x90]`) to the `(76, 65)` / model `0x6A`

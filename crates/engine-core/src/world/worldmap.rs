@@ -327,7 +327,7 @@ impl World {
     /// Seed `count` overworld entity state machines (all Idle) so
     /// `Self::tick_world_map` drives encounter / interaction gameplay.
     /// Replaces any previously installed set. The retail engine builds one
-    /// record per on-map entity from the scene's entity table; the clean-room
+    /// record per on-map entity from the scene's entity table; the port's
     /// world takes the count and pairs it with the shared encounter state
     /// configured via [`Self::set_world_map_encounter`].
     pub fn install_world_map_entities(&mut self, count: usize) {
@@ -371,7 +371,7 @@ impl World {
     /// a town / dungeon entrance ([`WorldMapEntityConfig::OverworldPortal`]) or
     /// a minigame door ([`WorldMapEntityConfig::MinigameDoor`]).
     ///
-    /// The clean-room stand-in for retail's per-entity player-position-in-zone
+    /// The port-side stand-in for retail's per-entity player-position-in-zone
     /// trigger: an entity whose placement tile (`pos >> 7`) matches the player's
     /// current tile is driven to its transition state, exactly as a host
     /// [`Self::engage_world_map_entity`] call would, so the next SM step runs

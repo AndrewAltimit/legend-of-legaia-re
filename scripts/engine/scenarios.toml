@@ -1,7 +1,7 @@
 # Engine integration scenarios manifest.
 #
-# Mirror of `scripts/scenarios.toml` for the clean-room engine
-# (clean-room engine track, not the byte-level state-diff track). Each
+# Mirror of `scripts/scenarios.toml` for the engine
+# (engine track, not the byte-level state-diff track). Each
 # scenario boots `BootSession::open` with audio off, ticks N frames,
 # and asserts the SHA-256 of the engine's `SaveFile` byte stream matches
 # the recorded `expected_save_sha256`.

@@ -18,7 +18,7 @@
 //! Gates on `LEGAIA_DISC_BIN`; skips+passes when unset. The patched image
 //! lives only in memory. Runtime verification of the guard's behaviour is the
 //! emulator replay `autorun_gaza2_approach_fix_verify.lua` against the
-//! library park savestates (the clean-room engine does not execute overlay
+//! library park savestates (the engine does not execute overlay
 //! code).
 
 use legaia_iso::iso9660::read_file_in_image;

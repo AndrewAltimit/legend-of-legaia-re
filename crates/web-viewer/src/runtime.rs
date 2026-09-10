@@ -223,7 +223,7 @@ pub struct LegaiaRuntime {
     /// same single destination (the title screen). Not a panel - retail draws
     /// nothing here and offers no choice.
     pub(crate) game_over: Option<legaia_engine_core::game_over::GameOverSession>,
-    /// Live WebAudio output + its clean-room SPU. Crate-visible so the SFX
+    /// Live WebAudio output + its from-scratch SPU. Crate-visible so the SFX
     /// channel ([`crate::play_sfx`]) can key one-shot cues into the same SPU the
     /// BGM sequencer feeds - one mixer, as on hardware.
     #[cfg(target_arch = "wasm32")]
@@ -920,7 +920,7 @@ impl LegaiaRuntime {
     /// handler (browser autoplay policy). `true` on success.
     ///
     /// Once up, the scene's BGM plays automatically: every [`Self::tick_frame`]
-    /// routes the field VM's op-`0x35` music events through the same clean-room
+    /// routes the field VM's op-`0x35` music events through the same port-side
     /// VAB + SEQ + SPU path the audio audition page uses. This call also stages
     /// the current scene's VAB bank (so a scene-local track has a bank) and
     /// parks the default level ([`BGM_DEFAULT_GAIN`] slider units through

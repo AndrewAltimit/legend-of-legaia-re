@@ -595,7 +595,7 @@ pub fn next_selectable_actor(
 /// `bearing_12bit` divides into is `(min << 11) / max`, so `0..=0x800`.
 pub const ARCTAN_LUT_LEN: usize = 0x801;
 
-/// A clean-room stand-in for the retail arctan LUT at `0x8006F4C8`.
+/// A port-side stand-in for the retail arctan LUT at `0x8006F4C8`.
 ///
 /// The retail table is Sony data and no engine boot path extracts it, so this
 /// is the same function computed from first principles: entry `i` is

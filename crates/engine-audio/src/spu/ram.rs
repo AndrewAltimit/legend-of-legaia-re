@@ -11,7 +11,7 @@
 //!    starting at the current pointer; `SpuTransfer()` (`_SpuTransfer`)
 //!    actually drains the queue, advancing the pointer in 8-byte units.
 //!
-//! Real hardware does this asynchronously by DMA, but a clean-room model can
+//! Real hardware does this asynchronously by DMA, but a from-scratch model can
 //! drain synchronously since the playback layer reads SPU RAM by address
 //! during voice ticks anyway.
 //!
@@ -91,7 +91,7 @@ impl SpuRam {
     /// number of bytes actually written (clipped to RAM end).
     ///
     /// Real hardware is asynchronous - the queue flush happens on the next
-    /// `SpuTransfer()`. The clean-room model collapses queue+drain since we
+    /// `SpuTransfer()`. The from-scratch model collapses queue+drain since we
     /// want the bytes visible to subsequent decoder ticks immediately.
     pub fn write(&mut self, data: &[u8]) -> usize {
         if self.direction != TransferDirection::CpuToSpu {

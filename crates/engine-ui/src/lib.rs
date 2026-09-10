@@ -36,7 +36,7 @@
 //!   OT sort and vertex builder. The one draw record here that is *not* a
 //!   [`TextDraw`] in disguise.
 //! * [`gte`] / [`vram_capture`] / [`battle_intro`] - the shared wgpu-free
-//!   render kernels: fixed-point GTE arithmetic (incl. the clean-room
+//!   render kernels: fixed-point GTE arithmetic (incl. the port's own
 //!   `psx_sin`/`psx_cos` LUT), the RGBA-to-BGR555 frame blit, and the
 //!   field-to-battle transition emitter both hosts arm. Here for the same
 //!   reason as `screen_prim`: this crate is the leaf both hosts link.

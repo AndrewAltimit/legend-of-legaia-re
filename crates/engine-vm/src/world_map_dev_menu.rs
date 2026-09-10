@@ -1,4 +1,4 @@
-//! World-map debug-menu value-adjust kernels, ported clean-room from the
+//! World-map debug-menu value-adjust kernels, ported from the
 //! per-row input state machine `FUN_801E9F64`.
 //!
 //! The address tag sits on each implementing function below rather than on

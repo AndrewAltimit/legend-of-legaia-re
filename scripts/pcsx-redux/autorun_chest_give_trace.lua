@@ -3,7 +3,7 @@
 -- Settles whether a randomizer chest-item patch reaches the running game.
 --
 -- The chest randomizer rewrites the field-VM GIVE_ITEM (op 0x39) inline operand
--- byte in a scene's MAN. The clean-room engine + the offline re-decode both prove
+-- byte in a scene's MAN. The engine + the offline re-decode both prove
 -- the patched bytes are what the scene loader reads. But on real disc images a
 -- patched chest was still granting its ORIGINAL item, so this probe captures, at
 -- runtime, exactly what the retail give-item path reads and from where.

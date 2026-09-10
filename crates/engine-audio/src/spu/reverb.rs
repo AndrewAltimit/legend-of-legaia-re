@@ -1,4 +1,4 @@
-//! Clean-room PSX SPU reverb.
+//! From-scratch PSX SPU reverb.
 //!
 //! Faithful register-driven port of the documented hardware reverb network
 //! (the SPU "Reverb Formula": per-22050 Hz-step same-side / different-side

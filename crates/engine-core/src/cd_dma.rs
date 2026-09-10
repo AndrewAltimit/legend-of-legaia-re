@@ -55,7 +55,7 @@
 //! because a disclosure on a file-scoped anchor reads as a stale tag rather
 //! than as a gap.
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No bytes from `SCUS_942.54` live in this crate. The five reference
 //! dumps (`ghidra/scripts/funcs/8003de7c.txt`, `8003e800.txt`,

@@ -1,4 +1,4 @@
-//! World-map entity state machine, ported clean-room from `FUN_801DA51C`
+//! World-map entity state machine, ported from `FUN_801DA51C`
 //! (overlay_world_map.bin base `0x801C0000`).
 //!
 //! PORT: FUN_801DA51C, FUN_801D9E1C
@@ -203,7 +203,7 @@ impl WorldMapEntityCtx {
     }
 }
 
-/// World-map atmospheric fog-RGB script interpreter, ported clean-room from
+/// World-map atmospheric fog-RGB script interpreter, ported from
 /// `FUN_801E3E00` (overlay_world_map.bin base `0x801C0000`; dump
 /// `ghidra/scripts/funcs/overlay_world_map_801e3e00.txt`).
 ///

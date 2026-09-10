@@ -1,7 +1,7 @@
 //! Name-entry overlay - the menu screen the opening (`town01`) field script
 //! opens so the player names the lead character.
 //!
-//! This is a clean-room port of the retail overlay's behaviour, not its bytes.
+//! This is a port of the retail overlay's behaviour, not its bytes.
 //! Retail reference (captured from the field/menu overlay at `0x801C0000` and
 //! live-traced against the recomp oracle's GP0 draw stream):
 //!

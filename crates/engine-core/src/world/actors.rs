@@ -43,7 +43,7 @@ impl World {
         self.tick_move_vms_with_delta(1);
     }
 
-    /// Per-actor physics tick - clean-room port driver for
+    /// Per-actor physics tick - port driver for
     /// `engine-vm::actor_tick::tick_actor` (FUN_80021DF4). Runs
     /// [`vm::actor_tick::tick_actor`] once per active slot, then dispatches
     /// the emitted [`TickEvent`]s.

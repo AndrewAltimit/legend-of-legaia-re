@@ -1,6 +1,6 @@
 //! Battle character-mesh assembly from a player battle file.
 //!
-//! Clean-room port of the retail battle-setup chain that builds each party
+//! Port of the retail battle-setup chain that builds each party
 //! member's in-battle TMD out of their `data\battle\PLAYER<n>` file (see
 //! [`crate::battle_data_pack`] for the container and
 //! `docs/formats/character-mesh.md` § Battle form for the full chain):

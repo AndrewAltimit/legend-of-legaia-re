@@ -672,7 +672,7 @@ impl World {
 
     /// Compute + store the AGL-driven multi-action budget for the physical swing
     /// monster `slot` is about to make - the enemy analogue of the party Arts AP
-    /// gauge. Clean-room port of the AGL-gauge spending loop in the picker
+    /// gauge. Port of the AGL-gauge spending loop in the picker
     /// `FUN_801E9FD4`: the monster gets one swing per action its per-round AGL
     /// gauge ([`crate::monster_catalog::MonsterDef::agl`]) can afford from its
     /// physical swing costs (`action_costs`), capped at 15, via
@@ -742,7 +742,7 @@ impl World {
         };
     }
 
-    /// Monster-AI action picker - clean-room port of the **generic decision
+    /// Monster-AI action picker - port of the **generic decision
     /// core** of `FUN_801E9FD4` (`overlay_battle_action_801e9fd4.txt`), the
     /// routine retail runs (from `recompute_battle_order` / `FUN_801DABA4`) to
     /// choose each monster's action.
@@ -1060,7 +1060,7 @@ impl World {
         best.map(|(i, _)| i)
     }
 
-    /// Clean-room port of `FUN_801E7320` - the monster-AI **target resolver**,
+    /// Port of `FUN_801E7320` - the monster-AI **target resolver**,
     /// invoked by the battle SM (`FUN_801E295C`) at `ActionSeed` as the
     /// `monster_setup` hook for monster actors whose `field_flags & 0x380` is
     /// set. It reads the targeting-class byte the action picker left in

@@ -280,7 +280,7 @@ pub struct SeruTradeReport {
 
 /// Enable **seru trading** (see [`crate::seru_trade`]): write a small config blob
 /// (enabled flag + master `seed` + per-vendor offer cap) into preserved
-/// `SCUS_942.54` rodata padding. The clean-room engine reads the blob and, at
+/// `SCUS_942.54` rodata padding. The engine reads the blob and, at
 /// runtime, lets vendors offer to swap one of a character's seru for a different
 /// one - the offers reseeding every two in-game hours from the same seed.
 ///

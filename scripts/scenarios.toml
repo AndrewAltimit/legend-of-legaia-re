@@ -464,7 +464,7 @@ topics = ["field load", "scene asset loader", "town01"]
 #   - collision grid (+0x4000) has 7455 / 16384 wall tiles painted
 #   - steady state runs ONE field-VM context: script_id 0xFB (system
 #     channel), bytecode at 0x8010F092, looping pc 0x0102..0x0297 - the
-#     same per-frame loop the clean-room engine's static trace settles
+#     same per-frame loop the engine's static trace settles
 #     into, and the nibble-7 paint ops fire 0 times (walls are painted
 #     at scene-load, not per frame).
 # Use this as the reference state for collision-grid / locomotion parity.
@@ -628,7 +628,7 @@ topics = ["battle", "reward", "exp", "gold", "drop", "spoils", "FUN_80026018", "
 # ids @ +0x13D, levels @ +0x161) against retail, and shows a story-Seru
 # capture is an IMMEDIATE grant (no capture-points accumulation in the
 # record) at spell level 1. Real spell ids (0x81) sit far above the
-# clean-room SpellCatalog approximations. See
+# port-side SpellCatalog approximations. See
 # capture_observations::seru_capture.
 # ----------------------------------------------------------------------
 

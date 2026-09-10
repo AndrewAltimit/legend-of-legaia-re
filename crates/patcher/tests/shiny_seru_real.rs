@@ -14,7 +14,7 @@
 //! composes with the enemy-ally feature (disjoint gaps), and the planner refuses
 //! an unrecognized build. Gates on `LEGAIA_DISC_BIN`; skips+passes when unset.
 //! The patched image lives only in memory. No engine runtime oracle exists for
-//! injected MIPS (the clean-room engine can't run it) - the engine path is
+//! injected MIPS (the engine can't run it) - the engine path is
 //! covered by `legaia-engine-core`'s `shiny_*` unit tests instead.
 
 use legaia_asset::item_names::file_offset_for_va;

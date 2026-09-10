@@ -88,7 +88,7 @@ impl World {
     /// allocator's `iVar13 = DAT_8007C018[(int16_t)tmd_idx]` read - the
     /// caller is responsible for clamping negative indices (the retail
     /// engine sign-extends the i16 then implicitly treats it as unsigned;
-    /// the clean-room port returns `None` for negative or out-of-range
+    /// the port returns `None` for negative or out-of-range
     /// indices via the `i16 → usize` cast guarded by the bounds check).
     ///
     /// Returns `None` when the slot is empty or `idx` is out of range.
@@ -124,7 +124,7 @@ impl World {
     ///    [`Actor::spawn_record`]. The retail allocator writes the
     ///    bytecode pointer to `actor[+0x90]` (different from the `+0x4C`
     ///    VDF-body field that the synchronous `0x4C 0xD8` path uses);
-    ///    the clean-room port stores the raw bytes on `spawn_record`
+    ///    the port stores the raw bytes on `spawn_record`
     ///    regardless and lets the engine route them as field-VM
     ///    bytecode for a child actor (the records are scripted-child
     ///    coroutines, not TMD-body or kind/variant tuples).

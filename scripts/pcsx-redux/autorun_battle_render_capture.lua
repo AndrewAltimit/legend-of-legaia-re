@@ -1,6 +1,6 @@
 -- autorun_battle_render_capture.lua
 --
--- Capture the ground-truth battle-render parameters the clean-room engine has
+-- Capture the ground-truth battle-render parameters the engine has
 -- been eyeballing: the orbit camera state, the func_0x801d02c0 flat ground-grid
 -- setup (the grass tile), and the live battle actor formation (world positions
 -- + scale). Run against a battle save state (game mode 0x15), ideally the

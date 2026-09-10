@@ -73,7 +73,7 @@ pub const PARTY_CLUT_ENTRIES: usize = 240;
 pub const PARTY_CLUT_SLOTS: usize = 3;
 
 /// The engine's stand-in for the three things retail's pass reads that the
-/// clean-room battle context has never carried: the per-actor palette copy
+/// port's battle context has never carried: the per-actor palette copy
 /// (`ctx[+0x894 + slot*0x1E0]`), the per-affliction latch (`actor[+0x220]`),
 /// and the staged row the upload comes from (`ctx[+0xE34]`).
 ///

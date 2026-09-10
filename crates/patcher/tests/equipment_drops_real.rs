@@ -14,7 +14,7 @@
 //!   * the planner refuses an unrecognized build instead of corrupting it.
 //!
 //! Gates on `LEGAIA_DISC_BIN`; skips+passes when unset. The patched image lives
-//! only in memory (never written to disk). NB the clean-room engine can't run
+//! only in memory (never written to disk). NB the engine can't run
 //! injected MIPS, so unlike the data-edit randomizers this feature has no engine
 //! runtime oracle - verification is the byte/disassembly checks here plus an
 //! emulator playtest.

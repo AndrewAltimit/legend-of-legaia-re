@@ -17,7 +17,7 @@
 //! RAM copy. The patched value is only observed after a fresh executable load
 //! re-reads the table off the (patched) disc.
 //!
-//! The clean-room engine sidesteps that cache entirely: it decodes the steal
+//! The engine sidesteps that cache entirely: it decodes the steal
 //! table straight from the disc's `SCUS_942.54` bytes
 //! ([`StealTable::from_scus`]) and runs the steal-grant kernel the randomizer's
 //! edit feeds - the percent roll + inventory add in [`World::apply_steal`] (the

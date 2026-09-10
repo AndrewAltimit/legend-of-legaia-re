@@ -29,7 +29,7 @@
 //!
 //! This module walks that chain in the browser off the visitor's own disc:
 //! SCUS -> descriptor table, PROT -> the bank each cue's category names, then
-//! renders each cue through the clean-room SPU ([`legaia_engine_audio`]) to a
+//! renders each cue through the from-scratch SPU ([`legaia_engine_audio`]) to a
 //! PCM buffer the page plays with WebAudio. No Sony bytes ship with the site -
 //! everything decodes at runtime from the loaded image.
 
@@ -351,7 +351,7 @@ impl LegaiaSfx {
     /// table, `PROT.DAT` -> **the bank each cue's own `+4` category names**
     /// (slot 0 = [`SFX_SYSTEM_BANK_PROT_INDEX`], slot 2 =
     /// [`SFX_BANK_PROT_INDEX`]), then each cue's descriptor -> a one-shot
-    /// through the clean-room SPU. Holds only the rendered PCM afterwards (the
+    /// through the from-scratch SPU. Holds only the rendered PCM afterwards (the
     /// disc bytes are dropped), so a page can call this alongside its own
     /// decoder without a second copy of the image.
     ///

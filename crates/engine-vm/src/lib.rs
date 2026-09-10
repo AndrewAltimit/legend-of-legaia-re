@@ -1,4 +1,4 @@
-//! Actor / sprite script VM, ported clean-room from `FUN_801D6628`.
+//! Actor / sprite script VM, ported from `FUN_801D6628`.
 //!
 //! PORT: FUN_801D6628, FUN_800319A8, FUN_800326AC, FUN_80035334, FUN_800357FC
 //! PORT: FUN_800358C0, FUN_80035978, FUN_80035A4C
@@ -58,7 +58,7 @@
 //! Note the `0x1FE` mask - `x` is even-aligned at 9-bit precision. This matches
 //! how the runtime quantises actor positions in field coordinates.
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No bytes from `SCUS_942.54` or any overlay live in this crate. The Ghidra
 //! decompilation is the *spec*, not source. The `Host` trait abstracts every

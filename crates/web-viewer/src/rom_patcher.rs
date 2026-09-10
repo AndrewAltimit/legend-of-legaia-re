@@ -724,7 +724,7 @@ pub async fn patch_rom(
         apply::inject_trade_full(&mut patcher, seed_n)
             .map_err(|e| err(format!("seru-trade: {e}")))?;
         // Also embed the engine-facing config blob (same seed), so the patched
-        // disc trades identically when booted in the clean-room engine.
+        // disc trades identically when booted in the engine.
         apply::enable_seru_trades(
             &mut patcher,
             seed_n,

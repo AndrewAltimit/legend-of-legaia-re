@@ -18,7 +18,7 @@
 //! offsets pass through unchanged. This is the foundation for both
 //! save/load and any future runtime that needs to mutate party state.
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No Sony bytes live in this crate. The struct definitions are derived
 //! purely from the consumer disassembly in `ghidra/scripts/funcs/` and

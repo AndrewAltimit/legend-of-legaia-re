@@ -111,7 +111,7 @@ impl NavButtons {
     }
 }
 
-/// Advance a packed menu cursor cell for one frame - the clean-room port of
+/// Advance a packed menu cursor cell for one frame - the port of
 /// `FUN_801d688c`.
 ///
 /// `cursor` is the caller-owned packed cell (index in the low 12 bits, flags

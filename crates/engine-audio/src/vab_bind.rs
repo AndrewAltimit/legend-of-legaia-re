@@ -3,7 +3,7 @@
 //!
 //! This is the bridge between the asset-extraction track (which parses VAB
 //! files off disc) and the engine-reimplementation track (which plays them
-//! through the clean-room SPU). One bank is uploaded once via
+//! through the from-scratch SPU). One bank is uploaded once via
 //! [`VabBank::upload`], then the engine triggers notes via
 //! [`VabBank::play_note`] which:
 //!  1. picks a tone from the program based on the requested key,

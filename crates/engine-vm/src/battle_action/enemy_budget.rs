@@ -1,4 +1,4 @@
-//! Enemy per-turn multi-action budget - clean-room port of the AGL-gauge
+//! Enemy per-turn multi-action budget - port of the AGL-gauge
 //! spending loop inside the monster action picker `FUN_801E9FD4`
 //! (`ghidra/scripts/funcs/overlay_battle_action_801e9fd4.txt`, the physical
 //! branch at `0x801EA2E4..0x801EA3CC`).

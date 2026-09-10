@@ -4,7 +4,7 @@
 //   object -> Dictionary<string, object>
 //   array  -> List<object>
 //   number -> double, string -> string, true/false -> bool, null -> null
-// Clean-room utility written for this kit; MIT OR Unlicense like the repo.
+// Utility written from scratch for this kit; MIT OR Unlicense like the repo.
 
 using System.Collections.Generic;
 using System.Globalization;

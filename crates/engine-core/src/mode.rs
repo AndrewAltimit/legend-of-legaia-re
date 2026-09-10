@@ -16,7 +16,7 @@
 //! handler returns by either staying in the same mode (per-frame loop), or
 //! transitioning to `next_mode` (init -> run pattern).
 //!
-//! In the clean-room port we map each mode to a [`GameMode`] enum variant,
+//! In the port we map each mode to a [`GameMode`] enum variant,
 //! the handler to a [`ModeHandler`] trait, and the parameter to the
 //! [`ModeEntry::param`] flag bits. The Sony function pointers are NOT used;
 //! engine integrations supply Rust closures that drive the

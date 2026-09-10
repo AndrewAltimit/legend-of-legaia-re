@@ -4,7 +4,7 @@
 //! scene's encounter table on every step. When the roll succeeds, the field
 //! VM yields control to the battle scene loader. The trigger is gated by
 //! several globals (`battle_disabled` flag, current encounter rate, etc.);
-//! this module mirrors the gameplay-relevant subset as a clean-room SM.
+//! this module mirrors the gameplay-relevant subset as a port-side SM.
 //!
 //! ## Components
 //!

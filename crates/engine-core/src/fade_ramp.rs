@@ -1,4 +1,4 @@
-//! The SCUS fade actor's per-frame half - clean-room port of the ramp step
+//! The SCUS fade actor's per-frame half - port of the ramp step
 //! `FUN_80020C14` and the tick `FUN_80025000` that pushes its result to the
 //! full-screen quad emitter.
 //!

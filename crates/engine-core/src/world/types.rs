@@ -416,7 +416,7 @@ pub struct ActorSpriteRequest {
 ///
 /// See `project_dat_8007c018_global_tmd_table.md` and
 /// `project_global_tmd_pool_source.md` for the retail-side semantics. The
-/// clean-room port treats the pool as opaque indexed storage: the field-VM
+/// port treats the pool as opaque indexed storage: the field-VM
 /// `0x4C 0xD8` host hook reads slot `tmd_idx` and writes the resulting `Arc`
 /// onto [`Actor::tmd_ref`] - whatever populated the slot is the producer's
 /// concern.
@@ -885,7 +885,7 @@ pub fn spar_menu_of(dialogue: &[u8]) -> Option<(usize, usize)> {
 }
 
 /// Per-field-carrier role. The retail engine builds one record per MAN-placed
-/// scene entity; this is the clean-room slice the field entity SM acts on.
+/// scene entity; this is the port's slice the field entity SM acts on.
 /// Paired by index with [`World::field_carriers`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldCarrierConfig {
@@ -901,7 +901,7 @@ pub enum FieldCarrierConfig {
 }
 
 /// Per-overworld-entity role. The retail engine builds one record per on-map
-/// entity from the scene's entity table; this is the clean-room slice the
+/// entity from the scene's entity table; this is the port's slice the
 /// gameplay SM acts on - an encounter zone spawns its own formation, a portal
 /// targets a scene, an NPC just surfaces an interaction. Paired by index with
 /// [`World::world_map_entities`].

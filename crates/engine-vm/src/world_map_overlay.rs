@@ -1,4 +1,4 @@
-//! World-map dev-menu overlay leaves, ported clean-room from the world-map
+//! World-map dev-menu overlay leaves, ported from the world-map
 //! overlay (`overlay_world_map.bin`, base `0x801C0000`; the bytes are
 //! byte-identical to the field/PROT-0897 image at the same VAs, so the dump
 //! label is only a resolution hint).

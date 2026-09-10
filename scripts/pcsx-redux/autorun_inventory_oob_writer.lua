@@ -10,7 +10,7 @@
 --   72-slot window the free-slot scan returns slot == window, so the id byte
 --   lands one slot PAST the window at
 --     ITEM_WINDOW_BASE + 72*2 = 0x80085958 + 0x90 = 0x800859E8
---   (= SC+0x18A8 = the first KEY-ITEM slot). The clean-room model of this is
+--   (= SC+0x18A8 = the first KEY-ITEM slot). The from-scratch model of this is
 --   `legaia_save::retail_inventory` (AddOutcome::OobIdWrite); this probe is the
 --   live half that confirms the store actually executes in retail.
 --

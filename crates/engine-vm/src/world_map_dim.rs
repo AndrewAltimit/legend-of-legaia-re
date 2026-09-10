@@ -1,4 +1,4 @@
-//! World-map top-view screen-dim pass, ported clean-room from
+//! World-map top-view screen-dim pass, ported from
 //! `FUN_801E75DC`.
 //!
 //! PORT: FUN_801E75DC

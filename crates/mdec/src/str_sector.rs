@@ -31,7 +31,7 @@
 //! PSX-SPX §MDEC - "STR Movie Files":
 //! <https://problemkaputt.de/psxspx-cdrom-sector-encoding.htm>, plus
 //! cross-reference with the Mednafen and PCSX-Redux implementations
-//! (clean-room: only the protocol spec, not source bytes, was used).
+//! (written from the protocol spec only, never from source bytes).
 
 use anyhow::{Context, Result, bail};
 

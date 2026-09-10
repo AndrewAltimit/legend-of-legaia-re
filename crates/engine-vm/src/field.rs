@@ -1,4 +1,4 @@
-//! Field / event script VM, ported clean-room from `FUN_801DE840`.
+//! Field / event script VM, ported from `FUN_801DE840`.
 //!
 //! PORT: FUN_801DE840, FUN_8003CE08, FUN_8003CE34, FUN_8003CE64, FUN_8003C83C, FUN_8003CF04
 //! PORT: FUN_801DAA50, FUN_801DAB90, FUN_801DBC20, FUN_801DE004, FUN_801DC0BC, FUN_801DDF48
@@ -45,7 +45,7 @@
 //! the original's `func_0x8003C83C(target_id)` lookup, lifted into the host
 //! layer to keep the VM borrow-free.
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No bytes from `SCUS_942.54` or any overlay live in this crate. The Ghidra
 //! decompilation at `ghidra/scripts/funcs/overlay_0897_801de840.txt` and the

@@ -4,7 +4,7 @@
 //! descriptor table, PROT -> **the bank each cue's `+4` category names** (slot
 //! 0 = PROT 868, the system bank behind the shared UI blips; slot 2 = PROT 869,
 //! the class-2 bank the battle scene loader `FUN_800520F0` and the Baka init
-//! `FUN_801CF00C` both load), each cue through the clean-room SPU - and asserts
+//! `FUN_801CF00C` both load), each cue through the from-scratch SPU - and asserts
 //! every cue the pages fire renders to **audible** PCM (a non-zero peak), not
 //! just "decodes without error", *from the right entry*.
 //!

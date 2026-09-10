@@ -2,7 +2,7 @@
 //!
 //! jPSXdec indexes PROT.DAT as one flat 2048-byte-sector stream and reports
 //! each TIM it finds (1132 items on the retail NA disc). This module
-//! reproduces that scan clean-room with the strict TIM validator
+//! reproduces that scan with the strict TIM validator
 //! ([`legaia_tim::parse_strict`]) and maps each hit back to OUR native
 //! addressing - the owning PROT TOC entry and the byte offset within it (or
 //! the unindexed system-UI gap that precedes the first entry).

@@ -250,7 +250,7 @@ pub fn extract_all_messages(buf: &[u8]) -> Result<Vec<Vec<MesEvent>>> {
 /// typewriter speed), hold-on-page-break-until-input, finish-on-end.
 ///
 /// The retail equivalent is the dialog window pager `FUN_801D84D0`.
-/// This is a clean-room port of that *behaviour*: when the player sees
+/// This is a port of that *behaviour*: when the player sees
 /// a `Control` byte (`0x80..=0x9F`) it pauses for engine input; when it
 /// sees `EndOfMessage` it terminates.
 #[derive(Debug)]

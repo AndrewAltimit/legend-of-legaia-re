@@ -1,4 +1,4 @@
-//! Dialog panel: clean-room port of the field VM's dialog opener path.
+//! Dialog panel: port of the field VM's dialog opener path.
 //!
 //! PORT: FUN_801D84D0
 //! REF: FUN_8001FD44, FUN_8001D7F8

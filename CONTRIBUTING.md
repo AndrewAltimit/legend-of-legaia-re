@@ -9,11 +9,11 @@ Thanks for looking. This page covers the rules of engagement: what will never la
 Two tracks share one Cargo workspace:
 
 1. **Asset preservation.** Extract every asset on the disc, document every format with Ghidra-traced provenance, build round-trip parsers.
-2. **Engine reimplementation.** A clean-room Rust port, written from the format docs and decompiled-C reference - the ScummVM / OpenRCT2 model, not a static recompilation of `SCUS_942.54`.
+2. **Engine reimplementation.** A from-scratch Rust port, written from the format docs and decompiled-C reference - the ScummVM / OpenRCT2 model, not a static recompilation of `SCUS_942.54`.
 
 The end-user model is: ship the engine, the user supplies their own disc image, the engine extracts and runs it.
 
-Faithfulness to retail is the baseline for game logic and simulation. That does not make this a strict 1:1 remake - the engine also carries an enhancement layer (dynamic lighting, precise movement, alternate cameras, VR), and the randomizer and translation toolchains are deliberate, shipped features. The rule those follow is that enhancements are **opt-in and off by default**, so the faithful behaviour stays available and the parity oracles keep passing. [`docs/subsystems/engine.md`](docs/subsystems/engine.md) is the authority on where the clean-room boundaries sit.
+Faithfulness to retail is the baseline for game logic and simulation. That does not make this a strict 1:1 remake - the engine also carries an enhancement layer (dynamic lighting, precise movement, alternate cameras, VR), and the randomizer and translation toolchains are deliberate, shipped features. The rule those follow is that enhancements are **opt-in and off by default**, so the faithful behaviour stays available and the parity oracles keep passing. [`docs/subsystems/engine.md`](docs/subsystems/engine.md) is the authority on where the port boundaries sit.
 
 ## The one hard rule: no Sony bytes
 

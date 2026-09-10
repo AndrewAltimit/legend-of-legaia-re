@@ -1,4 +1,4 @@
-//! Region-keyed random-encounter trigger - clean-room port of `FUN_801D9E1C`.
+//! Region-keyed random-encounter trigger - port of `FUN_801D9E1C`.
 //!
 //! This is the faithful overworld / field random-encounter model, distinct
 //! from the aggregated weighted-row [`crate::encounter::EncounterTable`]: it

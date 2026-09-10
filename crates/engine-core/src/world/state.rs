@@ -686,7 +686,7 @@ pub struct World {
     /// [`Self::drain_actor_spawns`] after [`Self::tick`] and route each
     /// record into their own actor pool - the retail engine mallocs a
     /// per-actor vertex pool and stores the record pointer at
-    /// `actor[+0x90]`; the clean-room port leaves that policy to the
+    /// `actor[+0x90]`; the port leaves that policy to the
     /// engine that consumes the request.
     pub pending_actor_spawns: Vec<Vec<u8>>,
 
@@ -844,7 +844,7 @@ pub struct World {
     /// from the MAN actor placements. The interaction probe
     /// (`Self::tick_field_interaction_probe`) box-tests the player's position
     /// against these to fire a `field_interact` on the action button - the
-    /// clean-room analogue of retail's `FUN_801cf9f4` adjacency test.
+    /// port-side analogue of retail's `FUN_801cf9f4` adjacency test.
     ///
     /// The runtime actor frame **is** the MAN placement frame: `FUN_8003A1E4`
     /// spawns each actor at `world = tile*128 + 0x40` (the placement's
@@ -2519,7 +2519,7 @@ pub struct World {
 
     /// Field state captured at the `Field -> Battle` transition so the live
     /// loop can restore it on victory. The retail engine re-enters the field
-    /// scene from scratch; the clean-room loop snapshots the actor table +
+    /// scene from scratch; the port's loop snapshots the actor table +
     /// player slot instead. `None` outside battle. Managed by the live loop;
     /// hosts read [`Self::mode`] / [`Self::active_formation`] instead.
     pub field_return: Option<FieldReturnState>,
@@ -2552,7 +2552,7 @@ pub struct World {
     /// the config-only installers leave it empty. When present, it drives the
     /// **auto-engage-on-walkover** trigger in `Self::tick_world_map`: the
     /// player stepping onto a `Portal` entity's tile fires its transition with
-    /// no host call, the clean-room stand-in for retail's per-entity
+    /// no host call, the port-side stand-in for retail's per-entity
     /// player-position-in-zone check.
     pub world_map_entity_positions: Vec<(i16, i16)>,
 

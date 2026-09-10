@@ -492,7 +492,7 @@ pub(crate) enum Cmd {
     ///     PCM over the trace window.
     ///   - **Retail**: lifts the SPU section from a mednafen
     ///     `.mc{slot}` save (or a path passed via `--retail-save`),
-    ///     seeds a clean-room SPU through `engine_spu_from_retail`,
+    ///     seeds a from-scratch SPU through `engine_spu_from_retail`,
     ///     and renders one second of PCM. Voice mid-stream state is
     ///     not preserved by the translator (engine-audio's `Voice`
     ///     doesn't expose those internals), so this is "what the SPU

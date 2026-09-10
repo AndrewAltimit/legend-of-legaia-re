@@ -7,7 +7,7 @@
 //! Unlike a drop / shop edit, the trade offers aren't a fixed table - they're a
 //! deterministic function of `(master_seed, vendor_id, in-game-time bucket,
 //! the character party's currently-owned seru)`, evaluated identically by the
-//! randomizer's preview and the clean-room engine's live UI (the shared kernel
+//! randomizer's preview and the engine's live UI (the shared kernel
 //! [`legaia_asset::seru_trade`]). So all the randomizer embeds on the disc is a
 //! tiny config blob - an *enabled* flag plus the run's master seed - and the
 //! engine recomputes the per-vendor offers at runtime, reseeding as the retail
@@ -22,7 +22,7 @@
 //! code hooks use, but at a higher, non-overlapping offset
 //! ([`legaia_asset::seru_trade::CONFIG_VA`] = `0x8007AF00`). It is plain data,
 //! not code: nothing in the retail executable reads it (retail has no trade UI),
-//! so on a real console the patch is inert; the clean-room engine is what gives
+//! so on a real console the patch is inert; the engine is what gives
 //! it meaning.
 //!
 //! The write is a single same-size, in-place `SCUS_942.54` edit. The planner

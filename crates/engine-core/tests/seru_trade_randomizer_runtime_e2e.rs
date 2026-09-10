@@ -6,7 +6,7 @@
 //! *reads it and lets the player swap a seru*. This test closes that: it patches
 //! the seru-trade config onto a scratch copy of the real disc (the surgical
 //! `--seru-trade` edit), re-decodes the config straight from the patched SCUS
-//! bytes, installs it into a clean-room [`World`] holding a party with known
+//! bytes, installs it into a port-side [`World`] holding a party with known
 //! seru, opens a trade session, confirms a trade, and asserts the runtime
 //! rewrites the owner's spell list to the offered seru - and that the offers
 //! reseed across a two-in-game-hour boundary.

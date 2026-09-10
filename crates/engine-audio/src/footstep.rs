@@ -85,7 +85,7 @@
 //! write **different** trigger bytes, which is the part worth not
 //! paraphrasing - see [`FootstepCadence::tick_cadence`].
 //!
-//! Clean-room from the decompiled control flow; no Sony bytes. Retail
+//! Written from the decompiled control flow; no Sony bytes. Retail
 //! reference `docs/subsystems/audio.md` § "Not SsAPI: the `0x801CE628`
 //! cluster is libpad" and the `80018DB0` row of
 //! `docs/reference/functions/audio.md`.

@@ -8,7 +8,7 @@
 //! PORT: FUN_800267fc - the timed sound-source auto-release.
 //! PORT: FUN_8002689c - the one-shot sound detach.
 //!
-//! The libsnd calls both of them end in are out of clean-room scope; what is
+//! The libsnd calls both of them end in are out of the port's scope; what is
 //! portable is the **scheduling**, which is where the behaviour lives.
 //! REF: FUN_80065440, FUN_80062AA0, FUN_8002657C, FUN_80064370
 //! REF: FUN_8001698C

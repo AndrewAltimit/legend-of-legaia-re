@@ -437,7 +437,7 @@ impl SpellCatalog {
             anim_id: 0x61,
             ..Default::default()
         });
-        // Clean-room monster-spell block. The per-monster-id AI script
+        // Port-side monster-spell block. The per-monster-id AI script
         // ([`crate::monster_ai`]) emits retail monster spell ids; the real
         // shapes/powers come from the disc spell table. These placeholders cover
         // the ids the early-roster cases use so their scripted casts fold and

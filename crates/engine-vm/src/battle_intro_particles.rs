@@ -9,7 +9,7 @@
 //! integration [`crate::battle_intro_styles::tick_particle_field`] walks it.
 //! What no host consumes is the *packet* - these are the style-0 and style-1
 //! render buffers, 1280 sprite records apiece, and the GTE/GPU emitters that
-//! turn a record into a primitive sit at the clean-room boundary. The grid is
+//! turn a record into a primitive sit at the port boundary. The grid is
 //! also plausible rather than retail-identical: the host implements
 //! [`ParticleEnv`] over computed sine and cosine instead of the overlay's
 //! `_DAT_8007B7F8` / `_DAT_8007B81C` height tables. Neither address has a

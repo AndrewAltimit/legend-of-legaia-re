@@ -29,7 +29,7 @@
 //! kick therefore snaps every wandering NPC back onto its default motion
 //! cycle while the dialog runs.
 //!
-//! Clean-room boundary: `ghidra/scripts/funcs/8003c9ac.txt` is the spec; no
+//! Port boundary: `ghidra/scripts/funcs/8003c9ac.txt` is the spec; no
 //! Sony bytes live here. Tests use synthetic actor lists + tables.
 //!
 //! ## NOT WIRED

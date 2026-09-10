@@ -1,6 +1,6 @@
 //! Battle damage / cost / RNG formulas.
 //!
-//! Clean-room Rust port of the in-game battle math. Each function is keyed
+//! From-scratch Rust port of the in-game battle math. Each function is keyed
 //! to a citation in `docs/subsystems/battle-formulas.md` so the provenance
 //! stays traceable. None of these functions touch `FUN_800402F4`'s full
 //! selector-dispatch - that lives next to the state machine in

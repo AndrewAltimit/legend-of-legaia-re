@@ -13,7 +13,7 @@
 //! against `extracted/SCUS_942.54` at `0x800 + va - 0x80010000`. The
 //! decompiled C in the reference dumps is not the source.
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No `SCUS_942.54` bytes live in this crate. The reference dumps
 //! (`ghidra/scripts/funcs/800203ec.txt`, `80020424.txt`, `80020454.txt`,

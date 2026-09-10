@@ -407,7 +407,7 @@ fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
     };
     world.mode = SceneMode::Battle;
     world.set_spell_catalog(SpellCatalog::vanilla());
-    // A clean-room boss at monster slot 1 with id 0xB6 (no own magic - it
+    // A synthetic boss at monster slot 1 with id 0xB6 (no own magic - it
     // casts purely off its scripted phase table).
     world
         .monster_catalog

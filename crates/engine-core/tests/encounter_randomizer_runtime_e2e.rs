@@ -19,7 +19,7 @@
 //! A patched formation is only observed after a *fresh scene load* re-reads the
 //! MAN off the (patched) disc.
 //!
-//! The clean-room engine sidesteps that cache entirely: it builds the encounter
+//! The engine sidesteps that cache entirely: it builds the encounter
 //! table + per-row formation defs straight from the MAN bytes
 //! ([`scene_encounter_from_man`]) and spawns the rolled formation through the very
 //! battle-entry path the randomizer's edit feeds (the `FUN_801DA51C` formation

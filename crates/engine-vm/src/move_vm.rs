@@ -1,4 +1,4 @@
-//! Move-table opcode VM, ported clean-room from `FUN_80023070` (main VM in
+//! Move-table opcode VM, ported from `FUN_80023070` (main VM in
 //! `SCUS_942.54`) and `FUN_801D362C` (extension VM in the town overlay).
 //!
 //! PORT: FUN_80023070, FUN_801D362C, FUN_8001A6C8, FUN_8001A78C, FUN_8001A8DC
@@ -37,7 +37,7 @@
 //! Both are wired through the [`MoveHost`] trait - extension sub-handlers that
 //! don't fit a clean Rust idiom are hooked through `host.ext_*` callbacks.
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No bytes from `SCUS_942.54` or any overlay live in this crate. The Ghidra
 //! decompilation at `ghidra/scripts/funcs/80023070.txt` and

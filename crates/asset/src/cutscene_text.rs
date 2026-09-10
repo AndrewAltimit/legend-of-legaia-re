@@ -39,7 +39,7 @@
 //! exhausted (the next byte is the following field-VM opcode, e.g. op `0x46`
 //! render-config).
 //!
-//! This parser is clean-room: it locates the introducing op and the
+//! This parser bakes in no text: it locates the introducing op and the
 //! `0x1F`/`0x00` page framing structurally and decodes the runtime disc bytes.
 //! No narration text is baked into the source.
 

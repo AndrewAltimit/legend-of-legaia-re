@@ -18,7 +18,7 @@
 //! placement script responds by playing an animation (op `0x4B`) / moving
 //! (op `0x23`).
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No Sony bytes live here: channel bytecode is sliced from the user's disc
 //! MAN at runtime; this module holds only the per-context cursor and the

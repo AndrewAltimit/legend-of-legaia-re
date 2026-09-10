@@ -7,7 +7,7 @@
 //! PORT: FUN_8006352c - the descending volume slide.
 //! PORT: FUN_80063aa8 - the track-end / loop-repeat handler.
 //!
-//! [`crate::Sequencer`] is the engine's clean-room replacement for this tier
+//! [`crate::Sequencer`] is the engine's port-side replacement for this tier
 //! and drives *playback* on its own integer-SPU-sample clock, so nothing on the
 //! audio output path calls these kernels. Their host is the differential:
 //! `note-trace --seq-calc` seeds one channel record off a real `music_01` SEQ

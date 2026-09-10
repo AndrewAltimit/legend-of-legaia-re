@@ -1,4 +1,4 @@
-//! Per-actor "third motion" VM, ported clean-room from `FUN_8003774C`
+//! Per-actor "third motion" VM, ported from `FUN_8003774C`
 //! (SCUS_942.54). Distinct from the actor / sprite VM in [`super`] and the
 //! move-table VM in [`super::move_vm`]:
 //!
@@ -75,7 +75,7 @@
 //! the engine - see `docs/subsystems/field-locomotion.md` for the priority
 //! order across every facing source.
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No bytes from `SCUS_942.54` live in this crate. The Ghidra decompilation at
 //! `ghidra/scripts/funcs/8003774c.txt` is the *spec*. Tests use synthetic
@@ -341,7 +341,7 @@ fn bearing_to_yaw(dx: i32, dz: i32) -> u16 {
 /// target byte too), mutates `state` per the body. The caller wires the
 /// `target` from its own actor list.
 ///
-/// This is a clean-room port of the dispatcher's outer switch, verified
+/// This is a port of the dispatcher's outer switch, verified
 /// against the Ghidra decompilation at `ghidra/scripts/funcs/8003774c.txt`.
 /// All six opcodes are implemented and covered by unit tests including full
 /// patrol-leg sequences (move + face-target in order).
@@ -669,7 +669,7 @@ pub struct FieldMotionDispatch {
 }
 
 /// The full per-frame plan `FUN_8003BC08` computes for one field actor -
-/// clean-room from the disassembly. The function itself also bumps a global
+/// written from the disassembly. The function itself also bumps a global
 /// frame counter (`_DAT_801C6ED0`) and, when `lifetime >= 0`, runs a
 /// pre-update (`FUN_801D79E8`); those are surfaced as [`Self::pre_update`].
 ///

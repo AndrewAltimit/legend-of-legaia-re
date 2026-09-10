@@ -1420,7 +1420,7 @@ impl LegaiaMinigames {
     }
 
     /// Render `seconds` of the dance BGM to interleaved stereo i16 PCM at
-    /// [`Self::dance_bgm_rate`], through the clean-room SPU + sequencer -
+    /// [`Self::dance_bgm_rate`], through the from-scratch SPU + sequencer -
     /// the same path the audio page uses. Empty when the pair didn't decode.
     pub fn dance_bgm_pcm_i16(&self, alt: bool, seconds: f32) -> Vec<i16> {
         let idx = if alt {
