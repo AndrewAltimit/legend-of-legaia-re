@@ -1005,14 +1005,14 @@ initiative key - which finds stores in **eight** images:
 
 | Image | routine | what it does to the block |
 |---|---|---|
-| 0940 `cast_glare_divide` | `0x801F78B8` | nine stores at `0x801F814C..0x801F819C`, two passes over `+0x150` / `+0x154` / `+0x156` / `+0x158` |
+| 0940 `cast_glare_divide` | `0x801F78B8` | nine stores - eight at `0x801F814C..0x801F819C`, two passes over `+0x150` / `+0x154` / `+0x156` / `+0x158`, plus `+0x16C` at `0x801F8064` |
 | 0942 `cast_power_up` | `0x801F7D34` | one store: `+0x156` (AGL base) `= record[+0x0E] * 3 / 2` |
 | 0943 `cast_curse` | `0x801F69D8` | `+0x150` / `+0x152` (the MP pair) at `0x801F6D08` / `0x801F6D1C` |
 | 0945 `cast_water_column` | `0x801F69F8` | all ten stat halfwords `x + (x >> 2)`, then the same `+0x156` write as 0942 |
 | 0954 `cast_fatal_decision` | `0x801F6A58` | halves stat halfwords with a floor of `1`, and ORs status bits into `+0x16E` |
 | 0955 `cast_white_shield` | six bodies | the four rows in the table above, plus the two turn-steal `+0x16C` clears |
-| 0925 `summon_spikefish` | `0x801F6A00` | `+0x16C` only - the initiative key, the turn-steal idiom |
-| 0956 `cast_water_hazard` | `0x801F7098` | `+0x16C` only, same idiom |
+| 0925 `summon_spikefish` | `0x801F6A00` | `+0x16C` only at `0x801F7A70`..`0x801F7A88` - the initiative key, the turn-steal idiom |
+| 0956 `cast_water_hazard` | `0x801F69D8` | `+0x16C` only at `0x801F7098`, same idiom |
 
 Two of those are worth reading before assuming a shape from a name.
 
