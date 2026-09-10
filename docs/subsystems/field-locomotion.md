@@ -755,6 +755,15 @@ The `+0x8000` map is a per-tile object/attribute word, not a terrain-flag grid: 
 
 The remaining derived bits have one writer, the grid-prep refresh **`FUN_80017bec`** (called from the per-scene initializer `FUN_801D6704`): it decays flags bit 0 of any object descriptor whose `+0x16` countdown reached zero, mirrors each cell's owning-descriptor flags bits 0/1 into cell bits `0x1000`/`0x2000`, and stamps `0x200 << kind` on every tile named by the trigger block's kind-0/1/2 sub-tables - which is where the walk-on dispatch's `cell & 0x600` fast gate and the floor sampler's `0x800` elevation-override marker come from. Engine port: `legaia_engine_core::field_regions::refresh_object_grid_marks` (derived from the static-recomp instruction stream; the Ghidra dump for this function carries no disassembly).
 
+One more cell bit belongs to the renderer rather than to locomotion:
+**`0x8000` is a per-tile depth-sort flag** on the ground quad. PROT 0900's
+ground pass buckets the tile by its own minimum projected `Z` when the bit is
+set, and drops it into a fixed far bucket when it is clear (`0x801F6F94` /
+`0x801F6FEC`). In `teien` 297 of 451 non-zero cells carry it. The ground pass
+itself - and the fact that **no** draw channel anywhere reads cell bit
+`0x0800` - is on
+[`renderer.md`](renderer.md#the-field-ground-pass-two-emitters-one-gate).
+
 That `0x400` bit is load-bearing, and the on-disc `.MAP` already carries it (a live town field buffer is byte-identical to the disc bytes here): read on a placed object's **footprint-anchor** tile it says *"this object is the init sweep's - do not re-create it"*, which is how the second placed-object spawner `FUN_801d7b50` stays disjoint from `FUN_8003a55c`. See [The object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose).
 
 ### Trigger block (`+0x10000`) - four kind sub-tables

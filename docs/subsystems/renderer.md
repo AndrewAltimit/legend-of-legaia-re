@@ -413,13 +413,19 @@ The window bytes are relative tile offsets, so the double loop runs
 
 Bit `0x0800` marks a **kind-2 tile-trigger** cell (the elevation override
 `FUN_80017BEC` stamps as `0x200 << kind`), and the question it raised was
-whether retail has an unpinned ground channel keyed on it. It does not.
-Scanning every `andi rt, rs, IMM` in PROT 0900, PROT 0901 and
-`SCUS_942.54` for the object-grid gate constants finds exactly one `0x800`
-test in the field render library, `0x801F78B8`, and its operand is the
-**object record's** `+0x12` flag halfword, not a cell word - it ORs
+whether retail has an unpinned ground channel keyed on it. It does not, and
+the search space is small enough to say so exhaustively. Of the 84 images
+with a static base (`SCUS_942.54` plus the 83 mapped overlays), only **eight**
+contain the instruction forms that can reach the field-env pointer at
+scratchpad `0x1F8003EC` at all - the direct `lw rY, 0x3EC(rX)` or the
+`ori rX, rX, 0x314` + `lw rY, 0xD8(rX)` pair - and only two of those, PROT
+0900 and PROT 0901, are the per-cell render passes.
+
+In each of those two there is **exactly one** `andi rt, rs, 0x800`
+(`0x801F78B8` in 0900, `0x801F7244` in 0901), and both read the same thing:
+an **object record's** `+0x12` flag halfword, not a cell word. Both OR
 `0x10000000` into the argument of the prim dispatcher `FUN_80043390`. The
-library's only two per-cell passes are this ground pass (gate `0x1000`) and
+libraries' only two per-cell passes are this ground pass (gate `0x1000`) and
 the static-object pass at `0x801F756C` (gate `0x2000`). In SCUS the sole
 consumer of cell bit `0x0800` is the floor sampler `FUN_80019278`
 (`0x8001932C` / `0x80019384`, `see ghidra/scripts/funcs/80019278.txt`),
