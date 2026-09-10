@@ -106,12 +106,14 @@ A reason that only names a *category* ("GP0 chrome", "PsyQ transport") cannot be
 confirmed or refuted, and the fix for one of those is to rewrite it with its
 operands rather than to argue about it.
 
-The failure mode a sampled audit does find is a **stale citation**: a reason
+The second thing worth checking while there is a **stale citation**: a reason
 whose `see ghidra/scripts/funcs/<stem>.txt` names a dump that has since been
-re-based or re-labelled. That is a pointer going stale, not the claim going
-wrong - the row's operands still check out against whichever dump of the VA the
-attribution CSV gives to the owning image - but it is the thing that makes a
-row unverifiable a year later, so it is worth fixing when noticed.
+re-based or re-labelled. That would be a pointer going stale rather than the
+claim going wrong - the row's operands still check out against whichever dump
+of the VA the attribution CSV gives to the owning image - but it is the thing
+that makes a row unverifiable later. Watch for the near-miss: an address can
+carry several dump stems, so a stem that is absent from the first two hits of a
+glob is not an absent stem.
 
 ### The reachability claim
 
