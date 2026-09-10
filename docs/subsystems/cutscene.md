@@ -429,7 +429,9 @@ holds **no** channel selector):
   chain - the id -> `(clip_slot, channel)` mapping, the length-field -> `duration_sectors` scale
   `(len*60+99)/100`, and the starter's end-LBA offset `(duration*150+149)/60` clamped at `0x2A30` -
   are ported in [`legaia_engine_shell::xa_clip`](../../crates/engine-shell/src/xa_clip.rs); the CD
-  control / `CdlSetfilter` state machines around them stay hardware-side and unported.
+  control / `CdlSetfilter` state machines around them stay hardware-side - scope
+  row `[cd_transport_shims]`, with the callback ring `FUN_8003D764` decoded in
+  `legaia_engine_audio::battle_voice::xa_transport_step`.
   `legaia-engine xa-cue <ids> [--xa-dir extracted/XA]` runs that mapping for a set of cue ids and
   reports the `XA<n>.XA` bank, the filter channel and the duration / end-LBA arithmetic, checking
   each resolved bank against the extracted files - the census entry point for this path.

@@ -2644,20 +2644,15 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             CueSpawn::Actor { id, yaw } => {
                 self.world.try_spawn_effect(id, at, (yaw as u16) & 0xFFF);
             }
-            CueSpawn::Effect {
-                effect_index, sfx, ..
-            } => {
+            // `clut_x` is a VRAM x coordinate, not a cue id: retail's arm
+            // is `MoveImage({x = clut_x, y = 476, w = 16, h = 1}, 224, 476)`
+            // - a 16-entry palette-row swap. It was pushed into
+            // `World::battle_sfx_cues` while the table was read as an SFX
+            // map, which fed the SFX scheduler the values `0xB0` / `0xC0` /
+            // `0xD0`. The engine has no VRAM CLUT-row swap on this seam, so
+            // the copy is dropped rather than mis-routed.
+            CueSpawn::Effect { effect_index, .. } => {
                 self.world.spawn_action_table_effect(effect_index, at);
-                if let Some(sfx) = sfx {
-                    self.world
-                        .battle_sfx_cues
-                        .push(crate::battle_events::BattleSfxCue {
-                            kind: u16::from(sfx),
-                            timing_frames: 0,
-                            actor_slot,
-                            target_slot: actor_slot,
-                        });
-                }
             }
         }
     }

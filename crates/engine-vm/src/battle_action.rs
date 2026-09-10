@@ -93,6 +93,12 @@ pub use hit_event::*;
 mod target_cursor;
 pub use target_cursor::*;
 
+mod effect_selector;
+pub use effect_selector::*;
+
+mod ai_companion;
+pub use ai_companion::*;
+
 #[cfg(test)]
 mod tests;
 

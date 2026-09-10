@@ -90,11 +90,11 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
         .expect("aux tables off the real overlay");
 
     // Pick a battle-usable item whose site names a group holding at least one
-    // effect cue **and** at least one sounded cue, so all three sinks are
-    // exercised by one action.
+    // effect cue **and** at least one cue carrying a CLUT row, so both sinks
+    // are exercised by one action.
     let tables = CueTables {
         groups: aux.cue_group_bytes(),
-        sfx_map: aux.sfx(),
+        clut_map: aux.sfx(),
     };
     let Some((item_id, site, plan)) = (0..=0xFFu8).find_map(|id| {
         let eff = items.effect(id)?;
@@ -106,10 +106,15 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
             return None;
         }
         let plan = expand_cue_group(site.tint, site.actor_state, 0, site.group, &tables);
-        let sounded = plan
-            .spawns
-            .iter()
-            .any(|s| matches!(s, CueSpawn::Effect { sfx: Some(_), .. }));
+        let sounded = plan.spawns.iter().any(|s| {
+            matches!(
+                s,
+                CueSpawn::Effect {
+                    clut_x: Some(_),
+                    ..
+                }
+            )
+        });
         let actor_cue = plan
             .spawns
             .iter()
@@ -187,25 +192,33 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
     if let legaia_engine_vm::battle_cast_cue::CastCueOutcome::Sfx(id) = cast {
         want.push(id);
     }
-    let group_sounds: Vec<u16> = plan
+    // `0x801F6418`'s bytes are the **CLUT source x** of a 16x1 `MoveImage`
+    // copy, not cue ids: they used to be pushed into `battle_sfx_cues`, which
+    // fed the SFX scheduler the values `0xB0` / `0xC0` / `0xD0`. The queue now
+    // carries only the cast one-shot, and the copy is dropped.
+    let group_clut_rows: Vec<u16> = plan
         .spawns
         .iter()
         .filter_map(|s| match s {
-            CueSpawn::Effect { sfx: Some(v), .. } => Some(u16::from(*v)),
+            CueSpawn::Effect {
+                clut_x: Some(v), ..
+            } => Some(u16::from(*v)),
             _ => None,
         })
         .collect();
-    assert!(!group_sounds.is_empty(), "fixture picked a silent group");
-    want.extend_from_slice(&group_sounds);
+    assert!(
+        !group_clut_rows.is_empty(),
+        "fixture picked a group with no CLUT row"
+    );
     let got: Vec<u16> = world.battle_sfx_cues.iter().map(|c| c.kind).collect();
     assert_eq!(got, want, "item {item_id:#04x} group {}", site.group);
+    for row in &group_clut_rows {
+        assert!(
+            !got.contains(row),
+            "CLUT x {row:#04x} reached the SFX queue"
+        );
+    }
     let target = world.actors[1].battle.active_target;
-    assert!(
-        world.battle_sfx_cues[got.len() - group_sounds.len()..]
-            .iter()
-            .all(|c| c.actor_slot == target),
-        "group cues are seated on the slot the group was placed at"
-    );
 
     // The actor-state word the site passes landed on the placed slot.
     assert_eq!(

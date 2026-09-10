@@ -114,7 +114,7 @@
       <tr><td><code>+0x13D</code> / <code>+0x149</code> / <code>+0x155</code></td><td>3&times;12</td><td><code>magic_group_0..2</code></td><td>"Magic Modifier 1..12" - three copies of the slot</td></tr>
       <tr><td><code>+0x161</code></td><td>16</td><td><code>summon_levels</code></td><td>"All Summons Level 9" - one byte per summon id (<a href="#summon-levels">note</a>); <code>+0x179..+0x184</code> unmapped</td></tr>
       <tr><td><code>+0x185</code></td><td>1</td><td><code>displayed_skill_count</code></td><td>menu-overlay art roster count</td></tr>
-      <tr><td><code>+0x186</code></td><td>16</td><td><code>displayed_skill_ids</code></td><td>"Has all Arts"; head insert on item-use learn. Fifteen arts per character, so the 16th slot <code>+0x195</code> is never reached - the patcher's <code>--show-super-arts</code> keeps its performed-Super mask there</td></tr>
+      <tr><td><code>+0x186</code></td><td>16</td><td><code>displayed_skill_ids</code></td><td>"Has all Arts"; item-use learn does an <strong>ordered</strong> insert, keeping the list sorted ascending by id (the applier arm at <code>0x80041FB4</code>, not a head insert). Fifteen arts per character, so the 16th slot <code>+0x195</code> is never reached - the patcher's <code>--show-super-arts</code> keeps its performed-Super mask there</td></tr>
       <tr><td><code>+0x196</code></td><td>1</td><td><code>armor_id</code></td><td>"Armor Modifier" / "Best Equipment"</td></tr>
       <tr><td><code>+0x197</code></td><td>1</td><td><code>head_gear_id</code></td><td>"Head Gear Modifier"</td></tr>
       <tr><td><code>+0x198</code></td><td>1</td><td><code>weapon_id</code></td><td>"Weapon Modifier"</td></tr>

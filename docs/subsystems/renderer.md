@@ -541,8 +541,10 @@ ported (the from-scratch engine projects and rasterises through wgpu):
   calls. Given an output slot, two vertices and a q12 fraction `a3`, it lerps
   X/Y/Z (`out = b + ((a-b)*frac >> 12)`) and, gated by the flag word `a2` (bit 0
   `0x1` the UV pair at `+0x18/0x19`, bit 1 `0x2` the RGB triple at `+0x14..0x16`,
-  bit `0x800` selects the trailing endpoint), the packed RGB and UV bytes. Pure integer arithmetic, but kept unported because it exists only to
-  service retail's software near-plane clip. See
+  bit `0x800` selects the trailing endpoint), the packed RGB and UV bytes. Pure integer arithmetic, but replaced rather than
+  ported: it exists only to service retail's software near-plane clip, and the
+  engine clips in wgpu's own clip space. Scope row `[render_pipeline]` in
+  `scripts/ci/port-catalog-ignore.toml`, so it is not a worklist gap. See
   `ghidra/scripts/funcs/80029724.txt`.
 
 ## 2D `POLY_*` packet emitters
@@ -1090,7 +1092,8 @@ distinct 16-entry palettes into one 256-wide row - so a CBA's 16-pixel slot sits
 The `--runtime-vram` cross-check tells the two failure modes apart. "Row absent
 from engine but present at runtime" is an engine loader gap. "Row absent from
 runtime too" means the mesh references an unreachable CLUT - likely a parser-side
-issue, or a CLUT loaded by an unported sub-pack walker.
+issue, or a CLUT that arrives through a sub-pack the engine's loader does not
+walk - a loader gap, not a port row.
 
 **`legaia-engine vram-oracle --scene <name> --disc <bin> --runtime-vram <bin> [--diff-png <path>] [--tiles]`**
 rebuilds the scene's engine VRAM and reports per-band overlap counts plus an

@@ -104,7 +104,7 @@ Full write-ups for the rows above whose detail outgrew a table cell. Linked from
 
 ### `801DB7B0`
 
-**VA aliases two different functions** - only the `overlay_0897` (town/field) resident is the dispatcher below. The `overlay_battle_action` / `magic_capture` / `magic_level_up` / `muscle_dome` residents are a **108-byte / 27-instruction battle-action record writer** (`FUN_801db7b0(id, p2, p3, u16 p4, u16 p5)`): builds a 12-byte record at `_DAT_8007BD24 + id*0xC + 0x11B4` (`[p2, 0, id, p3, u16 p4, u16 p5]`) then copies two u16s from the actor's stat block `*(_DAT_8007BD24 + id*4 + 0x1074) + 0xA/0xC`. Unported game logic (the engine models the consuming battle-action SM, not this `+0x11B4` producer).
+**VA aliases two different functions** - only the `overlay_0897` (town/field) resident is the dispatcher below. The `overlay_battle_action` / `magic_capture` / `magic_level_up` / `muscle_dome` residents are a **108-byte / 27-instruction battle-action record writer** (`FUN_801db7b0(id, p2, p3, u16 p4, u16 p5)`): builds a 12-byte record at `_DAT_8007BD24 + id*0xC + 0x11B4` (`[p2, 0, id, p3, u16 p4, u16 p5]`) then copies two u16s from the actor's stat block `*(_DAT_8007BD24 + id*4 + 0x1074) + 0xA/0xC`. Ported as `legaia_engine_vm::battle_record_writer::widget_record`, without a `PORT:` marker: `scripts/ci/port-catalog-ignore.toml` files the bare VA under `[worklist_va_aliased]` because the two residents are different routines, so the address names no single port site.
 
 **`overlay_0897` variant only:** a generic 4-byte jump-table dispatcher, 7 instructions: `(*(table[v1])(...))()` where table base = `v0 - 0xD6C`; caller sets `v0` (lui-immediate) and `v1` (index).
 

@@ -213,14 +213,20 @@ fn an_item_action_expands_its_cue_group_and_every_cue_lands_in_a_sink() {
     );
     let Rec::Cue {
         slot,
-        spawn: CueSpawn::Effect { id, sfx, tint, .. },
+        spawn: CueSpawn::Effect {
+            id, clut_x, tint, ..
+        },
     } = cues[1]
     else {
         panic!("second cue is the effect arm: {:?}", cues[1]);
     };
     assert_eq!(*slot, 4);
     assert_eq!(*id, 0x07);
-    assert_eq!(*sfx, Some(0x33), "the SFX-map byte rides the cue");
+    assert_eq!(
+        *clut_x,
+        Some(0x33),
+        "the `0x801F6418` byte rides the cue as a CLUT source x"
+    );
     assert!(
         tint.is_some(),
         "the class-3 site's tint is not neutral, so the spawn recolours"
@@ -245,7 +251,7 @@ fn the_revive_site_leaves_the_actor_scale_word_alone() {
             slot: 0,
             spawn: CueSpawn::Effect {
                 id: 0x09,
-                sfx: None,
+                clut_x: None,
                 ..
             }
         }

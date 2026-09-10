@@ -1752,21 +1752,50 @@ confuse behaviour *is* pinned (picker `& 0x380` guards + `FUN_801E7320` retarget
 at ActionSeed).
 
 **Char-id-4 (Terra) auto-AI pick - pinned.** `FUN_801EED1C`'s `== 4` block
-chooses by the actor's special gauge (`+0x14C` current / `+0x14E` max; seeded to
-`0xC8` when `DAT_8007BD11 == 4`) and status word (`+0x16E`):
+chooses by **battle seat 0's** gauge (`+0x14C` current / `+0x14E` max) and
+status word (`+0x16E`), and writes **battle seat 1**. The `0xC8` gauge seed is
+a separate, earlier gate on `DAT_8007BD11 == 4` (`0x801EEE10`) and lands on
+seat 1's `+0x174` / `+0x150` / `+0x172` / `+0x14C`.
 
-| condition | category `+0x1DE` | detail | writer PC |
+| condition (seat 0) | category `+0x1DE` | detail | writer PC |
 |---|---|---|---|
 | `+0x14C == 0` | `2` (Magic) | spell id `0x16`, target 0 | `0x801EEE70` |
 | `+0x14C < +0x14E >> 1` | `2` (Magic) | spell id `0x0D` | `0x801EEEAC` |
 | healthy, `+0x16E != 0` (statused) | `2` (Magic) | spell id `0x11` | `0x801EEEE0` |
-| healthy, no status | `3` (Attack) or none | `rand()&1`: 50% Attack with a 1-2 hit directional stream (`0x0C`/`0x0D`/`0x0E`), else category 0 (no action) | `0x801EEF28` |
+| healthy, no status | `3` (Attack) or none | `rand() & 1`: half Attack, half category `0` (stand by) | `0x801EEF28` |
 
 The spell id lands in `+0x1DF` (`0x801EEEF8`) and `+0x1E7 = 9` (`0x801EEF00`).
-So the AI companion *does* vary its pick (magic when low/statused, else a coin-flip
-between a short physical and standing by); it is not a flat auto-attack. This
-branch has no engine consumer yet (Terra joins past the playable slice), so it is
-documented but unported.
+
+**Two corrections to an earlier reading of this block.** It does *not* watch
+its own gauge: `lw v1, -0x6c90(0x801D0000)` at `0x801EEE50` is
+`actor_table[0]`, while every write goes through `lw v1, 4(s0)` -
+`actor_table[1]`, a fixed `+4`. So it is a healer watching the party leader.
+And the physical arm is not "a 1-2 hit directional stream of
+`0x0C`/`0x0D`/`0x0E`" - see [the physical arm](#the-companions-physical-arm).
+
+Ported as `legaia_engine_vm::battle_action::ai_companion_pick`, wired from
+`World::arm_party_physical` for the party slot whose roster character id is
+`4`.
+
+##### The companion's physical arm
+
+`0x801EEF2C..0x801EF024`, in draw order:
+
+1. `rand() % ctx[+1] + 3` picks a monster seat and is stored to `+0x1DD`
+   (`0x801EEF74`);
+2. if that seat's `+0x14C` is zero the roll is **redrawn** - the loop at
+   `0x801EEF98` is unbounded, so a row with no living monster spins;
+3. the chosen seat's monster **record** `+0x1E` is read through
+   `0x801C9348[target - 3]` (`0x801EEFC8`) - the swing class;
+4. on `+0x1E == 2` the stream is the single command `0x0E` and no further
+   draw happens (`0x801EF028`);
+5. otherwise `+0x1DF` and `+0x1E0` each take an independent
+   `rand() % 2 + 0x0C`, so the stream is always exactly two commands, each
+   `0x0C` or `0x0D`.
+
+The port bounds the redraw at
+`legaia_engine_vm::battle_action::AI_COMPANION_MAX_TARGET_DRAWS` and stands by
+instead of spinning; every other step is the bytes'.
 
 **One delegated pick is now observed** (`evil_medallion_rage_battle`; disc +
 library gated `rage_delegated_pick`). In the battle-actor pool, exactly the
@@ -2590,10 +2619,18 @@ they are documented here rather than lifted whole into `engine-vm`.
   **hit arm** (`0x801E1844..0x801E1A6C`) as
   `engine-vm::battle_cast_census::effect_child_hit`, which is what gives
   `battle_hp_bar::clamp_damage_against_live_hp` a caller - `engine-core`'s
-  `World::apply_effect_child_hit` drives it from the cast fold. Still
-  unported between the two: the GTE homing, the per-slot staging arms and the
-  per-effect spawn. Read off the 0898 image at base `0x801CE818`; see
-  `overlay_battle_action_801e09f8.txt`.
+  `World::apply_effect_child_hit` drives it from the cast fold. What sits
+  between the two does **not** share one verdict. The **GTE homing** is
+  render-track: the engine transforms effect positions through its own wgpu
+  path and the primitives retail calls are scope rows under `[libgte]`. The
+  **per-effect spawn** already has both its sinks - `World::try_spawn_effect`
+  for the direct form and `World::spawn_action_table_effect` for the table
+  form, drained by `World::drain_battle_effect_spawns` - so what is missing
+  there is not a spawner. It is the third item, and it is the only genuinely
+  simulation-shaped one: the **per-slot staging arms** that decide *when* each
+  slot fires - the `ctx[+0x24E]` phase byte, the `+0x252` target, the
+  `+0x1144` position quad and the `+0x6C6` per-slot timer. Read off the 0898
+  image at base `0x801CE818`; see `overlay_battle_action_801e09f8.txt`.
 
   Two details of that arm a decompiled reading loses. The `+0x1DC` writes are
   bit **ORs** (`|= 4` on the reaction leg at `0x801E19D8`, `|= 1` on the face
@@ -3155,15 +3192,17 @@ Spawn routing splits on the record's effect byte: bit `0x80` set goes to the
 battle overlay's 2D spawn `FUN_801DFDF0` with the actor's facing; otherwise
 `0x801F6324[effect]` names a move-VM part prototype spawned through the
 effect-actor pool allocator `FUN_80050ED4`, with an SFX cue from
-`0x801F6418[effect]` queued alongside
+a **CLUT-row copy** keyed by `0x801F6418[effect]` alongside
 ([`move-power.md`](../formats/move-power.md) documents both tables). The two
 arms carry per-code behaviour worth pinning:
 
-- **Table arm** (bit `0x80` clear, `0x801defa0..0x801df234`). The SFX read is
-  gated `code < 0x32` (`sltiu` at `0x801df0d8`) - a code at or above `0x32`
-  is silent whatever the map holds - and a non-zero map byte builds the
-  `[sfx, 0x1DC, 0x10, 1]` packet submitted through `FUN_80058490` (the
-  sound-driver command lane). The prototype read `0x801F6324 + code*4` is
+- **Table arm** (bit `0x80` clear, `0x801defa0..0x801df234`). The
+  `0x801F6418` read is gated `code < 0x32` (`sltiu` at `0x801df0d8`) - a code
+  at or above `0x32` reads nothing whatever the map holds - and a non-zero map
+  byte builds the four-halfword block `[map[code], 0x1DC, 0x10, 1]` handed to
+  `FUN_80058490`. That is a **`RECT`**, not a sound packet: see
+  [what `0x801F6418` really is](#0x801f6418-is-a-clut-row-map-not-an-sfx-map).
+  The prototype read `0x801F6324 + code*4` is
   **unbounded**: a code past the table's 61 entries reads into the SFX map -
   for the spreadsheet's `0x4C` "hit effect" constant the word at
   `0x801F6454` is zero, so `FUN_80050ED4` stages a part from a NULL record
@@ -3181,6 +3220,40 @@ arms carry per-code behaviour worth pinning:
   prototype `0x801F5EB0` seated at the actor's `+0x3C..+0x43` position plus
   a screen-shake global write when the `+0x45C8` context word is clear.
 
+#### `0x801F6418` is a CLUT-row map, not an SFX map
+
+Two consumers read the byte table at `0x801F6418` - the action-effect script
+walker's table arm above, and the cue-group expander `FUN_801E22C8` - and both
+hand it to `FUN_80058490`. That routine was read here as "the sound-driver
+command lane". It is **`MoveImage`**.
+
+The routine names itself: it opens
+`FUN_80058170(0x800156EC, self)`, the debug-name registration every PsyQ
+primitive wrapper in this band performs, and the bytes at `0x800156EC` are the
+ASCII `MoveImage`. Its shape agrees - `(RECT *rect, int dest_x, int dest_y)`,
+an early-out when `rect->w` or `rect->h` is zero (`lh v0, 4(s0)` /
+`lh v0, 6(s0)` at `0x800584C0` / `0x800584D0`), then `(dest_y << 16) | dest_x`
+packed into one word and the rect pushed through the GPU DMA table.
+
+The call site settles what the table holds. `FUN_801E22C8` at
+`0x801E2400..0x801E2450` bump-allocates eight bytes out of the scratchpad
+cursor `0x1F8003A0`, fills them as
+`{ x = map[id], y = 0x1DC, w = 0x10, h = 1 }`, and calls
+`MoveImage(rect, 0xE0, 0x1DC)`. `0x1DC` is VRAM row **476** and `0x10` is
+sixteen pixels: this is a 16-entry CLUT row copied from `(map[id], 476)` to
+`(224, 476)` - a palette swap that recolours whatever the cue draws.
+
+The bytes confirm it. Over the table's `0x32` live entries the whole value set
+is `0x00`, `0xB0`, `0xC0` and `0xD0` - four values, three of them non-zero,
+every one a plausible VRAM x and none a plausible cue id. An SFX map would not
+be three-valued.
+
+The port carries the corrected reading in
+`legaia_engine_vm::battle_cue_group` (`CueTables::clut_map`,
+`CueSpawn::Effect::clut_x`), and the cue-group sink no longer pushes those
+bytes into `World::battle_sfx_cues`. The engine has no VRAM CLUT-row swap on
+that seam, so the copy is dropped rather than mis-routed.
+
 The walker's prologue (`0x801DEA50..0x801DEBEC`) services the
 `ctx[+0x1028]` handle those table codes installed: it drops the handle when
 the part's `+0x10` flags carry bit `3`, and - only for the context's active
@@ -3197,8 +3270,10 @@ terminator maths, `RetailRotationLut`), driven per battle frame by
 `World::tick_battle_animations`; spawn requests drain via
 `World::drain_battle_effect_spawns` and route into the effect pool (direct
 form) / `World::spawn_action_table_effect` (table form), and the drain fires
-the table arm's `0x801F6418` SFX byte into `World::battle_sfx_cues` under
-the retail `< 0x32` gate. Not yet modeled: the mesh-header scale + the
+the table arm's `0x801F6418` byte under the retail `< 0x32` gate. That byte
+reaches `World::battle_sfx_cues` as a cue id, which is wrong for the reason
+[below](#0x801f6418-is-a-clut-row-map-not-an-sfx-map) - the walker's own sink
+still has to be moved off the SFX queue. Not yet modeled: the mesh-header scale + the
 per-code scale specials (the engine substitutes the q12 unit and the scene
 spawner has no scale channel), the code-`0` substitution, the extra-spawn
 and screen-shake specials above, and the prologue's follow-the-actor

@@ -273,7 +273,7 @@ pub trait BattleActionHost {
     }
 
     /// The two cue-group tables the expander indexes:
-    /// `(groups @ 0x801F6470, sfx_map @ 0x801F6418)`.
+    /// `(groups @ 0x801F6470, clut_map @ 0x801F6418)`.
     ///
     /// Both are disc-parsed by
     /// `legaia_asset::move_power::EffectAuxTables` off PROT 0898. `None` =

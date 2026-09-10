@@ -509,7 +509,7 @@ A pre/post save pair (battle command menu parked on Fire Book I → Fire Book I 
 | `+0x186` | `0x0C` | `0x03` | first list entry - new entry inserted at front |
 | `+0x187` | `0x00` | `0x0C` | second list entry - pre-event entry shifted right |
 
-Pattern: a length-prefixed list at `+0x185` grew by one entry. The new entry was inserted at position 0; the existing entry at position 0 moved to position 1.
+Pattern: a length-prefixed list at `+0x185` grew by one entry. The new entry landed at position 0 and the existing entry moved to position 1 - which a head insert and an **ordered** insert both produce, because `0x03 < 0x0C`. The writer settles it: the applier's `0x0B`..`0x0D` arm (`0x80041FB4`, `legaia_engine_vm::battle_action::selector_insert_displayed_skill`) walks down from the count moving entries up only while the new id is smaller, so the list is kept sorted **ascending by id**. This one sample cannot tell the two apart.
 
 ### Reader resolved
 
