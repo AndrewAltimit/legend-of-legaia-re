@@ -491,7 +491,10 @@ of `gp+0x3D8` (the frame-begin-skip flag), `gp+0x538`, `0x8007B938` and
 `gp+0x55C`. The seat performs the two pad clears - through
 `InputState::clear_edges`, so the button that caused a transition is not
 re-delivered as the first input of the mode it opened - and the frame-begin-skip
-clear. The rest are device-layer calls the port replaces.
+clear. The pad half is applied only to a transition a host performs
+synchronously, because the port publishes the frame's pad *before* the tick
+where retail polls it *after* the edge; the boot page carries that ordering
+note. The rest are device-layer calls the port replaces.
 
 Two readings of that block are corrected while it is being cited: it holds
 **four** clears, not three (`0x8007B938` at `0x800161F4` sits between

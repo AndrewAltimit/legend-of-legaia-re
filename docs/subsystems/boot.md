@@ -479,9 +479,18 @@ Three things come out of the seat that nothing else in the port produces:
   and the half of it with observable behaviour is the pad swallow: the edge
   words `gp+0x538` and `gp+0x55C` are cleared, so the button that caused a
   transition is not delivered again as the first input of the mode it opened.
-  The port clears the same edges through `InputState::clear_edges`. Two stores
-  in that block are not clears at all (`gp+0x564` and `gp+0x494` take copies of
-  the new mode), and a fourth clear at `0x8007B938` sits beside the three.
+  The port clears the same edges through `InputState::clear_edges`, on the
+  transitions a host performs synchronously mid-frame - see the ordering note
+  below. Two stores in that block are not clears at all (`gp+0x564` and
+  `gp+0x494` take copies of the new mode), and a fourth clear at `0x8007B938`
+  sits beside the three.
+
+  **Where the swallow may not go.** Retail clears the pad words and the *next*
+  loop pass polls the pad fresh, so the clear only ever discards the mode being
+  left. The port's hosts publish a pad word immediately *before* each tick, so
+  clearing at the top of a frame would discard that frame's own input instead.
+  The seat therefore swallows on `ModeSeat::enter` (a host-performed
+  transition) and not on a change it adopts from the world.
 - **Every frame carries a mode word.** The mode-trace oracle
   (`legaia-engine mode-trace`) used to emit `game_mode` only while the pause
   menu was open, so the field it transported against a retail capture was

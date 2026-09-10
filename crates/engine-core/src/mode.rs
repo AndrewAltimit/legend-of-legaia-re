@@ -1127,7 +1127,7 @@ impl ModeSeat {
     /// `world` is needed for the edge itself ([`ModeChangeEdge`]).
     pub fn enter(&mut self, mode: GameMode, world: &mut World) -> Option<ModeInitPlan> {
         self.write_mode(mode);
-        self.frame(world).init
+        self.frame_inner(world, true).init
     }
 
     /// The INIT column's plan for `mode`, without entering it.
@@ -1174,15 +1174,22 @@ impl ModeSeat {
     }
 
     /// Take the mode-change edge if the word moved since the last one.
-    fn take_edge(&mut self, world: &mut World) -> Option<ModeChangeEdge> {
+    ///
+    /// `swallow` decides whether the edge performs retail's pad-edge clears,
+    /// and the answer is not "always" - see [`Self::frame`] for why an
+    /// adopted change must not.
+    fn take_edge(&mut self, world: &mut World, swallow: bool) -> Option<ModeChangeEdge> {
         let to = self.driver.current();
         if to == self.previous {
             return None;
         }
         let from = self.previous;
-        // The two pad clears (`gp+0x538` / `gp+0x55C`): the button that caused
-        // the transition is not delivered again as the new mode's first input.
-        world.input.clear_edges();
+        if swallow {
+            // The two pad clears (`gp+0x538` / `gp+0x55C`): the button that
+            // caused the transition is not delivered again as the new mode's
+            // first input.
+            world.input.clear_edges();
+        }
         // `gp+0x3D8`.
         world.frame_begin_skip = false;
         self.previous = to;
@@ -1190,7 +1197,7 @@ impl ModeSeat {
         Some(ModeChangeEdge {
             from,
             to,
-            swallowed_pad_edges: true,
+            swallowed_pad_edges: swallow,
             cleared_frame_begin_skip: true,
         })
     }
@@ -1204,8 +1211,22 @@ impl ModeSeat {
     /// [`ModeFrame::runs_master_driver`] field is the same rule
     /// `World::tick` applies internally, surfaced so a host can skip its own
     /// render / actor work under `CARD MODE` too.
+    ///
+    /// **This edge does not swallow the pad, and the reason is an ordering
+    /// mismatch rather than a fidelity choice.** Retail's transition block
+    /// clears the pad words and the *next* loop pass polls the pad fresh, so
+    /// the clear only ever discards the mode it left. The port's hosts publish
+    /// a pad word immediately *before* each tick, so clearing here would
+    /// discard this frame's own input - the button the player is pressing at
+    /// the new mode, not the one that left the old one. The swallow therefore
+    /// belongs to the transitions a host performs synchronously mid-frame,
+    /// which is what [`Self::enter`] does.
     pub fn frame(&mut self, world: &mut World) -> ModeFrame {
-        let edge = self.take_edge(world);
+        self.frame_inner(world, false)
+    }
+
+    fn frame_inner(&mut self, world: &mut World, swallow: bool) -> ModeFrame {
+        let edge = self.take_edge(world, swallow);
         let mode = self.driver.current();
         let out = ModeFrame {
             game_mode: mode,
@@ -1811,7 +1832,7 @@ mod tests {
     }
 
     #[test]
-    fn a_mode_change_swallows_the_pad_edge_that_caused_it() {
+    fn an_entered_mode_swallows_the_pad_edge_that_caused_it() {
         let mut world = World::new();
         let mut seat = ModeSeat::new(GameMode::MainMode);
         // A frame with Start newly pressed - the edge that opens the menu.
@@ -1819,16 +1840,33 @@ mod tests {
         world.set_pad(crate::input::PadButton::Start.mask());
         assert!(world.input.just_pressed(crate::input::PadButton::Start));
 
-        seat.write_mode(GameMode::CardInit);
-        let f = seat.frame(&mut world);
-        let edge = f.edge.expect("the word moved, so the edge is taken");
-        assert_eq!(edge.from, GameMode::MainMode);
-        assert_eq!(edge.to, GameMode::CardInit);
-        assert!(edge.swallowed_pad_edges);
+        seat.enter(GameMode::CardInit, &mut world);
+        assert_eq!(seat.game_mode(), GameMode::CardMode);
         // Held is untouched; only the edge is gone.
         assert!(!world.input.just_pressed(crate::input::PadButton::Start));
         assert!(world.input.pressed(crate::input::PadButton::Start));
         assert_eq!(seat.edges(), 1);
+    }
+
+    /// The other direction, and the one a host's frame loop depends on: an
+    /// edge the seat *adopts* leaves the pad alone, because the host has
+    /// already published this frame's word by the time the frame runs.
+    #[test]
+    fn an_adopted_mode_change_leaves_this_frames_input_alone() {
+        let mut world = World::new();
+        let mut seat = ModeSeat::new(GameMode::MainMode);
+        seat.adopt_scene_mode(SceneMode::Battle);
+        world.set_pad(0);
+        world.set_pad(crate::input::PadButton::Circle.mask());
+
+        let f = seat.frame(&mut world);
+        let edge = f.edge.expect("the word moved, so the edge is taken");
+        assert_eq!(edge.to, GameMode::BattleMode);
+        assert!(!edge.swallowed_pad_edges);
+        assert!(
+            world.input.just_pressed(crate::input::PadButton::Circle),
+            "the frame's own input survives an adopted transition"
+        );
     }
 
     #[test]

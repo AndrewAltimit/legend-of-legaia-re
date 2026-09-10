@@ -161,10 +161,8 @@ pub struct SaveScreenFlow {
 ///
 /// Retail runs its fade on a timer of its own and the machine takes the rate
 /// from its caller ([`SaveScreenMachine::tick`]), so this is the port's rate,
-/// not a recovered constant: `0xF2` down past the `0x7A` input threshold in
-/// eight frames, which sits inside the "Now checking" beat by two orders of
-/// magnitude and inside a human's reaction to the button that opened the
-/// screen.
+/// not a recovered constant: `0xF2` down past the `0x79` dispatch threshold in
+/// eight frames, well inside the "Now checking" beat the screen opens with.
 pub const SAVE_SCREEN_FADE_DELTA: u8 = 0x10;
 
 impl SaveScreenFlow {
@@ -375,10 +373,16 @@ impl SaveScreenFlow {
             ..Default::default()
         };
         self.machine_effects = machine.tick(sub_input, SAVE_SCREEN_FADE_DELTA);
-        // Retail suppresses the pad while the fade is still above its
-        // threshold (`FADE_INPUT_THRESHOLD`), which is what keeps the button
-        // that opened the screen from being consumed as its first input.
-        let edge = if machine.input_active() { edge } else { 0 };
+        // The fade's input threshold is **not** applied to this edge, and the
+        // reason is a boundary mismatch rather than a fidelity choice. Retail
+        // suppresses the pad while its outer fade is above
+        // `FADE_INPUT_THRESHOLD`, and by the time a player is choosing a card
+        // port that fade is long finished - the save UI faded in when the menu
+        // row opened it. The port's session starts *at* the pill row and the
+        // flow is constructed with it, so gating on the fade here swallows the
+        // port confirm instead of the press that opened the screen. Hosts that
+        // want the gate read [`Self::retail_fade`] and
+        // `SaveScreenMachine::input_active` for themselves.
         match session.phase() {
             SelectPhase::SlotPreview { .. } => {
                 self.grid_cursor = step_grid_cursor(self.grid_cursor, edge);
@@ -568,7 +572,6 @@ mod tests {
             }
         }
     }
-
 
     /// Drive the flow the way the module's own usage note says a host must:
     /// answer the card read the moment it is asked for, and call

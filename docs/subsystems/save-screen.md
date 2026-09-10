@@ -361,12 +361,15 @@ place: the **card op**.
   finishing; the flow answers the first with "the I/O machine has published
   nothing yet" and the second with "it published success", so the graph's move
   to the slot selector `0x01` is caused by the backend, not by a frame counter.
-- The outer fade is load-bearing on input. `SaveScreenMachine::input_active`
-  is false while the fade sits above `FADE_INPUT_THRESHOLD`, and the flow
-  masks the pad edge for those frames - which is what keeps the button that
-  opened the screen from being consumed as the screen's first input. The rate
-  is the port's (`SAVE_SCREEN_FADE_DELTA`); retail's machine takes it from its
-  caller too.
+- The outer fade runs, and the flow deliberately does **not** gate the pad on
+  it. Retail suppresses input while the fade is above `FADE_INPUT_THRESHOLD`,
+  and by the time a player is choosing a card port that fade is long finished -
+  the save UI faded in when the menu row opened it. The port's session starts
+  *at* the pill row and the flow is constructed with it, so applying the gate
+  there swallows the port confirm rather than the press that opened the screen.
+  The level is exposed (`SaveScreenFlow::retail_fade`) for a host that wants to
+  draw or gate on it; the rate is the port's, since retail's machine takes it
+  from its caller too.
 - A confirm of either direction is refused until the I/O machine publishes
   success. In practice that only ever fires when the backend never answered,
   because the "Now checking" beat is two orders of magnitude longer than the
