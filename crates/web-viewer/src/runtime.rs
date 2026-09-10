@@ -97,6 +97,15 @@ pub struct LegaiaRuntime {
     /// `Some` only while the encounter session sits in its `Transition`
     /// phase; owns the captured-field VRAM clone the style bodies sample.
     pub(crate) battle_intro: Option<legaia_engine_ui::battle_intro::BattleIntro>,
+    /// The port's seat at the retail mode table (`_DAT_8007B83C`) - the same
+    /// `legaia_engine_core::mode::ModeSeat` `engine-shell`'s `BootSession`
+    /// holds. This host used to run its whole front end without a mode word,
+    /// so the two hosts could not be compared on it and only one of them
+    /// could take the battle-intro hand-off edge. Reconciled once per
+    /// [`Self::tick_frame`] through [`Self::tick_mode_seat`], which calls the
+    /// same two seat entry points the native session calls, so neither host
+    /// owns a copy of the rule.
+    pub(crate) mode_seat: legaia_engine_core::mode::ModeSeat,
     /// Field party-status HUD driver (`FUN_801D0D38`): the idle countdown and
     /// the cached player position its decision kernel reads. The same state
     /// the native window holds - retail keeps it in overlay globals, so every
@@ -311,6 +320,7 @@ impl LegaiaRuntime {
             field_vram_anim: None,
             field_vram_dirty: false,
             battle_intro: None,
+            mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
             battle_intro_geom: None,
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
@@ -731,6 +741,10 @@ impl LegaiaRuntime {
         // Party wipe: raise the game-over panel on the `World::game_over`
         // edge, the same probe the native window's redraw loop runs.
         self.poll_game_over();
+        // Reconcile the retail mode word with wherever the scene session left
+        // the world - the browser twin of `BootSession::tick`'s own call, and
+        // the same kernel, so the battle-intro hold applies on both hosts.
+        self.tick_mode_seat();
         // Field party-status HUD countdown, ticked where the native window
         // ticks it (`FUN_801D0D38`); the draw pass reads the decision back.
         self.tick_field_party_hud();
@@ -1065,6 +1079,21 @@ impl LegaiaRuntime {
         let event = self.menu.tick(&mut self.world, input);
         JsValue::from_str(&format!("{event:?}"))
     }
+
+    /// The live retail mode word (`_DAT_8007B83C`) and its table name, as
+    /// `{"word": <u32>, "name": "<MODE>"}`.
+    ///
+    /// The page's own read of the seat this host now holds - which is what
+    /// makes a browser mode trace possible at all. Before the seat existed
+    /// the front end ran with no mode word, so the two hosts could not be
+    /// compared on the one register retail's whole dispatch keys off.
+    pub fn mode_state_json(&self) -> String {
+        serde_json::json!({
+            "word": self.mode_word(),
+            "name": self.mode_seat.mode_name(),
+        })
+        .to_string()
+    }
 }
 
 impl LegaiaRuntime {
@@ -1077,6 +1106,40 @@ impl LegaiaRuntime {
             Some(h) => &mut h.world,
             None => &mut self.world,
         }
+    }
+
+    /// Advance the mode seat one frame and reconcile it with the live world.
+    ///
+    /// Mirrors `BootSession::tick`: `ModeSeat::frame` takes any pending edge
+    /// (which is what clears `World::frame_begin_skip` and performs retail's
+    /// transition-block bookkeeping), then `adopt_world_mode` moves the word
+    /// to wherever the scene session left the world - honouring the
+    /// battle-intro hold, so a browser encounter takes the mode edge at the
+    /// end of the spin exactly as the native window does.
+    pub(crate) fn tick_mode_seat(&mut self) {
+        // `world_mut` picks the scene host's world once a disc is loaded, so
+        // the seat follows the same world every other tick step does. The
+        // seat is moved out for the duration because both calls want a
+        // `&mut World` off `self`.
+        let mut seat = std::mem::replace(
+            &mut self.mode_seat,
+            legaia_engine_core::mode::ModeSeat::new_at_boot(),
+        );
+        {
+            let world = self.world_mut();
+            let _ = seat.frame(world);
+        }
+        {
+            let world = self.world_mut();
+            let _ = seat.adopt_world_mode(world);
+        }
+        self.mode_seat = seat;
+    }
+
+    /// The live retail mode word (`_DAT_8007B83C`), for the page's
+    /// diagnostics and for a mode trace this host can now emit.
+    pub(crate) fn mode_word(&self) -> u32 {
+        self.mode_seat.entry_word()
     }
 
     /// Decode the live dialogue box (the field VM's inline-script runner) into

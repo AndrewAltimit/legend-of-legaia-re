@@ -10,16 +10,17 @@
 //! pause menu uses, over black. Picking New Game hands control back to the page,
 //! which seeds the retail new-game defaults and enters the opening scene.
 //!
-//! **The mode word is native-only.** `engine-shell`'s `BootSession` holds the
-//! port's seat at the retail mode table (`engine-core::mode::ModeSeat`) and
-//! carries `_DAT_8007B83C` through the boot chain; this page drives
-//! `SceneHost` directly and holds no session object to hang a seat on, so it
-//! runs the front end without a mode word. Nothing here is drawn from one -
-//! the screen selection below is the *sub-mode* word, which is a different
-//! register and is shared with the native window - so the divergence is that
-//! the browser cannot yet emit a mode trace, not that the two hosts draw
-//! different screens. Closing it means giving the page a session, which is the
-//! same prerequisite its BGM director and its save flow already wait on.
+//! **The mode word is held here too.** `engine-shell`'s `BootSession` holds
+//! the port's seat at the retail mode table (`engine-core::mode::ModeSeat`)
+//! and carries `_DAT_8007B83C` through the boot chain; this page holds one on
+//! [`LegaiaRuntime`] (`mode_seat`), reconciled once per frame by
+//! `LegaiaRuntime::tick_mode_seat` through the same two seat entry points -
+//! so the battle-intro mode hand-off and the mode-change edge land on the same
+//! frame on both hosts, and the page can report the word
+//! (`mode_state_json`). Nothing on this screen is drawn from it: the screen
+//! selection below is the *sub-mode* word, a different register already shared
+//! with the native window. What the page still lacks is a session object, which
+//! is what its BGM director and its save flow wait on - not the seat.
 //!
 //! **All three rows are live.** Continue is enabled off a save scan (the
 //! memory-card rack, this host's save store) exactly as the native window

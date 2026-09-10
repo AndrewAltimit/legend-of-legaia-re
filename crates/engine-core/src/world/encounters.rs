@@ -1110,6 +1110,7 @@ impl World {
         else {
             self.battle_intro = None;
             self.battle_intro_effects.clear();
+            self.battle_intro_mode_handoff = false;
             return;
         };
         let total = self
@@ -1202,6 +1203,31 @@ impl World {
                 });
         }
         self.battle_intro_effects = tick.effects;
+        // The master mode hand-off (`_DAT_8007B83C = 0x14` at `0x801CF8F8`).
+        // Latching, not level-triggered: retail writes the word once, at the
+        // end of the spin, and never unwrites it inside the transition.
+        self.battle_intro_mode_handoff |= tick.entered_battle_mode;
+    }
+
+    /// Whether the battle-intro spin is still holding the master mode word
+    /// back from `BATTLE MODE`.
+    ///
+    /// The engine seats the battle **scene** synchronously at the trigger
+    /// (`World::enter_battle_from_formation`), where retail seats it at the
+    /// end of the spin, so `World::mode` reads `Battle` for the whole
+    /// transition. The mode *word* must not follow it that early:
+    /// `FUN_801CF5BC` writes `_DAT_8007B83C = 0x14` only once the intro clock
+    /// has passed its full duration **and** `TransitionEntity::ready == 3`
+    /// (`legaia_engine_vm::battle_intro_transition::TransitionTick::entered_battle_mode`).
+    /// [`crate::mode::ModeSeat::adopt_world_mode`] consults this, so both
+    /// hosts take the retail edge rather than the trigger frame.
+    ///
+    /// False outside a transition, so nothing else is gated by it.
+    pub fn battle_mode_word_held(&self) -> bool {
+        matches!(
+            self.encounter.as_ref().map(|s| s.phase()),
+            Some(crate::encounter::EncounterPhase::Transition { .. })
+        ) && !self.battle_intro_mode_handoff
     }
 
     /// Return the resolved [`crate::monster_catalog::FormationDef`] for the

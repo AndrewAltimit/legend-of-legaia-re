@@ -1303,7 +1303,7 @@ impl BootSession {
         // Reconcile the word with wherever the scene sessions left the world.
         // The seat owns the word; the sessions own the scene, and this is the
         // one join between them (see `ModeSeat`'s "what owns what").
-        self.mode_seat.adopt_scene_mode(self.host.world.mode);
+        self.mode_seat.adopt_world_mode(&self.host.world);
         self.frames += 1;
         Ok(event)
     }

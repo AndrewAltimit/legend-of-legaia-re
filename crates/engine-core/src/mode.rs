@@ -1184,6 +1184,31 @@ impl ModeSeat {
         Some(target)
     }
 
+    /// Reconcile the word with a world's scene mode, honouring the
+    /// battle-intro hold.
+    ///
+    /// The host-facing form of [`Self::adopt_scene_mode`]. The port seats the
+    /// battle scene at the encounter trigger where retail seats it at the end
+    /// of the intro spin, so `world.mode` reaches `Battle` a whole transition
+    /// early; retail's own write of `_DAT_8007B83C = 0x14` waits for the
+    /// clock and `ready == 3`
+    /// ([`World::battle_mode_word_held`](crate::world::World::battle_mode_word_held)).
+    /// Consulting the world here rather than at each host is what keeps the
+    /// native window and the browser page on the same edge.
+    ///
+    /// REF: FUN_801CF5BC - the transition kernel whose `0x801CF8F8` store this
+    /// gates the port's own word on. Deliberately a `REF:` and not a `PORT:`:
+    /// the routine is already ported as
+    /// `legaia_engine_vm::battle_intro_transition::tick_transition`, and a
+    /// second anchor here would put an address on code that implements none
+    /// of it.
+    pub fn adopt_world_mode(&mut self, world: &World) -> Option<GameMode> {
+        if world.battle_mode_word_held() {
+            return None;
+        }
+        self.adopt_scene_mode(world.mode)
+    }
+
     /// Take the mode-change edge if the word moved since the last one.
     ///
     /// `swallow` decides whether the edge performs retail's pad-edge clears,
