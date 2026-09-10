@@ -373,6 +373,15 @@ for the add, which is what lets a negative Y ramp upward without the compare
 wrapping.
 
 `FUN_80025054` runs the snap arm's exact pair - `FUN_80025344` then
-`actor[+0x16] = FUN_80019278(actor)` - which is the corroboration that the
+`actor[+0x16] = FUN_80019278(actor)` - which is one corroboration that the
 store is a height and not a heading: an actor-template tick has no reason to
 face anywhere before staging a clip.
+
+The decisive one is the sampler's own prologue. `FUN_80019278` opens by reading
+`actor[+0x14]` and `actor[+0x18]` - X and Z, the other two components of the
+same triple - shifting each right by six into a grid index, and indexing the
+scene map at `*(0x1F8003EC) + 0x8000`; its second scratchpad base is
+`0x1F80035C`, the 16-entry floor-height LUT the fishing bring-up
+`FUN_801CF070` seeds and the terrain emitter `FUN_801F89B8` reads. A routine
+whose inputs are a position's X and Z and whose table is a height LUT returns a
+height. `see ghidra/scripts/funcs/80019278.txt`.
