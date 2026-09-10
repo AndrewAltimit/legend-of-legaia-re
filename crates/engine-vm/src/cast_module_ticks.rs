@@ -1270,10 +1270,11 @@ pub const ALL_STATS_SURGE_ARM: u8 = 2;
 /// Arm `3` (`0x801F6E6C`) is terminal: `ctx+0x0D = 0`, `ctx[+0x6DA] = 0x780`
 /// and the return register is zeroed, so only that arm reports done.
 ///
-/// This corrects `docs/subsystems/cast-module.md`, which reads PROT 0955's
-/// four bodies as the band's only writers of the actor stat block. They are
-/// not: this body, PROT 0942's `0x801F7D34`, PROT 0954's `0x801F6A58` and
-/// PROT 0940's `0x801F78B8` all write it too.
+/// PROT 0955's four bodies were once read as the band's only writers of the
+/// actor stat block. They are not: this body, PROT 0942's `0x801F7D34`, PROT
+/// 0954's `0x801F6A58` and PROT 0940's `0x801F78B8` write it too, and an
+/// exhaustive `sh`-immediate sweep of all 64 band images finds stores in
+/// eight of them (`docs/subsystems/cast-module.md`).
 ///
 /// Not ported: the packet arms and the per-arm countdown gate at
 /// `0x801F8834`.

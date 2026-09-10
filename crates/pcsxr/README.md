@@ -47,12 +47,17 @@ state-reading script can dispatch on file extension and accept either
 emulator's states - `scripts/mednafen/check-0968-residency.py` does exactly
 that.
 
-One capability difference matters when picking which emulator to capture with:
-a `.sstate` carries **main RAM only**. Mednafen states additionally carry the
-scratchpad (`ScratchRAM.data8`), which is where `_DAT_1F8003EC` - and through it
-the live per-scene collision / object grid - becomes readable offline. A
-question that has to join a display-list read against grid cells therefore needs
-a **mednafen** capture, not a PCSX-Redux one.
+One capability difference matters when picking which emulator to capture with,
+and it is a **reader** difference, not a format one. Mednafen states carry the
+scratchpad as its own container entry (`ScratchRAM.data8`), which is where
+`_DAT_1F8003EC` - and through it the live per-scene collision / object grid -
+becomes readable offline. A PCSX-Redux `.sstate` carries the scratchpad as
+well: the protobuf holds a 64 KiB `hardware` blob (field 4, tag byte `0x22`,
+length varint `80 80 04`) whose **offset 0 is the scratchpad**, so
+`0x1F8003EC` reads at blob `+0x3EC` and the floor LUT at blob `+0x35C`. This
+crate exposes only `main_ram()`, so until it grows a scratchpad accessor a
+question that joins a display-list read against grid cells still needs a
+**mednafen** capture.
 
 ## How it composes
 

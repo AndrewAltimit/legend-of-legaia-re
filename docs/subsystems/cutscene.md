@@ -1823,6 +1823,20 @@ they are shared scripted-scene machinery rather than dialogue-only code.
 
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_<addr>.txt` for each.
 
+**`FUN_801D6058` is not a cutscene-only step.** It is the `+0x08` handler word
+of the `0x18`-byte plain-template descriptor at `0x801F271C` in the *field*
+overlay's own template table - the same table and shape as the floor-ladder
+oscillator (`0x801F27EC`), the eased move (`0x801F2840`) and the shutter bars
+(`0x801F2858`). Its one spawn site is field MAIN INIT `FUN_801D6704`:
+`lui $a1,0x801f; addiu $a1,$a1,0x271c` then `jal 0x80024c88` at `0x801D6FD8`,
+followed by `sh $s0,0x1a($v0)` - `+0x1A = 1`, the emitter's **scene** arm - and
+the whole site sits behind a `bnez` on `_DAT_8007B8B8` at `0x801D6FB0`, so it
+runs once per scene entry while that global is clear. The port hosts it as an
+element channel (`engine-core::world::cutscene_elements`). Its two table
+neighbours here, `FUN_801D5C08` and `FUN_801D5D60`, are referenced by nothing
+across the 84 overlay images in any of the five reference forms - what spawns
+*those* elements is open.
+
 ### `FUN_801D27E0` swaps the party leader
 
 The earlier reading of this state machine as a "scripted camera focus" is

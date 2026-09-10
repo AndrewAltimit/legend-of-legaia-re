@@ -1,4 +1,4 @@
-//! Per-VM `Host` trait implementations that bridge each clean-room VM into
+//! Per-VM `Host` trait implementations that bridge each port VM into
 //! [`World`]. Split out of `world.rs`.
 
 use super::*;
@@ -362,7 +362,7 @@ pub(super) struct WorldMapEntityHostImpl<'a> {
 impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
     fn activation_gate_open(&self) -> bool {
         // Retail gates the SM body on `_DAT_8007b868 == 0` (door/portal open).
-        // The clean-room world has no closed-portal state yet, so the body
+        // The port's world has no closed-portal state yet, so the body
         // always runs when world-map entities are installed; the per-state
         // gates (encounter-enabled, dialog-active) still apply below.
         true
@@ -492,7 +492,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
     fn on_encounter(&mut self, _entity_idx: usize, _resolver_result: u32) {}
     fn on_activating(&mut self, _entity_idx: usize) {
         // State-1 `entity[+0x94]` formation copy. Retail copies the carrier's
-        // formation into the global cell here; the clean-room world latches it
+        // formation into the global cell here; the port's world latches it
         // in `on_scene_transition` (same state-1 tick) and resolves it from
         // `formation_table` directly at the end of the carrier tick, so no
         // persistent encounter session is created (a re-rolling session would
@@ -513,7 +513,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
     }
     fn player_walking(&self) -> bool {
         // Report "player walking" so the SM's proximity-interact path stays
-        // suppressed: the clean-room world has no player-near-NPC model yet, so
+        // suppressed: the port's world has no player-near-NPC model yet, so
         // a field carrier is engaged explicitly via `engage_field_carrier`
         // rather than by the SM's auto-interact gate (which would otherwise
         // re-fire `on_interact` every frame once its cooldown bit latched).
@@ -847,7 +847,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     // Op-0x43 screen-effect widget sub-ops (the PROT-0900 mask / sprite /
-    // panel / letterbox family, exercised by the eight ending scenes).
+    // panel / letterbox family, exercised by the ten ending scenes).
     // Each routes to the world's widget host; the Field / Cutscene tick
     // advances the widgets and publishes `World::screen_fx_frame`.
     // REF: FUN_801F8004 / FUN_801F8D4C / FUN_801F88FC / FUN_801F8E6C /
@@ -1980,7 +1980,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // terminate a record; bytes whose top nibble is 0xC consume one
         // extra byte. The walker stops when the tail is exhausted - the
         // retail original would over-read into adjacent memory, which the
-        // clean-room port refuses by construction.
+        // port refuses by construction.
         let mut records: Vec<Vec<u8>> = Vec::with_capacity(count as usize);
         let mut cursor = 0usize;
         for _ in 0..count {
@@ -2259,7 +2259,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     ///
     /// `World::spell_catalog` is seeded from the user's `SCUS_942.54` at boot
     /// ([`crate::retail_magic::seru_magic_catalog_from_scus`]), so on a real
-    /// disc this *is* the retail `+3` byte; disc-free it is the clean-room
+    /// disc this *is* the retail `+3` byte; disc-free it is the port's
     /// catalog. Either way there is one price per spell in this engine, and
     /// this is where the state machine reads it.
     fn spell_mp_cost(&self, id: u8) -> u8 {

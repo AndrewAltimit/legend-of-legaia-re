@@ -900,7 +900,7 @@ one instruction *past* the `move s7, zero` at `0x801F7588`.
 write the actor **stat block** and the persistent character record, and one
 of them is the setter `battle-formulas.md` records as the last status-applier
 gap. They are not the band's *only* stat-block writers - see
-[the rest of the band's stat writers](#the-band-has-five-stat-block-writers-not-one).
+[the rest of the band's stat writers](#the-band-has-eight-stat-block-writers-not-one).
 
 | Body | What its working arm writes |
 |---|---|
@@ -999,7 +999,7 @@ different modules here and a capture-class body in six more - which is the
 same reason the trampoline map has to be keyed on `(entry, body)`
 [above](#a-body-va-is-not-a-key---only-entry-body-is).
 
-### The band has five stat-block writers, not one
+### The band has eight stat-block writers, not one
 
 The four PROT 0955 bodies above were once read as the band's only writers of
 the actor stat block. They are not. The decisive measurement is an exhaustive

@@ -262,13 +262,14 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         );
     }
 
-    // The container header words the battle scene loader registers as
-    // battle-VDF pointers at every battle load (FUN_800520F0 state 0xc:
-    // meta[0], meta[1], type<<24|size0, offset0) must stay byte-exact -
-    // meta[1] is the offset of the VDF tail past the LZS payload, and a
-    // recomputed value points the effect system at garbage (battle-load
-    // hang). PROT 0874 is a dual-consumer entry: field player pack AND
-    // battle VDF carrier.
+    // The container's first four header words (meta[0], meta[1],
+    // type<<24|size0, offset0) stay byte-exact. meta[1] is the sum of the
+    // descriptors' decoded sizes, not a pointer - the battle loader's VDF
+    // registration walks raw TOC 874 = extraction 872 (`vdf`), a
+    // different entry from this one (extraction 874 = raw 876). See
+    // docs/formats/character-mesh.md "Not a dual consumer". The
+    // byte-exactness rule is kept because a size change was observed to
+    // hang the next battle load, not because these words are pointers.
     {
         let retail = DiscPatcher::open(original.clone()).expect("open retail");
         let r = retail.read_entry(874).expect("retail 874");
@@ -276,7 +277,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         assert_eq!(
             &r[..16],
             &p[..16],
-            "PROT 0874 registered header words changed"
+            "PROT 0874 container header words changed"
         );
     }
 

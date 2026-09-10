@@ -910,11 +910,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   <h2>Muscle Dome courses</h2>
   <p>
     Three fixed arenas, each a ladder of ordinary battles against one monster at a time -
-    8 rounds on Beginner and Expert, 13 on Master. Restrictions are enforced at course entry:
-    the walkthrough data below records Beginner and Expert disabling equipment and items but
-    allowing magic, with Master adding a magic ban; accessories are always permitted. The
-    line-ups are cross-checked against the roster table on the disc, which agrees in every
-    slot.
+    8 rounds on Beginner and Expert, 13 on Master. The walkthrough data below records
+    Beginner and Expert disabling equipment and items but allowing magic, with Master adding
+    a magic ban; accessories are always permitted. Those are walkthrough labels, and the
+    magic half of them has no writer on the disc: the special-battle word's magic-forbidden
+    bit is raised only by the executable's battle init, keyed on the first enemy's monster
+    id, and the dome ladder never fields one of those ids. The line-ups are cross-checked
+    against the roster table on the disc, which agrees in every slot.
   </p>
   <div id="muscle-dome-courses"></div>
 

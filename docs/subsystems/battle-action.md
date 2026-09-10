@@ -2011,7 +2011,7 @@ occupant is the move-FX module **PROT 0900** itself (loader-B id `5`, byte-exact
 at the residency pin file `0x1628` ↔ `0x801F8000`).
 But PROT 0900's **screen-widget family is dormant**: an effect-actor-list walk of
 both frames finds **zero** live mask/sprite/panel/letterbox widgets - so Fire
-Tail is not the cutscene widget path (that stays exclusive to the eight ending
+Tail is not the cutscene widget path (that stays exclusive to the ten ending
 scenes; see [`move-vm.md` § screen-effect widget family](move-vm.md#screen-effect-widget-family-prot-0900)).
 The live effect is instead a single **move-VM part-actor** in the part pool
 `DAT_801C90F0`, ticked per frame by the generic SCUS actor tick `FUN_80021DF4`

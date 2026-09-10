@@ -1461,7 +1461,7 @@ in through the script door and back out through the map door, no story flags);
 
 The field/event VM (`FUN_801DE840`, see [`script-vm.md`](script-vm.md)) reaches a family of small overlay-resident handlers that write the **actor motion state** the locomotion and per-scene-actor-motion paths above then read. Each is a leaf of the VM dispatch: it consumes its inline operand bytes off the script cursor (register `s6`) against the current actor (register `s5`), writes the motion fields, and exits through the VM return idiom `j 0x801e3624` / `0x801e3628` (advancing the cursor `s8`).
 
-The field offsets they touch are the same ones tabulated in [Player actor fields used](#player-actor-fields-used) (`+0x14` X, `+0x16` terrain-conform angle, `+0x18` Z, `+0x26` heading, `+0x62` motion-clip control word, `+0x72` speed multiplier, `+0x8c`/`+0x8d` tile). All are field-overlay (`0897`) functions; each dump is `ghidra/scripts/funcs/overlay_0897[_xxx_dat]_<addr>.txt`.
+The field offsets they touch are the same ones tabulated in [Player actor fields used](#player-actor-fields-used) (`+0x14` X, `+0x16` footing height, `+0x18` Z, `+0x26` heading, `+0x62` motion-clip control word, `+0x72` speed multiplier, `+0x8c`/`+0x8d` tile). All are field-overlay (`0897`) functions; each dump is `ghidra/scripts/funcs/overlay_0897[_xxx_dat]_<addr>.txt`.
 
 | Handler | Role |
 |---|---|
@@ -1546,7 +1546,7 @@ Those are the flags programs 0 and 1 **set** and programs 2 and 3 **clear**. So 
 
 Several arms **fall through** into the next state inside the same call - `1→2→3→4`, `11→12`, `21→22`, `23→24`, `31→32→33` - because they bump `+0x54` without a jump and the arms are laid out in state order. A one-arm-per-frame reading delays each program's first part stage by three frames and its voice cue by two.
 
-The lift leg (state `0x18`) winds `player[+0x8E]` down by `((lift + actor[+0x16] + 0x1F) >> 5)` per vsync, clamped at `0x10` (the disassembly spells the clamp `slti v0,v1,0x11`), mirrors `-lift` into `player[+0x16]`, and ends when that angle returns to the value latched at `+0x16`. It is the same `+0x8E` / `+0x16` idiom as the dev warp applier `FUN_801EE328`'s rise-up arm.
+The lift leg (state `0x18`) winds `player[+0x8E]` down by `((lift + actor[+0x16] + 0x1F) >> 5)` per vsync, clamped at `0x10` (the disassembly spells the clamp `slti v0,v1,0x11`), mirrors `-lift` into `player[+0x16]`, and ends when that footing height returns to the value latched at `+0x16`. It is the same `+0x8E` / `+0x16` idiom as the dev warp applier `FUN_801EE328`'s rise-up arm.
 
 Both closers end at `0x801D55E0`: test flag `0x18` (`func_0x8003ce64`), clear `player[+0x10] & 0x80000` only if it is **clear**, then set the actor's own retire bit `+0x10 |= 8`. The guard gates the release, not the retire - a close-out under a set guard still removes the actor while leaving the player engaged.
 

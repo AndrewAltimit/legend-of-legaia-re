@@ -565,7 +565,7 @@ listed so the bucket count is the whole of what no host reaches.
 |---|---|---|---|
 | `save_subscreen.rs` | 8 | `801e4f40` `801dd12c` `801dd26c` `801d98f0` `801dae24` `801daef4` `801dafd4` `801dbc5c` | Closed: `save_screen::SaveScreenFlow` constructs a `SaveScreenMachine` on its first card-rack frame and ticks it around the session, so both hosts run the graph - the flow is the kernel they share. |
 | `card_bu_io.rs` | 4 | `801e0598` `801e3d68` `801e380c` `801e435c` | The engine has no `bu` device layer under the save screen. |
-| `cutscene_script_elements.rs` | 3 | `801d5d60` `801d6058` `801d27e0` | The element channel exists (`world::cutscene_elements`), but no host installs an element, so the three `step` bodies still have no production caller. |
+| `cutscene_script_elements.rs` | 3 | `801d5d60` `801d6058` `801d27e0` | The seat exists now - `World::tick_cutscene_elements` runs the channel from the frame tick on both hosts - but nothing in production **spawns** an element into the pool, so a replay still enters none of the three `step` bodies. |
 | `shop.rs` | 2 | `801db7f4` `801dbd94` | The retail menu-overlay quantity sub-screens, distinct from the engine's own shop session. |
 | `camera_rel_glide.rs` | 1 | `8002149c` | No producer for the family's 20-halfword spawn record. |
 | `card_flow.rs` | 1 | `801e13b8` | Nothing owns the state word `CardWriteMachine` drives. |

@@ -1484,9 +1484,9 @@ head re-lays into the character's atlas window,
 bodies stay flat vertex colours - the retail field style. The
 battle-model conversion survives as a fallback when the NPC source is
 unavailable. The rebuilt container keeps the entry's first four header
-words byte-exact - the battle loader registers them as battle-VDF
-pointers (see [`character-mesh.md` § Dual
-consumer](../formats/character-mesh.md#dual-consumer---the-battle-loader-registers-the-header-words-as-vdf-pointers)).
+words byte-exact (see [`character-mesh.md` § Not a dual
+consumer](../formats/character-mesh.md#not-a-dual-consumer---the-battle-vdf-pack-is-a-different-entry)
+for what that rule rests on, and what it does not).
 `R_align` reads the rig as a whole rather than joint by joint, and that
 is a correction, not a stylistic choice. Building each part's frame from
 a per-joint bend-plane reference makes the alignment depend on **which
