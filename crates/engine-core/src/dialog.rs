@@ -1,6 +1,6 @@
 //! Dialog panel: clean-room port of the field VM's dialog opener path.
 //!
-//! PORT: FUN_8001FD44, FUN_801D84D0
+//! PORT: FUN_801D84D0
 //!
 //! Wraps a [`legaia_mes::DialogPlayer`] in the runtime state the retail
 //! dialog renderer holds: the typed-out glyph buffer for the current page,
@@ -9,8 +9,12 @@
 //!
 //! This is the minimal substrate engines need to drive an on-screen dialog
 //! window without re-implementing the typewriter / page-break semantics in
-//! every consumer (the MES viewer in `asset-viewer`, the field VM dialog
-//! opener at SCUS `FUN_8001FD44`, the battle dialog overlay, etc).
+//! every consumer (the MES viewer in `asset-viewer`, the field VM's dialog
+//! opener, the battle dialog overlay, etc). `FUN_8001FD44` is **not** that
+//! opener - it is the name-based scene-change packet (`strcpy` into
+//! `0x8007050C` / `0x80084548`, `_DAT_1F800394 |= 0x40`, then
+//! `FUN_8001D7F8`), and nothing in this module implements it; the tag moved
+//! to the op-`0x3F` arm in `crate::world`'s field-VM host.
 //!
 //! Provenance: the per-page glyph accumulation + page-break gate mirror the
 //! retail dialog window pager `FUN_801D84D0` in the dialog overlay (see

@@ -1052,6 +1052,9 @@ def find_dual_labels(by_addr: dict[str, list[Dump]]) -> list[Finding]:
 #
 #   reaches       the word at `c` is a `jal` / `j` / conditional branch whose
 #                 target is `s`, or a `lui`+`addiu`/`ori` pair at `c` forms `s`
+#   returns-from  the word at `c - 8` is a `jal` to `s` - `c` is the RETURN
+#                 address the call leaves in `ra`, which is what a live-probe
+#                 row cites when it pins a caller by the `ra` it observed
 #   adjacent-body `c` and `s` sit in the same, or in two touching, byte-derived
 #                 bodies - the span between `jr ra` boundaries, the boundary
 #                 words included, which is what makes "this address is interior
@@ -1236,6 +1239,17 @@ def site_relation(cited: int, subject: int, co_cited: set[int]) -> str | None:
             return (
                 f"lui/addiu pair forming 0x{subject:08x} at 0x{cited:08x} "
                 f"in {img.label}"
+            )
+        # A live-probe row cites the RETURN address, not the `jal`. On R3000
+        # `ra` is the call word plus eight (the branch and its delay slot), so
+        # the caller-site test has to look there too or every `ra ...` citation
+        # reads as unsupported while the bytes say plainly which routine the
+        # probe was standing in.
+        wj = img.word(cited - 8)
+        if wj is not None and (wj >> 26) == 3 and _branch_target(cited - 8, wj) == subject:
+            return (
+                f"0x{cited:08x} is the return address of the jal to "
+                f"0x{subject:08x} at 0x{cited - 8:08x} in {img.label}"
             )
     for img in images():
         bc, bs = _body(img, cited), _body(img, subject)

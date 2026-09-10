@@ -1,7 +1,7 @@
 //! Scene-name sync for the name-based scene-change packet.
 //!
 //! PORT: FUN_8001D7F8
-//! REF: FUN_8001FD44 (scene-change-packet API caller; ported in [`crate::dialog`])
+//! REF: FUN_8001FD44 (scene-change-packet API; ported on the op-`0x3F` arm of `crate::world`'s field-VM host)
 //! REF: FUN_80056738 (BIOS strcmp), FUN_80056758 (BIOS strcpy)
 //! REF: FUN_801D6704 (the field-init that loads the synced active buffer)
 //!

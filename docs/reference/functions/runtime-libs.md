@@ -340,10 +340,10 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 
 | Address | Role |
 |---|---|
-| `8005DEA0` | Directory parser - reads the active sector, caches up to 128 entries into `0x801C4BEC`. |
+| `8005DEA0` | Directory parser - reads the active sector, caches up to 128 entries into `0x801CB408` (`lui at,0x801d` + `sw ...,-0x4bf8(at)`; stride `0x2C`, fields `+0x00` 1-based index, `+0x04` the source byte at `+6`, `+0x08` the four bytes at source `+2`, `+0x0C` the name the copier `FUN_8005E540` writes). The cap is the two `slti a3,0x80` tests at `0x8005E0E0` / `0x8005E100`. The long-standing `0x801C4BEC` was the *offset* half of that `lui`/`sw` pair pasted into the high half of an address; the routine forms no address in `0x801C4***` at all. `see ghidra/scripts/funcs/8005dea0.txt`. |
 | `8005E180` | Directory-entry lookup by ID; returns slot index or `-1`. |
 | `8005E228` | File loader - reads sectors from a directory entry into a cache buffer. |
-| `8005E4D4` | High-level open-then-read helper: `(buf, dir_entry, size)` → `bool`. Calls `FUN_8005C328` to build the CdlLOC, `FUN_8005BEFC(2,…)` to issue `CdlSetloc`, `FUN_8005E9A4` to set sector size `0x80` (2048 vs 2336). |
+| `8005E4D4` | Synchronous LBA read: `(sector_count, lba, dest_buffer)` → `bool`. `a1` alone reaches `FUN_8005C328` (LBA → `CdlLOC`), so it is an LBA and not a directory record; `a0` and `a2` are forwarded unchanged as `FUN_8005E9A4(a0, a2, 0x80)`, where `a0` lands in `0x800796C4` and `a2` in `0x800796C8`. `FUN_8005E228` calls it `(1, entry_lba, 0x801CCA08)`. `FUN_8005BEFC(2,…)` issues the `CdlSetloc` between the two; the `0x80` mode selects the 2048-byte sector size. The `(buf, dir_entry, size)` reading of this row was argument order reversed. |
 | `8005E574` | CD sector-reader state machine - handles block reads, timeout, completion callback at `_DAT_800796C0`. |
 | `8005C42C` | BCD-MSF → LBA: `((m*60 + s)*75 + f) - 150`. |
 | `8005ED64` | CD set-read-location - converts the stored MSF at `0x801CD210` to LBA (`FUN_8005C42C`) and builds the CdlLOC via `FUN_8005C328`; returns -1 when the drive is busy (`0x801CD208 != 0`). `see ghidra/scripts/funcs/8005ed64.txt`. |

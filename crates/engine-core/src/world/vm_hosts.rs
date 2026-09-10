@@ -1021,6 +1021,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.pending_minigame_warp = Some(sub_id);
     }
 
+    // PORT: FUN_8001FD44 (the name-based scene-change packet)
+    //
+    // Retail stages the destination by *name*: `strcpy` into the staged
+    // buffer `0x8007050C` and the active buffer `0x80084548`, raise
+    // `_DAT_1F800394 |= 0x40` (transition pending) and call `FUN_8001D7F8`
+    // to resolve the scene-index word. The engine has no staged/active
+    // buffer pair, so the packet is this deferred triple plus the arrival
+    // facing; `SceneHost::tick` drains it where retail's next field-init
+    // reads the active buffer.
     fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
         // Named scene-change (op 0x3F): the destination name is inline, so no
         // map-id resolver is needed. Recorded for SceneHost::tick to drain,
