@@ -199,17 +199,25 @@ pub struct WorldMapController {
     /// This tick's full-screen grey fade quad (retail `FUN_80024EE4(1, 2,
     /// grey * 0x010101)`), or `None` on a frame with no live ramp.
     ///
-    /// NOT WIRED: no renderer draws it. The engine computes the ramp and
-    /// stages the quad; the visible half of the transition is still missing
-    /// on all three hosts.
+    /// NOT WIRED: the blocker is a full-screen quad sink, not this producer.
+    /// The ramp is computed and the quad is staged every frame it should be;
+    /// what no host has is a draw list that accepts a screen-space
+    /// `FadeQuad` at the world-map layer - `engine-render` composites the
+    /// world map straight to the framebuffer with no overlay pass in front of
+    /// it, and the browser page has no equivalent seam either. Wiring it is
+    /// the same sink both hosts need for `entry_fade`, so it is one change on
+    /// two surfaces, not a call insertion.
     pub entry_fade_draw: Option<FadeQuad>,
     /// Raised for exactly one tick when the fade-up reaches `0x100` - retail's
     /// `_DAT_8007B83C = 0xC` (MAPDSIP INIT) master-mode store.
     ///
-    /// NOT WIRED: no host consumes this yet. The engine has no mode-12
-    /// map-display screen to hand off to, so the flag is a report, and the
-    /// ramp self-clears rather than parking at `0xFF` the way retail's global
-    /// does until the overlay swap clears it.
+    /// NOT WIRED: the mode this requests does not exist in the port. Retail's
+    /// `_DAT_8007B83C = 0xC` hands the frame to the MAPDSIP overlay; the
+    /// engine's `SceneMode` has no map-display variant to switch into, so
+    /// there is nothing for a host to hand off *to* - and that absence is
+    /// also why the ramp self-clears here instead of parking at `0xFF` the way
+    /// retail's global does until the overlay swap clears it. The prerequisite
+    /// is the screen, not a consumer of the flag.
     pub map_display_requested: bool,
     /// SFX cues the controller raised this tick ([`MAP_DISPLAY_SFX`] is the
     /// only producer). Drained by whoever owns the cue bank.
