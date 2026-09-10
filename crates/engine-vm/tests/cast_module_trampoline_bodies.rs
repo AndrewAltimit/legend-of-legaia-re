@@ -501,38 +501,255 @@ fn the_effect_child_reaction_pick_has_three_legs() {
     assert_eq!(v.restage & RESTAGE_BIT_FACE, 0);
 }
 
-/// Every trampoline arm the band names now resolves to a ported body VA.
+/// The `(entry, body)` pairs this crate carries a tick kernel for. A body VA
+/// alone is **not** a key: `0x801F6A20` is PROT 0951's Chaos Flare and also
+/// PROT 0963's only arm, and `0x801F69D8` - the slot-B load base itself - is
+/// a tick body in six different images.
+const PORTED_BODIES: [(u32, u32); 21] = [
+    (938, CHAOS_BREATH_TICK),
+    (938, MYSTIC_CIRCLE_TICK),
+    (942, POWER_UP_TICK),
+    (945, WATER_COLUMN_TICK),
+    (945, ALL_STATS_SURGE_TICK),
+    (951, CHAOS_FLARE_TICK),
+    (951, SCYTHE_WIND_TICK),
+    (952, ASTRAL_SLASH_TICK),
+    (952, BLOODY_HORNS_TICK),
+    (955, WHITE_SHIELD_TICK),
+    (955, KISS_OF_DEATH_TICK),
+    (955, MELT_SPRAY_TICK),
+    (955, TERROR_SCREAM_TICK),
+    (955, POWER_CHARGE_TICK),
+    (955, VOID_ACCESSORIES_TICK),
+    (957, SUMMON_EFFECT_TICK_A),
+    (957, SUMMON_EFFECT_TICK_B),
+    (958, BLAZING_SLASH_TICK),
+    (960, PLASMA_STRIKE_TICK),
+    (964, ELEMENT_CHANGE_TICK),
+    (965, DOOMSDAY_TICK),
+];
+
+/// The whole capture-class trampoline map, as the bytes carry it: twenty-one
+/// of the thirty-two `0x801CF56C` arms are a trampoline, and between them
+/// they name forty-eight `(id -> body)` arms.
 #[test]
-fn every_trampoline_arm_names_a_ported_body() {
-    let ported = [
-        BLAZING_SLASH_TICK,
-        ASTRAL_SLASH_TICK,
-        CHAOS_BREATH_TICK,
-        MYSTIC_CIRCLE_TICK,
-        CHAOS_FLARE_TICK,
-        SCYTHE_WIND_TICK,
-        BLOODY_HORNS_TICK,
-        DOOMSDAY_TICK,
-        WHITE_SHIELD_TICK,
-        KISS_OF_DEATH_TICK,
-        MELT_SPRAY_TICK,
-        TERROR_SCREAM_TICK,
-        POWER_CHARGE_TICK,
-        VOID_ACCESSORIES_TICK,
-    ];
-    let mut arms = 0;
+fn the_trampoline_map_is_the_whole_band() {
+    assert_eq!(CAPTURE_TRAMPOLINES.len(), 21);
+    let arms: usize = CAPTURE_TRAMPOLINES.iter().map(|t| t.arms.len()).sum();
+    assert_eq!(arms, 48);
     for t in CAPTURE_TRAMPOLINES {
         for (id, body) in t.arms {
-            arms += 1;
-            assert!(
-                ported.contains(body),
-                "PROT {} id {id:#04x} -> {body:#010X} has no ported body",
-                t.prot_entry
-            );
             assert_eq!(capture_tick_body(t.prot_entry, *id), Some(*body));
         }
     }
-    assert_eq!(arms, 14, "six trampolines, fourteen named arms");
+    // Every ported pair is an arm some trampoline really names.
+    for (entry, body) in PORTED_BODIES {
+        let t = capture_trampoline_for(entry).expect("ported entry has a trampoline");
+        assert!(
+            t.arms.iter().any(|(_, b)| *b == body),
+            "PROT {entry} has no arm for {body:#010X}"
+        );
+    }
+}
+
+/// The defect the `(entry, body)` key fixes: PROT 0945 and PROT 0960 each
+/// hold **two** choreographies, so a dispatcher keyed on the entry alone runs
+/// one of them for both of the module's ids.
+#[test]
+fn a_two_spell_cell_resolves_a_different_body_per_id() {
+    // PROT 0945 - `0x54` Water Column, `0xBA` its unported sibling.
+    assert_eq!(capture_tick_body(945, 0x54), Some(WATER_COLUMN_TICK));
+    let sibling = capture_tick_body(945, 0xBA).expect("0xBA is a named arm");
+    assert_ne!(sibling, WATER_COLUMN_TICK);
+    assert_eq!(sibling, ALL_STATS_SURGE_TICK);
+
+    // PROT 0960 - `0x7B` Plasma Strike, `0xA6` Neo Star Slash.
+    assert_eq!(capture_tick_body(960, 0x7B), Some(PLASMA_STRIKE_TICK));
+    let neo = capture_tick_body(960, 0xA6).expect("0xA6 is a named arm");
+    assert_ne!(neo, PLASMA_STRIKE_TICK);
+    assert!(!PORTED_BODIES.contains(&(960, neo)));
+
+    // ...and an id neither module names still ticks nothing.
+    assert_eq!(capture_tick_body(945, 0x7B), None);
+    assert_eq!(capture_tick_body(960, 0x54), None);
+}
+
+/// Two body VAs are shared across images, which is why nothing may key on the
+/// VA alone. Both pairs are read off the owning images' own bytes.
+#[test]
+fn body_vas_collide_across_images() {
+    // The slot-B load base is a tick body in six images at once.
+    let at_base: Vec<u32> = CAPTURE_TRAMPOLINES
+        .iter()
+        .filter(|t| t.arms.iter().any(|(_, b)| *b == CAST_MODULE_LINK_BASE))
+        .map(|t| t.prot_entry)
+        .collect();
+    assert_eq!(at_base, vec![956, 960, 961, 962, 964, 965]);
+    // ...and only PROT 0965's copy of it is Doomsday.
+    assert_eq!(DOOMSDAY_TICK, CAST_MODULE_LINK_BASE);
+    assert!(!PORTED_BODIES.contains(&(960, CAST_MODULE_LINK_BASE)));
+
+    // PROT 0963's single arm wears Chaos Flare's VA in a different image.
+    assert_eq!(capture_tick_body(963, 0xB3), Some(CHAOS_FLARE_TICK));
+    assert!(!PORTED_BODIES.contains(&(963, CHAOS_FLARE_TICK)));
+}
+
+/// PROT 0942's Power Up: four arms, and only arm 3 both writes the AGL base
+/// and reports done.
+#[test]
+fn power_up_writes_only_the_agl_base_and_only_on_arm_three() {
+    // `record[+0x0E] * 3 / 2`, the `sll`/`addu`/`sra 1` at `0x801F8068`.
+    assert_eq!(power_up_agl(40), 60);
+    assert_eq!(power_up_agl(41), 61);
+    assert_eq!(power_up_agl(0), 0);
+
+    let mut c = ctx(0, 4);
+    let mut a = actor(100);
+    a.agl = 7;
+    a.agl_base = 7;
+    // Arms 0..2 leave the gauge alone.
+    for phase in 0..3u8 {
+        c.phase = phase;
+        assert_eq!(power_up_tick(&mut c, &mut a, 40), CastTickStep::Busy);
+        assert_eq!(c.phase, phase + 1);
+        assert_eq!((a.agl, a.agl_base), (7, 7));
+    }
+    assert_eq!(a.render_flag, 0, "arm 2 clears the charge flag again");
+
+    // Arm 3 commits, and reports done rather than advancing.
+    assert_eq!(c.phase, POWER_UP_COMMIT_ARM);
+    assert_eq!(power_up_tick(&mut c, &mut a, 40), CastTickStep::Done);
+    assert_eq!(a.agl_base, 60);
+    assert_eq!(
+        a.agl, 7,
+        "the working gauge is untouched - no `+0x154` store"
+    );
+    assert_eq!(c.phase, POWER_UP_COMMIT_ARM, "the terminal arm holds");
+    assert_eq!(c.ctx_0d, 0);
+}
+
+/// The charge flag arm 1 puts on the caster.
+#[test]
+fn power_up_arm_one_raises_the_charge_render_flag() {
+    let mut c = ctx(1, 4);
+    let mut a = actor(100);
+    assert_eq!(power_up_tick(&mut c, &mut a, 40), CastTickStep::Busy);
+    assert_eq!(a.render_flag, POWER_UP_CHARGE_RENDER_FLAG);
+}
+
+/// PROT 0945's `0xBA` body raises **all ten** stat halfwords by `x + (x>>2)`
+/// and writes the AGL base off the record, on arm 2 only.
+#[test]
+fn all_stats_surge_raises_ten_halfwords_by_a_quarter() {
+    let mut c = ctx(0, 4);
+    let mut a = actor(100);
+    a.atk = 100;
+    a.atk_base = 100;
+    a.udf = 80;
+    a.udf_base = 80;
+    a.ldf = 40;
+    a.ldf_base = 40;
+    a.spd = 20;
+    a.spd_base = 20;
+    a.intel = 4;
+    a.intel_base = 4;
+    a.agl_base = 7;
+
+    // Arms 0 and 1 leave the block alone.
+    for phase in 0..ALL_STATS_SURGE_ARM {
+        c.phase = phase;
+        assert_eq!(all_stats_surge_tick(&mut c, &mut a, 40), CastTickStep::Busy);
+    }
+    assert_eq!((a.atk, a.intel_base, a.agl_base), (100, 4, 7));
+
+    assert_eq!(c.phase, ALL_STATS_SURGE_ARM);
+    assert_eq!(all_stats_surge_tick(&mut c, &mut a, 40), CastTickStep::Busy);
+    assert_eq!((a.atk, a.atk_base), (125, 125));
+    assert_eq!((a.udf, a.udf_base), (100, 100));
+    assert_eq!((a.ldf, a.ldf_base), (50, 50));
+    assert_eq!((a.spd, a.spd_base), (25, 25));
+    // `4 + (4 >> 2)` is 5 - the shift floors, it does not round.
+    assert_eq!((a.intel, a.intel_base), (5, 5));
+    // The same `record * 3 / 2` PROT 0942's Power Up writes.
+    assert_eq!(a.agl_base, power_up_agl(40));
+
+    // Arm 3 is the terminal one.
+    assert_eq!(c.phase, 3);
+    assert_eq!(all_stats_surge_tick(&mut c, &mut a, 40), CastTickStep::Done);
+    assert_eq!(c.ctx_0d, 0);
+    assert_eq!(c.phase, 3);
+}
+
+/// The surge is unsigned throughout (`lhu` + `srl`), so a maxed stat wraps.
+#[test]
+fn all_stats_surge_wraps_rather_than_saturating() {
+    let mut c = ctx(ALL_STATS_SURGE_ARM, 4);
+    let mut a = actor(100);
+    a.atk = 0xFFFF;
+    a.atk_base = 0xFFFF;
+    all_stats_surge_tick(&mut c, &mut a, 0);
+    assert_eq!(a.atk, 0xFFFFu16.wrapping_add(0xFFFF >> 2));
+}
+
+/// PROT 0964's Element Change never re-picks what the record already holds,
+/// and it maps the accepted draw through the module's own three-byte table.
+#[test]
+fn element_change_rerolls_until_the_element_differs() {
+    // A rigged RNG that keeps handing back the current element's index first.
+    let draws = [0u32, 0, 0, 2];
+    let mut it = draws.into_iter();
+    let mut c = ctx(0, 4);
+    let mut seats = vec![actor(100); 4];
+    let (step, outcome) =
+        element_change_tick(&mut c, &mut seats, 0, || it.next().unwrap_or_default());
+    assert_eq!(step, CastTickStep::Busy);
+    let out = outcome.expect("arm 0 commits");
+    assert_eq!(out.roll, 2);
+    assert_eq!(out.element, ELEMENT_CHANGE_ELEMENTS[2]);
+    assert_eq!(out.group, 2 + ELEMENT_CHANGE_GROUP_BASE);
+    assert_eq!(c.phase, 1);
+}
+
+/// A `last_roll` outside `0..3` matches nothing, so the first draw stands -
+/// what a never-written `0x801C8FE4` does.
+#[test]
+fn element_change_accepts_the_first_draw_when_nothing_matches() {
+    let mut it = [1u32].into_iter();
+    let mut c = ctx(0, 4);
+    let mut seats = vec![actor(100); 4];
+    let (_, outcome) =
+        element_change_tick(&mut c, &mut seats, 0xFF, || it.next().unwrap_or_default());
+    let out = outcome.expect("arm 0 commits");
+    assert_eq!(out.roll, 1);
+    assert_eq!(out.element, ELEMENT_CHANGE_ELEMENTS[1]);
+}
+
+/// Arm 1 hides every seat `ctx[+0]` covers and no more; arm 2 is the only one
+/// that reports done.
+#[test]
+fn element_change_hides_the_row_then_finishes() {
+    let mut c = ctx(1, 3);
+    let mut seats = vec![actor(100); 5];
+    let (step, outcome) = element_change_tick(&mut c, &mut seats, 0xFF, || 0);
+    assert_eq!(step, CastTickStep::Busy);
+    assert!(outcome.is_none());
+    for seat in seats.iter().take(3) {
+        assert_eq!(seat.render_flag, ELEMENT_CHANGE_HIDE_RENDER_FLAG);
+    }
+    for seat in seats.iter().skip(3) {
+        assert_eq!(seat.render_flag, 0, "seats past ctx[+0] are untouched");
+    }
+    assert_eq!(c.phase, 2);
+
+    let (step, _) = element_change_tick(&mut c, &mut seats, 0xFF, || 0);
+    assert_eq!(step, CastTickStep::Done);
+    assert_eq!(c.ctx_0d, 0);
+    assert_eq!(c.phase, 2, "the terminal arm holds");
+
+    // Past the last arm the body falls out of its own dispatch.
+    c.phase = 3;
+    let (step, _) = element_change_tick(&mut c, &mut seats, 0xFF, || 0);
+    assert_eq!(step, CastTickStep::Done);
 }
 
 /// The six wrapper-calling bodies' baked powers, keyed by body VA because

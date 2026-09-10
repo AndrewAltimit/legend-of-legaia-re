@@ -19,6 +19,7 @@
 //! | `+0x1D9` / `+0x1DA` / `+0x1DC` | playing clip / staged clip / restage bump | [`CastActorState::playing_anim`] / [`CastActorState::staged_anim`] / [`CastActorState::restage`] |
 //! | `+0x1DD` | active-target byte | [`CastActorState::target_code`] |
 //! | `+0x1F1` | the victim's own knockdown-reaction id | [`CastActorState::knockdown_anim`] |
+//! | `+0x154` / `+0x156` | AGL working / base (the action gauge) | [`CastActorState::agl`] / [`CastActorState::agl_base`] |
 //! | `+0x21C` / `+0x21D` | render flag / animation-rate scalar | [`CastActorState::render_flag`] / [`CastActorState::anim_rate`] |
 //! | ctx `+0`, `+1` | actor count, monster count | [`CastModuleCtx::actor_count`] / [`CastModuleCtx::monster_count`] |
 //! | ctx `+0x13` | caster seat | [`CastModuleCtx::caster_seat`] |
@@ -148,6 +149,12 @@ pub struct CastActorState {
     pub render_flag: u8,
     /// `+0x21D` - animation-rate scalar, normal [`ANIM_RATE_NORMAL`].
     pub anim_rate: u8,
+    /// `+0x154` - AGL **working**, the per-round action gauge.
+    pub agl: u16,
+    /// `+0x156` - AGL **base**, the value the round boundary restores
+    /// [`CastActorState::agl`] to. PROT 0942's Power Up writes this half and
+    /// only this half.
+    pub agl_base: u16,
     /// `+0x158` / `+0x15A` - ATK working / base. Raised as a pair by PROT
     /// 0955's Power Charge and lowered as a pair by its Melt Spray.
     pub atk: u16,
@@ -1161,6 +1168,259 @@ pub fn plasma_strike_tick(
 }
 
 // ---------------------------------------------------------------------------
+// PROT 0942 Power Up and PROT 0964 Element Change
+// ---------------------------------------------------------------------------
+
+/// The arm PROT 0942's Power Up commits its buff on (`ctx+0x279 == 3`, the
+/// `beq v1, 3` at `0x801F7DC4`).
+pub const POWER_UP_COMMIT_ARM: u8 = 3;
+
+/// The render flag PROT 0942's arm 1 puts on the caster (`addiu v0, zero, 7`
+/// then `sb v0, 0x21c(s0)` at `0x801F7F4C`/`0x801F7F58`); arm 2 clears it
+/// again (`sb zero, 0x21c(s0)` at `0x801F7FF8`).
+pub const POWER_UP_CHARGE_RENDER_FLAG: u8 = 7;
+
+/// PROT 0942 (Power Up) tick body - the buff `battle-formulas.md` names as
+/// the one that prints *"agility increased!"*.
+///
+/// Four `ctx+0x279` arms, reached through the `beq v1,1` / `slti v1,2` /
+/// `beq v1,2` / `beq v1,3` chain at `0x801F7D94..0x801F7DC8`; anything else
+/// falls to the epilogue with the seeded `1`. The module is reached from its
+/// own trampoline `0x801F80A0`, action id `0x52`.
+///
+/// What it writes:
+///
+/// * arm `0` (`0x801F7DD4`) - spawns the charge effect, seeds the module's
+///   own countdown at `0x801F88B4`, cue `0x5B` into `ctx+0x18`, advances;
+/// * arm `1` (`0x801F7EB8`) - caster `+0x21C` =
+///   [`POWER_UP_CHARGE_RENDER_FLAG`], advances;
+/// * arm `2` (`0x801F7F5C`) - caster `+0x21C` = `0`, advances;
+/// * arm `3` (`0x801F8010`) - the buff: caster `+0x156` (**AGL base**) =
+///   `record[+0x0E] * 3 / 2`, read through the monster-record table
+///   `0x801C9348[ctx[+0x13] - 3]` (`lhu v1,0xe(v0)` then `sll`/`addu`/`sra 1`
+///   at `0x801F8060..0x801F8074`), then `ctx+0x0D = 0` and `s4 = 0`, so this
+///   arm and only this arm reports done.
+///
+/// Only the **base** half moves: there is no `+0x154` store anywhere in the
+/// routine, so the working gauge picks the buff up at the next round reset
+/// (`battle_formulas::round_reset_agility`), not mid-round.
+///
+/// `agl_record` is the record's `+0x0E`; the caller supplies it because the
+/// record table is the host's, not the kernel's. The per-arm countdown gate
+/// (`0x801F88B4` minus `scratch[0x1F80037D] * scratch[0x1F800393]` each
+/// frame) is **not** ported - it is per-frame timing, the same class this
+/// module's header disclaims for every body here.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F7D34 (phase machine + the AGL-base buff; packet arms and the countdown gate unported)
+pub fn power_up_tick(
+    ctx: &mut CastModuleCtx,
+    caster: &mut CastActorState,
+    agl_record: u16,
+) -> CastTickStep {
+    if u16::from(ctx.phase) >= 4 {
+        return CastTickStep::Done;
+    }
+    run_tick_latched(ctx, |c| match c.phase {
+        1 => {
+            caster.render_flag = POWER_UP_CHARGE_RENDER_FLAG;
+            CastArmStep::Advance
+        }
+        2 => {
+            caster.render_flag = 0;
+            CastArmStep::Advance
+        }
+        POWER_UP_COMMIT_ARM => {
+            caster.agl_base = power_up_agl(agl_record);
+            c.ctx_0d = 0;
+            CastArmStep::Finish
+        }
+        _ => CastArmStep::Advance,
+    })
+}
+
+/// The Power Up arithmetic on its own: `(x * 3) >> 1`, an arithmetic shift on
+/// a value the routine loaded with `lhu`, so it never sees a negative.
+pub fn power_up_agl(agl_record: u16) -> u16 {
+    let x = u32::from(agl_record);
+    ((x * 3) >> 1) as u16
+}
+
+/// The arm PROT 0945's `0xBA` body runs its buff on (`ctx+0x279 == 2`, the
+/// `beq v1, 2` at `0x801F6A90`).
+pub const ALL_STATS_SURGE_ARM: u8 = 2;
+
+/// PROT 0945's **second** choreography - action id `0xBA` off the trampoline
+/// `0x801F76F4`, in the same image as Water Column.
+///
+/// Four `ctx+0x279` arms (`0x801F6AA8`, `0x801F6BCC`, `0x801F6D24`,
+/// `0x801F6E6C`) on the same chain shape PROT 0942 uses. Arm `2` is the buff
+/// and it is the widest stat write in the band: **all ten** halfwords of the
+/// five `(working, base)` pairs get `x + (x >> 2)` - a `+25%`, the same shape
+/// as PROT 0955's Power Charge but over the whole block instead of the ATK
+/// pair - and then `+0x156` (**AGL base**) takes the same
+/// `record[+0x0E] * 3 / 2` PROT 0942's Power Up writes, off the same
+/// `0x801C9348` record table. The stores run `0x801F6DA8..0x801F6E44`.
+///
+/// The shift is `srl`, and every operand is an `lhu`, so nothing here is
+/// signed: a stat at `0xFFFF` wraps rather than saturating, which is retail's
+/// behaviour and the port's.
+///
+/// Arm `3` (`0x801F6E6C`) is terminal: `ctx+0x0D = 0`, `ctx[+0x6DA] = 0x780`
+/// and the return register is zeroed, so only that arm reports done.
+///
+/// This corrects `docs/subsystems/cast-module.md`, which reads PROT 0955's
+/// four bodies as the band's only writers of the actor stat block. They are
+/// not: this body, PROT 0942's `0x801F7D34`, PROT 0954's `0x801F6A58` and
+/// PROT 0940's `0x801F78B8` all write it too.
+///
+/// Not ported: the packet arms and the per-arm countdown gate at
+/// `0x801F8834`.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F69F8 (phase machine + the ten-halfword surge and the AGL-base write; packet arms unported)
+pub fn all_stats_surge_tick(
+    ctx: &mut CastModuleCtx,
+    caster: &mut CastActorState,
+    agl_record: u16,
+) -> CastTickStep {
+    if u16::from(ctx.phase) >= 4 {
+        return CastTickStep::Done;
+    }
+    run_tick_latched(ctx, |c| match c.phase {
+        ALL_STATS_SURGE_ARM => {
+            for stat in [
+                &mut caster.atk,
+                &mut caster.atk_base,
+                &mut caster.udf,
+                &mut caster.udf_base,
+                &mut caster.ldf,
+                &mut caster.ldf_base,
+                &mut caster.spd,
+                &mut caster.spd_base,
+                &mut caster.intel,
+                &mut caster.intel_base,
+            ] {
+                *stat = stat.wrapping_add(*stat >> 2);
+            }
+            caster.agl_base = power_up_agl(agl_record);
+            CastArmStep::Advance
+        }
+        3 => {
+            c.ctx_0d = 0;
+            CastArmStep::Finish
+        }
+        _ => CastArmStep::Advance,
+    })
+}
+
+/// The three element ids PROT 0964's Element Change rolls between, read out
+/// of its own image at `0x801F9B70` (file `+0x3198`): `03 04 02` - the
+/// monster record's `+0x1D` id space.
+pub const ELEMENT_CHANGE_ELEMENTS: [u8; 3] = [0x03, 0x04, 0x02];
+
+/// The bias the same roll gets before it lands in the record's `+0x1C` group
+/// byte (`addiu v0, v0, 0x13` at `0x801F8AAC`).
+pub const ELEMENT_CHANGE_GROUP_BASE: u8 = 0x13;
+
+/// The render flag PROT 0964's arm 1 puts on **every** seat
+/// (`addiu a1, zero, 0xff` at `0x801F8B14`, stored `sb a1, 0x21c(v0)`).
+pub const ELEMENT_CHANGE_HIDE_RENDER_FLAG: u8 = 0xFF;
+
+/// How many rerolls the port allows before it accepts a repeat. Retail's loop
+/// at `0x801F8A3C..0x801F8A64` is unbounded (`beq a3, a0` back to the draw);
+/// an engine that inherits that spins forever on a degenerate RNG, so the
+/// port bounds it. Any real RNG clears it on the first or second draw.
+pub const ELEMENT_CHANGE_MAX_REROLLS: usize = 32;
+
+/// What one Element Change commit resolved to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ElementChangeOutcome {
+    /// The accepted `rand() % 3`, which retail keeps at `0x801C8FE4`.
+    pub roll: u8,
+    /// The monster record's new `+0x1D` element id.
+    pub element: u8,
+    /// The monster record's new `+0x1C` group byte.
+    pub group: u8,
+}
+
+/// PROT 0964 (Element Change) tick body, action id `0xAF` off its trampoline
+/// `0x801F8E3C`.
+///
+/// Three `ctx+0x279` arms (`beq v1,1` / `slti v1,2` / `beq v1,2` at
+/// `0x801F8954..0x801F8988`):
+///
+/// * arm `0` (`0x801F8990`) - cue `0x1C7`, the effect spawn, then the roll:
+///   `rand() % 3` (the `0x55555556` multiply-high divide at
+///   `0x801F89F8..0x801F8A28`) **re-drawn while it equals** the word at
+///   `0x801C8FE4`, which is then rewritten with the accepted draw. The draw
+///   indexes the module's own three-byte table at `0x801F9B70` into the
+///   monster record's element `+0x1D` (`sb v0,0x1d(t0)` at `0x801F8AA0`) and
+///   the raw draw `+ 0x13` into the record's group byte `+0x1C`
+///   (`sb v0,0x1c(v1)` at `0x801F8AB4`). The record is `0x801C9348[0]` - the
+///   **first monster seat**, not the caster and not the target.
+/// * arm `1` (`0x801F8AC0`) - hides every seat in `ctx[+0]`: `+0x21C = 0xFF`
+///   and the actor word `+4 = 0` (`0x801F8B20..0x801F8B50`).
+/// * arm `2` (`0x801F8B94`) - `ctx+0x0D = 0`, `ctx[+0x6DA] = 0x780` and
+///   `s4 = 0`: the only arm that reports done.
+///
+/// `last_roll` stands in for `0x801C8FE4`. The engine derives it from the
+/// enemy's current element rather than carrying a second global - the word's
+/// only job is "do not repeat what the last commit set", and the element the
+/// last commit set is exactly what the record now holds. A value outside
+/// `0..3` (a monster whose element is none of the three) matches nothing and
+/// the first draw is accepted, which is what a fresh `0x801C8FE4` does too.
+///
+/// Not ported: the packet / camera arms, the per-arm countdown gate at
+/// `0x801F9B74`, the `ctx[+0x6DA]` write and the actor word `+4`.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F88EC (phase machine + the element re-roll and the whole-row hide; packet arms unported)
+pub fn element_change_tick(
+    ctx: &mut CastModuleCtx,
+    seats: &mut [CastActorState],
+    last_roll: u8,
+    mut rand: impl FnMut() -> u32,
+) -> (CastTickStep, Option<ElementChangeOutcome>) {
+    if u16::from(ctx.phase) >= 3 {
+        return (CastTickStep::Done, None);
+    }
+    let mut outcome = None;
+    let step = run_tick_latched(ctx, |c| match c.phase {
+        0 => {
+            let mut roll = (rand() % 3) as u8;
+            for _ in 0..ELEMENT_CHANGE_MAX_REROLLS {
+                if roll != last_roll {
+                    break;
+                }
+                roll = (rand() % 3) as u8;
+            }
+            outcome = Some(ElementChangeOutcome {
+                roll,
+                element: ELEMENT_CHANGE_ELEMENTS[roll as usize % 3],
+                group: roll.wrapping_add(ELEMENT_CHANGE_GROUP_BASE),
+            });
+            CastArmStep::Advance
+        }
+        1 => {
+            let count = usize::from(c.actor_count).min(seats.len());
+            for seat in seats.iter_mut().take(count) {
+                seat.render_flag = ELEMENT_CHANGE_HIDE_RENDER_FLAG;
+            }
+            CastArmStep::Advance
+        }
+        _ => {
+            c.ctx_0d = 0;
+            CastArmStep::Finish
+        }
+    });
+    (step, outcome)
+}
+
+// ---------------------------------------------------------------------------
 // The capture-class trampolines (`0x801CF56C` arm -> tick body)
 // ---------------------------------------------------------------------------
 
@@ -1206,26 +1466,84 @@ pub const WHITE_SHIELD_TRAMPOLINE_ARMS: [(u8, u32); 6] = [
     (0x73, 0x801F_6A28),
 ];
 
-/// Every capture-class trampoline the port catalog lists, read off its
+/// **Every** capture-class trampoline in PROT 0935..0966, read off its
 /// **owning** image's bytes at slot-B base `0x801F69D8`.
 ///
-/// PROT 0957's trampoline (`0x801F9BA8`, ids `0x76` / `0x77`) is deliberately
-/// absent: that VA carries distinct code in several band images and is filed
-/// under `[worklist_va_aliased]`, so naming it here would put a `// PORT:`
-/// claim on an address that is not one port site. Its two ids are constants
-/// of their own ([`SUMMON_EFFECT_TICK_B_ID`] / [`SUMMON_EFFECT_TICK_A_ID`]).
+/// Twenty-one of the thirty-two `0x801CF56C` arms are a trampoline; the other
+/// eleven (PROT 0935, 0936, 0937, 0939, 0946, 0947, 0948, 0949, 0953, 0954,
+/// 0966) point straight at a tick body, which is what
+/// `docs/subsystems/cast-module.md` means by "modules whose cell holds a
+/// single spell skip the trampoline".
+///
+/// The `(id -> body)` map matters to the port because a module's own entry is
+/// **not** enough to pick a body: PROT 0945 and 0960 each hold two whole
+/// choreographies, and a dispatcher keyed on the entry alone runs one of them
+/// for both ids. The map also makes the body VA ambiguous on its own - six
+/// modules put a body at `0x801F69D8`, the load base - so a consumer has to
+/// key on `(entry, body)`, never on the body alone.
+///
+/// The `PORT:` tag names only the six trampoline VAs that are neither
+/// phantom prints nor VA-aliased across images; the other fifteen rows,
+/// PROT 0957's `0x801F9BA8` included, are data here for the same reason its
+/// two ids were already constants - `scripts/ci/port-catalog-ignore.toml`
+/// files those addresses under `[worklist_va_aliased]` / `[ghidra_phantoms]`,
+/// so a `// PORT:` claim on them would name an address that is not one port
+/// site.
 ///
 /// The tag is one line on purpose: `port-catalog.py` scrapes a `PORT:` tag's
 /// tail from the line it opens on, so a wrapped continuation drops every
 /// address after the break.
 ///
 /// PORT: FUN_801F7A40, FUN_801F7B1C, FUN_801F7B28, FUN_801F816C, FUN_801F8E60, FUN_801F92A4
-pub const CAPTURE_TRAMPOLINES: [CaptureTrampoline; 6] = [
+pub const CAPTURE_TRAMPOLINES: [CaptureTrampoline; 21] = [
     // `beq v1, 0x4e -> 0x801F726C` / `beq v1, 0xb7 -> 0x801F69EC`.
     CaptureTrampoline {
         prot_entry: 938,
         trampoline: 0x801F_7A40,
         arms: &[(0x4E, 0x801F_726C), (0xB7, 0x801F_69EC)],
+    },
+    // The band's widest `beq` chain: four ids over three bodies, with `0x50`
+    // and `0xAE` sharing `0x801F78B8` (`0x801F825C` and the `bne` at
+    // `0x801F8288` both land on `0x801F8290`).
+    CaptureTrampoline {
+        prot_entry: 940,
+        trampoline: 0x801F_8228,
+        arms: &[
+            (0x3C, 0x801F_69F8),
+            (0x50, 0x801F_78B8),
+            (0xAC, 0x801F_7240),
+            (0xAE, 0x801F_78B8),
+        ],
+    },
+    CaptureTrampoline {
+        prot_entry: 941,
+        trampoline: 0x801F_7D38,
+        arms: &[(0x51, 0x801F_730C), (0xB9, 0x801F_6A04)],
+    },
+    CaptureTrampoline {
+        prot_entry: 942,
+        trampoline: 0x801F_80A0,
+        arms: &[(0x52, POWER_UP_TICK), (0xAA, 0x801F_69F4)],
+    },
+    CaptureTrampoline {
+        prot_entry: 943,
+        trampoline: 0x801F_7624,
+        arms: &[(0x40, 0x801F_6EF4), (0xB5, 0x801F_6A04)],
+    },
+    CaptureTrampoline {
+        prot_entry: 944,
+        trampoline: 0x801F_7EBC,
+        arms: &[(0x37, 0x801F_6A04), (0x53, 0x801F_7470)],
+    },
+    CaptureTrampoline {
+        prot_entry: 945,
+        trampoline: 0x801F_76F4,
+        arms: &[(0x54, WATER_COLUMN_TICK), (0xBA, ALL_STATS_SURGE_TICK)],
+    },
+    CaptureTrampoline {
+        prot_entry: 950,
+        trampoline: 0x801F_8190,
+        arms: &[(0x5A, 0x801F_79F8), (0xAB, 0x801F_6A24)],
     },
     // Single arm, spelled as `bne v1, 0xb6 -> epilogue`.
     CaptureTrampoline {
@@ -1244,9 +1562,68 @@ pub const CAPTURE_TRAMPOLINES: [CaptureTrampoline; 6] = [
         arms: &WHITE_SHIELD_TRAMPOLINE_ARMS,
     },
     CaptureTrampoline {
+        prot_entry: 956,
+        trampoline: 0x801F_7E4C,
+        arms: &[(0x71, 0x801F_7298), (0x75, 0x801F_69D8)],
+    },
+    CaptureTrampoline {
+        prot_entry: 957,
+        trampoline: 0x801F_9BA8,
+        arms: &[
+            (SUMMON_EFFECT_TICK_B_ID, SUMMON_EFFECT_TICK_B),
+            (SUMMON_EFFECT_TICK_A_ID, SUMMON_EFFECT_TICK_A),
+        ],
+    },
+    CaptureTrampoline {
         prot_entry: 958,
         trampoline: 0x801F_8E60,
         arms: &[(0x79, 0x801F_6DD8)],
+    },
+    CaptureTrampoline {
+        prot_entry: 959,
+        trampoline: 0x801F_87F4,
+        arms: &[(0x7A, 0x801F_69F0)],
+    },
+    CaptureTrampoline {
+        prot_entry: 960,
+        trampoline: 0x801F_8638,
+        arms: &[(0x7B, PLASMA_STRIKE_TICK), (0xA6, 0x801F_69D8)],
+    },
+    // Two ids, one body - the only trampoline in the band that maps a pair
+    // onto the same routine (`0x801F7A88` and the `bne` at `0x801F7A90` both
+    // reach `0x801F7A98`).
+    CaptureTrampoline {
+        prot_entry: 961,
+        trampoline: 0x801F_7A54,
+        arms: &[(0xA1, 0x801F_69D8), (0xB4, 0x801F_69D8)],
+    },
+    CaptureTrampoline {
+        prot_entry: 962,
+        trampoline: 0x801F_8080,
+        arms: &[
+            (0xA2, 0x801F_7AE4),
+            (0xA3, 0x801F_74A0),
+            (0xA4, 0x801F_6D54),
+            (0xA5, 0x801F_69D8),
+        ],
+    },
+    CaptureTrampoline {
+        prot_entry: 963,
+        trampoline: 0x801F_8438,
+        arms: &[(0xB3, 0x801F_6A20)],
+    },
+    // `0xAF` is a `beq`; the second body is reached by a **range** test
+    // (`slti v1, 0xaf` then `slti v1, 0xb3` at `0x801F8E88`/`0x801F8E90`), so
+    // ids `0xB0..=0xB2` share `0x801F69D8`.
+    CaptureTrampoline {
+        prot_entry: 964,
+        trampoline: 0x801F_8E3C,
+        arms: &[
+            (0xAF, ELEMENT_CHANGE_TICK),
+            (0xB0, 0x801F_69D8),
+            (0xB1, 0x801F_69D8),
+            (0xB2, 0x801F_69D8),
+        ],
     },
     CaptureTrampoline {
         prot_entry: 965,
@@ -1257,6 +1634,23 @@ pub const CAPTURE_TRAMPOLINES: [CaptureTrampoline; 6] = [
 
 /// PROT 0958's tick body, the arm its trampoline reaches for action `0x79`.
 pub const BLAZING_SLASH_TICK: u32 = 0x801F_6DD8;
+/// PROT 0942's `0x52` arm - [`power_up_tick`].
+pub const POWER_UP_TICK: u32 = 0x801F_7D34;
+/// PROT 0964's `0xAF` arm - [`element_change_tick`].
+pub const ELEMENT_CHANGE_TICK: u32 = 0x801F_88EC;
+/// PROT 0945's `0x54` arm - [`water_column_tick`]. Its `0xBA` arm is a
+/// **second** choreography in the same image, which is what makes the
+/// `(entry, body)` key load-bearing.
+pub const WATER_COLUMN_TICK: u32 = 0x801F_6EDC;
+/// PROT 0945's `0xBA` arm - [`all_stats_surge_tick`].
+pub const ALL_STATS_SURGE_TICK: u32 = 0x801F_69F8;
+/// PROT 0960's `0x7B` arm - [`plasma_strike_tick`]. Its `0xA6` arm (Neo Star
+/// Slash) is `0x801F69D8`, the load base, and is unported.
+pub const PLASMA_STRIKE_TICK: u32 = 0x801F_74E4;
+/// PROT 0957's `0x77` arm - [`summon_effect_tick_a`].
+pub const SUMMON_EFFECT_TICK_A: u32 = 0x801F_6A14;
+/// PROT 0957's `0x76` arm - [`summon_effect_tick_b`].
+pub const SUMMON_EFFECT_TICK_B: u32 = 0x801F_798C;
 /// PROT 0952's tick body, the arm its trampoline reaches for action `0xB8`.
 pub const ASTRAL_SLASH_TICK: u32 = 0x801F_6A0C;
 /// PROT 0938's `0x4E` arm - [`chaos_breath_tick`].
