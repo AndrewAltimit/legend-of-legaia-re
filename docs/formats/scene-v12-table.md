@@ -203,29 +203,45 @@ effect-actor installs; see
 
 The field-asset loader `FUN_8001F7C0` (called per scene entry from the
 mode-2 initializer `FUN_801D6704`) stages the file **statically** - no
-capture needed (`see ghidra/scripts/funcs/8001f7c0.txt`). Retail branch,
-in order:
+capture needed (`see ghidra/scripts/funcs/8001f7c0.txt`). It forks on the
+dev/retail selector `_DAT_8007B8C2` ([`cdname.md`](cdname.md#the-table-is-populated-on-retail-hardware)),
+and the two arms reach the same window by different means.
 
-1. `DATA\FIELD\<scene>.MAP` → the per-scene buffer `*(0x1F8003EC)`
-   (collision grid `+0x4000`, event-cell grid `+0x8000`, trigger block
-   `+0x10000`).
-2. `DATA\FIELD\<scene>.PCH` → **`*(0x1F8003EC) + 0x12000`**. If the open
-   (`FUN_800608F0`) misses, the loader **zero-fills `0x800` bytes** there
-   instead - the empty-directory fallback for trigger-less scenes.
-3. `h:\PROT\FIELD\<scene>\efect.dat` → `*(0x1F8003EC) + 0x12800`
-   (`= _DAT_8007B8D0`), i.e. exactly `0x800` past the `.PCH`.
+**Retail arm** (`_DAT_8007B868 == 0`, `_DAT_8007B8C2 != 0`; the `bne` at
+`0x8001F87C` jumps to `0x8001F9A4`) - **one** contiguous read, no per-file
+opens at all:
 
-Steps 2 and 3 are each an independent statement that **the `.PCH` is one
-sector**: the miss path zero-fills exactly `0x800`, and the next asset is
-staged exactly `0x800` later. This page previously read the same two facts as
-a puzzle - "the on-disc prescript at `+0x800` is not reachable through this
-path" - because the over-reading entry size made a prescript appear at
-`+0x800`. There is no unreachable region: the entry ends at `0x800` and the
-prescript is the next PROT entry, staged by its own load.
+1. `FUN_8003E8A8(record, 1)` resolves the scene's `.MAP` PROT entry.
+2. `FUN_8003E800(dest, 0x28, 1)` reads **40 sectors = `0x14000` bytes** into
+   the per-scene buffer `*(0x1F8003EC)`, and the loader returns that
+   `0x14000` verbatim (`lui s1,0x1; ori s1,s1,0x4000` at `0x8001F9BC`).
 
-This closes the format's long-open "where does the loader stage the file"
-question and matches the live capture that found the table at heap
-`0x8014B530` (= the `town01` scene buffer `0x80139530 + 0x12000`).
+The `.MAP` is `0x12000` bytes ([`field-map.md`](field-map.md)), i.e. 36
+sectors, so the read runs **four sectors past it** - and PROT entries are
+contiguous, so those four are the entries that follow. The `.PCH` is block
+slot 1, one sector, and it lands at `+0x12000` because it is next on the
+disc. `_DAT_8007B8D0` is pointed at `+0x12800` (`0x8001F864`, computed
+before the fork) and is therefore the *next* entry after the `.PCH` - the
+scene's event-script prescript, staged by the same read.
+
+**Dev arm** (`_DAT_8007B8C2 == 0`, or `_DAT_8007B868 != 0`) - three separate
+host-station opens, which is where the per-file names live:
+
+1. `DATA\FIELD\<scene>.MAP` → `*(0x1F8003EC)` via `FUN_8003E6BC`.
+2. `DATA\FIELD\<scene>.PCH` → `*(0x1F8003EC) + 0x12000`. If the open
+   (`FUN_800608F0`, the `break 0x103` host trap) misses, this arm
+   **zero-fills `0x800` bytes** there instead (`FUN_8001A6A4`).
+3. `h:\PROT\FIELD\<scene>\efect.dat` → `*(0x1F8003EC) + 0x12800`.
+
+An earlier revision of this page attributed the whole three-step list to the
+**retail** branch. It is the dev branch: `FUN_800608F0` is the debug-station
+file trap retail hardware cannot service, and step 3's path is literally
+`h:\`. What survives the correction is the destination - the `.PCH` really
+is at `+0x12000` and really is one sector - and the `+0x12800` pointer,
+which is computed on both arms. What does **not** survive is the zero-fill:
+on retail the `+0x12000` window is simply the next four sectors of the same
+read, so a scene whose block has no `.PCH` at slot 1 gets whatever those
+sectors hold rather than zeros.
 
 Consumers of the staged window:
 
@@ -243,6 +259,61 @@ Consumers of the staged window:
 
 So the `.PCH` is a **patch/extension layer over the `.MAP` trigger block**:
 same directory, same record forms, second lookup window.
+
+### Who writes the staged window
+
+The whole write surface is three routines wide, and a byte-level sweep of
+`SCUS_942.54` plus all 83 mapped overlay images bounds it:
+
+- **The `+0x12000` offset itself is materialised six times** in those 84
+  images (`lui r,0x1; ori r,r,0x2000`): twice in the loader's dev arm
+  (`0x8001F8F4` host read, `0x8001F920` zero-fill), once in `FUN_8003AEB0`
+  (`0x8003AFA8`), and three times in the two-window lookup - `FUN_801D5630`
+  at `0x801D568C` plus that routine's private copies inside the fishing
+  (`0x801D617C`) and dance (`0x801D3F1C`) overlays. `FUN_8003AEB0` only
+  reads the directory; its stores all land in the `.MAP`'s `+0x8000`
+  event-cell grid.
+- **`FUN_801D5AE0` is reached from nowhere but `FUN_801D5630`'s two arms**
+  (`0x801D567C`, `0x801D56A0`), so the returned record pointer is the only
+  other handle on the window.
+- **`FUN_801D5630` has seven callers**, and exactly one of them writes
+  through the pointer it returns.
+
+### The one runtime writer - field-VM `0x4C 0x83`
+
+`0x801E20A8` in the field overlay is a field-VM arm, reached as main opcode
+`0x4C` (`MENU_CTRL`; main JT `0x801CECC0` indexed `opcode - 0x21`, slot at
+`0x801CED6C`) → operand high nibble `8` (JT `0x801CEE60`) → low nibble `3`
+(JT `0x801CEF48`). It walks a tile rectangle, `x` from `op[1]` to `op[3]`
+and `z` from `op[2]` to `op[4]` inclusive, calls `FUN_801D5630(2, x, z)`
+for every tile, and on a hit writes
+
+```text
+801e20f4  sb zero,0x3(v1)     ; quads  = 0
+801e20f8  sb v0,0x2(v1)       ; coarse = op[5]
+```
+
+into the matched **kind-2 elevation-override** record, then advances the VM
+PC by 7 (`0x801E2130`). A tile with no kind-2 record is skipped by the
+`beq v1,zero` guard. Sweeping all 84 images for that store pair
+(`sb zero,0x3(rX)` immediately followed by `sb ?,0x2(rX)`) returns four
+hits and this is the only one on a lookup return.
+
+That settles both standing questions on this page.
+
+- **The `+N` / `+N+2` / `+N+4` words are never filled at runtime.** The
+  writer above rewrites the *body* of a record the directory already
+  counts; it cannot append one, because the record it patches is the one the
+  lookup found. Nothing anywhere stores a count or an offset into the
+  directory. The words stay whatever the file carries, which on the retail
+  disc is zero in all 97 entries.
+- **The empty kinds split two ways.** Kind 2 has an engine-side writer -
+  the arm above, which is how a script re-floors a ramp or a bridge mid-scene
+  - but on retail it can only ever land in the `.MAP` `+0x10000` block,
+  because every retail `.PCH` ships `kind-2 count = 0` and an empty
+  sub-table has nothing to match. Kinds 0 and 3 have no writer in any image.
+  So the patch mechanism exists for exactly one kind and the `.PCH` never
+  carries a record it could reach.
 
 ## The `~0x800219xx` lead resolved - `FUN_80021934` stages the `.LZS`, not the `.PCH`
 
@@ -397,17 +468,19 @@ dispatch hypothesis fails because the `.PCH` is a standalone top-level PROT
 entry, never a `type << 24` chunk; `FUN_8002541C` is a generic 3-mode
 streaming driver.
 
-Still open:
+Both remaining opens are **closed from the bytes**, in
+[Who writes the staged window](#who-writes-the-staged-window):
 
-- **The `+N` "fixup slot" writes.** Under the directory reading the zero
-  words at `+N`, `+N+2`, `+N+4` are the empty kind-2/3 sub-table bodies;
-  whether any runtime writer fills them (the old "loader writes computed
-  pointers" observation) needs a targeted re-capture of the `+0x12000`
-  window.
-- **Empty kinds 0/2/3.** No retail `.PCH` populates teleports, elevation
-  overrides, or region AABBs (those live only in the `.MAP` `+0x10000`
-  block). Whether the engine-side patch mechanism was ever used for them
-  is a dev-history question, not a runtime one.
+- ~~**The `+N` "fixup slot" writes**~~ - closed: nothing writes them. The
+  window's whole write surface is the loader's own read/zero-fill plus one
+  field-VM arm, and that arm patches a record's body, never the directory.
+  The old "loader writes computed pointers" observation has no instruction
+  behind it.
+- ~~**Empty kinds 0/2/3**~~ - closed: kind 2 *does* have an engine-side
+  writer (field-VM `0x4C 0x83`, [above](#the-one-runtime-writer---field-vm-0x4c-0x83)),
+  kinds 0 and 3 have none in any image, and none of the three can add a
+  record to an empty sub-table - so on retail the `.PCH`'s empty kinds stay
+  empty by construction rather than by convention.
 - ~~dolk2 / rikuroa MAN source~~ - closed: the standalone
   `data_field_streaming` sibling's type-3 chunk is the scene's MAN
   (live byte-match at the Caruban beat; see the over-read section
