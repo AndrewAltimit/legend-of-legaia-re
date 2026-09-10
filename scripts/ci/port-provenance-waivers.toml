@@ -1281,3 +1281,43 @@ the finding's own lift line says 0x80073F1C is also formed by FUN_80038158 -
 tagged in world/field_movement.rs, another module. So the corroborator exists and
 sits behind the port's module partition.
 """
+
+# --- three more slot-B band members, surfaced by the inherited-tail cut -------
+#
+# These appeared when `dump-extent-attribution.csv` was regenerated with each
+# image cut at its own content: the consensus vote now runs only among the
+# OWNING image's dumps, so an address whose plurality used to come from a
+# sibling's residue reports a different body - and a different feature set.
+# Same band-structural cause as the 801f7740 / 801f8b90 waivers above: each
+# module is its own image with no internal `jal`, and its distinctive data is a
+# private pointer table at its own VAs, which no sibling can share.
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f6edc"
+reason = """
+Water Column's tick. Its eleven distinctive addresses are all in
+0x801F78xx..0x801F7Exx - the module's own record-pointer block - and it calls
+nothing, which is the band's shape: a slot-B image has no internal `jal` and its
+records are reached off pointers the image itself forms. Nothing it touches can
+be shared with a sibling module, because every sibling's records sit at that
+sibling's own offsets in its own image.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f7af4"
+reason = """
+Viguro's spawn stager, same cause: five distinctive addresses, all in
+0x801F81F4..0x801F835C - this module's record pointers - and no callee. The
+corroboration test can only match on shared rare data or a shared callee, and a
+slot-B module has neither with its siblings by construction.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f8d64"
+reason = """
+Evil Seru Magic's stager. Eleven distinctive addresses spanning
+0x801F93A0..0x801FA468 plus the band head 0x801F6A50, no callee - the largest
+private table in the module and the same band-structural shape as its
+neighbours. The only address it shares with anything is the head, which every
+module forms and which is therefore not distinctive.
+"""

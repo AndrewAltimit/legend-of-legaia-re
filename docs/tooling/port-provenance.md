@@ -282,6 +282,34 @@ finding key, each with a `reason` that says what was read and what it showed.
 "Probably fine" is not a reason - it would be equally true of a real defect, and
 an unreviewed row belongs in the report where it can still be seen.
 
+### Which class is ready to gate
+
+The list has been worked to zero unwaived findings, so `--strict` passes and the
+question stops being hypothetical. The three classes do not deserve the same
+answer, and the measured yields say why - each is real defects found over
+findings raised in one full pass:
+
+| Signal | Yield | Ready to gate on the delta |
+|---|---|---|
+| `dual-label` | 4 / 35 | **Yes.** Every one of the four was a byte-settleable contradiction between two pages, and the residue is the documented shapes - a coarse directory row beside a fine write-up, two topic pages of the same directory, a section about one arm of a dispatcher. |
+| `doc-citation` | 1 / 12 | **Yes.** The remaining shapes are enumerable - a callee's global, a field reached by `addu` off a formed base, a contrastive "not this pool", a caller's store site - and each new row is genuinely worth one read. |
+| `module-orphan` | 0 / 24 | **No, and the reason is structural.** |
+
+The four `dual-label` defects are the argument for that row: `FUN_8003E8A8`
+returning a sector count rather than an LBA, `FUN_8003E800`'s `a1` being that
+count, `FUN_80043264` scanning three slots rather than eight, and
+`FUN_8005E4D4`'s argument order. In three of the four a sibling page already had
+it right, which is exactly what the signal is built to notice.
+
+`module-orphan` is the one to leave warn-only, and this pass found the sharper
+reason. Three findings appeared in `cast_module_ticks.rs` with no Rust and no
+dump changing: the [inherited-tail cut](disc-coverage.md#content_bytes-is-longer-than-the-images-own-code-the-inherited-tail)
+re-keyed 38 extents in `dump-extent-attribution.csv`, the consensus vote then ran
+among a different set of dumps, and three addresses reported a different feature
+set. A signal that moves when a *neighbouring instrument* is corrected is
+reporting the corpus, and a gate on it fails commits that changed nothing it
+measures.
+
 ## A caller-site citation is checkable from the bytes
 
 `absent-citation` and `doc-citation` ask whether a row cites an address its
@@ -303,6 +331,7 @@ row's subject `s`:
 | relation | what the bytes show | the citation it rescues |
 |---|---|---|
 | reaches | the word at `c` is a `jal` / `j` / conditional branch whose target is `s`, or a `lui`+`addiu`/`ori` pair at `c` forms `s` | "called from the `jal` at ...", "four `beq`s target this join label" |
+| returns-from | the word at `c - 8` is a `jal` to `s` | "ra `0x801DF098`" - a live probe reports the RETURN address, which on R3000 is the call word plus eight |
 | adjacent-body | `c` and `s` fall in the same, or in two touching, `jr ra`-delimited bodies (the boundary words included) | "the ladder arms above it", "the nearest `jr ra` boundary above it" |
 | co-sited | `c` shares a body with another address the same row cites that *does* reach `s` | "the `sb rt,0x289(rs)` stores in the same caller" |
 | jump-table | the words at `c` hold `s`, or a co-cited address that reaches `s` | "arm 6 of the switch, jump table `0x80010AE4`" |

@@ -2503,9 +2503,14 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     ///   its stager here; the outcome is the stager's strike.
     /// * `< 0x25` - the per-spell anim-pair list at
     ///   `0x801F4E64` / `0x801F4EDC` copied into `params[1..]`
-    ///   (`0x801DBFAC..0x801DC060`). NOT WIRED: the engine has no parse of
-    ///   that overlay table, so the stream terminates at `params[1]` and the
-    ///   outcome the clips would have carried folds here instead.
+    ///   (`0x801DBFAC..0x801DC060`). The engine has no parse of that overlay
+    ///   table, so the stream terminates at `params[1]` and the outcome the
+    ///   clips would have carried folds here instead. That is a gap in *this
+    ///   arm's data*, not a wiring gap: the routine is called on every pre-cast
+    ///   expiry and the ladders execute it. Deliberately not written as an
+    ///   unwired-port disclosure - that marker is an anchor-level claim, and
+    ///   on a routine a ladder really runs it makes a passing oracle read as
+    ///   having traversed a stub.
     ///
     /// PORT: FUN_801DBF9C
     fn spell_anim_trigger(&mut self, party_slot: u8, spell_id: u8) {

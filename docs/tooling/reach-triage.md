@@ -126,6 +126,27 @@ instead of through the line fall-through, is what closes this. Until then, read
 a "disclosed `NOT WIRED` anchor executed" row as a claim to check rather than a
 finding: confirm a caller exists before treating it as a disclosure defect.
 
+### The other way that category misfires: a disclosure about one arm
+
+An anchor's disclosure is read anywhere in its doc block, and the marker is an
+**anchor-level** claim - "no host calls this port". A doc block that uses the
+same words about one *branch* of a two-branch routine therefore disclaims the
+whole routine, and `--fail-on-disclosed` then reports the ladders as having
+traversed a stub they did not.
+
+`FUN_801DBF9C`'s port is the worked case and it is not a stale disclosure. The
+routine is the party cast trigger, called on every pre-cast expiry, and the
+ladders run it; what is unimplemented is the `spell_id < 0x25` arm's per-spell
+anim-pair list, because the engine has no parse of the overlay table at
+`0x801F4E64` / `0x801F4EDC`. Both halves are true, and only one of them is
+about wiring.
+
+So a gap in an arm's **data** is written as prose, never in the disclosure form
+- the form is reserved for "nothing calls this". The alternative reading, that
+the routine should carry the marker because part of it is unfinished, makes the
+report's highest-priority category fire on exactly the routines a ladder
+proves are live.
+
 ## What a pad-only ladder structurally cannot execute
 
 The *headless* ladders drive `BootSession`, which constructs no renderer, no
@@ -645,7 +666,7 @@ rows below are what it did not reach.)
 
 | group | n | addresses | what would reach it |
 |---|---|---|---|
-| `screen_fx.rs` | 10 | `801de4c8` `801f8d4c` `801f811c` `801f8004` `801f7a9c` `801f88fc` `801f8e6c` `801f849c` `801f8f28` `801f8a34` | a scene whose script spawns an iris mask, letterbox or image panel - the ending scenes the module doc names |
+| `screen_fx.rs` | 10 | `801de4c8` `801f8d4c` `801f811c` `801f8004` `801f7a9c` `801f88fc` `801f8e6c` `801f849c` `801f8f28` `801f8a34` | Closed: `chapter1_frontier_ladder` enters all ten - a scene whose script spawns an iris mask, letterbox or image panel is exactly what its scene walk drives. |
 | `fishing.rs` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | a fishing rung past rung 4: rod select, a full cast, a landed catch |
 | `muscle_dome.rs` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | `w1b_dome_leg_ladder` - built; `801d9bbc` has no producer and stays |
 | `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | `w1b_baka_duel_ladder` - built; the door entry still arms neither |
@@ -1253,10 +1274,40 @@ tag.** Check `target/port-catalog/catalog.csv` before writing a verdict; if the
 wired half is the one that deserves the address, move the tag rather than the
 row.
 
+## The cast-module band, the largest cluster on this page and the one with no rows
+
+`crates/engine-vm/src/cast_module_ticks.rs` supplies **31** of the never-entered
+addresses - roughly a third of the whole set, the largest single-file cluster in
+it by a factor of six, and the only cluster of any size not cited anywhere else
+on this page. That is a gap in the page, not in the port: the file arrived whole
+and so never went through the per-row pass the rest of the buckets did.
+
+Every row is bucket **(b) GATED**, and they all share one gate. The engine
+reaches these bodies through `World::cast_module_for(spell_id)`
+(`crates/engine-core/src/world/battle/cast_band.rs`), which resolves a cast's
+spell id onto a PROT `0903..=0966` module and only then selects that module's
+tick body and sweep arm. So the gate is not "a battle", and it is not "a cast" -
+the union already drives both, and the seeded cast ladder enters 110 live
+addresses. The gate is **the specific spell or summon id**, one per row.
+
+This is the intro-style shape one layer down: a data arm rather than a beat a
+player reaches. A pad fixture cannot convert these rows however long it plays,
+because nothing about pad input selects a module; what converts one is a seeded
+oracle that casts that id with the band resolved, which is what
+`crates/engine-core/src/world/tests/cast_band.rs` already does per id without
+being in `CANONICAL_LADDERS`. Promoting a seeded per-id oracle into the union
+is the whole of the work, and it converts rows in proportion to the ids it
+covers.
+
+`screen_fx.rs`'s ten rows had the same shape and are closed: the scene-frontier
+ladder enters them, which is the reading the table below predicted - they were
+gated on a scene whose script spawns the effect, not on anything a pad does.
+
 ## Gates behind the (b) rows
 
 | gate | rows | what has to happen |
 |---|---|---|
+| cast-module id | 31 | one cast per PROT `0903..=0966` spell / summon id, with the band resolved - see the section above |
 | slot-bonus | 5 | the casino slot machine's bonus round and its marquee |
 | capture-class cast | 2 | a boss encounter seated with a capture-class caster |
 | summon cast / Seru capture | 2 | a party member who knows Seru magic, and a fight that lands a capture roll |

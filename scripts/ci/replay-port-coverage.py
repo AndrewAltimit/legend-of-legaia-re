@@ -112,9 +112,13 @@ Usage:
     cargo llvm-cov clean --workspace
 
     # NO `--release` anywhere - see "a release export loses executed code"
-    # below. The whole set (`--list-ladders`) takes tens of minutes on the default
-    # profile (`menu_replay` is a 4.7s run), so the optimised build buys
-    # nothing here and costs executed code.
+    # below. On the default profile the whole set (`--list-ladders`) is about an
+    # hour and a half of wall clock, and the shape of that is worth knowing:
+    # forty-six of the forty-seven ladders finish in half an hour together,
+    # and `chapter1_frontier_ladder` alone takes the other hour, because it is
+    # disc-heavy and an unoptimised build pays for every sector it walks. The
+    # optimised build would buy that back and cost executed code, so it is
+    # still the wrong trade - budget for the tail instead.
     # `--list-ladders` prints `<test> <package>` for every canonical entry, so
     # the recipe cannot drift from the list the report checks against.
     #
