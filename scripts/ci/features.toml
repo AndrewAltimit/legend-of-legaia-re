@@ -16,39 +16,100 @@
 #              generic helpers) so the BFS doesn't spill into everything.
 #   max_depth: optional integer cap on BFS depth.
 #   description: human-readable summary.
+#
+# --- Why the stop_at lists are what they are ---------------------------------
+#
+# An edge here is "this dump's text mentions that address", which is a superset
+# of "this routine calls that one". Left unbounded that superset collapses every
+# view into one blob: twelve of these features used to report 750-880 reachable
+# addresses at ~54% ported, several of them reporting the SAME set - `title-
+# screen` was a strict subset of `muscle-dome`. A view that measures the whole
+# engine measures nothing about its feature.
+#
+# Two boundary rules cut it, and both are stated per row rather than inferred:
+#
+# 1. A feature stops where ANOTHER feature begins. The save-slot select is not
+#    part of the title screen; the field VM is not part of the shop. Only the
+#    other-feature roots that actually fire are listed, so a row stays readable.
+#
+# 2. A feature stops at shared runtime infrastructure every actor reaches, and
+#    at edges that are an artifact rather than a call:
+#
+#      80023070 / 801d362c / 801d31b0  the move VM, its overlay extension and
+#                                      the extension's POLY strip emitter -
+#                                      every spawned actor runs move-table
+#                                      opcodes, so this is THE universal hub
+#      80021b04 / 800252ec / 8002519c  actor spawn, effect spawn, and the
+#                                      per-frame actor-list tick iterator
+#      801d1344 / 801d79e8             the field frame-pump orchestration and
+#                                      the per-actor draw helper under it
+#                                      (~420 calls/frame)
+#      801f8004 / 801f8d4c             the field VM's sprite-widget spawns
+#      800243f0                        the per-frame BGM / asset poller
+#      801d6e18                        the DEV character-parameter editor
+#                                      (save-screen.md) - a dev screen no
+#                                      gameplay feature reaches in play
+#      801c2b2c / 801f04b0 / 801f5748  phantom prints and `overlay_0896`-window
+#                                      edges: a target decoded at a wrong load
+#                                      base is a property of the base, not of
+#                                      the bytes (call-target-integrity.md,
+#                                      phantom-print-index.md)
+#      801f747c / 801f7628 / 801f71e0  slot-B VA aliases. Sixty-four modules
+#      801f7b88                        link over 0x801F69D8, so one VA holds
+#                                      different code per module and the
+#                                      citation graph unions all of them
+#                                      (cast-module.md)
+#
+# A stop that fires for nobody is not listed: every address below changes the
+# row it sits on.
 
 [title-screen]
 description = "Title overlay tick + boot UI. Drives fade-in, Press Start, New Game / Continue / Options menu."
 roots = ["801dd35c"]
-# Stop at the field-VM and battle dispatchers - they're not in scope of the title flow.
-stop_at = ["801de840", "801e295c"]
+# Field VM and battle SM are out of scope; the save-slot select and its
+# info-panel driver are `load-screen`'s, not the title's.
+stop_at = ["801de840", "801e295c", "801e08d8", "801e1c1c"]
 
 [load-screen]
 description = "Save-slot select overlay. Slot list, info panel, slide-in animator, NowChecking / Confirm / Card-init dialogs."
 roots = ["801dd35c", "801e08d8", "801e1c1c"]
-stop_at = ["801de840", "801e295c"]
+stop_at = [
+    "801de840", "801e295c", "801d6628", "801ead98",
+    "80021b04", "801d1344", "801d79e8", "801f8004", "801f8d4c",
+    "801c2b2c",
+]
 
 [battle-action]
 description = "Per-actor battle action state machine + formulas. Six-band selector, 47 outer arms."
 roots = ["801e295c"]
-# Stop at the field VM and BIOS thunks - battle action is self-contained.
-stop_at = ["801de840", "80056798"]
+# Field VM, BIOS thunks, the widget VM and the dev menu; plus the actor/field
+# frame infrastructure every battle actor shares with the field.
+stop_at = [
+    "801de840", "80056798", "801d6628", "801ead98",
+    "80021b04", "801d1344", "801d79e8",
+]
 
 [world-map]
 description = "World-map controller + entity state machine. Camera, top-view debug, NPC pursue/patrol."
 roots = ["801e76d4", "801da51c", "801d362c"]
-stop_at = ["801de840"]
+stop_at = ["801de840", "800243f0", "801d31b0", "801f04b0"]
 
 [field-vm]
 description = "Field/event script VM. Largest dispatcher in the corpus (357 outgoing calls). Use max_depth to keep the subgraph tractable."
 roots = ["801de840"]
 max_depth = 2
-# Stop at the move VM extension and BIOS thunks.
-stop_at = ["801d362c", "80056798"]
+# The move VM extension, BIOS thunks, and the spawn/draw helpers its opcodes
+# hand off to.
+stop_at = ["801d362c", "80056798", "800252ec", "801d79e8", "801f8004", "801f8d4c"]
 
 [cutscene]
 description = "STR FMV playback + cutscene-dialogue trigger paths. Game mode 26, MDEC + XA, six-slot runtime state table."
 roots = ["801cf098", "801e30e4"]
+stop_at = [
+    "801de840", "801d6628", "801ead98", "8005dbb4",
+    "80021b04", "801d1344", "801d79e8", "801f8004", "801f8d4c",
+    "801c2b2c",
+]
 
 [asset-loader]
 description = "Asset dispatcher + format detectors. FUN_8001F05C type-switch, scene-bundle field-loader chain, LZS decoder."
@@ -73,13 +134,13 @@ stop_at = ["801de840", "801e295c", "801dd35c"]
 [field-menu]
 description = "In-field pause menu (Items / Magic / Equip / Status / Save). Lives in the overlay_menu slot; dispatcher FUN_801DE234 is overlay_menu-specific."
 roots = ["801de234"]
-# Stop at the field VM, battle SM, title/save UI dispatcher.
-stop_at = ["801de840", "801e295c", "801dd35c", "801e08d8"]
+# Field VM, battle SM, and the title / save-UI dispatchers that share its image.
+stop_at = ["801de840", "801e295c", "801dd35c", "801e08d8", "801e1c1c"]
 
 [shop]
 description = "Shop / inn UI. FUN_801DA2A0 is unique to the overlay_shop_save slot (everything else in shop_save also lives in overlay_menu)."
 roots = ["801da2a0"]
-stop_at = ["801de840", "801e295c", "801dd35c"]
+stop_at = ["801de840", "801e295c", "801dd35c", "801d6628"]
 
 [debug-menu]
 description = "Dev cheat menu. Rendered by FUN_801EAD98 inside the world-map overlay."
@@ -102,14 +163,52 @@ roots = [
 [move-vm]
 description = "Move-table opcode VM. FUN_80023070 dispatches 71 ops via JT 0x80010778; op 0x2F escapes to FUN_801D362C (overlay extension, 61 sub-ops, included in scope)."
 roots = ["80023070", "801d362c"]
+# The field draw helper and the Muscle Dome hub the extension's arms reach.
+stop_at = ["801d79e8", "801f30c4"]
 
 [boot-toc]
 description = "Boot-time PROT TOC loader. FUN_8003E4E8 reads the first three PROT.DAT sectors into 0x801C70F0 and initialises the dispatcher table."
 roots = ["8003e4e8"]
+# The CD-IO primitives below it are their own feature.
+stop_at = ["8005dbb4", "8005e788"]
 
 [cd-io]
 description = "CD-IO primitive surface. CD-DMA channel-3 reader, ISO9660 directory lookup, streaming-read IRQ callback + starter. Shared infrastructure beneath asset-loader and any boot-time disc read."
 roots = ["8005d9a0", "8005dbb4", "8005e574", "8005e788"]
+
+[cast-module]
+description = "Capture-class cast-module band (PROT 0903..0966 at slot-B 0x801F69D8): the cast tick, the 0935+ band dispatcher and the per-module stagers they reach."
+roots = ["801f1ed4", "801f2160", "801f2410"]
+# The battle SM above it, the shared spawn/frame infrastructure, and the slot-B
+# VA aliases - sixty-four modules link over one base, so those addresses are
+# not one routine (cast-module.md).
+stop_at = [
+    "801e295c", "80021b04", "80023070", "801d362c", "801d1344", "801d79e8",
+    "801f747c", "801f7628", "801f5748", "801f71e0", "801f7b88",
+]
+
+[world-overview]
+description = "World-map RENDER pass: the per-cell bulk-terrain emitter FUN_801F69D8, the per-prim dispatch table and the per-actor render dispatcher above them. The draw half of `world-map`, which is the controller half."
+roots = ["801f69d8", "80043390", "8001ada4"]
+stop_at = [
+    "801e76d4", "801de840", "801e295c", "800243f0",
+    "80021b04", "80023070", "801d362c", "801d1344", "801d79e8",
+    "801f747c", "801f7628", "801f5748", "801f71e0", "801f7b88",
+]
+
+[text-dialog]
+description = "The dialog text stack a translation pack has to keep byte-exact: glyph stride walker, width measure, substitution expander, text renderer and the dialog window pager."
+roots = ["8003ca38", "80036044", "80036514", "80036888", "801d84d0"]
+stop_at = ["801de840", "801e295c", "80021b04", "80023070", "801d1344", "801d79e8"]
+
+[patcher-hooks]
+description = "The retail routines legaia-patcher edits or detours: the Seru capture roll, post-battle XP, the battle-init and command paths the tuning sliders rewrite."
+roots = ["801ec3e4", "801e9504", "8004fcc8", "800421d4", "80034a6c", "801e9fd4"]
+stop_at = [
+    "801e295c", "801de840", "80021b04", "80023070", "801d362c",
+    "801d1344", "801d79e8",
+    "801f747c", "801f7628", "801f5748", "801f71e0", "801f7b88",
+]
 
 # --- Minigame overlays. Each rooted at one or more overlay_<name>-unique addresses
 # (functions that appear in *only* this minigame's overlay dump).
@@ -117,7 +216,7 @@ roots = ["8005d9a0", "8005dbb4", "8005e574", "8005e788"]
 [dance]
 description = "Dance minigame overlay. Rooted at the two largest dance-unique functions; stops at the major shared dispatchers."
 roots = ["801cf470", "801d0750"]
-stop_at = ["801de840", "801e295c", "801e76d4", "801dd35c", "801da51c"]
+stop_at = ["801de840", "801e295c", "801e76d4", "801dd35c", "801da51c", "80021b04"]
 
 [fishing]
 description = "Fishing minigame overlay. Single fishing-unique dispatcher; the rest of the overlay is reached transitively."
@@ -126,12 +225,17 @@ roots = ["801cf3bc"]
 [slot-machine]
 description = "Casino slot-machine overlay. Two slot-unique entry points; stop_at trims overflow into the world-map / field-VM helpers."
 roots = ["801cf0d8", "801d13e8"]
-stop_at = ["801de840", "801e295c", "801e76d4", "801dd35c", "801da51c"]
+stop_at = [
+    "801de840", "801e295c", "801e76d4", "801dd35c", "801da51c",
+    "80021b04", "801d79e8", "801f04b0",
+]
 
 [baka-fighter]
 description = "'Baka Fighter' Genesis Tree minigame overlay. Two baka-unique seed addresses."
 roots = ["801cf678", "801d2afc"]
+stop_at = ["8001f05c", "80021b04"]
 
 [muscle-dome]
 description = "Muscle Dome minigame overlay. Four muscle-unique addresses in the 0x801F0000+ band; needs more than two roots to expand past leaves."
 roots = ["801f0450", "801f2410", "801f30c4", "801f12d0"]
+stop_at = ["80021b04"]
