@@ -1293,17 +1293,6 @@ sits behind the port's module partition.
 # private pointer table at its own VAs, which no sibling can share.
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f6edc"
-reason = """
-Water Column's tick. Its eleven distinctive addresses are all in
-0x801F78xx..0x801F7Exx - the module's own record-pointer block - and it calls
-nothing, which is the band's shape: a slot-B image has no internal `jal` and its
-records are reached off pointers the image itself forms. Nothing it touches can
-be shared with a sibling module, because every sibling's records sit at that
-sibling's own offsets in its own image.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f7af4"
 reason = """
 Viguro's spawn stager, same cause: five distinctive addresses, all in
@@ -1320,4 +1309,23 @@ Evil Seru Magic's stager. Eleven distinctive addresses spanning
 private table in the module and the same band-structural shape as its
 neighbours. The only address it shares with anything is the head, which every
 module forms and which is therefore not distinctive.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f7d34"
+reason = """
+PROT 0942's Power Up tick, in a file whose other 35 tagged siblings are other
+modules' bodies - so the signal has nothing to corroborate against and this row
+is the band's structural shape, not a defect. Re-derived against the bytes
+before waiving: 0x801F7D34 is file +0x135C of overlay_cast_power_up_0942.bin,
+inside that image's own content (which runs to +0x199C), and PROT 0943's copy
+of those bytes is inherited residue - 0943's own content ends at +0x1037, and
+0943 is byte-identical to 0942 from there to its end. The routine is 876 bytes
+and 219 instructions, and its terminal arm reads the monster record's +0x0E
+(`lhu v1,0xe(v0)` at 0x801F8060), computes `x * 3 >> 1` (0x801F8068..0x801F8070)
+and stores it to the caster's +0x156 AGL base (`sh v0,0x156(s0)` at 0x801F8074)
+before clearing ctx+0x0D and returning zero - which is exactly what
+`power_up_tick` implements. Its three distinctive data addresses
+(0x801F81B8 / 0x801F88A0 / 0x801F88B4) are this image's own spawn records and
+countdown word, which no sibling module can share.
 """
