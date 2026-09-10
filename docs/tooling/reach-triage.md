@@ -1293,10 +1293,16 @@ addresses. The gate is **the specific spell or summon id**, one per row.
 This is the intro-style shape one layer down: a data arm rather than a beat a
 player reaches. A pad fixture cannot convert these rows however long it plays,
 because nothing about pad input selects a module; what converts one is a seeded
-oracle that casts that id with the band resolved, which is what
-`crates/engine-core/src/world/tests/cast_band.rs` already does per id without
-being in `CANONICAL_LADDERS`. Promoting a seeded per-id oracle into the union
-is the whole of the work, and it converts rows in proportion to the ids it
+cast of that id with the band resolved.
+
+Two things already do most of that and neither is in the union.
+`crates/engine-core/src/world/tests/cast_band.rs` walks the id-to-module
+resolution per id, but it is a `#[cfg(test)]` module rather than a test binary,
+so it can never be named in `CANONICAL_LADDERS` at all - the list takes
+`--test <name>` integration targets. `crates/engine-core/tests/cast_effect_pool_disc.rs`
+IS such a target and already calls `cast_module_for`, but only for two ids and
+without driving the tick body. The work is one integration ladder that seats a
+cast per id and steps it, and it converts rows in proportion to the ids it
 covers.
 
 `screen_fx.rs`'s ten rows had the same shape and are closed: the scene-frontier
