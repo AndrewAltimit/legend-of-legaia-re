@@ -72,88 +72,70 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
-- **`FUN_801DD35C` is the title tick, not a menu dispatcher**, and
-  `_DAT_8007BAB4` is its pre-attract hold rather than an "active submenu
-  index" - the word is read at `0x801DDA9C`, tested `bgtz` at `0x801DDAB4` and
-  drained by `frame_scalar << 3`. With it fell three more title readings: the
-  sub-mode word is `0x801F0204` and `0x801DD920` is only the instruction that
-  writes it; a cold boot never shows sub-mode `0x02`; and the slider
-  `state[-0xEB4]` has no `[0, 0x2C]` range - both arms *converge on* `0x2C`
-  and the graph seeds it `0x100` and `-0x16`
-  ([settled](re-settled-threads.md#a-cold-boot-always-shows-title-sub-mode-0x10),
-  [falsified](re-do-not-re-walk.md#title--boot--overlays)).
-- **The summon draw does not run 35-64 times a frame.** Re-measured on the
-  same catalogued state, `FUN_80048A08` is called once per **live actor** per
-  rendered frame - at most `2` in the solo fight the original figure came
-  from. Any budget argument built on the larger number is off by more than an
-  order of magnitude
-  ([falsified](re-do-not-re-walk.md#the-summon-draw-runs-35-64-times-a-frame)).
-- **The world-map overlay's per-prim handler table is based at `0x801F8968`,
-  not at its first non-zero word.** `FUN_80043390` materialises the base with
-  `lui s4,0x8020` / `addiu s4,s4,-0x7698` and indexes it with the same
-  `(flags >> 1) * 4` it uses on the SCUS table `0x8007657C` - which has the
-  identical shape, words `0..7` zero. Re-basing by the zero prefix shifts
-  every prim kind by eight
-  ([falsified](re-do-not-re-walk.md#measurement-readings)).
-- **Two dumps were reading the wrong image.** `0x801D2784` is PROT 0976
-  (Baka Fighter), not 0979 - the two are byte-identical from file `0x3C68`, so
-  only the operands separate them. And every `overlay_dance_*` print above
-  `0x801D6818` is PROT 0972's fishing overlay: `0x801D73B8` is that image's
-  file `0x8BA0`, byte for byte
-  ([`overlay-va-aliases.md`](overlay-va-aliases.md#overlay_dance_-above-0x801d6818-is-the-fishing-overlay)).
-- **Not every alias is a phantom.** `0x801DDA90` is a real entry in *both*
-  slot-A images - the field overlay's screen-frame corner writer (slot 0 of the
-  `0x801CEC40` table) and the title tick's `AttractDelay` arm - and the
-  "two slices of one loop, neither an entry" reading was right about
-  `0x801DDB44` only. Same shape at `0x801D0ED8`: an arena-init entry and a
-  battle `jal` site.
-- **The 0898 entry tables do not resolve the slot-B byte residue.** They map
-  the band's *reachability* completely, which is why they looked like the
-  instrument for the attribution question too; measured, they close 6 extents /
-  48 bytes and name the wrong module for 10 of 15. Byte ambiguity needs a
-  byte-denominated answer.
-- **Four field-overlay routines were named for the wrong effect.**
-  `FUN_801DD784` is the scene shutter blackout, not a cinematic letterbox;
-  `0x801F27EC` oscillates one rung of the floor-height ladder at `0x1F80035C`,
-  not a fade; `FUN_801CFF3C` is `FUN_801DE754` printed `0xE818` low, so the bar
-  template still has exactly one spawner; and `0x801D44CC` flips the dance
-  step-marker's mesh rather than facing a dancer
+- **Seventeen of twenty "un-dumped code runs" were never code.** The
+  bytes-derived dump worklist ranked each overlay image's uncovered runs, and
+  the three that held real routines were all slot-A. The rest are the image's
+  own data tail or a *neighbouring* image's bytes sitting at the same file
+  offset - a build-buffer leftover every extracted image ends in. The residue
+  measurement had no way to say so, which is why it read as work
+  ([settled](re-settled-threads.md#measurement--corpus),
+  [falsified](re-do-not-re-walk.md#measurement-readings)).
+- **A slot-B module's data tail is a spawn-record band, and its regions
+  interleave.** The uncovered span is `[i16 model_sel][u16 flags][move-VM
+  bytecode]` records addressed by the consumer's own `lui`/`addiu`, not an
+  opaque blob; 62 of 64 images carry one. Two readings fell with it - that the
+  tail was un-dumped code above the frame partition, and that an image is laid
+  out head-table / code / data in that order. Records sit *between* bodies in
+  at least two images, so "everything past the last function is data" swallows
+  five real routines
+  ([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md)).
+- **`FUN_801DA390` eases a camera height, not a yaw.** `0x801DA3B4` reads
+  `ctrl[+0x4A]`, `0x801DA3B8` reads the actor's `+0x16`, and the routine
+  subtracts them - and `+0x16` is the Y of the `(+0x14, +0x16, +0x18)` position
+  triple, not an angle. The same `+0x16` had three incompatible readings across
+  the docs (heading, facing, footing); nothing on the disc masks it as an angle
   ([falsified](re-do-not-re-walk.md#field--locomotion)).
-- **A `jal` sweep scoped to one image answered the wrong question.** PROT 0898
-  really does not call `FUN_8002C69C`; SCUS `FUN_80031D00` drives it off the
-  retained widget list every frame a battle is up, so the post-battle report
-  chrome is the ordinary nine-slice after all
-  ([settled](re-settled-threads.md#rendering--camera)).
-- **`FUN_80019D50` uploads a palette, it does not emit primitives.** One
-  `LoadImage` at `0x8001A030` per call: it is the CLUT-cell HSV cycler behind
-  jou's pulsating flesh, not a BGR555 cell-grid emitter. Nearby,
-  `FUN_801D362C` has exactly one reference on the disc - the move VM's own
-  op-`0x2F` arm - so the world-map controller does not call it directly.
-- **Three menu / script gates were read too broadly.** Op `0x36`'s
-  request/acknowledge gate differs per sub-arm (sub `3` is ungated and yields
-  the frame); `_DAT_8007B868` *opens* the bit-15-clear arm while closing the
-  bit-15-set one; and the menu entry-context byte is keyed on the record kind,
-  which puts the save entry on `0x19` and leaves `0x02` to the dev character
-  editor ([falsified](re-do-not-re-walk.md#menus--ui)).
-- **The inline `0x1F` dialogue segment has no geometry header to find.** The
-  byte is a MES line-start marker; the box's rect and row capacity belong to
-  the pager `FUN_801D84D0`, and consecutive lines pack into one window.
-- **The Spirit halving flag is a persistent record bit, not a battle bit.**
-  It is accessory passive `0x2B` at character record `+0xF8` bit `0x800` -
-  which is why it survives a save - and `ctx[+0xD]`'s second bit stamps a
-  translation, not a `0x400` roll.
-- **The slot-B band has no single damage shape.** The seat-0 hardcode holds for
-  PROT 0958 / 0959 / 0960; 0927 and 0966 are multi-seat **stagers** that
-  subtract nothing themselves, which is what made 0927 read as unable to kill.
-- **The dome `INTERVAL` screen is a live `koin1` render**, so it is not the
-  consumer of the `(384, 0)` still - that draw site is still open. Separately, a
-  dome direction swing does not take damage from the `FUN_801DD0AC` chain: that
-  path carries a move-power index and the dome's four commands map to row `0`.
-- **Two measurement reflexes were wrong.** A `disc-coverage --check` floor
-  regression is attribution lag - a new unattributed dump raises the
-  denominator first - not lost coverage; and a `// PORT:` tag's live/inert
-  bucket is a property of the **tagged item**, not of a neighbouring symbol
-  that happens to be called.
+- **A `sh` in a jump-table arm's delay slot is still that arm's store.** Three
+  world-map horizon-gate subs were credited to the wrong instruction because
+  the write sits in the delay slot of the `j` that leaves the arm - and one
+  op-`0x4C` arm was read as writing one word when it writes two.
+- **Retail's title screen does not run under mode `0x10`.** The front end is a
+  six-store chain and the title's own mode is the **card** mode `0x17`; `0x10`
+  is one frame of logo INIT. The hand-off between INIT handlers is each
+  handler's own store, not a table's `next` field
+  ([settled](re-settled-threads.md#title--boot--overlays)).
+- **A dome round is an ordinary battle; the dome *hub* is the OTHER mode.** The
+  `0x14` reading was true of the hub (PROT 0977, sub-id 5) and false of a
+  round. Separately, magic is **not** forbidden on the Master course: the only
+  writers of the `0x200` restriction bit key on the *first enemy monster id*,
+  and no dome ladder reaches one
+  ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
+- **A cast costs MP, not AP.** The Ra-Seru chip's cast path writes the action
+  queue and the phase and spends no AP, so every "the pennant pays for a cast"
+  argument was about the wrong currency.
+- **`FUN_80058490` is `MoveImage`, not a sound-driver lane.** It moves a VRAM
+  rect to `(0xE0, 0x1DC)` - CLUT row `y = 476` - which makes the table behind
+  it a CLUT map rather than a cue list. An engine defect follows: the battle
+  SFX cue kind is being read out of those CLUT bytes.
+- **`FUN_8003E8A8` returns a sector *count*.** `0x8003E90C` is
+  `subu s0,v0,s2` over `TOC[idx+3]` and `TOC[idx+2]`, and `0x8003E948` returns
+  it; the LBA is the side effect at `gp+0x8f0`. Two loader rows and
+  `FUN_8005E4D4`'s argument order were reversed against it. And the libcd
+  directory cache is at `0x801CB408` - `0x801C4BEC` was the offset half of a
+  `lui`/`sw` pair pasted into the high half of an address.
+- **A live port wore another routine's address.** `engine-core::dialog`
+  carried `PORT: FUN_8001FD44` and implements nothing of it; the address is the
+  name-based scene-change packet, which the field VM's op-`0x3F` arm ports.
+  Nothing gates this class - a `// PORT:` tag naming the wrong routine passes
+  every check ([`port-provenance.md`](../tooling/port-provenance.md)).
+- **Twelve feature views were measuring one blob.** A BFS from a feature root
+  spills through the title tick into the save UI, the effect spawner and the
+  move VM, so `title-screen`'s 754 anchors were a strict subset of
+  `muscle-dome`'s 781. Localized, the same feature measures 72.
+- **`Insn::extended` is not the field VM's op-`0x43` sub-op.** It is a
+  cross-context target marker (`0x80`); the sub-op is `InsnInfo::ActorCtrl`,
+  and the real sites number 311 across **ten** ending scenes, not the eight the
+  docs listed.
 
 ---
 
@@ -162,77 +144,22 @@ cheapest place to look for a claim that is still wrong.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
-| teien hedge-base ground fill (kind-2 tile-trigger cells) | open - blocked on one `teien` field-run mednafen state | [details ↓](#teien-hedge-base-ground-fill) |
+| What arms `_DAT_8007B8B8`, the gate on the field overlay's one ambient template? | open | The MAIN INIT `FUN_801D6704` spawns the descriptor at `0x801F271C` exactly once, at `0x801D6FD8`, and only while `_DAT_8007B8B8 == 0`; the same word is the mode-entry prologue's field-state latch. Closes by naming every writer in load order - which decides whether the template is a boot-only spawn or a per-scene one. |
+| Nothing on the disc references the descriptors at `0x801D5C08` / `0x801D5D60` | open (a negative; needs a consumer or an ignore row) | Both look like actor templates in the field overlay's own data, and a sweep of all five reference forms over 84 images finds no word, `lui` pair, `jal`, `j` or branch that reaches either. Either a list-driven `jalr` seats them - which a target sweep structurally cannot see - or they are dead authored data; a retained-list dump at scene entry separates the two. |
 
-Recently closed here: Rim Elm's south gate. Neither of its two walk-on bands
+Recently closed here: **teien's hedge-base ground fill**, which had a false
+premise. Retail has no kind-2-cell draw channel at all - a live `teien`
+field-run pass visits 1536 window cells and emits 370, exactly the cells
+carrying `0x1000`, and none of the 42 `0x0800`-only cells
+([settled](re-settled-threads.md#field--locomotion),
+[falsified](re-do-not-re-walk.md#field--locomotion)). Before it, Rim Elm's
+south gate. Neither of its two walk-on bands
 was the mechanism the symptom suggested - the exit record is ungated and the
 other record is five inert bytes; what holds a player in is a collision row the
 gate object's own script paints. See
 [`re-settled-threads.md` § Rim Elm's south gate](re-settled-threads.md#rim-elms-south-gate),
 and the force-walk reading it falsified in
 [`re-do-not-re-walk.md`](re-do-not-re-walk.md#the-reachable-bands-record-force-walks-the-player-through-the-wall).
-
-### teien hedge-base ground fill
-
-*Status:* open - the port is byte-faithful to every pinned draw channel; the question is whether retail has one more
-
-Under teien's hedge maze the cells along the hedge rows carry only
-object-grid bit `0x0800` (kind-2 tile-trigger presence - the height-override
-platform records `FUN_80019278` reads), not the `0x1000` ground-draw bit, so
-neither retail's pinned ground-quad emitter (`FUN_801f6d48`, gate
-`(cell & 0x1000) != 0`) nor the port's `build_walk_heightfield` (same gate,
-verified byte-exact against retail's load-time recompute in `FUN_80017BEC`
-for kor5/teien/town01) emits ground there. Through the hedge sprites'
-authored cutout texels that reads as black holes along the hedge bases from
-free-camera angles retail's fixed camera may never reach. If retail really
-shows grass in those cells, the filler is an **unpinned kind-2-cell draw
-channel**.
-
-**The corpus cannot answer this yet, and the reason is now precise rather
-than assumed.** The state index (`scripts/mednafen/state-index.py`) covers 55
-scenes across both emulators and all three state populations - the live
-emulator slots, the repo's probe captures, and the curated `saves/library/` -
-and `teien` is one of them, but neither of its two states carries a `teien`
-field frame. One is `battle-init`; the other is `field-init`, and reading its
-display list settles what that means: the live ordering table holds **44
-packets**, three of which are stacked full-screen untextured `POLY_F4` quads
-spanning `(0,-4)..(320,228)`. That is a scene-transition fade, not a rendered
-garden. The several hundred packets also present in the pool are stale bytes
-from the previous frame that no ordering table links - which is exactly why
-the read walks the OT rather than scanning the pool.
-
-**What would close it:** one save state in `teien` at game mode `0x03`
-(field-run), captured in **mednafen**, not PCSX-Redux. The emulator choice is
-load-bearing: the question is per-cell, so answering it means joining the
-frame's ground primitives against the live object grid at `*(_DAT_1F8003EC)`,
-and that pointer lives in the scratchpad. Mednafen states carry
-`ScratchRAM.data8`; a PCSX-Redux `.sstate` carries main RAM only. With such a
-state the read is `mednafen-state display-list <state> --list` plus the grid
-slice; see
-[`mednafen-automation.md`](../tooling/mednafen-automation.md).
-
-**`edteien` was tried as a proxy and does not work - do not re-try it.** The
-emitter is scene-independent shared code, so a ground primitive over an
-`0x0800`-only cell in any scene would be a finding about the mechanism. The
-epilogue garden `edteien` has three field-run *mednafen* states drawing
-teien's own texture families, and its live object grid does hold 400 cells
-with `0x1000` and 45 with `0x0800` and no `0x1000`. Two things stop it being
-an answer, and the second disqualifies the scene rather than the attempt. The
-join cannot be made by **count**: retail's ground pass is not 1:1 with cells,
-so the two hypotheses (400 vs 445 packets) predict values no texture family in
-the frame is near - the largest ground-plausible family carries 651
-`POLY_FT4`, its whole atlas 917, and a geometric join needs a camera transform
-that is not pinned. And `edteien`'s `0x0800`-only cells are **not hedge
-bases**: 36 of the 45 form a solid 6x6 block inside the walkable region, 10 run
-along one row, and 3 sit outside the walkable area entirely. A solid block is a
-raised platform - which is what the bit means, `0x0800` being
-`CELL_ELEVATION_OVERRIDE`. Teien's case is hedge *rows* whose authored cutout
-texels are what make a missing quad visible. The bit pattern matches; the
-feature does not, and a raised platform would legitimately carry its own mesh,
-so even a clean result there would not transfer.
-
-Until this is measured in `teien` itself the engine must not grow a
-speculative fill.
 
 ### Coplanar residual tail: same-position curved-shell stacks
 
@@ -316,8 +243,14 @@ observed orders live in the settled page's play-order-captures paragraph,
 alongside the earlier organic `ropeway`/`ropeway2`/`jiji` walks and Nivora's
 `0x370` SET. Still owed:
 
-- **never walked:** `rayman`/`rayman2`, `station`/`station3`, and the Karisto
-  spokes `bubu2` + `deroa`/`chitei2`;
+- **never walked, and the corpus cannot help:** `rayman`/`rayman2`,
+  `station`/`station3`, and the Karisto spokes `bubu2` + `deroa`/`chitei2`. A
+  sweep of both emulators' state populations finds **no** state in `station`,
+  `station3`, `bubu2`, `deroa` or `chitei2`, and the one `rayman` state answers
+  a different question: an idle firehose over it logs 0 SETs and 2 CLEARs
+  (`0x11`/`0x12`, writers at `ra` `0x801D551C` / `0x801D55DC`), because a
+  family SET fires on the beat, not on standing still. These need a human
+  play-forward, not another probe;
 - **walked without an organic family SET** (the beats were already latched in
   the loaded state, or the region was entered mid-arc): `retock`/`retockin`
   (`0x502` never fired; `0x357` pre-latched), `doman` (`0x3FB` did not fire),
@@ -348,9 +281,18 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| What makes a Ra-Seru chip render? | open (both hosts draw nothing) | The chip surfaces are disabled on the native window and the browser play page alike, and the reason is upstream of the draw: nothing in either host produces a **magic command class** that casts into the capture pool, so the surface has no live input. Closes by driving one player Seru-magic cast end to end on either host and re-reading the pool - a draw fix without that input is untestable. |
+| Which frames gate each capture-class tick body's arms? | open (ready work, not a question) | Every arm of the twelve trampoline-reached bodies is decoded and ported, but the per-arm frame gating - PROT 0955's module-resident countdown at `0x801F9D28` and the `scratch[0x37D] * scratch[0x393]` product it is drawn down by - is pinned by shape, not by a measured frame count. Closes on a capture of one natural cast per body; table in [`cast-module.md`](../subsystems/cast-module.md#the-twelve-bodies-the-trampoline-map-names). |
+| Where does a slot-B module image's **highest** spawn record end? | open (bounded below, unbounded above) | Every record but the topmost is bounded on both sides by the next consumer pointer. The highest has none: it carries no length, nothing computes an address past it, and walking the move-VM opcode widths to `0x08` HALT lands within 4 bytes of the true boundary for about three quarters of the band's inner records and misses the rest - so it is not a static bound. Closes by finding a length the runtime itself uses, or by measuring one image's topmost record live. See [`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#the-one-span-the-band-cannot-bound). |
+| The eleven player-Seru modules (PROT 0903..0913) have no ported tick body | open (ready work) | The `0x801CF4EC` arms are tick bodies of 3396..7260 bytes - `ctx+0x279` phase machines with damage wrappers - not the data stagers the cast-module page's per-entry verdicts name (those verdicts describe each module's *stager*). None of the eleven is ported, so a player Seru-magic cast reaches `run_cast_module_code` and finds a body for only 2 of the 11 spell ids. |
 
-Recently closed in this area: the battle-**intro** enemy-name banner - the
+Recently closed in this area: **what makes a Ra-Seru chip render**. The
+question had a false premise - the native window drew no dome command cluster
+at all - and the three gates are now in order: `ctx[+0x25F+member]`, then
+`+0x16E & 0x1000`, then `0x8007BAC0 & 0x200`, of which only the third selects a
+mark. The three mark emitters `FUN_801DBC30` / `FUN_801DBD04` / `FUN_801DBEC4`
+are pinned cell by cell
+([settled](re-settled-threads.md#battle--arts--level-up)). Before it, the
+battle-**intro** enemy-name banner - the
 question had a false premise, no placement record raises it, the composer
 `FUN_801D9D3C` places its labels with immediates
 ([settled](re-settled-threads.md#the-battle-intro-enemy-name-banner),
@@ -375,9 +317,11 @@ resolved as the track-swap **commit** and moved to
 
 ## Title / boot / overlays
 
-No open threads.
+| Thread | Status | What would close it |
+|---|---|---|
+| The browser play page holds no mode seat | open (blocked on an overlay-residency model) | The native host now seats the mode driver (`ModeSeat`, owned by `BootSession`); the browser runtime does not, so the two hosts disagree about who owns the front-end mode chain - the drift shape [`host-drift.md`](../tooling/host-drift.md) exists for. The blocker is shared with the overlay loader: nothing in the port loads an image at a base and calls an INIT plan's entry, so a seat on the browser side would have no image to enter. Closes by giving the port a residency model, or by disclosing the browser half permanently. |
 
-The two that were here both closed by capture. Nothing draws the `init.pak`
+The two threads that were here both closed by capture. Nothing draws the `init.pak`
 WARNING screen - the TIM is uploaded to VRAM `(704, 0)` and given descriptor 1
 of the table at `0x801F369C`, and no call site ever passes that id
 ([settled](re-settled-threads.md#title--boot--overlays)). And a cold boot always
@@ -405,15 +349,38 @@ PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 
 | Thread | Status | What would close it |
 |---|---|---|
-| What draws VRAM `(384, 0)` 320x256 (the dome panel still)? | open (emit only - arming and staging both resolved) | The still is staged by PROT 0978 and armed by `ctx[+0xC] = 1` at `0x800474CC` in the generic battle-end teardown `FUN_80047430` ([settled](re-settled-threads.md#the-dome-panel-still-arming)); what remains is the **emit**. Two candidate consumers are now excluded: no draw site exists statically (33 sites disc-wide materialise `0x180`, none paired with `y = 0`), and the `INTERVAL` intermission is a live `koin1` render whose ordering table samples nothing at `x = 384` ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)). Needs a GPU-FIFO capture at battle teardown (`ctx[+0xC]` `1 -> 2`). |
+| What draws VRAM `(384, 0)` 320x256 (the dome panel still)? | open (emit only; arming, staging and the upload all resolved) | [details ↓](#what-draws-the-dome-panel-still) |
+
+### What draws the dome panel still
+
+*Status:* open - the **emit** is the only unresolved leg
+
+The still is staged by PROT 0978 and armed by `ctx[+0xC] = 1` at `0x800474CC`
+in the generic battle-end teardown `FUN_80047430`
+([settled](re-settled-threads.md#the-dome-panel-still-arming)). Three candidate
+consumers are excluded: no draw site exists statically (33 sites disc-wide
+materialise `0x180`, none paired with `y = 0`); the `INTERVAL` intermission is
+a live `koin1` render whose ordering table samples nothing at `x = 384`; and an
+1800-VSync GPU-call census across a teardown records no display-origin flip, no
+`MoveImage` and no blit at `x = 384`
+([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
+
+What the **upload** is is now measured, and it is not the shape the doc
+described: **four** `LoadImage` calls of 64x256 at `x = 384 / 448 / 512 / 576`
+- texture pages 6..9 - keyed on raw TOC `0x36C`. The "320x64, y-stepped"
+geometry belongs to the `int.tim` family (`0x4C7` / `0x4C8`), which did not run
+in the census, so it is not this still's upload.
+
+**What would close it:** a GPU-FIFO capture at battle teardown, bracketed on
+`ctx[+0xC]` going `1 -> 2`.
 
 ## Measurement + tooling
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which resident image does SCUS `jal 0x801F7B88` (at `0x800481A0`) mean? | mostly resolved | It is PROT 0920 (`cast_slippery`) at file `+0x11B0`. The gate names the image: the call is behind `_DAT_8007BDC0 != 0` (`gp+0xAA8`), 0920's own effect-drain counter, and a sweep of every form that reaches that word finds no other writer. The unconfirmed leg is *when* - the arm can only be entered by a battle ending mid-Slippery cast, and nothing in the save-state corpus has the gate up, so a residency capture pairing the call with the loader-B tracker `0x8007BC4C` is still owed. See [`cast-module.md`](../subsystems/cast-module.md#scus-calls-into-slot-b-at-one-fixed-va---and-only-prot-0920-arms-it). |
-| Why does `cast_earthquake` (PROT 0935) floor at 69.7%? | open (narrowed to a shape) | The uncovered `0x801F8028..0x801F89D8` is a 2480-byte **data tail** that neither the `no_exit` nor the `data_segment` shape rule recognises, so the byte-accounting pass leaves it unclassified rather than crediting it. Fifteen other fallen rows have the same shape. Closes by naming the tail's structure - or by widening the shape rules once it is named. |
-| Which frames gate each capture-class tick body's arms | open (ready work, not a question) | Every arm of the twelve trampoline-reached bodies is decoded and ported, but the per-arm frame gating - the module-resident countdown at `0x801F9D28` and the `scratch[0x37D] * scratch[0x393]` product it is drawn down by - is pinned only by shape, not by a measured frame count. Closes on a capture of one natural cast per body. Table in [`cast-module.md`](../subsystems/cast-module.md#the-twelve-bodies-the-trampoline-map-names). |
+| *When* does SCUS `jal 0x801F7B88` (at `0x800481A0`) run? | mostly resolved (image pinned; the frame is not) | The callee is PROT 0920 (`cast_slippery`) at file `+0x11B0`, named by its gate `_DAT_8007BDC0 != 0` (`gp+0xAA8`), 0920's own effect-drain counter, which no other writer reaches in any reference form. The arm also requires `_DAT_8007BD71 == 0xFF` - battle **running**, `0xFE` being ending - which falsifies "a battle ends mid-cast": it fires on ordinary in-battle frames while the budget is non-zero (123 hits on a victory ladder, all before the end signal). Owed: one PCSX-Redux state taken *inside* a Slippery cast; the corpus's only Slippery state is mednafen. See [`cast-module.md`](../subsystems/cast-module.md#scus-calls-into-slot-b-at-one-fixed-va---and-only-prot-0920-arms-it). |
+| 31 cast-band tick addresses are statically live and never entered by any ladder | open (ready work, not a question) | The replay reach export runs 47 ladders and reports 91 live-but-never-entered addresses; `cast_module_ticks.rs` is 31 of them, all gated on the spell id through `World::cast_module_for`. They are not host-dead - one ladder seating a cast per PROT `0903..0966` id would convert the whole cluster at once. Until then the reach figure understates the band and nothing says which of the 31 would actually run. See [`reach-triage.md`](../tooling/reach-triage.md). |
+| The dashboard's Port % denominator counts rows the ignore list removes | open (a tool fix, not a question) | `port-catalog.py --dashboard` divides by a worklist that still includes `port-catalog-ignore.toml` rows, so the headline percentage moves when an ignore row is added and nothing about the port changed. Closes by taking the ignore set out of the denominator - and by re-taking the committed baseline once, since the figure shifts. |
 
 ## Adding a thread
 
