@@ -61,6 +61,11 @@ pub use types::*;
 
 mod actors;
 pub mod ambient;
+mod cutscene_elements;
+pub use cutscene_elements::{
+    AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, CutsceneElement, ElementFrame,
+    ElementKind, ElementLink, WorldRng,
+};
 mod assets_events;
 mod battle;
 pub use battle::{

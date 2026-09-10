@@ -20,16 +20,29 @@
 //! not one. [`save_screen_spawn`]'s own doc opens a `WIRED:` line, which is
 //! what opts that one item out of the module disclosure below.
 //!
-//! NOT WIRED: there is no element-actor dispatch to hang these off.
-//! `crate::cutscene` is the FMV dispatch-table lookup and nothing else; the
-//! engine's scripted scenes run through [`crate::cutscene_timeline`], which
-//! interprets the record's cross-context yields (walk / rotate / channel
-//! waits) **directly** instead of spawning an object whose `+0x0C` holds a
-//! handler and whose `+0x90` points at a linked object. Wiring these four
-//! needs that element-actor channel first: a pool of spawned elements, each
-//! carrying a linked-object pointer, ticked once per frame with the linked
-//! object's done bit `+0x10 & 8` as the entry gate. Until then a call site
-//! would have nothing to link to and nothing to retire.
+//! WIRED, with a content gap: the element-actor **channel** these three run on
+//! now exists -
+//! [`crate::world::cutscene_elements`], a pool of spawned elements each
+//! carrying a linked-object pointer, ticked once per frame off the world's
+//! master-driver gate with the linked object's done bit `+0x10 & 8` as the
+//! entry gate, exactly beside the three other plain-template families. What is
+//! still missing is a **spawner a script reaches**: nothing on the engine's
+//! side installs an element yet, so on a real playthrough the channel is empty
+//! and none of the three handlers runs.
+//!
+//! Where the spawns are is now partly answered from the bytes rather than
+//! open. The ambient emitter's descriptor is `0x801F271C` in the field
+//! overlay's own plain-template table - the `0x18`-byte
+//! `[u32 0][u16 0][u16 0xFFFF][u32 handler][u32 0][u32 0][u32 0]` shape the
+//! floor-ladder oscillator (`0x801F27EC`), the eased move (`0x801F2840`) and
+//! the shutter bars (`0x801F2858`) also use - and its one spawn site is
+//! `0x801D6FD8`, inside the field overlay's MAIN INIT `FUN_801D6704`, behind a
+//! `bnez` on `_DAT_800838B8`. So it is **scene ambience installed by the field
+//! main routine**, not a cutscene-script element at all. The tween and the
+//! teardown remain unplaced: a five-form reference sweep over all 84 extracted
+//! images finds no word, `jal`, `j`, branch or `lui`/`addiu` pair naming
+//! `0x801D5C08` or `0x801D5D60`, so whatever holds their descriptors is not in
+//! the extracted set.
 //!
 //! REF: FUN_801E45BC - the vector midpoint/lerp helper the tween calls.
 //! REF: FUN_801D629C - the particle spawn primitive the emitter calls.
@@ -134,7 +147,11 @@ impl PositionTween {
     ///
     /// PORT: FUN_801D5C08
     ///
-    /// NOT WIRED: no element-actor dispatch - see the module docs.
+    /// WIRED: [`crate::world::World::tick_cutscene_elements`] runs this every
+    /// frame on both hosts, off the same master-driver gate the other
+    /// plain-template families ride. What no host yet does is **install** an
+    /// element for it to run on: the descriptor that names this handler is in no extracted image (see the module note), so nothing spawns one. That is a content-driven gap (nothing
+    /// reaches the spawner), not an unreached port.
     pub fn step(&mut self, frame_step: u8, linked_done: bool) -> TweenStep {
         if linked_done {
             self.done = true;
@@ -207,7 +224,11 @@ impl ElementTeardown {
     ///
     /// PORT: FUN_801D5D60
     ///
-    /// NOT WIRED: no element-actor dispatch - see the module docs.
+    /// WIRED: [`crate::world::World::tick_cutscene_elements`] runs this every
+    /// frame on both hosts, off the same master-driver gate the other
+    /// plain-template families ride. What no host yet does is **install** an
+    /// element for it to run on: the descriptor that names this handler is in no extracted image (see the module note), so nothing spawns one. That is a content-driven gap (nothing
+    /// reaches the spawner), not an unreached port.
     pub fn step(&mut self, linked_done: bool) -> TeardownActions {
         let mut out = TeardownActions {
             restore_camera: self.restore_armed != 0 && self.owns_camera != 0,
@@ -430,7 +451,11 @@ impl AmbientEmitter {
     ///
     /// PORT: FUN_801D6058
     ///
-    /// NOT WIRED: no element-actor dispatch - see the module docs.
+    /// WIRED: [`crate::world::World::tick_cutscene_elements`] runs this every
+    /// frame on both hosts, off the same master-driver gate the other
+    /// plain-template families ride. What no host yet does is **install** an
+    /// element for it to run on: its descriptor `0x801F271C` and spawn site `0x801D6FD8` are pinned, but the field MAIN INIT that spawns it is not ported, so nothing on the engine side installs one. That is a content-driven gap (nothing
+    /// reaches the spawner), not an unreached port.
     pub fn step(
         &self,
         scene: &AmbientScene,

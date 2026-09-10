@@ -1342,6 +1342,15 @@ pub struct World {
     /// drives one rung of [`Self::field_floor_height_lut`].
     pub floor_tier_bobs: Vec<legaia_engine_vm::field_actor_timers::FloorTierBob>,
 
+    /// Live **script-cutscene elements** - the pool the position tween
+    /// (`FUN_801D5C08`), the teardown (`FUN_801D5D60`) and the ambient emitter
+    /// (`FUN_801D6058`) run on, each carrying the linked object whose done bit
+    /// gates it. See [`crate::world::cutscene_elements`].
+    pub cutscene_elements: Vec<crate::world::CutsceneElement>,
+    /// What the element channel produced on the last tick - the writes, the
+    /// teardown requests and the ambient particles a host reads back.
+    pub cutscene_element_frame: crate::world::ElementFrame,
+
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
     /// [`crate::dance::DanceGame`] and [`World::enter_dance`].
@@ -2934,6 +2943,8 @@ impl World {
             field_region_attributes: crate::field_regions::RegionAttributes::DEFAULT_FILL,
             field_zone_record: None,
             field_floor_height_lut: [0i16; 16],
+            cutscene_elements: Vec::new(),
+            cutscene_element_frame: Default::default(),
             field_object_cells: Vec::new(),
             field_floor_cell_bit: legaia_asset::field_objects::CELL_WALK_VISIBLE,
             field_elevation_overrides: Vec::new(),

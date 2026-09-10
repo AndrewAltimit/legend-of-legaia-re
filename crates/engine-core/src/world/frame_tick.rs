@@ -1302,6 +1302,14 @@ impl World {
         if runs_master_driver {
             let delta = self.field_frame_step.min(u16::from(u8::MAX)) as u8;
             self.tick_field_timer_actors(delta);
+            // The script-cutscene element channel rides the same gate for the
+            // same reason - its three handlers are `+0x0C` handlers on that one
+            // effect-actor list, and the ambient emitter's own template
+            // (`0x801F271C`) sits in the very table the three above come from.
+            // Self-gates to a no-op on an empty channel.
+            let mut rng = crate::world::WorldRng::new(self.rng_state);
+            self.tick_cutscene_elements(delta, || rng.step());
+            self.rng_state = rng.state();
         }
         // The three-actor-talk controller's per-frame flag poll: when the
         // scene script drops the talk lock (system flag 0xD), the controller
