@@ -89,6 +89,26 @@ The corpus-wide consequence is worth stating plainly: a gzip-only reader indexes
 only the quicksave minority, so the scene index it produces silently under-reports
 the corpus by more than half.
 
+### A `.sstate` carries the scratchpad too
+
+"Mednafen states carry `ScratchRAM.data8`, a PCSX-Redux `.sstate` carries main
+RAM only" is a statement about **our reader**, not about the format, and it has
+been used to route work to the wrong emulator. The state's `Memory` message
+carries a fourth field beside RAM / ROM / EXP1 - a 64 KiB `hardware` blob bound
+to the same buffer `PCSX.getScratchPtr()` hands a probe - so the scratchpad is
+in the file, at offset `0x000..0x3FF` of that blob.
+
+It is easy to confirm on any capture without a decoder: take a scratchpad word
+whose value you know (say the field-env pointer a probe read at `0x1F8003EC`),
+search the raw state for it, and check whether `hit - 0x3EC` starts a 64 KiB
+run whose first `0x400` bytes are dense and whose remaining `0xFC00` are almost
+all zero - the scratchpad-plus-I/O-map shape. On a `teien` field-run state that
+lands one blob, and reading `+0x3E8` out of it returns the same visible-tile
+window the live probe logged. What is missing is only a reader:
+`legaia_pcsxr::SaveState` exposes `main_ram()` and nothing else, so a
+scratchpad-dependent question still needs either a live probe (which reads it
+directly) or a new accessor.
+
 ### Save-state library (immutable backups)
 
 PCSX-Redux quicksave slots (`<TITLE_ID>.sstate<N>`) and mednafen `mc{N}`
