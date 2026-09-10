@@ -21,7 +21,7 @@
   <h2>Runtime architecture</h2>
   <p>One binary, one session, one world. The shell boots a session, the session drives the mode table, the mode hands the scene host a world to tick, and the world drives every VM by implementing its <code>Host</code> trait. Rendering and audio hang off the side: they consume what the world reports and never reach back into it.</p>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 960 350" width="100%" style="max-width: 960px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Runtime data flow: the legaia-engine binary boots a BootSession, which drives ModeDriver, SceneHost and World in engine-core; World drives six VMs in engine-vm through Host traits; SceneResources feed the wgpu Renderer and the BGM director feeds the sequencer and SPU mixer in engine-audio">
+    <svg viewBox="0 0 960 350" width="100%" style="max-width: 960px; font-family: var(--font-mono); font-size: 12px;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Runtime data flow: the legaia-engine binary boots a BootSession, which drives the ModeSeat, SceneHost and World in engine-core; World drives six VMs in engine-vm through Host traits; SceneResources feed the wgpu Renderer and the BGM director feeds the sequencer and SPU mixer in engine-audio">
       <g fill="none" stroke="var(--border)" stroke-dasharray="4 3">
         <rect x="10" y="30" width="200" height="140" rx="6"/>
         <rect x="240" y="30" width="220" height="280" rx="6"/>
@@ -56,7 +56,7 @@
       <g fill="currentColor" text-anchor="middle" dominant-baseline="middle">
         <text x="110" y="70">legaia-engine</text>
         <text x="110" y="130">BootSession</text>
-        <text x="350" y="70">ModeDriver</text>
+        <text x="350" y="70">ModeSeat</text>
         <text x="350" y="130">SceneHost</text>
         <text x="350" y="188">World</text>
         <text x="350" y="206" fill="var(--text-muted)">implements every Host</text>

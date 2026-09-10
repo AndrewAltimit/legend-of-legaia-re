@@ -29,7 +29,7 @@ modes 22/23, which is simply not *named* for it.
 - [The main loop (`FUN_80015E90`)](#the-main-loop-fun_80015e90)
 - [TOC loader (`FUN_8003E4E8`)](#toc-loader-fun_8003e4e8)
 - [Asset-type dispatcher (`FUN_8001F05C`)](#asset-type-dispatcher-fun_8001f05c)
-- [Game-mode state machine](#game-mode-state-machine) - [full handler map](#full-handler-map-recovered-from-the-disc) · [New Game boot chain](#new-game-boot-chain-title--field) · [title runs under `CARD`](#the-title-screen-runs-under-the-card-pair-modes-2223) · [CD-read API stack](#cd-read-api-stack) · [system-UI gap](#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors) · [title-overlay source](#title-overlay-source-on-disc)
+- [Game-mode state machine](#game-mode-state-machine) - [full handler map](#full-handler-map-recovered-from-the-disc) · [New Game boot chain](#new-game-boot-chain-title--field) · [title runs under `CARD`](#the-title-screen-runs-under-the-card-pair-modes-2223) · [boot mode chain](#the-boot-mode-chain-end-to-end) · [the port's seat](#the-ports-seat-at-the-mode-table) · [CD-read API stack](#cd-read-api-stack) · [system-UI gap](#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors) · [title-overlay source](#title-overlay-source-on-disc)
 - [Title-screen overlay state](#title-screen-overlay-state) - [tick](#tick-function) · [sub-mode dispatcher](#sub-mode-dispatcher) · [opening scene chain + intro skip](#the-opening-scene-chain--the-fun_801d1344-intro-skip) · [name-entry overlay](#name-entry-overlay) · [sprite-emit helpers](#sprite-emit-helpers) · [state struct](#state-struct-extended) · [pad-mask layout](#pad-mask-layout-important)
 - [Boot init.pak (PROT 0895)](#boot-initpak-prot-0895) · [the VRAM upload](#the-vram-upload) · [the per-logo quads](#the-per-logo-quads) · [the logo sequencer](#the-logo-sequencer)
 - [Debug flags](#debug-flags)
@@ -420,6 +420,77 @@ The title *wordmark* TIM is PROT 888/890 (read by `legaia_asset::title_pak`);
 PROT 899 carries the options-menu config bundle **and** this overlay code, which
 is why the title screen, the memory-card manager and the in-field pause menu all
 share one mode pair and one overlay.
+
+#### The boot mode chain, end to end
+
+Six stores carry a cold boot from reset to the field, and every one of them is a
+`sh` of a literal into `_DAT_8007B83C`. Reading them in order is what settles
+which mode each front-end screen runs under, because none of the screens is
+named in the table:
+
+| Store | Writes | Hands the frame to |
+|---|---|---|
+| `0x8001D5B8` | `0x10` `READ INIT` | the pre-loop boot init, before the mode loop's first pass |
+| `0x801CEC94` | `0x11` `READ MODE` | the publisher logos, which animate as ordinary actors |
+| `0x801CF4D4` | `0x16` `CARD INIT` | the front end, once the logo pass reaches its phase 3 |
+| `0x80025974` | `0x17` `CARD MODE` | the title dispatcher, spawned as mode 22's actor |
+| `0x801DFC00` | `0x02` `MAIN INIT` | the field, on the title's NEW GAME row |
+| `0x80025E50` | `0x03` `MAIN MODE` | the field per-frame loop |
+
+Two of those are worth stating plainly because the shape invites a wrong guess.
+**Mode `0x10` is not the title screen** - it is one frame of logo INIT, and the
+logos run under `0x11`. **The title screen has no mode of its own**: it shares
+`CARD MODE` with the in-field pause menu, which is the reason its dispatcher
+`FUN_801DD35C` is resident in the *menu* overlay and is reached as a spawned
+actor rather than as a mode handler.
+
+The `0x801CF4D4` store is one arm of a branch, and the other arm is the dev
+route. `0x801CF490..0x801CF4E8` runs on the logo sequencer's phase `3`, calls
+the shared core-state reset `FUN_80025CB4`, then tests the front-end entry word
+`_DAT_8007BB00`: non-zero stores `CARD INIT`, zero stores `CONFIG INIT` (the
+debug menu) at `0x801CF4E4` and clears the word. `init.pak` raises that word
+itself at `0x801CEB84` before it hands off, so the retail cold boot always takes
+the front-end arm - and the same word is what the title dispatcher's `Init` arm
+reads at `0x801DD97C` to route to `0x11` rather than to the unreachable `0x02`.
+One flag, two readers, and the port holds it on the seat below.
+
+#### The port's seat at the mode table
+
+The engine's counterpart of `_DAT_8007B83C` is `engine-core::mode::ModeSeat`,
+owned by `engine-shell`'s `BootSession` and driven once per frame from
+`BootSession::tick`. It is a seat rather than a mirror because its **writes are
+the port's own transitions**: the session enters `MAIN INIT` where retail's
+title dispatcher stores `2`, and `CARD INIT` where retail's field image calls
+the request leaf `FUN_801D84B4` - and each `enter` returns that mode's INIT
+staging plan and then performs the mode's own hand-off store.
+
+Three things come out of the seat that nothing else in the port produces:
+
+- **The INIT column runs.** `ModeSeat::enter` resolves `mode_init_stage` /
+  `other_warp_init_stage` / `mode_init_bare` for the mode being entered and
+  then advances the word to that mode's pinned successor. The overlay *load*
+  each plan names is still replaced by native scene entry - the port has no
+  mode-table residency model - so the plan is data the caller stages against,
+  not a jump it takes.
+- **The mode-change edge runs.** `0x800161B8..0x80016200` is a fixed sequence,
+  and the half of it with observable behaviour is the pad swallow: the edge
+  words `gp+0x538` and `gp+0x55C` are cleared, so the button that caused a
+  transition is not delivered again as the first input of the mode it opened.
+  The port clears the same edges through `InputState::clear_edges`. Two stores
+  in that block are not clears at all (`gp+0x564` and `gp+0x494` take copies of
+  the new mode), and a fourth clear at `0x8007B938` sits beside the three.
+- **Every frame carries a mode word.** The mode-trace oracle
+  (`legaia-engine mode-trace`) used to emit `game_mode` only while the pause
+  menu was open, so the field it transported against a retail capture was
+  almost always absent; it now samples the seat.
+
+What the seat deliberately does **not** own is `SceneMode`. The port's scene
+sessions own the loaded assets, and its minigames are resident rules engines
+rather than paged overlays, so a session outlives the word that staged it. The
+two are reconciled once per tick by `ModeSeat::adopt_scene_mode`, which stages
+the warp sub-id alongside the word whenever the target is `OTHER MODE` - the one
+arm where the word alone cannot round-trip, because all five warp minigames
+share `0x19`.
 
 ### CD-read API stack
 

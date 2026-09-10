@@ -7,18 +7,18 @@
 //! mednafen save state; the engine side ticks a [`BootSession`] and
 //! samples each frame.
 //!
-//! **Asymmetry.** The engine port doesn't drive the full 28-mode
-//! game-mode dispatcher (see `legaia_engine_core::mode::ModeDriver`) -
-//! [`BootSession::tick`] goes through `SceneHost::tick`, which keeps
-//! [`world.mode`](legaia_engine_core::world::SceneMode) up to date but
-//! not the master game-mode word `_DAT_8007B83C`. Engine-sampled
-//! [`ModeTraceFrame::game_mode`] is therefore `None` for most frames;
-//! retail-sampled frames fill it from main RAM directly. The exception
-//! is the mode the session models explicitly: while the
-//! BootSession-hosted pause menu is open the engine emits `game_mode =
-//! 0x17` (`CARD MODE` - the retail menu / memory-card per-frame mode).
-//! [`first_mode_trace_divergence`] compares scene_mode + active_scene
-//! always, and game_mode whenever both sides emit it.
+//! **Both sides emit the mode word.** [`BootSession`] holds a
+//! [`ModeSeat`](legaia_engine_core::mode::ModeSeat) - the port's copy of
+//! `_DAT_8007B83C` - written where retail's code stores that word and
+//! reconciled with [`world.mode`](legaia_engine_core::world::SceneMode) once
+//! per tick, so every engine-sampled frame carries a `game_mode` and
+//! [`first_mode_trace_divergence`]'s `game_mode` compare is live rather than
+//! skipped. It used to be `None` for every frame except an open pause menu,
+//! which made the word a field the oracle transported but never checked.
+//!
+//! `SceneMode::Title` - the port's "no scene loaded" - is the one state with
+//! no retail mode at all, so the seat leaves the word where it was rather
+//! than inventing one.
 //!
 //! **The retail side reads two words, not one.** `SceneMode` is a finer
 //! partition than the retail mode word: all five warp minigames run under
@@ -51,9 +51,9 @@ pub struct ModeTraceFrame {
     /// are single-frame).
     pub frame: u64,
     /// `_DAT_8007B83C` byte (an index into the 28-mode table). Retail:
-    /// read directly. Engine: `Some(0x17)` while the BootSession-hosted
-    /// pause menu is open (the modelled CARD per-frame mode); `None`
-    /// otherwise until the port models the rest of the dispatcher.
+    /// read directly. Engine: the session's
+    /// [`ModeSeat`](legaia_engine_core::mode::ModeSeat) word, on every frame.
+    /// `None` only for a sampler that holds no seat.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub game_mode: Option<u8>,
     /// Debug name from `mode::TABLE` (e.g. `"MAPDISP MODE"`).
@@ -278,13 +278,14 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
 }
 
 fn sample_engine_frame(session: &BootSession) -> ModeTraceFrame {
-    // The engine doesn't run the full 28-mode dispatcher, but the mode the
-    // session models explicitly is reported: the BootSession-hosted pause
-    // menu runs under the retail CARD per-frame mode (game_mode 0x17,
-    // `GameMode::CardMode`).
-    let game_mode = session
-        .field_menu_is_open()
-        .then_some(legaia_engine_core::mode::GameMode::CardMode);
+    // The engine's mode word, read off the session's seat at the mode table
+    // ([`BootSession::mode_seat`]). Every frame carries one now: the seat is
+    // written where retail's code stores `_DAT_8007B83C` (field entry through
+    // `MAIN INIT`, the pause menu through `CARD INIT`) and reconciled with the
+    // world's `SceneMode` once per tick, so the field is no longer `None`
+    // outside the menu and the retail side's word has something to diff
+    // against.
+    let game_mode = Some(session.mode_seat.game_mode());
     ModeTraceFrame {
         frame: session.frames,
         game_mode: game_mode.map(|gm| gm.as_index() as u8),

@@ -157,12 +157,31 @@ impl PlayWindowApp {
                 }
                 session.tick();
                 if session.is_done() {
-                    // Hand off to the title screen with the
-                    // continue-enabled flag set per save-slot scan.
-                    let snapshots = scan_save_dir(&self.save_dir);
-                    let any_present = snapshots.iter().any(|s| s.present);
-                    self.boot_ui = BootUiState::Title(title_session(any_present));
-                    self.start_title_bgm();
+                    // The hand-off is the mode table's, not this host's:
+                    // `init.pak`'s phase-3 arm runs the core-state reset and
+                    // branches on the entry word - the front end (`CARD INIT`)
+                    // when it is raised, the debug menu (`CONFIG INIT`) when it
+                    // is not. The seat performs that branch and this arm raises
+                    // the screen the mode it returns owns.
+                    use legaia_engine_core::mode::GameMode;
+                    let next = self.session.mode_seat.boot_handoff();
+                    match next {
+                        GameMode::CardInit => {
+                            // Continue-enabled per save-slot scan.
+                            let snapshots = scan_save_dir(&self.save_dir);
+                            let any_present = snapshots.iter().any(|s| s.present);
+                            self.boot_ui = BootUiState::Title(title_session(any_present));
+                            self.start_title_bgm();
+                        }
+                        // The dev route. The port has no debug-menu screen, so
+                        // it lands on the title anyway - logged rather than
+                        // silently folded, because the two are different modes.
+                        other => {
+                            log::info!("boot hand-off went to {other:?}; no engine screen owns it");
+                            self.boot_ui = BootUiState::Title(title_session(false));
+                            self.start_title_bgm();
+                        }
+                    }
                 }
                 true
             }
