@@ -1038,6 +1038,21 @@ def page_audit() -> int:
         for row in csv.DictReader(fh):
             rows[row["addr"].lower()] = row
 
+    # `live` is written only by a run that did the reachability pass. Every
+    # other mode - the default, `--dashboard`, `--missing-ports` - leaves the
+    # column EMPTY, and an empty column reads exactly like "not live": the join
+    # then reports every cited address as having left the page, which is the
+    # loudest possible output and says nothing. Refuse the join instead, the way
+    # `check-port-provenance.py` refuses an empty dump corpus.
+    ported = [r for r in rows.values() if r.get("ported") == "1"]
+    if ported and not any(r.get("live") == "1" for r in ported):
+        print(f"[skip] {csv_path} has {len(ported)} ported row(s) and no `live` "
+              "column - it was written without the reachability pass. Re-run "
+              "`python3 scripts/ci/port-catalog.py --live` and try again; "
+              "joining against an unpopulated column would call every cited "
+              "address dead.")
+        return 0
+
     left: list[tuple[str, str]] = []
     unported: list[str] = []
     absent: list[str] = []
