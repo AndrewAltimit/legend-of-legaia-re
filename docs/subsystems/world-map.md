@@ -891,7 +891,8 @@ The encounter-record format consumed here is documented in
 [`formats/encounter.md`](../formats/encounter.md). The 4-byte formation cell
 at `0x8007BD0C` is the input to the battle-scene loader (`FUN_800520F0`); the
 adjacent byte at `0x8007BD11` is a battle-data PROT-id selector that picks
-between PROT entries `0x367` and `0x36D`.
+between **raw TOC** entries `0x367` and `0x36D` - extraction entries 869 and
+875, the paired battle stage packs ([`battle.md`](battle.md#battle-scene-loader-fun_800520f0)).
 
 #### From-scratch port - both overworld and field
 
