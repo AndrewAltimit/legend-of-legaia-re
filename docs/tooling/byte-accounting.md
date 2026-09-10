@@ -206,6 +206,17 @@ structural claims and not `scan` ones. The image's **highest** record has
 nothing above it to bound it and stays residue; the walker's note says so per
 entry, and names the offset.
 
+What the band measures, and why it is the cleanest class on the disc: all 64
+entries select this walker, over 616448 bytes, and every claim is structural -
+`scan_bytes` is **zero** across the band, so nothing in the figure rests on a
+magic guess. Residue is 80080 bytes (12.99%), and **none of it is slack**: the
+band has no `zero_pad` at all, so the unaccounted share is the unbounded top
+record in each image and nothing else. Per entry the accounted share runs 52.7%
+to 99.1% with a median of 87.2%, and the spread is a property of where each
+module's highest record sits rather than of the walker. The three classes the
+entries carry (`overlay_ptr_table` 39, `mips_overlay` 20, `overlay_data_blob` 5)
+are a statistic over the bytes and do **not** select the walker - the index does.
+
 ## Interpreting a report
 
 - A large `high_entropy` run that no parser claims is a compressed or sample-data region with no
@@ -242,6 +253,37 @@ committed: the numbers move with every parser that lands, so what belongs on thi
 
 Read the classes in three groups; only the first is work.
 
+The `entries` and `bytes` columns are the disc; the `non-slack residue` column is
+a **snapshot of the instrument** and moves with every parser that binds - re-derive
+it rather than quoting it. Its denominator is the whole TOC: 1233 entries,
+121006080 bytes. At the state below, 11.31% of that is residue, and 6.40 of those
+11.31 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 4.91%
+non-slack. Of the accounted 88.69%, 5.51 points came from the magic sweep rather
+than from a walked layout, so the *structural* share of the disc is 83.81%.
+
+| Class | entries | bytes | non-slack residue |
+|---|---:|---:|---:|
+| `lzs_container` | 18 | 4098048 | 4098048 |
+| `pochi_filler` | 266 | 544768 | 544768 |
+| `overlay_data_blob` | 25 | 17164288 | 486042 |
+| `vab_multi_bank` | 1 | 6002688 | 210704 |
+| `scene_vab_stream` | 218 | 22450176 | 199440 |
+| `scene_tmd_stream` | 182 | 14632960 | 141832 |
+| `init_pak` | 1 | 153600 | 80864 |
+| `scene_asset_table` | 90 | 22577152 | 77420 |
+| `overlay_ptr_table` | 42 | 407552 | 55312 |
+| `mips_overlay` | 22 | 194560 | 27188 |
+| `efect_pack` | 1 | 8192 | 8192 |
+| `scene_event_scripts` | 101 | 329728 | 2048 |
+| `bse_bank` | 2 | 6144 | 1716 |
+| `data_field_streaming` | 49 | 9052160 | 1536 |
+| `pack` | 7 | 1634304 | 948 |
+| `summon_readef` | 2 | 12232704 | 20 |
+| `battle_data_pack` | 4 | 1863680 | 0 |
+| `scene_v12_table` | 97 | 198656 | 0 |
+| `all_zeros` | 4 | 8192 | 0 |
+| `field_map` | 101 | 7446528 | 0 |
+
 | Class | What its unclaimed bytes are | Verdict |
 |---|---|---|
 | `lzs_container` | The whole entry, `high_entropy`, in one run: no walker binds to the class, so every one of these entries accounts to zero. The decoder exists (`legaia_lzs`) - what is missing is the binding, not the format. | Instrument gap, and the largest non-slack residue on the disc. |
@@ -249,7 +291,9 @@ Read the classes in three groups; only the first is work.
 | `overlay_ptr_table`, `mips_overlay` | `low_entropy` runs with a `plausible_mips` minority - the tables beside code the dump corpus has not reached. | Dump worklist; agrees with [`disc-coverage.md`](disc-coverage.md)'s gap list. |
 | `init_pak` (`0895`) | `ascii_text`: a string pool no walker claims. | Small, and a string pool is not a format. |
 | `efect_pack` (`0873`) | One sector-sized entry, `low_entropy`, walker `generic`. | The [effect bundle](../formats/effect.md) has a parser; the account walker does not select it. |
-| `scene_*`, `data_field_streaming`, `battle_data_pack`, `pack` | Short `mixed` / `low_entropy` runs at the tail of records the walker did reach, plus one `high_entropy` minority in `scene_asset_table`. | Walker tails, not unwalked format. |
+| `scene_vab_stream`, `scene_tmd_stream`, `scene_asset_table`, `pack` | Short `mixed` / `low_entropy` runs at the tail of records the walker did reach, plus one `high_entropy` minority in `scene_asset_table`. | Walker tails, not unwalked format. |
+| `data_field_streaming`, `battle_data_pack` | Almost entirely `zero_pad` now; `battle_data_pack`'s residue is slack outright and `data_field_streaming` keeps one `ascii_text` sector. | Closed but for that sector. |
+| `bse_bank`, `scene_event_scripts` | Kilobyte-scale `low_entropy` / `ascii_text` tails behind a walker that reached the records. | Walker tails. |
 | `pochi_filler`, `all_zeros`, `scene_v12_table`, `summon_readef` | `ascii_text` and `zero_pad` fill. | The disc's own slack. Not work. |
 | `field_map` | Nothing: all 101 entries account fully. | Closed. |
 
