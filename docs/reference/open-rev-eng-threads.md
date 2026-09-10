@@ -80,15 +80,18 @@ cheapest place to look for a claim that is still wrong.
   measurement had no way to say so, which is why it read as work
   ([settled](re-settled-threads.md#measurement--corpus),
   [falsified](re-do-not-re-walk.md#measurement-readings)).
-- **A slot-B module's data tail is a spawn-record band, and its regions
-  interleave.** The uncovered span is `[i16 model_sel][u16 flags][move-VM
-  bytecode]` records addressed by the consumer's own `lui`/`addiu`, not an
-  opaque blob; 62 of 64 images carry one. Two readings fell with it - that the
-  tail was un-dumped code above the frame partition, and that an image is laid
-  out head-table / code / data in that order. Records sit *between* bodies in
-  at least two images, so "everything past the last function is data" swallows
-  five real routines
-  ([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md)).
+- **A slot-B module's data tail is a spawn-record band** - `[i16 model_sel][u16
+  reserved][move-VM bytecode]` records addressed by the consumer's own
+  `lui`/`addiu`, not an opaque blob; 62 of 64 images carry one, and the `+0x02`
+  halfword is zero in every one of them with no reader
+  ([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md)). **The
+  "and its regions interleave" half of this correction was itself wrong**, and
+  it is the sharper lesson: the five framed bodies said to sit *above* a
+  record band in PROT 0943 and 0961 are the **donor's** residue. 0943 is
+  byte-identical to 0942 from file `+0x1037` up, so its own content ends there
+  and everything above it - the `+0x135C..+0x17E0` bodies included - is 0942's.
+  A dump that prints at an address under two images' names is not evidence of
+  which one owns it ([falsified](re-do-not-re-walk.md#measurement-readings)).
 - **`FUN_801DA390` eases a camera height, not a yaw.** `0x801DA3B4` reads
   `ctrl[+0x4A]`, `0x801DA3B8` reads the actor's `+0x16`, and the routine
   subtracts them - and `+0x16` is the Y of the `(+0x14, +0x16, +0x18)` position
@@ -106,9 +109,17 @@ cheapest place to look for a claim that is still wrong.
   ([settled](re-settled-threads.md#title--boot--overlays)).
 - **A dome round is an ordinary battle; the dome *hub* is the OTHER mode.** The
   `0x14` reading was true of the hub (PROT 0977, sub-id 5) and false of a
-  round. Separately, magic is **not** forbidden on the Master course: the only
-  writers of the `0x200` restriction bit key on the *first enemy monster id*,
-  and no dome ladder reaches one
+  round.
+- **"No dome round bans magic" was wrong, and this page published it.** The
+  claim rested on the `0x200` bit's SCUS writers keying on the first enemy
+  monster id, which the dome ladder never reaches - true, and beside the point:
+  the **arena seeds `0x8007BAC0` itself**. `FUN_801CEA6C` writes `0x101`,
+  `0x111` or `0x321` over a zero at `0x801CEBA0` / `0x801CEBB4` / `0x801CEBC8`,
+  gated on story flags `0x536` / `0x537` / `0x538`, last match winning. All
+  three carry `0x100`, so a seeded visit bars the Item chip on **every**
+  course, and the top seed carries `0x200`, so retail really does cross out the
+  Ra-Seru chip there. The course is `((word - 1) & 0xFF) >> 4`. Checking a
+  bit's writers is not the same as checking the word's
   ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
 - **A cast costs MP, not AP.** The Ra-Seru chip's cast path writes the action
   queue and the phase and spends no AP, so every "the pennant pays for a cast"
@@ -121,8 +132,10 @@ cheapest place to look for a claim that is still wrong.
   `subu s0,v0,s2` over `TOC[idx+3]` and `TOC[idx+2]`, and `0x8003E948` returns
   it; the LBA is the side effect at `gp+0x8f0`. Two loader rows and
   `FUN_8005E4D4`'s argument order were reversed against it. And the libcd
-  directory cache is at `0x801CB408` - `0x801C4BEC` was the offset half of a
-  `lui`/`sw` pair pasted into the high half of an address.
+  directory cache is at `0x801CB408`. How `0x801C4BEC` arose is *not* settled -
+  the "offset half of a `lui`/`sw` pair" story does not survive: `0x4BEC`
+  occurs at no word in SCUS, and the only relation the bytes support is
+  `0x801D0000 - 0x4BEC = 0x801CB414`, the record's `+0x0C` name field.
 - **A live port wore another routine's address.** `engine-core::dialog`
   carried `PORT: FUN_8001FD44` and implements nothing of it; the address is the
   name-based scene-change packet, which the field VM's op-`0x3F` arm ports.
@@ -146,7 +159,6 @@ cheapest place to look for a claim that is still wrong.
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
 | What arms `_DAT_8007B8B8`, the gate on the field overlay's one ambient template? | open | The MAIN INIT `FUN_801D6704` spawns the descriptor at `0x801F271C` exactly once, at `0x801D6FD8`, and only while `_DAT_8007B8B8 == 0`; the same word is the mode-entry prologue's field-state latch. Closes by naming every writer in load order - which decides whether the template is a boot-only spawn or a per-scene one. |
 | Coplanar residual tail: same-position curved-shell stacks | partial - the curved-shell half is answered by a display-list read; the sliver half remains | [details ↓](#coplanar-residual-tail-same-position-curved-shell-stacks) |
-| Nothing on the disc references the descriptors at `0x801D5C08` / `0x801D5D60` | open (a negative; needs a consumer or an ignore row) | Both look like actor templates in the field overlay's own data, and a sweep of all five reference forms over 84 images finds no word, `lui` pair, `jal`, `j` or branch that reaches either. Either a list-driven `jalr` seats them - which a target sweep structurally cannot see - or they are dead authored data; a retained-list dump at scene entry separates the two. |
 
 Recently closed here: **teien's hedge-base ground fill**, which had a false
 premise. Retail has no kind-2-cell draw channel at all - a live `teien`
@@ -282,6 +294,7 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
+| The port's dome bans neither Item nor magic | open (ready work) | Retail's arena seeds `0x8007BAC0` from story flags `0x536` / `0x537` / `0x538`, so a seeded course bars the Item chip and the top seed bars magic. The port passes `special = 0` into every dome round, so it implements neither ban and its chip row is unconditionally live. Closes by seeding the word from those three flags at dome entry and gating the two chips on `0x100` / `0x200`. |
 | Which frames gate each capture-class tick body's arms? | open (ready work, not a question) | Every arm of the twelve trampoline-reached bodies is decoded and ported, but the per-arm frame gating - PROT 0955's module-resident countdown at `0x801F9D28` and the `scratch[0x37D] * scratch[0x393]` product it is drawn down by - is pinned by shape, not by a measured frame count. Closes on a capture of one natural cast per body; table in [`cast-module.md`](../subsystems/cast-module.md#the-twelve-bodies-the-trampoline-map-names). |
 | Where does a slot-B module image's **highest** spawn record end? | open (bounded below, unbounded above) | Every record but the topmost is bounded on both sides by the next consumer pointer. The highest has none: it carries no length, nothing computes an address past it, and walking the move-VM opcode widths to `0x08` HALT lands within 4 bytes of the true boundary for about three quarters of the band's inner records and misses the rest - so it is not a static bound. Closes by finding a length the runtime itself uses, or by measuring one image's topmost record live. See [`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#the-one-span-the-band-cannot-bound). |
 | The eleven player-Seru modules (PROT 0903..0913) have no ported tick body | open (ready work) | The `0x801CF4EC` arms are tick bodies of 3396..7260 bytes - `ctx+0x279` phase machines with damage wrappers - not the data stagers the cast-module page's per-entry verdicts name (those verdicts describe each module's *stager*). None of the eleven is ported, so a player Seru-magic cast reaches `run_cast_module_code` and finds a body for only 2 of the 11 spell ids. |
@@ -381,6 +394,7 @@ in the census, so it is not this still's upload.
 |---|---|---|
 | *When* does SCUS `jal 0x801F7B88` (at `0x800481A0`) run? | mostly resolved (image pinned; the frame is not) | The callee is PROT 0920 (`cast_slippery`) at file `+0x11B0`, named by its gate `_DAT_8007BDC0 != 0` (`gp+0xAA8`), 0920's own effect-drain counter, which no other writer reaches in any reference form. The arm also requires `_DAT_8007BD71 == 0xFF` - battle **running**, `0xFE` being ending - which falsifies "a battle ends mid-cast": it fires on ordinary in-battle frames while the budget is non-zero (123 hits on a victory ladder, all before the end signal). Owed: one PCSX-Redux state taken *inside* a Slippery cast; the corpus's only Slippery state is mednafen. See [`cast-module.md`](../subsystems/cast-module.md#scus-calls-into-slot-b-at-one-fixed-va---and-only-prot-0920-arms-it). |
 | 31 cast-band tick addresses are statically live and never entered by any ladder | open (ready work, not a question) | The replay reach export runs 47 ladders and reports 91 live-but-never-entered addresses; `cast_module_ticks.rs` is 31 of them, all gated on the spell id through `World::cast_module_for`. They are not host-dead - one ladder seating a cast per PROT `0903..0966` id would convert the whole cluster at once. Until then the reach figure understates the band and nothing says which of the 31 would actually run. See [`reach-triage.md`](../tooling/reach-triage.md). |
+| `slot_b_module`'s call-site filter admits donor call sites | open (latent, not live) | The parser rejects a spawn call whose `lui`/`addiu` target falls outside the image's frame partition, which is what keeps a sibling's records out of the band. In 6 of 64 images (0908 / 0910 / 0920 / 0943 / 0945 / 0961) a *donor* call site passes the filter anyway, because the inherited run it sits in frame-matches locally. It is harmless today only because the unbounded-record rule drops each of those claims for a different reason; a change to that rule would surface them. |
 | The dashboard's Port % denominator counts rows the ignore list removes | open (a tool fix, not a question) | `port-catalog.py --dashboard` divides by a worklist that still includes `port-catalog-ignore.toml` rows, so the headline percentage moves when an ignore row is added and nothing about the port changed. Closes by taking the ignore set out of the denominator - and by re-taking the committed baseline once, since the figure shifts. |
 
 ## Adding a thread

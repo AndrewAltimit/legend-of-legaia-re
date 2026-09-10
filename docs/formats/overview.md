@@ -106,7 +106,7 @@ World-map slot 4 is likewise not what it was first read as - twice. It is neithe
 |---|---|---|
 | [MIPS overlay code](mips-overlay.md) | Inferred | PROT entries that carry runtime code blobs (recognized by `addiu sp, sp, -X` prologue) |
 | [Overlay pointer-table code](overlay-ptr-table.md) | Inferred | Sister format - entries whose first chunk is a function/jump-table header pointing into `0x801C0000..=0x801FFFFF` |
-| [Slot-B module image layout](slot-b-module-layout.md) | Confirmed (band shape + extent); Inferred (the highest record's end) | The file layout of the 64 cast / summon images `0903..=0966`: head table, code, the `[i16 model_sel][u16 flags][move-VM bytecode]` **spawn-record band**, and the inherited tail every image ends in. Records are recovered from the consumer's own `lui`/`addiu` pointer, not from a directory, so the topmost record has no static upper bound. Parser `legaia_asset::slot_b_module` |
+| [Slot-B module image layout](slot-b-module-layout.md) | Confirmed (band shape + extent); Inferred (the highest record's end) | The file layout of the 64 cast / summon images `0903..=0966`: head table, code, the `[i16 model_sel][u16 reserved][move-VM bytecode]` **spawn-record band**, and the inherited tail every image ends in. Records are recovered from the consumer's own `lui`/`addiu` pointer, not from a directory, so the topmost record has no static upper bound. Parser `legaia_asset::slot_b_module` |
 
 ## Audio path-strings
 

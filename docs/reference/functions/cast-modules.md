@@ -44,14 +44,15 @@ mechanical - no judgement, no dump filename ([why a filename is not evidence:
    halfwords - GTE-shaped constants (`0x1000` = 1.0 in 12-bit fixed point,
    `0x00FF` / `0x00C0` / `0x0080` colour bytes), signed deltas, and a recurring
    `0x00000000` / `0x10001000` / `0xFF89000C` separator triple. This is the
-   **spawn-record band** - `[i16 model_sel][u16 flags][move-VM bytecode]`
+   **spawn-record band** - `[i16 model_sel][u16 reserved][move-VM bytecode]`
    records the module hands to `FUN_80050ED4` / `FUN_80021B04` in `$a2`,
    addressed by the consumer's own `lui`/`addiu` pair. 62 of the 64 images
-   carry one. Layout, recovery and the one span it cannot bound:
+   carry one, and the `+0x02` halfword is zero in every record with no
+   reader. Layout, recovery and the one span it cannot bound:
    [`slot-b-module-layout.md`](../../formats/slot-b-module-layout.md). The
-   region is **not** a tail in the layout sense - records interleave with
-   bodies in at least two images, so "everything past the last function" is
-   the wrong rule for finding it.
+   band does sit past an image's last function; the "records interleave with
+   bodies" reading of PROT 0943 and 0961 was
+   [the donor's residue](../re-do-not-re-walk.md#measurement-readings).
 3. **Another image's bytes.** Every image in the band ends in a byte-identical,
    **same-file-offset** run of another extracted image, ending exactly at the
    shorter image's own length - build residue, not shared library code. Nine
