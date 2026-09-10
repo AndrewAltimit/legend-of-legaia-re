@@ -770,128 +770,121 @@ impl PlayWindowApp {
         out
     }
 
+    /// Build this frame's screen-effect widget meshes (PROT-0900 family) plus
+    /// the move-FX afterimage streak.
+    ///
+    /// The widget geometry - culling, UVs, colours and the retail ordering-table
+    /// slot each kind links at - comes out of the shared
+    /// [`legaia_engine_core::screen_fx::ScreenFxFrame::draw_quads`] kernel, so
+    /// this host and the browser play page cannot disagree about it. What is
+    /// host-local is only the mesh upload and the depth each OT slot maps to.
+    ///
+    /// The ordering is load-bearing and was wrong while the two flat families
+    /// shared one batch: retail links the mask's borders at OT `+0x1c` (farthest)
+    /// and the letterbox's bands at `+0x4` (nearest, in front of the sprites), so
+    /// a letterbox band drawn with the mask sits behind every sprite the same
+    /// scene spawns. The feather strips were not drawn at all.
     pub(super) fn build_screen_fx_meshes(
         &self,
         r: &legaia_engine_render::Renderer,
     ) -> (Option<UploadedColorMesh>, Option<UploadedVramMesh>) {
+        use legaia_engine_core::screen_fx::ScreenFxQuad;
+
         let mut screen_fx_solid = None;
         let mut screen_fx_tex = None;
         let streak = self.move_fx_streak_quads(r);
-        let fx_frame = &self.session.host.world.screen_fx_frame;
-        if !fx_frame.is_empty() || !streak.is_empty() {
-            let quad = |pos: &mut Vec<[f32; 3]>,
-                        idx: &mut Vec<u32>,
-                        l: f32,
-                        t: f32,
-                        rr: f32,
-                        b: f32,
-                        z: f32| {
-                let base = pos.len() as u32;
-                pos.push([l, t, z]);
-                pos.push([rr, t, z]);
-                pos.push([l, b, z]);
-                pos.push([rr, b, z]);
-                idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+        let fx_quads = self.session.host.world.screen_fx_frame.draw_quads();
+        if fx_quads.is_empty() && streak.is_empty() {
+            return (None, None);
+        }
+        // Retail OT slot -> ortho depth. Larger slot = farther, and the pass
+        // draws through `Mat4::orthographic_rh(0, 320, 240, 0, 0.0, 1.0)`, whose
+        // depth is `-z`; the scale keeps every slot inside the near/far range.
+        let ot_depth = |ot: u32| -(ot as f32) / 1024.0;
+
+        // --- flat quads ----------------------------------------------------
+        let mut pos: Vec<[f32; 3]> = Vec::new();
+        let mut colors: Vec<[u8; 3]> = Vec::new();
+        let mut idx: Vec<u32> = Vec::new();
+        for q in &fx_quads {
+            let ScreenFxQuad::Flat {
+                xy,
+                rgba,
+                gouraud,
+                ot,
+                ..
+            } = q
+            else {
+                continue;
             };
-            // Solid quads (mask borders + letterbox bands): flat black.
-            let mut pos = Vec::new();
-            let mut idx = Vec::new();
-            for q in &fx_frame.solid_quads {
-                if q.right <= q.left || q.bottom <= q.top {
-                    continue;
-                }
-                quad(
-                    &mut pos,
-                    &mut idx,
-                    q.left as f32,
-                    q.top as f32,
-                    q.right as f32,
-                    q.bottom as f32,
-                    -0.002,
-                );
+            let base = pos.len() as u32;
+            let z = ot_depth(*ot);
+            for (i, (x, y)) in xy.iter().enumerate() {
+                pos.push([*x as f32, *y as f32, z]);
+                let c = gouraud.map_or(*rgba, |g| g[i]);
+                colors.push([c[0], c[1], c[2]]);
             }
-            if !idx.is_empty() {
-                let colors = vec![[0u8, 0, 0]; pos.len()];
-                match r.upload_color_mesh(&pos, &colors, &idx) {
-                    Ok(m) => screen_fx_solid = Some(m),
-                    Err(e) => log::warn!("screen-fx solid mesh upload: {e:#}"),
-                }
+            idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+        }
+        if !idx.is_empty() {
+            match r.upload_color_mesh(&pos, &colors, &idx) {
+                Ok(m) => screen_fx_solid = Some(m),
+                Err(e) => log::warn!("screen-fx solid mesh upload: {e:#}"),
             }
-            // Textured quads: panels (15bpp direct pages) + sprites
-            // (clut-indexed), one shared mesh with per-kind depth.
-            let mut pos = Vec::new();
-            let mut uvs: Vec<[u8; 2]> = Vec::new();
-            let mut cba_tsb: Vec<[u16; 2]> = Vec::new();
-            let mut idx = Vec::new();
-            for p in &fx_frame.panels {
-                if p.right <= p.left || p.bottom <= p.top {
-                    continue;
-                }
-                let base = pos.len();
-                quad(
-                    &mut pos,
-                    &mut idx,
-                    p.left as f32,
-                    p.top as f32,
-                    p.right as f32,
-                    p.bottom as f32,
-                    -0.001,
-                );
-                uvs.extend_from_slice(&[[p.u0, p.v0], [p.u1, p.v0], [p.u0, p.v1], [p.u1, p.v1]]);
-                cba_tsb.extend(std::iter::repeat_n([0u16, p.texpage], pos.len() - base));
+        }
+
+        // --- textured quads (panels + sprites) + the afterimage streak ------
+        let mut pos: Vec<[f32; 3]> = Vec::new();
+        let mut uvs: Vec<[u8; 2]> = Vec::new();
+        let mut cba_tsb: Vec<[u16; 2]> = Vec::new();
+        let mut idx: Vec<u32> = Vec::new();
+        for q in &fx_quads {
+            let ScreenFxQuad::Textured {
+                xy,
+                uv,
+                clut,
+                tpage,
+                ot,
+                ..
+            } = q
+            else {
+                continue;
+            };
+            let base = pos.len() as u32;
+            let z = ot_depth(*ot);
+            for ((x, y), (u, v)) in xy.iter().zip(uv) {
+                pos.push([*x as f32, *y as f32, z]);
+                uvs.push([*u, *v]);
+                cba_tsb.push([*clut, *tpage]);
             }
-            for s in &fx_frame.sprites {
-                if s.w <= 0 || s.h <= 0 {
-                    continue;
-                }
-                let base = pos.len();
-                quad(
-                    &mut pos,
-                    &mut idx,
-                    s.x as f32,
-                    s.y as f32,
-                    (s.x + s.w) as f32,
-                    (s.y + s.h) as f32,
-                    0.0,
-                );
-                let u1 = (s.u as i32 + s.w as i32 - 1).min(255) as u8;
-                let v1 = (s.v as i32 + s.h as i32 - 1).min(255) as u8;
-                uvs.extend_from_slice(&[[s.u, s.v], [u1, s.v], [s.u, v1], [u1, v1]]);
-                cba_tsb.extend(std::iter::repeat_n(
-                    [s.clut as u16, s.texpage as u16],
-                    pos.len() - base,
-                ));
+            idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+        }
+        // Move-FX afterimage streak. Unlike the widget quads these are not
+        // axis-aligned rects - the packet carries four independent corners in
+        // the retail `xy0..xy3` order (TL, TR, BL, BR) - so they are pushed
+        // vertex-by-vertex. Depth `0.0` puts them in front of every widget:
+        // retail links each streak packet at the projected billboard's own OT
+        // bucket (inside the scene), which this screen-space batch cannot
+        // express, so the engine draws them over the actors instead.
+        for q in &streak {
+            let base = pos.len() as u32;
+            for (x, y) in q.xy {
+                pos.push([x as f32, y as f32, 0.0]);
             }
-            // Move-FX afterimage streak. Unlike the widget quads above these
-            // are not axis-aligned rects - the packet carries four
-            // independent corners in the retail `xy0..xy3` order (TL, TR, BL,
-            // BR) - so they are pushed vertex-by-vertex rather than through
-            // `quad()`. Depth `0.0` puts them with the sprites, in front of
-            // the panels: retail links each streak packet at the projected
-            // billboard's own OT bucket (inside the scene), which this
-            // screen-space batch cannot express, so the engine draws them
-            // over the actors instead of interleaved with them.
-            for q in &streak {
-                let base = pos.len() as u32;
-                for (x, y) in q.xy {
-                    pos.push([x as f32, y as f32, 0.0]);
-                }
-                // `xy` is TL, TR, BL, BR - the same winding `quad()` emits.
-                idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
-                for (u, v) in q.uv {
-                    uvs.push([u, v]);
-                }
-                cba_tsb.extend(std::iter::repeat_n([q.clut, q.tpage], q.xy.len()));
+            idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+            for (u, v) in q.uv {
+                uvs.push([u, v]);
             }
-            if !idx.is_empty() {
-                let normals = vec![[0.0f32; 3]; pos.len()];
-                // Screen-FX sprites are engine-synthesised: no baked colour
-                // word, so the neutral colour draws the texel unchanged.
-                let colors = vec![[legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3]; pos.len()];
-                match r.upload_vram_mesh(&pos, &uvs, &cba_tsb, &normals, &colors, &idx) {
-                    Ok(m) => screen_fx_tex = Some(m),
-                    Err(e) => log::warn!("screen-fx textured mesh upload: {e:#}"),
-                }
+            cba_tsb.extend(std::iter::repeat_n([q.clut, q.tpage], q.xy.len()));
+        }
+        if !idx.is_empty() {
+            let normals = vec![[0.0f32; 3]; pos.len()];
+            // Screen-FX sprites are engine-synthesised: no baked colour word,
+            // so the neutral colour draws the texel unchanged.
+            let colors = vec![[legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3]; pos.len()];
+            match r.upload_vram_mesh(&pos, &uvs, &cba_tsb, &normals, &colors, &idx) {
+                Ok(m) => screen_fx_tex = Some(m),
+                Err(e) => log::warn!("screen-fx textured mesh upload: {e:#}"),
             }
         }
         (screen_fx_solid, screen_fx_tex)

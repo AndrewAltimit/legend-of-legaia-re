@@ -116,7 +116,7 @@ goto jump_table[op[0]];                                   // JT at 0x80010778</c
       <tr><td>letterbox</td><td><code>FUN_801F8A34</code></td><td>Two solid black bands + two gradient feather strips</td></tr>
     </tbody>
   </table>
-  <p>On disc, only the eight ending-sequence scenes invoke the family (field-VM op <code>0x43</code> sub-ops); battle casts leave it dormant. All tweens share one four-mode interpolator, ported as <code>screen_fx::interp</code>. The engine ticks the family per Field/Cutscene frame and composites it above the 3D scene; the letterbox's gradient feather strips need the subtractive blend mode and are skipped for now.</p>
+  <p>On disc, only the ten ending-sequence (<code>ed*</code>) scenes invoke the family (field-VM op <code>0x43</code> sub-ops); battle casts leave it dormant. The count used to read "eight" here and in the subsystem docs, which omitted <code>edbubu</code> and <code>eddoman</code>; it is now a measurement, taken by decoding every partition record of every MAN carrier of every scene. All tweens share one four-mode interpolator, ported as <code>screen_fx::interp</code>. The engine ticks the family per Field/Cutscene frame and composites it above the 3D scene on both hosts, feather strips included - their subtractive blend rides the same screen-primitive path the browser page already used for the battle transition.</p>
   <details class="disclosure">
     <summary>Summon part glide, and how the mask widget was mis-filed as a summon renderer</summary>
     <div class="disclosure-body">
