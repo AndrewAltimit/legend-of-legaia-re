@@ -145,6 +145,7 @@ cheapest place to look for a claim that is still wrong.
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
 | What arms `_DAT_8007B8B8`, the gate on the field overlay's one ambient template? | open | The MAIN INIT `FUN_801D6704` spawns the descriptor at `0x801F271C` exactly once, at `0x801D6FD8`, and only while `_DAT_8007B8B8 == 0`; the same word is the mode-entry prologue's field-state latch. Closes by naming every writer in load order - which decides whether the template is a boot-only spawn or a per-scene one. |
+| Coplanar residual tail: same-position curved-shell stacks | partial - the curved-shell half is answered by a display-list read; the sliver half remains | [details ↓](#coplanar-residual-tail-same-position-curved-shell-stacks) |
 | Nothing on the disc references the descriptors at `0x801D5C08` / `0x801D5D60` | open (a negative; needs a consumer or an ignore row) | Both look like actor templates in the field overlay's own data, and a sweep of all five reference forms over 84 images finds no word, `lui` pair, `jal`, `j` or branch that reaches either. Either a list-driven `jalr` seats them - which a target sweep structurally cannot see - or they are dead authored data; a retained-list dump at scene entry separates the two. |
 
 Recently closed here: **teien's hedge-base ground fill**, which had a false
@@ -365,8 +366,7 @@ a live `koin1` render whose ordering table samples nothing at `x = 384`; and an
 `MoveImage` and no blit at `x = 384`
 ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
 
-What the **upload** is is now measured, and it is not the shape the doc
-described: **four** `LoadImage` calls of 64x256 at `x = 384 / 448 / 512 / 576`
+The **upload** is now measured, and it is not the shape the doc described: **four** `LoadImage` calls of 64x256 at `x = 384 / 448 / 512 / 576`
 - texture pages 6..9 - keyed on raw TOC `0x36C`. The "320x64, y-stepped"
 geometry belongs to the `int.tim` family (`0x4C7` / `0x4C8`), which did not run
 in the census, so it is not this still's upload.
