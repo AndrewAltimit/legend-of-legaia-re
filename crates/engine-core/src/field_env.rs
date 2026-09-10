@@ -1595,7 +1595,12 @@ mod tests {
                 rot_z: 0,
                 anim_id: 0,
                 anchor: (2, 3),
-                floor: Default::default(),
+                // A placed object carries the single placement-tile nibble,
+                // which is what the per-frame floor wave re-resolves it from.
+                floor: FloorAnchor {
+                    corners: None,
+                    nibble: Some(6),
+                },
             }]
         );
     }
