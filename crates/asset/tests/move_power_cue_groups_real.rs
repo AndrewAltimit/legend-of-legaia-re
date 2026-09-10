@@ -75,7 +75,7 @@ fn cue_groups_parse_off_the_real_overlay() {
                 continue;
             }
             assert!(
-                aux.effect_sfx(cue).is_some() && aux.effect_proto(cue).is_some(),
+                aux.effect_clut_x(cue).is_some() && aux.effect_proto(cue).is_some(),
                 "group {id} names effect cue {cue:#04x}, which is outside the sibling tables"
             );
         }

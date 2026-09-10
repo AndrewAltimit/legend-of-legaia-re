@@ -3197,10 +3197,12 @@ Its inputs resolve entirely out of state this page already names:
 Spawn routing splits on the record's effect byte: bit `0x80` set goes to the
 battle overlay's 2D spawn `FUN_801DFDF0` with the actor's facing; otherwise
 `0x801F6324[effect]` names a move-VM part prototype spawned through the
-effect-actor pool allocator `FUN_80050ED4`, with an SFX cue from
-a **CLUT-row copy** keyed by `0x801F6418[effect]` alongside
-([`move-power.md`](../formats/move-power.md) documents both tables). The two
-arms carry per-code behaviour worth pinning:
+effect-actor pool allocator `FUN_80050ED4`, preceded by a **CLUT-row copy**
+keyed by `0x801F6418[effect]`
+([`move-power.md`](../formats/move-power.md) documents both tables). No sound
+is submitted on either arm - see
+[what `0x801F6418` really is](#0x801f6418-is-a-clut-row-map-not-an-sfx-map).
+The two arms carry per-code behaviour worth pinning:
 
 - **Table arm** (bit `0x80` clear, `0x801defa0..0x801df234`). The
   `0x801F6418` read is gated `code < 0x32` (`sltiu` at `0x801df0d8`) - a code

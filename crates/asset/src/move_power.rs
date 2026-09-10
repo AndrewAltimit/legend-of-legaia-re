@@ -238,28 +238,28 @@ pub const EFFECT_PROTO_TABLE_VA: u32 = 0x801F_6324;
 /// Runtime VA of the **per-effect SFX table** indexed by the same effect-list
 /// entry: a non-zero byte is the sound cue `FUN_801e09f8` plays when the effect
 /// spawns.
-pub const EFFECT_SFX_TABLE_VA: u32 = 0x801F_6418;
+pub const EFFECT_CLUT_TABLE_VA: u32 = 0x801F_6418;
 
 /// Raw-entry file offset of [`EFFECT_PROTO_TABLE_VA`] within PROT 0898 (derived
 /// from the move-power table's pinned base, the same overlay link mapping).
 pub const EFFECT_PROTO_TABLE_FILE_OFFSET: usize =
     MOVE_POWER_TABLE_FILE_OFFSET + (EFFECT_PROTO_TABLE_VA - MOVE_POWER_TABLE_VA) as usize;
 
-/// Raw-entry file offset of [`EFFECT_SFX_TABLE_VA`] within PROT 0898.
-pub const EFFECT_SFX_TABLE_FILE_OFFSET: usize =
-    MOVE_POWER_TABLE_FILE_OFFSET + (EFFECT_SFX_TABLE_VA - MOVE_POWER_TABLE_VA) as usize;
+/// Raw-entry file offset of [`EFFECT_CLUT_TABLE_VA`] within PROT 0898.
+pub const EFFECT_CLUT_TABLE_FILE_OFFSET: usize =
+    MOVE_POWER_TABLE_FILE_OFFSET + (EFFECT_CLUT_TABLE_VA - MOVE_POWER_TABLE_VA) as usize;
 
 /// Entry count shared by both effect tables. The `u32`-stride prototype table is
 /// immediately followed by the byte-stride SFX table, so its extent is exactly
 /// `(0x6418 - 0x6324) / 4 = 61`; the same index space bounds both (the runtime's
 /// `< 100` spawn guard is a loose safety check - an `index >= 61` would alias the
 /// SFX table into the prototype read).
-pub const EFFECT_AUX_TABLE_LEN: usize = (EFFECT_SFX_TABLE_VA - EFFECT_PROTO_TABLE_VA) as usize / 4;
+pub const EFFECT_AUX_TABLE_LEN: usize = (EFFECT_CLUT_TABLE_VA - EFFECT_PROTO_TABLE_VA) as usize / 4;
 
 /// Runtime VA of the **cue-group table** the battle overlay's cue expander
 /// `FUN_801E22C8` indexes (`addiu v1, v0, 0x6470` at `0x801E2374`). One record
 /// per group id, `[count: u8][id: u8; 4]`, and each id is either an actor cue
-/// (bit `0x80` set) or an effect cue indexing [`EFFECT_SFX_TABLE_VA`] and
+/// (bit `0x80` set) or an effect cue indexing [`EFFECT_CLUT_TABLE_VA`] and
 /// [`EFFECT_PROTO_TABLE_VA`].
 pub const CUE_GROUP_TABLE_VA: u32 = 0x801F_6470;
 
@@ -571,7 +571,7 @@ pub enum EffectListEntry {
     Terminator,
     /// `0x01..=0x63` - spawn the effect prototype [`EffectAuxTables::effect_proto`]
     /// at this index and, when non-zero, play its SFX
-    /// [`EffectAuxTables::effect_sfx`].
+    /// [`EffectAuxTables::effect_clut_x`].
     Spawn(u8),
     /// `0x64` (`== 100`) - the fixed screen-flash effect (no table lookup).
     FixedFlash,
@@ -747,7 +747,7 @@ pub fn effect_trigger_index(
 /// A move-power record's `+0x12` / `+0x16` effect-id lists index the first two:
 /// each [`EffectListEntry::Spawn`] index `e` yields the spawn parameter
 /// [`Self::effect_proto`]`(e)` (`0x801F6324`, `u32`) and the SFX cue
-/// [`Self::effect_sfx`]`(e)` (`0x801F6418`, `u8`; `0` = silent).
+/// [`Self::effect_clut_x`]`(e)` (`0x801F6418`, `u8`; `0` = no palette copy).
 ///
 /// The third is the **cue-group table** at `0x801F6470`
 /// ([`Self::cue_group_bytes`]), which the battle overlay's cue expander
@@ -760,7 +760,7 @@ pub fn effect_trigger_index(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EffectAuxTables {
     proto: [u32; EFFECT_AUX_TABLE_LEN],
-    sfx: [u8; EFFECT_AUX_TABLE_LEN],
+    clut: [u8; EFFECT_AUX_TABLE_LEN],
     groups: [u8; CUE_GROUP_TABLE_LEN * CUE_GROUP_STRIDE],
 }
 
@@ -773,8 +773,8 @@ impl EffectAuxTables {
         // Tie validity to the move-power map guard in the same overlay.
         parse_id_index_map(battle_overlay_0898)?;
         let proto_end = EFFECT_PROTO_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN * 4;
-        let sfx_end = EFFECT_SFX_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN;
-        if proto_end > battle_overlay_0898.len() || sfx_end > battle_overlay_0898.len() {
+        let clut_end = EFFECT_CLUT_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN;
+        if proto_end > battle_overlay_0898.len() || clut_end > battle_overlay_0898.len() {
             return None;
         }
         let mut proto = [0u32; EFFECT_AUX_TABLE_LEN];
@@ -787,8 +787,8 @@ impl EffectAuxTables {
                 battle_overlay_0898[b + 3],
             ]);
         }
-        let mut sfx = [0u8; EFFECT_AUX_TABLE_LEN];
-        sfx.copy_from_slice(&battle_overlay_0898[EFFECT_SFX_TABLE_FILE_OFFSET..sfx_end]);
+        let mut clut = [0u8; EFFECT_AUX_TABLE_LEN];
+        clut.copy_from_slice(&battle_overlay_0898[EFFECT_CLUT_TABLE_FILE_OFFSET..clut_end]);
 
         const GROUP_BYTES: usize = CUE_GROUP_TABLE_LEN * CUE_GROUP_STRIDE;
         let groups_end = CUE_GROUP_TABLE_FILE_OFFSET + GROUP_BYTES;
@@ -811,7 +811,11 @@ impl EffectAuxTables {
                 }
             }
         }
-        Some(Self { proto, sfx, groups })
+        Some(Self {
+            proto,
+            clut,
+            groups,
+        })
     }
 
     /// The effect-prototype params (`0x801F6324`), one per spawn index.
@@ -819,9 +823,11 @@ impl EffectAuxTables {
         &self.proto
     }
 
-    /// The per-effect SFX ids (`0x801F6418`), one per spawn index (`0` = silent).
-    pub fn sfx(&self) -> &[u8] {
-        &self.sfx
+    /// The per-effect CLUT **source x** (`0x801F6418`), one per spawn index
+    /// (`0` = no palette copy). Not a sound-cue map: both readers hand the
+    /// byte to `MoveImage` as the `x` of a 16x1 `RECT` on VRAM row 476.
+    pub fn clut_map(&self) -> &[u8] {
+        &self.clut
     }
 
     /// The spawn parameter for a [`EffectListEntry::Spawn`] index, or `None` when
@@ -830,10 +836,10 @@ impl EffectAuxTables {
         self.proto.get(index as usize).copied()
     }
 
-    /// The SFX cue id for a [`EffectListEntry::Spawn`] index (`0` = silent), or
-    /// `None` when the index is outside the table.
-    pub fn effect_sfx(&self, index: u8) -> Option<u8> {
-        self.sfx.get(index as usize).copied()
+    /// The CLUT source x for a [`EffectListEntry::Spawn`] index (`0` = no
+    /// palette copy), or `None` when the index is outside the table.
+    pub fn effect_clut_x(&self, index: u8) -> Option<u8> {
+        self.clut.get(index as usize).copied()
     }
 
     /// The cue-group table (`0x801F6470`) as the flat `[count][id; 4]` byte
@@ -1079,12 +1085,12 @@ mod tests {
     fn effect_aux_table_offsets_and_extent() {
         // Pinned against the move-power table base (same overlay link mapping).
         assert_eq!(EFFECT_PROTO_TABLE_FILE_OFFSET, 0x27B0C);
-        assert_eq!(EFFECT_SFX_TABLE_FILE_OFFSET, 0x27C00);
+        assert_eq!(EFFECT_CLUT_TABLE_FILE_OFFSET, 0x27C00);
         // The prototype table is bounded by the SFX table that follows it.
         assert_eq!(EFFECT_AUX_TABLE_LEN, 61);
         assert_eq!(
             EFFECT_PROTO_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN * 4,
-            EFFECT_SFX_TABLE_FILE_OFFSET
+            EFFECT_CLUT_TABLE_FILE_OFFSET
         );
     }
 
@@ -1210,15 +1216,15 @@ mod tests {
         // proto[0x28] = 0xCAFEBABE, sfx[0x28] = 0x4d.
         let pb = EFFECT_PROTO_TABLE_FILE_OFFSET + 0x28 * 4;
         buf[pb..pb + 4].copy_from_slice(&0xCAFE_BABEu32.to_le_bytes());
-        buf[EFFECT_SFX_TABLE_FILE_OFFSET + 0x28] = 0x4d;
+        buf[EFFECT_CLUT_TABLE_FILE_OFFSET + 0x28] = 0x4d;
 
         let aux = EffectAuxTables::parse(&buf).expect("aux tables parse");
         assert_eq!(aux.effect_proto(0x28), Some(0xCAFE_BABE));
-        assert_eq!(aux.effect_sfx(0x28), Some(0x4d));
-        assert_eq!(aux.effect_sfx(0x00), Some(0)); // silent
+        assert_eq!(aux.effect_clut_x(0x28), Some(0x4d));
+        assert_eq!(aux.effect_clut_x(0x00), Some(0)); // silent
         assert_eq!(aux.effect_proto(EFFECT_AUX_TABLE_LEN as u8), None); // out of range
         assert_eq!(aux.proto().len(), EFFECT_AUX_TABLE_LEN);
-        assert_eq!(aux.sfx().len(), EFFECT_AUX_TABLE_LEN);
+        assert_eq!(aux.clut_map().len(), EFFECT_AUX_TABLE_LEN);
 
         // Guard: an overlay that fails the move-power map guard yields no tables.
         let mut bad = buf.clone();

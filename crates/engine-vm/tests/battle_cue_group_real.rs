@@ -70,7 +70,7 @@ fn the_real_cue_groups_expand_through_the_port() {
     let Some(aux) = aux_tables() else { return };
     let tables = CueTables {
         groups: aux.cue_group_bytes(),
-        clut_map: aux.sfx(),
+        clut_map: aux.clut_map(),
     };
 
     let mut spawns = 0usize;
@@ -99,7 +99,7 @@ fn the_real_cue_groups_expand_through_the_port() {
                     tint,
                 } => {
                     assert_eq!(effect_index, cue, "one id indexes both effect tables");
-                    assert_eq!(clut_x, aux.effect_sfx(cue).filter(|&s| s != 0));
+                    assert_eq!(clut_x, aux.effect_clut_x(cue).filter(|&s| s != 0));
                     // Every live entry of `0x801F6418` is a VRAM x, not a cue
                     // id: the table's whole value set is 0x00/0xB0/0xC0/0xD0.
                     if let Some(x) = clut_x {
@@ -133,7 +133,7 @@ fn every_real_battle_item_selects_a_group_the_disc_holds() {
     };
     let tables = CueTables {
         groups: aux.cue_group_bytes(),
-        clut_map: aux.sfx(),
+        clut_map: aux.clut_map(),
     };
 
     let mut selected = 0usize;
@@ -177,7 +177,7 @@ fn every_real_battle_item_selects_a_group_the_disc_holds() {
                     id: cue, clut_x, ..
                 } => {
                     assert_eq!(cue, ids[i]);
-                    assert_eq!(clut_x, aux.effect_sfx(cue).filter(|&s| s != 0));
+                    assert_eq!(clut_x, aux.effect_clut_x(cue).filter(|&s| s != 0));
                 }
             }
         }
@@ -257,7 +257,7 @@ fn the_state_machine_places_a_real_items_cue_group() {
         actors,
         items,
         groups: aux.cue_group_bytes().to_vec(),
-        sfx: aux.sfx().to_vec(),
+        sfx: aux.clut_map().to_vec(),
         cues: Vec::new(),
         applier: Vec::new(),
     };

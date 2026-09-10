@@ -2605,7 +2605,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// come from one parse of one overlay.
     fn cue_tables(&self) -> Option<(&[u8], &[u8])> {
         let aux = self.world.move_power.as_ref()?.aux_tables()?;
-        Some((aux.cue_group_bytes(), aux.sfx()))
+        Some((aux.cue_group_bytes(), aux.clut_map()))
     }
     /// Place one expanded cue.
     ///
@@ -2617,11 +2617,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// the `0x801F6324` prototype scene (`FUN_80050ED4` ->
     /// [`World::spawn_action_table_effect`]).
     ///
-    /// The SFX map's non-zero byte rides `World::battle_sfx_cues`, the queue
-    /// both hosts already drain into their SFX schedulers. That queue's id
-    /// space is "bank cue id, played directly" - which is what this byte is:
-    /// retail submits it as a sound packet through `FUN_80058490`, not
-    /// through the `FUN_8004FCC8` classifier.
+    /// The third table's non-zero byte is **not** a sound cue and is dropped
+    /// here: `0x801F6418` is a CLUT source x and `FUN_80058490` is
+    /// `MoveImage`, so retail's arm is a palette-row blit, not a sound
+    /// submit. See the `CueSpawn::Effect` arm below and
+    /// [`crate::battle_effect_clut`].
     ///
     /// The spawn position is the cue actor's own live position, which is what
     /// retail builds the transform from (`actor[+0x34]`/`+0x38` for the

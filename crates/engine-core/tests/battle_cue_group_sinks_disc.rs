@@ -94,7 +94,7 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
     // are exercised by one action.
     let tables = CueTables {
         groups: aux.cue_group_bytes(),
-        clut_map: aux.sfx(),
+        clut_map: aux.clut_map(),
     };
     let Some((item_id, site, plan)) = (0..=0xFFu8).find_map(|id| {
         let eff = items.effect(id)?;

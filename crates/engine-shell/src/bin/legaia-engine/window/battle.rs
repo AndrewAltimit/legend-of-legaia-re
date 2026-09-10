@@ -2005,6 +2005,44 @@ impl PlayWindowApp {
         }
     }
 
+    /// Effect **CLUT stages** - the palette arm of the action-effect script's
+    /// table form (`FUN_801DEA50`, `0x801df0dc..0x801df134`). Each queued
+    /// `0x801F6418` byte is a VRAM source x whose sixteen entries move onto
+    /// `(224, 476)`, recolouring whatever the spawned move-FX prototype draws
+    /// ([`legaia_engine_core::battle_effect_clut`]).
+    ///
+    /// Shares the mid-battle re-upload protocol with
+    /// [`Self::tick_battle_status_clut`]: mutate the stashed battle VRAM,
+    /// re-upload, and move the expected resident generation with it so
+    /// [`Self::check_battle_vram_residency`] does not read the refresh as a
+    /// clobber. Drains unconditionally so the queue cannot accumulate across
+    /// a battle when no renderer is up.
+    pub(super) fn tick_battle_effect_clut(&mut self) {
+        let stages = self.session.host.world.drain_battle_clut_stages();
+        if stages.is_empty() {
+            return;
+        }
+        let Some(vram) = self.battle_vram.as_mut() else {
+            return;
+        };
+        let mut dirty = false;
+        for x in stages {
+            dirty |= legaia_engine_core::battle_effect_clut::stage_effect_clut(vram, x);
+        }
+        if !dirty {
+            return;
+        }
+        if let (Some(r), Some(vram)) = (self.win.renderer.as_ref(), self.battle_vram.as_ref()) {
+            match r.upload_vram(vram) {
+                Ok(v) => {
+                    self.battle_vram_generation = Some(v.generation());
+                    self.uploaded_vram = Some(v);
+                }
+                Err(e) => log::error!("play-window: effect-CLUT VRAM re-upload: {e:#}"),
+            }
+        }
+    }
+
     /// Residency guard: while a battle texture is expected to be GPU-resident,
     /// verify no other path re-uploaded VRAM over it this frame. The
     /// white-speckle party bug (a background CLUT animator re-uploading the

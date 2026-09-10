@@ -184,7 +184,7 @@ impl MovePowerCatalog {
             }
             let (proto, sfx) = match entry {
                 EffectListEntry::Spawn(idx) => match self.aux.as_ref() {
-                    Some(aux) => (aux.effect_proto(idx), aux.effect_sfx(idx)),
+                    Some(aux) => (aux.effect_proto(idx), aux.effect_clut_x(idx)),
                     None => (None, None),
                 },
                 _ => (None, None),
@@ -396,7 +396,7 @@ mod tests {
     fn fx_descriptor_resolves_behavioural_fields_and_effect_lists() {
         use legaia_asset::move_power::{
             CUE_GROUP_STRIDE, CUE_GROUP_TABLE_FILE_OFFSET, CUE_GROUP_TABLE_LEN,
-            EFFECT_PROTO_TABLE_FILE_OFFSET, EFFECT_SFX_TABLE_FILE_OFFSET,
+            EFFECT_CLUT_TABLE_FILE_OFFSET, EFFECT_PROTO_TABLE_FILE_OFFSET,
             IMPACT_EFFECT_TABLE_FILE_OFFSET,
         };
 
@@ -443,8 +443,8 @@ mod tests {
             EFFECT_PROTO_TABLE_FILE_OFFSET + 3 * 4,
             0x0000_CAFE,
         );
-        buf[EFFECT_SFX_TABLE_FILE_OFFSET + 2] = 0x11;
-        buf[EFFECT_SFX_TABLE_FILE_OFFSET + 3] = 0x22;
+        buf[EFFECT_CLUT_TABLE_FILE_OFFSET + 2] = 0x11;
+        buf[EFFECT_CLUT_TABLE_FILE_OFFSET + 3] = 0x22;
         // Impact config table: selector 3 -> index 2.
         put_u32(
             &mut buf,

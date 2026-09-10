@@ -263,7 +263,7 @@ fn effect_aux_tables_parse_from_disc() {
     let table = move_power::parse(&bytes).expect("move-power table parses");
     let aux = move_power::EffectAuxTables::parse(&bytes).expect("effect aux tables parse");
     assert_eq!(aux.proto().len(), move_power::EFFECT_AUX_TABLE_LEN);
-    assert_eq!(aux.sfx().len(), move_power::EFFECT_AUX_TABLE_LEN);
+    assert_eq!(aux.clut_map().len(), move_power::EFFECT_AUX_TABLE_LEN);
 
     // Record 3 (move id 0x29) carries a contact list [0x27, 0x8e, 0x8d] and a
     // launch list [0x28, 0x64, 0x9d]. Classify each byte exactly as the runtime
@@ -283,8 +283,8 @@ fn effect_aux_tables_parse_from_disc() {
     // both effects share SFX cue `0xD0`.
     assert_eq!(aux.effect_proto(0x27), Some(0x801F_5BBC));
     assert_eq!(aux.effect_proto(0x28), Some(0x801F_5BDC));
-    assert_eq!(aux.effect_sfx(0x27), Some(0xD0));
-    assert_eq!(aux.effect_sfx(0x28), Some(0xD0));
+    assert_eq!(aux.effect_clut_x(0x27), Some(0xD0));
+    assert_eq!(aux.effect_clut_x(0x28), Some(0xD0));
     // The prototype pointers all land in the battle-action overlay's VA window.
     for (i, &p) in aux.proto().iter().enumerate() {
         if p != 0 {
@@ -303,7 +303,7 @@ fn effect_aux_tables_parse_from_disc() {
         for &e in r.contact_effects().iter().chain(r.launch_effects().iter()) {
             if let Spawn(idx) = move_power::EffectListEntry::classify(e) {
                 assert!(
-                    aux.effect_proto(idx).is_some() && aux.effect_sfx(idx).is_some(),
+                    aux.effect_proto(idx).is_some() && aux.effect_clut_x(idx).is_some(),
                     "record {} spawn index {idx:#04x} out of the aux-table range",
                     r.index
                 );

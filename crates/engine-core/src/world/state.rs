@@ -744,6 +744,14 @@ pub struct World {
     /// is dropped).
     pub xa_cue_durations: Option<Vec<u16>>,
 
+    /// Battle **effect CLUT stages** queued this frame - one `0x801F6418`
+    /// source x per table-form effect spawn whose map byte is non-zero
+    /// (`FUN_801DEA50`, `0x801df0dc..0x801df134`). Cosmetic: each is a 16x1
+    /// palette-row copy onto VRAM `(224, 476)` a host applies with
+    /// [`crate::battle_effect_clut::stage_effect_clut`]. Drained via
+    /// [`World::drain_battle_clut_stages`]; cleared on battle exit.
+    pub battle_clut_stages: Vec<u8>,
+
     /// Battle effect-script spawn requests queued this frame - one per
     /// effect record the per-actor effect-script walk consumed
     /// ([`crate::action_effect_script::step_effect_script`], driven by
@@ -2118,6 +2126,11 @@ pub struct World {
     /// [`World::battle_sfx_cues`]) - see `World::tick_battle_intro` in
     /// `world/encounters.rs`.
     pub battle_intro_effects: Vec<vm::battle_intro_transition::TransitionEffect>,
+    /// Latched when the battle-intro spin performed retail's master mode
+    /// hand-off (`_DAT_8007B83C = 0x14`) - see
+    /// [`World::battle_mode_word_held`]. Cleared when the transition ends.
+    pub battle_intro_mode_handoff: bool,
+
     /// The one-shot sound-detach latch (`gp+0x804`). Idempotent: the mode-INIT
     /// chain can call it repeatedly and only the first has any effect.
     ///
@@ -2133,9 +2146,21 @@ pub struct World {
     /// [`crate::mode::ModeDriver::tick`] via [`World::take_frame_begin_skip`].
     ///
     /// Defaults to `false`; a host that never sets it gets the pre-existing
-    /// tick-every-frame behaviour.
+    /// tick-every-frame behaviour - and that is also what **retail** does.
+    /// The flag has no retail producer that a shipped disc can reach: a
+    /// five-form sweep plus the `gp`-relative sweep over `SCUS_942.54` and
+    /// every based overlay image finds exactly three sites touching
+    /// `gp+0x3D8`, and two are clears - the mode-change edge's
+    /// (`0x800161E8`, which [`crate::mode::ModeSeat`] performs) and a reset
+    /// path's (`0x8001E100`). The one **setter** is
+    /// `_DAT_8007B6F0 = ~_DAT_8007B6F0` at `0x80018850`, the R1+Start pause
+    /// toggle in `FUN_8001822C`'s dev-hotkey tail, and that whole tail sits
+    /// behind `_DAT_8007B98C != 0` (`beq` at `0x800185FC`), which is zero on
+    /// retail. So this is a *debug pause* channel, and the port's own debug
+    /// surface - not a missing engine wire - is what would set it.
     ///
     /// REF: FUN_8001698C
+    /// REF: FUN_8001822C - the dev-hotkey tail that owns the only setter.
     pub frame_begin_skip: bool,
     /// Retail's frame-time history behind the adaptive cadence
     /// (`DAT_80084098[16]` + `0x1F800392`). Only advanced when a host calls
@@ -3023,6 +3048,7 @@ impl World {
             battle_hit_fx: Vec::new(),
             battle_hit_events: Vec::new(),
             battle_sfx_cues: Vec::new(),
+            battle_clut_stages: Vec::new(),
             battle_xa_cues: Vec::new(),
             battle_xa_busy_frames: 0,
             xa_cue_durations: None,
@@ -3192,6 +3218,7 @@ impl World {
             scene_control_block: crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET,
             battle_intro: None,
             battle_intro_effects: Vec::new(),
+            battle_intro_mode_handoff: false,
             sound_detach: crate::sound_state::SoundDetachLatch::default(),
             frame_begin_skip: false,
             frame_step_telemetry: vm::actor_tick::FrameStepTelemetry::new(),
