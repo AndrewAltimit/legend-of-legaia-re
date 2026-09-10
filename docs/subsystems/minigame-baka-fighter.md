@@ -658,16 +658,19 @@ the register. That is visible in the disassembly, not a decompiler artifact
 (Ghidra renders it `unaff_s5`), and the port takes no such argument rather
 than reproducing the uninitialised read.
 
-**`FUN_801d65f8` is only defined for its mode-0 call.** It builds a
-`(pitch, pan)` pair out of the 4-byte record at `&DAT_801dbe84 + index * 4` -
-byte `0` shifted right two plus `0x340`, byte `1` plus `0x80` - and plays it
-through `func_0x80058490(&record, 0x340, 0x86)`. The table pointer *and* the
-two trailing constants `(6, 0x18)` are written **only** inside the first
-argument's `== 0` arm, so any other value reads the table through an
+**`FUN_801d65f8` is only defined for its mode-0 call.** It builds a VRAM
+`RECT` out of the 4-byte record at `&DAT_801dbe84 + index * 4` - source
+`x = 0x340 + (byte 0 >> 2)` (`0x801D6628` / `0x801D6634` / `0x801D6638`),
+source `y = 0x80 + byte 1` (`0x801D6644` / `0x801D664C`) - and blits it to
+`(0x340, 0x86)` through `FUN_80058490`, which is **`MoveImage`**, a
+VRAM-to-VRAM blit, not a sound call (`docs/formats/effect.md` carried the same
+misreading of that routine). The table pointer *and* the rect's
+`(w, h) = (6, 0x18)` (`0x801D6610` / `0x801D6618`) are written **only** inside
+the first argument's `== 0` arm, so any other value reads the table through an
 uninitialised register; retail's one call site (`FUN_801d6310`) passes `0`.
 
 Ports: `engine-core::baka_fighter_chrome::{impact_effect_pair,
-mirrored_sprite_pass, positional_cue}`.
+mirrored_sprite_pass, sprite_blit}`.
 
 ### The developer keyframe editor
 
@@ -984,8 +987,8 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d6f18` | effect-part flag setter + spawn (`actor +0x10 \|= 0x200000`, `FUN_800204f8`) |
 | `FUN_801d3390` | per-fighter idle / reset pose setter (match phase `DAT_801dbf78 == 0`; seeds display anim `+0x6a` from the action table) |
 | `FUN_801d6300` | do-nothing stub (`jr ra`); a disabled hook the SM family still calls |
-| `FUN_801d6310` | scripted-arc effect-actor animator: phase `+0x22` (frame-delta stepped) drives a piecewise trajectory (`+0x14` / `+0x26`) with display-anim / flag swaps over phase bands `0..0xef`, fires a positional cue via `FUN_801d65f8` at two band edges, and raises the done flag (`+0x10 \| 8`) past phase `0xef` |
-| `FUN_801d65f8` | positional SFX helper: builds a pan / pitch pair from table `&DAT_801dbe84` (index `arg * 4`, pitch base `0x340`, pan base `0x80`) and plays it via `func_0x80058490` |
+| `FUN_801d6310` | scripted-arc effect-actor animator: phase `+0x22` (frame-delta stepped) drives a piecewise trajectory (`+0x14` / `+0x26`) with display-anim / flag swaps over phase bands `0..0xef`, fires a sprite blit via `FUN_801d65f8` at two band edges, and raises the done flag (`+0x10 \| 8`) past phase `0xef` |
+| `FUN_801d65f8` | VRAM blit helper: builds a `RECT` from table `&DAT_801dbe84` (index `arg * 4`) - `x = 0x340 + (byte0 >> 2)`, `y = 0x80 + byte1`, `w = 6`, `h = 0x18` - and blits it to `(0x340, 0x86)` via `FUN_80058490` (`MoveImage`) |
 
 Provenance: each row corresponds to `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`.
 

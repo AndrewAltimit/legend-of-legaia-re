@@ -1159,20 +1159,38 @@ are the Legaia mask's (`Up 0x1000`, `Right 0x2000`, `Down 0x4000`), and
 | Attack (confirm) | `0x801D1534..0x801D156C` | `actor+0x16E & 0x38 == 0x38` |
 | Spirit (Down) | `0x801D1670..0x801D1690` | never |
 
-`special` is the word at `0x8007BAC0`. It is **not** a flag set the arena
-owns: the arena's `FUN_801D0088` stamps only the low byte
-(`0x801D00B8..0x801D00E4` writes `(old & ~0xFF) + (course << 4) + round + 1`,
-preserving the high bits), and every other writer clears the whole word. The
-`0x200` (magic-forbidden) bit has exactly two writers, both in
-`SCUS_942.54`'s battle init and both keyed on the **first enemy's monster
-id**: `0x800519DC..0x80051A04` raises it for monster `0xAF`, and
-`0x8005200C..0x8005205C` for a first enemy in `0x3D..=0x3F` while the mode
-word `0x80084540` is `0xC` or `0x15`. The dome ladder tops out at monster
-`0xAA` ([Course ladder](#course-ladder-the-opponent-per-course-round)), so
-**no dome round raises it**: retail's dome never crosses out the Ra-Seru
-chip. *(Evidence: `disassembly` - the two arms, the arena's store, and a
-five-form reference sweep of `0x8007BAC0` over SCUS plus all 83 mapped
-overlays.)*
+`special` is the word at `0x8007BAC0`, and the arena **does** own its high
+bits. On the fresh-entry side of the `bnez` at `0x801CEB58`, `FUN_801CEA6C`
+seeds the whole word from three story-flag tests (`jal 0x8003CE64`): flag
+`0x536` writes `0x101` (`0x801CEBA0`), `0x537` writes `0x111` (`0x801CEBB4`)
+and `0x538` writes **`0x321`** (`0x801CEBC8`) - the last of which carries bit
+`0x200`. The seed before the three tests is `0` (`0x801CEB8C`), and the tests
+run in order with the last match winning. Note that **all three** seeds carry
+bit `0x100`, so a seeded dome visit forbids the **Item** chip on every course;
+and the low byte is where the course itself comes from,
+`((word - 1) & 0xFF) >> 4` at `0x801CEBD4..0x801CEBE8` giving `0` / `1` / `2`.
+Thereafter only the low byte moves: `FUN_801D0088`
+(`0x801D00B8..0x801D00E4`) writes `(old & ~0xFF) + (course << 4) + round + 1`
+and the per-leg bump at `0x801CEC08` adds one, so the seeded high bits survive
+the whole visit.
+
+The `0x200` (magic-forbidden) bit therefore has **three** raisers on the disc.
+Two are in `SCUS_942.54`'s battle init, keyed on the first enemy's monster id
+at `0x8007BD0C`: `0x800519DC..0x80051A04` for monster `0xAF`, and
+`0x8005200C..0x8005205C` for a first enemy in `0x3D..=0x3F` while the mode word
+`0x80084540` is `0xC` or `0x15`. Neither fires for a dome round - the ladder
+tops out at `0xAA`
+([Course ladder](#course-ladder-the-opponent-per-course-round)). The third is
+the arena's own seed, and `0x321` decodes to course `2` (Master), so **once the
+Master course is unlocked, every dome round in that visit crosses out the
+Ra-Seru chip**. *(Evidence: `disassembly` - the two SCUS arms, the arena's four
+seed stores and its low-byte stamp, and an unwindowed store sweep of
+`0x8007BAC0` over `SCUS_942.54` plus all 83 mapped overlays: 13 stores, 5 of
+which clear the word. The earlier "only two writers" reading came from
+`find-gp-relative-refs.py`, which caps `lui`-to-use pairing at 24 instructions
+and cannot see the four seed stores 34..49 instructions past their `lui`. That
+`0x538` is the Master unlock is inference from the three arms' course indices
+0/1/2; the literal `0x321` and its `0x200` bit are not.)*
 
 The member gate `ctx[+0x25F + member]` is the same byte the battle command
 ring's element chip reads - written once by the party battle-actor init
@@ -1791,8 +1809,10 @@ to the emitter it names).
   **resolved**: three gates, none of them a course table - the member's own
   Ra-Seru marker `ctx[+0x25F + member]`, the sealed-magic status bit
   `actor+0x16E & 0x1000`, and bit `0x200` of the special-battle word
-  `0x8007BAC0`, whose only two writers key on the first enemy's monster id and
-  so never fire for a dome round. The red X is that third bit's alone, and it
+  `0x8007BAC0`. Its two `SCUS_942.54` writers key on the first enemy's monster
+  id and never fire for a dome round, but the arena's own entry seed raises it
+  for the Master course (`0x321` at `0x801CEBC8`). The red X is that third
+  bit's alone, and it
   has two siblings the captures had folded together. See
   [What makes a Ra-Seru chip render](#what-makes-a-ra-seru-chip-render) and
   [the three marks](#three-marks-for-you-cannot-pick-this-and-the-gates-that-raise-them).

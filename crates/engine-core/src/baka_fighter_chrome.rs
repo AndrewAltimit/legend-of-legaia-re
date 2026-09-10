@@ -1119,53 +1119,62 @@ pub fn impact_keyframe_index(live_cursor: i32, reset_keyframe: bool) -> i32 {
     if reset_keyframe { 0 } else { live_cursor }
 }
 
-/// A positional SFX one-shot: the `(pitch, pan)` pair plus the two trailing
-/// fields the caller stacks beside them.
+/// One VRAM-to-VRAM sprite blit: the source `RECT` the helper stacks, plus
+/// the destination it hands `MoveImage`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PositionalCue {
-    pub pitch: i16,
-    pub pan: i16,
-    /// The two fixed words written beside the pair (`6`, `0x18`).
-    pub tail: (i16, i16),
-    /// The two literal arguments the play call takes after the record.
-    pub base_pitch: i32,
-    pub voice: i32,
+pub struct SpriteBlit {
+    /// Source `RECT.x` (`0x801D6628`..`0x801D6638`).
+    pub src_x: i16,
+    /// Source `RECT.y` (`0x801D6644`..`0x801D664C`).
+    pub src_y: i16,
+    /// The rect's fixed `(w, h)` (`0x801D6610` / `0x801D6618`).
+    pub size: (i16, i16),
+    /// Destination `x`, the call's `a1` (`0x801D6624`..`0x801D6648`).
+    pub dst_x: i32,
+    /// Destination `y`, the call's `a2`.
+    pub dst_y: i32,
 }
 
-/// Base pitch the table entry is added to.
-pub const CUE_BASE_PITCH: i16 = 0x340;
-/// Centre pan the table entry is added to.
-pub const CUE_BASE_PAN: i16 = 0x80;
-/// The literal voice argument the play call takes.
-pub const CUE_VOICE: i32 = 0x86;
+/// Source-`x` base the table entry's first byte is added to.
+pub const BLIT_SRC_X_BASE: i16 = 0x340;
+/// Source-`y` base the table entry's second byte is added to.
+pub const BLIT_SRC_Y_BASE: i16 = 0x80;
+/// Destination `y` the blit always writes to.
+pub const BLIT_DST_Y: i32 = 0x86;
 
-// NOT WIRED: the pan/pitch table `&DAT_801dbe84` is overlay rodata with no
+// NOT WIRED: the VRAM-rect table `&DAT_801dbe84` is overlay rodata with no
 // parser in `legaia_asset::baka_opponents`, and its one retail caller is the
 // scripted-arc effect animator `FUN_801d6310`, which the port does not model -
-// `BakaFight` fires the hit cue through the plain cue ring instead.
-/// PORT: FUN_801d65f8 - the **positional SFX helper**.
+// `BakaFight` draws the impact sprite through the ordinary chrome pass
+// instead.
+/// PORT: FUN_801d65f8 - the **sprite-blit helper**.
 ///
-/// Builds a `(pitch, pan)` pair out of the 4-byte record at
+/// Builds a VRAM source `RECT` out of the 4-byte record at
 /// `&DAT_801dbe84 + index * 4`: byte `0` shifted right two and added to
-/// [`CUE_BASE_PITCH`], byte `1` added to [`CUE_BASE_PAN`]. The record is
-/// stacked with the two constants `(6, 0x18)` and handed to
-/// `func_0x80058490(&record, 0x340, 0x86)`.
+/// [`BLIT_SRC_X_BASE`], byte `1` added to [`BLIT_SRC_Y_BASE`], with the
+/// rect's `(w, h) = (6, 0x18)`, and hands it to
+/// `FUN_80058490(&rect, 0x340, 0x86)`. That callee is **`MoveImage`** - it
+/// validates the string `"MoveImage"` at `0x800156EC`, packs the destination
+/// as `(y << 16) | x` and issues a VRAM-to-VRAM blit packet. An earlier
+/// reading here made it a positional SFX play, so the two rect halves wore
+/// `pitch` / `pan` names and the destination `y` wore `voice`; nothing in the
+/// 49-instruction callee touches a sound path.
 ///
 /// `mode` is the routine's first argument, and only `0` is a defined call:
-/// the table pointer *and* the two trailing constants are written **only**
-/// inside the `mode == 0` arm, so any other value reads the table through an
+/// the table pointer *and* the rect's `(w, h)` are written **only** inside
+/// the `mode == 0` arm, so any other value reads the table through an
 /// uninitialised register. Retail has no such call site; this port returns
 /// `None` rather than inventing behaviour for it.
-pub fn positional_cue(mode: i32, entry: [u8; 2]) -> Option<PositionalCue> {
+pub fn sprite_blit(mode: i32, entry: [u8; 2]) -> Option<SpriteBlit> {
     if mode != 0 {
         return None;
     }
-    Some(PositionalCue {
-        pitch: (entry[0] >> 2) as i16 + CUE_BASE_PITCH,
-        pan: entry[1] as i16 + CUE_BASE_PAN,
-        tail: (6, 0x18),
-        base_pitch: CUE_BASE_PITCH as i32,
-        voice: CUE_VOICE,
+    Some(SpriteBlit {
+        src_x: (entry[0] >> 2) as i16 + BLIT_SRC_X_BASE,
+        src_y: entry[1] as i16 + BLIT_SRC_Y_BASE,
+        size: (6, 0x18),
+        dst_x: BLIT_SRC_X_BASE as i32,
+        dst_y: BLIT_DST_Y,
     })
 }
 
@@ -1509,13 +1518,15 @@ mod tests {
     }
 
     #[test]
-    fn positional_cue_biases_a_shifted_pitch_and_a_centred_pan() {
-        let c = positional_cue(0, [0x40, 0x10]).unwrap();
-        assert_eq!(c.pitch, 0x10 + CUE_BASE_PITCH);
-        assert_eq!(c.pan, 0x10 + CUE_BASE_PAN);
-        assert_eq!(c.tail, (6, 0x18));
+    fn sprite_blit_biases_the_source_rect_off_the_table_entry() {
+        let c = sprite_blit(0, [0x40, 0x10]).unwrap();
+        assert_eq!(c.src_x, 0x10 + BLIT_SRC_X_BASE);
+        assert_eq!(c.src_y, 0x10 + BLIT_SRC_Y_BASE);
+        assert_eq!(c.size, (6, 0x18));
+        // The destination is fixed, not table-driven.
+        assert_eq!((c.dst_x, c.dst_y), (0x340, BLIT_DST_Y));
         // Only mode 0 is a defined call.
-        assert!(positional_cue(1, [0x40, 0x10]).is_none());
+        assert!(sprite_blit(1, [0x40, 0x10]).is_none());
     }
 
     #[test]

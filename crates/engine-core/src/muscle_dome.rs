@@ -519,10 +519,22 @@ fn dome_command_of_action_byte(b: u8) -> Option<legaia_art::Command> {
 /// Bit of the **special-battle word** `0x8007BAC0` that forbids the Item
 /// chip.
 ///
-/// The word is not a flag set the arena owns: the arena stamps only its low
-/// byte (`FUN_801D0088` at `0x801D00B8..0x801D00E4` writes
-/// `(old & ~0xFF) + (course << 4) + round + 1`, preserving the high bits),
-/// and the battle round driver reads the high bits as command restrictions.
+/// The arena **does** own this one. `FUN_801CEA6C` seeds the whole word on
+/// fresh entry from three story-flag tests in order (`jal 0x8003CE64`): flag
+/// `0x536` writes `0x101` (`0x801CEBA0`), `0x537` writes `0x111`
+/// (`0x801CEBB4`), `0x538` writes `0x321` (`0x801CEBC8`), the last match
+/// winning; the seed before them is `0` (`0x801CEB8C`). All three carry this
+/// bit, so **every seeded dome visit forbids the Item chip**. Thereafter the
+/// arena stamps only the low byte (`FUN_801D0088` at
+/// `0x801D00B8..0x801D00E4` writes `(old & ~0xFF) + (course << 4) + round + 1`,
+/// preserving the high bits), and the battle round driver reads the high bits
+/// as command restrictions. The low byte is also where the course comes from:
+/// `((word - 1) & 0xFF) >> 4` at `0x801CEBD4..0x801CEBE8` is `0` / `1` / `2`
+/// for the three seeds.
+///
+/// No host seeds the word yet - both dome entry paths pass `0`, so the port's
+/// dome restricts neither chip. Seeding it needs the three story flags the
+/// arena's own entry reads.
 ///
 /// REF: FUN_801d0748 (`0x801D12C0..0x801D12D8` the mark; `0x801D1370..0x801D137C`
 /// the arm's refusal)
@@ -531,12 +543,23 @@ pub const SPECIAL_ITEM_FORBIDDEN: u32 = 0x100;
 /// Bit of the same word that forbids the **Ra-Seru (magic)** chip - the one
 /// that draws the red X over it and makes the ring's Right arm refuse.
 ///
-/// Its two writers are both in `SCUS_942.54`'s battle init and both key on
-/// the **first enemy's monster id**, not on a course: `0x800519DC..0x80051A04`
-/// raises it for monster `0xAF`, and `0x8005200C..0x8005205C` for a first
-/// enemy in `0x3D..=0x3F` while the mode word `0x80084540` is `0xC` or
-/// `0x15`. The dome ladder tops out at monster `0xAA`, so **no dome round
-/// raises it** and retail's dome never crosses the Ra-Seru chip out.
+/// It has **three** raisers, not two. Two are in `SCUS_942.54`'s battle init
+/// and key on the **first enemy's monster id**, not on a course:
+/// `0x800519DC..0x80051A04` raises it for monster `0xAF`, and
+/// `0x8005200C..0x8005205C` for a first enemy in `0x3D..=0x3F` while the mode
+/// word `0x80084540` is `0xC` or `0x15`. The dome ladder tops out at monster
+/// `0xAA`, so neither of those fires here.
+///
+/// The third is the arena's **own entry seed**, in PROT 0977: `FUN_801CEA6C`
+/// stores `0x321` at `0x801CEBC8` when the story-flag test at `0x801CEBBC`
+/// (`jal 0x8003CE64`, flag `0x538`) returns non-zero, beside `0x101` for flag
+/// `0x536` and `0x111` for flag `0x537`. `0x321` decodes to course `2`
+/// (Master) **plus this bit**, and every later write preserves the high bits,
+/// so once the Master course is unlocked every dome round in that visit
+/// crosses the Ra-Seru chip out. The earlier "no dome round raises it"
+/// reading came from a `gp`-relative sweep that caps `lui`-to-use pairing at
+/// 24 instructions; the four seed stores sit 34..49 instructions past their
+/// `lui` and were invisible to it.
 ///
 /// REF: FUN_801d0748 (`0x801D12DC..0x801D12F4` the mark; `0x801D1448..0x801D1454`
 /// the arm's refusal)

@@ -39,10 +39,16 @@
 //! `0x801D6FD8`, inside the field overlay's MAIN INIT `FUN_801D6704`, behind a
 //! `bnez` on `_DAT_8007B8B8`. So it is **scene ambience installed by the field
 //! main routine**, not a cutscene-script element at all. The tween and the
-//! teardown remain unplaced: a five-form reference sweep over all 84 extracted
-//! images finds no word, `jal`, `j`, branch or `lui`/`addiu` pair naming
-//! `0x801D5C08` or `0x801D5D60`, so whatever holds their descriptors is not in
-//! the extracted set.
+//! teardown are placed too. `0x801D5C08` and `0x801D5D60` are the `+0x08`
+//! handler words of the same `0x18`-byte templates at `0x801F227C` and
+//! `0x801F22AC` (field-overlay file `0x23A64` / `0x23A94`, with
+//! `FUN_801D2298`'s at `0x801F2294` between them), and the field overlay
+//! spawns both through the actor allocator
+//! `FUN_80020DE0(descriptor, _DAT_8007C34C)`: the arc helper at `0x801D245C`,
+//! `0x801D2634` and `0x801D57C0`, the teardown at `0x801D2760`. Nothing names
+//! the handler VAs directly, so only the **word** form finds them - and
+//! `find-address-word-refs.py --tables-only` drops both hits as
+//! `incidental-code`, which is how "no reference exists" was concluded here.
 //!
 //! REF: FUN_801E45BC - the vector midpoint/lerp helper the tween calls.
 //! REF: FUN_801D629C - the particle spawn primitive the emitter calls.
@@ -150,8 +156,11 @@ impl PositionTween {
     /// WIRED: [`crate::world::World::tick_cutscene_elements`] runs this every
     /// frame on both hosts, off the same master-driver gate the other
     /// plain-template families ride. What no host yet does is **install** an
-    /// element for it to run on: the descriptor that names this handler is in no extracted image (see the module note), so nothing spawns one. That is a content-driven gap (nothing
-    /// reaches the spawner), not an unreached port.
+    /// element for it to run on: retail installs it from the field overlay's
+    /// own template table (`0x801F227C` / `0x801F22AC`, spawned through
+    /// `FUN_80020DE0`; see the module note), a site the port does not yet
+    /// reach. That is a content-driven gap (nothing reaches the spawner), not
+    /// an unreached port.
     pub fn step(&mut self, frame_step: u8, linked_done: bool) -> TweenStep {
         if linked_done {
             self.done = true;
@@ -227,8 +236,11 @@ impl ElementTeardown {
     /// WIRED: [`crate::world::World::tick_cutscene_elements`] runs this every
     /// frame on both hosts, off the same master-driver gate the other
     /// plain-template families ride. What no host yet does is **install** an
-    /// element for it to run on: the descriptor that names this handler is in no extracted image (see the module note), so nothing spawns one. That is a content-driven gap (nothing
-    /// reaches the spawner), not an unreached port.
+    /// element for it to run on: retail installs it from the field overlay's
+    /// own template table (`0x801F227C` / `0x801F22AC`, spawned through
+    /// `FUN_80020DE0`; see the module note), a site the port does not yet
+    /// reach. That is a content-driven gap (nothing reaches the spawner), not
+    /// an unreached port.
     pub fn step(&mut self, linked_done: bool) -> TeardownActions {
         let mut out = TeardownActions {
             restore_camera: self.restore_armed != 0 && self.owns_camera != 0,
