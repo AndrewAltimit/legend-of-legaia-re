@@ -553,6 +553,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/effect.html",        "Effect bundles",                "formats/effect",             "formats/effect.html"),
     ("formats/scene-bundles.html", "Scene bundles",                 "formats/scene-bundles",      "formats/scene-bundles.html"),
     ("formats/scene-v12-table.html","scene_v12_table",              "formats/scene-v12-table",    "formats/scene-v12-table.html"),
+    ("formats/slot-b-module-layout.html","Slot-B module layout",     "formats/slot-b-module-layout","formats/slot-b-module-layout.html"),
     ("formats/world-map-overlay.html","Slot-4 records",              "formats/world-map-overlay",  "formats/world-map-overlay.html"),
     ("formats/place-names.html",   "Place names",                   "formats/place-names",        "formats/place-names.html"),
     ("formats/tim.html",           "PSX TIM",                       "formats/tim",                "formats/tim.html"),

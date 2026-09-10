@@ -103,6 +103,7 @@ pub mod screen_elements;
 pub mod seru_trade;
 pub mod sfx_table;
 pub mod shop_stock;
+pub mod slot_b_module;
 pub mod slot_payout;
 pub mod sound_pack;
 pub mod spell_names;

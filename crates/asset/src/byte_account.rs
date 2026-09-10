@@ -315,6 +315,7 @@ pub enum Walker {
     Anm,
     Man,
     OverlayCode,
+    SlotBModule,
     Generic,
 }
 
@@ -348,6 +349,7 @@ impl Walker {
             Walker::Anm => "anm",
             Walker::Man => "man",
             Walker::OverlayCode => "overlay_code",
+            Walker::SlotBModule => "slot_b_module",
             Walker::Generic => "generic",
         }
     }
@@ -2204,6 +2206,53 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     ));
 }
 
+/// A slot-B module image: the dump corpus for its code, plus the image's own
+/// structural regions - the head jump table and the spawn-record band.
+///
+/// The record claims need no dump directory: both ends of every one of them are
+/// addresses the module's own code computes and hands to `FUN_80021B04` /
+/// `FUN_80050ED4`. See [`crate::slot_b_module`] and
+/// [`docs/formats/slot-b-module-layout.md`](https://andrewaltimit.github.io/legend-of-legaia-re/formats/slot-b-module-layout.html).
+fn walk_slot_b_module(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
+    let layout = crate::slot_b_module::parse(buf);
+    if let Some(h) = layout.head_table.clone() {
+        sink.claim(
+            h.start,
+            h.end,
+            OWNER_TOC,
+            format!("head jump table, {} arms", (h.end - h.start) / 4),
+        );
+    }
+    for (i, r) in layout.records.iter().enumerate() {
+        sink.claim(
+            r.start,
+            r.end,
+            OWNER_RECORD,
+            format!("spawn record {i} (model_sel {})", r.model_sel),
+        );
+    }
+    sink.note(format!(
+        "slot-B module: {} framed functions, code ends at {:#x}; {} spawn sites, \
+         {} records claimed ({} bytes){}",
+        layout.functions.len(),
+        layout.code_end(),
+        layout.spawn_sites,
+        layout.records.len(),
+        layout.record_bytes(),
+        match layout.unbounded_record {
+            Some(o) => format!(
+                "; the highest record at {o:#x} has no boundary above it and stays residue"
+            ),
+            None => String::new(),
+        }
+    ));
+    // The dump corpus is the parser for the code half, and it is optional here
+    // - `--funcs` absent still gives the structural regions.
+    if opts.funcs_dir.is_some() {
+        walk_overlay_code(buf, sink, opts);
+    }
+}
+
 // --- fallback --------------------------------------------------------------
 
 fn walk_generic(buf: &[u8], sink: &mut Sink) {
@@ -2245,6 +2294,15 @@ pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
     }
     if opts.prot_index == Some(CARD_FONT_PROT_INDEX) {
         return Walker::CardFontPack;
+    }
+    // The module band is selected on the index alone: its structural regions
+    // are recovered from the image, so the walker runs with or without a dump
+    // directory (it delegates to the code walker when one is given).
+    if opts
+        .prot_index
+        .is_some_and(crate::slot_b_module::is_slot_b_module)
+    {
+        return Walker::SlotBModule;
     }
     if let (Some(idx), Some(_)) = (opts.prot_index, opts.funcs_dir.as_ref()) {
         let is_overlay = crate::static_overlay::overlay_map()
@@ -2310,6 +2368,7 @@ fn dispatch(buf: &[u8], walker: Walker, sink: &mut Sink, opts: &AccountOptions, 
         Walker::Anm => walk_anm(buf, sink),
         Walker::Man => walk_man(buf, sink),
         Walker::OverlayCode => walk_overlay_code(buf, sink, opts),
+        Walker::SlotBModule => walk_slot_b_module(buf, sink, opts),
         Walker::Generic => walk_generic(buf, sink),
     }
 }

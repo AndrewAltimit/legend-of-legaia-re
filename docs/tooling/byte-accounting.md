@@ -186,6 +186,26 @@ A code image's non-code regions - string pools, jump tables, data segments - fal
 classifier, which is the right answer for them. `ascii_text` and `pointer_dense` runs in an overlay
 entry are the segments the dump corpus is not about.
 
+### The slot-B module band
+
+The 64 entries `0903..=0966` are selected on their **index**, not on a class and
+not on the presence of a dump directory: they are code images, but their
+structural regions come out of the image itself, so `asset account 0923` walks
+them with or without `--funcs` (it delegates to the overlay-code walker when one
+is given). Walker `slot_b_module`; parser
+[`legaia_asset::slot_b_module`](../formats/slot-b-module-layout.md).
+
+| Claim | Owner | What it is |
+|---|---|---|
+| head jump table | `toc` | the leading run of in-image VA words, bounded by the first frame-matched function |
+| spawn record `i` | `record` | `[i16 model_sel][u16 flags][move-VM bytecode]`, bounded by the next record pointer or by the next function's prologue |
+
+Both ends of a record claim are addresses the module's own code computes and
+hands to `FUN_80021B04` / `FUN_80050ED4` in `$a2`, which is why these are
+structural claims and not `scan` ones. The image's **highest** record has
+nothing above it to bound it and stays residue; the walker's note says so per
+entry, and names the offset.
+
 ## Interpreting a report
 
 - A large `high_entropy` run that no parser claims is a compressed or sample-data region with no
@@ -265,3 +285,8 @@ meaningful (claims stay inside the buffer, residue plus accounted equals the siz
 never exceeds `accounted`). It skips and passes without extracted data, like every other
 disc-dependent test. The range algebra and the residue classifier are unit-tested on synthetic
 buffers inside the module, including the two ordering traps above.
+
+`crates/asset/tests/slot_b_module_layout_real.rs` covers the module band over all 64 entries: no
+claimed record overlaps a framed function, every claimed record's start is an address some spawn
+call in the image really hands over in `$a2` (re-derived from the raw words, not taken from the
+parser), and the band is non-vacuous. Same skip-and-pass gating.

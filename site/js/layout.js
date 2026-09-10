@@ -149,6 +149,7 @@ const NAV = [
       { href: 'formats/summon-readef.html',          text: 'Summon / readef slots',    key: 'formats/summon-readef' },
       { href: 'formats/scene-bundles.html',          text: 'Scene bundles',            key: 'formats/scene-bundles' },
       { href: 'formats/scene-v12-table.html',        text: 'Scene V12 table',          key: 'formats/scene-v12-table' },
+      { href: 'formats/slot-b-module-layout.html',    text: 'Slot-B module layout',     key: 'formats/slot-b-module-layout' },
       { href: 'formats/world-map-overlay.html',      text: 'World-map overlay',        key: 'formats/world-map-overlay' },
       { href: 'formats/place-names.html',            text: 'Place names',              key: 'formats/place-names' },
       // Per-asset

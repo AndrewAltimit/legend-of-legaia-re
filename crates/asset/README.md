@@ -549,6 +549,17 @@ those modules hand `FUN_80050ED4` / `FUN_80021B04`; the modules' code half
 (lift, camera, phase machine, damage) is not expressible as a record. See
 [`cast-module.md`](../../docs/subsystems/cast-module.md#what-the-port-runs).
 
+`slot_b_module` - the same 64 images read as a **file layout** rather than as a
+pool: head jump table, frame-matched code partition, and the spawn-record band
+with a half-open extent per record. Every extent's ends are addresses the
+module's own code computes and hands to `FUN_80021B04` / `FUN_80050ED4` in
+`$a2`, cut where the image's code partition resumes (PROT 0943 and 0961
+interleave records with code) and dropped where the naming call sits outside
+every framed body (an inherited fragment of a sibling image's routine). Feeds
+`byte_account`'s `slot_b_module` walker and the `spawn_record_band` shape in
+`scripts/ci/disc-coverage.py`. See
+[`slot-b-module-layout.md`](../../docs/formats/slot-b-module-layout.md).
+
 `summon_readef` - the battle side-band streaming files `summon.dat` /
 `readef.DAT` (extraction PROT 893 / 894 = retail TOC `0x37F` / `0x380`,
 CDNAME block `bat_back_dat`): `0x10800`-byte slots carrying per-special-attack
