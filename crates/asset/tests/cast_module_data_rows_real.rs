@@ -91,9 +91,11 @@ const DATA_ROWS: [(u32, u32, usize); 48] = [
 
 /// The band's two record-less entries (`cast_effect_pool_disc.rs` names the
 /// same pair): PROT 0926 is the 1-sector null stub, and PROT 0952's two spawn
-/// sites load `a2` out of a saved register no static window can see. Neither
-/// is a DATA row, so neither appears above - this is only here so a reader
-/// does not go looking for them.
+/// sites sit in its inherited tail (file `+0x11E8..+0x1800`, PROT 0951's
+/// bytes) with `lui`/`addiu` pairs resolving to `0x801F8348` / `0x801F836C` -
+/// two of PROT 0951's records, past the end of 0952's `0x1800`-byte image.
+/// Neither is a DATA row, so neither appears above - this is only here so a
+/// reader does not go looking for them.
 const RECORDLESS: [u32; 2] = [926, 952];
 
 fn extracted_dir() -> Option<PathBuf> {

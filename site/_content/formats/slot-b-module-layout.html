@@ -25,13 +25,16 @@
     <tbody>
       <tr><td>head table</td><td>0 to 256 words of in-image addresses - the jump table of <em>one</em> of the module's two switches</td><td>leading run of words inside the image, stopping at the first framed function</td></tr>
       <tr><td>code</td><td>the tick's phase machine, the spawn stager, the capture-class trampolines</td><td>frame matching</td></tr>
-      <tr><td>spawn-record band</td><td><code>[i16 model_sel][u16 flags][move-VM bytecode]</code> particle records</td><td>the consumer's own pointer-forming instruction</td></tr>
+      <tr><td>spawn-record band</td><td><code>[i16 model_sel][u16 reserved][move-VM bytecode]</code> particle records</td><td>the consumer's own pointer-forming instruction</td></tr>
       <tr><td>inherited tail</td><td>a byte-identical copy of another extracted image's bytes at the same file offset</td><td>mastering residue: the build buffer still held the previous image</td></tr>
     </tbody>
   </table>
   <p><strong>They are not laid out head-to-tail.</strong> PROT 0943 (Curse) and PROT 0961 (Dead End Crisis) both
-  resume <em>code above their record band</em>, so "everything past the last function is data" swallows five real
-  routines. A record claim is therefore cut at the next function's prologue, never run to the image end.</p>
+  carry framed code <em>above their record band</em>, so "everything past the last function is data" swallows five
+  bodies. Those five are real routines but not those images' own: they sit above each image's own-content cut
+  (0943's bytes end at file +0x1037, 0961's at +0x1918) and are byte-identical to PROT 0942 and PROT 0960 at the
+  same offsets - inherited residue. A record claim is therefore cut at the next function's prologue, never run to
+  the image end.</p>
 </section>
 
 <section class="doc-section" id="records">

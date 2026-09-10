@@ -33,6 +33,16 @@ minimum length keeps a two-word coincidence from cutting an image short: at
 `MIN_TAIL_BYTES` the match is sixteen instructions long and runs to the end of
 the file, which no shared library routine does unless it is the last thing
 linked.
+
+Three restrictions, and a figure belongs to whichever set it was measured
+under. Donors are drawn only from images at the **same** `base_va`, and only
+from **strictly longer** ones, and the run must be at least `MIN_TAIL_BYTES`.
+Under all three, 66 of the 83 mapped images carry a tail, 61,597 bytes in
+total. Drop the first two and the same suffix test reports 79 of 83 and
+104,700 bytes - the extra 13 are 8 images whose donor is the same length and 5
+whose donor loads at a different base (PROT 0904 / 0912 / 0922's tails are PROT
+0899's menu code, and `gameover`'s is `world_map_render`'s). Neither figure is
+wrong; quote the rule with the number.
 """
 
 MIN_TAIL_BYTES = 0x40

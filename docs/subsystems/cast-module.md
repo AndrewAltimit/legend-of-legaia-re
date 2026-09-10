@@ -947,8 +947,12 @@ particle records and hands them to `FUN_80021B04`, so the pool produces its
 whole output too.
 
 Two band entries carry no record at all and stage nothing: PROT 0926, the
-1-sector null stub, and PROT 0952, whose two spawn sites both load `a2` out of
-a saved register no static window can see.
+1-sector null stub, and PROT 0952, whose two spawn sites sit in its inherited
+tail (file `+0x11E8..+0x1800`, PROT 0951's bytes) and whose `lui`/`addiu` pairs
+resolve to `0x801F8348` / `0x801F836C` - two of PROT 0951's own records, past
+the end of 0952's `0x1800`-byte image. The old reading, that `a2` came from a
+saved register no static window could see, is refuted by the pairs being right
+there in front of both calls.
 
 ### The player Seru band's tick bodies are code, not data
 

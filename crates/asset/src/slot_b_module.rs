@@ -16,7 +16,7 @@
 //! |---|---|---|
 //! | head table | 0 to 256 words of in-image VAs: the jump table of *one* of the module's two switches (which one is settled by the `sltiu` immediate - see [`cast-module.md`](https://andrewaltimit.github.io/legend-of-legaia-re/subsystems/cast-module.html)) | leading run of words inside `[base, base + len)`, capped at the first framed function |
 //! | code | the tick's `ctx+0x279` phase machine, the `0x801F6734` spawn stager, the capture-class trampolines | frame matching: `addiu sp, sp, -F` to the first `jr ra` whose delay slot restores the same `F` |
-//! | spawn-record band | the module's own data: `[i16 model_sel][u16 flags][move-VM bytecode]` records the stager hands to `FUN_80021B04` / `FUN_80050ED4` | the **consumer's** pointer-forming instruction (below) |
+//! | spawn-record band | the module's own data: `[i16 model_sel][u16 reserved][move-VM bytecode]` records the stager hands to `FUN_80021B04` / `FUN_80050ED4` | the **consumer's** pointer-forming instruction (below) |
 //!
 //! The three are not laid out head-to-tail in every image. PROT 0943
 //! (`cast_curse`) and PROT 0961 (`cast_dead_end_crisis`) both put a record band
@@ -112,8 +112,9 @@ pub struct RecordSpan {
     pub end: usize,
     /// `record[+0]` mesh selector.
     pub model_sel: i16,
-    /// `record[+2]` flags word.
-    pub flags: u16,
+    /// `record[+2]`, the reserved halfword (see the format page:
+    /// nothing reads it and it is zero in every band record).
+    pub reserved: u16,
 }
 
 impl RecordSpan {
@@ -353,7 +354,7 @@ pub fn parse_at(bytes: &[u8], link_base: u32) -> SlotBLayout {
             start: f,
             end,
             model_sel: i16::from_le_bytes([bytes[f], bytes[f + 1]]),
-            flags: u16::from_le_bytes([bytes[f + 2], bytes[f + 3]]),
+            reserved: u16::from_le_bytes([bytes[f + 2], bytes[f + 3]]),
         });
     }
 
@@ -404,7 +405,7 @@ mod tests {
         while b.len() < 0xC0 {
             b.push(0);
         }
-        // record A at 0x80: model_sel -1, flags 0
+        // record A at 0x80: model_sel -1, reserved 0
         b[0x80] = 0xFF;
         b[0x81] = 0xFF;
         // record B at 0xa0: model_sel 3

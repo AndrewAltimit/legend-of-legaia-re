@@ -20,9 +20,12 @@
 //!    parser;
 //! 4. the band is non-vacuous: at least 60 of the 64 entries carry a bounded
 //!    record, and the whole band claims at least 60 KB;
-//! 5. PROT 0943 and 0961 put a framed function **above** their first record -
-//!    the interleave that makes "everything past the last function" the wrong
-//!    rule; and
+//! 5. PROT 0943 and 0961 put a framed function **above** their first record,
+//!    which is what makes "everything past the last function" the wrong rule.
+//!    Those bodies are the images' inherited residue (0943's own bytes end at
+//!    file `+0x1037`, 0961's at `+0x1918`; the donors are PROT 0942 and
+//!    0960), so the assertion is about the partition this parser sees, not
+//!    about a second code region either image owns; and
 //! 6. `byte_account` credits the records structurally on a band entry.
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
@@ -35,8 +38,9 @@ const SPAWN: [u32; 2] = [0x8002_1B04, 0x8005_0ED4];
 
 /// The band's two record-less entries, for the same reason
 /// `cast_module_data_rows_real.rs` names them: PROT 0926 is the 1-sector null
-/// stub, and PROT 0952's two spawn sites load `$a2` out of a saved register no
-/// static window can see.
+/// stub, and PROT 0952's two spawn sites sit in its inherited tail (file
+/// `+0x11E8..+0x1800`, PROT 0951's bytes) and resolve to `0x801F8348` /
+/// `0x801F836C`, two of PROT 0951's records past the end of 0952's image.
 const RECORDLESS: [u32; 2] = [926, 952];
 
 fn extracted_dir() -> Option<PathBuf> {

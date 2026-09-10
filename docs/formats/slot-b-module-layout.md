@@ -18,7 +18,7 @@ stages, at a granularity the pool does not carry.
 |---|---|---|
 | head table | 0 to 256 words of in-image VAs - the jump table of **one** of the module's two switches | leading run of words inside `[base, base + len)`, stopping at the first framed function |
 | code | the tick's phase machine, the `0x801F6734` spawn stager, the capture-class trampolines | frame matching (below) |
-| spawn-record band | `[i16 model_sel][u16 flags][move-VM bytecode]` records | the consumer's own pointer-forming instruction (below) |
+| spawn-record band | `[i16 model_sel][u16 reserved][move-VM bytecode]` records | the consumer's own pointer-forming instruction (below) |
 | inherited tail | a byte-identical, same-file-offset copy of another extracted image's bytes | out of scope here - see [cast-module.md](../subsystems/cast-module.md#a-module-image-ends-in-another-images-bytes) |
 
 Which switch owns the head table varies across the band, and the arm count
@@ -31,19 +31,25 @@ independent, and only the extent is a byte-accounting claim.
 
 The obvious reading - head table, then code, then everything above the last
 function is data - is wrong for at least two images. PROT 0943 (`cast_curse`)
-and PROT 0961 (`cast_dead_end_crisis`) both resume **code above their record
-band**: 0943's frame-matched partition is four bodies ending at file `+0xD98`,
-then records, then three more bodies at `+0x135C..+0x17E0`; 0961's is three
-bodies to `+0x10DC`, records, then two more at `+0x1C60..+0x1D90`. A rule that
-reads the band as "past the last function" swallows those five routines, and
-they are real - a Ghidra dump prints at each of the five and the byte
-attribution places all five in the image they are read from.
+and PROT 0961 (`cast_dead_end_crisis`) both carry **framed code above their
+record band**: 0943's frame-matched partition is four bodies ending at file
+`+0xD98`, then records, then three more bodies at `+0x135C..+0x17E0`; 0961's is
+three bodies to `+0x10DC`, records, then two more at `+0x1C60..+0x1D90`. A rule
+that reads the band as "past the last function" swallows those five bodies.
+
+They are real routines, but they are **not this image's**. All five sit above
+the image's own-content cut - 0943's own bytes end at file `+0x1037`
+(VA `0x801F7A0F`), 0961's at `+0x1918` (VA `0x801F82F0`) - and are
+byte-identical to PROT 0942 and PROT 0960 at the same file offsets. They are
+inherited residue, and a Ghidra dump prints at each of them under *both*
+images' names, so a dump is not evidence of ownership here. Read them at the
+donor: [`cast-module.md`](../subsystems/cast-module.md#a-module-image-ends-in-another-images-bytes)
+and `scripts/ghidra-analysis/inherited_tail.py`.
 
 So a record claim is cut at the next framed function's prologue, never run to
-the image end. That cut is the load-bearing rule: without it, and with every
-other filter in place, six images' claims cover routines the dump corpus places
-in the same image (PROT 0908, 0910, 0920, 0943, 0961, 0964). With it, none
-does.
+the image end. The cut is still load-bearing - a claim that ran past it would
+cover code, whichever image the code belongs to - but its justification is the
+residue, not a second code region of the image's own.
 
 ## Frame matching
 
@@ -68,7 +74,7 @@ materialises the record's address with a `lui` / `addiu` pair and passes it in
 
 The record format is the summon part record
 ([move-power.md](move-power.md#effect-prototype-records---the-spawn-path)):
-`[i16 model_sel][u16 flags][move-VM bytecode]`, `model_sel = -1` for a
+`[i16 model_sel][u16 reserved][move-VM bytecode]`, `model_sel = -1` for a
 transform node, a small library index for a modelled part, `0x4000` / `0x4001`
 for the two render-mode nodes `FUN_80021B04` special-cases.
 
@@ -76,6 +82,18 @@ for the two render-mode nodes `FUN_80021B04` special-cases.
 addresses the module's own code computes. That is the whole of the evidence,
 and it is why the band needs no length field, no terminator scan and no
 entropy test.
+
+### `+0x02` is reserved, not a flags word
+
+The wider docs quote this record as `[i16 model_sel][u16 flags][bytecode]`, and
+the `flags` half of that name is not a measurement. Nothing reads `+0x02`:
+`FUN_80021B04` loads only `($a2)` (`lh` at `0x80021B2C`, `lhu` at
+`0x80021B30`, and again at `0x80021BD0` / `0x80021C98` / `0x80021CB4`), and the
+move VM starts the program at halfword index 2 (`actor[+0x70] = 2`, `sll v0,1`
+at `0x800230B8`), so `+0x02` is stepped over rather than fetched. It is zero in
+every band record and in every PROT 0898 effect-prototype record. Confidence on
+the halfword is therefore **Unknown**, and this page names it `reserved`; the
+other pages still carry the older `flags` label.
 
 ### The filters, and which of them retail exercises
 
@@ -101,9 +119,17 @@ its resolvable spawn calls sit at file `+0x199C` / `+0x19F4` / `+0x1A10`, which
 are PROT 0908's calls at the same offsets, and they name three of 0908's
 records. In 0909 those addresses hold nothing of 0909's, and without the filter
 484 bytes of the band's 118 KB of claims are a sibling's records seen through
-the build buffer. The filter is corpus-free: an inherited fragment is a *piece*
-of the sibling's body, so it does not frame-match here, and its calls fall
-outside this image's partition.
+the build buffer. The filter is corpus-free: an inherited fragment's calls fall
+outside this image's own framed partition.
+
+What it does **not** rest on is residue never frame-matching. It often does:
+PROT 0943's residue contains three complete bodies and PROT 0961's two, and six
+band images (0908, 0910, 0920, 0943, 0945, 0961) carry a spawn call inside a
+frame-matched body that is another module's bytes. In 0909's shape the fragment
+starts mid-body, so its prologue is missing and the calls fall outside the
+partition; in those six the frame is complete and the call passes. The filter
+is a partition test, not a truncation test, and where the residue frames
+cleanly it lets the donor's call through.
 
 ### The one span the band cannot bound
 

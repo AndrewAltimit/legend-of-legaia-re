@@ -209,6 +209,16 @@ Two guards keep it from cutting an image short:
 - **A minimum length.** At `MIN_TAIL_BYTES` the match is sixteen instructions
   long *and* runs to the end of the file, which no shared library routine does
   unless it is the last thing linked.
+- **Same link base.** Only images that load at the same `base_va` are compared,
+  so a run inherited across bases is not cut.
+
+Quote a tail figure with the rule it was measured under. Under all three
+restrictions, 66 of the 83 mapped images carry a tail (61,597 B). Drop the
+same-base and strictly-longer restrictions and the same suffix test reports 79
+of 83 (104,700 B): 8 more images whose donor is the same length, and 5 whose
+donor loads at a different base - PROT 0904 / 0912 / 0922 end in PROT 0899's
+menu code, and `gameover` in `world_map_render`'s. Only the first figure is the
+one this gate's denominator uses.
 
 What it moves, and why the moves go both ways: the tail is subtracted from the
 denominator, which raises a row, while an extent that used to be credited to
