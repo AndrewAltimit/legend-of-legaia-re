@@ -361,6 +361,19 @@ typo'd symbol fails CI rather than the probe run.
 
 ### Things that catch people out
 
+- **One vsync is not one game frame, so "sample for a vsync" can sample
+  nothing.** The `GPU::Vsync` event a probe's state machine ticks on fires
+  several times per rendered frame under the interpreter, and a per-frame
+  render pass therefore runs on only some of them. A census that opens a
+  window on one `on_capture` and closes it on the next records zero hits most
+  of the time - and zero hits reads exactly like "the code never ran", which
+  is the wrong conclusion to draw about a routine that is in fact running
+  every frame. Bracket the window on the routine's **own caller** instead:
+  arm a breakpoint on the call site, count entries, and record between entry
+  *n* and entry *n+1*. That is one complete pass by construction, whatever
+  the vsync cadence is doing. (`autorun_field_ground_cells.lua` reads 1536
+  cells per pass this way; the vsync-bracketed version of the same probe read
+  0, then 784, then 0 again.)
 - **A framebuffer capture shows the *displayed* buffer, which lags the draw.**
   `PCSX.GPU.takeScreenShot()` returns what is on screen, and a game tick spans
   several vsyncs at 30fps, so grabbing on the first vsync after the frame you
@@ -848,6 +861,10 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_delilas_enemy_cast_watch.lua`](../../scripts/pcsx-redux/autorun_delilas_enemy_cast_watch.lua) | Natural enemy-cast **choreography recorder**: phase (`ctx+7`), module phase (`ctx+0x279`), the slot-B word, and a change-log of the caster's and victim's `+0x1D8..+0x1F4` windows - the change-log IS the staging timeline. Ordered the Delilas walk tables on [monster-animation.md](../formats/monster-animation.md#a-special-attack-can-be-a-chain-of-entries) and exposed 960's paired stage/confirm gate. |
 | [`autorun_cast_hook_live.lua`](../../scripts/pcsx-redux/autorun_cast_hook_live.lua) | Live test of the cast-route queue hook: RAM-injects the SCUS-gap stub + the 0898 applier-call redirect (a savestate restores retail RAM, so the patched-disc bytes are not resident) and watches a queued attack proceed through the hook. |
 | [`autorun_battle_mesh_dump.lua`](../../scripts/pcsx-redux/autorun_battle_mesh_dump.lua) | Cold-boot -> **memory-card** load -> forced battle -> full 2 MiB RAM dump. The card (not a save state) is the point: a state replays a stale RAM image and masks what the loader actually built from the disc under test. See [the card-capture tier](#memory-card-capture-tier) below. |
+| [`autorun_field_ground_cells.lua`](../../scripts/pcsx-redux/autorun_field_ground_cells.lua) | Per-cell ground-draw census for a field scene: plays a field-init state forward to `game_mode 0x03`, dumps the live object grid at `*(0x1F8003EC)+0x8000`, then brackets exactly one pass of PROT 0900's ground emitter and logs every visited cell with its word and whether it produced a packet. Optionally writes a save state + 2 MiB RAM dump at the sampled frame. Settled the `teien` object-grid gate ([`renderer.md`](../subsystems/renderer.md#no-draw-channel-is-gated-on-object-grid-bit-0x0800)). |
+| [`autorun_ground_pass_liveness.lua`](../../scripts/pcsx-redux/autorun_ground_pass_liveness.lua) | Diagnostic sibling: raw exec-hit counters on both ground emitters, both packet-commit sites and their shared caller, logged as running totals every 30 vsyncs. Written to tell "the pass never runs" apart from "the pass ran between two vsyncs the census did not bracket". |
+| [`autorun_gpu_call_census.lua`](../../scripts/pcsx-redux/autorun_gpu_call_census.lua) | Watches the libgpu **entry points** instead of RAM: `LoadImage` / `StoreImage` / `MoveImage` / `PutDispEnv` / GP1 issue / direct GP0 list, reading each call's `RECT` or command word, plus every `FUN_8002C69C` window emit with its style id, jump-table kind and tile set. A one-shot blit cannot fall between samples that do not exist. Closed the `(384, 0)` sampling question ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#a-call-site-census-closes-the-sampling-question)) and pinned the report chrome's arm ([`level-up.md`](../subsystems/level-up.md#which-arm-lays-it-window-style-0x03-jump-table-slot-0)). |
+| [`autorun_slippery_budget_gate.lua`](../../scripts/pcsx-redux/autorun_slippery_budget_gate.lua) | Write-watch on the slot-B effect budget `_DAT_8007BDC0` plus exec-BPs on the gate read `0x8004818C` and the `jal 0x801F7B88` at `0x800481A0`, each row carrying the loader-B tracker so a firing can be paired with the image resident at slot B. Showed the arm is an in-battle per-frame path that the battle-end signal closes ([`cast-module.md`](../subsystems/cast-module.md#the-arm-is-an-in-battle-frame-path-not-a-teardown)). |
 
 #### Runtime probe details
 

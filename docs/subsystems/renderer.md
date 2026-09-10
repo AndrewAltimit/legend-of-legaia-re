@@ -369,6 +369,80 @@ render half.
 - **`FUN_80029DD8`** - a 39-`cop2`-op 3D primitive emitter, sibling of
   `FUN_8002735C` / `FUN_80029888`.
 
+## The field ground pass: two emitters, one gate
+
+The per-cell ground plane of a field scene is drawn by the slot-B field
+render library **PROT 0900**, and it ships the emitter **twice**. Both bodies
+are the same algorithm; the caller picks one at `0x801F79A0` on
+`_DAT_8007BB4C` - non-zero selects `FUN_801F69EC` (file `+0x14`), zero
+selects `FUN_801F6D48` (file `+0x370`). Ordinary field play takes the second
+(the selector reads zero in a `teien` field-run frame). Read with
+`disasm-overlay-fn.py extracted/overlays/overlay_summon_render_0900.bin
+--base 0x801F69D8 --addr 0x801F69EC` (and `0x801F6D48`).
+
+`FUN_801F6D48(tile_x, tile_z, world_x, world_z)` is frameless and keeps all
+of its state in the scratchpad through one base register `t6 = 0x1F800314`:
+
+| Scratchpad | Role |
+|---|---|
+| `0x1F8003A0` | packet cursor - bumped `0x28` per emitted `POLY_FT4`, stored back at exit |
+| `0x1F8003F4` | ordering-table base; `0x1F8003A4` is its shift |
+| `0x1F8003EC` | the per-scene field-env block (the streamed `.MAP`) |
+| `0x1F8003E8..EB` | the camera's visible-tile window, four **signed** bytes `x0, z0, x1, z1` |
+| `0x1F80035C..7B` | the 16-entry floor-height ladder the corner tiers index |
+
+The window bytes are relative tile offsets, so the double loop runs
+`(x1 - x0) x (z1 - z0)` cells around the caller's tile; in `teien` that is
+`32 x 48 = 1536` cells per pass. Per cell it reads the object-grid word at
+`*(0x1F8003EC) + 0x8000 + (z << 8) + (x << 1)` and then:
+
+- **gates on `cell & 0x1000`** (`0x801F6E10`; the sibling's is `0x801F6AB4`).
+  A cell without that bit branches straight to the loop increment - there is
+  no second arm;
+- takes the four corner tiers from the collision grid at `+0x4000` (`&0xf`,
+  through the height ladder), `RTPT`s them, and near-clips on `OTZ < 0x40`;
+- indexes the object-record table at the block's own base by `cell & 0x1FF`
+  (`* 0x20`), taking the tile's UVs from record `+0x14`, its tpage/CLUT from
+  `+0x1C`/`+0x1D`, and OR-ing the semi-transparency bit when `+0x1A` is
+  non-zero;
+- sorts on `cell & 0x8000`: set, the packet goes in the bucket its own
+  minimum vertex `Z` picks; clear, it goes in the fixed far bucket
+  `(0x3FF6 >> ot_shift) * 4`.
+
+### No draw channel is gated on object-grid bit `0x0800`
+
+Bit `0x0800` marks a **kind-2 tile-trigger** cell (the elevation override
+`FUN_80017BEC` stamps as `0x200 << kind`), and the question it raised was
+whether retail has an unpinned ground channel keyed on it. It does not.
+Scanning every `andi rt, rs, IMM` in PROT 0900, PROT 0901 and
+`SCUS_942.54` for the object-grid gate constants finds exactly one `0x800`
+test in the field render library, `0x801F78B8`, and its operand is the
+**object record's** `+0x12` flag halfword, not a cell word - it ORs
+`0x10000000` into the argument of the prim dispatcher `FUN_80043390`. The
+library's only two per-cell passes are this ground pass (gate `0x1000`) and
+the static-object pass at `0x801F756C` (gate `0x2000`). In SCUS the sole
+consumer of cell bit `0x0800` is the floor sampler `FUN_80019278`
+(`0x8001932C` / `0x80019384`, `see ghidra/scripts/funcs/80019278.txt`),
+which returns a height and emits nothing.
+
+A live pass confirms the gate end to end. In a `teien` field-run frame
+(`teien_field_run` in [`scenarios.toml`](../../scripts/scenarios.toml),
+probe `scripts/pcsx-redux/autorun_field_ground_cells.lua`) the pass visits
+all 1536 window cells and emits **370** packets: every visited cell carrying
+`0x1000` emits, no cell without it does, and none of the 42 `0x0800`-only
+cells inside the window produces anything. The scene's whole live grid is
+451 non-zero cells - 400 with `0x1000`, 53 with `0x2000`, 45 with `0x0800`
+and no `0x1000`.
+
+Those 45 are also not what the hole hypothesis assumed. They are a solid
+`6 x 6` block at tiles `(40..45, 46..51)`, a ten-cell run along `z = 28`,
+and three cells at `z = 6` - a raised platform plus a step, not the base row
+of a hedge. `teien` therefore has no hedge-row band of `0x0800`-only cells
+at all, which is the same shape (and the same 400 / 45 split) previously
+measured in `edteien` and used to argue `edteien` could not stand in for it.
+The engine's `build_walk_heightfield` gate matches retail's here, and no
+speculative fill is owed.
+
 ## The billboard projector (`FUN_800195A8`)
 
 The one helper every camera-facing rectangle in the game goes through: MVMVA the

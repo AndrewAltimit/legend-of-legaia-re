@@ -601,8 +601,35 @@ zero in all 176 catalogued states - every mednafen and PCSX-Redux backup in
 the word. In that state PROT 0920 is byte-resident at slot B (8183 of 8192
 bytes) and the sixteen bytes live at `0x801F7B88` are byte-equal to the image's
 `+0x11B0`, so the target is pinned even though the call was not caught firing.
-A live hit needs a battle that ends while a Slippery cast is still animating;
-no state in the library is at that point.
+
+#### The arm is an in-battle frame path, not a teardown
+
+The window the call needs is much wider than "a battle that ends mid-cast",
+and the arm's own gates say so. `FUN_800480D8` reaches the gate only when the
+teardown-request byte `gp[+0xA0C]->[+0x272]` is non-zero **and** the
+battle-end signal `_DAT_8007BD71` reads `0xFF` - and `0xFF` is the *battle
+running* value; `0xFE` is what the end sequence raises
+([`battle-action.md`](battle-action.md)). The arm also consumes its own
+request byte (`sb zero, 0x272(v0)` at `0x800481B0`), so it is a per-frame
+one-shot rather than a phase.
+
+Measured that way it is an ordinary in-battle path. An exec breakpoint on the
+gate read `0x8004818C` across `rim_elm_gimard_victory`
+(`scripts/pcsx-redux/autorun_slippery_budget_gate.lua`, 1800 vsyncs) enters
+it **123 times**, once per rendered frame from the first captured frame to
+vsync 323, every one with `_DAT_8007BD71 = 0xFF` - and then never again once
+the victory raises `0xFE`. The battle end *closes* this arm instead of
+opening it. `_DAT_8007BDC0` is zero at all 123 entries and is never written
+in the run, so the call is blocked by the budget alone.
+
+So the corrected residual: the call fires on any in-battle frame while PROT
+0920's drain budget is still non-zero - i.e. **during** a Slippery cast, not
+at a battle end during one - which makes it a per-frame tick of the module
+while its effect drains rather than a teardown courtesy. What is still owed
+is one PCSX-Redux state inside a Slippery cast: the corpus's only such state,
+`slippery_summon_mid_cast`, is a **mednafen** backup, and mednafen has no
+scriptable breakpoints, so the emulator that can watch the call cannot load
+the state that has the gate up.
 
 ### A module image ends in another image's bytes
 

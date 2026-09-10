@@ -527,6 +527,43 @@ The tracker holds `extraction - 895`, so `83` is **PROT 0978** - the load is
 byte-pinned live, on both battle-end paths, and `ra = 0x800252BC` is the
 actor-list tick iterator the settled `FUN_80047430` caller finding names.
 
+#### The teardown streams the *other* family - `0x36C`, not `0x4C7`
+
+PROT 0978 carries **two** streaming families behind its 12-arm phase machine,
+and they differ in every field that matters. Each has its own rect
+initialiser writing the same `RECT` at `0x801F735C`:
+
+| | panel-still family | field-restore family |
+|---|---|---|
+| rect init | `0x801F6BE4..0x801F6C20` | `0x801F6FC8..0x801F6FF0` |
+| rect | `x = 0x180`, `w = 0x140`, `h = 0x40` | `x = 0x180`, `w = 0x40`, `h = 0x100` |
+| stepped field | `y` `+= 0x40` (`0x801F6D2C`) | `x` `+= 0x40` (`0x801F70F8`) |
+| bytes per strip | `0xA000` | `0x8000` |
+| raw TOC index | `0x4C7` / `0x4C8` (`int.tim` / `int2.tim`) | `0x36C` |
+
+An exec-breakpoint census of the libgpu entry points across the ordinary
+victory (`rim_elm_gimard_victory`, probe
+`scripts/pcsx-redux/autorun_gpu_call_census.lua`) catches the teardown load
+in the act, and it is the **second** family. Four `LoadImage` calls, from the
+four `jal 0x800583C8` sites at `0x801F7078` / `0x801F7108` / `0x801F7190` /
+`0x801F7224`, upload `(384, 0)`, `(448, 0)`, `(512, 0)`, `(576, 0)`, each
+`64 x 256` - `0x8000` bytes apiece, `0x20000` in all - on the four vsyncs
+after the tracker flips to `83`. Sixty-four by two hundred fifty-six at those
+origins is not a picture rect: it is **PSX texture pages 6, 7, 8 and 9**.
+
+Raw `0x36C` is extraction **874** under the
+[+2 correction](../formats/cdname.md#numbering-space) - the head of the
+`player_data` block, whose four `0x8000` chunks the arm re-seeks at sectors
+`0`, `0x10`, `0x20`, `0x30`. So the entry's own strings are literal: the
+battle-teardown arm is the **`FIELD BACK READ NOW`** path, restoring the
+field party's texture pages over the VRAM the battle borrowed. The panel
+stills are a different arm of the same machine and did not run here.
+
+This corrects the upload geometry recorded above for the teardown: the four
+passes are vertical `64 x 256` strips stepping `x`, not horizontal `320 x 64`
+bands stepping `y`. The `320 x 64` reading is the *panel-still* family's, and
+it stands for that family.
+
 #### The `INTERVAL` screen is a live render, not the still
 
 The `INTERVAL` scoreboard and the `ROUND 2` card sit over a ringside scene that
@@ -561,6 +598,34 @@ takes `LEGAIA_SCAN_MODES` to sweep every vsync inside named modes. And a
 **two-byte tpage needle is not separable from data** even after a
 screen-coordinate filter, so RAM-scanned `(384, 0)` tpage candidates are not
 evidence of a draw; the ordering-table walk is what carries weight here.
+
+#### A call-site census closes the sampling question
+
+The way past both method limits is to watch the libgpu **entry points**
+rather than RAM, because a one-shot cannot fall between two samples that do
+not exist. `autorun_gpu_call_census.lua` breakpoints `LoadImage`
+(`0x800583C8`), `StoreImage` (`0x8005842C`), `MoveImage` (`0x80058490`),
+`PutDispEnv` (`0x800589D0`), the GP1 command issue (`0x8005A094`) and the
+direct GP0 FIFO write (`0x8005A0D0`), and reads each call's `RECT` / command
+word as it is made. Over 1800 vsyncs spanning a battle, its teardown and the
+return to field:
+
+| Call | Count | At `x = 384` |
+|---|---|---|
+| `PutDispEnv` / GP1 `0x05` display start | 641 / 641 | **0** |
+| `MoveImage` | 632 | **0** |
+| `LoadImage` | 214 | 4 - the teardown's texture-page strips |
+| `StoreImage` | 5 | 4 - the dev round-trip `FUN_8001E890` reading it back |
+| direct GP0 list carrying `0x80` / `0xA0` / `0xC0` | 0 | 0 |
+
+No display origin is ever moved to the page, nothing blits out of it, and
+the only writers are the teardown upload and a dev readback. Together with
+the ordering-table result above, that answers the sampling question the way
+the geometry already suggested: `(384, 0)` is not a still's display rect on
+this path but four ordinary texture pages, sampled by ordinary
+tpage-addressed primitives - the `tpage 0x0006` family the sweep already
+found. What remains open is only the **panel-still family's** own consumer,
+on whatever arm loads `int.tim` / `int2.tim`.
 
 Where to look next is in the entry's own strings: PROT 0978 opens with
 `f_read %d size %d KB` and **`FIELD BACK READ NOW`**, which reads as a
