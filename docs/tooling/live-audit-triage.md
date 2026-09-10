@@ -1898,6 +1898,93 @@ released disc, so no reachable `fmv_id` selects this path, and a second
 prerequisite (a code-list-to-RGBA entry point) outlives the missing input. That
 is a permanent structural gap, which is exactly what `DISCLOSE` is for.
 
+## The disclosed set, indexed by blocker rather than by anchor
+
+The tables above are per-anchor, and the disclosed-inert set has outgrown the
+subset they cover. Re-reading the `NOT WIRED:` text of every anchor the page
+does not already name finds no row restating the audit - each one names a
+prerequisite - so rewriting them here would duplicate the source. What the page
+was missing is the other cut: **which prerequisite**, so the set can be worked
+in the order that closes the most rows per unit of work rather than
+alphabetically.
+
+Six classes cover the anchors not otherwise named on this page. A class is not
+a verdict: every member below is `DISCLOSE`, and the class says what a `WIRE`
+for it would have to build first.
+
+| Blocker class | Closes when | Representative members |
+|---|---|---|
+| **The caller above it is unported** | that one routine is ported; the row then goes live transitively and must never be given a call site of its own. | `panel_backread_loader` (whole file, behind `FUN_80025358`), `scus_core_helpers::list_append_u16` (behind `FUN_8003F3FC`), `field_actor_program`'s three (behind `step_scene_program`), `field_ledge_hop_arc::spawn_arc_helper`. |
+| **No host produces the retail input shape** | a backend or a channel that does not exist yet exists. | `input::set_pad_reports` (raw two-port libpad reports), `frame_tick::resolve_frame_step` (an hblank sampler), `effect_ribbon` x3 (an actor render-mode-4 flag word plus a packet chain). |
+| **The record or table has no parser** | `legaia_asset` grows one. | `move_no_effect_guard` x3 - the `[element][band]` follow-up table at `0x801F6870` is the only input still missing; its sibling input, the affinity matrix, is already disc-parsed and live. |
+| **Retail-unreachable** | never. Not a wiring gap; the routine is linked and unreferenced on the whole disc. | `menu_open_sequence::menu_open_step`, `save::add_to_slot`, `fishing_actors::project_segment`, `baka_fighter_chrome::editor_tick` (linked as an actor prototype's callback word, but its band is a phase no shipping path enters). |
+| **A geometry kind the port has no sink for** | the sink is built - and the sink is usually not the obvious one. | `slot_machine::payline_prims` needs a *projection pass*, not a `ScreenPrim::Line`; the endpoints are model-space. |
+| **Host drift is the blocker, not the caller** | the *other* host gets the missing half; wiring one alone is the drift `host-drift.md` exists to catch. | `field_passive_hud` x2 - the native side could take it today and the browser has no projector at that seam at all. |
+
+Inside the retail-unreachable class, the **dev-only** members need calling out,
+because they fail the test a reader applies to the rest of it: a dev screen is
+*spawnable* and its gate is what never fires, so a reference sweep finds a
+reference and the row reads as wireable. `baka_fighter_chrome::editor_tick` is the worked example - nothing
+`jal`s `0x801D4FC8`, but its address is the callback word of the `0x18`-byte
+actor prototype at `0x801D7670`.
+
+## Three rows closed, and one whose blocker was the wrong shape
+
+### `World::frame_begin_skip` has no producer because **retail** has none
+
+`take_frame_begin_skip` (`FUN_8001698C`) reads a request flag that nothing in
+the engine sets, and the gap was carried as "a host frame-time sampler is
+owed". That is the wrong shape. The flag is `gp+0x3D8` = `0x8007B6F0`, and a
+`gp`-relative sweep plus the five-form address scan over `SCUS_942.54` and
+every based overlay image finds exactly three sites that touch it:
+
+| Site | What it does |
+|---|---|
+| `0x800161E8` | `sh zero,0x3d8(gp)` - the mode-change edge's clear, which `ModeSeat::take_edge` already performs. |
+| `0x8001E100` | `sh zero,-0x4910(at)` - a reset path's clear, beside the sibling clear of `_DAT_8007B6E8`. |
+| `0x80018850` | `sh v0,-0x4910(at)` after `nor v0,zero,v0` - the **only setter**, and it is a toggle, not a set. |
+
+The setter's gate settles it. It sits in `FUN_8001822C`'s tail, which the
+whole function skips with `beq v0,zero,0x800188B4` at `0x800185FC` when
+`_DAT_8007B98C` is zero - the dev-build word, zero on retail. Inside that
+gate the toggle needs the master mode word in
+`{0x03, 0x09, 0x0B, 0x11, 0x15, 0x17, 0x19}`, the held mask's bit `0x08` and
+the new-press word's bit `0x800`: R1 held plus Start pressed. A second arm
+(`_DAT_8007B83C == 3` and held mask exactly `0x900`) calls
+`FUN_80026740(0x8007056C)` and clears both the mode word and this flag.
+
+So the channel is a **debug pause**, and `crates/engine-core/src/retail_pad.rs`
+already says so about the same tail. The verdict stays `DISCLOSE`, but the
+prerequisite it names changes from "a frame-time sampler" to "the port's own
+debug surface" - the tag on `World::frame_begin_skip` now carries the three
+sites and the gate.
+
+### The battle-intro mode hand-off gained its consumer
+
+`TransitionTick::entered_battle_mode` was produced by the intro kernel and read
+by nothing. It is retail's `_DAT_8007B83C = 0x14` store at `0x801CF8F8` (inside
+`FUN_801CF5BC`, the transition kernel `tick_transition` ports), which lands
+only once the intro clock has passed its full duration and the entity's
+`ready` reads exactly `3`. The port seats the battle *scene* at the encounter
+trigger, so `World::mode` reaches `Battle` a whole transition early; the mode
+*word* must not follow it that early. `World::battle_mode_word_held` reports
+the hold and `ModeSeat::adopt_world_mode` consults it, so the word now moves on
+the retail edge. Putting the rule in `engine-core` rather than at the host is
+what keeps a second host from getting a different edge for free.
+
+### The effect-script `0x801F6418` arm was queueing sound cues, and is a palette copy
+
+`World::drain_battle_effect_spawns` pushed each table-form spawn's
+`0x801F6418` byte into `World::battle_sfx_cues` as a cue id. The byte is a VRAM
+**x** and `FUN_80058490` is `MoveImage`, so the SFX scheduler was being handed
+palette columns to look up in a sound bank. The arm is now
+`engine-core::battle_effect_clut::stage_effect_clut` - a 16x1 copy from
+`(map[code], 476)` onto `(224, 476)` - drained by the native window's
+`tick_battle_effect_clut` under the same mid-battle re-upload protocol as the
+status-CLUT recolour. The browser host has no mid-battle VRAM channel, so it
+takes the same disclosure the face stamps and the status CLUT already carry in
+`web-viewer::play_battle_render`.
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the

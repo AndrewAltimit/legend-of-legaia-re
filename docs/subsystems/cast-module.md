@@ -954,6 +954,46 @@ the end of 0952's `0x1800`-byte image. The old reading, that `a2` came from a
 saved register no static window could see, is refuted by the pairs being right
 there in front of both calls.
 
+### The fourteen trampoline arms that are unported tick bodies
+
+The twelve bodies above are the ones the port carries. The trampoline table
+[above](#the-trampolines-are-their-own-port-and-one-cell-holds-six-spells)
+names more arms than that, and the rest are tick bodies of exactly the same
+class as the eleven player-Seru ones below: whole choreographies, none small,
+none ported. They are listed here so the `--missing-ports` rows they raise
+read as sized work rather than as addresses.
+
+| Body | Owner | Action id | Size | Damage wrapper |
+|---|---|---|---|---|
+| `0x801F7240` | 940 `cast_glare_divide` | `0xAC` | 1656 B | none |
+| `0x801F78B8` | 940 `cast_glare_divide` | `0x50` / `0xAE` | 2416 B | none |
+| `0x801F730C` | 941 `cast_steal` | `0x51` | 2604 B | one |
+| `0x801F6A04` | 941 `cast_steal` | `0xB9` | 2312 B | one |
+| `0x801F6EF4` | 943 `cast_curse` | `0x40` | 1840 B | none |
+| `0x801F6A04` | 943 `cast_curse` | `0xB5` | 1264 B | none |
+| `0x801F6A04` | 944 `cast_guilty_cross` | `0x37` | 2668 B | one |
+| `0x801F7470` | 944 `cast_guilty_cross` | `0x53` | 2636 B | none |
+| `0x801F79F8` | 950 `cast_rolling_flare` | `0x5A` | 1944 B | one |
+| `0x801F6A24` | 950 `cast_rolling_flare` | `0xAB` | 4052 B | one |
+| `0x801F7298` | 956 `cast_water_hazard` | `0x71` | 2996 B | two |
+| `0x801F7AE4` | 962 `cast_blade_breath` | `0xA2` | 1436 B | one |
+| `0x801F74A0` | 962 `cast_blade_breath` | `0xA3` | 1604 B | one |
+| `0x801F6D54` | 962 `cast_blade_breath` | `0xA4` | 1868 B | one |
+
+Sizes are the frame-matched extent in the **owning** image; "damage wrapper"
+counts `jal` to `FUN_801DD0AC` / `FUN_801DD4B0` / `FUN_801DD6B4`.
+
+`0x801F6A04` is the clearest case yet that a body VA is not a key. It is an
+arm in three different images and frame-matches at **three different sizes** -
+1264 B in PROT 0943, 2312 B in 0941, 2668 B in 0944. One `--missing-ports`
+row therefore names three routines, and a port keyed on the address alone
+would run whichever one it happened to be written from for all three, which is
+the defect `capture_tick_body` already keys `(entry, body)` to avoid.
+
+Nothing removes these rows but a port: they are choreography, not data, so
+neither the spawn pool nor any other engine mechanism produces their output,
+and a scope row in `port-catalog-ignore.toml` would be a false claim.
+
 ### The player Seru band's tick bodies are code, not data
 
 The verdict table above answers for each module's **stager** - the

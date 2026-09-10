@@ -202,7 +202,7 @@
 "8005ccb4" = "CdSync (179-instr poll loop)"
 "8005d9a0" = "CdControl_raw / CD-DMA-channel-3 synchronous read primitive"
 "8005dbb4" = "ISO9660 directory lookup"
-"8005dea0" = "Directory parser (caches up to 128 entries at 0x801C4BEC)"
+"8005dea0" = "Directory parser (caches up to 128 entries at 0x801CB408, stride 0x2C; the routine forms no address in 0x801C4*** - the old 0x801C4BEC was the offset half of its lui/sw pair pasted into an address's high half). The engine reads the ISO9660 directory through legaia_iso::iso9660 instead of caching it."
 "8005e180" = "Directory-entry lookup by ID"
 "8005e228" = "File loader (reads sectors from a directory entry)"
 "8005e4d4" = "Synchronous LBA-based file reader (high-level open-then-read)"
