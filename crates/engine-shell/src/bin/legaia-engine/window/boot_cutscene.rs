@@ -597,15 +597,23 @@ impl PlayWindowApp {
             }
             BootUiState::Title(s) => {
                 use legaia_engine_core::title::TitlePhase;
-                let (phase_id, cursor) = match s.phase() {
-                    TitlePhase::FadeIn { .. } => (0, 0),
-                    TitlePhase::PressStart { .. } => (1, 0),
-                    TitlePhase::MainMenu { cursor } => (2, cursor),
+                // Which screen the front end draws is retail's own selector
+                // word `state[+0x204]`, not this host's enum: both hosts ask
+                // `title_text_phase` about `TitleSession::retail_submode`, so
+                // one table decides it (see `ui::title_draw_list`). The
+                // session's phase is still what supplies the *cursor row* and
+                // the blink, which the sub-mode word does not carry.
+                let (menu_open, cursor) = match s.phase() {
+                    TitlePhase::MainMenu { cursor } => (true, cursor),
                     // The attract movie owns the screen; the window
                     // renders its frames, not the title's text.
                     TitlePhase::Attract { .. } => return Vec::new(),
                     TitlePhase::Done(_) => return Vec::new(),
+                    TitlePhase::FadeIn { .. } => return Vec::new(),
+                    TitlePhase::PressStart { .. } => (false, 0),
                 };
+                let phase_id =
+                    legaia_engine_render::title_text_phase(s.retail_submode(), menu_open);
                 // When the title-screen atlas is uploaded, the
                 // main-menu rows render through the sprite path,
                 // sampling NEW GAME / CONTINUE sub-rects from the

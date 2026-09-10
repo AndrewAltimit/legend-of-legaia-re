@@ -10,6 +10,17 @@
 //! pause menu uses, over black. Picking New Game hands control back to the page,
 //! which seeds the retail new-game defaults and enters the opening scene.
 //!
+//! **The mode word is native-only.** `engine-shell`'s `BootSession` holds the
+//! port's seat at the retail mode table (`engine-core::mode::ModeSeat`) and
+//! carries `_DAT_8007B83C` through the boot chain; this page drives
+//! `SceneHost` directly and holds no session object to hang a seat on, so it
+//! runs the front end without a mode word. Nothing here is drawn from one -
+//! the screen selection below is the *sub-mode* word, which is a different
+//! register and is shared with the native window - so the divergence is that
+//! the browser cannot yet emit a mode trace, not that the two hosts draw
+//! different screens. Closing it means giving the page a session, which is the
+//! same prerequisite its BGM director and its save flow already wait on.
+//!
 //! **All three rows are live.** Continue is enabled off a save scan (the
 //! memory-card rack, this host's save store) exactly as the native window
 //! picks `TitleSession::new()` vs `::without_save_data()` off `scan_save_dir`,
@@ -312,14 +323,15 @@ impl LegaiaRuntime {
         if self.title_atlas.is_none()
             && let Some(font) = self.menu_assets.as_ref().map(|a| a.font_ref())
         {
-            let (phase, cursor) = match session.phase() {
-                TitlePhase::FadeIn { .. } | TitlePhase::PressStart { .. } => (1u8, 0u8),
-                TitlePhase::MainMenu { cursor } => (2u8, cursor),
-                // The attract state is entered and left on the same frame
-                // on this host (no STR/MDEC playback), so it never draws.
-                TitlePhase::Attract { .. } => (2u8, 0u8),
-                TitlePhase::Done(_) => (2u8, 0u8),
+            // The screen is selected by retail's own sub-mode word through
+            // the shared `ui::title_text_phase` table - the same call the
+            // native window makes - so neither host decides it locally. The
+            // session's phase supplies only the cursor row.
+            let (menu_open, cursor) = match session.phase() {
+                TitlePhase::MainMenu { cursor } => (true, cursor),
+                _ => (false, 0u8),
             };
+            let phase = ui::title_text_phase(session.retail_submode(), menu_open);
             // The menu rows are the glyph layer's job whenever that atlas
             // resolved; the font only ever stands in for a row nothing else
             // can draw. (The Press Start prompt has no glyph-atlas form, so
@@ -362,9 +374,13 @@ impl LegaiaRuntime {
         if self.menu_glyph_atlas.is_none() || self.title_atlas.is_some() {
             return Vec::new();
         }
-        let TitlePhase::MainMenu { cursor } = session.phase() else {
-            return Vec::new();
+        let (menu_open, cursor) = match session.phase() {
+            TitlePhase::MainMenu { cursor } => (true, cursor),
+            _ => (false, 0),
         };
+        if ui::title_text_phase(session.retail_submode(), menu_open) != 2 {
+            return Vec::new();
+        }
         // Anchor inside the same centred + integer-scaled 256x256 title stage
         // the art path uses. The rows sit between the wordmark band (ends at
         // src y=140) and the copyright bands (start at src y=195).

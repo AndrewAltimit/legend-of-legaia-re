@@ -523,10 +523,17 @@ impl PlayWindowApp {
             return Vec::new();
         }
         use legaia_engine_core::title::TitlePhase;
-        let (phase_id, cursor) = match session.phase() {
-            TitlePhase::MainMenu { cursor } => (2u8, cursor),
-            _ => return Vec::new(),
+        // Same one selector as the font path and as the browser page: the
+        // rows are drawn for whatever sub-mode word `title_draw_list` calls a
+        // menu, and the session's phase only supplies the cursor row.
+        let (menu_open, cursor) = match session.phase() {
+            TitlePhase::MainMenu { cursor } => (true, cursor),
+            _ => (false, 0),
         };
+        let phase_id = legaia_engine_render::title_text_phase(session.retail_submode(), menu_open);
+        if phase_id != 2 {
+            return Vec::new();
+        }
         // Anchor inside the same centred + integer-scaled 256×256
         // title stage that `title_screen_sprite_draws` uses. The menu
         // rows sit between the wordmark band (ends at src y=140) and
