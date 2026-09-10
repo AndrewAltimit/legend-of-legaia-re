@@ -61,6 +61,9 @@ import tomllib
 from collections import Counter, defaultdict, deque
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import port_tag_reader  # noqa: E402  (sibling module, path set just above)
+
 REPO = Path(__file__).resolve().parent.parent.parent
 FUNCS_DIR = REPO / "ghidra" / "scripts" / "funcs"
 DOCS_DIR = REPO / "docs"
@@ -215,7 +218,13 @@ def collect_doc_citations() -> dict[str, set[str]]:
 
 
 def collect_ports() -> dict[str, set[str]]:
-    """Return {addr: set(crate_names)} for every Rust `// PORT: FUN_<addr>` tag."""
+    """Return {addr: set(crate_names)} for every Rust `// PORT: FUN_<addr>` tag.
+
+    Addresses come from `port_tag_reader`, the one reader the three tag-reading
+    gates share. It takes the marker line **plus** the continuation lines of a
+    wrapped address list, which a per-line scan drops - see that module for why
+    only a wrapped *list* counts and prose after the marker does not.
+    """
     out: dict[str, set[str]] = defaultdict(set)
     if not CRATES_DIR.exists():
         return out
@@ -230,14 +239,12 @@ def collect_ports() -> dict[str, set[str]]:
         except ValueError:
             continue
         crate = rel.parts[0] if rel.parts else "?"
-        for line in text.splitlines():
-            tag = PORT_TAG_RE.search(line)
-            if not tag:
+        for _lineno, kind, tail in port_tag_reader.iter_markers(text):
+            if kind != "PORT":
                 continue
             # Inside the tail of the tag, pick up every code-range *function*
             # address - excluding `_DAT_` / `PTR_` data globals the prose names.
-            for m in PORT_ADDR_RE.finditer(tag.group(1)):
-                addr = m.group(1).lower()
+            for addr in port_tag_reader.addresses(tail):
                 out[addr].add(crate)
     return out
 
@@ -2416,6 +2423,29 @@ def run_selftest() -> int:
     check(
         "REPLACED_BY_RE needs the marker to open the line",
         not REPLACED_BY_RE.search("/// the node pool is REPLACED-BY: a Vec"),
+    )
+
+    # The shared marker reader ships its own cases; run them here so the one
+    # `--selftest` invocation covers the reader every tag-reading gate uses.
+    # A tag whose address list wraps is the case that used to lose addresses.
+    reader_failures = port_tag_reader.selftest()
+    check(
+        "port_tag_reader selftest",
+        reader_failures == 0,
+        f"{reader_failures} reader case(s) failed",
+    )
+    check(
+        "a wrapped PORT list reaches collect_ports",
+        port_tag_reader.addresses(
+            next(
+                tail
+                for _n, kind, tail in port_tag_reader.iter_markers(
+                    "/// PORT: FUN_801d6704,\n///       FUN_801cf00c\npub fn f() {}\n"
+                )
+                if kind == "PORT"
+            )
+        )
+        == {"801d6704", "801cf00c"},
     )
 
     if failures:
