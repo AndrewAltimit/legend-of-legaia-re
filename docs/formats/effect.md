@@ -12,6 +12,7 @@ Two distinct formats share the "effect" name - the on-disc bundle (magic `0x0201
   - [Consumer cluster](#consumer-cluster)
   - [Runtime pool layout](#runtime-pool-layout-_dat_8007bd30-5008-bytes-total)
   - [Side-band streaming-effect handler](#side-band-streaming-effect-handler)
+  - [Effect id -> triggering move - the join](#effect-id--triggering-move---the-join-run-against-the-disc)
   - [Open questions](#open-questions)
 - [The `0x01059B84` word is not this bundle's sibling magic](#the-0x01059b84-word-is-not-this-bundles-sibling-magic)
 - [See also](#see-also)
@@ -365,10 +366,18 @@ argument. Per byte:
 - **bit 7 clear** → the same 3D path - prototype `0x801F6324[id]` staged via
   `FUN_80050ED4` at scale `0x1000` unconditionally, and (only when
   `0x801F6418[id] != 0`, with **no** `< 0x32` bound here, unlike
-  `FUN_801DEA50`'s arm) a `[sfx, 0x1DC, 0x10, 1]` packet submitted through
-  `FUN_80058490` - the sound-driver command lane (it copies the packet into
-  the `DAT_80078DFC` mailbox and invokes the driver callback), not a GPU
-  primitive.
+  `FUN_801DEA50`'s arm) an 8-byte `[x, 0x1DC, 0x10, 1]` block handed to
+  `FUN_80058490`. That routine is **`MoveImage`**, not a sound submit: it
+  materialises the literal string `MoveImage` at `0x800156EC`
+  (`0x800584AC..0x800584B4`) and hands it plus the block to `FUN_80058170`.
+  The block is a PsyQ `RECT` and the copy lands at `(0xE0, 0x1DC)` - a 16-entry
+  CLUT row at VRAM `y = 476`. `0x801F6418` is that row's **source x**, and the
+  only values in it are `0x00` / `0xB0` / `0xC0` / `0xD0`, all outside the
+  `0x00..=0x63` id space of the [SFX descriptor table](sfx-table.md). An
+  earlier revision of this bullet called `FUN_80058490` "the sound-driver
+  command lane"; that is **falsified** - see
+  [art-data.md](art-data.md#the-cue-tables), which reaches the same conclusion
+  from the six readers and a `jal 0x80058490` sweep.
 - **bit 7 set** → `FUN_801DFDF0(id & 0x7F)` into this 2D pool.
 
 So the "trace call sites of `FUN_801DFDF0`" thread has two confirmed producers -
@@ -416,14 +425,95 @@ records (TMD + texture pool installed via `FUN_80055468`); parser
 at extraction entries 895 / 896 (init pak / `0896` blob) failed because it
 compared against the extraction numbering - the two index spaces differ by 2.
 
+
+### Effect id → triggering move - the join, run against the disc
+
+The join is disc-derivable and needs no capture: walk every populated move-power
+record, classify its `+0x12` (contact) and `+0x16` (launch) list bytes, and
+invert. `legaia_asset::move_power::effect_trigger_index` builds it and
+`asset move-power <PROT 0898 entry> --effect-index` prints it (`--json` for the
+machine form). Against the retail disc, 38 of the table's 44 records are
+populated and they cite **28** distinct effect keys. The third column is the
+**union** over a key's citers - a key marked `both` is cited from `+0x12` by at
+least one move and from `+0x16` by at least one, not necessarily the same move
+(the per-citer split is what `--effect-index` prints):
+
+| Key | Triggering move ids | Fired from |
+|---|---|---|
+| `efect2d 0x0B` | `0x37`, `0x3F`, `0x69` | both |
+| `efect2d 0x0D` | `0x04`, `0x05`, `0x06`, `0x25`, `0x2A`, `0x36`, `0x37`, `0x3F`, `0x46`, `0x61`, `0x68`, `0x69`, `0x6A` | both |
+| `efect2d 0x0E` | `0x05`, `0x06`, `0x25`, `0x2A`, `0x36`, `0x46`, `0x61`, `0x68`, `0x69`, `0x6A` | both |
+| `efect2d 0x0F` | `0x28`, `0x33`, `0x67` | both |
+| `efect2d 0x10` | `0x2A` | both |
+| `efect2d 0x11` | `0x2B`, `0x64` | both |
+| `efect2d 0x12` | `0x6A` | both |
+| `efect2d 0x13` | `0x05`, `0x36` | both |
+| `efect2d 0x16` | `0x61` | both |
+| `efect2d 0x18` | `0x19`, `0x1D` | contact |
+| `efect2d 0x1D` | `0x06` | launch |
+| `efect2d 0x1E` | `0x3F` | contact |
+| `flash` | `0x06` | launch |
+| `proto3d 0x12` | `0x19`, `0x1D`, `0x32`, `0x35`, `0x66` | contact |
+| `proto3d 0x15` | `0x1A`, `0x1E` | launch |
+| `proto3d 0x16` | `0x1A`, `0x1E` | launch |
+| `proto3d 0x19` | `0x1C` | launch |
+| `proto3d 0x1A` | `0x1C` | launch |
+| `proto3d 0x1B` | `0x04`, `0x25`, `0x27`, `0x46`, `0x61` | both |
+| `proto3d 0x1C` | `0x2D`, `0x63`, `0x68` | both |
+| `proto3d 0x1D` | `0x05`, `0x2A`, `0x36` | both |
+| `proto3d 0x1E` | `0x34`, `0x37`, `0x69` | both |
+| `proto3d 0x1F` | `0x37`, `0x3A`, `0x65`, `0x6A` | both |
+| `proto3d 0x27` | `0x06` | contact |
+| `proto3d 0x28` | `0x06` | launch |
+| `proto3d 0x2A` | `0x3F` | contact |
+| `proto3d 0x2B` | `0x3F` | launch |
+| `proto3d 0x2C` | `0x3F` | contact |
+
+What the shape says:
+
+- **Each space uses one small contiguous band, not its whole range.** The 2D
+  pool is addressable at `0x00..=0x7F` and the 3D prototype table at
+  `0x01..=0x63`, but the move-power lists only ever cite `efect2d 0x0B..=0x1E`
+  (12 ids) and `proto3d 0x12..=0x2C` (15 ids). Every other id in either space
+  reaches the pool through a different producer - the per-move cue table at
+  `0x801F6470` via `FUN_801E22C8`, or the ambient / cast paths.
+- **Two of them are the generic hit sprites.** `efect2d 0x0D` (13 moves) and
+  `efect2d 0x0E` (10) are cited by a third and a quarter of the whole join
+  respectively; the remaining 26 keys average two moves each and **13** of them
+  are cited by exactly one move id.
+- **The contact/launch split is real.** 14 keys are cited from both lists, 6
+  from `+0x12` only and 8 from `+0x16` only - so a key's list membership is part
+  of its identity, not a redundant copy.
+- The `0x64` screen flash is a singleton with exactly one citer (move `0x06`,
+  launch), which is what makes it worth keeping as its own key rather than an
+  id in either space.
+- **Only six of the fifteen `proto3d` keys swap a palette.** The CLI also
+  resolves each key's `0x801F6324` prototype VA and its `0x801F6418` CLUT
+  source-x. Nine of the fifteen carry source-x `0x00` (no row copy); `0x1F` is
+  `0xB0` and `0x1E`, `0x27`, `0x28`, `0x2A`, `0x2B`, `0x2C` are `0xD0`. Those
+  are VRAM x coordinates, not sound ids - see the
+  [bit-7 multiplex](#how-a-move-reaches-this-2d-pool---the-bit-7-multiplex).
+  `legaia_asset::move_power::EffectAuxTables` still calls the accessor
+  `effect_sfx` and the CLI still prints it as `sfx=`; the name is a leftover
+  from the superseded reading.
+
+Move ids resolve to names through the SCUS spell-name table
+([spell-table.md](spell-table.md), same `actor[+0x1DF]` id space) - run
+`asset spell-names` against your own disc. The bands are the ones
+[move-power.md](move-power.md#indexing---power_tablemapmove_id) documents: `0x04..=0x1F` are the
+unnamed internal enemy-attack tiers, `0x25..=0x74` the named monster special
+attacks. Nothing here is a symbolic *effect* name, because no such table exists
+on the disc - `(space, id)` plus this move set is the whole of an effect's
+identity.
+
 ### Open questions
 
-- **Effect-ID → human effect name.** Effect IDs are anonymous and there is **no
-  string table** that maps id → "fireball / thunder / heal" - the ids are pure
-  disc data. The call sites are now traced (the move-power `+0x12`/`+0x16` effect
-  lists' bit-7-set entries route here via `FUN_801e09f8` → `FUN_801DFDF0`; see the
-  bit-7 multiplex above), so the only "name" available is an id → triggering-move
-  join off the move-power table (disc-gated), not a symbolic effect name.
+- ~~**Effect-ID → human effect name**~~ - **closed to the extent the disc
+  allows.** There is no string table mapping id → "fireball / thunder / heal";
+  the ids are pure disc data. The achievable name is the id → triggering-move
+  join, and it is now built and run: see
+  [the join](#effect-id--triggering-move---the-join-run-against-the-disc)
+  for the 28 keys and their move sets.
 - **2D billboard texel source - RESOLVED (page-(0,0) was a field-order misread).**
   - The atlas entry's `+4`/`+6` fields are CLUT/tpage, not tpage/CLUT (see the Field order note): `0x7680` is the CLUT (CBA → fb `(0,474)`), and the real tpage is the byte at `+6`.
   - A melee hit-spark capture confirms it - the spark draws as textured quads sampling the **PROT 870 flame atlas at `(320,0)`/`(448,0)`** (effect-band CLUTs), with no prim anywhere sampling page (0,0)/8bpp.

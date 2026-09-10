@@ -498,6 +498,94 @@ fn effect_trigger_index_builds_from_disc() {
     assert_eq!(table[3].impact_effect(), 1);
 }
 
+/// Disc-gated: pin the **shape** of the effect -> triggering-move join, so the
+/// published table in `docs/formats/effect.md` cannot drift away from the disc
+/// without a red test. The sibling test above pins individual entries; this one
+/// pins the cardinalities and the id bands, which is what the doc quotes.
+#[test]
+fn effect_trigger_index_shape_matches_the_published_table() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(prot) = extracted_prot() else {
+        eprintln!("[skip] extracted/PROT.DAT missing");
+        return;
+    };
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let entry = archive
+        .entries
+        .get(BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .cloned()
+        .expect("PROT 0898 entry exists");
+    let mut bytes = Vec::new();
+    archive
+        .read_entry(&entry, &mut bytes)
+        .expect("read PROT 0898");
+
+    let table = move_power::parse(&bytes).expect("move-power table parses");
+    let map = move_power::parse_id_index_map(&bytes).expect("id->index map parses");
+    let index = move_power::effect_trigger_index(&table, &map);
+
+    use move_power::EffectKey;
+
+    assert_eq!(index.len(), 28, "the join has 28 effect keys on retail");
+
+    let mut proto: Vec<u8> = Vec::new();
+    let mut efect: Vec<u8> = Vec::new();
+    let mut flashes = 0usize;
+    for key in index.keys() {
+        match key {
+            EffectKey::Proto3D(id) => proto.push(*id),
+            EffectKey::Efect2D(id) => efect.push(*id),
+            EffectKey::Flash => flashes += 1,
+        }
+    }
+    // Each space uses one small contiguous band, not its whole addressable range.
+    assert_eq!(proto.len(), 15, "15 Proto3D keys");
+    assert_eq!(
+        (proto.iter().min().copied(), proto.iter().max().copied()),
+        (Some(0x12), Some(0x2C)),
+        "Proto3D keys span 0x12..=0x2C"
+    );
+    assert_eq!(efect.len(), 12, "12 Efect2D keys");
+    assert_eq!(
+        (efect.iter().min().copied(), efect.iter().max().copied()),
+        (Some(0x0B), Some(0x1E)),
+        "Efect2D keys span 0x0B..=0x1E"
+    );
+    assert_eq!(flashes, 1, "the 0x64 flash is a keyed singleton");
+
+    // Every citer resolves to an owning move id, and 32 distinct ids appear.
+    let mut movers = std::collections::BTreeSet::new();
+    for triggers in index.values() {
+        for t in triggers {
+            let id = t.move_id.expect("every trigger has an owning move id");
+            movers.insert(id);
+        }
+    }
+    assert_eq!(movers.len(), 32, "32 distinct triggering move ids");
+
+    // The two generic hit sprites carry a third and a quarter of the join.
+    let distinct_movers = |key: EffectKey| -> usize {
+        index
+            .get(&key)
+            .map(|ts| {
+                ts.iter()
+                    .filter_map(|t| t.move_id)
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+            })
+            .unwrap_or(0)
+    };
+    assert_eq!(distinct_movers(EffectKey::Efect2D(0x0D)), 13);
+    assert_eq!(distinct_movers(EffectKey::Efect2D(0x0E)), 10);
+
+    // Thirteen keys belong to exactly one move id.
+    let solo = index.keys().filter(|k| distinct_movers(**k) == 1).count();
+    assert_eq!(solo, 13, "13 keys are cited by exactly one move id");
+}
+
 /// Read `SCUS_942.54` from `extracted/` if present.
 fn read_scus() -> Option<Vec<u8>> {
     for base in ["extracted", "../../extracted"] {

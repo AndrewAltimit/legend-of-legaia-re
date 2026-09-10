@@ -228,7 +228,13 @@ The assembly is `legaia_engine_core::tile_board`: `tile_board_actor_draws`
 (per-cell draws off `World::tile_board_draw_list`, floor-snapped Y, one mesh
 instance per drawable cell), `tile_actor_slots_needing_mesh` and
 `is_tile_actor_slot`. Unresolved templates degrade to no-draw rather than a
-panic.
+panic - and that is the whole of what is left here. `DAT_801F35BC` is a
+**runtime** pointer array the install pass fills, not a table of art on the
+disc, and its inputs are the header's `+0xb` / `+0xc` template ids. Since no
+retail scene installs a board, no retail `+0xc` value exists anywhere on the
+disc to read, so no byte sweep can name the intended art; the only instrument
+that can is a live capture of a debug-menu entry into the mode, recording the
+installed header's `+0xb`/`+0xc` and the board-plane Y at the same instant.
 
 Each host uploads a board slot's template mesh once and skips board-owned
 slots in its **generic** actor loop - a tile actor's own transform only holds
