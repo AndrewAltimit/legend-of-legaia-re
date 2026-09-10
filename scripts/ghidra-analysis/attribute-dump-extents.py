@@ -49,6 +49,7 @@ DEFAULT_OUT = os.path.join(HERE, "dump-extent-attribution.csv")
 # One header parser for the whole corpus, shared with `scripts/ci/disc-coverage.py`.
 sys.path.insert(0, HERE)
 import dump_header  # noqa: E402
+import inherited_tail  # noqa: E402
 
 SCUS_BASE = 0x80010000
 SCUS_HEADER = 0x800
@@ -188,6 +189,22 @@ def load_images(extracted):
             own, src = len(data), "whole_file"
         images.append(Image(label, row.get("prot_index"), row["base_va"],
                             data, own, src))
+
+    # Cut the inherited tail. The packer wrote each overlay into a buffer it did
+    # not clear, so a module shorter than the buffer flushes its own bytes and
+    # then the previous, longer module's residue - inside `content_bytes`, at
+    # the same file offsets that module occupies. Those bytes are not this
+    # image's own content, and leaving them in makes a dump that lies wholly
+    # inside one read `identical` (two images hold them) when exactly one owns
+    # them. See `inherited_tail.py` for the rule and its asymmetry.
+    tails = inherited_tail.tail_starts(
+        [(im.label, im.base, im.data[:im.own_end]) for im in images
+         if im.prot is not None])
+    for im in images:
+        cut = tails.get(im.label)
+        if cut and cut[0] < im.own_end:
+            im.own_end = cut[0]
+            im.own_source = "inherited_tail(%s)" % cut[1]
 
     scus = os.path.join(extracted, "SCUS_942.54")
     if os.path.exists(scus):

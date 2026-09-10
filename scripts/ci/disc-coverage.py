@@ -78,6 +78,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 # `scripts/ghidra-analysis/dump_header.py`.
 sys.path.insert(0, os.path.join(REPO, "scripts", "ghidra-analysis"))
 import dump_header  # noqa: E402
+import inherited_tail  # noqa: E402
 
 DEFAULT_FUNCS = os.path.join(REPO, "ghidra", "scripts", "funcs")
 DEFAULT_EXTRACTED = os.path.join(REPO, "extracted")
@@ -505,7 +506,7 @@ def has_no_function_boundary(words):
     return True
 
 
-def gap_shape(image, base_va, a, b, floor=None, data_seg=None):
+def gap_shape(image, base_va, a, b, floor=None, data_seg=None, tail=None):
     """Why a code gap is a gap. Six shapes, and only one of them is work.
 
     A gap is not automatically an un-analysed routine, and reporting the total
@@ -533,6 +534,8 @@ def gap_shape(image, base_va, a, b, floor=None, data_seg=None):
     text segment carries linker data records short enough to ride it - each
     instance is documented in `docs/reference/functions/runtime-libs.md`.
     """
+    if tail is not None and a >= tail:
+        return "inherited_tail"
     n = (b - a) // 4
     start = a - base_va
     if n <= 0 or start < 0 or start + n * 4 > len(image):
@@ -603,12 +606,21 @@ def gap_shape(image, base_va, a, b, floor=None, data_seg=None):
     return "code"
 
 
-def classify_gap(image, base_va, a, b, floor=None, data_seg=None):
+def classify_gap(image, base_va, a, b, floor=None, data_seg=None, tail=None):
     """True when the bytes in [a, b) look like code rather than data.
 
     `data_seg` overrides the `in_data_segment` verdict. `split_gap` passes one
     taken over a whole gap, because that test must not be re-run per window.
+
+    `tail` is the VA at which this image stops being its own content - the
+    inherited tail (`scripts/ghidra-analysis/inherited_tail.py`). Bytes there
+    are a longer sibling's code sitting at the same file offset, so no dump of
+    THIS module can ever close them and they are not this module's denominator.
+    Tested first, because every other verdict below is a statement about the
+    image's own text segment.
     """
+    if tail is not None and a >= tail:
+        return False
     n = (b - a) // 4
     start = a - base_va
     in_bounds = n > 0 and start >= 0 and start + n * 4 <= len(image)
@@ -664,7 +676,7 @@ def classify_gap(image, base_va, a, b, floor=None, data_seg=None):
 GAP_WINDOW_WORDS = 64
 
 
-def split_gap(image, base_va, a, b, floor=None):
+def split_gap(image, base_va, a, b, floor=None, tail=None):
     """`[(start, end, is_code)]` for one gap, classified window by window.
 
     Adjacent windows of the same class are merged, so a real function is one run
@@ -681,14 +693,14 @@ def split_gap(image, base_va, a, b, floor=None):
            and in_data_segment(image, base_va, max(a, floor), b, floor))
     if (b - a) // 4 <= GAP_WINDOW_WORDS:
         return [(a, b, classify_gap(image, base_va, a, b, floor,
-                                    data_seg=seg and a >= floor))]
+                                    data_seg=seg and a >= floor, tail=tail))]
     out = []
     step = GAP_WINDOW_WORDS * 4
     pos = a
     while pos < b:
         end = min(pos + step, b)
         is_code = classify_gap(image, base_va, pos, end, floor,
-                               data_seg=seg and pos >= floor)
+                               data_seg=seg and pos >= floor, tail=tail)
         if out and out[-1][2] == is_code:
             out[-1] = (out[-1][0], end, is_code)
         else:
@@ -697,7 +709,8 @@ def split_gap(image, base_va, a, b, floor=None):
     return out
 
 
-def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()):
+def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=(),
+                tail=None):
     """Coverage of one loaded image. `span` is its byte length.
 
     `attrib` is the byte-attribution map. Where it places an extent in some
@@ -713,6 +726,17 @@ def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()
     only its own span reaches, which is the opposite of what the number means.
     """
     lo, hi = base_va, base_va + span
+    # The image is measured against its OWN content. Where an inherited tail
+    # was found, everything from `tail` up is a longer sibling's code at the
+    # same file offset (`inherited_tail.py`), so it leaves the numerator and
+    # the denominator together - counting a dump of it while excluding its
+    # bytes from the denominator would credit this module for a neighbour's
+    # routine. The tail's size is reported in the shape census below so the
+    # bytes stay visible rather than vanishing.
+    tail_bytes = 0
+    if tail is not None and lo <= tail < hi:
+        tail_bytes = hi - tail
+        hi = tail
     # One `jr ra` scan per image, threaded into every gap test below.
     seg_floor = data_floor(image, base_va)
     mine, floor, dropped = [], [], 0
@@ -771,8 +795,8 @@ def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()
     # than to a dump. A gap the statistic rejects that carries no structural
     # shape of its own is `data`.
     for a, b in gaps:
-        is_code = classify_gap(image, base_va, a, b, seg_floor)
-        shape = gap_shape(image, base_va, a, b, seg_floor)
+        is_code = classify_gap(image, base_va, a, b, seg_floor, tail=tail)
+        shape = gap_shape(image, base_va, a, b, seg_floor, tail=tail)
         if not is_code and shape == "code":
             shape = "data"
         # The slot-B spawn records inside this gap leave the denominator with
@@ -796,6 +820,9 @@ def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()
                 code_gaps.append((a, b))
         else:
             data_gap += rest
+    if tail_bytes:
+        n, nb = shapes.get("inherited_tail", (0, 0))
+        shapes["inherited_tail"] = (n + 1, nb + tail_bytes)
 
     # The worklist is cut against the FLOOR, not against `merged`. `merged`
     # credits every extent the byte attribution could not place to each span
@@ -820,11 +847,14 @@ def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()
         cuts = sorted(set(cuts))
         for u, v in zip(cuts, cuts[1:]):
             amb = any(x < v and u < y for x, y in merged)
-            for p, q, is_code in split_gap(image, base_va, u, v, seg_floor):
+            for p, q, is_code in split_gap(image, base_va, u, v, seg_floor,
+                                           tail=tail):
                 # `is_code` already carries the gap-level data-segment verdict
                 # (`split_gap`), so the shape must not re-run it per window.
                 shape = (gap_shape(image, base_va, p, q, seg_floor, data_seg=False)
-                         if is_code else "data")
+                         if is_code
+                         else ("inherited_tail" if tail is not None and p >= tail
+                               else "data"))
                 # Label the spawn-record pieces without re-classifying the run.
                 for x, y, in_band in split_on_band(image, base_va, p, q):
                     runs.append((x, y, "spawn_record_band" if in_band else shape,
@@ -855,6 +885,7 @@ def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()
         "pct": (100.0 * covered / denom) if denom else 0.0,
         "pct_floor": (100.0 * floor_cov / denom) if denom else 0.0,
         "gap_shapes": shapes,
+        "inherited_tail_bytes": tail_bytes,
         "runs": runs,
         "unattributed": sorted(set(unattributed)),
         "top_code_gaps": sorted(code_gaps, key=lambda g: g[0] - g[1])[:8],
@@ -896,6 +927,28 @@ def overlay_reports(extracted, extents, attrib=None):
         spans.append((base, base + min(span, os.path.getsize(candidates[0])), label))
     unambiguous = {k for k in set(extents)
                    if sum(1 for lo, hi, _ in spans if lo <= k[0] < hi) == 1}
+
+    # Where each image stops being its own content. The packer wrote every
+    # overlay into a buffer it did not clear, so a module shorter than the
+    # buffer flushes its own bytes and then the previous, longer module's
+    # residue - inside `content_bytes`, at the file offsets that module
+    # occupies. Counting that residue puts another module's code in this
+    # module's denominator, and no dump of this module can ever close it.
+    # `inherited_tail.py` states the rule and why it is asymmetric.
+    tail_inputs = []
+    for row in rows:
+        base, span, label = (row.get("base_va"), row.get("content_bytes"),
+                             row.get("label"))
+        if not base or not span or not label:
+            continue
+        candidates = sorted(glob.glob(
+            os.path.join(extracted, "overlays", "overlay_%s_*.bin" % label)))
+        if not candidates:
+            continue
+        with open(candidates[0], "rb") as fh:
+            tail_inputs.append((label, base, fh.read()[:span]))
+    tails = inherited_tail.tail_starts(tail_inputs)
+
     spans = []
     for row in rows:
         base = row.get("base_va")
@@ -920,8 +973,12 @@ def overlay_reports(extracted, extents, attrib=None):
         image = open(candidates[0], "rb").read()[:span]
         if len(image) < span:
             span = len(image)
+        cut = tails.get(label)
+        tail_va = base + cut[0] if cut and cut[0] < span else None
         row = cover_image(label, image, base, span, extents, attrib=attrib,
-                          unambiguous=unambiguous)
+                          unambiguous=unambiguous, tail=tail_va)
+        if tail_va is not None:
+            row["inherited_tail"] = (span - cut[0], cut[1])
         row["_image_span"] = (base, base + span)
         # Kept so `--check` can re-measure the row against the corpus the
         # attribution CSV knows about, without re-reading every overlay.
@@ -1154,6 +1211,14 @@ GAP_SHAPE_TEXT = {
                "in one and known code carries one per ~500-750 bytes, so a run "
                "this long without one is a data table the opcode statistic "
                "scored as code",
+    "inherited_tail": "the run from the offset at which a STRICTLY LONGER "
+                      "sibling image at the same link base reproduces this "
+                      "image's bytes through the end of its content - the "
+                      "residue the packer left in an uncleared buffer. It is "
+                      "the sibling's code at the sibling's own file offset, so "
+                      "no dump of THIS module can close it. Named by byte "
+                      "equality (`scripts/ghidra-analysis/inherited_tail.py`), "
+                      "not by a statistic. Outside the code denominator",
 }
 
 REJECT_TEXT = {
@@ -1242,6 +1307,24 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
         "`clean_copy_bytes`: that field says how much of a row a RAM capture has "
         "byte-verified, and on PROT 0899 it is 0x_f174 bytes short of the image.")
     add("")
+    tailed = [r for r in overlays if r.get("inherited_tail_bytes")]
+    if tailed:
+        add("**span is not the denominator.** %d of %d images end in an "
+            "**inherited tail** - %d bytes in total - and the row is measured "
+            "against what is left. The packer wrote each overlay into a buffer "
+            "it did not clear, so a module shorter than the buffer flushes its "
+            "own bytes and then the previous, longer module's residue, inside "
+            "`content_bytes` and at the file offsets that module occupies. The "
+            "run is found by exact byte equality with a strictly longer sibling "
+            "at the same link base, from some offset through the end of this "
+            "image's content (`scripts/ghidra-analysis/inherited_tail.py`); it "
+            "is that sibling's code, so no dump of this module can ever close "
+            "it and it belongs in neither this row's numerator nor its "
+            "denominator. The extreme case is PROT 0926, whose own content is "
+            "the eight bytes of a `jr ra; nop` stub."
+            % (len(tailed), len(overlays),
+               sum(r["inherited_tail_bytes"] for r in tailed)))
+        add("")
     add("**covered** is an upper bound and **at least** is its floor. The upper "
         "bound credits an extent the bytes could not place to every span "
         "containing it; the floor credits only the extents the bytes NAME for "

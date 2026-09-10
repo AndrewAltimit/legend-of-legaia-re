@@ -181,6 +181,43 @@ a large part of that overlay.
 An overlay row without a cited own-content length is skipped rather than guessed
 at, so a new row is unmeasured until someone states its length.
 
+### `content_bytes` is longer than the image's own code: the inherited tail
+
+`content_bytes` is a **sector** extent, and the packer that laid the disc wrote
+each overlay into a buffer it did not clear first. A module shorter than that
+buffer therefore flushes its own bytes and then whatever the previous, longer
+module left behind - inside `content_bytes`, at the file offsets that module
+occupies. Counting the residue puts one module's code in another module's
+denominator, and no dump of the shorter module can ever close it.
+
+The run is found by byte equality rather than inferred. Two images at the same
+link base are compared at the **same file offset**: where a *strictly longer*
+sibling reproduces this image's bytes from some offset through the end of its
+content, everything from that offset is the shorter image's **inherited tail**.
+Both the coverage denominator and the
+[attribution sweep](#byte-level-attribution) take the cut, so a row is measured
+against its own code and the sweep asks its at-VA question of its own code.
+The rule and its two guards live in
+[`scripts/ghidra-analysis/inherited_tail.py`](../../scripts/ghidra-analysis/inherited_tail.py).
+
+Two guards keep it from cutting an image short:
+
+- **Strictly longer.** A longer sibling is a candidate *writer* for the bytes.
+  Two images of equal length that share a suffix are both carrying somebody
+  else's residue and neither can be named as its owner, so the run stays in both
+  denominators rather than silently leaving both.
+- **A minimum length.** At `MIN_TAIL_BYTES` the match is sixteen instructions
+  long *and* runs to the end of the file, which no shared library routine does
+  unless it is the last thing linked.
+
+What it moves, and why the moves go both ways: the tail is subtracted from the
+denominator, which raises a row, while an extent that used to be credited to
+two images now belongs to one, which lowers whichever of them does not own it.
+PROT 0926 is the extreme: its own content is the eight bytes of a `jr ra; nop`
+stub ([`static-overlays.toml`](../../crates/asset/data/static-overlays.toml)
+already says so in prose), everything above is PROT 0925's, and its floor was
+being carried entirely by its sibling's dumps.
+
 ### What the `SCUS_942.54` gap turned out to be
 
 Worth stating as a result rather than as method, because it is the clearest
@@ -566,6 +603,16 @@ reads and applies:
 | `misbased` | the bytes live at another VA entirely | credit nobody |
 | `gapped` / `data` | not a coherent function body at that VA | credit nobody |
 | `short` / `unresolved` / `no_disassembly` | the window cannot sign it | residue: stays ambiguous |
+
+Most of what `identical` used to hold was the inherited tail rather than a real
+tie. Once the sweep cuts each image at its own content (see
+[the inherited tail](#content_bytes-is-longer-than-the-images-own-code-the-inherited-tail)),
+a dump whose extent lies wholly in one image's residue has exactly one owner
+left, and the class collapses from 45 extents to 7 with the difference landing
+in `unique`. `overlay_cast_curse_0943_801f7d34` is the worked case: PROT 0943's
+own content ends at file `0x1037` (VA `0x801F7A0F`) and the dump opens `0x32D`
+bytes past that, in PROT 0942's residue - the two images agree there because one
+of them wrote it.
 
 `divergent` used to be residue, and that reading was wrong in a way worth
 naming: the class does not mean "we could not tell", it means *every* named
