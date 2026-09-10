@@ -837,3 +837,32 @@ taken with `ghidra/scripts/dump_static_overlay.py` against one Ghidra program
 per PROT entry - `see ghidra/scripts/funcs/overlay_summon_ozma_0934_801f6a40.txt`
 and its siblings, and `see ghidra/scripts/funcs/80023070.txt` for the
 opcode-`0x20` call site.
+
+<!-- W1-A appendix -->
+
+## Appendix: the band names no routine the directory was missing
+
+An independent byte-level re-derivation of the seventeen `ambiguous = no`
+worklist runs this band still carries - the ones large enough to reach
+`disc-coverage.py`'s 64-byte floor - names **no new routine**, in any module.
+Every run is one of the two shapes
+[above](#a-module-image-ends-in-another-images-bytes): the image's own data
+tail, or a byte-identical same-file-offset run of a neighbour's image. Run by
+run, with the boundary between the two halves and where the inherited half is
+already dumped, on
+[`functions/cast-modules.md`](../reference/functions/cast-modules.md).
+
+Two checks make that a measurement rather than a reading. Force-disassembled,
+each run's own half decodes 9-34% implausible opcodes against 0% for a real
+body in the same band. And a prologue scan over the seventeen images finds
+five `addiu sp, sp, -F` words outside the frame-matched partition -
+`0x801F8078`, `0x801F816C`, `0x801F88EC`, `0x801F89D4`, `0x801F9458` - every
+one of them inside an inherited tail and a function head of the image the tail
+came from. Four are already named on this page at their owner - `0x801F8078`
+and `0x801F89D4` in the worklist table, `0x801F816C` in the trampoline map,
+`0x801F9458` in the residue section - and only `0x801F88EC` (a frame-matched
+head in PROT 0964) was not.
+
+The corresponding entry in `ghidra/scripts/dump_static_overlay.py`'s
+`NOT_CODE` record now carries the band, so the runs are recorded as answered
+rather than regenerating as work.

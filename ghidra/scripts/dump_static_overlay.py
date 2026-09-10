@@ -271,7 +271,27 @@ RANGES = {
     # coverage run it starts from is interior: the prologue is behind the run's
     # start and the `jr ra` is past its end. Bounds recovered the same way -
     # nearest preceding `addiu sp, sp, -X`, first following `jr ra` + delay.
-    "overlay_dance_0980": [("801cef54", "801cf470"), ("801d32f8", "801d387c")],
+    #
+    # `0x801D03C4` is the same shape one step further on: Ghidra carved that
+    # body 500 of its 636 bytes, stopping at `0x801D05B8` because the arms
+    # above it are reached only through an unresolved computed jump. The
+    # coverage run that starts at `0x801D05B8` is therefore the un-dumped TAIL
+    # of `FUN_801D03C4`, not a function head - see the WALK_RANGES note below.
+    "overlay_dance_0980": [("801cef54", "801cf470"), ("801d03c4", "801d0640"),
+                           ("801d32f8", "801d387c")],
+    # PROT 0977's contest hub `FUN_801CF870` runs 0x801CF870..0x801D00F8 by
+    # frame matching (prologue `addiu sp,sp,-0x20`, `jr ra` at 0x801D00F0 whose
+    # delay slot restores the same 0x20). The pre-existing dump prints the right
+    # entry and reports 1748 of those 2184 bytes, so the last 436 - the run the
+    # worklist reports at 0x801D0028 - carry no credit. Same short-carve shape
+    # as 0975 / 0979 below.
+    "overlay_arena_init_0977": [("801cf870", "801d00f8")],
+    # PROT 0971's own `FUN_801CE8EC` (0x801CE8EC..0x801CE97C, 144 B). No dump in
+    # the corpus covers it AT THIS IMAGE: the dumps that print 0x801CE8EC are
+    # `other2_dev(973)`'s, a VA-alias sibling in slot A holding different bytes.
+    # It uses the sp-restore-before-`jr ra` epilogue idiom, which is why the
+    # frame partition never reported it.
+    "overlay_debug_menu_0971": [("801ce8ec", "801ce97c")],
     # PROT 0978 holds exactly one prologue and one `jr ra`: one function over
     # the whole code region. The pre-existing 0x801F6B24 dump prints the same
     # span but reports a 328-byte body, so the coverage credit is short.
@@ -354,7 +374,12 @@ WALK_RANGES = {
         ("801f0718", "801f0adc"), ("801f0efc", "801f1138"), ("801f23b4", "801f26b4"),
         ("801f2db4", "801f30c4"), ("801f30d4", "801f32d4"),
     ],
-    "overlay_dance_0980": [("801d05b8", "801d0750")],
+    # 0x801D05B8 used to head this row and it FABRICATED an entry there: the
+    # address is interior to `FUN_801D03C4` (RANGES above), and the walk's
+    # fallback produced a 112-byte "function" whose printed addresses are
+    # non-contiguous - `gapped` in the byte-attribution CSV, creditable to no
+    # image. The row now starts at the real next entry, 0x801D0640.
+    "overlay_dance_0980": [("801d0640", "801d0750")],
     "overlay_arena_init_0977": [("801cf20c", "801cf870"), ("801d0cd0", "801d0e78")],
     # PROT 0895 (`init.pak`) is a slot-A image with a real internal call graph -
     # 23 internal `jal`s, 8 of them landing on prologues, which is what recovers
@@ -414,6 +439,49 @@ WALK_RANGES = {
 #   other3_dev(974)       0x801D1878                (nop field + `.byte` runs)
 #   SCUS_942.54           0x80074F80, 0x80075380, 0x80076880, 0x80076E80,
 #                         0x80077480, 0x80078B80, 0x8007A880  (static tables)
+#
+# The slot-B module band (base 0x801F69D8) contributes SEVENTEEN more, and they
+# are all one of two shapes - neither of them a function this image owns.
+#
+# 1. THE MODULE'S OWN DATA REGION. Every module is code first, then a payload of
+#    4-byte records read as two little-endian halfwords: GTE-shaped constants
+#    (0x1000 = 1.0 in 12-bit fixed point, 0x00FF/0x00C0/0x0080 colour bytes),
+#    signed deltas and a recurring 0x00000000 / 0x10001000 / 0xFF89000C
+#    separator triple. Force-disassembled it decodes 9-34% implausible opcodes
+#    (`tge`, `jalx`, `movf`, `j` outside RAM); a real body in the same band
+#    decodes 0%, so the separation is not a judgement call.
+# 2. A CROSS-IMAGE DUPLICATE TAIL. Images in this band share long byte-identical
+#    runs at the SAME FILE OFFSET as each other, and as `menu(899)`, ending at
+#    the shorter image's own end. `summon_kemaro(918)` 0x801F9388..0x801F99D8 is
+#    100% identical to `menu(899)` file+0x29B0, where the same words are
+#    already-dumped menu code whose branches resolve inside the menu image and
+#    whose 0x801E46B0 / 0x80074F68 / 0x800752C0 / 0x8007625C operands are menu
+#    tables; under 0x801F69D8 those branches leave the 0x3000-byte image
+#    entirely. So the bytes are the menu overlay's, not the module's.
+#
+#   summon_freed(912)          0x801F8D2C  (data; last 1784 B == menu(899))
+#   summon_theeder(904)        0x801F91E4  (36 B data + 2000 B == menu(899))
+#   summon_barra(917)          0x801F92B8  (65 B data + dup of kemaro's tail)
+#   summon_kemaro(918)         0x801F9388  (100% == menu(899), dumped there)
+#   summon_zenoir(908)         0x801F8A24  (data + dup of theeder)
+#   summon_swordie(910)        0x801F8A80  (data + dup of theeder)
+#   summon_orb(911)            0x801F864C  (100% == swordie(910), dumped there)
+#   summon_viguro(909)         0x801F8318  (data + dup of zenoir)
+#   summon_gizam(906)          0x801F7EE4  (data + dup of stager_x83(905))
+#   cast_dead_end_crisis(961)  0x801F7AB4  (data + dup of plasma_strike(960))
+#   cast_water_crystals(949)   0x801F7630, 0x801F8130  (data + dup of 948)
+#   cast_spore_gas(939)        0x801F74BC  (data + dup of chaos_breath(938))
+#   cast_curse(943)            0x801F7770  (data + dup of power_up(942))
+#   cast_bloody_horns(952)     0x801F7BA8  (24 B + 1452 B == chaos_flare(951))
+#   cast_doomsday(965)         0x801F842C  (100% == element_change(964))
+#   cast_terio_punch(953)      0x801F80C8  (100% == chaos_flare(951))
+#   cast_element_change(964)   0x801F9AB8  (data + dup of summon_effect_table)
+#
+# An independent check agrees: scanning each of those images for every
+# `addiu sp, sp, -N` prologue outside the RANGES partition finds candidates only
+# INSIDE the duplicate tails (0x801F9458, 0x801F816C, 0x801F88EC, 0x801F89D4,
+# 0x801F8078), each of which is a function head in the image the tail is copied
+# from. Not one of the seventeen images holds an un-dumped body of its own.
 #
 # SCUS 0x80045CB4 is the one SCUS run that IS code, and it is still not a dump
 # target: nothing in any image references it (five-form scan), its preceding
