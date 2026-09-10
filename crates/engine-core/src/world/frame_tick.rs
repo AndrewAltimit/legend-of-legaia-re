@@ -2676,25 +2676,23 @@ impl World {
         let confirm = self.input.just_pressed(input::PadButton::Cross);
         match phase {
             MusclePhase::Select => {
-                let card = if self.input.just_pressed(input::PadButton::Left) {
-                    Some(0)
-                } else if self.input.just_pressed(input::PadButton::Right) {
-                    Some(1)
-                } else if self.input.just_pressed(input::PadButton::Up) {
-                    Some(2)
-                } else if self.input.just_pressed(input::PadButton::Down) {
-                    Some(3)
-                } else {
-                    None
+                // The whole selection surface - the direction input and the
+                // Ra-Seru list over it - is the session's, so the browser
+                // minigames page runs the identical rule.
+                // Triangle is this host's binding for the ring's Right chip:
+                // the port's selection has no ring screen, so the four
+                // directions stay the input screen's.
+                let pad = crate::muscle_dome::DomeSelectPad {
+                    left: self.input.just_pressed(input::PadButton::Left),
+                    right: self.input.just_pressed(input::PadButton::Right),
+                    up: self.input.just_pressed(input::PadButton::Up),
+                    down: self.input.just_pressed(input::PadButton::Down),
+                    confirm,
+                    cancel: self.input.just_pressed(input::PadButton::Circle),
+                    magic: self.input.just_pressed(input::PadButton::Triangle),
                 };
                 if let Some(s) = self.muscle_dome.as_mut() {
-                    if let Some(card) = card {
-                        s.commit_card(0, card);
-                    }
-                    if confirm {
-                        s.ai_commit_all(1);
-                        s.end_selection();
-                    }
+                    s.select_input(pad);
                 }
             }
             MusclePhase::Resolve => {

@@ -400,6 +400,87 @@ pub const CAST_DAMAGE_SHAPES: [CastDamageShape; 6] = [
     },
 ];
 
+/// The three **whole-row sweeps'** damage shapes, keyed by tick body rather
+/// than by PROT entry.
+///
+/// [`CAST_DAMAGE_SHAPES`] cannot hold them: PROT 0938 carries **two** bodies
+/// with different baked powers and different skip guards behind one
+/// trampoline, so an entry-keyed lookup would answer for whichever came
+/// first. Each of the three writes `sh <net>, 0x14C(victim)` itself, over
+/// `actor_table[0 .. ctx[+0]]`, after its own `jal 0x801DD4B0` - the same
+/// shape PROT 0927's and 0966's stagers take, so these bodies **replace**
+/// the generic fold rather than joining it (`World::fold_pending_cast`).
+///
+/// The one difference from those two stagers, and it matters: the clamp here
+/// is `sltu` against the live HP (shape A, [`apply_hit_floor_zero`]), not
+/// `slt` against `HP - 1`. **These sweeps kill**; the stagers cannot.
+///
+/// REF: FUN_801F726C (`0x801F77B0` the baked `0x274`, `0x801F77EC` the
+/// unsigned clamp, `0x801F7820` the HP store)
+/// REF: FUN_801F69EC (`0x801F70DC` / `0x801F7118` / `0x801F714C`)
+/// REF: FUN_801F69D8 (`0x801F77A8` / `0x801F77E0` / `0x801F7814`)
+pub const SWEEP_DAMAGE_SHAPES: [(u32, CastDamageShape); 3] = [
+    (
+        CHAOS_BREATH_TICK,
+        CastDamageShape {
+            prot_entry: 938,
+            routine: 0x801F_726C,
+            wrapper: CastWrapper::Respect,
+            never_kills: false,
+            powers: &[0x274],
+        },
+    ),
+    (
+        MYSTIC_CIRCLE_TICK,
+        CastDamageShape {
+            prot_entry: 938,
+            routine: 0x801F_69EC,
+            wrapper: CastWrapper::Respect,
+            never_kills: false,
+            powers: &[0x309],
+        },
+    ),
+    (
+        DOOMSDAY_TICK,
+        CastDamageShape {
+            prot_entry: 965,
+            routine: 0x801F_69D8,
+            wrapper: CastWrapper::Respect,
+            never_kills: false,
+            powers: &[0x600],
+        },
+    ),
+];
+
+/// The damage shape of one whole-row sweep body, keyed by the body constant
+/// [`capture_tick_body`] resolves - see [`SWEEP_DAMAGE_SHAPES`] for why this
+/// cannot be keyed by PROT entry.
+pub fn sweep_damage_shape_for(body: u32) -> Option<&'static CastDamageShape> {
+    SWEEP_DAMAGE_SHAPES
+        .iter()
+        .find(|(b, _)| *b == body)
+        .map(|(_, s)| s)
+}
+
+/// Does this tick body own its cast's HP outcome outright - i.e. does the
+/// module write `actor+0x14C` itself, so the band's generic fold must not
+/// also run? True for exactly the three whole-row sweeps.
+pub fn tick_body_owns_the_fold(body: u32) -> bool {
+    sweep_damage_shape_for(body).is_some()
+}
+
+/// The module phase a whole-row sweep body applies its damage on - the one
+/// arm that reaches the wrapper. A caller deciding whether the module has
+/// already folded compares the live phase against this.
+pub fn sweep_arm_for(body: u32) -> Option<u8> {
+    match body {
+        CHAOS_BREATH_TICK => Some(CHAOS_BREATH_SWEEP_ARM),
+        MYSTIC_CIRCLE_TICK => Some(MYSTIC_CIRCLE_SWEEP_ARM),
+        DOOMSDAY_TICK => Some(DOOMSDAY_SWEEP_ARM),
+        _ => None,
+    }
+}
+
 /// The damage shape of the module PROT `prot_entry` pages, if it has one.
 ///
 /// This is the figure a capture cast's damage is *actually* built from in
@@ -481,7 +562,7 @@ pub fn roll_module_hit(
 /// `docs/subsystems/cast-module.md` grades this **PORT** for the `+0x0C`
 /// write and does not mention `+0x21D`; both stores are here.
 ///
-/// Wired: `World::run_cast_module_stager`, at the cast band's staging seam.
+/// Wired: `World::run_cast_module_code`, at the cast band's staging seam.
 ///
 /// PORT: FUN_801F75BC
 pub fn water_crystals_stager(victim: &mut CastActorState, arm: u8) {
@@ -499,7 +580,7 @@ pub fn water_crystals_stager(victim: &mut CastActorState, arm: u8) {
 /// branch's delay slot, which is why a prologue scan puts the entry four
 /// bytes late - the routine really starts at `0x801F90E4`.
 ///
-/// Wired: `World::run_cast_module_stager`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F90E4
 pub fn puera_stager(ctx: &mut CastModuleCtx, arm: u8) {
@@ -522,7 +603,7 @@ pub fn puera_stager(ctx: &mut CastModuleCtx, arm: u8) {
 /// The spawn calls are the DATA layer the pool already stages; the only
 /// simulation write in the routine is arm 0's `ctx[+0x278]`.
 ///
-/// Wired: `World::run_cast_module_stager`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F8B90 (state half; the three spawn sites are
 /// `legaia_asset::cast_effect_pool`'s records)
@@ -546,7 +627,7 @@ pub fn gilium_stager(ctx: &mut CastModuleCtx, arm: u8) {
 /// The rest are `FUN_80024E80` prim fills, two `FUN_80056798` rand draws and
 /// one `FUN_80021B04` spawn - the DATA layer.
 ///
-/// Wired: `World::run_cast_module_stager`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F7740 (state half)
 pub fn gizam_stager(ctx: &mut CastModuleCtx, summon_seat: &mut CastActorState, arm: u8) {
@@ -583,7 +664,7 @@ pub fn gizam_stager(ctx: &mut CastModuleCtx, summon_seat: &mut CastActorState, a
 /// Returns the `+0x1DD` value the arm displaced, which retail stashes for a
 /// later arm to restore.
 ///
-/// Wired: `World::run_cast_module_stager`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F7AF4 (state half)
 pub fn viguro_stager(
@@ -796,6 +877,40 @@ pub fn tick_shape_for(routine: u32) -> Option<&'static CastTickShape> {
 ///
 /// `arm` returns `true` when the taken arm holds the phase (retail's
 /// confirm-gated arms fall out of the dispatch without reaching an advance).
+///
+/// **The out-of-bound answer here is not retail's, deliberately.** Every one
+/// of the bodies below opens by seeding a saved register with `1`, returns
+/// that register, and lets **only** a terminal arm zero it - and the
+/// out-of-range branch is aimed one instruction *past* that zeroing store, at
+/// the return-value materialisation. So a phase past the `sltiu` bound
+/// returns **Busy** in retail, and retail's drive loop (which advances only
+/// on a zero return) would park there. The eleven bodies on this helper are
+/// uniform in that shape; the seed / bound / latch / landing sites are, in
+/// image order:
+///
+/// | PROT | routine | seed | bound | Done latch | out-of-range lands at |
+/// |---|---|---|---|---|---|
+/// | 0952 | `0x801F6A0C` | `0x801F6A58` | `0x801F6A98` `sltiu 5` | `0x801F70DC` | `0x801F70EC` |
+/// | 0957 | `0x801F6A14` | `0x801F6A54` | chain from `0x801F6A98` | `0x801F7954` | `0x801F7958` |
+/// | 0957 | `0x801F798C` | `0x801F79E0` | chain from `0x801F7A18` | `0x801F99BC` | `0x801F99C0` |
+/// | 0958 | `0x801F6DD8` | `0x801F6E2C` | `0x801F6E70` `sltiu 0x100` | `0x801F8CF4` | `0x801F8CFC` |
+/// | 0945 | `0x801F6EDC` | `0x801F6F38` | `0x801F6F68` `sltiu 8` | `0x801F769C` | `0x801F76C8` |
+/// | 0960 | `0x801F74E4` | `0x801F7530` | chain from `0x801F7570` | `0x801F85F4` | `0x801F75B4` |
+/// | 0925 | `0x801F6A00` | `0x801F6A70` | `0x801F6A68` `sltiu 0xA` | `0x801F7AA0` | `0x801F7ABC` |
+/// | 0924 | `0x801F6A18` | `0x801F6A64` | `0x801F6AA8` `sltiu 0xC` | `0x801F77D0` | `0x801F77EC` |
+/// | 0922 | `0x801F6A3C` | `0x801F6AA4` | `0x801F6AB4` `sltiu 0x19` | `0x801F90AC` | `0x801F90B0` |
+/// | 0927 | `0x801F6A84` | `0x801F6A9C` | `0x801F6B04` `sltiu 0x1D` | `0x801F82D0` | `0x801F82D4` |
+/// | 0949 | `0x801F6A10` | `0x801F6A70` | `0x801F6AA0` `sltiu 6` | `0x801F7588` | `0x801F758C` |
+///
+/// The port answers [`CastTickStep::Done`] instead, because the phase here is
+/// the *engine's* (`World::run_cast_module_code` advances it) and a body that
+/// walks past its own arms would otherwise hold the band's phase forever -
+/// a softlock, not a fidelity gain. [`run_tick_latched`] is the helper whose
+/// reported step **is** the register's, for the bodies whose terminal arms
+/// are named.
+///
+/// REF: FUN_801F6A10 (`0x801F6AA4` the branch, `0x801F7588` the latch it
+/// skips - the exemplar for all eleven)
 fn run_tick(
     ctx: &mut CastModuleCtx,
     arms: u16,
@@ -841,7 +956,7 @@ pub const ASTRAL_SLASH_ARM2_CLIP: u8 = 0x0A;
 /// Not ported: the packet arms and the `FUN_80050BB8` / `FUN_801D5854` /
 /// `FUN_80058490` calls.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A0C (phase machine + staging; packet arms unported)
 pub fn astral_slash_tick(
@@ -889,7 +1004,7 @@ pub const SUMMON_EFFECT_TICK_A_ID: u8 = 0x77;
 /// `hit` is `Some(roll)` on the frame the damage arm fires; the caller owns
 /// the wrapper call so the RNG cursor stays retail's.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A14 (phase machine + damage; packet arms and the per-arm
 /// gating unported)
@@ -930,7 +1045,7 @@ pub fn summon_effect_tick_a(
 /// Ported: the phase walk and the staging discipline. Not ported: the drain's
 /// per-arm rate, which is a frame-gated packet arm.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F798C (phase machine + staging; the drain arms unported)
 pub fn summon_effect_tick_b(ctx: &mut CastModuleCtx, victim: &mut CastActorState) -> CastTickStep {
@@ -951,7 +1066,7 @@ pub fn summon_effect_tick_b(ctx: &mut CastModuleCtx, victim: &mut CastActorState
 /// `hit` names which of the six sites fires this frame; the caller supplies
 /// the roll so the RNG cursor stays retail's.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6DD8 (phase machine + damage/staging; packet + camera arms
 /// unported)
@@ -980,7 +1095,7 @@ pub fn blazing_slash_tick(
 /// `0x30`, shape-A clamp at `0x801F74C0`. It is the one tick body that writes
 /// the flag word `+0x16E` (one store paired with one load).
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6EDC (phase machine + damage/staging; packet arms unported)
 pub fn water_column_tick(
@@ -1020,7 +1135,7 @@ pub const PLASMA_STRIKE_CONFIRM_CLIP: u8 = 0x0D;
 /// the compare stalls phase 5 forever, which is the softlock the module docs
 /// record.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F74E4 (phase machine + damage/staging + the phase-5 confirm
 /// gate; packet + camera arms unported)
@@ -1223,7 +1338,7 @@ pub fn capture_tick_body(prot_entry: u32, action_id: u8) -> Option<u32> {
 /// `ctx+0x278` discipline. Not ported: the packet arms, which are most of the
 /// body.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A00 (phase machine + staging; packet arms unported)
 pub fn spikefish_tick(ctx: &mut CastModuleCtx, caster: &mut CastActorState) -> CastTickStep {
@@ -1260,7 +1375,7 @@ pub const SPIKEFISH_STAGE_ARM: u8 = 5;
 /// Ported: the bound, the phase walk, the stage/restage pairs and the finale
 /// HP zero. Not ported: the packet and camera arms.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A18 (phase machine + staging + the finale HP zero; packet
 /// arms unported)
@@ -1301,7 +1416,7 @@ pub const ULTIMATE_RAVE_FINALE_ARM: u8 = 9;
 /// summon-branch wrapper is not itself a never-kill shape - this module calls
 /// it with the kill-capable clamp.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A3C (phase machine + damage/staging; packet arms unported)
 pub fn puera_tick(
@@ -1333,7 +1448,7 @@ pub fn puera_tick(
 /// hit is kill-capable, and a negative wrapper return there kills outright
 /// through the unsigned compare.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A84 (phase machine + damage/staging; packet arms unported)
 pub fn juggernaut_tick(
@@ -1367,7 +1482,7 @@ pub fn juggernaut_tick(
 /// does clamp also credits a kill: it increments the word at `+0x664` of the
 /// caster's per-character record in the `0x80084140 + n * 0x414` block.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6C70 (phase chain + damage/staging + the kill credit; packet
 /// arms unported)
@@ -1414,7 +1529,7 @@ pub const KEMARO_DONE_PHASE: u8 = 0xFF;
 /// does not carry: that table was read off the routines already on the
 /// verdict table, and this tick was not one of them.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A10 (phase machine + damage/staging; packet arms unported)
 pub fn water_crystals_tick(

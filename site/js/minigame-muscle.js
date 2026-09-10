@@ -179,6 +179,8 @@ window.MgMuscle = (function () {
     let artsPage = -1;         /* Triangle arts list: -1 closed, else page */
     let artsRows = null;       /* muscle_arts_list_json rows (lazy) */
     let confirmSel = 0;        /* confirm menu cursor: 0 Begin, 1 Reselect */
+    let magicRows = null;      /* muscle_magic_json rows (lazy, per open) */
+    let magicWhy = '';         /* last Ra-Seru refusal name, '' when none */
     let pennantFx = [];        /* committed-pennant glides {cmd,slot,x,y,t,life} */
     let introT = 0;            /* ticks into the intro card */
     let intervalT = 0;         /* ticks into the INTERVAL + tally screen */
@@ -1009,6 +1011,9 @@ window.MgMuscle = (function () {
     function beginSelect() {
       mode = 'select';
       selectSub = 'menu';
+      /* A new turn re-prices the Ra-Seru list off the live gauge. */
+      magicRows = null;
+      magicWhy = '';
       const n = contest ? contest.round + 1 : 1;
       /* The ROUND banner's life is retail's own envelope length (fade-in +
        * hold + fade-out off `HubScreen::round_banner`), not a page constant;
@@ -1073,7 +1078,45 @@ window.MgMuscle = (function () {
     }
 
     /* Close selection and play the round out. */
+    /* The fighter's Ra-Seru rows, priced by the shared session (the cost
+     * after the accessory MP-saver bits, which is what the arm charges). */
+    function readMagicRows() {
+      if (!api.muscle_magic_json) return [];
+      try { return JSON.parse(api.muscle_magic_json()); }
+      catch (e) { return []; }
+    }
+
+    /* Retail's Ra-Seru list over the ring - the port's stand-in for the
+     * phase-0x46 screen, whose piece decomposition is not pinned. */
+    function drawMagicList(state) {
+      const rows = magicRows || (magicRows = readMagicRows());
+      const cur = state.magic_cursor | 0;
+      const x = 176, y = 24, w = 132, h = Math.max(40, 22 + rows.length * 14);
+      g.fillStyle = 'rgba(10,16,32,0.86)';
+      g.fillRect(x * 2, y * 2, w * 2, h * 2);
+      g.strokeStyle = '#7d8ba8';
+      g.lineWidth = 2;
+      g.strokeRect(x * 2, y * 2, w * 2, h * 2);
+      text('Ra-Seru', x + 8, y + 12, 8, '#ffd98a', 'left', '');
+      text('MP ' + (state.mp ? state.mp[0] : 0), x + w - 8, y + 12, 7, '#8fe3d6', 'right', '');
+      rows.forEach((r, i) => {
+        const ry = y + 26 + i * 14;
+        const on = i === cur;
+        const ink = !r.affordable ? '#6b7080' : (on ? '#ffffff' : '#c7cede');
+        if (on) text('>', x + 4, ry, 8, ink, 'left', '');
+        text(r.name, x + 16, ry, 8, ink, 'left', '');
+        text(String(r.mp), x + w - 8, ry, 8, ink, 'right', '');
+      });
+      if (!rows.length) {
+        text('(no Seru learned)', x + 16, y + 26, 7, '#8b93a5', 'left', '');
+      }
+      const why = magicWhy === 'not_enough_mp' ? 'Not enough MP' : '';
+      text(why || '↑↓ pick · SPACE cast · ESC back',
+        x + w / 2, y + h - 6, 6, why ? '#ff9d9d' : '#aeb6c4', 'center', '');
+    }
+
     function fight() {
+      magicRows = null;
       api.muscle_end_selection();
       api.muscle_resolve();
       playQueue = JSON.parse(api.muscle_round_log_json());
@@ -1103,10 +1146,23 @@ window.MgMuscle = (function () {
         } else if (name === 'down') {     /* Spirit: end selection, fight */
           playCue('confirm', 0.5);
           fight();
-        } else if (name === 'up' || name === 'right') {
-          /* Item (crossed out) / Ra-Seru: disabled here - Item by the
-           * course rules, magic by the port's missing cast path. */
+        } else if (name === 'right') {    /* Ra-Seru: the magic command */
+          const why = api.muscle_open_magic ? api.muscle_open_magic() : 'no_loadout';
+          if (why) { magicWhy = why; playCue('blip', 0.3); }
+          else { magicWhy = ''; selectSub = 'magic'; magicRows = readMagicRows(); playCue('cursor', 0.4); }
+        } else if (name === 'up') {
+          /* Item: retail crosses it out on the dome's item-forbidden
+           * courses and the arm refuses. The port has no bag here either. */
           playCue('blip', 0.3);
+        }
+      } else if (selectSub === 'magic') {
+        if (name === 'back') {
+          if (api.muscle_close_magic) api.muscle_close_magic();
+          selectSub = 'menu';
+          playCue('cursor', 0.4);
+        } else if (name === 'up' || name === 'down') {
+          if (api.muscle_magic_move) api.muscle_magic_move(name === 'up' ? -1 : 1);
+          playCue('cursor', 0.35);
         }
       } else if (selectSub === 'attackmenu') {
         if (name === 'left') {
@@ -1153,6 +1209,17 @@ window.MgMuscle = (function () {
       if (mode === 'intro') {
         beginSelect();
       } else if (mode === 'select') {
+        if (selectSub === 'magic') {
+          /* Confirm the row under the cursor. A refusal leaves the list
+           * open, which is retail's answer to an unaffordable pick. */
+          const why = api.muscle_magic_confirm ? api.muscle_magic_confirm() : 'no_loadout';
+          if (why) { magicWhy = why; playCue('blip', 0.3); return; }
+          magicWhy = '';
+          selectSub = 'menu';
+          playCue('confirm', 0.5);
+          fight();
+          return;
+        }
         if (selectSub === 'input') {
           /* End the input early: to the queue review. */
           artsPage = -1;
@@ -1480,13 +1547,26 @@ window.MgMuscle = (function () {
       if (withAttack) chip(104, 6, 46, 13, 'gold', 'Attack');
     }
 
-    /* The retail command cluster: Item (crossed out) on top; Attack +
-     * D-pad + Ra-Seru; Spirit below. Anchors + widths are the SCUS element
-     * table's arrived glide endpoints (elements 8 / 9 / 0xA / 0xB), the
-     * plate/label offsets and the D-pad seat the captured packets. */
+    /* Which of retail's three mark emitters, if any, lays over each chip
+     * this frame - straight off the shared session's gates, so this page and
+     * the native window agree about which command is live. Keyed by chip
+     * name; the value is `forbidden` / `blocked` / `sealed` or null. */
+    function chipMarks(state) {
+      const out = { item: null, attack: null, raseru: null, spirit: null };
+      const on = { item: true, attack: true, raseru: true, spirit: true };
+      (state.chips || []).forEach((c) => { out[c.chip] = c.mark; on[c.chip] = !!c.enabled; });
+      return { mark: out, enabled: on };
+    }
+
+    /* The retail command cluster: Item on top; Attack + D-pad + Ra-Seru;
+     * Spirit below. Anchors + widths are the SCUS element table's arrived
+     * glide endpoints (elements 8 / 9 / 0xA / 0xB), the plate/label offsets
+     * and the D-pad seat the captured packets. Which chips wear a mark is
+     * the session's, not this page's. */
     function drawCommandCluster(state) {
       const raSeru = RA_SERU[state.char] || 'Meta';
       const inAttack = selectSub !== 'menu';
+      const gates = chipMarks(state);
       if (hudOk()) {
         const el = (i, dx, dy) => {
           const e = hudMeta.elements[i];
@@ -1496,33 +1576,37 @@ window.MgMuscle = (function () {
         const atk = el(9, 160, 66);
         const ras = el(0xA, 248, 66);
         const spi = el(0xB, 204, 98);
-        /* Item - crossed out with the retail 64x16 red X (etim page). */
+        /* The red cross-out X is retail's course restriction, and nothing
+         * else: a command that is merely unavailable keeps a bare plate. */
         rChip('Item', item.x, item.y - 6, 'blue', item.w);
-        hudWord('red_x', item.x - 8, item.y - 4);
+        if (gates.mark.item) hudWord('red_x', item.x - 8, item.y - 4);
         /* Attack + the D-pad glyph between it and the Ra-Seru chip. */
         rChip('Attack', atk.x, atk.y - 6, inAttack ? 'gold' : 'blue', atk.w);
         blit(0, hudMeta.pieces.dpad.pal,
           hudMeta.pieces.dpad.r[0], hudMeta.pieces.dpad.r[1], 16, 16,
           (atk.x + atk.w + ras.x - 8) / 2 - 8, atk.y - 4);
-        /* Ra-Seru (magic) - crossed out too: the port has no cast path
-         * (honest gap; retail crosses it only on magic-forbidden courses). */
-        rChip(raSeru, ras.x, ras.y - 6, 'blue', ras.w);
-        hudWord('red_x', ras.x - 8, ras.y - 4);
+        /* Ra-Seru (magic). The label is the `-` retail's element record
+         * draws when the member carries none, and no mark rides with it. */
+        rChip(gates.enabled.raseru ? raSeru : '-',
+          ras.x, ras.y - 6, selectSub === 'magic' ? 'gold' : 'blue', ras.w);
+        if (gates.mark.raseru) hudWord('red_x', ras.x - 8, ras.y - 4);
         /* Spirit - ends selection. */
         rChip('Spirit', spi.x, spi.y - 6, 'blue', spi.w);
         if (!inAttack && !banner) {
-          text('←Attack  ↓Spirit  SPACE Begin', 214, 116, 6, '#aeb6c4', 'center', '');
+          text('←Attack  →Ra-Seru  ↓Spirit  SPACE Begin', 214, 116, 6, '#aeb6c4', 'center', '');
         }
         return;
       }
       chip(196, 20, 60, 13, 'blue', 'Item');
-      crossOut(196, 20, 60, 13);
+      if (gates.mark.item) crossOut(196, 20, 60, 13);
       chip(150, 48, 54, 14, inAttack ? 'gold' : 'blue', 'Attack');
       dpadGlyph(216, 55, 7);
-      chip(228, 48, 50, 14, 'grey', raSeru);
+      chip(228, 48, 50, 14, gates.enabled.raseru ? 'blue' : 'grey',
+        gates.enabled.raseru ? raSeru : '-');
+      if (gates.mark.raseru) crossOut(228, 48, 50, 14);
       chip(178, 76, 60, 14, 'blue', 'Spirit');
       if (!inAttack && !banner) {
-        text('←Attack  ↓Spirit  SPACE Begin', 214, 100, 6, '#aeb6c4', 'center', '');
+        text('←Attack  →Ra-Seru  ↓Spirit  SPACE Begin', 214, 100, 6, '#aeb6c4', 'center', '');
       }
     }
 
@@ -2212,6 +2296,11 @@ window.MgMuscle = (function () {
           drawHeaderChips(state);
           drawCommandCluster(state);
           drawApPlate(state);
+          drawStatusPlate(state);
+        } else if (selectSub === 'magic') {
+          drawHeaderChips(state, true);
+          drawCommandCluster(state);
+          drawMagicList(state);
           drawStatusPlate(state);
         } else if (selectSub === 'attackmenu') {
           drawHeaderChips(state, true);

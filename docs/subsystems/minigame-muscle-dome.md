@@ -658,10 +658,13 @@ an art playing out.
   plates with gold borders. Bottom: the pointed blue status plate (fighter
   name, gold "HP" `cur/max`, teal "MP" `cur/max`) with the pointed **AP**
   plate above-right (red "AP" label, orange gauge, remaining-points
-  numeral). Course gating (curated, `data/gamedata/casino.toml`): no
-  equipment, no items on every course; magic allowed on Beginner/Expert,
-  forbidden on Master - which is why Item is crossed out while the Ra-Seru
-  chip is not.
+  numeral). Which chips are live is not a course table: it is the
+  special-battle word's restriction bits and the fighter's own status /
+  Ra-Seru gate, and the Ra-Seru chip's bit is never raised by a dome round -
+  see [What makes a Ra-Seru chip render](#what-makes-a-ra-seru-chip-render).
+  The curated course rules (`data/gamedata/casino.toml`: no equipment, no
+  items on every course, magic forbidden on Master) are walkthrough labels;
+  the *magic* half of them has no writer on the disc.
 - **Arts banner.** A committed directional sequence that performs a
   Tactical Art raises the art-class banner during playback - block-capital
   orange-gradient text with a dark outline ("HYPER ARTS!!") over white
@@ -690,15 +693,23 @@ battle form (`muscle_fighter_*`), the chrome drawn from the disc sources
 below (`muscle_hud_json` / `muscle_hud_sheet_rgba`), and the queue -> art
 resolution done against the SCUS arts-name table's combo strings
 (`muscle_round_arts_json`, kind labels joined from the curated gamedata
-arts table). One disclosed gap remains: the **Ra-Seru (magic) chip renders
-disabled on both hosts**, and retail's does not - only *Item* is crossed out,
-which is the whole point of the Master course's item ban. Wiring it needs a
-cast path in `MuscleDomeSession`, which today models direction commands only:
-a magic command class, a spell pick against the caster's learned Seru, an MP
-debit and a spawn into the capture-class cast pool
-(`legaia_asset::cast_effect_pool` + `engine-vm::cast_module_ticks`). The
-sibling gap - "the ported rules resolve each queued command as a basic
-strike" - is closed: see [the queue the dome resolves](#the-queue-the-dome-resolves-is-the-tokenizers).
+arts table). The **Ra-Seru (magic) chip** is a real command class on both
+hosts: `MuscleDomeSession` carries the ring gates, the learned-Seru list
+priced by the ability-bit discount, the MP gate at the pick and the debit at
+the play-out, and the cast resolves through the same
+`engine-core::spells::cast_spell` rule the regular battle's cast band folds
+with. Neither host crosses the chip out any more, because retail does not:
+its bit is never raised by a dome round
+([the gates](#what-makes-a-ra-seru-chip-render)). The sibling gap - "the
+ported rules resolve each queued command as a basic strike" - is closed:
+see [the queue the dome resolves](#the-queue-the-dome-resolves-is-the-tokenizers).
+
+The two hosts reach the chip from different buttons, and that is the one
+disclosed difference: retail opens the list from the ring's **Right** chip,
+which the port's collapsed selection cannot spare (the four directions are
+the input screen's), so the browser minigames page - which keeps a ring
+screen - binds Right, and the native `play-window` binds **Triangle**. Both
+land in `MuscleDomeSession::select_input`, so the rules are one.
 
 ## HUD chrome texture sources (capture-pinned)
 
@@ -1043,25 +1054,86 @@ What is still *not* unified is the session object: the dome keeps its own
 (`ctx+0x6dc`, `ctx+0x6d8`, `actor+0x1df`) in the same units, so the seam is
 a refactor rather than a question.
 
-### Two different marks for "you cannot pick this"
+### Three marks for "you cannot pick this", and the gates that raise them
 
 The dome's course restriction and a plain unavailable command are **not the
-same widget**, and the captures say so separately:
+same widget**. There are in fact **three** mark emitters, all in the battle
+overlay and all called from the phase-`0x28` cluster arm of `FUN_801D0748`:
 
-- A **course restriction** lays the red cross-out X over the chip - a
-  `0x40 x 0x10` blit of the `etim` page's `(0,96)` texels, drawn 1:1 and
-  seated `(x-8, y-4)` off the chip's content box. Retail's emitter is
-  `FUN_801DBC30`; the port is `legaia_engine_vm::battle_party_panel::cross_out_mark`
-  and the dome page ships its rect as `red_x`. The Master course's Item chip
-  is the captured instance.
-- A command that is merely **unavailable** keeps its chip and draws a single
-  `-` glyph where the word would go - the command-select capture's own
-  behaviour, which the shared cluster builder
-  `legaia_engine_ui::battle_command_ui` implements for both battle hosts.
+| Emitter | Source rect on the `etim` page | CLUT | Raised by |
+|---|---|---|---|
+| `FUN_801DBC30` | `(0,96)` 64x16 - the red cross-out X | `0x7704` | the special-battle word's restriction bit |
+| `FUN_801DBD04` | `(80,96)` 32x24 | `0x770B` | `actor+0x16E & 0x38 == 0x38` (Attack) |
+| `FUN_801DBEC4` | `(120,96)` 64x16 | `0x7700` | `actor+0x16E & 0x1000` (Ra-Seru, magic sealed) |
+
+All three take `(x, y)` and emit one `POLY_FT4` (tag `0x09000000`, code
+`0x2C808080`, tpage `7`) covering `(x-8, y-4)` to `(x+0x37, y+0xB)` - a
+64x16 screen quad at the chip's plate box, which is why a 32x24 source is
+stretched into it. Each returns early when `ctx+0x6CE` is non-zero.
+
+A command that is merely **unavailable** draws none of the three: it keeps
+its chip and its label becomes a single `-` (`FUN_801D8DE8` record `0xA`'s
+own blank arm), which the shared cluster builder
+`legaia_engine_ui::battle_command_ui` implements for both battle hosts. A
+fighter carrying no Ra-Seru is that case, not a crossed-out chip.
 
 The earlier reading that a restricted caller "most likely" expressed itself
-with the `-` glyph is superseded: the two marks coexist, and the X is the one
-the dome draws.
+with the `-` glyph is superseded: the marks coexist, and the X is the one a
+course restriction draws.
+
+### What makes a Ra-Seru chip render
+
+The ring is direction-selected, and each arm carries its own gate. Pad bits
+are the Legaia mask's (`Up 0x1000`, `Right 0x2000`, `Down 0x4000`), and
+**Attack is the configured confirm button** (`0x800846D0`), not Left:
+
+| Chip | Arm | Refuses when |
+|---|---|---|
+| Item (Up) | `0x801D1364..0x801D137C` | `special & 0x100` |
+| Ra-Seru (Right) | `0x801D1400..0x801D1454` | `ctx[+0x25F + member] == 0`, then `actor+0x16E & 0x1000`, then `special & 0x200` |
+| Attack (confirm) | `0x801D1534..0x801D156C` | `actor+0x16E & 0x38 == 0x38` |
+| Spirit (Down) | `0x801D1670..0x801D1690` | never |
+
+`special` is the word at `0x8007BAC0`. It is **not** a flag set the arena
+owns: the arena's `FUN_801D0088` stamps only the low byte
+(`0x801D00B8..0x801D00E4` writes `(old & ~0xFF) + (course << 4) + round + 1`,
+preserving the high bits), and every other writer clears the whole word. The
+`0x200` (magic-forbidden) bit has exactly two writers, both in
+`SCUS_942.54`'s battle init and both keyed on the **first enemy's monster
+id**: `0x800519DC..0x80051A04` raises it for monster `0xAF`, and
+`0x8005200C..0x8005205C` for a first enemy in `0x3D..=0x3F` while the mode
+word `0x80084540` is `0xC` or `0x15`. The dome ladder tops out at monster
+`0xAA` ([Course ladder](#course-ladder-the-opponent-per-course-round)), so
+**no dome round raises it**: retail's dome never crosses out the Ra-Seru
+chip. *(Evidence: `disassembly` - the two arms, the arena's store, and a
+five-form reference sweep of `0x8007BAC0` over SCUS plus all 83 mapped
+overlays.)*
+
+The member gate `ctx[+0x25F + member]` is the same byte the battle command
+ring's element chip reads - written once by the party battle-actor init
+`FUN_80053CB8` from the record's Ra-Seru equipment slot, mirrored at
+`engine-core::battle_hud::battle_member_has_raseru`. So "does the chip
+render live" has one answer across the dome and the ordinary battle.
+
+Taking the chip writes `ctx+6 = 0x46` and, at the confirm, the picked spell
+id straight into `actor+0x1DF[0]` with `actor+0x1DE = 2` and
+`actor+0x1E7 = 9` (`0x801D1A14..0x801D1A34`, `0x801D14A4`, `0x801D14C0`).
+Nothing on that path reads `ctx+0x6D8` / `ctx+0x6DC`: **a cast spends MP,
+not AP**, and it replaces the whole direction string rather than joining it.
+The cost is the static spell table's `+3` byte
+(`DAT_800754C8 + id*12`) discounted by the character record's ability
+bitfield `+0xF4` - bit `0x20` halves it, bit `0x10` takes a quarter off
+(`0x801D1A38..0x801D1B70`) - and the confirm arm compares it against
+`actor+0x150`, refusing without committing when the gauge is short
+(`0x801D1C0C..0x801D1C28`). The debit itself is the shared band's
+(`FUN_801E295C` state `0x28`), not the ring's.
+
+Port: `engine-core::muscle_dome`'s `DomeRing` / `ChipMark` /
+`DomeMagic` carry the gates and the marks, `MuscleDomeSession::commit_cast`
+the pick, and `MuscleDomeSession::select_input` the shared surface both
+hosts drive. A dome cast resolves through `engine-core::spells::cast_spell`,
+the same rule the regular battle's cast band folds with, so the two cannot
+disagree about a spell's outcome.
 
 ### The command cluster is the battle cluster
 
@@ -1583,10 +1655,22 @@ and the browser page resolve through this same kernel; neither carries a
 damage rule of its own, and a session with no model installed resolves to no
 damage rather than to invented constants.
 
+The **Ra-Seru (magic) command class** is the session's too: `DomeRing` carries
+retail's three chip gates and `ChipMark` its three mark emitters, `DomeMagic`
+the learned list with its ability-bit price, `commit_cast` the pick (which
+clears the direction string and leaves the AP budget alone, because retail's
+arm never reads `ctx+0x6D8` / `ctx+0x6DC`), and the debit lands at the
+play-out, where the shared band's `0x28` charges it. The outcome runs through
+`engine-core::spells::cast_spell` - the same rule an ordinary battle's cast
+band folds with. `select_input` is the one selection surface both hosts drive;
+the loadout comes from `magic_loadout_for`, the door both native dome entry
+paths install through. See
+[What makes a Ra-Seru chip render](#what-makes-a-ra-seru-chip-render).
+
 The world hosts the contest as the suspending `SceneMode::MuscleDome`
-(play-window `M` key; Left/Right/Up/Down enter the four directions, Cross
-confirms/continues). A KO of the opponent inside the limit credits the reward
-Seru through the engine's capture kernel.
+(play-window `M` key; Left/Right/Up/Down enter the four directions, Triangle
+opens the Ra-Seru list, Cross confirms/continues). A KO of the opponent inside
+the limit credits the reward Seru through the engine's capture kernel.
 
 The opponent is the disc's own: both hosts resolve `(course, round)` through
 `parse_course_ladder` to a monster id and read that monster's PROT 867
@@ -1637,6 +1721,16 @@ to the emitter it names).
 - ~~Which arm of `FUN_801D0CD4` / `FUN_801D0068` decides that a leg was *survived*~~ **resolved**: neither - it is the single byte test `DAT_8007BD60 & 0x80` at `0x801CEDD8`, cleared by the battle's own `0x5A` party-wipe scan and re-raised by the shared minigame-exit routine. `continuing` (`DAT_801D1ADC`) is therefore derived, not prompted: its one raising writer sits behind *course exhausted **and** survived*. See [Which arm decides a leg was survived](#which-arm-decides-a-leg-was-survived).
 - ~~The retail *dome* leg-end condition~~ **resolved**: a knockout, and nothing else. The arena hands the round to an ordinary battle (`FUN_801D1510` sets game mode `0x14`) and the only writers of the battle-end signal are the `0x5A` KO scans; the turn counter never reaches them. See [What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else).
 - ~~Whether card resolution applies any dome-specific damage scaling~~ **resolved**: it uses the shared `battle_formulas` unmodified - `FUN_801d0748` is byte-identical to the main battle round driver and a card resolves with no dome-local scaling (see [Round resolution](#round-resolution)). The `FUN_801e09f8` → `FUN_801dd0ac` half of that chain carries the arts / magic ids only; a bare direction swing's tier comes from the melee kernel instead ([why](#the-dd0ac-chain-is-not-a-direction-swings)).
+
+- ~~What makes a Ra-Seru chip render, and why the port crossed it out~~
+  **resolved**: three gates, none of them a course table - the member's own
+  Ra-Seru marker `ctx[+0x25F + member]`, the sealed-magic status bit
+  `actor+0x16E & 0x1000`, and bit `0x200` of the special-battle word
+  `0x8007BAC0`, whose only two writers key on the first enemy's monster id and
+  so never fire for a dome round. The red X is that third bit's alone, and it
+  has two siblings the captures had folded together. See
+  [What makes a Ra-Seru chip render](#what-makes-a-ra-seru-chip-render) and
+  [the three marks](#three-marks-for-you-cannot-pick-this-and-the-gates-that-raise-them).
 
 ## See also
 

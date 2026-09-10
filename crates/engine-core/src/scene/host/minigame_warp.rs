@@ -237,6 +237,13 @@ impl SceneHost {
         if !catalog.is_empty() {
             session.install_art_catalog(0, catalog);
         }
+        // The Ra-Seru (magic) command class. The special-battle word is `0`
+        // because no dome round raises either restriction bit: the arena
+        // stamps only the word's low byte, and the two `0x200` writers in
+        // battle init key on monster ids the dome ladder never stages.
+        if let Some(magic) = crate::muscle_dome::magic_loadout_for(&self.world, 0, 0) {
+            session.install_magic(0, magic);
+        }
         self.world.enter_muscle_dome(session);
         true
     }

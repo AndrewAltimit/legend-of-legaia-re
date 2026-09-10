@@ -98,6 +98,14 @@ pub const AOE_STAGER_WORKING_ARM: u8 = 4;
 /// creature at 7 and up, host debug actors) are outside both.
 pub const BATTLE_TABLE_SLOTS: usize = 8;
 
+/// The actor's own halfword, or the world's per-slot mirror when the actor
+/// has not carried one yet. Used to seed the stat block the slot-B kernels
+/// debuff: `seed_party_battle_stats` fills the mirrors, not the actor, so a
+/// zero here would have Melt Spray compute on nothing.
+fn nonzero_or(own: u16, mirror: Option<u16>) -> u16 {
+    if own != 0 { own } else { mirror.unwrap_or(0) }
+}
+
 /// A cast the action SM is carrying whose outcome is still owed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingCast {
@@ -289,6 +297,26 @@ impl World {
         {
             return;
         }
+        // ...and neither do the three whole-row **tick** sweeps, once they
+        // have run. PROT 0938's two bodies and PROT 0965's each roll their
+        // own baked power per hittable seat and store the clamped net into
+        // `+0x14C` themselves, over `actor_table[0 .. ctx[+0]]` - a seat
+        // range the spell record cannot express, exactly like the two
+        // stagers above. The one difference is the clamp: these kill, the
+        // stagers cannot.
+        //
+        // The `phase > sweep_arm` test is what keeps this from *losing* an
+        // outcome: a host that never drove the band past the sweep arm has
+        // had no module damage applied, and skipping the generic fold there
+        // would leave the cast owed forever instead of double-applied.
+        if let Some(entry) = self.cast_module_for(pc.spell_id)
+            && let Some(body) = vm::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
+            && vm::cast_module_ticks::tick_body_owns_the_fold(body)
+            && let Some(arm) = vm::cast_module_ticks::sweep_arm_for(body)
+            && self.cast_module_phase > arm
+        {
+            return;
+        }
         let Some(def) = self.spell_catalog.get(pc.spell_id).cloned() else {
             return;
         };
@@ -334,7 +362,12 @@ impl World {
     /// Arm the stager for `caster`'s `spell_id` cast. Called from the cast
     /// trigger (`FUN_801DBF9C`'s `>= 0x25` arm); the band's first stager
     /// tick does the spawn.
-    pub(in crate::world) fn arm_summon_stager(&mut self, caster: u8, spell_id: u8) {
+    ///
+    /// Public because it is the band's arming *seam*, not an internal step:
+    /// the trigger runs it for a host's cast, and a parity oracle that drives
+    /// the band a frame at a time has to reach the same door rather than a
+    /// second one of its own.
+    pub fn arm_summon_stager(&mut self, caster: u8, spell_id: u8) {
         let (cx, cy, cz) = self
             .actors
             .get(caster as usize)
@@ -740,24 +773,39 @@ impl World {
             knockdown_anim: a.battle.params.get(0x1F1 - 0x1DF).copied().unwrap_or(0),
             render_flag: a.battle.render_flag,
             anim_rate: a.battle.anim_rate.get(),
-            // The engine's battle actor carries one ATK halfword, so the
-            // pair's base half is seeded from the working one and dropped on
-            // write-back: Power Charge's `+0x15A` store and Melt Spray's
-            // `+0x15A` store land in the view only.
+            // The whole `+0x158..+0x16A` stat block, five `(working, base)`
+            // pairs, now has a home on the battle actor - so every one of
+            // Melt Spray's ten halfword stores and both of Power Charge's
+            // `+0x15A` stores land instead of stopping at the view. The
+            // defence pair is still kept in the world's per-slot split,
+            // which is where the physical-defence facet reads it.
             atk: a.battle.atk_working,
-            atk_base: a.battle.atk_working,
+            atk_base: a.battle.atk_base,
             udf: self.cast_defence_split(slot).0,
             udf_base: self.cast_defence_split(slot).0,
             ldf: self.cast_defence_split(slot).1,
             ldf_base: self.cast_defence_split(slot).1,
-            // SPD / INT have no live halfwords on the engine's battle actor
-            // yet, so Melt Spray's two widest columns land in the view and
-            // are dropped on write-back. Disclosed rather than faked - the
-            // three stats the engine does carry (ATK, UDF, LDF) do land.
-            spd: 0,
-            spd_base: 0,
-            intel: 0,
-            intel_base: 0,
+            // SPD and INT live in two places: the actor's own halfwords (new,
+            // so the band's writers have somewhere to land) and the world's
+            // per-slot mirrors, which are what turn order / the escape roll
+            // (`battle_speed`) and the accuracy seed (`battle_accuracy`)
+            // actually read. Seed from the mirror whenever the actor's own
+            // halfword is still zero - `seed_party_battle_stats` fills the
+            // mirrors, not the actor - so a debuff computes on a real number
+            // instead of underflowing zero.
+            spd: nonzero_or(a.battle.spd, self.battle_speed.get(slot as usize).copied()),
+            spd_base: nonzero_or(
+                a.battle.spd_base,
+                self.battle_speed.get(slot as usize).copied(),
+            ),
+            intel: nonzero_or(
+                a.battle.intel,
+                self.battle_accuracy.get(slot as usize).copied(),
+            ),
+            intel_base: nonzero_or(
+                a.battle.intel_base,
+                self.battle_accuracy.get(slot as usize).copied(),
+            ),
             init_key: a.battle.init_key,
             action_category: a.battle.action_category,
             queued_action: a.battle.params.first().copied().unwrap_or(0),
@@ -792,8 +840,22 @@ impl World {
         a.battle.render_flag = st.render_flag;
         a.battle.anim_rate = AnimRate(st.anim_rate);
         a.battle.atk_working = st.atk;
+        a.battle.atk_base = st.atk_base;
+        a.battle.spd = st.spd;
+        a.battle.spd_base = st.spd_base;
+        a.battle.intel = st.intel;
+        a.battle.intel_base = st.intel_base;
         a.battle.init_key = st.init_key;
         a.battle.action_category = st.action_category;
+        // ...and back into the mirrors the rest of the engine reads, so a
+        // five-stat debuff is visible to turn order and the accuracy seed
+        // rather than only to the next module tick.
+        if let Some(s) = self.battle_speed.get_mut(slot as usize) {
+            *s = st.spd;
+        }
+        if let Some(s) = self.battle_accuracy.get_mut(slot as usize) {
+            *s = st.intel;
+        }
         if let Some(s) = self.battle_defense_split.get_mut(slot as usize)
             && s.is_some()
         {
@@ -918,16 +980,23 @@ impl World {
                         .map(|s| self.cast_actor_state(s))
                         .collect();
                     let sweep_arm = ctx.phase;
-                    let rolls = self.sweep_status_rolls(&ctx, &seats, body);
-                    // Zero, not the module's baked power: see
-                    // `sweep_status_rolls` for why the fold stays the band
-                    // seam's.
-                    let take = |_seat: u8| 0i32;
+                    let rolls = self.sweep_status_rolls(&ctx, &seats, body, caster_slot);
+                    // The module's own baked power, rolled per seat: these
+                    // three write `+0x14C` themselves, so they own the
+                    // outcome and `fold_pending_cast` skips the generic fold
+                    // for them (see `sweep_status_rolls`).
+                    let take = |seat: u8| {
+                        rolls
+                            .iter()
+                            .find(|(s, _, _)| *s == seat)
+                            .map(|(_, d, _)| *d)
+                            .unwrap_or(0)
+                    };
                     let status = |seat: u8| {
                         rolls
                             .iter()
-                            .find(|(s, _)| *s == seat)
-                            .map(|(_, st)| *st)
+                            .find(|(s, _, _)| *s == seat)
+                            .map(|(_, _, st)| *st)
                             .unwrap_or((1, 1))
                     };
                     let (step, hits) = match body {
@@ -1247,23 +1316,39 @@ impl World {
     /// `0x4E` body makes per hittable seat (`0x801F7888` / `0x801F78B0`),
     /// which decide Venom then Toxic.
     ///
-    /// The **damage** roll is deliberately absent, for the reason every other
-    /// tick body in `cast_module_ticks` takes `hit: None`: the engine folds a
-    /// cast's HP outcome once, at [`Self::cast_spell_on_slots_prepaid`], with
-    /// the module's baked power substituted in. Rolling here as well would
-    /// apply the hit twice, which is the trap the PROT 0927 / 0966 stagers
-    /// avoid by *replacing* the generic fold rather than joining it. What the
-    /// sweep still owns is the part no fold can express - the per-seat status
-    /// bits, the reaction staging and the animation rate.
+    /// The **damage** roll comes first, per seat, because retail's loop calls
+    /// the wrapper before the status draws: each of the three sweeps opens
+    /// its seat body with `jal 0x801DD4B0` on its own baked power
+    /// ([`vm::cast_module_ticks::sweep_damage_shape_for`]) and stores the
+    /// clamped net into `+0x14C` itself. So these bodies **own** the cast's
+    /// HP outcome the way the PROT 0927 / 0966 stagers do, and
+    /// [`Self::fold_pending_cast`] must not also run the generic fold - which
+    /// is the double-application trap. The clamp is the kill-capable one
+    /// (`sltu` at `0x801F77EC` / `0x801F7118` / `0x801F77E0`), unlike the two
+    /// stagers' `HP - 1`.
     ///
-    /// Returns `(seat, (status_a, status_b))` in visit order.
+    /// Returns `(seat, damage, (status_a, status_b))` in visit order.
     fn sweep_status_rolls(
         &mut self,
         ctx: &vm::cast_module_ticks::CastModuleCtx,
         seats: &[vm::cast_module_ticks::CastActorState],
         body: u32,
-    ) -> Vec<(u8, (u32, u32))> {
+        caster: u8,
+    ) -> Vec<(u8, i32, (u32, u32))> {
         use vm::cast_module_ticks as ticks;
+        // Only the body's own sweep arm draws anything: retail reaches the
+        // wrapper and the two status calls inside that one arm, so rolling on
+        // every re-entry would run the shared `rand()` cursor forward on
+        // frames retail never draws.
+        let sweep_arm = match body {
+            ticks::CHAOS_BREATH_TICK => ticks::CHAOS_BREATH_SWEEP_ARM,
+            ticks::MYSTIC_CIRCLE_TICK => ticks::MYSTIC_CIRCLE_SWEEP_ARM,
+            _ => ticks::DOOMSDAY_SWEEP_ARM,
+        };
+        if ctx.phase != sweep_arm {
+            return Vec::new();
+        }
+        let shape = ticks::sweep_damage_shape_for(body);
         let mut out = Vec::new();
         for seat in 0..ctx.actor_count {
             let Some(s) = seats.get(seat as usize) else {
@@ -1279,7 +1364,11 @@ impl World {
             if !hittable {
                 continue;
             }
-            out.push((seat, (self.next_rng(), self.next_rng())));
+            let damage = match shape {
+                Some(sh) => self.capture_module_roll(sh, caster, seat).unwrap_or(0),
+                None => 0,
+            };
+            out.push((seat, damage, (self.next_rng(), self.next_rng())));
         }
         out
     }

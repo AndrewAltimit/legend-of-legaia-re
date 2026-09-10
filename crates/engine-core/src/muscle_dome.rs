@@ -1,4 +1,4 @@
-//! Clean-room **Muscle Dome** match rules engine.
+//! From-scratch **Muscle Dome** match rules engine.
 //!
 //! The dome is **not a card battle**. It is a ladder of ordinary Legaia
 //! battles: three courses of 8 / 8 / 13 rounds, each round one real monster
@@ -381,6 +381,79 @@ impl DomeDamageModel {
     }
 }
 
+/// The equipment-slot index the Ra-Seru gate reads: `+0x199` for every
+/// character but Noa, whose arm reads `+0x198`. Same pair
+/// [`crate::battle_hud::battle_member_has_raseru`] carries - kept here as
+/// its roster-slot twin, because a dome fighter has no battle ordinal until
+/// the leg hands off to the battle.
+///
+/// REF: FUN_80053CB8 (`0x800541EC..0x80054258`)
+const RASERU_SLOT: usize = 3;
+/// Noa's arm of the same gate.
+const RASERU_SLOT_NOA: usize = 2;
+/// The roster slot Noa occupies (`DAT_8007BD10` character id `2`).
+const NOA_ROSTER_SLOT: usize = 1;
+
+/// Build a dome fighter's [`DomeMagic`] out of a live world's roster - the
+/// one door both native dome entry paths (the arena-door warp and the
+/// window's own dome entry) install through, so neither grows a rule of its
+/// own.
+///
+/// `roster_slot` is the character occupying the fighter seat; `special` is
+/// the battle's [`SPECIAL_ITEM_FORBIDDEN`] / [`SPECIAL_MAGIC_FORBIDDEN`]
+/// word. The learned block is the roster record's own spell list unioned
+/// with anything captured this session, exactly as the regular battle's
+/// magic submenu builds it (`World::build_battle_spell_session`), so a dome
+/// cast offers the same rows the battle does.
+///
+/// Returns `None` when the roster has no such member.
+pub fn magic_loadout_for(
+    world: &crate::world::World,
+    roster_slot: usize,
+    special: u32,
+) -> Option<DomeMagic> {
+    let member = world.roster.members.get(roster_slot)?;
+    let list = member.spell_list();
+    let n = (list.count as usize).min(list.ids.len());
+    let mut learned: Vec<u8> = list.ids[..n].to_vec();
+    for &sid in world.seru_log.learned_spells(roster_slot as u8) {
+        if !learned.contains(&sid) {
+            learned.push(sid);
+        }
+    }
+    let spells: Vec<crate::spells::SpellDef> = learned
+        .iter()
+        .filter_map(|id| world.spell_catalog.get(*id).cloned())
+        .collect();
+    let live = member.live_stats();
+    let gauge = member.hp_mp_sp();
+    let slot = if roster_slot == NOA_ROSTER_SLOT {
+        RASERU_SLOT_NOA
+    } else {
+        RASERU_SLOT
+    };
+    let has_raseru = member.equipment().slots[slot] != 0;
+    Some(DomeMagic {
+        ring: DomeRing {
+            special,
+            // A dome fighter enters the leg unafflicted: the status halfword
+            // is a battle actor's, and the leg's actors are staged by the
+            // battle the arena hands off to.
+            status: 0,
+            has_raseru,
+        },
+        mp: gauge.mp_cur,
+        mp_max: gauge.mp_max,
+        ability_bits: world
+            .character_ability_bits
+            .get(roster_slot)
+            .copied()
+            .unwrap_or(0) as u8,
+        magic_power: live.int,
+        spells,
+    })
+}
+
 /// One fighter's **normal-art catalog** for [`MuscleDomeSession::install_art_catalog`],
 /// filtered out of a world's art records the way the retail queue builder's
 /// inner loop filters them: this character's rows only, the **normal** arts
@@ -437,6 +510,301 @@ fn dome_command_of_action_byte(b: u8) -> Option<legaia_art::Command> {
         0x0F => Some(legaia_art::Command::Up),
         _ => None,
     }
+}
+
+// ---------------------------------------------------------------------------
+// The command ring: which chip a dome fighter may pick, and the magic arm
+// ---------------------------------------------------------------------------
+
+/// Bit of the **special-battle word** `0x8007BAC0` that forbids the Item
+/// chip.
+///
+/// The word is not a flag set the arena owns: the arena stamps only its low
+/// byte (`FUN_801D0088` at `0x801D00B8..0x801D00E4` writes
+/// `(old & ~0xFF) + (course << 4) + round + 1`, preserving the high bits),
+/// and the battle round driver reads the high bits as command restrictions.
+///
+/// REF: FUN_801d0748 (`0x801D12C0..0x801D12D8` the mark; `0x801D1370..0x801D137C`
+/// the arm's refusal)
+pub const SPECIAL_ITEM_FORBIDDEN: u32 = 0x100;
+
+/// Bit of the same word that forbids the **Ra-Seru (magic)** chip - the one
+/// that draws the red X over it and makes the ring's Right arm refuse.
+///
+/// Its two writers are both in `SCUS_942.54`'s battle init and both key on
+/// the **first enemy's monster id**, not on a course: `0x800519DC..0x80051A04`
+/// raises it for monster `0xAF`, and `0x8005200C..0x8005205C` for a first
+/// enemy in `0x3D..=0x3F` while the mode word `0x80084540` is `0xC` or
+/// `0x15`. The dome ladder tops out at monster `0xAA`, so **no dome round
+/// raises it** and retail's dome never crosses the Ra-Seru chip out.
+///
+/// REF: FUN_801d0748 (`0x801D12DC..0x801D12F4` the mark; `0x801D1448..0x801D1454`
+/// the arm's refusal)
+pub const SPECIAL_MAGIC_FORBIDDEN: u32 = 0x200;
+
+/// The three `actor+0x16E` status bits that must **all** be set for the
+/// Attack chip to be refused (`andi 0x38` then a compare against `0x38`).
+///
+/// REF: FUN_801d0748 (`0x801D12F8..0x801D132C`, `0x801D1560..0x801D156C`)
+pub const STATUS_ATTACK_BLOCKED: u16 = 0x38;
+
+/// The `actor+0x16E` status bit that seals magic: the Ra-Seru chip keeps its
+/// plate, wears the sealed mark, and the ring's Right arm refuses.
+///
+/// REF: FUN_801d0748 (`0x801D1330..0x801D1360`, `0x801D1434..0x801D1440`)
+pub const STATUS_MAGIC_SEALED: u16 = 0x1000;
+
+/// One chip of the battle command ring, in the seats the dome draws them.
+///
+/// The ring is **direction-selected**, and the pad bit each arm tests is the
+/// Legaia mask's, not the PSX pad's: Up `0x1000` picks Item, Right `0x2000`
+/// picks Ra-Seru, Down `0x4000` picks Spirit, and Attack is taken by the
+/// *configured confirm button* (`0x800846D0`) rather than by Left.
+///
+/// REF: FUN_801d0748 (`0x801D1364` Item, `0x801D1400` Ra-Seru, `0x801D1534`
+/// Attack, `0x801D1670` Spirit)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DomeRingChip {
+    Item,
+    Attack,
+    RaSeru,
+    Spirit,
+}
+
+impl DomeRingChip {
+    /// The ring in its seat order (the SCUS screen-element table's records
+    /// 8 / 9 / `0xA` / `0xB`).
+    pub const RING: [DomeRingChip; 4] = [
+        DomeRingChip::Item,
+        DomeRingChip::Attack,
+        DomeRingChip::RaSeru,
+        DomeRingChip::Spirit,
+    ];
+
+    /// The chip's arrived screen anchor - the `(x, y)` the mark emitters are
+    /// called with, which is the element table's second glide endpoint.
+    pub fn anchor(self) -> (i16, i16) {
+        match self {
+            DomeRingChip::Item => (204, 34),
+            DomeRingChip::Attack => (160, 66),
+            DomeRingChip::RaSeru => (248, 66),
+            DomeRingChip::Spirit => (204, 98),
+        }
+    }
+
+    /// The action-state byte the arm writes into `actor+0x1DE` when the chip
+    /// is taken (`1` Item, `2` Ra-Seru, `3` Attack, `4` Spirit).
+    ///
+    /// REF: FUN_801d0748 (`0x801D13CC`, `0x801D14A4`, `0x801D15CC`, `0x801D1690`)
+    pub fn action_state(self) -> u8 {
+        match self {
+            DomeRingChip::Item => 1,
+            DomeRingChip::RaSeru => 2,
+            DomeRingChip::Attack => 3,
+            DomeRingChip::Spirit => 4,
+        }
+    }
+}
+
+/// The mark retail lays over a chip the fighter cannot take. All three are
+/// the same 64x16 screen quad at `(anchor.x - 8, anchor.y - 4)` off the
+/// `etim` page (tpage `7`); they differ only in source rect and palette.
+///
+/// REF: FUN_801dbc30, FUN_801dbd04, FUN_801dbec4
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChipMark {
+    /// The red cross-out X (`FUN_801DBC30`) - the course restriction.
+    Forbidden,
+    /// `FUN_801DBD04`'s 32x24 mark - the Attack chip under
+    /// [`STATUS_ATTACK_BLOCKED`].
+    Blocked,
+    /// `FUN_801DBEC4`'s 64x16 mark - the Ra-Seru chip under
+    /// [`STATUS_MAGIC_SEALED`].
+    Sealed,
+}
+
+impl ChipMark {
+    /// Source rect `(u, v, w, h)` on the `etim` page.
+    pub fn source_rect(self) -> (u16, u16, u16, u16) {
+        match self {
+            ChipMark::Forbidden => (0, 96, 64, 16),
+            ChipMark::Blocked => (80, 96, 32, 24),
+            ChipMark::Sealed => (120, 96, 64, 16),
+        }
+    }
+
+    /// The packet's CLUT word.
+    pub fn clut(self) -> u16 {
+        match self {
+            ChipMark::Forbidden => 0x7704,
+            ChipMark::Blocked => 0x770B,
+            ChipMark::Sealed => 0x7700,
+        }
+    }
+}
+
+/// Everything the command ring gates a chip on for one fighter.
+///
+/// Retail keeps the three inputs apart, and so does this: the **word** is
+/// per battle, the **status** is per actor, and the Ra-Seru marker is the
+/// per-member gate `ctx[+0x25F + member]` the party battle-actor init writes
+/// (`FUN_80053CB8`, mirrored by
+/// [`crate::battle_hud::battle_member_has_raseru`]).
+///
+/// A missing Ra-Seru is **not** a mark: the chip's label becomes a lone `-`
+/// (`FUN_801D8DE8` record `0xA`) and the arm refuses silently. Only the
+/// three [`ChipMark`] conditions draw anything.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DomeRing {
+    /// The special-battle word `0x8007BAC0`.
+    pub special: u32,
+    /// The fighter's `actor+0x16E` status halfword.
+    pub status: u16,
+    /// The per-member Ra-Seru gate `ctx[+0x25F + member]`.
+    pub has_raseru: bool,
+}
+
+impl DomeRing {
+    /// The mark this chip wears, if any.
+    ///
+    /// PORT: FUN_801d0748 (`0x801D12C0..0x801D1364`, the four mark tests of
+    /// the phase-`0x28` arm)
+    pub fn mark(&self, chip: DomeRingChip) -> Option<ChipMark> {
+        match chip {
+            DomeRingChip::Item => {
+                (self.special & SPECIAL_ITEM_FORBIDDEN != 0).then_some(ChipMark::Forbidden)
+            }
+            DomeRingChip::RaSeru => {
+                if self.special & SPECIAL_MAGIC_FORBIDDEN != 0 {
+                    Some(ChipMark::Forbidden)
+                } else if self.status & STATUS_MAGIC_SEALED != 0 {
+                    Some(ChipMark::Sealed)
+                } else {
+                    None
+                }
+            }
+            DomeRingChip::Attack => (self.status & STATUS_ATTACK_BLOCKED == STATUS_ATTACK_BLOCKED)
+                .then_some(ChipMark::Blocked),
+            DomeRingChip::Spirit => None,
+        }
+    }
+
+    /// Whether the ring's arm for this chip commits rather than refusing.
+    ///
+    /// The Ra-Seru arm's three refusals are tested in retail's own order:
+    /// the member gate first, then the sealed status, then the forbidden
+    /// bit. So a fighter with no Ra-Seru is refused even on a course that
+    /// allows magic.
+    ///
+    /// PORT: FUN_801d0748 (`0x801D1370..0x801D137C` Item,
+    /// `0x801D1408..0x801D1454` Ra-Seru, `0x801D1560..0x801D156C` Attack)
+    pub fn enabled(&self, chip: DomeRingChip) -> bool {
+        match chip {
+            DomeRingChip::Item => self.special & SPECIAL_ITEM_FORBIDDEN == 0,
+            DomeRingChip::RaSeru => {
+                self.has_raseru
+                    && self.status & STATUS_MAGIC_SEALED == 0
+                    && self.special & SPECIAL_MAGIC_FORBIDDEN == 0
+            }
+            DomeRingChip::Attack => self.status & STATUS_ATTACK_BLOCKED != STATUS_ATTACK_BLOCKED,
+            DomeRingChip::Spirit => true,
+        }
+    }
+}
+
+/// One fighter's magic loadout: the ring gates, the live MP gauge and the
+/// spells the Ra-Seru arm offers.
+///
+/// The spell list is the caster's **learned** block, which retail reads out
+/// of the character record at live `+0x13D` (32 ids) with the per-spell
+/// level at `+0x161`; the MP cost is the static spell table's `+3` byte
+/// discounted by the accessory ability bits at record `+0xF4` (bit `0x20`
+/// halves it, bit `0x10` takes a quarter off).
+///
+/// REF: FUN_801d0748 (`0x801D1A38..0x801D1B70`, the phase-`0x46` cost read)
+#[derive(Debug, Clone, Default)]
+pub struct DomeMagic {
+    /// The fighter's command-ring gates.
+    pub ring: DomeRing,
+    /// Live MP (`actor+0x150`).
+    pub mp: u16,
+    /// Max MP (`actor+0x152`).
+    pub mp_max: u16,
+    /// The character record's ability bitfield `+0xF4` low byte - the MP-saver
+    /// accessory bits the arm discounts with.
+    pub ability_bits: u8,
+    /// The caster's magic-power column, the `caster_mag` the shared cast
+    /// kernel takes.
+    pub magic_power: u16,
+    /// The learned spells, in list order.
+    pub spells: Vec<crate::spells::SpellDef>,
+}
+
+/// One selectable row of the dome's Ra-Seru list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DomeSpellRow {
+    pub id: u8,
+    pub name: String,
+    /// The cost **after** the ability-bit discount - the number the arm
+    /// compares against MP.
+    pub mp_cost: u16,
+    pub affordable: bool,
+}
+
+/// Why the ring's Ra-Seru arm refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DomeCastRefusal {
+    /// No magic loadout installed for this fighter at all.
+    NoLoadout,
+    /// `ctx[+0x25F + member] == 0` - the member carries no Ra-Seru.
+    NoRaSeru,
+    /// `actor+0x16E & 0x1000`.
+    Sealed,
+    /// The special-battle word's magic bit.
+    Forbidden,
+    /// The list carries no such spell.
+    UnknownSpell,
+    /// `actor+0x150 < cost` - retail clears the menu result and stays on the
+    /// list rather than committing.
+    NotEnoughMp,
+    /// The session is not taking a selection.
+    WrongPhase,
+}
+
+/// What a fighter does with its turn.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DomeTurnAction {
+    /// The queued direction string, already run through the tokenizer.
+    Commands(Vec<u8>),
+    /// One cast of this spell id. Retail writes the id at `actor+0x1DF[0]`
+    /// with `actor+0x1DE = 2` and `actor+0x1E7 = 9`, and never touches the AP
+    /// accounting: a cast costs **MP, not AP**.
+    ///
+    /// REF: FUN_801d0748 (`0x801D1A14..0x801D1A34` the queue store,
+    /// `0x801D14A4` / `0x801D14C0` the two action bytes)
+    Cast(u8),
+}
+
+/// One frame of edge-triggered pad for a dome selection, in the shape both
+/// hosts can build.
+///
+/// `magic` is the surface that opens the Ra-Seru list. Retail takes it off
+/// the ring's Right chip; the port's selection has no ring screen, so each
+/// host binds it separately (native `play-window`: Triangle; the browser
+/// minigames page: the ring's Right chip) and both reach
+/// [`MuscleDomeSession::select_input`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DomeSelectPad {
+    pub left: bool,
+    pub right: bool,
+    pub up: bool,
+    pub down: bool,
+    /// Confirm (Cross).
+    pub confirm: bool,
+    /// Cancel / back (Circle).
+    pub cancel: bool,
+    /// Open the Ra-Seru list.
+    pub magic: bool,
 }
 
 /// One dealt slot: a direction-command id + its per-fighter AP cost.
@@ -558,6 +926,21 @@ pub struct MuscleDomeSession {
     /// "this fighter knows no arts", which is retail's own answer for an
     /// unmatched string.
     art_catalog: [Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)>; 2],
+    /// Per-fighter magic loadout, when the host has one to give
+    /// ([`Self::install_magic`]). `None` is a fighter whose Ra-Seru chip
+    /// reads `-` and whose ring arm refuses, which is retail's own answer for
+    /// a member with no Ra-Seru equipped.
+    magic: [Option<DomeMagic>; 2],
+    /// The spell each fighter has committed for this turn (`actor+0x1DF[0]`
+    /// with `actor+0x1DE = 2`). A cast **replaces** the direction string; it
+    /// spends MP, not AP.
+    cast: [Option<u8>; 2],
+    /// Whether the player's Ra-Seru list is open over the ring, and where its
+    /// cursor sits. Retail's list is its own phase (`ctx+6 = 0x46`); the port
+    /// keeps [`MusclePhase`] as it is and carries the list as a sub-state of
+    /// `Select`, so a host that never opens it behaves exactly as before.
+    magic_open: bool,
+    magic_cursor: u8,
 }
 
 impl MuscleDomeSession {
@@ -584,6 +967,10 @@ impl MuscleDomeSession {
             time_meter: 0,
             time_meter_bar_y: time_meter_step(0, 0, false, false).1,
             art_catalog: [Vec::new(), Vec::new()],
+            magic: [None, None],
+            cast: [None, None],
+            magic_open: false,
+            magic_cursor: 0,
         }
     }
 
@@ -722,8 +1109,14 @@ impl MuscleDomeSession {
 
     /// Whether `slot` can commit dealt direction `card_slot` right now:
     /// selection phase, queue space, and the budget covers the cost.
+    ///
+    /// An open Ra-Seru list or a committed cast both close the direction
+    /// input: retail reaches the four-direction screen only through the
+    /// ring's Attack arm, and a cast leaves the ring by a different door.
     pub fn can_commit(&self, slot: usize, card_slot: usize) -> bool {
         self.phase == MusclePhase::Select
+            && !self.magic_open
+            && self.queued_cast(slot).is_none()
             && card_slot < HAND_SLOTS
             && self.f[slot].queue.len() < QUEUE_CAP
             && self.f[slot].budget >= self.f[slot].hand[card_slot].cost
@@ -805,6 +1198,8 @@ impl MuscleDomeSession {
         self.f[slot].queue.clear();
         self.f[slot].budget += self.f[slot].spent;
         self.f[slot].spent = 0;
+        self.cast[slot] = None;
+        self.magic_open = false;
         self.phase = MusclePhase::Select;
     }
 
@@ -834,6 +1229,18 @@ impl MuscleDomeSession {
         self.last_turn_damage = [0, 0];
         'play: for attacker in 0..2usize {
             let defender = attacker ^ 1;
+            // A committed cast is the whole turn: retail's ring arm stores
+            // the spell id at `actor+0x1DF[0]` and the direction string never
+            // reaches the queue, so there is nothing else to walk.
+            if self.queued_cast(attacker).is_some() {
+                let d = self.resolve_cast(attacker).max(0);
+                self.last_turn_damage[defender] += d;
+                self.f[defender].hp = (self.f[defender].hp - d).max(0);
+                if self.f[defender].hp == 0 {
+                    break 'play;
+                }
+                continue;
+            }
             // The bytes retail actually plays: the tokenizer's action queue
             // when the fighter has an art catalog, the raw string otherwise.
             let queue = self.tokenized_queue(attacker);
@@ -914,6 +1321,357 @@ impl MuscleDomeSession {
         legaia_art::tokenize::populated(&tokens).to_vec()
     }
 
+    // --- The Ra-Seru (magic) command class ---------------------------------
+
+    /// Install fighter `slot`'s magic loadout - the ring gates, the live MP
+    /// gauge and the learned spells the Ra-Seru arm offers.
+    ///
+    /// Both dome hosts install one through this single door, so neither can
+    /// grow a magic rule of its own. A fighter with no loadout keeps retail's
+    /// behaviour for a member carrying no Ra-Seru: the chip's label is `-`
+    /// and the arm refuses.
+    pub fn install_magic(&mut self, slot: usize, magic: DomeMagic) {
+        if slot < 2 {
+            self.magic[slot] = Some(magic);
+        }
+    }
+
+    /// The installed loadout, if any.
+    pub fn magic(&self, slot: usize) -> Option<&DomeMagic> {
+        self.magic.get(slot).and_then(|m| m.as_ref())
+    }
+
+    /// Fighter `slot`'s live MP.
+    pub fn mp(&self, slot: usize) -> u16 {
+        self.magic(slot).map_or(0, |m| m.mp)
+    }
+
+    /// The fighter's command-ring gates - the default (`special = 0`,
+    /// `status = 0`, no Ra-Seru) when no loadout is installed.
+    pub fn ring(&self, slot: usize) -> DomeRing {
+        self.magic(slot).map(|m| m.ring).unwrap_or_default()
+    }
+
+    /// Whether `slot`'s ring arm for `chip` commits rather than refusing.
+    /// Both hosts draw the chip enabled exactly when this is `true`.
+    pub fn chip_enabled(&self, slot: usize, chip: DomeRingChip) -> bool {
+        self.ring(slot).enabled(chip)
+    }
+
+    /// The mark retail lays over `chip`, if any. A chip that is merely
+    /// unavailable because the member carries no Ra-Seru wears **none** -
+    /// see [`DomeRing::mark`].
+    pub fn chip_mark(&self, slot: usize, chip: DomeRingChip) -> Option<ChipMark> {
+        self.ring(slot).mark(chip)
+    }
+
+    /// The MP a cast of `spell_id` actually charges `slot`: the spell table's
+    /// `+3` byte after the caster's ability-bit discount, which is the number
+    /// retail's phase-`0x46` arm compares against `actor+0x150`.
+    ///
+    /// PORT: FUN_801d0748 (`0x801D1A38..0x801D1B70` - the `DAT_800754C8`
+    /// `+3` read and the `+0xF4` bit `0x20` / `0x10` discounts)
+    pub fn spell_mp_cost(&self, slot: usize, spell_id: u8) -> Option<u16> {
+        let m = self.magic(slot)?;
+        let def = m.spells.iter().find(|s| s.id == spell_id)?;
+        let modifier = legaia_engine_vm::battle_formulas::MpCostModifier::from_ability_flags(
+            u32::from(m.ability_bits),
+        );
+        Some(
+            legaia_engine_vm::battle_formulas::mp_cost_after_ability_bits(
+                def.mp_cost as u16,
+                modifier,
+            ),
+        )
+    }
+
+    /// The Ra-Seru list as rows, priced through [`Self::spell_mp_cost`] so
+    /// the displayed cost is the one the arm charges.
+    pub fn spell_rows(&self, slot: usize) -> Vec<DomeSpellRow> {
+        let Some(m) = self.magic(slot) else {
+            return Vec::new();
+        };
+        m.spells
+            .iter()
+            .map(|def| {
+                let mp_cost = self
+                    .spell_mp_cost(slot, def.id)
+                    .unwrap_or(def.mp_cost as u16);
+                DomeSpellRow {
+                    id: def.id,
+                    name: def.name.clone(),
+                    mp_cost,
+                    affordable: m.mp >= mp_cost,
+                }
+            })
+            .collect()
+    }
+
+    /// Whether the player's Ra-Seru list is open over the ring.
+    pub fn magic_open(&self) -> bool {
+        self.magic_open
+    }
+
+    /// The open list's cursor row.
+    pub fn magic_cursor(&self) -> u8 {
+        self.magic_cursor
+    }
+
+    /// Take the ring's Ra-Seru arm for fighter `slot`: refuse for the three
+    /// retail reasons, or open the spell list.
+    ///
+    /// The refusal order is retail's own - the member gate first
+    /// (`ctx[+0x25F + member]`, `0x801D1418`), then the sealed status
+    /// (`actor+0x16E & 0x1000`, `0x801D143C`), then the special-battle word's
+    /// magic bit (`0x801D1450`).
+    ///
+    /// PORT: FUN_801d0748 (`0x801D1400..0x801D145C`, the ring's Right arm up
+    /// to the `ctx+6 = 0x46` store)
+    pub fn open_magic(&mut self, slot: usize) -> Result<(), DomeCastRefusal> {
+        if self.phase != MusclePhase::Select {
+            return Err(DomeCastRefusal::WrongPhase);
+        }
+        let Some(m) = self.magic(slot) else {
+            return Err(DomeCastRefusal::NoLoadout);
+        };
+        if !m.ring.has_raseru {
+            return Err(DomeCastRefusal::NoRaSeru);
+        }
+        if m.ring.status & STATUS_MAGIC_SEALED != 0 {
+            return Err(DomeCastRefusal::Sealed);
+        }
+        if m.ring.special & SPECIAL_MAGIC_FORBIDDEN != 0 {
+            return Err(DomeCastRefusal::Forbidden);
+        }
+        self.magic_open = true;
+        self.magic_cursor = 0;
+        Ok(())
+    }
+
+    /// Back out of the list without casting - retail's `0x8007BB94 == 3`
+    /// cancel arm, which restores the saved ring state and returns to phase
+    /// `0x28`.
+    ///
+    /// REF: FUN_801d0748 (`0x801D1B78..0x801D1BE8`)
+    pub fn close_magic(&mut self) {
+        self.magic_open = false;
+        self.magic_cursor = 0;
+    }
+
+    /// Move the open list's cursor, wrapping over the fighter's rows.
+    pub fn move_magic_cursor(&mut self, slot: usize, delta: i32) {
+        let n = self.magic(slot).map_or(0, |m| m.spells.len());
+        if !self.magic_open || n == 0 {
+            return;
+        }
+        let n = n as i32;
+        let next = (self.magic_cursor as i32 + delta).rem_euclid(n);
+        self.magic_cursor = next as u8;
+    }
+
+    /// The spell id under the open list's cursor.
+    pub fn magic_cursor_spell(&self, slot: usize) -> Option<u8> {
+        let m = self.magic(slot)?;
+        m.spells.get(self.magic_cursor as usize).map(|s| s.id)
+    }
+
+    /// Confirm the row under the cursor - the `0x8007BB94 == 2` arm.
+    pub fn confirm_magic(&mut self, slot: usize) -> Result<u16, DomeCastRefusal> {
+        let Some(id) = self.magic_cursor_spell(slot) else {
+            return Err(DomeCastRefusal::UnknownSpell);
+        };
+        self.commit_cast(slot, id)
+    }
+
+    /// Commit a cast for fighter `slot`: re-run the ring gate, price the
+    /// spell, and refuse when the live gauge does not cover it.
+    ///
+    /// On success the fighter's direction string is thrown away - retail's
+    /// arm stores the spell id at `actor+0x1DF[0]`, so a cast **is** the
+    /// whole queue - and the AP budget is left untouched, because the arm
+    /// never reads `ctx+0x6D8` / `ctx+0x6DC`. The MP is charged where retail
+    /// charges it, at the shared band's cast-begin, which is
+    /// [`Self::resolve_turn`] here.
+    ///
+    /// Returns the effective MP cost.
+    ///
+    /// PORT: FUN_801d0748 (`0x801D1408..0x801D1528` the ring arm;
+    /// `0x801D1BF0..0x801D1C58` the MP gate and confirm)
+    pub fn commit_cast(&mut self, slot: usize, spell_id: u8) -> Result<u16, DomeCastRefusal> {
+        if self.phase != MusclePhase::Select {
+            return Err(DomeCastRefusal::WrongPhase);
+        }
+        if slot >= 2 {
+            return Err(DomeCastRefusal::NoLoadout);
+        }
+        let ring = self.ring(slot);
+        if self.magic(slot).is_none() {
+            return Err(DomeCastRefusal::NoLoadout);
+        }
+        if !ring.has_raseru {
+            return Err(DomeCastRefusal::NoRaSeru);
+        }
+        if ring.status & STATUS_MAGIC_SEALED != 0 {
+            return Err(DomeCastRefusal::Sealed);
+        }
+        if ring.special & SPECIAL_MAGIC_FORBIDDEN != 0 {
+            return Err(DomeCastRefusal::Forbidden);
+        }
+        let Some(cost) = self.spell_mp_cost(slot, spell_id) else {
+            return Err(DomeCastRefusal::UnknownSpell);
+        };
+        if self.mp(slot) < cost {
+            return Err(DomeCastRefusal::NotEnoughMp);
+        }
+        // The queue store: the spell id replaces the direction string, and
+        // the budget the string spent comes back with it.
+        self.f[slot].queue.clear();
+        self.f[slot].budget += self.f[slot].spent;
+        self.f[slot].spent = 0;
+        self.cast[slot] = Some(spell_id);
+        self.magic_open = false;
+        Ok(cost)
+    }
+
+    /// The spell fighter `slot` has committed for this turn, if any.
+    pub fn queued_cast(&self, slot: usize) -> Option<u8> {
+        self.cast.get(slot).copied().flatten()
+    }
+
+    /// What fighter `slot` does with this turn: its cast, or the tokenizer's
+    /// action queue.
+    pub fn turn_action(&self, slot: usize) -> DomeTurnAction {
+        match self.queued_cast(slot) {
+            Some(id) => DomeTurnAction::Cast(id),
+            None => DomeTurnAction::Commands(self.tokenized_queue(slot)),
+        }
+    }
+
+    /// Resolve fighter `slot`'s committed cast against the other fighter -
+    /// the MP debit plus the shared [`crate::spells::cast_spell`] rule the
+    /// regular battle's cast band folds with
+    /// (`World::cast_spell_on_slots_prepaid`), so a dome cast and a battle
+    /// cast of the same spell resolve through one kernel.
+    ///
+    /// Returns the HP delta applied to the defender (positive = damage).
+    fn resolve_cast(&mut self, slot: usize) -> i32 {
+        use crate::spells::{SpellOutcome, SpellSnapshot, cast_spell};
+        let Some(spell_id) = self.queued_cast(slot) else {
+            return 0;
+        };
+        let Some(cost) = self.spell_mp_cost(slot, spell_id) else {
+            return 0;
+        };
+        let Some(def) = self
+            .magic(slot)
+            .and_then(|m| m.spells.iter().find(|s| s.id == spell_id))
+            .cloned()
+        else {
+            return 0;
+        };
+        // Retail charges the cast at the shared band's `0x28`, not at the
+        // ring - so the debit lands here, when the turn plays out.
+        let caster_mag = self.magic(slot).map_or(0, |m| m.magic_power);
+        if let Some(m) = self.magic[slot].as_mut() {
+            m.mp = m.mp.saturating_sub(cost);
+        }
+        let defender = slot ^ 1;
+        let target = defender as u8;
+        let snap = SpellSnapshot {
+            caster_mag,
+            caster_hp: self.f[slot].hp.clamp(0, u16::MAX as i32) as u16,
+            caster_max_hp: self.f[slot].max_hp.clamp(0, u16::MAX as i32) as u16,
+            // The gauge is already debited; the shared rule re-checks it.
+            caster_mp: self.mp(slot).saturating_add(cost),
+            target_mdef: self
+                .damage
+                .as_ref()
+                .map_or(0, |m| m.combatants()[defender].ldf),
+            target_hp: self.f[defender].hp.clamp(0, u16::MAX as i32) as u16,
+            target_hp_max: self.f[defender].max_hp.clamp(0, u16::MAX as i32) as u16,
+            target_mp: self.mp(defender),
+            target_alive: self.f[defender].hp > 0,
+            target_weakness: crate::spells::ElementMask::default(),
+        };
+        match cast_spell(&def, target, &snap) {
+            SpellOutcome::Damage { amount, .. } => i32::from(amount),
+            _ => 0,
+        }
+    }
+
+    /// One frame of edge-triggered pad for the player's selection, shared by
+    /// both dome hosts so neither can grow an input rule of its own.
+    ///
+    /// Two surfaces live under [`MusclePhase::Select`], exactly as retail's
+    /// `ctx+6` keeps them apart:
+    ///
+    /// * the **Ra-Seru list** (`ctx+6 = 0x46`) while [`Self::magic_open`] -
+    ///   up / down walk the rows, confirm commits the cast, cancel backs out;
+    /// * the **direction input** (`ctx+6 = 0x50`) otherwise - the four
+    ///   directions commit their dealt slot under the AP budget, and confirm
+    ///   closes the turn.
+    ///
+    /// `pad.magic` is the surface that opens the list. Retail reaches it from
+    /// the ring's Right chip (`0x801D1400`), which the port's collapsed
+    /// selection cannot spare - the four directions are the input screen's -
+    /// so each host binds it to a button of its own and both land here.
+    ///
+    /// Returns `true` when the player's selection closed this frame (the host
+    /// then runs the opponent and resolves).
+    pub fn select_input(&mut self, pad: DomeSelectPad) -> bool {
+        if self.phase != MusclePhase::Select {
+            return false;
+        }
+        if self.magic_open {
+            if pad.cancel {
+                self.close_magic();
+                return false;
+            }
+            if pad.up {
+                self.move_magic_cursor(0, -1);
+            }
+            if pad.down {
+                self.move_magic_cursor(0, 1);
+            }
+            if pad.confirm {
+                // A refusal leaves the list open, which is retail's answer to
+                // an unaffordable pick (`0x8007BB94` is cleared and the arm
+                // returns without committing).
+                if self.confirm_magic(0).is_err() {
+                    return false;
+                }
+                self.ai_commit_all(1);
+                self.end_selection();
+                return true;
+            }
+            return false;
+        }
+        if pad.magic {
+            let _ = self.open_magic(0);
+            return false;
+        }
+        let card = if pad.left {
+            Some(0)
+        } else if pad.right {
+            Some(1)
+        } else if pad.up {
+            Some(2)
+        } else if pad.down {
+            Some(3)
+        } else {
+            None
+        };
+        if let Some(card) = card {
+            self.commit_card(0, card);
+        }
+        if pad.confirm {
+            self.ai_commit_all(1);
+            self.end_selection();
+            return true;
+        }
+        false
+    }
+
     /// Install the shared [`DomeDamageModel`] so the turn can resolve through
     /// the **retail** battle formulas instead of a host stand-in.
     pub fn install_damage_model(&mut self, model: DomeDamageModel) {
@@ -978,6 +1736,9 @@ impl MuscleDomeSession {
         }
         self.f[0].reset_turn();
         self.f[1].reset_turn();
+        self.cast = [None, None];
+        self.magic_open = false;
+        self.magic_cursor = 0;
         self.phase = MusclePhase::Select;
     }
 }
@@ -2232,6 +2993,267 @@ mod tests {
             [500, 400],
             3,
         )
+    }
+
+    // --- The Ra-Seru command class ----------------------------------------
+
+    fn seru(id: u8, mp: u8, power: u16) -> crate::spells::SpellDef {
+        crate::spells::SpellDef {
+            id,
+            name: format!("Seru{id:02x}"),
+            mp_cost: mp,
+            element: crate::spells::SpellElement::Neutral,
+            target: crate::spells::SpellTarget::OneEnemy,
+            effect: crate::spells::SpellEffect::Damage {
+                base_power: power,
+                element: crate::spells::SpellElement::Neutral,
+            },
+            anim_id: 0,
+            effect_class: 0,
+        }
+    }
+
+    fn magic(mp: u16) -> DomeMagic {
+        DomeMagic {
+            ring: DomeRing {
+                special: 0,
+                status: 0,
+                has_raseru: true,
+            },
+            mp,
+            mp_max: 60,
+            ability_bits: 0,
+            magic_power: 40,
+            spells: vec![seru(0x81, 8, 40), seru(0x82, 30, 90)],
+        }
+    }
+
+    #[test]
+    fn the_ra_seru_chip_is_live_exactly_when_retails_three_gates_pass() {
+        let mut s = session();
+        // No loadout: retail's `-` chip, and no mark rides with it.
+        assert!(!s.chip_enabled(0, DomeRingChip::RaSeru));
+        assert_eq!(s.chip_mark(0, DomeRingChip::RaSeru), None);
+        s.install_magic(0, magic(60));
+        assert!(s.chip_enabled(0, DomeRingChip::RaSeru));
+        assert_eq!(s.chip_mark(0, DomeRingChip::RaSeru), None);
+        // Sealed: the chip keeps its plate and wears `FUN_801DBEC4`'s mark.
+        let mut sealed = magic(60);
+        sealed.ring.status = STATUS_MAGIC_SEALED;
+        s.install_magic(0, sealed);
+        assert!(!s.chip_enabled(0, DomeRingChip::RaSeru));
+        assert_eq!(s.chip_mark(0, DomeRingChip::RaSeru), Some(ChipMark::Sealed));
+        // Forbidden: the red cross-out X, the same emitter Item's uses.
+        let mut banned = magic(60);
+        banned.ring.special = SPECIAL_MAGIC_FORBIDDEN;
+        s.install_magic(0, banned);
+        assert!(!s.chip_enabled(0, DomeRingChip::RaSeru));
+        assert_eq!(
+            s.chip_mark(0, DomeRingChip::RaSeru),
+            Some(ChipMark::Forbidden)
+        );
+        // ...and the Item chip is the *other* bit, so a magic ban leaves it
+        // alone. Retail's dome crosses out Item, never both.
+        assert!(s.chip_enabled(0, DomeRingChip::Item));
+        assert_eq!(s.chip_mark(0, DomeRingChip::Item), None);
+    }
+
+    #[test]
+    fn the_item_chip_carries_its_own_bit() {
+        let mut s = session();
+        let mut m = magic(60);
+        m.ring.special = SPECIAL_ITEM_FORBIDDEN;
+        s.install_magic(0, m);
+        assert!(!s.chip_enabled(0, DomeRingChip::Item));
+        assert_eq!(
+            s.chip_mark(0, DomeRingChip::Item),
+            Some(ChipMark::Forbidden)
+        );
+        // The magic bit is clear, so the Ra-Seru arm still commits - which is
+        // exactly the dome's retail cluster.
+        assert!(s.chip_enabled(0, DomeRingChip::RaSeru));
+    }
+
+    #[test]
+    fn a_cast_spends_mp_not_ap_and_replaces_the_direction_string() {
+        let mut s = session();
+        s.install_magic(0, magic(60));
+        assert!(s.commit_card(0, 0));
+        let budget_after_a_swing = s.budget(0);
+        assert!(budget_after_a_swing < 100);
+        let cost = s.commit_cast(0, 0x81).expect("Gimard is affordable");
+        assert_eq!(cost, 8);
+        // The AP the string spent comes back: retail's magic arm never reads
+        // `ctx+0x6D8` / `ctx+0x6DC`, and the queue store is a whole-string
+        // replacement at `actor+0x1DF[0]`.
+        assert_eq!(s.budget(0), 100);
+        assert_eq!(s.spent(0), 0);
+        assert!(s.queue(0).is_empty());
+        assert_eq!(s.queued_cast(0), Some(0x81));
+        assert_eq!(s.turn_action(0), DomeTurnAction::Cast(0x81));
+        // Not charged until the turn plays out - retail debits at the shared
+        // band's cast-begin, not at the pick.
+        assert_eq!(s.mp(0), 60);
+        s.ai_commit_all(1);
+        s.end_selection();
+        let foe_before = s.hp(1);
+        s.resolve_turn(|_, _| 7);
+        assert_eq!(s.mp(0), 52, "the cast charged its MP once");
+        assert!(s.hp(1) < foe_before, "the cast landed");
+    }
+
+    #[test]
+    fn an_unaffordable_pick_is_refused_and_charges_nothing() {
+        let mut s = session();
+        s.install_magic(0, magic(10));
+        assert_eq!(
+            s.commit_cast(0, 0x82),
+            Err(DomeCastRefusal::NotEnoughMp),
+            "30 MP against a 10 MP gauge"
+        );
+        assert_eq!(s.queued_cast(0), None);
+        assert_eq!(s.mp(0), 10);
+        // The cheap one still goes.
+        assert_eq!(s.commit_cast(0, 0x81), Ok(8));
+    }
+
+    #[test]
+    fn the_ability_bits_discount_the_price_the_arm_compares() {
+        let mut s = session();
+        let mut m = magic(60);
+        // Bit 0x20 halves; retail's arm is `cost - (cost >> 1)`.
+        m.ability_bits = 0x20;
+        s.install_magic(0, m);
+        assert_eq!(s.spell_mp_cost(0, 0x82), Some(15));
+        assert_eq!(s.spell_rows(0)[1].mp_cost, 15);
+        s.commit_cast(0, 0x82).expect("half price is affordable");
+        s.ai_commit_all(1);
+        s.end_selection();
+        s.resolve_turn(|_, _| 0);
+        assert_eq!(s.mp(0), 45);
+    }
+
+    #[test]
+    fn an_open_ra_seru_list_swallows_the_direction_input() {
+        let mut s = session();
+        s.install_magic(0, magic(60));
+        s.open_magic(0).expect("the gates pass");
+        assert!(s.magic_open());
+        assert!(!s.can_commit(0, 0), "the list is the surface, not the deck");
+        s.move_magic_cursor(0, 1);
+        assert_eq!(s.magic_cursor(), 1);
+        s.move_magic_cursor(0, 1);
+        assert_eq!(s.magic_cursor(), 0, "the cursor wraps");
+        s.close_magic();
+        assert!(!s.magic_open());
+        assert!(s.can_commit(0, 0));
+    }
+
+    #[test]
+    fn a_sealed_or_forbidden_fighter_cannot_open_the_list() {
+        let mut s = session();
+        assert_eq!(s.open_magic(0), Err(DomeCastRefusal::NoLoadout));
+        let mut m = magic(60);
+        m.ring.has_raseru = false;
+        s.install_magic(0, m);
+        assert_eq!(s.open_magic(0), Err(DomeCastRefusal::NoRaSeru));
+        let mut m = magic(60);
+        m.ring.status = STATUS_MAGIC_SEALED;
+        s.install_magic(0, m);
+        assert_eq!(s.open_magic(0), Err(DomeCastRefusal::Sealed));
+        let mut m = magic(60);
+        m.ring.special = SPECIAL_MAGIC_FORBIDDEN;
+        s.install_magic(0, m);
+        assert_eq!(s.open_magic(0), Err(DomeCastRefusal::Forbidden));
+        assert!(!s.magic_open());
+    }
+
+    #[test]
+    fn the_shared_select_input_drives_the_list_on_both_hosts() {
+        let mut s = session();
+        s.install_magic(0, magic(60));
+        let pad = |f: fn(&mut DomeSelectPad)| {
+            let mut p = DomeSelectPad::default();
+            f(&mut p);
+            p
+        };
+        assert!(!s.select_input(pad(|p| p.magic = true)));
+        assert!(s.magic_open());
+        assert!(!s.select_input(pad(|p| p.down = true)));
+        assert_eq!(s.magic_cursor(), 1);
+        // Row 1 costs 30 of the 60-MP gauge, so the confirm commits and the
+        // turn closes for both fighters.
+        assert!(s.select_input(pad(|p| p.confirm = true)));
+        assert_eq!(s.phase(), MusclePhase::Resolve);
+        assert_eq!(s.queued_cast(0), Some(0x82));
+
+        // A fresh session: with the list shut a direction press still commits
+        // a card, and a turn boundary clears any cast the last one carried.
+        let mut s = session();
+        s.install_magic(0, magic(60));
+        s.commit_cast(0, 0x81).expect("affordable");
+        s.ai_commit_all(1);
+        s.end_selection();
+        s.resolve_turn(|_, _| 0);
+        assert_eq!(
+            s.phase(),
+            MusclePhase::TurnOver,
+            "the foe survived a Seru01"
+        );
+        s.next_turn();
+        assert_eq!(s.queued_cast(0), None, "a new turn clears the cast");
+        assert!(!s.select_input(pad(|p| p.left = true)));
+        assert_eq!(s.queue(0).len(), 1);
+    }
+
+    #[test]
+    fn a_reselect_throws_the_cast_away_with_the_string() {
+        let mut s = session();
+        s.install_magic(0, magic(60));
+        s.commit_cast(0, 0x81).expect("affordable");
+        s.reset_selection(0);
+        assert_eq!(s.queued_cast(0), None);
+        assert_eq!(s.mp(0), 60, "an uncommitted cast charged nothing");
+        assert_eq!(s.phase(), MusclePhase::Select);
+    }
+
+    #[test]
+    fn every_ring_chip_names_its_retail_anchor_and_action_byte() {
+        // The element table's arrived endpoints, and the `actor+0x1DE` byte
+        // each arm stores.
+        assert_eq!(DomeRingChip::Item.anchor(), (204, 34));
+        assert_eq!(DomeRingChip::Attack.anchor(), (160, 66));
+        assert_eq!(DomeRingChip::RaSeru.anchor(), (248, 66));
+        assert_eq!(DomeRingChip::Spirit.anchor(), (204, 98));
+        assert_eq!(DomeRingChip::Item.action_state(), 1);
+        assert_eq!(DomeRingChip::RaSeru.action_state(), 2);
+        assert_eq!(DomeRingChip::Attack.action_state(), 3);
+        assert_eq!(DomeRingChip::Spirit.action_state(), 4);
+        // The three mark emitters differ only in source rect and palette.
+        assert_eq!(ChipMark::Forbidden.source_rect(), (0, 96, 64, 16));
+        assert_eq!(ChipMark::Blocked.source_rect(), (80, 96, 32, 24));
+        assert_eq!(ChipMark::Sealed.source_rect(), (120, 96, 64, 16));
+        assert_eq!(ChipMark::Forbidden.clut(), 0x7704);
+        assert_eq!(ChipMark::Blocked.clut(), 0x770B);
+        assert_eq!(ChipMark::Sealed.clut(), 0x7700);
+    }
+
+    #[test]
+    fn the_attack_chip_needs_all_three_status_bits_to_be_blocked() {
+        let mut s = session();
+        let mut m = magic(60);
+        m.ring.status = 0x18; // two of the three
+        s.install_magic(0, m);
+        assert!(s.chip_enabled(0, DomeRingChip::Attack));
+        assert_eq!(s.chip_mark(0, DomeRingChip::Attack), None);
+        let mut m = magic(60);
+        m.ring.status = STATUS_ATTACK_BLOCKED;
+        s.install_magic(0, m);
+        assert!(!s.chip_enabled(0, DomeRingChip::Attack));
+        assert_eq!(
+            s.chip_mark(0, DomeRingChip::Attack),
+            Some(ChipMark::Blocked)
+        );
     }
 
     #[test]

@@ -659,9 +659,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <h3>Muscle Dome &mdash; the arena battle</h3>
         <p class="mg-blurb">
           Sol Tower's arena. Retail presents it as a <b>standard Legaia battle</b> - the usual
-          battle screen with the <b>Item command crossed out</b> - and so does this panel: the
+          battle screen, its command chips gated by the battle's own restriction word - and
+          so does this panel: the
           black <em>&ldquo;Welcome to the Muscle Dome!&rdquo;</em> intro card, the command
-          cluster (Attack / Ra-Seru / Spirit), the name/HP/MP plate and the AP gauge. You field
+          cluster (Item / Attack / Ra-Seru / Spirit), the name/HP/MP plate and the AP gauge. You field
           one character in their <b>assembled battle form</b> against one of the game's monsters,
           both drawn and animated from your disc. Choose <b>Attack</b> and enter directions
           under an <b>AP budget seeded from your fighter's AGL</b>; a sequence that spells a
@@ -705,9 +706,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <ul class="bullets" style="font-size: 0.86rem;">
           <li><kbd data-pad-key="Cross">Z</kbd> skips the intro card, reviews the queue, and
             confirms <b>Begin&nbsp;/&nbsp;Reselect</b> (<kbd>Esc</kbd> backs out).</li>
-          <li>In the command menu <kbd>&larr;</kbd> is <b>Attack</b>, <kbd>&darr;</kbd> is
-            <b>Spirit</b> (end selection and fight). Item is crossed out and the Ra-Seru chip
-            is disabled (see the note below).</li>
+          <li>In the command menu <kbd>&larr;</kbd> is <b>Attack</b>, <kbd>&rarr;</kbd> is
+            <b>Ra-Seru</b> (the magic list - pick with <kbd>&uarr;</kbd>/<kbd>&darr;</kbd>,
+            cast with <kbd data-pad-key="Cross">Z</kbd>), <kbd>&darr;</kbd> is
+            <b>Spirit</b> (end selection and fight). A cast spends <b>MP, not AP</b>, and
+            replaces the whole direction string - which is what retail's arm does.</li>
           <li>Attack opens the <b>Auto&nbsp;/&nbsp;Command</b> pick (<kbd>&larr;</kbd>/<kbd>&rarr;</kbd>).
             Command is the real input screen: the <b>arrow keys</b> (or <kbd>1</kbd>&ndash;<kbd>4</kbd>)
             enter directions onto the input bar while the AP budget covers their cost; entry
@@ -789,9 +792,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                 at all - it commits the command string saved into the character's own record
                 on the previous round's review confirm, which is also why a reopened input
                 screen starts with the last round's pennants.
-                <b>One honest gap left:</b> the Ra-Seru chip renders crossed out because the
-                port has no cast path, though retail crosses only <i>Item</i>, on its
-                item-forbidden course. The sibling gap is closed - the queue the turn resolves
+                <b>The Ra-Seru chip is live now,</b> on this page and in the native
+                window: the shared session carries retail's three gates (the member's
+                Ra-Seru, the sealed-magic status bit, the restriction word's magic bit),
+                prices the list by the accessory MP-saver discount and resolves the cast
+                through the same rule the ordinary battle folds with. Which chip wears the
+                red X is the restriction word's, not a course table - and no dome round
+                raises the magic bit, so retail's dome never crosses the Ra-Seru chip out.
+                The sibling gap is closed - the queue the turn resolves
                 is now the retail tokenizer's wherever the fighter's art records are loaded - the
                 arena door and the native window - so a recognised art contributes its own power
                 row instead of the swings it consumed. This page's standalone dome panel still

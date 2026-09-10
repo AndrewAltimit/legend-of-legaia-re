@@ -212,6 +212,24 @@ pub(crate) struct MuscleTables {
     affinity: Option<ElementAffinity>,
 }
 
+/// The static spell table's **player Seru-magic** block - the eleven ids a
+/// character's Ra-Seru command can offer (`docs/formats/spell-table.md`).
+const PLAYER_SERU_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8b;
+
+/// The refusal name the page shows for a rejected Ra-Seru pick.
+fn muscle_refusal_name(e: legaia_engine_core::muscle_dome::DomeCastRefusal) -> &'static str {
+    use legaia_engine_core::muscle_dome::DomeCastRefusal as R;
+    match e {
+        R::NoLoadout => "no_loadout",
+        R::NoRaSeru => "no_raseru",
+        R::Sealed => "sealed",
+        R::Forbidden => "forbidden",
+        R::UnknownSpell => "unknown_spell",
+        R::NotEnoughMp => "not_enough_mp",
+        R::WrongPhase => "wrong_phase",
+    }
+}
+
 /// A running contest: the rules session plus everything the battle-formula
 /// resolution needs alongside it.
 pub(crate) struct MuscleContest {
@@ -729,6 +747,43 @@ impl LegaiaMinigames {
         // Damage resolves through the shared retail kernel - the same
         // `DomeDamageModel` the native play-window host installs, so neither
         // host carries a damage rule of its own.
+        // The Ra-Seru (magic) command class. The gates, the pricing and the
+        // cast are the shared session's, so this panel and the native window
+        // resolve a dome cast through one rule; what is this page's own model
+        // is the *list*: a standalone contest has no save, so the fighter is
+        // offered the disc's whole player Seru block (`0x81..=0x8b`) rather
+        // than a record's learned ids, and the Ra-Seru gate is `true` because
+        // a party character reaching Sol Tower carries one. The special-battle
+        // word is `0`: no dome round raises either restriction bit.
+        if let Some(catalog) = self
+            .scus
+            .as_ref()
+            .and_then(|s| legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(s))
+        {
+            // The catalog carries the monster specials and the placeholder
+            // block as well; the ring offers the **player Seru** ids only.
+            let mut spells: Vec<_> = catalog
+                .iter()
+                .filter(|s| PLAYER_SERU_IDS.contains(&s.id))
+                .cloned()
+                .collect();
+            spells.sort_by_key(|s| s.id);
+            session.install_magic(
+                0,
+                legaia_engine_core::muscle_dome::DomeMagic {
+                    ring: legaia_engine_core::muscle_dome::DomeRing {
+                        special: 0,
+                        status: 0,
+                        has_raseru: true,
+                    },
+                    mp: player.mp_max,
+                    mp_max: player.mp_max,
+                    ability_bits: 0,
+                    magic_power: player.int,
+                    spells,
+                },
+            );
+        }
         session.install_damage_model(DomeDamageModel::new(
             tables.move_power.clone(),
             tables.move_map,
@@ -1095,8 +1150,117 @@ impl LegaiaMinigames {
             "char": c.char_slot,
             "level": c.level,
             "monster": c.monster_id,
+            "mp": [s.mp(0), s.mp(1)],
+            "magic_open": s.magic_open(),
+            "magic_cursor": s.magic_cursor(),
+            "cast": s.queued_cast(0),
+            "chips": Self::muscle_chip_json(s),
         })
         .to_string()
+    }
+
+    /// The command ring's four chips as the page draws them:
+    ///
+    /// ```json
+    /// [ { "chip": "item", "x": 204, "y": 34, "enabled": false,
+    ///     "mark": "forbidden" }, ... ]
+    /// ```
+    ///
+    /// `enabled` is the session's gate - the same one the native window
+    /// reads - and `mark` names which of retail's three mark emitters lays
+    /// over the chip (`forbidden` = the red cross-out X `FUN_801DBC30`,
+    /// `blocked` = `FUN_801DBD04`, `sealed` = `FUN_801DBEC4`), or `null` for
+    /// a chip that draws none. A chip can be disabled with **no** mark: a
+    /// fighter carrying no Ra-Seru gets the `-` label, not an X.
+    fn muscle_chip_json(s: &MuscleDomeSession) -> Vec<serde_json::Value> {
+        use legaia_engine_core::muscle_dome::{ChipMark, DomeRingChip};
+        DomeRingChip::RING
+            .iter()
+            .map(|chip| {
+                let (x, y) = chip.anchor();
+                let mark = s.chip_mark(0, *chip).map(|m| match m {
+                    ChipMark::Forbidden => "forbidden",
+                    ChipMark::Blocked => "blocked",
+                    ChipMark::Sealed => "sealed",
+                });
+                serde_json::json!({
+                    "chip": match chip {
+                        DomeRingChip::Item => "item",
+                        DomeRingChip::Attack => "attack",
+                        DomeRingChip::RaSeru => "raseru",
+                        DomeRingChip::Spirit => "spirit",
+                    },
+                    "x": x,
+                    "y": y,
+                    "enabled": s.chip_enabled(0, *chip),
+                    "mark": mark,
+                })
+            })
+            .collect()
+    }
+
+    /// The player fighter's Ra-Seru list, priced through the session's own
+    /// [`MuscleDomeSession::spell_mp_cost`] so the displayed cost is the one
+    /// the cast charges:
+    ///
+    /// ```json
+    /// [ { "id": 129, "name": "Gimard", "mp": 8, "affordable": true }, ... ]
+    /// ```
+    pub fn muscle_magic_json(&self) -> String {
+        let Some(c) = self.muscle.as_ref() else {
+            return "[]".to_string();
+        };
+        let rows: Vec<serde_json::Value> = c
+            .session
+            .spell_rows(0)
+            .into_iter()
+            .map(|r| {
+                serde_json::json!({
+                    "id": r.id, "name": r.name,
+                    "mp": r.mp_cost, "affordable": r.affordable,
+                })
+            })
+            .collect();
+        serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    /// Take the ring's Ra-Seru chip. Returns `""` on success, else the
+    /// refusal name (`no_loadout` / `no_raseru` / `sealed` / `forbidden` /
+    /// `wrong_phase`) so the page can play the refused blip and say why.
+    pub fn muscle_open_magic(&mut self) -> String {
+        let Some(c) = self.muscle.as_mut() else {
+            return "no_loadout".to_string();
+        };
+        match c.session.open_magic(0) {
+            Ok(()) => String::new(),
+            Err(e) => muscle_refusal_name(e).to_string(),
+        }
+    }
+
+    /// Back out of the open Ra-Seru list.
+    pub fn muscle_close_magic(&mut self) {
+        if let Some(c) = self.muscle.as_mut() {
+            c.session.close_magic();
+        }
+    }
+
+    /// Walk the open list's cursor.
+    pub fn muscle_magic_move(&mut self, delta: i32) {
+        if let Some(c) = self.muscle.as_mut() {
+            c.session.move_magic_cursor(0, delta);
+        }
+    }
+
+    /// Confirm the row under the cursor. Returns `""` on success, else the
+    /// refusal name (`not_enough_mp` is the one the page shows most).
+    pub fn muscle_magic_confirm(&mut self) -> String {
+        let Some(c) = self.muscle.as_mut() else {
+            return "no_loadout".to_string();
+        };
+        match c.session.confirm_magic(0) {
+            Ok(_) => String::new(),
+            Err(e) => muscle_refusal_name(e).to_string(),
+        }
     }
 
     /// Name of spell id `id` from the SCUS spell-name table (the table the
