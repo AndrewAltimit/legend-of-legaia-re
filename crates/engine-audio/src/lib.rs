@@ -39,6 +39,7 @@ pub mod vab_bind;
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
 mod webaudio;
 pub mod xa_clip_bank;
+pub mod xa_transport;
 
 pub use anim_cue::{
     AnimCueActor, AnimCueEmit, AnimCueSlot, AnimCueState, AnimCueWalk, walk_anim_cues,

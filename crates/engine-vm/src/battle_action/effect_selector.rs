@@ -108,6 +108,13 @@ pub const STATUS_CLEAR_MASK: u16 = 0xFFFC;
 /// is the caller's, exactly as it is for every other arm.
 ///
 /// PORT: FUN_800402F4 (selector `8`, `0x80041BB0..0x80041C3C`)
+/// NOT WIRED: the host that would call it is `World::use_item`
+/// (`engine-core::world::items_arts`), the engine's stand-in for the applier.
+/// It does not, because the engine clears status through the typed
+/// `StatusEffect` list (`engine-vm::status_effects::StatusKind`) rather than
+/// through the raw `+0x16E` bit word this arm masks, so adopting the arm
+/// means deciding which of the two representations is canonical - a model
+/// choice, not a wiring gap.
 pub fn selector_status_clear(hp: u16, status: u16) -> Option<u16> {
     if hp == 0 {
         return None;
@@ -148,6 +155,12 @@ pub const DISPLAYED_SKILL_CAP: usize = 16;
 /// the mode word at `0x80042084`). That call is the caller's.
 ///
 /// PORT: FUN_800402F4 (selectors `0x0B`..`0x0D`, `0x80041FB4..0x80042098`)
+/// NOT WIRED: the host is the item-use spell-learn leg of `World::use_item`.
+/// The engine commits a learn to the **spell list** at `+0x13D`
+/// (`engine-core::magic_xp::learn_spell_prepend`, `FUN_801E92DC`) and does
+/// not maintain the separate **displayed** list at `+0x185`/`+0x186` this arm
+/// writes; nothing reads that list in the port yet, because the menu page it
+/// feeds sources its rows from the spell list instead.
 pub fn selector_insert_displayed_skill(list: &mut [u8], count: &mut u8, id: u8) -> Option<usize> {
     let cap = list.len().min(DISPLAYED_SKILL_CAP);
     let mut at = usize::from(*count).min(cap);
@@ -216,6 +229,10 @@ pub struct PointCardDischarge {
 /// (`beq v1, zero, epilogue` at `0x800420AC`).
 ///
 /// PORT: FUN_800402F4 (selector `0x0E`, `0x8004209C..0x8004219C`)
+/// NOT WIRED: the host is `World::use_item` for the Point Card. The engine
+/// carries no counter at `0x800845B4` - the accumulator is a game-state
+/// window word with no `engine-core` field - so there is nothing for the arm
+/// to discharge until that word has a home.
 pub fn selector_point_card(counter: u32, victim: PointCardVictim) -> Option<PointCardDischarge> {
     if counter == 0 {
         return None;
