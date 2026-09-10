@@ -673,6 +673,11 @@ impl World {
 // The band's PORT half: the slot-B module code kernels
 // ---------------------------------------------------------------------------
 
+/// The equipment-slot index the first accessory occupies: record `+0x196` is
+/// slot 0 and `+0x19B` - the byte PROT 0955's Void Accessories arm forms as
+/// `0x80084140 + (char - 1) * 0x414 + 0x75E + 5 + slot` - is slot 5.
+const ACCESSORY_EQUIP_SLOT_0: usize = 5;
+
 /// Where a module's code half wrote, so a caller can see the kernel ran
 /// without re-reading every actor.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -696,6 +701,12 @@ pub struct CastModuleCodeRun {
     /// rows, and then [`Self::busy`] carries no information: a caller that
     /// held on it would hold forever.
     pub tick_ported: bool,
+    /// The item PROT 0955's turn-steal arms handed back to the bag
+    /// (`FUN_800421D4(victim[+0x1DF], 1)`), when the victim had an Item
+    /// action queued.
+    pub item_refund: Option<u8>,
+    /// What PROT 0955's Void Accessories arm decided this frame.
+    pub voided_accessory: Option<vm::cast_module_ticks::VoidAccessoriesOutcome>,
 }
 
 impl World {
@@ -729,7 +740,42 @@ impl World {
             knockdown_anim: a.battle.params.get(0x1F1 - 0x1DF).copied().unwrap_or(0),
             render_flag: a.battle.render_flag,
             anim_rate: a.battle.anim_rate.get(),
+            // The engine's battle actor carries one ATK halfword, so the
+            // pair's base half is seeded from the working one and dropped on
+            // write-back: Power Charge's `+0x15A` store and Melt Spray's
+            // `+0x15A` store land in the view only.
+            atk: a.battle.atk_working,
+            atk_base: a.battle.atk_working,
+            udf: self.cast_defence_split(slot).0,
+            udf_base: self.cast_defence_split(slot).0,
+            ldf: self.cast_defence_split(slot).1,
+            ldf_base: self.cast_defence_split(slot).1,
+            // SPD / INT have no live halfwords on the engine's battle actor
+            // yet, so Melt Spray's two widest columns land in the view and
+            // are dropped on write-back. Disclosed rather than faked - the
+            // three stats the engine does carry (ATK, UDF, LDF) do land.
+            spd: 0,
+            spd_base: 0,
+            intel: 0,
+            intel_base: 0,
+            init_key: a.battle.init_key,
+            action_category: a.battle.action_category,
+            queued_action: a.battle.params.first().copied().unwrap_or(0),
+            reaction_alt: a.battle.params.get(0x1EF - 0x1DF).copied().unwrap_or(0),
+            reaction_alt2: a.battle.params.get(0x1F0 - 0x1DF).copied().unwrap_or(0),
+            reaction_gate: a.battle.params.get(0x1F2 - 0x1DF).copied().unwrap_or(0),
         }
+    }
+
+    /// The live UDF / LDF pair for one battle slot, out of the world's own
+    /// per-slot defence split (the same store the physical-defence facet
+    /// reads).
+    fn cast_defence_split(&self, slot: u8) -> (u16, u16) {
+        self.battle_defense_split
+            .get(slot as usize)
+            .copied()
+            .flatten()
+            .unwrap_or((0, 0))
     }
 
     /// Write a kernel's state view back onto an actor slot.
@@ -745,6 +791,14 @@ impl World {
         a.battle.active_target = st.target_code;
         a.battle.render_flag = st.render_flag;
         a.battle.anim_rate = AnimRate(st.anim_rate);
+        a.battle.atk_working = st.atk;
+        a.battle.init_key = st.init_key;
+        a.battle.action_category = st.action_category;
+        if let Some(s) = self.battle_defense_split.get_mut(slot as usize)
+            && s.is_some()
+        {
+            *s = Some((st.udf, st.ldf));
+        }
     }
 
     /// The context bytes the kernels read (`ctx+0`, `+1`, `+0x13`, `+0x278`,
@@ -767,6 +821,9 @@ impl World {
             caster_seat: self.battle_ctx.active_actor,
             ctx_278: self.cast_module_ctx_278,
             phase: self.cast_module_phase,
+            ctx_0d: 0,
+            turn_cursor: self.battle_ctx.turn_cursor,
+            ctx_27a: 0,
         }
     }
 
@@ -848,9 +905,114 @@ impl World {
                 Some(ticks::ASTRAL_SLASH_TICK) => {
                     Some(ticks::astral_slash_tick(&mut ctx, &mut caster, &mut victim))
                 }
-                // The remaining trampoline arms name bodies whose packet
-                // halves are unported; the phase machine is not, so the
-                // module still reports busy through the shared bound.
+                // The three whole-row sweeps. Each rolls the module's own
+                // baked power per hittable seat off this world's RNG cursor,
+                // in seat order, so the draw order stays retail's; the two
+                // 1-in-8 status draws Chaos Breath makes per seat come off
+                // the same cursor.
+                Some(ticks::CHAOS_BREATH_TICK)
+                | Some(ticks::MYSTIC_CIRCLE_TICK)
+                | Some(ticks::DOOMSDAY_TICK) => {
+                    let body = body.unwrap_or_default();
+                    let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                        .map(|s| self.cast_actor_state(s))
+                        .collect();
+                    let sweep_arm = ctx.phase;
+                    let rolls = self.sweep_status_rolls(&ctx, &seats, body);
+                    // Zero, not the module's baked power: see
+                    // `sweep_status_rolls` for why the fold stays the band
+                    // seam's.
+                    let take = |_seat: u8| 0i32;
+                    let status = |seat: u8| {
+                        rolls
+                            .iter()
+                            .find(|(s, _)| *s == seat)
+                            .map(|(_, st)| *st)
+                            .unwrap_or((1, 1))
+                    };
+                    let (step, hits) = match body {
+                        ticks::CHAOS_BREATH_TICK => ticks::chaos_breath_tick(
+                            &mut ctx,
+                            &mut caster,
+                            &mut seats,
+                            take,
+                            status,
+                        ),
+                        ticks::MYSTIC_CIRCLE_TICK => ticks::mystic_circle_tick(
+                            &mut ctx,
+                            &mut seats,
+                            sweep_arm == ticks::MYSTIC_CIRCLE_SWEEP_ARM,
+                            take,
+                        ),
+                        _ => ticks::doomsday_tick(
+                            &mut ctx,
+                            &mut seats,
+                            sweep_arm == ticks::DOOMSDAY_SWEEP_ARM,
+                            take,
+                        ),
+                    };
+                    for (slot, st) in seats.iter().enumerate() {
+                        self.write_cast_actor_state(slot as u8, st);
+                    }
+                    run.aoe_hits = hits
+                        .iter()
+                        .map(|h| ticks::AoeHit {
+                            seat: h.seat,
+                            applied: h.applied as i32,
+                        })
+                        .collect();
+                    Some(step)
+                }
+                Some(ticks::CHAOS_FLARE_TICK) => {
+                    Some(ticks::chaos_flare_tick(&mut ctx, &mut victim, None))
+                }
+                Some(ticks::SCYTHE_WIND_TICK) => {
+                    Some(ticks::scythe_wind_tick(&mut ctx, &mut victim, None))
+                }
+                Some(ticks::BLOODY_HORNS_TICK) => Some(ticks::bloody_horns_tick(
+                    &mut ctx,
+                    &mut caster,
+                    &mut victim,
+                    None,
+                )),
+                // PROT 0955's six-spell cell. Its four status / buff bodies
+                // write simulation state no damage fold can express, so they
+                // run here and their outcome is reported back on the run.
+                Some(ticks::WHITE_SHIELD_TICK) => {
+                    // Retail reads the caster's own monster **record** at
+                    // `0x801C9348[seat - 3]` rather than the live actor, so
+                    // the buff is idempotent; the engine's nearest equivalent
+                    // is the un-buffed defence split it seeded at battle load.
+                    let record = (caster.udf_base, caster.ldf_base);
+                    Some(ticks::white_shield_tick(&mut ctx, &mut caster, record))
+                }
+                Some(ticks::KISS_OF_DEATH_TICK) => {
+                    let roll = Some(self.next_rng());
+                    let (step, refund) = ticks::kiss_of_death_tick(&mut ctx, &mut victim, roll);
+                    run.item_refund = refund;
+                    Some(step)
+                }
+                Some(ticks::MELT_SPRAY_TICK) => {
+                    let debuff = ctx.phase == ticks::MELT_SPRAY_DEBUFF_ARM;
+                    Some(ticks::melt_spray_tick(&mut ctx, &mut victim, debuff))
+                }
+                Some(ticks::TERROR_SCREAM_TICK) => {
+                    let (step, refund) = ticks::terror_scream_tick(&mut ctx, &mut victim);
+                    run.item_refund = refund;
+                    Some(step)
+                }
+                Some(ticks::POWER_CHARGE_TICK) => {
+                    Some(ticks::power_charge_tick(&mut ctx, &mut caster))
+                }
+                Some(ticks::VOID_ACCESSORIES_TICK) => {
+                    let rolls = Some((self.next_rng(), self.next_rng()));
+                    let accessories = self.cast_victim_accessories(victim_slot);
+                    let (step, outcome) =
+                        ticks::void_accessories_tick(&mut ctx, &mut victim, accessories, rolls);
+                    run.voided_accessory = outcome;
+                    Some(step)
+                }
+                // Every trampoline arm the band names now has a body.
                 _ => None,
             }
         } else {
@@ -901,8 +1063,32 @@ impl World {
         self.write_cast_actor_state(seat_slot, &seat);
         self.cast_module_ctx_278 = ctx.ctx_278;
         self.cast_module_phase = ctx.phase;
+        // The turn-steal arms bump `ctx[+0x1A]`; it is a context byte, so it
+        // has to travel back out of the view.
+        self.battle_ctx.turn_cursor = ctx.turn_cursor;
         run.phase = ctx.phase;
         run.ctx_278 = ctx.ctx_278;
+        // PROT 0955's two arms that reach outside the battle actor: the
+        // refunded item goes back in the bag (retail's `FUN_800421D4`), and
+        // the voided accessory is cleared out of the character record and
+        // handed back (retail's record write plus `FUN_80042558`).
+        if let Some(item) = run.item_refund {
+            *self.inventory.entry(item).or_insert(0) += 1;
+        }
+        if let Some(out) = run.voided_accessory
+            && let Some(id) = out.voided
+        {
+            let rslot = self.party_roster_slot(victim_slot as usize);
+            if let Some(rec) = self.roster.members.get_mut(rslot) {
+                let mut eq = rec.equipment();
+                if let Some(slot) = eq.slots.get_mut(ACCESSORY_EQUIP_SLOT_0 + out.slot as usize) {
+                    *slot = 0;
+                }
+                rec.set_equipment(eq);
+            }
+            *self.inventory.entry(id).or_insert(0) += 1;
+            self.refresh_party_ability_bits();
+        }
         Some(run)
     }
 
@@ -998,6 +1184,8 @@ impl World {
             busy: false,
             tick_ported: true,
             aoe_hits: hits,
+            item_refund: None,
+            voided_accessory: None,
         })
     }
 
@@ -1052,6 +1240,123 @@ impl World {
             rng,
             || (self.next_rng() & 0x7fff) as u16,
         ))
+    }
+
+    /// Pre-roll the status draws one whole-row sweep makes, in the order
+    /// retail visits its seats: the two `FUN_80056798` calls PROT 0938's
+    /// `0x4E` body makes per hittable seat (`0x801F7888` / `0x801F78B0`),
+    /// which decide Venom then Toxic.
+    ///
+    /// The **damage** roll is deliberately absent, for the reason every other
+    /// tick body in `cast_module_ticks` takes `hit: None`: the engine folds a
+    /// cast's HP outcome once, at [`Self::cast_spell_on_slots_prepaid`], with
+    /// the module's baked power substituted in. Rolling here as well would
+    /// apply the hit twice, which is the trap the PROT 0927 / 0966 stagers
+    /// avoid by *replacing* the generic fold rather than joining it. What the
+    /// sweep still owns is the part no fold can express - the per-seat status
+    /// bits, the reaction staging and the animation rate.
+    ///
+    /// Returns `(seat, (status_a, status_b))` in visit order.
+    fn sweep_status_rolls(
+        &mut self,
+        ctx: &vm::cast_module_ticks::CastModuleCtx,
+        seats: &[vm::cast_module_ticks::CastActorState],
+        body: u32,
+    ) -> Vec<(u8, (u32, u32))> {
+        use vm::cast_module_ticks as ticks;
+        let mut out = Vec::new();
+        for seat in 0..ctx.actor_count {
+            let Some(s) = seats.get(seat as usize) else {
+                continue;
+            };
+            // PROT 0938's `0xB7` body and PROT 0965's skip only a dead seat;
+            // the `0x4E` body also skips `+0x16E & 4`.
+            let hittable = if body == ticks::CHAOS_BREATH_TICK {
+                ticks::aoe_seat_is_hittable(s)
+            } else {
+                s.hp != 0
+            };
+            if !hittable {
+                continue;
+            }
+            out.push((seat, (self.next_rng(), self.next_rng())));
+        }
+        out
+    }
+
+    /// The three accessory ids PROT 0955's Void Accessories rolls between -
+    /// `record[+0x19B + slot]` for the character seated at `slot`.
+    fn cast_victim_accessories(&self, slot: u8) -> [u8; 3] {
+        let mut out = [0u8; 3];
+        let Some(rec) = self
+            .roster
+            .members
+            .get(self.party_roster_slot(slot as usize))
+        else {
+            return out;
+        };
+        // `+0x196` is equipment slot 0, so `+0x19B` - the module's
+        // `+ 0x75E + 5` - is index 5, and the three accessory slots are
+        // 5, 6, 7 (`legaia_save::character::EquipmentSlots`).
+        let eq = rec.equipment();
+        for (i, o) in out.iter_mut().enumerate() {
+            *o = eq
+                .slots
+                .get(ACCESSORY_EQUIP_SLOT_0 + i)
+                .copied()
+                .unwrap_or(0);
+        }
+        out
+    }
+
+    /// Apply one enemy-cast hit through retail's **safe** applier - the hit
+    /// arm of `FUN_801E09F8`'s per-slot effect-child driver
+    /// (`legaia_engine_vm::battle_cast_census::effect_child_hit`).
+    ///
+    /// This is the path a monster's cast takes in retail, and it differs from
+    /// the action band's accumulating seed in the one way that matters: the
+    /// roll is clamped against live HP **once** and that single value reaches
+    /// both the readout accumulator `+0x10` and live HP `+0x14C`, so the bar
+    /// can never be asked to travel further than HP moved. The action band's
+    /// seed can, which is the `0x51` settle park
+    /// `legaia_engine_vm::battle_hp_bar` documents.
+    ///
+    /// Also carried: the reaction-clip pick (`+0x1F2` gates `+0x1F1` against
+    /// `+0x1EF` / `+0x1F0`, and a dead victim always takes `+0x1F1`), the
+    /// `+0x1DC` **bit** ORs - retail ORs here, it does not bump - and the
+    /// readout cursor `ctx[+0x262]`.
+    ///
+    /// Returns the damage actually applied.
+    pub(in crate::world) fn apply_effect_child_hit(&mut self, slot: usize, damage: i32) -> i32 {
+        use vm::battle_cast_census::{EffectChildVictim, effect_child_hit};
+        let mut cursor = self.battle_ctx.cast_readout_cursor;
+        let Some(a) = self.actors.get_mut(slot) else {
+            return 0;
+        };
+        a.battle.arm_hp_bar();
+        let p = |i: usize| a.battle.params.get(i - 0x1DF).copied().unwrap_or(0);
+        let mut victim = EffectChildVictim {
+            hp: a.battle.hp,
+            hp_bar_delta: a.battle.hp_bar_pending,
+            flags: a.battle.field_flags,
+            staged_anim: a.battle.queued_anim,
+            restage: 0,
+            reaction_alt: p(0x1EF),
+            reaction_alt2: p(0x1F0),
+            knockdown_anim: p(0x1F1),
+            reaction_gate: p(0x1F2),
+        };
+        let hit = effect_child_hit(&mut victim, damage, &mut cursor);
+        a.battle.hp = victim.hp;
+        a.battle.hp_bar_pending = victim.hp_bar_delta;
+        a.battle.queued_anim = victim.staged_anim;
+        // `hp == 0 -> liveness = 0` holds for **present** actors only, the
+        // same `max_hp > 0` guard `apply_battle_hp_delta` applies.
+        if a.battle.max_hp > 0 && a.battle.hp == 0 {
+            a.battle.liveness = 0;
+        }
+        self.battle_ctx.cast_readout_cursor = cursor;
+        hit.applied
     }
 }
 

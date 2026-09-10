@@ -22,8 +22,11 @@
 //! [`crate::battle_hp_bar`], and worth knowing when a cast never finishes.
 //!
 //! Transcribed from the DISASSEMBLY at `0x801E0A44..0x801E0BF0`, not the C.
-//! The rest of `FUN_801E09F8` - the per-slot effect-child driver that runs
-//! once the census finds work - is **not** ported here.
+//! The driver that runs once the census finds work is a 1070-instruction
+//! tail; its **hit arm** - the one that calls a damage wrapper and applies
+//! the result - is [`effect_child_hit`] below, read off
+//! `0x801E1844..0x801E1A6C`. The staging, camera and packet arms between the
+//! two are not ported.
 
 /// The per-slot inputs the census reads. Retail walks the actor-pointer table
 /// `&DAT_801C9370` and reads three fields per entry.
@@ -121,6 +124,139 @@ pub fn cast_census(
     }
     out.effect_children = child_slots.iter().filter(|&&c| c != 0).count() as u8;
     out
+}
+
+// ---------------------------------------------------------------------------
+// The per-slot effect-child driver's hit arm (`0x801E1844..0x801E1A6C`)
+// ---------------------------------------------------------------------------
+
+/// The per-actor fields the hit arm reads or writes. Only the slice the arm
+/// touches; the rest of the record is the action SM's.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EffectChildVictim {
+    /// `+0x14C` - live HP.
+    pub hp: u16,
+    /// `+0x10` - the pending HP-bar delta accumulator.
+    pub hp_bar_delta: i32,
+    /// `+0x16E` - flag bank; bit `0x4` skips the face-toward store.
+    pub flags: u16,
+    /// `+0x1DA` - the staged clip.
+    pub staged_anim: u8,
+    /// `+0x1DC` - the restage byte. The arm ORs bits into it, it does not
+    /// increment: `|= 4` on the `+0x1EF`/`+0x1F0` leg, `|= 1` for the face.
+    pub restage: u8,
+    /// `+0x1EF` / `+0x1F0` / `+0x1F1` - the three reaction clips, and
+    /// `+0x1F2` the gate that picks between them.
+    pub reaction_alt: u8,
+    /// See [`EffectChildVictim::reaction_alt`].
+    pub reaction_alt2: u8,
+    /// See [`EffectChildVictim::reaction_alt`].
+    pub knockdown_anim: u8,
+    /// See [`EffectChildVictim::reaction_alt`].
+    pub reaction_gate: u8,
+}
+
+/// `+0x16E` bit `0x4` - Stone / non-targetable. A victim carrying it skips
+/// the face-toward store and its `+0x1DC |= 1`.
+pub const EFFECT_CHILD_STONE: u16 = 0x0004;
+
+/// `+0x1DC` bit the reaction leg ORs in (`ori v0,v0,4` at `0x801E19D8`).
+pub const RESTAGE_BIT_REACTION: u8 = 4;
+/// `+0x1DC` bit the face-toward leg ORs in (`ori v0,v0,1` at `0x801E1A18`).
+pub const RESTAGE_BIT_FACE: u8 = 1;
+
+/// The four-entry readout window the arm records each hit into, and the
+/// cursor that walks it (`ctx[+0x262]`, masked `& 7` at `0x801E18FC`).
+pub const READOUT_CURSOR_MASK: u8 = 7;
+
+/// What one pass of the hit arm did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EffectChildHit {
+    /// The clamped damage the arm actually applied.
+    pub applied: i32,
+    /// The readout slot the value was filed in (`ctx[+0x262]` before the
+    /// bump).
+    pub readout_slot: u8,
+    /// The clip the arm staged on the victim.
+    pub staged_anim: u8,
+}
+
+/// The **hit arm** of `FUN_801E09F8`'s per-slot effect-child driver -
+/// `0x801E1844..0x801E1A6C`, the tail the census head
+/// [`cast_census`] runs in front of.
+///
+/// Retail's shape, read off the battle overlay's own bytes at base
+/// `0x801CE818`:
+///
+/// ```text
+/// 801e184c  a0 = ctx->record[+0x0D] ; FUN_8004FCC8(a0)        ; the cue
+/// 801e1850  s1 = ctx[+0x13]                                    ; caster seat
+/// 801e1888  a0 = *(u8)(0x801F4E63 + caster[+0x1DF])            ; the power byte
+/// 801e188c  jal 0x801DD0AC          ; (power, caster_seat, victim_seat)
+/// 801e18b0  ctx[0x83C + slot*4] = (i16)dmg
+/// 801e18c4  ctx[0x318 + slot*2] = victim_seat
+/// 801e18d8  ctx[0x85C + slot*4] = 0
+/// 801e18e8  ctx[+0x262] = (slot + 1) & 7
+/// 801e1918  ctx[+0x273] += 1
+/// 801e1924  if victim[+0x14C] < dmg { dmg = victim[+0x14C] }   ; the SAFE clamp
+/// 801e1948  victim[+0x10]  += dmg
+/// 801e1960  victim[+0x14C] -= dmg
+/// 801e1974  if victim[+0x14C] == 0 || victim[+0x1F2] != 0 { +0x1DA = +0x1F1 }
+/// 801e1998  else { +0x1DA = (+0x1EF != 0) ? +0x1EF : +0x1F0 ; +0x1DC |= 4 }
+/// 801e1a04  if !(victim[+0x16E] & 4) { +0x1DC |= 1 ; face the caster }
+/// 801e1a64  ctx[+0x24E + i] = 0 ; ctx[+0x252 + i] = 0
+/// ```
+///
+/// The clamp at `0x801E1924` is
+/// [`crate::battle_hp_bar::clamp_damage_against_live_hp`]: one clamped value
+/// reaching **both** destinations, which is what makes it invariant-safe
+/// where the action band's accumulating seed is not. Porting this arm is
+/// what gives that clamp a caller.
+///
+/// Two details a decompiled reading loses. The `+0x1DC` writes here are
+/// **bit ORs**, not the `+= 1` bump the slot-B modules use, so a host that
+/// treats the byte as a counter drifts. And the face-toward store has no
+/// `+ 0x800` term (`0x801E1A54` writes the raw `FUN_80019B28` result), unlike
+/// every slot-B module's face-**away** store - the victim turns to face its
+/// attacker here, not away from it.
+///
+/// Not ported: the cue call, the packet writes and the caster-side pose. The
+/// `power` byte is the caller's, read out of the per-action table at
+/// `0x801F4E63`.
+///
+/// Wired: `World::apply_effect_child_hit`, from the cast band's fold seam.
+///
+/// PORT: FUN_801E09F8 (the effect-child hit arm `0x801E1844..0x801E1A6C`; the census head is `cast_census`)
+pub fn effect_child_hit(
+    victim: &mut EffectChildVictim,
+    damage: i32,
+    readout_cursor: &mut u8,
+) -> EffectChildHit {
+    let readout_slot = *readout_cursor;
+    *readout_cursor = readout_slot.wrapping_add(1) & READOUT_CURSOR_MASK;
+
+    let applied = crate::battle_hp_bar::clamp_damage_against_live_hp(damage, victim.hp);
+    victim.hp_bar_delta += applied;
+    victim.hp = (i32::from(victim.hp) - applied).clamp(0, i32::from(u16::MAX)) as u16;
+
+    if victim.hp == 0 || victim.reaction_gate != 0 {
+        victim.staged_anim = victim.knockdown_anim;
+    } else {
+        victim.staged_anim = if victim.reaction_alt != 0 {
+            victim.reaction_alt
+        } else {
+            victim.reaction_alt2
+        };
+        victim.restage |= RESTAGE_BIT_REACTION;
+    }
+    if victim.flags & EFFECT_CHILD_STONE == 0 {
+        victim.restage |= RESTAGE_BIT_FACE;
+    }
+    EffectChildHit {
+        applied,
+        readout_slot,
+        staged_anim: victim.staged_anim,
+    }
 }
 
 #[cfg(test)]

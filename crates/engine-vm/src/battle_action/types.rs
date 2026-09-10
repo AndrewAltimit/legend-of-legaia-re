@@ -836,6 +836,13 @@ pub struct BattleActionCtx {
     /// REF: FUN_801E295C (`ctx[+0x1A]`; the `PORT:` anchor for the seeding
     /// arm is `battle_action::dispatch`'s `seed_turn_cursor`)
     pub turn_cursor: u8,
+    /// `[+0x262]` - the **cast readout cursor**: which of the eight
+    /// value-window slots the next effect-child hit files its damage in.
+    /// `FUN_801E09F8`'s hit arm writes `ctx[0x83C + slot*4]`,
+    /// `ctx[0x318 + slot*2]` and `ctx[0x85C + slot*4]`, then stores
+    /// `(slot + 1) & 7` back (`0x801E18E8` / `0x801E18FC`).
+    /// Kernel: [`crate::battle_cast_census::effect_child_hit`].
+    pub cast_readout_cursor: u8,
     /// `[+0x16]` - the **Attack x2 pass counter** the War God Icon's pair
     /// runs on.
     ///

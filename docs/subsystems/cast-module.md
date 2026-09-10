@@ -332,8 +332,9 @@ compares above any HP, the clamp rewrites it to the victim's whole bar, and
 the victim dies. A negative roll on these modules kills outright rather than
 healing.
 
-**Shape B - clamp to `HP - 1`, floor 1.** The band's two AoE sweeps - and only
-those two sites, `0x801F8758` in PROT 0927 and `0x801F8F08` in PROT 0966. Both
+**Shape B - clamp to `HP - 1`, floor 1.** The band's two AoE *stagers* - and
+only those two sites, `0x801F8758` in PROT 0927 and `0x801F8F08` in PROT 0966;
+every tick body in the band, whole-row sweeps included, takes shape A. Both
 are the module's **stager**; both images' tick bodies clamp shape A, so "0927 /
 0966 never kill" is true of the sweep and false of the tick:
 
@@ -352,10 +353,12 @@ live seat is left at 1 HP at worst.
 
 ### The two AoE sweeps
 
-Those same two routines are the band's only whole-row appliers, and they are
-`0x801F6734` **stagers**, not tick bodies - the move script drives them
-through move-VM opcode `0x20`, so the damage lands from the spawn stager and
-not from the `ctx+0x279` machine:
+Those same two routines are the band's only whole-row appliers **among the
+stagers**, and they are `0x801F6734` stagers, not tick bodies - the move
+script drives them through move-VM opcode `0x20`, so the damage lands from the
+spawn stager and not from the `ctx+0x279` machine. Three *tick* bodies sweep
+the whole row too, and none of them shares the never-kill clamp -
+[below](#the-twelve-bodies-the-trampoline-map-names).
 
 | | PROT 0927 (Juggernaut) | PROT 0966 (Evil Seru Magic) |
 |---|---|---|
@@ -773,29 +776,88 @@ PROT 0918's damage arm also credits a kill: past the clamp it increments the
 word at `+0x664` of the caster's per-character record in the
 `0x80084140 + n * 0x414` block (`0x801F87D4..0x801F881C`).
 
-### The ten bodies the trampoline map names and nothing ports
+### The twelve bodies the trampoline map names
 
-Naming a trampoline's arms names ten more routines, each a whole choreography
-in an image whose *trampoline* is now ported. They are real, un-ported work,
-and these are the facts a port needs, read off each owning image's bytes:
+Naming a trampoline's arms names twelve more routines, each a whole
+choreography in an image whose *trampoline* the port also carries. Every one
+is read off its owning image's bytes at slot-B base `0x801F69D8`, and every
+one is ported (`legaia_engine_vm::cast_module_ticks`, driven from
+`World::run_cast_module_code`):
 
 | Body | Owner | Action id | Size | Phase bound | Damage |
 |---|---|---|---|---|---|
-| `0x801F726C` | 938 | `0x4E` Chaos Breath | 2004 B | `beq`/`slti` chain | `FUN_801DD4B0(0x274)` at `0x801F77C0` |
-| `0x801F6A20` | 951 | `0x36` Chaos Flare | 3528 B | `sltiu 0x0C` | `FUN_801DD4B0(0x3A0)` at `0x801F7414` |
-| `0x801F77E8` | 951 | `0x5B` Scythe Wind | 2436 B | `sltiu 6` | `FUN_801DD4B0(0x80)` at `0x801F7F88` |
-| `0x801F7118` | 952 | `0x5C` Bloody Horns | 2576 B | `sltiu 7` | `FUN_801DD6B4(0x1D0)` at `0x801F7948` |
-| `0x801F8F0C` | 955 | `0x60` White Shield | 920 B | `beq`/`slti` chain | none |
-| `0x801F86A4` | 955 | `0x6E` Kiss of Death | 2152 B | `beq`/`slti` chain | none |
-| `0x801F7FA4` | 955 | `0x6F` Melt Spray | 1792 B | `beq`/`slti` chain | none |
-| `0x801F767C` | 955 | `0x70` Terror Scream | 2344 B | `beq`/`slti` chain | none |
-| `0x801F7158` | 955 | `0x72` Power Charge | 1316 B | `beq`/`slti` chain | none |
-| `0x801F6A28` | 955 | `0x73` Void Accessories | 1840 B | `beq`/`slti` chain | none |
+| `0x801F726C` | 938 | `0x4E` Chaos Breath | 2004 B | `beq`/`slti` chain | `FUN_801DD4B0(0x274)` at `0x801F77C0`, **shape A**, whole row |
+| `0x801F69EC` | 938 | `0xB7` Mystic Circle | 2176 B | `sltiu 5`, table `0x801F69D8` | `FUN_801DD4B0(0x309)` at `0x801F70EC`, **shape A**, whole row |
+| `0x801F6A20` | 951 | `0x36` Chaos Flare | 3528 B | `sltiu 0x0C`, table `0x801F69D8` | `FUN_801DD4B0(0x3A0)` at `0x801F7414`, **shape A** |
+| `0x801F77E8` | 951 | `0x5B` Scythe Wind | 2436 B | `sltiu 6`, table `0x801F6A08` | `FUN_801DD4B0(0x80)` at `0x801F7F88`, **shape A** |
+| `0x801F7118` | 952 | `0x5C` Bloody Horns | 2576 B | `sltiu 7`, table `0x801F69F0` | `FUN_801DD6B4(0x1D0)` at `0x801F7948`, **shape A** |
+| `0x801F69D8` | 965 | `0xB6` Doomsday | 4420 B | `beq`/`slti` chain | `FUN_801DD4B0(0x600)` at `0x801F77B4`, **shape A**, whole row |
+| `0x801F8F0C` | 955 | `0x60` White Shield | 920 B | `beq`/`slti` chain | none - a **defence buff**, [below](#the-four-prot-0955-bodies-that-write-no-damage) |
+| `0x801F86A4` | 955 | `0x6E` Kiss of Death | 2152 B | `beq`/`slti` chain | no wrapper; a coin flip, a status mark and a literal `-1` HP |
+| `0x801F7FA4` | 955 | `0x6F` Melt Spray | 1792 B | `beq`/`slti` chain | none - a **five-stat debuff** |
+| `0x801F767C` | 955 | `0x70` Terror Scream | 2344 B | `beq`/`slti` chain | none - a **turn thief** |
+| `0x801F7158` | 955 | `0x72` Power Charge | 1316 B | `beq`/`slti` chain | none - an **ATK buff** |
+| `0x801F6A28` | 955 | `0x73` Void Accessories | 1840 B | `beq`/`slti` chain | none - it **strips an equipped accessory** |
 
-Two more bodies the same maps name are not on the port worklist only because
-no dump prints at their VAs: `0x801F69EC` (938, `0xB7` Mystic Circle,
-`FUN_801DD4B0(0x309)`) and `0x801F69D8` (965, `0xB6` Doomsday,
-`FUN_801DD4B0(0x600)` at `0x801F77B4`).
+Two of the twelve are on no `--missing-ports` row, only because no dump prints
+at their VAs: `0x801F69EC` and `0x801F69D8`. Both frame-match in their owning
+image - `0x801F69EC` runs `0x880` bytes to where the `0x4E` body opens, and
+`0x801F69D8` runs `0x1144` bytes from the module's own load base to where PROT
+0965's trampoline begins.
+
+Three corrections fall out of reading them.
+
+**The two AoE stagers are not the band's only whole-row appliers.** Three of
+the tick bodies above sweep `actor_table[0 .. ctx[+0]]` as well - PROT 0938's
+both bodies and PROT 0965's - and all three clamp
+[shape A](#the-two-clamp-shapes), so they **kill**. The pairing of "whole row"
+with the never-kill `HP - 1` clamp holds for `0x801F85A8` / `0x801F8D64` and
+for nothing else.
+
+The sweep arms are phase `2` (Chaos Breath, `0x801F7750`), phase `3` (Mystic
+Circle - table word 3 at `0x801F69E4`) and phase `0x0B` (Doomsday, the arm the
+`beq v1,0x0C` / `slt` pair at `0x801F6AE8` sends to `0x801F7648`).
+
+**One sweep has no Stone guard.** Every other loop in the band skips a victim
+carrying `+0x16E & 4`; PROT 0938's `0xB7` body tests only `+0x14C == 0`
+(`0x801F70D0`), so Mystic Circle hits a petrified seat.
+
+**Out of range is busy, not done.** Each of these bodies seeds a saved
+register with `1` and returns it, and only a terminal arm zeroes it - so a
+phase past a `sltiu` bound still reports busy. PROT 0949's tick is the
+clearest case: its out-of-bound `beqz` at `0x801F6AA4` targets `0x801F758C`,
+one instruction *past* the `move s7, zero` at `0x801F7588`.
+
+#### The four PROT 0955 bodies that write no damage
+
+"Damage: none" is not "writes nothing". Four of the six-spell cell's bodies
+are the band's only writers of the actor **stat block** and of the persistent
+character record, and one of them is the setter
+`battle-formulas.md` records as the last status-applier gap.
+
+| Body | What its working arm writes |
+|---|---|
+| `0x801F8F0C` White Shield | Both halves of both defence pairs (`+0x15C`/`+0x15E`, `+0x160`/`+0x162`) = the caster's **record** base `x 3/2`, read through `0x801C9348[seat - 3]`. Idempotent, because the source is the record and not the live stat. |
+| `0x801F7158` Power Charge | Both halves of the ATK pair (`+0x158`/`+0x15A`) `+= x >> 2` - a `+25%` - each capped at `999` (`sltiu 0x3E8` at `0x801F74D4`). |
+| `0x801F7FA4` Melt Spray | Ten halfwords: ATK, UDF, LDF, SPD and INT, working **and** base, each `x - (x + 9) / 5`. |
+| `0x801F6A28` Void Accessories | `rand() % 3` picks one of the victim's three accessory slots (`record[+0x19B + slot]`); on a second `rand() & 1 == 0` and a non-empty slot it refunds the id to the bag (`FUN_800421D4`), clears the record byte and rebuilds the ability bitfield (`FUN_80042558`). |
+
+Melt Spray's floor is worth spelling out. Each store is followed by
+`bnez ...; addiu v0,v0,1`, which tests the full **32-bit** difference while
+the store itself is a 16-bit `sh`. A stat of `2` lands on zero and is
+corrected to `1`; a stat of `0` or `1` goes to `-1`, misses the `bnez`, and is
+written back as `0xFFFF`. Retail underflows a one-point stat into 65535. It is
+also a different shape from the item buffs' `x * 6/5` clamped to `0xFFFF`
+([battle-formulas.md](battle-formulas.md)).
+
+The two remaining PROT 0955 bodies share one idiom, the **turn steal**
+(`0x801F8CF4..0x801F8D54` in Kiss of Death's miss arm, `0x801F7E18..0x801F7E4C`
+in Terror Scream's arm 3): refund the victim's queued item when `+0x1DE == 1`
+and `+0x16C != 0`, clear `+0x1DE`, then clear the initiative key `+0x16C` and
+bump the turn cursor `ctx[+0x1A]`. The victim loses its turn. Kiss of Death
+reaches it only on the odd half of a `FUN_80056798() & 1` coin flip, and sets
+`+0x16E` bit `0x400` beside it; its even half clears `+0x16E & 0x0F80`, applies
+exactly **one** point of damage and stages the victim's reaction.
 
 **Read the delay slot when you take a baked power.** PROT 0951's `0x5B` body
 sets `a0` *after* the call word - `jal 0x801DD4B0` at `0x801F7F88` with

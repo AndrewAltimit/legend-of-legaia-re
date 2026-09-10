@@ -1359,8 +1359,10 @@ later action too.
 `levelup_banner_element`. `FUN_801D99BC` - the per-actor UI-element array
 zeroing the teardown calls - carries a scope row in `render_pipeline` instead:
 the engine's HUD is rebuilt from state each frame, so there is no element array
-to clear. The unlatched multi-cast sweep that follows at `0x801E6218` is a real
-gap, still unported.
+to clear. The block does not end at the latch increment: it falls through into
+the tail at `0x801E6218`, which is **inside** the same latch and is ported -
+[the sweep section](#the-sweep-the-teardown-falls-into-0x801e62180x801e6368)
+has the branch targets that refute the earlier "unlatched, unported" reading.
 
 ## The `0x19` attack-approach park - a second, distinct softlock class
 
@@ -2584,11 +2586,23 @@ they are documented here rather than lifted whole into `engine-vm`.
   (`+0x14C`), death anim (`+0x1DA`), and the accumulated-damage queue
   (`ctx[+0x83C]`). **The two halves have different verdicts.** The census head
   (`0x801E0A44..0x801E0BF0`), including the `+0x24D` early-out ordering, is
-  ported as `engine-vm::battle_cast_census::cast_census`; the flight/impact
-  tail - GTE homing, per-effect spawn and the damage application - is not, and
-  it is what strands `battle_hp_bar::clamp_damage_against_live_hp` (tagged
-  `NOT WIRED` on exactly this prerequisite). See
+  ported as `engine-vm::battle_cast_census::cast_census`, and the tail's
+  **hit arm** (`0x801E1844..0x801E1A6C`) as
+  `engine-vm::battle_cast_census::effect_child_hit`, which is what gives
+  `battle_hp_bar::clamp_damage_against_live_hp` a caller - `engine-core`'s
+  `World::apply_effect_child_hit` drives it from the cast fold. Still
+  unported between the two: the GTE homing, the per-slot staging arms and the
+  per-effect spawn. Read off the 0898 image at base `0x801CE818`; see
   `overlay_battle_action_801e09f8.txt`.
+
+  Two details of that arm a decompiled reading loses. The `+0x1DC` writes are
+  bit **ORs** (`|= 4` on the reaction leg at `0x801E19D8`, `|= 1` on the face
+  leg at `0x801E1A18`), not the `+= 1` bump the slot-B cast modules use. And
+  the face store has no `+ 0x800` term (`0x801E1A54` writes the raw
+  `FUN_80019B28` result), so the victim turns to **face** its attacker here,
+  where every cast module's equivalent store faces it away. The reaction pick
+  has three legs, not two: a dead victim takes `+0x1F1` regardless of the
+  `+0x1F2` gate, and a zero `+0x1EF` falls on to `+0x1F0`.
 - **`FUN_801E0080` - battle particle/sprite-cloud animator.** Gated on
   `DAT_8007BD58 != 0 && DAT_8007BD71 == 0xFF` (battle live, no end signal).
   Advances per-frame animation cursors across two effect pools (a 32-slot

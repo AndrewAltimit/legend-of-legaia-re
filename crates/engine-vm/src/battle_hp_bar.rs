@@ -291,13 +291,13 @@ pub fn monster_mp_step(display: u16, pending: i16) -> BarStep {
 ///
 /// Returns the clamped delta.
 ///
+/// Wired: [`crate::battle_cast_census::effect_child_hit`] is the arm this
+/// clamp sits in, and `World::apply_effect_child_hit` drives it from
+/// `engine-core`'s `fold_spell_outcome` damage leg - so a cast resolved in
+/// `play-window` or on the browser play page reaches it. The action band's
+/// own strikes keep the accumulating seed, which is retail's split.
+///
 /// PORT: FUN_801E09F8 (the enemy-cast damage clamp at `0x801E1924`)
-/// NOT WIRED: its call site is inside the **unported tail** of
-/// `FUN_801E09F8` - the per-slot effect-child driver that runs past the
-/// census head [`crate::battle_cast_census::cast_census`] covers. The engine's
-/// enemy casts resolve through `engine-core`'s `fold_spell_outcome` into
-/// `World::apply_battle_hp_delta`, which uses the accumulating seed, so the
-/// safe applier has no path to reach. Porting that tail is the prerequisite.
 pub fn clamp_damage_against_live_hp(damage: i32, live_hp: u16) -> i32 {
     damage.min(i32::from(live_hp))
 }
