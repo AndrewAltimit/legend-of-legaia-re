@@ -496,6 +496,32 @@ impl PlayWindowApp {
             self.tick_field_party_hud();
         }
         legaia_engine_render::profile::mark("tick");
+        // The scene floor-height ladder is script-animated (op `0x4C`
+        // nibble-9): fold whatever the ticks above moved it by into the four
+        // baked field draw lists, so the drawn ground undulates with the walk
+        // heightfield instead of staying at the disc-static tier. A no-op -
+        // and not even an iteration - on a scene whose script leaves the
+        // ladder alone.
+        {
+            let Self {
+                field_floor_wave,
+                field_terrain_draws,
+                field_terrain_color_draws,
+                field_placement_draws,
+                field_placement_color_draws,
+                session,
+                ..
+            } = self;
+            field_floor_wave.apply(
+                &session.host.world.field_floor_height_lut,
+                [
+                    field_terrain_draws,
+                    field_terrain_color_draws,
+                    field_placement_draws,
+                    field_placement_color_draws,
+                ],
+            );
+        }
         // A tick this frame may have flipped the world into
         // SceneMode::Cutscene (field-VM FMV-trigger op). Start
         // windowed STR playback if so; a cut/missing slot drains the

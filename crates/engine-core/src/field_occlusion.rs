@@ -397,6 +397,7 @@ mod tests {
             rot_z: 0,
             anim_id: 0,
             anchor: (0, 0),
+            floor: Default::default(),
         }
     }
 

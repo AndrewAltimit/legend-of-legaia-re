@@ -54,6 +54,11 @@ pub struct FieldRender {
     pub terrain: Vec<EnvDraw>,
     /// Walk-ground heightfield surface, when the scene has a resolvable floor.
     pub ground: Option<legaia_asset::field_objects::WalkHeightfield>,
+    /// The scene's MAN-frame floor-height ladder, i.e. the one the two draw
+    /// lists' `world_y` were baked against. Kept so the live ladder - which
+    /// the field VM animates per frame (op `0x4C` nibble-9) - can be folded
+    /// back in through [`field_env::FloorWave`] without re-walking the map.
+    pub floor_lut: Option<[i16; 16]>,
     /// Cached built env mesh: `((slot, anim_id), mesh, flat_rgba)`.
     /// `anim_id != 0` is the frame-0 posed variant of the slot's mesh.
     #[allow(clippy::type_complexity)]
@@ -243,6 +248,7 @@ pub fn build_field_render(
         placements,
         terrain,
         ground,
+        floor_lut,
         cur: None,
         occluders,
         coplanar_offsets,
@@ -642,6 +648,39 @@ impl LegaiaRuntime {
             .as_ref()
             .map(|f| env_positions(&f.terrain, &f.coplanar_offsets))
             .unwrap_or_default()
+    }
+
+    /// Per-draw **floor-wave** Y offsets for the static map, terrain draws
+    /// first then placement draws - the two lists `field_terrain_positions()`
+    /// and `field_placement_positions()` return, concatenated in that order.
+    ///
+    /// The scene's sixteen-rung floor-height ladder is script-animated: op
+    /// `0x4C` nibble-9 sub-`0..2` sets a rung oscillating every frame
+    /// (`FUN_801DDE34` -> `FUN_801DA930`), which is the travelling wave under
+    /// `jou`'s organic interior floor. The page bakes its draw positions once
+    /// per scene, so this is what moves the drawn ground with the walk
+    /// heightfield instead of leaving it at the disc-static tier.
+    ///
+    /// **Empty** whenever the live ladder equals the baked one, which is every
+    /// frame of every scene whose script leaves it alone - the page skips the
+    /// whole pass on an empty return.
+    pub fn field_floor_wave_offsets(&self) -> Vec<f32> {
+        let Some(f) = self.field.as_ref() else {
+            return Vec::new();
+        };
+        let Some(h) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        let Some(wave) = field_env::FloorWave::from_scene_and_world(
+            f.floor_lut,
+            &h.world.field_floor_height_lut,
+        ) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(f.terrain.len() + f.placements.len());
+        out.extend(f.terrain.iter().map(|d| wave.offset(&d.floor) as f32));
+        out.extend(f.placements.iter().map(|d| wave.offset(&d.floor) as f32));
+        out
     }
 
     pub fn field_terrain_rot_y(&self) -> Vec<u16> {

@@ -562,6 +562,12 @@ struct PlayWindowApp {
     /// Drawn in `SceneMode::Field` UNDER the placed buildings so the town rests
     /// on its ground instead of floating over the bare clear colour.
     field_terrain_draws: Vec<(usize, Mat4)>,
+    /// Live floor-height-ladder patch for the four field draw lists above: the
+    /// per-draw ladder rungs plus the ladder currently folded into their Y, so
+    /// a script that sets a rung oscillating (op `0x4C` nibble-9) moves the
+    /// drawn ground and not only the walk heightfield. See
+    /// [`field_render::FieldFloorWave`].
+    field_floor_wave: field_render::FieldFloorWave,
     /// Cross-draw coplanar-surface offsets for the current scene's resolved
     /// [`legaia_engine_core::field_env::EnvDraw`] lists (terrain + placed
     /// layers combined), from `legaia_engine_core::coplanar_draws`. Applied to

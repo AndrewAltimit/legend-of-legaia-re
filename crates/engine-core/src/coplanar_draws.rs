@@ -580,6 +580,7 @@ mod tests {
             rot_z: 0,
             anim_id: 0,
             anchor: (0, 0),
+            floor: Default::default(),
         }
     }
 
@@ -699,6 +700,7 @@ mod probe_tests {
             rot_z: 0,
             anim_id: 0,
             anchor: (0, 0),
+            floor: Default::default(),
         };
         let draws = vec![mk(45), mk(39)];
         let offs = coplanar_draw_offsets(&draws, &planes);
