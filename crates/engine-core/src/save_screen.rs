@@ -569,6 +569,23 @@ mod tests {
         }
     }
 
+
+    /// Drive the flow the way the module's own usage note says a host must:
+    /// answer the card read the moment it is asked for, and call
+    /// [`SaveScreenFlow::before_tick`] on **every** frame, not only the ones
+    /// carrying an edge. The card I/O driver and the outer dispatcher both
+    /// advance on that call, so a shortcut driver leaves them parked - which
+    /// is what these tests used to be.
+    fn run_beat(flow: &mut SaveScreenFlow, s: &mut SaveSelectSession, frames: u16) {
+        for _ in 0..frames {
+            if let Some(port) = flow.pending_read(s) {
+                flow.install_blocks(port, (0..15).map(|i| block(i, i == 2)).collect());
+            }
+            let edge = flow.before_tick(s, 0);
+            s.tick(SelectInput::from_pad_edge(edge));
+        }
+    }
+
     /// The read is asked for once per port, not once per frame.
     #[test]
     fn pending_read_asks_once_per_port() {
@@ -613,12 +630,13 @@ mod tests {
                 cross: true,
                 ..Default::default()
             });
-            // Run out the card-read beat.
-            for _ in 0..s.now_checking_frames() + 1 {
-                s.tick(SelectInput::default());
-            }
+            // Run out the card-read beat, driving the flow every frame: the
+            // card op has to publish before a confirm of either direction is
+            // accepted, and the outer fade has to clear the input threshold.
+            let beat = s.now_checking_frames() + 1;
+            run_beat(&mut flow, &mut s, beat);
             assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
-            flow.install_blocks(0, (0..15).map(|i| block(i, i == 2)).collect());
+            assert_eq!(flow.card_io_result(), 1, "the card op published success");
             // Cell 0 is empty.
             let gated = flow.before_tick(&s, cross()) & PadButton::Cross.mask() == 0;
             assert_eq!(gated, expect_gated, "{mode:?} on an empty cell");
@@ -642,9 +660,8 @@ mod tests {
             cross: true,
             ..Default::default()
         });
-        for _ in 0..s.now_checking_frames() + 1 {
-            s.tick(SelectInput::default());
-        }
+        let beat = s.now_checking_frames() + 1;
+        run_beat(&mut flow, &mut s, beat);
         flow.install_blocks(1, (0..15).map(|i| block(i, true)).collect());
         let edge = flow.before_tick(&s, PadButton::Right.mask());
         s.tick(SelectInput::from_pad_edge(edge));

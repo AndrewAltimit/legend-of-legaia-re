@@ -41,9 +41,8 @@ use serde::{Deserialize, Serialize};
 use crate::{BootConfig, BootSession};
 
 /// One sample of the engine's (or retail's) high-level dispatch state.
-/// Fields that the sampler can't fill - the engine port doesn't model
-/// the 28-mode dispatcher today - are left as `None` rather than zeroed
-/// so downstream diff tools can tell "didn't observe" from "observed 0".
+/// A field the sampler cannot fill is left as `None` rather than zeroed, so a
+/// downstream diff tool can tell "didn't observe" from "observed 0".
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModeTraceFrame {
     /// Frame counter. Engine: wall-clock frame from

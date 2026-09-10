@@ -88,8 +88,11 @@ held-input / frame-state globals (`gp+0x3D8`, `gp+0x538`, `_DAT_8007B938`,
 `gp+0x55C`) before latching the new mode into `gp[0x564]` / `gp[0x494]`. A
 negative mode index exits the loop (dev quit path; retail never takes it).
 
-The port counterpart is `engine-shell`'s driver loop + `engine-core`'s
-mode-menu-world dispatch; the init sequence maps onto `BootSession`.
+The port counterpart is `engine-core::mode::ModeSeat`, which `BootSession`
+owns and drives once per frame - it holds the mode word, walks the INIT column
+and takes this transition edge (see [the port's
+seat](#the-ports-seat-at-the-mode-table)). The init sequence maps onto
+`BootSession`'s own construction.
 
 ## TOC loader (`FUN_8003E4E8`)
 
