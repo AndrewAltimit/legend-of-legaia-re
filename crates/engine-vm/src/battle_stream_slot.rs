@@ -58,11 +58,14 @@ impl StreamFile {
 /// `request - 1` whole. A request of `0` is idle and has no target.
 ///
 /// PORT: FUN_801F17F8 (the request-byte decode)
-/// NOT WIRED: the engine has no slot-at-a-time CD streamer. Retail reaches
-/// this from the battle scene loader `FUN_800520F0` case `0xFF`, whose port
-/// (`engine-core::overlay_loader::battle_stage_overlay_entry`) is itself
-/// inert, and the side-band files are read whole off the extracted PROT
-/// entries by `legaia_asset::summon_readef` instead of a slot at a time.
+/// REPLACED-BY: `legaia_asset::summon_readef::stream_target`, which resolves
+/// the same pair (which side-band file, and which slot in it) straight from
+/// the action id, with no request byte in between. The request byte only
+/// exists because retail has to hand one `u8` across a frame boundary to a CD
+/// state machine; the port resolves the pair and reads the whole PROT entry
+/// synchronously (`summon_readef::parse`), so nothing will ever need to decode
+/// one back. Same substitution as every other libcd device row: the behaviour
+/// survives, the transport does not.
 pub fn decode_request(request: u8) -> Option<(StreamFile, u8)> {
     if request == 0 {
         return None;
@@ -138,12 +141,13 @@ impl StreamSlotSm {
     /// the two functions are exact inverses over the armable range - the
     /// round-trip is a test in this module rather than a claim here.
     ///
-    /// NOT WIRED: nothing calls it. The two retail callers are the side-band
-    /// applier SM `FUN_801F12D0` and the battle scene loader's per-turn "ME"
-    /// archive request, and the engine reads the side-band files whole off the
-    /// extracted PROT entries (`legaia_asset::summon_readef`) instead of
-    /// arming one `0x10800`-byte slot at a time. The specific missing input is
-    /// the same as [`StreamSlotSm::step`]'s: a slot-at-a-time CD streamer.
+    /// REPLACED-BY: `legaia_asset::summon_readef::parse`, which owns the whole
+    /// side-band file at once. Arming is a request to a transport the port
+    /// does not have - the two retail callers (the side-band applier SM
+    /// `FUN_801F12D0` and the battle scene loader's per-turn "ME" archive
+    /// request) both exist to schedule one `0x10800`-byte read against libcd,
+    /// and the port's equivalent is an already-resident slice. There is no
+    /// arming step to re-host, only an index to compute.
     pub fn arm(&mut self, slot: u8) {
         self.request = slot.wrapping_add(1);
         self.stage = 0;
@@ -157,11 +161,13 @@ impl StreamSlotSm {
     /// busy drive costs a frame rather than a stage.
     ///
     /// PORT: FUN_801F17F8 (the `ctx[+0x26C]` stage machine)
-    /// NOT WIRED: the engine has no slot-at-a-time CD streamer. Retail reaches
-    /// this from the battle scene loader `FUN_800520F0` case `0xFF`, whose port
-    /// (`engine-core::overlay_loader::battle_stage_overlay_entry`) is itself
-    /// inert, and the side-band files are read whole off the extracted PROT
-    /// entries by `legaia_asset::summon_readef` instead of a slot at a time.
+    /// REPLACED-BY: the synchronous disc reader behind
+    /// `legaia_asset::summon_readef::parse`. Every stage this machine walks is
+    /// a libcd step - release the previous handle, seek, start the DMA, wait
+    /// for it - and the port models no CD device: it slices the extracted PROT
+    /// entry in place. Nothing observable comes out of the sequencer that the
+    /// slice does not already have, so no host is owed a call; what retail
+    /// spends four frames on the port has before the battle starts.
     pub fn step(&mut self, cd_busy: bool) -> StreamStep {
         if self.request == 0 {
             return StreamStep::Idle;

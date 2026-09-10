@@ -217,15 +217,16 @@ pub struct WorldMapController {
     /// The three scene globals `FUN_801D1344` forwards into
     /// [`EmitterGate::arm`]: `(_DAT_8007BCD0, _DAT_8007BCD4, _DAT_8007BCD8)`.
     ///
-    /// NOT WIRED: nothing sets these yet, so the gate-arm block below is a
-    /// complete chain over a zero source and the horizon emitter never fires.
-    /// The source is now identified and is *disc* data, not a missing port:
-    /// the field VM writes all three from a script operand - the arms at
-    /// `0x801E1638` (`sw v0,-0x4330(v1)`), `0x801E1688` (`-0x432c`) and
+    /// WIRED: the field VM writes all three from a script operand - op `0x4C`
+    /// outer-nibble-4 subs `0xA` / `0xB` / `0xC`, whose immediate arms store
+    /// at `0x801E1648` (`sw v0,-0x4330(v1)`), `0x801E1688` (`-0x432c`) and
     /// `0x801E16C8` (`-0x4328`) in `overlay_world_map_801de840.txt`, each with
-    /// a sibling ramp arm through the shared `0x801E205C` epilogue. Routing
-    /// those register ids through `engine_core::register_ramp` is what fills
-    /// this in; until then a caller-supplied value would be invented input.
+    /// a sibling ramp arm through the shared `0x801E205C` epilogue. `World`
+    /// implements `FieldHost::op4c_nibble4_global_write` onto this tuple, so a
+    /// scene script that sets the globals arms the gate exactly as retail's
+    /// `FUN_801D1344` does. (An earlier note cited `0x801E1638` for the first
+    /// store; that address is the arm's operand `jal`, and the store is the
+    /// branch-delay slot at `0x801E1648`.)
     pub horizon_params: (u32, u32, u32),
     /// The world-map band's panel windows and panel actors.
     ///

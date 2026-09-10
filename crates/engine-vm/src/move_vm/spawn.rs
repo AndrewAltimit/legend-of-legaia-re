@@ -119,7 +119,7 @@ impl SpawnSubmode {
 /// - `seq_word` ← `param_4` (written to `+0x72`).
 ///
 /// The move-buffer *pointer* itself (`param_3`) is not carried here - the
-/// clean-room engine binds the buffer via [`crate::move_buffer::MoveBufferHost`]
+/// engine binds the buffer via [`crate::move_buffer::MoveBufferHost`]
 /// rather than stashing a raw pointer at `actor[+0x48]`. Engines that need a
 /// per-actor reference back to the buffer track it through their own
 /// channel.
@@ -198,7 +198,7 @@ pub trait MoveSpawnHost: ActorAllocatorHost {
 ///
 /// The retail body additionally writes `DAT_80070630` (a global scratch
 /// slot) on entry. The slot has no SCUS reader outside FUN_80021B04 itself
-/// in the captured corpus; the clean-room port drops it. See
+/// in the captured corpus, so the port drops it. See
 /// `find_addr_materializer_dat_80070630.py` (TODO if a reader surfaces) for
 /// the readback search.
 pub fn spawn_move_actor<H: MoveSpawnHost + ?Sized>(
@@ -275,7 +275,10 @@ pub fn halt_part_actor(actor: &mut crate::move_vm::ActorState) {
 ///
 /// PORT: FUN_80050e74
 ///
-/// NOT WIRED: no engine caller, for the reason on [`halt_part_actor`].
+/// NOT WIRED: the engine has no `DAT_801C90F0` seat table to empty - the same
+/// missing pool as [`halt_part_actor`], one level up. Its field-FX list is
+/// cleared wholesale at scene install, so nothing holds the seat set this
+/// walks.
 pub fn flush_part_actor_pool(slots: &mut [Option<&mut crate::move_vm::ActorState>]) -> usize {
     let mut retired = 0;
     for slot in slots.iter_mut().take(PART_POOL_SLOTS) {

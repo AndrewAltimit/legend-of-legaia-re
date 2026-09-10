@@ -244,7 +244,7 @@ impl FadeState {
 /// `FUN_80020B00`) on the actor's `+0x7C` block. Pool exhaustion returns 0
 /// without touching the template.
 ///
-/// The clean-room engine has no fixed-capacity fade-actor pool; `slot_free`
+/// The engine has no fixed-capacity fade-actor pool; `slot_free`
 /// models the retail alloc outcome for hosts that cap concurrent fades
 /// (pass `true` when a slot is available). The template is copied rather
 /// than mutated in place - retail stamps a scratch buffer (e.g. the

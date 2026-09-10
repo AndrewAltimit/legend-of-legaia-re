@@ -298,11 +298,14 @@ Anything whose retail behaviour is still missing from the port stays
 worked examples from the same files, both a hair from the line:
 
 - `engine-core::camera_ease` (`FUN_801DA390`). `crate::camera` does ease the
-  camera, in floats, against a typed zone record - but the per-frame yaw is
+  camera, in floats, against a typed zone record - but the per-frame value is
   *observable output* and the two disagree frame by frame, so a retail-faithful
-  camera mode genuinely wants this kernel. The owner is `World`, which leaves
-  the field VM's op `0x4C` n4 sub-9 host hooks unimplemented, so nothing posts
-  the zone angle it eases toward.
+  camera mode genuinely wants this kernel. It stayed `NOT WIRED` while `World`
+  left the field VM's op `0x4C` n4 sub-9 host hooks unimplemented; those exist
+  now, so the row is live. It is kept here because the shape is the lesson: a
+  second implementation of an *observable* behaviour is a gap even while the
+  engine's own version runs. (The channel is a vertical offset, not a yaw -
+  [`live-audit-triage.md`](live-audit-triage.md) carries the correction.)
 - `engine-core::menu_list_rows`'s three `FUN_80030628` builders. The pause
   menu does list items - but not in retail's three-buffer order and with none
   of its dim gates, because `World::inventory` is keyed by item id with no slot

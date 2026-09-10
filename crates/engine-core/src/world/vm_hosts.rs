@@ -643,6 +643,76 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // outside the opening (`prologue_naming_pending == false`) these fall back
     // to the default Idle, so a normal field-VM op-0x49 behaves as before.
     // REF: FUN_801F03F0 (name-entry overlay) / op49_invoke_setup func_0x80020de0
+    // Op `0x4C` outer-nibble-4 sub-9 - the writer of the two globals
+    // `crate::camera_ease` eases between, read off the three arms at
+    // `0x801E1480..0x801E162C` in `overlay_world_map_801de840.txt`:
+    //
+    // | `_DAT_1F800394` | scene ctrl `+0x4A`     | `_DAT_8007BCAC`      |
+    // |---|---|---|
+    // | bit 25 (delta)  | `target`               | `target - player[+0x16]` |
+    // | bit 24 (rel)    | `target + player[+0x16]` | `target`           |
+    // | neither         | `target`               | untouched            |
+    //
+    // The first two arms both write **both** globals, and both land the
+    // accumulator on the same value the per-frame easing would have walked
+    // to (`ctrl[+0x4A] - player[+0x16]`); they are snaps, not a different
+    // destination. The bit-24 arm has to post the accumulator itself because
+    // that same bit is `FUN_801DA390`'s input lock (`0x801DA398`), so while
+    // it is raised the easing returns before its first store.
+    // REF: FUN_801DA390 (the easing), FUN_801D6704 (seeds the accumulator)
+    fn op4c_n4_sub9_default_write(&mut self, target: i16) {
+        self.world.camera_scene_offset = target;
+    }
+    fn op4c_n4_sub9_default_ramp(&mut self, target: i16, ticks: u16) {
+        // Retail schedules a ramp over `ticks` frames through the register
+        // ramp helper; the engine has one ramp mechanism and this is not it,
+        // so the endpoint is posted immediately and the per-frame easing
+        // supplies the approach. `ease_step` caps the move at 12 units a
+        // frame either way, so the visible difference is the shape of the
+        // last few frames, not the destination.
+        let _ = ticks;
+        self.world.camera_scene_offset = target;
+    }
+    fn op4c_n4_sub9_delta_write_or_ramp(&mut self, target: i16, ticks: u16) {
+        let _ = ticks;
+        self.world.camera_scene_offset = target;
+        let footing = self.world.camera_ease_player_footing();
+        self.world.camera_offset_ease = i32::from(target.wrapping_sub(footing));
+    }
+    fn op4c_n4_sub9_player_relative_write(&mut self, target: i16, ticks: u16) {
+        let _ = ticks;
+        let footing = self.world.camera_ease_player_footing();
+        self.world.camera_scene_offset = target.wrapping_add(footing);
+        self.world.camera_offset_ease = i32::from(target);
+    }
+
+    // Op `0x4C` outer-nibble-4 subs `0xA..=0xD` - four scene globals written
+    // or ramped from one script operand. Subs `0xA`/`0xB`/`0xC` are the three
+    // the world-map frame pump `FUN_801D1344` forwards into the horizon
+    // emitter gate, which is why the engine parks them on the world-map
+    // controller: `_DAT_8007BCD0` (`sw v0,-0x4330(v1)` at `0x801E1648`),
+    // `_DAT_8007BCD4` (`0x801E1688`) and `_DAT_8007BCD8` (`0x801E16C8`).
+    // Sub `0xD` scales its operand by `_DAT_8008457C >> 12` before storing to
+    // `_DAT_8007B910` (`0x801E1700..0x801E1720`); the engine has no consumer
+    // for that slot, so it is dropped rather than parked somewhere a reader
+    // would then have to be invented for.
+    //
+    // The ramp arms post the endpoint immediately for the same reason the
+    // sub-9 ramp does - the gate reads a level, not a trajectory.
+    // REF: FUN_801D1344 (the gate arm), FUN_801DE840 (these four arms)
+    fn op4c_nibble4_global_write(&mut self, sub: u8, target: i32, ticks: u16) {
+        let _ = ticks;
+        let Some(ctrl) = self.world.world_map_ctrl.as_mut() else {
+            return;
+        };
+        let v = target as u32;
+        match sub {
+            0xA => ctrl.horizon_params.0 = v,
+            0xB => ctrl.horizon_params.1 = v,
+            0xC => ctrl.horizon_params.2 = v,
+            _ => {}
+        }
+    }
     fn op49_state(&self) -> Op49State {
         // A field-VM-opened gold shop (op 0x49 sub-0 inline shop record) gates
         // the resume the same way name-entry does: Armed while the shop UI is
@@ -2327,6 +2397,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .pending_battle_events
             .push(BattleEvent::CameraBounds);
     }
+
     fn monster_size_class(&self, actor_slot: u8) -> u8 {
         // Retail reads `0x801C9348[slot - 3] + 0x1F`. The engine's equivalent
         // is the slot's seated monster id resolved through the catalog; a slot

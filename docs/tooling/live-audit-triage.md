@@ -1180,7 +1180,7 @@ gap at the wrong size - three too large, one at the wrong subsystem entirely.
 | `post_touch` (`8003d038`) | the wait-for-touch arm at `0x8003882C` is unported, and the engine's slice of `FUN_80038158` is "ops `0x04` / `0x0D` plus the static MAN decode" | that arm **is** op `0x05`, ported and live; only its four-instruction mailbox head was missing. Now wired - see below |
 | `spawn_arc_with_emitter` (`801d25ec`) | its callers are "the non-player arcs", which the world model has no actor-pool counterpart for | one named caller: field-VM op `0x43` sub-`0`/`1`/`0xA`/`0xB` at `0x801DF5AC`. What is missing is one keyed channel, not a pool |
 | `fade_ramp` (`80020c14` / `80025000`) | wiring needs the retail system-actor pool behind the fade spawn | `FadeRamp` *is* the `+0x7C` block and a world field can hold it; the pool is only what `spawn_fade` needs for concurrent fades |
-| `ease_camera_yaw` (`801da390`) | the engine has no `_DAT_8007BCAC` accumulator, so wiring is a fidelity-mode decision | the **target** is the harder half: nothing writes the zone angle either |
+| `ease_camera_offset` (`801da390`) | the engine has no `_DAT_8007BCAC` accumulator, so wiring is a fidelity-mode decision | the **target** was the harder half - since closed, and the channel is a height, not a yaw; see the camera-ease block below |
 | `reset_pool` (`8003cda8`) | the host builds a fresh `RampScheduler` per scene | true, and it makes a call site provably unobservable - `new()` and `reset_pool()` leave byte-identical state |
 
 **Op `0x43` sub-`0`/`1`/`0xA`/`0xB` is halt *and* arc.** The port's arm stops at
@@ -1635,7 +1635,7 @@ backwards in one direction:
 | `menu_actor_seed` | `REPLACE` | `World::open_field_submode_screen`'s side `SubmodeScreen` struct - and both entries are retail-unreachable besides |
 | `mode_entry_init::field_prim_buffer_bytes` | `REPLACE` | `engine-render`'s wgpu draw lists; the backend owns the allocation, so an arena size has no consumer |
 | `fade_ramp` | `DISCLOSE` | the battle-teardown owner: substituting `FadeRamp` for `FadeState` moves the fade's lifetime, which is a behaviour change, not a call |
-| `camera_ease` | `DISCLOSE` | `World`, whose `FieldHost::op4c_n4_sub9_*` hooks keep their no-op defaults, so no zone angle is posted |
+| `camera_ease` | `DISCLOSE`, since closed as `WIRE` | `World`, whose `FieldHost::op4c_n4_sub9_*` hooks were no-op defaults. They are implemented now, so the offset is posted and stepped - see the camera-ease block below |
 | `vram_rect_copy` | `DISCLOSE` | `engine-render`, which implements no `FieldHost::op43_vram_rect_copy`; the software VRAM it would blit inside already exists |
 | `panel_backread_loader` | `DISCLOSE` | its only retail caller `FUN_80025358` is unported |
 | `mode::mode_init_bare` | `DISCLOSE` | a production owner of `ModeDriver` - `engine-shell`'s `BootSession::tick` handing frame sequencing to the driver |
@@ -1785,6 +1785,118 @@ this seam at all - `play_field_hud.rs` reads a `NO_PROJECTION_STAND_IN`
 literal - so wiring the native side alone would create exactly the host drift
 `host-drift.md` exists to catch. The prerequisite is the browser's projector,
 not the icons.
+
+## The camera-ease / world-map-gate block: two wires, and a channel that is not a yaw
+
+Three anchors on `FUN_801DA390` plus the world-map horizon gate. Both closed as
+`WIRE`, and the first one falsified the reading its own disclosure rested on.
+
+### `FUN_801DA390` eases a height, not a camera yaw
+
+`engine-core::camera_ease` described `_DAT_8007BCAC` as a smoothed **camera
+yaw**, its target as "the camera-zone record's angle", and the player slot it
+subtracts (`+0x16`) as "current facing" with `+0x1E` as "the facing's settle
+target". The arithmetic was right; the units were not.
+
+The routine walks `_DAT_8007BCAC` toward `scene_ctrl[+0x4A] - player[+0x16]`
+(`0x801DA3A8..0x801DA3C0`, `lhu` both, `subu`). `+0x16` is the actor's
+**footing** - the height of the floor it stands on. Three independent readings
+agree and none of them is a facing: `FUN_801D1BA0` glides `+0x16` toward the
+floor sample at a clamped rate before the ledge classifier reads it back
+(`0x801D1C30..0x801D1C68`), the heading is `+0x26`, the move-VM actor struct
+maps the same slot as `world_y`, and two wall-press captures each read
+`player + 0x16 == -192` on `town0c`'s `-192` floor. So the eased channel is a
+vertical offset in world units, and `scene_ctrl[+0x4A]` is denominated the same
+way. The names in the module are corrected to match; `ease_camera_yaw` is now
+`ease_camera_offset`.
+
+The settle test compares `+0x16`/`+0x18` against the parallel slots eight bytes
+on - Y and Z only, never X - so what it asks is whether the actor has stopped
+moving. `World` answers from the previous tick's `(world_y, world_z)`, which
+reproduces that outcome without asserting what retail keeps at `+0x1E`/`+0x20`.
+
+### Op `0x4C` n4 sub-9 writes both globals on two of its three arms
+
+The writer the disclosure named is real, and reading it settled the wire. Its
+three arms are at `0x801E1480..0x801E162C` in `overlay_world_map_801de840.txt`:
+
+| `_DAT_1F800394` | `scene_ctrl[+0x4A]` | `_DAT_8007BCAC` |
+|---|---|---|
+| bit 25 set | `target` | `target - player[+0x16]` |
+| bit 24 set | `target + player[+0x16]` | `target` |
+| neither | `target` | untouched |
+
+Both non-default arms land the accumulator on exactly the value the per-frame
+easing would have walked to, so they are snaps, not a second destination - an
+independent confirmation of the target expression above. The bit-24 arm has to
+post the accumulator itself because that same bit is `FUN_801DA390`'s input
+lock (`0x801DA398`), so the easing returns before its first store while it is
+raised.
+
+`FieldHost::op4c_n4_sub9_player_relative_write`'s hook doc named only the
+`scene_ctrl[+0x4A]` store and missed the `_DAT_8007BCAC = target` one at
+`0x801E1560`; it is corrected with the hook.
+
+`World` now implements all four sub-9 hooks and steps the accumulator once a
+frame from `World::tick`. The accumulator is observable state, not yet a camera
+input: `crate::camera` keeps its float controller, and choosing between them
+stays a fidelity-mode decision rather than a wiring one.
+
+### The world-map horizon gate's source is the same opcode
+
+`world_map::WorldMapController::horizon_params` disclosed its three scene
+globals as unset, with the field-VM arms identified. They are op `0x4C`
+outer-nibble-4 subs `0xA`/`0xB`/`0xC`, whose immediate stores are the
+branch-delay slots at `0x801E1648` (`sw v0,-0x4330(v1)`), `0x801E1688`
+(`-0x432c`) and `0x801E16C8` (`-0x4328`). `World` now implements
+`FieldHost::op4c_nibble4_global_write` onto the tuple, so a scene script that
+sets the globals arms the gate the way `FUN_801D1344` does. Sub `0xD` scales by
+`_DAT_8008457C >> 12` into `0x8007B910` (`0x801E1700..0x801E1720`) and is
+dropped - the engine has no consumer, and parking it somewhere would only
+invent a reader.
+
+The old note cited `0x801E1638` for the first store. That address is the arm's
+operand `jal`; the store is sixteen bytes on. The other two citations were
+exact. Worth stating because the two forms look identical in a `grep` of a
+decompiled body and only the disassembly separates them.
+
+## Four more rows whose mechanism is named and live
+
+| Anchor | Verdict | `REPLACED-BY:` mechanism |
+|---|---|---|
+| `battle_stream_slot::decode_request` (`801F17F8`) | `REPLACE` | `legaia_asset::summon_readef::stream_target`, which resolves file + slot from the action id directly. The request byte exists only to hand one `u8` across a frame boundary to a CD state machine. |
+| `battle_stream_slot::StreamSlotSm::arm` (`80055B4C`) | `REPLACE` | `legaia_asset::summon_readef::parse`, which owns the whole side-band file. Arming schedules a `0x10800`-byte libcd read; the port's equivalent is an already-resident slice. |
+| `battle_stream_slot::StreamSlotSm::step` (`801F17F8`) | `REPLACE` | the synchronous disc reader behind the same `parse`. Every stage is a libcd step - release, seek, start DMA, wait - and the port models no CD device. |
+| `battle_intro_styles::tick_particle_field` (`801CFDA0` / `801D0370`) | `REPLACE` | `engine-render::battle_intro::emit_particle_field`, which carries the same two PORT tags, steps each particle through `step_particle` and builds the `POLY_FT4` in the same pass. Superseded, not blocked. |
+
+### Rows re-read and left `DISCLOSE`, with what each is waiting on
+
+A pass over the rest of the owed-a-host set found the existing reasons already
+naming a prerequisite rather than restating the audit, so they are recorded
+here rather than rewritten. The value of the row is that the next sweep does
+not have to re-derive it.
+
+| Anchors | Waiting on |
+|---|---|
+| `effect_ribbon` x3 (`801CFA48`) | an actor render-mode channel carrying the `+0x9E` flag word, and a GPU packet chain for the geometry to fill. `engine-render` has no battle effect pass that asks a kernel for per-frame geometry, so the emitter is pure by design and the consumer does not exist on either host. |
+| `menu_list_rows` x4 (`80030628`) | `World::inventory` becoming slot-indexed (families 3 and `0x22`), and the shop session adopting the class-tagged `[class][dim][id]` row word (families 2 and `0x0B`). The order kernel `shop_buy_row_order` beside them is already live. |
+| `fade::spawn_fade` / `fade_ramp` x3 | the fade's *lifetime*, not a call: `World::screen_fade` drops a ramp when `step()` reports it complete, and the retail escape template never reports complete (hold word `-1`). Substituting moves the clear from the world tick to the battle teardown. |
+| `move_vm::spawn` x3 (`80021B04`, `80050E74`) | a producer, not a host impl. `impl MoveSpawnHost for World` exists, but no engine path *starts from a move buffer*; and the part-pool pair needs retail's `DAT_801C90F0` seat table, which the world's generational actor vec replaced. |
+| `vram_rect_copy::build_packet` / `enqueue` | an actor kind that draws by VRAM rect copy. The field-VM sub-op `0x12` route fires on no on-disc script, so the honest prerequisite is the actor tick's kind-7 arm, not a renderer hook. |
+| `scus_leaf_kernels` x3, `scene_name_sync` x3, `chunk_install`, `morph_weight_apply` x2 | a retail-shaped producer in each case - the sprite index buffer, an `initmap.txt` boot override, the `[type, size, data]` side band, an actor whose morph set is a block. Each reason already names it. |
+| `save::add_to_slot` (`80042FE8`) | nothing. No reference of any form reaches it in any image, so retail never calls it either - the retail-unreachable bucket above, not a wiring gap. |
+| `battle_party_panel::cross_out_mark` / `panel_labels`, `monster_archive::find_action_by_tag`, `move_vm::flush_part_actor_pool` | unchanged verdicts; their lead sentences opened with "no caller", which restates the audit, and now open with the blocker instead. |
+
+### `mdec::strv2_decode::decode_frame` stays `DISCLOSE`
+
+It is tempting to call it `REPLACE` on the grounds that Legaia's movies are the
+Iki bitstream and `MdecDecoder::decode_frame` decodes those. That fails the
+test on this page: `REPLACE` needs a mechanism doing *this routine's* job, and
+nothing in the port decodes STRv2. The correct reading is the one already in
+the file - the two slots that clear the Iki flag ship files that are not on the
+released disc, so no reachable `fmv_id` selects this path, and a second
+prerequisite (a code-list-to-RGBA entry point) outlives the missing input. That
+is a permanent structural gap, which is exactly what `DISCLOSE` is for.
 
 ## See also
 

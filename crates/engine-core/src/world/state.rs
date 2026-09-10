@@ -931,6 +931,26 @@ pub struct World {
     /// PORT: FUN_801D5B5C (the `+0x26` -> `+0x5A` save)
     pub field_npc_facing_save: Option<(u8, i16)>,
 
+    /// Scene control block `+0x4A` (`_DAT_801C6EA4 + 0x4A`) - the camera
+    /// vertical offset the current scene asks for, in the player actor's
+    /// `+0x16` footing units. Written by the field VM's op `0x4C`
+    /// outer-nibble-4 sub-9 (all three arms) and read once a frame by
+    /// [`Self::tick_camera_offset_ease`].
+    pub camera_scene_offset: i16,
+    /// `_DAT_8007BCAC` - the smoothed camera vertical offset
+    /// [`crate::camera_ease::ease_camera_offset`] walks toward
+    /// `camera_scene_offset - player_footing`. Seeded to `0x3C` by retail's
+    /// per-scene initialiser `FUN_801D6704`, which is why the engine seeds it
+    /// there too. The op `0x4C` n4 sub-9 **delta** arm snaps it instead of
+    /// letting the easing arrive.
+    pub camera_offset_ease: i32,
+    /// Previous tick's player `(world_y, world_z)`. Stands in for the
+    /// `+0x1E`/`+0x20` slots retail's settle test compares `+0x16`/`+0x18`
+    /// against; the question the comparison asks is whether the actor has
+    /// stopped moving in Y and Z, and this answers it without asserting what
+    /// retail keeps in those two slots. `None` until the first tick.
+    pub camera_ease_prev_yz: Option<(i16, i16)>,
+
     /// Static prop colliders, one per placed object of the scene's field
     /// `.MAP` object grid - the engine's source for the **actor-collision
     /// arms** of the movement probe (retail `FUN_801CFC40`). Installed at
@@ -3015,6 +3035,9 @@ impl World {
             field_npc_entry_positions: std::collections::HashMap::new(),
             field_npc_headings: std::collections::HashMap::new(),
             field_npc_facing_save: None,
+            camera_scene_offset: 0,
+            camera_offset_ease: crate::camera_ease::CAMERA_OFFSET_EASE_SEED,
+            camera_ease_prev_yz: None,
             field_prop_colliders: Vec::new(),
             resolved_cold_spawn: None,
             field_prop_bank: Default::default(),

@@ -1179,10 +1179,14 @@ pub trait FieldHost {
 
     /// Op 0x4C outer-nibble-4 sub-9 - player-relative write (bit 24 set).
     ///
-    /// Fires when [`op4c_n4_sub9_state`] returns `PlayerRelative`: the
-    /// original writes `target + *(player_anchor + 0x16)` into
-    /// `*(_DAT_801C6EA4 + 0x4A)` (ramped via `func_0x8003C5F0` when
-    /// `ticks != 0`). Default impl is a no-op.
+    /// Fires when [`op4c_n4_sub9_state`] returns `PlayerRelative`. The arm
+    /// writes **both** globals, not one: `_DAT_8007BCAC = target` at
+    /// `0x801E1560` and `*(_DAT_801C6EA4 + 0x4A) = target + *(player + 0x16)`
+    /// at `0x801E15B0` (each ramped via `func_0x8003C5F0` when `ticks != 0`).
+    /// The second store is why this arm exists at all: bit 24 is also the
+    /// input lock the per-frame easing `FUN_801DA390` returns on
+    /// (`0x801DA398`), so while it is raised nothing else advances the
+    /// accumulator. Default impl is a no-op.
     ///
     /// [`op4c_n4_sub9_state`]: FieldHost::op4c_n4_sub9_state
     fn op4c_n4_sub9_player_relative_write(&mut self, target: i16, ticks: u16) {
