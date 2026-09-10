@@ -457,6 +457,21 @@ CANONICAL_LADDERS = [
     # `--release` (see "a release export loses executed code" above).
     ("chapter1_frontier_ladder", "legaia-engine-core"),
     # ------------------------------------------------------------------ </L4>
+    # --- lane W4-D -----------------------------------------------------
+    # `w4d_cast_band_ladder` is denominated in **spell ids**, which is the axis
+    # every other member is blind to. `cast_module_ticks`' bodies are gated on
+    # `World::cast_module_for`, so a route ladder enters whichever one or two
+    # casts its route happens to reach and the rest of the PROT 0903..0966
+    # band reads *live but never entered* no matter how far the route goes.
+    # This one asks the engine's own two dispatchers for a representative id
+    # per band entry and steps each entry's module code, so the gap it closes
+    # is an id gap rather than a reach gap.
+    #
+    # Disc-gated, and specifically on `SCUS_942.54` rather than only on
+    # `PROT.DAT`: the capture half of the band is keyed on the spell record's
+    # class byte, so without the executable every id falls to the action-id
+    # dispatcher and half the band cannot be seated.
+    ("w4d_cast_band_ladder", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
