@@ -232,7 +232,8 @@
     <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
       <tr><td>What draws VRAM <code>(384, 0)</code> 320x256 (the dome panel still)?</td><td><span class="tag tag-open">open</span> - emit only</td><td>Staged by PROT 0978 and armed by <code>ctx[+0xC] = 1</code> at <code>0x800474CC</code> in the generic battle-end teardown <code>FUN_80047430</code>. Three candidates are excluded: no draw site exists statically (33 sites materialise <code>0x180</code>, none with <code>y = 0</code>); the <code>INTERVAL</code> intermission is a live <code>koin1</code> render sampling nothing at <code>x = 384</code>; and an 1800-VSync GPU-call census across a teardown records no display-origin flip, no <code>MoveImage</code> and no blit there. The <em>upload</em> is measured: four <code>LoadImage</code> calls of 64x256 at <code>x = 384 / 448 / 512 / 576</code>, so the "320x64 y-stepped" geometry belongs to a different family. Needs a GPU-FIFO capture at battle teardown.</td></tr>
-    </tbody>
+          <tr><td>What actually breaks a rebuilt character-pack container at battle load?</td><td><span class="tag tag-open">open</span> - symptom measured, cause not</td><td>Changing the first section's decoded size produces a measured wild read, and that observation stands - but the mechanism offered for it rested on a header word being a tail offset inside the entry, which is falsified. The byte-exactness rule the modding path follows is therefore conservative rather than explained. Closes by watchpointing the read back to its producer on a rebuilt container.</td></tr>
+</tbody>
   </table>
   <p>Recently closed here: the card-screen kanji page is sampled by <strong>nothing</strong> - the GPU-FIFO watch at card-screen entry draws no primitive from it, so the USA build ships the Japanese glyph page and never reads it (<a href="re-settled-threads.html">settled threads</a>).</p>
 </section>

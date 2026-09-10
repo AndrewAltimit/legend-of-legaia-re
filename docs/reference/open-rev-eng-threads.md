@@ -350,6 +350,7 @@ PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 
 | Thread | Status | What would close it |
 |---|---|---|
+| What actually breaks a rebuilt PROT 0874 container at battle load? | open (the symptom is measured; its stated cause is not) | Changing section 0's decoded size produces a measured wild read at `0x808425F8`, and that observation stands. The mechanism previously offered for it does not: it rested on the header's `meta[1]` being a tail offset inside the entry, which is [falsified](re-do-not-re-walk.md#containers--placeholder-slots) - the word is the descriptors' decompressed-size sum and the battle loader's pack is a different entry entirely. So the byte-exactness rule the modding path follows is conservative rather than explained. Closes by watchpointing the read's address back to its producer on a rebuilt container. |
 | What draws VRAM `(384, 0)` 320x256 (the dome panel still)? | open (emit only; arming, staging and the upload all resolved) | [details ↓](#what-draws-the-dome-panel-still) |
 
 ### What draws the dome panel still
