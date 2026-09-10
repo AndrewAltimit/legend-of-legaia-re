@@ -1654,13 +1654,13 @@ once at scene load ([NPC initial facing](#npc-initial-facing)), and the player
 is its own case - `FUN_801D01B0` sets `+0x26` straight from the remapped pad
 direction, a snap with no ramp.
 
-### `+0x16` is not the yaw
+### `+0x16` is the actor's Y, and no consumer reads it as a tilt
 
 The actor tick's first block ramps `+0x16`, which reads like a facing slew but
 is not one: its value comes from `FUN_80019278`, which samples the per-scene
 terrain grid at `*_DAT_1F8003EC + 0x4000 / + 0x8000` under the actor's tile.
-It is the **terrain-conform angle** - the tilt that sits an actor on a slope -
-and it is the only per-frame angle ramp that is not opcode-driven:
+That sampler returns a **height**, so `+0x16` is the actor's world Y and the
+block is a ground-follow smoother, not an angle ramp:
 
 - skipped entirely when `+0x5C < 0` or `+0x10 & 2`;
 - forced to `-actor[+0x8E]` when `+0x10 & 0x20000000`;
@@ -1669,17 +1669,44 @@ and it is the only per-frame angle ramp that is not opcode-driven:
 
 The yaw an NPC faces is `+0x26`, always.
 
-**Open, and load-bearing for the ledge hop:** whether "angle" is the right word
-for this field. The [ledge classifier](#fun_801d1878---probe-and-post) subtracts
-`+0x16` from another `FUN_80019278` return and compares the difference against
-`±0x60` *world units*, then passes the sampled value on as the hop's landing
-**height**; the tile-placement op `FUN_801d03a4` writes `+0x14`, `+0x18` and
-`+0x16` together as one placement. Both wall-press captures read
-`player + 0x16 == -192`, equal to the floor sample under each - one value on a
-flat floor, so it does not separate the two readings on its own. The engine
-ports `+0x16` as the actor's Y either way, which is what the settle and the
-classifier need; what is unresolved is whether some *other* consumer reads the
-same half-word as a tilt.
+#### The tilt reading is falsified
+
+The residual question - whether some *other* consumer reads the same half-word
+as a tilt - is answered no, by two independent byte sweeps.
+
+**Nothing angle-masks it.** A PSX angle is used by masking it `& 0xFFF` and
+indexing the sine/cosine tables at `_DAT_8007B81C` / `DAT_8007B7F8`. Sweeping
+every load at displacement `0x16` with a base other than `sp`: the field
+overlay has **77** and masks **none** of them; `SCUS_942.54` has **44** and
+masks four - and all four are re-bases, not this field. Both live behind a
+materialised `base + 0x80` (`0x80021E3C` `addiu s6,s5,0x80` in `FUN_80021DF4`,
+`0x80023088` `addiu s1,s2,0x80` in the move VM `FUN_80023070`), so the
+half-word they read is `actor[+0x96]` - the documented tween-scale angle op
+`0x03` rotates a step along ([`move-vm.md`](move-vm.md#0x03---world_rotate_add-size-2)). The same
+sweep at displacement `0x26`, the real yaw, masks 10 of 42 in SCUS and 1 of 31
+in the field overlay, which is the positive control that makes the zero
+load-bearing.
+
+**Every actor-shaped access groups it with the position pair, never with the
+rotation triple.** Classifying each `+0x16` access by the other displacements
+its own base register is used at inside a ±20-instruction window: in the field
+overlay 34 sit on an actor-shaped base, and all 34 co-access `+0x14` **and**
+`+0x18`. Two of them copy the pair as raw bytes across the field
+(`0x801D2498` / `0x801D2670`: `swl 0x17` + `swr 0x14`, then `swl 0x1b` +
+`swr 0x18` - an unaligned word copy of `+0x14..+0x1B`), which only makes sense
+for `(x, y, z)`. Those same routines read `+0x24`, `+0x26` and `+0x28`
+separately in the same window: the actor already has a rotation triple, and
+`+0x16` is not in it.
+
+The engine ports `+0x16` as the actor's Y, which is what the settle, the
+[ledge classifier](#fun_801d1878---probe-and-post) and the tile-placement op
+`FUN_801d03a4` (which writes `+0x14`, `+0x16` and `+0x18` as one placement) all
+need. The reference table agrees - `FUN_80025054` "snaps the actor's Y
+(`actor[+0x16]`) to the ground-height sampler's result ... not a heading write"
+([`functions/game-modes.md`](../reference/functions/game-modes.md#8003bc08-ground-follow)).
+The wall-press captures reading `player + 0x16 == -192` are consistent with it
+and were never able to separate the readings on their own, because both
+captures sit on a flat floor.
 
 ### Live corroboration
 

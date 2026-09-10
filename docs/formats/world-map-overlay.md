@@ -945,18 +945,46 @@ Two of that write-up's inferences do **not** survive:
   prim handler is only ever handed a `DAT_8007C018` TMD. A read bp fires
   on an address, not on a provenance; a TMD allocated into the same heap
   region as the animation bank will trip a window bp all the same.
-- "`ra = 0x801F78D4` (the world-map top-view overlay renderer)" - under
-  the recovered base `0x801F69D8` for PROT 0901, `0x801F78D0` decodes as
-  `swc2 $1,4($t6)`, not a `jal`, and the same VA in the sibling image
-  0900 is `addu $t6,$zero,$zero`. No `jal` at `0x801F78D0` exists in
-  either slot-B image, so no call in either can produce that return
-  address. What the value was is unresolved; it is not evidence that a
-  world-map overlay routine reads slot 4.
+- "`ra = 0x801F78D4` (the world-map top-view overlay renderer)" - the
+  *identity* claim is still wrong, but the address is **not** unresolvable,
+  and an earlier revision here said it was on arithmetic that was off by one
+  instruction. A MIPS return address is the call site **plus 8**, so
+  `ra = 0x801F78D4` puts the `jal` at `0x801F78CC` and its delay slot at
+  `0x801F78D0`. Testing `0x801F78D0` for a `jal` tests the delay slot, and a
+  `jal` there would return to `0x801F78D8` instead. See
+  [Which slot-B image returns to `0x801F78D4`](#which-slot-b-image-returns-to-0x801f78d4).
 
 The "762 of 2153 `FUN_80043390` calls take `a0` from inside the slot-4
 window" figure is the same address-vs-identity confusion: `a0` there is
 a TMD group pointer, and during the warp the heap put TMDs in that
 address range.
+
+### Which slot-B image returns to `0x801F78D4`
+
+Decoding `0x801F78CC` in every image the static overlay map bases at
+`0x801F69D8` - 68 of them - **three** hold a call there, and PROT 0901 is not
+one of them:
+
+| Image | Word at `0x801F78CC` |
+|---|---|
+| PROT 0900 `summon_render` | `jal 0x80043390`, delay slot `addu a2,zero,zero` |
+| PROT 0928 `summon_palma` | `jal 0x801D829C` |
+| PROT 0933 `summon_terra` | `jal 0x80050E74` |
+| PROT 0901 `world_map_render` | `lwc2 zero,0x0(t6)` - not a call |
+
+The two summon modules page in only for their own cast, so the only candidate
+consistent with a world-map warp capture is **PROT 0900** - and its target is
+`FUN_80043390`, the per-prim colour/mode draw wrapper that the Drake run's
+other in-window RA (`0x8001BC8C`, the return of `jal FUN_80043390` at
+`0x8001BC84`) also comes back from.
+
+That resolves the value and leaves the write-up's conclusion where it was.
+`FUN_80043390` is handed a prim/node pointer in `a0`; a read watchpoint fires
+on an address, so a heap allocation landing in the slot-4 range trips it
+whatever the pointer's provenance. The RA names a **draw** wrapper, not a
+world-map terrain pass, and PROT 0901 cannot produce it at all. What the bytes
+cannot settle is which slot-B image was resident at that instant - that needs
+the capture, not the disassembly.
 
 **Cross-kingdom.** The resident base is byte-pinned for all three
 kingdoms (Drake `0x8011A624`, Sebucus `0x80119CE4`, Karisto
