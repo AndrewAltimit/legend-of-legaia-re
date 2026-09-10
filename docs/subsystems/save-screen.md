@@ -12,7 +12,7 @@ both confirmed as the menu overlay by function-address identity; decompiled func
 ## Contents
 
 - [Overlay structure](#overlay-structure) · [Key functions](#key-functions) · [Globals used](#globals-used)
-- [Sub-screen function pointer table](#sub-screen-function-pointer-table) - [entry-context decode](#the-entry-context-decode-picks-the-screen-family) · [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [card-operation sequencer](#card-operation-sequencer-fun_801e13b8) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [equip-candidate list handler](#equip-candidate-list-handler-fun_801d9c14-sub-screen-0x14)
+- [Sub-screen function pointer table](#sub-screen-function-pointer-table) - [who hosts the graph](#who-hosts-the-graph-and-what-joins-it-to-the-session) · [entry-context decode](#the-entry-context-decode-picks-the-screen-family) · [load/save dispatch](#loadsave-dispatch-fun_801dd35c) · [libcd I/O state machine](#libcd-io-state-machine-fun_801e3294) · [card-operation sequencer](#card-operation-sequencer-fun_801e13b8) · [save-block directory enumeration](#save-block-directory-enumeration-fun_801e1208) · [equip-candidate list handler](#equip-candidate-list-handler-fun_801d9c14-sub-screen-0x14)
 - [Relationship to `legaia_save`](#relationship-to-legaia_save) · [story-flag persistence vs. scratchpad word](#story-flag-persistence-vs-scratchpad-word) · [retail SC block layout](#retail-sc-block-layout)
 - [Sprite asset sources (Continue → Load screen)](#sprite-asset-sources-continue--load-screen) - [9-slice tile rects](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2) · [how the panel TIM was pinned](#how-the-panel-tim-was-pinned) · [the kanji page is never sampled](#the-card-screens-kanji-page-is-never-sampled)
 - [Slide-in UI primitive (`FUN_801E1C1C`)](#slide-in-ui-primitive-fun_801e1c1c) · [messagebox panel geometry (`FUN_801E36C4`)](#messagebox-panel-geometry-fun_801e36c4) · [bottom info panel renderer (`FUN_801E08D8`)](#bottom-info-panel-renderer-fun_801e08d8)
@@ -341,6 +341,41 @@ card drivers `0x18` / `0x19` share one implementation parameterised by
 differing only in the op selector. Every slot's **handler** is pinned
 regardless - see
 [the pointer table](#sub-screen-function-pointer-table).
+
+#### Who hosts the graph, and what joins it to the session
+
+`save_screen::SaveScreenFlow` - the host-half kernel both hosts already share -
+owns the `SaveScreenMachine`, constructs it on the first frame a card-rack
+screen is up, and ticks it around `SaveSelectSession`. That is what makes the
+two models complementary rather than stacked, because they are joined at one
+place: the **card op**.
+
+- `SaveScreenFlow` also keeps a `CardIoMachine` and advances it every frame
+  through `card_frame_tick`. The "card" is whatever backs the host's blocks -
+  the native shell's save directory, the browser's imported `.mcr` - so the
+  poll status is what that backend answered: blocks installed for the port on
+  screen poll `Ready`, a mount with nothing readable polls `NoCard` and spends
+  the retry budget, an unanswered read polls `Pending`.
+- The card driver's own waits read that result. Sub-screen `0x18` / `0x19` step
+  1 blocks on the display script going idle and step 2 blocks on the op
+  finishing; the flow answers the first with "the I/O machine has published
+  nothing yet" and the second with "it published success", so the graph's move
+  to the slot selector `0x01` is caused by the backend, not by a frame counter.
+- The outer fade is load-bearing on input. `SaveScreenMachine::input_active`
+  is false while the fade sits above `FADE_INPUT_THRESHOLD`, and the flow
+  masks the pad edge for those frames - which is what keeps the button that
+  opened the screen from being consumed as the screen's first input. The rate
+  is the port's (`SAVE_SCREEN_FADE_DELTA`); retail's machine takes it from its
+  caller too.
+- A confirm of either direction is refused until the I/O machine publishes
+  success. In practice that only ever fires when the backend never answered,
+  because the "Now checking" beat is two orders of magnitude longer than the
+  two-op cycle - which is the point: a screen whose card never read cannot
+  commit into it.
+
+The rebuild arm of `card_frame_tick` is the half that stays unexercised. It
+keys on the commit phase word the *save* direction raises, and the port commits
+a save in one call, so no phase is ever raised for it to see.
 
 ### The entry-context decode picks the screen family
 

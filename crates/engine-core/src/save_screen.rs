@@ -48,7 +48,12 @@
 
 use crate::input::PadButton;
 use crate::save_select::{
-    SaveSelectMode, SaveSelectSession, SelectOutcome, SelectPhase, SlotSnapshot,
+    CardIoMachine, CardStatus, SaveSelectMode, SaveSelectSession, SelectOutcome, SelectPhase,
+    SlotSnapshot, card_frame_tick,
+};
+use crate::save_subscreen::{
+    FADE_OPAQUE, SaveEntryContext, SaveScreenMachine, SaveSubScreen, SubScreenEffect,
+    SubScreenInput,
 };
 
 /// Columns in retail's slot-preview grid.
@@ -118,7 +123,49 @@ pub struct SaveScreenFlow {
     /// part of a card, so it happens once per read rather than once per
     /// frame in the draw path.
     blocks: Option<(u8, Vec<SlotSnapshot>)>,
+    /// Retail's two-op card I/O driver, running behind the read above.
+    ///
+    /// The **card is the host's block backend**: the native shell's save
+    /// directory, the browser's imported `.mcr`. So the machine's poll status
+    /// is what the backend answered - blocks installed for the port on screen
+    /// is `Ready`, a mount with nothing readable is `NoCard`, and a read the
+    /// host has not answered yet is `Pending`. That is the same substitution
+    /// the rest of this module makes (the flow asks for snapshots and never
+    /// touches a device), applied to the beat instead of to the bytes.
+    io: CardIoMachine,
+    /// `DAT_801EF17C` - the backstop counter the arm states reset.
+    io_poll: u16,
+    /// The last result [`card_frame_tick`] published (`0` = still running).
+    io_result: i32,
+    /// `_DAT_801F0224` - the directory-rebuild request the commit beat
+    /// consumes.
+    io_rebuild: bool,
+    /// Retail's outer save-UI dispatcher, running around the session.
+    ///
+    /// [`SaveSelectSession`] is the screen's *content* model; this is its
+    /// control flow - the fade-in that gates input, the sub-screen id, and
+    /// the card driver's own step machine. The two are joined at the card
+    /// op: the driver's `script_busy` / `card_done` waits are answered by
+    /// [`Self::io`]'s published result, so the graph moves because the
+    /// backend answered a read, not because a frame counter expired.
+    ///
+    /// `None` until the first card-rack frame, which is where the session's
+    /// direction is known (retail picks it at the root picker: row `5`
+    /// `@Load` routes to `0x18`, row `6` `@Save` to `0x19`).
+    machine: Option<SaveScreenMachine>,
+    /// The effects the machine's last frame asked for.
+    machine_effects: Vec<SubScreenEffect>,
 }
+
+/// How much of the outer fade one frame burns.
+///
+/// Retail runs its fade on a timer of its own and the machine takes the rate
+/// from its caller ([`SaveScreenMachine::tick`]), so this is the port's rate,
+/// not a recovered constant: `0xF2` down past the `0x7A` input threshold in
+/// eight frames, which sits inside the "Now checking" beat by two orders of
+/// magnitude and inside a human's reaction to the button that opened the
+/// screen.
+pub const SAVE_SCREEN_FADE_DELTA: u8 = 0x10;
 
 impl SaveScreenFlow {
     pub fn new() -> Self {
@@ -178,6 +225,59 @@ impl SaveScreenFlow {
     pub fn reset(&mut self) {
         self.grid_cursor = 0;
         self.blocks = None;
+        self.io = CardIoMachine::new();
+        self.io_poll = 0;
+        self.io_result = 0;
+        self.io_rebuild = false;
+        self.machine = None;
+        self.machine_effects.clear();
+    }
+
+    /// The retail sub-screen id the flow is on, or `None` before the first
+    /// card-rack frame.
+    ///
+    /// This is the id a host keys retail-exact chrome off: the card driver
+    /// (`0x18` / `0x19`) while the op runs, then the slot selector (`0x01`)
+    /// once it published.
+    pub fn retail_subscreen(&self) -> Option<SaveSubScreen> {
+        self.machine.as_ref().map(|m| m.screen())
+    }
+
+    /// The outer dispatcher's fade level (`0xF2` opaque, `0` clear).
+    pub fn retail_fade(&self) -> u8 {
+        self.machine.as_ref().map_or(FADE_OPAQUE, |m| m.fade())
+    }
+
+    /// What the last frame of the outer dispatcher asked the host for.
+    pub fn subscreen_effects(&self) -> &[SubScreenEffect] {
+        &self.machine_effects
+    }
+
+    /// The card I/O driver's last published result: `1` once the two-op cycle
+    /// completed, `-1` no card, `-2` a stray completion, `-3` abort/timeout,
+    /// `0` while it is still running.
+    pub fn card_io_result(&self) -> i32 {
+        self.io_result
+    }
+
+    /// Whether the driver spent its retry budget without the backend ever
+    /// answering with readable blocks - retail's "no card" verdict.
+    pub fn card_absent(&self) -> bool {
+        self.io_result == -1
+    }
+
+    /// This frame's poll status for the card behind `port`, derived from what
+    /// the host has answered [`Self::pending_read`] with.
+    fn card_status(&self, port: u8) -> CardStatus {
+        match self.blocks.as_ref() {
+            Some((p, blocks)) if *p == port && blocks.iter().any(|b| b.present) => {
+                CardStatus::Ready
+            }
+            // The host answered and the port holds nothing readable: an empty
+            // mount reads as no card, which is what spends the retry budget.
+            Some((p, _)) if *p == port => CardStatus::NoCard,
+            _ => CardStatus::Pending,
+        }
     }
 
     /// The port whose blocks the host must lift this frame, or `None` when
@@ -228,6 +328,57 @@ impl SaveScreenFlow {
         if !session.card_slots_mode() {
             return edge;
         }
+        // The card I/O beat, once per frame for as long as a card screen is
+        // up. Retail's ticker runs `FUN_801E3294` every frame while its gate
+        // word allows and latches the first non-zero result; the commit phase
+        // it also watches is the one the *save* direction raises, which the
+        // port performs in one call, so the rebuild arm never fires here.
+        let status = self.card_status(session.current_slot());
+        let (result, _effect, rebuilt) = card_frame_tick(
+            &mut self.io,
+            status,
+            &mut self.io_poll,
+            true,
+            0,
+            &mut self.io_rebuild,
+            &[],
+        );
+        debug_assert!(rebuilt.is_none(), "no commit phase is raised here");
+        if result != 0 {
+            self.io_result = result;
+        }
+        // The outer dispatcher, around the same beat. Retail enters the card
+        // direction from the root picker's rows rather than from an entry
+        // context, so the flow opens the context a field save point uses and
+        // routes to the driver the session's direction names.
+        let machine = self.machine.get_or_insert_with(|| {
+            let mut m = SaveScreenMachine::new(SaveEntryContext::ScriptSave);
+            if session.mode() == SaveSelectMode::Load {
+                m.goto(SaveSubScreen::CardLoad);
+            }
+            m
+        });
+        let sub_input = SubScreenInput {
+            // The display script is "busy" until the card op published: that
+            // is what the driver's step-1 wait is waiting for here.
+            script_busy: self.io_result == 0,
+            any_button_held: edge != 0,
+            nav: if edge & PadButton::Cross.mask() != 0 {
+                1
+            } else if edge & PadButton::Circle.mask() != 0 {
+                2
+            } else {
+                0
+            },
+            cursor: u16::from(self.grid_cursor),
+            card_done: self.io_result > 0,
+            ..Default::default()
+        };
+        self.machine_effects = machine.tick(sub_input, SAVE_SCREEN_FADE_DELTA);
+        // Retail suppresses the pad while the fade is still above its
+        // threshold (`FADE_INPUT_THRESHOLD`), which is what keeps the button
+        // that opened the screen from being consumed as its first input.
+        let edge = if machine.input_active() { edge } else { 0 };
         match session.phase() {
             SelectPhase::SlotPreview { .. } => {
                 self.grid_cursor = step_grid_cursor(self.grid_cursor, edge);
@@ -244,9 +395,20 @@ impl SaveScreenFlow {
             _ => {}
         }
         if !matches!(session.phase(), SelectPhase::SlotPreview { .. })
-            || session.mode() != SaveSelectMode::Load
             || edge & PadButton::Cross.mask() == 0
         {
+            return edge;
+        }
+        // A confirm of either direction needs the card op to have completed:
+        // retail's screens sit on the driver's result word and a write into a
+        // card whose two-op cycle has not published success is the one thing
+        // that corrupts a block. The grid is only up after the "Now checking"
+        // beat, which is two orders of magnitude longer than the cycle, so
+        // this refuses a confirm exactly when the backend never answered.
+        if self.io_result <= 0 {
+            return edge & !PadButton::Cross.mask();
+        }
+        if session.mode() != SaveSelectMode::Load {
             return edge;
         }
         if self.focused_block().is_some() {
