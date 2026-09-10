@@ -1620,6 +1620,12 @@ def main() -> int:
         + find_doc_row_citations(by_addr)
         + find_dual_labels(by_addr)
     )
+    # The unmatched-waiver report is a statement about the whole waiver file, so
+    # it has to be computed before the display filters narrow the finding set. A
+    # `--addr` drill-down otherwise reported every waiver in the file as
+    # matching nothing, which reads as a repo-wide problem and is an artifact of
+    # having asked about one address.
+    all_keys = {f.key for f in findings}
     if args.signal:
         findings = [f for f in findings if f.signal == args.signal]
     if args.addr:
@@ -1691,7 +1697,7 @@ def main() -> int:
     # A waiver that matches nothing is a claim nobody can check any more: the
     # finding it excused is gone, or its key drifted when a neighbouring
     # citation started passing. Either way it should be deleted, not carried.
-    unused = sorted(set(waivers) - {f.key for f in findings})
+    unused = sorted(set(waivers) - all_keys)
     if unused:
         print(
             f"\n{len(unused)} waiver(s) in {WAIVERS.name} match no current "
