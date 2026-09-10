@@ -131,6 +131,15 @@ partition; in those six the frame is complete and the call passes. The filter
 is a partition test, not a truncation test, and where the residue frames
 cleanly it lets the donor's call through.
 
+No claimed byte comes from one today, and the reason is the *other* rule: in
+five of the six (0908, 0910, 0920, 0943, 0961) the donor's pointer is the
+image's **highest** offset, so the unbounded-record rule below drops it, and in
+PROT 0945 the pointer does not resolve at all. `asset account` reports the
+dropped offset for each - `0x26D8`, `0x26D8`, `0x1EF4`, `0x17E0`, `0x1DAC`. So
+the band's record bytes are sound while the call-site filter is narrower than
+its own description; a donor whose residue framed cleanly *and* whose record
+sat below one of this image's own would be credited here.
+
 ### The one span the band cannot bound
 
 The image's **highest** record has no next pointer above it. Nothing in the
