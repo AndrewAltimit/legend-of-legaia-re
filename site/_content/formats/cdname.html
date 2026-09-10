@@ -195,7 +195,7 @@
     <thead><tr><th>Function / test</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
       <tr><td>CDNAME loader</td><td><code>FUN_8001D8FC</code></td><td>16-byte records at <code>0x80088758</code>; unbounded copy at <code>0x8001D980</code>, index stores at <code>0x8001DA78</code>/<code>0x8001DA90</code></td><td><code>8001d8fc.txt</code></td></tr>
-      <tr><td>Source flag write</td><td><code>0x80015F08</code> in <code>main()</code></td><td><code>sh v0,0x5aa(gp)</code> sets <code>_DAT_8007B8C2</code> non-zero, selecting the disc read</td><td>SCUS disassembly</td></tr>
+      <tr><td>Source flag write</td><td><code>0x80015F08</code> in <code>main()</code></td><td><code>sh v0,0x5aa(gp)</code> stores the <code>1</code> returned by a two-instruction leaf; the only writer among 70 access sites across 84 images, the other 69 all reads</td><td>SCUS disassembly</td></tr>
       <tr><td>PROT resolver</td><td><code>FUN_8003E8A8</code></td><td>Indexes the raw in-RAM TOC, header included</td><td><code>8003e8a8.txt</code></td></tr>
       <tr><td>Player-file loader</td><td><code>FUN_800558FC</code></td><td>Constants <code>0x361..0x364</code> = defines <code>battle_data 865..868</code></td><td>live trace</td></tr>
       <tr><td>Monster SE loader</td><td><code>FUN_8003E104</code></td><td><code>li v0,0x37d</code> = define <code>monster_se 893</code></td><td><code>8003e104.txt</code></td></tr>

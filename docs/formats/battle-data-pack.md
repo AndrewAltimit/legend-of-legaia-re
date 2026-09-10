@@ -712,30 +712,56 @@ The relocation itself is instruction-pinned, in `80052fa0.txt`:
 
 The **negative** is the part that needs its coverage stated, because a
 "no reader anywhere" claim is only as exhaustive as the thing it swept. This
-one was re-derived word-wise from bytes with capstone, not from the Ghidra dump
-corpus:
+one is re-derived word-wise from bytes, not from the Ghidra dump corpus, and it
+now covers the **whole extracted corpus**: `SCUS_942.54` plus all **83** mapped
+overlay images, 518,656 instruction words.
 
-- **`SCUS_942.54`: exhaustive.** All 110,080 words of the `t_size = 0x6B800`
-  text decoded individually (102,684 decode as instructions; the remainder are
-  data / COP2 words, and no `lw` encoding is undecodable, so the sweep is sound
-  for loads). The whole executable contains **31** loads at offset `0x5c`, of
-  which exactly one has a non-`sp` base: `800532d4`, the relocation above.
-  Every other non-`sp` `0x5c` access is an `lh`/`lhu`, which cannot read a
-  32-bit relocated pointer.
-- **Overlays: 15 of 26 images.** The 15 binaries in `extracted/overlays/`
-  (278,267 words) yield two non-`sp` word loads at `0x5c`, both in
-  `overlay_summon_render_0900.bin` (`801f7984`, `801f9af4`). Both sit inside a
-  contiguous `+0x44..+0x60` eight-word block copy whose base register is set by
-  `801f7090 lui s1,0x1f80` - the **scratchpad**, not a `0x801C9360` record.
-  Not readers.
+Across those 84 images there are **eight** word-width (`lw`/`sw`) accesses at
+displacement `0x5c` with a base register other than `sp`, and none of them reads
+a record[0] pointer:
 
-**What is not covered:** `crates/asset/data/static-overlays.toml` carries 26
-overlay identities; 11 of them - mostly summon stagers sharing the
-`0x801F69D8` window - are not extracted locally and were seen only through
-Ghidra dumps. To close the negative completely, extract those with
-`asset overlay` and re-run the same word-wise sweep. Until then the honest
-statement is "no reader in SCUS or the 15 extracted overlays", **not**
-"no reader anywhere".
+| Site | Access | What the base is |
+|---|---|---|
+| `0x800532D4` / `0x800532E4` (SCUS) | `lw` / `sw` | the relocation above - the read-modify-write itself. |
+| `0x8002702C` (SCUS) | `sw` | third component of a sign-extended `(x, y, z)` triple written to `+0x58`/`+0x5C`/`+0x60` of a render struct. |
+| `0x801F7984` (PROT 0900) | `lw` | scratchpad: base is `lui s1,0x1f80` at `0x801F7090`. |
+| `0x801F72F4` (PROT 0901) | `lw` | scratchpad: base is `lui s1,0x1f80; ori s1,s1,0x2a8` = `0x1F8002A8`. |
+| `0x801F88F4` (PROT 0922) | `sw` | module-local effect-handle table - the fourth of a run of `FUN_80021B04` returns stored at `+0x50`/`+0x54`/`+0x58`/`+0x5C`. |
+| `0x801F7060` (PROT 0946) | `sw` | same shape, same spawn helper. |
+| `0x801F6E8C` (PROT 0931) | `lw` | `[[ctx+0x22C]+0x44]`, staged into the module's own word pair with `[X+0x1C]`. |
+
+Two of those need their own sentence.
+
+**SCUS is exhaustive.** All 110,080 words of the `t_size = 0x6B800` text decode
+individually. The executable holds **31** loads at displacement `0x5c`; 21 are
+`sp`-relative stack locals and 9 of the remaining 10 are `lh`/`lhu`, which
+cannot read a 32-bit relocated pointer. Exactly one non-`sp` **word** load
+remains: `0x800532D4`, the relocation.
+
+**The PROT 0931 load is not a record[0] read.** Its base is reached by a
+two-step pointer walk off the module context (`lw v1,0x22c(s6)`;
+`lw v1,0x44(v1)`), and PROT 0931 never materialises the record[0] base table
+`0x801C9360` anywhere in its image. That table is materialised in 23 places
+across the 84 images - 12 in SCUS, 8 in PROT 0898, one in PROT 0925 and two in
+PROT 0966 - and at every one of them the loaded record[0] pointer is
+dereferenced immediately at `0x0`, `0x50`, `0x58`, `0xAC` or a computed
+`index*4`, and is never stored into an actor or context field that a later
+`+0x5C` load could reach. So the chain the 0931 load walks cannot alias a
+record[0] base.
+
+**What the sweep still cannot see** is a reader that pre-biases its base
+(`addiu rX, rec0, 0x40; lw rY, 0x1c(rX)`). The bound on that residual is the
+action-table consumer census in [Descriptor table](#descriptor-table): every
+consumer indexes `base + index*4` inside the action-slot range or reads a named
+field, and slot `0x17` is outside all of them.
+
+An earlier revision of this sweep placed both scratchpad hits in
+`overlay_summon_render_0900.bin`, at `0x801F7984` and `0x801F9AF4`. The second
+belongs to **PROT 0901**: entry 0900's own content is `0x2800` bytes, so file
+offset `0x311C` is 0x91C past its end, and PROT 0901 begins there - the same
+over-read the [static overlay map](../tooling/static-overlay-pipeline.md)
+warns about. Both hits are still scratchpad block copies; only the image
+attribution changes.
 
 ### Two container encodings, one pose format
 
@@ -1577,12 +1603,13 @@ on the player files.)
   reading of a Gala slot with `u32[1] = 0x3310` was this swing record -
   sec-2 id `0x21`'s entry at `0x3310` parses as a 15-part/17-frame stream).
   See [Swing records](#swing-records-equipment-sections--slots-0xc0xf).
-- ~~**record[0] `+0x5C` consumer**~~ **reframed - vestigial**: the word is
+- ~~**record[0] `+0x5C` consumer**~~ **closed - vestigial**: the word is
   rebased self-relative→absolute at load by `FUN_80052FA0` (`:561`)
   **alongside** the `+0x58` art-bank pointer (`:558`), but unlike `+0x58` (read
-  by `FUN_8004AD80`) it has **no reader in the code searched** - word-wise
-  exhaustive over `SCUS_942.54` plus the 15 extracted overlay binaries, with 11
-  overlay images still dump-only ([coverage](#the-0x5c-no-reader-sweep)) - and
+  by `FUN_8004AD80`) it has **no reader in any image on the disc** - word-wise
+  exhaustive over `SCUS_942.54` plus all 83 mapped overlay binaries, 518,656
+  words, eight non-`sp` word accesses at the displacement and not one of them on
+  a record[0] base ([coverage](#the-0x5c-no-reader-sweep)) - and
   the word (slot `0x17`) sits outside every action-table
   consumer's range. Target is `clut_a_off − 4` (zero on disc), and the CLUT
   upload uses `file+0x04`/`+0x08`, not this field. So it is a rebased-at-load
