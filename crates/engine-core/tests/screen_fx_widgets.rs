@@ -23,9 +23,11 @@
 //!
 //! Where they are driven from, measured rather than assumed: decoding every
 //! partition record of every MAN carrier of every CDNAME scene confines the
-//! whole family to the **ending** scenes (`ed*`) - and to ten of them, not the
-//! eight `screen_fx`'s module doc says. The disc-gated test below prints the
-//! per-sub-op scene lists it measured.
+//! whole family to the **ending** scenes (`ed*`) - and to ten of them (the
+//! module doc's earlier figure of eight omitted `edbubu` and `eddoman`). The
+//! disc-gated test below prints the per-sub-op scene lists it measured; it
+//! does not assert the count or the list, so a drift in either shows up in the
+//! output rather than as a failure.
 
 use legaia_engine_core::screen_fx::{OT_LETTERBOX, OT_MASK, OT_PANEL, OT_SPRITE, ScreenFxQuad};
 use legaia_engine_core::world::{SceneMode, World};

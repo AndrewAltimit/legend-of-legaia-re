@@ -1307,10 +1307,16 @@ block rather than to the epilogue.
 ### The sweep the teardown falls into (`0x801E6218..0x801E6368`)
 
 The tail past the latch increment, and it is **inside** the latch: nothing
-branches to `0x801E6218`, and both of the block's gates
-(`beq v0,zero` at `0x801E6158`, `bne v0,zero` at `0x801E6168`) jump to
-`0x801E6814` - past the whole tail. An earlier reading here called it "the
-unlatched multi-cast sweep"; the two branch targets refute that.
+branches to `0x801E6218` (no word, `jal`, `j`, PC-relative branch,
+materialisation pair or `gp`-relative access, in any of the 84 images), so its
+only entry is the fall-through from `sb v0,0x6(s5)` at `0x801E6214`. Both of
+the block's gates (`beq v0,zero` at `0x801E6158`, `bne v0,zero` at
+`0x801E6168`) are conditional, and **when taken** they land on `0x801E6814` -
+past the whole tail; the second reads the very byte `0x801E6210`/`0x801E6214`
+increments. So the tail runs on the same once-per-arming pass the teardown
+does. An earlier reading here called it "the unlatched multi-cast sweep"; the
+gate on the latch byte refutes that. The gates do not *jump* - a reading that
+says they do makes the tail unreachable, which the fall-through disproves.
 
 | step | site | condition |
 |---|---|---|

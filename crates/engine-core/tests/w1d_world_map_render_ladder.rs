@@ -875,7 +875,8 @@ fn w1d_submode_frame_loop_reaches_the_equipment_sub_panel() {
 /// (`_DAT_8007BCD0/_D4/_D8`) and skips the arm entirely while the first two
 /// are zero. Nothing in the engine writes them: their retail source is the
 /// field VM, which stores each from a script operand (`sw v0,-0x4330(v1)` at
-/// `0x801E1638` and its two siblings, plus a ramp arm each through the
+/// `0x801E1648`, the delay slot of the arm's `j`, and its two siblings, plus a
+/// ramp arm each through the
 /// `0x801E205C` epilogue). Until those register ids are routed, a world map
 /// the engine loads leaves the gate shut every frame.
 ///

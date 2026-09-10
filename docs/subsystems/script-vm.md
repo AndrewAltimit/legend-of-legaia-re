@@ -747,9 +747,13 @@ On disc the family is exclusive to the **ten** ending-sequence scenes
 `edson`, `edstati3`, `edbubu`, `eddoman`), all but one site in partition-2
 (cutscene-timeline) records. The last two were missing from the earlier list of
 eight, and the count is now a measurement rather than a reading: decoding every
-partition record of every MAN carrier of every CDNAME scene finds 311 sites,
-and the census runs as a disc-gated test (`crates/engine-core/tests/
-screen_fx_widgets.rs`), which is what keeps the list from drifting again. The
+partition record of every MAN carrier of every CDNAME scene (124 scenes, 103
+MAN carriers) finds 311 **widget** sub-op sites among 1081 decoded op-`0x43`
+sites. The disc-gated test `crates/engine-core/tests/screen_fx_widgets.rs`
+re-runs that census and **prints** it, asserting only that each spawn sub-op is
+carried by some scene and reaches a draw list - the count and the ten-scene
+list are not pinned by an assertion, so quote them as a measurement, not as a
+gate. The
 single exception to "partition-2" is one sub-`0x11` site a linear walk decodes
 in `edlast` partition-1; a partition record whose `pc0` desyncs decodes phantom
 instructions, so treat that one as unconfirmed. The choreography:

@@ -724,7 +724,7 @@ a record[0] pointer:
 |---|---|---|
 | `0x800532D4` / `0x800532E4` (SCUS) | `lw` / `sw` | the relocation above - the read-modify-write itself. |
 | `0x8002702C` (SCUS) | `sw` | third component of a sign-extended `(x, y, z)` triple written to `+0x58`/`+0x5C`/`+0x60` of a render struct. |
-| `0x801F7984` (PROT 0900) | `lw` | scratchpad: base is `lui s1,0x1f80` at `0x801F7090`. |
+| `0x801F7984` (PROT 0900) | `lw` | scratchpad: base is `lui s1,0x1f80; ori s1,s1,0x2a8` = `0x1F8002A8`, at `0x801F7090`. |
 | `0x801F72F4` (PROT 0901) | `lw` | scratchpad: base is `lui s1,0x1f80; ori s1,s1,0x2a8` = `0x1F8002A8`. |
 | `0x801F88F4` (PROT 0922) | `sw` | module-local effect-handle table - the fourth of a run of `FUN_80021B04` returns stored at `+0x50`/`+0x54`/`+0x58`/`+0x5C`. |
 | `0x801F7060` (PROT 0946) | `sw` | same shape, same spawn helper. |

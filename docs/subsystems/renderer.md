@@ -372,13 +372,30 @@ render half.
 ## The field ground pass: two emitters, one gate
 
 The per-cell ground plane of a field scene is drawn by the slot-B field
-render library **PROT 0900**, and it ships the emitter **twice**. Both bodies
-are the same algorithm; the caller picks one at `0x801F79A0` on
-`_DAT_8007BB4C` - non-zero selects `FUN_801F69EC` (file `+0x14`), zero
-selects `FUN_801F6D48` (file `+0x370`). Ordinary field play takes the second
-(the selector reads zero in a `teien` field-run frame). Read with
-`disasm-overlay-fn.py extracted/overlays/overlay_summon_render_0900.bin
---base 0x801F69D8 --addr 0x801F69EC` (and `0x801F6D48`).
+render library **PROT 0900**, and it ships the emitter **twice** - as a
+**depth-cued / flat pair**, not as two copies of one body. The two are one
+routine emitted twice and differ in exactly one block. `FUN_801F69EC` (file
+`+0x14`, 860 B) runs the packet colour through the GTE depth cue: `RGBC` takes
+the colour word, `IR0` takes `SZ1 >> 3`, `DPCS` fires at `0x801F6C44`, and the
+result comes back out of `RGB2` with `swc2 $22,4($t5)` at `0x801F6C4C`.
+`FUN_801F6D48` (file `+0x370`, 832 B) replaces those eight words with one -
+`sw $s2,4($t5)` at `0x801F6F88`, the raw colour word, no GTE colour op. Every
+other instruction matches once the `0x1C` branch-displacement shift the size
+difference forces is normalised, and both test `andi $s0,$s5,0x1000` on the
+cell word at the same instruction index (`0x801F6AB4` / `0x801F6E10`).
+
+The caller picks one at `0x801F79A0` (`beqz $a0`) on `_DAT_8007BB4C` (loaded
+at `0x801F7958`): non-zero first calls `SetFarColor` (`FUN_8005B7D8`, three
+`ctc2` into GTE control regs 21/22/23) with the bytes at `0x8007BB48..4A` and
+then the depth-cued body; zero selects the flat body. Ordinary field play
+takes the flat one (the selector reads zero in a `teien` field-run frame).
+Read with `disasm-overlay-fn.py
+extracted/overlays/overlay_summon_render_0900.bin --base 0x801F69D8 --addr
+0x801F69EC` (and `0x801F6D48`).
+
+The earlier reading here - "both bodies are the same algorithm" - is what a
+length comparison suggests and an instruction diff refutes: they are 860 B and
+832 B, and the 28-byte difference is the whole fog path.
 
 `FUN_801F6D48(tile_x, tile_z, world_x, world_z)` is frameless and keeps all
 of its state in the scratchpad through one base register `t6 = 0x1F800314`:

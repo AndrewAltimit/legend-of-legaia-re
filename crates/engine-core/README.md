@@ -504,7 +504,9 @@ presentation left to the host:
   (`FUN_801D7518`, which the field initialiser runs once per actor list on a
   warp entry) and the per-actor **colour tween** (`FUN_801DDC20`) whose actors
   the sweep retires by handler address.
-- `camera_ease` - the field camera's smoothed-yaw step (`FUN_801DA390`):
+- `camera_ease` - the field camera's smoothed **vertical-offset** step
+  (`FUN_801DA390`; `player[+0x16]` is the middle slot of the `+0x14/+0x16/+0x18`
+  position triple, and the eased result lands in the Y halfword of a vector):
   settled creeps by 1, unsettled takes a gap-proportional step capped at 12.
 - `world_map::WorldMapController` - drives `SceneMode::WorldMap`.
 - `world_map_panel_host` - the world-map band's panel screen: the

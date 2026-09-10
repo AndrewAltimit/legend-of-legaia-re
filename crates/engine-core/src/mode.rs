@@ -763,9 +763,13 @@ pub struct ModeWordStore {
 /// `init.pak` (PROT 0895), whose logo pass ends `li v0,0x11` /
 /// `sh v0,-0x47c4(v1)` at `0x801CEC94`, in the delay slot of a `jal`.
 ///
-/// `GameOverInit` is deliberately absent: its handler's hand-off lives in
-/// PROT 0902, which no scan here covers, so the port does not claim a
-/// successor for mode 18.
+/// `GameOverInit`'s store is the second one outside `SCUS_942.54`: it lives
+/// in PROT 0902, at the head of the staged entry `0x801CE844`, as
+/// `addiu v0,zero,0x13` (`0x801CE8D4`) / `sh v0,-0x47c4(at)` (`0x801CE8DC`).
+/// An earlier reading left mode 18 without a successor because the scan
+/// behind this table did not reach PROT 0902; a sweep of all three
+/// addressing forms over `SCUS_942.54` plus the 83 mapped overlay images
+/// finds 53 stores into the word, and that one among them.
 pub const INIT_HANDOFFS: &[(GameMode, ModeWordStore)] = &[
     (
         GameMode::ConfigInit,
@@ -821,6 +825,13 @@ pub const INIT_HANDOFFS: &[(GameMode, ModeWordStore)] = &[
         ModeWordStore {
             store_pc: 0x8002_5B04,
             mode: GameMode::OtherMode,
+        },
+    ),
+    (
+        GameMode::GameOverInit,
+        ModeWordStore {
+            store_pc: 0x801C_E8DC,
+            mode: GameMode::GameOverMode,
         },
     ),
 ];
@@ -1809,8 +1820,22 @@ mod tests {
             mode_init_bare(GameMode::MonsterTest),
             Some(ModeInitBare::SetsMode(GameMode::ConfigInit))
         );
-        // Mode 18's hand-off lives in PROT 0902 and is not claimed here.
-        assert_eq!(init_successor(GameMode::GameOverInit), None);
+        // Mode 18's hand-off lives in PROT 0902 (`li v0,0x13` at
+        // `0x801CE8D4`, `sh` at `0x801CE8DC`), inside the staged entry
+        // `0x801CE844` - so it is claimed here like the other eight.
+        assert_eq!(
+            init_successor(GameMode::GameOverInit),
+            Some(GameMode::GameOverMode)
+        );
+        assert_eq!(
+            INIT_HANDOFFS
+                .iter()
+                .find(|(m, _)| *m == GameMode::GameOverInit)
+                .unwrap()
+                .1
+                .store_pc,
+            0x801C_E8DC
+        );
     }
 
     #[test]

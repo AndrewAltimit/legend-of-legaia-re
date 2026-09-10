@@ -2556,12 +2556,22 @@ pub fn kiss_of_death_tick(
 ///
 /// The division is the signed magic `0x66666667` (`mult`, `mfhi`, `sra 2`,
 /// minus the sign) at `0x801F8314..0x801F8378`. The floor is the
-/// `bnez ...; addiu v0,v0,1` pair each store is followed by, and it tests the
-/// full **32-bit** difference while the store is a 16-bit `sh` - so a stat of
-/// `2` lands on zero and is corrected to `1`, but a stat of `0` or `1` goes
-/// to `-1`, misses the `bnez`, and is written back as `0xFFFF`. Retail
+/// `bnez ...; addiu v0,v0,1` pair each store is followed by, and the
+/// arithmetic that reaches the store is 32-bit `subu` while the store itself
+/// is a 16-bit `sh` - so a stat of `2` lands on zero and is corrected to `1`,
+/// but a stat of `0` or `1` goes to `-1` and is written back as `0xFFFF`,
+/// which the floor's `bnez` then sees as non-zero and leaves alone. Retail
 /// underflows a one-point stat into 65535; that is the behaviour, not a port
 /// artefact, and it is why the floor cannot be modelled as `max(1, ..)`.
+///
+/// Only the first floor of each five-stat block tests a live 32-bit register
+/// (`move v1,a1` at `0x801F83E0` / `0x801F8504`, then `bnez v1`); the other
+/// four re-`lhu` the halfword they just stored and test that
+/// (`0x801F83F8`, `0x801F840C`, `0x801F8420`, `0x801F8434`, and the same
+/// four in the base block from `0x801F851C`). The two shapes agree on every
+/// reachable value - `-1` truncates to `0xFFFF`, which is non-zero either
+/// way - so the underflow is a property of the `subu`/`sh` width mismatch,
+/// not of which register the `bnez` reads.
 pub fn melt_spray_step(stat: u16) -> u16 {
     let x = i32::from(stat);
     let reduced = x - (x + 9) / 5;

@@ -47,10 +47,13 @@
 //! `0x15` letterbox, via the 0x43 sub-op JT at `0x801CEDA8` (`jal` sites
 //! inside `FUN_801DE840` at `0x801DF918`, `0x801DF974`, `0x801DFA70`,
 //! `0x801DFABC`, `0x801DFACC`). On disc only the **ten** ending-sequence
-//! (`ed*`) scenes' partition-2 cutscene scripts invoke them - the figure of
-//! eight this doc used to give omitted `edbubu` and `eddoman`. The census is a
-//! disc-gated test (`crates/engine-core/tests/screen_fx_widgets.rs`), which
-//! also drives one real script per widget kind through the field VM.
+//! (`ed*`) scenes' cutscene scripts invoke them - the figure of eight this doc
+//! used to give omitted `edbubu` and `eddoman` - and it is partition 2 for 310
+//! of the 311 sites, the odd one being a sub-`0x11` in `edlast` partition 1.
+//! The census is a disc-gated test
+//! (`crates/engine-core/tests/screen_fx_widgets.rs`), which also drives one
+//! real script per widget kind through the field VM; the test prints the
+//! census rather than asserting its count.
 //! The earlier reading that the summon stagers
 //! (0910..0915) reference these functions was **VA aliasing**: those hits are
 //! in-file `FUN_80021B04` part records whose addresses coincide with the 0900
