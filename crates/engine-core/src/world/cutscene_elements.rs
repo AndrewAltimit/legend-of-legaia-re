@@ -31,7 +31,7 @@
 //! fp + 0xA40]` on the caller's stack, followed by `sh $s0, 0x1a($v0)` - i.e.
 //! `+0x1A = 1` on the actor the spawn returned, which selects the emitter's
 //! **scene** arm rather than its point arm. The whole site sits behind a
-//! `bnez` on `_DAT_800838B8`, so it runs only while that global is clear.
+//! `bnez` on `_DAT_8007B8B8`, so it runs only while that global is clear.
 //!
 //! REF: FUN_80024C88 (the positioned spawn), FUN_801D6058 (the handler)
 

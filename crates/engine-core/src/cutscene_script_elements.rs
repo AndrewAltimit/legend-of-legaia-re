@@ -37,7 +37,7 @@
 //! floor-ladder oscillator (`0x801F27EC`), the eased move (`0x801F2840`) and
 //! the shutter bars (`0x801F2858`) also use - and its one spawn site is
 //! `0x801D6FD8`, inside the field overlay's MAIN INIT `FUN_801D6704`, behind a
-//! `bnez` on `_DAT_800838B8`. So it is **scene ambience installed by the field
+//! `bnez` on `_DAT_8007B8B8`. So it is **scene ambience installed by the field
 //! main routine**, not a cutscene-script element at all. The tween and the
 //! teardown remain unplaced: a five-form reference sweep over all 84 extracted
 //! images finds no word, `jal`, `j`, branch or `lui`/`addiu` pair naming
