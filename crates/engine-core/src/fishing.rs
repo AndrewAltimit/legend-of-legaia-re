@@ -1,4 +1,5 @@
-//! Clean-room **fishing minigame** rules engine.
+//! From-scratch Rust **fishing minigame** rules engine, written from the
+//! disassembly - no retail bytes are reproduced here.
 //!
 //! A port of the confirmed numeric kernels of the fishing overlay (PROT 0972,
 //! `data\OTHER1`) - the casting-power oscillator, the tension-gauge tug-of-war,
@@ -764,6 +765,97 @@ pub fn select_owned_rod(rod_index: &mut u32, mut count_of: impl FnMut(u32) -> i3
     // out-of-range index lands here instead of spinning.
     false
 }
+
+/// Item id of the **rod** whose ownership the overlay bring-up probes for.
+///
+/// The rod family (`0xA0..=0xA2`) is not the lure family ([`lure_item_id`],
+/// `0x9D..=0x9F`), and the two are tracked by two different persistent words:
+/// the lure index is `_DAT_80084450` and the rod stat is `_DAT_80084454`, the
+/// value every tension divisor in this module scales by. Reading one gate as
+/// the other silently ties the reel feel to the lure the player is holding.
+pub fn rod_item_id(rod_index: u32) -> u32 {
+    0xa0 + rod_index
+}
+
+/// How many probes the bring-up's rod scan makes before giving up.
+///
+/// Two full cycles of [`ROD_KINDS`]. The extra lap cannot find anything the
+/// first one missed - it is retail being belt-and-braces about a persistent
+/// index that could start out of range.
+pub const ENTRY_ROD_PROBES: u32 = 6;
+
+/// The rod index the fishing overlay's bring-up leaves in `_DAT_80084454`.
+///
+/// `saved` is the persistent index the player last used; `count_of` reports
+/// the live bag count of an item id. The scan keeps `saved` when its rod is
+/// held, otherwise steps forward (wrapping at [`ROD_KINDS`]) up to
+/// [`ENTRY_ROD_PROBES`] times, and lands on `0` when the player holds no rod
+/// at all - so a rodless player fishes with the **first** rod's stat, not with
+/// whatever stale index the save carried.
+///
+/// The wrap and the give-up write are two separate stores in retail, and the
+/// try counter advances on every miss including the one that wraps, which is
+/// what makes six probes cover two laps rather than six fresh rods.
+///
+/// PORT: FUN_801CF070 (`0x801cf35c..0x801cf39c`)
+///
+/// NOT WIRED: both hosts that open a fishing session pass a fixed placeholder
+/// rod stat - `window/minigames.rs`'s `DEV_ROD_STAT` and `play_fishing.rs`'s
+/// `WEB_ROD_STAT` - because neither carries the live bag into the fishing
+/// entry, so there is nothing to run the scan against. The host that should
+/// call it is whichever of those first takes an inventory: the result is
+/// exactly the `rod_stat` argument of [`FishingSession::new`].
+pub fn entry_rod_index(saved: u32, mut count_of: impl FnMut(u32) -> i32) -> u32 {
+    let mut rod = saved;
+    for _ in 0..ENTRY_ROD_PROBES {
+        if count_of(rod_item_id(rod)) != 0 {
+            return rod;
+        }
+        rod += 1;
+        if rod >= ROD_KINDS {
+            rod = 0;
+        }
+    }
+    0
+}
+
+/// The 16-entry floor-height LUT the fishing bring-up writes to the
+/// scratchpad at `0x1F80035C`, one halfword per floor tier.
+///
+/// Retail stores `-0x20 * n` descending from `0x1F80037A`, so tier `n` sits
+/// `0x20` world units below tier `n - 1`. It is the same LUT the per-cell
+/// terrain emitters index by a map cell's low nibble, in the sign convention
+/// [`legaia_asset::field_objects::Placement::world_y`] uses (`world_y =
+/// -lut[nibble]`), which is why the entries here are positive.
+///
+/// PORT: FUN_801CF070 (`0x801cf24c..0x801cf268`)
+///
+/// REPLACED-BY: `legaia_asset::field_objects::Placement::world_y` and
+/// `legaia_asset::field_objects::build_walk_heightfield`, which take a
+/// scene's floor LUT as a parameter and read it out of the scene's own MAN
+/// (`Scene::field_floor_height_lut`). The port has no scratchpad for a scene
+/// to publish a LUT into, so the constant is the retail value for the fishing
+/// venue rather than a slot anything writes.
+pub const FISHING_FLOOR_LUT: [i16; 16] = [
+    0x000, 0x020, 0x040, 0x060, 0x080, 0x0a0, 0x0c0, 0x0e0, 0x100, 0x120, 0x140, 0x160, 0x180,
+    0x1a0, 0x1c0, 0x1e0,
+];
+
+/// Points the bring-up adds to the persistent counter `_DAT_8008444C` when
+/// the dev print flag `_DAT_8007B9B0` is set.
+///
+/// The same `999999` the persistent HUD caps its point row at, added in one
+/// store before anything else in the overlay runs - a developer shortcut past
+/// the prize counter, not a reachable game rule. Retail ships with the flag
+/// clear.
+///
+/// PORT: FUN_801CF070 (`0x801cf0a8..0x801cf0d0`)
+///
+/// REPLACED-BY: nothing is owed a port. It is a debug-flag branch, and the
+/// engine's equivalent of granting points is editing the save; the constant
+/// is here because a reader of `0x8008444C` who sees `999999` in a capture
+/// should know a dev build can put it there in one frame.
+pub const DEV_ENTRY_POINT_BONUS: i32 = 999_999;
 
 /// One text line of the fishing help panel: which overlay string-table
 /// row to draw, and where.
@@ -2717,5 +2809,60 @@ mod tests {
             g.apply_reel(ReelInput::ReelA, 4000, 1);
         }
         assert!(g.at_max());
+    }
+
+    #[test]
+    fn entry_rod_scan_keeps_a_held_rod_and_falls_back_to_zero() {
+        // The saved rod is held: the scan keeps it and probes nothing else.
+        let mut probes = Vec::new();
+        assert_eq!(
+            entry_rod_index(2, |id| {
+                probes.push(id);
+                i32::from(id == rod_item_id(2))
+            }),
+            2
+        );
+        assert_eq!(probes, vec![rod_item_id(2)]);
+
+        // Saved rod not held: step forward, wrapping past the last kind.
+        assert_eq!(entry_rod_index(2, |id| i32::from(id == rod_item_id(0))), 0);
+        assert_eq!(entry_rod_index(1, |id| i32::from(id == rod_item_id(2))), 2);
+
+        // Nothing held at all lands on rod 0, and stops after the probe cap
+        // rather than spinning.
+        let mut n = 0;
+        assert_eq!(
+            entry_rod_index(1, |_| {
+                n += 1;
+                0
+            }),
+            0
+        );
+        assert_eq!(n, ENTRY_ROD_PROBES);
+
+        // A stale out-of-range index still terminates on the same cap.
+        assert_eq!(entry_rod_index(9, |_| 0), 0);
+    }
+
+    #[test]
+    fn the_rod_family_is_not_the_lure_family() {
+        // Two persistent indices, two item bands - reading one gate as the
+        // other ties the reel divisors to the lure the player happens to hold.
+        for k in 0..ROD_KINDS {
+            assert_eq!(rod_item_id(k), 0xa0 + k);
+            assert_eq!(lure_item_id(k), 0x9d + k);
+            assert_ne!(rod_item_id(k), lure_item_id(k));
+        }
+    }
+
+    #[test]
+    fn the_floor_lut_is_one_tier_per_nibble_at_a_fixed_step() {
+        assert_eq!(FISHING_FLOOR_LUT[0], 0);
+        for n in 1..FISHING_FLOOR_LUT.len() {
+            assert_eq!(FISHING_FLOOR_LUT[n] - FISHING_FLOOR_LUT[n - 1], 0x20);
+        }
+        // The LUT is indexed by a map cell's low nibble, so it must cover
+        // every value a nibble can take.
+        assert_eq!(FISHING_FLOOR_LUT.len(), 16);
     }
 }

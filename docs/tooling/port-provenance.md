@@ -340,6 +340,60 @@ intended, find out why. A key can also drift without anything being fixed: the
 key carries the citation list, so rescuing two of a row's three citations
 renames the finding and orphans its waiver.
 
+### A partial corpus is a quieter kind of empty one
+
+The section below says an empty corpus is not a clean run. A *third* of a
+corpus is the same failure with a number attached, and the checker read one for
+a long time. `load_corpus` admitted a dump to the evidence map only when its
+header carried an `[image.bin]` tag - and 1180 of 3856 parsed dumps carry none,
+every plain `<addr>.txt` SCUS dump among them. Three of the four signals read
+only that map, so `dual-label` and `doc-citation` were silent over the whole
+SCUS range while the run reported zero findings.
+
+The image is what disambiguates a VA, and only the overlay band is ambiguous:
+one SCUS image ships on the disc, so a dump below `OVERLAY_BASE` has exactly
+one possible owner and its untagged header withholds nothing. `elsewhere_claims`
+already drew the line there. Drawing the same one in `load_corpus` is what
+un-blinded the rest of the corpus, and it is why two waivers that had looked
+settled turned out to have been silenced rather than answered.
+
+### Plurality is a property of the corpus, not of the disc
+
+`consensus` groups an address's dumps by body fingerprint and keeps the
+plurality, which is right when the dumps disagree and wrong about *why* they
+disagree: a VA in the overlay band holds different code in different images, so
+adding one more dump taken under a different image can flip which body wins, or
+tie it and silence the address, with no byte on the disc changing. A signal that
+moves when the corpus grows reports the corpus.
+
+`scripts/ghidra-analysis/dump-extent-attribution.csv` has already answered the
+question the vote is guessing at - which image's own content reproduces the
+instruction window at this VA - so that verdict selects the dumps first and the
+vote runs only among the owning image's. Only its `unique` and
+`resolved_by_table` classes count: `misbased` says the bytes live somewhere
+else and `short` / `unresolved` say the instrument could not decide, and an
+undecided verdict must not narrow anything. It only ever narrows, too - an
+address whose owning image has no dump keeps the unfiltered vote, because
+taking the empty set would silence a row on the strength of a CSV line that
+says nothing about the dumps we hold.
+
+### Why a waiver goes stale, in four shapes
+
+The unmatched-waiver list says a key matches nothing; it does not say why, and
+the four reasons want different actions:
+
+| Shape | What happened | Action |
+|---|---|---|
+| Answered | The routine now corroborates on its own - the evidence the waiver wrote out by hand is what the signal can see for itself. | Delete. |
+| Silenced | The module fell below the adaptive cohesion target, so the signal declines to read it at all. Nothing was decided about the row. | Delete, and expect it back if a sibling tag lands. |
+| Re-keyed | The key carries a computed detail (`doc-citation` embeds the missing-address list), and the corpus changed it - a new dump at a cited address drops that address from the list. | Re-key or delete. |
+| Moved | The tag left the file the key names. | Delete; re-waive at the new site if it fires there. |
+
+Answered and silenced read identically from the outside, which is the trap: one
+means the question is settled and the other means nobody is asking it. The
+distinguishing evidence is whether the address appears among its module's
+corroborating siblings in a `--show-waived --signal module-orphan` run.
+
 ## Known-good shapes, excluded by construction
 
 - **One routine linked into two overlays.** `FUN_801D14B0` and `FUN_801D6710`
