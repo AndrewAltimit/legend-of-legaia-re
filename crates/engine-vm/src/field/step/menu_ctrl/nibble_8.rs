@@ -262,7 +262,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
         // col_start, row_start, col_end, row_end, value]`. The
         // dispatcher walks the inclusive rectangle and calls
         // `FUN_801D5630(col, row, ...)` per tile; on hit, writes
-        // `tile[+0x2] = value`. The clean-room port surfaces
+        // `tile[+0x2] = value`. The port surfaces
         // the rectangle through one host hook and lets the
         // engine drive its tile-pool semantics. PC advances by
         // `header_size + 6` (= 7 bytes).

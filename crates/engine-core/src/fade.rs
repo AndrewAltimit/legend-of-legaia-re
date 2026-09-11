@@ -1,4 +1,4 @@
-//! Screen-fade primitive state - clean-room port of the retail fade-state
+//! Screen-fade primitive state - port of the retail fade-state
 //! loader (`FUN_80020B00`, `see ghidra/scripts/funcs/80020b00.txt`).
 //!
 //! Retail stages full-screen fades as pool actors: `FUN_80024E80` allocates an
@@ -232,7 +232,7 @@ impl FadeState {
     }
 }
 
-/// Fade-actor spawn wrapper - clean-room port of `FUN_80024E80` (`see
+/// Fade-actor spawn wrapper - port of `FUN_80024E80` (`see
 /// ghidra/scripts/funcs/80024e80.txt`), the most-cited helper in the dump
 /// corpus: every subsystem that stages a full-screen fade goes through it.
 ///
@@ -244,7 +244,7 @@ impl FadeState {
 /// `FUN_80020B00`) on the actor's `+0x7C` block. Pool exhaustion returns 0
 /// without touching the template.
 ///
-/// The clean-room engine has no fixed-capacity fade-actor pool; `slot_free`
+/// The engine has no fixed-capacity fade-actor pool; `slot_free`
 /// models the retail alloc outcome for hosts that cap concurrent fades
 /// (pass `true` when a slot is available). The template is copied rather
 /// than mutated in place - retail stamps a scratch buffer (e.g. the

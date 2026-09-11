@@ -160,7 +160,7 @@ impl StreamFileHost {
     /// Build a host over a shared PROT index. The cursor starts unopened;
     /// [`Self::seek_bytes`]/[`Self::read`] before an open fail (retail would walk
     /// from whatever stale MSF the cells held - surfacing an error is the
-    /// clean-room tightening).
+    /// port-side tightening).
     pub fn new(prot: Arc<ProtIndex>) -> Self {
         Self {
             prot,

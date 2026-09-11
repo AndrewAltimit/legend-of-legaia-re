@@ -27,7 +27,7 @@
 //! value as the engine currently labels it. `Retail effect` is the pinned
 //! behaviour where a dump pins it, else the published behaviour (the Legaia
 //! wiki status pages - see [`docs/reference/gamedata.md`]); `Engine` flags
-//! where this clean-room model diverges.
+//! where this from-scratch model diverges.
 //!
 //! | Status    | byte | Retail effect                                               | Engine |
 //! |-----------|------|-------------------------------------------------------------|--------|
@@ -64,7 +64,7 @@ use legaia_art::record::EnemyEffect;
 /// One kind of status-effect condition, named with the game's in-game ailment
 /// terms. The mapping from the on-disc `enemy_effect` byte names bytes 1/2
 /// directly (`EnemyEffect::Toxic`/`Numb`); bytes 3..=8 arrive as
-/// `EnemyEffect::Other(_)`. Per-turn effects are clean-room approximations.
+/// `EnemyEffect::Other(_)`. Per-turn effects are port-side approximations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatusKind {
     /// Deadly poison: HP drains faster than Venom and ATK/DEF drop. The HP

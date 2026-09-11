@@ -19,6 +19,7 @@
 //! | `+0x1D9` / `+0x1DA` / `+0x1DC` | playing clip / staged clip / restage bump | [`CastActorState::playing_anim`] / [`CastActorState::staged_anim`] / [`CastActorState::restage`] |
 //! | `+0x1DD` | active-target byte | [`CastActorState::target_code`] |
 //! | `+0x1F1` | the victim's own knockdown-reaction id | [`CastActorState::knockdown_anim`] |
+//! | `+0x154` / `+0x156` | AGL working / base (the action gauge) | [`CastActorState::agl`] / [`CastActorState::agl_base`] |
 //! | `+0x21C` / `+0x21D` | render flag / animation-rate scalar | [`CastActorState::render_flag`] / [`CastActorState::anim_rate`] |
 //! | ctx `+0`, `+1` | actor count, monster count | [`CastModuleCtx::actor_count`] / [`CastModuleCtx::monster_count`] |
 //! | ctx `+0x13` | caster seat | [`CastModuleCtx::caster_seat`] |
@@ -148,6 +149,50 @@ pub struct CastActorState {
     pub render_flag: u8,
     /// `+0x21D` - animation-rate scalar, normal [`ANIM_RATE_NORMAL`].
     pub anim_rate: u8,
+    /// `+0x154` - AGL **working**, the per-round action gauge.
+    pub agl: u16,
+    /// `+0x156` - AGL **base**, the value the round boundary restores
+    /// [`CastActorState::agl`] to. PROT 0942's Power Up writes this half and
+    /// only this half.
+    pub agl_base: u16,
+    /// `+0x158` / `+0x15A` - ATK working / base. Raised as a pair by PROT
+    /// 0955's Power Charge and lowered as a pair by its Melt Spray.
+    pub atk: u16,
+    /// See [`CastActorState::atk`].
+    pub atk_base: u16,
+    /// `+0x15C` / `+0x15E` - UDF (upper defence) working / base.
+    pub udf: u16,
+    /// See [`CastActorState::udf`].
+    pub udf_base: u16,
+    /// `+0x160` / `+0x162` - LDF (lower defence) working / base.
+    pub ldf: u16,
+    /// See [`CastActorState::ldf`].
+    pub ldf_base: u16,
+    /// `+0x164` / `+0x166` - SPD working / base.
+    pub spd: u16,
+    /// See [`CastActorState::spd`].
+    pub spd_base: u16,
+    /// `+0x168` / `+0x16A` - INT working / base.
+    pub intel: u16,
+    /// See [`CastActorState::intel`].
+    pub intel_base: u16,
+    /// `+0x16C` - the per-round **initiative key**, doubling as "has not
+    /// acted yet". The turn-steal idiom clears it.
+    pub init_key: u16,
+    /// `+0x1DE` - action category. `1` is Item, which is what the refund
+    /// arm gates on.
+    pub action_category: u8,
+    /// `+0x1DF` - the queued action byte. For an Item action it is the item
+    /// id the refund hands back.
+    pub queued_action: u8,
+    /// `+0x1EF` / `+0x1F0` - the two alternative reaction clips the band
+    /// stages when `+0x1F2` is zero.
+    pub reaction_alt: u8,
+    /// See [`CastActorState::reaction_alt`].
+    pub reaction_alt2: u8,
+    /// `+0x1F2` - the gate that picks [`CastActorState::knockdown_anim`]
+    /// over [`CastActorState::reaction_alt`].
+    pub reaction_gate: u8,
 }
 
 /// The battle-context bytes a slot-B routine drives (`ctx` is
@@ -165,6 +210,15 @@ pub struct CastModuleCtx {
     /// `ctx+0x279` - the **module phase**, the second phase space riding
     /// under battle phase `0x70`.
     pub phase: u8,
+    /// `ctx+0x0D` - the band's own "this cast is finished" byte, which every
+    /// PROT 0955 body clears in its terminal arm (`sb zero,0xd(ctx)`).
+    pub ctx_0d: u8,
+    /// `ctx+0x1A` - the **turn cursor**. The turn-steal arms bump it, which
+    /// is how they consume the victim's turn.
+    pub turn_cursor: u8,
+    /// `ctx+0x27A` - a second scratch byte, cleared beside `ctx+0x278` by
+    /// PROT 0965's damage arm (`0x801F789C`).
+    pub ctx_27a: u8,
 }
 
 /// What a tick reported to the drive loop. Retail's `0x801E4CA8` /
@@ -353,6 +407,87 @@ pub const CAST_DAMAGE_SHAPES: [CastDamageShape; 6] = [
     },
 ];
 
+/// The three **whole-row sweeps'** damage shapes, keyed by tick body rather
+/// than by PROT entry.
+///
+/// [`CAST_DAMAGE_SHAPES`] cannot hold them: PROT 0938 carries **two** bodies
+/// with different baked powers and different skip guards behind one
+/// trampoline, so an entry-keyed lookup would answer for whichever came
+/// first. Each of the three writes `sh <net>, 0x14C(victim)` itself, over
+/// `actor_table[0 .. ctx[+0]]`, after its own `jal 0x801DD4B0` - the same
+/// shape PROT 0927's and 0966's stagers take, so these bodies **replace**
+/// the generic fold rather than joining it (`World::fold_pending_cast`).
+///
+/// The one difference from those two stagers, and it matters: the clamp here
+/// is `sltu` against the live HP (shape A, [`apply_hit_floor_zero`]), not
+/// `slt` against `HP - 1`. **These sweeps kill**; the stagers cannot.
+///
+/// REF: FUN_801F726C (`0x801F77B0` the baked `0x274`, `0x801F77EC` the
+/// unsigned clamp, `0x801F7820` the HP store)
+/// REF: FUN_801F69EC (`0x801F70DC` / `0x801F7118` / `0x801F714C`)
+/// REF: FUN_801F69D8 (`0x801F77A8` / `0x801F77E0` / `0x801F7814`)
+pub const SWEEP_DAMAGE_SHAPES: [(u32, CastDamageShape); 3] = [
+    (
+        CHAOS_BREATH_TICK,
+        CastDamageShape {
+            prot_entry: 938,
+            routine: 0x801F_726C,
+            wrapper: CastWrapper::Respect,
+            never_kills: false,
+            powers: &[0x274],
+        },
+    ),
+    (
+        MYSTIC_CIRCLE_TICK,
+        CastDamageShape {
+            prot_entry: 938,
+            routine: 0x801F_69EC,
+            wrapper: CastWrapper::Respect,
+            never_kills: false,
+            powers: &[0x309],
+        },
+    ),
+    (
+        DOOMSDAY_TICK,
+        CastDamageShape {
+            prot_entry: 965,
+            routine: 0x801F_69D8,
+            wrapper: CastWrapper::Respect,
+            never_kills: false,
+            powers: &[0x600],
+        },
+    ),
+];
+
+/// The damage shape of one whole-row sweep body, keyed by the body constant
+/// [`capture_tick_body`] resolves - see [`SWEEP_DAMAGE_SHAPES`] for why this
+/// cannot be keyed by PROT entry.
+pub fn sweep_damage_shape_for(body: u32) -> Option<&'static CastDamageShape> {
+    SWEEP_DAMAGE_SHAPES
+        .iter()
+        .find(|(b, _)| *b == body)
+        .map(|(_, s)| s)
+}
+
+/// Does this tick body own its cast's HP outcome outright - i.e. does the
+/// module write `actor+0x14C` itself, so the band's generic fold must not
+/// also run? True for exactly the three whole-row sweeps.
+pub fn tick_body_owns_the_fold(body: u32) -> bool {
+    sweep_damage_shape_for(body).is_some()
+}
+
+/// The module phase a whole-row sweep body applies its damage on - the one
+/// arm that reaches the wrapper. A caller deciding whether the module has
+/// already folded compares the live phase against this.
+pub fn sweep_arm_for(body: u32) -> Option<u8> {
+    match body {
+        CHAOS_BREATH_TICK => Some(CHAOS_BREATH_SWEEP_ARM),
+        MYSTIC_CIRCLE_TICK => Some(MYSTIC_CIRCLE_SWEEP_ARM),
+        DOOMSDAY_TICK => Some(DOOMSDAY_SWEEP_ARM),
+        _ => None,
+    }
+}
+
 /// The damage shape of the module PROT `prot_entry` pages, if it has one.
 ///
 /// This is the figure a capture cast's damage is *actually* built from in
@@ -434,7 +569,7 @@ pub fn roll_module_hit(
 /// `docs/subsystems/cast-module.md` grades this **PORT** for the `+0x0C`
 /// write and does not mention `+0x21D`; both stores are here.
 ///
-/// Wired: `World::run_cast_module_stager`, at the cast band's staging seam.
+/// Wired: `World::run_cast_module_code`, at the cast band's staging seam.
 ///
 /// PORT: FUN_801F75BC
 pub fn water_crystals_stager(victim: &mut CastActorState, arm: u8) {
@@ -452,7 +587,7 @@ pub fn water_crystals_stager(victim: &mut CastActorState, arm: u8) {
 /// branch's delay slot, which is why a prologue scan puts the entry four
 /// bytes late - the routine really starts at `0x801F90E4`.
 ///
-/// Wired: `World::run_cast_module_stager`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F90E4
 pub fn puera_stager(ctx: &mut CastModuleCtx, arm: u8) {
@@ -475,7 +610,7 @@ pub fn puera_stager(ctx: &mut CastModuleCtx, arm: u8) {
 /// The spawn calls are the DATA layer the pool already stages; the only
 /// simulation write in the routine is arm 0's `ctx[+0x278]`.
 ///
-/// Wired: `World::run_cast_module_stager`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F8B90 (state half; the three spawn sites are
 /// `legaia_asset::cast_effect_pool`'s records)
@@ -499,7 +634,7 @@ pub fn gilium_stager(ctx: &mut CastModuleCtx, arm: u8) {
 /// The rest are `FUN_80024E80` prim fills, two `FUN_80056798` rand draws and
 /// one `FUN_80021B04` spawn - the DATA layer.
 ///
-/// Wired: `World::run_cast_module_stager`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F7740 (state half)
 pub fn gizam_stager(ctx: &mut CastModuleCtx, summon_seat: &mut CastActorState, arm: u8) {
@@ -536,7 +671,7 @@ pub fn gizam_stager(ctx: &mut CastModuleCtx, summon_seat: &mut CastActorState, a
 /// Returns the `+0x1DD` value the arm displaced, which retail stashes for a
 /// later arm to restore.
 ///
-/// Wired: `World::run_cast_module_stager`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F7AF4 (state half)
 pub fn viguro_stager(
@@ -749,6 +884,40 @@ pub fn tick_shape_for(routine: u32) -> Option<&'static CastTickShape> {
 ///
 /// `arm` returns `true` when the taken arm holds the phase (retail's
 /// confirm-gated arms fall out of the dispatch without reaching an advance).
+///
+/// **The out-of-bound answer here is not retail's, deliberately.** Every one
+/// of the bodies below opens by seeding a saved register with `1`, returns
+/// that register, and lets **only** a terminal arm zero it - and the
+/// out-of-range branch is aimed one instruction *past* that zeroing store, at
+/// the return-value materialisation. So a phase past the `sltiu` bound
+/// returns **Busy** in retail, and retail's drive loop (which advances only
+/// on a zero return) would park there. The eleven bodies on this helper are
+/// uniform in that shape; the seed / bound / latch / landing sites are, in
+/// image order:
+///
+/// | PROT | routine | seed | bound | Done latch | out-of-range lands at |
+/// |---|---|---|---|---|---|
+/// | 0952 | `0x801F6A0C` | `0x801F6A58` | `0x801F6A98` `sltiu 5` | `0x801F70DC` | `0x801F70EC` |
+/// | 0957 | `0x801F6A14` | `0x801F6A54` | chain from `0x801F6A98` | `0x801F7954` | `0x801F7958` |
+/// | 0957 | `0x801F798C` | `0x801F79E0` | chain from `0x801F7A18` | `0x801F99BC` | `0x801F99C0` |
+/// | 0958 | `0x801F6DD8` | `0x801F6E2C` | `0x801F6E70` `sltiu 0x100` | `0x801F8CF4` | `0x801F8CFC` |
+/// | 0945 | `0x801F6EDC` | `0x801F6F38` | `0x801F6F68` `sltiu 8` | `0x801F769C` | `0x801F76C8` |
+/// | 0960 | `0x801F74E4` | `0x801F7530` | chain from `0x801F7570` | `0x801F85F4` | `0x801F75B4` |
+/// | 0925 | `0x801F6A00` | `0x801F6A70` | `0x801F6A68` `sltiu 0xA` | `0x801F7AA0` | `0x801F7ABC` |
+/// | 0924 | `0x801F6A18` | `0x801F6A64` | `0x801F6AA8` `sltiu 0xC` | `0x801F77D0` | `0x801F77EC` |
+/// | 0922 | `0x801F6A3C` | `0x801F6AA4` | `0x801F6AB4` `sltiu 0x19` | `0x801F90AC` | `0x801F90B0` |
+/// | 0927 | `0x801F6A84` | `0x801F6A9C` | `0x801F6B04` `sltiu 0x1D` | `0x801F82D0` | `0x801F82D4` |
+/// | 0949 | `0x801F6A10` | `0x801F6A70` | `0x801F6AA0` `sltiu 6` | `0x801F7588` | `0x801F758C` |
+///
+/// The port answers [`CastTickStep::Done`] instead, because the phase here is
+/// the *engine's* (`World::run_cast_module_code` advances it) and a body that
+/// walks past its own arms would otherwise hold the band's phase forever -
+/// a softlock, not a fidelity gain. [`run_tick_latched`] is the helper whose
+/// reported step **is** the register's, for the bodies whose terminal arms
+/// are named.
+///
+/// REF: FUN_801F6A10 (`0x801F6AA4` the branch, `0x801F7588` the latch it
+/// skips - the exemplar for all eleven)
 fn run_tick(
     ctx: &mut CastModuleCtx,
     arms: u16,
@@ -794,7 +963,7 @@ pub const ASTRAL_SLASH_ARM2_CLIP: u8 = 0x0A;
 /// Not ported: the packet arms and the `FUN_80050BB8` / `FUN_801D5854` /
 /// `FUN_80058490` calls.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A0C (phase machine + staging; packet arms unported)
 pub fn astral_slash_tick(
@@ -842,7 +1011,7 @@ pub const SUMMON_EFFECT_TICK_A_ID: u8 = 0x77;
 /// `hit` is `Some(roll)` on the frame the damage arm fires; the caller owns
 /// the wrapper call so the RNG cursor stays retail's.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A14 (phase machine + damage; packet arms and the per-arm
 /// gating unported)
@@ -883,7 +1052,7 @@ pub fn summon_effect_tick_a(
 /// Ported: the phase walk and the staging discipline. Not ported: the drain's
 /// per-arm rate, which is a frame-gated packet arm.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F798C (phase machine + staging; the drain arms unported)
 pub fn summon_effect_tick_b(ctx: &mut CastModuleCtx, victim: &mut CastActorState) -> CastTickStep {
@@ -904,7 +1073,7 @@ pub fn summon_effect_tick_b(ctx: &mut CastModuleCtx, victim: &mut CastActorState
 /// `hit` names which of the six sites fires this frame; the caller supplies
 /// the roll so the RNG cursor stays retail's.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6DD8 (phase machine + damage/staging; packet + camera arms
 /// unported)
@@ -933,7 +1102,7 @@ pub fn blazing_slash_tick(
 /// `0x30`, shape-A clamp at `0x801F74C0`. It is the one tick body that writes
 /// the flag word `+0x16E` (one store paired with one load).
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6EDC (phase machine + damage/staging; packet arms unported)
 pub fn water_column_tick(
@@ -973,7 +1142,7 @@ pub const PLASMA_STRIKE_CONFIRM_CLIP: u8 = 0x0D;
 /// the compare stalls phase 5 forever, which is the softlock the module docs
 /// record.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F74E4 (phase machine + damage/staging + the phase-5 confirm
 /// gate; packet + camera arms unported)
@@ -996,6 +1165,260 @@ pub fn plasma_strike_tick(
         }
         false
     })
+}
+
+// ---------------------------------------------------------------------------
+// PROT 0942 Power Up and PROT 0964 Element Change
+// ---------------------------------------------------------------------------
+
+/// The arm PROT 0942's Power Up commits its buff on (`ctx+0x279 == 3`, the
+/// `beq v1, 3` at `0x801F7DC4`).
+pub const POWER_UP_COMMIT_ARM: u8 = 3;
+
+/// The render flag PROT 0942's arm 1 puts on the caster (`addiu v0, zero, 7`
+/// then `sb v0, 0x21c(s0)` at `0x801F7F4C`/`0x801F7F58`); arm 2 clears it
+/// again (`sb zero, 0x21c(s0)` at `0x801F7FF8`).
+pub const POWER_UP_CHARGE_RENDER_FLAG: u8 = 7;
+
+/// PROT 0942 (Power Up) tick body - the buff `battle-formulas.md` names as
+/// the one that prints *"agility increased!"*.
+///
+/// Four `ctx+0x279` arms, reached through the `beq v1,1` / `slti v1,2` /
+/// `beq v1,2` / `beq v1,3` chain at `0x801F7D94..0x801F7DC8`; anything else
+/// falls to the epilogue with the seeded `1`. The module is reached from its
+/// own trampoline `0x801F80A0`, action id `0x52`.
+///
+/// What it writes:
+///
+/// * arm `0` (`0x801F7DD4`) - spawns the charge effect, seeds the module's
+///   own countdown at `0x801F88B4`, cue `0x5B` into `ctx+0x18`, advances;
+/// * arm `1` (`0x801F7EB8`) - caster `+0x21C` =
+///   [`POWER_UP_CHARGE_RENDER_FLAG`], advances;
+/// * arm `2` (`0x801F7F5C`) - caster `+0x21C` = `0`, advances;
+/// * arm `3` (`0x801F8010`) - the buff: caster `+0x156` (**AGL base**) =
+///   `record[+0x0E] * 3 / 2`, read through the monster-record table
+///   `0x801C9348[ctx[+0x13] - 3]` (`lhu v1,0xe(v0)` then `sll`/`addu`/`sra 1`
+///   at `0x801F8060..0x801F8074`), then `ctx+0x0D = 0` and `s4 = 0`, so this
+///   arm and only this arm reports done.
+///
+/// Only the **base** half moves: there is no `+0x154` store anywhere in the
+/// routine, so the working gauge picks the buff up at the next round reset
+/// (`battle_formulas::round_reset_agility`), not mid-round.
+///
+/// `agl_record` is the record's `+0x0E`; the caller supplies it because the
+/// record table is the host's, not the kernel's. The per-arm countdown gate
+/// (`0x801F88B4` minus `scratch[0x1F80037D] * scratch[0x1F800393]` each
+/// frame) is **not** ported - it is per-frame timing, the same class this
+/// module's header disclaims for every body here.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F7D34 (phase machine + the AGL-base buff; packet arms and the countdown gate unported)
+pub fn power_up_tick(
+    ctx: &mut CastModuleCtx,
+    caster: &mut CastActorState,
+    agl_record: u16,
+) -> CastTickStep {
+    if u16::from(ctx.phase) >= 4 {
+        return CastTickStep::Done;
+    }
+    run_tick_latched(ctx, |c| match c.phase {
+        1 => {
+            caster.render_flag = POWER_UP_CHARGE_RENDER_FLAG;
+            CastArmStep::Advance
+        }
+        2 => {
+            caster.render_flag = 0;
+            CastArmStep::Advance
+        }
+        POWER_UP_COMMIT_ARM => {
+            caster.agl_base = power_up_agl(agl_record);
+            c.ctx_0d = 0;
+            CastArmStep::Finish
+        }
+        _ => CastArmStep::Advance,
+    })
+}
+
+/// The Power Up arithmetic on its own: `(x * 3) >> 1`, an arithmetic shift on
+/// a value the routine loaded with `lhu`, so it never sees a negative.
+pub fn power_up_agl(agl_record: u16) -> u16 {
+    let x = u32::from(agl_record);
+    ((x * 3) >> 1) as u16
+}
+
+/// The arm PROT 0945's `0xBA` body runs its buff on (`ctx+0x279 == 2`, the
+/// `beq v1, 2` at `0x801F6A90`).
+pub const ALL_STATS_SURGE_ARM: u8 = 2;
+
+/// PROT 0945's **second** choreography - action id `0xBA` off the trampoline
+/// `0x801F76F4`, in the same image as Water Column.
+///
+/// Four `ctx+0x279` arms (`0x801F6AA8`, `0x801F6BCC`, `0x801F6D24`,
+/// `0x801F6E6C`) on the same chain shape PROT 0942 uses. Arm `2` is the buff
+/// and it is the widest stat write in the band: **all ten** halfwords of the
+/// five `(working, base)` pairs get `x + (x >> 2)` - a `+25%`, the same shape
+/// as PROT 0955's Power Charge but over the whole block instead of the ATK
+/// pair - and then `+0x156` (**AGL base**) takes the same
+/// `record[+0x0E] * 3 / 2` PROT 0942's Power Up writes, off the same
+/// `0x801C9348` record table. The stores run `0x801F6DA8..0x801F6E44`.
+///
+/// The shift is `srl`, and every operand is an `lhu`, so nothing here is
+/// signed: a stat at `0xFFFF` wraps rather than saturating, which is retail's
+/// behaviour and the port's.
+///
+/// Arm `3` (`0x801F6E6C`) is terminal: `ctx+0x0D = 0`, `ctx[+0x6DA] = 0x780`
+/// and the return register is zeroed, so only that arm reports done.
+///
+/// PROT 0955's four bodies were once read as the band's only writers of the
+/// actor stat block. They are not: this body, PROT 0942's `0x801F7D34`, PROT
+/// 0954's `0x801F6A58` and PROT 0940's `0x801F78B8` write it too, and an
+/// exhaustive `sh`-immediate sweep of all 64 band images finds stores in
+/// eight of them (`docs/subsystems/cast-module.md`).
+///
+/// Not ported: the packet arms and the per-arm countdown gate at
+/// `0x801F8834`.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F69F8 (phase machine + the ten-halfword surge and the AGL-base write; packet arms unported)
+pub fn all_stats_surge_tick(
+    ctx: &mut CastModuleCtx,
+    caster: &mut CastActorState,
+    agl_record: u16,
+) -> CastTickStep {
+    if u16::from(ctx.phase) >= 4 {
+        return CastTickStep::Done;
+    }
+    run_tick_latched(ctx, |c| match c.phase {
+        ALL_STATS_SURGE_ARM => {
+            for stat in [
+                &mut caster.atk,
+                &mut caster.atk_base,
+                &mut caster.udf,
+                &mut caster.udf_base,
+                &mut caster.ldf,
+                &mut caster.ldf_base,
+                &mut caster.spd,
+                &mut caster.spd_base,
+                &mut caster.intel,
+                &mut caster.intel_base,
+            ] {
+                *stat = stat.wrapping_add(*stat >> 2);
+            }
+            caster.agl_base = power_up_agl(agl_record);
+            CastArmStep::Advance
+        }
+        3 => {
+            c.ctx_0d = 0;
+            CastArmStep::Finish
+        }
+        _ => CastArmStep::Advance,
+    })
+}
+
+/// The three element ids PROT 0964's Element Change rolls between, read out
+/// of its own image at `0x801F9B70` (file `+0x3198`): `03 04 02` - the
+/// monster record's `+0x1D` id space.
+pub const ELEMENT_CHANGE_ELEMENTS: [u8; 3] = [0x03, 0x04, 0x02];
+
+/// The bias the same roll gets before it lands in the record's `+0x1C` group
+/// byte (`addiu v0, v0, 0x13` at `0x801F8AAC`).
+pub const ELEMENT_CHANGE_GROUP_BASE: u8 = 0x13;
+
+/// The render flag PROT 0964's arm 1 puts on **every** seat
+/// (`addiu a1, zero, 0xff` at `0x801F8B14`, stored `sb a1, 0x21c(v0)`).
+pub const ELEMENT_CHANGE_HIDE_RENDER_FLAG: u8 = 0xFF;
+
+/// How many rerolls the port allows before it accepts a repeat. Retail's loop
+/// at `0x801F8A3C..0x801F8A64` is unbounded (`beq a3, a0` back to the draw);
+/// an engine that inherits that spins forever on a degenerate RNG, so the
+/// port bounds it. Any real RNG clears it on the first or second draw.
+pub const ELEMENT_CHANGE_MAX_REROLLS: usize = 32;
+
+/// What one Element Change commit resolved to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ElementChangeOutcome {
+    /// The accepted `rand() % 3`, which retail keeps at `0x801C8FE4`.
+    pub roll: u8,
+    /// The monster record's new `+0x1D` element id.
+    pub element: u8,
+    /// The monster record's new `+0x1C` group byte.
+    pub group: u8,
+}
+
+/// PROT 0964 (Element Change) tick body, action id `0xAF` off its trampoline
+/// `0x801F8E3C`.
+///
+/// Three `ctx+0x279` arms (`beq v1,1` / `slti v1,2` / `beq v1,2` at
+/// `0x801F8954..0x801F8988`):
+///
+/// * arm `0` (`0x801F8990`) - cue `0x1C7`, the effect spawn, then the roll:
+///   `rand() % 3` (the `0x55555556` multiply-high divide at
+///   `0x801F89F8..0x801F8A28`) **re-drawn while it equals** the word at
+///   `0x801C8FE4`, which is then rewritten with the accepted draw. The draw
+///   indexes the module's own three-byte table at `0x801F9B70` into the
+///   monster record's element `+0x1D` (`sb v0,0x1d(t0)` at `0x801F8AA0`) and
+///   the raw draw `+ 0x13` into the record's group byte `+0x1C`
+///   (`sb v0,0x1c(v1)` at `0x801F8AB4`). The record is `0x801C9348[0]` - the
+///   **first monster seat**, not the caster and not the target.
+/// * arm `1` (`0x801F8AC0`) - hides every seat in `ctx[+0]`: `+0x21C = 0xFF`
+///   and the actor word `+4 = 0` (`0x801F8B20..0x801F8B50`).
+/// * arm `2` (`0x801F8B94`) - `ctx+0x0D = 0`, `ctx[+0x6DA] = 0x780` and
+///   `s4 = 0`: the only arm that reports done.
+///
+/// `last_roll` stands in for `0x801C8FE4`. The engine derives it from the
+/// enemy's current element rather than carrying a second global - the word's
+/// only job is "do not repeat what the last commit set", and the element the
+/// last commit set is exactly what the record now holds. A value outside
+/// `0..3` (a monster whose element is none of the three) matches nothing and
+/// the first draw is accepted, which is what a fresh `0x801C8FE4` does too.
+///
+/// Not ported: the packet / camera arms, the per-arm countdown gate at
+/// `0x801F9B74`, the `ctx[+0x6DA]` write and the actor word `+4`.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F88EC (phase machine + the element re-roll and the whole-row hide; packet arms unported)
+pub fn element_change_tick(
+    ctx: &mut CastModuleCtx,
+    seats: &mut [CastActorState],
+    last_roll: u8,
+    mut rand: impl FnMut() -> u32,
+) -> (CastTickStep, Option<ElementChangeOutcome>) {
+    if u16::from(ctx.phase) >= 3 {
+        return (CastTickStep::Done, None);
+    }
+    let mut outcome = None;
+    let step = run_tick_latched(ctx, |c| match c.phase {
+        0 => {
+            let mut roll = (rand() % 3) as u8;
+            for _ in 0..ELEMENT_CHANGE_MAX_REROLLS {
+                if roll != last_roll {
+                    break;
+                }
+                roll = (rand() % 3) as u8;
+            }
+            outcome = Some(ElementChangeOutcome {
+                roll,
+                element: ELEMENT_CHANGE_ELEMENTS[roll as usize % 3],
+                group: roll.wrapping_add(ELEMENT_CHANGE_GROUP_BASE),
+            });
+            CastArmStep::Advance
+        }
+        1 => {
+            let count = usize::from(c.actor_count).min(seats.len());
+            for seat in seats.iter_mut().take(count) {
+                seat.render_flag = ELEMENT_CHANGE_HIDE_RENDER_FLAG;
+            }
+            CastArmStep::Advance
+        }
+        _ => {
+            c.ctx_0d = 0;
+            CastArmStep::Finish
+        }
+    });
+    (step, outcome)
 }
 
 // ---------------------------------------------------------------------------
@@ -1044,26 +1467,84 @@ pub const WHITE_SHIELD_TRAMPOLINE_ARMS: [(u8, u32); 6] = [
     (0x73, 0x801F_6A28),
 ];
 
-/// Every capture-class trampoline the port catalog lists, read off its
+/// **Every** capture-class trampoline in PROT 0935..0966, read off its
 /// **owning** image's bytes at slot-B base `0x801F69D8`.
 ///
-/// PROT 0957's trampoline (`0x801F9BA8`, ids `0x76` / `0x77`) is deliberately
-/// absent: that VA carries distinct code in several band images and is filed
-/// under `[worklist_va_aliased]`, so naming it here would put a `// PORT:`
-/// claim on an address that is not one port site. Its two ids are constants
-/// of their own ([`SUMMON_EFFECT_TICK_B_ID`] / [`SUMMON_EFFECT_TICK_A_ID`]).
+/// Twenty-one of the thirty-two `0x801CF56C` arms are a trampoline; the other
+/// eleven (PROT 0935, 0936, 0937, 0939, 0946, 0947, 0948, 0949, 0953, 0954,
+/// 0966) point straight at a tick body, which is what
+/// `docs/subsystems/cast-module.md` means by "modules whose cell holds a
+/// single spell skip the trampoline".
+///
+/// The `(id -> body)` map matters to the port because a module's own entry is
+/// **not** enough to pick a body: PROT 0945 and 0960 each hold two whole
+/// choreographies, and a dispatcher keyed on the entry alone runs one of them
+/// for both ids. The map also makes the body VA ambiguous on its own - six
+/// modules put a body at `0x801F69D8`, the load base - so a consumer has to
+/// key on `(entry, body)`, never on the body alone.
+///
+/// The `PORT:` tag names only the six trampoline VAs that are neither
+/// phantom prints nor VA-aliased across images; the other fifteen rows,
+/// PROT 0957's `0x801F9BA8` included, are data here for the same reason its
+/// two ids were already constants - `scripts/ci/port-catalog-ignore.toml`
+/// files those addresses under `[worklist_va_aliased]` / `[ghidra_phantoms]`,
+/// so a `// PORT:` claim on them would name an address that is not one port
+/// site.
 ///
 /// The tag is one line on purpose: `port-catalog.py` scrapes a `PORT:` tag's
 /// tail from the line it opens on, so a wrapped continuation drops every
 /// address after the break.
 ///
 /// PORT: FUN_801F7A40, FUN_801F7B1C, FUN_801F7B28, FUN_801F816C, FUN_801F8E60, FUN_801F92A4
-pub const CAPTURE_TRAMPOLINES: [CaptureTrampoline; 6] = [
+pub const CAPTURE_TRAMPOLINES: [CaptureTrampoline; 21] = [
     // `beq v1, 0x4e -> 0x801F726C` / `beq v1, 0xb7 -> 0x801F69EC`.
     CaptureTrampoline {
         prot_entry: 938,
         trampoline: 0x801F_7A40,
         arms: &[(0x4E, 0x801F_726C), (0xB7, 0x801F_69EC)],
+    },
+    // The band's widest `beq` chain: four ids over three bodies, with `0x50`
+    // and `0xAE` sharing `0x801F78B8` (`0x801F825C` and the `bne` at
+    // `0x801F8288` both land on `0x801F8290`).
+    CaptureTrampoline {
+        prot_entry: 940,
+        trampoline: 0x801F_8228,
+        arms: &[
+            (0x3C, 0x801F_69F8),
+            (0x50, 0x801F_78B8),
+            (0xAC, 0x801F_7240),
+            (0xAE, 0x801F_78B8),
+        ],
+    },
+    CaptureTrampoline {
+        prot_entry: 941,
+        trampoline: 0x801F_7D38,
+        arms: &[(0x51, 0x801F_730C), (0xB9, 0x801F_6A04)],
+    },
+    CaptureTrampoline {
+        prot_entry: 942,
+        trampoline: 0x801F_80A0,
+        arms: &[(0x52, POWER_UP_TICK), (0xAA, 0x801F_69F4)],
+    },
+    CaptureTrampoline {
+        prot_entry: 943,
+        trampoline: 0x801F_7624,
+        arms: &[(0x40, 0x801F_6EF4), (0xB5, 0x801F_6A04)],
+    },
+    CaptureTrampoline {
+        prot_entry: 944,
+        trampoline: 0x801F_7EBC,
+        arms: &[(0x37, 0x801F_6A04), (0x53, 0x801F_7470)],
+    },
+    CaptureTrampoline {
+        prot_entry: 945,
+        trampoline: 0x801F_76F4,
+        arms: &[(0x54, WATER_COLUMN_TICK), (0xBA, ALL_STATS_SURGE_TICK)],
+    },
+    CaptureTrampoline {
+        prot_entry: 950,
+        trampoline: 0x801F_8190,
+        arms: &[(0x5A, 0x801F_79F8), (0xAB, 0x801F_6A24)],
     },
     // Single arm, spelled as `bne v1, 0xb6 -> epilogue`.
     CaptureTrampoline {
@@ -1082,9 +1563,68 @@ pub const CAPTURE_TRAMPOLINES: [CaptureTrampoline; 6] = [
         arms: &WHITE_SHIELD_TRAMPOLINE_ARMS,
     },
     CaptureTrampoline {
+        prot_entry: 956,
+        trampoline: 0x801F_7E4C,
+        arms: &[(0x71, 0x801F_7298), (0x75, 0x801F_69D8)],
+    },
+    CaptureTrampoline {
+        prot_entry: 957,
+        trampoline: 0x801F_9BA8,
+        arms: &[
+            (SUMMON_EFFECT_TICK_B_ID, SUMMON_EFFECT_TICK_B),
+            (SUMMON_EFFECT_TICK_A_ID, SUMMON_EFFECT_TICK_A),
+        ],
+    },
+    CaptureTrampoline {
         prot_entry: 958,
         trampoline: 0x801F_8E60,
         arms: &[(0x79, 0x801F_6DD8)],
+    },
+    CaptureTrampoline {
+        prot_entry: 959,
+        trampoline: 0x801F_87F4,
+        arms: &[(0x7A, 0x801F_69F0)],
+    },
+    CaptureTrampoline {
+        prot_entry: 960,
+        trampoline: 0x801F_8638,
+        arms: &[(0x7B, PLASMA_STRIKE_TICK), (0xA6, 0x801F_69D8)],
+    },
+    // Two ids, one body - the only trampoline in the band that maps a pair
+    // onto the same routine (`0x801F7A88` and the `bne` at `0x801F7A90` both
+    // reach `0x801F7A98`).
+    CaptureTrampoline {
+        prot_entry: 961,
+        trampoline: 0x801F_7A54,
+        arms: &[(0xA1, 0x801F_69D8), (0xB4, 0x801F_69D8)],
+    },
+    CaptureTrampoline {
+        prot_entry: 962,
+        trampoline: 0x801F_8080,
+        arms: &[
+            (0xA2, 0x801F_7AE4),
+            (0xA3, 0x801F_74A0),
+            (0xA4, 0x801F_6D54),
+            (0xA5, 0x801F_69D8),
+        ],
+    },
+    CaptureTrampoline {
+        prot_entry: 963,
+        trampoline: 0x801F_8438,
+        arms: &[(0xB3, 0x801F_6A20)],
+    },
+    // `0xAF` is a `beq`; the second body is reached by a **range** test
+    // (`slti v1, 0xaf` then `slti v1, 0xb3` at `0x801F8E88`/`0x801F8E90`), so
+    // ids `0xB0..=0xB2` share `0x801F69D8`.
+    CaptureTrampoline {
+        prot_entry: 964,
+        trampoline: 0x801F_8E3C,
+        arms: &[
+            (0xAF, ELEMENT_CHANGE_TICK),
+            (0xB0, 0x801F_69D8),
+            (0xB1, 0x801F_69D8),
+            (0xB2, 0x801F_69D8),
+        ],
     },
     CaptureTrampoline {
         prot_entry: 965,
@@ -1095,8 +1635,61 @@ pub const CAPTURE_TRAMPOLINES: [CaptureTrampoline; 6] = [
 
 /// PROT 0958's tick body, the arm its trampoline reaches for action `0x79`.
 pub const BLAZING_SLASH_TICK: u32 = 0x801F_6DD8;
+/// PROT 0942's `0x52` arm - [`power_up_tick`].
+pub const POWER_UP_TICK: u32 = 0x801F_7D34;
+/// PROT 0964's `0xAF` arm - [`element_change_tick`].
+pub const ELEMENT_CHANGE_TICK: u32 = 0x801F_88EC;
+/// PROT 0945's `0x54` arm - [`water_column_tick`]. Its `0xBA` arm is a
+/// **second** choreography in the same image, which is what makes the
+/// `(entry, body)` key load-bearing.
+pub const WATER_COLUMN_TICK: u32 = 0x801F_6EDC;
+/// PROT 0945's `0xBA` arm - [`all_stats_surge_tick`].
+pub const ALL_STATS_SURGE_TICK: u32 = 0x801F_69F8;
+/// PROT 0960's `0x7B` arm - [`plasma_strike_tick`]. Its `0xA6` arm (Neo Star
+/// Slash) is `0x801F69D8`, the load base, and is unported.
+pub const PLASMA_STRIKE_TICK: u32 = 0x801F_74E4;
+/// PROT 0957's `0x77` arm - [`summon_effect_tick_a`].
+pub const SUMMON_EFFECT_TICK_A: u32 = 0x801F_6A14;
+/// PROT 0957's `0x76` arm - [`summon_effect_tick_b`].
+pub const SUMMON_EFFECT_TICK_B: u32 = 0x801F_798C;
 /// PROT 0952's tick body, the arm its trampoline reaches for action `0xB8`.
 pub const ASTRAL_SLASH_TICK: u32 = 0x801F_6A0C;
+/// PROT 0938's `0x4E` arm - [`chaos_breath_tick`].
+pub const CHAOS_BREATH_TICK: u32 = 0x801F_726C;
+/// PROT 0938's `0xB7` arm - [`mystic_circle_tick`].
+pub const MYSTIC_CIRCLE_TICK: u32 = 0x801F_69EC;
+/// PROT 0951's `0x36` arm - [`chaos_flare_tick`].
+pub const CHAOS_FLARE_TICK: u32 = 0x801F_6A20;
+/// PROT 0951's `0x5B` arm - [`scythe_wind_tick`].
+pub const SCYTHE_WIND_TICK: u32 = 0x801F_77E8;
+/// PROT 0952's `0x5C` arm - [`bloody_horns_tick`].
+pub const BLOODY_HORNS_TICK: u32 = 0x801F_7118;
+/// PROT 0965's `0xB6` arm - [`doomsday_tick`].
+pub const DOOMSDAY_TICK: u32 = 0x801F_69D8;
+/// PROT 0955's `0x60` arm - [`white_shield_tick`].
+pub const WHITE_SHIELD_TICK: u32 = 0x801F_8F0C;
+/// PROT 0955's `0x6E` arm - [`kiss_of_death_tick`].
+pub const KISS_OF_DEATH_TICK: u32 = 0x801F_86A4;
+/// PROT 0955's `0x6F` arm - [`melt_spray_tick`].
+pub const MELT_SPRAY_TICK: u32 = 0x801F_7FA4;
+/// PROT 0955's `0x70` arm - [`terror_scream_tick`].
+pub const TERROR_SCREAM_TICK: u32 = 0x801F_767C;
+/// PROT 0955's `0x72` arm - [`power_charge_tick`].
+pub const POWER_CHARGE_TICK: u32 = 0x801F_7158;
+/// PROT 0955's `0x73` arm - [`void_accessories_tick`].
+pub const VOID_ACCESSORIES_TICK: u32 = 0x801F_6A28;
+/// The phase PROT 0955's Melt Spray runs its five-stat debuff on
+/// (`0x801F828C`, the `slt v1, 4` arm of its chain).
+pub const MELT_SPRAY_DEBUFF_ARM: u8 = 3;
+/// The phase PROT 0938's Chaos Breath runs its sweep on (`0x801F7750`).
+pub const CHAOS_BREATH_SWEEP_ARM: u8 = 2;
+/// The phase PROT 0938's Mystic Circle runs its sweep on: table word 3
+/// (`0x801F69E4` -> `0x801F6F3C`), the arm the loop at `0x801F70B0` sits in.
+pub const MYSTIC_CIRCLE_SWEEP_ARM: u8 = 3;
+/// The phase PROT 0965's Doomsday runs its sweep on: the `beq v1, 0x0C` /
+/// `slt` pair at `0x801F6AE8` sends `0x0B` to `0x801F7648`, and the loop at
+/// `0x801F76E4` sits inside that arm.
+pub const DOOMSDAY_SWEEP_ARM: u8 = 0x0B;
 
 /// The trampoline of the module PROT `prot_entry` pages, if it has one.
 pub fn capture_trampoline_for(prot_entry: u32) -> Option<&'static CaptureTrampoline> {
@@ -1140,7 +1733,7 @@ pub fn capture_tick_body(prot_entry: u32, action_id: u8) -> Option<u32> {
 /// `ctx+0x278` discipline. Not ported: the packet arms, which are most of the
 /// body.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A00 (phase machine + staging; packet arms unported)
 pub fn spikefish_tick(ctx: &mut CastModuleCtx, caster: &mut CastActorState) -> CastTickStep {
@@ -1177,7 +1770,7 @@ pub const SPIKEFISH_STAGE_ARM: u8 = 5;
 /// Ported: the bound, the phase walk, the stage/restage pairs and the finale
 /// HP zero. Not ported: the packet and camera arms.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A18 (phase machine + staging + the finale HP zero; packet
 /// arms unported)
@@ -1218,7 +1811,7 @@ pub const ULTIMATE_RAVE_FINALE_ARM: u8 = 9;
 /// summon-branch wrapper is not itself a never-kill shape - this module calls
 /// it with the kill-capable clamp.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A3C (phase machine + damage/staging; packet arms unported)
 pub fn puera_tick(
@@ -1250,7 +1843,7 @@ pub fn puera_tick(
 /// hit is kill-capable, and a negative wrapper return there kills outright
 /// through the unsigned compare.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A84 (phase machine + damage/staging; packet arms unported)
 pub fn juggernaut_tick(
@@ -1284,7 +1877,7 @@ pub fn juggernaut_tick(
 /// does clamp also credits a kill: it increments the word at `+0x664` of the
 /// caster's per-character record in the `0x80084140 + n * 0x414` block.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6C70 (phase chain + damage/staging + the kill credit; packet
 /// arms unported)
@@ -1331,7 +1924,7 @@ pub const KEMARO_DONE_PHASE: u8 = 0xFF;
 /// does not carry: that table was read off the routines already on the
 /// verdict table, and this tick was not one of them.
 ///
-/// Wired: `World::run_cast_module_tick`.
+/// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6A10 (phase machine + damage/staging; packet arms unported)
 pub fn water_crystals_tick(
@@ -1348,6 +1941,935 @@ pub fn water_crystals_tick(
         }
         false
     })
+}
+
+// ---------------------------------------------------------------------------
+// The twelve trampoline-reached tick bodies (PROT 0938 / 0951 / 0952 / 0955 /
+// 0965)
+// ---------------------------------------------------------------------------
+
+/// What one phase arm did, in the three shapes the band's arms come in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CastArmStep {
+    /// The arm ran and performed the `ctx[+0x279] += 1` store.
+    Advance,
+    /// The arm ran (or the phase named none) and left the phase alone; the
+    /// busy register is still `1`.
+    Hold,
+    /// The terminal arm: it zeroed the busy register, so the tick reports
+    /// [`CastTickStep::Done`].
+    Finish,
+}
+
+/// Return convention of every body in this section, read off the bytes rather
+/// than assumed: each opens by seeding a saved register with `1` and returns
+/// it, and **only** a terminal arm zeroes it. So a phase the dispatch does not
+/// name - including one past a `sltiu` bound - returns **Busy**, not Done.
+///
+/// `0x801F6AA4` in PROT 0949's tick is the exemplar: its out-of-bound `beqz`
+/// jumps to `0x801F758C`, one instruction *past* the `move s7, zero` at
+/// `0x801F7588`, so `s7` is still `1` there. [`run_tick`] models an
+/// out-of-bound phase as [`CastTickStep::Done`] instead; the bodies below use
+/// this helper so their reported step is the register's.
+fn run_tick_latched(
+    ctx: &mut CastModuleCtx,
+    arm: impl FnOnce(&mut CastModuleCtx) -> CastArmStep,
+) -> CastTickStep {
+    match arm(ctx) {
+        CastArmStep::Advance => {
+            advance_phase(ctx);
+            CastTickStep::Busy
+        }
+        CastArmStep::Hold => CastTickStep::Busy,
+        CastArmStep::Finish => CastTickStep::Done,
+    }
+}
+
+/// `+0x1DE == 1` - the Item action category, the only one the turn-steal
+/// refunds.
+pub const ACTION_CATEGORY_ITEM: u8 = 1;
+
+/// The band's **turn-steal** idiom, shared by PROT 0955's Kiss of Death miss
+/// arm (`0x801F8CF4..0x801F8D54`) and its Terror Scream arm 3
+/// (`0x801F7E18..0x801F7E4C`).
+///
+/// ```text
+/// if victim[+0x1DE] == 1 && victim[+0x16C] != 0 { FUN_800421D4(victim[+0x1DF], 1) }
+/// victim[+0x1DE] = 0
+/// if victim[+0x16C] != 0 { ctx[+0x1A] += 1 ; victim[+0x16C] = 0 }
+/// ```
+///
+/// `FUN_800421D4` is the inventory find-or-insert
+/// (`docs/subsystems/inventory.md`), so the refund only makes sense for an
+/// Item action - which is exactly what `+0x1DE == 1` names. `+0x16C` is the
+/// per-round initiative key, and clearing it is what "the victim has already
+/// acted" means to the next-actor selector; `ctx[+0x1A]` is the turn cursor.
+///
+/// Returns `Some(item_id)` when retail refunds an item, so a host can hand it
+/// back through its own bag.
+pub fn steal_turn(ctx: &mut CastModuleCtx, victim: &mut CastActorState) -> Option<u8> {
+    let had_turn = victim.init_key != 0;
+    let refund = (victim.action_category == ACTION_CATEGORY_ITEM && had_turn)
+        .then_some(victim.queued_action);
+    victim.action_category = 0;
+    if had_turn {
+        ctx.turn_cursor = ctx.turn_cursor.wrapping_add(1);
+        victim.init_key = 0;
+    }
+    refund
+}
+
+/// The band's reaction-stage pick: `+0x1F2` decides between the knockdown
+/// clip `+0x1F1` and the alternate `+0x1EF`.
+///
+/// PROT 0955's Kiss of Death (`0x801F8D90`) and Melt Spray (`0x801F856C`)
+/// both spell it as `if +0x1F2 != 0 { +0x1DA = +0x1F1 } else { +0x1DA = +0x1EF }`;
+/// the battle overlay's own effect-child arm (`0x801E196C`) adds the third
+/// leg - a dead victim takes `+0x1F1` regardless, and a zero `+0x1EF` falls
+/// on to `+0x1F0`.
+pub fn stage_reaction(victim: &mut CastActorState) {
+    victim.staged_anim = if victim.reaction_gate != 0 {
+        victim.knockdown_anim
+    } else {
+        victim.reaction_alt
+    };
+}
+
+/// The `0xFF` phase every `beq`/`slti` body in this section ends on.
+pub const CHOREOGRAPHY_DONE_PHASE: u8 = 0xFF;
+
+/// One seat's outcome inside a tick body's whole-row sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SweepHit {
+    /// The seat the wrapper was called for (the wrapper's `a2`).
+    pub seat: u8,
+    /// The damage actually applied after the clamp.
+    pub applied: u32,
+}
+
+// --- PROT 0938 -------------------------------------------------------------
+
+/// The baked power PROT 0938's `0x4E` body hands `FUN_801DD4B0`
+/// (`addiu a0,zero,0x274` at `0x801F77B0`).
+pub const CHAOS_BREATH_POWER: u16 = 0x274;
+/// The clip PROT 0938's arm 0 stages on the caster
+/// (`addiu v1,zero,9; sb v1,0x1da(s3)` at `0x801F73C8`).
+pub const CHAOS_BREATH_ARM0_CLIP: u8 = 9;
+/// `+0x16E` bit `0x1` - **Venom** (`docs/subsystems/battle-formulas.md`).
+pub const FLAG_VENOM: u16 = 0x0001;
+/// `+0x16E` bit `0x2` - **Toxic**.
+pub const FLAG_TOXIC: u16 = 0x0002;
+
+/// PROT 0938 (Chaos Breath) tick body - action id `0x4E`.
+///
+/// A `beq`/`slti` chain over phases `0`, `1`, `2`, `3` and `0xFF`
+/// (`0x801F72EC..0x801F7334`), caster `s3 = actor_table[ctx+0x13]`.
+///
+/// * arm `0` (`0x801F733C`) - cue `0x156`, face the caster
+///   (`+0x46 = angle + 0x800`), stage clip [`CHAOS_BREATH_ARM0_CLIP`] with a
+///   `+0x1DC` bump, and **halve** the caster's animation rate
+///   (`+0x21D >>= 1` at `0x801F73E4`);
+/// * arm `2` (`0x801F7750`) - the **sweep**, below;
+/// * arm `0xFF` (`0x801F7A04`) - `+0x21D <<= 1` restores the rate and zeroes
+///   the busy register, so this is the only arm that reports
+///   [`CastTickStep::Done`].
+///
+/// The sweep walks `actor_table[0 .. ctx[+0]]`, skips a dead seat and a
+/// `+0x16E & 4` one, then per hittable seat:
+/// `FUN_801DD4B0(0x274, ctx[+0x13], seat)` then the **shape-A** clamp
+/// (`sltu a0,s1` at `0x801F77EC`, kill-capable), `+0x10 +=`, `+0x14C -=`,
+/// `+0x1DA = +0x1F1`, `+0x1DC = 1`, face away from the caster,
+/// `+0x04 = 0x3FF04040`, then two 1-in-8 rolls: the first sets
+/// [`FLAG_VENOM`], and only if that one misses does a second roll set
+/// [`FLAG_TOXIC`] (`0x801F7888..0x801F78D8`).
+///
+/// **This is a whole-row applier that kills.** `docs/subsystems/cast-module.md`
+/// called `0x801F85A8` / `0x801F8D64` "the band's only whole-row appliers" and
+/// paired whole-row with the never-kill `HP - 1` clamp; this body, PROT 0938's
+/// `0xB7` body and PROT 0965's are three more, and all three take shape A.
+///
+/// `rolls` supplies one wrapper result per hittable seat in seat order, and
+/// `status` one `rand()` pair per hittable seat, so the caller keeps retail's
+/// RNG cursor. Not ported: the packet and camera arms, and arms `1` / `3`,
+/// which are frame-gated presentation.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F726C (phase chain + the whole-row damage/status sweep; packet arms unported)
+pub fn chaos_breath_tick(
+    ctx: &mut CastModuleCtx,
+    caster: &mut CastActorState,
+    seats: &mut [CastActorState],
+    mut rolls: impl FnMut(u8) -> i32,
+    mut status: impl FnMut(u8) -> (u32, u32),
+) -> (CastTickStep, Vec<SweepHit>) {
+    let mut hits = Vec::new();
+    let step = run_tick_latched(ctx, |c| match c.phase {
+        0 => {
+            caster.staged_anim = CHAOS_BREATH_ARM0_CLIP;
+            caster.restage = caster.restage.wrapping_add(1);
+            caster.anim_rate >>= 1;
+            CastArmStep::Advance
+        }
+        2 => {
+            for seat in 0..c.actor_count {
+                let Some(v) = seats.get_mut(seat as usize) else {
+                    continue;
+                };
+                if !aoe_seat_is_hittable(v) {
+                    continue;
+                }
+                let applied = apply_hit_floor_zero(v, rolls(seat));
+                let knockdown = v.knockdown_anim;
+                v.staged_anim = knockdown;
+                v.restage = 1;
+                let (a, b) = status(seat);
+                if a & 7 == 0 {
+                    v.flags |= FLAG_VENOM;
+                } else if b & 7 == 0 {
+                    v.flags |= FLAG_TOXIC;
+                }
+                hits.push(SweepHit { seat, applied });
+            }
+            CastArmStep::Advance
+        }
+        CHOREOGRAPHY_DONE_PHASE => {
+            caster.anim_rate = caster.anim_rate.wrapping_shl(1);
+            CastArmStep::Finish
+        }
+        _ => CastArmStep::Advance,
+    });
+    (step, hits)
+}
+
+/// The baked power PROT 0938's `0xB7` body hands `FUN_801DD4B0`
+/// (`addiu a0,zero,0x309` at `0x801F70DC`, in the `beqz` delay slot).
+pub const MYSTIC_CIRCLE_POWER: u16 = 0x309;
+/// The animation rate PROT 0938's `0xB7` sweep drops each hit seat to
+/// (`addiu v0,zero,4; sb v0,0x21d(v1)` at `0x801F7180`).
+pub const MYSTIC_CIRCLE_HIT_ANIM_RATE: u8 = 4;
+
+/// PROT 0938 (Mystic Circle) tick body - action id `0xB7`.
+///
+/// Five phase arms behind `sltiu v1, 5` (`0x801F6A78`) through a word table at
+/// `0x801F69D8` - the image head, which ends exactly where this function
+/// opens. The damage arm sweeps `actor_table[0 .. ctx[+0]]` and skips **only**
+/// a dead seat: unlike every other sweep in the band it does *not* test
+/// `+0x16E & 4`, so a Stoned seat is still hit (`0x801F70D0`).
+///
+/// Per hittable seat: `FUN_801DD4B0(0x309, ctx[+0x13], seat)`, the shape-A
+/// clamp at `0x801F7118`, `+0x10 +=`, `+0x14C -=`, `+0x1DA = +0x1F1`,
+/// `+0x1DC += 1`, `+0x21D = 4`, face away, `+0x04 = 0x3FF80300`.
+///
+/// This body is on no `--missing-ports` row only because no dump prints at
+/// its VA; it is named by PROT 0938's trampoline `0x801F7A40`.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F69EC (phase table + the whole-row damage sweep; packet arms unported)
+pub fn mystic_circle_tick(
+    ctx: &mut CastModuleCtx,
+    seats: &mut [CastActorState],
+    damage_arm: bool,
+    mut rolls: impl FnMut(u8) -> i32,
+) -> (CastTickStep, Vec<SweepHit>) {
+    let mut hits = Vec::new();
+    let step = run_tick_latched(ctx, |c| {
+        if damage_arm {
+            for seat in 0..c.actor_count {
+                let Some(v) = seats.get_mut(seat as usize) else {
+                    continue;
+                };
+                // The one sweep in the band with no `+0x16E & 4` guard.
+                if v.hp == 0 {
+                    continue;
+                }
+                let applied = apply_hit_floor_zero(v, rolls(seat));
+                let knockdown = v.knockdown_anim;
+                stage_clip(v, knockdown);
+                v.anim_rate = MYSTIC_CIRCLE_HIT_ANIM_RATE;
+                hits.push(SweepHit { seat, applied });
+            }
+        }
+        CastArmStep::Advance
+    });
+    (step, hits)
+}
+
+// --- PROT 0951 -------------------------------------------------------------
+
+/// PROT 0951's twelve-arm phase table, at `0x801F69D8` (file `0x00..0x30`).
+pub const CHAOS_FLARE_ARMS: u16 = 0x0C;
+/// The baked power PROT 0951's `0x36` body hands `FUN_801DD4B0`
+/// (`addiu a0,zero,0x3a0` at `0x801F7404`).
+pub const CHAOS_FLARE_POWER: u16 = 0x3A0;
+
+/// PROT 0951 (Chaos Flare) tick body - action id `0x36`.
+///
+/// Twelve phase arms behind `sltiu v1, 0x0C` (`0x801F6AB4`) through the table
+/// at `0x801F69D8`; caster `s4`, victim `s1 = actor_table[caster[+0x1DD]]`.
+/// One damage site - `FUN_801DD4B0(0x3A0, ctx[+0x13], victim_seat)` at
+/// `0x801F7414` with the shape-A clamp at `0x801F7438` - then `+0x10 +=`,
+/// `+0x14C -=`, face the victim away and stage its `+0x1F1` with a `+0x1DC`
+/// bump. The routine also writes `ctx[+0x278]` (`0x801F71F0` seeds it,
+/// `0x801F76D4` clears it), `ctx[+0x0D]` (`0x801F6B08` and the terminal arm's
+/// `0x801F77A4`) and eight `+0x21D` stores across the two seats.
+///
+/// Not ported: the packet and camera arms, and the per-arm frame gating.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F6A20 (phase table + damage/staging; packet arms unported)
+pub fn chaos_flare_tick(
+    ctx: &mut CastModuleCtx,
+    victim: &mut CastActorState,
+    hit: Option<i32>,
+) -> CastTickStep {
+    run_tick_latched(ctx, |c| {
+        if let Some(roll) = hit {
+            apply_hit_floor_zero(victim, roll);
+            let knockdown = victim.knockdown_anim;
+            stage_clip(victim, knockdown);
+        }
+        if u16::from(c.phase) >= CHAOS_FLARE_ARMS {
+            // Out of the table's range: retail's `beqz` lands past the busy
+            // register's only clearing store, so the tick still reports busy.
+            CastArmStep::Hold
+        } else {
+            CastArmStep::Advance
+        }
+    })
+}
+
+/// PROT 0951's second phase table - six arms at `0x801F6A08`, ending exactly
+/// where the `0x5B` body opens.
+pub const SCYTHE_WIND_ARMS: u16 = 6;
+/// The baked power PROT 0951's `0x5B` body hands `FUN_801DD4B0`.
+///
+/// It is set in the call's **delay slot** (`jal 0x801DD4B0` at `0x801F7F88`,
+/// `addiu a0,zero,0x80` at `0x801F7F8C`), so a scan that only looks backwards
+/// from a `jal` reports no constant for this site.
+pub const SCYTHE_WIND_POWER: u16 = 0x80;
+
+/// PROT 0951 (Scythe Wind) tick body - action id `0x5B`.
+///
+/// Six phase arms behind `sltiu v1, 6` (`0x801F7874`) through the table at
+/// `0x801F6A08`. The damage arm writes the victim's animation rate back to
+/// [`ANIM_RATE_NORMAL`] (`0x801F7F74`) before the call, then
+/// `FUN_801DD4B0(0x80, ctx[+0x13], victim_seat)`, the shape-A clamp at
+/// `0x801F7FAC`, `+0x1DC = 1`, `+0x1DA = +0x1F1`, `+0x10 +=`, `+0x14C -=` and
+/// the face-away store.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F77E8 (phase table + damage/staging; packet arms unported)
+pub fn scythe_wind_tick(
+    ctx: &mut CastModuleCtx,
+    victim: &mut CastActorState,
+    hit: Option<i32>,
+) -> CastTickStep {
+    run_tick_latched(ctx, |c| {
+        if let Some(roll) = hit {
+            victim.anim_rate = ANIM_RATE_NORMAL;
+            apply_hit_floor_zero(victim, roll);
+            victim.restage = 1;
+            let knockdown = victim.knockdown_anim;
+            victim.staged_anim = knockdown;
+        }
+        if u16::from(c.phase) >= SCYTHE_WIND_ARMS {
+            CastArmStep::Hold
+        } else {
+            CastArmStep::Advance
+        }
+    })
+}
+
+// --- PROT 0952 -------------------------------------------------------------
+
+/// PROT 0952's seven-arm phase table for the `0x5C` body, at `0x801F69F0` -
+/// it ends where the module's *other* tick body (`0x801F6A0C`, Astral Slash)
+/// opens.
+pub const BLOODY_HORNS_ARMS: u16 = 7;
+/// The baked power PROT 0952's `0x5C` body hands `FUN_801DD6B4`
+/// (`addiu a0,zero,0x1d0` at `0x801F792C`, six instructions ahead of the
+/// `jal` and past two intervening stores).
+pub const BLOODY_HORNS_POWER: u16 = 0x1D0;
+
+/// PROT 0952 (Bloody Horns) tick body - action id `0x5C`.
+///
+/// Seven phase arms behind `sltiu v1, 7` (`0x801F71A4`) through the table at
+/// `0x801F69F0`. The damage arm clears three presentation fields on the
+/// **caster** first - `+0x21B = 0`, `+0x1DA = 0`, `+0x176 = 0`
+/// (`0x801F7930..0x801F7940`) - and the victim's `+0x36 = 0` /
+/// `+0x21D = 8`, then calls `FUN_801DD6B4(0x1D0, ctx[+0x13], victim_seat)`,
+/// clamps shape A at `0x801F796C`, accumulates `+0x10`, writes `+0x14C`,
+/// stages `+0x1F1` with `+0x1DC = 1` and faces the victim away.
+///
+/// `FUN_801DD6B4` is the physical wrapper - the one that folds the defender's
+/// two defence stats - which is what makes this body's `0x1D0` a physical
+/// figure rather than a spell one.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F7118 (phase table + damage/staging; packet arms unported)
+pub fn bloody_horns_tick(
+    ctx: &mut CastModuleCtx,
+    caster: &mut CastActorState,
+    victim: &mut CastActorState,
+    hit: Option<i32>,
+) -> CastTickStep {
+    run_tick_latched(ctx, |c| {
+        if let Some(roll) = hit {
+            caster.staged_anim = 0;
+            victim.anim_rate = ANIM_RATE_NORMAL;
+            apply_hit_floor_zero(victim, roll);
+            victim.restage = 1;
+            let knockdown = victim.knockdown_anim;
+            victim.staged_anim = knockdown;
+        }
+        if u16::from(c.phase) >= BLOODY_HORNS_ARMS {
+            CastArmStep::Hold
+        } else {
+            CastArmStep::Advance
+        }
+    })
+}
+
+// --- PROT 0965 -------------------------------------------------------------
+
+/// The baked power PROT 0965's `0xB6` body hands `FUN_801DD4B0`
+/// (`addiu a0,zero,0x600` at `0x801F77A8`, in the `beqz` delay slot).
+pub const DOOMSDAY_POWER: u16 = 0x600;
+
+/// PROT 0965 (Doomsday) tick body - action id `0xB6`, and the whole image:
+/// the function opens at the module's own load base `0x801F69D8` and runs
+/// `0x1144` bytes to `0x801F7B1C`, where the trampoline begins.
+///
+/// A `beq`/`slti` chain (`0x801F6A58..0x801F6AB4`) over phases `0`, `1`, `2`,
+/// `4`, `5`, `6`, `7` and more. Its damage arm is the band's **third**
+/// whole-row applier: it walks `actor_table[0 .. ctx[+0]]`, poses each seat
+/// (`+0x34`/`+0x38` copied to a scratch strip, `+0x46 = 0x800`), skips a dead
+/// one, then `FUN_801DD4B0(0x600, ctx[+0x13], seat)`, the shape-A clamp at
+/// `0x801F77E0`, `+0x10 +=`, `+0x14C -=`, `+0x1DA = +0x1F1`, `+0x1DC += 1`.
+/// Past the loop it clears `ctx[+0x27A]` and `ctx[+0x278]`
+/// (`0x801F789C` / `0x801F78A8`).
+///
+/// Like Mystic Circle this body is on no `--missing-ports` row only because
+/// no dump prints at its VA.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F69D8 (phase chain + the whole-row damage sweep; packet arms unported)
+pub fn doomsday_tick(
+    ctx: &mut CastModuleCtx,
+    seats: &mut [CastActorState],
+    damage_arm: bool,
+    mut rolls: impl FnMut(u8) -> i32,
+) -> (CastTickStep, Vec<SweepHit>) {
+    let mut hits = Vec::new();
+    let step = run_tick_latched(ctx, |c| {
+        if damage_arm {
+            for seat in 0..c.actor_count {
+                let Some(v) = seats.get_mut(seat as usize) else {
+                    continue;
+                };
+                if v.hp == 0 {
+                    continue;
+                }
+                let applied = apply_hit_floor_zero(v, rolls(seat));
+                let knockdown = v.knockdown_anim;
+                stage_clip(v, knockdown);
+                hits.push(SweepHit { seat, applied });
+            }
+            c.ctx_27a = 0;
+            c.ctx_278 = 0;
+        }
+        CastArmStep::Advance
+    });
+    (step, hits)
+}
+
+// --- PROT 0955, the six-spell cell -----------------------------------------
+
+/// PROT 0955's White Shield (`0x60`) multiplies the caster's **record** base
+/// defence by `3/2` (`sll 1; addu; sra 1` at `0x801F9230..0x801F9238`).
+///
+/// The source is the monster **record** through `0x801C9348[seat - 3]`, not
+/// the live actor, so the buff is idempotent: recasting rewrites the same
+/// product rather than compounding it.
+pub fn white_shield_defence(record_udf: u16, record_ldf: u16) -> (u16, u16) {
+    let scale = |v: u16| ((i32::from(v) * 3) >> 1) as u16;
+    (scale(record_udf), scale(record_ldf))
+}
+
+/// The `+0x21C` value PROT 0955's White Shield arm 1 writes on the caster
+/// (`addiu v0,zero,9; sb v0,0x21c(s0)` at `0x801F9114`). Neither `0` nor the
+/// summon fade's `0xFF`, so the field is a small enum rather than a flag.
+pub const WHITE_SHIELD_ARM1_RENDER_FLAG: u8 = 9;
+
+/// PROT 0955 (White Shield) tick body - action id `0x60`, 920 B.
+///
+/// Four phase arms in a `beq`/`slti` chain (`0x801F8F6C..0x801F8FA8`), caster
+/// `s0 = actor_table[ctx+0x13]`; every arm past `0` gates on the module's own
+/// countdown word at `0x801F9D28`, and the busy register defaults to `1`, so
+/// an unnamed phase reports busy.
+///
+/// * arm `0` - cue `0x196`, one `FUN_80021B04` spawn, seed the countdown from
+///   `scratch[0x37D] * 12` and write `ctx[+0x18] = 0x5B`;
+/// * arm `1` - `caster[+0x21C] = 9`;
+/// * arm `2` - `caster[+0x21C] = 0`;
+/// * arm `3` - the buff: read the caster's own monster record through
+///   `0x801C9348[ctx[+0x13] - 3]`, take `+0x14` (UDF) and `+0x16` (LDF), and
+///   write `base * 3 / 2` into **both** halves of each live pair -
+///   `+0x15C`/`+0x15E` and `+0x160`/`+0x162` - then clear `ctx[+0x0D]` and
+///   return zero.
+///
+/// `docs/subsystems/cast-module.md` grades this row's damage "none". It is a
+/// **defence buff**, and the pair-at-a-time write is why: the working
+/// halfword is what the damage kernel reads and the base halfword is what a
+/// round reset restores to, so writing only the working half would evaporate
+/// at the next `FUN_80053CB8` pass.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F8F0C (phase chain + the defence buff; packet arms unported)
+pub fn white_shield_tick(
+    ctx: &mut CastModuleCtx,
+    caster: &mut CastActorState,
+    record_defence: (u16, u16),
+) -> CastTickStep {
+    run_tick_latched(ctx, |c| match c.phase {
+        1 => {
+            caster.render_flag = WHITE_SHIELD_ARM1_RENDER_FLAG;
+            CastArmStep::Advance
+        }
+        2 => {
+            caster.render_flag = 0;
+            CastArmStep::Advance
+        }
+        3 => {
+            let (udf, ldf) = white_shield_defence(record_defence.0, record_defence.1);
+            caster.udf = udf;
+            caster.udf_base = udf;
+            caster.ldf = ldf;
+            caster.ldf_base = ldf;
+            c.ctx_0d = 0;
+            CastArmStep::Finish
+        }
+        _ => CastArmStep::Advance,
+    })
+}
+
+/// `+0x16E` bit `0x400` - the flag PROT 0955's Kiss of Death sets on its
+/// victim when the instant-death roll **misses** (`ori v0,v0,0x400` at
+/// `0x801F8CFC`).
+///
+/// `docs/subsystems/battle-formulas.md` records the setter for this bit as
+/// the one remaining status-applier gap; this is it.
+pub const FLAG_KISS_OF_DEATH_MARK: u16 = 0x0400;
+
+/// The `+0x16E` mask Kiss of Death's **hit** arm keeps (`andi v0,v0,0xf07f`
+/// at `0x801F8D7C`) - it clears bits `0x0F80`, the status block above Venom /
+/// Toxic / Stone.
+pub const KISS_OF_DEATH_KEEP_MASK: u16 = 0xF07F;
+
+/// The `+0x1DC` value Kiss of Death's `+0x1EF` leg writes (`sb s2,0x1dc(s0)`
+/// at `0x801F8DB0`, `s2` still holding the dispatch chain's `5`).
+pub const KISS_OF_DEATH_ALT_RESTAGE: u8 = 5;
+
+/// PROT 0955 (Kiss of Death) tick body - action id `0x6E`, 2152 B.
+///
+/// Arms `0`, `1`, `2`, `3`, `4`, `5` and `0xFF` in a `beq`/`slti` chain
+/// (`0x801F8728..0x801F8788`); caster `s2 = actor_table[ctx+0x13]`, victim
+/// `s0 = actor_table[caster[+0x1DD]]`.
+///
+/// Arm `4` (`0x801F8C68`) is the spell: past the countdown gate it draws
+/// `FUN_80056798()` and tests bit `0`.
+///
+/// * **odd - the miss.** Set [`FLAG_KISS_OF_DEATH_MARK`] on the victim and run
+///   the [`steal_turn`] idiom, so a missed Kiss of Death still costs the
+///   victim its turn.
+/// * **even - the hit.** Skip a `+0x16E & 4` victim; else clear the status
+///   block ([`KISS_OF_DEATH_KEEP_MASK`]), then `+0x10 += 1` and
+///   `+0x14C -= 1` - the arm applies exactly **one** point of damage - and
+///   stage the reaction ([`stage_reaction`], with `+0x1DC` set to `1` on the
+///   `+0x1F1` leg and [`KISS_OF_DEATH_ALT_RESTAGE`] on the `+0x1EF` leg).
+///
+/// Arm `5` waits for the victim to settle and jumps the phase to `0xFF`; arm
+/// `0xFF` clears `ctx[+0x0D]`, restores every living seat's
+/// `+0x04 = 0x20080200` / `+0x21C = 0` across the seven combat slots, and
+/// zeroes the busy register.
+///
+/// `docs/subsystems/cast-module.md` grades the row's damage "none", which is
+/// true of the damage *wrapper*: this body calls none. The HP write is a
+/// literal decrement, and the real effect is the status mark plus the stolen
+/// turn.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F86A4 (phase chain + the roll, status mark, turn steal and one-point hit; packet arms unported)
+pub fn kiss_of_death_tick(
+    ctx: &mut CastModuleCtx,
+    victim: &mut CastActorState,
+    roll: Option<u32>,
+) -> (CastTickStep, Option<u8>) {
+    let mut refund = None;
+    let step = run_tick_latched(ctx, |c| match c.phase {
+        4 => {
+            match roll {
+                Some(r) if r & 1 != 0 => {
+                    victim.flags |= FLAG_KISS_OF_DEATH_MARK;
+                    refund = steal_turn(c, victim);
+                }
+                // The even leg, and only for a victim the `+0x16E & 4`
+                // guard at `0x801F8D60` lets through.
+                Some(_) if victim.flags & FLAG_NON_TARGETABLE == 0 => {
+                    victim.flags &= KISS_OF_DEATH_KEEP_MASK;
+                    victim.hp_bar_delta += 1;
+                    victim.hp = victim.hp.wrapping_sub(1);
+                    stage_reaction(victim);
+                    victim.restage = if victim.reaction_gate != 0 {
+                        1
+                    } else {
+                        KISS_OF_DEATH_ALT_RESTAGE
+                    };
+                }
+                Some(_) | None => {}
+            }
+            CastArmStep::Advance
+        }
+        5 => {
+            c.phase = CHOREOGRAPHY_DONE_PHASE;
+            CastArmStep::Hold
+        }
+        CHOREOGRAPHY_DONE_PHASE => {
+            c.ctx_0d = 0;
+            CastArmStep::Finish
+        }
+        _ => CastArmStep::Advance,
+    });
+    (step, refund)
+}
+
+/// PROT 0955's Melt Spray (`0x6F`) stat step: `x - (x + 9) / 5` - a `-20%`
+/// with a `+9` rounding bias - with a floor that fires only on an exact
+/// zero.
+///
+/// The division is the signed magic `0x66666667` (`mult`, `mfhi`, `sra 2`,
+/// minus the sign) at `0x801F8314..0x801F8378`. The floor is the
+/// `bnez ...; addiu v0,v0,1` pair each store is followed by, and the
+/// arithmetic that reaches the store is 32-bit `subu` while the store itself
+/// is a 16-bit `sh` - so a stat of `2` lands on zero and is corrected to `1`,
+/// but a stat of `0` or `1` goes to `-1` and is written back as `0xFFFF`,
+/// which the floor's `bnez` then sees as non-zero and leaves alone. Retail
+/// underflows a one-point stat into 65535; that is the behaviour, not a port
+/// artefact, and it is why the floor cannot be modelled as `max(1, ..)`.
+///
+/// Only the first floor of each five-stat block tests a live 32-bit register
+/// (`move v1,a1` at `0x801F83E0` / `0x801F8504`, then `bnez v1`); the other
+/// four re-`lhu` the halfword they just stored and test that
+/// (`0x801F83F8`, `0x801F840C`, `0x801F8420`, `0x801F8434`, and the same
+/// four in the base block from `0x801F851C`). The two shapes agree on every
+/// reachable value - `-1` truncates to `0xFFFF`, which is non-zero either
+/// way - so the underflow is a property of the `subu`/`sh` width mismatch,
+/// not of which register the `bnez` reads.
+pub fn melt_spray_step(stat: u16) -> u16 {
+    let x = i32::from(stat);
+    let reduced = x - (x + 9) / 5;
+    if reduced == 0 { 1 } else { reduced as u16 }
+}
+
+/// PROT 0955 (Melt Spray) tick body - action id `0x6F`, 1792 B.
+///
+/// Arms `0`, `1`, `2`, `3`, `4` and a terminal `0x801F8670`
+/// (`0x801F8024..0x801F8074`); victim `s0 = actor_table[caster[+0x1DD]]`.
+///
+/// The debuff arm walks **five** stats and both halfwords of each -
+/// `+0x158`/`+0x15A` ATK, `+0x15C`/`+0x15E` UDF, `+0x160`/`+0x162` LDF,
+/// `+0x164`/`+0x166` SPD, `+0x168`/`+0x16A` INT - applying
+/// [`melt_spray_step`] to each and then staging the victim's reaction
+/// ([`stage_reaction`], `+0x1DC = 1`).
+///
+/// It is the widest single stat write in the band and the row
+/// `docs/subsystems/cast-module.md` grades "none": the module calls no damage
+/// wrapper, and what it does instead is a five-stat, ten-halfword `-20%`.
+/// Note the shape differs from the item buffs' `x * 6/5` clamped to `0xFFFF`
+/// (`battle-formulas.md`): this is `x - (x + 9)/5` floored at `1`.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F7FA4 (phase chain + the five-stat debuff; packet arms unported)
+pub fn melt_spray_tick(
+    ctx: &mut CastModuleCtx,
+    victim: &mut CastActorState,
+    debuff_arm: bool,
+) -> CastTickStep {
+    run_tick_latched(ctx, |c| {
+        if debuff_arm {
+            for stat in [
+                &mut victim.udf,
+                &mut victim.ldf,
+                &mut victim.spd,
+                &mut victim.atk,
+                &mut victim.intel,
+                &mut victim.udf_base,
+                &mut victim.ldf_base,
+                &mut victim.spd_base,
+                &mut victim.atk_base,
+                &mut victim.intel_base,
+            ] {
+                *stat = melt_spray_step(*stat);
+            }
+            stage_reaction(victim);
+            victim.restage = 1;
+        }
+        if c.phase == CHOREOGRAPHY_DONE_PHASE {
+            c.ctx_0d = 0;
+            CastArmStep::Finish
+        } else {
+            CastArmStep::Advance
+        }
+    })
+}
+
+/// PROT 0955 (Terror Scream) tick body - action id `0x70`, 2344 B.
+///
+/// Arms `0`, `1`, `2`, `3`, `4` and `0xFF` (`0x801F7700..0x801F7750`); caster
+/// `s3`, victim `s2 = actor_table[caster[+0x1DD]]`.
+///
+/// Arm `3` (`0x801F7D98`) is the whole spell, and it writes **no** stat and
+/// **no** status bit: it runs the [`steal_turn`] idiom unconditionally on the
+/// victim (`0x801F7E18..0x801F7E4C`). Arm `4` polls the victim for a settled
+/// pose and jumps the phase to `0xFF`; the `0xFF` arm clears `ctx[+0x0D]`,
+/// restores the seven combat seats and reports done.
+///
+/// So the row `docs/subsystems/cast-module.md` grades "none" is a **turn
+/// thief**: the victim's queued item is refunded, its initiative key is
+/// consumed and the turn cursor advances past it.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F767C (phase chain + the turn steal; packet arms unported)
+pub fn terror_scream_tick(
+    ctx: &mut CastModuleCtx,
+    victim: &mut CastActorState,
+) -> (CastTickStep, Option<u8>) {
+    let mut refund = None;
+    let step = run_tick_latched(ctx, |c| match c.phase {
+        3 => {
+            refund = steal_turn(c, victim);
+            CastArmStep::Advance
+        }
+        4 => {
+            c.phase = CHOREOGRAPHY_DONE_PHASE;
+            CastArmStep::Hold
+        }
+        CHOREOGRAPHY_DONE_PHASE => {
+            c.ctx_0d = 0;
+            CastArmStep::Finish
+        }
+        _ => CastArmStep::Advance,
+    });
+    (step, refund)
+}
+
+/// The exclusive cap Power Charge tests against - a stat that reaches it is
+/// written back as `0x3E7` (999).
+pub const POWER_CHARGE_CAP: u16 = 0x3E8;
+
+/// PROT 0955's Power Charge (`0x72`) stat step: `x + (x >> 2)` - a `+25%` -
+/// capped at [`POWER_CHARGE_CAP`] (`sltiu v0,v0,0x3e8` at `0x801F74D4`).
+pub fn power_charge_step(stat: u16) -> u16 {
+    let raised = u32::from(stat) + (u32::from(stat) >> 2);
+    let raised = (raised & 0xFFFF) as u16;
+    if raised < POWER_CHARGE_CAP {
+        raised
+    } else {
+        POWER_CHARGE_CAP - 1
+    }
+}
+
+/// PROT 0955 (Power Charge) tick body - action id `0x72`, 1316 B.
+///
+/// Arms `0`, `1`, `2`, `3` and `4` (`0x801F71D4..0x801F721C`); the target is
+/// the **caster** `s1 = actor_table[ctx+0x13]`, not the `+0x1DD` victim the
+/// prologue also resolves.
+///
+/// Arm `3` (`0x801F743C`) raises both halves of the ATK pair -
+/// `+0x158` at `0x801F74BC` and `+0x15A` at `0x801F74E4` - by
+/// [`power_charge_step`], each with its own cap test, then writes
+/// `caster[+0x21C] = 0`.
+///
+/// The row `docs/subsystems/cast-module.md` grades "none" is an **attack
+/// buff**. Its ceiling is `999`, not the `0xFFFF` the item buffs clamp to.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F7158 (phase chain + the ATK buff; packet arms unported)
+pub fn power_charge_tick(ctx: &mut CastModuleCtx, caster: &mut CastActorState) -> CastTickStep {
+    run_tick_latched(ctx, |c| match c.phase {
+        3 => {
+            caster.atk = power_charge_step(caster.atk);
+            caster.atk_base = power_charge_step(caster.atk_base);
+            caster.render_flag = 0;
+            CastArmStep::Advance
+        }
+        4 => {
+            c.ctx_0d = 0;
+            CastArmStep::Finish
+        }
+        _ => CastArmStep::Advance,
+    })
+}
+
+/// The three accessory slots PROT 0955's Void Accessories rolls between -
+/// `rand() % 3` at `0x801F6EBC` (magic `0x55555556`).
+pub const ACCESSORY_SLOTS: u8 = 3;
+
+/// Offset of the first accessory id inside a per-character record
+/// (`0x800848A3` for character 1, stride `0x414`) - `save-record.md`'s
+/// `accessory_1_id`. The module forms it as
+/// `0x80084140 + (char - 1) * 0x414 + 0x75E + 5 + slot`
+/// (`0x801F6EF8..0x801F6F24`).
+pub const ACCESSORY_SLOT_0: usize = 0x19B;
+
+/// What PROT 0955's Void Accessories arm decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VoidAccessoriesOutcome {
+    /// The slot the `rand() % 3` picked, `0..=2`.
+    pub slot: u8,
+    /// The accessory id lifted out of the record - `None` when the slot was
+    /// empty or the second coin flip refused.
+    pub voided: Option<u8>,
+}
+
+/// PROT 0955 (Void Accessories) tick body - action id `0x73`, 1840 B.
+///
+/// Arms `0`, `1`, `2`, `3` and `4` (`0x801F6AB0..0x801F6B04`); victim
+/// `s1 = actor_table[caster[+0x1DD]]`, and its **character** id comes from
+/// `0x8007BD10[victim_seat]`.
+///
+/// Arm `3` (`0x801F6E60`) is the spell:
+///
+/// 1. `slot = FUN_80056798() % 3`, stashed at the module word `0x801F9D2C`;
+/// 2. read `record[+0x19B + slot]` out of the live game-state block
+///    `0x80084140 + (char - 1) * 0x414 + 0x763 + slot`; a zero byte takes the
+///    "nothing to void" branch;
+/// 3. a second `FUN_80056798() & 1` must be **even** or the arm gives up;
+/// 4. `FUN_800421D4(accessory_id, 1)` puts the accessory back in the bag,
+///    `FUN_8003CBF8` opens the announcement with the id patched into the
+///    module's own string at `0x801F9AD5`, the record byte is cleared, and
+///    `FUN_80042558` rebuilds the character's ability bitfield;
+/// 5. the victim's `+0x1F1` is staged with a `+0x1DC` bump.
+///
+/// The row `docs/subsystems/cast-module.md` grades "none" **strips a party
+/// member's equipped accessory** and is the only routine in the band that
+/// writes the persistent character record rather than the battle actor.
+/// `FUN_80042558` is the same ability aggregator the pause menu's equip
+/// commit runs, which is why the passive the accessory granted disappears
+/// with it.
+///
+/// `rolls` carries the two `FUN_80056798` draws in order, so the caller keeps
+/// retail's RNG cursor. Returns the outcome for the host to apply to its own
+/// save record.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F6A28 (phase chain + the accessory strip; packet arms unported)
+pub fn void_accessories_tick(
+    ctx: &mut CastModuleCtx,
+    victim: &mut CastActorState,
+    accessories: [u8; ACCESSORY_SLOTS as usize],
+    rolls: Option<(u32, u32)>,
+) -> (CastTickStep, Option<VoidAccessoriesOutcome>) {
+    let mut outcome = None;
+    let step = run_tick_latched(ctx, |c| match c.phase {
+        3 => {
+            if let Some((slot_roll, keep_roll)) = rolls {
+                let slot = (slot_roll % u32::from(ACCESSORY_SLOTS)) as u8;
+                let id = accessories[slot as usize];
+                let voided = (id != 0 && keep_roll & 1 == 0).then_some(id);
+                if voided.is_some() {
+                    let knockdown = victim.knockdown_anim;
+                    stage_clip(victim, knockdown);
+                }
+                outcome = Some(VoidAccessoriesOutcome { slot, voided });
+            }
+            CastArmStep::Advance
+        }
+        4 => {
+            c.ctx_0d = 0;
+            CastArmStep::Finish
+        }
+        _ => CastArmStep::Advance,
+    });
+    (step, outcome)
+}
+
+/// The damage shapes of the six trampoline-reached tick **bodies** that call
+/// a wrapper, keyed by the body's own VA rather than by its PROT entry.
+///
+/// [`CAST_DAMAGE_SHAPES`] cannot express these: four of the six live in cells
+/// whose trampoline dispatches to *two* bodies with different baked powers
+/// (PROT 0938 bakes `0x274` on one arm and `0x309` on the other, PROT 0951
+/// `0x3A0` and `0x80`), so an entry-keyed lookup would have to pick one. The
+/// entry-keyed table stays what `docs/subsystems/cast-module.md` says it is -
+/// the module's **stager** - and a tick's magnitude comes from here.
+///
+/// Every one clamps shape A: `sltu` against live HP at `0x801F77EC`,
+/// `0x801F7118`, `0x801F7438`, `0x801F7FAC`, `0x801F796C` and `0x801F77E0`
+/// respectively, so none of them is a never-kill site.
+pub const TRAMPOLINE_BODY_SHAPES: [CastDamageShape; 6] = [
+    CastDamageShape {
+        prot_entry: 938,
+        routine: CHAOS_BREATH_TICK,
+        wrapper: CastWrapper::Respect,
+        never_kills: false,
+        powers: &[CHAOS_BREATH_POWER],
+    },
+    CastDamageShape {
+        prot_entry: 938,
+        routine: MYSTIC_CIRCLE_TICK,
+        wrapper: CastWrapper::Respect,
+        never_kills: false,
+        powers: &[MYSTIC_CIRCLE_POWER],
+    },
+    CastDamageShape {
+        prot_entry: 951,
+        routine: CHAOS_FLARE_TICK,
+        wrapper: CastWrapper::Respect,
+        never_kills: false,
+        powers: &[CHAOS_FLARE_POWER],
+    },
+    CastDamageShape {
+        prot_entry: 951,
+        routine: SCYTHE_WIND_TICK,
+        wrapper: CastWrapper::Respect,
+        never_kills: false,
+        powers: &[SCYTHE_WIND_POWER],
+    },
+    CastDamageShape {
+        prot_entry: 952,
+        routine: BLOODY_HORNS_TICK,
+        wrapper: CastWrapper::Bypass,
+        never_kills: false,
+        powers: &[BLOODY_HORNS_POWER],
+    },
+    CastDamageShape {
+        prot_entry: 965,
+        routine: DOOMSDAY_TICK,
+        wrapper: CastWrapper::Respect,
+        never_kills: false,
+        powers: &[DOOMSDAY_POWER],
+    },
+];
+
+/// The damage shape of one trampoline-reached tick body, by its VA.
+///
+/// `None` for the six PROT 0955 bodies and for PROT 0952's `0xB8` arm, which
+/// call no wrapper at all.
+pub fn body_damage_shape(body: u32) -> Option<&'static CastDamageShape> {
+    TRAMPOLINE_BODY_SHAPES.iter().find(|s| s.routine == body)
 }
 
 #[cfg(test)]

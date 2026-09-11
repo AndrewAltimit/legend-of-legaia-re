@@ -29,7 +29,7 @@ modes 22/23, which is simply not *named* for it.
 - [The main loop (`FUN_80015E90`)](#the-main-loop-fun_80015e90)
 - [TOC loader (`FUN_8003E4E8`)](#toc-loader-fun_8003e4e8)
 - [Asset-type dispatcher (`FUN_8001F05C`)](#asset-type-dispatcher-fun_8001f05c)
-- [Game-mode state machine](#game-mode-state-machine) - [full handler map](#full-handler-map-recovered-from-the-disc) · [New Game boot chain](#new-game-boot-chain-title--field) · [title runs under `CARD`](#the-title-screen-runs-under-the-card-pair-modes-2223) · [CD-read API stack](#cd-read-api-stack) · [system-UI gap](#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors) · [title-overlay source](#title-overlay-source-on-disc)
+- [Game-mode state machine](#game-mode-state-machine) - [full handler map](#full-handler-map-recovered-from-the-disc) · [New Game boot chain](#new-game-boot-chain-title--field) · [title runs under `CARD`](#the-title-screen-runs-under-the-card-pair-modes-2223) · [boot mode chain](#the-boot-mode-chain-end-to-end) · [the port's seat](#the-ports-seat-at-the-mode-table) · [CD-read API stack](#cd-read-api-stack) · [system-UI gap](#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors) · [title-overlay source](#title-overlay-source-on-disc)
 - [Title-screen overlay state](#title-screen-overlay-state) - [tick](#tick-function) · [sub-mode dispatcher](#sub-mode-dispatcher) · [opening scene chain + intro skip](#the-opening-scene-chain--the-fun_801d1344-intro-skip) · [name-entry overlay](#name-entry-overlay) · [sprite-emit helpers](#sprite-emit-helpers) · [state struct](#state-struct-extended) · [pad-mask layout](#pad-mask-layout-important)
 - [Boot init.pak (PROT 0895)](#boot-initpak-prot-0895) · [the VRAM upload](#the-vram-upload) · [the per-logo quads](#the-per-logo-quads) · [the logo sequencer](#the-logo-sequencer)
 - [Debug flags](#debug-flags)
@@ -88,8 +88,11 @@ held-input / frame-state globals (`gp+0x3D8`, `gp+0x538`, `_DAT_8007B938`,
 `gp+0x55C`) before latching the new mode into `gp[0x564]` / `gp[0x494]`. A
 negative mode index exits the loop (dev quit path; retail never takes it).
 
-The port counterpart is `engine-shell`'s driver loop + `engine-core`'s
-mode-menu-world dispatch; the init sequence maps onto `BootSession`.
+The port counterpart is `engine-core::mode::ModeSeat`, which `BootSession`
+owns and drives once per frame - it holds the mode word, walks the INIT column
+and takes this transition edge (see [the port's
+seat](#the-ports-seat-at-the-mode-table)). The init sequence maps onto
+`BootSession`'s own construction.
 
 ## TOC loader (`FUN_8003E4E8`)
 
@@ -421,6 +424,86 @@ PROT 899 carries the options-menu config bundle **and** this overlay code, which
 is why the title screen, the memory-card manager and the in-field pause menu all
 share one mode pair and one overlay.
 
+#### The boot mode chain, end to end
+
+Six stores carry a cold boot from reset to the field, and every one of them is a
+`sh` of a literal into `_DAT_8007B83C`. Reading them in order is what settles
+which mode each front-end screen runs under, because none of the screens is
+named in the table:
+
+| Store | Writes | Hands the frame to |
+|---|---|---|
+| `0x8001D5B8` | `0x10` `READ INIT` | the pre-loop boot init, before the mode loop's first pass |
+| `0x801CEC94` | `0x11` `READ MODE` | the publisher logos, which animate as ordinary actors |
+| `0x801CF4D4` | `0x16` `CARD INIT` | the front end, once the logo pass reaches its phase 3 |
+| `0x80025974` | `0x17` `CARD MODE` | the title dispatcher, spawned as mode 22's actor |
+| `0x801DFC00` | `0x02` `MAIN INIT` | the field, on the title's NEW GAME row |
+| `0x80025E50` | `0x03` `MAIN MODE` | the field per-frame loop |
+
+Two of those are worth stating plainly because the shape invites a wrong guess.
+**Mode `0x10` is not the title screen** - it is one frame of logo INIT, and the
+logos run under `0x11`. **The title screen has no mode of its own**: it shares
+`CARD MODE` with the in-field pause menu, which is the reason its dispatcher
+`FUN_801DD35C` is resident in the *menu* overlay and is reached as a spawned
+actor rather than as a mode handler.
+
+The `0x801CF4D4` store is one arm of a branch, and the other arm is the dev
+route. `0x801CF490..0x801CF4E8` runs on the logo sequencer's phase `3`, calls
+the shared core-state reset `FUN_80025CB4`, then tests the front-end entry word
+`_DAT_8007BB00`: non-zero stores `CARD INIT`, zero stores `CONFIG INIT` (the
+debug menu) at `0x801CF4E4` and clears the word. `init.pak` raises that word
+itself at `0x801CEB84` before it hands off, so the retail cold boot always takes
+the front-end arm - and the same word is what the title dispatcher's `Init` arm
+reads at `0x801DD97C` to route to `0x11` rather than to the unreachable `0x02`.
+One flag, two readers, and the port holds it on the seat below.
+
+#### The port's seat at the mode table
+
+The engine's counterpart of `_DAT_8007B83C` is `engine-core::mode::ModeSeat`,
+owned by `engine-shell`'s `BootSession` and driven once per frame from
+`BootSession::tick`. It is a seat rather than a mirror because its **writes are
+the port's own transitions**: the session enters `MAIN INIT` where retail's
+title dispatcher stores `2`, and `CARD INIT` where retail's field image calls
+the request leaf `FUN_801D84B4` - and each `enter` returns that mode's INIT
+staging plan and then performs the mode's own hand-off store.
+
+Three things come out of the seat that nothing else in the port produces:
+
+- **The INIT column runs.** `ModeSeat::enter` resolves `mode_init_stage` /
+  `other_warp_init_stage` / `mode_init_bare` for the mode being entered and
+  then advances the word to that mode's pinned successor. The overlay *load*
+  each plan names is still replaced by native scene entry - the port has no
+  mode-table residency model - so the plan is data the caller stages against,
+  not a jump it takes.
+- **The mode-change edge runs.** `0x800161B8..0x80016200` is a fixed sequence,
+  and the half of it with observable behaviour is the pad swallow: the edge
+  words `gp+0x538` and `gp+0x55C` are cleared, so the button that caused a
+  transition is not delivered again as the first input of the mode it opened.
+  The port clears the same edges through `InputState::clear_edges`, on the
+  transitions a host performs synchronously mid-frame - see the ordering note
+  below. Two stores in that block are not clears at all (`gp+0x564` and
+  `gp+0x494` take copies of the new mode), and a fourth clear at `0x8007B938`
+  sits beside the three.
+
+  **Where the swallow may not go.** Retail clears the pad words and the *next*
+  loop pass polls the pad fresh, so the clear only ever discards the mode being
+  left. The port's hosts publish a pad word immediately *before* each tick, so
+  clearing at the top of a frame would discard that frame's own input instead.
+  The seat therefore swallows on `ModeSeat::enter` (a host-performed
+  transition) and not on a change it adopts from the world.
+- **Every frame carries a mode word.** The mode-trace oracle
+  (`legaia-engine mode-trace`) used to emit `game_mode` only while the pause
+  menu was open, so the field it transported against a retail capture was
+  almost always absent; it now samples the seat.
+
+What the seat deliberately does **not** own is `SceneMode`. The port's scene
+sessions own the loaded assets, and its minigames are resident rules engines
+rather than paged overlays, so a session outlives the word that staged it. The
+two are reconciled once per tick by `ModeSeat::adopt_scene_mode`, which stages
+the warp sub-id alongside the word whenever the target is `OTHER MODE` - the one
+arm where the word alone cannot round-trip, because all five warp minigames
+share `0x19`.
+
 ### CD-read API stack
 
 The SCUS-side CD I/O is layered. Bottom-up:
@@ -439,8 +522,8 @@ The SCUS-side CD I/O is layered. Bottom-up:
 | `FUN_8005EA84` | Streaming-read completion sync: `(poll_once, result)` → sectors remaining, `0` = complete, `-1` = timed out. Poll mode (`a0=1`, used by `FUN_8003E4E8` / `FUN_8003D3C4`) makes one pass; block mode (`a0=0`) loops. Overall timeout `DAT_800796E0 + 0x4B0` vsyncs; a negative `DAT_800796D8` (IRQ error) or `>0x3C` vsyncs since `DAT_800796DC` (sector stall) restarts via `FUN_8005E788(1)` and reports the full `DAT_800796C4` count. Exits through `FUN_8005BEAC(1, result)` (drive-status delivery; its decompiled C drops both register args). Port: `engine-core::cd_dma::stream_read_sync`. |
 | `FUN_8003D3C4` | Path-based ISO9660 file loader: `(path, dest)`. Wraps `FUN_8005DBB4` + SetLoc + `FUN_8005E9A4`. Used for `.STR`/`.XA` filesystem files. |
 | `FUN_8003E4E8` | Boot-time TOC loader: `(filename_str, do_read_flag)`. Hardcoded for `"PROT.DAT"` from `FUN_8003F08C(0)`. Reads 3 sectors (= 6 KB) into `0x801C70F0`. |
-| `FUN_8003E800` | Async LBA-based loader: `(dest, lba, flags)`. Queues a load via globals `gp+0x97c` (lba) / `gp+0x894` (dest), kicks via `FUN_8003F128`. Used by both overlay loaders. |
-| `FUN_8003E8A8` | PROT TOC index resolver: `(prot_index, flag)` → LBA. Reads `*(0x801C70F0 + (index+2)*4)` matching the [PROT TOC math](../formats/prot.md). |
+| `FUN_8003E800` | Async sector-count loader: `(dest, sector_count, flags)`. Queues via `gp+0x97c` (**count**) / `gp+0x894` (dest), kicks `FUN_8003F128`, which forms the LBA itself from the `CdlLOC` at `0x8008BC5C`. Used by both overlay loaders. |
+| `FUN_8003E8A8` | PROT TOC index resolver: `(prot_index, flag)` → the entry's **sector count** (`subu s0,v0,s2` over `TOC[idx+3]`/`TOC[idx+2]` at `0x8003E90C`), with the start LBA left at `gp+0x8f0`. Matches the [PROT TOC math](../formats/prot.md). |
 | `FUN_8003EBE4` / `FUN_8003EC70` | Parallel overlay loaders A/B (see Game-mode state machine section). Both call `FUN_8003E8A8(param + 0x381)`; in extraction index space that is **entry `param + 0x37F`** (the resolver indexes the raw in-RAM `PROT.DAT` head, 2 entries above the extraction indexing - see the index-spaces note above the mode table). Differ only in destination buffer pointer (`*DAT_8001038C` vs `*DAT_80010390`) and current-id tracker (`gp+0x924` vs `gp+0x934`; `gp = 0x8007B318`, so `0x8007BC3C` / `0x8007BC4C`). |
 
 `FUN_8003E360` shows a **dual-mode loader pattern** keyed on the dev/retail flag `_DAT_8007B8C2`. The gate is `bne v0,zero,0x8003E49C` at `0x8003E37C`: the **non-zero** (retail) branch takes the PROT TOC index path (`FUN_8003E8A8(0x3D5,1)` + `FUN_8003E800`), while the **zero** (dev) fall-through opens a path through `FUN_800608F0` - `break 0x103`, a dev-station host trap - then `FUN_80060920` / `FUN_80060944`. Only the retail branch runs on real hardware. The dev branch zero-fills the tail up to the next 2 KB boundary, so the padded length - not the file length - is what it records.
@@ -470,7 +553,7 @@ in `legaia_engine_core::cd_dma`. The async loaders feed a two-part queue engine:
   bumps the queued-entry count `gp+0x8BC`, and advances the running byte cursor
   `gp+0x984` by `size_sectors << 11` (= ×2048 bytes). Each append is bracketed by
   the XA-control toggles `FUN_8003EE7C` / `FUN_8003DE7C` / `FUN_8003ED04`. This is
-  the size-aware sibling of the plain LBA resolver `FUN_8003E8A8`.
+  the path-keyed sibling of the index resolver `FUN_8003E8A8` (which is itself size-aware: it returns the sector count and leaves the LBA in `gp+0x8f0`).
   Ported: `legaia_engine_core::cd_dma::StreamLoadQueue`, which holds the
   descriptor table and the cursor arithmetic and leaves the XA toggles to the
   hardware side-band. Disclosed `NOT WIRED` - every engine host resolves assets

@@ -8,7 +8,7 @@
 # curated table in known_symbols.py and, for each SCUS-resident entry that
 # lives in the current program, (1) names the function (creating one if the
 # import didn't auto-detect it) and (2) sets a one-line PLATE comment with the
-# role. It's the clean-room counterpart to a PsyQ FidDB pass: instead of an
+# role. It's the port-side counterpart to a PsyQ FidDB pass: instead of an
 # external SDK signature DB, it replays the names we reverse-engineered.
 #
 # Run (after importing SCUS_942.54 into a project):

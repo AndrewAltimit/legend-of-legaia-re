@@ -106,7 +106,7 @@ fn idle_ticks(w: &mut World, n: usize, trace: &mut Vec<u8>) {
 fn item_use_runs_the_sm_item_band_to_the_cast_states() {
     let mut w = build_world();
     // Two copies so the "one copy consumed" assertion is non-vacuous. The
-    // catalog defaults empty (disc-installed at boot); the clean-room vanilla
+    // catalog defaults empty (disc-installed at boot); the port's vanilla
     // catalog carries the Healing Leaf entry the menu filter needs.
     w.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
     w.inventory.insert(0x77, 2);
@@ -232,7 +232,7 @@ fn summon_flute_item_reroutes_to_the_summon_band_and_completes() {
 
     // Wait for the party command session, then commit a SummonFlute use as
     // the live loop's item arm now does (the flute ids are not in the
-    // clean-room item catalog's usable set, so the menu path is not the
+    // port's item catalog's usable set, so the menu path is not the
     // vehicle here - the arming contract is).
     let mut opened = false;
     for _ in 0..0x40 {

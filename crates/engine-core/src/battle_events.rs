@@ -303,7 +303,7 @@ impl BattleEvent {
 }
 
 /// Damage formula primitive. The retail engine has separate physical /
-/// magical / item paths; this is a clean-room minimum-viable formula
+/// magical / item paths; this is a port-side minimum-viable formula
 /// that engines can replace. Mirrors the JRPG-staple
 /// `dmg = base_attack * 2 - target_def`, clamped to `>=1` so attacks
 /// never deal zero (battle progress would otherwise stall).

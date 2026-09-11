@@ -46,6 +46,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import port_tag_reader  # noqa: E402  (sibling module, path set just above)
+
 REPO = Path(__file__).resolve().parent.parent.parent
 FUNCS_DIR = REPO / "ghidra" / "scripts" / "funcs"
 CRATES_DIR = REPO / "crates"
@@ -188,13 +191,11 @@ def parse_tags(text: str) -> tuple[set[str], set[str]]:
     """
     port_tags: set[str] = set()
     ref_tags: set[str] = set()
-    for line in text.splitlines():
-        m = TAG_RE.search(line)
-        if not m:
-            continue
-        kind = m.group(1).upper()
-        tail = m.group(2)
-        addrs = {a.group(1).lower() for a in ADDR_RE.finditer(tail)}
+    # `port_tag_reader` is the shared marker reader: it takes the marker line
+    # plus the continuation lines of a wrapped address list, so a tag whose
+    # list wraps does not read as an untagged citation on the wrapped line.
+    for _lineno, kind, tail in port_tag_reader.iter_markers(text):
+        addrs = port_tag_reader.addresses(tail)
         if not addrs:
             continue
         if kind == "PORT":

@@ -452,8 +452,10 @@ sub-ops `0x10`/`0x11`/`0x13`/`0x14`/`0x15`**
 `0x801DF918` (sub-`0x10` sprite, inline record), `0x801DF974` (sub-`0x11`
 mask, operands `[L][T][R][B][dur]` i16s), `0x801DFA70` (sub-`0x13` panel),
 `0x801DFABC` (sub-`0x14` panel move/scale), `0x801DFACC` (sub-`0x15`
-letterbox); on disc only the eight ending-sequence scenes' cutscene-timeline
-(partition-2) scripts invoke them. The earlier reading that the summon stagers 0910..0915 reference
+letterbox); on disc only the ten ending-sequence scenes' cutscene-timeline
+(partition-2) scripts invoke them
+([script-vm.md](script-vm.md#0x43-actor_ctrl---sub-dispatcher) has the scene list and
+the census behind it - the earlier figure of eight omitted two). The earlier reading that the summon stagers 0910..0915 reference
 these handlers was **VA aliasing**: those hits are in-file `FUN_80021B04` part
 records whose addresses coincide with the handler VAs under the shared slot-B
 base. PROT 0900 file `0x0640..0x2660` (the whole family) is byte-resident at

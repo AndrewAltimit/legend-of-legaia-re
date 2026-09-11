@@ -326,56 +326,6 @@ instructions), which the tag already discloses.
 # ---------------------------------------------------------------------------
 
 [[waiver]]
-key = "module-orphan:crates/asset/src/minigame_slot_scene.rs:801d0fa8"
-reason = """
-overlay_slot_machine_801d0fa8.txt, 263 instructions, base-tagged
-[overlay_slot_machine.bin]. It reads the sine table through the pointer
-_DAT_8007B81C and the cosine table through _DAT_8007B7F8, negates the sine and
-multiplies by 585 = 0x249 (`sll 3; addu` then `sll 6; addu`) before
-`+0xFFF >> 0xC`, and shifts the cosine `+7 >> 3` - which is `reel_y` / `reel_z`
-including the round-toward-zero biases. The shade ladder is `(v + 0x200) * 540
-+ 0x1FF >> 9` subtracted from 0xB4 and clamped, and the packet goes out through
-0x8005BAC8. Orphan because the module's other tagged routines are the reel state
-machine and payout eval, which share slot globals this renderer never touches.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/battle_intro.rs:801d1a20"
-reason = """
-Re-keyed from crates/engine-render/src/battle_intro.rs: the swirl emitter moved
-to the wgpu-free engine-ui leaf, so the old key named a path that no longer
-carries the tag and the waiver had gone silent. Re-read rather than carried:
-overlay_field_battle_intro_801d1a20.txt is base-tagged
-[overlay_field_battle_intro base=0x801C0000], 173 instructions. It builds into
-`_DAT_8007B85C + 0x5DC00`, loops 0x20 times emitting 0x30-byte primitives with
-colours 0x2C808080 and 0x2C404040, texture page 0x117 for half 0 and 0x115 for
-half 1, and submits through 0x80043390 with flag 0x18808080 while
-DAT_801D2470 < 0x5A, otherwise through 0x80029888 with `(clock - 0x3C) * 4`.
-`emit_swirl_band` carries all of that. The same VA is also PORT-tagged in
-engine-vm::battle_intro_swirl (`swirl_band_draw`), which is a deliberate split -
-that half resolves the addressing and path choice, this half emits the packet -
-and both disclose it. The distinctive data the checker now lists for the row
-(0x801D2470 / 0x801D2474 / 0x801D2478) is real: the disassembly loads all three
-(`lw a3,0x2470(v0)` / `lw v0,0x2474(v0)` / `lw a1,0x2478(v0)`), and they are the
-swirl's own scratch globals, which is exactly why the module's three sibling
-intro styles (801cfda0 / 801d0370 / 801d1cfc) do not corroborate it. Orphan by
-construction, not by mis-attribution.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-ui/src/ui_menu/field_panels.rs:801d0148"
-reason = """
-overlay_menu_801d0148.txt, 113 instructions: pictogram 0x62 at (WX, WY+2) then
-party gold 0x8008459C 8 digits at WX+0x28; if FUN_8003CE64(8) is true, pictogram
-0x66 and the coin bank 0x800845A4 one row (0xE) lower; then one more row and
-pictogram 0x63 with the play clock 0x80084570 - so the time tag lands at WY+0x10
-exactly when the coin row is absent, which is what the tag says.
-`field_menu_icon_sprites_for` places the sprite pass for it. Orphan because
-every callee it makes (0x8002C488, 0x80034B78, 0x8003C1F8, 0x80034E4C) is a
-corpus-wide drawing primitive.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-vm/src/battle_cast_dispatch.rs:801dba90"
 reason = """
 overlay_battle_action_801dba90.txt, 39 instructions, and the body is the module
@@ -399,51 +349,8 @@ key = "module-orphan:crates/engine-core/src/slot_machine.rs:801e6f70"
 reason = "Disassembly: eight digit cells at 0x801F35F0 accumulated x10 per cell, cost = coins*100, gold gate 0x8008459C, stock gate 0x8007BB90, both recolouring to ink 9. The coin-exchange counter."
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/pause_screens.rs:801d7e50"
-reason = "Handler table slot [0x06]; body reads item-effect record 0x800752C0 + idx*4 and routes class 0x80/0x81/0x82 to screens 0xB/0xC/0xD, else flag byte +2 & 0x20 to 9, else 0xA. The Use-list phase-2 dispatch, as tagged."
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/field_menu.rs:801d6d38"
 reason = "Same routine as the save_subscreen row and the same disassembly; it runs under two entry contexts, which is why two modules model it. Window 0x801E4BD4, FUN_801d688c(&0x801E46D0, 2, 1), next-screen word 0x801E46A4 written 0 unconditionally then overwritten with 1 on the default row."
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/world/battle/loop_driver.rs:801ec3e4"
-reason = """
-The tag is a SUB-RANGE claim and it names its own range: `PORT: FUN_801EC3E4
-(0x801EEBD8..0x801EEBEC, the cue-submit site)`. overlay_battle_action_801ec3e4.txt
-is 2502 instructions and the cited window is four of them - `801eebe8 jal
-0x8004fe5c` is the ONLY jal to the sound funnel in the whole body, which is what
-makes "the cue-submit site" a well-defined address rather than a gesture, and
-`fire_melee_impact_cue` implements exactly that: cue id 0x10C, attacker slot as
-the category, through `crate::sfx_cue::route_sfx_cue` (itself PORT-tagged
-FUN_8004FE5C). The `+0x1D9 < 0x10` clip gate the tag models is the branch at
-0x801EEB88 in the same window. Orphan because the checker measures a routine
-against its module's siblings by shared data, and a 10 KB melee kernel shares no
-global with the module's other two tags (801e6968 round bookkeeping, 801f45a4
-victory) while sharing its one callee with a DIFFERENT module - sfx_cue.rs -
-which is where the corroboration actually is. The one distinctive address the
-row lists that turns up elsewhere, 0x801F5480 under muscle_dome.rs's
-FUN_801DD864, is a battle-context cell both overlays read; it is not evidence
-about either label.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/scus_leaf_kernels.rs:800265e8"
-reason = """
-800265e8.txt is base-tagged [SCUS_942.54] and prints all 33 instructions, and
-the port matches store for store. `lui v1,0x8007 / addiu v1,v1,0x51c` then
-`li v0,1` and `sh v0` at +0x4 / +0x64 / +0x94 = 0x80070520 / 0x80070580 /
-0x800705B0, which is BOOT_ENABLE_FLAG_ADDRS verbatim. Then `lui v0,0x8009 /
-li v1,0x1010 / sw v1,0x17b0(v0)` seeds 0x800917B0 and `addiu v0,v0,0x17b0`
-re-bases so the eleven remaining `sw`s land at +0x04/0x08/0x0C/0x10/0x14/0x18/
-0x1C/0x20/0x28/0x2C - every slot of the twelve-word table except +0x24, which is
-BOOT_OFFSET_TABLE_UNWRITTEN = 9. The six literals the `lui`/`ori` pairs build
-(0x00010010, 0x00033010, 0x00060010, 0x00065010, 0x0006C810, 0x0006F010) are the
-table's own values. Orphan because this is a boot-time SPU-base seeder parked in
-a module whose other two tags are a sound-cue delay set and a timed sound arm -
-the module is explicitly a home for leaf kernels with no home, so "shares
-nothing with its siblings" is the module's premise rather than a finding.
-"""
 
 [[waiver]]
 key = "doc-citation:docs/reference/functions/audio.md:8001d230:801ce628"
@@ -453,15 +360,6 @@ reason = """
 the pad path is the report block 0x800840F8. 0x801CE628 is libpad's two-port
 context block, written up in docs/subsystems/audio.md as the not-SsAPI cluster
 and cleared by PadInitDirect (FUN_8006E2B4), which this routine calls.
-"""
-
-[[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801d0f60:801ce818+801c0000"
-reason = """
-Both are load bases the row names as provenance, not operands. 0x801CE818 is
-PROT 0977's slot-A base (the row reads "at slot-A base 0x801CE818, file
-+0x2748") and 0x801C0000 is the mis-based import the superseded FUN_801C2748
-citation came from. A base cannot appear in the body it bases.
 """
 
 [[waiver]]
@@ -545,28 +443,6 @@ says that and keeps the address so the falsified reading stays searchable.
 
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/world/actors.rs:801d01b0"
-reason = """
-Correct tag, new neighbours. `field_base_step` is the base-step selector at
-`0x801D0334..0x801D03E0` inside the field locomotion controller
-`FUN_801d01b0` (its second tag; the walker itself is in `field_movement.rs`).
-The row went orphan only when the battle-side siblings `8004ad80` / `801ec3e4`
-were tagged in the same module: a field routine shares no data with the battle
-anim commit or the melee kernel, and the heuristic reads that as doubt.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/world/vm_hosts.rs:801dbf9c"
-reason = """
-Correct tag. `spell_anim_trigger` is the party cast trigger `FUN_801DBF9C`: the
-`sltiu v0,a1,0x25` split at `0x801DBFA0` and the `+0x1E0 = 9 / +0x1E1 = 0x12 /
-+0x1E2 = 0xFF` stores at `0x801DC080..0x801DC09C` are its own, and its two
-distinctive addresses `0x801F4E64` / `0x801F4EDC` are exactly the `< 0x25`
-anim-pair table the doc comment names as the un-parsed arm. The host trait's
-other hooks are dispatcher-side routines that share nothing with it by design.
-"""
-
-[[waiver]]
 key = "doc-citation:docs/reference/functions/battle.md:801e91e8:801c9348"
 reason = """
 DAT_801C9348 is the caller's monster-record table, not this routine's. The
@@ -578,23 +454,6 @@ FUN_801E91E8's own 61 instructions form only 0x8007BD24, 0x8007BAC0,
 0x8007BD10 and the character-record base 0x80084140 - a caller's table and a
 caller's instruction address cannot appear in them. The row names both dumps
 so the citation is locatable.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/world/frame_tick.rs:800267a8"
-reason = """
-Correct tag; the module is a host dispatcher, which is the shape the signal's
-own DF_LADDER comment says it cannot read. `arm_sound_release` implements the
-21-instruction SCUS leaf FUN_800267A8 exactly: the five gp cells it writes are
-`sw v0,0x808(gp)` (armed=1), `sw a0,0x810(gp)` (tag), `sw a2,0x814(gp)`
-(deadline), `sw zero,0x81c(gp)` (elapsed) and `sw a1,0x80c(gp)` (the latched
-level read at `800267b0  lw a1,-0x46f0(a1)` = _DAT_8007B910), followed by the
-tail call `800267e4  jal 0x80062004` with `a0 = *(i16*)0x80070536` and
-`a1 = (level << 15) >> 16`. Those are the routine's only distinctive data
-(0x80070536, 0x8007B910) and its only callee (0x80062004), and no other module
-claims either - the corroboration half of the shop shape is absent. The
-module's other ten tags are minigame and walk state machines it ticks per
-frame, so sharing nothing with them is by construction.
 """
 
 [[waiver]]
@@ -656,18 +515,6 @@ row corrected: the sub-state switch on `+0x5A` is two switches, not one.
 
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f7740"
-reason = """
-PROT 0906 (summon_gizam)'s move-VM spawn stager, 0x801F6734 row: `sltiu a1,7`
-arm bound, three FUN_80021B04 spawn calls, writes actor +0x0C and the phase
-byte ctx+0x279 (cast-module.md verdict table, PORT). Slot-B modules are
-separate images loaded at one base with NO internal jal, so a stager shares no
-callee with any sibling by construction, and its distinctive data words are its
-own module-resident spawn records - the corroboration test cannot apply inside
-this band.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f8b90"
 reason = """
 PROT 0923 (summon_gilium)'s move-VM spawn stager, 0x801F6734 row: three spawn
@@ -687,4 +534,798 @@ teleport arm (0x801D21C0..0x801D2268): it reads 0x8007BDC8..0x8007BDD4 and
 0x8007B5FC and calls the spawn evaluator FUN_8003BDE0 plus 0x801D5630 /
 0x801D58F0 / 0x801DDF48. The checker corroborates by module, not by image;
 the image-keyed form is the open checker gap.
+"""
+
+# --- doc-citation rows read against the disassembly ---------------------------
+#
+# Each of these cites an address that is real and checkable, and that the
+# subject's own body cannot carry: a global its CALLEE forms, a struct field
+# reached by `addu` off a base the body does form, a store site in another
+# image, or a contrastive "not this pool" reference. None is a caller `jal`
+# site (`site_relation` settles those from the bytes) and none is a hex-digit
+# slip - the one of those in the class was fixed rather than waived
+# (`8005DEA0`'s directory cache is `0x801CB408`, not `0x801C4BEC`).
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/asset-loading.md:80017910:801ce362"
+reason = """
+0x801CE362 belongs to the CALLEE. FUN_80017910 is 26 instructions with two lui
+immediates, 0x0001 and 0x0007 (the `lui s1,0x7` / `sra a0,s1,0x10` counter that
+feeds voice ids 7,8,9,...); every datum it touches is gp-relative
+(gp+0x5D0, gp+0x40C). The voice-stop it calls, FUN_800653C8, forms 0x801CE362
+itself - `lui at,0x801d` / `sh a1,-0x1c9e(at)` at 0x80065418 - which is what the
+row says. A dump of the caller structurally cannot carry it.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/asset-loading.md:80020038:801e350c"
+reason = """
+FUN_80020038 is six instructions and forms no address at all (no lui). The row
+cites 0x801E350C as a DIFFERENT routine - the field-VM slice that later
+rewrites the dither cell from a script operand - and says so in that sentence.
+The citation is corroboration for "the value does not survive the first frame",
+not a claim about these six stores.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/audio.md:8003e104:801c8988"
+reason = """
+A field reached by `addu`, off a base the body does form. 0x8003E118 is
+`addiu s2,v0,-0x7680` = 0x801C8980, and the index math at 0x8003E198..0x8003E1B8
+is `v1 = s2 + (i+3)*4` / `v0 = s2 + (i+2)*4`, i.e. entry i of the offsets array
+at 0x801C8988 + i*4 - exactly the layout the row states. The register tracker
+deliberately ends provenance at an `addu` (see the synthesised-address section
+of port-provenance.md), so a correct `base + 8` claim is invisible to it.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/audio.md:80065034:801ce33c"
+reason = """
+The two banks the body reads ARE formed: `lw v1,-0x1ccc(v1)` = 0x801CE334
+(ProgAtr) and `-0x1cc0` = 0x801CE340 (VagAtr), both under `lui 0x801d`. The
+offset -0x1cc4 that would form 0x801CE33C appears nowhere in its 229
+instructions, because that cell is the VAB header base the libsnd bank setter
+writes and this routine only consumes the two derived pointers. The row cites
+it as the provenance of those two, not as a datum this body forms.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:80042558:801c9370"
+reason = """
+Contrastive citation: the row's point is that the aggregated fields are in the
+character record and NOT in the DAT_801C9370 battle-actor pool. The 537
+instructions carry lui immediates 0x8001, 0x8007, 0x8008 and 0xcccc only - no
+0x801c at all - which is the evidence for the sentence. A citation the body is
+asserted NOT to touch cannot be supported by the body.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/game-modes.md:80017978:800257ac"
+reason = """
+A store site in another routine, decoded from SCUS_942.54: the words at
+0x800257A0..0x800257AC are `jal 0x80020DE0` / `addiu a0,a0,0x6d4` /
+`lui at,0x8008` / `sw v0,-0x4720(at)`, i.e. the allocation whose result lands in
+0x8007B8E0 - precisely what the row says. FUN_80017978 is 18 instructions with
+one lui (0x1f80, the scratchpad) and reads the actor through the pointer, so it
+forms no code address in the 0x8002**** range.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/game-modes.md:80025b64:801dfc00"
+reason = """
+A store site in a co-resident slot-A image, decoded from
+extracted/overlays/overlay_menu_0899.bin at base 0x801CE818: 0x801DFBF8..0x801DFC00
+is `lui v1,0x8008` / `addiu v0,zero,0x2` / `sh v0,-0x47c4(v1)`, which writes 2
+into 0x8007B83C - the row's claim exactly. FUN_80025B64 is 15 instructions with
+no lui. The row now names the image, because the same VA in the field overlay
+(0897) holds unrelated shift/add words.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/renderer.md:80024e80:801c9070"
+reason = """
+An argument, not a datum. FUN_80024E80 receives the fade template in a0 and its
+25 instructions carry lui immediates 0x8007 and 0x8008 only, so it cannot form a
+0x801C**** address; 0x801C9070 is the battle-action overlay's own template that
+its caller passes in, which is how the row writes it
+(`func_0x80024E80(&DAT_801C9070, ...)`).
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/runtime-libs.md:80017888:801f35c0"
+reason = """
+The CALLER's store target. FUN_80017888 is 26 instructions (lui 0x0002, 0x8001)
+and returns the pointer; the tile-board caller stores it. The caller site in the
+same sentence checks out on the bytes - the word at 0x801EF3E8 in
+overlay_field_0897 is `jal 0x80017888` - and 0x801F35C0 is where that caller
+puts the result, which no dump of the allocator can show.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/runtime-libs.md:8003d038:8003882c"
+reason = """
+The CONSUMER's read site, decoded from SCUS_942.54: the words at
+0x8003882C..0x80038830 are `lui a1,0x8007` / `lw v1,0x3f1c(a1)`, the motion-VM
+opcode reading the post at 0x80073F1C that this 11-instruction routine writes.
+Citing the consumer is what pins the post's meaning; it is by construction
+outside the writer's body.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/runtime-libs.md:8005dea0:801c4bec"
+reason = """
+Corrected rather than dismissed, and the row still names the wrong address on
+purpose so the correction is greppable. FUN_8005DEA0's cache is 0x801CB408:
+0x8005DFF4 is `lui s4,0x801d` / `addiu s4,s4,-0x4bf0` and the per-entry stores
+at 0x8005E048..0x8005E05C are `sw s3,-0x4bf8(at)` / `sw v0,-0x4bf4(at)` under
+`addu at,at,s0`, with s0 = i*0x2C from the `((i*3)*4 - i)*4` chain at
+0x8005E00C..0x8005E01C; the 128-entry cap is `slti a3,0x80` at 0x8005E0E0 and
+0x8005E100. No address in 0x801C4*** is formed anywhere in the 184
+instructions - 0x801C4BEC was the `-0x4bec`-shaped offset half of that pair
+pasted into the low half of an address. The finding fires on the corrected row
+because the row quotes the superseded value.
+"""
+
+# --- dual-label rows read against the disassembly and against each other ------
+#
+# Every row below was checked by reading both carriers and, where they made
+# competing byte-level claims, the routine's own disassembly. Four of the class
+# were real and were FIXED rather than waived (FUN_8003E8A8 and FUN_8003E800's
+# argument meanings, FUN_80043264's slot range, FUN_8005E4D4's argument order);
+# the corrected ones keep a waiver because three pages still define them, which
+# is duplication and not conflict. What is left is the shape port-provenance.md
+# predicts: a coarse directory row plus a fine write-up, two topic pages of the
+# SAME directory, or a section about one arm of a dispatcher.
+
+[[waiver]]
+key = "dual-label:80019d50"
+reason = """
+Both carriers say HSV recolour and both say it is NOT a spawner. renderer.md's
+row states the one `LoadImage` at 0x8001A030 that ends the routine and calls
+that the tell; move-vm.md's heading is worded as the correction ("not a particle
+spawner") of the same falsified reading. Agreement, read as conflict because the
+filenames share no token.
+"""
+
+[[waiver]]
+key = "dual-label:8001ada4"
+reason = """
+Three carriers, one routine: the per-actor render dispatcher switching on
+actor[+0x56]. renderer.md's row and world-map.md's heading name it that
+outright; world-map-overlay.md's section is scoped to ONE of its arms (the mesh
+walk at 0x8001B40C reaching FUN_80043390) and opens by calling it "the per-actor
+renderer that walks a linked list of actor records". A section about one arm is
+not a rival label for the whole routine.
+"""
+
+[[waiver]]
+key = "dual-label:8001f05c"
+reason = """
+Asset-type dispatcher on both. asset-loading.md's row is the directory entry
+naming the (type_size, copy_only) switch and its case 6; boot.md's section is
+the same switch in the boot chain. Both point at formats/asset-type.md for the
+table, so neither invents a second identity.
+"""
+
+[[waiver]]
+key = "dual-label:8001fa88"
+reason = """
+Sound-bank loader on all three. audio.md's row and asset-loader.md's section
+both say "loads bse.dat then the per-scene .dpk"; sound-driver.md's heading is
+about the bank HEADER LAYOUT that this loader reads, which is a format claim
+about its input, not a second label for the routine.
+"""
+
+[[waiver]]
+key = "dual-label:8001fc00"
+reason = """
+Streaming-asset loader on both, in the same words - audio.md's row lists the
+`sound` directory prefix and the XA / .pac / STR consumers, asset-loader.md's section is
+the write-up of that path. The rivalry is entirely in the two filenames.
+"""
+
+[[waiver]]
+key = "dual-label:8001fd44"
+reason = """
+Name-based scene-change packet on all three. renderer.md's row says so
+explicitly and defers ("full entry in asset loading + disc I/O"), which is the
+pointer shape; it fires only against asset-loader.md, whose section heading is
+the same claim with the transition streamer FUN_80021934 named alongside.
+"""
+
+[[waiver]]
+key = "dual-label:8001fe70"
+reason = """
+Per-PROT streaming-tail walker on all three, agreeing on the chunk loop and on
+the distinction from FUN_8002541C. scene-bundles.md's section is the FORMAT the
+walker consumes (the streaming tail) and asset-loading.md's row links to it.
+"""
+
+[[waiver]]
+key = "dual-label:80021b04"
+reason = """
+Two directory rows for one routine and they corroborate rather than compete:
+game-modes.md gives the OBJECT pointer table at actor[+0x44]+4 and the single
+FUN_80023070 init call, renderer.md gives the same table with the stride 0x1C
+and adds the DAT_8007C018 lookup and the FUN_8003D344 transform. A directory
+duplicate, not a second identity.
+"""
+
+[[waiver]]
+key = "dual-label:8002519c"
+reason = """
+All three describe the same 328-byte SCUS actor-list iterator called five times
+per frame from FUN_80016444 over _DAT_8007C34C..0x36C, dispatching each node
+through +0x0C. The only divergence is whether to call the five lists "render
+passes" (world-map.md's heading, game-modes.md's row) or "tick" lists
+(renderer.md's row); renderer.md's "distinct from FUN_8001D140 (render pass)"
+is about a different routine and does not contradict them.
+"""
+
+[[waiver]]
+key = "dual-label:80026b4c"
+reason = """
+Two directory rows, same routine: validate TMD magic 0x80000002 and store into
+the 0x8007C018 table. renderer.md adds the FUN_800268DC group-descriptor call
+and the FUN_8001F05C cases that reach it. Duplicate directory coverage.
+"""
+
+[[waiver]]
+key = "dual-label:8002bdc4"
+reason = """
+Same emitter from two sides: battle.md's row gives the call signature and the
+CLUT/tpage word, subsystems/renderer.md's section reads it as the 2D
+gradient-tile primitive. A textured-image blit and a gradient tile are the same
+POLY primitive path, and neither text claims an exclusive subsystem for it.
+"""
+
+[[waiver]]
+key = "dual-label:8002c69c"
+reason = """
+Widget/sprite-batch emitter on all three. battle.md's row scopes it to the bar
+widgets (kind 0x31 AP gauge) and records the interior addresses; renderer.md
+gives the corpus-wide addprim census; level-up.md's section is a REACH finding
+("it does run in battle") about the caller sweep, not a second identity.
+"""
+
+[[waiver]]
+key = "dual-label:80030628"
+reason = """
+Menu/HUD content builder on all carriers, and the rivals are its per-content-id
+arms: field-menu.md documents content id 3 (the use list), shop.md documents
+case 0x0B (the buy list). renderer.md's row is the directory entry with the
+detail section it links to. Arms of one dispatcher, not competing labels.
+"""
+
+[[waiver]]
+key = "dual-label:80034250"
+reason = """
+Description resolver on both. battle.md's row states the static resolution chain
+(item id -> descriptor +3 -> 0x8007625C +8) and menus.md's row is the same
+resolver keyed by screen id gp+0x884, listing 0x9000 as exactly that chain. The
+directory has one coarse row and one detailed one.
+"""
+
+[[waiver]]
+key = "dual-label:80036044"
+reason = """
+Text-width measurement on all three, with the same byte classification and the
+same 0xC0..0xC7 substitution escapes. mes.md carries the format side, and
+renderer.md and runtime-libs.md are two directory rows for one routine -
+duplicate coverage inside one directory, not two identities.
+"""
+
+[[waiver]]
+key = "dual-label:80036514"
+reason = """
+Substitution expander on both. mes.md's section and renderer.md's row give the
+same normalisations (0x5E XX -> 0xCE (XX-0x2D), 0xFF -> 0xCF) and the same
+inlining of 0xC1..0xC5 / 0xC7. The pages differ only in filename tokens.
+"""
+
+[[waiver]]
+key = "dual-label:80036888"
+reason = """
+Text renderer on both, both saying it shares FUN_80036044's dispatch and calls
+FUN_80036514 first. mes.md is the format-side write-up of the same routine.
+"""
+
+[[waiver]]
+key = "dual-label:80039b7c"
+reason = """
+Per-context field-script runner on both. runtime-libs.md's row and motion-vm.md's
+section describe the same loop over FUN_801DE840 gated on ctx[+0x10] & 0x100;
+motion-vm.md scopes its heading to the cutscene event-script arm, which is one
+caller family of that runner, not a rival identity.
+"""
+
+[[waiver]]
+key = "dual-label:8003bc08"
+reason = """
+Per-actor tick for the _DAT_8007C354 list on both, with the same flag dispatch
+(0x100 -> FUN_80039B7C, 0x400 -> FUN_8003774C, +0x80 -> FUN_80038158).
+motion-vm.md calls it "the driver" because it is that VM's caller; game-modes.md
+carries the full arm list plus the ground-follow detail section.
+"""
+
+[[waiver]]
+key = "dual-label:8003ca38"
+reason = """
+Glyph stride walker on both, same 16 instructions, same terminator test (< 0x1F)
+and same extra byte for (byte & 0xF0) == 0xC0. mes.md holds the format side.
+"""
+
+[[waiver]]
+key = "dual-label:8003e4e8"
+reason = """
+Boot-time TOC loader on both: three sectors of PROT.DAT into 0x801C70F0, called
+from FUN_8003F08C(0). asset-loading.md's row and boot.md's section are the same
+claim at two altitudes.
+"""
+
+[[waiver]]
+key = "dual-label:8003e800"
+reason = """
+Corrected rather than dismissed. The bytes settle the argument the two carriers
+disagreed about: 0x8003E864 is `sw s1,0x97c(gp)` with s1 = a1, and FUN_8003F128
+adds gp+0x97c to the LBA it derives itself from the CdlLOC at 0x8008BC5C
+(0x8003F178..0x8003F184), so a1 is a SECTOR COUNT. FUN_8003EB98 passes
+FUN_8003E8A8's return value straight into it. asset-loading.md's "(dest, lba,
+flags)" is fixed; renderer.md's "LBA count" was already right.
+"""
+
+[[waiver]]
+key = "dual-label:8003e8a8"
+reason = """
+Corrected rather than dismissed. 0x8003E90C is `subu s0,v0,s2` over TOC[idx+3]
+and TOC[idx+2] and the epilogue returns s0, so the routine yields the entry's
+SECTOR COUNT; the start LBA is the side effect `sw s2,0x8f0(gp)`.
+renderer.md's row and formats/prot.md already said so; asset-loading.md's
+"-> LBA" and boot.md's copy of it are fixed. The signal still fires because
+three pages define the routine, which is duplication rather than conflict.
+"""
+
+[[waiver]]
+key = "dual-label:80042558"
+reason = """
+Per-frame stat aggregator on all four, and the rival is a data section:
+accessory-passive-table.md's heading is "stat-boost MAGNITUDES pinned from
+FUN_80042558" - the table the routine applies, not a label for the routine.
+battle.md's row links to battle-action.md's section, and battle.md's own
+aggregator section is the same field map.
+"""
+
+[[waiver]]
+key = "dual-label:8004313c"
+reason = """
+Inventory active-window setup on both, both keying on the page flag at
+0x80084594 and both naming gp[+0x2D2..+0x2D6]. menus.md carries the detail
+section the directory row links to; battle.md's row is the coarse entry.
+"""
+
+[[waiver]]
+key = "dual-label:800431fc"
+reason = """
+Same predicate in both rows: scan char +0x13D with the count at +0x13C for a
+spell id. battle.md and menus.md are two topic pages of one directory.
+"""
+
+[[waiver]]
+key = "dual-label:80043390"
+reason = """
+Per-prim dispatch on both. subsystems/renderer.md documents the dispatch table
+itself; world-map-overlay.md's section is titled "where FUN_80043390 fits" and
+places that same table in the world-map emit path. A siting section is not a
+second definition.
+"""
+
+[[waiver]]
+key = "dual-label:80049348"
+reason = """
+Arts after-image renderer on both, agreeing on the 31-deep history rings and on
+FUN_80048A08 as the ghost draw. battle-action.md's section is the same walk
+under the battle write-up.
+"""
+
+[[waiver]]
+key = "dual-label:800520f0"
+reason = """
+Battle scene loader on all three; battle.md's coarse row links to its own detail
+section, and asset-loader.md's and battle.md's sections describe the same bundle
+sequence from the loader side and the battle side.
+"""
+
+[[waiver]]
+key = "dual-label:8005a1c0"
+reason = """
+GPU command-queue enqueue on both. renderer.md's row gives the ring layout
+(0x801C9590 + tail*0x60, head/tail at 0x80078E5C/0x80078E58);
+runtime-libs.md's section is the libgpu register layer that ends at this address
+and describes the same enqueue. One is the entry, the other the band it closes.
+"""
+
+[[waiver]]
+key = "dual-label:8005c42c"
+reason = """
+Two directory rows carrying the identical formula ((m*60 + s)*75 + f) - 150 for
+the BCD-MSF -> LBA converter. Duplicate coverage across two topic pages of one
+directory; nothing disagrees.
+"""
+
+[[waiver]]
+key = "dual-label:8005d9a0"
+reason = """
+Both rows are the raw CD command/MMIO writer. asset-loading.md names the DMA
+trigger (*DAT_800796B4 = 0x11000000) and records the FUN_8005DA40 label-call
+artifact; runtime-libs.md enumerates the MMIO globals and the two wait bits.
+Complementary halves of one routine, in one directory.
+"""
+
+[[waiver]]
+key = "dual-label:8005e4d4"
+reason = """
+Corrected rather than dismissed. Only a1 reaches FUN_8005C328 (LBA -> CdlLOC),
+so a1 is an LBA; a0 and a2 pass through to FUN_8005E9A4(a0, a2, 0x80), which
+parks a0 at 0x800796C4 and a2 at 0x800796C8. The caller FUN_8005E228 supplies
+`li a0,0x1` and a2 = 0x801CCA08, the sector buffer FUN_8005DEA0 then walks -
+so the order is (sector_count, lba, dest_buffer). runtime-libs.md's
+"(buf, dir_entry, size)" is fixed; asset-loading.md was already right.
+"""
+
+[[waiver]]
+key = "dual-label:8005e574"
+reason = """
+Streaming-read per-IRQ callback on both. asset-loading.md names the working
+globals (DAT_800796CC / 800796D8 / 800796E4) and its registrar FUN_8005E788;
+runtime-libs.md calls the same routine the sector-reader state machine and adds
+the completion callback at _DAT_800796C0. Two rows of one directory.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/runtime-libs.md:8005e4d4:801cca08"
+reason = """
+The CALLER's buffer, named as the evidence for the corrected argument order.
+FUN_8005E4D4's 26 instructions form no address at all - it moves a0/a1/a2 into
+s1/a0/s0 and forwards them. 0x801CCA08 is formed in FUN_8005E228 at
+0x8005E280..0x8005E284 (`lui s0,0x801d` / `addiu s0,s0,-0x35f8`) and passed as
+a2, and it is the same sector buffer FUN_8005DEA0 walks from its own
+`addiu s0,s0,-0x35f8` at 0x8005DEB4 - which is what makes a2 the destination
+rather than a size.
+"""
+
+# --- module-orphan rows, one triage pass -------------------------------------
+#
+# None of these is the shop defect's shape (a routine whose tables belong to a
+# different subsystem than its module's name). They fall into five causes, each
+# named per row: a sibling that was INLINED (no call edge to find), a module
+# whose members couple through gp-relative cells or through a pointer argument
+# rather than through a shared global, a module that spans the SCUS / overlay
+# boundary the signal declines to cross, a host-dispatcher module reporting the
+# state machines it dispatches, and a stub too small to carry any feature.
+# Where a row's identity was worth re-deriving it was read off the disassembly
+# and the reason says what the words were.
+
+[[waiver]]
+key = "module-orphan:crates/asset/src/lib.rs:8001fe70"
+reason = """
+Read the disassembly: FUN_8001FE70's one distinctive datum is 0x8007B864, the
+TMD staging pointer, and its module siblings (8001a8b0, 8001f05c, 80020224,
+8002541c) are the LZS/dispatcher/pack parsers, which touch descriptor tables
+instead. The finding's own lift line names the corroborator - 0x8007B864 is also
+formed by FUN_800513F0, tagged in engine-core's battle_seats.rs / world/actors.rs
+- and that is the battle scene loader this walker is called from, i.e. the
+sibling is in another crate because the port partitions by parser-vs-runtime.
+Identity is not in doubt: three doc carriers and the row rewritten this pass all
+read it as the type-0x02-terminated chunk walker.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-audio/src/vab_bind.rs:80068d94"
+reason = """
+FUN_80068D94 is a libsnd VAB-open worker: a 0x438-byte stack frame, four
+arguments moved into s3/s0/s4/s5 and an immediate call to the libsnd helper
+0x8006BC9C. Its module siblings (80066d8c, 80066e50, 80067550) are the other
+libsnd entries, and what they share with it is the bank-pointer pair
+0x801CE334 / 0x801CE340 - which THIS routine writes through a walked pointer
+rather than forming, so the shared-address test cannot see the link. The tag's
+claim (it writes the running used-program count into each ProgAtr's +8, read
+back by FUN_80068B98) is a claim about that walk, not about a global.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/actor_handler.rs:8003aeb0"
+reason = """
+The sibling relation here is INLINING, which by construction produces no call
+edge and no shared distinctive datum. The tag says so itself: both retired-handler
+loops at 0x8003B3C8..0x8003B3F0 and 0x8003B414..0x8003B43C are FUN_8003CF40
+inlined - they walk _DAT_8007C34C through +0x00 and OR 8 into +0x10 in place.
+The checker corroborates on `calls a sibling` and on shared rare data; an inlined
+sibling is neither, and the module's other tags (8003cf04, 8003cf40) are exactly
+the routines that were inlined.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/cd_dma.rs:8005ea84"
+reason = """
+A layer boundary, visible in the bytes. FUN_8005EA84 forms 0x800796E0
+(`lui s1,0x8008` / `addiu s1,s1,-0x6920` at 0x8005EA9C) - the libcd streaming-read
+working block - and calls the timer 0x8005FB84. Its module siblings (8003dda0,
+8003de7c, 8003e800, 8003e8a8, 8003eb98, 8003f128) keep all of their state in
+`imm(gp)` cells (gp+0x97c, gp+0x894, gp+0x8f0, gp+0x90c), a form the absolute
+data tracker cannot see at all. So the module is one loader stack whose two
+halves address memory differently, not a foreign member.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/field_actor_program.rs:801d4a60"
+reason = """
+Cross-image module, and the tag pins the routine from its own bytes: FUN_801D4A60
+opens `lh v1,0x54(s1)` / `sltiu v1,0x26` / `jr v0` against the 38-word table at
+0x801CE960 in the field overlay. Its two siblings are SCUS's MAN loader
+(8003aeb0) and another field-overlay routine (801d5a24); corroboration across the
+overlay band requires a shared image tag, so a SCUS sibling can never corroborate
+an overlay member however tightly the two are coupled at runtime.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/field_submode.rs:801d84b4"
+reason = """
+VA aliasing, which the checker documents as unresolved. 0x801D84B4 in the FIELD
+overlay (0897) is this module's panel-row layout; 0x801D84C0 twelve bytes away is
+`panel_labels` in the BATTLE overlay (0898), a different image. The module's
+corroborating siblings 801d9c3c / 801de478 are field-overlay routines that share
+the submode context block through actor pointers rather than through a global,
+so nothing distinctive is common. Nothing here contradicts either reading.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/field_submode.rs:801e6984"
+reason = """
+Same module, same cause as the 801d84b4 row: the four op-0x49 submode entry
+routines are coupled through the submode CONTEXT BLOCK, which each reaches off a
+pointer argument rather than by forming an address, so the shared-rare-data test
+has nothing to match on. 801E6984 sits 0x18000 above the module's other members
+in the same image, which is a layout fact and not an identity one.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/menu_list_rows.rs:80034250"
+reason = """
+The corroborating datum is gp-relative and therefore invisible. FUN_80034250
+resolves the highlighted row's description through the item / goods tables
+(0x8007625C and the item record's +8), while its module siblings (8002ff8c,
+80030104, 80030628, 80032434) build the window rows; the thing they actually
+share is the screen-class / mode / payload trio at gp+0x884, gp+0x87C and
+gp+0x878, which the tracker only sees as `imm(gp)`. Both doc carriers
+(battle.md and menus.md) agree on the identity; the row is a duplicate, not a
+conflict.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/muscle_dome.rs:80026018"
+reason = """
+Verified against the disassembly, and the tag's sub-range is exact.
+0x80026054 is `addiu s0,v0,0x4140` (the live game-state window 0x80084140);
+0x80026058..0x80026068 is `lw v0,0x464(s0)` / `lw v1,0x300(s0)` / `addu` /
+`sw v0,0x464(s0)`, i.e. the coin bank 0x800845A4 credited by the tally at
+0x80084440; 0x8002606C..0x80026078 clamps it at `lui a0,0x98` / `ori a0,a0,0x967f`
+= 9,999,999, which is the port's COIN_BANK_MAX. That is `credit_casino_coins`
+exactly. The module's siblings are the dome / hub state machines, which never
+touch the coin bank - the venue rules and the payout kernel are separate
+routines in retail too.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/overlay_loader.rs:8003ebe4"
+reason = """
+The two loaders are twins that deliberately share NO datum, which makes the
+orphan verdict structural. Read side by side: 8003EBE4 writes gp+0x924
+(0x8003EC04, 0x8003EC4C) and 8003EC70 writes gp+0x934 (0x8003EC90, 0x8003ECB0,
+0x8003ECEC) - the per-slot current-id trackers - and their destination pointers
+are the distinct *DAT_8001038C / *DAT_80010390 windows. Every cell they differ
+on is gp-relative, a form the absolute tracker cannot see, so the pair reads as
+two unrelated routines however identical their bodies are.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/pause_screens.rs:80032a44"
+reason = """
+Read the disassembly: 0x80032A80 is `lw v1,0x87c(gp)` - the list-mode global
+0x8007BB94 that this module's whole family keys on - and the rest of the body
+walks the window record from a0. The module's siblings are all menu-overlay
+(801d****) routines in a different image, and the one thing they share with this
+SCUS kernel is that gp cell, which the tracker reads as an offset rather than an
+address. Cross-image plus gp-relative is the double blind spot, not a foreign
+member.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/actors.rs:8002519c"
+reason = """
+FUN_8002519C is the 328-byte SCUS actor-list iterator; it forms 0x80021DF4 (the
+per-actor tick it compares each node's +0x0C against) and calls 0x80017B94 /
+0x800204A4 / 0x80024DFC / 0x800250D4. Its module siblings are the battle seat and
+loader routines, which is a port-partition fact: the engine keeps the actor pool
+and the seats in one module while retail splits the walker from the handlers it
+dispatches. The finding's own lift line confirms the identity rather than
+disputing it - 0x80021DF4 is also formed by FUN_801D7518, tagged in
+field_actor_kernels.rs, which is the same tick from the field side.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/battle/initiative.rs:80051d84"
+reason = """
+FUN_80051D84's first two tests are `lw v1,-0x42dc(v1)` then `lbu v0,0x287(v1)`
+and `lbu v0,-0x49b6(v0)` - the battle context byte +0x287 and the flag at
+0x8007B64A - which is the formation-advantage gate this tag names. The module's
+three siblings are overlay-resident (801d9d3c, 801da780, 801daba4), so
+corroboration would have to cross the SCUS / overlay boundary, which the signal
+declines by construction. The arithmetic half is separately tagged in
+engine-vm's battle_formulas::round, and this tag says so.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/encounters.rs:801da51c"
+reason = """
+Cross-image again: FUN_801DA51C is the world-map entity SM's encounter-record
+reader (its record-overlay body is 0x801DA620..0x801DA678, pinned in
+encounter.md), and the module's corroborating siblings are the SCUS aggregator
+80042558, 800431d0, plus 801cf5bc and the field VM 801de840. The field VM is the
+one true overlay sibling and it shares no rare datum with the reader - it hands
+it a window off the script pointer. No claim in the module contradicts the
+routine's identity.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/field_movement.rs:8001f7c0"
+reason = """
+A loader in a module of movement kernels. FUN_8001F7C0's distinctive data is the
+0x800104xx / 0x800105xx descriptor block and its callees are the LZS decoder
+0x8001A6A4 plus the dev host traps 0x800608F0 / 0x80060910 - the field-file
+loader, which site/_content and field-locomotion.md both read the same way. Its
+19 siblings are the walk / collision / pose routines that CONSUME the buffer it
+fills, and a producer that hands over a buffer address shares no table with them.
+The tag is scoped to that: it names the +0x4000 sub-region streamed into
+*(_DAT_1F8003EC), not the loader's dispatch.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/frame_tick.rs:801ef2b0"
+reason = """
+A host-dispatcher module reporting one of the state machines it dispatches -
+the shape port-provenance.md names as the kind the cut cannot read. The module's
+15 corroborating siblings are the master frame driver and the per-mode SMs
+(80016444, 801cf0d8 slots, 801cf3bc fishing, 801cf470 dance, 801d0748 dome...),
+each with its own tables; the tile-board walk SM at 0x801EF2B0 keeps its state in
+the board cell array installed by field-VM op 0x49 (_DAT_8007B450), which is
+per-scene script data rather than a resident global.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/handler_actors.rs:8003aeb0"
+reason = """
+Same address and same cause as the actor_handler.rs row: the module's siblings
+8003cf04 / 8003cf40 are the handler helpers that FUN_8003AEB0 INLINES, so there
+is no call edge and no shared rare datum to find. This tag is scoped to a
+different window of the same routine (0x8003BAF0..0x8003BB3C, the scripted-scene
+resume pair) and cites the program spawner FUN_801D5A24 it drives, which is the
+module's other tag.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world_map.rs:801e76d4"
+reason = """
+A two-sibling module, so the corroboration denominator is a single pair.
+FUN_801E76D4 is the world-map controller (its camera globals are the
+0x801F**** block in the field overlay's world-map band); the siblings are
+800196A4 in SCUS and 801D8258 in the menu band, neither of which can share the
+controller's own overlay data. The identity is corroborated elsewhere instead -
+world-map.md and static-overlays.toml both place the controller at field-overlay
+base+0x18EBC.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/anim_vm.rs:80024cfc"
+reason = """
+A three-store stub cannot corroborate anything. The tag's own text is the
+evidence: FUN_80024CFC stows the record pointer in actor[+0x4C], sets
+actor[+0x56] = 0xB and actor[+0x68] = 100, and returns - its ONE distinctive
+datum is 0x8007B7C8 and it calls nothing. The module's six siblings are the
+battle anim ticks that consume those fields. The finding's lift line places
+0x8007B7C8 under FUN_8001F05C and FUN_801D6704, the asset dispatcher and the
+scene-entry init, which is where the anim payload is installed - consistent with
+the stub, not against it.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f1b64"
+reason = """
+The painter shape port-provenance.md documents, one level up: this is a
+label-painter module in the Baka hub image, every member draws one string plus a
+cursor through the corpus-wide text writer, and the only datum a painter owns is
+its private string pool. FUN_801F1B64 is `count_gated_label` without the count
+test, so it owns even less than its neighbours do. The module reads as cohesive
+only at cut 48 and this member is what is left over there.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/battle_action/queue_applier.rs:801e91e8"
+reason = """
+FUN_801E91E8 operates on the raw per-actor queue at actor[+0x1DF..+0x1F2] through
+the actor pointer, while its module siblings key on the resident trigger tables
+(Miracle 0x801F64F4, Super find 0x801F6524, Super replace 0x801F65E8). A kernel
+that only ever touches memory off its argument forms no address at all, so it
+cannot share one; the module's cut is already up at 96 because of it. The
+identity is pinned separately in battle-action.md's queue-builder section.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/battle_formulas/round.rs:80051d84"
+reason = """
+The arithmetic half of the same routine as the initiative.rs row. Its own bytes
+(the 0x8007BD24 context load, the +0x287 gate and the 0x8007B64A flag at
+0x80051D84..0x80051DC0) are battle-side; the module's siblings 801d88cc,
+801da780, 801f0348 and 801f45a4 are overlay-resident, so no corroboration can
+cross to a SCUS member. Nothing in the module claims a different subsystem for
+it.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/motion_vm.rs:8003d038"
+reason = """
+Eleven instructions, two data addresses, no callee - too small to corroborate.
+FUN_8003D038 reads DAT_801C6470 + param*4 and, unless the byte is 0x8C, writes
+DAT_80073F1C. The routine that READS that post is FUN_80038158 (verified: the
+words at 0x8003882C..0x80038830 are `lui a1,0x8007` / `lw v1,0x3f1c(a1)`), and
+the finding's own lift line says 0x80073F1C is also formed by FUN_80038158 -
+tagged in world/field_movement.rs, another module. So the corroborator exists and
+sits behind the port's module partition.
+"""
+
+# --- three more slot-B band members, surfaced by the inherited-tail cut -------
+#
+# These appeared when `dump-extent-attribution.csv` was regenerated with each
+# image cut at its own content: the consensus vote now runs only among the
+# OWNING image's dumps, so an address whose plurality used to come from a
+# sibling's residue reports a different body - and a different feature set.
+# Same band-structural cause as the 801f7740 / 801f8b90 waivers above: each
+# module is its own image with no internal `jal`, and its distinctive data is a
+# private pointer table at its own VAs, which no sibling can share.
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f7af4"
+reason = """
+Viguro's spawn stager, same cause: five distinctive addresses, all in
+0x801F81F4..0x801F835C - this module's record pointers - and no callee. The
+corroboration test can only match on shared rare data or a shared callee, and a
+slot-B module has neither with its siblings by construction.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f8d64"
+reason = """
+Evil Seru Magic's stager. Eleven distinctive addresses spanning
+0x801F93A0..0x801FA468 plus the band head 0x801F6A50, no callee - the largest
+private table in the module and the same band-structural shape as its
+neighbours. The only address it shares with anything is the head, which every
+module forms and which is therefore not distinctive.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f7d34"
+reason = """
+PROT 0942's Power Up tick, in a file whose other 35 tagged siblings are other
+modules' bodies - so the signal has nothing to corroborate against and this row
+is the band's structural shape, not a defect. Re-derived against the bytes
+before waiving: 0x801F7D34 is file +0x135C of overlay_cast_power_up_0942.bin,
+inside that image's own content (which runs to +0x199C), and PROT 0943's copy
+of those bytes is inherited residue - 0943's own content ends at +0x1037, and
+0943 is byte-identical to 0942 from there to its end. The routine is 876 bytes
+and 219 instructions, and its terminal arm reads the monster record's +0x0E
+(`lhu v1,0xe(v0)` at 0x801F8060), computes `x * 3 >> 1` (0x801F8068..0x801F8070)
+and stores it to the caster's +0x156 AGL base (`sh v0,0x156(s0)` at 0x801F8074)
+before clearing ctx+0x0D and returning zero - which is exactly what
+`power_up_tick` implements. Its three distinctive data addresses
+(0x801F81B8 / 0x801F88A0 / 0x801F88B4) are this image's own spawn records and
+countdown word, which no sibling module can share.
 """

@@ -157,12 +157,31 @@ impl PlayWindowApp {
                 }
                 session.tick();
                 if session.is_done() {
-                    // Hand off to the title screen with the
-                    // continue-enabled flag set per save-slot scan.
-                    let snapshots = scan_save_dir(&self.save_dir);
-                    let any_present = snapshots.iter().any(|s| s.present);
-                    self.boot_ui = BootUiState::Title(title_session(any_present));
-                    self.start_title_bgm();
+                    // The hand-off is the mode table's, not this host's:
+                    // `init.pak`'s phase-3 arm runs the core-state reset and
+                    // branches on the entry word - the front end (`CARD INIT`)
+                    // when it is raised, the debug menu (`CONFIG INIT`) when it
+                    // is not. The seat performs that branch and this arm raises
+                    // the screen the mode it returns owns.
+                    use legaia_engine_core::mode::GameMode;
+                    let next = self.session.mode_seat.boot_handoff();
+                    match next {
+                        GameMode::CardInit => {
+                            // Continue-enabled per save-slot scan.
+                            let snapshots = scan_save_dir(&self.save_dir);
+                            let any_present = snapshots.iter().any(|s| s.present);
+                            self.boot_ui = BootUiState::Title(title_session(any_present));
+                            self.start_title_bgm();
+                        }
+                        // The dev route. The port has no debug-menu screen, so
+                        // it lands on the title anyway - logged rather than
+                        // silently folded, because the two are different modes.
+                        other => {
+                            log::info!("boot hand-off went to {other:?}; no engine screen owns it");
+                            self.boot_ui = BootUiState::Title(title_session(false));
+                            self.start_title_bgm();
+                        }
+                    }
                 }
                 true
             }
@@ -597,15 +616,23 @@ impl PlayWindowApp {
             }
             BootUiState::Title(s) => {
                 use legaia_engine_core::title::TitlePhase;
-                let (phase_id, cursor) = match s.phase() {
-                    TitlePhase::FadeIn { .. } => (0, 0),
-                    TitlePhase::PressStart { .. } => (1, 0),
-                    TitlePhase::MainMenu { cursor } => (2, cursor),
+                // Which screen the front end draws is retail's own selector
+                // word `state[+0x204]`, not this host's enum: both hosts ask
+                // `title_text_phase` about `TitleSession::retail_submode`, so
+                // one table decides it (see `ui::title_draw_list`). The
+                // session's phase is still what supplies the *cursor row* and
+                // the blink, which the sub-mode word does not carry.
+                let (menu_open, cursor) = match s.phase() {
+                    TitlePhase::MainMenu { cursor } => (true, cursor),
                     // The attract movie owns the screen; the window
                     // renders its frames, not the title's text.
                     TitlePhase::Attract { .. } => return Vec::new(),
                     TitlePhase::Done(_) => return Vec::new(),
+                    TitlePhase::FadeIn { .. } => return Vec::new(),
+                    TitlePhase::PressStart { .. } => (false, 0),
                 };
+                let phase_id =
+                    legaia_engine_render::title_text_phase(s.retail_submode(), menu_open);
                 // When the title-screen atlas is uploaded, the
                 // main-menu rows render through the sprite path,
                 // sampling NEW GAME / CONTINUE sub-rects from the

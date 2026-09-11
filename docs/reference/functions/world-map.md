@@ -9,6 +9,7 @@ Both live at `0x801C0000+`. Full architecture in `docs/subsystems/world-map.md`.
 
 | Address | Role |
 |---|---|
+| `801DA390` (row on [`runtime-libs.md`](runtime-libs.md)) | The camera **vertical-offset** ease this overlay's camera path uses - `_DAT_8007BCAC` toward `cam[+0x4A] - player[+0x16]`. Listed here because it was read as a camera *yaw* for as long as the world-map camera work cited it; `+0x16` is the player's Y. |
 | `FUN_801E76D4` (world_map overlay) | World map controller. Handles the debug top-view toggle (combo: `_DAT_8007B98C != 0` + `pad 0x4A` + `held 0x40`), flips `DAT_801F2B94` (view flag at offset past 192 KB window), captures camera origin into `_DAT_801F35A8/AA/AC`. In top-view mode processes D-pad input into `_DAT_80089120/_18` (XZ scroll) and `_DAT_8007B794`/`_6F4` (azimuth/zoom). Normal-walk path ticks field VM + actor + motion VM. |
 | `FUN_801EAD98` (world_map overlay) | World map developer menu renderer (display-only - the tools it fronts live in field overlay 0897, rows below). Scrollable 24-entry list incl. MAP_CHANGE / CARD_OPTION / PLAYER_STATUS / CAMERA (shows `_DAT_80089120/_18`) / ENCOUNT (`DAT_8007B5F8`) / OTHER_SETTINGS / BGM_CALL (`_DAT_801F2E90`) / DEBUG / EVENT FLAG / PLAY POS / GET ITEM. `_DAT_8007B868` gates MAP_CHANGE and CARD_OPTION to "CLOSED". Row model + digit formatter ported at `legaia_engine_vm::world_map_overlay` (`DevMenuRow`, `format_fixed_decimal`, `decode_camera_readout`); draws stay render-side. |
 | `FUN_801EE094` (field overlay 0897, file `+0x1F87C`) | **Dev-menu "ON RIREMITO," warp applier** (MAP CHANGE). Walks the map table from `func_0x80019788()` (stride 0x10) for map number `_DAT_80084628`, loads it via `func_0x8001fd44`, teleports the player (`_DAT_80073ef4/ef8 = _DAT_80084624/_DAT_8008462C * 0x80 + 0x40`); miss prints `"UNFIND MAP NUMBER %d"`. Sibling `FUN_801EE328` (`+0x1FB10`) = the "ON RULA," rise-up variant. With the EVENT FLAG editor these explain the debug-menu "jump to beat" behaviour (teleport + flags) - no per-FMV event table exists. `see ghidra/scripts/funcs/spine_refs_overlay_0897_xxx_dat.txt`. |
@@ -40,7 +41,7 @@ The render chain that gets the POLY_FT4 batch from the per-frame SCUS dispatch i
 | `0x801C2B2C` (phantom VA) | **Not a second copy of anything.** `FUN_801D1344` printed `0xE818` low: all 296 instructions of `overlay_0897_xxx_dat_801c2b2c.txt` match by VA `+0xE818` against the base-correct `overlay_cutscene_dialogue_801d1344.txt` / `overlay_world_map_801d1344.txt`, and its `jal 0x801D8258` at printed PC `0x801C2C58` is the same call `FUN_801D1344` makes at `0x801D1470`. There is no "relocation copy" - PSX overlays are not relocated. |
 | `0x801C9688` (phantom VA) | **Not a field-mode copy of the horizon emitter.** `FUN_801D7EA0` printed `0xE818` low: all 208 instructions match by VA `+0xE818` against `overlay_world_map_801d7ea0.txt`, operands included. "Same 224-band loop, same four packets per band, same trig-warped extents" is what one function looks like when it is compared with itself. See [`overlay-va-aliases.md`](../overlay-va-aliases.md) and `FUN_801D7EA0` above. |
 | `801F7644`..`801F8690` (PROT 0901) | **World-map per-prim draw leaves**, eight of them - the band `0x801F7644..0x801F8968`, split leaf by leaf below. Frameless, no `jr ra`; each tail-jumps into the SCUS emitter `0x80043580`. Selected through the overlay-mode handler table **based at `0x801F8968`** (slots `12..19`). |
-| `801F89B8` (PROT 0901, 1284 bytes) | The band's ninth routine, and a different shape: same frameless style, four local `j`s to its own tail at `0x801F8E54`, returning through the `jr ra` at `0x801F8EB4`. `overlay_world_map_render_0901_801f89b8.txt`. |
+| `801F89B8` (PROT 0901, 1284 bytes) | The band's ninth routine, and a different shape: same frameless style, four local `j`s to its own tail at `0x801F8E54`, returning through the `jr ra` at `0x801F8EB4`. It is the **bulk terrain-cell emitter** - a hand-written GTE loop over the camera's visible-tile window that draws one textured quad per map cell - and it is `jal`'d from `0x801F733C` in this same image. [Detail](#801f89b8-draws-terrain-cells). `overlay_world_map_render_0901_801f89b8.txt`. |
 | `0x801F8968` (PROT 0901) | **Overlay-mode handler table**, twenty words indexed by the same per-prim kind the SCUS table uses - [details ↓](#the-overlay-mode-handler-table-is-based-at-0x801f8968). Slots `0..7` are zero, `8..11` are the SCUS emitters `0x8004409C` / `0x8004423C` / `0x80044434` / `0x800445B0`, and `12..19` are the eight leaves in the order `7644`, `7838`, `7F78`, `8198`, `7AA4`, `7CCC`, `8454`, `8690`. |
 | `80044798` (SCUS) | **Cluster-A primitive off-screen reject test.** Shared helper `jal`'d by the per-prim handlers in the `0x80043390` dispatcher band after RTPT projection. Reads the three projected screen-XY GTE FIFO regs `SXY0/SXY1/SXY2` (cop2 `0x6000/0x6800/0x7000`, sign-extended `>>16`) plus a fourth coord pre-loaded in `s3`; returns `0` in `s3` only when all four X/Y lie inside the PSX `[0,0xF0)` / `[0,0x140)` (240x320) framebuffer window, else `1`. Callers (`FUN_800445B0`, `FUN_80044C14`, …) skip the GP0 emit when it returns nonzero. (Ghidra's decompiled C drops the `s3` return - read the disassembly.) `see ghidra/scripts/funcs/80044798.txt`. |
 | `80044C14` (SCUS) | **Cluster-A kind-16 `POLY_G4` (gouraud quad) handler** (bank-1/2 variant; `0x80043390` band, cmd stride `0x14`, GP0 stride `0x20` = 7-word packet). Per command word reads two packed vertex indices (low `& 0x7FF8`, high `>>0x10`) into the `param_3` vertex pool, runs RTPT (cop2 `0x280030`), backface-tests SZ vs `in_t2-0x2D8`, derives a fog/depth value, `jal`s `FUN_80044798` for the off-screen reject, then emits the GP0 packet at the pool cursor and advances it `0x20`; the tail dispatches the next command through the shared `0x80043614` handler table. See [`formats/world-map-overlay.md`](../../formats/world-map-overlay.md) kind-16 row. `see ghidra/scripts/funcs/80044c14.txt`. |
@@ -108,3 +109,38 @@ Maps to [`WorldMapEntityHost::on_encounter`] in `crates/engine-vm/src/world_map.
 Parametric POLY_FT4 emitter. Gated by one-shot self-clearing flag `_DAT_801F351C`. 224-iter outer loop emitting 2× POLY_FT4 (literal `0x2C808080` GP0 cmd, chain tag `0x9000000`) + 1 small prim (chain tag `0x3000000`) per iter using cos-rotation projection from the LUT at `0x8007B81C`. ~670 prims per call. Horizon / sky / animated background. The bulk continent (~4300 POLY_FT4 prims per kingdom) is **not** emitted here - it flows through ordinary case-5 TMD rendering via `FUN_80043390`'s overlay-mode dispatch table at `0x801F8968` (eight per-prim fog-enabled leaves at `0x801F7644..0x801F8690`, each a SCUS-side sibling body plus a GTE `dpcs`/`dpct` distance-cue post-process).
 
 See [world-map subsystem § bulk continent terrain emit mechanism (pinned)](../../subsystems/world-map.md#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers).
+
+### `801F89B8` draws terrain cells
+
+The ninth routine of the draw band is not a per-prim leaf like its eight
+neighbours. It is a nested loop that emits the ground itself, and every input
+it reads is a documented one, which is what makes it identifiable without a
+caller-side trace.
+
+**Extents.** It reads the four signed bytes at scratchpad `0x1F8003E8..EB` -
+the camera's visible tile window, primed per scene by `FUN_801DE37C` and
+overwritten by field-VM op `0x46` - and takes `max - min` on each axis as its
+two loop counts (`0x801F89FC..0x801F8A28`). The window is therefore not a fog
+or culling hint: it is literally how many cells get drawn.
+
+**Height.** Per cell corner it reads a byte from the map's `+0x4000`
+floor-nibble grid at `*(0x1F8003EC) + 0x4000 + z*0x80 + x`, masks the low
+nibble, and indexes the 16-entry halfword LUT at scratchpad `0x1F80035C` -
+the LUT the fishing bring-up seeds with `-0x20 * n`. Corners `(x, z)` and
+`(x, z+1)` open each column strip and `+0x1` / `+0x81` close it, so adjacent
+cells share corner heights and the surface is continuous.
+
+**Texture.** The cell's `u16` at `+0x8000` masks to `& 0x1FF` and indexes a
+`0x20`-byte object record; the record's `+0x14` word supplies all three
+texture selectors at once - tile id `& 0x3F` (`u = (id % 8) * 32`,
+`v = (id / 8) * 32`), `tpage` `(w >> 8) & 0x1F`, and the CLUT in the high
+half. That is the terrain-type-keyed multi-page atlas
+[`field-map.md`](../../formats/field-map.md) describes, read here off the
+consumer rather than off the data.
+
+**Rejection.** Four corners through `RTPT`, an off-screen test against the
+`0xF0` / `0x140` framebuffer window, `NCLIP` for backfacing, and a `0x28`-byte
+packet linked into the OT. The engine covers all of it with
+`legaia_asset::field_objects::build_walk_heightfield` plus
+`Placement::world_y` and its own wgpu renderer, so the row sits in
+`[prim_builder]` in `scripts/ci/port-catalog-ignore.toml`.

@@ -451,15 +451,17 @@ fn field_vm_op43_widget_subops_drive_screen_fx_frame() {
     assert!(world.screen_fx.panel.is_some(), "panel spawned");
     assert_eq!(world.screen_fx.sprites.len(), 1, "sprite widget spawned");
 
-    // One world tick publishes the frame: 4 mask border quads + 2 letterbox
+    // One world tick publishes the frame: 4 mask border quads, 2 letterbox
     // bands, 2 gradient strips, 1 panel quad (128px wide - no split), 1 sprite.
+    //
+    // The mask's borders and the letterbox's bands are counted SEPARATELY
+    // because retail links them at opposite ends of the ordering table
+    // (`+0x1c` vs `+0x4`); batching them into one list drew the bands behind
+    // every sprite the same scene spawns.
     let _ = world.tick();
     let frame = &world.screen_fx_frame;
-    assert_eq!(
-        frame.solid_quads.len(),
-        6,
-        "4 mask quads + 2 letterbox bands"
-    );
+    assert_eq!(frame.solid_quads.len(), 4, "4 mask border quads");
+    assert_eq!(frame.band_quads.len(), 2, "2 letterbox bands");
     assert_eq!(frame.gradient_quads.len(), 2);
     assert_eq!(frame.panels.len(), 1);
     assert_eq!(frame.sprites.len(), 1);

@@ -145,7 +145,15 @@ pub(super) fn spirit_fire_damage<H: BattleActionHost + ?Sized>(
         .map(|a| (a.cast_class, a.cast_sub_class))
         .unwrap_or((0, 0));
     let party_index = host.roster_character_id(slot).saturating_sub(1);
-    host.apply_damage(class, tier, target, party_index);
+    // Retail's applier is a jump table with 116 dead slots
+    // ([`super::effect_selector`]): a committed class outside `0x00..=0x0E`
+    // (or `0x82`) restores the frame and returns, so the port does not stand
+    // in for an arm that does not exist. Every class byte from the spell
+    // table's routing band - `0x14` plain cast, `0x32` summon, `0x63`
+    // capture - is one of those.
+    if super::effect_selector_dispatches(class) {
+        host.apply_damage(class, tier, target, party_index);
+    }
     place_cue_group(host, class, tier, target);
     ctx.frame_timer = 0x80;
     transition(ctx, ActionState::SpiritPostDamage)
@@ -194,13 +202,13 @@ fn place_cue_group<H: BattleActionHost + ?Sized>(host: &mut H, class: u8, tier: 
         let yaw = host.actor(s).map(|a| a.facing_angle as i16).unwrap_or(0);
         // The table borrow ends with the statement, so the plan is owned by
         // the time the spawn sink needs `&mut host`.
-        let Some(plan) = host.cue_tables().map(|(groups, sfx_map)| {
+        let Some(plan) = host.cue_tables().map(|(groups, clut_map)| {
             expand_cue_group(
                 site.tint,
                 site.actor_state,
                 yaw,
                 site.group,
-                &CueTables { groups, sfx_map },
+                &CueTables { groups, clut_map },
             )
         }) else {
             return;

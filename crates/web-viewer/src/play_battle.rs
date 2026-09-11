@@ -186,6 +186,62 @@ pub(crate) type CommandChips = (
     legaia_engine_ui::battle_command_ui::ChipPhase,
 );
 
+/// Re-wrap one frame of the PROT-0900 screen-effect widget family as overlay
+/// primitives for the browser play page's screen-prim pass.
+///
+/// The **geometry** is not decided here: culling, UVs, colours and the retail
+/// ordering-table slot each widget kind links at all come out of
+/// [`legaia_engine_core::screen_fx::ScreenFxFrame::draw_quads`], the same kernel
+/// the native window's `build_screen_fx_meshes` consumes. This function exists
+/// only because `engine-core` sits below `engine-ui` and so cannot name
+/// `ScreenPrim` itself - it is a variant-for-variant re-wrap with no arithmetic.
+fn screen_fx_prims(
+    frame: &legaia_engine_core::screen_fx::ScreenFxFrame,
+) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+    use legaia_engine_core::screen_fx::ScreenFxQuad;
+    use legaia_engine_ui::screen_prim::{FlatQuad, ScreenPrim, ScreenQuad};
+
+    frame
+        .draw_quads()
+        .into_iter()
+        .map(|q| match q {
+            ScreenFxQuad::Flat {
+                xy,
+                rgba,
+                gouraud,
+                semi_transparent,
+                abr_mode,
+                ot,
+            } => ScreenPrim::Flat(FlatQuad {
+                xy,
+                color: rgba,
+                gouraud,
+                semi_transparent,
+                abr_mode,
+                ot_index: ot,
+            }),
+            ScreenFxQuad::Textured {
+                xy,
+                uv,
+                clut,
+                tpage,
+                color,
+                semi_transparent,
+                ot,
+            } => ScreenPrim::Textured(ScreenQuad {
+                xy,
+                uv,
+                clut,
+                tpage,
+                color,
+                gouraud: None,
+                semi_transparent,
+                ot_index: ot,
+            }),
+        })
+        .collect()
+}
+
 impl LegaiaRuntime {
     /// The retail enemy target-name strip for a picker parked on the enemy
     /// row - the browser twin of the native window's
@@ -1714,6 +1770,11 @@ impl LegaiaRuntime {
                 host.world.cinematic_bar,
                 legaia_engine_ui::screen_prim::PSX_DISPLAY_H,
             ));
+            // The PROT-0900 screen-effect widgets - iris mask, scripted
+            // sprites, image panel, letterbox bands - which the native window
+            // draws and this page did not. Geometry, culling and ordering come
+            // out of the shared `screen_fx` kernel; this only re-wraps.
+            prims.extend(screen_fx_prims(&host.world.screen_fx_frame));
         }
         self.battle_intro_geom = (!prims.is_empty()).then(|| {
             (

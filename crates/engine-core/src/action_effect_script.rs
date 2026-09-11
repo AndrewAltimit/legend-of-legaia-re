@@ -150,17 +150,22 @@ pub const HOMING_SLOT_COUNT: usize = 4;
 pub const EFFECT_DIRECT_BIT: u8 = 0x80;
 
 /// Exclusive upper bound of the table-form codes that consult the per-effect
-/// SFX map (`0x801F6418`): the table arm's sound gate is `sltiu v0,v1,0x32`
-/// (`0x801df0d8`), so only plain codes `0x00..=0x31` can fire the `0x1DC`
-/// sound packet, and a code at or above this (e.g. the spreadsheet's `0x4C`
-/// "hit effect" constant) is silent by construction. Contrast the cue-group
-/// expander `FUN_801E22C8`, whose SFX arm has **no** such bound - the two
-/// arms gate differently. Consumed by
-/// `World::drain_battle_effect_spawns`, the engine seat of the arm.
+/// **CLUT map** (`0x801F6418`): the table arm's gate is `sltiu v0,v1,0x32`
+/// (`0x801df0d8`), so only plain codes `0x00..=0x31` can stage a palette row,
+/// and a code at or above this (e.g. the spreadsheet's `0x4C` "hit effect"
+/// constant) copies nothing by construction. Contrast the cue-group expander
+/// `FUN_801E22C8`, whose arm has **no** such bound - the two gate
+/// differently. Consumed by `World::drain_battle_effect_spawns`, the engine
+/// seat of the arm.
 ///
-/// PORT: FUN_801DEA50 (`0x801df0d4..0x801df134`, the SFX gate + packet build)
-/// REF: FUN_80058490 (the sound-driver command submit the packet reaches)
-pub const TABLE_SFX_GATE: u8 = 0x32;
+/// The map is not a sound table: the byte becomes `rect.x` of a `RECT` handed
+/// to `MoveImage` (`FUN_80058490`), a 16x1 VRAM copy onto `(224, 476)`. See
+/// [`crate::battle_effect_clut`] for the whole arm and the reading it
+/// replaces.
+///
+/// PORT: FUN_801DEA50 (`0x801df0d4..0x801df134`, the CLUT gate + `RECT` build)
+/// REF: FUN_80058490 (`MoveImage` - the blit the `RECT` reaches)
+pub const TABLE_CLUT_GATE: u8 = 0x32;
 
 /// PSX angle units in a full revolution.
 const ANGLE_MASK: i32 = 0xFFF;

@@ -1,7 +1,7 @@
 //! Engine integration scenarios manifest.
 //!
 //! Mirror of [`scripts/scenarios.toml`](../../../scripts/scenarios.toml)
-//! for the clean-room engine: a declarative list of (scene, frames-to-tick,
+//! for the engine: a declarative list of (scene, frames-to-tick,
 //! expected SaveFile SHA-256) tuples that a CI test runs headlessly to
 //! catch state drift across release velocity.
 //!

@@ -369,6 +369,103 @@ render half.
 - **`FUN_80029DD8`** - a 39-`cop2`-op 3D primitive emitter, sibling of
   `FUN_8002735C` / `FUN_80029888`.
 
+## The field ground pass: two emitters, one gate
+
+The per-cell ground plane of a field scene is drawn by the slot-B field
+render library **PROT 0900**, and it ships the emitter **twice** - as a
+**depth-cued / flat pair**, not as two copies of one body. The two are one
+routine emitted twice and differ in exactly one block. `FUN_801F69EC` (file
+`+0x14`, 860 B) runs the packet colour through the GTE depth cue: `RGBC` takes
+the colour word, `IR0` takes `SZ1 >> 3`, `DPCS` fires at `0x801F6C44`, and the
+result comes back out of `RGB2` with `swc2 $22,4($t5)` at `0x801F6C4C`.
+`FUN_801F6D48` (file `+0x370`, 832 B) replaces those eight words with one -
+`sw $s2,4($t5)` at `0x801F6F88`, the raw colour word, no GTE colour op. Every
+other instruction matches once the `0x1C` branch-displacement shift the size
+difference forces is normalised, and both test `andi $s0,$s5,0x1000` on the
+cell word at the same instruction index (`0x801F6AB4` / `0x801F6E10`).
+
+The caller picks one at `0x801F79A0` (`beqz $a0`) on `_DAT_8007BB4C` (loaded
+at `0x801F7958`): non-zero first calls `SetFarColor` (`FUN_8005B7D8`, three
+`ctc2` into GTE control regs 21/22/23) with the bytes at `0x8007BB48..4A` and
+then the depth-cued body; zero selects the flat body. Ordinary field play
+takes the flat one (the selector reads zero in a `teien` field-run frame).
+Read with `disasm-overlay-fn.py
+extracted/overlays/overlay_summon_render_0900.bin --base 0x801F69D8 --addr
+0x801F69EC` (and `0x801F6D48`).
+
+The earlier reading here - "both bodies are the same algorithm" - is what a
+length comparison suggests and an instruction diff refutes: they are 860 B and
+832 B, and the 28-byte difference is the whole fog path.
+
+`FUN_801F6D48(tile_x, tile_z, world_x, world_z)` is frameless and keeps all
+of its state in the scratchpad through one base register `t6 = 0x1F800314`:
+
+| Scratchpad | Role |
+|---|---|
+| `0x1F8003A0` | packet cursor - bumped `0x28` per emitted `POLY_FT4`, stored back at exit |
+| `0x1F8003F4` | ordering-table base; `0x1F8003A4` is its shift |
+| `0x1F8003EC` | the per-scene field-env block (the streamed `.MAP`) |
+| `0x1F8003E8..EB` | the camera's visible-tile window, four **signed** bytes `x0, z0, x1, z1` |
+| `0x1F80035C..7B` | the 16-entry floor-height ladder the corner tiers index |
+
+The window bytes are relative tile offsets, so the double loop runs
+`(x1 - x0) x (z1 - z0)` cells around the caller's tile; in `teien` that is
+`32 x 48 = 1536` cells per pass. Per cell it reads the object-grid word at
+`*(0x1F8003EC) + 0x8000 + (z << 8) + (x << 1)` and then:
+
+- **gates on `cell & 0x1000`** (`0x801F6E10`; the sibling's is `0x801F6AB4`).
+  A cell without that bit branches straight to the loop increment - there is
+  no second arm;
+- takes the four corner tiers from the collision grid at `+0x4000` (`&0xf`,
+  through the height ladder), `RTPT`s them, and near-clips on `OTZ < 0x40`;
+- indexes the object-record table at the block's own base by `cell & 0x1FF`
+  (`* 0x20`), taking the tile's UVs from record `+0x14`, its tpage/CLUT from
+  `+0x1C`/`+0x1D`, and OR-ing the semi-transparency bit when `+0x1A` is
+  non-zero;
+- sorts on `cell & 0x8000`: set, the packet goes in the bucket its own
+  minimum vertex `Z` picks; clear, it goes in the fixed far bucket
+  `(0x3FF6 >> ot_shift) * 4`.
+
+### No draw channel is gated on object-grid bit `0x0800`
+
+Bit `0x0800` marks a **kind-2 tile-trigger** cell (the elevation override
+`FUN_80017BEC` stamps as `0x200 << kind`), and the question it raised was
+whether retail has an unpinned ground channel keyed on it. It does not, and
+the search space is small enough to say so exhaustively. Of the 84 images
+with a static base (`SCUS_942.54` plus the 83 mapped overlays), only **eight**
+contain the instruction forms that can reach the field-env pointer at
+scratchpad `0x1F8003EC` at all - the direct `lw rY, 0x3EC(rX)` or the
+`ori rX, rX, 0x314` + `lw rY, 0xD8(rX)` pair - and only two of those, PROT
+0900 and PROT 0901, are the per-cell render passes.
+
+In each of those two there is **exactly one** `andi rt, rs, 0x800`
+(`0x801F78B8` in 0900, `0x801F7244` in 0901), and both read the same thing:
+an **object record's** `+0x12` flag halfword, not a cell word. Both OR
+`0x10000000` into the argument of the prim dispatcher `FUN_80043390`. The
+libraries' only two per-cell passes are this ground pass (gate `0x1000`) and
+the static-object pass at `0x801F756C` (gate `0x2000`). In SCUS the sole
+consumer of cell bit `0x0800` is the floor sampler `FUN_80019278`
+(`0x8001932C` / `0x80019384`, `see ghidra/scripts/funcs/80019278.txt`),
+which returns a height and emits nothing.
+
+A live pass confirms the gate end to end. In a `teien` field-run frame
+(`teien_field_run` in [`scenarios.toml`](../../scripts/scenarios.toml),
+probe `scripts/pcsx-redux/autorun_field_ground_cells.lua`) the pass visits
+all 1536 window cells and emits **370** packets: every visited cell carrying
+`0x1000` emits, no cell without it does, and none of the 42 `0x0800`-only
+cells inside the window produces anything. The scene's whole live grid is
+451 non-zero cells - 400 with `0x1000`, 53 with `0x2000`, 45 with `0x0800`
+and no `0x1000`.
+
+Those 45 are also not what the hole hypothesis assumed. They are a solid
+`6 x 6` block at tiles `(40..45, 46..51)`, a ten-cell run along `z = 28`,
+and three cells at `z = 6` - a raised platform plus a step, not the base row
+of a hedge. `teien` therefore has no hedge-row band of `0x0800`-only cells
+at all, which is the same shape (and the same 400 / 45 split) previously
+measured in `edteien` and used to argue `edteien` could not stand in for it.
+The engine's `build_walk_heightfield` gate matches retail's here, and no
+speculative fill is owed.
+
 ## The billboard projector (`FUN_800195A8`)
 
 The one helper every camera-facing rectangle in the game goes through: MVMVA the
@@ -461,8 +558,10 @@ ported (the from-scratch engine projects and rasterises through wgpu):
   calls. Given an output slot, two vertices and a q12 fraction `a3`, it lerps
   X/Y/Z (`out = b + ((a-b)*frac >> 12)`) and, gated by the flag word `a2` (bit 0
   `0x1` the UV pair at `+0x18/0x19`, bit 1 `0x2` the RGB triple at `+0x14..0x16`,
-  bit `0x800` selects the trailing endpoint), the packed RGB and UV bytes. Pure integer arithmetic, but kept unported because it exists only to
-  service retail's software near-plane clip. See
+  bit `0x800` selects the trailing endpoint), the packed RGB and UV bytes. Pure integer arithmetic, but replaced rather than
+  ported: it exists only to service retail's software near-plane clip, and the
+  engine clips in wgpu's own clip space. Scope row `[render_pipeline]` in
+  `scripts/ci/port-catalog-ignore.toml`, so it is not a worklist gap. See
   `ghidra/scripts/funcs/80029724.txt`.
 
 ## 2D `POLY_*` packet emitters
@@ -1010,7 +1109,8 @@ distinct 16-entry palettes into one 256-wide row - so a CBA's 16-pixel slot sits
 The `--runtime-vram` cross-check tells the two failure modes apart. "Row absent
 from engine but present at runtime" is an engine loader gap. "Row absent from
 runtime too" means the mesh references an unreachable CLUT - likely a parser-side
-issue, or a CLUT loaded by an unported sub-pack walker.
+issue, or a CLUT that arrives through a sub-pack the engine's loader does not
+walk - a loader gap, not a port row.
 
 **`legaia-engine vram-oracle --scene <name> --disc <bin> --runtime-vram <bin> [--diff-png <path>] [--tiles]`**
 rebuilds the scene's engine VRAM and reports per-band overlap counts plus an

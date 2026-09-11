@@ -1,4 +1,4 @@
-//! Per-actor physics tick - clean-room port of `FUN_80021DF4`.
+//! Per-actor physics tick - port of `FUN_80021DF4`.
 //!
 //! PORT: FUN_80021DF4, FUN_800250D4, FUN_801D79E8
 //!

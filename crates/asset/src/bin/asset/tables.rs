@@ -237,7 +237,7 @@ pub(crate) fn move_power_effect_index_cmd(input: &Path, json: bool) -> Result<()
     };
     let sfx_of = |k: &EffectKey| -> Option<u8> {
         match k {
-            EffectKey::Proto3D(id) => aux.as_ref().and_then(|a| a.effect_sfx(*id)),
+            EffectKey::Proto3D(id) => aux.as_ref().and_then(|a| a.effect_clut_x(*id)),
             _ => None,
         }
     };

@@ -126,6 +126,27 @@ instead of through the line fall-through, is what closes this. Until then, read
 a "disclosed `NOT WIRED` anchor executed" row as a claim to check rather than a
 finding: confirm a caller exists before treating it as a disclosure defect.
 
+### The other way that category misfires: a disclosure about one arm
+
+An anchor's disclosure is read anywhere in its doc block, and the marker is an
+**anchor-level** claim - "no host calls this port". A doc block that uses the
+same words about one *branch* of a two-branch routine therefore disclaims the
+whole routine, and `--fail-on-disclosed` then reports the ladders as having
+traversed a stub they did not.
+
+`FUN_801DBF9C`'s port is the worked case and it is not a stale disclosure. The
+routine is the party cast trigger, called on every pre-cast expiry, and the
+ladders run it; what is unimplemented is the `spell_id < 0x25` arm's per-spell
+anim-pair list, because the engine has no parse of the overlay table at
+`0x801F4E64` / `0x801F4EDC`. Both halves are true, and only one of them is
+about wiring.
+
+So a gap in an arm's **data** is written as prose, never in the disclosure form
+- the form is reserved for "nothing calls this". The alternative reading, that
+the routine should carry the marker because part of it is unfinished, makes the
+report's highest-priority category fire on exactly the routines a ladder
+proves are live.
+
 ## What a pad-only ladder structurally cannot execute
 
 The *headless* ladders drive `BootSession`, which constructs no renderer, no
@@ -353,12 +374,12 @@ descriptor drops.
 |---|---|---|---|
 | `cd_dma.rs` | 7 | `8003de7c` `8003e800` `8003e8a8` `8003eb98` `8003f128` `8005ea84` `8003dda0` | `ProtCdDmaHost` is constructed only inside `#[cfg(test)]` and the disc-gated `cd_dma_real_prot` test; no crate outside `engine-core` names `cd_dma`, and `overlay_loader`'s only non-test implementor is that same test-only host. |
 | `stream_file.rs` | 5 | `800558fc` `80055a5c` `800559ec` `80055ac8` `8003e964` | `StreamFileHost` has exactly one production mention - its own `impl` line. Every construction is a unit test or the disc-gated `stream_file_real` oracle. |
-| `mode.rs` | 4 | `80017978` `80025eec` `80025f2c` `80025f74` | `ModeDriver` - the port of the 28-entry game-mode state table, and the only caller of `per_frame_stage` - is named by no code outside `mode.rs`. `CARD_FRAME_BODY` is read only in that file's tests. |
+| `mode.rs` | 4 | `80017978` `80025eec` `80025f2c` `80025f74` | Closed: `mode::ModeSeat` wraps `ModeDriver` and `engine-shell`'s `BootSession` owns one, driving it every frame; `World::tick` resolves `runs_master_frame_driver` (and so `per_frame_stage`) on every host. |
 | `sound_state.rs` | 1 | `80020038` | `DRAW_ENV_INIT` is read at three sites, all inside that file's `#[cfg(test)]` block. |
 | `scene_bundle.rs` | 1 | `80020118` | `field_load_entry_plan` is called at three sites, all in that file's `#[cfg(test)]` block. |
 | `prize_exchange.rs` | 1 | `801dc1cc` | Closed: `World::try_arm_prize_exchange` (op-`0x49` sub-op 7) stages the session and `MenuRuntime::tick` drives it on both hosts; the koin1 interaction oracle `prize_exchange_disc.rs` reaches it from a real record. |
 | `scene_name_sync.rs` | 1 | `8001d7f8` | `sync_scene_name` is called only from that file's tests. Two anchors share the address - the `fn` and a `//! PORT:` module tag - and it is the module tag that carries the liveness verdict, so both need the disclosure. |
-| `save_select.rs` | 1 | `801e3294` | `card_frame_tick` - the only thing that advances a `CardIoMachine` - is disclosed on the function *and* on the type anchor the address is keyed to; the function alone left the verdict on the type. |
+| `save_select.rs` | 1 | `801e3294` | Closed: the same flow keeps a `CardIoMachine` for as long as a card screen is up and advances it through `card_frame_tick` each frame, with the poll status taken from the host's own block backend. |
 
 Three of these name routines that are heavily used on the disc, so the gap is a
 port that is not reached rather than a port of dead code. A five-form
@@ -455,43 +476,64 @@ in `per_frame_stage` and the inner level wired to every host as `World::tick`
 (tagged `FUN_80016444`, with the split spelled out at its own site). The outer
 level is what has no seat.
 
-**The seat cannot be taken as the code stands, and the blocker is not the
-hosts.** `ModeDriver::tick`'s first act is `world.mode = current.scene_mode()`,
-and `GameMode::scene_mode` answers `SceneMode::Title` for every mode outside the
-five pairs it names - which includes `OtherInit` / `OtherMode`, the pair retail
-runs **every minigame** under (`other_warp_init_stage`: mode 24 stages the
-overlay by warp sub-id and hands the mode word to `0x19`). The port splits that
-one retail mode into five `SceneMode` variants because its minigames are
-resident rules engines rather than paged overlays, so the map is 28 -> 11 in one
-direction and *not a function* in the other: a host that derived `world.mode`
-from a `GameMode` would drop a running fishing / dance / casino / duel session
-into `Title` on the frame it took the seat. Muscle Dome is a second, unrelated
-case - its retail mode word is `0x14` (`BattleInit`), pinned by the disc-gated
-`dome_leg_ends_on_ko_real`, not `OtherMode` at all.
+**The seat is taken, and two of the three blockers this page named were gone
+before it was.** `engine-shell`'s `BootSession` owns a `mode::ModeSeat` and
+drives it once per frame from `tick`; `docs/subsystems/boot.md`
+([the port's seat](../subsystems/boot.md#the-ports-seat-at-the-mode-table))
+carries the shape. What made it takeable:
 
-What a seat therefore needs first is a bridge keyed on `(GameMode, warp sub-id)`
-rather than on `GameMode` alone - the port already models the sub-id
-(`minigame_entry::MinigameSubId`), so this is a missing join, not a missing
-fact. Until it exists, wiring `ModeDriver` into either host's frame loop is not
-a wire but a regression, and the four `mode.rs` rows stay HOST-DEAD for a
-reason that lives in `engine-core`, not in `engine-shell` or `web-viewer`.
+- The lossy map is no longer lossy. `ModeDriver::tick`'s first act is
+  `world.mode = self.scene_mode()`, and that resolves the `(GameMode, warp
+  sub-id)` **pair** through `GameMode::scene_mode_with_warp`, so a running
+  fishing / dance / casino / duel session is not dropped into `Title` on the
+  frame a host takes the seat. The bridge this page called "a missing join"
+  landed as `mode::WARP_SUB_ID_ADDR` plus that method, pinned at both ends
+  (writer: the field VM's `0x3E` arm at `0x801E07B0`; reader: mode 24's init at
+  `0x80025A14`).
+- The direction that stays lossy is the other one, and the seat handles it
+  rather than avoiding it: `ModeSeat::adopt_scene_mode` stages the sub-id
+  alongside the word whenever the scene mode it is adopting maps to
+  `OTHER MODE`.
 
-**The half worth wanting is the mode-change edge**, and `ModeDriver` does not
-model it either. Retail's `0x800161B8..0x80016200` runs a fixed sequence on
-every transition: the CD read-wait poll `FUN_8003DE7C`, an overlay wait
+The Muscle Dome sentence on this page over-read its own evidence and is
+corrected here. `dome_leg_ends_on_ko_real` asserts that the **arena overlay's
+one game-mode store** writes `BattleInit` - that is a dome *round* handing off
+to an ordinary battle, which is the negative result the test exists for. The
+dome *hub* is PROT 0977, warp sub-id `5`, entered by mode 24 like the other
+four; "not `OtherMode` at all" is true of the round and false of the ladder.
+
+**The mode-change edge is wired**, and it is the half with observable
+behaviour. Retail's `0x800161B8..0x80016200` runs a fixed sequence on every
+transition: the CD read-wait poll `FUN_8003DE7C`, an overlay wait
 `FUN_8003ED04`, the mode-transition routine `FUN_80016230`
 (`engine-render::mode_transition`), `FUN_80058104(0)`, the pad-report
-re-publish `FUN_8001822C` (`engine-core::input::set_pad_reports`), and clears of
-`gp+0x3D8` (the frame-begin-skip flag), `gp+0x538` and `gp+0x55C`. Two ports on
-that edge are themselves disclosed inert, and the engine's scene transitions
-perform none of it. That is a self-contained wiring target with no lossy-map
-prerequisite, and it is the one a host could take without the bridge above.
+re-publish `FUN_8001822C` (`engine-core::input::set_pad_reports`), and clears
+of `gp+0x3D8` (the frame-begin-skip flag), `gp+0x538`, `0x8007B938` and
+`gp+0x55C`. The seat performs the two pad clears - through
+`InputState::clear_edges`, so the button that caused a transition is not
+re-delivered as the first input of the mode it opened - and the frame-begin-skip
+clear. The pad half is applied only to a transition a host performs
+synchronously, because the port publishes the frame's pad *before* the tick
+where retail polls it *after* the edge; the boot page carries that ordering
+note. The rest are device-layer calls the port replaces.
 
-The frame-begin skip is the third piece and it is inert from the other end:
-`World::frame_begin_skip` is read only by `ModeDriver::tick` and written by
-nothing outside `mode.rs`'s tests, so the "a skipped frame runs no frame-end
-pass" law `per_frame_stage` documents has neither a producer nor a consumer on
-any host.
+Two readings of that block are corrected while it is being cited: it holds
+**four** clears, not three (`0x8007B938` at `0x800161F4` sits between
+`gp+0x538` and `gp+0x55C`), and the `gp+0x564` / `gp+0x494` stores that close it
+are *copies of the new mode word*, not clears - `gp+0x494` being the
+previous-mode cell the loop's own `bne` compares against.
+
+**What is still owed**, now that the seat exists:
+
+- the residency model. `ModeSeat::enter` resolves the INIT column's staging
+  plan and performs each mode's own hand-off store, so `mode_init_stage`,
+  `other_warp_init_stage` and `mode_init_bare` are walked - but nothing loads
+  an image at a base and calls the entry the plan names, which is
+  `crate::overlay_loader`'s gap, not the seat's.
+- the frame-begin skip's *producer*. `World::frame_begin_skip` now has a
+  consumer on a host (the seat clears it on every edge and `ModeDriver::tick`
+  reads it), and still no writer outside tests, so the "a skipped frame runs no
+  frame-end pass" law remains unexercised end to end.
 
 **One of the laws in that unreached shape is a live gameplay divergence**, and
 it is the reason the family is worth more than its four rows. Mode 23 CARD is
@@ -503,14 +545,16 @@ calls the debug chord, the card actor's `+0x0C` handler and the dev HUD - there
 is **no `jal 0x80016444` in it**. So retail runs no actor tick pass, no render
 pass and no display flip while the pause menu is up.
 
-`World::tick` is Menu-gated only at its closing `match`: the effect pool, the
-move VMs, actor physics, the handler-actor pass, actor motions, the banners,
-the narration roller, the text balloon, the register ramps and the scripted
-countdown all run first, whatever `SceneMode` says. The countdown is the one
-with teeth - opening the pause menu does not stop a `4C D3` timer in the port
-and does stop it in retail, in the scenes that arm one with a real duration.
-That is a gate in `World::tick`, not a call site in a host, which is the same
-place the seat is blocked.
+That law is now in `World::tick`: it resolves
+`mode::runs_master_frame_driver` off its own `SceneMode` and suspends the
+effect pool, the move VMs, actor physics, the handler-actor pass, the actor
+motions, the banners, the narration roller, the text balloon, the register
+ramps and the scripted countdown when the answer is no. What is left is a
+host-side asymmetry in the *other* direction: neither shipped host ticks the
+world at all while its menu owns the frame, so both freeze more than retail
+does - retail keeps the CARD handler's frame-begin and frame-end passes
+running, and those are where the timed sound release and the cadence resolver
+live.
 
 ### HOST-DEAD, disclosed
 
@@ -519,9 +563,9 @@ listed so the bucket count is the whole of what no host reaches.
 
 | group | n | addresses | why |
 |---|---|---|---|
-| `save_subscreen.rs` | 8 | `801e4f40` `801dd12c` `801dd26c` `801d98f0` `801dae24` `801daef4` `801dafd4` `801dbc5c` | `SaveScreenMachine` - the graph every sub-screen hangs off - is constructed only in that file's tests. |
+| `save_subscreen.rs` | 8 | `801e4f40` `801dd12c` `801dd26c` `801d98f0` `801dae24` `801daef4` `801dafd4` `801dbc5c` | Closed: `save_screen::SaveScreenFlow` constructs a `SaveScreenMachine` on its first card-rack frame and ticks it around the session, so both hosts run the graph - the flow is the kernel they share. |
 | `card_bu_io.rs` | 4 | `801e0598` `801e3d68` `801e380c` `801e435c` | The engine has no `bu` device layer under the save screen. |
-| `cutscene_script_elements.rs` | 3 | `801d5d60` `801d6058` `801d27e0` | No element-actor dispatch; the three `step` bodies have no production caller. |
+| `cutscene_script_elements.rs` | 3 | `801d5d60` `801d6058` `801d27e0` | The seat exists now - `World::tick_cutscene_elements` runs the channel from the frame tick on both hosts - but nothing in production **spawns** an element into the pool, so a replay still enters none of the three `step` bodies. |
 | `shop.rs` | 2 | `801db7f4` `801dbd94` | The retail menu-overlay quantity sub-screens, distinct from the engine's own shop session. |
 | `camera_rel_glide.rs` | 1 | `8002149c` | No producer for the family's 20-halfword spawn record. |
 | `card_flow.rs` | 1 | `801e13b8` | Nothing owns the state word `CardWriteMachine` drives. |
@@ -622,7 +666,7 @@ rows below are what it did not reach.)
 
 | group | n | addresses | what would reach it |
 |---|---|---|---|
-| `screen_fx.rs` | 10 | `801de4c8` `801f8d4c` `801f811c` `801f8004` `801f7a9c` `801f88fc` `801f8e6c` `801f849c` `801f8f28` `801f8a34` | a scene whose script spawns an iris mask, letterbox or image panel - the ending scenes the module doc names |
+| `screen_fx.rs` | 10 | `801de4c8` `801f8d4c` `801f811c` `801f8004` `801f7a9c` `801f88fc` `801f8e6c` `801f849c` `801f8f28` `801f8a34` | Closed: `chapter1_frontier_ladder` enters all ten - a scene whose script spawns an iris mask, letterbox or image panel is exactly what its scene walk drives. |
 | `fishing.rs` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | a fishing rung past rung 4: rod select, a full cast, a landed catch |
 | `muscle_dome.rs` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | `w1b_dome_leg_ladder` - built; `801d9bbc` has no producer and stays |
 | `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | `w1b_baka_duel_ladder` - built; the door entry still arms neither |
@@ -1230,10 +1274,46 @@ tag.** Check `target/port-catalog/catalog.csv` before writing a verdict; if the
 wired half is the one that deserves the address, move the tag rather than the
 row.
 
+## The cast-module band, the largest cluster on this page and the one with no rows
+
+`crates/engine-vm/src/cast_module_ticks.rs` supplies **31** of the never-entered
+addresses - roughly a third of the whole set, the largest single-file cluster in
+it by a factor of six, and the only cluster of any size not cited anywhere else
+on this page. That is a gap in the page, not in the port: the file arrived whole
+and so never went through the per-row pass the rest of the buckets did.
+
+Every row is bucket **(b) GATED**, and they all share one gate. The engine
+reaches these bodies through `World::cast_module_for(spell_id)`
+(`crates/engine-core/src/world/battle/cast_band.rs`), which resolves a cast's
+spell id onto a PROT `0903..=0966` module and only then selects that module's
+tick body and sweep arm. So the gate is not "a battle", and it is not "a cast" -
+the union already drives both, and the seeded cast ladder enters 110 live
+addresses. The gate is **the specific spell or summon id**, one per row.
+
+This is the intro-style shape one layer down: a data arm rather than a beat a
+player reaches. A pad fixture cannot convert these rows however long it plays,
+because nothing about pad input selects a module; what converts one is a seeded
+cast of that id with the band resolved.
+
+Two things already do most of that and neither is in the union.
+`crates/engine-core/src/world/tests/cast_band.rs` walks the id-to-module
+resolution per id, but it is a `#[cfg(test)]` module rather than a test binary,
+so it can never be named in `CANONICAL_LADDERS` at all - the list takes
+`--test <name>` integration targets. `crates/engine-core/tests/cast_effect_pool_disc.rs`
+IS such a target and already calls `cast_module_for`, but only for two ids and
+without driving the tick body. The work is one integration ladder that seats a
+cast per id and steps it, and it converts rows in proportion to the ids it
+covers.
+
+`screen_fx.rs`'s ten rows had the same shape and are closed: the scene-frontier
+ladder enters them, which is the reading the table below predicted - they were
+gated on a scene whose script spawns the effect, not on anything a pad does.
+
 ## Gates behind the (b) rows
 
 | gate | rows | what has to happen |
 |---|---|---|
+| cast-module id | 31 | one cast per PROT `0903..=0966` spell / summon id, with the band resolved - see the section above |
 | slot-bonus | 5 | the casino slot machine's bonus round and its marquee |
 | capture-class cast | 2 | a boss encounter seated with a capture-class caster |
 | summon cast / Seru capture | 2 | a party member who knows Seru magic, and a fight that lands a capture roll |

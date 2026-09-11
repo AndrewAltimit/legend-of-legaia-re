@@ -13,7 +13,7 @@
 //! index spaces and [`docs/subsystems/boot.md`](../../../docs/subsystems/boot.md)
 //! for the loader.
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No `SCUS_942.54` bytes live in this crate. The reference dump
 //! `ghidra/scripts/funcs/8003e68c.txt` is the *spec*, cross-checked

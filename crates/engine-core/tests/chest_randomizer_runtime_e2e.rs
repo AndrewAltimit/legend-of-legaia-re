@@ -15,7 +15,7 @@
 //! already-loaded RAM copy, never re-fetched from the (patched) disc on open. A
 //! patched chest is only observed after a *fresh scene load* re-reads the MAN.
 //!
-//! The clean-room engine sidesteps the cache entirely: it loads the MAN straight
+//! The engine sidesteps the cache entirely: it loads the MAN straight
 //! from disc bytes and runs the very op (`0x39`) the randomizer edits. So this
 //! test:
 //!   1. patches one known chest (keikoku's Phoenix, item `0x80`) to a distinct id

@@ -188,7 +188,7 @@
     <summary>Open questions and history</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>Effect id &rarr; name.</strong> There is no string table; the only "name" available is an id &rarr; triggering-move join off the move-power table.</li>
+        <li><strong>Effect id &rarr; name - as close as the disc gets.</strong> There is no string table, so an effect is named only by its space, its id, and the moves that fire it. That join is built and run: 38 of the move-power table's 44 populated records cite 28 distinct effect keys, and each space uses one small contiguous band rather than its whole range. Two of the 28 are the generic hit sprites - one is cited by thirteen moves, another by ten - while thirteen keys belong to a single move each.</li>
         <li><strong>The low-band <code>readef.DAT</code> aux-slot consumer</strong> - see <a href="summon-readef.html">summon-readef</a>.</li>
         <li><strong>The <code>0x02018B0C</code> bundle's consumer</strong> is unreached.</li>
       </ul>

@@ -17,7 +17,7 @@
 //! *original* combo from the cached RAM copy. The patched combo is only the
 //! trigger after a fresh executable load re-reads the table off the disc.
 //!
-//! The clean-room engine sidesteps that cache: it decodes the combo straight
+//! The engine sidesteps that cache: it decodes the combo straight
 //! from the patched `SCUS_942.54` bytes and runs the real combo-recognition
 //! kernel - [`battle_arts::chain_matches_record`], the tail-match a directional
 //! chain triggers an art with in retail. So this test, on a scratch copy of the

@@ -236,17 +236,38 @@ per-node tick is `FUN_8003BC08`. So a marker tile is an ordinary field actor:
 the pass fills `+0x50` (the clip sub-index), `+0x74` and `+0x10` from the tile
 record, and the driver then runs it like any other node in that list.
 
-That names the port's blocker exactly, and it is one blocker rather than two.
-`legaia_engine_core::minigame_floor`'s `floor_tile_spawns` / `marker_template`
-resolve every field of these spawns; what neither host has is the *pool* -
-`engine-core` keys field entities by typed per-slot maps rather than by actor
-records, which is the same gap `legaia_engine_vm::motion_vm::field_actor_plan`
-discloses for `FUN_8003BC08` itself. Native minigame frames
-(`window/minigames.rs`) carry no tile-actor list, and the browser page bakes
-the whole venue into one static world-space mesh
-(`web-viewer::minigames_dance`'s `bake_dance_env`), so it has no per-cell draw
-to attach a flipbook to at all. Drawing the marker meshes means giving both
-hosts a per-cell tile-actor pass, not adding a call.
+The port's pool for these is `legaia_engine_core::minigame_floor::MarkerFloor`:
+it runs the `floor_tile_spawns` sweep over a venue's floor rect, keeps the cells
+`marker_template` classes as markers, and gives each one a
+`legaia_engine_vm::dance_marker::MarkerActor` carrying exactly the three fields
+the retail actor does - `+0x50` the class, `+0x9C` the script cursor, `+0x54`
+the countdown. `MarkerFloor::step` advances every tile's flipbook on the frame
+delta and `draws` reports the tiles that have staged a mesh.
+
+Measured on the real venue rather than assumed: `other7`'s `.MAP` carries sixty
+kind-1 trigger records, ten of which land on drawn floor cells with a clip in
+`6..=9`, spread over the classes as `[2, 2, 2, 4]` - and all ten swap mesh
+inside 240 frames. See `crates/engine-core/tests/dance_marker_floor_disc.rs`.
+
+The cells that are *not* markers keep no flipbook and no per-cell draw is owed
+for them: they take the plain floor template, which is the static hall geometry
+the env-pack bake already draws.
+
+#### Where the pool is drawn, and where it is not
+
+The browser minigames page draws it. `bake_dance_markers` in
+`web-viewer::minigames_dance` builds the pool at venue load and bakes **every
+candidate mesh of every tile** into the page's one static-topology buffer;
+each frame `dance_marker_step` advances the flipbooks and returns the block's
+positions with the spans that are not a tile's current mesh collapsed onto a
+single point, so their triangles are degenerate. That keeps the index buffer
+static and the per-frame cost at one array copy.
+
+The native play window is **not** drawing it, and the reason is upstream of the
+pool: its dance minigame is HUD-only - it never builds the dance hall's 3D venue
+at all, so there is no scene for a tile actor to stand in. Adding marker tiles
+there means building the venue first; the gap is a whole 3D presentation, not a
+missing call. See [`host-drift.md`](../tooling/host-drift.md).
 
 The step marker is **not a marker-specific record**. The call is
 `FUN_801d3ec0(1, x, z)`, so the sub-table it reads is kind **1** of the `.MAP`

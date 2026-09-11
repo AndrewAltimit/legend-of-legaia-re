@@ -390,10 +390,11 @@ pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
 ///
 /// The block does **not** end at the latch. `0x801E6218` falls straight
 /// through from the `sb v0,0x6(s5)` at `0x801E6214`, and nothing branches
-/// into it: both of the gates above jump to `0x801E6814`, past the whole
-/// tail. So the sweep that follows is inside the same once-per-action latch,
-/// not outside it. It was recorded here (and in `battle-action.md`) as
-/// "unlatched", which is refuted by the two branch targets.
+/// into it: both of the gates above are conditional and, **when taken**,
+/// land on `0x801E6814`, past the whole tail. So the sweep that follows is
+/// inside the same once-per-action latch, not outside it. It was recorded
+/// here (and in `battle-action.md`) as "unlatched", which is refuted by the
+/// second gate reading the latch byte itself.
 ///
 /// That tail is [`done_band_capture_and_banner_sweep`], and its multi-cast
 /// half turns out to be code this crate already ports: retail's

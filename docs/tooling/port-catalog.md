@@ -67,7 +67,10 @@ Rules:
   contexts that don't imply a port (cross-refs, "inspired by", "not yet
   ported", etc.) and noisily inflate the column.
 - Address must be lowercase hex in the SCUS / overlay code range.
-- Match is line-local - put the tag on its own line or as a trailing comment.
+- Match starts on the marker's own line - put the tag on its own line or as a
+  trailing comment - and continues onto the next comment line only when the
+  **address list** itself wraps. See
+  [A wrapped address list](#a-wrapped-address-list).
 - A single Rust file can carry many tags. The catalog records the crate name
   each tag appears in.
 - One Ghidra function can be ported into more than one crate (e.g. a
@@ -86,6 +89,34 @@ struct carry a `REF:` instead. See
 [Anchors](#anchors) for how each form resolves and
 [`stale-not-wired-triage.md`](stale-not-wired-triage.md#anchor-granularity) for
 the edit that splits a module tag safely.
+
+### A wrapped address list
+
+A tag naming several routines can outgrow its line. The reader
+(`scripts/ci/port_tag_reader.py`, shared by this tool,
+[`check-port-tags.py`](#tag-drift-checker) and
+[`check-port-provenance.py`](port-provenance.md)) takes the continuation, so
+both of these claim three addresses:
+
+```rust
+/// PORT: FUN_801d6704, FUN_801cf00c,
+///       FUN_801cef54
+/// PORT: FUN_801d6704, FUN_801cf00c, FUN_801cef54
+```
+
+A following comment line continues the list only when the text so far ends with
+a separator **and** the line starts with an address token. That is deliberately
+narrow, and the reason is measurable: reading every comment line up to the first
+blank one instead pulls 47 further addresses into the ported set over this
+tree's `crates/`, and they are `REF:` lines and prose - "the Baka overlay links
+the same body at `FUN_801D6710`" - not wrapped lists. A port claim the author
+did not make is worse than a dropped one, because the dropped one shows up as a
+worklist row and the invented one shows up as nothing.
+
+The narrow rule adds no address to this tree today. It is the shape a wrapped
+tag *would* lose, and the workaround it retires is the one already in the tree:
+repeating the marker on the next line (`//! REF:` twice in
+`crates/engine-core/src/battle_tutorial.rs`) so the second half is read at all.
 
 ## The `// REF:` tag
 
@@ -267,11 +298,14 @@ Anything whose retail behaviour is still missing from the port stays
 worked examples from the same files, both a hair from the line:
 
 - `engine-core::camera_ease` (`FUN_801DA390`). `crate::camera` does ease the
-  camera, in floats, against a typed zone record - but the per-frame yaw is
+  camera, in floats, against a typed zone record - but the per-frame value is
   *observable output* and the two disagree frame by frame, so a retail-faithful
-  camera mode genuinely wants this kernel. The owner is `World`, which leaves
-  the field VM's op `0x4C` n4 sub-9 host hooks unimplemented, so nothing posts
-  the zone angle it eases toward.
+  camera mode genuinely wants this kernel. It stayed `NOT WIRED` while `World`
+  left the field VM's op `0x4C` n4 sub-9 host hooks unimplemented; those exist
+  now, so the row is live. It is kept here because the shape is the lesson: a
+  second implementation of an *observable* behaviour is a gap even while the
+  engine's own version runs. (The channel is a vertical offset, not a yaw -
+  [`live-audit-triage.md`](live-audit-triage.md) carries the correction.)
 - `engine-core::menu_list_rows`'s three `FUN_80030628` builders. The pause
   menu does list items - but not in retail's three-buffer order and with none
   of its dim gates, because `World::inventory` is keyed by item id with no slot

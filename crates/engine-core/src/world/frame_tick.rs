@@ -128,6 +128,68 @@ impl World {
     ///
     /// REF: FUN_801DD784, FUN_801DD4C4, FUN_801DA930 (the kernels live in
     /// [`legaia_engine_vm::field_actor_timers`])
+    /// The player actor's `+0x16` footing height, or `0` when there is no
+    /// live player actor. The subtrahend of the camera-offset easing's target.
+    pub fn camera_ease_player_footing(&self) -> i16 {
+        self.player_actor_slot
+            .map(usize::from)
+            .filter(|&slot| slot < self.actors.len() && self.actors[slot].active)
+            .map_or(0, |slot| self.actors[slot].move_state.world_y)
+    }
+
+    /// One frame of the camera vertical-offset easing.
+    ///
+    /// REF: FUN_801DA390 - this is the per-frame call site retail runs off the
+    /// field frame pump; the ported kernel is
+    /// [`crate::camera_ease::ease_camera_offset`], which carries the tag.
+    ///
+    /// Supplies the kernel's six actor-side inputs from the engine's own
+    /// player actor. Two of them stand in for retail slots the engine does not
+    /// carry: `+0x1E` / `+0x20` become the previous tick's `(world_y,
+    /// world_z)`, so the settle test still answers "has the actor stopped
+    /// moving in Y and Z". The pad word is [`Self::story_flags`] - the same
+    /// `_DAT_1F800394` scratchpad word retail reads the input lock and the
+    /// fast-arm bit out of - and `_DAT_8007B850` is passed as `0`, which
+    /// leaves the fast arm disengaged (see the comment at the call).
+    ///
+    /// The result is observable engine state, not a camera input:
+    /// [`crate::camera`] still drives the rendered view from its float
+    /// controller, and choosing between them is a fidelity-mode decision.
+    pub fn tick_camera_offset_ease(&mut self) {
+        let (y, z) = match self
+            .player_actor_slot
+            .map(usize::from)
+            .filter(|&slot| slot < self.actors.len() && self.actors[slot].active)
+        {
+            Some(slot) => {
+                let ms = &self.actors[slot].move_state;
+                (ms.world_y, ms.world_z)
+            }
+            None => {
+                self.camera_ease_prev_yz = None;
+                return;
+            }
+        };
+        let (prev_y, prev_z) = self.camera_ease_prev_yz.unwrap_or((y, z));
+        self.camera_offset_ease =
+            crate::camera_ease::ease_camera_offset(crate::camera_ease::CameraEaseInput {
+                pad: self.story_flags,
+                scene_target: self.camera_scene_offset as u16,
+                player_footing: y as u16,
+                footing_settled: prev_y,
+                z,
+                z_target: prev_z,
+                // `_DAT_8007B850` has no engine mirror, so the fast arm
+                // never engages. It is a shortcut, not a behaviour: with it
+                // clear the adaptive arm reaches the same destination in the
+                // same 12-units-a-frame cap, only without pinning the step
+                // while the gap is small.
+                fast_flags: 0,
+                current: self.camera_offset_ease,
+            });
+        self.camera_ease_prev_yz = Some((y, z));
+    }
+
     pub fn tick_field_timer_actors(&mut self, frame_delta: u8) {
         // The bar envelope. It retires itself at phase 3, and the published
         // height is what both hosts' screen-prim pass reads.
@@ -1226,6 +1288,13 @@ impl World {
         if runs_master_driver {
             self.tick_register_ramps();
         }
+        // The camera vertical-offset easing `FUN_801DA390`: one call a frame,
+        // walking `_DAT_8007BCAC` toward `scene_ctrl[+0x4A] - player[+0x16]`.
+        // Same gate as the ramps above - retail runs it off the field frame
+        // pump, which the CARD-mode frame does not reach.
+        if runs_master_driver {
+            self.tick_camera_offset_ease();
+        }
         // The three frame-delta timer templates (`0x801F2858` bars,
         // `0x801F2840` eased moves, `0x801F27EC` floor-ladder rungs) ride the
         // same gate for the same reason: all three are `+0x0C` handlers on
@@ -1233,6 +1302,14 @@ impl World {
         if runs_master_driver {
             let delta = self.field_frame_step.min(u16::from(u8::MAX)) as u8;
             self.tick_field_timer_actors(delta);
+            // The script-cutscene element channel rides the same gate for the
+            // same reason - its three handlers are `+0x0C` handlers on that one
+            // effect-actor list, and the ambient emitter's own template
+            // (`0x801F271C`) sits in the very table the three above come from.
+            // Self-gates to a no-op on an empty channel.
+            let mut rng = crate::world::WorldRng::new(self.rng_state);
+            self.tick_cutscene_elements(delta, || rng.step());
+            self.rng_state = rng.state();
         }
         // The three-actor-talk controller's per-frame flag poll: when the
         // scene script drops the talk lock (system flag 0xD), the controller
@@ -2607,25 +2684,23 @@ impl World {
         let confirm = self.input.just_pressed(input::PadButton::Cross);
         match phase {
             MusclePhase::Select => {
-                let card = if self.input.just_pressed(input::PadButton::Left) {
-                    Some(0)
-                } else if self.input.just_pressed(input::PadButton::Right) {
-                    Some(1)
-                } else if self.input.just_pressed(input::PadButton::Up) {
-                    Some(2)
-                } else if self.input.just_pressed(input::PadButton::Down) {
-                    Some(3)
-                } else {
-                    None
+                // The whole selection surface - the direction input and the
+                // Ra-Seru list over it - is the session's, so the browser
+                // minigames page runs the identical rule.
+                // Triangle is this host's binding for the ring's Right chip:
+                // the port's selection has no ring screen, so the four
+                // directions stay the input screen's.
+                let pad = crate::muscle_dome::DomeSelectPad {
+                    left: self.input.just_pressed(input::PadButton::Left),
+                    right: self.input.just_pressed(input::PadButton::Right),
+                    up: self.input.just_pressed(input::PadButton::Up),
+                    down: self.input.just_pressed(input::PadButton::Down),
+                    confirm,
+                    cancel: self.input.just_pressed(input::PadButton::Circle),
+                    magic: self.input.just_pressed(input::PadButton::Triangle),
                 };
                 if let Some(s) = self.muscle_dome.as_mut() {
-                    if let Some(card) = card {
-                        s.commit_card(0, card);
-                    }
-                    if confirm {
-                        s.ai_commit_all(1);
-                        s.end_selection();
-                    }
+                    s.select_input(pad);
                 }
             }
             MusclePhase::Resolve => {

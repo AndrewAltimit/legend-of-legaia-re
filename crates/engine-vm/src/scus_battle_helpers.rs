@@ -10,7 +10,7 @@
 //! several larger battle-actor routines whose bodies are otherwise
 //! render-track (they call the GTE, write GPU primitive packets through the
 //! scratchpad OT pointer `_DAT_1f8003a0`, or drive dozens of battle globals)
-//! and therefore are **not** ported whole in the clean-room engine. Each core
+//! and therefore are **not** ported whole in the engine. Each core
 //! is the faithful, testable computation the retail routine repeats inline:
 //!
 //! - [`bgr555_to_grey`] - the desaturate step of the stone/petrify CLUT-fade
@@ -27,7 +27,7 @@
 //! REF: FUN_8004695C (the arm whose drain `scale_rgb24` is the maths of)
 //! REF: FUN_80024EE4 (that drain's submit)
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No `SCUS_942.54` bytes live in this crate. The reference dumps
 //! (`ghidra/scripts/funcs/80055854.txt`, `80046978.txt`, `8004ce2c.txt`,
@@ -42,7 +42,7 @@
 //!
 //! "The battle path is expected to grow a consumer" is a forecast, not a
 //! reason, and it is not the one that holds. Each kernel is the arithmetic
-//! core of a routine whose *body* the clean-room port deliberately stops
+//! core of a routine whose *body* the port deliberately stops
 //! short of, so what has to exist first is that body's engine equivalent -
 //! and each is a different missing thing:
 //!
@@ -149,7 +149,7 @@
 /// buffers. Nothing in the engine holds a `&mut [u32]` destination for this
 /// to advance, because the destination it would fill does not exist as a
 /// representation - the same substitution the rest of this module's
-/// "Clean-room boundary" note describes, and a call site would have to
+/// "Port boundary" note describes, and a call site would have to
 /// re-introduce retail's staging buffer purely so the kernel had something
 /// to chew.
 ///

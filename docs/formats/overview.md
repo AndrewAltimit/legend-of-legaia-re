@@ -49,7 +49,7 @@ There is **one** pack format and two readers for it. `pack.md` reads it at offse
 | [MES dialog](mes.md) | Confirmed | Two variants (Compact `0x404` and Records `0x44 0x78`); offset table + bytecode. Renderer is overlay-resident. |
 | [Dialog font](dialog-font.md) | Confirmed | Proportional Latin font for dialog/menu text. Width table at `0x80073F1C`, escape table at `0x80074050`, glyph bitmaps in VRAM at `(896, 0)`. |
 | [ANM animation](anm.md) | Confirmed | `(u16 count, u16 offsets[count], records)` layout. Asset type `0x06`. |
-| [Player-character meshes](character-mesh.md) | Confirmed | Field form = PROT 0874 §0 (low-poly). Battle form = **assembled per character** from the player battle files' equipment-id sections; PROT 1204 `other5` is the sibling default-equipment pack. |
+| [Player-character meshes](character-mesh.md) | Confirmed | Field form = PROT 0874 §0 (low-poly). Battle form = **assembled per character** from the player battle files' equipment-id sections; PROT 1204 `other5` is the sibling default-equipment pack. The entry's header follows the ordinary descriptor-table convention - `[count][Σ decompressed sizes][descriptors]` - so its second word indexes nothing and is 78 KB past the entry's own end. |
 | [Monster animation](monster-animation.md) | Confirmed | Per-object rigid-transform keyframes inside the monster archive (PROT 867). Per-action stream at entry `+0x8c`: `[u8 parts][u8 frames][parts×frames × 9-byte TRS]`. Action 0 = idle. |
 | [MDT move table](mdt.md) | Confirmed | Tactical Arts move tables. Two on-disc layouts the consumer accepts. |
 | [Place names](place-names.md) | Confirmed | The three carriers one place name has - the SCUS quick-travel cells, the world-map label table trailing each kingdom MAN, and each scene MAN's section-2 banner name. Editing one changes one display. |
@@ -106,6 +106,7 @@ World-map slot 4 is likewise not what it was first read as - twice. It is neithe
 |---|---|---|
 | [MIPS overlay code](mips-overlay.md) | Inferred | PROT entries that carry runtime code blobs (recognized by `addiu sp, sp, -X` prologue) |
 | [Overlay pointer-table code](overlay-ptr-table.md) | Inferred | Sister format - entries whose first chunk is a function/jump-table header pointing into `0x801C0000..=0x801FFFFF` |
+| [Slot-B module image layout](slot-b-module-layout.md) | Confirmed (band shape + extent); Inferred (the highest record's end) | The file layout of the 64 cast / summon images `0903..=0966`: head table, code, the `[i16 model_sel][u16 reserved][move-VM bytecode]` **spawn-record band**, and the inherited tail every image ends in. Records are recovered from the consumer's own `lui`/`addiu` pointer, not from a directory, so the topmost record has no static upper bound. Parser `legaia_asset::slot_b_module` |
 
 ## Audio path-strings
 

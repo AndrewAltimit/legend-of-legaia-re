@@ -1,7 +1,7 @@
 //! Shiny Seru feature: a rare (default 2%/battle) **capturable** enemy that
 //! spawns with +35% stats, and whose captured Seru deals +35% damage forever.
 //!
-//! Mirrors the clean-room engine implementation in
+//! Mirrors the engine implementation in
 //! `legaia_engine_core::seru_learning` (the `shiny` set + `SHINY_DAMAGE_BONUS_PCT`)
 //! as a retail disc patch, built from the same `enemy_ally`-style code injection.
 //!

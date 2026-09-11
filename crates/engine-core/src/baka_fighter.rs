@@ -1,4 +1,4 @@
-//! Clean-room **Baka Fighter duel minigame** rules engine.
+//! From-scratch **Baka Fighter duel minigame** rules engine.
 //!
 //! A faithful port of the fight logic in the Baka Fighter overlay (PROT 0976):
 //! the rock-paper-scissors exchange resolver, the HP-tiered damage kernel, the

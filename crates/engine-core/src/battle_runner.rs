@@ -25,7 +25,7 @@
 //! validator - "can this heal / revive / status action apply to slot N?")
 //! is not a runner concern: liveness / kind constraints live in
 //! [`crate::target_picker`] and per-item benefit relevance in
-//! [`crate::inventory_use`], each a purpose-built clean-room port of the
+//! [`crate::inventory_use`], each a purpose-built port of the
 //! arms it needs.
 //!
 //! No SM ticking happens here - engines tick the SM through their existing

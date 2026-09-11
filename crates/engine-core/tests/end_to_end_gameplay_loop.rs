@@ -16,7 +16,7 @@
 //!    monster slots 3..N from [`legaia_engine_core::monster_catalog::MonsterCatalog`],
 //!    flips the world into [`SceneMode::Battle`].
 //! 4. **Drive the battle SM through to victory.** Loops [`World::tick`]
-//!    while applying clean-room formula damage (the same pattern as
+//!    while applying port-side formula damage (the same pattern as
 //!    `battle_full_playthrough.rs`) until every monster slot reaches 0
 //!    HP. `World::tick` resolves the battle in the frame it completes, so
 //!    the assertions read the effects of a monster wipe (no `game_over`,
@@ -192,7 +192,7 @@ fn enter_battle(world: &mut World, formation: &FormationDef, catalog: &MonsterCa
     world.battle_ctx.action_state = ActionState::Begin.as_byte();
 }
 
-/// Apply a clean-room damage strike from the active attacker against the
+/// Apply a port-side damage strike from the active attacker against the
 /// first alive monster. Returns the new HP after the swing landed (or
 /// `None` if every monster is already dead / the strike missed).
 fn apply_strike(world: &mut World, attacker_slot: u8, seed: &mut u32) -> Option<u16> {
@@ -935,7 +935,7 @@ fn extracted_prot_path() -> Option<std::path::PathBuf> {
 /// entry, install it through [`World::install_encounter_from_record`],
 /// then drive the encounter session into a battle and resolve it. This
 /// closes the synthetic data leak in the field → battle handoff -
-/// every byte of the formation came from the disc, not a clean-room
+/// every byte of the formation came from the disc, not a port-side
 /// catalog.
 ///
 /// Skips when `extracted/PROT.DAT` is missing (CI without disc data).

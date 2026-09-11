@@ -1,4 +1,4 @@
-//! Battle-action validator, ported clean-room from `FUN_8003FB10`
+//! Battle-action validator, ported from `FUN_8003FB10`
 //! (`SCUS_942.54`-resident), plus its arm-`0x82` leaf callee `FUN_80046898`.
 //!
 //! PORT: FUN_8003FB10, FUN_80046898
@@ -37,7 +37,7 @@
 //! item-count gate `FUN_80046898` (arm `0x82`, ported as
 //! [`item_count_gate`] over [`ActionValidatorHost::inventory_count`]).
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No bytes from `SCUS_942.54` live here. The Ghidra decompilation at
 //! `ghidra/scripts/funcs/8003fb10.txt` is the *spec*, not source. Tests use

@@ -13,7 +13,7 @@
     <dt>Overlay window</dt><dd>Slot A at <code>0x801CE818</code> holds one of field / menu / cutscene / minigame code at a time; slot B holds the summon-render pair</dd>
     <dt>Title screen</dt><dd>No row is named for it, but it is a mode - the <code>CARD</code> pair (22/23), whose init streams PROT 0899 into slot A</dd>
     <dt>NEW GAME</dt><dd>Writes mode 2 (field), loads PROT 0897 and opens the prologue scene <code>opdeene</code>; name entry comes later, in <code>town01</code></dd>
-    <dt>Port</dt><dd><code>engine-shell::BootSession</code> (init), <code>engine-core::mode::ModeDriver</code> (the table), <code>engine-vm::title_overlay</code> (the title tick)</dd>
+    <dt>Port</dt><dd><code>engine-shell::BootSession</code> (init + the seat), <code>engine-core::mode::ModeSeat</code> (the mode word and the table around it), <code>engine-vm::title_overlay</code> (the title tick)</dd>
     <dt>Confidence</dt><dd>Confirmed - mode table read off the disc; title tick and launch write pinned by live watchpoints</dd>
   </dl>
 </section>
@@ -77,7 +77,7 @@
     <span class="num">4</span><span class="layer">Asset router</span><span class="desc">the type-byte dispatcher&rsquo;s buffer pointers become valid</span><span class="crate">asset dispatcher</span>
     <span class="num">5</span><span class="layer">Publisher logos</span><span class="desc">four textures in <code>init.pak</code> fade in / hold / fade out</span><span class="crate">legaia_asset::init_pak</span>
     <span class="num">6</span><span class="layer">Title overlay</span><span class="desc">mode 22 <code>CARD INIT</code> streams PROT 0899 into slot A; the attract loop ticks</span><span class="crate">title tick</span>
-    <span class="num">7</span><span class="layer">Mode machine</span><span class="desc">NEW GAME writes mode 2; the master loop dispatches the table from here on</span><span class="crate">ModeDriver</span>
+    <span class="num">7</span><span class="layer">Mode machine</span><span class="desc">NEW GAME writes mode 2; the master loop dispatches the table from here on</span><span class="crate">ModeSeat</span>
   </div>
   <p>Almost every PlayStation game bundles its small files into one archive so the disc can stream them; Legaia&rsquo;s is <code>PROT.DAT</code>, with a table of contents saying &ldquo;entry N starts at sector S&rdquo;. Reading that table is job one. Job two is the <em>asset-type dispatcher</em>: each entry&rsquo;s first byte is a type tag, and one router hands the bytes to the matching parser (<a href="../formats/asset-type.html">asset-type</a>). Job three is the mode machine below.</p>
   <p class="hint">Most gameplay code is <strong>not</strong> in the executable. The field VM, dialog renderer and battle logic live in RAM overlays streamed on demand into <code>0x801C0000+</code>. &ldquo;Zero callers in <code>SCUS_942.54</code>&rdquo; never means dead code - it means the caller is in an overlay.</p>

@@ -4,7 +4,7 @@
 //! Most field-VM opcodes only have meaningful side-effects in the host -
 //! BGM dispatch lives in audio, dialog opens a UI overlay, money / inventory
 //! / party manipulation update game state. The retail engine called into
-//! its loader / audio / UI layers directly; in the clean-room port we route
+//! its loader / audio / UI layers directly; in the port we route
 //! every such call through a [`FieldEvent`] pushed onto
 //! [`crate::world::World::pending_field_events`].
 //!

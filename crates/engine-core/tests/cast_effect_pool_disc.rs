@@ -44,7 +44,9 @@ const EXEMPLARS: [(u32, usize, usize, u32, u32); 3] = [
 
 /// The band's two record-less entries: PROT 0926 is the 1-sector null stub
 /// (2040 of its 2048 bytes are PROT 0925's residue) and PROT 0952's two spawn
-/// sites both load `a2` out of a saved register the static window cannot see.
+/// sites sit in its inherited tail (file `+0x11E8..+0x1800`, PROT 0951's
+/// bytes), resolving to `0x801F8348` / `0x801F836C` - two of PROT 0951's
+/// records, past the end of 0952's `0x1800`-byte image.
 const RECORDLESS: [u32; 2] = [926, 952];
 
 fn extracted_dir() -> Option<PathBuf> {

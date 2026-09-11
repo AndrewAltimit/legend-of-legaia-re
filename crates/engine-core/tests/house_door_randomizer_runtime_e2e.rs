@@ -13,7 +13,7 @@
 //! oracles: a scene's MAN is resident in RAM the moment you're standing in the
 //! town, so loading a patched disc on such a state still warps to the
 //! *original* interior. A patched door is only observed after a fresh scene
-//! load re-streams the MAN - which is exactly what the clean-room engine does.
+//! load re-streams the MAN - which is exactly what the engine does.
 //!
 //! The mechanism was pinned by a live PCSX-Redux range write-watch
 //! (`probe.step.find_writer`): entering Mei's house executes the field-VM

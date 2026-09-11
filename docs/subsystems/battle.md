@@ -43,19 +43,34 @@ Multi-step async state machine; sub-state byte at `gp+0xa59`. The dual-mode
 loader (`_DAT_8007b8c2`) chooses between PROT-TOC indices (dev) and
 `h:\prot\battle\*.dat` ISO9660 files (retail) for the same data. Notable steps:
 
-- **State `0x8`** - loads the battle texture pack: PROT `0x368` (872) / `etim.dat`.
-- **State `0xb`** - loads the battle **model** pack: PROT `0x36a` (**874**) / `etmd.dat`
-  (`FUN_8003e68c(0x36a)` + `async_lba_loader`), with PROT `0x369` (873) as its index.
-- **State `0xc`** - two loops over the contiguous 873+874 load. The FIRST
-  (`jal 0x8001FBCC`) walks **874's own header** as a flat pack - count =
-  word 0 (`meta[0]` = 3), then registers words 1..3 (`meta[1]`,
-  `type<<24|size0`, `offset0`) verbatim as battle-VDF pointers off the raw
-  874 base; `meta[1]` addresses a VDF tail past the LZS payload inside the
-  entry, so those words are a byte-exact editing contract - see
-  [`character-mesh.md` § Dual consumer](../formats/character-mesh.md#dual-consumer---the-battle-loader-registers-the-header-words-as-vdf-pointers).
-  The SECOND walks the **873** pack and calls `tmd_register` on every entry
+Every index in this section is a **raw TOC** index, the space the loader's
+own `li a0,…` constants live in; the extraction entry is two lower
+([`cdname.md`](../formats/cdname.md#numbering-space)). All four members
+belong to the `befect_data` block - raw 872..875 = extraction 870..873 =
+`etim` / `etmd` / `vdf` / `efect` ([`effect.md`](../formats/effect.md)).
+
+- **State `0x8`** - loads the battle texture pack: PROT raw `0x368` (872) =
+  extraction 870 / `etim.dat`.
+- **State `0xb`** - loads the battle **model** pack: PROT raw `0x369` (873) =
+  extraction 871 / `etmd.dat`, together with raw `0x36a` (874) = extraction
+  872 / `vdf`. One read covers both: `FUN_8003e8a8(0x369)` leaves 873's LBA
+  in `gp+0x8f0` and its sector count in `gp+0xa84` (`0x80052518`), then
+  `FUN_8003e68c(0x36a)` adds 874's sector count (`0x8005253c`) so the
+  transfer is `size(873) + size(874)` sectors from 873's LBA. The 874 half
+  lands at `base + size(873)*2048`, cached at `0x8007B878`.
+- **State `0xc`** - two loops over that contiguous 873+874 load. The FIRST
+  (`jal 0x8001FBCC` at `0x80052584`) walks the **874 half** - the `vdf`
+  pack, header `[u32 count][u32 byte_offsets[count]]` (count `0x20`) - and
+  appends each `base + offset` to the VDF pointer table `0x80083E58`
+  (`FUN_8001FBCC` is that table's append). It does **not** touch the
+  character pack, whose *extraction* label is also 874; that collision is
+  the falsified "the battle loader reads PROT 0874's header words as VDF
+  pointers" reading - see
+  [`character-mesh.md` § Not a dual consumer](../formats/character-mesh.md#not-a-dual-consumer---the-battle-vdf-pack-is-a-different-entry).
+  The SECOND walks the **873** (`etmd`) pack and calls `tmd_register` on every entry
   (`jal 0x80026b4c` = `FUN_80026B4C`, the sole `DAT_8007C018` installer),
-  then loads `efect.dat` / PROT `0x36b` (875). **This registration fills the
+  then loads `efect.dat` / PROT raw `0x36b` (875) = extraction 873.
+  **This registration fills the
   effect/model window `DAT_8007C018[3..]`, NOT the party `[0..=2]`.** The party
   battle meshes come from a **separate** pack - **PROT 1204 (`other5`)**,
   installed into `DAT_8007C018[0..=2]` for Vahn/Noa/Gala by **static SCUS battle

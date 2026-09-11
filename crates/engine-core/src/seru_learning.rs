@@ -214,7 +214,7 @@ impl SeruRegistry {
     /// capture banner reads correctly (e.g. capturing the Gimard Seru learns
     /// spell `0x81` "Gimard", matching the save-state pin in
     /// [`crate::capture_observations::seru_capture`]). The monster->Seru
-    /// attachment itself is still a clean-room approximation - only the
+    /// attachment itself is still a port-side approximation - only the
     /// spell-id space is pinned.
     pub fn retail() -> Self {
         let mut r = Self::new();

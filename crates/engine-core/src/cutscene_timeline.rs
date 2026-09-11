@@ -17,7 +17,7 @@
 //! [`crate::world::World::step_cutscene_timeline`]; this type is just the
 //! cursor + halt bookkeeping around the VM step.
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No Sony bytes live here. The record body is sliced from the user's disc MAN
 //! at runtime and handed in; this module only holds the per-context cursor.

@@ -58,13 +58,26 @@ pub enum CueSpawn {
     /// `id & 0x80` set: `FUN_801DFDF0(id & 0x7F, &pos, yaw)`, where `yaw` is
     /// the actor's **unbiased** `+0x46` heading.
     Actor { id: u8, yaw: i16 },
-    /// `id & 0x80` clear. `sfx` is the byte the SFX map at `0x801F6418`
-    /// carries for this id - `None` when that byte is zero, in which case
-    /// retail emits no sound packet at all. `effect_index` indexes the
-    /// effect-parameter table at `0x801F6324` (word stride).
+    /// `id & 0x80` clear. `clut_x` is the byte the map at `0x801F6418`
+    /// carries for this id - the **VRAM x** of a 16-entry CLUT row, `None`
+    /// when the byte is zero, in which case retail copies nothing.
+    /// `effect_index` indexes the effect-parameter table at `0x801F6324`
+    /// (word stride).
+    ///
+    /// This is **not** a sound cue. `0x801F6418` was read as a per-cue SFX
+    /// map, and the routine it feeds, `FUN_80058490`, as a sound-driver
+    /// submit. `FUN_80058490` registers itself as `"MoveImage"`
+    /// (`FUN_80058170(0x800156EC, ...)`, and the bytes at `0x800156EC` are
+    /// that ASCII) and takes `(RECT*, dest_x, dest_y)`; the site at
+    /// `0x801E2400..0x801E2450` builds the RECT
+    /// `{ x = map[id], y = 0x1DC, w = 0x10, h = 1 }` in scratchpad and calls
+    /// `MoveImage(rect, 0xE0, 0x1DC)`. That is a 16x1 VRAM block copy from
+    /// `(map[id], 476)` to `(224, 476)` - a palette-row swap. The table's
+    /// whole value set is `0x00` / `0xB0` / `0xC0` / `0xD0` over its 0x32
+    /// live entries, which are x coordinates and not cue ids.
     Effect {
         id: u8,
-        sfx: Option<u8>,
+        clut_x: Option<u8>,
         effect_index: u8,
         /// `Some(word)` when the caller's tint is not [`CUE_TINT_NEUTRAL`];
         /// the value is what retail stores at the spawned effect's `+0x74`.
@@ -93,8 +106,9 @@ pub struct CueGroupExpansion {
 pub struct CueTables<'a> {
     /// `0x801F6470` - the `[count][id;4]` groups, `CUE_GROUP_STRIDE` apart.
     pub groups: &'a [u8],
-    /// `0x801F6418` - per-cue-id SFX byte; zero means "no sound".
-    pub sfx_map: &'a [u8],
+    /// `0x801F6418` - per-cue-id **CLUT source x**; zero means "no copy".
+    /// See [`CueSpawn::Effect`] for why this is not an SFX map.
+    pub clut_map: &'a [u8],
 }
 
 /// Expand one action's cue group into its spawns. `FUN_801E22C8`.
@@ -118,7 +132,7 @@ pub struct CueTables<'a> {
 /// [`CueSpawn`] is handed to
 /// [`BattleActionHost::spawn_cue`](crate::battle_action::BattleActionHost::spawn_cue).
 /// Both tables come off the disc - `legaia_asset::move_power::EffectAuxTables`
-/// reads all three regions (`0x801F6324` prototypes, `0x801F6418` SFX map,
+/// reads all three regions (`0x801F6324` prototypes, `0x801F6418` CLUT map,
 /// `0x801F6470` groups) off PROT 0898 - through
 /// [`BattleActionHost::cue_tables`](crate::battle_action::BattleActionHost::cue_tables),
 /// so a host with no overlay expands nothing rather than expanding synthetic
@@ -140,7 +154,7 @@ pub struct CueTables<'a> {
 /// REF: FUN_801E295C (its one call site in the action SM, `0x801E4134`),
 /// REF: FUN_801EC3E4 (what the strike loop resolves damage through instead),
 /// REF: FUN_801DFDF0 (actor-cue spawn), FUN_80050ED4 (effect spawn),
-/// REF: FUN_80058490 (sound packet submit)
+/// REF: FUN_80058490 (`MoveImage` - the 16x1 CLUT-row copy, not a sound submit)
 pub fn expand_cue_group(
     tint: u32,
     actor_state: u32,
@@ -177,10 +191,14 @@ pub fn expand_cue_group(
                 yaw: actor_yaw,
             });
         } else {
-            let sfx = tables.sfx_map.get(id as usize).copied().filter(|&s| s != 0);
+            let clut_x = tables
+                .clut_map
+                .get(id as usize)
+                .copied()
+                .filter(|&s| s != 0);
             out.spawns.push(CueSpawn::Effect {
                 id,
-                sfx,
+                clut_x,
                 effect_index: id,
                 tint: (tint != CUE_TINT_NEUTRAL).then_some(tint | CUE_TINT_MODE),
             });
@@ -252,8 +270,9 @@ pub struct CueGroupSite {
 /// 7-entry inner table at `0x800151B0` only bumps counters), a class-`7` tier
 /// outside `1..=4` falls past all four of its `jal`s, and every class byte
 /// from the spell table's routing band (`0x14` plain cast, `0x32` summon,
-/// `0x63` capture) is above the jump table's `0x84` bound or lands on an arm
-/// with no `jal`.
+/// `0x63` capture) is *inside* the jump table's `0x84` bound but lands on the
+/// shared default slot, which is the applier's own epilogue - see
+/// [`crate::battle_action::effect_selector_arm`].
 ///
 /// **What a missing tier costs.** Six of the eight rows are literals, so a
 /// host that cannot supply `+0x1E9` still selects the right group for classes
@@ -538,18 +557,18 @@ mod tests {
         groups[CUE_GROUP_STRIDE * 2] = 2;
         groups[CUE_GROUP_STRIDE * 2 + 1] = 0x83;
         groups[CUE_GROUP_STRIDE * 2 + 2] = 9;
-        let mut sfx = vec![0u8; 16];
-        sfx[4] = 0x21;
+        let mut clut = vec![0u8; 16];
+        clut[4] = 0xD0;
         // id 5 and id 9 have no sound.
-        (groups, sfx)
+        (groups, clut)
     }
 
     #[test]
     fn empty_group_still_writes_the_actor_fields() {
-        let (groups, sfx_map) = tables();
+        let (groups, clut_map) = tables();
         let t = CueTables {
             groups: &groups,
-            sfx_map: &sfx_map,
+            clut_map: &clut_map,
         };
         let out = expand_cue_group(CUE_TINT_NEUTRAL, 0x1234, 0, 0, &t);
         assert!(out.spawns.is_empty());
@@ -559,21 +578,21 @@ mod tests {
 
     #[test]
     fn skip_state_suppresses_the_flags_write() {
-        let (groups, sfx_map) = tables();
+        let (groups, clut_map) = tables();
         let t = CueTables {
             groups: &groups,
-            sfx_map: &sfx_map,
+            clut_map: &clut_map,
         };
         let out = expand_cue_group(CUE_TINT_NEUTRAL, CUE_ACTOR_STATE_SKIP, 0, 0, &t);
         assert_eq!(out.actor_blend, None);
     }
 
     #[test]
-    fn effect_cues_carry_their_sfx_only_when_the_map_byte_is_set() {
-        let (groups, sfx_map) = tables();
+    fn effect_cues_carry_their_clut_row_only_when_the_map_byte_is_set() {
+        let (groups, clut_map) = tables();
         let t = CueTables {
             groups: &groups,
-            sfx_map: &sfx_map,
+            clut_map: &clut_map,
         };
         let out = expand_cue_group(CUE_TINT_NEUTRAL, 0, 0, 1, &t);
         assert_eq!(
@@ -581,13 +600,13 @@ mod tests {
             vec![
                 CueSpawn::Effect {
                     id: 4,
-                    sfx: Some(0x21),
+                    clut_x: Some(0xD0),
                     effect_index: 4,
                     tint: None
                 },
                 CueSpawn::Effect {
                     id: 5,
-                    sfx: None,
+                    clut_x: None,
                     effect_index: 5,
                     tint: None
                 },
@@ -597,10 +616,10 @@ mod tests {
 
     #[test]
     fn actor_cues_strip_the_flag_and_use_the_unbiased_yaw() {
-        let (groups, sfx_map) = tables();
+        let (groups, clut_map) = tables();
         let t = CueTables {
             groups: &groups,
-            sfx_map: &sfx_map,
+            clut_map: &clut_map,
         };
         let out = expand_cue_group(0x00FF_0000, 0, 0x400, 2, &t);
         assert_eq!(out.spawns[0], CueSpawn::Actor { id: 3, yaw: 0x400 });
@@ -608,7 +627,7 @@ mod tests {
             out.spawns[1],
             CueSpawn::Effect {
                 id: 9,
-                sfx: None,
+                clut_x: None,
                 effect_index: 9,
                 tint: Some(0x00FF_0000 | CUE_TINT_MODE)
             }
@@ -670,10 +689,10 @@ mod tests {
         assert_eq!(revive.actor_state, CUE_ACTOR_STATE_SKIP);
         // ... which is what suppresses the `+0x0C` follow-up write.
         let groups = vec![0u8; CUE_GROUP_STRIDE * 8];
-        let sfx = vec![0u8; 16];
+        let clut = vec![0u8; 16];
         let t = CueTables {
             groups: &groups,
-            sfx_map: &sfx,
+            clut_map: &clut,
         };
         let out = expand_cue_group(revive.tint, revive.actor_state, 0, revive.group, &t);
         assert_eq!(out.actor_blend, None);

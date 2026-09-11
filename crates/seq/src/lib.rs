@@ -1,4 +1,4 @@
-//! Clean-room parser for PsyQ SEQ files (PS1 sequenced-music format).
+//! From-scratch parser for PsyQ SEQ files (PS1 sequenced-music format).
 //!
 //! SEQ is a MIDI-derived format used by Sony's `libsnd` SsAPI sequencer
 //! (`SsSeqOpen`/`SsSeqPlay`/...). The header is 15 bytes; the payload is a

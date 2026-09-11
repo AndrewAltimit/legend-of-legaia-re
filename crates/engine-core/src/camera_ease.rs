@@ -1,42 +1,66 @@
-//! Field **camera yaw easing**: the per-frame step that walks the camera's
-//! smoothed yaw toward the angle the current camera zone asks for.
+//! Field **camera vertical-offset easing**: the per-frame step that walks the
+//! scene control block's smoothed camera offset toward the value the current
+//! scene asks for.
 //!
 //! PORT: FUN_801DA390
 //!
 //! One call per frame. It owns a single global (`_DAT_8007BCAC`, seeded to
-//! `0x3C` by the field initialiser) and moves it toward a target derived from
-//! the camera-zone record's angle minus the player's facing. The interesting
-//! part is the **step size**, which is not constant: while the camera is
-//! settled it moves one unit a frame, and while it is not it moves by a
-//! gap-proportional amount capped at twelve. That is what makes a scene
-//! transition swing the camera round quickly and then creep the last few units.
+//! `0x3C` by the field initialiser) and moves it toward
+//! `scene_ctrl[+0x4A] - player[+0x16]`, where `scene_ctrl` is the MAN scene
+//! control block `_DAT_801C6EA4` and `player` the player actor `_DAT_8007C364`.
+//! The interesting part is the **step size**, which is not constant: while the
+//! player is stationary it moves one unit a frame, and while the player is
+//! still gliding it moves by a gap-proportional amount capped at twelve. That
+//! is what makes a scene transition swing the offset round quickly and then
+//! creep the last few units.
+//!
+//! ### What this channel is **not**
+//!
+//! It is not a camera **yaw**. The subtrahend is the player actor's `+0x16`,
+//! and that slot is the actor's **footing** - the height of the floor it is
+//! standing on - not a facing: `FUN_801D1BA0` glides `+0x16` toward the floor
+//! sample at a clamped rate before the ledge classifier reads it back
+//! (`0x801D1C30..0x801D1C68`), the heading lives at `+0x26`, and two wall-press
+//! captures each read `player + 0x16 == -192` on `town0c`'s `-192` floor. The
+//! move-VM actor struct maps the same slot as `world_y`. So `_DAT_8007BCAC` is
+//! a smoothed **vertical offset** in world units, and both the accumulator and
+//! `scene_ctrl[+0x4A]` are denominated in `+0x16`'s units. An earlier reading
+//! of this module named `+0x16` "player facing" and `+0x1E` "the facing's
+//! settle target", which made the whole channel a yaw; the arithmetic is
+//! unchanged by the correction but the units and the consumer are not.
+//! See [`field-locomotion.md`](../../../docs/subsystems/field-locomotion.md).
+//!
+//! The settle test compares `+0x16`/`+0x18` against the parallel slots eight
+//! bytes on (`+0x1E`/`+0x20`) - Y and Z only, never X - so what it asks is
+//! whether the actor's height and depth have both stopped moving. The engine
+//! has no `+0x1E`/`+0x20` pair; [`crate::world::World`] answers the same
+//! question from the previous tick's Y and Z, which reproduces the outcome the
+//! comparison encodes without asserting what retail keeps in those two slots.
 //!
 //! Provenance: `overlay_cutscene_dialogue_801da390.txt`, cross-checked against
 //! `overlay_cutscene_mapview_801da390.txt` and the standalone `801da390.txt`
 //! (all 99 instructions, identical).
 //!
-//! NOT WIRED (whole module). Both of the easing's inputs are missing, and the
-//! **target** is the harder one - a fidelity toggle over the accumulator alone
-//! would still have nothing to ease toward.
-//!
-//! `zone_angle` is the camera-zone record's `+0x4A` (`_DAT_801C6EA4 + 0x4A`).
-//! Its retail writer is the field VM: op `0x4C` outer-nibble-4 sub-9 sets or
-//! ramps that halfword, and on its delta arm writes `_DAT_8007BCAC` in the same
-//! breath - so the two globals this module reads are written by one opcode. The
-//! port dispatches that opcode (`legaia_engine_vm::field::step::menu_ctrl`) but
-//! `World` overrides none of its three host hooks
+//! WIRED: the field VM's op `0x4C` outer-nibble-4 sub-9 is the retail writer of
+//! both globals - it sets or ramps `scene_ctrl[+0x4A]`, and on its delta arm
+//! writes `_DAT_8007BCAC` in the same breath. `World` now implements all three
+//! of that opcode's host hooks
 //! (`FieldHost::op4c_n4_sub9_default_write` / `_default_ramp` /
-//! `_delta_write_or_ramp` keep their no-op default bodies), so no scene angle is
-//! ever posted and there is no `_DAT_8007BCAC` to step. [`crate::camera`] eases
-//! in its own float-based controller against a typed zone record instead.
-//!
-//! Wiring is therefore two steps, in order: implement those hooks on `World` so
-//! the retail zone angle exists, then decide - as a **fidelity-mode toggle** -
-//! which easing drives the camera, because the two disagree frame by frame and
-//! swapping silently changes camera feel.
+//! `_delta_write_or_ramp`) onto [`crate::world::World::camera_scene_offset`] /
+//! [`crate::world::World::camera_offset_ease`], and `World::tick` steps the
+//! accumulator once a frame through [`ease_camera_offset`]. The accumulator is
+//! observable state, not yet a camera input: [`crate::camera`] still drives the
+//! rendered camera from its own float controller, and which of the two owns the
+//! view is a fidelity-mode decision, not a wiring one - the two disagree frame
+//! by frame and swapping silently changes camera feel.
 //!
 //! REF: FUN_801D6704 (seeds the global to `0x3C`), FUN_801DBA20 (the zone query
-//! that supplies the target angle)
+//! that supplies the per-region camera preset), FUN_801D1BA0 (the `+0x16`
+//! footing glide)
+
+/// Value the per-scene field initialiser seeds `_DAT_8007BCAC` to
+/// (`FUN_801D6704`, `0x801D67B8`: `li v0,0x3c` / `sw v0,-0x4354(v1)`).
+pub const CAMERA_OFFSET_EASE_SEED: i32 = 0x3C;
 
 /// Pad-word bit that suspends the easing entirely - the field input lock.
 ///
@@ -66,18 +90,21 @@ const STEP_SHIFT: u32 = 4;
 pub struct CameraEaseInput {
     /// Scratchpad pad word `_DAT_1F800394`.
     pub pad: u32,
-    /// Camera-zone record `+0x4A` - the angle the zone wants.
-    pub zone_angle: u16,
-    /// Player actor `+0x16` - current facing.
-    pub player_facing: u16,
-    /// Player actor `+0x1E` - the facing's settle target.
-    pub facing_target: i16,
-    /// Player actor `+0x18` / `+0x20` - Z and its settle target.
+    /// Scene control block `+0x4A` (`_DAT_801C6EA4 + 0x4A`) - the offset
+    /// the scene wants, in `+0x16` units.
+    pub scene_target: u16,
+    /// Player actor `+0x16` - current footing height.
+    pub player_footing: u16,
+    /// Player actor `+0x1E` - the slot the settle test compares `+0x16`
+    /// against. Hosts without that slot pass the previous tick's `+0x16`.
+    pub footing_settled: i16,
+    /// Player actor `+0x18` / `+0x20` - Z and the slot the settle test
+    /// compares it against.
     pub z: i16,
     pub z_target: i16,
     /// `_DAT_8007B850`, consulted only on the fast arm.
     pub fast_flags: u32,
-    /// `_DAT_8007BCAC` - the smoothed yaw being eased.
+    /// `_DAT_8007BCAC` - the smoothed offset being eased.
     pub current: i32,
 }
 
@@ -89,8 +116,9 @@ pub struct CameraEaseInput {
 ///
 /// 1. **Fast** - [`PAD_FAST_ARM`] set *and* `fast_flags & 0xF000` non-zero:
 ///    step [`STEP_MAX`] outright.
-/// 2. **Settled** - the player's facing equals its target *and* its Z equals
-///    its target: step [`STEP_SETTLED`].
+/// 2. **Settled** - the player's `+0x16` footing equals the slot eight bytes
+///    on *and* its Z equals its own: step [`STEP_SETTLED`]. Read plainly:
+///    the actor has stopped moving in Y and Z.
 /// 3. **Adaptive** - otherwise derived from the gap, capped at [`STEP_MAX`].
 ///
 /// The adaptive arm is `v = |current - gap| >> 4`, then **`v + 1` when
@@ -104,15 +132,14 @@ pub struct CameraEaseInput {
 /// 16 and the easing silently never arrives; the convergence test in this
 /// module is what pins it.
 ///
-/// NOT WIRED: reached only from [`ease_camera_yaw`], which nothing calls - same
-/// missing retail yaw channel as the module note. Exposed separately because
-/// the step rule is the part a fidelity-mode camera would want to reuse even if
-/// it drove its own accumulator.
+/// WIRED through [`ease_camera_offset`], which `World::tick` runs once a frame.
+/// Exposed separately because the step rule is the part a fidelity-mode camera
+/// would want to reuse even if it drove its own accumulator.
 pub fn ease_step(input: CameraEaseInput, gap: i16) -> i16 {
     if input.pad & PAD_FAST_ARM != 0 && input.fast_flags & FAST_ARM_MASK != 0 {
         return STEP_MAX;
     }
-    let settled = i32::from(input.player_facing as i16) == i32::from(input.facing_target)
+    let settled = i32::from(input.player_footing as i16) == i32::from(input.footing_settled)
         && input.z == input.z_target;
     if settled {
         return STEP_SETTLED;
@@ -129,28 +156,29 @@ pub fn ease_step(input: CameraEaseInput, gap: i16) -> i16 {
     if step < STEP_MAX { step } else { STEP_MAX }
 }
 
-/// Advance the smoothed camera yaw by one frame.
+/// Advance the smoothed camera vertical offset by one frame.
 ///
 /// PORT: FUN_801DA390 (`0x801da390..0x801da518`).
 ///
 /// Returns the new value of `_DAT_8007BCAC`. While [`PAD_INPUT_LOCKED`] is set
 /// the value is returned unchanged - the routine returns before touching it.
 ///
-/// The target is `zone_angle - player_facing`, both read as `u16` and
-/// subtracted as such, so the gap wraps like the 12-bit angle space it comes
-/// from. The move is then clamped to [`ease_step`]'s magnitude in whichever
-/// direction closes the gap, and a gap of exactly zero leaves the value alone.
+/// The target is `scene_target - player_footing`, both read as `u16` and
+/// subtracted as such, then sign-extended, so the gap wraps in 16 bits. The
+/// move is then clamped to [`ease_step`]'s magnitude in whichever direction
+/// closes the gap, and a gap of exactly zero leaves the value alone.
 ///
-/// NOT WIRED: no engine writer posts the camera-zone angle this eases toward
-/// (the field VM's op `0x4C` n4 sub-9 hooks are unimplemented on `World`), so
-/// there is no target, and no `_DAT_8007BCAC` accumulator to hold the result -
-/// [`crate::camera`] eases in floats against its own typed zone record. See the
-/// module note for the two-step order wiring has to take.
-pub fn ease_camera_yaw(input: CameraEaseInput) -> i32 {
+/// WIRED: `World::tick_camera_offset_ease` calls this once a frame, over the
+/// two globals the field VM's op `0x4C` n4 sub-9 hooks now write
+/// ([`crate::world::World::camera_scene_offset`] and
+/// [`crate::world::World::camera_offset_ease`]). What the accumulator does
+/// *not* yet do is drive the rendered camera - [`crate::camera`] keeps its own
+/// float controller, and choosing between them is a fidelity-mode decision.
+pub fn ease_camera_offset(input: CameraEaseInput) -> i32 {
     if input.pad & PAD_INPUT_LOCKED != 0 {
         return input.current;
     }
-    let gap = input.zone_angle.wrapping_sub(input.player_facing) as i16;
+    let gap = input.scene_target.wrapping_sub(input.player_footing) as i16;
     let step = ease_step(input, gap);
     let cur = input.current;
     let g = i32::from(gap);
@@ -175,9 +203,9 @@ mod tests {
     fn input() -> CameraEaseInput {
         CameraEaseInput {
             pad: 0,
-            zone_angle: 0,
-            player_facing: 0,
-            facing_target: 0,
+            scene_target: 0,
+            player_footing: 0,
+            footing_settled: 0,
             z: 0,
             z_target: 0,
             fast_flags: 0,
@@ -189,30 +217,30 @@ mod tests {
     fn the_input_lock_freezes_the_value() {
         let mut i = input();
         i.pad = PAD_INPUT_LOCKED;
-        i.zone_angle = 0x400;
+        i.scene_target = 0x400;
         i.current = 0x3C;
-        assert_eq!(ease_camera_yaw(i), 0x3C);
+        assert_eq!(ease_camera_offset(i), 0x3C);
     }
 
     #[test]
     fn a_settled_camera_creeps_one_unit_a_frame() {
         let mut i = input();
         // facing == target and z == z_target -> settled.
-        i.zone_angle = 500;
+        i.scene_target = 500;
         i.current = 0;
         assert_eq!(ease_step(i, 500), STEP_SETTLED);
-        assert_eq!(ease_camera_yaw(i), 1);
+        assert_eq!(ease_camera_offset(i), 1);
     }
 
     #[test]
     fn an_unsettled_camera_takes_a_gap_proportional_step_capped_at_twelve() {
         let mut i = input();
-        i.facing_target = 5; // != player_facing 0 -> not settled
-        i.zone_angle = 800;
+        i.footing_settled = 5; // != player_footing 0 -> not settled
+        i.scene_target = 800;
         i.current = 0;
         // gap 800, |800 - 0| >> 4 = 50, +1 = 51, capped at 12.
         assert_eq!(ease_step(i, 800), STEP_MAX);
-        assert_eq!(ease_camera_yaw(i), i32::from(STEP_MAX));
+        assert_eq!(ease_camera_offset(i), i32::from(STEP_MAX));
     }
 
     #[test]
@@ -235,14 +263,14 @@ mod tests {
         let mut i = input();
         i.pad = PAD_FAST_ARM;
         i.fast_flags = 0x1000;
-        i.zone_angle = 3;
+        i.scene_target = 3;
         i.current = 0;
         assert_eq!(ease_step(i, 3), STEP_MAX);
-        assert_eq!(ease_camera_yaw(i), 3, "lands on the target, not past it");
+        assert_eq!(ease_camera_offset(i), 3, "lands on the target, not past it");
         // Same from above.
-        i.zone_angle = 0;
+        i.scene_target = 0;
         i.current = 3;
-        assert_eq!(ease_camera_yaw(i), 0);
+        assert_eq!(ease_camera_offset(i), 0);
     }
 
     #[test]
@@ -251,13 +279,13 @@ mod tests {
         // that into a step of 1 rather than 0. A step of 0 would stall the
         // easing forever, which is what an inverted branch here produces.
         let mut i = input();
-        i.facing_target = 5; // not settled, so this is the adaptive arm
-        i.zone_angle = 3;
+        i.footing_settled = 5; // not settled, so this is the adaptive arm
+        i.scene_target = 3;
         i.current = 0;
         assert_eq!(ease_step(i, 3), 1);
-        assert_eq!(ease_camera_yaw(i), 1);
+        assert_eq!(ease_camera_offset(i), 1);
         for gap in 1..16i16 {
-            i.zone_angle = gap as u16;
+            i.scene_target = gap as u16;
             assert_eq!(ease_step(i, gap), 1, "gap {gap} must still move");
         }
     }
@@ -266,15 +294,15 @@ mod tests {
     fn easing_converges_from_either_side_and_then_holds() {
         for start in [-500i32, 500] {
             let mut i = input();
-            i.facing_target = 5;
-            i.zone_angle = 100;
+            i.footing_settled = 5;
+            i.scene_target = 100;
             i.current = start;
             for _ in 0..400 {
-                i.current = ease_camera_yaw(i);
+                i.current = ease_camera_offset(i);
             }
             assert_eq!(i.current, 100, "from {start}");
             // Once there it stops moving.
-            assert_eq!(ease_camera_yaw(i), 100);
+            assert_eq!(ease_camera_offset(i), 100);
         }
     }
 }

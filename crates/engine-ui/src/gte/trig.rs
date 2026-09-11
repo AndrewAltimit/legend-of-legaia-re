@@ -1,4 +1,4 @@
-//! The clean-room PSX trig LUT reproduction.
+//! The from-scratch PSX trig LUT reproduction.
 //!
 //! Retail reads sine values from an in-image LUT (Sony bytes, never
 //! committed). [`psx_sin`] / [`psx_cos`] compute the same q3.12 values

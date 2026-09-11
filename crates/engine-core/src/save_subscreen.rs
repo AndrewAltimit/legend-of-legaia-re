@@ -43,19 +43,19 @@
 //! only for an id past the end of the retail table. See
 //! `docs/subsystems/save-screen.md` for the per-id table.
 //!
-//! NOT WIRED: nothing constructs a [`SaveScreenMachine`] outside this
-//! module's own tests. The engine's save UI runs on
-//! [`crate::save_select`]'s player-facing phase model, which
-//! `engine-shell`'s window driver does use; this module is the retail
-//! control-flow mirror alongside it and no host keys off it yet. The
-//! step machines below are therefore verified against the disassembly
-//! but exercised only by unit tests.
+//! WIRED: [`crate::save_screen::SaveScreenFlow`] constructs a
+//! [`SaveScreenMachine`] on its first card-rack frame and ticks it around
+//! [`crate::save_select::SaveSelectSession`], so both hosts run it - the flow
+//! is the kernel they share. The two models are joined at the card op, not
+//! stacked: the driver's `script_busy` / `card_done` waits are answered by
+//! the flow's [`crate::save_select::CardIoMachine`] result, and the outer
+//! fade's input threshold is what suppresses the pad while a screen comes up.
 //!
-//! That reason covers the **step machines** and nothing else. The
-//! `sub15_*` family below are free functions the machine never calls, so
-//! building a host for [`SaveScreenMachine`] would not reach them; they
-//! carry their own reason and a reader should not read this heading onto
-//! them.
+//! Two parts of the graph stay unreached and say so on themselves: the
+//! screens whose per-frame body belongs to another module (they park here and
+//! the host drives them), and the `sub15_*` family below, which no step
+//! machine calls at all - hosting the machine does not reach a free function,
+//! and a reader should not read this heading onto them.
 
 /// Sub-screen ids, as indexed out of the retail pointer table.
 ///

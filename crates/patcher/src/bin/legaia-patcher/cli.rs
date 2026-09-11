@@ -1054,7 +1054,7 @@ pub(crate) struct RandomizeArgs {
     /// Seru-magic for a different one (offer reseeds on a play-time bucket,
     /// deterministic from the run's seed). Runs on real hardware - the whole
     /// screen is hand-assembled MIPS hosted in the menu overlay - and the same
-    /// seed is embedded in `SCUS_942.54` for the clean-room engine's trade UI.
+    /// seed is embedded in `SCUS_942.54` for the engine's trade UI.
     #[arg(long, default_value_t = false)]
     pub(crate) seru_trade: bool,
     /// Maximum trades a single vendor offers at once (only with `--seru-trade`).

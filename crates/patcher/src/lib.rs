@@ -3,7 +3,7 @@
 //! Builds patches for a **user-supplied** retail disc: it shuffles gameplay
 //! data (monster item drops, random-encounter formations, and treasure-chest
 //! contents) and produces a patched copy plus a portable patch
-//! file. It does **not** touch the clean-room engine.
+//! file. It does **not** touch the engine.
 //!
 //! ## No Sony bytes
 //!

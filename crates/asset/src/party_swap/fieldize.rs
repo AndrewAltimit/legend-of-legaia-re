@@ -1413,13 +1413,15 @@ fn fieldize_pack_at(
     }
 
     // New §0: the 5-body pack with slots 0..2 replaced. Its DECODED size
-    // must stay EXACTLY retail's: the battle scene loader registers the
-    // container's first three header words (`meta[1]`, `type<<24|size0`,
-    // `offset0`) as battle-VDF pointers off the raw entry base at every
-    // battle load (`FUN_800520F0` state 0xc first loop -> `FUN_8001FBCC`),
-    // and `meta[1]` doubles as the byte offset of the VDF tail that lives
-    // PAST the LZS payload inside the same PROT entry. Changing either
-    // word points the effect system at garbage and hangs the battle load.
+    // stays EXACTLY retail's, and the container's first four header words
+    // stay byte-exact. `meta[1]` is the sum of the descriptors' decoded
+    // sizes (docs/formats/scene-bundles.md), not a pointer: the battle
+    // loader's VDF registration walks a DIFFERENT entry (raw TOC 874 =
+    // extraction 872, `vdf`), so the old "meta[1] addresses a VDF tail
+    // inside this entry" reading is falsified - see
+    // docs/formats/character-mesh.md "Not a dual consumer". A rebuild
+    // that changed §0's decoded size was still observed to hang the next
+    // battle load, with no mechanism yet, so the size stays pinned.
     // Retail's own §0 carries ~19 KB of trailing pack padding, so padding
     // to the exact size is the retail shape.
     let sec0 = &container.descriptors[character_pack::CONTAINER_SECTION];
@@ -1454,7 +1456,7 @@ fn fieldize_pack_at(
     if sec0_new.len() > sec0_decoded.len() {
         bail!(
             "rebuilt §0 pack decodes to {} bytes, retail's {} is a hard cap \
-             (battle-VDF header words must stay byte-exact)",
+             (the container header words must stay byte-exact)",
             sec0_new.len(),
             sec0_decoded.len()
         );
@@ -1550,13 +1552,12 @@ fn fieldize_pack_at(
         );
     }
     // Preserve the RETAIL bytes past the rebuilt payload instead of
-    // zero-filling: the band after the compressed streams carries the
-    // battle-VDF effect payload the scene loader registers off this
-    // entry's header words at every battle load (see the battle-VDF
-    // note above sec0). Zero-filling it fed the battle effect system
-    // zeros - measured live as thin garbage streaks over the Spirit
-    // charge (the `delilas_gi_spirit_artifact` catalogue state), and
-    // statically as ~4.5 KB of retail-nonzero bytes at the entry tail
+    // zero-filling. What reads that band is not settled - it is NOT the
+    // battle VDF table, which is registered off a different entry (see
+    // the note above sec0) - but zero-filling it was measured live as
+    // thin garbage streaks over the Spirit charge (the
+    // `delilas_gi_spirit_artifact` catalogue state), and statically as
+    // ~4.5 KB of retail-nonzero bytes at the entry tail
     // (0x186DB..0x197FF on the USA disc) that the rebuild wiped. The
     // copy keeps every retained byte at its ORIGINAL offset (the tail
     // is addressed relative to the raw entry base); the stretch between

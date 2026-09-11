@@ -310,21 +310,17 @@ pub struct CardRequest {
 ///
 /// PORT: FUN_801D84B4.
 ///
-/// NOT WIRED: nothing in `engine-core` requests a master-mode transition by
-/// writing the retail mode word - [`crate::mode::GameMode`] changes go through
-/// typed scene-host calls. Two ports do carry a `_DAT_8007B83C` mirror
-/// (`scene_transition_actor`'s `EnterGameMode` step and
-/// `ProtCdDmaHost::set_overlay_mode_state`), so the word is not unmodelled;
-/// neither is a live master-mode driver a request could be routed through.
-/// The companion flag `_DAT_8007BB00` has no engine counterpart at all; its
-/// consumer is not in the ported set, which is the narrower blocker of the two.
+/// WIRED: [`crate::mode::ModeSeat::request_card_mode`] applies both stores,
+/// and `engine-shell`'s `BootSession` opens the pause menu through it - the
+/// seat is the production owner of the mode word this leaf writes.
 ///
-/// The `(mode, warp sub-id)` bridge ([`crate::mode::GameMode::scene_mode_with_warp`])
-/// is unrelated to both blockers: it decides which `SceneMode` a *running*
-/// mode maps to, and this leaf is a *request* to change the mode. The
-/// legitimate host is the same one `mode_init_bare` names - a production owner
-/// of [`crate::mode::ModeDriver`] - plus a port of `_DAT_8007BB00`'s consumer,
-/// without which the second store here has nowhere to land.
+/// The second store had "no engine counterpart at all, its consumer is not in
+/// the ported set" written on it. That was wrong on both halves: `0x8007BB00`
+/// is the front-end entry word, its two retail readers are `init.pak`'s
+/// hand-off arm (`0x801CF4B0`, ported at [`crate::mode::ModeSeat::boot_handoff`])
+/// and the title dispatcher's `Init` routing (`0x801DD97C`, already ported as
+/// `legaia_engine_vm::title_overlay::ENTRY_WORD_ADDR`), and the seat now holds
+/// the word both of them read.
 pub const fn request_card_mode() -> CardRequest {
     CardRequest {
         game_mode: CARD_REQUEST_MODE,

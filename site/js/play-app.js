@@ -884,7 +884,11 @@ void main() {
       };
       const isSky = (window.FieldSceneView && window.FieldSceneView.isSkyMesh)
         || (() => false);
-      const push = (slots, pos, rots, anims, rotsX, rotsZ) => {
+      /* `floorBase` is where this list starts inside the concatenated
+       * floor-wave offset array (`rt.field_floor_wave_offsets()`, terrain then
+       * placements), so a draw the loop below SKIPS - a sky dome, a mesh with
+       * no renderable prims - does not shift every later draw's rung. */
+      const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase) => {
         for (let i = 0; i < slots.length; i++) {
           const anim = anims ? anims[i] : 0;
           let meshId, animRec = null;
@@ -928,15 +932,28 @@ void main() {
           }
           /* World box for the occluder test, baked once (see `_frame`). */
           draw.box = placementWorldBox(aabb, draw);
+          /* Floor-wave bookkeeping: the rung index this draw's Y came from,
+           * and the Y the scene's baked ladder gave it. `_applyFloorWave`
+           * re-derives `y` from these when the ladder moves. */
+          if (floorBase !== undefined) {
+            draw.floorIdx = floorBase + i;
+            draw.baseY = draw.y;
+            draw.eulerY = (rx || rz)
+              ? [rx * A2R, (rots[i] & 0xFFF) * A2R, rz * A2R] : null;
+          }
           this.staticDraws.push(draw);
           if (animRec) this.animProps.push(animRec);
         }
       };
-      push(rt.field_terrain_slots(), rt.field_terrain_positions(), rt.field_terrain_rot_y(), null);
+      const terrainSlots = rt.field_terrain_slots();
+      push(terrainSlots, rt.field_terrain_positions(), rt.field_terrain_rot_y(), null,
+        null, null, 0);
       push(rt.field_placement_slots(), rt.field_placement_positions(), rt.field_placement_rot_y(),
         rt.field_placement_anim_ids(),
         rt.field_placement_rot_x ? rt.field_placement_rot_x() : null,
-        rt.field_placement_rot_z ? rt.field_placement_rot_z() : null);
+        rt.field_placement_rot_z ? rt.field_placement_rot_z() : null,
+        terrainSlots.length);
+      this._floorWaveLive = false;
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */
       if (rt.player_has_mesh()) {
@@ -1735,6 +1752,43 @@ void main() {
     }
 
     /* One engine frame + one draw (the draw is skipped while VR presents). */
+    /* Re-derive every static draw's Y from the engine's LIVE floor-height
+     * ladder.
+     *
+     * The sixteen-rung ladder a scene loads from its MAN header is not static:
+     * field-VM op `0x4C` nibble-9 sub-`0xE` rewrites all sixteen rungs and
+     * sub-`0..2` sets one oscillating every frame, which is the travelling
+     * wave under `jou`'s organic Seru interior. Retail's per-cell terrain
+     * emitters re-read the ladder every frame; this page bakes its draw
+     * positions once per scene, so the engine hands back a per-draw Y offset
+     * instead (`field_floor_wave_offsets`, terrain draws then placement draws)
+     * and this folds it in. The array comes back EMPTY while the ladder sits
+     * where the scene loaded it, so the common scene pays one call and no
+     * iteration; `_floorWaveLive` is what returns the draws to their baked Y on
+     * the falling edge.
+     *
+     * The page's world frame negates retail Y, so the offset subtracts. */
+    _applyFloorWave(rt) {
+      if (!rt.field_floor_wave_offsets) return;
+      const wave = rt.field_floor_wave_offsets();
+      if (!wave.length) {
+        if (!this._floorWaveLive) return;
+        for (const d of this.staticDraws) {
+          if (d.floorIdx === undefined) continue;
+          d.y = d.baseY;
+          if (d.model) d.model[13] = d.y;
+        }
+        this._floorWaveLive = false;
+        return;
+      }
+      for (const d of this.staticDraws) {
+        if (d.floorIdx === undefined || d.floorIdx >= wave.length) continue;
+        d.y = d.baseY - wave[d.floorIdx];
+        if (d.model) d.model[13] = d.y;
+      }
+      this._floorWaveLive = true;
+    }
+
     _frame(skipDraw) {
       const rt = this.rt;
       const stepping = this.stepOnce;
@@ -1894,6 +1948,12 @@ void main() {
          * accumulated wall-clock gap as a burst of catch-up ticks. */
         this._simLast = performance.now();
       }
+
+      /* The scene's floor-height ladder is script-animated (field-VM op `0x4C`
+       * nibble-9): fold its live rungs into the baked static draws so the drawn
+       * ground undulates with the walk heightfield. Costs one WASM call per
+       * frame and nothing else on a scene whose script never moves the ladder. */
+      this._applyFloorWave(rt);
 
       /* The per-frame READ of the engine's live pose + NPC transforms runs the
        * WASM engine too, so a trap here poisons the instance exactly like the

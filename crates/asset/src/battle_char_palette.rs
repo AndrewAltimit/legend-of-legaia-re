@@ -10,7 +10,7 @@
 //! `data\battle\PLAYERn` path resolves to - a PROT entry, not an ISO file) and
 //! only materialise after the loader decodes a small record set and STP-copies
 //! the CLUT structs to VRAM rows `481 + slot` (Vahn=481, Noa=482, Gala=483).
-//! This module is the clean-room port of that decode+assembly, validated
+//! This module is the port of that decode+assembly, validated
 //! byte-exact against a live battle VRAM capture and against the on-disc data.
 //!
 //! ## Why `a0` is an output-byte budget (the decode that used to "diverge")

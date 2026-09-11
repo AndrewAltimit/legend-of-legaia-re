@@ -1,7 +1,7 @@
 //! Composite actor + scene runtime that wires the per-VM hosts together.
 //!
 //! `legaia-engine-vm` ships each script VM (actor / sprite, move-table,
-//! effect, field, battle action) as a small clean-room port + a `Host` trait
+//! effect, field, battle action) as a small port + a `Host` trait
 //! that lets engines plug in their own state. This module is the engine-side
 //! glue: a single [`World`] that owns the per-actor data and implements every
 //! VM `Host` trait by routing into that data.
@@ -12,7 +12,7 @@
 //! all four VMs read/write - world position, anim banks, flags, render bank,
 //! per-action queue, etc. Splitting that across four crates would force
 //! engines to keep four parallel index tables in sync. The composite pattern
-//! here keeps the per-VM `ActorState` structs intact (clean-room boundary
+//! here keeps the per-VM `ActorState` structs intact (port boundary
 //! preserved) but lets one struct own them.
 //!
 //! Engines that want a different layout - say, ECS storage - should
@@ -61,6 +61,11 @@ pub use types::*;
 
 mod actors;
 pub mod ambient;
+mod cutscene_elements;
+pub use cutscene_elements::{
+    AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, CutsceneElement, ElementFrame,
+    ElementKind, ElementLink, WorldRng,
+};
 mod assets_events;
 mod battle;
 pub use battle::{

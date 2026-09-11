@@ -366,7 +366,7 @@ fn is_mesh_sel(model_sel: i16) -> bool {
 /// Only the two values the spawner `FUN_80021B04` seeds from a record's
 /// `model_sel` sentinel ([`RENDER_NODE_MODE_A`] `0x4000`, [`RENDER_NODE_MODE_B`]
 /// `0x4001`) are classified statically here - the rest of the `+0x5A` space is
-/// rebound at runtime by move-VM anim ops, which the clean-room engine abstracts
+/// rebound at runtime by move-VM anim ops, which the engine abstracts
 /// away (it carries no `+0x5A` cell), so this is the faithful static surface.
 ///
 /// The important fact this captures: **`SoundEmitter` (`0x4001` → `+0x5A = 5`)

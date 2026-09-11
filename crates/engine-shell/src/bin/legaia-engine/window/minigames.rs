@@ -1273,6 +1273,16 @@ impl PlayWindowApp {
                 session.install_art_catalog(0, catalog);
             }
         }
+        // The Ra-Seru (magic) command class, through the same shared door the
+        // arena-door warp installs it with. The special-battle word is `0`:
+        // no dome round raises either restriction bit (the arena stamps only
+        // the word's low byte, and battle init's two `0x200` writers key on
+        // monster ids the ladder never stages).
+        if let Some(magic) =
+            legaia_engine_core::muscle_dome::magic_loadout_for(&self.session.host.world, 0, 0)
+        {
+            session.install_magic(0, magic);
+        }
         match opponent_round {
             Some((n, r)) => log::info!(
                 "muscle: course {course} round {} vs monster {:#04x} ({} HP), tally {}, \

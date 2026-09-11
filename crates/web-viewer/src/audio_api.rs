@@ -292,7 +292,7 @@ impl LegaiaAudio {
     /// Start BGM playback for the given (`prot_index`, `vab_offset`,
     /// `seq_offset`) tuple. Constructs the WebAudio output on the first call
     /// (must be invoked from a user-gesture handler), parses VAB + SEQ,
-    /// uploads the bank to the embedded clean-room SPU, and attaches the
+    /// uploads the bank to the embedded from-scratch SPU, and attaches the
     /// sequencer.
     #[cfg(target_arch = "wasm32")]
     pub fn start_bgm(

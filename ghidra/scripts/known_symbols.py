@@ -11,7 +11,7 @@
 # 0x801C0000+ are deliberately excluded - the same overlay address holds
 # different code per overlay, so naming by address alone would mislabel.
 #
-# Source of truth is our own clean-room analysis (no Sony/PsyQ SDK data).
+# Source of truth is our own analysis (no Sony/PsyQ SDK data).
 # ASCII-only: the Ghidra-bundled Jython 2.7 chokes on non-ASCII source.
 
 SCUS_LO = 0x80010000

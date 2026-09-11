@@ -65,7 +65,7 @@
 //! overlay across mode bounces; the sister-invalidate captures the case
 //! where the same PROT entry is staged for the other slot.
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No bytes from `SCUS_942.54` live in this crate. The two reference dumps
 //! (`ghidra/scripts/funcs/8003ebe4.txt`, `8003ec70.txt`) are the *spec*.

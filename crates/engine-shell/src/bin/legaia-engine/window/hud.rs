@@ -933,10 +933,47 @@ impl PlayWindowApp {
             let ly1 = self.font.layout_ascii(&ml1);
             out.extend(text_draws_for(&ly1, (8, 62), white));
             let status = match s.phase() {
+                // The Ra-Seru list is the ring's Right chip in retail; this
+                // host has no ring screen, so Triangle opens it. The rows and
+                // their prices are the session's, shared with the browser.
+                MusclePhase::Select if s.magic_open() => {
+                    let rows = s.spell_rows(0);
+                    let cursor = s.magic_cursor() as usize;
+                    let row = rows
+                        .get(cursor)
+                        .map(|r| {
+                            format!(
+                                "{} ({} MP){}",
+                                r.name,
+                                r.mp_cost,
+                                if r.affordable {
+                                    ""
+                                } else {
+                                    "  - not enough MP"
+                                }
+                            )
+                        })
+                        .unwrap_or_else(|| "(no Seru learned)".to_string());
+                    format!(
+                        "Ra-Seru {}/{}: {}   MP {}   (Up/Down, Cross = cast, Circle = back)",
+                        cursor + 1,
+                        rows.len().max(1),
+                        row,
+                        s.mp(0),
+                    )
+                }
                 MusclePhase::Select => {
                     let h = s.hand(0);
+                    let chip = {
+                        use legaia_engine_core::muscle_dome::DomeRingChip;
+                        if s.chip_enabled(0, DomeRingChip::RaSeru) {
+                            "  Triangle = Ra-Seru"
+                        } else {
+                            ""
+                        }
+                    };
                     format!(
-                        "AP L:{} R:{} U:{} D:{}  budget {}  entered {}  (Cross = fight)",
+                        "AP L:{} R:{} U:{} D:{}  budget {}  entered {}  (Cross = fight){chip}",
                         h[0].cost,
                         h[1].cost,
                         h[2].cost,

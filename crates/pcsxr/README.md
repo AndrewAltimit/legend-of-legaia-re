@@ -47,12 +47,16 @@ state-reading script can dispatch on file extension and accept either
 emulator's states - `scripts/mednafen/check-0968-residency.py` does exactly
 that.
 
-One capability difference matters when picking which emulator to capture with:
-a `.sstate` carries **main RAM only**. Mednafen states additionally carry the
-scratchpad (`ScratchRAM.data8`), which is where `_DAT_1F8003EC` - and through it
-the live per-scene collision / object grid - becomes readable offline. A
-question that has to join a display-list read against grid cells therefore needs
-a **mednafen** capture, not a PCSX-Redux one.
+A `.sstate` is **not** main RAM only. Its memory submessage carries four
+length-delimited blobs - RAM, BIOS ROM, parallel port and a 64 KiB `hardware`
+region - and the PSX **scratchpad** (`0x1F800000`, 1 KiB) is the first kilobyte
+of that last one, with the memory-mapped I/O registers filling the rest.
+`SaveState::hardware()` / `scratchpad()` / `scratchpad_u32_at()` expose it, so
+`_DAT_1F8003EC` - and through it the live per-scene collision / object grid -
+is readable offline from a PCSX-Redux capture just as it is from a mednafen
+one (`ScratchRAM.data8`). The blob is located structurally, by walking the
+protobuf for the memory submessage's 64 KiB member, so neither the field
+numbers nor the file offset are baked in.
 
 ## How it composes
 

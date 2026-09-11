@@ -1,4 +1,4 @@
-//! NPC motion-pause kick, clean-room port of `FUN_8003C9AC` (SCUS_942.54).
+//! NPC motion-pause kick, the port of `FUN_8003C9AC` (SCUS_942.54).
 //!
 //! PORT: FUN_8003C9AC
 //! REF: FUN_801D5B5C, FUN_80038158, FUN_8003BC08
@@ -29,7 +29,7 @@
 //! kick therefore snaps every wandering NPC back onto its default motion
 //! cycle while the dialog runs.
 //!
-//! Clean-room boundary: `ghidra/scripts/funcs/8003c9ac.txt` is the spec; no
+//! Port boundary: `ghidra/scripts/funcs/8003c9ac.txt` is the spec; no
 //! Sony bytes live here. Tests use synthetic actor lists + tables.
 //!
 //! ## NOT WIRED

@@ -527,6 +527,43 @@ The tracker holds `extraction - 895`, so `83` is **PROT 0978** - the load is
 byte-pinned live, on both battle-end paths, and `ra = 0x800252BC` is the
 actor-list tick iterator the settled `FUN_80047430` caller finding names.
 
+#### The teardown streams the *other* family - `0x36C`, not `0x4C7`
+
+PROT 0978 carries **two** streaming families behind its 12-arm phase machine,
+and they differ in every field that matters. Each has its own rect
+initialiser writing the same `RECT` at `0x801F735C`:
+
+| | panel-still family | field-restore family |
+|---|---|---|
+| rect init | `0x801F6BE4..0x801F6C20` | `0x801F6FC8..0x801F6FF0` |
+| rect | `x = 0x180`, `w = 0x140`, `h = 0x40` | `x = 0x180`, `w = 0x40`, `h = 0x100` |
+| stepped field | `y` `+= 0x40` (`0x801F6D2C`) | `x` `+= 0x40` (`0x801F70F8`) |
+| bytes per strip | `0xA000` | `0x8000` |
+| raw TOC index | `0x4C7` / `0x4C8` (`int.tim` / `int2.tim`) | `0x36C` |
+
+An exec-breakpoint census of the libgpu entry points across the ordinary
+victory (`rim_elm_gimard_victory`, probe
+`scripts/pcsx-redux/autorun_gpu_call_census.lua`) catches the teardown load
+in the act, and it is the **second** family. Four `LoadImage` calls, from the
+four `jal 0x800583C8` sites at `0x801F7078` / `0x801F7108` / `0x801F7190` /
+`0x801F7224`, upload `(384, 0)`, `(448, 0)`, `(512, 0)`, `(576, 0)`, each
+`64 x 256` - `0x8000` bytes apiece, `0x20000` in all - on the four vsyncs
+after the tracker flips to `83`. Sixty-four by two hundred fifty-six at those
+origins is not a picture rect: it is **PSX texture pages 6, 7, 8 and 9**.
+
+Raw `0x36C` is extraction **874** under the
+[+2 correction](../formats/cdname.md#numbering-space) - the head of the
+`player_data` block, whose four `0x8000` chunks the arm re-seeks at sectors
+`0`, `0x10`, `0x20`, `0x30`. So the entry's own strings are literal: the
+battle-teardown arm is the **`FIELD BACK READ NOW`** path, restoring the
+field party's texture pages over the VRAM the battle borrowed. The panel
+stills are a different arm of the same machine and did not run here.
+
+This corrects the upload geometry recorded above for the teardown: the four
+passes are vertical `64 x 256` strips stepping `x`, not horizontal `320 x 64`
+bands stepping `y`. The `320 x 64` reading is the *panel-still* family's, and
+it stands for that family.
+
 #### The `INTERVAL` screen is a live render, not the still
 
 The `INTERVAL` scoreboard and the `ROUND 2` card sit over a ringside scene that
@@ -561,6 +598,34 @@ takes `LEGAIA_SCAN_MODES` to sweep every vsync inside named modes. And a
 **two-byte tpage needle is not separable from data** even after a
 screen-coordinate filter, so RAM-scanned `(384, 0)` tpage candidates are not
 evidence of a draw; the ordering-table walk is what carries weight here.
+
+#### A call-site census closes the sampling question
+
+The way past both method limits is to watch the libgpu **entry points**
+rather than RAM, because a one-shot cannot fall between two samples that do
+not exist. `autorun_gpu_call_census.lua` breakpoints `LoadImage`
+(`0x800583C8`), `StoreImage` (`0x8005842C`), `MoveImage` (`0x80058490`),
+`PutDispEnv` (`0x800589D0`), the GP1 command issue (`0x8005A094`) and the
+direct GP0 FIFO write (`0x8005A0D0`), and reads each call's `RECT` / command
+word as it is made. Over 1800 vsyncs spanning a battle, its teardown and the
+return to field:
+
+| Call | Count | At `x = 384` |
+|---|---|---|
+| `PutDispEnv` / GP1 `0x05` display start | 641 / 641 | **0** |
+| `MoveImage` | 632 | **0** |
+| `LoadImage` | 214 | 4 - the teardown's texture-page strips |
+| `StoreImage` | 5 | 4 - the dev round-trip `FUN_8001E890` reading it back |
+| direct GP0 list carrying `0x80` / `0xA0` / `0xC0` | 0 | 0 |
+
+No display origin is ever moved to the page, nothing blits out of it, and
+the only writers are the teardown upload and a dev readback. Together with
+the ordering-table result above, that answers the sampling question the way
+the geometry already suggested: `(384, 0)` is not a still's display rect on
+this path but four ordinary texture pages, sampled by ordinary
+tpage-addressed primitives - the `tpage 0x0006` family the sweep already
+found. What remains open is only the **panel-still family's** own consumer,
+on whatever arm loads `int.tim` / `int2.tim`.
 
 Where to look next is in the entry's own strings: PROT 0978 opens with
 `f_read %d size %d KB` and **`FIELD BACK READ NOW`**, which reads as a
@@ -658,10 +723,13 @@ an art playing out.
   plates with gold borders. Bottom: the pointed blue status plate (fighter
   name, gold "HP" `cur/max`, teal "MP" `cur/max`) with the pointed **AP**
   plate above-right (red "AP" label, orange gauge, remaining-points
-  numeral). Course gating (curated, `data/gamedata/casino.toml`): no
-  equipment, no items on every course; magic allowed on Beginner/Expert,
-  forbidden on Master - which is why Item is crossed out while the Ra-Seru
-  chip is not.
+  numeral). Which chips are live is not a course table: it is the
+  special-battle word's restriction bits and the fighter's own status /
+  Ra-Seru gate, and the Ra-Seru chip's bit is never raised by a dome round -
+  see [What makes a Ra-Seru chip render](#what-makes-a-ra-seru-chip-render).
+  The curated course rules (`data/gamedata/casino.toml`: no equipment, no
+  items on every course, magic forbidden on Master) are walkthrough labels;
+  the *magic* half of them has no writer on the disc.
 - **Arts banner.** A committed directional sequence that performs a
   Tactical Art raises the art-class banner during playback - block-capital
   orange-gradient text with a dark outline ("HYPER ARTS!!") over white
@@ -690,15 +758,23 @@ battle form (`muscle_fighter_*`), the chrome drawn from the disc sources
 below (`muscle_hud_json` / `muscle_hud_sheet_rgba`), and the queue -> art
 resolution done against the SCUS arts-name table's combo strings
 (`muscle_round_arts_json`, kind labels joined from the curated gamedata
-arts table). One disclosed gap remains: the **Ra-Seru (magic) chip renders
-disabled on both hosts**, and retail's does not - only *Item* is crossed out,
-which is the whole point of the Master course's item ban. Wiring it needs a
-cast path in `MuscleDomeSession`, which today models direction commands only:
-a magic command class, a spell pick against the caster's learned Seru, an MP
-debit and a spawn into the capture-class cast pool
-(`legaia_asset::cast_effect_pool` + `engine-vm::cast_module_ticks`). The
-sibling gap - "the ported rules resolve each queued command as a basic
-strike" - is closed: see [the queue the dome resolves](#the-queue-the-dome-resolves-is-the-tokenizers).
+arts table). The **Ra-Seru (magic) chip** is a real command class on both
+hosts: `MuscleDomeSession` carries the ring gates, the learned-Seru list
+priced by the ability-bit discount, the MP gate at the pick and the debit at
+the play-out, and the cast resolves through the same
+`engine-core::spells::cast_spell` rule the regular battle's cast band folds
+with. Neither host crosses the chip out any more, because retail does not:
+its bit is never raised by a dome round
+([the gates](#what-makes-a-ra-seru-chip-render)). The sibling gap - "the
+ported rules resolve each queued command as a basic strike" - is closed:
+see [the queue the dome resolves](#the-queue-the-dome-resolves-is-the-tokenizers).
+
+The two hosts reach the chip from different buttons, and that is the one
+disclosed difference: retail opens the list from the ring's **Right** chip,
+which the port's collapsed selection cannot spare (the four directions are
+the input screen's), so the browser minigames page - which keeps a ring
+screen - binds Right, and the native `play-window` binds **Triangle**. Both
+land in `MuscleDomeSession::select_input`, so the rules are one.
 
 ## HUD chrome texture sources (capture-pinned)
 
@@ -1043,25 +1119,104 @@ What is still *not* unified is the session object: the dome keeps its own
 (`ctx+0x6dc`, `ctx+0x6d8`, `actor+0x1df`) in the same units, so the seam is
 a refactor rather than a question.
 
-### Two different marks for "you cannot pick this"
+### Three marks for "you cannot pick this", and the gates that raise them
 
 The dome's course restriction and a plain unavailable command are **not the
-same widget**, and the captures say so separately:
+same widget**. There are in fact **three** mark emitters, all in the battle
+overlay and all called from the phase-`0x28` cluster arm of `FUN_801D0748`:
 
-- A **course restriction** lays the red cross-out X over the chip - a
-  `0x40 x 0x10` blit of the `etim` page's `(0,96)` texels, drawn 1:1 and
-  seated `(x-8, y-4)` off the chip's content box. Retail's emitter is
-  `FUN_801DBC30`; the port is `legaia_engine_vm::battle_party_panel::cross_out_mark`
-  and the dome page ships its rect as `red_x`. The Master course's Item chip
-  is the captured instance.
-- A command that is merely **unavailable** keeps its chip and draws a single
-  `-` glyph where the word would go - the command-select capture's own
-  behaviour, which the shared cluster builder
-  `legaia_engine_ui::battle_command_ui` implements for both battle hosts.
+| Emitter | Source rect on the `etim` page | CLUT | Raised by |
+|---|---|---|---|
+| `FUN_801DBC30` | `(0,96)` 64x16 - the red cross-out X | `0x7704` | the special-battle word's restriction bit |
+| `FUN_801DBD04` | `(80,96)` 32x24 | `0x770B` | `actor+0x16E & 0x38 == 0x38` (Attack) |
+| `FUN_801DBEC4` | `(120,96)` 64x16 | `0x7700` | `actor+0x16E & 0x1000` (Ra-Seru, magic sealed) |
+
+All three take `(x, y)` and emit one `POLY_FT4` (tag `0x09000000`, code
+`0x2C808080`, tpage `7`) covering `(x-8, y-4)` to `(x+0x37, y+0xB)` - a
+64x16 screen quad at the chip's plate box, which is why a 32x24 source is
+stretched into it. Each returns early when `ctx+0x6CE` is non-zero.
+
+A command that is merely **unavailable** draws none of the three: it keeps
+its chip and its label becomes a single `-` (`FUN_801D8DE8` record `0xA`'s
+own blank arm), which the shared cluster builder
+`legaia_engine_ui::battle_command_ui` implements for both battle hosts. A
+fighter carrying no Ra-Seru is that case, not a crossed-out chip.
 
 The earlier reading that a restricted caller "most likely" expressed itself
-with the `-` glyph is superseded: the two marks coexist, and the X is the one
-the dome draws.
+with the `-` glyph is superseded: the marks coexist, and the X is the one a
+course restriction draws.
+
+### What makes a Ra-Seru chip render
+
+The ring is direction-selected, and each arm carries its own gate. Pad bits
+are the Legaia mask's (`Up 0x1000`, `Right 0x2000`, `Down 0x4000`), and
+**Attack is the configured confirm button** (`0x800846D0`), not Left:
+
+| Chip | Arm | Refuses when |
+|---|---|---|
+| Item (Up) | `0x801D1364..0x801D137C` | `special & 0x100` |
+| Ra-Seru (Right) | `0x801D1400..0x801D1454` | `ctx[+0x25F + member] == 0`, then `actor+0x16E & 0x1000`, then `special & 0x200` |
+| Attack (confirm) | `0x801D1534..0x801D156C` | `actor+0x16E & 0x38 == 0x38` |
+| Spirit (Down) | `0x801D1670..0x801D1690` | never |
+
+`special` is the word at `0x8007BAC0`, and the arena **does** own its high
+bits. On the fresh-entry side of the `bnez` at `0x801CEB58`, `FUN_801CEA6C`
+seeds the whole word from three story-flag tests (`jal 0x8003CE64`): flag
+`0x536` writes `0x101` (`0x801CEBA0`), `0x537` writes `0x111` (`0x801CEBB4`)
+and `0x538` writes **`0x321`** (`0x801CEBC8`) - the last of which carries bit
+`0x200`. The seed before the three tests is `0` (`0x801CEB8C`), and the tests
+run in order with the last match winning. Note that **all three** seeds carry
+bit `0x100`, so a seeded dome visit forbids the **Item** chip on every course;
+and the low byte is where the course itself comes from,
+`((word - 1) & 0xFF) >> 4` at `0x801CEBD4..0x801CEBE8` giving `0` / `1` / `2`.
+Thereafter only the low byte moves: `FUN_801D0088`
+(`0x801D00B8..0x801D00E4`) writes `(old & ~0xFF) + (course << 4) + round + 1`
+and the per-leg bump at `0x801CEC08` adds one, so the seeded high bits survive
+the whole visit.
+
+The `0x200` (magic-forbidden) bit therefore has **three** raisers on the disc.
+Two are in `SCUS_942.54`'s battle init, keyed on the first enemy's monster id
+at `0x8007BD0C`: `0x800519DC..0x80051A04` for monster `0xAF`, and
+`0x8005200C..0x8005205C` for a first enemy in `0x3D..=0x3F` while the mode word
+`0x80084540` is `0xC` or `0x15`. Neither fires for a dome round - the ladder
+tops out at `0xAA`
+([Course ladder](#course-ladder-the-opponent-per-course-round)). The third is
+the arena's own seed, and `0x321` decodes to course `2` (Master), so **once the
+Master course is unlocked, every dome round in that visit crosses out the
+Ra-Seru chip**. *(Evidence: `disassembly` - the two SCUS arms, the arena's four
+seed stores and its low-byte stamp, and an unwindowed store sweep of
+`0x8007BAC0` over `SCUS_942.54` plus all 83 mapped overlays: 13 stores, 5 of
+which clear the word. The earlier "only two writers" reading came from
+`find-gp-relative-refs.py`, which caps `lui`-to-use pairing at 24 instructions
+and cannot see the four seed stores 34..49 instructions past their `lui`. That
+`0x538` is the Master unlock is inference from the three arms' course indices
+0/1/2; the literal `0x321` and its `0x200` bit are not.)*
+
+The member gate `ctx[+0x25F + member]` is the same byte the battle command
+ring's element chip reads - written once by the party battle-actor init
+`FUN_80053CB8` from the record's Ra-Seru equipment slot, mirrored at
+`engine-core::battle_hud::battle_member_has_raseru`. So "does the chip
+render live" has one answer across the dome and the ordinary battle.
+
+Taking the chip writes `ctx+6 = 0x46` and, at the confirm, the picked spell
+id straight into `actor+0x1DF[0]` with `actor+0x1DE = 2` and
+`actor+0x1E7 = 9` (`0x801D1A14..0x801D1A34`, `0x801D14A4`, `0x801D14C0`).
+Nothing on that path reads `ctx+0x6D8` / `ctx+0x6DC`: **a cast spends MP,
+not AP**, and it replaces the whole direction string rather than joining it.
+The cost is the static spell table's `+3` byte
+(`DAT_800754C8 + id*12`) discounted by the character record's ability
+bitfield `+0xF4` - bit `0x20` halves it, bit `0x10` takes a quarter off
+(`0x801D1A38..0x801D1B70`) - and the confirm arm compares it against
+`actor+0x150`, refusing without committing when the gauge is short
+(`0x801D1C0C..0x801D1C28`). The debit itself is the shared band's
+(`FUN_801E295C` state `0x28`), not the ring's.
+
+Port: `engine-core::muscle_dome`'s `DomeRing` / `ChipMark` /
+`DomeMagic` carry the gates and the marks, `MuscleDomeSession::commit_cast`
+the pick, and `MuscleDomeSession::select_input` the shared surface both
+hosts drive. A dome cast resolves through `engine-core::spells::cast_spell`,
+the same rule the regular battle's cast band folds with, so the two cannot
+disagree about a spell's outcome.
 
 ### The command cluster is the battle cluster
 
@@ -1583,10 +1738,22 @@ and the browser page resolve through this same kernel; neither carries a
 damage rule of its own, and a session with no model installed resolves to no
 damage rather than to invented constants.
 
+The **Ra-Seru (magic) command class** is the session's too: `DomeRing` carries
+retail's three chip gates and `ChipMark` its three mark emitters, `DomeMagic`
+the learned list with its ability-bit price, `commit_cast` the pick (which
+clears the direction string and leaves the AP budget alone, because retail's
+arm never reads `ctx+0x6D8` / `ctx+0x6DC`), and the debit lands at the
+play-out, where the shared band's `0x28` charges it. The outcome runs through
+`engine-core::spells::cast_spell` - the same rule an ordinary battle's cast
+band folds with. `select_input` is the one selection surface both hosts drive;
+the loadout comes from `magic_loadout_for`, the door both native dome entry
+paths install through. See
+[What makes a Ra-Seru chip render](#what-makes-a-ra-seru-chip-render).
+
 The world hosts the contest as the suspending `SceneMode::MuscleDome`
-(play-window `M` key; Left/Right/Up/Down enter the four directions, Cross
-confirms/continues). A KO of the opponent inside the limit credits the reward
-Seru through the engine's capture kernel.
+(play-window `M` key; Left/Right/Up/Down enter the four directions, Triangle
+opens the Ra-Seru list, Cross confirms/continues). A KO of the opponent inside
+the limit credits the reward Seru through the engine's capture kernel.
 
 The opponent is the disc's own: both hosts resolve `(course, round)` through
 `parse_course_ladder` to a monster id and read that monster's PROT 867
@@ -1637,6 +1804,18 @@ to the emitter it names).
 - ~~Which arm of `FUN_801D0CD4` / `FUN_801D0068` decides that a leg was *survived*~~ **resolved**: neither - it is the single byte test `DAT_8007BD60 & 0x80` at `0x801CEDD8`, cleared by the battle's own `0x5A` party-wipe scan and re-raised by the shared minigame-exit routine. `continuing` (`DAT_801D1ADC`) is therefore derived, not prompted: its one raising writer sits behind *course exhausted **and** survived*. See [Which arm decides a leg was survived](#which-arm-decides-a-leg-was-survived).
 - ~~The retail *dome* leg-end condition~~ **resolved**: a knockout, and nothing else. The arena hands the round to an ordinary battle (`FUN_801D1510` sets game mode `0x14`) and the only writers of the battle-end signal are the `0x5A` KO scans; the turn counter never reaches them. See [What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else).
 - ~~Whether card resolution applies any dome-specific damage scaling~~ **resolved**: it uses the shared `battle_formulas` unmodified - `FUN_801d0748` is byte-identical to the main battle round driver and a card resolves with no dome-local scaling (see [Round resolution](#round-resolution)). The `FUN_801e09f8` → `FUN_801dd0ac` half of that chain carries the arts / magic ids only; a bare direction swing's tier comes from the melee kernel instead ([why](#the-dd0ac-chain-is-not-a-direction-swings)).
+
+- ~~What makes a Ra-Seru chip render, and why the port crossed it out~~
+  **resolved**: three gates, none of them a course table - the member's own
+  Ra-Seru marker `ctx[+0x25F + member]`, the sealed-magic status bit
+  `actor+0x16E & 0x1000`, and bit `0x200` of the special-battle word
+  `0x8007BAC0`. Its two `SCUS_942.54` writers key on the first enemy's monster
+  id and never fire for a dome round, but the arena's own entry seed raises it
+  for the Master course (`0x321` at `0x801CEBC8`). The red X is that third
+  bit's alone, and it
+  has two siblings the captures had folded together. See
+  [What makes a Ra-Seru chip render](#what-makes-a-ra-seru-chip-render) and
+  [the three marks](#three-marks-for-you-cannot-pick-this-and-the-gates-that-raise-them).
 
 ## See also
 

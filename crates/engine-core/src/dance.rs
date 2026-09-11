@@ -1,4 +1,5 @@
-//! Clean-room **Noa dance (rhythm) minigame** rules engine.
+//! From-scratch Rust **Noa dance (rhythm) minigame** rules engine, written
+//! from the disassembly - no retail bytes are reproduced here.
 //!
 //! A faithful port of the dance overlay's per-frame rhythm logic - the beat
 //! clock, the timing-window hit judge, the triangle "groovy move" wildcard, the
@@ -1790,6 +1791,93 @@ pub fn dance_face_rig(mode: DanceMode, dancer: usize) -> Option<usize> {
 /// **fishing** overlay, whose venue that scene is.
 pub const DANCE_SCENE_BLOCK_BASE: u16 = 0x4CC;
 
+/// What the dance overlay's **entry** stages, in the order retail stores it.
+///
+/// The counterpart of [`DanceSceneStage`]: `FUN_801CEF54` is the mode-24
+/// sub-id-6 initialiser (arm 6 of the SCUS switch `FUN_80025980`, `jal
+/// 0x801cef54` at `0x80025AE0`), and every field below is one of its stores or
+/// one of its fixed-argument calls. Straight-line apart from one branch: the
+/// by-name asset load is taken only while the dev/retail loader flag
+/// `_DAT_8007B8C2` is clear.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DanceSceneEntry {
+    /// Display width handed to `FUN_8001DAF8` (`0x140` = 320), then the
+    /// ordering-table depth handed to the boot mode-init `FUN_8001DCF8`.
+    pub screen_width: u16,
+    /// `FUN_8001DCF8`'s argument. `0x0C` here against the duel's `0x0C` and
+    /// the fishing bring-up's `0x0B` - it is a per-mode depth, not a constant.
+    pub ot_depth: u8,
+    /// Scene block base written to `_DAT_80084540`, which the SCUS BGM
+    /// resolver indexes as `*(0x80084540) + 6 + bgm_id`. Same value the
+    /// teardown restores - see [`DANCE_SCENE_BLOCK_BASE`].
+    pub scene_block_base: u16,
+    /// Bytes the game-mode work buffer is allocated at through the malloc
+    /// wrapper `FUN_80017888`, then parked at the scratchpad scene pointer
+    /// `0x1F8003EC`.
+    pub work_buffer_bytes: u32,
+    /// Bytes the GPU primitive-packet buffer is allocated at
+    /// (`FUN_8001E3B8`).
+    pub prim_buffer_bytes: u32,
+    /// The dancer actor's spawn position, `(+0x14, +0x16, +0x18)` of the
+    /// actor `FUN_80020DE0` materialises from the template at `0x801D42E4`.
+    /// The middle component is negative: the floor is above the origin.
+    pub dancer_spawn: (i16, i16, i16),
+    /// `+0x4` / `+0x8` of the camera-target block at `0x800840B8`, the same
+    /// pair the field-camera reset writes on field entry.
+    pub camera_pair: (u32, u32),
+    /// Scratchpad bytes `0x1F8003E8..EB` - the camera's visible tile window,
+    /// as `(min_x, min_z, max_x, max_z)` signed tiles. **Symmetric** about the
+    /// camera on both axes, where the field's default
+    /// ([`crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW`]) is offset
+    /// forward and to the left; the dance floor is also two tiles wider and
+    /// four deeper.
+    pub view_window: (i8, i8, i8, i8),
+    /// How many per-dancer slots the entry clears, one word each in the four
+    /// parallel arrays at `0x801D544C` / `0x801D53CC` / `0x801D578C` /
+    /// `0x801D57CC`. Three - the qualifier floor's size, which is the floor
+    /// the overlay's own init stages regardless of which mode runs later.
+    pub cleared_dancer_slots: usize,
+    /// Arguments of the five `FUN_801D03C4` face-stamp calls, in order. The
+    /// second argument is the mode global `DAT_801D514C`, which the entry
+    /// raises to `1` for the first call and drops to `0` for the rest.
+    pub face_stamps: [(u8, u8); 5],
+    /// Streaming asset ids the entry loads: the venue's field file
+    /// (`FUN_8001F7C0`, also [`Self::scene_block_base`]) and the audio bank
+    /// (`FUN_8001FC00` then `FUN_8001E54C`).
+    pub stream_ids: (u32, u32),
+}
+
+/// The dance overlay's entry constants.
+///
+/// PORT: FUN_801CEF54 (`0x801cef54..0x801cf46c`)
+///
+/// NOT WIRED: the host that should call it is [`crate::world::World`]'s dance
+/// entry, and it cannot: the port enters the dance by **suspending** the
+/// current scene mode rather than loading the venue's own bundle, so there is
+/// no scene-name buffer to fill, no block base to publish and no GPU packet
+/// buffer to size. That is the same reason the teardown
+/// ([`dance_scene_stage`]) is only partly wired, and the two become reachable
+/// together the day the dance is a real scene load. Until then the record is
+/// the retail seed a dance scene host reads, and the fields that already have
+/// engine mirrors agree with them: [`Self::scene_block_base`] with
+/// [`DANCE_SCENE_BLOCK_BASE`] and [`Self::cleared_dancer_slots`] with the
+/// qualifier floor's size.
+pub const fn dance_scene_entry() -> DanceSceneEntry {
+    DanceSceneEntry {
+        screen_width: 0x140,
+        ot_depth: 0x0c,
+        scene_block_base: DANCE_SCENE_BLOCK_BASE,
+        work_buffer_bytes: 0x1_4000,
+        prim_buffer_bytes: 0x1_9000,
+        dancer_spawn: (0x1800, -0x64, 0x3300),
+        camera_pair: (0x62c, 0xff0),
+        view_window: (-8, -0x0a, 8, 0x0a),
+        cleared_dancer_slots: 3,
+        face_stamps: [(0, 1), (1, 0), (2, 0), (1, 0), (2, 0)],
+        stream_ids: (0x4cc, 0x4d1),
+    }
+}
+
 /// What the dance scene teardown writes, in the order retail stores it. It is
 /// a **restore**, not a stage: the overlay's init `FUN_801CEF54` saved each of
 /// these on the way in.
@@ -2866,6 +2954,63 @@ mod tests {
         assert!(s.clear_pad_latch);
         // The impossible-value write is the BGM swap's force-reload idiom.
         assert_eq!(s.bgm_force_reload, -1);
+    }
+
+    #[test]
+    fn the_entry_and_the_teardown_agree_on_the_block_base() {
+        let e = dance_scene_entry();
+        // The teardown restores `_DAT_80084540` from the slot the entry wrote,
+        // so the two have to name the same value or the BGM resolver indexes
+        // a different block after the dance than before it.
+        assert_eq!(e.scene_block_base, DANCE_SCENE_BLOCK_BASE);
+        assert!(dance_scene_stage().restores_scene_block_base);
+        // The field file the entry loads is the venue block itself; the second
+        // stream is the audio bank, five entries along.
+        assert_eq!(e.stream_ids.0, u32::from(DANCE_SCENE_BLOCK_BASE));
+        assert_eq!(e.stream_ids.1, 0x4d1);
+    }
+
+    #[test]
+    fn the_entry_stages_the_qualifier_floor() {
+        let e = dance_scene_entry();
+        // Three per-dancer slots cleared, and the qualifier cast is the same
+        // size - the overlay stages one floor whichever mode runs later.
+        assert_eq!(e.cleared_dancer_slots, QUALIFIER_KINDS.len());
+        assert_eq!(e.cleared_dancer_slots, 3);
+        // The face-stamp calls raise the mode global for the first slot only.
+        assert_eq!(e.face_stamps[0], (0, 1));
+        assert!(e.face_stamps[1..].iter().all(|&(_, mode)| mode == 0));
+        // Slots 1 and 2 are stamped twice, slot 0 once - five calls, three
+        // slots, and the repeat is what makes the count odd.
+        assert_eq!(e.face_stamps.len(), 5);
+        for slot in 0..e.cleared_dancer_slots as u8 {
+            assert!(e.face_stamps.iter().any(|&(s, _)| s == slot));
+        }
+    }
+
+    #[test]
+    fn the_dance_view_window_is_centred_where_the_fields_is_offset() {
+        let e = dance_scene_entry();
+        let (x0, z0, x1, z1) = e.view_window;
+        // Symmetric about the camera on both axes.
+        assert_eq!(x1, -x0);
+        assert_eq!(z1, -z0);
+        assert_eq!(i32::from(x1 - x0), 16);
+        assert_eq!(i32::from(z1 - z0), 20);
+
+        // The field's default is offset instead - further ahead than behind
+        // and further left than right - so the two are not the same box even
+        // though both are deeper than wide.
+        let f = crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
+        assert_ne!(f.2, -f.0);
+        assert_ne!(f.3, -f.1);
+        assert_ne!(e.view_window, f);
+        // And the dance floor is the larger box on both axes.
+        assert!(x1 - x0 > f.2 - f.0);
+        assert!(z1 - z0 > f.3 - f.1);
+
+        // Y is above the origin: the dancer's spawn height is negative.
+        assert!(e.dancer_spawn.1 < 0);
     }
 
     #[test]

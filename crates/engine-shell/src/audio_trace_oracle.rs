@@ -89,7 +89,7 @@ pub struct AudioTraceFrame {
     /// Retail: `None`.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub sequencer_finished: Option<bool>,
-    /// Master volume `(left, right)`. Engine: clean-room model's
+    /// Master volume `(left, right)`. Engine: from-scratch model's
     /// `master_left/right`. Retail: mednafen's
     /// `(GlobalSweep[0/1]).Current` accumulator.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -163,7 +163,7 @@ impl Default for AudioTraceBuildOptions {
 ///
 /// Pause / resume gate the per-frame `tick_us` call inside
 /// [`build_engine_audio_trace`] - we don't have a "pause" hook on the
-/// clean-room [`Sequencer`] itself, so the flag lives here.
+/// port's [`Sequencer`] itself, so the flag lives here.
 pub struct TraceBgmDirector {
     bank: Option<VabBank>,
     sequencer: Option<Sequencer>,

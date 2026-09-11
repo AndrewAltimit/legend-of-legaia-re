@@ -558,6 +558,25 @@ pub struct BattleActor {
     /// committed command - see
     /// [`crate::battle_formulas::arms_weapon_atk_fold`].
     pub atk_working: u16,
+    /// `+0x15A` - ATK **base**, the half a buff restores to. The stat block
+    /// runs `+0x158..+0x16A` as five pairs `(working, base)`
+    /// (`docs/subsystems/battle-formulas.md`); this is the second half of
+    /// the ATK pair and the one PROT 0955's Power Charge and Melt Spray
+    /// arms write alongside `+0x158`.
+    pub atk_base: u16,
+    /// `+0x164` - SPD **working**, the turn-order initiative seed
+    /// `FUN_801DA780` reads.
+    pub spd: u16,
+    /// `+0x166` - SPD **base** (`FUN_80053CB8` resets `+0x164 = +0x166` each
+    /// round).
+    pub spd_base: u16,
+    /// `+0x168` - INT **working**: the magic-damage / magic-defence column
+    /// and the accuracy-evasion seed. The engine also mirrors it per slot in
+    /// `World::battle_accuracy`; this is the actor's own halfword, so the
+    /// band's five-stat writers have somewhere to land.
+    pub intel: u16,
+    /// `+0x16A` - INT **base**.
+    pub intel_base: u16,
     /// `+0x1F5` - anim-cue flag (read at state `SummonFadeIn` for fade-in
     /// trigger).
     pub anim_cue: u8,
@@ -836,6 +855,13 @@ pub struct BattleActionCtx {
     /// REF: FUN_801E295C (`ctx[+0x1A]`; the `PORT:` anchor for the seeding
     /// arm is `battle_action::dispatch`'s `seed_turn_cursor`)
     pub turn_cursor: u8,
+    /// `[+0x262]` - the **cast readout cursor**: which of the eight
+    /// value-window slots the next effect-child hit files its damage in.
+    /// `FUN_801E09F8`'s hit arm writes `ctx[0x83C + slot*4]`,
+    /// `ctx[0x318 + slot*2]` and `ctx[0x85C + slot*4]`, then stores
+    /// `(slot + 1) & 7` back (`0x801E18E8` / `0x801E18FC`).
+    /// Kernel: [`crate::battle_cast_census::effect_child_hit`].
+    pub cast_readout_cursor: u8,
     /// `[+0x16]` - the **Attack x2 pass counter** the War God Icon's pair
     /// runs on.
     ///

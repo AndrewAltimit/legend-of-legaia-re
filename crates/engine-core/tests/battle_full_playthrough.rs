@@ -6,7 +6,7 @@
 //! This is the integration counterpart to `battle_attack_integration.rs`.
 //! That file exercises individual primitives; this file proves the SM
 //! settles into a `BattleComplete` outcome when the host applies damage
-//! across many ticks. Stays clean-room (no Sony bytes, no PROT lookups).
+//! across many ticks. Stays disc-free (no Sony bytes, no PROT lookups).
 
 use legaia_engine_core::world::{SceneMode, World};
 use legaia_engine_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};

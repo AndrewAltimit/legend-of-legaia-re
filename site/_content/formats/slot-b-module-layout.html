@@ -1,0 +1,66 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; slot-B module layout</div>
+  <h1>Slot-B module image layout <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">Sixty-four PROT entries hold the choreography of every Seru summon and every capture-class
+  cast - one file format wearing 64 different spells. They all load at the same address, one at a time, into
+  the second overlay window. This page is the <em>file</em>: which bytes of one of those images are a jump
+  table, which are code, and which are the particle records the spell spawns.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd><a href="prot.html">PROT.DAT</a> entries <code>0903..0966</code>, one per spell slot</dd>
+    <dt>Load base</dt><dd><code>0x801F69D8</code> - the shared slot-B overlay window; only one image is resident at a time</dd>
+    <dt>Regions</dt><dd>head jump table, frame-matched code, spawn-record band, inherited mastering tail</dd>
+    <dt>Parser</dt><dd><code>legaia_asset::slot_b_module</code>; the records feed <code>cast_effect_pool</code></dd>
+    <dt>Behaviour</dt><dd>the phase machine, the entry tables and the damage shape are the behaviour side, in <code>docs/subsystems/cast-module.md</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="regions">
+  <h2>The regions</h2>
+  <table class="data">
+    <thead><tr><th>Region</th><th>Contents</th><th>Recovered by</th></tr></thead>
+    <tbody>
+      <tr><td>head table</td><td>0 to 256 words of in-image addresses - the jump table of <em>one</em> of the module's two switches</td><td>leading run of words inside the image, stopping at the first framed function</td></tr>
+      <tr><td>code</td><td>the tick's phase machine, the spawn stager, the capture-class trampolines</td><td>frame matching</td></tr>
+      <tr><td>spawn-record band</td><td><code>[i16 model_sel][u16 reserved][move-VM bytecode]</code> particle records</td><td>the consumer's own pointer-forming instruction</td></tr>
+      <tr><td>inherited tail</td><td>a byte-identical copy of another extracted image's bytes at the same file offset</td><td>mastering residue: the build buffer still held the previous image</td></tr>
+    </tbody>
+  </table>
+  <p><strong>They are not laid out head-to-tail.</strong> PROT 0943 (Curse) and PROT 0961 (Dead End Crisis) both
+  carry framed code <em>above their record band</em>, so "everything past the last function is data" swallows five
+  bodies. Those five are real routines but not those images' own: they sit above each image's own-content cut
+  (0943's bytes end at file +0x1037, 0961's at +0x1918) and are byte-identical to PROT 0942 and PROT 0960 at the
+  same offsets - inherited residue. A record claim is therefore cut at the next function's prologue, never run to
+  the image end.</p>
+</section>
+
+<section class="doc-section" id="records">
+  <h2>The spawn-record band</h2>
+  <p>A record is named by an <strong>instruction</strong>, never by a statistic. The module materialises the
+  record's address with a <code>lui</code>/<code>addiu</code> pair and passes it in <code>$a2</code> to the actor
+  spawn helper <code>FUN_80021B04</code> or its pool wrapper <code>FUN_80050ED4</code>. One record's end is the
+  next record's start, so both ends of a claim are addresses the module's own code computes - no length field, no
+  terminator scan, no entropy test.</p>
+  <p>Five filters keep a spurious pointer out, and three of them fire on retail: the resolved address must land
+  inside this image (97 pointers), the <strong>call site</strong> must lie inside a framed body of this image (5
+  records, 484 bytes - an inherited tail carries a sibling's spawn calls, and in PROT 0909 three of them name PROT
+  0908's records), and an intervening call voids the value, since <code>$a2</code> is caller-saved (9 pointers).
+  The remaining two - a target inside a framed function, and a <code>model_sel</code> the spawn helper would not
+  dispatch - never fire on this disc, and saying so is the point: they are guards, not findings. With all five, no
+  claim in the band overlaps a routine the dump corpus places in the same image.</p>
+  <p>One span the band cannot bound: the image's <strong>highest</strong> record has nothing above it computing an
+  address, so its end is not derivable and it stays unclaimed.</p>
+</section>
+
+<section class="doc-section" id="why">
+  <h2>Why it was read as un-dumped code</h2>
+  <p>The coverage instrument's data-segment rule rejects any run holding a <code>lui</code> of a RAM page. A
+  record's body is move-VM bytecode - arbitrary bytes - so a long enough band contains that word by accident, and
+  the opcode statistic then scored the records as code. Several images' whole record bands ranked as
+  disassembly work on the strength of that. Naming the band with a parser takes them out of the code denominator
+  and off the worklist. See <a href="../tooling/byte-accounting.html">byte accounting</a> and
+  <a href="../tooling/disc-coverage.html">disc coverage</a>.</p>
+</section>

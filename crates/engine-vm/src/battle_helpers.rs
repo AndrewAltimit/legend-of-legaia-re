@@ -1,4 +1,4 @@
-//! Small self-contained battle / motion kernels ported clean-room from the
+//! Small self-contained battle / motion kernels ported from the
 //! `SCUS_942.54` battle code.
 //!
 //! These are the leaf arithmetic / byte-buffer helpers underneath the larger
@@ -33,7 +33,7 @@
 //! acquires a caller; nothing else has to move", and both halves were wrong.
 //! `FUN_800589D0` is `PutDispEnv` - PsyQ libgpu, carried on the port-catalog
 //! ignore list (`scripts/ci/port-catalog-ignore.toml`) precisely because a
-//! clean-room port replaces the display-environment layer rather than
+//! port replaces the display-environment layer rather than
 //! reproducing it - and it is documented, in
 //! `docs/reference/functions/renderer.md`, which also records this kernel as
 //! its port. So the caller is not pending; it is declined. The real

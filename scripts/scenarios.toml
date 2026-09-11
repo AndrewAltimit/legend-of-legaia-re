@@ -464,7 +464,7 @@ topics = ["field load", "scene asset loader", "town01"]
 #   - collision grid (+0x4000) has 7455 / 16384 wall tiles painted
 #   - steady state runs ONE field-VM context: script_id 0xFB (system
 #     channel), bytecode at 0x8010F092, looping pc 0x0102..0x0297 - the
-#     same per-frame loop the clean-room engine's static trace settles
+#     same per-frame loop the engine's static trace settles
 #     into, and the nibble-7 paint ops fire 0 times (walls are painted
 #     at scene-load, not per frame).
 # Use this as the reference state for collision-grid / locomotion parity.
@@ -628,7 +628,7 @@ topics = ["battle", "reward", "exp", "gold", "drop", "spoils", "FUN_80026018", "
 # ids @ +0x13D, levels @ +0x161) against retail, and shows a story-Seru
 # capture is an IMMEDIATE grant (no capture-points accumulation in the
 # record) at spell level 1. Real spell ids (0x81) sit far above the
-# clean-room SpellCatalog approximations. See
+# port-side SpellCatalog approximations. See
 # capture_observations::seru_capture.
 # ----------------------------------------------------------------------
 
@@ -1062,7 +1062,7 @@ slot = 255
 label = "minigame_muscle_dome_pcsx"
 backup_fingerprint = "ed174405c2685db529b0e9bd6a4deb5024db916b963588f43c44cefa3a8905cb"
 phase = "minigame"
-description = "Muscle Dome card-battle minigame, load-transition capture (earliest reachable, no input). Run forward to resident-load the overlay + start the SM. Overlay: match SM FUN_801d0748 (phase byte ctx+6), 4-slot hand deal/commit into the actor +0x1df action queue, resolution via the shared battle-action path (deck / card-table bytes unpinned)."
+description = "Muscle Dome arena minigame, load-transition capture (earliest reachable, no input). Run forward to resident-load the overlay + start the SM. Overlay: match SM FUN_801d0748 (phase byte ctx+6), four direction commands 0xC..0xF committed under an AP budget into the actor +0x1df action queue, resolution via the shared battle-action path. Not a card battle - nothing is drawn, discarded or reshuffled."
 topics = ["minigame", "muscle dome", "RE", "pcsx-redux", "load-transition", "breakpoint-probe"]
 
 [[scenarios]]
@@ -2525,3 +2525,21 @@ phase = "boot"
 expected_game_mode = 0x17
 description = "Cold boot with no save state, driven through the title front end by the probe's own pad ladder (LEGAIA_PAD_SCRIPT). Reference timings from the USA disc under PCSX-Redux with FastBoot: master mode 0x10 at ~235 vsyncs, 0x11 at 318, CARD INIT 0x16 at 978, title 0x17 at 1109; title sub-mode 0x11 at 1110 and 0x10 at 1185. Answers what draws the init.pak WARNING screen (nothing does), which title sub-mode a cold boot shows (0x10, because the boot init.pak raises _DAT_8007BB00 at 0x801CEB84), and whether anything samples the card-screen kanji page (nothing does)."
 topics = ["boot", "title", "cold boot", "init.pak", "WARNING screen", "kanji page", "no-save", "probe state"]
+
+# ----------------------------------------------------------------------
+# Teien (Sebucus garden) free field run - the state the object-grid ground
+# thread was blocked on. Produced by playing the corpus's teien field-init
+# state forward past its transition fade under
+# scripts/pcsx-redux/autorun_field_ground_cells.lua, which also writes the
+# live object-grid census and the per-cell emit census for the frame.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "teien_field_run"
+backup_fingerprint = "811098af2f18e96d7989c03cbc3521976eb913a92af34e244127248c6fbf6fe4"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "teien"
+description = "Free field run inside the Sebucus garden (scene teien), captured a minute of field frames past the transition fade the corpus's only other teien field state sits in. The frame's live object grid at *(0x1F8003EC)+0x8000 holds 451 non-zero cells - 400 with the ground-draw bit 0x1000, 53 with 0x2000, 45 with 0x0800 and no 0x1000 - and PROT 0900 is byte-resident at slot B, so the ground pass FUN_801F6D48 can be breakpointed straight from the load."
+topics = ["field", "teien", "object grid", "ground pass", "FUN_801F6D48", "PROT 0900", "probe state"]

@@ -1,4 +1,4 @@
-//! Clean-room PSX SPU model.
+//! From-scratch PSX SPU model.
 //!
 //! 24 voices, 512 KB SPU RAM, ADSR-shaped per-voice envelopes, libspu-shaped
 //! transfer engine. The mixer's job is simple:

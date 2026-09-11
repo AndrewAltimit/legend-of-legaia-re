@@ -440,7 +440,7 @@ impl World {
         true
     }
 
-    /// Clean-room interaction probe - retail `FUN_801cf9f4`, the action-button
+    /// Port-side interaction probe - retail `FUN_801cf9f4`, the action-button
     /// adjacency test that talks to a nearby field NPC.
     ///
     /// Mirrors [`Self::tick_world_map_npc_dialog`] for field mode: a single

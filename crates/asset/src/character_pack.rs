@@ -375,7 +375,7 @@ pub mod equipment_swap {
         pub patched_group_index: u8,
         /// Per-character record byte offset of the equipment toggle. Read by
         /// retail as `*(0x80084140 + slot*0x414 + 0x75e + local_10[slot])`;
-        /// folded down to a flat record offset for clean-room consumers.
+        /// folded down to a flat record offset for port consumers.
         pub equip_byte_record_offset: u16,
     }
 

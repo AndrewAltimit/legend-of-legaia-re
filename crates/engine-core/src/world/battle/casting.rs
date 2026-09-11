@@ -976,7 +976,12 @@ impl World {
                 } else {
                     amount
                 };
-                self.apply_battle_hp_delta(target as usize, i32::from(applied));
+                // Retail applies a cast's HP through `FUN_801E09F8`'s
+                // effect-child hit arm, whose clamp is the **safe** one: one
+                // value clamped against live HP reaches both `+0x10` and
+                // `+0x14C`, so the bar can never outrun HP. That arm also
+                // picks the victim's reaction clip off `+0x1F2`.
+                self.apply_effect_child_hit(target as usize, i32::from(applied));
                 self.battle_hit_fx.push(BattleHitFx {
                     target_slot: target,
                     amount: applied,

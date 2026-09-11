@@ -1,6 +1,6 @@
 //! PROT.DAT archive reader.
 //!
-//! `Archive::from_reader` is the clean-room analogue of the retail boot-time
+//! `Archive::from_reader` is the port-side analogue of the retail boot-time
 //! TOC loader: it parses the PROT.DAT header sectors and walks the same TOC
 //! pair (`toc[p+2]` start LBA, `toc[p+3]` next start) the SCUS dispatcher
 //! reads into `0x801C70F0` at boot. See

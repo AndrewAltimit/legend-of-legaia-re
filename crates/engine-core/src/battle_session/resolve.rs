@@ -1,5 +1,5 @@
 //! Resolve-phase action-SM driver: builds the per-slot resolve queue, arms
-//! and steps the battle action SM one attacker at a time, applies clean-room
+//! and steps the battle action SM one attacker at a time, applies port-side
 //! swing damage, and runs end-of-round bookkeeping + wipe detection.
 
 use super::*;
@@ -127,7 +127,7 @@ impl BattleSession {
         }
 
         // Damage hook: AttackChain → AttackRecovery is the canonical
-        // strike-landed transition. Apply clean-room formula damage to
+        // strike-landed transition. Apply port-side formula damage to
         // the attacker's `active_target`.
         if let Some(StepOutcome::Transition { from, to }) = outcome
             && from == ActionState::AttackChain.as_byte()
@@ -182,11 +182,11 @@ impl BattleSession {
         }
     }
 
-    /// Clean-room damage roll on AttackChain → AttackRecovery.
+    /// Port-side damage roll on AttackChain → AttackRecovery.
     ///
     /// Reads attacker `atk` + target `udf` off [`Self::round.stats`]
     /// (computed by [`BattleRound::begin`]), runs an accuracy roll, then
-    /// folds the clean-room PSY-Q variance into the raw damage. Writes
+    /// folds the port's PSY-Q variance into the raw damage. Writes
     /// the result back into the target's `BattleActor::hp`, pushes a HUD
     /// popup, and emits [`SessionEvent::HpChanged`].
     fn apply_session_swing(

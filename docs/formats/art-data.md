@@ -319,11 +319,42 @@ Thunder Punch is `2`. A reskin that rewrites the cue records but leaves `+0x7A`
 alone still shows the host character's sparks and ghost trail - see
 [randomizer.md](../tooling/randomizer.md).
 
-The afterimage table's channel order is **not** settled: `+0x74` is a GP0
-colour word, and the byte order that reads correctly for move-VM op `0x0C`
-disagrees with the one that reads correctly for `FUN_8005112c`'s ribbon
-literals. Treat the per-character colours as unresolved until a frame capture
-settles it.
+#### The afterimage table's channel order - **R is byte 0**
+
+`0x80076908` is four words, and the party rows are permutations of one pair
+(`60 30 30`, `30 60 30`, `30 30 60`, with `50 50 30` for the monster row at
+`0x80076914`), so only the byte order decides which character is red.
+
+The order is pinned by hardware register assignment, not by taste.
+`FUN_80049348` writes the row into the render node's `+0x74`
+(`0x8004939C..0x800493C4`); `FUN_80048A08` stages that word into `gp[+0x9D8]`
+(`0x80048BEC` `lw v0,0x74(s0)` / `0x80048BF8` `sw v0,0x9d8(gp)`); the draw
+wrapper `FUN_80043390` takes it as `a1` and, on the `a2 != 0` arm, splits it
+low byte first into the **GTE far-colour control registers**:
+
+```text
+800434c8  ctc2 s6,cr21     ; RFC <- (a1 & 0xff) << 4
+800434cc  ctc2 s5,cr22     ; GFC <- ((a1 >> 8) & 0xff) << 4
+800434d0  ctc2 s4,cr23     ; BFC <- ((a1 >> 16) & 0xff) << 4
+```
+
+with the same low-byte-first split into `cr13`/`cr14`/`cr15` (`RBK`/`GBK`/`BBK`)
+at `0x80043464..0x8004346C`. So byte 0 is red, and the table reads Vahn red,
+Noa green, Gala blue, monsters olive. Move-VM op `0x0C` builds the same field
+the same way (`+0x74 = (v1<<24 | 0x40000000) + v2 + (v3<<8) + (v4<<16)` - `v2`
+is the red operand). Mirror: `engine-core::battle_afterimage::GHOST_COLOR_PARTY`.
+
+`FUN_8005112c`'s ribbon literals looked like a contradiction because they are
+**not this field**. They are the fourth argument of the 2D streak builder
+`FUN_80048310`, which decomposes and re-packs them without moving a byte
+(`0x80048460..0x80048474`, `0x80048540..0x80048580`) and hands the result to
+`FUN_800485BC`. That routine lays down a `POLY_G4`, whose vertex colour bytes
+sit at `+0x04`/`+0x0C`/`+0x14`/`+0x1C`, and it writes **byte 2** of the word to
+the `r` slot (`0x800487FC..0x80048814` shifts `>> 0x10` into `sp+0x8C`, stored
+at `+0x04`/`+0x14`), byte 1 to `g` and byte 0 to `b`. Two conventions, one per
+consumer: the mesh-tint word feeds GTE colour registers red-first, the 2D
+streak literals feed GP0 vertex colours blue-first. Neither is a mis-read of
+the other, and no capture is needed.
 
 ### The cue tables
 

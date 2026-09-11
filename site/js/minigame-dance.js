@@ -220,6 +220,28 @@ window.MgDance = (function () {
         }
       }
 
+      /* The floor's STEP-MARKER tiles: the per-cell actors retail's floor pass
+       * spawns for every venue cell whose kind-1 `.MAP` record resolves to clip
+       * 6..9, each flipping its mesh through its class row of the overlay's
+       * script table. Their topology is static - every candidate mesh of every
+       * tile is baked once - and only the positions change, with the spans that
+       * are not the tile's current mesh collapsed to a point. So they ride the
+       * same single buffer as the hall and the dancers, and the per-frame cost
+       * is one array copy. Absent on a venue whose `.MAP` has no marker cell. */
+      let markers = null;
+      if (api.dance_marker_tiles && api.dance_marker_tiles() > 0) {
+        const mp = api.dance_marker_positions();
+        if (mp.length) {
+          markers = {
+            pos: mp,
+            uvs: api.dance_marker_uvs(),
+            ct: api.dance_marker_cba_tsb(),
+            idx: api.dance_marker_indices(),
+            flat: api.dance_marker_flat_rgba(),
+          };
+        }
+      }
+
       /* Vertical extent of the rest pose, for camera framing. */
       const halfOf = (f, cl) => {
         const c = cl[0] || cl[1];
@@ -249,6 +271,8 @@ window.MgDance = (function () {
       for (const f of dancers) { vertBases.push(total); total += f.pos.length / 3; }
       const envBase = total;
       if (env) total += env.pos.length / 3;
+      const markerBase = total;
+      if (markers) total += markers.pos.length / 3;
       const pos = new Float32Array(total * 3);
       const uvs = new Uint8Array(total * 2);
       const ct = new Uint16Array(total * 2);
@@ -268,6 +292,13 @@ window.MgDance = (function () {
         ct.set(env.ct, envBase * 2);
         flat.set(env.flat, envBase * 4);
         for (const ix of env.idx) idxArr.push(ix + envBase);
+      }
+      if (markers) {
+        pos.set(markers.pos, markerBase * 3);
+        uvs.set(markers.uvs, markerBase * 2);
+        ct.set(markers.ct, markerBase * 2);
+        flat.set(markers.flat, markerBase * 4);
+        for (const ix of markers.idx) idxArr.push(ix + markerBase);
       }
       const idx = new Uint32Array(idxArr);
 
@@ -296,6 +327,7 @@ window.MgDance = (function () {
         : { yaw: 0.0, pitch: 0.12, distance: 1.9 };
       const scene = {
         renderer, dancers, clips, anim, moves: cast.moves, dx, vertBases,
+        markerBase: markers ? markerBase : -1,
         base: pos.slice(),      /* pristine object-local vertices */
         out: pos,               /* per-frame posed copy (uploaded buffer) */
         lastBeat: -1,
@@ -396,6 +428,13 @@ window.MgDance = (function () {
         if (!st_.clip) continue;
         poseInto(b.out, b.base, b.dancers[d].oid, st_.clip, st_.frame,
                  b.vertBases[d], b.dx[d], b.faceYaw);
+      }
+      /* Step-marker flipbook: one retail frame per render, the same cadence
+       * the dancer clips advance on. `dance_marker_step` returns the whole
+       * block's positions with the non-current spans collapsed. */
+      if (b.markerBase >= 0) {
+        const mp = api.dance_marker_step(1);
+        if (mp.length) b.out.set(mp, b.markerBase * 3);
       }
       b.renderer.updatePositions(b.out);
       b.renderer.render(b.cam.yaw, b.cam.pitch, b.cam.distance,

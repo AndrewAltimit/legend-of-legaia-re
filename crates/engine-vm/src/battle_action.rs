@@ -1,4 +1,4 @@
-//! Battle action state machine, ported clean-room from `FUN_801E295C` (battle
+//! Battle action state machine, ported from `FUN_801E295C` (battle
 //! overlay `0898`). Drives the per-actor execution of a chosen battle action -
 //! the layer between "the player picked Attack" and "the actor's body has
 //! finished swinging the sword and HP has been deducted."
@@ -22,7 +22,7 @@
 //! 3. **Per-actor sub-state** - `actor.flag_bits` and the per-action parameter
 //!    byte stream `actor.params[..]`.
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No bytes from `SCUS_942.54` or any overlay live here. The Ghidra
 //! decompilation at `ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`
@@ -92,6 +92,12 @@ pub use hit_event::*;
 
 mod target_cursor;
 pub use target_cursor::*;
+
+mod effect_selector;
+pub use effect_selector::*;
+
+mod ai_companion;
+pub use ai_companion::*;
 
 #[cfg(test)]
 mod tests;

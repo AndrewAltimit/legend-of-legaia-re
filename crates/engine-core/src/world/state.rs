@@ -686,7 +686,7 @@ pub struct World {
     /// [`Self::drain_actor_spawns`] after [`Self::tick`] and route each
     /// record into their own actor pool - the retail engine mallocs a
     /// per-actor vertex pool and stores the record pointer at
-    /// `actor[+0x90]`; the clean-room port leaves that policy to the
+    /// `actor[+0x90]`; the port leaves that policy to the
     /// engine that consumes the request.
     pub pending_actor_spawns: Vec<Vec<u8>>,
 
@@ -743,6 +743,14 @@ pub struct World {
     /// `None` on a disc-free build (a voice cue then requests no span and
     /// is dropped).
     pub xa_cue_durations: Option<Vec<u16>>,
+
+    /// Battle **effect CLUT stages** queued this frame - one `0x801F6418`
+    /// source x per table-form effect spawn whose map byte is non-zero
+    /// (`FUN_801DEA50`, `0x801df0dc..0x801df134`). Cosmetic: each is a 16x1
+    /// palette-row copy onto VRAM `(224, 476)` a host applies with
+    /// [`crate::battle_effect_clut::stage_effect_clut`]. Drained via
+    /// [`World::drain_battle_clut_stages`]; cleared on battle exit.
+    pub battle_clut_stages: Vec<u8>,
 
     /// Battle effect-script spawn requests queued this frame - one per
     /// effect record the per-actor effect-script walk consumed
@@ -844,7 +852,7 @@ pub struct World {
     /// from the MAN actor placements. The interaction probe
     /// (`Self::tick_field_interaction_probe`) box-tests the player's position
     /// against these to fire a `field_interact` on the action button - the
-    /// clean-room analogue of retail's `FUN_801cf9f4` adjacency test.
+    /// port-side analogue of retail's `FUN_801cf9f4` adjacency test.
     ///
     /// The runtime actor frame **is** the MAN placement frame: `FUN_8003A1E4`
     /// spawns each actor at `world = tile*128 + 0x40` (the placement's
@@ -930,6 +938,26 @@ pub struct World {
     ///
     /// PORT: FUN_801D5B5C (the `+0x26` -> `+0x5A` save)
     pub field_npc_facing_save: Option<(u8, i16)>,
+
+    /// Scene control block `+0x4A` (`_DAT_801C6EA4 + 0x4A`) - the camera
+    /// vertical offset the current scene asks for, in the player actor's
+    /// `+0x16` footing units. Written by the field VM's op `0x4C`
+    /// outer-nibble-4 sub-9 (all three arms) and read once a frame by
+    /// [`Self::tick_camera_offset_ease`].
+    pub camera_scene_offset: i16,
+    /// `_DAT_8007BCAC` - the smoothed camera vertical offset
+    /// [`crate::camera_ease::ease_camera_offset`] walks toward
+    /// `camera_scene_offset - player_footing`. Seeded to `0x3C` by retail's
+    /// per-scene initialiser `FUN_801D6704`, which is why the engine seeds it
+    /// there too. The op `0x4C` n4 sub-9 **delta** arm snaps it instead of
+    /// letting the easing arrive.
+    pub camera_offset_ease: i32,
+    /// Previous tick's player `(world_y, world_z)`. Stands in for the
+    /// `+0x1E`/`+0x20` slots retail's settle test compares `+0x16`/`+0x18`
+    /// against; the question the comparison asks is whether the actor has
+    /// stopped moving in Y and Z, and this answers it without asserting what
+    /// retail keeps in those two slots. `None` until the first tick.
+    pub camera_ease_prev_yz: Option<(i16, i16)>,
 
     /// Static prop colliders, one per placed object of the scene's field
     /// `.MAP` object grid - the engine's source for the **actor-collision
@@ -1321,6 +1349,15 @@ pub struct World {
     /// sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`). Each
     /// drives one rung of [`Self::field_floor_height_lut`].
     pub floor_tier_bobs: Vec<legaia_engine_vm::field_actor_timers::FloorTierBob>,
+
+    /// Live **script-cutscene elements** - the pool the position tween
+    /// (`FUN_801D5C08`), the teardown (`FUN_801D5D60`) and the ambient emitter
+    /// (`FUN_801D6058`) run on, each carrying the linked object whose done bit
+    /// gates it. See [`crate::world::cutscene_elements`].
+    pub cutscene_elements: Vec<crate::world::CutsceneElement>,
+    /// What the element channel produced on the last tick - the writes, the
+    /// teardown requests and the ambient particles a host reads back.
+    pub cutscene_element_frame: crate::world::ElementFrame,
 
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
@@ -2089,6 +2126,11 @@ pub struct World {
     /// [`World::battle_sfx_cues`]) - see `World::tick_battle_intro` in
     /// `world/encounters.rs`.
     pub battle_intro_effects: Vec<vm::battle_intro_transition::TransitionEffect>,
+    /// Latched when the battle-intro spin performed retail's master mode
+    /// hand-off (`_DAT_8007B83C = 0x14`) - see
+    /// [`World::battle_mode_word_held`]. Cleared when the transition ends.
+    pub battle_intro_mode_handoff: bool,
+
     /// The one-shot sound-detach latch (`gp+0x804`). Idempotent: the mode-INIT
     /// chain can call it repeatedly and only the first has any effect.
     ///
@@ -2104,9 +2146,21 @@ pub struct World {
     /// [`crate::mode::ModeDriver::tick`] via [`World::take_frame_begin_skip`].
     ///
     /// Defaults to `false`; a host that never sets it gets the pre-existing
-    /// tick-every-frame behaviour.
+    /// tick-every-frame behaviour - and that is also what **retail** does.
+    /// The flag has no retail producer that a shipped disc can reach: a
+    /// five-form sweep plus the `gp`-relative sweep over `SCUS_942.54` and
+    /// every based overlay image finds exactly three sites touching
+    /// `gp+0x3D8`, and two are clears - the mode-change edge's
+    /// (`0x800161E8`, which [`crate::mode::ModeSeat`] performs) and a reset
+    /// path's (`0x8001E100`). The one **setter** is
+    /// `_DAT_8007B6F0 = ~_DAT_8007B6F0` at `0x80018850`, the R1+Start pause
+    /// toggle in `FUN_8001822C`'s dev-hotkey tail, and that whole tail sits
+    /// behind `_DAT_8007B98C != 0` (`beq` at `0x800185FC`), which is zero on
+    /// retail. So this is a *debug pause* channel, and the port's own debug
+    /// surface - not a missing engine wire - is what would set it.
     ///
     /// REF: FUN_8001698C
+    /// REF: FUN_8001822C - the dev-hotkey tail that owns the only setter.
     pub frame_begin_skip: bool,
     /// Retail's frame-time history behind the adaptive cadence
     /// (`DAT_80084098[16]` + `0x1F800392`). Only advanced when a host calls
@@ -2490,7 +2544,7 @@ pub struct World {
 
     /// Field state captured at the `Field -> Battle` transition so the live
     /// loop can restore it on victory. The retail engine re-enters the field
-    /// scene from scratch; the clean-room loop snapshots the actor table +
+    /// scene from scratch; the port's loop snapshots the actor table +
     /// player slot instead. `None` outside battle. Managed by the live loop;
     /// hosts read [`Self::mode`] / [`Self::active_formation`] instead.
     pub field_return: Option<FieldReturnState>,
@@ -2523,7 +2577,7 @@ pub struct World {
     /// the config-only installers leave it empty. When present, it drives the
     /// **auto-engage-on-walkover** trigger in `Self::tick_world_map`: the
     /// player stepping onto a `Portal` entity's tile fires its transition with
-    /// no host call, the clean-room stand-in for retail's per-entity
+    /// no host call, the port-side stand-in for retail's per-entity
     /// player-position-in-zone check.
     pub world_map_entity_positions: Vec<(i16, i16)>,
 
@@ -2914,6 +2968,8 @@ impl World {
             field_region_attributes: crate::field_regions::RegionAttributes::DEFAULT_FILL,
             field_zone_record: None,
             field_floor_height_lut: [0i16; 16],
+            cutscene_elements: Vec::new(),
+            cutscene_element_frame: Default::default(),
             field_object_cells: Vec::new(),
             field_floor_cell_bit: legaia_asset::field_objects::CELL_WALK_VISIBLE,
             field_elevation_overrides: Vec::new(),
@@ -2992,6 +3048,7 @@ impl World {
             battle_hit_fx: Vec::new(),
             battle_hit_events: Vec::new(),
             battle_sfx_cues: Vec::new(),
+            battle_clut_stages: Vec::new(),
             battle_xa_cues: Vec::new(),
             battle_xa_busy_frames: 0,
             xa_cue_durations: None,
@@ -3015,6 +3072,9 @@ impl World {
             field_npc_entry_positions: std::collections::HashMap::new(),
             field_npc_headings: std::collections::HashMap::new(),
             field_npc_facing_save: None,
+            camera_scene_offset: 0,
+            camera_offset_ease: crate::camera_ease::CAMERA_OFFSET_EASE_SEED,
+            camera_ease_prev_yz: None,
             field_prop_colliders: Vec::new(),
             resolved_cold_spawn: None,
             field_prop_bank: Default::default(),
@@ -3158,6 +3218,7 @@ impl World {
             scene_control_block: crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET,
             battle_intro: None,
             battle_intro_effects: Vec::new(),
+            battle_intro_mode_handoff: false,
             sound_detach: crate::sound_state::SoundDetachLatch::default(),
             frame_begin_skip: false,
             frame_step_telemetry: vm::actor_tick::FrameStepTelemetry::new(),

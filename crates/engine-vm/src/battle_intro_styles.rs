@@ -650,13 +650,13 @@ pub fn particle_quad_accepted(style: &ParticleTickStyle, depth: i32, corner0: (i
 /// PORT: FUN_801CFDA0
 /// PORT: FUN_801D0370
 ///
-/// NOT WIRED: **superseded, not blocked**. The live path is
-/// `legaia_engine_render::battle_intro::emit_particle_field`, which carries
-/// the same two PORT tags and does what this loop does *and* assembles the
-/// per-particle `POLY_FT4` packet in the same pass - the packet assembly this
-/// note used to name as the missing piece. It steps each particle through
-/// [`step_particle`] rather than calling this batch wrapper, so nothing
-/// outside the tests reaches this entry point.
+/// REPLACED-BY: `legaia_engine_render::battle_intro::emit_particle_field`,
+/// which carries the same two PORT tags and is the live path. It does what
+/// this loop does *and* assembles the per-particle `POLY_FT4` packet in the
+/// same pass, stepping each particle through [`step_particle`] rather than
+/// calling this batch wrapper. So this entry point is superseded, not
+/// blocked: no host is owed a call to it, because the host already runs the
+/// same two retail routines through a different door.
 ///
 /// Kept because it is the side-effect-free integration kernel: the emitter
 /// needs a renderer, this does not, so the frame-by-frame position/clock

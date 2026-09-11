@@ -1,4 +1,4 @@
-//! Per-monster-id battle-AI script - clean-room port of the per-monster
+//! Per-monster-id battle-AI script - port of the per-monster
 //! `switch` in the action picker `FUN_801E9FD4`
 //! (`ghidra/scripts/funcs/overlay_battle_action_801e9fd4.txt`).
 //!
@@ -20,7 +20,7 @@
 //!
 //! - Scripted casts emit retail spell ids (`0x50..=0xBA`); they fold only when
 //!   the active spell catalog knows the id (the disc spell table, or the
-//!   clean-room monster block added to [`crate::spells::SpellCatalog::vanilla`]).
+//!   port's monster block added to [`crate::spells::SpellCatalog::vanilla`]).
 //!   Otherwise the engine falls back to a physical strike, matching the retail
 //!   shape (the picked action is simply unaffordable / unknown).
 //! - `ctx+0x28a` battle-mode flags ([`MonsterAiState::mode_flags`]) gate the

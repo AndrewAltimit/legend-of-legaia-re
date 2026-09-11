@@ -667,10 +667,13 @@ pub fn light_flinch_window(entry: &[u8], id: u16) -> Result<Option<JuggleWindow>
 /// 80050e68  addiu v0,zero,0xff   ; not found
 /// ```
 ///
-/// NOT WIRED: no caller at all - and unlike [`reaction_map`], which the
-/// `legaia-patcher` CLI reaches through [`light_flinch_window`], nothing
-/// outside this module's tests names this tag search. The owner is the battle
-/// action SM's monster-animation resolve, which is not ported here.
+/// NOT WIRED: the owner is the battle action SM's monster-animation resolve,
+/// which is not ported - so there is no caller holding a monster's tag table
+/// and an action tag to look up in it. The contrast that makes this a real
+/// gap rather than a shape the port routes around: its file-mate
+/// [`reaction_map`] parses the *same* per-action table and the
+/// `legaia-patcher` CLI reaches it through [`light_flinch_window`], so the
+/// table itself is live; only the runtime lookup into it is missing.
 ///
 /// PORT: FUN_80050e2c
 pub fn find_action_by_tag(tags: &[u8], tag: u8) -> Option<u8> {

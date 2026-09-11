@@ -2,6 +2,103 @@
 
 use super::*;
 
+use legaia_engine_core::field_env::{FloorAnchor, FloorWave};
+
+/// The live **floor-height ladder** patch for the field draw lists.
+///
+/// The scene's sixteen-rung elevation ladder is not static: field-VM op `0x4C`
+/// nibble-9 sub-`0xE` rewrites all sixteen rungs and sub-`0..2` sets one rung
+/// oscillating every frame through `FUN_801DDE34` -> `FUN_801DA930`, which is
+/// the travelling wave under `jou`'s organic Seru interior (57 sites; `concnow`
+/// carries 34, and `4C 90` occurs 180 times across 19 scenes). Retail's per-cell
+/// terrain emitters re-read the scratchpad ladder at `0x1F80035C` every frame,
+/// so the drawn ground moves with it.
+///
+/// The window bakes its `(mesh, model)` lists once per scene, so this keeps the
+/// per-draw ladder rungs beside them and folds the difference into each
+/// matrix's Y whenever the live ladder moves. Nothing happens - not even an
+/// iteration - while the live ladder equals the one the lists were baked
+/// against, which is every frame of every scene whose script leaves it alone.
+#[derive(Default)]
+pub(super) struct FieldFloorWave {
+    /// MAN-frame ladder the four lists' `world_y` were resolved against.
+    base: Option<[i16; 16]>,
+    /// MAN-frame ladder currently folded into those matrices.
+    applied: [i16; 16],
+    /// Anchors parallel to `field_terrain_draws`.
+    pub(super) terrain: Vec<FloorAnchor>,
+    /// Anchors parallel to `field_terrain_color_draws`.
+    pub(super) terrain_color: Vec<FloorAnchor>,
+    /// Anchors parallel to `field_placement_draws`.
+    pub(super) placement: Vec<FloorAnchor>,
+    /// Anchors parallel to `field_placement_color_draws`.
+    pub(super) placement_color: Vec<FloorAnchor>,
+}
+
+impl FieldFloorWave {
+    /// Adopt one scene's baked ladder (`Scene::field_floor_height_lut`, MAN
+    /// frame) and the four lists' per-draw rungs. Called once per scene load,
+    /// after the four lists resolve.
+    pub(super) fn install(
+        base: Option<[i16; 16]>,
+        terrain: Vec<FloorAnchor>,
+        terrain_color: Vec<FloorAnchor>,
+        placement: Vec<FloorAnchor>,
+        placement_color: Vec<FloorAnchor>,
+    ) -> Self {
+        FieldFloorWave {
+            base,
+            applied: base.unwrap_or([0i16; 16]),
+            terrain,
+            terrain_color,
+            placement,
+            placement_color,
+        }
+    }
+
+    /// Fold the world's live ladder into the four lists' Y translations.
+    ///
+    /// `world_lut` is `World::field_floor_height_lut` - the runtime
+    /// **scratchpad** frame, the negation of the MAN frame held here.
+    /// Returns the number of draw matrices moved this frame.
+    pub(super) fn apply(
+        &mut self,
+        world_lut: &[i16; 16],
+        lists: [&mut Vec<(usize, Mat4)>; 4],
+    ) -> usize {
+        if self.base.is_none() {
+            return 0;
+        }
+        let live = world_lut.map(i16::wrapping_neg);
+        if live == self.applied {
+            return 0;
+        }
+        // The step is `live - applied`, not `live - base`: the matrices already
+        // carry whatever the last frame folded in.
+        let Some(step) = FloorWave::between(self.applied, live) else {
+            return 0;
+        };
+        self.applied = live;
+        let anchors = [
+            &self.terrain,
+            &self.terrain_color,
+            &self.placement,
+            &self.placement_color,
+        ];
+        let mut moved = 0;
+        for (list, anchors) in lists.into_iter().zip(anchors) {
+            for ((_, model), floor) in list.iter_mut().zip(anchors) {
+                let dy = step.offset(floor);
+                if dy != 0 {
+                    model.w_axis.y += dy as f32;
+                    moved += 1;
+                }
+            }
+        }
+        moved
+    }
+}
+
 impl PlayWindowApp {
     /// Resolve the field static-geometry placement draws for the current
     /// scene: each placed environment object's scene-pack mesh paired with a
@@ -21,13 +118,16 @@ impl PlayWindowApp {
         tmd_src_index: &[usize],
         posed: &PosedPlacementMeshes,
         textured: bool,
-    ) -> Vec<(usize, Mat4)> {
+    ) -> (
+        Vec<(usize, Mat4)>,
+        Vec<legaia_engine_core::field_env::FloorAnchor>,
+    ) {
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let placements = match scene.field_object_placements(&self.session.host.index) {
             Ok(Some(p)) if !p.is_empty() => p,
-            _ => return Vec::new(),
+            _ => return (Vec::new(), Vec::new()),
         };
         let binds = scene
             .field_object_binds(&self.session.host.index)
@@ -443,9 +543,12 @@ impl PlayWindowApp {
         &self,
         res: &SceneResources,
         tmd_src_index: &[usize],
-    ) -> Vec<(usize, Mat4)> {
+    ) -> (
+        Vec<(usize, Mat4)>,
+        Vec<legaia_engine_core::field_env::FloorAnchor>,
+    ) {
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let tiles: Vec<legaia_asset::field_objects::Placement> =
             match scene.field_terrain_tiles(&self.session.host.index) {
@@ -453,10 +556,10 @@ impl PlayWindowApp {
                     .into_iter()
                     .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
                     .collect(),
-                _ => return Vec::new(),
+                _ => return (Vec::new(), Vec::new()),
             };
         if tiles.is_empty() {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         }
         // Field frame: raw retail-convention transforms (see above).
         self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None)
@@ -506,6 +609,7 @@ impl PlayWindowApp {
         // cameras compose FIELD_WORLD_FLIP (the walk view through the pinned
         // retail composition), so the draws are unflipped like the field's.
         self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None)
+            .0
     }
 
     /// Resolve the world-map water/CLUT-cell animation for the active scene.
@@ -855,12 +959,15 @@ impl PlayWindowApp {
             &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
         >,
         posed: Option<(&PosedPlacementMeshes, bool)>,
-    ) -> Vec<(usize, Mat4)> {
+    ) -> (
+        Vec<(usize, Mat4)>,
+        Vec<legaia_engine_core::field_env::FloorAnchor>,
+    ) {
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         if placements.is_empty() {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         }
         // Per-tile floor-height LUT (MAN header). World Y for a placed object
         // is `-lut[tile_floor_nibble] + y_off`; without it the town renders on
@@ -878,7 +985,7 @@ impl PlayWindowApp {
         // render-frame model matrix.
         let env_tmds = legaia_engine_core::field_env::env_pack_tmd_indices(scene, res);
         if env_tmds.is_empty() {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         }
         let (mut env_draws, dropped) = legaia_engine_core::field_env::resolve_placed_env_draws(
             &env_tmds, placements, floor_lut, binds,
@@ -939,6 +1046,10 @@ impl PlayWindowApp {
             }
         }
         let mut draws = Vec::new();
+        // Parallel to `draws`: which ladder rungs each draw's Y came from, so
+        // the per-frame floor wave (`FieldFloorWave`) can move the drawn ground
+        // when a script sets a rung oscillating.
+        let mut floors = Vec::new();
         for d in &env_draws {
             // A bind with an anim id means the prop's TMD objects are that
             // clip's bones, and the clip is live (a house door swings open on
@@ -1025,6 +1136,7 @@ impl PlayWindowApp {
                 );
             }
             draws.push((mesh_idx, model));
+            floors.push(d.floor);
         }
         log::info!(
             "play-window: {} field placement draws ({} placements, {} env meshes)",
@@ -1032,7 +1144,7 @@ impl PlayWindowApp {
             placements.len(),
             env_tmds.len(),
         );
-        draws
+        (draws, floors)
     }
 
     /// Debug-install a synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`) so

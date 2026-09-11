@@ -263,10 +263,12 @@ pub const fn strip_draws(ctx_6ce: i16) -> bool {
 /// decoding those texels out of a battle VRAM dump. The battle name plates
 /// come off a different sheet entirely; see [`crate::battle_chrome`].
 ///
-/// NOT WIRED: no caller. The one surface that wants this mark - the muscle
-/// dome's forbidden-command chip - is drawn by `engine-ui` as a rect built
-/// from its own constants, so the quad this returns (with its `etim` CLUT and
-/// texture page) reaches no draw list on any host.
+/// NOT WIRED: the one surface that wants this mark - the muscle dome's
+/// forbidden-command chip - already draws it, as an `engine-ui` rect built
+/// from that crate's own constants rather than from an `etim` CLUT and
+/// texture page. So the blocker is a representation, not an absent screen:
+/// nothing on any host consumes a `StripQuad` carrying retail's tpage/CLUT
+/// pair, and wiring this means moving that chip onto the textured path.
 ///
 /// PORT: FUN_801DBC30
 pub fn cross_out_mark(x: i16, y: i16) -> StripQuad {
@@ -386,12 +388,13 @@ pub enum PanelLabel {
 /// an absent slot is `0`, which is exactly the discriminator
 /// [`build_arm`] keys on. Returns the buffers in [`LABEL_BUFFERS`] order.
 ///
-/// NOT WIRED: no caller. `engine-ui`'s battle HUD does not model four label
-/// buffers at all - it draws the party names straight from the live roster,
-/// seated at the [`panel_anchors`] name pens (its `party_panel_stage_x`
-/// calls this module's kernel directly). Wiring this means giving
-/// `engine-ui` the buffer model, and the roster arm's three caption strings
-/// are overlay-resident text that is not lifted yet.
+/// NOT WIRED: `engine-ui`'s battle HUD does not model four label buffers at
+/// all - it draws the party names straight from the live roster, seated at the
+/// [`panel_anchors`] name pens (its `party_panel_stage_x` calls this module's
+/// kernel directly), so there is no buffer set for this to resolve into.
+/// Wiring it needs two things in order: the buffer model on `engine-ui`, and
+/// the roster arm's three caption strings, which are overlay-resident text
+/// that is not lifted yet.
 ///
 /// PORT: FUN_801D84C0 (the two build arms)
 pub const fn panel_labels(slots: [u8; 3]) -> [PanelLabel; 4] {

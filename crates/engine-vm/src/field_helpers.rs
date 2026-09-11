@@ -6,7 +6,7 @@
 //!
 //! These three helpers are referenced from many of the still-Pending sub-ops
 //! in `FUN_801DE840`'s `case 0x4C` cluster. They are pure arithmetic - no
-//! globals, no overlay calls - so a clean-room port can match the original
+//! globals, no overlay calls - so a port can match the original
 //! byte-for-byte and the dispatcher arms can call into them directly without
 //! a `FieldHost` round-trip.
 //!

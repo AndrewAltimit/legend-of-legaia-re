@@ -737,7 +737,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     // Seru trading, both halves: the retail in-shop vendor (hand-assembled
     // trade screen + seed-derived bucket schedule, all hosted in menu overlay
     // 0899 - runs on real hardware) and the SCUS config blob (enabled flag +
-    // the same seed) the clean-room engine reads, so a patched disc trades
+    // the same seed) the engine reads, so a patched disc trades
     // identically in an emulator and in the engine.
     if args.seru_trade {
         apply::inject_trade_full(&mut patcher, seed)?;

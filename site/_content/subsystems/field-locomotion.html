@@ -210,8 +210,8 @@
         <thead><tr><th>Offset</th><th>Meaning</th></tr></thead>
         <tbody>
           <tr><td><code>+0x10</code></td><td>flags: <code>0x80000</code> movement disabled, <code>0x1000000</code> interact requested</td></tr>
-          <tr><td><code>+0x14 / 18</code></td><td>world X / Z (<code>s16</code>, 128 units per tile)</td></tr>
-          <tr><td><code>+0x16</code></td><td>terrain-conform angle - not the yaw</td></tr>
+          <tr><td><code>+0x14 / 18</code></td><td>world X / Z (<code>s16</code>, 128 units per tile); with <code>+0x16</code> between them the three are one position triple</td></tr>
+          <tr><td><code>+0x16</code></td><td>world Y - the ground-follow height, not the yaw and not a tilt</td></tr>
           <tr><td><code>+0x26</code></td><td>heading, eight angles</td></tr>
           <tr><td><code>+0x5C</code></td><td>run state (<code>&gt; 0</code> selects the run clip)</td></tr>
           <tr><td><code>+0x72</code></td><td>speed multiplier, <code>0x1000</code> = 1.0</td></tr>

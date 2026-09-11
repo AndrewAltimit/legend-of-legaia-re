@@ -199,17 +199,25 @@ pub struct WorldMapController {
     /// This tick's full-screen grey fade quad (retail `FUN_80024EE4(1, 2,
     /// grey * 0x010101)`), or `None` on a frame with no live ramp.
     ///
-    /// NOT WIRED: no renderer draws it. The engine computes the ramp and
-    /// stages the quad; the visible half of the transition is still missing
-    /// on all three hosts.
+    /// NOT WIRED: the blocker is a full-screen quad sink, not this producer.
+    /// The ramp is computed and the quad is staged every frame it should be;
+    /// what no host has is a draw list that accepts a screen-space
+    /// `FadeQuad` at the world-map layer - `engine-render` composites the
+    /// world map straight to the framebuffer with no overlay pass in front of
+    /// it, and the browser page has no equivalent seam either. Wiring it is
+    /// the same sink both hosts need for `entry_fade`, so it is one change on
+    /// two surfaces, not a call insertion.
     pub entry_fade_draw: Option<FadeQuad>,
     /// Raised for exactly one tick when the fade-up reaches `0x100` - retail's
     /// `_DAT_8007B83C = 0xC` (MAPDSIP INIT) master-mode store.
     ///
-    /// NOT WIRED: no host consumes this yet. The engine has no mode-12
-    /// map-display screen to hand off to, so the flag is a report, and the
-    /// ramp self-clears rather than parking at `0xFF` the way retail's global
-    /// does until the overlay swap clears it.
+    /// NOT WIRED: the mode this requests does not exist in the port. Retail's
+    /// `_DAT_8007B83C = 0xC` hands the frame to the MAPDSIP overlay; the
+    /// engine's `SceneMode` has no map-display variant to switch into, so
+    /// there is nothing for a host to hand off *to* - and that absence is
+    /// also why the ramp self-clears here instead of parking at `0xFF` the way
+    /// retail's global does until the overlay swap clears it. The prerequisite
+    /// is the screen, not a consumer of the flag.
     pub map_display_requested: bool,
     /// SFX cues the controller raised this tick ([`MAP_DISPLAY_SFX`] is the
     /// only producer). Drained by whoever owns the cue bank.
@@ -217,15 +225,16 @@ pub struct WorldMapController {
     /// The three scene globals `FUN_801D1344` forwards into
     /// [`EmitterGate::arm`]: `(_DAT_8007BCD0, _DAT_8007BCD4, _DAT_8007BCD8)`.
     ///
-    /// NOT WIRED: nothing sets these yet, so the gate-arm block below is a
-    /// complete chain over a zero source and the horizon emitter never fires.
-    /// The source is now identified and is *disc* data, not a missing port:
-    /// the field VM writes all three from a script operand - the arms at
-    /// `0x801E1638` (`sw v0,-0x4330(v1)`), `0x801E1688` (`-0x432c`) and
+    /// WIRED: the field VM writes all three from a script operand - op `0x4C`
+    /// outer-nibble-4 subs `0xA` / `0xB` / `0xC`, whose immediate arms store
+    /// at `0x801E1648` (`sw v0,-0x4330(v1)`), `0x801E1688` (`-0x432c`) and
     /// `0x801E16C8` (`-0x4328`) in `overlay_world_map_801de840.txt`, each with
-    /// a sibling ramp arm through the shared `0x801E205C` epilogue. Routing
-    /// those register ids through `engine_core::register_ramp` is what fills
-    /// this in; until then a caller-supplied value would be invented input.
+    /// a sibling ramp arm through the shared `0x801E205C` epilogue. `World`
+    /// implements `FieldHost::op4c_nibble4_global_write` onto this tuple, so a
+    /// scene script that sets the globals arms the gate exactly as retail's
+    /// `FUN_801D1344` does. (An earlier note cited `0x801E1638` for the first
+    /// store; that address is the arm's operand `jal`, and the store is the
+    /// branch-delay slot at `0x801E1648`.)
     pub horizon_params: (u32, u32, u32),
     /// The world-map band's panel windows and panel actors.
     ///

@@ -672,14 +672,14 @@ pub enum CardIoEffect {
 /// `ghidra/scripts/funcs/overlay_menu_801e3294.txt`; the state table in
 /// `docs/subsystems/save-screen.md` is the same machine)
 ///
-/// NOT WIRED: no host owns one. The disclosure was written on the ticker
-/// [`card_frame_tick`], which is the only thing that advances this machine
-/// and is itself called from no production site - so the gap was invisible
-/// from this type, which is what the port catalog keys `FUN_801E3294` to.
-/// The prerequisite is a host that keeps a [`CardIoMachine`] across frames:
-/// [`SaveSelectSession`] runs its `NowChecking` beat off [`card_status_poll`]
-/// alone, and the browser card rack patches container bytes synchronously
-/// with no asynchronous I/O beat to tick.
+/// WIRED: [`crate::save_screen::SaveScreenFlow`] keeps one for as long as a
+/// card-rack screen is up and advances it every frame through
+/// [`card_frame_tick`], so both hosts drive it - the flow is the one kernel
+/// they share. The card is the host's block backend: blocks installed for the
+/// port on screen poll `Ready`, a mount with nothing readable polls `NoCard`
+/// and spends the retry budget, an unanswered read polls `Pending`. The
+/// machine's published result is what gates a confirm and what the outer
+/// dispatcher's card driver waits on.
 #[derive(Debug, Clone, Default)]
 pub struct CardIoMachine {
     /// `DAT_801EF188`.
@@ -874,14 +874,12 @@ impl CardIoMachine {
 /// folds the poll result into the card-health counters)
 /// REF: FUN_801E380C (the remaining sibling call, unported)
 ///
-/// NOT WIRED: nothing owns the state this ticker advances. No engine host
-/// keeps a [`CardIoMachine`] - the browser card rack
-/// (`web-viewer::cards`), which does enumerate a real card directory into
-/// the tables the rebuild arm consumes, patches its container bytes
-/// synchronously with no asynchronous I/O beat to tick.
-/// [`SaveSelectSession`] runs its own `NowChecking` beat off
-/// [`card_status_poll`] alone, so the two-op I/O machine has no frame to
-/// be advanced on.
+/// WIRED: [`crate::save_screen::SaveScreenFlow::before_tick`] calls this once
+/// per frame for as long as a card-rack save screen is up, with the poll
+/// status derived from the host's own block backend. The rebuild arm is the
+/// half that stays unexercised: the port commits a save in one call, so no
+/// commit phase is ever raised for the directory rebuild to key on, and the
+/// flow passes `0` there and asserts nothing comes back.
 #[allow(clippy::too_many_arguments)]
 pub fn card_frame_tick(
     io: &mut CardIoMachine,

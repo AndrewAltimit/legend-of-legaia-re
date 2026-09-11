@@ -10,7 +10,7 @@
 //! the catalog at startup and pass it into [`EquipmentSession`] /
 //! [`crate::equip_session::EquipSession`] for the player UI.
 //!
-//! The vanilla catalog is a clean-room reconstruction approximating the
+//! The vanilla catalog is a from-scratch reconstruction approximating the
 //! retail values; the actual numeric stats live in the equipment table
 //! that the level_up overlay reads (still partially overlay-blocked).
 //! Engines that care about exact retail values can override per-id via

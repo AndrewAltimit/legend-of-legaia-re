@@ -476,8 +476,117 @@ impl World {
     /// confused member can't be controlled, so it auto-acts and the retarget
     /// flips its strike to a random living ally). No-op retarget when the member
     /// isn't confused, so the auto-resolve path is RNG-unchanged.
+    /// Retail's delegated pick for the AI-controlled party member -
+    /// `FUN_801EED1C`'s `DAT_8007BD10[slot] == 4` block, ported as
+    /// [`vm::battle_action::ai_companion_pick`].
+    ///
+    /// Returns `false` when this slot is not the AI companion, so
+    /// [`Self::arm_party_physical`] falls through to the plain auto-swing it
+    /// has always used for the rest of the party.
+    ///
+    /// Two deviations from the bytes, both because retail's block was written
+    /// for one seating and the engine's roster is not fixed to it:
+    ///
+    /// * retail writes battle seat `1` unconditionally
+    ///   ([`vm::battle_action::AI_COMPANION_SEAT`]); the port writes the slot
+    ///   whose roster character id is `4`, which is the same seat whenever
+    ///   the companion is seated where retail seats it;
+    /// * retail's target redraw loop is unbounded, so a row with no living
+    ///   monster spins; the port bounds it and stands by.
+    ///
+    /// The watched seat is retail's own: battle seat `0`, the party leader,
+    /// **not** the companion itself.
+    fn arm_ai_companion(&mut self, slot: u8) -> bool {
+        use vm::battle_action::ActionState;
+        use vm::battle_action::{
+            AI_COMPANION_CHAR_ID, AI_COMPANION_MAGIC_SUB_ROUTE, AI_COMPANION_WATCHED_SEAT,
+            AiCompanionPick, AiCompanionWatch, ai_companion_pick,
+        };
+        if self.party_roster_slot(slot as usize) as u8 + 1 != AI_COMPANION_CHAR_ID {
+            return false;
+        }
+        let watch = self
+            .actors
+            .get(AI_COMPANION_WATCHED_SEAT as usize)
+            .map(|a| AiCompanionWatch {
+                hp: a.battle.hp,
+                hp_max: a.battle.max_hp,
+                status: a.battle.field_flags,
+            })
+            .unwrap_or_default();
+        let table = self
+            .actors
+            .len()
+            .min(crate::world::battle::cast_band::BATTLE_TABLE_SLOTS);
+        let monster_count = (self.party_count as usize..table)
+            .filter(|&s| self.actors[s].active)
+            .count() as u8;
+        let alive: Vec<bool> = (0..table).map(|s| self.actors[s].battle.hp != 0).collect();
+        let guard: Vec<u8> = (0..table)
+            .map(|s| {
+                self.actors[s]
+                    .battle_monster_id
+                    .and_then(|id| self.monster_catalog.get(id))
+                    .map(|d| d.swing_class)
+                    .unwrap_or(0)
+            })
+            .collect();
+        let mut rolls: Vec<u32> = Vec::new();
+        for _ in 0..(2 + vm::battle_action::AI_COMPANION_MAX_TARGET_DRAWS + 2) {
+            rolls.push(self.next_rng());
+        }
+        let mut cursor = rolls.into_iter();
+        let pick = ai_companion_pick(
+            watch,
+            monster_count,
+            |s| alive.get(s as usize).copied().unwrap_or(false),
+            |s| guard.get(s as usize).copied().unwrap_or(0),
+            || cursor.next().unwrap_or(0),
+        );
+
+        self.battle_ctx.active_actor = slot;
+        self.clear_action_stream(slot);
+        self.battle_ctx.action_state = ActionState::Begin.as_byte();
+        match pick {
+            AiCompanionPick::Magic { spell } => {
+                self.battle_ctx.queued_action = 2;
+                if let Some(a) = self.actors.get_mut(slot as usize) {
+                    a.battle.action_category = 2;
+                    a.battle.active_target = 0;
+                    if let Some(p) = a.battle.params.first_mut() {
+                        *p = spell;
+                    }
+                    a.battle.sub_route = AI_COMPANION_MAGIC_SUB_ROUTE;
+                }
+            }
+            AiCompanionPick::Attack { target, commands } => {
+                self.battle_ctx.queued_action = 3;
+                if let Some(a) = self.actors.get_mut(slot as usize) {
+                    a.battle.action_category = 3;
+                    a.battle.active_target = target;
+                    for (i, cmd) in commands.iter().enumerate() {
+                        if let (Some(c), Some(p)) = (cmd, a.battle.params.get_mut(i)) {
+                            *p = *c;
+                        }
+                    }
+                }
+                self.maybe_confuse_retarget(slot);
+            }
+            AiCompanionPick::StandBy => {
+                self.battle_ctx.queued_action = 0;
+                if let Some(a) = self.actors.get_mut(slot as usize) {
+                    a.battle.action_category = 0;
+                }
+            }
+        }
+        true
+    }
+
     pub(in crate::world) fn arm_party_physical(&mut self, slot: u8) {
         use vm::battle_action::ActionState;
+        if self.arm_ai_companion(slot) {
+            return;
+        }
         let target = self.first_living_opponent_of(slot).unwrap_or(slot);
         self.battle_ctx.active_actor = slot;
         self.clear_action_stream(slot);
@@ -563,7 +672,7 @@ impl World {
 
     /// Compute + store the AGL-driven multi-action budget for the physical swing
     /// monster `slot` is about to make - the enemy analogue of the party Arts AP
-    /// gauge. Clean-room port of the AGL-gauge spending loop in the picker
+    /// gauge. Port of the AGL-gauge spending loop in the picker
     /// `FUN_801E9FD4`: the monster gets one swing per action its per-round AGL
     /// gauge ([`crate::monster_catalog::MonsterDef::agl`]) can afford from its
     /// physical swing costs (`action_costs`), capped at 15, via
@@ -633,7 +742,7 @@ impl World {
         };
     }
 
-    /// Monster-AI action picker - clean-room port of the **generic decision
+    /// Monster-AI action picker - port of the **generic decision
     /// core** of `FUN_801E9FD4` (`overlay_battle_action_801e9fd4.txt`), the
     /// routine retail runs (from `recompute_battle_order` / `FUN_801DABA4`) to
     /// choose each monster's action.
@@ -951,7 +1060,7 @@ impl World {
         best.map(|(i, _)| i)
     }
 
-    /// Clean-room port of `FUN_801E7320` - the monster-AI **target resolver**,
+    /// Port of `FUN_801E7320` - the monster-AI **target resolver**,
     /// invoked by the battle SM (`FUN_801E295C`) at `ActionSeed` as the
     /// `monster_setup` hook for monster actors whose `field_flags & 0x380` is
     /// set. It reads the targeting-class byte the action picker left in

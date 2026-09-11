@@ -1,6 +1,6 @@
 //! Seru-trade vendor offers: a deterministic, time-bucketed trade table shared
 //! by the randomizer (which embeds the toggle + master seed on the disc and
-//! previews offers) and the clean-room engine (which renders the trade UI and
+//! previews offers) and the engine (which renders the trade UI and
 //! performs the swap at runtime).
 //!
 //! ## What a "trade" is

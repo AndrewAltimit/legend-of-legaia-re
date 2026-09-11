@@ -23,8 +23,10 @@ pub const PLAYER_Z_OFF: u32 = 0x18;
 /// The per-scene field-environment block pointer lives in the scratchpad at
 /// `0x1F8003EC`; the collision/object grid hangs off it at `+0x4000`. Mednafen
 /// states carry the scratchpad as its own container entry (`ScratchRAM.data8`),
-/// which is why the live grid is readable offline from a `.mc` but not from a
-/// PCSX-Redux `.sstate` (main RAM only).
+/// so the live grid is readable offline from a `.mc`. A PCSX-Redux `.sstate`
+/// carries it too - in a 64 KiB `hardware` blob whose offset 0 is the
+/// scratchpad - but `legaia_pcsxr` exposes only main RAM, so today the grid
+/// read goes through this reader.
 pub const FIELD_ENV_PTR_SPAD: u32 = 0x1F80_03EC;
 /// Byte offset of the scratchpad window inside the 1 KiB scratchpad blob.
 pub const SPAD_BASE: u32 = 0x1F80_0000;

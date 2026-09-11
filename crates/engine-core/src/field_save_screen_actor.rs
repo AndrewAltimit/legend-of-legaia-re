@@ -78,7 +78,7 @@
 //! loader's bookkeeping without there being separate overlay images to page.
 //! So the five queue waits and the two `LoadOverlaySlot` steps have nothing
 //! to wait on, and the sequencing this actor exists to provide is exactly the
-//! part the clean-room engine does not need. What has to exist first is a
+//! part the engine does not need. What has to exist first is a
 //! host that actually pages overlay code (or a deliberate decision to model
 //! the swap latency), not a caller.
 

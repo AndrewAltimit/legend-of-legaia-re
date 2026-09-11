@@ -494,20 +494,26 @@ impl PlayWindowApp {
         self.field_occluders = self.build_field_occluders(&res);
         let posed_props =
             self.resolve_posed_props(&res, &posed_placement_meshes, scene_bundle.as_ref());
-        let field_placement_draws =
+        // Each resolver also hands back the floor-ladder rungs every draw's Y
+        // came from, parallel to the draw list, so the live ladder can be
+        // folded back in per frame (`FieldFloorWave` - the op-`0x4C` nibble-9
+        // floor wave).
+        let (field_placement_draws, floor_placement) =
             self.resolve_field_placement_draws(&res, &tmd_src_index, &posed_placement_meshes, true);
         // Same resolver, but bridged through the colour-mesh list: the untextured
         // props' placement transforms map to `color_meshes` indices.
-        let field_placement_color_draws = self.resolve_field_placement_draws(
-            &res,
-            &color_tmd_src_index,
-            &posed_placement_meshes,
-            false,
-        );
-        let field_terrain_draws = self.resolve_field_terrain_draws(&res, &tmd_src_index);
+        let (field_placement_color_draws, floor_placement_color) = self
+            .resolve_field_placement_draws(
+                &res,
+                &color_tmd_src_index,
+                &posed_placement_meshes,
+                false,
+            );
+        let (field_terrain_draws, floor_terrain) =
+            self.resolve_field_terrain_draws(&res, &tmd_src_index);
         // Untextured ground tiles resolve through the colour-mesh bridge (the
         // textured bridge has no entry for them - they'd render as floor holes).
-        let field_terrain_color_draws =
+        let (field_terrain_color_draws, floor_terrain_color) =
             self.resolve_field_terrain_draws(&res, &color_tmd_src_index);
         log::info!(
             "play-window: {} field terrain draws (ground layer, +{} colour tiles)",
@@ -756,6 +762,20 @@ impl PlayWindowApp {
         self.field_placement_draws = field_placement_draws;
         self.color_meshes = color_meshes;
         self.field_placement_color_draws = field_placement_color_draws;
+        // The ladder those four lists were baked against, plus their per-draw
+        // rungs: `handle_redraw` folds any later movement into the matrices.
+        let floor_base = self.session.host.scene.as_ref().and_then(|s| {
+            s.field_floor_height_lut(&self.session.host.index)
+                .ok()
+                .flatten()
+        });
+        self.field_floor_wave = field_render::FieldFloorWave::install(
+            floor_base,
+            floor_terrain,
+            floor_terrain_color,
+            floor_placement,
+            floor_placement_color,
+        );
         // The posed props own their own draws (one per placement, so each keeps
         // its own clip cursor) and their own live animation state.
         self.field_posed_tmds = posed_tmds;

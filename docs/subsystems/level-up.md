@@ -509,7 +509,7 @@ A pre/post save pair (battle command menu parked on Fire Book I → Fire Book I 
 | `+0x186` | `0x0C` | `0x03` | first list entry - new entry inserted at front |
 | `+0x187` | `0x00` | `0x0C` | second list entry - pre-event entry shifted right |
 
-Pattern: a length-prefixed list at `+0x185` grew by one entry. The new entry was inserted at position 0; the existing entry at position 0 moved to position 1.
+Pattern: a length-prefixed list at `+0x185` grew by one entry. The new entry landed at position 0 and the existing entry moved to position 1 - which a head insert and an **ordered** insert both produce, because `0x03 < 0x0C`. The writer settles it: the applier's `0x0B`..`0x0D` arm (`0x80041FB4`, `legaia_engine_vm::battle_action::selector_insert_displayed_skill`) walks down from the count moving entries up only while the new id is smaller, so the list is kept sorted **ascending by id**. This one sample cannot tell the two apart.
 
 ### Reader resolved
 
@@ -651,14 +651,44 @@ one battle:
   What a jal sweep cannot see is a caller reached through a list, and that is
   the whole distance between the two readings.
 
-  One caveat on the emitter, stated as measured: the live capture is the Rim
-  Elm Gimard fight, a **story battle that returns to the field without a
-  results report at all** - across its end sequence no packet anywhere in the
-  frame carries the `304`-wide band, so it pins `FUN_8002C69C`'s in-battle
-  liveness and the strip family, not which of that routine's arms lays the
-  nine-slice. Pinning the arm needs the same `AddPrim` capture over a *random*
-  encounter's victory, which needs a pad-driven ladder rather than a state
-  that resolves on its own.
+### Which arm lays it: window style `0x03`, jump-table slot 0
+
+  `FUN_8002C69C(x, y, w, h)` does not dispatch on its arguments. It reads a
+  window **style** id from `gp[+0x14C]`, indexes a 12-byte descriptor at
+  `0x800732A4 + style * 12`, and `jr`s through the seven-entry jump table at
+  `0x80010D18` on that descriptor's first byte
+  (`see ghidra/scripts/funcs/8002c69c.txt`). The descriptor is
+  `[kind, tileset, ?, clut, u0, v0, w, h, s16 dx, s16 dy]`: `clut` becomes
+  `0x7FC0 + (clut & 0x7F)`, and `dx`/`dy` shift the drawn band out from the
+  caller's rect.
+
+  Style **`0x03`** is the one that lays the report chrome. Its descriptor is
+  `kind = 0`, `tileset = 0`, `clut = 0x02` (CLUT `0x7FC2`), `dx = dy = -8`.
+  Kind `0` is jump-table slot `0` at `0x8002C800`, which outsets the caller's
+  rect by a further 4 and falls into the slot-1 body at `0x8002CE7C`. Its
+  `SPRT` tiles come from row `tileset` of an eight-entry table at
+  `0x80073A00` (32-byte rows, four bytes `[u, v, w, h]` each), and row 0 is
+  `(160,0,4,4) (188,0,4,4) (160,28,4,4) (188,28,4,4) (164,0,24,4)
+  (164,28,24,4) (160,4,4,24) (188,4,4,24)` - the corner / edge set measured
+  off the `noa_levelup_banner` packets above, byte for byte.
+
+  Live confirmation, from an exec breakpoint on the emitter across the Rim
+  Elm Gimard fight and its end sequence
+  (`scripts/pcsx-redux/autorun_gpu_call_census.lua`): every one of the 782
+  calls arrives with `ra = 0x800323EC`, i.e. the `jal` at `0x800323E4` inside
+  the retained-widget driver `FUN_80031D00` - no other caller appears. 152 of
+  them carry style `0x03` with rect `(16, 160, 288, 42)`, which the `-8`
+  descriptor shift expands to exactly `x 8..312, y 152..210` -
+  `SPOILS_REPORT_RECT`. The remaining calls are the two HUD name plaques,
+  styles `0x01` and `0x02`, both `kind = 3`, tile sets 3 and 4, CLUT bytes
+  `0x04` / `0x0C` (`0x7FC4` / `0x7FCC`).
+
+  This also corrects the earlier caveat here, which said the Gimard fight
+  returns to the field "without a results report at all" and that no packet
+  in its end sequence carries the `304`-wide band. Measured at the call site
+  the band is emitted, on every frame from vsync 406 to 725 of the
+  `rim_elm_gimard_victory` state - the whole battle-end window. A
+  display-list read that missed it sampled outside that window.
 
 One thing the pair still gets wrong:
 

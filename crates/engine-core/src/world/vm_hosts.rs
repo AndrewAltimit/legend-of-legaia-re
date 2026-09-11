@@ -1,4 +1,4 @@
-//! Per-VM `Host` trait implementations that bridge each clean-room VM into
+//! Per-VM `Host` trait implementations that bridge each port VM into
 //! [`World`]. Split out of `world.rs`.
 
 use super::*;
@@ -362,7 +362,7 @@ pub(super) struct WorldMapEntityHostImpl<'a> {
 impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
     fn activation_gate_open(&self) -> bool {
         // Retail gates the SM body on `_DAT_8007b868 == 0` (door/portal open).
-        // The clean-room world has no closed-portal state yet, so the body
+        // The port's world has no closed-portal state yet, so the body
         // always runs when world-map entities are installed; the per-state
         // gates (encounter-enabled, dialog-active) still apply below.
         true
@@ -492,7 +492,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
     fn on_encounter(&mut self, _entity_idx: usize, _resolver_result: u32) {}
     fn on_activating(&mut self, _entity_idx: usize) {
         // State-1 `entity[+0x94]` formation copy. Retail copies the carrier's
-        // formation into the global cell here; the clean-room world latches it
+        // formation into the global cell here; the port's world latches it
         // in `on_scene_transition` (same state-1 tick) and resolves it from
         // `formation_table` directly at the end of the carrier tick, so no
         // persistent encounter session is created (a re-rolling session would
@@ -513,7 +513,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
     }
     fn player_walking(&self) -> bool {
         // Report "player walking" so the SM's proximity-interact path stays
-        // suppressed: the clean-room world has no player-near-NPC model yet, so
+        // suppressed: the port's world has no player-near-NPC model yet, so
         // a field carrier is engaged explicitly via `engage_field_carrier`
         // rather than by the SM's auto-interact gate (which would otherwise
         // re-fire `on_interact` every frame once its cooldown bit latched).
@@ -643,6 +643,76 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // outside the opening (`prologue_naming_pending == false`) these fall back
     // to the default Idle, so a normal field-VM op-0x49 behaves as before.
     // REF: FUN_801F03F0 (name-entry overlay) / op49_invoke_setup func_0x80020de0
+    // Op `0x4C` outer-nibble-4 sub-9 - the writer of the two globals
+    // `crate::camera_ease` eases between, read off the three arms at
+    // `0x801E1480..0x801E162C` in `overlay_world_map_801de840.txt`:
+    //
+    // | `_DAT_1F800394` | scene ctrl `+0x4A`     | `_DAT_8007BCAC`      |
+    // |---|---|---|
+    // | bit 25 (delta)  | `target`               | `target - player[+0x16]` |
+    // | bit 24 (rel)    | `target + player[+0x16]` | `target`           |
+    // | neither         | `target`               | untouched            |
+    //
+    // The first two arms both write **both** globals, and both land the
+    // accumulator on the same value the per-frame easing would have walked
+    // to (`ctrl[+0x4A] - player[+0x16]`); they are snaps, not a different
+    // destination. The bit-24 arm has to post the accumulator itself because
+    // that same bit is `FUN_801DA390`'s input lock (`0x801DA398`), so while
+    // it is raised the easing returns before its first store.
+    // REF: FUN_801DA390 (the easing), FUN_801D6704 (seeds the accumulator)
+    fn op4c_n4_sub9_default_write(&mut self, target: i16) {
+        self.world.camera_scene_offset = target;
+    }
+    fn op4c_n4_sub9_default_ramp(&mut self, target: i16, ticks: u16) {
+        // Retail schedules a ramp over `ticks` frames through the register
+        // ramp helper; the engine has one ramp mechanism and this is not it,
+        // so the endpoint is posted immediately and the per-frame easing
+        // supplies the approach. `ease_step` caps the move at 12 units a
+        // frame either way, so the visible difference is the shape of the
+        // last few frames, not the destination.
+        let _ = ticks;
+        self.world.camera_scene_offset = target;
+    }
+    fn op4c_n4_sub9_delta_write_or_ramp(&mut self, target: i16, ticks: u16) {
+        let _ = ticks;
+        self.world.camera_scene_offset = target;
+        let footing = self.world.camera_ease_player_footing();
+        self.world.camera_offset_ease = i32::from(target.wrapping_sub(footing));
+    }
+    fn op4c_n4_sub9_player_relative_write(&mut self, target: i16, ticks: u16) {
+        let _ = ticks;
+        let footing = self.world.camera_ease_player_footing();
+        self.world.camera_scene_offset = target.wrapping_add(footing);
+        self.world.camera_offset_ease = i32::from(target);
+    }
+
+    // Op `0x4C` outer-nibble-4 subs `0xA..=0xD` - four scene globals written
+    // or ramped from one script operand. Subs `0xA`/`0xB`/`0xC` are the three
+    // the world-map frame pump `FUN_801D1344` forwards into the horizon
+    // emitter gate, which is why the engine parks them on the world-map
+    // controller: `_DAT_8007BCD0` (`sw v0,-0x4330(v1)` at `0x801E1648`),
+    // `_DAT_8007BCD4` (`0x801E1688`) and `_DAT_8007BCD8` (`0x801E16C8`).
+    // Sub `0xD` scales its operand by `_DAT_8008457C >> 12` before storing to
+    // `_DAT_8007B910` (`0x801E1700..0x801E1720`); the engine has no consumer
+    // for that slot, so it is dropped rather than parked somewhere a reader
+    // would then have to be invented for.
+    //
+    // The ramp arms post the endpoint immediately for the same reason the
+    // sub-9 ramp does - the gate reads a level, not a trajectory.
+    // REF: FUN_801D1344 (the gate arm), FUN_801DE840 (these four arms)
+    fn op4c_nibble4_global_write(&mut self, sub: u8, target: i32, ticks: u16) {
+        let _ = ticks;
+        let Some(ctrl) = self.world.world_map_ctrl.as_mut() else {
+            return;
+        };
+        let v = target as u32;
+        match sub {
+            0xA => ctrl.horizon_params.0 = v,
+            0xB => ctrl.horizon_params.1 = v,
+            0xC => ctrl.horizon_params.2 = v,
+            _ => {}
+        }
+    }
     fn op49_state(&self) -> Op49State {
         // A field-VM-opened gold shop (op 0x49 sub-0 inline shop record) gates
         // the resume the same way name-entry does: Armed while the shop UI is
@@ -777,7 +847,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     // Op-0x43 screen-effect widget sub-ops (the PROT-0900 mask / sprite /
-    // panel / letterbox family, exercised by the eight ending scenes).
+    // panel / letterbox family, exercised by the ten ending scenes).
     // Each routes to the world's widget host; the Field / Cutscene tick
     // advances the widgets and publishes `World::screen_fx_frame`.
     // REF: FUN_801F8004 / FUN_801F8D4C / FUN_801F88FC / FUN_801F8E6C /
@@ -951,6 +1021,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.pending_minigame_warp = Some(sub_id);
     }
 
+    // PORT: FUN_8001FD44 (the name-based scene-change packet)
+    //
+    // Retail stages the destination by *name*: `strcpy` into the staged
+    // buffer `0x8007050C` and the active buffer `0x80084548`, raise
+    // `_DAT_1F800394 |= 0x40` (transition pending) and call `FUN_8001D7F8`
+    // to resolve the scene-index word. The engine has no staged/active
+    // buffer pair, so the packet is this deferred triple plus the arrival
+    // facing; `SceneHost::tick` drains it where retail's next field-init
+    // reads the active buffer.
     fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
         // Named scene-change (op 0x3F): the destination name is inline, so no
         // map-id resolver is needed. Recorded for SceneHost::tick to drain,
@@ -1901,7 +1980,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // terminate a record; bytes whose top nibble is 0xC consume one
         // extra byte. The walker stops when the tail is exhausted - the
         // retail original would over-read into adjacent memory, which the
-        // clean-room port refuses by construction.
+        // port refuses by construction.
         let mut records: Vec<Vec<u8>> = Vec::with_capacity(count as usize);
         let mut cursor = 0usize;
         for _ in 0..count {
@@ -2180,7 +2259,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     ///
     /// `World::spell_catalog` is seeded from the user's `SCUS_942.54` at boot
     /// ([`crate::retail_magic::seru_magic_catalog_from_scus`]), so on a real
-    /// disc this *is* the retail `+3` byte; disc-free it is the clean-room
+    /// disc this *is* the retail `+3` byte; disc-free it is the port's
     /// catalog. Either way there is one price per spell in this engine, and
     /// this is where the state machine reads it.
     fn spell_mp_cost(&self, id: u8) -> u8 {
@@ -2327,6 +2406,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .pending_battle_events
             .push(BattleEvent::CameraBounds);
     }
+
     fn monster_size_class(&self, actor_slot: u8) -> u8 {
         // Retail reads `0x801C9348[slot - 3] + 0x1F`. The engine's equivalent
         // is the slot's seated monster id resolved through the catalog; a slot
@@ -2423,9 +2503,14 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     ///   its stager here; the outcome is the stager's strike.
     /// * `< 0x25` - the per-spell anim-pair list at
     ///   `0x801F4E64` / `0x801F4EDC` copied into `params[1..]`
-    ///   (`0x801DBFAC..0x801DC060`). NOT WIRED: the engine has no parse of
-    ///   that overlay table, so the stream terminates at `params[1]` and the
-    ///   outcome the clips would have carried folds here instead.
+    ///   (`0x801DBFAC..0x801DC060`). The engine has no parse of that overlay
+    ///   table, so the stream terminates at `params[1]` and the outcome the
+    ///   clips would have carried folds here instead. That is a gap in *this
+    ///   arm's data*, not a wiring gap: the routine is called on every pre-cast
+    ///   expiry and the ladders execute it. Deliberately not written as an
+    ///   unwired-port disclosure - that marker is an anchor-level claim, and
+    ///   on a routine a ladder really runs it makes a passing oracle read as
+    ///   having traversed a stub.
     ///
     /// PORT: FUN_801DBF9C
     fn spell_anim_trigger(&mut self, party_slot: u8, spell_id: u8) {
@@ -2520,7 +2605,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// come from one parse of one overlay.
     fn cue_tables(&self) -> Option<(&[u8], &[u8])> {
         let aux = self.world.move_power.as_ref()?.aux_tables()?;
-        Some((aux.cue_group_bytes(), aux.sfx()))
+        Some((aux.cue_group_bytes(), aux.clut_map()))
     }
     /// Place one expanded cue.
     ///
@@ -2532,11 +2617,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// the `0x801F6324` prototype scene (`FUN_80050ED4` ->
     /// [`World::spawn_action_table_effect`]).
     ///
-    /// The SFX map's non-zero byte rides `World::battle_sfx_cues`, the queue
-    /// both hosts already drain into their SFX schedulers. That queue's id
-    /// space is "bank cue id, played directly" - which is what this byte is:
-    /// retail submits it as a sound packet through `FUN_80058490`, not
-    /// through the `FUN_8004FCC8` classifier.
+    /// The third table's non-zero byte is **not** a sound cue and is dropped
+    /// here: `0x801F6418` is a CLUT source x and `FUN_80058490` is
+    /// `MoveImage`, so retail's arm is a palette-row blit, not a sound
+    /// submit. See the `CueSpawn::Effect` arm below and
+    /// [`crate::battle_effect_clut`].
     ///
     /// The spawn position is the cue actor's own live position, which is what
     /// retail builds the transform from (`actor[+0x34]`/`+0x38` for the
@@ -2559,20 +2644,15 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             CueSpawn::Actor { id, yaw } => {
                 self.world.try_spawn_effect(id, at, (yaw as u16) & 0xFFF);
             }
-            CueSpawn::Effect {
-                effect_index, sfx, ..
-            } => {
+            // `clut_x` is a VRAM x coordinate, not a cue id: retail's arm
+            // is `MoveImage({x = clut_x, y = 476, w = 16, h = 1}, 224, 476)`
+            // - a 16-entry palette-row swap. It was pushed into
+            // `World::battle_sfx_cues` while the table was read as an SFX
+            // map, which fed the SFX scheduler the values `0xB0` / `0xC0` /
+            // `0xD0`. The engine has no VRAM CLUT-row swap on this seam, so
+            // the copy is dropped rather than mis-routed.
+            CueSpawn::Effect { effect_index, .. } => {
                 self.world.spawn_action_table_effect(effect_index, at);
-                if let Some(sfx) = sfx {
-                    self.world
-                        .battle_sfx_cues
-                        .push(crate::battle_events::BattleSfxCue {
-                            kind: u16::from(sfx),
-                            timing_frames: 0,
-                            actor_slot,
-                            target_slot: actor_slot,
-                        });
-                }
             }
         }
     }

@@ -11,7 +11,7 @@
 //! state captured in a shop on a patched disc still offers the original stock; a
 //! patched shop is only observed after a fresh scene/overlay load re-reads it.
 //!
-//! The clean-room engine sidesteps the cache: it decodes the shop stock straight
+//! The engine sidesteps the cache: it decodes the shop stock straight
 //! from the patched disc bytes and runs the real purchase-grant kernel
 //! ([`World::buy_from_shop`], shared with the menu runtime's `ShopConfirm`
 //! commit). So each test here patches one shop slot's item id to a distinct id

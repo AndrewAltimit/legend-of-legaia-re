@@ -43,7 +43,7 @@
 //! pixels down, `0x100`-unit half-size) and jittered per corner so the
 //! after-images shimmer.
 //!
-//! Two of the three things the retail function touches are out of clean-room
+//! Two of the three things the retail function touches are out of the port's
 //! scope and stay on the caller's side:
 //!
 //! * **`FUN_80056798`** is the BIOS `rand()` thunk (`li t1,0x2f; jr 0xa0`);

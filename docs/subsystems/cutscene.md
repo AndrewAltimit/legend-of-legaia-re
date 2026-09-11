@@ -429,7 +429,9 @@ holds **no** channel selector):
   chain - the id -> `(clip_slot, channel)` mapping, the length-field -> `duration_sectors` scale
   `(len*60+99)/100`, and the starter's end-LBA offset `(duration*150+149)/60` clamped at `0x2A30` -
   are ported in [`legaia_engine_shell::xa_clip`](../../crates/engine-shell/src/xa_clip.rs); the CD
-  control / `CdlSetfilter` state machines around them stay hardware-side and unported.
+  control / `CdlSetfilter` state machines around them stay hardware-side - scope
+  row `[cd_transport_shims]`, with the callback ring `FUN_8003D764` decoded in
+  `legaia_engine_audio::battle_voice::xa_transport_step`.
   `legaia-engine xa-cue <ids> [--xa-dir extracted/XA]` runs that mapping for a set of cue ids and
   reports the `XA<n>.XA` bank, the filter channel and the duration / end-LBA arithmetic, checking
   each resolved bank against the extracted files - the census entry point for this path.
@@ -1820,6 +1822,20 @@ they are shared scripted-scene machinery rather than dialogue-only code.
 | `FUN_801D6058` | ambient particle emitter (gated on `_DAT_8007B854`, optional `fog_set` trace): with actor `+0x1a == 0` occasionally spawns one particle at the actor position + random jitter via `FUN_801D629C`; otherwise loops 0x18 times spawning random bursts across the scene bounds (`DAT_1F8003E8..EB`) |
 
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_<addr>.txt` for each.
+
+**`FUN_801D6058` is not a cutscene-only step.** It is the `+0x08` handler word
+of the `0x18`-byte plain-template descriptor at `0x801F271C` in the *field*
+overlay's own template table - the same table and shape as the floor-ladder
+oscillator (`0x801F27EC`), the eased move (`0x801F2840`) and the shutter bars
+(`0x801F2858`). Its one spawn site is field MAIN INIT `FUN_801D6704`:
+`lui $a1,0x801f; addiu $a1,$a1,0x271c` then `jal 0x80024c88` at `0x801D6FD8`,
+followed by `sh $s0,0x1a($v0)` - `+0x1A = 1`, the emitter's **scene** arm - and
+the whole site sits behind a `bnez` on `_DAT_8007B8B8` at `0x801D6FB0`, so it
+runs once per scene entry while that global is clear. The port hosts it as an
+element channel (`engine-core::world::cutscene_elements`). Its two table
+neighbours here, `FUN_801D5C08` and `FUN_801D5D60`, are referenced by nothing
+across the 84 overlay images in any of the five reference forms - what spawns
+*those* elements is open.
 
 ### `FUN_801D27E0` swaps the party leader
 

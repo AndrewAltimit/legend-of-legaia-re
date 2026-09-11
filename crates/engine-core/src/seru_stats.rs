@@ -55,7 +55,7 @@
 //!
 //! Two layered APIs:
 //!
-//! 1. [`SeruStatGrant`] - the clean-room shape of one Seru's grant: HP, MP,
+//! 1. [`SeruStatGrant`] - the port-side shape of one Seru's grant: HP, MP,
 //!    Spirit, and the six u16 record-stat byte deltas. Engines populate this
 //!    from a [`crate::levelup::LevelUpObservation`] (averaging across the
 //!    observed range) for the flat-curve path; the faithful per-level source is
@@ -65,7 +65,7 @@
 //!    Seru grants, and feed the resulting [`crate::levelup::StatGrowthCurve::PerLevel`]
 //!    into [`crate::levelup::LevelUpTracker::with_stat_curves`].
 //!
-//! Both APIs are clean-room: no on-disc bytes, no decompiled values. The
+//! Both APIs are port-side: no on-disc bytes, no decompiled values. The
 //! shipped `vanilla_*` constructors below are placeholder pre-balance values
 //! roughly matching the retail Vahn / Noa / Gala curves the user sees during
 //! the early game (verified by the legacy `vahn_4_level_jump` capture).

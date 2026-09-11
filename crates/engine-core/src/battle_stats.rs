@@ -2,7 +2,7 @@
 //!
 //! PORT: FUN_80042558
 //!
-//! Clean-room port of the per-frame stat resolver in
+//! Port of the per-frame stat resolver in
 //! `ghidra/scripts/funcs/80042558.txt` (`FUN_80042558`). The retail
 //! routine reads the active character record's base stat block, walks
 //! the 8 equipment slots, ORs equipment ability flags into the global
@@ -233,7 +233,7 @@ fn mul_clamp(value: u16, mult: f32) -> u16 {
 /// record's `ATK / UDF / LDF / SPD / INT` halfwords (`+0x112/0x114/0x116/0x118/
 /// 0x11A`), so the five equipment bytes target `ATK / UDF / LDF / SPD / INT`
 /// respectively (the `+0` byte is INT, the `+4` byte is SPD). This function is
-/// the clean-room equivalent: it consumes the same five equipment ids
+/// the port-side equivalent: it consumes the same five equipment ids
 /// (`record.equip`), looks each up in the engine's [`EquipmentTable`] (analogue
 /// of the `0x80074F68` bonus row), and accumulates the modifiers into
 /// [`BattleStats`]. Accuracy / evasion are derived from AGL upstream and are

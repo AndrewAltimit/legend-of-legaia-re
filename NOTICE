@@ -35,7 +35,7 @@ to any intellectual property owned by third parties. In particular:
     Unlicense / MIT grants do not apply to that portion; the underlying
     rights remain with the original rights holder.
 
-  * The engine reimplementation (`crates/engine-*`) is a clean-room Rust
+  * The engine reimplementation (`crates/engine-*`) is a from-scratch Rust
     port written from format documentation and decompile-then-rewrite
     reference notes. It contains no copied Sony code or data and is
     distributed under the licenses above. It is functional only when

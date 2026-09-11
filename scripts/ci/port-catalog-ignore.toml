@@ -1,7 +1,6 @@
 # Catalog scope-ignore list for `scripts/ci/port-catalog.py`.
 #
-# Lists Ghidra-traced addresses that are NOT engine-port sites. The clean-room
-# port maps the named clusters to Rust stdlib / wgpu / cpal / direct-API shims
+# Lists Ghidra-traced addresses that are NOT engine-port sites. The port maps the named clusters to Rust stdlib / wgpu / cpal / direct-API shims
 # rather than line-by-line porting, so they should not contribute to the
 # `--missing-ports` worklist.
 #
@@ -18,7 +17,7 @@
 # `scripts/ghidra-analysis/classify-worklist.py`, and those are exactly the rows
 # its `--audit-ignored` mode re-examines against the extracted images. Every
 # other section holds a SCOPE claim: the routine is real and the reason says so,
-# and the row asserts only that the clean-room port covers it another way. An
+# and the row asserts only that the port covers it another way. An
 # image-boundary test cannot refute a scope claim, so scope sections stay
 # unprefixed however they were arrived at. See
 # `docs/tooling/worklist-classification.md`.
@@ -203,7 +202,7 @@
 "8005ccb4" = "CdSync (179-instr poll loop)"
 "8005d9a0" = "CdControl_raw / CD-DMA-channel-3 synchronous read primitive"
 "8005dbb4" = "ISO9660 directory lookup"
-"8005dea0" = "Directory parser (caches up to 128 entries at 0x801C4BEC)"
+"8005dea0" = "Directory parser (caches up to 128 entries at 0x801CB408, stride 0x2C; the routine forms no address in 0x801C4*** - the old 0x801C4BEC was the offset half of its lui/sw pair pasted into an address's high half). The engine reads the ISO9660 directory through legaia_iso::iso9660 instead of caching it."
 "8005e180" = "Directory-entry lookup by ID"
 "8005e228" = "File loader (reads sectors from a directory entry)"
 "8005e4d4" = "Synchronous LBA-based file reader (high-level open-then-read)"
@@ -212,18 +211,18 @@
 "8005e9a4" = "Public streaming-read API (sector_count, dest_buffer, mode_flags)"
 "8005becc" = "libcd completion-callback swap-setter: loads the callback pointer at DAT_800793AC, stores the new a0, returns the previous (the CdReadSyncCallback-family slot; sibling of the already-listed 8005bee4 setter for DAT_800793B0). Engine reads PROT.DAT through legaia-iso/legaia-prot, no libcd callback slots"
 "8005be8c" = "CdSync wrapper: 8-instruction tail-call to 8005ca34 (the CdSync/CdReady drive-status poll - s_CD_sync / s_CD_timeout / CdlSync diagnostics, drains the CD result registers). Engine reads PROT.DAT through legaia-iso/legaia-prot, no CD-drive transport"
-"8003d53c" = "CD-XA streaming-clip start: arms a streamed XA-ADPCM read off the clip MSF table (0x801C6ED8) through the libcd transport (8005c42c msf_to_lba, 8005be8c CdSync, 8005becc callback-swap, 8005c034 CdControl). The CD-drive half is out of clean-room scope - the engine decodes XA buffers (legaia-xa) and plays them through its own mixer, not a CD transport. see ghidra/scripts/funcs/8003d53c.txt"
+"8003d53c" = "CD-XA streaming-clip start: arms a streamed XA-ADPCM read off the clip MSF table (0x801C6ED8) through the libcd transport (8005c42c msf_to_lba, 8005be8c CdSync, 8005becc callback-swap, 8005c034 CdControl). The CD-drive half is out of the port's scope - the engine decodes XA buffers (legaia-xa) and plays them through its own mixer, not a CD transport. see ghidra/scripts/funcs/8003d53c.txt"
 "8003ed04" = "CD-XA streaming-clip stop: teardown counterpart of 8003d53c. Clears the libcd completion callback (8005becc) and issues the drive Pause/Stop commands (8005c160 / 8005c034) by mode. CD transport only, no game logic; sibling of the already-listed clip-path shim 8003ee7c. see ghidra/scripts/funcs/8003ed04.txt"
 "8003eae4" = "CD-XA streaming-clip start by table index (simpler sibling of 8003d53c): when no clip is armed, stops the in-flight read (8003ed04 / 8003ee7c), looks up the 8-byte clip entry in the MSF table 0x801C6ED8, sets the drive read location via 8005c160, and issues CdControl 0x15 (8005c034). CD transport only; the engine decodes XA buffers (legaia-xa) through its own mixer. see ghidra/scripts/funcs/8003eae4.txt"
 
 
-# libgs / libgpu primitives. The clean-room renderer in `engine-render` emits
+# libgs / libgpu primitives. The port's renderer in `engine-render` emits
 # its own GP0 / OT / draw-env machinery; the retail PsyQ wrappers below are
 # 1:1 PsyQ entry points that wrap a vtable dispatch + dev-string printf, plus
 # a couple of inline addPrim-shape helpers Sony's build emitted as real
 # functions rather than macros (presumably to save code size given call counts
 # in the 100s).
-"8005c160" = "libcd CdControl issue-with-retry wrapper. Issues a CD command via FUN_8005cf80 up to 3 times (saving/restoring the libcd busy state DAT_800793ac and the per-command word DAT_80079324[cmd] between tries) then polls the completion via FUN_8005ca34; returns success. Pure libcd transport with no game-specific semantic; the clean-room engine reads sectors through the CdDmaHost trait and plays decoded XA through its own mixer, so this is already REF-listed as out-of-scope in crates/engine-core/src/cd_dma.rs. see ghidra/scripts/funcs/8005c160.txt"
+"8005c160" = "libcd CdControl issue-with-retry wrapper. Issues a CD command via FUN_8005cf80 up to 3 times (saving/restoring the libcd busy state DAT_800793ac and the per-command word DAT_80079324[cmd] between tries) then polls the completion via FUN_8005ca34; returns success. Pure libcd transport with no game-specific semantic; the port reads sectors through the CdDmaHost trait and plays decoded XA through its own mixer, so this is already REF-listed as out-of-scope in crates/engine-core/src/cd_dma.rs. see ghidra/scripts/funcs/8005c160.txt"
 "8005ca34" = "CdSync (libcd): polls the CD IRQ status (8005fedc) with a VSync-based timeout, prints sync/timeout diagnostics on overrun, drains pending CD results and dispatches the ready / data-ready callbacks. The poll loop 8005be8c tail-calls and 8005c160 completes through; engine reads PROT.DAT via legaia-iso/legaia-prot, no CD-drive poll. see ghidra/scripts/funcs/8005ca34.txt"
 "8005cf80" = "CdControl / CdControlB (libcd): writes a CD command + parameter bytes to the drive command/param registers, then (blocking form) reuses the CdSync poll loop to await completion and read back the result. The drive-issue primitive the 8005c034 / 8005c160 retry wrappers call; engine issues no PSX CD commands. see ghidra/scripts/funcs/8005cf80.txt"
 "8005fedc" = "Leaf accessor returning the 16-bit CD status/IRQ word (*0x800797da); polled by CdSync (8005ca34) and CdControl (8005cf80). libcd internal; no engine equivalent. see ghidra/scripts/funcs/8005fedc.txt"
@@ -276,7 +275,7 @@
 # SCUS-resident PSX GPU/GTE render-pipeline scaffolding. Unlike the [libgs] /
 # [libgte] entries above (which are PsyQ library entry points), these are
 # game-side functions that build and drive the PSX ordering-table / packet-pool
-# / display-env / software-clip machinery. The clean-room renderer in
+# / display-env / software-clip machinery. The port's renderer in
 # `crates/engine-render` emits a wgpu pipeline with no OT, no packet pool, no
 # DISPENV/DRAWENV, and hardware clipping/rasterisation - so the entire concept
 # these encode is replaced rather than line-ported. (Each is documented in
@@ -301,7 +300,7 @@
 "80024ee4" = "UI panel fill+tile GP0 packet emitter: pushes a fill/clear (0x05xxxxxx tag word) plus a textured-tile move packet (0x2bxxxxxx + 24-bit color) into the scratchpad OT cursor _DAT_1F8003A0, sets the draw mode via 80059010, links via 8003D2C4. Shared box-tile draw primitive across the cutscene/save-UI/fishing/slot/baka overlays; engine draws UI panels through its own text/overlay path with no GP0 submission"
 "80017ec8" = "Tile-window background render pass: sets the scroll-origin globals then walks a tile window centred on (cx,cz) emitting one per-cell GP0 textured-sprite packet each (8002b96c, via the 801d7b50 OT setup). The region-attribute refresh it calls (800180ec) is the genuine game-logic half and stays in the worklist; this outer per-frame GP0 tile emission is replaced by the engine's wgpu field/board background path. see ghidra/scripts/funcs/80017ec8.txt"
 "8003c11c" = "Generic textured-sprite (GP0 0x64 / SPRT) emitter: reserves a 0x14-byte packet at the scratchpad OT cursor _DAT_1F8003A0, writes the GP0 tag 0x4000000 + color 0x64808080, copies XY/UV+CLUT/WH from its two arg structs, sets the draw mode via 80059010 and links via 8003d2c4 (AddPrim). The sibling of the dialog-font cell emitter 8003c1f8 and the per-digit glyph push the HUD number formatter (80034e4c/80034b78) uses. Engine renders text/sprites through the legaia-font atlas + wgpu overlay, not GP0 SPRT pushes. see ghidra/scripts/funcs/8003c11c.txt"
-"8003541c" = "Floating-UI text-actor register+draw: produces the gp+0x148 draw-list node + layout dispatch (FUN_80030628) that the tutorial/status text boxes push. The content builders are ported separately (engine-render status/menu draws_for); this draw-list plumbing has no clean-room analogue (same class as the ignored GP0 emitters). see ghidra/scripts/funcs/8003541c.txt"
+"8003541c" = "Floating-UI text-actor register+draw: produces the gp+0x148 draw-list node + layout dispatch (FUN_80030628) that the tutorial/status text boxes push. The content builders are ported separately (engine-render status/menu draws_for); this draw-list plumbing has no port-side analogue (same class as the ignored GP0 emitters). see ghidra/scripts/funcs/8003541c.txt"
 "8001ce34" = "Dev 3-D line emitter: projects two endpoints via 8003d368 (RTPS) and links a 3-word GP0 line packet (colour DAT_8007B714 + 0x40000000) into OT bucket _DAT_1F8003F4+8. All 12 static callers are the wireframe-box drawer 8001cad8; no retail-path caller in the captured corpus. Dev visualisation; engine debug draws use its own overlay. see ghidra/scripts/funcs/8001ce34.txt"
 "8001cad8" = "Dev wireframe-box drawer: emits the 12 edges of an axis-aligned box via 12 calls to 8001ce34. Debug bounding-box/trigger-volume visualisation; zero callers across SCUS + captured overlays. see ghidra/scripts/funcs/8001cad8.txt"
 "8001ccfc" = "Dev 2-D line emitter: 3-word GP0 line packet from pre-projected screen coords, caller-supplied command/colour word + OT bucket. Sibling of 8001ce34; zero callers in the captured corpus. see ghidra/scripts/funcs/8001ccfc.txt"
@@ -318,8 +317,8 @@
 "801d99bc" = "Per-actor battle UI-element array teardown: zeroes the 0x28-actor UI-element arrays (+0x1074/+0x11b4/+0x11b7) and calls 800355f0. Frame draw-state reset companion to 800355f0; no engine equivalent (engine holds battle UI state in Rust structs). see ghidra/scripts/funcs/801d99bc.txt"
 "8003563c" = "Per-actor record-queue append: appends a 16-byte record into an actor's 8-slot sub-buffer on the gp+0x148 draw/event list (lazy 0x80-byte alloc, hard cap 8). Data-structure plumbing; the reward-resolver semantic it serves is ported in apply_battle_loot. see ghidra/scripts/funcs/8003563c.txt"
 "8003adac" = "Scene-entry letterbox/sprite-pair chrome: builds two box/sprite primitives (sizes 0x1E, 0x08) via the panel emitter 80024e80. Host GP0 chrome emission; engine draws scene-entry framing through its own overlay path. see ghidra/scripts/funcs/8003adac.txt"
-"800355f0" = "Floating draw-list teardown: drains the gp+0x148 element list, freeing nodes via FUN_800319A8. Pure host data-structure teardown (maps to Rust Drop/clear); no clean-room port site. see ghidra/scripts/funcs/800355f0.txt"
-"8004313c" = "Inventory/HUD two-page window-bounds setup: computes the retail 128-slot-per-half inventory panel bounds (gp+0x2D2/0x2D4/0x2D6) gated on party count. The clean-room inventory (crates/save) is a flat model without the paginated struct; engine GIVE_ITEM adds via the inventory accessors. Menu panel-geometry setup, not game logic. see ghidra/scripts/funcs/8004313c.txt"
+"800355f0" = "Floating draw-list teardown: drains the gp+0x148 element list, freeing nodes via FUN_800319A8. Pure host data-structure teardown (maps to Rust Drop/clear); no port site. see ghidra/scripts/funcs/800355f0.txt"
+"8004313c" = "Inventory/HUD two-page window-bounds setup: computes the retail 128-slot-per-half inventory panel bounds (gp+0x2D2/0x2D4/0x2D6) gated on party count. The port's inventory (crates/save) is a flat model without the paginated struct; engine GIVE_ITEM adds via the inventory accessors. Menu panel-geometry setup, not game logic. see ghidra/scripts/funcs/8004313c.txt"
 "8001b964" = "Per-actor skinned-mesh GTE/OT render loop: Euler->matrix (80026988) + camera-relative rotate select, walks the actor's bones decoding each per-(bone,frame) entry and emits the assembled mesh into the OT (80043390/80029888/8002735c). The portable inner unit is ported - BoneTransform::decode carries PORT: FUN_8001BE80 (crates/asset player_anm.rs) and the playhead lives in engine-core field_anim; the loop itself is GTE COP2 register I/O + OT emission replaced by the wgpu pipeline. see ghidra/scripts/funcs/8001b964.txt"
 
 
@@ -331,14 +330,14 @@
 "80017dd4" = "Tile-window render pass, sibling of the listed 80017ec8: seeds the scroll-origin scratchpad words _DAT_1F8003F8/FA, calls the region-attribute refresh 800180ec (the genuine game-logic half, which stays in the worklist), then walks a 32x32 cell window emitting each cell through 8002b96c - itself an empty retail-stripped stub. The real tile draw is the engine's wgpu field/board background path. see ghidra/scripts/funcs/80017dd4.txt"
 "8001d184" = "GTE matrix-composition thunk: PushMatrix (8005b268), control-word restore from 0x1F8003A8 (8003d1a4), RotMatrixZ/Y/X over the object angles at +0x28/+0x26/+0x24 then the camera angles at +0xC/+0xA/+0x8, control-word save to 0x1F800334 (8003d20c), SetLightMatrix (8005b648), PopMatrix (8005b308). Eleven libgte calls and no game state of its own; the engine composes transforms with glam and lights in the wgpu shader. see ghidra/scripts/funcs/8001d184.txt"
 "8001f690" = "Ordering-table allocator: allocates 1<<depth entries twice through the malloc wrapper 80017888 into the DISPENV pair at +0x70 / +0xE4, publishes the depth to the scratchpad, then ClearOTagR (8005860c) on both. The OT half of the already-listed packet/OT allocator 8001e3b8. see ghidra/scripts/funcs/8001f690.txt"
-# STR/FMV overlay (PROT 0970) MDEC hardware layer. The clean-room decoder in
+# STR/FMV overlay (PROT 0970) MDEC hardware layer. The port's decoder in
 # crates/mdec is a software VLC -> IDCT -> BT.601 pipeline over a byte buffer;
 # it never touches the MDEC command/status registers or DMA channels 0/1, so
 # the three routines below have no port site. Their non-hardware siblings ARE
 # ported (docs/subsystems/cutscene.md maps FUN_801CF098/8B0/988/A14/D84/EBC/56C
 # onto mdec::str_player), which is what makes this a boundary and not a gap.
 "801cffdc" = "MDEC command + DMA-0 upload: waits out the in-FIFO through 801d0100, ORs 0x88 into the MDEC control word (*(0x801D0E98)), points DMA-0 MADR at src+4 and BCR at ((len>>5)<<16)|0x20, writes src[0] to the MDEC command register (*(0x801D0E90)) and kicks CHCR 0x01000201. Pure MMIO/DMA; the engine's software MDEC consumes the same code stream from memory. see ghidra/scripts/funcs/overlay_str_fmv_0x801CFFDC.txt"
-"801cfee0" = "MDEC reset (`MDEC_rest:bad option(%d)`): option 0 writes 0x80000000 then 0x60000000 to the MDEC control register, zeroes the DMA-0/DMA-1 register pointers and uploads the two 0x20-word quant/IDCT tables through 801cffdc; option 1 is the same reset without the table upload; any other option only prints. Hardware reset of a chip the clean-room decoder does not model. see ghidra/scripts/funcs/overlay_str_fmv_0x801CFEE0.txt"
+"801cfee0" = "MDEC reset (`MDEC_rest:bad option(%d)`): option 0 writes 0x80000000 then 0x60000000 to the MDEC control register, zeroes the DMA-0/DMA-1 register pointers and uploads the two 0x20-word quant/IDCT tables through 801cffdc; option 1 is the same reset without the table upload; any other option only prints. Hardware reset of a chip the port's decoder does not model. see ghidra/scripts/funcs/overlay_str_fmv_0x801CFEE0.txt"
 "801d0248" = "MDEC sync-timeout diagnostic: two printf calls (800567a8) dumping the MDEC status word plus the DMA-0/DMA-1 channel and FIFO bits, called only from the two spin waiters 801d0100 / 801d0198 when their 0x100000-iteration budget runs out. Dev instrumentation over registers the engine has none of. see ghidra/scripts/funcs/overlay_str_fmv_0x801D0248.txt"
 
 # Added by the port-wiring wave.
@@ -394,10 +393,10 @@
 [libetc]
 "8005f9c8" = "CD-DMA channel start: pokes DMA MADR/BCR/CHCR at 0x1f801080/84/88, 'DMA STATUS ERROR'"
 "8001a068" = "in-game dev-string formatter / on-screen log printer. Reads format string, writes RGB 0x808080 cell, %-escape walker. Called via 8001a09c-style wrapper that takes (fmt, args...) and pushes a text primitive."
-"8001aa68" = "fixed-cell debug-string drawer: (str, x, y) -> per-glyph sprite into the scratchpad OT at _DAT_1F8003A0, source cell chosen by character class (digits/upper/lower/punct). The dev/CONFIG-test-screen monospaced text path (sibling of the 8001a068 formatter); the clean-room engine renders text via the proportional legaia-font atlas instead."
+"8001aa68" = "fixed-cell debug-string drawer: (str, x, y) -> per-glyph sprite into the scratchpad OT at _DAT_1F8003A0, source cell chosen by character class (digits/upper/lower/punct). The dev/CONFIG-test-screen monospaced text path (sibling of the 8001a068 formatter); the port renders text via the proportional legaia-font atlas instead."
 "8001ad38" = "low-level fixed-cell sprite-glyph emitter: pushes one sprite prim (tag 0x3000000, color 0x74808080) into the scratchpad OT _DAT_1F8003A0 + linkPrim 8003d2c4. The per-glyph primitive behind the dev monospaced text path 8001aa68"
 "80017d98" = "draws one fixed-cell dev-font glyph (cell u=0x50, v=0xf8) at signed (x,y) via 8001ad38; thin wrapper in the 8001aa68 dev/CONFIG monospaced text family. Engine renders text via legaia-font"
-"8003e6bc" = "dev host-FS reader: (path, dest) -> fopen + fseek/SEEK_END for size + fread + zero-pad to 0x800 sector. Calls libapi 800608f0/80060920/80060944/80060910. The retail dual-mode loader's debug branch; clean-room engine reads from disc via ISO9660 only."
+"8003e6bc" = "dev host-FS reader: (path, dest) -> fopen + fseek/SEEK_END for size + fread + zero-pad to 0x800 sector. Calls libapi 800608f0/80060920/80060944/80060910. The retail dual-mode loader's debug branch; port reads from disc via ISO9660 only."
 "8005fb84" = "VSync(N) handler - wraps 8005fccc with frame-counter math"
 "800173bc" = "Debug profiler / timing HUD: when the debug bit (gp+0x3b8 & 2) is set, prints scene / camera / map / fog / TMD readouts via the dev-string formatter 8001a068 and draws captured VSync timestamps (gp+0x3a8/0x3ac/0x428) as digit sprites (8001abc8). Dev instrumentation gated off in retail; engine uses tracing / a debug overlay. see ghidra/scripts/funcs/800173bc.txt"
 "800178f0" = "Profiling checkpoint: captures a VSync timestamp (8005fb84(1)) into gp+0x428, later rendered by the debug HUD 800173bc. Dev instrumentation; engine uses tracing spans. see ghidra/scripts/funcs/800178f0.txt"
@@ -419,7 +418,7 @@
 "8005fd88" = "libapi device-vtable trampoline (slot +0xC of PTR_PTR_8007A860)"
 
 
-# Sony SsAPI sequencer (libsnd). The clean-room `engine-audio::Sequencer`
+# Sony SsAPI sequencer (libsnd). The port's `engine-audio::Sequencer`
 # replaces this cluster end-to-end; see `docs/subsystems/audio.md`.
 "8005fde8" = "libapi device-vtable trampoline (slot +0x4 of PTR_PTR_8007A860): the whole body is `lw v0,-0x57a0(0x8008); lw v0,0x4(v0); jalr v0`, forwarding its arguments untouched. Direct sibling of the already-listed 8005fd88 (slot +0xC). see ghidra/scripts/funcs/8005fde8.txt"
 [libsnd]
@@ -517,28 +516,28 @@
 "8006ce30" = "SsSeqSetUserData"
 "8006d7b4" = "_SsSeqSetUserDataInner"
 "8006ddc8" = "SsSeqSetMarkCallback"
-"8002630c" = "Game-side VAB-bank upload wrapper (gated on _DAT_8007B868==0): drives the libsnd load sequence SsVabOpenHead (80068d34) -> SsVabTransBody (80069170) / SsVabTransBodyPartly (80069230) -> SsVabClose (80069390), with the literal 'SsVabOpenHead/SsVabTransBody/SsVabTransBodyPartly' dev error strings. Pure SsAPI orchestration; engine loads banks clean-room via legaia-vab + vab_bind"
+"8002630c" = "Game-side VAB-bank upload wrapper (gated on _DAT_8007B868==0): drives the libsnd load sequence SsVabOpenHead (80068d34) -> SsVabTransBody (80069170) / SsVabTransBodyPartly (80069230) -> SsVabClose (80069390), with the literal 'SsVabOpenHead/SsVabTransBody/SsVabTransBodyPartly' dev error strings. Pure SsAPI orchestration; engine loads banks covered via legaia-vab + vab_bind"
 "800644c0" = "SsSetTableSize(table, s_max, t_max): latches the two counts into the libsnd BSS halfwords _DAT_801CDB40 / _DAT_801CDB42 then fills the slot-pointer array at _DAT_801CD2C0 with `table + slot * 0xB0` (the (v1*2+v1)*4-v1 <<4 chain is a x176 multiply - the libsnd SEQ_TABLE record stride), one entry per sep x seq. Touches nothing but the libsnd table BSS; engine-audio's Sequencer owns its own slot vector. see ghidra/scripts/funcs/800644c0.txt"
 "80065fe8" = "libsnd all-voice reset / calc-top: installs the SPU transfer-callback block (8006bc70), clears the 0xC0-entry u16 array at 0x801CE080, the 24-byte voice-flag array at 0x801CE060 (0x18 = the SPU voice count) and the 0x10-byte mask block at 0x801CE368, clamps its u8 arg to 0x18 voices, then sweeps 80065bac / 80065978 / 80067480 / 8006c048 (SpuSetVoiceAttr). Every store lands in the 0x801Cxxxx-0x801Dxxxx libsnd BSS. engine-audio maps the whole tier to a Spu reset + one Sequencer pass (docs/subsystems/audio.md). see ghidra/scripts/funcs/80065fe8.txt"
-"80066308" = "libsnd note-trigger dispatch: per-slot status bytes _DAT_801CE34x, the x0x81 velocity scale, then the voice-allocation scan 80066b00 -> _SsVoKeyOnDirect 80065978 / _SsVoNoteOn 80067550 with 80066f4c / 80066d8c / 80068568 as the pitch + envelope helpers. Sits entirely below the SsAPI surface (its only non-libsnd input is the sequencer event already decoded by 8006320c/8006352c); engine-audio's sequencer.rs is the clean-room replacement. see ghidra/scripts/funcs/80066308.txt"
-"8006171c" = "SsAPI SEQ event dispatch: routes the decoded event through the installed handler-vector table _DAT_801cd238.._DAT_801cd250 (indexed by event class, jalr v0). engine-audio's Sequencer has its own clean-room event loop. see ghidra/scripts/funcs/8006171c.txt"
+"80066308" = "libsnd note-trigger dispatch: per-slot status bytes _DAT_801CE34x, the x0x81 velocity scale, then the voice-allocation scan 80066b00 -> _SsVoKeyOnDirect 80065978 / _SsVoNoteOn 80067550 with 80066f4c / 80066d8c / 80068568 as the pitch + envelope helpers. Sits entirely below the SsAPI surface (its only non-libsnd input is the sequencer event already decoded by 8006320c/8006352c); engine-audio's sequencer.rs is the port-side replacement. see ghidra/scripts/funcs/80066308.txt"
+"8006171c" = "SsAPI SEQ event dispatch: routes the decoded event through the installed handler-vector table _DAT_801cd238.._DAT_801cd250 (indexed by event class, jalr v0). engine-audio's Sequencer has its own port-side event loop. see ghidra/scripts/funcs/8006171c.txt"
 "80064cf0" = "SsAPI ProgAtr getter: 8-byte copy of a program-attribute record out of the libsnd open-bank table the engine does not maintain (engine-audio parses the VAB directly via VabBank). see ghidra/scripts/funcs/80064cf0.txt"
 "80064df8" = "SsAPI tone-region getter: 0x18-byte copy of a tone/VAG-region record out of the libsnd open-bank table (mirror-read of the setter 800655cc). No engine consumer. see ghidra/scripts/funcs/80064df8.txt"
 "800655cc" = "SsAPI tone-region setter: 0x18-byte store into the libsnd open-bank table (write mirror of 80064df8). engine-audio holds tone regions in VabBank. see ghidra/scripts/funcs/800655cc.txt"
 "8006861c" = "utility velocity key-on: runs the exact FUN_80067550 vol/pan key-on chain already ported as vab_bind::fire + sequencer::channel_mix. Duplicate of a ported kernel. see ghidra/scripts/funcs/8006861c.txt"
 "80066f4c" = "per-voice vol/pan/reverb recompute: the standalone form of the FUN_80067550 mix chain already ported as sequencer::remix_channel. Duplicate of a ported kernel. see ghidra/scripts/funcs/80066f4c.txt"
 "80067a1c" = "pitch-bend apply: the per-tone pbmin/pbmax scaling law already ported as VabBank::pitch_bend_range + sequencer::pitch_bend_factor (engine uses a float model by design). see ghidra/scripts/funcs/80067a1c.txt"
-"8006cf9c" = "SsAPI worker/callback machinery (SsSetSerialAttr-tier table plumbing); the clean-room Sequencer stubs this tier wholesale. see ghidra/scripts/funcs/8006cf9c.txt"
-"8006cfc8" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006cfc8.txt"
-"8006d030" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006d030.txt"
-"8006d1e0" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006d1e0.txt"
-"8006daac" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006daac.txt"
-"8006e0a0" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006e0a0.txt"
-"8006e2b4" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006e2b4.txt"
-"8006e46c" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006e46c.txt"
-"8006e9c0" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006e9c0.txt"
-"8006ec24" = "SsAPI worker/callback machinery; clean-room Sequencer stub tier. see ghidra/scripts/funcs/8006ec24.txt"
-"8006db54" = "VAB-header table builder, the states 2 / 3 / 4 body of the +0x46 streaming state machine already listed as 8006d854: from the header cursor at ctx[+0x3c] state 2 fills the u16 array at *ctx[+0x0] (count ctx[+0xE3]) with the big-endian pair src[4] / src[5], state 3 fills the 5-byte program records at *ctx[+0x4] (count ctx[+0xE9]), and state 4 fills the 8-byte records at *ctx[+0x8] (count ctx[+0xEA]) chaining each record's +0x4 address as prev_addr + ((prev_size + 3) & 0x1FC) while copying 3 or 6 header bytes through the running cursor 0x801CE588. Each state parks at 0xFE on overrun. The clean-room VabBank parses the bank whole. see ghidra/scripts/funcs/8006db54.txt"
+"8006cf9c" = "SsAPI worker/callback machinery (SsSetSerialAttr-tier table plumbing); the port's Sequencer stubs this tier wholesale. see ghidra/scripts/funcs/8006cf9c.txt"
+"8006cfc8" = "SsAPI worker/callback machinery; port-side Sequencer stub tier. see ghidra/scripts/funcs/8006cfc8.txt"
+"8006d030" = "SsAPI worker/callback machinery; port-side Sequencer stub tier. see ghidra/scripts/funcs/8006d030.txt"
+"8006d1e0" = "SsAPI worker/callback machinery; port-side Sequencer stub tier. see ghidra/scripts/funcs/8006d1e0.txt"
+"8006daac" = "SsAPI worker/callback machinery; port-side Sequencer stub tier. see ghidra/scripts/funcs/8006daac.txt"
+"8006e0a0" = "SsAPI worker/callback machinery; port-side Sequencer stub tier. see ghidra/scripts/funcs/8006e0a0.txt"
+"8006e2b4" = "SsAPI worker/callback machinery; port-side Sequencer stub tier. see ghidra/scripts/funcs/8006e2b4.txt"
+"8006e46c" = "SsAPI worker/callback machinery; port-side Sequencer stub tier. see ghidra/scripts/funcs/8006e46c.txt"
+"8006e9c0" = "SsAPI worker/callback machinery; port-side Sequencer stub tier. see ghidra/scripts/funcs/8006e9c0.txt"
+"8006ec24" = "SsAPI worker/callback machinery; port-side Sequencer stub tier. see ghidra/scripts/funcs/8006ec24.txt"
+"8006db54" = "VAB-header table builder, the states 2 / 3 / 4 body of the +0x46 streaming state machine already listed as 8006d854: from the header cursor at ctx[+0x3c] state 2 fills the u16 array at *ctx[+0x0] (count ctx[+0xE3]) with the big-endian pair src[4] / src[5], state 3 fills the 5-byte program records at *ctx[+0x4] (count ctx[+0xE9]), and state 4 fills the 8-byte records at *ctx[+0x8] (count ctx[+0xEA]) chaining each record's +0x4 address as prev_addr + ((prev_size + 3) & 0x1FC) while copying 3 or 6 header bytes through the running cursor 0x801CE588. Each state parks at 0xFE on overrun. The port's VabBank parses the bank whole. see ghidra/scripts/funcs/8006db54.txt"
 "8006de30" = "SEQ/VAB cmd setter of the already-ignored 8006e06c family: ctx[+0x36] = 0x4D, ctx[+0x35] = 6, ctx[+0x2c] = ctx[+0x20]. Seven instructions. see ghidra/scripts/funcs/8006de30.txt"
 "8006de4c" = "Per-program channel-enable expander: for each of ctx[+0xE9] programs it walks six bytes of the buffer at ctx[+0x20] and the +0x2 byte of the matching 5-byte record at *ctx[+0x4], writing 0xFF or 0x00 into the six per-channel bytes at ctx[+0x5D]; ends by parking the state byte ctx[+0x46] at 0xFE. Same context struct as 8006db54 / 8006d854. see ghidra/scripts/funcs/8006de4c.txt"
 "8006dfac" = "Cmd-state dispatch of the 8006d7d0 shape: on ctx[+0x46] == 2 sets ctx[+0x36] = 0x44, ctx[+0x2c] = &ctx[0x51], ctx[+0x35] = 2; on 3 sets ctx[+0x36] = 0x4D, ctx[+0x2c] = &ctx[0x5D], ctx[+0x35] = 6. Installed as the ctx[+0x14] handler by 8006df14. see ghidra/scripts/funcs/8006dfac.txt"
@@ -556,7 +555,7 @@
 "80067e48" = "Open-bank record getter for byte +0x4 of the same *0x801CE334 record 80067d80 reads at +0x1; identical body modulo the field offset. see ghidra/scripts/funcs/80067e48.txt"
 "80067dd4" = "Open-bank record setter: the write twin of 80067e48 - same 80068b98 bounds check, stores its third argument into byte +0x4 of *0x801CE334 + seq*0x10 and reads it back as the return value. see ghidra/scripts/funcs/80067dd4.txt"
 
-# libspu primitives + SPU DMA transfer engine. Replaced by clean-room
+# libspu primitives + SPU DMA transfer engine. Replaced by the port's
 # software SPU in `engine-audio`.
 [libspu]
 "800694d0" = "SPU init: SpuMalloc-like FUN_80056638(0xf0000009,..), register callback FUN_8006a0e0"
@@ -615,11 +614,11 @@
 # port models each label's PC delta directly inside its dispatcher (see
 # `crates/engine-vm/src/field.rs`), so there is no separate function to port.
 "8003ee7c" = "libspu SPU common-attr / reverb-depth setter shim used by the CD-XA clip path. Thin two-call wrapper: FUN_800643c4(0, depth, depth) (SpuSetCommonAttr-style master/reverb-depth set from the s16 arg) then FUN_80062a0c(0,0,1) (CD/reverb attribute apply). No game logic; REF-listed as out-of-scope in crates/engine-core/src/cd_dma.rs. see ghidra/scripts/funcs/8003ee7c.txt"
-"8006a7c8" = "SpuSetReverbVol-shape 3-mode wrapper (mode 0 = clear, 1 = OR, 8 = write) over the SPU voice-attribute halfword table at DAT_8007AF40, or the shadow copy at 0x801CE390 when DAT_8007AF38 & 1, also ORing the dirty mask DAT_8007AB04. Reverb lives in the clean-room SPU. see ghidra/scripts/funcs/8006a7c8.txt"
-"80062228" = "libspu voice-block register clear: writes the SPU MMIO region at base 0x1f80_1xxx (two lui a2,0x1f80 poke loops). Hardware register access modelled at value level by the clean-room SPU, never poked. see ghidra/scripts/funcs/80062228.txt"
+"8006a7c8" = "SpuSetReverbVol-shape 3-mode wrapper (mode 0 = clear, 1 = OR, 8 = write) over the SPU voice-attribute halfword table at DAT_8007AF40, or the shadow copy at 0x801CE390 when DAT_8007AF38 & 1, also ORing the dirty mask DAT_8007AB04. Reverb lives in the port's SPU. see ghidra/scripts/funcs/8006a7c8.txt"
+"80062228" = "libspu voice-block register clear: writes the SPU MMIO region at base 0x1f80_1xxx (two lui a2,0x1f80 poke loops). Hardware register access modelled at value level by the port's SPU, never poked. see ghidra/scripts/funcs/80062228.txt"
 "800693d8" = "SpuInit core: SPU control-register bring-up + BSS zeroing. engine-audio constructs its Spu directly. see ghidra/scripts/funcs/800693d8.txt"
 "8006954c" = "SPU transfer/DMA reset: resets the transfer state block driven by the software SPU in engine-audio. see ghidra/scripts/funcs/8006954c.txt"
-"800699ac" = "SPU DMA settle + kick: waits the transfer FIFO then starts the SPU DMA channel. No hardware DMA in the clean-room SPU. see ghidra/scripts/funcs/800699ac.txt"
+"800699ac" = "SPU DMA settle + kick: waits the transfer FIFO then starts the SPU DMA channel. No hardware DMA in the port's SPU. see ghidra/scripts/funcs/800699ac.txt"
 "8006b854" = "SpuSetKey: writes the SPU KON/KOFF key-on/off registers. engine-audio keys voices in its software SPU voice pool. see ghidra/scripts/funcs/8006b854.txt"
 # PSX serial-port (JOY) transfer driver - the controller / memory-card link
 # byte-exchange protocol plus its Timer-2 timeout pair. One driver, and it is
@@ -680,7 +679,7 @@
 # Constant-address / global-buffer accessors: two- or three-instruction
 # functions whose entire body is `lui v0, HI; (jr ra;) addiu v0, v0, LO` -
 # they return the address of a fixed PSX-RAM global and nothing else. The
-# clean-room engine replaces raw global pointers with typed Rust fields, so
+# port replaces raw global pointers with typed Rust fields, so
 # there is no function body to port (the callers' intent - e.g. walking the
 # returned buffer as a CDNAME char* - is modelled where the caller is ported).
 "8003adcc" = "Interior +0x20 of FUN_8003ADAC: the dump resolves the entry to 8003adac, and 8003adcc is that function's `sw s1,0x34(sp)` prologue register-save promoted to a fake FUN_ entry. see ghidra/scripts/funcs/8003adcc.txt"
@@ -758,9 +757,9 @@
 # reading actor-struct fields (+0x6 pan, +0x8 active, +0xa bound sequence id)
 # and dispatching straight into the already-ignored libsnd/libspu shims
 # (80064370 SsSeqRewind, 80061e94 SsSeqClose, 8002657c/8002614c -> 800643c4 /
-# 80062a0c / 80064890 vol+pan setters). The clean-room engine-audio owns its
+# 80062a0c / 80064890 vol+pan setters). The port's engine-audio owns its
 # own sequencer + software-SPU voice pool, so the per-actor voice lifecycle has
-# no separate clean-room semantic to port. (Documented in
+# no separate semantic to port. (Documented in
 # `docs/reference/functions.md`.)
 [actor_sound_glue]
 "800266e0" = "Actor sound-source teardown: pan-reset (8002657c) + libsnd SsSeqRewind (80064370) on the actor's bound sequence id. Game-side libsnd glue."
@@ -773,7 +772,7 @@
 
 
 # Retail CD-streaming / boot-orchestration plumbing. The engine loads assets
-# clean-room through the legaia_asset PROT index + MemoryVfs and owns its own
+# covered through the legaia_asset PROT index + MemoryVfs and owns its own
 # scene/boot lifecycle, so the retail async-load state machines and dual-mode
 # (ISO9660-path vs PROT-TOC) file plumbing have no port site. Game-logic
 # residue inside each is ported separately and named in the reason.
@@ -791,7 +790,7 @@
 
 
 # Game-side helpers whose observable behavior is subsumed by an existing
-# clean-room port or host model: the function's own body is thin plumbing
+# port or host model: the function's own body is thin plumbing
 # (a list marker, a free-slot wrapper, a record copy) with no separate
 # semantic to port. The reason names the Rust site that owns the behavior.
 "8001ed60" = "Dev VRAM-integrity self-test: mallocs 0x40000, loads PROT 0x36C (retail through the TOC resolver 8003e8a8, dev through a host path), word-sums the payload into gp+0x6B8 and gp+0x690, records two header sizes, then frees the buffer. The sums have exactly one consumer - FUN_8001E890 compares gp+0x6B8 against a StoreImage read-back of the same VRAM region - and no lasting game state is produced. see ghidra/scripts/funcs/8001ed60.txt"
@@ -1367,7 +1366,7 @@
 # and one of them (801C36B0, the shop / exchange buy-confirm) is a documented
 # port site. Only routines that carry no game logic belong here.
 [dev_tool_overlays]
-"801cf730" = "Debug-menu (PROT 0971) mode init - `CONFIG INIT`, the dev mode the mode-name table mislabels as game config (docs/subsystems/boot.md). Its 51 instructions are entirely (a) a PsyQ heap reset - `FUN_8001DCF8(0)` then `FUN_80017888(0, 0x7D000)` - which the clean-room port maps to Rust allocation rather than porting, and (b) seeding six debug-menu colour bytes (two `(0x20, 0x40, 0xA0)` triples) plus two counters. No game logic, no draw. NB the VA is also aliased: outside the debug-menu image it is interior to 801cf650, so a future dump at this address need not be this body."
+"801cf730" = "Debug-menu (PROT 0971) mode init - `CONFIG INIT`, the dev mode the mode-name table mislabels as game config (docs/subsystems/boot.md). Its 51 instructions are entirely (a) a PsyQ heap reset - `FUN_8001DCF8(0)` then `FUN_80017888(0, 0x7D000)` - which the port maps to Rust allocation rather than porting, and (b) seeding six debug-menu colour bytes (two `(0x20, 0x40, 0xA0)` triples) plus two counters. No game logic, no draw. NB the VA is also aliased: outside the debug-menu image it is interior to 801cf650, so a future dump at this address need not be this body."
 
 # Added by the port-wiring wave.
 "801ce97c" = "Debug-menu per-frame controller in the PROT 0971 DEBUG MODE overlay (docs/tooling/static-overlay-pipeline.md pins that overlay's base and its 'DEBUG MODE' head string). Runs a ~22-row cursor list over _DAT_8007B862 whose row actions are dev instrumentation: eight dev-string formats (8001a068), fi..."
@@ -1377,6 +1376,8 @@
 # 0x801CE818). Both head with the ASCII `OTHE`/`OTHER GAME` string the
 # static-overlay map names them for, and neither ships a game mode of its own -
 # their content is a dev viewer for the shared GTE + prim helpers.
+"801ce8a0" = "PROT 0973 dev viewer's init (image base + 0x88), arm 1 of the mode-24 OTHER init switch (jal at SCUS 0x80025A90). Nineteen instructions, all of them bring-up: display env FUN_8001DAF8(0x140), boot mode-init FUN_8001DCF8(0xB), one actor spawn FUN_80020DE0 from the in-image template at 0x801CEFD0 whose +0x08 tick word is the viewer tick 801ce8ec, then the packet/OT allocator FUN_8001E3B8(0x32000). No game state is written and no draw is emitted - the engine allocates through Rust and has no dev viewer to bring up. Attribution: dump-extent-attribution.csv gives this VA to other2_dev(973) unique at 76 bytes; the 100-byte dump at the same VA is misbased (the bytes live at field(897) 0x801D40B8). Disassembled from extracted/overlays/overlay_other2_dev_0973.bin at base 0x801CE818."
+"801ce8ec" = "PROT 0973 dev viewer's per-frame tick - the +0x08 word of the template 801ce8a0 spawns (word hit at 0x801CEFD8), also jal'd from SCUS 0x80025C9C. Prints its head string through the dev formatter FUN_8001A068, then edits the viewed object in place from the HELD pad mask _DAT_8007B850: left/right move +0x14 by +-0x20, up/down move +0x16, Square/Circle move +0x26, Triangle/Cross move +0x24, with L2 held suppressing the whole block; two edge-mask counters at 0x801CEFE8 / 0x801CEFEC step on R1 / R2 and are reduced mod 4 and mod 6 before being handed to the prim worker 801ceb58 with the object's translate and rotate fields. The same translate/rotate-editing shape as the debug TMD viewer 801cf338 already filed here. Dev instrumentation over the shared GTE/prim helpers; the engine owns its own camera and renderer. Disassembled from extracted/overlays/overlay_other2_dev_0973.bin at base 0x801CE818."
 "801ceb58" = "PROT 0973 dev viewer's primitive builder, reached by the image's own `jal` at 0x801CEB3C. `(a0, a1, obj, mat)`: allocates a 0x5000-byte block through FUN_80017888, fills a stack descriptor with fixed constants (scale 0x1000/0x1000, 0x7F80, 0x3E8/0x7D0 extents, 0x1F/0x3F flags, colours 0xF0F0F0 and 0x404040), pushes the object through the GTE matrix wrapper FUN_8003D344 and the libgte transform pair FUN_80026988 / FUN_8005B158, and emits the result. Every constant it sets is a GTE/prim-builder field the engine's own renderer owns - the port has no dev viewer to host it. Disassembled from extracted/overlays/overlay_other2_dev_0973.bin at base 0x801CE818."
 "801ce85c" = "PROT 0974 dev viewer's entry (image base + 0x44). Prints two head strings through the dev formatter FUN_8001A068, then branches the whole body on the debug flag words _DAT_8007B874 / _DAT_8007B938 - bits 0x100 / 0x1000 / others - stepping counters in the image's own 0x801D19xx block. Dev instrumentation gated on debug flags retail never sets; same class as the [dev_tool_overlays] rows above. Disassembled from extracted/overlays/overlay_other3_dev_0974.bin at base 0x801CE818."
 "801ced68" = "PROT 0974 dev viewer's HUD bar, reached by the image's own `jal` at 0x801CED30. Emits one flat opaque quad (GP0 code 0x28, tag 0x05000000, colour 0x800080) spanning (0x10, 0x3E)-(0x130, 0x4E) into the scratchpad prim cursor 0x1F8003A0 and links it with FUN_8003D2C4, then repeats down the screen. A dev readout backdrop - a prim builder in the sense of the [prim_builder] section, not game logic."
@@ -1666,6 +1667,7 @@
 # overlay at that link base carries, the field image included, which is why the
 # field VM can hand its address around as a token. Its claim is the same one.
 [prim_builder]
+"801f89b8" = "PROT 0901's bulk terrain-cell emitter, the ninth routine of the world-map draw band and the only one with its own jr ra (0x801F8EB4); reached by jal from 0x801F733C inside the same image. Hand-written GTE assembly: it takes the camera visible-tile window bytes at scratchpad 0x1F8003E8..EB as its two loop counts, walks the scene map at *(0x1F8003EC), reads each cell corner's floor nibble from the +0x4000 grid through the 16-entry height LUT at 0x1F80035C, projects the four corners with RTPT, rejects off-screen against the 240x320 window, backface-tests with NCLIP, takes the cell's object record at +(idx & 0x1FF)*0x20 and unpacks its +0x14 word as tile id (& 0x3F, u = (id % 8) * 32, v = (id / 8) * 32), tpage ((id >> 8) & 0x1F) and CLUT (high half), then links a 0x28-byte packet into the OT. Every step of that is legaia_asset::field_objects::build_walk_heightfield plus Placement::world_y and the GROUND_ATLAS_* constants, drawn by the engine's own wgpu renderer from legaia_engine_core::field_env - the port emits no GP0 packets. Attribution: dump-extent-attribution.csv gives the VA to world_map_render(901) unique at 1284 bytes. Disassembled from extracted/overlays/overlay_world_map_render_0901.bin at base 0x801CE818."
 "801dd9d4" = "Per-actor screen-frame primitive emitter, `(actor_ptr)`. Reads the actor's size word +0x72 into the corner scalars (0x140-size, size-4, 0xE0-size), then loops eight times: takes the scratchpad prim cursor *(0x1F8003A0), advances it 0x18, writes the OT tag 0x05000000 and the POLY_F4 code word 0x28808080, overwrites the code word's three colour bytes from the actor's +0xB8/+0xBA/+0xBC, `jr`s through slot i of the eight-entry vertex-writer table at 0x801CEC40 to fill the four corners, and links the packet with the OT insert 8003d2c4 at *(0x1F8003F4) + actor[+0x50]*4. Packet geometry only - no store lands outside the packet and the prim cursor. The engine draws screen frames and masks from engine-ui's own screen_prim draw list, so there is no port site; the field VM's op 0x43 sub-0xE only ever passes this address as a search TOKEN to func_0x8003CF04, never calls it, and that token use is already modelled at `engine_vm::field::FieldHost::op43_mark_actor_flag_8`. NB the eight vertex writers behind the `jr` are outside every dump's extent (69 of 147 slots printed) and the untagged overlay_0897_801dd9d4.txt resolves entry=801dd8f0 at a base that puts a divide-overflow delay slot here - the seven base-tagged field-family dumps agree instruction for instruction and are the evidence. see ghidra/scripts/funcs/overlay_dance_801dd9d4.txt"
 "801d079c" = "Slot-machine bet-lamp strip: three 5-word 0x14-byte rects at y=0x84 stepping x by 0x10 from 0x230, cell 0x10 square, clut 0x7A8D, shaded 0x80 when *(0x801D3C9C) bit 0 is set and 0x90 otherwise, lit only while the lamp index is below the bet count *(0x801D3CB0); then one libgpu fill through 80059010. Every store lands in the prim arena and is linked with 8003d2c4. see ghidra/scripts/funcs/overlay_slot_machine_801d079c.txt"
 "801d0e1c" = "Slot-machine cabinet frame: builds 0x14-byte flat rect packets (tag 0x04000000) from stack SVECTORs projected through 8003d368 and links each with 8003d2c4; the only non-packet stores are the loop's own stack scratch. see ghidra/scripts/funcs/overlay_slot_machine_801d0e1c.txt"
@@ -1767,7 +1769,7 @@
 # PSX BIOS interrupt-callback infrastructure (libapi), the tier under every
 # InterruptCallback / DMACallback registration in the binary. State block at
 # 0x800797D8; hardware register pointers 0x8007A864 I_STAT, 0x8007A868 I_MASK,
-# 0x8007A86C DPCR, 0x8007A89C DICR. The clean-room port has no interrupts at
+# 0x8007A86C DPCR, 0x8007A89C DICR. The port has no interrupts at
 # all: `engine-render` drives frames from the winit event loop and
 # `engine-audio` from the cpal output callback, so there is no vector to hook,
 # no I_MASK to shadow and no per-IRQ fan-out table to walk. Every row is a
@@ -1869,6 +1871,7 @@
 "801f85d4" = "PROT 0954 (Fatal Decision) move-VM stager, 0x801F6734 row 51. The same eight-byte `jr ra; nop` stub"
 "801f7948" = "A framed routine in PROT 0909 (Viguro) that nothing reaches. 0909 partitions into five frame-matched functions; two are the tick 0x801F69F4 and the stager 0x801F7AF4 that PROT 0898's tables name, and 0x801F7948 / 0x801F7CC8 / 0x801F7D30 are reached by nothing. The five-form sweep (scripts/ghidra-analysis/find-address-word-refs.py 801f7948 801f7cc8 801f7d30) reports no word, no jal, no j, no lui+addiu pair and no in-image PC-relative branch for any of them across SCUS, the 83 based overlay images and the PROT entries, and 0909 holds no jump table that could reach them. Only this one is on the worklist because only this one has a dump. Real code, unreachable one level up - the shape docs/tooling/address-reference-scan.md exists for"
 "801f7b88" = "PROT 0920 (Slippery) per-frame effect updater at file +0x11B0, 1632 B / 408 instructions - the one slot-B routine SCUS calls directly (`jal 0x801F7B88` in FUN_800480D8 under `_DAT_8007BDC0 != 0`, docs/subsystems/cast-module.md). It is the DATA layer's runtime half, not simulation: it READS the budget word 0x8007BDC0 once (`lw v1,-0x4240(v1)` at 0x801F7C84) and never writes it - the three writers are the module's OTHER routines at 0x801F6FEC / 0x801F70CC / 0x801F7B4C - walks the module's own 8-byte particle records at 0x801F8448 through 0x801F81F0, and its only outward call with a module-resident pointer is `jal FUN_80021B04`, the same spawn primitive the [slot_b_spawn_stagers] rows hand records to. No GTE op, no write to any battle-actor field or to the module phase. The mechanism that covers it is therefore the same one: legaia_asset::cast_effect_pool parses those records and World::spawn_cast_module_fx stages them as a move-VM scene, so the emitter's whole output is already produced. Nothing to port"
+"801f8b84" = "PROT 0904 (Theeder) internal GPU packet emitter, 808 B / 202 instructions, entry two instructions above its `addiu sp,sp,-0x68` prologue (the shape PROT 0946 / 0953 also take, so a prologue scan reports 0x801F8B8C). One reference of any form in any image: `jal 0x801F8B84` at 0x801F7FB4, inside 0904's OWN tick body at 0x801F69D8 - the five-form sweep (scripts/ghidra-analysis/find-address-word-refs.py 801f8b84 --prot) adds only in-image PC-relative branches from three other modules, and find-gp-relative-refs.py --va 0x801F8B84 reports no gp form, no lui+load pair and no base+displacement anywhere. Its whole store census is stack slots, the scratchpad OT cursor 0x1F8003A0, the packet words it links with FUN_8003D2C4, and the module-resident counter 0x801F91CC: it projects a caller-supplied vector pair through FUN_800195A8 and emits 0x24-byte gouraud quads (code 0x3B). No battle-actor field, no ctx+0x279, no damage wrapper - the GPU-packet arms cast_module_ticks already declares out of scope, and the same mechanism covers it: the module's spawn records reach both hosts through legaia_asset::cast_effect_pool + World::spawn_cast_module_fx. Nothing to port"
 "801f7cc8" = "PROT 0909's second unreachable framed routine, 104 B, immediately after 0x801F7948 and of the same shape. The five-form sweep reports no reference of any kind, in any image. Not named by 0x801CF4EC, 0x801CF56C or 0x801F6734"
 "801f7d30" = "PROT 0909's third unreachable framed routine, 232 B. The five-form sweep's only hits are a PC-relative branch inside PROT 0949 (which cannot leave its own image) and a pointer word inside PROT 0958 that means 0958's own arm, so neither reaches 0909's routine. Not named by any of the three PROT 0898 tables"
 

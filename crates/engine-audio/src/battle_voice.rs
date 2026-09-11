@@ -9,15 +9,19 @@
 //! issues CD command `0x15` (`li a0,0x15; jal 0x8005C034` at `0x8003EB68`,
 //! `CdlSeekL`), then raises `gp+0x908` / `gp+0x910` and stores the slot at
 //! `gp+0x890` - driver flags whose consumer (the CD-callback state machine
-//! that would chain a `CdlReadS` once the seek lands) is not traced. So the
+//! that would chain a `CdlReadS` once the seek lands) is that ring. So the
 //! stream this arms is a drive-side sequence: a seek, then whatever the
 //! driver does with those flags. The engine has no drive to seek and no
 //! driver to poll them; its clips are pre-decoded
 //! (`legaia_engine_audio::XaClipBank`) and start after a modelled response
-//! delay. The prerequisite for wiring it honestly is that driver's read chain
-//! (`gp+0x908` / `gp+0x910` readers) and the clip it streams - a whole
-//! `XA<n>` channel from the file start, not the cut one-shot the melee kernel's
-//! `FUN_8003D53C` requests take. Grade: `inference` on what the flags start.
+//! delay. **The read chain is no longer untraced**: it is the eleven-state
+//! callback ring `FUN_8003D764`, decoded in [`crate::xa_transport`], whose
+//! sole state writer is `FUN_8003D53C`, and it is a scope row rather than a
+//! port gap (`[cd_transport_shims]`: every one of its states is a drive
+//! command). What that leaves is a transport the
+//! engine has no hardware for, not an unknown - the clip it streams is a
+//! whole `XA<n>` channel from the file start, not the cut one-shot the melee
+//! kernel's `FUN_8003D53C` requests take.
 //!
 //! Retail reaches this pass through a **static actor template**
 //! (`docs/reference/functions/runtime-libs.md`), not a call: the battle

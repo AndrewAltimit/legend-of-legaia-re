@@ -12,7 +12,7 @@
 //! the world's banner channel -> the summon-spawn request the render hosts
 //! consume (`take_pending_summon_spawn`).
 //!
-//! Disc-free: the clean-room Seru-magic catalog (`retail_magic`), a synthetic
+//! Disc-free: the port's Seru-magic catalog (`retail_magic`), a synthetic
 //! threshold table in the retail shape, and the vanilla monster tables. Runs
 //! in CI unconditionally.
 
@@ -100,7 +100,7 @@ fn press(w: &mut World, b: PadButton) {
 #[test]
 fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     let mut w = build_world();
-    // The clean-room Seru-magic catalog: id 0x81 = Gimard, a damage spell.
+    // The port's Seru-magic catalog: id 0x81 = Gimard, a damage spell.
     w.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
     // The retail-shaped threshold curve (strictly ascending, level 1 needs
     // the total to EXCEED entry [0]).

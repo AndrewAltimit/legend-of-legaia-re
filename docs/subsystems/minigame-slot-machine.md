@@ -913,7 +913,16 @@ in practice. Parser [`legaia_asset::minigame_sfx`].
   `koin*` bundle's, yet both framebuffers carry the fully-drawn cabinet).
 - The site's minigames page still **draws** the cabinet as a composition
   measured off the capture's framebuffer rather than as the decoded mesh, and
-  says so; routing it through the disc mesh is open work, not an open question.
+  says so. This is open **work**, not an open question, and the work is one
+  specific thing: the page's slot panel is a `getContext('2d')` canvas
+  (`#slot-canvas` in `site/_content/minigames.html`), so it has no surface the
+  mesh can be drawn into. The mesh itself needs nothing further - it is PROT
+  1200 descriptor 1 and `legaia_asset::minigame_slot_scene` already returns it.
+  Closing it means either giving that panel a WebGL context (the site's 3D
+  pages already carry `site/js/webgl-tmd.js` + `webgl-shaders.js`) or
+  software-rasterising the mesh into the existing 2D canvas
+  (`legaia_asset::mesh_raster`, which the WASM viewer already uses). Nothing
+  about retail is unknown here.
 
 ## See also
 

@@ -177,6 +177,17 @@ pub struct BootSession {
     /// `--disc <image>` boot on the retail metrics. `None` when the source
     /// carries neither the font TIM nor the executable.
     pub dialog_font: Option<legaia_font::Font>,
+    /// The session's **seat at the retail mode table**: the port's copy of
+    /// `_DAT_8007B83C` ([`legaia_engine_core::mode::ModeSeat`]).
+    ///
+    /// [`Self::tick`] drives it once per frame, and the session's own
+    /// transitions write it where retail's code stores the word - field entry
+    /// through `MAIN INIT`, the pause menu through `CARD INIT`. Two things
+    /// come out of it that nothing else in the port produces: the mode-change
+    /// edge (which swallows the pad edge that caused the transition, the way
+    /// `0x800161EC` / `0x800161F8` do) and a real `game_mode` for every frame
+    /// the mode-trace oracle samples.
+    pub mode_seat: legaia_engine_core::mode::ModeSeat,
     /// In-field pause-menu session, when open. Retail runs the pause menu
     /// under the CARD mode pair (`_DAT_8007B83C = 0x17`, `CARD MODE`, in
     /// every menu-open capture); the session-hosted equivalent holds
@@ -883,6 +894,7 @@ impl BootSession {
             last_save_commit: None,
             spell_level_notice: None,
             field_menu_resume: SceneMode::Field,
+            mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
         })
     }
 
@@ -958,6 +970,20 @@ impl BootSession {
         self.field_menu_resume = world.mode;
         world.mode = SceneMode::Menu;
         self.field_menu = Some(session);
+        // Retail opens the menu by writing the mode word, not by calling the
+        // menu: `CARD INIT` (22) stages the menu overlay and hands the word to
+        // `CARD MODE` (23) at `0x80025974`, which is the mode every menu-open
+        // capture holds. Going through the seat is what runs the mode-change
+        // edge - in particular the pad-edge swallow, so the Start press that
+        // opened the menu is not also delivered as the menu's first input.
+        self.mode_seat.request_card_mode();
+        let plan = self
+            .mode_seat
+            .enter(legaia_engine_core::mode::GameMode::CardInit, world);
+        debug_assert!(
+            plan.is_none(),
+            "CARD INIT stages no overlay-A request in the port's model"
+        );
     }
 
     /// Close the pause menu and restore the suspended scene mode (the mode
@@ -971,6 +997,10 @@ impl BootSession {
             self.field_menu_sub = None;
             self.save_flow.reset();
             self.host.world.mode = self.field_menu_resume;
+            // The word follows the world back out of `CARD MODE`; the seat
+            // takes the edge (and the pad swallow) on the next frame, so the
+            // confirm that closed the menu does not walk the player.
+            self.mode_seat.adopt_scene_mode(self.field_menu_resume);
             // A kind-`0x0D` entry context is a *standing* op-`0x49` park: the
             // script halts on the instruction and keeps the menu gated until
             // the player answers, and closing the menu under that gate is the
@@ -1177,6 +1207,21 @@ impl BootSession {
     /// events, advance the camera follow, return the [`SceneTickEvent`] for
     /// engines that want to react to scene transitions.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        // The mode table's outer level, once per frame, ahead of everything
+        // else - retail's `main` (`FUN_80015E90`, `0x8001615C..0x8001620C`)
+        // takes any pending mode-change edge before it dispatches the new
+        // mode's handler. The edge is not bookkeeping: it swallows the pad
+        // edges (`gp+0x538` / `gp+0x55C`) so the button that caused the
+        // transition is not re-delivered to the mode it opened.
+        let mode_frame = self.mode_seat.frame(&mut self.host.world);
+        if let Some(edge) = mode_frame.edge {
+            log::debug!(
+                "mode {:?} -> {:?} ({})",
+                edge.from,
+                edge.to,
+                self.mode_seat.mode_name()
+            );
+        }
         // Pause menu (retail CARD pair, game_mode 0x17). Drive the Start edge
         // through the shared predicate rather than a local mode test: retail's
         // accept is a leg of the locomotion controller `FUN_801D01B0`, so the
@@ -1255,6 +1300,10 @@ impl BootSession {
             // to this point is what left every Biron Monastery cutscene
             // silent and then started its score over the next scene.
         }
+        // Reconcile the word with wherever the scene sessions left the world.
+        // The seat owns the word; the sessions own the scene, and this is the
+        // one join between them (see `ModeSeat`'s "what owns what").
+        self.mode_seat.adopt_world_mode(&self.host.world);
         self.frames += 1;
         Ok(event)
     }
@@ -1274,6 +1323,25 @@ impl BootSession {
     /// logs and continues (the world stays in whatever mode it was in).
     /// Returns the active [`SceneMode`] after the attempt.
     pub fn enter_field_live(&mut self, scene: &str, opts: &FieldLiveOpts) -> Result<SceneMode> {
+        // Retail reaches the field through the mode table, not through a call:
+        // whoever wants the field stores `MAIN INIT` (2) - the title
+        // dispatcher does it at `0x801DFC00` - and mode 2's handler
+        // `FUN_80025B64` stages the field overlay and calls the per-scene
+        // initializer `FUN_801D6704` before handing the word to `MAIN MODE`
+        // at `0x80025E50`. The port replaces the overlay load with native
+        // scene entry, so the INIT column here is the plan and the body
+        // below is the staging it names.
+        {
+            use legaia_engine_core::mode::{GameMode, ModeInitPlan};
+            let plan = self
+                .mode_seat
+                .enter(GameMode::MainInit, &mut self.host.world);
+            debug_assert!(
+                matches!(plan, Some(ModeInitPlan::Stage(st))
+                    if st.overlay_entry == legaia_engine_vm::title_overlay::FIELD_SCENE_INIT_PC),
+                "MAIN INIT's plan should name the per-scene initializer"
+            );
+        }
         match self.host.enter_field_scene(scene, 0) {
             Ok(()) => log::info!("entered field scene '{scene}' record 0 (field VM live)"),
             Err(e) => log::warn!(

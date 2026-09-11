@@ -111,6 +111,9 @@ try:  # py311+
 except ModuleNotFoundError:  # pragma: no cover - py<3.11
     tomllib = None  # type: ignore[assignment]
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import port_tag_reader  # noqa: E402  (sibling module, path set just above)
+
 REPO = Path(__file__).resolve().parent.parent.parent
 FUNCS_DIR = REPO / "ghidra" / "scripts" / "funcs"
 CRATES_DIR = REPO / "crates"
@@ -149,6 +152,23 @@ RAM_HI = 0x801FFFFF
 # VA at or above it identifies an object only together with the image it was
 # read in. Below it the address is always-resident and means one thing.
 OVERLAY_BASE = 0x801C0000
+
+# The image name a dump below `OVERLAY_BASE` is given when its header carries
+# none. Spelled the way the extracted images are, so the two agree in output.
+SCUS_IMAGE = "SCUS_942.54"
+
+# Per-address owning image, read from `dump-extent-attribution.csv`: which
+# extracted image actually holds a VA's bytes, decided by reproducing the
+# dump's own instruction window against each image's content. `consensus`
+# prefers the dumps from that image, so a dump taken at the same VA under a
+# different overlay never votes on what the routine is.
+ATTRIBUTION_CSV = (
+    REPO / "scripts" / "ghidra-analysis" / "dump-extent-attribution.csv"
+)
+# Only these attribution classes name an owner worth deferring to. `misbased`
+# says the bytes are somewhere else entirely and `short` / `unresolved` say the
+# instrument could not decide, so neither settles which dump to believe.
+ATTRIBUTION_TRUSTED = frozenset({"unique", "resolved_by_table"})
 
 # `module-orphan` needs enough siblings for "shares nothing" to mean anything.
 ORPHAN_MIN_SIBLINGS = 3
@@ -510,9 +530,16 @@ def load_corpus() -> tuple[dict[str, list[Dump]], dict[int, int], dict[int, int]
       dump is as good a witness to it as a tagged one. Restricting it to
       image-tagged dumps measured the commonality of half the corpus and called
       the result distinctive.
-    - The **evidence** map keeps only image-tagged dumps, because attributing a
-      body to a VA in the overlay band needs the image
-      (`docs/tooling/dump-corpus-integrity.md`).
+    - The **evidence** map needs an image only where a VA is ambiguous, which
+      is the overlay band and nowhere else (`OVERLAY_BASE` up). One SCUS image
+      ships on the disc, so a dump whose entry sits below that base has exactly
+      one possible owner and its untagged header withholds nothing. Requiring
+      the tag everywhere dropped every plain `<addr>.txt` SCUS dump from the
+      evidence map, and three of the four signals read only that map - so
+      `dual-label` and `doc-citation` went silent over the whole SCUS range
+      while reporting a clean run. `elsewhere_claims` already draws the line
+      here (`data_addr >= OVERLAY_BASE`); this is the same line drawn one layer
+      earlier.
 
     Both drop a dump whose header `entry` is not the address asked for: that
     file is a window opening inside a *different* routine, and reading a
@@ -533,6 +560,9 @@ def load_corpus() -> tuple[dict[str, list[Dump]], dict[int, int], dict[int, int]
         if d.entry != int(d.addr, 16):
             continue
         every.append(d)
+        if not d.image and d.entry < OVERLAY_BASE:
+            # One SCUS image exists, so the owner is not in question.
+            d.image = SCUS_IMAGE
         if d.image:
             by_addr[d.addr].append(d)
     seen_data: dict[int, set[str]] = defaultdict(set)
@@ -549,6 +579,50 @@ def load_corpus() -> tuple[dict[str, list[Dump]], dict[int, int], dict[int, int]
     return by_addr, df, cdf
 
 
+def image_key(name: str) -> str:
+    """A dump image or attribution-CSV image name reduced to `label:entry`.
+
+    `overlay_other2_dev_0973.bin` and `other2_dev(973)` are the same image
+    written by two tools; both reduce to `other2_dev:973`. The PROT entry is
+    the part that decides, so a name carrying one compares on it alone and a
+    name carrying none (`SCUS_942.54`) compares on its own text.
+    """
+    stem = name.strip().rsplit("/", 1)[-1]
+    stem = re.sub(r"\.(bin|BIN)$", "", stem)
+    m = re.match(r"^(.*?)\((\d+)\)$", stem)
+    if m:
+        return f"{m.group(1).strip().lower()}:{int(m.group(2))}"
+    m = re.match(r"^overlay_(.*)_(\d{3,4})$", stem)
+    if m:
+        return f"{m.group(1).lower()}:{int(m.group(2))}"
+    return stem.lower()
+
+
+@lru_cache(maxsize=1)
+def owning_images() -> dict[str, set[str]]:
+    """`{addr: {image_key, ...}}` from `dump-extent-attribution.csv`.
+
+    Only the classes that actually name an owner (`ATTRIBUTION_TRUSTED`); the
+    rest of the CSV records that the instrument could not decide, and a
+    verdict of "undecided" must not narrow anything.
+    """
+    out: dict[str, set[str]] = defaultdict(set)
+    if not ATTRIBUTION_CSV.is_file():
+        return out
+    try:
+        with ATTRIBUTION_CSV.open(newline="") as fh:
+            for row in csv.DictReader(fh):
+                if (row.get("class") or "").strip() not in ATTRIBUTION_TRUSTED:
+                    continue
+                img = (row.get("image") or "").strip()
+                if not img or img == "-":
+                    continue
+                out[(row.get("entry") or "").strip().lower()].add(image_key(img))
+    except OSError:
+        return out
+    return out
+
+
 def consensus(dumps: list[Dump]) -> list[Dump]:
     """The dumps of one address that agree on what the routine is.
 
@@ -563,9 +637,29 @@ def consensus(dumps: list[Dump]) -> list[Dump]:
     real prologue, and one 48-instruction window in `overlay_0897` that opens on
     a bare `jal` mid-routine. Unioned, the odd one's callee and string-pool
     reads read as the routine's own.
+
+    Plurality is a vote, though, and a vote is a property of the corpus rather
+    than of the disc: adding one more dump of a VA taken under a *different*
+    image can flip which body wins, or tie it and silence the address, without
+    a byte on the disc changing. So where
+    `scripts/ghidra-analysis/dump-extent-attribution.csv` has already decided
+    which image's content reproduces the window at this VA, that verdict is
+    applied first and the vote runs only among the dumps of the owning image.
+    The CSV is byte-derived, so this keys the evidence to the **module** that
+    holds the routine instead of to whichever image happened to be dumped most.
     """
     if len(dumps) < 2:
         return dumps
+    owners = owning_images().get(dumps[0].addr, set())
+    if owners:
+        kept = [d for d in dumps if image_key(d.image) in owners]
+        # Only narrow. An address whose owning image has no dump keeps the
+        # unfiltered vote - taking the empty set would silence it on the
+        # strength of a row that says nothing about the dumps we hold.
+        if kept:
+            dumps = kept
+        if len(dumps) < 2:
+            return dumps
     groups: dict[str, list[Dump]] = defaultdict(list)
     for d in dumps:
         groups[d.body].append(d)
@@ -621,12 +715,15 @@ def collect_tags() -> list[Tag]:
             text = p.read_text(errors="ignore")
         except OSError:
             continue
-        for lineno, line in enumerate(text.splitlines(), start=1):
-            m = PORT_TAG_RE.search(line)
-            if not m:
+        lines = text.splitlines()
+        # The shared marker reader takes the marker line plus the continuation
+        # lines of a wrapped address list, so an address past a wrap is still a
+        # claim this checker weighs against the routine's dump.
+        for lineno, kind, tail in port_tag_reader.iter_markers(text):
+            if kind != "PORT":
                 continue
-            tail = m.group(1)
             hits = list(PORT_ADDR_RE.finditer(tail))
+            raw = lines[lineno - 1]
             for i, am in enumerate(hits):
                 stop = hits[i + 1].start() if i + 1 < len(hits) else len(tail)
                 out.append(
@@ -636,7 +733,7 @@ def collect_tags() -> list[Tag]:
                         lineno,
                         tail,
                         tail[am.end():stop],
-                        line,
+                        raw,
                     )
                 )
     return out
@@ -955,6 +1052,9 @@ def find_dual_labels(by_addr: dict[str, list[Dump]]) -> list[Finding]:
 #
 #   reaches       the word at `c` is a `jal` / `j` / conditional branch whose
 #                 target is `s`, or a `lui`+`addiu`/`ori` pair at `c` forms `s`
+#   returns-from  the word at `c - 8` is a `jal` to `s` - `c` is the RETURN
+#                 address the call leaves in `ra`, which is what a live-probe
+#                 row cites when it pins a caller by the `ra` it observed
 #   adjacent-body `c` and `s` sit in the same, or in two touching, byte-derived
 #                 bodies - the span between `jr ra` boundaries, the boundary
 #                 words included, which is what makes "this address is interior
@@ -1139,6 +1239,17 @@ def site_relation(cited: int, subject: int, co_cited: set[int]) -> str | None:
             return (
                 f"lui/addiu pair forming 0x{subject:08x} at 0x{cited:08x} "
                 f"in {img.label}"
+            )
+        # A live-probe row cites the RETURN address, not the `jal`. On R3000
+        # `ra` is the call word plus eight (the branch and its delay slot), so
+        # the caller-site test has to look there too or every `ra ...` citation
+        # reads as unsupported while the bytes say plainly which routine the
+        # probe was standing in.
+        wj = img.word(cited - 8)
+        if wj is not None and (wj >> 26) == 3 and _branch_target(cited - 8, wj) == subject:
+            return (
+                f"0x{cited:08x} is the return address of the jal to "
+                f"0x{subject:08x} at 0x{cited - 8:08x} in {img.label}"
             )
     for img in images():
         bc, bs = _body(img, cited), _body(img, subject)
@@ -1523,6 +1634,12 @@ def main() -> int:
         + find_doc_row_citations(by_addr)
         + find_dual_labels(by_addr)
     )
+    # The unmatched-waiver report is a statement about the whole waiver file, so
+    # it has to be computed before the display filters narrow the finding set. A
+    # `--addr` drill-down otherwise reported every waiver in the file as
+    # matching nothing, which reads as a repo-wide problem and is an artifact of
+    # having asked about one address.
+    all_keys = {f.key for f in findings}
     if args.signal:
         findings = [f for f in findings if f.signal == args.signal]
     if args.addr:
@@ -1594,7 +1711,7 @@ def main() -> int:
     # A waiver that matches nothing is a claim nobody can check any more: the
     # finding it excused is gone, or its key drifted when a neighbouring
     # citation started passing. Either way it should be deleted, not carried.
-    unused = sorted(set(waivers) - {f.key for f in findings})
+    unused = sorted(set(waivers) - all_keys)
     if unused:
         print(
             f"\n{len(unused)} waiver(s) in {WAIVERS.name} match no current "

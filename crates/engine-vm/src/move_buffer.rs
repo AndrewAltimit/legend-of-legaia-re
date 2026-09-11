@@ -27,7 +27,7 @@
 //! struct ([`MoveBufferState`]) rather than extending
 //! [`actor_tick::ActorPhysics`].
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No bytes from `SCUS_942.54` live in this crate. The two reference
 //! dumps (`ghidra/scripts/funcs/800204f8.txt`,
@@ -247,7 +247,7 @@ pub trait MoveBufferHost {
     fn resolve_record(&self, actor_status_flags: u32, requested_id: i16) -> Option<&[u8]>;
 }
 
-/// Per-bone ramp envelope tick - clean-room port of `FUN_80020740`
+/// Per-bone ramp envelope tick - port of `FUN_80020740`
 /// (`ghidra/scripts/funcs/80020740.txt`).
 ///
 /// `frame_delta` is the per-frame ramp step in 1/16 units (mirrors
@@ -383,7 +383,7 @@ pub fn envelope_tick(state: &mut MoveBufferState, frame_delta: u8) {
     }
 }
 
-/// Per-actor move-buffer cursor advance - clean-room port of
+/// Per-actor move-buffer cursor advance - port of
 /// `FUN_800204F8` (`ghidra/scripts/funcs/800204f8.txt`).
 ///
 /// `frame_delta` is the per-frame cursor step in 1/16 frame units

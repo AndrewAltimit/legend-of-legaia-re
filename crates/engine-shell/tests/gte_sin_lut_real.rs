@@ -1,4 +1,4 @@
-//! Pin the clean-room trig reproduction against the retail GTE sin/cos LUT.
+//! Pin the from-scratch trig reproduction against the retail GTE sin/cos LUT.
 //!
 //! `FUN_8004638c` (RotMatrixZ) and its X/Y siblings index a q3.12 sine LUT
 //! pair inside `SCUS_942.54`: sine at VA `0x80070A2C + 2*angle`, "cosine" at

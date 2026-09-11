@@ -254,6 +254,7 @@ mod battle_stone_gaze;
 mod battle_turns_items;
 mod battle_tutorial_flow;
 mod battle_xp_attack;
+mod camera_offset_ease;
 mod cast_band;
 mod core;
 mod dialogue_runner_fx;

@@ -1,6 +1,6 @@
-//! Clean-room RGB<->HSV helpers used by ext sub-ops 0x1F / 0x20.
+//! From-scratch RGB<->HSV helpers used by ext sub-ops 0x1F / 0x20.
 
-/// Clean-room RGB→HSV port of `FUN_8001a78c`. Inputs are 0..255; outputs are
+/// RGB→HSV port of `FUN_8001a78c`. Inputs are 0..255; outputs are
 /// `(H ∈ 0..0x167, S ∈ 0..255, V ∈ 0..255)`. Used by ext sub-ops 0x1F / 0x20
 /// to rotate a packed RGB color in HSV space.
 ///
@@ -34,7 +34,7 @@ pub fn rgb_to_hsv(r: i32, g: i32, b: i32) -> (i32, i32, i32) {
     (h, s, v)
 }
 
-/// Clean-room HSV→RGB port of `FUN_8001a8dc`. `H ∈ 0..0x167`, `S, V ∈ 0..256`.
+/// HSV→RGB port of `FUN_8001a8dc`. `H ∈ 0..0x167`, `S, V ∈ 0..256`.
 /// Returns `(R, G, B)` each in 0..255 (caller may clamp further; FUN_8001a6c8
 /// caps at 0xF8). Used by ext sub-ops 0x1F / 0x20.
 pub fn hsv_to_rgb(h: i32, s: i32, v: i32) -> (i32, i32, i32) {

@@ -2,7 +2,7 @@
 //!
 //! Two layers:
 //!
-//! - [`spu`] - a clean-room model of the PSX SPU: 24 voices, 512 KB SPU RAM,
+//! - [`spu`] - a from-scratch model of the PSX SPU: 24 voices, 512 KB SPU RAM,
 //!   ADSR-shaped envelopes, libspu-shaped transfer engine. Drives the
 //!   actual playback every output frame at 44.1 kHz internal rate. This is
 //!   what the engine reimplementation track uses to render in-game audio.
@@ -14,7 +14,7 @@
 //!   convenience path that materialises a one-block stream into SPU RAM,
 //!   sets up voice 0, and key-ons it through the same SPU model.
 //!
-//! No Sony bytes - this is a clean-room port from the libspu API surface
+//! No Sony bytes - this is a port from the libspu API surface
 //! and the PSX hardware register layout (see `docs/subsystems/audio.md`).
 
 use std::sync::{Arc, Mutex};
@@ -39,6 +39,7 @@ pub mod vab_bind;
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
 mod webaudio;
 pub mod xa_clip_bank;
+pub mod xa_transport;
 
 pub use anim_cue::{
     AnimCueActor, AnimCueEmit, AnimCueSlot, AnimCueState, AnimCueWalk, walk_anim_cues,

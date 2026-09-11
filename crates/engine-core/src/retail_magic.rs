@@ -312,7 +312,7 @@ pub fn seru_magic_catalog_from_scus(scus: &[u8]) -> Option<SpellCatalog> {
 /// Tail Fire). The disc is the single source for this block, so a vanilla
 /// placeholder that happens to sit on a real id under another name (`0x26`
 /// "Crash" on the disc's Thunderbolt) is replaced, while a vanilla record on
-/// its real id under the same name (the clean-room monster block - Divide /
+/// its real id under the same name (the port's monster block - Divide /
 /// Steal / Power Up / Curse All / ...) keeps its effect class and target and
 /// takes the disc's cost.
 ///

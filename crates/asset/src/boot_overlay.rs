@@ -148,8 +148,8 @@ pub struct SlotBChoice {
 // PORT: FUN_80025ba0
 // No *engine* consumer, by design - and deliberately carrying no inert-port
 // disclosure, because a host root does reach it. The choice modelled here is
-// *which MIPS overlay to DMA into slot B*, and the clean-room
-// engine installs no retail overlays; it reimplements 900 / 901's contents in
+// *which MIPS overlay to DMA into slot B*, and the port
+// installs no retail overlays; it reimplements 900 / 901's contents in
 // Rust, so there is no engine state for it to drive. Its consumers are on the
 // preservation track, and one of them is a host root: `asset boot-overlay`
 // prints the choice for every (flag, suppression) pair against a real

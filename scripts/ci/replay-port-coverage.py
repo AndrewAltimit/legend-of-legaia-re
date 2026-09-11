@@ -112,9 +112,13 @@ Usage:
     cargo llvm-cov clean --workspace
 
     # NO `--release` anywhere - see "a release export loses executed code"
-    # below. The whole set (`--list-ladders`) takes tens of minutes on the default
-    # profile (`menu_replay` is a 4.7s run), so the optimised build buys
-    # nothing here and costs executed code.
+    # below. On the default profile the whole set (`--list-ladders`) is about an
+    # hour and a half of wall clock, and the shape of that is worth knowing:
+    # forty-six of the forty-seven ladders finish in half an hour together,
+    # and `chapter1_frontier_ladder` alone takes the other hour, because it is
+    # disc-heavy and an unoptimised build pays for every sector it walks. The
+    # optimised build would buy that back and cost executed code, so it is
+    # still the wrong trade - budget for the tail instead.
     # `--list-ladders` prints `<test> <package>` for every canonical entry, so
     # the recipe cannot drift from the list the report checks against.
     #
@@ -453,6 +457,21 @@ CANONICAL_LADDERS = [
     # `--release` (see "a release export loses executed code" above).
     ("chapter1_frontier_ladder", "legaia-engine-core"),
     # ------------------------------------------------------------------ </L4>
+    # --- lane W4-D -----------------------------------------------------
+    # `w4d_cast_band_ladder` is denominated in **spell ids**, which is the axis
+    # every other member is blind to. `cast_module_ticks`' bodies are gated on
+    # `World::cast_module_for`, so a route ladder enters whichever one or two
+    # casts its route happens to reach and the rest of the PROT 0903..0966
+    # band reads *live but never entered* no matter how far the route goes.
+    # This one asks the engine's own two dispatchers for a representative id
+    # per band entry and steps each entry's module code, so the gap it closes
+    # is an id gap rather than a reach gap.
+    #
+    # Disc-gated, and specifically on `SCUS_942.54` rather than only on
+    # `PROT.DAT`: the capture half of the band is keyed on the spell record's
+    # class byte, so without the executable every id falls to the action-id
+    # dispatcher and half the band cannot be seated.
+    ("w4d_cast_band_ladder", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
@@ -1037,6 +1056,21 @@ def page_audit() -> int:
     with csv_path.open() as fh:
         for row in csv.DictReader(fh):
             rows[row["addr"].lower()] = row
+
+    # `live` is written only by a run that did the reachability pass. Every
+    # other mode - the default, `--dashboard`, `--missing-ports` - leaves the
+    # column EMPTY, and an empty column reads exactly like "not live": the join
+    # then reports every cited address as having left the page, which is the
+    # loudest possible output and says nothing. Refuse the join instead, the way
+    # `check-port-provenance.py` refuses an empty dump corpus.
+    ported = [r for r in rows.values() if r.get("ported") == "1"]
+    if ported and not any(r.get("live") == "1" for r in ported):
+        print(f"[skip] {csv_path} has {len(ported)} ported row(s) and no `live` "
+              "column - it was written without the reachability pass. Re-run "
+              "`python3 scripts/ci/port-catalog.py --live` and try again; "
+              "joining against an unpopulated column would call every cited "
+              "address dead.")
+        return 0
 
     left: list[tuple[str, str]] = []
     unported: list[str] = []

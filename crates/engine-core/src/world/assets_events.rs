@@ -88,7 +88,7 @@ impl World {
     /// allocator's `iVar13 = DAT_8007C018[(int16_t)tmd_idx]` read - the
     /// caller is responsible for clamping negative indices (the retail
     /// engine sign-extends the i16 then implicitly treats it as unsigned;
-    /// the clean-room port returns `None` for negative or out-of-range
+    /// the port returns `None` for negative or out-of-range
     /// indices via the `i16 → usize` cast guarded by the bounds check).
     ///
     /// Returns `None` when the slot is empty or `idx` is out of range.
@@ -124,7 +124,7 @@ impl World {
     ///    [`Actor::spawn_record`]. The retail allocator writes the
     ///    bytecode pointer to `actor[+0x90]` (different from the `+0x4C`
     ///    VDF-body field that the synchronous `0x4C 0xD8` path uses);
-    ///    the clean-room port stores the raw bytes on `spawn_record`
+    ///    the port stores the raw bytes on `spawn_record`
     ///    regardless and lets the engine route them as field-VM
     ///    bytecode for a child actor (the records are scripted-child
     ///    coroutines, not TMD-body or kind/variant tuples).
@@ -230,38 +230,45 @@ impl World {
     /// ([`World::spawn_action_table_effect`]); nothing here mutates gameplay
     /// state beyond the SFX queue below. Returns them in walk order.
     ///
-    /// Draining also fires each table-form spawn's **per-effect SFX byte**
-    /// into [`World::battle_sfx_cues`] (the queue both hosts already play
-    /// through their SFX scheduler), mirroring retail's table arm: only a
-    /// plain code below
-    /// [`crate::action_effect_script::TABLE_SFX_GATE`] consults the
-    /// `0x801F6418` map, and only a non-zero byte submits the `0x1DC` sound
-    /// packet. The map comes off the installed move-power catalog's aux
-    /// tables (the same PROT 0898 parse the table spawner reads its
-    /// prototypes from), so a disc-free battle degrades to silent spawns
-    /// exactly as it degrades to no spawns.
+    /// Draining also queues each table-form spawn's **per-effect CLUT stage**
+    /// onto [`World::battle_clut_stages`], mirroring retail's table arm: only
+    /// a plain code below
+    /// [`crate::action_effect_script::TABLE_CLUT_GATE`] consults the
+    /// `0x801F6418` map, and only a non-zero byte performs the copy. The map
+    /// comes off the installed move-power catalog's aux tables (the same PROT
+    /// 0898 parse the table spawner reads its prototypes from), so a
+    /// disc-free battle degrades to unstaged palettes exactly as it degrades
+    /// to no spawns.
     ///
-    /// PORT: FUN_801DEA50 (`0x801df0d4..0x801df134`, the SFX arm)
-    /// REF: FUN_80058490 (the sound-driver submit the retail packet reaches)
+    /// That byte was pushed into [`World::battle_sfx_cues`] as a sound cue id
+    /// while `0x801F6418` was read as an SFX map and `FUN_80058490` as the
+    /// sound-driver command lane. Both readings are false - the byte is a
+    /// VRAM x and the call is `MoveImage` - so the SFX scheduler was being
+    /// handed palette columns to look up in a sound bank. See
+    /// [`crate::battle_effect_clut`].
+    ///
+    /// PORT: FUN_801DEA50 (`0x801df0d4..0x801df134`, the CLUT-stage arm)
+    /// REF: FUN_80058490 (`MoveImage` - the blit the `RECT` reaches)
     pub fn drain_battle_effect_spawns(&mut self) -> Vec<crate::battle_events::BattleEffectSpawn> {
         if let Some(aux) = self.move_power.as_ref().and_then(|cat| cat.aux_tables()) {
-            let cues: Vec<crate::battle_events::BattleSfxCue> = self
+            let stages: Vec<u8> = self
                 .battle_effect_spawns
                 .iter()
-                .filter(|s| !s.direct && s.effect < crate::action_effect_script::TABLE_SFX_GATE)
-                .filter_map(|s| {
-                    let sfx = aux.effect_sfx(s.effect).filter(|&b| b != 0)?;
-                    Some(crate::battle_events::BattleSfxCue {
-                        kind: u16::from(sfx),
-                        timing_frames: 0,
-                        actor_slot: s.actor_slot,
-                        target_slot: s.actor_slot,
-                    })
-                })
+                .filter(|s| !s.direct && s.effect < crate::action_effect_script::TABLE_CLUT_GATE)
+                .filter_map(|s| aux.effect_clut_x(s.effect).filter(|&b| b != 0))
                 .collect();
-            self.battle_sfx_cues.extend(cues);
+            self.battle_clut_stages.extend(stages);
         }
         std::mem::take(&mut self.battle_effect_spawns)
+    }
+
+    /// Drain the battle **effect CLUT stages** queued this frame - one source
+    /// x per table-form effect spawn whose `0x801F6418` map byte is non-zero.
+    /// A host applies each with
+    /// [`crate::battle_effect_clut::stage_effect_clut`] against its battle
+    /// VRAM and re-uploads; purely cosmetic, like the spawns themselves.
+    pub fn drain_battle_clut_stages(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.battle_clut_stages)
     }
 
     /// Drain the Tactical-Arts shout cues queued this frame (one per executed

@@ -103,6 +103,7 @@ pub mod screen_elements;
 pub mod seru_trade;
 pub mod sfx_table;
 pub mod shop_stock;
+pub mod slot_b_module;
 pub mod slot_payout;
 pub mod sound_pack;
 pub mod spell_names;
@@ -268,8 +269,10 @@ pub fn decode(buffer: &[u8], desc: &Descriptor, mode: DecodeMode) -> Result<Vec<
 /// where each `(size, off)` pair is a [`Descriptor`] and `total_size` is the sum of the
 /// descriptors' decompressed sizes (a word retail never reads - see `scene_asset_table`).
 ///
-/// The header has 2 metadata u32s (purpose currently unknown) before the
-/// descriptor pairs. `count` is how many descriptors to read; player.lzs uses 3.
+/// The header is 2 u32s before the descriptor pairs: `meta[0]` is the
+/// descriptor count retail loops on, `meta[1]` the decompressed-size sum
+/// nothing reads (`docs/formats/asset-descriptor.md`). `count` is how many
+/// descriptors to read; player.lzs uses 3.
 pub fn parse_player_lzs(file: &[u8], count: usize) -> Result<Container> {
     if file.len() < 8 + count * 8 {
         bail!(

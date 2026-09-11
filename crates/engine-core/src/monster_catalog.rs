@@ -32,7 +32,7 @@
 
 use std::collections::HashMap;
 
-/// One monster's definition (clean-room, vanilla values).
+/// One monster's definition (port-side, vanilla values).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MonsterDef {
     pub id: u16,

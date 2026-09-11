@@ -742,9 +742,21 @@ bounds-checks the sub-op (`< 0x16`) and jumps through the 22-entry JT at
 | 0x14 | `[43, 0x14][x][y][scale][dur]` s16s | `FUN_801F8E6C(x, y, scale, dur)` - **panel move/scale** (`scale` 4.12 fixed) | +10 |
 | 0x15 | `[43, 0x15][x_left][x_right][y0][y1][y2][y3]` i16s | `FUN_801F8F28(operand+1)` - **letterbox config** | +14 |
 
-On disc the family is exclusive to the eight ending-sequence scenes
+On disc the family is exclusive to the **ten** ending-sequence scenes
 (`edteien`, `edbylon`, `edbalden`, `edlast`, `edretoin`, `edkorout`,
-`edson`, `edstati3`), always in partition-2 (cutscene-timeline) records:
+`edson`, `edstati3`, `edbubu`, `eddoman`), all but one site in partition-2
+(cutscene-timeline) records. The last two were missing from the earlier list of
+eight, and the count is now a measurement rather than a reading: decoding every
+partition record of every MAN carrier of every CDNAME scene (124 scenes, 103
+MAN carriers) finds 311 **widget** sub-op sites among 1081 decoded op-`0x43`
+sites. The disc-gated test `crates/engine-core/tests/screen_fx_widgets.rs`
+re-runs that census and **prints** it, asserting only that each spawn sub-op is
+carried by some scene and reaches a draw list - the count and the ten-scene
+list are not pinned by an assertion, so quote them as a measurement, not as a
+gate. The
+single exception to "partition-2" is one sub-`0x11` site a linear walk decodes
+in `edlast` partition-1; a partition record whose `pc0` desyncs decodes phantom
+instructions, so treat that one as unconfirmed. The choreography:
 mask-to-black (`0x11` with the degenerate rect `[0x20,0x20,0x20,0x20]`) →
 fullscreen photo panel (`0x13`, every retail record `[0,0,0x140,0xE0,
 0x200,0]` - the >0x100-wide two-page split is exercised by every use) →

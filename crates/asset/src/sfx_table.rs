@@ -33,7 +33,7 @@
 //! cover.
 //!
 //! The actual SPU programming (`FUN_80065034` -> `SpuSetVoiceAttr`) is libsnd
-//! plumbing and out of clean-room scope; what this module ports is the static
+//! plumbing and out of the port's scope; what this module ports is the static
 //! **data**. The engine's `legaia_engine_audio::SfxBank` consumes the decoded
 //! descriptors (`program` -> program index, `note` -> key).
 //!

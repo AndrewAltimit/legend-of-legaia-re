@@ -9,9 +9,9 @@
 //!   activate it, copy the vec3 position into [`MoveActorState::world_x`]
 //!   / `world_y` / `world_z`. The GTE world→view transform retail runs
 //!   at `FUN_8003D344` is folded into the per-frame renderer pass in the
-//!   clean-room engine, so the spawn-time call is a no-op here.
+//!   engine, so the spawn-time call is a no-op here.
 //! - `rebuild_object_table` → the retail "stamp +0x44 pointer table"
-//!   semantic collapses in the clean-room because rendering reaches
+//!   semantic collapses in the port because rendering reaches
 //!   into [`Actor::tmd_ref`]`.tmd.objects` directly. The method returns
 //!   `true` iff the actor has a populated TMD reference (set by the
 //!   field-VM `0x4C 0xD8` host hook from [`World::global_tmd`]) and
@@ -20,13 +20,13 @@
 //!   [`Actor::active`].
 //! - `on_actor_cleanup` → the retail body is effectively a no-op
 //!   ([`ghidra/scripts/funcs/80024dfc.txt`] reads `actor[+0x56]` low
-//!   nibble and returns); the clean-room hook drops the per-actor TMD
+//!   nibble and returns); the port's hook drops the per-actor TMD
 //!   reference + deactivates the slot so the pool can recycle it.
 //!
 //! ## Pool keying (`pool_a` / `pool_b`)
 //!
 //! Retail's `FUN_80020DE0(pool_a, pool_b)` selects one of three actor
-//! pools by the supplied `(a, b)` discriminator. The clean-room engine
+//! pools by the supplied `(a, b)` discriminator. The engine
 //! maintains a single [`World::actors`] vector and ignores the
 //! discriminator (the trait declaration explicitly notes this is fine
 //! for hosts that maintain a single global pool).
@@ -60,7 +60,7 @@ impl ActorAllocatorHost for World {
     ) -> Option<ActorHandle> {
         // Find the first inactive slot. Retail's FUN_80020DE0 walks a
         // free-list inside the per-pool linked list at gp+0x148; the
-        // clean-room engine's simpler vector pool reduces to a linear
+        // engine's simpler vector pool reduces to a linear
         // scan since per-frame churn is bounded by MAX_ACTORS.
         let slot = self.actors.iter().position(|a| !a.active)?;
         let actor = &mut self.actors[slot];
@@ -83,7 +83,7 @@ impl ActorAllocatorHost for World {
         // pointers into actor's +0x44-rooted pointer table, sets the
         // 0x08000000 "renderable" bit in actor[+0x10].
         //
-        // Clean-room: rendering walks `tmd_ref.tmd.objects` directly,
+        // Port side: rendering walks `tmd_ref.tmd.objects` directly,
         // so the +0x44 table doesn't exist. The "renderable" bit maps
         // to `Actor::active`. The method succeeds iff the actor was
         // populated with a TMD reference upstream (the field-VM
@@ -98,7 +98,7 @@ impl ActorAllocatorHost for World {
 
     fn on_actor_cleanup(&mut self, actor: ActorHandle) {
         // Retail FUN_80024DFC body is a no-op (reads actor[+0x56] low
-        // nibble into v1, returns without setting v0). The clean-room
+        // nibble into v1, returns without setting v0). The port's
         // hook drops the per-actor TMD reference + deactivates the
         // slot so a subsequent spawn_at_position can claim it.
         if let Some(a) = self.actors.get_mut(actor as usize) {
@@ -504,7 +504,7 @@ mod tests {
     #[test]
     fn move_spawn_forwards_retail_pool_selectors() {
         // Sanity-check the constants pass through the trait dispatch. The
-        // single-pool clean-room engine ignores them, but the values must
+        // single-pool engine ignores them, but the values must
         // match the SCUS dump.
         assert_eq!(MOVE_SPAWN_POOL_A, 0x8007_062C);
         assert_eq!(MOVE_SPAWN_POOL_B, 0x8007_C350);

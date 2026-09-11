@@ -181,6 +181,53 @@ a large part of that overlay.
 An overlay row without a cited own-content length is skipped rather than guessed
 at, so a new row is unmeasured until someone states its length.
 
+### `content_bytes` is longer than the image's own code: the inherited tail
+
+`content_bytes` is a **sector** extent, and the packer that laid the disc wrote
+each overlay into a buffer it did not clear first. A module shorter than that
+buffer therefore flushes its own bytes and then whatever the previous, longer
+module left behind - inside `content_bytes`, at the file offsets that module
+occupies. Counting the residue puts one module's code in another module's
+denominator, and no dump of the shorter module can ever close it.
+
+The run is found by byte equality rather than inferred. Two images at the same
+link base are compared at the **same file offset**: where a *strictly longer*
+sibling reproduces this image's bytes from some offset through the end of its
+content, everything from that offset is the shorter image's **inherited tail**.
+Both the coverage denominator and the
+[attribution sweep](#byte-level-attribution) take the cut, so a row is measured
+against its own code and the sweep asks its at-VA question of its own code.
+The rule and its two guards live in
+[`scripts/ghidra-analysis/inherited_tail.py`](../../scripts/ghidra-analysis/inherited_tail.py).
+
+Two guards keep it from cutting an image short:
+
+- **Strictly longer.** A longer sibling is a candidate *writer* for the bytes.
+  Two images of equal length that share a suffix are both carrying somebody
+  else's residue and neither can be named as its owner, so the run stays in both
+  denominators rather than silently leaving both.
+- **A minimum length.** At `MIN_TAIL_BYTES` the match is sixteen instructions
+  long *and* runs to the end of the file, which no shared library routine does
+  unless it is the last thing linked.
+- **Same link base.** Only images that load at the same `base_va` are compared,
+  so a run inherited across bases is not cut.
+
+Quote a tail figure with the rule it was measured under. Under all three
+restrictions, 66 of the 83 mapped images carry a tail (61,597 B). Drop the
+same-base and strictly-longer restrictions and the same suffix test reports 79
+of 83 (104,700 B): 8 more images whose donor is the same length, and 5 whose
+donor loads at a different base - PROT 0904 / 0912 / 0922 end in PROT 0899's
+menu code, and `gameover` in `world_map_render`'s. Only the first figure is the
+one this gate's denominator uses.
+
+What it moves, and why the moves go both ways: the tail is subtracted from the
+denominator, which raises a row, while an extent that used to be credited to
+two images now belongs to one, which lowers whichever of them does not own it.
+PROT 0926 is the extreme: its own content is the eight bytes of a `jr ra; nop`
+stub ([`static-overlays.toml`](../../crates/asset/data/static-overlays.toml)
+already says so in prose), everything above is PROT 0925's, and its floor was
+being carried entirely by its sibling's dumps.
+
 ### What the `SCUS_942.54` gap turned out to be
 
 Worth stating as a result rather than as method, because it is the clearest
@@ -226,6 +273,7 @@ shape is work:
 | `padding` | every word is `nop`: inter-function alignment | no |
 | `mostly_padding` | at least half the words are zero | no |
 | `data_segment` | at or above the image's last `jr ra`, and holding no `lui $rt, 0x80xx` | no |
+| `spawn_record_band` | one bounded spawn record of a slot-B module image | no |
 | `no_exit` | 1024 bytes or more with no `jr ra` in them | if the statistic passes it |
 | `no_boundary` | neither delimiter word: no `addiu $sp, $sp, -F` and no `jr ra`, at any length | if the statistic passes it |
 | `return_tail` | a `jr ra` (+ `nop`) the preceding routine's analysed body stops short of | if the statistic passes it |
@@ -375,6 +423,50 @@ overlay above `0x801E43E8` opens on the casino prize table at `0x801E4518`; and
 bytes are the memory-card filename string and whose four publisher-logo TIMs sit
 at file `+0x21C4` / `+0xD3E4` / `+0x18E04` / `+0x1CE44`.
 
+#### `spawn_record_band`: a shape a parser names
+
+Every shape above is a property of MIPS - where a body can end, which words
+delimit one, what a `nop` decodes to. This one is not: it is a range a parser
+in this workspace claims, `legaia_asset::slot_b_module`, and the mirror in
+`scripts/ci/disc-coverage.py` is that parser's rule rather than a test over the
+bytes' distribution. The full layout is
+[`slot-b-module-layout.md`](../formats/slot-b-module-layout.md); what matters
+here is the evidence and the seam.
+
+**The evidence.** A slot-B module (PROT `0903..=0966`, all at base
+`0x801F69D8`) materialises each of its spawn records' addresses with a
+`lui` / `addiu` pair and hands it to `FUN_80021B04` or `FUN_80050ED4` in `$a2`.
+The next record's pointer is the current one's end, so both ends of a claim are
+addresses the module's own code computes. Four filters keep a spurious pointer
+out, and the load-bearing one is that the **call site** must lie inside a framed
+body of this image: a band image's tail is a byte-identical, same-offset copy of
+another image's bytes, so an inherited fragment's own spawn calls name the
+sibling's records (PROT 0909's three inherited calls name 484 bytes of PROT
+0908's). The rest are the in-image range test, an intervening `jal` (`$a2` is
+caller-saved), and a `model_sel` the spawn helper would not dispatch. With all
+four, and with each claim cut at the next framed function's prologue, no claim
+in the band overlaps a dump extent the byte attribution places in the same
+image.
+
+**Why the statistical shapes could not reach it.** `data_segment`'s second leg
+rejects any run holding a `lui $rt, 0x8001..0x801F`. A record's body is move-VM
+bytecode, i.e. arbitrary bytes, so a long enough band contains that word by
+accident - 33 of them in PROT 0923's, 38 in PROT 0917's. The shape therefore
+never fired on the band, `no_exit` and `no_boundary` fired but do not enter
+`classify_gap`, and the opcode statistic scored the records as code. Several
+images' whole record bands ranked as dump work on the strength of that.
+
+**The seam.** Unlike `no_boundary`, this shape *does* enter the denominator -
+that is the point of it - so the change has to leave every other byte where it
+was. It does, by never re-cutting a gap: the records inside a gap leave the
+denominator with their own shape and the rest of the gap keeps the verdict the
+whole gap earned. Cutting the gap at the record edges and re-classifying the
+pieces instead moves bytes that have nothing to do with the band, because both
+`in_data_segment` and the tiny-gap fiat answer per window - measured, that
+reading moved two images the *wrong* way while the band was being credited.
+The worklist runs are labelled the same way: `split_gap` classifies, then the
+run is cut at the record edges purely to name the pieces.
+
 #### Why the worklist classifies at a finer grain than the denominator
 
 The statistical test answers for whatever span it is given. Over a
@@ -522,6 +614,16 @@ reads and applies:
 | `gapped` / `data` | not a coherent function body at that VA | credit nobody |
 | `short` / `unresolved` / `no_disassembly` | the window cannot sign it | residue: stays ambiguous |
 
+Most of what `identical` used to hold was the inherited tail rather than a real
+tie. Once the sweep cuts each image at its own content (see
+[the inherited tail](#content_bytes-is-longer-than-the-images-own-code-the-inherited-tail)),
+a dump whose extent lies wholly in one image's residue has exactly one owner
+left, and the class collapses from 45 extents to 7 with the difference landing
+in `unique`. `overlay_cast_curse_0943_801f7d34` is the worked case: PROT 0943's
+own content ends at file `0x1037` (VA `0x801F7A0F`) and the dump opens `0x32D`
+bytes past that, in PROT 0942's residue - the two images agree there because one
+of them wrote it.
+
 `divergent` used to be residue, and that reading was wrong in a way worth
 naming: the class does not mean "we could not tell", it means *every* named
 image was told, positively, by a dump of its own. Two dumps sharing an
@@ -661,7 +763,7 @@ in that image covers. Columns:
 
 | Column | Meaning |
 |---|---|
-| `shape` | `code` is work; `padding` / `return_tail` / `bios_thunk_slot` / `psyq_lib_stamp` / `constant_table` / `data` / `no_exit` / `no_boundary` / `data_segment` / `mostly_padding` are structural, and persist however much is dumped |
+| `shape` | `code` is work; `padding` / `return_tail` / `bios_thunk_slot` / `psyq_lib_stamp` / `constant_table` / `data` / `no_exit` / `no_boundary` / `data_segment` / `mostly_padding` / `spawn_record_band` are structural, and persist however much is dumped |
 | `ambiguous` | some dump does print at that VA, but the bytes could not place it in this image - a sibling overlay at the same base is the other candidate |
 | `spans_at_start` | how many measured images map the run's start VA |
 

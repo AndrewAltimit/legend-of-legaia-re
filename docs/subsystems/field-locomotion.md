@@ -136,7 +136,7 @@ The player actor pointer is the global `_DAT_8007c364`. Confirmed fields on the 
 |---|---|
 | `+0x10` | flags; bit `0x80000` = movement disabled (encounter pending / cutscene), bit `0x1000000` = action/interact requested |
 | `+0x14` | world X (`s16`) |
-| `+0x16` | terrain-conform angle (`s16`), **not** the yaw - see [NPC dynamic facing](#npc-dynamic-facing) |
+| `+0x16` | **footing** - the height of the floor the actor stands on (`s16`), glided toward the floor sample at a clamped rate by [`FUN_801d1ba0`](#fun_801d1ba0---settle-then-trigger). Not a yaw and not an angle of any kind; the heading is `+0x26`. |
 | `+0x18` | world Z (`s16`) |
 | `+0x26` | heading (8-direction movement angle, set from the pad direction) |
 | `+0x5c` | running/dash state counter (`> 0` switches the walk-animation select) |
@@ -146,7 +146,7 @@ The player actor pointer is the global `_DAT_8007c364`. Confirmed fields on the 
 
 World coordinates are plain `s16` in 1-unit resolution; one collision tile is `0x80` (128) units (see below). The field camera derives its origin by negating these - see [`world-map.md`](world-map.md) and the camera notes in [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
-**Probe trap - read these as 16-bit, not `u32`.** `+0x14` (X), `+0x16` (facing), and `+0x18` (Z) are adjacent `s16` fields, so a 32-bit read of `+0x14` folds the facing word into the X high half and a 32-bit read of `+0x18` folds the next word into the Z high half. A headless nav probe that read them as `u32` measured the *facing* as position drift and (wrongly) concluded the camera-to-pad mapping was "dynamic"; reading `s16` shows the per-room camera is static and the pad maps to world consistently. See the [S4 grid-BFS capture](../tooling/playthrough-coverage.md#s4-captured-the-grid-bfs-door-nav-walks-out-of-vahns-house).
+**Probe trap - read these as 16-bit, not `u32`.** `+0x14` (X), `+0x16` (footing) and `+0x18` (Z) are adjacent `s16` fields, so a 32-bit read of `+0x14` folds the footing word into the X high half and a 32-bit read of `+0x18` folds the next word into the Z high half. A headless nav probe that read them as `u32` measured the *footing* as position drift and (wrongly) concluded the camera-to-pad mapping was "dynamic"; reading `s16` shows the per-room camera is static and the pad maps to world consistently. See the [S4 grid-BFS capture](../tooling/playthrough-coverage.md#s4-captured-the-grid-bfs-door-nav-walks-out-of-vahns-house).
 
 ## Spawn position on scene entry
 
@@ -754,6 +754,15 @@ The nibble-7 op is the same dispatch row in [`script-vm.md`](script-vm.md#0x4c-m
 The `+0x8000` map is a per-tile object/attribute word, not a terrain-flag grid: its low 9 bits index the `+0x0000` object-record table, which `FUN_8003a55c` walks at scene entry to spawn the NPCs/objects occupying each tile. `FUN_8003aeb0` (the field/town scene-entry map-init - note its `town_mode` / `baria_mode` debug strings) ORs the `0x400` footprint flag into these cells from the fallback trigger window's kind-1 records (`+0x12000`, offset/count at `+0x12006` / `+0x12008`, 4-byte records - the gate-0 object-bind entries of the trigger block below).
 
 The remaining derived bits have one writer, the grid-prep refresh **`FUN_80017bec`** (called from the per-scene initializer `FUN_801D6704`): it decays flags bit 0 of any object descriptor whose `+0x16` countdown reached zero, mirrors each cell's owning-descriptor flags bits 0/1 into cell bits `0x1000`/`0x2000`, and stamps `0x200 << kind` on every tile named by the trigger block's kind-0/1/2 sub-tables - which is where the walk-on dispatch's `cell & 0x600` fast gate and the floor sampler's `0x800` elevation-override marker come from. Engine port: `legaia_engine_core::field_regions::refresh_object_grid_marks` (derived from the static-recomp instruction stream; the Ghidra dump for this function carries no disassembly).
+
+One more cell bit belongs to the renderer rather than to locomotion:
+**`0x8000` is a per-tile depth-sort flag** on the ground quad. PROT 0900's
+ground pass buckets the tile by its own minimum projected `Z` when the bit is
+set, and drops it into a fixed far bucket when it is clear (`0x801F6F94` /
+`0x801F6FEC`). In `teien` 297 of 451 non-zero cells carry it. The ground pass
+itself - and the fact that **no** draw channel anywhere reads cell bit
+`0x0800` - is on
+[`renderer.md`](renderer.md#the-field-ground-pass-two-emitters-one-gate).
 
 That `0x400` bit is load-bearing, and the on-disc `.MAP` already carries it (a live town field buffer is byte-identical to the disc bytes here): read on a placed object's **footprint-anchor** tile it says *"this object is the init sweep's - do not re-create it"*, which is how the second placed-object spawner `FUN_801d7b50` stays disjoint from `FUN_8003a55c`. See [The object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose).
 
@@ -1452,7 +1461,7 @@ in through the script door and back out through the map door, no story flags);
 
 The field/event VM (`FUN_801DE840`, see [`script-vm.md`](script-vm.md)) reaches a family of small overlay-resident handlers that write the **actor motion state** the locomotion and per-scene-actor-motion paths above then read. Each is a leaf of the VM dispatch: it consumes its inline operand bytes off the script cursor (register `s6`) against the current actor (register `s5`), writes the motion fields, and exits through the VM return idiom `j 0x801e3624` / `0x801e3628` (advancing the cursor `s8`).
 
-The field offsets they touch are the same ones tabulated in [Player actor fields used](#player-actor-fields-used) (`+0x14` X, `+0x16` terrain-conform angle, `+0x18` Z, `+0x26` heading, `+0x62` motion-clip control word, `+0x72` speed multiplier, `+0x8c`/`+0x8d` tile). All are field-overlay (`0897`) functions; each dump is `ghidra/scripts/funcs/overlay_0897[_xxx_dat]_<addr>.txt`.
+The field offsets they touch are the same ones tabulated in [Player actor fields used](#player-actor-fields-used) (`+0x14` X, `+0x16` footing height, `+0x18` Z, `+0x26` heading, `+0x62` motion-clip control word, `+0x72` speed multiplier, `+0x8c`/`+0x8d` tile). All are field-overlay (`0897`) functions; each dump is `ghidra/scripts/funcs/overlay_0897[_xxx_dat]_<addr>.txt`.
 
 | Handler | Role |
 |---|---|
@@ -1537,7 +1546,7 @@ Those are the flags programs 0 and 1 **set** and programs 2 and 3 **clear**. So 
 
 Several arms **fall through** into the next state inside the same call - `1→2→3→4`, `11→12`, `21→22`, `23→24`, `31→32→33` - because they bump `+0x54` without a jump and the arms are laid out in state order. A one-arm-per-frame reading delays each program's first part stage by three frames and its voice cue by two.
 
-The lift leg (state `0x18`) winds `player[+0x8E]` down by `((lift + actor[+0x16] + 0x1F) >> 5)` per vsync, clamped at `0x10` (the disassembly spells the clamp `slti v0,v1,0x11`), mirrors `-lift` into `player[+0x16]`, and ends when that angle returns to the value latched at `+0x16`. It is the same `+0x8E` / `+0x16` idiom as the dev warp applier `FUN_801EE328`'s rise-up arm.
+The lift leg (state `0x18`) winds `player[+0x8E]` down by `((lift + actor[+0x16] + 0x1F) >> 5)` per vsync, clamped at `0x10` (the disassembly spells the clamp `slti v0,v1,0x11`), mirrors `-lift` into `player[+0x16]`, and ends when that footing height returns to the value latched at `+0x16`. It is the same `+0x8E` / `+0x16` idiom as the dev warp applier `FUN_801EE328`'s rise-up arm.
 
 Both closers end at `0x801D55E0`: test flag `0x18` (`func_0x8003ce64`), clear `player[+0x10] & 0x80000` only if it is **clear**, then set the actor's own retire bit `+0x10 |= 8`. The guard gates the release, not the retire - a close-out under a set guard still removes the actor while leaving the player engaged.
 
@@ -1645,13 +1654,13 @@ once at scene load ([NPC initial facing](#npc-initial-facing)), and the player
 is its own case - `FUN_801D01B0` sets `+0x26` straight from the remapped pad
 direction, a snap with no ramp.
 
-### `+0x16` is not the yaw
+### `+0x16` is the actor's Y, and no consumer reads it as a tilt
 
 The actor tick's first block ramps `+0x16`, which reads like a facing slew but
 is not one: its value comes from `FUN_80019278`, which samples the per-scene
 terrain grid at `*_DAT_1F8003EC + 0x4000 / + 0x8000` under the actor's tile.
-It is the **terrain-conform angle** - the tilt that sits an actor on a slope -
-and it is the only per-frame angle ramp that is not opcode-driven:
+That sampler returns a **height**, so `+0x16` is the actor's world Y and the
+block is a ground-follow smoother, not an angle ramp:
 
 - skipped entirely when `+0x5C < 0` or `+0x10 & 2`;
 - forced to `-actor[+0x8E]` when `+0x10 & 0x20000000`;
@@ -1660,17 +1669,44 @@ and it is the only per-frame angle ramp that is not opcode-driven:
 
 The yaw an NPC faces is `+0x26`, always.
 
-**Open, and load-bearing for the ledge hop:** whether "angle" is the right word
-for this field. The [ledge classifier](#fun_801d1878---probe-and-post) subtracts
-`+0x16` from another `FUN_80019278` return and compares the difference against
-`±0x60` *world units*, then passes the sampled value on as the hop's landing
-**height**; the tile-placement op `FUN_801d03a4` writes `+0x14`, `+0x18` and
-`+0x16` together as one placement. Both wall-press captures read
-`player + 0x16 == -192`, equal to the floor sample under each - one value on a
-flat floor, so it does not separate the two readings on its own. The engine
-ports `+0x16` as the actor's Y either way, which is what the settle and the
-classifier need; what is unresolved is whether some *other* consumer reads the
-same half-word as a tilt.
+#### The tilt reading is falsified
+
+The residual question - whether some *other* consumer reads the same half-word
+as a tilt - is answered no, by two independent byte sweeps.
+
+**Nothing angle-masks it.** A PSX angle is used by masking it `& 0xFFF` and
+indexing the sine/cosine tables at `_DAT_8007B81C` / `DAT_8007B7F8`. Sweeping
+every load at displacement `0x16` with a base other than `sp`: the field
+overlay has **77** and masks **none** of them; `SCUS_942.54` has **44** and
+masks four - and all four are re-bases, not this field. Both live behind a
+materialised `base + 0x80` (`0x80021E3C` `addiu s6,s5,0x80` in `FUN_80021DF4`,
+`0x80023088` `addiu s1,s2,0x80` in the move VM `FUN_80023070`), so the
+half-word they read is `actor[+0x96]` - the documented tween-scale angle op
+`0x03` rotates a step along ([`move-vm.md`](move-vm.md#0x03---world_rotate_add-size-2)). The same
+sweep at displacement `0x26`, the real yaw, masks 10 of 42 in SCUS and 1 of 31
+in the field overlay, which is the positive control that makes the zero
+load-bearing.
+
+**Every actor-shaped access groups it with the position pair, never with the
+rotation triple.** Classifying each `+0x16` access by the other displacements
+its own base register is used at inside a ±20-instruction window: in the field
+overlay 34 sit on an actor-shaped base, and all 34 co-access `+0x14` **and**
+`+0x18`. Two of them copy the pair as raw bytes across the field
+(`0x801D2498` / `0x801D2670`: `swl 0x17` + `swr 0x14`, then `swl 0x1b` +
+`swr 0x18` - an unaligned word copy of `+0x14..+0x1B`), which only makes sense
+for `(x, y, z)`. Those same routines read `+0x24`, `+0x26` and `+0x28`
+separately in the same window: the actor already has a rotation triple, and
+`+0x16` is not in it.
+
+The engine ports `+0x16` as the actor's Y, which is what the settle, the
+[ledge classifier](#fun_801d1878---probe-and-post) and the tile-placement op
+`FUN_801d03a4` (which writes `+0x14`, `+0x16` and `+0x18` as one placement) all
+need. The reference table agrees - `FUN_80025054` "snaps the actor's Y
+(`actor[+0x16]`) to the ground-height sampler's result ... not a heading write"
+([`functions/game-modes.md`](../reference/functions/game-modes.md#8003bc08-ground-follow)).
+The wall-press captures reading `player + 0x16 == -192` are consistent with it
+and were never able to separate the readings on their own, because both
+captures sit on a flat floor.
 
 ### Live corroboration
 

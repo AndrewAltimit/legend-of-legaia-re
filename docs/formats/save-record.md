@@ -114,7 +114,7 @@ Field offsets are pinned by a fusion of three sources:
                                            ; interpretation was wrong.
 +0x179  u8[12]   post_summon_unmapped
 +0x185  u8       displayed_skill_count    ; menu-overlay skill roster count
-+0x186  u8[16]   displayed_skill_ids      ; "Has all Arts" target. Head insert
++0x186  u8[16]   displayed_skill_ids      ; "Has all Arts" target. Ordered insert
                                            ; on item-use spell-learn. Fifteen
                                            ; arts per character, so +0x195 (the
                                            ; sixteenth slot) is never reached

@@ -12,6 +12,16 @@
 //! the captured anchors the RAM happens to start at payload offset `0x27`, but
 //! the anchor search makes the reader robust to that offset.)
 //!
+//! A `.sstate` is **not** main RAM only. The protobuf's memory submessage
+//! carries four length-delimited blobs - RAM, BIOS ROM, parallel port and a
+//! 64 KiB `hardware` region - and the PSX **scratchpad** (`0x1F800000`, 1 KiB)
+//! is that last blob's first kilobyte, with the memory-mapped I/O registers
+//! (`0x1F801000+`) filling the rest. [`SaveState::scratchpad`] exposes it, so
+//! the scratchpad globals the field code lives on (the visible-tile window at
+//! `0x1F8003E8`, the scene-map pointer at `0x1F8003EC`, the floor LUT at
+//! `0x1F80035C`) are readable from a capture instead of only from a live
+//! probe.
+//!
 //! Disc-gated: the anchor search reads `extracted/SCUS_942.54` (or `$LEGAIA_SCUS`).
 
 use std::io::Read;
@@ -27,9 +37,102 @@ pub use legaia_mednafen::game_anchors::{
     GAME_MODE_VA, PLAYER_PTR_VA, PLAYER_X_OFF, PLAYER_Z_OFF, SCENE_NAME_VA, StateIdentity,
 };
 
-/// A loaded PCSX-Redux save state: just its 2 MiB main RAM, KSEG0-addressed.
+/// PSX scratchpad base address (`0x1F800000`), the "fast RAM" the field and
+/// battle code keep their hot globals in.
+pub const SCRATCHPAD_BASE: u32 = 0x1F80_0000;
+
+/// Scratchpad size in bytes (1 KiB). The `.sstate` hardware blob it starts is
+/// 64 KiB; the rest is the memory-mapped I/O register window.
+pub const SCRATCHPAD_LEN: usize = 0x400;
+
+/// Size of the `hardware` blob a PCSX-Redux state carries (`psxH`).
+const HARDWARE_LEN: usize = 0x1_0000;
+
+/// Smallest blob in the same submessage that can be the RAM image - the guard
+/// that keeps a stray 64 KiB field elsewhere in the state from being read as
+/// the hardware region.
+const MIN_RAM_LEN: usize = 0x20_0000;
+
+/// A loaded PCSX-Redux save state: its main RAM (KSEG0-addressed) and, when
+/// the state carries one, the 64 KiB hardware blob whose first kilobyte is the
+/// scratchpad.
 pub struct SaveState {
     ram: Vec<u8>,
+    hardware: Option<Vec<u8>>,
+}
+
+/// Read one protobuf varint at `off`, returning `(value, next_offset)`.
+fn varint(buf: &[u8], mut off: usize) -> Option<(u64, usize)> {
+    let mut out: u64 = 0;
+    let mut shift = 0u32;
+    loop {
+        let b = *buf.get(off)?;
+        off += 1;
+        out |= u64::from(b & 0x7F) << shift;
+        if b & 0x80 == 0 {
+            return Some((out, off));
+        }
+        shift += 7;
+        if shift > 63 {
+            return None;
+        }
+    }
+}
+
+/// Walk one protobuf message, yielding every length-delimited field as
+/// `(payload_start, len)`. Returns `None` if the message does not consume
+/// exactly `[start, end)` - which is what makes "does this blob parse as a
+/// message?" a usable test rather than a guess.
+fn message_fields(buf: &[u8], start: usize, end: usize) -> Option<Vec<(usize, usize)>> {
+    let mut out = Vec::new();
+    let mut off = start;
+    while off < end {
+        let (tag, o) = varint(buf, off)?;
+        match tag & 7 {
+            0 => {
+                let (_, o2) = varint(buf, o)?;
+                off = o2;
+            }
+            1 => off = o.checked_add(8)?,
+            2 => {
+                let (len, o2) = varint(buf, o)?;
+                let len = usize::try_from(len).ok()?;
+                let stop = o2.checked_add(len)?;
+                if stop > end {
+                    return None;
+                }
+                out.push((o2, len));
+                off = stop;
+            }
+            5 => off = o.checked_add(4)?,
+            _ => return None,
+        }
+    }
+    (off == end).then_some(out)
+}
+
+/// Locate the 64 KiB `hardware` blob in a decompressed `.sstate` payload.
+///
+/// Structural rather than positional: walk the top-level message, and for each
+/// length-delimited field that itself parses cleanly as a message, accept it
+/// when it holds **both** a blob of exactly [`HARDWARE_LEN`] and one of at
+/// least [`MIN_RAM_LEN`] - i.e. the memory submessage, whose 64 KiB member is
+/// the hardware region. Nothing here depends on the field numbers or on the
+/// blob's file offset, both of which are PCSX-Redux build details.
+fn find_hardware(payload: &[u8]) -> Option<&[u8]> {
+    for (start, len) in message_fields(payload, 0, payload.len())? {
+        let Some(inner) = message_fields(payload, start, start + len) else {
+            continue;
+        };
+        let Some(hw) = inner.iter().find(|(_, l)| *l == HARDWARE_LEN) else {
+            continue;
+        };
+        if !inner.iter().any(|(_, l)| *l >= MIN_RAM_LEN) {
+            continue;
+        }
+        return payload.get(hw.0..hw.0 + hw.1);
+    }
+    None
 }
 
 impl SaveState {
@@ -67,7 +170,11 @@ impl SaveState {
         let ram = legaia_mednafen::extract::main_ram_via_anchor(payload)
             .context("locate main RAM in PCSX-Redux payload (anchor search)")?
             .to_vec();
-        Ok(Self { ram })
+        // Absent rather than fatal: a state written by a build whose memory
+        // submessage differs still yields main RAM, and every existing
+        // consumer only wants that.
+        let hardware = find_hardware(payload).map(<[u8]>::to_vec);
+        Ok(Self { ram, hardware })
     }
 
     /// The 2 MiB main RAM; index `0` is PSX virtual address `0x80000000`.
@@ -109,6 +216,33 @@ impl SaveState {
     /// struct, or `None` if the struct pointer is implausible.
     pub fn player_pos(&self) -> Option<(i16, i16)> {
         legaia_mednafen::game_anchors::player_pos(&self.ram)
+    }
+
+    /// The state's 64 KiB `hardware` blob (`psxH`), or `None` when the payload
+    /// carries no memory submessage this reader recognises.
+    pub fn hardware(&self) -> Option<&[u8]> {
+        self.hardware.as_deref()
+    }
+
+    /// The 1 KiB PSX **scratchpad** (`0x1F800000..0x1F800400`) - the first
+    /// kilobyte of [`Self::hardware`]. `None` when the blob is absent.
+    pub fn scratchpad(&self) -> Option<&[u8]> {
+        self.hardware().map(|h| &h[..SCRATCHPAD_LEN])
+    }
+
+    /// Read a `u32` from a scratchpad address (`0x1F8003EC`, ...). `None` when
+    /// the state has no scratchpad or the address is outside it.
+    pub fn scratchpad_u32_at(&self, va: u32) -> Option<u32> {
+        let off = usize::try_from(va.checked_sub(SCRATCHPAD_BASE)?).ok()?;
+        let sp = self.scratchpad()?;
+        let b = sp.get(off..off + 4)?;
+        Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    }
+
+    /// Read a `u8` from a scratchpad address.
+    pub fn scratchpad_u8_at(&self, va: u32) -> Option<u8> {
+        let off = usize::try_from(va.checked_sub(SCRATCHPAD_BASE)?).ok()?;
+        self.scratchpad()?.get(off).copied()
     }
 
     /// Scene + mode + player position in one record.

@@ -1467,7 +1467,7 @@ fn null_mem_returns_zero_loads_and_drops_stores() {
 // Real-COP2 oracle: cross-check `Gte::rtpt` against a live PS1 execution.
 //
 // The in-repo `reference_rtps` sweep validates the UNR divide against a second
-// clean-room implementation, but both share this crate's scale conventions, so
+// independent implementation, but both share this crate's scale conventions, so
 // a convention shared by BOTH is invisible to it. This test closes that gap by
 // replaying real GTE RTPT (func 0x30) traffic captured from a Beetle-validated
 // PS1 static recompilation's COP2 register file (its `gte.cpp` gte_divide is the

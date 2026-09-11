@@ -197,7 +197,7 @@ fn read_vector(buf: &[u8], off: usize) -> Result<Vector> {
 
 /// Parse a Legaia TMD blob into its object list.
 ///
-/// This is the clean-room reimplementation of the retail TMD object-table
+/// This is the from-scratch reimplementation of the retail TMD object-table
 /// *descriptor builder*, not the renderer (that's [`descriptor`], tagged for
 /// `FUN_8002735C`):
 ///

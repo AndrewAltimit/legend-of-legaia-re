@@ -1,4 +1,4 @@
-//! Battle-effect VM, ported clean-room from the `0898_xxx_dat` battle overlay.
+//! Battle-effect VM, ported from the `0898_xxx_dat` battle overlay.
 //!
 //! PORT: FUN_801DE914, FUN_801DFDF8, FUN_801E0088
 //! PORT: FUN_801DFDF0 (the spawn API's dump entry point - the dump stem
@@ -31,7 +31,7 @@
 //! | `0x801DFDF8` | Public spawn API: `(byte effect_id, short* world_pos, ushort angle)` | Ported as [`Pool::spawn`] |
 //! | `0x801E0088` | Per-frame walker | [`Pool::tick_retail`] (pass 1) + [`Pool::child_billboards`] (pass 2) |
 //!
-//! ## Clean-room boundary
+//! ## Port boundary
 //!
 //! No bytes from `SCUS_942.54` or any overlay live in this crate. The Ghidra
 //! decompilation at `ghidra/scripts/funcs/overlay_battle_801de914.txt`,

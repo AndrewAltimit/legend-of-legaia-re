@@ -932,6 +932,63 @@ The two arms are selected by **game mode**, not by a debug/release build. `0x800
 
 Cited in `ghidra/scripts/funcs/800402f4.txt`, `0x80040338..0x8004043C` (both arms).
 
+#### The selector table - 132 slots, 15 arms
+
+The switch is a jump table at `0x80014FA0`, `0x84` entries wide
+(`sltiu v0,v1,0x84` at `0x80040448`, `jr v0` at `0x80040468`). Decoding all
+132 words gives **15 distinct arms**, and the largest of them is the function's
+own epilogue:
+
+| Selector(s) | Arm | What it does |
+|---|---|---|
+| `0x00` | `0x80040470` | [Basic damage](#selector-0---basic-damage-attack--item--generic-spell). |
+| `0x01`..`0x05` | `0x80040908` / `0x80040D94` / `0x80040E64` / `0x80040F14` / `0x800410D4` | [Stat buffs](#stat-buff-selectors-17). |
+| `0x06` | `0x8004112C` | Permanent field stat-up - the *Water* line. |
+| `0x07` | `0x80041464` | One-battle stat-up - the *Elixir* line, `sub_index` = the item's tier. |
+| `0x08` | `0x80041BB0` | **Status clear** + the cure flash. |
+| `0x09` | `0x80041C70` | [Accuracy / evasion roll](#selector-9---accuracy--evasion-roll). |
+| `0x0A` | `0x80041E64` | **Opposed INT roll** that sets status bit `0x1000`. |
+| `0x0B`, `0x0C`, `0x0D` | `0x80041FB4` | **Learn a Tactical Art** for party slot `selector - 0x0B`. |
+| `0x0E` | `0x8004209C` | **Point Card discharge**. |
+| `0x82` | `0x800421A0` | `jal FUN_80046870` - the brightness ramp-up - then falls into the epilogue. |
+| `0x0F`..`0x81`, `0x83` | `0x800421A8` | **The epilogue.** 116 slots, all no-ops. |
+
+`0x800421A8` is where the register restore and `jr ra` live, and it is also the
+target of the out-of-range guard (`beq v0,zero,0x800421A8` at `0x8004044C`), so
+those 116 selectors behave exactly like an unrecognised one. An earlier
+revision of this page described the `0x10..=0x83` band as "stat-up animations,
+status-clear, queue-end markers, and the multi-target item slot", left
+un-decoded because it was "fine for a first port". That reading is
+**falsified**: only one selector above `0x0E` has a body at all, its body is a
+single call, and the four behaviours it named are selectors `0x01..0x07`,
+`0x08`, the epilogue, and `0x0E` respectively - all at or below `0x0E`.
+
+##### The four arms the sections above do not cover
+
+- **`0x08` - status clear.** Masks the target's status word with `0xFFFC`,
+  clearing its low two bits: in battle at `actor[+0x16E]`
+  (`0x80041BFC..0x80041C0C`), outside battle at the game-state window
+  `0x80084140 + slot*0x414 + 0x6F6` (`0x80041C2C..0x80041C38`). It then runs a
+  two-colour flash (`0x0080C0C0` / `0x200C0300`) on the battle arm only.
+- **`0x0A` - opposed INT roll.** Sums the two actors' `+0x168` (attacker from
+  `DAT_8007BD24[+0x13]`, defender from `sub_index`), draws `rand() % sum`, and
+  on `defender_INT < roll` ORs status bit `0x1000` into the defender's `+0x16E`
+  (`0x80041EB8..0x80041EEC`). `sub_index == 8` runs a further per-actor pass.
+- **`0x0B`/`0x0C`/`0x0D` - learn a Tactical Art.** `selector - 0x0B` picks the
+  party slot (`0x80041FC0` `addiu v1,v1,0xfff5`, then the `0x414` stride), and
+  the arm does an **ordered insert** of `sub_index` into that character's
+  learned-Arts list - entries greater than it shift up one
+  (`0x80041FFC..0x80042028`), the id is written at the gap
+  (`0x80042064`), and the count byte `+0x74D` is bumped
+  (`0x80042068..0x80042074`). Same list the arts panel draws
+  ([`functions/runtime-libs.md`](../reference/functions/runtime-libs.md)).
+- **`0x0E` - Point Card discharge.** Reads the Point Card counter
+  `0x800845B4` (game-state window `+0x474`), clamps the spend to `0x270F`
+  (9999), writes the remainder back (`0x800420D8`), pops the number over the
+  target via `FUN_801F44A0`, then stages the victim's reaction from `+0x1EF`
+  or `+0x1F1` into `+0x1DA` by comparing the amount against `actor[+0x14C]`
+  and sets `+0x1DC` bits `0x4`/`0x1`.
+
 ### Actor stat block + monster record mapping
 
 The per-actor stat block runs `+0x14C..+0x16A`, each stat stored as a **pair** of adjacent halfwords (the lower offset is the working value the formulas read; `+2` is the base used to restore after a buff wears off). For enemies, `FUN_80054CB0` (`ghidra/scripts/funcs/80054cb0.txt`, lines 629-699) copies the [monster stat record](battle.md) field-by-field into this block:
@@ -1486,7 +1543,7 @@ The unit tests there pin the documented formulas as fixtures - a future runtime 
   through `FUN_800421D4`/`FUN_8003D53C` instead), not damage arithmetic. The
   chain's rolls, scale stage, and finisher are the ported kernels above; no
   unported spirit/magic damage roll hides behind state `0x3D`.
-- **Selector dispatch for selectors `0x10..=0x83`.** The cases beyond status / buff / damage handle stat-up animations, status-clear, queue-end markers, and the multi-target item slot used by Smelly Glove etc. They're mostly read-only stat ramps that don't affect game balance, so leaving them un-decoded is fine for a first port.
+- ~~**Selector dispatch for selectors `0x10..=0x83`**~~ - closed, and the premise was wrong: 116 of the 132 table slots are the function's own epilogue and only `0x82` has a body above `0x0E`. See [the selector table](#the-selector-table---132-slots-15-arms).
 - The monster record is now fully decoded: all six stat halfwords (see [actor stat block mapping](#actor-stat-block--monster-record-mapping)), the reward fields (see [victory spoils](#victory-spoils-rewards)), and the spell-offset list (see [spell list](#spell-list-record-0x4c)). No record fields remain open. The spell entries' `+0x04`/`+0x08` **effect indices** now resolve through the per-block effect-offset table to the per-spell effect descriptor (`MonsterSpell::effect_offset` / `aux_offset`; see [spell list](#spell-list-record-0x4c)) - these are indices into a table, not direct sub-pointers, and the target is a small fixed descriptor, not TMD geometry. What stays open is only that descriptor's **interior field semantics** (its runtime consumer is the cast/effect path).
 - **Juggle window, three loose ends.** (1) `FUN_80050E00`'s fall-through exit returns
   `a0 + 3` in `v0`, so an entry whose `+0x11..+0x13` are all non-zero hands the tick

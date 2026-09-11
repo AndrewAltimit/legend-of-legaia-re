@@ -358,7 +358,7 @@ pub struct ProjectedVertex {
 //
 // The 257-entry seed table is generated below from the published PSX hardware
 // algorithm (no$psx "GTE Division Inaccuracy"; the same values Beetle/mednafen
-// derive). It is *computed*, not copied Sony data - the same clean-room
+// derive). It is *computed*, not copied Sony data - the same
 // provenance class as the SPU Gaussian / reverb tables (`spu/gauss.rs`,
 // `spu/reverb.rs`). See docs/subsystems/renderer.md.
 

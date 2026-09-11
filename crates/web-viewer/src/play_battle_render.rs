@@ -71,7 +71,11 @@
 //! (`engine-core::battle_status_clut`, `FUN_8004CE2C` pass 4) is native-only
 //! for the same reason the face stamps are - its model is shared and its
 //! latch is armed here too, via `BattleHud::sync_status`; only the drain is
-//! missing. Growing the channel lights up both at once.
+//! missing. The effect **CLUT stage** (`engine-core::battle_effect_clut`,
+//! `FUN_801DEA50`'s palette arm) is the third rider on that same missing
+//! channel: `World::battle_clut_stages` fills here exactly as it does
+//! natively, and nothing drains it. Growing the channel lights up all three
+//! at once.
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::scene::{Scene, SceneHost};

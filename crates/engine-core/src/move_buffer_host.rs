@@ -3,7 +3,7 @@
 //!
 //! Wires the per-actor move-buffer cursor + envelope tick
 //! (`engine-vm::move_buffer`, FUN_800204F8 / FUN_80020740) onto the
-//! three retail MOVE pool roots that the clean-room engine carries on
+//! three retail MOVE pool roots that the engine carries on
 //! [`crate::world::World`]:
 //!
 //! - [`World::move_buffer_root`] mirrors retail `_DAT_8007B888` (MOVE).
@@ -30,7 +30,7 @@
 //!  - the index falls past the offset-table region, or
 //!  - the offset itself walks past end-of-pool.
 //!
-//! The clean-room boundary stays intact: no Sony bytes live in this
+//! The port boundary stays intact: no Sony bytes live in this
 //! module; the spec is `ghidra/scripts/funcs/800204f8.txt` plus the
 //! per-record reader in `legaia-mdt`.
 //!

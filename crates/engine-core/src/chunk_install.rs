@@ -98,7 +98,7 @@ pub struct SeqSlot {
 /// budget a type-3 chunk bounds itself by). Returns the type-3 leftover
 /// byte count (`size - remaining_budget`), or 0 when the list ends normally.
 ///
-/// Clean-room hardening over the retail walker: a header that overruns the
+/// Hardening the retail walker does not do: a header that overruns the
 /// buffer, a payload size the buffer cannot hold, or a size too small to
 /// advance the word cursor (`size >> 2 == 0`, which would spin retail
 /// forever) all terminate the walk.

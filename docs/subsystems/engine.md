@@ -112,7 +112,7 @@ graph LR
     end
 
     subgraph core ["engine-core"]
-        MD["ModeDriver"]
+        MD["ModeSeat · the mode word"]
         SH["SceneHost"]
         W["World"]
         SR["SceneResources"]
@@ -139,7 +139,8 @@ graph LR
     BIN --> BS
     BS --> MD
     BS --> BGM
-    MD -->|drives| SH
+    BS --> SH
+    MD -->|"(mode, sub-id) → SceneMode"| W
     SH --> W
     SH --> SR
     W -->|ActorVmHost| AVM
@@ -152,6 +153,17 @@ graph LR
     BGM -->|sequences| SEQ
     SEQ -->|samples| SPU
 ```
+
+`ModeSeat` is the port of retail's outermost dispatch level, the 28-entry mode
+table at `0x8007078C` indexed by `_DAT_8007B83C`. It is a seat rather than a
+mirror because the session writes it where retail's code stores that word -
+field entry through `MAIN INIT`, the pause menu through `CARD INIT` - and each
+entry returns the INIT column's staging plan before the seat performs the
+mode's own hand-off store. It also runs the transition edge, whose observable
+half is the pad-edge swallow. `SceneMode` stays the scene sessions' state and
+is reconciled with the word once per frame; the direction that is lossy (five
+minigames share `OTHER MODE`) is closed by staging the warp sub-id beside it.
+See [boot](boot.md#the-ports-seat-at-the-mode-table).
 
 ## Architectural principles
 

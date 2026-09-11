@@ -780,14 +780,14 @@ impl World {
     /// part record, staged as its own small scene at `origin` - the engine
     /// analogue of the effect-script walk's `FUN_80050ED4` arm
     /// (`FUN_801DEA50`, `0x801df168..0x801df194`: `a2 = 0x801F6324[id*4]`).
-    /// The per-effect SFX byte the same arm queues (`0x801F6418[id]`,
-    /// `0x801df0ec..0x801df134`) is **not** fired here but at the queue's
-    /// drain: `World::drain_battle_effect_spawns` pushes it into
-    /// [`World::battle_sfx_cues`] under the retail gate (plain code below
+    /// The per-effect **CLUT source x** the same arm reads (`0x801F6418[id]`,
+    /// `0x801df0ec..0x801df134`) is not staged here but at the queue's drain:
+    /// `World::drain_battle_effect_spawns` pushes it onto
+    /// [`World::battle_clut_stages`] under the retail gate (plain code below
     /// `0x32`, non-zero map byte), so callers routing an effect-script spawn
-    /// through this get the sound without a second fire, while the cue-group
-    /// expander's host (`spawn_cue`), which fires its own ungated SFX byte
-    /// per `FUN_801E22C8`, does not double it.
+    /// through this get the palette swap without a second copy. It is a 16x1
+    /// `MoveImage` onto `(224, 476)`, not a sound cue - see
+    /// [`crate::battle_effect_clut`].
     ///
     /// Still unmodelled from the same arm: the spawn-scale specials (code
     /// `4` spawns at base scale `0xC00`, code `6` at `0x2000`, all scales

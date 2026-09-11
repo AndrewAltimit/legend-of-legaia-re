@@ -13,7 +13,7 @@
 //! a patched disc on such a state still warps to the *original* destination
 //! (read from the already-loaded RAM copy). A patched door is only observed
 //! after a fresh scene load re-streams the MAN - which is exactly what the
-//! clean-room engine does. The mechanism was pinned by a live PCSX-Redux trace
+//! engine does. The mechanism was pinned by a live PCSX-Redux trace
 //! (the `drake_castle_to_worldmap` capture): a door destination is a partition-2
 //! MAN record the controller reaches by setting the field-VM bytecode base to
 //! `man_base + data_region + partition2[slot]`, then running the record's tiny

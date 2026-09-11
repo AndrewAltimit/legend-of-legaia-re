@@ -1,5 +1,5 @@
 //! World-map single-source CLUT blend-to-target fade actor, ported
-//! clean-room from `FUN_801E4D8C`.
+//! from `FUN_801E4D8C`.
 //!
 //! PORT: FUN_801E4D8C
 //! REF: FUN_8003CE9C (misaligned-LE16 operand reads), FUN_8005842C

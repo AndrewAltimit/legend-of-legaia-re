@@ -104,9 +104,9 @@ instead. And a lookup of "the name at index 990" answers `music_01` while
 retail's own record 117 holds `music_test`, which is worth knowing before
 treating a name as an identity.
 
-### Is this table populated on retail hardware?
+### The table is populated on retail hardware
 
-Open question, and worth knowing before leaning on the mangled names as "what
+Settled, and worth knowing before leaning on the mangled names as "what
 retail holds". `FUN_8001D8FC` has exactly one caller (`0x8001D6FC`) and picks
 its source on `_DAT_8007B8C2`: flag **non-zero** reads `cdname.txt` off the disc
 through the ISO stack (`FUN_8003D3C4`), flag **zero** reads
@@ -118,10 +118,23 @@ SN/PsyQ debug-station link, not a name resolver
 off the disc through the ISO stack. The table is populated on retail hardware,
 and the mangling described above is what retail RAM actually holds.
 
-The earlier framing here - that the flag was writer-less and therefore `0` at
-boot, leaving it unclear whether the table was populated at all - rested on an
-address sweep that searched only the absolute `lui`+offset form and so never saw
-the gp-relative store
+The flag has exactly **one** writer, and nothing rewrites it later. Sweeping
+`SCUS_942.54` and all 83 extracted overlay images in both directions - the
+`disp(gp)` / `lui`+load / materialised-base forms, and the five absolute forms
+(literal word, `lui`+`addiu`/`ori`, `jal`, `j`, PC-relative branch) - gives 70
+access sites over 84 images: 44 in SCUS (one `sh` store, 43 `lh` reads) and 26
+`lh` reads spread over eleven overlays (`0895`, `0899`, `0902`, `0970`, `0971`,
+`0975`, `0976`, `0977`, `0978`, `0979`, `0980`). No image outside `SCUS_942.54`
+stores to it at all. The one store is `main()`'s: `jal 0x8003F084` - a
+two-instruction leaf whose whole body is `jr ra; li v0,0x1` - immediately
+followed by `sh v0,0x5aa(gp)` at `0x80015F08`. So the flag is `1` from cold boot
+onward on every path, the loader takes the disc arm, and the table is populated.
+
+The absolute-form sweep on its own reports "no word, no jump, no branch, no
+materialisation pair - in any image", because a `disp(gp)` store carries no
+address. That is exactly the blind spot behind the earlier framing here - that
+the flag was writer-less and therefore `0` at boot, leaving it unclear whether
+the table was populated at all
 ([`tooling/ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)).
 
 Implementation: `crates/prot/src/cdname.rs`; see `ghidra/scripts/funcs/8001d8fc.txt`.

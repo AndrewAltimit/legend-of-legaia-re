@@ -9,7 +9,7 @@
 //! See `docs/subsystems/battle.md` § Additional SCUS battle-band helpers.
 //!
 //! It is a genuine closed-form arithmetic kernel with no hardware or table
-//! dependency, so it ports clean-room even though its consumer is presentation.
+//! dependency, so it ports even though its consumer is presentation.
 //!
 //! # Wiring
 //!

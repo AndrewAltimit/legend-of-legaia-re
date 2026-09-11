@@ -429,6 +429,63 @@ pub const FIELD_INIT_STEPS: [FieldInitStep; 16] = [
     FieldInitStep::EnterFieldLoop,
 ];
 
+/// The field's **default camera visible-tile window**, as `(min_x, min_z,
+/// max_x, max_z)` in signed tiles relative to the camera.
+///
+/// Four signed bytes at scratchpad `0x1F8003E8..EB`. This is not the same
+/// quantity as [`FIELD_CAMERA_WINDOW_TILES`], which is the absolute
+/// `0x1F8003F8` / `0x1F8003FA` extent the sub-area rebuild sweep walks: this
+/// one is a **relative** box the per-cell terrain emitters turn into their two
+/// loop counts (`max - min` on each axis), and field-VM op `0x46`
+/// `VIEW_WINDOW` overwrites it per scene. It is asymmetric - the camera looks
+/// down the +Z axis, so the box reaches further ahead (`+0x0A`) than behind
+/// (`-6`), and further left (`-8`) than right (`+6`).
+pub const FIELD_DEFAULT_VIEW_WINDOW: (i8, i8, i8, i8) = (-8, -6, 6, 10);
+
+/// Everything the field draw-context primer writes.
+///
+/// A 25-instruction leaf with no frame and no calls, reached by `jal` from
+/// `0x8003B01C` inside the MAN-decode / camera-anchor routine `FUN_8003AEB0`,
+/// so it runs once per scene entry before the field's first frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldDrawContext {
+    /// The three-word camera-target block at `0x800840B8`: `+0` cleared, then
+    /// `+4` and `+8`. The same block the duel arena re-seeds for its own view
+    /// ([`DuelOverlayInit::camera_pair`]) and the dance entry for its floor.
+    pub camera_block: (u32, u32, u32),
+    /// The three halfwords at `0x8007B790`. The first is the field's value;
+    /// the dance entry writes `0x3C` into the same slot, so it is a per-mode
+    /// quantity rather than a screen constant.
+    pub screen_triple: (u16, u16, u16),
+    /// Scratchpad `0x1F8003E8..EB` - [`FIELD_DEFAULT_VIEW_WINDOW`].
+    pub view_window: (i8, i8, i8, i8),
+}
+
+/// The field draw context every scene entry starts from.
+///
+/// PORT: FUN_801DE37C (`0x801de37c..0x801de3dc`)
+///
+/// NOT WIRED: the host that should call it is the scene-entry path in
+/// `world/frame_tick.rs`, and there is nothing yet for it to write into - the
+/// port's renderer draws the whole scene (`SCENE_FAR`, no distance or frustum
+/// culling), so no draw list is bounded by a tile window and no camera reads
+/// the `0x800840B8` block. The record becomes reachable when the renderer
+/// grows a per-camera cell window; until then it is what the emitters would
+/// be handed.
+///
+/// The window matters even so, because it is the quantity retail's own
+/// per-cell terrain emitters loop over - `FUN_801F89B8` reads these four bytes
+/// at `0x801f89fc..0x801f8a18` and derives both loop counts from them - and
+/// because field-VM op `0x46` overwrites it. A scene whose script never runs
+/// that op draws with exactly this box.
+pub const fn field_draw_context() -> FieldDrawContext {
+    FieldDrawContext {
+        camera_block: (0, 0x200, 0x4000),
+        screen_triple: (0x1b8, 0x64, 0),
+        view_window: FIELD_DEFAULT_VIEW_WINDOW,
+    }
+}
+
 /// Everything the Baka Fighter duel-arena overlay initialiser seeds.
 ///
 /// REF: FUN_801CF00C - the `PORT:` for this address sits on
@@ -592,6 +649,38 @@ mod tests {
             (i32::from(d.window_tiles.0), i32::from(d.window_tiles.1)),
             FIELD_CAMERA_WINDOW_TILES
         );
+    }
+
+    #[test]
+    fn the_field_view_window_is_the_relative_box_not_the_absolute_extent() {
+        let c = field_draw_context();
+        let (x0, z0, x1, z1) = c.view_window;
+        // The emitters take `max - min` per axis as their loop counts.
+        assert_eq!((i32::from(x1 - x0), i32::from(z1 - z0)), (14, 16));
+        // Which happens to equal the absolute window's tile extent - the two
+        // quantities coincide in size and differ in kind, so a test that only
+        // compared sizes would not catch one being used for the other.
+        assert_eq!(
+            (i32::from(x1 - x0), i32::from(z1 - z0)),
+            FIELD_CAMERA_WINDOW_TILES
+        );
+        // Asymmetric: further ahead than behind, further left than right.
+        assert!(z1 > -z0);
+        assert!(-x0 > x1);
+        assert_eq!(c.view_window, FIELD_DEFAULT_VIEW_WINDOW);
+    }
+
+    #[test]
+    fn the_field_and_duel_share_the_camera_block_and_disagree_on_its_pair() {
+        let c = field_draw_context();
+        let d = duel_overlay_init();
+        // Both seed `0x800840B8 + 4 / + 8`; the field's is not the arena's.
+        assert_eq!(c.camera_block.0, 0);
+        assert_eq!((c.camera_block.1, c.camera_block.2), (0x200, 0x4000));
+        assert_ne!((c.camera_block.1, c.camera_block.2), d.camera_pair);
+        // The `0x8007B790` triple's first halfword is per-mode, so the field's
+        // is stated rather than inherited.
+        assert_eq!(c.screen_triple, (0x1b8, 0x64, 0));
     }
 
     #[test]

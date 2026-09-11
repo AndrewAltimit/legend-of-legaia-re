@@ -1,4 +1,4 @@
-//! Clean-room **casino slot-machine** rules engine.
+//! From-scratch **casino slot-machine** rules engine.
 //!
 //! A port of the confirmed numeric kernels of the slot-machine overlay (PROT
 //! 0975, `data\OTHER4`) - the reel-strip permutation builder, the slot LCG,

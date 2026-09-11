@@ -332,8 +332,9 @@ compares above any HP, the clamp rewrites it to the victim's whole bar, and
 the victim dies. A negative roll on these modules kills outright rather than
 healing.
 
-**Shape B - clamp to `HP - 1`, floor 1.** The band's two AoE sweeps - and only
-those two sites, `0x801F8758` in PROT 0927 and `0x801F8F08` in PROT 0966. Both
+**Shape B - clamp to `HP - 1`, floor 1.** The band's two AoE *stagers* - and
+only those two sites, `0x801F8758` in PROT 0927 and `0x801F8F08` in PROT 0966;
+every tick body in the band, whole-row sweeps included, takes shape A. Both
 are the module's **stager**; both images' tick bodies clamp shape A, so "0927 /
 0966 never kill" is true of the sweep and false of the tick:
 
@@ -352,10 +353,12 @@ live seat is left at 1 HP at worst.
 
 ### The two AoE sweeps
 
-Those same two routines are the band's only whole-row appliers, and they are
-`0x801F6734` **stagers**, not tick bodies - the move script drives them
-through move-VM opcode `0x20`, so the damage lands from the spawn stager and
-not from the `ctx+0x279` machine:
+Those same two routines are the band's only whole-row appliers **among the
+stagers**, and they are `0x801F6734` stagers, not tick bodies - the move
+script drives them through move-VM opcode `0x20`, so the damage lands from the
+spawn stager and not from the `ctx+0x279` machine. Three *tick* bodies sweep
+the whole row too, and none of them shares the never-kill clamp -
+[below](#the-twelve-bodies-the-trampoline-map-names).
 
 | | PROT 0927 (Juggernaut) | PROT 0966 (Evil Seru Magic) |
 |---|---|---|
@@ -598,8 +601,35 @@ zero in all 176 catalogued states - every mednafen and PCSX-Redux backup in
 the word. In that state PROT 0920 is byte-resident at slot B (8183 of 8192
 bytes) and the sixteen bytes live at `0x801F7B88` are byte-equal to the image's
 `+0x11B0`, so the target is pinned even though the call was not caught firing.
-A live hit needs a battle that ends while a Slippery cast is still animating;
-no state in the library is at that point.
+
+#### The arm is an in-battle frame path, not a teardown
+
+The window the call needs is much wider than "a battle that ends mid-cast",
+and the arm's own gates say so. `FUN_800480D8` reaches the gate only when the
+teardown-request byte `gp[+0xA0C]->[+0x272]` is non-zero **and** the
+battle-end signal `_DAT_8007BD71` reads `0xFF` - and `0xFF` is the *battle
+running* value; `0xFE` is what the end sequence raises
+([`battle-action.md`](battle-action.md)). The arm also consumes its own
+request byte (`sb zero, 0x272(v0)` at `0x800481B0`), so it is a per-frame
+one-shot rather than a phase.
+
+Measured that way it is an ordinary in-battle path. An exec breakpoint on the
+gate read `0x8004818C` across `rim_elm_gimard_victory`
+(`scripts/pcsx-redux/autorun_slippery_budget_gate.lua`, 1800 vsyncs) enters
+it **123 times**, once per rendered frame from the first captured frame to
+vsync 323, every one with `_DAT_8007BD71 = 0xFF` - and then never again once
+the victory raises `0xFE`. The battle end *closes* this arm instead of
+opening it. `_DAT_8007BDC0` is zero at all 123 entries and is never written
+in the run, so the call is blocked by the budget alone.
+
+So the corrected residual: the call fires on any in-battle frame while PROT
+0920's drain budget is still non-zero - i.e. **during** a Slippery cast, not
+at a battle end during one - which makes it a per-frame tick of the module
+while its effect drains rather than a teardown courtesy. What is still owed
+is one PCSX-Redux state inside a Slippery cast: the corpus's only such state,
+`slippery_summon_mid_cast`, is a **mednafen** backup, and mednafen has no
+scriptable breakpoints, so the emulator that can watch the call cannot load
+the state that has the gate up.
 
 ### A module image ends in another image's bytes
 
@@ -700,24 +730,63 @@ The port routes on the same two ids.
 
 ### The trampolines are their own port, and one cell holds six spells
 
-The capture-class arm shape above is a routine in its own right, and six of
-them are named by nothing else in the corpus. Each is 88 to 204 bytes, opens
-`addiu sp, sp, -0x18`, materialises the battle ctx `*0x8007BD24`, loads the
-caster `actor_table[ctx+0x13]` out of `0x801C9370` and reads its queued action
-byte `caster[+0x1DF]`; an id the routine does not name returns `a0 = 0`, so the
-module ticks nothing and the drive loop proceeds. The port carries the map as
-data (`cast_module_ticks::CAPTURE_TRAMPOLINES` / `capture_tick_body`), and
+The capture-class arm shape above is a routine in its own right, and **21 of
+the 32** `0x801CF56C` arms are one - the other eleven (PROT 0935, 0936, 0937,
+0939, 0946, 0947, 0948, 0949, 0953, 0954, 0966) point straight at a body.
+Each trampoline is 88 to 204 bytes, opens `addiu sp, sp, -0x18`, materialises
+the battle ctx `*0x8007BD24`, loads the caster `actor_table[ctx+0x13]` out of
+`0x801C9370` and reads its queued action byte `caster[+0x1DF]`; an id the
+routine does not name returns `a0 = 0`, so the module ticks nothing and the
+drive loop proceeds. The port carries the whole map as data
+(`cast_module_ticks::CAPTURE_TRAMPOLINES` / `capture_tick_body`), and
 `crates/asset/tests/cast_module_data_rows_real.rs` re-derives each row off the
 disc from PROT 0898's `0x801CF56C` arm and the trampoline's own `jal` set.
+
+Between them the 21 trampolines name **48** `(action id -> body)` arms over 32
+distinct bodies. A reader that stops at the module is one step short: eleven
+cells hold more than one choreography, and a dispatcher keyed on the PROT
+entry alone runs the wrong one for the cell's other ids.
 
 | Owner | Trampoline | Action id -> tick body |
 |---|---|---|
 | 938 (`cast_chaos_breath`) | `0x801F7A40` | `0x4E` -> `0x801F726C`, `0xB7` -> `0x801F69EC` |
+| 940 (`cast_glare_divide`) | `0x801F8228` | `0x3C` -> `0x801F69F8`, `0x50` / `0xAE` -> `0x801F78B8`, `0xAC` -> `0x801F7240` |
+| 941 (`cast_steal`) | `0x801F7D38` | `0x51` -> `0x801F730C`, `0xB9` -> `0x801F6A04` |
+| 942 (`cast_power_up`) | `0x801F80A0` | `0x52` -> `0x801F7D34`, `0xAA` -> `0x801F69F4` |
+| 943 (`cast_curse`) | `0x801F7624` | `0x40` -> `0x801F6EF4`, `0xB5` -> `0x801F6A04` |
+| 944 (`cast_guilty_cross`) | `0x801F7EBC` | `0x37` -> `0x801F6A04`, `0x53` -> `0x801F7470` |
+| 945 (`cast_water_column`) | `0x801F76F4` | `0x54` -> `0x801F6EDC`, `0xBA` -> `0x801F69F8` |
+| 950 (`cast_rolling_flare`) | `0x801F8190` | `0x5A` -> `0x801F79F8`, `0xAB` -> `0x801F6A24` |
 | 951 (`cast_chaos_flare`) | `0x801F816C` | `0x36` -> `0x801F6A20`, `0x5B` -> `0x801F77E8` |
 | 952 (`cast_bloody_horns`) | `0x801F7B28` | `0x5C` -> `0x801F7118`, `0xB8` -> `0x801F6A0C` |
 | 955 (`cast_white_shield`) | `0x801F92A4` | six ids, [below](#prot-0955-is-a-six-spell-cell) |
+| 956 (`cast_water_hazard`) | `0x801F7E4C` | `0x71` -> `0x801F7298`, `0x75` -> `0x801F69D8` |
+| 957 (`summon_effect_table`) | `0x801F9BA8` | `0x76` -> `0x801F798C`, `0x77` -> `0x801F6A14` |
 | 958 (`cast_blazing_slash`) | `0x801F8E60` | `0x79` -> `0x801F6DD8` |
+| 959 (`cast_megaton_press`) | `0x801F87F4` | `0x7A` -> `0x801F69F0` |
+| 960 (`cast_plasma_strike`) | `0x801F8638` | `0x7B` -> `0x801F74E4`, `0xA6` -> `0x801F69D8` |
+| 961 (`cast_dead_end_crisis`) | `0x801F7A54` | `0xA1` and `0xB4` -> `0x801F69D8` |
+| 962 (`cast_blade_breath`) | `0x801F8080` | `0xA2` -> `0x801F7AE4`, `0xA3` -> `0x801F74A0`, `0xA4` -> `0x801F6D54`, `0xA5` -> `0x801F69D8` |
+| 963 (`cast_genocidal_cannon`) | `0x801F8438` | `0xB3` -> `0x801F6A20` |
+| 964 (`cast_element_change`) | `0x801F8E3C` | `0xAF` -> `0x801F88EC`, `0xB0`..`0xB2` -> `0x801F69D8` |
 | 965 (`cast_doomsday`) | `0x801F7B1C` | `0xB6` -> `0x801F69D8` |
+
+#### A body VA is not a key - only `(entry, body)` is
+
+Six of the trampolines send an id to **`0x801F69D8`**, which is the slot-B
+load base itself: PROT 0956, 0960, 0961, 0962, 0964 and 0965. Those are six
+different routines wearing one address, because each is its own image's word
+0. `0x801F6A20` is likewise PROT 0951's Chaos Flare *and* PROT 0963's only
+arm, and `0x801F6A04` is PROT 0941's, 0943's and 0944's second arm. Anything
+that resolves a body - a dispatcher, a damage-shape lookup, a port tag - has
+to carry the owning entry beside the VA.
+
+Two of the arm maps also read against the grain of their `beq` chains. PROT
+0940's `0x50` and `0xAE` both reach `0x801F78B8` (the `beq` at `0x801F825C`
+and the `bne` at `0x801F8288` land on the same `jal`), and PROT 0964's second
+body is reached by a **range** test rather than a compare - `slti v1, 0xaf`
+then `slti v1, 0xb3` at `0x801F8E88`/`0x801F8E90` - so ids `0xB0`, `0xB1` and
+`0xB2` share it.
 
 #### PROT 0955 is a six-spell cell
 
@@ -773,29 +842,89 @@ PROT 0918's damage arm also credits a kill: past the clamp it increments the
 word at `+0x664` of the caster's per-character record in the
 `0x80084140 + n * 0x414` block (`0x801F87D4..0x801F881C`).
 
-### The ten bodies the trampoline map names and nothing ports
+### The twelve bodies the trampoline map names
 
-Naming a trampoline's arms names ten more routines, each a whole choreography
-in an image whose *trampoline* is now ported. They are real, un-ported work,
-and these are the facts a port needs, read off each owning image's bytes:
+Naming a trampoline's arms names twelve more routines, each a whole
+choreography in an image whose *trampoline* the port also carries. Every one
+is read off its owning image's bytes at slot-B base `0x801F69D8`, and every
+one is ported (`legaia_engine_vm::cast_module_ticks`, driven from
+`World::run_cast_module_code`):
 
 | Body | Owner | Action id | Size | Phase bound | Damage |
 |---|---|---|---|---|---|
-| `0x801F726C` | 938 | `0x4E` Chaos Breath | 2004 B | `beq`/`slti` chain | `FUN_801DD4B0(0x274)` at `0x801F77C0` |
-| `0x801F6A20` | 951 | `0x36` Chaos Flare | 3528 B | `sltiu 0x0C` | `FUN_801DD4B0(0x3A0)` at `0x801F7414` |
-| `0x801F77E8` | 951 | `0x5B` Scythe Wind | 2436 B | `sltiu 6` | `FUN_801DD4B0(0x80)` at `0x801F7F88` |
-| `0x801F7118` | 952 | `0x5C` Bloody Horns | 2576 B | `sltiu 7` | `FUN_801DD6B4(0x1D0)` at `0x801F7948` |
-| `0x801F8F0C` | 955 | `0x60` White Shield | 920 B | `beq`/`slti` chain | none |
-| `0x801F86A4` | 955 | `0x6E` Kiss of Death | 2152 B | `beq`/`slti` chain | none |
-| `0x801F7FA4` | 955 | `0x6F` Melt Spray | 1792 B | `beq`/`slti` chain | none |
-| `0x801F767C` | 955 | `0x70` Terror Scream | 2344 B | `beq`/`slti` chain | none |
-| `0x801F7158` | 955 | `0x72` Power Charge | 1316 B | `beq`/`slti` chain | none |
-| `0x801F6A28` | 955 | `0x73` Void Accessories | 1840 B | `beq`/`slti` chain | none |
+| `0x801F726C` | 938 | `0x4E` Chaos Breath | 2004 B | `beq`/`slti` chain | `FUN_801DD4B0(0x274)` at `0x801F77C0`, **shape A**, whole row |
+| `0x801F69EC` | 938 | `0xB7` Mystic Circle | 2176 B | `sltiu 5`, table `0x801F69D8` | `FUN_801DD4B0(0x309)` at `0x801F70EC`, **shape A**, whole row |
+| `0x801F6A20` | 951 | `0x36` Chaos Flare | 3528 B | `sltiu 0x0C`, table `0x801F69D8` | `FUN_801DD4B0(0x3A0)` at `0x801F7414`, **shape A** |
+| `0x801F77E8` | 951 | `0x5B` Scythe Wind | 2436 B | `sltiu 6`, table `0x801F6A08` | `FUN_801DD4B0(0x80)` at `0x801F7F88`, **shape A** |
+| `0x801F7118` | 952 | `0x5C` Bloody Horns | 2576 B | `sltiu 7`, table `0x801F69F0` | `FUN_801DD6B4(0x1D0)` at `0x801F7948`, **shape A** |
+| `0x801F69D8` | 965 | `0xB6` Doomsday | 4420 B | `beq`/`slti` chain | `FUN_801DD4B0(0x600)` at `0x801F77B4`, **shape A**, whole row |
+| `0x801F8F0C` | 955 | `0x60` White Shield | 920 B | `beq`/`slti` chain | none - a **defence buff**, [below](#the-four-prot-0955-bodies-that-write-no-damage) |
+| `0x801F86A4` | 955 | `0x6E` Kiss of Death | 2152 B | `beq`/`slti` chain | no wrapper; a coin flip, a status mark and a literal `-1` HP |
+| `0x801F7FA4` | 955 | `0x6F` Melt Spray | 1792 B | `beq`/`slti` chain | none - a **five-stat debuff** |
+| `0x801F767C` | 955 | `0x70` Terror Scream | 2344 B | `beq`/`slti` chain | none - a **turn thief** |
+| `0x801F7158` | 955 | `0x72` Power Charge | 1316 B | `beq`/`slti` chain | none - an **ATK buff** |
+| `0x801F6A28` | 955 | `0x73` Void Accessories | 1840 B | `beq`/`slti` chain | none - it **strips an equipped accessory** |
 
-Two more bodies the same maps name are not on the port worklist only because
-no dump prints at their VAs: `0x801F69EC` (938, `0xB7` Mystic Circle,
-`FUN_801DD4B0(0x309)`) and `0x801F69D8` (965, `0xB6` Doomsday,
-`FUN_801DD4B0(0x600)` at `0x801F77B4`).
+Two of the twelve are on no `--missing-ports` row, only because no dump prints
+at their VAs: `0x801F69EC` and `0x801F69D8`. Both frame-match in their owning
+image - `0x801F69EC` runs `0x880` bytes to where the `0x4E` body opens, and
+`0x801F69D8` runs `0x1144` bytes from the module's own load base to where PROT
+0965's trampoline begins.
+
+Three corrections fall out of reading them.
+
+**The two AoE stagers are not the band's only whole-row appliers.** Three of
+the tick bodies above sweep `actor_table[0 .. ctx[+0]]` as well - PROT 0938's
+both bodies and PROT 0965's - and all three clamp
+[shape A](#the-two-clamp-shapes), so they **kill**. The pairing of "whole row"
+with the never-kill `HP - 1` clamp holds for `0x801F85A8` / `0x801F8D64` and
+for nothing else.
+
+The sweep arms are phase `2` (Chaos Breath, `0x801F7750`), phase `3` (Mystic
+Circle - table word 3 at `0x801F69E4`) and phase `0x0B` (Doomsday, the arm the
+`beq v1,0x0C` / `slt` pair at `0x801F6AE8` sends to `0x801F7648`).
+
+**One sweep has no Stone guard.** Every other loop in the band skips a victim
+carrying `+0x16E & 4`; PROT 0938's `0xB7` body tests only `+0x14C == 0`
+(`0x801F70D0`), so Mystic Circle hits a petrified seat.
+
+**Out of range is busy, not done.** Each of these bodies seeds a saved
+register with `1` and returns it, and only a terminal arm zeroes it - so a
+phase past a `sltiu` bound still reports busy. PROT 0949's tick is the
+clearest case: its out-of-bound `beqz` at `0x801F6AA4` targets `0x801F758C`,
+one instruction *past* the `move s7, zero` at `0x801F7588`.
+
+#### The four PROT 0955 bodies that write no damage
+
+"Damage: none" is not "writes nothing". Four of the six-spell cell's bodies
+write the actor **stat block** and the persistent character record, and one
+of them is the setter `battle-formulas.md` records as the last status-applier
+gap. They are not the band's *only* stat-block writers - see
+[the rest of the band's stat writers](#the-band-has-eight-stat-block-writers-not-one).
+
+| Body | What its working arm writes |
+|---|---|
+| `0x801F8F0C` White Shield | Both halves of both defence pairs (`+0x15C`/`+0x15E`, `+0x160`/`+0x162`) = the caster's **record** base `x 3/2`, read through `0x801C9348[seat - 3]`. Idempotent, because the source is the record and not the live stat. |
+| `0x801F7158` Power Charge | Both halves of the ATK pair (`+0x158`/`+0x15A`) `+= x >> 2` - a `+25%` - each capped at `999` (`sltiu 0x3E8` at `0x801F74D4`). |
+| `0x801F7FA4` Melt Spray | Ten halfwords: ATK, UDF, LDF, SPD and INT, working **and** base, each `x - (x + 9) / 5`. |
+| `0x801F6A28` Void Accessories | `rand() % 3` picks one of the victim's three accessory slots (`record[+0x19B + slot]`); on a second `rand() & 1 == 0` and a non-empty slot it refunds the id to the bag (`FUN_800421D4`), clears the record byte and rebuilds the ability bitfield (`FUN_80042558`). |
+
+Melt Spray's floor is worth spelling out. Each store is followed by
+`bnez ...; addiu v0,v0,1`, which tests the full **32-bit** difference while
+the store itself is a 16-bit `sh`. A stat of `2` lands on zero and is
+corrected to `1`; a stat of `0` or `1` goes to `-1`, misses the `bnez`, and is
+written back as `0xFFFF`. Retail underflows a one-point stat into 65535. It is
+also a different shape from the item buffs' `x * 6/5` clamped to `0xFFFF`
+([battle-formulas.md](battle-formulas.md)).
+
+The two remaining PROT 0955 bodies share one idiom, the **turn steal**
+(`0x801F8CF4..0x801F8D54` in Kiss of Death's miss arm, `0x801F7E18..0x801F7E4C`
+in Terror Scream's arm 3): refund the victim's queued item when `+0x1DE == 1`
+and `+0x16C != 0`, clear `+0x1DE`, then clear the initiative key `+0x16C` and
+bump the turn cursor `ctx[+0x1A]`. The victim loses its turn. Kiss of Death
+reaches it only on the odd half of a `FUN_80056798() & 1` coin flip, and sets
+`+0x16E` bit `0x400` beside it; its even half clears `+0x16E & 0x0F80`, applies
+exactly **one** point of damage and stages the victim's reaction.
 
 **Read the delay slot when you take a baked power.** PROT 0951's `0x5B` body
 sets `a0` *after* the call word - `jal 0x801DD4B0` at `0x801F7F88` with
@@ -818,8 +947,141 @@ particle records and hands them to `FUN_80021B04`, so the pool produces its
 whole output too.
 
 Two band entries carry no record at all and stage nothing: PROT 0926, the
-1-sector null stub, and PROT 0952, whose two spawn sites both load `a2` out of
-a saved register no static window can see.
+1-sector null stub, and PROT 0952, whose two spawn sites sit in its inherited
+tail (file `+0x11E8..+0x1800`, PROT 0951's bytes) and whose `lui`/`addiu` pairs
+resolve to `0x801F8348` / `0x801F836C` - two of PROT 0951's own records, past
+the end of 0952's `0x1800`-byte image. The old reading, that `a2` came from a
+saved register no static window could see, is refuted by the pairs being right
+there in front of both calls.
+
+### The fourteen trampoline arms that are unported tick bodies
+
+The twelve bodies above are the ones the port carries. The trampoline table
+[above](#the-trampolines-are-their-own-port-and-one-cell-holds-six-spells)
+names more arms than that, and the rest are tick bodies of exactly the same
+class as the eleven player-Seru ones below: whole choreographies, none small,
+none ported. They are listed here so the `--missing-ports` rows they raise
+read as sized work rather than as addresses.
+
+| Body | Owner | Action id | Size | Damage wrapper |
+|---|---|---|---|---|
+| `0x801F7240` | 940 `cast_glare_divide` | `0xAC` | 1656 B | none |
+| `0x801F78B8` | 940 `cast_glare_divide` | `0x50` / `0xAE` | 2416 B | none |
+| `0x801F730C` | 941 `cast_steal` | `0x51` | 2604 B | one |
+| `0x801F6A04` | 941 `cast_steal` | `0xB9` | 2312 B | one |
+| `0x801F6EF4` | 943 `cast_curse` | `0x40` | 1840 B | none |
+| `0x801F6A04` | 943 `cast_curse` | `0xB5` | 1264 B | none |
+| `0x801F6A04` | 944 `cast_guilty_cross` | `0x37` | 2668 B | one |
+| `0x801F7470` | 944 `cast_guilty_cross` | `0x53` | 2636 B | none |
+| `0x801F79F8` | 950 `cast_rolling_flare` | `0x5A` | 1944 B | one |
+| `0x801F6A24` | 950 `cast_rolling_flare` | `0xAB` | 4052 B | one |
+| `0x801F7298` | 956 `cast_water_hazard` | `0x71` | 2996 B | two |
+| `0x801F7AE4` | 962 `cast_blade_breath` | `0xA2` | 1436 B | one |
+| `0x801F74A0` | 962 `cast_blade_breath` | `0xA3` | 1604 B | one |
+| `0x801F6D54` | 962 `cast_blade_breath` | `0xA4` | 1868 B | one |
+
+Sizes are the frame-matched extent in the **owning** image; "damage wrapper"
+counts `jal` to `FUN_801DD0AC` / `FUN_801DD4B0` / `FUN_801DD6B4`.
+
+`0x801F6A04` is the clearest case yet that a body VA is not a key. It is an
+arm in three different images and frame-matches at **three different sizes** -
+1264 B in PROT 0943, 2312 B in 0941, 2668 B in 0944. One `--missing-ports`
+row therefore names three routines, and a port keyed on the address alone
+would run whichever one it happened to be written from for all three, which is
+the defect `capture_tick_body` already keys `(entry, body)` to avoid.
+
+Nothing removes these rows but a port: they are choreography, not data, so
+neither the spawn pool nor any other engine mechanism produces their output,
+and a scope row in `port-catalog-ignore.toml` would be a false claim.
+
+### The player Seru band's tick bodies are code, not data
+
+The verdict table above answers for each module's **stager** - the
+`0x801F6734` row the move VM's opcode `0x20` calls. It does not answer for
+the module's *tick*, and for the eleven player Seru-magic ids (`0x81..=0x8B`
+= PROT 0903..0913) those are two different routines. Reading a **DATA**
+verdict there as "the whole module is data" is a category error: the stager
+hands spawn records to the pool, and the tick is the choreography.
+
+Every one of the eleven `0x801CF4EC` arms is a full tick body, and none of
+them is small:
+
+| Id | PROT | `0x801CF4EC` arm | Size | Wrapper calls | HP `+0x14C` | Stage `+0x1DA` | Phase `+0x279` |
+|---|---|---|---|---|---|---|---|
+| `0x81` | 903 `summon_gimard` | `0x801F69D8` | 3396 B | 1 | 1 | 3 | 2 |
+| `0x82` | 904 `summon_theeder` | `0x801F69D8` | 6020 B | 1 | 1 | 3 | 4 |
+| `0x83` | 905 `summon_stager_x83` | `0x801F69D8` | 5792 B | 0 | 1 | 3 | 3 |
+| `0x84` | 906 `summon_gizam` | `0x801F69F4` | 3404 B | 1 | 1 | 4 | 5 |
+| `0x85` | 907 `summon_nighto` | `0x801F69E8` | 5568 B | 0 | 1 | 2 | 9 |
+| `0x86` | 908 `summon_zenoir` | `0x801F69D8` | 6456 B | 3 | 3 | 10 | 0 |
+| `0x87` | 909 `summon_viguro` | `0x801F69F4` | 3924 B | 1 | 1 | 4 | 3 |
+| `0x88` | 910 `summon_swordie` | `0x801F69EC` | 4652 B | 0 | 0 | 3 | 3 |
+| `0x89` | 911 `summon_orb` | `0x801F69D8` | 5648 B | 0 | 1 | 1 | 3 |
+| `0x8A` | 912 `summon_freed` | `0x801F69D8` | 6532 B | 1 | 1 | 3 | 4 |
+| `0x8B` | 913 `summon_nova` | `0x801F69F0` | 7260 B | 1 | 1 | 4 | 1 |
+
+"Wrapper calls" counts `jal` to any of the three damage wrappers
+`FUN_801DD0AC` / `FUN_801DD4B0` / `FUN_801DD6B4`; the store columns count
+`sb`/`sh`/`sw` with that displacement. Sizes are the frame-matched extent in
+the **owning** image.
+
+None of the eleven is ported. What the engine runs for a player summon is the
+band's DATA half (`legaia_asset::cast_effect_pool` staged by
+`World::spawn_cast_module_fx`), the two state-touching stagers the port does
+carry (`gizam_stager` for PROT 0906 and `viguro_stager` for PROT 0909 - both
+the `0x801F6734` routine, not the arm in this table), and the engine's own
+damage fold at `World::cast_spell_on_slots_prepaid`. So a player summon's
+numbers are right and its choreography is the engine's, not the module's.
+
+Five VAs cover the eleven arms, because a module whose image opens with code
+puts its tick at the load base. `0x801F69D8` alone is the arm for five
+different modules here and a capture-class body in six more - which is the
+same reason the trampoline map has to be keyed on `(entry, body)`
+[above](#a-body-va-is-not-a-key---only-entry-body-is).
+
+### The band has eight stat-block writers, not one
+
+The four PROT 0955 bodies above were once read as the band's only writers of
+the actor stat block. They are not. The decisive measurement is an exhaustive
+sweep of all 64 band images for `sh` with an immediate in `+0x150..+0x16D` -
+the HP/MP/AGL triplet plus the five `(working, base)` stat pairs and the
+initiative key - which finds stores in **eight** images:
+
+| Image | routine | what it does to the block |
+|---|---|---|
+| 0940 `cast_glare_divide` | `0x801F78B8` | nine stores - eight at `0x801F814C..0x801F819C`, two passes over `+0x150` / `+0x154` / `+0x156` / `+0x158`, plus `+0x16C` at `0x801F8064` |
+| 0942 `cast_power_up` | `0x801F7D34` | one store: `+0x156` (AGL base) `= record[+0x0E] * 3 / 2` |
+| 0943 `cast_curse` | `0x801F69D8` | `+0x150` / `+0x152` (the MP pair) at `0x801F6D08` / `0x801F6D1C` |
+| 0945 `cast_water_column` | `0x801F69F8` | all ten stat halfwords `x + (x >> 2)`, then the same `+0x156` write as 0942 |
+| 0954 `cast_fatal_decision` | `0x801F6A58` | halves stat halfwords with a floor of `1`, and ORs status bits into `+0x16E` |
+| 0955 `cast_white_shield` | six bodies | the four rows in the table above, plus the two turn-steal `+0x16C` clears |
+| 0925 `summon_spikefish` | `0x801F6A00` | `+0x16C` only at `0x801F7A70`..`0x801F7A88` - the initiative key, the turn-steal idiom |
+| 0956 `cast_water_hazard` | `0x801F69D8` | `+0x16C` only at `0x801F7098`, same idiom |
+
+Two of those are worth reading before assuming a shape from a name.
+
+**PROT 0945's `0xBA` body is the band's widest buff.** Its arm `2`
+(`0x801F6DA8..0x801F6E44`) raises **all ten** halfwords of the five pairs by
+`x + (x >> 2)` - the same `+25%` PROT 0955's Power Charge applies, but over
+the whole block instead of the ATK pair - and then writes `+0x156` off the
+monster record exactly as PROT 0942's Power Up does. Every operand is an
+`lhu` and the shift is `srl`, so nothing here saturates: a stat near `0xFFFF`
+wraps.
+
+**PROT 0954's is the mirror image.** Each store is `srl 1` followed by a
+`bnez` / `addiu +1` pair, so a stat halves with a floor of `1` rather than
+reaching zero - the opposite floor rule from PROT 0955's Melt Spray, which
+lets a one-point stat underflow to `0xFFFF`.
+
+The AGL write is the one formula two modules share verbatim: `+0x156` takes
+`record[+0x0E] * 3 / 2` through `0x801C9348[ctx[+0x13] - 3]`, in PROT 0942 at
+`0x801F8060..0x801F8074` and in PROT 0945 at `0x801F6E38..0x801F6E44`.
+Neither writes `+0x154`, so the working gauge only picks the buff up at the
+next round reset. `battle-formulas.md` names that pair as the one the "Power
+Up" buff moves, and PROT 0942 is the module the spell pages.
+
+Ports: `legaia_engine_vm::cast_module_ticks::power_up_tick` and
+`all_stats_surge_tick`.
 
 ## Provenance
 
@@ -837,3 +1099,32 @@ taken with `ghidra/scripts/dump_static_overlay.py` against one Ghidra program
 per PROT entry - `see ghidra/scripts/funcs/overlay_summon_ozma_0934_801f6a40.txt`
 and its siblings, and `see ghidra/scripts/funcs/80023070.txt` for the
 opcode-`0x20` call site.
+
+<!-- W1-A appendix -->
+
+## Appendix: the band names no routine the directory was missing
+
+An independent byte-level re-derivation of the seventeen `ambiguous = no`
+worklist runs this band still carries - the ones large enough to reach
+`disc-coverage.py`'s 64-byte floor - names **no new routine**, in any module.
+Every run is one of the two shapes
+[above](#a-module-image-ends-in-another-images-bytes): the image's own data
+tail, or a byte-identical same-file-offset run of a neighbour's image. Run by
+run, with the boundary between the two halves and where the inherited half is
+already dumped, on
+[`functions/cast-modules.md`](../reference/functions/cast-modules.md).
+
+Two checks make that a measurement rather than a reading. Force-disassembled,
+each run's own half decodes 9-34% implausible opcodes against 0% for a real
+body in the same band. And a prologue scan over the seventeen images finds
+five `addiu sp, sp, -F` words outside the frame-matched partition -
+`0x801F8078`, `0x801F816C`, `0x801F88EC`, `0x801F89D4`, `0x801F9458` - every
+one of them inside an inherited tail and a function head of the image the tail
+came from. Four are already named on this page at their owner - `0x801F8078`
+and `0x801F89D4` in the worklist table, `0x801F816C` in the trampoline map,
+`0x801F9458` in the residue section - and only `0x801F88EC` (a frame-matched
+head in PROT 0964) was not.
+
+The corresponding entry in `ghidra/scripts/dump_static_overlay.py`'s
+`NOT_CODE` record now carries the band, so the runs are recorded as answered
+rather than regenerating as work.

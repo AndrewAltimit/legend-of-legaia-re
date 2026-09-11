@@ -20,7 +20,7 @@
 //!
 //! Split out of [`crate::world_map_overlay`], whose other four addresses are
 //! the developer-menu / records-screen leaves and have no engine caller.
-//! Clean-room from the disassembly; no Sony bytes live here.
+//! Written from the disassembly; no Sony bytes live here.
 
 /// Ink colour the escape-timer HUD selects from the remaining count
 /// (`_DAT_8007B454`): white while there is time, then a warning colour, then

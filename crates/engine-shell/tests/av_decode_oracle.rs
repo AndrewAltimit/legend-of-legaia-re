@@ -1,4 +1,4 @@
-//! Internal audio/video decode oracle - a clean-room self-consistency check
+//! Internal audio/video decode oracle - a port-side self-consistency check
 //! on real disc data (no external reference decoder).
 //!
 //! Disc-gated per the `LEGAIA_DISC_BIN` skip-pass convention: when the var is

@@ -20,8 +20,8 @@
 //!     unrecognized build.
 //!
 //! Gates on `LEGAIA_DISC_BIN`; skips+passes when unset. The patched image lives
-//! only in memory. NB the retail wrappers are overlay code the clean-room
-//! engine does not execute, so runtime verification is an emulator playtest;
+//! only in memory. NB the retail wrappers are overlay code the port
+//! does not execute, so runtime verification is an emulator playtest;
 //! the engine-side equivalent of the fix is `damage_finish::bypass_party_resist
 //! = false`.
 

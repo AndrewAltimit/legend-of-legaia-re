@@ -93,6 +93,28 @@ it. A **leaf** has no prologue, so a missing prologue is not a missing function 
 `FUN_801CF5D0` is a frameless eight-field record copy and is still the menu
 overlay's first routine.
 
+### What a scope-row audit can and cannot find
+
+The paragraph above says a scope claim is checked by re-reading the body. That
+is a human task with no exit code, so it is worth saying what a pass means.
+
+The check that carries weight is **operand-level**: a scope reason that names
+the table the routine indexes, the jump table it dispatches through, the bound
+it compares against and the helpers it calls is a reason written from the bytes,
+and re-deriving those four from the disassembly either confirms it or does not.
+A reason that only names a *category* ("GP0 chrome", "PsyQ transport") cannot be
+confirmed or refuted, and the fix for one of those is to rewrite it with its
+operands rather than to argue about it.
+
+The second thing worth checking while there is a **stale citation**: a reason
+whose `see ghidra/scripts/funcs/<stem>.txt` names a dump that has since been
+re-based or re-labelled. That would be a pointer going stale rather than the
+claim going wrong - the row's operands still check out against whichever dump
+of the VA the attribution CSV gives to the owning image - but it is the thing
+that makes a row unverifiable later. Watch for the near-miss: an address can
+carry several dump stems, so a stem that is absent from the first two hits of a
+glob is not an absent stem.
+
 ### The reachability claim
 
 A row in `unreferenced` says the opposite of an address claim: a routine *does*

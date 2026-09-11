@@ -301,9 +301,10 @@
     </tbody>
   </table>
   <details class="disclosure">
-    <summary>Open: the <code>record[0] +0x5C</code> word</summary>
+    <summary>Closed: the <code>record[0] +0x5C</code> word is vestigial</summary>
     <div class="disclosure-body">
-      <p>Rebased at load together with the <code>+0x58</code> art-bank pointer, but with no reader in <code>SCUS_942.54</code> or any extracted overlay image (11 overlay images remain dump-only). Its target is <code>clut_a_off &minus; 4</code>, zero on disc. The earlier "points at the ME archive" hypothesis is refuted by the disc: no <code>"ME"</code> archive exists in any player file.</p>
+      <p>Rebased at load together with the <code>+0x58</code> art-bank pointer, and read by nothing. The sweep now covers the whole disc: <code>SCUS_942.54</code> plus all 83 mapped overlay images, 518,656 instruction words. Eight word-width accesses sit at that displacement on a base other than the stack pointer, and every one is accounted for - the relocation itself, a render struct's <em>z</em> component, two scratchpad block copies, two module-local effect-handle stores, and one pointer walk that starts in a module context rather than at the record table.</p>
+      <p>Its target is <code>clut_a_off &minus; 4</code>, zero on disc. The earlier "points at the ME archive" hypothesis is refuted by the disc: no <code>"ME"</code> archive exists in any player file.</p>
     </div>
   </details>
   <details class="disclosure">

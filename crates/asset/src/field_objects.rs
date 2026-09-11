@@ -706,7 +706,7 @@ pub const GROUND_ATLAS_TPAGE: u16 = 0x001A;
 pub const GROUND_ATLAS_CLUT: u16 = 0x7C40;
 
 /// A triangulated heightfield surface for the world-map walk-view continent
-/// ground - the clean-room analogue of the retail terrain renderer, whose
+/// ground - the port-side analogue of the retail terrain renderer, whose
 /// elevation comes from the `+0x4000` floor-nibble grid (the height math is
 /// pinned by `FUN_80019278`, the SCUS bilinear ground-height sampler: a tile's
 /// low nibble indexes the 16-entry floor LUT, and the surface interpolates
@@ -789,7 +789,7 @@ impl WalkHeightfield {
 /// position, `>> 0xE`). This builder shares the nibble-LUT decode but only at
 /// integer cell corners - pre-baking the heightfield mesh once so the
 /// renderer's GPU vertex interpolation supplies the same bilinear surface in
-/// a single pass. A clean-room per-entity bilinear sampler (what
+/// a single pass. A port-side per-entity bilinear sampler (what
 /// `FUN_80019278` literally does) is not currently needed - entities walking
 /// on the heightfield get implicit interpolation from the rasteriser.
 pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfield {
