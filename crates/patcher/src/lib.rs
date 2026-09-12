@@ -83,6 +83,7 @@ pub mod element_affinity;
 pub mod encounter;
 pub mod enemy_ally;
 pub mod enemy_anim_mirror;
+pub mod enemy_hp_bar;
 pub mod equip_bonus;
 pub mod equip_mask;
 pub mod equipment;

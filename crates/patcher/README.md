@@ -78,6 +78,7 @@ full design.
   - [Encounters](#encounters)
   - [Run-away EXP](#run-away-exp)
   - [Enemy ally (charm)](#enemy-ally-charm) - [Charm softlock fix](#charm-softlock-fix-charm_fix-module)
+  - [Enemy HP bars](#enemy-hp-bars)
   - [Jewel fix](#jewel-fix-jewel_fix-module)
   - [Fishing prize prices](#fishing-prize-prices-fishing_price-module)
   - [Place names](#place-names-location_name-module)
@@ -316,6 +317,59 @@ code injection**, not a data edit.
 The grant is **banked**, not an immediate level-up: it only writes the experience
 cell, so it shows in the status screen at once and applies as a level the next
 time a won battle tallies it. `apply::inject_flee_exp` performs the two edits.
+
+## Enemy HP bars
+
+`--enemy-hp-bar` draws a red HP gauge over every living monster in battle
+(`enemy_hp_bar` module). Retail has no monster HP readout (the Koru fight's
+`HP Left` percentage strip is the lone exception), so this is new UI, but no
+new art: the plate is the AP plate's own icon-table records - the `HP` label
+chip (record `0x07`) where the red `AP` cap would sit, the trough (`0x32`),
+the value box (`0x69`) and the pointed end (`0x6A`) - around retail's
+gauge-content primitive `FUN_8002C0B0(x, y, value)`, which emits the two
+gouraud strips and the value numerals. The routine calls it with the monster's
+HP percentage and rewrites the gold end of both strips to red in the packets
+it just emitted (the dark-red end is retail's already).
+
+Each plate sits on its own row along the top of the screen (one 16-px row per
+monster slot, under the acting-actor plaque) and tracks its monster's screen X
+through the game's billboard projector `FUN_800195A8`, the same call the
+damage-number popup makes. A head-anchored plate collides with a retail
+widget for some monster size in every phase (the Begin / Reselect prompt for a
+small one, the party panels for a tall one), and one shared row piles up when
+an attack camera zooms in; the row-per-slot band is clear of both.
+
+`apply::inject_enemy_hp_bar` performs five same-size edits:
+
+- a **two-word detour** at the head of the damage-popup renderer
+  `FUN_801DF6B8` (PROT 0898, `0x801DF6B8`). It runs once per frame in the
+  fighting phase from the actor-render callback, after the frame's camera
+  matrix is in the GTE - the popup projects with it too. The routine replays
+  the two displaced words and resumes at `+8`. The detour lives only in PROT
+  0898's bytes, so a sibling slot-A image never carries it;
+- the routine as **four fragments over four routines nothing on the disc
+  references** (the five-form scan - word, `jal`, `j`, branch, `lui`+`addiu`
+  pair - over every image; `scripts/ci/port-catalog-ignore.toml`
+  `[unreferenced]`): `FUN_801F2D54` (cast colour-wash pulse), `FUN_801F463C`
+  (learned-art predicate) and `FUN_801DBB2C` (card-slot highlight reset) in
+  the battle overlay, and `FUN_8005126C` (battle sprite on-screen test) in
+  `SCUS_942.54`. The three overlay bodies are within branch range of each
+  other; the SCUS body is a `jal` leaf that draws one plate. Every body is
+  fingerprinted (prologue words + its own `jr ra`) and a fragment that would
+  overrun its body refuses.
+
+The hosts are code, not zero padding, so the "zero is not dead" trap does not
+apply; the evidence that they are free is the reference scan, not their
+bytes. No injected-code arena byte is claimed, so the feature composes with
+every other hook, including the ones that are mutually exclusive among
+themselves. The routine honours the R3000 load-delay slot (a static scan in
+the module's tests), keeps four instructions between `mflo` and the `divu`
+that follows it (the R3000 leaves `lo` undefined otherwise), and opens its
+own frame under the popup's caller - this render pass runs with the stack in
+the scratchpad, and the frame is smaller than the popup's own. The module's
+tests execute the assembled words in `mips_sim` against stubbed retail
+helpers; the runtime check is the PCSX-Redux RAM-injection probe
+`scripts/pcsx-redux/autorun_enemy_hp_bar_inject.lua`.
 
 ## Enemy ally (charm)
 
@@ -1444,6 +1498,7 @@ a randomize entry that emits a per-feature `*ApplyReport`.
 | Drops | `current_drops` | `apply_drop_plan` / `randomize_drops` | a `DropApplyReport` records any slot too tight to re-pack. |
 | Equipment drops | - | `inject_equipment_bonus_drop` | injects a code hook into the battle-end reward routine that grants one extra random equipment piece on a low per-battle chance - additive, leaving the normal drop untouched (two same-size `SCUS_942.54` edits via `bonus_drop`). |
 | Run-away EXP | - | `inject_flee_exp` | injects a code hook into the battle-action escape teardown that banks a slice of a fled fight's experience into the party on a successful escape - vanilla gives nothing for fleeing (a raw overlay-entry detour + a `SCUS_942.54` routine via `flee_exp`). |
+| Enemy HP bars | - | `inject_enemy_hp_bar` | a two-word detour at the head of the battle overlay's damage-popup renderer plus the gauge routine laid over four routines nothing on the disc references (three in PROT 0898, one in `SCUS_942.54`), drawing the AP plate's own tiles + gauge primitive over every living monster each frame (`enemy_hp_bar`). Claims no arena byte. |
 | Enemy ally (charm) | - | `inject_enemy_ally` | injects a code hook into battle setup that, on a per-battle chance, sets the AI-delegated bits (`0x380`) on the frontmost enemy so it fights on the player's side, plus a one-word widen of the victory check so the ally isn't an enemy you must defeat (a `SCUS_942.54` detour + gap routine + an overlay-0898 edit via `enemy_ally`). Always ships the `charm_fix` victory-arm guard alongside it (a one-word overlay detour + a SCUS-gap guard) so the widen can't drive the win-pose staging out of bounds - the charm battle softlock fix. |
 | Shiny Seru | - | `inject_shiny_seru` | injects nine code hooks so that, on a per-battle chance, a capturable enemy spawns with +35% stats (translucent) and its captured Seru deals +35% damage forever, plus cosmetics (translucent summon + a "+35% DMG!" caption below the effect box); the persistent flag is a parallel per-spell shiny byte at `record+0x1C0` (not the spell-level byte), with a grant-shift hook keeping it slot-aligned; all routines/data live in six verified-dead SCUS arenas **outside every live table** (an earlier layout squatted in the victory mouth-override + move-power tables - corrupted mouth + 6 broken moves - now guarded by `assert_not_in_tables`) via `shiny_seru`. |
 | Shops | `current_shops` | `randomize_shops` | `ShopApplyReport`; first `apply_item_price_edits` prices the chest-found equipment, then `Random` draws from the priced sellable pool so no quest item is sold. |

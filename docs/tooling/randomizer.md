@@ -706,6 +706,105 @@ default in the web Balanced / Full Chaos presets.
 > edit is surgical and EDC/ECC-valid; the build guard refuses an unknown layout)
 > plus an emulator playtest.
 
+### Enemy HP bars
+
+`--enemy-hp-bar` draws a red HP gauge over every living monster in battle
+(`enemy_hp_bar` module). Retail never shows a monster's HP - the party HUD
+counts its own HP down after a hit, a monster's `+0x172` display cursor is
+maintained but never drawn ([`battle-action.md`](../subsystems/battle-action.md)),
+and the one readout on the disc is the Koru fight's `HP Left` percentage
+strip. This adds a per-monster plate without adding art.
+
+**What is drawn.** The AP plate's own parts, from the system-UI icon table
+`0x800732A4` ([`field-menu.md`](../subsystems/field-menu.md#status-page-submenu-0-or-5)):
+the `HP` label chip (record `0x07`, the roster panel's own) where the plate's
+red `AP` cap would sit, the trough (`0x32`), the value box (`0x69`) and the
+pointed end (`0x6A`), each through the icon sprite emitter `FUN_8002C488`.
+The meter and the numeral come from retail's gauge-content primitive
+`FUN_8002C0B0(x, y, value)`, called with the monster's HP percentage
+(`hp * 100 / max`, capped at 100, floored at 1 so a living monster always
+shows a sliver): it emits two 3-px gouraud strips of `value/2` px and the
+value digits. Its strips run dark-red `(0x80,0x20,0x10)` to gold
+`(0xC0,0xA0,0x40)` and back; the routine reads the primitive cursor
+`0x1F8003A0` before the call and afterwards rewrites the four gold colour
+words of the two packets it emitted to red, keeping the GP0 code byte the
+first colour word of the second packet carries. The fill is linked first, so
+it draws over the trough (earlier-linked = on top in an ordering-table
+bucket).
+
+**Where.** One 16-px row per monster slot along the top of the screen
+(slot 3 on the first row, at `y = 28`), under the acting-actor plaque and
+above the Begin / Reselect prompt, each plate centred on its monster's
+projected screen X. The X comes from the billboard projector `FUN_800195A8`
+over the actor's stage anchor `+0x3C/+0x3E/+0x40` - the same call, with the
+same GTE state, the damage-number popup makes - so a plate follows its
+monster under any attack camera; a monster behind the camera (the projector's
+depth saturates to zero) or off-screen simply lands off-screen. A
+head-anchored plate was tried first and collides with a retail widget for
+some monster size in every phase, and a single shared row piles up when a
+zoomed attack camera brings the monsters' X together; the row-per-slot band
+is clear of both. Slots are read from the actor pointer table
+`DAT_801C9370[3..=6]` (slot 7 is the "none" sentinel); a seat is skipped when
+its pointer is null, its live HP `+0x14C` is zero, or its `+0x21C` byte is
+`0xFF` (hidden by a summon fade).
+
+**Hook.** A two-word detour at the head of the damage-popup renderer
+`FUN_801DF6B8` (PROT 0898, `0x801DF6B8`), which the actor-render callback
+`FUN_800480D8` calls once per frame (`0x80048138`) while the battle phase
+byte `DAT_8007BD71` is `0xFF` - not during the intro ramp, not in the results
+sequence - after the frame's camera matrix is in the GTE. The routine also
+early-outs on the HUD-parked halfword `ctx[+0x6CE]` every retail HUD emitter
+tests, replays the two displaced words and resumes at `0x801DF6C0`. The
+detour is a PROT 0898 edit only, so the sibling slot-A images (dome, capture,
+magic level-up) never carry it.
+
+**Where the code lives.** The SCUS injected-code arena is full (34 bytes in
+fragments - [the arena budget](#the-injected-code-arena-budget)) and the
+battle overlay's image is packed, so the routine is laid over **four
+routines nothing on the disc references** - the five-form scan (word, `jal`,
+`j`, PC-relative branch, `lui`+`addiu` pair) over `SCUS_942.54`, every based
+overlay image and every PROT entry finds no reference of any kind
+([`address-reference-scan.md`](address-reference-scan.md); the verdicts are
+recorded per body in `scripts/ci/port-catalog-ignore.toml` `[unreferenced]`):
+
+| Fragment | Host body | Capacity |
+|---|---|---|
+| A - gates, monster loop, percentage | `FUN_801F2D54`, cast colour-wash pulse (PROT 0898) | 47 words |
+| B - clamp, project the anchor, seat the plate | `FUN_801F463C`, learned-art predicate (PROT 0898) | 35 words |
+| C - loop tail, epilogue, return | `FUN_801DBB2C`, card-slot highlight reset (PROT 0898) | 24 words |
+| S - draw one plate (leaf, `jal` from C) | `FUN_8005126C`, battle sprite on-screen test (SCUS) | 52 words |
+
+The three overlay bodies are within PC-relative branch range of one another,
+so A, B and C are one program spliced with branches; the far transfers (the
+loop back-edge, the `jal` into SCUS, the return to the popup) are `j` /
+`jal`. Every body is fingerprinted at plan time - its prologue words and its
+own `jr ra` - and a fragment that would overrun its body refuses, so a build
+that differs, a body some later mod has claimed, or a second application all
+fail closed with nothing written. The hosts are code, not zero padding: the
+["zero is not dead"](../../crates/patcher/README.md#region-placement---zero-is-not-dead-three-times)
+trap does not apply, and the evidence is the reference scan, not the bytes.
+No arena byte is claimed, so `--enemy-hp-bar` composes with every other code
+hook, including the ones that exclude each other.
+
+**Traps honoured.** The R3000 load-delay slot (a static scan over each
+fragment and across the splices is in the module's tests); `mflo` followed
+within two instructions by a multiply or divide leaves `lo` undefined, so the
+percentage math keeps four instructions between them; branch reach is
+checked against the 16-bit word offset at assembly; and the routine opens its
+own `0x50`-byte frame under the popup's caller - this render pass runs with
+the stack **in the scratchpad**, which is also why the plate geometry probe
+reads the routine's frame through the scratchpad reader.
+
+Off by default, seedless, no Sony bytes (the plate is the disc's own icon
+records, drawn by the disc's own emitters). Module
+[`legaia_patcher::enemy_hp_bar`](../../crates/patcher/src/enemy_hp_bar.rs);
+the module's tests execute the assembled words in the crate's R3000
+interpreter against stubbed retail helpers; disc oracle
+`crates/patcher/tests/enemy_hp_bar_real.rs`; runtime probe
+[`autorun_enemy_hp_bar_inject.lua`](../../scripts/pcsx-redux/autorun_enemy_hp_bar_inject.lua)
+(RAM-injects the planned edits into a mid-battle save state and captures the
+frame plus every gauge / icon emission).
+
 ### Enemy ally (charm)
 
 `--enemy-ally` gives a per-battle chance (`--enemy-ally-pct`%, default **20**)
@@ -4817,6 +4916,7 @@ bit-for-bit.
 | `crates/patcher` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
 | `crates/patcher` `equipment_drops_real` | disc-gated | inject the bonus equipment drop into a scratch `SCUS_942.54`; assert off the patched image that the hook site holds `j routine` + nop, the routine + id table decode as the hand-assembled bytes (replaying the two displaced instructions and returning), the table holds pool equipment ids, the edit is surgical (only the hook + routine regions change) and the disc still parses; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
 | `crates/patcher` `flee_exp_real` | disc-gated | inject the run-away EXP hook: assert the real disc's escape-teardown site (PROT 898, VA `0x801E5A10`) **is** the expected displaced pair, then off the patched image that the overlay detour is `j routine` + nop, the SCUS routine decodes as the hand-assembled bytes (replaying the displaced pair + returning), each edit is surgical (only the 8-byte hook / the routine region change), the patched overlay + image still parse and stay EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
+| `crates/patcher` `enemy_hp_bar_real` | disc-gated | inject the enemy HP bars: assert every host body on the real disc **is** the fingerprinted retail routine (prologue words + its own `jr ra`), then off the patched image that the popup detour is `j fragment-A` + nop, all four fragments decode as the assembled words, nothing outside the five spans changed, every touched sector stays EDC/ECC-valid, the patch is byte-deterministic, and a second application refuses |
 | `crates/patcher` `enemy_ally_real` | disc-gated | inject the enemy-ally charm: assert the real disc's setup hook (SCUS, VA `0x80051990`) **is** `lui v1,0x8008` / `lbu v1,-0x42f4(v1)` and the victory site (PROT 898, VA `0x801E6638`) **is** `andi v0,v0,0x4`, then off the patched image that the SCUS detour is `j routine` + nop, the routine decodes as the hand-assembled bytes (sets `0x380`, replays the displaced pair, returns), the victory word is widened to `andi v0,v0,0x384`, each edit is surgical, it composes with flee-EXP in the same gap, the image stays EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook / non-dead routine region / unexpected victory word |
 | `crates/patcher` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and the SCUS regions (`0x80077728` gap 1 / `0x8007AE00` arena 1 / `0x8007AFF8` arena 2 / `0x80078A88` slot 6) are all-zero dead space outside every live table - incl. the `0x80079xxx` SsAPI sound tables the old arena3/4/5 squatted in (routine VAs 4-byte aligned), and the victory mouth-override row at `0x800781B0` keeps the clean keyframes; then off the patched image: every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, bytes outside the planned edits are untouched, the disc stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted / non-dead / in-table region |
 | `crates/patcher` `approach_fix_real` | disc-gated | apply the approach-softlock fix: assert the baseline window at PROT 898 `+0x14D50` holds the stock nine facing-recompute words (and the pose/range-check context around it matches the documented disassembly), then off the patched image that exactly the nine window words changed, the image still parses, the edit is byte-deterministic, and a second application is a clean no-op |

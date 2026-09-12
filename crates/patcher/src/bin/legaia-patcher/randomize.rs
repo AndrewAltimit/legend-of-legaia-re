@@ -256,6 +256,20 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("enemy_ally = false".to_string());
     }
 
+    // Enemy HP bars: a per-frame gauge over each living monster, drawn with
+    // retail's own AP-plate tiles + gauge primitive from a detour at the head
+    // of the damage-popup renderer. Purely cosmetic; claims no arena bytes.
+    if args.enemy_hp_bar {
+        let report = apply::inject_enemy_hp_bar(&mut patcher)?;
+        println!(
+            "enemy-hp-bar: red HP gauge over every enemy ({} overlay + {} SCUS words, {} edits)",
+            report.overlay_words, report.scus_words, report.edits
+        );
+        manifest.push("enemy_hp_bar = true".to_string());
+    } else {
+        manifest.push("enemy_hp_bar = false".to_string());
+    }
+
     // Shiny Seru: a code hook in battle setup boosts a rare capturable enemy's
     // stats +35% and marks it; the capture/damage hooks flag the captured Seru
     // (persistent byte at record+0x1C0, kept off the level byte so the Seru still

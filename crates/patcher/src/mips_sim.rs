@@ -1,5 +1,5 @@
 //! A tiny R3000 subset - exactly the instructions the injected routines use,
-//! delay slots included - so assembled words can be run against a model in
+//! delay slots and the `hi`/`lo` multiply-divide pair included - so assembled words can be run against a model in
 //! unit tests instead of being read. Memory is a sparse byte map; anything
 //! unmapped reads as zero. Test-only.
 
@@ -8,6 +8,9 @@ use std::collections::HashMap;
 pub(crate) struct Cpu {
     pub r: [u32; 32],
     pub pc: u32,
+    /// The multiply / divide result pair.
+    pub hi: u32,
+    pub lo: u32,
     pub mem: HashMap<u32, u8>,
     pub steps: usize,
 }
@@ -17,6 +20,8 @@ impl Cpu {
         Self {
             r: [0; 32],
             pc: 0,
+            hi: 0,
+            lo: 0,
             mem: HashMap::new(),
             steps: 0,
         }
@@ -74,6 +79,25 @@ impl Cpu {
                 0x04 => self.r[rd] = self.r[rt] << (self.r[rs] & 31),
                 0x06 => self.r[rd] = self.r[rt] >> (self.r[rs] & 31),
                 0x08 => branch = Some(self.r[rs]),
+                0x10 => self.r[rd] = self.hi,
+                0x12 => self.r[rd] = self.lo,
+                0x18 => {
+                    let p = (self.r[rs] as i32 as i64) * (self.r[rt] as i32 as i64);
+                    self.lo = p as u32;
+                    self.hi = (p >> 32) as u32;
+                }
+                0x19 => {
+                    let p = u64::from(self.r[rs]) * u64::from(self.r[rt]);
+                    self.lo = p as u32;
+                    self.hi = (p >> 32) as u32;
+                }
+                0x1b => {
+                    // Division by zero is undefined on the R3000; the model
+                    // keeps it loud so a routine never leans on it.
+                    assert_ne!(self.r[rt], 0, "divu by zero at {:#x}", self.pc);
+                    self.lo = self.r[rs] / self.r[rt];
+                    self.hi = self.r[rs] % self.r[rt];
+                }
                 0x09 => {
                     // `jalr rd, rs` - the link register defaults to $ra.
                     let target = self.r[rs];
@@ -88,6 +112,18 @@ impl Cpu {
                 0x2b => self.r[rd] = u32::from(self.r[rs] < self.r[rt]),
                 f => panic!("unsupported SPECIAL funct {f:#x} at {:#x}", self.pc),
             },
+            0x01 => {
+                // REGIMM: rt = 0 bltz, 1 bgez.
+                let neg = (self.r[rs] as i32) < 0;
+                let take = match rt {
+                    0 => neg,
+                    1 => !neg,
+                    o => panic!("unsupported REGIMM {o:#x} at {:#x}", self.pc),
+                };
+                if take {
+                    branch = Some(self.pc.wrapping_add(4).wrapping_add(simm << 2));
+                }
+            }
             0x02 => branch = Some((self.pc & 0xF000_0000) | ((w & 0x03ff_ffff) << 2)),
             0x03 => {
                 self.r[31] = self.pc + 8;
@@ -103,12 +139,23 @@ impl Cpu {
                     branch = Some(self.pc.wrapping_add(4).wrapping_add(simm << 2));
                 }
             }
+            0x06 => {
+                if (self.r[rs] as i32) <= 0 {
+                    branch = Some(self.pc.wrapping_add(4).wrapping_add(simm << 2));
+                }
+            }
+            0x07 => {
+                if (self.r[rs] as i32) > 0 {
+                    branch = Some(self.pc.wrapping_add(4).wrapping_add(simm << 2));
+                }
+            }
             0x09 => self.r[rt] = self.r[rs].wrapping_add(simm),
             0x0a => self.r[rt] = u32::from((self.r[rs] as i32) < (simm as i32)),
             0x0b => self.r[rt] = u32::from(self.r[rs] < simm),
             0x0c => self.r[rt] = self.r[rs] & u32::from(imm),
             0x0d => self.r[rt] = self.r[rs] | u32::from(imm),
             0x0f => self.r[rt] = u32::from(imm) << 16,
+            0x20 => self.r[rt] = self.rd8(self.r[rs].wrapping_add(simm)) as i8 as i32 as u32,
             0x21 => self.r[rt] = self.rd16(self.r[rs].wrapping_add(simm)) as i16 as i32 as u32,
             0x23 => self.r[rt] = self.rd32(self.r[rs].wrapping_add(simm)),
             0x24 => self.r[rt] = u32::from(self.rd8(self.r[rs].wrapping_add(simm))),

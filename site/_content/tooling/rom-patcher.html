@@ -398,6 +398,12 @@
           <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">A 20% chance per battle that one enemy starts charmed and turns on its own side - an existing enemy flipped for that battle, not a controllable party member. Multi-enemy fights only, so tutorials and solo bosses are skipped. <a href="randomizer.html#enemy-ally">Details</a>.</span></span></span>
       </label>
 
+      <label class="rom-check-row" id="rom-enemy-hp-bar-row">
+        <input type="checkbox" id="rom-enemy-hp-bar">
+        <span>Enemy HP bars <span class="rom-opt-note">- a red HP gauge over every enemy in battle</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Retail never shows a monster's HP. With this on, every living enemy gets a gauge built from the game's own AP-plate parts - an <strong>HP</strong> label, the trough, a red meter and the remaining percentage - on its own row along the top of the screen, following the enemy left and right as the camera moves.</p><p>The code lives in four routines the game never calls, so it takes no injected-code arena bytes and combines with every other option, including Shiny Seru and the Super Arts Pack. <a href="randomizer.html#enemy-hp-bars">Details</a>.</p></span></span></span>
+      </label>
+
       <label class="rom-check-row" id="rom-shiny-seru-row">
         <input type="checkbox" id="rom-shiny-seru">
         <span>Shiny Seru <span class="rom-opt-note">- 2% chance of a +35% shiny; its Seru keeps the boost</span>

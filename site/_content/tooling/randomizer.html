@@ -559,6 +559,20 @@ legaia-patcher chests --input DISC.bin                     # read-only listing</
   </div></details>
 </section>
 
+<section class="doc-section" id="enemy-hp-bars">
+  <h3>Enemy HP bars</h3>
+  <p>Every living enemy carries a red HP gauge - an <strong>HP</strong> label, the trough, a red meter and the remaining percentage - on its own row along the top of the screen, following the enemy left and right as the battle camera moves. The game never shows a monster's HP on its own.</p>
+  <table class="layout">
+    <thead><tr><th>Flag</th><th>Values</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>--enemy-hp-bar</td><td>toggle</td><td>Cosmetic. Combines with every other option, including the arena features.</td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
+    <p>Tier F, with no arena byte claimed. The plate is the AP plate's own parts from the system-UI icon table, drawn by the game's own icon and gauge routines; the routine calls the gauge primitive with the monster's HP percentage and recolours the gold end of the two strips it just emitted. Each plate's X comes from the billboard projector the damage numbers use, so it tracks the monster under any camera; the rows are fixed so plates never pile up when a zoomed camera brings monsters together. A two-word detour at the head of the damage-popup renderer runs it once per fighting-phase frame, and the code is laid over four routines nothing on the disc references - three in the battle overlay, one in the executable - each fingerprinted before it is overwritten. The full placement story is in the <a href="../reference/functions.html">function reference</a> and the repo's <code>docs/tooling/randomizer.md</code>.</p>
+  </div></details>
+</section>
+
 <section class="doc-section" id="shiny-seru">
   <h3>Shiny Seru</h3>
   <p>Now and then a capturable enemy spawns translucent and 35% stronger; absorb it and the Seru keeps a permanent +35% damage boost, shown in a caption every cast.</p>

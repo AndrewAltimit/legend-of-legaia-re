@@ -13,7 +13,8 @@
  * earth_egg_price, arts_powers, super_art_powers,
  * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, enemy_stat_scale,
  * exp_scale, seru_catch_rate, delilas_party, delilas_arts_voice,
- * delilas_moves, enemy_attack_count, progress?)
+ * delilas_moves, enemy_attack_count, swing_costs, equip_owners, enemy_hp_bar,
+ * progress?)
  * -> Promise<{ data, summary, seed, lang }>`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
  * `export_lang_pack(image, language) -> yaml_string`, and
@@ -2244,7 +2245,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, shinySeru: false, showSuperArts: false, superArtsPack: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '', delilasArtsVoice: 'original', delilasMoves: 'hybrid', attackCount: '',
+  enemyAlly: false, enemyHpBar: false, shinySeru: false, showSuperArts: false, superArtsPack: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '', delilasArtsVoice: 'original', delilasMoves: 'hybrid', attackCount: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -2338,6 +2339,7 @@ function init() {
   const equipmentDropsChk = $('rom-equipment-drops');
   const seruTradeChk = $('rom-seru-trade');
   const enemyAllyChk = $('rom-enemy-ally');
+  const enemyHpBarChk = $('rom-enemy-hp-bar');
   const shinySeruChk = $('rom-shiny-seru');
   const showSuperArtsChk = $('rom-show-super-arts');
   const superArtsPackChk = $('rom-super-arts-pack');
@@ -2629,6 +2631,7 @@ function init() {
     equipmentDropsChk.checked = cfg.equipmentDrops;
     seruTradeChk.checked = cfg.seruTrade;
     enemyAllyChk.checked = cfg.enemyAlly;
+    enemyHpBarChk.checked = !!cfg.enemyHpBar;
     shinySeruChk.checked = cfg.shinySeru;
     showSuperArtsChk.checked = !!cfg.showSuperArts;
     superArtsPackChk.checked = !!cfg.superArtsPack;
@@ -2839,6 +2842,7 @@ function init() {
     const fleeExp = fleeExpChk.checked;
     const seruTrade = seruTradeChk.checked;
     const enemyAlly = enemyAllyChk.checked;
+    const enemyHpBar = enemyHpBarChk.checked;
     const shinySeru = shinySeruChk.checked;
     const showSuperArts = showSuperArtsChk.checked;
     const superArtsPack = superArtsPackChk.checked;
@@ -2990,7 +2994,7 @@ function init() {
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !superArtPower &&
       !artsApGrant && !artsApCost &&
       !spiritAp && !damageAp && !enemyStatScale && !expScale && !seruCatchRate && !delilasParty &&
-      !attackCount && !swingCosts && !equipOwners
+      !attackCount && !swingCosts && !equipOwners && !enemyHpBar
     );
     if (!baseActive && texSpecs.length === 0) {
       setStatus('Enable at least one option (pick a preset, a language, a texture, or flip a toggle).', 'err');
@@ -3026,7 +3030,7 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = await mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, superArtsPack, attackCount, swingCosts, equipOwners, onPatchProgress);
+        const result = await mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, superArtsPack, attackCount, swingCosts, equipOwners, enemyHpBar, onPatchProgress);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';
