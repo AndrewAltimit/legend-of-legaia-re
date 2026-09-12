@@ -324,7 +324,7 @@ unless asked for:
 | `--arts-ap-cost [CHAR:]COMBO=AMOUNT` | set what a Tactical Art **costs** in AP (`1..=100`), replacing retail's computed cost. Same hook, same keying, same exclusivity; the art's menu AP number is rewritten to match | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
 | `--damage-ap AP` | set how much AP taking damage charges into the battle gauge, per 100% of max HP lost (retail 100): `0` = damage never feeds the gauge, negative = being hit drains it | single value -200..=200 | [Enemy-damage AP](#enemy-damage-ap) |
-| `--oscillating-ap [DAMAGE_PCT]` | every battle, deal each Tactical Art at random onto the **cost** side (retail) or the **grant** side (castable at any AP, gives its AP back, deals `DAMAGE_PCT` percent of its damage); re-rolled per art per battle. Mutually exclusive with every other arena feature | single value 0..=100, default 20 | [Oscillating AP costs](#oscillating-ap-costs) |
+| `--oscillating-ap [DAMAGE_PCT]` | every battle, deal each Tactical Art at random onto the **cost** side (retail) or the **grant** side (castable at any AP, gives its AP back, deals `DAMAGE_PCT` percent of its damage); re-rolled per art per battle, and the in-battle arts list shows a grant-side art as `0` AP. Mutually exclusive with every other arena feature | single value 0..=100, default 20 | [Oscillating AP costs](#oscillating-ap-costs) |
 | `--enemy-stat-scale MULT`, `STAT=MULT,...` or `GROUP:SCALE\|...` | scale enemy combat stats (HP / MP / ATK / UDF / LDF / INT / SPD), story bosses included; one number scales all seven, a `stat=mult` list scales only what it names, and a `regular:`/`boss:` split gives random encounters and set-pieces their own scale. Nothing moves between monsters, and EXP / gold / drops are untouched | each value 0.1..=5 | [Enemy difficulty scale](#enemy-difficulty-scale) |
 | `--exp-scale MULT` | scale every monster's base EXP reward - the victory payout, its party split and the `--flee-exp` grant all read the scaled field; gold and drops stay retail | 0.1..=5 | [Experience multiplier](#experience-multiplier) |
 | `--seru-catch-rate PCT` | override every capturable Seru's catch chance with one flat percent (the odds a killing blow absorbs its magic; retail 1..=80% per monster); only the 63 capturable records are touched | 0..=100 | [Seru catch rate](#seru-catch-rate) |
@@ -4268,10 +4268,11 @@ every battle, onto one of two sides at random:
 | **grant** | admitted at any AP level; *adds* the AP it would have cost (clamped at 100) | `DAMAGE_PCT`% (default 20) |
 
 The deal is per art and per battle, so a fight is a mix of both sides and the
-next fight a different mix. Enemies are untouched. Nothing on screen says which
-side an art drew - the pause menu's AP number is a static SCUS byte the roll
-cannot reach and the battle UI draws no per-art cost - so the gauge moving the
-other way, and the damage, are the tell.
+next fight a different mix. Enemies are untouched. The in-battle Tactical-Arts
+list (Triangle) shows a grant-side art as **`0` AP** for that battle - the same
+marker the arts AP override uses - so the deal is readable before committing a
+combo. The field pause menu keeps retail's numbers: outside a battle no deal is
+in force.
 
 **How it is built.** The AP half is the [arts AP override](#arts-ap-override)'s
 machinery with the per-art config byte replaced by a **per-battle side bit**:
@@ -4307,9 +4308,20 @@ end-of-turn refund has nothing to double-count. Two pieces are new:
   in exact integer arithmetic (`mflo` three words clear of the `divu`), then
   replays the two displaced words; `t0..t6` are free there and `HI`/`LO` hold
   nothing the kernel still reads.
+- **The list read-out.** A detour at `0x800344D8` in the SCUS arts-list widget
+  `FUN_80034358` - the `lbu s0,-0x6(s5)` that loads the AP number a row draws
+  from the static arts-name table (`s5 = record + 8`; `+0` character, `+1`
+  row, `+2` AP). While the game mode is battle (`0x8007B83C == 0x15`) a
+  grant-side row draws `0`; any other case, and every draw outside battle
+  (the same widget serves the field pause menu), replays the stock load.
 
-**Placement.** Guard + debit in `ARENA1`, the refund in `ARENA2`, the roll in
-`SLOT6`, the damage routine + side table + counter in `SCUS_GAP` - all four of
+The four consumers share one **side leaf** (`(row, character) -> grant?`) they
+reach with `jal`: `ra` is dead at every site, each host having saved it in its
+prologue and issuing `jal`s of its own before its epilogue.
+
+**Placement.** The leaf, guard, debit and list routines in `ARENA1`, the
+refund in `ARENA2`, the roll in `SLOT6`, the damage routine + side table +
+counter in `SCUS_GAP` - all four of
 [the injected-code arena](#the-injected-code-arena-budget)'s regions, so the
 knob is **mutually exclusive with `--shiny-seru`, `--arts-ap-grant` /
 `--arts-ap-cost`, `--show-super-arts`, `--super-arts-pack` and
@@ -4321,18 +4333,20 @@ per battle.
 Seedless toggle, off by default, in no preset. Module
 [`legaia_patcher::oscillating_ap`](../../crates/patcher/src/oscillating_ap.rs)
 (unit tests execute every routine on the crate's R3000 model - guard, debit,
-roll against a fake `rand`, damage across every fall-through shape); disc
+list, roll against a fake `rand`, damage across every fall-through shape); disc
 oracle `crates/patcher/tests/oscillating_ap_real.rs` (independently transcribed
 retail words at every fingerprinted site, byte-exact landing, surgical diff,
 determinism, idempotence, the exclusions both ways, refusal of a corrupted
 site or a dirty region). In the browser patcher it is the **Oscillating AP
 costs** toggle + slider in the Gameplay group.
 
-> **Verification state**: statically verified only. The oracles prove where
-> the bytes land and the model runs prove what the routines compute; a live
-> battle playtest (a grant-side art admits at 0 AP, raises the gauge by its
-> retail cost and deals the configured fraction; a cost-side art is retail; the
-> deal changes between battles) has not been run.
+> **Verification state**: the roll is emulator-verified - the probe
+> `scripts/pcsx-redux/autorun_oscillating_ap_roll.lua` walks a pre-encounter
+> state on the patched disc into a battle and reads the side table filled and
+> the counter at 16 at the setup site's resume - and the AP side has been
+> played (grant-side arts give AP back across battles). The list read-out and
+> the grant-side damage fraction rest on the model runs and the oracles; a
+> playtest of those two is the remaining step.
 
 ### Doors (scene transitions)
 

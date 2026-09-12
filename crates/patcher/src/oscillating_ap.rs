@@ -3,25 +3,28 @@
 //! damage) or the **grant** side (admitted at any AP level, *adds* the AP it
 //! would have cost, deals a fraction of its damage). The deal is re-rolled per
 //! art per battle, so a fight is a mix of both sides and the next fight is a
-//! different mix.
+//! different mix. The in-battle Tactical-Arts list (Triangle) shows a
+//! grant-side art as `0` AP, the way the arts AP override marks a grant.
 //!
 //! A community modding knob. It reuses the two facts the arts AP override
 //! ([`crate::arts_ap_grant`]) pinned - retail computes an art's AP cost inside
 //! the party arts queue-builder `FUN_801EED1C` (PROT 0898) instead of loading
 //! it, and the builder identifies the art by its arts-table row `s3 - 0x0B`
 //! keyed with the acting slot's party-record id `DAT_8007BD10[slot]` - and adds
-//! two things that module has no need for: a per-battle roll, and a damage
-//! scale on the grant side.
+//! what that module has no need for: a per-battle roll, a damage scale on the
+//! grant side, and a list read-out that follows the deal.
 //!
 //! ## What is on the disc after the patch
 //!
 //! | Piece | Where | What it does |
 //! |---|---|---|
 //! | roll (S) | SCUS setup hook `0x80051A20`, inside the battle loader `FUN_800513F0` | fills the 16-byte side table with 16 `rand()` draws (one bit per (character, row)) |
+//! | side leaf (L) | SCUS arena | `(row, char) -> t3 = grant side?`, the one lookup the four consumers below `jal` |
 //! | guard (A) | 0898 `0x801EF410` | a grant-side art reads as affordable at any Spirit |
 //! | debit (C) | 0898 `0x801EF490` | a grant-side art *adds* retail's own computed charge (`a2`, clamped at 100) and skips the spent accrual; the cost side is untouched |
 //! | refund (D) | 0898 `0x801EF988` | the end-of-turn `Spirit += spent` refund is clamped at 100 (the arts AP override's routine, verbatim) |
 //! | damage (M) | 0898 `0x801EDA10`, inside the arms execution resolver `FUN_801EC3E4` | a grant-side art's strike damage becomes `damage * pct / 100` |
+//! | list (V) | SCUS `0x800344D8`, inside the arts-list renderer `FUN_80034358` | in battle, a grant-side row's AP number draws as `0` |
 //!
 //! `actor[+0x170]` = Spirit/AP; `actor[+0x224]` = spent-AP accumulator.
 //!
@@ -41,7 +44,14 @@
 //! retail's own `rand` veneer `FUN_80056798` sixteen times and stores the low
 //! byte of each draw; the loop counter lives in a scratch word next to the
 //! table because the BIOS clobbers the temporaries. Sixteen extra draws per
-//! battle shift the RNG stream, nothing else.
+//! battle shift the RNG stream, nothing else. Observed live: the roll enters
+//! once per battle load and leaves the counter at 16 and the table filled
+//! (`scripts/pcsx-redux/autorun_oscillating_ap_roll.lua`).
+//!
+//! The lookup itself is one leaf every consumer reaches with `jal`: `t0` =
+//! row, `t1` = 0-based character, `t3` out (`t2` scratch, `t0`/`t1` consumed).
+//! `ra` is dead at all four call sites - each host saves it in its prologue
+//! and issues `jal`s of its own between the site and its epilogue.
 //!
 //! ## Identifying the art at strike time
 //!
@@ -71,23 +81,32 @@
 //! hold nothing (the kernel's next `mflo` follows its own `divu` at
 //! `0x801EDB98`).
 //!
+//! ## The list read-out
+//!
+//! The Tactical-Arts list is drawn by the SCUS window widget `FUN_80034358`,
+//! which walks the static arts-name table (`DAT_80075EC4`, 20-byte records:
+//! `+0` character, `+1` row, `+2` AP) with `s5 = record + 8` and loads the AP
+//! it draws at `0x800344D8` (`lbu s0,-0x6(s5)`), halving it under the actor's
+//! `0x800` flag. The detour there re-derives the side bit from the record's own
+//! `+0` / `+1` bytes and draws `0` for a grant-side row **while the game mode
+//! is battle** (`0x8007B83C == 0x15`); the same widget serves the field pause
+//! menu, where no deal is in force, so there it stays retail. The two displaced
+//! words are replayed (`andi v0,v0,0x800` first - the routine never touches
+//! `v0`); `t0..t3` are dead at the site (`t0` is next written at `0x80034620`).
+//!
 //! ## Placement
 //!
 //! The same four verified-dead SCUS regions every hand-assembled feature
-//! shares: guard + debit in [`ARENA1_VA`], refund in [`ARENA2_VA`], the roll in
-//! [`SLOT6_VA`] (it fills the slot exactly), the damage routine + side table +
-//! counter in [`SCUS_GAP_VA`]. So the knob is **mutually exclusive with
-//! `--shiny-seru`, `--arts-ap-grant` / `--arts-ap-cost`, `--show-super-arts`,
-//! `--super-arts-pack` and `--delilas-challenge`** - enforced in the CLI and
-//! the web patcher, and structurally by the all-zero check on every region.
+//! shares: the leaf, guard, debit and list routines in [`ARENA1_VA`], the
+//! refund in [`ARENA2_VA`], the roll in [`SLOT6_VA`] (it fills the slot
+//! exactly), the damage routine + side table + counter in [`SCUS_GAP_VA`]. So
+//! the knob is **mutually exclusive with `--shiny-seru`, `--arts-ap-grant` /
+//! `--arts-ap-cost`, `--show-super-arts`, `--super-arts-pack` and
+//! `--delilas-challenge`** - enforced in the CLI and the web patcher, and
+//! structurally by the all-zero check on every region.
 //!
-//! ## What it does not do
-//!
-//! Nothing on screen says which side an art landed on: the pause menu's AP
-//! number is a static SCUS byte the roll cannot reach, and the battle UI draws
-//! no per-art cost. The gauge moving the other way, and the damage, are the
-//! tell. Enemies are untouched (`FUN_801EED1C` is the party builder; monster
-//! strikes hit the damage site with a slot `>= 3` and fall through).
+//! Enemies are untouched (`FUN_801EED1C` is the party builder; monster strikes
+//! hit the damage site with a slot `>= 3` and fall through).
 //!
 //! No Sony bytes are embedded; the routines are the patcher's own code and the
 //! fingerprints are single instruction words.
@@ -153,6 +172,22 @@ pub(crate) const COMMIT_FINGERPRINT: [(u32, u32); 3] = [
 /// [`HOOK_SETUP_W0`].
 pub(crate) const HOOK_SETUP_W1: u32 = 0x3C03_8008;
 
+/// V: the list renderer's AP read. `lbu s0,-0x6(s5)` (`s5 = record + 8`) is
+/// the number the row draws; the detour replaces it and the following
+/// `andi v0,v0,0x800`, both replayed.
+pub const HOOK_LIST_VA: u32 = 0x8003_44D8;
+pub(crate) const HOOK_LIST_W0: u32 = 0x92B0_FFFA; // lbu s0,-0x6(s5)
+pub(crate) const HOOK_LIST_W1: u32 = 0x3042_0800; // andi v0,v0,0x800
+const RET_LIST_VA: u32 = 0x8003_44E0;
+
+/// The renderer's record cursor + row compare the list detour's `-8` / `-7`
+/// offsets rest on: `addiu s5,a1,0x8` and `lbu v0,-0x7(s5)`.
+pub(crate) const LIST_FINGERPRINT: [(u32, u32); 3] = [
+    (0x8003_4460, 0x24B5_0008), // addiu s5,a1,0x8
+    (0x8003_4478, 0x92A2_FFF9), // lbu v0,-0x7(s5)
+    (0x8003_44E0, 0x1040_0002), // beq v0,zero,+2 - the return site
+];
+
 /// Retail's read of the acting slot's party-record id at the builder's head.
 const CHAR_READ_VA: u32 = 0x801E_F340;
 
@@ -164,6 +199,9 @@ const ACTOR_TABLE_VA: u32 = 0x801C_9370;
 const RECORD0_TABLE_VA: u32 = 0x801C_9360;
 /// 1-based party-record id per slot.
 const PARTY_ID_TABLE_VA: u32 = 0x8007_BD10;
+/// The game-mode selector; `0x15` = battle.
+const GAME_MODE_VA: u32 = 0x8007_B83C;
+const GAME_MODE_BATTLE: u16 = 0x15;
 /// `actor[+0x1D9]`: the playing anim id.
 const PLAYING_ID_OFF: u16 = 0x1D9;
 /// First art anim id: `q - 0x10` is the art record index, `q - 0x1B` the row.
@@ -175,48 +213,61 @@ const ENTRY_SPILL_OFF: u16 = 0x54;
 
 // --- Routine assemblers ------------------------------------------------------
 
-/// Words that compute the side bit for the builder's current art into `t3`
-/// (`0` / `1`), branching to `fail` (a word index) when the row or character is
-/// out of range. `t0..t3` scratch. The Spirit load `disp0` rides the first
-/// branch's delay slot so `v0` is valid on every path. Shared by the guard and
-/// the debit.
-fn side_bit_prologue(bits_va: u32, disp0: u32, fail: i32) -> Vec<u32> {
+/// (L) The side leaf. In: `t0` = row (0-based), `t1` = character (0-based).
+/// Out: `t3` = `1` grant side / `0` cost side or out of range. Clobbers `t2`
+/// and both inputs. `jr ra`.
+pub(crate) fn assemble_side_leaf(bits_va: u32) -> Vec<u32> {
+    const FAIL: i32 = 14;
+    let w = vec![
+        sltiu(T2, T0, NUM_ROWS as u16),   // 0
+        beq(T2, ZERO, (FAIL - 2) as i16), // 1  row out of range
+        sltiu(T2, T1, NUM_CHARS as u16),  // 2  delay (harmless)
+        beq(T2, ZERO, (FAIL - 4) as i16), // 3  char out of range
+        sll(T1, T1, ROW_SHIFT),           // 4  delay: char * 32
+        addu(T0, T0, T1),                 // 5  bit index
+        srl(T2, T0, 3),                   // 6  byte index
+        lui(T3, hi(bits_va)),             // 7
+        addu(T3, T3, T2),                 // 8
+        lbu(T3, T3, lo(bits_va)),         // 9  side byte
+        andi(T2, T0, 7),                  // 10 load delay: bit
+        srlv(T3, T3, T2),                 // 11
+        jr(RA),                           // 12
+        andi(T3, T3, 1),                  // 13 delay: t3 = grant side?
+        jr(RA),                           // 14 FAIL
+        addu(T3, ZERO, ZERO),             // 15 delay: t3 = 0
+    ];
+    debug_assert_eq!(w.len() as i32, FAIL + 2);
+    w
+}
+
+/// The builder-side prologue the guard and the debit share: `t1` = party id,
+/// `t0` = row, the displaced Spirit load, then the leaf (`t1` made 0-based in
+/// the `jal` delay slot - one word past its load).
+fn builder_side_call(leaf_va: u32, disp0: u32) -> Vec<u32> {
     vec![
         lbu(T1, T6, 0),                                    // 0  t1 = DAT_8007BD10[slot]
         andi(T0, S3, 0xff),                                // 1  load delay: row cursor
-        addiu(T0, T0, (-(ROW_CURSOR_BASE as i16)) as u16), // 2 row = s3 - 0xb
-        sltiu(T2, T0, NUM_ROWS as u16),                    // 3
-        beq(T2, ZERO, (fail - 5) as i16),                  // 4  row out of range
-        disp0,                                             // 5  delay: v0 = Spirit
-        addiu(T1, T1, 0xFFFF),                             // 6  char index
-        sltiu(T2, T1, NUM_CHARS as u16),                   // 7
-        beq(T2, ZERO, (fail - 9) as i16),                  // 8  char out of range
-        sll(T1, T1, ROW_SHIFT),                            // 9  delay: char * 32
-        addu(T0, T0, T1),                                  // 10 bit index
-        srl(T2, T0, 3),                                    // 11 byte index
-        lui(T3, hi(bits_va)),                              // 12
-        addu(T3, T3, T2),                                  // 13
-        lbu(T3, T3, lo(bits_va)),                          // 14 side byte
-        andi(T2, T0, 7),                                   // 15 load delay: bit
-        srlv(T3, T3, T2),                                  // 16
-        andi(T3, T3, 1),                                   // 17 t3 = grant side?
+        addiu(T0, T0, (-(ROW_CURSOR_BASE as i16)) as u16), // 2  row = s3 - 0xb
+        disp0,                                             // 3  v0 = Spirit
+        jal(leaf_va),                                      // 4
+        addiu(T1, T1, 0xFFFF),                             // 5  delay: 0-based char
     ]
 }
 
 /// (A) Affordability guard. A grant-side art forces `v0 = 0x7FFF` so the
 /// stock `slt v0,v0,t7` at the return site reads "affordable"; everything
-/// else keeps the real Spirit. `disp = [lhu v0,0x170(a1), mflo t7]`; the
-/// routine issues no `mult`/`div`, so the replayed `mflo` still reads retail's
-/// computed cost.
-pub(crate) fn assemble_guard(bits_va: u32, disp: [u32; 2], ret: u32) -> Vec<u32> {
-    const DONE: i32 = 21;
-    let mut w = side_bit_prologue(bits_va, disp[0], DONE);
+/// else keeps the real Spirit. `disp = [lhu v0,0x170(a1), mflo t7]`; neither
+/// this routine nor the leaf issues a `mult`/`div`, so the replayed `mflo`
+/// still reads retail's computed cost.
+pub(crate) fn assemble_guard(leaf_va: u32, disp: [u32; 2], ret: u32) -> Vec<u32> {
+    const DONE: i32 = 9;
+    let mut w = builder_side_call(leaf_va, disp[0]);
     w.extend([
-        beq(T3, ZERO, (DONE - 19) as i16), // 18 cost side -> native
-        nop(),                             // 19
-        ori(V0, ZERO, 0x7FFF),             // 20 grant side: force affordable
-        j(ret),                            // 21 DONE
-        disp[1],                           // 22 delay: mflo t7 (replay)
+        beq(T3, ZERO, (DONE - 7) as i16), // 6  cost side -> native
+        nop(),                            // 7
+        ori(V0, ZERO, 0x7FFF),            // 8  grant side: force affordable
+        j(ret),                           // 9  DONE
+        disp[1],                          // 10 delay: mflo t7 (replay)
     ]);
     debug_assert_eq!(w.len() as i32, DONE + 2);
     w
@@ -228,27 +279,27 @@ pub(crate) fn assemble_guard(bits_va: u32, disp: [u32; 2], ret: u32) -> Vec<u32>
 /// spent, so nothing is refunded). The cost side returns to the stock
 /// `subu v0,v0,a2` with `LO` intact. `disp = [lhu v0,0x170(v1), nop]`.
 pub(crate) fn assemble_debit(
-    bits_va: u32,
+    leaf_va: u32,
     disp: [u32; 2],
     override_ret: u32,
     native_ret: u32,
 ) -> Vec<u32> {
-    const STORE: i32 = 25;
-    const NATIVE: i32 = 28;
-    let mut w = side_bit_prologue(bits_va, disp[0], NATIVE);
+    const STORE: i32 = 13;
+    const NATIVE: i32 = 16;
+    let mut w = builder_side_call(leaf_va, disp[0]);
     w.extend([
-        beq(T3, ZERO, (NATIVE - 19) as i16), // 18 cost side -> native
-        nop(),                               // 19
-        addu(V0, V0, A2),                    // 20 Spirit += retail's charge
-        sltiu(T1, V0, AP_CAP + 1),           // 21 <= 100?
-        bne(T1, ZERO, (STORE - 23) as i16),  // 22
-        nop(),                               // 23
-        ori(V0, ZERO, AP_CAP),               // 24 clamp
-        sh(V0, V1, 0x170),                   // 25 STORE
-        j(override_ret),                     // 26 -> past debit + accrual
-        nop(),                               // 27
-        j(native_ret),                       // 28 NATIVE -> stock subu
-        disp[1],                             // 29 delay: nop (replay)
+        beq(T3, ZERO, (NATIVE - 7) as i16), // 6  cost side -> native
+        nop(),                              // 7
+        addu(V0, V0, A2),                   // 8  Spirit += retail's charge
+        sltiu(T1, V0, AP_CAP + 1),          // 9  <= 100?
+        bne(T1, ZERO, (STORE - 11) as i16), // 10
+        nop(),                              // 11
+        ori(V0, ZERO, AP_CAP),              // 12 clamp
+        sh(V0, V1, 0x170),                  // 13 STORE
+        j(override_ret),                    // 14 -> past debit + accrual
+        nop(),                              // 15
+        j(native_ret),                      // 16 NATIVE -> stock subu
+        disp[1],                            // 17 delay: nop (replay)
     ]);
     debug_assert_eq!(w.len() as i32, NATIVE + 2);
     w
@@ -289,8 +340,8 @@ pub(crate) fn assemble_roll(bits_va: u32, counter_va: u32, disp: [u32; 2], ret: 
 /// kernel was called with; a set side bit rewrites
 /// `s0 = s1 + (s0 - s1) * pct / 100`. Every other case replays the displaced
 /// words untouched. `disp = [addiu v1,v0,-0x6c90, andi v0,s4,0xff]`.
-pub(crate) fn assemble_damage(bits_va: u32, pct: u8, disp: [u32; 2], ret: u32) -> Vec<u32> {
-    const NATIVE: i32 = 44;
+pub(crate) fn assemble_damage(leaf_va: u32, pct: u8, disp: [u32; 2], ret: u32) -> Vec<u32> {
+    const NATIVE: i32 = 31;
     let w = vec![
         andi(T0, S6, 0xff),                 // 0  attacker slot
         sltiu(T1, T0, 3),                   // 1  party?
@@ -305,43 +356,58 @@ pub(crate) fn assemble_damage(bits_va: u32, pct: u8, disp: [u32; 2], ret: u32) -
         sll(T6, T4, 2),                     // 10 q*4
         addu(T6, T6, T2),                   // 11
         lw(T6, T6, 0),                      // 12 record0[q*4]
-        addiu(T4, T4, (-((ART_ID_BASE + ROW_CURSOR_BASE) as i16)) as u16), // 13 row
+        lui(T2, hi(PARTY_ID_TABLE_VA)),     // 13 load delay
         bne(T6, T5, (NATIVE - 15) as i16),  // 14 not the art's entry
-        sltiu(T1, T4, NUM_ROWS as u16),     // 15 delay
-        beq(T1, ZERO, (NATIVE - 17) as i16), // 16 row out of range
-        lui(T2, hi(PARTY_ID_TABLE_VA)),     // 17 delay
-        addu(T2, T2, T0),                   // 18
-        lbu(T2, T2, lo(PARTY_ID_TABLE_VA)), // 19 DAT_8007BD10[slot]
-        nop(),                              // 20 load delay
-        addiu(T2, T2, 0xFFFF),              // 21 char index
-        sltiu(T1, T2, NUM_CHARS as u16),    // 22
-        beq(T1, ZERO, (NATIVE - 24) as i16), // 23
-        sll(T2, T2, ROW_SHIFT),             // 24 delay: char*32
-        addu(T4, T4, T2),                   // 25 bit index
-        srl(T2, T4, 3),                     // 26
-        lui(T3, hi(bits_va)),               // 27
-        addu(T3, T3, T2),                   // 28
-        lbu(T3, T3, lo(bits_va)),           // 29 side byte
-        andi(T2, T4, 7),                    // 30 load delay
-        srlv(T3, T3, T2),                   // 31
-        andi(T3, T3, 1),                    // 32
-        beq(T3, ZERO, (NATIVE - 34) as i16), // 33 cost side
-        subu(T3, S0, S1),                   // 34 delay: damage
-        bltz(T3, (NATIVE - 36) as i16),     // 35 never negative; guard anyway
-        ori(T4, ZERO, u16::from(pct)),      // 36 delay
-        multu(T3, T4),                      // 37
-        mflo(T3),                           // 38 damage * pct
-        ori(T4, ZERO, 100),                 // 39
-        nop(),                              // 40 (mflo -> div spacing)
-        divu(T3, T4),                       // 41
-        mflo(T3),                           // 42 / 100
-        addu(S0, S1, T3),                   // 43 s0 = s1 + scaled
-        lui(V0, 0x801D),                    // 44 NATIVE: v0 as the cap left it
-        disp[0],                            // 45 addiu v1,v0,-0x6c90
-        j(ret),                             // 46
-        disp[1],                            // 47 delay: andi v0,s4,0xff
+        addu(T2, T2, T0),                   // 15 delay
+        lbu(T1, T2, lo(PARTY_ID_TABLE_VA)), // 16 DAT_8007BD10[slot]
+        addiu(T0, T4, (-((ART_ID_BASE + ROW_CURSOR_BASE) as i16)) as u16), // 17 row
+        jal(leaf_va),                       // 18
+        addiu(T1, T1, 0xFFFF),              // 19 delay: 0-based char
+        beq(T3, ZERO, (NATIVE - 21) as i16), // 20 cost side
+        subu(T3, S0, S1),                   // 21 delay: damage
+        bltz(T3, (NATIVE - 23) as i16),     // 22 never negative; guard anyway
+        ori(T4, ZERO, u16::from(pct)),      // 23 delay
+        multu(T3, T4),                      // 24
+        mflo(T3),                           // 25 damage * pct
+        ori(T4, ZERO, 100),                 // 26
+        nop(),                              // 27 (mflo -> div spacing)
+        divu(T3, T4),                       // 28
+        mflo(T3),                           // 29 / 100
+        addu(S0, S1, T3),                   // 30 s0 = s1 + scaled
+        lui(V0, 0x801D),                    // 31 NATIVE: v0 as the cap left it
+        disp[0],                            // 32 addiu v1,v0,-0x6c90
+        j(ret),                             // 33
+        disp[1],                            // 34 delay: andi v0,s4,0xff
     ];
     debug_assert_eq!(w.len() as i32, NATIVE + 4);
+    w
+}
+
+/// (V) The list read-out, detoured from the renderer's AP load. In battle, a
+/// grant-side record draws `0`; anything else replays the stock load. The
+/// displaced `andi v0,v0,0x800` is replayed first (nothing here touches `v0`).
+/// `disp = [lbu s0,-0x6(s5), andi v0,v0,0x800]`.
+pub(crate) fn assemble_list(leaf_va: u32, disp: [u32; 2], ret: u32) -> Vec<u32> {
+    const NATIVE: i32 = 14;
+    let w = vec![
+        disp[1],                                            // 0  andi v0,v0,0x800 (replay)
+        lui(T2, hi(GAME_MODE_VA)),                          // 1
+        lhu(T2, T2, lo(GAME_MODE_VA)),                      // 2  game mode
+        lbu(T1, S5, (-8i16) as u16),                        // 3  record +0: character
+        lbu(T0, S5, (-7i16) as u16),                        // 4  record +1: row
+        addiu(T2, T2, (-(GAME_MODE_BATTLE as i16)) as u16), // 5
+        bne(T2, ZERO, (NATIVE - 7) as i16),                 // 6  not in battle -> retail
+        nop(),                                              // 7
+        jal(leaf_va),                                       // 8
+        nop(),                                              // 9
+        beq(T3, ZERO, (NATIVE - 11) as i16),                // 10 cost side -> retail
+        nop(),                                              // 11
+        j(ret),                                             // 12
+        addu(S0, ZERO, ZERO),                               // 13 delay: draws 0
+        j(ret),                                             // 14 NATIVE
+        disp[0],                                            // 15 delay: lbu s0,-0x6(s5) (replay)
+    ];
+    debug_assert_eq!(w.len() as i32, NATIVE + 2);
     w
 }
 
@@ -354,8 +420,10 @@ pub struct OscillatingApInjection {
     pub edits: Vec<Edit>,
     /// Grant-side damage, percent of retail.
     pub damage_pct: u8,
+    pub leaf_va: u32,
     pub guard_va: u32,
     pub debit_va: u32,
+    pub list_va: u32,
     pub refund_va: u32,
     pub roll_va: u32,
     pub damage_va: u32,
@@ -367,11 +435,11 @@ pub struct OscillatingApInjection {
 
 impl OscillatingApInjection {
     /// Plan all edits for a grant-side damage of `damage_pct` percent. Needs
-    /// the `SCUS_942.54` image (setup hook + commit fingerprints + the four
-    /// dead regions) and the raw 0898 overlay entry (the four AP sites + the
-    /// damage site). Refuses - without touching anything - if the build isn't
-    /// the recognized US layout, a region isn't dead, or a routine overruns /
-    /// overlaps a live table.
+    /// the `SCUS_942.54` image (setup + list hooks, commit fingerprints, the
+    /// four dead regions) and the raw 0898 overlay entry (the four AP sites +
+    /// the damage site). Refuses - without touching anything - if the build
+    /// isn't the recognized US layout, a region isn't dead, or a routine
+    /// overruns / overlaps a live table.
     pub fn plan(scus: &[u8], ov0898: &[u8], damage_pct: u8) -> Result<Self> {
         if damage_pct > MAX_DAMAGE_PCT {
             bail!("oscillating-ap damage percent {damage_pct} exceeds {MAX_DAMAGE_PCT}");
@@ -424,7 +492,7 @@ impl OscillatingApInjection {
             assert_not_in_tables(va, 8, OVERLAY_TABLE_RANGES, name)?;
         }
 
-        // --- SCUS fingerprints: the setup site + the anim commit -----------
+        // --- SCUS fingerprints: setup site, list site, the anim commit ------
         let scus_off = |va: u32| -> Result<usize> {
             legaia_asset::item_names::file_offset_for_va(scus, va)
                 .ok_or_else(|| anyhow::anyhow!("can't resolve SCUS VA {va:#x}"))
@@ -439,40 +507,57 @@ impl OscillatingApInjection {
                 setup[1]
             );
         }
-        for (va, want) in COMMIT_FINGERPRINT {
-            let got = read_word(scus, scus_off(va)?)?;
-            if got != want {
+        let list_off = scus_off(HOOK_LIST_VA)?;
+        let list_disp = [read_word(scus, list_off)?, read_word(scus, list_off + 4)?];
+        if list_disp != [HOOK_LIST_W0, HOOK_LIST_W1] {
+            bail!(
+                "SCUS list hook {HOOK_LIST_VA:#x} = {:#010x} {:#010x}, expected \
+                 lbu s0,-0x6(s5) / andi v0,v0,0x800 (unrecognized build)",
+                list_disp[0],
+                list_disp[1]
+            );
+        }
+        for (va, want) in COMMIT_FINGERPRINT.iter().chain(LIST_FINGERPRINT.iter()) {
+            let got = read_word(scus, scus_off(*va)?)?;
+            if got != *want {
                 bail!(
-                    "SCUS {va:#x} = {got:#010x}, expected {want:#010x} (the anim commit's \
-                     entry materialisation the row reading rests on) - unrecognized build"
+                    "SCUS {va:#x} = {got:#010x}, expected {want:#010x} (a word the row \
+                     reading or the list read-out rests on) - unrecognized build"
                 );
             }
         }
 
         // --- Layout -----------------------------------------------------------
         let damage_va = SCUS_GAP_VA;
-        let damage = assemble_damage(0, damage_pct, m.1, RET_DMG_VA); // sized first
-        let bits_va = damage_va + (damage.len() * 4) as u32;
+        let damage_len = assemble_damage(0, damage_pct, m.1, RET_DMG_VA).len(); // sized first
+        let bits_va = damage_va + (damage_len * 4) as u32;
         let counter_va = bits_va + BITS_LEN as u32;
         let gap_end = counter_va + 4;
-        let damage = assemble_damage(bits_va, damage_pct, m.1, RET_DMG_VA);
 
-        let guard = assemble_guard(bits_va, a.1, RET_A_VA);
-        let debit = assemble_debit(bits_va, c.1, C_OVERRIDE_RET_VA, C_NATIVE_RET_VA);
+        let leaf_va = ARENA1_VA;
+        let leaf = assemble_side_leaf(bits_va);
+        let guard_va = leaf_va + (leaf.len() * 4) as u32;
+        let guard = assemble_guard(leaf_va, a.1, RET_A_VA);
+        let debit_va = guard_va + (guard.len() * 4) as u32;
+        let debit = assemble_debit(leaf_va, c.1, C_OVERRIDE_RET_VA, C_NATIVE_RET_VA);
+        let list_va = debit_va + (debit.len() * 4) as u32;
+        let list = assemble_list(leaf_va, list_disp, RET_LIST_VA);
+        let arena1_end = list_va + (list.len() * 4) as u32;
+
+        let damage = assemble_damage(leaf_va, damage_pct, m.1, RET_DMG_VA);
         let refund = assemble_refund(d.1, RET_D_VA);
         let roll = assemble_roll(bits_va, counter_va, setup, HOOK_SETUP_VA + 8);
 
-        let guard_va = ARENA1_VA;
-        let debit_va = guard_va + (guard.len() * 4) as u32;
-        let arena1_end = debit_va + (debit.len() * 4) as u32;
         let refund_va = ARENA2_VA;
         let arena2_end = refund_va + (refund.len() * 4) as u32;
         let roll_va = SLOT6_VA;
         let slot6_end = roll_va + (roll.len() * 4) as u32;
 
         for (va, what) in [
+            (leaf_va, "leaf"),
             (guard_va, "guard"),
             (debit_va, "debit"),
+            (list_va, "list"),
             (refund_va, "refund"),
             (roll_va, "roll"),
             (damage_va, "damage"),
@@ -483,7 +568,7 @@ impl OscillatingApInjection {
                 bail!("oscillating-ap {what} VA {va:#x} is not 4-byte aligned");
             }
         }
-        // Every side-table byte must sit in the page the routines' `lui`
+        // Every side-table byte must sit in the page the leaf's `lui`
         // addresses (`hi(bits_va)` + a byte index < 16, never crossing the
         // signed-offset boundary).
         if hi(bits_va) != hi(bits_va + BITS_LEN as u32 - 1)
@@ -494,7 +579,8 @@ impl OscillatingApInjection {
         }
         if arena1_end > ARENA1_END_VA {
             bail!(
-                "oscillating-ap guard + debit ({} B) overrun arena 1 {ARENA1_VA:#x}..{ARENA1_END_VA:#x}",
+                "oscillating-ap leaf + guard + debit + list ({} B) overrun arena 1 \
+                 {ARENA1_VA:#x}..{ARENA1_END_VA:#x}",
                 arena1_end - ARENA1_VA
             );
         }
@@ -533,6 +619,13 @@ impl OscillatingApInjection {
         }
 
         let detour = |target_va: u32| -> Vec<u8> { words_to_bytes(&[j(target_va), nop()]) };
+        let scus_edit = |va: u32, words: &[u32]| -> Result<Edit> {
+            Ok(Edit {
+                prot_index: None,
+                file_off: scus_off(va)?,
+                bytes: words_to_bytes(words),
+            })
+        };
         let edits = vec![
             // Detours into the 0898 overlay.
             Edit {
@@ -555,46 +648,35 @@ impl OscillatingApInjection {
                 file_off: m.0,
                 bytes: detour(damage_va),
             },
-            // The setup detour in SCUS.
+            // The two SCUS detours.
             Edit {
                 prot_index: None,
                 file_off: setup_off,
                 bytes: detour(roll_va),
             },
+            Edit {
+                prot_index: None,
+                file_off: list_off,
+                bytes: detour(list_va),
+            },
             // Routines into the dead regions. The side table + counter stay
             // zero on disc (asserted above); the roll fills them per battle.
-            Edit {
-                prot_index: None,
-                file_off: scus_off(guard_va)?,
-                bytes: words_to_bytes(&guard),
-            },
-            Edit {
-                prot_index: None,
-                file_off: scus_off(debit_va)?,
-                bytes: words_to_bytes(&debit),
-            },
-            Edit {
-                prot_index: None,
-                file_off: scus_off(refund_va)?,
-                bytes: words_to_bytes(&refund),
-            },
-            Edit {
-                prot_index: None,
-                file_off: scus_off(roll_va)?,
-                bytes: words_to_bytes(&roll),
-            },
-            Edit {
-                prot_index: None,
-                file_off: scus_off(damage_va)?,
-                bytes: words_to_bytes(&damage),
-            },
+            scus_edit(leaf_va, &leaf)?,
+            scus_edit(guard_va, &guard)?,
+            scus_edit(debit_va, &debit)?,
+            scus_edit(list_va, &list)?,
+            scus_edit(refund_va, &refund)?,
+            scus_edit(roll_va, &roll)?,
+            scus_edit(damage_va, &damage)?,
         ];
 
         Ok(Self {
             edits,
             damage_pct,
+            leaf_va,
             guard_va,
             debit_va,
+            list_va,
             refund_va,
             roll_va,
             damage_va,
@@ -609,8 +691,14 @@ mod tests {
     use super::*;
     use crate::mips_sim::Cpu;
 
-    const BITS: u32 = SCUS_GAP_VA + 0xC0;
+    const BITS: u32 = SCUS_GAP_VA + 35 * 4;
     const CNT: u32 = BITS + 16;
+    const LEAF: u32 = ARENA1_VA;
+    const GUARD: u32 = ARENA1_VA + 16 * 4;
+    const DEBIT: u32 = GUARD + 11 * 4;
+    const LIST: u32 = DEBIT + 18 * 4;
+    const ROLL: u32 = SLOT6_VA;
+    const DMG: u32 = SCUS_GAP_VA;
 
     fn op(w: u32) -> u32 {
         w >> 26
@@ -658,6 +746,40 @@ mod tests {
         }
     }
 
+    fn all_routines() -> Vec<(&'static str, Vec<u32>)> {
+        vec![
+            ("leaf", assemble_side_leaf(BITS)),
+            (
+                "guard",
+                assemble_guard(LEAF, [HOOK_A_W0, mflo(T7)], RET_A_VA),
+            ),
+            (
+                "debit",
+                assemble_debit(LEAF, [HOOK_C_W0, nop()], C_OVERRIDE_RET_VA, C_NATIVE_RET_VA),
+            ),
+            (
+                "list",
+                assemble_list(LEAF, [HOOK_LIST_W0, HOOK_LIST_W1], RET_LIST_VA),
+            ),
+            (
+                "roll",
+                assemble_roll(BITS, CNT, [HOOK_SETUP_W0, HOOK_SETUP_W1], HOOK_SETUP_VA + 8),
+            ),
+            (
+                "damage",
+                assemble_damage(LEAF, 20, [HOOK_DMG_W0, HOOK_DMG_W1], RET_DMG_VA),
+            ),
+        ]
+    }
+
+    fn routine(name: &str) -> Vec<u32> {
+        all_routines()
+            .into_iter()
+            .find(|(n, _)| *n == name)
+            .unwrap()
+            .1
+    }
+
     #[test]
     fn fingerprints_match_documented_disassembly() {
         assert_eq!(HOOK_DMG_W0, addiu(V1, V0, 0x9370), "addiu v1,v0,-0x6c90");
@@ -671,46 +793,77 @@ mod tests {
         assert_eq!(COMMIT_FINGERPRINT[2].1, sb(V0, S1, 0x1D9));
         assert_eq!(HOOK_SETUP_W0, lui(V0, 0x8008));
         assert_eq!(HOOK_SETUP_W1, lui(V1, 0x8008));
+        assert_eq!(HOOK_LIST_W0, lbu(S0, S5, (-6i16) as u16), "lbu s0,-0x6(s5)");
+        assert_eq!(HOOK_LIST_W1, andi(V0, V0, 0x800));
+        assert_eq!(LIST_FINGERPRINT[0].1, addiu(S5, A1, 8), "addiu s5,a1,0x8");
+        assert_eq!(
+            LIST_FINGERPRINT[1].1,
+            lbu(V0, S5, (-7i16) as u16),
+            "lbu v0,-0x7(s5)"
+        );
+        assert_eq!(LIST_FINGERPRINT[2].1, beq(V0, ZERO, 2));
         // `(q - 0x10) * 0xD0 + 0x24 - 0x10 * 0xD0` folds to the commit's -0xCDC.
         assert_eq!(0x10 * 0xD0 - 0x24, 0xCDC);
         // The row the damage routine derives: q - 0x10 = s3, s3 - 0x0B = row.
         assert_eq!(ART_ID_BASE + ROW_CURSOR_BASE, 0x1B);
+        // The game-mode word is where the memory map puts it.
+        assert_eq!(0x8008_0000u32.wrapping_sub(0x47C4), GAME_MODE_VA);
     }
 
     #[test]
     fn routines_have_no_load_delay_hazards_and_fit() {
-        let guard = assemble_guard(BITS, [HOOK_A_W0, mflo(T7)], RET_A_VA);
-        let debit = assemble_debit(BITS, [HOOK_C_W0, nop()], C_OVERRIDE_RET_VA, C_NATIVE_RET_VA);
-        let roll = assemble_roll(BITS, CNT, [HOOK_SETUP_W0, HOOK_SETUP_W1], HOOK_SETUP_VA + 8);
-        let damage = assemble_damage(BITS, 20, [HOOK_DMG_W0, HOOK_DMG_W1], RET_DMG_VA);
-        assert_no_load_delay_hazard(&guard, "guard");
-        assert_no_load_delay_hazard(&debit, "debit");
-        assert_no_load_delay_hazard(&roll, "roll");
-        assert_no_load_delay_hazard(&damage, "damage");
-        assert_eq!(guard.len(), 23);
-        assert_eq!(debit.len(), 30);
+        for (name, words) in all_routines() {
+            assert_no_load_delay_hazard(&words, name);
+        }
+        let (leaf, guard, debit, list, roll, damage) = (
+            routine("leaf"),
+            routine("guard"),
+            routine("debit"),
+            routine("list"),
+            routine("roll"),
+            routine("damage"),
+        );
+        assert_eq!(leaf.len(), 16);
+        assert_eq!(guard.len(), 11);
+        assert_eq!(debit.len(), 18);
+        assert_eq!(list.len(), 16);
         assert_eq!(roll.len(), 17, "the roll fills slot 6 exactly");
-        assert_eq!(damage.len(), 48);
-        assert!((guard.len() + debit.len()) * 4 <= (ARENA1_END_VA - ARENA1_VA) as usize);
+        assert_eq!(damage.len(), 35);
+        let arena1 = leaf.len() + guard.len() + debit.len() + list.len();
+        assert!(arena1 * 4 <= (ARENA1_END_VA - ARENA1_VA) as usize);
         assert!(roll.len() * 4 == (SLOT6_END_VA - SLOT6_VA) as usize);
         assert!(damage.len() * 4 + BITS_LEN + 4 <= (SCUS_GAP_END_VA - SCUS_GAP_VA) as usize);
-        // Neither AP routine touches HI/LO before replaying into a live `mflo`.
-        for w in guard.iter().chain(debit.iter()) {
-            assert!(!(op(*w) == 0 && matches!(funct(*w), 0x18..=0x1b)));
+        // Neither AP routine nor the leaf touches HI/LO before the replayed
+        // `mflo` at site A reads retail's cost.
+        for (name, words) in [("leaf", &leaf), ("guard", &guard), ("debit", &debit)] {
+            for w in words {
+                assert!(!(op(*w) == 0 && matches!(funct(*w), 0x18..=0x1b)), "{name}");
+            }
         }
         // Branch targets land where the comments say.
-        assert_eq!(br(&guard, 4), 21);
-        assert_eq!(br(&guard, 8), 21);
-        assert_eq!(br(&guard, 18), 21);
-        assert_eq!(br(&debit, 18), 28);
-        assert_eq!(br(&debit, 22), 25);
+        assert_eq!(br(&leaf, 1), 14);
+        assert_eq!(br(&leaf, 3), 14);
+        assert_eq!(br(&guard, 6), 9);
+        assert_eq!(br(&debit, 6), 16);
+        assert_eq!(br(&debit, 10), 13);
+        assert_eq!(br(&list, 6), 14);
+        assert_eq!(br(&list, 10), 14);
         assert_eq!(br(&roll, 11), 2);
-        for i in [2, 14, 16, 23, 33, 35] {
-            assert_eq!(br(&damage, i), 44, "damage word {i} -> NATIVE");
+        for i in [2, 14, 20, 22] {
+            assert_eq!(br(&damage, i), 31, "damage word {i} -> NATIVE");
         }
         // `mflo` sits three words clear of the `divu` that follows it.
-        assert_eq!(funct(damage[38]), 0x12);
-        assert_eq!(funct(damage[41]), 0x1b);
+        assert_eq!(funct(damage[25]), 0x12);
+        assert_eq!(funct(damage[28]), 0x1b);
+        // Every consumer reaches the leaf with `jal LEAF`.
+        for (name, words, at) in [
+            ("guard", &guard, 4),
+            ("debit", &debit, 4),
+            ("list", &list, 8),
+            ("damage", &damage, 18),
+        ] {
+            assert_eq!(words[at], jal(LEAF), "{name} word {at} is jal LEAF");
+        }
     }
 
     // --- Simulated executions ----------------------------------------------
@@ -719,10 +872,23 @@ mod tests {
     const RECORD0: u32 = 0x8011_0000;
     const ENTRY: u32 = 0x8011_2000;
     const SP0: u32 = 0x801F_FF00;
-    const GUARD: u32 = ARENA1_VA;
-    const DEBIT: u32 = ARENA1_VA + 0x80;
-    const ROLL: u32 = SLOT6_VA;
-    const DMG: u32 = SCUS_GAP_VA;
+
+    fn cpu_with_routines() -> Cpu {
+        let mut cpu = Cpu::new();
+        for (name, words) in all_routines() {
+            let va = match name {
+                "leaf" => LEAF,
+                "guard" => GUARD,
+                "debit" => DEBIT,
+                "list" => LIST,
+                "roll" => ROLL,
+                "damage" => DMG,
+                _ => unreachable!(),
+            };
+            cpu.load_words(va, &words);
+        }
+        cpu
+    }
 
     fn set_bit(cpu: &mut Cpu, char_idx: u32, row: u32) {
         let idx = char_idx * 32 + row;
@@ -730,19 +896,16 @@ mod tests {
         let b = cpu.rd8(a) | (1 << (idx % 8));
         cpu.wr8(a, b);
     }
+    fn set_all(cpu: &mut Cpu) {
+        for b in 0..16 {
+            cpu.wr8(BITS + b, 0xFF);
+        }
+    }
 
     /// Guard/debit scene: slot 0 is party-record `char_id`, the builder is on
     /// row cursor `s3`, Spirit is `spirit`, retail's charge is `charge`.
     fn ap_cpu(char_id: u8, s3: u32, spirit: u16, charge: u32) -> Cpu {
-        let mut cpu = Cpu::new();
-        cpu.load_words(
-            GUARD,
-            &assemble_guard(BITS, [HOOK_A_W0, mflo(T7)], RET_A_VA),
-        );
-        cpu.load_words(
-            DEBIT,
-            &assemble_debit(BITS, [HOOK_C_W0, nop()], C_OVERRIDE_RET_VA, C_NATIVE_RET_VA),
-        );
+        let mut cpu = cpu_with_routines();
         cpu.wr8(PARTY_ID_TABLE_VA, char_id);
         cpu.wr16(ACTOR + 0x170, spirit);
         cpu.wr8(ACTOR + 0x224, 5);
@@ -779,9 +942,7 @@ mod tests {
         // A row past the 26 (a Super Art) and an unknown party id are native.
         for (id, s3) in [(1, 0x0B + 26), (5, 0x0E), (0, 0x0E)] {
             let mut cpu = ap_cpu(id, s3, 12, 33);
-            for b in 0..16 {
-                cpu.wr8(BITS + b, 0xFF);
-            }
+            set_all(&mut cpu);
             cpu.pc = GUARD;
             cpu.run_until(&[RET_A_VA]);
             assert_eq!(cpu.r[V0 as usize], 12, "id {id} s3 {s3:#x}");
@@ -849,11 +1010,7 @@ mod tests {
 
     #[test]
     fn roll_fills_the_side_table_with_sixteen_draws_and_replays() {
-        let mut cpu = Cpu::new();
-        cpu.load_words(
-            ROLL,
-            &assemble_roll(BITS, CNT, [HOOK_SETUP_W0, HOOK_SETUP_W1], HOOK_SETUP_VA + 8),
-        );
+        let mut cpu = cpu_with_routines();
         install_fake_rand(&mut cpu);
         cpu.pc = ROLL;
         assert_eq!(cpu.run_until(&[HOOK_SETUP_VA + 8]), HOOK_SETUP_VA + 8);
@@ -871,10 +1028,10 @@ mod tests {
     /// `q`, the kernel called with entry `entry`, strike damage `dmg` over base
     /// `base`.
     fn dmg_cpu(slot: u32, char_id: u8, q: u8, entry: u32, base: u32, dmg: u32, pct: u8) -> Cpu {
-        let mut cpu = Cpu::new();
+        let mut cpu = cpu_with_routines();
         cpu.load_words(
             DMG,
-            &assemble_damage(BITS, pct, [HOOK_DMG_W0, HOOK_DMG_W1], RET_DMG_VA),
+            &assemble_damage(LEAF, pct, [HOOK_DMG_W0, HOOK_DMG_W1], RET_DMG_VA),
         );
         cpu.wr32(ACTOR_TABLE_VA + slot * 4, ACTOR);
         cpu.wr32(RECORD0_TABLE_VA + slot * 4, RECORD0);
@@ -932,64 +1089,111 @@ mod tests {
 
     #[test]
     fn damage_falls_through_on_every_non_art_shape() {
-        let all_set = |cpu: &mut Cpu| {
-            for b in 0..16 {
-                cpu.wr8(BITS + b, 0xFF);
-            }
-        };
         // A monster attacker (slot 3).
         let mut cpu = dmg_cpu(3, 1, 0x1F, ENTRY, 0, 1000, 20);
-        all_set(&mut cpu);
+        set_all(&mut cpu);
         assert_eq!(run_dmg(&mut cpu), 1000);
         // A plain direction swing (q < 0x1B) - its entry is elsewhere.
         let mut cpu = dmg_cpu(0, 1, 0x0D, ENTRY, 0, 1000, 20);
-        all_set(&mut cpu);
+        set_all(&mut cpu);
         assert_eq!(run_dmg(&mut cpu), 1000);
         // A row past the 26 (a Super Art).
         let mut cpu = dmg_cpu(0, 1, 0x1B + 26, ENTRY, 0, 1000, 20);
-        all_set(&mut cpu);
+        set_all(&mut cpu);
         assert_eq!(run_dmg(&mut cpu), 1000);
         // The playing id's entry is not the entry the kernel was called with.
         let mut cpu = dmg_cpu(0, 1, 0x1F, ENTRY + 0xD0, 0, 1000, 20);
-        all_set(&mut cpu);
+        set_all(&mut cpu);
         assert_eq!(run_dmg(&mut cpu), 1000);
         // An out-of-range party id.
         let mut cpu = dmg_cpu(0, 5, 0x1F, ENTRY, 0, 1000, 20);
-        all_set(&mut cpu);
+        set_all(&mut cpu);
         assert_eq!(run_dmg(&mut cpu), 1000);
         // A negative delta (never produced by the kernel) is left alone.
         let mut cpu = dmg_cpu(0, 1, 0x1F, ENTRY, 100, 0, 20);
         cpu.r[S0 as usize] = 50;
-        all_set(&mut cpu);
+        set_all(&mut cpu);
         cpu.pc = DMG;
         cpu.run_until(&[RET_DMG_VA]);
         assert_eq!(cpu.r[S0 as usize], 50);
     }
 
+    /// List scene: the renderer's cursor on a record `(character, row, ap)`,
+    /// `v0` holding the actor flags word, the game in `mode`.
+    fn list_cpu(character: u8, row: u8, ap: u8, flags: u32, mode: u16) -> Cpu {
+        const REC: u32 = 0x8007_5EC4 + 0x14 * 7;
+        let mut cpu = cpu_with_routines();
+        cpu.wr8(REC, character);
+        cpu.wr8(REC + 1, row);
+        cpu.wr8(REC + 2, ap);
+        cpu.wr16(GAME_MODE_VA, mode);
+        cpu.r[S5 as usize] = REC + 8;
+        cpu.r[V0 as usize] = flags;
+        cpu.r[S0 as usize] = 0xDEAD;
+        cpu
+    }
+
+    fn run_list(cpu: &mut Cpu) -> u32 {
+        cpu.pc = LIST;
+        assert_eq!(cpu.run_until(&[RET_LIST_VA]), RET_LIST_VA);
+        cpu.r[S0 as usize]
+    }
+
+    #[test]
+    fn list_draws_zero_for_a_grant_side_row_in_battle_only() {
+        // Cost side in battle: the retail number, flags word masked as retail.
+        let mut cpu = list_cpu(1, 4, 30, 0x1_0800, GAME_MODE_BATTLE);
+        assert_eq!(run_list(&mut cpu), 30);
+        assert_eq!(cpu.r[V0 as usize], 0x800, "replayed andi v0,v0,0x800");
+        // Grant side in battle: draws 0.
+        let mut cpu = list_cpu(1, 4, 30, 0x1_0000, GAME_MODE_BATTLE);
+        set_bit(&mut cpu, 1, 4);
+        assert_eq!(run_list(&mut cpu), 0);
+        assert_eq!(cpu.r[V0 as usize], 0, "replayed andi v0,v0,0x800");
+        // The same row for another character does not leak.
+        let mut cpu = list_cpu(2, 4, 30, 0, GAME_MODE_BATTLE);
+        set_bit(&mut cpu, 1, 4);
+        assert_eq!(run_list(&mut cpu), 30);
+        // Outside battle (field pause menu) every row is retail.
+        let mut cpu = list_cpu(1, 4, 30, 0, 0x03);
+        set_all(&mut cpu);
+        assert_eq!(run_list(&mut cpu), 30);
+        // A row past the 26 is retail even with every bit set.
+        let mut cpu = list_cpu(0, 26, 30, 0, GAME_MODE_BATTLE);
+        set_all(&mut cpu);
+        assert_eq!(run_list(&mut cpu), 30);
+    }
+
     #[test]
     fn plan_lays_pieces_out_in_the_four_regions_and_refuses_a_bad_build() {
-        // A synthetic SCUS: a flat image whose VA→offset map is identity off
-        // 0x80010000 (as `file_offset_for_va` reads the PS-X EXE header).
         let scus = synthetic_scus();
         let ov = synthetic_overlay();
         let plan = OscillatingApInjection::plan(&scus, &ov, 20).expect("plan");
-        assert_eq!(plan.guard_va, ARENA1_VA);
+        assert_eq!(plan.leaf_va, ARENA1_VA);
+        assert_eq!(plan.guard_va, GUARD);
+        assert_eq!(plan.debit_va, DEBIT);
+        assert_eq!(plan.list_va, LIST);
         assert_eq!(plan.refund_va, ARENA2_VA);
         assert_eq!(plan.roll_va, SLOT6_VA);
         assert_eq!(plan.damage_va, SCUS_GAP_VA);
-        assert_eq!(plan.bits_va, SCUS_GAP_VA + 48 * 4);
-        assert_eq!(plan.counter_va, plan.bits_va + 16);
-        assert_eq!(plan.edits.len(), 10);
+        assert_eq!(plan.bits_va, BITS);
+        assert_eq!(plan.counter_va, CNT);
+        assert_eq!(plan.edits.len(), 13);
         assert_eq!(
             plan.edits.iter().filter(|e| e.prot_index.is_some()).count(),
             4
         );
-        // Over 100% is refused; a shifted damage site is refused.
+        // Over 100% is refused; a shifted damage site is refused; a shifted
+        // list site is refused.
         assert!(OscillatingApInjection::plan(&scus, &ov, 101).is_err());
         let mut bad = ov.clone();
         let off = (HOOK_DMG_VA - OVERLAY_BASE_VA) as usize;
         bad[off..off + 4].copy_from_slice(&nop().to_le_bytes());
         assert!(OscillatingApInjection::plan(&scus, &bad, 20).is_err());
+        let mut bad = scus.clone();
+        let off = legaia_asset::item_names::file_offset_for_va(&bad, HOOK_LIST_VA).unwrap();
+        bad[off..off + 4].copy_from_slice(&nop().to_le_bytes());
+        assert!(OscillatingApInjection::plan(&bad, &ov, 20).is_err());
         // A dirty slot 6 (another feature's bytes) is refused.
         let mut dirty = scus.clone();
         let off = legaia_asset::item_names::file_offset_for_va(&dirty, SLOT6_VA).unwrap();
@@ -998,8 +1202,8 @@ mod tests {
     }
 
     /// A PS-X EXE-shaped SCUS image large enough to hold every VA the plan
-    /// touches, with the setup site + commit fingerprints in place and the
-    /// four regions zero.
+    /// touches, with the fingerprinted words in place and the four regions
+    /// zero.
     fn synthetic_scus() -> Vec<u8> {
         let base = 0x8001_0000u32;
         let size = 0x7_0000u32;
@@ -1013,8 +1217,10 @@ mod tests {
         };
         put(HOOK_SETUP_VA, HOOK_SETUP_W0);
         put(HOOK_SETUP_VA + 4, HOOK_SETUP_W1);
-        for (va, w) in COMMIT_FINGERPRINT {
-            put(va, w);
+        put(HOOK_LIST_VA, HOOK_LIST_W0);
+        put(HOOK_LIST_VA + 4, HOOK_LIST_W1);
+        for (va, w) in COMMIT_FINGERPRINT.iter().chain(LIST_FINGERPRINT.iter()) {
+            put(*va, *w);
         }
         img
     }

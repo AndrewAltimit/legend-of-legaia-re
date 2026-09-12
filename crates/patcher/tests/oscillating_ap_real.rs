@@ -35,7 +35,7 @@ use legaia_patcher::arts_ap_grant::{
 };
 use legaia_patcher::arts_power::parse_combo;
 use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::oscillating_ap::{BITS_LEN, HOOK_DMG_VA, OscillatingApInjection};
+use legaia_patcher::oscillating_ap::{BITS_LEN, HOOK_DMG_VA, HOOK_LIST_VA, OscillatingApInjection};
 use legaia_patcher::shiny_seru::{
     ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, HOOK_SETUP_VA, SCUS_GAP_END_VA,
     SCUS_GAP_VA, SLOT6_END_VA, SLOT6_VA,
@@ -112,6 +112,43 @@ fn hosted_regions_are_zero_and_fingerprints_are_the_us_build() {
         scus_word(&scus, 0x8004_B718),
         0x2450_0004,
         "addiu s0,v0,0x4 - bank + 4"
+    );
+    // The arts-list renderer's AP read the list detour replaces, its record
+    // cursor and the row compare that pin the -8 / -7 / -6 offsets.
+    assert_eq!(
+        scus_word(&scus, 0x8003_4460),
+        0x24B5_0008,
+        "addiu s5,a1,0x8"
+    );
+    assert_eq!(
+        scus_word(&scus, 0x8003_4478),
+        0x92A2_FFF9,
+        "lbu v0,-0x7(s5)"
+    );
+    assert_eq!(
+        scus_word(&scus, 0x8003_44D4),
+        0x8C42_06C0,
+        "lw v0,0x6c0(v0)"
+    );
+    assert_eq!(
+        scus_word(&scus, HOOK_LIST_VA),
+        0x92B0_FFFA,
+        "lbu s0,-0x6(s5)"
+    );
+    assert_eq!(
+        scus_word(&scus, HOOK_LIST_VA + 4),
+        0x3042_0800,
+        "andi v0,v0,0x800"
+    );
+    assert_eq!(
+        scus_word(&scus, HOOK_LIST_VA + 8),
+        0x1040_0002,
+        "beq v0,zero,+2 - the return site"
+    );
+    assert_eq!(
+        scus_word(&scus, 0x8003_44E8),
+        0x0010_8042,
+        "srl s0,s0,0x1 - the halving the read feeds"
     );
 
     let patcher = DiscPatcher::open(disc).expect("open");
@@ -228,6 +265,12 @@ fn injection_lands_exactly_and_is_surgical() {
         plan.roll_va,
         "setup site",
     );
+    check_detour(
+        scus_word(&scus, HOOK_LIST_VA),
+        scus_word(&scus, HOOK_LIST_VA + 4),
+        plan.list_va,
+        "list site",
+    );
     assert_eq!(overlay_word(&ov, HOOK_B_VA), 0x2665_FFF5, "site B intact");
     assert_eq!(
         overlay_word(&ov, 0x801E_F340),
@@ -242,8 +285,9 @@ fn injection_lands_exactly_and_is_surgical() {
 
     // Layout: one piece per region, the roll filling slot 6 exactly, the side
     // table + counter inside the gap and still zero on disc.
-    assert_eq!(plan.guard_va, ARENA1_VA);
-    assert!(plan.debit_va > plan.guard_va && plan.debit_va < ARENA1_END_VA);
+    assert_eq!(plan.leaf_va, ARENA1_VA);
+    assert!(plan.guard_va > plan.leaf_va && plan.debit_va > plan.guard_va);
+    assert!(plan.list_va > plan.debit_va && plan.list_va < ARENA1_END_VA);
     assert_eq!(plan.refund_va, ARENA2_VA);
     assert_eq!(plan.roll_va, SLOT6_VA);
     assert_eq!(plan.damage_va, SCUS_GAP_VA);
@@ -277,7 +321,7 @@ fn injection_lands_exactly_and_is_surgical() {
             Some(i) => panic!("unexpected PROT index {i}"),
         }
     }
-    assert_eq!(scus_edits.len(), 6, "setup detour + five routines");
+    assert_eq!(scus_edits.len(), 9, "setup + list detours, seven routines");
     assert_eq!(ov_edits.len(), 4, "four 0898 detours");
     for (off, b) in &scus_edits {
         assert_eq!(
@@ -433,9 +477,12 @@ fn planner_refuses_bad_input_and_unrecognized_build() {
     for va in [
         HOOK_SETUP_VA,
         HOOK_SETUP_VA + 4,
+        HOOK_LIST_VA,
+        HOOK_LIST_VA + 4,
         0x8004_BC80,
         0x8004_BC84,
         0x8004_BDE0,
+        0x8003_4460,
     ] {
         let mut bad = scus.clone();
         let off = file_offset_for_va(&scus, va).unwrap();
@@ -446,7 +493,7 @@ fn planner_refuses_bad_input_and_unrecognized_build() {
         );
     }
     // A dirty region -> refuse.
-    for va in [ARENA1_VA + 8, ARENA2_VA, SLOT6_VA + 60, SCUS_GAP_VA + 0xC0] {
+    for va in [ARENA1_VA + 8, ARENA2_VA, SLOT6_VA + 60, SCUS_GAP_VA + 0x90] {
         let mut dirty = scus.clone();
         let off = file_offset_for_va(&scus, va).unwrap();
         dirty[off] = 0x5A;

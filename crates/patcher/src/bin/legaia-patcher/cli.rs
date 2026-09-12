@@ -1053,10 +1053,11 @@ pub(crate) struct RandomizeArgs {
     /// cost, deals `DAMAGE_PCT` percent of its damage). Re-rolled per art per
     /// battle, so a fight is a mix of both sides and the next fight a
     /// different one. `DAMAGE_PCT` is `0..=100` (default 20 when the flag is
-    /// given bare). Enemies are untouched. Nothing on screen says which side an
-    /// art landed on - the gauge moving the other way is the tell. Code hooks
-    /// into the arts queue-builder, the strike-damage kernel (PROT 0898) and
-    /// the battle loader, with the routines in the verified-dead SCUS regions.
+    /// given bare). Enemies are untouched. The in-battle Tactical-Arts list
+    /// (Triangle) shows a grant-side art as `0` AP for that battle. Code hooks
+    /// into the arts queue-builder, the strike-damage kernel (PROT 0898), the
+    /// battle loader and the arts-list renderer, with the routines in the
+    /// verified-dead SCUS regions.
     /// **Mutually exclusive with `--shiny-seru`, `--arts-ap-grant` /
     /// `--arts-ap-cost`, `--show-super-arts`, `--super-arts-pack` and
     /// `--delilas-challenge`** (same regions).
