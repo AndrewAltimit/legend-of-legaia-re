@@ -23,6 +23,19 @@
 --   LEGAIA_SHOTS                 comma list of vsyncs to screenshot on
 --                                (default "40,120,220")
 --   LEGAIA_NO_INJECT=1           control run: same state, no edits
+--   LEGAIA_HPBAR_ENCOUNTER=1     disc-carrier mode: run on the PATCHED disc,
+--                                resume a field state parked one step from a
+--                                random encounter (karisto_sol_pre_encounter),
+--                                apply LEGAIA_POKES (`legaia-patcher scus-pokes`
+--                                output) so the resident SCUS matches the disc,
+--                                hold RIGHT into the encounter so PROT 0898 is
+--                                read from the disc under test, then settle and
+--                                screenshot. Proves the overlay-side edits arrive
+--                                from the disc, which a state's stale RAM cannot.
+--   LEGAIA_POKES                 the poke list for encounter mode
+--   LEGAIA_WALK_FROM             vsync to start holding RIGHT (default 8)
+--   LEGAIA_BATTLE_SETTLE         vsyncs after the fight phase opens before the
+--                                screenshot (default 300)
 --
 -- Outputs (probe.out_path): hpbar_<n>.raw(+.meta) screenshots, hpbar_calls.csv
 -- (vsync, fn, a0, a1, a2), hpbar_summary.txt.
@@ -34,6 +47,26 @@ local EDITS_PATH = probe.getenv("LEGAIA_HPBAR_EDITS", "/tmp/hpbar_ramedits.txt")
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 240)
 local SHOTS_SPEC = probe.getenv("LEGAIA_SHOTS", "40,120,220")
 local NO_INJECT = probe.getenv("LEGAIA_NO_INJECT", "0") == "1"
+local ENCOUNTER = probe.getenv("LEGAIA_HPBAR_ENCOUNTER", "0") == "1"
+local POKES_PATH = probe.getenv("LEGAIA_POKES", "")
+local WALK_FROM = probe.getenv_num("LEGAIA_WALK_FROM", 8)
+local BATTLE_SETTLE = probe.getenv_num("LEGAIA_BATTLE_SETTLE", 300)
+local GAME_MODE_VA = 0x8007B83C
+local PHASE_VA = 0x8007BD71
+local HOOK_VA = 0x801DF6B8
+local J_FRAG_A = 0x0807CB55 -- `j 0x801F2D54`
+
+local function read_pokes(path)
+    local out = {}
+    local f = io.open(path, "r")
+    if not f then return nil end
+    for line in f:lines() do
+        local a, w = line:match("^%s*0x(%x+)%s*:%s*0x(%x+)")
+        if a then out[#out + 1] = { addr = tonumber(a, 16), word = tonumber(w, 16) } end
+    end
+    f:close()
+    return out
+end
 
 local GAUGE_FN = 0x8002C0B0
 local ICON_FN = 0x8002C488
@@ -93,6 +126,9 @@ end
 
 local vsync_now = 0
 local counts = { frag_a = 0, gauge = 0, icon = 0, project = 0 }
+local battle_at = nil   -- vsync the game mode turned 0x15
+local fight_at = nil    -- vsync the fighting phase opened
+local shot_done = false
 
 probe.run({
     sstate = probe.getenv("LEGAIA_SSTATE", os.getenv("HOME") .. "/Tools/pcsx-redux/SCUS94254.sstate1"),
@@ -142,6 +178,52 @@ probe.run({
     end,
     on_capture = function(ctx, el)
         vsync_now = el
+        if ENCOUNTER then
+            if el == 2 then
+                local pokes = read_pokes(POKES_PATH)
+                if not pokes or #pokes == 0 then
+                    w(string.format("FAIL: no pokes read from %q", POKES_PATH))
+                    ctx.request_quit = true
+                    return
+                end
+                for _, p in ipairs(pokes) do probe.write_u32(p.addr, p.word) end
+                w(string.format("applied %d SCUS pokes; fragment S head now %08X", #pokes, probe.read_u32(0x8005126C)))
+                w(string.format("field state: mode=%02X hook word (field overlay) %08X", probe.read_u8(GAME_MODE_VA), probe.read_u32(HOOK_VA)))
+            elseif el == WALK_FROM then
+                probe.pad_force(probe.BTN.RIGHT)
+                w("holding RIGHT to roll an encounter")
+            end
+            local mode = probe.read_u8(GAME_MODE_VA)
+            if battle_at == nil and mode == 0x15 then
+                battle_at = el
+                probe.pad_release(probe.BTN.RIGHT)
+                w(string.format("battle mode at vsync %d", el))
+            end
+            if battle_at and fight_at == nil and probe.read_u8(PHASE_VA) == 0xFF then
+                fight_at = el
+                local hook = probe.read_u32(HOOK_VA)
+                w(string.format("fighting phase at vsync %d; hook word from disc = %08X (%s)", el, hook,
+                    hook == J_FRAG_A and "PATCHED" or "RETAIL - overlay edit did not arrive"))
+                for slot = 3, 6 do
+                    local a = probe.read_u32(0x801C9370 + slot * 4)
+                    if a ~= 0 then
+                        w(string.format("slot %d actor=%08X hp=%d/%d", slot, a,
+                            probe.read_u16(a + 0x14C), probe.read_u16(a + 0x14E)))
+                    end
+                end
+            end
+            if fight_at and not shot_done and el >= fight_at + BATTLE_SETTLE then
+                shot_done = true
+                w(string.format("screenshot at vsync %d: %s", el, tostring(screenshot("hpbar_encounter"))))
+                w(string.format("hits: frag_a=%d gauge=%d icon=%d project=%d",
+                    counts.frag_a, counts.gauge, counts.icon, counts.project))
+                ctx.request_quit = true
+            end
+            if el == FRAMES - 1 then
+                w(string.format("TIMEOUT: battle_at=%s fight_at=%s mode=%02X", tostring(battle_at), tostring(fight_at), mode))
+            end
+            return
+        end
         if el == 2 then
             if NO_INJECT then
                 w("control run: no edits injected")
