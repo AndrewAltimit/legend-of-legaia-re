@@ -33,6 +33,24 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     // resolved softly below (the challenge wins) so the presets that carry
     // both still patch. Refuse the hard conflicts before touching anything.
     let arts_ap = !args.arts_ap_grant.is_empty() || !args.arts_ap_cost.is_empty();
+    // Oscillating AP costs claims all four regions (it reuses the arts AP
+    // override's sites and adds a roll + a damage routine), so it is a hard
+    // conflict with every other arena feature.
+    let oscillating = args.oscillating_ap.is_some();
+    for (other, flag) in [
+        (arts_ap, "--arts-ap-grant / --arts-ap-cost"),
+        (args.shiny_seru, "--shiny-seru"),
+        (args.delilas_challenge, "--delilas-challenge"),
+        (args.show_super_arts, "--show-super-arts"),
+        (args.super_arts_pack, "--super-arts-pack"),
+    ] {
+        if oscillating && other {
+            bail!(
+                "--oscillating-ap and {flag} both inject into the same verified-dead SCUS \
+                 regions and are mutually exclusive; enable only one"
+            );
+        }
+    }
     if arts_ap && args.shiny_seru {
         bail!(
             "--arts-ap-grant / --arts-ap-cost and --shiny-seru both inject into the same \
@@ -358,12 +376,16 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     // 1v2 on the retail sibling data while the ravine duels (1v1, ample
     // headroom) carry the swapped models.
     if let Some(mapping) = &args.delilas_party {
-        let cast_route =
-            if args.shiny_seru || args.show_super_arts || args.super_arts_pack || arts_ap {
-                legaia_patcher::delilas_party::CastRoutePolicy::ArenaTaken
-            } else {
-                legaia_patcher::delilas_party::CastRoutePolicy::Install
-            };
+        let cast_route = if args.shiny_seru
+            || args.show_super_arts
+            || args.super_arts_pack
+            || arts_ap
+            || oscillating
+        {
+            legaia_patcher::delilas_party::CastRoutePolicy::ArenaTaken
+        } else {
+            legaia_patcher::delilas_party::CastRoutePolicy::Install
+        };
         match legaia_patcher::delilas_party::apply_delilas_party_with(
             &mut patcher,
             mapping,
@@ -639,6 +661,22 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             };
             manifest.push(format!("{key} {who}{combo_s} = {}", spec.mode.amount()));
         }
+    }
+
+    // Oscillating AP costs: per battle, each Tactical Art lands on the cost
+    // side (retail) or the grant side (admitted at any AP, adds the AP it would
+    // have cost, deals a fraction of its damage). The arts AP override's three
+    // sites plus the strike-damage site in PROT 0898, a roll at the SCUS
+    // battle-loader setup site, and the routines in the four dead regions.
+    if let Some(pct) = args.oscillating_ap {
+        let report = apply::inject_oscillating_ap(&mut patcher, pct)?;
+        println!(
+            "oscillating-ap: every battle re-deals each art onto the cost side (retail) or the \
+             grant side (gives its AP back, {}% damage); roll at {:#x}, damage routine at {:#x}, \
+             side table at {:#x}",
+            report.damage_pct, report.roll_va, report.damage_va, report.bits_va
+        );
+        manifest.push(format!("oscillating_ap = {pct}"));
     }
 
     // Show Super Arts: the in-battle Tactical-Arts list gains, sorted in by AP,

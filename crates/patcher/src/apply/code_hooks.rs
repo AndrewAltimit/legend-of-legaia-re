@@ -271,6 +271,70 @@ pub fn inject_arts_ap_grant(
     })
 }
 
+/// Outcome of injecting the oscillating AP costs feature.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OscillatingApReport {
+    /// Grant-side damage, percent of retail.
+    pub damage_pct: u8,
+    /// Where the per-battle roll landed (SCUS VA).
+    pub roll_va: u32,
+    /// Where the grant-side damage routine landed (SCUS VA).
+    pub damage_va: u32,
+    /// The 16-byte per-battle side table (SCUS VA).
+    pub bits_va: u32,
+}
+
+/// Inject **oscillating AP costs** (see [`crate::oscillating_ap`]): every
+/// battle deals each Tactical Art onto the *cost* side (retail) or the *grant*
+/// side (admitted at any AP level, adds the AP it would have cost, deals
+/// `damage_pct` percent of its damage), re-rolled per art per battle. Four
+/// same-size detours into PROT 0898 (the arts AP override's three sites plus
+/// the strike-damage site), one into the SCUS battle loader, and the routines
+/// in the four verified-dead SCUS regions.
+///
+/// **Mutually exclusive with `--shiny-seru`, `--arts-ap-grant` /
+/// `--arts-ap-cost`, `--show-super-arts`, `--super-arts-pack` and
+/// `--delilas-challenge`** - all claim the same regions. Fails (without
+/// touching the disc) if the build isn't the recognized US layout or a hosted
+/// region isn't dead space.
+pub fn inject_oscillating_ap(
+    patcher: &mut DiscPatcher,
+    damage_pct: u8,
+) -> Result<OscillatingApReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for oscillating-ap injection")?;
+    let ov0898 = patcher
+        .read_entry(crate::oscillating_ap::OVERLAY_PROT_INDEX)
+        .context("read battle-action overlay (0898) for oscillating-ap injection")?;
+    let plan = crate::oscillating_ap::OscillatingApInjection::plan(&scus, &ov0898, damage_pct)?;
+
+    for edit in &plan.edits {
+        match edit.prot_index {
+            None => patcher
+                .patch_named_file(SCUS_NAME, edit.file_off as u64, &edit.bytes)
+                .with_context(|| {
+                    format!("write oscillating-ap SCUS edit at {:#x}", edit.file_off)
+                })?,
+            Some(idx) => patcher
+                .patch_prot_entry(idx, edit.file_off as u64, &edit.bytes)
+                .with_context(|| {
+                    format!(
+                        "write oscillating-ap PROT {idx} edit at {:#x}",
+                        edit.file_off
+                    )
+                })?,
+        }
+    }
+
+    Ok(OscillatingApReport {
+        damage_pct: plan.damage_pct,
+        roll_va: plan.roll_va,
+        damage_va: plan.damage_va,
+        bits_va: plan.bits_va,
+    })
+}
+
 /// Outcome of enabling seru trading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeruTradeReport {

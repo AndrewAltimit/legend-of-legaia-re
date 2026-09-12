@@ -51,6 +51,11 @@ Four patching families share that machinery:
   AP instead of costing it, or charge a chosen flat cost (a battle-overlay code
   hook - [`arts_ap_grant`](src/arts_ap_grant.rs), mutually exclusive with
   `--shiny-seru`);
+  `--oscillating-ap [DAMAGE_PCT]` deals every art, per battle, onto a cost side
+  (retail) or a grant side (castable at any AP, gives its AP back, a fraction of
+  its damage) - the same hook plus a per-battle roll and a strike-damage scale
+  ([`oscillating_ap`](src/oscillating_ap.rs), mutually exclusive with every
+  other arena feature);
   `--spirit-ap AP` sets how much AP the Spirit command charges (retail 32; four
   battle-overlay immediates - [`spirit_ap`](src/spirit_ap.rs)); `--damage-ap AP`
   sets how much AP taking damage charges, per 100% of max HP lost (retail 100 -

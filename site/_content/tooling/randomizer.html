@@ -413,6 +413,20 @@ legaia-patcher chests --input DISC.bin                     # read-only listing</
   </div></details>
 </section>
 
+<section class="doc-section" id="oscillating-ap-costs">
+  <h3>Oscillating AP costs</h3>
+  <p>Every battle deals each Tactical Art onto one of two sides at random: the <strong>cost</strong> side is exactly retail, the <strong>grant</strong> side is castable at any AP level, <em>gives back</em> the AP it would have cost, and deals a fraction of its damage. Fresh deal every fight, per art, so a battle is a mix of both.</p>
+  <table class="layout">
+    <thead><tr><th>Flag</th><th>Values</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>--oscillating-ap</td><td>[0..100] (default 20)</td><td>Grant-side damage as a percent of retail. Enemies untouched. The in-battle arts list (Triangle) shows a grant-side art as <code>0</code> AP for that battle.</td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
+    <p>Tier E. The AP half is the <a href="#arts-ap-override">arts AP override</a>'s hook with its config byte replaced by a per-battle side bit: sixteen bytes in the SCUS gap, filled at the battle loader's setup site by sixteen calls to retail's own <code>rand</code>. A grant-side art adds the charge the builder had just computed instead of subtracting it. The damage half is a detour in the arms execution resolver at the word after the 9999 cap, where <code>s0 - s1</code> is the strike's final damage; the kernel does not know which art it is running, but the action entry it was called with is a pointer into the character's <code>0xD0</code>-stride art bank (the one the queue builder walks), so the routine recovers the row as <code>(entry - bank - 0x28) / 0xD0 - 0x0B</code> when that division is exact. The playing anim id at <code>actor[+0x1D9]</code> is a staging slot handed out in queue order, not the art, and is not used. A third detour in the SCUS arts-list widget draws a grant-side row's AP as <code>0</code> while the game mode is battle. Occupies all four arena regions, so it excludes every other arena feature. The roll and the damage fraction are emulator-verified (a Tri-Somersault chain with the table forced to grant lands Cyclone's 218 and 239 as 43 and 47), and the AP side and the list read-out have been played.</p>
+  </div></details>
+</section>
+
 <section class="doc-section" id="ap-gauge-tuning">
   <h3>AP gauge tuning</h3>
   <p>The AP gauge that pays for Super and Miracle Arts fills two ways - pressing Spirit and getting hit - and each gets a slider, including negative values that turn the fill into a drain.</p>

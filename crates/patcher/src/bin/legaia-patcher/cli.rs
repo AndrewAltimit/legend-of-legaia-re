@@ -1047,6 +1047,24 @@ pub(crate) struct RandomizeArgs {
     /// **Mutually exclusive with `--shiny-seru`** (same arena bytes).
     #[arg(long, value_name = "COMBO=AMOUNT", value_delimiter = ',', value_parser = parse_arts_ap_cost)]
     pub(crate) arts_ap_cost: Vec<legaia_patcher::arts_ap_grant::ArtApSpec>,
+    /// **Oscillating AP costs**: every battle, each Tactical Art is dealt at
+    /// random onto the *cost* side (retail: pays its AP, full damage) or the
+    /// *grant* side (castable at any AP level, *adds* the AP it would have
+    /// cost, deals `DAMAGE_PCT` percent of its damage). Re-rolled per art per
+    /// battle, so a fight is a mix of both sides and the next fight a
+    /// different one. `DAMAGE_PCT` is `0..=100` (default 20 when the flag is
+    /// given bare). Enemies are untouched. The in-battle Tactical-Arts list
+    /// (Triangle) shows a grant-side art as `0` AP for that battle. Code hooks
+    /// into the arts queue-builder, the strike-damage kernel (PROT 0898), the
+    /// battle loader and the arts-list renderer, with the routines in the
+    /// verified-dead SCUS regions.
+    /// **Mutually exclusive with `--shiny-seru`, `--arts-ap-grant` /
+    /// `--arts-ap-cost`, `--show-super-arts`, `--super-arts-pack` and
+    /// `--delilas-challenge`** (same regions).
+    #[arg(long, value_name = "DAMAGE_PCT", num_args = 0..=1,
+          default_missing_value = "20",
+          value_parser = clap::value_parser!(u8).range(0..=100))]
+    pub(crate) oscillating_ap: Option<u8>,
     /// **Rename a place everywhere the game shows it**: the quick-travel /
     /// Door-of-Wind list, the label drawn over the world map at its map
     /// position, and the banner shown on entering the scene (which is also the
