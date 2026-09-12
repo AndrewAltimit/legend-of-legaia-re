@@ -76,6 +76,10 @@ use legaia_asset::seru_side_effect::{
     MIN_LEVEL, RESIST_BYPASS_MIN_PCT, SeruSideEffectTable, SideEffectKind, level_band,
 };
 
+// REF: FUN_801d8de8 (the banner printer the stager fires with id 0x66)
+// REF: FUN_80054cb0 (the boost profiles the compare gate runs against)
+// REF: FUN_80056798 (the BIOS rand() the suppression roll draws)
+
 /// The base-halfword / raw-record pair the stager compares for one stat.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StatCompare {

@@ -83,6 +83,9 @@
 //! `see ghidra/scripts/funcs/overlay_muscle_dome_801f3c34.txt` (body) and
 //! `overlay_battle_action_801e295c.txt` `0x801E4CB8` (the call site)
 
+// REF: FUN_801d8de8 (the banner printer the pass fires with id 0x66)
+// REF: FUN_801e70bc (the spell-XP check the same SM body runs after it)
+
 /// Queued-action ids the pass skips outright: Nighto and Aluru, the two Seru
 /// spells whose modules stage no side effect.
 pub const SKIPPED_ACTIONS: [u8; 2] = [0x85, 0x8E];
