@@ -415,6 +415,18 @@ status = "shipped"
 test = "seru_trade_real.rs"
 notes = "config blob is the only gap-resident byte; the UI escapes the gap entirely"
 
+[[mod]]
+key = "enemy_hp_bar"
+name = "Enemy HP bars"
+flag = "--enemy-hp-bar"
+tier = "F"
+target = "Two-word detour at the damage-popup renderer (PROT 0898, 0x801DF6B8); the routine laid over four routines nothing on the disc references: 0x801F2D54 / 0x801F463C / 0x801DBB2C in the battle overlay and FUN_8005126C in SCUS"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "enemy_hp_bar_real.rs"
+notes = "A red HP gauge over every living monster, drawn every frame from the roster panel's HP label and the AP meter's gauge primitive (red meter + percentage numeral, no blue chrome), fed by the displayed-HP mirror so it steps per hit inside a combo; one row per monster slot along the top of the screen, tracking each monster's screen X through the game's own billboard projector. Hosts are unreferenced code, not zero padding, so 'zero is not dead' does not apply and no arena byte is claimed."
+
 # --- Roadmap (planned) -----------------------------------------------------
 
 [[mod]]

@@ -808,6 +808,16 @@ pub(crate) struct RandomizeArgs {
     /// Per-battle percentage chance an enemy is charmed (only with `--enemy-ally`).
     #[arg(long, default_value_t = legaia_patcher::enemy_ally::DEFAULT_PCT)]
     pub(crate) enemy_ally_pct: u8,
+    /// Draw a **red HP gauge over every enemy** during battle: the roster
+    /// panel's `HP` label and retail's AP-meter primitive recoloured red with
+    /// the remaining percentage (no frame), fed by the displayed-HP mirror so
+    /// it steps per hit, seated over each living monster's screen X every
+    /// frame. A two-word detour at the head
+    /// of the damage-number popup renderer plus the routine laid over four
+    /// routines retail never references - no injected-code arena bytes, so it
+    /// composes with every other hook.
+    #[arg(long, default_value_t = false)]
+    pub(crate) enemy_hp_bar: bool,
     /// With `--shiny-pct`% probability per battle, the frontmost **capturable**
     /// enemy spawns as a rare **shiny** variant: +35% stats (translucent), and the
     /// Seru you capture from it deals +35% damage forever, with a translucent

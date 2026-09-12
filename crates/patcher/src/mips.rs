@@ -228,6 +228,11 @@ pub(crate) const fn sll(rd: u32, rt: u32, sa: u32) -> u32 {
 pub(crate) const fn srl(rd: u32, rt: u32, sa: u32) -> u32 {
     (rt << 16) | (rd << 11) | (sa << 6) | 0x02
 }
+/// `sra rd,rt,sa` - shift right arithmetic by a constant amount (the
+/// sign-extension half of the `sll 16` / `sra 16` idiom for an `i16`).
+pub(crate) const fn sra(rd: u32, rt: u32, sa: u32) -> u32 {
+    (rt << 16) | (rd << 11) | (sa << 6) | 0x03
+}
 /// `srlv rd,rt,rs` - shift right logical by a variable amount (`rs`).
 pub(crate) const fn srlv(rd: u32, rt: u32, rs: u32) -> u32 {
     (rs << 21) | (rt << 16) | (rd << 11) | 0x06

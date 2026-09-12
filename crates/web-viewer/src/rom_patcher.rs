@@ -168,7 +168,7 @@ pub fn resolve_seed(seed: &str) -> String {
 
 /// Number of `prog.stage(..)` boundaries in [`patch_rom`] (the `stage_count`
 /// every progress-callback invocation carries).
-const PATCH_ROM_STAGES: u32 = 37;
+const PATCH_ROM_STAGES: u32 = 38;
 
 /// Patch a user-supplied disc image with the chosen randomizer settings.
 ///
@@ -220,7 +220,13 @@ const PATCH_ROM_STAGES: u32 = 37;
 /// code hook into battle setup so that, with a per-battle chance, a random enemy
 /// is charmed onto the party's side as an uncontrolled ally (works in any fight,
 /// bosses included), plus a one-word widen of the victory check so the ally isn't
-/// an enemy you must defeat. `shiny_seru` injects code hooks so that, with a
+/// an enemy you must defeat. `enemy_hp_bar` draws a red HP gauge over every
+/// living monster (the `HP` label chip + the AP meter's gauge primitive and
+/// numeral, no chrome, stepping per hit; one row per monster slot along the
+/// top of the screen, tracking each monster's screen X),
+/// from a detour at the damage-popup renderer with the routine laid over four
+/// routines retail never references - no arena bytes, composes with everything.
+/// `shiny_seru` injects code hooks so that, with a
 /// per-battle chance, the frontmost *capturable* enemy spawns as a rare shiny
 /// variant (+35% stats) whose captured Seru deals +35% damage on every future
 /// cast (the flag rides the spell's level byte and is masked from the level-up +
@@ -396,6 +402,7 @@ pub async fn patch_rom(
     enemy_attack_count: &str,
     swing_costs: &str,
     equip_owners: &str,
+    enemy_hp_bar: bool,
     progress: Option<js_sys::Function>,
 ) -> Result<JsValue, JsValue> {
     let seed_n = seed_from_str(seed);
@@ -651,6 +658,20 @@ pub async fn patch_rom(
         ));
     } else {
         summary.push_str("enemy-ally: untouched\n");
+    }
+
+    // Enemy HP bars: a per-frame gauge over each living monster, drawn with
+    // retail's own AP-plate tiles + gauge primitive. Cosmetic; no arena bytes.
+    prog.stage("enemy HP bars").await;
+    if enemy_hp_bar {
+        let rep = apply::inject_enemy_hp_bar(&mut patcher)
+            .map_err(|e| err(format!("enemy-hp-bar: {e}")))?;
+        summary.push_str(&format!(
+            "enemy-hp-bar: red HP gauge over every enemy ({} edits)\n",
+            rep.edits
+        ));
+    } else {
+        summary.push_str("enemy-hp-bar: untouched\n");
     }
 
     // Shiny Seru: a code hook boosts a rare capturable enemy's stats +35%; the
