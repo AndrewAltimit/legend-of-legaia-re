@@ -425,7 +425,7 @@ edit = "in-place"
 gap = false
 status = "shipped"
 test = "enemy_hp_bar_real.rs"
-notes = "A red HP gauge over every living monster, drawn every frame from the AP plate's own tiles and gauge primitive (HP label, trough, red meter, percentage numeral), one row per monster slot along the top of the screen and tracking each monster's screen X through the game's own billboard projector. Hosts are unreferenced code, not zero padding, so 'zero is not dead' does not apply and no arena byte is claimed."
+notes = "A red HP gauge over every living monster, drawn every frame from the roster panel's HP label and the AP meter's gauge primitive (red meter + percentage numeral, no blue chrome), fed by the displayed-HP mirror so it steps per hit inside a combo; one row per monster slot along the top of the screen, tracking each monster's screen X through the game's own billboard projector. Hosts are unreferenced code, not zero padding, so 'zero is not dead' does not apply and no arena byte is claimed."
 
 # --- Roadmap (planned) -----------------------------------------------------
 

@@ -8,12 +8,13 @@
 //! projects the actor's stage anchor to the screen through the billboard
 //! projector every other 2-D battle sprite rides, seats a plate in a fixed
 //! band along the top of the screen centred on that X, and draws the AP
-//! plate's own parts around a percentage fill - the `HP` label chip instead of the red `AP`
-//! cap, the trough, the value box with the percentage numeral, the pointed
-//! end, and the meter as retail's two gouraud strips recoloured from dark-red /
-//! gold to dark-red / bright-red. Nothing is new art: every tile is a record
-//! of the system-UI icon table `0x800732A4`, every primitive is emitted by a
-//! SCUS routine the battle HUD already calls.
+//! plate's content without its blue chrome: the roster panel's `HP` label
+//! chip, the meter as retail's two gouraud strips recoloured from dark-red /
+//! gold to dark-red / bright-red, and the percentage numeral. The value is
+//! the displayed-HP mirror `+0x172`, which steps down hit by hit inside a
+//! combo. Nothing is new art: the label is a record of the system-UI icon
+//! table `0x800732A4`, every primitive is emitted by a SCUS routine the
+//! battle HUD already calls.
 //!
 //! ## Where it hooks
 //!
@@ -149,6 +150,14 @@ pub const MONSTER_SLOT_END: u32 = 7;
 /// Actor record fields.
 pub const ACTOR_HP_OFF: u16 = 0x14C;
 pub const ACTOR_HP_MAX_OFF: u16 = 0x14E;
+/// `actor[+0x172]` - the **displayed** HP mirror. Live HP `+0x14C` is
+/// committed once at the end of a player art out of the per-action total
+/// (`actor[+0x00]`, `FUN_801EC3E4`), but each hit credits the pending delta
+/// `+0x10` and the drain `FUN_80047430` applies it to this mirror the same
+/// frame on a monster slot (no ramp - retail never drew it). Reading it is
+/// what makes the bar step down hit by hit inside a combo; `+0x14C` stays the
+/// liveness test.
+pub const ACTOR_HP_SHOWN_OFF: u16 = 0x172;
 pub const ACTOR_ANCHOR_X_OFF: u16 = 0x3C;
 pub const ACTOR_ANCHOR_Y_OFF: u16 = 0x3E;
 pub const ACTOR_ANCHOR_Z_OFF: u16 = 0x40;
@@ -172,21 +181,21 @@ pub const ICON_FN: u32 = 0x8002_C488;
 /// Scratchpad primitive write cursor (`_DAT_1F8003A0`).
 pub const PRIM_CURSOR_VA: u32 = 0x1F80_03A0;
 
-/// Icon-table records the plate is built from.
+/// The one icon-table record drawn: the roster panel's `HP` label chip. The
+/// AP plate's blue chrome (trough `0x32`, value box `0x69`, end cap `0x6A`)
+/// is deliberately left out - the plate is the label, the meter and the
+/// numeral.
 pub const ICON_HP_LABEL: u16 = 0x07; // (208,86) 16x10, sub-palette 1
-pub const ICON_TROUGH: u16 = 0x32; // (128,80) 56x16, sub-palette 4
-pub const ICON_VALUE_BOX: u16 = 0x69; // (176,64) 16x16
-pub const ICON_END_CAP: u16 = 0x6A; // (184,80) 8x16
 
-/// Plate geometry, relative to the plate origin `(x, y)` - the AP plate's own
-/// offsets ([`field-menu.md`](../../../docs/subsystems/field-menu.md)).
+/// Plate geometry, relative to the plate origin `(x, y)`, keeping the AP
+/// plate's own offsets ([`field-menu.md`](../../../docs/subsystems/field-menu.md)):
+/// the label at `+4`, the meter at `+0x1B..+0x4D` (the gauge primitive's own
+/// span) and the numeral at `+0x50`.
 pub const LABEL_DX: u16 = 4;
 pub const LABEL_DY: u16 = 3;
-pub const TROUGH_DX: u16 = 0x18;
-pub const VALUE_BOX_DX: u16 = 0x50;
-pub const END_CAP_DX: u16 = 0x60;
-/// Full plate width (end cap right edge), used to centre it on the anchor.
-pub const PLATE_W: u16 = 0x68;
+/// Plate width (label to the last numeral cell), used to centre it on the
+/// anchor.
+pub const PLATE_W: u16 = 0x5C;
 /// Screen Y of the first row's top edge. The plates sit in a band along the
 /// top of the screen, one 16-px row per monster slot (slot 3 on the first
 /// row), and track their monsters horizontally: only the projected X is
@@ -353,9 +362,9 @@ fn program() -> Vec<Fragment> {
     a.w(lbu(V0, S1, ACTOR_HIDDEN_OFF));
     a.w(addiu(V1, ZERO, ACTOR_HIDDEN_VALUE));
     a.br(beq_to(V0, V1), Label::ANext); // hidden by a summon fade
-    a.w(nop()); // (branch delay)
+    a.w(lhu(S5, S1, ACTOR_HP_SHOWN_OFF)); // (branch delay) s5 = displayed HP - moves per hit
     a.w(addiu(V0, ZERO, 100));
-    a.w(multu(S5, V0)); // lo = hp * 100
+    a.w(multu(S5, V0)); // lo = shown * 100 (one instruction past the load)
     a.w(mflo(V0));
     a.br(beq_to(ZERO, ZERO), Label::BStart); // splice -> B
     a.w(lhu(V1, S1, ACTOR_HP_MAX_OFF)); // (branch delay) v1 = max HP
@@ -452,18 +461,6 @@ fn program() -> Vec<Fragment> {
     s.w(addiu(A1, S4, LABEL_DY));
     s.w(jal(ICON_FN));
     s.w(addiu(A2, ZERO, ICON_HP_LABEL)); // (branch delay)
-    s.w(addiu(A0, S3, TROUGH_DX));
-    s.w(addu(A1, S4, ZERO));
-    s.w(jal(ICON_FN));
-    s.w(addiu(A2, ZERO, ICON_TROUGH)); // (branch delay)
-    s.w(addiu(A0, S3, VALUE_BOX_DX));
-    s.w(addu(A1, S4, ZERO));
-    s.w(jal(ICON_FN));
-    s.w(addiu(A2, ZERO, ICON_VALUE_BOX)); // (branch delay)
-    s.w(addiu(A0, S3, END_CAP_DX));
-    s.w(addu(A1, S4, ZERO));
-    s.w(jal(ICON_FN));
-    s.w(addiu(A2, ZERO, ICON_END_CAP)); // (branch delay)
     s.w(lw(RA, SP, F_LEAF_RA));
     s.w(nop()); // (load delay)
     s.w(jr(RA));
@@ -821,8 +818,8 @@ mod tests {
         },
     }
 
-    /// One monster seat for the model: `(hp, max, hidden, anchor)`.
-    type Seat = Option<(u16, u16, bool, (i16, i16, i16))>;
+    /// One monster seat for the model: `(live hp, displayed hp, max, hidden, anchor)`.
+    type Seat = Option<(u16, u16, u16, bool, (i16, i16, i16))>;
 
     struct Scene {
         /// Per monster slot 3..=6.
@@ -848,10 +845,11 @@ mod tests {
             let entry = ACTOR_TABLE_VA + 4 * (MONSTER_SLOT_FIRST + i as u32);
             match slot {
                 None => cpu.wr32(entry, 0),
-                Some((hp, max, hidden, (x, y, z))) => {
+                Some((hp, shown, max, hidden, (x, y, z))) => {
                     let a = ACTORS[i];
                     cpu.wr32(entry, a);
                     cpu.wr16(a + u32::from(ACTOR_HP_OFF), *hp);
+                    cpu.wr16(a + u32::from(ACTOR_HP_SHOWN_OFF), *shown);
                     cpu.wr16(a + u32::from(ACTOR_HP_MAX_OFF), *max);
                     cpu.wr8(
                         a + u32::from(ACTOR_HIDDEN_OFF),
@@ -866,6 +864,7 @@ mod tests {
         // Slot 7 (sentinel) holds a live-looking record that must never draw.
         cpu.wr32(ACTOR_TABLE_VA + 4 * 7, 0x8010_7000);
         cpu.wr16(0x8010_7000 + u32::from(ACTOR_HP_OFF), 5);
+        cpu.wr16(0x8010_7000 + u32::from(ACTOR_HP_SHOWN_OFF), 5);
         cpu.wr16(0x8010_7000 + u32::from(ACTOR_HP_MAX_OFF), 5);
 
         // Primitive cursor and a scratch arena for the gauge stub.
@@ -956,9 +955,10 @@ mod tests {
     fn scene_two_enemies() -> Scene {
         Scene {
             slots: [
-                Some((50, 100, false, (-300, -172, 200))),
-                Some((0, 100, false, (0, 0, 0))),         // dead
-                Some((1, 1000, false, (300, -700, 200))), // sliver
+                // Live HP 80 but the mirror already shows 50: mid-combo.
+                Some((80, 50, 100, false, (-300, -172, 200))),
+                Some((0, 0, 100, false, (0, 0, 0))), // dead
+                Some((1, 1, 1000, false, (300, -700, 200))), // sliver
                 None,
             ],
             ctx: Some(0),
@@ -990,21 +990,6 @@ mod tests {
                     y: y + i32::from(LABEL_DY),
                     icon: u32::from(ICON_HP_LABEL),
                 },
-                Call::Icon {
-                    x: x + i32::from(TROUGH_DX),
-                    y,
-                    icon: u32::from(ICON_TROUGH),
-                },
-                Call::Icon {
-                    x: x + i32::from(VALUE_BOX_DX),
-                    y,
-                    icon: u32::from(ICON_VALUE_BOX),
-                },
-                Call::Icon {
-                    x: x + i32::from(END_CAP_DX),
-                    y,
-                    icon: u32::from(ICON_END_CAP),
-                },
             ]
         };
         let mut expect = vec![Call::Project {
@@ -1015,7 +1000,7 @@ mod tests {
             hh: 0,
             angle: 0,
         }];
-        expect.extend(plate(x0, y0, 50));
+        expect.extend(plate(x0, y0, 50)); // the mirror, not live HP
         expect.push(Call::Project {
             x: 300,
             y: -700,
@@ -1048,10 +1033,10 @@ mod tests {
     fn percentage_caps_at_100_and_skips_hidden_or_behind_camera() {
         let scene = Scene {
             slots: [
-                Some((500, 100, false, (0, 0, 0))), // over max (a buff) -> 100
-                Some((10, 10, true, (0, 0, 0))),    // hidden by a summon fade
-                Some((10, 10, false, (0, 0, 0))),   // projector says behind the camera
-                Some((33, 100, false, (0, 0, 0))),
+                Some((500, 500, 100, false, (0, 0, 0))), // over max (a buff) -> 100
+                Some((10, 10, 10, true, (0, 0, 0))),     // hidden by a summon fade
+                Some((10, 10, 10, false, (0, 0, 0))),    // projector says behind the camera
+                Some((33, 33, 100, false, (0, 0, 0))),
             ],
             ctx: Some(0),
             projections: vec![(10, 10, 0x10), (10, 10, 0), (10, 10, 0x220)],

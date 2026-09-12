@@ -221,8 +221,9 @@ const PATCH_ROM_STAGES: u32 = 38;
 /// is charmed onto the party's side as an uncontrolled ally (works in any fight,
 /// bosses included), plus a one-word widen of the victory check so the ally isn't
 /// an enemy you must defeat. `enemy_hp_bar` draws a red HP gauge over every
-/// living monster (the AP plate's own tiles + gauge primitive, one row per
-/// monster slot along the top of the screen, tracking each monster's screen X),
+/// living monster (the `HP` label chip + the AP meter's gauge primitive and
+/// numeral, no chrome, stepping per hit; one row per monster slot along the
+/// top of the screen, tracking each monster's screen X),
 /// from a detour at the damage-popup renderer with the routine laid over four
 /// routines retail never references - no arena bytes, composes with everything.
 /// `shiny_seru` injects code hooks so that, with a

@@ -323,13 +323,17 @@ time a won battle tallies it. `apply::inject_flee_exp` performs the two edits.
 `--enemy-hp-bar` draws a red HP gauge over every living monster in battle
 (`enemy_hp_bar` module). Retail has no monster HP readout (the Koru fight's
 `HP Left` percentage strip is the lone exception), so this is new UI, but no
-new art: the plate is the AP plate's own icon-table records - the `HP` label
-chip (record `0x07`) where the red `AP` cap would sit, the trough (`0x32`),
-the value box (`0x69`) and the pointed end (`0x6A`) - around retail's
-gauge-content primitive `FUN_8002C0B0(x, y, value)`, which emits the two
-gouraud strips and the value numerals. The routine calls it with the monster's
-HP percentage and rewrites the gold end of both strips to red in the packets
-it just emitted (the dark-red end is retail's already).
+new art: the roster panel's `HP` label chip (icon-table record `0x07`), then
+retail's gauge-content primitive `FUN_8002C0B0(x, y, value)`, which emits the
+AP meter's two gouraud strips and the value numerals - without the AP plate's
+blue chrome (trough, value box, end cap). The routine calls it with the
+monster's HP percentage and rewrites the gold end of both strips to red in
+the packets it just emitted (the dark-red end is retail's already). The value
+is the displayed-HP mirror `+0x172`, not live HP `+0x14C`: a player art
+commits live HP once at the end of the action out of its per-action total,
+but every hit credits the pending delta `+0x10` and the drain `FUN_80047430`
+applies it to the mirror the same frame on a monster slot, so the bar steps
+down hit by hit inside a combo. Live HP stays the liveness test.
 
 Each plate sits on its own row along the top of the screen (one 16-px row per
 monster slot, under the acting-actor plaque) and tracks its monster's screen X

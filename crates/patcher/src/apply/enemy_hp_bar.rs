@@ -14,8 +14,9 @@ pub struct EnemyHpBarReport {
     pub edits: usize,
 }
 
-/// Draw a **red HP gauge over every living monster** in battle, built from
-/// the AP plate's own tiles and gauge primitive (percentage fill + numeral).
+/// Draw a **red HP gauge over every living monster** in battle: the `HP`
+/// label chip and the AP meter's gauge primitive (percentage fill + numeral),
+/// fed by the displayed-HP mirror so it steps hit by hit.
 ///
 /// Five same-size edits: a two-word detour at the head of the damage-number
 /// popup renderer in the battle-action overlay, and the routine itself laid

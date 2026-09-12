@@ -715,16 +715,24 @@ maintained but never drawn ([`battle-action.md`](../subsystems/battle-action.md)
 and the one readout on the disc is the Koru fight's `HP Left` percentage
 strip. This adds a per-monster plate without adding art.
 
-**What is drawn.** The AP plate's own parts, from the system-UI icon table
-`0x800732A4` ([`field-menu.md`](../subsystems/field-menu.md#status-page-submenu-0-or-5)):
-the `HP` label chip (record `0x07`, the roster panel's own) where the plate's
-red `AP` cap would sit, the trough (`0x32`), the value box (`0x69`) and the
-pointed end (`0x6A`), each through the icon sprite emitter `FUN_8002C488`.
-The meter and the numeral come from retail's gauge-content primitive
-`FUN_8002C0B0(x, y, value)`, called with the monster's HP percentage
-(`hp * 100 / max`, capped at 100, floored at 1 so a living monster always
-shows a sliver): it emits two 3-px gouraud strips of `value/2` px and the
-value digits. Its strips run dark-red `(0x80,0x20,0x10)` to gold
+**What is drawn.** The AP plate's content without its blue chrome. The
+`HP` label chip (system-UI icon table `0x800732A4` record `0x07`, the roster
+panel's own - [`field-menu.md`](../subsystems/field-menu.md#status-page-submenu-0-or-5))
+through the icon sprite emitter `FUN_8002C488`; then the meter and the
+numeral from retail's gauge-content primitive `FUN_8002C0B0(x, y, value)`,
+called with the monster's HP percentage (`shown * 100 / max`, capped at 100,
+floored at 1 so a living monster always shows a sliver): it emits two 3-px
+gouraud strips of `value/2` px and the value digits. The trough, value box
+and end cap tiles the AP plate frames these with are left out.
+
+**What the value is.** The displayed-HP mirror `actor[+0x172]`, not live HP
+`+0x14C`. A player art commits live HP once at the end of the action out of
+its per-action total `actor[+0x00]` (`FUN_801EC3E4`), but every hit credits
+the pending delta `+0x10`, and on a monster slot the drain `FUN_80047430`
+applies that delta to the mirror in the same frame - retail never drew it,
+so it never ramped ([`battle-action.md`](../subsystems/battle-action.md)).
+Reading the mirror is what makes the bar step down hit by hit inside a
+combo; live HP stays the liveness test (a dead monster draws nothing). Its strips run dark-red `(0x80,0x20,0x10)` to gold
 `(0xC0,0xA0,0x40)` and back; the routine reads the primitive cursor
 `0x1F8003A0` before the call and afterwards rewrites the four gold colour
 words of the two packets it emitted to red, keeping the GP0 code byte the
