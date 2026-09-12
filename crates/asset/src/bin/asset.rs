@@ -23,6 +23,8 @@ mod overlay;
 mod packs;
 #[path = "asset/shops.rs"]
 mod shops;
+#[path = "asset/side_effect.rs"]
+mod side_effect;
 #[path = "asset/stage.rs"]
 mod stage;
 #[path = "asset/summon.rs"]
@@ -41,6 +43,7 @@ use minigame::*;
 use overlay::*;
 use packs::*;
 use shops::*;
+use side_effect::*;
 use stage::*;
 use summon::*;
 use tables::*;
@@ -296,6 +299,29 @@ enum Cmd {
         /// Raw PROT 0898 (battle-action overlay) entry `.BIN`.
         input: PathBuf,
         /// Emit the matrix + tables as JSON instead of the text listing.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the Seru-magic side-effect table (`0x801F6870`): per summon
+    /// element and magic-level band, the percent the damage finisher shaves
+    /// off the target's stat on every hit (light row: the cure class) and the
+    /// banner-string VA the stager installs. `legaia_asset::seru_side_effect`.
+    SeruSideEffect {
+        /// Raw PROT 0898 (battle-action overlay) entry `.BIN`.
+        input: PathBuf,
+        /// Emit the table as JSON instead of the text listing.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Disc-wide formation census: for every monster id, how many MAN
+    /// formation rows name it, split by the row's scripted-fight header byte
+    /// and by random-region reachability - which fights (scripted / random)
+    /// the enemy is met in, and so which stat-boost profile and Seru
+    /// side-effect gates apply. `legaia_asset::formation_census`.
+    FormationCensus {
+        /// `PROT.DAT`, or a directory of extracted PROT entries.
+        input: PathBuf,
+        /// Emit the census as JSON instead of the text listing.
         #[arg(long)]
         json: bool,
     },
@@ -1571,6 +1597,8 @@ fn main() -> Result<()> {
         }
         Cmd::ModeTable { input, json } => mode_table_cmd(&input, json),
         Cmd::ElementAffinity { input, json } => element_affinity_cmd(&input, json),
+        Cmd::SeruSideEffect { input, json } => seru_side_effect_cmd(&input, json),
+        Cmd::FormationCensus { input, json } => formation_census_cmd(&input, json),
         Cmd::SummonCreatures { scus, json } => summon_creatures_cmd(scus.as_deref(), json),
         Cmd::Overlay { cmd } => match cmd {
             OverlayCmd::List { json } => overlay_list_cmd(json),

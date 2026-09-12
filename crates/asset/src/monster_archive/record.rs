@@ -215,14 +215,15 @@ impl MonsterRecord {
         self.stats[0]
     }
 
-    /// The six stats as the battle loader **installs them into the live actor**,
-    /// in [`stats`](Self::stats) order. The raw record bytes are *not* what the
-    /// player fights: `FUN_80054cb0` boosts four of the six combat stats while
-    /// copying the record into the battle actor (see the module's *Battle-load
-    /// stat boost* note). This returns the **boosted
-    /// (gate-set) profile** - the one the international retail build uses for the
-    /// captured fights, and the one the curated `enemies.toml` bestiary matches
-    /// byte-for-byte:
+    /// The six stats as the battle loader **installs them into the live actor**
+    /// in a **scripted fight**, in [`stats`](Self::stats) order. The raw record
+    /// bytes are *not* what the player fights: `FUN_80054cb0` boosts four of
+    /// the six combat stats while copying the record into the battle actor,
+    /// choosing one of two profiles by the scripted-fight flag `ctx[+0x287]`
+    /// (see the module's *Battle-load stat boost* note). This is the
+    /// **flag-set profile** - the one every boss / story fight installs, the
+    /// one the two live boss captures (Gaza, Cort) reproduce byte-for-byte, and
+    /// the one the curated `enemies.toml` bestiary holds for every enemy:
     ///
     /// - `attack`   += `attack >> 2`   (`×5/4`, truncating)
     /// - `defense_high` `× 2` (the **upper** defense, UDF)
@@ -232,9 +233,9 @@ impl MonsterRecord {
     ///
     /// Each op is a 16-bit truncating integer step matching the MIPS exactly
     /// (`wrapping` so a degenerate record can't panic; no real record overflows).
-    /// The alternate gate-clear profile (`DEF ×7/4`, `INT ×5/4`, ATK unchanged)
-    /// is documented in the module note but not produced here - both profiles
-    /// boost, so the raw record always understates the fight.
+    /// A **random encounter** runs with the flag clear and installs
+    /// [`Self::battle_stats_random`] instead - both profiles boost, so the raw
+    /// record always understates the fight, but they differ per stat.
     pub fn battle_stats(&self) -> [u16; 6] {
         let s = self.stats;
         [
@@ -245,6 +246,41 @@ impl MonsterRecord {
             s[4].wrapping_add(s[4] >> 3), // INT  + INT>>3   (×9/8)
             s[5],                         // SPD  - copied unchanged
         ]
+    }
+
+    /// The six stats as the battle loader installs them in a **random
+    /// encounter** (scripted-fight flag clear - the `FUN_80054cb0` branch at
+    /// `0x80055234..0x8005529C`), in [`stats`](Self::stats) order:
+    ///
+    /// - `attack` copied **unchanged**
+    /// - `defense_high` += `(udf >> 1) + (udf >> 2)` (`×7/4`, truncating)
+    /// - `defense_low`  += `(ldf >> 1) + (ldf >> 2)` (`×7/4`, truncating)
+    /// - `intelligence` += `int >> 2` (`×5/4`, truncating)
+    /// - `agility`, HP, MP and `speed` copied unchanged.
+    ///
+    /// Pinned live: a world-map random Gobu Gobu (record ATK 17 / UDF 15 /
+    /// LDF 14 / INT 10) fights as ATK 17 / UDF 25 / LDF 24 / INT 12 with
+    /// `ctx[+0x287] == 0`. The scripted profile is [`Self::battle_stats`].
+    pub fn battle_stats_random(&self) -> [u16; 6] {
+        let s = self.stats;
+        [
+            s[0],                                         // AGL  - copied unchanged
+            s[1],                                         // ATK  - copied unchanged
+            s[2].wrapping_add((s[2] >> 1) + (s[2] >> 2)), // UDF  ×7/4
+            s[3].wrapping_add((s[3] >> 1) + (s[3] >> 2)), // LDF  ×7/4
+            s[4].wrapping_add(s[4] >> 2),                 // INT  + INT>>2   (×5/4)
+            s[5],                                         // SPD  - copied unchanged
+        ]
+    }
+
+    /// The installed stat block for a fight class: [`Self::battle_stats`]
+    /// when `scripted`, else [`Self::battle_stats_random`].
+    pub fn battle_stats_for(&self, scripted: bool) -> [u16; 6] {
+        if scripted {
+            self.battle_stats()
+        } else {
+            self.battle_stats_random()
+        }
     }
 }
 
@@ -572,6 +608,11 @@ mod tests {
             plaque_badge: None,
         };
         assert_eq!(rec.battle_stats(), [128, 360, 444, 400, 247, 146]);
+        // The same record in a random encounter (flag clear): ATK untouched,
+        // DEF x7/4, INT x5/4.
+        assert_eq!(rec.battle_stats_random(), [128, 288, 388, 350, 275, 146]);
+        assert_eq!(rec.battle_stats_for(true), rec.battle_stats());
+        assert_eq!(rec.battle_stats_for(false), rec.battle_stats_random());
         // AGL, HP, MP and SPD are pass-through; the four combat stats are boosted.
         assert_eq!(rec.battle_stats()[0], rec.agility());
         assert_eq!(rec.battle_stats()[5], rec.speed());

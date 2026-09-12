@@ -200,6 +200,8 @@ face:
 | Battle-intro style selector (`FUN_801CE8CC`) | Selects `SpinUpParticles` instead of the `TileShatter` default (or `TileShatter` sub-style 1 for slot-0 ids `0x13..=0x15`). |
 | Intro transition phase 0 (`FUN_801CF5BC`) | Overwrites the plain battle-start cue `0x1F` with `0x4D` in SFX-ring slot 0 (see [`cutscene.md`](../subsystems/cutscene.md#transition-tick--battle-handoff---fun_801cf5bc)). |
 | Enemy stat-boost profile (`FUN_80054CB0` via `ctx[+0x287]`) | Picks the boost profile; see [`legaia_asset::monster_archive`](../../crates/asset/src/monster_archive.rs). |
+| Seru-magic side-effect stager (`FUN_801F3D3C` via `ctx[+0x287]`) | Enables the 80% suppression roll and the base-vs-record compare that keeps a player's ATK / DEF / INT debuffs off a boss; see [battle-formulas.md](../subsystems/battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch). |
+| Escape roll (`FUN_801E791C` via `ctx[+0x287]`) | Blocks the party's escape ([battle-action.md](../subsystems/battle-action.md)). |
 
 The engine carries the bit as a property of the *formation row* rather than as
 a global: `legaia_engine_core::monster_catalog::FormationDef` keeps the row's

@@ -1909,9 +1909,27 @@ All six stat names match the game's own labels + the fan bestiaries, cross-check
 | **INT** (`+0x18`) | `+= INT>>3` (×9/8) | `+= INT>>2` (×5/4) |
 | HP / MP / AGL / SPD | unchanged | unchanged |
 
-Both profiles boost; only the magnitude differs, so the raw record always understates the fight. Profile **B** (the gate-set branch) is what a live international-retail capture reproduces byte-for-byte (Gaza Sim-Seru id 166: raw `[AGL 128, ATK 288, UDF 222, LDF 200, INT 220, SPD 146]` → in-battle `ATK 360, UDF 444, LDF 400, INT 247`), and is what the curated `enemies.toml` bestiary holds. `MonsterRecord::battle_stats()` returns profile B. This cross-region difficulty difference (international retail hitting harder than the raw record / the Japanese release) was first surfaced by **Zetopheonix**.
+Both profiles boost; only the magnitude differs, so the raw record always understates
+the fight - but **which profile runs is the fight class**, not the region. `ctx[+0x287]`
+is the scripted-fight flag (bit `0x80` of `DAT_8007BD60`, raised for a formation row
+with a non-zero header byte -
+[`encounter.md`](../formats/encounter.md#the-per-battle-flags-byte-dat_8007bd60)), and
+both branches are save-state pinned: every boss capture (Gaza Sim-Seru id 166: raw `[AGL
+128, ATK 288, UDF 222, LDF 200, INT 220, SPD 146]` → in-battle `ATK 360, UDF 444, LDF
+400, INT 247`; Cort likewise) carries `+0x287 == 4` and profile **B**, and every
+random-encounter capture (a world-map Gobu Gobu: raw `ATK 17, UDF 15, LDF 14, INT 10` →
+in-battle `17, 25, 24, 12`) carries `0` and profile **A**.
+`MonsterRecord::battle_stats()` returns profile B, `battle_stats_random()` profile A,
+`battle_stats_for(scripted)` picks. The curated `enemies.toml` bestiary holds profile B
+for every enemy - the boss-fight numbers, which overstate a random encounter's UDF/LDF
+by 8/7 and its ATK by 5/4. The earlier reading that profile B is *the*
+international-retail profile for every fight rested on the Gaza capture alone; the
+cross-region difficulty difference itself (international retail hitting harder than the
+raw record / the Japanese release) was first surfaced by **Zetopheonix**. The same flag
+gates which Seru-magic side-effect debuffs can ever land on the enemy - see
+[battle-formulas.md](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch).
 
-The **engine port applies it**: `engine_core::monster_catalog::monster_def_from_record` seeds ATK / UDF / LDF / INT from `battle_stats()` and AGL / SPD / HP / MP from the plain record fields, matching which stores the boost block does and does not touch. The accuracy / evasion bytes clamp the *boosted* INT, because the actor halfword the interrupt roll reads (`+0x168`) is the one the boost block's last store writes. Seeding from the raw accessors instead - which the port did - makes every enemy in the game materially weaker than retail.
+The **engine port applies profile B in every fight**: `engine_core::monster_catalog::monster_def_from_record` seeds ATK / UDF / LDF / INT from `battle_stats()` (the random-encounter profile is not yet selected at battle entry - ready work in [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)) and AGL / SPD / HP / MP from the plain record fields, matching which stores the boost block does and does not touch. The accuracy / evasion bytes clamp the *boosted* INT, because the actor halfword the interrupt roll reads (`+0x168`) is the one the boost block's last store writes. Seeding from the raw accessors instead - which the port did - makes every enemy in the game materially weaker than retail.
 
 Battle entry also seeds **both defence facets** into `World::battle_defense_split`, not one collapsed `max(UDF, LDF)` scalar. The melee kernel picks UDF or LDF by the swing's command parity (`FUN_801EC3E4` at `0x801ECE14`), so a single scalar leaves that branch dead for the whole monster band and makes every enemy defend with its better half against every swing. A Defense buff moves both halves together, as retail's "Defense Up" does.
 
@@ -2738,6 +2756,8 @@ Conditions are named with the game's in-game ailment terms (the `enemy_effect` b
 | Curse | `6` | 4 turns | Blocks Magic | blocks Magic (matches) |
 | Stone | `7` | whole battle (255) | Petrification: cannot act, cannot be damaged, counts as defeated; lasts the whole battle (no in-battle cure; escape restores) | block + whole-battle duration + invulnerability at every damage entry point + counts-as-defeated in the wipe checks; escape restores (see below) |
 | Faint | `8` | until cured | KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic | block + `until cured` (matches) |
+
+The **stat debuffs** a player's Seru magic inflicts (DEF / AGL / ATK / SPD / INT / MP down, 5-20% per hit by magic level) are a separate mechanism with no `+0x16E` bit - the element-keyed [side-effect](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch), whose "immunities" are the scripted-fight boost profile, not a monster field.
 
 Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs). The per-tick `StatusEvent` stream feeds back into the engine's HUD pipeline; engines call `World::tick_status_effects` once per round and consume `StatusEffectTracker::drain_events()` for log lines. Both battle drivers tick it once per round: the runner path at `BattleRound::end`, and the live loop at the initiative round boundary (when no living actor still holds an initiative key, just before the keys reseed).
 

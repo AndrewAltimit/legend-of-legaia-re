@@ -13,6 +13,12 @@ impl LegaiaViewer {
     /// ```json
     /// { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
     ///                  "stats": [u16; 6], "battle_stats": [u16; 6],
+    ///                  "battle_stats_random": [u16; 6],
+    ///                  "fights": { "flagged": u32, "clear": u32, "random": u32,
+    ///                              "scripted": bool },
+    ///                  "side_effects": { "scripted": [verdict; 6],
+    ///                                    "random": [verdict; 6] },
+    ///                  "resist_bypass": ["thunder", "water"],
     ///                  "magic_count": u8, "gold": u16,
     ///                  "element": u8, "element_name": "fire"|null,
     ///                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8,
@@ -72,6 +78,59 @@ impl LegaiaViewer {
                 })
                 .collect()
         };
+        // Which fights each monster is met in (scripted rows vs random rows),
+        // read off every scene MAN's formation table - the same header byte
+        // the entity SM turns into the scripted-fight flag. Decides the boost
+        // profile and the Seru side-effect gates the table presents per row.
+        let census = {
+            let mut c = legaia_asset::formation_census::FormationCensus::default();
+            if let Some(entries) = parse_prot_toc(&self.disc) {
+                for e in entries {
+                    let off = e.byte_offset as usize;
+                    let end = off.saturating_add(e.size_bytes as usize);
+                    if end > self.disc.len() {
+                        continue;
+                    }
+                    for man in legaia_asset::formation_census::scene_mans(&self.disc[off..end]) {
+                        c.fold_man(&man);
+                    }
+                }
+            }
+            c
+        };
+        // The element-affinity matrix (PROT 0898): a scripted fight's 80%
+        // suppression roll is skipped when `matrix[summon][enemy] >= 101`.
+        let affinity = parse_prot_toc(&self.disc)
+            .and_then(|es| {
+                es.into_iter().find(|e| {
+                    e.index
+                        == legaia_asset::seru_side_effect::BATTLE_ACTION_OVERLAY_PROT_INDEX as u32
+                })
+            })
+            .and_then(|e| {
+                let off = e.byte_offset as usize;
+                let end = off.saturating_add(e.size_bytes as usize);
+                (end <= self.disc.len())
+                    .then(|| legaia_asset::element_affinity::parse(&self.disc[off..end]))
+                    .flatten()
+            });
+        let element_name =
+            |id: u8| legaia_asset::element_affinity::Element::from_id(id).map(|e| e.name());
+        let resist_bypass = |enemy_element: u8| -> Vec<&'static str> {
+            (0u8..7)
+                .filter(|&summon| {
+                    summon != 5
+                        && affinity
+                            .as_ref()
+                            .and_then(|a| a.affinity_pct(summon, enemy_element))
+                            .map(|pct| {
+                                legaia_asset::seru_side_effect::resist_roll_bypassed(summon, pct)
+                            })
+                            .unwrap_or(false)
+                })
+                .filter_map(element_name)
+                .collect()
+        };
         let arr: Vec<serde_json::Value> = records
             .into_iter()
             .map(|r| {
@@ -87,6 +146,18 @@ impl LegaiaViewer {
                     // i.e. what the player actually fights - the raw `stats`
                     // understate it. See `MonsterRecord::battle_stats`.
                     "battle_stats": r.battle_stats(),
+                    "battle_stats_random": r.battle_stats_random(),
+                    "fights": {
+                        "flagged": census.rows_for(r.id as u8).flagged,
+                        "clear": census.rows_for(r.id as u8).clear,
+                        "random": census.rows_for(r.id as u8).random,
+                        "scripted": census.rows_for(r.id as u8).default_scripted(),
+                    },
+                    "side_effects": {
+                        "scripted": legaia_asset::seru_side_effect::Susceptibility::for_record(&r.stats, true),
+                        "random": legaia_asset::seru_side_effect::Susceptibility::for_record(&r.stats, false),
+                    },
+                    "resist_bypass": resist_bypass(r.element),
                     "magic_count": r.magic_count,
                     "gold": r.gold,
                     "exp": r.exp,

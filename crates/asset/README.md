@@ -29,6 +29,8 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [`baka_opponents`](#baka_opponents)
   - [`muscle_dome`](#muscle_dome)
   - [`element_affinity`](#element_affinity)
+  - [`seru_side_effect`](#seru_side_effect)
+  - [`formation_census`](#formation_census)
   - [`battle_camera_table`](#battle_camera_table)
   - [`befect_cluster`](#befect_cluster)
   - [Character meshes, textures, animation](#character-meshes-textures-animation) - `character_pack`, `battle_char_pack`, `battle_char_palette`, `field_char_textures`, `player_anm`
@@ -364,6 +366,37 @@ the attacker roll.
 PROT 0898, same link base as `move_power`. CLI `asset element-affinity <PROT 0898
 .BIN>` (`--json` emits the matrix + per-character + summon-power tables). See
 [`battle-formulas.md`](../../docs/subsystems/battle-formulas.md#element-affinity-matrix-fun_801dd864-0x801f53e8).
+
+### `seru_side_effect`
+
+The Seru-magic **side-effect table** (runtime VA `0x801F6870`, PROT 0898 file
+`0x28058`): per summon element and magic-level band, the percent the damage
+finisher `FUN_801DDB30` shaves off the target's stat on every hit (earth DEF /
+water AGL / fire ATK / wind SPD / thunder INT / dark MP, `5/10/15/20`), the
+cure class on the light row, and the banner-string VA the stager
+`FUN_801F3D3C` installs.
+
+- `SeruSideEffectTable::parse` → `amount(element, level)` / `record(..)`;
+  `level_band` (`(level - 3) >> 1`, nothing below 3); `SideEffectKind::for_element`.
+- `Susceptibility::for_record(stats, scripted)` → per-debuff `EveryHit` / `Once`
+  / `Never` for one monster record: in a scripted fight the stager compares the
+  target's base stat with the record, and the scripted boost profile has already
+  moved ATK / UDF / INT - there is **no per-monster immunity field**.
+- `resist_roll_bypassed(summon_element, affinity_pct)` - the scripted fight's
+  80% suppression roll is skipped at affinity `>= 101` or for light.
+
+CLI `asset seru-side-effect <PROT 0898 .BIN>`. See
+[`battle-formulas.md`](../../docs/subsystems/battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch).
+
+### `formation_census`
+
+Disc-wide census of every scene MAN's formation rows (bundled LZS MANs and the
+raw type-`0x03` streaming chunks): per monster id, rows whose header byte is
+non-zero (the scripted / boss rows that raise `DAT_8007BD60` bit `0x80`), rows
+with a zero header, and rows a `rate > 0` region can roll. `FightRows::met_scripted`
+treats an id in **no** row as scripted (an inline-script install, which raises
+the bit by construction). Drives the site's per-enemy fight class, boost profile
+and side-effect verdicts. CLI `asset formation-census <PROT.DAT | dir>`.
 
 ### `battle_backdrop`
 

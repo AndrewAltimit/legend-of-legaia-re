@@ -147,6 +147,24 @@ body.magic-live .magic-status-idle { display: none; }
     Retail applies no light source to these bodies: a textured face draws as its texel scaled by the model's own baked colour. This page uploads that per-vertex colour and does the same, so what you see is the game's shading, not a viewer's.
   </p>
 
+<section class="doc-section" id="side-effects">
+  <h2>Side-effects: what each spell does besides damage</h2>
+  <p>From magic level 3 up, every Seru spell that reaches its target also carries a secondary effect chosen by the summoned creature's <strong>element</strong> and scaled by the spell's magic level - the game's own "Magic effect" banner names it. The six damaging elements shave a percentage off one stat on <em>every hit</em>; the light spells cure the party instead.</p>
+  <table class="layout">
+    <thead><tr><th>Element</th><th>Spells</th><th>Effect on the target</th><th>lv 3-4</th><th>lv 5-6</th><th>lv 7-8</th><th>lv 9</th></tr></thead>
+    <tbody>
+      <tr><td>earth</td><td>Mushura, Kemaro, Iota</td><td><strong>DEF down</strong> (UDF and LDF)</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+      <tr><td>water</td><td>Gizam, Freed, Slippery</td><td><strong>AGL down</strong> (the enemy's action gauge)</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+      <tr><td>fire</td><td>Gimard, Zenoir, Gola Gola</td><td><strong>ATK down</strong></td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+      <tr><td>wind</td><td>Swordie, Nova, Barra</td><td><strong>SPD down</strong></td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+      <tr><td>thunder</td><td>Theeder, Viguro, Gilium</td><td><strong>INT down</strong></td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+      <tr><td>light</td><td>Vera, Orb, Spoon</td><td>cure - Venom; Rot/Venom; Numb/Rot/Venom; some status &amp; AP</td><td>class 1</td><td>2</td><td>3</td><td>4</td></tr>
+      <tr><td>dark</td><td>Puera</td><td><strong>MP down</strong></td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">Nighto and Aluru carry no side-effect (their cast modules never stage one), and neither does any Ra-Seru spell. In a scripted (boss) fight four casts in five are suppressed unless the enemy is weak to the element, and a stat the boss profile boosted (ATK, DEF, INT) is never touched - the <a href="monsters.html#side-effects">enemy table</a> shows which effects each enemy can take, and <a href="subsystems/battle-formulas.html#seru-side-effects">battle formulas</a> has the mechanism.</p>
+</section>
+
 <section class="doc-section" id="related">
   <h3>Under the hood</h3>
   <div class="see-also">

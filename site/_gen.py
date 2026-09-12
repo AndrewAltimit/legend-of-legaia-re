@@ -103,8 +103,9 @@ DESCRIPTIONS: dict[str, str] = {
         "own disc image."
     ),
     "monsters": (
-        "Every Legend of Legaia enemy with stats, item drops, steals, and "
-        "rotating 3D battle models, decoded from the disc's own data tables."
+        "Every Legend of Legaia enemy with stats, item drops, steals, which "
+        "Seru-magic side-effects it can take, and rotating 3D battle models, "
+        "decoded from the disc's own data tables."
     ),
     "characters": (
         "Legend of Legaia's party in 3D: Vahn, Noa, Gala and their Ra-Seru "
