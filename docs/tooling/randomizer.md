@@ -4294,20 +4294,28 @@ end-of-turn refund has nothing to double-count. Two pieces are new:
 - **The damage scale.** A detour in the arms execution resolver `FUN_801EC3E4`
   at `0x801EDA10`, the word after the 9999 cap, where `s0 - s1` is the strike's
   final damage. The kernel does not know which art it is executing - it is
-  handed one action entry and walks its per-strike bytes - so the routine
-  recovers the art from the **playing anim id** `actor[+0x1D9]`: the SCUS anim
-  commit `FUN_8004AD80` materialises a staged id `q >= 0x10` as
-  `record0[q*4] = bank + 4 + (q - 0x10) * 0xD0 + 0x24` (`0x8004BC80`, with
-  `bank + 4` the very base the builder walks `s3 * 0xD0` from) and snaps
-  `+0x1D9 = q` (`0x8004BDE0`), so the row is `q - 0x1B`. Before trusting that
-  it re-derives `record0[q*4]` and compares it with the entry the kernel was
-  called with (`[sp+0x54]`, the kernel's own spill of `a1`). A plain direction
-  swing (`q` `0x0C..=0x0F`, entries copied elsewhere by `FUN_800557B8`), a
-  Super Art row past the 26, a monster attacker or any mismatch falls through
-  to retail damage. On a set bit it rewrites `s0 = s1 + (s0 - s1) * pct / 100`
+  handed one **action entry** (`a1`, spilled at `[sp+0x54]` by its own
+  `sw a1,0x54(sp)`) and walks its per-strike bytes - but that entry is a
+  pointer into the character's art bank: the SCUS anim commit `FUN_8004AD80`
+  materialises a staged art id `id >= 0x10` as `bank + 4 + (id - 0x10) * 0xD0 +
+  0x24` (`0x8004BC80`; `bank = record0[+0x58]` at `0x8004B710`, `bank + 4` the
+  very base the builder walks `s3 * 0xD0` from), so the row is
+  `(entry - bank - 0x28) / 0xD0 - 0x0B`, taken only when the division is
+  exact. What the routine must **not** key on is the playing anim id
+  `actor[+0x1D9]`: the commit stores the entry at `record0[q*4]` and snaps
+  `+0x1D9 = q` where `q` is a *staging slot* handed out in queue order
+  (`0x10`, `0x11`, ...; a live probe on a Tri-Somersault chain read `0x0F`,
+  `0x10`, `0x11` for a swing, a connector and Cyclone), not the art id - a
+  routine keyed on `q - 0x1B` never scales anything. A plain direction swing
+  (its entries live outside the bank, copied by `FUN_800557B8`), a Super /
+  Miracle chain connector (record index below the first row), a Super Art row
+  past the 26, a monster attacker or an entry below the bank falls through to
+  retail damage. On a set bit it rewrites `s0 = s1 + (s0 - s1) * pct / 100`
   in exact integer arithmetic (`mflo` three words clear of the `divu`), then
   replays the two displaced words; `t0..t6` are free there and `HI`/`LO` hold
-  nothing the kernel still reads.
+  nothing the kernel still reads. Emulator-verified on the Tri-Somersault
+  chain with the side table forced to grant: the swing's 101 stays 101, and
+  Cyclone's strikes of 218 and 239 land as 43 and 47 at 20%.
 - **The list read-out.** A detour at `0x800344D8` in the SCUS arts-list widget
   `FUN_80034358` - the `lbu s0,-0x6(s5)` that loads the AP number a row draws
   from the static arts-name table (`s5 = record + 8`; `+0` character, `+1`
@@ -4343,10 +4351,12 @@ costs** toggle + slider in the Gameplay group.
 > **Verification state**: the roll is emulator-verified - the probe
 > `scripts/pcsx-redux/autorun_oscillating_ap_roll.lua` walks a pre-encounter
 > state on the patched disc into a battle and reads the side table filled and
-> the counter at 16 at the setup site's resume - and the AP side has been
-> played (grant-side arts give AP back across battles). The list read-out and
-> the grant-side damage fraction rest on the model runs and the oracles; a
-> playtest of those two is the remaining step.
+> the counter at 16 at the setup site's resume - and so is the damage scale:
+> `autorun_oscillating_ap_damage.lua` resumes an art-executing battle state
+> with the side table forced to grant and reads every strike before and after
+> the routine (a swing kept, an art's strikes at the fraction). The AP side
+> and the list read-out have been played (grant-side arts give AP back and
+> show `0` across battles).
 
 ### Doors (scene transitions)
 

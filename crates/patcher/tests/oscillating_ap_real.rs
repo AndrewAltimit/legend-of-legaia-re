@@ -96,17 +96,17 @@ fn hosted_regions_are_zero_and_fingerprints_are_the_us_build() {
     assert_eq!(
         scus_word(&scus, 0x8004_BC80),
         0x2442_F324,
-        "addiu v0,v0,-0xcdc - the anim commit's (q-0x10)*0xD0+0x24 fold"
+        "addiu v0,v0,-0xcdc - the anim commit's (id-0x10)*0xD0+0x24 fold"
     );
     assert_eq!(
         scus_word(&scus, 0x8004_BC84),
         0xAC82_0000,
-        "sw v0,0x0(a0) - record0[q*4]"
+        "sw v0,0x0(a0) - record0[q*4], q the staging slot"
     );
     assert_eq!(
-        scus_word(&scus, 0x8004_BDE0),
-        0xA222_01D9,
-        "sb v0,0x1d9(s1) - playing id snap"
+        scus_word(&scus, 0x8004_B710),
+        0x8C42_0058,
+        "lw v0,0x58(v0) - bank = record0[+0x58]"
     );
     assert_eq!(
         scus_word(&scus, 0x8004_B718),
@@ -479,9 +479,10 @@ fn planner_refuses_bad_input_and_unrecognized_build() {
         HOOK_SETUP_VA + 4,
         HOOK_LIST_VA,
         HOOK_LIST_VA + 4,
+        0x8004_B710,
+        0x8004_B718,
         0x8004_BC80,
         0x8004_BC84,
-        0x8004_BDE0,
         0x8003_4460,
     ] {
         let mut bad = scus.clone();

@@ -28,8 +28,8 @@ local ROLL_VA   = 0x80078A88
 local GUARD_VA  = 0x8007AE40
 local DEBIT_VA  = 0x8007AE6C
 local DMG_VA    = 0x80077728
-local BITS_VA   = 0x800777B4
-local CNT_VA    = 0x800777C4
+local BITS_VA   = 0x800777C4
+local CNT_VA    = 0x800777D4
 
 local WALK_FROM  = probe.getenv_num("LEGAIA_WALK_FROM", 8)
 local POKES_PATH = probe.getenv("LEGAIA_POKES", "")

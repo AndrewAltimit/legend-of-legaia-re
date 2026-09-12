@@ -57,19 +57,25 @@
 //!
 //! The AP sites know the art (the builder's `s3` cursor); the damage kernel
 //! does not - it is handed one **action entry** per art and walks that entry's
-//! per-strike power bytes with the cursor `actor[+0x1F4]`. The entry pointer is
-//! `actor[+0x4C]`, materialised by the SCUS anim commit `FUN_8004AD80` from the
-//! staged anim id `q` as `record0[q*4] = bank + 4 + (q - 0x10) * 0xD0 + 0x24`
-//! (`0x8004BC80`..`0x8004BC84`; `bank = record0[+0x58]`, the character's
-//! `0xD0`-stride art records - the very array the builder walks with
-//! `s3 * 0xD0` from `bank + 4`), and the commit snaps the playing id
-//! `actor[+0x1D9] = q` (`0x8004BDE0`). So at a strike the executing art's
-//! record index is `q - 0x10 = s3`, i.e. **row = `actor[+0x1D9] - 0x1B`**. The
-//! damage routine cross-checks that reading before it trusts it: it re-derives
-//! `record0[q*4]` and compares it with the entry pointer the kernel was called
-//! with (`[sp+0x54]`, the kernel's own spill of `a1`). A plain direction swing
-//! (`q` `0x0C..=0x0F`, its entries copied elsewhere by `FUN_800557B8`), a
-//! Super Art row past the 26, or any mismatch falls through to retail damage.
+//! per-strike power bytes with the cursor `actor[+0x1F4]`. The entry is the
+//! kernel's `a1` (spilled at `[sp+0x54]`, its own `sw a1,0x54(sp)`), and it is
+//! a pointer *into the character's art bank*: the SCUS anim commit
+//! `FUN_8004AD80` materialises a staged art id `id >= 0x10` as
+//! `bank + 4 + (id - 0x10) * 0xD0 + 0x24` (`0x8004BC80`; `bank =
+//! record0[+0x58]` at `0x8004B710`, `s0 = bank + 4` at `0x8004B718` - the very
+//! array the builder walks with `s3 * 0xD0` from `bank + 4`, so record index
+//! `id - 0x10 = s3` and **row = record index - 0x0B**). The routine therefore
+//! recovers the row from the entry itself: `(entry - bank - 0x28) / 0xD0`, and
+//! only when the division is exact. What it must **not** use is the playing
+//! anim id `actor[+0x1D9]`: the commit stores the entry at
+//! `record0[q*4]` and snaps `+0x1D9 = q` where `q` is a *staging slot*
+//! (`0x10`, `0x11`, ... in the order the queue is committed - a live probe on a
+//! Tri-Somersault chain read `0x0F, 0x10, 0x11` for a swing, a connector and
+//! Cyclone), not the art id; a routine keyed on `q - 0x1B` never scales a
+//! thing. A plain direction swing (its entries live outside the bank, copied
+//! by `FUN_800557B8`), a Super/Miracle chain connector (record index below
+//! the first row), a Super Art row past the 26, a monster attacker or an entry
+//! below the bank falls through to retail damage.
 //!
 //! The site is the word after the 9999 cap (`0x801EDA00..0x801EDA0C`), where
 //! `s0 - s1` is the strike's final damage (the kernel adds `s0 - s1` to the
@@ -159,13 +165,15 @@ pub(crate) const CAP_FINGERPRINT: [(u32, u32); 4] = [
     (0x801E_DA0C, 0x0060_8021), // move s0,v1
 ];
 
-/// The SCUS anim commit's entry materialisation + playing-id snap the row
-/// reading rests on: `addiu v0,v0,-0xcdc` (`= (q-0x10)*0xD0 + 0x24` over
-/// `bank+4`), `sw v0,0x0(a0)` (`record0[q*4]`), `sb v0,0x1d9(s1)`.
-pub(crate) const COMMIT_FINGERPRINT: [(u32, u32); 3] = [
+/// The SCUS anim commit's bank read + entry materialisation the row reading
+/// rests on: `lw v0,0x58(v0)` (`bank = record0[+0x58]`), `addiu s0,v0,0x4`
+/// (`bank + 4`), `addiu v0,v0,-0xcdc` (`= (id-0x10)*0xD0 + 0x24` over
+/// `bank+4`), `sw v0,0x0(a0)` (`record0[q*4]`, `q` the staging slot).
+pub(crate) const COMMIT_FINGERPRINT: [(u32, u32); 4] = [
+    (0x8004_B710, 0x8C42_0058), // lw v0,0x58(v0)
+    (0x8004_B718, 0x2450_0004), // addiu s0,v0,0x4
     (0x8004_BC80, 0x2442_F324), // addiu v0,v0,-0xcdc
     (0x8004_BC84, 0xAC82_0000), // sw v0,0x0(a0)
-    (0x8004_BDE0, 0xA222_01D9), // sb v0,0x1d9(s1)
 ];
 
 /// S: the setup site's second word (`lui v1,0x8008`); the first is
@@ -193,8 +201,6 @@ const CHAR_READ_VA: u32 = 0x801E_F340;
 
 // --- Runtime addresses the routines index -----------------------------------
 
-/// Battle actor pointer table, indexed by slot.
-const ACTOR_TABLE_VA: u32 = 0x801C_9370;
 /// Per-party-member `record0` pointer table (the anim / action entry table).
 const RECORD0_TABLE_VA: u32 = 0x801C_9360;
 /// 1-based party-record id per slot.
@@ -202,11 +208,13 @@ const PARTY_ID_TABLE_VA: u32 = 0x8007_BD10;
 /// The game-mode selector; `0x15` = battle.
 const GAME_MODE_VA: u32 = 0x8007_B83C;
 const GAME_MODE_BATTLE: u16 = 0x15;
-/// `actor[+0x1D9]`: the playing anim id.
-const PLAYING_ID_OFF: u16 = 0x1D9;
-/// First art anim id: `q - 0x10` is the art record index, `q - 0x1B` the row.
-const ART_ID_BASE: u16 = 0x10;
-/// The builder's first art row cursor (`li s3,0xb`).
+/// `record0[+0x58]`: the character's art bank (`0xD0`-stride records).
+const BANK_OFF: u16 = 0x58;
+/// Stride of one art record in the bank.
+const RECORD_STRIDE: u16 = 0xD0;
+/// Offset of record 0's action entry from the bank: `4 + 0x24`.
+const FIRST_ENTRY_OFF: u16 = 0x28;
+/// The builder's first art row cursor (`li s3,0xb`): row = record index - this.
 const ROW_CURSOR_BASE: u16 = 0x0B;
 /// The kernel's spill of its `a1` (the action entry) - `sw a1,0x54(sp)`.
 const ENTRY_SPILL_OFF: u16 = 0x54;
@@ -341,43 +349,47 @@ pub(crate) fn assemble_roll(bits_va: u32, counter_va: u32, disp: [u32; 2], ret: 
 /// `s0 = s1 + (s0 - s1) * pct / 100`. Every other case replays the displaced
 /// words untouched. `disp = [addiu v1,v0,-0x6c90, andi v0,s4,0xff]`.
 pub(crate) fn assemble_damage(leaf_va: u32, pct: u8, disp: [u32; 2], ret: u32) -> Vec<u32> {
-    const NATIVE: i32 = 31;
+    const NATIVE: i32 = 35;
     let w = vec![
-        andi(T0, S6, 0xff),                 // 0  attacker slot
-        sltiu(T1, T0, 3),                   // 1  party?
-        beq(T1, ZERO, (NATIVE - 3) as i16), // 2
-        sll(T1, T0, 2),                     // 3  delay: slot*4
-        lui(T2, hi(ACTOR_TABLE_VA)),        // 4
-        addu(T2, T2, T1),                   // 5
-        lw(T3, T2, lo(ACTOR_TABLE_VA)),     // 6  actor
-        lw(T2, T2, lo(RECORD0_TABLE_VA)),   // 7  record0
-        lbu(T4, T3, PLAYING_ID_OFF),        // 8  q = playing anim id
-        lw(T5, SP, ENTRY_SPILL_OFF),        // 9  the kernel's entry (a1)
-        sll(T6, T4, 2),                     // 10 q*4
-        addu(T6, T6, T2),                   // 11
-        lw(T6, T6, 0),                      // 12 record0[q*4]
-        lui(T2, hi(PARTY_ID_TABLE_VA)),     // 13 load delay
-        bne(T6, T5, (NATIVE - 15) as i16),  // 14 not the art's entry
-        addu(T2, T2, T0),                   // 15 delay
-        lbu(T1, T2, lo(PARTY_ID_TABLE_VA)), // 16 DAT_8007BD10[slot]
-        addiu(T0, T4, (-((ART_ID_BASE + ROW_CURSOR_BASE) as i16)) as u16), // 17 row
-        jal(leaf_va),                       // 18
-        addiu(T1, T1, 0xFFFF),              // 19 delay: 0-based char
-        beq(T3, ZERO, (NATIVE - 21) as i16), // 20 cost side
-        subu(T3, S0, S1),                   // 21 delay: damage
-        bltz(T3, (NATIVE - 23) as i16),     // 22 never negative; guard anyway
-        ori(T4, ZERO, u16::from(pct)),      // 23 delay
-        multu(T3, T4),                      // 24
-        mflo(T3),                           // 25 damage * pct
-        ori(T4, ZERO, 100),                 // 26
-        nop(),                              // 27 (mflo -> div spacing)
-        divu(T3, T4),                       // 28
-        mflo(T3),                           // 29 / 100
-        addu(S0, S1, T3),                   // 30 s0 = s1 + scaled
-        lui(V0, 0x801D),                    // 31 NATIVE: v0 as the cap left it
-        disp[0],                            // 32 addiu v1,v0,-0x6c90
-        j(ret),                             // 33
-        disp[1],                            // 34 delay: andi v0,s4,0xff
+        andi(T0, S6, 0xff),                                // 0  attacker slot
+        sltiu(T1, T0, 3),                                  // 1  party?
+        beq(T1, ZERO, (NATIVE - 3) as i16),                // 2
+        sll(T1, T0, 2),                                    // 3  delay: slot*4
+        lui(T2, hi(RECORD0_TABLE_VA)),                     // 4
+        addu(T2, T2, T1),                                  // 5
+        lw(T2, T2, lo(RECORD0_TABLE_VA)),                  // 6  record0
+        lw(T5, SP, ENTRY_SPILL_OFF),                       // 7  the kernel's entry (a1)
+        lui(T4, hi(PARTY_ID_TABLE_VA)),                    // 8  load delay
+        lw(T2, T2, BANK_OFF),                              // 9  bank
+        addu(T4, T4, T0),                                  // 10
+        lbu(T1, T4, lo(PARTY_ID_TABLE_VA)),                // 11 DAT_8007BD10[slot]
+        addiu(T2, T2, FIRST_ENTRY_OFF),                    // 12 record 0's entry
+        subu(T3, T5, T2),                                  // 13 entry - first entry
+        bltz(T3, (NATIVE - 15) as i16),                    // 14 below the bank
+        ori(T4, ZERO, RECORD_STRIDE),                      // 15 delay
+        divu(T3, T4),                                      // 16
+        addiu(T1, T1, 0xFFFF),                             // 17 0-based char
+        mfhi(T6),                                          // 18 remainder
+        mflo(T0),                                          // 19 record index (s3)
+        bne(T6, ZERO, (NATIVE - 21) as i16),               // 20 not a record's entry
+        addiu(T0, T0, (-(ROW_CURSOR_BASE as i16)) as u16), // 21 delay: row
+        jal(leaf_va),                                      // 22 (rejects a row outside 0..26)
+        nop(),                                             // 23 delay
+        beq(T3, ZERO, (NATIVE - 25) as i16),               // 24 cost side
+        subu(T3, S0, S1),                                  // 25 delay: damage
+        bltz(T3, (NATIVE - 27) as i16),                    // 26 never negative; guard anyway
+        ori(T4, ZERO, u16::from(pct)),                     // 27 delay
+        multu(T3, T4),                                     // 28
+        mflo(T3),                                          // 29 damage * pct
+        ori(T4, ZERO, 100),                                // 30
+        nop(),                                             // 31 (mflo -> div spacing)
+        divu(T3, T4),                                      // 32
+        mflo(T3),                                          // 33 / 100
+        addu(S0, S1, T3),                                  // 34 s0 = s1 + scaled
+        lui(V0, 0x801D),                                   // 35 NATIVE: v0 as the cap left it
+        disp[0],                                           // 36 addiu v1,v0,-0x6c90
+        j(ret),                                            // 37
+        disp[1],                                           // 38 delay: andi v0,s4,0xff
     ];
     debug_assert_eq!(w.len() as i32, NATIVE + 4);
     w
@@ -691,7 +703,7 @@ mod tests {
     use super::*;
     use crate::mips_sim::Cpu;
 
-    const BITS: u32 = SCUS_GAP_VA + 35 * 4;
+    const BITS: u32 = SCUS_GAP_VA + 39 * 4;
     const CNT: u32 = BITS + 16;
     const LEAF: u32 = ARENA1_VA;
     const GUARD: u32 = ARENA1_VA + 16 * 4;
@@ -788,9 +800,8 @@ mod tests {
         assert_eq!(CAP_FINGERPRINT[1].1, beq(V0, ZERO, 2));
         assert_eq!(CAP_FINGERPRINT[2].1, lui(V0, 0x801D));
         assert_eq!(CAP_FINGERPRINT[3].1, addu(S0, V1, ZERO), "move s0,v1");
-        assert_eq!(COMMIT_FINGERPRINT[0].1, addiu(V0, V0, (-0xCDC_i16) as u16));
-        assert_eq!(COMMIT_FINGERPRINT[1].1, sw(V0, A0, 0));
-        assert_eq!(COMMIT_FINGERPRINT[2].1, sb(V0, S1, 0x1D9));
+        assert_eq!(COMMIT_FINGERPRINT[2].1, addiu(V0, V0, (-0xCDC_i16) as u16));
+        assert_eq!(COMMIT_FINGERPRINT[3].1, sw(V0, A0, 0));
         assert_eq!(HOOK_SETUP_W0, lui(V0, 0x8008));
         assert_eq!(HOOK_SETUP_W1, lui(V1, 0x8008));
         assert_eq!(HOOK_LIST_W0, lbu(S0, S5, (-6i16) as u16), "lbu s0,-0x6(s5)");
@@ -802,10 +813,19 @@ mod tests {
             "lbu v0,-0x7(s5)"
         );
         assert_eq!(LIST_FINGERPRINT[2].1, beq(V0, ZERO, 2));
-        // `(q - 0x10) * 0xD0 + 0x24 - 0x10 * 0xD0` folds to the commit's -0xCDC.
+        // `(id - 0x10) * 0xD0 + 0x24 - 0x10 * 0xD0` folds to the commit's -0xCDC.
         assert_eq!(0x10 * 0xD0 - 0x24, 0xCDC);
-        // The row the damage routine derives: q - 0x10 = s3, s3 - 0x0B = row.
-        assert_eq!(ART_ID_BASE + ROW_CURSOR_BASE, 0x1B);
+        // The commit's bank read + `bank + 4` the routine's `0x28` rests on.
+        assert_eq!(
+            COMMIT_FINGERPRINT[0].1,
+            lw(V0, V0, BANK_OFF),
+            "lw v0,0x58(v0)"
+        );
+        assert_eq!(COMMIT_FINGERPRINT[1].1, addiu(S0, V0, 4), "addiu s0,v0,0x4");
+        assert_eq!(FIRST_ENTRY_OFF, 4 + 0x24);
+        // The row the damage routine derives: record index - 0x0B; the queue's
+        // art id is record index + 0x10, so id 0x1B is row 0.
+        assert_eq!(0x10 + ROW_CURSOR_BASE, 0x1B);
         // The game-mode word is where the memory map puts it.
         assert_eq!(0x8008_0000u32.wrapping_sub(0x47C4), GAME_MODE_VA);
     }
@@ -828,7 +848,7 @@ mod tests {
         assert_eq!(debit.len(), 18);
         assert_eq!(list.len(), 16);
         assert_eq!(roll.len(), 17, "the roll fills slot 6 exactly");
-        assert_eq!(damage.len(), 35);
+        assert_eq!(damage.len(), 39);
         let arena1 = leaf.len() + guard.len() + debit.len() + list.len();
         assert!(arena1 * 4 <= (ARENA1_END_VA - ARENA1_VA) as usize);
         assert!(roll.len() * 4 == (SLOT6_END_VA - SLOT6_VA) as usize);
@@ -849,18 +869,24 @@ mod tests {
         assert_eq!(br(&list, 6), 14);
         assert_eq!(br(&list, 10), 14);
         assert_eq!(br(&roll, 11), 2);
-        for i in [2, 14, 20, 22] {
-            assert_eq!(br(&damage, i), 31, "damage word {i} -> NATIVE");
+        for i in [2, 14, 20, 24, 26] {
+            assert_eq!(br(&damage, i), 35, "damage word {i} -> NATIVE");
         }
+        // The row divide: `divu` at 16, its `mfhi`/`mflo` read after, and the
+        // next `multu` (28) more than two words past the `mflo` (19).
+        assert_eq!(funct(damage[16]), 0x1b);
+        assert_eq!(funct(damage[18]), 0x10);
+        assert_eq!(funct(damage[19]), 0x12);
+        assert_eq!(funct(damage[28]), 0x19);
         // `mflo` sits three words clear of the `divu` that follows it.
-        assert_eq!(funct(damage[25]), 0x12);
-        assert_eq!(funct(damage[28]), 0x1b);
+        assert_eq!(funct(damage[29]), 0x12);
+        assert_eq!(funct(damage[32]), 0x1b);
         // Every consumer reaches the leaf with `jal LEAF`.
         for (name, words, at) in [
             ("guard", &guard, 4),
             ("debit", &debit, 4),
             ("list", &list, 8),
-            ("damage", &damage, 18),
+            ("damage", &damage, 22),
         ] {
             assert_eq!(words[at], jal(LEAF), "{name} word {at} is jal LEAF");
         }
@@ -868,9 +894,11 @@ mod tests {
 
     // --- Simulated executions ----------------------------------------------
 
+    /// Battle actor pointer table, indexed by slot (what the replayed
+    /// `addiu v1,v0,-0x6c90` leaves in `v1`).
+    const ACTOR_TABLE_VA: u32 = 0x801C_9370;
     const ACTOR: u32 = 0x8010_0000;
     const RECORD0: u32 = 0x8011_0000;
-    const ENTRY: u32 = 0x8011_2000;
     const SP0: u32 = 0x801F_FF00;
 
     fn cpu_with_routines() -> Cpu {
@@ -1024,10 +1052,16 @@ mod tests {
         assert_eq!(cpu.r[V1 as usize], 0x8008_0000, "replayed lui v1");
     }
 
-    /// Damage scene: attacker `slot` (party record `char_id`) playing anim id
-    /// `q`, the kernel called with entry `entry`, strike damage `dmg` over base
-    /// `base`.
-    fn dmg_cpu(slot: u32, char_id: u8, q: u8, entry: u32, base: u32, dmg: u32, pct: u8) -> Cpu {
+    const BANK: u32 = 0x8016_0000;
+
+    /// The commit's entry for art-bank record `index`.
+    fn entry_of(index: u32) -> u32 {
+        BANK + 4 + index * 0xD0 + 0x24
+    }
+
+    /// Damage scene: attacker `slot` (party record `char_id`), the kernel
+    /// called with entry `entry`, strike damage `dmg` over base `base`.
+    fn dmg_cpu(slot: u32, char_id: u8, entry: u32, base: u32, dmg: u32, pct: u8) -> Cpu {
         let mut cpu = cpu_with_routines();
         cpu.load_words(
             DMG,
@@ -1035,9 +1069,8 @@ mod tests {
         );
         cpu.wr32(ACTOR_TABLE_VA + slot * 4, ACTOR);
         cpu.wr32(RECORD0_TABLE_VA + slot * 4, RECORD0);
+        cpu.wr32(RECORD0 + 0x58, BANK);
         cpu.wr8(PARTY_ID_TABLE_VA + slot, char_id);
-        cpu.wr8(ACTOR + 0x1D9, q);
-        cpu.wr32(RECORD0 + u32::from(q) * 4, ENTRY); // the commit's materialised entry
         cpu.wr32(SP0 + 0x54, entry);
         cpu.r[SP as usize] = SP0;
         cpu.r[S6 as usize] = slot;
@@ -1059,58 +1092,81 @@ mod tests {
 
     #[test]
     fn damage_scales_a_grant_side_art_and_nothing_else() {
-        // Vahn (slot 0, id 1) executing row 4 (q = 0x1F), 1000 damage at 20%.
-        let mut cpu = dmg_cpu(0, 1, 0x1F, ENTRY, 7, 1000, 20);
+        // Vahn (slot 0, id 1) executing row 4 (record index 0xF, id 0x1F -
+        // Cyclone on the probed chain), 1000 damage at 20%.
+        let row4 = entry_of(0xF);
+        let mut cpu = dmg_cpu(0, 1, row4, 7, 1000, 20);
         assert_eq!(run_dmg(&mut cpu), 1000, "cost side: untouched");
-        let mut cpu = dmg_cpu(0, 1, 0x1F, ENTRY, 7, 1000, 20);
+        let mut cpu = dmg_cpu(0, 1, row4, 7, 1000, 20);
         set_bit(&mut cpu, 0, 4);
         assert_eq!(run_dmg(&mut cpu), 200, "grant side: 20%");
         assert_eq!(cpu.r[S1 as usize], 7, "the base is kept");
         // Exact integer arithmetic, floor.
-        let mut cpu = dmg_cpu(0, 1, 0x1F, ENTRY, 0, 999, 33);
+        let mut cpu = dmg_cpu(0, 1, row4, 0, 999, 33);
         set_bit(&mut cpu, 0, 4);
         assert_eq!(run_dmg(&mut cpu), 329);
         // 100% and 0% are exact.
-        let mut cpu = dmg_cpu(0, 1, 0x1F, ENTRY, 0, 9999, 100);
+        let mut cpu = dmg_cpu(0, 1, row4, 0, 9999, 100);
         set_bit(&mut cpu, 0, 4);
         assert_eq!(run_dmg(&mut cpu), 9999);
-        let mut cpu = dmg_cpu(0, 1, 0x1F, ENTRY, 3, 9999, 0);
+        let mut cpu = dmg_cpu(0, 1, row4, 3, 9999, 0);
         set_bit(&mut cpu, 0, 4);
         assert_eq!(run_dmg(&mut cpu), 0);
         // Another character's bit for the same row does not leak.
-        let mut cpu = dmg_cpu(0, 1, 0x1F, ENTRY, 0, 1000, 20);
+        let mut cpu = dmg_cpu(0, 1, row4, 0, 1000, 20);
         set_bit(&mut cpu, 1, 4);
         assert_eq!(run_dmg(&mut cpu), 1000);
-        // Gala in slot 2 (id 3), row 0 (q = 0x1B).
-        let mut cpu = dmg_cpu(2, 3, 0x1B, ENTRY, 0, 500, 50);
+        // Gala in slot 2 (id 3), row 0 (record index 0xB).
+        let mut cpu = dmg_cpu(2, 3, entry_of(0xB), 0, 500, 50);
         set_bit(&mut cpu, 2, 0);
         assert_eq!(run_dmg(&mut cpu), 250);
+        // Somersault as the probe saw it: record index 0x17 = row 12.
+        let mut cpu = dmg_cpu(0, 1, entry_of(0x17), 0, 500, 20);
+        set_bit(&mut cpu, 0, 12);
+        assert_eq!(run_dmg(&mut cpu), 100);
+        // The last row (25) still scales; the leaf's bound is exclusive.
+        let mut cpu = dmg_cpu(0, 1, entry_of(0xB + 25), 0, 500, 20);
+        set_bit(&mut cpu, 0, 25);
+        assert_eq!(run_dmg(&mut cpu), 100);
     }
 
     #[test]
     fn damage_falls_through_on_every_non_art_shape() {
+        let row4 = entry_of(0xF);
         // A monster attacker (slot 3).
-        let mut cpu = dmg_cpu(3, 1, 0x1F, ENTRY, 0, 1000, 20);
+        let mut cpu = dmg_cpu(3, 1, row4, 0, 1000, 20);
         set_all(&mut cpu);
         assert_eq!(run_dmg(&mut cpu), 1000);
-        // A plain direction swing (q < 0x1B) - its entry is elsewhere.
-        let mut cpu = dmg_cpu(0, 1, 0x0D, ENTRY, 0, 1000, 20);
+        // A plain direction swing - its entry lives outside the bank.
+        let mut cpu = dmg_cpu(0, 1, BANK + 0x4000 + 0x24, 0, 1000, 20);
+        set_all(&mut cpu);
+        assert_eq!(run_dmg(&mut cpu), 1000);
+        // An entry below the bank (and one 8 bytes into a record).
+        let mut cpu = dmg_cpu(0, 1, BANK - 0xD0, 0, 1000, 20);
+        set_all(&mut cpu);
+        assert_eq!(run_dmg(&mut cpu), 1000);
+        let mut cpu = dmg_cpu(0, 1, row4 + 8, 0, 1000, 20);
+        set_all(&mut cpu);
+        assert_eq!(run_dmg(&mut cpu), 1000);
+        // A Super/Miracle chain connector (record index 9 = id 0x19, below row 0).
+        let mut cpu = dmg_cpu(0, 1, entry_of(9), 0, 1000, 20);
         set_all(&mut cpu);
         assert_eq!(run_dmg(&mut cpu), 1000);
         // A row past the 26 (a Super Art).
-        let mut cpu = dmg_cpu(0, 1, 0x1B + 26, ENTRY, 0, 1000, 20);
-        set_all(&mut cpu);
-        assert_eq!(run_dmg(&mut cpu), 1000);
-        // The playing id's entry is not the entry the kernel was called with.
-        let mut cpu = dmg_cpu(0, 1, 0x1F, ENTRY + 0xD0, 0, 1000, 20);
+        let mut cpu = dmg_cpu(0, 1, entry_of(0xB + 26), 0, 1000, 20);
         set_all(&mut cpu);
         assert_eq!(run_dmg(&mut cpu), 1000);
         // An out-of-range party id.
-        let mut cpu = dmg_cpu(0, 5, 0x1F, ENTRY, 0, 1000, 20);
+        let mut cpu = dmg_cpu(0, 5, row4, 0, 1000, 20);
+        set_all(&mut cpu);
+        assert_eq!(run_dmg(&mut cpu), 1000);
+        // A zero bank pointer.
+        let mut cpu = dmg_cpu(0, 1, row4, 0, 1000, 20);
+        cpu.wr32(RECORD0 + 0x58, 0);
         set_all(&mut cpu);
         assert_eq!(run_dmg(&mut cpu), 1000);
         // A negative delta (never produced by the kernel) is left alone.
-        let mut cpu = dmg_cpu(0, 1, 0x1F, ENTRY, 100, 0, 20);
+        let mut cpu = dmg_cpu(0, 1, row4, 100, 0, 20);
         cpu.r[S0 as usize] = 50;
         set_all(&mut cpu);
         cpu.pc = DMG;
