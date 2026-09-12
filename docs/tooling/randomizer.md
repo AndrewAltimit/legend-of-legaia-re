@@ -102,6 +102,7 @@ disc-gated, so CI runs without a disc. There is also a
   - [Spirit AP](#spirit-ap)
   - [Enemy-damage AP](#enemy-damage-ap)
   - [The signed accrual tail](#the-signed-accrual-tail)
+  - [Oscillating AP costs](#oscillating-ap-costs)
   - [Doors (scene transitions)](#doors-scene-transitions)
   - [House doors (intra-town)](#house-doors-intra-town)
   - [Map doors (`.MAP` kind-0 intra-scene teleports)](#map-doors-map-kind-0-intra-scene-teleports)
@@ -323,6 +324,7 @@ unless asked for:
 | `--arts-ap-cost [CHAR:]COMBO=AMOUNT` | set what a Tactical Art **costs** in AP (`1..=100`), replacing retail's computed cost. Same hook, same keying, same exclusivity; the art's menu AP number is rewritten to match | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--spirit-ap AP` | set how much AP the Spirit command charges into the battle gauge (retail 32): `0` = defence boost only, `100` = one press fills the gauge, negative = Spirit drains the gauge | single value -100..=100 | [Spirit AP](#spirit-ap) |
 | `--damage-ap AP` | set how much AP taking damage charges into the battle gauge, per 100% of max HP lost (retail 100): `0` = damage never feeds the gauge, negative = being hit drains it | single value -200..=200 | [Enemy-damage AP](#enemy-damage-ap) |
+| `--oscillating-ap [DAMAGE_PCT]` | every battle, deal each Tactical Art at random onto the **cost** side (retail) or the **grant** side (castable at any AP, gives its AP back, deals `DAMAGE_PCT` percent of its damage); re-rolled per art per battle. Mutually exclusive with every other arena feature | single value 0..=100, default 20 | [Oscillating AP costs](#oscillating-ap-costs) |
 | `--enemy-stat-scale MULT`, `STAT=MULT,...` or `GROUP:SCALE\|...` | scale enemy combat stats (HP / MP / ATK / UDF / LDF / INT / SPD), story bosses included; one number scales all seven, a `stat=mult` list scales only what it names, and a `regular:`/`boss:` split gives random encounters and set-pieces their own scale. Nothing moves between monsters, and EXP / gold / drops are untouched | each value 0.1..=5 | [Enemy difficulty scale](#enemy-difficulty-scale) |
 | `--exp-scale MULT` | scale every monster's base EXP reward - the victory payout, its party split and the `--flee-exp` grant all read the scaled field; gold and drops stay retail | 0.1..=5 | [Experience multiplier](#experience-multiplier) |
 | `--seru-catch-rate PCT` | override every capturable Seru's catch chance with one flat percent (the odds a killing blow absorbs its magic; retail 1..=80% per monster); only the 63 capturable records are touched | 0..=100 | [Seru catch rate](#seru-catch-rate) |
@@ -3790,8 +3792,9 @@ slots Triple Lizard between Hurricane Kick and Vulture Blade. Module
 | `SLOT6` `0x80078A88` | the fifteen 4-byte Super Art records | 60 of 68 B |
 
 Those are exactly the four regions `--shiny-seru`, `--arts-ap-grant` /
-`--arts-ap-cost` and the Delilas Challenge contend over, so `--show-super-arts`
-is **mutually exclusive** with them - enforced in the CLI and the web patcher.
+`--arts-ap-cost`, `--oscillating-ap` and the Delilas Challenge contend over, so
+`--show-super-arts` is **mutually exclusive** with them - enforced in the CLI
+and the web patcher.
 
 #### The injected-code arena budget
 
@@ -4032,8 +4035,9 @@ checks the four X halfwords come out `160 - width/2` for the installed name.
 
 The battle-load stub is 48 bytes at `0x8007AE00`, the head of the
 verified-dead SCUS arena 1 - so the pack is **mutually exclusive with
-`--shiny-seru`, `--show-super-arts`, `--arts-ap-grant` / `--arts-ap-cost` and
-`--delilas-challenge`**, the other claimants of the same 652 bytes (see
+`--shiny-seru`, `--show-super-arts`, `--arts-ap-grant` / `--arts-ap-cost`,
+`--oscillating-ap` and `--delilas-challenge`**, the other claimants of the same
+652 bytes (see
 [Show Super Arts](#show-super-arts-on-the-in-battle-move-list) for the arena
 budget). `--show-super-arts` would conflict anyway: it detours the same applier.
 
@@ -4252,6 +4256,83 @@ which words land where and that the hand-assembled branches resolve to the
 instructions claimed above. A live battle playtest (gauge drains by the
 configured amount, stops at empty, non-Spirit actions still grant their `+8`
 and still cap at 100) has not been run.
+
+### Oscillating AP costs
+
+`--oscillating-ap [DAMAGE_PCT]` deals every Tactical Art, at the start of
+every battle, onto one of two sides at random:
+
+| Side | AP | Damage |
+|---|---|---|
+| **cost** | retail: gated on and charged its computed cost | 100% |
+| **grant** | admitted at any AP level; *adds* the AP it would have cost (clamped at 100) | `DAMAGE_PCT`% (default 20) |
+
+The deal is per art and per battle, so a fight is a mix of both sides and the
+next fight a different mix. Enemies are untouched. Nothing on screen says which
+side an art drew - the pause menu's AP number is a static SCUS byte the roll
+cannot reach and the battle UI draws no per-art cost - so the gauge moving the
+other way, and the damage, are the tell.
+
+**How it is built.** The AP half is the [arts AP override](#arts-ap-override)'s
+machinery with the per-art config byte replaced by a **per-battle side bit**:
+the same three detours into the party arts queue-builder `FUN_801EED1C` (PROT
+0898) at `0x801EF410` (guard), `0x801EF490` (debit) and `0x801EF988` (refund),
+keyed the same way - `(DAT_8007BD10[slot] - 1) * 32 + (s3 - 0x0B)` - into a
+16-byte side table. A set bit reads as affordable at the guard and, at the
+debit, adds retail's own computed charge (the `mflo a2` the stock `subu` was
+about to spend) instead of subtracting it, skipping the spent accrual so the
+end-of-turn refund has nothing to double-count. Two pieces are new:
+
+- **The roll.** A detour at the battle loader's setup site `0x80051A20`
+  (`FUN_800513F0`, after the monster-setup loop - the site `--shiny-seru` also
+  hooks; `ra` is dead there and every caller-saved register free) calls retail's
+  `rand` veneer `FUN_80056798` sixteen times and stores the low byte of each
+  draw into the side table, the loop counter kept in a scratch word because the
+  BIOS clobbers the temporaries. Sixteen extra draws per battle shift the RNG
+  stream and nothing else. The routine is exactly 17 words - it fills `SLOT6`.
+- **The damage scale.** A detour in the arms execution resolver `FUN_801EC3E4`
+  at `0x801EDA10`, the word after the 9999 cap, where `s0 - s1` is the strike's
+  final damage. The kernel does not know which art it is executing - it is
+  handed one action entry and walks its per-strike bytes - so the routine
+  recovers the art from the **playing anim id** `actor[+0x1D9]`: the SCUS anim
+  commit `FUN_8004AD80` materialises a staged id `q >= 0x10` as
+  `record0[q*4] = bank + 4 + (q - 0x10) * 0xD0 + 0x24` (`0x8004BC80`, with
+  `bank + 4` the very base the builder walks `s3 * 0xD0` from) and snaps
+  `+0x1D9 = q` (`0x8004BDE0`), so the row is `q - 0x1B`. Before trusting that
+  it re-derives `record0[q*4]` and compares it with the entry the kernel was
+  called with (`[sp+0x54]`, the kernel's own spill of `a1`). A plain direction
+  swing (`q` `0x0C..=0x0F`, entries copied elsewhere by `FUN_800557B8`), a
+  Super Art row past the 26, a monster attacker or any mismatch falls through
+  to retail damage. On a set bit it rewrites `s0 = s1 + (s0 - s1) * pct / 100`
+  in exact integer arithmetic (`mflo` three words clear of the `divu`), then
+  replays the two displaced words; `t0..t6` are free there and `HI`/`LO` hold
+  nothing the kernel still reads.
+
+**Placement.** Guard + debit in `ARENA1`, the refund in `ARENA2`, the roll in
+`SLOT6`, the damage routine + side table + counter in `SCUS_GAP` - all four of
+[the injected-code arena](#the-injected-code-arena-budget)'s regions, so the
+knob is **mutually exclusive with `--shiny-seru`, `--arts-ap-grant` /
+`--arts-ap-cost`, `--show-super-arts`, `--super-arts-pack` and
+`--delilas-challenge`**: enforced up front in the CLI and the web patcher, and
+structurally by the all-zero check on every region (whichever runs second is
+refused). The side table and its counter stay zero on disc; the roll fills them
+per battle.
+
+Seedless toggle, off by default, in no preset. Module
+[`legaia_patcher::oscillating_ap`](../../crates/patcher/src/oscillating_ap.rs)
+(unit tests execute every routine on the crate's R3000 model - guard, debit,
+roll against a fake `rand`, damage across every fall-through shape); disc
+oracle `crates/patcher/tests/oscillating_ap_real.rs` (independently transcribed
+retail words at every fingerprinted site, byte-exact landing, surgical diff,
+determinism, idempotence, the exclusions both ways, refusal of a corrupted
+site or a dirty region). In the browser patcher it is the **Oscillating AP
+costs** toggle + slider in the Gameplay group.
+
+> **Verification state**: statically verified only. The oracles prove where
+> the bytes land and the model runs prove what the routines compute; a live
+> battle playtest (a grant-side art admits at 0 AP, raises the gauge by its
+> retail cost and deals the configured fraction; a cost-side art is retail; the
+> deal changes between battles) has not been run.
 
 ### Doors (scene transitions)
 

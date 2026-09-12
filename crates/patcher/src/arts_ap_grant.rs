@@ -164,7 +164,7 @@ pub(crate) const HOOK_B_W0: u32 = 0x2665_FFF5; // addiu a1,s3,-0xb
 /// `mflo t7`; returns to `0x801EF418` (`slt v0,v0,t7`).
 pub const HOOK_A_VA: u32 = 0x801E_F410;
 pub(crate) const HOOK_A_W0: u32 = 0x94A2_0170; // lhu v0,0x170(a1)
-const RET_A_VA: u32 = 0x801E_F418;
+pub(crate) const RET_A_VA: u32 = 0x801E_F418;
 
 /// C: AP debit + accrual. Detour replaces `lhu v0,0x170(v1)` + the following
 /// `nop`. A grant or cost art returns to `0x801EF4B8` (past the stock debit AND
@@ -173,15 +173,15 @@ const RET_A_VA: u32 = 0x801E_F418;
 /// (`subu v0,v0,a2`, the stock debit).
 pub const HOOK_C_VA: u32 = 0x801E_F490;
 pub(crate) const HOOK_C_W0: u32 = 0x9462_0170; // lhu v0,0x170(v1)
-const C_OVERRIDE_RET_VA: u32 = 0x801E_F4B8;
-const C_NATIVE_RET_VA: u32 = 0x801E_F498;
+pub(crate) const C_OVERRIDE_RET_VA: u32 = 0x801E_F4B8;
+pub(crate) const C_NATIVE_RET_VA: u32 = 0x801E_F498;
 
 /// D: end-of-turn refund. Detour replaces `lhu v0,0x170(v1)` + the following
 /// `nop`; the routine does the `Spirit += +0x224` add itself, clamps at 100,
 /// stores, and returns to `0x801EF998` (past the stock `addu`/`sh`).
 pub const HOOK_D_VA: u32 = 0x801E_F988;
 pub(crate) const HOOK_D_W0: u32 = 0x9462_0170; // lhu v0,0x170(v1)
-const RET_D_VA: u32 = 0x801E_F998;
+pub(crate) const RET_D_VA: u32 = 0x801E_F998;
 
 /// The retail read of the acting slot's 1-based party-record id, replayed at
 /// the head of both routines: `lbu t1,0x0(t6)` with `t6 = &DAT_8007BD10[slot]`
@@ -485,12 +485,12 @@ pub struct ArtsApGrantInjection {
     pub table_va: u32,
 }
 
-fn words_to_bytes(w: &[u32]) -> Vec<u8> {
+pub(crate) fn words_to_bytes(w: &[u32]) -> Vec<u8> {
     w.iter().flat_map(|x| x.to_le_bytes()).collect()
 }
 
 /// Read a little-endian `u32` from an overlay at `va - OVERLAY_BASE_VA`.
-fn ov_hook(overlay: &[u8], va: u32, expect_w0: u32) -> Result<(usize, [u32; 2])> {
+pub(crate) fn ov_hook(overlay: &[u8], va: u32, expect_w0: u32) -> Result<(usize, [u32; 2])> {
     let off = (va - OVERLAY_BASE_VA) as usize;
     let w0 = read_word(overlay, off)?;
     let w1 = read_word(overlay, off + 4)?;
@@ -502,7 +502,12 @@ fn ov_hook(overlay: &[u8], va: u32, expect_w0: u32) -> Result<(usize, [u32; 2])>
 
 /// Refuse if `[va, va+len)` overlaps a known live data table (zero bytes there
 /// are indexed at runtime).
-fn assert_not_in_tables(va: u32, len: u32, ranges: &[(u32, u32)], what: &str) -> Result<()> {
+pub(crate) fn assert_not_in_tables(
+    va: u32,
+    len: u32,
+    ranges: &[(u32, u32)],
+    what: &str,
+) -> Result<()> {
     let end = va.saturating_add(len);
     for &(a, b) in ranges {
         if va < b && a < end {
@@ -515,7 +520,7 @@ fn assert_not_in_tables(va: u32, len: u32, ranges: &[(u32, u32)], what: &str) ->
 }
 
 /// Confirm `[off, off+len)` in `scus` is all-zero dead space.
-fn assert_zero(scus: &[u8], off: usize, len: usize, va: u32) -> Result<()> {
+pub(crate) fn assert_zero(scus: &[u8], off: usize, len: usize, va: u32) -> Result<()> {
     let region = scus
         .get(off..off + len)
         .ok_or_else(|| anyhow::anyhow!("arena {va:#x}..+{len} past end of SCUS"))?;

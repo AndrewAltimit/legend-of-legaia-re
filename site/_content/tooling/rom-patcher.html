@@ -581,6 +581,16 @@
       </div>
 
       <label class="rom-check-row">
+        <input type="checkbox" id="rom-oscillating-ap-on">
+        <span>Oscillating AP costs <span class="rom-opt-note">- each battle deals every art onto a cost side or a grant side</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>At the start of every battle each Tactical Art lands at random on one of two sides. <strong>Cost side</strong>: exactly retail - pays its AP, full damage. <strong>Grant side</strong>: castable at any AP level, <em>gives back</em> the AP it would have cost, and deals only the slider's percent of its damage. The deal is fresh every battle and per art, so a fight is a mix of both and the next fight a different mix.</p><p>Nothing on screen says which side an art drew - the gauge moving the other way, and the damage, are the tell. Enemies are untouched. Unaffected by the seed. Shares the injected-code arena with Shiny Seru, the arts AP overrides, Show Super Arts, the Super Arts Pack and the Delilas Challenge, so it cannot be combined with them. <a href="randomizer.html#oscillating-ap-costs">Details</a>.</p></span></span></span>
+      </label>
+      <div class="rom-opt rom-sub" id="rom-oscillating-ap-row">
+        <label class="rom-opt-label" for="rom-oscillating-ap">&#8627; Grant-side damage, % of retail: <output id="rom-oscillating-ap-val">20</output></label>
+        <input type="range" id="rom-oscillating-ap" min="0" max="100" step="5" value="20">
+      </div>
+
+      <label class="rom-check-row">
         <input type="checkbox" id="rom-enemy-scale-on">
         <span>Enemy difficulty scale <span class="rom-opt-note">- multiply enemy stats 0.1x-5x</span>
           <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Multiplies every enemy's combat stats (HP, MP, attack, both defenses, INT, speed) by one factor. Nothing moves between monsters, so each keeps its own profile. EXP, gold and drops are untouched: a hard run is harder, not richer.</p><p>Random encounters and bosses get their own sliders; <em>Advanced</em> gives each stat its own. The enemy action gauge and the unwinnable Rim Elm sparring match are left alone. Unaffected by the seed. <a href="randomizer.html#enemy-stat-scale">Details</a>.</p></span></span></span>

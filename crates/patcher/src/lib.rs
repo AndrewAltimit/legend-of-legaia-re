@@ -106,6 +106,7 @@ pub mod monster_stats;
 pub mod monster_texture;
 pub mod move_power;
 pub mod nivora_field;
+pub mod oscillating_ap;
 pub mod ppf;
 pub mod rewards;
 pub mod rng;

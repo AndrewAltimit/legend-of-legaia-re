@@ -11,7 +11,7 @@
  * solo_strong_encounters, flee_exp, seru_trade, enemy_ally, shiny_seru,
  * jewel_fix, approach_softlock_fix, delilas_challenge, custom_items, fishing_prices, location_renames,
  * earth_egg_price, arts_powers, super_art_powers,
- * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, enemy_stat_scale,
+ * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, oscillating_ap, enemy_stat_scale,
  * exp_scale, seru_catch_rate, delilas_party, delilas_arts_voice,
  * delilas_moves, enemy_attack_count, swing_costs, equip_owners, enemy_hp_bar,
  * progress?)
@@ -2245,7 +2245,7 @@ const PRESET_BASE = {
   drops: 'none', encounters: 'none', encounter_scope: 'scene', soloStrong: false, fleeExp: false, chests: 'none',
   shops: 'none', casino: 'none', steals: 'none', arts: 'none', doors: 'none',
   door_coupling: 'coupled', houseDoors: false, equipmentDrops: false, seruTrade: false,
-  enemyAlly: false, enemyHpBar: false, shinySeru: false, showSuperArts: false, superArtsPack: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '', delilasArtsVoice: 'original', delilasMoves: 'hybrid', attackCount: '',
+  enemyAlly: false, enemyHpBar: false, shinySeru: false, showSuperArts: false, superArtsPack: false, jewelFix: false, approachFix: false, delilasChallenge: false, customItems: false, fishingPrice: '', renameLocation: '', earthEggPrice: '', artsPower: '', superArtPower: '', artsApGrant: '', spiritAp: '', damageAp: '', oscillatingAp: '', enemyStatScale: '', expScale: '', seruCatchRate: '', delilasParty: '', delilasArtsVoice: 'original', delilasMoves: 'hybrid', attackCount: '',
   startingItems: 0, doorOfWind: false, incense: false,
   speedChain: false, chickenHeart: false, goodLuckBell: false,
   allWarps: false,
@@ -2367,6 +2367,9 @@ function init() {
   const damageApChk = $('rom-damage-ap-on');
   const damageApSlider = $('rom-damage-ap');
   const damageApVal = $('rom-damage-ap-val');
+  const oscillatingApChk = $('rom-oscillating-ap-on');
+  const oscillatingApSlider = $('rom-oscillating-ap');
+  const oscillatingApVal = $('rom-oscillating-ap-val');
   const enemyScaleChk = $('rom-enemy-scale-on');
   const expScaleChk = $('rom-exp-scale-on');
   const expScaleSlider = $('rom-exp-scale');
@@ -2379,7 +2382,7 @@ function init() {
   const attackCountVal = $('rom-attack-count-val');
   // Live read-out next to each AP slider. `input` fires while dragging;
   // `change` (which drives markCustom/syncDependents) only fires on release.
-  for (const [slider, out] of [[spiritApSlider, spiritApVal], [damageApSlider, damageApVal], [seruCatchSlider, seruCatchVal]]) {
+  for (const [slider, out] of [[spiritApSlider, spiritApVal], [damageApSlider, damageApVal], [oscillatingApSlider, oscillatingApVal], [seruCatchSlider, seruCatchVal]]) {
     if (slider && out) slider.addEventListener('input', () => { out.textContent = slider.value; });
   }
   // The difficulty scale is a multiplier, so it reads out as "2.5x". Its step
@@ -2652,6 +2655,11 @@ function init() {
     damageApChk.checked = cfg.damageAp !== '' && cfg.damageAp != null;
     damageApSlider.value = String(damageApChk.checked ? cfg.damageAp : 100);
     damageApVal.textContent = damageApSlider.value;
+    if (oscillatingApChk) {
+      oscillatingApChk.checked = cfg.oscillatingAp !== '' && cfg.oscillatingAp != null;
+      oscillatingApSlider.value = String(oscillatingApChk.checked ? cfg.oscillatingAp : 20);
+      oscillatingApVal.textContent = oscillatingApSlider.value;
+    }
     expScaleChk.checked = cfg.expScale !== '' && cfg.expScale != null;
     expScaleSlider.value = String(expScaleChk.checked ? cfg.expScale : 1);
     expScaleVal.textContent = fmtScale(expScaleSlider.value);
@@ -2786,6 +2794,8 @@ function init() {
     if (spiritRow) spiritRow.classList.toggle('is-disabled', !(spiritApChk && spiritApChk.checked));
     const damageRow = $('rom-damage-ap-row');
     if (damageRow) damageRow.classList.toggle('is-disabled', !(damageApChk && damageApChk.checked));
+    const oscillatingRow = $('rom-oscillating-ap-row');
+    if (oscillatingRow) oscillatingRow.classList.toggle('is-disabled', !(oscillatingApChk && oscillatingApChk.checked));
     const expScaleRow = $('rom-exp-scale-row');
     if (expScaleRow) expScaleRow.classList.toggle('is-disabled', !(expScaleChk && expScaleChk.checked));
     const seruCatchRow = $('rom-seru-catch-row');
@@ -2876,6 +2886,8 @@ function init() {
     // Both ranges include 0 and negatives, so read the value as-is.
     const spiritAp = spiritApChk.checked ? String(spiritApSlider.value) : '';
     const damageAp = damageApChk.checked ? String(damageApSlider.value) : '';
+    // Oscillating AP costs: the grant-side damage percent, '' = off.
+    const oscillatingAp = oscillatingApChk && oscillatingApChk.checked ? String(oscillatingApSlider.value) : '';
     // Difficulty scale. Per enemy group: Simple sends one multiplier for every
     // stat; Advanced sends a `stat=mult` list naming only the stats that
     // actually move, which is the same spelling the CLI takes. Every value is
@@ -2993,7 +3005,7 @@ function init() {
       startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !showSuperArts && !superArtsPack && !jewelFix && !approachFix && !delilasChallenge && !customItems &&
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !superArtPower &&
       !artsApGrant && !artsApCost &&
-      !spiritAp && !damageAp && !enemyStatScale && !expScale && !seruCatchRate && !delilasParty &&
+      !spiritAp && !damageAp && !oscillatingAp && !enemyStatScale && !expScale && !seruCatchRate && !delilasParty &&
       !attackCount && !swingCosts && !equipOwners && !enemyHpBar
     );
     if (!baseActive && texSpecs.length === 0) {
@@ -3030,7 +3042,7 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = await mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, superArtsPack, attackCount, swingCosts, equipOwners, enemyHpBar, onPatchProgress);
+        const result = await mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, oscillatingAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, superArtsPack, attackCount, swingCosts, equipOwners, enemyHpBar, onPatchProgress);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';

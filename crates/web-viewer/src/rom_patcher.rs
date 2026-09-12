@@ -291,7 +291,12 @@ const PATCH_ROM_STAGES: u32 = 38;
 /// gauge-widget ramp targets that mirror it). `damage_ap` (empty = untouched)
 /// sets how much AP taking damage grants, as AP per 100% of max HP lost
 /// (retail 100; `0` = damage never feeds the gauge, negative = being hit
-/// drains it) - the damage finisher's scale chain in the same overlay. A
+/// drains it) - the damage finisher's scale chain in the same overlay.
+/// `oscillating_ap` (`0..=100`, empty = off) turns on oscillating AP costs:
+/// every battle each Tactical Art is dealt onto the cost side (retail) or the
+/// grant side (castable at any AP, gives its AP back, deals that percent of
+/// its damage) - it claims the same dead regions as every other arena feature
+/// and is refused alongside any of them. A
 /// negative value on either knob also neutralizes the AP-Boost accessory
 /// arms, which read the accrual unsigned. `enemy_stat_scale` (empty or `1` =
 /// untouched) multiplies every monster's combat stats by a difficulty factor
@@ -390,6 +395,7 @@ pub async fn patch_rom(
     arts_ap_costs: &str,
     spirit_ap: &str,
     damage_ap: &str,
+    oscillating_ap: &str,
     enemy_stat_scale: &str,
     exp_scale: &str,
     seru_catch_rate: &str,
@@ -429,6 +435,23 @@ pub async fn patch_rom(
     // conflict with either (manual-only); shiny-Seru vs the Delilas Challenge is
     // resolved softly below (the challenge wins). Refuse the hard combos here.
     let arts_ap = !(arts_ap_grants.trim().is_empty() && arts_ap_costs.trim().is_empty());
+    // Oscillating AP costs claims all four regions, so it is a hard conflict
+    // with every other arena feature.
+    let oscillating = !oscillating_ap.trim().is_empty();
+    for (other, what) in [
+        (arts_ap, "the arts AP override"),
+        (shiny_seru, "shiny-seru"),
+        (delilas_challenge, "the Delilas Challenge"),
+        (show_super_arts, "showing Super Arts on the move list"),
+        (super_arts_pack, "the Super Arts Pack"),
+    ] {
+        if oscillating && other {
+            return Err(err(format!(
+                "oscillating AP costs and {what} both inject into the same verified-dead SCUS \
+                 regions and are mutually exclusive; enable only one"
+            )));
+        }
+    }
     if arts_ap && shiny_seru {
         return Err(err(
             "the arts AP override and shiny-seru both inject into the same verified-dead SCUS \
@@ -933,6 +956,32 @@ pub async fn patch_rom(
         }
     }
 
+    // Oscillating AP costs: `DAMAGE_PCT` (0..=100, empty = off). Per battle,
+    // each Tactical Art lands on the cost side (retail) or the grant side
+    // (admitted at any AP, adds the AP it would have cost, deals DAMAGE_PCT
+    // percent of its damage). Mutually exclusive with every other arena
+    // feature (guarded above).
+    let oscillating_ap = oscillating_ap.trim();
+    if oscillating_ap.is_empty() {
+        summary.push_str("oscillating-ap: off\n");
+    } else {
+        match oscillating_ap.parse::<u8>() {
+            Ok(pct) if pct <= legaia_patcher::oscillating_ap::MAX_DAMAGE_PCT => {
+                match apply::inject_oscillating_ap(&mut patcher, pct) {
+                    Ok(rep) => summary.push_str(&format!(
+                        "oscillating-ap: every battle re-deals each art onto the cost side \
+                         (retail) or the grant side (gives its AP back, {}% damage)\n",
+                        rep.damage_pct
+                    )),
+                    Err(e) => summary.push_str(&format!("oscillating-ap: {e}\n")),
+                }
+            }
+            _ => summary.push_str(&format!(
+                "oscillating-ap: skipped out-of-range value {oscillating_ap:?} (want 0..=100)\n"
+            )),
+        }
+    }
+
     // Place renames: newline-separated `target=name` lines (a name may contain
     // spaces, so only the newline splits entries). `target` is a landmark index
     // or the place's current name. Each rename propagates to all three carriers
@@ -1299,6 +1348,7 @@ pub async fn patch_rom(
                     || super_arts_pack
                     || !arts_ap_grants.trim().is_empty()
                     || !arts_ap_costs.trim().is_empty()
+                    || oscillating
                 {
                     legaia_patcher::delilas_party::CastRoutePolicy::ArenaTaken
                 } else {
