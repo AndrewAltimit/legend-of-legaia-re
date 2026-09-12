@@ -63,8 +63,18 @@ table.enemy-table tbody .mesh-side-effects td {
   padding: 0.3rem 1rem 0.3rem 0; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap;
 }
 .mesh-side-effects th { color: var(--text-dim); font-weight: normal; }
-.mesh-side-effects th.is-met, .mesh-side-effects td.is-met { color: var(--text); }
-.mesh-side-effects td.is-met b { color: var(--accent); }
+/* The column (or row) for the fight this enemy is met in: tinted and marked
+   "applies"; the other one dimmed. An enemy met both ways gets neither. */
+.mesh-side-effects th.is-met, .mesh-side-effects td.is-met, .mesh-side-effects tr.is-met td {
+  color: var(--text); background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.mesh-side-effects th.is-met { color: var(--accent); }
+.mesh-side-effects th.is-met::after { content: " · applies"; font-size: 0.66rem; letter-spacing: 0.06em; }
+.mesh-side-effects th.is-other, .mesh-side-effects td.is-other, .mesh-side-effects tr.is-other td { color: var(--text-dim); }
+.mesh-side-effects th.is-met, .mesh-side-effects td.is-met, .mesh-side-effects th.is-other, .mesh-side-effects td.is-other { padding-left: 0.5rem; }
+.mesh-met { margin: 0.35rem 0 0.2rem; color: var(--text-muted); font-size: 0.78rem; line-height: 1.5; }
+.mesh-met .fight-tag { margin-right: 0.35rem; vertical-align: 1px; }
+.mesh-met b { color: var(--text); }
 .mesh-side-effects .why { color: var(--text-dim); font-size: 0.74rem; margin-top: 0.55rem; line-height: 1.5; max-width: 720px; }
 /* Carries `table-wrap` too, so layout.js does not nest a second scroller inside it (the
    detail row is pinned to this one). The shared rule's outer margin is dropped: the shell gap spaces it. */
@@ -523,24 +533,31 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   }
   // The expanded-row breakdown: both fight classes side by side.
   function sideEffectPanel(r) {
-    const metCls = (scripted) => (scripted === r.fightScripted ? ' class="is-met"' : '');
+    const metCls = (scripted) => (r.fight === 2 ? '' : (scripted === r.fightScripted ? ' class="is-met"' : ' class="is-other"'));
     const rows = DEBUFF_KINDS.map((k, i) =>
       `<tr><td><b>${k.key}</b> down</td><td>${escapeHtml(k.element)}</td>` +
       `<td${metCls(false)}>${VERDICT_LABEL[r.seRandom[i]] || '-'}</td><td${metCls(true)}>${VERDICT_LABEL[r.seScripted[i]] || '-'}</td></tr>`
     ).join('');
-    const met = r.fight === 3 ? 'boss fights only (no escape)' : r.fight === 2 ? 'random encounters and boss fights' : r.fight === 1 ? 'a story fight on a row whose no-escape switch is off (random-encounter rules)' : 'random encounters';
+    const metLine = r.fight === 2
+      ? 'Met <b>both ways</b>: in random encounters (this row) and in boss fights. Read the column for the fight you are in.'
+      : r.fightScripted
+        ? 'Met in <b>boss fights</b> (the game will not let you run), so the <b>Boss fight</b> column applies.'
+        : r.fight === 1
+          ? 'A story fight on a row whose no-escape switch is off, so the <b>Random encounter</b> column applies.'
+          : 'Met in <b>random encounters</b>, so the <b>Random encounter</b> column applies.';
     const bypass = r.resistBypass.length ? r.resistBypass.join(' / ') : 'light';
     const profiles = r.fight !== 2 ? '' : `
       <div class="mesh-anim-label">Stats by kind of fight</div>
       <table><thead><tr><th>Met as</th><th>ATK</th><th>UDF</th><th>LDF</th><th>INT</th></tr></thead><tbody>
-        <tr class="is-met"><td>random encounter (this row)</td><td>${r.ns1}</td><td>${r.ns2}</td><td>${r.ns3}</td><td>${r.ns4}</td></tr>
+        <tr><td>random encounter (this row)</td><td>${r.ns1}</td><td>${r.ns2}</td><td>${r.ns3}</td><td>${r.ns4}</td></tr>
         <tr><td>boss fight</td><td>${r.bs1}</td><td>${r.bs2}</td><td>${r.bs3}</td><td>${r.bs4}</td></tr>
         <tr><td>raw disc record</td><td>${r.rs1}</td><td>${r.rs2}</td><td>${r.rs3}</td><td>${r.rs4}</td></tr>
       </tbody></table>`;
     return `<div class="mesh-side-effects">${profiles}
       <div class="mesh-anim-label">Seru-magic side-effects</div>
+      <div class="mesh-met">${fmtFight(r)}${metLine}</div>
       <table><thead><tr><th>Effect</th><th>Spell element</th><th${metCls(false)}>Random encounter</th><th${metCls(true)}>Boss fight</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="why">Met in ${escapeHtml(met)}. <b>once</b>: the first cast lands, every later cast of that element prints "No effect.". <b>stacks</b>: every cast lands and lowers the stat again. Size 5% at magic level 3-4, 10% at 5-6, 15% at 7-8, 20% at 9. In a boss fight four casts in five are thrown away first unless the spell is <b>${escapeHtml(bypass)}</b> (${escapeHtml(r.element_name || 'neutral')} enemy). No per-enemy immunity exists on the disc - see <a href="subsystems/battle-formulas.html#seru-side-effects">battle formulas</a>.</p>
+      <p class="why"><b>once</b>: the first cast lands, every later cast of that element prints "No effect.". <b>stacks</b>: every cast lands and lowers the stat again. Size 5% at magic level 3-4, 10% at 5-6, 15% at 7-8, 20% at 9. In a boss fight four casts in five are thrown away first unless the spell is <b>${escapeHtml(bypass)}</b> (${escapeHtml(r.element_name || 'neutral')} enemy). No per-enemy immunity exists on the disc - see <a href="subsystems/battle-formulas.html#seru-side-effects">battle formulas</a>.</p>
     </div>`;
   }
 
