@@ -37,23 +37,35 @@ table.enemy-table tbody td.col-fight { text-align: center; }
   color: var(--text-muted);
 }
 .fight-tag.is-boss { border-color: var(--accent); color: var(--accent); }
-/* Seru-magic side-effect chips: one per debuff the game can inflict. */
+/* Seru-magic side-effect chips: one per debuff the game can inflict, in one
+   of three looks (solid = stacks, dashed = once, struck = never). The legend
+   in the toolbar shows the same three chips with their words. */
 table.enemy-table tbody td.col-debuffs { text-align: left; white-space: nowrap; }
 .debuff-chip {
   display: inline-block; min-width: 2.4em; text-align: center; margin-right: 0.15rem;
   padding: 0 0.25rem; border-radius: 3px; font-size: 0.72rem; line-height: 1.5;
   border: 1px solid var(--border); color: var(--text); background: var(--bg-raised);
 }
-.debuff-chip.is-once { border-style: dashed; color: var(--text-muted); }
-.debuff-chip.is-once::after { content: "\00b9"; color: var(--accent); }
-.debuff-chip.is-never { color: var(--text-dim); text-decoration: line-through; background: transparent; }
-.debuff-chip.is-off { color: var(--text-dim); background: transparent; border-color: transparent; }
-/* Expanded row: the per-enemy side-effect breakdown beside the model. */
+.debuff-chip.is-once { border-style: dashed; color: var(--text-muted); background: transparent; }
+.debuff-chip.is-never { color: var(--text-dim); text-decoration: line-through; background: transparent; border-color: transparent; }
+.debuff-legend {
+  display: inline-flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; align-items: center;
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 0.76rem;
+}
+.debuff-legend .debuff-chip { margin-right: 0.3rem; }
+/* Expanded row: the per-enemy side-effect breakdown beside the model. The
+   enemy table's own right-aligned, padded td rule reaches into this nested
+   table, so alignment and padding are restated at higher specificity. */
 .mesh-side-effects { margin-top: 0.7rem; }
-.mesh-side-effects table { border-collapse: collapse; font-size: 0.76rem; margin-top: 0.3rem; }
-.mesh-side-effects th, .mesh-side-effects td { padding: 0.15rem 0.5rem; border-bottom: 1px solid var(--border); text-align: left; }
+.mesh-side-effects table { border-collapse: collapse; font-size: 0.76rem; margin-top: 0.3rem; width: auto; }
+table.enemy-table tbody .mesh-side-effects th,
+table.enemy-table tbody .mesh-side-effects td {
+  padding: 0.15rem 1rem 0.15rem 0; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap;
+}
 .mesh-side-effects th { color: var(--text-dim); font-weight: normal; }
-.mesh-side-effects .why { color: var(--text-dim); font-size: 0.72rem; margin-top: 0.35rem; line-height: 1.45; max-width: 46ch; }
+.mesh-side-effects th.is-met, .mesh-side-effects td.is-met { color: var(--text); }
+.mesh-side-effects td.is-met b { color: var(--accent); }
+.mesh-side-effects .why { color: var(--text-dim); font-size: 0.72rem; margin-top: 0.45rem; line-height: 1.5; }
 .enemy-table-table-wrap { border: 1px solid var(--border); background: var(--bg-card); overflow-x: auto; }
 table.enemy-table {
   border-collapse: collapse; width: 100%;
@@ -140,6 +152,11 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         </select>
       </label>
       <span class="enemy-table-count" id="enemy-table-count"></span>
+      <span class="debuff-legend" title="Seru side-effect chips. Solid: every cast lands and the drops stack. Dashed: the first cast lands, every later cast of that element prints 'No effect.'. Struck through: never lands. The Seru side-effects column and the section below the table explain why.">
+        <span><span class="debuff-chip">DEF</span>stacks</span>
+        <span><span class="debuff-chip is-once">SPD</span>once, then "No effect."</span>
+        <span><span class="debuff-chip is-never">ATK</span>never</span>
+      </span>
     </div>
 
     <div class="enemy-table-table-wrap" id="enemy-table-table-wrap" style="display: none;">
@@ -158,7 +175,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             <th data-key="s0" title="Agility - the action gauge the enemy spends to act.">AGL</th>
             <th data-key="element" title="Element - shifts elemental damage dealt and taken.">Elem</th>
             <th data-key="fight" class="col-fight" title="How the disc's formation rows meet this enemy: a boss / scripted fight (its row carries the scripted flag, or it is placed by script), a random encounter, or both. Decides the stat-boost profile and which Seru side-effects can land.">Met</th>
-            <th data-key="debuffs" class="col-debuffs" title="Which Seru-magic side-effects can land on this enemy in the fight it is met in: solid = every hit, dashed¹ = once per battle, struck = never. Hover a chip for the reason; open the row for the full breakdown.">Seru side-effects</th>
+            <th data-key="debuffs" class="col-debuffs" title="Which Seru-magic stat debuffs can land on this enemy in the fight it is met in. Solid: every cast lands and the drops stack. Dashed: the first cast lands, every later cast of that element prints 'No effect.'. Struck through: never lands. Hover a chip for the reason; open the row for the full breakdown.">Seru side-effects</th>
             <th data-key="magic" title="Number of spell slots in the record.">Magic</th>
             <th data-key="castable" class="col-name" title="The enemy's named magic attacks and their MP cost.">Magic attacks (MP)</th>
             <th data-key="exp" title="Base EXP reward.">EXP</th>
@@ -193,7 +210,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     <dt><strong>Met</strong></dt>
     <dd>How the disc's formation tables meet this enemy. <em>boss</em>: only in rows that carry the scripted-fight flag (or placed by inline script, which always sets it). <em>random</em>: in rows a region can roll. <em>story</em>: placed by script on rows <em>without</em> the flag - a handful of story fights sit there and run under the random-encounter rules. <em>both</em>: appearances of each kind. The flag is what picks the stat-boost profile and the side-effect gates - there is no per-monster boss byte.</dd>
     <dt><strong>Seru side-effects</strong></dt>
-    <dd>Which of the six stat debuffs your Seru magic can put on this enemy, in the fight it is met in. A solid chip lands on every hit, a dashed chip with a <sup>1</sup> lands once per battle, a struck-through chip never lands. Hover a chip for the reason; open the row for both fight classes side by side. The rules are in the section below.</dd>
+    <dd>Which of the six stat debuffs your Seru magic can put on this enemy, in the fight it is met in. A <strong>solid</strong> chip: every cast lands and the drops stack. A <strong>dashed</strong> chip: the first cast lands, and every later cast of that element prints "No effect." for the rest of the battle. A <strong>struck-through</strong> chip never lands. Hover a chip for the reason; open the row for both fight classes side by side. The rules are in the section below.</dd>
     <dt><strong>EXP / Gold</strong></dt>
     <dd>Base rewards. The game scales them down at the end of a fight: EXP is reduced then split among the party, gold lands at roughly a quarter to a third of the base.</dd>
     <dt><strong>Drop</strong></dt>
@@ -213,27 +230,30 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
 <section class="doc-section" id="side-effects">
   <h2>Seru-magic side-effects: what a boss is really "immune" to</h2>
-  <p>Every Seru spell at magic level 3 or more carries a secondary effect keyed on the summoned creature's element, and it is applied on <em>every hit</em> by the damage finisher: a percentage shaved off one of the target's stats, growing with the spell's magic level. There is <strong>no per-enemy immunity table</strong> - the monster record has no such field, and no battle code reads one. What plays as immunity is the fight's <strong>scripted flag</strong>, which changes the rules twice.</p>
-  <table class="layout">
-    <thead><tr><th>Spell element</th><th>Effect on the target</th><th>lv 3-4</th><th>lv 5-6</th><th>lv 7-8</th><th>lv 9</th></tr></thead>
+  <p>Every Seru spell at magic level 3 or more does something besides damage: it shaves a percentage off one of the target's stats, chosen by the summoned creature's element. The size is the same for every element and depends only on the spell's magic level: <strong>5%</strong> at level 3-4, <strong>10%</strong> at 5-6, <strong>15%</strong> at 7-8, <strong>20%</strong> at 9. The light spells cure the party instead, on the same ladder (cure class 1 to 4).</p>
+  <table class="layout narrow">
+    <thead><tr><th>Element</th><th>Spells</th><th>Effect on the target</th></tr></thead>
     <tbody>
-      <tr><td>earth - Mushura, Kemaro, Iota</td><td><strong>DEF down</strong> (UDF and LDF)</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
-      <tr><td>water - Gizam, Freed, Slippery</td><td><strong>AGL down</strong> (the action gauge's base)</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
-      <tr><td>fire - Gimard, Zenoir, Gola Gola</td><td><strong>ATK down</strong></td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
-      <tr><td>wind - Swordie, Nova, Barra</td><td><strong>SPD down</strong></td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
-      <tr><td>thunder - Theeder, Viguro, Gilium</td><td><strong>INT down</strong></td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
-      <tr><td>light - Vera, Orb, Spoon</td><td>a cure on the party (not a debuff)</td><td>class 1</td><td>2</td><td>3</td><td>4</td></tr>
-      <tr><td>dark - Puera</td><td><strong>MP down</strong> (current MP)</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+      <tr><td>earth</td><td>Mushura, Kemaro, Iota</td><td><strong>DEF down</strong> (UDF and LDF)</td></tr>
+      <tr><td>water</td><td>Gizam, Freed, Slippery</td><td><strong>AGL down</strong> (the action gauge)</td></tr>
+      <tr><td>fire</td><td>Gimard, Zenoir, Gola Gola</td><td><strong>ATK down</strong></td></tr>
+      <tr><td>wind</td><td>Swordie, Nova, Barra</td><td><strong>SPD down</strong></td></tr>
+      <tr><td>thunder</td><td>Theeder, Viguro, Gilium</td><td><strong>INT down</strong></td></tr>
+      <tr><td>light</td><td>Vera, Orb, Spoon</td><td>a cure on the party, not a debuff</td></tr>
+      <tr><td>dark</td><td>Puera</td><td><strong>MP down</strong> (current MP)</td></tr>
     </tbody>
   </table>
-  <p class="hint">Nighto and Aluru stage no side-effect (their cast modules skip the stager), and neither do the Ra-Seru spells. A level-1 or level-2 spell has none either, and shows no banner.</p>
+  <p class="hint">Nighto, Aluru and the Ra-Seru spells have no side-effect at all. A level-1 or level-2 spell has none either, and shows no banner.</p>
+  <p>There is <strong>no per-enemy immunity table</strong>: the monster record has no such field, and no battle code reads one. What plays as immunity comes from one check the game makes before applying the effect, and from the kind of fight you are in.</p>
   <dl class="kv">
+    <dt><strong>The check</strong></dt>
+    <dd>Before applying a debuff, the game compares the target's current base stat with the value on its disc record. Equal: the effect goes through. Different: it prints <strong>"No effect."</strong> A debuff that lands changes that base stat, so the same debuff cannot pass the check a second time. That is what <em>once</em> means in the table: the first cast works, and every later cast of that element says "No effect." for the rest of the battle.</dd>
     <dt><strong>Random encounters</strong></dt>
-    <dd>Every debuff lands on every hit and stacks (two 10% Gimard hits leave ATK at 81%). The one exception is water: AGL-down compares the gauge's base against the record and the first hit moves that base, so it lands once per battle.</dd>
+    <dd>The check is skipped for everything except AGL, so every cast lands and the drops <em>stack</em>: two level-5 Gimard casts leave ATK at 81% of where it started, a third at 73%. AGL-down is checked in every kind of fight and so lands once.</dd>
     <dt><strong>Scripted (boss) fights</strong></dt>
-    <dd>First a roll: four casts in five are suppressed outright, unless the spell is light or the enemy is <em>weak</em> to it (thunder against earth / water / fire / wind enemies, or the opposite element: earth&harr;wind, water&harr;fire, light&harr;dark). Then the game compares the target's <em>base</em> stat against its record and gives up if they differ - and the scripted boost profile has already raised ATK, DEF and INT, so <strong>ATK-down, DEF-down and INT-down can never land on a boss</strong>. SPD and AGL are not boosted, so they land once per battle; MP-down compares a value the hit never moves, so it lands on every hit that survives the roll. That is the pattern players notice as "SPD-down works but ATK-down never does".</dd>
-    <dt><strong>"No effect."</strong></dt>
-    <dd>The banner the game prints when a levelled spell's effect was suppressed or had already landed. An unlevelled spell prints nothing, because it never had an effect to miss.</dd>
+    <dd>Two things change. First a roll: four casts in five are thrown away before the check, unless the spell is light or the enemy is <em>weak</em> to it (thunder against earth / water / fire / wind enemies, or the opposite element: earth&harr;wind, water&harr;fire, light&harr;dark). Then the check runs for every element - and the battle loader already raised a boss's ATK, DEF and INT when it set the fight up (the boost profile in the notice above), so for those three stats the base and the record differ before you cast anything. <strong>ATK-down, DEF-down and INT-down never land on a boss.</strong> SPD and AGL are not boosted, so they land once. MP-down is checked against a value the effect never changes, so it lands on every cast that survives the roll. That is the pattern players notice as "SPD-down works but ATK-down never does".</dd>
+    <dt><strong>Worked example</strong></dt>
+    <dd>Against Gaza with Swordie at magic level 5: the first cast that gets past the roll lowers SPD by 10%. Cast Swordie again and the game says "No effect.", because SPD no longer matches the record. Gimard at any level says "No effect." from the first cast, because Gaza's ATK was boosted ×5/4 at load. Puera keeps taking 10% of Gaza's current MP on every cast that survives the roll. Against a random Gobu Gobu, every Swordie and every Gimard cast lands, and each one lowers the stat again.</dd>
   </dl>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -377,7 +397,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     earth: ['wind', 'thunder'], water: ['fire', 'thunder'], fire: ['water', 'thunder'],
     wind: ['earth', 'thunder'], thunder: [], light: ['dark'], dark: ['light'], neutral: [],
   };
-  const VERDICT_LABEL = { every_hit: 'every hit', once: 'once per battle', never: 'never' };
+  const VERDICT_LABEL = { every_hit: 'stacks (every cast)', once: 'once', never: 'never' };
   const VERDICT_CLASS = { every_hit: 'is-hit', once: 'is-once', never: 'is-never' };
   const VERDICT_SCORE = { every_hit: 2, once: 1, never: 0 };
   let viewer = null;       // WASM LegaiaViewer (hoisted so the mesh view can call it)
@@ -477,20 +497,20 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     const scripted = r.fightScripted;
     let why;
     if (v === 'never') {
-      why = `never lands: the scripted-fight boost already moved this enemy's ${k.key} base off its record value, so the side-effect check fails before the first cast`;
+      why = `never lands: before applying the effect the game checks the target's ${k.key} against its disc record, and the scripted-fight boost already raised this enemy's ${k.key} at load, so every cast prints "No effect."`;
     } else if (v === 'once') {
       why = scripted
-        ? `lands once per battle: ${k.key} is not boosted in a scripted fight, so the check passes until the first hit moves it`
-        : `lands once per battle: the AGL check runs in every fight and the first hit moves the value it compares`;
+        ? `lands once: ${k.key} is not boosted in a scripted fight, so the first cast passes the record check and lowers ${k.key}; every later cast prints "No effect."`
+        : `lands once: AGL is checked against the record in every kind of fight, and the first cast moves it; every later cast prints "No effect."`;
     } else {
       why = scripted
-        ? `lands on every hit (the check reads a value the hit never moves)`
-        : `lands on every hit and stacks (random encounters run no check)`;
+        ? `lands on every cast that survives the roll (the check reads a value the effect never changes)`
+        : `lands on every cast and stacks (random encounters skip the record check)`;
     }
     const roll = scripted
-      ? ` In a scripted fight 4 casts in 5 are suppressed first unless the spell is ${r.resistBypass.length ? r.resistBypass.join(' or ') : 'light'}.`
+      ? ` In a scripted fight 4 casts in 5 are thrown away before the check unless the spell is ${r.resistBypass.length ? r.resistBypass.join(' or ') : 'light'}.`
       : '';
-    return `${k.key} down (${k.element}: ${k.spells}) - ${why}.${roll} 5/10/15/20% per hit at magic level 3-4/5-6/7-8/9.`;
+    return `${k.key} down (${k.element}: ${k.spells}) - ${why}.${roll} Size: 5 / 10 / 15 / 20% at magic level 3-4 / 5-6 / 7-8 / 9.`;
   }
   function fmtDebuffs(r) {
     const v = activeVerdicts(r);
@@ -500,16 +520,17 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   }
   // The expanded-row breakdown: both fight classes side by side.
   function sideEffectPanel(r) {
+    const metCls = (scripted) => (scripted === r.fightScripted ? ' class="is-met"' : '');
     const rows = DEBUFF_KINDS.map((k, i) =>
       `<tr><td><b>${k.key}</b> down</td><td>${escapeHtml(k.element)}</td>` +
-      `<td>${VERDICT_LABEL[r.seRandom[i]] || '-'}</td><td>${VERDICT_LABEL[r.seScripted[i]] || '-'}</td></tr>`
+      `<td${metCls(false)}>${VERDICT_LABEL[r.seRandom[i]] || '-'}</td><td${metCls(true)}>${VERDICT_LABEL[r.seScripted[i]] || '-'}</td></tr>`
     ).join('');
     const met = r.fight === 3 ? 'flagged (boss) fights only' : r.fight === 2 ? 'random encounters and flagged rows' : r.fight === 1 ? 'script-placed rows without the flag (random-encounter rules)' : 'random encounters';
     const bypass = r.resistBypass.length ? r.resistBypass.join(' / ') : 'light';
     return `<div class="mesh-side-effects">
       <div class="mesh-anim-label">Seru-magic side-effects</div>
-      <table><thead><tr><th>Effect</th><th>Spell element</th><th>Random encounter</th><th>Scripted fight</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="why">Met in ${escapeHtml(met)}. A side-effect needs the spell at magic level 3 or more (5% per hit at 3-4, 10% at 5-6, 15% at 7-8, 20% at 9). In a scripted fight four casts in five are suppressed outright unless the spell is <b>${escapeHtml(bypass)}</b> (${escapeHtml(r.element_name || 'neutral')} enemy); the survivors then hit only the stats the scripted boost did not touch. No per-enemy immunity exists on the disc - see <a href="subsystems/battle-formulas.html#seru-side-effects">battle formulas</a>.</p>
+      <table><thead><tr><th>Effect</th><th>Spell element</th><th${metCls(false)}>Random encounter</th><th${metCls(true)}>Scripted fight</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="why">Met in ${escapeHtml(met)}. <b>once</b>: the first cast lands, every later cast of that element prints "No effect.". <b>stacks</b>: every cast lands and lowers the stat again. Size 5% at magic level 3-4, 10% at 5-6, 15% at 7-8, 20% at 9. In a scripted fight four casts in five are thrown away first unless the spell is <b>${escapeHtml(bypass)}</b> (${escapeHtml(r.element_name || 'neutral')} enemy). No per-enemy immunity exists on the disc - see <a href="subsystems/battle-formulas.html#seru-side-effects">battle formulas</a>.</p>
     </div>`;
   }
 

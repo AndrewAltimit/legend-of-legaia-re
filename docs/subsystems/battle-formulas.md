@@ -1524,7 +1524,10 @@ untouched base half (`+0x152`) while the finisher shaves the current half
 (`+0x150`), so MP-down lands on **every hit** that survives the roll.
 
 That is the whole "immunity": a boss is immune to exactly the stats the
-scripted boost inflated. Per record the verdict is
+scripted boost inflated. And "once per battle" is literal: the first cast
+that passes moves the halfword the compare reads, so every later cast of
+that element prints "No effect." for the rest of the fight, while a random
+encounter's uncompared arms lower the stat again on every cast. Per record the verdict is
 `legaia_asset::seru_side_effect::Susceptibility::for_record`, and the
 site's enemy table renders it per row, keyed
 on which fight class the disc's formation rows put each monster in
