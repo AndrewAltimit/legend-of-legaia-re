@@ -150,12 +150,10 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   <div class="enemy-table-shell">
     <div class="enemy-table-toolbar" id="enemy-table-toolbar" style="display: none;">
       <input type="search" id="enemy-table-filter" placeholder="Filter by name or id…">
-      <label class="enemy-table-statview" title="The battle loader boosts ATK / UDF / LDF / INT as it installs each enemy, and the boost depends on the kind of fight: a boss fight (one the game will not let you run from) uses ATK ×5/4, UDF/LDF ×2, INT ×9/8; a random encounter uses ATK ×1, UDF/LDF ×7/4, INT ×5/4. 'As met' picks per enemy from the disc's formation rows.">
+      <label class="enemy-table-statview" title="The raw record on the disc is not what you fight: the battle loader boosts ATK / UDF / LDF / INT as it installs each enemy. A boss fight (one the game will not let you run from) gets ATK ×5/4, UDF/LDF ×2, INT ×9/8; a random encounter gets ATK ×1, UDF/LDF ×7/4, INT ×5/4. 'In battle' shows each enemy the way it is met (its Met column).">
         Stats
         <select id="enemy-table-statview">
-          <option value="met" selected>in battle, as met</option>
-          <option value="scripted">boss-fight profile</option>
-          <option value="random">random-encounter profile</option>
+          <option value="battle" selected>in battle</option>
           <option value="raw">raw disc record</option>
         </select>
       </label>
@@ -231,7 +229,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
   <div class="notice">
     <div class="notice-title">The stats you fight depend on the kind of fight</div>
-    <p>The <strong>ATK / UDF / LDF / INT</strong> columns default to <em>in-battle</em> values, because the raw record on the disc is not what you fight: the battle loader boosts those four stats as it installs each enemy, and it has two profiles. A <strong>boss fight</strong> (the no-escape switch on, see <strong>Met</strong> above) installs ATK ×5/4, UDF ×2, LDF ×2, INT ×9/8; a <strong>random encounter</strong> installs ATK ×1, UDF ×7/4, LDF ×7/4, INT ×5/4 (HP, MP, AGL and SPD are never changed). Both are pinned from save states - Gaza and Cort carry the switch and the first profile, every random-encounter capture the second. The <strong>Stats</strong> selector picks: <em>as met</em> uses the row's <strong>Met</strong> class, or force either profile, or the raw record. Walkthrough bestiaries list the boss-fight numbers for every enemy, which overstates a random native's defence by 8/7. The cross-region difficulty difference itself (international retail hitting harder than the raw record) was first surfaced by <strong>Zetopheonix</strong>.</p>
+    <p>The <strong>ATK / UDF / LDF / INT</strong> columns default to <em>in-battle</em> values, because the raw record on the disc is not what you fight: the battle loader boosts those four stats as it installs each enemy, and it has two profiles. A <strong>boss fight</strong> (the no-escape switch on, see <strong>Met</strong> above) installs ATK ×5/4, UDF ×2, LDF ×2, INT ×9/8; a <strong>random encounter</strong> installs ATK ×1, UDF ×7/4, LDF ×7/4, INT ×5/4 (HP, MP, AGL and SPD are never changed). Both are pinned from save states - Gaza and Cort carry the switch and the first profile, every random-encounter capture the second. The table shows each enemy the way it is met (its <strong>Met</strong> column); the <strong>Stats</strong> selector switches to the raw record. Only one enemy on the disc is met both ways (Kemaro, in four boss rows and eight random rows): its row shows the random-encounter values, and its expanded panel shows both. Walkthrough bestiaries list the boss-fight numbers for every enemy, which overstates a random native's defence by 8/7. The cross-region difficulty difference itself (international retail hitting harder than the raw record) was first surfaced by <strong>Zetopheonix</strong>.</p>
   </div>
 </section>
 
@@ -332,7 +330,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   let sortKey = 'id';
   let sortDir = 1;         // 1 = asc, -1 = desc
   const statViewEl = document.getElementById('enemy-table-statview');
-  let statView = statViewEl ? statViewEl.value : 'met';  // met | scripted | random | raw
+  let statView = statViewEl ? statViewEl.value : 'battle';  // battle | raw
 
   // The raw monster record is NOT what the player fights: the battle loader
   // (FUN_80054cb0) boosts four combat stats when it installs the enemy, and
@@ -361,15 +359,13 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   }
 
   // Point r.s0..r.s5 at the stat block the active view asks for, so sort +
-  // render (which read s0..s5) follow it. 'met' picks per enemy: the boss
-  // profile for an enemy the disc only meets in scripted rows, the random
-  // profile otherwise.
+  // render (which read s0..s5) follow it. 'battle' picks per enemy: the boss
+  // profile for an enemy the disc meets only in boss fights, the random
+  // profile otherwise (the one enemy met both ways shows its random side
+  // here and both in its panel).
   function applyView() {
     for (const r of records) {
-      const src = statView === 'raw' ? 'rs'
-        : statView === 'scripted' ? 'bs'
-        : statView === 'random' ? 'ns'
-        : (r.fightScripted ? 'bs' : 'ns');
+      const src = statView === 'raw' ? 'rs' : (r.fightScripted ? 'bs' : 'ns');
       for (let i = 0; i < 6; i++) r['s' + i] = r[src + i];
     }
   }
@@ -534,7 +530,14 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     ).join('');
     const met = r.fight === 3 ? 'boss fights only (no escape)' : r.fight === 2 ? 'random encounters and boss fights' : r.fight === 1 ? 'a story fight on a row whose no-escape switch is off (random-encounter rules)' : 'random encounters';
     const bypass = r.resistBypass.length ? r.resistBypass.join(' / ') : 'light';
-    return `<div class="mesh-side-effects">
+    const profiles = r.fight !== 2 ? '' : `
+      <div class="mesh-anim-label">Stats by kind of fight</div>
+      <table><thead><tr><th>Met as</th><th>ATK</th><th>UDF</th><th>LDF</th><th>INT</th></tr></thead><tbody>
+        <tr class="is-met"><td>random encounter (this row)</td><td>${r.ns1}</td><td>${r.ns2}</td><td>${r.ns3}</td><td>${r.ns4}</td></tr>
+        <tr><td>boss fight</td><td>${r.bs1}</td><td>${r.bs2}</td><td>${r.bs3}</td><td>${r.bs4}</td></tr>
+        <tr><td>raw disc record</td><td>${r.rs1}</td><td>${r.rs2}</td><td>${r.rs3}</td><td>${r.rs4}</td></tr>
+      </tbody></table>`;
+    return `<div class="mesh-side-effects">${profiles}
       <div class="mesh-anim-label">Seru-magic side-effects</div>
       <table><thead><tr><th>Effect</th><th>Spell element</th><th${metCls(false)}>Random encounter</th><th${metCls(true)}>Boss fight</th></tr></thead><tbody>${rows}</tbody></table>
       <p class="why">Met in ${escapeHtml(met)}. <b>once</b>: the first cast lands, every later cast of that element prints "No effect.". <b>stacks</b>: every cast lands and lowers the stat again. Size 5% at magic level 3-4, 10% at 5-6, 15% at 7-8, 20% at 9. In a boss fight four casts in five are thrown away first unless the spell is <b>${escapeHtml(bypass)}</b> (${escapeHtml(r.element_name || 'neutral')} enemy). No per-enemy immunity exists on the disc - see <a href="subsystems/battle-formulas.html#seru-side-effects">battle formulas</a>.</p>
