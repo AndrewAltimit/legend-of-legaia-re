@@ -586,7 +586,7 @@
           <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>At the start of every battle each Tactical Art lands at random on one of two sides. <strong>Cost side</strong>: exactly retail - pays its AP, full damage. <strong>Grant side</strong>: castable at any AP level, <em>gives back</em> the AP it would have cost, and deals only the slider's percent of its damage. The deal is fresh every battle and per art, so a fight is a mix of both and the next fight a different mix.</p><p>Nothing on screen says which side an art drew - the gauge moving the other way, and the damage, are the tell. Enemies are untouched. Unaffected by the seed. Shares the injected-code arena with Shiny Seru, the arts AP overrides, Show Super Arts, the Super Arts Pack and the Delilas Challenge, so it cannot be combined with them. <a href="randomizer.html#oscillating-ap-costs">Details</a>.</p></span></span></span>
       </label>
       <div class="rom-opt rom-sub" id="rom-oscillating-ap-row">
-        <label class="rom-opt-label" for="rom-oscillating-ap">&#8627; Grant-side damage, % of retail: <output id="rom-oscillating-ap-val">20</output></label>
+        <label class="rom-opt-label" for="rom-oscillating-ap">&#8627; Grant-side damage %: <output id="rom-oscillating-ap-val">20</output></label>
         <input type="range" id="rom-oscillating-ap" min="0" max="100" step="5" value="20">
       </div>
 
@@ -910,6 +910,10 @@
   .rom-form input[type=range] { width: 100%; max-width: 24rem; accent-color: var(--accent); }
   #rom-spirit-ap-val, #rom-damage-ap-val { font-weight: 700; color: var(--accent-hi); }
   .rom-sub.is-disabled { opacity: 0.4; pointer-events: none; }
+  /* A slider's read-out changes digit count as it moves (5 -> 100 -> -200); a
+     fixed-width, tabular cell keeps the label the same width, so the row never
+     flips between "slider beside the label" and "slider under it" mid-drag. */
+  .rom-sub .rom-opt-label output { display: inline-block; min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
 
   /* Difficulty scale: simple/advanced mode switch + the per-stat slider grid.
      A .rom-opt is a space-between flex row, which is right for a label/slider
