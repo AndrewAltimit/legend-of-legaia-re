@@ -704,6 +704,10 @@ tr.dp-tier:hover td { background: var(--bg-raised); }
 /* ---------- Definition list ---------- */
 /* Byte-layout tables: first column is the offset/field key. */
 table.layout td:first-child { font-family: var(--font-mono); white-space: nowrap; }
+/* A short reference table that keeps to the prose column instead of the full
+   content width, so it lines up with the 720px paragraphs around it. The
+   `.table-wrap` layout.js puts around it carries the cap, the table follows. */
+table.narrow, .table-wrap:has(> table.narrow) { max-width: 720px; }
 
 dl.kv {
   display: grid;

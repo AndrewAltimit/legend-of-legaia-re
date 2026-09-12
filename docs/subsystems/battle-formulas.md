@@ -51,7 +51,7 @@ own finisher; blocking and the limb-height "Miss" are separate mechanics.
 - [Physical damage - Offense Value and Defense Value](#physical-damage---offense-value-and-defense-value) - [base offense](#base-offense-value-base-atk-plus-half-of-one-equipment-slot) · [offense](#offense-value) · [juggle window](#the-juggle-window---what-makes-a-monster-juggleable) · [defense](#defense-value) · [underdog floor](#damage-and-the-underdog-floor) · [worked example](#worked-example---vahn-vs-evil-fly) · [claims checked against the bytes](#checking-the-community-analysis-against-the-bytes) · [register-level stages](#the-melee-roll-pair-and-the-underdog-rewrite)
 - [Other damage kernels](#other-damage-kernels) - [summon / magic roll](#summon-magic-damage-roll---fun_801dd0ac) · [arts / physical branch](#arts--physical-branch-attacker_slot--7) · [element-affinity matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8) · [summon spell XP](#summon-spell-xp--magic-level-up) · [spirit damage](#spirit-damage-formula)
 - [Stats and the actor record](#stats-and-the-actor-record) - [applicator `FUN_800402F4`](#damage-application-primitive---fun_800402f4) · [stat block mapping](#actor-stat-block--monster-record-mapping) · [initiative](#initiative-key-seeding-fun_801da780) · [formation advantage](#formation-advantage-fun_80051d84) · [spell list](#spell-list-record-0x4c) · [selector 0](#selector-0---basic-damage-attack--item--generic-spell) · [selector 9](#selector-9---accuracy--evasion-roll) · [stat buffs](#stat-buff-selectors-17)
-- [Round mechanics and status](#round-mechanics-and-status) - [escape roll](#run--escape-roll---fun_801e791c) · [monster escape](#monster-escape-roll---fun_801ec0dc) · [status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) · [status application](#status-application-the-art--move-record-status-byte)
+- [Round mechanics and status](#round-mechanics-and-status) - [escape roll](#run--escape-roll---fun_801e791c) · [monster escape](#monster-escape-roll---fun_801ec0dc) · [status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) · [status application](#status-application-the-art--move-record-status-byte) · [Seru-magic side-effects](#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)
 - [Rewards and costs](#rewards-and-costs) - [victory spoils](#victory-spoils-rewards) · [MP cost](#mp-cost--ability-bit-modifiers) · [RNG](#rng-primitive)
 - [Engine-side mirror](#engine-side-mirror---engine-vmbattle_formulas) · [what's still open](#whats-still-open) · [credits and sources](#credits-and-sources) · [address appendix](#address-appendix)
 
@@ -584,7 +584,9 @@ draws its one RNG only when a hit zeroes out, so the no-gear RNG call-count is
 unchanged. The
 finisher's remaining tail - the damage-popup accumulator (`_DAT_8007bd14`), the
 `DAT_801f6980` AI revenge table, the MP drain, and the per-element stat-debuff
-`switch` (keyed on the attacker element at `DAT_801c9358+0x1d`) - reads/writes
+`switch` (keyed on the **summon record's** element at `DAT_801c9358+0x1d`, the
+Seru-magic [side-effect](#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)
+whose percent the stager `FUN_801F3D3C` leaves in `0x801F6960`) - reads/writes
 ~20 battle globals and stays in the live battle context. Dumps:
 `overlay_battle_action_801dd0ac.txt` / `_801dd864.txt` / `_801ddb30.txt`; see the
 [`FUN_801DD0AC` / `FUN_801DD864` / `FUN_801DDB30` rows](../reference/functions.md).
@@ -1157,7 +1159,19 @@ For party members, both accuracy and evasion derive from the character's AGL wit
 
 These cases multiply the actor stat block by `6/5` (decompiles to `0x4cccccccd >> 0x22` then `+ uVar13/5`, clamped to `0xFFFF`) - the +20% stat-up animations for buff spells. The earlier "one distinct stat per halfword across `+0x158..+0x16A`" reading was wrong: the actor stores each stat as a **pair of adjacent halfwords** (working + base, both seeded to the same value by `FUN_80054CB0`), so a buff touches two halfwords per stat. See the [actor stat block mapping](#actor-stat-block--monster-record-mapping) below.
 
-**Engine wiring.** `battle_formulas::buff_ramp` ports the `×6/5`-clamped ramp, and the live battle loop applies it for **stat-up** buffs: `World::apply_battle_buff` routes a positive-magnitude `Buff` outcome through `ramp_buff_scalar`, which ramps the live per-slot scalar (`battle_attack` / `battle_magic` / `battle_defense`) by +20% of its current value and records the exact `u16` delta for precise revert on expiry (a refresh reverts the old delta first, so the ramp re-applies from the base with no compounding). Buffs consume **no RNG**, so determinism oracles are unaffected. **Debuffs** (negative magnitude) keep the saturating additive model because retail's debuff scaling factor is not yet pinned - the engine does not fabricate one. Accuracy / Evasion / Speed have no live-loop scalar,
+**Engine wiring.** `battle_formulas::buff_ramp` ports the `×6/5`-clamped ramp, and the
+live battle loop applies it for **stat-up** buffs: `World::apply_battle_buff` routes a
+positive-magnitude `Buff` outcome through `ramp_buff_scalar`, which ramps the live
+per-slot scalar (`battle_attack` / `battle_magic` / `battle_defense`) by +20% of its
+current value and records the exact `u16` delta for precise revert on expiry (a refresh
+reverts the old delta first, so the ramp re-applies from the base with no compounding).
+Buffs consume **no RNG**, so determinism oracles are unaffected. **Debuffs** (negative
+magnitude) keep the saturating additive model: retail's only stat debuffs are the
+Seru-magic
+[side-effects](#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)
+(a per-hit `stat * pct / 100` shave, pinned), which the live loop does not yet apply -
+the engine does not fabricate a factor for its own buff model. Accuracy / Evasion /
+Speed have no live-loop scalar,
 so a buff on them only runs the turn timer.
 
 Class 7's `param_2` sub-index picks which stat group to buff (`800402f4.txt`
@@ -1412,6 +1426,138 @@ remaining status-applier gap is the setter for `+0x16E` bit `0x400` - a
 guard-disabling status (read at `801ec3e4:2640` and the AI picker
 `801e9fd4:3035`: a victim carrying it auto-fails its guard roll) whose applier
 is neither the byte map above nor anywhere in the dumped corpus.
+
+### Seru-magic side-effects - the element debuffs (`FUN_801F3D3C` + the finisher switch)
+
+Every levelled player Seru-magic cast carries a **secondary effect keyed on
+the summon creature's element**: a stat debuff on the target for the six
+damaging elements, a cure class for light. It is the mechanism behind two
+things players report as per-enemy immunities - "this boss shrugs off
+ATK-down but SPD-down works", and "the effect sometimes just doesn't happen" -
+and **neither is a per-monster property**: the monster record carries no
+immunity field (its `+0x24..+0x43` tail is zero across the whole roster), and
+no overlay reads one. Both come out of one gate function and the fight's
+scripted flag.
+
+Two halves, one table:
+
+- the **stager** `FUN_801F3D3C` (PROT 0898 own code, file `0x25524`), called
+  once per cast from inside the spell's own summon module (the `jal
+  0x801f3d3c` word `0x0C07CF4F` sits in 19 of the 21 Seru-magic images
+  `0903..=0923`; **Nighto** `0907` and **Aluru** `0916` carry none, and no
+  Ra-Seru image `0927..=0934` does). It decides whether an effect is staged,
+  writes the percent to `0x801F6960`, the banner string pointer to
+  `0x800775B4`, seeds the hold `0x801F6964 = 0xB4`, and raises the "Magic
+  effect" banner through `FUN_801D8DE8(0x66, 0)`;
+- the **finisher** `FUN_801DDB30`, whose summon-path tail (`attacker_slot ==
+  7`, `0x801DE60C..0x801DE8EC`) switches on the same element and shaves
+  `stat * (*0x801F6960) / 100` off the target on **every hit**. A staged
+  percent of zero shaves nothing, which is how a suppressed cast stays inert.
+
+The table both index is `0x801F6870` (PROT 0898 file `0x28058`), `[element]
+[band]` with `0x20` bytes per element and 8-byte records `[u8 amount][3 pad]
+[u32 banner_va]`; parser `legaia_asset::seru_side_effect`, CLI
+`asset seru-side-effect`:
+
+| summon element | effect on the target | lv 3-4 | lv 5-6 | lv 7-8 | lv 9 |
+|---|---|---|---|---|---|
+| 0 earth (Mushura / Kemaro / Iota) | **DEF down** - all four defence halfwords (`+0x15C..+0x162`) | 5% | 10% | 15% | 20% |
+| 1 water (Gizam / Freed / Slippery) | **AGL down** - the action-gauge **base** only (`+0x156`) | 5% | 10% | 15% | 20% |
+| 2 fire (Gimard / Zenoir / Gola Gola) | **ATK down** (`+0x158`/`+0x15A`) | 5% | 10% | 15% | 20% |
+| 3 wind (Swordie / Nova / Barra) | **SPD down** (`+0x164`/`+0x166`) | 5% | 10% | 15% | 20% |
+| 4 thunder (Theeder / Viguro / Gilium) | **INT down** (`+0x168`/`+0x16A`) | 5% | 10% | 15% | 20% |
+| 5 light (Vera / Orb / Spoon) | cure class, party targets (the summon modules read `0x801F6960` as `1..=4`) | 1 | 2 | 3 | 4 |
+| 6 dark (Puera; Nighto stages nothing) | **MP down** - the current MP only (`+0x150`) | 5% | 10% | 15% | 20% |
+
+The band is `(level - 3) >> 1` of the caster's **magic level** for the spell
+(character record `+0x161` array, found by scanning the `+0x13D` id list for
+`actor[+0x1DF]`, `0x20` entries): a level-1 or level-2 spell returns before
+the table is touched (`slti` / `beq` at `0x801F3D90..0x801F3DA0`) and has no
+side effect and no banner at all. The element is the **summon record's**
+`+0x1D` through `0x801C9358` (record-pointer slot 4 = battle slot 7, the
+streamed cast body - the same byte the affinity scale reads), so it is the
+creature's element, never the caster's.
+
+#### The gates, in order
+
+```text
+if level < 3:                                   return          // 0x801F3DA0
+if ctx[+0x287] && summon_el != 5 && rand() % 5 != 0:
+    if affinity[summon_el][first_enemy_el] < 0x65: return       // suppressed
+switch summon_el:                                                // 0x801F3EB4
+  0 2 3 4 6:  if ctx[+0x287] && target is an enemy seat:
+                  compare target BASE halfword vs raw record; differ -> return
+  1:          same compare, in every fight (AGL base +0x156 vs record +0x0E)
+  5 7:        no compare
+stage table[summon_el][band]                                     // 0x801F4420..
+```
+
+`ctx[+0x287]` is the **scripted-fight flag** - bit `0x80` of `DAT_8007BD60`,
+raised by a formation row whose header byte is non-zero (most boss rows; a
+story fight authored on a zero-header row runs under the random rules)
+([`encounter.md`](../formats/encounter.md#the-per-battle-flags-byte-dat_8007bd60)),
+latched by `FUN_800513F0`. It is `4` in every boss capture (Gaza, Cort) and
+`0` in every random-encounter capture, and it splits the roster into two
+regimes:
+
+**Flag clear - random encounters.** No suppression roll, and for earth /
+fire / wind / thunder / dark **no compare**: the debuff lands on every hit and
+stacks multiplicatively (two 10% Gimard hits leave ATK at 81%). Water is the
+one arm whose compare is unconditional, and the finisher moves exactly the
+halfword it compares (`+0x156`), so AGL-down lands **once per battle**.
+
+**Flag set - scripted fights.** First the roll: four casts in five are
+suppressed unless the spell is light or the fight's first enemy is **weak**
+to it - `affinity[summon][enemy] >= 101`, which the
+[matrix](#element-affinity-matrix-fun_801dd864-0x801f53e8) grants to thunder
+against the four base elements (102) and to each opposite pair (104). Then
+the compare, against the first enemy the stager can see (the single target,
+or the first living enemy seat of a group cast). The battle loader has
+already run the **scripted boost profile** on this actor -
+`ATK += ATK>>2`, `UDF/LDF x2`, `INT += INT>>3` on both halfwords
+([battle.md](battle.md#monster-record-source-layout)) - so the ATK, DEF and
+INT base halfwords already differ from the record before the first cast and
+those three debuffs **can never land** (the only exceptions are stats the
+boost cannot move: ATK `< 4`, INT `< 8`, UDF `0`). SPD and AGL are unboosted,
+so they compare equal once and land **once per battle**; MP compares the
+untouched base half (`+0x152`) while the finisher shaves the current half
+(`+0x150`), so MP-down lands on **every hit** that survives the roll.
+
+That is the whole "immunity": a boss is immune to exactly the stats the
+scripted boost inflated. And "once per battle" is literal: the first cast
+that passes moves the halfword the compare reads, so every later cast of
+that element prints "No effect." for the rest of the fight, while a random
+encounter's uncompared arms lower the stat again on every cast. Per record the verdict is
+`legaia_asset::seru_side_effect::Susceptibility::for_record`, and the
+site's enemy table renders it per row, keyed
+on which fight class the disc's formation rows put each monster in
+(`legaia_asset::formation_census`, CLI `asset formation-census`).
+
+The **"No effect."** banner is the other half's: `FUN_801F3C34` runs at the
+summon's return-from-fade (state `0x36`), and when the spell is levelled
+(`>= 3`) but `0x801F6960` is still zero it installs the `0x801CFA20` string
+at `0x800775B4` and fires the same banner id - so a suppressed or
+already-landed effect is announced as a miss, and an unlevelled spell says
+nothing. Its early-out ids `0x85` / `0x8E` / `>= 0x96` are exactly the
+stager-free spells (Nighto, Aluru, the Ra-Seru band).
+
+Engine: the stager and the finisher switch are pure kernels with tests
+(`engine-vm::seru_side_effect::{stage, apply_hit}`; the banner pass is
+`engine-vm::move_no_effect_guard`, live from the SM's state `0x36`). The live
+loop does not yet apply them - `World` keeps one live scalar per stat with no
+base halfword to compare, no SPD / AGL scalar for a monster, and does not
+retain the scripted flag - which is the ready work recorded in
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+
+Dumps: `overlay_muscle_dome_801f3d3c.txt` (the stager - a 0898 body under a
+capture-named file, see `dump-corpus-integrity.md`),
+`overlay_battle_action_801ddb30.txt` `0x801DE60C..`, `80054cb0.txt`
+`0x80055234..` (the profile branch), `801da51c.txt` `0x801DA5F8..` (the flag
+raise). Save-state pins: `ctx[+0x287]` and the installed stat block read off
+the mednafen / PCSX-Redux battle states via `mednafen-state extract` /
+`pcsxr-state extract` (Gaza `ATK 360 UDF 444 LDF 400 INT 247` from record
+`288/222/200/220` with flag `4`; a world-map Gobu Gobu `ATK 17 UDF 25 LDF 24
+INT 12` from `17/15/14/10` with flag `0`).
 
 ## Rewards and costs
 

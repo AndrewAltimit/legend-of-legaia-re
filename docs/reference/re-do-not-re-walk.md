@@ -121,6 +121,39 @@ prim-dispatch family at all. See
 | An action returns its combatants to their authored formation seats | falsified (retail leaves them on the ground the action ended on) | Two library states of one solo fight read the authored formation 1600 apart; two later ones read the same pair ~300 apart and both far off it, with every actor's `+0x3C`/`+0x40` pair within ~110 units of its live `+0x34`/`+0x38`. The port's walk-home leg is gone; the seat is committed from the live pair at `DoneCleanup`. [details](../subsystems/battle-action.md#where-an-action-leaves-its-combatants) |
 | Staged ids `0x10` and `0x1A` **alone** install at dynamic slot `0x11`, every other art-bank id at `0x10` | falsified (`0x10`, `0x1A` and every art constant `>= 0x1B` install at `0x11`; only the base ids `0x11..=0x19` take `0x10`) | [details ↓](#the-dynamic-slot-rewrite-was-never-0x10-and-0x1a-only) |
 
+### The scripted boost profile is "the international release's" profile for every fight
+
+The battle loader `FUN_80054CB0` boosts an enemy's ATK / UDF / LDF / INT as it
+installs the record, choosing between two profiles on `ctx[+0x287]`. A live
+Gaza capture reproduced the flag-set profile (`ATK x5/4, UDF/LDF x2, INT
+x9/8`) byte-for-byte, and the curated bestiary matched it for 120+ enemies,
+so the reading became "the gate-set profile is what the US/PAL build uses"
+and `battle_stats()` returned it as *the* in-battle block. Both premises hold
+and the conclusion is wrong: `ctx[+0x287]` is the **scripted-fight flag**
+(a formation row's non-zero header byte), Gaza is a scripted fight, and the
+bestiary was authored from boss-profile numbers. Every random-encounter save
+state carries `+0x287 == 0` and the *other* profile (`ATK x1, UDF/LDF x7/4,
+INT x5/4`) - a world-map Gobu Gobu with record `17/15/14/10` fights as
+`17/25/24/12`. The site's enemy table and `enemies.toml` both showed random
+natives with boss-fight defence. `MonsterRecord::battle_stats_random` is the
+flag-clear profile; see [battle.md](../subsystems/battle.md#monster-record-source-layout).
+
+### `FUN_801F3D3C` installs a queued-magic follow-up routine
+
+The pair `FUN_801F3C34` / `FUN_801F3D3C` was read as a "queued-magic
+follow-up" latch: the installer picks a record out of `0x801F6870` by
+`[actor class][level band]`, stores its byte `0` as a follow-up id and its
+word `1` as a **routine pointer** at `0x800775B4`, and the reader stays
+silent while a follow-up is pending. The table index is not a class - it is
+the summon record's **element** byte (`(*0x801C9358)[+0x1D]`), the same
+byte the affinity scale reads; the word is a **banner string** pointer (the
+table's strings name the stat and the percent, and the reader's own install
+value `0x801CFA20` is the text "No effect."); and byte `0` is the **percent**
+the damage finisher's per-element switch shaves off the target on every hit.
+The "seven-entry jump table the dump does not cover" is the per-element
+base-vs-record compare inside the same function. Full mechanism:
+[battle-formulas.md](../subsystems/battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch).
+
 ### The dynamic-slot rewrite was never "`0x10` and `0x1A` only"
 
 The decompiled C of `FUN_8004AD80` shows two `0x11` assignments and the

@@ -153,10 +153,11 @@
 //! four of the six combat stats - so the raw record systematically understates
 //! the enemy. The function carries two scaling profiles, selected by the
 //! battle-context flag at `_DAT_8007bd24 + 0x287` (itself
-//! `(*(u8*)0x8007BD60 >> 5) & 4` = bit 7 of a per-battle flags byte, set by the
-//! actor-registration routine `FUN_800513f0`):
+//! `(*(u8*)0x8007BD60 >> 5) & 4` = bit 7 of the per-battle flags byte, which
+//! the entity SM raises for a formation row whose header byte is non-zero -
+//! the **scripted / boss** rows, `docs/formats/encounter.md`):
 //!
-//! | stat | gate-set profile (B) | gate-clear profile (A) |
+//! | stat | flag set - scripted fight | flag clear - random encounter |
 //! |---|---|---|
 //! | `attack` (ATK)          | `+= atk >> 2` (`×5/4`) | unchanged |
 //! | `defense_high` (UDF)    | `× 2`                  | `+= (udf>>1)+(udf>>2)` (`×7/4`) |
@@ -164,15 +165,22 @@
 //! | `intelligence` (INT)    | `+= int >> 3` (`×9/8`) | `+= int >> 2` (`×5/4`) |
 //! | HP / MP / AGL / SPD     | unchanged              | unchanged |
 //!
-//! Both profiles boost; the flag only picks which. The **gate-set profile (B)**
-//! is the one a live international-retail battle capture (Gaza Sim-Seru, id 166)
-//! reproduces byte-for-byte, and the one the curated `enemies.toml` bestiary
-//! matches - so [`MonsterRecord::battle_stats`] returns it as *the* in-battle
-//! stat block. The cross-region origin of this boost (the international US/PAL
-//! build hitting harder than the raw record / the Japanese release) was first
-//! surfaced by **Zetopheonix**; this module pins the mechanism and exact
-//! factors. See `docs/subsystems/battle.md` ("Monster-record source layout" -
-//! the *Battle-load stat boost* note) and `docs/subsystems/battle-formulas.md`.
+//! Both profiles boost; the flag only picks which. Both are pinned live: the
+//! boss captures (Gaza Sim-Seru id 166, Cort) carry `ctx[+0x287] == 4` and the
+//! scripted profile byte-for-byte; every random-encounter capture (a world-map
+//! Gobu Gobu among them) carries `0` and the random profile.
+//! [`MonsterRecord::battle_stats`] returns the scripted profile - the one the
+//! curated `enemies.toml` bestiary holds for every enemy - and
+//! [`MonsterRecord::battle_stats_random`] the random-encounter one;
+//! [`MonsterRecord::battle_stats_for`] picks by fight class. The cross-region
+//! origin of this boost (the international US/PAL build hitting harder than
+//! the raw record / the Japanese release) was first surfaced by
+//! **Zetopheonix**; this module pins the mechanism and exact factors. See
+//! `docs/subsystems/battle.md` ("Monster-record source layout" - the
+//! *Battle-load stat boost* note) and `docs/subsystems/battle-formulas.md`.
+//!
+//! The same flag decides which Seru-magic **side-effect** debuffs can touch
+//! the enemy at all - see [`crate::seru_side_effect`].
 //!
 //! ## Rewards (EXP / gold / drop)
 //!

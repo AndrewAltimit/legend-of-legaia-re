@@ -27,7 +27,7 @@
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x00</code></td><td>1</td><td>scripted-fight predicate</td><td>Non-zero raises the "scripted fight" bit in the <a href="#flags-byte">per-battle flags byte</a>. On a MAN row it is authored per row; for an inline arm it is the install opcode itself.</td></tr>
+      <tr><td><code>+0x00</code></td><td>1</td><td>scripted-fight predicate</td><td>Non-zero raises the "scripted fight" bit in the <a href="#flags-byte">per-battle flags byte</a>. On a MAN row it is authored per row; for an inline arm it is the install opcode itself. The raised bit is what makes a fight a "boss" fight: it picks the harder enemy stat-boost profile, blocks the escape roll, and gates the Seru-magic side-effects (see the <a href="../monsters.html#side-effects">enemy table</a>).</td></tr>
       <tr><td><code>+0x01</code></td><td>2</td><td>reserved</td><td>Not consumed (opcode operands, or scratch on a MAN row).</td></tr>
       <tr><td><code>+0x03</code></td><td>1</td><td><code>monster_count</code></td><td><code>0..=4</code>.</td></tr>
       <tr><td><code>+0x04</code></td><td><code>count</code></td><td><code>monster_ids[]</code></td><td>Each id indexes the <a href="../monsters.html">monster archive</a> (PROT 867).</td></tr>

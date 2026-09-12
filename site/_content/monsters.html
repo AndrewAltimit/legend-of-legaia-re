@@ -21,19 +21,76 @@
 .enemy-table-statmode input { cursor: pointer; }
 /* Combat stats the battle loader boosts: tint them while the in-battle view is on. */
 table.enemy-table.show-inbattle tbody td.col-boosted { color: var(--accent); }
-.enemy-table-table-wrap { border: 1px solid var(--border); background: var(--bg-card); overflow-x: auto; }
+.enemy-table-statview {
+  display: inline-flex; gap: 0.4rem; align-items: center; max-width: 100%; min-width: 0;
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 0.82rem;
+}
+.enemy-table-statview select {
+  background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
+  padding: 0.3rem 0.5rem; font-family: var(--font-mono); font-size: 0.82rem; min-width: 0; max-width: 100%;
+}
+/* Fight class the disc's formation rows put the enemy in. */
+table.enemy-table tbody td.col-fight { text-align: center; }
+.fight-tag {
+  display: inline-block; padding: 0 0.4rem; border-radius: 3px; font-size: 0.72rem;
+  letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.fight-tag.is-boss { border-color: var(--accent); color: var(--accent); }
+/* Seru-magic side-effect chips: one per debuff the game can inflict, in one
+   of three looks (solid = stacks, dashed = once, struck = never). The legend
+   in the toolbar shows the same three chips with their words. */
+table.enemy-table tbody td.col-debuffs { text-align: left; white-space: nowrap; }
+.debuff-chip {
+  display: inline-block; min-width: 2.2em; text-align: center; margin-right: 0.1rem;
+  padding: 0 0.2rem; border-radius: 3px; font-size: 0.72rem; line-height: 1.5;
+  border: 1px solid var(--border); color: var(--text); background: var(--bg-raised);
+}
+.debuff-chip.is-once { border-style: dashed; color: var(--text-muted); background: transparent; }
+.debuff-chip.is-never { color: var(--text-dim); text-decoration: line-through; background: transparent; border-color: transparent; }
+.debuff-legend {
+  display: inline-flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; align-items: center;
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 0.76rem;
+}
+.debuff-legend .debuff-chip { margin-right: 0.3rem; }
+/* Expanded row: the per-enemy side-effect breakdown beside the model. The
+   enemy table's own right-aligned, padded td rule reaches into this nested
+   table, so alignment and padding are restated at higher specificity. */
+.mesh-side-effects { margin-top: 0.7rem; max-width: 100%; overflow-x: auto; }
+.mesh-side-effects table { border-collapse: collapse; font-size: 0.78rem; margin-top: 0.3rem; width: 100%; max-width: 720px; }
+table.enemy-table tbody .mesh-side-effects th,
+table.enemy-table tbody .mesh-side-effects td {
+  padding: 0.3rem 1rem 0.3rem 0; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap;
+}
+.mesh-side-effects th { color: var(--text-dim); font-weight: normal; }
+/* The column (or row) for the fight this enemy is met in: tinted and marked
+   "applies"; the other one dimmed. An enemy met both ways gets neither. */
+.mesh-side-effects th.is-met, .mesh-side-effects td.is-met, .mesh-side-effects tr.is-met td {
+  color: var(--text); background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.mesh-side-effects th.is-met { color: var(--accent); }
+.mesh-side-effects th.is-met::after { content: " · applies"; font-size: 0.66rem; letter-spacing: 0.06em; }
+.mesh-side-effects th.is-other, .mesh-side-effects td.is-other, .mesh-side-effects tr.is-other td { color: var(--text-dim); }
+.mesh-side-effects th.is-met, .mesh-side-effects td.is-met, .mesh-side-effects th.is-other, .mesh-side-effects td.is-other { padding-left: 0.5rem; }
+.mesh-met { margin: 0.35rem 0 0.2rem; color: var(--text-muted); font-size: 0.78rem; line-height: 1.5; }
+.mesh-met .fight-tag { margin-right: 0.35rem; vertical-align: 1px; }
+.mesh-met b { color: var(--text); }
+.mesh-side-effects .why { color: var(--text-dim); font-size: 0.74rem; margin-top: 0.55rem; line-height: 1.5; max-width: 720px; }
+/* Carries `table-wrap` too, so layout.js does not nest a second scroller inside it (the
+   detail row is pinned to this one). The shared rule's outer margin is dropped: the shell gap spaces it. */
+.enemy-table-table-wrap { border: 1px solid var(--border); border-radius: 4px; background: var(--bg-card); overflow-x: auto; margin: 0; }
 table.enemy-table {
   border-collapse: collapse; width: 100%;
   font-family: var(--font-mono); font-size: 0.8rem;
 }
 table.enemy-table thead th {
   position: sticky; top: 0; background: var(--bg-raised); color: var(--text);
-  text-align: right; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border);
+  text-align: right; padding: 0.5rem 0.45rem; border-bottom: 1px solid var(--border);
   cursor: pointer; user-select: none; white-space: nowrap;
 }
 table.enemy-table thead th.col-name { text-align: left; }
 table.enemy-table thead th .arrow { color: var(--accent); font-size: 0.7rem; margin-left: 0.2rem; }
-table.enemy-table tbody td { padding: 0.4rem 0.7rem; border-bottom: 1px solid var(--border); text-align: right; }
+table.enemy-table tbody td { padding: 0.35rem 0.45rem; border-bottom: 1px solid var(--border); text-align: right; }
 table.enemy-table tbody td.col-name { text-align: left; color: var(--text); }
 table.enemy-table tbody td.col-id { color: var(--accent); }
 table.enemy-table tbody tr:hover { background: var(--bg-raised); cursor: pointer; }
@@ -44,10 +101,17 @@ table.enemy-table tbody tr.selected td.col-mesh { color: var(--accent); }
 
 /* Inline per-row 3D mesh viewer: an expanded detail row injected right
    beneath the clicked row. */
-tr.mesh-detail-row > td { padding: 0 !important; background: var(--bg-code); border-bottom: 1px solid var(--border); }
+/* Specificity beats the enemy table's right-aligned td rule, which would otherwise reach every line of the panel. */
+table.enemy-table tbody tr.mesh-detail-row > td { padding: 0 !important; background: var(--bg-code); border-bottom: 1px solid var(--border); text-align: left; }
 .mesh-detail-inner {
-  display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-start;
-  padding: 0.85rem 0.9rem;
+  display: flex; gap: 1rem 1.5rem; flex-wrap: wrap; align-items: flex-start;
+  padding: 0.85rem 0.9rem; box-sizing: border-box;
+  /* The table is wider than its scroll container and this row spans all of
+     it; sticky at the left edge keeps the panel in the visible part instead
+     of riding along with the sideways scroll. Its width is synced to the
+     container by script (there is no CSS length for "the scroller's width"
+     from inside a table cell). */
+  position: sticky; left: 0;
 }
 .mesh-viewer-canvas-wrap { position: relative; }
 canvas.mesh-viewer-canvas {
@@ -56,7 +120,7 @@ canvas.mesh-viewer-canvas {
   border: 1px solid var(--border); display: block; cursor: grab;
 }
 canvas.mesh-viewer-canvas:active { cursor: grabbing; }
-.mesh-viewer-side { flex: 1 1 240px; min-width: 220px; font-family: var(--font-mono); font-size: 0.82rem; }
+.mesh-viewer-side { flex: 1 1 320px; min-width: 0; font-family: var(--font-mono); font-size: 0.82rem; }
 .mesh-viewer-side h3 { margin: 0 0 0.3rem; color: var(--text); font-size: 1rem; }
 .mesh-viewer-side .mesh-stat { color: var(--text-muted); }
 .mesh-viewer-side .mesh-stat b { color: var(--text); }
@@ -75,7 +139,6 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 }
 .mesh-anim-btn:hover { border-color: var(--accent); color: var(--text); }
 .mesh-anim-btn.is-active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
-.mesh-viewer-hint { color: var(--text-dim); font-size: 0.74rem; margin-top: 0.5rem; line-height: 1.5; max-width: 42ch; }
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/disc-info.js"></script>
@@ -97,14 +160,22 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   <div class="enemy-table-shell">
     <div class="enemy-table-toolbar" id="enemy-table-toolbar" style="display: none;">
       <input type="search" id="enemy-table-filter" placeholder="Filter by name or id…">
-      <label class="enemy-table-statmode" title="The international (US/PAL) release boosts enemy combat stats when a battle loads: ATK ×5/4, UDF/LDF ×2, INT ×9/8 over the raw on-disc record. Toggle off to see the raw record bytes.">
-        <input type="checkbox" id="enemy-table-inbattle" checked>
-        Show international release stats
+      <label class="enemy-table-statview" title="The raw record on the disc is not what you fight: the battle loader boosts ATK / UDF / LDF / INT as it installs each enemy. A boss fight (one the game will not let you run from) gets ATK ×5/4, UDF/LDF ×2, INT ×9/8; a random encounter gets ATK ×1, UDF/LDF ×7/4, INT ×5/4. 'In battle' shows each enemy the way it is met (its Met column).">
+        Stats
+        <select id="enemy-table-statview">
+          <option value="battle" selected>in battle</option>
+          <option value="raw">raw disc record</option>
+        </select>
       </label>
       <span class="enemy-table-count" id="enemy-table-count"></span>
+      <span class="debuff-legend" title="Seru side-effect chips. Solid: every cast lands and the drops stack. Dashed: the first cast lands, every later cast of that element prints 'No effect.'. Struck through: never lands. The Seru side-effects column and the section below the table explain why.">
+        <span><span class="debuff-chip">DEF</span>stacks</span>
+        <span><span class="debuff-chip is-once">SPD</span>once, then "No effect."</span>
+        <span><span class="debuff-chip is-never">ATK</span>never</span>
+      </span>
     </div>
 
-    <div class="enemy-table-table-wrap" id="enemy-table-table-wrap" style="display: none;">
+    <div class="table-wrap enemy-table-table-wrap" id="enemy-table-table-wrap" style="display: none;">
       <table class="enemy-table">
         <thead>
           <tr id="enemy-table-head">
@@ -119,7 +190,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             <th data-key="s5" title="Speed - battle turn order.">SPD</th>
             <th data-key="s0" title="Agility - the action gauge the enemy spends to act.">AGL</th>
             <th data-key="element" title="Element - shifts elemental damage dealt and taken.">Elem</th>
-            <th data-key="magic" title="Number of spell slots in the record.">Magic</th>
+            <th data-key="fight" class="col-fight" title="How the disc's formation rows meet this enemy: a boss fight (the game's no-escape switch is on - its formation row sets it, or the story starts the fight from script), a random encounter, or both. The same switch picks the stat-boost profile and which Seru side-effects can land.">Met</th>
+            <th data-key="debuffs" class="col-debuffs" title="Which Seru-magic stat debuffs can land on this enemy in the fight it is met in. Solid: every cast lands and the drops stack. Dashed: the first cast lands, every later cast of that element prints 'No effect.'. Struck through: never lands. Hover a chip for the reason; open the row for the full breakdown.">Seru side-effects</th>
             <th data-key="castable" class="col-name" title="The enemy's named magic attacks and their MP cost.">Magic attacks (MP)</th>
             <th data-key="exp" title="Base EXP reward.">EXP</th>
             <th data-key="gold" title="Base gold reward.">Gold</th>
@@ -150,6 +222,10 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     <dd>The action gauge the enemy spends to act each round (the in-game "Power Up" buff raises it).</dd>
     <dt><strong>Elem</strong></dt>
     <dd>The monster's element. Its effect on damage is small: same element 96%, opposed element 104%, anything else 100% - and an Art applies it twice.</dd>
+    <dt><strong>Met</strong></dt>
+    <dd>The game keeps <strong>one switch per fight</strong>, read off the formation row on the disc (or set outright when the story starts the fight from its own script). When it is on, three things follow: <strong>you cannot run away</strong>, the enemies get the stronger stat boost, and the side-effect checks below apply. Every boss and story fight captured so far has it on (Gaza, Cort), every random encounter has it off - so the quick test in play is whether the game lets you escape. This page calls fights with the switch on <em>boss</em> fights. <em>boss</em>: met only in rows with the switch on, or started from script. <em>random</em>: in rows a region can roll. <em>story</em>: started by the story, but on a row whose switch is off - a handful of fights sit there and run under the random-encounter rules (not yet confirmed in play). <em>both</em>: appearances of each kind. There is no per-monster boss byte; the switch belongs to the fight.</dd>
+    <dt><strong>Seru side-effects</strong></dt>
+    <dd>Which of the six stat debuffs your Seru magic can put on this enemy, in the fight it is met in. A <strong>solid</strong> chip: every cast lands and the drops stack. A <strong>dashed</strong> chip: the first cast lands, and every later cast of that element prints "No effect." for the rest of the battle. A <strong>struck-through</strong> chip never lands. Hover a chip for the reason; open the row for both fight classes side by side. The rules are in the section below.</dd>
     <dt><strong>EXP / Gold</strong></dt>
     <dd>Base rewards. The game scales them down at the end of a fight: EXP is reduced then split among the party, gold lands at roughly a quarter to a third of the base.</dd>
     <dt><strong>Drop</strong></dt>
@@ -162,8 +238,43 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   <p class="hint">Names for spells, drops and steals resolve from a full disc image; a raw <code>PROT.DAT</code> shows raw ids instead, and no steal column - that table lives in the executable, not in PROT.DAT.</p>
 
   <div class="notice">
-    <div class="notice-title">The international release is harder than the Japanese one</div>
-    <p>The <strong>ATK / UDF / LDF / INT</strong> columns default to the <em>in-battle</em> values, because the raw record on the disc is not what you fight: the US / PAL battle loader boosts those four stats as it installs each enemy - ATK ×5/4, UDF ×2, LDF ×2, INT ×9/8 (HP, MP, AGL and SPD are unchanged). This cross-region difference was first surfaced by <strong>Zetopheonix</strong>. Untick <strong>Show international release stats</strong> to see the raw record.</p>
+    <div class="notice-title">The stats you fight depend on the kind of fight</div>
+    <p>The <strong>ATK / UDF / LDF / INT</strong> columns default to <em>in-battle</em> values, because the raw record on the disc is not what you fight: the battle loader boosts those four stats as it installs each enemy, and it has two profiles. A <strong>boss fight</strong> (the no-escape switch on, see <strong>Met</strong> above) installs ATK ×5/4, UDF ×2, LDF ×2, INT ×9/8; a <strong>random encounter</strong> installs ATK ×1, UDF ×7/4, LDF ×7/4, INT ×5/4 (HP, MP, AGL and SPD are never changed). Both are pinned from save states - Gaza and Cort carry the switch and the first profile, every random-encounter capture the second. The table shows each enemy the way it is met (its <strong>Met</strong> column); the <strong>Stats</strong> selector switches to the raw record. Only one enemy on the disc is met both ways (Kemaro, in four boss rows and eight random rows): its row shows the random-encounter values, and its expanded panel shows both. Walkthrough bestiaries list the boss-fight numbers for every enemy, which overstates a random native's defence by 8/7. The cross-region difficulty difference itself (international retail hitting harder than the raw record) was first surfaced by <strong>Zetopheonix</strong>.</p>
+  </div>
+</section>
+
+<section class="doc-section" id="side-effects">
+  <h2>Seru-magic side-effects: what a boss is really "immune" to</h2>
+  <p>Every Seru spell at magic level 3 or more does something besides damage: it shaves a percentage off one of the target's stats, chosen by the summoned creature's element. The size is the same for every element and depends only on the spell's magic level: <strong>5%</strong> at level 3-4, <strong>10%</strong> at 5-6, <strong>15%</strong> at 7-8, <strong>20%</strong> at 9. The light spells cure the party instead, on the same ladder (cure class 1 to 4).</p>
+  <table class="layout narrow">
+    <thead><tr><th>Element</th><th>Spells</th><th>Effect on the target</th></tr></thead>
+    <tbody>
+      <tr><td>earth</td><td>Mushura, Kemaro, Iota</td><td><strong>DEF down</strong> (UDF and LDF)</td></tr>
+      <tr><td>water</td><td>Gizam, Freed, Slippery</td><td><strong>AGL down</strong> (the action gauge)</td></tr>
+      <tr><td>fire</td><td>Gimard, Zenoir, Gola Gola</td><td><strong>ATK down</strong></td></tr>
+      <tr><td>wind</td><td>Swordie, Nova, Barra</td><td><strong>SPD down</strong></td></tr>
+      <tr><td>thunder</td><td>Theeder, Viguro, Gilium</td><td><strong>INT down</strong></td></tr>
+      <tr><td>light</td><td>Vera, Orb, Spoon</td><td>a cure on the party, not a debuff</td></tr>
+      <tr><td>dark</td><td>Puera</td><td><strong>MP down</strong> (current MP)</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">Nighto, Aluru and the Ra-Seru spells have no side-effect at all. A level-1 or level-2 spell has none either, and shows no banner.</p>
+  <p>There is <strong>no per-enemy immunity table</strong>: the monster record has no such field, and no battle code reads one. What plays as immunity comes from one check the game makes before applying the effect, and from the kind of fight you are in.</p>
+  <dl class="kv">
+    <dt><strong>The check</strong></dt>
+    <dd>Before applying a debuff, the game compares the target's current base stat with the value on its disc record. Equal: the effect goes through. Different: it prints <strong>"No effect."</strong> A debuff that lands changes that base stat, so the same debuff cannot pass the check a second time. That is what <em>once</em> means in the table: the first cast works, and every later cast of that element says "No effect." for the rest of the battle.</dd>
+    <dt><strong>Random encounters</strong></dt>
+    <dd>The check is skipped for everything except AGL, so every cast lands and the drops <em>stack</em>: two level-5 Gimard casts leave ATK at 81% of where it started, a third at 73%. AGL-down is checked in every kind of fight and so lands once.</dd>
+    <dt><strong>Boss fights</strong> (the no-escape switch on)</dt>
+    <dd>Two things change. First a roll: four casts in five are thrown away before the check, unless the spell is light or the enemy is <em>weak</em> to it (thunder against earth / water / fire / wind enemies, or the opposite element: earth&harr;wind, water&harr;fire, light&harr;dark). Then the check runs for every element - and the battle loader already raised a boss's ATK, DEF and INT when it set the fight up (the boost profile in the notice above), so for those three stats the base and the record differ before you cast anything. <strong>ATK-down, DEF-down and INT-down never land on a boss.</strong> SPD and AGL are not boosted, so they land once. MP-down is checked against a value the effect never changes, so it lands on every cast that survives the roll. That is the pattern players notice as "SPD-down works but ATK-down never does".</dd>
+    <dt><strong>Worked example</strong></dt>
+    <dd>Against Gaza with Swordie at magic level 5: the first cast that gets past the roll lowers SPD by 10%. Cast Swordie again and the game says "No effect.", because SPD no longer matches the record. Gimard at any level says "No effect." from the first cast, because Gaza's ATK was boosted ×5/4 at load. Puera keeps taking 10% of Gaza's current MP on every cast that survives the roll. Against a random Gobu Gobu, every Swordie and every Gimard cast lands, and each one lowers the stat again.</dd>
+  </dl>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="subsystems/battle-formulas.html#seru-side-effects">Battle formulas - Seru-magic side-effects</a>
+    <a href="formats/encounter.html#flags-byte">Encounter rows and the no-escape switch</a>
+    <a href="magic.html#side-effects">Seru magic - side-effects by spell</a>
   </div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -228,15 +339,15 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   let records = [];        // normalized {id,name,hp,mp,s0..s5,magic}
   let sortKey = 'id';
   let sortDir = 1;         // 1 = asc, -1 = desc
-  const inBattleEl = document.getElementById('enemy-table-inbattle');
-  let inBattle = inBattleEl ? inBattleEl.checked : true;  // show the boosted in-battle stats
+  const statViewEl = document.getElementById('enemy-table-statview');
+  let statView = statViewEl ? statViewEl.value : 'battle';  // battle | raw
 
   // The raw monster record is NOT what the player fights: the battle loader
-  // (FUN_80054cb0) boosts four combat stats when it installs the enemy. This
-  // mirrors the gate-set profile the international retail build uses (and that
-  // MonsterRecord::battle_stats() returns) - kept here as a fallback for cached
-  // wasm builds that predate the JSON's `battle_stats` field.
-  function boostStats(s) {
+  // (FUN_80054cb0) boosts four combat stats when it installs the enemy, and
+  // picks one of two profiles by the fight's scripted flag (ctx+0x287). These
+  // mirror MonsterRecord::battle_stats() / battle_stats_random() - kept here
+  // as fallbacks for cached wasm builds that predate the JSON fields.
+  function boostScripted(s) {
     return [
       s[0],                  // AGL - unchanged
       s[1] + (s[1] >> 2),    // ATK + ATK>>2  (×5/4)
@@ -246,15 +357,62 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       s[5],                  // SPD - unchanged
     ];
   }
+  function boostRandom(s) {
+    return [
+      s[0],                              // AGL - unchanged
+      s[1],                              // ATK - unchanged
+      s[2] + (s[2] >> 1) + (s[2] >> 2),  // UDF ×7/4
+      s[3] + (s[3] >> 1) + (s[3] >> 2),  // LDF ×7/4
+      s[4] + (s[4] >> 2),                // INT + INT>>2  (×5/4)
+      s[5],                              // SPD - unchanged
+    ];
+  }
 
-  // Point r.s0..r.s5 at either the raw record or the boosted in-battle stats,
-  // so sort + render (which read s0..s5) follow the active view.
+  // Point r.s0..r.s5 at the stat block the active view asks for, so sort +
+  // render (which read s0..s5) follow it. 'battle' picks per enemy: the boss
+  // profile for an enemy the disc meets only in boss fights, the random
+  // profile otherwise (the one enemy met both ways shows its random side
+  // here and both in its panel).
   function applyView() {
-    const src = inBattle ? 'bs' : 'rs';
     for (const r of records) {
+      const src = statView === 'raw' ? 'rs' : (r.fightScripted ? 'bs' : 'ns');
       for (let i = 0; i < 6; i++) r['s' + i] = r[src + i];
     }
   }
+
+  // Seru-magic side-effects (the element debuffs). Order + labels follow the
+  // side-effect table's element rows (earth DEF, water AGL, fire ATK, wind
+  // SPD, thunder INT, dark MP); the JS fallback verdicts mirror
+  // legaia_asset::seru_side_effect::Susceptibility::for_record.
+  const DEBUFF_KINDS = [
+    { key: 'DEF', element: 'earth',   spells: 'Mushura / Kemaro / Iota' },
+    { key: 'AGL', element: 'water',   spells: 'Gizam / Freed / Slippery' },
+    { key: 'ATK', element: 'fire',    spells: 'Gimard / Zenoir / Gola Gola' },
+    { key: 'SPD', element: 'wind',    spells: 'Swordie / Nova / Barra' },
+    { key: 'INT', element: 'thunder', spells: 'Theeder / Viguro / Gilium' },
+    { key: 'MP',  element: 'dark',    spells: 'Puera (Nighto has no side-effect)' },
+  ];
+  function verdictsFor(s, scripted) {
+    if (!scripted) return ['every_hit', 'once', 'every_hit', 'every_hit', 'every_hit', 'every_hit'];
+    const once = (unchanged) => (unchanged ? 'once' : 'never');
+    return [
+      once(s[2] === 0),        // DEF: UDF ×2 leaves only 0 unchanged
+      'once',                  // AGL: unboosted base, moved by the hit
+      once((s[1] >> 2) === 0), // ATK: += ATK>>2
+      'once',                  // SPD: unboosted base, moved by the hit
+      once((s[4] >> 3) === 0), // INT: += INT>>3
+      'every_hit',             // MP: the compare reads the base half, the hit moves the current half
+    ];
+  }
+  // Opposite-element pairs of the affinity matrix (104%) plus thunder's 102%
+  // row: the spell elements that skip a boss fight's 80% suppression roll.
+  const RESIST_BYPASS_FALLBACK = {
+    earth: ['wind', 'thunder'], water: ['fire', 'thunder'], fire: ['water', 'thunder'],
+    wind: ['earth', 'thunder'], thunder: [], light: ['dark'], dark: ['light'], neutral: [],
+  };
+  const VERDICT_LABEL = { every_hit: 'stacks', once: 'once', never: 'never' };
+  const VERDICT_CLASS = { every_hit: 'is-hit', once: 'is-once', never: 'is-never' };
+  const VERDICT_SCORE = { every_hit: 2, once: 1, never: 0 };
   let viewer = null;       // WASM LegaiaViewer (hoisted so the mesh view can call it)
   let selectedId = null;   // currently-rendered monster id
   let meshView = null;     // MonsterMeshView (lazily created on first selection)
@@ -265,13 +423,30 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     const s = r.stats || [];
     // Raw on-disc record stats (rs*) and the boosted in-battle stats (bs*).
     // Prefer the wasm-computed battle_stats; fall back to the JS boost.
-    const b = (r.battle_stats && r.battle_stats.length === 6) ? r.battle_stats : boostStats(s);
+    const b = (r.battle_stats && r.battle_stats.length === 6) ? r.battle_stats : boostScripted(s);
+    const n = (r.battle_stats_random && r.battle_stats_random.length === 6) ? r.battle_stats_random : boostRandom(s);
+    // Fight class from the disc's formation rows (legaia_asset::formation_census):
+    // scripted when only flagged rows (or no row at all - a script-placed
+    // fight) name this id. Older wasm builds carry no census; treat as random.
+    const fights = r.fights || { flagged: 0, clear: 1, random: 1, scripted: false };
+    const fightScripted = !!fights.scripted;
+    const se = r.side_effects || {};
+    const elementName = r.element_name || 'neutral';
     return {
       id: r.id, name: r.name, hp: r.hp, mp: r.mp,
       rs0: s[0] ?? 0, rs1: s[1] ?? 0, rs2: s[2] ?? 0,
       rs3: s[3] ?? 0, rs4: s[4] ?? 0, rs5: s[5] ?? 0,
       bs0: b[0] ?? 0, bs1: b[1] ?? 0, bs2: b[2] ?? 0,
       bs3: b[3] ?? 0, bs4: b[4] ?? 0, bs5: b[5] ?? 0,
+      ns0: n[0] ?? 0, ns1: n[1] ?? 0, ns2: n[2] ?? 0,
+      ns3: n[3] ?? 0, ns4: n[4] ?? 0, ns5: n[5] ?? 0,
+      fights, fightScripted,
+      // Sort key + tag: 0 random rows, 1 script-placed rows without the
+      // flag, 2 both kinds, 3 flagged rows only (or no row: inline script).
+      fight: fightScripted ? 3 : (fights.flagged > 0 ? 2 : (fights.random > 0 ? 0 : 1)),
+      seScripted: (se.scripted && se.scripted.length === 6) ? se.scripted : verdictsFor(s, true),
+      seRandom: (se.random && se.random.length === 6) ? se.random : verdictsFor(s, false),
+      resistBypass: r.resist_bypass || RESIST_BYPASS_FALLBACK[elementName] || [],
       // s0..s5 are set by applyView() to the active (raw / in-battle) view.
       s0: s[0] ?? 0, s1: s[1] ?? 0, s2: s[2] ?? 0,
       s3: s[3] ?? 0, s4: s[4] ?? 0, s5: s[5] ?? 0,
@@ -284,6 +459,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       // the SCUS spell table). `castable` doubles as the sort key + dim flag.
       magicAttacks: r.magic || [],
       castable: (r.magic || []).length,
+      // Sort key for the side-effect column: how much of the six can land.
+      debuffs: 0,
       exp: r.exp ?? 0, gold: r.gold ?? 0,
       drop_item: r.drop_item ?? 0, drop_chance: r.drop_chance_pct ?? 0,
       // Resolved from the SCUS item-name table when a full disc image is
@@ -315,6 +492,75 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     return r.element_name || ('#' + r.element);
   }
 
+  // The verdict set the table shows: the fight class this enemy is met in.
+  function activeVerdicts(r) {
+    return r.fightScripted ? r.seScripted : r.seRandom;
+  }
+  function debuffScore(r) {
+    return activeVerdicts(r).reduce((acc, v) => acc + (VERDICT_SCORE[v] ?? 0), 0);
+  }
+  function fmtFight(r) {
+    if (r.fight === 3) return '<span class="fight-tag is-boss" title="Met only in boss fights: the no-escape switch is on - its formation rows set it, or the story starts the fight from script. The boss stat-boost profile applies and the side-effect checks are the boss ones.">boss</span>';
+    if (r.fight === 2) return '<span class="fight-tag" title="Met both ways: in random-encounter rows and in at least one boss fight. The table shows the random side; the boss rules apply in its boss appearance.">both</span>';
+    if (r.fight === 1) return '<span class="fight-tag" title="Started by the story, but on a formation row whose no-escape switch is off - by the data on the disc the game runs it under the random-encounter rules (random boost profile, every side-effect lands). Not yet confirmed in play.">story</span>';
+    return '<span class="fight-tag" title="Met in random encounters (rows a region can roll).">random</span>';
+  }
+  function chipTitle(r, i, v) {
+    const k = DEBUFF_KINDS[i];
+    const scripted = r.fightScripted;
+    let why;
+    if (v === 'never') {
+      why = `never lands: before applying the effect the game checks the target's ${k.key} against its disc record, and the boss-fight boost already raised this enemy's ${k.key} at load, so every cast prints "No effect."`;
+    } else if (v === 'once') {
+      why = scripted
+        ? `lands once: ${k.key} is not boosted in a boss fight, so the first cast passes the record check and lowers ${k.key}; every later cast prints "No effect."`
+        : `lands once: AGL is checked against the record in every kind of fight, and the first cast moves it; every later cast prints "No effect."`;
+    } else {
+      why = scripted
+        ? `lands on every cast that survives the roll (the check reads a value the effect never changes)`
+        : `lands on every cast and stacks (random encounters skip the record check)`;
+    }
+    const roll = scripted
+      ? ` In a boss fight 4 casts in 5 are thrown away before the check unless the spell is ${r.resistBypass.length ? r.resistBypass.join(' or ') : 'light'}.`
+      : '';
+    return `${k.key} down (${k.element}: ${k.spells}) - ${why}.${roll} Size: 5 / 10 / 15 / 20% at magic level 3-4 / 5-6 / 7-8 / 9.`;
+  }
+  function fmtDebuffs(r) {
+    const v = activeVerdicts(r);
+    return DEBUFF_KINDS.map((k, i) =>
+      `<span class="debuff-chip ${VERDICT_CLASS[v[i]] || ''}" title="${escapeHtml(chipTitle(r, i, v[i]))}">${k.key}</span>`
+    ).join('');
+  }
+  // The expanded-row breakdown: both fight classes side by side.
+  function sideEffectPanel(r) {
+    const metCls = (scripted) => (r.fight === 2 ? '' : (scripted === r.fightScripted ? ' class="is-met"' : ' class="is-other"'));
+    const rows = DEBUFF_KINDS.map((k, i) =>
+      `<tr><td><b>${k.key}</b> down</td><td>${escapeHtml(k.element)}</td>` +
+      `<td${metCls(false)}>${VERDICT_LABEL[r.seRandom[i]] || '-'}</td><td${metCls(true)}>${VERDICT_LABEL[r.seScripted[i]] || '-'}</td></tr>`
+    ).join('');
+    const metLine = r.fight === 2
+      ? 'Met <b>both ways</b>: in random encounters (this row) and in boss fights. Read the column for the fight you are in.'
+      : r.fightScripted
+        ? 'Met in <b>boss fights</b> (the game will not let you run), so the <b>Boss fight</b> column applies.'
+        : r.fight === 1
+          ? 'A story fight on a row whose no-escape switch is off, so the <b>Random encounter</b> column applies.'
+          : 'Met in <b>random encounters</b>, so the <b>Random encounter</b> column applies.';
+    const bypass = r.resistBypass.length ? r.resistBypass.join(' / ') : 'light';
+    const profiles = r.fight !== 2 ? '' : `
+      <div class="mesh-anim-label">Stats by kind of fight</div>
+      <table><thead><tr><th>Met as</th><th>ATK</th><th>UDF</th><th>LDF</th><th>INT</th></tr></thead><tbody>
+        <tr><td>random encounter (this row)</td><td>${r.ns1}</td><td>${r.ns2}</td><td>${r.ns3}</td><td>${r.ns4}</td></tr>
+        <tr><td>boss fight</td><td>${r.bs1}</td><td>${r.bs2}</td><td>${r.bs3}</td><td>${r.bs4}</td></tr>
+        <tr><td>raw disc record</td><td>${r.rs1}</td><td>${r.rs2}</td><td>${r.rs3}</td><td>${r.rs4}</td></tr>
+      </tbody></table>`;
+    return `<div class="mesh-side-effects">${profiles}
+      <div class="mesh-anim-label">Seru-magic side-effects</div>
+      <div class="mesh-met">${fmtFight(r)}${metLine}</div>
+      <table><thead><tr><th>Effect</th><th>Spell element</th><th${metCls(false)}>Random encounter</th><th${metCls(true)}>Boss fight</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="why"><b>once</b>: the first cast lands, every later cast of that element prints "No effect.". <b>stacks</b>: every cast lands and lowers the stat again. Size 5% at magic level 3-4, 10% at 5-6, 15% at 7-8, 20% at 9. In a boss fight four casts in five are thrown away first unless the spell is <b>${escapeHtml(bypass)}</b> (${escapeHtml(r.element_name || 'neutral')} enemy). No per-enemy immunity exists on the disc - see <a href="subsystems/battle-formulas.html#seru-side-effects">battle formulas</a>.</p>
+    </div>`;
+  }
+
   // Named magic attacks: resolved spell name (+ MP cost) from the SCUS spell
   // table, falling back to the raw global id when no name is loaded.
   function fmtMagic(magic) {
@@ -333,7 +579,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
   function render() {
     const tableEl = tableWrap.querySelector('table.enemy-table');
-    if (tableEl) tableEl.classList.toggle('show-inbattle', inBattle);
+    if (tableEl) tableEl.classList.toggle('show-inbattle', statView !== 'raw');
+    for (const r of records) r.debuffs = debuffScore(r);
     const q = (filterInput.value || '').trim().toLowerCase();
     let rows = records;
     if (q) {
@@ -359,7 +606,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         <td>${r.s5}</td>
         <td>${r.s0}</td>
         <td class="${r.element === 7 ? 'dim' : ''}">${escapeHtml(fmtElement(r))}</td>
-        <td class="${r.magic ? '' : 'dim'}">${r.magic}</td>
+        <td class="col-fight">${fmtFight(r)}</td>
+        <td class="col-debuffs">${fmtDebuffs(r)}</td>
         <td class="col-name ${r.castable ? '' : 'dim'}">${escapeHtml(fmtMagic(r.magicAttacks))}</td>
         <td>${r.exp}</td>
         <td>${r.gold}</td>
@@ -397,9 +645,9 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   });
   filterInput.addEventListener('input', render);
 
-  if (inBattleEl) {
-    inBattleEl.addEventListener('change', () => {
-      inBattle = inBattleEl.checked;
+  if (statViewEl) {
+    statViewEl.addEventListener('change', () => {
+      statView = statViewEl.value;
       applyView();
       render();
     });
@@ -813,6 +1061,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   // Number of <th> columns the expanded detail cell must span.
   const COLSPAN = head.querySelectorAll('th').length;
   let detailRow = null;   // persistent <tr> node (canvas + GL context survive re-renders)
+  let syncDetailWidth = () => {};  // set by ensureDetailRow; re-run whenever the row is (re)inserted
 
   // Build the persistent expandable detail row once. The canvas/WebGL viewer
   // are created lazily on first use and reused; we only ever move the row in
@@ -838,15 +1087,19 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             </div>
             <div class="mesh-anim-label" id="mesh-anim-label" style="display:none">Animation</div>
             <div class="mesh-anim-actions" id="mesh-anim-actions"></div>
-            <p class="mesh-viewer-hint">
-              Drag to orbit · scroll to zoom · double-click to reset.
-              Textured, directional-lit, playing the selected action.
-            </p>
+            <div id="mesh-side-effects"></div>
           </div>
         </div>
       </td>`;
     // Stop row clicks inside the detail row from re-toggling the parent row.
     detailRow.addEventListener('click', (e) => e.stopPropagation());
+    // Pin the panel to the scroll container's visible width (see the
+    // .mesh-detail-inner CSS note): the row itself is as wide as the table.
+    const inner = detailRow.querySelector('.mesh-detail-inner');
+    const scroller = document.getElementById('enemy-table-table-wrap');
+    syncDetailWidth = () => { inner.style.width = scroller.clientWidth + 'px'; };
+    if (window.ResizeObserver) new ResizeObserver(syncDetailWidth).observe(scroller);
+    else window.addEventListener('resize', syncDetailWidth);
     detailRow.querySelector('#mesh-spin-btn').addEventListener('click', () => {
       if (!meshView) return;
       meshView.cam.autoRotate = !meshView.cam.autoRotate;
@@ -870,6 +1123,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     const tr = body.querySelector(`tr[data-id="${selectedId}"]`);
     if (!tr) { detailRow.remove(); return; } // selected row filtered out
     tr.after(detailRow);
+    syncDetailWidth();
   }
 
   function selectMonster(id) {
@@ -884,6 +1138,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     const nameEl = detailRow.querySelector('#mesh-viewer-name');
     const statsEl = detailRow.querySelector('#mesh-viewer-stats');
     nameEl.textContent = rec ? `${rec.name} (id ${id})` : `id ${id}`;
+    const seEl = detailRow.querySelector('#mesh-side-effects');
+    if (seEl) seEl.innerHTML = rec ? sideEffectPanel(rec) : '';
 
     const positions = viewer.monster_mesh_positions(id);
     const normals = viewer.monster_mesh_normals(id);

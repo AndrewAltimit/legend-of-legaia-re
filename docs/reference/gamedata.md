@@ -247,13 +247,16 @@ is the tie-breaker when the two disagree:
   (`PROT 0867`) by name (unambiguous names only - multi-form bosses like Gaza
   are skipped). The curated bestiary stats are the **in-battle** stats, not the
   raw disc record: the combat fields are the record run through the battle
-  loader's **stat boost** (`FUN_80054cb0`, gate-set profile) - `udf`/`ldf` ×2,
+  loader's **stat boost** (`FUN_80054cb0`, the **scripted-fight** profile - the one a
+  boss / story fight installs; a random encounter installs the other, `udf`/`ldf` ×7/4,
+  `atk` ×1, `intel` ×5/4, see `MonsterRecord::battle_stats_random`) - `udf`/`ldf` ×2,
   `atk` ×5/4, `intel` (the disc INT stat, `+0x18`) ×9/8 - while `hp`/`spd`/`agl`
   (the disc AGL action gauge, `+0x0E`) are ×1, and `exp` ×3/4 / `gold` ×5/16 are the
   separate victory-spoils reward scaling (`FUN_8004e568`). All exact, ±1 on the
   fractional ones; the five combat factors match `MonsterRecord::battle_stats()`.
-  So the disc is the raw ground truth and the curated table is the boosted view
-  the player fights; the test pins all nine fields across 120+ enemies. This
+  So the disc is the raw ground truth and the curated table is the boss-fight
+  view of every enemy - for a random native it overstates the in-battle defence
+  by 8/7 and ATK by 5/4; the test pins all nine fields across 120+ enemies. This
   cross-region difficulty difference (international retail vs. the raw / JP
   record) was first surfaced by **Zetopheonix**. See
   [`battle.md`](../subsystems/battle.md#monster-record-source-layout) (the

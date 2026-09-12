@@ -147,6 +147,24 @@ body.magic-live .magic-status-idle { display: none; }
     Retail applies no light source to these bodies: a textured face draws as its texel scaled by the model's own baked colour. This page uploads that per-vertex colour and does the same, so what you see is the game's shading, not a viewer's.
   </p>
 
+<section class="doc-section" id="side-effects">
+  <h2>Side-effects: what each spell does besides damage</h2>
+  <p>From magic level 3 up, every Seru spell that reaches its target also carries a secondary effect chosen by the summoned creature's <strong>element</strong> - the game's own "Magic effect" banner names it. The six damaging elements shave a percentage off one of the target's stats; the light spells cure the party instead. The size is the same for every element and depends only on the spell's magic level: <strong>5%</strong> at level 3-4, <strong>10%</strong> at 5-6, <strong>15%</strong> at 7-8, <strong>20%</strong> at 9.</p>
+  <table class="layout narrow">
+    <thead><tr><th>Element</th><th>Spells</th><th>Effect on the target</th></tr></thead>
+    <tbody>
+      <tr><td>earth</td><td>Mushura, Kemaro, Iota</td><td><strong>DEF down</strong> (UDF and LDF)</td></tr>
+      <tr><td>water</td><td>Gizam, Freed, Slippery</td><td><strong>AGL down</strong> (the enemy's action gauge)</td></tr>
+      <tr><td>fire</td><td>Gimard, Zenoir, Gola Gola</td><td><strong>ATK down</strong></td></tr>
+      <tr><td>wind</td><td>Swordie, Nova, Barra</td><td><strong>SPD down</strong></td></tr>
+      <tr><td>thunder</td><td>Theeder, Viguro, Gilium</td><td><strong>INT down</strong></td></tr>
+      <tr><td>light</td><td>Vera, Orb, Spoon</td><td>cure: Venom at level 3-4; Rot and Venom at 5-6; Numb, Rot and Venom at 7-8; some status &amp; AP at 9</td></tr>
+      <tr><td>dark</td><td>Puera</td><td><strong>MP down</strong> (current MP)</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">Nighto, Aluru and the Ra-Seru spells carry no side-effect. Whether a debuff lands depends on the fight: in a random encounter every cast lands and the drops stack; in a boss fight (one the game will not let you run from) four casts in five are thrown away, a stat the boss profile boosted (ATK, DEF, INT) is never touched, and SPD / AGL land once, then print "No effect.". The <a href="monsters.html#side-effects">enemy table</a> shows which effects each enemy can take, and <a href="subsystems/battle-formulas.html#seru-side-effects">battle formulas</a> has the mechanism.</p>
+</section>
+
 <section class="doc-section" id="related">
   <h3>Under the hood</h3>
   <div class="see-also">

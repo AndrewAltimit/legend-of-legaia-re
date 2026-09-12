@@ -170,6 +170,7 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
       <tr><td>Spirit super-art damage</td><td><code>target_HP &times; 7 / 5 + 8</code>, cap 288 (large arts) / 100 (small)</td><td>a 150-HP target: <code>218</code>, under the cap</td></tr>
       <tr><td>Escape (Run)</td><td>party score = &Sigma; <code>(SPD&times;3)/2 + missingHP/16</code>; enemy score = &Sigma; <code>SPD + missingHP/32</code>; one rand each; caught iff <code>roll_p &lt; roll_e</code> or the no-escape flag</td><td>a fast, wounded party out-rolls a slow healthy pack most rounds; Chicken Heart / King bits tilt it further</td></tr>
       <tr><td>Stat buff</td><td>working stat <code>&times; 6/5</code>, clamp <code>0xFFFF</code>; each stat is a working/base halfword pair</td><td>ATK 300 &rarr; 360 for the fight</td></tr>
+      <tr><td>Seru-magic stat debuff</td><td><code>stat - stat &times; pct / 100</code> per hit, <code>pct</code> = 5 / 10 / 15 / 20 by magic-level band 3-4 / 5-6 / 7-8 / 9; the stat is picked by the summon's element (<a href="#seru-side-effects">below</a>)</td><td>two level-5 Gimard hits: ATK 300 &rarr; 270 &rarr; 243</td></tr>
       <tr><td>Victory gold</td><td>&Sigma; <code>gold/2</code> over dead enemies, &times;1.25 with the gold passive, then halved; lone enemy <code>floor((gold/2)/2)</code></td><td>Gimard (record gold 60) credits exactly <strong>+15</strong></td></tr>
       <tr><td>Victory EXP</td><td>&Sigma; exp &times; 3/4, split evenly among living members</td><td>two survivors of a 400-EXP fight get 150 each</td></tr>
       <tr><td>RNG</td><td><code>seed = seed &times; 1103515245 + 12345; return (seed &gt;&gt; 16) &amp; 0x7FFF</code></td><td>range 0..32767 - the standard PsyQ <code>rand()</code></td></tr>
@@ -194,6 +195,25 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
     </tbody>
   </table>
   <p>The single "Defense Up" buff raising UDF and LDF together confirms they are two facets of one defense. The parser exposes all six via <code>legaia_asset::monster_archive::MonsterRecord</code>; the <a href="../monsters.html">enemy table</a> renders them per enemy, along with each monster's castable spell list and AGL costs (decoded from the record's spell-offset array - entry head byte is the spell id, <code>+0x74</code> the AGL cost the AI checks and spends).</p>
+</section>
+
+<section class="doc-section" id="seru-side-effects">
+  <h2>Seru-magic side-effects</h2>
+  <p>A levelled Seru spell does more than damage: the stager <code>FUN_801F3D3C</code>, called once per cast from inside the spell's own summon module, stages a secondary effect keyed on the <strong>summoned creature's element</strong> (the slot-7 record's <code>+0x1D</code>, the byte the affinity scale reads) and scaled by the caster's magic level for the spell (record <code>+0x161</code>). It writes a percent to <code>0x801F6960</code> and a banner string to <code>0x800775B4</code>; the damage finisher <code>FUN_801DDB30</code> then shaves <code>stat &times; pct / 100</code> off the target on <em>every hit</em>. The table is <code>0x801F6870</code> (PROT 0898 file <code>0x28058</code>), parsed by <code>legaia_asset::seru_side_effect</code>.</p>
+  <table class="layout">
+    <thead><tr><th>Summon element</th><th>Effect</th><th>lv 3-4</th><th>lv 5-6</th><th>lv 7-8</th><th>lv 9</th></tr></thead>
+    <tbody>
+      <tr><td>0 earth</td><td>DEF down - all four defence halfwords</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+      <tr><td>1 water</td><td>AGL down - the gauge base <code>+0x156</code> only</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+      <tr><td>2 fire</td><td>ATK down</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+      <tr><td>3 wind</td><td>SPD down</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+      <tr><td>4 thunder</td><td>INT down</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+      <tr><td>5 light</td><td>cure class (party targets)</td><td>1</td><td>2</td><td>3</td><td>4</td></tr>
+      <tr><td>6 dark</td><td>MP down - current MP <code>+0x150</code> only</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
+    </tbody>
+  </table>
+  <p>The gates, in order: level below 3 stages nothing. With the <strong>scripted-fight flag</strong> <code>ctx[+0x287]</code> set (a formation row's non-zero header byte - every boss), four casts in five are suppressed unless the spell is light or <code>affinity[summon][first enemy] &ge; 101</code> (thunder against the four base elements, or the opposite pair). Then, for earth / fire / wind / thunder / dark in a scripted fight and for water always, the target's <em>base</em> stat halfword is compared with the raw record and the effect is dropped when they differ. Because the scripted boost profile has already raised ATK, UDF/LDF and INT, those three debuffs can never land on a boss; SPD and AGL land once per battle - literally once: the first cast that passes moves the value the compare reads, and every later cast of that element prints "No effect." for the rest of the fight; MP-down compares a value the hit never moves and lands every time. A random encounter runs neither the roll nor the compare (water aside), so everything lands and stacks. There is no per-monster immunity field - the record's <code>+0x24..+0x43</code> is zero across the roster. The <a href="../monsters.html#side-effects">enemy table</a> renders the verdict per enemy; the "No effect." banner is the return-from-fade pass <code>FUN_801F3C34</code> announcing a suppressed or already-landed effect.</p>
+  <p>Engine: <code>engine-vm::seru_side_effect::{stage, apply_hit}</code> are pure, tested kernels; the live loop does not yet apply them (it keeps one live scalar per stat with no base halfword to compare, and no SPD / AGL scalar for a monster).</p>
 </section>
 
 <section class="doc-section" id="victory-spoils">
