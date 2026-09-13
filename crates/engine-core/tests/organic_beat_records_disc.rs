@@ -457,7 +457,7 @@ fn town01_p2_3_sets_flag_549_by_record_execution() {
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     // New-game prologue hand-off into Rim Elm (the path that installs the
     // opening cutscene timeline record P2[3]).
-    host.world.entering_town01_opening = true;
+    host.world.cutscene.entering_town01_opening = true;
     host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
     assert!(

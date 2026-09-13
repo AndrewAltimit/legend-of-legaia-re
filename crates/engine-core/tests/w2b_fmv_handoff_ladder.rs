@@ -155,7 +155,7 @@ fn every_scene_fmv_trigger_reaches_its_retail_handoff() {
         host.world.set_pad(0);
         let _ = host.world.tick(); // op fires -> pending trigger
         assert_eq!(
-            host.world.pending_fmv_trigger,
+            host.world.cutscene.pending_fmv_trigger,
             Some(want_id),
             "[{scene_name}] the disc op did not record its trigger"
         );

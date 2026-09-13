@@ -51,7 +51,8 @@ fn opdeene_caption_is_a_bounded_beat_in_the_crawl_gap() {
     // 1. The caption image decoded from PROT 0749, and starts hidden.
     let cap = host
         .world
-        .cutscene_caption
+        .cutscene
+        .caption
         .as_ref()
         .expect("opdeene decodes the 'It was the Seru.' caption image");
     assert_eq!((cap.width, cap.height), (112, 32), "112x32 caption strip");
@@ -71,7 +72,7 @@ fn opdeene_caption_is_a_bounded_beat_in_the_crawl_gap() {
         "the caption has a transparent background ({transparent} px) and opaque glyphs ({opaque_bright} px)"
     );
     assert_eq!(
-        host.world.cutscene_caption_alpha, 0.0,
+        host.world.cutscene.caption_alpha, 0.0,
         "the caption starts hidden"
     );
 
@@ -81,7 +82,7 @@ fn opdeene_caption_is_a_bounded_beat_in_the_crawl_gap() {
     while !host.world.cutscene_narration_active() && ticked < 600 {
         let _ = host.world.tick();
         assert_eq!(
-            host.world.cutscene_caption_alpha, 0.0,
+            host.world.cutscene.caption_alpha, 0.0,
             "caption hidden before any crawl opens (tick {ticked})"
         );
         ticked += 1;
@@ -90,7 +91,7 @@ fn opdeene_caption_is_a_bounded_beat_in_the_crawl_gap() {
         host.world.cutscene_narration_active(),
         "the timeline reaches crawl block 1 within {ticked} ticks"
     );
-    assert_eq!(host.world.cutscene_narration_seq, 1, "block 1 is the first");
+    assert_eq!(host.world.cutscene.narration_seq, 1, "block 1 is the first");
     // Tick a chunk while block 1 is still scrolling; the caption stays hidden.
     for _ in 0..60 {
         if !host.world.cutscene_narration_active() {
@@ -98,7 +99,7 @@ fn opdeene_caption_is_a_bounded_beat_in_the_crawl_gap() {
         }
         let _ = host.world.tick();
         assert_eq!(
-            host.world.cutscene_caption_alpha, 0.0,
+            host.world.cutscene.caption_alpha, 0.0,
             "caption stays hidden while crawl block 1 is on screen"
         );
     }
@@ -116,12 +117,12 @@ fn opdeene_caption_is_a_bounded_beat_in_the_crawl_gap() {
             // then targets 0 again, so the caption never reaches full while
             // a crawl is on screen.
             assert!(
-                host.world.cutscene_caption_alpha < 0.99,
+                host.world.cutscene.caption_alpha < 0.99,
                 "caption never fully shown while a crawl block is on screen"
             );
         }
-        peak_alpha = peak_alpha.max(host.world.cutscene_caption_alpha);
-        if host.world.cutscene_caption_alpha >= 0.99 {
+        peak_alpha = peak_alpha.max(host.world.cutscene.caption_alpha);
+        if host.world.cutscene.caption_alpha >= 0.99 {
             faded_in = true;
             break;
         }
@@ -140,7 +141,7 @@ fn opdeene_caption_is_a_bounded_beat_in_the_crawl_gap() {
     let mut faded_out = false;
     for _ in 0..40000 {
         let _ = host.world.tick();
-        if host.world.cutscene_caption_alpha <= 0.0 {
+        if host.world.cutscene.caption_alpha <= 0.0 {
             faded_out = true;
             break;
         }

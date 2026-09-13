@@ -57,7 +57,7 @@ fn seat_at_tile(world: &mut World, tile_x: i16, tile_z: i16) {
 /// Run the `town01` opening to free-roam: prologue hand-off entry, tick to
 /// the name-entry park, commit a name, tick the timeline to completion.
 fn run_opening_to_freeroam(host: &mut SceneHost) {
-    host.world.entering_town01_opening = true;
+    host.world.cutscene.entering_town01_opening = true;
     host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
     let mut ticks = 0u32;
@@ -88,12 +88,12 @@ fn run_opening_to_freeroam(host: &mut SceneHost) {
         ..Default::default()
     });
     let mut more = 0u32;
-    while host.world.cutscene_timeline.is_some() && more < 12000 {
+    while host.world.cutscene.timeline.is_some() && more < 12000 {
         tick_pressing_through_dialogs(&mut host.world, more);
         more += 1;
     }
     assert!(
-        host.world.cutscene_timeline.is_none(),
+        host.world.cutscene.timeline.is_none(),
         "opening timeline completes"
     );
 }
@@ -404,7 +404,8 @@ fn gate_flags_survive_save_roundtrip() {
 /// completion, it is a hang recovery.
 fn tick_pressing_through_dialogs(world: &mut legaia_engine_core::world::World, tick: u32) {
     let parked = world
-        .cutscene_timeline
+        .cutscene
+        .timeline
         .as_ref()
         .is_some_and(|t| t.dialog.is_some());
     if parked && tick.is_multiple_of(2) {

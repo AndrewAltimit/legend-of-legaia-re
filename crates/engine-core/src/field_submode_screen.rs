@@ -300,7 +300,7 @@ impl World {
     pub fn op49_park_owner(&self) -> Op49ParkOwner {
         if !self.in_spawned_record_slice {
             Op49ParkOwner::FieldScript
-        } else if self.in_cutscene_timeline {
+        } else if self.cutscene.in_timeline {
             Op49ParkOwner::CutsceneTimeline
         } else {
             Op49ParkOwner::HelperContext

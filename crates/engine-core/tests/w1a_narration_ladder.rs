@@ -86,7 +86,8 @@ fn the_opening_prologue_roller_crawls_under_a_pad_driven_tick() {
     );
     let pages = host
         .world
-        .cutscene_narration
+        .cutscene
+        .narration
         .as_ref()
         .map(|n| n.page_count())
         .unwrap_or(0);
@@ -105,7 +106,7 @@ fn the_opening_prologue_roller_crawls_under_a_pad_driven_tick() {
     for _ in 0..1_200 {
         host.world.set_pad(0);
         let _ = host.tick();
-        let Some(n) = host.world.cutscene_narration.as_ref() else {
+        let Some(n) = host.world.cutscene.narration.as_ref() else {
             break;
         };
         admitted = admitted.max(n.current_index() + 1);

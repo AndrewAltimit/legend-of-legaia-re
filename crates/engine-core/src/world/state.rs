@@ -603,13 +603,8 @@ pub struct World {
     /// spawn-point wiring. `None` between transitions.
     pub pending_named_scene_transition: Option<(String, u8, u8, u8)>,
 
-    /// Pending FMV trigger (field-VM op `0x4C 0xE2`). When `Some(fmv_id)`,
-    /// the field VM has signalled that the next-game-mode global should
-    /// transition to game mode 26 (StrInit) with the given index. Engines
-    /// drain this after [`World::tick`] to actually open the corresponding
-    /// `MV*.STR` (use [`crate::cutscene::fmv_index_to_str_filename`] for
-    /// the retail mapping). `None` between triggers.
-    pub pending_fmv_trigger: Option<i16>,
+    /// Cutscene presentation state: narration, timeline, caption / card / balloon overlays, FMV handoff and the opening-chain latches.
+    pub cutscene: CutsceneState,
 
     /// Pending scripted-encounter install (field-VM bare arm-encounter op
     /// `0x37`/`0x41`). When that op runs and [`Self::scripted_encounter_armed`]
@@ -642,34 +637,6 @@ pub struct World {
     /// (`FUN_801D9E1C`), so a 0%-random scene (e.g. town01's Rim Elm tutorial)
     /// still starts the scripted fight. Cleared when the step consumes it.
     pub scripted_formation_pending: bool,
-
-    /// The FMV currently playing in [`SceneMode::Cutscene`]. Set when the
-    /// world consumes a [`Self::pending_fmv_trigger`] at the top of a
-    /// [`World::tick`] and flips into the cutscene mode (mirroring retail's
-    /// next-game-mode dispatch to game mode 26 one frame after the field-VM
-    /// op writes the global). While `Some`, the field VM is suspended (the
-    /// STR overlay owns the frame in retail); the host plays the resolved
-    /// `MV*.STR` and calls [`World::finish_cutscene`] when playback ends.
-    /// `None` outside an STR-FMV cutscene.
-    pub active_fmv: Option<i16>,
-
-    /// Scene mode to restore when the active STR-FMV cutscene finishes
-    /// (set on entry, consumed by [`World::finish_cutscene`]). Retail
-    /// returns to the field after the cutscene overlay unloads; `None`
-    /// outside a cutscene.
-    pub cutscene_return_mode: Option<SceneMode>,
-
-    /// The `fmv_id` whose playback just ended, parked here by
-    /// [`World::finish_cutscene`] for exactly one drain by
-    /// [`crate::scene::SceneHost::apply_pending_fmv_handoff`].
-    ///
-    /// Retail's post-play control transfer is not a world-only decision - the
-    /// [`FmvHandoff::Field`](crate::cutscene::FmvHandoff::Field) arm loads a
-    /// *different scene*, which needs the host's asset index. So the world
-    /// records "an FMV finished, and which one" and the scene host performs
-    /// the transfer. Draining it is a `take`: the transfer runs once however
-    /// many hosts poll.
-    pub finished_fmv: Option<i16>,
 
     /// Field-VM side-effects emitted this frame. Engines drain after
     /// [`World::tick`] to dispatch BGM, dialog, money, party, camera, etc.
@@ -1308,15 +1275,6 @@ pub struct World {
     /// sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`). Each
     /// drives one rung of [`Self::field_floor_height_lut`].
     pub floor_tier_bobs: Vec<legaia_engine_vm::field_actor_timers::FloorTierBob>,
-
-    /// Live **script-cutscene elements** - the pool the position tween
-    /// (`FUN_801D5C08`), the teardown (`FUN_801D5D60`) and the ambient emitter
-    /// (`FUN_801D6058`) run on, each carrying the linked object whose done bit
-    /// gates it. See [`crate::world::cutscene_elements`].
-    pub cutscene_elements: Vec<crate::world::CutsceneElement>,
-    /// What the element channel produced on the last tick - the writes, the
-    /// teardown requests and the ambient particles a host reads back.
-    pub cutscene_element_frame: crate::world::ElementFrame,
 
     /// Minigame sessions (dance, fishing, slot machine, Baka Fighter, Muscle Dome) plus the casino coin / point-card wallet.
     pub minigames: MinigameState,
@@ -2317,37 +2275,6 @@ pub struct World {
     /// [`Self::party_names`].
     pub name_entry: Option<crate::name_entry::NameEntry>,
 
-    /// Active opening-cutscene narration presenter, or `None` when no cutscene
-    /// narration is playing. Installed by [`Self::open_cutscene_narration`]
-    /// (the `opdeene` opening prologue) with the inline subtitle pages decoded
-    /// from the scene MAN's cutscene-timeline script; its per-page timer is
-    /// advanced in [`Self::tick`], and the host renders [`Self::cutscene_narration`]'s
-    /// current page. It gates the prologue hand-off: while it is active the
-    /// confirm press skips narration pages, and only once it completes does a
-    /// confirm reach [`Self::take_prologue_handoff`].
-    pub cutscene_narration: Option<crate::cutscene_narration::CutsceneNarration>,
-
-    /// Monotonic counter incremented each time [`Self::open_cutscene_narration`]
-    /// installs a crawl block. Lets observers distinguish back-to-back crawl
-    /// blocks (a non-blocking crawl opens the next block the same tick the prior
-    /// scrolls out) that a rising-edge `active`-watch would merge into one.
-    pub cutscene_narration_seq: u32,
-
-    /// Active opening-cutscene timeline executor, or `None` when no cutscene
-    /// timeline is running. Installed by
-    /// [`Self::load_cutscene_timeline_from_man`] (the `opdeene` opening
-    /// prologue) with the partition-2 record that issues `GFLAG_SET 26`;
-    /// stepped each frame by [`Self::step_cutscene_timeline`] so the cutscene's
-    /// camera path + actor moves play and the hand-off bit fires by execution.
-    /// See [`crate::cutscene_timeline::CutsceneTimeline`].
-    ///
-    /// This is the single **modal** context slot: while it is active the
-    /// cutscene camera owns the frame and pad locomotion is locked
-    /// ([`Self::cutscene_timeline_active`] gates). Ordinary mid-play spawned
-    /// records execute concurrently in [`Self::helper_contexts`] instead and
-    /// never seize either.
-    pub cutscene_timeline: Option<crate::cutscene_timeline::CutsceneTimeline>,
-
     /// Concurrent spawned-record contexts: partition-2 records spawned
     /// mid-play (field-VM op-`0x44` outside the opening chain) that execute
     /// as independent field-VM contexts, mirroring retail's per-record spawn
@@ -2369,13 +2296,6 @@ pub struct World {
     /// prologue flag tests, branch flag-sets, and scene changes between text
     /// boxes. See [`crate::inline_dialogue`] and [`Self::step_inline_dialogue`].
     pub inline_dialogue: Option<crate::inline_dialogue::InlineDialogue>,
-
-    /// `true` only while [`Self::step_cutscene_timeline`] is executing the
-    /// spawned cutscene context. The field-VM host reads it to suppress the
-    /// actor-allocator hook (op `0x4C` n8 sub-0), which in the cutscene context
-    /// (target `0xF8`) is the inline-narration text-draw the separate
-    /// [`Self::cutscene_narration`] presenter owns - not an actor spawn.
-    pub in_cutscene_timeline: bool,
 
     /// Monotonic count of sim ticks that ran, advanced once per
     /// [`Self::tick`]. It is the world's cheapest "a frame actually ran"
@@ -2468,62 +2388,6 @@ pub struct World {
     /// retail player anim pointer on scene records 47/48).
     pub field_player_move_cues: Vec<u8>,
 
-    /// Set when the `town01` opening cutscene timeline is installed via the
-    /// new-game prologue hand-off. While set, the timeline's first op-`0x49`
-    /// STATE_RESUME (the pinned name-entry handoff at P2[3] body `0x02c6`) opens
-    /// the name-entry overlay instead of parking generically. One-shot for the
-    /// opening; a normal `town01` visit never sets it. See
-    /// [`Self::install_town01_opening_timeline`].
-    pub prologue_naming_pending: bool,
-
-    /// Set once the timeline's op-`0x49` has opened the name-entry overlay, so
-    /// the op suspends (Armed) until the player commits a name, then resumes
-    /// (Done) - and never re-opens it on the record's later STATE_RESUMEs.
-    pub prologue_naming_armed: bool,
-
-    /// Set by [`Self::take_prologue_handoff`] when it hands off to `town01`, so
-    /// the next `town01` field entry installs the opening cutscene timeline
-    /// (establishing shot + Vahn walk-out + name-entry handoff). Cleared when
-    /// the entry consumes it, so only the prologue path runs the opening.
-    pub entering_town01_opening: bool,
-
-    /// The active opening-cutscene static title card (narration `0x89`
-    /// blocks): pages shown simultaneously, centered mid-screen, until a
-    /// blank card block clears it (the `map01` fly-in's "twilight of
-    /// humanity" card). Rendered by the host; independent of the crawl
-    /// roller [`Self::cutscene_narration`].
-    pub cutscene_card: Option<Vec<String>>,
-
-    /// The `opdeene` "It was the Seru." caption, decoded to RGBA at scene
-    /// entry ([`crate::cutscene_caption::decode_opdeene_caption`]). `Some`
-    /// only while `opdeene` is loaded; the host uploads it once as a sprite
-    /// atlas and blits it, faded by [`Self::cutscene_caption_alpha`]. Unlike
-    /// the crawl / card this is a pre-rendered image, not font text - retail
-    /// draws it as a scene textured quad, so the engine blits the scene
-    /// texture rather than rendering a string. See [`crate::cutscene_caption`].
-    pub cutscene_caption: Option<crate::cutscene_caption::CaptionImage>,
-
-    /// The live `4C E1` single-line text balloon, spawned by the field-VM
-    /// menu-ctrl sub-op (`FUN_8003C764`) and ticked per frame
-    /// ([`crate::text_balloon::TextBalloon::tick`], the `FUN_801DA7F0`
-    /// handler). Spawning replaces any live balloon - the retail
-    /// predecessor-kill. Hosts render `text` at `(x, y)` while it runs.
-    pub text_balloon: Option<crate::text_balloon::TextBalloon>,
-
-    /// Fade level (0..=1) of [`Self::cutscene_caption`], ramped each
-    /// [`Self::tick`]. Target-visible in the gap after the first narration
-    /// crawl block scrolls out and before the second opens (retail shows the
-    /// caption once, between `opdeene`'s two crawls).
-    pub cutscene_caption_alpha: f32,
-
-    /// Frames [`Self::cutscene_caption`] has been fully faded in. Used to bound
-    /// the caption to a retail-like ~2 s beat and fade it back out, since the
-    /// engine's inter-crawl timeline gap currently runs much longer than
-    /// retail's - so the caption reads as a deliberate pause, not a freeze,
-    /// even when the second crawl block is still frames away. Reset on scene
-    /// entry; never re-shows once the hold elapses (the gap continues hidden).
-    pub cutscene_caption_shown_frames: u32,
-
     /// Pending field-VM op-`0x44` SPAWN_RECORD requests: the GLOBAL record
     /// indices whose partition-2 records should spawn as new contexts.
     /// Recorded by the host hook (the VM borrow precludes resolving the MAN
@@ -2535,16 +2399,6 @@ pub struct World {
     /// [`SPAWNED_CONTEXT_SLOTS`]) so a second spawn issued while another
     /// record executes is not dropped.
     pub pending_record_spawns: Vec<u8>,
-
-    /// `true` while the New-Game opening cutscene chain is playing (from the
-    /// `opdeene` entry through its `opstati` / `opurud` / world-map fly-in
-    /// legs, until `town01` is entered). While set, a confirm press with the
-    /// hand-off bit armed skips the WHOLE remaining opening to `town01` -
-    /// retail's `FUN_801D1344` packet is a skip available any time after
-    /// `opdeene` arms `GFLAG 26`, not a post-narration gate. Set when the
-    /// prologue cutscene scene is entered; cleared by the skip or by the
-    /// `town01` opening entry.
-    pub opening_chain_active: bool,
 }
 
 impl Default for World {
@@ -2584,8 +2438,7 @@ impl World {
             field_region_attributes: crate::field_regions::RegionAttributes::DEFAULT_FILL,
             field_zone_record: None,
             field_floor_height_lut: [0i16; 16],
-            cutscene_elements: Vec::new(),
-            cutscene_element_frame: Default::default(),
+            cutscene: CutsceneState::new(),
             field_object_cells: Vec::new(),
             field_floor_cell_bit: legaia_asset::field_objects::CELL_WALK_VISIBLE,
             field_elevation_overrides: Vec::new(),
@@ -2651,13 +2504,9 @@ impl World {
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
             pending_named_scene_transition: None,
-            pending_fmv_trigger: None,
             pending_scripted_encounter: None,
             scripted_encounter_armed: false,
             scripted_formation_pending: false,
-            active_fmv: None,
-            cutscene_return_mode: None,
-            finished_fmv: None,
             pending_field_events: Vec::new(),
             pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),
@@ -2870,12 +2719,8 @@ impl World {
             carriers: FieldCarrierState::new(),
             party_names: Vec::new(),
             name_entry: None,
-            cutscene_narration: None,
-            cutscene_narration_seq: 0,
-            cutscene_timeline: None,
             helper_contexts: Vec::new(),
             inline_dialogue: None,
-            in_cutscene_timeline: false,
             // Every sim tick is a retail display frame under the 1:1
             // denomination, so there is no phase to prime: a world that ticks
             // exactly once advances the roller and the retail-frame-paced
@@ -2892,16 +2737,7 @@ impl World {
             object_channel_binds: Vec::new(),
             field_npc_anim_cues: std::collections::HashMap::new(),
             field_player_move_cues: Vec::new(),
-            prologue_naming_pending: false,
-            prologue_naming_armed: false,
-            entering_town01_opening: false,
-            cutscene_card: None,
-            cutscene_caption: None,
-            text_balloon: None,
-            cutscene_caption_alpha: 0.0,
-            cutscene_caption_shown_frames: 0,
             pending_record_spawns: Vec::new(),
-            opening_chain_active: false,
         }
     }
 
@@ -3018,7 +2854,7 @@ impl World {
         self.inventory.clear();
         self.pending_scene_transition = None;
         self.pending_named_scene_transition = None;
-        self.pending_fmv_trigger = None;
+        self.cutscene.pending_fmv_trigger = None;
         self.pending_scripted_encounter = None;
         self.scripted_encounter_armed = false;
         self.scripted_formation_pending = false;
@@ -3044,11 +2880,11 @@ impl World {
         self.game_over = false;
         self.game_over_hold = false;
         self.play_time_seconds = 0;
-        self.cutscene_timeline = None;
+        self.cutscene.timeline = None;
         self.helper_contexts.clear();
-        self.cutscene_narration = None;
-        self.cutscene_card = None;
-        self.text_balloon = None;
+        self.cutscene.narration = None;
+        self.cutscene.card = None;
+        self.cutscene.text_balloon = None;
         // Camera-register zone ramps are scene content: retail's MAN loader
         // retire sweep (`FUN_8003AEB0` at `0x8003B414`) is keyed on the ramp
         // actor's own handler VA, and the zone-miss defaults are reinstalled
@@ -3063,11 +2899,11 @@ impl World {
         self.cinematic_bar = 0;
         self.eased_moves.clear();
         self.floor_tier_bobs.clear();
-        self.prologue_naming_pending = false;
-        self.prologue_naming_armed = false;
-        self.entering_town01_opening = false;
+        self.cutscene.prologue_naming_pending = false;
+        self.cutscene.prologue_naming_armed = false;
+        self.cutscene.entering_town01_opening = false;
         self.pending_record_spawns.clear();
-        self.opening_chain_active = false;
+        self.cutscene.opening_chain_active = false;
         // Arm the arrival side of the scene-transition fade handshake
         // (`0x52F`/`0x530`/`0x531`, the shared `P1[0]` idiom): with `0x52F`
         // set, the destination entry script's arrival arm fires `4C 12 00 00

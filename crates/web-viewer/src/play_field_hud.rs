@@ -41,7 +41,7 @@ impl LegaiaRuntime {
             || self.menu.is_open()
             || w.current_dialog.is_some()
             || w.inline_dialogue.is_some()
-            || w.text_balloon.is_some()
+            || w.cutscene.text_balloon.is_some()
             || w.cutscene_timeline_active()
     }
 

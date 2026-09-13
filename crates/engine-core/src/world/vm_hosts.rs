@@ -745,7 +745,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 Op49State::Done
             };
         }
-        if self.world.in_cutscene_timeline && self.world.prologue_naming_armed {
+        if self.world.cutscene.in_timeline && self.world.cutscene.prologue_naming_armed {
             if self.world.name_entry_active() {
                 Op49State::Armed
             } else {
@@ -831,15 +831,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         }
     }
     fn op49_invoke_setup(&mut self) {
-        if self.world.in_cutscene_timeline
-            && self.world.prologue_naming_pending
-            && !self.world.prologue_naming_armed
+        if self.world.cutscene.in_timeline
+            && self.world.cutscene.prologue_naming_pending
+            && !self.world.cutscene.prologue_naming_armed
             && !self.world.name_entry_active()
         {
             // Lead character (party slot 0 = Vahn) is the one named at the
             // opening, matching the retail char-record pointer `_DAT_8007B450`.
             self.world.open_name_entry(0);
-            self.world.prologue_naming_armed = true;
+            self.world.cutscene.prologue_naming_armed = true;
         }
     }
     fn screen_mode(&self) -> u32 {
@@ -1074,7 +1074,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // measurement; the tick lives in `World::tick`
         // (`crate::text_balloon::TextBalloon::tick`).
         let _ = script_id;
-        self.world.text_balloon = Some(crate::text_balloon::TextBalloon::spawn(text_buf));
+        self.world.cutscene.text_balloon = Some(crate::text_balloon::TextBalloon::spawn(text_buf));
     }
 
     fn op4c_n_e_sub2_fmv_trigger(&mut self, fmv_id: i16) {
@@ -1084,7 +1084,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // record the request here so the SceneHost / engine driver can
         // pop it after the field step returns and switch its scene
         // mode without invalidating the field-VM borrow.
-        self.world.pending_fmv_trigger = Some(fmv_id);
+        self.world.cutscene.pending_fmv_trigger = Some(fmv_id);
         self.world
             .pending_field_events
             .push(FieldEvent::FmvTrigger { fmv_id });
@@ -1428,7 +1428,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // and let the entry script proceed to its op-0x44 record spawn.
         // Outside the opening the faithful halt-until-callback park is kept
         // (returning `false`).
-        self.world.opening_chain_active
+        self.world.cutscene.opening_chain_active
     }
 
     // -- the three frame-delta timer templates ---------------------------
@@ -1971,7 +1971,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // `CutsceneNarration` presenter owns those pages. Suppress the spawn
         // side-effect while the cutscene timeline steps; the VM still advances
         // the PC past the page bytes on its own.
-        if self.world.in_cutscene_timeline {
+        if self.world.cutscene.in_timeline {
             return;
         }
         // Walk `count` variable-length records out of `tail` using the

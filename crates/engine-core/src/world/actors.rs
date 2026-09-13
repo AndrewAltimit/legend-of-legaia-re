@@ -1506,16 +1506,16 @@ impl World {
     /// returns `None`) is a no-op transition - the field continues - which
     /// matches the engine's documented "treat a cut slot as a no-op" rule.
     pub(crate) fn maybe_enter_pending_cutscene(&mut self) {
-        let Some(fmv_id) = self.pending_fmv_trigger.take() else {
+        let Some(fmv_id) = self.cutscene.pending_fmv_trigger.take() else {
             return;
         };
         if self.mode != SceneMode::Field {
             return;
         }
         if crate::cutscene::fmv_index_to_str_filename(fmv_id).is_some() {
-            self.cutscene_return_mode = Some(self.mode);
+            self.cutscene.return_mode = Some(self.mode);
             self.mode = SceneMode::Cutscene;
-            self.active_fmv = Some(fmv_id);
+            self.cutscene.active_fmv = Some(fmv_id);
         }
     }
 
@@ -1523,14 +1523,15 @@ impl World {
     /// when no STR FMV is active. Hosts poll this after [`World::tick`] to
     /// learn which `MV*.STR` to open.
     pub fn active_fmv(&self) -> Option<i16> {
-        self.active_fmv
+        self.cutscene.active_fmv
     }
 
     /// The retail `MV*.STR` path of the active cutscene FMV, or `None` when
     /// no STR FMV is active. Convenience over
     /// [`crate::cutscene::fmv_index_to_str_filename`].
     pub fn active_fmv_str_filename(&self) -> Option<&'static str> {
-        self.active_fmv
+        self.cutscene
+            .active_fmv
             .and_then(crate::cutscene::fmv_index_to_str_filename)
     }
 
@@ -1553,9 +1554,9 @@ impl World {
     // REF: FUN_801CEA3C
     pub fn finish_cutscene(&mut self) {
         if self.mode == SceneMode::Cutscene {
-            self.mode = self.cutscene_return_mode.take().unwrap_or(SceneMode::Field);
-            self.finished_fmv = self.active_fmv;
-            self.active_fmv = None;
+            self.mode = self.cutscene.return_mode.take().unwrap_or(SceneMode::Field);
+            self.cutscene.finished_fmv = self.cutscene.active_fmv;
+            self.cutscene.active_fmv = None;
         }
     }
 
@@ -1569,7 +1570,7 @@ impl World {
     /// is the only production caller. `take` semantics are what stop two
     /// hosts - or one host polling twice - from transferring control twice.
     pub fn take_finished_fmv(&mut self) -> Option<i16> {
-        self.finished_fmv.take()
+        self.cutscene.finished_fmv.take()
     }
 
     /// Build the per-frame sprite list for the renderer. One

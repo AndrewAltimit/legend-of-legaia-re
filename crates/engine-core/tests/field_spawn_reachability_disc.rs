@@ -151,7 +151,7 @@ fn cold_spawn_is_reachable_across_all_field_scenes() {
         if !matches!(host.world.mode, SceneMode::Field) {
             continue; // a scripted transition took over; nothing to assert
         }
-        if !host.world.helper_contexts.is_empty() || host.world.cutscene_timeline.is_some() {
+        if !host.world.helper_contexts.is_empty() || host.world.cutscene.timeline.is_some() {
             // A spawned record or the scene's own cutscene timeline is still
             // playing (the ending scenes hide the player for a long authored
             // cinematic - `WaitFrames` holds no longer count toward the

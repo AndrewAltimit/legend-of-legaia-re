@@ -446,7 +446,7 @@ fn enter_raw(host: &mut SceneHost, name: &str) -> bool {
     // when entered on its own. A verdict has to be a property of the scene.
     host.world.current_dialog = None;
     host.world.inline_dialogue = None;
-    host.world.cutscene_timeline = None;
+    host.world.cutscene.timeline = None;
     host.world.helper_contexts.clear();
     let r = if is_world_map_scene(name) {
         host.enter_world_map_scene(name)
@@ -1711,7 +1711,7 @@ fn part_e2_do_those_scenes_carry_a_record_that_exits_at_all() {
                     // record turns this into a quarter-hour run.
                     base.restore(&mut host);
                     host.world.helper_contexts.clear();
-                    host.world.cutscene_timeline = None;
+                    host.world.cutscene.timeline = None;
                     host.world.current_dialog = None;
                     host.world.inline_dialogue = None;
                 }

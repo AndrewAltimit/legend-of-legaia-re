@@ -270,7 +270,8 @@ fn cutscene_narration_roller_is_timer_driven_not_confirm_paced() {
     world.mode = SceneMode::Title; // isolate the top-of-tick narration advance
     world.open_cutscene_narration(vec!["Page 1".into(), "Page 2".into()]);
     let entered = |w: &World| {
-        w.cutscene_narration
+        w.cutscene
+            .narration
             .as_ref()
             .map(|n| n.current_index())
             .unwrap_or(usize::MAX)
@@ -306,7 +307,7 @@ fn cutscene_narration_roller_is_timer_driven_not_confirm_paced() {
         let _ = world.tick();
     }
     assert!(
-        world.cutscene_narration.is_none(),
+        world.cutscene.narration.is_none(),
         "the crawl completes on its own timer"
     );
 }
@@ -348,7 +349,7 @@ fn locomotion_gated_while_cutscene_timeline_active() {
     world.actors[0].move_state.world_z = 200;
     // An opening-cutscene timeline owns the scene (establishing sweep). A
     // non-empty body so it is not immediately `done`.
-    world.cutscene_timeline = Some(CutsceneTimeline::new(vec![0x21, 0x2E, 0x1A], 0));
+    world.cutscene.timeline = Some(CutsceneTimeline::new(vec![0x21, 0x2E, 0x1A], 0));
     assert!(world.cutscene_timeline_active());
     world.set_pad(input::PadButton::Up.mask());
     world.step_field_locomotion();
@@ -357,7 +358,7 @@ fn locomotion_gated_while_cutscene_timeline_active() {
         "pad-driven walk is locked while the cutscene timeline owns the scene"
     );
     // Once the timeline finishes, free-roam control returns.
-    if let Some(tl) = world.cutscene_timeline.as_mut() {
+    if let Some(tl) = world.cutscene.timeline.as_mut() {
         tl.done = true;
     }
     assert!(!world.cutscene_timeline_active());

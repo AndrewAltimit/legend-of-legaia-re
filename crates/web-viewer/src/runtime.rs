@@ -590,7 +590,7 @@ impl LegaiaRuntime {
         // Free-roam story staging for PICKER entries only: the opening
         // chain's legs re-enter through here too, and their authored
         // presentation (silent dawn, pre-event scenery) must stay untouched.
-        if !host.world.opening_chain_active && !host.world.cutscene_timeline_active() {
+        if !host.world.cutscene.opening_chain_active && !host.world.cutscene_timeline_active() {
             host.world.seed_free_roam_story_baseline(name);
         }
         if legaia_engine_core::scene::is_world_map_scene(name) {
@@ -607,10 +607,9 @@ impl LegaiaRuntime {
         // The seat heuristic is for interactive free-roam entry; the opening
         // chain's cutscene legs stage their own tableau (the timeline owns
         // actor placement) and must not have the anchor relocated under it.
-        let in_opening = self
-            .scene_host
-            .as_ref()
-            .is_some_and(|h| h.world.opening_chain_active || h.world.cutscene_timeline_active());
+        let in_opening = self.scene_host.as_ref().is_some_and(|h| {
+            h.world.cutscene.opening_chain_active || h.world.cutscene_timeline_active()
+        });
         if !in_opening {
             self.seat_player();
         }
@@ -689,7 +688,7 @@ impl LegaiaRuntime {
         // would otherwise park the world forever. Finish it immediately -
         // the 3D cutscene / field resumes, minus the movie.
         let mut fmv_handoff_scene = String::new();
-        if host.world.mode == SceneMode::Cutscene && host.world.active_fmv.is_some() {
+        if host.world.mode == SceneMode::Cutscene && host.world.cutscene.active_fmv.is_some() {
             host.world.finish_cutscene();
             // Skipping the *movie* is not skipping the *hand-off*. Retail's
             // master dispatch writes a next-scene label after playback

@@ -189,7 +189,7 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
         // The host arm fires only when the first payload byte is non-zero,
         // which is a property of the disc bytes - so a site whose payload
         // opens with zero legitimately spawns nothing.
-        let Some(balloon) = world.text_balloon.as_ref() else {
+        let Some(balloon) = world.cutscene.text_balloon.as_ref() else {
             continue;
         };
         spawned += 1;
@@ -214,13 +214,14 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
         for _ in 0..(legaia_engine_core::text_balloon::BALLOON_TOTAL as u32 + 8) {
             world.tick();
             if world
+                .cutscene
                 .text_balloon
                 .as_ref()
                 .is_some_and(|b| b.timer >= 1 && !b.killed)
             {
                 drew = true;
             }
-            if world.text_balloon.is_none() {
+            if world.cutscene.text_balloon.is_none() {
                 break;
             }
         }

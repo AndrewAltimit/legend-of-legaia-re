@@ -290,18 +290,18 @@ impl SceneHost {
         // re-installs one below, so it must not leak into the scene we hand off
         // to (Rim Elm). The per-actor channels are timeline-scoped and drop
         // with it.
-        self.world.cutscene_timeline = None;
+        self.world.cutscene.timeline = None;
         // Concurrent spawned-record contexts (and any not-yet-drained op-0x44
         // requests) are scene-scoped like the timeline: their bytecode slices
         // came from the previous scene's MAN.
         self.world.helper_contexts.clear();
         self.world.pending_record_spawns.clear();
-        self.world.cutscene_card = None;
+        self.world.cutscene.card = None;
         // Drop the previous scene's caption image (only `opdeene` re-decodes one
         // below); reset its fade + hold so a re-entry starts hidden.
-        self.world.cutscene_caption = None;
-        self.world.cutscene_caption_alpha = 0.0;
-        self.world.cutscene_caption_shown_frames = 0;
+        self.world.cutscene.caption = None;
+        self.world.cutscene.caption_alpha = 0.0;
+        self.world.cutscene.caption_shown_frames = 0;
         self.world.field_channels.clear();
         self.world.field_channels_man = None;
         self.world.field_npc_anim_cues.clear();
@@ -1059,15 +1059,15 @@ impl SceneHost {
             // the `opstati` / `opurud` legs the timelines chain into), a
             // confirm press with the hand-off bit armed skips the whole
             // remaining opening to `town01` (retail `FUN_801D1344`).
-            self.world.opening_chain_active = true;
+            self.world.cutscene.opening_chain_active = true;
             // Decode the "It was the Seru." caption image from the scene's
             // geometry pack (PROT 0749). It is a baked TIM, not text - the host
             // blits it, faded, in the gap between the two narration crawls (see
             // `crate::cutscene_caption`). `None` when the disc / entry is absent.
             if let Some(scene) = self.scene.as_ref() {
-                self.world.cutscene_caption =
+                self.world.cutscene.caption =
                     crate::cutscene_caption::decode_opdeene_caption(scene);
-                if self.world.cutscene_caption.is_some() {
+                if self.world.cutscene.caption.is_some() {
                     log::info!("prologue: decoded 'It was the Seru.' caption image (PROT 0749)");
                 }
             }
@@ -1110,7 +1110,7 @@ impl SceneHost {
                         // presenter when its PC reaches the block's op and
                         // suspends the timeline until the crawl completes
                         // (retail `FUN_80037174`). Nothing to install here.
-                        if let Some(tl) = self.world.cutscene_timeline.as_ref() {
+                        if let Some(tl) = self.world.cutscene.timeline.as_ref() {
                             log::info!(
                                 "prologue: '{}' timeline carries {} narration block(s)",
                                 legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
@@ -1131,14 +1131,15 @@ impl SceneHost {
         // (rather than the host opening it blindly at the hand-off). One-shot:
         // consume the flag so re-entering `town01` later never re-runs it.
         if name == legaia_asset::new_game::OPENING_SCENE
-            && (self.world.entering_town01_opening || self.world.opening_chain_active)
+            && (self.world.cutscene.entering_town01_opening
+                || self.world.cutscene.opening_chain_active)
         {
-            self.world.entering_town01_opening = false;
+            self.world.cutscene.entering_town01_opening = false;
             // Arriving at Rim Elm ends the opening cutscene chain, whether via
             // the skip packet or the natural scene-change chain.
-            self.world.opening_chain_active = false;
-            self.world.cutscene_narration = None;
-            self.world.cutscene_card = None;
+            self.world.cutscene.opening_chain_active = false;
+            self.world.cutscene.narration = None;
+            self.world.cutscene.card = None;
             match self
                 .scene
                 .as_ref()
@@ -1413,7 +1414,7 @@ impl SceneHost {
     /// instead and never reach this path.
     // REF: FUN_801D1EC4, FUN_801D5630, FUN_8003BDE0
     fn spawn_arrival_trigger_record(&mut self, tile_x: u8, tile_z: u8) {
-        if !self.world.opening_chain_active || self.world.cutscene_timeline_active() {
+        if !self.world.cutscene.opening_chain_active || self.world.cutscene_timeline_active() {
             return;
         }
         let Some(scene) = self.scene.as_ref() else {
@@ -1725,7 +1726,7 @@ impl SceneHost {
             && let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes)
         {
             for global_index in pending_spawns {
-                if self.world.opening_chain_active {
+                if self.world.cutscene.opening_chain_active {
                     // Opening-chain sequencing: one modal beat at a time. A
                     // request issued while a beat still plays is dropped -
                     // the retail opening never issues one - preserving the

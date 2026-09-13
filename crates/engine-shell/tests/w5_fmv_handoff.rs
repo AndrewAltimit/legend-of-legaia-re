@@ -155,8 +155,8 @@ fn the_handoff_transfers_once_however_many_hosts_poll() {
     // Stand in for playback: the world is in the cutscene mode with fmv 1
     // live, exactly as the field VM's `0x4C 0xE2` op leaves it.
     session.host.world.mode = SceneMode::Cutscene;
-    session.host.world.active_fmv = Some(1);
-    session.host.world.cutscene_return_mode = Some(SceneMode::Field);
+    session.host.world.cutscene.active_fmv = Some(1);
+    session.host.world.cutscene.return_mode = Some(SceneMode::Field);
     session.host.world.finish_cutscene();
 
     match session.host.apply_pending_fmv_handoff() {

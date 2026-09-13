@@ -60,7 +60,8 @@ fn opdeene_narration_is_script_driven_and_skippable() {
     );
     let blocks: Vec<usize> = host
         .world
-        .cutscene_timeline
+        .cutscene
+        .timeline
         .as_ref()
         .map(|tl| tl.narration_blocks.iter().map(|b| b.pages.len()).collect())
         .unwrap_or_default();
@@ -73,7 +74,10 @@ fn opdeene_narration_is_script_driven_and_skippable() {
         !host.world.cutscene_narration_active(),
         "no narration before the timeline reaches its first block"
     );
-    assert!(host.world.opening_chain_active, "the opening chain started");
+    assert!(
+        host.world.cutscene.opening_chain_active,
+        "the opening chain started"
+    );
 
     // 2. Ticking reaches the first block: the roller installs (14 pages) as a
     //    NON-BLOCKING child spawn (`narration_pc` clear) and the timeline
@@ -89,19 +93,21 @@ fn opdeene_narration_is_script_driven_and_skippable() {
     );
     let pages = host
         .world
-        .cutscene_narration
+        .cutscene
+        .narration
         .as_ref()
         .map(|n| n.page_count())
         .unwrap_or(0);
     assert_eq!(pages, 14, "block 1 is the 14-page creation prologue");
-    let block1_seq = host.world.cutscene_narration_seq;
+    let block1_seq = host.world.cutscene.narration_seq;
     assert_eq!(
         block1_seq, 1,
         "the creation crawl is the first block opened"
     );
     assert!(
         host.world
-            .cutscene_timeline
+            .cutscene
+            .timeline
             .as_ref()
             .is_some_and(|tl| tl.narration_pc.is_none()),
         "block 1 is non-blocking - the timeline plays the camera cuts under it"
@@ -117,10 +123,11 @@ fn opdeene_narration_is_script_driven_and_skippable() {
     let mut saw_block_2 = false;
     for _ in 0..24_000 {
         let _ = host.world.tick();
-        if host.world.cutscene_narration_seq != block1_seq
+        if host.world.cutscene.narration_seq != block1_seq
             && host
                 .world
-                .cutscene_narration
+                .cutscene
+                .narration
                 .as_ref()
                 .is_some_and(|n| n.page_count() == 8)
         {
@@ -131,7 +138,8 @@ fn opdeene_narration_is_script_driven_and_skippable() {
     assert!(saw_block_2, "the timeline reaches the 8-page Seru block");
     assert!(
         host.world
-            .cutscene_timeline
+            .cutscene
+            .timeline
             .as_ref()
             .is_some_and(|tl| tl.narration_pc.is_none()),
         "the second block opens non-blocking (child-context spawn)"

@@ -186,7 +186,7 @@ impl PlayWindowApp {
             // ticking so the crawl advances and the timeline's terminal
             // SceneChange can fire (rebuilding render state on a swap).
             if self.session.host.world.cutscene_narration_active()
-                || self.session.host.world.cutscene_card.is_some()
+                || self.session.host.world.cutscene.card.is_some()
             {
                 self.session.host.world.set_pad(0);
                 match self.session.tick() {
@@ -660,14 +660,14 @@ impl PlayWindowApp {
             // Disjoint fields: `r` borrows `win.renderer`, the image lives under
             // `session`, the cache is `caption_atlas`.
             if self.caption_atlas.is_none()
-                && let Some(cap) = self.session.host.world.cutscene_caption.as_ref()
+                && let Some(cap) = self.session.host.world.cutscene.caption.as_ref()
             {
                 match r.upload_sprite_atlas(&cap.rgba, cap.width, cap.height) {
                     Ok(atlas) => self.caption_atlas = Some((atlas, cap.width, cap.height)),
                     Err(e) => log::warn!("caption atlas upload: {e:#}"),
                 }
             } else if self.caption_atlas.is_some()
-                && self.session.host.world.cutscene_caption.is_none()
+                && self.session.host.world.cutscene.caption.is_none()
             {
                 self.caption_atlas = None;
             }
@@ -2039,7 +2039,7 @@ impl PlayWindowApp {
             // preserve the PSX 320x240 framing (retail centers it horizontally,
             // mid-screen ~y110 over the villager tableau).
             let caption_draw_vec: Vec<legaia_engine_render::SpriteDraw> = {
-                let alpha = self.session.host.world.cutscene_caption_alpha;
+                let alpha = self.session.host.world.cutscene.caption_alpha;
                 match self.caption_atlas.as_ref() {
                     Some((_, cw, ch)) if alpha > 0.001 => {
                         let scale = h as f32 / 240.0;

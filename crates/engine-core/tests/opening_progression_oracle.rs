@@ -175,7 +175,7 @@ fn engine_reproduces_the_town01_name_entry_beat() {
     // name entry at op-0x49 - retail's beat between S2 (Rim Elm arrival) and S3
     // (post-name-entry free-roam).
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
-    host.world.entering_town01_opening = true;
+    host.world.cutscene.entering_town01_opening = true;
     host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
         .expect("enter town01 opening");
     assert_eq!(

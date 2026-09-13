@@ -241,7 +241,7 @@ fn a_field_script_park_never_answers_the_cutscene_timeline() {
     let mut w = field_world();
     // The per-tick field script arms a default submode park.
     w.in_spawned_record_slice = false;
-    w.in_cutscene_timeline = false;
+    w.cutscene.in_timeline = false;
     assert_eq!(w.op49_park_owner(), Op49ParkOwner::FieldScript);
     w.open_field_submode_screen(slot::CLOSE_TICK, None);
     assert!(w.submode_screen.is_open());
@@ -249,7 +249,7 @@ fn a_field_script_park_never_answers_the_cutscene_timeline() {
     // Same frame, the modal timeline steps its own op-0x49. It must read Idle
     // (so `op49_invoke_setup` runs), not the field script's Armed.
     w.in_spawned_record_slice = true;
-    w.in_cutscene_timeline = true;
+    w.cutscene.in_timeline = true;
     assert_eq!(w.op49_park_owner(), Op49ParkOwner::CutsceneTimeline);
     assert!(
         !w.submode_screen
@@ -264,7 +264,7 @@ fn a_field_script_park_never_answers_the_cutscene_timeline() {
 
     // A helper context is a third owner, distinct from both.
     w.in_spawned_record_slice = true;
-    w.in_cutscene_timeline = false;
+    w.cutscene.in_timeline = false;
     assert_eq!(w.op49_park_owner(), Op49ParkOwner::HelperContext);
     assert!(!w.submode_screen.is_open_for(Op49ParkOwner::HelperContext));
 }

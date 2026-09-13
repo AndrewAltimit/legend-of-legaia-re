@@ -150,12 +150,12 @@ fn the_channel_advances_from_the_worlds_own_frame_tick() {
     );
     for _ in 0..32 {
         let _ = w.tick();
-        if w.cutscene_elements.is_empty() {
+        if w.cutscene.elements.is_empty() {
             break;
         }
     }
     assert!(
-        w.cutscene_elements.is_empty(),
+        w.cutscene.elements.is_empty(),
         "the world tick must run the channel, not just `tick_cutscene_elements`"
     );
     assert_eq!(

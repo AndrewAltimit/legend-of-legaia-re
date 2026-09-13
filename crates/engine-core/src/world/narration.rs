@@ -79,7 +79,7 @@ impl World {
         // Per-scene crawl geometry / speed (capture-pinned; see
         // `RollerParams::for_scene`).
         let params = crate::cutscene_narration::RollerParams::for_scene(&self.active_scene_label);
-        self.cutscene_narration = Some(crate::cutscene_narration::CutsceneNarration::with_params(
+        self.cutscene.narration = Some(crate::cutscene_narration::CutsceneNarration::with_params(
             pages, params,
         ));
         // Monotonic "which crawl block is showing" counter. Because a
@@ -87,14 +87,15 @@ impl World {
         // one scrolls out (continuous crawl, no blank frame), a rising-edge
         // `active && !was_active` observer can miss a block; observers count
         // this instead. Never reset within a scene's opening.
-        self.cutscene_narration_seq = self.cutscene_narration_seq.wrapping_add(1);
+        self.cutscene.narration_seq = self.cutscene.narration_seq.wrapping_add(1);
     }
 
     /// `true` while the opening-cutscene narration is on screen (not yet
     /// stepped past its last page). Hosts gate the prologue hand-off on this:
     /// the narration plays first, the Rim Elm hand-off follows.
     pub fn cutscene_narration_active(&self) -> bool {
-        self.cutscene_narration
+        self.cutscene
+            .narration
             .as_ref()
             .is_some_and(|n| !n.is_complete())
     }
@@ -164,12 +165,12 @@ impl World {
     /// narration is still on screen, `false` once it completes (so the host
     /// lets the confirm fall through to [`Self::take_prologue_handoff`]).
     pub fn skip_cutscene_narration(&mut self) -> bool {
-        let Some(narration) = self.cutscene_narration.as_mut() else {
+        let Some(narration) = self.cutscene.narration.as_mut() else {
             return false;
         };
         let still_active = narration.skip_page();
         if !still_active {
-            self.cutscene_narration = None;
+            self.cutscene.narration = None;
         }
         still_active
     }
@@ -255,19 +256,22 @@ impl World {
     // REF: FUN_801D1344
     // REF: FUN_8001FD44
     pub fn take_prologue_handoff(&mut self, confirm: bool) -> Option<&'static str> {
-        if confirm && self.story_flags & PROLOGUE_HANDOFF_FLAG != 0 && self.opening_chain_active {
+        if confirm
+            && self.story_flags & PROLOGUE_HANDOFF_FLAG != 0
+            && self.cutscene.opening_chain_active
+        {
             self.story_flags &= !PROLOGUE_HANDOFF_FLAG;
             // Tear down whatever leg of the opening is mid-flight - the skip
             // abandons the remaining narration + choreography wholesale.
-            self.cutscene_narration = None;
-            self.cutscene_card = None;
-            self.cutscene_timeline = None;
+            self.cutscene.narration = None;
+            self.cutscene.card = None;
+            self.cutscene.timeline = None;
             self.pending_named_scene_transition = None;
-            self.opening_chain_active = false;
+            self.cutscene.opening_chain_active = false;
             // Mark the upcoming `town01` entry as the new-game opening so it
             // installs the opening cutscene timeline (which opens name entry at
             // its pinned op-`0x49`); a normal `town01` visit never sets this.
-            self.entering_town01_opening = true;
+            self.cutscene.entering_town01_opening = true;
             Some(legaia_asset::new_game::OPENING_SCENE)
         } else {
             None
@@ -311,8 +315,8 @@ impl World {
         }
         // opdeene's terminal `GFLAG_SET 26` arms the `town01` hand-off; mark the
         // timeline so its completion / frame-cap safety net does so.
-        if let Some(tl) = self.cutscene_timeline.take() {
-            self.cutscene_timeline = Some(tl.arming_prologue_handoff());
+        if let Some(tl) = self.cutscene.timeline.take() {
+            self.cutscene.timeline = Some(tl.arming_prologue_handoff());
         }
         true
     }
@@ -514,11 +518,11 @@ impl World {
         // The opening hides the town for its establishing shot; free-roam
         // follows with no scene reload, so completion must drop the hide-box
         // overrides (see `CutsceneTimeline::restore_hidden_on_complete`).
-        if let Some(tl) = self.cutscene_timeline.as_mut() {
+        if let Some(tl) = self.cutscene.timeline.as_mut() {
             tl.restore_hidden_on_complete = true;
         }
-        self.prologue_naming_pending = true;
-        self.prologue_naming_armed = false;
+        self.cutscene.prologue_naming_pending = true;
+        self.cutscene.prologue_naming_armed = false;
         true
     }
 
@@ -578,7 +582,7 @@ impl World {
         if trace || std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some() {
             tl = tl.with_trace();
         }
-        self.cutscene_timeline = Some(tl);
+        self.cutscene.timeline = Some(tl);
         // Spawn the per-actor channels (one per partition-1 placement,
         // retail `FUN_8003AEB0`'s spawn loop) so the timeline's cross-context
         // pokes land on real per-actor contexts - the vignette mechanism -
@@ -613,7 +617,8 @@ impl World {
     /// and not yet complete). Diagnostics / tests read this; the hand-off gate
     /// itself keys off the scratchpad flag the timeline sets, not this.
     pub fn cutscene_timeline_active(&self) -> bool {
-        self.cutscene_timeline
+        self.cutscene
+            .timeline
             .as_ref()
             .is_some_and(|t| !t.is_done())
     }
@@ -705,18 +710,18 @@ impl World {
 
     // REF: FUN_8003BDE0
     pub fn step_cutscene_timeline(&mut self) {
-        let Some(mut tl) = self.cutscene_timeline.take() else {
+        let Some(mut tl) = self.cutscene.timeline.take() else {
             return;
         };
         if tl.done {
-            self.cutscene_timeline = Some(tl);
+            self.cutscene.timeline = Some(tl);
             return;
         }
         // Freeze the timeline while the name-entry overlay it spawned is open:
         // its op-`0x49` STATE_RESUME is suspended until the player commits a
         // name, so neither the VM nor the frame cap advances meanwhile.
         if self.name_entry_active() {
-            self.cutscene_timeline = Some(tl);
+            self.cutscene.timeline = Some(tl);
             return;
         }
         // Parked at an inline dialog box (a `0x1F` glyph segment the record's
@@ -774,12 +779,12 @@ impl World {
                 }
             }
             if tl.dialog.is_some() && !tl.done {
-                self.cutscene_timeline = Some(tl);
+                self.cutscene.timeline = Some(tl);
                 return;
             }
             if tl.done {
                 let restore = tl.restore_hidden_on_complete;
-                self.cutscene_timeline = None;
+                self.cutscene.timeline = None;
                 if restore {
                     self.restore_hidden_field_npcs();
                 }
@@ -792,7 +797,7 @@ impl World {
         // clears the parent's halt bit when every page has scrolled off.
         if tl.narration_pc.is_some() {
             if self.cutscene_narration_active() {
-                self.cutscene_timeline = Some(tl);
+                self.cutscene.timeline = Some(tl);
                 return;
             }
             // The prior roller drained: clear the hold and leave the PC AT
@@ -806,7 +811,7 @@ impl World {
         } else {
             // Still parked on the channel-completion handshake: keep the
             // timeline installed and re-test next tick.
-            self.cutscene_timeline = Some(tl);
+            self.cutscene.timeline = Some(tl);
         }
     }
 
@@ -840,7 +845,7 @@ impl World {
         modal: bool,
     ) -> bool {
         tl.frames = tl.frames.saturating_add(1);
-        self.in_cutscene_timeline = modal;
+        self.cutscene.in_timeline = modal;
         self.in_spawned_record_slice = true;
         let mut channels = std::mem::take(&mut self.field_channels);
         let channel_pre_pos: Vec<(u16, u16)> = channels
@@ -864,7 +869,7 @@ impl World {
                     wait.frames += 1;
                     tl.channel_wait = Some(wait);
                     self.field_channels = channels;
-                    self.in_cutscene_timeline = false;
+                    self.cutscene.in_timeline = false;
                     self.in_spawned_record_slice = false;
                     return false;
                 }
@@ -896,7 +901,7 @@ impl World {
             if tl.player_move_frames > 0 {
                 tl.player_wait = Some(width);
                 self.field_channels = channels;
-                self.in_cutscene_timeline = false;
+                self.cutscene.in_timeline = false;
                 self.in_spawned_record_slice = false;
                 return false;
             }
@@ -959,7 +964,7 @@ impl World {
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 tl.walk_wait = Some(walk);
                 self.field_channels = channels;
-                self.in_cutscene_timeline = false;
+                self.cutscene.in_timeline = false;
                 self.in_spawned_record_slice = false;
                 // A walk park is real playout progress, not a hang: don't let
                 // it accumulate toward the anti-hang frame cap (a long leg -
@@ -1013,7 +1018,7 @@ impl World {
             if r != vm::motion_vm::StepResult::Done && fw.frames < WALK_PARK_TIMEOUT {
                 tl.facing_wait = Some(fw);
                 self.field_channels = channels;
-                self.in_cutscene_timeline = false;
+                self.cutscene.in_timeline = false;
                 self.in_spawned_record_slice = false;
                 // Like the walk park: a rotate park is real playout progress,
                 // not a hang - keep it off the anti-hang frame cap.
@@ -1064,7 +1069,7 @@ impl World {
                         }
                         legaia_asset::cutscene_text::NarrationKind::Card => {
                             let blank = site.pages.iter().all(|p| p.trim().is_empty());
-                            host.world.cutscene_card = if blank {
+                            host.world.cutscene.card = if blank {
                                 None
                             } else {
                                 Some(site.pages.clone())
@@ -1611,7 +1616,7 @@ impl World {
             }
         }
         self.field_channels = channels;
-        self.in_cutscene_timeline = false;
+        self.cutscene.in_timeline = false;
         self.in_spawned_record_slice = false;
         true
     }
@@ -1638,7 +1643,7 @@ impl World {
         // frames of choreography), so the tight anti-hang cap would cut the
         // chain mid-scene. `town01`'s opening (chain flag already cleared)
         // keeps the tight cap.
-        let cap = if tl.arms_prologue_handoff || self.opening_chain_active {
+        let cap = if tl.arms_prologue_handoff || self.cutscene.opening_chain_active {
             PROLOGUE_TIMELINE_MAX_FRAMES
         } else {
             CUTSCENE_TIMELINE_MAX_FRAMES
@@ -1653,12 +1658,12 @@ impl World {
             if tl.done && self.story_flags & PROLOGUE_HANDOFF_FLAG == 0 {
                 self.arm_prologue_handoff();
             }
-            self.cutscene_timeline = Some(tl);
+            self.cutscene.timeline = Some(tl);
         } else if tl.done {
             // Timeline finished (or capped): drop it so the view reverts
             // from the cutscene camera to normal field gameplay.
             let restore = tl.restore_hidden_on_complete;
-            self.cutscene_timeline = None;
+            self.cutscene.timeline = None;
             // The town01 OPENING choreography `MoveTo`s the townsfolk to the
             // off-map hide box to clear the establishing shot. Nothing
             // reloads the scene between the cutscene and free-roam, so that
@@ -1672,7 +1677,7 @@ impl World {
                 self.restore_hidden_field_npcs();
             }
         } else {
-            self.cutscene_timeline = Some(tl);
+            self.cutscene.timeline = Some(tl);
         }
     }
 
@@ -2757,7 +2762,7 @@ mod tests {
         let mut w = World::new();
         // `B3 05 03` (3 bytes) then `4A FF 7F` (WAIT_FRAMES target 0x7FFF).
         let bc = vec![0xB3, 0x05, 0x03, 0x4A, 0xFF, 0x7F];
-        w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
         let mut ctx = FieldCtx {
             script_id: 5,
             ..FieldCtx::default()
@@ -2784,7 +2789,8 @@ mod tests {
         w.step_cutscene_timeline();
         {
             let tl = w
-                .cutscene_timeline
+                .cutscene
+                .timeline
                 .as_ref()
                 .expect("timeline still installed");
             assert!(tl.channel_wait.is_some(), "parks on the channel handshake");
@@ -2797,7 +2803,7 @@ mod tests {
             w.step_cutscene_timeline();
         }
         {
-            let tl = w.cutscene_timeline.as_ref().unwrap();
+            let tl = w.cutscene.timeline.as_ref().unwrap();
             assert!(
                 tl.channel_wait.is_some(),
                 "stays parked while the flag is clear"
@@ -2809,7 +2815,8 @@ mod tests {
         w.field_channels[0].ctx.flags |= 1 << 3;
         w.step_cutscene_timeline();
         let tl = w
-            .cutscene_timeline
+            .cutscene
+            .timeline
             .as_ref()
             .expect("timeline still installed");
         assert!(
@@ -2834,7 +2841,8 @@ mod tests {
         let mut resumed = false;
         for _ in 0..(cap + 4) {
             w.step_cutscene_timeline();
-            if w.cutscene_timeline
+            if w.cutscene
+                .timeline
                 .as_ref()
                 .is_some_and(|tl| tl.channel_wait.is_none() && tl.pc == 3)
             {
@@ -2859,7 +2867,7 @@ mod tests {
 
         let mut w = World::new();
         let bc = vec![0xB8, 0x05, op0, op1, 0x4A, 0xFF, 0x7F];
-        w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
         w.field_channels = vec![FieldChannel {
             placement_index: 5,
             ctx: FieldCtx {
@@ -2889,7 +2897,8 @@ mod tests {
         let mut w = timeline_with_npc_facing_op(0x06, 0x12, 0xE00);
         w.step_cutscene_timeline(); // reaches the op, arms the rotate park
         assert!(
-            w.cutscene_timeline
+            w.cutscene
+                .timeline
                 .as_ref()
                 .is_some_and(|tl| tl.facing_wait.is_some()),
             "budgeted facing op parks the timeline on the rotate leg"
@@ -2897,7 +2906,8 @@ mod tests {
         let mut headings = Vec::new();
         for _ in 0..18 {
             assert!(
-                w.cutscene_timeline
+                w.cutscene
+                    .timeline
                     .as_ref()
                     .is_some_and(|tl| tl.facing_wait.is_some()),
                 "the park holds for the op's whole frame budget"
@@ -2918,7 +2928,7 @@ mod tests {
             Some(&0x0400),
             "terminal frame snaps exactly onto the compass entry"
         );
-        let tl = w.cutscene_timeline.as_ref().expect("timeline installed");
+        let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
         assert!(tl.facing_wait.is_none(), "ramp done: park released");
         assert_eq!(tl.pc, 4, "record resumed past the 4-byte yield op");
     }
@@ -2934,7 +2944,7 @@ mod tests {
             Some(&0x0C00),
             "LUT index 2 (-X) written outright"
         );
-        let tl = w.cutscene_timeline.as_ref().expect("timeline installed");
+        let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
         assert!(tl.facing_wait.is_none(), "no park on the simple path");
     }
 
@@ -2956,7 +2966,7 @@ mod tests {
             0x3F, 0x8F, 0x02, 0x06, b'j', b'o', b'u', b'i', b'n', b'a', 0x84, 0x14, 0x00,
         ]);
         bc.extend_from_slice(&[0x21, 0x26, 0xFE, 0xFF]); // Nop + JmpRel-to-self park
-        w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
         w
     }
 
@@ -2973,7 +2983,8 @@ mod tests {
         w.step_cutscene_timeline();
         {
             let tl = w
-                .cutscene_timeline
+                .cutscene
+                .timeline
                 .as_ref()
                 .expect("timeline still installed");
             assert!(
@@ -2998,7 +3009,7 @@ mod tests {
         // inside the frame cap.
         let cap = crate::world::CHANNEL_WAIT_PARK_TIMEOUT;
         let mut ticks = 0;
-        while w.cutscene_timeline.is_some() && ticks < cap + 8 {
+        while w.cutscene.timeline.is_some() && ticks < cap + 8 {
             w.step_cutscene_timeline();
             ticks += 1;
         }
@@ -3010,7 +3021,7 @@ mod tests {
             "the trailing 0x3F scene change fired"
         );
         assert!(
-            w.cutscene_timeline.is_none(),
+            w.cutscene.timeline.is_none(),
             "the timeline completed without hitting the frame cap"
         );
         assert!(
@@ -3034,10 +3045,11 @@ mod tests {
             0xC3, 0xF8, 0x00, 0x5E, 0xE2, 0x00, 0x00, 0x00, 0x00, // halt-acquire sub-0
             0x4A, 0xFF, 0x7F, // WAIT_FRAMES target 0x7FFF (keeps it installed)
         ];
-        w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
         w.step_cutscene_timeline();
         let tl = w
-            .cutscene_timeline
+            .cutscene
+            .timeline
             .as_ref()
             .expect("timeline still installed");
         assert!(tl.player_wait.is_none(), "no park without a move in flight");
@@ -3151,7 +3163,7 @@ mod tests {
             0,
         );
         let mut w = World::new();
-        w.cutscene_timeline = Some(CutsceneTimeline::new(long_wait.to_vec(), 0));
+        w.cutscene.timeline = Some(CutsceneTimeline::new(long_wait.to_vec(), 0));
         assert!(w.cutscene_timeline_active());
         assert!(w.install_helper_record(&mf, &man, 0));
         assert!(w.install_helper_record(&mf, &man, 1));

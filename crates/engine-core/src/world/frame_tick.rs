@@ -34,7 +34,7 @@ impl World {
     ///
     /// REF: FUN_8003C764 (`0x8003C7C0..0x8003C7DC`, the measure + centre)
     pub fn commit_text_balloon_width(&mut self, text_width_px: i16) -> Option<(i32, i32)> {
-        let balloon = self.text_balloon.as_mut()?;
+        let balloon = self.cutscene.text_balloon.as_mut()?;
         if balloon.x.is_none() {
             balloon.center_with_width(text_width_px);
         }
@@ -48,7 +48,7 @@ impl World {
     /// The startup band (`timer < 1`) draws nothing in retail, so a host that
     /// keys on `text_balloon.is_some()` shows the balloon one frame early.
     pub fn text_balloon_drawing(&self) -> Option<&[u8]> {
-        let b = self.text_balloon.as_ref()?;
+        let b = self.cutscene.text_balloon.as_ref()?;
         (!b.killed && b.timer >= 1 && b.timer < b.total).then_some(b.text.as_slice())
     }
 
@@ -1227,10 +1227,10 @@ impl World {
         // has to deliver a full 60 retail frames a second - which it does only
         // under the 1:1 denomination (at the old 100 Hz premise it delivered
         // 36, and the crawl ran at 0.6x its own pinned figure).
-        if let Some(narration) = &mut self.cutscene_narration
+        if let Some(narration) = &mut self.cutscene.narration
             && !narration.tick(self.field_frame_step as u32)
         {
-            self.cutscene_narration = None;
+            self.cutscene.narration = None;
         }
         // Fade the "It was the Seru." caption image (opdeene's baked-TIM
         // caption, `Self::cutscene_caption`). It is target-visible in the
@@ -1248,22 +1248,22 @@ impl World {
         // beat: once it has been fully shown for `CAPTION_HOLD_FRAMES`, fade
         // it back out and keep it hidden (the counter never resets within
         // the scene, so the caption shows exactly once).
-        if self.cutscene_caption.is_some() {
+        if self.cutscene.caption.is_some() {
             const CAPTION_FADE_STEP: f32 = 0.06;
             const CAPTION_HOLD_FRAMES: u32 = 180;
-            let in_gap = self.cutscene_narration_seq >= 1 && !self.cutscene_narration_active();
-            if in_gap && self.cutscene_caption_alpha >= 1.0 {
-                self.cutscene_caption_shown_frames =
-                    self.cutscene_caption_shown_frames.saturating_add(1);
+            let in_gap = self.cutscene.narration_seq >= 1 && !self.cutscene_narration_active();
+            if in_gap && self.cutscene.caption_alpha >= 1.0 {
+                self.cutscene.caption_shown_frames =
+                    self.cutscene.caption_shown_frames.saturating_add(1);
             }
-            let hold_elapsed = self.cutscene_caption_shown_frames >= CAPTION_HOLD_FRAMES;
+            let hold_elapsed = self.cutscene.caption_shown_frames >= CAPTION_HOLD_FRAMES;
             let target = if in_gap && !hold_elapsed { 1.0 } else { 0.0 };
-            if self.cutscene_caption_alpha < target {
-                self.cutscene_caption_alpha =
-                    (self.cutscene_caption_alpha + CAPTION_FADE_STEP).min(target);
-            } else if self.cutscene_caption_alpha > target {
-                self.cutscene_caption_alpha =
-                    (self.cutscene_caption_alpha - CAPTION_FADE_STEP).max(target);
+            if self.cutscene.caption_alpha < target {
+                self.cutscene.caption_alpha =
+                    (self.cutscene.caption_alpha + CAPTION_FADE_STEP).min(target);
+            } else if self.cutscene.caption_alpha > target {
+                self.cutscene.caption_alpha =
+                    (self.cutscene.caption_alpha - CAPTION_FADE_STEP).max(target);
             }
         }
         // Tick the live `4C E1` text balloon (FUN_801DA7F0 handler; see
@@ -1272,11 +1272,11 @@ impl World {
         // live"; the cadence is the 60 fps sub-clock step, matching the
         // narration roller above.
         let balloon_engaged = self.dialogue_owns_input();
-        if runs_master_driver && let Some(balloon) = self.text_balloon.as_mut() {
+        if runs_master_driver && let Some(balloon) = self.cutscene.text_balloon.as_mut() {
             let engaged = balloon_engaged;
             let cadence = self.field_frame_step as i16;
             if balloon.tick(engaged, cadence) == crate::text_balloon::BalloonTick::Killed {
-                self.text_balloon = None;
+                self.cutscene.text_balloon = None;
             }
         }
         // Run every live camera-register zone ramp (op `0x43` sub-3..6). Same
@@ -1528,7 +1528,7 @@ impl World {
                 // ([`active_fmv`] set), the field VM is suspended - retail
                 // hands the frame to the cutscene/MDEC overlay - and the host
                 // drives playback, calling [`finish_cutscene`] when it ends.
-                if self.active_fmv.is_none() {
+                if self.cutscene.active_fmv.is_none() {
                     self.step_spawned_record_contexts();
                     self.step_field_channels();
                     self.step_field_frame_slice();

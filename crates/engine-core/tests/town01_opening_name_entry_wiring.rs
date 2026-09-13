@@ -47,7 +47,7 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
 
     // Simulate the opdeene→town01 prologue hand-off: the flag `take_prologue_handoff`
     // would set, telling the town01 entry to install the opening timeline.
-    host.world.entering_town01_opening = true;
+    host.world.cutscene.entering_town01_opening = true;
     host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
 
@@ -58,11 +58,11 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
         "town01 opening timeline installs on the prologue hand-off"
     );
     assert!(
-        host.world.prologue_naming_pending,
+        host.world.cutscene.prologue_naming_pending,
         "the timeline is armed to open name entry at its op-0x49"
     );
     assert!(
-        !host.world.entering_town01_opening,
+        !host.world.cutscene.entering_town01_opening,
         "the one-shot opening flag is consumed by the entry"
     );
     assert!(
@@ -85,11 +85,11 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
         "name entry opens partway through the opening (after camera/wait beats), not instantly"
     );
     assert!(
-        host.world.prologue_naming_armed,
+        host.world.cutscene.prologue_naming_armed,
         "the op-0x49 host hook armed the name-entry handoff"
     );
     // The timeline is parked exactly on the pinned op-0x49 (body 0x02c6).
-    let parked_pc = host.world.cutscene_timeline.as_ref().map(|t| t.pc);
+    let parked_pc = host.world.cutscene.timeline.as_ref().map(|t| t.pc);
     assert_eq!(
         parked_pc,
         Some(NAME_ENTRY_OP49_OFFSET),
@@ -99,7 +99,7 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
 
     // 3. The timeline is frozen while name entry is open: ticking does not
     //    advance its frame counter or PC.
-    let frames_before = host.world.cutscene_timeline.as_ref().map(|t| t.frames);
+    let frames_before = host.world.cutscene.timeline.as_ref().map(|t| t.frames);
     for _ in 0..30 {
         host.world.tick();
     }
@@ -108,12 +108,12 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
         "name entry stays open while the player has not committed"
     );
     assert_eq!(
-        host.world.cutscene_timeline.as_ref().map(|t| t.frames),
+        host.world.cutscene.timeline.as_ref().map(|t| t.frames),
         frames_before,
         "the timeline is frozen (no frame-cap progress) while name entry is up"
     );
     assert_eq!(
-        host.world.cutscene_timeline.as_ref().map(|t| t.pc),
+        host.world.cutscene.timeline.as_ref().map(|t| t.pc),
         Some(NAME_ENTRY_OP49_OFFSET),
         "the timeline stays parked on the op-0x49 while name entry is up"
     );
@@ -159,16 +159,16 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
     //    dropping itself so the view reverts from the cutscene camera.
     host.world.field_player_move_cues.clear();
     let mut more = 0u32;
-    while host.world.cutscene_timeline.is_some() && more < 12000 {
+    while host.world.cutscene.timeline.is_some() && more < 12000 {
         tick_pressing_through_dialogs(&mut host.world, more);
         more += 1;
     }
-    let parked = host.world.cutscene_timeline.as_ref().map(|t| {
+    let parked = host.world.cutscene.timeline.as_ref().map(|t| {
         let end = (t.pc + 12).min(t.bytecode.len());
         (t.pc, t.frames, t.bytecode[t.pc.min(end)..end].to_vec())
     });
     assert!(
-        host.world.cutscene_timeline.is_none(),
+        host.world.cutscene.timeline.is_none(),
         "the opening timeline completes after naming and is dropped (ticked {more} more); \
          still parked at (pc, frames, bytes) = {parked:02x?}"
     );
@@ -195,7 +195,8 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
 /// completion, it is a hang recovery.
 fn tick_pressing_through_dialogs(world: &mut legaia_engine_core::world::World, tick: u32) {
     let parked = world
-        .cutscene_timeline
+        .cutscene
+        .timeline
         .as_ref()
         .is_some_and(|t| t.dialog.is_some());
     if parked && tick.is_multiple_of(2) {

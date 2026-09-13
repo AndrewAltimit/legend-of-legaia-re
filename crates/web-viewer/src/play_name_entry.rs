@@ -72,7 +72,7 @@ impl LegaiaRuntime {
     /// plain `enter_field("town01")` is a casual visit and never does.
     pub fn debug_enter_town01_opening(&mut self) -> Result<(), String> {
         let host = self.scene_host.as_mut().ok_or("no disc loaded")?;
-        host.world.entering_town01_opening = true;
+        host.world.cutscene.entering_town01_opening = true;
         self.enter_field(legaia_asset::new_game::OPENING_SCENE)
             .map(|_| ())
             .map_err(|e| format!("{e:?}"))

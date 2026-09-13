@@ -133,7 +133,7 @@ fn field_op_4c_e2_records_pending_fmv_trigger() {
     let bytecode = vec![0x4C, 0xE2, 0x03, 0x00, 0, 0];
     world.load_field_script(bytecode);
     let _ = world.tick();
-    assert_eq!(world.pending_fmv_trigger, Some(3));
+    assert_eq!(world.cutscene.pending_fmv_trigger, Some(3));
     let events = world.drain_field_events();
     assert!(events.contains(&FieldEvent::FmvTrigger { fmv_id: 3 }));
     assert_eq!(fmv_index_to_str_filename(3), Some("MOV/MV3.STR"));
@@ -155,14 +155,14 @@ fn field_fmv_trigger_drives_field_cutscene_field_flow() {
     // Frame 1: op fires, records the pending trigger; still in Field.
     let _ = world.tick();
     assert_eq!(world.mode, SceneMode::Field);
-    assert_eq!(world.pending_fmv_trigger, Some(3));
+    assert_eq!(world.cutscene.pending_fmv_trigger, Some(3));
     assert_eq!(world.active_fmv(), None);
 
     // Frame 2: the pending trigger is consumed at the top of the tick and
     // the world flips into the cutscene mode for the resolved FMV.
     let _ = world.tick();
     assert_eq!(world.mode, SceneMode::Cutscene);
-    assert_eq!(world.pending_fmv_trigger, None);
+    assert_eq!(world.cutscene.pending_fmv_trigger, None);
     assert_eq!(world.active_fmv(), Some(3));
     assert_eq!(world.active_fmv_str_filename(), Some("MOV/MV3.STR"));
 
@@ -191,14 +191,17 @@ fn field_fmv_trigger_cut_path_is_a_noop() {
     world.load_field_script(vec![0x4C, 0xE2, 0x0A, 0x00, 0, 0]);
 
     let _ = world.tick(); // op fires
-    assert_eq!(world.pending_fmv_trigger, Some(10));
+    assert_eq!(world.cutscene.pending_fmv_trigger, Some(10));
     let _ = world.tick(); // pending consumed
     assert_eq!(
         world.mode,
         SceneMode::Field,
         "cut path does not enter cutscene"
     );
-    assert_eq!(world.pending_fmv_trigger, None, "pending still drained");
+    assert_eq!(
+        world.cutscene.pending_fmv_trigger, None,
+        "pending still drained"
+    );
     assert_eq!(world.active_fmv(), None);
 }
 

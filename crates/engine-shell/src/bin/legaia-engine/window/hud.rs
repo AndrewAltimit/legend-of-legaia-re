@@ -85,13 +85,14 @@ impl PlayWindowApp {
     pub(super) fn sync_text_balloon(&mut self) {
         let world = &mut self.session.host.world;
         if world
+            .cutscene
             .text_balloon
             .as_ref()
             .is_none_or(|b| b.x.is_some() || b.killed)
         {
             return;
         }
-        let width = match world.text_balloon.as_ref() {
+        let width = match world.cutscene.text_balloon.as_ref() {
             Some(b) => legaia_engine_render::text_balloon_text_width(&self.font, &b.text),
             None => return,
         };
@@ -114,7 +115,7 @@ impl PlayWindowApp {
             || w.cutscene_timeline_active()
             || w.current_dialog.is_some()
             || w.inline_dialogue.is_some()
-            || w.text_balloon.is_some()
+            || w.cutscene.text_balloon.is_some()
             || self.active_dialog.is_some()
     }
 
@@ -1613,7 +1614,7 @@ impl PlayWindowApp {
         // cold-boot retail capture (multi-line, 0.5 px/frame; the earlier
         // one-caption-at-a-time reading measured the separate `4C E1`
         // balloon, not this crawl).
-        if let Some(narration) = &self.session.host.world.cutscene_narration {
+        if let Some(narration) = &self.session.host.world.cutscene.narration {
             let white = [1.0f32, 1.0, 1.0, 1.0];
             let center_x = (w / 2) as i32;
             let scale = h as f32 / 240.0;
@@ -1630,7 +1631,7 @@ impl PlayWindowApp {
         // Opening-cutscene static title card (`map01`'s "twilight of
         // humanity" beat): the pages shown together, centered, at the
         // capture-pinned band y=92..130.
-        if let Some(card) = &self.session.host.world.cutscene_card {
+        if let Some(card) = &self.session.host.world.cutscene.card {
             let white = [1.0f32, 1.0, 1.0, 1.0];
             let center_x = (w / 2) as i32;
             let scale = h as f32 / 240.0;
@@ -1721,6 +1722,7 @@ impl PlayWindowApp {
                 .session
                 .host
                 .world
+                .cutscene
                 .text_balloon
                 .as_ref()
                 .and_then(|b| b.pen())
@@ -1787,7 +1789,8 @@ impl PlayWindowApp {
             .session
             .host
             .world
-            .cutscene_timeline
+            .cutscene
+            .timeline
             .as_ref()
             .and_then(|tl| tl.dialog.as_ref())
             && let Some(snap) = from_panel(panel, true)
@@ -1922,6 +1925,7 @@ impl PlayWindowApp {
                 .session
                 .host
                 .world
+                .cutscene
                 .text_balloon
                 .as_ref()
                 .map(|b| b.frame_rect())

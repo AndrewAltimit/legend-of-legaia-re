@@ -156,7 +156,8 @@ fn town01_opening_name_entry_trigger_is_op49_at_0x02c6() {
     );
     let tl = host
         .world
-        .cutscene_timeline
+        .cutscene
+        .timeline
         .take()
         .expect("timeline present");
     let pc0 =
