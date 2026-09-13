@@ -77,7 +77,7 @@ impl LegaiaRuntime {
         let Some(session) = self
             .scene_host
             .as_ref()
-            .and_then(|h| h.world.fishing.as_ref())
+            .and_then(|h| h.world.minigames.fishing.as_ref())
         else {
             self.fishing_banners = Default::default();
             self.fishing_banner_draws.clear();
@@ -109,7 +109,7 @@ impl LegaiaRuntime {
     /// The live fishing session, when one is installed on the scene host's
     /// world.
     fn fishing_session(&self) -> Option<&FishingSession> {
-        self.scene_host.as_ref()?.world.fishing.as_ref()
+        self.scene_host.as_ref()?.world.minigames.fishing.as_ref()
     }
 
     /// The phase / prompt status rows the native window prints above the retail
@@ -262,7 +262,7 @@ impl LegaiaRuntime {
             [0usize, 1].map(|venue| PrizeExchange::from_asset(venue, &ex.venues[venue], names))
         });
         let record = FishingRecord {
-            points: host.world.fishing_points,
+            points: host.world.minigames.fishing_points,
             ..Default::default()
         };
         host.world
@@ -286,7 +286,7 @@ impl LegaiaRuntime {
         self.fishing_banners = Default::default();
         self.fishing_banner_draws.clear();
         self.fishing_prev_phase = None;
-        host.world.fishing_points
+        host.world.minigames.fishing_points
     }
 
     /// Is a fishing session live on the world this frame?
@@ -407,17 +407,17 @@ impl LegaiaRuntime {
                     "owned": owned,
                     "available": ex.is_available(
                         i,
-                        world.fishing_points,
+                        world.minigames.fishing_points,
                         owned,
-                        world.fishing_prizes_purchased,
+                        world.minigames.fishing_prizes_purchased,
                     ),
                 })
             })
             .collect();
         serde_json::json!({
             "venue": ex.venue,
-            "points": world.fishing_points,
-            "first_visible": ex.first_visible(world.fishing_points),
+            "points": world.minigames.fishing_points,
+            "first_visible": ex.first_visible(world.minigames.fishing_points),
             "rows": rows,
         })
         .to_string()
@@ -437,6 +437,10 @@ impl LegaiaRuntime {
         host.world.open_fishing_exchange(exchange);
         let ok = host.world.fishing_exchange_buy(row, 1).is_some();
         host.world.close_fishing_exchange();
-        if ok { host.world.fishing_points } else { -1 }
+        if ok {
+            host.world.minigames.fishing_points
+        } else {
+            -1
+        }
     }
 }

@@ -516,7 +516,7 @@ impl MenuRuntime {
             input.up || input.left,
             input.down || input.right,
         );
-        let coins = world.casino_coins;
+        let coins = world.minigames.casino_coins;
         let inventory = &world.inventory;
         let event = session.tick(buttons, coins, |id| {
             inventory.get(&id).copied().unwrap_or(0)
@@ -529,7 +529,7 @@ impl MenuRuntime {
             } => {
                 let flags = &mut world.system_flags;
                 let applied = crate::prize_exchange::apply_redeem(
-                    &mut world.casino_coins,
+                    &mut world.minigames.casino_coins,
                     &mut world.inventory,
                     &mut |g| {
                         // `World::system_flag_set`, inlined over the split
@@ -573,7 +573,8 @@ impl MenuRuntime {
         if !world.point_card_held() {
             return;
         }
-        world.point_card = crate::shop::apply_point_card(world.point_card, credit);
+        world.minigames.point_card =
+            crate::shop::apply_point_card(world.minigames.point_card, credit);
         self.point_card_toast = Some(credit);
     }
 
@@ -1624,7 +1625,7 @@ mod tests {
         runtime.tick(&mut world, cross()); // ShopConfirm (yes): the commit
 
         assert_eq!(world.money, 400, "the gold debit still runs");
-        assert_eq!(world.point_card, 5, "100 / 20 * 1 banked");
+        assert_eq!(world.minigames.point_card, 5, "100 / 20 * 1 banked");
         assert_eq!(
             runtime.point_card_toast(),
             Some(5),
@@ -1696,7 +1697,7 @@ mod tests {
         runtime.tick(&mut world, cross());
 
         assert_eq!(world.inventory.get(&10), Some(&1), "the buy still lands");
-        assert_eq!(world.point_card, 0);
+        assert_eq!(world.minigames.point_card, 0);
         assert_eq!(runtime.point_card_toast(), None);
         assert_eq!(
             runtime.ctx.state,
@@ -1725,7 +1726,7 @@ mod tests {
         runtime.ctx.state = MenuState::ShopBuy.as_byte();
         runtime.tick(&mut world, cross());
 
-        assert_eq!(world.point_card, 0);
+        assert_eq!(world.minigames.point_card, 0);
         assert_eq!(runtime.point_card_toast(), None);
     }
 

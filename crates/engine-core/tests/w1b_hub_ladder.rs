@@ -323,7 +323,7 @@ fn rung4_a_confirm_hands_back_and_the_script_resumes() {
 fn rung5_pad_entered_digits_buy_coins_through_the_script_opened_screen() {
     let mut w = field_world();
     w.money = 5_000;
-    w.casino_coins = 7;
+    w.minigames.casino_coins = 7;
     w.load_field_script(op49_script(6, [0, 0, 0]));
     assert!(tick_until(&mut w, 8, |w| w.submode_screen.actor.sub == 1));
 
@@ -340,9 +340,13 @@ fn rung5_pad_entered_digits_buy_coins_through_the_script_opened_screen() {
     // host supplies it, as the module documents.
     w.submode_screen.picker_result = PICK_ACCEPT;
     w.submode_screen.counter.yes_no = 0;
-    assert!(tick_until(&mut w, 16, |w| w.casino_coins != 7));
+    assert!(tick_until(&mut w, 16, |w| w.minigames.casino_coins != 7));
 
-    assert_eq!(w.casino_coins, 7 + 3, "coins land in the casino bank");
+    assert_eq!(
+        w.minigames.casino_coins,
+        7 + 3,
+        "coins land in the casino bank"
+    );
     assert_eq!(
         w.money,
         5_000 - 3 * GOLD_PER_COIN,

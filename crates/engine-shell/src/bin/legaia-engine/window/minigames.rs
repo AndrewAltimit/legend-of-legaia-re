@@ -31,7 +31,7 @@ impl PlayWindowApp {
     /// `DAT_1f800393`, its frame-rate compensation word).
     pub(super) fn tick_fishing_banners(&mut self) {
         use legaia_engine_core::fishing::{FightOutcome, FishingPhase};
-        let Some(session) = self.session.host.world.fishing.as_ref() else {
+        let Some(session) = self.session.host.world.minigames.fishing.as_ref() else {
             // Left the minigame: drop any half-run banner with the session.
             self.fishing_banners = Default::default();
             self.fishing_banner_draws.clear();
@@ -72,7 +72,7 @@ impl PlayWindowApp {
         log::info!(
             "muscle: contest settled - {} coins paid, bank now {}{}",
             out.score,
-            self.session.host.world.casino_coins,
+            self.session.host.world.minigames.casino_coins,
             if out.award_prize {
                 " (War God Icon awarded)"
             } else {
@@ -87,7 +87,7 @@ impl PlayWindowApp {
     /// delta from scratchpad `0x1F800393`; the engine ticks a fixed one per
     /// frame. No-op outside a contest.
     pub(super) fn tick_muscle_time_meter(&mut self) {
-        if let Some(s) = self.session.host.world.muscle_dome.as_mut() {
+        if let Some(s) = self.session.host.world.minigames.muscle_dome.as_mut() {
             s.tick_time_meter(1);
         }
     }
@@ -110,6 +110,7 @@ impl PlayWindowApp {
             .session
             .host
             .world
+            .minigames
             .baka_fighter
             .as_mut()
             .map(|f| f.take_cues())
@@ -261,6 +262,7 @@ impl PlayWindowApp {
             .session
             .host
             .world
+            .minigames
             .dance
             .as_ref()
             .map(|g| {
@@ -273,7 +275,9 @@ impl PlayWindowApp {
             .unwrap_or((0, 0, false));
         // Sequence-clear banner on the score edge of a scoring judge.
         if in_dance && score > self.dance_fx_score {
-            if let Some(Judge::Sequence { weight }) = self.session.host.world.dance_last_judge {
+            if let Some(Judge::Sequence { weight }) =
+                self.session.host.world.minigames.dance_last_judge
+            {
                 self.minigame_fx
                     .spawn_good_banner(&dance::good_banner_spawn(weight.min(0xFFFF) as u16));
             }
@@ -323,7 +327,15 @@ impl PlayWindowApp {
             self.fishing_sway_offset = (0, 0);
             return;
         }
-        let Some(phase) = self.session.host.world.fishing.as_ref().map(|s| s.phase()) else {
+        let Some(phase) = self
+            .session
+            .host
+            .world
+            .minigames
+            .fishing
+            .as_ref()
+            .map(|s| s.phase())
+        else {
             return;
         };
         // One-time venue arm: the wander actor, the floor buffer, and the
@@ -388,6 +400,7 @@ impl PlayWindowApp {
             .session
             .host
             .world
+            .minigames
             .fishing
             .as_ref()
             .and_then(|s| s.last_outcome());
@@ -439,7 +452,7 @@ impl PlayWindowApp {
             }
         }
         // Sub-screen idle sway while the point-exchange list is up.
-        if self.session.host.world.fishing_exchange.is_some() {
+        if self.session.host.world.minigames.fishing_exchange.is_some() {
             let (v, next) = fc::sway_vector(sway_sine_table(), self.fishing_sway_angle, 1);
             self.fishing_sway_angle = next;
             self.fishing_sway_offset = (v.x, v.y);
@@ -461,7 +474,7 @@ impl PlayWindowApp {
             self.baka_chrome_frame.clear();
             return;
         }
-        let Some(f) = self.session.host.world.baka_fighter.as_ref() else {
+        let Some(f) = self.session.host.world.minigames.baka_fighter.as_ref() else {
             return;
         };
         let frame = f.chrome_frame();
@@ -541,10 +554,11 @@ impl PlayWindowApp {
         // snapshot of `_DAT_8007B874 | _DAT_8007B938`).
         let pad = self.session.host.world.input.retail_pad().pressed as u16;
         let world = &self.session.host.world;
-        let leg_open = world.muscle_dome.is_some();
-        let contest_open = world.muscle_contest.is_some();
+        let leg_open = world.minigames.muscle_dome.is_some();
+        let contest_open = world.minigames.muscle_contest.is_some();
         if leg_open && !self.muscle_prev_leg_open {
             let round = world
+                .minigames
                 .muscle_contest
                 .as_ref()
                 .map_or(1, |c| c.round() as i32 + 1);
@@ -558,7 +572,7 @@ impl PlayWindowApp {
             // The leg boundary the arena hub sees. Whether it shows the tally
             // screen is the shared rule's call, not this host's.
             let raises = legaia_engine_core::muscle_dome::leg_boundary_raises_interval(
-                world.muscle_contest.as_ref().map(|c| c.state()),
+                world.minigames.muscle_contest.as_ref().map(|c| c.state()),
             );
             // The tally roll is data-dependent; its four lanes step one row
             // per tick after the shared lead-in, and the last cue lands on
@@ -779,6 +793,7 @@ impl PlayWindowApp {
             // tally screen shows the coin bank alone - the browser page's
             // no-run arm does exactly the same.
             let (rows, tally) = world
+                .minigames
                 .muscle_contest
                 .as_ref()
                 .map_or((Default::default(), 0), |c| (c.rows(), c.tally()));
@@ -790,7 +805,7 @@ impl PlayWindowApp {
                     rows.outcome_lane,
                     rows.score_cell,
                     tally,
-                    world.casino_coins as i32,
+                    world.minigames.casino_coins as i32,
                 ],
                 [bright; hud::SCORE_TALLY_ROWS],
             ));
@@ -897,7 +912,7 @@ impl PlayWindowApp {
         // world's persistent point pool (banked back on exit).
         const DEV_ROD_STAT: i32 = 4;
         let record = legaia_engine_core::fishing::FishingRecord {
-            points: self.session.host.world.fishing_points,
+            points: self.session.host.world.minigames.fishing_points,
             ..Default::default()
         };
         let session =
@@ -947,7 +962,7 @@ impl PlayWindowApp {
         // banked; when the bank can't cover a spin, buy them at the exchange
         // counter first, and only front a dev stake if the party can't pay.
         const DEV_STAKE: i32 = 100;
-        let bank = self.session.host.world.casino_coins as i32;
+        let bank = self.session.host.world.minigames.casino_coins as i32;
         let balance = if bank >= legaia_engine_core::slot_machine::MIN_SPIN_BALANCE {
             bank
         } else if let Some(bought) = self.buy_casino_coins(DEV_STAKE) {
@@ -1003,8 +1018,8 @@ impl PlayWindowApp {
             return None;
         }
         self.session.host.world.money = gold - quote.cost;
-        let bank = self.session.host.world.casino_coins as i32 + quote.coins;
-        self.session.host.world.casino_coins = bank.max(0) as u32;
+        let bank = self.session.host.world.minigames.casino_coins as i32 + quote.coins;
+        self.session.host.world.minigames.casino_coins = bank.max(0) as u32;
         log::info!(
             "slots: bought {} coins for {} gold at the exchange counter (bank {bank})",
             quote.coins,
@@ -1154,16 +1169,18 @@ impl PlayWindowApp {
         let ladder = arena_raw
             .as_deref()
             .and_then(legaia_engine_core::muscle_dome::parse_course_ladder);
-        if self.session.host.world.muscle_contest.is_none() {
+        if self.session.host.world.minigames.muscle_contest.is_none() {
             let flags = self.session.host.world.muscle_contest_flags();
-            self.session.host.world.muscle_contest = arena_raw.as_deref().and_then(|raw| {
-                legaia_engine_core::muscle_dome::DomeContest::from_overlay(raw, &flags)
-            });
+            self.session.host.world.minigames.muscle_contest =
+                arena_raw.as_deref().and_then(|raw| {
+                    legaia_engine_core::muscle_dome::DomeContest::from_overlay(raw, &flags)
+                });
         }
         let (course, round) = self
             .session
             .host
             .world
+            .minigames
             .muscle_contest
             .as_ref()
             .map_or((0usize, 0u32), |c| (c.course(), c.round()));
@@ -1294,6 +1311,7 @@ impl PlayWindowApp {
                 self.session
                     .host
                     .world
+                    .minigames
                     .muscle_contest
                     .as_ref()
                     .map_or(0, |c| c.tally()),

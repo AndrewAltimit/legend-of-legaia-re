@@ -1591,7 +1591,7 @@ impl LegaiaRuntime {
         };
         let point_card = model.info.as_ref().filter(|i| i.is_point_card).map(|_| {
             self.menu_world()
-                .map(|w| w.point_card.max(0) as u32)
+                .map(|w| w.minigames.point_card.max(0) as u32)
                 .unwrap_or(0)
         });
         let out = pause_screen_draws(

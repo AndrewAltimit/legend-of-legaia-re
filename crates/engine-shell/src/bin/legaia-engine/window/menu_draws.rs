@@ -549,7 +549,7 @@ impl PlayWindowApp {
                     .info
                     .as_ref()
                     .filter(|i| i.is_point_card)
-                    .map(|_| self.session.host.world.point_card.max(0) as u32),
+                    .map(|_| self.session.host.world.minigames.point_card.max(0) as u32),
                 throw_confirm: throw.as_ref(),
                 special_confirm: model.special_confirm.as_ref().map(|sc| SpecialConfirmView {
                     lines: &special_lines,

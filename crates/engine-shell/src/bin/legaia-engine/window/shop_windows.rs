@@ -191,7 +191,9 @@ impl PlayWindowApp {
         {
             let value = match source {
                 legaia_engine_render::CounterSource::PartyGold => world.money.max(0) as u64,
-                legaia_engine_render::CounterSource::CasinoCoins => world.casino_coins as u64,
+                legaia_engine_render::CounterSource::CasinoCoins => {
+                    world.minigames.casino_coins as u64
+                }
             };
             let rect = legaia_engine_render::painter_rect(d);
             let (digits, pic) = counter_panel_draws_for(&self.font, rect, pictogram, value);
@@ -324,7 +326,7 @@ impl PlayWindowApp {
             })
             .map(|(d, _)| legaia_engine_render::painter_rect(d));
         if let Some(rect) = toast {
-            let points = world.point_card.max(0) as u64;
+            let points = world.minigames.point_card.max(0) as u64;
             let (text, cur) = amount_prompt_draws_for(
                 &self.font,
                 rect,
@@ -517,7 +519,7 @@ impl PlayWindowApp {
                 })
                 .collect(),
             cursor: session.cursor(),
-            coins: world.casino_coins,
+            coins: world.minigames.casino_coins,
             confirm_cursor: session.confirming().then(|| session.confirm_cursor()),
         };
         let (mut out, sprites, pict) = px::prize_exchange_draws_for(&self.font, table, &view);
@@ -551,7 +553,7 @@ impl PlayWindowApp {
             cursor: screen.counter.cursor,
             ceiling: screen.counter.ceiling,
             gold: world.money,
-            coins: world.casino_coins,
+            coins: world.minigames.casino_coins,
             confirm_cursor: (screen.actor.sub == 2).then_some((screen.counter.yes_no & 1) as u8),
         };
         let (mut out, sprites, pict) = px::coin_counter_draws_for(&self.font, table, &view);

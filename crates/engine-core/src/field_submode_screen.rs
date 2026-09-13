@@ -663,7 +663,7 @@ impl World {
             entry_count: self.active_party.len().min(u8::MAX as usize) as u8,
             entry_codes: self.active_party.clone(),
             gold: self.money,
-            coin_bank: self.casino_coins.min(i32::MAX as u32) as i32,
+            coin_bank: self.minigames.casino_coins.min(i32::MAX as u32) as i32,
             // Everything the entry list's per-entry sub-draw `FUN_801E5B4C`
             // reads out of RAM - see [`World::submode_equip_env`].
             equip: self.submode_equip_env(),
@@ -682,7 +682,8 @@ impl World {
                     if coins <= 0 {
                         continue;
                     }
-                    self.casino_coins = self
+                    self.minigames.casino_coins = self
+                        .minigames
                         .casino_coins
                         .saturating_add(coins as u32)
                         .min(hub::COIN_BANK_MAX as u32);
@@ -907,7 +908,7 @@ mod tests {
     fn the_coin_counter_moves_coins_and_gold_through_a_world_tick() {
         let mut w = world_with_driver();
         w.money = 5_000;
-        w.casino_coins = 7;
+        w.minigames.casino_coins = 7;
         w.open_coin_counter();
 
         // Frame 1: state 0 seeds the screen.
@@ -927,7 +928,11 @@ mod tests {
         w.submode_screen.picker_result = 0;
         w.tick_submode_screen(1);
 
-        assert_eq!(w.casino_coins, 7 + 12, "coins land in the casino bank");
+        assert_eq!(
+            w.minigames.casino_coins,
+            7 + 12,
+            "coins land in the casino bank"
+        );
         assert_eq!(w.money, 5_000 - 1_200, "gold pays 100 per coin");
     }
 

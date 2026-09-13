@@ -64,7 +64,7 @@ impl SceneHost {
     /// [`World::minigame_return_warp`] - a script that armed a warp must never
     /// be left in a mode with no exit.
     pub fn drain_minigame_warp(&mut self) -> Option<MinigameWarpOutcome> {
-        let sub_id = self.world.pending_minigame_warp.take()?;
+        let sub_id = self.world.minigames.pending_warp.take()?;
         let Some(slot) = MinigameSubId::from_sub_id(sub_id) else {
             return Some(MinigameWarpOutcome::UnknownSubId(sub_id));
         };
@@ -103,7 +103,7 @@ impl SceneHost {
             return false;
         };
         let record = crate::fishing::FishingRecord {
-            points: self.world.fishing_points,
+            points: self.world.minigames.fishing_points,
             ..Default::default()
         };
         self.world
@@ -127,7 +127,7 @@ impl SceneHost {
         let Some(payouts) = legaia_asset::slot_payout::parse(loaded) else {
             return false;
         };
-        let balance = self.world.casino_coins as i32;
+        let balance = self.world.minigames.casino_coins as i32;
         self.world
             .enter_slot_machine(crate::slot_machine::SlotMachine::new(
                 payouts,

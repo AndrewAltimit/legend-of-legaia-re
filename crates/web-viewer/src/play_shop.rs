@@ -555,7 +555,7 @@ impl LegaiaRuntime {
                 })
                 .collect(),
             cursor: session.cursor(),
-            coins: world.casino_coins,
+            coins: world.minigames.casino_coins,
             confirm_cursor: session.confirming().then(|| session.confirm_cursor()),
         };
         let (mut out, sprites, pict) = px::prize_exchange_draws_for(font, table, &view);
@@ -590,7 +590,7 @@ impl LegaiaRuntime {
             cursor: screen.counter.cursor,
             ceiling: screen.counter.ceiling,
             gold: world.money,
-            coins: world.casino_coins,
+            coins: world.minigames.casino_coins,
             confirm_cursor: (screen.actor.sub == 2).then_some((screen.counter.yes_no & 1) as u8),
         };
         let (mut out, sprites, pict) = px::coin_counter_draws_for(font, table, &view);
@@ -652,7 +652,7 @@ impl LegaiaRuntime {
         {
             let value = match source {
                 ui::CounterSource::PartyGold => world.money.max(0) as u64,
-                ui::CounterSource::CasinoCoins => world.casino_coins as u64,
+                ui::CounterSource::CasinoCoins => world.minigames.casino_coins as u64,
             };
             let rect = ui::painter_rect(d);
             let (digits, pic) = counter_panel_draws_for(font, rect, pictogram, value);
@@ -766,7 +766,7 @@ impl LegaiaRuntime {
                 font,
                 ui::painter_rect(d),
                 painters::POINT_CARD_HEADING,
-                world.point_card.max(0) as u64,
+                world.minigames.point_card.max(0) as u64,
                 painters::POINT_CARD_UNIT_LABEL,
             );
             out.extend(text);

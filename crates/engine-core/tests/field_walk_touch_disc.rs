@@ -137,10 +137,10 @@ fn koin1_cabinet_walk_touch_posts_the_interact_but_does_not_enter() {
     //   so walking up to an NPC to talk dropped the player into a minigame.
     let _ = sub_id;
     walk_into(&mut world, pos, |w| {
-        w.pending_minigame_warp.is_some() || w.pending_scene_transition.is_some()
+        w.minigames.pending_warp.is_some() || w.pending_scene_transition.is_some()
     });
     assert_eq!(
-        world.pending_minigame_warp, None,
+        world.minigames.pending_warp, None,
         "brushing a koin1 cabinet must not enter its minigame"
     );
     assert_eq!(
@@ -148,7 +148,7 @@ fn koin1_cabinet_walk_touch_posts_the_interact_but_does_not_enter() {
         "a cabinet's sub-id must not reach the map-id resolver"
     );
     assert!(
-        world.minigame_scene_backup.is_none(),
+        world.minigames.scene_backup.is_none(),
         "no mode-24 round trip is armed by a brush"
     );
     let events = world.drain_field_events();

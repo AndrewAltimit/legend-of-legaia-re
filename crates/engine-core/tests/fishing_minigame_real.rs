@@ -53,10 +53,11 @@ fn playwindow_load_path_fishes_a_real_species() {
     world.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
     assert_eq!(
-        world.fishing.as_ref().unwrap().phase(),
+        world.minigames.fishing.as_ref().unwrap().phase(),
         FishingPhase::Fighting
     );
     let hooked = world
+        .minigames
         .fishing
         .as_ref()
         .unwrap()
@@ -67,7 +68,7 @@ fn playwindow_load_path_fishes_a_real_species() {
     assert!(hooked < legaia_asset::fishing_species::SPECIES_COUNT);
 
     for _ in 0..5000 {
-        if world.fishing.as_ref().unwrap().phase() != FishingPhase::Fighting {
+        if world.minigames.fishing.as_ref().unwrap().phase() != FishingPhase::Fighting {
             break;
         }
         world.set_pad(PadButton::Cross.mask()); // hold reel A

@@ -461,7 +461,7 @@ fn world_map_walking_onto_real_minigame_door_arms_the_warp() {
         let mut armed = false;
         for _ in 0..4 {
             let _ = world.tick();
-            if world.pending_minigame_warp == Some(sub_id) {
+            if world.minigames.pending_warp == Some(sub_id) {
                 armed = true;
                 break;
             }

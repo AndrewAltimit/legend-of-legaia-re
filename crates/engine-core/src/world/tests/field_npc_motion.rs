@@ -202,7 +202,7 @@ fn walk_touch_warp_posts_the_interact_but_does_not_enter_the_minigame() {
     for _ in 0..3 {
         let _ = world.tick();
     }
-    assert!(world.pending_minigame_warp.is_none());
+    assert!(world.minigames.pending_warp.is_none());
     assert!(world.pending_scene_transition.is_none());
     assert!(world.drain_field_events().is_empty());
 
@@ -212,7 +212,7 @@ fn walk_touch_warp_posts_the_interact_but_does_not_enter_the_minigame() {
         let _ = world.tick();
     }
     assert_eq!(
-        world.pending_minigame_warp, None,
+        world.minigames.pending_warp, None,
         "brushing a cabinet must not enter its minigame - retail resumes the \
          record's script (coin compare + confirm), it does not run the \
          script's terminal warp"

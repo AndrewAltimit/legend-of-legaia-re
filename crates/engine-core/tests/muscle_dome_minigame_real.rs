@@ -142,7 +142,11 @@ fn real_hand_tables_drive_a_decided_contest() {
     loop {
         frames += 1;
         assert!(frames < 10_000, "contest terminates");
-        let s = world.muscle_dome.as_ref().expect("session installed");
+        let s = world
+            .minigames
+            .muscle_dome
+            .as_ref()
+            .expect("session installed");
         if s.decided() {
             break;
         }
@@ -175,7 +179,7 @@ fn real_hand_tables_drive_a_decided_contest() {
 
     // Budget accounting held on the way: the spent+budget invariant is the
     // pool, and every queued id is a real deck command.
-    let s = world.muscle_dome.as_ref().unwrap();
+    let s = world.minigames.muscle_dome.as_ref().unwrap();
     assert!(s.decided());
     let dmg = s.last_turn_damage();
     assert!(dmg[0] > 0 || dmg[1] > 0, "the deciding turn dealt damage");
@@ -226,5 +230,8 @@ fn real_hand_tables_drive_a_decided_contest() {
     world.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
     assert_eq!(world.mode, SceneMode::Field, "return mode restored");
-    assert!(world.muscle_dome.is_none(), "session cleared on exit");
+    assert!(
+        world.minigames.muscle_dome.is_none(),
+        "session cleared on exit"
+    );
 }

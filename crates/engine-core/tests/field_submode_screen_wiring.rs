@@ -87,7 +87,7 @@ fn the_coin_counter_draws_the_panel_its_own_descriptor_installs() {
 fn buying_coins_through_the_frame_loop_moves_gold_into_the_coin_bank() {
     let mut w = field_world();
     w.money = 5_000;
-    w.casino_coins = 7;
+    w.minigames.casino_coins = 7;
     w.open_coin_counter();
 
     // Frame 1: the counter seeds itself and opens the entry panel.
@@ -107,12 +107,15 @@ fn buying_coins_through_the_frame_loop_moves_gold_into_the_coin_bank() {
     w.submode_screen.picker_result = PICK_ACCEPT;
     assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub >= 3));
     w.submode_screen.picker_result = 0;
-    assert!(tick_until(&mut w, 16, |w| w.casino_coins != 7));
+    assert!(tick_until(&mut w, 16, |w| w.minigames.casino_coins != 7));
 
     // The regression this pins: the credit is coins, the debit is gold, and
     // the two never swap. (A sibling minigame tally once paid a coin prize
     // into gold.)
-    assert_eq!(w.casino_coins, 19, "12 coins credited to the casino bank");
+    assert_eq!(
+        w.minigames.casino_coins, 19,
+        "12 coins credited to the casino bank"
+    );
     assert_eq!(
         w.money,
         5_000 - 12 * GOLD_PER_COIN,
@@ -124,7 +127,7 @@ fn buying_coins_through_the_frame_loop_moves_gold_into_the_coin_bank() {
 fn an_unaffordable_amount_never_reaches_the_bank() {
     let mut w = field_world();
     w.money = 250; // two coins' worth
-    w.casino_coins = 0;
+    w.minigames.casino_coins = 0;
     w.open_coin_counter();
     assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 1));
     w.submode_screen.counter.set_entered(9_999);
@@ -133,7 +136,10 @@ fn an_unaffordable_amount_never_reaches_the_bank() {
     for _ in 0..16 {
         w.tick();
     }
-    assert_eq!(w.casino_coins, 0, "the refusal buzz banks nothing");
+    assert_eq!(
+        w.minigames.casino_coins, 0,
+        "the refusal buzz banks nothing"
+    );
     assert_eq!(w.money, 250);
     assert_ne!(
         w.submode_screen.actor.sub, 2,
@@ -269,14 +275,14 @@ fn an_idle_world_pays_nothing_for_the_new_pass() {
     // and no change to the money model.
     let mut w = field_world();
     w.money = 1_234;
-    w.casino_coins = 5;
+    w.minigames.casino_coins = 5;
     for _ in 0..32 {
         w.tick();
     }
     assert!(w.submode_screen.frame.actions.is_empty());
     assert!(w.submode_screen.draws().is_empty());
     assert_eq!(w.money, 1_234);
-    assert_eq!(w.casino_coins, 5);
+    assert_eq!(w.minigames.casino_coins, 5);
     assert!(
         w.find_actor_by_handler(ActorHandler::SubmodeDriver)
             .is_some()
@@ -294,7 +300,7 @@ fn an_idle_world_pays_nothing_for_the_new_pass() {
 fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
     let mut w = field_world();
     w.money = 5_000;
-    w.casino_coins = 7;
+    w.minigames.casino_coins = 7;
     w.open_coin_counter();
     assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 1));
     w.submode_screen.counter.set_entered(12);
@@ -316,10 +322,10 @@ fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
     w.tick();
     w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
     assert!(
-        tick_until(&mut w, 32, |w| w.casino_coins != 7),
+        tick_until(&mut w, 32, |w| w.minigames.casino_coins != 7),
         "the pad-driven Yes never committed - the state-2 softlock is back"
     );
-    assert_eq!(w.casino_coins, 19);
+    assert_eq!(w.minigames.casino_coins, 19);
     assert_eq!(w.money, 5_000 - 12 * GOLD_PER_COIN);
     w.input.set_pad(0);
     assert!(

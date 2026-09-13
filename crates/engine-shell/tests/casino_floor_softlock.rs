@@ -222,7 +222,7 @@ fn every_minigame_can_be_left_by_pad() {
         // and let the host's mode-24 init drain it. Nothing calls `enter_*`,
         // so this measures the entry a player would actually reach.
         host.world.arm_minigame_warp();
-        host.world.pending_minigame_warp = Some(slot.sub_id());
+        host.world.minigames.pending_warp = Some(slot.sub_id());
         let _ = host.tick();
         let mode = host.world.mode;
         if mode == SceneMode::Field {

@@ -479,12 +479,12 @@ fn world_map_minigame_door_engage_arms_the_door_warp() {
     world.engage_world_map_entity(0);
     let _ = world.tick();
     assert_eq!(
-        world.pending_minigame_warp,
+        world.minigames.pending_warp,
         Some(5),
         "the door arms its minigame sub-id"
     );
     assert!(
-        world.minigame_scene_backup.is_some(),
+        world.minigames.scene_backup.is_some(),
         "the departure scene is backed up for the return trip"
     );
     assert!(
@@ -523,7 +523,7 @@ fn world_map_walking_onto_minigame_door_auto_engages() {
     let mut armed = false;
     for _ in 0..200 {
         let _ = world.tick();
-        if world.pending_minigame_warp == Some(3) {
+        if world.minigames.pending_warp == Some(3) {
             armed = true;
             break;
         }
@@ -563,7 +563,7 @@ fn world_map_walking_onto_npc_does_not_transition() {
         "an NPC is not auto-engaged by walking onto its tile"
     );
     assert_eq!(
-        world.pending_minigame_warp, None,
+        world.minigames.pending_warp, None,
         "nor does it arm a door warp"
     );
 }

@@ -82,7 +82,7 @@ fn without_a_prize_table_the_counter_refuses_rather_than_inventing_stock() {
 #[test]
 fn redeem_and_exit_through_the_menu_runtime() {
     let mut w = prize_world();
-    w.casino_coins = 1_000;
+    w.minigames.casino_coins = 1_000;
     assert!(w.try_arm_prize_exchange(&[0x49, 0x07, 0x00]));
     let session = w.take_pending_prize_exchange().unwrap();
 
@@ -96,7 +96,10 @@ fn redeem_and_exit_through_the_menu_runtime() {
     press(&mut menu, &mut w, |i| i.up = true); // onto Yes
     press(&mut menu, &mut w, |i| i.cross = true); // commit
 
-    assert_eq!(w.casino_coins, 500, "price debited from the coin bank");
+    assert_eq!(
+        w.minigames.casino_coins, 500,
+        "price debited from the coin bank"
+    );
     assert_eq!(w.inventory.get(&0x20), Some(&1), "prize granted");
     assert!(
         w.system_flag_test(0x36),
@@ -132,13 +135,13 @@ fn redeem_and_exit_through_the_menu_runtime() {
 #[test]
 fn a_short_coin_bank_refuses_without_mutation() {
     let mut w = prize_world();
-    w.casino_coins = 10;
+    w.minigames.casino_coins = 10;
     assert!(w.try_arm_prize_exchange(&[0x49, 0x07, 0x00]));
     let session = w.take_pending_prize_exchange().unwrap();
     let mut menu = MenuRuntime::new(std::env::temp_dir());
     menu.open_prize_exchange(session);
     press(&mut menu, &mut w, |i| i.cross = true);
-    assert_eq!(w.casino_coins, 10);
+    assert_eq!(w.minigames.casino_coins, 10);
     assert!(w.inventory.is_empty());
     assert!(
         menu.prize_session.is_some(),

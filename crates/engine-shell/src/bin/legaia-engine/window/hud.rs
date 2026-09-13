@@ -341,7 +341,7 @@ impl PlayWindowApp {
         // the arrow the current beat calls for, and the last press judgement.
         // The three arrows are the retail pad bits (Square/Circle/Triangle).
         if self.session.host.world.mode == SceneMode::Dance
-            && let Some(g) = &self.session.host.world.dance
+            && let Some(g) = &self.session.host.world.minigames.dance
         {
             let arrow = match g.required_symbol() {
                 Some(1) => "< (Square)",
@@ -350,7 +350,7 @@ impl PlayWindowApp {
                 _ => "- (rest)",
             };
             use legaia_engine_core::dance::Judge;
-            let judge = match self.session.host.world.dance_last_judge {
+            let judge = match self.session.host.world.minigames.dance_last_judge {
                 Some(Judge::Sequence { .. }) => "SEQUENCE!",
                 Some(Judge::Hit { .. }) => "HIT",
                 Some(Judge::Miss) => "miss",
@@ -587,7 +587,7 @@ impl PlayWindowApp {
         // casting; tension + strength while fighting; the catch result when
         // done) plus the running point total.
         if self.session.host.world.mode == SceneMode::Fishing
-            && let Some(s) = &self.session.host.world.fishing
+            && let Some(s) = &self.session.host.world.minigames.fishing
         {
             use legaia_engine_core::fishing::{FightOutcome, FishingPhase};
             let line = match s.phase() {
@@ -714,7 +714,7 @@ impl PlayWindowApp {
         // gating (row 0 hidden until affordable, greyed unavailable rows,
         // one-time prizes latched after purchase).
         if self.session.host.world.mode == SceneMode::Fishing
-            && let Some(ex) = &self.session.host.world.fishing_exchange
+            && let Some(ex) = &self.session.host.world.minigames.fishing_exchange
         {
             let world = &self.session.host.world;
             // The venue sub-screen's panel frame (FUN_801d74b0): the retail
@@ -729,18 +729,18 @@ impl PlayWindowApp {
             let venue_name = if ex.venue == 0 { "Buma" } else { "Vidna" };
             let head = format!(
                 "PRIZE EXCHANGE ({venue_name})  points {}   (Enter = trade, Left/Right = venue, P = close)",
-                world.fishing_points
+                world.minigames.fishing_points
             );
             let ly = self.font.layout_ascii(&head);
             out.extend(text_draws_for(&ly, (px, py), white));
-            let first = ex.first_visible(world.fishing_points);
+            let first = ex.first_visible(world.minigames.fishing_points);
             for (i, r) in ex.rows.iter().enumerate().skip(first) {
                 let owned = *world.inventory.get(&r.item_id).unwrap_or(&0) as u32;
                 let avail = ex.is_available(
                     i,
-                    world.fishing_points,
+                    world.minigames.fishing_points,
                     owned,
-                    world.fishing_prizes_purchased,
+                    world.minigames.fishing_prizes_purchased,
                 );
                 let cursor = if i == ex.cursor { ">" } else { " " };
                 let name = r
@@ -755,7 +755,7 @@ impl PlayWindowApp {
                 // seen reads as the row they already bought. Ask the latch on
                 // its own by re-testing with the two other gates open.
                 let sold = r.is_one_time()
-                    && !ex.is_available(i, i32::MAX, 0, world.fishing_prizes_purchased);
+                    && !ex.is_available(i, i32::MAX, 0, world.minigames.fishing_prizes_purchased);
                 let tag = if r.is_one_time() {
                     if sold { "sold" } else { "one-time" }
                 } else {
@@ -777,7 +777,7 @@ impl PlayWindowApp {
         // Slot-machine minigame HUD: the three payline symbols, the balance /
         // bet readout, and the phase-specific prompt.
         if self.session.host.world.mode == SceneMode::SlotMachine
-            && let Some(m) = &self.session.host.world.slot_machine
+            && let Some(m) = &self.session.host.world.minigames.slot_machine
         {
             use legaia_engine_core::slot_machine::SlotPhase;
             let reels = format!(
@@ -813,7 +813,7 @@ impl PlayWindowApp {
         // Baka Fighter minigame HUD: HP bars as numbers, round pips, the
         // last-exchange readout, and the input prompt.
         if self.session.host.world.mode == SceneMode::BakaFighter
-            && let Some(f) = &self.session.host.world.baka_fighter
+            && let Some(f) = &self.session.host.world.minigames.baka_fighter
         {
             use legaia_engine_core::baka_fighter::MatchPhase;
             let bl1 = format!(
@@ -911,13 +911,13 @@ impl PlayWindowApp {
         // it. A dome leg is an unbounded battle, so line 1 reports the turn
         // reached rather than a countdown to a limit that does not exist.
         if self.session.host.world.mode == SceneMode::MuscleDome
-            && let Some(s) = &self.session.host.world.muscle_dome
+            && let Some(s) = &self.session.host.world.minigames.muscle_dome
         {
             use legaia_engine_core::muscle_dome::MusclePhase;
             // Line 0 is the *contest*: which leg of which course this is and
             // what the run has banked. A leg pays nothing; the contest pays
             // coins, so the tally is the number that matters.
-            if let Some(c) = &self.session.host.world.muscle_contest {
+            if let Some(c) = &self.session.host.world.minigames.muscle_contest {
                 let flags = self.session.host.world.muscle_contest_flags();
                 let ml0 = format!(
                     "Course {}  Round {}/{}   Coins banked: {}",

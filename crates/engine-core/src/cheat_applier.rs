@@ -185,7 +185,7 @@ fn apply_world(world: &mut World, field: WorldField, code: CheatCode) {
         WorldField::Coins => {
             // The casino coin bank (`0x800845A4`) - the slot machine seeds
             // its playing balance from this and assigns it back on cash-out.
-            world.casino_coins = code.value as u32;
+            world.minigames.casino_coins = code.value as u32;
         }
         WorldField::EncounterStepCounter
         | WorldField::SaveAnywhereFlag

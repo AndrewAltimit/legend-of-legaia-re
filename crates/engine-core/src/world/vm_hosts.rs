@@ -406,7 +406,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
             Some(WorldMapEntityConfig::MinigameDoor { sub_id }) => {
                 let sub_id = *sub_id;
                 self.world.arm_minigame_warp();
-                self.world.pending_minigame_warp = Some(sub_id);
+                self.world.minigames.pending_warp = Some(sub_id);
             }
             // An overworld town/dungeon entrance (the `0x3F`-bridge portal) -
             // the only producer of `WorldMapTransition`. The event carries the
@@ -1018,7 +1018,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // The mode change itself is deferred like every other transition: the
         // field bytecode is still borrowed for this step, and entering a
         // minigame swaps the world's scene mode out from under it.
-        self.world.pending_minigame_warp = Some(sub_id);
+        self.world.minigames.pending_warp = Some(sub_id);
     }
 
     // PORT: FUN_8001FD44 (the name-based scene-change packet)
@@ -1302,7 +1302,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// table, so this read is what makes the charge reachable at all.
     fn party_bank_value(&self, sub_op: u8) -> i32 {
         match sub_op {
-            11 => self.world.casino_coins.min(i32::MAX as u32) as i32,
+            11 => self.world.minigames.casino_coins.min(i32::MAX as u32) as i32,
             _ => self.world.money,
         }
     }

@@ -272,7 +272,7 @@ enum DoorPath {
 /// gold, and a broad inventory. Retail gates read an inventory item and debit
 /// a coin; this is the "player who has been to the casino before" state.
 fn seed_venue_state(host: &mut SceneHost) {
-    host.world.casino_coins = 5_000;
+    host.world.minigames.casino_coins = 5_000;
     host.world.money = 50_000;
     for id in 0u8..=255 {
         host.world.inventory.insert(id, 20);
@@ -289,11 +289,11 @@ fn seed_venue_state(host: &mut SceneHost) {
 /// stream confirms.
 fn run_door_at(host: &mut SceneHost, door: &DoorSite, pc: usize) -> Option<u8> {
     let body = door.man[door.script_start..door.script_start + door.body_len].to_vec();
-    host.world.pending_minigame_warp = None;
+    host.world.minigames.pending_warp = None;
     host.last_minigame_warp = None;
     host.world.load_field_script_at(body, pc);
     for frame in 0..DOOR_FRAMES {
-        if let Some(sub) = host.world.pending_minigame_warp {
+        if let Some(sub) = host.world.minigames.pending_warp {
             return Some(sub);
         }
         // Two frames released, one pressed: an edge every third frame, which
@@ -305,7 +305,7 @@ fn run_door_at(host: &mut SceneHost, door: &DoorSite, pc: usize) -> Option<u8> {
         };
         host.world.set_pad(mask);
         let _ = host.tick();
-        if let Some(sub) = host.world.pending_minigame_warp {
+        if let Some(sub) = host.world.minigames.pending_warp {
             return Some(sub);
         }
         // The drain runs inside `SceneHost::tick`, so on the frame the warp
@@ -376,6 +376,7 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
         MinigameSubId::Dance => {
             let before = host
                 .world
+                .minigames
                 .dance
                 .as_ref()
                 .map(|g| g.score())
@@ -388,12 +389,23 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                     _ => PadButton::Circle,
                 };
                 tap(host, b);
-                if host.world.dance.as_ref().is_some_and(|g| g.song_over()) {
+                if host
+                    .world
+                    .minigames
+                    .dance
+                    .as_ref()
+                    .is_some_and(|g| g.song_over())
+                {
                     break;
                 }
             }
-            let g = host.world.dance.as_ref().ok_or("dance session vanished")?;
-            let judged = host.world.dance_last_judge.is_some();
+            let g = host
+                .world
+                .minigames
+                .dance
+                .as_ref()
+                .ok_or("dance session vanished")?;
+            let judged = host.world.minigames.dance_last_judge.is_some();
             if g.score() != before || judged || g.song_over() {
                 Ok(format!(
                     "score {} -> {}, judged={judged}, song_over={}",
@@ -415,6 +427,7 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
             tap(host, PadButton::Cross);
             let phase = host
                 .world
+                .minigames
                 .fishing
                 .as_ref()
                 .map(|s| s.phase())
@@ -426,6 +439,7 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
             hold(host, PadButton::Cross.mask(), 400);
             let s = host
                 .world
+                .minigames
                 .fishing
                 .as_ref()
                 .ok_or("fishing session vanished")?;
@@ -439,6 +453,7 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
             use legaia_engine_core::slot_machine::SlotPhase;
             let start = host
                 .world
+                .minigames
                 .slot_machine
                 .as_ref()
                 .map(|m| m.balance())
@@ -446,14 +461,19 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
             // Cross does everything: spin, stop each reel, collect.
             for _ in 0..400 {
                 tap(host, PadButton::Cross);
-                let Some(m) = host.world.slot_machine.as_ref() else {
+                let Some(m) = host.world.minigames.slot_machine.as_ref() else {
                     return Err("slot session vanished mid-spin".into());
                 };
                 if m.balance() != start && m.phase() == SlotPhase::Idle {
                     break;
                 }
             }
-            let m = host.world.slot_machine.as_ref().ok_or("slot vanished")?;
+            let m = host
+                .world
+                .minigames
+                .slot_machine
+                .as_ref()
+                .ok_or("slot vanished")?;
             if m.balance() == start {
                 Err(format!(
                     "400 Cross edges left the balance at {start} (phase {:?})",
@@ -466,6 +486,7 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
         MinigameSubId::BakaFighter => {
             let before = host
                 .world
+                .minigames
                 .baka_fighter
                 .as_ref()
                 .map(|f| f.round())
@@ -480,7 +501,7 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                     _ => PadButton::Down,
                 };
                 tap(host, b);
-                let Some(f) = host.world.baka_fighter.as_ref() else {
+                let Some(f) = host.world.minigames.baka_fighter.as_ref() else {
                     break;
                 };
                 resolved |= f.last_exchange().is_some();
@@ -488,7 +509,12 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                     break;
                 }
             }
-            let f = host.world.baka_fighter.as_ref().ok_or("baka vanished")?;
+            let f = host
+                .world
+                .minigames
+                .baka_fighter
+                .as_ref()
+                .ok_or("baka vanished")?;
             if !resolved && f.round() == before {
                 Err("400 direction edges resolved no exchange".into())
             } else {
@@ -502,6 +528,7 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
         MinigameSubId::MuscleDome => {
             let before = host
                 .world
+                .minigames
                 .muscle_dome
                 .as_ref()
                 .map(|s| s.turn())
@@ -517,14 +544,19 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                     tap(host, b);
                 }
                 tap(host, PadButton::Cross);
-                let Some(s) = host.world.muscle_dome.as_ref() else {
+                let Some(s) = host.world.minigames.muscle_dome.as_ref() else {
                     break;
                 };
                 if s.turn() != before {
                     break;
                 }
             }
-            let s = host.world.muscle_dome.as_ref().ok_or("dome vanished")?;
+            let s = host
+                .world
+                .minigames
+                .muscle_dome
+                .as_ref()
+                .ok_or("dome vanished")?;
             if s.turn() == before {
                 Err(format!(
                     "80 commit rounds left the dome on turn {before} (phase {:?})",

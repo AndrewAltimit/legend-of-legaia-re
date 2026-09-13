@@ -45,7 +45,7 @@ fn playwindow_load_path_spins_the_real_payout_table() {
     // Drive the session through the World exactly like play-window's O key.
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.casino_coins = 200;
+    world.minigames.casino_coins = 200;
     world.enter_slot_machine(SlotMachine::new(payouts.clone(), 0xC0FFEE, 200));
     assert_eq!(world.mode, SceneMode::SlotMachine);
 
@@ -56,7 +56,7 @@ fn playwindow_load_path_spins_the_real_payout_table() {
     // below are exercised too - `bonus_spins_seen` keeps that non-vacuous.
     let mut bonus_spins_seen = 0;
     for spin in 0..8 {
-        let m = world.slot_machine.as_ref().unwrap();
+        let m = world.minigames.slot_machine.as_ref().unwrap();
         if !m.can_spin() {
             break;
         }
@@ -74,23 +74,24 @@ fn playwindow_load_path_spins_the_real_payout_table() {
         world.set_pad(PadButton::Cross.mask());
         let _ = world.tick();
         assert_eq!(
-            world.slot_machine.as_ref().unwrap().phase(),
+            world.minigames.slot_machine.as_ref().unwrap().phase(),
             SlotPhase::Spinning
         );
         assert_eq!(
-            world.slot_machine.as_ref().unwrap().balance(),
+            world.minigames.slot_machine.as_ref().unwrap().balance(),
             before - cost
         );
         let mut waited = 0;
         let limit = SPIN_UP_FRAMES + BONUS_SPIN_UP_FRAMES + 8;
-        while world.slot_machine.as_ref().unwrap().phase() == SlotPhase::Spinning && waited < limit
+        while world.minigames.slot_machine.as_ref().unwrap().phase() == SlotPhase::Spinning
+            && waited < limit
         {
             world.set_pad(0);
             let _ = world.tick();
             waited += 1;
         }
         assert_eq!(
-            world.slot_machine.as_ref().unwrap().phase(),
+            world.minigames.slot_machine.as_ref().unwrap().phase(),
             SlotPhase::Stopping
         );
         assert_eq!(
@@ -107,7 +108,7 @@ fn playwindow_load_path_spins_the_real_payout_table() {
             world.set_pad(PadButton::Cross.mask());
             let _ = world.tick();
         }
-        let m = world.slot_machine.as_ref().unwrap();
+        let m = world.minigames.slot_machine.as_ref().unwrap();
         assert_eq!(m.phase(), SlotPhase::Payout);
         let result = m.last_result().expect("spin evaluated");
         if let (Some(sym), false) = (result.symbol, result.bonus_spin) {
@@ -152,7 +153,7 @@ fn playwindow_load_path_spins_the_real_payout_table() {
         let _ = world.tick();
         world.set_pad(PadButton::Cross.mask());
         let _ = world.tick();
-        let m = world.slot_machine.as_ref().unwrap();
+        let m = world.minigames.slot_machine.as_ref().unwrap();
         assert_eq!(m.phase(), SlotPhase::Idle);
         assert_eq!(m.balance(), before_collect + result.payout);
         eprintln!(
@@ -170,9 +171,9 @@ fn playwindow_load_path_spins_the_real_payout_table() {
     );
 
     // Cash out: the world bank is ASSIGNED the final playing balance.
-    let final_balance = world.slot_machine.as_ref().unwrap().balance();
+    let final_balance = world.minigames.slot_machine.as_ref().unwrap().balance();
     let m = world.exit_slot_machine().expect("machine installed");
     assert_eq!(m.balance(), final_balance);
-    assert_eq!(world.casino_coins as i32, final_balance);
+    assert_eq!(world.minigames.casino_coins as i32, final_balance);
     assert_eq!(world.mode, SceneMode::Field);
 }

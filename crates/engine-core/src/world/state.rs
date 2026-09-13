@@ -1319,134 +1319,13 @@ pub struct World {
     /// teardown requests and the ambient particles a host reads back.
     pub cutscene_element_frame: crate::world::ElementFrame,
 
-    /// Noa dance (rhythm) minigame state. `Some` while `mode ==
-    /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
-    /// [`crate::dance::DanceGame`] and [`World::enter_dance`].
-    pub dance: Option<crate::dance::DanceGame>,
-
-    /// The scene mode to restore when the dance minigame ends
-    /// ([`World::enter_dance`] snapshots the mode it interrupted). Mirrors the
-    /// pause-menu suspend/restore contract.
-    pub dance_return_mode: SceneMode,
-
-    /// The most recent dance-press judgement, kept for the host HUD (the
-    /// score/gauge banner). Reset to `None` on [`World::enter_dance`]; updated
-    /// each frame a directional press is judged.
-    pub dance_last_judge: Option<crate::dance::Judge>,
-
-    /// Fishing minigame session. `Some` while `mode == SceneMode::Fishing`; the
-    /// cast / fight / score loop runs each tick. See
-    /// [`crate::fishing::FishingSession`] and [`World::enter_fishing`].
-    pub fishing: Option<crate::fishing::FishingSession>,
-
-    /// The scene mode to restore when the fishing minigame ends
-    /// ([`World::enter_fishing`] snapshots the interrupted mode).
-    pub fishing_return_mode: SceneMode,
-
-    /// Persistent fishing-point pool, mirroring retail's `_DAT_8008444C`
-    /// counter: [`World::exit_fishing`] banks the session record's points
-    /// here, and the point exchange spends from it
-    /// ([`World::fishing_exchange_buy`]). Hosts seed a new session's
-    /// [`crate::fishing::FishingRecord`] from this cell.
-    pub fishing_points: i32,
-
-    /// Persistent one-time prize bitmask, mirroring retail's `_DAT_8008446C`:
-    /// bit `row + venue * 8` latches when a `limit == 1` exchange row is
-    /// bought (see [`legaia_asset::fishing_exchange`]).
-    pub fishing_prizes_purchased: u32,
-
-    /// Fishing point-exchange (prize shop) session. `Some` while the exchange
-    /// list is open on the host's fishing screen; purchases commit through
-    /// [`World::fishing_exchange_buy`].
-    pub fishing_exchange: Option<crate::fishing::PrizeExchange>,
-
-    /// Slot-machine minigame session. `Some` while
-    /// `mode == SceneMode::SlotMachine`; the reel state machine runs each
-    /// tick. See [`crate::slot_machine::SlotMachine`] and
-    /// [`World::enter_slot_machine`].
-    pub slot_machine: Option<crate::slot_machine::SlotMachine>,
-
-    /// The scene mode to restore when the slot-machine minigame ends
-    /// ([`World::enter_slot_machine`] snapshots the interrupted mode).
-    pub slot_return_mode: SceneMode,
-
-    /// Baka Fighter duel state. `Some` while `mode ==
-    /// SceneMode::BakaFighter`; the exchange / round / match state machine
-    /// runs each tick. See [`crate::baka_fighter::BakaFight`] and
-    /// [`World::enter_baka_fighter`].
-    pub baka_fighter: Option<crate::baka_fighter::BakaFight>,
-
-    /// The scene mode to restore when the Baka Fighter match ends
-    /// ([`World::enter_baka_fighter`] snapshots the interrupted mode).
-    pub baka_return_mode: SceneMode,
-
-    /// Muscle Dome contest state. `Some` while `mode ==
-    /// SceneMode::MuscleDome`; the hand-select / commit / resolve loop runs
-    /// each tick. See [`crate::muscle_dome::MuscleDomeSession`] and
-    /// [`World::enter_muscle_dome`].
-    pub muscle_dome: Option<crate::muscle_dome::MuscleDomeSession>,
-
-    /// The scene mode to restore when the Muscle Dome contest ends
-    /// ([`World::enter_muscle_dome`] snapshots the interrupted mode).
-    pub muscle_return_mode: SceneMode,
-
-    /// The Muscle Dome **contest** - the ladder run above the individual
-    /// legs: which `(course, round)` is staged, the running coin tally, and
-    /// whether the run continues. `Some` for as long as a contest is open,
-    /// which outlives any one `muscle_dome` session. See
-    /// [`crate::muscle_dome::DomeContest`].
-    pub muscle_contest: Option<crate::muscle_dome::DomeContest>,
-
-    /// The last Muscle Dome contest's settlement, kept after the contest
-    /// itself is gone so a host can put the payout on screen.
-    pub muscle_settlement: Option<crate::muscle_dome::ContestSettlement>,
-
-    /// The casino coin bank (`_DAT_800845A4`, the GameShark "Infinite
-    /// Coins" cell). Read to seed the slot machine's playing balance and
-    /// **assigned** its final balance on cash-out (the retail state-100
-    /// commit is an assignment, not a delta). The coin counter
-    /// ([`World::open_coin_counter`]) credits it as a delta instead.
-    pub casino_coins: u32,
-
-    /// The **Point Card** bank (`_DAT_800845B4`), the third purse beside
-    /// [`Self::money`] and [`Self::casino_coins`]. A shop buy credits 5% of
-    /// the gold spent while the party holds the Point Card
-    /// ([`crate::shop::POINT_CARD_ITEM_ID`]); the total is what the pause
-    /// Items screen's "Points Left" line and the shop's window-31 toast
-    /// print, and it is clamped to [`crate::shop::POINT_CARD_CAP`].
-    ///
-    /// See [`crate::shop::point_card_credit`] for the accrual and
-    /// `docs/subsystems/shop.md` for the retail chain.
-    pub point_card: i32,
+    /// Minigame sessions (dance, fishing, slot machine, Baka Fighter, Muscle Dome) plus the casino coin / point-card wallet.
+    pub minigames: MinigameState,
 
     /// The op-`0x49` sub-screen the submode driver actor is running, if any.
     /// See [`crate::field_submode_screen`]; ticked by
     /// [`World::tick_handler_actors`].
     pub submode_screen: crate::field_submode_screen::SubmodeScreen,
-    /// The mode-24 minigame door-warp's backup of the active scene name
-    /// (retail `0x8007BAE8`, written by the OTHER-INIT entry `FUN_80025980`
-    /// from `0x80084548`). [`World::minigame_return_warp`] restores it into
-    /// [`World::active_scene_label`] on exit. `None` while no warp is armed.
-    pub minigame_scene_backup: Option<String>,
-
-    /// The mode-24 session-winnings accumulator (retail `_DAT_80084440`,
-    /// zeroed by the field-VM `0x3E` warp arm; the minigame overlays add
-    /// their winnings here). [`World::minigame_return_warp`] commits it
-    /// into [`World::casino_coins`].
-    pub minigame_winnings: u32,
-
-    /// Pending **mode-24 minigame door-warp** (field-VM op `0x3E`, `op0 >=
-    /// 100`): `Some(sub_id)` for the frame the arm ran on. Drained by
-    /// [`crate::scene::SceneHost::tick`], which decodes it with
-    /// [`crate::minigame_entry::MinigameSubId`] and enters that minigame.
-    ///
-    /// **Not a map id.** `sub_id` selects a code overlay, not a scene - the op
-    /// carries no destination name at all. It reads like a map id (a small
-    /// dense integer on a warp opcode), which is exactly why the engine used
-    /// to resolve it through a CDNAME-ordinal scene table and warp the player
-    /// somewhere unrelated instead of into the minigame. See
-    /// [`crate::minigame_entry`] for the arm's disassembly.
-    pub pending_minigame_warp: Option<u8>,
 
     /// The scripted countdown timer the field VM arms with `0x4C 0xD3`
     /// (`SCHEDULE_TIMED_FLAGS`). Retail keeps it in three globals -
@@ -2966,28 +2845,8 @@ impl World {
             field_eased_mirror_y: None,
             floor_tier_bobs: Vec::new(),
             camera_registers: Default::default(),
-            dance: None,
-            dance_return_mode: SceneMode::Field,
-            dance_last_judge: None,
-            fishing: None,
-            fishing_return_mode: SceneMode::Field,
-            fishing_points: 0,
-            fishing_prizes_purchased: 0,
-            fishing_exchange: None,
-            slot_machine: None,
-            slot_return_mode: SceneMode::Field,
-            baka_fighter: None,
-            baka_return_mode: SceneMode::Field,
-            muscle_dome: None,
-            muscle_return_mode: SceneMode::Field,
-            muscle_contest: None,
-            muscle_settlement: None,
-            casino_coins: 0,
-            point_card: 0,
+            minigames: MinigameState::new(),
             submode_screen: crate::field_submode_screen::SubmodeScreen::default(),
-            minigame_scene_backup: None,
-            minigame_winnings: 0,
-            pending_minigame_warp: None,
             escape_timer: Default::default(),
             escape_timer_flag_word: 0,
             escape_timer_hud: None,
@@ -3278,7 +3137,7 @@ impl World {
         self.free_roam_staging = false;
         self.system_flags.clear();
         self.money = NEW_GAME_STARTING_GOLD;
-        self.point_card = 0;
+        self.minigames.point_card = 0;
         self.inventory.clear();
         self.pending_scene_transition = None;
         self.pending_named_scene_transition = None;
@@ -3381,7 +3240,8 @@ impl World {
             return None;
         }
         let credit = crate::shop::point_card_credit(price, qty);
-        self.point_card = crate::shop::apply_point_card(self.point_card, credit);
+        self.minigames.point_card =
+            crate::shop::apply_point_card(self.minigames.point_card, credit);
         Some(credit)
     }
 }

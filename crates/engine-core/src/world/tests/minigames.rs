@@ -22,12 +22,12 @@ fn enter_dance_suspends_mode_and_exit_restores_it() {
     let game = crate::dance::DanceGame::new(dance_test_chart(), false);
     world.enter_dance(game);
     assert_eq!(world.mode, SceneMode::Dance);
-    assert!(world.dance.is_some());
+    assert!(world.minigames.dance.is_some());
     // A mid-song abort restores the interrupted mode and yields the game.
     let finished = world.exit_dance();
     assert!(finished.is_some());
     assert_eq!(world.mode, SceneMode::Field);
-    assert!(world.dance.is_none());
+    assert!(world.minigames.dance.is_none());
 }
 
 #[test]
@@ -44,10 +44,10 @@ fn dance_tick_judges_a_correct_press() {
     // fixture with no overlay tables leaves at zero - `dance_minigame_real`
     // covers the scoring end on the real tables.
     assert!(matches!(
-        world.dance_last_judge,
+        world.minigames.dance_last_judge,
         Some(crate::dance::Judge::Hit { .. }) | Some(crate::dance::Judge::Sequence { .. })
     ));
-    assert!(world.dance.as_ref().unwrap().gauge() > 0);
+    assert!(world.minigames.dance.as_ref().unwrap().gauge() > 0);
 }
 
 #[test]
@@ -58,8 +58,11 @@ fn dance_wrong_direction_misses() {
     world.set_pad(0);
     world.set_pad(input::PadButton::Circle.mask());
     let _ = world.tick();
-    assert_eq!(world.dance_last_judge, Some(crate::dance::Judge::Miss));
-    assert_eq!(world.dance.as_ref().unwrap().score(), 0);
+    assert_eq!(
+        world.minigames.dance_last_judge,
+        Some(crate::dance::Judge::Miss)
+    );
+    assert_eq!(world.minigames.dance.as_ref().unwrap().score(), 0);
 }
 
 /// The judge reads the retail packed-pad word, so the three judged buttons are
@@ -78,13 +81,16 @@ fn dance_judges_the_retail_pad_bits_not_the_dpad() {
     world.set_pad(0);
     world.set_pad(input::PadButton::Left.mask());
     let _ = world.tick();
-    assert_eq!(world.dance_last_judge, None, "the dpad is not judged");
+    assert_eq!(
+        world.minigames.dance_last_judge, None,
+        "the dpad is not judged"
+    );
     // Square is - and it is the direction beat 0 asks for.
     world.set_pad(0);
     world.set_pad(input::PadButton::Square.mask());
     let _ = world.tick();
     assert!(matches!(
-        world.dance_last_judge,
+        world.minigames.dance_last_judge,
         Some(crate::dance::Judge::Hit { .. }) | Some(crate::dance::Judge::Sequence { .. })
     ));
 }
@@ -107,10 +113,17 @@ fn dance_song_end_auto_restores_mode() {
     // The song timed out: mode restored, but the game is still installed for
     // the host to read the final score until it calls exit_dance.
     assert_eq!(world.mode, SceneMode::Field);
-    assert!(world.dance.as_ref().map(|g| g.song_over()).unwrap_or(false));
+    assert!(
+        world
+            .minigames
+            .dance
+            .as_ref()
+            .map(|g| g.song_over())
+            .unwrap_or(false)
+    );
     let finished = world.exit_dance();
     assert!(finished.is_some());
-    assert!(world.dance.is_none());
+    assert!(world.minigames.dance.is_none());
 }
 
 // --- Fishing minigame wiring -----------------------------------------------
@@ -144,11 +157,11 @@ fn enter_fishing_suspends_mode_and_exit_restores_it() {
     world.mode = SceneMode::Field;
     world.enter_fishing(fishing_test_session());
     assert_eq!(world.mode, SceneMode::Fishing);
-    assert!(world.fishing.is_some());
+    assert!(world.minigames.fishing.is_some());
     let session = world.exit_fishing();
     assert!(session.is_some());
     assert_eq!(world.mode, SceneMode::Field);
-    assert!(world.fishing.is_none());
+    assert!(world.minigames.fishing.is_none());
 }
 
 #[test]
@@ -162,7 +175,7 @@ fn fishing_casts_locks_and_reels_to_a_resolution() {
         let _ = world.tick();
     }
     assert_eq!(
-        world.fishing.as_ref().unwrap().phase(),
+        world.minigames.fishing.as_ref().unwrap().phase(),
         FishingPhase::Casting
     );
     // Confirm (Cross rising edge) locks the cast -> Fighting.
@@ -170,20 +183,31 @@ fn fishing_casts_locks_and_reels_to_a_resolution() {
     world.set_pad(input::PadButton::Cross.mask());
     let _ = world.tick();
     assert_eq!(
-        world.fishing.as_ref().unwrap().phase(),
+        world.minigames.fishing.as_ref().unwrap().phase(),
         FishingPhase::Fighting
     );
     // Hold Cross (reel A) until the fight resolves.
     for _ in 0..3000 {
-        if world.fishing.as_ref().unwrap().phase() != FishingPhase::Fighting {
+        if world.minigames.fishing.as_ref().unwrap().phase() != FishingPhase::Fighting {
             break;
         }
         // Keep Cross held frame to frame (no fresh edge needed for reeling).
         world.set_pad(input::PadButton::Cross.mask());
         let _ = world.tick();
     }
-    assert_eq!(world.fishing.as_ref().unwrap().phase(), FishingPhase::Done);
-    assert!(world.fishing.as_ref().unwrap().last_outcome().is_some());
+    assert_eq!(
+        world.minigames.fishing.as_ref().unwrap().phase(),
+        FishingPhase::Done
+    );
+    assert!(
+        world
+            .minigames
+            .fishing
+            .as_ref()
+            .unwrap()
+            .last_outcome()
+            .is_some()
+    );
 }
 
 /// The reel buttons are the retail packed-pad bits decoded by
@@ -223,6 +247,7 @@ fn fishing_reel_buttons_are_cross_and_square_with_cross_winning() {
         world.set_pad(mask);
         let _ = world.tick();
         world
+            .minigames
             .fishing
             .as_ref()
             .and_then(|s| s.fight())
@@ -249,7 +274,7 @@ fn fishing_tick_without_session_falls_back_to_return_mode() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     // Force the mode without installing a session (defensive path).
-    world.fishing_return_mode = SceneMode::Field;
+    world.minigames.fishing_return_mode = SceneMode::Field;
     world.mode = SceneMode::Fishing;
     let _ = world.tick();
     assert_eq!(world.mode, SceneMode::Field);
@@ -269,17 +294,17 @@ fn slot_test_machine(balance: i32) -> crate::slot_machine::SlotMachine {
 fn enter_slot_machine_suspends_mode_and_exit_commits_the_bank() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.casino_coins = 7;
+    world.minigames.casino_coins = 7;
     world.enter_slot_machine(slot_test_machine(50));
     assert_eq!(world.mode, SceneMode::SlotMachine);
-    assert!(world.slot_machine.is_some());
+    assert!(world.minigames.slot_machine.is_some());
     let machine = world.exit_slot_machine();
     assert!(machine.is_some());
     assert_eq!(world.mode, SceneMode::Field);
-    assert!(world.slot_machine.is_none());
+    assert!(world.minigames.slot_machine.is_none());
     // Exit commits the playing balance INTO the bank (the retail state-100
     // assignment `_DAT_800845A4 = DAT_801d4114`), replacing the old value.
-    assert_eq!(world.casino_coins, 50);
+    assert_eq!(world.minigames.casino_coins, 50);
 }
 
 #[test]
@@ -291,7 +316,7 @@ fn slot_machine_spins_stops_and_collects_through_the_pad() {
     world.set_pad(0);
     world.set_pad(input::PadButton::Cross.mask());
     let _ = world.tick();
-    let m = world.slot_machine.as_ref().unwrap();
+    let m = world.minigames.slot_machine.as_ref().unwrap();
     assert_eq!(m.phase(), SlotPhase::Spinning);
     assert_eq!(m.balance(), 50 - m.spin_cost());
     // Run the spin-up timer down into Stopping.
@@ -300,7 +325,7 @@ fn slot_machine_spins_stops_and_collects_through_the_pad() {
         let _ = world.tick();
     }
     assert_eq!(
-        world.slot_machine.as_ref().unwrap().phase(),
+        world.minigames.slot_machine.as_ref().unwrap().phase(),
         SlotPhase::Stopping
     );
     // Three fresh Cross edges stop the three reels -> Payout.
@@ -310,7 +335,7 @@ fn slot_machine_spins_stops_and_collects_through_the_pad() {
         world.set_pad(input::PadButton::Cross.mask());
         let _ = world.tick();
     }
-    let m = world.slot_machine.as_ref().unwrap();
+    let m = world.minigames.slot_machine.as_ref().unwrap();
     assert_eq!(m.phase(), SlotPhase::Payout);
     assert_eq!(m.reels_stopped(), crate::slot_machine::REEL_COUNT);
     let result = m.last_result().expect("spin evaluated");
@@ -320,7 +345,7 @@ fn slot_machine_spins_stops_and_collects_through_the_pad() {
     let _ = world.tick();
     world.set_pad(input::PadButton::Cross.mask());
     let _ = world.tick();
-    let m = world.slot_machine.as_ref().unwrap();
+    let m = world.minigames.slot_machine.as_ref().unwrap();
     assert_eq!(m.phase(), SlotPhase::Idle);
     assert_eq!(m.balance(), before + result.payout);
 }
@@ -330,12 +355,12 @@ fn slot_machine_spin_accrues_the_net_take() {
     use crate::slot_machine::NET_TAKE_NORMAL_SPIN;
     let mut world = World::new();
     world.enter_slot_machine(slot_test_machine(50));
-    assert_eq!(world.slot_machine.as_ref().unwrap().net_take(), 0);
+    assert_eq!(world.minigames.slot_machine.as_ref().unwrap().net_take(), 0);
     world.set_pad(0);
     world.set_pad(input::PadButton::Cross.mask());
     let _ = world.tick();
     assert_eq!(
-        world.slot_machine.as_ref().unwrap().net_take(),
+        world.minigames.slot_machine.as_ref().unwrap().net_take(),
         NET_TAKE_NORMAL_SPIN
     );
 }
@@ -343,7 +368,7 @@ fn slot_machine_spin_accrues_the_net_take() {
 #[test]
 fn slot_machine_tick_without_session_falls_back_to_return_mode() {
     let mut world = World::new();
-    world.slot_return_mode = SceneMode::Field;
+    world.minigames.slot_return_mode = SceneMode::Field;
     world.mode = SceneMode::SlotMachine;
     let _ = world.tick();
     assert_eq!(world.mode, SceneMode::Field);
@@ -356,25 +381,25 @@ fn minigame_return_warp_restores_scene_and_commits_winnings() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.active_scene_label = "sioro".to_string();
-    world.casino_coins = 100;
+    world.minigames.casino_coins = 100;
 
     // 0x3E warp arm + mode-24 OTHER-INIT: name backed up, accumulator zeroed.
-    world.minigame_winnings = 55; // stale value from a previous session
+    world.minigames.winnings = 55; // stale value from a previous session
     world.arm_minigame_warp();
-    assert_eq!(world.minigame_scene_backup.as_deref(), Some("sioro"));
-    assert_eq!(world.minigame_winnings, 0);
+    assert_eq!(world.minigames.scene_backup.as_deref(), Some("sioro"));
+    assert_eq!(world.minigames.winnings, 0);
 
     // The minigame overlay runs: scene state clobbered, winnings accumulate.
     world.active_scene_label = "minigame".to_string();
     world.mode = SceneMode::SlotMachine;
-    world.minigame_winnings = 250;
+    world.minigames.winnings = 250;
 
     // FUN_80026018: name restored, `_DAT_800845A4 += _DAT_80084440`, mode 2.
     world.minigame_return_warp();
     assert_eq!(world.active_scene_label, "sioro");
-    assert_eq!(world.casino_coins, 350);
+    assert_eq!(world.minigames.casino_coins, 350);
     assert_eq!(world.mode, SceneMode::Field);
-    assert!(world.minigame_scene_backup.is_none(), "backup consumed");
+    assert!(world.minigames.scene_backup.is_none(), "backup consumed");
 }
 
 #[test]
@@ -382,21 +407,24 @@ fn minigame_return_warp_coin_bank_saturates_at_retail_cap() {
     let mut world = World::new();
     world.active_scene_label = "sioro".to_string();
     world.arm_minigame_warp();
-    world.casino_coins = 9_999_000;
-    world.minigame_winnings = 5_000;
+    world.minigames.casino_coins = 9_999_000;
+    world.minigames.winnings = 5_000;
     world.minigame_return_warp();
-    assert_eq!(world.casino_coins, 9_999_999, "clamped to the retail cap");
+    assert_eq!(
+        world.minigames.casino_coins, 9_999_999,
+        "clamped to the retail cap"
+    );
 }
 
 #[test]
 fn minigame_return_warp_without_arm_keeps_scene_but_still_commits() {
     let mut world = World::new();
     world.active_scene_label = "town01".to_string();
-    world.casino_coins = 1;
-    world.minigame_winnings = 2;
+    world.minigames.casino_coins = 1;
+    world.minigames.winnings = 2;
     world.minigame_return_warp();
     // Retail's coin add is unconditional; only the restore needs the backup.
-    assert_eq!(world.casino_coins, 3);
+    assert_eq!(world.minigames.casino_coins, 3);
     assert_eq!(world.active_scene_label, "town01");
 }
 
@@ -416,7 +444,7 @@ fn entering_the_dance_drops_the_confirm_press_edge() {
     world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
     let _ = world.tick();
     assert_eq!(
-        world.dance_last_judge, None,
+        world.minigames.dance_last_judge, None,
         "the opening press was consumed as a note"
     );
     // The button is still *held*, so releasing and pressing it again scores.
@@ -424,7 +452,7 @@ fn entering_the_dance_drops_the_confirm_press_edge() {
     world.set_pad(input::PadButton::Square.mask());
     let _ = world.tick();
     assert!(
-        world.dance_last_judge.is_some(),
+        world.minigames.dance_last_judge.is_some(),
         "later presses still judge"
     );
 }

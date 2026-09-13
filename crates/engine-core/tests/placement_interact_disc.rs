@@ -325,7 +325,7 @@ fn interacting_with_a_door_runs_its_record() {
             // (`koin1` / `balden` compare the coin bank with `0x4E` sub-9)
             // takes its *pass* branch - otherwise the run measures the refusal
             // path and reports a boundary the record did not actually hit.
-            world.casino_coins = 500;
+            world.minigames.casino_coins = 500;
             world.money = 50_000;
 
             let prologue = world
@@ -379,11 +379,11 @@ fn interacting_with_a_door_runs_its_record() {
                 {
                     opened_box = true;
                 }
-                if world.pending_minigame_warp.is_some() || world.inline_dialogue.is_none() {
+                if world.minigames.pending_warp.is_some() || world.inline_dialogue.is_none() {
                     break;
                 }
             }
-            let armed = world.pending_minigame_warp;
+            let armed = world.minigames.pending_warp;
             let rest = world.inline_dialogue.as_ref().map(|r| {
                 (
                     r.pc,

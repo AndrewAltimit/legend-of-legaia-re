@@ -1951,10 +1951,10 @@ impl World {
         // Don't stack a suspend: if the dance is already running, just swap the
         // game so a re-entry keeps the true return mode.
         if self.mode != SceneMode::Dance {
-            self.dance_return_mode = self.mode;
+            self.minigames.dance_return_mode = self.mode;
         }
-        self.dance = Some(game);
-        self.dance_last_judge = None;
+        self.minigames.dance = Some(game);
+        self.minigames.dance_last_judge = None;
         self.mode = SceneMode::Dance;
         if crate::dance::dance_scene_stage().clear_pad_latch {
             self.input.clear_edges();
@@ -1968,15 +1968,15 @@ impl World {
     /// installed for one frame so the host can read it - this take clears it.
     pub fn exit_dance(&mut self) -> Option<crate::dance::DanceGame> {
         if self.mode == SceneMode::Dance {
-            self.mode = self.dance_return_mode;
+            self.mode = self.minigames.dance_return_mode;
         }
-        self.dance_last_judge = None;
+        self.minigames.dance_last_judge = None;
         // The stager runs on teardown as well as on entry, so the press that
         // leaves the hall does not carry into the restored field mode.
         if crate::dance::dance_scene_stage().clear_pad_latch {
             self.input.clear_edges();
         }
-        self.dance.take()
+        self.minigames.dance.take()
     }
 
     /// Advance the dance minigame one frame: step the beat clock, judge this
@@ -1993,9 +1993,9 @@ impl World {
     /// PORT: the dance overlay's per-frame driver (`FUN_801cf470` beat clock ->
     /// `FUN_801d1960` hit judge), one advance + one judged press pass per frame.
     fn tick_dance(&mut self) {
-        let Some(game) = self.dance.as_mut() else {
+        let Some(game) = self.minigames.dance.as_mut() else {
             // Mode is Dance but no game installed - drop back to a sane mode.
-            self.mode = self.dance_return_mode;
+            self.mode = self.minigames.dance_return_mode;
             return;
         };
         game.advance(1);
@@ -2014,12 +2014,12 @@ impl World {
             .into_iter()
             .find(|d| pressed & d.pad_bit() != 0);
         if let Some(dir) = dir {
-            self.dance_last_judge = Some(game.judge_press(dir));
+            self.minigames.dance_last_judge = Some(game.judge_press(dir));
         }
         if game.song_over() {
             // Song finished: restore the interrupted mode, leaving `dance`
             // in place so the host can read the final score before clearing.
-            self.mode = self.dance_return_mode;
+            self.mode = self.minigames.dance_return_mode;
         }
     }
 
@@ -2028,9 +2028,9 @@ impl World {
     /// suspend contract, the interrupted field state stays intact underneath.
     pub fn enter_fishing(&mut self, session: crate::fishing::FishingSession) {
         if self.mode != SceneMode::Fishing {
-            self.fishing_return_mode = self.mode;
+            self.minigames.fishing_return_mode = self.mode;
         }
-        self.fishing = Some(session);
+        self.minigames.fishing = Some(session);
         self.mode = SceneMode::Fishing;
     }
 
@@ -2044,12 +2044,12 @@ impl World {
     /// [`FishingRecord`]: crate::fishing::FishingRecord
     pub fn exit_fishing(&mut self) -> Option<crate::fishing::FishingSession> {
         if self.mode == SceneMode::Fishing {
-            self.mode = self.fishing_return_mode;
+            self.mode = self.minigames.fishing_return_mode;
         }
-        let session = self.fishing.take();
-        self.fishing_exchange = None;
+        let session = self.minigames.fishing.take();
+        self.minigames.fishing_exchange = None;
         if let Some(s) = &session {
-            self.fishing_points = s.record().points;
+            self.minigames.fishing_points = s.record().points;
         }
         session
     }
@@ -2062,13 +2062,13 @@ impl World {
         // first visible row for the current point pool.
         exchange.cursor = exchange
             .cursor
-            .max(exchange.first_visible(self.fishing_points));
-        self.fishing_exchange = Some(exchange);
+            .max(exchange.first_visible(self.minigames.fishing_points));
+        self.minigames.fishing_exchange = Some(exchange);
     }
 
     /// Close the point-exchange list.
     pub fn close_fishing_exchange(&mut self) {
-        self.fishing_exchange = None;
+        self.minigames.fishing_exchange = None;
     }
 
     /// Commit a point-exchange purchase of `qty` units of `row`
@@ -2084,24 +2084,24 @@ impl World {
         row: usize,
         qty: u32,
     ) -> Option<crate::fishing::PrizePurchase> {
-        let ex = self.fishing_exchange.as_ref()?;
+        let ex = self.minigames.fishing_exchange.as_ref()?;
         let item_id = ex.rows.get(row)?.item_id;
         let owned = *self.inventory.get(&item_id).unwrap_or(&0) as u32;
         let purchase = ex.buy(
             row,
             qty,
-            self.fishing_points,
+            self.minigames.fishing_points,
             owned,
-            self.fishing_prizes_purchased,
+            self.minigames.fishing_prizes_purchased,
         )?;
-        self.fishing_points -= purchase.cost as i32;
+        self.minigames.fishing_points -= purchase.cost as i32;
         if let Some(bit) = purchase.latched_bit {
-            self.fishing_prizes_purchased |= 1 << bit;
+            self.minigames.fishing_prizes_purchased |= 1 << bit;
         }
         let count = self.inventory.entry(purchase.item_id).or_insert(0);
         *count = count.saturating_add(purchase.qty.min(255) as u8);
-        if let Some(s) = &mut self.fishing {
-            s.set_points(self.fishing_points);
+        if let Some(s) = &mut self.minigames.fishing {
+            s.set_points(self.minigames.fishing_points);
         }
         Some(purchase)
     }
@@ -2130,18 +2130,18 @@ impl World {
         use crate::fishing::{FishingPhase, ReelInput};
         /// Per-frame casting-meter step (see the method note - not byte-pinned).
         const FISHING_CAST_STEP: i32 = 0x80;
-        let Some(phase) = self.fishing.as_ref().map(|s| s.phase()) else {
+        let Some(phase) = self.minigames.fishing.as_ref().map(|s| s.phase()) else {
             // Mode is Fishing but no session installed - drop back to a sane mode.
-            self.mode = self.fishing_return_mode;
+            self.mode = self.minigames.fishing_return_mode;
             return;
         };
         match phase {
             FishingPhase::Casting => {
-                if let Some(s) = self.fishing.as_mut() {
+                if let Some(s) = self.minigames.fishing.as_mut() {
                     s.advance_cast(FISHING_CAST_STEP);
                 }
                 if self.input.just_pressed(input::PadButton::Cross)
-                    && let Some(s) = self.fishing.as_mut()
+                    && let Some(s) = self.minigames.fishing.as_mut()
                 {
                     s.lock_cast();
                 }
@@ -2158,13 +2158,13 @@ impl World {
                     held |= crate::fishing::REEL_B_PAD_BIT;
                 }
                 let input = ReelInput::from_pad_mask(held);
-                if let Some(s) = self.fishing.as_mut() {
+                if let Some(s) = self.minigames.fishing.as_mut() {
                     s.reel(input, 1);
                 }
             }
             FishingPhase::Done => {
                 if self.input.just_pressed(input::PadButton::Cross)
-                    && let Some(s) = self.fishing.as_mut()
+                    && let Some(s) = self.minigames.fishing.as_mut()
                 {
                     s.recast();
                 }
@@ -2178,9 +2178,9 @@ impl World {
     /// field state stays intact underneath.
     pub fn enter_slot_machine(&mut self, machine: crate::slot_machine::SlotMachine) {
         if self.mode != SceneMode::SlotMachine {
-            self.slot_return_mode = self.mode;
+            self.minigames.slot_return_mode = self.mode;
         }
-        self.slot_machine = Some(machine);
+        self.minigames.slot_machine = Some(machine);
         self.mode = SceneMode::SlotMachine;
     }
 
@@ -2191,11 +2191,11 @@ impl World {
     /// read the final state. No-op when the machine isn't active.
     pub fn exit_slot_machine(&mut self) -> Option<crate::slot_machine::SlotMachine> {
         if self.mode == SceneMode::SlotMachine {
-            self.mode = self.slot_return_mode;
+            self.mode = self.minigames.slot_return_mode;
         }
-        let mut machine = self.slot_machine.take();
+        let mut machine = self.minigames.slot_machine.take();
         if let Some(m) = machine.as_mut() {
-            self.casino_coins = m.cash_out().max(0) as u32;
+            self.minigames.casino_coins = m.cash_out().max(0) as u32;
         }
         machine
     }
@@ -2257,7 +2257,7 @@ impl World {
         }
         // Close the mode-24 round trip when the entry came through the door
         // warp (`exit_baka_fighter` already does its own).
-        if self.minigame_scene_backup.is_some() {
+        if self.minigames.scene_backup.is_some() {
             self.minigame_return_warp();
         }
     }
@@ -2274,8 +2274,8 @@ impl World {
     // REF: FUN_80025980 (scene-name backup half), FUN_801DE840 case 0x3E
     //      (winnings-accumulator zero half)
     pub fn arm_minigame_warp(&mut self) {
-        self.minigame_scene_backup = Some(self.active_scene_label.clone());
-        self.minigame_winnings = 0;
+        self.minigames.scene_backup = Some(self.active_scene_label.clone());
+        self.minigames.winnings = 0;
     }
 
     /// Mode-24 minigame exit / return-warp: restore the backed-up scene name
@@ -2296,11 +2296,12 @@ impl World {
     /// unconditional); only the name restore needs the backup.
     // PORT: FUN_80026018
     pub fn minigame_return_warp(&mut self) {
-        self.casino_coins = self
+        self.minigames.casino_coins = self
+            .minigames
             .casino_coins
-            .saturating_add(self.minigame_winnings)
+            .saturating_add(self.minigames.winnings)
             .min(9_999_999);
-        if let Some(name) = self.minigame_scene_backup.take() {
+        if let Some(name) = self.minigames.scene_backup.take() {
             self.active_scene_label = name;
         }
         self.mode = SceneMode::Field;
@@ -2323,13 +2324,13 @@ impl World {
     /// the confirmed kernels live in [`crate::slot_machine`]).
     fn tick_slot_machine(&mut self) {
         use crate::slot_machine::SlotPhase;
-        let Some(phase) = self.slot_machine.as_ref().map(|m| m.phase()) else {
+        let Some(phase) = self.minigames.slot_machine.as_ref().map(|m| m.phase()) else {
             // Mode is SlotMachine but no session installed - drop back.
-            self.mode = self.slot_return_mode;
+            self.mode = self.minigames.slot_return_mode;
             return;
         };
         let confirm = self.input.just_pressed(input::PadButton::Cross);
-        let Some(m) = self.slot_machine.as_mut() else {
+        let Some(m) = self.minigames.slot_machine.as_mut() else {
             return;
         };
         m.tick();
@@ -2353,7 +2354,7 @@ impl World {
             SlotPhase::CashedOut => {
                 // Committed: restore the interrupted mode (the host reads the
                 // session out via [`World::exit_slot_machine`]).
-                self.mode = self.slot_return_mode;
+                self.mode = self.minigames.slot_return_mode;
             }
         }
     }
@@ -2364,17 +2365,17 @@ impl World {
     /// state stays intact underneath.
     pub fn enter_baka_fighter(&mut self, fight: crate::baka_fighter::BakaFight) {
         if self.mode != SceneMode::BakaFighter {
-            self.baka_return_mode = self.mode;
+            self.minigames.baka_return_mode = self.mode;
         }
         // Retail reaches the duel through the mode-24 door warp: the field-VM
         // `0x3E` arm zeroes the winnings accumulator `_DAT_80084440` and the
         // mode-24 OTHER-INIT `FUN_80025980` backs up the active scene name.
         // Only a field entry goes through that warp; an engine-only entry from
         // another mode keeps the plain suspend/restore contract.
-        if self.baka_return_mode == SceneMode::Field {
+        if self.minigames.baka_return_mode == SceneMode::Field {
             self.arm_minigame_warp();
         }
-        self.baka_fighter = Some(fight);
+        self.minigames.baka_fighter = Some(fight);
         self.mode = SceneMode::BakaFighter;
     }
 
@@ -2393,14 +2394,14 @@ impl World {
     /// Returns the fight so the host can read the final state. No-op when no
     /// duel is active.
     pub fn exit_baka_fighter(&mut self) -> Option<crate::baka_fighter::BakaFight> {
-        let fight = self.baka_fighter.take();
+        let fight = self.minigames.baka_fighter.take();
         if let Some(f) = fight.as_ref()
             && f.winner() == Some(0)
         {
             let owed = f.tally_gold_remaining().max(0) as u32;
-            self.minigame_winnings = self.minigame_winnings.saturating_add(owed);
+            self.minigames.winnings = self.minigames.winnings.saturating_add(owed);
         }
-        let return_mode = self.baka_return_mode;
+        let return_mode = self.minigames.baka_return_mode;
         if self.mode == SceneMode::BakaFighter {
             // The warp's own mode write is retail's mode-2 (field) latch. An
             // engine-only entry from another mode restores that mode instead,
@@ -2430,9 +2431,9 @@ impl World {
     /// type commit; `FUN_801d3468` resolution SM via `BakaFight::tick`).
     fn tick_baka_fighter(&mut self) {
         use crate::baka_fighter::BakaAttack;
-        let Some(fight) = self.baka_fighter.as_ref() else {
+        let Some(fight) = self.minigames.baka_fighter.as_ref() else {
             // Mode is BakaFighter but no fight installed - drop back.
-            self.mode = self.baka_return_mode;
+            self.mode = self.minigames.baka_return_mode;
             return;
         };
         if fight.match_over() {
@@ -2450,11 +2451,11 @@ impl World {
             ]
             .iter()
             .any(|&b| self.input.just_pressed(b));
-            if let Some(f) = self.baka_fighter.as_mut() {
+            if let Some(f) = self.minigames.baka_fighter.as_mut() {
                 f.tick_with_input(1, face);
                 let paid = f.take_tally_gold();
                 if paid > 0 {
-                    self.minigame_winnings = self.minigame_winnings.saturating_add(paid as u32);
+                    self.minigames.winnings = self.minigames.winnings.saturating_add(paid as u32);
                 }
             }
             if self.input.just_pressed(input::PadButton::Cross) {
@@ -2473,7 +2474,7 @@ impl World {
         } else {
             None
         };
-        if let Some(fight) = self.baka_fighter.as_mut() {
+        if let Some(fight) = self.minigames.baka_fighter.as_mut() {
             if let Some(attack) = attack {
                 fight.choose(0, attack);
             }
@@ -2496,9 +2497,10 @@ impl World {
     /// `muscle_dome::apply_contest_start_restore`)
     pub fn enter_muscle_dome(&mut self, session: crate::muscle_dome::MuscleDomeSession) {
         if self.mode != SceneMode::MuscleDome {
-            self.muscle_return_mode = self.mode;
+            self.minigames.muscle_return_mode = self.mode;
         }
         if let Some(restore) = self
+            .minigames
             .muscle_contest
             .as_mut()
             .and_then(|c| c.take_start_restore())
@@ -2506,7 +2508,7 @@ impl World {
         {
             crate::muscle_dome::apply_contest_start_restore(rec, restore);
         }
-        self.muscle_dome = Some(session);
+        self.minigames.muscle_dome = Some(session);
         self.mode = SceneMode::MuscleDome;
     }
 
@@ -2526,9 +2528,9 @@ impl World {
     /// Returns the session so the host can read the final state.
     pub fn exit_muscle_dome(&mut self) -> Option<crate::muscle_dome::MuscleDomeSession> {
         if self.mode == SceneMode::MuscleDome {
-            self.mode = self.muscle_return_mode;
+            self.mode = self.minigames.muscle_return_mode;
         }
-        self.muscle_dome.take()
+        self.minigames.muscle_dome.take()
     }
 
     /// Report the finished leg to the open contest and step the between-leg
@@ -2553,7 +2555,7 @@ impl World {
             .map(|r| r.hp_mp_sp().hp_max)
             .filter(|&hp| hp > 0)
             .unwrap_or(500);
-        let contest = self.muscle_contest.as_mut()?;
+        let contest = self.minigames.muscle_contest.as_mut()?;
         contest.finish_leg(report, hp_max, &flags);
         // The three recovery lanes drain, then the restore state hands the
         // total back to the fighter - a dome contest costs no permanent HP.
@@ -2573,13 +2575,14 @@ impl World {
                     None => break,
                 };
                 hms.hp_cur = self
+                    .minigames
                     .muscle_contest
                     .as_mut()?
                     .take_hp_restore(hms.hp_cur, hp_max);
                 if let Some(rec) = self.roster.members.first_mut() {
                     rec.set_hp_mp_sp(hms);
                 }
-                return Some(self.muscle_contest.as_ref()?.state());
+                return Some(self.minigames.muscle_contest.as_ref()?.state());
             }
         }
         Some(contest.state())
@@ -2611,14 +2614,15 @@ impl World {
     pub fn settle_muscle_contest(&mut self) -> Option<crate::muscle_dome::ContestSettlement> {
         use crate::muscle_dome as md;
         let flags = self.muscle_contest_flags();
-        let contest = self.muscle_contest.as_mut()?;
+        let contest = self.minigames.muscle_contest.as_mut()?;
         if !contest.over() {
             return None;
         }
         let out = contest.settle(&flags);
-        self.muscle_contest = None;
-        self.muscle_settlement = Some(out);
-        self.casino_coins = md::credit_casino_coins(self.casino_coins, out.score);
+        self.minigames.muscle_contest = None;
+        self.minigames.muscle_settlement = Some(out);
+        self.minigames.casino_coins =
+            md::credit_casino_coins(self.minigames.casino_coins, out.score);
         if out.set_continue_flag {
             self.system_flag_set(md::CONTEST_CONTINUE_FLAG);
         } else {
@@ -2677,8 +2681,8 @@ impl World {
     /// resolve), with the presentation left to the host.
     fn tick_muscle_dome(&mut self) {
         use crate::muscle_dome::MusclePhase;
-        let Some(phase) = self.muscle_dome.as_ref().map(|s| s.phase()) else {
-            self.mode = self.muscle_return_mode;
+        let Some(phase) = self.minigames.muscle_dome.as_ref().map(|s| s.phase()) else {
+            self.mode = self.minigames.muscle_return_mode;
             return;
         };
         let confirm = self.input.just_pressed(input::PadButton::Cross);
@@ -2699,12 +2703,12 @@ impl World {
                     cancel: self.input.just_pressed(input::PadButton::Circle),
                     magic: self.input.just_pressed(input::PadButton::Triangle),
                 };
-                if let Some(s) = self.muscle_dome.as_mut() {
+                if let Some(s) = self.minigames.muscle_dome.as_mut() {
                     s.select_input(pad);
                 }
             }
             MusclePhase::Resolve => {
-                if let Some(s) = self.muscle_dome.as_mut() {
+                if let Some(s) = self.minigames.muscle_dome.as_mut() {
                     // With no disc tables staged this closes the turn without
                     // damage rather than substituting invented numbers - and
                     // rather than parking the leg in `Resolve` forever.
@@ -2720,7 +2724,7 @@ impl World {
                 // executing during a leg, so a confirm gate here was a silent
                 // one-press stall with nothing on screen to explain it.
                 // REF: FUN_801e295c (turn-top arm)
-                if let Some(s) = self.muscle_dome.as_mut() {
+                if let Some(s) = self.minigames.muscle_dome.as_mut() {
                     s.next_turn();
                 }
             }
@@ -2729,7 +2733,7 @@ impl World {
                     let report = crate::muscle_dome::LegReport {
                         survived: phase == MusclePhase::Won,
                         outcome: 0,
-                        turns_taken: self.muscle_dome.as_ref().map_or(0, |s| s.turn()),
+                        turns_taken: self.minigames.muscle_dome.as_ref().map_or(0, |s| s.turn()),
                     };
                     self.exit_muscle_dome();
                     self.report_muscle_leg(report);

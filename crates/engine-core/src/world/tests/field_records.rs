@@ -91,15 +91,15 @@ fn field_op_3e_warp_arms_the_minigame_door_not_a_scene_change() {
     let bytecode = vec![0x3E, 105, 0, 0, 0, 0];
     world.load_field_script(bytecode);
     let _ = world.tick();
-    assert_eq!(world.pending_minigame_warp, Some(5));
+    assert_eq!(world.minigames.pending_warp, Some(5));
     assert_eq!(
         world.pending_scene_transition, None,
         "the door-warp sub-id must not reach the map-id resolver"
     );
     // The arm's other retail half: the winnings accumulator is zeroed and the
     // departure scene is backed up for the return trip.
-    assert_eq!(world.minigame_winnings, 0);
-    assert!(world.minigame_scene_backup.is_some());
+    assert_eq!(world.minigames.winnings, 0);
+    assert!(world.minigames.scene_backup.is_some());
 }
 
 /// `op0 < 100` is the field_interact arm - should trigger neither a scene
@@ -112,7 +112,7 @@ fn field_op_3e_low_op0_does_not_request_scene_transition() {
     world.load_field_script(bytecode);
     let _ = world.tick();
     assert_eq!(world.pending_scene_transition, None);
-    assert_eq!(world.pending_minigame_warp, None);
+    assert_eq!(world.minigames.pending_warp, None);
 }
 
 /// Field-VM op `0x4C 0xE2` (FMV trigger) records the FMV index in
