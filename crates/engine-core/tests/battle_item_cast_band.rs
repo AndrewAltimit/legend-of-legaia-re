@@ -65,7 +65,7 @@ fn build_world() -> World {
 
     w.mode = SceneMode::Field;
     w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.battle.player_driven = true;
     w
 }
 
@@ -128,14 +128,14 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
     // Round prompt (`Begin | Run`): Cross takes Begin -> the command ring.
     press(&mut w, PadButton::Cross, &mut trace);
     assert!(
-        w.battle_command.is_some(),
+        w.battle.command.is_some(),
         "command session should be open on the party turn"
     );
     // Ring seat order is up/left/right/down = Item/Attack/Magic/Spirit; the
     // Up press itself commits the Item arm (retail state 0x28 dispatch).
     press(&mut w, PadButton::Up, &mut trace);
     assert!(
-        w.battle_item_menu.is_some(),
+        w.battle.item_menu.is_some(),
         "the Item arm should hand off to the inventory submenu"
     );
 
@@ -164,13 +164,13 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
     // begins; with flat turn tokens slot 0 dispatches first.
     for _ in 0..2 {
         assert!(
-            w.battle_command.is_some(),
+            w.battle.command.is_some(),
             "the ring walks on to the next member"
         );
         press(&mut w, PadButton::Down, &mut trace);
     }
     assert!(
-        w.battle_command.is_none(),
+        w.battle.command.is_none(),
         "the last commit begins the round"
     );
 
@@ -217,7 +217,7 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
     for _ in 0..0x200 {
         w.set_pad(0);
         let _ = w.tick();
-        if w.battle_command.is_some() {
+        if w.battle.command.is_some() {
             reopened = true;
             break;
         }
@@ -238,14 +238,14 @@ fn summon_flute_item_reroutes_to_the_summon_band_and_completes() {
     for _ in 0..0x40 {
         w.set_pad(0);
         let _ = w.tick();
-        if w.battle_command.is_some() {
+        if w.battle.command.is_some() {
             opened = true;
             break;
         }
     }
     assert!(opened, "no command session opened");
-    let actor = w.battle_command.as_ref().unwrap().actor;
-    w.battle_command = None;
+    let actor = w.battle.command.as_ref().unwrap().actor;
+    w.battle.command = None;
     if let Some(a) = w.actors.get_mut(actor as usize) {
         // Fresh action stream (the live loop's own arming sites clear it the
         // same way before staging params[0]).

@@ -114,7 +114,7 @@ impl World {
                 a.battle.mp = a.battle.mp.saturating_sub(cost);
             }
         }
-        let caster_mag = self.battle_magic.get(caster as usize).copied().unwrap_or(0);
+        let caster_mag = self.battle.magic.get(caster as usize).copied().unwrap_or(0);
 
         // For a monster caster whose move id carries a real per-move power
         // record, the damage rolls through the faithful arts/physical kernel
@@ -159,7 +159,7 @@ impl World {
                 caster_hp,
                 caster_max_hp,
                 caster_mp: caster_mp_before,
-                target_mdef: self.battle_defense.get(t as usize).copied().unwrap_or(0),
+                target_mdef: self.battle.defense.get(t as usize).copied().unwrap_or(0),
                 target_hp: actor.battle.hp,
                 target_hp_max: actor.battle.max_hp,
                 target_mp: actor.battle.mp,
@@ -329,7 +329,8 @@ impl World {
         let attacker_roll = SummonRollActor {
             hp: a.battle.hp,
             agl: self
-                .battle_accuracy
+                .battle
+                .accuracy
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),
@@ -379,7 +380,8 @@ impl World {
             attacker_element,
             defender_resist: self.defender_resist(target),
             defender_guarding: self
-                .battle_guarding
+                .battle
+                .guarding
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
@@ -442,7 +444,8 @@ impl World {
             // `+0x168` is not read on this path at all.
             agl: 0,
             spell_power: self
-                .battle_attack
+                .battle
+                .attack
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),
@@ -480,7 +483,8 @@ impl World {
             attacker_element,
             defender_resist: self.defender_resist(target),
             defender_guarding: self
-                .battle_guarding
+                .battle
+                .guarding
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
@@ -606,7 +610,8 @@ impl World {
         let a = WrapperAttacker {
             hp: attacker_hp,
             agl: self
-                .battle_accuracy
+                .battle
+                .accuracy
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),
@@ -648,7 +653,8 @@ impl World {
             attacker_element,
             defender_resist: self.defender_resist(target),
             defender_guarding: self
-                .battle_guarding
+                .battle
+                .guarding
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
@@ -675,20 +681,22 @@ impl World {
     ) -> Option<vm::battle_formulas::SummonRollActor> {
         let t = self.actors.get(slot as usize)?;
         let (stat_a, stat_b) = self
-            .battle_defense_split
+            .battle
+            .defense_split
             .get(slot as usize)
             .copied()
             .flatten()
             .unwrap_or_else(|| {
                 (
-                    self.battle_defense.get(slot as usize).copied().unwrap_or(0),
+                    self.battle.defense.get(slot as usize).copied().unwrap_or(0),
                     0,
                 )
             });
         Some(vm::battle_formulas::SummonRollActor {
             hp: t.battle.hp,
             agl: self
-                .battle_accuracy
+                .battle
+                .accuracy
                 .get(slot as usize)
                 .copied()
                 .unwrap_or(0),
@@ -782,7 +790,8 @@ impl World {
         };
         let summon_element = creature.element;
         let caster_agl = self
-            .battle_accuracy
+            .battle
+            .accuracy
             .get(caster as usize)
             .copied()
             .unwrap_or(0);
@@ -986,7 +995,7 @@ impl World {
                 // `+0x14C`, so the bar can never outrun HP. That arm also
                 // picks the victim's reaction clip off `+0x1F2`.
                 self.apply_effect_child_hit(target as usize, i32::from(applied));
-                self.battle_hit_fx.push(BattleHitFx {
+                self.battle.hit_fx.push(BattleHitFx {
                     target_slot: target,
                     amount: applied,
                     is_heal: false,
@@ -1004,7 +1013,7 @@ impl World {
             O::Heal { target, amount } => {
                 self.apply_battle_hp_delta(target as usize, -i32::from(amount));
                 if amount > 0 {
-                    self.battle_hit_fx.push(BattleHitFx {
+                    self.battle.hit_fx.push(BattleHitFx {
                         target_slot: target,
                         amount,
                         is_heal: true,
@@ -1013,7 +1022,7 @@ impl World {
                 }
             }
             O::Cure { target, .. } => {
-                self.status_effects.cure_all(target);
+                self.battle.status_effects.cure_all(target);
             }
             O::Revive { target, hp } => {
                 if let Some(a) = self.actors.get_mut(target as usize) {
@@ -1036,7 +1045,7 @@ impl World {
                         );
                     }
                 }
-                self.battle_hit_fx.push(BattleHitFx {
+                self.battle.hit_fx.push(BattleHitFx {
                     target_slot: target,
                     amount: hp,
                     is_heal: true,
@@ -1055,7 +1064,7 @@ impl World {
                 self.resolve_capture(target, hit_pct);
             }
             O::Escape => {
-                self.battle_escaped = true;
+                self.battle.escaped = true;
             }
             // Multi-target variants aren't produced by per-slot casts; Failed
             // is a no-op (MP was already spent up front).
@@ -1125,15 +1134,15 @@ mod capture_bypass_tests {
         world.actors[0].battle.max_hp = 9999;
         world.actors[0].battle.hp = 9999;
         world.actors[0].battle.liveness = 1;
-        world.battle_accuracy[0] = 5;
-        world.battle_defense[0] = 1;
+        world.battle.accuracy[0] = 5;
+        world.battle.defense[0] = 1;
 
         world.actors[1].battle.max_hp = 4000;
         world.actors[1].battle.hp = 4000;
         world.actors[1].battle.mp = 200;
         world.actors[1].battle.liveness = 1;
         world.actors[1].battle_monster_id = Some(5);
-        world.battle_accuracy[1] = 200;
+        world.battle.accuracy[1] = 200;
 
         world.tables.move_power = Some(
             crate::move_power::MovePowerCatalog::from_overlay_0898(&overlay_with_two_ids(2000))
@@ -1250,8 +1259,8 @@ mod capture_bypass_tests {
     /// arms fire and the two rebuilds differ.
     fn world_on_the_bonus_floor() -> World {
         let mut world = world_with_resisting_party();
-        world.battle_accuracy[1] = 20; // attacker `+0x168`
-        world.battle_defense[0] = 4000; // defender `+0x15C`
+        world.battle.accuracy[1] = 20; // attacker `+0x168`
+        world.battle.defense[0] = 4000; // defender `+0x15C`
         world.tables.move_power = Some(
             crate::move_power::MovePowerCatalog::from_overlay_0898(&overlay_with_two_ids(40))
                 .expect("synthetic catalog parses"),
@@ -1392,7 +1401,7 @@ mod capture_bypass_tests {
                 bits[3] &= !0x20;
                 m.set_ability_bits(bits);
             }
-            world.battle_defense[0] = defence;
+            world.battle.defense[0] = defence;
             let before = world.actors[0].battle.hp as i32;
             world.cast_spell_on_slots(1, &spell(move_id), &[0]);
             before - world.actors[0].battle.hp as i32

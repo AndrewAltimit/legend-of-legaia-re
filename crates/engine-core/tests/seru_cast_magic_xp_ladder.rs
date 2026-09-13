@@ -57,7 +57,7 @@ fn build_world() -> World {
 
     w.mode = SceneMode::Field;
     w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.battle.player_driven = true;
     w
 }
 
@@ -81,7 +81,7 @@ fn wait_for_prompt(w: &mut World, spawn_requests: &mut usize) -> bool {
         if w.take_pending_summon_spawn().is_some() {
             *spawn_requests += 1;
         }
-        if w.battle_command.is_some() {
+        if w.battle.command.is_some() {
             return true;
         }
         w.set_pad(0);
@@ -124,7 +124,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         w.actors[i].battle.liveness = 1;
         w.actors[i].battle.mp = 99;
     }
-    w.battle_magic[0] = 80;
+    w.battle.magic[0] = 80;
     // Monster sizing matters to the accrual, and the shape is faithful: the
     // partial-hit gain is `damage * 12 / max_hp` (integer), so a huge target
     // accrues 0 per cast exactly as in retail. 300 max HP puts the ~195-damage
@@ -136,7 +136,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     // The enemy-side flee checkpoint (FUN_801EC0DC) can remove the monster on
     // its first pick under an unlucky seed; the scripted no-escape flag is
     // retail's own gate for it (ctx+0x287, tested at the roll's head).
-    w.battle_no_escape = true;
+    w.battle.no_escape = true;
 
     let rec_xp = |w: &World| legaia_engine_core::magic_xp::spell_xp(&w.roster.members[0], 0usize);
     assert_eq!(rec_xp(&w), 0);
@@ -150,9 +150,9 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
                 "command session never reopened (cast {casts}); active={} state={:02X} spell_menu={} item_menu={} arts={} mode={:?} monster_hp={}",
                 w.battle_ctx.active_actor,
                 w.battle_ctx.action_state,
-                w.battle_spell_menu.is_some(),
-                w.battle_item_menu.is_some(),
-                w.battle_arts_menu.is_some(),
+                w.battle.spell_menu.is_some(),
+                w.battle.item_menu.is_some(),
+                w.battle.arts_menu.is_some(),
                 w.mode,
                 w.actors[w.party_count as usize].battle.hp,
             );
@@ -160,7 +160,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         // A round-open session sits on the `Begin | Run` prompt; a mid-round
         // one opens straight on the ring - dismiss the prompt when it is up.
         if matches!(
-            w.battle_command.as_ref().map(|s| &s.phase),
+            w.battle.command.as_ref().map(|s| &s.phase),
             Some(legaia_engine_core::battle_input::CommandPhase::RoundPrompt { .. })
         ) {
             press(&mut w, PadButton::Cross); // Begin -> the command ring
@@ -174,7 +174,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         }
         press(&mut w, PadButton::Right); // ring: Magic arm
         assert!(
-            w.battle_spell_menu.is_some(),
+            w.battle.spell_menu.is_some(),
             "the Magic arm should open the spell submenu (cast {casts})"
         );
         press(&mut w, PadButton::Cross); // spell row 0 (Gimard) -> target
@@ -184,13 +184,13 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         // commits (retail `0x6E -> 0xFE`): the other members Spirit so the
         // round begins, and with flat turn tokens slot 0 dispatches first.
         for _ in 0..3 {
-            if w.battle_command.is_none() {
+            if w.battle.command.is_none() {
                 break;
             }
             press(&mut w, PadButton::Down); // ring: Spirit arm
         }
         assert!(
-            w.battle_command.is_none(),
+            w.battle.command.is_none(),
             "the last commit begins the round (cast {casts})"
         );
         // The outcome (and its XP) folds at the stager's strike, inside the

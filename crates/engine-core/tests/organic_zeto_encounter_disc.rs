@@ -216,6 +216,7 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
     // The active formation is the MAN table row - id 9, lone Zeto slot.
     let formation = host
         .world
+        .battle
         .active_formation
         .as_ref()
         .expect("active formation set");

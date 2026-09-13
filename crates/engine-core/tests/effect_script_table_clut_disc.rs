@@ -89,18 +89,18 @@ fn draining_table_spawns_stages_the_real_clut_map_bytes_under_the_retail_gates()
     // the gate (>= 0x32 never consults the map - the arm that makes the
     // spreadsheet's 0x4C code copy nothing), and a direct-form spawn (2D
     // pool, which has no palette arm at all).
-    world.battle_effect_spawns = vec![
+    world.battle.effect_spawns = vec![
         spawn(staged, false),
         spawn(no_copy, false),
         spawn(TABLE_CLUT_GATE, false),
         spawn(staged, true),
     ];
-    world.battle_clut_stages.clear();
+    world.battle.clut_stages.clear();
     world.audio.battle_sfx_cues.clear();
 
     let drained = world.drain_battle_effect_spawns();
     assert_eq!(drained.len(), 4, "the drain still returns every spawn");
-    assert!(world.battle_effect_spawns.is_empty());
+    assert!(world.battle.effect_spawns.is_empty());
 
     assert_eq!(
         world.drain_battle_clut_stages(),
@@ -128,9 +128,9 @@ fn draining_without_a_catalog_returns_the_spawns_and_stages_nothing() {
     // drain hands back the spawns and queues nothing - the same shape as the
     // table spawner itself, which stages nothing without the overlay.
     let mut world = World::new();
-    world.battle_effect_spawns = vec![spawn(0x01, false), spawn(0x01, true)];
-    world.battle_clut_stages.clear();
+    world.battle.effect_spawns = vec![spawn(0x01, false), spawn(0x01, true)];
+    world.battle.clut_stages.clear();
     let drained = world.drain_battle_effect_spawns();
     assert_eq!(drained.len(), 2);
-    assert!(world.battle_clut_stages.is_empty());
+    assert!(world.battle.clut_stages.is_empty());
 }

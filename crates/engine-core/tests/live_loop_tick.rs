@@ -91,7 +91,7 @@ fn walking_triggers_battle_and_returns_to_field_with_loot() {
             moved = true;
         }
         // Stop once we've fought and come back to the field with rewards.
-        if entered_battle && w.mode == SceneMode::Field && w.last_battle_rewards.is_some() {
+        if entered_battle && w.mode == SceneMode::Field && w.battle.last_rewards.is_some() {
             break;
         }
     }
@@ -111,7 +111,8 @@ fn walking_triggers_battle_and_returns_to_field_with_loot() {
     );
 
     let rewards = w
-        .last_battle_rewards
+        .battle
+        .last_rewards
         .as_ref()
         .expect("victory should record rewards");
     assert!(rewards.gold > 0, "Goblin formation drops gold: {rewards:?}");
@@ -127,7 +128,7 @@ fn walking_triggers_battle_and_returns_to_field_with_loot() {
     );
     assert!(!w.game_over, "a monster wipe is not a party wipe");
     assert!(
-        w.active_formation.is_none(),
+        w.battle.active_formation.is_none(),
         "formation cleared after battle"
     );
 }
@@ -191,5 +192,5 @@ fn live_loop_off_never_transitions_on_its_own() {
             "must stay in field when loop is off"
         );
     }
-    assert!(w.last_battle_rewards.is_none());
+    assert!(w.battle.last_rewards.is_none());
 }

@@ -29,7 +29,7 @@ fn battle_with(monster: MonsterDef, party_spd: u16) -> World {
         w.actors[i].battle.max_hp = 200;
         w.actors[i].battle.liveness = 1;
         w.set_battle_attack(i as u8, 40);
-        w.battle_speed[i] = party_spd;
+        w.battle.speed[i] = party_spd;
     }
     let mut catalog = MonsterCatalog::new();
     let id = monster.id;
@@ -90,7 +90,7 @@ fn a_fast_party_still_opens_against_a_slow_monster() {
 fn a_battle_without_speed_still_opens_on_slot_zero() {
     let w = battle_with(MonsterDef::new(1, "Mob", 100, 10), 0);
     assert!(
-        w.battle_speed.iter().all(|&s| s == 0),
+        w.battle.speed.iter().all(|&s| s == 0),
         "this setup leaves every SPD at 0"
     );
     assert_eq!(w.battle_ctx.active_actor, 0);
@@ -143,16 +143,16 @@ fn party_battle_speed_keeps_the_resolved_spd() {
     w.actors[0].battle.liveness = 1;
 
     // Raw record SPD lands first, via `load_party`.
-    assert_eq!(w.battle_speed[0], 12);
+    assert_eq!(w.battle.speed[0], 12);
 
     // Now resolve through the aggregator. With an empty equipment table the
     // resolved SPD equals the base, so this alone would not distinguish a
     // working write from no write - poison the slot first so only a real write
     // can restore it.
-    w.battle_speed[0] = 0;
+    w.battle.speed[0] = 0;
     w.seed_party_battle_stats();
     assert_eq!(
-        w.battle_speed[0], 12,
+        w.battle.speed[0], 12,
         "the resolved SPD must be written back to battle_speed"
     );
 }

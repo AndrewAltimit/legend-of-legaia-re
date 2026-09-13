@@ -60,7 +60,7 @@ fn seated_battle() -> (World, BattleSession) {
         world.actors[slot].battle.max_hp = 100;
         world.actors[slot].battle.mp = 30;
     }
-    for gauge in world.ap_gauges.iter_mut().take(3) {
+    for gauge in world.battle.ap_gauges.iter_mut().take(3) {
         *gauge = ApGauge::with_base(8);
     }
 

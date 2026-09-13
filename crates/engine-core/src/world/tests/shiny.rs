@@ -20,7 +20,7 @@ fn shiny_roll_boosts_only_the_capturable_enemy() {
         "the capturable enemy is flagged shiny"
     );
     assert_eq!(world.actors[1].battle.max_hp, 33, "shiny HP +35%");
-    assert_eq!(world.battle_attack[1], 12, "shiny ATK +35%");
+    assert_eq!(world.battle.attack[1], 12, "shiny ATK +35%");
     // Slot 2 = Wolf (not capturable) is never chosen.
     assert!(!world.shiny_enemy_slots.contains(&2));
 }

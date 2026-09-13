@@ -47,14 +47,14 @@ impl World {
     /// answer the same value and the parity pick is a no-op for it.
     pub fn physical_defense_of(&self, slot: u8, command: u8) -> u16 {
         let idx = slot as usize;
-        if let Some(Some((udf, ldf))) = self.battle_defense_split.get(idx) {
+        if let Some(Some((udf, ldf))) = self.battle.defense_split.get(idx) {
             return if vm::battle_formulas::physical_defense_is_udf(command) {
                 *udf
             } else {
                 *ldf
             };
         }
-        self.battle_defense.get(idx).copied().unwrap_or(0)
+        self.battle.defense.get(idx).copied().unwrap_or(0)
     }
 
     /// Roll the Run command's escape chance - the retail `FUN_801E791C`
@@ -87,14 +87,14 @@ impl World {
         };
         let party_n = (self.party_count as usize).min(self.actors.len());
         let fold = |i: usize| EscapeActor {
-            speed: self.battle_speed.get(i).copied().unwrap_or(0),
+            speed: self.battle.speed.get(i).copied().unwrap_or(0),
             hp: self.actors[i].battle.hp,
             max_hp: self.actors[i].battle.max_hp,
         };
         let party: Vec<EscapeActor> = (0..party_n).map(fold).collect();
         let enemies: Vec<EscapeActor> = (party_n..self.actors.len()).map(fold).collect();
         let mut flags = EscapeFlags {
-            no_escape: self.battle_no_escape,
+            no_escape: self.battle.no_escape,
             ..EscapeFlags::default()
         };
         // `ctx+0x291` - the latched formation advantage. A pre-emptive strike
@@ -146,7 +146,7 @@ impl World {
         let fold = |world: &Self, i: usize| FleeActor {
             hp: world.actors[i].battle.hp,
             max_hp: world.actors[i].battle.max_hp,
-            atk: world.battle_attack.get(i).copied().unwrap_or(0),
+            atk: world.battle.attack.get(i).copied().unwrap_or(0),
         };
         let party: Vec<FleeActor> = (0..pc).map(|i| fold(self, i)).collect();
         let monsters: Vec<FleeActor> = (pc..self.actors.len()).map(|i| fold(self, i)).collect();
@@ -170,7 +170,7 @@ impl World {
             .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.intel)
             .unwrap_or(0);
-        let no_escape = u8::from(self.battle_no_escape);
+        let no_escape = u8::from(self.battle.no_escape);
         vm::battle_formulas::monster_escape_roll(
             no_escape,
             &party,
@@ -257,11 +257,12 @@ impl World {
     ) {
         // Refresh: revert + drop any existing buff on this (slot, stat).
         if let Some(pos) = self
-            .battle_buffs
+            .battle
+            .buffs
             .iter()
             .position(|b| b.slot == slot && b.stat == stat)
         {
-            let old = self.battle_buffs.remove(pos);
+            let old = self.battle.buffs.remove(pos);
             self.add_to_buff_scalar(old.slot, old.stat, -old.applied_delta);
         }
         if turns == 0 {
@@ -274,7 +275,7 @@ impl World {
             // Debuff: additive (retail factor unpinned), saturating at 0.
             self.add_to_buff_scalar(slot, stat, magnitude)
         };
-        self.battle_buffs.push(BattleBuff {
+        self.battle.buffs.push(BattleBuff {
             slot,
             stat,
             applied_delta,
@@ -292,16 +293,16 @@ impl World {
     fn ramp_buff_scalar(&mut self, slot: u8, stat: crate::spells::BuffStat) -> i16 {
         use crate::spells::BuffStat;
         if matches!(stat, BuffStat::Defense | BuffStat::MagicDefense)
-            && let Some(Some((udf, _))) = self.battle_defense_split.get(slot as usize).copied()
+            && let Some(Some((udf, _))) = self.battle.defense_split.get(slot as usize).copied()
         {
             let delta = (i32::from(vm::battle_formulas::buff_ramp(udf)) - i32::from(udf)) as i16;
             return self.add_to_buff_scalar(slot, stat, delta);
         }
         let scalar = match stat {
-            BuffStat::Attack => self.battle_attack.get_mut(slot as usize),
-            BuffStat::MagicAttack => self.battle_magic.get_mut(slot as usize),
+            BuffStat::Attack => self.battle.attack.get_mut(slot as usize),
+            BuffStat::MagicAttack => self.battle.magic.get_mut(slot as usize),
             BuffStat::Defense | BuffStat::MagicDefense => {
-                self.battle_defense.get_mut(slot as usize)
+                self.battle.defense.get_mut(slot as usize)
             }
             BuffStat::Accuracy | BuffStat::Evasion | BuffStat::Speed => None,
         };
@@ -327,10 +328,10 @@ impl World {
             self.move_defense_split(slot, delta);
         }
         let scalar = match stat {
-            BuffStat::Attack => self.battle_attack.get_mut(slot as usize),
-            BuffStat::MagicAttack => self.battle_magic.get_mut(slot as usize),
+            BuffStat::Attack => self.battle.attack.get_mut(slot as usize),
+            BuffStat::MagicAttack => self.battle.magic.get_mut(slot as usize),
             BuffStat::Defense | BuffStat::MagicDefense => {
-                self.battle_defense.get_mut(slot as usize)
+                self.battle.defense.get_mut(slot as usize)
             }
             BuffStat::Accuracy | BuffStat::Evasion | BuffStat::Speed => None,
         };
@@ -358,7 +359,7 @@ impl World {
     /// `applied_delta` stays a single exactly-reversible number, so a buff that
     /// expires restores the pair it found.
     fn move_defense_split(&mut self, slot: u8, delta: i16) {
-        if let Some(Some((udf, ldf))) = self.battle_defense_split.get_mut(slot as usize) {
+        if let Some(Some((udf, ldf))) = self.battle.defense_split.get_mut(slot as usize) {
             let shift = |v: &mut u16| {
                 *v = (i32::from(*v) + i32::from(delta)).clamp(0, i32::from(u16::MAX)) as u16;
             };
@@ -371,7 +372,7 @@ impl World {
     /// revert + drop those that reach zero.
     pub(in crate::world) fn tick_battle_buffs_on_turn(&mut self, slot: u8) {
         let mut expired: Vec<BattleBuff> = Vec::new();
-        self.battle_buffs.retain_mut(|b| {
+        self.battle.buffs.retain_mut(|b| {
             if b.slot != slot {
                 return true;
             }

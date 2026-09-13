@@ -47,7 +47,7 @@ fn fresh_world_with_actors() -> World {
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
         w.actors[i].battle.mp = 30;
-        w.ap_gauges[i] = ApGauge::with_base(8);
+        w.battle.ap_gauges[i] = ApGauge::with_base(8);
     }
     w
 }
@@ -201,7 +201,7 @@ fn square_charges_spirit_and_emits_event() {
             ..Default::default()
         },
     );
-    let before = w.ap_gauges[0].current_ap;
+    let before = w.battle.ap_gauges[0].current_ap;
     let events = s.tick(
         &mut w,
         SessionInput {
@@ -209,7 +209,7 @@ fn square_charges_spirit_and_emits_event() {
             ..Default::default()
         },
     );
-    let after = w.ap_gauges[0].current_ap;
+    let after = w.battle.ap_gauges[0].current_ap;
     assert!(after > before);
     assert!(
         events
@@ -609,7 +609,7 @@ fn push_command_with_target_returns_false_when_out_of_ap() {
     let mut s = fresh_session();
     let mut w = fresh_world_with_actors();
     // Drain the AP gauge so the cost can't be paid.
-    w.ap_gauges[0] = ApGauge::with_base(0);
+    w.battle.ap_gauges[0] = ApGauge::with_base(0);
     s.begin_round(&mut w);
     s.transition(BattlePhase::CommandInput);
     let ok = s.push_command_with_target(&mut w, Command::Right, TargetKind::AllEnemies, 0);
@@ -631,9 +631,10 @@ fn rot_refuses_the_rotted_limbs_command_only() {
     s.transition(BattlePhase::CommandInput);
     // Rot the active slot's Right arm (limb roll 1).
     let active = s.runner.active_party_slot();
-    w.status_effects
+    w.battle
+        .status_effects
         .apply(active, legaia_engine_vm::status_effects::StatusKind::Rot);
-    w.status_effects.set_rot_limb(active, 1);
+    w.battle.status_effects.set_rot_limb(active, 1);
     assert!(
         !s.push_command(&mut w, Command::Right),
         "rotted limb blocked"
@@ -641,7 +642,8 @@ fn rot_refuses_the_rotted_limbs_command_only() {
     assert!(s.push_command(&mut w, Command::Left), "other limbs admit");
     assert!(s.push_command(&mut w, Command::Down));
     // Curing restores the command.
-    w.status_effects
+    w.battle
+        .status_effects
         .cure(active, legaia_engine_vm::status_effects::StatusKind::Rot);
     assert!(s.push_command(&mut w, Command::Right));
 }

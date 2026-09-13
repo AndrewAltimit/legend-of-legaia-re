@@ -78,7 +78,7 @@ fn a_monster_killed_before_its_staged_action_fires_never_attacks() {
     );
     // Make the monster the first pick and the party harmless to it, so the
     // only thing that can end this battle is the monster's own death below.
-    w.battle_speed[monster_slot] = 20000;
+    w.battle.speed[monster_slot] = 20000;
     for i in 0..3 {
         w.set_battle_attack(i as u8, 0);
     }

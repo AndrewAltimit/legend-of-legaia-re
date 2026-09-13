@@ -156,8 +156,8 @@ fn apply_basic_attack_queues_hit_fx_for_damaged_monster() {
     // it on either band, so a fixture must not lean on the fallback).
     world.actors[0].battle.active_target = 1;
     // Give the attacker enough ATK to chip the monster (>defense).
-    world.battle_attack[0] = 40;
-    world.battle_defense[1] = 10;
+    world.battle.attack[0] = 40;
+    world.battle.defense[1] = 10;
     world.apply_basic_attack();
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1);
@@ -181,8 +181,8 @@ fn one_basic_strike(attack: u16, defense: u16, gate: bool) -> (u16, bool) {
     world.actors[1].battle.hp = 60_000;
     world.actors[1].battle.max_hp = 60_000;
     world.actors[1].battle.liveness = 1;
-    world.battle_attack[0] = attack;
-    world.battle_defense[1] = defense;
+    world.battle.attack[0] = attack;
+    world.battle.defense[1] = defense;
     world.use_damage_finish = gate;
     let rng_before = world.rng_state;
     world.battle_ctx.active_actor = 0;
@@ -252,8 +252,8 @@ fn basic_attack_accrues_defender_spirit_gauge() {
     world.actors[1].battle.hp = 200;
     world.actors[1].battle.max_hp = 200;
     world.actors[1].battle.liveness = 1;
-    world.battle_attack[0] = 40;
-    world.battle_defense[1] = 10;
+    world.battle.attack[0] = 40;
+    world.battle.defense[1] = 10;
     world.battle_ctx.active_actor = 0;
     world.actors[0].battle.active_target = 1;
 
@@ -286,8 +286,8 @@ fn spirit_gauge_clamps_at_full() {
     world.actors[1].battle.hp = 9999;
     world.actors[1].battle.max_hp = 100;
     world.actors[1].battle.liveness = 1;
-    world.battle_attack[0] = 60;
-    world.battle_defense[1] = 10;
+    world.battle.attack[0] = 60;
+    world.battle.defense[1] = 10;
     world.battle_ctx.active_actor = 0;
     world.actors[0].battle.active_target = 1;
 
@@ -345,11 +345,11 @@ fn apply_basic_attack_does_not_roll_accuracy() {
     world.actors[1].battle.hp = 60_000;
     world.actors[1].battle.max_hp = 60_000;
     world.actors[1].battle.liveness = 1;
-    world.battle_attack[0] = 40;
-    world.battle_defense[1] = 10;
+    world.battle.attack[0] = 40;
+    world.battle.defense[1] = 10;
     // A matchup the old roll would have whiffed most of the time.
-    world.battle_accuracy[0] = 1;
-    world.battle_evasion[1] = 500;
+    world.battle.accuracy[0] = 1;
+    world.battle.evasion[1] = 500;
     let mut hits = 0;
     for _ in 0..200 {
         world.battle_ctx.active_actor = 0;
@@ -412,9 +412,9 @@ fn initiative_orders_turns_by_speed_then_reseeds() {
     world.actors[0].battle.liveness = 1;
     world.actors[1].battle.liveness = 1;
     world.actors[2].battle.liveness = 1;
-    world.battle_speed[0] = 10;
-    world.battle_speed[1] = 50;
-    world.battle_speed[2] = 30;
+    world.battle.speed[0] = 10;
+    world.battle.speed[1] = 50;
+    world.battle.speed[2] = 30;
     // Fresh keys (all 0) are a round that never started: the pick has
     // nothing to order and says so.
     assert_eq!(world.next_combatant_by_initiative(), None);
@@ -444,9 +444,9 @@ fn initiative_skips_dead_high_speed_actor() {
     world.actors[0].battle.liveness = 1; // party, SPD 20
     world.actors[1].battle.liveness = 0; // dead monster, SPD 90
     world.actors[2].battle.liveness = 1; // monster, SPD 40
-    world.battle_speed[0] = 20;
-    world.battle_speed[1] = 90;
-    world.battle_speed[2] = 40;
+    world.battle.speed[0] = 20;
+    world.battle.speed[1] = 90;
+    world.battle.speed[2] = 40;
     world.reseed_initiative();
     // Slot 1 is dead -> skipped; slot 2 (40) outruns slot 0 (20).
     assert_eq!(world.next_combatant_by_initiative(), Some(2));
@@ -475,7 +475,7 @@ fn initiative_falls_back_to_round_robin_without_speed() {
     // Both tokens spent: the round is over until the next start re-seeds.
     assert_eq!(world.next_combatant_by_initiative(), None);
     world.reseed_initiative();
-    world.battle_round_flow.flat_walk_last = None;
+    world.battle.round_flow.flat_walk_last = None;
     assert_eq!(world.next_combatant_by_initiative(), Some(0));
 }
 
@@ -496,8 +496,8 @@ fn seed_battle_initiative_arms_every_slot_and_the_fastest_opens() {
     }
     world.actors[0].battle.liveness = 1; // party, SPD 5
     world.actors[1].battle.liveness = 1; // monster, SPD 200
-    world.battle_speed[0] = 5;
-    world.battle_speed[1] = 200;
+    world.battle.speed[0] = 5;
+    world.battle.speed[1] = 200;
     world.seed_battle_initiative();
     // Nothing is consumed: both sides carry a live key into the first pick.
     assert!(
@@ -521,7 +521,7 @@ fn any_battle_speed_requires_a_living_carrier() {
     }
     assert!(!world.any_battle_speed());
     // SPD on a dead slot doesn't count.
-    world.battle_speed[3] = 40;
+    world.battle.speed[3] = 40;
     assert!(!world.any_battle_speed());
     // Living carrier flips the gate.
     world.actors[3].battle.liveness = 1;

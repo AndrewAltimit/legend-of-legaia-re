@@ -128,7 +128,8 @@ fn derive_battle_cam(
     // The submenu close-up frames whoever owns the menu; the action framing
     // frames whoever is acting (`ctx[+0x13]`).
     let acting_slot = world
-        .battle_command
+        .battle
+        .command
         .as_ref()
         .map(|c| c.actor)
         .unwrap_or(world.battle_ctx.active_actor);
@@ -166,9 +167,9 @@ fn derive_battle_cam(
     };
     let phase = script::phase_for_state(
         world.current_dialog.is_some() || world.inline_dialogue.is_some(),
-        world.battle_arts_menu.is_some()
-            || world.battle_spell_menu.is_some()
-            || world.battle_item_menu.is_some(),
+        world.battle.arts_menu.is_some()
+            || world.battle.spell_menu.is_some()
+            || world.battle.item_menu.is_some(),
         world.battle_ctx.action_state,
         done,
     );
@@ -201,7 +202,7 @@ fn derive_battle_cam(
             height,
         })
     };
-    let acting = match world.battle_command.as_ref() {
+    let acting = match world.battle.command.as_ref() {
         Some(c) => actor_at(c.actor, Some(c.party_slot)),
         None => actor_at(acting_slot, None),
     };
@@ -242,7 +243,7 @@ fn derive_battle_cam(
         action: script::ActionFraming {
             party_slot: party,
             battle_over: false,
-            depth_raw: world.battle_camera_frame_height as i32,
+            depth_raw: world.battle.camera_frame_height as i32,
             yaw_base: 0,
             style: world.battle_ctx.camera_variant,
             char_id: if party { acting_slot + 1 } else { 0 },
@@ -1595,13 +1596,13 @@ mod battle_cam_web_tests {
         tetsu.battle_monster_id = Some(1);
         tetsu.tmd_binding = Some(0);
         world.actors = vec![vahn, tetsu];
-        world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
+        world.battle.command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
             0, 0,
         ));
         // The **arts input** picker is what arms retail's case-0 close-up;
         // the command chooser alone keeps the far framing (see
         // `script::phase_for_state`). Same recipe as the native mirror.
-        world.battle_arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
+        world.battle.arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
             0,
             0,
             Vec::new(),
@@ -1688,13 +1689,13 @@ mod battle_cam_web_tests {
         tetsu.battle_monster_id = Some(1);
         tetsu.tmd_binding = Some(0);
         world.actors = vec![vahn, tetsu];
-        world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
+        world.battle.command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
             0, 0,
         ));
         // The **arts input** picker is what arms retail's case-0 close-up;
         // the command chooser alone keeps the far framing (see
         // `script::phase_for_state`). Same recipe as the native mirror.
-        world.battle_arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
+        world.battle.arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
             0,
             0,
             Vec::new(),

@@ -234,14 +234,14 @@ impl World {
     /// The battle-end presentation is up: the scene is still in
     /// [`SceneMode::Battle`] but the action SM no longer runs.
     pub fn battle_end_sequence_active(&self) -> bool {
-        self.battle_victory.is_some()
+        self.battle.victory.is_some()
     }
 
     /// The result windows are on screen. Hosts hide the in-fight party
     /// readout behind this (retail's results frame draws neither the card
     /// nor the pill - `noa_levelup_banner`).
     pub fn battle_result_screen_active(&self) -> bool {
-        self.battle_victory.is_some_and(|v| v.results_shown())
+        self.battle.victory.is_some_and(|v| v.results_shown())
     }
 
     /// Arm the end-of-battle presentation for the cause the action SM just
@@ -254,13 +254,13 @@ impl World {
     /// wipe scan keeps raising are consumed exactly as before.
     pub(in crate::world) fn begin_battle_end_sequence(&mut self) {
         if self.game_over_hold {
-            self.battle_end = None;
+            self.battle.end = None;
             return;
         }
-        if self.battle_victory.is_some() {
+        if self.battle.victory.is_some() {
             return;
         }
-        let cause = self.battle_end.unwrap_or(BattleEndCause::MonsterWipe);
+        let cause = self.battle.end.unwrap_or(BattleEndCause::MonsterWipe);
         let phase = match cause {
             BattleEndCause::MonsterWipe => VictoryPhase::Loading {
                 frames_left: VICTORY_LOAD_FRAMES,
@@ -295,7 +295,7 @@ impl World {
                 }
             }
         }
-        self.battle_victory = Some(seq);
+        self.battle.victory = Some(seq);
     }
 
     /// Phase 0's pose pick (`0x8004E78C..0x8004EAF0`) for `seat`.
@@ -307,7 +307,7 @@ impl World {
             actor.battle.max_hp,
             actor.battle.field_flags,
         );
-        let round = self.monster_ai_state.mode_flags;
+        let round = self.battle.monster_ai_state.mode_flags;
         let tier = victory_pose_tier(hp, hp_max, round, status);
         // `DAT_8007BD10[seat]` is 1-based; the roster slot is 0-based.
         let char_id = (self.party_roster_slot(seat) as u8).saturating_add(1);
@@ -322,7 +322,7 @@ impl World {
 
     /// One retail frame of the sequence. Runs instead of the action SM.
     pub(in crate::world) fn tick_battle_end_sequence(&mut self) {
-        let Some(mut seq) = self.battle_victory else {
+        let Some(mut seq) = self.battle.victory else {
             return;
         };
         match seq.phase {
@@ -366,15 +366,15 @@ impl World {
             VictoryPhase::Exit { phase } => {
                 let phase = phase.saturating_add(1);
                 if phase >= VICTORY_EXIT_PHASE {
-                    self.battle_victory = None;
-                    self.battle_spoils_frames = 0;
+                    self.battle.victory = None;
+                    self.battle.spoils_frames = 0;
                     self.finish_battle();
                     return;
                 }
                 seq.phase = VictoryPhase::Exit { phase };
             }
         }
-        self.battle_victory = Some(seq);
+        self.battle.victory = Some(seq);
     }
 
     /// The per-frame camera / pose request the sequencer makes for its pose
@@ -411,13 +411,13 @@ impl World {
                 // (`0x8004F390..0x8004F398`).
                 self.floor_downed_party_hp();
                 // Rewards: XP / gold / drop / level-ups, then the windows.
-                if let Some(formation) = self.active_formation.clone() {
+                if let Some(formation) = self.battle.active_formation.clone() {
                     let catalog = std::mem::take(&mut self.tables.monster_catalog);
                     let rewards = self.apply_battle_loot(&formation, &catalog);
                     self.tables.monster_catalog = catalog;
                     let levelled = !rewards.level_ups.is_empty();
-                    self.last_battle_rewards = Some(rewards);
-                    self.battle_loot_applied = true;
+                    self.battle.last_rewards = Some(rewards);
+                    self.battle.loot_applied = true;
                     if levelled {
                         // `FUN_8004FCC8(0x50)` at `0x8004F6E8`.
                         self.audio.battle_sfx_cues.push(BattleSfxCue {
@@ -428,14 +428,14 @@ impl World {
                         });
                     }
                 }
-                self.battle_spoils_frames =
+                self.battle.spoils_frames =
                     VICTORY_RESULTS_HOLD_FRAMES.saturating_add(VICTORY_EXIT_PHASE);
             }
             BattleEndCause::PartyWipe => {
                 // The annihilated arm (`0x8004F8C0..`): the loss window
                 // (`FUN_801D8DE8(0x42)`) and the same hold; the HP floor
                 // waits for the fade frame.
-                self.battle_spoils_frames =
+                self.battle.spoils_frames =
                     VICTORY_RESULTS_HOLD_FRAMES.saturating_add(VICTORY_EXIT_PHASE);
             }
             BattleEndCause::Escaped => {}

@@ -229,8 +229,8 @@ fn build_world() -> World {
 
     w.mode = SceneMode::Field;
     w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
-    w.battle_no_escape = true;
+    w.battle.player_driven = true;
+    w.battle.no_escape = true;
     w
 }
 
@@ -256,7 +256,7 @@ fn press(w: &mut World, b: PadButton) {
 fn wait_for_prompt(w: &mut World) -> bool {
     for _ in 0..0x400 {
         let _ = w.take_pending_summon_spawn();
-        if w.battle_command.is_some() {
+        if w.battle.command.is_some() {
             return true;
         }
         w.set_pad(0);
@@ -307,7 +307,7 @@ fn a_live_cast_stages_its_module_records() {
     enter_battle(&mut w);
     w.install_cast_effect_pool(pool.clone());
     refill(&mut w);
-    w.battle_magic[0] = 80;
+    w.battle.magic[0] = 80;
 
     let mut cast = 0usize;
     let mut staged: Vec<(u8, usize)> = Vec::new();
@@ -324,15 +324,15 @@ fn a_live_cast_stages_its_module_records() {
                 w.mode,
                 w.battle_ctx.action_state,
                 w.battle_ctx.active_actor,
-                w.battle_spell_menu.is_some(),
-                w.battle_arts_menu.is_some(),
-                w.battle_item_menu.is_some(),
+                w.battle.spell_menu.is_some(),
+                w.battle.arts_menu.is_some(),
+                w.battle.item_menu.is_some(),
                 w.actors[w.party_count as usize].battle.hp,
                 (0..3).map(|i| w.actors[i].battle.hp).collect::<Vec<_>>(),
             );
         }
         if matches!(
-            w.battle_command.as_ref().map(|s| &s.phase),
+            w.battle.command.as_ref().map(|s| &s.phase),
             Some(legaia_engine_core::battle_input::CommandPhase::RoundPrompt { .. })
         ) {
             press(&mut w, PadButton::Cross);
@@ -344,7 +344,7 @@ fn a_live_cast_stages_its_module_records() {
         let row = staged.len();
         press(&mut w, PadButton::Right); // ring: Magic
         assert!(
-            w.battle_spell_menu.is_some(),
+            w.battle.spell_menu.is_some(),
             "the Magic arm opens the list"
         );
         // The list cursor is per-session, so walk from the top each time.
@@ -352,7 +352,8 @@ fn a_live_cast_stages_its_module_records() {
             press(&mut w, PadButton::Down); // walk to this cast's row
         }
         let picked = w
-            .battle_spell_menu
+            .battle
+            .spell_menu
             .as_ref()
             .and_then(|s| s.menu_spell())
             .map(|r| r.id)
@@ -360,7 +361,8 @@ fn a_live_cast_stages_its_module_records() {
         press(&mut w, PadButton::Cross); // pick the spell
         // A single-target shape opens the picker; a group shape commits
         // straight away, so only confirm when there is something to confirm.
-        if w.battle_spell_menu
+        if w.battle
+            .spell_menu
             .as_ref()
             .and_then(|s| s.picker())
             .is_some()
@@ -369,7 +371,7 @@ fn a_live_cast_stages_its_module_records() {
         }
         cast += 1;
         for _ in 0..3 {
-            if w.battle_command.is_none() {
+            if w.battle.command.is_none() {
                 break;
             }
             press(&mut w, PadButton::Down);

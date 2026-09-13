@@ -290,7 +290,10 @@ fn scripted_ai_monster_self_heals_when_wounded() {
         world.battle_ctx.action_state >= ActionState::MagicAnimChain.as_byte(),
         "cast is the whole turn; the band runs it out"
     );
-    assert_eq!(world.monster_ai_state.dat[4], 1, "ability cooldown armed");
+    assert_eq!(
+        world.battle.monster_ai_state.dat[4], 1,
+        "ability cooldown armed"
+    );
     let fx = world.drain_battle_hit_fx();
     assert!(fx.iter().any(|f| f.is_heal && f.target_slot == 1));
 }
@@ -425,7 +428,7 @@ fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
     // Spend the once-per-pass flee checkpoint: this test drives the scripted
     // phase table, and the synthetic world's preallocated empty monster slots
     // dilute the flee roll's monster-side average enough for seed 1 to flee.
-    world.battle_monster_flee_attempted = true;
+    world.battle.monster_flee_attempted = true;
 
     assert_eq!(world.battle_mode(), 0, "fresh battle starts in phase 0");
     world.take_monster_turn(1);
@@ -456,11 +459,11 @@ fn monster_flee_checkpoint_rolls_once_and_arms_run_band() {
         world.actors[0].battle.max_hp = 2000;
         world.actors[0].battle.hp = 2000;
         world.actors[0].battle.liveness = 1;
-        world.battle_attack[0] = 800;
+        world.battle.attack[0] = 800;
         world.actors[1].battle.max_hp = 100;
         world.actors[1].battle.hp = 1;
         world.actors[1].battle.liveness = 1;
-        world.battle_attack[1] = 0;
+        world.battle.attack[1] = 0;
         world
     };
 
@@ -481,14 +484,14 @@ fn monster_flee_checkpoint_rolls_once_and_arms_run_band() {
     assert!(matches!(world.pick_monster_action(1), MonsterAction::Flee));
     assert_eq!(world.actors[1].battle.action_category, 5);
     assert!(
-        world.battle_monster_flee_attempted,
+        world.battle.monster_flee_attempted,
         "the pass latch is spent"
     );
 
     // Same seed, latch already spent: the checkpoint is skipped entirely.
     let mut world = build();
     world.rng_state = seed;
-    world.battle_monster_flee_attempted = true;
+    world.battle.monster_flee_attempted = true;
     assert!(
         !matches!(world.pick_monster_action(1), MonsterAction::Flee),
         "a spent latch skips the flee roll until the round boundary re-arms it"
@@ -497,9 +500,9 @@ fn monster_flee_checkpoint_rolls_once_and_arms_run_band() {
     // The round boundary re-arms the latch (retail re-enters the picker with
     // its balance counter cleared each round).
     let mut world = build();
-    world.battle_monster_flee_attempted = true;
+    world.battle.monster_flee_attempted = true;
     crate::battle_round::BattleRound::boundary(&mut world);
-    assert!(!world.battle_monster_flee_attempted);
+    assert!(!world.battle.monster_flee_attempted);
 }
 
 /// The scripted no-escape flag (`ctx+0x287`) blocks the monster flee roll
@@ -516,11 +519,11 @@ fn no_escape_flag_blocks_monster_flee() {
         world.actors[0].battle.max_hp = 2000;
         world.actors[0].battle.hp = 2000;
         world.actors[0].battle.liveness = 1;
-        world.battle_attack[0] = 800;
+        world.battle.attack[0] = 800;
         world.actors[1].battle.max_hp = 100;
         world.actors[1].battle.hp = 1;
         world.actors[1].battle.liveness = 1;
-        world.battle_no_escape = true;
+        world.battle.no_escape = true;
         world.rng_state = seed;
         assert!(
             !matches!(world.pick_monster_action(1), MonsterAction::Flee),

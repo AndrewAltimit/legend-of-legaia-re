@@ -188,7 +188,8 @@ fn final_heal_revives_and_consumes_one_lost_grail() {
     );
     assert!(
         world
-            .battle_hit_fx
+            .battle
+            .hit_fx
             .iter()
             .any(|fx| fx.target_slot == 0 && fx.is_heal && fx.amount == 250),
         "heal popup recorded"

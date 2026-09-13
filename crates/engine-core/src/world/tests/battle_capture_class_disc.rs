@@ -59,14 +59,14 @@ fn capture_world(scus: &[u8], overlay: &[u8]) -> World {
     for i in 0..3usize {
         w.actors[i].battle.hp = 400;
         w.actors[i].battle.max_hp = 400;
-        w.battle_defense[i] = 20;
-        w.battle_accuracy[i] = 30;
+        w.battle.defense[i] = 20;
+        w.battle.accuracy[i] = 30;
     }
     let ms = 3usize;
     w.actors[ms].battle.hp = 500;
     w.actors[ms].battle.max_hp = 500;
-    w.battle_attack[ms] = 120;
-    w.battle_accuracy[ms] = 60;
+    w.battle.attack[ms] = 120;
+    w.battle.accuracy[ms] = 60;
     w.rng_state = RNG_SEED;
     w
 }

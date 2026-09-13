@@ -123,7 +123,7 @@ fn world_with_somersault() -> World {
 
     w.mode = SceneMode::Field;
     w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.battle.player_driven = true;
     w
 }
 
@@ -176,7 +176,7 @@ fn drive_the_swing(w: &mut World) -> Swing {
                 }
                 _ => InputState::mask_of([PadButton::Cross]),
             }
-        } else if let Some(cmd) = w.battle_command.as_ref() {
+        } else if let Some(cmd) = w.battle.command.as_ref() {
             match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.menu_command() != Some(BattleCommand::Attack) => {
                     InputState::mask_of([PadButton::Left])
@@ -211,7 +211,7 @@ fn drive_the_swing(w: &mut World) -> Swing {
         if let Some(p) = w.actors.first().and_then(|a| a.battle_animation.as_ref()) {
             out.clip_frames.push((p.action_id(), p.current_frame()));
         }
-        if w.mode == SceneMode::Field && w.last_battle_rewards.is_some() {
+        if w.mode == SceneMode::Field && w.battle.last_rewards.is_some() {
             break;
         }
     }

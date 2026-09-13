@@ -236,12 +236,12 @@ fn elixir_battle_buffs_seed_and_ramp_from_disc() {
     assert_eq!(pe.name, "Power Elixir");
     assert!(pe.usable_in_battle && !pe.usable_in_field);
     assert_eq!(world.use_item(0x8B, 0), ItemOutcome::Buffed { count: 1 });
-    assert_eq!(world.battle_attack[0], 120);
-    assert_eq!(world.battle_buffs.len(), 1);
+    assert_eq!(world.battle.attack[0], 120);
+    assert_eq!(world.battle.buffs.len(), 1);
 
     // Shield Elixir ramps DEF ×6/5: 50 -> 60.
     assert_eq!(world.use_item(0x8C, 0), ItemOutcome::Buffed { count: 1 });
-    assert_eq!(world.battle_defense[0], 60);
+    assert_eq!(world.battle.defense[0], 60);
 
     // Wonder Elixir buffs all four (SPD/DEF/ATK/AGL). ATK + DEF refresh (revert
     // the prior delta, re-ramp from base, no compounding), SPD + AGL are new but
@@ -249,11 +249,11 @@ fn elixir_battle_buffs_seed_and_ramp_from_disc() {
     // trackers.
     assert_eq!(world.use_item(0x8E, 0), ItemOutcome::Buffed { count: 4 });
     assert_eq!(
-        world.battle_attack[0], 120,
+        world.battle.attack[0], 120,
         "ATK refreshed from base, not compounded"
     );
-    assert_eq!(world.battle_defense[0], 60);
-    assert_eq!(world.battle_buffs.len(), 4);
+    assert_eq!(world.battle.defense[0], 60);
+    assert_eq!(world.battle.buffs.len(), 4);
 }
 
 /// Installing the disc table seeds Fury Boost (class 5, the action-gauge
@@ -283,7 +283,7 @@ fn fury_boost_seeds_and_extends_the_ap_gauge_from_disc() {
 
     let mut world = World::new();
     world.set_item_effects(table); // seeds Fury Boost onto the catalog
-    world.ap_gauges[0] = legaia_engine_core::ap_gauge::ApGauge::with_base(10);
+    world.battle.ap_gauges[0] = legaia_engine_core::ap_gauge::ApGauge::with_base(10);
 
     // Fury Boost is battle-only and extends the gauge: base 10 -> 14 (×7/5).
     let fb = world
@@ -294,6 +294,6 @@ fn fury_boost_seeds_and_extends_the_ap_gauge_from_disc() {
     assert_eq!(fb.name, "Fury Boost");
     assert!(fb.usable_in_battle && !fb.usable_in_field);
     assert_eq!(world.use_item(0x81, 0), ItemOutcome::ActionGaugeExtended);
-    assert_eq!(world.ap_gauges[0].base_ap, 14);
-    assert_eq!(world.fury_boost[0], Some(4));
+    assert_eq!(world.battle.ap_gauges[0].base_ap, 14);
+    assert_eq!(world.battle.fury_boost[0], Some(4));
 }

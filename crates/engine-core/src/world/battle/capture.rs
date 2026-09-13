@@ -66,13 +66,13 @@ impl World {
             a.battle.hp = bump(a.battle.hp);
             a.battle.max_hp = bump(a.battle.max_hp);
         }
-        if let Some(v) = self.battle_attack.get_mut(s) {
+        if let Some(v) = self.battle.attack.get_mut(s) {
             *v = bump(*v);
         }
-        if let Some(v) = self.battle_defense.get_mut(s) {
+        if let Some(v) = self.battle.defense.get_mut(s) {
             *v = bump(*v);
         }
-        if let Some(v) = self.battle_speed.get_mut(s) {
+        if let Some(v) = self.battle.speed.get_mut(s) {
             *v = bump(*v);
         }
     }

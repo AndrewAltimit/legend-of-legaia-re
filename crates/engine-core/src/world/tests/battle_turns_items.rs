@@ -120,7 +120,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
         party_count: 2,
         ..World::default()
     };
-    world.battle_player_driven = true;
+    world.battle.player_driven = true;
     world.mode = SceneMode::Battle;
     world.set_item_catalog(full_test_catalog());
     // Two party members (slot 0 wounded), one monster.
@@ -139,9 +139,9 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
 
     // Open the item submenu for the active party member.
     world.battle_ctx.active_actor = 0;
-    world.battle_item_menu = Some(world.build_battle_item_session());
+    world.battle.item_menu = Some(world.build_battle_item_session());
     {
-        let m = world.battle_item_menu.as_ref().unwrap();
+        let m = world.battle.item_menu.as_ref().unwrap();
         assert_eq!(m.filtered_items.len(), 1, "one battle-usable item");
         assert_eq!(m.targets.len(), 2, "two party targets");
     }
@@ -150,7 +150,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu();
-    assert!(world.battle_item_menu.is_some(), "still picking a target");
+    assert!(world.battle.item_menu.is_some(), "still picking a target");
 
     // Frame 2: Cross confirms the first target (the wounded slot 0). The copy
     // goes at the commit (retail's item window consumes it there and the
@@ -163,7 +163,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
         Some(1),
         "one Healing Leaf consumed at the commit"
     );
-    assert!(world.battle_item_menu.is_none(), "menu closed after use");
+    assert!(world.battle.item_menu.is_none(), "menu closed after use");
     assert_eq!(
         world.actors[0].battle.hp, 50,
         "the heal waits for the dispatch"
@@ -175,11 +175,12 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     {
         use crate::battle_input::{BattleCommand, BattleCommandSession, CommandPhase};
         let next = world
-            .battle_command
+            .battle
+            .command
             .as_ref()
             .expect("slot 1's ring opens after slot 0 commits");
         assert_eq!(next.actor, 1);
-        world.battle_command = Some(BattleCommandSession {
+        world.battle.command = Some(BattleCommandSession {
             actor: 1,
             party_slot: 1,
             no_escape: false,
@@ -192,7 +193,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
         world.tick_battle_command();
     }
     assert!(
-        world.battle_command.is_none(),
+        world.battle.command.is_none(),
         "the last commit begins the round"
     );
     assert_eq!(world.actors[0].battle.hp, 150, "healed 50 -> 150");
@@ -224,7 +225,7 @@ fn battle_item_menu_cancel_reopens_command_menu() {
         party_count: 1,
         ..World::default()
     };
-    world.battle_player_driven = true;
+    world.battle.player_driven = true;
     world.mode = SceneMode::Battle;
     world.set_item_catalog(full_test_catalog());
     world.actors[0].battle.max_hp = 100;
@@ -233,19 +234,19 @@ fn battle_item_menu_cancel_reopens_command_menu() {
     world.inventory.insert(0x01, 1);
 
     world.battle_ctx.active_actor = 0;
-    world.battle_item_menu = Some(world.build_battle_item_session());
+    world.battle.item_menu = Some(world.build_battle_item_session());
 
     // Circle from the item list backs all the way out.
     world.set_pad(0);
     world.set_pad(PadButton::Circle.mask());
     world.tick_battle_item_menu();
 
-    assert!(world.battle_item_menu.is_none(), "item menu closed");
+    assert!(world.battle.item_menu.is_none(), "item menu closed");
     assert!(
-        world.battle_command.is_some(),
+        world.battle.command.is_some(),
         "command menu reopened for the same actor"
     );
-    assert_eq!(world.battle_command.as_ref().unwrap().actor, 0);
+    assert_eq!(world.battle.command.as_ref().unwrap().actor, 0);
     // No item was consumed on a cancel.
     assert_eq!(world.inventory.get(&0x01).copied(), Some(1));
 }

@@ -196,14 +196,14 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
 
     let mut world = World::new();
     world.live_gameplay_loop = true;
-    world.battle_player_driven = true;
+    world.battle.player_driven = true;
     world.prime_battle_tutorial(script);
     world.enter_battle(3, 2);
     for i in 0..5 {
         world.actors[i].battle.hp = 100;
         world.actors[i].battle.max_hp = 100;
     }
-    assert!(world.battle_tutorial.is_some(), "armed at battle entry");
+    assert!(world.battle.tutorial.is_some(), "armed at battle entry");
 
     // Drive the public per-frame tick until the loop reaches the first party
     // turn and the tutorial puts its lesson-0 intro up.
@@ -213,7 +213,7 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
             break;
         }
     }
-    assert_eq!(world.battle_flow, BattleFlowState::TurnPrompt);
+    assert_eq!(world.battle.flow, BattleFlowState::TurnPrompt);
     assert_eq!(
         world.battle_tutorial_box().map(|b| b.text.as_str()),
         Some(intro.as_str()),
@@ -229,7 +229,7 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
     // Acknowledge every queued box; the loop stays parked until the last one
     // clears, then the category prompt for this lesson comes up.
     for _ in 0..600 {
-        if world.battle_flow != BattleFlowState::TurnPrompt {
+        if world.battle.flow != BattleFlowState::TurnPrompt {
             break;
         }
         world.input.set_pad(PadButton::Cross.mask());
@@ -237,7 +237,7 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
         world.input.set_pad(0);
         world.tick();
     }
-    assert_eq!(world.battle_flow, BattleFlowState::CategoryMenu);
+    assert_eq!(world.battle.flow, BattleFlowState::CategoryMenu);
     assert_eq!(
         world.battle_tutorial_box().map(|b| b.text.as_str()),
         Some(pick_attack.as_str()),
@@ -245,8 +245,8 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
     );
 
     // Running is refused for the whole sparring fight.
-    world.battle_tutorial_boxes.clear();
-    world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession {
+    world.battle.tutorial_boxes.clear();
+    world.battle.command = Some(legaia_engine_core::battle_input::BattleCommandSession {
         actor: 0,
         party_slot: 0,
         no_escape: false,
@@ -259,7 +259,7 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
         "Run is rejected"
     );
     assert!(
-        world.battle_command.is_some(),
+        world.battle.command.is_some(),
         "and the command menu comes back"
     );
 }

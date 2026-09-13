@@ -29,11 +29,11 @@ fn wiped_battle_world() -> World {
         player_actor_slot: world.player_actor_slot,
         party_count: world.party_count,
     });
-    world.battle_return_mode = SceneMode::Field;
+    world.battle.return_mode = SceneMode::Field;
     world.enter_battle_from_formation(&formation);
     let _ = world.drain_field_events(); // drop the battle-BGM start
     world.actors[0].battle.liveness = 0; // the wipe
-    world.battle_end = Some(BattleEndCause::PartyWipe);
+    world.battle.end = Some(BattleEndCause::PartyWipe);
     world
 }
 
@@ -111,9 +111,9 @@ fn repeated_wipe_folds_during_the_hold_are_inert() {
     // With the scene parked in Battle mode, a host that keeps ticking the
     // world re-runs the action SM's wipe scan, which re-raises `battle_end`
     // every tick. The repeat fold must consume the cause and change nothing.
-    world.battle_end = Some(BattleEndCause::PartyWipe);
+    world.battle.end = Some(BattleEndCause::PartyWipe);
     world.finish_battle();
-    assert_eq!(world.battle_end, None, "repeat cause consumed");
+    assert_eq!(world.battle.end, None, "repeat cause consumed");
     assert!(world.game_over_hold, "hold still frozen");
     assert_eq!(world.mode, SceneMode::Battle);
     assert!(world.field_return.is_some());
@@ -130,7 +130,7 @@ fn non_wipe_teardown_keeps_the_latch_and_restores_the_field() {
     let mut world = wiped_battle_world();
     world.system_flag_set(0);
     world.actors[0].battle.liveness = 1; // party survived after all
-    world.battle_end = Some(BattleEndCause::MonsterWipe);
+    world.battle.end = Some(BattleEndCause::MonsterWipe);
     world.finish_battle();
 
     assert!(!world.game_over);

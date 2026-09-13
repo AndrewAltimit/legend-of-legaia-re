@@ -100,14 +100,14 @@ impl World {
             player_actor_slot: self.player_actor_slot,
             party_count: self.party_count,
         });
-        self.battle_return_mode = SceneMode::Field;
+        self.battle.return_mode = SceneMode::Field;
         // No engine-side battle staging: a scripted boss fight's transient
         // staged marker (rikuroa's `0x289`) is SET by the stager record's own
         // script bytes (`P1[3]`'s `52 89`, executed through
         // [`Self::run_boss_stager_record`]) immediately before its `3E FF`
         // battle-entry op reaches this path.
         self.enter_battle_from_formation(&formation);
-        self.active_formation = Some(formation);
+        self.battle.active_formation = Some(formation);
     }
 
     /// Seed the battle actor table from `formation` and enter
@@ -213,17 +213,18 @@ impl World {
         // held a party member in the previous battle carries that member's
         // (UDF, LDF) pair, and a formation whose monster id misses the catalog
         // would otherwise keep defending with it.
-        for s in self.battle_speed.iter_mut().skip(party_count as usize) {
+        for s in self.battle.speed.iter_mut().skip(party_count as usize) {
             *s = 0;
         }
-        for s in self.battle_accuracy.iter_mut().skip(party_count as usize) {
+        for s in self.battle.accuracy.iter_mut().skip(party_count as usize) {
             *s = 0;
         }
-        for s in self.battle_evasion.iter_mut().skip(party_count as usize) {
+        for s in self.battle.evasion.iter_mut().skip(party_count as usize) {
             *s = 0;
         }
         for s in self
-            .battle_defense_split
+            .battle
+            .defense_split
             .iter_mut()
             .skip(party_count as usize)
         {
@@ -251,7 +252,7 @@ impl World {
                 // it.
                 a.battle.agl_base = def.agl;
                 a.battle.agl = def.agl;
-                if let Some(s) = self.battle_attack.get_mut(mslot) {
+                if let Some(s) = self.battle.attack.get_mut(mslot) {
                     *s = def.attack;
                 }
                 // Both defence facets, not one collapsed scalar. Retail's melee
@@ -261,21 +262,21 @@ impl World {
                 // only `max(udf, ldf)` made every enemy defend with its better
                 // half against every swing and left the kernel's parity branch
                 // dead for the whole monster band.
-                if let Some(s) = self.battle_defense_split.get_mut(mslot) {
+                if let Some(s) = self.battle.defense_split.get_mut(mslot) {
                     *s = Some((def.udf, def.ldf));
                 }
-                if let Some(s) = self.battle_defense.get_mut(mslot) {
+                if let Some(s) = self.battle.defense.get_mut(mslot) {
                     // Kept as the scalar fallback (and the Defense-buff target);
                     // the split above is what the physical path reads.
                     *s = def.udf.max(def.ldf);
                 }
-                if let Some(s) = self.battle_speed.get_mut(mslot) {
+                if let Some(s) = self.battle.speed.get_mut(mslot) {
                     *s = speed;
                 }
-                if let Some(s) = self.battle_accuracy.get_mut(mslot) {
+                if let Some(s) = self.battle.accuracy.get_mut(mslot) {
                     *s = def.accuracy as u16;
                 }
-                if let Some(s) = self.battle_evasion.get_mut(mslot) {
+                if let Some(s) = self.battle.evasion.get_mut(mslot) {
                     *s = def.evasion as u16;
                 }
             }
@@ -294,14 +295,14 @@ impl World {
         // `enter_battle` above installs a fresh `battle_ctx`, so `+0x290` /
         // `+0x291` (and the arm's one-shot flag) are already zero - there is
         // one copy of each and it lives there.
-        if !self.battle_no_escape {
+        if !self.battle.no_escape {
             self.roll_battle_formation(formation);
         }
 
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.active_actor = 0;
         // Fresh battle: clear the monster-AI cooldowns / phase counter / ring.
-        self.monster_ai_state.reset();
+        self.battle.monster_ai_state.reset();
         // Seed the turn-order initiative keys for this battle. When real SPD is
         // present the next-actor selector runs the initiative scheme from the
         // very first turn (see the opener pick below). A no-SPD battle leaves
@@ -322,7 +323,7 @@ impl World {
         // for the round's first party command. Nobody - whoever won
         // initiative - acts before the last member commits
         // (`World::begin_battle_round`).
-        self.battle_round_flow = crate::battle_round::RoundFlow::default();
+        self.battle.round_flow = crate::battle_round::RoundFlow::default();
         self.begin_battle_round();
     }
 

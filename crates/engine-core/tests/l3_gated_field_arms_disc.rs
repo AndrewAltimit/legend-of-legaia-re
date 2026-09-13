@@ -426,13 +426,13 @@ fn countdown_section(sites: &[Site]) {
     let mut expired_any = false;
     for site in sites {
         let mut world = world_at(site);
-        assert!(!world.escape_timer.armed, "starts disarmed");
+        assert!(!world.battle.escape_timer.armed, "starts disarmed");
         world.step_field().expect("step the `4C D3` instruction");
 
-        let armed = world.escape_timer.armed;
-        let duration = world.escape_timer.remaining;
-        let threshold = world.escape_timer.warn_threshold;
-        let flag_word = world.escape_timer_flag_word;
+        let armed = world.battle.escape_timer.armed;
+        let duration = world.battle.escape_timer.remaining;
+        let threshold = world.battle.escape_timer.warn_threshold;
+        let flag_word = world.battle.escape_timer_flag_word;
         eprintln!(
             "[4C D3] {} pc={:#x}: armed={armed} duration={duration} \
              threshold={threshold} flag_word={flag_word:#010x}",
@@ -472,7 +472,7 @@ fn countdown_section(sites: &[Site]) {
         };
         for _ in 0..budget {
             world.tick();
-            if let Some((m, s, hundredths, ink)) = world.escape_timer_hud {
+            if let Some((m, s, hundredths, ink)) = world.battle.escape_timer_hud {
                 saw_hud = true;
                 // The decomposition is a product of the tick, so it must stay
                 // a valid clock face for every frame it is published on.
@@ -492,9 +492,9 @@ fn countdown_section(sites: &[Site]) {
                 }
             }
             if warned_at.is_none() && world.system_flag_test(warn_flag) {
-                warned_at = Some(world.escape_timer.remaining);
+                warned_at = Some(world.battle.escape_timer.remaining);
             }
-            if !world.escape_timer.armed {
+            if !world.battle.escape_timer.armed {
                 break;
             }
         }
@@ -512,7 +512,7 @@ fn countdown_section(sites: &[Site]) {
         if !to_expiry {
             // Bounded drain: the counter must at least be moving.
             assert!(
-                world.escape_timer.remaining < duration,
+                world.battle.escape_timer.remaining < duration,
                 "{}: the countdown did not advance at all",
                 site.scene
             );
@@ -520,7 +520,7 @@ fn countdown_section(sites: &[Site]) {
         }
 
         assert!(
-            !world.escape_timer.armed,
+            !world.battle.escape_timer.armed,
             "{}: the countdown never expired within its own duration",
             site.scene
         );
@@ -571,7 +571,7 @@ fn countdown_section(sites: &[Site]) {
     // because the corpus scan above is what costs.
     let Some(site) = sites.iter().find(|s| {
         let mut w = world_at(s);
-        w.step_field().is_some() && w.escape_timer.armed
+        w.step_field().is_some() && w.battle.escape_timer.armed
     }) else {
         panic!("no `4C D3` carrier armed a countdown");
     };
@@ -582,19 +582,19 @@ fn countdown_section(sites: &[Site]) {
         world.tick();
     }
     assert!(
-        world.escape_timer.armed && world.escape_timer.remaining > 0,
+        world.battle.escape_timer.armed && world.battle.escape_timer.remaining > 0,
         "{}: the freeze below is only meaningful on a live countdown",
         site.scene
     );
 
     // A non-field mode is one of retail's three pause conditions.
     world.mode = SceneMode::Menu;
-    let before = world.escape_timer.remaining;
+    let before = world.battle.escape_timer.remaining;
     for _ in 0..30 {
         world.tick();
     }
     assert_eq!(
-        world.escape_timer.remaining, before,
+        world.battle.escape_timer.remaining, before,
         "{}: the countdown must not drain outside the field",
         site.scene
     );
@@ -603,7 +603,7 @@ fn countdown_section(sites: &[Site]) {
         world.tick();
     }
     assert!(
-        world.escape_timer.remaining < before,
+        world.battle.escape_timer.remaining < before,
         "{}: and it must resume afterwards",
         site.scene
     );

@@ -554,8 +554,8 @@ pub(super) fn cmd_play_window_with_record(
         // Merged, not assigned: the SCUS half (the chip words and the
         // sparring caption) was read at boot (`boot.rs`), this is the overlay
         // half.
-        session.host.world.battle_ui_strings.merge(&strings);
-        let n = session.host.world.battle_ui_strings.len();
+        session.host.world.battle.ui_strings.merge(&strings);
+        let n = session.host.world.battle.ui_strings.len();
         log::info!("play-window: battle UI labels read off the disc ({n} string(s))");
     }
     // Sparring tutorial: nothing to gate here.
@@ -595,7 +595,7 @@ pub(super) fn cmd_play_window_with_record(
                     .host
                     .world
                     .system_flag_set(legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG);
-                let n = session.host.world.battle_tutorial_script.len();
+                let n = session.host.world.battle.tutorial_script.len();
                 log::info!(
                     "play-window: LEGAIA_BATTLE_TUTORIAL forced the sparring arm for the next \
                      battle ({n} prompt(s) off the disc)"

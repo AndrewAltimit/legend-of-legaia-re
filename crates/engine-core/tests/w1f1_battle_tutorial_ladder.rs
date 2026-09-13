@@ -102,7 +102,7 @@ fn primed_world() -> World {
 
     w.mode = SceneMode::Field;
     w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.battle.player_driven = true;
     w.prime_battle_tutorial(synthetic_script());
     w
 }
@@ -128,7 +128,7 @@ fn walk_into_battle(w: &mut World) {
 /// not vacuous.
 fn inspect_boxes(w: &World) -> usize {
     let mut n = 0;
-    for b in &w.battle_tutorial_boxes {
+    for b in &w.battle.tutorial_boxes {
         let width: i16 = b
             .text
             .lines()
@@ -177,7 +177,7 @@ fn inspect_boxes(w: &World) -> usize {
 fn drain_boxes(w: &mut World) -> usize {
     let mut seen = 0;
     for _ in 0..600 {
-        if w.battle_tutorial_boxes.is_empty() {
+        if w.battle.tutorial_boxes.is_empty() {
             break;
         }
         seen += inspect_boxes(w);
@@ -187,9 +187,9 @@ fn drain_boxes(w: &mut World) -> usize {
         let _ = w.tick();
     }
     assert!(
-        w.battle_tutorial_boxes.is_empty(),
+        w.battle.tutorial_boxes.is_empty(),
         "box queue never drained: {:?}",
-        w.battle_tutorial_boxes
+        w.battle.tutorial_boxes
     );
     seen
 }
@@ -199,7 +199,7 @@ fn a_primed_sparring_fight_raises_prompts_and_every_box_places_by_the_emitter() 
     let mut w = primed_world();
     walk_into_battle(&mut w);
     assert!(
-        w.battle_tutorial.is_some(),
+        w.battle.tutorial.is_some(),
         "entering battle arms the primed machine"
     );
     assert_eq!(
@@ -222,7 +222,7 @@ fn a_primed_sparring_fight_raises_prompts_and_every_box_places_by_the_emitter() 
         "the turn-start hook never raised a prompt"
     );
     assert_eq!(
-        w.battle_flow,
+        w.battle.flow,
         BattleFlowState::TurnPrompt,
         "the first hook state is the round prompt"
     );
@@ -239,7 +239,7 @@ fn a_primed_sparring_fight_raises_prompts_and_every_box_places_by_the_emitter() 
         if w.battle_tutorial_box_up() {
             boxes += drain_boxes(&mut w);
         }
-        if w.battle_tutorial.is_none() || w.mode != SceneMode::Battle {
+        if w.battle.tutorial.is_none() || w.mode != SceneMode::Battle {
             break;
         }
     }
@@ -267,7 +267,7 @@ fn a_box_on_screen_parks_the_pad_driven_battle_loop() {
     // Retail's `ctx[+0x6B2]` guard: `FUN_801D0748` returns before it looks at
     // the flow state at all while a box is up, so nothing downstream may move.
     let action_state = w.battle_ctx.action_state;
-    let flow = w.battle_flow;
+    let flow = w.battle.flow;
     for _ in 0..30 {
         w.set_pad(0);
         let _ = w.tick();
@@ -276,7 +276,7 @@ fn a_box_on_screen_parks_the_pad_driven_battle_loop() {
         w.battle_ctx.action_state, action_state,
         "the action SM advanced while a tutorial box was up"
     );
-    assert_eq!(w.battle_flow, flow, "the command flow advanced under a box");
+    assert_eq!(w.battle.flow, flow, "the command flow advanced under a box");
     assert!(
         w.battle_tutorial_box_up(),
         "a waiting box must not time out"

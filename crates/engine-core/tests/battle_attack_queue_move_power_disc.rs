@@ -94,7 +94,7 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
 
     w.mode = SceneMode::Field;
     w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.battle.player_driven = true;
 
     let up = InputState::mask_of([PadButton::Up]);
     for _ in 0..8000 {
@@ -111,14 +111,14 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
     // round two. Settle with no input until a session is up: nothing acts
     // on a prompt without a press, so the first open is the one observed.
     let advantage = w.battle_formation_latched();
-    let mut opened = w.battle_command.is_some();
+    let mut opened = w.battle.command.is_some();
     for _ in 0..4000 {
         if opened {
             break;
         }
         w.set_pad(0);
         w.tick();
-        opened = w.battle_command.is_some();
+        opened = w.battle.command.is_some();
     }
     assert!(
         opened,
@@ -136,7 +136,7 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
     let left = InputState::mask_of([PadButton::Left]);
     let mut release = false;
     for _ in 0..256 {
-        let Some(session) = w.battle_command.as_ref() else {
+        let Some(session) = w.battle.command.as_ref() else {
             break;
         };
         let pad = if release {
@@ -155,7 +155,7 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
         w.set_pad(pad);
         w.tick();
     }
-    assert!(w.battle_command.is_none(), "Attack was never confirmed");
+    assert!(w.battle.command.is_none(), "Attack was never confirmed");
 
     // The effect script's move-power key is the stream head byte.
     let action = w.actors[slot].battle.params[0];

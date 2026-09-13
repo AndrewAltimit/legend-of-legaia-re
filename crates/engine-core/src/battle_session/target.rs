@@ -367,12 +367,12 @@ impl BattleSession {
         // Charge AP up-front; the command is buffered until the picker
         // resolves, but the cost is gated against the same gauge as a
         // direct `push_command` call.
-        let mut ap = world.ap_gauges[actor_slot as usize];
+        let mut ap = world.battle.ap_gauges[actor_slot as usize];
         let cost = crate::ap_gauge::art_ap_cost(cmd.as_action());
         if !ap.try_spend(cost) {
             return false;
         }
-        world.ap_gauges[actor_slot as usize] = ap;
+        world.battle.ap_gauges[actor_slot as usize] = ap;
         let mut sink: Vec<SessionEvent> = Vec::new();
         self.open_target_picker_mut(world, kind, actor_slot, Some(cmd), &mut sink);
         // Drop sink - engines that want the events use `tick`.

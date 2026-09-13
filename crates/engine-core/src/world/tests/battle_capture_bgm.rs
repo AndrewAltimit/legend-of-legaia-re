@@ -352,7 +352,7 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
         party_count: 1,
         ..World::default()
     };
-    world.battle_player_driven = true;
+    world.battle.player_driven = true;
     world.mode = SceneMode::Battle;
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 200;
@@ -371,25 +371,25 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     });
 
     world.battle_ctx.active_actor = 0;
-    world.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
+    world.battle.arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
         0,
         0,
         world.build_battle_arts_rows(0),
     ));
-    assert_eq!(world.battle_arts_menu.as_ref().unwrap().arts[0].hits(), 3);
+    assert_eq!(world.battle.arts_menu.as_ref().unwrap().arts[0].hits(), 3);
 
     // Frame 1: Cross opens the target cursor.
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
-    assert!(world.battle_arts_menu.is_some(), "still picking a target");
+    assert!(world.battle.arts_menu.is_some(), "still picking a target");
 
     // Frame 2: Cross confirms the monster; the art runs.
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
 
-    assert!(world.battle_arts_menu.is_none(), "arts menu closed");
+    assert!(world.battle.arts_menu.is_none(), "arts menu closed");
     // The confirm arms the SM's attack band with the queue the builder made
     // of the three arrows - three swings and the terminator, retail's own
     // answer to a string that matches no art (`0x0B + dir`).
@@ -406,7 +406,7 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     let mut ended = false;
     for _ in 0..400 {
         if world.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
-            || world.battle_command.is_some()
+            || world.battle.command.is_some()
         {
             ended = true;
             break;
@@ -468,7 +468,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
         party_count: 1,
         ..World::default()
     };
-    world.battle_player_driven = true;
+    world.battle.player_driven = true;
     world.mode = SceneMode::Battle;
     world.actors[0].battle.liveness = 1;
     world.set_battle_attack(0, 64);
@@ -512,7 +512,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     assert_eq!(rows[0].enemy_effect, EnemyEffect::Toxic);
 
     world.battle_ctx.active_actor = 0;
-    world.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(0, 0, rows));
+    world.battle.arts_menu = Some(crate::battle_arts::BattleArtsSession::new(0, 0, rows));
 
     // Open the target cursor, then confirm.
     world.set_pad(0);
@@ -556,7 +556,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     // HP read has to land before the turn moves on.
     for _ in 0..400 {
         if world.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
-            || world.battle_command.is_some()
+            || world.battle.command.is_some()
             || world.battle_ctx.active_actor != 0
         {
             break;
@@ -594,7 +594,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     assert!(hits.iter().all(|h| h.damage > 0), "ATK 64 lands every hit");
     assert_eq!(u32::from(world.actors[1].battle.hp), 4000 - total);
     assert!(
-        world.status_effects.is_afflicted(1),
+        world.battle.status_effects.is_afflicted(1),
         "the art's Toxic effect was applied to the target"
     );
     // Through the SM the popups are per hit, like the melee seam's, rather

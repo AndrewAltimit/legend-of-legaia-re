@@ -200,7 +200,7 @@ fn a_party_wipe_raises_game_over_and_leaves_the_party_down() {
         1,
         "losing floors the party at 1 HP, never heals it"
     );
-    assert!(w.last_battle_rewards.is_none(), "a wipe grants no loot");
+    assert!(w.battle.last_rewards.is_none(), "a wipe grants no loot");
 
     // `revive_party_full` is what a host's "Retry" row runs; without it the
     // party would re-wipe on the next encounter.
@@ -253,7 +253,7 @@ fn a_victory_arms_the_spoils_panel() {
     // 0): an id off the table row lands in the pose actor's `+0x1DA`
     // mirror, and the commit keeps it as the committed value in a world
     // without a clip bank.
-    let seq = w.battle_victory.expect("the sequence is armed");
+    let seq = w.battle.victory.expect("the sequence is armed");
     assert_eq!(seq.pose_actor, 0, "the leader poses");
     let pose = seq.pose_id.expect("the table picks a pose");
     assert!((0x11..=0x18).contains(&pose), "win-pose band: {pose:#x}");
@@ -294,7 +294,7 @@ fn a_victory_arms_the_spoils_panel() {
         if let Some(legaia_engine_core::world::VictorySequence {
             phase: legaia_engine_core::world::VictoryPhase::Exit { .. },
             ..
-        }) = w.battle_victory
+        }) = w.battle.victory
         {
             let fade = w
                 .screen_fade

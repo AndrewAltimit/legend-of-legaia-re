@@ -151,7 +151,7 @@ fn both_hosts_option_shapes_arm_the_same_world_state() {
     let a = &native.host.world;
     let b = &browserish.host.world;
     assert_eq!(a.live_gameplay_loop, b.live_gameplay_loop);
-    assert_eq!(a.battle_player_driven, b.battle_player_driven);
+    assert_eq!(a.battle.player_driven, b.battle.player_driven);
     assert_eq!(a.scene_encounters_rollable, b.scene_encounters_rollable);
     assert_eq!(a.active_scene_label, b.active_scene_label);
 }
@@ -219,7 +219,7 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     world.live_gameplay_loop = true;
     // Auto-resolve the battle: this test is about the loop reaching a
     // terminal state, not about the command menu.
-    world.battle_player_driven = false;
+    world.battle.player_driven = false;
     // map03's roster is late-game (four-figure monster HP and four-figure
     // swings) and the boot party is a fresh Vahn: faithfully he chips for 1
     // damage AND dies long before the fight ends - either way no field

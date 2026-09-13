@@ -703,9 +703,9 @@ impl World {
             player_actor_slot: self.player_actor_slot,
             party_count: self.party_count,
         });
-        self.battle_return_mode = SceneMode::WorldMap;
+        self.battle.return_mode = SceneMode::WorldMap;
         // `enter_battle_from_formation` swaps to the battle BGM itself.
         self.enter_battle_from_formation(&formation);
-        self.active_formation = Some(formation);
+        self.battle.active_formation = Some(formation);
     }
 }

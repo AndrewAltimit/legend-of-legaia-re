@@ -775,7 +775,7 @@ impl BootSession {
             // `Run`, `Attack`, ... and the sparring fight's opening caption).
             // The overlay half merges in when a player battle is requested
             // (`window/run.rs`); twin of the browser runtime's `load_disc`.
-            host.world.battle_ui_strings.merge_scus(&scus);
+            host.world.battle.ui_strings.merge_scus(&scus);
             // Pause-menu text: item names + info-window descriptions,
             // spell names / descriptions, accessory passive lines. The
             // Items / Magic pause screens resolve their strings here.

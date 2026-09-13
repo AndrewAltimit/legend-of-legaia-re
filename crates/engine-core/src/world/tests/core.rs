@@ -158,7 +158,7 @@ fn battle_party_wipe_signals_end_via_world() {
     // so hosts freeze on the final battle frame (retail holds the wipe frame
     // while mode 22 CARD INIT streams the menu overlay). Read the *effect*
     // of the wipe, not the transient cause byte.
-    assert_eq!(world.battle_end, None, "the cause is consumed on resolve");
+    assert_eq!(world.battle.end, None, "the cause is consumed on resolve");
     assert!(world.game_over, "a party wipe raises game over");
     assert!(world.game_over_hold, "the field restore is deferred");
     assert_eq!(
@@ -192,7 +192,7 @@ fn battle_party_wipe_raises_party_wipe_cause_on_the_step() {
     }
     world.battle_ctx.action_state = vm::battle_action::ActionState::EndOfAction.as_byte();
     assert_eq!(world.step_battle(), StepOutcome::BattleComplete);
-    assert_eq!(world.battle_end, Some(BattleEndCause::PartyWipe));
+    assert_eq!(world.battle.end, Some(BattleEndCause::PartyWipe));
 }
 
 #[test]

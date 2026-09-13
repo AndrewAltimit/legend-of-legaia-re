@@ -191,12 +191,12 @@ fn gated_and_ungated_consumers_share_one_denominator() {
     // Arm the scripted countdown (`0x4C 0xD3`) with a duration longer than the
     // run so it never disarms: flag word 0, 10 000 frames, no warn threshold.
     w.schedule_timed_flags(0, 10_000, 0);
-    let start = w.escape_timer.remaining;
+    let start = w.battle.escape_timer.remaining;
 
     let ticks = RETAIL_FPS * 3;
     let (_, dz) = hold(&mut w, input::PadButton::Up.mask(), ticks);
 
-    let gated_frames = start - w.escape_timer.remaining;
+    let gated_frames = start - w.battle.escape_timer.remaining;
     let ungated_frames = dz / 8; // locomotion committed `base_step` per frame
 
     assert_eq!(

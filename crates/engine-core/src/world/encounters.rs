@@ -553,16 +553,16 @@ impl World {
                     equip_atk_sum = equip_atk_sum.saturating_add(u16::from(b));
                 }
             }
-            if let Some(s) = self.battle_attack.get_mut(slot) {
+            if let Some(s) = self.battle.attack.get_mut(slot) {
                 *s = stats.atk.saturating_sub(equip_atk_sum);
             }
-            if let Some(s) = self.battle_equip_atk.get_mut(slot) {
+            if let Some(s) = self.battle.equip_atk.get_mut(slot) {
                 *s = equip_atk;
             }
-            if let Some(s) = self.battle_accuracy.get_mut(slot) {
+            if let Some(s) = self.battle.accuracy.get_mut(slot) {
                 *s = stats.acc;
             }
-            if let Some(s) = self.battle_evasion.get_mut(slot) {
+            if let Some(s) = self.battle.evasion.get_mut(slot) {
                 *s = stats.eva;
             }
             // Resolved SPD (base + the equipment table's footwear bonus). This
@@ -572,7 +572,7 @@ impl World {
             // so every SPD point a party member's gear granted was invisible to
             // turn order, the formation-advantage roll and the escape roll, all
             // three of which read `battle_speed`.
-            if let Some(s) = self.battle_speed.get_mut(slot) {
+            if let Some(s) = self.battle.speed.get_mut(slot) {
                 *s = stats.spd;
             }
             self.set_battle_defense_split(slot as u8, Some((stats.udf, stats.ldf)));
@@ -582,7 +582,7 @@ impl World {
             // mid-battle (a permanent stat-up item also calls this) is a no-op:
             // the level is unchanged, so the base is rewritten to the same value
             // and the live balance is untouched.
-            if let Some(g) = self.ap_gauges.get_mut(slot) {
+            if let Some(g) = self.battle.ap_gauges.get_mut(slot) {
                 g.set_base_ap(ap_base);
             }
             // Only when the record carries a real ceiling: a zeroed one would
@@ -738,7 +738,7 @@ impl World {
         // ORs `0x80` into a battle-setup flag for; the staged fight refuses
         // the Run command (the `ctx+0x287` no-escape input of the escape
         // roll `FUN_801E791C`). Cleared by `finish_battle`.
-        self.battle_no_escape = true;
+        self.battle.no_escape = true;
         true
     }
 
@@ -1116,9 +1116,9 @@ impl World {
             roll,
         }) = phase
         else {
-            self.battle_intro = None;
-            self.battle_intro_effects.clear();
-            self.battle_intro_mode_handoff = false;
+            self.battle.intro = None;
+            self.battle.intro_effects.clear();
+            self.battle.intro_mode_handoff = false;
             return;
         };
         let total = self
@@ -1126,7 +1126,7 @@ impl World {
             .as_ref()
             .map(|s| s.transition_frames)
             .unwrap_or(0);
-        let mut entity = self.battle_intro.take().unwrap_or_default();
+        let mut entity = self.battle.intro.take().unwrap_or_default();
         // `+0x1A` counts display frames against `DAT_801D2458`; the session's
         // own countdown is the same clock read the other way round.
         entity.elapsed = total.saturating_sub(frames_remaining) as i16;
@@ -1178,7 +1178,7 @@ impl World {
             ..Default::default()
         };
         let tick = tick_transition(&mut entity, &globals, &TransitionResponses::default());
-        self.battle_intro = Some(entity);
+        self.battle.intro = Some(entity);
         let mut battle_start_cue = None;
         for effect in &tick.effects {
             match effect {
@@ -1212,11 +1212,11 @@ impl World {
                     target_slot: 0,
                 });
         }
-        self.battle_intro_effects = tick.effects;
+        self.battle.intro_effects = tick.effects;
         // The master mode hand-off (`_DAT_8007B83C = 0x14` at `0x801CF8F8`).
         // Latching, not level-triggered: retail writes the word once, at the
         // end of the spin, and never unwrites it inside the transition.
-        self.battle_intro_mode_handoff |= tick.entered_battle_mode;
+        self.battle.intro_mode_handoff |= tick.entered_battle_mode;
     }
 
     /// Whether the battle-intro spin is still holding the master mode word
@@ -1237,7 +1237,7 @@ impl World {
         matches!(
             self.encounter.as_ref().map(|s| s.phase()),
             Some(crate::encounter::EncounterPhase::Transition { .. })
-        ) && !self.battle_intro_mode_handoff
+        ) && !self.battle.intro_mode_handoff
     }
 
     /// Return the resolved [`crate::monster_catalog::FormationDef`] for the

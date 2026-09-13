@@ -652,8 +652,8 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
             // REF: FUN_801D33D8 (docs/subsystems/field-menu.md).
             ap: hms.sp_cur.min(u8::MAX as u16) as u8,
             ap_max: 100,
-            attack: world.battle_attack.get(i).copied().unwrap_or(0),
-            defense: world.battle_defense.get(i).copied().unwrap_or(0),
+            attack: world.battle.attack.get(i).copied().unwrap_or(0),
+            defense: world.battle.defense.get(i).copied().unwrap_or(0),
             stats: stat_pairs,
             stat_labels: crate::status_screen::RETAIL_STAT_LABELS,
             equip: equip_views,
@@ -666,7 +666,7 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
             // tracker, whose `display_flags` packs the same bit word. Party
             // seats and roster indices coincide for `i < party_count`
             // (`World::enter_battle` seats the roster in order).
-            status_flags: world.status_effects.display_flags(i as u8),
+            status_flags: world.battle.status_effects.display_flags(i as u8),
         });
     }
     out
@@ -791,6 +791,7 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
                 .with_stats(hms.hp_cur, hms.hp_max, hms.mp_cur, hms.mp_max)
                 .with_statuses(
                     world
+                        .battle
                         .status_effects
                         .statuses(i as u8)
                         .iter()

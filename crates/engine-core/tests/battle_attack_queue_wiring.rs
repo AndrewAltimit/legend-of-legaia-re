@@ -75,7 +75,7 @@ fn battle_awaiting_command() -> World {
 
     w.mode = SceneMode::Field;
     w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.battle.player_driven = true;
 
     let up = InputState::mask_of([PadButton::Up]);
     for _ in 0..8000 {
@@ -87,7 +87,7 @@ fn battle_awaiting_command() -> World {
     }
     assert_eq!(w.mode, SceneMode::Battle, "walking should trigger a battle");
     assert!(
-        w.battle_command.is_some(),
+        w.battle.command.is_some(),
         "battle entry opens the opening command session"
     );
     // Make every seated monster tanky enough that the measured Attack can't
@@ -121,7 +121,7 @@ fn confirm_attack(w: &mut World) {
     let left = InputState::mask_of([PadButton::Left]);
     let mut release = false;
     for _ in 0..256 {
-        let Some(session) = w.battle_command.as_ref() else {
+        let Some(session) = w.battle.command.as_ref() else {
             return;
         };
         let pad = if release {
@@ -336,7 +336,7 @@ fn damage_lands_exactly_once_per_queued_swing() {
         }
         acted |= acting;
         hp_after = w.actors[target].battle.hp;
-        if (acted && !acting) || w.battle_command.is_some() {
+        if (acted && !acting) || w.battle.command.is_some() {
             break;
         }
     }

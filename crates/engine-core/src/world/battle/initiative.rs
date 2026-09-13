@@ -83,7 +83,7 @@ impl World {
     /// battle stays on the round-robin [`Self::next_living_combatant`].
     pub(in crate::world) fn any_battle_speed(&self) -> bool {
         (0..BATTLE_SLOTS).any(|i| {
-            self.battle_speed[i] != 0 && self.actors.get(i).is_some_and(|a| a.battle.liveness != 0)
+            self.battle.speed[i] != 0 && self.actors.get(i).is_some_and(|a| a.battle.liveness != 0)
         })
     }
 
@@ -147,7 +147,7 @@ impl World {
             }
             let is_party = i < party_count;
             let actor = InitiativeActor {
-                speed: self.battle_speed[i],
+                speed: self.battle.speed[i],
                 hp: self.actors[i].battle.hp,
                 max_hp: self.actors[i].battle.max_hp,
                 is_party,
@@ -258,11 +258,11 @@ impl World {
         let party_n = (self.party_count as usize).min(self.actors.len());
         let party_spd: Vec<u16> = (0..party_n)
             .filter(|&i| self.actors[i].battle.liveness != 0)
-            .map(|i| self.battle_speed.get(i).copied().unwrap_or(0))
+            .map(|i| self.battle.speed.get(i).copied().unwrap_or(0))
             .collect();
         let enemy_spd: Vec<u16> = (party_n..self.actors.len())
             .filter(|&i| self.actors[i].battle.liveness != 0)
-            .map(|i| self.battle_speed.get(i).copied().unwrap_or(0))
+            .map(|i| self.battle.speed.get(i).copied().unwrap_or(0))
             .collect();
         let mut ability_bits = 0u32;
         for slot in 0..party_n {
@@ -357,11 +357,13 @@ impl World {
             .filter(|n| !n.trim().is_empty())
             .unwrap_or_else(|| "The party".to_string());
         let template = self
-            .battle_ui_strings
+            .battle
+            .ui_strings
             .get(banner.disc_label())
             .map(str::to_string);
         let group = self.next_battle_tutorial_group();
-        self.battle_tutorial_boxes
+        self.battle
+            .tutorial_boxes
             .push_back(crate::battle_flow::ActiveTutorialBox {
                 text: banner.line(&leader, template.as_deref()),
                 style: BANNER_BOX_STYLE,
@@ -403,7 +405,8 @@ impl World {
             // (party first, then monsters) - see `RoundFlow::flat_walk_last`.
             let n = self.actors.len().min(BATTLE_SLOTS);
             let start = self
-                .battle_round_flow
+                .battle
+                .round_flow
                 .flat_walk_last
                 .map_or(0, |last| usize::from(last) + 1);
             let pick = (start..n).find(|&i| {
@@ -411,7 +414,7 @@ impl World {
                 a.liveness != 0 && a.init_key != 0
             })?;
             self.actors[pick].battle.init_key = 0;
-            self.battle_round_flow.flat_walk_last = Some(pick as u8);
+            self.battle.round_flow.flat_walk_last = Some(pick as u8);
             return Some(pick as u8);
         }
         // Highest key among living actors; ties collected in slot order.

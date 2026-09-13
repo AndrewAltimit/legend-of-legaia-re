@@ -1308,7 +1308,7 @@ impl PlayWindowApp {
                     origin,
                     scale,
                 ));
-            } else if let Some(arts) = &bw.battle_arts_menu {
+            } else if let Some(arts) = &bw.battle.arts_menu {
                 use legaia_engine_core::battle_arts::ArtsPhase;
                 let menu_x = 8i32;
                 let mut my = 210i32;
@@ -1380,7 +1380,7 @@ impl PlayWindowApp {
                     }
                     _ => {}
                 }
-            } else if let Some(spell) = &bw.battle_spell_menu {
+            } else if let Some(spell) = &bw.battle.spell_menu {
                 use legaia_engine_core::battle_magic::SpellPhase;
                 let menu_x = 8i32;
                 let mut my = 210i32;
@@ -1447,7 +1447,7 @@ impl PlayWindowApp {
                     }
                     _ => {}
                 }
-            } else if bw.battle_item_menu.is_some() {
+            } else if bw.battle.item_menu.is_some() {
                 // Retail's item window (state 0x3C): the packet-pinned list
                 // + description windows with breadcrumbs and the hand
                 // cursor. Text half here; the window chrome + hand ride the
@@ -1460,7 +1460,7 @@ impl PlayWindowApp {
                         )
                     }));
                 }
-            } else if let Some(cmd) = &bw.battle_command {
+            } else if let Some(cmd) = &bw.battle.command {
                 let menu_x = 8i32;
                 let mut my = 210i32;
                 match &cmd.phase {
@@ -2204,7 +2204,7 @@ impl PlayWindowApp {
                 // frame draws one or the other, never both.
                 plaque: plaque
                     .as_ref()
-                    .filter(|_| w_ref.battle_item_menu.is_none())
+                    .filter(|_| w_ref.battle.item_menu.is_none())
                     .map(|(_, n)| n.as_str()),
                 plaque_badge: bh::battle_plaque_element_badge(w_ref),
                 banner: banner.as_deref(),

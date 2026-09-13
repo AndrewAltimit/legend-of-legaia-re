@@ -329,7 +329,7 @@ fn training_reaches_battle_via_field_carrier_sm() {
 
     // The enemy slot is Tetsu with the real archive HP merged at scene entry.
     let world = &session.host.world;
-    assert_eq!(world.battle_return_mode, SceneMode::Field);
+    assert_eq!(world.battle.return_mode, SceneMode::Field);
     let monster_slot = world.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,

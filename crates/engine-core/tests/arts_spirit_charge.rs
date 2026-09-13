@@ -76,7 +76,7 @@ fn build_world() -> World {
     // Three presses spend 99 of the disc-free 100-AP pool and a fourth is
     // unaffordable, so the entry auto-ends on the third exactly - retail's
     // `0x50 -> 0x5A` edge, reached with no confirm to time.
-    w.battle_swing_costs[0] = [33; 4];
+    w.battle.swing_costs[0] = [33; 4];
 
     w.player_actor_slot = Some(0);
     w.actors[0].move_state.world_x = 300;
@@ -97,7 +97,7 @@ fn build_world() -> World {
 
     w.mode = SceneMode::Field;
     w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.battle.player_driven = true;
     w
 }
 
@@ -141,7 +141,7 @@ fn spirit_drops_over_one_turn(w: &mut World, combo: &[PadButton]) -> (Vec<i32>, 
                 }
                 _ => InputState::mask_of([PadButton::Cross]),
             }
-        } else if let Some(cmd) = w.battle_command.as_ref() {
+        } else if let Some(cmd) = w.battle.command.as_ref() {
             match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.menu_command() != Some(BattleCommand::Attack) => {
                     InputState::mask_of([PadButton::Left])

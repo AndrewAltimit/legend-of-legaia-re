@@ -262,7 +262,7 @@ impl SceneHost {
             };
             for (i, c) in costs.iter().enumerate() {
                 if let Some(c) = c {
-                    self.world.battle_swing_costs[slot][i] = *c as u16;
+                    self.world.battle.swing_costs[slot][i] = *c as u16;
                 }
             }
         }

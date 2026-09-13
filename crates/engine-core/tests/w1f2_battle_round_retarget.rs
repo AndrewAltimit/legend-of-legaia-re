@@ -57,9 +57,9 @@ fn live_three_monster_battle() -> World {
     let mut world = World::new();
     world.enter_battle(PARTY, MONSTERS);
     world.live_gameplay_loop = true;
-    world.battle_player_driven = false;
+    world.battle.player_driven = false;
     for slot in 0..(PARTY + MONSTERS) as usize {
-        if let Some(s) = world.battle_speed.get_mut(slot) {
+        if let Some(s) = world.battle.speed.get_mut(slot) {
             *s = 10;
         }
     }
@@ -108,7 +108,7 @@ fn a_dead_target_is_re_pointed_at_the_first_living_monster_at_the_round_boundary
         if alive == 0 {
             break;
         }
-        let round = world.monster_ai_state.mode_flags;
+        let round = world.battle.monster_ai_state.mode_flags;
         if world.actors[aim as usize].battle.liveness == 0 && death_round.is_none() {
             death_round = Some(round);
         }

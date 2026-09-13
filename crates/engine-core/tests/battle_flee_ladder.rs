@@ -63,7 +63,7 @@ fn build_world() -> World {
 
     w.mode = SceneMode::Field;
     w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.battle.player_driven = true;
     w
 }
 
@@ -82,7 +82,7 @@ fn enter_battle(w: &mut World) {
 /// Wait for the party command session (the round prompt) to open.
 fn wait_for_prompt(w: &mut World) {
     for _ in 0..0x80 {
-        if w.battle_command.is_some() {
+        if w.battle.command.is_some() {
             return;
         }
         w.set_pad(0);
@@ -128,7 +128,8 @@ fn assured_escape_runs_the_run_band_and_leaves_the_battle() {
     // (`cure_stone_on_escape`).
     w.actors[2].battle.hp = 0;
     w.actors[2].battle.liveness = 0;
-    w.status_effects
+    w.battle
+        .status_effects
         .apply_with_duration(1, StatusKind::Stone, 255);
     let xp_before = w.roster.members[0].raw.to_vec();
 
@@ -172,7 +173,7 @@ fn assured_escape_runs_the_run_band_and_leaves_the_battle() {
         "the 0x64 success arm floors a downed member's liveness at 1"
     );
     assert!(
-        w.status_effects.statuses(1).is_empty(),
+        w.battle.status_effects.statuses(1).is_empty(),
         "the Escaped teardown cures Stone (cure_stone_on_escape)"
     );
 }
@@ -189,11 +190,11 @@ fn failed_escape_consumes_the_turn_and_the_battle_goes_on() {
     // `roll_p < roll_e` fails the escape. Deterministic: the world RNG is
     // seeded, and the roll consumes exactly two draws.
     for i in 0..3 {
-        w.battle_speed[i] = 0;
+        w.battle.speed[i] = 0;
         w.actors[i].battle.hp = w.actors[i].battle.max_hp;
     }
     let monster_slot = w.party_count as usize;
-    w.battle_speed[monster_slot] = 20000;
+    w.battle.speed[monster_slot] = 20000;
     w.rng_state = 0xDEAD_BEEF;
 
     let mut trace: Vec<u8> = Vec::new();

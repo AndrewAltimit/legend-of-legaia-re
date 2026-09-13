@@ -192,7 +192,7 @@ fn battle_party_wipe_resolves_to_party_wipe_cause() {
 
     // The cause byte, read at the step that raises it.
     assert_eq!(world.step_battle(), StepOutcome::BattleComplete);
-    assert_eq!(world.battle_end, Some(BattleEndCause::PartyWipe));
+    assert_eq!(world.battle.end, Some(BattleEndCause::PartyWipe));
 
     // And the same wipe through `tick`, which resolves the battle in the
     // frame it completes (consuming `battle_end` and latching `game_over`) -

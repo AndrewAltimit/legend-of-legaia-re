@@ -59,7 +59,7 @@ fn build_player_driven_world() -> World {
 
     w.mode = SceneMode::Field;
     w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.battle.player_driven = true;
     w
 }
 
@@ -91,7 +91,7 @@ fn battle_waits_for_player_command_then_resolves() {
         "walking should trigger a Field -> Battle transition"
     );
     assert!(
-        w.battle_command.is_some(),
+        w.battle.command.is_some(),
         "entering battle should open a command session, not auto-attack"
     );
 
@@ -107,7 +107,7 @@ fn battle_waits_for_player_command_then_resolves() {
             "no input must not end the battle"
         );
         assert!(
-            w.battle_command.is_some(),
+            w.battle.command.is_some(),
             "command session stays open while the player gives no input"
         );
     }
@@ -132,7 +132,7 @@ fn battle_waits_for_player_command_then_resolves() {
         let pad = if release {
             0
         } else {
-            match w.battle_command.as_ref().map(|s| (&s.phase, s)) {
+            match w.battle.command.as_ref().map(|s| (&s.phase, s)) {
                 Some((CommandPhase::Menu { .. }, s))
                     if s.menu_command() != Some(BattleCommand::Attack) =>
                 {
@@ -144,7 +144,7 @@ fn battle_waits_for_player_command_then_resolves() {
         release = !release;
         w.set_pad(pad);
         w.tick();
-        if w.mode == SceneMode::Field && w.last_battle_rewards.is_some() {
+        if w.mode == SceneMode::Field && w.battle.last_rewards.is_some() {
             returned = true;
             break;
         }
@@ -153,11 +153,12 @@ fn battle_waits_for_player_command_then_resolves() {
     assert!(returned, "battle should resolve once commands are issued");
     assert_eq!(w.mode, SceneMode::Field, "return to field after the wipe");
     assert!(
-        w.battle_command.is_none(),
+        w.battle.command.is_none(),
         "command session cleared on exit"
     );
     let rewards = w
-        .last_battle_rewards
+        .battle
+        .last_rewards
         .as_ref()
         .expect("victory records rewards");
     assert!(rewards.xp > 0, "victory grants XP: {rewards:?}");
@@ -170,7 +171,7 @@ fn player_driven_off_auto_resolves_like_the_spine() {
     // Same world but player-driven OFF: the live loop must auto-resolve with
     // no input at all (guards that the new flag is purely additive).
     let mut w = build_player_driven_world();
-    w.battle_player_driven = false;
+    w.battle.player_driven = false;
     let up = InputState::mask_of([PadButton::Up]);
 
     let mut entered = false;
@@ -181,14 +182,14 @@ fn player_driven_off_auto_resolves_like_the_spine() {
             entered = true;
         }
         assert!(
-            w.battle_command.is_none(),
+            w.battle.command.is_none(),
             "no command session when player-driven is off"
         );
-        if entered && w.mode == SceneMode::Field && w.last_battle_rewards.is_some() {
+        if entered && w.mode == SceneMode::Field && w.battle.last_rewards.is_some() {
             break;
         }
     }
     assert!(entered, "should still enter battle");
     assert_eq!(w.mode, SceneMode::Field, "auto-resolve returns to field");
-    assert!(w.last_battle_rewards.is_some(), "auto-resolve applies loot");
+    assert!(w.battle.last_rewards.is_some(), "auto-resolve applies loot");
 }

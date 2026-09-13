@@ -110,7 +110,7 @@ fn build_world(with_record: bool) -> World {
 
     w.mode = SceneMode::Field;
     w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.battle.player_driven = true;
     w
 }
 
@@ -165,7 +165,7 @@ fn drive_art_and_collect_shouts(
                 // Review → Begin|Reselect (cursor 0 = Begin) → target picker.
                 _ => InputState::mask_of([PadButton::Cross]),
             }
-        } else if let Some(cmd) = w.battle_command.as_ref() {
+        } else if let Some(cmd) = w.battle.command.as_ref() {
             // Retail's open flow: `Begin` on the round prompt, the ring's
             // `Attack` arm, then the `Auto | Command` prompt - `Command` is
             // the directional arts entry, `Auto` the plain swing.
@@ -202,7 +202,7 @@ fn drive_art_and_collect_shouts(
             arts_turns += 1;
         }
         shouts.extend(w.drain_battle_shout_cues());
-        if w.mode == SceneMode::Field && w.last_battle_rewards.is_some() {
+        if w.mode == SceneMode::Field && w.battle.last_rewards.is_some() {
             break;
         }
     }
@@ -215,7 +215,7 @@ fn drive_art_and_collect_shouts(
     // in Battle, and the shout-free baseline would pass for the wrong reason.
     assert_eq!(w.mode, SceneMode::Field, "the battle resolved");
     assert!(
-        w.last_battle_rewards.is_some(),
+        w.battle.last_rewards.is_some(),
         "the party won, so an art actually landed"
     );
     shouts

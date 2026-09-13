@@ -28,7 +28,8 @@ impl World {
     /// modded table) can never match the byte compare, so it resolves as
     /// "no override" rather than truncating onto an accidental match.
     fn formation_slot0_monster_id(&self) -> Option<u8> {
-        self.active_formation
+        self.battle
+            .active_formation
             .as_ref()
             .and_then(|f| f.slots.first())
             .and_then(|s| u8::try_from(s.monster_id).ok())
@@ -66,7 +67,7 @@ impl World {
                 return stage;
             }
         }
-        if self.battle_tutorial.is_some() {
+        if self.battle.tutorial.is_some() {
             return crate::battle_tutorial::TUTORIAL_STAGE_ID;
         }
         0

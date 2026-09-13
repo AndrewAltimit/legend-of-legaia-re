@@ -158,7 +158,7 @@ fn a_monster_slot_carries_both_defence_facets() {
     let mslot = w.party_count; // first monster
 
     assert_eq!(
-        w.battle_defense_split[mslot as usize],
+        w.battle.defense_split[mslot as usize],
         Some((90, 10)),
         "battle entry must seed the monster band's (UDF, LDF) pair"
     );
@@ -201,7 +201,7 @@ fn battle_entry_clears_a_stale_monster_defence_split() {
     }
     assert_eq!(w.mode, SceneMode::Battle);
     assert_eq!(
-        w.battle_defense_split[4], None,
+        w.battle.defense_split[4], None,
         "a monster slot must not defend with the split a previous occupant left"
     );
 }

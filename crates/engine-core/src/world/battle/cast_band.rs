@@ -320,7 +320,7 @@ impl World {
         let Some(def) = self.tables.spell_catalog.get(pc.spell_id).cloned() else {
             return;
         };
-        let hit_fx_start = self.battle_hit_fx.len();
+        let hit_fx_start = self.battle.hit_fx.len();
         self.cast_spell_on_slots_prepaid(pc.caster, &def, &pc.targets);
         if pc.caster >= self.party_count {
             self.apply_enemy_move_status(pc.caster, def.id, hit_fx_start);
@@ -802,18 +802,18 @@ impl World {
             // halfword is still zero - `seed_party_battle_stats` fills the
             // mirrors, not the actor - so a debuff computes on a real number
             // instead of underflowing zero.
-            spd: nonzero_or(a.battle.spd, self.battle_speed.get(slot as usize).copied()),
+            spd: nonzero_or(a.battle.spd, self.battle.speed.get(slot as usize).copied()),
             spd_base: nonzero_or(
                 a.battle.spd_base,
-                self.battle_speed.get(slot as usize).copied(),
+                self.battle.speed.get(slot as usize).copied(),
             ),
             intel: nonzero_or(
                 a.battle.intel,
-                self.battle_accuracy.get(slot as usize).copied(),
+                self.battle.accuracy.get(slot as usize).copied(),
             ),
             intel_base: nonzero_or(
                 a.battle.intel_base,
-                self.battle_accuracy.get(slot as usize).copied(),
+                self.battle.accuracy.get(slot as usize).copied(),
             ),
             init_key: a.battle.init_key,
             action_category: a.battle.action_category,
@@ -828,7 +828,8 @@ impl World {
     /// per-slot defence split (the same store the physical-defence facet
     /// reads).
     fn cast_defence_split(&self, slot: u8) -> (u16, u16) {
-        self.battle_defense_split
+        self.battle
+            .defense_split
             .get(slot as usize)
             .copied()
             .flatten()
@@ -927,13 +928,13 @@ impl World {
         // ...and back into the mirrors the rest of the engine reads, so a
         // five-stat debuff is visible to turn order and the accuracy seed
         // rather than only to the next module tick.
-        if let Some(s) = self.battle_speed.get_mut(slot as usize) {
+        if let Some(s) = self.battle.speed.get_mut(slot as usize) {
             *s = st.spd;
         }
-        if let Some(s) = self.battle_accuracy.get_mut(slot as usize) {
+        if let Some(s) = self.battle.accuracy.get_mut(slot as usize) {
             *s = st.intel;
         }
-        if let Some(s) = self.battle_defense_split.get_mut(slot as usize)
+        if let Some(s) = self.battle.defense_split.get_mut(slot as usize)
             && s.is_some()
         {
             *s = Some((st.udf, st.ldf));
@@ -1400,12 +1401,14 @@ impl World {
         let a = WrapperAttacker {
             hp: attacker_hp,
             agl: self
-                .battle_accuracy
+                .battle
+                .accuracy
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),
             spell_power: self
-                .battle_attack
+                .battle
+                .attack
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),

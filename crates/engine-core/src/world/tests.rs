@@ -135,7 +135,7 @@ fn offensive_item_world(monster_hp: u16, monster_id: u16) -> World {
         party_count: 1,
         ..World::default()
     };
-    world.battle_player_driven = true;
+    world.battle.player_driven = true;
     world.mode = SceneMode::Battle;
     world.set_item_catalog(full_test_catalog());
     world.actors[0].battle.max_hp = 200;
@@ -219,7 +219,7 @@ fn summon_xp_world(enemy_hp: u16, enemy_max_hp: u16) -> World {
     world.actors[1].battle.max_hp = enemy_max_hp;
     world.actors[1].battle.hp = enemy_hp;
     world.actors[1].battle.liveness = 1;
-    world.battle_defense[1] = 0;
+    world.battle.defense[1] = 0;
     world
 }
 

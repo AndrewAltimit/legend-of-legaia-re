@@ -140,8 +140,8 @@ fn a_monster_swing_is_not_whiffed_by_the_accuracy_gate() {
 
     let mut w = world_against(table, cat, 24, 1);
     for slot in 0..3usize {
-        w.battle_accuracy[slot] = 100;
-        w.battle_evasion[slot] = 100;
+        w.battle.accuracy[slot] = 100;
+        w.battle.evasion[slot] = 100;
     }
     let mut monster_swings = 0u32;
     for _ in 0..40_000 {

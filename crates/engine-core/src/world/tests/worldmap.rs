@@ -221,7 +221,7 @@ fn world_map_region_walk_triggers_battle() {
         entered_battle,
         "walking the overworld triggers a region encounter"
     );
-    assert_eq!(world.battle_return_mode, SceneMode::WorldMap);
+    assert_eq!(world.battle.return_mode, SceneMode::WorldMap);
 }
 
 /// The overworld player is bounded by the scene's walkability grid, exactly
@@ -359,7 +359,7 @@ fn world_map_encounter_flips_to_battle_returning_to_world_map() {
         let _ = world.tick();
     }
     assert_eq!(world.mode, SceneMode::Battle);
-    assert_eq!(world.battle_return_mode, SceneMode::WorldMap);
+    assert_eq!(world.battle.return_mode, SceneMode::WorldMap);
     assert!(world.field_return.is_some());
 
     // Drive the fight to completion; it must return to the world map, not
@@ -458,7 +458,11 @@ fn world_map_encounter_zone_uses_its_own_formation() {
     }
     assert_eq!(world.mode, SceneMode::Battle);
     assert_eq!(
-        world.active_formation.as_ref().map(|f| f.formation_id),
+        world
+            .battle
+            .active_formation
+            .as_ref()
+            .map(|f| f.formation_id),
         Some(9),
         "the zone's own formation spawns, not the shared one"
     );

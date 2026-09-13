@@ -2248,7 +2248,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world.input.retail_pad().pressed as u16
     }
     fn previous_action_cleared(&self, _: u8) -> bool {
-        self.world.prev_action_cleared
+        self.world.battle.prev_action_cleared
     }
     fn sound_bank_ready(&self, _: u8) -> bool {
         self.world.audio.sound_bank_ready
@@ -2334,7 +2334,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         }
     }
     fn battle_end(&mut self, cause: BattleEndCause) {
-        self.world.battle_end = Some(cause);
+        self.world.battle.end = Some(cause);
         self.world
             .pending_battle_events
             .push(BattleEvent::BattleEnd { cause });
@@ -2439,7 +2439,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .map_or(0, |def| def.size_class)
     }
     fn camera_frame_height(&mut self, height: i16) {
-        self.world.battle_camera_frame_height = height;
+        self.world.battle.camera_frame_height = height;
         self.world
             .pending_battle_events
             .push(BattleEvent::CameraFrameHeight { height });
@@ -2753,11 +2753,12 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         // attack bytes (`FUN_801EC3E4`, `PTR_801CF4B4[5]`).
         let mut attack = self
             .world
-            .battle_attack
+            .battle
+            .attack
             .get(info.actor_slot as usize)
             .copied()
             .unwrap_or(0);
-        if let Some(bonuses) = self.world.battle_equip_atk.get(info.actor_slot as usize)
+        if let Some(bonuses) = self.world.battle.equip_atk.get(info.actor_slot as usize)
             && let Some(fold) = legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(
                 legaia_engine_vm::battle_formulas::ARMS_ART_COMMAND,
                 bonuses,

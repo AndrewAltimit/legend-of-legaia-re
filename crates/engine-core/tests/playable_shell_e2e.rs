@@ -30,7 +30,7 @@ fn build_world_with_party() -> World {
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
         w.actors[i].battle.mp = 30;
-        w.ap_gauges[i] = legaia_engine_core::ap_gauge::ApGauge::with_base(8);
+        w.battle.ap_gauges[i] = legaia_engine_core::ap_gauge::ApGauge::with_base(8);
     }
     // Wire vanilla monster + formation tables.
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());

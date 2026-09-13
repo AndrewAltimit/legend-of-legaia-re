@@ -59,7 +59,7 @@ fn snapshots_publish_a_clean_party_as_status_zero() {
 #[test]
 fn an_applied_ailment_reaches_the_snapshot_status_word() {
     let mut w = world_with_one_member();
-    w.status_effects.apply(0, StatusKind::Toxic);
+    w.battle.status_effects.apply(0, StatusKind::Toxic);
 
     let snaps = legaia_engine_core::field_menu_dispatch::status_snapshots(&w);
     assert!(
@@ -74,7 +74,7 @@ fn an_applied_ailment_reaches_the_snapshot_status_word() {
     );
     assert_eq!(
         flags,
-        w.status_effects.display_flags(0),
+        w.battle.status_effects.display_flags(0),
         "the snapshot must carry the tracker's own packed word verbatim"
     );
 }

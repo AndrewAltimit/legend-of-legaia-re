@@ -82,7 +82,7 @@ impl World {
         }
         self.set_battle_bgm(opts.battle_bgm);
         if opts.player_battle {
-            self.battle_player_driven = true;
+            self.battle.player_driven = true;
             self.set_seru_registry(crate::seru_learning::SeruRegistry::retail());
         }
         self.refresh_encounter_rollable();

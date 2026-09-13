@@ -115,11 +115,11 @@ fn disc_accessory_passives_drive_bits_boosts_and_party_wide_mask() {
 
     // Power Ring: ATK +20% of the base (100 + 100/5 = 120).
     assert_eq!(
-        world.battle_attack[2], 120,
+        world.battle.attack[2], 120,
         "Power Ring boosts attack by 20% of the base"
     );
     // The wearer-only boost does not leak onto other members.
-    assert_eq!(world.battle_attack[0], 100);
+    assert_eq!(world.battle.attack[0], 100);
 
     // Golden Book: party-wide scope - the Gold Boost bit (index 0x30) lands
     // in the global mask, and the wearer's record carries the byte the

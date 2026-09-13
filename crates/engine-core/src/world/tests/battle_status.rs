@@ -44,23 +44,27 @@ fn status_block_helpers_classify_by_kind() {
     let mut world = World::new();
     // Sleep blocks all actions but not magic specifically.
     world
+        .battle
         .status_effects
         .apply_with_duration(1, StatusKind::Sleep, 5);
     assert!(world.actor_blocked_from_acting(1));
     assert!(!world.actor_blocked_from_magic(1));
     // Numb is a full paralysis - blocks the whole turn (so magic is moot too).
     world
+        .battle
         .status_effects
         .apply_with_duration(4, StatusKind::Numb, 5);
     assert!(world.actor_blocked_from_acting(4));
     // Silence blocks magic only.
     world
+        .battle
         .status_effects
         .apply_with_duration(2, StatusKind::Curse, 5);
     assert!(!world.actor_blocked_from_acting(2));
     assert!(world.actor_blocked_from_magic(2));
     // Petrify blocks both.
     world
+        .battle
         .status_effects
         .apply_with_duration(3, StatusKind::Faint, 5);
     assert!(world.actor_blocked_from_acting(3));
@@ -91,6 +95,7 @@ fn confuse_retargets_a_monster_strike_to_its_own_band() {
 
     // Confused: the strike flips to a living member of its own (monster) band.
     world
+        .battle
         .status_effects
         .apply_with_duration(3, StatusKind::Confuse, 3);
     world.maybe_confuse_retarget(3);
@@ -120,6 +125,7 @@ fn confuse_retargets_a_party_strike_to_a_living_ally() {
     // flips to a random living member of its own (party) side.
     world.actors[1].battle.active_target = 3;
     world
+        .battle
         .status_effects
         .apply_with_duration(1, StatusKind::Confuse, 3);
     world.maybe_confuse_retarget(1);
@@ -133,7 +139,7 @@ fn confused_party_member_auto_acts_instead_of_opening_the_command_menu() {
     use legaia_engine_vm::status_effects::StatusKind;
     let mut world = World::new();
     world.party_count = 3;
-    world.battle_player_driven = true;
+    world.battle.player_driven = true;
     for i in 0..5 {
         world.actors[i].active = true;
         world.actors[i].battle.liveness = 1;
@@ -141,13 +147,14 @@ fn confused_party_member_auto_acts_instead_of_opening_the_command_menu() {
         world.actors[i].battle.max_hp = 100;
     }
     world
+        .battle
         .status_effects
         .apply_with_duration(0, StatusKind::Confuse, 3);
     // The confused party member auto-arms a physical strike (no command session)
     // aimed at a living ally.
     world.arm_party_physical(0);
     assert!(
-        world.battle_command.is_none(),
+        world.battle.command.is_none(),
         "a confused party member never opens the command menu"
     );
     assert_eq!(world.actors[0].battle.action_category, 3, "physical armed");
@@ -167,6 +174,7 @@ fn confuse_retargets_a_monster_cast_to_the_opposite_side() {
         world.actors[i].battle.max_hp = 100;
     }
     world
+        .battle
         .status_effects
         .apply_with_duration(3, StatusKind::Confuse, 3);
 
@@ -201,6 +209,7 @@ fn stone_counts_as_defeated_and_is_petrified() {
     world.actors[1].battle.liveness = 1;
     world.actors[1].battle.hp = 100;
     world
+        .battle
         .status_effects
         .apply_with_duration(1, StatusKind::Stone, 255);
     assert!(world.actor_is_petrified(1));
@@ -228,6 +237,7 @@ fn petrified_target_absorbs_art_strike_damage() {
         world.actors[slot].battle.liveness = 1;
     }
     world
+        .battle
         .status_effects
         .apply_with_duration(3, StatusKind::Stone, 255);
     let event = BattleEvent::ApplyArtStrike {
@@ -263,6 +273,7 @@ fn stone_absorbs_a_damage_spell() {
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.liveness = 1;
     world
+        .battle
         .status_effects
         .apply_with_duration(0, StatusKind::Stone, 255);
 
@@ -299,7 +310,7 @@ fn asleep_monster_loses_its_turn_and_never_attacks() {
         let mut world = World::new();
         world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
         world.live_gameplay_loop = true; // route tick() through live_battle_tick
-        world.battle_player_driven = false; // both sides auto-act
+        world.battle.player_driven = false; // both sides auto-act
         // Big monster HP so it survives long enough to take many turns; the
         // party HP is what we watch.
         world.actors[1].battle.hp = 9999;
@@ -308,6 +319,7 @@ fn asleep_monster_loses_its_turn_and_never_attacks() {
         world.actors[0].battle.max_hp = 500;
         if asleep {
             world
+                .battle
                 .status_effects
                 .apply_with_duration(1, StatusKind::Sleep, 255);
         }
@@ -349,7 +361,7 @@ fn dot_never_kills_actor_bottoms_out_at_one_hp() {
     world.actors[1].battle.max_hp = 80;
     world.actors[1].battle.hp = 4;
     world.actors[1].battle.liveness = 1;
-    world.status_effects.apply(1, StatusKind::Toxic);
+    world.battle.status_effects.apply(1, StatusKind::Toxic);
 
     world.tick_status_effects();
 
@@ -375,16 +387,17 @@ fn live_loop_ticks_dot_at_the_round_boundary() {
         let mut world = World::new();
         world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
         world.live_gameplay_loop = true;
-        world.battle_player_driven = false;
+        world.battle.player_driven = false;
         // Both sides carry SPD so the initiative round boundary engages (the DoT
         // tick is gated on it); seed up front so battle start isn't mistaken for
         // a round boundary.
-        world.battle_speed[0] = 10;
-        world.battle_speed[1] = 10;
+        world.battle.speed[0] = 10;
+        world.battle.speed[1] = 10;
         world.seed_battle_initiative();
         // The monster is asleep, so it never attacks - the party's only HP loss
         // can come from the DoT.
         world
+            .battle
             .status_effects
             .apply_with_duration(1, StatusKind::Sleep, 255);
         world.actors[0].battle.max_hp = 800;
@@ -393,6 +406,7 @@ fn live_loop_ticks_dot_at_the_round_boundary() {
         world.actors[1].battle.hp = 9999;
         if poisoned {
             world
+                .battle
                 .status_effects
                 .apply_with_duration(0, StatusKind::Toxic, 255);
         }

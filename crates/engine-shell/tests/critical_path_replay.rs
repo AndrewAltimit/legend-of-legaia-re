@@ -1025,10 +1025,10 @@ impl FightPolicy {
         }
         let w = &host.world;
         // A message box owns the frame ahead of everything else.
-        if !w.battle_tutorial_boxes.is_empty() {
+        if !w.battle.tutorial_boxes.is_empty() {
             return PadButton::Cross.mask();
         }
-        if let Some(menu) = w.battle_item_menu.as_ref() {
+        if let Some(menu) = w.battle.item_menu.as_ref() {
             return match menu.state {
                 InventoryUseState::Browsing { .. } => {
                     if menu.filtered_items.is_empty() {
@@ -1047,7 +1047,7 @@ impl FightPolicy {
                 _ => 0,
             };
         }
-        if let Some(session) = w.battle_command.as_ref() {
+        if let Some(session) = w.battle.command.as_ref() {
             return match &session.phase {
                 CommandPhase::RoundPrompt { .. } => PadButton::Left.mask(), // Begin
                 CommandPhase::Menu { .. } => {
@@ -1194,6 +1194,7 @@ fn fight_snapshot(host: &SceneHost) -> String {
         })
         .collect();
     let formation = w
+        .battle
         .active_formation
         .as_ref()
         .map(|f| {
@@ -2065,7 +2066,7 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     // here too: **an empty item catalog makes every bag row inadmissible**,
     // which is a silent way for a healing policy to do nothing at all.
     if fight.driven {
-        host.world.battle_player_driven = true;
+        host.world.battle.player_driven = true;
         // Arm the **field** side of the loop as well, which is what both play
         // hosts do (`BootSession::enter_field_live`) and what makes a dungeon
         // roll its own encounters. It is inert on this route today - see the

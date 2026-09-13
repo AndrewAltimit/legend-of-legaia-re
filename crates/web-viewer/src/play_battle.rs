@@ -404,7 +404,7 @@ impl LegaiaRuntime {
             sync_battle_hud_rows(&mut self.battle_hud, &host.world);
             for slot in 0..self.battle_hud.slots.len() as u8 {
                 self.battle_hud
-                    .sync_status(slot, &host.world.status_effects);
+                    .sync_status(slot, &host.world.battle.status_effects);
             }
         }
         self.battle_hud.tick();
@@ -630,7 +630,7 @@ impl LegaiaRuntime {
                 // (battle_item_window capture), so one or the other draws.
                 plaque: plaque
                     .as_ref()
-                    .filter(|_| world.is_none_or(|w| w.battle_item_menu.is_none()))
+                    .filter(|_| world.is_none_or(|w| w.battle.item_menu.is_none()))
                     .map(|(_, n)| n.as_str()),
                 // The element badge the plaque wears in front of the name;
                 // `None` draws the bare name.
@@ -857,7 +857,7 @@ impl LegaiaRuntime {
         let dialogue_up = bw.current_dialog.is_some() || bw.inline_dialogue.is_some();
         if dialogue_up {
             // Dialogue box up: no menu chrome.
-        } else if let Some(arts) = &bw.battle_arts_menu {
+        } else if let Some(arts) = &bw.battle.arts_menu {
             use legaia_engine_core::battle_arts::ArtsPhase;
             let mut my = MENU_Y;
             match &arts.phase {
@@ -928,7 +928,7 @@ impl LegaiaRuntime {
                 }
                 _ => {}
             }
-        } else if let Some(spell) = &bw.battle_spell_menu {
+        } else if let Some(spell) = &bw.battle.spell_menu {
             use legaia_engine_core::battle_magic::SpellPhase;
             let mut my = MENU_Y;
             match &spell.phase {
@@ -994,7 +994,7 @@ impl LegaiaRuntime {
                 }
                 _ => {}
             }
-        } else if bw.battle_item_menu.is_some() {
+        } else if bw.battle.item_menu.is_some() {
             // Retail's item window (state 0x3C): the packet-pinned list +
             // description windows with breadcrumbs and the hand cursor.
             // Same engine-core projection + engine-ui builder the native
@@ -1009,7 +1009,7 @@ impl LegaiaRuntime {
                     )
                 }));
             }
-        } else if let Some(cmd) = &bw.battle_command {
+        } else if let Some(cmd) = &bw.battle.command {
             let mut my = MENU_Y;
             match &cmd.phase {
                 CommandPhase::RoundPrompt { .. }
@@ -1311,7 +1311,7 @@ impl LegaiaRuntime {
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
             return r#"{"armed":false,"prompts":0,"flag_armed":false}"#.to_string();
         };
-        let prompts = world.battle_tutorial_script.len();
+        let prompts = world.battle.tutorial_script.len();
         let flag_armed =
             world.system_flag_test(legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG);
         let Some(lesson) = world.battle_tutorial_lesson() else {
@@ -1345,7 +1345,7 @@ impl LegaiaRuntime {
             "flag_armed": flag_armed,
             "lesson": lesson.raw(),
             "box": tbox,
-            "queued": world.battle_tutorial_boxes.len(),
+            "queued": world.battle.tutorial_boxes.len(),
         })
         .to_string()
     }
@@ -1359,7 +1359,7 @@ impl LegaiaRuntime {
         self.live_battles = on;
         if let Some(h) = self.scene_host.as_mut() {
             h.world.live_gameplay_loop = on;
-            h.world.battle_player_driven = on;
+            h.world.battle.player_driven = on;
         }
     }
 
@@ -1441,7 +1441,7 @@ impl LegaiaRuntime {
         };
         if !host.world.live_gameplay_loop {
             host.world.live_gameplay_loop = true;
-            host.world.battle_player_driven = true;
+            host.world.battle.player_driven = true;
         }
         host.world.force_encounter(id)
     }
@@ -1533,7 +1533,7 @@ mod live_hud_tests {
             let open = rt
                 .scene_host
                 .as_ref()
-                .is_some_and(|h| h.world.battle_command.is_some());
+                .is_some_and(|h| h.world.battle.command.is_some());
             if open {
                 break;
             }
@@ -1542,7 +1542,7 @@ mod live_hud_tests {
         assert!(
             rt.scene_host
                 .as_ref()
-                .is_some_and(|h| h.world.battle_command.is_some()),
+                .is_some_and(|h| h.world.battle.command.is_some()),
             "player-driven battle opens the command menu"
         );
 
@@ -1625,7 +1625,7 @@ mod live_hud_tests {
                 let phase = rt
                     .scene_host
                     .as_ref()
-                    .and_then(|h| h.world.battle_command.as_ref())
+                    .and_then(|h| h.world.battle.command.as_ref())
                     .map(|c| {
                         (
                             std::mem::discriminant(&c.phase),
@@ -1667,7 +1667,7 @@ mod live_hud_tests {
         {
             let w = &rt.scene_host.as_ref().expect("host").world;
             let targeting = matches!(
-                w.battle_command.as_ref().map(|c| &c.phase),
+                w.battle.command.as_ref().map(|c| &c.phase),
                 Some(legaia_engine_core::battle_input::CommandPhase::Targeting { .. })
             );
             if !targeting {
@@ -1683,7 +1683,8 @@ mod live_hud_tests {
                 eprintln!(
                     "[dbg] mode={:?} cmd_phase={:?} dialog={} inline={} monsters={monsters:?}",
                     w.mode,
-                    w.battle_command
+                    w.battle
+                        .command
                         .as_ref()
                         .map(|c| std::mem::discriminant(&c.phase)),
                     w.current_dialog.is_some(),
@@ -1805,7 +1806,7 @@ impl LegaiaRuntime {
             self.drop_battle_intro();
             return None;
         };
-        let Some(entity) = host.world.battle_intro else {
+        let Some(entity) = host.world.battle.intro else {
             // The transition is armed but its entity has not ticked yet:
             // keep the emitter (the native window does the same), just show
             // nothing this frame.

@@ -54,12 +54,12 @@ fn frame_height_for(size_class: u8) -> (i16, bool) {
                 framed = Some(height);
                 // The event and the world field are written together by the
                 // host hook, so they must agree at this instant.
-                assert_eq!(height, world.battle_camera_frame_height);
+                assert_eq!(height, world.battle.camera_frame_height);
             }
         }
     }
     (
-        framed.unwrap_or(world.battle_camera_frame_height),
+        framed.unwrap_or(world.battle.camera_frame_height),
         framed.is_some(),
     )
 }
@@ -89,7 +89,7 @@ fn action_seed_frames_the_camera_on_the_target_size_class() {
 #[test]
 fn default_world_seeds_the_retail_floor() {
     assert_eq!(
-        World::default().battle_camera_frame_height,
+        World::default().battle.camera_frame_height,
         CAMERA_HEIGHT_MIN
     );
 }

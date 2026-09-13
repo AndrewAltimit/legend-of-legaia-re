@@ -36,7 +36,7 @@ impl World {
     /// [`Self::take_battle_tutorial_arm`]. A world with no script still arms
     /// normally; it just resolves no box text and so shows nothing.
     pub fn set_battle_tutorial_script(&mut self, script: BattleTutorialScript) {
-        self.battle_tutorial_script = script;
+        self.battle.tutorial_script = script;
     }
 
     /// Retail's own sparring-tutorial condition, consumed at battle entry.
@@ -80,29 +80,29 @@ impl World {
     /// Tetsu spar. The faithful path is [`Self::take_battle_tutorial_arm`],
     /// which needs nothing from the host.
     pub fn prime_battle_tutorial(&mut self, script: BattleTutorialScript) {
-        self.battle_tutorial_script = script;
-        self.battle_tutorial_pending = true;
+        self.battle.tutorial_script = script;
+        self.battle.tutorial_pending = true;
     }
 
     /// Arm the sparring tutorial right now, using the already-primed script.
     /// Called by [`World::enter_battle`] when a tutorial battle was primed;
     /// hosts and tests can call it directly.
     pub fn arm_battle_tutorial(&mut self) {
-        self.battle_tutorial = Some(BattleTutorial::new());
-        self.battle_tutorial_pending = false;
-        self.battle_tutorial_boxes.clear();
-        self.battle_flow = BattleFlowState::Idle;
+        self.battle.tutorial = Some(BattleTutorial::new());
+        self.battle.tutorial_pending = false;
+        self.battle.tutorial_boxes.clear();
+        self.battle.flow = BattleFlowState::Idle;
     }
 
     /// `true` while a tutorial box is on screen. The battle loop parks on this
     /// (retail `ctx[+0x6B2]`).
     pub fn battle_tutorial_box_up(&self) -> bool {
-        !self.battle_tutorial_boxes.is_empty()
+        !self.battle.tutorial_boxes.is_empty()
     }
 
     /// The box currently on screen, if any.
     pub fn battle_tutorial_box(&self) -> Option<&ActiveTutorialBox> {
-        self.battle_tutorial_boxes.front()
+        self.battle.tutorial_boxes.front()
     }
 
     /// Every box on screen this frame: the **front group** of the queue.
@@ -113,15 +113,17 @@ impl World {
     /// draws the whole group, not the queue's head. A later dispatch's boxes
     /// wait behind the group until it has been dismissed.
     pub fn battle_tutorial_boxes_on_screen(&self) -> impl Iterator<Item = &ActiveTutorialBox> + '_ {
-        let group = self.battle_tutorial_boxes.front().map(|b| b.group);
-        self.battle_tutorial_boxes
+        let group = self.battle.tutorial_boxes.front().map(|b| b.group);
+        self.battle
+            .tutorial_boxes
             .iter()
             .take_while(move |b| Some(b.group) == group)
     }
 
     /// The next free dispatch group id for the box queue.
     pub(in crate::world) fn next_battle_tutorial_group(&self) -> u32 {
-        self.battle_tutorial_boxes
+        self.battle
+            .tutorial_boxes
             .back()
             .map_or(0, |b| b.group.wrapping_add(1))
     }
@@ -165,20 +167,21 @@ impl World {
     /// PORT: FUN_80056208 (stage-1 arm; phases 0 and 1)
     pub(in crate::world) fn raise_sparring_caption_if_due(&mut self) -> bool {
         use crate::battle_tutorial::{SPARRING_CAPTION_FRAMES, SPARRING_CAPTION_STYLE};
-        if self.battle_tutorial.is_none() || self.battle_sparring_phase != 0 {
+        if self.battle.tutorial.is_none() || self.battle.sparring_phase != 0 {
             return false;
         }
         let Some(text) = self
-            .battle_ui_strings
+            .battle
+            .ui_strings
             .get(legaia_asset::battle_ui_strings::BattleUiLabel::SparringIntro)
             .map(str::to_string)
         else {
-            self.battle_sparring_phase = 2;
+            self.battle.sparring_phase = 2;
             return false;
         };
-        self.battle_sparring_phase = 1;
+        self.battle.sparring_phase = 1;
         let group = self.next_battle_tutorial_group();
-        self.battle_tutorial_boxes.push_back(ActiveTutorialBox {
+        self.battle.tutorial_boxes.push_back(ActiveTutorialBox {
             text,
             style: SPARRING_CAPTION_STYLE,
             waits_for_input: false,
@@ -222,7 +225,7 @@ impl World {
 
     /// The lesson the sparring fight is currently teaching, when armed.
     pub fn battle_tutorial_lesson(&self) -> Option<TutorialLesson> {
-        self.battle_tutorial.as_ref().map(BattleTutorial::lesson)
+        self.battle.tutorial.as_ref().map(BattleTutorial::lesson)
     }
 
     /// Age the box queue one frame. Returns `true` when a box is (still) up and
@@ -242,13 +245,14 @@ impl World {
     pub(in crate::world) fn tick_battle_tutorial_boxes(&mut self) -> bool {
         use crate::input::PadButton;
 
-        let Some(group) = self.battle_tutorial_boxes.front().map(|b| b.group) else {
+        let Some(group) = self.battle.tutorial_boxes.front().map(|b| b.group) else {
             return false;
         };
         let confirm = self.input.just_pressed(PadButton::Cross);
         let any_press = self.input.pad() & !self.input.pad_prev() != 0;
         for b in self
-            .battle_tutorial_boxes
+            .battle
+            .tutorial_boxes
             .iter_mut()
             .take_while(|b| b.group == group)
         {
@@ -266,22 +270,23 @@ impl World {
         // Drop the finished members of the front group only; the ones behind
         // it are a later dispatch and keep their frames.
         let keep_from = self
-            .battle_tutorial_boxes
+            .battle
+            .tutorial_boxes
             .iter()
             .position(|b| b.group != group)
-            .unwrap_or(self.battle_tutorial_boxes.len());
+            .unwrap_or(self.battle.tutorial_boxes.len());
         let mut i = 0;
         let mut end = keep_from;
         while i < end {
-            if done(&self.battle_tutorial_boxes[i]) {
-                self.battle_tutorial_boxes.remove(i);
+            if done(&self.battle.tutorial_boxes[i]) {
+                self.battle.tutorial_boxes.remove(i);
                 end -= 1;
             } else {
                 i += 1;
             }
         }
-        if self.battle_sparring_phase == 1 && self.battle_tutorial_boxes.is_empty() {
-            self.battle_sparring_phase = 2;
+        if self.battle.sparring_phase == 1 && self.battle.tutorial_boxes.is_empty() {
+            self.battle.sparring_phase = 2;
             self.begin_battle_round();
         }
         true
@@ -295,11 +300,11 @@ impl World {
     /// The latch clear on entry is retail `0x801F71E8`; the dispatch is
     /// `FUN_801F6B70`.
     pub(in crate::world) fn set_battle_flow(&mut self, next: BattleFlowState) -> bool {
-        if self.battle_flow == next {
+        if self.battle.flow == next {
             return false;
         }
-        self.battle_flow = next;
-        let Some(tut) = self.battle_tutorial.as_mut() else {
+        self.battle.flow = next;
+        let Some(tut) = self.battle.tutorial.as_mut() else {
             return false;
         };
         // Entering a state re-arms the one-shot latch (retail 0x801F71E8), so
@@ -317,7 +322,7 @@ impl World {
 
     /// Run one hook dispatch for `state` and queue the resulting boxes.
     fn dispatch_battle_tutorial(&mut self, state: BattleFlowState) -> bool {
-        let Some(mut tut) = self.battle_tutorial.take() else {
+        let Some(mut tut) = self.battle.tutorial.take() else {
             return false;
         };
         let tick = tut.tick(state.raw());
@@ -325,13 +330,13 @@ impl World {
         // One dispatch = one group: its boxes share the frame.
         let group = self.next_battle_tutorial_group();
         for b in &tick.emission.boxes {
-            let Some(text) = self.battle_tutorial_script.text(b.message) else {
+            let Some(text) = self.battle.tutorial_script.text(b.message) else {
                 // No disc text for this VA - skip it rather than showing a
                 // placeholder. A host booted without a disc shows no boxes.
                 continue;
             };
             let waits_for_input = b.placement().is_some_and(|p| p.waits_for_input);
-            self.battle_tutorial_boxes.push_back(ActiveTutorialBox {
+            self.battle.tutorial_boxes.push_back(ActiveTutorialBox {
                 text: text.to_string(),
                 style: b.style,
                 waits_for_input,
@@ -341,12 +346,12 @@ impl World {
             });
         }
         let over = tick.battle_over;
-        self.battle_tutorial = Some(tut);
+        self.battle.tutorial = Some(tut);
         if over {
             // The completion tail wrote ctx[0x06] = 0xC8 / ctx[0x07] = 0xFF:
             // the sparring fight is done. Disarm so the closing box is the last
             // thing the machine ever emits.
-            self.battle_tutorial = None;
+            self.battle.tutorial = None;
         }
         rewind
     }
@@ -361,11 +366,11 @@ impl World {
     ) -> bool {
         use crate::battle_flow::{BattleMenuKind, flow_state_for};
 
-        let menu = if self.battle_item_menu.is_some() {
+        let menu = if self.battle.item_menu.is_some() {
             BattleMenuKind::Item
-        } else if self.battle_spell_menu.is_some() {
+        } else if self.battle.spell_menu.is_some() {
             BattleMenuKind::Magic
-        } else if self.battle_arts_menu.is_some() || self.battle_arts_input.is_some() {
+        } else if self.battle.arts_menu.is_some() || self.battle.arts_input.is_some() {
             BattleMenuKind::Arts
         } else {
             BattleMenuKind::None
@@ -381,14 +386,14 @@ impl World {
     /// On acceptance the lesson is marked due to advance; the bump lands at the
     /// next turn start so this validator kept the lesson it validated against.
     pub(in crate::world) fn battle_tutorial_commit(&mut self, category: u8) -> bool {
-        if self.battle_tutorial.is_none() {
+        if self.battle.tutorial.is_none() {
             return false;
         }
-        if let Some(tut) = self.battle_tutorial.as_mut() {
+        if let Some(tut) = self.battle.tutorial.as_mut() {
             tut.inputs.action_category = category;
         }
         let rewind = self.set_battle_flow(BattleFlowState::CommitBegin);
-        if !rewind && let Some(tut) = self.battle_tutorial.as_mut() {
+        if !rewind && let Some(tut) = self.battle.tutorial.as_mut() {
             let expected = tut.lesson().expected_action_category();
             if expected == Some(category) {
                 tut.pending_advance = true;

@@ -132,7 +132,7 @@ fn battle_complete_propagates_through_world() {
     // resolves the battle in the same frame it completes, which consumes
     // `battle_end` (see `finish_battle`).
     assert_eq!(world.step_battle(), StepOutcome::BattleComplete);
-    assert_eq!(world.battle_end, Some(BattleEndCause::PartyWipe));
+    assert_eq!(world.battle.end, Some(BattleEndCause::PartyWipe));
 
     // And through `tick`: the same wipe must reach a terminal state rather
     // than sitting in `SceneMode::Battle` forever.

@@ -34,7 +34,7 @@ impl World {
             // Seed the per-slot turn-order SPD from the record's live stats so
             // a battle's next-actor selector can run the initiative scheme.
             // A zeroed record leaves SPD at 0 -> round-robin fallback.
-            if let Some(s) = self.battle_speed.get_mut(slot) {
+            if let Some(s) = self.battle.speed.get_mut(slot) {
                 *s = rec.live_stats().spd;
             }
         }

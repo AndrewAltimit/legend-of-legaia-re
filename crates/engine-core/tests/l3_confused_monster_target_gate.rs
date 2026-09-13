@@ -147,9 +147,10 @@ fn a_confused_monster_swings_at_its_own_band() {
     let mut any_self_clear = false;
     for seed in SEEDS {
         let mut w = battle_world(seed);
-        w.status_effects.apply(PARTY, StatusKind::Confuse);
+        w.battle.status_effects.apply(PARTY, StatusKind::Confuse);
         assert!(
-            w.status_effects
+            w.battle
+                .status_effects
                 .statuses(PARTY)
                 .iter()
                 .any(|s| s.kind == StatusKind::Confuse),
@@ -218,9 +219,10 @@ fn party_hp(w: &World) -> u32 {
 fn damage_with_only_monsters_acting(seed: u32, confuse_first_monster: bool) -> (u32, u32) {
     let mut w = battle_world(seed);
     for slot in 0..PARTY {
-        w.status_effects.apply(slot, StatusKind::Sleep);
+        w.battle.status_effects.apply(slot, StatusKind::Sleep);
         assert!(
-            w.status_effects
+            w.battle
+                .status_effects
                 .statuses(slot)
                 .iter()
                 .any(|s| s.kind == StatusKind::Sleep && s.kind.blocks_actions()),
@@ -228,7 +230,7 @@ fn damage_with_only_monsters_acting(seed: u32, confuse_first_monster: bool) -> (
         );
     }
     if confuse_first_monster {
-        w.status_effects.apply(PARTY, StatusKind::Confuse);
+        w.battle.status_effects.apply(PARTY, StatusKind::Confuse);
     }
     let band_before = band_hp(&w);
     let party_before = party_hp(&w);
@@ -302,22 +304,22 @@ fn a_confused_party_member_is_flipped_the_other_way() {
     let mut any = false;
     for seed in SEEDS {
         let mut w = battle_world(seed);
-        w.battle_player_driven = true;
+        w.battle.player_driven = true;
         for slot in 0..PARTY {
-            w.status_effects.apply(slot, StatusKind::Confuse);
+            w.battle.status_effects.apply(slot, StatusKind::Confuse);
         }
         // The contrast: with no confusion the same world parks on a command
         // session instead of arming anything.
         let mut control = battle_world(seed);
-        control.battle_player_driven = true;
+        control.battle.player_driven = true;
         for _ in 0..600 {
             control.tick();
-            if control.battle_command.is_some() {
+            if control.battle.command.is_some() {
                 break;
             }
         }
         assert!(
-            control.battle_command.is_some(),
+            control.battle.command.is_some(),
             "seed {seed:#x}: an unconfused player-driven party must open the \
              command menu - otherwise the auto-act below is not the \
              confusion's doing"
@@ -351,8 +353,9 @@ fn a_confused_party_member_is_flipped_the_other_way() {
         // from `0x14`), so a confusion can wear off inside the sampling
         // window and the cured member owes the next round a command. The menu
         // is off-limits only while the member holds the status.
-        if let Some(session) = w.battle_command.as_ref() {
+        if let Some(session) = w.battle.command.as_ref() {
             let still_confused = w
+                .battle
                 .status_effects
                 .statuses(session.actor)
                 .iter()

@@ -754,13 +754,13 @@ impl World {
     ///
     /// REF: FUN_801DE840 case 0xD sub 3 (the installer)
     pub fn schedule_timed_flags(&mut self, ab: u32, cd: u32, ef: u32) {
-        self.escape_timer_flag_word = ab;
-        self.escape_timer = vm::escape_timer::EscapeTimer {
+        self.battle.escape_timer_flag_word = ab;
+        self.battle.escape_timer = vm::escape_timer::EscapeTimer {
             remaining: cd as i32,
             warn_threshold: ef as i32,
             armed: cd != 0,
         };
-        self.escape_timer_hud = None;
+        self.battle.escape_timer_hud = None;
     }
 
     /// Whether this frame is one of the ones retail's timed-flag scheduler
@@ -806,22 +806,22 @@ impl World {
     /// REF: FUN_801D2EBC (scheduler + HUD decomposition; the ports are
     /// `legaia_engine_vm::escape_timer::EscapeTimer` and `timer_ink`)
     fn tick_escape_timer(&mut self) {
-        if !self.escape_timer.armed {
-            self.escape_timer_hud = None;
+        if !self.battle.escape_timer.armed {
+            self.battle.escape_timer_hud = None;
             return;
         }
         let busy = self.escape_timer_busy();
-        let flag_word = self.escape_timer_flag_word;
-        let events = self.escape_timer.tick(1, flag_word, busy);
+        let flag_word = self.battle.escape_timer_flag_word;
+        let events = self.battle.escape_timer.tick(1, flag_word, busy);
         if let Some(flag) = events.expiry_flag {
             self.system_flag_set(flag);
         }
         if let Some(flag) = events.warning_flag {
             self.system_flag_set(flag);
         }
-        let (minutes, seconds, hundredths) = self.escape_timer.hud_fields();
-        let ink = vm::escape_timer::timer_ink(self.escape_timer.remaining);
-        self.escape_timer_hud = Some((minutes, seconds, hundredths, ink));
+        let (minutes, seconds, hundredths) = self.battle.escape_timer.hud_fields();
+        let ink = vm::escape_timer::timer_ink(self.battle.escape_timer.remaining);
+        self.battle.escape_timer_hud = Some((minutes, seconds, hundredths, ink));
     }
 
     /// Resolve this frame's cadence the way `FUN_80016B6C` does and install
@@ -990,7 +990,7 @@ impl World {
         self.latch_submode_pad_edge();
         // Age the post-battle spoils panel (armed by `finish_battle`) and the
         // no-encounters-here hint (armed by `arm_live_loop`).
-        self.battle_spoils_frames = self.battle_spoils_frames.saturating_sub(1);
+        self.battle.spoils_frames = self.battle.spoils_frames.saturating_sub(1);
         self.scene_encounter_hint_frames = self.scene_encounter_hint_frames.saturating_sub(1);
         // ------------------------------------------------------------------
         // The simulation clock's denomination.

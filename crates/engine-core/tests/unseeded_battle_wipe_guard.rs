@@ -55,7 +55,7 @@ fn unseeded_party_reading_dead_is_not_a_party_wipe() {
         "an unseeded battle must not end on the party-wipe arm"
     );
     assert_ne!(
-        world.battle_end,
+        world.battle.end,
         Some(BattleEndCause::PartyWipe),
         "no PartyWipe for a party that was never seated"
     );
@@ -72,7 +72,7 @@ fn unseeded_party_reading_dead_is_not_a_party_wipe() {
 #[test]
 fn unseeded_battle_still_tears_down_on_a_monster_wipe() {
     let mut world = unseeded_battle_world();
-    world.battle_return_mode = SceneMode::Field;
+    world.battle.return_mode = SceneMode::Field;
     for i in 0..3 {
         world.actors[i].battle.liveness = 0;
     }
@@ -83,7 +83,7 @@ fn unseeded_battle_still_tears_down_on_a_monster_wipe() {
     world.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
     let out = world.step_battle();
     assert_eq!(out, StepOutcome::BattleComplete);
-    assert_eq!(world.battle_end, Some(BattleEndCause::MonsterWipe));
+    assert_eq!(world.battle.end, Some(BattleEndCause::MonsterWipe));
     assert!(!world.game_over);
 }
 
@@ -102,5 +102,5 @@ fn seated_party_killed_is_still_a_party_wipe() {
     world.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
     let out = world.step_battle();
     assert_eq!(out, StepOutcome::BattleComplete);
-    assert_eq!(world.battle_end, Some(BattleEndCause::PartyWipe));
+    assert_eq!(world.battle.end, Some(BattleEndCause::PartyWipe));
 }

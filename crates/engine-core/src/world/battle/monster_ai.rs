@@ -218,7 +218,8 @@ impl World {
             return;
         };
         let targets: Vec<u8> = self
-            .battle_hit_fx
+            .battle
+            .hit_fx
             .get(hit_fx_start..)
             .unwrap_or(&[])
             .iter()
@@ -254,12 +255,13 @@ impl World {
                 continue;
             };
             let applied = self
+                .battle
                 .status_effects
                 .apply_from_enemy_effect(target, proc.effect);
             if let (Some(vm::status_effects::StatusKind::Rot), Some(limb)) =
                 (applied, proc.rot_limb)
             {
-                self.status_effects.set_rot_limb(target, limb);
+                self.battle.status_effects.set_rot_limb(target, limb);
             }
         }
     }
@@ -327,7 +329,8 @@ impl World {
             return;
         }
         let attacker_agl = self
-            .battle_accuracy
+            .battle
+            .accuracy
             .get(caster as usize)
             .copied()
             .unwrap_or(0);
@@ -337,7 +340,7 @@ impl World {
             if t >= pc {
                 continue;
             }
-            let target_agl = self.battle_accuracy.get(t as usize).copied().unwrap_or(0);
+            let target_agl = self.battle.accuracy.get(t as usize).copied().unwrap_or(0);
             // One draw per rolled target, in retail call order.
             let rand = self.next_rng();
             if !agl_status_inflict_roll(attacker_agl, target_agl, rand) {
@@ -355,7 +358,7 @@ impl World {
             if bits & (guard_bit | MASTER_GUARD_BIT) != 0 {
                 continue;
             }
-            self.status_effects.apply(t, kind);
+            self.battle.status_effects.apply(t, kind);
             if kind == StatusKind::Stone {
                 self.stone_cancels_queued_action(t);
             }
@@ -465,7 +468,8 @@ impl World {
 
     /// True if `slot` carries the Confuse status.
     pub(in crate::world) fn actor_is_confused(&self, slot: u8) -> bool {
-        self.status_effects
+        self.battle
+            .status_effects
             .statuses(slot)
             .iter()
             .any(|s| s.kind == vm::status_effects::StatusKind::Confuse)
@@ -657,7 +661,7 @@ impl World {
         let target = self.first_living_opponent_of(slot).unwrap_or(slot);
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.action_state = ActionState::Begin.as_byte();
-        let picks = std::mem::take(&mut self.monster_strike_entries);
+        let picks = std::mem::take(&mut self.battle.monster_strike_entries);
         if let Some(a) = self.actors.get_mut(slot as usize) {
             a.battle.active_target = target;
             a.battle.action_category = 3;
@@ -694,7 +698,7 @@ impl World {
             .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| (d.agl, d.action_costs.clone(), d.action_entries.clone()))
             .unwrap_or((0, Vec::new(), Vec::new()));
-        self.monster_strike_entries.clear();
+        self.battle.monster_strike_entries.clear();
         // The gauge retail spends is the actor's **live** `+0x154`, which the
         // round boundary (`BattleRound::boundary`, the port of `FUN_801D88CC`)
         // restores from `+0x156` once per round. A slot whose base `+0x156` was
@@ -711,7 +715,7 @@ impl World {
         } else {
             catalog_agl
         };
-        self.monster_strike_budget = if agl > 0 && !costs.is_empty() {
+        self.battle.monster_strike_budget = if agl > 0 && !costs.is_empty() {
             let stream =
                 vm::battle_action::enemy_action_budget(agl, &costs, &mut || self.next_rng());
             // Retail's budget loop spends the gauge it walked. Only do so on
@@ -733,7 +737,7 @@ impl World {
             // of that entry are the swing's damage). Without the aligned
             // entry list (the synthetic catalog) the stream stays empty and
             // the budget count drives immediate swings instead.
-            self.monster_strike_entries = stream
+            self.battle.monster_strike_entries = stream
                 .iter()
                 .filter_map(|&pick| entries.get(pick as usize).copied())
                 .collect();
@@ -857,7 +861,7 @@ impl World {
                     .map(|a| a.battle.spirit_gauge)
                     .unwrap_or(0),
             };
-            let mut ai = std::mem::take(&mut self.monster_ai_state);
+            let mut ai = std::mem::take(&mut self.battle.monster_ai_state);
             let mut spirit_writeback = None;
             if let Some(cast) = crate::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rng()) {
                 category = cast.category;
@@ -881,7 +885,7 @@ impl World {
                 &mut ai,
                 &mut || self.next_rng(),
             );
-            self.monster_ai_state = ai;
+            self.battle.monster_ai_state = ai;
         }
 
         // --- the once-per-pass flee checkpoint (`FUN_801E9FD4` loop bottom,
@@ -892,8 +896,8 @@ impl World {
         // 5 (`sb 5, 0x1de(s4)`). The `lw` gate on the battle-flag word
         // `0x8007BAC0` (roll only when it is zero) passes as unset here, the
         // same reading `roll_battle_escape` documents for its `forced` bit.
-        if !self.battle_monster_flee_attempted {
-            self.battle_monster_flee_attempted = true;
+        if !self.battle.monster_flee_attempted {
+            self.battle.monster_flee_attempted = true;
             if self.monster_flee_roll(slot) {
                 if let Some(a) = self.actors.get_mut(slot as usize) {
                     a.battle.action_category = 5;
@@ -948,7 +952,7 @@ impl World {
     /// multi-phase bosses (`0xA8`, `0xB4`, `0xB5`, `0xB6`, `0xA2..=0xA4`, …)
     /// change which spell they cast as it advances. `0` in a normal battle.
     pub fn battle_mode(&self) -> u8 {
-        self.monster_ai_state.mode_flags
+        self.battle.monster_ai_state.mode_flags
     }
 
     /// Advance the battle-mode counter by one - the faithful port of the
@@ -961,7 +965,8 @@ impl World {
     ///
     /// PORT: FUN_801E295C
     pub fn advance_battle_mode(&mut self) {
-        self.monster_ai_state.mode_flags = self.monster_ai_state.mode_flags.wrapping_add(1);
+        self.battle.monster_ai_state.mode_flags =
+            self.battle.monster_ai_state.mode_flags.wrapping_add(1);
     }
 
     /// Target **class** the generic core picks for a monster casting `def`, by

@@ -118,7 +118,7 @@ impl BattleSession {
                 (0, 0, 0)
             };
             let ap = if info.is_party && i < 3 {
-                Some(&world.ap_gauges[i])
+                Some(&world.battle.ap_gauges[i])
             } else {
                 None
             };
@@ -135,7 +135,7 @@ impl BattleSession {
                     ap,
                 },
             );
-            self.hud.sync_status(i as u8, &world.status_effects);
+            self.hud.sync_status(i as u8, &world.battle.status_effects);
         }
         self.transition(BattlePhase::RoundIntro);
         self.round.as_ref().unwrap()

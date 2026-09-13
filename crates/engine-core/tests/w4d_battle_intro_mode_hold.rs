@@ -71,7 +71,7 @@ fn the_mode_word_waits_for_the_intro_hand_off() {
     );
 
     // The kernel's hand-off frame releases it.
-    world.battle_intro_mode_handoff = true;
+    world.battle.intro_mode_handoff = true;
     assert!(!world.battle_mode_word_held());
     assert_eq!(
         held_seat.adopt_world_mode(&world),

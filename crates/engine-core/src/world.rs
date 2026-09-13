@@ -53,6 +53,7 @@ use vm_hosts::{
 
 mod ambient_fx_state;
 mod audio_state;
+mod battle_state;
 mod config;
 mod cutscene_state;
 mod disc_tables;
@@ -68,6 +69,7 @@ mod world_map_state;
 
 pub use ambient_fx_state::AmbientFxState;
 pub use audio_state::AudioState;
+pub use battle_state::BattleState;
 pub use config::*;
 pub use cutscene_state::CutsceneState;
 pub use disc_tables::DiscTables;

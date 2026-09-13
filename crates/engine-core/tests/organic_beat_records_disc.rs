@@ -278,6 +278,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     // not a synthetic boss id.
     let formation = host
         .world
+        .battle
         .active_formation
         .as_ref()
         .expect("active formation set");
@@ -320,7 +321,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     // the player-driven command menu would otherwise open on Vahn's turn and
     // hold the Done band's `0x51` menu floor forever - this test is about the
     // flag chain, not the command UI.
-    host.world.battle_player_driven = false;
+    host.world.battle.player_driven = false;
     for a in host.world.actors.iter_mut().skip(party) {
         if a.battle_monster_id.is_some() {
             let delta = i32::from(a.battle.hp);

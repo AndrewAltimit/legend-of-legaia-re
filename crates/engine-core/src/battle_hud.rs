@@ -831,7 +831,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
                 hp_max: a.battle.max_hp,
                 mp: a.battle.mp,
                 mp_max: world.tables.character_max_mp.get(i).copied().unwrap_or(0),
-                ap_slot: (i < world.ap_gauges.len()).then_some(i),
+                ap_slot: (i < world.battle.ap_gauges.len()).then_some(i),
                 // The status element's no-ailment arm draws the character
                 // record's `+0x130` beside the base marker (`FUN_8002C2E4`
                 // reads it as the display record's `+0x6F8`).
@@ -884,7 +884,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
     }
 
     for (slot, name, row) in &rows {
-        let ap = row.ap_slot.map(|i| &world.ap_gauges[i]);
+        let ap = row.ap_slot.map(|i| &world.battle.ap_gauges[i]);
         hud.sync_slot(
             *slot,
             SlotSyncInfo {
@@ -1024,13 +1024,13 @@ pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
         return BattleHudPhase::Idle;
     }
     if world.arts_input_active()
-        || world.battle_arts_menu.is_some()
-        || world.battle_spell_menu.is_some()
-        || world.battle_item_menu.is_some()
+        || world.battle.arts_menu.is_some()
+        || world.battle.spell_menu.is_some()
+        || world.battle.item_menu.is_some()
     {
         return BattleHudPhase::CommandEntry;
     }
-    if let Some(cmd) = world.battle_command.as_ref() {
+    if let Some(cmd) = world.battle.command.as_ref() {
         return match cmd.phase {
             CommandPhase::RoundPrompt { .. } => BattleHudPhase::RoundPrompt,
             _ => BattleHudPhase::CommandEntry,
@@ -1101,10 +1101,10 @@ pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurf
     if world.arts_input_active() {
         return Some(CommandSurface::ArtsInput);
     }
-    if world.battle_arts_menu.is_some() {
+    if world.battle.arts_menu.is_some() {
         return Some(CommandSurface::ArtsList);
     }
-    if let Some(m) = world.battle_spell_menu.as_ref() {
+    if let Some(m) = world.battle.spell_menu.as_ref() {
         return Some(match &m.phase {
             crate::battle_magic::SpellPhase::Targeting { picker, .. } => {
                 CommandSurface::SpellTarget(match picker.state() {
@@ -1118,7 +1118,7 @@ pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurf
             _ => CommandSurface::SpellBrowse,
         });
     }
-    if let Some(menu) = world.battle_item_menu.as_ref() {
+    if let Some(menu) = world.battle.item_menu.as_ref() {
         let view = menu.menu_view();
         return Some(if view.target_select {
             CommandSurface::ItemTarget(
@@ -1131,7 +1131,7 @@ pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurf
             CommandSurface::ItemBrowse
         });
     }
-    let cmd = world.battle_command.as_ref()?;
+    let cmd = world.battle.command.as_ref()?;
     Some(match cmd.phase {
         CommandPhase::Menu { .. } => CommandSurface::Ring,
         CommandPhase::AttackMode { .. } => CommandSurface::AttackMode,
@@ -1145,16 +1145,16 @@ fn command_entry_actor(world: &crate::world::World) -> Option<u8> {
     if let Some(slot) = world.arts_input_actor() {
         return Some(slot);
     }
-    if let Some(m) = world.battle_arts_menu.as_ref() {
+    if let Some(m) = world.battle.arts_menu.as_ref() {
         return Some(m.actor);
     }
-    if let Some(m) = world.battle_spell_menu.as_ref() {
+    if let Some(m) = world.battle.spell_menu.as_ref() {
         return Some(m.actor);
     }
-    if world.battle_item_menu.is_some() {
+    if world.battle.item_menu.is_some() {
         return Some(world.battle_ctx.active_actor);
     }
-    world.battle_command.as_ref().map(|c| c.actor)
+    world.battle.command.as_ref().map(|c| c.actor)
 }
 
 /// Seated party count, clamped to the actor table.
@@ -1342,7 +1342,7 @@ pub fn battle_ring_ap_plate_value(world: &crate::world::World) -> Option<u8> {
     if battle_command_surface(world) != Some(CommandSurface::Ring) {
         return None;
     }
-    let actor = world.battle_command.as_ref()?.actor;
+    let actor = world.battle.command.as_ref()?.actor;
     Some(world.spirit_gauge(actor).min(100) as u8)
 }
 
@@ -1518,7 +1518,8 @@ pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, b
         4
     };
     let label = world
-        .battle_ui_strings
+        .battle
+        .ui_strings
         .raseru_label(idx)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
@@ -1570,14 +1571,14 @@ pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommand
         return None;
     }
     if world.arts_input_active()
-        || world.battle_arts_menu.is_some()
-        || world.battle_spell_menu.is_some()
-        || world.battle_item_menu.is_some()
+        || world.battle.arts_menu.is_some()
+        || world.battle.spell_menu.is_some()
+        || world.battle.item_menu.is_some()
     {
         return None;
     }
-    let cmd = world.battle_command.as_ref()?;
-    let no_escape = world.battle_no_escape;
+    let cmd = world.battle.command.as_ref()?;
+    let no_escape = world.battle.no_escape;
     let chip = |label: &str, enabled: bool| (label.to_string(), enabled);
     match cmd.phase {
         CommandPhase::RoundPrompt { cursor } => Some(BattleCommandChips {
@@ -2495,7 +2496,7 @@ mod tests {
     fn round_prompt_is_panels_only() {
         use crate::battle_input::BattleCommandSession;
         let mut w = battle_world(1);
-        w.battle_command = Some(BattleCommandSession::new_round_open(0, 0, false));
+        w.battle.command = Some(BattleCommandSession::new_round_open(0, 0, false));
         assert_eq!(battle_hud_phase(&w), BattleHudPhase::RoundPrompt);
         assert!(battle_panels_visible(&w));
         assert_eq!(battle_readout_bar_slot(&w), None);
@@ -2512,7 +2513,7 @@ mod tests {
         use crate::battle_input::BattleCommandSession;
         let mut w = battle_world(1);
         w.actors[0].battle.spirit_gauge = 37;
-        w.battle_command = Some(BattleCommandSession::new(0, 0));
+        w.battle.command = Some(BattleCommandSession::new(0, 0));
         assert_eq!(battle_command_surface(&w), Some(CommandSurface::Ring));
         assert!(!battle_panels_visible(&w));
         assert_eq!(battle_readout_bar_slot(&w), Some(0));
@@ -2525,7 +2526,7 @@ mod tests {
     fn the_magic_chip_reads_dash_without_a_raseru_and_the_disc_name_with_one() {
         use crate::battle_input::BattleCommandSession;
         let mut w = battle_world(1);
-        w.battle_command = Some(BattleCommandSession::new(0, 0));
+        w.battle.command = Some(BattleCommandSession::new(0, 0));
         let chips = battle_command_chips(&w).expect("ring chips");
         assert_eq!(chips.phase, CommandChipPhase::CommandRing);
         assert_eq!(chips.chips.len(), 4);
@@ -2576,7 +2577,7 @@ mod tests {
         let mut w = battle_world(1);
         let mut cmd = BattleCommandSession::new(0, 0);
         cmd.phase = CommandPhase::AttackMode { cursor: 0 };
-        w.battle_command = Some(cmd);
+        w.battle.command = Some(cmd);
         assert_eq!(battle_command_surface(&w), Some(CommandSurface::AttackMode));
         assert_eq!(battle_readout_bar_slot(&w), None);
         assert!(!battle_panels_visible(&w));
@@ -2602,7 +2603,7 @@ mod tests {
             vec![TargetRow::new(0, "Vahn"), TargetRow::new(1, "Noa")],
             InventoryContext::Battle,
         );
-        w.battle_item_menu = Some(menu.clone());
+        w.battle.item_menu = Some(menu.clone());
         assert_eq!(battle_command_surface(&w), Some(CommandSurface::ItemBrowse));
         assert!(
             battle_panels_visible(&w),
@@ -2624,7 +2625,7 @@ mod tests {
             item_cursor: 0,
             cursor: 0,
         };
-        w.battle_item_menu = Some(menu);
+        w.battle.item_menu = Some(menu);
         assert_eq!(
             battle_command_surface(&w),
             Some(CommandSurface::ItemTarget(Some(0)))
@@ -2638,7 +2639,7 @@ mod tests {
     }
 
     fn arm_action(w: &mut crate::world::World, actor: u8, category: u8, target: u8) {
-        w.battle_command = None;
+        w.battle.command = None;
         w.battle_ctx.active_actor = actor;
         w.battle_ctx.action_state = 0x20;
         let a = &mut w.actors[usize::from(actor)].battle;

@@ -19,7 +19,7 @@ impl World {
     pub(in crate::world) fn open_battle_command(&mut self, actor: u8) {
         use crate::battle_flow::BattleFlowState as Flow;
         use crate::battle_input::BattleCommandSession;
-        if !self.battle_player_driven {
+        if !self.battle.player_driven {
             return;
         }
         self.battle_ctx.active_actor = actor;
@@ -47,13 +47,13 @@ impl World {
         // open on the ring.
         //
         // REF: FUN_801D0748 (states 0x14 / 0x1E / 0x28)
-        let round_open = matches!(self.battle_flow, Flow::Idle | Flow::TurnPrompt);
-        self.battle_command = Some(if round_open {
-            BattleCommandSession::new_round_open(actor, actor, self.battle_no_escape)
+        let round_open = matches!(self.battle.flow, Flow::Idle | Flow::TurnPrompt);
+        self.battle.command = Some(if round_open {
+            BattleCommandSession::new_round_open(actor, actor, self.battle.no_escape)
         } else {
             BattleCommandSession::new(actor, actor)
         });
-        if self.battle_flow == Flow::Idle {
+        if self.battle.flow == Flow::Idle {
             self.set_battle_flow(Flow::TurnPrompt);
         }
     }
@@ -69,7 +69,7 @@ impl World {
         use crate::input::PadButton;
         use crate::target_picker::CursorRow;
 
-        let Some(mut session) = self.battle_command.take() else {
+        let Some(mut session) = self.battle.command.take() else {
             return;
         };
 
@@ -104,7 +104,7 @@ impl World {
         if resolution.is_none() {
             self.sync_battle_flow(Some(&session.phase));
         }
-        if self.battle_tutorial.is_some()
+        if self.battle.tutorial.is_some()
             && let Some(res) = resolution
         {
             use crate::battle_flow::BattleFlowState as Flow;
@@ -160,7 +160,7 @@ impl World {
                 self.battle_ctx.active_actor = session.actor;
                 if std::env::var_os("LEGAIA_ARTS_SAVED_LIST").is_some() {
                     let rows = self.build_battle_arts_rows(session.actor);
-                    self.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
+                    self.battle.arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
                         session.actor,
                         session.actor,
                         rows,
@@ -175,7 +175,7 @@ impl World {
                 // player casts (turn cycles via EndOfAction) or backs out.
                 self.battle_ctx.active_actor = session.actor;
                 match self.build_battle_spell_session(session.actor) {
-                    Some(menu) => self.battle_spell_menu = Some(menu),
+                    Some(menu) => self.battle.spell_menu = Some(menu),
                     // No caster record / no catalog - don't strand the SM;
                     // reopen the command menu so the player can pick again.
                     None => self.open_battle_command(session.actor),
@@ -188,7 +188,7 @@ impl World {
                 // uses an item (turn cycles via EndOfAction) or backs out
                 // (the command menu reopens for the same actor).
                 self.battle_ctx.active_actor = session.actor;
-                self.battle_item_menu = Some(self.build_battle_item_session());
+                self.battle.item_menu = Some(self.build_battle_item_session());
             }
             Some(Resolution::SpiritGuard) => {
                 // Player picked Spirit: the guard stance (retail's pending
@@ -201,7 +201,7 @@ impl World {
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.action_category = 4;
                 }
-                if let Some(guard) = self.battle_guarding.get_mut(actor as usize) {
+                if let Some(guard) = self.battle.guarding.get_mut(actor as usize) {
                     *guard = true;
                 }
                 self.commit_party_command(actor, PendingPartyAction::Spirit);
@@ -228,7 +228,7 @@ impl World {
             }
             None => {
                 // Still selecting - keep the session open for the next frame.
-                self.battle_command = Some(session);
+                self.battle.command = Some(session);
             }
         }
     }
@@ -418,7 +418,7 @@ impl World {
         use crate::battle_arts::{ArtsResolution, BattleArtsInput};
         use crate::input::PadButton;
 
-        let Some(mut menu) = self.battle_arts_menu.take() else {
+        let Some(mut menu) = self.battle.arts_menu.take() else {
             return;
         };
 
@@ -457,7 +457,7 @@ impl World {
                 self.open_battle_command(actor);
             }
             None => {
-                self.battle_arts_menu = Some(menu);
+                self.battle.arts_menu = Some(menu);
             }
         }
     }
@@ -479,7 +479,7 @@ impl World {
     /// § Arts command input), so a host's battle-HUD strip reads this and
     /// emits nothing while it holds.
     pub fn arts_input_active(&self) -> bool {
-        self.battle_arts_input.is_some()
+        self.battle.arts_input.is_some()
     }
 
     /// The actor-table index of the party member entering commands, or
@@ -488,14 +488,14 @@ impl World {
     /// that owns the pad - so a host needs the *which*, not just the
     /// *whether*.
     pub fn arts_input_actor(&self) -> Option<u8> {
-        self.battle_arts_input.as_ref().map(|s| s.actor)
+        self.battle.arts_input.as_ref().map(|s| s.actor)
     }
 
     /// Renderer-agnostic view of the open Arts command input, or `None`
     /// when no session is up. Both hosts build the pinned chrome from
     /// this and nothing else.
     pub fn arts_input_view(&self) -> Option<crate::arts_command_input::ArtsInputView<'_>> {
-        let s = self.battle_arts_input.as_ref()?;
+        let s = self.battle.arts_input.as_ref()?;
         Some(crate::arts_command_input::ArtsInputView {
             buffer: &s.buffer,
             spent: &s.spent,
@@ -527,7 +527,8 @@ impl World {
         // Cost order = Command byte order (Left, Right, Down, Up) = the
         // runtime action slots `0xC..=0xF` the disc bytes are keyed by.
         let costs = self
-            .battle_swing_costs
+            .battle
+            .swing_costs
             .get(char_slot as usize)
             .copied()
             .unwrap_or([FAVORED_COST; 4]);
@@ -539,7 +540,7 @@ impl World {
             .filter(|((ch, _), rec)| *ch == character && !rec.commands.is_empty())
             .count();
         let pages = n_arts.div_ceil(ARTS_LIST_ROWS_PER_PAGE) as u8;
-        self.battle_arts_input = Some(ArtsCommandInputSession::new(
+        self.battle.arts_input = Some(ArtsCommandInputSession::new(
             actor, actor, pool, costs, pages,
         ));
     }
@@ -555,7 +556,7 @@ impl World {
         use crate::arts_command_input::{ArtsCommandPad, ArtsInputResolution};
         use crate::input::PadButton;
 
-        let Some(mut session) = self.battle_arts_input.take() else {
+        let Some(mut session) = self.battle.arts_input.take() else {
             return;
         };
         let (party, monsters) = self.battle_target_rows();
@@ -583,7 +584,7 @@ impl World {
                 self.open_battle_command(actor);
             }
             None => {
-                self.battle_arts_input = Some(session);
+                self.battle.arts_input = Some(session);
             }
         }
     }
@@ -941,11 +942,11 @@ impl World {
                     let outcome = self.apply_battle_item(item_id, target_slot);
                     self.push_item_use_fx(target_slot, outcome);
                 }
-                if self.battle_escaped {
+                if self.battle.escaped {
                     // Escape item succeeded: leave the encounter (no loot, no
                     // game-over) through the escape teardown's fade + exit
                     // hold instead of cycling the turn.
-                    self.battle_end = Some(BattleEndCause::Escaped);
+                    self.battle.end = Some(BattleEndCause::Escaped);
                     self.begin_battle_end_sequence();
                     return;
                 }
@@ -980,10 +981,10 @@ impl World {
                 // The AP charge (+5, idempotent per turn - the retail
                 // Square-press kernel). The guard stance has been up since
                 // the commit.
-                if let Some(gauge) = self.ap_gauges.get_mut(actor as usize) {
+                if let Some(gauge) = self.battle.ap_gauges.get_mut(actor as usize) {
                     gauge.charge_spirit();
                 }
-                if let Some(guard) = self.battle_guarding.get_mut(actor as usize) {
+                if let Some(guard) = self.battle.guarding.get_mut(actor as usize) {
                     *guard = true;
                 }
                 self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
@@ -1112,7 +1113,7 @@ impl World {
         use crate::battle_magic::{BattleSpellInput, SpellResolution};
         use crate::input::PadButton;
 
-        let Some(mut menu) = self.battle_spell_menu.take() else {
+        let Some(mut menu) = self.battle.spell_menu.take() else {
             return;
         };
 
@@ -1155,7 +1156,7 @@ impl World {
                 self.open_battle_command(actor);
             }
             None => {
-                self.battle_spell_menu = Some(menu);
+                self.battle.spell_menu = Some(menu);
             }
         }
     }
@@ -1193,7 +1194,13 @@ impl World {
                     .unwrap_or_else(|| format!("P{}", i + 1));
                 let mut row = TargetRow::new(i as u8, name)
                     .with_stats(a.battle.hp, a.battle.max_hp, a.battle.mp, mp_max)
-                    .with_statuses(self.status_effects.statuses(i as u8).iter().map(|s| s.kind));
+                    .with_statuses(
+                        self.battle
+                            .status_effects
+                            .statuses(i as u8)
+                            .iter()
+                            .map(|s| s.kind),
+                    );
                 row.alive = a.battle.liveness != 0;
                 Some(row)
             })
@@ -1245,7 +1252,7 @@ impl World {
         if self.current_dialog.is_some() || self.inline_dialogue.is_some() {
             return None;
         }
-        let menu = self.battle_item_menu.as_ref()?;
+        let menu = self.battle.item_menu.as_ref()?;
         let view = menu.menu_view();
         let description = view
             .selected_id
@@ -1315,7 +1322,7 @@ impl World {
         use crate::input::PadButton;
         use crate::inventory_use::{InventoryUseInput, InventoryUseState};
 
-        let Some(mut menu) = self.battle_item_menu.take() else {
+        let Some(mut menu) = self.battle.item_menu.take() else {
             return;
         };
 
@@ -1391,7 +1398,7 @@ impl World {
             }
             _ => {
                 // Still browsing / target-selecting - keep the menu open.
-                self.battle_item_menu = Some(menu);
+                self.battle.item_menu = Some(menu);
             }
         }
     }
@@ -1470,7 +1477,7 @@ impl World {
         if amount == 0 {
             return;
         }
-        self.battle_hit_fx.push(BattleHitFx {
+        self.battle.hit_fx.push(BattleHitFx {
             target_slot,
             amount,
             is_heal,

@@ -227,7 +227,7 @@ impl PlayWindowApp {
             self.sync_battle_hud_rows();
             for slot in 0..self.battle_hud.slots.len() as u8 {
                 self.battle_hud
-                    .sync_status(slot, &self.session.host.world.status_effects);
+                    .sync_status(slot, &self.session.host.world.battle.status_effects);
             }
         }
         self.battle_hud.tick();
@@ -1503,7 +1503,7 @@ impl PlayWindowApp {
             self.battle_intro_vram = None;
             return (None, Vec::new());
         };
-        let Some(entity) = self.session.host.world.battle_intro else {
+        let Some(entity) = self.session.host.world.battle.intro else {
             return (self.battle_intro.take(), Vec::new());
         };
         let total = self
@@ -1885,7 +1885,7 @@ impl PlayWindowApp {
         // still on screen" stands in for them. Escapes also raise 0xFE
         // but never set the celebration flag, so they stay excluded.
         let victory_window =
-            self.session.host.world.battle_end == Some(BattleEndCause::MonsterWipe);
+            self.session.host.world.battle.end == Some(BattleEndCause::MonsterWipe);
         let mut changed = false;
         for mf in &mut self.battle_faces {
             let Some(actor) = self.session.host.world.actors.get(mf.actor_slot) else {

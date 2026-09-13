@@ -486,7 +486,7 @@ fn use_item_attack_boost_raises_persistent_record_and_live_stat() {
         "persistent attack raised"
     );
     // Re-derived live battle stat reflects it.
-    assert_eq!(world.battle_attack[0], 21);
+    assert_eq!(world.battle.attack[0], 21);
 }
 
 #[test]
@@ -534,34 +534,34 @@ fn use_item_fury_boost_extends_ap_gauge_and_reverts_at_battle_end() {
         usable_in_battle: true,
         usable_in_field: false,
     });
-    world.ap_gauges[0] = crate::ap_gauge::ApGauge::with_base(10);
-    world.ap_gauges[0].current_ap = 6; // mid-turn, some AP already spent
+    world.battle.ap_gauges[0] = crate::ap_gauge::ApGauge::with_base(10);
+    world.battle.ap_gauges[0].current_ap = 6; // mid-turn, some AP already spent
 
     // Fury Boost extends the gauge by the retail ×7/5 ratio: base 10 -> 14, and
     // the live gauge gains the +4 delta immediately.
     let out = world.use_item(0x81, 0);
     assert_eq!(out, crate::items::ItemOutcome::ActionGaugeExtended);
-    assert_eq!(world.ap_gauges[0].base_ap, 14);
-    assert_eq!(world.ap_gauges[0].current_ap, 10);
-    assert_eq!(world.fury_boost[0], Some(4));
+    assert_eq!(world.battle.ap_gauges[0].base_ap, 14);
+    assert_eq!(world.battle.ap_gauges[0].current_ap, 10);
+    assert_eq!(world.battle.fury_boost[0], Some(4));
 
     // The boost survives a turn reset (it's "for one battle").
-    world.ap_gauges[0].reset_for_turn();
-    assert_eq!(world.ap_gauges[0].base_ap, 14);
-    assert_eq!(world.ap_gauges[0].current_ap, 14);
+    world.battle.ap_gauges[0].reset_for_turn();
+    assert_eq!(world.battle.ap_gauges[0].base_ap, 14);
+    assert_eq!(world.battle.ap_gauges[0].current_ap, 14);
 
     // Idempotent within the battle: a second Fury Boost does not compound.
     assert_eq!(
         world.use_item(0x81, 0),
         crate::items::ItemOutcome::ActionGaugeExtended
     );
-    assert_eq!(world.ap_gauges[0].base_ap, 14);
-    assert_eq!(world.fury_boost[0], Some(4));
+    assert_eq!(world.battle.ap_gauges[0].base_ap, 14);
+    assert_eq!(world.battle.fury_boost[0], Some(4));
 
     // Battle end reverts the extension and clears the flag.
     world.finish_battle();
-    assert_eq!(world.ap_gauges[0].base_ap, 10);
-    assert_eq!(world.fury_boost[0], None);
+    assert_eq!(world.battle.ap_gauges[0].base_ap, 10);
+    assert_eq!(world.battle.fury_boost[0], None);
 }
 
 #[test]
@@ -587,14 +587,15 @@ fn use_item_cure_clears_status() {
     world.actors[0].battle.hp = 50;
     // Apply a Toxic status, then cure it via CureAll.
     world
+        .battle
         .status_effects
         .apply_from_enemy_effect(0, EnemyEffect::Toxic);
-    assert!(world.status_effects.is_afflicted(0));
+    assert!(world.battle.status_effects.is_afflicted(0));
     world.set_item_catalog(full_test_catalog());
     // Antidote Flower is id 0x09 (CureAll).
     let outcome = world.use_item(0x09, 0);
     assert!(matches!(outcome, crate::items::ItemOutcome::CuredAll));
-    assert!(!world.status_effects.is_afflicted(0));
+    assert!(!world.battle.status_effects.is_afflicted(0));
 }
 
 #[test]
@@ -667,7 +668,7 @@ fn fold_battle_event_pushes_status_into_tracker() {
     for e in &events {
         world.fold_battle_event(e);
     }
-    assert!(world.status_effects.has(3, StatusKind::Toxic));
+    assert!(world.battle.status_effects.has(3, StatusKind::Toxic));
 }
 
 #[test]
@@ -676,7 +677,7 @@ fn tick_status_effects_drains_hp() {
     let mut world = World::new();
     world.actors[0].battle.hp = 100;
     world.actors[0].battle.max_hp = 160;
-    world.status_effects.apply(0, StatusKind::Toxic);
+    world.battle.status_effects.apply(0, StatusKind::Toxic);
     world.tick_status_effects();
     // Toxic drains max_hp / 16 = 160 / 16 = 10 (FUN_801E752C).
     assert_eq!(world.actors[0].battle.hp, 90);
@@ -685,11 +686,11 @@ fn tick_status_effects_drains_hp() {
 #[test]
 fn reset_party_ap_refills_all_three_gauges() {
     let mut world = World::new();
-    for g in world.ap_gauges.iter_mut() {
+    for g in world.battle.ap_gauges.iter_mut() {
         g.try_spend(3);
     }
     world.reset_party_ap();
-    for g in world.ap_gauges.iter() {
+    for g in world.battle.ap_gauges.iter() {
         assert_eq!(g.current_ap, g.base_ap);
         assert!(!g.spirit_charged);
     }

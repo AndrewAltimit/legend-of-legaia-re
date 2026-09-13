@@ -35,16 +35,16 @@ fn active_party_maps_battle_ordinals_to_characters() {
     // Actor mirrors reseeded per the mapping.
     assert_eq!(world.actors[0].battle.max_hp, 200, "ordinal 0 = Noa's HP");
     assert_eq!(world.actors[1].battle.max_hp, 400, "ordinal 1 = Terra's HP");
-    assert_eq!(world.battle_speed[0], 10);
-    assert_eq!(world.battle_speed[1], 20);
+    assert_eq!(world.battle.speed[0], 10);
+    assert_eq!(world.battle.speed[1], 20);
     // Stat seeding folds the OCCUPYING character's record onto the ordinal.
     world.seed_party_battle_stats();
     assert_eq!(
-        world.battle_attack[0], 22,
+        world.battle.attack[0], 22,
         "ordinal 0 attacks with Noa's ATK"
     );
     assert_eq!(
-        world.battle_attack[1], 44,
+        world.battle.attack[1], 44,
         "ordinal 1 attacks with Terra's ATK"
     );
 }

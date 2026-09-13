@@ -64,7 +64,7 @@ fn battle_complete_fires_on_party_wipe() {
     // in the same frame it completes, which consumes `battle_end` into
     // `game_over` (see `World::finish_battle`).
     assert_eq!(world.step_battle(), StepOutcome::BattleComplete);
-    assert_eq!(world.battle_end, Some(BattleEndCause::PartyWipe));
+    assert_eq!(world.battle.end, Some(BattleEndCause::PartyWipe));
 
     let mut world = build_world(3);
     for i in 0..3 {

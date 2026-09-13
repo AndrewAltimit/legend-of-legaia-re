@@ -173,15 +173,15 @@ fn move_power_table_drives_monster_special_attack_damage() {
         world.actors[0].battle.max_hp = 4000;
         world.actors[0].battle.hp = 4000;
         world.actors[0].battle.liveness = 1;
-        world.battle_accuracy[0] = 30;
-        world.battle_defense[0] = 40;
+        world.battle.accuracy[0] = 30;
+        world.battle.defense[0] = 40;
         // Bandit Boss (id 5) at slot 1: casts magic[0] = Flame (0x20) on seed 0.
         world.actors[1].battle.max_hp = 120;
         world.actors[1].battle.hp = 120;
         world.actors[1].battle.mp = 10;
         world.actors[1].battle.liveness = 1;
         world.actors[1].battle_monster_id = Some(5);
-        world.battle_accuracy[1] = 25;
+        world.battle.accuracy[1] = 25;
         world.set_battle_magic(1, 40);
         if install_table {
             world.tables.move_power =
@@ -263,14 +263,14 @@ fn elemental_guard_accessory_halves_matching_monster_special() {
         world.actors[0].battle.max_hp = 4000;
         world.actors[0].battle.hp = 4000;
         world.actors[0].battle.liveness = 1;
-        world.battle_accuracy[0] = 30;
-        world.battle_defense[0] = 40;
+        world.battle.accuracy[0] = 30;
+        world.battle.defense[0] = 40;
         world.actors[1].battle.max_hp = 120;
         world.actors[1].battle.hp = 120;
         world.actors[1].battle.mp = 10;
         world.actors[1].battle.liveness = 1;
         world.actors[1].battle_monster_id = Some(5);
-        world.battle_accuracy[1] = 25;
+        world.battle.accuracy[1] = 25;
         world.set_battle_magic(1, 40);
         world.tables.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
 
@@ -358,8 +358,8 @@ fn escape_world(party_speed: u16, enemy_speed: u16, passive: Option<u8>) -> Worl
     world.actors[1].battle.max_hp = 300;
     world.actors[1].battle.hp = 300;
     world.actors[1].battle.liveness = 1;
-    world.battle_speed[0] = party_speed;
-    world.battle_speed[1] = enemy_speed;
+    world.battle.speed[0] = party_speed;
+    world.battle.speed[1] = enemy_speed;
     let mut party = legaia_save::Party::zeroed(1);
     if let Some(idx) = passive {
         world.set_accessory_passives(AccessoryPassives::from_entries([(0x50, idx)], []));
@@ -498,7 +498,7 @@ fn latched_preemptive_strike_still_loses_to_the_no_escape_flag() {
         let mut w = escape_world(1000, 1, None);
         w.rng_state = seed;
         w.set_battle_formation_latched(FormationAdvantage::Preemptive);
-        w.battle_no_escape = true;
+        w.battle.no_escape = true;
         assert!(
             !w.roll_battle_escape(),
             "seed {seed}: ctx+0x287 outranks the pre-emptive arm"
@@ -522,7 +522,7 @@ fn seed_then_latch_feeds_both_formation_consumers() {
         w.actors[slot].battle.liveness = 1;
         w.actors[slot].battle.hp = 100;
         w.actors[slot].battle.max_hp = 100;
-        w.battle_speed[slot] = 40;
+        w.battle.speed[slot] = 40;
     }
     w.set_battle_formation(FormationAdvantage::Preemptive);
 
@@ -575,7 +575,7 @@ fn side_lockout_follows_party_count_not_the_fixed_retail_boundary() {
             w.actors[slot].battle.liveness = 1;
             w.actors[slot].battle.hp = 100;
             w.actors[slot].battle.max_hp = 100;
-            w.battle_speed[slot] = 40;
+            w.battle.speed[slot] = 40;
         }
         w.set_battle_formation(advantage);
         w.rng_state = 3;
@@ -615,7 +615,7 @@ fn initiative_keys_carry_the_wounded_bonus_from_the_kernel() {
         for slot in 0..2 {
             w.actors[slot].battle.liveness = 1;
             w.actors[slot].battle.max_hp = 1000;
-            w.battle_speed[slot] = 10;
+            w.battle.speed[slot] = 10;
         }
         w.actors[0].battle.hp = 1; // near death
         w.actors[1].battle.hp = 1000; // untouched
@@ -701,14 +701,14 @@ fn element_affinity_scales_monster_special_attack_damage() {
         world.actors[0].battle.max_hp = 4000;
         world.actors[0].battle.hp = 4000;
         world.actors[0].battle.liveness = 1;
-        world.battle_accuracy[0] = 30;
-        world.battle_defense[0] = 40;
+        world.battle.accuracy[0] = 30;
+        world.battle.defense[0] = 40;
         world.actors[1].battle.max_hp = 120;
         world.actors[1].battle.hp = 120;
         world.actors[1].battle.mp = 10;
         world.actors[1].battle.liveness = 1;
         world.actors[1].battle_monster_id = Some(5);
-        world.battle_accuracy[1] = 25;
+        world.battle.accuracy[1] = 25;
         world.set_battle_magic(1, 40);
         world.tables.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
         // vanilla monster 5 has the default element 7 (neutral); the party
@@ -818,13 +818,13 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
         world.actors[0].battle.mp = 40;
         world.actors[0].battle.liveness = 1;
         world.set_battle_magic(0, 40);
-        world.battle_accuracy[0] = 200;
+        world.battle.accuracy[0] = 200;
         // Target = enemy slot 1, identified to the catalog by monster id.
         world.actors[1].battle.max_hp = 4000;
         world.actors[1].battle.hp = 4000;
         world.actors[1].battle.liveness = 1;
         world.actors[1].battle_monster_id = Some(5);
-        world.battle_defense[1] = 0;
+        world.battle.defense[1] = 0;
 
         if let Some(pct) = affinity_pct {
             let mut matrix = [[100u8; 8]; 8];
@@ -896,13 +896,13 @@ fn player_summon_cast_matches_the_summon_kernel_composition() {
         world.actors[0].battle.mp = 40;
         world.actors[0].battle.liveness = 1;
         world.set_battle_magic(0, 40);
-        world.battle_accuracy[0] = 25;
+        world.battle.accuracy[0] = 25;
         world.actors[1].battle.max_hp = 4000;
         world.actors[1].battle.hp = 4000;
         world.actors[1].battle.liveness = 1;
         world.actors[1].battle_monster_id = Some(5);
-        world.battle_accuracy[1] = 12;
-        world.battle_defense[1] = 30;
+        world.battle.accuracy[1] = 12;
+        world.battle.defense[1] = 30;
         world.rng_state = SEED;
         world
     }
@@ -1062,14 +1062,14 @@ fn flame_caster_battle(impact: u8) -> World {
     world.actors[0].battle.max_hp = 4000;
     world.actors[0].battle.hp = 4000;
     world.actors[0].battle.liveness = 1;
-    world.battle_accuracy[0] = 30;
-    world.battle_defense[0] = 40;
+    world.battle.accuracy[0] = 30;
+    world.battle.defense[0] = 40;
     world.actors[1].battle.max_hp = 120;
     world.actors[1].battle.hp = 120;
     world.actors[1].battle.mp = 10;
     world.actors[1].battle.liveness = 1;
     world.actors[1].battle_monster_id = Some(5);
-    world.battle_accuracy[1] = 25;
+    world.battle.accuracy[1] = 25;
     world.set_battle_magic(1, 40);
     world.tables.move_power =
         MovePowerCatalog::from_overlay_0898(&overlay_flame_with_impact(impact));
@@ -1084,7 +1084,7 @@ fn flame_caster_battle(impact: u8) -> World {
 /// Stage one already-resolved damaging impact on `target` so the applier has an
 /// impact list without re-running the cast.
 fn stage_impact(world: &mut World, target: u8) {
-    world.battle_hit_fx.push(BattleHitFx {
+    world.battle.hit_fx.push(BattleHitFx {
         target_slot: target,
         amount: 100,
         is_heal: false,
@@ -1118,7 +1118,7 @@ fn enemy_special_impact_selector_5_rots_the_party_target() {
         "the special connected (a status proc needs an impact)"
     );
     assert!(
-        !none.status_effects.is_afflicted(0),
+        !none.battle.status_effects.is_afflicted(0),
         "selector 0 applies no status - the wire is selector-driven, not unconditional"
     );
 
@@ -1128,11 +1128,11 @@ fn enemy_special_impact_selector_5_rots_the_party_target() {
     tick_until_cast_folds(&mut rot);
     assert_eq!(rot.actors[1].battle.params[0], 0x20, "picker chose Flame");
     assert!(
-        rot.status_effects.has(0, StatusKind::Rot),
+        rot.battle.status_effects.has(0, StatusKind::Rot),
         "the enemy special's +0x0A selector 5 rotted the party member"
     );
     assert!(
-        rot.status_effects.rot_limb(0).is_some(),
+        rot.battle.status_effects.rot_limb(0).is_some(),
         "the applier rolled which limb the Rot disables (rand % 3)"
     );
     assert_eq!(
@@ -1155,7 +1155,7 @@ fn enemy_special_rot_is_blocked_by_rot_guard_and_master_guard() {
         world.take_monster_turn(1);
         tick_until_cast_folds(&mut world);
         assert!(
-            !world.status_effects.has(0, StatusKind::Rot),
+            !world.battle.status_effects.has(0, StatusKind::Rot),
             "ability bit {bit:#x} (Rot Guard / Master Guard) blocks the Rot arm"
         );
     }
@@ -1165,7 +1165,7 @@ fn enemy_special_rot_is_blocked_by_rot_guard_and_master_guard() {
     world.take_monster_turn(1);
     tick_until_cast_folds(&mut world);
     assert!(
-        world.status_effects.has(0, StatusKind::Rot),
+        world.battle.status_effects.has(0, StatusKind::Rot),
         "an unrelated passive leaves the Rot arm alone"
     );
 }
@@ -1185,7 +1185,7 @@ fn enemy_special_dot_arms_are_a_one_in_eight_roll() {
             world.rng_state = seed;
             stage_impact(&mut world, 0);
             world.apply_enemy_move_status(1, 0x20, 0);
-            if world.status_effects.has(0, kind) {
+            if world.battle.status_effects.has(0, kind) {
                 landed += 1;
             }
         }
@@ -1211,7 +1211,7 @@ fn enemy_applied_toxic_ticks_at_the_round_boundary() {
             w.rng_state = s;
             stage_impact(&mut w, 0);
             w.apply_enemy_move_status(1, 0x20, 0);
-            w.status_effects.has(0, StatusKind::Toxic)
+            w.battle.status_effects.has(0, StatusKind::Toxic)
         })
         .expect("some seed lands the 1-in-8 Toxic gate");
 
@@ -1219,7 +1219,7 @@ fn enemy_applied_toxic_ticks_at_the_round_boundary() {
     world.rng_state = seed;
     stage_impact(&mut world, 0);
     world.apply_enemy_move_status(1, 0x20, 0);
-    assert!(world.status_effects.has(0, StatusKind::Toxic));
+    assert!(world.battle.status_effects.has(0, StatusKind::Toxic));
 
     let hp_before = world.actors[0].battle.hp;
     crate::battle_round::BattleRound::end(&mut world);
@@ -1238,7 +1238,7 @@ fn enemy_move_status_applier_rejects_a_party_caster() {
     stage_impact(&mut world, 1);
     world.apply_enemy_move_status(0, 0x20, 0);
     assert!(
-        !world.status_effects.is_afflicted(1),
+        !world.battle.status_effects.is_afflicted(1),
         "a party-slot caster is rejected by the applier's own seat guard"
     );
 }

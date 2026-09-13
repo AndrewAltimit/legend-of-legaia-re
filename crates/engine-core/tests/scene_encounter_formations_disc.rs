@@ -223,7 +223,7 @@ fn a_region_scene_still_reaches_battle_after_the_new_game_reset() {
         };
         world.seat_player_at_tile_rescued(cx, cz);
         world.live_gameplay_loop = true;
-        world.battle_player_driven = false;
+        world.battle.player_driven = false;
 
         let mut triggered = false;
         for _ in 0..40_000 {
@@ -270,7 +270,7 @@ fn force_encounter_drives_a_named_row_through_the_normal_transition() {
     }
     host.world.arm_live_loop(scene, &LiveLoopOpts::playable());
     host.world.live_gameplay_loop = true;
-    host.world.battle_player_driven = false;
+    host.world.battle.player_driven = false;
     let world = &mut host.world;
 
     // An unregistered row changes nothing.

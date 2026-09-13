@@ -408,7 +408,11 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
         "the gate flag 0x142 stays clear during the fight (no victory latch)"
     );
     assert_eq!(
-        host.world.active_formation.as_ref().map(|f| f.formation_id),
+        host.world
+            .battle
+            .active_formation
+            .as_ref()
+            .map(|f| f.formation_id),
         Some(RIKUROA_BOSS_FORMATION_ROW),
         "the battle formation is MAN row 17, not a synthetic boss id"
     );
@@ -422,7 +426,7 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
     // the player-driven command menu would otherwise open on Vahn's turn and
     // hold the Done band's menu floor forever - the subject is the flag
     // chain, not the command UI.
-    host.world.battle_player_driven = false;
+    host.world.battle.player_driven = false;
     for a in host.world.actors.iter_mut().skip(party) {
         if a.battle_monster_id.is_some() {
             let delta = i32::from(a.battle.hp);

@@ -193,24 +193,24 @@ fn seed_party_battle_stats_folds_live_stats_and_equipment() {
     // Retail seeds the actor's ATK without equipment (`FUN_80053CB8` folds
     // UDF / LDF / SPD only); the weapon's +7 reaches a swing at execution
     // time as `+7 >> 1` for the command that reads its slot.
-    assert_eq!(world.battle_attack[0], 30, "base ATK, no equipment fold");
+    assert_eq!(world.battle.attack[0], 30, "base ATK, no equipment fold");
     assert_eq!(
-        world.battle_equip_atk[0],
+        world.battle.equip_atk[0],
         [7, 0, 0, 0, 0],
         "per-slot equipment attack bytes"
     );
     assert_eq!(
-        legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(0x11, &world.battle_equip_atk[0]),
+        legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(0x11, &world.battle.equip_atk[0]),
         Some(3),
         "an art folds half the sum of all five slots"
     );
     assert_eq!(
-        legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(0x0C, &world.battle_equip_atk[0]),
+        legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(0x0C, &world.battle.equip_atk[0]),
         Some(0),
         "the left-arm command reads slot 2, which is empty here"
     );
     assert_eq!(
-        world.battle_defense_split[0],
+        world.battle.defense_split[0],
         Some((13, 10)),
         "(10+3) UDF, (8+2) LDF"
     );
@@ -224,8 +224,8 @@ fn seed_party_battle_stats_skips_zeroed_roster() {
     world.set_battle_attack(0, 60);
     world.load_party(legaia_save::Party::zeroed(3));
     world.seed_party_battle_stats();
-    assert_eq!(world.battle_attack[0], 60, "zeroed roster leaves it intact");
-    assert_eq!(world.battle_defense_split[0], None);
+    assert_eq!(world.battle.attack[0], 60, "zeroed roster leaves it intact");
+    assert_eq!(world.battle.defense_split[0], None);
 }
 
 #[test]
@@ -250,14 +250,20 @@ fn seed_party_battle_stats_scales_ap_base_with_level() {
     world.load_party(party);
 
     world.seed_party_battle_stats();
-    assert_eq!(world.ap_gauges[0].base_ap, 4, "level 1 -> base 4");
-    assert_eq!(world.ap_gauges[1].base_ap, 6, "level 23 -> 4 + 23/10 = 6");
-    assert_eq!(world.ap_gauges[2].base_ap, 10, "level 99 -> capped at 10");
+    assert_eq!(world.battle.ap_gauges[0].base_ap, 4, "level 1 -> base 4");
+    assert_eq!(
+        world.battle.ap_gauges[1].base_ap, 6,
+        "level 23 -> 4 + 23/10 = 6"
+    );
+    assert_eq!(
+        world.battle.ap_gauges[2].base_ap, 10,
+        "level 99 -> capped at 10"
+    );
 
     // The round-start reset picks up the seeded base as the per-turn budget.
     world.reset_party_ap();
-    assert_eq!(world.ap_gauges[1].current_ap, 6);
-    assert_eq!(world.ap_gauges[2].current_ap, 10);
+    assert_eq!(world.battle.ap_gauges[1].current_ap, 6);
+    assert_eq!(world.battle.ap_gauges[2].current_ap, 10);
 }
 
 #[test]
@@ -434,9 +440,13 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
         world.tick();
     }
     assert_eq!(world.mode, SceneMode::Battle);
-    assert_eq!(world.battle_return_mode, SceneMode::Field);
+    assert_eq!(world.battle.return_mode, SceneMode::Field);
     assert!(world.field_return.is_some());
-    let formation = world.active_formation.as_ref().expect("active formation");
+    let formation = world
+        .battle
+        .active_formation
+        .as_ref()
+        .expect("active formation");
     assert_eq!(
         formation.slots[0].monster_id, 0x4F,
         "Tetsu in the enemy slot"
@@ -632,7 +642,7 @@ fn boss_battle_entry_writes_no_flags() {
     }
     assert!(matches!(world.mode, SceneMode::Battle));
     // The scripted fight refuses the Run command (retail `ctx+0x287`).
-    assert!(world.battle_no_escape, "scripted battle sets no-escape");
+    assert!(world.battle.no_escape, "scripted battle sets no-escape");
     assert!(
         !world.system_flag_test(0x289),
         "no engine stamp: the marker comes from the record's bytes"
@@ -667,18 +677,19 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
     // BGM + bundle load - three ticks reach it.
     world.tick_encounter();
     assert!(
-        world.battle_intro.is_some(),
+        world.battle.intro.is_some(),
         "armed on the transition frame"
     );
     world.tick_encounter();
     world.tick_encounter();
     assert!(
         world
-            .battle_intro_effects
+            .battle
+            .intro_effects
             .iter()
             .any(|e| matches!(e, TransitionEffect::LoadBattleBgm { battle_id: 3 })),
         "phase 2 loads the battle BGM: {:?}",
-        world.battle_intro_effects
+        world.battle.intro_effects
     );
     assert_eq!(
         world.audio.current_bgm,
@@ -697,7 +708,7 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
         world.encounter.as_ref().unwrap().phase(),
         EncounterPhase::Triggered(_)
     ));
-    assert!(world.battle_intro.is_none());
+    assert!(world.battle.intro.is_none());
 }
 
 #[test]

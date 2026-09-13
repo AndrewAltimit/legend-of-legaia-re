@@ -413,6 +413,7 @@ impl World {
         // to `mp` itself when not separately tracked, which gives a
         // conservative "MP already capped" reading).
         let status_mask = self
+            .battle
             .status_effects
             .statuses(target_slot)
             .iter()
@@ -476,10 +477,10 @@ impl World {
                 }
             }
             crate::items::ItemOutcome::Cured { kind } => {
-                self.status_effects.cure(target_slot, kind);
+                self.battle.status_effects.cure(target_slot, kind);
             }
             crate::items::ItemOutcome::CuredAll => {
-                self.status_effects.cure_all(target_slot);
+                self.battle.status_effects.cure_all(target_slot);
             }
             crate::items::ItemOutcome::Revived { hp_after } => {
                 if field_roster {
@@ -492,9 +493,11 @@ impl World {
                     a.battle.hp = hp_after.min(a.battle.max_hp);
                 }
             }
-            crate::items::ItemOutcome::SpiritGained { amount } if idx < self.ap_gauges.len() => {
+            crate::items::ItemOutcome::SpiritGained { amount }
+                if idx < self.battle.ap_gauges.len() =>
+            {
                 // Refund AP into the active actor's gauge if it's a party slot.
-                self.ap_gauges[idx].refund(amount);
+                self.battle.ap_gauges[idx].refund(amount);
             }
             crate::items::ItemOutcome::DamageDealt { amount } => {
                 // Offensive item (e.g. Bomb): subtract HP from the enemy slot
@@ -515,7 +518,7 @@ impl World {
             crate::items::ItemOutcome::EscapeRequested => {
                 // Escape item (e.g. Goblin Foot): flag the encounter to end;
                 // the battle item-menu tick returns to the field.
-                self.battle_escaped = true;
+                self.battle.escaped = true;
             }
             crate::items::ItemOutcome::StatRaised { target, delta } => {
                 // Permanent stat-up consumable (Power Tonic, Vital Tonic, ...):
@@ -569,19 +572,19 @@ impl World {
     /// a non-party slot.
     fn apply_fury_boost_item(&mut self, target_slot: u8) -> crate::items::ItemOutcome {
         let idx = target_slot as usize;
-        if idx >= self.ap_gauges.len() {
+        if idx >= self.battle.ap_gauges.len() {
             return crate::items::ItemOutcome::NoEffect;
         }
         // Already boosted this battle: retail re-sets the same flag, no compound.
-        if self.fury_boost[idx].is_none() {
-            let gauge = &mut self.ap_gauges[idx];
+        if self.battle.fury_boost[idx].is_none() {
+            let gauge = &mut self.battle.ap_gauges[idx];
             let before = gauge.base_ap;
             let after = ((before as u16 * 7) / 5) as u8;
             let delta = after.saturating_sub(before);
             gauge.set_base_ap(after);
             // Extend the live gauge so the longer budget is usable this turn.
             gauge.current_ap = gauge.current_ap.saturating_add(delta);
-            self.fury_boost[idx] = Some(delta);
+            self.battle.fury_boost[idx] = Some(delta);
         }
         crate::items::ItemOutcome::ActionGaugeExtended
     }
@@ -791,7 +794,7 @@ impl World {
     /// Reset every party-member's AP gauge for a new turn. Refills to
     /// `base_ap`, clears the Spirit-charged flag.
     pub fn reset_party_ap(&mut self) {
-        for g in self.ap_gauges.iter_mut() {
+        for g in self.battle.ap_gauges.iter_mut() {
             g.reset_for_turn();
         }
     }
@@ -800,7 +803,7 @@ impl World {
     /// resolution. Engines call this when a character equips / unequips a
     /// weapon, or once at battle init from the active stat record.
     pub fn set_battle_attack(&mut self, slot: u8, atk: u16) {
-        if let Some(s) = self.battle_attack.get_mut(slot as usize) {
+        if let Some(s) = self.battle.attack.get_mut(slot as usize) {
             *s = atk;
         }
     }
@@ -809,7 +812,7 @@ impl World {
     /// resolution. Engines call this at battle init from the active stat
     /// record's magic stat.
     pub fn set_battle_magic(&mut self, slot: u8, mag: u16) {
-        if let Some(s) = self.battle_magic.get_mut(slot as usize) {
+        if let Some(s) = self.battle.magic.get_mut(slot as usize) {
             *s = mag;
         }
     }
@@ -817,7 +820,7 @@ impl World {
     /// Set the per-slot generic defense - used when no UDF / LDF split is
     /// configured for the slot.
     pub fn set_battle_defense(&mut self, slot: u8, def: u16) {
-        if let Some(s) = self.battle_defense.get_mut(slot as usize) {
+        if let Some(s) = self.battle.defense.get_mut(slot as usize) {
             *s = def;
         }
     }
@@ -825,7 +828,7 @@ impl World {
     /// Set per-slot UDF / LDF defense override. Replaces any prior value.
     /// Pass `None` to revert to [`Self::set_battle_defense`].
     pub fn set_battle_defense_split(&mut self, slot: u8, udf_ldf: Option<(u16, u16)>) {
-        if let Some(s) = self.battle_defense_split.get_mut(slot as usize) {
+        if let Some(s) = self.battle.defense_split.get_mut(slot as usize) {
             *s = udf_ldf;
         }
     }
@@ -843,7 +846,7 @@ impl World {
         // If we have a UDF / LDF split for the slot, pick the half that
         // matches the strike's power target. Otherwise fall back to the
         // single defense value.
-        if let Some(Some((udf, ldf))) = self.battle_defense_split.get(idx)
+        if let Some(Some((udf, ldf))) = self.battle.defense_split.get(idx)
             && let Some(legaia_art::power::PowerByte::Damage(p)) = info.power
         {
             return match p.target {
@@ -851,7 +854,7 @@ impl World {
                 legaia_art::power::PowerTarget::Ldf => *ldf,
             };
         }
-        self.battle_defense.get(idx).copied().unwrap_or(0)
+        self.battle.defense.get(idx).copied().unwrap_or(0)
     }
 
     /// Distribute `xp_reward` (the summed enemy EXP) to the surviving party

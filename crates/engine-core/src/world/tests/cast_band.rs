@@ -18,7 +18,7 @@ fn seru_cast_world() -> World {
     while world.actors.len() < 12 {
         world.actors.push(Actor::default());
     }
-    world.battle_player_driven = true;
+    world.battle.player_driven = true;
     world.mode = SceneMode::Battle;
     world.tables.spell_catalog = crate::retail_magic::retail_seru_magic_catalog();
     world.actors[0].active = true;
@@ -42,7 +42,7 @@ fn seru_cast_world() -> World {
     party.members[0].set_spell_list(list);
     world.roster = party;
     world.battle_ctx.active_actor = 0;
-    world.battle_spell_menu = world.build_battle_spell_session(0);
+    world.battle.spell_menu = world.build_battle_spell_session(0);
     world
 }
 
@@ -66,7 +66,7 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
     confirm_cast(&mut world);
 
     // The confirm armed the band, not the fold: nothing has landed yet.
-    assert!(world.battle_spell_menu.is_none(), "spell menu closed");
+    assert!(world.battle.spell_menu.is_none(), "spell menu closed");
     assert_eq!(
         world.actors[0].battle.mp, 50,
         "no MP charged at the confirm"
@@ -130,7 +130,7 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
         if folded_at.is_none() && world.pending_cast.is_none() {
             folded_at = Some(tick);
         }
-        if world.battle_command.is_some() || world.battle_ctx.active_actor != 0 {
+        if world.battle.command.is_some() || world.battle_ctx.active_actor != 0 {
             break;
         }
     }

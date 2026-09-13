@@ -379,7 +379,8 @@ impl World {
         );
         let cursor = step.cursor;
         for s in &step.spawns {
-            self.battle_effect_spawns
+            self.battle
+                .effect_spawns
                 .push(crate::battle_events::BattleEffectSpawn {
                     actor_slot: i as u8,
                     effect: s.effect & !fx::EFFECT_DIRECT_BIT,
@@ -1391,7 +1392,7 @@ impl World {
                 a.battle.mp = hms.mp_cur;
                 a.battle.liveness = if hms.hp_cur > 0 { 1 } else { 0 };
             }
-            if let Some(s) = self.battle_speed.get_mut(member) {
+            if let Some(s) = self.battle.speed.get_mut(member) {
                 *s = rec.live_stats().spd;
             }
         }
@@ -1422,7 +1423,7 @@ impl World {
     // PORT: FUN_800513F0 (battle setup: seat stamping from the SCUS tables)
     pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
-        self.battle_monster_flee_attempted = false;
+        self.battle.monster_flee_attempted = false;
         self.party_count = party_count.min(3);
         let monster_count = monster_count.min(5);
         let actor_count = ((self.party_count as usize) + (monster_count as usize)).min(MAX_ACTORS);
@@ -1456,7 +1457,7 @@ impl World {
         // avoid pulling battle_action::ActionState into world.rs imports.
         self.battle_ctx = vm::battle_action::BattleActionCtx::new();
         self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
-        self.battle_end = None;
+        self.battle.end = None;
         // Effect pool is reused across scenes - reset to a fresh instance
         // (per-battle the head/free-list rebuilds from scratch).
         self.effect_pool = vm::effect_vm::Pool::new();
@@ -1467,15 +1468,15 @@ impl World {
         // (`World::prime_battle_tutorial`); both are evaluated so a forced
         // fight still consumes an armed flag rather than leaving it to fire
         // again on the next battle.
-        self.battle_tutorial = None;
-        self.battle_tutorial_boxes.clear();
-        self.battle_flow = crate::battle_flow::BattleFlowState::Idle;
-        self.battle_round_flow = crate::battle_round::RoundFlow::default();
+        self.battle.tutorial = None;
+        self.battle.tutorial_boxes.clear();
+        self.battle.flow = crate::battle_flow::BattleFlowState::Idle;
+        self.battle.round_flow = crate::battle_round::RoundFlow::default();
         // `ctx[+0x289]`: the side-band's stage-1 phase starts at 0 with the
         // rest of the battle context.
-        self.battle_sparring_phase = 0;
+        self.battle.sparring_phase = 0;
         let armed_by_disc = self.take_battle_tutorial_arm();
-        if self.battle_tutorial_pending || armed_by_disc {
+        if self.battle.tutorial_pending || armed_by_disc {
             self.arm_battle_tutorial();
         }
     }

@@ -290,7 +290,7 @@ fn world_map_live_walk_reaches_battle() {
         reached,
         "walking the overworld in-region reaches a battle within the budget"
     );
-    assert_eq!(world.battle_return_mode, SceneMode::WorldMap);
+    assert_eq!(world.battle.return_mode, SceneMode::WorldMap);
 }
 
 /// Every kingdom overworld scene loads a **non-empty** walkability grid into
