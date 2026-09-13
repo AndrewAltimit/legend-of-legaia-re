@@ -33,7 +33,7 @@ fn precise_movement_walks_true_diagonals_at_full_speed() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.install_field_player(0);
-    world.precise_movement = true;
+    world.locomotion.precise_movement = true;
     world.actors[0].move_state.world_x = 400;
     world.actors[0].move_state.world_z = 400;
     // Up+Right in precise mode: the normalised 45-degree vector at speed 8
@@ -59,8 +59,8 @@ fn precise_movement_honours_continuous_camera_azimuth() {
         let mut world = World::new();
         world.mode = SceneMode::Field;
         world.install_field_player(0);
-        world.precise_movement = precise;
-        world.field_camera_azimuth = 512;
+        world.locomotion.precise_movement = precise;
+        world.locomotion.camera_azimuth = 512;
         world.actors[0].move_state.world_x = 400;
         world.actors[0].move_state.world_z = 400;
         for _ in 0..4 {
@@ -90,7 +90,7 @@ fn precise_movement_passes_analog_stick_angle_through() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.install_field_player(0);
-    world.precise_movement = true;
+    world.locomotion.precise_movement = true;
     world.actors[0].move_state.world_x = 400;
     world.actors[0].move_state.world_z = 400;
     // Stick deflected up-and-slightly-right (~26.6 degrees off forward):
@@ -124,7 +124,11 @@ fn precise_movement_off_is_bit_identical_to_quantised_path() {
     let _ = world.tick();
     assert_eq!(world.actors[0].move_state.world_z, 406);
     assert_eq!(world.actors[0].move_state.world_x, 406);
-    assert_eq!(world.precise_move_carry, (0.0, 0.0), "carry untouched");
+    assert_eq!(
+        world.locomotion.precise_move_carry,
+        (0.0, 0.0),
+        "carry untouched"
+    );
 }
 
 #[test]
@@ -132,7 +136,7 @@ fn precise_movement_stops_at_wall() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.install_field_player(0);
-    world.precise_movement = true;
+    world.locomotion.precise_movement = true;
     world.actors[0].move_state.world_x = 200;
     world.actors[0].move_state.world_z = 250;
     // Same wall band as `locomotion_stops_at_wall` - the precise stepper
@@ -191,7 +195,7 @@ fn locomotion_follows_terrain_height_only_when_gated_on() {
     assert_eq!(world.actors[0].move_state.world_y, 20);
 
     // Gate on: the next step snaps Y to the sampled floor height.
-    world.follow_terrain_height = true;
+    world.locomotion.follow_terrain_height = true;
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
     assert_eq!(world.actors[0].move_state.world_y, -40);
@@ -430,7 +434,7 @@ fn ledge_world(height: i16) -> World {
     world.terrain.collision_grid = vec![0u8; FIELD_GRID_LEN];
     // Opt into the retail glide so the settle is observable; it is off by
     // default so the flat-Y locomotion oracles keep their exact positions.
-    world.field_vertical_settle = true;
+    world.locomotion.vertical_settle = true;
     world.terrain.floor_height_lut = [0i16; 16];
     world.terrain.floor_height_lut[1] = height;
     // The floor sampler reads the 2x2 corner block at tile (2, 2).
@@ -450,12 +454,13 @@ fn ledge_hop_posted_through_frame_tick() {
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
     assert_eq!(
-        world.field_step_delta,
+        world.locomotion.step_delta,
         (0, 8),
         "the committed +Z sub-step records the retail probe delta"
     );
     let hop = world
-        .field_ledge_hop
+        .locomotion
+        .ledge_hop
         .expect("the frame tick runs the vertical controller and it posts the hop");
     assert_eq!(hop.kind, 0x10, "a drop is retail hop class 0x10");
     assert!(!hop.is_up());
@@ -475,7 +480,10 @@ fn ledge_hop_up_class_takes_the_taller_apex() {
     let mut world = ledge_world(-200);
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
-    let hop = world.field_ledge_hop.expect("a raised tile is a ledge too");
+    let hop = world
+        .locomotion
+        .ledge_hop
+        .expect("a raised tile is a ledge too");
     assert_eq!(hop.kind, 0x18, "a step up is retail hop class 0x18");
     assert!(hop.is_up());
     assert_eq!(hop.arc.step, 0x100, "0x1000 / 0x10 frames");
@@ -488,9 +496,13 @@ fn ledge_hop_refused_on_flat_ground() {
     let mut world = ledge_world(8);
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
-    assert_eq!(world.field_step_delta, (0, 8), "the walk still committed");
+    assert_eq!(
+        world.locomotion.step_delta,
+        (0, 8),
+        "the walk still committed"
+    );
     assert!(
-        world.field_ledge_hop.is_none(),
+        world.locomotion.ledge_hop.is_none(),
         "a sub-threshold rise is flat ground - no hop"
     );
     // Non-vacuous: `is_none()` is trivially true if the controller never
@@ -521,7 +533,7 @@ fn ledge_hop_refused_when_wall_ahead() {
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
     assert!(
-        world.field_ledge_hop.is_none(),
+        world.locomotion.ledge_hop.is_none(),
         "a wall at the forward probe refuses the hop"
     );
     // Non-vacuous, as above: the settle ran, rate-clamped to 12 units of the
@@ -541,16 +553,16 @@ fn step_delta_clears_on_an_input_free_frame() {
     let mut world = ledge_world(8);
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
-    assert_eq!(world.field_step_delta, (0, 8));
+    assert_eq!(world.locomotion.step_delta, (0, 8));
     world.set_pad(0);
     let _ = world.tick();
     assert_eq!(
-        world.field_step_delta,
+        world.locomotion.step_delta,
         (0, 0),
         "an input-free frame clears the step delta"
     );
     assert!(
-        world.field_ledge_hop.is_none(),
+        world.locomotion.ledge_hop.is_none(),
         "and posts no hop, since nothing walked"
     );
 }
@@ -564,11 +576,12 @@ fn a_started_hop_survives_the_pad_being_released() {
     let mut world = ledge_world(200);
     world.set_pad(input::PadButton::Up.mask());
     let _ = world.tick();
-    assert!(world.field_ledge_hop.is_some(), "posted while walking");
+    assert!(world.locomotion.ledge_hop.is_some(), "posted while walking");
     world.set_pad(0);
     let _ = world.tick();
     let hop = world
-        .field_ledge_hop
+        .locomotion
+        .ledge_hop
         .expect("the session outlives the frame that started it");
     assert!(hop.arc.cursor > 0, "and it advanced rather than idling");
     assert_ne!(
@@ -586,19 +599,19 @@ fn a_started_hop_survives_the_pad_being_released() {
 fn run_is_the_xor_of_the_option_and_the_button() {
     let mut world = World::new();
     // Walk selected, button clear -> walk.
-    world.field_move_run_default = false;
-    world.field_run_button_held = false;
+    world.locomotion.run_default = false;
+    world.locomotion.run_button_held = false;
     assert!(!world.field_run_active());
     assert_eq!(world.field_base_step(), 8);
 
     // Walk selected, button HELD -> run. (Hold-to-run.)
-    world.field_run_button_held = true;
+    world.locomotion.run_button_held = true;
     assert!(world.field_run_active());
     assert_eq!(world.field_base_step(), 0xc);
 
     // Run selected, button clear -> run.
-    world.field_move_run_default = true;
-    world.field_run_button_held = false;
+    world.locomotion.run_default = true;
+    world.locomotion.run_button_held = false;
     assert!(world.field_run_active());
     assert_eq!(world.field_base_step(), 0xc);
 
@@ -606,7 +619,7 @@ fn run_is_the_xor_of_the_option_and_the_button() {
     // does not simply force run. This is the arm that a plain OR would get
     // wrong, and it is what the paired branches at 0x801D0370 / 0x801D0398
     // encode.
-    world.field_run_button_held = true;
+    world.locomotion.run_button_held = true;
     assert!(!world.field_run_active());
     assert_eq!(world.field_base_step(), 8);
 }
@@ -616,10 +629,10 @@ fn forced_slow_cannot_be_run_out_of() {
     let mut world = World::new();
     // Retail's `_DAT_8007B6A8` arm jumps past the run check entirely, so a
     // forced walk stays slow no matter what the option or the button say.
-    world.field_forced_slow = true;
+    world.locomotion.forced_slow = true;
     for (opt, btn) in [(false, false), (false, true), (true, false), (true, true)] {
-        world.field_move_run_default = opt;
-        world.field_run_button_held = btn;
+        world.locomotion.run_default = opt;
+        world.locomotion.run_button_held = btn;
         assert_eq!(
             world.field_base_step(),
             5,
@@ -631,12 +644,12 @@ fn forced_slow_cannot_be_run_out_of() {
 #[test]
 fn set_pad_latches_the_run_button() {
     let mut world = World::new();
-    assert!(!world.field_run_button_held);
+    assert!(!world.locomotion.run_button_held);
     world.set_pad(input::PadButton::Square.mask());
-    assert!(world.field_run_button_held);
+    assert!(world.locomotion.run_button_held);
     // Released on the next word - it is a held state, not an edge.
     world.set_pad(input::PadButton::Up.mask());
-    assert!(!world.field_run_button_held);
+    assert!(!world.locomotion.run_button_held);
 }
 
 /// The default run button is **retail's**: the config word `0x800846DC` is
@@ -655,7 +668,10 @@ fn the_default_run_button_is_the_retail_pair() {
     );
 
     let mut world = World::new();
-    assert_eq!(world.field_run_button_mask, FIELD_RUN_BUTTON_MASK_DEFAULT);
+    assert_eq!(
+        world.locomotion.run_button_mask,
+        FIELD_RUN_BUTTON_MASK_DEFAULT
+    );
     assert_eq!(
         FIELD_RUN_BUTTON_MASK_DEFAULT & FIELD_RUN_BUTTON_MASK_RETAIL,
         FIELD_RUN_BUTTON_MASK_RETAIL,
@@ -666,7 +682,7 @@ fn the_default_run_button_is_the_retail_pair() {
     for btn in [input::PadButton::Cross, input::PadButton::R1] {
         world.set_pad(btn.mask());
         assert!(
-            world.field_run_button_held,
+            world.locomotion.run_button_held,
             "{} is a retail run button",
             btn.name()
         );
@@ -677,21 +693,21 @@ fn the_default_run_button_is_the_retail_pair() {
     // Square stays bound as the port's alternate.
     world.set_pad(input::PadButton::Square.mask());
     assert!(
-        world.field_run_button_held,
+        world.locomotion.run_button_held,
         "Square is kept as an alternate"
     );
 
     // A host that wants the retail set exactly drops the alternate, and then
     // Square is just Square.
-    world.field_run_button_mask = FIELD_RUN_BUTTON_MASK_RETAIL;
+    world.locomotion.run_button_mask = FIELD_RUN_BUTTON_MASK_RETAIL;
     world.set_pad(input::PadButton::Square.mask());
-    assert!(!world.field_run_button_held);
+    assert!(!world.locomotion.run_button_held);
     world.set_pad(input::PadButton::Cross.mask());
-    assert!(world.field_run_button_held);
+    assert!(world.locomotion.run_button_held);
 
     // Nothing else on the pad runs, under either mask.
     for m in [FIELD_RUN_BUTTON_MASK_DEFAULT, FIELD_RUN_BUTTON_MASK_RETAIL] {
-        world.field_run_button_mask = m;
+        world.locomotion.run_button_mask = m;
         for btn in [
             input::PadButton::Up,
             input::PadButton::Circle,
@@ -701,7 +717,7 @@ fn the_default_run_button_is_the_retail_pair() {
         ] {
             world.set_pad(btn.mask());
             assert!(
-                !world.field_run_button_held,
+                !world.locomotion.run_button_held,
                 "{} must not run under mask {m:#06x}",
                 btn.name()
             );
@@ -715,7 +731,7 @@ fn running_covers_more_ground_per_frame_than_walking() {
         let mut world = World::new();
         world.mode = SceneMode::Field;
         world.install_field_player(0);
-        world.field_move_run_default = run;
+        world.locomotion.run_default = run;
         world.actors[0].move_state.world_x = 200;
         world.actors[0].move_state.world_z = 200;
         world.set_pad(input::PadButton::Up.mask());
@@ -742,7 +758,7 @@ fn script_driven_player_movement_raises_the_walk_flag() {
     // to be standing still.
     world.set_pad(0);
     let _ = world.tick();
-    assert!(!world.field_actor_moving.contains(&0));
+    assert!(!world.locomotion.actor_moving.contains(&0));
 
     // Now move the player the way a cutscene MoveTo does: write the position
     // directly, touching no locomotion path and raising no flag of its own.
@@ -750,7 +766,7 @@ fn script_driven_player_movement_raises_the_walk_flag() {
     world.set_pad(0);
     let _ = world.tick();
     assert!(
-        world.field_actor_moving.contains(&0),
+        world.locomotion.actor_moving.contains(&0),
         "a script-moved player must read as moving - selecting the walk clip \
          off the MOVER rather than off the MOTION is what made it glide"
     );
@@ -766,7 +782,7 @@ fn standing_still_is_not_motion_and_a_new_actor_is_not_a_step() {
     world.set_pad(0);
     let _ = world.tick();
     let _ = world.tick();
-    assert!(!world.field_actor_moving.contains(&0), "idle player");
+    assert!(!world.locomotion.actor_moving.contains(&0), "idle player");
 
     // An NPC seated mid-scene by a timeline appears in the position map for
     // the first time. Its ARRIVAL is a placement, not a step, so it must not
@@ -774,11 +790,11 @@ fn standing_still_is_not_motion_and_a_new_actor_is_not_a_step() {
     world.npcs.positions.insert(7, (1024, 1024));
     let _ = world.tick();
     assert!(
-        !world.field_actor_moving.contains(&7),
+        !world.locomotion.actor_moving.contains(&7),
         "a freshly-seated actor must not read as walking on its arrival frame"
     );
     // But its next actual move does.
     world.npcs.positions.insert(7, (1064, 1024));
     let _ = world.tick();
-    assert!(world.field_actor_moving.contains(&7), "NPC walked");
+    assert!(world.locomotion.actor_moving.contains(&7), "NPC walked");
 }

@@ -343,19 +343,19 @@ mod tests {
         let _ = w.tick();
         let pose = w.actors[0].pose_frame.clone().expect("idle pose set");
         assert_eq!(pose.bone_outputs[0].0[0], 100, "idle record tag");
-        assert!(!w.field_player_anim.as_ref().unwrap().walking);
+        assert!(!w.locomotion.player_anim.as_ref().unwrap().walking);
         // Held direction: locomotion flags the move, the walk clip plays.
         w.set_pad(crate::input::PadButton::Up.mask());
         let _ = w.tick();
         let pose = w.actors[0].pose_frame.clone().expect("walk pose set");
         assert_eq!(pose.bone_outputs[0].0[0], 0, "walk record restarts");
-        assert!(w.field_player_anim.as_ref().unwrap().walking);
+        assert!(w.locomotion.player_anim.as_ref().unwrap().walking);
         // Release: back to idle, restarted at frame 0.
         w.set_pad(0);
         let _ = w.tick();
         let pose = w.actors[0].pose_frame.clone().expect("idle pose set");
         assert_eq!(pose.bone_outputs[0].0[0], 100);
-        assert!(!w.field_player_anim.as_ref().unwrap().walking);
+        assert!(!w.locomotion.player_anim.as_ref().unwrap().walking);
     }
 
     /// A scripted one-shot (ExecMove) overrides idle/walk for exactly one

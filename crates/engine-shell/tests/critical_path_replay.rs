@@ -605,7 +605,7 @@ fn pad_for_step(host: &SceneHost, dwx: i16, dwz: i16) -> u16 {
             dwx,
             dwz,
         ),
-        _ => pad_for_world_step(host.world.field_camera_azimuth, dwx, dwz),
+        _ => pad_for_world_step(host.world.locomotion.camera_azimuth, dwx, dwz),
     }
 }
 
@@ -1370,7 +1370,7 @@ fn walk_to(
             eprintln!(
                 "[trace] w=({wx},{wz}) tile={here:?} goal={goal:?} want={:?} pad={pad:04x} az={} scripted={scripted} tl={} dlg={}",
                 path.first().map(|&c| tile_of_cell(c)),
-                host.world.field_camera_azimuth,
+                host.world.locomotion.camera_azimuth,
                 host.world.cutscene_timeline_active(),
                 host.world.dialogue_owns_input(),
             );
@@ -2104,7 +2104,7 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     // consulting `field_actor_dir_blocked` as well: with solid NPCs and a
     // wall-only planner, a Rim Elm townsperson parked in the route stalls
     // rung 2 at tile `(25, 22)`. The two edits belong together.
-    host.world.leading_edge_wall_probes = true;
+    host.world.locomotion.leading_edge_wall_probes = true;
     host.world.npcs.solid = true;
 
     // Rim Elm's south exit is **story-locked**, and correctly so - but the

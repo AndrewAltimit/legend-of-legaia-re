@@ -118,7 +118,7 @@ fn leading_edge_wall_probes_rest_at_retail_standoff() {
         let mut world = World::new();
         world.install_field_player(0);
         paint(&mut world);
-        world.leading_edge_wall_probes = edge;
+        world.locomotion.leading_edge_wall_probes = edge;
         world.actors[0].move_state.world_x = start.0;
         world.actors[0].move_state.world_z = start.1;
         for _ in 0..200 {

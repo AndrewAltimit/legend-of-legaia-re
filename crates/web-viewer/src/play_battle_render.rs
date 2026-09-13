@@ -251,7 +251,7 @@ fn derive_battle_cam(
         // `_DAT_8007B792` is one global shared with the field camera, and
         // nothing on the battle-entry path zeroes it - a fight inherits the
         // live azimuth (see `BattleCamInputs::entry_yaw`).
-        entry_yaw: f32::from(world.field_camera_azimuth & 0xFFF),
+        entry_yaw: f32::from(world.locomotion.camera_azimuth & 0xFFF),
         shake_amplitude: world.camera_shake_amplitude,
         attack: attack_channels(world, world.battle_ctx.active_actor),
         // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's

@@ -1957,7 +1957,7 @@ impl World {
         // against its box, 64+ units short of the centre. The stand-inside
         // test is kept as well (a landing seated inside a box, nav drivers).
         let mut points: Vec<(i32, i32)> = vec![(px as i32, pz as i32)];
-        for dir in Self::dirs_of_bits(self.last_move_dir_bits) {
+        for dir in Self::dirs_of_bits(self.locomotion.last_move_dir_bits) {
             for &(dx, dz) in &FIELD_ACTOR_PROBES[dir] {
                 points.push((px.saturating_add(dx) as i32, pz.saturating_sub(dz) as i32));
             }
@@ -2108,7 +2108,7 @@ impl World {
         // The same probe fan the NPC collision test walks
         // (`Self::field_npc_dir_blocked`), plus the stand-inside point.
         let mut points: Vec<(i32, i32)> = vec![(px as i32, pz as i32)];
-        for dir in Self::dirs_of_bits(self.last_move_dir_bits) {
+        for dir in Self::dirs_of_bits(self.locomotion.last_move_dir_bits) {
             for &(dx, dz) in &FIELD_ACTOR_PROBES[dir] {
                 points.push((px.saturating_add(dx) as i32, pz.saturating_sub(dz) as i32));
             }
@@ -2251,7 +2251,7 @@ impl World {
         // Quantise the camera azimuth to one of four cardinal rotations and
         // rotate the screen delta into world space. quadrant 0 = identity
         // (screen-up -> +Z, screen-right -> +X).
-        let quadrant = (((self.field_camera_azimuth as u32) + 512) / 1024) & 3;
+        let quadrant = (((self.locomotion.camera_azimuth as u32) + 512) / 1024) & 3;
         let (mut wx, mut wz) = match quadrant {
             0 => (sx, sy),
             1 => (sy, -sx),
@@ -2324,7 +2324,7 @@ impl World {
         // Azimuth 0 = identity (screen-up -> +Z, screen-right -> +X); the
         // quadrant table in `decode_field_direction` is this rotation
         // sampled at the four cardinal angles.
-        let az = self.field_camera_azimuth as f32 / 4096.0 * std::f32::consts::TAU;
+        let az = self.locomotion.camera_azimuth as f32 / 4096.0 * std::f32::consts::TAU;
         let (sin, cos) = az.sin_cos();
         let wx = sx * cos + sy * sin;
         let wz = -sx * sin + sy * cos;
@@ -2394,7 +2394,7 @@ impl World {
         // Retail `0x801d0550` clears the step-delta pair before the frame's
         // direction decode, so an input-free (or fully wall-blocked) frame
         // leaves `(0, 0)` behind and the ledge-hop trigger stays quiet.
-        self.field_step_delta = (0, 0);
+        self.locomotion.step_delta = (0, 0);
         // BOTH dialogue channels, through the shared predicate. The ordinary
         // NPC talk runs the field-VM inline runner, which holds a box open
         // without a `current_dialog` whenever the record selects its segment
@@ -2426,21 +2426,21 @@ impl World {
         // Opt-in precise mode swaps the quantised d-pad remap for the
         // continuous decode; the default path is bit-identical to the
         // historical quantised behaviour.
-        let precise = if self.precise_movement {
+        let precise = if self.locomotion.precise_movement {
             self.decode_field_direction_precise()
         } else {
             None
         };
-        let (dir_bits, heading) = if self.precise_movement {
+        let (dir_bits, heading) = if self.locomotion.precise_movement {
             precise.map(|(_, b, h)| (b, h)).unwrap_or((0, 0))
         } else {
             self.decode_field_direction()
         };
-        self.last_move_dir_bits = dir_bits;
+        self.locomotion.last_move_dir_bits = dir_bits;
         if dir_bits == 0 {
             // Input released: drop any precise sub-step remainder so a later
             // hold starts clean.
-            self.precise_move_carry = (0.0, 0.0);
+            self.locomotion.precise_move_carry = (0.0, 0.0);
             return;
         }
         self.actors[slot].move_state.render_26 = heading;
@@ -2463,7 +2463,7 @@ impl World {
 
         // A held direction is a movement frame for the locomotion animation
         // even when the step is wall-blocked (retail walks in place).
-        if let Some(anim) = &mut self.field_player_anim {
+        if let Some(anim) = &mut self.locomotion.player_anim {
             anim.moved_this_frame = true;
         }
 
@@ -2492,7 +2492,8 @@ impl World {
         {
             let ms = &self.actors[slot].move_state;
             if (ms.world_x, ms.world_z) != before {
-                self.walk_regen_steps = self
+                self.locomotion.walk_regen_steps = self
+                    .locomotion
                     .walk_regen_steps
                     .saturating_add(self.field_frame_step as i32);
             }
@@ -2512,7 +2513,7 @@ impl World {
         // world-map walk path (which collides through the same routine but
         // derives height from the continent grid) is unaffected. No-op height
         // 0 until a scene supplies a floor LUT.
-        if self.follow_terrain_height {
+        if self.locomotion.follow_terrain_height {
             let y = match self.field_actor_mirrored_y(slot) {
                 Some(mirror) => i32::from(mirror),
                 None => {
@@ -2554,7 +2555,7 @@ impl World {
         if self.player_actor_slot? as usize != slot {
             return None;
         }
-        self.field_eased_mirror_y.map(|m| m.wrapping_neg())
+        self.locomotion.eased_mirror_y.map(|m| m.wrapping_neg())
     }
 
     /// The height retail's ledge classifier measures its rise **from**: the
@@ -2587,7 +2588,7 @@ impl World {
     /// comes from the sampler retail's settle targets, which is the value the
     /// glide converges to.
     fn field_actor_footing(&self, slot: usize, x: i32, z: i32) -> i32 {
-        if self.field_vertical_settle || self.follow_terrain_height {
+        if self.locomotion.vertical_settle || self.locomotion.follow_terrain_height {
             self.actors[slot].move_state.world_y as i32
         } else {
             self.sample_field_floor_height(x, z)
@@ -2654,7 +2655,7 @@ impl World {
         if slot >= self.actors.len() || !self.actors[slot].active {
             return false;
         }
-        let (dx, dz) = self.field_step_delta;
+        let (dx, dz) = self.locomotion.step_delta;
         if dx == 0 && dz == 0 {
             return false;
         }
@@ -2743,7 +2744,7 @@ impl World {
         // ORs `0x80000` into the player context's `+0x10`, and the phase
         // machine's end arm is the only thing that clears it again.
         self.actors[slot].move_state.flags |= 0x0008_0000;
-        self.field_ledge_hop = Some(FieldLedgeHop {
+        self.locomotion.ledge_hop = Some(FieldLedgeHop {
             target_x: target.0,
             target_y: target.1,
             target_z: target.2,
@@ -2781,11 +2782,11 @@ impl World {
     /// PORT: FUN_801d5c08
     /// REF: FUN_801d2298, FUN_801e45bc
     fn tick_field_ledge_hop(&mut self, slot: usize) -> bool {
-        let Some(mut hop) = self.field_ledge_hop else {
+        let Some(mut hop) = self.locomotion.ledge_hop else {
             return false;
         };
         if hop.finished {
-            self.field_ledge_hop = None;
+            self.locomotion.ledge_hop = None;
             return false;
         }
         hop.sfx = None;
@@ -2811,7 +2812,7 @@ impl World {
         ms.local_flags |= phase.player_anim_set;
         ms.local_flags &= !phase.player_anim_clear;
         hop.finished = phase.finished;
-        self.field_ledge_hop = Some(hop);
+        self.locomotion.ledge_hop = Some(hop);
         true
     }
 
@@ -2860,7 +2861,7 @@ impl World {
     /// from here, ahead of that gate.
     pub fn step_field_vertical(&mut self, slot: usize) {
         if slot >= self.actors.len() || !self.actors[slot].active {
-            self.field_ledge_hop = None;
+            self.locomotion.ledge_hop = None;
             return;
         }
         if self.tick_field_ledge_hop(slot) {
@@ -2882,7 +2883,7 @@ impl World {
         // carries the flag holds the actor's Y outright; no glide, no sample.
         if let Some(mirror) = self.field_actor_mirrored_y(slot) {
             self.actors[slot].move_state.world_y = mirror;
-        } else if self.field_vertical_settle && !self.follow_terrain_height {
+        } else if self.locomotion.vertical_settle && !self.locomotion.follow_terrain_height {
             let (x, z, y) = {
                 let ms = &self.actors[slot].move_state;
                 (ms.world_x as i32, ms.world_z as i32, ms.world_y as i32)
@@ -2896,7 +2897,7 @@ impl World {
         }
         // Retail gates the hop on the step-delta pair being non-zero - i.e.
         // the actor actually walked this frame.
-        let (dx, dz) = self.field_step_delta;
+        let (dx, dz) = self.locomotion.step_delta;
         if dx != 0 || dz != 0 {
             self.try_field_ledge_hop(slot);
         }
@@ -2934,7 +2935,7 @@ impl World {
     /// step and posts the touch (`FUN_801D01B0`'s bit-`4` auto-post of
     /// `FUN_801D5B5C`).
     pub fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
-        let edge = self.leading_edge_wall_probes;
+        let edge = self.locomotion.leading_edge_wall_probes;
         let solid_npcs = self.npcs.solid;
         let mut remaining = speed;
         while remaining > 0 {
@@ -2951,7 +2952,7 @@ impl World {
                 } || actors;
                 if !blocked {
                     self.actors[slot].move_state.world_z = nz;
-                    self.field_step_delta.1 = FIELD_PROBE_DELTA;
+                    self.locomotion.step_delta.1 = FIELD_PROBE_DELTA;
                 }
             } else if dir_bits & 0x4000 != 0 {
                 let nz = cz.saturating_sub(FIELD_STEP_UNIT as i16);
@@ -2963,7 +2964,7 @@ impl World {
                 } || actors;
                 if !blocked {
                     self.actors[slot].move_state.world_z = nz;
-                    self.field_step_delta.1 = -FIELD_PROBE_DELTA;
+                    self.locomotion.step_delta.1 = -FIELD_PROBE_DELTA;
                 }
             }
             // X axis (re-read X in case Z committed; X collision uses the
@@ -2979,7 +2980,7 @@ impl World {
                 } || actors;
                 if !blocked {
                     self.actors[slot].move_state.world_x = nx;
-                    self.field_step_delta.0 = FIELD_PROBE_DELTA;
+                    self.locomotion.step_delta.0 = FIELD_PROBE_DELTA;
                 }
             } else if dir_bits & 0x8000 != 0 {
                 let nx = cx.saturating_sub(FIELD_STEP_UNIT as i16);
@@ -2991,7 +2992,7 @@ impl World {
                 } || actors;
                 if !blocked {
                     self.actors[slot].move_state.world_x = nx;
-                    self.field_step_delta.0 = -FIELD_PROBE_DELTA;
+                    self.locomotion.step_delta.0 = -FIELD_PROBE_DELTA;
                 }
             }
             remaining -= FIELD_STEP_UNIT;
@@ -3015,8 +3016,8 @@ impl World {
             return;
         }
         let step = FIELD_STEP_UNIT as f32;
-        let mut ax = self.precise_move_carry.0 + wx / len * speed as f32;
-        let mut az = self.precise_move_carry.1 + wz / len * speed as f32;
+        let mut ax = self.locomotion.precise_move_carry.0 + wx / len * speed as f32;
+        let mut az = self.locomotion.precise_move_carry.1 + wz / len * speed as f32;
         while ax.abs() >= step || az.abs() >= step {
             if az.abs() >= step {
                 let bit = if az > 0.0 { 0x1000 } else { 0x4000 };
@@ -3029,7 +3030,7 @@ impl World {
                 ax -= step * ax.signum();
             }
         }
-        self.precise_move_carry = (ax, az);
+        self.locomotion.precise_move_carry = (ax, az);
     }
 
     /// One movement sub-step's **actor-collision** gate - the engine's
@@ -3112,7 +3113,7 @@ impl World {
             wx = -1;
         }
         if dir != 0 {
-            self.last_move_dir_bits = dir;
+            self.locomotion.last_move_dir_bits = dir;
             // Walking sets the heading, exactly as the pad path does (retail
             // locomotion writes the facing every moved frame) - so a nav walk
             // leaves the player facing its travel direction and the interact
@@ -3123,7 +3124,7 @@ impl World {
                     & 0x0FFF) as i16;
             // A nav step is a movement frame for the locomotion animation,
             // same as a held pad direction.
-            if let Some(anim) = &mut self.field_player_anim {
+            if let Some(anim) = &mut self.locomotion.player_anim {
                 anim.moved_this_frame = true;
             }
             self.advance_with_collision(slot, dir, FIELD_BASE_STEP);

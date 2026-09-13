@@ -83,7 +83,7 @@ fn wall_from_row(world: &mut World, tz: usize) {
 #[test]
 fn flat_ground_at_a_non_zero_tier_is_not_a_ledge() {
     let mut world = flat_world(-192);
-    world.field_step_delta = (0, 8);
+    world.locomotion.step_delta = (0, 8);
     assert_eq!(
         world.actors[0].move_state.world_y, 0,
         "the fixture leaves Y where the engine's flat-Y default leaves it"
@@ -97,7 +97,7 @@ fn flat_ground_at_a_non_zero_tier_is_not_a_ledge() {
         !world.try_field_ledge_hop(0),
         "flat ground is flat however stale the actor's world_y is"
     );
-    assert!(world.field_ledge_hop.is_none(), "nothing posted");
+    assert!(world.locomotion.ledge_hop.is_none(), "nothing posted");
 }
 
 /// Non-vacuity for the leg above: the same fixture with a real step in front
@@ -109,12 +109,12 @@ fn a_real_step_ahead_of_flat_ground_still_classifies() {
     // Row 4 starts at z = 512; the actor stands at z = 480 so the `+32` sample
     // lands on the raised tile while the actor's own tile stays on the ground.
     raise_from_row(&mut world, 4, -992);
-    world.field_step_delta = (0, 8);
+    world.locomotion.step_delta = (0, 8);
     assert!(
         world.try_field_ledge_hop(0),
         "an authored step is still a ledge"
     );
-    let hop = world.field_ledge_hop.expect("posted");
+    let hop = world.locomotion.ledge_hop.expect("posted");
     assert_eq!(hop.kind, 0x18, "a raised tile is retail hop class 0x18");
     assert_eq!(
         hop.target_z,
@@ -131,11 +131,11 @@ fn a_real_step_ahead_of_flat_ground_still_classifies() {
 fn a_maintained_world_y_is_the_footing() {
     for (settle, follow) in [(true, false), (false, true)] {
         let mut world = flat_world(-192);
-        world.field_vertical_settle = settle;
-        world.follow_terrain_height = follow;
+        world.locomotion.vertical_settle = settle;
+        world.locomotion.follow_terrain_height = follow;
         // What either controller converges the actor to.
         world.actors[0].move_state.world_y = -192;
-        world.field_step_delta = (0, 8);
+        world.locomotion.step_delta = (0, 8);
         assert!(
             !world.try_field_ledge_hop(0),
             "settle={settle} follow={follow}: a settled actor on flat ground has no ledge"
@@ -151,9 +151,9 @@ fn a_maintained_world_y_is_the_footing() {
 #[test]
 fn an_unconverged_glide_classifies_off_the_lagging_footing() {
     let mut world = flat_world(-192);
-    world.field_vertical_settle = true;
+    world.locomotion.vertical_settle = true;
     world.actors[0].move_state.world_y = 0; // mid-glide, 192 units to fall
-    world.field_step_delta = (0, 8);
+    world.locomotion.step_delta = (0, 8);
     assert!(
         world.try_field_ledge_hop(0),
         "retail measures against +0x16, lag included"
@@ -171,7 +171,7 @@ fn a_wall_press_on_flat_ground_never_hops_through_the_wall() {
     // one tile short of that, which is all this leg needs: the player is
     // walking into a wall well ahead of the grid edge.
     wall_from_row(&mut world, 6);
-    world.leading_edge_wall_probes = true;
+    world.locomotion.leading_edge_wall_probes = true;
     let start_z = world.actors[0].move_state.world_z;
 
     let mut prev_z = start_z;
@@ -189,7 +189,7 @@ fn a_wall_press_on_flat_ground_never_hops_through_the_wall() {
             frames_past_the_wall_probes += 1;
         }
         assert!(
-            world.field_ledge_hop.is_none(),
+            world.locomotion.ledge_hop.is_none(),
             "frame {frame}: a wall press is not a ledge (posted a hop at z={})",
             ms.world_z
         );

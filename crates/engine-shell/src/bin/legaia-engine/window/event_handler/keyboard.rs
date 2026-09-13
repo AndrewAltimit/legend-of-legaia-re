@@ -736,7 +736,7 @@ impl PlayWindowApp {
         {
             let on = !self.options_state.precise_movement;
             self.options_state.precise_movement = on;
-            self.session.host.world.precise_movement = on;
+            self.session.host.world.locomotion.precise_movement = on;
             self.persist_and_apply_options();
             log::info!(
                 "movement: precise {}",

@@ -196,7 +196,7 @@ fn pad_walk_through_the_open_gate_leaves_for_map01() {
     let mut deepest = start_z;
     let mut entered = None;
     for _ in 0..600 {
-        let pad = pad_for_world_step(host.world.field_camera_azimuth, 0, 1);
+        let pad = pad_for_world_step(host.world.locomotion.camera_azimuth, 0, 1);
         host.world.set_pad(pad);
         match host.tick().expect("tick") {
             SceneTickEvent::SceneEntered { name } => {
@@ -243,7 +243,7 @@ fn the_shut_gate_stops_the_same_walk() {
         ms.world_z = APPROACH_Z;
     }
     for _ in 0..600 {
-        let pad = pad_for_world_step(host.world.field_camera_azimuth, 0, 1);
+        let pad = pad_for_world_step(host.world.locomotion.camera_azimuth, 0, 1);
         host.world.set_pad(pad);
         if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
             panic!("the shut gate must not transition (entered {name})");

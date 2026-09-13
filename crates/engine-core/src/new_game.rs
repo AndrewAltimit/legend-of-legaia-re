@@ -449,7 +449,7 @@ mod tests {
         world.mode = SceneMode::Field;
         world.install_field_player(0);
         // Open floor (no walls) + camera facing forward.
-        world.field_camera_azimuth = 0;
+        world.locomotion.camera_azimuth = 0;
 
         let z0 = world.actors[0].move_state.world_z;
         world.set_pad(PadButton::Up as u16);

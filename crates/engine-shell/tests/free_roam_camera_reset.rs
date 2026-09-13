@@ -66,7 +66,7 @@ fn free_roam_field_clears_leaked_cinematic_camera_yaw() {
 
     // Quadrant 0 (identity remap) - screen-up walks world +Z, not inverted.
     // (`decode_field_direction` quantises `((azimuth + 512) / 1024) & 3`.)
-    let azimuth = session.host.world.field_camera_azimuth;
+    let azimuth = session.host.world.locomotion.camera_azimuth;
     let quadrant = ((azimuth as u32 + 512) / 1024) & 3;
     assert_eq!(
         quadrant, 0,

@@ -157,7 +157,7 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
 
     // 5. The timeline resumes (op-0x49 now Done) and eventually completes,
     //    dropping itself so the view reverts from the cutscene camera.
-    host.world.field_player_move_cues.clear();
+    host.world.locomotion.player_move_cues.clear();
     let mut more = 0u32;
     while host.world.cutscene.timeline.is_some() && more < 12000 {
         tick_pressing_through_dialogs(&mut host.world, more);
@@ -176,7 +176,7 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
     // record's `A2 F8 30` (+0x030B) then `A2 F8 31` (+0x0352) ExecMoves -
     // the retail anim cue the recomp trace pinned to scene-ANM records
     // 47/48. The world surfaces them as player move cues in order.
-    let cues = &host.world.field_player_move_cues;
+    let cues = &host.world.locomotion.player_move_cues;
     let pos48 = cues.iter().position(|&m| m == 48);
     let pos49 = cues.iter().position(|&m| m == 49);
     assert!(

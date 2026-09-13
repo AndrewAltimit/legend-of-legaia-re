@@ -583,8 +583,8 @@ impl LegaiaRuntime {
         // wall footprint, solid NPC bodies, per-step terrain follow, and NPCs
         // walking their MAN-authored routes.
         host.world.use_vm_dialogue = true;
-        host.world.follow_terrain_height = true;
-        host.world.leading_edge_wall_probes = true;
+        host.world.locomotion.follow_terrain_height = true;
+        host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;
         host.world.npcs.animate = true;
         // Free-roam story staging for PICKER entries only: the opening
@@ -647,8 +647,8 @@ impl LegaiaRuntime {
     /// path keeps the retail quantised 8-way remap.
     pub fn set_precise_movement(&mut self, on: bool) {
         match self.scene_host.as_mut() {
-            Some(h) => h.world.precise_movement = on,
-            None => self.world.precise_movement = on,
+            Some(h) => h.world.locomotion.precise_movement = on,
+            None => self.world.locomotion.precise_movement = on,
         }
     }
 
@@ -668,7 +668,7 @@ impl LegaiaRuntime {
     /// controller quantises it to the nearest quarter-turn, as retail does.
     pub fn set_camera_azimuth(&mut self, units: u16) {
         if let Some(h) = self.scene_host.as_mut() {
-            h.world.field_camera_azimuth = units % 4096;
+            h.world.locomotion.camera_azimuth = units % 4096;
         }
     }
 
@@ -830,7 +830,7 @@ impl LegaiaRuntime {
                     "y": a.move_state.world_y,
                     "z": a.move_state.world_z,
                     "facing": a.move_state.render_26,
-                    "walking": w.field_player_anim.as_ref().is_some_and(|f| f.walking),
+                    "walking": w.locomotion.player_anim.as_ref().is_some_and(|f| f.walking),
                 })
             })
             .unwrap_or(serde_json::Value::Null);
@@ -1388,7 +1388,7 @@ impl LegaiaRuntime {
     /// already animates; the native drain skips them and so does this one.
     fn drive_player_move_cues(&mut self) {
         let cues: Vec<u8> = match self.scene_host.as_mut() {
-            Some(h) => std::mem::take(&mut h.world.field_player_move_cues),
+            Some(h) => std::mem::take(&mut h.world.locomotion.player_move_cues),
             None => return,
         };
         for id in cues {
@@ -1407,7 +1407,7 @@ impl LegaiaRuntime {
             if let Some(anim) = self
                 .scene_host
                 .as_mut()
-                .and_then(|h| h.world.field_player_anim.as_mut())
+                .and_then(|h| h.world.locomotion.player_anim.as_mut())
             {
                 anim.push_scripted(clip);
             }
@@ -1973,11 +1973,11 @@ impl LegaiaRuntime {
             audio.set_muted(self.options_state.muted);
         }
         if let Some(host) = self.scene_host.as_mut() {
-            host.world.precise_movement = self.options_state.precise_movement;
+            host.world.locomotion.precise_movement = self.options_state.precise_movement;
             // Field Move (pause-menu Walk / Run). Only the DEFAULT lands
             // here; the run button that inverts it is latched by
             // `World::set_pad`, so this page needs no per-frame wiring.
-            host.world.field_move_run_default =
+            host.world.locomotion.run_default =
                 self.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
             // Photosensitivity guard over the ambient palette cyclers
             // (default ON; see `OptionsState::reduce_flashing`).

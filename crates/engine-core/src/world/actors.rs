@@ -1174,7 +1174,7 @@ impl World {
     /// after the locomotion step; `None` (the default) leaves the player on
     /// the static rest pose.
     pub fn set_field_player_anim(&mut self, anim: Option<crate::field_anim::FieldPlayerAnim>) {
-        self.field_player_anim = anim;
+        self.locomotion.player_anim = anim;
     }
 
     /// Frame count to size a **cross-context** clip cursor with when the scene
@@ -1186,7 +1186,8 @@ impl World {
     /// the right order - the frames the player actually *sees* are the host
     /// clip player's, which is a different object.
     pub(crate) fn player_clip_frames_hint(&self) -> u16 {
-        self.field_player_anim
+        self.locomotion
+            .player_anim
             .as_ref()
             .map(|a| {
                 let clip = if a.walking { &a.walk } else { &a.idle };
@@ -1212,7 +1213,7 @@ impl World {
     /// the option picks the default and the button inverts it - hold to run
     /// when Walk is selected, hold to walk when Run is.
     pub fn field_run_active(&self) -> bool {
-        self.field_run_button_held != self.field_move_run_default
+        self.locomotion.run_button_held != self.locomotion.run_default
     }
 
     /// The frame's base step - retail's `$s4` before the `+0x72` multiply at
@@ -1226,7 +1227,7 @@ impl World {
     ///
     /// PORT: FUN_801d01b0 (base-step selector)
     pub fn field_base_step(&self) -> i32 {
-        if self.field_forced_slow {
+        if self.locomotion.forced_slow {
             return crate::world::config::FIELD_BASE_STEP_FORCED_SLOW;
         }
         if self.field_run_active() {
@@ -1257,7 +1258,7 @@ impl World {
     /// timeline, or the frame after a scene load) seeds the snapshot and is
     /// NOT reported as moving - its arrival is a placement, not a step.
     pub(crate) fn detect_field_actor_motion(&mut self) {
-        self.field_actor_moving.clear();
+        self.locomotion.actor_moving.clear();
         let player_slot = self.player_actor_slot;
         // The player reads from its move_state (the locomotion commits
         // there); NPCs read from the live placement-position map.
@@ -1269,10 +1270,10 @@ impl World {
         let mut moved_player = false;
         if let (Some(slot), Some(pos)) = (player_slot, player_pos) {
             seen.insert(slot);
-            match self.field_motion_prev.insert(slot, pos) {
+            match self.locomotion.motion_prev.insert(slot, pos) {
                 Some(prev) if prev != pos => {
                     moved_player = true;
-                    self.field_actor_moving.insert(slot);
+                    self.locomotion.actor_moving.insert(slot);
                 }
                 _ => {}
             }
@@ -1284,9 +1285,9 @@ impl World {
                 continue;
             }
             seen.insert(slot);
-            match self.field_motion_prev.insert(slot, pos) {
+            match self.locomotion.motion_prev.insert(slot, pos) {
                 Some(prev) if prev != pos => {
-                    self.field_actor_moving.insert(slot);
+                    self.locomotion.actor_moving.insert(slot);
                 }
                 _ => {}
             }
@@ -1294,8 +1295,10 @@ impl World {
         // Drop slots that are no longer tracked (scene actors torn down), so
         // a later scene reusing the slot number starts from a fresh seed
         // instead of diffing against a dead actor's last position.
-        self.field_motion_prev.retain(|slot, _| seen.contains(slot));
-        if moved_player && let Some(anim) = &mut self.field_player_anim {
+        self.locomotion
+            .motion_prev
+            .retain(|slot, _| seen.contains(slot));
+        if moved_player && let Some(anim) = &mut self.locomotion.player_anim {
             anim.moved_this_frame = true;
         }
     }
@@ -1309,7 +1312,7 @@ impl World {
         let Some(slot) = self.player_actor_slot else {
             return;
         };
-        let Some(anim) = &mut self.field_player_anim else {
+        let Some(anim) = &mut self.locomotion.player_anim else {
             return;
         };
         let pose = anim.tick();

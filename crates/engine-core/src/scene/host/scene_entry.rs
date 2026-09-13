@@ -317,7 +317,7 @@ impl SceneHost {
         // of the session. Retail cannot reach the state (the hop always
         // finishes before a transition); the port can, so scene entry drops
         // the hop and its lock together.
-        self.world.field_ledge_hop = None;
+        self.world.locomotion.ledge_hop = None;
         if let Some(slot) = self.world.player_actor_slot
             && let Some(actor) = self.world.actors.get_mut(slot as usize)
         {

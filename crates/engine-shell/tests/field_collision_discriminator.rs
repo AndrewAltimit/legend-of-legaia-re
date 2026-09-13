@@ -377,7 +377,7 @@ fn engine_press_rest(
     let mut world = World::new();
     world.install_field_player(0);
     world.load_field_collision_grid(&wp.live_grid);
-    world.leading_edge_wall_probes = edge_probes;
+    world.locomotion.leading_edge_wall_probes = edge_probes;
     world.actors[0].move_state.world_x = start.0;
     world.actors[0].move_state.world_z = start.1;
     for _ in 0..100 {
@@ -446,7 +446,7 @@ fn full_scene_press_rest(
     frames: usize,
 ) -> (i16, i16) {
     let world = &mut session.host.world;
-    world.leading_edge_wall_probes = edge_probes;
+    world.locomotion.leading_edge_wall_probes = edge_probes;
     let slot = world.player_actor_slot.expect("player actor installed") as usize;
     world.actors[slot].move_state.world_x = start.0;
     world.actors[slot].move_state.world_z = start.1;

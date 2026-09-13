@@ -87,7 +87,7 @@ fn field_world(index: &ProtIndex, scene_name: &str) -> World {
         &map[TRIGGER_BLOCK_OFFSET..],
         map.get(TRIGGER_FALLBACK_OFFSET..).unwrap_or_default(),
     );
-    world.follow_terrain_height = true;
+    world.locomotion.follow_terrain_height = true;
     world
 }
 

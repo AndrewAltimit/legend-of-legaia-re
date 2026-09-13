@@ -229,7 +229,7 @@ impl World {
                 .iter()
                 .any(|r| matches!(r.target, crate::world::EasedMoveTarget::Player))
             {
-                self.field_eased_mirror_y = None;
+                self.locomotion.eased_mirror_y = None;
             }
         }
 
@@ -285,7 +285,7 @@ impl World {
                 // Published whether or not a seat resolves: the latch is a
                 // property of the move, and retail's store goes through the
                 // back-link ahead of anything that reads the seat.
-                self.field_eased_mirror_y = frame.mirror_y;
+                self.locomotion.eased_mirror_y = frame.mirror_y;
                 let Some(slot) = self.player_actor_slot else {
                     return;
                 };
@@ -903,7 +903,7 @@ impl World {
     /// REF: FUN_80034A6C
     pub fn set_pad(&mut self, mask: u16) {
         self.input.set_pad(mask);
-        self.field_run_button_held = mask & self.field_run_button_mask != 0;
+        self.locomotion.run_button_held = mask & self.locomotion.run_button_mask != 0;
     }
 
     /// Per-frame world tick. Drives whichever scene-mode VMs are live.
@@ -1626,7 +1626,7 @@ impl World {
     /// at `0x80084598`), resolved through [`Self::party_roster_slot`].
     fn tick_field_walk_regen(&mut self) {
         use crate::walk_regen::{WalkGauge, WalkRegenMember};
-        if self.walk_regen_steps <= crate::walk_regen::WALK_REGEN_STEP_COST {
+        if self.locomotion.walk_regen_steps <= crate::walk_regen::WALK_REGEN_STEP_COST {
             return;
         }
         let count = (self.party_count.min(3) as usize).min(self.roster.members.len());
@@ -1657,12 +1657,12 @@ impl World {
                 },
             });
         }
-        let mut counter = self.walk_regen_steps;
-        let mut window = self.walk_regen_window;
+        let mut counter = self.locomotion.walk_regen_steps;
+        let mut window = self.locomotion.walk_regen_window;
         // The dialog-window arm edge (see the note above) has no consumer.
         let _armed = crate::walk_regen::tick_walk_regen(&mut counter, &mut members, &mut window);
-        self.walk_regen_steps = counter;
-        self.walk_regen_window = window;
+        self.locomotion.walk_regen_steps = counter;
+        self.locomotion.walk_regen_window = window;
         for (&rslot, m) in slots.iter().zip(members.iter()) {
             let Some(rec) = self.roster.members.get_mut(rslot) else {
                 continue;

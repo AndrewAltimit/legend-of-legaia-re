@@ -253,11 +253,12 @@ impl PlayWindowApp {
             // Re-assert the precise-movement toggle each tick: scene / New
             // Game transitions can reseed world state, and the toggle is
             // host policy (options file + `R` key), not world state.
-            self.session.host.world.precise_movement = self.options_state.precise_movement;
+            self.session.host.world.locomotion.precise_movement =
+                self.options_state.precise_movement;
             // Field Move default (pause-menu Walk / Run) + the run button
             // that inverts it. Re-asserted per tick for the same reason as
             // precise movement: it is host policy over reseeded world state.
-            self.session.host.world.field_move_run_default =
+            self.session.host.world.locomotion.run_default =
                 self.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
             // Photosensitivity guard over the ambient palette cyclers -
             // host policy like the two above (default ON; see
@@ -1048,7 +1049,8 @@ impl PlayWindowApp {
                 // whose record doesn't resolve (e.g. the low walk-move
                 // ids the locomotion controller already covers) drop out
                 // harmlessly.
-                let move_cues = std::mem::take(&mut self.session.host.world.field_player_move_cues);
+                let move_cues =
+                    std::mem::take(&mut self.session.host.world.locomotion.player_move_cues);
                 if !move_cues.is_empty()
                     && let Some(bundle) = self.npc_anim_bundles.0.as_ref()
                 {
@@ -1066,7 +1068,8 @@ impl PlayWindowApp {
                                 bundle,
                                 id as usize - 1,
                             )
-                            && let Some(anim) = self.session.host.world.field_player_anim.as_mut()
+                            && let Some(anim) =
+                                self.session.host.world.locomotion.player_anim.as_mut()
                         {
                             anim.push_scripted(clip);
                         }

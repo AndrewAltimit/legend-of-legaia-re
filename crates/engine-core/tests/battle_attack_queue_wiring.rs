@@ -60,7 +60,7 @@ fn battle_awaiting_command() -> World {
     w.actors[0].move_state.world_x = 300;
     w.actors[0].move_state.world_z = 300;
     w.actors[0].move_state.field_72 = 4096;
-    w.field_camera_azimuth = 0;
+    w.locomotion.camera_azimuth = 0;
 
     use legaia_engine_core::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,

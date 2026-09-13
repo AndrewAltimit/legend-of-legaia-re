@@ -191,8 +191,8 @@ fn faithful_dialogue_tick_never_errors() {
             continue;
         }
         host.world.use_vm_dialogue = true;
-        host.world.follow_terrain_height = true;
-        host.world.leading_edge_wall_probes = true;
+        host.world.locomotion.follow_terrain_height = true;
+        host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;
         host.world.npcs.animate = true;
         if host.enter_field_scene(scene_name, 0).is_err() {
@@ -298,8 +298,8 @@ fn scene_change_destinations_all_enter_without_error() {
     for dest in &destinations {
         // Same play-page arming + world-map routing `SceneHost::tick` uses.
         host.world.use_vm_dialogue = true;
-        host.world.follow_terrain_height = true;
-        host.world.leading_edge_wall_probes = true;
+        host.world.locomotion.follow_terrain_height = true;
+        host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;
         host.world.npcs.animate = true;
         let res = if is_world_map_scene(dest) {

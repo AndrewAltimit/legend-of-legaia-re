@@ -46,11 +46,14 @@ fn field_tick_drains_the_walk_regen_accumulator_and_bumps_the_gauges() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     party_with_walk_passives(&mut world, HP_WALK_MASK | MP_WALK_MASK | AP_WALK_MASK);
-    world.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
+    world.locomotion.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
 
     world.tick();
 
-    assert_eq!(world.walk_regen_steps, 1, "the tick drained 0x20");
+    assert_eq!(
+        world.locomotion.walk_regen_steps, 1,
+        "the tick drained 0x20"
+    );
     assert_eq!(pools(&world), (58, 22, 11), "HP +8 / MP +2 / AP +1");
 }
 
@@ -69,7 +72,7 @@ fn walk_regen_gates_are_per_passive_and_a_bare_party_is_untouched() {
         let mut world = World::new();
         world.mode = SceneMode::Field;
         party_with_walk_passives(&mut world, mask);
-        world.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
+        world.locomotion.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
         world.tick();
         assert_eq!(pools(&world), want, "mask {mask:#x}");
     }
@@ -83,9 +86,12 @@ fn field_tick_walk_regen_is_gated_on_the_retail_step_cost() {
         let mut world = World::new();
         world.mode = SceneMode::Field;
         party_with_walk_passives(&mut world, HP_WALK_MASK);
-        world.walk_regen_steps = start;
+        world.locomotion.walk_regen_steps = start;
         world.tick();
-        assert_eq!(world.walk_regen_steps, start, "counter untouched");
+        assert_eq!(
+            world.locomotion.walk_regen_steps, start,
+            "counter untouched"
+        );
         assert_eq!(pools(&world), (50, 20, 10), "no bump below the cost");
     }
 }

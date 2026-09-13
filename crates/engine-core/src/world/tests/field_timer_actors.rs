@@ -230,14 +230,14 @@ fn op_43_09_mirror_flag_holds_the_eased_y_against_the_terrain_follow() {
     // Y write (into the physics seat) does not reach `move_state`.
     let mut plain = field_world();
     plain.player_actor_slot = Some(1);
-    plain.follow_terrain_height = true;
+    plain.locomotion.follow_terrain_height = true;
     plain.spawn_actor(1);
     plain.load_field_script(script.clone());
     plain.field_ctx.flags |= 0x0100_0000;
     for _ in 0..4 {
         let _ = plain.tick();
     }
-    assert_eq!(plain.field_eased_mirror_y, None, "no flag, no latch");
+    assert_eq!(plain.locomotion.eased_mirror_y, None, "no flag, no latch");
     let floor = plain.sample_field_floor_height(
         plain.actors[1].move_state.world_x as i32,
         plain.actors[1].move_state.world_z as i32,
@@ -250,7 +250,7 @@ fn op_43_09_mirror_flag_holds_the_eased_y_against_the_terrain_follow() {
     // With the flag: the latch carries `-Y` and the height arm writes `Y`.
     let mut mirrored = field_world();
     mirrored.player_actor_slot = Some(1);
-    mirrored.follow_terrain_height = true;
+    mirrored.locomotion.follow_terrain_height = true;
     mirrored.spawn_actor(1);
     mirrored.load_field_script(script);
     mirrored.field_ctx.flags |= 0x0100_0000 | EASE_TARGET_INVERT_Y;
@@ -258,7 +258,8 @@ fn op_43_09_mirror_flag_holds_the_eased_y_against_the_terrain_follow() {
         let _ = mirrored.tick();
     }
     let latch = mirrored
-        .field_eased_mirror_y
+        .locomotion
+        .eased_mirror_y
         .expect("the mirror flag arms the latch");
     let eased_y = mirrored.actors[1].physics.world_y;
     assert_eq!(latch, eased_y.wrapping_neg(), "the latch is the negated Y");
@@ -277,5 +278,8 @@ fn op_43_09_mirror_flag_holds_the_eased_y_against_the_terrain_follow() {
         let _ = mirrored.tick();
     }
     assert!(mirrored.eased_moves.is_empty(), "the tween retired");
-    assert_eq!(mirrored.field_eased_mirror_y, None, "the latch retired too");
+    assert_eq!(
+        mirrored.locomotion.eased_mirror_y, None,
+        "the latch retired too"
+    );
 }

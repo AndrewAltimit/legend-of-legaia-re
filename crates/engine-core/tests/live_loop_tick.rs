@@ -55,7 +55,7 @@ fn build_field_world() -> World {
     w.actors[0].move_state.world_x = 300;
     w.actors[0].move_state.world_z = 300;
     w.actors[0].move_state.field_72 = 4096;
-    w.field_camera_azimuth = 0;
+    w.locomotion.camera_azimuth = 0;
 
     // Encounter session: rate 0xFF (every step rolls a battle), one row =
     // formation 1. Short transition / grace timers keep the test brisk.

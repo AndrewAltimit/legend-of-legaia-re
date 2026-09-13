@@ -1346,7 +1346,7 @@ impl World {
                         // post-naming `A2 F8 30`/`31` land the retail anim
                         // pointer on scene records 47/48 for one playthrough
                         // each).
-                        host.world.field_player_move_cues.push(move_id);
+                        host.world.locomotion.player_move_cues.push(move_id);
                         tl.player_move_frames = CHANNEL_WAIT_PARK_TIMEOUT;
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
@@ -2453,7 +2453,7 @@ impl World {
                     .field_prop_bank
                     .bind_actor_clip(target, move_id, fallback);
                 if target == crate::field_env::PLAYER_ANCHOR_TARGET && move_id > 2 {
-                    host.world.field_player_move_cues.push(move_id);
+                    host.world.locomotion.player_move_cues.push(move_id);
                 }
             }
             // Bind the poked actor's `+0x62` into the executing context for the

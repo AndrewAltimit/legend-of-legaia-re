@@ -407,10 +407,10 @@ pub(super) fn cmd_play_window_with_record(
     session.host.world.use_vm_dialogue = vm_dialogue;
     // Opt-in: snap the player's Y to the per-scene floor height each
     // locomotion step. Off by default → flat-Y behaviour preserved.
-    session.host.world.follow_terrain_height = terrain_y;
+    session.host.world.locomotion.follow_terrain_height = terrain_y;
     // Opt-in: retail's three-probe leading-edge wall footprint (the
     // `DAT_801f2214` standoff). Off by default → candidate-centre test.
-    session.host.world.leading_edge_wall_probes = edge_collision;
+    session.host.world.locomotion.leading_edge_wall_probes = edge_collision;
     session.host.world.npcs.solid = solid_npcs;
     // Opt-in: walk field NPCs along their MAN-authored routes through the
     // motion VM. Off by default -> NPCs rest at their placement anchors.
@@ -1177,11 +1177,11 @@ pub(super) fn cmd_play_window_with_record(
     // on-screen view exactly - including after a left-mouse drag-orbit.
     app.session.camera.distance = app.options_state.camera_distance;
     app.session.camera.render_yaw_bias = -FIELD_FOLLOW_YAW_UNITS / 4096.0 * std::f32::consts::TAU;
-    app.session.host.world.precise_movement = app.options_state.precise_movement;
+    app.session.host.world.locomotion.precise_movement = app.options_state.precise_movement;
     // Field Move (pause menu Walk / Run, retail config word 0x800846CC). The
     // run BUTTON inverts this per frame - see `World::field_run_active` - and
     // is fed from the pad each tick in the event handler.
-    app.session.host.world.field_move_run_default =
+    app.session.host.world.locomotion.run_default =
         app.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
     log::info!(
         "camera: distance = {} (T cycles); precise movement {} (R toggles); drag to orbit",
@@ -1194,7 +1194,7 @@ pub(super) fn cmd_play_window_with_record(
     );
     log::info!(
         "field move: {} by default (hold the run button to invert)",
-        if app.session.host.world.field_move_run_default {
+        if app.session.host.world.locomotion.run_default {
             "RUN"
         } else {
             "walk"

@@ -854,7 +854,7 @@ const DEGENERATE_YAW_WINDOW: u16 = 192;
 /// feed the same case-9 framing - only the azimuth the idle orbit starts from
 /// differs.
 pub(super) fn battle_entry_yaw(world: &legaia_engine_core::world::World) -> f32 {
-    let live = world.field_camera_azimuth & 0xFFF;
+    let live = world.locomotion.camera_azimuth & 0xFFF;
     // Distance to the nearer end of the seat axis (`0` and `2048` are the two
     // azimuths that put the eye on it).
     let off_axis = live.min(4096 - live).min(live.abs_diff(2048));
@@ -871,7 +871,7 @@ mod battle_entry_yaw_tests {
 
     fn world_at(azimuth: u16) -> legaia_engine_core::world::World {
         let mut w = legaia_engine_core::world::World::new();
-        w.field_camera_azimuth = azimuth;
+        w.locomotion.camera_azimuth = azimuth;
         w
     }
 

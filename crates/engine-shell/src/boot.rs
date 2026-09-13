@@ -1267,7 +1267,7 @@ impl BootSession {
         // scripted yaw, the user's manual drag-orbit, and the host
         // renderer's fixed framing bias (`Camera::compass_azimuth_units`);
         // all three default to 0, which maps straight to world +Z.
-        self.host.world.field_camera_azimuth = self.camera.compass_azimuth_units();
+        self.host.world.locomotion.camera_azimuth = self.camera.compass_azimuth_units();
         let event = self.host.tick()?;
         self.camera.route_camera_events(&mut self.host.world);
         if let Some(bgm) = self.bgm.as_mut() {
