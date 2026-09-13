@@ -7,7 +7,7 @@
 pub struct MenuState {
     /// Disc-derived pause-menu text (item names + descriptions, spell
     /// names / descriptions, accessory passive lines). `None` on a
-    /// PROT.DAT-only load; install via [`World::install_menu_text`] when
+    /// PROT.DAT-only load; install via [`crate::world::World::install_menu_text`] when
     /// the executable is reachable. The Items / Magic pause screens read
     /// it through [`crate::pause_screens`].
     pub text: Option<crate::pause_screens::MenuTextTables>,
@@ -25,7 +25,7 @@ pub struct MenuState {
     /// drawing invented text.
     pub context_labels: crate::pause_screens::ContextLockedLabels,
     /// Window-widget bytecode programs resolved from the menu-overlay
-    /// image (PROT 0899) by [`World::install_menu_overlay_tables`] -
+    /// image (PROT 0899) by [`crate::world::World::install_menu_overlay_tables`] -
     /// the disc source the window-script VM (`legaia_engine_vm::run`,
     /// retail `FUN_801D6628`) interprets. `None` on a load without the
     /// overlay; the shop then opens without window choreography.
@@ -36,12 +36,12 @@ pub struct MenuState {
     /// its weapon candidates against. Empty on a load without the overlay,
     /// which is exactly the retail routine's empty-table arm (score 0 for
     /// every weapon, so the pick falls back to raw ATK).
-    /// Installed by [`World::install_menu_overlay_tables`].
+    /// Installed by [`crate::world::World::install_menu_overlay_tables`].
     pub item_category: Vec<crate::menu_item_category::CategoryEntry>,
     /// The quick-travel landmark tables out of `SCUS_942.54`
     /// (`DAT_80073A98` placement records + `DAT_80073B18` names,
     /// [`legaia_asset::worldmap_menu`]). Installed by
-    /// [`World::install_menu_text`]; `None` on a PROT.DAT-only load, and
+    /// [`crate::world::World::install_menu_text`]; `None` on a PROT.DAT-only load, and
     /// the pause menu's Door of Wind list is then empty rather than
     /// invented. Also the world-map landmark menu's source.
     pub worldmap_menu: Option<legaia_asset::worldmap_menu::WorldmapMenu>,
@@ -50,7 +50,7 @@ pub struct MenuState {
     /// by `FUN_801D8B90` phase 3 right before it hands the outer menu SM
     /// exit code [`crate::pause_screens::MENU_EXIT_CODE_WORLD_MAP_WARP`].
     /// `None` until a warp commits; the world tick's
-    /// [`World::drain_staged_menu_warp`] resolves it through
+    /// [`crate::world::World::drain_staged_menu_warp`] resolves it through
     /// [`crate::world::DiscTables::scene_toc_names`] into the named scene transition the scene
     /// host consumes.
     pub pending_warp: Option<crate::pause_screens::StagedWarp>,
@@ -60,8 +60,8 @@ pub struct MenuState {
     pub pending_escape: bool,
     /// The window list those programs drive
     /// ([`crate::menu_widget::MenuWidgetState`], the `vm::Host` impl).
-    /// Run against it via [`World::run_shop_widget_open`] /
-    /// [`World::run_shop_widget_sell_away`].
+    /// Run against it via [`crate::world::World::run_shop_widget_open`] /
+    /// [`crate::world::World::run_shop_widget_sell_away`].
     pub widgets: crate::menu_widget::MenuWidgetState,
 }
 

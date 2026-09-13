@@ -7,7 +7,7 @@
 pub struct FieldVmState {
     /// `_DAT_8007B868` - the dev/retail branch discriminator. **Retail is
     /// zero**; a non-zero value is the dev build's "not an ordinary field
-    /// frame" state. Read by [`World::man_load_actor_reset`] through
+    /// frame" state. Read by [`crate::world::World::man_load_actor_reset`] through
     /// [`crate::field_submode::scene_actor_initial_state`], which forces the
     /// spawned scene actor's state word to `1` when it is set. Mirrors of the
     /// same word live on [`crate::cd_dma`] and [`crate::overlay_loader`]; this
@@ -16,10 +16,10 @@ pub struct FieldVmState {
     /// The op-`0x49` submode context block (`0x801F2734..`), in the order
     /// [`crate::field_submode::SUBMODE_CONTEXT_SEEDS`] lists its ten words -
     /// that const carries the offsets. Reseeded on every MAN load by
-    /// [`World::man_load_actor_reset`]; word `0` is the submode state
+    /// [`crate::world::World::man_load_actor_reset`]; word `0` is the submode state
     /// ([`crate::field_submode::SUBMODE_STATE_OPEN`] once opened).
     pub submode_context: [u32; 10],
-    /// `true` only while [`Self::pre_run_field_channel_prologues`] is
+    /// `true` only while [`crate::world::World::pre_run_field_channel_prologues`] is
     /// executing the scene-entry spawn-prologue slices. The field-VM host
     /// reads it to give the prologue's `4C 51` NPC-run ops their load-time
     /// semantics (an initial SEAT written through the channel ctx) without
@@ -31,7 +31,7 @@ pub struct FieldVmState {
     pub eased_moves: Vec<crate::world::FieldEasedMove>,
     /// The op-`0x49` sub-screen the submode driver actor is running, if any.
     /// See [`crate::field_submode_screen`]; ticked by
-    /// [`World::tick_handler_actors`].
+    /// [`crate::world::World::tick_handler_actors`].
     pub submode_screen: crate::field_submode_screen::SubmodeScreen,
     /// Concurrent spawned-record contexts: partition-2 records spawned
     /// mid-play (field-VM op-`0x44` outside the opening chain) that execute
@@ -39,15 +39,15 @@ pub struct FieldVmState {
     /// (`FUN_8003BDE0` installs `ctx[+0x90]`/`ctx[+0x9E]` and lets the
     /// per-frame context sweep run it as a sibling). Unlike
     /// [`crate::world::CutsceneState::timeline`] these never seize the camera or lock
-    /// player locomotion ([`Self::cutscene_timeline_active`] does not cover
+    /// player locomotion ([`crate::world::World::cutscene_timeline_active`] does not cover
     /// them); only cutscene-class records - the opening chain and gated
     /// walk-on beat records - install as the modal timeline. Installed by
-    /// [`Self::install_spawned_helper_record`], stepped per frame by
-    /// [`Self::step_helper_contexts`], bounded by
-    /// [`SPAWNED_CONTEXT_SLOTS`] (retail's context table is a small fixed
+    /// [`crate::world::World::install_spawned_helper_record`], stepped per frame by
+    /// [`crate::world::World::step_helper_contexts`], bounded by
+    /// [`crate::world::SPAWNED_CONTEXT_SLOTS`] (retail's context table is a small fixed
     /// actor-slot pool). A completed context is dropped the frame it ends.
     pub helper_contexts: Vec<crate::cutscene_timeline::CutsceneTimeline>,
-    /// Set by [`Self::seed_free_roam_story_baseline`] for scene-picker /
+    /// Set by [`crate::world::World::seed_free_roam_story_baseline`] for scene-picker /
     /// `--scene` entries: the world was staged for a free-roam visit with no
     /// story behind it, so the BGM host arm drops entry-window pauses (their
     /// authored repair - the opening records' sub-9 restarts - never runs
@@ -59,21 +59,21 @@ pub struct FieldVmState {
     /// Per-actor field-VM channels: one spawned context per MAN partition-1
     /// placement record, mirroring the retail per-record spawn
     /// (`FUN_8003A1E4`). Spawned alongside a cutscene timeline
-    /// ([`Self::install_cutscene_timeline_record`]) so the timeline's
+    /// ([`crate::world::World::install_cutscene_timeline_record`]) so the timeline's
     /// cross-context pokes (flag writes, animate cues, moves) land on real
     /// per-actor contexts - the opening prologue's vignette mechanism.
-    /// Stepped run-until-yield per frame by [`Self::step_field_channels`].
+    /// Stepped run-until-yield per frame by [`crate::world::World::step_field_channels`].
     pub channels: Vec<crate::field_channels::FieldChannel>,
     /// The MAN payload the channels' bytecode slices from (each channel's
     /// buffer base is its `record_offset` into this).
     pub channels_man: Option<std::sync::Arc<Vec<u8>>>,
     /// Placement index of the channel context currently executing (its own
-    /// slice in [`Self::step_field_channels`], or the target of a
+    /// slice in [`crate::world::World::step_field_channels`], or the target of a
     /// cross-context poke from the cutscene timeline), so field-VM host hooks
     /// (animate, move) can attribute the side-effect to that placement's NPC.
     /// `None` outside a channel-targeted step.
     pub executing_channel: Option<u8>,
-    /// `true` while [`Self::run_spawned_record_slice`] is stepping a spawned
+    /// `true` while [`crate::world::World::run_spawned_record_slice`] is stepping a spawned
     /// partition-2 record context (the modal cutscene timeline or a
     /// concurrent helper context). Host hooks use it to distinguish a
     /// spawned record's cross-context channel poke (seat the target exactly -
@@ -94,7 +94,7 @@ pub struct FieldVmState {
     /// the record - as the modal cutscene timeline during the opening chain,
     /// as a concurrent [`crate::world::FieldVmState::helper_contexts`] entry otherwise - when its
     /// C1/C2 story-flag gates pass. A queue (bounded by
-    /// [`SPAWNED_CONTEXT_SLOTS`]) so a second spawn issued while another
+    /// [`crate::world::SPAWNED_CONTEXT_SLOTS`]) so a second spawn issued while another
     /// record executes is not dropped.
     pub pending_record_spawns: Vec<u8>,
 }

@@ -9,7 +9,7 @@ use super::*;
 pub struct MoveVmGlobals {
     /// Per-actor move-VM bytecode buffers. Indexed by actor slot. Empty
     /// vec means "no active move" - the move VM is not ticked for that
-    /// actor. Set via [`World::set_move_bytecode`].
+    /// actor. Set via [`crate::world::World::set_move_bytecode`].
     pub bytecode: Vec<Vec<u16>>,
     /// MOVE buffer pool root, mirroring retail `_DAT_8007B888`. Populated
     /// per scene from the slot-1 `Asset(0x05) = Move` descriptor (the
@@ -30,7 +30,7 @@ pub struct MoveVmGlobals {
     /// overlay paths.
     pub buffer_alt_root: Vec<u8>,
     /// Per-actor [`TickEvent`]s emitted by the last
-    /// [`World::tick_actor_physics`] pass. Engines that want to react
+    /// [`crate::world::World::tick_actor_physics`] pass. Engines that want to react
     /// to audio cues, render submissions, or unlink requests drain
     /// this each frame; the move-buffer cursor kick is dispatched
     /// inline so callers do not need to inspect this list to keep
@@ -65,7 +65,7 @@ pub struct MoveVmGlobals {
     /// actor's `move_state` `(world_x, world_y)` toward the target through
     /// the motion VM, one step per tick (`Self::tick_actor_motions`).
     pub actor_motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
-    /// Per-actor move-VM outcomes from the most recent [`World::tick_move_vms`]
+    /// Per-actor move-VM outcomes from the most recent [`crate::world::World::tick_move_vms`]
     /// call. Pairs of `(actor_slot, outcome)`. Engines drain or inspect this
     /// after `World::tick` to react to halts / pending opcodes.
     pub outcomes: Vec<(u8, vm::move_vm::ActorTickOutcome)>,

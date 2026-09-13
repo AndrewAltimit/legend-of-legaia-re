@@ -25,7 +25,7 @@ pub struct PartyState {
     /// There is no melee-range table here either, for the same reason and by
     /// the same evidence: retail computes reach (`FUN_8004E2F0`) from the
     /// attacker's per-character base, both actors' size classes and their live
-    /// positions. [`World::battle_range_metric`] answers from those models.
+    /// positions. [`crate::world::World::battle_range_metric`] answers from those models.
     pub character_ability_bits: [u32; 8],
     /// Number of party slots (default 3).
     pub party_count: u8,
@@ -40,10 +40,10 @@ pub struct PartyState {
     /// the live-verified retail banding rule (band = ordinal, file =
     /// 862 + char_id). Empty = identity mapping (slot `i` = roster `i`,
     /// the Vahn/Noa/Gala default). Resolve through
-    /// [`Self::party_roster_slot`]; install via [`Self::set_active_party`].
+    /// [`crate::world::World::party_roster_slot`]; install via [`crate::world::World::set_active_party`].
     pub active_party: Vec<u8>,
-    /// Persistent per-character roster - populated by [`World::load_party`]
-    /// and written back by [`World::save_party`]. Each record is the
+    /// Persistent per-character roster - populated by [`crate::world::World::load_party`]
+    /// and written back by [`crate::world::World::save_party`]. Each record is the
     /// 0x414-byte struct documented in `docs/subsystems/battle.md`. The
     /// in-battle `BattleActor` slots mirror HP / MP from this; everything
     /// else (spells, equipment, ability bits) flows through this canonical
@@ -60,23 +60,23 @@ pub struct PartyState {
     /// can re-key this to their own inventory model.
     pub inventory: std::collections::HashMap<u8, u8>,
     /// Per-character Tactical Arts use-counter tracker. Engines call
-    /// [`World::notify_art_used`] from the battle side-effects handler when
+    /// [`crate::world::World::notify_art_used`] from the battle side-effects handler when
     /// a Tactical Arts strike lands; the tracker emits
     /// [`BattleEvent::TacticalArtLearned`] and sets
     /// [`crate::world::PartyState::current_art_banner`] on first learn.
     pub tactical_arts: TacticalArtsTracker,
-    /// Active "art learned" HUD banner. Set by [`World::notify_art_used`]
+    /// Active "art learned" HUD banner. Set by [`crate::world::World::notify_art_used`]
     /// when a new art crosses the learn threshold; its `frames_remaining`
-    /// counter is decremented by [`World::tick`] until it reaches zero.
+    /// counter is decremented by [`crate::world::World::tick`] until it reaches zero.
     /// `None` when no banner is active. Engines render this as a dialog-
     /// font overlay above the battle HUD.
     pub current_art_banner: Option<ArtLearnedBanner>,
     /// Per-party XP accumulator and level state. Engines call
-    /// [`World::apply_battle_xp`] after a `BattleEndCause::MonsterWipe` to
+    /// [`crate::world::World::apply_battle_xp`] after a `BattleEndCause::MonsterWipe` to
     /// distribute XP and check for level-ups.
     pub level_up_tracker: LevelUpTracker,
-    /// Active level-up HUD banner. Set by [`World::apply_battle_xp`];
-    /// `frames_remaining` is decremented by [`World::tick`] until it reaches
+    /// Active level-up HUD banner. Set by [`crate::world::World::apply_battle_xp`];
+    /// `frames_remaining` is decremented by [`crate::world::World::tick`] until it reaches
     /// zero, at which point the next entry of
     /// [`crate::world::PartyState::pending_level_up_banners`] takes the slot. `None` when no
     /// banner is active. Engines render this as a dialog-font overlay after
@@ -93,7 +93,7 @@ pub struct PartyState {
     /// banners.
     pub pending_level_up_banners: std::collections::VecDeque<LevelUpBanner>,
     /// Active post-battle Seru-capture banner. Set by `World::resolve_captures`
-    /// when a capture is accepted; advanced one frame per [`World::tick`] and
+    /// when a capture is accepted; advanced one frame per [`crate::world::World::tick`] and
     /// cleared when its [`crate::seru_learning::SeruCaptureSession`] reaches
     /// `Done`. Engines render [`crate::seru_learning::SeruCaptureSession::current_banner`]
     /// as a dialog-font overlay after battle, the sibling of
@@ -113,7 +113,7 @@ pub struct PartyState {
     ///
     /// Seeded at scene load from the scene MAN header's `[0x01] & 1`
     /// ([`legaia_asset::man_section::ManHeader::low_flag`]) by
-    /// [`World::install_scene_save_permission`]; a scene with no MAN, and a
+    /// [`crate::world::World::install_scene_save_permission`]; a scene with no MAN, and a
     /// world that has not loaded one, reads `false` - the same state retail's
     /// own init leaves the byte in. Read by the pause menu, where a cleared
     /// flag greys the Save row and buzzes its confirm
@@ -121,19 +121,19 @@ pub struct PartyState {
     pub scene_save_allowed: bool,
     /// Party-global 4×u32 ability mask - the engine mirror of retail
     /// `DAT_80074358..0x80074368` (every member's `+0xF4` bitfield OR'd
-    /// together each rebuild). Bit-tested via [`World::party_has_ability`]
+    /// together each rebuild). Bit-tested via [`crate::world::World::party_has_ability`]
     /// (the `FUN_800431D0` port); rebuilt by
-    /// [`World::refresh_party_ability_bits`].
+    /// [`crate::world::World::refresh_party_ability_bits`].
     pub party_ability_mask: [u32; crate::accessory_passives::ABILITY_WORDS],
     /// Per-party-slot display names. Seeded from the starting-party template
-    /// at [`Self::seed_starting_party`] and overwritten by the name-entry
-    /// overlay ([`Self::open_name_entry`]). Indexed by party slot; a slot with
+    /// at [`crate::world::World::seed_starting_party`] and overwritten by the name-entry
+    /// overlay ([`crate::world::World::open_name_entry`]). Indexed by party slot; a slot with
     /// no entry falls back to the template name at the call site.
     pub party_names: Vec<String>,
     /// Active name-entry overlay session, or `None` when no name is being
-    /// entered. Installed by [`Self::open_name_entry`] (the opening `town01`
+    /// entered. Installed by [`crate::world::World::open_name_entry`] (the opening `town01`
     /// script's lead-character prompt) and driven by
-    /// [`Self::step_name_entry`]; on commit the name lands in
+    /// [`crate::world::World::step_name_entry`]; on commit the name lands in
     /// [`crate::world::PartyState::party_names`].
     pub name_entry: Option<crate::name_entry::NameEntry>,
 }

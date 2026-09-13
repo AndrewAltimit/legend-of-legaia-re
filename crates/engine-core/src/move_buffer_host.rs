@@ -34,9 +34,9 @@
 //! module; the spec is `ghidra/scripts/funcs/800204f8.txt` plus the
 //! per-record reader in `legaia-mdt`.
 //!
-//! [`crate::world::MoveVmGlobals::buffer_root`]: crate::world::World::move_buffer_root
-//! [`crate::world::MoveVmGlobals::buffer2_root`]: crate::world::World::move2_buffer_root
-//! [`crate::world::MoveVmGlobals::buffer_alt_root`]: crate::world::World::move_buffer_alt_root
+//! [`crate::world::MoveVmGlobals::buffer_root`]: crate::world::MoveVmGlobals::buffer_root
+//! [`crate::world::MoveVmGlobals::buffer2_root`]: crate::world::MoveVmGlobals::buffer2_root
+//! [`crate::world::MoveVmGlobals::buffer_alt_root`]: crate::world::MoveVmGlobals::buffer_alt_root
 //! [`STATUS_FLAG_ALT_POOL`]: legaia_engine_vm::move_buffer::STATUS_FLAG_ALT_POOL
 //! [`vm::move_buffer::MoveBufferHost::resolve_record`]:
 //! legaia_engine_vm::move_buffer::MoveBufferHost::resolve_record

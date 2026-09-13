@@ -6,7 +6,7 @@
 /// Engine behaviour toggles: the live gameplay loop, VM-driven dialogue, damage finish, monster targeting, select-attack option, flashing reduction and the entry pulse gate.
 pub struct WorldToggles {
     /// Scene-entry VDF pulse **enhancement** gate
-    /// ([`World::install_entry_vdf_pulse`]). On by default; clearing it
+    /// ([`crate::world::World::install_entry_vdf_pulse`]). On by default; clearing it
     /// keeps every never-retail-armed morph pack (jou's flesh ground)
     /// static at plain entry, exactly as retail draws it. Retail-armed
     /// scenes are unaffected either way - the installer stands aside for
@@ -15,7 +15,7 @@ pub struct WorldToggles {
     /// Photosensitivity guard over the ambient CLUT-cell cyclers (see
     /// [`crate::options::OptionsState::reduce_flashing`]). When `true`
     /// (the default - a host that never plumbs options stays safe),
-    /// [`World::step_ambient_fx`] slew-limits the **applied** luminance
+    /// [`crate::world::World::step_ambient_fx`] slew-limits the **applied** luminance
     /// channels (`v_add`, `white`) toward each cell's simulated target
     /// instead of jumping, so full-swing per-tick strobes (koin3's dance
     /// floor) become sub-hazard-rate pulses. Hue / saturation sweeps pass
@@ -26,16 +26,16 @@ pub struct WorldToggles {
     /// Master opt-in for the **field side** of the in-`tick` Field <-> Battle
     /// round trip: the step-driven random-encounter roll.
     ///
-    /// When `false` the Field branch of [`World::tick`] runs the field VM +
+    /// When `false` the Field branch of [`crate::world::World::tick`] runs the field VM +
     /// locomotion but never rolls an encounter. When `true` it also drives
-    /// [`World::live_field_tick`] - per-step roll, transition countdown, and
+    /// [`crate::world::World::live_field_tick`] - per-step roll, transition countdown, and
     /// the automatic `Field -> Battle` flip resolving a real formation.
     ///
     /// The **battle side is not gated by this flag.** Once the world is in
-    /// [`SceneMode::Battle`] - however it got there: this roll, a field
+    /// [`crate::world::SceneMode::Battle`] - however it got there: this roll, a field
     /// carrier's scripted `3E FF` fight, a world-map region encounter, or a
-    /// direct [`World::enter_battle`] - [`World::tick`] always drives
-    /// [`World::live_battle_tick`], because a battle that cannot resolve is a
+    /// direct [`crate::world::World::enter_battle`] - [`crate::world::World::tick`] always drives
+    /// [`crate::world::World::live_battle_tick`], because a battle that cannot resolve is a
     /// soft-lock. Retail has no "loop enabled" concept either
     /// (`FUN_801E295C`). Hosts that want a driven-battle-only slice can
     /// simply leave this flag off and enter battle themselves.
@@ -52,7 +52,7 @@ pub struct WorldToggles {
     /// targets are never touched.
     pub smarter_monster_targeting: bool,
     /// Opt-in: route field NPC dialogue through the inline-script field-VM
-    /// runner ([`Self::drive_inline_dialogue`]) instead of the simplified
+    /// runner ([`crate::world::World::drive_inline_dialogue`]) instead of the simplified
     /// `current_dialog` / `OwnedDialogPanel` path, so dialogue branch handlers
     /// actually execute (story-flag tests, `SET`/`CLEAR`, scene changes). Off
     /// by default - when off, behaviour is identical to before.
@@ -62,7 +62,7 @@ pub struct WorldToggles {
     /// of `FUN_801ddb30`) instead of stopping at the raw roll. The finisher
     /// adds the universal post-stages - the party defender's equipment
     /// elemental-resistance ladder (live, off the character's ability words
-    /// via [`World::defender_resist`]), the rand-based no-damage floor on a
+    /// via [`crate::world::World::defender_resist`]), the rand-based no-damage floor on a
     /// hit mitigation zeroed, and the 9999 cap. The guard halve is
     /// deliberately not taken here: the melee kernel already charges the
     /// Spirit stance as its guard-roll triple. **On by default** - retail

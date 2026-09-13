@@ -23,7 +23,7 @@ pub struct FrameClock {
     /// ([`crate::scene::SceneHost::enter_field_scene`]) rather than modelling
     /// the load-adaptive writer. Consumed by everything that advances
     /// per-game-tick in vsync units - the scripted CLUT fades
-    /// ([`Self::step_clut_fx`]) and the shell's CLUT-cycle cadence.
+    /// ([`crate::world::World::step_clut_fx`]) and the shell's CLUT-cycle cadence.
     ///
     /// REF: FUN_80016B6C
     pub frame_step: u8,
@@ -44,7 +44,7 @@ pub struct FrameClock {
     /// its caller (the per-frame mode handler, [`crate::mode::per_frame_stage`])
     /// then abandons the frame after a pad poll and a `VSync(0)` - no
     /// mid-frame driver, no frame-end pass. Consumed (and cleared) by
-    /// [`crate::mode::ModeDriver::tick`] via [`World::take_frame_begin_skip`].
+    /// [`crate::mode::ModeDriver::tick`] via [`crate::world::World::take_frame_begin_skip`].
     ///
     /// Defaults to `false`; a host that never sets it gets the pre-existing
     /// tick-every-frame behaviour - and that is also what **retail** does.
@@ -65,7 +65,7 @@ pub struct FrameClock {
     pub frame_begin_skip: bool,
     /// Retail's frame-time history behind the adaptive cadence
     /// (`DAT_80084098[16]` + `0x1F800392`). Only advanced when a host calls
-    /// [`World::resolve_frame_step`]; a host with no frame-time telemetry
+    /// [`crate::world::World::resolve_frame_step`]; a host with no frame-time telemetry
     /// leaves it untouched and keeps the deterministic floor.
     pub frame_step_telemetry: vm::actor_tick::FrameStepTelemetry,
     /// Vsyncs accumulated toward the next **actor** game tick. Same clock as
@@ -81,26 +81,26 @@ pub struct FrameClock {
     /// REF: FUN_80016B6C (cadence resolver), FUN_801D6704 (field floor = 2)
     pub actor_vsync_accum: u8,
     /// Monotonic count of sim ticks that ran, advanced once per
-    /// [`Self::tick`]. It is the world's cheapest "a frame actually ran"
+    /// [`crate::world::World::tick`]. It is the world's cheapest "a frame actually ran"
     /// witness - the mode driver's frame-begin-skip test probes it to tell an
     /// abandoned frame from a live one.
     ///
     /// Historically this was a fixed-point phase accumulator bridging a
     /// claimed 100 Hz sim to retail's 60 Hz display frame. No host ever ticked
     /// at 100 Hz, so the phase only ever *withheld* retail frames; with the
-    /// 1:1 denomination (see [`Self::tick`]) there is no phase left to carry.
+    /// 1:1 denomination (see [`crate::world::World::tick`]) there is no phase left to carry.
     pub sim_ticks: u32,
     /// Monotonic count of retail display frames elapsed. Consumers that have
     /// to advance something in retail-frame time (the renderer's cutscene
     /// camera glide, whose `apply_trigger` is a duration in display frames)
     /// diff this rather than counting sim ticks.
     ///
-    /// Under the 1:1 denomination this equals [`Self::frame`]; it stays a
+    /// Under the 1:1 denomination this equals [`crate::world::World::frame`]; it stays a
     /// separate counter because it names a *unit* (retail display frames) that
     /// the sim-tick counter does not promise.
     pub display_frames: u64,
     /// `1` on every sim tick that maps to a retail display frame - which, under
-    /// the 1:1 denomination [`Self::tick`] documents, is every sim tick.
+    /// the 1:1 denomination [`crate::world::World::tick`] documents, is every sim tick.
     ///
     /// Consumers gate on it to say "this is retail-frame paced": the narration
     /// roller (whose scroll speed is pinned as 1 px per 6 frames at 60 Hz), the

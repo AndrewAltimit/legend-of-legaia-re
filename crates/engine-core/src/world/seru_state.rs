@@ -12,14 +12,14 @@ pub struct SeruState {
     /// through [`legaia_save::SaveExtV2::per_char`].
     pub log: crate::seru_learning::SeruCaptureLog,
     /// Master Seru registry (Seru id -> spell taught + capture points).
-    /// Engines install via [`World::set_seru_registry`]; `World::finish_battle`
+    /// Engines install via [`crate::world::World::set_seru_registry`]; `World::finish_battle`
     /// resolves [`crate::world::SeruState::battle_captures`] against it into [`crate::world::SeruState::log`].
     /// Empty by default - captures then bank no points (the monster is still
     /// downed + logged, but nothing is learned).
     pub registry: crate::seru_learning::SeruRegistry,
     /// Capture outcomes produced by the most recently finished battle, one per
     /// captured Seru that the registry accepted. Hosts drain this with
-    /// [`World::drain_last_capture_outcomes`] to drive the "captured / learned"
+    /// [`crate::world::World::drain_last_capture_outcomes`] to drive the "captured / learned"
     /// banner ([`crate::seru_learning::SeruCaptureSession`]).
     pub last_capture_outcomes: Vec<crate::seru_learning::CaptureOutcome>,
     /// Monster ids captured this battle by a capture spell (`SpellEffect::Capture`).
@@ -31,10 +31,10 @@ pub struct SeruState {
     /// variant in a given battle: a single rare enemy with +35% stats whose
     /// captured Seru deals +35% damage forever (see the `--shiny-seru`
     /// randomizer feature). `0` disables. Default
-    /// [`World::DEFAULT_SHINY_CHANCE_PCT`].
+    /// [`crate::world::World::DEFAULT_SHINY_CHANCE_PCT`].
     pub shiny_chance_pct: u8,
     /// Battle slots flagged shiny this battle (filled by
-    /// [`World::roll_shiny_enemy`] at battle entry, drained at battle end).
+    /// [`crate::world::World::roll_shiny_enemy`] at battle entry, drained at battle end).
     /// A shiny enemy's stats are pre-boosted; capturing it marks the learned
     /// spell shiny.
     pub shiny_enemy_slots: std::collections::HashSet<u8>,
@@ -45,7 +45,7 @@ pub struct SeruState {
     /// new_level)` per event, in resolution order. The engine analogue of the
     /// retail level-up banner (the level-up check fires UI element `0x65` -
     /// REF: FUN_801e70bc, ported in `world::battle::accrue_summon_spell_xp`);
-    /// hosts drain via [`World::drain_magic_level_ups`].
+    /// hosts drain via [`crate::world::World::drain_magic_level_ups`].
     pub magic_level_ups: Vec<(u8, u8, u8)>,
 }
 

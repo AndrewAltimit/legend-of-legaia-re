@@ -18,7 +18,7 @@ pub struct StoryFlagState {
     /// Field-VM `extra_flags` register read by op 0x42 mode 0 - the
     /// `_DAT_8007B8F4` **region-type mask**: bit `n` set when the player's
     /// tile sits inside a type-`n` region of the scene `.MAP` region table.
-    /// Rebuilt per tile crossing by [`World::refresh_field_regions`] (the
+    /// Rebuilt per tile crossing by [`crate::world::World::refresh_field_regions`] (the
     /// `FUN_800180EC` / `FUN_801DBA20` ports in [`crate::field_regions`])
     /// when the per-scene tables are installed; otherwise host-owned
     /// scene-local state.
@@ -39,7 +39,7 @@ pub struct StoryFlagState {
     /// the per-mode scratchpad word [`crate::world::StoryFlagState::story_flags`].
     ///
     /// Empty (`vec![]`) when the engine hasn't been booted from a retail
-    /// SC block; populated via [`Self::load_full`] when a retail-shaped
+    /// SC block; populated via [`crate::world::World::load_full`] when a retail-shaped
     /// [`legaia_save::SaveFile`] is restored.
     pub story_flag_bits: Vec<u8>,
 }

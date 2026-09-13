@@ -47,11 +47,11 @@ pub struct FieldTerrain {
     /// (retail `DAT_1F80035C`, filled from the MAN header by `FUN_8003AEB0` as
     /// 16 negated `s16` elevation tiers). Resolved per-scene into here from
     /// [`crate::scene::SceneAssets::field_floor_height_lut`]; consumed by
-    /// [`World::sample_field_floor_height`] (the port of `FUN_80019278`). All
+    /// [`crate::world::World::sample_field_floor_height`] (the port of `FUN_80019278`). All
     /// zero until a field scene supplies it.
     pub floor_height_lut: [i16; 16],
     /// The `.MAP` **object-grid** cell words (`+0x8000`, one `u16` per tile,
-    /// `0x80 x 0x80`). [`World::sample_field_floor_height`] tests each tile's
+    /// `0x80 x 0x80`). [`crate::world::World::sample_field_floor_height`] tests each tile's
     /// [`crate::world::CELL_ELEVATION_OVERRIDE`] (`0x800`) bit to pick the
     /// floor model: bilinear corner-nibble surface, or the flat tile mean plus
     /// the tile's [`crate::world::FieldTerrain::elevation_overrides`] record (ramps / stairs).
@@ -71,23 +71,23 @@ pub struct FieldTerrain {
     /// carry object grids with `0x2000` cells and **not one** `0x1000` cell.
     /// Gating the standable test on `0x1000` alone therefore reads those scenes
     /// as having no floor at all, which makes
-    /// [`World::resolve_cold_field_spawn`] inert there: every component is
+    /// [`crate::world::World::resolve_cold_field_spawn`] inert there: every component is
     /// empty, so the retail seat is returned unresolved and `kor5` seats the
     /// player inside a wall.
     ///
     /// Retail never consults this grid to decide where the player may stand -
     /// standing is the collision grid's wall bits
-    /// ([`World::field_tile_is_wall`]) - so the bit is only ever the port's
+    /// ([`crate::world::World::field_tile_is_wall`]) - so the bit is only ever the port's
     /// extra "is this inside the authored area" filter, and the filter has to
     /// use whichever bit the scene actually authored.
     ///
-    /// Set by [`World::load_field_object_cells`]; `CELL_WALK_VISIBLE` before
+    /// Set by [`crate::world::World::load_field_object_cells`]; `CELL_WALK_VISIBLE` before
     /// any scene supplies a grid.
     pub floor_cell_bit: u16,
     /// The scene's kind-2 `.MAP` **elevation-override** records, primary
     /// (`+0x10000`) table followed by the fallback (`+0x12000`) one, so a
     /// linear first-match scan reproduces `FUN_801D5630`'s order. Consumed by
-    /// [`World::sample_field_floor_height`] on
+    /// [`crate::world::World::sample_field_floor_height`] on
     /// [`crate::world::CELL_ELEVATION_OVERRIDE`] tiles.
     pub elevation_overrides: Vec<crate::world::ElevationOverride>,
     /// Live floor-height-ladder oscillators (field-VM op `0x4C` nibble-9
@@ -103,7 +103,7 @@ pub struct FieldTerrain {
     /// Region-keyed random-encounter state for the current FIELD scene (the
     /// same [`crate::region_encounter`] `FUN_801D9E1C` port the overworld
     /// uses, [`crate::world::WorldMapState::region_tracker`]). When set,
-    /// [`Self::on_field_step`] rolls against the player's *active region*
+    /// [`crate::world::World::on_field_step`] rolls against the player's *active region*
     /// (per-region rate increment + formation-range pick) and drives the
     /// trigger through the [`crate::encounter::EncounterSession`]'s
     /// transition / grace SM, instead of the session's mean-rate tracker.

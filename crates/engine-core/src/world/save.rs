@@ -533,7 +533,7 @@ impl World {
     ///
     /// Note this is the *open* gate only. Whether the opened menu's **Save**
     /// row then accepts is a separate, per-scene question answered by
-    /// [`crate::world::PartyState::scene_save_allowed`](crate::world::World::scene_save_allowed)
+    /// [`crate::world::PartyState::scene_save_allowed`](crate::world::PartyState::scene_save_allowed)
     /// at the row's confirm, exactly as retail keeps `_DAT_800846D8` (which
     /// button opens the menu) and `_DAT_8007B6A8` (whether Save is legal
     /// here) as two independent globals.

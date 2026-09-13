@@ -10,26 +10,26 @@ pub struct CutsceneState {
     /// Pending FMV trigger (field-VM op `0x4C 0xE2`). When `Some(fmv_id)`,
     /// the field VM has signalled that the next-game-mode global should
     /// transition to game mode 26 (StrInit) with the given index. Engines
-    /// drain this after [`World::tick`] to actually open the corresponding
+    /// drain this after [`crate::world::World::tick`] to actually open the corresponding
     /// `MV*.STR` (use [`crate::cutscene::fmv_index_to_str_filename`] for
     /// the retail mapping). `None` between triggers.
     pub pending_fmv_trigger: Option<i16>,
-    /// The FMV currently playing in [`SceneMode::Cutscene`]. Set when the
+    /// The FMV currently playing in [`crate::world::SceneMode::Cutscene`]. Set when the
     /// world consumes a [`crate::world::CutsceneState::pending_fmv_trigger`] at the top of a
-    /// [`World::tick`] and flips into the cutscene mode (mirroring retail's
+    /// [`crate::world::World::tick`] and flips into the cutscene mode (mirroring retail's
     /// next-game-mode dispatch to game mode 26 one frame after the field-VM
     /// op writes the global). While `Some`, the field VM is suspended (the
     /// STR overlay owns the frame in retail); the host plays the resolved
-    /// `MV*.STR` and calls [`World::finish_cutscene`] when playback ends.
+    /// `MV*.STR` and calls [`crate::world::World::finish_cutscene`] when playback ends.
     /// `None` outside an STR-FMV cutscene.
     pub active_fmv: Option<i16>,
     /// Scene mode to restore when the active STR-FMV cutscene finishes
-    /// (set on entry, consumed by [`World::finish_cutscene`]). Retail
+    /// (set on entry, consumed by [`crate::world::World::finish_cutscene`]). Retail
     /// returns to the field after the cutscene overlay unloads; `None`
     /// outside a cutscene.
     pub return_mode: Option<SceneMode>,
     /// The `fmv_id` whose playback just ended, parked here by
-    /// [`World::finish_cutscene`] for exactly one drain by
+    /// [`crate::world::World::finish_cutscene`] for exactly one drain by
     /// [`crate::scene::SceneHost::apply_pending_fmv_handoff`].
     ///
     /// Retail's post-play control transfer is not a world-only decision - the
@@ -48,34 +48,34 @@ pub struct CutsceneState {
     /// teardown requests and the ambient particles a host reads back.
     pub element_frame: crate::world::ElementFrame,
     /// Active opening-cutscene narration presenter, or `None` when no cutscene
-    /// narration is playing. Installed by [`Self::open_cutscene_narration`]
+    /// narration is playing. Installed by [`crate::world::World::open_cutscene_narration`]
     /// (the `opdeene` opening prologue) with the inline subtitle pages decoded
     /// from the scene MAN's cutscene-timeline script; its per-page timer is
-    /// advanced in [`Self::tick`], and the host renders [`Self::narration`]'s
+    /// advanced in [`crate::world::World::tick`], and the host renders [`Self::narration`]'s
     /// current page. It gates the prologue hand-off: while it is active the
     /// confirm press skips narration pages, and only once it completes does a
-    /// confirm reach [`Self::take_prologue_handoff`].
+    /// confirm reach [`crate::world::World::take_prologue_handoff`].
     pub narration: Option<crate::cutscene_narration::CutsceneNarration>,
-    /// Monotonic counter incremented each time [`Self::open_cutscene_narration`]
+    /// Monotonic counter incremented each time [`crate::world::World::open_cutscene_narration`]
     /// installs a crawl block. Lets observers distinguish back-to-back crawl
     /// blocks (a non-blocking crawl opens the next block the same tick the prior
     /// scrolls out) that a rising-edge `active`-watch would merge into one.
     pub narration_seq: u32,
     /// Active opening-cutscene timeline executor, or `None` when no cutscene
     /// timeline is running. Installed by
-    /// [`Self::load_cutscene_timeline_from_man`] (the `opdeene` opening
+    /// [`crate::world::World::load_cutscene_timeline_from_man`] (the `opdeene` opening
     /// prologue) with the partition-2 record that issues `GFLAG_SET 26`;
-    /// stepped each frame by [`Self::step_cutscene_timeline`] so the cutscene's
+    /// stepped each frame by [`crate::world::World::step_cutscene_timeline`] so the cutscene's
     /// camera path + actor moves play and the hand-off bit fires by execution.
     /// See [`crate::cutscene_timeline::CutsceneTimeline`].
     ///
     /// This is the single **modal** context slot: while it is active the
     /// cutscene camera owns the frame and pad locomotion is locked
-    /// ([`Self::cutscene_timeline_active`] gates). Ordinary mid-play spawned
+    /// ([`crate::world::World::cutscene_timeline_active`] gates). Ordinary mid-play spawned
     /// records execute concurrently in [`crate::world::FieldVmState::helper_contexts`] instead and
     /// never seize either.
     pub timeline: Option<crate::cutscene_timeline::CutsceneTimeline>,
-    /// `true` only while [`Self::step_cutscene_timeline`] is executing the
+    /// `true` only while [`crate::world::World::step_cutscene_timeline`] is executing the
     /// spawned cutscene context. The field-VM host reads it to suppress the
     /// actor-allocator hook (op `0x4C` n8 sub-0), which in the cutscene context
     /// (target `0xF8`) is the inline-narration text-draw the separate
@@ -86,13 +86,13 @@ pub struct CutsceneState {
     /// STATE_RESUME (the pinned name-entry handoff at P2[3] body `0x02c6`) opens
     /// the name-entry overlay instead of parking generically. One-shot for the
     /// opening; a normal `town01` visit never sets it. See
-    /// [`Self::install_town01_opening_timeline`].
+    /// [`crate::world::World::install_town01_opening_timeline`].
     pub prologue_naming_pending: bool,
     /// Set once the timeline's op-`0x49` has opened the name-entry overlay, so
     /// the op suspends (Armed) until the player commits a name, then resumes
     /// (Done) - and never re-opens it on the record's later STATE_RESUMEs.
     pub prologue_naming_armed: bool,
-    /// Set by [`Self::take_prologue_handoff`] when it hands off to `town01`, so
+    /// Set by [`crate::world::World::take_prologue_handoff`] when it hands off to `town01`, so
     /// the next `town01` field entry installs the opening cutscene timeline
     /// (establishing shot + Vahn walk-out + name-entry handoff). Cleared when
     /// the entry consumes it, so only the prologue path runs the opening.
@@ -118,7 +118,7 @@ pub struct CutsceneState {
     /// predecessor-kill. Hosts render `text` at `(x, y)` while it runs.
     pub text_balloon: Option<crate::text_balloon::TextBalloon>,
     /// Fade level (0..=1) of [`crate::world::CutsceneState::caption`], ramped each
-    /// [`Self::tick`]. Target-visible in the gap after the first narration
+    /// [`crate::world::World::tick`]. Target-visible in the gap after the first narration
     /// crawl block scrolls out and before the second opens (retail shows the
     /// caption once, between `opdeene`'s two crawls).
     pub caption_alpha: f32,

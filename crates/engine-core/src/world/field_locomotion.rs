@@ -9,7 +9,7 @@ use super::*;
 pub struct FieldLocomotion {
     /// When set, field free-movement snaps the player's `world_y` to the
     /// per-scene terrain elevation each step via
-    /// [`World::sample_field_floor_height`] (the port of `FUN_80019278`).
+    /// [`crate::world::World::sample_field_floor_height`] (the port of `FUN_80019278`).
     /// Off by default so the flat-Y locomotion oracles keep their constant
     /// `world_y`; enable it for terrain-following play. Only the pad
     /// locomotion path consults it - world-map walk keeps its own height
@@ -18,7 +18,7 @@ pub struct FieldLocomotion {
     pub follow_terrain_height: bool,
     /// The player's field idle/walk clip pair (PROT 0874 §1 locomotion
     /// bundle). Installed per scene by the host
-    /// ([`World::set_field_player_anim`]); the field tick advances it after
+    /// ([`crate::world::World::set_field_player_anim`]); the field tick advances it after
     /// the locomotion step and folds the output into the player actor's
     /// `pose_frame`, so hosts rebuild the posed mesh exactly like the battle
     /// animation path. `None` = static rest pose.
@@ -34,12 +34,12 @@ pub struct FieldLocomotion {
     /// captures by `engine-shell/tests/field_collision_discriminator.rs`.
     pub leading_edge_wall_probes: bool,
     /// Accumulated walked amount the field walk-regen tick drains (retail
-    /// `_DAT_801F2274`). [`World::step_field_locomotion`] bumps it on every
+    /// `_DAT_801F2274`). [`crate::world::World::step_field_locomotion`] bumps it on every
     /// retail frame whose locomotion step actually committed;
-    /// [`World::tick_field_walk_regen`] consumes
+    /// [`crate::world::World::tick_field_walk_regen`] consumes
     /// [`crate::walk_regen::WALK_REGEN_STEP_COST`] per regen tick. The drain
     /// is retail-pinned, the fill unit is the engine's - see
-    /// [`World::tick_field_walk_regen`].
+    /// [`crate::world::World::tick_field_walk_regen`].
     pub walk_regen_steps: i32,
     /// The walk-regen tick's secondary countdown (retail `_DAT_8007B600`),
     /// which arms a dialog-window callback on its zero edge. Nothing in the
@@ -55,7 +55,7 @@ pub struct FieldLocomotion {
     /// each frame; the locomotion remap quantises it to the nearest 90°.
     pub camera_azimuth: u16,
     /// Opt-in precise-movement mode for pad locomotion. When set,
-    /// [`World::step_field_locomotion`] decodes the held direction
+    /// [`crate::world::World::step_field_locomotion`] decodes the held direction
     /// **continuously** instead of through retail's 4/8-way quantisation:
     /// the camera azimuth is applied at full angular resolution (not
     /// snapped to the nearest 90°), key diagonals walk true 45° vectors at
@@ -72,10 +72,10 @@ pub struct FieldLocomotion {
     ///
     /// This is the *default*, not the state: the run button INVERTS it, so
     /// with Run selected the button walks. See
-    /// [`World::field_run_active`].
+    /// [`crate::world::World::field_run_active`].
     pub run_default: bool,
     /// `true` while the field run button is held this frame. Derived from the
-    /// pad word inside [`World::set_pad`], so no host wires it separately.
+    /// pad word inside [`crate::world::World::set_pad`], so no host wires it separately.
     ///
     /// Retail reads it as `pad_held & mask`, where the held-pad word is
     /// `_DAT_8007B850` and the mask is the config word `0x800846DC` - `0x48`
@@ -84,7 +84,7 @@ pub struct FieldLocomotion {
     /// on the disc, so retail's run button is not configurable. The port's
     /// mask is [`crate::world::FieldLocomotion::run_button_mask`], and it defaults to those two
     /// buttons. The XOR structure around the flag, in
-    /// [`World::field_run_active`], is pinned as well.
+    /// [`crate::world::World::field_run_active`], is pinned as well.
     pub run_button_held: bool,
     /// Which pad buttons count as "the run button" for
     /// [`crate::world::FieldLocomotion::run_button_held`].
@@ -118,7 +118,7 @@ pub struct FieldLocomotion {
     /// Last frame's field position for every actor the motion detector
     /// tracks - the player (from its [`crate::vm::ActorMoveState`]) and every
     /// entry of [`crate::world::FieldNpcState::positions`]. Rewritten each field tick by
-    /// [`Self::detect_field_actor_motion`], which is the only reader.
+    /// [`crate::world::World::detect_field_actor_motion`], which is the only reader.
     ///
     /// Cleared on scene entry alongside [`crate::world::FieldNpcState::positions`]: a
     /// stale entry across a scene change would read the warp itself as one
@@ -131,7 +131,7 @@ pub struct FieldLocomotion {
     /// Placement slots whose field position CHANGED during the frame just
     /// ticked - the source-agnostic "this actor is moving" signal.
     ///
-    /// Recomputed every field tick by [`Self::detect_field_actor_motion`] by
+    /// Recomputed every field tick by [`crate::world::World::detect_field_actor_motion`] by
     /// diffing live positions against [`crate::world::FieldLocomotion::motion_prev`], so it is
     /// true for a walk driven by the pad, by a nav step, by a motion-VM
     /// patrol leg, by a cutscene `MoveTo`, or by anything else that commits a
@@ -180,7 +180,7 @@ pub struct FieldLocomotion {
     /// The ledge-hop trigger is **not** gated on this - a hop is posted off
     /// the step delta whether or not the settle runs.
     pub vertical_settle: bool,
-    /// The ledge hop [`Self::try_field_ledge_hop`] posted this frame, if any
+    /// The ledge hop [`crate::world::World::try_field_ledge_hop`] posted this frame, if any
     /// (retail hands the same triple to `FUN_801d2404`). `None` on every
     /// frame that did not start a hop.
     pub ledge_hop: Option<FieldLedgeHop>,

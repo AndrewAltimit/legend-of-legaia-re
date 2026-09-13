@@ -10,7 +10,7 @@ pub struct FieldNpcState {
     /// When set, pad locomotion also blocks a direction when any of retail's
     /// **actor-collision probes** (`FIELD_ACTOR_PROBES`, the `DAT_801f21b4`
     /// sibling table) lands inside a field NPC's body box or a placed prop's
-    /// static collision box ([`Self::field_actor_dir_blocked`]) - NPCs and
+    /// static collision box ([`crate::world::World::field_actor_dir_blocked`]) - NPCs and
     /// props become solid, as in retail, where `FUN_801cfe4c`'s actor bits
     /// (`1`/`4`) gate a step exactly like the wall bit (`2`). Off by default
     /// for the same oracle-stability reason as
@@ -58,7 +58,7 @@ pub struct FieldNpcState {
     pub positions: std::collections::HashMap<u8, (i16, i16)>,
     /// Snapshot of [`crate::world::FieldNpcState::positions`] taken right after the
     /// scene-entry spawn-prologue pre-run
-    /// ([`Self::pre_run_field_channel_prologues`]) - each slot's story-true
+    /// ([`crate::world::World::pre_run_field_channel_prologues`]) - each slot's story-true
     /// initial position (spawn tile, story relocation, or the off-map park).
     /// The cutscene-teardown un-hide restores parked slots to THIS state
     /// rather than the raw MAN spawn tile, so a story-parked actor stays
@@ -130,8 +130,8 @@ pub struct FieldNpcState {
     /// `0x04` / `0x0D`, ported at
     /// [`legaia_engine_vm::ambient_motion::AmbientMotion`]). Seeded at scene
     /// load from the MAN's tail-section-1 streams
-    /// ([`World::seed_field_npc_ambient`]) and stepped once per actor game
-    /// tick by [`World::tick_field_npc_ambient`]. Without it a standing town
+    /// ([`crate::world::World::seed_field_npc_ambient`]) and stepped once per actor game
+    /// tick by [`crate::world::World::tick_field_npc_ambient`]. Without it a standing town
     /// NPC holds one heading forever where retail NPCs slowly look around.
     pub ambient: std::collections::BTreeMap<u8, FieldNpcAmbient>,
     /// Drive autonomous NPC patrol routes ([`crate::world::FieldNpcState::routes`]) through

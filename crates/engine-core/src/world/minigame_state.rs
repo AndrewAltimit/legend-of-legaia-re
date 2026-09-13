@@ -9,27 +9,27 @@ use super::*;
 pub struct MinigameState {
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
-    /// [`crate::dance::DanceGame`] and [`World::enter_dance`].
+    /// [`crate::dance::DanceGame`] and [`crate::world::World::enter_dance`].
     pub dance: Option<crate::dance::DanceGame>,
     /// The scene mode to restore when the dance minigame ends
-    /// ([`World::enter_dance`] snapshots the mode it interrupted). Mirrors the
+    /// ([`crate::world::World::enter_dance`] snapshots the mode it interrupted). Mirrors the
     /// pause-menu suspend/restore contract.
     pub dance_return_mode: SceneMode,
     /// The most recent dance-press judgement, kept for the host HUD (the
-    /// score/gauge banner). Reset to `None` on [`World::enter_dance`]; updated
+    /// score/gauge banner). Reset to `None` on [`crate::world::World::enter_dance`]; updated
     /// each frame a directional press is judged.
     pub dance_last_judge: Option<crate::dance::Judge>,
     /// Fishing minigame session. `Some` while `mode == SceneMode::Fishing`; the
     /// cast / fight / score loop runs each tick. See
-    /// [`crate::fishing::FishingSession`] and [`World::enter_fishing`].
+    /// [`crate::fishing::FishingSession`] and [`crate::world::World::enter_fishing`].
     pub fishing: Option<crate::fishing::FishingSession>,
     /// The scene mode to restore when the fishing minigame ends
-    /// ([`World::enter_fishing`] snapshots the interrupted mode).
+    /// ([`crate::world::World::enter_fishing`] snapshots the interrupted mode).
     pub fishing_return_mode: SceneMode,
     /// Persistent fishing-point pool, mirroring retail's `_DAT_8008444C`
-    /// counter: [`World::exit_fishing`] banks the session record's points
+    /// counter: [`crate::world::World::exit_fishing`] banks the session record's points
     /// here, and the point exchange spends from it
-    /// ([`World::fishing_exchange_buy`]). Hosts seed a new session's
+    /// ([`crate::world::World::fishing_exchange_buy`]). Hosts seed a new session's
     /// [`crate::fishing::FishingRecord`] from this cell.
     pub fishing_points: i32,
     /// Persistent one-time prize bitmask, mirroring retail's `_DAT_8008446C`:
@@ -38,31 +38,31 @@ pub struct MinigameState {
     pub fishing_prizes_purchased: u32,
     /// Fishing point-exchange (prize shop) session. `Some` while the exchange
     /// list is open on the host's fishing screen; purchases commit through
-    /// [`World::fishing_exchange_buy`].
+    /// [`crate::world::World::fishing_exchange_buy`].
     pub fishing_exchange: Option<crate::fishing::PrizeExchange>,
     /// Slot-machine minigame session. `Some` while
     /// `mode == SceneMode::SlotMachine`; the reel state machine runs each
     /// tick. See [`crate::slot_machine::SlotMachine`] and
-    /// [`World::enter_slot_machine`].
+    /// [`crate::world::World::enter_slot_machine`].
     pub slot_machine: Option<crate::slot_machine::SlotMachine>,
     /// The scene mode to restore when the slot-machine minigame ends
-    /// ([`World::enter_slot_machine`] snapshots the interrupted mode).
+    /// ([`crate::world::World::enter_slot_machine`] snapshots the interrupted mode).
     pub slot_return_mode: SceneMode,
     /// Baka Fighter duel state. `Some` while `mode ==
     /// SceneMode::BakaFighter`; the exchange / round / match state machine
     /// runs each tick. See [`crate::baka_fighter::BakaFight`] and
-    /// [`World::enter_baka_fighter`].
+    /// [`crate::world::World::enter_baka_fighter`].
     pub baka_fighter: Option<crate::baka_fighter::BakaFight>,
     /// The scene mode to restore when the Baka Fighter match ends
-    /// ([`World::enter_baka_fighter`] snapshots the interrupted mode).
+    /// ([`crate::world::World::enter_baka_fighter`] snapshots the interrupted mode).
     pub baka_return_mode: SceneMode,
     /// Muscle Dome contest state. `Some` while `mode ==
     /// SceneMode::MuscleDome`; the hand-select / commit / resolve loop runs
     /// each tick. See [`crate::muscle_dome::MuscleDomeSession`] and
-    /// [`World::enter_muscle_dome`].
+    /// [`crate::world::World::enter_muscle_dome`].
     pub muscle_dome: Option<crate::muscle_dome::MuscleDomeSession>,
     /// The scene mode to restore when the Muscle Dome contest ends
-    /// ([`World::enter_muscle_dome`] snapshots the interrupted mode).
+    /// ([`crate::world::World::enter_muscle_dome`] snapshots the interrupted mode).
     pub muscle_return_mode: SceneMode,
     /// The Muscle Dome **contest** - the ladder run above the individual
     /// legs: which `(course, round)` is staged, the running coin tally, and
@@ -77,7 +77,7 @@ pub struct MinigameState {
     /// Coins" cell). Read to seed the slot machine's playing balance and
     /// **assigned** its final balance on cash-out (the retail state-100
     /// commit is an assignment, not a delta). The coin counter
-    /// ([`World::open_coin_counter`]) credits it as a delta instead.
+    /// ([`crate::world::World::open_coin_counter`]) credits it as a delta instead.
     pub casino_coins: u32,
     /// The **Point Card** bank (`_DAT_800845B4`), the third purse beside
     /// [`crate::world::PartyState::money`] and [`crate::world::MinigameState::casino_coins`]. A shop buy credits 5% of
@@ -91,12 +91,12 @@ pub struct MinigameState {
     pub point_card: i32,
     /// The mode-24 minigame door-warp's backup of the active scene name
     /// (retail `0x8007BAE8`, written by the OTHER-INIT entry `FUN_80025980`
-    /// from `0x80084548`). [`World::minigame_return_warp`] restores it into
-    /// [`World::active_scene_label`] on exit. `None` while no warp is armed.
+    /// from `0x80084548`). [`crate::world::World::minigame_return_warp`] restores it into
+    /// [`crate::world::World::active_scene_label`] on exit. `None` while no warp is armed.
     pub scene_backup: Option<String>,
     /// The mode-24 session-winnings accumulator (retail `_DAT_80084440`,
     /// zeroed by the field-VM `0x3E` warp arm; the minigame overlays add
-    /// their winnings here). [`World::minigame_return_warp`] commits it
+    /// their winnings here). [`crate::world::World::minigame_return_warp`] commits it
     /// into [`crate::world::MinigameState::casino_coins`].
     pub winnings: u32,
     /// Pending **mode-24 minigame door-warp** (field-VM op `0x3E`, `op0 >=

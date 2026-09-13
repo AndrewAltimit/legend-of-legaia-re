@@ -9,7 +9,7 @@ pub struct EncounterState {
     /// `0x37`/`0x41`). When that op runs and [`crate::world::EncounterState::scripted_armed`]
     /// is set, the host records the bounded record window overlaying the opcode
     /// here; the field-step driver drains it after the VM borrow ends and feeds
-    /// it to [`Self::install_scripted_encounter`]. `None` between installs.
+    /// it to [`crate::world::World::install_scripted_encounter`]. `None` between installs.
     ///
     /// Retail writes the install opcode pointer into `actor[+0x94]`
     /// (`0x801DEEDC`) and the 5-state `FUN_801DA51C` SM reads it as a formation
@@ -22,13 +22,13 @@ pub struct EncounterState {
     /// When `true`, the field VM's bare arm-encounter op (`0x37`/`0x41`) is
     /// treated as a scripted-encounter install: the record window overlaying
     /// the opcode is parsed as an [`crate::encounter_record::EncounterRecord`]
-    /// and installed via [`Self::install_scripted_encounter`], which then
+    /// and installed via [`crate::world::World::install_scripted_encounter`], which then
     /// disarms (fire-once). Default `false` so generic script yields are never
-    /// mistaken for encounter arms. See [`Self::arm_scripted_encounter`].
+    /// mistaken for encounter arms. See [`crate::world::World::arm_scripted_encounter`].
     pub scripted_armed: bool,
     /// One-shot override: a scripted/forced formation has been installed
-    /// ([`Self::install_man_formation`] / [`Self::install_encounter_from_record`])
-    /// and the next [`Self::on_field_step`] must fire it regardless of any
+    /// ([`crate::world::World::install_man_formation`] / [`crate::world::World::install_encounter_from_record`])
+    /// and the next [`crate::world::World::on_field_step`] must fire it regardless of any
     /// per-region random rate. Retail copies the carrier's `entity[+0x94]`
     /// formation into the battle cell independent of the random-roll path
     /// (`FUN_801D9E1C`), so a 0%-random scene (e.g. town01's Rim Elm tutorial)
@@ -38,13 +38,13 @@ pub struct EncounterState {
     /// step-driven random battles. `Some` when an encounter table is
     /// installed; `None` in scenes where encounters are disabled
     /// (towns / cutscenes / world-map). Engines call
-    /// [`World::on_field_step`] from the field-step path (player walks one
+    /// [`crate::world::World::on_field_step`] from the field-step path (player walks one
     /// tile) to advance the tracker; the resulting [`crate::encounter::EncounterPhase`]
     /// drives the camera-shake / fade / battle-load chain.
     pub session: Option<crate::encounter::EncounterSession>,
-    /// Cached answer to [`World::scene_can_roll_encounters`] for the scene
+    /// Cached answer to [`crate::world::World::scene_can_roll_encounters`] for the scene
     /// currently installed, refreshed by
-    /// [`World::refresh_encounter_rollable`] whenever the encounter tables
+    /// [`crate::world::World::refresh_encounter_rollable`] whenever the encounter tables
     /// change. Hosts read it per frame (the underlying scan walks region
     /// AABBs, so it is not a per-frame query) to tell the player that a
     /// scene has no random encounters *by design* - several retail scenes,
@@ -52,8 +52,8 @@ pub struct EncounterState {
     /// earlier rate-0 row.
     pub scene_rollable: bool,
     /// Frames left on the "no random encounters in this scene" hint, armed by
-    /// [`World::arm_live_loop`] when the loop lands on such a scene and aged
-    /// by [`World::tick`]. Read through [`World::show_encounter_hint`].
+    /// [`crate::world::World::arm_live_loop`] when the loop lands on such a scene and aged
+    /// by [`crate::world::World::tick`]. Read through [`crate::world::World::show_encounter_hint`].
     pub scene_hint_frames: u16,
 }
 

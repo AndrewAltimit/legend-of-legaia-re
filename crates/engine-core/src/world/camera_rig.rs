@@ -22,7 +22,7 @@ pub struct CameraRig {
     /// vertical offset the current scene asks for, in the player actor's
     /// `+0x16` footing units. Written by the field VM's op `0x4C`
     /// outer-nibble-4 sub-9 (all three arms) and read once a frame by
-    /// [`Self::tick_camera_offset_ease`].
+    /// [`crate::world::World::tick_camera_offset_ease`].
     pub scene_offset: i16,
     /// `_DAT_8007BCAC` - the smoothed camera vertical offset
     /// [`crate::camera_ease::ease_camera_offset`] walks toward
@@ -43,7 +43,7 @@ pub struct CameraRig {
     pub state: CameraState,
     /// Live camera-register zone-ramp records spawned by the field-VM op
     /// `0x43` sub-3..6 (retail `FUN_8003C6A4` actors on the effect list).
-    /// [`World::tick_register_ramps`] runs each one's `FUN_80037018` handler
+    /// [`crate::world::World::tick_register_ramps`] runs each one's `FUN_80037018` handler
     /// against the player's position every field frame. See
     /// [`crate::register_ramp`].
     pub register_ramps: Vec<crate::register_ramp::RegisterRamp>,

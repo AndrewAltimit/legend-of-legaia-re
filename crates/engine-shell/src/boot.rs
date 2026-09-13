@@ -1193,7 +1193,7 @@ impl BootSession {
     /// Restart the field scene's BGM after a minigame that took over the
     /// director with its own global track (dance / Baka Fighter / Muscle
     /// Dome). Re-plays whatever op-`0x35` track the scene had running
-    /// ([`legaia_engine_core::world::AudioState::current_bgm`](legaia_engine_core::world::World::current_bgm)),
+    /// ([`legaia_engine_core::world::AudioState::current_bgm`](legaia_engine_core::world::AudioState::current_bgm)),
     /// re-uploading its VAB. No-op when the scene had no track or it isn't a
     /// global-pool id. The slot machine + fishing don't need this: they never
     /// replaced the director's bank.

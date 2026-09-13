@@ -11,16 +11,16 @@ pub struct AudioState {
     pub sound_bank_ready: bool,
     /// Per-strike battle sound cues surfaced this frame for the host to play
     /// through its SFX bank (the art-record `HitCue` sound cues that
-    /// [`World::fold_battle_event`] resolves from an `ApplyArtStrike` outcome -
+    /// [`crate::world::World::fold_battle_event`] resolves from an `ApplyArtStrike` outcome -
     /// previously dropped). Cosmetic, like [`crate::world::BattleState::hit_fx`]: no gameplay
-    /// state depends on them. Drained via [`World::drain_battle_sfx_cues`];
+    /// state depends on them. Drained via [`crate::world::World::drain_battle_sfx_cues`];
     /// cleared on battle exit.
     pub battle_sfx_cues: Vec<BattleSfxCue>,
     /// CD-XA one-shot clip requests the battle raised this tick - the
     /// `FUN_8003D53C(clip, channel, dur)` calls the melee kernel makes (the
     /// per-character `XA30` grunt) and the party voice leg of the sound
     /// funnel resolves (`XA27` for `0x10C`). Drained by the hosts into the
-    /// XA mixing path ([`World::drain_battle_xa_cues`]).
+    /// XA mixing path ([`crate::world::World::drain_battle_xa_cues`]).
     pub battle_xa_cues: Vec<crate::sfx_cue::XaVoiceClip>,
     /// Frames the modelled CD drive stays busy after a clip start - the
     /// read span in vsyncs (`dur * 2.5` sectors at 150/s = `dur / 60` s). The
@@ -39,7 +39,7 @@ pub struct AudioState {
     /// animation-start frame (see [`crate::battle_events::BattleShoutCue`]).
     /// Cosmetic: the host resolves each against the arts-voice tables + XA
     /// clip banks and plays the CD-XA shout; nothing here mutates gameplay
-    /// state. Drained via [`World::drain_battle_shout_cues`]; cleared on
+    /// state. Drained via [`crate::world::World::drain_battle_shout_cues`]; cleared on
     /// battle exit.
     pub battle_shout_cues: Vec<crate::battle_events::BattleShoutCue>,
     /// Last BGM the field VM started (op 0x35 sub-1 / sub-9). `None` until
@@ -49,7 +49,7 @@ pub struct AudioState {
     /// BGM id to swap to when a live-loop encounter begins, restored to the
     /// field track when the battle ends. `None` (the default) leaves music
     /// untouched across the Battle transition - set it via
-    /// [`World::set_battle_bgm`] to enable the swap. The swap is routed as an
+    /// [`crate::world::World::set_battle_bgm`] to enable the swap. The swap is routed as an
     /// ordinary `FieldEvent::Bgm` start (sub-op 1), so the host's existing
     /// BGM director resolves the SEQ and cross-fades exactly like a field
     /// op-`0x35` start.
@@ -64,21 +64,21 @@ pub struct AudioState {
     /// restore.
     pub battle_bgm_active: bool,
     /// Retail's timed sound-source auto-release (`gp+0x808`/`0x814`/`0x81C`),
-    /// serviced by the frame-begin driver. Advanced by [`World::tick`] on the
+    /// serviced by the frame-begin driver. Advanced by [`crate::world::World::tick`] on the
     /// sim ticks that map to a retail vsync, by [`crate::world::FrameClock::frame_step`] - the
     /// same cadence-invariant clock every other retail duration uses.
     ///
     /// REF: FUN_800267FC, FUN_8001698C
     pub sound_release: crate::sound_state::SoundReleaseTimer,
-    /// Set by [`World::tick`] on the frame [`crate::world::AudioState::sound_release`] expires;
-    /// hosts drain it with [`World::take_pending_sound_release`] and stop the
+    /// Set by [`crate::world::World::tick`] on the frame [`crate::world::AudioState::sound_release`] expires;
+    /// hosts drain it with [`crate::world::World::take_pending_sound_release`] and stop the
     /// bound voice. Retail does the stop inline through libsnd
     /// (`FUN_8002657C` + `FUN_80064370`), which the engine replaces with its
     /// own voice pool - so the port surfaces the *event*, not the teardown.
     pub pending_sound_release: bool,
     /// The five `gp` cells retail's **arm** half writes alongside
     /// [`crate::world::AudioState::sound_release`] (`gp+0x80C`/`0x810`), latched by
-    /// [`World::arm_sound_release`]. `None` until the field VM's BGM op
+    /// [`crate::world::World::arm_sound_release`]. `None` until the field VM's BGM op
     /// sub-`5` arms the release.
     ///
     /// REF: FUN_800267A8

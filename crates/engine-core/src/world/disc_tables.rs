@@ -14,23 +14,23 @@ pub struct DiscTables {
     pub victory_pose_table: Option<legaia_asset::victory_pose::VictoryPoseTable>,
     /// Item catalog used by item-action resolution. Populated at battle
     /// init from [`crate::items::ItemCatalog::vanilla`] (or a custom
-    /// catalog set by [`World::set_item_catalog`]); empty by default so
+    /// catalog set by [`crate::world::World::set_item_catalog`]); empty by default so
     /// the field VM doesn't trigger item effects in non-battle scenes.
     pub item_catalog: crate::items::ItemCatalog,
     /// Real on-disc item-effect descriptor table ([`legaia_asset::item_effect`],
     /// `DAT_800752C0`), if the boot source's `SCUS_942.54` was readable. When
-    /// present, [`Self::set_item_catalog`] applies its field/battle usability
+    /// present, [`crate::world::World::set_item_catalog`] applies its field/battle usability
     /// flags onto the installed catalog so item-menu gating matches retail.
     pub item_effects: Option<legaia_asset::item_effect::ItemEffectTable>,
     /// Spell catalog used by the player-driven battle Magic submenu to resolve
     /// spell ids → names / MP cost / effect. Populated at battle init from
     /// [`crate::spells::SpellCatalog::vanilla`] (or a custom catalog via
-    /// [`World::set_spell_catalog`]); empty by default.
+    /// [`crate::world::World::set_spell_catalog`]); empty by default.
     pub spell_catalog: crate::spells::SpellCatalog,
     /// Art-record catalog used by the player-driven battle Arts submenu to
     /// resolve a saved chain → its real per-strike power profile. Keyed by
     /// `(character, art constant)`; populated from disc art data (PROT entry
-    /// `0x05C4`) via [`World::set_art_record`] when available. Empty by
+    /// `0x05C4`) via [`crate::world::World::set_art_record`] when available. Empty by
     /// default - the Arts submenu then falls back to a synthetic power profile
     /// derived from the chain's directional commands
     /// (see [`crate::battle_arts::synthetic_power`]).
@@ -44,7 +44,7 @@ pub struct DiscTables {
     /// character record at battle init.
     pub character_max_mp: Vec<u16>,
     /// Optional formation table - engines install this at boot via
-    /// [`World::set_formation_table`] so triggered encounters can resolve
+    /// [`crate::world::World::set_formation_table`] so triggered encounters can resolve
     /// their `formation_id` into concrete monster slot definitions.
     pub formation_table: crate::monster_catalog::FormationTable,
     /// Optional monster catalog - paired with `formation_table`. Engines
@@ -86,21 +86,21 @@ pub struct DiscTables {
     /// instead of jumping.
     pub battle_camera_heights: Option<legaia_asset::battle_camera_table::BattleCameraHeights>,
     /// Per-item battle-stat modifier table (weapon / armor / accessory
-    /// bonuses). Empty by default; install via [`World::set_equipment_table`]
-    /// so [`World::seed_party_battle_stats`] folds equipped gear onto each
+    /// bonuses). Empty by default; install via [`crate::world::World::set_equipment_table`]
+    /// so [`crate::world::World::seed_party_battle_stats`] folds equipped gear onto each
     /// party combatant's attack / defense at battle entry.
     pub equipment_table: crate::battle_stats::EquipmentTable,
     /// Accessory ("Goods") passive-effect catalog: item id → passive index +
     /// per-index party-wide scope, decoded from the executable. Empty by
-    /// default; install via [`World::set_accessory_passives`].
-    /// [`World::refresh_party_ability_bits`] derives each member's ability
+    /// default; install via [`crate::world::World::set_accessory_passives`].
+    /// [`crate::world::World::refresh_party_ability_bits`] derives each member's ability
     /// bitfield from it, and
     /// [`crate::battle_stats::compute_battle_stats_with_passives`] applies the
-    /// percent stat boosts inside [`World::seed_party_battle_stats`].
+    /// percent stat boosts inside [`crate::world::World::seed_party_battle_stats`].
     pub accessory_passives: crate::accessory_passives::AccessoryPassives,
     /// CDNAME `#define` map (raw in-RAM PROT TOC index → block name),
     /// installed once by the scene host from the disc's `CDNAME.TXT`
-    /// ([`World::install_scene_toc_names`]). This is the id space a
+    /// ([`crate::world::World::install_scene_toc_names`]). This is the id space a
     /// quick-travel placement record's `scene_id` lives in - the on-disc
     /// values (`0x55` map01 / `0xF4` map02 / `0x187` map03 / `0x162` son /
     /// `0x215` korout) are the destination scenes' own `#define` numbers,
@@ -111,12 +111,12 @@ pub struct DiscTables {
     pub scene_toc_names: legaia_prot::cdname::IndexMap,
     /// Magic-XP threshold table from `SCUS_942.54` (`0x8007656C`, 8 ascending
     /// u16 steps). Installed at boot via
-    /// [`World::install_magic_xp_thresholds`]; while `None` (disc-free) summon
+    /// [`crate::world::World::install_magic_xp_thresholds`]; while `None` (disc-free) summon
     /// casts still accrue spell XP but never level the spell up.
     pub magic_xp_thresholds: Option<[u16; crate::magic_xp::THRESHOLD_STEPS]>,
     /// Seru-trade config from the patched disc (the randomizer's `--seru-trade`
     /// blob: enabled flag + master seed + offer cap). Installed at boot via
-    /// [`World::install_seru_trade_config`]; `None` (or `enabled == false`)
+    /// [`crate::world::World::install_seru_trade_config`]; `None` (or `enabled == false`)
     /// disables vendor seru trading. See [`crate::seru_trade`].
     pub seru_trade_config: Option<legaia_asset::seru_trade::SeruTradeConfig>,
 }

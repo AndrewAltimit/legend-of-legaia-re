@@ -14,19 +14,19 @@ pub struct ScreenFxState {
     /// Active full-screen fade, staged by the battle SM's escape teardown
     /// (retail state `0x66` spawns the `DAT_801C9070` black→white ramp via
     /// the fade-primitive spawner `FUN_80024E80`). Stepped once per
-    /// [`World::tick`]; dropped when the ramp completes. Hosts draw an
+    /// [`crate::world::World::tick`]; dropped when the ramp completes. Hosts draw an
     /// overlay from [`crate::fade::FadeState::rgb`] while this is `Some`.
     pub fade: Option<crate::fade::FadeState>,
     /// Effect-layer global colour (op `0x34` sub-0, `FUN_801E1FB0`; neutral
     /// operand `0xFF`, stored normalized). The opening timeline ramps it in
     /// the crawl gaps (`34 05 00 00 00 D2 00` = to black over 210 frames,
     /// `34 01 FF FF FF 00 00` = instant neutral). Stepped once per
-    /// [`World::tick`]; dropped once it lands on the neutral identity.
+    /// [`crate::world::World::tick`]; dropped once it lands on the neutral identity.
     /// **Not a screen fade**: the retail cold-boot capture holds the lit
     /// villager tableau across the span where the timeline's black ramp
     /// would blank a full-screen fade, so this value feeds the effect layer
     /// (the creation-glow planes; consumer still an open thread) and stays
-    /// out of [`World::scene_screen_tint`]. Scene-local: reset on scene
+    /// out of [`crate::world::World::scene_screen_tint`]. Scene-local: reset on scene
     /// entry. Distinct from [`crate::world::ScreenFxState::fade`] (the battle escape ramp).
     pub effect_tint: Option<crate::fade::SceneTintRamp>,
     /// Global multiply screen tint (op `0x4C 0x12` → `DAT_8007BCB8/B9/BA`,
@@ -36,7 +36,7 @@ pub struct ScreenFxState {
     /// `4C 12 80 80 80 44 00` (ramp to neutral over 68 frames) - lives here.
     /// Persists across scene changes (retail's cross-scene fade continuity:
     /// a departure fade-to-black carries into the next scene's fade-in).
-    /// Stepped once per [`World::tick`]; dropped once neutral.
+    /// Stepped once per [`crate::world::World::tick`]; dropped once neutral.
     pub tint: Option<crate::fade::SceneTintRamp>,
     /// Screen-effect widget host (the PROT-0900 mask / sprite / panel /
     /// letterbox family), driven by the field-VM op `0x43` sub-ops
@@ -44,13 +44,13 @@ pub struct ScreenFxState {
     /// path. See [`crate::screen_fx`].
     pub fx: crate::screen_fx::ScreenFxHost,
     /// The current frame's widget draw list, refreshed by the Field /
-    /// Cutscene tick while any widget is live ([`Self::tick_screen_fx`]).
+    /// Cutscene tick while any widget is live ([`crate::world::World::tick_screen_fx`]).
     /// Renderers composite these 2D overlays above the scene.
     pub fx_frame: crate::screen_fx::ScreenFxFrame,
     /// The live cinematic bar emitter (field-VM op `0x43` sub-`0xC`, retail
     /// template `0x801F2858` / tick `FUN_801DD784`). One at a time, because
     /// its spawner is the one op that allocates it and its envelope retires
-    /// itself; [`World::tick_field_timer_actors`] steps it and
+    /// itself; [`crate::world::World::tick_field_timer_actors`] steps it and
     /// [`crate::world::ScreenFxState::cinematic_bar`] is what the two hosts draw from.
     pub cinematic_bars: Option<legaia_engine_vm::field_actor_timers::ShutterBars>,
     /// This frame's bar height in scanlines, republished every tick so a

@@ -8,14 +8,14 @@ use super::*;
 /// Field-scene carrier entities: the per-entity FUN_801DA51C state machines ticked in field scenes and their battle / engage handoffs.
 pub struct FieldCarrierState {
     /// Per-entity **field** state machines - the same `FUN_801DA51C` SM the
-    /// overworld uses ([`vm::world_map`]), but ticked in [`SceneMode::Field`]
+    /// overworld uses ([`vm::world_map`]), but ticked in [`crate::world::SceneMode::Field`]
     /// for the scene's MAN-placed actors. A scripted-encounter carrier (the
-    /// Rim Elm Tetsu fight) sits Idle until [`Self::engage_field_carrier`]
+    /// Rim Elm Tetsu fight) sits Idle until [`crate::world::World::engage_field_carrier`]
     /// (the dialogue-accept) advances it to `Activating`; the next
     /// `Self::tick_field_carriers` then copies its formation and launches the
     /// battle, mirroring retail's state-1 `entity[+0x94]` copy + `case 2/3`
     /// fall-through battle handoff. Empty unless
-    /// [`Self::install_field_carriers`] seeded them.
+    /// [`crate::world::World::install_field_carriers`] seeded them.
     pub entities: Vec<vm::world_map::WorldMapEntityCtx>,
     /// Per-carrier role config, paired by index with [`crate::world::FieldCarrierState::entities`].
     pub configs: Vec<FieldCarrierConfig>,
@@ -26,7 +26,7 @@ pub struct FieldCarrierState {
     pub pending_battle: Option<u16>,
     /// Field-interact `slot` -> [`crate::world::FieldCarrierState::entities`] index, for the
     /// **scripted-encounter** carriers only. Built by
-    /// [`Self::install_field_carriers_from_man`] so a field-interact on the
+    /// [`crate::world::World::install_field_carriers_from_man`] so a field-interact on the
     /// sparring partner's placement can find its carrier and auto-arm the fight
     /// (the dialogue-accept drives the engage instead of the manual API). Plain
     /// talk NPCs are deliberately absent - interacting with them never launches
