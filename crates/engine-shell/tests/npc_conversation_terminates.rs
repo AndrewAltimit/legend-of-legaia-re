@@ -103,7 +103,8 @@ fn rim_elm_conversations_end() {
     let mut slots: Vec<u8> = session
         .host
         .world
-        .field_npc_dialog_prologue
+        .npcs
+        .dialog_prologue
         .keys()
         .copied()
         .collect();

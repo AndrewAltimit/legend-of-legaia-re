@@ -269,7 +269,8 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
 
     let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
     let parked_at_hide = |w: &legaia_engine_core::world::World| {
-        w.field_npc_positions
+        w.npcs
+            .positions
             .values()
             .any(|&(x, z)| x == hide && z == hide)
     };
@@ -293,7 +294,8 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
     // be one the scene-entry pre-run itself parked.
     let leftover: Vec<u8> = host
         .world
-        .field_npc_positions
+        .npcs
+        .positions
         .iter()
         .filter(|&(_, &(x, z))| x == hide && z == hide)
         .map(|(&slot, _)| slot)
@@ -301,7 +303,7 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
     assert!(
         leftover
             .iter()
-            .all(|slot| host.world.field_npc_entry_positions.get(slot) == Some(&(hide, hide))),
+            .all(|slot| host.world.npcs.entry_positions.get(slot) == Some(&(hide, hide))),
         "free-roam restores every cutscene-hidden villager (story-parked slots stay): {leftover:?}"
     );
     eprintln!("[opening] skip path reached town01 name entry + free-roam");

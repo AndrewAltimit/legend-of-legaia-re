@@ -172,11 +172,11 @@ fn town01_villagers_wander_inside_their_authored_boxes() {
     // vacuously with nobody wandering.
     world.pre_run_field_channel_prologues();
     assert!(
-        !world.field_npc_ambient.is_empty(),
+        !world.npcs.ambient.is_empty(),
         "town01 binds ambient motion streams to placements"
     );
 
-    let anchors = world.field_npc_positions.clone();
+    let anchors = world.npcs.positions.clone();
 
     // Control: liveliness off holds every seat exactly. The walk ops read
     // blocked, so they neither commit a step nor advance past themselves.
@@ -184,12 +184,12 @@ fn town01_villagers_wander_inside_their_authored_boxes() {
         let _ = world.tick();
     }
     assert_eq!(
-        world.field_npc_positions, anchors,
+        world.npcs.positions, anchors,
         "liveliness off: ambient wandering must not move a single NPC"
     );
 
     // Liveliness on: the wander walks villagers off their seats.
-    world.animate_field_npcs = true;
+    world.npcs.animate = true;
     let mut ever_moved: std::collections::BTreeSet<u8> = Default::default();
     let boxes = wander_boxes(&man, &man_file);
     let widest = boxes
@@ -206,7 +206,7 @@ fn town01_villagers_wander_inside_their_authored_boxes() {
     // applies to the pure-wander channels.
     let mut ambient_walkers: std::collections::BTreeMap<u8, Vec<(i32, i32, i32, i32)>> =
         Default::default();
-    for (&slot, chan) in &world.field_npc_ambient {
+    for (&slot, chan) in &world.npcs.ambient {
         if !chan.walks {
             continue;
         }
@@ -246,11 +246,11 @@ fn town01_villagers_wander_inside_their_authored_boxes() {
             ambient_walkers.insert(slot, boxes);
         }
     }
-    let walking_channels = world.field_npc_ambient.values().filter(|c| c.walks).count();
+    let walking_channels = world.npcs.ambient.values().filter(|c| c.walks).count();
     eprintln!(
         "[town01] {} ambient channels, {walking_channels} carry walk ops, \
          {} seated inside their own wander box",
-        world.field_npc_ambient.len(),
+        world.npcs.ambient.len(),
         ambient_walkers.len(),
     );
     assert!(
@@ -263,7 +263,7 @@ fn town01_villagers_wander_inside_their_authored_boxes() {
 
     for _ in 0..1200 {
         let _ = world.tick();
-        for (&slot, &(x, z)) in &world.field_npc_positions {
+        for (&slot, &(x, z)) in &world.npcs.positions {
             let Some(boxes) = ambient_walkers.get(&slot) else {
                 continue;
             };
@@ -278,7 +278,7 @@ fn town01_villagers_wander_inside_their_authored_boxes() {
                 "slot {slot} at ({x},{z}) left every authored wander box {boxes:?}"
             );
         }
-        for (&slot, &h) in &world.field_npc_headings {
+        for (&slot, &h) in &world.npcs.headings {
             assert!(
                 (0..=0x0FFF).contains(&h),
                 "slot {slot}: ambient walk heading {h:#X} left the 12-bit space"
@@ -291,7 +291,7 @@ fn town01_villagers_wander_inside_their_authored_boxes() {
     );
     eprintln!(
         "[town01] {} ambient channels, {} villagers wandered in 1200 ticks",
-        world.field_npc_ambient.len(),
+        world.npcs.ambient.len(),
         ever_moved.len()
     );
 }
@@ -319,7 +319,7 @@ fn town01_villagers_wander_through_the_real_scene_entry() {
     host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
 
-    let anchors = host.world.field_npc_positions.clone();
+    let anchors = host.world.npcs.positions.clone();
     assert!(!anchors.is_empty(), "town01 seats field NPCs");
 
     // Control first: the opt-in liveliness is off by default and must hold
@@ -328,14 +328,15 @@ fn town01_villagers_wander_through_the_real_scene_entry() {
         let _ = host.world.tick();
     }
     assert_eq!(
-        host.world.field_npc_positions, anchors,
+        host.world.npcs.positions, anchors,
         "liveliness off: no NPC moves"
     );
 
-    host.world.animate_field_npcs = true;
+    host.world.npcs.animate = true;
     let walkers: Vec<u8> = host
         .world
-        .field_npc_ambient
+        .npcs
+        .ambient
         .iter()
         .filter(|(_, c)| c.walks)
         .map(|(&s, _)| s)
@@ -349,7 +350,7 @@ fn town01_villagers_wander_through_the_real_scene_entry() {
     for _ in 0..1200 {
         let _ = host.world.tick();
         for &slot in &walkers {
-            if host.world.field_npc_positions.get(&slot) != anchors.get(&slot) {
+            if host.world.npcs.positions.get(&slot) != anchors.get(&slot) {
                 moved.insert(slot);
             }
         }
@@ -392,26 +393,24 @@ fn liveliness_off_publishes_neither_position_nor_walk_facing() {
     };
     host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
-    assert!(
-        !host.world.animate_field_npcs,
-        "liveliness is off by default"
-    );
+    assert!(!host.world.npcs.animate, "liveliness is off by default");
 
     let walkers: Vec<u8> = host
         .world
-        .field_npc_ambient
+        .npcs
+        .ambient
         .iter()
         .filter(|(_, c)| c.walks)
         .map(|(&s, _)| s)
         .collect();
     assert!(!walkers.is_empty(), "town01 binds walking streams");
 
-    let pos0 = host.world.field_npc_positions.clone();
-    let head0 = host.world.field_npc_headings.clone();
+    let pos0 = host.world.npcs.positions.clone();
+    let head0 = host.world.npcs.headings.clone();
     // PCs of the walking channels, to prove the interpreter kept running.
     let pc0: Vec<u16> = walkers
         .iter()
-        .map(|s| host.world.field_npc_ambient[s].vm.pc)
+        .map(|s| host.world.npcs.ambient[s].vm.pc)
         .collect();
 
     for _ in 0..600 {
@@ -419,12 +418,12 @@ fn liveliness_off_publishes_neither_position_nor_walk_facing() {
     }
 
     assert_eq!(
-        host.world.field_npc_positions, pos0,
+        host.world.npcs.positions, pos0,
         "no NPC position is published while liveliness is off"
     );
     for &slot in &walkers {
         assert_eq!(
-            host.world.field_npc_headings.get(&slot),
+            host.world.npcs.headings.get(&slot),
             head0.get(&slot),
             "slot {slot}: a walk op's implied facing must not be published \
              while its step is suppressed (the pivot-on-the-spot artefact)"
@@ -432,13 +431,13 @@ fn liveliness_off_publishes_neither_position_nor_walk_facing() {
     }
     let pc1: Vec<u16> = walkers
         .iter()
-        .map(|s| host.world.field_npc_ambient[s].vm.pc)
+        .map(|s| host.world.npcs.ambient[s].vm.pc)
         .collect();
     assert!(
         pc0 != pc1
             || walkers
                 .iter()
-                .any(|s| host.world.field_npc_ambient[s].vm.cursor != 0),
+                .any(|s| host.world.npcs.ambient[s].vm.cursor != 0),
         "the interpreter kept running: some walking channel advanced its PC \
          or burnt cursor budget (a stalled stream would starve story-flag writes)"
     );

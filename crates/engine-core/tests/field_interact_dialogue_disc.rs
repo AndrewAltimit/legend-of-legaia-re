@@ -107,7 +107,7 @@ fn field_interact_slot_opens_real_npc_dialogue() {
         "town01 derives the Rim Elm sparring carrier from its MAN"
     );
 
-    let installed = &world.field_npc_dialog;
+    let installed = &world.npcs.dialog;
     assert_eq!(
         installed.len(),
         expected.len(),
@@ -134,7 +134,8 @@ fn field_interact_slot_opens_real_npc_dialogue() {
     for (idx, inline) in &expected {
         let slot = *idx as u8;
         let prologue = world
-            .field_npc_dialog_prologue
+            .npcs
+            .dialog_prologue
             .get(&slot)
             .unwrap_or_else(|| panic!("field_npc_dialog_prologue[{slot}] must be populated"));
         assert!(
@@ -257,10 +258,10 @@ fn field_interact_slot_mapping_holds_across_field_scene_corpus() {
 
         // install == classify, and a lossless u8 slot space.
         assert_eq!(
-            world.field_npc_dialog.len(),
+            world.npcs.dialog.len(),
             expected.len(),
             "[{name}] install populated {} dialogue slots, classify found {}",
-            world.field_npc_dialog.len(),
+            world.npcs.dialog.len(),
             expected.len(),
         );
         for (idx, inline) in &expected {
@@ -269,7 +270,7 @@ fn field_interact_slot_mapping_holds_across_field_scene_corpus() {
                 "[{name}] NPC placement index {idx} exceeds the u8 field-interact slot space"
             );
             assert_eq!(
-                world.field_npc_dialog.get(&(*idx as u8)),
+                world.npcs.dialog.get(&(*idx as u8)),
                 Some(inline),
                 "[{name}] installed field_npc_dialog[{idx}] must equal the classify inline"
             );

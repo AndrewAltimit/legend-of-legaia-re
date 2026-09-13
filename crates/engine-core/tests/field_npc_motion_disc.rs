@@ -60,14 +60,14 @@ fn town01_npc_motion_routes_walk_npcs_through_the_motion_vm() {
     // Route derivation is non-vacuous: several Rim Elm villagers carry local
     // `0x4C 0x51` walk legs in their placement scripts.
     assert!(
-        world.field_npc_routes.len() >= 3,
+        world.npcs.routes.len() >= 3,
         "town01 derives walk routes for several NPCs (got {})",
-        world.field_npc_routes.len()
+        world.npcs.routes.len()
     );
     // Every derived waypoint is a local, on-map world position (the locality
     // gate that drops story-relocation branches held).
-    let anchors = world.field_npc_positions.clone();
-    for (slot, route) in &world.field_npc_routes {
+    let anchors = world.npcs.positions.clone();
+    for (slot, route) in &world.npcs.routes {
         let &(ax, az) = anchors
             .get(slot)
             .expect("routed slots are installed NPC placements");
@@ -86,19 +86,20 @@ fn town01_npc_motion_routes_walk_npcs_through_the_motion_vm() {
         let _ = world.tick();
     }
     assert_eq!(
-        world.field_npc_positions, anchors,
+        world.npcs.positions, anchors,
         "flag off: NPCs rest at their MAN placement anchors"
     );
 
     // Flag on: the motion VM walks at least one routed NPC off its anchor.
-    world.animate_field_npcs = true;
+    world.npcs.animate = true;
     for _ in 0..120 {
         let _ = world.tick();
     }
     let moved: Vec<u8> = world
-        .field_npc_routes
+        .npcs
+        .routes
         .keys()
-        .filter(|slot| world.field_npc_positions.get(slot) != anchors.get(slot))
+        .filter(|slot| world.npcs.positions.get(slot) != anchors.get(slot))
         .copied()
         .collect();
     assert!(
@@ -107,7 +108,7 @@ fn town01_npc_motion_routes_walk_npcs_through_the_motion_vm() {
     );
     eprintln!(
         "[town01] {} routed NPCs, {} moved off-anchor after 120 ticks: {:?}",
-        world.field_npc_routes.len(),
+        world.npcs.routes.len(),
         moved.len(),
         moved
     );
@@ -115,9 +116,9 @@ fn town01_npc_motion_routes_walk_npcs_through_the_motion_vm() {
     // Collision consistency: a moved NPC blocks at its LIVE position with the
     // ±40-unit moving-actor box, exactly like the anchored case - the probes
     // read `field_npc_positions`, which the motion tick keeps live.
-    world.solid_field_npcs = true;
+    world.npcs.solid = true;
     let slot = moved[0];
-    let &(lx, lz) = world.field_npc_positions.get(&slot).unwrap();
+    let &(lx, lz) = world.npcs.positions.get(&slot).unwrap();
     assert!(
         world.field_actor_dir_blocked(lx - 102, lz, 3),
         "the moving NPC's collision box follows its live position"

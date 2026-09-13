@@ -771,14 +771,14 @@ fn standing_still_is_not_motion_and_a_new_actor_is_not_a_step() {
     // An NPC seated mid-scene by a timeline appears in the position map for
     // the first time. Its ARRIVAL is a placement, not a step, so it must not
     // read as moving on the frame it shows up.
-    world.field_npc_positions.insert(7, (1024, 1024));
+    world.npcs.positions.insert(7, (1024, 1024));
     let _ = world.tick();
     assert!(
         !world.field_actor_moving.contains(&7),
         "a freshly-seated actor must not read as walking on its arrival frame"
     );
     // But its next actual move does.
-    world.field_npc_positions.insert(7, (1064, 1024));
+    world.npcs.positions.insert(7, (1064, 1024));
     let _ = world.tick();
     assert!(world.field_actor_moving.contains(&7), "NPC walked");
 }

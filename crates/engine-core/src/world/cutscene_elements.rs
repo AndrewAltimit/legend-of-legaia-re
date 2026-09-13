@@ -261,7 +261,7 @@ impl World {
                 .eased_moves
                 .iter()
                 .any(|r| matches!(r.target, EasedMoveTarget::Player)),
-            ElementLink::Placement(p) => !self.field_npc_positions.contains_key(&p),
+            ElementLink::Placement(p) => !self.npcs.positions.contains_key(&p),
             ElementLink::Camera | ElementLink::None => false,
         }
     }
@@ -324,7 +324,7 @@ impl World {
                     self.field_ctx.world_z = pos.z as u16;
                 }
                 Some(EasedMoveTarget::Placement(slot)) => {
-                    self.field_npc_positions.insert(slot, (pos.x, pos.z));
+                    self.npcs.positions.insert(slot, (pos.x, pos.z));
                 }
                 None => {}
             }
@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn a_position_tween_blends_then_snaps_and_retires() {
         let mut w = world();
-        w.field_npc_positions.insert(3, (0, 0));
+        w.npcs.positions.insert(3, (0, 0));
         w.spawn_element_position_tween(
             ElementLink::Placement(3),
             ElementVec::default(),
@@ -374,7 +374,7 @@ mod tests {
         assert_eq!(*seen.last().unwrap(), (400, 800), "it must reach the end");
         assert!(seen.len() > 2, "and pass through the middle: {seen:?}");
         // The write landed on the linked placement, not just on the frame.
-        assert_eq!(w.field_npc_positions.get(&3), Some(&(400, 800)));
+        assert_eq!(w.npcs.positions.get(&3), Some(&(400, 800)));
     }
 
     #[test]
@@ -391,7 +391,7 @@ mod tests {
         assert_eq!(w.cutscene.element_frame.tween_writes[0].2, None);
 
         let mut w = world();
-        w.field_npc_positions.insert(1, (0, 0));
+        w.npcs.positions.insert(1, (0, 0));
         w.spawn_element_position_tween(
             ElementLink::Placement(1),
             ElementVec::default(),
@@ -426,13 +426,13 @@ mod tests {
     fn the_teardown_restores_the_camera_every_frame_and_clears_flags_once() {
         let mut w = world();
         w.spawn_element_teardown(ElementLink::Placement(4), 1, 1, 0x0000_0080);
-        w.field_npc_positions.insert(4, (0, 0));
+        w.npcs.positions.insert(4, (0, 0));
         w.tick_cutscene_elements(1, || 0);
         let a = w.cutscene.element_frame.teardowns[0];
         assert!(a.restore_camera && !a.clear_target_flags);
         assert_eq!(w.cutscene.elements.len(), 1, "still armed");
         // The linked placement goes away: that is its done bit.
-        w.field_npc_positions.remove(&4);
+        w.npcs.positions.remove(&4);
         w.tick_cutscene_elements(1, || 0);
         let a = w.cutscene.element_frame.teardowns[0];
         assert!(a.clear_target_flags && a.clear_camera_flags);

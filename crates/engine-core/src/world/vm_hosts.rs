@@ -57,7 +57,7 @@ impl<'a> ActorVmHost for ActorVmHostImpl<'a> {
         // slot - walks that NPC in the field frame (y → z).
         // PORT: FUN_800358c0
         self.world.start_actor_motion(actor_id, target);
-        if self.world.field_npc_positions.contains_key(&actor_id) {
+        if self.world.npcs.positions.contains_key(&actor_id) {
             self.world
                 .start_field_npc_motion(actor_id, target.x, target.y);
         }
@@ -943,9 +943,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // restore (retail: controller SM state 0).
             let saved = actor_ids.map(|id| {
                 let slot = resolve(w, id);
-                w.field_npc_positions
+                w.npcs
+                    .positions
                     .get(&slot)
-                    .map(|&pos| (pos, w.field_npc_headings.get(&slot).copied().unwrap_or(0)))
+                    .map(|&pos| (pos, w.npcs.headings.get(&slot).copied().unwrap_or(0)))
             });
             (saved, saved_party, saved_party_len, saved_leader)
         } else {
@@ -958,8 +959,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             for (i, &id) in actor_ids.iter().enumerate() {
                 if let Some((pos, heading)) = prior.saved[i] {
                     let slot = resolve(w, id);
-                    w.field_npc_positions.insert(slot, pos);
-                    w.field_npc_headings.insert(slot, heading);
+                    w.npcs.positions.insert(slot, pos);
+                    w.npcs.headings.insert(slot, heading);
                 }
             }
             (
@@ -1479,7 +1480,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         } else if let Some(placement) = self.world.executing_channel {
             let seat = self
                 .world
-                .field_npc_positions
+                .npcs
+                .positions
                 .get(&placement)
                 .copied()
                 .unwrap_or((ctx.world_x as i16, ctx.world_z as i16));
@@ -1575,7 +1577,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // windowed host re-targets that NPC's clip player.
         if let Some(placement) = self.world.executing_channel {
             self.world
-                .field_npc_anim_cues
+                .npcs
+                .anim_cues
                 .insert(placement, (count, base_id, frames.to_vec()));
         }
         self.world
@@ -1904,7 +1907,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // REF: FUN_80024E08, FUN_800204F8
         if let Some(slot) = self.world.executing_channel {
             self.world
-                .field_npc_anim_cues
+                .npcs
+                .anim_cues
                 .insert(slot, (1, move_id, Vec::new()));
         }
         self.world
@@ -2082,7 +2086,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             if let Some(heading) =
                 crate::man_field_scripts::facing_index_to_engine_heading(depth_byte & 0xF)
             {
-                self.world.field_npc_headings.insert(slot, heading);
+                self.world.npcs.headings.insert(slot, heading);
             }
             return;
         }

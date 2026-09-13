@@ -131,8 +131,8 @@ fn locomotion_actor_gate_routes_through_the_combined_probe() {
     let press = |solid: bool| {
         let mut world = World::new();
         world.install_field_player(0);
-        world.solid_field_npcs = solid;
-        world.field_npc_positions.insert(1, (2000, 2526));
+        world.npcs.solid = solid;
+        world.npcs.positions.insert(1, (2000, 2526));
         world.actors[0].move_state.world_x = 1800;
         world.actors[0].move_state.world_z = 2526;
         for _ in 0..100 {
@@ -146,7 +146,7 @@ fn locomotion_actor_gate_routes_through_the_combined_probe() {
 
     // And the direct probe agrees with what the gate did.
     let mut world = World::new();
-    world.field_npc_positions.insert(1, (2000, 2526));
+    world.npcs.positions.insert(1, (2000, 2526));
     assert!(
         world.field_actor_dir_blocked(2000 - 102, 2526, 3),
         "X+ into the NPC reads blocked"

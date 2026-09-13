@@ -609,7 +609,7 @@ impl World {
             self.object_channel_binds = binds;
             self.field_channels_man = Some(std::sync::Arc::new(man.to_vec()));
         }
-        self.field_npc_anim_cues.clear();
+        self.npcs.anim_cues.clear();
         true
     }
 
@@ -924,7 +924,7 @@ impl World {
         if let Some(mut walk) = tl.walk_wait.take() {
             walk.frames += 1;
             let arrived = match walk.slot {
-                Some(slot) => !self.field_npc_motions.contains_key(&slot),
+                Some(slot) => !self.npcs.motions.contains_key(&slot),
                 None => {
                     // Step the player toward the target at the op's speed.
                     if let Some(p) = self.player_actor_slot
@@ -979,8 +979,8 @@ impl World {
             if !arrived {
                 match walk.slot {
                     Some(slot) => {
-                        self.field_npc_motions.remove(&slot);
-                        self.field_npc_positions.insert(slot, walk.target);
+                        self.npcs.motions.remove(&slot);
+                        self.npcs.positions.insert(slot, walk.target);
                     }
                     None => {
                         if let Some(p) = self.player_actor_slot
@@ -1013,7 +1013,7 @@ impl World {
             if fw.state.yaw_written {
                 // Raw write-back (`yaw` may sit outside 0..0xFFF mid-ramp,
                 // exactly as retail's `+0x26` does); render consumers mask.
-                self.field_npc_headings.insert(fw.slot, fw.state.yaw as i16);
+                self.npcs.headings.insert(fw.slot, fw.state.yaw as i16);
             }
             if r != vm::motion_vm::StepResult::Done && fw.frames < WALK_PARK_TIMEOUT {
                 tl.facing_wait = Some(fw);
@@ -1235,7 +1235,7 @@ impl World {
                             }
                             if parked_sentinel {
                                 // Despawn: seat at the hide box, no playout.
-                                host.world.field_npc_positions.insert(
+                                host.world.npcs.positions.insert(
                                     s,
                                     (
                                         crate::world::FIELD_OFFMAP_HIDE_XZ,
@@ -1246,14 +1246,14 @@ impl World {
                                 continue;
                             }
                             if host.world.start_field_npc_motion(s, tx, tz) {
-                                if let Some(m) = host.world.field_npc_motions.get_mut(&s) {
+                                if let Some(m) = host.world.npcs.motions.get_mut(&s) {
                                     m.state.speed = speed;
                                     m.route_cursor = None;
                                 }
                             } else {
                                 // No surfaced live position to glide from:
                                 // seat directly (the pre-park fallback).
-                                host.world.field_npc_positions.insert(s, (tx, tz));
+                                host.world.npcs.positions.insert(s, (tx, tz));
                                 tl.pc = pc + 5;
                                 continue;
                             }
@@ -1300,7 +1300,7 @@ impl World {
                         if let Some(h) =
                             crate::man_field_scripts::facing_index_to_engine_heading(op0 & 0xF)
                         {
-                            host.world.field_npc_headings.insert(slot, h);
+                            host.world.npcs.headings.insert(slot, h);
                         }
                         tl.pc = pc + 4;
                         continue;
@@ -1310,7 +1310,8 @@ impl World {
                     // spawn default 0 = engine 0x800.
                     let cur = host
                         .world
-                        .field_npc_headings
+                        .npcs
+                        .headings
                         .get(&slot)
                         .copied()
                         .unwrap_or(0x800);
@@ -1609,7 +1610,7 @@ impl World {
         // placement-keyed.
         for (c, pre) in channels.iter().zip(channel_pre_pos) {
             if !c.object_bind && (c.ctx.world_x, c.ctx.world_z) != pre {
-                self.field_npc_positions.insert(
+                self.npcs.positions.insert(
                     c.placement_index as u8,
                     (c.ctx.world_x as i16, c.ctx.world_z as i16),
                 );
@@ -1759,7 +1760,8 @@ impl World {
     fn restore_hidden_field_npcs(&mut self) {
         let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
         let restored: Vec<u8> = self
-            .field_npc_positions
+            .npcs
+            .positions
             .iter()
             .filter(|&(_, &(x, z))| x == hide && z == hide)
             .map(|(&slot, _)| slot)
@@ -1771,13 +1773,13 @@ impl World {
             // be the hide box) rather than resurrecting it at the raw MAN
             // spawn tile - the exact ghost the prologue park exists to
             // prevent.
-            match self.field_npc_entry_positions.get(&slot) {
+            match self.npcs.entry_positions.get(&slot) {
                 Some(&entry_pos) => {
-                    self.field_npc_positions.insert(slot, entry_pos);
+                    self.npcs.positions.insert(slot, entry_pos);
                 }
                 None => {
-                    self.field_npc_positions.remove(&slot);
-                    self.field_npc_headings.remove(&slot);
+                    self.npcs.positions.remove(&slot);
+                    self.npcs.headings.remove(&slot);
                 }
             }
         }
@@ -1866,7 +1868,7 @@ impl World {
         // timeline (whose choreography drives the channels), plus the
         // opt-in `animate_field_npcs` liveliness approximation.
         // REF: FUN_8003BC08 (the `+0x10 & 0x100` dispatch gate)
-        if !self.cutscene_timeline_active() && !self.animate_field_npcs {
+        if !self.cutscene_timeline_active() && !self.npcs.animate {
             return;
         }
         self.step_field_channels_inner(false);
@@ -1903,7 +1905,7 @@ impl World {
         self.field_entry_prerun = true;
         self.step_field_channels_inner(true);
         self.field_entry_prerun = false;
-        self.field_npc_entry_positions = self.field_npc_positions.clone();
+        self.npcs.entry_positions = self.npcs.positions.clone();
         // The ambient motion channels installed with the carriers still hold
         // the raw MAN header tiles; re-seat them on the story-true positions
         // this pre-run just resolved. The `0x18` wander's containment box is
@@ -2057,7 +2059,7 @@ impl World {
                 let (nx, nz) = (nx as i16, nz as i16);
                 let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
                 let parked = (nx, nz) == (hide, hide);
-                let outside_route = self.field_npc_routes.get(&slot).is_some_and(|route| {
+                let outside_route = self.npcs.routes.get(&slot).is_some_and(|route| {
                     route.iter().all(|&(wx, wz)| {
                         let (dx, dz) =
                             ((wx as i32 - nx as i32).abs(), (wz as i32 - nz as i32).abs());
@@ -2065,15 +2067,15 @@ impl World {
                     })
                 });
                 if parked || outside_route {
-                    self.field_npc_routes.remove(&slot);
-                    self.field_npc_glide_speeds.remove(&slot);
-                    self.field_npc_motions.remove(&slot);
+                    self.npcs.routes.remove(&slot);
+                    self.npcs.glide_speeds.remove(&slot);
+                    self.npcs.motions.remove(&slot);
                 }
-                self.field_npc_positions.insert(slot, (nx, nz));
+                self.npcs.positions.insert(slot, (nx, nz));
                 continue;
             }
             if patroller_active {
-                if self.field_npc_routes.contains_key(&slot) {
+                if self.npcs.routes.contains_key(&slot) {
                     continue;
                 }
                 // Surface a facing from the scripted move so a never-walked NPC
@@ -2088,11 +2090,10 @@ impl World {
                     i32::from(nz) - i32::from(pre.1),
                 );
                 if let Some(yaw) = vm::motion_vm::walk_facing_yaw(dx, dz) {
-                    self.field_npc_headings.insert(slot, yaw as i16);
+                    self.npcs.headings.insert(slot, yaw as i16);
                 }
             }
-            self.field_npc_positions
-                .insert(slot, (nx as i16, nz as i16));
+            self.npcs.positions.insert(slot, (nx as i16, nz as i16));
         }
         self.field_channels = channels;
     }
@@ -2131,7 +2132,7 @@ impl World {
         // A new scene's binds are installed by `seed_object_channels` after
         // the trigger tables resolve; drop the previous scene's.
         self.object_channel_binds.clear();
-        self.field_npc_anim_cues.clear();
+        self.npcs.anim_cues.clear();
     }
 
     /// Append the `.MAP` **object-bind** channels (retail scene-init
@@ -2682,31 +2683,31 @@ mod tests {
         // Two townsfolk parked off-map by the opening cutscene, one NPC left at
         // a real tile (e.g. a mid-scene walker), plus stale headings for all.
         let hide = FIELD_OFFMAP_HIDE_XZ;
-        w.field_npc_positions.insert(1, (hide, hide));
-        w.field_npc_positions.insert(2, (hide, hide));
-        w.field_npc_positions.insert(3, (2880, 5440));
-        w.field_npc_headings.insert(1, 0x800);
-        w.field_npc_headings.insert(2, 0x000);
-        w.field_npc_headings.insert(3, 0x400);
+        w.npcs.positions.insert(1, (hide, hide));
+        w.npcs.positions.insert(2, (hide, hide));
+        w.npcs.positions.insert(3, (2880, 5440));
+        w.npcs.headings.insert(1, 0x800);
+        w.npcs.headings.insert(2, 0x000);
+        w.npcs.headings.insert(3, 0x400);
 
         w.restore_hidden_field_npcs();
 
         // The hide-box NPCs lose their overrides (render falls back to the MAN
         // spawn); the on-tile NPC and its heading are untouched.
-        assert!(!w.field_npc_positions.contains_key(&1));
-        assert!(!w.field_npc_positions.contains_key(&2));
-        assert!(!w.field_npc_headings.contains_key(&1));
-        assert!(!w.field_npc_headings.contains_key(&2));
-        assert_eq!(w.field_npc_positions.get(&3), Some(&(2880, 5440)));
-        assert_eq!(w.field_npc_headings.get(&3), Some(&0x400));
+        assert!(!w.npcs.positions.contains_key(&1));
+        assert!(!w.npcs.positions.contains_key(&2));
+        assert!(!w.npcs.headings.contains_key(&1));
+        assert!(!w.npcs.headings.contains_key(&2));
+        assert_eq!(w.npcs.positions.get(&3), Some(&(2880, 5440)));
+        assert_eq!(w.npcs.headings.get(&3), Some(&0x400));
     }
 
     #[test]
     fn restore_hidden_field_npcs_noop_when_none_parked() {
         let mut w = World::default();
-        w.field_npc_positions.insert(5, (1000, 2000));
+        w.npcs.positions.insert(5, (1000, 2000));
         w.restore_hidden_field_npcs();
-        assert_eq!(w.field_npc_positions.get(&5), Some(&(1000, 2000)));
+        assert_eq!(w.npcs.positions.get(&5), Some(&(1000, 2000)));
     }
 
     #[test]
@@ -2879,8 +2880,8 @@ mod tests {
             done: false,
             object_bind: false,
         }];
-        w.field_npc_positions.insert(5, (1000, 1000));
-        w.field_npc_headings.insert(5, start);
+        w.npcs.positions.insert(5, (1000, 1000));
+        w.npcs.headings.insert(5, start);
         w
     }
 
@@ -2913,7 +2914,7 @@ mod tests {
                 "the park holds for the op's whole frame budget"
             );
             w.step_cutscene_timeline();
-            headings.push(*w.field_npc_headings.get(&5).expect("heading written"));
+            headings.push(*w.npcs.headings.get(&5).expect("heading written"));
         }
         // Linear at arc/budget = 0x600/18 = 85 units/frame (floor-divide
         // pattern 85 85 85 86 ... as the live arc feeds back), raw values
@@ -2940,7 +2941,7 @@ mod tests {
         let mut w = timeline_with_npc_facing_op(0x02, 0x00, 0x000);
         w.step_cutscene_timeline();
         assert_eq!(
-            w.field_npc_headings.get(&5),
+            w.npcs.headings.get(&5),
             Some(&0x0C00),
             "LUT index 2 (-X) written outright"
         );

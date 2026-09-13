@@ -23,9 +23,7 @@ fn field_interact_opens_dialog_and_panel_emits_glyphs() {
     // Seed actor slot 3's inline interaction-script dialogue: a single
     // `0x1F`-lead segment carrying "hi" (the MES glyph bytes for 'h' 'i'),
     // `0x00`-terminated.
-    world
-        .field_npc_dialog
-        .insert(3, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.dialog.insert(3, vec![0x1F, b'h', b'i', 0x00]);
 
     // Field VM op 0x3E with op0 = 5 (< 100 -> field interact), op1 = slot 3.
     world.load_field_record(&[0x3E, 0x05, 0x03]);
@@ -66,9 +64,7 @@ fn dialog_clear_unblocks_world() {
         mode: SceneMode::Field,
         ..World::default()
     };
-    world
-        .field_npc_dialog
-        .insert(3, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.dialog.insert(3, vec![0x1F, b'h', b'i', 0x00]);
     world.load_field_record(&[0x3E, 0x05, 0x03]);
     let _ = world.step_field();
     assert!(world.current_dialog.is_some());

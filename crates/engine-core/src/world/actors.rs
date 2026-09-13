@@ -1264,7 +1264,7 @@ impl World {
             .and_then(|s| self.actors.get(s as usize))
             .map(|a| (a.move_state.world_x, a.move_state.world_z));
         let mut seen: std::collections::HashSet<u8> =
-            std::collections::HashSet::with_capacity(self.field_npc_positions.len() + 1);
+            std::collections::HashSet::with_capacity(self.npcs.positions.len() + 1);
         let mut moved_player = false;
         if let (Some(slot), Some(pos)) = (player_slot, player_pos) {
             seen.insert(slot);
@@ -1276,7 +1276,7 @@ impl World {
                 _ => {}
             }
         }
-        for (&slot, &pos) in &self.field_npc_positions {
+        for (&slot, &pos) in &self.npcs.positions {
             if Some(slot) == player_slot {
                 // The player is tracked off its move_state above; a stale
                 // mirror of it here must not double-report.

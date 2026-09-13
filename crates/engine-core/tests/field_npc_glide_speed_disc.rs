@@ -98,7 +98,7 @@ fn town01_npc_glide_speeds_decode_from_real_walk_kernel_ops() {
 
     // Non-vacuous: several Rim Elm villagers carry decodable motion legs.
     assert!(
-        !world.field_npc_glide_speeds.is_empty(),
+        !world.npcs.glide_speeds.is_empty(),
         "at least one town01 placement derives a glide speed from its motion op"
     );
 
@@ -120,7 +120,7 @@ fn town01_npc_glide_speeds_decode_from_real_walk_kernel_ops() {
         assert_eq!(step.bits, bits, "slot {slot}: base-step selector");
         assert_eq!(step.speed, speed, "slot {slot}: decoded per-frame step");
         assert_eq!(
-            world.field_npc_glide_speeds.get(&slot),
+            world.npcs.glide_speeds.get(&slot),
             Some(&speed),
             "slot {slot}: the engine installs the wander-decoded speed"
         );
@@ -140,7 +140,7 @@ fn town01_npc_glide_speeds_decode_from_real_walk_kernel_ops() {
         assert_eq!(step.bits, bits, "slot {slot}: base-step selector");
         assert_eq!(step.speed, speed, "slot {slot}: decoded per-frame step");
         assert_eq!(
-            world.field_npc_glide_speeds.get(&slot),
+            world.npcs.glide_speeds.get(&slot),
             Some(&speed),
             "slot {slot}: the engine installs the yield-decoded speed"
         );
@@ -151,7 +151,7 @@ fn town01_npc_glide_speeds_decode_from_real_walk_kernel_ops() {
     // just the cache). Count divergence from the flat stand-in to show the
     // decode is data-driven.
     let mut differ_from_stand_in = 0usize;
-    for (&slot, &speed) in &world.field_npc_glide_speeds {
+    for (&slot, &speed) in &world.npcs.glide_speeds {
         assert!(
             GLIDE_LADDER.contains(&speed),
             "slot {slot}: decoded glide speed {speed} is on the retail base-step ladder"
@@ -173,10 +173,10 @@ fn town01_npc_glide_speeds_decode_from_real_walk_kernel_ops() {
 
     eprintln!(
         "[town01] {} placements carry a decoded glide speed; {} differ from the stand-in ({}): {:?}",
-        world.field_npc_glide_speeds.len(),
+        world.npcs.glide_speeds.len(),
         differ_from_stand_in,
         STAND_IN_SPEED,
-        world.field_npc_glide_speeds,
+        world.npcs.glide_speeds,
     );
 
     // The engine USES the decoded speed: starting a leg for a pinned wander
@@ -187,7 +187,8 @@ fn town01_npc_glide_speeds_decode_from_real_walk_kernel_ops() {
         "the slot is an installed field NPC"
     );
     let leg = world
-        .field_npc_motions
+        .npcs
+        .motions
         .get(&slot)
         .expect("the leg was installed");
     assert_eq!(
@@ -224,7 +225,7 @@ fn town01_motion_op17_default_move_pairs_harvest() {
     // pair is fed to the motion-pause kick (`FUN_8003C9AC` port) as its
     // per-actor table entry.
     assert!(
-        !world.field_npc_default_moves.is_empty(),
+        !world.npcs.default_moves.is_empty(),
         "town01 motion streams carry op-0x17 default-move writes"
     );
     // Structural cross-check: each pinned wander slot also carries a pair
@@ -232,7 +233,8 @@ fn town01_motion_op17_default_move_pairs_harvest() {
     // byte is the 0x8C "unset" sentinel.
     for (slot, _, _) in [(12u8, 3u8, 4u16), (17, 4, 2), (43, 3, 4)] {
         let pair = world
-            .field_npc_default_moves
+            .npcs
+            .default_moves
             .get(&slot)
             .unwrap_or_else(|| panic!("slot {slot}: op-0x17 pair harvested"));
         assert!(
@@ -242,6 +244,6 @@ fn town01_motion_op17_default_move_pairs_harvest() {
     }
     eprintln!(
         "[town01] default-move pairs: {:?}",
-        world.field_npc_default_moves
+        world.npcs.default_moves
     );
 }

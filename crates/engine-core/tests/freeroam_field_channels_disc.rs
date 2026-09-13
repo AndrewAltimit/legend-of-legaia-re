@@ -108,8 +108,8 @@ fn freeroam_channels_seed_and_execute() {
     //    gated behind the engine's NPC-animation switch (the same master gate
     //    the waypoint patroller honours), so enable it to exercise execution -
     //    seeding (parts 1-2) is unconditional and already asserted above.
-    host.world.animate_field_npcs = true;
-    let headings_before = host.world.field_npc_headings.len();
+    host.world.npcs.animate = true;
+    let headings_before = host.world.npcs.headings.len();
     let mut any_advanced = false;
     let mut any_state_changed = false;
     for _ in 0..600 {
@@ -140,7 +140,7 @@ fn freeroam_channels_seed_and_execute() {
         any_state_changed,
         "at least one channel's context state changed (facing / wait / flag setup applied)"
     );
-    let headings_after = host.world.field_npc_headings.len();
+    let headings_after = host.world.npcs.headings.len();
     eprintln!(
         "[town01] channels advanced; NPC headings before={headings_before} after={headings_after}"
     );

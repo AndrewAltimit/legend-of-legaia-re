@@ -49,7 +49,7 @@ fn open_host() -> Option<SceneHost> {
 fn split_by_class(host: &SceneHost) -> (Vec<u8>, Vec<u8>) {
     let mut statics = Vec::new();
     let mut movers = Vec::new();
-    let mut slots: Vec<u8> = host.world.field_npc_positions.keys().copied().collect();
+    let mut slots: Vec<u8> = host.world.npcs.positions.keys().copied().collect();
     slots.sort_unstable();
     for slot in slots {
         if host.world.field_channel_flags(slot) & STATIC_POSE_BIT != 0 {
@@ -90,16 +90,16 @@ fn talking_to_a_static_pose_placement_does_not_turn_it() {
 
     // --- The behaviour half: the gate is actually consulted. ---
     for slot in STATIC_POSE_SLOTS {
-        let before = host.world.field_npc_headings.get(&slot).copied();
-        host.world.field_npc_facing_save = None;
+        let before = host.world.npcs.headings.get(&slot).copied();
+        host.world.npcs.facing_save = None;
         host.world.face_field_npc_at_player(slot);
         assert_eq!(
-            host.world.field_npc_headings.get(&slot).copied(),
+            host.world.npcs.headings.get(&slot).copied(),
             before,
             "static-pose placement {slot} must keep its authored heading"
         );
         assert!(
-            host.world.field_npc_facing_save.is_none(),
+            host.world.npcs.facing_save.is_none(),
             "a skipped snap must not arm the restore for slot {slot}"
         );
     }
@@ -108,10 +108,10 @@ fn talking_to_a_static_pose_placement_does_not_turn_it() {
     // otherwise the gate is rejecting everything and the loop above proves
     // nothing.
     let turned = movers.iter().any(|&slot| {
-        let before = host.world.field_npc_headings.get(&slot).copied();
-        host.world.field_npc_facing_save = None;
+        let before = host.world.npcs.headings.get(&slot).copied();
+        host.world.npcs.facing_save = None;
         host.world.face_field_npc_at_player(slot);
-        let after = host.world.field_npc_headings.get(&slot).copied();
+        let after = host.world.npcs.headings.get(&slot).copied();
         before.is_some() && after != before
     });
     assert!(

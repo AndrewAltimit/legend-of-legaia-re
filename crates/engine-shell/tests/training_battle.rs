@@ -395,7 +395,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         slots[0]
     };
     assert!(
-        world.field_npc_dialog.contains_key(&slot),
+        world.npcs.dialog.contains_key(&slot),
         "the sparring carrier's slot carries inline dialogue"
     );
 
@@ -522,7 +522,8 @@ fn training_reaches_battle_via_interaction_probe() {
             .next()
             .expect("town01 installs the scripted-encounter carrier slot");
         let &(cx, cz) = w
-            .field_npc_positions
+            .npcs
+            .positions
             .get(&slot)
             .expect("the carrier slot carries a placement position");
         (slot, cx, cz)

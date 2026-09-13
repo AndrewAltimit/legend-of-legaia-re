@@ -514,7 +514,8 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
             };
             let (ex, ez) = host
                 .world
-                .field_npc_positions
+                .npcs
+                .positions
                 .get(&pi)
                 .copied()
                 .unwrap_or((p.world_x, p.world_z));
@@ -581,7 +582,7 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
             // Heading: diagnostic only. Engine convention 0 = Z+, retail
             // 0 = Z- (engine = retail + 0x800 mod 0x1000); a walker keeps its
             // last travel direction, so drift is expected dynamics.
-            if let Some(&eh) = host.world.field_npc_headings.get(&pi) {
+            if let Some(&eh) = host.world.npcs.headings.get(&pi) {
                 heading_checked += 1;
                 let expected = ((ra.heading + 0x800) & 0xFFF) as i16;
                 if (eh & 0xFFF) != expected {

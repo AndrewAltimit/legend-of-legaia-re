@@ -585,8 +585,8 @@ impl LegaiaRuntime {
         host.world.use_vm_dialogue = true;
         host.world.follow_terrain_height = true;
         host.world.leading_edge_wall_probes = true;
-        host.world.solid_field_npcs = true;
-        host.world.animate_field_npcs = true;
+        host.world.npcs.solid = true;
+        host.world.npcs.animate = true;
         // Free-roam story staging for PICKER entries only: the opening
         // chain's legs re-enter through here too, and their authored
         // presentation (silent dawn, pre-event scenery) must stay untouched.
@@ -1342,7 +1342,7 @@ impl LegaiaRuntime {
         /// the `World::field_npc_anim_cues` entry shape.
         type AnimCue = (u8, (u8, u8, Vec<u8>));
         let cues: Vec<AnimCue> = match self.scene_host.as_mut() {
-            Some(h) => h.world.field_npc_anim_cues.drain().collect(),
+            Some(h) => h.world.npcs.anim_cues.drain().collect(),
             None => return,
         };
         for (slot, (_count, base_id, _frames)) in cues {

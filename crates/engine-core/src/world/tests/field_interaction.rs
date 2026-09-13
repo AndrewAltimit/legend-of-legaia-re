@@ -9,9 +9,7 @@ fn field_interact_opens_actor_inline_dialogue() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     // Seed actor slot 3's inline interaction-script dialogue.
-    world
-        .field_npc_dialog
-        .insert(3, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.dialog.insert(3, vec![0x1F, b'h', b'i', 0x00]);
     // 0x3E with op0 = 5 (< 100 -> field interact), op1 = slot 3.
     world.load_field_script(vec![0x3E, 0x05, 0x03]);
     let _ = world.tick();
@@ -81,12 +79,8 @@ fn field_dialogue_accept_auto_arms_scripted_carrier() {
         FieldCarrierConfig::Npc { interact_id: 7 },
     ]);
     world.carriers.slots.insert(3, 0);
-    world
-        .field_npc_dialog
-        .insert(3, vec![0x1F, b'h', b'i', 0x00]);
-    world
-        .field_npc_dialog
-        .insert(7, vec![0x1F, b'y', b'o', 0x00]);
+    world.npcs.dialog.insert(3, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.dialog.insert(7, vec![0x1F, b'y', b'o', 0x00]);
 
     // Interact with the scripted carrier's slot, then poll the dialog.
     world.load_field_script(vec![0x3E, 0x05, 0x03, 0x4C, 0x54]);
@@ -148,12 +142,10 @@ fn interaction_probe_talks_to_adjacent_npc_only() {
     world.actors[0].move_state.world_z = 2624;
     world.actors[0].move_state.render_26 = 0x400;
     // Adjacent NPC at tile (21, 20); a far NPC at tile 40 that must not trigger.
-    world
-        .field_npc_dialog
-        .insert(5, vec![0x1F, b'h', b'i', 0x00]);
-    world.field_npc_positions.insert(5, (2752, 2624)); // tile (21, 20)
-    world.field_npc_dialog.insert(6, vec![0x1F, b'x', 0x00]);
-    world.field_npc_positions.insert(6, (5120, 5120)); // tile (40, 40)
+    world.npcs.dialog.insert(5, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.positions.insert(5, (2752, 2624)); // tile (21, 20)
+    world.npcs.dialog.insert(6, vec![0x1F, b'x', 0x00]);
+    world.npcs.positions.insert(6, (5120, 5120)); // tile (40, 40)
 
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
@@ -187,10 +179,8 @@ fn interaction_probe_requires_facing_the_npc() {
     world.actors[0].move_state.world_z = 2624;
     // NPC one tile X+ ahead, but the player faces Z+ (engine heading 0).
     world.actors[0].move_state.render_26 = 0;
-    world
-        .field_npc_dialog
-        .insert(5, vec![0x1F, b'h', b'i', 0x00]);
-    world.field_npc_positions.insert(5, (2752, 2624));
+    world.npcs.dialog.insert(5, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.positions.insert(5, (2752, 2624));
 
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
@@ -212,8 +202,8 @@ fn interaction_probe_no_npc_in_range_opens_nothing() {
     world.actors[0].active = true;
     world.actors[0].move_state.world_x = 2624;
     world.actors[0].move_state.world_z = 2624;
-    world.field_npc_dialog.insert(6, vec![0x1F, b'x', 0x00]);
-    world.field_npc_positions.insert(6, (5120, 5120)); // tile (40, 40), far
+    world.npcs.dialog.insert(6, vec![0x1F, b'x', 0x00]);
+    world.npcs.positions.insert(6, (5120, 5120)); // tile (40, 40), far
 
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
@@ -239,10 +229,8 @@ fn interaction_probe_matches_tetsu_capture_geometry() {
     world.actors[0].move_state.world_x = 2762;
     world.actors[0].move_state.world_z = 1782;
     world.actors[0].move_state.render_26 = 0; // engine heading 0 = facing Z+
-    world
-        .field_npc_dialog
-        .insert(4, vec![0x1F, b'y', b'o', 0x00]);
-    world.field_npc_positions.insert(4, (2752, 1856));
+    world.npcs.dialog.insert(4, vec![0x1F, b'y', b'o', 0x00]);
+    world.npcs.positions.insert(4, (2752, 1856));
 
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
@@ -278,10 +266,8 @@ fn interaction_probe_walk_up_to_scripted_carrier_starts_fight() {
         formation_id: 1,
     }]);
     world.carriers.slots.insert(5, 0);
-    world
-        .field_npc_dialog
-        .insert(5, vec![0x1F, b'h', b'i', 0x00]);
-    world.field_npc_positions.insert(5, (2752, 2624));
+    world.npcs.dialog.insert(5, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.positions.insert(5, (2752, 2624));
 
     // Talk: the probe opens the carrier's dialogue and arms the engage.
     world.input.set_pad(PadButton::Cross.mask());
@@ -475,8 +461,8 @@ fn world_with_spar_carrier() -> World {
         formation_id: 1,
     }]);
     world.carriers.slots.insert(5, 0);
-    world.field_npc_dialog.insert(5, spar_dialogue());
-    world.field_npc_positions.insert(5, (2752, 2624));
+    world.npcs.dialog.insert(5, spar_dialogue());
+    world.npcs.positions.insert(5, (2752, 2624));
     world
 }
 
@@ -605,9 +591,7 @@ fn field_dialogue_accept_on_plain_npc_does_not_arm_battle() {
     world.mode = SceneMode::Field;
     world.install_field_carriers(vec![FieldCarrierConfig::Npc { interact_id: 7 }]);
     // No scripted carrier -> field_carrier_slots stays empty.
-    world
-        .field_npc_dialog
-        .insert(7, vec![0x1F, b'y', b'o', 0x00]);
+    world.npcs.dialog.insert(7, vec![0x1F, b'y', b'o', 0x00]);
 
     world.load_field_script(vec![0x3E, 0x05, 0x07, 0x4C, 0x54]);
     world.input.set_pad(0);
@@ -646,8 +630,8 @@ fn three_actor_talk_first_arm_collapses_party_and_sets_flags() {
     world.mode = SceneMode::Field;
     world.party_actor_slots = vec![Some(1), Some(0), Some(2)];
     world.party_leader_slot = Some(1);
-    world.field_npc_positions.insert(5, (100, 200));
-    world.field_npc_headings.insert(5, 0x400);
+    world.npcs.positions.insert(5, (100, 200));
+    world.npcs.headings.insert(5, 0x400);
 
     let op = talk_op([5, 6, 7], 0x3412, 0xAB);
     let mut ctx = FieldCtx::default();
@@ -678,8 +662,8 @@ fn three_actor_talk_rearm_restores_saved_positions() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.party_leader_slot = Some(0);
-    world.field_npc_positions.insert(5, (100, 200));
-    world.field_npc_headings.insert(5, 0x400);
+    world.npcs.positions.insert(5, (100, 200));
+    world.npcs.headings.insert(5, 0x400);
 
     // First arm captures actor 5's position.
     let op = talk_op([5, 6, 7], 1, 10);
@@ -689,8 +673,8 @@ fn three_actor_talk_rearm_restores_saved_positions() {
         let _ = vm::field::step(&mut host, &mut ctx, &op, 0);
     }
     // The talk moves the actor.
-    world.field_npc_positions.insert(5, (900, 900));
-    world.field_npc_headings.insert(5, 0);
+    world.npcs.positions.insert(5, (900, 900));
+    world.npcs.headings.insert(5, 0);
 
     // Re-arm while flag 0xD is up: retail's else-branch restores the saved
     // table onto the new instruction's participants.
@@ -698,8 +682,8 @@ fn three_actor_talk_rearm_restores_saved_positions() {
         let mut host = FieldHostImpl { world: &mut world };
         let _ = vm::field::step(&mut host, &mut ctx, &op, 0);
     }
-    assert_eq!(world.field_npc_positions.get(&5), Some(&(100, 200)));
-    assert_eq!(world.field_npc_headings.get(&5), Some(&0x400));
+    assert_eq!(world.npcs.positions.get(&5), Some(&(100, 200)));
+    assert_eq!(world.npcs.headings.get(&5), Some(&0x400));
     assert!(world.system_flag_test(0xD), "lock stays up");
 }
 
@@ -804,8 +788,8 @@ fn talk_world_with_participants() -> World {
         (6, (300, 400), 0x600),
         (7, (700, 800), 0x000),
     ] {
-        world.field_npc_positions.insert(slot, pos);
-        world.field_npc_headings.insert(slot, heading);
+        world.npcs.positions.insert(slot, pos);
+        world.npcs.headings.insert(slot, heading);
     }
     let op = talk_op([5, 6, 7], 0x10, 10);
     let mut ctx = FieldCtx::default();
@@ -853,14 +837,14 @@ fn three_actor_talk_switch_cycles_leader_and_returns_to_poll() {
     assert!(!world.system_flag_test(0x12));
 
     // Outgoing leader's participant (id 5) took the player's pose.
-    assert_eq!(world.field_npc_positions.get(&5), Some(&(500, 600)));
-    assert_eq!(world.field_npc_headings.get(&5), Some(&0x200));
+    assert_eq!(world.npcs.positions.get(&5), Some(&(500, 600)));
+    assert_eq!(world.npcs.headings.get(&5), Some(&0x200));
     // The player took the incoming participant's (id 6) pose + heading.
     let ms = &world.actors[0].move_state;
     assert_eq!((ms.world_x, ms.world_z), (300, 400));
     assert_eq!(ms.render_26, 0x600);
     // The incoming participant parked at the 0x3F80 sentinel.
-    assert_eq!(world.field_npc_positions.get(&6), Some(&(0x3F80, 0x3F80)));
+    assert_eq!(world.npcs.positions.get(&6), Some(&(0x3F80, 0x3F80)));
 }
 
 /// All three presence flags set = nobody left to switch to: the arm gate
@@ -1059,9 +1043,9 @@ fn walkable_talk_scene() -> World {
 /// and the runner alone owns it - the case every `current_dialog`-only gate
 /// in the field tick was blind to.
 fn seat_prologue_npc(w: &mut World, slot: u8) {
-    w.field_npc_positions.insert(slot, (0, 64));
-    w.field_npc_headings.insert(slot, 0x400);
-    w.field_npc_dialog_prologue.insert(
+    w.npcs.positions.insert(slot, (0, 64));
+    w.npcs.headings.insert(slot, 0x400);
+    w.npcs.dialog_prologue.insert(
         slot,
         crate::man_field_scripts::InlineDialogPrologue {
             body: vec![0x1F, b'h', b'i', 0x00, 0x21],
@@ -1234,7 +1218,7 @@ fn talking_turns_the_npc_to_the_player_and_restores_its_facing() {
     let mut world = walkable_talk_scene();
     seat_prologue_npc(&mut world, 3);
     assert_eq!(
-        world.field_npc_headings.get(&3),
+        world.npcs.headings.get(&3),
         Some(&0x400),
         "the NPC starts on its authored heading"
     );
@@ -1243,21 +1227,21 @@ fn talking_turns_the_npc_to_the_player_and_restores_its_facing() {
     // Player at (0, 0), NPC at (0, 64): the bearing NPC -> player is -Z, which
     // is 0x800 in the engine's heading space (0 = +Z). One frame, not a ramp.
     assert_eq!(
-        world.field_npc_headings.get(&3),
+        world.npcs.headings.get(&3),
         Some(&0x800),
         "the addressed NPC faces the player on the frame the talk starts"
     );
-    assert_eq!(world.field_npc_facing_save, Some((3, 0x400)));
+    assert_eq!(world.npcs.facing_save, Some((3, 0x400)));
 
     play_out_conversation(&mut world);
     hold(&mut world, 0, 1);
     assert!(!world.dialogue_owns_input(), "the conversation ended");
     assert_eq!(
-        world.field_npc_headings.get(&3),
+        world.npcs.headings.get(&3),
         Some(&0x400),
         "the NPC goes back to the heading it was authored with"
     );
-    assert!(world.field_npc_facing_save.is_none());
+    assert!(world.npcs.facing_save.is_none());
 }
 
 /// The pause menu is refused while a dialogue owns the player - retail's

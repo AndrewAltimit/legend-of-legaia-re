@@ -155,7 +155,8 @@ fn casino_floor_is_walkable() {
     // NPCs parked at the off-map stow coordinate are not on the floor.
     let npcs: Vec<(u8, (i16, i16))> = host
         .world
-        .field_npc_positions
+        .npcs
+        .positions
         .iter()
         .map(|(&s, &p)| (s, p))
         .filter(|(_, p)| p.0 < 16000 && p.1 < 16000)

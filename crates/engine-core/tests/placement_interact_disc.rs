@@ -238,7 +238,7 @@ fn the_action_probe_reaches_a_door_placement() {
             };
             // Clear the NPC anchors so the assertion is about the door arm and
             // not about which of two adjacent actors won the distance tie.
-            world.field_npc_positions.clear();
+            world.npcs.positions.clear();
             if let Some(p) = world.player_actor_slot
                 && let Some(actor) = world.actors.get_mut(p as usize)
             {
@@ -254,7 +254,7 @@ fn the_action_probe_reaches_a_door_placement() {
             );
             // Contrast: without an interaction record the same seat probes
             // nothing, so the arm above is what the hit came from.
-            world.field_npc_dialog_prologue.remove(&d.slot);
+            world.npcs.dialog_prologue.remove(&d.slot);
             assert_eq!(
                 world.field_interact_probe_slot(),
                 None,
@@ -329,7 +329,8 @@ fn interacting_with_a_door_runs_its_record() {
             world.money = 50_000;
 
             let prologue = world
-                .field_npc_dialog_prologue
+                .npcs
+                .dialog_prologue
                 .get(&d.slot)
                 .cloned()
                 .unwrap_or_else(|| {

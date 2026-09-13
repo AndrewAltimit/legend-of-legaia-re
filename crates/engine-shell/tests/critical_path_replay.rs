@@ -1442,7 +1442,8 @@ fn walk_to(
                     eprintln!(
                         "[dbg] npc positions near: {:?}",
                         host.world
-                            .field_npc_positions
+                            .npcs
+                            .positions
                             .values()
                             .filter(|&&(ax, az)| (i32::from(ax) - i32::from(sx)).abs() < 400
                                 && (i32::from(az) - i32::from(sz)).abs() < 400)
@@ -1684,7 +1685,7 @@ fn ablate_rung4_inputs(host: &mut SceneHost, hazards: &HashSet<(i32, i32)>) {
 
     let none: HashSet<(i32, i32)> = HashSet::new();
     let n_props = host.world.field_prop_colliders.len();
-    let n_npcs = host.world.field_npc_positions.len();
+    let n_npcs = host.world.npcs.positions.len();
     eprintln!(
         "[ablate] map01 from {from:?}: {} keikoku mouths, {n_props} props, {n_npcs} npcs, \
          {} hazards",
@@ -1910,10 +1911,10 @@ fn ablate_rung4_inputs(host: &mut SceneHost, hazards: &HashSet<(i32, i32)>) {
     row("props cleared", host, hazards);
     row("props+hazards cleared", host, &none);
 
-    let npcs = std::mem::take(&mut host.world.field_npc_positions);
+    let npcs = std::mem::take(&mut host.world.npcs.positions);
     row("props+npcs+hazards (walls)", host, &none);
 
-    host.world.field_npc_positions = npcs;
+    host.world.npcs.positions = npcs;
     host.world.field_prop_colliders = props;
     row("restored (sanity, == as-is)", host, hazards);
 }
@@ -2103,7 +2104,7 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     // wall-only planner, a Rim Elm townsperson parked in the route stalls
     // rung 2 at tile `(25, 22)`. The two edits belong together.
     host.world.leading_edge_wall_probes = true;
-    host.world.solid_field_npcs = true;
+    host.world.npcs.solid = true;
 
     // Rim Elm's south exit is **story-locked**, and correctly so - but the
     // lock is the gate's own collision, not a script gate on the `0x3F`. The

@@ -88,7 +88,7 @@ fn koin1_prize_counter_interact_arms_the_exchange_through_the_runner() {
     // The prize counter is the NPC whose interaction record carries the
     // `49 07 00` counter op (P1[5]; keyed by content, not slot order).
     let mut counter_slot = None;
-    for (&slot, inline) in &host.world.field_npc_dialog {
+    for (&slot, inline) in &host.world.npcs.dialog {
         if inline.windows(3).any(|w| w == [0x49, 0x07, 0x00]) {
             counter_slot = Some(slot);
         }
@@ -99,7 +99,7 @@ fn koin1_prize_counter_interact_arms_the_exchange_through_the_runner() {
     // classification: a full 3-row box whose dispatch byte opens the
     // Yes/No menu with the box-geometry animation (`Dispatch::Picker(2)`).
     {
-        let inline = &host.world.field_npc_dialog[&slot];
+        let inline = &host.world.npcs.dialog[&slot];
         let lead = inline.iter().position(|&b| b == 0x1F).unwrap();
         let bx = legaia_mes::pack_box(inline, lead).unwrap();
         assert_eq!(bx.lines.len(), 3, "the Prize Counter greeting is 3 rows");

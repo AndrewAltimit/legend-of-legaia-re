@@ -92,7 +92,7 @@ fn opdeene_channels_spawn_and_execute() {
             break;
         }
         let _ = host.world.tick();
-        cue_count = cue_count.max(host.world.field_npc_anim_cues.len());
+        cue_count = cue_count.max(host.world.npcs.anim_cues.len());
         for (c, s) in host.world.field_channels.iter().zip(&spawn_state) {
             if c.pc != s.0 {
                 any_advanced = true;

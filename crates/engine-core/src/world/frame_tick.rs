@@ -311,7 +311,7 @@ impl World {
                 }
             }
             crate::world::EasedMoveTarget::Placement(slot) => {
-                let cur = self.field_npc_positions.get(&slot).copied();
+                let cur = self.npcs.positions.get(&slot).copied();
                 let (mut x, mut z) = cur.unwrap_or((0, 0));
                 if let Some(nx) = frame.axis[0] {
                     x = nx;
@@ -319,7 +319,7 @@ impl World {
                 if let Some(nz) = frame.axis[2] {
                     z = nz;
                 }
-                self.field_npc_positions.insert(slot, (x, z));
+                self.npcs.positions.insert(slot, (x, z));
             }
         }
     }
@@ -457,8 +457,8 @@ impl World {
                     // arm-time capture.
                     for (i, &id) in ids.iter().enumerate() {
                         let slot = self.talk_participant_slot(id);
-                        if let Some(&pos) = self.field_npc_positions.get(&slot) {
-                            let heading = self.field_npc_headings.get(&slot).copied().unwrap_or(0);
+                        if let Some(&pos) = self.npcs.positions.get(&slot) {
+                            let heading = self.npcs.headings.get(&slot).copied().unwrap_or(0);
                             talk.saved[i] = Some((pos, heading));
                         }
                     }
@@ -488,8 +488,8 @@ impl World {
                             .map(|a| a.move_state.render_26)
                             .unwrap_or(0);
                         let npc = self.talk_participant_slot(ids[usize::from(slot.min(2))]);
-                        self.field_npc_positions.insert(npc, (px, pz));
-                        self.field_npc_headings.insert(npc, heading);
+                        self.npcs.positions.insert(npc, (px, pz));
+                        self.npcs.headings.insert(npc, heading);
                     }
                 }
                 LeaderSwapEffect::CommitLeader { slot } => {
@@ -512,8 +512,8 @@ impl World {
                     // (`801d2b3c..801d2c04`), and the map origin follows
                     // (`_DAT_80089118/20` = negated pose).
                     let npc = self.talk_participant_slot(ids[usize::from(slot.min(2))]);
-                    if let Some(&(nx, nz)) = self.field_npc_positions.get(&npc) {
-                        let heading = self.field_npc_headings.get(&npc).copied().unwrap_or(0);
+                    if let Some(&(nx, nz)) = self.npcs.positions.get(&npc) {
+                        let heading = self.npcs.headings.get(&npc).copied().unwrap_or(0);
                         let ny = self.sample_field_floor_height(i32::from(nx), i32::from(nz));
                         if let Some(a) = self
                             .player_actor_slot
@@ -532,7 +532,7 @@ impl World {
                     // parked at the 0x3F80 sentinel (the player object now
                     // represents them).
                     let npc = self.talk_participant_slot(ids[usize::from(slot.min(2))]);
-                    self.field_npc_positions.insert(
+                    self.npcs.positions.insert(
                         npc,
                         (LEADER_ACTOR_POSE_SENTINEL, LEADER_ACTOR_POSE_SENTINEL),
                     );

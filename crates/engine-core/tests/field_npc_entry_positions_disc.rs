@@ -165,7 +165,8 @@ fn town01_entry_positions_match_retail_actor_list() {
         };
         let (ex, ez) = host
             .world
-            .field_npc_positions
+            .npcs
+            .positions
             .get(&pi)
             .copied()
             .unwrap_or((p.world_x, p.world_z));
@@ -266,7 +267,8 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
     let door = (17i16 * 128 + 0x40, 29i16 * 128 + 0x40);
     let entry = host
         .world
-        .field_npc_positions
+        .npcs
+        .positions
         .get(&mei)
         .copied()
         .expect("Mei's slot has an entry position");
@@ -284,7 +286,8 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
     }
     let during = host
         .world
-        .field_npc_positions
+        .npcs
+        .positions
         .get(&mei)
         .copied()
         .expect("Mei's slot still surfaced");
@@ -326,8 +329,8 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
         );
         eprintln!(
             "[diag] motion: {:?} routes: {:?}",
-            host.world.field_npc_motions.get(&mei),
-            host.world.field_npc_routes.get(&mei)
+            host.world.npcs.motions.get(&mei),
+            host.world.npcs.routes.get(&mei)
         );
     }
     assert!(
@@ -342,7 +345,8 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
     // her ENTRY seat the moment the beat completed.
     let after = host
         .world
-        .field_npc_positions
+        .npcs
+        .positions
         .get(&mei)
         .copied()
         .expect("Mei's slot survives the beat");

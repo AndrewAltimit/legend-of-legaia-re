@@ -162,7 +162,7 @@ fn post_naming_story_beat_spawns_on_walk_on() {
         host.world.set_pad(pad);
         host.tick().expect("tick");
         n += 1;
-        if let Some(&p) = host.world.field_npc_positions.get(&34)
+        if let Some(&p) = host.world.npcs.positions.get(&34)
             && mei_positions.last() != Some(&p)
         {
             mei_positions.push(p);

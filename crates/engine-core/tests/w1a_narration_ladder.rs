@@ -193,10 +193,11 @@ fn npc_conversations_run_through_the_inline_field_vm() {
         }
         let mut slots: Vec<u8> = host
             .world
-            .field_npc_dialog_prologue
+            .npcs
+            .dialog_prologue
             .keys()
             .copied()
-            .chain(host.world.field_npc_dialog.keys().copied())
+            .chain(host.world.npcs.dialog.keys().copied())
             .collect();
         slots.sort_unstable();
         slots.dedup();

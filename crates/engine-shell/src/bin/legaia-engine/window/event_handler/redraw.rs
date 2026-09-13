@@ -1072,13 +1072,7 @@ impl PlayWindowApp {
                         }
                     }
                 }
-                let cues: Vec<_> = self
-                    .session
-                    .host
-                    .world
-                    .field_npc_anim_cues
-                    .drain()
-                    .collect();
+                let cues: Vec<_> = self.session.host.world.npcs.anim_cues.drain().collect();
                 for (slot, (_count, base_id, _frames)) in cues {
                     if !self.npc_anim_srcs.contains_key(&slot) {
                         continue;
@@ -1571,11 +1565,7 @@ impl PlayWindowApp {
                     // the spawn tile), floor-snapped like the player.
                     let w = &self.session.host.world;
                     for d in self.field_npc_draws.iter().filter(|_| layer_on("npc")) {
-                        let (x, z) = w
-                            .field_npc_positions
-                            .get(&d.slot)
-                            .copied()
-                            .unwrap_or(d.spawn);
+                        let (x, z) = w.npcs.positions.get(&d.slot).copied().unwrap_or(d.spawn);
                         // Story-parked actor (spawn-prologue `MoveTo` to the
                         // off-map hide box, or a cutscene hide): not drawn -
                         // retail parks despawned actors at the far-corner
@@ -1603,7 +1593,7 @@ impl PlayWindowApp {
                         // seeded into `field_npc_headings` (facing-0
                         // / prologue-less records render at
                         // identity).
-                        let rot = match w.field_npc_headings.get(&d.slot) {
+                        let rot = match w.npcs.headings.get(&d.slot) {
                             Some(&h) => Mat4::from_rotation_y(
                                 std::f32::consts::PI + (h as f32) / 4096.0 * std::f32::consts::TAU,
                             ),

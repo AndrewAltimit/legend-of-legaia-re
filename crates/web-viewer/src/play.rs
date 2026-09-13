@@ -1133,7 +1133,8 @@ impl LegaiaRuntime {
             let slot = e.placement.index as u8;
             let (mut x, mut z) = h
                 .world
-                .field_npc_positions
+                .npcs
+                .positions
                 .get(&slot)
                 .copied()
                 .unwrap_or((e.placement.world_x, e.placement.world_z));
@@ -1151,12 +1152,7 @@ impl LegaiaRuntime {
             // composes `rot = -(facing + 2048)` (the half-turn the walker
             // convention carries), so identity is `facing = 2048`, not `0` -
             // `0` would draw every prologue-less NPC turned half a revolution.
-            let facing = h
-                .world
-                .field_npc_headings
-                .get(&slot)
-                .copied()
-                .unwrap_or(2048) as f32;
+            let facing = h.world.npcs.headings.get(&slot).copied().unwrap_or(2048) as f32;
             let y = h.world.sample_field_floor_height(x as i32, z as i32) as f32;
             out.extend_from_slice(&[x as f32, y, z as f32, facing]);
         }

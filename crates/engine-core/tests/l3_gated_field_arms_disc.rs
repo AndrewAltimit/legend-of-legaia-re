@@ -225,9 +225,10 @@ fn three_actor_talk_section(sites: &[Site]) {
     // capture half is falsifiable rather than three `None`s.
     for (i, id) in ids.iter().enumerate() {
         world
-            .field_npc_positions
+            .npcs
+            .positions
             .insert(*id, (100 + i as i16 * 10, 200 + i as i16 * 10));
-        world.field_npc_headings.insert(*id, 0x100 * (i as i16 + 1));
+        world.npcs.headings.insert(*id, 0x100 * (i as i16 + 1));
     }
     assert!(!world.system_flag_test(0xD), "the lock starts clear");
 
@@ -265,8 +266,8 @@ fn three_actor_talk_section(sites: &[Site]) {
     // ---- re-arm: the lock is up, so the same instruction restores ---------
     // Move every participant, then step the SAME real instruction again.
     for id in ids.iter() {
-        world.field_npc_positions.insert(*id, (-999, -999));
-        world.field_npc_headings.insert(*id, -1);
+        world.npcs.positions.insert(*id, (-999, -999));
+        world.npcs.headings.insert(*id, -1);
     }
     world.load_field_script_at(site.body.clone(), site.pc);
     world.step_field().expect("re-step the `43 02` instruction");
@@ -275,12 +276,12 @@ fn three_actor_talk_section(sites: &[Site]) {
     for (i, id) in ids.iter().enumerate() {
         if let Some((pos, heading)) = talk.saved[i] {
             assert_eq!(
-                world.field_npc_positions.get(id).copied(),
+                world.npcs.positions.get(id).copied(),
                 Some(pos),
                 "{}: participant {i} was not put back",
                 site.scene
             );
-            assert_eq!(world.field_npc_headings.get(id).copied(), Some(heading));
+            assert_eq!(world.npcs.headings.get(id).copied(), Some(heading));
             restored += 1;
         }
     }

@@ -1042,8 +1042,8 @@ impl World {
     /// the same routine - three points off a compass table, taken at the
     /// actor's own position - and the two are not interchangeable.
     pub(crate) fn field_actor_point_blocked(&self, px: i32, pz: i32) -> bool {
-        if self.solid_field_npcs
-            && self.field_npc_positions.values().any(|&(ax, az)| {
+        if self.npcs.solid
+            && self.npcs.positions.values().any(|&(ax, az)| {
                 (px - ax as i32).abs() < FIELD_NPC_BOX_HALF
                     && (pz - az as i32).abs() < FIELD_NPC_BOX_HALF
             })
@@ -1069,13 +1069,13 @@ impl World {
     ///
     /// PORT: FUN_801cfc40
     pub(crate) fn field_npc_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
-        if self.field_npc_positions.is_empty() {
+        if self.npcs.positions.is_empty() {
             return false;
         }
         FIELD_ACTOR_PROBES[dir & 3].iter().any(|&(dx, dz)| {
             let px = x.saturating_add(dx) as i32;
             let pz = z.saturating_sub(dz) as i32;
-            self.field_npc_positions.values().any(|&(ax, az)| {
+            self.npcs.positions.values().any(|&(ax, az)| {
                 (px - ax as i32).abs() < FIELD_NPC_BOX_HALF
                     && (pz - az as i32).abs() < FIELD_NPC_BOX_HALF
             })
@@ -1165,7 +1165,7 @@ impl World {
                 }
             }
         };
-        for (&npc_slot, &(ax, az)) in &self.field_npc_positions {
+        for (&npc_slot, &(ax, az)) in &self.npcs.positions {
             consider(npc_slot, ax, az, &mut best);
         }
         // Retail's probe walks the **actor list** and box-tests every placed
@@ -1180,8 +1180,8 @@ impl World {
         // set and nothing else.
         // REF: FUN_801cf9f4 (the actor-list walk), FUN_80039B7C
         for (&slot, &((ax, az), _)) in &self.field_walk_touch {
-            if self.field_npc_positions.contains_key(&slot)
-                || !self.field_npc_dialog_prologue.contains_key(&slot)
+            if self.npcs.positions.contains_key(&slot)
+                || !self.npcs.dialog_prologue.contains_key(&slot)
             {
                 continue;
             }
@@ -1201,7 +1201,7 @@ impl World {
     ///
     /// REF: FUN_80019b28
     pub(crate) fn face_field_npc(&mut self, npc_slot: u8) {
-        let Some(&(nx, nz)) = self.field_npc_positions.get(&npc_slot) else {
+        let Some(&(nx, nz)) = self.npcs.positions.get(&npc_slot) else {
             return;
         };
         let Some(slot) = self.player_actor_slot else {
@@ -1295,7 +1295,7 @@ impl World {
         if self.field_channel_flags(slot) & 0x0040_0000 != 0 {
             return;
         }
-        let Some(&(nx, nz)) = self.field_npc_positions.get(&slot) else {
+        let Some(&(nx, nz)) = self.npcs.positions.get(&slot) else {
             return;
         };
         let Some(pslot) = self.player_actor_slot else {
@@ -1312,11 +1312,11 @@ impl World {
         if dx == 0.0 && dz == 0.0 {
             return;
         }
-        if self.field_npc_facing_save.is_none() {
-            let prev = self.field_npc_headings.get(&slot).copied().unwrap_or(0);
-            self.field_npc_facing_save = Some((slot, prev));
+        if self.npcs.facing_save.is_none() {
+            let prev = self.npcs.headings.get(&slot).copied().unwrap_or(0);
+            self.npcs.facing_save = Some((slot, prev));
         }
-        self.field_npc_headings.insert(slot, engine_bearing(dx, dz));
+        self.npcs.headings.insert(slot, engine_bearing(dx, dz));
     }
 
     /// Write an addressed NPC's pre-talk heading back, once the conversation
@@ -1333,12 +1333,12 @@ impl World {
     ///
     /// PORT: FUN_80039B7C (the `+0x5A` -> `+0x26` interaction-end restore)
     pub fn release_talk_facing(&mut self) {
-        let Some((slot, prev)) = self.field_npc_facing_save.take() else {
+        let Some((slot, prev)) = self.npcs.facing_save.take() else {
             return;
         };
         // Only restore when the talk pose is still the live heading.
         let posed = match (
-            self.field_npc_positions.get(&slot),
+            self.npcs.positions.get(&slot),
             self.player_actor_slot
                 .and_then(|p| self.actors.get(p as usize)),
         ) {
@@ -1352,10 +1352,10 @@ impl World {
             }
             _ => None,
         };
-        if posed.is_some() && self.field_npc_headings.get(&slot).copied() != posed {
+        if posed.is_some() && self.npcs.headings.get(&slot).copied() != posed {
             return;
         }
-        self.field_npc_headings.insert(slot, prev);
+        self.npcs.headings.insert(slot, prev);
     }
 
     /// Seed each placed field NPC's **initial facing** from its MAN spawn
@@ -1397,7 +1397,7 @@ impl World {
             else {
                 continue;
             };
-            self.field_npc_headings.entry(slot).or_insert(heading);
+            self.npcs.headings.entry(slot).or_insert(heading);
         }
         // The ambient facing channels are installed by
         // `install_field_carriers_from_man`, which runs BEFORE this pass - so
@@ -1416,11 +1416,11 @@ impl World {
     /// are touched: once a stream is running its `+0x26` is the VM's own, and
     /// rewriting it would teleport a turn mid-ramp.
     pub(crate) fn resync_ambient_start_headings(&mut self) {
-        for (slot, chan) in self.field_npc_ambient.iter_mut() {
+        for (slot, chan) in self.npcs.ambient.iter_mut() {
             if chan.live.is_some() {
                 continue;
             }
-            let engine = (self.field_npc_headings.get(slot).copied().unwrap_or(0) & 0x0FFF) as u16;
+            let engine = (self.npcs.headings.get(slot).copied().unwrap_or(0) & 0x0FFF) as u16;
             chan.vm.heading = engine.wrapping_sub(0x800) & 0x0FFF;
         }
     }
@@ -1434,11 +1434,11 @@ impl World {
     ///
     /// Call after [`Self::pre_run_field_channel_prologues`].
     pub(crate) fn resync_ambient_start_positions(&mut self) {
-        for (slot, chan) in self.field_npc_ambient.iter_mut() {
+        for (slot, chan) in self.npcs.ambient.iter_mut() {
             if chan.live.is_some() {
                 continue;
             }
-            if let Some(&(x, z)) = self.field_npc_positions.get(slot) {
+            if let Some(&(x, z)) = self.npcs.positions.get(slot) {
                 chan.vm.x = x;
                 chan.vm.z = z;
             }
@@ -1474,7 +1474,7 @@ impl World {
         man: &[u8],
     ) {
         use legaia_asset::man_motion;
-        self.field_npc_ambient.clear();
+        self.npcs.ambient.clear();
         let Some(n0) = man_file.partitions.first().map(|p| p.len()) else {
             return;
         };
@@ -1509,16 +1509,12 @@ impl World {
             // The ambient ops live in retail heading space; the engine's
             // render heading is the same compass rotated a half turn.
             let engine_heading =
-                (self.field_npc_headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16;
+                (self.npcs.headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16;
             let retail_heading = engine_heading.wrapping_sub(0x800) & 0x0FFF;
             // Seat the channel where the spawn prologue left the actor: the
             // wander op's AABB guard is absolute, so a channel started at
             // the origin would retire its wander on the first tick.
-            let (px, pz) = self
-                .field_npc_positions
-                .get(&slot)
-                .copied()
-                .unwrap_or((0, 0));
+            let (px, pz) = self.npcs.positions.get(&slot).copied().unwrap_or((0, 0));
             let mut vm = vm::ambient_motion::AmbientMotion::new(u32::from(slot), retail_heading)
                 .with_position(px, pz);
             // Per-actor RNG stream: retail draws from one global `rand()`,
@@ -1529,7 +1525,7 @@ impl World {
                 .wrapping_mul(u32::from(slot).wrapping_add(1))
                 .wrapping_add(0x1234_5678);
             let walks = variants.iter().any(|(_, code)| stream_has_walk_op(code));
-            self.field_npc_ambient.insert(
+            self.npcs.ambient.insert(
                 slot,
                 FieldNpcAmbient {
                     variants,
@@ -1570,7 +1566,7 @@ impl World {
     // `world/frame_tick.rs`'s call site already uses for the pair.
     // REF: FUN_80038158 (facing channel drive), FUN_80036D80 (ramp pool)
     pub fn tick_field_npc_ambient(&mut self) {
-        if self.field_npc_ambient.is_empty() {
+        if self.npcs.ambient.is_empty() {
             return;
         }
         let speed = self.frame_step.max(1);
@@ -1594,7 +1590,7 @@ impl World {
         // while the flag is off. That only shows if the flag is flipped
         // mid-scene, which no real entry path does - it is set once at boot
         // (`play-window --live-npcs`).
-        let live_walk = self.animate_field_npcs;
+        let live_walk = self.npcs.animate;
         let blocking = AmbientPlayerProbe {
             player: if live_walk {
                 self.player_field_position()
@@ -1602,15 +1598,16 @@ impl World {
                 None
             },
         };
-        let slots: Vec<u8> = self.field_npc_ambient.keys().copied().collect();
+        let slots: Vec<u8> = self.npcs.ambient.keys().copied().collect();
         for slot in slots {
             // Re-select against the live system-flag bank before stepping.
             let pick = self
-                .field_npc_ambient
+                .npcs
+                .ambient
                 .get(&slot)
                 .and_then(|c| c.select_variant(|f| self.system_flag_test(f)));
             let Some(pick) = pick else { continue };
-            let Some(chan) = self.field_npc_ambient.get_mut(&slot) else {
+            let Some(chan) = self.npcs.ambient.get_mut(&slot) else {
                 continue;
             };
             // Split the borrow across the struct's fields so the bytecode can
@@ -1645,7 +1642,7 @@ impl World {
                 // Retail's walk ops write the live `+0x14`/`+0x18`, which
                 // every downstream probe reads: the NPC's own collision box,
                 // the interact box, and the renderer's placement.
-                self.field_npc_positions.insert(slot, (nx, nz));
+                self.npcs.positions.insert(slot, (nx, nz));
                 if let Some(id) = anim {
                     self.carry_npc_run_anim(slot, id);
                 }
@@ -1653,7 +1650,7 @@ impl World {
             if !turned {
                 continue; // idle op: leave whatever heading is posted standing
             }
-            self.field_npc_headings.insert(slot, engine_heading as i16);
+            self.npcs.headings.insert(slot, engine_heading as i16);
         }
     }
 
@@ -1686,7 +1683,7 @@ impl World {
     ///
     /// REF: FUN_800358c0, FUN_8003774C
     pub fn start_field_npc_motion(&mut self, slot: u8, tx: i16, tz: i16) -> bool {
-        let Some(&(cx, cz)) = self.field_npc_positions.get(&slot) else {
+        let Some(&(cx, cz)) = self.npcs.positions.get(&slot) else {
             return false;
         };
         // Faithful glide speed: the placement's own `0x4C 0x51` motion-op
@@ -1694,11 +1691,12 @@ impl World {
         // into `field_npc_glide_speeds`; the stand-in `FIELD_NPC_MOTION_SPEED`
         // is the fallback for a placement with no decodable motion leg.
         let speed = self
-            .field_npc_glide_speeds
+            .npcs
+            .glide_speeds
             .get(&slot)
             .copied()
             .unwrap_or(FIELD_NPC_MOTION_SPEED);
-        self.field_npc_motions.insert(
+        self.npcs.motions.insert(
             slot,
             FieldNpcMotion {
                 state: vm::motion_vm::MotionState {
@@ -1710,7 +1708,7 @@ impl World {
                     // reads the live `+0x26`), so a leg that never moves - or
                     // one whose first frame is blocked - keeps it instead of
                     // snapping to the compass origin.
-                    yaw: (self.field_npc_headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16,
+                    yaw: (self.npcs.headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16,
                     ..Default::default()
                 },
                 target: (tx, tz),
@@ -1732,8 +1730,7 @@ impl World {
     /// REF: FUN_80024E08, FUN_800204F8 (actor `+0x5C` anim-slot consumer)
     pub(crate) fn carry_npc_run_anim(&mut self, slot: u8, move_id: u8) {
         if move_id != 0 {
-            self.field_npc_anim_cues
-                .insert(slot, (1, move_id, Vec::new()));
+            self.npcs.anim_cues.insert(slot, (1, move_id, Vec::new()));
         }
     }
 
@@ -1750,13 +1747,13 @@ impl World {
     ///
     /// REF: FUN_8003774C (0x4C FaceTarget), FUN_80019B28 (bearing)
     pub fn face_field_npc_toward(&mut self, slot: u8, tx: i16, tz: i16) {
-        let Some(&(cx, cz)) = self.field_npc_positions.get(&slot) else {
+        let Some(&(cx, cz)) = self.npcs.positions.get(&slot) else {
             return;
         };
         // Seed the one-shot VM state from the NPC's current facing so the leg
         // rotates *from* where it stands (a full match for retail's actor
         // `+0x26` seed) and mask into the 12-bit yaw space the op expects.
-        let cur_yaw = (self.field_npc_headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16;
+        let cur_yaw = (self.npcs.headings.get(&slot).copied().unwrap_or(0) & 0x0FFF) as u16;
         let mut state = vm::motion_vm::MotionState {
             world_x: cx,
             world_z: cz,
@@ -1777,8 +1774,7 @@ impl World {
         // target byte `0xF8` (self); no high bit -> the body starts at +1.
         const FACE_TARGET_PROGRAM: [u8; 5] = [0x4C, 0x85, 0x01, 0x00, 0xF8];
         let _ = vm::motion_vm::step(&mut state, target, &FACE_TARGET_PROGRAM);
-        self.field_npc_headings
-            .insert(slot, (state.yaw & 0x0FFF) as i16);
+        self.npcs.headings.insert(slot, (state.yaw & 0x0FFF) as i16);
     }
 
     /// Step every in-flight field-NPC walk leg one frame through the ported
@@ -1810,21 +1806,22 @@ impl World {
         let timeline_up = self.cutscene_timeline_active();
         let dialogue_up = self.dialogue_owns_input();
         // Kick autonomous legs for routed NPCs with no in-flight motion.
-        if self.animate_field_npcs && !dialogue_up && !timeline_up {
+        if self.npcs.animate && !dialogue_up && !timeline_up {
             let kicks: Vec<(u8, (i16, i16))> = self
-                .field_npc_routes
+                .npcs
+                .routes
                 .iter()
-                .filter(|(slot, _)| !self.field_npc_motions.contains_key(slot))
+                .filter(|(slot, _)| !self.npcs.motions.contains_key(slot))
                 // Retail dispatches the two motion VMs off different actor
                 // flag bits, so a placement bound to a walking ambient
                 // stream is never also pursued by `FUN_8003774C`. Its own
                 // `0x18` / `0x03` legs are the authored behaviour.
-                .filter(|(slot, _)| !self.field_npc_ambient.get(slot).is_some_and(|c| c.walks))
+                .filter(|(slot, _)| !self.npcs.ambient.get(slot).is_some_and(|c| c.walks))
                 .filter_map(|(&slot, route)| {
                     let first = *route.first()?;
                     // A one-waypoint route that has arrived stays put (no
                     // restart churn); multi-waypoint routes always loop.
-                    if route.len() == 1 && self.field_npc_positions.get(&slot) == Some(&first) {
+                    if route.len() == 1 && self.npcs.positions.get(&slot) == Some(&first) {
                         return None;
                     }
                     Some((slot, first))
@@ -1832,7 +1829,7 @@ impl World {
                 .collect();
             for (slot, (tx, tz)) in kicks {
                 if self.start_field_npc_motion(slot, tx, tz)
-                    && let Some(m) = self.field_npc_motions.get_mut(&slot)
+                    && let Some(m) = self.npcs.motions.get_mut(&slot)
                 {
                     m.route_cursor = Some(0);
                     // Liveliness amble cap: the decoded pace comes from
@@ -1848,9 +1845,9 @@ impl World {
             }
         }
         // Step each leg; collect per-slot outcomes, then apply.
-        let slots: Vec<u8> = self.field_npc_motions.keys().copied().collect();
+        let slots: Vec<u8> = self.npcs.motions.keys().copied().collect();
         for slot in slots {
-            let Some(motion) = self.field_npc_motions.get_mut(&slot) else {
+            let Some(motion) = self.npcs.motions.get_mut(&slot) else {
                 continue;
             };
             if (dialogue_up || timeline_up) && motion.route_cursor.is_some() {
@@ -1873,23 +1870,23 @@ impl World {
             // write keeps a heading some other writer posed (the interact
             // face-the-speaker bearing) standing while a leg idles unmoved.
             if motion.state.yaw_written {
-                self.field_npc_headings
-                    .insert(slot, motion.state.yaw as i16);
+                self.npcs.headings.insert(slot, motion.state.yaw as i16);
             }
-            self.field_npc_positions.insert(slot, pos);
+            self.npcs.positions.insert(slot, pos);
             if result == vm::motion_vm::StepResult::Done {
                 match cursor {
                     // Patrol loop: start the next route leg (wrapping).
                     Some(i) => {
                         let next = self
-                            .field_npc_routes
+                            .npcs
+                            .routes
                             .get(&slot)
                             .filter(|route| route.len() > 1)
                             .map(|route| ((i + 1) % route.len(), route[(i + 1) % route.len()]));
                         match next {
                             Some((ni, (tx, tz))) => {
                                 if self.start_field_npc_motion(slot, tx, tz)
-                                    && let Some(m) = self.field_npc_motions.get_mut(&slot)
+                                    && let Some(m) = self.npcs.motions.get_mut(&slot)
                                 {
                                     m.route_cursor = Some(ni);
                                     // Same amble cap as the kick site above.
@@ -1897,13 +1894,13 @@ impl World {
                                 }
                             }
                             None => {
-                                self.field_npc_motions.remove(&slot);
+                                self.npcs.motions.remove(&slot);
                             }
                         }
                     }
                     // Scripted leg: ends where it lands.
                     None => {
-                        self.field_npc_motions.remove(&slot);
+                        self.npcs.motions.remove(&slot);
                     }
                 }
             }
@@ -2095,7 +2092,7 @@ impl World {
     ///
     /// REF: FUN_801cfc40, FUN_8003d038, FUN_80038158
     pub(crate) fn post_ambient_motion_touch(&mut self) {
-        if self.field_npc_ambient.is_empty() {
+        if self.npcs.ambient.is_empty() {
             return;
         }
         let Some((px, pz)) = self.player_field_position() else {
@@ -2109,8 +2106,8 @@ impl World {
                 points.push((px.saturating_add(dx) as i32, pz.saturating_sub(dz) as i32));
             }
         }
-        let hit = self.field_npc_ambient.keys().copied().find(|slot| {
-            let Some(&(ax, az)) = self.field_npc_positions.get(slot) else {
+        let hit = self.npcs.ambient.keys().copied().find(|slot| {
+            let Some(&(ax, az)) = self.npcs.positions.get(slot) else {
                 return false;
             };
             points.iter().any(|&(qx, qz)| {
@@ -2120,15 +2117,15 @@ impl World {
         });
         let Some(slot) = hit else { return };
         let stride = vm::motion_vm::BIND_RECORD_STRIDE;
-        let slots = usize::from(*self.field_npc_ambient.keys().next_back().unwrap_or(&0)) + 1;
+        let slots = usize::from(*self.npcs.ambient.keys().next_back().unwrap_or(&0)) + 1;
         let mut arena = vec![vm::ambient_motion::DEFAULT_MOVE_UNSET; slots * stride];
-        for (&s, chan) in &self.field_npc_ambient {
+        for (&s, chan) in &self.npcs.ambient {
             arena[usize::from(s) * stride] = chan.vm.default_move[0];
         }
         let Some(posted) = vm::motion_vm::post_touch(&arena, usize::from(slot)) else {
             return; // suppressed by the record's class byte
         };
-        if let Some(chan) = self.field_npc_ambient.get_mut(&slot) {
+        if let Some(chan) = self.npcs.ambient.get_mut(&slot) {
             chan.vm.pending_touch = Some(posted);
         }
     }
@@ -2931,7 +2928,7 @@ impl World {
     /// `FUN_801D5B5C`).
     pub fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
         let edge = self.leading_edge_wall_probes;
-        let solid_npcs = self.solid_field_npcs;
+        let solid_npcs = self.npcs.solid;
         let mut remaining = speed;
         while remaining > 0 {
             let ms = &self.actors[slot].move_state;
@@ -3149,8 +3146,8 @@ mod face_target_tests {
         w.actors[0].move_state.world_z = 0;
         // NPC placement slot 3 at the origin, facing the *opposite* way (0x800)
         // so the face leg has a full half-turn to converge.
-        w.field_npc_positions.insert(3, (0, 0));
-        w.field_npc_headings.insert(3, 0x800);
+        w.npcs.positions.insert(3, (0, 0));
+        w.npcs.headings.insert(3, 0x800);
 
         {
             let mut host = FieldHostImpl { world: &mut w };
@@ -3159,7 +3156,7 @@ mod face_target_tests {
 
         // atan2(dx=100, dz=0) = +pi/2 -> 12-bit yaw 0x400 (X+); the one-shot
         // FaceTarget leg snaps straight onto it.
-        assert_eq!(w.field_npc_headings.get(&3), Some(&0x0400));
+        assert_eq!(w.npcs.headings.get(&3), Some(&0x0400));
     }
 
     /// The face driver rotates toward the bearing from an arbitrary start and
@@ -3170,14 +3167,14 @@ mod face_target_tests {
         let mut w = World::new();
         // NPC at the origin, facing +X (0x400). Player is due -Z (0, -100):
         // atan2(dx=0, dz=-100) = pi -> yaw 0x800.
-        w.field_npc_positions.insert(2, (0, 0));
-        w.field_npc_headings.insert(2, 0x400);
+        w.npcs.positions.insert(2, (0, 0));
+        w.npcs.headings.insert(2, 0x400);
         w.face_field_npc_toward(2, 0, -100);
-        assert_eq!(w.field_npc_headings.get(&2), Some(&0x0800));
+        assert_eq!(w.npcs.headings.get(&2), Some(&0x0800));
 
         // A slot with no position is left untouched - no heading is invented.
         w.face_field_npc_toward(9, 100, 100);
-        assert!(!w.field_npc_headings.contains_key(&9));
+        assert!(!w.npcs.headings.contains_key(&9));
     }
 }
 

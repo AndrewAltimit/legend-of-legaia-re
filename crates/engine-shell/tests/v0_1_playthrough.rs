@@ -760,7 +760,8 @@ fn v0_1_battle_leg_walk_talk_accept() {
     session
         .host
         .world
-        .field_npc_positions
+        .npcs
+        .positions
         .insert(slot, (TUT.0, TUT.1));
 
     // BFS a path from the player spawn to the carrier over the real collision

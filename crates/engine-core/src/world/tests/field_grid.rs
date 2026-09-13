@@ -191,8 +191,8 @@ fn solid_field_npcs_block_at_retail_actor_standoff() {
     let press = |solid: bool, npc: (i16, i16), start: (i16, i16)| {
         let mut world = World::new();
         world.install_field_player(0);
-        world.solid_field_npcs = solid;
-        world.field_npc_positions.insert(1, npc);
+        world.npcs.solid = solid;
+        world.npcs.positions.insert(1, npc);
         world.actors[0].move_state.world_x = start.0;
         world.actors[0].move_state.world_z = start.1;
         for _ in 0..100 {

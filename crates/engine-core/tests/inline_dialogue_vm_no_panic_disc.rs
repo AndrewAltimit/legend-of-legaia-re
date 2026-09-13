@@ -193,18 +193,19 @@ fn faithful_dialogue_tick_never_errors() {
         host.world.use_vm_dialogue = true;
         host.world.follow_terrain_height = true;
         host.world.leading_edge_wall_probes = true;
-        host.world.solid_field_npcs = true;
-        host.world.animate_field_npcs = true;
+        host.world.npcs.solid = true;
+        host.world.npcs.animate = true;
         if host.enter_field_scene(scene_name, 0).is_err() {
             continue;
         }
 
         let mut slots: Vec<u8> = host
             .world
-            .field_npc_dialog_prologue
+            .npcs
+            .dialog_prologue
             .keys()
             .copied()
-            .chain(host.world.field_npc_dialog.keys().copied())
+            .chain(host.world.npcs.dialog.keys().copied())
             .collect();
         slots.sort_unstable();
         slots.dedup();
@@ -299,8 +300,8 @@ fn scene_change_destinations_all_enter_without_error() {
         host.world.use_vm_dialogue = true;
         host.world.follow_terrain_height = true;
         host.world.leading_edge_wall_probes = true;
-        host.world.solid_field_npcs = true;
-        host.world.animate_field_npcs = true;
+        host.world.npcs.solid = true;
+        host.world.npcs.animate = true;
         let res = if is_world_map_scene(dest) {
             host.enter_world_map_scene(dest)
         } else {

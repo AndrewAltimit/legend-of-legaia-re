@@ -616,8 +616,8 @@ fn npc_press_pins_moving_actor_arm() {
     // the captured rest configuration and leaves the opposite one clear.
     let mut world = World::new();
     world.install_field_player(0);
-    world.solid_field_npcs = true;
-    world.field_npc_positions.insert(1, (ax, az));
+    world.npcs.solid = true;
+    world.npcs.positions.insert(1, (ax, az));
     assert!(
         world.field_actor_dir_blocked(px, pz, dir),
         "the engine probe blocks the captured press direction"

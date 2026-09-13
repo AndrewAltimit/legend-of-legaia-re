@@ -35,10 +35,10 @@ impl World {
         self.carriers.menu = None;
         // NPC motion + walk-touch state is placement-keyed too: never let a
         // previous scene's routes / in-flight legs / door events leak.
-        self.field_npc_routes.clear();
-        self.field_npc_glide_speeds.clear();
-        self.field_npc_default_moves.clear();
-        self.field_npc_motions.clear();
+        self.npcs.routes.clear();
+        self.npcs.glide_speeds.clear();
+        self.npcs.default_moves.clear();
+        self.npcs.motions.clear();
         self.field_walk_touch.clear();
         self.field_boss_stagers.clear();
         self.active_walk_touch = None;
@@ -115,11 +115,11 @@ impl World {
         // so `field_interact` can open the interacted actor's real dialogue.
         // This is the actor's own inline MES text (retail `actor[+0x90]`), the
         // mechanism `0x3F` was wrongly standing in for.
-        self.field_npc_dialog.clear();
-        self.field_npc_dialog_prologue.clear();
-        self.field_npc_positions.clear();
-        self.field_npc_entry_positions.clear();
-        self.field_npc_headings.clear();
+        self.npcs.dialog.clear();
+        self.npcs.dialog_prologue.clear();
+        self.npcs.positions.clear();
+        self.npcs.entry_positions.clear();
+        self.npcs.headings.clear();
         // Motion state is per-scene: a snapshot carried across a scene change
         // would diff the warp itself as one enormous step and start every
         // actor - the player included - walking on the landing frame.
@@ -140,7 +140,8 @@ impl World {
             // them); a parked anchor draws nothing and collides with nothing,
             // so free-roam behaviour is unchanged.
             if placement.special_model {
-                self.field_npc_positions
+                self.npcs
+                    .positions
                     .insert(slot, (placement.world_x, placement.world_z));
             }
             // A **minigame door** placement (`PlacementKind::Portal`, i.e. a
@@ -160,25 +161,26 @@ impl World {
                     man_file, man, &placement,
                 )
             {
-                self.field_npc_dialog_prologue.insert(slot, record);
+                self.npcs.dialog_prologue.insert(slot, record);
             }
             if let crate::man_field_scripts::PlacementKind::Npc {
                 dialog_inline: Some(inline),
                 ..
             } = kind
             {
-                self.field_npc_dialog.insert(slot, inline);
+                self.npcs.dialog.insert(slot, inline);
                 // Stash the untruncated record so the opt-in field-VM runner can
                 // execute the interaction prologue (segment selection) - purely
                 // additive; the default path keeps using `field_npc_dialog`.
                 if let Some(prologue) =
                     crate::man_field_scripts::placement_inline_prologue(man_file, man, &placement)
                 {
-                    self.field_npc_dialog_prologue.insert(slot, prologue);
+                    self.npcs.dialog_prologue.insert(slot, prologue);
                 }
                 // The interaction probe box-tests the player against this spawn
                 // position (= runtime actor frame; see `field_npc_positions`).
-                self.field_npc_positions
+                self.npcs
+                    .positions
                     .insert(slot, (placement.world_x, placement.world_z));
                 // The placement's autonomous walk route (its own pre-text
                 // `0x4C 0x51` move-to-tile ops), driven through the motion VM
@@ -206,7 +208,7 @@ impl World {
                     route
                 };
                 if !route.is_empty() {
-                    self.field_npc_routes.insert(slot, route);
+                    self.npcs.routes.insert(slot, route);
                 }
                 // Faithful per-leg glide speed from the placement's real
                 // walk-kernel operands: the bound tail-section-1
@@ -221,7 +223,7 @@ impl World {
                 if let Some(speed) =
                     crate::man_field_scripts::placement_glide_speed(man_file, man, &placement)
                 {
-                    self.field_npc_glide_speeds.insert(slot, speed);
+                    self.npcs.glide_speeds.insert(slot, speed);
                 }
             }
             // Walk-touch events ride any non-parked placement (door warps are
@@ -241,7 +243,7 @@ impl World {
         // motion-pause kick (`legaia_engine_vm::motion_pause`) a real table.
         // REF: FUN_80038158 (case 0x17), FUN_8003C9AC
         for (slot, pair) in crate::man_field_scripts::motion_default_move_writes(man_file, man) {
-            self.field_npc_default_moves.insert(slot, pair);
+            self.npcs.default_moves.insert(slot, pair);
         }
 
         // Seed the per-actor field-VM channels from the same placement partition
@@ -335,11 +337,11 @@ impl World {
         // Stash this slot's untruncated record (if any) so the opt-in VM-dialogue
         // runner can execute its interaction prologue. Always reassigned (to
         // `None` when absent) so a prior interaction's prologue can't leak.
-        self.active_inline_prologue = self.field_npc_dialog_prologue.get(&slot).cloned();
+        self.active_inline_prologue = self.npcs.dialog_prologue.get(&slot).cloned();
         // Remember which NPC this interaction belongs to: the inline runner
         // routes the prologue's `0x4C 0x51` NPC-run ops to this slot.
         self.active_inline_slot = Some(slot);
-        let inline = self.field_npc_dialog.get(&slot).cloned();
+        let inline = self.npcs.dialog.get(&slot).cloned();
         let opened_dialog = if let Some(ref text) = inline {
             self.open_field_dialog(text.clone());
             true
@@ -518,7 +520,7 @@ impl World {
         // face-the-NPC step retail applies to moving-class partners
         // (`flags & 0x20010 == 0x20000`), which every talk NPC is
         // (capture-pinned by `rimelm_npc_press_tetsu`).
-        if !self.field_npc_positions.is_empty()
+        if !self.npcs.positions.is_empty()
             && let Some(npc_slot) = self.field_interact_probe_slot()
         {
             self.dialog_input_consumed = true;

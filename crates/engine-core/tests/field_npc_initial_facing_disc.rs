@@ -111,9 +111,9 @@ fn town01_npc_initial_facings_derive_from_spawn_prologues() {
     world.install_field_carriers_from_man(&man_file, &man_bytes);
     world.seed_field_npc_facings(&man_file, &man_bytes);
     assert!(
-        world.field_npc_headings.len() >= derived.min(4),
+        world.npcs.headings.len() >= derived.min(4),
         "seeded headings missing (got {})",
-        world.field_npc_headings.len()
+        world.npcs.headings.len()
     );
     for p in &placements {
         let Some(idx) = placement_initial_facing(&man_file, &man_bytes, p) else {
@@ -121,7 +121,7 @@ fn town01_npc_initial_facings_derive_from_spawn_prologues() {
         };
         let expect = facing_index_to_engine_heading(idx).expect("direction slot");
         assert_eq!(
-            world.field_npc_headings.get(&(p.index as u8)),
+            world.npcs.headings.get(&(p.index as u8)),
             Some(&expect),
             "placement {} seeded heading mismatch",
             p.index

@@ -19,9 +19,7 @@ fn dialog_advance_halts_then_clears_on_just_pressed_cross() {
     // 0x4C 0x54: dialog-advance poll (2 bytes).
     // 0x00: sentinel that makes `step_field` advance further once the dialog
     //   clears.
-    world
-        .field_npc_dialog
-        .insert(3, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.dialog.insert(3, vec![0x1F, b'h', b'i', 0x00]);
     let bc = vec![0x3E, 0x05, 0x03, 0x4C, 0x54, 0x00];
     world.load_field_script(bc);
 

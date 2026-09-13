@@ -74,7 +74,7 @@ fn the_koin4_price_menu_confirms_through_the_option_jump() {
     // number is disc data; keying by content keeps the ladder honest if the
     // placement table's order ever re-derives.
     let mut offer_slot = None;
-    for (&slot, inline) in &host.world.field_npc_dialog {
+    for (&slot, inline) in &host.world.npcs.dialog {
         if let Some(panel) = OwnedDialogPanel::from_inline_dialog(inline)
             && let Some(pk) = panel.picker()
             && pk.n == 3

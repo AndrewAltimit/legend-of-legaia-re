@@ -868,7 +868,7 @@ impl World {
                     park_gate: site.park_gate_flag,
                 },
             );
-            self.field_npc_positions.insert(slot, station);
+            self.npcs.positions.insert(slot, station);
             self.field_walk_touch.insert(
                 slot,
                 (

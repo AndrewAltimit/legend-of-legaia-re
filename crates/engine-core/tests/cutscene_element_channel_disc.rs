@@ -136,7 +136,7 @@ fn the_channel_advances_from_the_worlds_own_frame_tick() {
     let mut w = World::new();
     w.mode = SceneMode::Field;
     w.field_frame_step = 1;
-    w.field_npc_positions.insert(2, (0, 0));
+    w.npcs.positions.insert(2, (0, 0));
     w.spawn_element_position_tween(
         ElementLink::Placement(2),
         Default::default(),
@@ -159,7 +159,7 @@ fn the_channel_advances_from_the_worlds_own_frame_tick() {
         "the world tick must run the channel, not just `tick_cutscene_elements`"
     );
     assert_eq!(
-        w.field_npc_positions.get(&2),
+        w.npcs.positions.get(&2),
         Some(&(256, 512)),
         "and the tween must have written through its link"
     );
