@@ -206,8 +206,8 @@ impl World {
         // The eased moves. Retail writes the target's `+0x14/+0x16/+0x18`
         // straight through the back-link; the engine writes the same triple
         // wherever that target lives.
-        if !self.eased_moves.is_empty() {
-            let mut records = std::mem::take(&mut self.eased_moves);
+        if !self.field_vm.eased_moves.is_empty() {
+            let mut records = std::mem::take(&mut self.field_vm.eased_moves);
             for rec in records.iter_mut() {
                 let frame = rec.ease.step(frame_delta, rec.target_flags);
                 self.apply_eased_move(rec.target, &frame);
@@ -215,8 +215,8 @@ impl World {
             records.retain(|r| !r.ease.retired);
             // A spawn that landed during this pass appended to the (empty)
             // live list, so splice rather than overwrite.
-            records.append(&mut self.eased_moves);
-            self.eased_moves = records;
+            records.append(&mut self.field_vm.eased_moves);
+            self.field_vm.eased_moves = records;
             // Drop the `+0x8E` latch once the last mirrored player move has
             // retired. Retail's byte is sticky and its reader gates on the
             // actor flag `+0x10 & 0x20000000` instead, which a script clears;
@@ -225,6 +225,7 @@ impl World {
             // scene - a softlock class, not a fidelity gain. The armed window
             // is otherwise identical: every frame of the move, and no other.
             if !self
+                .field_vm
                 .eased_moves
                 .iter()
                 .any(|r| matches!(r.target, crate::world::EasedMoveTarget::Player))
@@ -570,8 +571,8 @@ impl World {
     /// performs (retail `FUN_8003C83C`); an unmatched id passes through raw.
     // REF: FUN_8003C83C (id resolve)
     fn talk_participant_slot(&self, id: u8) -> u8 {
-        crate::field_channels::resolve_target(&self.field_channels, id)
-            .map(|ci| self.field_channels[ci].placement_index as u8)
+        crate::field_channels::resolve_target(&self.field_vm.channels, id)
+            .map(|ci| self.field_vm.channels[ci].placement_index as u8)
             .unwrap_or(id)
     }
 

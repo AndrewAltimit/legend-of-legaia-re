@@ -259,7 +259,7 @@ impl World {
             // slot this screen wants goes on the screen's own actor view.
             self.actors[slot].state_54 = 0;
         }
-        let s = &mut self.submode_screen;
+        let s = &mut self.field_vm.submode_screen;
         s.owner = owner;
         s.actor = HubActor {
             width: SUBMODE_PANEL_WIDTH,
@@ -298,7 +298,7 @@ impl World {
     /// for both spawned-record shapes, and [`World::in_cutscene_timeline`]
     /// only for the modal one, so the pair separates all three contexts.
     pub fn op49_park_owner(&self) -> Op49ParkOwner {
-        if !self.in_spawned_record_slice {
+        if !self.field_vm.in_spawned_record_slice {
             Op49ParkOwner::FieldScript
         } else if self.cutscene.in_timeline {
             Op49ParkOwner::CutsceneTimeline
@@ -322,8 +322,8 @@ impl World {
     ///
     /// PORT: FUN_801DE840 (`0x801e0984` / `0x801e09a8`)
     pub fn record_op49_park(&mut self, sub_op: u8) {
-        self.submode_screen.owner = self.op49_park_owner();
-        self.submode_screen.park_sub_op = Some(sub_op);
+        self.field_vm.submode_screen.owner = self.op49_park_owner();
+        self.field_vm.submode_screen.park_sub_op = Some(sub_op);
     }
 
     /// Record the op-`0x49` operand's payload bytes for the screen this arm
@@ -338,7 +338,7 @@ impl World {
         for (i, slot) in out.iter_mut().enumerate() {
             *slot = instr.get(2 + i).copied().unwrap_or(0);
         }
-        self.submode_screen.board_entries = out;
+        self.field_vm.submode_screen.board_entries = out;
     }
 
     /// Clear the park on resume - retail's `sw zero,-0x4bb0(s0)` at
@@ -347,16 +347,16 @@ impl World {
     /// Only the context that armed the park may clear it, for the same
     /// reason it is the only one that may read it.
     pub fn clear_op49_park(&mut self) {
-        if self.submode_screen.owner == self.op49_park_owner() {
-            self.submode_screen.park_sub_op = None;
+        if self.field_vm.submode_screen.owner == self.op49_park_owner() {
+            self.field_vm.submode_screen.park_sub_op = None;
         }
     }
 
     /// Close whatever screen is up without running its hand-back.
     pub fn close_field_submode_screen(&mut self) {
-        self.submode_screen.open = false;
-        self.submode_screen.window = None;
-        self.submode_screen.frame = HubFrame::default();
+        self.field_vm.submode_screen.open = false;
+        self.field_vm.submode_screen.window = None;
+        self.field_vm.submode_screen.frame = HubFrame::default();
     }
 
     /// Run one dispatcher frame over the submode driver actor.
@@ -368,7 +368,7 @@ impl World {
     /// Returns `true` when the dispatcher retired the actor this frame, which
     /// is retail's `_DAT_8007B450 = 1` and unparks the field VM's op `0x49`.
     pub fn tick_submode_screen(&mut self, frame_delta: u8) -> bool {
-        if !self.submode_screen.open {
+        if !self.field_vm.submode_screen.open {
             return false;
         }
         // Retail runs this off an actor on the pool; with no live driver there
@@ -390,31 +390,31 @@ impl World {
         // cabinet's accept). A host/test that pre-loaded `picker_result`
         // keeps its value for this pass (the derive only fills an empty
         // cell); either way the dispatch below consumes it one-shot.
-        if self.submode_screen.actor.state == hub::slot::COIN_COUNTER
-            && self.submode_screen.actor.sub == 2
-            && self.submode_screen.picker_result == 0
+        if self.field_vm.submode_screen.actor.state == hub::slot::COIN_COUNTER
+            && self.field_vm.submode_screen.actor.sub == 2
+            && self.field_vm.submode_screen.picker_result == 0
         {
             let pad = self.input.pad() as u32;
             let prev = self.input.pad_prev() as u32;
-            let edge = (pad & !prev) | self.submode_screen.pad_edge_latch;
+            let edge = (pad & !prev) | self.field_vm.submode_screen.pad_edge_latch;
             let toggle = (crate::dev_menu::PACK_UP
                 | crate::dev_menu::PACK_DOWN
                 | crate::dev_menu::PACK_LEFT
                 | crate::dev_menu::PACK_RIGHT) as u32;
             if edge & toggle != 0 {
-                self.submode_screen.counter.yes_no ^= 1;
+                self.field_vm.submode_screen.counter.yes_no ^= 1;
             }
             if edge & SUBMODE_ACCEPT_MASK != 0 {
-                self.submode_screen.picker_result = hub::PICK_ACCEPT;
+                self.field_vm.submode_screen.picker_result = hub::PICK_ACCEPT;
             } else if edge & SUBMODE_BACK_MASK != 0 {
-                self.submode_screen.picker_result = hub::PICK_CANCEL;
+                self.field_vm.submode_screen.picker_result = hub::PICK_CANCEL;
             }
         }
         let env = self.submode_env(frame_delta);
         // The latch is one-shot: a pass that ran has consumed every edge that
         // reached it, exactly as retail's per-game-tick pad sample is.
-        self.submode_screen.pad_edge_latch = 0;
-        let mut screen = std::mem::take(&mut self.submode_screen);
+        self.field_vm.submode_screen.pad_edge_latch = 0;
+        let mut screen = std::mem::take(&mut self.field_vm.submode_screen);
         let window = screen.window;
         let mut installed = std::mem::take(&mut screen.installed_windows);
         let SubmodeScreen {
@@ -459,14 +459,14 @@ impl World {
 
         let retired = screen.actor.flags & ACTOR_RETIRE != 0;
         screen.frame = frame;
-        self.submode_screen = screen;
+        self.field_vm.submode_screen = screen;
         // The picker return is one-shot: the pass that ran has consumed it
         // (retail's `FUN_801E9DC8` returns a fresh value per call).
-        self.submode_screen.picker_result = 0;
+        self.field_vm.submode_screen.picker_result = 0;
         self.apply_submode_actions();
         if retired {
-            self.submode_screen.open = false;
-            self.submode_screen.done = true;
+            self.field_vm.submode_screen.open = false;
+            self.field_vm.submode_screen.done = true;
             // Retail retires the node; the engine drops the pool slot the same
             // way every other kill-bit actor goes.
             if let Some(idx) = self.find_actor_by_handler(ActorHandler::SubmodeDriver) {
@@ -491,7 +491,7 @@ impl World {
     /// rather than answering "can this character equip that" from a zero mask,
     /// which would paint the reject line over every entry.
     pub fn install_hub_equip_restrictions(&mut self, info: &DiscEquipInfo) {
-        self.submode_screen.equip_restrictions = (0..=u8::MAX)
+        self.field_vm.submode_screen.equip_restrictions = (0..=u8::MAX)
             .filter_map(|id| info.entry(id).map(|e| (id, (e.mask, disc_slot_bits(e)))))
             .collect();
     }
@@ -504,7 +504,7 @@ impl World {
     /// Honored only once [`World::install_hub_equip_restrictions`] has run -
     /// see that method for why.
     pub fn set_hub_equip_mode(&mut self, mode: u32) {
-        self.submode_screen.equip_mode = mode;
+        self.field_vm.submode_screen.equip_mode = mode;
     }
 
     /// Project the world's equipment state onto the globals `FUN_801E5B4C`
@@ -603,13 +603,15 @@ impl World {
             ];
             // Several ids can name the same row; both halves of what lands here
             // are that row's own bytes, so which id wrote it does not matter.
-            if let Some(&(mask, slot_bits)) = self.submode_screen.equip_restrictions.get(&id) {
+            if let Some(&(mask, slot_bits)) =
+                self.field_vm.submode_screen.equip_restrictions.get(&id)
+            {
                 props.char_mask = mask;
                 props.slot_bits = slot_bits;
             }
         }
-        if !self.submode_screen.equip_restrictions.is_empty() {
-            env.mode = self.submode_screen.equip_mode;
+        if !self.field_vm.submode_screen.equip_restrictions.is_empty() {
+            env.mode = self.field_vm.submode_screen.equip_mode;
         }
         env
     }
@@ -624,23 +626,23 @@ impl World {
     pub fn latch_submode_pad_edge(&mut self) {
         // Only while a screen is up: a latch that accumulated across a whole
         // scene would hand the next screen a press from minutes ago.
-        if !self.submode_screen.open {
-            self.submode_screen.pad_edge_latch = 0;
+        if !self.field_vm.submode_screen.open {
+            self.field_vm.submode_screen.pad_edge_latch = 0;
             return;
         }
         let pad = self.input.pad() as u32;
         let prev = self.input.pad_prev() as u32;
-        self.submode_screen.pad_edge_latch |= pad & !prev;
+        self.field_vm.submode_screen.pad_edge_latch |= pad & !prev;
     }
 
     fn submode_env(&self, frame_delta: u8) -> HubEnv {
         let pad = self.input.pad() as u32;
         let prev = self.input.pad_prev() as u32;
-        let edge = (pad & !prev) | self.submode_screen.pad_edge_latch;
+        let edge = (pad & !prev) | self.field_vm.submode_screen.pad_edge_latch;
         HubEnv {
             // `DAT_801F2734` is the submode context's state word, which
             // `open_submode` seeds and `World::submode_context` mirrors.
-            submode: self.submode_context.first().copied().unwrap_or(0) as i32,
+            submode: self.field_vm.submode_context.first().copied().unwrap_or(0) as i32,
             pad_edge: edge,
             pad_held: pad,
             pad_repeat: edge,
@@ -649,14 +651,14 @@ impl World {
             accept_mask: SUBMODE_ACCEPT_MASK,
             back_mask: SUBMODE_BACK_MASK,
             frame_delta: frame_delta.max(1) as i32,
-            picker_result: self.submode_screen.picker_result,
-            cursor_row: self.submode_screen.counter.cursor,
-            cursor_row_alt: self.submode_screen.counter.yes_no,
+            picker_result: self.field_vm.submode_screen.picker_result,
+            cursor_row: self.field_vm.submode_screen.counter.cursor,
+            cursor_row_alt: self.field_vm.submode_screen.counter.yes_no,
             // Retail reads the op-0x49 operand pointer here; the engine has no
             // RAM pointer, so it carries the "a screen is armed" truth value
             // the dispatcher's release arm actually branches on.
-            board_flag: i32::from(self.submode_screen.open),
-            board_entries: self.submode_screen.board_entries,
+            board_flag: i32::from(self.field_vm.submode_screen.open),
+            board_entries: self.field_vm.submode_screen.board_entries,
             // `DAT_80084594` / `DAT_80084598..` are the present-party roster;
             // the engine's mirror of retail's `0x8007BD10` list is
             // `World::active_party`.
@@ -673,7 +675,7 @@ impl World {
 
     /// Apply the side effects the last tick reported.
     fn apply_submode_actions(&mut self) {
-        let actions = self.submode_screen.frame.actions.clone();
+        let actions = self.field_vm.submode_screen.frame.actions.clone();
         for a in actions {
             match a {
                 // The one action that moves persistent state: coins into the
@@ -689,7 +691,7 @@ impl World {
                         .min(hub::COIN_BANK_MAX as u32);
                     self.money = self.money.saturating_sub(gold_cost).max(0);
                 }
-                HubAction::ClearCursorRow => self.submode_screen.counter.cursor = 0,
+                HubAction::ClearCursorRow => self.field_vm.submode_screen.counter.cursor = 0,
                 _ => {}
             }
         }
@@ -894,14 +896,14 @@ mod tests {
         let mut w = world_with_driver();
         w.open_coin_counter();
         assert!(!w.tick_submode_screen(1));
-        assert!(!w.submode_screen.frame.actions.is_empty());
+        assert!(!w.field_vm.submode_screen.frame.actions.is_empty());
 
         // Retire the driver: the dispatcher has nothing to run.
         w.retire_actors_by_handler(ActorHandler::SubmodeDriver);
         w.retire_yielded_actors();
-        w.submode_screen.frame = HubFrame::default();
+        w.field_vm.submode_screen.frame = HubFrame::default();
         assert!(!w.tick_submode_screen(1));
-        assert!(w.submode_screen.frame.actions.is_empty());
+        assert!(w.field_vm.submode_screen.frame.actions.is_empty());
     }
 
     #[test]
@@ -914,18 +916,21 @@ mod tests {
         // Frame 1: state 0 seeds the screen.
         w.tick_submode_screen(1);
         // Type 12 coins.
-        w.submode_screen.counter.set_entered(12);
+        w.field_vm.submode_screen.counter.set_entered(12);
         // Frame 2: accept.
         w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
         w.tick_submode_screen(1);
-        assert_eq!(w.submode_screen.actor.sub, 2, "the confirm panel is up");
+        assert_eq!(
+            w.field_vm.submode_screen.actor.sub, 2,
+            "the confirm panel is up"
+        );
         // Frame 3: pick Yes on the confirm panel.
         w.input.set_pad(0);
-        w.submode_screen.counter.yes_no = 0;
-        w.submode_screen.picker_result = hub::PICK_ACCEPT;
+        w.field_vm.submode_screen.counter.yes_no = 0;
+        w.field_vm.submode_screen.picker_result = hub::PICK_ACCEPT;
         w.tick_submode_screen(1);
         // Frame 4: the commit.
-        w.submode_screen.picker_result = 0;
+        w.field_vm.submode_screen.picker_result = 0;
         w.tick_submode_screen(1);
 
         assert_eq!(
@@ -941,7 +946,7 @@ mod tests {
         let mut w = world_with_driver();
         // Slot 0 is what a fresh driver carries.
         w.open_field_submode_screen(slot::CLOSE_TICK, None);
-        assert!(w.submode_screen.is_open());
+        assert!(w.field_vm.submode_screen.is_open());
         let mut retired = false;
         for _ in 0..8 {
             if w.tick_submode_screen(1) {
@@ -950,8 +955,8 @@ mod tests {
             }
         }
         assert!(retired, "the close tick clears the gate and retires");
-        assert!(w.submode_screen.is_done());
-        assert!(!w.submode_screen.is_open());
+        assert!(w.field_vm.submode_screen.is_done());
+        assert!(!w.field_vm.submode_screen.is_open());
     }
 
     #[test]
@@ -964,16 +969,16 @@ mod tests {
         // does. So the draw appears when the descriptor names it, not when
         // the screen opens.
         w.tick_submode_screen(1);
-        assert_eq!(w.submode_screen.installed_windows, vec![0, 10, 10]);
-        w.submode_screen.counter.set_entered(2);
+        assert_eq!(w.field_vm.submode_screen.installed_windows, vec![0, 10, 10]);
+        w.field_vm.submode_screen.counter.set_entered(2);
         w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
         w.tick_submode_screen(1);
         assert_eq!(
-            w.submode_screen.installed_windows,
+            w.field_vm.submode_screen.installed_windows,
             vec![hub::window::THREE_LINE]
         );
         assert!(
-            !w.submode_screen.draws().is_empty(),
+            !w.field_vm.submode_screen.draws().is_empty(),
             "the installed panel's painter runs alongside the state machine"
         );
     }

@@ -543,7 +543,7 @@ impl PlayWindowApp {
             return Vec::new();
         };
         let world = &self.session.host.world;
-        let screen = &world.submode_screen;
+        let screen = &world.field_vm.submode_screen;
         if !screen.is_open()
             || screen.actor.state != legaia_engine_vm::baka_hub_actors::slot::COIN_COUNTER
         {

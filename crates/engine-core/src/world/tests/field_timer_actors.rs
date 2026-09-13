@@ -146,7 +146,11 @@ fn op_43_09_with_ticks_eases_the_player_to_the_target() {
     ]);
     world.field_ctx.flags |= 0x0100_0000;
     let _ = world.tick();
-    assert_eq!(world.eased_moves.len(), 1, "the tween record spawned");
+    assert_eq!(
+        world.field_vm.eased_moves.len(),
+        1,
+        "the tween record spawned"
+    );
 
     let mut xs = Vec::new();
     for _ in 0..8 {
@@ -162,7 +166,7 @@ fn op_43_09_with_ticks_eases_the_player_to_the_target() {
         "t^2/d^2 keeps the halfway sample below the midpoint: {xs:?}"
     );
     assert!(
-        world.eased_moves.is_empty(),
+        world.field_vm.eased_moves.is_empty(),
         "the record retires on arrival"
     );
 }
@@ -205,7 +209,7 @@ fn the_man_load_sweep_drops_every_live_timer_record() {
     assert!(world.cinematic_bars.is_none());
     assert_eq!(world.cinematic_bar, 0);
     assert!(world.terrain.floor_tier_bobs.is_empty());
-    assert!(world.eased_moves.is_empty());
+    assert!(world.field_vm.eased_moves.is_empty());
 }
 
 /// The `+0x8E` inverted-Y mirror reaches a consumer.
@@ -277,7 +281,10 @@ fn op_43_09_mirror_flag_holds_the_eased_y_against_the_terrain_follow() {
     for _ in 0..16 {
         let _ = mirrored.tick();
     }
-    assert!(mirrored.eased_moves.is_empty(), "the tween retired");
+    assert!(
+        mirrored.field_vm.eased_moves.is_empty(),
+        "the tween retired"
+    );
     assert_eq!(
         mirrored.locomotion.eased_mirror_y, None,
         "the latch retired too"

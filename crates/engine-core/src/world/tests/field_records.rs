@@ -244,12 +244,13 @@ fn object_channels_seed_without_partition1_placements() {
     let mut world = World::default();
     world.seed_field_channels(&man_file, &man);
     assert!(
-        world.field_channels.is_empty(),
+        world.field_vm.channels.is_empty(),
         "no placements -> no placement channels"
     );
     world.seed_object_channels(&man_file, &man, &[(0usize, (100i16, 200i16))]);
     let obj = world
-        .field_channels
+        .field_vm
+        .channels
         .iter()
         .find(|c| c.object_bind)
         .expect("the object bind seeds a channel even with zero placements");

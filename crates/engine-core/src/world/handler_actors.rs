@@ -298,12 +298,12 @@ impl World {
         self.terrain.floor_tier_bobs.clear();
         self.cinematic_bars = None;
         self.cinematic_bar = 0;
-        self.eased_moves.clear();
+        self.field_vm.eased_moves.clear();
         let present = self
             .find_actor_by_handler(ActorHandler::SubmodeDriver)
             .is_some();
         let (seeds, outcome) = open_submode(present);
-        self.submode_context = seeds.map(|(_, v)| v);
+        self.field_vm.submode_context = seeds.map(|(_, v)| v);
         if outcome == SubmodeOpen::Spawned
             && let Some(slot) = self.spawn_handler_actor(ActorHandler::SubmodeDriver)
         {
@@ -325,7 +325,7 @@ impl World {
         self.retire_yielded_actors();
         if let Some(slot) = self.spawn_handler_actor(ActorHandler::SceneActor) {
             self.actors[slot].state_54 =
-                scene_actor_initial_state(SCENE_ACTOR_REQUESTED_STATE, self.field_mode_flags);
+                scene_actor_initial_state(SCENE_ACTOR_REQUESTED_STATE, self.field_vm.mode_flags);
         }
         self.man_load_resume_programs();
         outcome
@@ -492,14 +492,14 @@ mod tests {
             .expect("a driver actor was spawned");
         // Second load with the driver still live: retail returns 0 and spawns
         // nothing, but the context reset happens either way.
-        w.submode_context = [0; 10];
+        w.field_vm.submode_context = [0; 10];
         assert_eq!(w.man_load_actor_reset(), SubmodeOpen::AlreadyOpen);
         assert_eq!(
             w.find_actor_by_handler(ActorHandler::SubmodeDriver),
             Some(driver)
         );
         assert_eq!(
-            w.submode_context[0],
+            w.field_vm.submode_context[0],
             crate::field_submode::SUBMODE_STATE_OPEN
         );
     }
@@ -532,10 +532,8 @@ mod tests {
                 .iter()
                 .any(|a| a.active && a.state_54 == SCENE_ACTOR_REQUESTED_STATE)
         );
-        let mut w = World {
-            field_mode_flags: 1,
-            ..Default::default()
-        };
+        let mut w = World::default();
+        w.field_vm.mode_flags = 1;
         w.man_load_actor_reset();
         assert!(w.actors.iter().any(|a| a.active && a.state_54 == 1));
         assert!(

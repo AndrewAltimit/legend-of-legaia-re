@@ -109,7 +109,7 @@ fn field_vm_op_4c_c3_teleports_through_the_host() {
         [0x00, 2, 0x10, 0x90], // record 1: bz high bit -> half tile
     ]);
     let mut world = World::new();
-    world.field_channels_man = Some(std::sync::Arc::new(man));
+    world.field_vm.channels_man = Some(std::sync::Arc::new(man));
     let mut ctx = FieldCtx {
         script_id: 1,
         ..Default::default()

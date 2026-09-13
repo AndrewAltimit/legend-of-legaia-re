@@ -39,7 +39,8 @@ fn tick_until(w: &mut World, limit: usize, mut done: impl FnMut(&World) -> bool)
 }
 
 fn sub_panel(w: &World) -> Vec<EquipPanelDraw> {
-    w.submode_screen
+    w.field_vm
+        .submode_screen
         .draws()
         .iter()
         .filter_map(|d| match d {

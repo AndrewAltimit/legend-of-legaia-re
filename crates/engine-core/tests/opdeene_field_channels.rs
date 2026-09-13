@@ -50,11 +50,12 @@ fn opdeene_channels_spawn_and_execute() {
         host.world.cutscene_timeline_active(),
         "entering opdeene installs the cutscene timeline"
     );
-    let n = host.world.field_channels.len();
+    let n = host.world.field_vm.channels.len();
     assert!(n > 0, "opdeene spawns per-actor channels");
     let spawn_state: Vec<_> = host
         .world
-        .field_channels
+        .field_vm
+        .channels
         .iter()
         .map(|c| {
             (
@@ -68,7 +69,13 @@ fn opdeene_channels_spawn_and_execute() {
         .collect();
     // Placement channels only: `.MAP` object-bind channels (flat record ids,
     // retail `FUN_8003A55C`) ride alongside and may carry ids < N0.
-    for c in host.world.field_channels.iter().filter(|c| !c.object_bind) {
+    for c in host
+        .world
+        .field_vm
+        .channels
+        .iter()
+        .filter(|c| !c.object_bind)
+    {
         assert!(
             c.ctx.script_id >= 4,
             "script id = partition-0 count + record index (opdeene P0 count is 3, records 1..)"
@@ -77,7 +84,8 @@ fn opdeene_channels_spawn_and_execute() {
     eprintln!(
         "[opdeene] {n} channels spawned, script ids {:?}",
         host.world
-            .field_channels
+            .field_vm
+            .channels
             .iter()
             .map(|c| c.ctx.script_id)
             .collect::<Vec<_>>()
@@ -93,7 +101,7 @@ fn opdeene_channels_spawn_and_execute() {
         }
         let _ = host.world.tick();
         cue_count = cue_count.max(host.world.npcs.anim_cues.len());
-        for (c, s) in host.world.field_channels.iter().zip(&spawn_state) {
+        for (c, s) in host.world.field_vm.channels.iter().zip(&spawn_state) {
             if c.pc != s.0 {
                 any_advanced = true;
             }

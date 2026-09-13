@@ -447,7 +447,7 @@ impl World {
     /// / `sw zero,0x138(gp)` / `jr ra` - the live-window list head and the
     /// entry-context word cleared together, which is what releases the park).
     pub fn release_menu_entry_context_park(&mut self) -> bool {
-        let Some(sub_op) = self.submode_screen.park_sub_op else {
+        let Some(sub_op) = self.field_vm.submode_screen.park_sub_op else {
             return false;
         };
         if !crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS.contains(&sub_op) {
@@ -458,7 +458,7 @@ impl World {
     }
 
     pub fn menu_entry_context_kind(&self) -> Option<u8> {
-        if let Some(sub_op) = self.submode_screen.park_sub_op {
+        if let Some(sub_op) = self.field_vm.submode_screen.park_sub_op {
             return Some(sub_op);
         }
         if self.shops.shop_armed {

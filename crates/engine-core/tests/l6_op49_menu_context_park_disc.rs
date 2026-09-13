@@ -163,7 +163,7 @@ fn op49_sub_0d_park_survives_and_a_handler_row_still_unparks() {
         // The reason it survives: no screen was opened for it. A screen is
         // what used to retire and take the park with it.
         assert!(
-            !world.submode_screen.open,
+            !world.field_vm.submode_screen.open,
             "{}: sub-0x0D opened a submode screen - retail's table row is -1",
             site.scene
         );
@@ -186,7 +186,7 @@ fn op49_sub_0d_park_survives_and_a_handler_row_still_unparks() {
     for site in &handled {
         let mut world = world_at(site);
         let _ = world.step_field();
-        if world.submode_screen.open {
+        if world.field_vm.submode_screen.open {
             opened += 1;
         }
     }

@@ -438,7 +438,7 @@ impl World {
         man: &[u8],
         record_idx: usize,
     ) -> bool {
-        if self.helper_contexts.len() >= crate::world::SPAWNED_CONTEXT_SLOTS {
+        if self.field_vm.helper_contexts.len() >= crate::world::SPAWNED_CONTEXT_SLOTS {
             return false;
         }
         match crate::man_field_scripts::partition2_record_gates(man_file, man, record_idx) {
@@ -457,7 +457,8 @@ impl World {
         let Some(body) = man.get(script_start..script_start + body_len) else {
             return false;
         };
-        self.helper_contexts
+        self.field_vm
+            .helper_contexts
             .push(crate::cutscene_timeline::CutsceneTimeline::new(
                 body.to_vec(),
                 pc0,
@@ -596,18 +597,20 @@ impl World {
         // town01 Mei beat's opening `SET 550` re-routed her prologue to its
         // post-beat seat, fighting the beat's own door-tile seat poke.
         let same_man = self
-            .field_channels_man
+            .field_vm
+            .channels_man
             .as_deref()
             .is_some_and(|m| m.as_slice() == man);
-        if !same_man || self.field_channels.is_empty() {
-            self.field_channels = crate::field_channels::spawn_channels(man_file, man);
-            let binds = std::mem::take(&mut self.object_channel_binds);
-            self.field_channels
+        if !same_man || self.field_vm.channels.is_empty() {
+            self.field_vm.channels = crate::field_channels::spawn_channels(man_file, man);
+            let binds = std::mem::take(&mut self.field_vm.object_channel_binds);
+            self.field_vm
+                .channels
                 .extend(crate::field_channels::spawn_object_channels(
                     man_file, man, &binds,
                 ));
-            self.object_channel_binds = binds;
-            self.field_channels_man = Some(std::sync::Arc::new(man.to_vec()));
+            self.field_vm.object_channel_binds = binds;
+            self.field_vm.channels_man = Some(std::sync::Arc::new(man.to_vec()));
         }
         self.npcs.anim_cues.clear();
         true
@@ -846,8 +849,8 @@ impl World {
     ) -> bool {
         tl.frames = tl.frames.saturating_add(1);
         self.cutscene.in_timeline = modal;
-        self.in_spawned_record_slice = true;
-        let mut channels = std::mem::take(&mut self.field_channels);
+        self.field_vm.in_spawned_record_slice = true;
+        let mut channels = std::mem::take(&mut self.field_vm.channels);
         let channel_pre_pos: Vec<(u16, u16)> = channels
             .iter()
             .map(|c| (c.ctx.world_x, c.ctx.world_z))
@@ -868,9 +871,9 @@ impl World {
                 Some(false) if wait.frames < CHANNEL_WAIT_PARK_TIMEOUT => {
                     wait.frames += 1;
                     tl.channel_wait = Some(wait);
-                    self.field_channels = channels;
+                    self.field_vm.channels = channels;
                     self.cutscene.in_timeline = false;
-                    self.in_spawned_record_slice = false;
+                    self.field_vm.in_spawned_record_slice = false;
                     return false;
                 }
                 // The channel raised the flag (resume), the target is gone, or
@@ -900,9 +903,9 @@ impl World {
             tl.player_move_frames = tl.player_move_frames.saturating_sub(1);
             if tl.player_move_frames > 0 {
                 tl.player_wait = Some(width);
-                self.field_channels = channels;
+                self.field_vm.channels = channels;
                 self.cutscene.in_timeline = false;
-                self.in_spawned_record_slice = false;
+                self.field_vm.in_spawned_record_slice = false;
                 return false;
             }
             tl.pc += width;
@@ -963,9 +966,9 @@ impl World {
             };
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 tl.walk_wait = Some(walk);
-                self.field_channels = channels;
+                self.field_vm.channels = channels;
                 self.cutscene.in_timeline = false;
-                self.in_spawned_record_slice = false;
+                self.field_vm.in_spawned_record_slice = false;
                 // A walk park is real playout progress, not a hang: don't let
                 // it accumulate toward the anti-hang frame cap (a long leg -
                 // tower P2[2]'s `C7 F8 0D 45` covers ~7500 units at 4/tick -
@@ -1017,9 +1020,9 @@ impl World {
             }
             if r != vm::motion_vm::StepResult::Done && fw.frames < WALK_PARK_TIMEOUT {
                 tl.facing_wait = Some(fw);
-                self.field_channels = channels;
+                self.field_vm.channels = channels;
                 self.cutscene.in_timeline = false;
-                self.in_spawned_record_slice = false;
+                self.field_vm.in_spawned_record_slice = false;
                 // Like the walk park: a rotate park is real playout progress,
                 // not a hang - keep it off the anti-hang frame cap.
                 tl.frames = tl.frames.saturating_sub(1);
@@ -1381,7 +1384,7 @@ impl World {
                     // `placement_index` is a flat record index - never
                     // attribute placement-keyed side effects (anim cues,
                     // seat write-throughs) to them.
-                    host.world.executing_channel =
+                    host.world.field_vm.executing_channel =
                         (!channels[ci].object_bind).then_some(channels[ci].placement_index as u8);
                     // The timeline is the acquirer: it halt-acquired these
                     // channels earlier (the `4C 85` freeze sweep) and now
@@ -1399,7 +1402,7 @@ impl World {
                         &tl.bytecode,
                         pc,
                     );
-                    host.world.executing_channel = None;
+                    host.world.field_vm.executing_channel = None;
                     r
                 } else {
                     vm::field::step(&mut host, &mut tl.ctx, &tl.bytecode, pc)
@@ -1616,9 +1619,9 @@ impl World {
                 );
             }
         }
-        self.field_channels = channels;
+        self.field_vm.channels = channels;
         self.cutscene.in_timeline = false;
-        self.in_spawned_record_slice = false;
+        self.field_vm.in_spawned_record_slice = false;
         true
     }
 
@@ -1692,10 +1695,10 @@ impl World {
     /// [`CUTSCENE_TIMELINE_MAX_FRAMES`] cap) is dropped from the table.
     // REF: FUN_8003BDE0
     pub fn step_helper_contexts(&mut self) {
-        if self.helper_contexts.is_empty() {
+        if self.field_vm.helper_contexts.is_empty() {
             return;
         }
-        let mut contexts = std::mem::take(&mut self.helper_contexts);
+        let mut contexts = std::mem::take(&mut self.field_vm.helper_contexts);
         for tl in contexts.iter_mut() {
             if tl.done {
                 continue;
@@ -1707,7 +1710,7 @@ impl World {
         }
         let dropped = contexts.iter().any(|tl| tl.done);
         contexts.retain(|tl| !tl.done);
-        self.helper_contexts = contexts;
+        self.field_vm.helper_contexts = contexts;
         // Stranded-player rescue: a spawned record can `MoveTo` the PLAYER as
         // part of its choreography (izumi's first-visit record parks the
         // party at the spring pocket, a spot the base collision grid walls
@@ -1719,7 +1722,7 @@ impl World {
         // partially-executed record can never strand the player where no
         // direction unblocks.
         if dropped
-            && self.helper_contexts.is_empty()
+            && self.field_vm.helper_contexts.is_empty()
             && matches!(self.mode, crate::world::SceneMode::Field)
             && let Some((sx, sz)) = self.props.resolved_cold_spawn
             && let Some(slot) = self.player_actor_slot
@@ -1826,7 +1829,8 @@ impl World {
     // REF: FUN_8001ADA4 (scale-vector compose, disasm 8001b240..8001b28c)
     // REF: FUN_80020de0 (actor_free: +0x72 = 0x1000 at birth)
     pub fn field_npc_render_scale(&self, placement_index: usize) -> Option<u16> {
-        self.field_channels
+        self.field_vm
+            .channels
             .iter()
             .find(|c| !c.object_bind && c.placement_index == placement_index)
             .map(|c| c.ctx.field_72)
@@ -1843,7 +1847,8 @@ impl World {
     // REF: FUN_8003A55C (bind-time prologue pre-run seats/parks the actor)
     pub fn hidden_object_records(&self) -> std::collections::HashSet<usize> {
         let hide = crate::world::FIELD_OFFMAP_HIDE_XZ as u16;
-        self.field_channels
+        self.field_vm
+            .channels
             .iter()
             .filter(|c| c.object_bind)
             .filter(|c| (c.ctx.world_x == hide && c.ctx.world_z == hide) || c.ctx.field_72 == 0)
@@ -1902,9 +1907,9 @@ impl World {
     // PORT: FUN_8003A1E4 (spawn-prologue pre-run -> initial actor positions)
     // REF: FUN_8003AEB0, FUN_80039B7C
     pub fn pre_run_field_channel_prologues(&mut self) {
-        self.field_entry_prerun = true;
+        self.field_vm.entry_prerun = true;
         self.step_field_channels_inner(true);
-        self.field_entry_prerun = false;
+        self.field_vm.entry_prerun = false;
         self.npcs.entry_positions = self.npcs.positions.clone();
         // The ambient motion channels installed with the carriers still hold
         // the raw MAN header tiles; re-seat them on the story-true positions
@@ -1914,13 +1919,13 @@ impl World {
     }
 
     fn step_field_channels_inner(&mut self, entry_prerun: bool) {
-        if self.field_channels.is_empty() {
+        if self.field_vm.channels.is_empty() {
             return;
         }
-        let Some(man) = self.field_channels_man.clone() else {
+        let Some(man) = self.field_vm.channels_man.clone() else {
             return;
         };
-        let mut channels = std::mem::take(&mut self.field_channels);
+        let mut channels = std::mem::take(&mut self.field_vm.channels);
         let pre_pos: Vec<(u16, u16)> = channels
             .iter()
             .map(|c| (c.ctx.world_x, c.ctx.world_z))
@@ -1968,7 +1973,7 @@ impl World {
                     let ci = crate::field_channels::resolve_target(&channels, t)?;
                     (ci != i).then_some(ci)
                 });
-                self.executing_channel = match target {
+                self.field_vm.executing_channel = match target {
                     // Object-bind targets carry a flat record index, not a
                     // placement slot - no placement-keyed attribution.
                     Some(ci) if channels[ci].object_bind => None,
@@ -1997,7 +2002,7 @@ impl World {
                         }
                     }
                 };
-                self.executing_channel = None;
+                self.field_vm.executing_channel = None;
                 match result {
                     FieldStepResult::Advance { next_pc } => {
                         let stalled = next_pc == pc;
@@ -2095,7 +2100,7 @@ impl World {
             }
             self.npcs.positions.insert(slot, (nx as i16, nz as i16));
         }
-        self.field_channels = channels;
+        self.field_vm.channels = channels;
     }
 
     /// Seed the per-actor field-VM channels for **ordinary free-roam** scene
@@ -2123,15 +2128,15 @@ impl World {
         man_file: &legaia_asset::man_section::ManFile,
         man: &[u8],
     ) {
-        self.field_channels = crate::field_channels::spawn_channels(man_file, man);
-        self.field_channels_man = if man.is_empty() {
+        self.field_vm.channels = crate::field_channels::spawn_channels(man_file, man);
+        self.field_vm.channels_man = if man.is_empty() {
             None
         } else {
             Some(std::sync::Arc::new(man.to_vec()))
         };
         // A new scene's binds are installed by `seed_object_channels` after
         // the trigger tables resolve; drop the previous scene's.
-        self.object_channel_binds.clear();
+        self.field_vm.object_channel_binds.clear();
         self.npcs.anim_cues.clear();
     }
 
@@ -2159,9 +2164,10 @@ impl World {
         man: &[u8],
         binds: &[(usize, (i16, i16))],
     ) {
-        self.object_channel_binds = binds.to_vec();
+        self.field_vm.object_channel_binds = binds.to_vec();
         let same_man = self
-            .field_channels_man
+            .field_vm
+            .channels_man
             .as_deref()
             .is_some_and(|m| m.as_slice() == man);
         if !same_man {
@@ -2169,7 +2175,7 @@ impl World {
         }
         let mut obj = crate::field_channels::spawn_object_channels(man_file, man, binds);
         self.pre_run_object_channel_prologues(&mut obj, man);
-        self.field_channels.extend(obj);
+        self.field_vm.channels.extend(obj);
     }
 
     /// The `FUN_8003A55C` bind-time prologue pre-run: for each object-bind
@@ -2770,7 +2776,7 @@ mod tests {
         if channel_flag_bit3 {
             ctx.flags |= 1 << 3;
         }
-        w.field_channels = vec![FieldChannel {
+        w.field_vm.channels = vec![FieldChannel {
             placement_index: 5,
             ctx,
             record_offset: 0,
@@ -2812,7 +2818,7 @@ mod tests {
         }
         // The awaited channel raises the completion flag: the very next step
         // resolves the park and resumes PAST the 3-byte flag-test op.
-        w.field_channels[0].ctx.flags |= 1 << 3;
+        w.field_vm.channels[0].ctx.flags |= 1 << 3;
         w.step_cutscene_timeline();
         let tl = w
             .cutscene
@@ -2868,7 +2874,7 @@ mod tests {
         let mut w = World::new();
         let bc = vec![0xB8, 0x05, op0, op1, 0x4A, 0xFF, 0x7F];
         w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
-        w.field_channels = vec![FieldChannel {
+        w.field_vm.channels = vec![FieldChannel {
             placement_index: 5,
             ctx: FieldCtx {
                 script_id: 5,
@@ -3117,7 +3123,7 @@ mod tests {
         let (mf, man) = man_with_p2_records(&[p2_record(&[], &[0x2E, 0x1A])], 0, 0);
         let mut w = World::new();
         assert!(w.install_helper_record(&mf, &man, 0));
-        assert_eq!(w.helper_contexts.len(), 1);
+        assert_eq!(w.field_vm.helper_contexts.len(), 1);
         assert!(
             !w.cutscene_timeline_active(),
             "a helper spawn never installs the modal cutscene timeline"
@@ -3129,7 +3135,7 @@ mod tests {
             "the helper record's GFLAG_SET executed"
         );
         assert!(
-            w.helper_contexts.is_empty(),
+            w.field_vm.helper_contexts.is_empty(),
             "a completed helper context is dropped from the table"
         );
     }
@@ -3141,13 +3147,13 @@ mod tests {
         let (mf, man) = man_with_p2_records(&[p2_record(&[0x0193], &[0x21])], 0, 0);
         let mut w = World::new();
         assert!(w.install_helper_record(&mf, &man, 0), "clear flag: spawns");
-        w.helper_contexts.clear();
+        w.field_vm.helper_contexts.clear();
         w.system_flag_set(0x0193);
         assert!(
             !w.install_helper_record(&mf, &man, 0),
             "latched C1 flag blocks the spawn"
         );
-        assert!(w.helper_contexts.is_empty());
+        assert!(w.field_vm.helper_contexts.is_empty());
     }
 
     #[test]
@@ -3168,13 +3174,13 @@ mod tests {
         assert!(w.install_helper_record(&mf, &man, 0));
         assert!(w.install_helper_record(&mf, &man, 1));
         assert_eq!(
-            w.helper_contexts.len(),
+            w.field_vm.helper_contexts.len(),
             2,
             "concurrent spawns coexist with the modal timeline"
         );
         w.step_helper_contexts();
         assert_eq!(
-            w.helper_contexts.len(),
+            w.field_vm.helper_contexts.len(),
             2,
             "waiting helper contexts stay installed across a frame"
         );
@@ -3192,7 +3198,10 @@ mod tests {
             !w.install_helper_record(&mf, &man, 0),
             "a full context table refuses further spawns"
         );
-        assert_eq!(w.helper_contexts.len(), crate::world::SPAWNED_CONTEXT_SLOTS);
+        assert_eq!(
+            w.field_vm.helper_contexts.len(),
+            crate::world::SPAWNED_CONTEXT_SLOTS
+        );
     }
 
     #[test]
@@ -3206,6 +3215,6 @@ mod tests {
             "a global index below N0+N1 cannot re-base"
         );
         assert!(w.install_spawned_helper_record(&mf, &man, 7));
-        assert_eq!(w.helper_contexts.len(), 1);
+        assert_eq!(w.field_vm.helper_contexts.len(), 1);
     }
 }

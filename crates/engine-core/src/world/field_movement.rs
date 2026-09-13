@@ -1245,7 +1245,8 @@ impl World {
     ///
     /// REF: FUN_8003A1E4 (per-placement context), FUN_801DE840 (op 0x31)
     pub fn field_channel_flags(&self, slot: u8) -> u32 {
-        self.field_channels
+        self.field_vm
+            .channels
             .iter()
             .find(|c| !c.object_bind && c.placement_index == slot as usize)
             .map_or(0, |c| c.ctx.flags)
@@ -1994,7 +1995,7 @@ impl World {
             .get(&touch_slot)
             .copied()
             .and_then(|record| {
-                let man = self.field_channels_man.clone()?;
+                let man = self.field_vm.channels_man.clone()?;
                 let man_file = legaia_asset::man_section::parse(&man).ok()?;
                 let flags = self.system_flags.clone();
                 let test = |idx: u16| -> bool {
@@ -2075,7 +2076,7 @@ impl World {
             // the in-house beat, not a bare reposition.
             WalkTouchEvent::SpawnRecord { flat_index } => {
                 if let Ok(idx) = u8::try_from(flat_index) {
-                    self.pending_record_spawns.push(idx);
+                    self.field_vm.pending_record_spawns.push(idx);
                 }
             }
         }

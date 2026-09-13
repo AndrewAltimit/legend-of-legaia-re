@@ -917,7 +917,7 @@ impl World {
         if self.cutscene_timeline_active() {
             return false;
         }
-        let Some(man) = self.field_channels_man.clone() else {
+        let Some(man) = self.field_vm.channels_man.clone() else {
             return false;
         };
         let Ok(man_file) = legaia_asset::man_section::parse(&man) else {

@@ -48,7 +48,12 @@ fn world_tick_runs_the_submode_dispatcher() {
     // One `World::tick` must reach `tick_handler_actors` -> the dispatcher.
     // The actor cadence gates on `actor_vsync_accum`, so allow a few ticks.
     assert!(
-        tick_until(&mut w, 16, |w| !w.submode_screen.frame.actions.is_empty()),
+        tick_until(&mut w, 16, |w| !w
+            .field_vm
+            .submode_screen
+            .frame
+            .actions
+            .is_empty()),
         "the frame loop never reached the dispatcher"
     );
 }
@@ -63,22 +68,32 @@ fn the_coin_counter_draws_the_panel_its_own_descriptor_installs() {
     let mut w = field_world();
     w.money = 50_000;
     w.open_coin_counter();
-    assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 1));
+    assert!(tick_until(&mut w, 16, |w| w
+        .field_vm
+        .submode_screen
+        .actor
+        .sub
+        == 1));
     assert_eq!(
-        w.submode_screen.installed_windows,
+        w.field_vm.submode_screen.installed_windows,
         vec![0, 10, 10],
         "the entry arm installs the coin counter's own idle record"
     );
 
-    w.submode_screen.counter.set_entered(3);
+    w.field_vm.submode_screen.counter.set_entered(3);
     w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
-    assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 2));
+    assert!(tick_until(&mut w, 16, |w| w
+        .field_vm
+        .submode_screen
+        .actor
+        .sub
+        == 2));
     assert_eq!(
-        w.submode_screen.installed_windows,
+        w.field_vm.submode_screen.installed_windows,
         vec![legaia_engine_vm::baka_hub_actors::window::THREE_LINE]
     );
     assert!(
-        !w.submode_screen.draws().is_empty(),
+        !w.field_vm.submode_screen.draws().is_empty(),
         "the installed panel's painter produced no draws in a live frame loop"
     );
 }
@@ -91,22 +106,32 @@ fn buying_coins_through_the_frame_loop_moves_gold_into_the_coin_bank() {
     w.open_coin_counter();
 
     // Frame 1: the counter seeds itself and opens the entry panel.
-    assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 1));
-    w.submode_screen.counter.set_entered(12);
+    assert!(tick_until(&mut w, 16, |w| w
+        .field_vm
+        .submode_screen
+        .actor
+        .sub
+        == 1));
+    w.field_vm.submode_screen.counter.set_entered(12);
 
     // Accept -> the Yes/No panel.
     w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
     assert!(
-        tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 2),
+        tick_until(&mut w, 16, |w| w.field_vm.submode_screen.actor.sub == 2),
         "the accept edge never reached the counter"
     );
 
     // Pick Yes and accept -> the commit state, then the commit itself.
     w.input.set_pad(0);
-    w.submode_screen.counter.yes_no = 0;
-    w.submode_screen.picker_result = PICK_ACCEPT;
-    assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub >= 3));
-    w.submode_screen.picker_result = 0;
+    w.field_vm.submode_screen.counter.yes_no = 0;
+    w.field_vm.submode_screen.picker_result = PICK_ACCEPT;
+    assert!(tick_until(&mut w, 16, |w| w
+        .field_vm
+        .submode_screen
+        .actor
+        .sub
+        >= 3));
+    w.field_vm.submode_screen.picker_result = 0;
     assert!(tick_until(&mut w, 16, |w| w.minigames.casino_coins != 7));
 
     // The regression this pins: the credit is coins, the debit is gold, and
@@ -129,8 +154,13 @@ fn an_unaffordable_amount_never_reaches_the_bank() {
     w.money = 250; // two coins' worth
     w.minigames.casino_coins = 0;
     w.open_coin_counter();
-    assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 1));
-    w.submode_screen.counter.set_entered(9_999);
+    assert!(tick_until(&mut w, 16, |w| w
+        .field_vm
+        .submode_screen
+        .actor
+        .sub
+        == 1));
+    w.field_vm.submode_screen.counter.set_entered(9_999);
 
     w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
     for _ in 0..16 {
@@ -142,7 +172,7 @@ fn an_unaffordable_amount_never_reaches_the_bank() {
     );
     assert_eq!(w.money, 250);
     assert_ne!(
-        w.submode_screen.actor.sub, 2,
+        w.field_vm.submode_screen.actor.sub, 2,
         "an over-budget accept must not open the confirm panel"
     );
 }
@@ -153,10 +183,10 @@ fn a_screen_closes_itself_and_reports_done() {
     // Slot 0 - what a freshly spawned driver actor carries.
     w.open_field_submode_screen(slot::CLOSE_TICK, None);
     assert!(
-        tick_until(&mut w, 32, |w| w.submode_screen.is_done()),
+        tick_until(&mut w, 32, |w| w.field_vm.submode_screen.is_done()),
         "the close tick never handed the frame back"
     );
-    assert!(!w.submode_screen.is_open());
+    assert!(!w.field_vm.submode_screen.is_open());
     // Retail retires the driver node; the engine's kill-bit sweep frees it.
     assert!(
         w.find_actor_by_handler(ActorHandler::SubmodeDriver)
@@ -210,7 +240,10 @@ fn the_four_dedicated_sub_ops_still_own_their_own_paths() {
 fn a_second_screen_gets_its_own_driver_and_still_hands_back() {
     let mut w = field_world();
     w.open_field_submode_screen(slot::CLOSE_TICK, None);
-    assert!(tick_until(&mut w, 32, |w| w.submode_screen.is_done()));
+    assert!(tick_until(&mut w, 32, |w| w
+        .field_vm
+        .submode_screen
+        .is_done()));
     assert!(
         w.find_actor_by_handler(ActorHandler::SubmodeDriver)
             .is_none(),
@@ -225,7 +258,7 @@ fn a_second_screen_gets_its_own_driver_and_still_hands_back() {
         "arming a screen with no live driver must spawn one"
     );
     assert!(
-        tick_until(&mut w, 32, |w| w.submode_screen.is_done()),
+        tick_until(&mut w, 32, |w| w.field_vm.submode_screen.is_done()),
         "the second screen never handed back - the park would stay Armed forever"
     );
 }
@@ -240,33 +273,43 @@ fn a_second_screen_gets_its_own_driver_and_still_hands_back() {
 fn a_field_script_park_never_answers_the_cutscene_timeline() {
     let mut w = field_world();
     // The per-tick field script arms a default submode park.
-    w.in_spawned_record_slice = false;
+    w.field_vm.in_spawned_record_slice = false;
     w.cutscene.in_timeline = false;
     assert_eq!(w.op49_park_owner(), Op49ParkOwner::FieldScript);
     w.open_field_submode_screen(slot::CLOSE_TICK, None);
-    assert!(w.submode_screen.is_open());
+    assert!(w.field_vm.submode_screen.is_open());
 
     // Same frame, the modal timeline steps its own op-0x49. It must read Idle
     // (so `op49_invoke_setup` runs), not the field script's Armed.
-    w.in_spawned_record_slice = true;
+    w.field_vm.in_spawned_record_slice = true;
     w.cutscene.in_timeline = true;
     assert_eq!(w.op49_park_owner(), Op49ParkOwner::CutsceneTimeline);
     assert!(
-        !w.submode_screen
+        !w.field_vm
+            .submode_screen
             .is_open_for(Op49ParkOwner::CutsceneTimeline)
     );
     assert!(
-        !w.submode_screen
+        !w.field_vm
+            .submode_screen
             .is_done_for(Op49ParkOwner::CutsceneTimeline)
     );
     // ... and the field script still owns its own park.
-    assert!(w.submode_screen.is_open_for(Op49ParkOwner::FieldScript));
+    assert!(
+        w.field_vm
+            .submode_screen
+            .is_open_for(Op49ParkOwner::FieldScript)
+    );
 
     // A helper context is a third owner, distinct from both.
-    w.in_spawned_record_slice = true;
+    w.field_vm.in_spawned_record_slice = true;
     w.cutscene.in_timeline = false;
     assert_eq!(w.op49_park_owner(), Op49ParkOwner::HelperContext);
-    assert!(!w.submode_screen.is_open_for(Op49ParkOwner::HelperContext));
+    assert!(
+        !w.field_vm
+            .submode_screen
+            .is_open_for(Op49ParkOwner::HelperContext)
+    );
 }
 
 #[test]
@@ -279,8 +322,8 @@ fn an_idle_world_pays_nothing_for_the_new_pass() {
     for _ in 0..32 {
         w.tick();
     }
-    assert!(w.submode_screen.frame.actions.is_empty());
-    assert!(w.submode_screen.draws().is_empty());
+    assert!(w.field_vm.submode_screen.frame.actions.is_empty());
+    assert!(w.field_vm.submode_screen.draws().is_empty());
     assert_eq!(w.money, 1_234);
     assert_eq!(w.minigames.casino_coins, 5);
     assert!(
@@ -302,20 +345,35 @@ fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
     w.money = 5_000;
     w.minigames.casino_coins = 7;
     w.open_coin_counter();
-    assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 1));
-    w.submode_screen.counter.set_entered(12);
+    assert!(tick_until(&mut w, 16, |w| w
+        .field_vm
+        .submode_screen
+        .actor
+        .sub
+        == 1));
+    w.field_vm.submode_screen.counter.set_entered(12);
 
     // Accept -> the Yes/No panel (cursor seeded to No).
     w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
-    assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.sub == 2));
-    assert_eq!(w.submode_screen.counter.yes_no, 1, "seeded to No");
+    assert!(tick_until(&mut w, 16, |w| w
+        .field_vm
+        .submode_screen
+        .actor
+        .sub
+        == 2));
+    assert_eq!(w.field_vm.submode_screen.counter.yes_no, 1, "seeded to No");
 
     // A direction edge toggles onto Yes; release the pad in between so each
     // press is a fresh edge.
     w.input.set_pad(0);
     w.tick();
     w.input.set_pad(legaia_engine_core::dev_menu::PACK_UP);
-    assert!(tick_until(&mut w, 16, |w| w.submode_screen.counter.yes_no == 0));
+    assert!(tick_until(&mut w, 16, |w| w
+        .field_vm
+        .submode_screen
+        .counter
+        .yes_no
+        == 0));
 
     // Accept on Yes -> commit: coins in, gold out, screen hands back.
     w.input.set_pad(0);
@@ -329,7 +387,7 @@ fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
     assert_eq!(w.money, 5_000 - 12 * GOLD_PER_COIN);
     w.input.set_pad(0);
     assert!(
-        tick_until(&mut w, 64, |w| w.submode_screen.is_done()),
+        tick_until(&mut w, 64, |w| w.field_vm.submode_screen.is_done()),
         "the counter never handed back after the commit"
     );
 }

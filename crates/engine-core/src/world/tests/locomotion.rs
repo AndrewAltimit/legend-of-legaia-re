@@ -328,10 +328,15 @@ fn locomotion_free_while_helper_context_active() {
     world.actors[0].move_state.world_z = 200;
     // A long WAIT_FRAMES so the context stays live across the step.
     world
+        .field_vm
         .helper_contexts
         .push(CutsceneTimeline::new(vec![0x4A, 0xFF, 0x7F], 0));
     world.step_helper_contexts();
-    assert_eq!(world.helper_contexts.len(), 1, "the context stays live");
+    assert_eq!(
+        world.field_vm.helper_contexts.len(),
+        1,
+        "the context stays live"
+    );
     assert!(
         !world.cutscene_timeline_active(),
         "a helper context never reads as the modal timeline"

@@ -447,7 +447,7 @@ fn enter_raw(host: &mut SceneHost, name: &str) -> bool {
     host.world.dialog.current = None;
     host.world.dialog.inline = None;
     host.world.cutscene.timeline = None;
-    host.world.helper_contexts.clear();
+    host.world.field_vm.helper_contexts.clear();
     let r = if is_world_map_scene(name) {
         host.enter_world_map_scene(name)
     } else {
@@ -488,7 +488,7 @@ fn settle(host: &mut SceneHost) -> Settle {
     for _ in 0..SETTLE_TICKS {
         if !host.world.cutscene_timeline_active()
             && !host.world.dialogue_owns_input()
-            && host.world.helper_contexts.is_empty()
+            && host.world.field_vm.helper_contexts.is_empty()
         {
             return Settle::Released;
         }
@@ -679,7 +679,7 @@ impl Fired {
 /// here on the tick after the step.
 fn world_idle(host: &SceneHost) -> bool {
     !host.world.cutscene_timeline_active()
-        && host.world.helper_contexts.is_empty()
+        && host.world.field_vm.helper_contexts.is_empty()
         && !host.world.dialogue_owns_input()
         && host.world.active_fmv().is_none()
 }
@@ -1710,7 +1710,7 @@ fn part_e2_do_those_scenes_carry_a_record_that_exits_at_all() {
                     // timeline and any dialogue it opened. A scene load per
                     // record turns this into a quarter-hour run.
                     base.restore(&mut host);
-                    host.world.helper_contexts.clear();
+                    host.world.field_vm.helper_contexts.clear();
                     host.world.cutscene.timeline = None;
                     host.world.dialog.current = None;
                     host.world.dialog.inline = None;

@@ -258,6 +258,7 @@ impl World {
     fn element_link_done(&self, link: ElementLink) -> bool {
         match link {
             ElementLink::Player => !self
+                .field_vm
                 .eased_moves
                 .iter()
                 .any(|r| matches!(r.target, EasedMoveTarget::Player)),

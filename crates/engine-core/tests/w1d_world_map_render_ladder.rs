@@ -851,6 +851,7 @@ fn w1d_submode_frame_loop_reaches_the_equipment_sub_panel() {
     for _ in 0..16 {
         w.tick();
         painted = w
+            .field_vm
             .submode_screen
             .draws()
             .iter()

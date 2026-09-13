@@ -284,8 +284,8 @@ impl SceneHost {
         // door walked through in free roam runs the next scene's entry
         // script, whose authored pause has the same no-choreography problem
         // as the picked scene's).
-        if self.world.free_roam_staging {
-            self.world.free_roam_entry_frame = self.world.field_frames;
+        if self.world.field_vm.free_roam_staging {
+            self.world.field_vm.free_roam_entry_frame = self.world.field_frames;
         }
         // Drop any cutscene timeline from a previous scene; only `opdeene`
         // re-installs one below, so it must not leak into the scene we hand off
@@ -295,16 +295,16 @@ impl SceneHost {
         // Concurrent spawned-record contexts (and any not-yet-drained op-0x44
         // requests) are scene-scoped like the timeline: their bytecode slices
         // came from the previous scene's MAN.
-        self.world.helper_contexts.clear();
-        self.world.pending_record_spawns.clear();
+        self.world.field_vm.helper_contexts.clear();
+        self.world.field_vm.pending_record_spawns.clear();
         self.world.cutscene.card = None;
         // Drop the previous scene's caption image (only `opdeene` re-decodes one
         // below); reset its fade + hold so a re-entry starts hidden.
         self.world.cutscene.caption = None;
         self.world.cutscene.caption_alpha = 0.0;
         self.world.cutscene.caption_shown_frames = 0;
-        self.world.field_channels.clear();
-        self.world.field_channels_man = None;
+        self.world.field_vm.channels.clear();
+        self.world.field_vm.channels_man = None;
         self.world.npcs.anim_cues.clear();
         // An in-flight ledge hop is scene-scoped, and its steering lock is
         // one-way: `start_field_ledge_hop` ORs `0x0008_0000` into the player's
@@ -1718,7 +1718,7 @@ impl SceneHost {
         // camera + locomotion lock + the chain's beat sequencing); an
         // ordinary scene's mid-play helper spawn installs as a concurrent
         // helper context that executes without seizing either.
-        let pending_spawns = std::mem::take(&mut self.world.pending_record_spawns);
+        let pending_spawns = std::mem::take(&mut self.world.field_vm.pending_record_spawns);
         if !pending_spawns.is_empty()
             && let Some(Ok(Some(man_bytes))) = self
                 .scene

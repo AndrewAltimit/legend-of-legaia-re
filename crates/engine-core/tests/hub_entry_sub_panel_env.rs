@@ -138,7 +138,8 @@ fn world_with_tables(restrictions: bool) -> World {
 }
 
 fn sub_panel(w: &World) -> Vec<EquipPanelDraw> {
-    w.submode_screen
+    w.field_vm
+        .submode_screen
         .draws()
         .iter()
         .filter_map(|d| match d {
@@ -166,7 +167,7 @@ fn painted(w: &mut World) -> Vec<EquipPanelDraw> {
 fn painted_with_candidate(w: &mut World, mode: u32, cursor: i32) -> Vec<EquipPanelDraw> {
     w.open_field_submode_screen(slot::DRAW_TICK, Some(ENTRY_LIST_WINDOW));
     w.set_hub_equip_mode(mode);
-    w.submode_screen.counter.cursor = cursor;
+    w.field_vm.submode_screen.counter.cursor = cursor;
     for _ in 0..16 {
         w.tick();
         let panel = sub_panel(w);
@@ -369,12 +370,13 @@ fn any_other_kind_draws_nothing_at_all() {
     // parked on an empty bag slot resolves to.
     w.open_field_submode_screen(slot::DRAW_TICK, Some(ENTRY_LIST_WINDOW));
     w.set_hub_equip_mode(EQUIP_MODE_DIRECT);
-    w.submode_screen.counter.cursor = 0;
+    w.field_vm.submode_screen.counter.cursor = 0;
     let mut label_drawn = false;
     for _ in 0..16 {
         w.tick();
         // The entry's own label still draws; the sub-panel contributes nothing.
-        if w.submode_screen
+        if w.field_vm
+            .submode_screen
             .draws()
             .iter()
             .any(|d| matches!(d, HubDraw::Text { .. }))

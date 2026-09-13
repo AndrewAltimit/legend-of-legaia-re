@@ -765,9 +765,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // the field script must not park the cutscene timeline's own
             // op-`0x49` - which is the town01 name-entry hand-off.
             let owner = self.world.op49_park_owner();
-            if self.world.submode_screen.is_open_for(owner) {
+            if self.world.field_vm.submode_screen.is_open_for(owner) {
                 Op49State::Armed
-            } else if self.world.submode_screen.is_done_for(owner) {
+            } else if self.world.field_vm.submode_screen.is_done_for(owner) {
                 Op49State::Done
             } else {
                 Op49State::Idle
@@ -799,8 +799,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // another context's pending Done would strand it back on Idle and
         // re-open the screen it had just finished.
         let owner = self.world.op49_park_owner();
-        if self.world.submode_screen.owner == owner {
-            self.world.submode_screen.done = false;
+        if self.world.field_vm.submode_screen.owner == owner {
+            self.world.field_vm.submode_screen.done = false;
         }
     }
     fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
@@ -911,8 +911,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // state is keyed by; an unmatched id passes through raw (tests /
         // channel-less scenes).
         fn resolve(world: &World, id: u8) -> u8 {
-            crate::field_channels::resolve_target(&world.field_channels, id)
-                .map(|ci| world.field_channels[ci].placement_index as u8)
+            crate::field_channels::resolve_target(&world.field_vm.channels, id)
+                .map(|ci| world.field_vm.channels[ci].placement_index as u8)
                 .unwrap_or(id)
         }
         let w = &mut *self.world;
@@ -1127,11 +1127,11 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Pauses issued after the window (dialog / cutscene beats the
         // player triggers) route normally.
         if sub_op == 2
-            && self.world.free_roam_staging
+            && self.world.field_vm.free_roam_staging
             && self
                 .world
                 .field_frames
-                .saturating_sub(self.world.free_roam_entry_frame)
+                .saturating_sub(self.world.field_vm.free_roam_entry_frame)
                 < crate::world::FREE_ROAM_ENTRY_PAUSE_WINDOW
         {
             return;
@@ -1483,7 +1483,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 })
                 .unwrap_or([ctx.world_x as i16, ctx.world_y as i16, ctx.world_z as i16]);
             (EasedMoveTarget::Player, seat)
-        } else if let Some(placement) = self.world.executing_channel {
+        } else if let Some(placement) = self.world.field_vm.executing_channel {
             let seat = self
                 .world
                 .npcs
@@ -1502,7 +1502,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // actor would be worse than none.
             return;
         };
-        self.world.eased_moves.push(FieldEasedMove {
+        self.world.field_vm.eased_moves.push(FieldEasedMove {
             target,
             target_flags: ctx.flags,
             ease: legaia_engine_vm::field_actor_timers::EasedMove::spawn(
@@ -1568,8 +1568,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // another record executes is not dropped - retail's context table
         // holds several concurrent spawned records.
         // REF: FUN_8003BDE0
-        if self.world.pending_record_spawns.len() < crate::world::SPAWNED_CONTEXT_SLOTS {
-            self.world.pending_record_spawns.push(global_index);
+        if self.world.field_vm.pending_record_spawns.len() < crate::world::SPAWNED_CONTEXT_SLOTS {
+            self.world.field_vm.pending_record_spawns.push(global_index);
         }
         self.world
             .pending_field_events
@@ -1582,7 +1582,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // actor's anim-slot array (`+0xB0`, `FUN_801DE840` case 0x4B) with two
         // u16 params per entry. Raise a cue keyed by the placement so the
         // windowed host re-targets that NPC's clip player.
-        if let Some(placement) = self.world.executing_channel {
+        if let Some(placement) = self.world.field_vm.executing_channel {
             self.world
                 .npcs
                 .anim_cues
@@ -1859,7 +1859,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // prologue that flips its own ctx class bit would otherwise
         // teleport the player to the record's seat at scene load (seen as
         // `suimon`'s cold spawn landing in the off-map hide box).
-        if self.world.field_entry_prerun {
+        if self.world.field_vm.entry_prerun {
             let _ = ctx;
             return;
         }
@@ -1878,8 +1878,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // for the `4C 51` form; the slice's write-through surfaces the move
         // into the placement-keyed NPC state.
         // REF: FUN_8003C83C (cross-context target resolve)
-        if self.world.in_spawned_record_slice
-            && let Some(_slot) = self.world.executing_channel
+        if self.world.field_vm.in_spawned_record_slice
+            && let Some(_slot) = self.world.field_vm.executing_channel
         {
             ctx.world_x = world_x;
             ctx.world_z = world_z;
@@ -1912,7 +1912,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Mei visibly WALK (clip 61) then idle (clip 60) through her town01
         // walk-on beat instead of sliding in a frozen pose.
         // REF: FUN_80024E08, FUN_800204F8
-        if let Some(slot) = self.world.executing_channel {
+        if let Some(slot) = self.world.field_vm.executing_channel {
             self.world
                 .npcs
                 .anim_cues
@@ -2067,7 +2067,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // The player arm is suppressed too - at install the op belongs to
         // the spawned actor, and a record whose ctx carries the player-class
         // bit must not yank the player at scene load (see `move_to`).
-        if self.world.field_entry_prerun {
+        if self.world.field_vm.entry_prerun {
             ctx.world_x = world_x;
             ctx.world_z = world_z;
             return;
@@ -2085,8 +2085,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // channel's context here; the slice's write-through surfaces the
         // move into the placement-keyed NPC state.
         // REF: FUN_8003C83C (cross-context target resolve)
-        if self.world.in_spawned_record_slice
-            && let Some(slot) = self.world.executing_channel
+        if self.world.field_vm.in_spawned_record_slice
+            && let Some(slot) = self.world.field_vm.executing_channel
         {
             ctx.world_x = world_x;
             ctx.world_z = world_z;
@@ -2138,7 +2138,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // `4C 51` run dispatch plays a move clip toward the tile). Falls
         // back to a direct ctx seat when the slot has no surfaced position
         // yet (the glide needs a start point).
-        if let Some(slot) = self.world.executing_channel {
+        if let Some(slot) = self.world.field_vm.executing_channel {
             if self
                 .world
                 .start_field_npc_motion(slot, world_x as i16, world_z as i16)
@@ -2161,7 +2161,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Resolve against the scene's resident MAN (kept on the world while
         // per-actor channels run). Without one the trait's default no-op
         // semantics stand - there is no partition table to resolve against.
-        let Some(man) = self.world.field_channels_man.clone() else {
+        let Some(man) = self.world.field_vm.channels_man.clone() else {
             return;
         };
         let Ok(man_file) = legaia_asset::man_section::parse(&man) else {

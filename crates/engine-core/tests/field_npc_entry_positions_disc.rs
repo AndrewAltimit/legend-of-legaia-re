@@ -258,7 +258,8 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
     // (retail `FUN_8003A55C` writes `actor[+0x50] = 1`).
     assert!(
         host.world
-            .field_channels
+            .field_vm
+            .channels
             .iter()
             .any(|c| c.object_bind && c.ctx.script_id == 1),
         "the Vahn's-house door object (flat record 1) spawns as a resolvable channel"
@@ -314,7 +315,8 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
     if std::env::var_os("LEGAIA_DIAG_MEI").is_some() {
         let ch = host
             .world
-            .field_channels
+            .field_vm
+            .channels
             .iter()
             .find(|c| !c.object_bind && c.placement_index == mei as usize);
         eprintln!(
