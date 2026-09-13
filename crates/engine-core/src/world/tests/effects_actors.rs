@@ -70,11 +70,12 @@ fn tick_move_vms_records_halt_outcome() {
     world.tick_move_vms();
     assert!(
         world
-            .move_outcomes
+            .move_vm
+            .outcomes
             .iter()
             .any(|(s, o)| *s == 0 && matches!(o, vm::move_vm::ActorTickOutcome::Halted)),
         "expected actor 0 to halt, got {:?}",
-        world.move_outcomes
+        world.move_vm.outcomes
     );
 }
 
@@ -91,7 +92,7 @@ fn tick_move_vms_with_delta_decrements_then_gates() {
     // After delta=1: wait_timer = 2, still >= 0 -> Waiting.
     assert_eq!(world.actors[0].move_state.wait_timer, 2);
     assert!(matches!(
-        world.move_outcomes[0],
+        world.move_vm.outcomes[0],
         (0, vm::move_vm::ActorTickOutcome::Waiting)
     ));
     // After three more ticks (delta=1 each): wait_timer goes 1, 0, -1.
@@ -101,7 +102,7 @@ fn tick_move_vms_with_delta_decrements_then_gates() {
     world.tick_move_vms_with_delta(1);
     // The last tick should have entered the VM and Halted.
     assert!(matches!(
-        world.move_outcomes[0],
+        world.move_vm.outcomes[0],
         (0, vm::move_vm::ActorTickOutcome::Halted)
     ));
 }

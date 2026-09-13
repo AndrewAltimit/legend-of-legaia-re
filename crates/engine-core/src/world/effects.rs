@@ -19,8 +19,8 @@ impl World {
     /// Set / clear the move-VM bytecode for `slot`. `None` clears the
     /// buffer; subsequent ticks won't run the move VM on this actor.
     pub fn set_move_bytecode(&mut self, slot: usize, bytecode: Option<Vec<u16>>) {
-        if slot < self.move_bytecode.len() {
-            self.move_bytecode[slot] = bytecode.unwrap_or_default();
+        if slot < self.move_vm.bytecode.len() {
+            self.move_vm.bytecode[slot] = bytecode.unwrap_or_default();
         }
     }
 
@@ -243,7 +243,7 @@ impl World {
         let result = vm::move_vm::step(&mut host, actor_state, bytecode);
         let writes = std::mem::take(&mut host.deferred_writes);
         if !writes.is_empty()
-            && let Some(buf) = self.move_bytecode.get_mut(slot)
+            && let Some(buf) = self.move_vm.bytecode.get_mut(slot)
         {
             for (off, value) in writes {
                 if off >= buf.len() {

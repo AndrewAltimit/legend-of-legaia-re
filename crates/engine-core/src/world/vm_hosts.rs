@@ -152,16 +152,16 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     // --- ext-VM globals -----------------------------------------------
 
     fn move_global_predicate_get(&self) -> u32 {
-        self.world.move_predicate
+        self.world.move_vm.predicate
     }
     fn move_global_predicate_set(&mut self, value: u32) {
-        self.world.move_predicate = value;
+        self.world.move_vm.predicate = value;
     }
     fn move_global_counter_get(&self) -> u16 {
-        self.world.move_counter
+        self.world.move_vm.counter
     }
     fn move_global_counter_set(&mut self, value: u16) {
-        self.world.move_counter = value;
+        self.world.move_vm.counter = value;
     }
 
     // --- ext-VM 16-slot scratch table ---------------------------------
@@ -169,24 +169,24 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     fn move_slot_load_u32(&self, slot: u16, dword_off: u8) -> u32 {
         let i = (slot & 0x0F) as usize;
         let off = (dword_off & 0x4) as usize; // 0 or 4
-        let bytes = &self.world.move_slot_table[i][off..off + 4];
+        let bytes = &self.world.move_vm.slot_table[i][off..off + 4];
         u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
     }
     fn move_slot_save_u32(&mut self, slot: u16, dword_off: u8, value: u32) {
         let i = (slot & 0x0F) as usize;
         let off = (dword_off & 0x4) as usize;
-        self.world.move_slot_table[i][off..off + 4].copy_from_slice(&value.to_le_bytes());
+        self.world.move_vm.slot_table[i][off..off + 4].copy_from_slice(&value.to_le_bytes());
     }
     fn move_slot_load_u16(&self, slot: u16, byte_off: u8) -> u16 {
         let i = (slot & 0x0F) as usize;
         let off = (byte_off & 0x6) as usize; // even, 0..6
-        let bytes = &self.world.move_slot_table[i][off..off + 2];
+        let bytes = &self.world.move_vm.slot_table[i][off..off + 2];
         u16::from_le_bytes([bytes[0], bytes[1]])
     }
     fn move_slot_save_u16(&mut self, slot: u16, byte_off: u8, value: u16) {
         let i = (slot & 0x0F) as usize;
         let off = (byte_off & 0x6) as usize;
-        self.world.move_slot_table[i][off..off + 2].copy_from_slice(&value.to_le_bytes());
+        self.world.move_vm.slot_table[i][off..off + 2].copy_from_slice(&value.to_le_bytes());
     }
 
     // --- bytecode self-modify (0x04 / 0x1B / 0x1E) --------------------
@@ -212,7 +212,8 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
             return 0;
         };
         self.world
-            .move_bytecode
+            .move_vm
+            .bytecode
             .get(slot)
             .and_then(|bc| bc.get(word_off))
             .copied()
@@ -250,10 +251,10 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         self.world.terrain.map_origin_xz
     }
     fn move_axis_threshold(&self) -> i16 {
-        self.world.move_axis_threshold
+        self.world.move_vm.axis_threshold
     }
     fn move_dat_1f800393(&self) -> u8 {
-        self.world.move_ramp_ratio
+        self.world.move_vm.ramp_ratio
     }
 
     // --- shared system flag bank --------------------------------------
@@ -276,20 +277,20 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
 
     fn ext_scratchpad_write(&mut self, slot_index: i16, value: i16) {
         let i = (slot_index as u16 & 0x0F) as usize;
-        self.world.scratchpad_targets[i] = value;
+        self.world.move_vm.scratchpad_targets[i] = value;
     }
     fn ext_scratchpad_ramp(&mut self, slot_index: i16, target: i16, _ticks: i16) {
         // Default world has no per-frame ramp scheduler; record the target
         // immediately so reads see the final state. Engines override to
         // model the per-frame interpolation.
         let i = (slot_index as u16 & 0x0F) as usize;
-        self.world.scratchpad_targets[i] = target;
+        self.world.move_vm.scratchpad_targets[i] = target;
     }
 
     // --- ext sub-op 0x2F global slot ---------------------------------
 
     fn ext_set_8007b9d8(&mut self, value: i32) {
-        self.world.move_dat_8007b9d8 = value;
+        self.world.move_vm.dat_8007b9d8 = value;
     }
 
     // --- ext sub-op 0x3A angle-to-player ------------------------------

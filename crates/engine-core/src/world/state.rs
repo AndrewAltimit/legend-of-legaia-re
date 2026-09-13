@@ -37,52 +37,8 @@ pub struct World {
     pub field_bytecode: Vec<u8>,
     /// Current field-VM PC. Updated by `tick()` based on the StepResult.
     pub field_pc: usize,
-    /// Per-actor move-VM bytecode buffers. Indexed by actor slot. Empty
-    /// vec means "no active move" - the move VM is not ticked for that
-    /// actor. Set via [`World::set_move_bytecode`].
-    pub move_bytecode: Vec<Vec<u16>>,
-    /// MOVE buffer pool root, mirroring retail `_DAT_8007B888`. Populated
-    /// per scene from the slot-1 `Asset(0x05) = Move` descriptor (the
-    /// MDT-shaped offset-table blob parsed by [`legaia_mdt::MoveBuffer`]).
-    /// Consumed by the [`vm::move_buffer::MoveBufferHost`] impl in
-    /// `move_buffer_host.rs`. Empty when no scene MOVE table is wired
-    /// (the cursor's resolver returns `None` and the per-actor state
-    /// stays idle, matching retail when the table pointer is null).
-    pub move_buffer_root: Vec<u8>,
-    /// MOVE2 buffer pool root, mirroring retail `_DAT_8007B840`. Used
-    /// when the per-actor `cursor_requested` is `>= 0x400`. Empty
-    /// across most retail save states; only a small number of scenes
-    /// install this. See `docs/formats/mdt.md`.
-    pub move2_buffer_root: Vec<u8>,
-    /// Alternate MOVE buffer pool root, mirroring retail `_DAT_8007B75C`.
-    /// Selected by [`vm::move_buffer::STATUS_FLAG_ALT_POOL`] in the
-    /// per-actor status flag word. Populated by the world-map / battle
-    /// overlay paths.
-    pub move_buffer_alt_root: Vec<u8>,
-    /// Per-actor [`TickEvent`]s emitted by the last
-    /// [`World::tick_actor_physics`] pass. Engines that want to react
-    /// to audio cues, render submissions, or unlink requests drain
-    /// this each frame; the move-buffer cursor kick is dispatched
-    /// inline so callers do not need to inspect this list to keep
-    /// move-VM playback running.
-    pub last_tick_events: Vec<(u8, TickResult)>,
-    /// Move-VM global predicate at `_DAT_801F22F4` (set by ext sub-op 0x08,
-    /// cleared by 0x09; sub-ops 0x0A / 0x0B branch on it).
-    pub move_predicate: u32,
-    /// Move-VM global counter at `_DAT_801F22F6` (cleared by ext sub-op 0x0F,
-    /// cycled mod 16 by sub-op 0x10).
-    pub move_counter: u16,
-    /// Move-VM 16-slot 8-byte-stride scratch table at `&DAT_801F3498`. Used
-    /// by ext sub-ops 0x11 / 0x12 / 0x25 / 0x27 / 0x28 / 0x31 / 0x32 / 0x34
-    /// / 0x35 to checkpoint world coords + tween state per actor / animation.
-    pub move_slot_table: [[u8; 8]; 16],
-    /// Move-VM axis offset at `_DAT_8007C348` - used by ext sub-ops 0x36 / 0x37
-    /// for the `0x8E - axis` threshold predicate. Engines write per-scene.
-    pub move_axis_threshold: i16,
-    /// Move-VM scratchpad ramp ratio numerator at `_DAT_1F800393` - used by
-    /// ext sub-op 0x23 (anim-bank lerp) as the numerator of a 12.0 fixed-point
-    /// ratio against the operand-supplied denominator.
-    pub move_ramp_ratio: u8,
+    /// Move-VM globals: per-actor bytecode and buffer pools, the shared predicate / counter / slot-table words, scratchpad ramp targets and the per-tick outcomes.
+    pub move_vm: MoveVmGlobals,
     /// Per-scene field terrain: walkability grid, map-region block, zone table, floor-height LUT, object cells, elevation overrides and the region / tile trackers.
     pub terrain: FieldTerrain,
     /// Player actor slot - when `Some(slot)`, ext sub-ops 0x06 / 0x07 / 0x2A
@@ -107,13 +63,6 @@ pub struct World {
     pub party_actor_slots: Vec<Option<u8>>,
     /// Full-screen presentation state: fades, tints, the screen-effect widget host and the cinematic bars.
     pub presentation: ScreenFxState,
-    /// Move-VM `_DAT_8007B9D8` - globally-shared 32-bit slot written by ext
-    /// sub-op 0x2F. Engines read this on whatever frame-tick they want.
-    pub move_dat_8007b9d8: i32,
-    /// Move-VM 16-slot scratchpad ramp targets at `_DAT_1F80035C` - used by
-    /// ext sub-op 0x29 (per-frame ramp / immediate write). Stored as i16
-    /// pairs (target, current); engines apply per-frame interpolation.
-    pub scratchpad_targets: [i16; 16],
     /// Story / system flag words: the retail flag arrays and the story-flag bit image the scripts test and set.
     pub flags: StoryFlagState,
     /// Field-VM `screen_mode` register read by op 0x42 mode 1 - packed mode
@@ -239,12 +188,6 @@ pub struct World {
     /// Field props + triggers: prop colliders and bank, walk-touch records, the scene's move-VM stager tables, boss stagers, live field effects and the resolved cold spawn.
     pub props: FieldPropState,
 
-    /// Actor-VM glide targets (op `0x09` `MotionAt` → `start_motion`,
-    /// retail `FUN_800358c0`), keyed by actor slot: each entry glides the
-    /// actor's `move_state` `(world_x, world_y)` toward the target through
-    /// the motion VM, one step per tick (`Self::tick_actor_motions`).
-    pub actor_motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
-
     /// Active party slot for the leader (op 0x4C sub-0 writes here, plus
     /// `party_add` populates it on the first member).
     pub party_leader_slot: Option<u8>,
@@ -275,11 +218,6 @@ pub struct World {
     /// here via [`Self::set_pad`] before each tick. Menu navigation still
     /// runs through the host-side `play-window` loop.
     pub input: input::InputState,
-
-    /// Per-actor move-VM outcomes from the most recent [`World::tick_move_vms`]
-    /// call. Pairs of `(actor_slot, outcome)`. Engines drain or inspect this
-    /// after `World::tick` to react to halts / pending opcodes.
-    pub move_outcomes: Vec<(u8, vm::move_vm::ActorTickOutcome)>,
 
     /// Per-character Tactical Arts use-counter tracker. Engines call
     /// [`World::notify_art_used`] from the battle side-effects handler when
@@ -667,16 +605,7 @@ impl World {
             field_ctx: FieldCtx::default(),
             field_bytecode: Vec::new(),
             field_pc: 0,
-            move_bytecode: vec![Vec::new(); MAX_ACTORS],
-            move_buffer_root: Vec::new(),
-            move2_buffer_root: Vec::new(),
-            move_buffer_alt_root: Vec::new(),
-            last_tick_events: Vec::new(),
-            move_predicate: 0,
-            move_counter: 0,
-            move_slot_table: [[0u8; 8]; 16],
-            move_axis_threshold: 0,
-            move_ramp_ratio: 0,
+            move_vm: MoveVmGlobals::new(),
             terrain: FieldTerrain::new(),
             player_actor_slot: None,
             cutscene: CutsceneState::new(),
@@ -685,8 +614,6 @@ impl World {
             entry_pulse_enabled: true,
             party_actor_slots: Vec::new(),
             presentation: ScreenFxState::new(),
-            move_dat_8007b9d8: 0,
-            scratchpad_targets: [0; 16],
             flags: StoryFlagState::new(),
             screen_mode: 0,
             rng_state: 0x1234_5678,
@@ -709,13 +636,11 @@ impl World {
             pending_battle_events: Vec::new(),
             dialog: DialogState::new(),
             props: FieldPropState::new(),
-            actor_motions: std::collections::BTreeMap::new(),
             party_leader_slot: None,
             money: 0,
             inventory: std::collections::HashMap::new(),
             frame: 0,
             input: input::InputState::default(),
-            move_outcomes: Vec::new(),
             tactical_arts: TacticalArtsTracker::new(),
             current_art_banner: None,
             level_up_tracker: LevelUpTracker::new(),

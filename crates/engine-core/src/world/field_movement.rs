@@ -2158,7 +2158,7 @@ impl World {
         }
         let (cx, cy) = (actor.move_state.world_x, actor.move_state.world_y);
         self.actors[actor_id as usize].motion_target = Some(target);
-        self.actor_motions.insert(
+        self.move_vm.actor_motions.insert(
             actor_id,
             FieldNpcMotion {
                 state: vm::motion_vm::MotionState {
@@ -2182,20 +2182,20 @@ impl World {
     ///
     /// REF: FUN_8003774C
     pub(crate) fn tick_actor_motions(&mut self) {
-        if self.actor_motions.is_empty() {
+        if self.move_vm.actor_motions.is_empty() {
             return;
         }
-        let slots: Vec<u8> = self.actor_motions.keys().copied().collect();
+        let slots: Vec<u8> = self.move_vm.actor_motions.keys().copied().collect();
         for slot in slots {
             let alive = self
                 .actors
                 .get(slot as usize)
                 .is_some_and(|actor| actor.active);
             if !alive {
-                self.actor_motions.remove(&slot);
+                self.move_vm.actor_motions.remove(&slot);
                 continue;
             }
-            let Some(motion) = self.actor_motions.get_mut(&slot) else {
+            let Some(motion) = self.move_vm.actor_motions.get_mut(&slot) else {
                 continue;
             };
             let target = vm::motion_vm::MotionTarget {
@@ -2210,7 +2210,7 @@ impl World {
             actor.move_state.world_x = nx;
             actor.move_state.world_y = ny;
             if result == vm::motion_vm::StepResult::Done {
-                self.actor_motions.remove(&slot);
+                self.move_vm.actor_motions.remove(&slot);
             }
         }
     }
@@ -2450,7 +2450,7 @@ impl World {
 
         // speed = ((base_step * player[+0x72]) >> 12) * DAT_1f800393.
         let mult = self.actors[slot].move_state.field_72 as i32;
-        let ratio = self.move_ramp_ratio.max(1) as i32;
+        let ratio = self.move_vm.ramp_ratio.max(1) as i32;
         let mut speed = ((self.field_base_step() * mult) >> 12) * ratio;
         // Diagonal normalise (camera mode 4, both axes pressed): x0.75.
         // The precise path normalises its vector instead (below), so the
@@ -2795,7 +2795,7 @@ impl World {
         hop.sfx = None;
         // `DAT_1F800393`, the frame-delta scalar both ticks pace on. The arc
         // multiplies it into the cursor step; the phase machine adds it raw.
-        let scalar = self.move_ramp_ratio.max(1);
+        let scalar = self.move_vm.ramp_ratio.max(1);
         if !hop.landed {
             let tick = hop_arc::advance_hop_arc(&mut hop.arc, scalar);
             let ms = &mut self.actors[slot].move_state;
@@ -2876,7 +2876,7 @@ impl World {
         }
         // Retail rate: `delta_scalar * 3 << 2`, halved for the `0x2000`
         // slow-fall class.
-        let scalar = self.move_ramp_ratio.max(1) as i32;
+        let scalar = self.move_vm.ramp_ratio.max(1) as i32;
         let mut rate = scalar * 12;
         if flags & 0x2000 != 0 {
             rate >>= 1;

@@ -27,7 +27,7 @@ fn tick_actor_physics_skips_inactive_slots() {
     let mut world = World::new();
     // No actor active; should be a no-op (no panics, no events).
     world.tick_actor_physics();
-    assert!(world.last_tick_events.is_empty());
+    assert!(world.move_vm.last_tick_events.is_empty());
 }
 
 #[test]
@@ -41,8 +41,8 @@ fn tick_actor_physics_records_keyframe_event_for_active_actor() {
     world.actors[0].physics.set_bone_count(8);
     world.tick_actor_physics();
     // One slot fired; events vector non-empty.
-    assert_eq!(world.last_tick_events.len(), 1);
-    let (slot, res) = &world.last_tick_events[0];
+    assert_eq!(world.move_vm.last_tick_events.len(), 1);
+    let (slot, res) = &world.move_vm.last_tick_events[0];
     assert_eq!(*slot, 0);
     assert!(
         res.events
@@ -72,7 +72,7 @@ fn move_vm_kick_drives_cursor_advance_against_installed_pool() {
     world.frame_step = 1;
     world.tick_actor_physics();
     // MoveVmKick emitted.
-    let (_, res) = &world.last_tick_events[0];
+    let (_, res) = &world.move_vm.last_tick_events[0];
     assert!(
         res.events
             .iter()

@@ -247,7 +247,7 @@ impl MoveSpawnHost for World {
         // this slot, the tick is a no-op - callers stage the move buffer
         // via World::move_bytecode before invoking the spawn.
         let slot = actor as usize;
-        let bc = match self.move_bytecode.get(slot) {
+        let bc = match self.move_vm.bytecode.get(slot) {
             Some(b) if !b.is_empty() => b.clone(),
             _ => return,
         };

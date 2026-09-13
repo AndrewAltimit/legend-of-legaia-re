@@ -21,12 +21,12 @@ impl World {
     /// scalar; the default world tick uses `1` so a Wait of N consumes N
     /// frames.
     pub fn tick_move_vms_with_delta(&mut self, delta: u16) {
-        self.move_outcomes.clear();
+        self.move_vm.outcomes.clear();
         for slot in 0..self.actors.len() {
             if !self.actors[slot].active {
                 continue;
             }
-            let bc = self.move_bytecode.get(slot).cloned().unwrap_or_default();
+            let bc = self.move_vm.bytecode.get(slot).cloned().unwrap_or_default();
             if bc.is_empty() {
                 continue;
             }
@@ -34,7 +34,7 @@ impl World {
             // before the gate).
             vm::move_vm::decrement_wait_timer(&mut self.actors[slot].move_state, delta);
             let outcome = self.actor_tick_at(slot, &bc, MOVE_VM_BUDGET);
-            self.move_outcomes.push((slot as u8, outcome));
+            self.move_vm.outcomes.push((slot as u8, outcome));
         }
     }
 
@@ -78,11 +78,11 @@ impl World {
     // PORT: FUN_8002519c (list-walk tick dispatch; pool-not-lists divergence
     //                     documented above)
     pub fn tick_actor_physics_with(&mut self, scalars: TickScalars, listener: &ListenerState) {
-        self.last_tick_events.clear();
+        self.move_vm.last_tick_events.clear();
         let host = move_buffer_host::WorldMoveBufferView {
-            move_buf: &self.move_buffer_root,
-            move2_buf: &self.move2_buffer_root,
-            alt_buf: &self.move_buffer_alt_root,
+            move_buf: &self.move_vm.buffer_root,
+            move2_buf: &self.move_vm.buffer2_root,
+            alt_buf: &self.move_vm.buffer_alt_root,
         };
         for (idx, actor) in self.actors.iter_mut().enumerate() {
             if !actor.active {
@@ -98,7 +98,7 @@ impl World {
                 if kicked {
                     cursor_advance(&mut actor.move_buffer, &host, scalars.frame_delta);
                 }
-                self.last_tick_events.push((idx as u8, res));
+                self.move_vm.last_tick_events.push((idx as u8, res));
             }
         }
     }
@@ -127,20 +127,20 @@ impl World {
     /// an empty slice to clear it - the cursor's resolver will then
     /// return `None` for every requested id.
     pub fn set_move_buffer_root(&mut self, bytes: Vec<u8>) {
-        self.move_buffer_root = bytes;
+        self.move_vm.buffer_root = bytes;
     }
 
     /// Install the MOVE2 buffer pool root (retail `_DAT_8007B840`).
     /// Selected when an actor's `cursor_requested` is `>= 0x400`.
     pub fn set_move2_buffer_root(&mut self, bytes: Vec<u8>) {
-        self.move2_buffer_root = bytes;
+        self.move_vm.buffer2_root = bytes;
     }
 
     /// Install the alternate MOVE buffer pool root (retail
     /// `_DAT_8007B75C`). Selected when the actor's status flag word
     /// has [`vm::move_buffer::STATUS_FLAG_ALT_POOL`] set.
     pub fn set_move_buffer_alt_root(&mut self, bytes: Vec<u8>) {
-        self.move_buffer_alt_root = bytes;
+        self.move_vm.buffer_alt_root = bytes;
     }
 
     /// Advance all active actor animations one frame. Mirrors the
@@ -1345,7 +1345,7 @@ impl World {
         let outcome = vm::move_vm::actor_tick(&mut host, actor_state, bytecode, budget);
         let writes = std::mem::take(&mut host.deferred_writes);
         if !writes.is_empty()
-            && let Some(buf) = self.move_bytecode.get_mut(slot)
+            && let Some(buf) = self.move_vm.bytecode.get_mut(slot)
         {
             for (off, value) in writes {
                 if off >= buf.len() {

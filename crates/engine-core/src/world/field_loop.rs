@@ -342,8 +342,8 @@ impl World {
             actor.active = true;
             actor.move_state.field_72 = FIELD_PLAYER_SPEED_MULT;
         }
-        if self.move_ramp_ratio == 0 {
-            self.move_ramp_ratio = 1;
+        if self.move_vm.ramp_ratio == 0 {
+            self.move_vm.ramp_ratio = 1;
         }
         self.reset_field_collision_grid();
     }
