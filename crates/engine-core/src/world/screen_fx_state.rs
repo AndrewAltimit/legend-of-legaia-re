@@ -27,7 +27,7 @@ pub struct ScreenFxState {
     /// would blank a full-screen fade, so this value feeds the effect layer
     /// (the creation-glow planes; consumer still an open thread) and stays
     /// out of [`World::scene_screen_tint`]. Scene-local: reset on scene
-    /// entry. Distinct from [`Self::screen_fade`] (the battle escape ramp).
+    /// entry. Distinct from [`crate::world::ScreenFxState::fade`] (the battle escape ramp).
     pub effect_tint: Option<crate::fade::SceneTintRamp>,
     /// Global multiply screen tint (op `0x4C 0x12` → `DAT_8007BCB8/B9/BA`,
     /// neutral operand `0x80`, stored normalized; ramp via `FUN_8003C5F0`).
@@ -51,7 +51,7 @@ pub struct ScreenFxState {
     /// template `0x801F2858` / tick `FUN_801DD784`). One at a time, because
     /// its spawner is the one op that allocates it and its envelope retires
     /// itself; [`World::tick_field_timer_actors`] steps it and
-    /// [`Self::cinematic_bar`] is what the two hosts draw from.
+    /// [`crate::world::ScreenFxState::cinematic_bar`] is what the two hosts draw from.
     pub cinematic_bars: Option<legaia_engine_vm::field_actor_timers::ShutterBars>,
     /// This frame's bar height in scanlines, republished every tick so a
     /// renderer reads a value rather than re-stepping the envelope.

@@ -5,7 +5,7 @@
 //! `clamp(size << 7, 0x0C00, 0x1400)`. The chain under test is
 //! `record +0x1F` -> `MonsterRecord::size_class` -> `MonsterDef::size_class` ->
 //! the `BattleActionHost::monster_size_class` hook -> the port's
-//! `camera_height_for_frame` at action seed -> `World::battle_camera_frame_height`.
+//! `camera_height_for_frame` at action seed -> `World::battle.camera_frame_height`.
 //!
 //! The first test is disc-free (synthetic catalog); the second is disc-gated
 //! and pins the chain to real records.

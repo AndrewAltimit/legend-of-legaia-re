@@ -24,7 +24,7 @@ pub struct FieldTerrain {
     pub collision_grid: Vec<u8>,
     /// Per-scene `.MAP` region-table block (the file's `+0x10000..+0x12000`
     /// region - retail `*(_DAT_1F8003EC) + 0x10000`). Scanned per tile by
-    /// the [`crate::field_regions`] ports to rebuild [`World::extra_flags`]
+    /// the [`crate::field_regions`] ports to rebuild [`crate::world::StoryFlagState::extra_flags`]
     /// (the `_DAT_8007B8F4` mirror) and the scratch attribute box. Empty for
     /// scenes without a field map.
     pub map_region_block: Vec<u8>,
@@ -54,7 +54,7 @@ pub struct FieldTerrain {
     /// `0x80 x 0x80`). [`World::sample_field_floor_height`] tests each tile's
     /// [`crate::world::CELL_ELEVATION_OVERRIDE`] (`0x800`) bit to pick the
     /// floor model: bilinear corner-nibble surface, or the flat tile mean plus
-    /// the tile's [`Self::field_elevation_overrides`] record (ramps / stairs).
+    /// the tile's [`crate::world::FieldTerrain::elevation_overrides`] record (ramps / stairs).
     /// Empty until a field scene supplies it - then every tile reads as a
     /// plain bilinear tile, the pre-override behaviour.
     pub object_cells: Vec<u16>,
@@ -92,7 +92,7 @@ pub struct FieldTerrain {
     pub elevation_overrides: Vec<crate::world::ElevationOverride>,
     /// Live floor-height-ladder oscillators (field-VM op `0x4C` nibble-9
     /// sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`). Each
-    /// drives one rung of [`Self::field_floor_height_lut`].
+    /// drives one rung of [`crate::world::FieldTerrain::floor_height_lut`].
     pub floor_tier_bobs: Vec<legaia_engine_vm::field_actor_timers::FloorTierBob>,
     /// Player tile `(col, row)` on the previous live-loop field tick. A
     /// change between ticks is one "step" and drives the encounter roll,
@@ -102,7 +102,7 @@ pub struct FieldTerrain {
     pub last_tile: Option<(i16, i16)>,
     /// Region-keyed random-encounter state for the current FIELD scene (the
     /// same [`crate::region_encounter`] `FUN_801D9E1C` port the overworld
-    /// uses, [`Self::world_map_region_tracker`]). When set,
+    /// uses, [`crate::world::WorldMapState::region_tracker`]). When set,
     /// [`Self::on_field_step`] rolls against the player's *active region*
     /// (per-region rate increment + formation-range pick) and drives the
     /// trigger through the [`crate::encounter::EncounterSession`]'s

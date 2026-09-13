@@ -567,7 +567,7 @@ impl LegaiaRuntime {
     }
 
     /// Whether the current scene permits a menu Save
-    /// ([`World::scene_save_allowed`](legaia_engine_core::world::World::scene_save_allowed),
+    /// ([`legaia_engine_core::world::PartyState::scene_save_allowed`](legaia_engine_core::world::World::scene_save_allowed),
     /// seeded at scene load from the MAN header bit retail copies into
     /// `_DAT_8007B6A8`). The page shows the Save-here hint from this, and the
     /// menu's own Save row inks and buzzes from the same value through

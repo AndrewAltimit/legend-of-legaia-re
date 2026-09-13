@@ -25,7 +25,7 @@ use legaia_engine_core::input::PadButton;
 use legaia_engine_core::world::{FieldNpcAmbient, SceneMode, World};
 use legaia_engine_vm::ambient_motion::AmbientMotion;
 
-/// `World::field_collision_grid` is a `0x80 x 0x80` byte grid; the
+/// `World::terrain.collision_grid` is a `0x80 x 0x80` byte grid; the
 /// crate-private constants are mirrored here because this is an integration
 /// test.
 const GRID_LEN: usize = 0x80 * 0x80;

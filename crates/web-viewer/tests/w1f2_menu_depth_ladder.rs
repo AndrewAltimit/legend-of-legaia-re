@@ -195,7 +195,7 @@ fn money(rt: &mut LegaiaRuntime) -> i64 {
 
 /// Scenes whose MAN carries exactly **one** named merchant record. The
 /// vendor plate resolves its label by matching the open session's stock
-/// against `World::scene_shops`, and falls back to the sole shop when the
+/// against `World::shops.scene_shops`, and falls back to the sole shop when the
 /// scene has exactly one - so a one-shop scene is what lets a debug-opened
 /// stock list still carry a real vendor name. Measured off the disc: every
 /// other shop-bearing scene ships two or more records.

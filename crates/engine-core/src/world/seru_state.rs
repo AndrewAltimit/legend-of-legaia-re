@@ -13,7 +13,7 @@ pub struct SeruState {
     pub log: crate::seru_learning::SeruCaptureLog,
     /// Master Seru registry (Seru id -> spell taught + capture points).
     /// Engines install via [`World::set_seru_registry`]; `World::finish_battle`
-    /// resolves [`World::battle_captures`] against it into [`World::seru_log`].
+    /// resolves [`crate::world::SeruState::battle_captures`] against it into [`crate::world::SeruState::log`].
     /// Empty by default - captures then bank no points (the monster is still
     /// downed + logged, but nothing is learned).
     pub registry: crate::seru_learning::SeruRegistry,
@@ -39,7 +39,7 @@ pub struct SeruState {
     /// spell shiny.
     pub shiny_enemy_slots: std::collections::HashSet<u8>,
     /// Monster ids captured **as shiny** this battle (subset of
-    /// [`Self::battle_captures`]; `resolve_captures` marks their spell shiny).
+    /// [`crate::world::SeruState::battle_captures`]; `resolve_captures` marks their spell shiny).
     pub shiny_captures: Vec<u16>,
     /// Summon-magic level-ups resolved this session: `(party_slot, spell_id,
     /// new_level)` per event, in resolution order. The engine analogue of the

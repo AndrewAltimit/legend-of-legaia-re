@@ -139,11 +139,11 @@
   <table class="data-table">
     <thead><tr><th>Retail piece</th><th>Engine mirror</th></tr></thead>
     <tbody>
-      <tr><td>stock record + prices</td><td><code>legaia_asset::shop_stock</code> scan &rarr; <code>shop_catalog</code> &rarr; <code>ShopInventory</code> on <code>World::scene_shops</code></td></tr>
+      <tr><td>stock record + prices</td><td><code>legaia_asset::shop_stock</code> scan &rarr; <code>shop_catalog</code> &rarr; <code>ShopInventory</code> on <code>World::shops.scene_shops</code></td></tr>
       <tr><td>op-<code>0x49</code> trigger</td><td><code>FieldHost::op49_menu_request</code> &rarr; <code>World::try_arm_field_shop</code> / <code>finish_field_shop</code>; non-shop payloads (inn, save prompts) fail validation and arm nothing</td></tr>
       <tr><td>screen routing</td><td><code>engine-vm::menu</code> (<code>commit_route</code> on Cross, <code>back_route</code> on Triangle); <code>ShopExit</code> auto-advances after the fade</td></tr>
       <tr><td>commit</td><td><code>ShopSession::try_buy</code> / <code>try_sell</code>; grant kernel <code>World::buy_from_shop</code> refuses a buy past 99</td></tr>
-      <tr><td>Point Card</td><td><code>World::point_card</code> bank, <code>credit_point_card</code>; toast held on <code>MenuRuntime::point_card_toast</code>; kept out of <code>buy_from_shop</code> so the randomizer oracles stay retail-shaped</td></tr>
+      <tr><td>Point Card</td><td><code>World::minigames.point_card</code> bank, <code>credit_point_card</code>; toast held on <code>MenuRuntime::point_card_toast</code>; kept out of <code>buy_from_shop</code> so the randomizer oracles stay retail-shaped</td></tr>
       <tr><td>recipient picker</td><td><code>BuyRecipientSession</code>, live behind <code>MenuRuntime::retail_equipment_buy</code> (browser play page enables it)</td></tr>
       <tr><td>ink + panels</td><td><code>shop_stock_row_ink</code>, <code>shop_root_command_rows</code>, <code>shop_buy_quantity_panel</code>, <code>shop_sell_detail_panel</code> &rarr; <code>engine-ui::shop_draws_for</code></td></tr>
     </tbody>

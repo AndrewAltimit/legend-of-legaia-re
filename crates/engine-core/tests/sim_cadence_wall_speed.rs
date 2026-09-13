@@ -221,7 +221,7 @@ fn gated_and_ungated_consumers_share_one_denominator() {
 
 /// Cadence invariance, the property that lets the engine run the controller
 /// once per vsync where retail runs it once per game tick: moving
-/// `World::frame_step` (retail `DAT_1F800393`'s resolved value, the field
+/// `World::clock.frame_step` (retail `DAT_1F800393`'s resolved value, the field
 /// floor being 2) must not move the player's wall speed.
 ///
 /// The engine's locomotion reads `move_ramp_ratio`, not `frame_step`, so this

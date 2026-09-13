@@ -4,7 +4,7 @@
 //! Unlike `end_to_end_gameplay_loop.rs` - which composes the encounter /
 //! battle / loot pieces with test-side glue (manual `on_field_step`,
 //! `enter_battle`, a hand-rolled `drive_battle_to_victory` damage loop) -
-//! this test sets [`World::live_gameplay_loop`] and then does nothing but
+//! this test sets [`crate::world::WorldToggles::live_gameplay_loop`] and then does nothing but
 //! hold a d-pad direction and call [`World::tick`]. The engine itself must:
 //!
 //!   1. Walk the player on the held pad (field locomotion).

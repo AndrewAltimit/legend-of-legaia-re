@@ -38,7 +38,7 @@ pub struct FieldVmState {
     /// as independent field-VM contexts, mirroring retail's per-record spawn
     /// (`FUN_8003BDE0` installs `ctx[+0x90]`/`ctx[+0x9E]` and lets the
     /// per-frame context sweep run it as a sibling). Unlike
-    /// [`Self::cutscene_timeline`] these never seize the camera or lock
+    /// [`crate::world::CutsceneState::timeline`] these never seize the camera or lock
     /// player locomotion ([`Self::cutscene_timeline_active`] does not cover
     /// them); only cutscene-class records - the opening chain and gated
     /// walk-on beat records - install as the modal timeline. Installed by
@@ -53,7 +53,7 @@ pub struct FieldVmState {
     /// authored repair - the opening records' sub-9 restarts - never runs
     /// here). The new-game / opening chain leaves this `false`.
     pub free_roam_staging: bool,
-    /// [`Self::field_frames`] at the most recent free-roam staging / scene
+    /// [`crate::world::FrameClock::display_frames`] at the most recent free-roam staging / scene
     /// entry - the base of the entry window the pause-drop measures against.
     pub free_roam_entry_frame: u64,
     /// Per-actor field-VM channels: one spawned context per MAN partition-1
@@ -92,7 +92,7 @@ pub struct FieldVmState {
     /// there); drained FIFO by `SceneHost::tick`, which re-bases each into
     /// partition 2 (`global - N0 - N1`, retail `FUN_8003BDE0`) and installs
     /// the record - as the modal cutscene timeline during the opening chain,
-    /// as a concurrent [`Self::helper_contexts`] entry otherwise - when its
+    /// as a concurrent [`crate::world::FieldVmState::helper_contexts`] entry otherwise - when its
     /// C1/C2 story-flag gates pass. A queue (bounded by
     /// [`SPAWNED_CONTEXT_SLOTS`]) so a second spawn issued while another
     /// record executes is not dropped.

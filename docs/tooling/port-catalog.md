@@ -308,7 +308,7 @@ worked examples from the same files, both a hair from the line:
   [`live-audit-triage.md`](live-audit-triage.md) carries the correction.)
 - `engine-core::menu_list_rows`'s three `FUN_80030628` builders. The pause
   menu does list items - but not in retail's three-buffer order and with none
-  of its dim gates, because `World::inventory` is keyed by item id with no slot
+  of its dim gates, because `World::party.inventory` is keyed by item id with no slot
   space. The order a player sees is wrong today, so this is a gap, not a
   substitution. Its file-mates *are* replaced, and each says which of the
   three families it belongs to - a per-file verdict would have been wrong in

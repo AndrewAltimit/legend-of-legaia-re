@@ -130,10 +130,10 @@ pub const COUNTER_PICTOGRAM_COINS: u8 = 0x66;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CounterSource {
     /// `_DAT_8008459C` - party gold (`FUN_801DCF84`, `lw a0,0x459c(v0)`).
-    /// Engine side: `World::money`.
+    /// Engine side: `World::party.money`.
     PartyGold,
     /// `_DAT_800845A4` - the casino coin bank (`FUN_801DD028`,
-    /// `lw a0,0x45a4(v0)`). Engine side: `World::casino_coins`.
+    /// `lw a0,0x45a4(v0)`). Engine side: `World::minigames.casino_coins`.
     CasinoCoins,
 }
 

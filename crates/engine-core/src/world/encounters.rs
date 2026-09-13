@@ -204,7 +204,7 @@ impl World {
         armed
     }
 
-    /// Every `formation_id` currently registered in [`Self::formation_table`],
+    /// Every `formation_id` currently registered in [`crate::world::DiscTables::formation_table`],
     /// sorted. The answer to "which rows can `--battle` name" and the list the
     /// unresolved-formation diagnostics print.
     pub fn registered_formation_ids(&self) -> Vec<u16> {
@@ -324,14 +324,14 @@ impl World {
     /// `+0xF4` 4×u32 field is zeroed and re-derived from the eight equipment
     /// slots ([`crate::accessory_passives::AccessoryPassives::bits_for_equipment`]),
     /// then all members' words OR into the global mask (the engine's
-    /// [`Self::party_ability_mask`], mirroring `DAT_80074358`). The rebuilt
-    /// word 0 also lands in [`Self::character_ability_bits`] - the mask the
+    /// [`crate::world::PartyState::party_ability_mask`], mirroring `DAT_80074358`). The rebuilt
+    /// word 0 also lands in [`crate::world::PartyState::character_ability_bits`] - the mask the
     /// MP-cost consumers read (`Self::build_battle_spell_session` /
     /// `cast_spell_on_slots` / the battle-action VM host) - together with the
     /// party-wide-scoped bits any member contributes, so a party-wide passive
     /// is visible through every member's effective mask.
     ///
-    /// No-op while [`Self::accessory_passives`] is empty (the disc-free
+    /// No-op while [`crate::world::DiscTables::accessory_passives`] is empty (the disc-free
     /// default), so synthetic setups that write `character_ability_bits`
     /// directly keep their values.
     ///
@@ -391,7 +391,7 @@ impl World {
     ///
     /// The port of retail's global-mask bit test
     /// (`DAT_80074358[index >> 5] & 1 << (index & 0x1F)`), against the
-    /// engine's [`Self::party_ability_mask`]. Point-of-use consumers of the
+    /// engine's [`crate::world::PartyState::party_ability_mask`]. Point-of-use consumers of the
     /// party-wide passives (encounter rate, escape, battle-end rewards) call
     /// this.
     pub fn party_has_ability(&self, index: u8) -> bool {
@@ -423,11 +423,11 @@ impl World {
     /// attack `> 0`), this resolves a [`crate::battle_stats::BattleStats`] from
     /// the character's base attack / UDF / LDF and the modifiers of the items
     /// in its equipment slots ([`crate::battle_stats::compute_battle_stats_default`]
-    /// against [`Self::equipment_table`]), then writes
-    /// [`Self::battle_attack`] (= the attack **without** the equipment sum,
+    /// against [`crate::world::DiscTables::equipment_table`]), then writes
+    /// [`crate::world::BattleState::attack`] (= the attack **without** the equipment sum,
     /// which retail folds per command at swing time - see
-    /// [`Self::battle_equip_atk`]) and
-    /// [`Self::battle_defense_split`] (= resolved UDF / LDF). Slots with a
+    /// [`crate::world::BattleState::equip_atk`]) and
+    /// [`crate::world::BattleState::defense_split`] (= resolved UDF / LDF). Slots with a
     /// zeroed roster record are left untouched, so synthetic battles that set
     /// `battle_attack` directly keep their values.
     ///
@@ -710,7 +710,7 @@ impl World {
     /// the record copy and the battle transition without any player step.
     /// The engine models that confirm-and-transition with the same immediate
     /// latch the field-carrier SM resolution uses
-    /// ([`Self::pending_field_carrier_battle`], drained by
+    /// ([`crate::world::FieldCarrierState::pending_battle`], drained by
     /// `Self::tick_field_carriers` in the same frame): the formation must
     /// already be registered by [`Self::install_man_encounter`] (the
     /// scene-entry MAN install, which also merges the row's monster ids'
@@ -751,7 +751,7 @@ impl World {
     /// the record window overlaying the opcode to the host, which parses it as
     /// an [`crate::encounter_record::EncounterRecord`] and routes it through
     /// [`Self::install_scripted_encounter`]. See
-    /// [`Self::scripted_encounter_armed`] for why this gate exists (there is no
+    /// [`crate::world::EncounterState::scripted_armed`] for why this gate exists (there is no
     /// dedicated encounter opcode; the consuming entity SM is the retail
     /// discriminator).
     pub fn arm_scripted_encounter(&mut self, on: bool) {
@@ -815,12 +815,12 @@ impl World {
     /// - park-gate flag (the record's own head `SysFlag.Test`, e.g. `0x142`)
     ///   is still clear (the beaten-boss one-shot),
     ///
-    /// this registers the placement slot in [`Self::field_boss_stagers`] and
+    /// this registers the placement slot in [`crate::world::FieldPropState::boss_stagers`] and
     /// stations its approach point - the record's own `0x4C 0x51` NPC-run
     /// destination (Noa at the nest tile), or the placement spawn tile when
     /// the record has no station leg - as an interact-probe position
-    /// ([`Self::field_npc_positions`]) plus a walk-touch contact
-    /// ([`Self::field_walk_touch`],
+    /// ([`crate::world::FieldNpcState::positions`]) plus a walk-touch contact
+    /// ([`crate::world::FieldPropState::walk_touch`],
     /// [`crate::man_field_scripts::WalkTouchEvent::StagerBeat`]). Walking
     /// into / interacting with the placed actor then runs the record itself
     /// ([`Self::run_boss_stager_record`]) - the engine mirror of retail's
@@ -1095,12 +1095,12 @@ impl World {
     /// is the battle-start sound: retail stores the cue id (`0x1F` plain,
     /// `0x4D` for a flagged/boss row) straight into slot 0 of the pending SFX
     /// ring `_DAT_8007B6D8`, and the engine's carrier for that ring is
-    /// [`World::battle_sfx_cues`] - the queue both hosts drain into their SFX
+    /// [`crate::world::AudioState::battle_sfx_cues`] - the queue both hosts drain into their SFX
     /// scheduler every frame - so the cue is pushed there. Because retail's
     /// store is a slot-0 **overwrite** (no ring-counter bump), only the last
     /// `SetAudioCue` of the tick is pushed. The remaining effects (mesh
     /// assembly, the bundle read, the load waits) are recorded in
-    /// [`World::battle_intro_effects`] for a host that owns those reads.
+    /// [`crate::world::BattleState::intro_effects`] for a host that owns those reads.
     ///
     /// The kernel's own load-wait response is reported idle: the engine has
     /// already resolved the formation by the time the session reaches

@@ -90,7 +90,7 @@ impl World {
     }
 
     /// Per-frame battle-side driver for the live gameplay loop. Gated by
-    /// [`Self::live_gameplay_loop`] in [`Self::tick`].
+    /// [`crate::world::WorldToggles::live_gameplay_loop`] in [`Self::tick`].
     ///
     /// Wraps [`Self::step_battle`] with the host-side glue retail performs
     /// through the render + animation systems, so the battle resolves from
@@ -1592,7 +1592,7 @@ impl World {
     /// target playing a plain action-table clip (`+0x1D9 < 0x10`,
     /// `0x801EEB88`) and, inside the funnel, the drive being idle
     /// (`FUN_8003DE7C(1) == 0` at `0x8004FE9C`, modelled as
-    /// [`World::battle_xa_busy_frames`]).
+    /// [`crate::world::AudioState::battle_xa_busy_frames`]).
     ///
     /// The ring is transient by design. Its slots are drained in retail by
     /// `FUN_80016B6C`, which the port does not model (the hosts' own SFX
@@ -1675,7 +1675,7 @@ impl World {
     }
 
     /// Queue one CD-XA clip start and hold the modelled drive busy for its
-    /// read span (`dur` vsyncs - see [`World::battle_xa_busy_frames`]).
+    /// read span (`dur` vsyncs - see [`crate::world::AudioState::battle_xa_busy_frames`]).
     /// REF: FUN_8003D53C
     fn push_battle_xa_cue(&mut self, cue: crate::sfx_cue::XaVoiceClip) {
         self.audio.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;

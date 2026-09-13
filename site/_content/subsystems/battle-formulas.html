@@ -155,7 +155,7 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
   </details>
   <details class="disclosure">
     <summary>History: the port once seeded attack from the menu aggregate</summary>
-    <div class="disclosure-body"><p>The port once seeded a party member's attack from the <em>menu</em> aggregate (base plus every item's full ATK), over-stating Vahn's first hit above from 237 to 472 before the roll. It seeds the base and folds the halved slot per command (<code>World::battle_equip_atk</code>, <code>arms_weapon_atk_fold</code>); <code>physical_predamage</code> ports the roll pair, the Art and element passes, the status scales, the underdog rewrite and the chip floor, drawing <code>rand()</code> in retail order.</p></div>
+    <div class="disclosure-body"><p>The port once seeded a party member's attack from the <em>menu</em> aggregate (base plus every item's full ATK), over-stating Vahn's first hit above from 237 to 472 before the roll. It seeds the base and folds the halved slot per command (<code>World::battle.equip_atk</code>, <code>arms_weapon_atk_fold</code>); <code>physical_predamage</code> ports the roll pair, the Art and element passes, the status scales, the underdog rewrite and the chip floor, drawing <code>rand()</code> in retail order.</p></div>
   </details>
 </section>
 

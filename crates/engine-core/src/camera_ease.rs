@@ -46,8 +46,8 @@
 //! writes `_DAT_8007BCAC` in the same breath. `World` now implements all three
 //! of that opcode's host hooks
 //! (`FieldHost::op4c_n4_sub9_default_write` / `_default_ramp` /
-//! `_delta_write_or_ramp`) onto [`crate::world::World::camera_scene_offset`] /
-//! [`crate::world::World::camera_offset_ease`], and `World::tick` steps the
+//! `_delta_write_or_ramp`) onto [`crate::world::CameraRig::scene_offset`] /
+//! [`crate::world::CameraRig::offset_ease`], and `World::tick` steps the
 //! accumulator once a frame through [`ease_camera_offset`]. The accumulator is
 //! observable state, not yet a camera input: [`crate::camera`] still drives the
 //! rendered camera from its own float controller, and which of the two owns the
@@ -170,8 +170,8 @@ pub fn ease_step(input: CameraEaseInput, gap: i16) -> i16 {
 ///
 /// WIRED: `World::tick_camera_offset_ease` calls this once a frame, over the
 /// two globals the field VM's op `0x4C` n4 sub-9 hooks now write
-/// ([`crate::world::World::camera_scene_offset`] and
-/// [`crate::world::World::camera_offset_ease`]). What the accumulator does
+/// ([`crate::world::CameraRig::scene_offset`] and
+/// [`crate::world::CameraRig::offset_ease`]). What the accumulator does
 /// *not* yet do is drive the rendered camera - [`crate::camera`] keeps its own
 /// float controller, and choosing between them is a fidelity-mode decision.
 pub fn ease_camera_offset(input: CameraEaseInput) -> i32 {

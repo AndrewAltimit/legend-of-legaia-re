@@ -639,7 +639,7 @@ impl LegaiaRuntime {
     }
 
     /// Opt in / out of the engine's continuous locomotion decode
-    /// ([`legaia_engine_core::world::World::precise_movement`]): the camera
+    /// ([`legaia_engine_core::world::FieldLocomotion::precise_movement`]): the camera
     /// azimuth rotates the movement vector at full angular resolution and the
     /// left analog stick ([`Self::set_left_stick`]) supplies an arbitrary
     /// screen angle. The play page's VR first-person mode drives this so
@@ -1110,7 +1110,7 @@ impl LegaiaRuntime {
     /// Advance the mode seat one frame and reconcile it with the live world.
     ///
     /// Mirrors `BootSession::tick`: `ModeSeat::frame` takes any pending edge
-    /// (which is what clears `World::frame_begin_skip` and performs retail's
+    /// (which is what clears `World::clock.frame_begin_skip` and performs retail's
     /// transition-block bookkeeping), then `adopt_world_mode` moves the word
     /// to wherever the scene session left the world - honouring the
     /// battle-intro hold, so a browser encounter takes the mode edge at the
@@ -1339,7 +1339,7 @@ impl LegaiaRuntime {
     /// the display refresh - the native window's sim-tick anim contract.
     fn drive_npc_clips(&mut self) {
         /// One drained ANIMATE cue: `(slot, (count, base_anim_id, frames))`,
-        /// the `World::field_npc_anim_cues` entry shape.
+        /// the `World::npcs.anim_cues` entry shape.
         type AnimCue = (u8, (u8, u8, Vec<u8>));
         let cues: Vec<AnimCue> = match self.scene_host.as_mut() {
             Some(h) => h.world.npcs.anim_cues.drain().collect(),
@@ -1370,7 +1370,7 @@ impl LegaiaRuntime {
         self.drive_player_move_cues();
     }
 
-    /// Drain `World::field_player_move_cues` - the cross-context ExecMove
+    /// Drain `World::locomotion.player_move_cues` - the cross-context ExecMove
     /// pokes a script aims at the **player** channel (`A2 F8 <move_id>`) -
     /// and queue each as a scripted one-shot over the idle/walk pair, the
     /// browser twin of the native window's cue drain in
@@ -1923,7 +1923,7 @@ impl LegaiaRuntime {
     /// Whole seconds only, and by delta rather than absolutely, so a loaded
     /// save keeps its accumulated total. The page used to substitute
     /// `world.frame / 60` at the one place the clock was *drawn*, which left
-    /// [`legaia_engine_core::world::World::play_time_seconds`] frozen at
+    /// [`legaia_engine_core::world::FrameClock::play_time_seconds`] frozen at
     /// whatever a load put there - so the H:MM:SS box reset on every page
     /// load, ignored a loaded save's hours, and, worse, a save written from
     /// the browser recorded the *loaded* play time rather than the played one.

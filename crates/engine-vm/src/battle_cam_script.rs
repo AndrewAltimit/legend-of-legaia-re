@@ -131,7 +131,7 @@
 //! overrides the whole translation. This is the arm that reads `ctx[+0x6D0]` -
 //! the depth `FUN_801F0348` computes at action seed from the framed
 //! monster's size class ([`crate::battle_formulas::camera_height_for_frame`],
-//! mirrored on the engine side as `World::battle_camera_frame_height`).
+//! mirrored on the engine side as `World::battle.camera_frame_height`).
 //! Pinned byte-exact by three PCSX-Redux `ctx[7] == 0x19` captures (Gaza
 //! acting): `TR (0, 0x500, prescale(ctx[+0x6D0]))` with `0x6D0 = 0xD00`
 //! landing on `5324`, yaw `(ctx[+0x6DA] - actor[+0x46]) & 0xFFF` eight units
@@ -1249,7 +1249,7 @@ const STRIKE_LOOP_STATE: u8 = 0x1E;
 const ACTION_DONE_STATE: u8 = 0x50;
 
 /// The phase-scripted battle camera state. Created on battle entry, stepped
-/// once per 2 retail display frames (`World::field_frames`), dropped on exit.
+/// once per 2 retail display frames (`World::clock.display_frames`), dropped on exit.
 #[derive(Debug)]
 pub struct BattleCamera {
     phase: BattleCamPhase,
@@ -1399,7 +1399,7 @@ pub struct BattleCamInputs {
 /// drift between them. `slot` is the host's per-battle camera state
 /// (dropped whenever `active` is false so the next battle re-snaps);
 /// `active` is "a stage-dome battle owns the 3D frame"; `frames` is the
-/// world's retail display-frame counter (`World::field_frames`, one camera
+/// world's retail display-frame counter (`World::clock.display_frames`, one camera
 /// step per 2 frames).
 ///
 /// A battle that opens on dialogue snaps to the held close-up; any other

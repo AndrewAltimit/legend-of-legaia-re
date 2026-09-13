@@ -23,7 +23,7 @@
 //! menu) is inline-runner content instead.
 //!
 //! The drive is the native host's own contract, stage by stage: a field
-//! interact on the NPC raises `World::current_dialog` (session path),
+//! interact on the NPC raises `World::dialog.current` (session path),
 //! `SceneHost::open_pending_dialog` builds the panel exactly as
 //! `sync_dialog_panel` does, the typewriter ticks until the menu arms,
 //! Up/Down move the cursor, and the confirm calls `confirm_menu` - the
@@ -89,7 +89,7 @@ fn the_koin4_price_menu_confirms_through_the_option_jump() {
     let slot = offer_slot.expect("koin4 carries the merchant's two-price offer");
 
     // Interact through the session path: the world raises the pre-decoded
-    // dialog request (`World::current_dialog`) from the NPC's inline record.
+    // dialog request (`World::dialog.current`) from the NPC's inline record.
     host.world.trigger_field_interact(0, slot);
     let mut ticks = 0u32;
     while host.world.dialog.current.is_none() && ticks < 240 {

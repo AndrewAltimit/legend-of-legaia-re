@@ -22,7 +22,7 @@
 //!
 //! Nothing here is a Sony byte: the stock ids + prices are decoded from the
 //! user's own disc at runtime, exactly like the level-up growth tables and the
-//! move-power table. Disc-free builds leave [`crate::world::World::scene_shops`]
+//! move-power table. Disc-free builds leave [`crate::world::ShopState::scene_shops`]
 //! empty and fall back to host-supplied stock, so determinism oracles are
 //! unaffected.
 
@@ -30,7 +30,7 @@ use crate::shop::{ShopInventory, ShopItem};
 
 /// Item buy-price table from `SCUS_942.54`, the gold-shop path's source of both
 /// prices and the **sellable mask** (price `> 0`). Built once at boot
-/// ([`Self::from_scus`]) and parked on [`crate::world::World::item_shop_data`].
+/// ([`Self::from_scus`]) and parked on [`crate::world::ShopState::item_shop_data`].
 #[derive(Debug, Clone)]
 pub struct ShopItemData {
     /// Buy price in gold for each id (`0` = quest / found-only / internal /

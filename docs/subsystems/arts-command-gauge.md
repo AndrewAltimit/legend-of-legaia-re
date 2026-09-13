@@ -206,7 +206,7 @@ Each arm resolves one or more of the character record's five equipment slots (`+
 
 This is the counterpart to the battle-load asymmetry recorded in [`battle-formulas.md`](battle-formulas.md): the seeder `FUN_80053CB8` folds the equipment table's UDF / LDF / SPD bytes and folds **neither** INT nor ATK, so a weapon's attack bonus never reaches the actor's ATK **base** (`+0x15A`). It reaches ATK **working** here instead, per committed command. The seeder's omission is correct, not a gap.
 
-Ports: `legaia_engine_vm::battle_formulas::arms_command_equip_slots` / `arms_weapon_atk_fold` / `arms_resolver_admits`; the live loop seeds a party slot's `battle_attack` without the equipment sum and adds the halved slot per swing (`World::battle_equip_atk`). The player-facing formula this fold feeds is on [battle-formulas.md](battle-formulas.md#base-offense-value-base-atk-plus-half-of-one-equipment-slot).
+Ports: `legaia_engine_vm::battle_formulas::arms_command_equip_slots` / `arms_weapon_atk_fold` / `arms_resolver_admits`; the live loop seeds a party slot's `battle_attack` without the equipment sum and adds the halved slot per swing (`World::battle.equip_atk`). The player-facing formula this fold feeds is on [battle-formulas.md](battle-formulas.md#base-offense-value-base-atk-plus-half-of-one-equipment-slot).
 
 ## Who writes the cost
 
@@ -318,8 +318,8 @@ a Super combination replaces the tail, and otherwise each named art contributes
 its record's strikes with unmatched directions staying plain swings.
 
 Costs come from the equipped set at scene entry
-([above](#reading-it)) into `World::battle_swing_costs`; the pool seeds from
-the actor's AGL. Sessions live at `World::battle_arts_input`, and
+([above](#reading-it)) into `World::battle.swing_costs`; the pool seeds from
+the actor's AGL. Sessions live at `World::battle.arts_input`, and
 `World::arts_input_active()` is what a host's party status strip reads to park
 itself, since retail moves the status plate off-screen for the whole session.
 
@@ -418,7 +418,7 @@ is a *remembered starting buffer*, not a shortcut past the input
 carries the byte-level walk; ported as
 `legaia_engine_vm::battle_action::preseed_action_queue` / `save_action_queue`).
 
-The port opens every entry empty. `World::saved_chains` stays live data - the
+The port opens every entry empty. `World::party.saved_chains` stays live data - the
 chain editor writes it, the save round-trip carries it, and the legacy
 `LEGAIA_ARTS_SAVED_LIST=1` list still reads it - but nothing preseeds the input
 from it. Wiring that is the open piece; what it needs first is whether the

@@ -26,7 +26,7 @@
 //! hands the menu exit code 5 with the destination triple staged.
 //!
 //! What it does not do is *enter* the world map at that landmark: the port has
-//! no drain for `World::pending_menu_warp`. The last test pins the reachable
+//! no drain for `World::menu.pending_warp`. The last test pins the reachable
 //! half and the staged-but-undrained half separately, so neither reads as the
 //! other.
 
@@ -316,7 +316,7 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
 }
 
 /// The residual, stated as a test so it cannot rot into a silent claim:
-/// nothing in the engine drains `World::pending_menu_warp`, so a committed
+/// nothing in the engine drains `World::menu.pending_warp`, so a committed
 /// Door of Wind stages its destination and the player stays put.
 #[test]
 fn the_staged_warp_has_no_drain_yet() {

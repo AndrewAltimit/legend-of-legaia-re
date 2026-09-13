@@ -82,14 +82,14 @@ pub struct CastFxState {
     /// retail `FUN_801DEA50` -> `FUN_80050ED4`). Retail allocates these from
     /// the same `0x60`-slot effect-actor pool as everything else; the engine
     /// keeps them in their own small list (capped) so concurrent records
-    /// don't clobber [`Self::active_move_fx`]. Ticked by
+    /// don't clobber [`crate::world::CastFxState::active_move_fx`]. Ticked by
     /// [`World::tick_move_fx`]; drawn through
     /// [`World::active_move_fx_part_draws`].
     pub active_action_fx: Vec<crate::summon::SummonScene>,
     /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
     /// move-FX scene, set by [`World::spawn_move_fx`] from the move record's
     /// `+0x0b` field and cleared when the scene drains. Surfaced via
-    /// [`World::active_move_fx_trail_texpage`] for the render layer's streak
+    /// [`crate::world::CastFxState::move_fx_trail_texpage`] for the render layer's streak
     /// pass - the trail id this carries is what
     /// `legaia_engine_render::afterimage::build_afterimage_quad` (the ported
     /// `FUN_801e1ab0`) turns into the jittered semi-transparent quad.
@@ -97,7 +97,7 @@ pub struct CastFxState {
     /// The battle context's move-FX projection block, installed by the action
     /// effect script's terminator (`ctx[+0x1014]` / `+0x6C6` / `+0x24E` /
     /// `+0x1144`; see [`crate::action_effect_script::MoveFxStreak`]). Read by
-    /// [`World::move_fx_streak`]; the render layer projects the afterimage
+    /// [`crate::world::CastFxState::move_fx_streak`]; the render layer projects the afterimage
     /// streak's billboard from its launch point + half-width.
     pub move_fx_streak: crate::action_effect_script::MoveFxStreak,
     /// Pending move-FX sound cue id (`+0x0d`), set by [`World::spawn_move_fx`]

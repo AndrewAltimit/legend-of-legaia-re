@@ -1091,7 +1091,7 @@ pub struct FieldHudMemberData {
 /// Retail's draw loop walks the present-party list at `0x80084598` for
 /// `0x80084594` entries and indexes the character records with it; the engine
 /// mirror is [`crate::world::World::party_roster_slot`] over
-/// [`crate::world::World::party_count`]. Every number comes from the *record*,
+/// [`crate::world::PartyState::party_count`]. Every number comes from the *record*,
 /// not from a battle actor: outside a fight the battle mirrors are stale (or
 /// zero for a party that has never fought), and a field readout that only
 /// works after the first battle is worse than none.

@@ -572,7 +572,7 @@ pub struct BattleActor {
     pub spd_base: u16,
     /// `+0x168` - INT **working**: the magic-damage / magic-defence column
     /// and the accuracy-evasion seed. The engine also mirrors it per slot in
-    /// `World::battle_accuracy`; this is the actor's own halfword, so the
+    /// `World::battle.accuracy`; this is the actor's own halfword, so the
     /// band's five-stat writers have somewhere to land.
     pub intel: u16,
     /// `+0x16A` - INT **base**.

@@ -186,7 +186,7 @@ pub struct PauseItemsSession {
     /// Destination a committed Door of Wind pick staged, in retail's
     /// `0x80084624`/`28`/`2C` shape. Drained by
     /// [`crate::field_menu_dispatch::apply_pause_items_outcome`] onto
-    /// [`crate::world::World::pending_menu_warp`].
+    /// [`crate::world::MenuState::pending_warp`].
     staged_warp: Option<StagedWarp>,
     /// Menu exit code the finished screen hands the outer menu SM
     /// (`_DAT_8007B43C`): [`MENU_EXIT_CODE_FIELD_ESCAPE`] or
@@ -721,7 +721,7 @@ pub struct ItemsInfoModel {
     /// the whole passive / scope-pictogram block.
     ///
     /// The bank itself is not here because this model is built from the
-    /// session alone; a host reads [`crate::world::World::point_card`] and
+    /// session alone; a host reads [`crate::world::MinigameState::point_card`] and
     /// calls `engine-ui`'s `item_points_panel_draws`. The passive lines stay
     /// `None` on this row without needing a suppression: the Point Card's
     /// effect descriptor carries the `0x41` no-passive sentinel.
@@ -1310,7 +1310,7 @@ impl SpecialUseSession {
     ///
     /// A pick warps: retail's phase 4 writes `_DAT_8007B43C = 5` and the
     /// outer menu SM acts on it; the port stages the destination on
-    /// [`crate::world::World::pending_menu_warp`] and the world tick's
+    /// [`crate::world::MenuState::pending_warp`] and the world tick's
     /// menu-warp drain (`World::drain_staged_menu_warp`) resolves the staged
     /// scene word - a raw CDNAME TOC index - into the named scene
     /// transition the scene host consumes, seating the party at the
@@ -1601,7 +1601,7 @@ pub enum RootMenuRoute {
 ///
 /// Both gate inputs come from the world at menu-open
 /// (`BootSession::open_field_menu`): `save_allowed` from
-/// [`crate::world::World::scene_save_allowed`], which scene load seeds from
+/// [`crate::world::PartyState::scene_save_allowed`], which scene load seeds from
 /// [`legaia_asset::man_section::ManHeader::low_flag`], and
 /// `entry_context_kind` from
 /// [`crate::world::World::menu_entry_context_kind`]. The save gate is the one

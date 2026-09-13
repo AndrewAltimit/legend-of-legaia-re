@@ -17,14 +17,14 @@ pub struct WorldMapState {
     /// world-map mode without gameplay (camera-only) keeps ticking untouched.
     /// Driven each [`SceneMode::WorldMap`] tick by `Self::tick_world_map`.
     pub entities: Vec<vm::world_map::WorldMapEntityCtx>,
-    /// Per-entity role config, paired by index with [`Self::world_map_entities`].
+    /// Per-entity role config, paired by index with [`crate::world::WorldMapState::entities`].
     /// Empty (or shorter than the entity list) means an entity has no specific
-    /// role: its encounters fall back to [`Self::world_map_encounter`]'s shared
+    /// role: its encounters fall back to [`crate::world::WorldMapState::encounter`]'s shared
     /// formation and it surfaces a plain interaction. Installed together with
     /// the entities via [`Self::install_world_map_entities_with_configs`].
     pub entity_configs: Vec<WorldMapEntityConfig>,
     /// Per-entity overworld world position `(x, z)`, paired by index with
-    /// [`Self::world_map_entities`]. Populated only by
+    /// [`crate::world::WorldMapState::entities`]. Populated only by
     /// [`Self::install_world_map_entities_at`] (the disc placement seeding);
     /// the config-only installers leave it empty. When present, it drives the
     /// **auto-engage-on-walkover** trigger in `Self::tick_world_map`: the
@@ -49,7 +49,7 @@ pub struct WorldMapState {
     /// Region-keyed random-encounter state for the overworld (the
     /// `FUN_801D9E1C` port, [`crate::region_encounter`]). When set,
     /// `Self::tick_world_map` rolls it once per 128-unit tile the player
-    /// crosses, latching [`Self::pending_world_map_encounter`] on a trigger.
+    /// crosses, latching [`crate::world::WorldMapState::pending_encounter`] on a trigger.
     /// `None` on a camera-only world map (no region data routed).
     ///
     /// REF: FUN_801D9E1C

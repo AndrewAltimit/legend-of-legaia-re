@@ -167,7 +167,7 @@ impl World {
             *slot = u16::from_le_bytes([cells[i * 2], cells[i * 2 + 1]]);
         }
         // Which bit this scene records its authored floor with. See
-        // [`crate::world::World::field_floor_cell_bit`]: eighteen field scenes
+        // [`crate::world::FieldTerrain::floor_cell_bit`]: eighteen field scenes
         // author `CELL_VISIBLE` and never `CELL_WALK_VISIBLE`, and reading
         // those as floorless makes the cold-spawn resolver inert in exactly
         // the scenes whose retail seat is a wall.
@@ -203,7 +203,7 @@ impl World {
     /// Install the per-scene region / zone tables (the `.MAP` `+0x10000`
     /// block + the MAN section-3 camera-region table) and run the initial
     /// per-tile refresh. Pass empty slices for scenes without the data -
-    /// the refresh then clears [`Self::extra_flags`] and resets the
+    /// the refresh then clears [`crate::world::StoryFlagState::extra_flags`] and resets the
     /// attribute block to the default fill, so stale tables never leak
     /// across a transition.
     pub fn load_field_region_tables(&mut self, map_region_block: &[u8], zone_table: &[u8]) {
@@ -217,7 +217,7 @@ impl World {
     ///
     /// Quantises `tile = (world - 0x40) >> 7` (the retail locomotion-cluster
     /// convention for `FUN_801DBA20`'s arguments), rebuilds
-    /// [`Self::extra_flags`] (the `_DAT_8007B8F4` region-type mask the
+    /// [`crate::world::StoryFlagState::extra_flags`] (the `_DAT_8007B8F4` region-type mask the
     /// field-VM op `0x42` mode 0 tests), latches the scratch attribute
     /// block, and re-selects the current camera-zone record. Called on
     /// scene entry and on every player tile crossing
@@ -284,10 +284,10 @@ impl World {
     ///
     /// Retail keeps **two** floor models and picks between them per tile on the
     /// object-grid cell's [`CELL_ELEVATION_OVERRIDE`] (`0x800`) bit
-    /// ([`Self::field_object_cells`]):
+    /// ([`crate::world::FieldTerrain::object_cells`]):
     ///
     /// - **Plain tiles** (bit clear) take the collision grid's low-nibble
-    ///   elevation tier through [`Self::field_floor_height_lut`] and
+    ///   elevation tier through [`crate::world::FieldTerrain::floor_height_lut`] and
     ///   **bilinearly interpolate** it across the `2x2` corner-tile block. The
     ///   tile is `(x >> 7, z >> 7)` (128-unit tiles); the sub-tile weights are
     ///   `x & 0x7F` / `z & 0x7F` (0..=127). When all four corner tiers match,
@@ -440,7 +440,7 @@ impl World {
     /// sampler (47-48 units ahead, ±16 lateral; per-direction table
     /// `DAT_801f2214` = `FIELD_WALL_PROBES`) - see
     /// [`World::field_dir_blocked`], wired into pad locomotion behind
-    /// [`World::leading_edge_wall_probes`]. With the flag off, locomotion
+    /// [`crate::world::FieldLocomotion::leading_edge_wall_probes`]. With the flag off, locomotion
     /// tests one candidate-centre point - a standoff/feel difference, not an
     /// indexing one.
     ///
@@ -480,7 +480,7 @@ impl World {
 
     /// Is world `(x, z)` on the scene's authored **walkable floor** - i.e. does
     /// its plain (unbiased) `.MAP` object-grid cell carry this scene's floor
-    /// bit ([`Self::field_floor_cell_bit`]: `CELL_WALK_VISIBLE` `0x1000` where
+    /// bit ([`crate::world::FieldTerrain::floor_cell_bit`]: `CELL_WALK_VISIBLE` `0x1000` where
     /// the scene authors it, `CELL_VISIBLE` `0x2000` in the eighteen scenes
     /// that never do)? Plain `world >> 7` indexing - the same convention
     /// [`Self::sample_field_floor_height`] samples the floor under. `false`
@@ -854,7 +854,7 @@ impl World {
     ///
     /// NOT WIRED: the live pad path remaps through
     /// [`Self::decode_field_direction`] instead, because the engine's camera
-    /// publishes a 12-bit azimuth ([`Self::field_camera_azimuth`]) rather
+    /// publishes a 12-bit azimuth ([`crate::world::FieldLocomotion::camera_azimuth`]) rather
     /// than retail's eighth-turn ring step `gp+0x2d8`, and because the same
     /// azimuth has to serve the continuous `precise_movement` decode, which
     /// a ring index cannot express. The two agree on every even `rot` - i.e.
@@ -989,7 +989,7 @@ impl World {
     /// `(x, z)`, take the three probe points of `FIELD_ACTOR_PROBES` row
     /// `dir` (same `(x + dx, z - dz)` convention as the wall probes) and
     /// box-test each against every field NPC's position
-    /// ([`Self::field_npc_positions`]); the direction is blocked when any
+    /// ([`crate::world::FieldNpcState::positions`]); the direction is blocked when any
     /// probe lands within `FIELD_NPC_BOX_HALF` (40 units) of an NPC on
     /// both axes (strict).
     ///
@@ -1004,12 +1004,12 @@ impl World {
     ///   bit, and the mutual `+0x98` collision link is live in-frame). The
     ///   positions are LIVE: `Self::tick_field_npc_motions` walks routed /
     ///   scripted NPCs through the motion VM and writes back into
-    ///   [`Self::field_npc_positions`], so a moving NPC's
+    ///   [`crate::world::FieldNpcState::positions`], so a moving NPC's
     ///   ±`FIELD_NPC_BOX_HALF` (40) box follows it, exactly as retail
     ///   probes the live `+0x14`/`+0x18`.
     /// - the **static-entity arm** (result bit `4`) - placed `.MAP` props,
     ///   box ±`FIELD_PROP_BOX_HALF` (80) around the record-derived
-    ///   footprint centre ([`Self::field_prop_colliders`]).
+    ///   footprint centre ([`crate::world::FieldPropState::colliders`]).
     ///
     /// The locomotion-path touch dispatches are modelled alongside: the
     /// button-press interact (facing probe + event + face-the-NPC,
@@ -1276,7 +1276,7 @@ impl World {
     /// port that copied the `0x4C` convention here *and* kept the `0x800`
     /// would face the NPC exactly backwards.
     ///
-    /// The previous heading goes into [`Self::field_npc_facing_save`], which
+    /// The previous heading goes into [`crate::world::FieldNpcState::facing_save`], which
     /// [`Self::release_talk_facing`] writes back when the conversation ends.
     /// No-op for a slot with no surfaced position (retail's actor-list miss)
     /// and while a save is already outstanding, so a nested interaction cannot
@@ -1379,7 +1379,7 @@ impl World {
     /// derives the same LUT index statically per placement and stores the
     /// converted 12-bit engine heading (`0` = Z+;
     /// [`crate::man_field_scripts::facing_index_to_engine_heading`]) in
-    /// [`Self::field_npc_headings`] - the map every NPC draw reads. A later
+    /// [`crate::world::FieldNpcState::headings`] - the map every NPC draw reads. A later
     /// walk overwrites the slot exactly as retail's per-step facing writes
     /// overwrite `+0x26`, and an already-present heading (a scripted channel
     /// move that ran first) is kept.
@@ -1468,7 +1468,7 @@ impl World {
     /// ([`FieldNpcAmbient::select_variant`]).
     ///
     /// Each channel's VM starts from the heading the NPC is already standing
-    /// in ([`Self::field_npc_headings`], seeded by
+    /// in ([`crate::world::FieldNpcState::headings`], seeded by
     /// [`Self::seed_field_npc_facings`]), converted back into the **retail**
     /// heading space the ambient ops work in (`retail = engine - 0x800`), so
     /// an ambient turn starts where the spawn prologue left the actor.
@@ -1546,9 +1546,9 @@ impl World {
     }
 
     /// Step every NPC's ambient facing channel one **actor game tick** and
-    /// mirror the result into [`Self::field_npc_headings`].
+    /// mirror the result into [`crate::world::FieldNpcState::headings`].
     ///
-    /// `speed` is retail's `DAT_1F800393` ([`Self::frame_step`]). The two ops
+    /// `speed` is retail's `DAT_1F800393` ([`crate::world::FrameClock::frame_step`]). The two ops
     /// respond to it differently and both readings are the retail law:
     /// `0x04`'s cursor is `addiu a0, a0, 1` - unit-per-tick, scalar-invariant,
     /// so its budget is denominated in *ticks*; `0x0D`'s wait cursor advances
@@ -1685,7 +1685,7 @@ impl World {
     /// search miss, which returns 0.
     ///
     /// A leg started here is *scripted* (`route_cursor = None`): it runs even
-    /// while [`Self::animate_field_npcs`] is off and even during a dialogue
+    /// while [`crate::world::FieldNpcState::animate`] is off and even during a dialogue
     /// (the interaction partner executing its own prologue walk), and ends
     /// where it lands.
     ///
@@ -1730,7 +1730,7 @@ impl World {
     /// NPC glide leg. Retail's run dispatch writes that byte to the actor's
     /// `+0x5C` anim slot (consumed by the anim-stream stepper `FUN_800204F8`),
     /// so the walk plays its named move clip instead of gliding in a frozen
-    /// pose. The engine surfaces it as a [`Self::field_npc_anim_cues`] entry -
+    /// pose. The engine surfaces it as a [`crate::world::FieldNpcState::anim_cues`] entry -
     /// the same shape the cross-context `A2` ExecMove raises - keyed by the
     /// placement slot. A zero id carries no clip (retail's `+0x5C = 0` is the
     /// "no move-anim" sentinel, not clip `-1`).
@@ -1747,7 +1747,7 @@ impl World {
     /// motion VM's `0x4C` `FaceTarget` op (the yaw-rotate leg of
     /// `FUN_8003774C`, [`legaia_engine_vm::motion_vm`]) seeded from the NPC's
     /// current heading and settles the resulting 12-bit yaw straight into
-    /// [`Self::field_npc_headings`] - the map every NPC draw reads. It is the
+    /// [`crate::world::FieldNpcState::headings`] - the map every NPC draw reads. It is the
     /// runtime driver the retail dialog engine invokes when the player talks
     /// to an actor (a `FaceTarget` leg whose budget is small enough to snap in
     /// one step), and is a no-op for a slot with no surfaced position (the
@@ -1787,14 +1787,14 @@ impl World {
 
     /// Step every in-flight field-NPC walk leg one frame through the ported
     /// motion VM and kick autonomous route legs, writing each NPC's new
-    /// position back into [`Self::field_npc_positions`] - so the moving NPC's
+    /// position back into [`crate::world::FieldNpcState::positions`] - so the moving NPC's
     /// ±40-unit collision box ([`Self::field_actor_dir_blocked`]) and its
     /// interact box ([`Self::field_interact_probe_slot`]) follow the live
     /// position, exactly as retail probes the live `+0x14`/`+0x18` rather
     /// than the spawn anchor.
     ///
-    /// Autonomous legs (started from [`Self::field_npc_routes`], gated by
-    /// [`Self::animate_field_npcs`]) loop their waypoints - a patrol - and
+    /// Autonomous legs (started from [`crate::world::FieldNpcState::routes`], gated by
+    /// [`crate::world::FieldNpcState::animate`]) loop their waypoints - a patrol - and
     /// pause while a dialogue is up (retail's interaction motion-pause kick:
     /// the touch event post reloads every moving-class actor's pause timer,
     /// `FUN_8003c9ac`). Scripted legs (interaction-prologue `0x4C 0x51`,
@@ -1931,7 +1931,7 @@ impl World {
     /// Retail posts the touch event (`FUN_801d5b5c`) on every contact step,
     /// gated by the player's `+0x10 & 0x80000` engaged flag until the dialog
     /// SM teardown clears it; the engine latches one post per contact
-    /// ([`Self::active_walk_touch`]) instead. The full post kernel (engaged
+    /// ([`crate::world::FieldPropState::active_walk_touch`]) instead. The full post kernel (engaged
     /// flag, facing save/restore, touch counters) is not modelled.
     ///
     /// REF: FUN_801d5b5c, FUN_801cfc40
@@ -2095,7 +2095,7 @@ impl World {
     ///
     /// The `0x801C6470` arena the guard reads is assembled from the live
     /// channels' op-`0x17` records rather than from
-    /// [`Self::field_npc_default_moves`] (the static harvest): retail reads
+    /// [`crate::world::FieldNpcState::default_moves`] (the static harvest): retail reads
     /// the arena, and a stream that has not run its `0x17` yet still holds
     /// the [`DEFAULT_MOVE_UNSET`](legaia_engine_vm::ambient_motion::DEFAULT_MOVE_UNSET)
     /// sentinel there, which suppresses the post.
@@ -2223,7 +2223,7 @@ impl World {
     /// `dir_bits == 0` means no direction is held.
     ///
     /// The raw screen direction (up / down / left / right) is remapped by
-    /// [`World::field_camera_azimuth`] quantised to the nearest 90° so
+    /// [`crate::world::FieldLocomotion::camera_azimuth`] quantised to the nearest 90° so
     /// "screen up" always walks away from the camera, the same job
     /// `func_0x800467e8` does in retail.
     fn decode_field_direction(&self) -> (u16, i16) {
@@ -2284,11 +2284,11 @@ impl World {
     }
 
     /// Continuous (non-quantised) camera-relative movement decode for the
-    /// opt-in [`World::precise_movement`] mode. Returns
+    /// opt-in [`crate::world::FieldLocomotion::precise_movement`] mode. Returns
     /// `(world_dir, dir_bits, heading)` where `world_dir` is the unnormalised
     /// world-space XZ movement vector, `dir_bits` is the sign-derived retail
     /// direction mask (kept for the facing / animation / touch consumers that
-    /// key on [`World::last_move_dir_bits`]), and `heading` is the continuous
+    /// key on [`crate::world::FieldLocomotion::last_move_dir_bits`]), and `heading` is the continuous
     /// PSX 12-bit angle. `None` when no direction is held.
     ///
     /// Differences from [`Self::decode_field_direction`] (the retail path):
@@ -2358,7 +2358,7 @@ impl World {
     /// Reads this frame's
     /// pad, turns it into a camera-relative direction + facing, and
     /// advances the player actor in 2-unit increments with per-axis
-    /// collision against [`World::field_collision_grid`].
+    /// collision against [`crate::world::FieldTerrain::collision_grid`].
     ///
     /// No-ops when there is no player actor, while a dialog box is up (the
     /// field VM owns the frame), while the tile-board minigame is installed
@@ -2378,10 +2378,10 @@ impl World {
     /// at every cadence the resolver can pick.
     ///
     /// This port takes the fine-grained half of that identity - one call per
-    /// vsync with the scalar ([`World::move_ramp_ratio`]) at `1` - because a
+    /// vsync with the scalar ([`crate::world::MoveVmGlobals::ramp_ratio`]) at `1` - because a
     /// sim tick is one retail display frame (see [`World::tick`]). Same wall
     /// speed, twice the intermediate poses at retail's field floor of 2.
-    /// Gating it on [`World::field_frame_step`] would be a tautology under
+    /// Gating it on [`crate::world::FrameClock::display_frame_step`] would be a tautology under
     /// that denomination and a 0.6x slowdown under any other.
     ///
     /// | base step | selector | units/vsync | units/second |
@@ -2548,7 +2548,7 @@ impl World {
     ///
     /// The branch jumps **past** both ground arms, so an armed mirror is an
     /// override and not a bias: the floor is not sampled at all that frame.
-    /// [`World::field_eased_mirror_y`] is where the eased-move tick publishes
+    /// [`crate::world::FieldLocomotion::eased_mirror_y`] is where the eased-move tick publishes
     /// the halfword; the double negation (`-Y` stored, `-(+0x8E)` read back)
     /// is retail's, and it lands the actor on the eased Y.
     ///
@@ -2581,9 +2581,9 @@ impl World {
     /// [`Self::sample_field_floor_height`] returns under them.
     ///
     /// The engine only maintains `world_y` as a footing when one of its two
-    /// height controllers is on - [`World::field_vertical_settle`] (retail's
+    /// height controllers is on - [`crate::world::FieldLocomotion::vertical_settle`] (retail's
     /// glide, ported in [`Self::step_field_vertical`]) or
-    /// [`World::follow_terrain_height`] (the snap the walk path applies, and
+    /// [`crate::world::FieldLocomotion::follow_terrain_height`] (the snap the walk path applies, and
     /// the `play-window` default). With both off, `world_y` is left untouched
     /// at whatever placed the actor - an invariant the locomotion oracles pin -
     /// so it carries no footing at all and reading it here would make every
@@ -2605,10 +2605,10 @@ impl World {
     /// REF: FUN_801cfe4c, FUN_80019278, FUN_801d2404
     ///
     /// Decides whether the actor may hop onto (or down off) the ledge it is
-    /// walking into, and posts the hop into [`World::field_ledge_hop`].
+    /// walking into, and posts the hop into [`crate::world::FieldLocomotion::ledge_hop`].
     /// Returns `true` when a hop was started - retail's `v0`.
     ///
-    /// The probe direction is [`World::field_step_delta`], the last
+    /// The probe direction is [`crate::world::FieldLocomotion::step_delta`], the last
     /// *committed* sub-step direction, scaled by 4 (retail `s1 = dx << 2`).
     /// Two forward points are tested against the collision grid through
     /// [`Self::field_tile_is_wall`]:
@@ -2721,7 +2721,7 @@ impl World {
     /// player's movement-lock bit `+0x10 & 0x80000` so the walk controller
     /// and the vertical settle both yield for the flight. The engine has no
     /// actor pool, so the two clips are stored on the world's
-    /// [`World::field_ledge_hop`] session instead; everything else is the
+    /// [`crate::world::FieldLocomotion::ledge_hop`] session instead; everything else is the
     /// retail body, including the arithmetic, which lives in
     /// [`legaia_engine_vm::field_ledge_hop_arc::build_hop_arc`].
     ///
@@ -2846,10 +2846,10 @@ impl World {
     /// snapping; that clamp is the whole reason this is a controller and not
     /// a one-line assignment.
     ///
-    /// This is the retail sibling of [`World::follow_terrain_height`], which
+    /// This is the retail sibling of [`crate::world::FieldLocomotion::follow_terrain_height`], which
     /// snaps instead of gliding. The snap stays authoritative when set, and
     /// the glide runs only behind its own opt-in
-    /// [`World::field_vertical_settle`] - the engine's default is that Y is
+    /// [`crate::world::FieldLocomotion::vertical_settle`] - the engine's default is that Y is
     /// left untouched, an invariant the locomotion oracles pin, so the
     /// retail glide cannot become the default without rewriting them.
     ///
@@ -2910,7 +2910,7 @@ impl World {
     /// `dir_bits` (post-remap convention: `0x1000`=Z+, `0x4000`=Z-,
     /// `0x2000`=X+, `0x8000`=X-), stepping `FIELD_STEP_UNIT` at a time and
     /// committing only the axes that stay off a wall in
-    /// [`World::field_collision_grid`]. X collision uses the just-committed Z
+    /// [`crate::world::FieldTerrain::collision_grid`]. X collision uses the just-committed Z
     /// so a diagonal move can't tunnel through a wall corner.
     ///
     /// Shared by [`Self::step_field_locomotion`] and
@@ -2918,12 +2918,12 @@ impl World {
     /// routine in both the field and world-map-walk overlays, and both collide
     /// against the same `_DAT_1f8003ec + 0x4000` walkability grid.
     ///
-    /// With [`Self::leading_edge_wall_probes`] set, each axis instead blocks
+    /// With [`crate::world::FieldLocomotion::leading_edge_wall_probes`] set, each axis instead blocks
     /// on retail's three-probe leading-edge footprint taken at the CURRENT
     /// position ([`Self::field_dir_blocked`]) - the retail standoff - and
     /// commits the step whenever the edge is clear. The default candidate-
     /// centre test is kept (off-flag) for the locomotion oracles and the
-    /// BFS nav drivers. With [`Self::solid_field_npcs`] set, each axis takes
+    /// BFS nav drivers. With [`crate::world::FieldNpcState::solid`] set, each axis takes
     /// its actor gate from the combined [`Self::field_actor_dir_blocked`]
     /// instead - both `FUN_801cfc40` entity classes in one test - so a field
     /// NPC's body box blocks the step as well: retail gates a step on the
@@ -2934,7 +2934,7 @@ impl World {
     /// retail's placed-object actors always sit in the collision candidate
     /// list (`FUN_801CF754`), so a closed door is solid until its touch pass
     /// runs `31 00`. A static-class prop hit also records the touched prop
-    /// into [`Self::pending_prop_touch`] - the same probe both refuses the
+    /// into [`crate::world::FieldPropState::pending_touch`] - the same probe both refuses the
     /// step and posts the touch (`FUN_801D01B0`'s bit-`4` auto-post of
     /// `FUN_801D5B5C`).
     pub fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
@@ -3003,14 +3003,14 @@ impl World {
     }
 
     /// Advance actor `slot` by `speed` world units along the arbitrary
-    /// ground-plane direction `(wx, wz)` - the [`World::precise_movement`]
+    /// ground-plane direction `(wx, wz)` - the [`crate::world::FieldLocomotion::precise_movement`]
     /// sibling of [`Self::advance_with_collision`]. The vector is
     /// normalised, split into per-axis distances, and walked in the same
     /// `FIELD_STEP_UNIT` sub-steps through the same per-axis collision
     /// probes (each sub-step is one single-axis `advance_with_collision`
     /// call, Z before X, so X collision sees the just-committed Z exactly
     /// like the quantised path). Sub-`FIELD_STEP_UNIT` remainders persist in
-    /// [`World::precise_move_carry`] so shallow angles keep their exact
+    /// [`crate::world::FieldLocomotion::precise_move_carry`] so shallow angles keep their exact
     /// slope across frames instead of rounding each frame's minor axis to
     /// zero.
     pub fn advance_with_collision_vector(&mut self, slot: usize, wx: f32, wz: f32, speed: i32) {
@@ -3061,7 +3061,7 @@ impl World {
     }
 
     /// One movement sub-step's prop probe: blocks on any solid prop box hit
-    /// and latches a static-class touch into [`Self::pending_prop_touch`]
+    /// and latches a static-class touch into [`crate::world::FieldPropState::pending_touch`]
     /// (drained by [`Self::tick_prop_interactions`]). Returns whether the
     /// step is prop-blocked.
     fn probe_props_for_step(&mut self, x: i16, z: i16, dir: usize) -> bool {
@@ -3145,7 +3145,7 @@ mod face_target_tests {
     /// Talking to a field NPC turns it to face the player: the interaction
     /// dispatch (`FieldHostImpl::field_interact`) drives the ported `0x4C`
     /// `FaceTarget` motion-VM leg through [`World::face_field_npc_toward`] and
-    /// settles the NPC's [`World::field_npc_headings`] entry onto the player
+    /// settles the NPC's [`crate::world::FieldNpcState::headings`] entry onto the player
     /// bearing, converging from whatever stale facing it held.
     #[test]
     fn interaction_start_turns_npc_to_face_player() {

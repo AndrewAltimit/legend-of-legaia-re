@@ -1104,7 +1104,7 @@ impl FightPolicy {
 ///
 /// The first version of this held the pad neutral for the whole battle. That
 /// is not "no fighting model", it is a specific one: with
-/// [`World::battle_player_driven`] off the live loop auto-commits
+/// [`legaia_engine_core::world::BattleState::player_driven`] off the live loop auto-commits
 /// `arm_party_physical` for every party turn - a two-swing basic attack at the
 /// first living monster, retail's own AI-party queue
 /// (`FUN_801EED1C`'s `(&DAT_8007BD10)[slot] == 4` arm) - and nothing else. No
@@ -1113,7 +1113,7 @@ impl FightPolicy {
 /// fighter is incompetent", which is exactly what the wipe on the
 /// `map01 -> suimon` leg had been reporting.
 ///
-/// So the fighter drives [`World::battle_command`] - the same
+/// So the fighter drives [`legaia_engine_core::world::BattleState::command`] - the same
 /// [`crate::battle_input::BattleCommandSession`] the windowed host binds its
 /// keyboard to - with **pad presses only** ([`FightPolicy::pad_for`]). No
 /// engine API is called to pick a command, choose a target or use an item;
@@ -1236,7 +1236,7 @@ fn wait_for_input(host: &mut SceneHost) -> bool {
 /// suspected. Rim Elm's opening is not a property of loading `town01`; it is
 /// partition-2 record 3, whose header gate is "system flag `0x225` is clear",
 /// and the engine installs it only on the New Game hand-off
-/// (`World::entering_town01_opening` / `opening_chain_active`). This ladder
+/// (`World::cutscene.entering_town01_opening` / `opening_chain_active`). This ladder
 /// walks a *route*, so it enters Rim Elm the way a returning player does, and
 /// a returning player gets no opening - retail's own scene-entry script
 /// (`town01` P1[0]) likewise reads `0x225` and skips its first-visit arms once

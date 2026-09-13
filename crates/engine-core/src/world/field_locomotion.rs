@@ -68,7 +68,7 @@ pub struct FieldLocomotion {
     /// `0x800846CC`, the pause menu's "Field Move" row - see
     /// [`crate::options::FieldMoveOpt`]). Hosts mirror their
     /// [`crate::options::OptionsState`] onto this the way they mirror
-    /// [`Self::precise_movement`].
+    /// [`crate::world::FieldLocomotion::precise_movement`].
     ///
     /// This is the *default*, not the state: the run button INVERTS it, so
     /// with Run selected the button walks. See
@@ -82,12 +82,12 @@ pub struct FieldLocomotion {
     /// = **Cross | R1** in the packed pad layout, seeded once by the new-game
     /// data-init `FUN_80034A6C` at `0x80034AB8` and written by nothing else
     /// on the disc, so retail's run button is not configurable. The port's
-    /// mask is [`Self::field_run_button_mask`], and it defaults to those two
+    /// mask is [`crate::world::FieldLocomotion::run_button_mask`], and it defaults to those two
     /// buttons. The XOR structure around the flag, in
     /// [`World::field_run_active`], is pinned as well.
     pub run_button_held: bool,
     /// Which pad buttons count as "the run button" for
-    /// [`Self::field_run_button_held`].
+    /// [`crate::world::FieldLocomotion::run_button_held`].
     ///
     /// Defaults to
     /// [`FIELD_RUN_BUTTON_MASK_DEFAULT`](crate::world::config::FIELD_RUN_BUTTON_MASK_DEFAULT)
@@ -112,15 +112,15 @@ pub struct FieldLocomotion {
     /// Sub-step remainder carried between precise-movement frames, in world
     /// units per axis (|carry| < one collision step). Lets shallow movement
     /// angles accumulate distance across frames instead of rounding to
-    /// zero. Only touched while [`Self::precise_movement`] is active with a
+    /// zero. Only touched while [`crate::world::FieldLocomotion::precise_movement`] is active with a
     /// direction held; reset when input releases.
     pub precise_move_carry: (f32, f32),
     /// Last frame's field position for every actor the motion detector
     /// tracks - the player (from its [`crate::vm::ActorMoveState`]) and every
-    /// entry of [`Self::field_npc_positions`]. Rewritten each field tick by
+    /// entry of [`crate::world::FieldNpcState::positions`]. Rewritten each field tick by
     /// [`Self::detect_field_actor_motion`], which is the only reader.
     ///
-    /// Cleared on scene entry alongside [`Self::field_npc_positions`]: a
+    /// Cleared on scene entry alongside [`crate::world::FieldNpcState::positions`]: a
     /// stale entry across a scene change would read the warp itself as one
     /// enormous step and start every actor walking on the landing frame.
     ///
@@ -132,7 +132,7 @@ pub struct FieldLocomotion {
     /// ticked - the source-agnostic "this actor is moving" signal.
     ///
     /// Recomputed every field tick by [`Self::detect_field_actor_motion`] by
-    /// diffing live positions against [`Self::field_motion_prev`], so it is
+    /// diffing live positions against [`crate::world::FieldLocomotion::motion_prev`], so it is
     /// true for a walk driven by the pad, by a nav step, by a motion-VM
     /// patrol leg, by a cutscene `MoveTo`, or by anything else that commits a
     /// position - the animation layer does not have to know which. That is
@@ -169,7 +169,7 @@ pub struct FieldLocomotion {
     /// toward the floor) instead of leaving the actor's Y alone.
     ///
     /// Default **off**, and deliberately separate from
-    /// [`Self::follow_terrain_height`]: that flag *snaps* Y to the sampled
+    /// [`crate::world::FieldLocomotion::follow_terrain_height`]: that flag *snaps* Y to the sampled
     /// floor in one frame, and the engine's flat-Y default (Y untouched when
     /// the snap is off) is an invariant the locomotion oracles pin. Retail
     /// does neither - it glides at `delta_scalar * 12` units per frame, so a
@@ -199,8 +199,8 @@ pub struct FieldLocomotion {
     /// dragging an airborne scripted move back down to the terrain.
     ///
     /// The engine's two height controllers are exactly those other two arms
-    /// ([`World::field_vertical_settle`] is the glide, and
-    /// [`World::follow_terrain_height`] the snap), so both read this and step
+    /// ([`crate::world::FieldLocomotion::vertical_settle`] is the glide, and
+    /// [`crate::world::FieldLocomotion::follow_terrain_height`] the snap), so both read this and step
     /// aside while it is armed. `None` is the no-mirror case, which is every
     /// ordinary frame.
     ///
@@ -213,7 +213,7 @@ pub struct FieldLocomotion {
     /// Scripted player-move cues raised by cutscene-timeline `A2 F8
     /// <move_id>` ExecMove pokes, in emission order. The windowed host
     /// drains these each frame and queues the named clip as a one-shot on
-    /// [`Self::field_player_anim`] - the clip is scene-ANM-bundle record
+    /// [`crate::world::FieldLocomotion::player_anim`] - the clip is scene-ANM-bundle record
     /// `move_id - 1`, the same `id - 1` record space the op-`0x4B` NPC cues
     /// use (live-pinned: the `town01` post-naming ExecMove 48/49 land the
     /// retail player anim pointer on scene records 47/48).

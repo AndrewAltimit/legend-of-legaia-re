@@ -243,7 +243,7 @@ player a row here has invented a destination. The panel that used to sit in this
 slot was exactly that, drawn from a pinned literal pair on one host and from a
 live cursor on the other: two pictures of a menu retail never shows.
 
-**Play clock.** The H:MM:SS box reads `World::play_time_seconds`, and that
+**Play clock.** The H:MM:SS box reads `World::clock.play_time_seconds`, and that
 counter only moves if a host drives `advance_play_time`. Substituting a frame
 count at the *draw* site looks identical on screen and is not: the save writes
 the world's counter, so a save taken from a host that never advanced it

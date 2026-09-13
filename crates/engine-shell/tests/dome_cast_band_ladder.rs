@@ -183,7 +183,7 @@ fn a_dome_cast_the_gauge_cannot_cover_is_refused() {
 /// per-frame seam and a **ported** module kernel runs there.
 ///
 /// The observable is the resident module's own phase byte (`ctx+0x279`,
-/// mirrored as `World::cast_module_phase`): the band arms it at zero, and
+/// mirrored as `World::casting.module_phase`): the band arms it at zero, and
 /// only a ported tick body advances it. An entry whose code half is unported
 /// leaves it at zero, which is what makes this assertion non-vacuous.
 #[test]

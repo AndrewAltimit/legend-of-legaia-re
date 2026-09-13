@@ -294,8 +294,8 @@ impl World {
     /// Which field-VM context is stepping right now - the owner an op-`0x49`
     /// park armed on this step belongs to, and the only one that may read it.
     ///
-    /// [`World::in_spawned_record_slice`] is set by `run_spawned_record_slice`
-    /// for both spawned-record shapes, and [`World::in_cutscene_timeline`]
+    /// [`crate::world::FieldVmState::in_spawned_record_slice`] is set by `run_spawned_record_slice`
+    /// for both spawned-record shapes, and [`crate::world::CutsceneState::in_timeline`]
     /// only for the modal one, so the pair separates all three contexts.
     pub fn op49_park_owner(&self) -> Op49ParkOwner {
         if !self.field_vm.in_spawned_record_slice {
@@ -482,9 +482,9 @@ impl World {
     /// and the `+7` slot byte of `DAT_80074F68`.
     ///
     /// Everything else the panel reads is already world state - the character
-    /// records ([`World::roster`]), the item property table's `+0` / `+1` bytes
-    /// ([`World::item_effects`]) and the five stat bonuses
-    /// ([`World::equipment_table`]). These two bytes are dropped by the
+    /// records ([`crate::world::PartyState::roster`]), the item property table's `+0` / `+1` bytes
+    /// ([`crate::world::DiscTables::item_effects`]) and the five stat bonuses
+    /// ([`crate::world::DiscTables::equipment_table`]). These two bytes are dropped by the
     /// modifier-only view a boot installs on the world, and survive only on the
     /// [`DiscEquipInfo`] a host builds for its menu runtime - hence the
     /// hand-in. Until one arrives the panel stays on retail's no-candidate arm
@@ -517,11 +517,11 @@ impl World {
     ///
     /// | Retail read | World source |
     /// |---|---|
-    /// | `char[+0x75E..]`, the five equip slots | [`World::roster`] |
+    /// | `char[+0x75E..]`, the five equip slots | [`crate::world::PartyState::roster`] |
     /// | `char[+0x6DA/+0x6DC/+0x6DE]`, ATK / UDF / LDF | the same record's `+0x112` / `+0x114` / `+0x116` |
-    /// | `DAT_80074368[id*0xC + 0/+1]`, kind + stat index | [`World::item_effects`] |
-    /// | `DAT_80074F68[row][+0..+4]`, the five bonuses | [`World::equipment_table`], re-keyed row-wise |
-    /// | `0x80084140 + 0x1818`, the bag id list | [`World::inventory`] |
+    /// | `DAT_80074368[id*0xC + 0/+1]`, kind + stat index | [`crate::world::DiscTables::item_effects`] |
+    /// | `DAT_80074F68[row][+0..+4]`, the five bonuses | [`crate::world::DiscTables::equipment_table`], re-keyed row-wise |
+    /// | `0x80084140 + 0x1818`, the bag id list | [`crate::world::PartyState::inventory`] |
     /// | `0x8007B42C`, the weapon-slot table | [`RETAIL_WEAPON_SLOTS`] |
     ///
     /// The bonus rows arrive **keyed by item id** (that is the shape a battle
@@ -642,7 +642,7 @@ impl World {
         let edge = (pad & !prev) | self.field_vm.submode_screen.pad_edge_latch;
         HubEnv {
             // `DAT_801F2734` is the submode context's state word, which
-            // `open_submode` seeds and `World::submode_context` mirrors.
+            // `open_submode` seeds and `World::field_vm.submode_context` mirrors.
             submode: self.field_vm.submode_context.first().copied().unwrap_or(0) as i32,
             pad_edge: edge,
             pad_held: pad,
@@ -662,7 +662,7 @@ impl World {
             board_entries: self.field_vm.submode_screen.board_entries,
             // `DAT_80084594` / `DAT_80084598..` are the present-party roster;
             // the engine's mirror of retail's `0x8007BD10` list is
-            // `World::active_party`.
+            // `World::party.active_party`.
             entry_count: self.party.active_party.len().min(u8::MAX as usize) as u8,
             entry_codes: self.party.active_party.clone(),
             gold: self.party.money,

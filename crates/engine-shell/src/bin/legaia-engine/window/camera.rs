@@ -215,7 +215,7 @@ impl PlayWindowApp {
     /// **Dialogue** while an in-battle box is up, **Submenu** while a
     /// command / arts / spell / item menu owns the pad, **Menu** otherwise -
     /// and steps the pose on the retail display-frame clock
-    /// (`World::field_frames`; one camera step per 2 vsyncs). Dropped
+    /// (`World::clock.display_frames`; one camera step per 2 vsyncs). Dropped
     /// outside stage-dome battles so the next battle re-snaps.
     /// See [`super::battle_cam`] for the measured phase law + provenance.
     pub(super) fn tick_battle_camera(&mut self) {
@@ -539,7 +539,7 @@ impl PlayWindowApp {
 
     /// Camera parameters for the cutscene shot, decoded from the cutscene
     /// timeline's executed op-`0x45` Camera Configure params (read from
-    /// `World::camera_state`, committed by `FUN_801DE084`). Returns
+    /// `World::camera.state`, committed by `FUN_801DE084`). Returns
     /// `(focus, pitch_radians, yaw_radians, h, tr_eye)` - the inputs to the
     /// retail PSX GTE camera `screen = H * (R*(v - focus) + tr_eye) / Ze`
     /// (see [`Self::psx_camera_mvp`]), the SAME model the field follow camera
@@ -950,7 +950,7 @@ pub(super) fn battle_done_band(
 
 /// The per-art attack camera's track table, re-read from the battle-action
 /// overlay the scene loader retains for the move-FX path
-/// (`World::move_power_overlay`). `None` on a host that never loaded it.
+/// (`World::tables.move_power_overlay`). `None` on a host that never loaded it.
 pub(super) fn battle_attack_tracks(
     world: &legaia_engine_core::world::World,
 ) -> Option<legaia_asset::battle_attack_camera_table::AttackCameraTracks> {

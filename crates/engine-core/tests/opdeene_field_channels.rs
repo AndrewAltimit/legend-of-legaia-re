@@ -9,7 +9,7 @@
 //! 2. ticking the world steps the channels: at least one channel executes past
 //!    its entry PC (the placement scripts are not inert);
 //! 3. channel scripts raise animate cues (op `0x4B` ANIMATE via
-//!    `World::field_npc_anim_cues`) - the "characters doing things" signal the
+//!    `World::npcs.anim_cues`) - the "characters doing things" signal the
 //!    windowed host consumes;
 //! 4. the timeline's cross-context pokes reach channel contexts (some
 //!    channel's flag word / local flags / position differs from spawn state).

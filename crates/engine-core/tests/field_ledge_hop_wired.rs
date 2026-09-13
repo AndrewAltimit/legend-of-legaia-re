@@ -22,7 +22,7 @@
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::world::{SceneMode, World};
 
-/// Collision-grid geometry (`World::field_collision_grid` is a `0x80 x 0x80`
+/// Collision-grid geometry (`World::terrain.collision_grid` is a `0x80 x 0x80`
 /// byte grid; the crate-private constants are mirrored here because this is an
 /// integration test).
 const GRID_STRIDE: usize = 0x80;

@@ -530,7 +530,7 @@ previous-mode cell the loop's own `bne` compares against.
   `other_warp_init_stage` and `mode_init_bare` are walked - but nothing loads
   an image at a base and calls the entry the plan names, which is
   `crate::overlay_loader`'s gap, not the seat's.
-- the frame-begin skip's *producer*. `World::frame_begin_skip` now has a
+- the frame-begin skip's *producer*. `World::clock.frame_begin_skip` now has a
   consumer on a host (the seat clears it on every edge and `ModeDriver::tick`
   reads it), and still no writer outside tests, so the "a skipped frame runs no
   frame-end pass" law remains unexercised end to end.

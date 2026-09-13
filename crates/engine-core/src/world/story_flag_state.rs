@@ -27,7 +27,7 @@ pub struct StoryFlagState {
     /// by op `0x2E` GFLAG_SET; cleared by op `0x2F` GFLAG_CLR; tested
     /// by op `0x30` GFLAG_TST.
     ///
-    /// Independent of [`Self::story_flag_bits`]: retail seeds this from
+    /// Independent of [`crate::world::StoryFlagState::story_flag_bits`]: retail seeds this from
     /// the game-mode descriptor table on mode init (low 16 bits of
     /// `mode_table[mode_idx].param`) and the SC save/load bulk copy
     /// from RAM `0x80084340` never reaches scratchpad, so the bitmap
@@ -36,7 +36,7 @@ pub struct StoryFlagState {
     /// Full 512-byte story-flag bitmap mirroring retail RAM
     /// `0x80085600..0x80085800` (SC block offset `0x14C0`). This is the
     /// narrative-progress bitmap the SC block persists, separate from
-    /// the per-mode scratchpad word [`Self::story_flags`].
+    /// the per-mode scratchpad word [`crate::world::StoryFlagState::story_flags`].
     ///
     /// Empty (`vec![]`) when the engine hasn't been booted from a retail
     /// SC block; populated via [`Self::load_full`] when a retail-shaped

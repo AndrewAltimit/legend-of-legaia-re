@@ -3,7 +3,7 @@
 //! auto-resolving.
 //!
 //! Companion to `live_loop_tick.rs` (which exercises the auto-resolve spine).
-//! Here [`World::battle_player_driven`] is set, so:
+//! Here [`crate::world::BattleState::player_driven`] is set, so:
 //!
 //!   1. Walking still rolls a step-driven encounter and flips Field -> Battle.
 //!   2. On entering battle the action SM PARKS - a command session opens and

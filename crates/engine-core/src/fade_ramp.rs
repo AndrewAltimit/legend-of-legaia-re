@@ -56,12 +56,12 @@
 //! [`crate::fade::spawn_fade`] does"), and it names a prerequisite this module
 //! does not have. [`FadeRamp`] *is* the `+0x7C` block; one world field can hold
 //! it exactly as well as a pool entry can, and its per-frame input is a vsync
-//! delta, which [`crate::world::World::frame_step`] already carries live. The
+//! delta, which [`crate::world::FrameClock::frame_step`] already carries live. The
 //! pool is what `spawn_fade` needs in order to have *several* fades at once,
 //! which is a different question.
 //!
 //! What blocks it is that the engine's one live fade already has a model.
-//! [`crate::world::World::screen_fade`] is an `Option<`[`crate::fade::FadeState`]`>`,
+//! [`crate::world::ScreenFxState::fade`] is an `Option<`[`crate::fade::FadeState`]`>`,
 //! staged by the battle-escape teardown and stepped once per frame by the world
 //! tick, which **drops it when `step()` reports the ramp complete**. The retail
 //! ramp has no such report on this template: the escape template's hold word is

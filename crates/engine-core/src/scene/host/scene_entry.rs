@@ -131,7 +131,7 @@ impl SceneHost {
     /// Install the battle-action move-power table onto the world from PROT
     /// entry 0898 (the battle-action overlay), once per host. The monster
     /// special-attack damage path reads it to roll faithful per-move damage;
-    /// a read/parse failure leaves [`crate::world::World::move_power`] `None`
+    /// a read/parse failure leaves [`crate::world::DiscTables::move_power`] `None`
     /// (the placeholder damage path stays active) and is not retried.
     fn ensure_move_power_table(&mut self) {
         if self.move_power_loaded {
@@ -217,7 +217,7 @@ impl SceneHost {
             .install_cast_effect_pool(std::sync::Arc::new(pool));
     }
 
-    /// Refresh [`crate::world::World::battle_swing_costs`] from the player
+    /// Refresh [`crate::world::BattleState::swing_costs`] from the player
     /// battle files: for each roster character (Vahn / Noa / Gala = PROT
     /// 863 / 864 / 865), splice that character's *equipped* sections and
     /// read each swing record's `+0x74` AP cost
@@ -330,7 +330,7 @@ impl SceneHost {
         self.world.camera.state.params.clear();
         // The op-0x34 effect-global tint is scene-scoped (the opening
         // timeline's between-beat black fades); drop any in flight. The
-        // op-0x4C-0x12 global screen tint (`World::screen_tint`) deliberately
+        // op-0x4C-0x12 global screen tint (`World::presentation.tint`) deliberately
         // PERSISTS - retail's cross-scene fade continuity: a departure
         // fade-to-black carries into the next scene, whose `P1[0]` arrival
         // arm fades back in.
@@ -341,7 +341,7 @@ impl SceneHost {
         // vsyncs-per-game-tick factor the frame-flip path `FUN_80016B6C`
         // writes): live poll baselines run field/town scenes at 2 (30 fps)
         // and the overworld kingdom scenes (`mapNN`) at 3 (20 fps). See
-        // `World::frame_step`.
+        // `World::clock.frame_step`.
         self.world.ambient.clut_fx.clear();
         self.world.ambient.clut_vsync_accum = 0;
         self.world.ambient.clut_pending_game_ticks = 0;
@@ -1193,8 +1193,8 @@ impl SceneHost {
     }
 
     /// Decode the active scene's gold shops from its MAN(s) and park them on
-    /// [`crate::world::World::scene_shops`], priced from
-    /// [`crate::world::World::item_shop_data`]. Scans every entry in the scene's
+    /// [`crate::world::ShopState::scene_shops`], priced from
+    /// [`crate::world::ShopState::item_shop_data`]. Scans every entry in the scene's
     /// CDNAME block (most carry one bundle MAN); cheap for non-bundle entries -
     /// the locator returns early without decompressing when an entry isn't a
     /// scene bundle with a MAN. No-op shop list when the disc / item data is
@@ -1470,7 +1470,7 @@ impl SceneHost {
     /// Skipped while a modal cutscene timeline owns the frame (a walk-on beat
     /// record is cutscene-class: it seizes the camera and locks locomotion,
     /// one at a time) and while any dialog or name entry is up. Concurrent
-    /// helper contexts ([`crate::world::World::helper_contexts`]) do NOT
+    /// helper contexts ([`crate::world::FieldVmState::helper_contexts`]) do NOT
     /// block the dispatch.
     ///
     /// Runs in both plain field mode **and** the overworld (world-map) mode.

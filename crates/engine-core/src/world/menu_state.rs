@@ -51,7 +51,7 @@ pub struct MenuState {
     /// exit code [`crate::pause_screens::MENU_EXIT_CODE_WORLD_MAP_WARP`].
     /// `None` until a warp commits; the world tick's
     /// [`World::drain_staged_menu_warp`] resolves it through
-    /// [`World::scene_toc_names`] into the named scene transition the scene
+    /// [`crate::world::DiscTables::scene_toc_names`] into the named scene transition the scene
     /// host consumes.
     pub pending_warp: Option<crate::pause_screens::StagedWarp>,
     /// Set by a committed **Door of Light** pause-menu use - retail's

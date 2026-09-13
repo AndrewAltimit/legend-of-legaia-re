@@ -2,7 +2,7 @@
 //! the live cast path does, sourced from the user's own `SCUS_942.54`.
 //!
 //! Two questions, one table record each. What a cast costs is the record's
-//! `+3` byte, which boot folds into `World::spell_catalog`
+//! `+3` byte, which boot folds into `World::tables.spell_catalog`
 //! (`retail_magic::seru_magic_catalog_from_scus`) and which
 //! `World::cast_spell_on_slots` charges. Whether a cast is capture-class is the
 //! same record's `+0` class byte, which routes both the damage-kernel pick and

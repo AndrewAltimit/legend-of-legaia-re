@@ -17,14 +17,14 @@ pub struct FieldCarrierState {
     /// fall-through battle handoff. Empty unless
     /// [`Self::install_field_carriers`] seeded them.
     pub entities: Vec<vm::world_map::WorldMapEntityCtx>,
-    /// Per-carrier role config, paired by index with [`Self::field_carriers`].
+    /// Per-carrier role config, paired by index with [`crate::world::FieldCarrierState::entities`].
     pub configs: Vec<FieldCarrierConfig>,
     /// Field carrier battle pending resolution: the MAN `formation_id` a
     /// carrier SM latched on its scene-transition this frame. Drained at the
     /// end of `Self::tick_field_carriers` to flip Field -> Battle. `None`
     /// between transitions.
     pub pending_battle: Option<u16>,
-    /// Field-interact `slot` -> [`Self::field_carriers`] index, for the
+    /// Field-interact `slot` -> [`crate::world::FieldCarrierState::entities`] index, for the
     /// **scripted-encounter** carriers only. Built by
     /// [`Self::install_field_carriers_from_man`] so a field-interact on the
     /// sparring partner's placement can find its carrier and auto-arm the fight
@@ -41,12 +41,12 @@ pub struct FieldCarrierState {
     /// This any-accept path is used for a carrier whose dialogue has **no
     /// picker**. The Rim Elm spar's dialogue *does* (a 4-option menu whose
     /// index-2 entry "I want to practice with you." arms the fight), so it takes
-    /// the faithful [`Self::carrier_menu`] path instead - the engage there fires
+    /// the faithful [`crate::world::FieldCarrierState::menu`] path instead - the engage there fires
     /// only on the fight option, matching retail (live-pinned by
     /// `autorun_tetsu_confirm.lua`: a dialog-SM inline picker, cursor at
     /// `*(0x801C6EA4)+0x0C`, confirming index 2 drives `0x03 -> 0x09 -> 0x15`).
     pub pending_engage: Option<usize>,
-    /// The faithful counterpart to [`Self::pending_carrier_engage`]: when the
+    /// The faithful counterpart to [`crate::world::FieldCarrierState::pending_engage`]: when the
     /// opened carrier dialogue carries a 4-option picker (the Rim Elm spar menu),
     /// this holds the live menu so the engage fires **only** on the fight option
     /// ("I want to practice with you.", picker index 2 - RE-pinned live by

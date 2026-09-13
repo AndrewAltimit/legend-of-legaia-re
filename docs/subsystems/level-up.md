@@ -428,7 +428,7 @@ After a battle win with `BattleEndCause::MonsterWipe`:
    three fields the retail applier maintains and the Status menu draws.
 6. `BattleEvent::LevelUp { char_id, new_level, hp_gained, mp_gained }` is pushed
    to `World::battle_events`.
-7. `World::current_level_up_banner` is set to the last character who levelled up.
+7. `World::party.current_level_up_banner` is set to the last character who levelled up.
 
 ### Hydration on load
 

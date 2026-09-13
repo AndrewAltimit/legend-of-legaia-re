@@ -17,7 +17,7 @@
 //!    (reel A), Square reels harder (reel B), Cross recasts when the cast is
 //!    done. The ported reel decoder `ReelInput::from_pad_mask` classifies the
 //!    two held bits, so holding both resolves the way retail does.
-//! 3. **A point record.** `World::fishing_points` is the persistent pool
+//! 3. **A point record.** `World::minigames.fishing_points` is the persistent pool
 //!    (retail `_DAT_8008444C`); the session seeds from it and `exit_fishing`
 //!    banks back into it, so points survive leaving and re-entering.
 //!
@@ -232,10 +232,10 @@ impl LegaiaRuntime {
     /// mode. Returns `false` (and leaves the world untouched) when no disc is
     /// loaded or the fishing overlay's species table does not decode.
     ///
-    /// The session's point pool resumes [`World::fishing_points`], so leaving
+    /// The session's point pool resumes [`legaia_engine_core::world::MinigameState::fishing_points`], so leaving
     /// and re-entering keeps the running total.
     ///
-    /// [`World::fishing_points`]: legaia_engine_core::world::World::fishing_points
+    /// [`legaia_engine_core::world::MinigameState::fishing_points`]: legaia_engine_core::world::World::fishing_points
     pub fn play_fishing_start(&mut self) -> bool {
         use legaia_asset::{fishing_species, static_overlay};
         let Some(host) = self.scene_host.as_mut() else {

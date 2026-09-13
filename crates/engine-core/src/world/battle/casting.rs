@@ -270,8 +270,8 @@ impl World {
     /// Stat bridge (all read live off the actor arrays, faithful to the retail
     /// fields the kernel reads): attacker/target AGL = `battle_accuracy`
     /// (`+0x168`, the AGL-derived stat); HP = `battle.hp` (`+0x14c`); the two
-    /// defender defense terms (`+0x15c`/`+0x160`) = the [`Self::battle_defense_split`]
-    /// (UDF, LDF) pair, falling back to the single [`Self::battle_defense`].
+    /// defender defense terms (`+0x15c`/`+0x160`) = the [`crate::world::BattleState::defense_split`]
+    /// (UDF, LDF) pair, falling back to the single [`crate::world::BattleState::defense`].
     /// Element affinity comes from [`Self::enemy_affinity_pct`] when the
     /// affinity tables are installed (`matrix[enemy_element][party_element]`,
     /// `FUN_801dd864`), else 100 (neutral); status-weaken (`+0x16e`) and the
@@ -425,7 +425,7 @@ impl World {
     /// slot element, so only the *defender's* resist stage is dropped.
     ///
     /// Stat bridge is the sibling paths' ([`Self::summon_roll_defender`] for
-    /// the defender, [`Self::battle_attack`] for the attacker's `+0x158`).
+    /// the defender, [`crate::world::BattleState::attack`] for the attacker's `+0x158`).
     /// `power` is the move-power table's `+0` scalar; retail's module bakes
     /// the per-hit constant into the call site instead, so the magnitude is
     /// the engine's own seed even though the arithmetic is the wrapper's.
@@ -674,8 +674,8 @@ impl World {
     /// ([`Self::enemy_move_predamage`]) and the player summon roll
     /// ([`Self::player_summon_predamage`]). AGL = `battle_accuracy` (the
     /// `+0x168` AGL-derived stat); HP = `battle.hp` (`+0x14c`); the two
-    /// defense terms (`+0x15c`/`+0x160`) = the [`Self::battle_defense_split`]
-    /// (UDF, LDF) pair, falling back to the single [`Self::battle_defense`];
+    /// defense terms (`+0x15c`/`+0x160`) = the [`crate::world::BattleState::defense_split`]
+    /// (UDF, LDF) pair, falling back to the single [`crate::world::BattleState::defense`];
     /// status-weaken (`+0x16e`) and the guard byte (`+0x1de`) default to none.
     pub(in crate::world::battle) fn summon_roll_defender(
         &self,
@@ -974,7 +974,7 @@ impl World {
     /// target's status; buffs adjust a per-slot scalar with a turn timer
     /// ([`Self::apply_battle_buff`]); capture rolls vs the monster's weakened
     /// state ([`Self::resolve_capture`]); escape flags a return to the field
-    /// ([`Self::battle_escaped`]). `Failed` is a no-op (MP already spent).
+    /// ([`crate::world::BattleState::escaped`]). `Failed` is a no-op (MP already spent).
     pub(in crate::world) fn fold_spell_outcome(&mut self, outcome: crate::spells::SpellOutcome) {
         use crate::spells::SpellOutcome as O;
         match outcome {
@@ -1450,7 +1450,7 @@ mod capture_bypass_tests {
 /// and a `capture_spells` set that nothing ever wrote, the battle-action host
 /// answered `spell_mp_cost` / `is_capture_spell` from them, and the whole live
 /// cast path answered the same two questions from
-/// [`World::spell_catalog`] and the disc spell table instead. Both halves
+/// [`crate::world::DiscTables::spell_catalog`] and the disc spell table instead. Both halves
 /// compiled, both were tested, and the state-machine half was silently a
 /// free-magic stub.
 #[cfg(test)]

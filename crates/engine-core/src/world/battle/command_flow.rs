@@ -15,7 +15,7 @@ impl World {
     /// Open the player-driven command menu for party member `actor` and park
     /// the action SM. The action context's `active_actor` is set now; the
     /// queued action / target is filled in by [`Self::tick_battle_command`]
-    /// once the player confirms. No-op unless [`Self::battle_player_driven`].
+    /// once the player confirms. No-op unless [`crate::world::BattleState::player_driven`].
     pub(in crate::world) fn open_battle_command(&mut self, actor: u8) {
         use crate::battle_flow::BattleFlowState as Flow;
         use crate::battle_input::BattleCommandSession;
@@ -244,7 +244,7 @@ impl World {
     /// falls straight through to recovery, which is a strike-less turn - no
     /// weapon swing staged, no equipment clip committed, no effect script
     /// installed, and therefore no move-power record for the weapon-trail
-    /// pass to project from ([`World::move_fx_streak`], whose `action` key is
+    /// pass to project from ([`crate::world::CastFxState::move_fx_streak`], whose `action` key is
     /// this stream's first byte).
     ///
     /// The bytes come from [`vm::battle_action::basic_attack_queue`], the port
@@ -257,7 +257,7 @@ impl World {
     /// applies. The alternative - the player's own recorded chain, retail
     /// `FUN_801DA34C` / [`vm::battle_action::preseed_action_queue`] - is
     /// closer than this note used to say: the chains themselves *are* carried
-    /// live, as `World::saved_chains` (LGSF v2, edited by
+    /// live, as `World::party.saved_chains` (LGSF v2, edited by
     /// `tactical_arts_editor`, read by the battle arts path). What is missing
     /// is the **record projection** retail preseeds from: the pair of 16-byte
     /// slots at record-relative `+0x1A7` / `+0x1B7` that its

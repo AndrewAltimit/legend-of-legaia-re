@@ -37,7 +37,7 @@ pub struct FieldPropState {
     pub bank: crate::field_env::PropAnimBank,
     /// A prop the movement probe touched this tick (the `FUN_801CFC40`
     /// static-arm hit whose result bit `4` the locomotion auto-posts through
-    /// `FUN_801D5B5C`): the anchor key of the touched [`Self::field_prop_bank`]
+    /// `FUN_801D5B5C`): the anchor key of the touched [`crate::world::FieldPropState::bank`]
     /// entry. Drained by [`Self::tick_prop_interactions`], which starts the
     /// record's field-VM run.
     pub pending_touch: Option<(u8, u8)>,

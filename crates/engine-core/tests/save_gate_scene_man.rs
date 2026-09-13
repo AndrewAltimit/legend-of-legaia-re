@@ -9,7 +9,7 @@
 //! This drives the engine's real chain on disc data:
 //!
 //! 1. `SceneHost::enter_field_scene` -> `load_scene` seeds
-//!    `World::scene_save_allowed` from the scene's own MAN header.
+//!    `World::party.scene_save_allowed` from the scene's own MAN header.
 //! 2. The menu-open sample (`FieldMenuGate`, what
 //!    `BootSession::open_field_menu` builds) turns that into the row's ink.
 //!

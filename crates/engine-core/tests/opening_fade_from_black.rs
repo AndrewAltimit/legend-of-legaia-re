@@ -9,11 +9,11 @@
 //! `4C 12 80 80 80 44 00` (ramp to neutral `0x80` over 68 frames). New Game
 //! arms the handshake (`begin_new_game` sets sysflag `0x52F`, the boot-side
 //! stage), and `opdeene`'s entry script fires the arm through the field VM's
-//! `menu_ctrl_sub1` host hook into `World::screen_tint`.
+//! `menu_ctrl_sub1` host hook into `World::presentation.tint`.
 //!
 //! Also pins the opening timeline's op-`0x34` sub-0 effect-layer colour ramps
 //! (e.g. `34 05 00 00 00 D2 00` = ramp to black over 210 frames) firing into
-//! `World::effect_tint` during the crawl. NB that value is NOT a screen fade
+//! `World::presentation.effect_tint` during the crawl. NB that value is NOT a screen fade
 //! (the retail capture holds the lit tableau across its black spans); the
 //! test pins the ramp value model only.
 //!
@@ -59,7 +59,7 @@ fn new_game_opdeene_entry_fades_in_from_black() {
 
     // The entry script's arrival arm fires within the load-frame pre-run:
     // the 4C-12 screen-tint channel opens at (or near) black on the very
-    // first tick. Track `World::screen_tint` (the 4C-12 channel) directly -
+    // first tick. Track `World::presentation.tint` (the 4C-12 channel) directly -
     // the combined `scene_screen_tint` also carries the timeline's op-0x34
     // between-beat fade, which overlaps mid-ramp.
     let _ = host.tick();

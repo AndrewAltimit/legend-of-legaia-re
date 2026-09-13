@@ -1,8 +1,8 @@
 //! Lane B3: the menu-staged transitions actually drain.
 //!
 //! A committed Door of Wind pick stages retail's `0x80084628`/`24`/`2C`
-//! triple on [`World::pending_menu_warp`]; a committed Door of Light stages
-//! [`World::pending_menu_escape`]. Both were disclosed as undrained. The
+//! triple on [`crate::world::MenuState::pending_warp`]; a committed Door of Light stages
+//! [`crate::world::MenuState::pending_escape`]. Both were disclosed as undrained. The
 //! world tick's `World::drain_staged_menu_warp` now converts them into the
 //! named scene transition the scene host consumes
 //! ([`World::pending_named_scene_transition`]).

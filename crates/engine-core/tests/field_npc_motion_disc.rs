@@ -5,7 +5,7 @@
 //! script: the per-actor record's `0x4C 0x51` NPC move-to-tile ops feed the
 //! glide path whose per-frame stepper is the motion VM (`FUN_8003774C`,
 //! started through the `FUN_800358c0`-shape target write). The engine mirrors
-//! this with [`World::field_npc_routes`] (decoded by
+//! this with [`crate::world::FieldNpcState::routes`] (decoded by
 //! `man_field_scripts::placement_motion_route` from the same pre-text script
 //! region the interaction-prologue runner executes) driven through
 //! [`legaia_engine_vm::motion_vm::step`] by `World::tick_field_npc_motions`,

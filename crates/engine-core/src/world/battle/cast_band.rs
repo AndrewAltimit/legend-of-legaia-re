@@ -49,7 +49,7 @@
 //! So the retail creature walks **in from behind the party** toward the
 //! target while its effect parts play, and the damage lands mid-walk. The
 //! stager here does the same with the pieces the engine has: it requests the
-//! namesake creature spawn ([`World::pending_summon_spawn`]) at the spawn
+//! namesake creature spawn ([`crate::world::CastFxState::pending_summon_spawn`]) at the spawn
 //! point, idles it, stages the walk clip and glides it to the strike point,
 //! folds the outcome there, lingers, and despawns it.
 //!
@@ -427,7 +427,7 @@ impl World {
     /// Install the cast-effect pool - the DATA half of the slot-B cast-module
     /// band (PROT 0903..0966), parsed off the disc by the scene host (which
     /// holds the PROT index; `World` is index-agnostic, the same split
-    /// [`Self::pending_summon_spawn`](crate::world::World::pending_summon_spawn)
+    /// [`crate::world::CastFxState::pending_summon_spawn`](crate::world::World::pending_summon_spawn)
     /// uses). Idempotent; a host that never calls it leaves every cast staging
     /// no module records, which is the disc-free behaviour.
     pub fn install_cast_effect_pool(

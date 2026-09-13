@@ -1,7 +1,7 @@
 use super::*;
 
 // ---------------------------------------------------------------------------
-// Present-party composition (`World::active_party`)
+// Present-party composition (`World::party.active_party`)
 // ---------------------------------------------------------------------------
 
 /// Four-record roster with distinct, recognisable stats per character.

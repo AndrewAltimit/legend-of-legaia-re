@@ -73,14 +73,14 @@ pub struct DiscTables {
     /// by `matrix[enemy_element][party_member_element]` (`FUN_801dd864`);
     /// `None` (disc-free / synthetic battles) keeps the neutral 100% multiplier,
     /// so the damage and determinism trace are unchanged. Installed lazily from
-    /// the same PROT 0898 overlay as [`Self::move_power`] by
+    /// the same PROT 0898 overlay as [`crate::world::DiscTables::move_power`] by
     /// [`crate::scene::SceneHost`].
     pub element_affinity: Option<legaia_asset::element_affinity::ElementAffinity>,
     /// Per-character battle-camera height table
     /// ([`legaia_asset::battle_camera_table`], runtime VA `0x801F4D2C`) - the
     /// `TR.y` the submenu close-up framing (`FUN_801D5854` case `0`) reads for
     /// whichever character is acting. Installed from the same PROT 0898
-    /// overlay as [`Self::move_power`] by [`crate::scene::SceneHost`]; `None`
+    /// overlay as [`crate::world::DiscTables::move_power`] by [`crate::scene::SceneHost`]; `None`
     /// on disc-free hosts, which leaves the camera on its single traced
     /// fallback height so an unpinned character frames like the measured case
     /// instead of jumping.

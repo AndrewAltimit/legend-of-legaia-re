@@ -8,7 +8,7 @@
 //!
 //! Per-scene shop **stock + prices** are decoded from the disc by
 //! [`crate::shop_catalog`] (the scene MAN's op-`0x49` records + the SCUS item
-//! price table) and parked on [`crate::world::World::scene_shops`]; the field-VM
+//! price table) and parked on [`crate::world::ShopState::scene_shops`]; the field-VM
 //! op-`0x49` merchant trigger opens one ([`crate::world::World::try_arm_field_shop`]).
 //! This module owns only the buy/sell session state. (Disc-free builds leave the
 //! stock host-supplied.)
@@ -453,7 +453,7 @@ pub enum BuyListRoute {
 ///
 /// Wired: `crate::menu_runtime`'s `ShopBuy` commit + route override run
 /// this dispatch on every confirmed buy row (kind byte off the on-disc
-/// item-effect tables, `World::item_effects`). `Refused` is the retail
+/// item-effect tables, `World::tables.item_effects`). `Refused` is the retail
 /// list-level refusal beat (the hand stays on the row); `RecipientPicker`
 /// opens [`BuyRecipientSession`] while the host opted into
 /// `MenuRuntime::retail_equipment_buy`; `ModeSelect` returns to the

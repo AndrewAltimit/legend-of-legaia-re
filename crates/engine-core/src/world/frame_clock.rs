@@ -28,7 +28,7 @@ pub struct FrameClock {
     /// REF: FUN_80016B6C
     pub frame_step: u8,
     /// Retail `DAT_8007B9D8` - the per-mode **floor** under
-    /// [`Self::frame_step`], installed by the mode/scene loader and never by
+    /// [`crate::world::FrameClock::frame_step`], installed by the mode/scene loader and never by
     /// the frame driver. `FUN_80016B6C` applies it as a minimum (`slt` plus a
     /// store taken only when the adaptive value is *below* it), so it raises
     /// the cadence and never caps it. Kept separate from `frame_step` because
@@ -69,11 +69,11 @@ pub struct FrameClock {
     /// leaves it untouched and keeps the deterministic floor.
     pub frame_step_telemetry: vm::actor_tick::FrameStepTelemetry,
     /// Vsyncs accumulated toward the next **actor** game tick. Same clock as
-    /// [`Self::clut_vsync_accum`] and the same law - retail resolves one
+    /// [`crate::world::AmbientFxState::clut_vsync_accum`] and the same law - retail resolves one
     /// `DAT_1F800393` per frame and runs the actor pool once per game tick,
     /// so the per-actor physics / anim / motion passes fire once every
-    /// [`Self::frame_step`] vsyncs rather than once per rendered frame. The
-    /// tick that fires carries [`Self::frame_step`] into the dispatcher's
+    /// [`crate::world::FrameClock::frame_step`] vsyncs rather than once per rendered frame. The
+    /// tick that fires carries [`crate::world::FrameClock::frame_step`] into the dispatcher's
     /// scalars ([`legaia_engine_vm::actor_tick::TickScalars::for_cadence`]),
     /// which is what keeps wall-clock durations identical while the pose
     /// sample rate drops.

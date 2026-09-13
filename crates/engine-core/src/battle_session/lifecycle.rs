@@ -51,7 +51,7 @@ impl BattleSession {
     }
 
     /// Set the three party-slot characters. Engines pull from
-    /// `World::roster` or the live `Party` shape.
+    /// `World::party.roster` or the live `Party` shape.
     pub fn set_party(&mut self, characters: [Character; 3]) {
         self.runner.set_characters(characters);
     }

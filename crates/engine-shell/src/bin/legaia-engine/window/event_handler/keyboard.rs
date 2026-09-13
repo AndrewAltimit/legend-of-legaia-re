@@ -417,7 +417,7 @@ impl PlayWindowApp {
                         // counter. Retail credits its point pool
                         // (`_DAT_8008444C`) as each catch lands, so the
                         // counter spends what this session just earned; the
-                        // port credits `World::fishing_points` only inside
+                        // port credits `World::minigames.fishing_points` only inside
                         // `exit_fishing`, and the counter is reachable only
                         // while fishing is still active - so without this it
                         // always reads the PREVIOUS session's total (0 on a

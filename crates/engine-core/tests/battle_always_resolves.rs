@@ -4,7 +4,7 @@
 //! **1. Battle entry was ungated; battle driving was not.** A field carrier's
 //! scripted fight (`3E FF`) and a world-map region encounter both flipped the
 //! world into [`SceneMode::Battle`] regardless of
-//! [`World::live_gameplay_loop`], while `World::tick`'s Battle arm only drove
+//! [`crate::world::WorldToggles::live_gameplay_loop`], while `World::tick`'s Battle arm only drove
 //! the full [`World::live_battle_tick`] when that flag was set - otherwise it
 //! ran one bare `step_battle` per frame, which applies no damage, arms no
 //! turn and never calls `finish_battle`. A default `play-window` session that

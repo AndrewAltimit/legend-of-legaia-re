@@ -77,7 +77,7 @@ pub struct WorldToggles {
     /// straight to the target cursor (`0x5A`) or straight to the directional
     /// arts entry (`0x50`) - `FUN_801D0748`'s `0x28` Left arm at
     /// `0x801D15E0..0x801D1650`. Hosts mirror their `OptionsState` onto this
-    /// the way they mirror [`Self::field_move_run_default`].
+    /// the way they mirror [`crate::world::FieldLocomotion::run_default`].
     pub select_attack: crate::options::SelectAttackOpt,
 }
 

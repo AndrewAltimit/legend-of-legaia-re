@@ -362,7 +362,7 @@ impl ProtIndex {
 
     /// The parsed CDNAME `#define` map (raw in-RAM TOC index → block name),
     /// or `None` when the index was built without `CDNAME.TXT`. The scene
-    /// host clones this into [`crate::world::World::scene_toc_names`] so the
+    /// host clones this into [`crate::world::DiscTables::scene_toc_names`] so the
     /// world-side menu-warp drain can resolve a quick-travel placement's
     /// `scene_id` (that field is a raw TOC index - see
     /// `legaia_asset::worldmap_menu`).

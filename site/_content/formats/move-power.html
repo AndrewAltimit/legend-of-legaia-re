@@ -133,7 +133,7 @@
 <section class="doc-section" id="runtime-resolution">
   <h2>Engine wiring</h2>
   <ul class="bullets">
-    <li><code>MovePowerCatalog</code> pairs the table with the map on <code>World::move_power</code> and resolves a move id to a full <code>MoveFx</code> descriptor: every behavioural field, the impact-config join, each list byte classified as <code>Spawn</code> (3D), <code>AltEffect</code> (2D pool) or <code>Flash</code>.</li>
+    <li><code>MovePowerCatalog</code> pairs the table with the map on <code>World::tables.move_power</code> and resolves a move id to a full <code>MoveFx</code> descriptor: every behavioural field, the impact-config join, each list byte classified as <code>Spawn</code> (3D), <code>AltEffect</code> (2D pool) or <code>Flash</code>.</li>
     <li>The monster special-attack damage path rolls <code>+0x00</code> through the arts/physical kernel (<a href="../subsystems/battle-formulas.html">battle formulas</a>).</li>
     <li><code>World::spawn_move_fx</code> stages a move's spawn records as a <code>SummonScene</code> at the fixed library base and drives each part through the ported move VM; <code>play-window</code> <code>H</code> cycles the spawnable moves. The shared cast path requests the spawn for any non-summon move with a spawnable entry.</li>
     <li>The trail texpage (<code>+0x0b</code>) feeds the ported afterimage quad (<code>afterimage::build_afterimage_quad</code>); the sound cue (<code>+0x0d</code>) goes through the ported cue decode into the <a href="sfx-table.html">SFX ring</a>.</li>

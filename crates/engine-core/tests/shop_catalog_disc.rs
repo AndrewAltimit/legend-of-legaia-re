@@ -5,7 +5,7 @@
 //! Anchored on the Rim Elm "Variety Store", whose 10 ids are pinned from a live
 //! capture (shared ground truth with the randomizer's `shop_patch_real` test).
 //! Also drives the live wiring: entering the scene that holds the shop populates
-//! [`World::scene_shops`] with the priced inventory. Skips without
+//! [`crate::world::ShopState::scene_shops`] with the priced inventory. Skips without
 //! `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 
 use legaia_engine_core::Vfs;

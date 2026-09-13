@@ -145,7 +145,7 @@
 //! retail entry with a named live caller - the field VM's op `0x43`
 //! sub-`0`/`1`/`0xA`/`0xB` arm, whose port already forwards the landing triple
 //! to a host hook - and what it lacks is a per-actor arc channel to spawn into;
-//! `World::field_ledge_hop` is the player's alone.
+//! `World::locomotion.ledge_hop` is the player's alone.
 //!
 //! The player hop itself is live: `World::try_field_ledge_hop` classifies the
 //! ledge and starts the session, `World::step_field_vertical` advances both
@@ -368,7 +368,7 @@ pub fn spawn_arc_helper(
 // It already computes and forwards the landing coords -
 // `FieldHost::field_halt_acquire_apply(ctx, sub_op, resume, coords)` - so the
 // hook that would carry the spawn exists and is called. What does not exist is
-// anywhere to put the result: `World::field_ledge_hop` is a single
+// anywhere to put the result: `World::locomotion.ledge_hop` is a single
 // `Option<FieldLedgeHop>` for the **player**, and this entry arcs whichever
 // actor the script is running on, chaining an emitter record besides. Wiring
 // needs a per-actor arc channel (and a consumer for `HopEmitter`, whose tick

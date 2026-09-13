@@ -88,14 +88,14 @@ the simulation by exactly one vsync. Both hosts drive it that way and must
 keep doing so - the native window's fixed-timestep accumulator
 (`EngineWindow::drain_ticks`, `TICK_DT = 1.0/60.0`, backlog capped at 4) and
 the browser play page (`site/js/play-app.js`, `TICK_DT = 1000/60`, same cap).
-`World::field_frame_step` is consequently `1` on every tick and
-`World::field_frames == World::frame`; it survives as a *unit marker* on the
+`World::clock.display_frame_step` is consequently `1` on every tick and
+`World::clock.display_frames == World::frame`; it survives as a *unit marker* on the
 consumers whose durations are authored in display frames, not as a throttle.
 
 The port takes the fine-grained half of retail's identity - the controller
-once per vsync with the scalar at `1` (`World::move_ramp_ratio`) - rather than
+once per vsync with the scalar at `1` (`World::move_vm.ramp_ratio`) - rather than
 retail's once per game tick with the scalar at `2`. Same wall speed, twice the
-poses. `World::frame_step` still carries the retail cadence for the consumers
+poses. `World::clock.frame_step` still carries the retail cadence for the consumers
 that genuinely sample at game-tick rate (the actor pool, the CLUT / ambient
 game-tick banks).
 
@@ -126,7 +126,7 @@ x0.75 on the quantised path. Pinned by `engine-core/tests/sim_cadence_wall_speed
 which measures displacement per second of held pad on both the walk and run
 arms, asserts the gated and ungated halves of the frame advance the same
 number of retail frames over one span, and asserts the speed does not move
-when `World::frame_step` sweeps `1..=4`.
+when `World::clock.frame_step` sweeps `1..=4`.
 
 ## Player actor fields used
 
@@ -180,7 +180,7 @@ On `map01` / `map02` / `map03` the collision grid leaves the sea open. Retail ca
 
 The object grid's cell word carries two draw gates: `CELL_WALK_VISIBLE` (`0x1000`, the walk view's) and `CELL_VISIBLE` (`0x2000`, the overhead one's). Most scenes set `0x1000` on every tile the party may stand on. Eighteen do not - they author `0x2000` and not one `0x1000` cell: `dream`, `edkorout`, `edlast`, `jagaroom`, `jouinb`, `jouinc`, `jouind`, `jouine`, `juui2`, `kor`, `kor3`, `kor4`, `kor5`, `korb2`, `korb3`, `korout`, `noaru`, `tunnela`. A fixed `0x1000` gate reads all eighteen as floorless, which makes the resolver inert in exactly the scenes it is needed in: every component is empty, the retail constant is returned unresolved, and in `kor5` that constant is a tile with all four leading-edge wall probes blocked - the player spawns inside a wall and no pad direction moves.
 
-`World::field_floor_cell_bit` therefore picks the bit each scene actually authored (`0x1000` where any cell has it, `0x2000` otherwise), set once per scene by `World::load_field_object_cells`. Disc-gated coverage: `crates/engine-core/tests/cold_seat_walkable_disc.rs` asserts that every CDNAME scene's cold seat is on the authored floor or is the retail constant, and that none is walled in on all four sides.
+`World::terrain.floor_cell_bit` therefore picks the bit each scene actually authored (`0x1000` where any cell has it, `0x2000` otherwise), set once per scene by `World::load_field_object_cells`. Disc-gated coverage: `crates/engine-core/tests/cold_seat_walkable_disc.rs` asserts that every CDNAME scene's cold seat is on the authored floor or is the retail constant, and that none is walled in on all four sides.
 
 The `.MAP` data is retail and is untouched. Disc-gated coverage: `crates/engine-core/tests/field_spawn_ashore_disc.rs` - each overworld spawns on raised ground inside the smaller region, holding any direction for 1500 frames never reaches the larger one, `town01`'s New Game seat stays byte-identical, and the set of scenes seated outside their largest region is exactly the three overworlds.
 
@@ -230,7 +230,7 @@ After movement, the same function runs an interaction probe (`FUN_801cf9f4`) to 
 
 The probe compares the player's position against each actor's `+0x14`/`+0x18` **directly** (no transform), so the player and the placed actors share one coordinate frame - and that frame is the MAN placement frame. `FUN_8003A1E4` spawns each partition-1 placement at `world = tile*128 + 0x40` (the `+0x40`/`+0x80` half-tile centre, i.e. the placement's [`world_x`](../formats/encounter.md)) and `FUN_80024C88` writes it straight into `actor[+0x14/+0x16/+0x18]` with **no anchor subtraction**. The player cold-spawn `0xA40` (2624) is exactly `tile 20 * 128 + 0x40`, so the player starts at MAN tile 20 in the same frame. (A live actor's position can still drift from its spawn tile if it patrols - a moving NPC reads at a different tile than its placement - but the frame is identical.)
 
-The engine ports the probe as `World::tick_field_interaction_probe` (`engine-core`): it stores each talkable NPC's placement position (`World::field_npc_positions`, keyed by the same slot as the dialogue) and, on a just-pressed action button, runs the retail facing probe (`World::field_interact_probe_slot` - the `DAT_801f2254` radius-64 compass point ahead of the facing, ±72 box), opens the matched NPC's dialogue via `World::trigger_field_interact`, and turns the player toward it (`World::face_field_npc`) - then dismisses a probe-opened box on the next press (a `dialog_input_consumed` per-tick guard keeps it from racing the field VM's `0x4C` dialog poll).
+The engine ports the probe as `World::tick_field_interaction_probe` (`engine-core`): it stores each talkable NPC's placement position (`World::npcs.positions`, keyed by the same slot as the dialogue) and, on a just-pressed action button, runs the retail facing probe (`World::field_interact_probe_slot` - the `DAT_801f2254` radius-64 compass point ahead of the facing, ±72 box), opens the matched NPC's dialogue via `World::trigger_field_interact`, and turns the player toward it (`World::face_field_npc`) - then dismisses a probe-opened box on the next press (a `dialog_input_consumed` per-tick guard keeps it from racing the field VM's `0x4C` dialog poll).
 This is the input-driven counterpart to the scripted field-interact op; talking to the Rim Elm sparring partner this way starts the Tetsu fight through the dialogue-accept auto-arm.
 
 `World::nav_step_toward(tx, tz, tol)` is the matching auto-navigation primitive: it steps the player one frame toward a world target using the same per-axis collision as the pad path (`advance_with_collision`) but a world-space direction, returning `true` on arrival. A driver loops it along a BFS route over the collision grid to walk the player to a target - e.g. the v0.1 oracle's emergent Battle leg walks from the cold-boot spawn to the sparring partner, then talks to it via the probe. (The partner's *placement* tile (76,65) is its post-tutorial village spot, in a town01 sub-area not walk-reachable from the spawn; the opening repositions it next to Vahn for the tutorial - see `RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS`.)
@@ -267,15 +267,15 @@ The port is configurable, one level lower down. Its pad word is assembled from a
 
 The earlier "not pinned" reading came from the address form, not from the bytes: `0x800846DC` is reached as `lui`+`addiu` to `0x80084140` followed by `lw v1,0x59c(a0)`, so neither the address nor its low half `0x46dc` appears in any instruction and the five-form [address-reference scan](../tooling/address-reference-scan.md) is structurally blind to it. The base-plus-displacement walk in [`find-gp-relative-refs.py`](../../scripts/ghidra-analysis/find-gp-relative-refs.py) finds the one writer and the one reader.
 
-**Engine port.** `World::field_base_step` (the selector) over `World::field_run_active` (the XOR), with the four base-step constants in `engine-core::world::config`. The option arrives as `World::field_move_run_default` (hosts mirror `OptionsState::field_move`); the button as `World::field_run_button_held`, latched inside `World::set_pad` so every host that feeds a pad gets it without wiring anything.
+**Engine port.** `World::field_base_step` (the selector) over `World::field_run_active` (the XOR), with the four base-step constants in `engine-core::world::config`. The option arrives as `World::locomotion.run_default` (hosts mirror `OptionsState::field_move`); the button as `World::locomotion.run_button_held`, latched inside `World::set_pad` so every host that feeds a pad gets it without wiring anything.
 
-The mask that latch applies is `World::field_run_button_mask`, and it **defaults to the retail pair** - `FIELD_RUN_BUTTON_MASK_DEFAULT` is `FIELD_RUN_BUTTON_MASK_RETAIL` (`Cross | R1`) plus Square. Square is not retail's run button; it is the debug-turbo bit `0x80` on this same selector, and for a while it was the port's only run binding. That divergence is closed: a host wanting the retail set exactly assigns `FIELD_RUN_BUTTON_MASK_RETAIL`, and `the_default_run_button_is_the_retail_pair` in `engine-core`'s locomotion tests pins the default.
+The mask that latch applies is `World::locomotion.run_button_mask`, and it **defaults to the retail pair** - `FIELD_RUN_BUTTON_MASK_DEFAULT` is `FIELD_RUN_BUTTON_MASK_RETAIL` (`Cross | R1`) plus Square. Square is not retail's run button; it is the debug-turbo bit `0x80` on this same selector, and for a while it was the port's only run binding. That divergence is closed: a host wanting the retail set exactly assigns `FIELD_RUN_BUTTON_MASK_RETAIL`, and `the_default_run_button_is_the_retail_pair` in `engine-core`'s locomotion tests pins the default.
 
-`World::field_forced_slow` is ported but **NOT WIRED** - no host drives `_DAT_8007B6A8`'s equivalent - and the turbo arm is recorded as a constant and never taken.
+`World::locomotion.forced_slow` is ported but **NOT WIRED** - no host drives `_DAT_8007B6A8`'s equivalent - and the turbo arm is recorded as a constant and never taken.
 
 ### Motion-derived locomotion animation
 
-Which clip plays is a function of whether an actor **moved**, not of what moved it. `World::detect_field_actor_motion` runs once per field tick, after every mover in the frame (cutscene timeline, per-actor channels, field VM, NPC motion legs, locomotion) and before the animation tick, diffing each tracked actor's position against last frame's into `World::field_actor_moving`; the player's bit folds into `FieldPlayerAnim::moved_this_frame`.
+Which clip plays is a function of whether an actor **moved**, not of what moved it. `World::detect_field_actor_motion` runs once per field tick, after every mover in the frame (cutscene timeline, per-actor channels, field VM, NPC motion legs, locomotion) and before the animation tick, diffing each tracked actor's position against last frame's into `World::locomotion.actor_moving`; the player's bit folds into `FieldPlayerAnim::moved_this_frame`.
 
 The pad and nav-walk paths still raise that flag directly, because they know they moved *before* they commit - and a wall-blocked pad step walks in place the way retail does, which a position diff cannot see.
 
@@ -454,7 +454,7 @@ and [`tooling/dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
 **The static-entity anchor decodes against the `.MAP` object records.** A static actor's box centre is its live position plus a **collision-footprint offset** from its object record (`actor[+0x60]` indexes the `+0x0000` record table): `off = (rec[+6]·0x80 + rec[+0xE]·0x10, rec[+7]·0x80 + rec[+0xF]·0x10)`, and when the actor's `+0x52 & 8` is set (mirrored at spawn from record flag bit `0x8`) further corrected by `(−x_off, +z_off)` (record halfwords `+0`/`+4`).
 Live-verified against the spawned static collision actors of four catalogued captures (town01 records 315 + 137 - the latter the correction arm - town0c 331, koin3 116): the live actor position equals the placement spawn position and the live-computed centre equals the disc-computed one (`engine-shell/tests/field_prop_colliders_live.rs`).
 
-**Engine model (from-scratch).** [`World::field_tile_is_wall`] samples with **retail's exact sub-cell derivation** (`zc = (z>>6)+2`, `xc = ((x+0x3f)>>6)−1`, quad `(zc&1)<<1|(xc&1)`); [`World::advance_with_collision`] steps incrementally and blocks each axis either on a **single candidate-centre** test (default, kept for the locomotion oracles + BFS nav drivers) or on **retail's three-probe leading-edge footprint** (`World::field_dir_blocked` over the `DAT_801f2214` table, opt-in via `World::leading_edge_wall_probes` / `play-window --edge-collision`) - under the footprint the player rests 47–48 units off the wall plane exactly like retail.
+**Engine model (from-scratch).** [`World::field_tile_is_wall`] samples with **retail's exact sub-cell derivation** (`zc = (z>>6)+2`, `xc = ((x+0x3f)>>6)−1`, quad `(zc&1)<<1|(xc&1)`); [`World::advance_with_collision`] steps incrementally and blocks each axis either on a **single candidate-centre** test (default, kept for the locomotion oracles + BFS nav drivers) or on **retail's three-probe leading-edge footprint** (`World::field_dir_blocked` over the `DAT_801f2214` table, opt-in via `World::locomotion.leading_edge_wall_probes` / `play-window --edge-collision`) - under the footprint the player rests 47–48 units off the wall plane exactly like retail.
 The derivation and the footprint rest positions are pinned by two cheat-free Rim Elm wall-press captures (scenarios `rimelm_wall_press_left` / `rimelm_wall_press_down`; disc-gated `engine-shell/tests/field_collision_discriminator.rs`):
 
 - **The quadrant-mask formula is identical** to retail (verified byte-for-byte against the decomp's branchy `bVar5` for all four parities, `world.rs::tests`). The earlier "inverted X parity" worry is **false**.
@@ -463,7 +463,7 @@ The derivation and the footprint rest positions are pinned by two cheat-free Rim
 - **X alignment + the 47-unit standoff validated live (left press).** The clean left-press capture rests at `(1838, 2526)` against the full-height wall column at grid col 13: the probe `x−47 = 1791` reads the column's last wall sub-cell, one 2-unit step shallower reads clear. In X, retail's `ceil−1` equals the floor everywhere except exact 64-multiples - a divergence the even step parity never reaches.
 - **The three-probe footprint is wired and rest-validated.** With `leading_edge_wall_probes` set, driving the engine stepper over each capture's **live grid** from a shallow start reproduces the captured retail rest position **byte-exactly** (left press rests at `x = 1838`, down press at `z = 2606`), while the candidate-centre default demonstrably walks deeper (`field_collision_discriminator.rs`, the `*_engine_rest_matches_retail` legs).
 - **The full scene context reproduces the standoff too.** The `*_full_scene_rest_matches_retail` legs press the same walls inside a real `BootSession::enter_field_live` scene entry - the resolver-loaded `.MAP` grid plus the engine-executed prescript paints, walked through the pad -> camera-remap -> `step_field_locomotion` path - and rest at the captured retail positions byte-exactly.
-- **The actor-collision arm is modelled too - and capture-classed.** `World::field_actor_dir_blocked` ports `FUN_801cfc40`'s **moving-actor arm** (result bit `1`): the three `DAT_801f21b4` probes box-tested against the NPC positions (`World::field_npc_positions`) with the **±40-unit** box (`0x40` core minus the locomotion's `0x18` extent bias), gated behind `World::solid_field_npcs` / `play-window --solid-npcs` - NPCs become solid, resting 102 units short of an NPC head-on (unit-pinned in `world.rs::tests`).
+- **The actor-collision arm is modelled too - and capture-classed.** `World::field_actor_dir_blocked` ports `FUN_801cfc40`'s **moving-actor arm** (result bit `1`): the three `DAT_801f21b4` probes box-tested against the NPC positions (`World::npcs.positions`) with the **±40-unit** box (`0x40` core minus the locomotion's `0x18` extent bias), gated behind `World::npcs.solid` / `play-window --solid-npcs` - NPCs become solid, resting 102 units short of an NPC head-on (unit-pinned in `world.rs::tests`).
   The class is **capture-pinned by `rimelm_npc_press_tetsu`**: a live state with the player pressed into the sparring partner shows the mutual `+0x98` collision link active in-frame both ways and Tetsu's `flags+0x10 = 0x08020884` carrying the `0x20000` moving-class bit - village NPCs take the bit-1 arm, not the static prop arm. The disc-gated `npc_press_pins_moving_actor_arm` leg asserts the link, the class, and that the engine probe refuses the captured press direction while the stepper holds the captured rest.
 - **The placed-prop arms are modelled from the `.MAP` placements, and props are solid by default.**
   `Scene::field_object_placements` already returns exactly the collision-actor spawns (the placed
@@ -475,12 +475,12 @@ The derivation and the footprint rest positions are pinned by two cheat-free Rim
   (`interact`/`moving_box`/born-exempt); `advance_with_collision` blocks on them **unconditionally**
   (retail's props always sit in the `FUN_801cf754` candidate list) - a head-on press rests 142 units
   short of a static prop centre (same pre-step parity as the NPC arm's 102), and the same refused
-  step latches a static-class prop's touch into `World::pending_prop_touch`. A prop whose script has
+  step latches a static-class prop's touch into `World::props.pending_touch`. A prop whose script has
   run `31 00` (`FieldPropCollider::solid = false`) blocks and touches nothing, exactly like retail's
-  `flags & 3` skip. Only the NPC arm stays behind `World::solid_field_npcs` / `--solid-npcs`.
+  `flags & 3` skip. Only the NPC arm stays behind `World::npcs.solid` / `--solid-npcs`.
 - **The button-press interact dispatch is modelled faithfully.** `World::field_interact_probe_slot` ports the `DAT_801f2254` facing probe (the radius-64 compass point, ±72 interact box); a hit opens the NPC's dialogue and turns the player toward it (`World::face_field_npc`, the face-the-NPC step - shape-faithful float `atan2` rather than retail's arctan LUT). The engine's field heading stores `0` = Z+ where retail facing stores `0` = Z− (a Z+ walk writes `0x800` to `+0x26`), so the sector index adds a half-turn before quantising. The captured Tetsu press-rest position talks to him through this probe (`world.rs::tests::interaction_probe_matches_tetsu_capture_geometry`).
-- **Field-NPC motion is modelled through the motion VM.** Each talk NPC's placement script carries its authored walk legs as `0x4C 0x51` NPC move-to-tile ops; `man_field_scripts::placement_motion_route` decodes the local waypoints and `World::tick_field_npc_motions` drives them through the ported motion VM (`FUN_8003774C`), one pursue step per field tick, writing the live position back into `World::field_npc_positions` - so the moving NPC's ±40 collision box and its interact box follow it, exactly as retail probes the live `+0x14`/`+0x18`.
-  Autonomous patrol is opt-in (`World::animate_field_npcs` / `play-window --live-npcs`) and pauses while a dialogue is up (the retail interaction motion-pause kick); an interaction prologue's own `0x4C 0x51` runs the interacted NPC through the same kernel regardless of the flag. See [`motion-vm.md`](motion-vm.md#field-npc-walking). Disc-gated: `engine-core/tests/field_npc_motion_disc.rs` (town01 derives routes for many villagers; the engine walks them off-anchor; the collision box follows).
+- **Field-NPC motion is modelled through the motion VM.** Each talk NPC's placement script carries its authored walk legs as `0x4C 0x51` NPC move-to-tile ops; `man_field_scripts::placement_motion_route` decodes the local waypoints and `World::tick_field_npc_motions` drives them through the ported motion VM (`FUN_8003774C`), one pursue step per field tick, writing the live position back into `World::npcs.positions` - so the moving NPC's ±40 collision box and its interact box follow it, exactly as retail probes the live `+0x14`/`+0x18`.
+  Autonomous patrol is opt-in (`World::npcs.animate` / `play-window --live-npcs`) and pauses while a dialogue is up (the retail interaction motion-pause kick); an interaction prologue's own `0x4C 0x51` runs the interacted NPC through the same kernel regardless of the flag. See [`motion-vm.md`](motion-vm.md#field-npc-walking). Disc-gated: `engine-core/tests/field_npc_motion_disc.rs` (town01 derives routes for many villagers; the engine walks them off-anchor; the collision box follows).
 - **The prop walk-touch event post is modelled for the decoded script classes.**
   `man_field_scripts::placement_walk_touch_event` classifies each non-parked placement's script: a
   genuine `0x3E` door-warp (`Warp`) or a cross-context `0x23` into the player channel `0xF8`
@@ -533,7 +533,7 @@ Pinned by `engine-shell/tests/casino_floor_softlock.rs`, which walks the real pl
 koin1 cabinet and every koin1 NPC from four sides and asserts the scene mode never leaves the
 field.
 - **Prop bind records run through the field VM on touch / interact - the door swing, its collision
-  drop, and the cupboard search.** A static-class prop touch (`World::pending_prop_touch`, the bit-4
+  drop, and the cupboard search.** A static-class prop touch (`World::props.pending_touch`, the bit-4
   auto-post) or an interact-class confirm press (`World::field_interact_prop_anchor`, the
   facing-probe prop arm wired into `tick_field_interaction_probe`) starts
   `World::start_prop_interaction`: the prop's bind record runs through the inline field-VM runner
@@ -659,9 +659,9 @@ far point.
 after `step_field_locomotion`; it calls `World::try_field_ledge_hop`
 (`FUN_801d1878`), which classifies the ledge and starts the hop through
 `World::start_field_ledge_hop` (`FUN_801d2404`). The step-delta pair is
-`World::field_step_delta`.
+`World::locomotion.step_delta`.
 
-`World::field_ledge_hop` is the live session, not a per-frame transient: it
+`World::locomotion.ledge_hop` is the live session, not a per-frame transient: it
 carries both clips retail keeps on the two spawned helper actors, and
 `step_field_vertical` advances them through
 `World::tick_field_ledge_hop` before anything else, returning the frame to the
@@ -672,9 +672,9 @@ it finishes, which is what leaves the landing frame's cue readable.
 
 Two deliberate divergences:
 
-- The **settle is opt-in** (`World::field_vertical_settle`, default off). The
+- The **settle is opt-in** (`World::locomotion.vertical_settle`, default off). The
   engine's default is that Y is left untouched unless
-  `World::follow_terrain_height` snaps it, and the locomotion oracles pin that
+  `World::locomotion.follow_terrain_height` snaps it, and the locomotion oracles pin that
   flat-Y behaviour. The hop trigger is *not* gated on it - which means the
   classifier cannot read `World::world_y` as retail's `+0x16`, because in the
   default configuration nothing is maintaining it as a footing and every
@@ -746,7 +746,7 @@ Each `+0x4000` byte packs two nibbles for its 128-unit tile:
 
 **Ramps and staircases are the second model, and only the second model.** A ramp tile's collision nibble carries no useful elevation - Rim Elm's two shore ramps sit on nibble-`0` (sea-level) tiles and hold their entire elevation in the kind-2 records, whose two step fields (`-32` per whole-tile count, `-16` per 64-unit sub-cell) are what make a 128-unit tile a *staircase* rather than a plane. Interpolating a ramp's nibbles instead reads the whole ramp as sea level: an actor walking off the plateau drops the full tier height at the lip and travels **under** the drawn stair mesh. The kind-2 record is not an optional "fast path" layered on the bilinear branch - it replaces it.
 
-Engine port: `World::sample_field_floor_height(world_x, world_z)` carries both branches. Its inputs are the per-scene LUT (`World::field_floor_height_lut`), the collision grid, the object-grid cell words (`World::field_object_cells`, tested against `world::CELL_ELEVATION_OVERRIDE`), and the parsed kind-2 records (`World::field_elevation_overrides`, `world::field_elevation`) - all installed at field entry. The pad locomotion path follows the sample: with `World::follow_terrain_height` set (on by default in `play-window`; `--flat-y` opts out), each committed step snaps the player actor's `world_y` to it, so the player rides slopes and stairs. Field NPCs and props are floor-snapped through the same sampler.
+Engine port: `World::sample_field_floor_height(world_x, world_z)` carries both branches. Its inputs are the per-scene LUT (`World::terrain.floor_height_lut`), the collision grid, the object-grid cell words (`World::terrain.object_cells`, tested against `world::CELL_ELEVATION_OVERRIDE`), and the parsed kind-2 records (`World::terrain.elevation_overrides`, `world::field_elevation`) - all installed at field entry. The pad locomotion path follows the sample: with `World::locomotion.follow_terrain_height` set (on by default in `play-window`; `--flat-y` opts out), each committed step snaps the player actor's `world_y` to it, so the player rides slopes and stairs. Field NPCs and props are floor-snapped through the same sampler.
 
 The **base wall + floor data is an on-disc blob**: it is the `+0x4000..+0x8000` region of the per-scene field map file (`DATA\FIELD\<scene>.MAP`), streamed into the field buffer at scene load by `FUN_8001f7c0` (see [Field-buffer load chain](#field-buffer-load-chain)). On top of that base, the field VM's `0x4C` (MENU_CTRL) opcode with outer-nibble 7 (`op0` ∈ `0x70..0x7F`, `[4C, 0x7s, b1, b2, b3, b4 (, mask)]` - **6 bytes** for subs 0/1, **7** for the masked subs 2/3) applies **story-conditional deltas** - a rectangular paint that sets/clears the high-nibble wall bits over a tile range (`col ∈ [b1, b3+1)`, `row ∈ [b2+1, b4+2)`; sub-op `s` = clear-walkable / block-all / clear-mask / set-mask), gated behind system-flag tests in the prescript.
 The nibble-7 op is the same dispatch row in [`script-vm.md`](script-vm.md#0x4c-menu_ctrl---outer-nibble-dispatch).
@@ -1170,7 +1170,7 @@ All three halves are ported into
 evaluator as `bezier_at`), and the phase tick as `advance_hop_session`, which
 returns the frame's writes rather than reaching into the player context. All
 three are live: `engine-core` has no actor pool, so the two clips live on the
-`World::field_ledge_hop` session and `World::step_field_vertical` runs both
+`World::locomotion.ledge_hop` session and `World::step_field_vertical` runs both
 ticks - the arc's result written to the player actor, the phase's flag writes
 folded into the same actor's `+0x10`. A hop therefore occupies 16 frames of
 arc plus six of recovery, exactly as retail paces it.
@@ -1227,7 +1227,7 @@ The **overworld walk mode** shares it too. The world-map-walk overlay's locomoti
 
 ## Engine port
 
-The from-scratch engine loads the base grid directly from the field map file. `SceneHost::enter_field_scene` resolves the `.MAP` entry via `Scene::field_map_index` - the scene's retail block's **first entry** (extraction `define − 2`; CDNAME defines are raw-TOC indices, see [cdname.md](../formats/cdname.md#numbering-space)), identified by its **extended on-disc footprint** of exactly `0x12000` bytes - and copies its `+0x4000..+0x8000` region into `World::field_collision_grid` (`World::load_field_collision_grid`).
+The from-scratch engine loads the base grid directly from the field map file. `SceneHost::enter_field_scene` resolves the `.MAP` entry via `Scene::field_map_index` - the scene's retail block's **first entry** (extraction `define − 2`; CDNAME defines are raw-TOC indices, see [cdname.md](../formats/cdname.md#numbering-space)), identified by its **extended on-disc footprint** of exactly `0x12000` bytes - and copies its `+0x4000..+0x8000` region into `World::terrain.collision_grid` (`World::load_field_collision_grid`).
 The rule mirrors the runtime resolution (`FUN_8003e8a8`'s `toc[idx+2]`) and is **universal**, not kingdom-specific: a save-library census found the live `keikoku` field buffer matches PROT 0109 (`define 111 − 2`) with **zero** diffs while the neighbouring `0x12000` candidate (0118) differs by thousands, and `koin3` likewise matches 0559 exactly.
 An earlier rule picked the first `0x12000` entry inside the era's unshifted scene window - the **next** scene's map - and loaded the wrong base grid for every field scene, masked only where adjacent Rim Elm variants byte-copy (town01/town0b/town0c share one identical map), the only scene it had been validated on. The grid byte format (high nibble = sub-cell wall bits, low nibble = floor-elevation tier) matches the runtime 1:1, so it copies verbatim; the field-VM `0x4C` nibble-7 hook then layers deltas on top as the prescript runs.
 
@@ -1263,7 +1263,7 @@ Towns carry random encounters too: `town01`'s MAN encounter section declares **7
 
 ### Per-step encounter roll in the live loop
 
-When `World::live_gameplay_loop` is set, locomotion feeds the encounter system directly: `World::live_field_tick` treats the player crossing into a new 128-unit collision tile (`pos >> 7`) as one *step* and drives a single `World::on_field_step` roll, mirroring the retail per-step counter rather than rolling every frame. A successful roll transitions `Field → Battle`; on victory the field actor table is restored and the player resumes where they stood. See the [live gameplay loop](battle.md#live-gameplay-loop---field--battle-in-tick) section in `battle.md` for the full round trip.
+When `World::toggles.live_gameplay_loop` is set, locomotion feeds the encounter system directly: `World::live_field_tick` treats the player crossing into a new 128-unit collision tile (`pos >> 7`) as one *step* and drives a single `World::on_field_step` roll, mirroring the retail per-step counter rather than rolling every frame. A successful roll transitions `Field → Battle`; on victory the field actor table is restored and the player resumes where they stood. See the [live gameplay loop](battle.md#live-gameplay-loop---field--battle-in-tick) section in `battle.md` for the full round trip.
 
 ### Input is locked during an opening-cutscene timeline
 
@@ -1282,7 +1282,7 @@ Across the transition the grid jumped 2093 → 6805 wall tiles while only **6** 
 
 **For the engine, base collision is a load step, not a script step**: slice bytes `0x4000..0x8000` of the per-scene `.MAP` file; no script execution is needed for the base walls. The nibble-7 ops ride the scene's field-VM scripts - which run multi-context at load (`FUN_8003aeb0` scene-entry init → `FUN_8003ab2c` MAN system-script runner, the `0xFB` system context being the conditional-delta painter) - and only matter for story-conditional terrain changes.
 
-NPC walkers carry a live heading (`World::field_npc_headings`, the player's
+NPC walkers carry a live heading (`World::npcs.headings`, the player's
 12-bit `render_26` convention, derived from each motion-VM step's direction
 and retained on arrival); the `play-window` field renderer rotates each NPC
 model to it and plays the placement's scene-bundle ANM clip per frame
@@ -1562,7 +1562,7 @@ Provenance: the per-handler dumps named above. Not documented here (out of scope
 
 ## Open
 
-- The `FUN_801d5b5c` post kernel's touch counters (`+0x2A` / `_DAT_801c6ea4+0xA`), which are what let overlapping touches keep the engaged flag raised until every one is dismissed. The engaged flag, the parked-script resume (`world/prop_interact.rs`) and the facing save/restore (`+0x26` -> `+0x5A` -> `+0x26`, `World::field_npc_facing_save` / `World::release_talk_facing`; see [`motion-vm.md`](motion-vm.md#talk-time-facing-is-not-this-vm)) are modelled.
+- The `FUN_801d5b5c` post kernel's touch counters (`+0x2A` / `_DAT_801c6ea4+0xA`), which are what let overlapping touches keep the engaged flag raised until every one is dismissed. The engaged flag, the parked-script resume (`world/prop_interact.rs`) and the facing save/restore (`+0x26` -> `+0x5A` -> `+0x26`, `World::npcs.facing_save` / `World::release_talk_facing`; see [`motion-vm.md`](motion-vm.md#talk-time-facing-is-not-this-vm)) are modelled.
 - Full per-actor field-VM channel execution with story-flag-conditioned branches (the engine loops decoded waypoint lists, and the initial-facing decode takes the fall-through branch - see [NPC initial facing](#npc-initial-facing) - rather than evaluating the prologue's `0x7x` flag-TEST chain against live flags, so a later-chapter branch's facing/position is not selected). The **door** path does evaluate its branches live (see [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family)); the general actor path does not yet.
 
 ## NPC initial facing
@@ -1578,7 +1578,7 @@ The heading space itself is pinned from the locomotion's pad→facing writes (`F
 
 Town prologues route the facing leg through a story-flag `0x7x`-TEST branch chain (jump when the flag is **set**), so the fall-through branch - the first leg in linear record order - is the fresh-game state.
 
-The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), and seeds `World::field_npc_headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's walk-leg facing writes overwrite `+0x26`. Semantic pin: town01's side-by-side villager pair at tiles `(29,22)`/`(30,22)` derives LUT indices 6 (X+) and 2 (X-) - they face each other; disc-gated coverage in `field_npc_initial_facing_disc.rs`.
+The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), and seeds `World::npcs.headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's walk-leg facing writes overwrite `+0x26`. Semantic pin: town01's side-by-side villager pair at tiles `(29,22)`/`(30,22)` derives LUT indices 6 (X+) and 2 (X-) - they face each other; disc-gated coverage in `field_npc_initial_facing_disc.rs`.
 
 Note the facing pin also fixes what `0x4C 0x51` operand byte +3 **is**: bit 7 toggles the special-model flag, the low nibble is the facing-LUT index - and the raw case-5-sub-1 asm reads the byte **nowhere else**, so the op carries no speed operand (byte +4 is the move-anim id written to `+0x5C`; the trailing `FUN_801D81E0` is an active-list relink via `FUN_800204A4`/`FUN_80020454`, not a bytecode builder). The old glide-speed reading of the same byte is a misattribution of the walk-kernel op `0x47`'s own operand encoding - see the reconcile note under [NPC glide speed](#npc-glide-speed).
 
@@ -1734,7 +1734,7 @@ The engine decodes each placement's glide speed from those real operands off the
 tries the placement's bound tail-section-1 stream first (`placement_wander_step` - binding id = `N0 + placement_index`, default variant first),
 then the record's own pre-text field-VM yield ops (`placement_yield_step` - own-context only, with the park-sentinel/locality filters on a 0x47's target),
 maps the selector through [`World::field_npc_walk_step_speed`](../../crates/engine-core/src/world/config.rs),
-and stashes it in `World::field_npc_glide_speeds`. `World::start_field_npc_motion` writes that into the leg's motion-VM `speed`.
+and stashes it in `World::npcs.glide_speeds`. `World::start_field_npc_motion` writes that into the leg's motion-VM `speed`.
 Disc-gated `field_npc_glide_speed_disc.rs` pins town01's wandering villagers to their 0x18-decoded steps
 (e.g. binding `0x30` = slot 12, `bits` 3 = step 4) and the plaza nudge NPCs to their 0x41-decoded step 16.
 
@@ -1744,12 +1744,12 @@ Modelling note (reconcile outcome): the raw `4C 51` handler pins its byte +3 as 
 
 ## Engine port: movement compass + opt-in precise movement
 
-The engine mirrors retail's camera-remapped pad in `World::step_field_locomotion` (`decode_field_direction`): the held d-pad is rotated by `World::field_camera_azimuth` **quantised to the nearest 90°** - the same job `func_0x800467e8` does - and stepped through the per-axis collision above. The azimuth feed is `Camera::compass_azimuth_units()` (engine-core): scripted yaw + the user's `manual_orbit` (the play-window's left-mouse drag-orbit) + the host renderer's `render_yaw_bias` (the follow camera's fixed base yaw, compass sense = the negated PSX render yaw), pushed into the world each `BootSession::tick`. All three terms default to 0, so headless hosts keep the identity remap.
+The engine mirrors retail's camera-remapped pad in `World::step_field_locomotion` (`decode_field_direction`): the held d-pad is rotated by `World::locomotion.camera_azimuth` **quantised to the nearest 90°** - the same job `func_0x800467e8` does - and stepped through the per-axis collision above. The azimuth feed is `Camera::compass_azimuth_units()` (engine-core): scripted yaw + the user's `manual_orbit` (the play-window's left-mouse drag-orbit) + the host renderer's `render_yaw_bias` (the follow camera's fixed base yaw, compass sense = the negated PSX render yaw), pushed into the world each `BootSession::tick`. All three terms default to 0, so headless hosts keep the identity remap.
 
 Two non-retail, opt-in knobs layer on top (play-window keybinds, persisted in `legaia-options.toml`):
 
 - **Camera distance** (`Camera::distance`, presets retail / far / farther; `T` cycles) - a pure framing scale on the follow camera's eye-back depth. Never feeds the simulation; the engine-core default stays `retail` so oracle/replay paths are bit-identical, while the windowed host defaults to `far`.
-- **Precise movement** (`World::precise_movement`; `R` toggles, default off) - swaps the quantised remap for a continuous decode (`decode_field_direction_precise`): the azimuth rotates the screen vector at full angular resolution, key diagonals walk true 45° vectors at normalised speed (no ×0.75 cut - the vector itself is unit length), and a deflected analog stick (`InputState::lstick`) passes its angle through. The step still routes through the same 2-unit per-axis collision probes (`advance_with_collision_vector`, Z before X per sub-step), with a sub-step remainder carried across frames so shallow angles keep their exact slope.
+- **Precise movement** (`World::locomotion.precise_movement`; `R` toggles, default off) - swaps the quantised remap for a continuous decode (`decode_field_direction_precise`): the azimuth rotates the screen vector at full angular resolution, key diagonals walk true 45° vectors at normalised speed (no ×0.75 cut - the vector itself is unit length), and a deflected analog stick (`InputState::lstick`) passes its angle through. The step still routes through the same 2-unit per-axis collision probes (`advance_with_collision_vector`, Z before X per sub-step), with a sub-step remainder carried across frames so shallow angles keep their exact slope.
 
 ## See also
 

@@ -488,7 +488,7 @@ impl FieldApp {
         self.tick_active_dialog();
     }
 
-    /// If `world.current_dialog` carries a pending request and no panel is
+    /// If `world.dialog.current` carries a pending request and no panel is
     /// active yet, build one from the scene's MES container.
     fn maybe_open_dialog(&mut self) {
         if self.active_dialog.is_some() {

@@ -170,8 +170,8 @@ The field VM's `idx` encoding is `((opcode_byte & 0x8F) << 8) | operand_byte`, r
 Sub-ops `0x3A`, `0x3B`, `0x3C` close out the player-relative cluster:
 
 - `0x3A` writes the angle from the actor to the player (computed as `atan2(dz, dx)` quantised to PSX 12-bit angle units, 4096 = full circle) into `bytecode[state.pc + op[2] + 3]`. Engines wire `MoveHost::ext_compute_angle` to surface the player position; the world-side default reads `world.player_actor_slot`.
-- `0x3B` looks up the position of party-member `op[2]` and writes the world-XYZ triple into `bytecode[state.pc + op[3] + 4..+6]`. Pre-clears the dst slots before the lookup so a no-table host still gets the zero-sentinel guarantee. When the lookup returns `None`, the size is `4` (skip the follow-up payload). Engines populate `world.party_actor_slots: Vec<Option<u8>>` with the live party-to-actor-slot map.
-- `0x3C` writes the immediate fade colour to scratchpad globals (`ticks == 0`) or schedules a per-frame ramp (`ticks > 0`). The world records the request in `world.pending_fade: Option<FadeRequest>` so engines can drain it each frame to drive the screen overlay.
+- `0x3B` looks up the position of party-member `op[2]` and writes the world-XYZ triple into `bytecode[state.pc + op[3] + 4..+6]`. Pre-clears the dst slots before the lookup so a no-table host still gets the zero-sentinel guarantee. When the lookup returns `None`, the size is `4` (skip the follow-up payload). Engines populate `world.party.party_actor_slots: Vec<Option<u8>>` with the live party-to-actor-slot map.
+- `0x3C` writes the immediate fade colour to scratchpad globals (`ticks == 0`) or schedules a per-frame ramp (`ticks > 0`). The world records the request in `world.presentation.pending_fade: Option<FadeRequest>` so engines can drain it each frame to drive the screen overlay.
 
 ## Sub-op coverage in `crates/engine-vm`
 

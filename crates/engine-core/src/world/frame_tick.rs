@@ -57,9 +57,9 @@ impl World {
     /// driven off the player's world position.
     ///
     /// Retail runs one of these actors per spawned ramp off the effect-actor
-    /// list; the engine holds the records on [`World::register_ramps`] and
+    /// list; the engine holds the records on [`crate::world::CameraRig::register_ramps`] and
     /// steps them here. What a tick writes lands in
-    /// [`World::camera_registers`], the four field camera-configuration
+    /// [`crate::world::CameraRig::registers`], the four field camera-configuration
     /// registers `0x8007B60C`/`B610`/`B614`/`B618`.
     ///
     /// Two retail gates come first, both inside
@@ -147,7 +147,7 @@ impl World {
     /// player actor. Two of them stand in for retail slots the engine does not
     /// carry: `+0x1E` / `+0x20` become the previous tick's `(world_y,
     /// world_z)`, so the settle test still answers "has the actor stopped
-    /// moving in Y and Z". The pad word is [`Self::story_flags`] - the same
+    /// moving in Y and Z". The pad word is [`crate::world::StoryFlagState::story_flags`] - the same
     /// `_DAT_1F800394` scratchpad word retail reads the input lock and the
     /// fast-arm bit out of - and `_DAT_8007B850` is passed as `0`, which
     /// leaves the fast arm disengaged (see the comment at the call).
@@ -258,7 +258,7 @@ impl World {
     /// `move_to` host resolves - see [`crate::world::EasedMoveTarget`].
     ///
     /// The `+0x8E` **inverted-Y mirror** is published too, into
-    /// [`crate::world::World::field_eased_mirror_y`]. It used to be dropped
+    /// [`crate::world::FieldLocomotion::eased_mirror_y`]. It used to be dropped
     /// here for want of a consumer; the consumer is retail's own, and it was
     /// mis-read rather than missing. `FUN_8003BC08`'s height arm tests the
     /// same `0x20000000` flag before either of its ground-height arms
@@ -266,7 +266,7 @@ impl World {
     /// `+0x16`, which is the Y **position** the eased move itself writes - so
     /// the mirror is a hold: it re-asserts the scripted Y against the
     /// per-frame floor follow. The engine's two height controllers
-    /// (`World::field_vertical_settle` and `World::follow_terrain_height`)
+    /// (`World::locomotion.vertical_settle` and `World::locomotion.follow_terrain_height`)
     /// are the ports of that routine's other two arms and both stand down
     /// while the latch is armed.
     ///
@@ -367,13 +367,13 @@ impl World {
     ///   arms under an open text box.
     ///
     ///   The port latches its field **run** modifier off the same pad word
-    ///   ([`Self::field_run_button_held`], mask
-    ///   [`Self::field_run_button_mask`]), so inside an armed talk one press
+    ///   ([`crate::world::FieldLocomotion::run_button_held`], mask
+    ///   [`crate::world::FieldLocomotion::run_button_mask`]), so inside an armed talk one press
     ///   does both. Retail behaves the same way - its run mask word
     ///   `0x800846DC` is `0x48` = Cross | R1, and Cross is also the talk
     ///   button - so this is the retail overlap, not a port divergence.
     /// - **1** - hold [`LEADER_SWAP_FADE_FRAMES`] behind the fade-to-white
-    ///   ([`Self::screen_fade`] carries the retail template: kind 2, `0x20`
+    ///   ([`crate::world::ScreenFxState::fade`] carries the retail template: kind 2, `0x20`
     ///   frames, black -> white, `801d29c8..801d2a00`).
     /// - **2** - the swap (`801d2a54..801d2c7c`): the outgoing leader's
     ///   participant NPC takes the player's pose (retail: camera `+0x14..`
@@ -381,9 +381,9 @@ impl World {
     ///   reads clear becomes leader (wrap-scan from `leader+1`), flags
     ///   `0x10..=0x12` are re-pointed at the new leader, the player takes
     ///   the incoming participant's pose (+ the negated map origin
-    ///   `_DAT_80089118/20` = [`Self::map_origin_xz`]), the incoming NPC is
+    ///   `_DAT_80089118/20` = [`crate::world::FieldTerrain::map_origin_xz`]), the incoming NPC is
     ///   parked at the `0x3F80` sentinel, and the fade-back-in spawns.
-    /// - **3** - release the fade object (engine: [`Self::screen_fade`]
+    /// - **3** - release the fade object (engine: [`crate::world::ScreenFxState::fade`]
     ///   steps itself; nothing to do).
     /// - **4** - hold the fade-in, then clear the camera-busy latch and
     ///   return to state 0 (the poll).
@@ -553,7 +553,7 @@ impl World {
                 }
                 LeaderSwapEffect::ReleaseFadeObject | LeaderSwapEffect::ClearCameraBusy => {
                     // The engine fade steps + drops itself
-                    // ([`Self::screen_fade`]); no modelled camera flag word
+                    // ([`crate::world::ScreenFxState::fade`]); no modelled camera flag word
                     // to clear.
                 }
                 LeaderSwapEffect::RetireController => {
@@ -610,11 +610,11 @@ impl World {
     /// Drain a menu-staged transition into the named scene transition the
     /// scene host consumes ([`Self::pending_named_scene_transition`]).
     ///
-    /// **Door of Wind** ([`Self::pending_menu_warp`]): the staged triple is
+    /// **Door of Wind** ([`crate::world::MenuState::pending_warp`]): the staged triple is
     /// retail's `0x80084628` scene word + `0x80084624`/`0x8008462C` tile
     /// pair (`FUN_801D8B90` phase 3, from quick-travel placement record
     /// bytes `+2/+4/+5`). The scene word is the destination scene's raw
-    /// CDNAME TOC index ([`Self::scene_toc_names`]); the tile pair seats
+    /// CDNAME TOC index ([`crate::world::DiscTables::scene_toc_names`]); the tile pair seats
     /// the party at `(tile << 7) + 0x40`, the same conversion the world-map
     /// arrival kernel applies (`FUN_801EE328`: `0x80073EF4/EF8` stores).
     /// The named-transition drain performs exactly that seat
@@ -624,7 +624,7 @@ impl World {
     /// `UNFIND MAP NUMBER %d` diagnostic (the `FUN_801EE328` phase-`0x63`
     /// park) and drops the warp.
     ///
-    /// **Door of Light** ([`Self::pending_menu_escape`]): retail hands the
+    /// **Door of Light** ([`crate::world::MenuState::pending_escape`]): retail hands the
     /// outer menu SM exit code 4 (`FUN_801D8A58`) - the dungeon-escape
     /// handoff, whose overlay-side consumer is not yet pinned. The engine
     /// routes it onto the last visited-map record (the return point the
@@ -696,7 +696,7 @@ impl World {
     /// **audio level** `_DAT_8007B910` (`lw a1,-0x46f0(a1)` at `0x800267B0`
     /// into `gp+0x80C`), then tail-calls the libsnd volume shim
     /// `FUN_80062004(*(i16*)0x80070536, (level << 15) >> 16, deadline | 1)`
-    /// (`0x800267E4`). Those two extra cells land in [`Self::sound_arm`] so a
+    /// (`0x800267E4`). Those two extra cells land in [`crate::world::AudioState::sound_arm`] so a
     /// host driving the shim has the exact arguments; the engine has no live
     /// volume ramp of its own, so the latched level is the cold-reset value
     /// retail boots `_DAT_8007B910` to - `0xD7`, carried on
@@ -730,7 +730,7 @@ impl World {
 
     /// Consume the frame-begin skip request, returning whether this frame
     /// should be abandoned. Models `FUN_8001698C`'s non-zero return; see
-    /// [`Self::frame_begin_skip`].
+    /// [`crate::world::FrameClock::frame_begin_skip`].
     ///
     /// PORT: FUN_8001698c (the frame-skip return; the ring-aging half of the
     /// same function is `legaia_engine_audio::sfx_ring::SfxCueRing::age`)
@@ -797,11 +797,11 @@ impl World {
     /// the timer) and for the below-threshold flag under `_DAT_800845BC`,
     /// then decomposes the remaining count into MM:SS.ff and picks the
     /// readout ink from it. The decomposition and ink are therefore products
-    /// of the tick, not of a renderer - [`World::escape_timer_hud`] caches
+    /// of the tick, not of a renderer - [`crate::world::BattleState::escape_timer_hud`] caches
     /// this frame's.
     ///
     /// The delta is one retail frame per call (the caller gates on
-    /// [`World::field_frame_step`]); retail reads it as
+    /// [`crate::world::FrameClock::display_frame_step`]); retail reads it as
     /// `_DAT_80084570 - _DAT_80073ED4`, a clock that also advances one step
     /// per display frame.
     ///
@@ -827,14 +827,14 @@ impl World {
     }
 
     /// Resolve this frame's cadence the way `FUN_80016B6C` does and install
-    /// it into [`Self::frame_step`].
+    /// it into [`crate::world::FrameClock::frame_step`].
     ///
     /// PORT: FUN_80016b6c (the `0x80017044 .. 0x800171D8` cadence block; the
     /// telemetry state machine lives in
     /// [`legaia_engine_vm::actor_tick::FrameStepTelemetry`]).
     ///
     /// `elapsed_hblanks` is the frame time retail samples with `VSync(1)`
-    /// through `FUN_800173BC`. The floor is [`Self::frame_step_floor`]
+    /// through `FUN_800173BC`. The floor is [`crate::world::FrameClock::frame_step_floor`]
     /// (`DAT_8007B9D8`), installed per scene, and the resolver can only raise
     /// the cadence above it - never below.
     ///
@@ -851,7 +851,7 @@ impl World {
     /// loader installed it. Wiring it needs a host frame-time sampler **and**
     /// a decision that the adaptive cadence is on (retail gates the whole
     /// path behind the boot config word `gp+0x4CE == 0x10`); until then
-    /// [`Self::frame_step`] is scene-driven and this has nothing to resolve.
+    /// [`crate::world::FrameClock::frame_step`] is scene-driven and this has nothing to resolve.
     pub fn resolve_frame_step(&mut self, elapsed_hblanks: i32, frameskip_enabled: bool) -> u8 {
         let cadence = self.clock.frame_step_telemetry.resolve(
             elapsed_hblanks,
@@ -886,14 +886,14 @@ impl World {
     /// [`input::InputState`] at the call site. Hosts that drive the
     /// world from a scripted timeline (`legaia-engine replay`, the
     /// v0.1 playthrough oracle) call this before each [`Self::tick`].
-    /// Also latches [`Self::field_run_button_held`] off the same word, so the
+    /// Also latches [`crate::world::FieldLocomotion::run_button_held`] off the same word, so the
     /// run modifier reaches every host that feeds a pad - native window,
     /// browser play page, replay driver - without any of them wiring it
     /// separately. Deriving it here rather than per-host is deliberate: a
     /// per-host derivation is exactly the shape the UI-drift gate exists to
     /// catch, and this way there is nothing to keep in sync.
     ///
-    /// The buttons are [`Self::field_run_button_mask`], which **defaults to
+    /// The buttons are [`crate::world::FieldLocomotion::run_button_mask`], which **defaults to
     /// retail's** `Cross | R1` (the config word `0x800846DC` = `0x48`, seeded
     /// by `FUN_80034A6C` and read at `0x801D0364`), plus Square as an
     /// alternate. Square alone was the port's binding for a while and is not
@@ -1070,7 +1070,7 @@ impl World {
         self.clock.sim_ticks = self.clock.sim_ticks.wrapping_add(1);
         // Retail game-tick clock for the scripted CLUT-cell effects: one game
         // tick spans `frame_step` vsyncs (the adaptive `DAT_1F800393` factor
-        // written by `FUN_80016B6C`; see [`Self::frame_step`]). Count the sim
+        // written by `FUN_80016B6C`; see [`crate::world::FrameClock::frame_step`]). Count the sim
         // ticks that map to a retail vsync and bank a game tick every
         // `frame_step` of them; [`Self::step_clut_fx`] drains the bank
         // against the host's VRAM. Only accumulates while effects are live
@@ -1207,7 +1207,7 @@ impl World {
         }
         // Tick level-up banner countdown; when it expires the next member who
         // levelled in the same fight takes the slot (see
-        // `World::pending_level_up_banners`).
+        // `World::party.pending_level_up_banners`).
         if let Some(banner) = &mut self.party.current_level_up_banner {
             if banner.frames_remaining > 0 {
                 banner.frames_remaining -= 1;
@@ -1381,7 +1381,7 @@ impl World {
                     // concept - once the battle scene is up it always runs
                     // the full per-frame driver until a wipe resolves it.
                     // This arm used to be gated on
-                    // [`Self::live_gameplay_loop`], falling back to a bare
+                    // [`crate::world::WorldToggles::live_gameplay_loop`], falling back to a bare
                     // [`Self::step_battle`] that applies no damage, arms no
                     // turn and never calls [`Self::finish_battle`] - while
                     // battle *entry* (a field carrier's `3E FF` scripted
@@ -1598,7 +1598,7 @@ impl World {
 
     /// Field walk-regen driver: project the present party onto the
     /// [`crate::walk_regen`] kernel, run one tick against
-    /// [`Self::walk_regen_steps`], and write the bumped gauges back into the
+    /// [`crate::world::FieldLocomotion::walk_regen_steps`], and write the bumped gauges back into the
     /// roster records.
     ///
     /// REF: FUN_801D0B90
@@ -1617,13 +1617,13 @@ impl World {
     /// controller: `FUN_801D01B0`'s tail at `0x801D0910..0x801D0928` adds
     /// `DAT_1F800393` to `_DAT_801F2274` behind the step-delta-non-zero test at
     /// `0x801D08F4..0x801D090C` - one unit per vsync whose step committed.
-    /// [`Self::step_field_locomotion`] adds [`Self::field_frame_step`] once per
+    /// [`Self::step_field_locomotion`] adds [`crate::world::FrameClock::display_frame_step`] once per
     /// sim tick, which is the same rate under the 1:1 denomination.
     ///
     /// One honest gap remains:
     ///
     /// - The kernel's return value is the edge where retail arms a
-    ///   dialog-window callback off [`Self::walk_regen_window`]
+    ///   dialog-window callback off [`crate::world::FieldLocomotion::walk_regen_window`]
     ///   (`_DAT_8007B600`). The engine has no such window slot and nothing
     ///   arms the countdown, so the edge cannot fire and the result is
     ///   dropped here.
@@ -1737,7 +1737,7 @@ impl World {
     }
 
     /// Advance the screen-effect widgets one frame and refresh
-    /// [`Self::screen_fx_frame`]. Runs in the Field / Cutscene tick after
+    /// [`crate::world::ScreenFxState::fx_frame`]. Runs in the Field / Cutscene tick after
     /// the script step (so a sub-op spawned this frame draws this frame,
     /// matching retail's actor-pool order). The engine ticks the widget
     /// clocks by 1 per world tick (retail's per-frame byte
@@ -2045,7 +2045,7 @@ impl World {
     /// Leave the fishing minigame and restore the interrupted mode, returning
     /// the session so the host can read the final [`FishingRecord`]. The
     /// record's point total is banked into the persistent
-    /// [`World::fishing_points`] pool (retail credits `_DAT_8008444C`
+    /// [`crate::world::MinigameState::fishing_points`] pool (retail credits `_DAT_8008444C`
     /// directly; hosts seed the next session's record from the pool). No-op
     /// when fishing isn't active.
     ///
@@ -2063,7 +2063,7 @@ impl World {
     }
 
     /// Open the fishing point-exchange (prize shop) list on `exchange`.
-    /// The host renders [`World::fishing_exchange`] and commits buys through
+    /// The host renders [`crate::world::MinigameState::fishing_exchange`] and commits buys through
     /// [`World::fishing_exchange_buy`].
     pub fn open_fishing_exchange(&mut self, mut exchange: crate::fishing::PrizeExchange) {
         // Row 0 hides until strictly affordable - floor the cursor to the
@@ -2083,8 +2083,8 @@ impl World {
     /// (`FUN_801d06c8`'s Yes arm): validates through
     /// [`crate::fishing::PrizeExchange::buy`] against the persistent pool /
     /// purchased mask / live inventory count, then deducts
-    /// [`World::fishing_points`], latches the one-time bit, and grants the
-    /// item into [`World::inventory`]. While a fishing session is live its
+    /// [`crate::world::MinigameState::fishing_points`], latches the one-time bit, and grants the
+    /// item into [`crate::world::PartyState::inventory`]. While a fishing session is live its
     /// record is synced to the reduced pool so the on-screen point total
     /// matches. `None` when no exchange is open or the buy doesn't validate.
     pub fn fishing_exchange_buy(
@@ -2194,7 +2194,7 @@ impl World {
 
     /// Leave the slot machine and restore the interrupted mode, committing
     /// the session's final balance into the casino coin bank
-    /// ([`World::casino_coins`] - the retail state-100 assignment
+    /// ([`crate::world::MinigameState::casino_coins`] - the retail state-100 assignment
     /// `_DAT_800845A4 = DAT_801d4114`). Returns the session so the host can
     /// read the final state. No-op when the machine isn't active.
     pub fn exit_slot_machine(&mut self) -> Option<crate::slot_machine::SlotMachine> {
@@ -2389,7 +2389,7 @@ impl World {
 
     /// Leave the Baka Fighter duel through the mode-24 return warp
     /// ([`Self::minigame_return_warp`], retail `FUN_80026018`): the winnings
-    /// accumulator is banked into [`Self::casino_coins`], the backed-up scene
+    /// accumulator is banked into [`crate::world::MinigameState::casino_coins`], the backed-up scene
     /// name is restored and the mode drops back to the field.
     ///
     /// On a decided match with a player win, whatever prize the end-of-match

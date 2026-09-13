@@ -4,7 +4,7 @@
 //! How a field NPC's line is shown (the mechanism the engine re-grounded to):
 //! each placed actor's dialogue is its own inline interaction-script MES (retail
 //! `actor[+0x90]`), keyed by the actor's **partition-1 placement index**. On
-//! field entry the engine populates [`World::field_npc_dialog`] from that real
+//! field entry the engine populates [`crate::world::FieldNpcState::dialog`] from that real
 //! placement table ([`World::install_field_carriers_from_man`]). A field-VM
 //! field-interact op (`0x3E` with `op0 < 100`) then carries that index as its
 //! `slot` operand, and the host opens `field_npc_dialog[slot]`.

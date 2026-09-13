@@ -67,11 +67,11 @@ pub enum CellTarget {
 /// Which engine `World`-level field a [`CellTarget::World`] writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WorldField {
-    /// Gold (`World::money`).
+    /// Gold (`World::party.money`).
     Gold,
     /// Casino coins. Currently no engine field; recorded only.
     Coins,
-    /// Game-time seconds (`World::play_time_seconds`). Mapped from
+    /// Game-time seconds (`World::clock.play_time_seconds`). Mapped from
     /// the in-RAM frame counter at the cell address.
     PlayTimeSeconds,
     /// Party member count.

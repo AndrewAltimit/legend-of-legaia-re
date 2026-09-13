@@ -620,7 +620,7 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
 
     // Drive the dialogue-accept: a real field-interact on the carrier's slot
     // opens its dialogue with the faithful 4-option spar picker
-    // (`World::carrier_menu`); the index-2 "practice" option is the one that
+    // (`World::carriers.menu`); the index-2 "practice" option is the one that
     // arms the fight, so navigate the cursor Down twice (releases between -
     // the menu keys off just-pressed edges), then confirm with Cross.
     let mut modes: Vec<SceneMode> = vec![w.mode];
@@ -800,7 +800,7 @@ fn v0_1_battle_leg_walk_talk_accept() {
     );
 
     // Accept: the spar dialogue carries the faithful 4-option picker
-    // (`World::carrier_menu`); index 2 ("I want to practice with you.") is
+    // (`World::carriers.menu`); index 2 ("I want to practice with you.") is
     // the option that arms the fight. Navigate the cursor Down twice
     // (releases in between - the menu keys off just-pressed edges), then
     // confirm -> dismiss -> engage -> Battle.

@@ -78,8 +78,8 @@ fn a_live_frame_loop_paints_the_per_entry_equipment_panel() {
 ///
 /// This world has no roster and no static tables, so its rows print a base
 /// stat of zero plus a zero aggregate. That is the empty case, not a gap:
-/// `submode_env` fills `HubEnv::equip` from `World::roster`,
-/// `World::item_effects` and `World::equipment_table`, and
+/// `submode_env` fills `HubEnv::equip` from `World::party.roster`,
+/// `World::tables.item_effects` and `World::tables.equipment_table`, and
 /// `hub_entry_sub_panel_env` / `hub_entry_sub_panel_disc` assert the numbers a
 /// populated world prints.
 #[test]

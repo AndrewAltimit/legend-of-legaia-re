@@ -11,7 +11,7 @@ pub struct ShopState {
     /// host-supplied and unpriced. See [`crate::shop_catalog`].
     pub item_shop_data: Option<crate::shop_catalog::ShopItemData>,
     /// Gold shops located in the active scene's MAN, priced from
-    /// [`Self::item_shop_data`]. Repopulated on each field-scene entry by
+    /// [`crate::world::ShopState::item_shop_data`]. Repopulated on each field-scene entry by
     /// [`crate::scene::SceneHost::enter_field_scene`]; empty when the scene has
     /// no merchant or the disc isn't available. The field-menu shop-open path
     /// picks from these instead of a hand-authored stock list.
@@ -44,7 +44,7 @@ pub struct ShopState {
     pub pending_prize_exchange: Option<crate::prize_exchange::PrizeExchangeSession>,
     /// `true` from the frame an op-`0x49` sub-op-7 arm is recognised until
     /// the op's resume runs - gates the op-0x49 tristate like
-    /// [`Self::field_shop_armed`] does for the gold shop.
+    /// [`crate::world::ShopState::shop_armed`] does for the gold shop.
     pub prize_exchange_armed: bool,
     /// `true` while the opened prize-exchange UI is still up; cleared via
     /// [`Self::finish_prize_exchange`] so the tristate flips Armed -> Done.

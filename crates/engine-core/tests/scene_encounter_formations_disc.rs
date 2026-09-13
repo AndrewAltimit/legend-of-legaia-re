@@ -6,7 +6,7 @@
 //! on a scene whose MAN carries encounter regions, from the region's
 //! `[formation_range_base, +formation_range_count)` slice (the faithful
 //! `FUN_801D9E1C` model). The **battle** then looks that index up in
-//! `World::formation_table`, which `install_man_encounter` populates from the
+//! `World::tables.formation_table`, which `install_man_encounter` populates from the
 //! same MAN. If the two ever disagree the roll evaporates in
 //! `begin_encounter_battle` and the player walks on with no fight and nothing
 //! on screen to explain it.
@@ -17,7 +17,7 @@
 //! fight".
 //!
 //! The second test is the regression for the defect that produced this file:
-//! a host that cleared `World::encounter` after scene entry (the New Game
+//! a host that cleared `World::encounters.session` after scene entry (the New Game
 //! reset does exactly that) used to leave the region tracker rolling into a
 //! null sink, so every roll was consumed - RNG drawn, anti-repeat latched,
 //! counter re-seeded - and thrown away.
@@ -141,7 +141,7 @@ fn every_rollable_formation_resolves_across_the_scene_corpus() {
 
 /// A New Game runs *after* scene entry (`play-window --seed-party` does
 /// exactly that), so it lands on a world whose per-region tracker is already
-/// installed. It used to null `World::encounter` outright, leaving that
+/// installed. It used to null `World::encounters.session` outright, leaving that
 /// tracker with nothing to trigger into - and because a region roll is
 /// destructive (RNG drawn, pick latched, counter re-seeded, all before the
 /// return), every roll it produced was a fight that happened and was thrown

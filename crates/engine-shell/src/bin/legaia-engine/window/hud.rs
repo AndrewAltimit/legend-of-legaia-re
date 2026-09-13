@@ -40,7 +40,7 @@ impl PlayWindowApp {
     /// the world's pending dialog request.
     ///
     /// The world owns dismissal: the field VM's op-`0x4C` dialog-advance hook
-    /// and the overworld talk-to handler both clear `World::current_dialog` on
+    /// and the overworld talk-to handler both clear `World::dialog.current` on
     /// a confirm/cancel press. This method only mirrors that state into a
     /// visible, typed-out box - it opens a panel from the scene's MES the frame
     /// a request appears, ticks its typewriter reveal, and drops the panel the
@@ -48,7 +48,7 @@ impl PlayWindowApp {
     /// itself, so it can't race the world's dismiss.
     pub(super) fn sync_dialog_panel(&mut self) {
         // When the inline-script field-VM runner owns dialogue, it manages its
-        // own box (rendered from `world.inline_dialogue`); don't also open the
+        // own box (rendered from `world.dialog.inline`); don't also open the
         // simplified panel.
         if self.session.host.world.toggles.use_vm_dialogue {
             self.active_dialog = None;

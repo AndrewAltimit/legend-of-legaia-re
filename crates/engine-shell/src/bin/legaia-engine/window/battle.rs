@@ -762,7 +762,7 @@ impl PlayWindowApp {
             // char_slot` (raw TOC 0x361-0x364; see docs/formats/cdname.md
             // numbering space) - while the present-party ORDINAL picks the
             // runtime texture band (`relocate_tsb_cba` x = 0x200 + i*0x80,
-            // CLUT row 481 + i). `World::active_party` supplies the mapping;
+            // CLUT row 481 + i). `World::party.active_party` supplies the mapping;
             // empty = the identity Vahn/Noa/Gala default.
             for member in 0..party_count.min(3) {
                 let cslot = self.session.host.world.party_roster_slot(member);
@@ -1479,7 +1479,7 @@ impl PlayWindowApp {
     /// This is the host half of `legaia_engine_render::battle_intro`. The
     /// simulation half is already live: `World::tick_encounter` runs
     /// `tick_transition` every frame the session sits in `Transition`, and
-    /// `World::battle_intro` carries the entity whose `+0x1A` clock the styles
+    /// `World::battle.intro` carries the entity whose `+0x1A` clock the styles
     /// ride. What was missing was an owner for the per-style working set and
     /// a route from its output into a draw call - both of which land here.
     ///

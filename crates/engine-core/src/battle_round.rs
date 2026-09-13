@@ -63,7 +63,7 @@ impl BattleRound {
     /// 2. Computes per-slot [`BattleStats`] from each provided
     ///    [`StatRecord`] and the active status set.
     /// 3. Writes the resolved attack / defense values back into
-    ///    `World::battle_attack` / `battle_defense` so the strike
+    ///    `World::battle.attack` / `battle_defense` so the strike
     ///    resolver picks them up.
     pub fn begin(
         world: &mut World,

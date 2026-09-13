@@ -22,10 +22,10 @@ impl World {
     }
 
     /// Roll for a shiny capturable enemy at battle entry. On a hit (chance
-    /// [`Self::shiny_chance_pct`]) one capturable monster slot (a monster the
+    /// [`crate::world::SeruState::shiny_chance_pct`]) one capturable monster slot (a monster the
     /// catalog maps to a Seru) is chosen, its battle stats boosted by
     /// [`crate::seru_learning::SHINY_DAMAGE_BONUS_PCT`]% (HP / ATK / DEF /
-    /// SPD), and its slot recorded in [`Self::shiny_enemy_slots`] so a capture
+    /// SPD), and its slot recorded in [`crate::world::SeruState::shiny_enemy_slots`] so a capture
     /// marks the learned spell shiny. Mirrors the retail `--shiny-seru` battle
     /// hook (`FUN_800513F0` → cave routine). Idempotent per battle; the slot
     /// sets are cleared by [`Self::enter_battle_from_formation`] first.
@@ -82,7 +82,7 @@ impl World {
     /// `hit_pct` only near death, zero at full HP) - mirroring retail capture,
     /// which is reliable only on a weakened Seru. On success the monster is
     /// downed (so it counts toward the wipe) and its id is logged into
-    /// [`Self::battle_captures`] for post-battle Seru learning.
+    /// [`crate::world::SeruState::battle_captures`] for post-battle Seru learning.
     pub(in crate::world) fn resolve_capture(&mut self, target: u8, hit_pct: u8) {
         let (hp, max, monster_id, alive) = match self.actors.get(target as usize) {
             Some(a) => (
@@ -117,7 +117,7 @@ impl World {
         }
     }
 
-    /// Drain the monster ids captured this battle (see [`Self::battle_captures`]).
+    /// Drain the monster ids captured this battle (see [`crate::world::SeruState::battle_captures`]).
     pub fn drain_battle_captures(&mut self) -> Vec<u16> {
         std::mem::take(&mut self.seru.battle_captures)
     }
@@ -211,7 +211,7 @@ impl World {
     /// so at most one level is gained per cast - mirrored here. The leveled
     /// byte is what the next cast's magic-power stage reads
     /// ([`Self::caster_magic_power_byte`]). A level-up is recorded in
-    /// [`Self::magic_level_ups`] (the banner the retail check fires as UI
+    /// [`crate::world::SeruState::magic_level_ups`] (the banner the retail check fires as UI
     /// element `0x65`).
     ///
     /// Unmodelled retail gates (skips the engine doesn't reproduce): the
@@ -269,13 +269,13 @@ impl World {
 
     /// Resolve this battle's captured monsters into Seru-learning progress.
     ///
-    /// Drains [`Self::battle_captures`] (so the list is always cleared), maps
-    /// each captured monster id to its Seru id via [`Self::monster_catalog`],
-    /// and banks capture points against [`Self::seru_log`] for every active
+    /// Drains [`crate::world::SeruState::battle_captures`] (so the list is always cleared), maps
+    /// each captured monster id to its Seru id via [`crate::world::DiscTables::monster_catalog`],
+    /// and banks capture points against [`crate::world::SeruState::log`] for every active
     /// party slot through [`crate::seru_learning::record_capture`]. Any Seru
     /// that crosses its learn threshold adds its spell to the character's
     /// learned list (which [`Self::build_battle_spell_session`] then offers).
-    /// Accepted outcomes are stashed in [`Self::last_capture_outcomes`] for the
+    /// Accepted outcomes are stashed in [`crate::world::SeruState::last_capture_outcomes`] for the
     /// host to drive the capture / learned banner. Monsters with no Seru, or
     /// any capture when the registry is empty, bank nothing.
     pub(super) fn resolve_captures(&mut self) {

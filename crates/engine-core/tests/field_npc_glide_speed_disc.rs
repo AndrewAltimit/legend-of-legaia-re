@@ -17,7 +17,7 @@
 //! The facing-nibble heuristic (the `4C 51` byte-+3 low nibble - NOT a
 //! retail speed field) survives only as the last-resort arm for placements
 //! with no walk-kernel op in either carrier. The engine feeds the decoded
-//! value through `World::field_npc_glide_speeds`, and
+//! value through `World::npcs.glide_speeds`, and
 //! `World::start_field_npc_motion` writes it into the leg's motion-VM speed
 //! instead of the flat stand-in (8).
 //!

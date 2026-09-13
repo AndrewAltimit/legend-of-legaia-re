@@ -618,11 +618,11 @@ onto world state (`World::submode_equip_env`):
 
 | Retail read | World source |
 |---|---|
-| `char[+0x75E..]`, the five equip slots | `World::roster`, re-ordered by `hub_panel_slots` |
+| `char[+0x75E..]`, the five equip slots | `World::party.roster`, re-ordered by `hub_panel_slots` |
 | `char[+0x6DA/+0x6DC/+0x6DE]` ATK / UDF / LDF | the same record's `+0x112` / `+0x114` / `+0x116` |
-| `DAT_80074368[id].+0/+1` kind + stat index | `World::item_effects` |
-| `DAT_80074F68[row][+0..+4]` the five bonuses | `World::equipment_table`, re-keyed row-wise through the same `+1` byte |
-| `0x80084140 + 0x1818`, the bag id list | `World::inventory`, id-ordered |
+| `DAT_80074368[id].+0/+1` kind + stat index | `World::tables.item_effects` |
+| `DAT_80074F68[row][+0..+4]` the five bonuses | `World::tables.equipment_table`, re-keyed row-wise through the same `+1` byte |
+| `0x80084140 + 0x1818`, the bag id list | `World::party.inventory`, id-ordered |
 | `0x8007B42C`, the weapon-slot table | `field_submode_screen::RETAIL_WEAPON_SLOTS` |
 | `_DAT_8007BB9C`, the class word | `World::set_hub_equip_mode` |
 | `DAT_80074F68[row].+6/+7` mask + slot byte | `World::install_hub_equip_restrictions` |
@@ -924,7 +924,7 @@ The from-scratch engine ports this SM as `legaia_engine_vm::world_map::step`
 tick: the Idle state's encounter (countdown reaches zero with encounters
 enabled) latches the configured formation, which the world resolves into a
 battle through the same `formation_table` machinery as a field encounter,
-tagged via `World::battle_return_mode` to return to the overworld rather than
+tagged via `World::battle.return_mode` to return to the overworld rather than
 the field.
 
 Each entity carries an optional per-entity role
@@ -1152,7 +1152,7 @@ landed:
 - `Npc { interact_id, text_id, inline }` - surfaces a `FieldEvent::FieldInteract`
   with that id. `inline` is the record's structural inline dialog-text block (see
   [dialog text source](#npc-dialogue-text-source)); `tick_world_map` opens it
-  (sets `World::current_dialog` + emits `FieldEvent::OpenDialog`, both carrying
+  (sets `World::dialog.current` + emits `FieldEvent::OpenDialog`, both carrying
   the inline bytes) when the player presses confirm while standing within one
   tile of the entity, and dismisses it on the next confirm/cancel press. This is
   the overworld talk-to path - portals are walk-onto, NPCs are talk-to. (`text_id`
@@ -2299,7 +2299,7 @@ script-faded park cells), and `(48, 500)` 4 steps hold 6 from row 498
 The engine consumes the table in `play-window` (`WaterAnim::Walk` /
 `advance_ocean_animation`): slot 5 is parsed at scene resolve, all eight
 entries run as independent accumulators with the retail semantics above
-(clock in retail vsync units - a game tick every `World::frame_step`
+(clock in retail vsync units - a game tick every `World::clock.frame_step`
 vsyncs), and each fire is a CPU-VRAM 16x1 `move_image` + re-upload. The
 legacy single-cell 13-frame ocean-head cycle (`legaia_asset::ocean`,
 `WaterAnim::Ocean`) survives only as the fallback for a bundle without a

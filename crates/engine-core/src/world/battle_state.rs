@@ -18,7 +18,7 @@ pub struct BattleState {
     /// Retail never folds these into the actor's ATK at battle load - the
     /// arms execution resolver `FUN_801EC3E4` adds **half** of the slot the
     /// executing command reads (`arms_weapon_atk_fold`) on every swing, so
-    /// [`Self::battle_attack`] stays the un-equipped base and this array
+    /// [`crate::world::BattleState::attack`] stays the un-equipped base and this array
     /// supplies the per-command half. Party slots only; monster slots stay
     /// zero.
     pub equip_atk: [[u8; legaia_engine_vm::battle_formulas::EQUIP_SLOTS]; 8],
@@ -34,7 +34,7 @@ pub struct BattleState {
     pub defense: [u16; 8],
     /// Optional UDF / LDF defense override per slot. When set, the
     /// art-strike applier uses the matching half for the strike's target
-    /// class instead of [`Self::battle_defense`]. Engines that don't
+    /// class instead of [`crate::world::BattleState::defense`]. Engines that don't
     /// distinguish UDF / LDF can leave this `None`.
     pub defense_split: [Option<(u16, u16)>; 8],
     /// Per-slot SPD (turn-order initiative seed, retail actor `+0x164`).
@@ -73,7 +73,7 @@ pub struct BattleState {
     /// stats keep their always-land behaviour and bit-identical RNG streams.
     pub accuracy: [u16; 8],
     /// Per-slot evasion stat - the **defender's** term in the selector-9
-    /// accuracy roll. Same field as [`Self::battle_accuracy`] in retail
+    /// accuracy roll. Same field as [`crate::world::BattleState::accuracy`] in retail
     /// (`+0x168` serves both rolls); kept separate here so equipment that
     /// modifies only accuracy or only evasion is representable. Seeded
     /// alongside accuracy.
@@ -94,7 +94,7 @@ pub struct BattleState {
     /// The AGL-budget picks of the monster whose physical strike is being
     /// armed, as archive **entry indices** (the anim ids the attack band
     /// stages) - filled by [`World::arm_monster_strike_budget`] alongside
-    /// [`Self::monster_strike_budget`] and moved into the monster's action
+    /// [`crate::world::BattleState::monster_strike_budget`] and moved into the monster's action
     /// stream by its arming. Empty when the catalog carries no aligned
     /// entry list.
     pub monster_strike_entries: Vec<u8>,
@@ -126,7 +126,7 @@ pub struct BattleState {
     /// [`BattleHitEvent`] per `FUN_801EC3E4` resolution (index, power byte,
     /// damage, running combo total, whether the total landed on HP). The
     /// impact-FX and HIT / TOTAL counter layers consume it; cosmetic, like
-    /// [`Self::battle_hit_fx`]. Drained via
+    /// [`crate::world::BattleState::hit_fx`]. Drained via
     /// [`World::drain_battle_hit_events`]; cleared on battle exit.
     pub hit_events: Vec<BattleHitEvent>,
     /// Battle **effect CLUT stages** queued this frame - one `0x801F6418`
@@ -185,7 +185,7 @@ pub struct BattleState {
     /// Per-party-slot Fury Boost state for the current battle: `Some(delta)` is
     /// the AP added to that slot's gauge by the class-5 Fury Boost item (retail
     /// actor `+0x1F9` flag). Reverted wholesale at battle end (`finish_battle`),
-    /// the same lifecycle as [`Self::battle_buffs`]; `None` = not boosted.
+    /// the same lifecycle as [`crate::world::BattleState::buffs`]; `None` = not boosted.
     pub fury_boost: [Option<u8>; 3],
     /// Battle-scoped monster-AI state (cooldowns / phase counter / recent-target
     /// ring) read & written by the per-monster-id scripted-cast picker
@@ -202,7 +202,7 @@ pub struct BattleState {
     /// perform itself (mesh assembly, the battle bundle read). The world
     /// consumes two of them before publishing: `LoadBattleBgm` (the BGM swap)
     /// and `SetAudioCue` (the battle-start sound, pushed onto
-    /// [`World::battle_sfx_cues`]) - see `World::tick_battle_intro` in
+    /// [`crate::world::AudioState::battle_sfx_cues`]) - see `World::tick_battle_intro` in
     /// `world/encounters.rs`.
     pub intro_effects: Vec<vm::battle_intro_transition::TransitionEffect>,
     /// Latched when the battle-intro spin performed retail's master mode
@@ -216,13 +216,13 @@ pub struct BattleState {
     /// a [`crate::battle_input::BattleCommandSession`] that reads
     /// [`World::input`]: the player selects a command from the battle command
     /// menu and a target before the strike commits. Requires
-    /// [`Self::live_gameplay_loop`]; hosts that want a playable battle
+    /// [`crate::world::WorldToggles::live_gameplay_loop`]; hosts that want a playable battle
     /// (`legaia-engine play-window`) set both after boot. All four commands
     /// are wired: Attack strikes; Arts opens the per-press
-    /// [`Self::battle_arts_input`] (the saved-chain
-    /// [`Self::battle_arts_menu`] is the legacy path, behind
+    /// [`crate::world::BattleState::arts_input`] (the saved-chain
+    /// [`crate::world::BattleState::arts_menu`] is the legacy path, behind
     /// `LEGAIA_ARTS_SAVED_LIST=1`); Magic / Item open
-    /// [`Self::battle_spell_menu`] / [`Self::battle_item_menu`].
+    /// [`crate::world::BattleState::spell_menu`] / [`crate::world::BattleState::item_menu`].
     pub player_driven: bool,
     /// Active command-selection session for the player-driven battle. `Some`
     /// only while a party member is choosing a command/target (the action SM
@@ -233,7 +233,7 @@ pub struct BattleState {
     /// Active inventory submenu for the player-driven battle, opened when the
     /// player picks **Item** from the command menu. `Some` while the player
     /// browses items / picks a target (both the action SM and
-    /// [`Self::battle_command`] are parked meanwhile); `None` otherwise. The
+    /// [`crate::world::BattleState::command`] are parked meanwhile); `None` otherwise. The
     /// World owns it - not [`crate::battle_input::BattleCommandSession`] -
     /// because it needs the live inventory + party stats. Hosts read it to
     /// draw the item overlay.
@@ -241,16 +241,16 @@ pub struct BattleState {
     /// Active spell submenu for the player-driven battle, opened when the
     /// player picks **Magic** from the command menu. `Some` while the player
     /// browses spells / picks a target (both the action SM and
-    /// [`Self::battle_command`] are parked meanwhile); `None` otherwise. The
+    /// [`crate::world::BattleState::command`] are parked meanwhile); `None` otherwise. The
     /// World owns it because building the spell list needs the caster's
     /// learned spells + live MP. Hosts read it to draw the spell overlay.
     pub spell_menu: Option<crate::battle_magic::BattleSpellSession>,
     /// Active Arts submenu for the player-driven battle, opened when the player
     /// picks **Arts** from the command menu. `Some` while the player browses
-    /// saved chains / picks a target (the action SM and [`Self::battle_command`]
+    /// saved chains / picks a target (the action SM and [`crate::world::BattleState::command`]
     /// are parked meanwhile); `None` otherwise. The World owns it because each
-    /// row's power profile is resolved from [`Self::saved_chains`] +
-    /// [`Self::art_records`] by `Self::build_battle_arts_rows`. Hosts read it
+    /// row's power profile is resolved from [`crate::world::PartyState::saved_chains`] +
+    /// [`crate::world::DiscTables::art_records`] by `Self::build_battle_arts_rows`. Hosts read it
     /// to draw the arts overlay.
     pub arts_menu: Option<crate::battle_arts::BattleArtsSession>,
     /// Active retail-model **Arts command input** - the per-press
@@ -258,8 +258,8 @@ pub struct BattleState {
     /// ([`crate::arts_command_input::ArtsCommandInputSession`], the port of
     /// the `FUN_801D0748` state-`0x50` gauge-input arm). `Some` while a
     /// party member is entering commands / reviewing / picking the Begin
-    /// target; the action SM and [`Self::battle_command`] are parked
-    /// meanwhile. The saved-chain list ([`Self::battle_arts_menu`]) is the
+    /// target; the action SM and [`crate::world::BattleState::command`] are parked
+    /// meanwhile. The saved-chain list ([`crate::world::BattleState::arts_menu`]) is the
     /// legacy path, kept reachable via `LEGAIA_ARTS_SAVED_LIST=1`.
     pub arts_input: Option<crate::arts_command_input::ArtsCommandInputSession>,
     /// Per-party-slot **swing costs** for the Arts command gauge: the four
@@ -295,7 +295,7 @@ pub struct BattleState {
     /// [`Self::arm_battle_tutorial`]. `None` in every other battle - which is
     /// every battle but one, matching retail's stage-overlay dispatch.
     pub tutorial: Option<crate::battle_tutorial::BattleTutorial>,
-    /// Prompt text for [`Self::battle_tutorial`], read off the user's own disc
+    /// Prompt text for [`crate::world::BattleState::tutorial`], read off the user's own disc
     /// copy of overlay 967. Empty when the host had no disc to read - the
     /// tutorial then emits no boxes rather than inventing text.
     pub tutorial_script: crate::battle_tutorial::BattleTutorialScript,
@@ -313,7 +313,7 @@ pub struct BattleState {
     /// draw rather than going blank.
     pub ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings,
     /// The next [`World::enter_battle`] is the sparring fight and should arm
-    /// [`Self::battle_tutorial`]. Set by
+    /// [`crate::world::BattleState::tutorial`]. Set by
     /// [`World::prime_battle_tutorial`]; the engine's stand-in for retail's
     /// per-formation battle-stage id.
     pub tutorial_pending: bool,
@@ -363,7 +363,7 @@ pub struct BattleState {
     /// arms it on a monster wipe ([`World::SPOILS_BANNER_FRAMES`]) and
     /// [`World::tick`] counts it down; a host draws
     /// [`World::battle_spoils_banner`] while it is non-zero. Without this the
-    /// XP / gold / drops in [`Self::last_battle_rewards`] were applied with no
+    /// XP / gold / drops in [`crate::world::BattleState::last_rewards`] were applied with no
     /// on-screen acknowledgement at all.
     pub spoils_frames: u16,
     /// Scene mode to return to when the current battle finishes. Captured at

@@ -44,7 +44,7 @@ impl World {
     /// Both party slots ([`Self::seed_party_battle_stats`]) and monster slots
     /// (battle entry, from the catalog's UDF / LDF pair) carry a real split.
     /// A slot with none configured - a synthetic battle that wrote only
-    /// [`Self::battle_defense`] - falls back to that scalar, so both halves
+    /// [`crate::world::BattleState::defense`] - falls back to that scalar, so both halves
     /// answer the same value and the parity pick is a no-op for it.
     pub fn physical_defense_of(&self, slot: u8, command: u8) -> u16 {
         let idx = slot as usize;
@@ -75,7 +75,7 @@ impl World {
     /// scripted no-flee battle is caught anyway.
     ///
     /// The scripted no-escape flag (`ctx+0x287`) is the engine's
-    /// [`World::battle_no_escape`], set at scripted-battle entry
+    /// [`crate::world::BattleState::no_escape`], set at scripted-battle entry
     /// ([`World::trigger_scripted_battle`] - the boss fights); the forced
     /// flee `_DAT_8007bac0 & 0x100` passes as unset.
     ///
@@ -130,7 +130,7 @@ impl World {
     /// `FUN_801EC0DC` with the monster's pool slot).
     ///
     /// Side scores fold live HP/max-HP off the actors and live ATK off the
-    /// [`World::battle_attack`] sidecar (retail reads actor `+0x158`); the
+    /// [`crate::world::BattleState::attack`] sidecar (retail reads actor `+0x158`); the
     /// party's No Escape / Chicken Guard bit folds from each living member's
     /// second ability word exactly as [`Self::roll_battle_escape`] folds its
     /// escape accessories. The fleeing monster's INT (`+0x168`) comes from the
@@ -232,7 +232,7 @@ impl World {
     /// Apply (or refresh) a stat buff / debuff on `slot`. The delta is written
     /// straight into the matching per-slot battle scalar so it changes damage
     /// the same frame: `Attack`/`MagicAttack`/`Defense` map to
-    /// [`Self::battle_attack`] / [`Self::battle_magic`] / [`Self::battle_defense`]
+    /// [`crate::world::BattleState::attack`] / [`crate::world::BattleState::magic`] / [`crate::world::BattleState::defense`]
     /// (`MagicDefense` reuses `battle_defense`, the spell-defense proxy).
     ///
     /// **Stat-up buffs (`magnitude > 0`) use the retail multiplicative ramp.**
@@ -290,7 +290,7 @@ impl World {
     /// Stats with no live-loop scalar (Accuracy / Evasion / Speed) return `0`.
     ///
     /// A Defense ramp is taken from the slot's **UDF half** when it carries a
-    /// [`Self::battle_defense_split`] - see [`Self::move_defense_split`] for why
+    /// [`crate::world::BattleState::defense_split`] - see [`Self::move_defense_split`] for why
     /// the scalar alone is the wrong basis.
     fn ramp_buff_scalar(&mut self, slot: u8, stat: crate::spells::BuffStat) -> i16 {
         use crate::spells::BuffStat;
@@ -347,7 +347,7 @@ impl World {
     /// Move both halves of `slot`'s defence split by `delta`, saturating at
     /// zero. No-op for a slot with no split.
     ///
-    /// The physical path reads the split, not the [`Self::battle_defense`]
+    /// The physical path reads the split, not the [`crate::world::BattleState::defense`]
     /// scalar ([`Self::physical_defense_of`]), so a Defense buff that touched
     /// only the scalar changed nothing a swing could see. That was already true
     /// for every party slot - [`Self::seed_party_battle_stats`] writes the split

@@ -1936,7 +1936,7 @@ impl PlayWindowApp {
             hud.extend(field_hud_draws.text.iter().copied());
             // Post-battle spoils panel. The XP / gold / drops a victory
             // credits used to land with no on-screen acknowledgement at all
-            // (`World::last_battle_rewards` had no reader outside its own
+            // (`World::battle.last_rewards` had no reader outside its own
             // declaration); this is the shared `engine-ui` builder both hosts
             // draw. Suppressed while a boot-UI panel owns the frame.
             if !self.boot_ui.is_active() {
@@ -2024,7 +2024,7 @@ impl PlayWindowApp {
                 draws: &muscle_hub_draw_vec,
             });
             // Opening-cutscene "It was the Seru." caption: the opdeene baked TIM
-            // (`World::cutscene_caption`) blitted centered and faded
+            // (`World::cutscene.caption`) blitted centered and faded
             // (`cutscene_caption_alpha`) over the gap between the two narration
             // crawls. One textured quad sampling the caption atlas - the
             // background palette entry is transparent, so only the white text

@@ -121,7 +121,7 @@ pub(super) struct MoveVmHostImpl<'a> {
     pub(super) deferred_writes: std::collections::BTreeMap<usize, u16>,
     /// When set, this host is ticking an **ambient field-fx part** whose
     /// bytecode is a window of the shared prescript stager bundle
-    /// (`world.field_stager_bytes`) starting at this u16-word offset.
+    /// (`world.props.stager_bytes`) starting at this u16-word offset.
     /// Routes `move_bytecode_read_u16` to the shared bundle (retail's
     /// `_DAT_8007B8D0`-resident copy, which the self-modifying ext ops
     /// 0x04/0x1B/0x1E patch in place) and arms `spawn_child` collection.
@@ -851,7 +851,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // Op-0x43 screen-effect widget sub-ops (the PROT-0900 mask / sprite /
     // panel / letterbox family, exercised by the ten ending scenes).
     // Each routes to the world's widget host; the Field / Cutscene tick
-    // advances the widgets and publishes `World::screen_fx_frame`.
+    // advances the widgets and publishes `World::presentation.fx_frame`.
     // REF: FUN_801F8004 / FUN_801F8D4C / FUN_801F88FC / FUN_801F8E6C /
     // FUN_801F8F28 (spawn + control APIs)
     fn op43_widget_sprite_spawn(&mut self, payload: &[u8]) {
@@ -873,7 +873,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // Op-0x43 sub-3..6 camera-register zone-ramp spawn (retail
     // `FUN_8003C6A4` actor on the effect list). The record's
     // parameterization is the ported kernel; the world holds the spawned
-    // records ([`World::register_ramps`]) and ticks each one's
+    // records ([`crate::world::CameraRig::register_ramps`]) and ticks each one's
     // `FUN_80037018` handler per frame ([`World::tick_register_ramps`]).
     // REF: FUN_8003C6A4 (kernel PORT lives in crate::register_ramp)
     fn op43_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
@@ -1552,7 +1552,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// `b1` is the rung (`0..16`, the low nibble of a collision byte);
     /// `words` are the half-period, the amplitude and the burst-arm word.
     /// Retail seeds both the position and the rest height from the rung's
-    /// current value, which is `World::field_floor_height_lut` here.
+    /// current value, which is `World::terrain.floor_height_lut` here.
     fn op4c_n9_sub0_2_dde34(&mut self, sub: u8, b1: u8, words: [i16; 3]) {
         let seed = self
             .world
@@ -1695,8 +1695,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Two gates ride on top of the sub-switch, both read off
         // `0x801E030C..0x801E0444` and both keyed on the side-band
         // request/acknowledge pair `_DAT_8007BABC` / `_DAT_8007BAA0`
-        // (`World::sound_stream`) plus the dev/dual-mode word
-        // `_DAT_8007B868` (`World::dual_mode_gate`, `0` in retail):
+        // (`World::audio.sound_stream`) plus the dev/dual-mode word
+        // `_DAT_8007B868` (`World::audio.dual_mode_gate`, `0` in retail):
         //
         // * bit-15 **set**: `_DAT_8007B868 != 0` skips the whole sub-switch
         //   (`bnez v0,0x801DF898` at `0x801E031C`). Subs `0`, `1` and `2`
@@ -2000,7 +2000,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// This opcode is the global's only retail writer and the global is the
     /// only input to `FUN_801D9D30`, so the field script is the sole source
     /// of a camera shake. The world holds it for the camera to read; see
-    /// [`crate::world::World::camera_shake_amplitude`].
+    /// [`crate::world::CameraRig::shake_amplitude`].
     fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
         self.world.camera.shake_amplitude = value;
     }
@@ -2297,7 +2297,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// the number [`World::cast_spell_on_slots`] deducts (`def.mp_cost`),
     /// before the shared ability-bit fold the SM applies on top.
     ///
-    /// `World::spell_catalog` is seeded from the user's `SCUS_942.54` at boot
+    /// `World::tables.spell_catalog` is seeded from the user's `SCUS_942.54` at boot
     /// ([`crate::retail_magic::seru_magic_catalog_from_scus`]), so on a real
     /// disc this *is* the retail `+3` byte; disc-free it is the port's
     /// catalog. Either way there is one price per spell in this engine, and
@@ -2627,7 +2627,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
     /// `(class, tier)` of the item's descriptor in the disc item-effect table
     /// (`0x800752C0`, resolved through the item property record's `+1`
-    /// subtype) - `World::item_effects`, the same table the field/battle item
+    /// subtype) - `World::tables.item_effects`, the same table the field/battle item
     /// menus gate usability on. `None` without a disc image.
     ///
     fn item_effect_class_pair(&self, item_id: u8) -> Option<(u8, u8)> {
@@ -2691,7 +2691,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             // `clut_x` is a VRAM x coordinate, not a cue id: retail's arm
             // is `MoveImage({x = clut_x, y = 476, w = 16, h = 1}, 224, 476)`
             // - a 16-entry palette-row swap. It was pushed into
-            // `World::battle_sfx_cues` while the table was read as an SFX
+            // `World::audio.battle_sfx_cues` while the table was read as an SFX
             // map, which fed the SFX scheduler the values `0xB0` / `0xC0` /
             // `0xD0`. The engine has no VRAM CLUT-row swap on this seam, so
             // the copy is dropped rather than mis-routed.
@@ -2762,7 +2762,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         skills.ids[..n].to_vec()
     }
     /// The disc-parsed [`legaia_art::ArtRecord`] for `(character, action)` -
-    /// `World::art_records`, the same map the entry resolver reads its
+    /// `World::tables.art_records`, the same map the entry resolver reads its
     /// per-strike power profile out of.
     ///
     /// The record supplies an art hit's side data - the status effect and

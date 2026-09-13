@@ -71,7 +71,7 @@ pub struct MenuRuntime {
     /// Number of save slots the picker offers (default 3 - one per save
     /// file in the `slot_NN.bin` shape).
     pub slot_count: u8,
-    /// Index into `World::roster.members` for the active character
+    /// Index into `World::party.roster.members` for the active character
     /// sub-screen (StatusEquipment / StatusMagic / StatusTacticalArts).
     /// Updated by `commit(StatusCharacter, slot)`.
     pub selected_char: usize,
@@ -192,7 +192,7 @@ impl MenuRuntime {
 
     /// The live Point Card toast's credit, or `None` when window 31 is not
     /// up. A host paints the window while this is `Some`; the number it
-    /// prints is the **bank** (`World::point_card`), not this delta - retail
+    /// prints is the **bank** (`World::minigames.point_card`), not this delta - retail
     /// hands `_DAT_800845B4` to the renderer.
     pub fn point_card_toast(&self) -> Option<i32> {
         self.point_card_toast
@@ -812,7 +812,7 @@ impl MenuRuntimeHost<'_> {
     /// ([`crate::shop::buy_list_confirm_route`], `FUN_801DB21C` state 2):
     /// affordability against the purse first, then the item record's `+0`
     /// kind byte picks the follow-up screen. The kind comes from the
-    /// on-disc item-effect tables ([`World::item_effects`]); a
+    /// on-disc item-effect tables ([`crate::world::DiscTables::item_effects`]); a
     /// PROT.DAT-only load has no kind byte and falls back to the stackable
     /// arm (the quantity flow), which is also where an equipment row lands
     /// while [`MenuRuntime::retail_equipment_buy`] is off.

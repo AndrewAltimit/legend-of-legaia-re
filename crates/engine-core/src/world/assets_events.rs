@@ -200,7 +200,7 @@ impl World {
     /// its `SfxBank::play_one_shot` at the cue's `timing_frames` delay; nothing
     /// here mutates gameplay state. Returns them in resolve order.
     /// Take this tick's CD-XA clip requests (see
-    /// [`World::battle_xa_cues`]). A host with a staged
+    /// [`crate::world::AudioState::battle_xa_cues`]). A host with a staged
     /// `legaia_engine_audio::XaClipBank` plays each one; the request is a
     /// `(clip_slot, channel, duration_sectors)` triple in the retail
     /// starter's own terms.
@@ -231,7 +231,7 @@ impl World {
     /// state beyond the SFX queue below. Returns them in walk order.
     ///
     /// Draining also queues each table-form spawn's **per-effect CLUT stage**
-    /// onto [`World::battle_clut_stages`], mirroring retail's table arm: only
+    /// onto [`crate::world::BattleState::clut_stages`], mirroring retail's table arm: only
     /// a plain code below
     /// [`crate::action_effect_script::TABLE_CLUT_GATE`] consults the
     /// `0x801F6418` map, and only a non-zero byte performs the copy. The map
@@ -240,7 +240,7 @@ impl World {
     /// disc-free battle degrades to unstaged palettes exactly as it degrades
     /// to no spawns.
     ///
-    /// That byte was pushed into [`World::battle_sfx_cues`] as a sound cue id
+    /// That byte was pushed into [`crate::world::AudioState::battle_sfx_cues`] as a sound cue id
     /// while `0x801F6418` was read as an SFX map and `FUN_80058490` as the
     /// sound-driver command lane. Both readings are false - the byte is a
     /// VRAM x and the call is `MoveImage` - so the SFX scheduler was being

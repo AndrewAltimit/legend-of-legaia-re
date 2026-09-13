@@ -41,11 +41,11 @@
 //! Everything this kick *reads* has an engine home. The retail caller has an
 //! analogue: `World::check_field_walk_touch` is the `FUN_801D5B5C` touch post
 //! and runs from the locomotion step. The default-move table is harvested at
-//! scene load into `World::field_npc_default_moves`, keyed by the same
+//! scene load into `World::npcs.default_moves`, keyed by the same
 //! placement slot. Both gates are derivable from the typed per-slot maps -
 //! `+0x80 != 0` ("a motion stream is installed") is exactly "the placement has
 //! a bound tail-section-1 stream", which is what seeds
-//! `World::field_npc_ambient`, and the moving class is the slot set carrying a
+//! `World::npcs.ambient`, and the moving class is the slot set carrying a
 //! route or an in-flight leg. A `[PauseKickActor]` slice is projectable today.
 //!
 //! What has nowhere to land is the result. The kick's whole effect is to

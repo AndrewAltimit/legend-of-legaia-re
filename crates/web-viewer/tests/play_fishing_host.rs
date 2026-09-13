@@ -15,7 +15,7 @@
 //!    So the contract is that pad-word + `tick_frame` alone walks the phase
 //!    machine (cast -> lock -> fight), which the cast-power test pins.
 //! 3. **The point pool round-trips.** `exit_fishing` banks the session's points
-//!    into `World::fishing_points`, and the suspended scene mode comes back -
+//!    into `World::minigames.fishing_points`, and the suspended scene mode comes back -
 //!    otherwise entering the minigame would strand the field.
 //!
 //! No Sony bytes are asserted, only structural facts. Skips + passes when

@@ -253,7 +253,7 @@ pub struct World {
     /// loop can restore it on victory. The retail engine re-enters the field
     /// scene from scratch; the port's loop snapshots the actor table +
     /// player slot instead. `None` outside battle. Managed by the live loop;
-    /// hosts read [`Self::mode`] / [`Self::active_formation`] instead.
+    /// hosts read [`Self::mode`] / [`crate::world::BattleState::active_formation`] instead.
     pub field_return: Option<FieldReturnState>,
 
     /// Field-scene carrier entities: the per-entity FUN_801DA51C state machines ticked in field scenes and their battle / engage handoffs.
@@ -370,7 +370,7 @@ impl World {
     ///   starts the town theme then pauses it while flag `0x225` is clear
     ///   (the opening's silent dawn; `P1[0]` `+0x5D..+0x91`); retail's
     ///   opening records repair it with their own sub-9 starts, which a
-    ///   picker visit never runs. [`Self::free_roam_staging`] lets the BGM
+    ///   picker visit never runs. [`crate::world::FieldVmState::free_roam_staging`] lets the BGM
     ///   host arm drop a pause issued inside the entry window (see
     ///   `op35_bgm` in `vm_hosts`).
     /// - **Story-twin scenes present the wrong world event.** `town0c` is

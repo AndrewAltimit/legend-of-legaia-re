@@ -13,7 +13,7 @@ impl World {
     /// global frame-time `delta`, (2) run the move VM through
     /// [`vm::move_vm::actor_tick`], which gates on the resulting timer and
     /// inspects the HALT flag after the call. Outcomes are recorded in
-    /// [`World::move_outcomes`] so engines that want to react to per-actor
+    /// [`crate::world::MoveVmGlobals::outcomes`] so engines that want to react to per-actor
     /// halts / waits can read them after the world ticks.
     ///
     /// `delta` mirrors the retail product `_DAT_1f800393 * _DAT_1f80037D`
@@ -69,7 +69,7 @@ impl World {
     ///
     /// The other event variants (audio cues, render submissions,
     /// unlink requests, keyframe pose writeback) are recorded in
-    /// [`World::last_tick_events`] for engines that want to consume
+    /// [`crate::world::MoveVmGlobals::last_tick_events`] for engines that want to consume
     /// them but otherwise no-op. Wiring those is orthogonal to the
     /// move-buffer cursor.
     ///
@@ -108,7 +108,7 @@ impl World {
     ///
     /// `frame_delta` is retail's `DAT_1F800393` - the vsyncs one game tick
     /// spans - not a constant `1`. [`World::tick`] fires this once every
-    /// [`World::frame_step`] vsyncs, so the two together conserve
+    /// [`crate::world::FrameClock::frame_step`] vsyncs, so the two together conserve
     /// vsyncs-per-second: the dispatcher integrates the same total delta over
     /// the same wall-clock span, just in fewer, larger steps. That is exactly
     /// retail's own trade, and it is why duration-based parity (the camera
@@ -326,7 +326,7 @@ impl World {
     /// is the installed [`crate::move_power::MovePowerCatalog`]'s id-index
     /// map when present.
     ///
-    /// The terminator's context writes land in [`Self::move_fx_streak`] -
+    /// The terminator's context writes land in [`crate::world::CastFxState::move_fx_streak`] -
     /// the `ctx[+0x1014]` / `+0x6C6` / `+0x1144` block the afterimage streak
     /// projects from ([`crate::action_effect_script::MoveFxStreak`]).
     // REF: FUN_80047430 (the retail caller this substitutes for)
@@ -1236,7 +1236,7 @@ impl World {
         crate::world::config::FIELD_BASE_STEP
     }
 
-    /// Recompute [`World::field_actor_moving`] by diffing every tracked
+    /// Recompute [`crate::world::FieldLocomotion::actor_moving`] by diffing every tracked
     /// actor's live field position against last frame's, and fold the
     /// player's own bit into its locomotion animation.
     ///
@@ -1359,7 +1359,7 @@ impl World {
 
     /// Resolve a battle/party ordinal (actor slot, HUD row, VRAM texture
     /// band) to the **roster slot** of the character occupying it, per
-    /// [`Self::active_party`]. Identity when no composition is installed
+    /// [`crate::world::PartyState::active_party`]. Identity when no composition is installed
     /// or the ordinal runs past it - the historical slot-`i`-is-character-`i`
     /// behaviour every synthetic test relies on.
     pub fn party_roster_slot(&self, member: usize) -> usize {
@@ -1374,7 +1374,7 @@ impl World {
     /// battle ordinal `i` (the engine mirror of retail's present-party
     /// list at `0x8007BD10`). The list caps at the 3 on-screen party
     /// positions (the runtime texture-band count). Sets
-    /// [`Self::party_count`] to the resulting length and, for each ordinal
+    /// [`crate::world::PartyState::party_count`] to the resulting length and, for each ordinal
     /// whose mapped roster record exists, reseeds the party actor's HP /
     /// MP / liveness / SPD mirror from it - the same projection
     /// [`Self::load_party`] performs for the identity mapping. Ordinals
@@ -1557,7 +1557,7 @@ impl World {
     /// seven-entry list at `0x801CE8AC` into the next-scene name global
     /// `0x80084548` (+ spawn/door word `0x80084540`), e.g. `town01` triggers
     /// fmv 1 and lands in `town0b`. That transfer needs the host's asset
-    /// index, so this parks the finished id in [`World::finished_fmv`] and
+    /// index, so this parks the finished id in [`crate::world::CutsceneState::finished_fmv`] and
     /// [`crate::scene::SceneHost::apply_pending_fmv_handoff`] performs it -
     /// one drain, whichever host polls.
     // REF: FUN_801CEA3C

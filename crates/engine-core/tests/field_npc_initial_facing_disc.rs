@@ -9,7 +9,7 @@
 //! units; retail `0` = Z-, pinned from `FUN_801d01b0`'s pad->facing writes).
 //! The engine derives the same LUT index statically
 //! (`man_field_scripts::placement_initial_facing`) and seeds
-//! `World::field_npc_headings` (engine convention `0` = Z+, retail + 0x800)
+//! `World::npcs.headings` (engine convention `0` = Z+, retail + 0x800)
 //! via `World::seed_field_npc_facings`.
 //!
 //! Assertions are structural (facing-carrying prologues exist, every derived

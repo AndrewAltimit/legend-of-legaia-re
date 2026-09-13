@@ -73,7 +73,7 @@
 //! latch is armed here too, via `BattleHud::sync_status`; only the drain is
 //! missing. The effect **CLUT stage** (`engine-core::battle_effect_clut`,
 //! `FUN_801DEA50`'s palette arm) is the third rider on that same missing
-//! channel: `World::battle_clut_stages` fills here exactly as it does
+//! channel: `World::battle.clut_stages` fills here exactly as it does
 //! natively, and nothing drains it. Growing the channel lights up all three
 //! at once.
 

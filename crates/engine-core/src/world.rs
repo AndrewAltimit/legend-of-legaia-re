@@ -17,6 +17,23 @@
 //!
 //! Engines that want a different layout - say, ECS storage - should
 //! implement the VM `Host` traits themselves; this is the default.
+//!
+//! ## Layout
+//!
+//! [`World`] itself keeps the VM contexts, the actor table and the
+//! scene-flow latches as direct fields. Everything else is grouped one
+//! plain data struct per subsystem, each in its own `world/*_state.rs`
+//! file and reached as `world.<group>.<field>`: [`PartyState`],
+//! [`BattleState`], [`EncounterState`], [`SeruState`], [`CastFxState`],
+//! [`FieldTerrain`], [`FieldLocomotion`], [`FieldPropState`],
+//! [`FieldNpcState`], [`FieldVmState`], [`DialogState`], [`CutsceneState`],
+//! [`WorldMapState`], [`FieldCarrierState`], [`MinigameState`],
+//! [`ShopState`], [`MenuState`], [`TileBoardState`], [`CameraRig`],
+//! [`ScreenFxState`], [`AmbientFxState`], [`AudioState`],
+//! [`MoveVmGlobals`], [`FrameClock`], [`DiscTables`], [`StoryFlagState`]
+//! and [`WorldToggles`]. The groups carry no methods of their own - every
+//! `impl World` block reads and writes them directly, so a borrow of one
+//! group never conflicts with another.
 //! REF: FUN_8001E890, FUN_80021DF4, FUN_80026B4C, FUN_8003CA38, FUN_8003CE08, FUN_800520F0
 //! REF: FUN_801D65D8, FUN_801D77F4, FUN_801D8DE8, FUN_801DE840, FUN_801DFDF8
 //!

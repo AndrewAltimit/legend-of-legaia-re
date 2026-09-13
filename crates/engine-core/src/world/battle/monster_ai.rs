@@ -1052,7 +1052,7 @@ impl World {
     /// Lowest-HP living party member (slot `0..party_count`), ties broken by
     /// the lower slot index. `None` only when the whole party is down.
     /// Consumes no RNG - used solely by the opt-in
-    /// [`World::smarter_monster_targeting`] override, which runs after the
+    /// [`crate::world::WorldToggles::smarter_monster_targeting`] override, which runs after the
     /// faithful random pick has already advanced the RNG stream.
     fn lowest_hp_living_party_member(&self, party_count: u8) -> Option<u8> {
         let pc = party_count.max(1);

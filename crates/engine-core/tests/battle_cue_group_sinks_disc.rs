@@ -10,7 +10,7 @@
 //!   effect pool),
 //! * `CueSpawn::Effect` -> `World::spawn_action_table_effect` (`FUN_80050ED4`
 //!   over the `0x801F6324` prototypes), plus the SFX-map byte into
-//!   `World::battle_sfx_cues`.
+//!   `World::audio.battle_sfx_cues`.
 //!
 //! Skips and passes without `LEGAIA_DISC_BIN` / `extracted/`.
 

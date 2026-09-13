@@ -475,7 +475,7 @@ impl Camera {
     /// The mover is clocked in **display frames**, not sim ticks - retail
     /// credits `DAT_1F800393` (the adaptive frame-skip factor) per logic tick,
     /// which banks exactly one unit per display frame, making every authored
-    /// `apply` a duration in 60 Hz frames. `World::field_frames` is the
+    /// `apply` a duration in 60 Hz frames. `World::clock.display_frames` is the
     /// engine's display-frame counter, so diffing it is the faithful clock
     /// (the same thing the renderer's glide does).
     ///
@@ -560,7 +560,7 @@ impl Camera {
     }
 
     /// The camera azimuth to feed
-    /// [`World::field_camera_azimuth`](crate::world::World::field_camera_azimuth)
+    /// [`crate::world::FieldLocomotion::camera_azimuth`](crate::world::World::field_camera_azimuth)
     /// this frame, in PSX 12-bit units (`4096` = full turn): scripted yaw +
     /// the user's manual orbit + the host renderer's fixed framing bias.
     /// This is what keeps the d-pad -> world-direction remap ("screen up
@@ -589,7 +589,7 @@ impl Camera {
     /// [`Self::route_camera_events`]). That stale cinematic yaw must not leak
     /// into free-roam: a renderer frames free-roam field with a fixed follow
     /// camera, and hosts feed [`Self::yaw`] into
-    /// [`World::field_camera_azimuth`](crate::world::World::field_camera_azimuth)
+    /// [`crate::world::FieldLocomotion::camera_azimuth`](crate::world::World::field_camera_azimuth)
     /// to remap the d-pad camera-relative - so a non-zero leaked yaw rotates
     /// the controls off the on-screen camera (the New Game prologue → Rim Elm
     /// hand-off left the d-pad ~180deg inverted). Retail returns control on the

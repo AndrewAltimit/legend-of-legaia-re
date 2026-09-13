@@ -499,7 +499,7 @@ struct PlayWindowApp {
     /// in [`MENU_WINDOW_FALLBACK`] apply).
     menu_window_table: Option<legaia_asset::menu_windows::MenuWindowTable>,
     /// Uploaded "It was the Seru." caption sprite atlas (opdeene's baked TIM,
-    /// `World::cutscene_caption`). Uploaded lazily the first frame the caption
+    /// `World::cutscene.caption`). Uploaded lazily the first frame the caption
     /// image is present and dropped when it clears on scene change; holds
     /// `(atlas, width, height)`. The caption is a pre-rendered scene texture,
     /// not font text - see [`legaia_engine_core::cutscene_caption`].
@@ -590,7 +590,7 @@ struct PlayWindowApp {
     player_color_draw: Option<(usize, usize)>,
     /// Field NPC / animated-prop draws, one per visible MAN partition-1
     /// placement (the retail per-scene actor pool). Positions are live: the
-    /// draw follows `World::field_npc_positions` (motion-VM walkers move),
+    /// draw follows `World::npcs.positions` (motion-VM walkers move),
     /// falling back to the record's spawn tile. Built at scene load in
     /// `upload_assets`.
     field_npc_draws: Vec<FieldNpcDraw>,
@@ -628,7 +628,7 @@ struct PlayWindowApp {
     npc_pose_verify: NpcPoseVerify,
     /// The ANM bundles the placements resolved their clips through,
     /// retained past scene load so channel op-`0x4B` ANIMATE cues
-    /// (`World::field_npc_anim_cues`) can re-target an NPC's clip player
+    /// (`World::npcs.anim_cues`) can re-target an NPC's clip player
     /// mid-scene (the prologue-vignette "characters doing things" beats).
     /// `.0` = the per-scene bundle, `.1` = the party locomotion bundle
     /// (PROT 0874 §1); `npc_bundle_special[slot]` records which of the two
@@ -700,7 +700,7 @@ struct PlayWindowApp {
     ///
     /// Owns the selected style's working set between frames and turns it into
     /// screen-space primitives; the transition *state machine* it rides is
-    /// `World::battle_intro`, driven by `World::tick_encounter`. Armed by
+    /// `World::battle.intro`, driven by `World::tick_encounter`. Armed by
     /// `take_battle_intro_prims` on the first transition frame and dropped when
     /// the phase ends. See `legaia_engine_render::battle_intro`.
     battle_intro: Option<legaia_engine_render::battle_intro::BattleIntro>,
@@ -759,7 +759,7 @@ struct PlayWindowApp {
     /// appended by the (immutable) HUD builder. Empty unless the menu is on.
     dev_menu_draws: Vec<TextDraw>,
     /// Whole seconds of window wall clock already folded into
-    /// `World::play_time_seconds`. The high-water mark `tick_play_clock`
+    /// `World::clock.play_time_seconds`. The high-water mark `tick_play_clock`
     /// deltas against, so a loaded save's accumulated total survives.
     play_clock_secs: u32,
     /// Whether the dev menu is showing the battle-records page
@@ -834,9 +834,9 @@ struct PlayWindowApp {
     /// The between-legs INTERVAL + score-tally screen's envelope, armed when
     /// a leg closes while its contest is (or just was) open.
     muscle_interval: Option<legaia_engine_core::muscle_dome::HubScreen>,
-    /// Last frame's `world.muscle_dome.is_some()`, for the leg edges above.
+    /// Last frame's `world.minigames.muscle_dome.is_some()`, for the leg edges above.
     muscle_prev_leg_open: bool,
-    /// Last frame's `world.muscle_contest.is_some()`, distinguishing a fresh
+    /// Last frame's `world.minigames.muscle_contest.is_some()`, distinguishing a fresh
     /// contest (intro card) from a mid-ladder re-entry (ROUND banner only).
     muscle_prev_contest_open: bool,
     /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
@@ -1035,7 +1035,7 @@ struct PlayWindowApp {
     /// the opening choreography blends instead of cutting. Reset (snaps) while
     /// no cutscene timeline is active.
     cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp,
-    /// `World::field_frames` at the last cutscene-camera glide step. The
+    /// `World::clock.display_frames` at the last cutscene-camera glide step. The
     /// interp advances in retail DISPLAY frames (the op-`0x45` `apply` unit),
     /// so the step count is this counter's delta, not the sim-tick count.
     cutscene_cam_frames: u64,
@@ -1047,7 +1047,7 @@ struct PlayWindowApp {
     /// glide's targets; the snap replays keep the glide's start pose retail
     /// (the captured fly-in trajectory starts exactly at the snapped pose).
     pending_camera_snaps: Vec<Vec<legaia_engine_vm::field::CameraParam>>,
-    /// Active dialog box, mirroring `World::current_dialog`. Opened from the
+    /// Active dialog box, mirroring `World::dialog.current`. Opened from the
     /// scene's MES container the frame a dialog request appears (field-VM
     /// op `0x3F` or the overworld talk-to), ticked for its typewriter reveal,
     /// and dropped when the world clears the request (the world owns dismissal
@@ -1197,7 +1197,7 @@ impl PlayWindowApp {
         legaia_engine_render::pause_menu::MenuRects::new(self.menu_window_table.as_ref()).rect(id)
     }
 
-    /// Advance `World::play_time_seconds` by the whole seconds elapsed since
+    /// Advance `World::clock.play_time_seconds` by the whole seconds elapsed since
     /// the last call.
     ///
     /// Kept as a delta against a host-side high-water mark rather than as an
@@ -1312,7 +1312,7 @@ const WORLD_MAP_WORLD_SCALE: f32 = 6.0;
 ///    index + 1 in the **scene bundle** (normal models) or the **PROT 0874 §1
 ///    locomotion bundle** (special models); `0` = no clip (unposed prop).
 struct FieldNpcDraw {
-    /// Partition-1 record index - the key `World::field_npc_positions` tracks
+    /// Partition-1 record index - the key `World::npcs.positions` tracks
     /// live walker positions under.
     slot: u8,
     /// Textured mesh half (`self.meshes`), `None` when the model carries no
@@ -1345,7 +1345,7 @@ struct ClutWalkAnim {
     /// `table.entries`.
     state: Vec<(u32, usize)>,
     /// Vsyncs counted toward the next retail *game tick* (a game tick spans
-    /// `World::frame_step` vsyncs - the retail `DAT_1F800393` adaptive
+    /// `World::clock.frame_step` vsyncs - the retail `DAT_1F800393` adaptive
     /// frame-skip factor written by `FUN_80016B6C`).
     vsyncs_to_game_tick: u32,
 }

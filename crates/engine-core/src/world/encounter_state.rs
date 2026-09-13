@@ -6,7 +6,7 @@
 /// Random / scripted encounter state: the per-scene encounter session, the scripted-encounter arm and the roll gates.
 pub struct EncounterState {
     /// Pending scripted-encounter install (field-VM bare arm-encounter op
-    /// `0x37`/`0x41`). When that op runs and [`Self::scripted_encounter_armed`]
+    /// `0x37`/`0x41`). When that op runs and [`crate::world::EncounterState::scripted_armed`]
     /// is set, the host records the bounded record window overlaying the opcode
     /// here; the field-step driver drains it after the VM borrow ends and feeds
     /// it to [`Self::install_scripted_encounter`]. `None` between installs.

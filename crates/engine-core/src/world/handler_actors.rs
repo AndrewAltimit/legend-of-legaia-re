@@ -98,7 +98,7 @@ impl World {
     /// [`legaia_engine_vm::field_actor_timers::FloorTierBob`]. The engine keeps
     /// those records off the pool, so the callers that mean the retire
     /// (`4C 9F`, [`Self::man_load_actor_reset`]) clear
-    /// [`crate::world::World::floor_tier_bobs`] alongside this sweep. Nothing
+    /// [`crate::world::FieldTerrain::floor_tier_bobs`] alongside this sweep. Nothing
     /// is *registered* anywhere and no fade is cancelled - `FUN_8003CF40` has
     /// no return value and writes only the flag word.
     pub fn retire_floor_ladder_oscillators(&mut self) -> usize {
@@ -291,7 +291,7 @@ impl World {
         // The first of those two sweeps is `FUN_8003CF40(_DAT_8007C34C,
         // LAB_801DA930)` - the **floor-height-ladder** oscillator's handler.
         // The engine keeps those records off the pool (see
-        // `World::floor_tier_bobs`), so the sweep has to reach them here or a
+        // `World::terrain.floor_tier_bobs`), so the sweep has to reach them here or a
         // rung left oscillating would keep writing into the next scene's
         // ladder. Its two siblings on the same list go with it: a bar
         // envelope and an eased move are both scene content.

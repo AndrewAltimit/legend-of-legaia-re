@@ -2,8 +2,8 @@
 //!
 //! Its sibling `hub_entry_sub_panel_world` proves the sub-draw is on the frame
 //! loop's path. This one asserts what the sub-draw prints: every number comes
-//! from `World::roster` and the two static tables a boot installs on the world
-//! (`World::item_effects` + `World::equipment_table`), reached through
+//! from `World::party.roster` and the two static tables a boot installs on the world
+//! (`World::tables.item_effects` + `World::tables.equipment_table`), reached through
 //! `World::tick` -> `tick_handler_actors` -> `tick_submode_screen` ->
 //! `HubPainter::EntryList` -> `entry_list` -> `equip_stat_panel`.
 //!

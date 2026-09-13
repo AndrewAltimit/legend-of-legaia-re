@@ -41,7 +41,7 @@
 //!   minigame sessions), so a diff flags them as absent instead of faking a
 //!   match.
 //!
-//! [`World::camera_state`]: legaia_engine_core::world::World
+//! [`legaia_engine_core::world::CameraRig::state`]: legaia_engine_core::world::World
 
 use std::f32::consts::TAU;
 use std::path::Path;

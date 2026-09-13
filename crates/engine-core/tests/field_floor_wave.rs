@@ -18,7 +18,7 @@
 //!
 //! The **sign** is the trap. `Scene::field_floor_height_lut` returns the MAN
 //! header's sixteen shorts; `FUN_8003AEB0` installs their **negation** into the
-//! scratchpad, which is what `World::field_floor_height_lut` holds and what
+//! scratchpad, which is what `World::terrain.floor_height_lut` holds and what
 //! `FUN_801DA930` writes. `Placement::world_y` consumes the MAN frame (its every
 //! term is `-lut[nibble]`). Handing the world's copy straight to a draw resolver
 //! therefore inverts the wave. `FloorWave::from_scene_and_world` is where that

@@ -165,7 +165,7 @@ fn simple_dialogue_opt_out_leaves_runner_untouched() {
 }
 
 /// A non-summon battle move whose move-power record carries a spawnable effect
-/// entry requests a move-FX spawn (`World::pending_move_fx_spawn`) at the
+/// entry requests a move-FX spawn (`World::casting.pending_move_fx_spawn`) at the
 /// target's battle position when it resolves through the shared cast path
 /// (`cast_spell_on_slots`) - the engine-side wiring the host drains to call
 /// `spawn_move_fx`. A move with NO effect entry requests nothing (the gate).

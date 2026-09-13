@@ -27,7 +27,7 @@
 //! split on the actor's `+0x10`):
 //!
 //! - **auto-touch** (bit `4`, doors): the movement probe both refuses the
-//!   step and posts the touch - [`World::pending_prop_touch`] set by
+//!   step and posts the touch - [`crate::world::FieldPropState::pending_touch`] set by
 //!   [`World::advance_with_collision`];
 //! - **interact-gated** (bit `1`, `+0x10 & 0x40020000`, cupboards): only the
 //!   just-pressed-confirm facing probe posts it

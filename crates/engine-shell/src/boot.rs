@@ -41,7 +41,7 @@ use crate::bgm::AudioBgmDirector;
 #[derive(Debug, Clone, Default)]
 pub struct FieldLiveOpts {
     /// Arm the step-driven random-encounter roll
-    /// (`World::live_gameplay_loop`). Independent of `player_battle`: a
+    /// (`World::toggles.live_gameplay_loop`). Independent of `player_battle`: a
     /// battle the engine is already in is always driven to resolution either
     /// way, so this decides only whether one *starts* on its own.
     pub live_loop: bool,
@@ -1193,7 +1193,7 @@ impl BootSession {
     /// Restart the field scene's BGM after a minigame that took over the
     /// director with its own global track (dance / Baka Fighter / Muscle
     /// Dome). Re-plays whatever op-`0x35` track the scene had running
-    /// ([`World::current_bgm`](legaia_engine_core::world::World::current_bgm)),
+    /// ([`legaia_engine_core::world::AudioState::current_bgm`](legaia_engine_core::world::World::current_bgm)),
     /// re-uploading its VAB. No-op when the scene had no track or it isn't a
     /// global-pool id. The slot machine + fishing don't need this: they never
     /// replaced the director's bank.

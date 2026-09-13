@@ -12,7 +12,7 @@ pub struct AudioState {
     /// Per-strike battle sound cues surfaced this frame for the host to play
     /// through its SFX bank (the art-record `HitCue` sound cues that
     /// [`World::fold_battle_event`] resolves from an `ApplyArtStrike` outcome -
-    /// previously dropped). Cosmetic, like [`Self::battle_hit_fx`]: no gameplay
+    /// previously dropped). Cosmetic, like [`crate::world::BattleState::hit_fx`]: no gameplay
     /// state depends on them. Drained via [`World::drain_battle_sfx_cues`];
     /// cleared on battle exit.
     pub battle_sfx_cues: Vec<BattleSfxCue>,
@@ -65,19 +65,19 @@ pub struct AudioState {
     pub battle_bgm_active: bool,
     /// Retail's timed sound-source auto-release (`gp+0x808`/`0x814`/`0x81C`),
     /// serviced by the frame-begin driver. Advanced by [`World::tick`] on the
-    /// sim ticks that map to a retail vsync, by [`Self::frame_step`] - the
+    /// sim ticks that map to a retail vsync, by [`crate::world::FrameClock::frame_step`] - the
     /// same cadence-invariant clock every other retail duration uses.
     ///
     /// REF: FUN_800267FC, FUN_8001698C
     pub sound_release: crate::sound_state::SoundReleaseTimer,
-    /// Set by [`World::tick`] on the frame [`Self::sound_release`] expires;
+    /// Set by [`World::tick`] on the frame [`crate::world::AudioState::sound_release`] expires;
     /// hosts drain it with [`World::take_pending_sound_release`] and stop the
     /// bound voice. Retail does the stop inline through libsnd
     /// (`FUN_8002657C` + `FUN_80064370`), which the engine replaces with its
     /// own voice pool - so the port surfaces the *event*, not the teardown.
     pub pending_sound_release: bool,
     /// The five `gp` cells retail's **arm** half writes alongside
-    /// [`Self::sound_release`] (`gp+0x80C`/`0x810`), latched by
+    /// [`crate::world::AudioState::sound_release`] (`gp+0x80C`/`0x810`), latched by
     /// [`World::arm_sound_release`]. `None` until the field VM's BGM op
     /// sub-`5` arms the release.
     ///
@@ -89,7 +89,7 @@ pub struct AudioState {
     /// REF: FUN_80035BAC
     pub sfx_cue_delays: crate::scus_leaf_kernels::SfxCueDelays,
     /// The slot the SFX enqueue last parked (`gp+0x15A`) - the index
-    /// [`Self::sfx_cue_delays`] is written through.
+    /// [`crate::world::AudioState::sfx_cue_delays`] is written through.
     pub sfx_parked_slot: i16,
     /// The enqueue's round-robin write cursor (`gp+0x158`), wrapping at
     /// [`crate::scus_leaf_kernels::SFX_CUE_SLOTS`].

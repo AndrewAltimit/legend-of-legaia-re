@@ -78,7 +78,7 @@
 //! The terminator's context writes now have a sink: [`MoveFxStreak`] models
 //! the `ctx[+0x1014]` / `+0x6C6` / `+0x24E` / `+0x1144` block, the live tick
 //! installs it (`World::step_actor_effect_script` →
-//! `World::move_fx_streak`), and the render layer projects the streak
+//! `World::casting.move_fx_streak`), and the render layer projects the streak
 //! billboard from it (`legaia_engine_render::afterimage`, drawn by the native
 //! window's screen-FX pass). What is still **not** modelled is the stepper's
 //! function-head sibling, retail's `0x801DEA50..0x801DEBEC` prologue - whose

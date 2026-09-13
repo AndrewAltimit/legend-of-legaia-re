@@ -21,7 +21,7 @@ pub struct TileBoardState {
     /// `true` while a field-VM op-0x49 sub-5 board install holds the
     /// script suspended (the engine face of retail's `_DAT_8007b450`
     /// arm for the board consumer). The op reads `Armed` while
-    /// [`Self::tile_board`] is installed and `Done` once the board
+    /// [`crate::world::TileBoardState::grid`] is installed and `Done` once the board
     /// exits (an event cell landing), then clears this on resume.
     pub armed: bool,
     /// The parsed op-49 board header (radius / mode flag / actor

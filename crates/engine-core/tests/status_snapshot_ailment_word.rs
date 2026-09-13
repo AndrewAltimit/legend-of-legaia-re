@@ -4,7 +4,7 @@
 //! character record's `+0x12E` battle-status halfword is non-zero (read as
 //! `lh v0,0x6f6(v1)` off `0x80084140 + slot*0x414`; see
 //! `docs/formats/save-record.md`). The port's equivalent latch is
-//! `World::status_effects`, whose `display_flags` packs the same bit word that
+//! `World::battle.status_effects`, whose `display_flags` packs the same bit word that
 //! retail's `FUN_80047430` mirrors into the record every frame a party actor
 //! ticks - and it is never cleared, so an ailment walks out of the battle the
 //! way retail's does.

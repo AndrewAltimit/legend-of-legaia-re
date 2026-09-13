@@ -251,7 +251,7 @@ impl World {
     /// (`world >> 7`); each step drives one
     /// [`crate::region_encounter::RegionEncounterTracker::on_step`] against the
     /// player's current position. A trigger latches
-    /// [`Self::pending_world_map_encounter`], which [`Self::tick_world_map`]
+    /// [`crate::world::WorldMapState::pending_encounter`], which [`Self::tick_world_map`]
     /// resolves into a battle. The RNG comes from the world's shared
     /// deterministic source, drawn only on the trigger branch, so replays stay
     /// bit-identical. No-op without a player actor or region tracker.
@@ -446,7 +446,7 @@ impl World {
     /// directly. Otherwise, a confirm press while the player stands within one
     /// tile of an [`WorldMapEntityConfig::Npc`] that carries inline dialog text
     /// (the `Dialog` op the placement walker found) opens that text against the
-    /// scene's MES container - sets [`Self::current_dialog`] and emits
+    /// scene's MES container - sets [`crate::world::DialogState::current`] and emits
     /// [`FieldEvent::OpenDialog`], which the host renders through
     /// [`crate::scene::SceneHost::open_pending_dialog`], the same panel path
     /// the field VM's op `0x3F` feeds.
@@ -767,7 +767,7 @@ impl World {
     /// [`WorldMapEntityConfig::OverworldPortal`] surfaces a
     /// [`crate::field_events::FieldEvent::WorldMapTransition`], while a
     /// [`WorldMapEntityConfig::MinigameDoor`] arms
-    /// [`Self::pending_minigame_warp`] instead - its payload is a mode-24
+    /// [`crate::world::MinigameState::pending_warp`] instead - its payload is a mode-24
     /// sub-id, not a map id.
     ///
     /// Hosts can call this directly; `Self::auto_engage_world_map_portals`
@@ -791,7 +791,7 @@ impl World {
     /// overworld-entrance engage the entity SM emitted (walk-onto its tile),
     /// leaving every other queued field event in place. `None` when no
     /// world-map transition is queued. The returned `slot` indexes
-    /// [`Self::world_map_entity_configs`], where the
+    /// [`crate::world::WorldMapState::entity_configs`], where the
     /// [`WorldMapEntityConfig::OverworldPortal`] that raised it carries the
     /// real CDNAME destination - `dest_index` is only that entrance's `0x3F`
     /// index, never a door-warp map id.
@@ -809,7 +809,7 @@ impl World {
     /// Configure the shared overworld encounter rate. `enabled` is the master
     /// gate, `start_countdown` the initial per-step counter, `formation_id`
     /// the formation an encounter spawns (resolved against
-    /// [`Self::formation_table`]), and `reset_to` the value the countdown is
+    /// [`crate::world::DiscTables::formation_table`]), and `reset_to` the value the countdown is
     /// reset to after each encounter fires.
     pub fn set_world_map_encounter(
         &mut self,

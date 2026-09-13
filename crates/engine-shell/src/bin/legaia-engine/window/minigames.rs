@@ -15,7 +15,7 @@ impl PlayWindowApp {
     // end-of-match tally: `FUN_801D239C` at `0x801d2894..0x801d28bc` adds each
     // drained step into `0x80084440` - the coin prize, not party gold
     // (`0x8008459C`). The engine's duel tick pays the same drain into
-    // `World::minigame_winnings`, so the warp's commit has something to bank.
+    // `World::minigames.winnings`, so the warp's commit has something to bank.
     // REF: FUN_80026018 (coin-bank commit), FUN_801d239c (the producer)
 
     /// Drive the fishing HUD's one-shot banner animations for this frame.
@@ -927,7 +927,7 @@ impl PlayWindowApp {
     /// decode. Mirrors [`Self::start_dance_minigame`]'s overlay path.
     ///
     /// The playing balance seeds from the world's casino coin bank
-    /// (`World::casino_coins`, the retail `_DAT_800845A4`); a thin bank first
+    /// (`World::minigames.casino_coins`, the retail `_DAT_800845A4`); a thin bank first
     /// goes through the casino's **coin-exchange counter**
     /// ([`Self::buy_casino_coins`]) and only falls back to a fronted dev stake
     /// when the party cannot pay. The final balance commits back to the bank on

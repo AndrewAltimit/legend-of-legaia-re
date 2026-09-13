@@ -9,7 +9,7 @@
 //! Everything here is measured on state **after** a `World::tick`, never on a
 //! call: the ramp is stepped from the disc instruction, the player is walked
 //! to the two edges and the middle of the authored zone, and the assertion is
-//! on `World::camera_registers` and on `Camera::globals`.
+//! on `World::camera.registers` and on `Camera::globals`.
 //!
 //! Non-vacuity is by contrast throughout: the same world with the player
 //! *outside* the zone must leave the register alone, and a world with no ramp

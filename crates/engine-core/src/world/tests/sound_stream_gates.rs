@@ -139,7 +139,7 @@ fn the_xa_arm_waits_for_the_pair_too() {
 /// `_DAT_8007B868` moves in opposite directions on the two halves: it
 /// *skips* the whole bit-15-set arm and *bypasses* the bit-15-clear
 /// barrier. Retail boots it `0`, so neither fires in play - the engine
-/// keeps `World::dual_mode_gate` at `0` for that reason.
+/// keeps `World::audio.dual_mode_gate` at `0` for that reason.
 #[test]
 fn the_dual_mode_gate_skips_one_arm_and_opens_the_other() {
     let busy = SoundStreamRequest {

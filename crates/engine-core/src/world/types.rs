@@ -34,7 +34,7 @@ pub struct FadeRequest {
 // REF: FUN_801CFC40, FUN_801CF754, FUN_801CF9F4
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldPropCollider {
-    /// Footprint-anchor tile of the placement (the [`World::field_prop_bank`]
+    /// Footprint-anchor tile of the placement (the [`crate::world::FieldPropState::bank`]
     /// key), when the placement is bound; `None` for unbound (window-sweep)
     /// placements.
     pub anchor: Option<(u8, u8)>,
@@ -114,7 +114,7 @@ impl FieldLedgeHop {
 /// (`FUN_801DD4C4`); what the engine adds is retail's `+0x90` back-link,
 /// resolved at spawn to whichever of the two things the field host can
 /// address: the player's pool slot, or an NPC placement in
-/// `World::field_npc_positions`.
+/// `World::npcs.positions`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldEasedMove {
     /// The `+0x90` target.
@@ -131,7 +131,7 @@ pub struct FieldEasedMove {
 pub enum EasedMoveTarget {
     /// The party leader's pool slot (`World::player_actor_slot`).
     Player,
-    /// A scene NPC placement, keyed the way `World::field_npc_positions` is.
+    /// A scene NPC placement, keyed the way `World::npcs.positions` is.
     Placement(u8),
 }
 
@@ -762,7 +762,7 @@ impl Actor {
 /// One active stat buff / debuff produced by a battle Magic cast.
 ///
 /// The applied delta is the exact change written into the per-slot scalar
-/// ([`World::battle_attack`] / [`World::battle_defense`] / [`World::battle_magic`]),
+/// ([`crate::world::BattleState::attack`] / [`crate::world::BattleState::defense`] / [`crate::world::BattleState::magic`]),
 /// so `World::finish_battle` (or natural expiry) can revert it precisely.
 /// Stats with no live-loop scalar (Accuracy / Evasion / Speed) are tracked
 /// with a zero delta so the timer still expires cleanly.
@@ -804,7 +804,7 @@ pub(crate) enum MonsterAction {
 /// gates the engage on `fight_option` directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CarrierMenu {
-    /// Index into [`World::field_carriers`] this menu engages.
+    /// Index into [`crate::world::FieldCarrierState::entities`] this menu engages.
     pub carrier_idx: usize,
     /// Number of options in the picker (4 for the spar).
     pub n: usize,
@@ -886,7 +886,7 @@ pub fn spar_menu_of(dialogue: &[u8]) -> Option<(usize, usize)> {
 
 /// Per-field-carrier role. The retail engine builds one record per MAN-placed
 /// scene entity; this is the port's slice the field entity SM acts on.
-/// Paired by index with [`World::field_carriers`].
+/// Paired by index with [`crate::world::FieldCarrierState::entities`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldCarrierConfig {
     /// A **scripted-encounter carrier**: engaging it (the dialogue-accept)
@@ -904,7 +904,7 @@ pub enum FieldCarrierConfig {
 /// entity from the scene's entity table; this is the port's slice the
 /// gameplay SM acts on - an encounter zone spawns its own formation, a portal
 /// targets a scene, an NPC just surfaces an interaction. Paired by index with
-/// [`World::world_map_entities`].
+/// [`crate::world::WorldMapState::entities`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorldMapEntityConfig {
     /// A roaming-encounter zone: when the shared countdown drains while this
@@ -981,7 +981,7 @@ pub struct WorldMapEncounterState {
     /// overworld encounters never fire regardless of the countdown.
     pub enabled: bool,
     /// Formation id an overworld encounter spawns (resolved against
-    /// [`World::formation_table`]). The retail per-region resolution
+    /// [`crate::world::DiscTables::formation_table`]). The retail per-region resolution
     /// (`FUN_800243F0` → the MAN region table) is a separate thread; v0.1
     /// uses one configured formation for the whole map.
     pub formation_id: u16,
@@ -1003,7 +1003,7 @@ impl Default for WorldMapEncounterState {
 
 /// Field state snapshot taken at the `Field -> Battle` transition and
 /// restored when the live loop returns from battle. See
-/// [`World::live_gameplay_loop`].
+/// [`crate::world::WorldToggles::live_gameplay_loop`].
 #[derive(Debug, Clone, Default)]
 pub struct FieldReturnState {
     pub actors: Vec<Actor>,
@@ -1045,7 +1045,7 @@ pub struct ThreeActorTalk {
     pub saved_party: [Option<u8>; 4],
     /// Number of live entries in [`Self::saved_party`].
     pub saved_party_len: u8,
-    /// [`World::party_leader_slot`] before the collapse.
+    /// [`crate::world::PartyState::party_leader_slot`] before the collapse.
     pub saved_leader: Option<u8>,
     /// The controller SM itself (`FUN_801D27E0` `+0x54` phase + `+0x9E` fade
     /// counter): state 0 polls the talk lock and arms the mid-talk leader
@@ -1059,7 +1059,7 @@ pub struct ThreeActorTalk {
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
-/// renders + advances; clearing `World::current_dialog` signals the script
+/// renders + advances; clearing `World::dialog.current` signals the script
 /// to resume.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DialogRequest {

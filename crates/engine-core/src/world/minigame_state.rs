@@ -80,7 +80,7 @@ pub struct MinigameState {
     /// ([`World::open_coin_counter`]) credits it as a delta instead.
     pub casino_coins: u32,
     /// The **Point Card** bank (`_DAT_800845B4`), the third purse beside
-    /// [`Self::money`] and [`Self::casino_coins`]. A shop buy credits 5% of
+    /// [`crate::world::PartyState::money`] and [`crate::world::MinigameState::casino_coins`]. A shop buy credits 5% of
     /// the gold spent while the party holds the Point Card
     /// ([`crate::shop::POINT_CARD_ITEM_ID`]); the total is what the pause
     /// Items screen's "Points Left" line and the shop's window-31 toast
@@ -97,7 +97,7 @@ pub struct MinigameState {
     /// The mode-24 session-winnings accumulator (retail `_DAT_80084440`,
     /// zeroed by the field-VM `0x3E` warp arm; the minigame overlays add
     /// their winnings here). [`World::minigame_return_warp`] commits it
-    /// into [`World::casino_coins`].
+    /// into [`crate::world::MinigameState::casino_coins`].
     pub winnings: u32,
     /// Pending **mode-24 minigame door-warp** (field-VM op `0x3E`, `op0 >=
     /// 100`): `Some(sub_id)` for the frame the arm ran on. Drained by

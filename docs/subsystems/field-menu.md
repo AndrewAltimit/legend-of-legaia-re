@@ -379,7 +379,7 @@ maps and clear on every field scene, so the Save row draws grey
 everywhere but the overworld.
 
 Engine port of the gate: scene load seeds
-`engine-core::world::World::scene_save_allowed`
+`engine-core::world::World::party.scene_save_allowed`
 (`World::install_scene_save_permission`); the host samples it - together
 with the entry-context kind from `World::menu_entry_context_kind` - into a
 `field_menu::FieldMenuGate` when the pause menu opens
@@ -1203,7 +1203,7 @@ would draw nothing anyway. That is why the port keeps it as a separate
 builder (`engine-ui::item_points_panel_draws`) layered over
 `items_screen_draws_for` rather than as a field inside the info view: the
 condition is on the staged **id**, and the number is world state
-(`World::point_card`) the screen model does not carry.
+(`World::minigames.point_card`) the screen model does not carry.
 
 ### Command sub-flows (Use / Throw Out / Arrange)
 
@@ -1416,8 +1416,8 @@ count column showing `0`, since retail's destination rows have no count.
 
 What a committed pick does not yet do is **enter** the world map at the
 landmark: the port writes the destination triple to
-`World::pending_menu_warp` and the escape flag to
-`World::pending_menu_escape`, and nothing drains either. The bag
+`World::menu.pending_warp` and the escape flag to
+`World::menu.pending_escape`, and nothing drains either. The bag
 decrement, the exit code and the staged triple are all committed.
 
 **Throw Out list `FUN_801D8734`** (submenu 7): phase 0 re-points the
@@ -1873,7 +1873,7 @@ the widget VM a script whose entire body is `01 1F` plus the terminator -
 one command, "open window `0x1F`" (`0x801E4EDC` from the quantity commit
 `FUN_801DB7F4`, `0x801E4EA8` from the recipient picker `FUN_801DB380`) -
 and then park in a phase that only a confirm / cancel press releases. The
-engine keeps the bank on `World::point_card` and the beat on
+engine keeps the bank on `World::minigames.point_card` and the beat on
 `MenuRuntime::point_card_toast`; see [shop.md](shop.md#point-card).
 
 Windows 5 and 6 are drawn on both hosts. Their trigger is the entry-context

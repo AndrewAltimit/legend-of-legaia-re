@@ -1,6 +1,6 @@
 //! The photosensitivity guard over the ambient CLUT-cell cyclers
 //! (`World::limit_flash` inside `World::step_ambient_fx`, gated by
-//! `World::reduce_flashing`).
+//! `World::toggles.reduce_flashing`).
 //!
 //! koin3's dance-floor records full-swing their cells' `v_add`
 //! `-256 <-> 0` on consecutive game ticks - a 15 Hz bright/black strobe.

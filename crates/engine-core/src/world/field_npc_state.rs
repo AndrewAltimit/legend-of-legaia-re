@@ -14,7 +14,7 @@ pub struct FieldNpcState {
     /// props become solid, as in retail, where `FUN_801cfe4c`'s actor bits
     /// (`1`/`4`) gate a step exactly like the wall bit (`2`). Off by default
     /// for the same oracle-stability reason as
-    /// [`Self::leading_edge_wall_probes`]. The locomotion-path touch
+    /// [`crate::world::FieldLocomotion::leading_edge_wall_probes`]. The locomotion-path touch
     /// dispatch (the `FUN_801d5b5c` auto event post for prop walk-touch) is
     /// modelled separately and independent of this flag -
     /// `Self::check_field_walk_touch`; the button-press interact dispatch
@@ -29,17 +29,17 @@ pub struct FieldNpcState {
     /// actor's dialogue from here - not from a `0x3F` op (which is the named
     /// scene-change, not dialogue). Empty between field scenes.
     pub dialog: std::collections::HashMap<u8, Vec<u8>>,
-    /// Prologue-aware companion to [`Self::field_npc_dialog`], keyed by the same
+    /// Prologue-aware companion to [`crate::world::FieldNpcState::dialog`], keyed by the same
     /// `slot`. Carries each talk NPC's **untruncated** interaction record (full
     /// body + entry PC + first-segment offset) so the opt-in field-VM dialogue
-    /// runner ([`Self::use_vm_dialogue`]) can execute the interaction prologue -
+    /// runner ([`crate::world::WorldToggles::use_vm_dialogue`]) can execute the interaction prologue -
     /// the story-flag `SysFlag.Test`/`JmpRel` segment-selection bytecode before
     /// the first `0x1F` - instead of starting at the first segment. The default
     /// simplified path ignores this and uses `field_npc_dialog` unchanged.
     pub dialog_prologue:
         std::collections::HashMap<u8, crate::man_field_scripts::InlineDialogPrologue>,
     /// Per-talkable-NPC spawn world position `(world_x, world_z)`, keyed by the
-    /// same `slot` as [`Self::field_npc_dialog`]. Populated at field-scene entry
+    /// same `slot` as [`crate::world::FieldNpcState::dialog`]. Populated at field-scene entry
     /// from the MAN actor placements. The interaction probe
     /// (`Self::tick_field_interaction_probe`) box-tests the player's position
     /// against these to fire a `field_interact` on the action button - the
@@ -56,7 +56,7 @@ pub struct FieldNpcState {
     /// per-frame positions back here, so collision and interact probes follow
     /// a moving NPC.
     pub positions: std::collections::HashMap<u8, (i16, i16)>,
-    /// Snapshot of [`Self::field_npc_positions`] taken right after the
+    /// Snapshot of [`crate::world::FieldNpcState::positions`] taken right after the
     /// scene-entry spawn-prologue pre-run
     /// ([`Self::pre_run_field_channel_prologues`]) - each slot's story-true
     /// initial position (spawn tile, story relocation, or the off-map park).
@@ -90,15 +90,15 @@ pub struct FieldNpcState {
     /// PORT: FUN_801D5B5C (the `+0x26` -> `+0x5A` save)
     pub facing_save: Option<(u8, i16)>,
     /// Per-NPC autonomous walk routes, keyed by the same placement `slot` as
-    /// [`Self::field_npc_dialog`]: the ordered local waypoints the placement's
+    /// [`crate::world::FieldNpcState::dialog`]: the ordered local waypoints the placement's
     /// own pre-text script walks the actor through (its `0x4C 0x51` NPC
     /// move-to-tile ops - [`crate::man_field_scripts::placement_motion_route`]).
     /// Driven through the motion VM by `Self::tick_field_npc_motions` when
-    /// [`Self::animate_field_npcs`] is set. `BTreeMap` so the per-tick walk
+    /// [`crate::world::FieldNpcState::animate`] is set. `BTreeMap` so the per-tick walk
     /// order is deterministic (the replay oracle requires bit-stable traces).
     pub routes: std::collections::BTreeMap<u8, Vec<(i16, i16)>>,
     /// Per-NPC glide speed, keyed by the same placement `slot` as
-    /// [`Self::field_npc_routes`]: the per-frame world-unit step
+    /// [`crate::world::FieldNpcState::routes`]: the per-frame world-unit step
     /// `Self::start_field_npc_motion` writes into a leg's motion-VM
     /// [`legaia_engine_vm::motion_vm::MotionState::speed`], decoded from the
     /// placement's real walk-kernel operands
@@ -120,10 +120,10 @@ pub struct FieldNpcState {
     pub default_moves: std::collections::BTreeMap<u8, [u8; 2]>,
     /// In-flight field-NPC walk legs, keyed by placement `slot`. Stepped once
     /// per field tick through the ported motion VM; each step writes the new
-    /// position back into [`Self::field_npc_positions`], so the moving NPC
+    /// position back into [`crate::world::FieldNpcState::positions`], so the moving NPC
     /// keeps its ±40-unit collision box and its interact box at the live
     /// position. Script-started legs (interaction-prologue `0x4C 0x51`, actor
-    /// VM `start_motion`) run regardless of [`Self::animate_field_npcs`].
+    /// VM `start_motion`) run regardless of [`crate::world::FieldNpcState::animate`].
     pub motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
     /// Per-NPC **ambient facing** channels, keyed by placement `slot`: the
     /// second motion VM's idle turn-in-place behaviour (`FUN_80038158` ops
@@ -134,7 +134,7 @@ pub struct FieldNpcState {
     /// tick by [`World::tick_field_npc_ambient`]. Without it a standing town
     /// NPC holds one heading forever where retail NPCs slowly look around.
     pub ambient: std::collections::BTreeMap<u8, FieldNpcAmbient>,
-    /// Drive autonomous NPC patrol routes ([`Self::field_npc_routes`]) through
+    /// Drive autonomous NPC patrol routes ([`crate::world::FieldNpcState::routes`]) through
     /// the motion VM. Off by default (NPCs rest at their placement anchors,
     /// like the locomotion oracles expect); `play-window --live-npcs` enables
     /// it. Script-started motion is NOT gated by this flag.

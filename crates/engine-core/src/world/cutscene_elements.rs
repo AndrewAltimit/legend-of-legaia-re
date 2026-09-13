@@ -11,7 +11,7 @@
 //! [`crate::cutscene_timeline`] interprets a cutscene record's cross-context
 //! yields directly and so has nowhere to hang an element; this module is that
 //! missing seat. It follows the shape `World` already uses for the field
-//! overlay's other plain-template actors ([`crate::world::World::eased_moves`],
+//! overlay's other plain-template actors ([`crate::world::FieldVmState::eased_moves`],
 //! `floor_tier_bobs`): one `Vec` per family on the world, advanced together on
 //! the same frame delta, retired when the kernel says so.
 //!
@@ -87,7 +87,7 @@ pub const AMBIENT_EMITTER_SCENE_ARM: i16 = 1;
 pub enum ElementLink {
     /// The party leader's pool slot.
     Player,
-    /// A scene NPC placement, keyed the way `World::field_npc_positions` is.
+    /// A scene NPC placement, keyed the way `World::npcs.positions` is.
     Placement(u8),
     /// The camera object. The one link the `+0x8E` mirror is NOT written for.
     Camera,

@@ -6,7 +6,7 @@
 use super::*;
 
 impl World {
-    /// First synthetic [`Self::field_walk_touch`] slot for gate-0
+    /// First synthetic [`crate::world::FieldPropState::walk_touch`] slot for gate-0
     /// tile-trigger binds ([`Self::install_trigger_walk_touch`]). Partition-1
     /// placement indices (the natural walk-touch keys) stay well below this
     /// in the retail corpus, so the two key spaces never collide.
@@ -287,7 +287,7 @@ impl World {
 
     /// [`Self::install_trigger_walk_touch`] plus each bind's **flat MAN record
     /// index**, so the touch dispatch can re-resolve the record's story-flag
-    /// branch at contact time (see [`Self::field_walk_touch_records`]).
+    /// branch at contact time (see [`crate::world::FieldPropState::walk_touch_records`]).
     pub fn install_trigger_walk_touch_with_records(
         &mut self,
         binds: &[(
@@ -376,7 +376,7 @@ impl World {
 
     /// Open a field dialogue box from an inline interaction-script buffer (the
     /// text is the buffer itself; the retail box geometry isn't pinned, so the
-    /// box coords are zero). Sets [`Self::current_dialog`] and surfaces a
+    /// box coords are zero). Sets [`crate::world::DialogState::current`] and surfaces a
     /// [`FieldEvent::OpenDialog`].
     fn open_field_dialog(&mut self, inline: Vec<u8>) {
         self.dialog.current = Some(DialogRequest {
@@ -461,7 +461,7 @@ impl World {
     ///   [`Self::trigger_field_interact`] and turns the player toward it
     ///   ([`Self::face_field_npc`]).
     ///
-    /// The [`Self::dialog_input_consumed`] per-tick guard keeps this and the
+    /// The [`crate::world::DialogState::input_consumed`] per-tick guard keeps this and the
     /// field VM's `0x4C` dialog poll from both acting on the same button edge.
     /// No-op without a player actor or installed NPC positions.
     ///

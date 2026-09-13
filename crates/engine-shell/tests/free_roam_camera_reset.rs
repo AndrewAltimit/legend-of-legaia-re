@@ -4,7 +4,7 @@
 //! Camera Configure events that leave the [`BootSession`]'s camera controller in
 //! `Cinematic` mode at the shot's yaw. The renderer frames free-roam field with
 //! a fixed follow camera that never reads that yaw, but `BootSession::tick`
-//! feeds the controller yaw into `World::field_camera_azimuth` to remap the pad
+//! feeds the controller yaw into `World::locomotion.camera_azimuth` to remap the pad
 //! camera-relative. A leaked non-zero yaw therefore rotated the d-pad ~180deg
 //! off the on-screen camera (up walked down, left walked right) once control
 //! returned in Rim Elm - only on the `--boot-ui` path, since a direct boot never

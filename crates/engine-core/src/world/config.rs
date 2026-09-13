@@ -8,7 +8,7 @@ use super::*;
 pub const MAX_ACTORS: usize = 64;
 
 /// Number of stat-bearing battle slots (party + monsters). Indexes
-/// [`World::battle_attack`] / [`World::battle_defense`] / [`World::battle_speed`]
+/// [`crate::world::BattleState::attack`] / [`crate::world::BattleState::defense`] / [`crate::world::BattleState::speed`]
 /// and bounds the turn-order initiative scan.
 pub(crate) const BATTLE_SLOTS: usize = 8;
 
@@ -75,7 +75,7 @@ pub const FIELD_RUN_BUTTON_MASK_RETAIL: u16 =
 /// this default removes. It stays in the mask so a player who learned the
 /// port's binding keeps it; a host that wants the retail button set exactly
 /// assigns [`FIELD_RUN_BUTTON_MASK_RETAIL`] to
-/// [`crate::world::World::field_run_button_mask`].
+/// [`crate::world::FieldLocomotion::run_button_mask`].
 pub const FIELD_RUN_BUTTON_MASK_DEFAULT: u16 =
     FIELD_RUN_BUTTON_MASK_RETAIL | crate::input::PadButton::Square as u16;
 
@@ -186,7 +186,7 @@ pub(crate) const FIELD_ACTOR_PROBES: [[(i16, i16); 3]; 4] = [
 /// (result bit `1`), with the mutual `+0x98` collision link live in-frame.
 /// (STATIC entities - props, `flags & 0x1020000 == 0` - use a wider
 /// `0x40 + 0x10` = 80-unit box around their MAN record anchor instead; see
-/// [`FIELD_PROP_BOX_HALF`] / [`World::field_prop_colliders`].)
+/// [`FIELD_PROP_BOX_HALF`] / [`crate::world::FieldPropState::colliders`].)
 pub(crate) const FIELD_NPC_BOX_HALF: i32 = 0x40 - 0x18;
 
 /// Retail interact facing-probe table `DAT_801f2254` (field overlay 0897,
@@ -367,7 +367,7 @@ pub(crate) const FIELD_NPC_MOTION_PROGRAM: [u8; 1] =
 /// One in-flight field-NPC walk leg, stepped through the ported motion VM
 /// ([`legaia_engine_vm::motion_vm::step`], the `FUN_8003774C` port) by
 /// `World::tick_field_npc_motions`. The live position lives in
-/// [`World::field_npc_positions`] (so collision / interact probes follow the
+/// [`crate::world::FieldNpcState::positions`] (so collision / interact probes follow the
 /// walking NPC automatically); this carries the VM cursor + target.
 #[derive(Debug, Clone)]
 pub struct FieldNpcMotion {
@@ -377,7 +377,7 @@ pub struct FieldNpcMotion {
     /// World-space walk target of the current leg.
     pub target: (i16, i16),
     /// For an autonomous route leg: the index into
-    /// [`World::field_npc_routes`] this leg walks toward (the next leg starts
+    /// [`crate::world::FieldNpcState::routes`] this leg walks toward (the next leg starts
     /// at `cursor + 1`, wrapping - a patrol loop). `None` for a
     /// script-started leg (interaction-prologue `0x4C 0x51` or actor-VM
     /// `start_motion`), which ends where it lands.
@@ -463,7 +463,7 @@ pub const FIELD_COLD_SPAWN_XZ: i16 = 0x0A40;
 /// conditional actor retail hides until a script places it (skipped at NPC
 /// build time), and the `town01` opening cutscene `MoveTo`s the townsfolk here
 /// to clear the establishing shot, restoring them (via
-/// [`crate::world::World::field_npc_positions`] fallback to the MAN spawn) when
+/// [`crate::world::FieldNpcState::positions`] fallback to the MAN spawn) when
 /// the opening timeline completes. Both the build-time skip
 /// (`legaia_engine_shell` NPC upload) and the completion restore key off this
 /// value.
@@ -612,8 +612,8 @@ pub(crate) const FIELD_CHANNEL_STEP_BUDGET: u32 = 128;
 pub(crate) const FIELD_FRAME_SLICE_BUDGET: usize = 256;
 
 /// Bound on the concurrent spawned-record contexts
-/// ([`World::helper_contexts`]) and the pending op-`0x44` spawn queue
-/// ([`World::pending_record_spawns`]). Retail's context table is a small
+/// ([`crate::world::FieldVmState::helper_contexts`]) and the pending op-`0x44` spawn queue
+/// ([`crate::world::FieldVmState::pending_record_spawns`]). Retail's context table is a small
 /// fixed actor-slot pool (`FUN_8003BDE0` allocates from the actor list), so
 /// the container is bounded rather than open-ended; a scene never
 /// legitimately runs this many helper records at once.

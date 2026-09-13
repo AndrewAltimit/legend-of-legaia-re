@@ -33,7 +33,7 @@
 //!   behaviour.
 //!
 //! And one that is **not** a divergence, though it once was: both hosts now
-//! resolve their row labels from the disc item table (`World::menu_text`), so
+//! resolve their row labels from the disc item table (`World::menu.text`), so
 //! a name that appears on one appears on the other.
 //!
 //! Row inks come from the retail kernels
@@ -63,7 +63,7 @@
 //! | Id | Renderer | Content |
 //! |---|---|---|
 //! | 33 (`0x21`) | `FUN_801DCF14` | vendor plate - the scene MAN shop record's trailing name |
-//! | 32 (`0x20`) | `FUN_801DCF84` | purse - `World::money` (retail `_DAT_8008459C`) |
+//! | 32 (`0x20`) | `FUN_801DCF84` | purse - `World::party.money` (retail `_DAT_8008459C`) |
 //! | 34 (`0x22`) | `FUN_801D4A80` | hovered item's name / owned count / description |
 //! | 37 (`0x25`) | `FUN_801D5944` | sell quantity, held count, halved gold total |
 //!

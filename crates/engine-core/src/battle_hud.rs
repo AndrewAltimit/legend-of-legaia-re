@@ -779,7 +779,7 @@ struct SlotRow {
     hp_max: u16,
     mp: u16,
     mp_max: u16,
-    /// Index into `World::ap_gauges` for party rows; `None` for monsters.
+    /// Index into `World::battle.ap_gauges` for party rows; `None` for monsters.
     ap_slot: Option<usize>,
     /// Displayed level (char record `+0x130`) for party rows; `0` for
     /// monsters, which retail's status element never draws a count for.
@@ -1507,7 +1507,7 @@ pub fn battle_member_has_raseru(world: &crate::world::World, ordinal: u8) -> boo
 /// Ra-Seru (`Meta` / `Terra` / `Ozma` for `char_id` `1..=3`) - and index 4
 /// of the same run, a lone `-`, when it is clear; a character past the
 /// three (Terra is `char_id` 4) lands on the `-` entry. The label comes off
-/// the disc (`World::battle_ui_strings`) and falls back to the port's own
+/// the disc (`World::battle.ui_strings`) and falls back to the port's own
 /// word only when the overlay strings were not read. `enabled` is the
 /// same gate: retail draws the `-` chip and refuses the arm.
 pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, bool) {

@@ -7,14 +7,14 @@
 pub struct AmbientFxState {
     /// Live **ambient** move-VM effect parts - the scene-entry effect tree
     /// the MAN partition-1 effect-actor scripts install (jou's pulsating
-    /// flesh / lightning director). Unlike [`Self::active_field_fx`] these
+    /// flesh / lightning director). Unlike [`crate::world::FieldPropState::active_fx`] these
     /// parts read + self-modify the shared prescript bundle in place
     /// (retail `_DAT_8007B8D0`) and spawn op-`0x25` children. Spawned by
     /// [`World::spawn_ambient_record`] at scene entry, ticked on the retail
     /// game-tick clock by [`World::step_ambient_fx`].
     pub fx: Vec<crate::world::ambient::AmbientPart>,
     /// Retail game ticks banked for the ambient effect parts (the sibling
-    /// of [`Self::clut_pending_game_ticks`], same clock law).
+    /// of [`crate::world::AmbientFxState::clut_pending_game_ticks`], same clock law).
     pub pending_game_ticks: u32,
     /// Vsync sub-accumulator for the ambient game-tick bank.
     pub vsync_accum: u8,
@@ -25,7 +25,7 @@ pub struct AmbientFxState {
     pub cell_captures: std::collections::HashMap<(u16, u16, u16, u16), Vec<u16>>,
     /// The limiter's per-rect applied `(v_add, white)` state - what the
     /// last [`World::step_ambient_fx`] actually wrote, keyed like
-    /// [`Self::ambient_cell_captures`] and cleared with it on scene entry.
+    /// [`crate::world::AmbientFxState::cell_captures`] and cleared with it on scene entry.
     pub flash_applied: std::collections::HashMap<(u16, u16, u16, u16), (i16, i16)>,
     /// Scene-entry **VDF pulse** (enhancement): a rolling ramp envelope over
     /// the scene's populated VDF pack for scenes whose entry-ambient tree
@@ -39,12 +39,12 @@ pub struct AmbientFxState {
     /// ([`World::take_morph_dirty_slots`]).
     pub morph_dirty_slots: std::collections::BTreeSet<(usize, u32)>,
     /// Vsyncs accumulated toward the next retail *game tick* (a game tick
-    /// spans [`Self::frame_step`] vsyncs). Advanced by [`World::tick`] on the
-    /// sim ticks that map to a retail vsync ([`Self::field_frame_step`]).
+    /// spans [`crate::world::FrameClock::frame_step`] vsyncs). Advanced by [`World::tick`] on the
+    /// sim ticks that map to a retail vsync ([`crate::world::FrameClock::display_frame_step`]).
     pub clut_vsync_accum: u8,
     /// Retail game ticks elapsed since the host last drained the scripted
     /// CLUT effects ([`World::step_clut_fx`] consumes these). Only
-    /// accumulates while [`Self::clut_fx`] is non-empty, and saturates at a
+    /// accumulates while [`crate::world::AmbientFxState::clut_fx`] is non-empty, and saturates at a
     /// small cap so a host that never drains can't wind up an unbounded
     /// backlog.
     pub clut_pending_game_ticks: u32,
@@ -55,7 +55,7 @@ pub struct AmbientFxState {
     /// [`World::step_clut_fx`], cleared on scene entry.
     pub clut_fx: Vec<crate::world::ClutCellFx>,
     /// Queued field-VM `4C 60` literal-operand VRAM `MoveImage` stamps (the
-    /// sibling of [`Self::clut_fx`] - retail's one-shot face-frame stamps
+    /// sibling of [`crate::world::AmbientFxState::clut_fx`] - retail's one-shot face-frame stamps
     /// onto the player texture atlas). Queued by
     /// [`World::queue_script_vram_move`] (the `op4c_n6_sub0_emitter6` host
     /// hook), drained against the host's software VRAM by

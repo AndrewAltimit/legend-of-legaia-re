@@ -1,5 +1,5 @@
 //! Host half of the **mode-24 minigame door-warp**: drain
-//! [`World::pending_minigame_warp`], load the selected minigame's overlay off
+//! [`crate::world::MinigameState::pending_warp`], load the selected minigame's overlay off
 //! the disc, and enter it.
 //!
 //! This is the missing link between the field VM and the five minigame rules

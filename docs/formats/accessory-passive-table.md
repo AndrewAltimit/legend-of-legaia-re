@@ -258,7 +258,7 @@ passive index + party-wide scope flags, built from the same parse at boot).
 `World::refresh_party_ability_bits` is the port of the aggregator's bitfield
 pass: each party member's record `+0xF4` field is rebuilt from the eight
 equipment slots, all members OR into the engine's global-mask mirror
-(`World::party_ability_mask`, bit-tested by `World::party_has_ability` - the
+(`World::party.party_ability_mask`, bit-tested by `World::party_has_ability` - the
 `FUN_800431D0` port), and the per-member word 0 feeds the MP-cost consumers
 (`MpCostModifier::from_ability_flags`), so an equipped MP-saver halves /
 quarter-shaves the live cast cost. The percent stat boosts apply inside

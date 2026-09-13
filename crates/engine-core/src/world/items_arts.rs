@@ -343,13 +343,13 @@ impl World {
     /// library; the engine writes the result back with
     /// [`Self::store_chain_library`] so the edit reaches the next battle's
     /// Arts menu (via `Self::build_battle_arts_rows`) and the next save
-    /// (via [`Self::saved_chains`]).
+    /// (via [`crate::world::PartyState::saved_chains`]).
     pub fn chain_library(&self) -> crate::tactical_arts_editor::ChainLibrary {
         crate::tactical_arts_editor::ChainLibrary::from_records(&self.party.saved_chains)
     }
 
     /// Write an edited [`crate::tactical_arts_editor::ChainLibrary`] back into
-    /// [`Self::saved_chains`], replacing the whole library. This is the bridge
+    /// [`crate::world::PartyState::saved_chains`], replacing the whole library. This is the bridge
     /// that closes the loop the field menu opens with [`Self::chain_library`]:
     /// once stored, a chain composed in the editor is selectable in battle and
     /// persists across `save_full` / `load_full`.
@@ -976,7 +976,7 @@ impl World {
     /// `FUN_8004E568`): accumulate each dead enemy's gold as `gold >> 1`,
     /// finalize it through the +25% bonus + halve
     /// ([`vm::battle_formulas::victory_gold_finalize`]) and add it to
-    /// [`World::money`]; sum the enemy EXP and distribute it (scaled 3/4,
+    /// [`crate::world::PartyState::money`]; sum the enemy EXP and distribute it (scaled 3/4,
     /// ceiling-split) via [`World::apply_battle_xp`]. Returns the aggregated
     /// [`BattleRewards`] (`gold` is the **credited** amount, not the raw sum) so
     /// engines can surface the post-battle banner ("got N XP, M gold,
@@ -1063,7 +1063,7 @@ impl World {
     /// Resolve a **steal** attempt against `monster_id` using the per-monster
     /// steal table (the Evil God Icon mechanic). Rolls the monster's steal
     /// chance against the deterministic world RNG; on success the stolen item is
-    /// added to [`Self::inventory`] and its id returned. Returns `None` when the
+    /// added to [`crate::world::PartyState::inventory`] and its id returned. Returns `None` when the
     /// monster has no steal (item `0` / chance `0`) or the roll misses.
     ///
     /// The steal item + chance live in a static `SCUS_942.54` table
@@ -1091,7 +1091,7 @@ impl World {
 
     /// Commit a shop **buy** transaction for the session's pending item: if the
     /// player can afford it, deduct the gold and add the item(s) to
-    /// [`Self::inventory`], returning `(item_id, qty, gold_delta)` (the delta is
+    /// [`crate::world::PartyState::inventory`], returning `(item_id, qty, gold_delta)` (the delta is
     /// negative). Returns `None` when the buy isn't valid (unaffordable, sell
     /// mode, no pending item - see [`crate::shop::ShopSession::try_buy`]).
     ///
@@ -1119,7 +1119,7 @@ impl World {
     }
 
     /// Build a [`crate::shop::ShopSession`] for the `idx`-th gold shop located in
-    /// the active scene ([`Self::scene_shops`], decoded from the scene MAN +
+    /// the active scene ([`crate::world::ShopState::scene_shops`], decoded from the scene MAN +
     /// priced from the SCUS item table at scene entry). `None` when `idx` is out
     /// of range (no merchant, or the disc / item data was absent at boot, leaving
     /// the list empty).
@@ -1140,10 +1140,10 @@ impl World {
     /// uses ([`legaia_asset::shop_stock::parse_record`]) rejects every non-shop
     /// op-0x49 sub-0 (inn / save prompts carry MES text, not a priced item
     /// list), so this only fires on a real merchant. Gated on
-    /// [`Self::item_shop_data`] being installed - without prices there's no
+    /// [`crate::world::ShopState::item_shop_data`] being installed - without prices there's no
     /// sellable mask (so a disc-free build can't false-positive) and no shop to
     /// price anyway. On a match it stages a priced [`crate::shop::ShopSession`]
-    /// on [`Self::pending_field_shop`] and arms the op-0x49 gate; a no-op if a
+    /// on [`crate::world::ShopState::pending_shop`] and arms the op-0x49 gate; a no-op if a
     /// shop is already armed (single-open) or the record doesn't validate.
     ///
     /// Returns `true` when a shop was armed.
@@ -1206,7 +1206,7 @@ impl World {
     /// `instr[2]` (the byte after the sub-op; retail reads it through the
     /// parked operand pointer as `_DAT_8007B450[1]` and scales by `0x60`).
     /// Builds a [`crate::prize_exchange::PrizeExchangeSession`] over the
-    /// installed [`Self::prize_blocks`] table, raises the retail entry flag
+    /// installed [`crate::world::ShopState::prize_blocks`] table, raises the retail entry flag
     /// ([`crate::prize_exchange::PRIZE_EXCHANGE_VISITED_FLAG`]), and arms the
     /// op-`0x49` gate. No-op when the table isn't installed (disc-free), the
     /// block index is out of range, or an exchange is already armed.
@@ -1260,7 +1260,7 @@ impl World {
     ///
     /// 1. Pushes [`BattleEvent::TacticalArtLearned`] onto
     ///    [`Self::pending_battle_events`].
-    /// 2. Sets [`Self::current_art_banner`] with a 2-second display window
+    /// 2. Sets [`crate::world::PartyState::current_art_banner`] with a 2-second display window
     ///    so the engine's HUD overlay can show "Learned Art #N!".
     ///
     /// Subsequent calls for the same `(char_id, art_id)` pair are no-ops.

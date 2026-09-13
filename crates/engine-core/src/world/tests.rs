@@ -10,7 +10,7 @@ use vm::battle_action::BattleActionHost;
 /// player actor in slot 0 placed at its start-tile centre.
 /// Run the live loop until the armed cast's owed outcome has folded - the
 /// band's `0x29` exit for a non-summon cast, the stager's strike for a Seru
-/// one (`World::pending_cast` goes `None`). A world with nothing armed
+/// one (`World::casting.pending_cast` goes `None`). A world with nothing armed
 /// returns at once.
 fn tick_until_cast_folds(w: &mut World) {
     for _ in 0..0x400 {

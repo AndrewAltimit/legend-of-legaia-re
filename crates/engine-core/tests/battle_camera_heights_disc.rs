@@ -4,7 +4,7 @@
 //! `legaia_asset::battle_camera_table` is pinned against raw PROT 0898 bytes
 //! by the asset crate's own oracle; what this covers is the wiring - that
 //! entering a scene installs the parsed table on
-//! [`World::battle_camera_heights`], so the battle camera frames a non-Vahn
+//! [`crate::world::DiscTables::battle_camera_heights`], so the battle camera frames a non-Vahn
 //! seat at that character's own height instead of falling back to Vahn's.
 //! Skips and passes without `LEGAIA_DISC_BIN` (the workspace convention).
 

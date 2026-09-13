@@ -60,7 +60,7 @@
 //! ## Where the Save row is
 //!
 //! Only the three kingdom overworlds set the MAN bit that enables it
-//! (`World::scene_save_allowed`, retail `_DAT_8007B6A8`), so in a town the
+//! (`World::party.scene_save_allowed`, retail `_DAT_8007B6A8`), so in a town the
 //! Save row is correctly grey - rung 2 lands on it and asserts the confirm
 //! buzzes. Rung 10 goes to `map01`, where the bit is set, and drives the row
 //! for real.

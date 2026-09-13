@@ -2,7 +2,7 @@
 //!
 //! `SceneHost::enter_field_scene` builds the per-region encounter table from the
 //! scene's MAN (`region_encounter_table_from_man`) and installs it on
-//! `World::field_region_tracker`, so a field step rolls against the player's
+//! `World::terrain.region_tracker`, so a field step rolls against the player's
 //! *active region* (per-region rate increment + formation-range pick,
 //! `FUN_801D9E1C`) instead of the aggregated mean-rate `EncounterSession`. This
 //! is the field counterpart to the world-map `set_world_map_regions` path, which

@@ -67,6 +67,26 @@ struct. `World::tick` runs:
 Engines that want a different storage layout (ECS, custom parallelism)
 implement the per-VM `Host` traits themselves; `World` is the default.
 
+##### Layout
+
+`World` keeps the VM contexts, the actor table and the scene-flow latches
+as direct fields; everything else lives in one sub-struct per subsystem,
+each a plain data struct in its own `world/*.rs` file. Access is
+`world.<group>.<field>` (`world.party.money`, `world.battle.command`):
+
+| Field | Type | Holds |
+|---|---|---|
+| `party` | `PartyState` | Roster, active party + leader, money, inventory, ability masks, tactical arts, level-up tracking, banners, save extensions, name entry. |
+| `battle` | `BattleState` | Per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues, end-of-battle latches. |
+| `encounters` / `seru` / `casting` | `EncounterState` / `SeruState` / `CastFxState` | Encounter session + scripted arms; capture log, registry, shiny rolls; summon / cast-module / move-FX scene graph. |
+| `terrain` / `locomotion` / `props` / `npcs` | `FieldTerrain` / `FieldLocomotion` / `FieldPropState` / `FieldNpcState` | Walkability + zones + floor LUT; player movement gates and deltas; prop colliders, walk-touch, stagers; NPC positions, routes, motions, dialog bindings. |
+| `field_vm` / `dialog` / `cutscene` | `FieldVmState` / `DialogState` / `CutsceneState` | Per-record channels, helper contexts, submode block; dialog panel + inline runner; narration, timeline, caption / card overlays, FMV handoff. |
+| `world_map` / `carriers` | `WorldMapState` / `FieldCarrierState` | Overworld controller + entity SMs; field-scene carrier SMs. |
+| `minigames` / `shops` / `menu` / `board` | `MinigameState` / `ShopState` / `MenuState` / `TileBoardState` | Minigame sessions + wallet; shop / prize-exchange sessions; pause-menu tables + warp requests; op-0x49 tile board. |
+| `camera` / `presentation` / `ambient` | `CameraRig` / `ScreenFxState` / `AmbientFxState` | Camera snapshot + ease + register file; fades, tints, cinematic bars; CLUT cyclers, VDF pulse, VRAM moves. |
+| `audio` / `move_vm` / `clock` | `AudioState` / `MoveVmGlobals` / `FrameClock` | BGM + SFX cue slots + battle cue queues; move-VM pools and globals; frame-step factor, vsync accumulators, tick counters. |
+| `tables` / `flags` / `toggles` | `DiscTables` / `StoryFlagState` / `WorldToggles` | Disc-parsed static tables; story / system flag words; engine behaviour toggles. |
+
 #### `SceneMode::Battle`
 
 The battle-action state machine step, preceded by the staged-anim commit
@@ -103,8 +123,8 @@ Alongside the timeline, `step_field_channels` runs the scene's per-actor
 script channels (`field_channels::FieldChannel`, one per MAN partition-1
 placement, port of `FUN_8003A1E4`/`FUN_8003AEB0`) - the vignette actors
 the timeline halt-acquires and pokes beat by beat. Animate cues go into
-`field_npc_anim_cues` (drained by the windowed render to re-target each
-NPC's clip player); scripted moves go into `field_npc_positions`. The
+`npcs.anim_cues` (drained by the windowed render to re-target each
+NPC's clip player); scripted moves go into `npcs.positions`. The
 opening white flash (op `0x34` sub-0) drives `fade::ColorFade` on
 `World::color_fade`, drawn as a full-screen wash. See
 [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md).
@@ -115,7 +135,7 @@ opening white flash (op `0x34` sub-0) drives `fade::ColorFade` on
 (remapped by `field_camera_azimuth`, quantised to the nearest 90° like
 retail); the player actor advances in 2-unit steps with per-axis
 collision against the per-scene `field_collision_grid`, and facing is
-updated. The opt-in `World::precise_movement` swaps in a continuous
+updated. The opt-in `World::locomotion.precise_movement` swaps in a continuous
 decode - true key diagonals + analog-stick angles - through the *same*
 collision, so it changes input feel without forking the physics.
 
@@ -149,7 +169,7 @@ switched on the movement edge and folded into the player actor's
 `pose_frame` for the host's posed-mesh rebuild. See
 [`docs/subsystems/field-locomotion.md`](../../docs/subsystems/field-locomotion.md).
 
-`World::active_party` holds the present-party composition - the engine
+`World::party.active_party` holds the present-party composition - the engine
 mirror of retail's present-party list at `0x8007BD10`: `active_party[i]`
 is the **roster slot** occupying battle ordinal `i`, so battle actor
 slot / HUD row / VRAM texture band all key on the ordinal while the
@@ -170,7 +190,7 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   directional buffer, per-command AP debit from the turn pool, auto-end
   when nothing is affordable, and the Begin | Reselect review. Resolves
   the entered sequence through the `legaia-art` matchers. Costs come from
-  the equipped set's `+0x74` bytes (`World::battle_swing_costs`).
+  the equipped set's `+0x74` bytes (`World::battle.swing_costs`).
 - `ap_gauge` - per-character Action-Point gauge. Charges +5 on
   Spirit-press, refills per turn; backs the Spirit command and the AP
   override hook, **not** the Arts input's swing budget.
@@ -202,10 +222,10 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   (the sellable mask), and `shop_catalog::scene_shops` decodes a
   scene MAN's op-`0x49` stock records (`legaia_asset::shop_stock`) into
   a priced `ShopInventory`. `SceneHost::enter_field_scene` parks them on
-  `World::scene_shops`; `World::scene_shop_session(idx)` opens one. The **live
+  `World::shops.scene_shops`; `World::scene_shop_session(idx)` opens one. The **live
   trigger** is the field VM's op `0x49` sub-0: `World::try_arm_field_shop`
   recognises an inline shop record on the op's bytes and stages it on
-  `World::pending_field_shop` (Armed -> Done op-0x49 gating), so a host drains
+  `World::shops.pending_shop` (Armed -> Done op-0x49 gating), so a host drains
   `take_pending_field_shop` -> drives the buy UI -> `finish_field_shop`.
 - `seru_trade` - the engine side of the randomizer's `--seru-trade` toggle:
   vendors offer to swap one of a character's seru for a different one, reseeding
@@ -243,7 +263,7 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   picker for the live gameplay loop. A small state machine (command menu
   → target select → confirm) driven a frame at a time from `World::input`.
   Target selection reuses `target_picker`. When
-  `World::battle_player_driven` is set, `World::live_battle_tick` opens
+  `World::battle.player_driven` is set, `World::live_battle_tick` opens
   one per party turn and parks the action SM until the player confirms;
   otherwise the loop auto-resolves with a physical Attack. v0.1 enables
   only the Attack command. See `docs/subsystems/battle.md#auto-resolve-vs-player-driven`.
@@ -290,7 +310,7 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
 - `tactical_arts_editor` - the field-menu Arts screen: `ChainEditor`
   (Browsing → Editing → Naming → Done) composes a directional chain into
   a per-character `ChainLibrary`. `World::chain_library` /
-  `World::store_chain_library` bridge that library to `World.saved_chains`,
+  `World::store_chain_library` bridge that library to `World.party.saved_chains`,
   so a chain authored in the menu serializes with `save_full` - the same
   path whether it was edited live or loaded from a save
   (`SavedChain::to_record` / `from_record` pack to the `Command` byte

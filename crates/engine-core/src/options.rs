@@ -186,7 +186,7 @@ pub struct OptionsState {
     /// hosts don't read options and keep the engine-core `Retail` default).
     pub camera_distance: crate::camera::CameraDistance,
     /// Opt-in precise-movement toggle (engine-only, non-retail): mirrors
-    /// into [`World::precise_movement`](crate::world::World::precise_movement)
+    /// into [`crate::world::FieldLocomotion::precise_movement`](crate::world::World::precise_movement)
     /// by windowed hosts. Default off = retail's quantised 4/8-way remap.
     pub precise_movement: bool,
     /// Photosensitivity guard (engine-only, non-retail): slew-limits the
@@ -194,7 +194,7 @@ pub struct OptionsState {
     /// like koin3's dance floor can't strobe at hazardous rates (retail
     /// itself full-swings bright<->black every game tick there - 15 Hz
     /// cycles, far past the 3-flashes-per-second guideline). Mirrors into
-    /// [`World::reduce_flashing`](crate::world::World::reduce_flashing).
+    /// [`crate::world::WorldToggles::reduce_flashing`](crate::world::World::reduce_flashing).
     /// **Default ON**; turning it off restores the retail-exact palette
     /// steps. Purely presentational - the move-VM simulation state is
     /// identical either way.

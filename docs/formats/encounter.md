@@ -346,7 +346,7 @@ carries `3E FF 04` at record offset `+0x07F7`, three instructions past the
 scene's talk records. So there **is** a decline path: picking any of the other
 three runs that option's talk reply and no fight. The engine gates on it rather than on the dialog dismiss -
 `spar_menu_of` scans each option's branch target for the install prefix and
-`World::carrier_menu` engages only when the cursor sits on that option
+`World::carriers.menu` engages only when the cursor sits on that option
 (`world/types.rs`, `world/field_carriers.rs`). Keying on the disc op rather
 than an English label is what makes it hold under the PAL discs and translation
 packs. The formation *index* (`4`) is still a pinned

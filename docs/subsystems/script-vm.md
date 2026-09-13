@@ -503,7 +503,7 @@ sub-op `0xA` note above), so in play the sub-switch always runs and the XA arm a
 waits on the bank.
 
 The port models the pair as `engine-core::scus_leaf_kernels::SoundStreamRequest` on
-`World::sound_stream`, with `World::dual_mode_gate` pinned at `0`; the arms live in
+`World::audio.sound_stream`, with `World::audio.dual_mode_gate` pinned at `0`; the arms live in
 the field host's op-`0x36` handler and the gates are covered by
 `engine-core::world::tests::sound_stream_gates`. Because the engine's bank loads are
 synchronous the pair is born settled and a sub-`1` settles in the same call, so no
@@ -973,7 +973,7 @@ The three SCUS dispatchers all operate on the **same bitfield array based at `0x
 - So the `0x5x/0x6x/0x7x` opcode space encodes a 12-bit operand: the low 4 bits of the opcode plus the next operand byte form an 8-bit (1-byte) flag index - but with the "extended" prefix bit (0x80) preserved into the high bits, the addressable space is 12-bit, suggesting per-script-context banks within the same array.
 - (An earlier draft mislabeled the base as `DAT_80086D70` by double-counting the `0x1618` displacement onto `0x80085758`; the Ghidra symbol `DAT_80085758` is itself `0x80084140 + 0x1618`, and the array is indexed directly from there - no further `+0x1618`.)
 
-This is a **fourth flag bank** (per-script local at `ctx[+0x62]`, 32-bit globals at `_DAT_1F800394`, ctx flag word at `ctx[+0x10]` are the other three). It is **not** a wholly separate region: base `0x80085758` falls inside the story-flag RAM window `0x80085600..0x80085800` (at `+0x158`) and the bank extends past `0x80085800` (flag indices up to ~`0xFFF` reach `0x80085758 + 0x1FF`). In a retail SC save block the bank therefore lives at SC offset `0x1618` (= `0x200 + (0x80085758 - 0x80084340)`, via the `SAVE_GAME_DATA_RAM_BASE` formula in `crates/save`), overlapping the story-flag bitmap (`SC 0x14C0`, 512 bytes) and continuing to the inventory array (`SC 0x1818`). Seeding the engine's `World::system_flags` from `sc_block[0x1618..0x1818]` reproduces the live bank as of the save.
+This is a **fourth flag bank** (per-script local at `ctx[+0x62]`, 32-bit globals at `_DAT_1F800394`, ctx flag word at `ctx[+0x10]` are the other three). It is **not** a wholly separate region: base `0x80085758` falls inside the story-flag RAM window `0x80085600..0x80085800` (at `+0x158`) and the bank extends past `0x80085800` (flag indices up to ~`0xFFF` reach `0x80085758 + 0x1FF`). In a retail SC save block the bank therefore lives at SC offset `0x1618` (= `0x200 + (0x80085758 - 0x80084340)`, via the `SAVE_GAME_DATA_RAM_BASE` formula in `crates/save`), overlapping the story-flag bitmap (`SC 0x14C0`, 512 bytes) and continuing to the inventory array (`SC 0x1818`). Seeding the engine's `World::flags.system_flags` from `sc_block[0x1618..0x1818]` reproduces the live bank as of the save.
 Note this bank is **not** sufficient on its own to drive a scene's collision: see [`field-locomotion.md`](field-locomotion.md) - the `0x4C` nibble-7 wall paints reached through it are story-conditional collision *deltas*, not the base walkable grid.
 
 Decompiled bodies:
@@ -1782,7 +1782,7 @@ NPC is the **interaction pipeline**, not a text-carrying instruction:
    executing the control bytecode between text segments (story-flag tests,
    `SET`/`CLEAR`, scene changes) and pausing at each `0x1F` segment to show a
    box, applying a menu choice's relative jump (`FUN_80038050`) so the branch
-   handler's side effects run before its reply. Gated by `World::use_vm_dialogue`
+   handler's side effects run before its reply. Gated by `World::toggles.use_vm_dialogue`
    (default `false` at the engine-core level so unit-test worlds keep the simple
    path; the shell's `play-window` sets it **on by default**, with
    `--simple-dialogue` opting back into the simplified `OwnedDialogPanel`
@@ -1861,7 +1861,7 @@ interaction-driven actor-text pipeline above, not an inline-text opcode. (The
 
 **Engine wiring (re-grounded).** The from-scratch engine now matches this:
 `field_interact` (`0x3E` with `op0 < 100`) opens the interacted actor's inline
-dialogue from `World::field_npc_dialog` (the per-actor inline interaction-script
+dialogue from `World::npcs.dialog` (the per-actor inline interaction-script
 text, keyed by `slot` = the actor's MAN record index, populated at field-scene
 entry), via the host's `open_dialog` primitive. `0x3F` is now a **live named
 scene-change** (`host.scene_transition_named` → `SceneHost::tick`), no longer a

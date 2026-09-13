@@ -31,7 +31,7 @@
 //! (`0x2000`, the overhead one's). Most scenes set `0x1000` on every tile the
 //! party may stand on - but eighteen field scenes author `0x2000` and never
 //! `0x1000`, so a fixed `0x1000` gate reads them as having no floor at all and
-//! makes the whole resolver inert there. `World::field_floor_cell_bit` picks
+//! makes the whole resolver inert there. `World::terrain.floor_cell_bit` picks
 //! the bit each scene actually authored; this test is what pins that the
 //! choice covers the disc rather than the sample that was looked at.
 //!

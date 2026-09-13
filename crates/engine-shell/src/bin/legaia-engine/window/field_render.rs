@@ -58,7 +58,7 @@ impl FieldFloorWave {
 
     /// Fold the world's live ladder into the four lists' Y translations.
     ///
-    /// `world_lut` is `World::field_floor_height_lut` - the runtime
+    /// `world_lut` is `World::terrain.floor_height_lut` - the runtime
     /// **scratchpad** frame, the negation of the MAN frame held here.
     /// Returns the number of draw matrices moved this frame.
     pub(super) fn apply(
@@ -154,7 +154,7 @@ impl PlayWindowApp {
     /// at spawn (`0x4C 0x35`) and its resumable body clears the hold bit when
     /// the touch / interact dispatch runs the record through the field VM. The
     /// **live animation bank lives on the world**
-    /// (`World::field_prop_bank`, installed at field entry and ticked by
+    /// (`World::props.bank`, installed at field entry and ticked by
     /// `World::tick_prop_interactions`) - the draw pass here only reads each
     /// prop's current frame.
     ///
@@ -781,8 +781,8 @@ impl PlayWindowApp {
 
     /// Advance the world-map water/CLUT-cell animation one sim tick, in
     /// retail vsync units: only the sim ticks that map to a retail vsync
-    /// (`World::field_frame_step`) advance the clock, and a retail *game
-    /// tick* lands every `World::frame_step` vsyncs (the adaptive
+    /// (`World::clock.display_frame_step`) advance the clock, and a retail *game
+    /// tick* lands every `World::clock.frame_step` vsyncs (the adaptive
     /// `DAT_1F800393` factor `FUN_80016B6C` writes - `3` on the overworld,
     /// `2` in towns).
     ///
@@ -812,7 +812,7 @@ impl PlayWindowApp {
             return;
         }
         // Only the sim ticks that map to a retail vsync advance the clock
-        // (the 100 Hz sim carries ~60 vsyncs/s; see `World::field_frame_step`).
+        // (the 100 Hz sim carries ~60 vsyncs/s; see `World::clock.display_frame_step`).
         if self.session.host.world.clock.display_frame_step == 0 {
             return;
         }

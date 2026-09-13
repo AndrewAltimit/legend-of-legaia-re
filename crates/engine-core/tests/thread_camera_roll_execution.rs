@@ -33,7 +33,7 @@
 //! 2. **Execution.** [`exec_census`] loads the same records into a real
 //!    [`World`] and steps them, so a CONFIGURE counted there has run through
 //!    the whole engine chain - VM step, `camera_configure` host hook,
-//!    `FieldEvent::CameraConfigure`, `World::camera_state` merge. It runs
+//!    `FieldEvent::CameraConfigure`, `World::camera.state` merge. It runs
 //!    twice, once with the flag banks cleared and once full, so both arms of
 //!    every story-flag gate execute.
 //!

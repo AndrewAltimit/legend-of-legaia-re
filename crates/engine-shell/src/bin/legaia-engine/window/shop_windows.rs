@@ -12,7 +12,7 @@
 //! | Id | Renderer | Content this host feeds it |
 //! |---|---|---|
 //! | 33 (`0x21`) | `FUN_801DCF14` | the vendor plate - the scene MAN shop record's trailing name |
-//! | 32 (`0x20`) | `FUN_801DCF84` | the purse - `World::money` (retail `_DAT_8008459C`) |
+//! | 32 (`0x20`) | `FUN_801DCF84` | the purse - `World::party.money` (retail `_DAT_8008459C`) |
 //! | 34 (`0x22`) | `FUN_801D4A80` | the hovered item's name / owned count / description |
 //! | 35 (`0x23`) | `FUN_801D5510` | the buy quantity, held count, unit price and running total |
 //! | 37 (`0x25`) | `FUN_801D5944` | the sell quantity, held count and halved gold total |
@@ -104,7 +104,7 @@ impl PlayWindowApp {
     ///
     /// The engine's `ShopSession` keeps the priced stock but not that name, so
     /// the host recovers it by matching the session's stock against the
-    /// scene's decoded shops (`World::scene_shops`); a scene with one merchant
+    /// scene's decoded shops (`World::shops.scene_shops`); a scene with one merchant
     /// resolves on the first entry.
     ///
     /// REF: FUN_801DCF14

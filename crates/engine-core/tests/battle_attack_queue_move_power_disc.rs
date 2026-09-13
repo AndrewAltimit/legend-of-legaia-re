@@ -8,7 +8,7 @@
 //! `legaia_engine_core::action_effect_script::move_power_record_offset` over
 //! the id-index map at `0x801F4E63` (PROT 0898). An Attack that leaves that
 //! byte at `0` resolves nothing, `MoveFxStreak` is never installed, and
-//! `World::active_move_fx_trail_texpage` stays `None` - the streak pass emits
+//! `World::casting.move_fx_trail_texpage` stays `None` - the streak pass emits
 //! zero quads for the whole fight.
 //!
 //! This pins the two halves against the real table: the pre-fix value `0`

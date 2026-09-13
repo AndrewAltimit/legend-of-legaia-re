@@ -9,7 +9,7 @@ impl World {
     // --- live gameplay loop: Field <-> Battle round trip ------------------
 
     /// Per-frame field-side driver for the live gameplay loop. Gated by
-    /// [`Self::live_gameplay_loop`] in [`Self::tick`]; never called when the
+    /// [`crate::world::WorldToggles::live_gameplay_loop`] in [`Self::tick`]; never called when the
     /// flag is off.
     ///
     /// Composes the already-existing encounter pieces into the per-frame
@@ -115,7 +115,7 @@ impl World {
     ///
     /// Party slots `0..party_count` keep their HP / MP (seeded from the
     /// roster by the boot path); monster slots take HP / attack / defense
-    /// from [`Self::monster_catalog`]. Every combatant is marked alive,
+    /// from [`crate::world::DiscTables::monster_catalog`]. Every combatant is marked alive,
     /// `action_category = Attack`, and party members target the first
     /// monster. The battle-action context is seeded at `Begin` with the
     /// Attack action queued. This is the live-loop counterpart to the
@@ -123,13 +123,13 @@ impl World {
     /// Configure the battle BGM track id. `Some(id)` enables the
     /// Battle↔Field music swap (the live loop switches to `id` on encounter
     /// and restores the field track on battle end); `None` disables it. See
-    /// [`World::battle_bgm`].
+    /// [`crate::world::AudioState::battle_bgm`].
     pub fn set_battle_bgm(&mut self, bgm_id: Option<u16>) {
         self.audio.battle_bgm = bgm_id;
     }
 
     /// Switch to the configured battle track at encounter start. No-op when
-    /// [`World::battle_bgm`] is `None` or the swap is already active. Stashes
+    /// [`crate::world::AudioState::battle_bgm`] is `None` or the swap is already active. Stashes
     /// the current field track for [`World::restore_field_bgm`] and queues a
     /// `FieldEvent::Bgm` start so the host's BGM director cross-fades to it.
     pub(crate) fn swap_to_battle_bgm(&mut self) {

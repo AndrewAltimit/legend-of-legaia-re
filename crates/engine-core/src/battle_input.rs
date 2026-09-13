@@ -3,7 +3,7 @@
 //! The live battle loop (`crate::world::World::live_battle_tick`) can run a
 //! battle two ways. By default it auto-resolves: every party turn commits a
 //! physical Attack with no player choice. When
-//! [`crate::world::World::battle_player_driven`] is set, each party turn pauses
+//! [`crate::world::BattleState::player_driven`] is set, each party turn pauses
 //! the action state machine and runs a [`BattleCommandSession`] that reads the
 //! pad.
 //!
@@ -134,7 +134,7 @@ impl BattleCommand {
     ///
     /// [`Self::enabled`] answers "is the command wired at all"; this adds
     /// the per-battle refusal the retail flow has: a scripted no-escape
-    /// battle ([`crate::world::World::battle_no_escape`], the same flag the
+    /// battle ([`crate::world::BattleState::no_escape`], the same flag the
     /// field loop honours) forbids **Run**. A command that answers `false`
     /// still draws its chip - retail keeps the plate and puts a single `-`
     /// where the word would go
@@ -302,7 +302,7 @@ pub struct BattleCommandSession {
     pub party_slot: u8,
     /// Scripted no-escape battle: the round prompt draws its `Run` chip with
     /// the `-` placeholder and refuses to take it. Set by the live loop from
-    /// [`crate::world::World::battle_no_escape`]; defaults to `false` so a
+    /// [`crate::world::BattleState::no_escape`]; defaults to `false` so a
     /// caller that does not know still gets a working prompt.
     pub no_escape: bool,
     pub phase: CommandPhase,

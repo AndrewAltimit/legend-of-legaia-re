@@ -28,7 +28,7 @@ impl World {
     /// Open the name-entry overlay for `slot`, seeded with the slot's current
     /// display name (e.g. the template `Vahn`). Mirrors the opening `town01`
     /// script's lead-character naming prompt. The host drives it each frame
-    /// with [`Self::step_name_entry`] and renders from [`Self::name_entry`].
+    /// with [`Self::step_name_entry`] and renders from [`crate::world::PartyState::name_entry`].
     pub fn open_name_entry(&mut self, slot: usize) {
         let initial = self.party_name(slot).to_string();
         self.party.name_entry = Some(crate::name_entry::NameEntry::new(slot, &initial));
@@ -41,7 +41,7 @@ impl World {
 
     /// Advance the active name-entry overlay by one input frame. On commit
     /// (the player confirms "Is this name okay?") the entered name is written
-    /// into [`Self::party_names`] for the entry's slot, the session is closed,
+    /// into [`crate::world::PartyState::party_names`] for the entry's slot, the session is closed,
     /// and `true` is returned so the host can resume the field script.
     /// Returns `false` while the overlay stays open (or when none is active).
     pub fn step_name_entry(&mut self, input: crate::name_entry::NameEntryInput) -> bool {
@@ -74,7 +74,7 @@ impl World {
     /// script; see [`crate::man_field_scripts::collect_partition_narration`]).
     /// A presenter with no pages installs nothing - a scene that carries no
     /// inline narration simply never shows one. The host renders the active
-    /// page from [`Self::cutscene_narration`]; [`Self::tick`] advances its
+    /// page from [`crate::world::CutsceneState::narration`]; [`Self::tick`] advances its
     /// per-page timer.
     pub fn open_cutscene_narration(&mut self, pages: Vec<String>) {
         if pages.is_empty() {
@@ -185,7 +185,7 @@ impl World {
     /// timeline (a field-VM record in the MAN's third record partition)
     /// that ends with `GFLAG_SET 26` - field-VM op `0x2E` with operand
     /// `0x1A`, which sets bit 26 (`0x0400_0000`) of the scratchpad flag
-    /// word `_DAT_1F800394` (the engine's [`Self::story_flags`]) right
+    /// word `_DAT_1F800394` (the engine's [`crate::world::StoryFlagState::story_flags`]) right
     /// after staging the closing camera + actor moves. Once that bit is
     /// set, the per-frame field controller `FUN_801D1344` waits for the
     /// player's confirm press and then issues a name-based scene-change
@@ -246,7 +246,7 @@ impl World {
     ///
     /// Returns the skip target scene ([`legaia_asset::new_game::OPENING_SCENE`]
     /// = `town01`) once - when the opening cutscene chain is playing
-    /// ([`Self::opening_chain_active`], set at the `opdeene` entry and carried
+    /// ([`crate::world::CutsceneState::opening_chain_active`], set at the `opdeene` entry and carried
     /// through its `opstati` / `opurud` legs), the trigger bit is set
     /// ([`Self::arm_prologue_handoff`] - `opdeene`'s timeline raises it near
     /// its top, so the skip is available almost immediately), and the caller
@@ -328,11 +328,11 @@ impl World {
     /// `true` when story flag `flag` is set in the partition-2 gate bitmap
     /// (retail `DAT_80085758`). That base is the **system-flag bank** the
     /// field VM's `0x50`/`0x60`/`0x70` SET/CLEAR/TEST opcodes operate on
-    /// ([`Self::system_flags`], same `byte = flag >> 3`,
+    /// ([`crate::world::StoryFlagState::system_flags`], same `byte = flag >> 3`,
     /// `bit = 0x80 >> (flag & 7)` addressing - `FUN_8003BDE0`'s test), so the
     /// gate check and the VM writes share one store. It also sits at offset
     /// `0x158` of the `0x80085600..0x80085800` save-bitmap window
-    /// ([`Self::story_flag_bits`]); the save/load paths sync that overlap so
+    /// ([`crate::world::StoryFlagState::story_flag_bits`]); the save/load paths sync that overlap so
     /// gate state persists (see [`Self::save_full`] / [`Self::load_full`]).
     // REF: FUN_8003BDE0
     pub fn p2_gate_flag_set(&self, flag: u16) -> bool {
@@ -397,7 +397,7 @@ impl World {
     }
 
     /// Install a field-VM op-`0x44` SPAWN_RECORD request as a **concurrent
-    /// helper context** ([`Self::helper_contexts`]): re-base the GLOBAL record
+    /// helper context** ([`crate::world::FieldVmState::helper_contexts`]): re-base the GLOBAL record
     /// index into partition 2 (`global - N0 - N1`, retail `FUN_8003BDE0`),
     /// check the record's C1/C2 story-flag gates, and push the record as an
     /// independent spawned context. Returns `true` when a context installed.
@@ -633,8 +633,8 @@ impl World {
     /// `true` while a dialogue engagement owns the pad and the player.
     ///
     /// The engine has **two** dialogue channels and either one can be live on
-    /// its own. [`Self::current_dialog`] is the simplified request the probe /
-    /// world map open; [`Self::inline_dialogue`] is the faithful field-VM
+    /// its own. [`crate::world::DialogState::current`] is the simplified request the probe /
+    /// world map open; [`crate::world::DialogState::inline`] is the faithful field-VM
     /// runner ([`crate::inline_dialogue`]), which the ordinary NPC-talk path
     /// runs and which can hold a box open with no `current_dialog` at all -
     /// an interaction record whose prologue selects its segment never sets
@@ -699,7 +699,7 @@ impl World {
     /// The engine's sim clock runs at 100 Hz, so stepping the timeline once
     /// per sim tick drained every `WaitFrames` 1.67x too fast. The narration
     /// roller was already corrected onto the retail-frame sub-clock
-    /// ([`crate::world::World::field_frame_step`]); the timeline is paced off
+    /// ([`crate::world::FrameClock::display_frame_step`]); the timeline is paced off
     /// the same sub-clock here so wait-dominated legs keep retail wall-time
     /// too. (Measured against a headless retail capture of the New Game
     /// opening chain: before, the roller-bound `opdeene` leg matched retail
@@ -832,7 +832,7 @@ impl World {
     /// the spawned per-actor channels, the channel-completion handshake park
     /// (`B3 <id> <bit>`), the flag-test step-past rules, and the
     /// backward-wrap completion detection. Only `modal` differences apply:
-    /// - `modal` sets [`Self::in_cutscene_timeline`] while the VM steps (the
+    /// - `modal` sets [`crate::world::CutsceneState::in_timeline`] while the VM steps (the
     ///   op-49 name-entry / narration-draw host-hook scoping); a helper
     ///   context runs with ordinary field-VM host semantics.
     /// - a `0x1F` inline-dialog segment parks a modal timeline on an owned
@@ -1689,7 +1689,7 @@ impl World {
         }
     }
 
-    /// Step every concurrent helper context ([`Self::helper_contexts`]) one
+    /// Step every concurrent helper context ([`crate::world::FieldVmState::helper_contexts`]) one
     /// frame slice - the per-frame sweep over the mid-play spawned records,
     /// running each through the shared [`Self::run_spawned_record_slice`]
     /// core (`modal = false`). Helper contexts execute alongside the modal
@@ -1756,7 +1756,7 @@ impl World {
 
     /// Un-park every field NPC a cutscene left at the off-map hide box
     /// ([`crate::world::FIELD_OFFMAP_HIDE_XZ`]), dropping its
-    /// [`Self::field_npc_positions`] / [`Self::field_npc_headings`] overrides so
+    /// [`crate::world::FieldNpcState::positions`] / [`crate::world::FieldNpcState::headings`] overrides so
     /// the field render falls back to the NPC's MAN spawn tile.
     ///
     /// The `town01` opening cutscene hides the townsfolk at that box for its
@@ -1814,7 +1814,7 @@ impl World {
     /// scripted initial facings, idle/`WAIT`-loop cadence, local-flag setup.
     ///
     /// After stepping, each channel whose context position changed writes
-    /// through to [`Self::field_npc_positions`] so the field render / probes
+    /// through to [`crate::world::FieldNpcState::positions`] so the field render / probes
     /// follow the scripted move. On free-roam the engine's waypoint patroller
     /// ([`Self::tick_field_npc_motions`]) owns any placement carrying a route,
     /// so a channel's move (and the heading derived from it) is only surfaced
@@ -1906,7 +1906,7 @@ impl World {
     /// facing ops.
     ///
     /// Call at scene entry after the carrier/channel install; the resulting
-    /// positions snapshot into [`Self::field_npc_entry_positions`], the state
+    /// positions snapshot into [`crate::world::FieldNpcState::entry_positions`], the state
     /// a cutscene teardown restores to.
     // PORT: FUN_8003A1E4 (spawn-prologue pre-run -> initial actor positions)
     // REF: FUN_8003AEB0, FUN_80039B7C
@@ -2157,7 +2157,7 @@ impl World {
     /// loop), so the object context carries its init state (the door-angle
     /// `4C 41` ramp seed) before the first poke.
     ///
-    /// Binds are remembered on [`Self::object_channel_binds`] so a
+    /// Binds are remembered on [`crate::world::FieldVmState::object_channel_binds`] so a
     /// cutscene-timeline install that has to respawn the channel set
     /// re-appends them. Call after [`Self::seed_field_channels`]; no-op when
     /// that seeded nothing (a scene without a MAN).
@@ -2452,7 +2452,7 @@ impl World {
             // target's clip cursor in the bank, which is what the following
             // `AC <target> 08` / `AD <target> 08` end-latch spin then waits on.
             // For the player the windowed / browser hosts additionally draw the
-            // gesture off `World::field_player_move_cues` (moves 1/2 are the
+            // gesture off `World::locomotion.player_move_cues` (moves 1/2 are the
             // locomotion clips their own controller already animates).
             if (b & 0x7F) == 0x22
                 && let Some(target) = ext_target
@@ -2609,9 +2609,9 @@ impl World {
         self.dialog.inline = Some(id);
     }
 
-    /// Live-loop bridge for the inline-script runner: when [`Self::use_vm_dialogue`]
+    /// Live-loop bridge for the inline-script runner: when [`crate::world::WorldToggles::use_vm_dialogue`]
     /// is set, this starts the runner the frame a field dialogue opens (from
-    /// [`Self::current_dialog`]'s inline buffer), steps it from the current pad
+    /// [`crate::world::DialogState::current`]'s inline buffer), steps it from the current pad
     /// edges (Cross/Circle = confirm, Up/Down = menu cursor), and tears it down
     /// (clearing `current_dialog`) when the conversation ends. No-op when the
     /// flag is off, so the default simplified path is untouched.

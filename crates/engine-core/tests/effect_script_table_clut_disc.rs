@@ -1,13 +1,13 @@
 //! The effect-script walk's table-form **CLUT-stage** lane, against the real
-//! overlay: draining `World::battle_effect_spawns` queues each qualifying
-//! table-form spawn's `0x801F6418` byte onto `World::battle_clut_stages` -
+//! overlay: draining `World::battle.effect_spawns` queues each qualifying
+//! table-form spawn's `0x801F6418` byte onto `World::battle.clut_stages` -
 //! the engine seat of retail `FUN_801DEA50`'s palette arm
 //! (`0x801df0d4..0x801df134`), whose two gates the tests pin: only plain
 //! codes below `0x32` consult the map, and only a non-zero map byte copies.
 //!
 //! The map is a CLUT source-x table, not a sound table: the byte is `rect.x`
 //! of the 16x1 `RECT` `FUN_80058490` (`MoveImage`) blits onto `(224, 476)`.
-//! This file previously asserted the byte reaching `World::battle_sfx_cues`
+//! This file previously asserted the byte reaching `World::audio.battle_sfx_cues`
 //! as a sound-cue id - it was asserting the defect.
 //!
 //! Skips and passes without `LEGAIA_DISC_BIN` / `extracted/`; the no-catalog

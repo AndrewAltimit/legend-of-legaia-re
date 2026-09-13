@@ -88,7 +88,7 @@ const MAX_PENDING_SCROLLS: usize = 64;
 #[derive(Debug, Clone)]
 pub struct AmbientPart {
     /// Byte offset of the part's record inside the shared stager bundle
-    /// (`World::field_stager_bytes`) - the base `move_bytecode_*` word
+    /// (`World::props.stager_bytes`) - the base `move_bytecode_*` word
     /// offsets translate against.
     pub record_off: usize,
     /// `record[+0]` mesh selector (`-1` transform node, `0x4000`/`0x4001`

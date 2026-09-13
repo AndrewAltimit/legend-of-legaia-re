@@ -358,7 +358,7 @@ impl World {
 
     /// Recompute the flow state from `phase` plus the live submenus, and
     /// dispatch the hook on a change. `phase` is passed in rather than read off
-    /// [`World::battle_command`] because the command flow drives its session
+    /// [`crate::world::BattleState::command`] because the command flow drives its session
     /// detached from the World for the frame.
     pub(in crate::world) fn sync_battle_flow(
         &mut self,

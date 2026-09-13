@@ -177,7 +177,7 @@ Provenance: `overlay_0897_801ef2b0.txt` case 4; a denser duplicate of this logic
 
 ## From-scratch port
 
-[`legaia_engine_core::tile_board::TileBoard`](../../crates/engine-core/src/tile_board.rs) holds the board (dims + origin + cell bytes + player cell). [`World::tick`](../../crates/engine-core/src/world.rs) drives a board step in the `SceneMode::Field` arm when a board is installed (`World.tile_board`), reading `World.input` (the [input contract](engine.md)): it decodes one direction, gates against `cell == 2`, commits the player cell, and interpolates the player actor to the destination tile centre. The board stays inert (no-op) until installed, so it does not affect ordinary field scenes.
+[`legaia_engine_core::tile_board::TileBoard`](../../crates/engine-core/src/tile_board.rs) holds the board (dims + origin + cell bytes + player cell). [`World::tick`](../../crates/engine-core/src/world.rs) drives a board step in the `SceneMode::Field` arm when a board is installed (`World.board.grid`), reading `World.input` (the [input contract](engine.md)): it decodes one direction, gates against `cell == 2`, commits the player cell, and interpolates the player actor to the destination tile centre. The board stays inert (no-op) until installed, so it does not affect ordinary field scenes.
 
 The install is wired to the field VM: op `0x49` **sub-op 5** hands the host the
 13-byte inline header (`TileBoardHeader::parse`, the window retail points
@@ -192,7 +192,7 @@ op-49 tristate. The arrival pass mirrors the walk SM's case 3: an event /
 transition cell (`8..=0xA`) exits the board mode - the suspended script reads
 `Done` and resumes past the install op - and an animated cell cycles
 `0xB -> 0xE -> 0xB`. The header's actor-template ids are kept on
-`World::tile_board_header` for the render consumers.
+`World::board.header` for the render consumers.
 
 **Tile-actor spawn + reposition.** At install `World::try_install_tile_board`
 spawns one field actor per distinct drawable cell value present on the board
@@ -200,9 +200,9 @@ spawns one field actor per distinct drawable cell value present on the board
 through the same global-TMD + VDF-buffer path the `0x4C 0xD8` field allocator
 uses (the shared `World::spawn_field_actor` helper), and the resulting
 actor-pool slots are recorded in the per-cell-value tile-actor table
-`World::tile_actor_slots` (retail `DAT_801f35bc`; slot `0` = the reused player
+`World::board.actor_slots` (retail `DAT_801f35bc`; slot `0` = the reused player
 actor, `2..=14` = the tile actors). Each field tick
-`World::refresh_tile_board_draw_list` rebuilds `World::tile_board_draw_list`:
+`World::refresh_tile_board_draw_list` rebuilds `World::board.draw_list`:
 for every drawable cell in the active draw set - the full board when the header
 `+6` mode flag is `0`, else the windowed square of Chebyshev `+5` radius around
 the player cell (`TileBoard::draw_cells`) - it selects the cell value's tile
@@ -225,7 +225,7 @@ table + draw list so they don't leak into the next scene; the player actor
 ## Rendering the board
 
 The assembly is `legaia_engine_core::tile_board`: `tile_board_actor_draws`
-(per-cell draws off `World::tile_board_draw_list`, floor-snapped Y, one mesh
+(per-cell draws off `World::board.draw_list`, floor-snapped Y, one mesh
 instance per drawable cell), `tile_actor_slots_needing_mesh` and
 `is_tile_actor_slot`. Unresolved templates degrade to no-draw rather than a
 panic - and that is the whole of what is left here. `DAT_801F35BC` is a

@@ -10,7 +10,7 @@
 //! straight to its power record.
 //!
 //! Loaded lazily from PROT entry 0898 by [`crate::scene::SceneHost`] and parked
-//! on [`crate::world::World::move_power`]; the monster special-attack damage
+//! on [`crate::world::DiscTables::move_power`]; the monster special-attack damage
 //! path consumes it (see `World::enemy_move_predamage`). Disc-free / synthetic
 //! battles leave it `None` and keep the placeholder damage path, so no
 //! determinism trace changes when the table is absent.

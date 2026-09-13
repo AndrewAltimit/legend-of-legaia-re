@@ -15,7 +15,7 @@ pub struct CutsceneState {
     /// the retail mapping). `None` between triggers.
     pub pending_fmv_trigger: Option<i16>,
     /// The FMV currently playing in [`SceneMode::Cutscene`]. Set when the
-    /// world consumes a [`Self::pending_fmv_trigger`] at the top of a
+    /// world consumes a [`crate::world::CutsceneState::pending_fmv_trigger`] at the top of a
     /// [`World::tick`] and flips into the cutscene mode (mirroring retail's
     /// next-game-mode dispatch to game mode 26 one frame after the field-VM
     /// op writes the global). While `Some`, the field VM is suspended (the
@@ -72,14 +72,14 @@ pub struct CutsceneState {
     /// This is the single **modal** context slot: while it is active the
     /// cutscene camera owns the frame and pad locomotion is locked
     /// ([`Self::cutscene_timeline_active`] gates). Ordinary mid-play spawned
-    /// records execute concurrently in [`Self::helper_contexts`] instead and
+    /// records execute concurrently in [`crate::world::FieldVmState::helper_contexts`] instead and
     /// never seize either.
     pub timeline: Option<crate::cutscene_timeline::CutsceneTimeline>,
     /// `true` only while [`Self::step_cutscene_timeline`] is executing the
     /// spawned cutscene context. The field-VM host reads it to suppress the
     /// actor-allocator hook (op `0x4C` n8 sub-0), which in the cutscene context
     /// (target `0xF8`) is the inline-narration text-draw the separate
-    /// [`Self::cutscene_narration`] presenter owns - not an actor spawn.
+    /// [`crate::world::CutsceneState::narration`] presenter owns - not an actor spawn.
     pub in_timeline: bool,
     /// Set when the `town01` opening cutscene timeline is installed via the
     /// new-game prologue hand-off. While set, the timeline's first op-`0x49`
@@ -101,12 +101,12 @@ pub struct CutsceneState {
     /// blocks): pages shown simultaneously, centered mid-screen, until a
     /// blank card block clears it (the `map01` fly-in's "twilight of
     /// humanity" card). Rendered by the host; independent of the crawl
-    /// roller [`Self::cutscene_narration`].
+    /// roller [`crate::world::CutsceneState::narration`].
     pub card: Option<Vec<String>>,
     /// The `opdeene` "It was the Seru." caption, decoded to RGBA at scene
     /// entry ([`crate::cutscene_caption::decode_opdeene_caption`]). `Some`
     /// only while `opdeene` is loaded; the host uploads it once as a sprite
-    /// atlas and blits it, faded by [`Self::cutscene_caption_alpha`]. Unlike
+    /// atlas and blits it, faded by [`crate::world::CutsceneState::caption_alpha`]. Unlike
     /// the crawl / card this is a pre-rendered image, not font text - retail
     /// draws it as a scene textured quad, so the engine blits the scene
     /// texture rather than rendering a string. See [`crate::cutscene_caption`].
@@ -117,12 +117,12 @@ pub struct CutsceneState {
     /// handler). Spawning replaces any live balloon - the retail
     /// predecessor-kill. Hosts render `text` at `(x, y)` while it runs.
     pub text_balloon: Option<crate::text_balloon::TextBalloon>,
-    /// Fade level (0..=1) of [`Self::cutscene_caption`], ramped each
+    /// Fade level (0..=1) of [`crate::world::CutsceneState::caption`], ramped each
     /// [`Self::tick`]. Target-visible in the gap after the first narration
     /// crawl block scrolls out and before the second opens (retail shows the
     /// caption once, between `opdeene`'s two crawls).
     pub caption_alpha: f32,
-    /// Frames [`Self::cutscene_caption`] has been fully faded in. Used to bound
+    /// Frames [`crate::world::CutsceneState::caption`] has been fully faded in. Used to bound
     /// the caption to a retail-like ~2 s beat and fade it back out, since the
     /// engine's inter-crawl timeline gap currently runs much longer than
     /// retail's - so the caption reads as a deliberate pause, not a freeze,

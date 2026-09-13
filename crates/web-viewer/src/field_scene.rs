@@ -66,7 +66,7 @@ pub struct FieldScenePack {
 ///    jou's pulsating-flesh palette cyclers + lightning).
 ///
 /// Both run on the retail game-tick clock: a game tick every
-/// [`Self::frame_step`] vsyncs (`DAT_1F800393`; 2 in towns, 3 on the
+/// [`legaia_engine_core::world::FrameClock::frame_step`] vsyncs (`DAT_1F800393`; 2 in towns, 3 on the
 /// overworld).
 pub struct FieldSceneAnim {
     /// Parsed walker table + per-entry `(accumulator, frame_index)` state.

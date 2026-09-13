@@ -116,7 +116,7 @@ fn field_op_3e_low_op0_does_not_request_scene_transition() {
 }
 
 /// Field-VM op `0x4C 0xE2` (FMV trigger) records the FMV index in
-/// `World::pending_fmv_trigger` AND emits a `FieldEvent::FmvTrigger`
+/// `World::cutscene.pending_fmv_trigger` AND emits a `FieldEvent::FmvTrigger`
 /// for engines to drain. Retail handler at `0x801E30E4` writes the
 /// s16 to `_DAT_8007BA78` and pokes next-game-mode = 0x1A; the
 /// world mirrors the request via these two channels.

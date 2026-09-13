@@ -100,7 +100,7 @@ fn unresolvable_script_id_leaves_ctx_untouched() {
 }
 
 /// Full host path: `[0x4C, 0xC3]` stepped through [`FieldHostImpl`] resolves
-/// the world's resident MAN ([`World::field_channels_man`]), applies the
+/// the world's resident MAN ([`crate::world::FieldVmState::channels_man`]), applies the
 /// teleport, and advances PC by 2.
 #[test]
 fn field_vm_op_4c_c3_teleports_through_the_host() {

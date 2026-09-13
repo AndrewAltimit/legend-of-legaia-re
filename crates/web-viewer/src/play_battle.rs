@@ -1,7 +1,7 @@
 //! Browser **live battle** host: encounter arming + battle overlay draws.
 //!
 //! The simulation half is entirely [`legaia_engine_core`]: with
-//! `World::live_gameplay_loop` armed, `World::tick` rolls step-driven random
+//! `World::toggles.live_gameplay_loop` armed, `World::tick` rolls step-driven random
 //! encounters off the scene MAN's own encounter table, flips
 //! `Field -> Battle`, runs the battle-action state machine (player-driven
 //! command menus included - `battle_player_driven`), and returns to the field

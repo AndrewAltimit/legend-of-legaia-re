@@ -425,7 +425,7 @@ impl World {
     ///
     /// Returns an empty vector unless the disc-placement seeding
     /// ([`Self::install_world_map_entities_at`]) populated
-    /// [`Self::world_map_entity_positions`] - the config-only installers
+    /// [`crate::world::WorldMapState::entity_positions`] - the config-only installers
     /// (which leave positions empty) produce no markers, so a camera-only or
     /// synthetic world map degrades cleanly. The marker `y` is the player
     /// actor's current plane (the placements are 2D), so markers sit on the
@@ -597,7 +597,7 @@ impl World {
     /// Spawn one field move-VM stager record by id at `origin` (world units),
     /// mirroring the field-VM op `0x34` sub-3 → `FUN_800252EC(id)` →
     /// `FUN_80021B04` → move VM chain. `id` is the installer argument
-    /// (`operand + 1`); it indexes [`Self::field_stagers`] (= the bundle's
+    /// (`operand + 1`); it indexes [`crate::world::FieldPropState::stagers`] (= the bundle's
     /// `offsets[id]` record). No-ops (returns `false`) when the id is out of
     /// range or no table is installed, matching the retail bounds behaviour.
     /// Tick the spawned effect with [`Self::tick_field_fx`].
@@ -789,7 +789,7 @@ impl World {
     /// The per-effect **CLUT source x** the same arm reads (`0x801F6418[id]`,
     /// `0x801df0ec..0x801df134`) is not staged here but at the queue's drain:
     /// `World::drain_battle_effect_spawns` pushes it onto
-    /// [`World::battle_clut_stages`] under the retail gate (plain code below
+    /// [`crate::world::BattleState::clut_stages`] under the retail gate (plain code below
     /// `0x32`, non-zero map byte), so callers routing an effect-script spawn
     /// through this get the palette swap without a second copy. It is a 16x1
     /// `MoveImage` onto `(224, 476)`, not a sound cue - see
@@ -905,7 +905,7 @@ impl World {
 
     /// Per-part render draws for the active move-FX scene's mesh-bearing parts
     /// plus the live effect-script table-form scenes
-    /// ([`Self::active_action_fx`]) - one render seam so hosts that already
+    /// ([`crate::world::CastFxState::active_action_fx`]) - one render seam so hosts that already
     /// draw move FX draw the effect-script spawns too. Empty when nothing is
     /// playing. Each draw's `model_index` indexes [`Self::global_tmd_pool`]
     /// (the PROT 0871 effect-model library).
@@ -925,7 +925,7 @@ impl World {
     /// Take the pending production summon-spawn request, if a player Seru-magic
     /// cast set one this step. Returns `(spell_id, origin)`; the host maps
     /// `spell_id` to the overlay PROT entry (extraction `903 + (spell_id - 0x81)`), loads
-    /// it, and calls [`Self::spawn_summon`]. See [`Self::pending_summon_spawn`].
+    /// it, and calls [`Self::spawn_summon`]. See [`crate::world::CastFxState::pending_summon_spawn`].
     pub fn take_pending_summon_spawn(&mut self) -> Option<(u8, [i16; 3])> {
         self.casting.pending_summon_spawn.take()
     }
@@ -945,7 +945,7 @@ impl World {
     }
 
     /// Drain a pending non-summon move-FX spawn request (the host calls
-    /// [`Self::spawn_move_fx`] with it). See [`Self::pending_move_fx_spawn`].
+    /// [`Self::spawn_move_fx`] with it). See [`crate::world::CastFxState::pending_move_fx_spawn`].
     pub fn take_pending_move_fx_spawn(&mut self) -> Option<(u8, [i16; 3])> {
         self.casting.pending_move_fx_spawn.take()
     }
@@ -1086,7 +1086,7 @@ impl World {
     /// software VRAM - play-window's `cpu_vram_base`, a test's scratch
     /// [`legaia_tim::Vram`]). One-shots apply immediately; fades consume the
     /// retail game ticks [`World::tick`] accumulated since the last call,
-    /// each advancing the fade by [`Self::frame_step`] vsyncs (the retail
+    /// each advancing the fade by [`crate::world::FrameClock::frame_step`] vsyncs (the retail
     /// `counter += DAT_1F800393` cadence) and writing the interpolated row to
     /// the destination cell. A completed fade performs the final cell-B copy
     /// / flat fill and clears the script context's halt bit, matching the

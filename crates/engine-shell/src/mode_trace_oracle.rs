@@ -251,7 +251,7 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
     let down = PadButton::Down.mask();
     for i in 0..frames {
         // Tick 0 opens the dialogue (pad 0). The spar dialogue carries the
-        // faithful 4-option picker (`World::carrier_menu`), whose index-2
+        // faithful 4-option picker (`World::carriers.menu`), whose index-2
         // "practice" option is the one that arms the fight - navigate the
         // cursor Down twice (releases in between: the menu keys off
         // just-pressed edges) before the Cross confirm. The transition

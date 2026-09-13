@@ -695,8 +695,8 @@ pub(super) fn cmd_play_window_with_record(
     }
 
     // Apply the cheat file (if any) to the live World before building
-    // scene resources. The applier mutates `world.roster` /
-    // `world.money` / `world.play_time_seconds` etc. through the
+    // scene resources. The applier mutates `world.party.roster` /
+    // `world.party.money` / `world.clock.play_time_seconds` etc. through the
     // ram_map registry.
     if let Some(path) = cheat_file {
         apply_cheat_file(&mut session.host.world, path, cheat_strict)?;

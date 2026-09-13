@@ -16,9 +16,9 @@ pub struct PartyState {
     ///
     /// There is deliberately **no** spell-cost or capture-spell table here.
     /// `BattleHostImpl` answers both questions from the models already loaded
-    /// at boot - [`World::spell_catalog`] for the price, and the disc spell
+    /// at boot - [`crate::world::DiscTables::spell_catalog`] for the price, and the disc spell
     /// table's class byte (`World::spell_table_class`, off
-    /// [`World::menu_text`]) for the capture route - so the battle-action
+    /// [`crate::world::MenuState::text`]) for the capture route - so the battle-action
     /// state machine and the live cast path cannot price or classify the same
     /// spell differently. A pair of `HashMap`s here that nothing filled is
     /// exactly how they used to.
@@ -30,7 +30,7 @@ pub struct PartyState {
     /// Number of party slots (default 3).
     pub party_count: u8,
     /// Present-party composition: `active_party[i]` = the **roster slot**
-    /// (index into [`Self::roster`]) occupying battle ordinal `i`. The
+    /// (index into [`crate::world::PartyState::roster`]) occupying battle ordinal `i`. The
     /// engine mirror of retail's present-party list at `0x8007BD10`
     /// (1-based char ids there; 0-based roster slots here). Battle actor
     /// slot `i`, HUD row `i`, and the runtime VRAM texture band `i`
@@ -63,7 +63,7 @@ pub struct PartyState {
     /// [`World::notify_art_used`] from the battle side-effects handler when
     /// a Tactical Arts strike lands; the tracker emits
     /// [`BattleEvent::TacticalArtLearned`] and sets
-    /// [`World::current_art_banner`] on first learn.
+    /// [`crate::world::PartyState::current_art_banner`] on first learn.
     pub tactical_arts: TacticalArtsTracker,
     /// Active "art learned" HUD banner. Set by [`World::notify_art_used`]
     /// when a new art crosses the learn threshold; its `frames_remaining`
@@ -78,7 +78,7 @@ pub struct PartyState {
     /// Active level-up HUD banner. Set by [`World::apply_battle_xp`];
     /// `frames_remaining` is decremented by [`World::tick`] until it reaches
     /// zero, at which point the next entry of
-    /// [`Self::pending_level_up_banners`] takes the slot. `None` when no
+    /// [`crate::world::PartyState::pending_level_up_banners`] takes the slot. `None` when no
     /// banner is active. Engines render this as a dialog-font overlay after
     /// battle.
     pub current_level_up_banner: Option<LevelUpBanner>,
@@ -97,7 +97,7 @@ pub struct PartyState {
     /// cleared when its [`crate::seru_learning::SeruCaptureSession`] reaches
     /// `Done`. Engines render [`crate::seru_learning::SeruCaptureSession::current_banner`]
     /// as a dialog-font overlay after battle, the sibling of
-    /// [`Self::current_level_up_banner`].
+    /// [`crate::world::PartyState::current_level_up_banner`].
     pub current_capture_banner: Option<crate::seru_learning::SeruCaptureSession>,
     /// Per-character v2 save extension data. Mirrors `SaveExtV2` shape;
     /// engines populate from in-memory state at save time and consume on
@@ -134,7 +134,7 @@ pub struct PartyState {
     /// entered. Installed by [`Self::open_name_entry`] (the opening `town01`
     /// script's lead-character prompt) and driven by
     /// [`Self::step_name_entry`]; on commit the name lands in
-    /// [`Self::party_names`].
+    /// [`crate::world::PartyState::party_names`].
     pub name_entry: Option<crate::name_entry::NameEntry>,
 }
 

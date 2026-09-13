@@ -287,8 +287,8 @@ pub const MAGIC_LEVEL_INCREASED_SUFFIX: &str = "'s magic level increased.";
 /// PORT: FUN_801F452C
 ///
 /// Driven from `World::accrue_summon_spell_xp`: the same edge that pushes
-/// `World::magic_level_ups` composes this line and stages it on the world's
-/// banner channel, resolving the spell name through `World::spell_catalog`.
+/// `World::seru.magic_level_ups` composes this line and stages it on the world's
+/// banner channel, resolving the spell name through `World::tables.spell_catalog`.
 /// Retail raises it as its own UI element (`0x65`); the engine has one
 /// banner slot, so the two share it.
 pub fn magic_level_increased_message(spell_name: &str) -> String {

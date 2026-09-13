@@ -18,17 +18,17 @@ use crate::world::{SceneMode, World};
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LiveLoopOpts {
     /// Arm the field side of the Field<->Battle round trip
-    /// ([`World::live_gameplay_loop`]): walking a scene rolls step-driven
+    /// ([`crate::world::WorldToggles::live_gameplay_loop`]): walking a scene rolls step-driven
     /// random encounters.
     ///
     /// This does **not** gate battle *driving* - a battle the world is in is
-    /// always driven to resolution (see [`World::live_gameplay_loop`]) - and
+    /// always driven to resolution (see [`crate::world::WorldToggles::live_gameplay_loop`]) - and
     /// it is **independent of `player_battle`**. The two used to be
     /// entangled ("player battle implies the loop"), which made a
     /// "player-driven battles, no random encounters" configuration
     /// unexpressible: the implication silently re-armed the roll.
     pub live_loop: bool,
-    /// Make battles player-driven ([`World::battle_player_driven`]): each
+    /// Make battles player-driven ([`crate::world::BattleState::player_driven`]): each
     /// party turn opens the command menu instead of auto-attacking, and the
     /// Seru-learning registry a player-driven battle needs is installed.
     /// Orthogonal to `live_loop` - it decides how a battle is *played*, not
@@ -112,7 +112,7 @@ impl World {
             && matches!(self.mode, SceneMode::Field | SceneMode::WorldMap)
     }
 
-    /// Recompute the cached [`Self::scene_encounters_rollable`] answer.
+    /// Recompute the cached [`crate::world::EncounterState::scene_rollable`] answer.
     ///
     /// Called whenever the encounter tables change (scene entry's region
     /// routing, and [`Self::arm_live_loop`]). The underlying scan is a pass

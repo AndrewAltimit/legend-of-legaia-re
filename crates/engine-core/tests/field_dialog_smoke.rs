@@ -1,6 +1,6 @@
 //! Field-VM → dialog panel wiring: the **field-interact op** (`0x3E` with
 //! `op0 < 100`) opens the interacted actor's inline interaction-script
-//! dialogue into `World::current_dialog`; `OwnedDialogPanel::from_inline_dialog`
+//! dialogue into `World::dialog.current`; `OwnedDialogPanel::from_inline_dialog`
 //! renders it; ticking the panel emits the glyphs.
 //!
 //! Field dialogue has no dedicated opcode - it is the actor's own inline MES

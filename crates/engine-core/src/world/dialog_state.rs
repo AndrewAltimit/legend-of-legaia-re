@@ -48,7 +48,7 @@ pub struct DialogState {
     pub input_consumed: bool,
     /// A running inline interaction script driven through the field VM (the
     /// faithful dialogue path). Opt-in alternative to the simplified
-    /// [`Self::current_dialog`] / `OwnedDialogPanel` path: it *executes* the
+    /// [`crate::world::DialogState::current`] / `OwnedDialogPanel` path: it *executes* the
     /// prologue flag tests, branch flag-sets, and scene changes between text
     /// boxes. See [`crate::inline_dialogue`] and [`Self::step_inline_dialogue`].
     pub inline: Option<crate::inline_dialogue::InlineDialogue>,
