@@ -792,7 +792,7 @@ impl BootSession {
         // at real prices (populated per scene by `enter_field_scene`). Persists
         // across New Game; absent on disc-free builds (stock stays host-supplied).
         if let Some(shop_data) = read_shop_item_data(&source) {
-            host.world.item_shop_data = Some(shop_data);
+            host.world.shops.item_shop_data = Some(shop_data);
         }
 
         // Install the real item-effect descriptor table so the item catalog's

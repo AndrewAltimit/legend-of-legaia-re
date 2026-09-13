@@ -113,11 +113,12 @@ fn gold_shops_decode_from_disc_with_real_prices() {
         .expect("Variety Store entry resolves to a CDNAME scene")
         .to_string();
     let mut host = host;
-    host.world.item_shop_data = Some(data);
+    host.world.shops.item_shop_data = Some(data);
     host.enter_field_scene(&label, 0)
         .unwrap_or_else(|e| panic!("enter field scene '{label}': {e:#}"));
     let live = host
         .world
+        .shops
         .scene_shops
         .iter()
         .find(|s| s.name.starts_with("Variety"))

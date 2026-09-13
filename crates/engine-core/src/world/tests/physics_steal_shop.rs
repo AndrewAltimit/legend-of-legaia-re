@@ -241,7 +241,7 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
     let mut prices = [0u16; 256];
     prices[0x22] = 50;
     prices[0x34] = 120;
-    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
 
     let code = shop_op49_script();
     let mut ctx = FieldCtx::default();
@@ -258,7 +258,7 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
         );
     }
     assert!(
-        world.field_shop_armed && world.field_shop_open,
+        world.shops.shop_armed && world.shops.shop_open,
         "shop armed"
     );
     // The opened shop carries the priced inline stock.
@@ -294,7 +294,7 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
         }
     }
     assert!(
-        !world.field_shop_armed,
+        !world.shops.shop_armed,
         "the arm clears so a later op-0x49 can open the next merchant"
     );
 }
@@ -499,7 +499,7 @@ fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
     prices[0x34] = 120;
 
     let mut world = World::new();
-    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
     assert!(world.try_arm_field_shop(&shop_op49_script()));
     let sess = world.take_pending_field_shop().expect("shop opened");
 
@@ -553,7 +553,7 @@ fn field_vm_op49_non_shop_payload_does_not_open_a_shop() {
     // mask rejects it as not a gold shop.
     let mut prices = [0u16; 256];
     prices[0x22] = 50;
-    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
     let mut code = vec![0x49, 0x00, 0x00, 0x02, 0x34, 0x22];
     code.extend_from_slice(b"Shop\0");
     let mut ctx = FieldCtx::default();
@@ -562,7 +562,7 @@ fn field_vm_op49_non_shop_payload_does_not_open_a_shop() {
         let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
     }
     assert!(
-        !world.field_shop_armed,
+        !world.shops.shop_armed,
         "a payload that doesn't lead with a sellable item is not a gold shop"
     );
     assert!(world.take_pending_field_shop().is_none());
@@ -576,7 +576,7 @@ fn field_vm_op49_trims_unsellable_padding_to_the_sellable_stock() {
     let mut prices = [0u16; 256];
     prices[0x22] = 50;
     prices[0x34] = 120;
-    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
     let mut code = vec![0x49, 0x00, 0x00, 0x03, 0x22, 0x34, 0x03];
     code.extend_from_slice(b"Shop\0");
     let mut ctx = FieldCtx::default();
@@ -607,7 +607,7 @@ fn field_vm_op49_without_item_data_never_opens_a_shop() {
         let mut host = FieldHostImpl { world: &mut world };
         let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
     }
-    assert!(!world.field_shop_armed);
+    assert!(!world.shops.shop_armed);
     assert!(world.take_pending_field_shop().is_none());
 }
 

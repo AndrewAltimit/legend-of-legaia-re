@@ -458,7 +458,7 @@ impl World {
         if let Some(sub_op) = self.submode_screen.park_sub_op {
             return Some(sub_op);
         }
-        if self.field_shop_armed {
+        if self.shops.shop_armed {
             return Some(0);
         }
         if self.board.armed {

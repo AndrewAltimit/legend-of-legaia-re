@@ -460,7 +460,7 @@ impl LegaiaRuntime {
     ///
     /// REF: FUN_801DCF14
     fn shop_vendor_name<'a>(&'a self, shop: &ShopSession) -> Option<&'a str> {
-        let shops = &self.scene_host.as_ref()?.world.scene_shops;
+        let shops = &self.scene_host.as_ref()?.world.shops.scene_shops;
         shops
             .iter()
             .find(|s| {
@@ -702,6 +702,7 @@ impl LegaiaRuntime {
             // product; the merchant's stock list is not consulted, so a bag
             // item the shop does not sell still prices correctly.
             let unit_price = world
+                .shops
                 .item_shop_data
                 .as_ref()
                 .map(|t| u32::from(t.price(id)))
@@ -868,6 +869,7 @@ impl LegaiaRuntime {
         let rect = ui::painter_rect(d);
         let id = staged.unwrap_or(0);
         let price = world
+            .shops
             .item_shop_data
             .as_ref()
             .map(|t| t.price(id))
@@ -1143,14 +1145,14 @@ impl LegaiaRuntime {
     pub fn debug_has_shop_catalog(&self) -> bool {
         self.scene_host
             .as_ref()
-            .is_some_and(|h| h.world.item_shop_data.is_some())
+            .is_some_and(|h| h.world.shops.item_shop_data.is_some())
     }
 
     /// Is the op-`0x49` shop gate still held (i.e. the field VM suspended)?
     pub fn debug_field_shop_gate_held(&self) -> bool {
         self.scene_host
             .as_ref()
-            .is_some_and(|h| h.world.field_shop_open)
+            .is_some_and(|h| h.world.shops.shop_open)
     }
 
     /// Arm + open a shop the way a merchant's op-`0x49` sub-0 record would,
@@ -1160,7 +1162,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return false;
         };
-        let Some(data) = host.world.item_shop_data.as_ref() else {
+        let Some(data) = host.world.shops.item_shop_data.as_ref() else {
             return false;
         };
         // First few genuinely priced ids - enough rows to prove the panel
@@ -1179,8 +1181,8 @@ impl LegaiaRuntime {
         let inv = legaia_engine_core::shop::ShopInventory::new(0, items);
         // Mirror the arm the field VM performs, so closing the shop has a
         // gate to release.
-        host.world.field_shop_armed = true;
-        host.world.field_shop_open = true;
+        host.world.shops.shop_armed = true;
+        host.world.shops.shop_open = true;
         self.menu
             .open_shop_menu(legaia_engine_core::shop::ShopSession::new(inv));
         true
@@ -1200,7 +1202,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return false;
         };
-        let Some(data) = host.world.item_shop_data.as_ref() else {
+        let Some(data) = host.world.shops.item_shop_data.as_ref() else {
             return false;
         };
         let items: Vec<legaia_engine_core::shop::ShopItem> = (1u8..=255)
@@ -1216,8 +1218,8 @@ impl LegaiaRuntime {
         }
         host.world.money = legaia_engine_core::shop::GOLD_CAP;
         let inv = legaia_engine_core::shop::ShopInventory::new(0, items);
-        host.world.field_shop_armed = true;
-        host.world.field_shop_open = true;
+        host.world.shops.shop_armed = true;
+        host.world.shops.shop_open = true;
         self.menu
             .open_shop_menu(legaia_engine_core::shop::ShopSession::new(inv));
         true
@@ -1283,7 +1285,7 @@ impl LegaiaRuntime {
         }
         if self.menu.shop_session.is_none()
             && let Some(host) = self.scene_host.as_mut()
-            && host.world.field_shop_open
+            && host.world.shops.shop_open
         {
             host.world.finish_field_shop();
         }
@@ -1291,7 +1293,7 @@ impl LegaiaRuntime {
         // tick; this is the same safety net the shop keeps.
         if self.menu.prize_session.is_none()
             && let Some(host) = self.scene_host.as_mut()
-            && host.world.prize_exchange_open
+            && host.world.shops.prize_exchange_open
         {
             host.world.finish_prize_exchange();
         }

@@ -1111,7 +1111,7 @@ impl World {
     /// [`crate::menu_runtime::MenuRuntime::open_shop`] when the player triggers
     /// the scene's merchant (field-VM op `0x49`).
     pub fn scene_shop_session(&self, idx: usize) -> Option<crate::shop::ShopSession> {
-        let shop = self.scene_shops.get(idx)?;
+        let shop = self.shops.scene_shops.get(idx)?;
         Some(crate::shop::ShopSession::new(shop.inventory.clone()))
     }
 
@@ -1130,10 +1130,10 @@ impl World {
     ///
     /// Returns `true` when a shop was armed.
     pub fn try_arm_field_shop(&mut self, instr: &[u8]) -> bool {
-        if self.field_shop_armed {
+        if self.shops.shop_armed {
             return false;
         }
-        let Some(data) = self.item_shop_data.as_ref() else {
+        let Some(data) = self.shops.item_shop_data.as_ref() else {
             return false;
         };
         let mask = data.sellable_mask();
@@ -1161,9 +1161,9 @@ impl World {
         let mut session = crate::shop::ShopSession::new(inv);
         session.vendor_id = vendor_id;
         session.vendor_bucket_offset = vendor_offset;
-        self.pending_field_shop = Some(session);
-        self.field_shop_armed = true;
-        self.field_shop_open = true;
+        self.shops.pending_shop = Some(session);
+        self.shops.shop_armed = true;
+        self.shops.shop_open = true;
         true
     }
 
@@ -1171,14 +1171,14 @@ impl World {
     /// so the host can drive its buy/sell UI. Returns `None` if no shop is
     /// pending. The op-0x49 gate stays armed until [`Self::finish_field_shop`].
     pub fn take_pending_field_shop(&mut self) -> Option<crate::shop::ShopSession> {
-        self.pending_field_shop.take()
+        self.shops.pending_shop.take()
     }
 
     /// Mark the open field shop closed: the op-0x49 tristate flips Armed ->
     /// Done so the field VM resumes past the merchant op on its next step. The
     /// arm itself is cleared by the VM's resume (`op49_clear`).
     pub fn finish_field_shop(&mut self) {
-        self.field_shop_open = false;
+        self.shops.shop_open = false;
     }
 
     /// Recognise + stage a casino **prize-exchange** counter (field-VM op
@@ -1195,11 +1195,11 @@ impl World {
     ///
     /// Returns `true` when a session was staged.
     pub fn try_arm_prize_exchange(&mut self, instr: &[u8]) -> bool {
-        if self.prize_exchange_armed {
+        if self.shops.prize_exchange_armed {
             return false;
         }
         let block_idx = instr.get(2).copied().unwrap_or(0) as usize;
-        let Some(block) = self.prize_blocks.get(block_idx).cloned() else {
+        let Some(block) = self.shops.prize_blocks.get(block_idx).cloned() else {
             return false;
         };
         // Retail state 0: `FUN_8003CE08(8)` on entry.
@@ -1214,9 +1214,9 @@ impl World {
                 .get(byte)
                 .is_some_and(|b| b & (0x80u8 >> (f & 7)) != 0)
         });
-        self.pending_prize_exchange = Some(session);
-        self.prize_exchange_armed = true;
-        self.prize_exchange_open = true;
+        self.shops.pending_prize_exchange = Some(session);
+        self.shops.prize_exchange_armed = true;
+        self.shops.prize_exchange_open = true;
         true
     }
 
@@ -1226,13 +1226,13 @@ impl World {
     pub fn take_pending_prize_exchange(
         &mut self,
     ) -> Option<crate::prize_exchange::PrizeExchangeSession> {
-        self.pending_prize_exchange.take()
+        self.shops.pending_prize_exchange.take()
     }
 
     /// Mark the open prize exchange closed: the op-0x49 tristate flips
     /// Armed -> Done so the field VM resumes past the counter op.
     pub fn finish_prize_exchange(&mut self) {
-        self.prize_exchange_open = false;
+        self.shops.prize_exchange_open = false;
     }
 
     /// Record one use of `art_id` by `char_id` (roster index).

@@ -521,7 +521,7 @@ impl LegaiaRuntime {
             .as_ref()
             .and_then(|s| legaia_engine_core::shop_catalog::ShopItemData::from_scus(s))
         {
-            host.world.item_shop_data = Some(shop_data);
+            host.world.shops.item_shop_data = Some(shop_data);
         }
 
         // Battle chip / banner labels off the user's own disc - the

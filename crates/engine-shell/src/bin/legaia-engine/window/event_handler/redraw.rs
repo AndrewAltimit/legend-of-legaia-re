@@ -459,14 +459,14 @@ impl PlayWindowApp {
             // A field-VM-triggered shop the player has now closed: tell
             // the world so the suspended op-0x49 resumes (Armed -> Done)
             // and the field VM advances past the merchant op next tick.
-            if self.session.host.world.field_shop_open && !self.menu_runtime.is_open() {
+            if self.session.host.world.shops.shop_open && !self.menu_runtime.is_open() {
                 self.session.host.world.finish_field_shop();
             }
             // Safety net for the prize exchange (its own Exit already calls
             // `finish_prize_exchange` through the runtime tick): if the menu
             // closed by any other path, unpark the suspended counter script
             // rather than wedge it.
-            if self.session.host.world.prize_exchange_open && !self.menu_runtime.is_open() {
+            if self.session.host.world.shops.prize_exchange_open && !self.menu_runtime.is_open() {
                 self.session.host.world.finish_prize_exchange();
             }
             self.prev_pad = self.pad;

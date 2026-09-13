@@ -304,7 +304,7 @@ impl World {
         // the record base window 44's renderer (`FUN_801D5DE0`) indexes.
         // Feeds `World::try_arm_prize_exchange` (op-0x49 sub-7).
         if let Some(blocks) = crate::prize_exchange::parse_blocks(overlay) {
-            self.prize_blocks = blocks;
+            self.shops.prize_blocks = blocks;
         }
         if let Some(scripts) = crate::menu_widget::MenuWidgetScripts::resolve_from_overlay(overlay)
         {

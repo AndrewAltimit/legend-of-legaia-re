@@ -109,7 +109,7 @@ impl PlayWindowApp {
     ///
     /// REF: FUN_801DCF14
     fn shop_vendor_name(&self, shop: &ShopSession) -> Option<&str> {
-        let shops = &self.session.host.world.scene_shops;
+        let shops = &self.session.host.world.shops.scene_shops;
         shops
             .iter()
             .find(|s| {
@@ -250,6 +250,7 @@ impl PlayWindowApp {
             // the product; the shop's stock list is not consulted, so a bag
             // item the merchant does not stock still prices correctly.
             let unit_price = world
+                .shops
                 .item_shop_data
                 .as_ref()
                 .map(|d| u32::from(d.price(id)))
@@ -627,6 +628,7 @@ impl PlayWindowApp {
         let rect = legaia_engine_render::painter_rect(d);
         let id = staged.unwrap_or(0);
         let price = world
+            .shops
             .item_shop_data
             .as_ref()
             .map(|t| t.price(id))

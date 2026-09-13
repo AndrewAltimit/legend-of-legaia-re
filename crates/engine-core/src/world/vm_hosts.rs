@@ -718,8 +718,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // the resume the same way name-entry does: Armed while the shop UI is
         // up, Done once the host closes it (`finish_field_shop`), so the VM
         // suspends across the shop and then advances past the merchant op.
-        if self.world.field_shop_armed {
-            return if self.world.field_shop_open {
+        if self.world.shops.shop_armed {
+            return if self.world.shops.shop_open {
                 Op49State::Armed
             } else {
                 Op49State::Done
@@ -728,8 +728,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // A sub-7 casino prize exchange (`World::try_arm_prize_exchange`):
         // same shape as the gold shop - Armed while the exchange UI is up,
         // Done once the host closes it (`finish_prize_exchange`).
-        if self.world.prize_exchange_armed {
-            return if self.world.prize_exchange_open {
+        if self.world.shops.prize_exchange_armed {
+            return if self.world.shops.prize_exchange_open {
                 Op49State::Armed
             } else {
                 Op49State::Done
@@ -786,9 +786,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.clear_op49_park();
         // The shop op's resume ran: drop the arm so a later op-0x49 can open
         // the next merchant. (Name-entry clears via its own pending flags.)
-        self.world.field_shop_armed = false;
+        self.world.shops.shop_armed = false;
         // Same for a finished prize exchange (sub-7).
-        self.world.prize_exchange_armed = false;
+        self.world.shops.prize_exchange_armed = false;
         // A finished tile-board segment resumes the same way.
         self.world.board.armed = false;
         // The submode screen's Done is one-shot: consume it so the next

@@ -1201,11 +1201,11 @@ impl SceneHost {
         let entry_idxs: Vec<u32> = match self.scene.as_ref() {
             Some(s) => s.entries.iter().map(|e| e.idx).collect(),
             None => {
-                self.world.scene_shops.clear();
+                self.world.shops.scene_shops.clear();
                 return;
             }
         };
-        let item_data = self.world.item_shop_data.clone();
+        let item_data = self.world.shops.item_shop_data.clone();
         let mut shops = Vec::new();
         for idx in entry_idxs {
             let bytes = match self.index.entry_bytes_extended(idx) {
@@ -1218,7 +1218,7 @@ impl SceneHost {
                 item_data.as_ref(),
             ));
         }
-        self.world.scene_shops = shops;
+        self.world.shops.scene_shops = shops;
     }
 
     /// Enter `name` as the **overworld** (world-map) scene.
