@@ -18,7 +18,7 @@ impl World {
     /// Set the per-battle shiny-enemy chance (percent, clamped to `0..=100`).
     /// `0` disables shiny enemies.
     pub fn set_shiny_chance_pct(&mut self, pct: u8) {
-        self.shiny_chance_pct = pct.min(100);
+        self.seru.shiny_chance_pct = pct.min(100);
     }
 
     /// Roll for a shiny capturable enemy at battle entry. On a hit (chance
@@ -30,10 +30,10 @@ impl World {
     /// hook (`FUN_800513F0` → cave routine). Idempotent per battle; the slot
     /// sets are cleared by [`Self::enter_battle_from_formation`] first.
     pub(in crate::world) fn roll_shiny_enemy(&mut self, first_monster: u8) {
-        if self.shiny_chance_pct == 0 {
+        if self.seru.shiny_chance_pct == 0 {
             return;
         }
-        if (self.next_rng() % 100) as u8 >= self.shiny_chance_pct {
+        if (self.next_rng() % 100) as u8 >= self.seru.shiny_chance_pct {
             return;
         }
         // Gather capturable monster slots (those whose monster id maps to a
@@ -54,7 +54,7 @@ impl World {
         }
         let pick = candidates[(self.next_rng() as usize) % candidates.len()];
         self.boost_shiny_stats(pick);
-        self.shiny_enemy_slots.insert(pick);
+        self.seru.shiny_enemy_slots.insert(pick);
     }
 
     /// Apply the shiny +35% stat boost to one battle slot's combat stats.
@@ -107,25 +107,25 @@ impl World {
             a.battle.liveness = 0;
         }
         if let Some(id) = monster_id {
-            self.battle_captures.push(id);
+            self.seru.battle_captures.push(id);
             // A shiny enemy's capture marks the learned spell shiny (+35%
             // damage forever). Tracked in parallel; resolved in
             // `resolve_captures`.
-            if self.shiny_enemy_slots.contains(&target) {
-                self.shiny_captures.push(id);
+            if self.seru.shiny_enemy_slots.contains(&target) {
+                self.seru.shiny_captures.push(id);
             }
         }
     }
 
     /// Drain the monster ids captured this battle (see [`Self::battle_captures`]).
     pub fn drain_battle_captures(&mut self) -> Vec<u16> {
-        std::mem::take(&mut self.battle_captures)
+        std::mem::take(&mut self.seru.battle_captures)
     }
 
     /// Install the master [`crate::seru_learning::SeruRegistry`]. Boot wires
     /// this once; `Self::finish_battle` consults it to bank capture points.
     pub fn set_seru_registry(&mut self, registry: crate::seru_learning::SeruRegistry) {
-        self.seru_registry = registry;
+        self.seru.registry = registry;
     }
 
     /// Install the magic-XP threshold table from `SCUS_942.54` bytes
@@ -187,7 +187,7 @@ impl World {
     /// new_level)`) resolved since the last drain - the engine analogue of
     /// the retail level-up banner (`FUN_801e70bc` fires UI element `0x65`).
     pub fn drain_magic_level_ups(&mut self) -> Vec<(u8, u8, u8)> {
-        std::mem::take(&mut self.magic_level_ups)
+        std::mem::take(&mut self.seru.magic_level_ups)
     }
 
     /// Accrue summon spell-XP for `caster`'s cast of `spell_id` and resolve a
@@ -235,7 +235,9 @@ impl World {
             gain,
             thresholds.as_ref().map(|t| t.as_slice()),
         ) {
-            self.magic_level_ups.push((caster, spell_id, up.new_level));
+            self.seru
+                .magic_level_ups
+                .push((caster, spell_id, up.new_level));
             // `sb v0,0x26(v1)` at `0x801E723C`: the level-up arm records the
             // banner element on the battle context, and the action state
             // machine's Done band reads it - the `0x50` seed takes `0x96`
@@ -277,10 +279,10 @@ impl World {
     /// host to drive the capture / learned banner. Monsters with no Seru, or
     /// any capture when the registry is empty, bank nothing.
     pub(super) fn resolve_captures(&mut self) {
-        let captures = std::mem::take(&mut self.battle_captures);
-        self.last_capture_outcomes.clear();
+        let captures = std::mem::take(&mut self.seru.battle_captures);
+        self.seru.last_capture_outcomes.clear();
         self.current_capture_banner = None;
-        if captures.is_empty() || self.seru_registry.is_empty() {
+        if captures.is_empty() || self.seru.registry.is_empty() {
             return;
         }
         // Capture progress banks against CHARACTERS, not battle ordinals -
@@ -295,8 +297,8 @@ impl World {
         let mut first_accepted: Option<(u16, crate::seru_learning::CaptureOutcome)> = None;
         for sid in seru_ids {
             let outcome = crate::seru_learning::record_capture(
-                &self.seru_registry,
-                &mut self.seru_log,
+                &self.seru.registry,
+                &mut self.seru.log,
                 sid,
                 &party_slots,
             );
@@ -315,7 +317,7 @@ impl World {
                 if first_accepted.is_none() {
                     first_accepted = Some((sid, outcome.clone()));
                 }
-                self.last_capture_outcomes.push(outcome);
+                self.seru.last_capture_outcomes.push(outcome);
             }
         }
         // Build the host-facing banner for the first accepted capture (a
@@ -323,7 +325,8 @@ impl World {
         // the Seru from the registry and the learned spell from the catalog.
         if let Some((sid, outcome)) = first_accepted {
             let seru_name = self
-                .seru_registry
+                .seru
+                .registry
                 .get(sid)
                 .map(|s| s.name.clone())
                 .unwrap_or_else(|| format!("Seru {sid:#04X}"));
@@ -350,7 +353,7 @@ impl World {
         // +35% damage on every future cast - whether or not the spell was
         // newly learned this battle (re-capturing a shiny Seru you already
         // know still upgrades it). Mirrors the retail `+0x161` high-bit flag.
-        let shiny = std::mem::take(&mut self.shiny_captures);
+        let shiny = std::mem::take(&mut self.seru.shiny_captures);
         if !shiny.is_empty() {
             let party_slots: Vec<u8> = (0..self.party_count.clamp(1, 3))
                 .map(|i| self.party_roster_slot(i as usize) as u8)
@@ -364,7 +367,7 @@ impl World {
                     .monster_catalog
                     .get(mid)
                     .and_then(|d| d.seru_id)
-                    .and_then(|sid| self.seru_registry.get(sid))
+                    .and_then(|sid| self.seru.registry.get(sid))
                     .map(|seru| {
                         let elig: Vec<u8> = party_slots
                             .iter()
@@ -375,7 +378,7 @@ impl World {
                     });
                 if let Some((spell_id, elig)) = resolved {
                     for slot in elig {
-                        self.seru_log.mark_shiny(slot, spell_id);
+                        self.seru.log.mark_shiny(slot, spell_id);
                     }
                 }
             }
@@ -384,6 +387,6 @@ impl World {
 
     /// Drain the capture outcomes from the most recently finished battle.
     pub fn drain_last_capture_outcomes(&mut self) -> Vec<crate::seru_learning::CaptureOutcome> {
-        std::mem::take(&mut self.last_capture_outcomes)
+        std::mem::take(&mut self.seru.last_capture_outcomes)
     }
 }

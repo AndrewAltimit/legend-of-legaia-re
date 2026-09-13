@@ -284,8 +284,8 @@ impl World {
         // Roll for a rare shiny capturable enemy now that every monster slot
         // carries its stats + id (so capturability + the +35% boost see final
         // values). Clears last battle's flags first.
-        self.shiny_enemy_slots.clear();
-        self.shiny_captures.clear();
+        self.seru.shiny_enemy_slots.clear();
+        self.seru.shiny_captures.clear();
         self.roll_shiny_enemy(first_monster);
 
         // Roll this battle's formation advantage (`FUN_80051D84` -> `ctx+0x290`)

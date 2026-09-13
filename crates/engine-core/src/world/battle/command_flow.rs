@@ -1074,7 +1074,7 @@ impl World {
         // capture this session, so a freshly-learned spell is immediately
         // castable without waiting for a save/load round-trip.
         let mut learned: Vec<u8> = list.ids[..n].to_vec();
-        for &sid in self.seru_log.learned_spells(char_slot) {
+        for &sid in self.seru.log.learned_spells(char_slot) {
             if !learned.contains(&sid) {
                 learned.push(sid);
             }

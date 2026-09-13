@@ -200,12 +200,13 @@ impl World {
                 }
             }
             // Spells: the per-character learned spell list from the seru log.
-            ce.spells = self.seru_log.learned_spells(slot).to_vec();
+            ce.spells = self.seru.log.learned_spells(slot).to_vec();
             // Seru captures: export the live log's per-Seru capture-point
             // progress (real seru_id -> points) so sub-threshold progress
             // survives a save/load. Sorted for deterministic output.
             ce.seru_captures = self
-                .seru_log
+                .seru
+                .log
                 .iter_rows()
                 .filter(|(s, _, _)| *s == slot)
                 .map(|(_, sid, row)| (sid, row.points))
@@ -214,7 +215,8 @@ impl World {
             // Shiny spells: spell ids this character learned from a shiny
             // capture (+35% damage). Persisted in the LGSF v4 LGX4 block.
             ce.shiny_spells = self
-                .seru_log
+                .seru
+                .log
                 .iter_shiny()
                 .filter(|(s, _)| *s == slot)
                 .map(|(_, spell_id)| spell_id)
@@ -305,7 +307,7 @@ impl World {
         self.per_char_ext = sf.ext_v2.per_char.clone();
         // Reset trackers so reloads don't accumulate stale state.
         self.tactical_arts = TacticalArtsTracker::new();
-        self.seru_log = crate::seru_learning::SeruCaptureLog::new();
+        self.seru.log = crate::seru_learning::SeruCaptureLog::new();
         for (slot, ce) in &sf.ext_v2.per_char {
             // Re-mark learned arts so the tracker doesn't re-fire the
             // "first time learned" event for arts the save already has.
@@ -319,25 +321,26 @@ impl World {
             // learned (with its spell), so a later capture doesn't re-fire
             // the learn event.
             for &(sid, pts) in &ce.seru_captures {
-                let def = self.seru_registry.get(sid);
+                let def = self.seru.registry.get(sid);
                 let learned = def.is_some_and(|d| pts >= d.learn_threshold);
                 let spell_id = def.map(|d| d.spell_id);
-                self.seru_log
+                self.seru
+                    .log
                     .restore_row(*slot, sid, pts, 0, learned, spell_id);
             }
             // Ensure every persisted learned spell lands in the learned list,
             // even with no registry installed: map it back to its teaching
             // Seru when known, else key by the spell id as a surrogate.
             for &spell_id in &ce.spells {
-                if let Some(def) = self.seru_registry.seru_for_spell(spell_id) {
-                    self.seru_log.mark_learned(*slot, def.id, spell_id);
+                if let Some(def) = self.seru.registry.seru_for_spell(spell_id) {
+                    self.seru.log.mark_learned(*slot, def.id, spell_id);
                 } else {
-                    self.seru_log.mark_learned(*slot, spell_id as u16, spell_id);
+                    self.seru.log.mark_learned(*slot, spell_id as u16, spell_id);
                 }
             }
             // Restore the shiny set (+35% damage spells).
             for &spell_id in &ce.shiny_spells {
-                self.seru_log.mark_shiny(*slot, spell_id);
+                self.seru.log.mark_shiny(*slot, spell_id);
             }
         }
     }

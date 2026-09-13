@@ -416,7 +416,7 @@ pub fn magic_loadout_for(
     let list = member.spell_list();
     let n = (list.count as usize).min(list.ids.len());
     let mut learned: Vec<u8> = list.ids[..n].to_vec();
-    for &sid in world.seru_log.learned_spells(roster_slot as u8) {
+    for &sid in world.seru.log.learned_spells(roster_slot as u8) {
         if !learned.contains(&sid) {
             learned.push(sid);
         }

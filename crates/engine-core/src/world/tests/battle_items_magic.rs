@@ -617,7 +617,7 @@ fn battle_magic_capture_downs_a_weakened_monster_and_logs_the_id() {
         world.actors[1].battle.liveness, 1,
         "healthy monster resists"
     );
-    assert!(world.battle_captures.is_empty());
+    assert!(world.seru.battle_captures.is_empty());
 }
 
 #[test]

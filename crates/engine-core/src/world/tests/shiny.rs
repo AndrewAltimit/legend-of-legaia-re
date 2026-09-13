@@ -16,13 +16,13 @@ fn shiny_roll_boosts_only_the_capturable_enemy() {
 
     // Slot 1 = first monster (Killer Bee). hp 25 -> 33, attack 9 -> 12.
     assert!(
-        world.shiny_enemy_slots.contains(&1),
+        world.seru.shiny_enemy_slots.contains(&1),
         "the capturable enemy is flagged shiny"
     );
     assert_eq!(world.actors[1].battle.max_hp, 33, "shiny HP +35%");
     assert_eq!(world.battle.attack[1], 12, "shiny ATK +35%");
     // Slot 2 = Wolf (not capturable) is never chosen.
-    assert!(!world.shiny_enemy_slots.contains(&2));
+    assert!(!world.seru.shiny_enemy_slots.contains(&2));
 }
 
 #[test]
@@ -32,7 +32,10 @@ fn shiny_disabled_when_chance_is_zero() {
     world.set_shiny_chance_pct(0);
     let formation = FormationDef::new(1, vec![FormationSlot::new(7)]);
     world.enter_battle_from_formation(&formation);
-    assert!(world.shiny_enemy_slots.is_empty(), "no shiny when disabled");
+    assert!(
+        world.seru.shiny_enemy_slots.is_empty(),
+        "no shiny when disabled"
+    );
     assert_eq!(world.actors[1].battle.max_hp, 25, "stats unmodified");
 }
 
@@ -41,17 +44,17 @@ fn shiny_capture_marks_spell_shiny_and_persists_through_save() {
     let mut world = capture_world(1);
     world.set_spell_catalog(crate::spells::SpellCatalog::vanilla());
     // Killer Bee captured as shiny (Seru 1 -> spell 0x20).
-    world.battle_captures = vec![7];
-    world.shiny_captures = vec![7];
+    world.seru.battle_captures = vec![7];
+    world.seru.shiny_captures = vec![7];
     world.finish_battle();
 
-    assert!(world.seru_log.has_learned(0, 1), "spell learned");
+    assert!(world.seru.log.has_learned(0, 1), "spell learned");
     assert!(
-        world.seru_log.is_shiny(0, 0x20),
+        world.seru.log.is_shiny(0, 0x20),
         "shiny capture flags the learned spell shiny"
     );
     // shiny_captures drained.
-    assert!(world.shiny_captures.is_empty());
+    assert!(world.seru.shiny_captures.is_empty());
 
     // Round-trips through the LGSF v4 save.
     let sf = world.save_full();
@@ -65,7 +68,7 @@ fn shiny_capture_marks_spell_shiny_and_persists_through_save() {
     let mut reloaded = capture_world(1);
     reloaded.load_full(sf);
     assert!(
-        reloaded.seru_log.is_shiny(0, 0x20),
+        reloaded.seru.log.is_shiny(0, 0x20),
         "shiny survives save/load"
     );
 }
@@ -73,11 +76,11 @@ fn shiny_capture_marks_spell_shiny_and_persists_through_save() {
 #[test]
 fn non_shiny_capture_does_not_flag_shiny() {
     let mut world = capture_world(1);
-    world.battle_captures = vec![7]; // captured normally (not in shiny_captures)
+    world.seru.battle_captures = vec![7]; // captured normally (not in shiny_captures)
     world.finish_battle();
-    assert!(world.seru_log.has_learned(0, 1));
+    assert!(world.seru.log.has_learned(0, 1));
     assert!(
-        !world.seru_log.is_shiny(0, 0x20),
+        !world.seru.log.is_shiny(0, 0x20),
         "a normal capture is never shiny"
     );
 }
@@ -94,7 +97,7 @@ fn shiny_spell_deals_35_percent_more_damage() {
 
     // Shiny cast: same world setup, spell 0x20-> here 0x81 flagged shiny.
     let mut shiny = summon_xp_world(4000, 4000);
-    shiny.seru_log.mark_shiny(0, 0x81);
+    shiny.seru.log.mark_shiny(0, 0x81);
     let before_s = shiny.actors[1].battle.hp;
     shiny.cast_spell_on_slots(0, &def, &[1]);
     let shiny_dmg = (before_s - shiny.actors[1].battle.hp) as u32;

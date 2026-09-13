@@ -5,16 +5,16 @@ fn capture_banks_points_and_learns_on_finish_battle() {
     let mut world = capture_world(2);
     // Two monsters captured this battle: Killer Bee (Seru 1, learns) and
     // Wolf (no Seru, banks nothing).
-    world.battle_captures = vec![7, 9];
+    world.seru.battle_captures = vec![7, 9];
 
     world.finish_battle();
 
     // battle_captures always drained.
-    assert!(world.battle_captures.is_empty());
+    assert!(world.seru.battle_captures.is_empty());
     // Both party slots learned Spark (id 0x20).
-    assert!(world.seru_log.has_learned(0, 1));
-    assert!(world.seru_log.has_learned(1, 1));
-    assert_eq!(world.seru_log.learned_spells(0), &[0x20]);
+    assert!(world.seru.log.has_learned(0, 1));
+    assert!(world.seru.log.has_learned(1, 1));
+    assert_eq!(world.seru.log.learned_spells(0), &[0x20]);
     // One accepted outcome (the Wolf had no Seru), with two learn events.
     let outcomes = world.drain_last_capture_outcomes();
     assert_eq!(outcomes.len(), 1);
@@ -26,12 +26,12 @@ fn capture_banks_points_and_learns_on_finish_battle() {
 #[test]
 fn capture_below_threshold_banks_points_without_learning() {
     let mut world = capture_world(1);
-    world.battle_captures = vec![8]; // Slime -> Seru 2, 40 < 100
+    world.seru.battle_captures = vec![8]; // Slime -> Seru 2, 40 < 100
 
     world.finish_battle();
 
-    assert!(!world.seru_log.has_learned(0, 2), "not learned yet");
-    assert_eq!(world.seru_log.row(0, 2).points, 40, "points banked");
+    assert!(!world.seru.log.has_learned(0, 2), "not learned yet");
+    assert_eq!(world.seru.log.row(0, 2).points, 40, "points banked");
     let outcomes = world.drain_last_capture_outcomes();
     assert_eq!(outcomes.len(), 1);
     assert!(outcomes[0].learns.is_empty());
@@ -43,7 +43,7 @@ fn capture_sets_the_banner_and_it_clears_on_tick() {
 
     let mut world = capture_world(1);
     world.set_spell_catalog(crate::spells::SpellCatalog::vanilla());
-    world.battle_captures = vec![7]; // Killer Bee -> Seru 1 (Spark), learns
+    world.seru.battle_captures = vec![7]; // Killer Bee -> Seru 1 (Spark), learns
     world.finish_battle();
 
     // The banner opens on the capture phase naming the captured Seru.
@@ -71,7 +71,7 @@ fn capture_sets_the_banner_and_it_clears_on_tick() {
 #[test]
 fn sub_threshold_capture_banner_shows_no_learn_line() {
     let mut world = capture_world(1);
-    world.battle_captures = vec![8]; // Slime -> Seru 2, 40 < 100, no learn
+    world.seru.battle_captures = vec![8]; // Slime -> Seru 2, 40 < 100, no learn
     world.finish_battle();
 
     let banner = world
@@ -223,7 +223,7 @@ fn learned_spell_is_offered_in_the_battle_spell_session() {
     world.set_spell_catalog(crate::spells::SpellCatalog::vanilla());
     // Caster has an empty roster spell list; learning Spark via capture
     // should still surface it in the battle spell menu.
-    world.battle_captures = vec![7];
+    world.seru.battle_captures = vec![7];
     world.finish_battle();
     world.actors[0].battle.mp = 99;
 
@@ -243,31 +243,31 @@ fn capture_progress_round_trips_through_save_load() {
     // has the registry installed, and confirm the points + learned state
     // survive.
     let mut world = capture_world(1);
-    world.battle_captures = vec![7, 8]; // Seru 1 learns; Seru 2 banks 40
+    world.seru.battle_captures = vec![7, 8]; // Seru 1 learns; Seru 2 banks 40
     world.finish_battle();
-    assert!(world.seru_log.has_learned(0, 1));
-    assert_eq!(world.seru_log.row(0, 2).points, 40);
+    assert!(world.seru.log.has_learned(0, 1));
+    assert_eq!(world.seru.log.row(0, 2).points, 40);
 
     let save = world.save_full();
 
     let mut reloaded = capture_world(1);
     reloaded.load_full(save);
     assert!(
-        reloaded.seru_log.has_learned(0, 1),
+        reloaded.seru.log.has_learned(0, 1),
         "learned Spark restored"
     );
     assert_eq!(
-        reloaded.seru_log.learned_spells(0),
+        reloaded.seru.log.learned_spells(0),
         &[0x20],
         "spell list restored"
     );
     assert_eq!(
-        reloaded.seru_log.row(0, 2).points,
+        reloaded.seru.log.row(0, 2).points,
         40,
         "sub-threshold progress restored"
     );
     assert!(
-        !reloaded.seru_log.has_learned(0, 2),
+        !reloaded.seru.log.has_learned(0, 2),
         "still below threshold after reload"
     );
 }

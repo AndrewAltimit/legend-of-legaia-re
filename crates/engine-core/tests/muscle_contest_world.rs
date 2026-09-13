@@ -78,7 +78,7 @@ fn the_between_leg_restore_lands_on_the_fighters_record() {
 #[test]
 fn a_finished_run_pays_coins_and_leaves_the_seru_log_alone() {
     let mut w = world_with_contest();
-    let seru_rows_before = w.seru_log.iter_rows().count();
+    let seru_rows_before = w.seru.log.iter_rows().count();
     // Three legs is the whole course.
     for _ in 0..3 {
         w.report_muscle_leg(cleared());
@@ -98,7 +98,7 @@ fn a_finished_run_pays_coins_and_leaves_the_seru_log_alone() {
     // And nothing captured a Seru: the victory caption names a spell, it does
     // not award one.
     assert_eq!(
-        w.seru_log.iter_rows().count(),
+        w.seru.log.iter_rows().count(),
         seru_rows_before,
         "a dome win credits no Seru capture"
     );

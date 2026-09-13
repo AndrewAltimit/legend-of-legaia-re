@@ -141,7 +141,8 @@ impl World {
         // (`FUN_801dd864` `+0x161` high-bit read). Computed once per cast.
         let shiny_cast = is_party_summon_cast
             && self
-                .seru_log
+                .seru
+                .log
                 .is_shiny(self.party_roster_slot(caster as usize) as u8, def.id);
         let group_target = matches!(def.target, crate::spells::SpellTarget::AllEnemies);
         let mut summon_xp_gain: u32 = 0;

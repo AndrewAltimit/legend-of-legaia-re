@@ -912,23 +912,8 @@ pub struct World {
     /// hydrate one back into the editor on load.
     pub saved_chains: Vec<legaia_save::SavedChainRecord>,
 
-    /// Per-character Seru capture log - drives the post-battle "spell
-    /// learned!" banner and the in-menu spell list. Pure data; saved
-    /// through [`legaia_save::SaveExtV2::per_char`].
-    pub seru_log: crate::seru_learning::SeruCaptureLog,
-
-    /// Master Seru registry (Seru id -> spell taught + capture points).
-    /// Engines install via [`World::set_seru_registry`]; `World::finish_battle`
-    /// resolves [`World::battle_captures`] against it into [`World::seru_log`].
-    /// Empty by default - captures then bank no points (the monster is still
-    /// downed + logged, but nothing is learned).
-    pub seru_registry: crate::seru_learning::SeruRegistry,
-
-    /// Capture outcomes produced by the most recently finished battle, one per
-    /// captured Seru that the registry accepted. Hosts drain this with
-    /// [`World::drain_last_capture_outcomes`] to drive the "captured / learned"
-    /// banner ([`crate::seru_learning::SeruCaptureSession`]).
-    pub last_capture_outcomes: Vec<crate::seru_learning::CaptureOutcome>,
+    /// Seru capture + magic-learning state: the capture log and registry, this battle's captures, shiny rolls and magic level-ups.
+    pub seru: SeruState,
 
     /// Total game time in wall-clock seconds since the world was
     /// instantiated or loaded. Engines tick this independently of
@@ -1178,36 +1163,6 @@ pub struct World {
     /// `0x801D15E0..0x801D1650`. Hosts mirror their `OptionsState` onto this
     /// the way they mirror [`Self::field_move_run_default`].
     pub battle_select_attack: crate::options::SelectAttackOpt,
-
-    /// Monster ids captured this battle by a capture spell (`SpellEffect::Capture`).
-    /// The captured monster is downed immediately; the host drains this for
-    /// post-battle Seru-learning resolution (the live loop carries no Seru
-    /// registry, so the learn step itself lives outside the battle tick).
-    pub battle_captures: Vec<u16>,
-
-    /// Chance, in percent, that a capturable enemy spawns as a **shiny**
-    /// variant in a given battle: a single rare enemy with +35% stats whose
-    /// captured Seru deals +35% damage forever (see the `--shiny-seru`
-    /// randomizer feature). `0` disables. Default
-    /// [`World::DEFAULT_SHINY_CHANCE_PCT`].
-    pub shiny_chance_pct: u8,
-
-    /// Battle slots flagged shiny this battle (filled by
-    /// [`World::roll_shiny_enemy`] at battle entry, drained at battle end).
-    /// A shiny enemy's stats are pre-boosted; capturing it marks the learned
-    /// spell shiny.
-    pub shiny_enemy_slots: std::collections::HashSet<u8>,
-
-    /// Monster ids captured **as shiny** this battle (subset of
-    /// [`Self::battle_captures`]; `resolve_captures` marks their spell shiny).
-    pub shiny_captures: Vec<u16>,
-
-    /// Summon-magic level-ups resolved this session: `(party_slot, spell_id,
-    /// new_level)` per event, in resolution order. The engine analogue of the
-    /// retail level-up banner (the level-up check fires UI element `0x65` -
-    /// REF: FUN_801e70bc, ported in `world::battle::accrue_summon_spell_xp`);
-    /// hosts drain via [`World::drain_magic_level_ups`].
-    pub magic_level_ups: Vec<(u8, u8, u8)>,
 
     /// Boss-stager bindings for the active scene, keyed by partition-1
     /// placement slot: the record an approach (walk-touch) or interact on
@@ -1538,16 +1493,9 @@ impl World {
             minigames: MinigameState::new(),
             submode_screen: crate::field_submode_screen::SubmodeScreen::default(),
             tables: DiscTables::new(),
-            battle_captures: Vec::new(),
-            shiny_chance_pct: Self::DEFAULT_SHINY_CHANCE_PCT,
-            shiny_enemy_slots: std::collections::HashSet::new(),
-            shiny_captures: Vec::new(),
-            magic_level_ups: Vec::new(),
+            seru: SeruState::new(),
             per_char_ext: Vec::new(),
             saved_chains: Vec::new(),
-            seru_log: crate::seru_learning::SeruCaptureLog::new(),
-            seru_registry: crate::seru_learning::SeruRegistry::new(),
-            last_capture_outcomes: Vec::new(),
             play_time_seconds: 0,
             scene_save_allowed: false,
             field_stagers: Vec::new(),
