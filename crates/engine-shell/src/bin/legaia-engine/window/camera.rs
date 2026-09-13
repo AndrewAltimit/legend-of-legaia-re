@@ -744,6 +744,7 @@ pub(super) fn battle_cam_inputs(
         // order, so the row index + 1 is the same id.
         let height = party_slot.and_then(|p| {
             world
+                .tables
                 .battle_camera_heights
                 .as_ref()
                 .and_then(|t| t.height_for_char_id(p + 1))
@@ -952,7 +953,7 @@ pub(super) fn battle_done_band(
 pub(super) fn battle_attack_tracks(
     world: &legaia_engine_core::world::World,
 ) -> Option<legaia_asset::battle_attack_camera_table::AttackCameraTracks> {
-    let overlay = world.move_power_overlay.as_ref()?;
+    let overlay = world.tables.move_power_overlay.as_ref()?;
     legaia_asset::battle_attack_camera_table::parse(overlay)
 }
 

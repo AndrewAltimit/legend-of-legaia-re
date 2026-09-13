@@ -1283,7 +1283,7 @@ impl PlayWindowApp {
         // lead is the roster slot whose swing costs were read above.
         {
             let catalog = legaia_engine_core::muscle_dome::art_catalog_for(
-                &self.session.host.world.art_records,
+                &self.session.host.world.tables.art_records,
                 legaia_art::Character::Vahn,
             );
             if !catalog.is_empty() {

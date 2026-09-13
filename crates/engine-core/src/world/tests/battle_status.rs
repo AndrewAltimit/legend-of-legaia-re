@@ -444,7 +444,7 @@ fn all_party_item_heals_every_living_party_actor_in_battle() {
         })
         .collect();
     let mut s = InventoryUseSession::new(
-        world.item_catalog.clone(),
+        world.tables.item_catalog.clone(),
         vec![0x7A],
         targets,
         InventoryContext::Battle,

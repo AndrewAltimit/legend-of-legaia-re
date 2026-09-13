@@ -250,7 +250,12 @@ impl World {
     /// PORT: FUN_801DEA50 (`0x801df0d4..0x801df134`, the CLUT-stage arm)
     /// REF: FUN_80058490 (`MoveImage` - the blit the `RECT` reaches)
     pub fn drain_battle_effect_spawns(&mut self) -> Vec<crate::battle_events::BattleEffectSpawn> {
-        if let Some(aux) = self.move_power.as_ref().and_then(|cat| cat.aux_tables()) {
+        if let Some(aux) = self
+            .tables
+            .move_power
+            .as_ref()
+            .and_then(|cat| cat.aux_tables())
+        {
             let stages: Vec<u8> = self
                 .battle_effect_spawns
                 .iter()

@@ -386,7 +386,7 @@ pub fn apply_spell_outcome(
     // catalog's nominal amount ([`crate::spells::cast_spell`] returns
     // `min(nominal, deficit)`).
     let gain = crate::magic_xp::menu_heal_xp_gain(group_cast, healed == nominal);
-    let thresholds = world.magic_xp_thresholds;
+    let thresholds = world.tables.magic_xp_thresholds;
     let record = world.roster.members.get_mut(caster_slot as usize)?;
     let up = crate::magic_xp::accrue_and_level(
         record,
@@ -802,7 +802,7 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
         })
         .collect();
     InventoryUseSession::new(
-        world.item_catalog.clone(),
+        world.tables.item_catalog.clone(),
         items,
         targets,
         InventoryContext::Field,
@@ -823,7 +823,13 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
             let name = text
                 .and_then(|t| t.item_name(id))
                 .map(str::to_string)
-                .or_else(|| world.item_catalog.get(id).map(|e| e.name.to_string()))
+                .or_else(|| {
+                    world
+                        .tables
+                        .item_catalog
+                        .get(id)
+                        .map(|e| e.name.to_string())
+                })
                 .unwrap_or_else(|| format!("Item {id:02X}"));
             let desc = text
                 .and_then(|t| t.item_desc(id))

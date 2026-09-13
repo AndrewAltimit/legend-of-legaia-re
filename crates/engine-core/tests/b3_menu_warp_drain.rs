@@ -140,7 +140,7 @@ fn every_disc_placement_scene_id_resolves_through_the_installed_toc_map() {
     };
     let host = legaia_engine_core::scene::SceneHost::open_disc(&path).expect("open disc");
     assert!(
-        !host.world.scene_toc_names.is_empty(),
+        !host.world.tables.scene_toc_names.is_empty(),
         "SceneHost::new installed the CDNAME TOC map into the world"
     );
     let scus = legaia_engine_core::DiscVfs::open(&path)
@@ -152,6 +152,7 @@ fn every_disc_placement_scene_id_resolves_through_the_installed_toc_map() {
     for p in &menu.placements {
         let name = host
             .world
+            .tables
             .scene_toc_names
             .get(&u32::from(p.scene_id))
             .unwrap_or_else(|| {

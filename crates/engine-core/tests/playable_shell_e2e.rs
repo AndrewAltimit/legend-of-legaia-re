@@ -117,11 +117,13 @@ fn encounter_trigger_resolves_to_formation_def() {
     assert_eq!(roll.formation_id, 1);
 
     let formation = w
+        .tables
         .formation_table
         .formation(roll.formation_id)
         .expect("vanilla formation 1");
     assert_eq!(formation.slots[0].monster_id, 1);
     let monster = w
+        .tables
         .monster_catalog
         .get(formation.slots[0].monster_id)
         .expect("vanilla goblin");
@@ -469,6 +471,7 @@ fn full_loop_title_then_encounter_then_battle_then_save_then_load() {
 
     // 4. Resolve a battle session against the formation.
     let formation = w
+        .tables
         .formation_table
         .formation(roll.formation_id)
         .expect("vanilla formation")
@@ -487,7 +490,11 @@ fn full_loop_title_then_encounter_then_battle_then_save_then_load() {
         );
     }
     for (i, slot) in formation.slots.iter().enumerate() {
-        let monster = w.monster_catalog.get(slot.monster_id).expect("monster def");
+        let monster = w
+            .tables
+            .monster_catalog
+            .get(slot.monster_id)
+            .expect("monster def");
         let actor_idx = 3 + i;
         w.actors[actor_idx].battle.hp = monster.hp;
         w.actors[actor_idx].battle.max_hp = monster.hp;

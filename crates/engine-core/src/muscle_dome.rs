@@ -423,7 +423,7 @@ pub fn magic_loadout_for(
     }
     let spells: Vec<crate::spells::SpellDef> = learned
         .iter()
-        .filter_map(|id| world.spell_catalog.get(*id).cloned())
+        .filter_map(|id| world.tables.spell_catalog.get(*id).cloned())
         .collect();
     let live = member.live_stats();
     let gauge = member.hp_mp_sp();

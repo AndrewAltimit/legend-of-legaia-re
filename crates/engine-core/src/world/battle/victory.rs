@@ -300,7 +300,7 @@ impl World {
 
     /// Phase 0's pose pick (`0x8004E78C..0x8004EAF0`) for `seat`.
     fn pick_victory_pose(&mut self, seat: usize) -> Option<u8> {
-        let table = self.victory_pose_table?;
+        let table = self.tables.victory_pose_table?;
         let actor = self.actors.get(seat)?;
         let (hp, hp_max, status) = (
             actor.battle.hp,
@@ -412,9 +412,9 @@ impl World {
                 self.floor_downed_party_hp();
                 // Rewards: XP / gold / drop / level-ups, then the windows.
                 if let Some(formation) = self.active_formation.clone() {
-                    let catalog = std::mem::take(&mut self.monster_catalog);
+                    let catalog = std::mem::take(&mut self.tables.monster_catalog);
                     let rewards = self.apply_battle_loot(&formation, &catalog);
-                    self.monster_catalog = catalog;
+                    self.tables.monster_catalog = catalog;
                     let levelled = !rewards.level_ups.is_empty();
                     self.last_battle_rewards = Some(rewards);
                     self.battle_loot_applied = true;

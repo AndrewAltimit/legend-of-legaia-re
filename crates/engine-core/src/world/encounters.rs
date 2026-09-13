@@ -86,10 +86,11 @@ impl World {
         formations: Vec<crate::monster_catalog::FormationDef>,
     ) -> bool {
         for def in formations {
-            self.formation_table.insert(def);
+            self.tables.formation_table.insert(def);
         }
         for entry in &table.entries {
             if self
+                .tables
                 .formation_table
                 .formation(entry.formation_id)
                 .is_none_or(|d| d.slots.is_empty())
@@ -157,7 +158,7 @@ impl World {
     /// Clears any post-battle grace / suppression first so a second call
     /// straight after a fight still lands.
     pub fn force_encounter(&mut self, formation_id: u16) -> bool {
-        let Some(def) = self.formation_table.formation(formation_id) else {
+        let Some(def) = self.tables.formation_table.formation(formation_id) else {
             log::error!(
                 "encounter: forced formation {formation_id} is not registered for scene '{}' \
                  (registered rows: {:?})",
@@ -206,7 +207,7 @@ impl World {
     /// sorted. The answer to "which rows can `--battle` name" and the list the
     /// unresolved-formation diagnostics print.
     pub fn registered_formation_ids(&self) -> Vec<u16> {
-        let mut ids: Vec<u16> = self.formation_table.by_id.keys().copied().collect();
+        let mut ids: Vec<u16> = self.tables.formation_table.by_id.keys().copied().collect();
         ids.sort_unstable();
         ids
     }
@@ -215,7 +216,8 @@ impl World {
     /// `None` when the scene registered none. What `--battle first` resolves.
     pub fn first_rollable_formation_id(&self) -> Option<u16> {
         self.registered_formation_ids().into_iter().find(|id| {
-            self.formation_table
+            self.tables
+                .formation_table
                 .formation(*id)
                 .is_some_and(|d| !d.slots.is_empty())
         })
@@ -226,14 +228,14 @@ impl World {
     /// not stat blocks, so the host installs the stat catalog separately when
     /// the formations come from [`Self::install_man_encounter`].
     pub fn set_monster_catalog(&mut self, catalog: crate::monster_catalog::MonsterCatalog) {
-        self.monster_catalog = catalog;
+        self.tables.monster_catalog = catalog;
     }
 
     /// Install the per-item battle-stat modifier table (weapon / armor /
     /// accessory bonuses). Boot wires this once; [`Self::seed_party_battle_stats`]
     /// folds the equipped items onto each party combatant at battle entry.
     pub fn set_equipment_table(&mut self, table: crate::battle_stats::EquipmentTable) {
-        self.equipment_table = table;
+        self.tables.equipment_table = table;
     }
 
     /// Install the accessory ("Goods") passive-effect catalog (item id →
@@ -243,7 +245,7 @@ impl World {
     /// per-character ability bitfields from it and
     /// [`Self::seed_party_battle_stats`] applies the percent stat boosts.
     pub fn set_accessory_passives(&mut self, p: crate::accessory_passives::AccessoryPassives) {
-        self.accessory_passives = p;
+        self.tables.accessory_passives = p;
     }
 
     /// Install the pause-menu text tables (item names/descriptions, spell
@@ -337,7 +339,7 @@ impl World {
     /// rebuild-on-every-aggregator-pass behaviour.
     pub fn refresh_party_ability_bits(&mut self) {
         use crate::accessory_passives::ABILITY_WORDS;
-        if self.accessory_passives.is_empty() {
+        if self.tables.accessory_passives.is_empty() {
             return;
         }
         let pc = (self.party_count.min(3) as usize).min(self.roster.members.len());
@@ -351,7 +353,7 @@ impl World {
                 continue;
             };
             let equip = member.equipment().slots;
-            let words = self.accessory_passives.bits_for_equipment(&equip);
+            let words = self.tables.accessory_passives.bits_for_equipment(&equip);
             // Rebuild the record-side bitfield (retail zeroes `+0xF4..+0x103`
             // and re-derives it from equipment on every pass). Bytes past the
             // four words stay zero - passive indices live below 0x40.
@@ -369,7 +371,7 @@ impl World {
         // Effective per-member mask for the u32 consumers: own bits plus the
         // party-wide-scoped bits any member contributes (the engine shape of
         // "consumers test the global mask for party-wide passives").
-        let pw = self.accessory_passives.party_wide_mask();
+        let pw = self.tables.accessory_passives.party_wide_mask();
         for (bits, own_words) in self
             .character_ability_bits
             .iter_mut()
@@ -476,7 +478,7 @@ impl World {
             // remains the better effective source.
             let recs = rec.record_stats();
             let (agl, atk, udf, ldf, spd, int) =
-                if !self.accessory_passives.is_empty() && recs.atk != 0 {
+                if !self.tables.accessory_passives.is_empty() && recs.atk != 0 {
                     (recs.agl, recs.atk, recs.udf, recs.ldf, recs.spd, recs.int)
                 } else {
                     (live.agl, live.atk, live.udf, live.ldf, live.spd, live.int)
@@ -498,8 +500,8 @@ impl World {
             };
             let stats = crate::battle_stats::compute_battle_stats_with_passives(
                 &record,
-                &self.equipment_table,
-                &self.accessory_passives,
+                &self.tables.equipment_table,
+                &self.tables.accessory_passives,
                 &[],
                 &crate::battle_stats::StatusModifiers::default(),
             );
@@ -510,7 +512,10 @@ impl World {
             // keep their values. (Retail's max-MP boosts, indices 0x02/0x03,
             // have no engine consumer yet: the battle actor carries current
             // MP only, no max-MP mirror.)
-            let pwords = self.accessory_passives.bits_for_equipment(&record.equip);
+            let pwords = self
+                .tables
+                .accessory_passives
+                .bits_for_equipment(&record.equip);
             if pwords[0] & 0x3 != 0 {
                 let mut max_hp = base_max_hp;
                 if pwords[0] & 0x1 != 0 {
@@ -542,7 +547,7 @@ impl World {
                 if id == 0 {
                     continue;
                 }
-                if let Some(m) = self.equipment_table.get(id) {
+                if let Some(m) = self.tables.equipment_table.get(id) {
                     let b = m.atk.clamp(0, 255) as u8;
                     equip_atk[i] = b;
                     equip_atk_sum = equip_atk_sum.saturating_add(u16::from(b));
@@ -596,8 +601,8 @@ impl World {
         table: crate::monster_catalog::FormationTable,
         catalog: crate::monster_catalog::MonsterCatalog,
     ) {
-        self.formation_table = table;
-        self.monster_catalog = catalog;
+        self.tables.formation_table = table;
+        self.tables.monster_catalog = catalog;
     }
 
     /// Install a [`crate::encounter_record::EncounterRecord`] decoded from
@@ -622,7 +627,7 @@ impl World {
         }
         let formation = record.to_formation_def(scene_label);
         let formation_id = formation.formation_id;
-        self.formation_table.insert(formation);
+        self.tables.formation_table.insert(formation);
 
         use crate::encounter::{
             EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
@@ -663,6 +668,7 @@ impl World {
     /// REF: FUN_801DA51C
     pub fn install_man_formation(&mut self, formation_id: u16) -> Option<u16> {
         let has_slots = self
+            .tables
             .formation_table
             .formation(formation_id)
             .is_some_and(|def| !def.slots.is_empty());
@@ -718,6 +724,7 @@ impl World {
     pub fn trigger_scripted_battle(&mut self, row: u8) -> bool {
         let formation_id = u16::from(row);
         let has_slots = self
+            .tables
             .formation_table
             .formation(formation_id)
             .is_some_and(|def| !def.slots.is_empty());
@@ -784,7 +791,7 @@ impl World {
             // construction and the confirm state raises the per-battle
             // `0x80`. Carry it onto the synthesized def so the intro style
             // and the transition's audio cue see the scripted battle.
-            if let Some(def) = self.formation_table.by_id.get_mut(&id) {
+            if let Some(def) = self.tables.formation_table.by_id.get_mut(&id) {
                 def.header_flags = record_bytes.first().copied().unwrap_or(0);
             }
         }
@@ -830,6 +837,7 @@ impl World {
             // The row must be a registered scene formation (scene entry merged
             // the MAN rows + their archive stats) - a desync phantom is not.
             let row_ok = self
+                .tables
                 .formation_table
                 .formation(u16::from(site.formation_row))
                 .is_some_and(|def| !def.slots.is_empty());
@@ -1146,6 +1154,7 @@ impl World {
             // makes the flagged battle-start cue (`0x4D`) overwrite the plain
             // one (`0x1F`) in ring slot 0.
             battle_flags: self
+                .tables
                 .formation_table
                 .formation(roll.formation_id)
                 .map(|d| d.per_battle_flags())

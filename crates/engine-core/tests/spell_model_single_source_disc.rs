@@ -97,7 +97,7 @@ fn the_state_machine_charges_the_discs_own_mp_cost() {
 
     let mut w = armed_battle(&scus, GIMARD, 200);
     assert_eq!(
-        w.spell_catalog.mp_cost(GIMARD) as u16,
+        w.tables.spell_catalog.mp_cost(GIMARD) as u16,
         disc_mp,
         "boot folds the disc's own +3 byte into the catalog"
     );

@@ -204,6 +204,7 @@ impl PlayWindowApp {
                 .session
                 .host
                 .world
+                .tables
                 .move_power
                 .as_ref()
                 .map(|c| c.spawnable_move_ids())

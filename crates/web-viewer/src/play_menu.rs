@@ -827,8 +827,8 @@ impl LegaiaRuntime {
                     &self.options_state,
                     &rack,
                     &chain,
-                    &world.spell_catalog,
-                    &world.equipment_table,
+                    &world.tables.spell_catalog,
+                    &world.tables.equipment_table,
                 )))
             });
             if let Some(sub) = sub

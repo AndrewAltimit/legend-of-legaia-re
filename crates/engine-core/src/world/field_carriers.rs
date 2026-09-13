@@ -635,11 +635,16 @@ impl World {
     /// nothing ever sees - the same shape of defect that made nine consecutive
     /// field rolls vanish.
     pub(crate) fn begin_world_map_encounter(&mut self, formation_id: u16) {
-        if self.formation_table.formation(formation_id).is_none() {
+        if self
+            .tables
+            .formation_table
+            .formation(formation_id)
+            .is_none()
+        {
             log::error!(
                 "world-map encounter: formation {formation_id} is not registered \
                  ({} rows in the table) - the roll is dropped",
-                self.formation_table.len()
+                self.tables.formation_table.len()
             );
             return;
         }
@@ -677,7 +682,12 @@ impl World {
     /// flip into the battle, snapshotting the world-map context so
     /// [`Self::finish_battle`] returns to [`SceneMode::WorldMap`].
     pub(crate) fn enter_world_map_battle(&mut self, roll: crate::encounter::EncounterRoll) {
-        let Some(formation) = self.formation_table.formation(roll.formation_id).cloned() else {
+        let Some(formation) = self
+            .tables
+            .formation_table
+            .formation(roll.formation_id)
+            .cloned()
+        else {
             log::error!(
                 "world-map encounter: drained formation {} vanished from the table - the \
                  battle is dropped",

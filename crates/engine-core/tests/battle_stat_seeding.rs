@@ -189,7 +189,7 @@ fn battle_entry_clears_a_stale_monster_defence_split() {
     w.set_battle_defense_split(4, Some((999, 999)));
     let mut table = FormationTable::new();
     table.insert(FormationDef::new(2, vec![FormationSlot::new(77)])); // id 77 not in catalog
-    let catalog = w.monster_catalog.clone();
+    let catalog = w.tables.monster_catalog.clone();
     w.set_formation_table(table, catalog);
     w.mode = SceneMode::Field;
     assert!(w.trigger_scripted_battle(2));

@@ -32,7 +32,7 @@ fn frame_height_for(size_class: u8) -> (i16, bool) {
     world.actors[3].battle_monster_id = Some(1);
     let mut def = MonsterDef::new(1, "Test Bulk", 500, 40);
     def.size_class = size_class;
-    world.monster_catalog.insert(def);
+    world.tables.monster_catalog.insert(def);
 
     // Party slot 0 attacks monster slot 3 - retail's target-side arm.
     world.actors[0].battle.active_target = 3;

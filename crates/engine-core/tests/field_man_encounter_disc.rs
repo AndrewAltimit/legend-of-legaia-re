@@ -81,6 +81,7 @@ fn field_entry_installs_man_encounter_table() {
                 for e in &table.entries {
                     assert!(
                         host.world
+                            .tables
                             .formation_table
                             .formation(e.formation_id)
                             .is_some(),
@@ -129,9 +130,14 @@ fn field_entry_installs_real_monster_stats_from_archive() {
         (79, "Tetsu", 999, 999),
     ];
     for &(id, name, hp, mp) in expect {
-        let def = host.world.monster_catalog.get(id).unwrap_or_else(|| {
-            panic!("monster id {id} missing from the catalog after field entry")
-        });
+        let def = host
+            .world
+            .tables
+            .monster_catalog
+            .get(id)
+            .unwrap_or_else(|| {
+                panic!("monster id {id} missing from the catalog after field entry")
+            });
         assert_eq!(def.name, name, "id {id} name");
         assert_eq!(def.hp, hp, "id {id} HP");
         assert_eq!(def.mp, mp, "id {id} MP");
@@ -139,10 +145,14 @@ fn field_entry_installs_real_monster_stats_from_archive() {
 
     // Every encounter-formation monster-id resolves to a catalog entry, so a
     // triggered battle spawns concrete monsters (not an unknown id).
-    for def in host.world.formation_table.by_id.values() {
+    for def in host.world.tables.formation_table.by_id.values() {
         for slot in &def.slots {
             assert!(
-                host.world.monster_catalog.get(slot.monster_id).is_some(),
+                host.world
+                    .tables
+                    .monster_catalog
+                    .get(slot.monster_id)
+                    .is_some(),
                 "formation monster-id {} has no catalog entry",
                 slot.monster_id
             );

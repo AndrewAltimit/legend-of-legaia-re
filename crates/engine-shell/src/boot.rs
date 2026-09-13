@@ -756,7 +756,7 @@ impl BootSession {
         // (`world::battle::victory`). Best-effort: absent on a disc-free
         // build, where the pose actor keeps its idle.
         if let Some(scus) = read_scus(&source) {
-            host.world.victory_pose_table =
+            host.world.tables.victory_pose_table =
                 legaia_asset::victory_pose::victory_pose_table_from_scus(&scus);
             // The XA cue duration table (`DAT_800788B8`) the sound funnel's
             // voice leg reads for its read span.
@@ -1089,8 +1089,8 @@ impl BootSession {
                     &self.options_state,
                     &self.save_rack,
                     &chain_library,
-                    &world.spell_catalog,
-                    &world.equipment_table,
+                    &world.tables.spell_catalog,
+                    &world.tables.equipment_table,
                 ));
             }
         }

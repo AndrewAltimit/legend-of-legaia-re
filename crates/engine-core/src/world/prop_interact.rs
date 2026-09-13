@@ -400,7 +400,7 @@ impl World {
                     }
                 }
                 0xC2 | 0xC4 => {
-                    if let Some(entry) = self.item_catalog.get(arg) {
+                    if let Some(entry) = self.tables.item_catalog.get(arg) {
                         map.entry((2, arg))
                             .or_insert_with(|| entry.name.as_bytes().to_vec());
                     }

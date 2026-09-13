@@ -161,7 +161,11 @@ fn water_line_stat_up_items_seed_and_apply_from_disc() {
     world.set_item_effects(table); // seeds the Water line onto the catalog
 
     // Life Water is now offered: field-only, not battle.
-    let life = world.item_catalog.get(0x82).expect("Life Water seeded");
+    let life = world
+        .tables
+        .item_catalog
+        .get(0x82)
+        .expect("Life Water seeded");
     assert_eq!(life.name, "Life Water");
     assert!(life.usable_in_field && !life.usable_in_battle);
 
@@ -224,7 +228,11 @@ fn elixir_battle_buffs_seed_and_ramp_from_disc() {
     world.set_battle_defense(0, 50);
 
     // Power Elixir is battle-only and ramps ATK ×6/5: 100 -> 120.
-    let pe = world.item_catalog.get(0x8B).expect("Power Elixir seeded");
+    let pe = world
+        .tables
+        .item_catalog
+        .get(0x8B)
+        .expect("Power Elixir seeded");
     assert_eq!(pe.name, "Power Elixir");
     assert!(pe.usable_in_battle && !pe.usable_in_field);
     assert_eq!(world.use_item(0x8B, 0), ItemOutcome::Buffed { count: 1 });
@@ -278,7 +286,11 @@ fn fury_boost_seeds_and_extends_the_ap_gauge_from_disc() {
     world.ap_gauges[0] = legaia_engine_core::ap_gauge::ApGauge::with_base(10);
 
     // Fury Boost is battle-only and extends the gauge: base 10 -> 14 (×7/5).
-    let fb = world.item_catalog.get(0x81).expect("Fury Boost seeded");
+    let fb = world
+        .tables
+        .item_catalog
+        .get(0x81)
+        .expect("Fury Boost seeded");
     assert_eq!(fb.name, "Fury Boost");
     assert!(fb.usable_in_battle && !fb.usable_in_field);
     assert_eq!(world.use_item(0x81, 0), ItemOutcome::ActionGaugeExtended);

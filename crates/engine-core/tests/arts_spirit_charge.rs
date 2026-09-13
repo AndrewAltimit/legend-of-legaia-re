@@ -216,7 +216,8 @@ fn a_committed_art_charges_its_body_out_of_spirit() {
     // queue stages the art rather than three plain swings.
     let action = legaia_art::ActionConstant::from_byte(SOMERSAULT).unwrap();
     assert_eq!(
-        w.art_records
+        w.tables
+            .art_records
             .get(&(legaia_art::Character::Vahn, action))
             .map(|r| r.commands.len()),
         Some(SOMERSAULT_COMMANDS),

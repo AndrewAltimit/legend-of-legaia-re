@@ -44,7 +44,7 @@ impl World {
                     && self.actors[s].battle.max_hp > 0
                     && self.actors[s]
                         .battle_monster_id
-                        .and_then(|mid| self.monster_catalog.get(mid))
+                        .and_then(|mid| self.tables.monster_catalog.get(mid))
                         .is_some_and(|d| d.seru_id.is_some())
             })
             .map(|s| s as u8)
@@ -134,8 +134,8 @@ impl World {
     /// spell XP but never level the spell up. Returns whether the table
     /// decoded.
     pub fn install_magic_xp_thresholds(&mut self, scus: &[u8]) -> bool {
-        self.magic_xp_thresholds = crate::magic_xp::thresholds_from_scus(scus);
-        self.magic_xp_thresholds.is_some()
+        self.tables.magic_xp_thresholds = crate::magic_xp::thresholds_from_scus(scus);
+        self.tables.magic_xp_thresholds.is_some()
     }
 
     /// Install the seru-trade config from `SCUS_942.54` bytes (the randomizer's
@@ -144,13 +144,13 @@ impl World {
     /// or disabled, [`Self::open_seru_trade`] yields `None` and vendors don't
     /// offer trades. See [`crate::seru_trade`].
     pub fn install_seru_trade_config(&mut self, scus: &[u8]) -> bool {
-        self.seru_trade_config = legaia_asset::seru_trade::SeruTradeConfig::from_scus(scus);
-        self.seru_trade_config.is_some_and(|c| c.enabled)
+        self.tables.seru_trade_config = legaia_asset::seru_trade::SeruTradeConfig::from_scus(scus);
+        self.tables.seru_trade_config.is_some_and(|c| c.enabled)
     }
 
     /// `true` when seru trading is enabled on this disc.
     pub fn seru_trade_enabled(&self) -> bool {
-        self.seru_trade_config.is_some_and(|c| c.enabled)
+        self.tables.seru_trade_config.is_some_and(|c| c.enabled)
     }
 
     /// Open a seru-trade session at a vendor for the current party + play
@@ -163,7 +163,7 @@ impl World {
         &self,
         vendor_offset: u8,
     ) -> Option<crate::seru_trade::SeruTradeSession> {
-        let config = self.seru_trade_config.filter(|c| c.enabled)?;
+        let config = self.tables.seru_trade_config.filter(|c| c.enabled)?;
         Some(crate::seru_trade::SeruTradeSession::open(
             config,
             vendor_offset,
@@ -220,7 +220,7 @@ impl World {
     pub(in crate::world) fn accrue_summon_spell_xp(&mut self, caster: u8, spell_id: u8, gain: u32) {
         // Battle ordinal -> the occupying character's record (the XP holder).
         let char_slot = self.party_roster_slot(caster as usize);
-        let thresholds = self.magic_xp_thresholds;
+        let thresholds = self.tables.magic_xp_thresholds;
         let Some(record) = self.roster.members.get_mut(char_slot) else {
             return;
         };
@@ -253,6 +253,7 @@ impl World {
             // goes there so the text a host draws is the retail one rather
             // than an engine-invented string.
             let spell_name = self
+                .tables
                 .spell_catalog
                 .get(spell_id)
                 .map(|d| d.name.clone())
@@ -289,7 +290,7 @@ impl World {
             .collect();
         let seru_ids: Vec<u16> = captures
             .iter()
-            .filter_map(|&mid| self.monster_catalog.get(mid).and_then(|d| d.seru_id))
+            .filter_map(|&mid| self.tables.monster_catalog.get(mid).and_then(|d| d.seru_id))
             .collect();
         let mut first_accepted: Option<(u16, crate::seru_learning::CaptureOutcome)> = None;
         for sid in seru_ids {
@@ -326,7 +327,7 @@ impl World {
                 .get(sid)
                 .map(|s| s.name.clone())
                 .unwrap_or_else(|| format!("Seru {sid:#04X}"));
-            let spell_catalog = &self.spell_catalog;
+            let spell_catalog = &self.tables.spell_catalog;
             let banner = crate::seru_learning::SeruCaptureSession::new(
                 seru_name,
                 sid,
@@ -359,6 +360,7 @@ impl World {
                 // mutating the log (the registry borrow can't overlap the
                 // mark_shiny &mut self).
                 let resolved = self
+                    .tables
                     .monster_catalog
                     .get(mid)
                     .and_then(|d| d.seru_id)

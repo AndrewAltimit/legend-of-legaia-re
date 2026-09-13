@@ -351,6 +351,7 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
     // formation install covers every row's monster ids, row 17 included).
     let caruban = host
         .world
+        .tables
         .monster_catalog
         .get(CARUBAN_MONSTER_ID)
         .expect("Caruban stats seeded from the monster archive");

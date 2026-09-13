@@ -368,7 +368,7 @@ impl World {
             .actors
             .get(attacker as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
             .unwrap_or(7);
         let target_is_party = target < self.party_count;
@@ -469,7 +469,7 @@ impl World {
             .actors
             .get(attacker as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
             .unwrap_or(7);
         let target_is_party = target < self.party_count;
@@ -637,7 +637,7 @@ impl World {
             .actors
             .get(attacker as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
             .unwrap_or(7);
         let target_is_party = target < self.party_count;
@@ -810,6 +810,7 @@ impl World {
         // per-caster 0x801F5468 table when the affinity tables are installed
         // (char id = slot + 1, same model as the element lookups), else 100.
         let summon_power_pct = self
+            .tables
             .element_affinity
             .as_ref()
             .and_then(|aff| aff.summon_power_pct(caster + 1, summon_element))
@@ -852,14 +853,14 @@ impl World {
     /// enemy→party direction; the status-weaken / guard-double / slot-7 summon
     /// stages of the full retail function are not part of this scalar)
     pub(in crate::world::battle) fn enemy_affinity_pct(&self, attacker: u8, target: u8) -> u8 {
-        let Some(aff) = self.element_affinity.as_ref() else {
+        let Some(aff) = self.tables.element_affinity.as_ref() else {
             return 100;
         };
         let Some(enemy_elem) = self
             .actors
             .get(attacker as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
         else {
             return 100;
@@ -878,12 +879,12 @@ impl World {
     /// affinity tables aren't installed or no element resolves, so callers fall
     /// back to neutral.
     pub(in crate::world) fn battle_slot_element(&self, slot: u8) -> Option<u8> {
-        let aff = self.element_affinity.as_ref()?;
+        let aff = self.tables.element_affinity.as_ref()?;
         if (slot as usize) < self.party_count as usize {
             aff.character_element(slot + 1)
         } else {
             let id = self.actors.get(slot as usize)?.battle_monster_id?;
-            Some(self.monster_catalog.get(id)?.element)
+            Some(self.tables.monster_catalog.get(id)?.element)
         }
     }
 
@@ -909,7 +910,8 @@ impl World {
             return None;
         }
         let name = crate::retail_magic::get(spell_id)?.name;
-        self.monster_catalog
+        self.tables
+            .monster_catalog
             .by_id
             .values()
             .filter(|d| d.name == name)
@@ -930,7 +932,7 @@ impl World {
     /// synthetic battles and non-summon casts are unaffected. Applied post-roll,
     /// so it never touches the RNG stream.
     fn cast_affinity_pct(&self, spell_id: u8, target: u8) -> u8 {
-        let Some(aff) = self.element_affinity.as_ref() else {
+        let Some(aff) = self.tables.element_affinity.as_ref() else {
             return 100;
         };
         let Some(atk_elem) = self.summon_attacker_element(spell_id) else {
@@ -951,7 +953,7 @@ impl World {
         if (caster as usize) < self.party_count as usize {
             return None;
         }
-        self.move_power.as_ref()?.power_for_move_id(move_id)
+        self.tables.move_power.as_ref()?.power_for_move_id(move_id)
     }
 
     /// Fold a single-target [`crate::spells::SpellOutcome`] into live actor
@@ -1106,7 +1108,7 @@ mod capture_bypass_tests {
         let mut caster = MonsterDef::new(5, "Boss", 4000, 200);
         caster.element = 0;
         catalog.insert(caster);
-        world.monster_catalog = catalog;
+        world.tables.monster_catalog = catalog;
 
         // Party slot 0 resists element 0 (`record+0xF4` bit 0x20000000) and
         // carries no All-Guard absorb bit, so the ladder's halve arm is the one
@@ -1133,7 +1135,7 @@ mod capture_bypass_tests {
         world.actors[1].battle_monster_id = Some(5);
         world.battle_accuracy[1] = 200;
 
-        world.move_power = Some(
+        world.tables.move_power = Some(
             crate::move_power::MovePowerCatalog::from_overlay_0898(&overlay_with_two_ids(2000))
                 .expect("synthetic catalog parses"),
         );
@@ -1250,7 +1252,7 @@ mod capture_bypass_tests {
         let mut world = world_with_resisting_party();
         world.battle_accuracy[1] = 20; // attacker `+0x168`
         world.battle_defense[0] = 4000; // defender `+0x15C`
-        world.move_power = Some(
+        world.tables.move_power = Some(
             crate::move_power::MovePowerCatalog::from_overlay_0898(&overlay_with_two_ids(40))
                 .expect("synthetic catalog parses"),
         );
@@ -1457,6 +1459,7 @@ mod one_spell_model_tests {
         let mut world = World::new();
         world.set_spell_catalog(SpellCatalog::vanilla());
         let priced: Vec<(u8, u8)> = world
+            .tables
             .spell_catalog
             .iter()
             .map(|s| (s.id, s.mp_cost))
@@ -1586,6 +1589,7 @@ mod one_spell_model_tests {
             a.battle.mp = 100;
         }
         let def = world
+            .tables
             .spell_catalog
             .get(0x82)
             .cloned()

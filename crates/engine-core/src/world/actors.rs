@@ -365,6 +365,7 @@ impl World {
         // stepper's terminator reads the 0x801F4E64-based view (`map[action
         // - 1]`), so skip the first byte - same bytes, reconciled bases.
         let map = self
+            .tables
             .move_power
             .as_ref()
             .and_then(|cat| cat.id_index_map_bytes().get(1..))
@@ -396,7 +397,7 @@ impl World {
             let counter = step
                 .move_power_offset
                 .map(|off| (off / fx::MOVE_POWER_STRIDE) as u8)
-                .and_then(|id| self.move_power.as_ref()?.record_for_move_id(id))
+                .and_then(|id| self.tables.move_power.as_ref()?.record_for_move_id(id))
                 .map(|rec| rec.counter_init());
             self.move_fx_streak.install(&step, counter);
         }
@@ -493,6 +494,7 @@ impl World {
             return;
         }
         let word = self
+            .tables
             .move_power
             .as_ref()
             .and_then(|t| t.impact_table())
@@ -604,6 +606,7 @@ impl World {
             return;
         };
         let tint = self
+            .tables
             .move_power
             .as_ref()
             .and_then(|t| t.impact_table())

@@ -109,7 +109,7 @@ fn every_rollable_formation_resolves_across_the_scene_corpus() {
         rows_checked += want.len();
 
         for id in &want {
-            match host.world.formation_table.formation(*id) {
+            match host.world.tables.formation_table.formation(*id) {
                 None => failures.push(format!(
                     "{scene}: rollable formation row {id} is not registered (registered {registered:?})"
                 )),
@@ -295,6 +295,7 @@ fn force_encounter_drives_a_named_row_through_the_normal_transition() {
     // `0x80`). Force it and require the battle to open with that monster.
     let row = 17u16;
     let expect_ids: Vec<u16> = world
+        .tables
         .formation_table
         .formation(row)
         .map(|d| d.slots.iter().map(|s| s.monster_id).collect())
@@ -305,6 +306,7 @@ fn force_encounter_drives_a_named_row_through_the_normal_transition() {
     );
     assert_ne!(
         world
+            .tables
             .formation_table
             .formation(row)
             .map(|d| d.per_battle_flags())

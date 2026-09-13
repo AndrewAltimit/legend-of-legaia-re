@@ -567,7 +567,7 @@ impl World {
         bag.sort_unstable();
         env.inventory = bag;
 
-        let Some(items) = self.item_effects.as_ref() else {
+        let Some(items) = self.tables.item_effects.as_ref() else {
             // No item property table: the aggregation has nothing to resolve
             // an equipped id through, so every row prints its base stat. The
             // candidate ladder stays off with it.
@@ -583,7 +583,7 @@ impl World {
             if items.kind(id) != legaia_asset::equip_stats::KIND_EQUIPMENT {
                 continue;
             }
-            let Some(m) = self.equipment_table.get(id) else {
+            let Some(m) = self.tables.equipment_table.get(id) else {
                 continue;
             };
             let row = usize::from(items.subtype(id));

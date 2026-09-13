@@ -356,11 +356,12 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
 
     // 3. Trigger the encounter - populate monsters from the formation.
     let formation = world
+        .tables
         .formation_table
         .formation(roll.formation_id)
         .expect("formation present in vanilla table")
         .clone();
-    let catalog = world.monster_catalog.clone();
+    let catalog = world.tables.monster_catalog.clone();
     enter_battle(&mut world, &formation, &catalog);
 
     // 4. Drive the battle SM until victory.
@@ -670,6 +671,7 @@ fn battle_session_phase_transitions_during_loop() {
     world.tick_encounter();
     let roll = world.drain_encounter_formation().expect("triggered");
     let formation = world
+        .tables
         .formation_table
         .formation(roll.formation_id)
         .expect("vanilla formation")
@@ -697,7 +699,7 @@ fn battle_session_phase_transitions_during_loop() {
             },
         );
     }
-    let catalog = world.monster_catalog.clone();
+    let catalog = world.tables.monster_catalog.clone();
     for (i, slot) in formation.slots.iter().enumerate() {
         let def = catalog.get(slot.monster_id).expect("monster");
         let actor_idx = 3 + i;
@@ -773,6 +775,7 @@ fn battle_session_drives_action_sm_to_monster_wipe() {
     world.tick_encounter();
     let roll = world.drain_encounter_formation().expect("triggered");
     let formation = world
+        .tables
         .formation_table
         .formation(roll.formation_id)
         .expect("vanilla formation")
@@ -814,7 +817,7 @@ fn battle_session_drives_action_sm_to_monster_wipe() {
             },
         );
     }
-    let catalog = world.monster_catalog.clone();
+    let catalog = world.tables.monster_catalog.clone();
     for (i, slot) in formation.slots.iter().take(5).enumerate() {
         let def = catalog.get(slot.monster_id).expect("monster def");
         let actor_idx = 3 + i;
@@ -1052,6 +1055,7 @@ fn real_battle_data_encounter_drives_loop() {
         .expect("disc-derived formation should yield a roll");
     assert_eq!(roll.formation_id, formation_id);
     let formation = world
+        .tables
         .formation_table
         .formation(roll.formation_id)
         .expect("synthesized formation registered")

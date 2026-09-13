@@ -329,7 +329,8 @@ impl World {
         else {
             return 0;
         };
-        self.monster_catalog
+        self.tables
+            .monster_catalog
             .get(id)
             .map(|d| d.swing_class)
             .unwrap_or(0)
@@ -532,6 +533,7 @@ impl World {
             .unwrap_or([FAVORED_COST; 4]);
         let character = self.caster_character(char_slot);
         let n_arts = self
+            .tables
             .art_records
             .iter()
             .filter(|((ch, _), rec)| *ch == character && !rec.commands.is_empty())
@@ -627,6 +629,7 @@ impl World {
         // The character's art catalog in grid order (ascending constant),
         // the order the builder's inner loop walks (`s3 = 0xB..`).
         let mut catalog: Vec<(ActionConstant, Vec<legaia_art::Command>)> = self
+            .tables
             .art_records
             .iter()
             .filter(|((ch, action), rec)| {
@@ -788,7 +791,7 @@ impl World {
         }
         let roster = self.party_roster_slot(caster as usize) as u8;
         let character = self.caster_character(roster);
-        let catalog = crate::battle_arts::spirit_catalog(&self.art_records, character);
+        let catalog = crate::battle_arts::spirit_catalog(&self.tables.art_records, character);
         // Retail's halving gate (`srl t4,t4,0x1` at `0x801EF378`) reads the
         // **character record's** `+0xF8` - word 1 of the accessory-passive
         // ability bitfield - and tests bit `0x800`, i.e. passive `0x2B`
@@ -916,7 +919,7 @@ impl World {
                 // (`World::settle_cast_band` / the stager's strike). An
                 // escape spell's success ends the encounter from the live
                 // loop the frame it folds, through the escape teardown.
-                match self.spell_catalog.get(spell_id).cloned() {
+                match self.tables.spell_catalog.get(spell_id).cloned() {
                     Some(def) => {
                         let targets = self.spell_targets_for(&def, target_row, target_slot);
                         self.arm_player_cast(actor, &def, targets);
@@ -1091,7 +1094,7 @@ impl World {
             caster,
             caster,
             &learned,
-            &self.spell_catalog,
+            &self.tables.spell_catalog,
             caster_mp,
             ability_bits,
         ))
@@ -1124,7 +1127,7 @@ impl World {
             cross: self.input.just_pressed(PadButton::Cross),
             circle: self.input.just_pressed(PadButton::Circle),
         };
-        menu.input(ev, &self.spell_catalog, party, monsters);
+        menu.input(ev, &self.tables.spell_catalog, party, monsters);
 
         match menu.resolved() {
             Some(SpellResolution::Confirmed {
@@ -1181,7 +1184,7 @@ impl World {
                 if a.battle.max_hp == 0 {
                     return None;
                 }
-                let mp_max = self.character_max_mp.get(i).copied().unwrap_or(0);
+                let mp_max = self.tables.character_max_mp.get(i).copied().unwrap_or(0);
                 // Row label = the occupying character's name (roster_names is
                 // roster-slot keyed; `i` is the battle ordinal).
                 let name = names
@@ -1206,7 +1209,7 @@ impl World {
             }
             let name = a
                 .battle_monster_id
-                .and_then(|id| self.monster_catalog.get(id))
+                .and_then(|id| self.tables.monster_catalog.get(id))
                 .map(|d| d.name.clone())
                 .unwrap_or_else(|| format!("Enemy {}", slot - pc + 1));
             let mut row = TargetRow::new(slot as u8, name)
@@ -1216,7 +1219,7 @@ impl World {
             targets.push(row);
         }
         InventoryUseSession::new(
-            self.item_catalog.clone(),
+            self.tables.item_catalog.clone(),
             items,
             targets,
             InventoryContext::Battle,

@@ -108,7 +108,7 @@ impl World {
             } => {
                 // A confused caster's spell lands on the opposite side.
                 self.confuse_retarget_cast(slot, &mut targets);
-                let def = self.spell_catalog.get(spell_id).cloned();
+                let def = self.tables.spell_catalog.get(spell_id).cloned();
                 let mp = self
                     .actors
                     .get(slot as usize)
@@ -208,6 +208,7 @@ impl World {
             return;
         }
         let Some(selector) = self
+            .tables
             .move_power
             .as_ref()
             .and_then(|c| c.record_for_move_id(move_id))
@@ -526,7 +527,7 @@ impl World {
             .map(|s| {
                 self.actors[s]
                     .battle_monster_id
-                    .and_then(|id| self.monster_catalog.get(id))
+                    .and_then(|id| self.tables.monster_catalog.get(id))
                     .map(|d| d.swing_class)
                     .unwrap_or(0)
             })
@@ -690,7 +691,7 @@ impl World {
             .actors
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| (d.agl, d.action_costs.clone(), d.action_entries.clone()))
             .unwrap_or((0, Vec::new(), Vec::new()));
         self.monster_strike_entries.clear();
@@ -783,7 +784,7 @@ impl World {
             .actors
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.magic_attacks.clone())
             .unwrap_or_default();
         let mp = self
@@ -801,7 +802,7 @@ impl World {
         let mut target_class;
         if roll != 0 {
             let id = magic[(roll - 1) as usize];
-            if let Some(def) = self.spell_catalog.get(id).cloned()
+            if let Some(def) = self.tables.spell_catalog.get(id).cloned()
                 && mp >= def.mp_cost as u16
             {
                 category = 2;

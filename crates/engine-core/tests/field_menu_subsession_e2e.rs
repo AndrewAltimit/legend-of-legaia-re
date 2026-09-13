@@ -287,7 +287,7 @@ fn apply_spell_outcome_zeroes_caster_mp_after_heal() {
 #[test]
 fn menu_heal_cast_accrues_spell_xp_and_levels_with_notice() {
     let mut world = fresh_world();
-    world.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
     // Wound member 1 far past the vanilla Heal amount (60) so the heal runs
     // at full power (deficit >= nominal -> the +12 grant).
     let mut hms = world.roster.members[1].hp_mp_sp();
@@ -347,7 +347,7 @@ fn menu_heal_cast_accrues_spell_xp_and_levels_with_notice() {
 #[test]
 fn menu_heal_cast_accrues_partial_grant_when_clipped() {
     let mut world = fresh_world();
-    world.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
     // Deficit 50 < the vanilla Heal's 60 -> partial power.
     let mut spells = world.roster.members[0].spell_list();
     spells.count = 1;

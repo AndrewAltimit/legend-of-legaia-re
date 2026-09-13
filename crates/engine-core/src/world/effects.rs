@@ -689,7 +689,7 @@ impl World {
     /// move carries no spawnable effect entries. Replaces any in-flight
     /// move-FX scene. Tick with [`Self::tick_move_fx`].
     pub fn spawn_move_fx(&mut self, move_id: u8, origin: [i16; 3]) -> bool {
-        let Some(cat) = self.move_power.as_ref() else {
+        let Some(cat) = self.tables.move_power.as_ref() else {
             return false;
         };
         let Some(fx) = cat.fx_for_move_id(move_id) else {
@@ -737,7 +737,7 @@ impl World {
             // reference. Bounding against only this move's subset would
             // over-run each record into the next selected one rather than the
             // next packed one.
-            if let Some(overlay) = self.move_power_overlay.clone()
+            if let Some(overlay) = self.tables.move_power_overlay.clone()
                 && let Some(all_parts) = move_power::parse_effect_proto_records(&overlay)
             {
                 let parts: Vec<legaia_asset::summon_overlay::SummonPart> = all_parts
@@ -811,6 +811,7 @@ impl World {
             return false;
         }
         let Some(off) = self
+            .tables
             .move_power
             .as_ref()
             .and_then(|cat| cat.aux_tables())
@@ -818,7 +819,7 @@ impl World {
         else {
             return false;
         };
-        let Some(overlay) = self.move_power_overlay.clone() else {
+        let Some(overlay) = self.tables.move_power_overlay.clone() else {
             return false;
         };
         use legaia_asset::move_power;
@@ -952,6 +953,7 @@ impl World {
     /// [`Self::request_summon_spawn`]; Seru-summon ids go through that instead.
     pub(crate) fn request_move_fx_spawn(&mut self, move_id: u8, origin: [i16; 3]) {
         if self
+            .tables
             .move_power
             .as_ref()
             .is_some_and(|cat| cat.move_has_spawn_fx(move_id))

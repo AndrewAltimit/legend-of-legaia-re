@@ -634,7 +634,7 @@ impl World {
     /// FUN_801EE328 (arrival tile math + UNFIND diagnostic)
     pub fn drain_staged_menu_warp(&mut self) {
         if let Some(warp) = self.menu.pending_warp.take() {
-            match self.scene_toc_names.get(&u32::from(warp.scene_id)) {
+            match self.tables.scene_toc_names.get(&u32::from(warp.scene_id)) {
                 Some(name) => {
                     self.pending_named_scene_transition =
                         Some((name.clone(), warp.menu_x, warp.menu_y, 0));
@@ -682,7 +682,7 @@ impl World {
     /// scene host wires this once at construction from the same parsed
     /// `CDNAME.TXT` its own scene loads use.
     pub fn install_scene_toc_names(&mut self, map: legaia_prot::cdname::IndexMap) {
-        self.scene_toc_names = map;
+        self.tables.scene_toc_names = map;
     }
 
     /// Arm the timed sound-source auto-release for `deadline` vsyncs

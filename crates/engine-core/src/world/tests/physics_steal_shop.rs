@@ -521,7 +521,7 @@ fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
         expected_offset as u32,
         &legaia_asset::seru_trade::default_pool(),
     );
-    world.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
+    world.tables.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
         enabled: true,
         seed,
         max_offers: 4,

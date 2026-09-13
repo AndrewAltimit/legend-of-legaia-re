@@ -1430,7 +1430,7 @@ pub fn target_panel_view_model(
 ) -> Option<TargetPanelModel> {
     let mode = staged_use_item_id(s)
         .and_then(|id| {
-            let table = world.item_effects.as_ref()?;
+            let table = world.tables.item_effects.as_ref()?;
             let eff = table.effect(id)?;
             Some(target_panel_mode(table.kind(id), eff.class, eff.tier))
         })

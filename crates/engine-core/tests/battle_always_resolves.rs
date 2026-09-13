@@ -218,7 +218,7 @@ fn a_victory_arms_the_spoils_panel() {
     // A win-pose table in the shape the SCUS carries (one pair per tier,
     // every id in the `0x11..=0x18` band), so the results frame has a
     // pose to stage.
-    w.victory_pose_table = Some([[0x13, 0x14, 0x11, 0x12, 0x15, 0x16]; 4]);
+    w.tables.victory_pose_table = Some([[0x13, 0x14, 0x11, 0x12, 0x15, 0x16]; 4]);
     assert!(w.trigger_scripted_battle(0) || w.trigger_scripted_battle(1));
     // Through the intro transition into the fight first, so the resolution
     // loop below cannot pass vacuously off the pre-battle Field mode.
@@ -346,7 +346,7 @@ fn a_monster_cast_does_not_park_the_action_sm() {
     // A **priced** catalog, so the band's MP debit is a real subtraction and
     // not the zero an unwired `spell_mp_cost` used to hand it. Flame is 5 MP.
     w.set_spell_catalog(legaia_engine_core::spells::SpellCatalog::vanilla());
-    let flame_cost = u16::from(w.spell_catalog.mp_cost(0x20));
+    let flame_cost = u16::from(w.tables.spell_catalog.mp_cost(0x20));
     assert!(flame_cost > 0, "the catalog prices Flame");
     for i in 0..8 {
         let a = w.spawn_actor(i);

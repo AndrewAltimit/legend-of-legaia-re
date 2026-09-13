@@ -20,7 +20,7 @@ fn seru_cast_world() -> World {
     }
     world.battle_player_driven = true;
     world.mode = SceneMode::Battle;
-    world.spell_catalog = crate::retail_magic::retail_seru_magic_catalog();
+    world.tables.spell_catalog = crate::retail_magic::retail_seru_magic_catalog();
     world.actors[0].active = true;
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 200;
@@ -61,7 +61,7 @@ fn confirm_cast(world: &mut World) {
 #[test]
 fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
     let mut world = seru_cast_world();
-    let cost = u16::from(world.spell_catalog.get(0x81).unwrap().mp_cost);
+    let cost = u16::from(world.tables.spell_catalog.get(0x81).unwrap().mp_cost);
     assert!(cost > 0);
     confirm_cast(&mut world);
 
@@ -218,7 +218,7 @@ fn a_monster_cast_runs_the_magic_band_and_folds_on_leaving_the_wait() {
     };
     world.mode = SceneMode::Battle;
     world.set_spell_catalog(SpellCatalog::vanilla());
-    world.monster_catalog = vanilla_monster_catalog();
+    world.tables.monster_catalog = vanilla_monster_catalog();
     world.actors[0].active = true;
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 200;
@@ -270,7 +270,7 @@ fn a_monster_cast_runs_the_magic_band_and_folds_on_leaving_the_wait() {
     assert!(world.actors[0].battle.hp < 200, "the party took the hit");
     assert_eq!(
         world.actors[1].battle.mp,
-        10 - u16::from(world.spell_catalog.get(0x20).unwrap().mp_cost),
+        10 - u16::from(world.tables.spell_catalog.get(0x20).unwrap().mp_cost),
         "MP charged once, by the band's 0x28"
     );
     let fx = world.drain_battle_hit_fx();

@@ -527,7 +527,7 @@ fn use_item_fury_boost_extends_ap_gauge_and_reverts_at_battle_end() {
     let mut world = World::new();
     // Seed a Fury Boost catalog entry directly (the disc seeder installs the
     // same `ActionGauge` marker; this exercises the apply path without a disc).
-    world.item_catalog.insert(crate::items::ItemEntry {
+    world.tables.item_catalog.insert(crate::items::ItemEntry {
         id: 0x81,
         name: "Fury Boost",
         effect: crate::items::ItemEffect::ActionGauge,
@@ -567,7 +567,7 @@ fn use_item_fury_boost_extends_ap_gauge_and_reverts_at_battle_end() {
 #[test]
 fn use_item_fury_boost_on_non_party_slot_is_noop() {
     let mut world = World::new();
-    world.item_catalog.insert(crate::items::ItemEntry {
+    world.tables.item_catalog.insert(crate::items::ItemEntry {
         id: 0x81,
         name: "Fury Boost",
         effect: crate::items::ItemEffect::ActionGauge,
@@ -698,9 +698,9 @@ fn reset_party_ap_refills_all_three_gauges() {
 #[test]
 fn item_catalog_setter_replaces() {
     let mut world = World::new();
-    assert!(world.item_catalog.is_empty());
+    assert!(world.tables.item_catalog.is_empty());
     world.set_item_catalog(full_test_catalog());
-    assert!(!world.item_catalog.is_empty());
+    assert!(!world.tables.item_catalog.is_empty());
 }
 
 // --- lane B3: field-menu heals land on the roster record --------------------

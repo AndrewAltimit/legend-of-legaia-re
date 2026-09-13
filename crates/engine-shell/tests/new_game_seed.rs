@@ -189,11 +189,11 @@ fn enter_field_live_installs_disc_catalogs_without_battle_flags() {
 
     let world = &session.host.world;
     assert!(
-        !world.spell_catalog.is_empty(),
+        !world.tables.spell_catalog.is_empty(),
         "spell catalog must be installed for the field Magic menu"
     );
     assert!(
-        !world.equipment_table.is_empty(),
+        !world.tables.equipment_table.is_empty(),
         "equipment table must be installed for the field Equip menu"
     );
 }

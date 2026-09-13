@@ -1577,6 +1577,7 @@ impl PlayWindowApp {
         // unreachable. Resolve the row instead, and keep the live table as the
         // in-battle re-arm path.
         let slot0 = world
+            .tables
             .formation_table
             .formation(formation_id)
             .and_then(|d| d.slots.first())
@@ -1598,6 +1599,7 @@ impl PlayWindowApp {
         // flag selects. Passing a hard `0` here pinned every fight to the
         // TileShatter default.
         let battle_flags = world
+            .tables
             .formation_table
             .formation(formation_id)
             .map(|d| d.per_battle_flags())

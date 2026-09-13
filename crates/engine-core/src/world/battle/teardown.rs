@@ -43,7 +43,8 @@ impl World {
             .drops
             .iter()
             .map(|&id| {
-                self.item_catalog
+                self.tables
+                    .item_catalog
                     .get(id)
                     .map(|it| it.name.to_string())
                     .unwrap_or_else(|| format!("Item {id}"))
@@ -118,9 +119,9 @@ impl World {
         {
             // `apply_battle_loot` borrows the catalog while mutating self, so
             // swap it out and back around the call.
-            let catalog = std::mem::take(&mut self.monster_catalog);
+            let catalog = std::mem::take(&mut self.tables.monster_catalog);
             let rewards = self.apply_battle_loot(&formation, &catalog);
-            self.monster_catalog = catalog;
+            self.tables.monster_catalog = catalog;
             self.last_battle_rewards = Some(rewards);
             // Arm the spoils panel. The numbers were always applied; nothing
             // ever told the player about them.

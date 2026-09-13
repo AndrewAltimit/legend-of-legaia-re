@@ -422,11 +422,13 @@ impl PlayWindowApp {
             |rec: &legaia_save::CharacterRecord, current: EquipStatBlock| -> EquipStatBlock {
                 let displaced = slot_idx.map(|idx| rec.equipment().slots[idx]).unwrap_or(0);
                 let old_m = world
+                    .tables
                     .equipment_table
                     .get(displaced)
                     .copied()
                     .unwrap_or_default();
                 let new_m = world
+                    .tables
                     .equipment_table
                     .get(item_id)
                     .copied()
@@ -636,7 +638,7 @@ impl PlayWindowApp {
             .as_ref()
             .map(|t| t.price(id))
             .unwrap_or(0);
-        let passive = world.item_effects.as_ref().and_then(|effects| {
+        let passive = world.tables.item_effects.as_ref().and_then(|effects| {
             legaia_engine_core::shop::item_passive_index(
                 effects.kind(id),
                 effects.subtype(id),

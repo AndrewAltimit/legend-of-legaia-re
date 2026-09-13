@@ -238,6 +238,7 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
         .expect("Zeto battle actor spawned");
     let archive = host
         .world
+        .tables
         .monster_catalog
         .get(ZETO_MONSTER_ID)
         .expect("archive stats merged for Zeto");

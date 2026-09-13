@@ -54,7 +54,7 @@ fn capture_world(scus: &[u8], overlay: &[u8]) -> World {
     let mut w = World::default();
     w.enter_battle(3, 2);
     w.install_menu_text(scus);
-    w.move_power =
+    w.tables.move_power =
         Some(crate::move_power::MovePowerCatalog::from_overlay_0898(overlay).expect("catalog"));
     for i in 0..3usize {
         w.actors[i].battle.hp = 400;
@@ -135,7 +135,13 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
     );
 
     let mut w = capture_world(&scus, &overlay);
-    let Some(power) = w.move_power.as_ref().unwrap().power_for_move_id(0x37) else {
+    let Some(power) = w
+        .tables
+        .move_power
+        .as_ref()
+        .unwrap()
+        .power_for_move_id(0x37)
+    else {
         eprintln!("[skip] no move-power record for 0x37 on this image");
         return;
     };
@@ -236,7 +242,13 @@ fn a_respecting_capture_cast_rolls_the_physical_wrapper() {
     );
 
     let mut w = capture_world(&scus, &overlay);
-    let Some(power) = w.move_power.as_ref().unwrap().power_for_move_id(0xA6) else {
+    let Some(power) = w
+        .tables
+        .move_power
+        .as_ref()
+        .unwrap()
+        .power_for_move_id(0xA6)
+    else {
         eprintln!("[skip] no move-power record for 0xA6 on this image");
         return;
     };

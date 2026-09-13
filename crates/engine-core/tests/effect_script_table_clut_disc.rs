@@ -62,8 +62,9 @@ fn draining_table_spawns_stages_the_real_clut_map_bytes_under_the_retail_gates()
     };
     let overlay = overlay_0898(&dir);
     let mut world = World::new();
-    world.move_power = Some(MovePowerCatalog::from_overlay_0898(&overlay).expect("catalog"));
+    world.tables.move_power = Some(MovePowerCatalog::from_overlay_0898(&overlay).expect("catalog"));
     let aux = world
+        .tables
         .move_power
         .as_ref()
         .unwrap()

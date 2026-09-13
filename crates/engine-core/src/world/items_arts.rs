@@ -15,31 +15,31 @@ impl World {
     /// onto the new catalog so the item-menu gating matches retail.
     pub fn set_item_catalog(&mut self, catalog: crate::items::ItemCatalog) {
         let mut catalog = catalog;
-        if let Some(table) = &self.item_effects {
+        if let Some(table) = &self.tables.item_effects {
             catalog.apply_effect_flags(table);
             catalog.apply_stat_items(table);
             catalog.apply_buff_items(table);
             catalog.apply_action_gauge_items(table);
         }
-        self.item_catalog = catalog;
+        self.tables.item_catalog = catalog;
     }
 
     /// Install the real on-disc item-effect descriptor table. Subsequent
     /// [`Self::set_item_catalog`] calls apply its usability flags; this also
     /// re-applies them to the catalog already installed.
     pub fn set_item_effects(&mut self, table: legaia_asset::item_effect::ItemEffectTable) {
-        self.item_catalog.apply_effect_flags(&table);
-        self.item_catalog.apply_stat_items(&table);
-        self.item_catalog.apply_buff_items(&table);
-        self.item_catalog.apply_action_gauge_items(&table);
-        self.item_effects = Some(table);
+        self.tables.item_catalog.apply_effect_flags(&table);
+        self.tables.item_catalog.apply_stat_items(&table);
+        self.tables.item_catalog.apply_buff_items(&table);
+        self.tables.item_catalog.apply_action_gauge_items(&table);
+        self.tables.item_effects = Some(table);
     }
 
     /// Install the spell catalog used by the player-driven battle Magic
     /// submenu. Engines call this at battle init (commonly
     /// [`crate::spells::SpellCatalog::vanilla`]).
     pub fn set_spell_catalog(&mut self, catalog: crate::spells::SpellCatalog) {
-        self.spell_catalog = catalog;
+        self.tables.spell_catalog = catalog;
     }
 
     /// Stage one decoded art record for the player-driven battle Arts submenu,
@@ -52,7 +52,7 @@ impl World {
         action: legaia_art::ActionConstant,
         record: legaia_art::ArtRecord,
     ) {
-        self.art_records.insert((character, action), record);
+        self.tables.art_records.insert((character, action), record);
     }
 
     /// Install a character's art records **from its art-animation bank** -
@@ -106,7 +106,7 @@ impl World {
                 background: 0,
                 runtime_address: None,
             };
-            self.art_records.insert((character, action), record);
+            self.tables.art_records.insert((character, action), record);
         }
     }
 
@@ -121,7 +121,7 @@ impl World {
             ),
         >,
     ) {
-        self.art_records.extend(records);
+        self.tables.art_records.extend(records);
     }
 
     /// Resolve a party slot to the [`legaia_art::Character`] whose art tables
@@ -182,7 +182,8 @@ impl World {
                 // art catalog and tail-match it against the caster's Super art
                 // sequences (connectors abstracted - see `super_for_chain`).
                 let caster_records = || {
-                    self.art_records
+                    self.tables
+                        .art_records
                         .iter()
                         .filter(|((ch, _), _)| *ch == character)
                         .map(|(_, rec)| rec)
@@ -208,6 +209,7 @@ impl World {
                     };
                 }
                 let best = self
+                    .tables
                     .art_records
                     .iter()
                     .filter(|((ch, _), _)| *ch == character)
@@ -313,7 +315,7 @@ impl World {
             if !action.is_art() {
                 continue;
             }
-            match self.art_records.get(&(character, action)) {
+            match self.tables.art_records.get(&(character, action)) {
                 Some(rec) => {
                     let (mut bytes, effect) = crate::battle_arts::power_from_record(rec);
                     if enemy_effect == legaia_art::EnemyEffect::None {
@@ -368,7 +370,7 @@ impl World {
     /// CureAll outcomes also clear the corresponding entries from the
     /// `StatusEffectTracker`.
     pub fn use_item(&mut self, item_id: u8, target_slot: u8) -> crate::items::ItemOutcome {
-        let entry = match self.item_catalog.get(item_id) {
+        let entry = match self.tables.item_catalog.get(item_id) {
             Some(e) => *e,
             None => return crate::items::ItemOutcome::NoEffect,
         };
@@ -432,6 +434,7 @@ impl World {
                     hp_max: a.battle.max_hp,
                     mp: a.battle.mp,
                     mp_max: self
+                        .tables
                         .character_max_mp
                         .get(idx)
                         .copied()
@@ -463,7 +466,12 @@ impl World {
                     rec.set_hp_mp_sp(hms);
                     self.mirror_roster_hp_mp(idx);
                 } else if let Some(a) = self.actors.get_mut(idx) {
-                    let cap = self.character_max_mp.get(idx).copied().unwrap_or(u16::MAX);
+                    let cap = self
+                        .tables
+                        .character_max_mp
+                        .get(idx)
+                        .copied()
+                        .unwrap_or(u16::MAX);
                     a.battle.mp = a.battle.mp.saturating_add(amount).min(cap);
                 }
             }
@@ -599,6 +607,7 @@ impl World {
         const BUFF_SIGN: i16 = 1;
 
         let resolved = self
+            .tables
             .item_effects
             .as_ref()
             .and_then(|t| t.stat_effect(item_id));
@@ -643,6 +652,7 @@ impl World {
         // Resolve to an owned value so the immutable table borrow is dropped
         // before the mutable `apply_stat_raise` calls.
         let resolved = self
+            .tables
             .item_effects
             .as_ref()
             .and_then(|t| t.stat_effect(item_id));
@@ -772,10 +782,10 @@ impl World {
     /// no-op for that slot.
     pub fn set_character_max_mp(&mut self, slot: u8, mp_max: u16) {
         let i = slot as usize;
-        if i >= self.character_max_mp.len() {
-            self.character_max_mp.resize(i + 1, 0);
+        if i >= self.tables.character_max_mp.len() {
+            self.tables.character_max_mp.resize(i + 1, 0);
         }
-        self.character_max_mp[i] = mp_max;
+        self.tables.character_max_mp[i] = mp_max;
     }
 
     /// Reset every party-member's AP gauge for a new turn. Refills to

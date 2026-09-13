@@ -17,7 +17,7 @@ fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
     };
     world.mode = SceneMode::Battle;
     world.set_spell_catalog(SpellCatalog::vanilla());
-    world.monster_catalog = vanilla_monster_catalog();
+    world.tables.monster_catalog = vanilla_monster_catalog();
     // Party member at slot 0.
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 200;
@@ -167,7 +167,7 @@ fn move_power_table_drives_monster_special_attack_damage() {
         };
         world.mode = SceneMode::Battle;
         world.set_spell_catalog(SpellCatalog::vanilla());
-        world.monster_catalog = vanilla_monster_catalog();
+        world.tables.monster_catalog = vanilla_monster_catalog();
         // Party target at slot 0 with a healthy HP pool + seeded AGL/DEF so the
         // kernel reads live defender stats.
         world.actors[0].battle.max_hp = 4000;
@@ -184,8 +184,12 @@ fn move_power_table_drives_monster_special_attack_damage() {
         world.battle_accuracy[1] = 25;
         world.set_battle_magic(1, 40);
         if install_table {
-            world.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
-            assert!(world.move_power.is_some(), "synthetic table installs");
+            world.tables.move_power =
+                MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
+            assert!(
+                world.tables.move_power.is_some(),
+                "synthetic table installs"
+            );
         }
         world.rng_state = 0;
 
@@ -246,10 +250,16 @@ fn elemental_guard_accessory_halves_matching_monster_special() {
         };
         world.mode = SceneMode::Battle;
         world.set_spell_catalog(SpellCatalog::vanilla());
-        world.monster_catalog = vanilla_monster_catalog();
+        world.tables.monster_catalog = vanilla_monster_catalog();
         // Pin the attacking monster's element to 2 (Fire) so the resist
         // ladder has a real element to test against.
-        world.monster_catalog.by_id.get_mut(&5).unwrap().element = 2;
+        world
+            .tables
+            .monster_catalog
+            .by_id
+            .get_mut(&5)
+            .unwrap()
+            .element = 2;
         world.actors[0].battle.max_hp = 4000;
         world.actors[0].battle.hp = 4000;
         world.actors[0].battle.liveness = 1;
@@ -262,7 +272,7 @@ fn elemental_guard_accessory_halves_matching_monster_special() {
         world.actors[1].battle_monster_id = Some(5);
         world.battle_accuracy[1] = 25;
         world.set_battle_magic(1, 40);
-        world.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
+        world.tables.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
 
         let mut party = legaia_save::Party::zeroed(1);
         if let Some(idx) = guard_passive {
@@ -687,7 +697,7 @@ fn element_affinity_scales_monster_special_attack_damage() {
         };
         world.mode = SceneMode::Battle;
         world.set_spell_catalog(SpellCatalog::vanilla());
-        world.monster_catalog = vanilla_monster_catalog();
+        world.tables.monster_catalog = vanilla_monster_catalog();
         world.actors[0].battle.max_hp = 4000;
         world.actors[0].battle.hp = 4000;
         world.actors[0].battle.liveness = 1;
@@ -700,14 +710,14 @@ fn element_affinity_scales_monster_special_attack_damage() {
         world.actors[1].battle_monster_id = Some(5);
         world.battle_accuracy[1] = 25;
         world.set_battle_magic(1, 40);
-        world.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
+        world.tables.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
         // vanilla monster 5 has the default element 7 (neutral); the party
         // member at slot 0 is char id 1 -> element 3 in the synthetic table.
-        let enemy_elem = world.monster_catalog.get(5).unwrap().element as usize;
+        let enemy_elem = world.tables.monster_catalog.get(5).unwrap().element as usize;
         if let Some(pct) = affinity_pct {
             let mut matrix = [[100u8; 8]; 8];
             matrix[enemy_elem][3] = pct;
-            world.element_affinity = Some(ElementAffinity {
+            world.tables.element_affinity = Some(ElementAffinity {
                 matrix,
                 character_elements: vec![3; 8],
                 summon_power: [[100; 8]; 3],
@@ -800,7 +810,7 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
         let mut enemy = MonsterDef::new(5, "Goblin", 120, 8);
         enemy.element = ENEMY_ELEM as u8;
         catalog.insert(enemy);
-        world.monster_catalog = catalog;
+        world.tables.monster_catalog = catalog;
 
         // Caster = party slot 0; enough MP to afford the cast.
         world.actors[0].battle.max_hp = 400;
@@ -819,7 +829,7 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
         if let Some(pct) = affinity_pct {
             let mut matrix = [[100u8; 8]; 8];
             matrix[SUMMON_ELEM][ENEMY_ELEM] = pct;
-            world.element_affinity = Some(ElementAffinity {
+            world.tables.element_affinity = Some(ElementAffinity {
                 matrix,
                 character_elements: vec![3; 8],
                 summon_power: [[100; 8]; 3],
@@ -880,7 +890,7 @@ fn player_summon_cast_matches_the_summon_kernel_composition() {
         let mut enemy = MonsterDef::new(5, "Goblin", 120, 8);
         enemy.element = 5;
         catalog.insert(enemy);
-        world.monster_catalog = catalog;
+        world.tables.monster_catalog = catalog;
         world.actors[0].battle.max_hp = 400;
         world.actors[0].battle.hp = 400;
         world.actors[0].battle.mp = 40;
@@ -1048,7 +1058,7 @@ fn flame_caster_battle(impact: u8) -> World {
     };
     world.mode = SceneMode::Battle;
     world.set_spell_catalog(SpellCatalog::vanilla());
-    world.monster_catalog = vanilla_monster_catalog();
+    world.tables.monster_catalog = vanilla_monster_catalog();
     world.actors[0].battle.max_hp = 4000;
     world.actors[0].battle.hp = 4000;
     world.actors[0].battle.liveness = 1;
@@ -1061,8 +1071,12 @@ fn flame_caster_battle(impact: u8) -> World {
     world.actors[1].battle_monster_id = Some(5);
     world.battle_accuracy[1] = 25;
     world.set_battle_magic(1, 40);
-    world.move_power = MovePowerCatalog::from_overlay_0898(&overlay_flame_with_impact(impact));
-    assert!(world.move_power.is_some(), "synthetic table installs");
+    world.tables.move_power =
+        MovePowerCatalog::from_overlay_0898(&overlay_flame_with_impact(impact));
+    assert!(
+        world.tables.move_power.is_some(),
+        "synthetic table installs"
+    );
     world.rng_state = 0;
     world
 }

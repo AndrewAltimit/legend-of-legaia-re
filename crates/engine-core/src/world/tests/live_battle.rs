@@ -116,7 +116,7 @@ fn enemy_agl_budget_drives_multi_strike_and_gates_on_agl() {
     cat.insert(def);
 
     let mut world = live_battle_world_3v2();
-    world.monster_catalog = cat;
+    world.tables.monster_catalog = cat;
     world.actors[3].battle_monster_id = Some(42);
     world.battle_attack[3] = 50;
     world.battle_defense[0] = 10;

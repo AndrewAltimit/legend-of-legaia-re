@@ -76,7 +76,7 @@ fn summon_cast_accrues_spell_xp_from_dealt_damage() {
 fn summon_kill_accrues_flat_unit_and_levels_up_past_threshold() {
     let mut world = summon_xp_world(50, 4000);
     // Tiny live HP: the cast kills -> flat 12 XP (single-target).
-    world.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
     // Pre-bank XP just below the level-1 threshold: 6 + 12 = 18 > 17.
     let slot = crate::magic_xp::spell_slot(&world.roster.members[0], 0x81).unwrap();
     crate::magic_xp::add_spell_xp(&mut world.roster.members[0], slot, 6);
@@ -112,7 +112,7 @@ fn summon_kill_accrues_flat_unit_and_levels_up_past_threshold() {
 #[test]
 fn a_cast_that_does_not_level_leaves_the_banner_byte_clear() {
     let mut world = summon_xp_world(4000, 4000);
-    world.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
     let def = gimard_spell_def();
     world.cast_spell_on_slots(0, &def, &[1]);
     assert!(world.drain_magic_level_ups().is_empty());
@@ -122,7 +122,7 @@ fn a_cast_that_does_not_level_leaves_the_banner_byte_clear() {
 #[test]
 fn summon_xp_threshold_compare_is_strict() {
     let mut world = summon_xp_world(50, 4000);
-    world.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
     // 5 + 12 = 17 == threshold: strict compare -> no level.
     let slot = crate::magic_xp::spell_slot(&world.roster.members[0], 0x81).unwrap();
     crate::magic_xp::add_spell_xp(&mut world.roster.members[0], slot, 5);

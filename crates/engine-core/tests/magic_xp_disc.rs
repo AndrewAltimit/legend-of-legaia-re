@@ -43,5 +43,5 @@ fn disc_magic_xp_thresholds_decode_and_install() {
     // Installs into the World (the boot-side wiring point).
     let mut world = legaia_engine_core::world::World::default();
     assert!(world.install_magic_xp_thresholds(&scus));
-    assert_eq!(world.magic_xp_thresholds, Some(table));
+    assert_eq!(world.tables.magic_xp_thresholds, Some(table));
 }

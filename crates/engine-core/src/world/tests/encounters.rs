@@ -76,6 +76,7 @@ fn install_encounter_from_record_registers_and_arms() {
         .expect("non-empty record produces an id");
     // Formation registered.
     let formation = world
+        .tables
         .formation_table
         .formation(formation_id)
         .expect("formation registered");
@@ -111,6 +112,7 @@ fn install_scripted_encounter_parses_window_and_arms_battle() {
     assert!(!world.scripted_encounter_armed);
     // Formation registered with the window's two ids.
     let formation = world
+        .tables
         .formation_table
         .formation(formation_id)
         .expect("formation registered");
@@ -297,8 +299,8 @@ fn seed_party_battle_stats_seeds_the_mp_ceiling_from_the_record() {
     world.load_party(party);
 
     world.seed_party_battle_stats();
-    assert_eq!(world.character_max_mp.first().copied(), Some(20));
-    assert_eq!(world.character_max_mp.get(1).copied(), Some(35));
+    assert_eq!(world.tables.character_max_mp.first().copied(), Some(20));
+    assert_eq!(world.tables.character_max_mp.get(1).copied(), Some(35));
 }
 
 #[test]
@@ -321,7 +323,7 @@ fn seed_party_battle_stats_leaves_a_synthetic_mp_ceiling_alone() {
     world.set_character_max_mp(0, 99);
 
     world.seed_party_battle_stats();
-    assert_eq!(world.character_max_mp.first().copied(), Some(99));
+    assert_eq!(world.tables.character_max_mp.first().copied(), Some(99));
 }
 
 #[test]
@@ -360,6 +362,7 @@ fn install_man_formation_forces_registered_row() {
     world.set_active_scene_label("town01");
     // Register a lone-monster formation at id 4 (town01's Tetsu row shape).
     world
+        .tables
         .formation_table
         .insert(FormationDef::new(4, vec![FormationSlot::new(0x4F)]));
 
@@ -395,7 +398,7 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
     world.actors[0].battle.liveness = 1;
     world.set_battle_attack(0, 80);
     // town01's Tetsu row: formation index 4 = lone monster id 0x4F.
-    world.formation_table.insert(FormationDef::new(
+    world.tables.formation_table.insert(FormationDef::new(
         RIM_ELM_TRAINING_FORMATION_ID,
         vec![FormationSlot::new(0x4F)],
     ));
@@ -473,7 +476,7 @@ fn field_carrier_unengaged_never_fires() {
     };
     world.mode = SceneMode::Field;
     world.set_active_scene_label("town01");
-    world.formation_table.insert(FormationDef::new(
+    world.tables.formation_table.insert(FormationDef::new(
         RIM_ELM_TRAINING_FORMATION_ID,
         vec![FormationSlot::new(0x4F)],
     ));
@@ -615,6 +618,7 @@ fn boss_battle_entry_writes_no_flags() {
     let mut world = World::new();
     world.set_active_scene_label("rikuroa");
     world
+        .tables
         .formation_table
         .insert(FormationDef::new(17, vec![FormationSlot::new(73)]));
     world.mode = SceneMode::Field;
@@ -636,7 +640,7 @@ fn boss_battle_entry_writes_no_flags() {
     assert!(!world.system_flag_test(0x142), "no victory latch either");
     // Loot resolution also writes no flags.
     let cat = crate::monster_catalog::MonsterCatalog::new();
-    let formation = world.formation_table.formation(17).cloned().unwrap();
+    let formation = world.tables.formation_table.formation(17).cloned().unwrap();
     let _ = world.apply_battle_loot(&formation, &cat);
     assert!(!world.system_flag_test(0x289));
     assert!(!world.system_flag_test(0x142));
@@ -730,6 +734,7 @@ fn the_battle_intro_phase_zero_enqueues_the_battle_start_cue() {
     // exactly one cue - 0x4D - reaches the queue.
     let mut world = World::new();
     world
+        .tables
         .formation_table
         .insert(crate::monster_catalog::FormationDef::new(9, Vec::new()).with_header_flags(1));
     let mut session = crate::encounter::EncounterSession::new(

@@ -101,6 +101,7 @@ fn training_encounter_reaches_battle_with_real_monster() {
         let formation = session
             .host
             .world
+            .tables
             .formation_table
             .formation(formation_id)
             .expect("formation registered");
@@ -185,6 +186,7 @@ fn training_reaches_battle_via_man_formation_index() {
         let formation = session
             .host
             .world
+            .tables
             .formation_table
             .formation(RIM_ELM_TRAINING_FORMATION_ID)
             .expect("town01 MAN carries formation_id 4");

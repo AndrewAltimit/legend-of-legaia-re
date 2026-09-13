@@ -1941,7 +1941,7 @@ impl LegaiaRuntime {
         use legaia_engine_vm::battle_intro_styles::{IntroStyleInputs, select_intro_style};
 
         let host = self.scene_host.as_ref().expect("caller checked");
-        let def = host.world.formation_table.formation(formation_id);
+        let def = host.world.tables.formation_table.formation(formation_id);
         let slot0 = def
             .and_then(|d| d.slots.first())
             .map(|s| s.monster_id as u8)

@@ -303,6 +303,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
         .expect("Caruban battle actor spawned");
     let archive = host
         .world
+        .tables
         .monster_catalog
         .get(CARUBAN_MONSTER_ID)
         .expect("archive stats merged for Caruban");

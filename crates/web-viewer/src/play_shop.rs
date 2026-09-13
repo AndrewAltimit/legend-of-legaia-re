@@ -876,7 +876,7 @@ impl LegaiaRuntime {
             .unwrap_or(0);
         // The renderer's passive chain: item kind picks which table the
         // subtype indexes (equip record `+5` vs effect record `+3`).
-        let passive = world.item_effects.as_ref().and_then(|effects| {
+        let passive = world.tables.item_effects.as_ref().and_then(|effects| {
             legaia_engine_core::shop::item_passive_index(
                 effects.kind(id),
                 effects.subtype(id),
@@ -889,6 +889,7 @@ impl LegaiaRuntime {
                 },
                 |sub| {
                     world
+                        .tables
                         .item_effects
                         .as_ref()
                         .and_then(|t| t.descriptor(sub))
@@ -1032,11 +1033,13 @@ impl LegaiaRuntime {
          -> ui::EquipStatBlock {
             let displaced = slot_idx.map(|idx| rec.equipment().slots[idx]).unwrap_or(0);
             let old_m = world
+                .tables
                 .equipment_table
                 .get(displaced)
                 .copied()
                 .unwrap_or_default();
             let new_m = world
+                .tables
                 .equipment_table
                 .get(item_id)
                 .copied()
@@ -1244,7 +1247,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return false;
         };
-        host.world.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
+        host.world.tables.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
             enabled: true,
             seed,
             ..Default::default()

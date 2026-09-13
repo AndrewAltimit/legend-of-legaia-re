@@ -260,7 +260,7 @@ fn scripted_ai_monster_self_heals_when_wounded() {
     };
     world.mode = SceneMode::Battle;
     world.set_spell_catalog(SpellCatalog::vanilla());
-    world.monster_catalog = vanilla_monster_catalog();
+    world.tables.monster_catalog = vanilla_monster_catalog();
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 200;
     world.actors[0].battle.liveness = 1;
@@ -311,7 +311,7 @@ fn monster_8a_charge_gate_drives_cast_and_clamps_gauge() {
     };
     world.mode = SceneMode::Battle;
     world.set_spell_catalog(SpellCatalog::vanilla());
-    world.monster_catalog = vanilla_monster_catalog();
+    world.tables.monster_catalog = vanilla_monster_catalog();
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 200;
     world.actors[0].battle.liveness = 1;
@@ -410,6 +410,7 @@ fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
     // A synthetic boss at monster slot 1 with id 0xB6 (no own magic - it
     // casts purely off its scripted phase table).
     world
+        .tables
         .monster_catalog
         .insert(MonsterDef::new(0xb6, "Boss", 400, 50));
     world.actors[0].battle.max_hp = 300;

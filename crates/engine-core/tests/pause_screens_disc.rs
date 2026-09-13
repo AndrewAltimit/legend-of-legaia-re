@@ -97,8 +97,9 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
         list.levels[..3].copy_from_slice(&[2, 1, 1]);
         member.set_spell_list(list);
     }
-    world.spell_catalog = legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
-        .expect("disc spell catalog");
+    world.tables.spell_catalog =
+        legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
+            .expect("disc spell catalog");
 
     let sub = FieldMenuSubsession::build(
         FieldMenuRow::Magic,
@@ -106,7 +107,7 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
         &legaia_engine_core::options::OptionsState::default(),
         &legaia_engine_core::save_select::SaveRack::Blocks(Vec::new()),
         &legaia_engine_core::tactical_arts_editor::ChainLibrary::new(),
-        &world.spell_catalog,
+        &world.tables.spell_catalog,
         &legaia_engine_core::battle_stats::EquipmentTable::new(),
     );
     let FieldMenuSubsession::Spells(mut s) = sub else {

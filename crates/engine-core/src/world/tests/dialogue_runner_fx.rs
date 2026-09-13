@@ -207,7 +207,7 @@ fn battle_special_attack_requests_move_fx_spawn() {
         };
         world.mode = SceneMode::Battle;
         world.set_spell_catalog(SpellCatalog::vanilla());
-        world.monster_catalog = vanilla_monster_catalog();
+        world.tables.monster_catalog = vanilla_monster_catalog();
         // Party target at slot 0 with a distinct battle position so the request
         // origin is provably the target's position, not a constant.
         world.actors[0].battle.max_hp = 4000;
@@ -226,7 +226,7 @@ fn battle_special_attack_requests_move_fx_spawn() {
         world.actors[1].battle_monster_id = Some(5);
         world.battle_accuracy[1] = 25;
         world.set_battle_magic(1, 40);
-        world.move_power = MovePowerCatalog::from_overlay_0898(&overlay(with_fx));
+        world.tables.move_power = MovePowerCatalog::from_overlay_0898(&overlay(with_fx));
         world.rng_state = 0;
 
         world.take_monster_turn(1);

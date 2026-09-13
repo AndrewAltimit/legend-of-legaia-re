@@ -25,7 +25,7 @@ fn scene_entry_installs_the_battle_camera_height_table() {
     };
     let mut host = SceneHost::open_disc(&disc).expect("open disc host");
     assert!(
-        host.world.battle_camera_heights.is_none(),
+        host.world.tables.battle_camera_heights.is_none(),
         "the table is installed lazily on scene entry, not at host open"
     );
 
@@ -33,6 +33,7 @@ fn scene_entry_installs_the_battle_camera_height_table() {
 
     let table = host
         .world
+        .tables
         .battle_camera_heights
         .as_ref()
         .expect("scene entry installs the battle-camera height table");

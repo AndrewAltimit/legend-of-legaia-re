@@ -521,8 +521,8 @@ impl PlayWindowApp {
                         &self.options_state,
                         &rack,
                         &chain_library,
-                        &world.spell_catalog,
-                        &world.equipment_table,
+                        &world.tables.spell_catalog,
+                        &world.tables.equipment_table,
                     ));
                 }
                 let outcome = self.session.field_menu.as_ref().and_then(|m| m.outcome());

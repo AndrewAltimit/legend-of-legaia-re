@@ -58,8 +58,8 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
         legaia_asset::item_effect::ItemEffectTable::from_scus(&scus).expect("item-effect table");
 
     let mut world = World::new();
-    world.move_power = Some(MovePowerCatalog::from_overlay_0898(&overlay).expect("catalog"));
-    world.move_power_overlay = Some(Arc::from(overlay.as_slice()));
+    world.tables.move_power = Some(MovePowerCatalog::from_overlay_0898(&overlay).expect("catalog"));
+    world.tables.move_power_overlay = Some(Arc::from(overlay.as_slice()));
     world.set_item_effects(items.clone());
     // A 32-entry effect catalog so the actor-cue arm has a pool to spawn in
     // (the real efect.dat is not loaded here).
@@ -82,6 +82,7 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
     }
 
     let aux = world
+        .tables
         .move_power
         .as_ref()
         .unwrap()

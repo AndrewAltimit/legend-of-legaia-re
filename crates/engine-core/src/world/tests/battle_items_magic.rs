@@ -637,7 +637,7 @@ fn battle_magic_escape_returns_to_field() {
     world.actors[1].battle.max_hp = 200;
     world.actors[1].battle.hp = 200;
     world.actors[1].battle.liveness = 1;
-    world.spell_catalog = SpellCatalog::vanilla();
+    world.tables.spell_catalog = SpellCatalog::vanilla();
 
     // Open the spell submenu with Warp (0x41, SelfOnly escape) learned.
     world.battle_ctx.active_actor = 0;
@@ -645,7 +645,7 @@ fn battle_magic_escape_returns_to_field() {
         0,
         0,
         &[0x41],
-        &world.spell_catalog,
+        &world.tables.spell_catalog,
         20,
         0,
     ));

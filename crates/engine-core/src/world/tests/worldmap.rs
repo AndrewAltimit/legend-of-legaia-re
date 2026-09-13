@@ -186,6 +186,7 @@ fn world_map_region_walk_triggers_battle() {
 
     // Formation 5 spawns one weak monster (id 100).
     world
+        .tables
         .formation_table
         .insert(FormationDef::new(5, vec![FormationSlot::new(100)]));
     let mut cat = MonsterCatalog::new();
@@ -337,6 +338,7 @@ fn world_map_encounter_flips_to_battle_returning_to_world_map() {
     world.set_battle_attack(0, 80);
     // Formation 7 spawns one weak monster (id 100); register its stats.
     world
+        .tables
         .formation_table
         .insert(FormationDef::new(7, vec![FormationSlot::new(100)]));
     let mut cat = MonsterCatalog::new();
@@ -429,9 +431,11 @@ fn world_map_encounter_zone_uses_its_own_formation() {
     world.set_battle_attack(0, 80);
     // Register both the zone's formation (9) and a decoy shared one (7).
     world
+        .tables
         .formation_table
         .insert(FormationDef::new(9, vec![FormationSlot::new(100)]));
     world
+        .tables
         .formation_table
         .insert(FormationDef::new(7, vec![FormationSlot::new(101)]));
     let mut cat = MonsterCatalog::new();

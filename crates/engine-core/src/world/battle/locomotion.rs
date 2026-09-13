@@ -69,7 +69,10 @@ impl World {
         else {
             return 0;
         };
-        self.monster_catalog.get(id).map_or(0, |def| def.size_class)
+        self.tables
+            .monster_catalog
+            .get(id)
+            .map_or(0, |def| def.size_class)
     }
 
     /// The slot's seat (anchor) pair - retail `+0x3C`/`+0x40`. Falls back to

@@ -54,6 +54,7 @@ use vm_hosts::{
 mod audio_state;
 mod config;
 mod cutscene_state;
+mod disc_tables;
 mod field_carrier_state;
 mod menu_state;
 mod minigame_state;
@@ -66,6 +67,7 @@ mod world_map_state;
 pub use audio_state::AudioState;
 pub use config::*;
 pub use cutscene_state::CutsceneState;
+pub use disc_tables::DiscTables;
 pub use field_carrier_state::FieldCarrierState;
 pub use menu_state::MenuState;
 pub use minigame_state::MinigameState;

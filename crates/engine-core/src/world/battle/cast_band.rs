@@ -317,7 +317,7 @@ impl World {
         {
             return;
         }
-        let Some(def) = self.spell_catalog.get(pc.spell_id).cloned() else {
+        let Some(def) = self.tables.spell_catalog.get(pc.spell_id).cloned() else {
             return;
         };
         let hit_fx_start = self.battle_hit_fx.len();
@@ -470,8 +470,12 @@ impl World {
     /// ([`crate::spells::SpellDef::effect_class`], which
     /// [`crate::retail_magic`] fills from `SCUS_942.54`).
     pub fn spell_effect_class(&self, spell_id: u8) -> Option<u8> {
-        self.spell_table_sub_class(spell_id)
-            .or_else(|| self.spell_catalog.get(spell_id).map(|d| d.effect_class))
+        self.spell_table_sub_class(spell_id).or_else(|| {
+            self.tables
+                .spell_catalog
+                .get(spell_id)
+                .map(|d| d.effect_class)
+        })
     }
 
     /// Stage the cast module's **spawn records** at `origin` - the engine's
@@ -842,7 +846,7 @@ impl World {
         self.actors
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.agl)
             .unwrap_or_else(|| {
                 self.actors
@@ -863,7 +867,7 @@ impl World {
             .actors
             .get(FIRST_MONSTER_SEAT as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
         else {
             return 0xFF;
@@ -892,7 +896,7 @@ impl World {
         else {
             return;
         };
-        if let Some(def) = self.monster_catalog.by_id.get_mut(&id) {
+        if let Some(def) = self.tables.monster_catalog.by_id.get_mut(&id) {
             def.element = element;
         }
     }

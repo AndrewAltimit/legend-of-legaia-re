@@ -1277,7 +1277,7 @@ impl World {
         let mut hits: Vec<u8> = Vec::new();
         if let Some(art) = art {
             let character = self.actors[attacker as usize].battle.character;
-            if let Some(rec) = self.art_records.get(&(character, art)) {
+            if let Some(rec) = self.tables.art_records.get(&(character, art)) {
                 hits.extend(rec.power.iter().filter_map(|p| match p {
                     // Re-encode the decoded power byte for the kernel.
                     legaia_art::PowerByte::Damage(ap) => Some(power_byte_of(*ap)),
@@ -1337,7 +1337,7 @@ impl World {
         dmg: u16,
     ) {
         let character = self.actors[attacker as usize].battle.character;
-        let Some(rec) = self.art_records.get(&(character, art)) else {
+        let Some(rec) = self.tables.art_records.get(&(character, art)) else {
             return;
         };
         let effect = rec.enemy_effect;

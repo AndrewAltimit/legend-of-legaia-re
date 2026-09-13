@@ -142,10 +142,11 @@ impl SceneHost {
         match self.index.entry_bytes(entry) {
             Ok(bytes) => {
                 if let Some(cat) = crate::move_power::MovePowerCatalog::from_overlay_0898(&bytes) {
-                    self.world.move_power = Some(cat);
+                    self.world.tables.move_power = Some(cat);
                     // Retain the overlay so the move-FX render path can read the
                     // 0x801f6324 prototype records' move-VM bytecode.
-                    self.world.move_power_overlay = Some(std::sync::Arc::from(bytes.as_slice()));
+                    self.world.tables.move_power_overlay =
+                        Some(std::sync::Arc::from(bytes.as_slice()));
                 } else {
                     eprintln!(
                         "[scene] move-power table (PROT {entry}) parse failed - placeholder damage stays active"
@@ -155,7 +156,7 @@ impl SceneHost {
                 // sibling static data in the same overlay, so parse them from the
                 // same bytes. A failure leaves the neutral 100% multiplier active.
                 if let Some(aff) = legaia_asset::element_affinity::parse(&bytes) {
-                    self.world.element_affinity = Some(aff);
+                    self.world.tables.element_affinity = Some(aff);
                 } else {
                     eprintln!(
                         "[scene] element-affinity tables (PROT {entry}) parse failed - neutral affinity stays active"
@@ -165,7 +166,7 @@ impl SceneHost {
                 // is sibling static data in the same overlay. A failure leaves
                 // the camera on its single traced fallback height.
                 if let Some(heights) = legaia_asset::battle_camera_table::parse(&bytes) {
-                    self.world.battle_camera_heights = Some(heights);
+                    self.world.tables.battle_camera_heights = Some(heights);
                 } else {
                     eprintln!(
                         "[scene] battle-camera height table (PROT {entry}) parse failed - fallback height stays active"
@@ -669,7 +670,7 @@ impl SceneHost {
             {
                 let cat = crate::monster_catalog::catalog_from_monster_archive(&archive, &ids);
                 for def in cat.by_id.into_values() {
-                    self.world.monster_catalog.insert(def);
+                    self.world.tables.monster_catalog.insert(def);
                 }
                 // Pair the per-move power table with the just-merged monster
                 // stats so the special-attack damage path can resolve real

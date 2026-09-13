@@ -820,7 +820,7 @@ impl MenuRuntimeHost<'_> {
         // Without it, the disc-built `DiscEquipInfo` indexes exactly the
         // kind-1 ids, so it answers the equipment test; a build with
         // neither table falls back to the stackable arm.
-        let kind = match self.world.item_effects.as_ref() {
+        let kind = match self.world.tables.item_effects.as_ref() {
             Some(t) => t.kind(item.item_id),
             None => match self.equip_info.as_ref() {
                 Some(info) if info.is_equipment(item.item_id) => 1,
@@ -1492,7 +1492,7 @@ mod tests {
             &legaia_asset::seru_trade::default_pool(),
         );
         let mut world = World::new();
-        world.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
+        world.tables.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
             enabled: true,
             seed,
             max_offers: 4,

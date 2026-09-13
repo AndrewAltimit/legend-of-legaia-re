@@ -101,10 +101,10 @@ fn press(w: &mut World, b: PadButton) {
 fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     let mut w = build_world();
     // The port's Seru-magic catalog: id 0x81 = Gimard, a damage spell.
-    w.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
+    w.tables.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
     // The retail-shaped threshold curve (strictly ascending, level 1 needs
     // the total to EXCEED entry [0]).
-    w.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    w.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
     // Teach the acting character Gimard at level 1.
     {
         let rec = &mut w.roster.members[0];
@@ -240,7 +240,12 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     );
     // The FUN_801F452C banner: "<spell name>'s magic level increased." on the
     // world's banner channel, composed through the spell-name table.
-    let name = w.spell_catalog.get(0x81).map(|d| d.name.clone()).unwrap();
+    let name = w
+        .tables
+        .spell_catalog
+        .get(0x81)
+        .map(|d| d.name.clone())
+        .unwrap();
     let banner = w
         .current_art_banner
         .as_ref()

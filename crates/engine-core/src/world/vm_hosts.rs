@@ -2271,7 +2271,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// catalog. Either way there is one price per spell in this engine, and
     /// this is where the state machine reads it.
     fn spell_mp_cost(&self, id: u8) -> u8 {
-        self.world.spell_catalog.mp_cost(id)
+        self.world.tables.spell_catalog.mp_cost(id)
     }
     fn character_ability_bits(&self, slot: u8) -> u32 {
         let i = slot as usize;
@@ -2429,6 +2429,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             return 0;
         };
         self.world
+            .tables
             .monster_catalog
             .get(id)
             .map_or(0, |def| def.size_class)
@@ -2595,7 +2596,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// menus gate usability on. `None` without a disc image.
     ///
     fn item_effect_class_pair(&self, item_id: u8) -> Option<(u8, u8)> {
-        let eff = self.world.item_effects.as_ref()?.effect(item_id)?;
+        let eff = self.world.tables.item_effects.as_ref()?.effect(item_id)?;
         Some((eff.class, eff.tier))
     }
     /// The spell-side sibling: `+1` of the same 12-byte spell record
@@ -2612,7 +2613,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// prototypes from, so the group ids, the SFX map and the prototypes all
     /// come from one parse of one overlay.
     fn cue_tables(&self) -> Option<(&[u8], &[u8])> {
-        let aux = self.world.move_power.as_ref()?.aux_tables()?;
+        let aux = self.world.tables.move_power.as_ref()?.aux_tables()?;
         Some((aux.cue_group_bytes(), aux.clut_map()))
     }
     /// Place one expanded cue.
@@ -2739,7 +2740,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         character: legaia_art::Character,
         action: legaia_art::ActionConstant,
     ) -> Option<&legaia_art::ArtRecord> {
-        self.world.art_records.get(&(character, action))
+        self.world.tables.art_records.get(&(character, action))
     }
     fn apply_art_strike(&mut self, info: legaia_engine_vm::battle_action::ArtStrikeInfo) {
         // Resolve per-slot weapon attack and the defense the art targets.

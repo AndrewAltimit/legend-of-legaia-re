@@ -167,7 +167,7 @@ impl World {
             .actors
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.intel)
             .unwrap_or(0);
         let no_escape = u8::from(self.battle_no_escape);

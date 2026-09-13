@@ -830,7 +830,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
                 hp: a.battle.hp_display.unwrap_or(a.battle.hp),
                 hp_max: a.battle.max_hp,
                 mp: a.battle.mp,
-                mp_max: world.character_max_mp.get(i).copied().unwrap_or(0),
+                mp_max: world.tables.character_max_mp.get(i).copied().unwrap_or(0),
                 ap_slot: (i < world.ap_gauges.len()).then_some(i),
                 // The status element's no-ailment arm draws the character
                 // record's `+0x130` beside the base marker (`FUN_8002C2E4`
@@ -857,7 +857,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
         }
         let name = a
             .battle_monster_id
-            .and_then(|id| world.monster_catalog.get(id))
+            .and_then(|id| world.tables.monster_catalog.get(id))
             .map(|d| d.name.clone())
             .unwrap_or_else(|| format!("M{}", slot - pc + 1));
         rows.push((
@@ -944,7 +944,7 @@ pub fn battle_enemy_target_rows(
         }
         let name = a
             .battle_monster_id
-            .and_then(|id| world.monster_catalog.get(id))
+            .and_then(|id| world.tables.monster_catalog.get(id))
             .map(|d| d.name.clone())
             .unwrap_or_else(|| format!("M{}", i + 1));
         let pos = names[..i].iter().position(|n| !n.is_empty() && n == &name);
@@ -1179,7 +1179,7 @@ fn monster_name(world: &crate::world::World, slot: u8) -> String {
         .actors
         .get(slot as usize)
         .and_then(|a| a.battle_monster_id)
-        .and_then(|id| world.monster_catalog.get(id))
+        .and_then(|id| world.tables.monster_catalog.get(id))
         .map(|d| d.name.clone())
         .unwrap_or_else(|| format!("M{}", (slot as usize).saturating_sub(pc) + 1))
 }
@@ -1451,6 +1451,7 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
 fn monster_element_badge(world: &crate::world::World, slot: u8) -> Option<u8> {
     let actor = world.actors.get(slot as usize)?;
     let def = world
+        .tables
         .monster_catalog
         .get(actor.battle_monster_id?)
         .filter(|d| (d.element as usize) < legaia_asset::element_affinity::ELEMENT_COUNT)?;
@@ -1785,7 +1786,7 @@ pub fn battle_plaque_element_badge(world: &crate::world::World) -> Option<u8> {
         return None;
     }
     let actor = world.actors.get(slot as usize)?;
-    let def = world.monster_catalog.get(actor.battle_monster_id?)?;
+    let def = world.tables.monster_catalog.get(actor.battle_monster_id?)?;
     def.plaque_badge
         .filter(|b| usize::from(*b) < BATTLE_PLAQUE_BADGE_COUNT)
 }
@@ -1848,7 +1849,7 @@ pub fn encounter_banner_label(world: &crate::world::World) -> String {
         }
         let name = a
             .battle_monster_id
-            .and_then(|id| world.monster_catalog.get(id))
+            .and_then(|id| world.tables.monster_catalog.get(id))
             .map(|d| d.name.clone())
             .unwrap_or_else(|| format!("M{}", i - pc + 1));
         names.push(name);
@@ -2386,9 +2387,11 @@ mod tests {
             w.actors.push(Actor::default());
         }
         w.party_count = 1;
-        w.monster_catalog
+        w.tables
+            .monster_catalog
             .insert(MonsterDef::new(7, "Gimard", 40, 5));
-        w.monster_catalog
+        w.tables
+            .monster_catalog
             .insert(MonsterDef::new(9, "Zenoir", 40, 5));
         // Slots 1..=3: Gimard, Gimard, Zenoir. Slot 2's twin is dead.
         for (i, (id, hp)) in [(7u16, 40u16), (7, 40), (9, 40)].iter().enumerate() {
@@ -2480,7 +2483,7 @@ mod tests {
         }
         let mut gimard = MonsterDef::new(7, "Gimard", 40, 5);
         gimard.element = 2;
-        w.monster_catalog.insert(gimard);
+        w.tables.monster_catalog.insert(gimard);
         w.actors[3].battle.hp = 40;
         w.actors[3].battle.max_hp = 40;
         w.actors[3].battle.liveness = 1;

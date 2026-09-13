@@ -205,7 +205,7 @@ fn a_player_seru_cast_reaches_a_ported_module_kernel() {
         a.battle.max_hp = 400;
         a.battle.liveness = 1;
     }
-    world.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
+    world.tables.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
     world.battle_ctx.active_actor = 0;
 
     // The band's own arming seam, the one `spell_anim_trigger` runs for a

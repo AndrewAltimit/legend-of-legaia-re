@@ -67,7 +67,12 @@ impl World {
     /// same pairing at scene entry; if this ever fires, that check was bypassed
     /// or the table was replaced after it ran.
     pub(crate) fn begin_encounter_battle(&mut self, roll: crate::encounter::EncounterRoll) {
-        let Some(formation) = self.formation_table.formation(roll.formation_id).cloned() else {
+        let Some(formation) = self
+            .tables
+            .formation_table
+            .formation(roll.formation_id)
+            .cloned()
+        else {
             log::error!(
                 "encounter: rolled formation {} in scene '{}' is not registered - the battle is \
                  dropped and the field resumes (registered rows: {:?})",
@@ -232,7 +237,7 @@ impl World {
             // Tag the slot with its monster id so a renderer can fetch the
             // battle mesh, even if the catalog has no stats for it.
             self.actors[mslot].battle_monster_id = Some(fslot.monster_id);
-            if let Some(def) = self.monster_catalog.get(fslot.monster_id) {
+            if let Some(def) = self.tables.monster_catalog.get(fslot.monster_id) {
                 let speed = def.speed;
                 let a = &mut self.actors[mslot];
                 a.battle.hp = def.hp;

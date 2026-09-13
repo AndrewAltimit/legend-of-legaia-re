@@ -256,7 +256,7 @@ impl SceneHost {
     /// plain swings - retail's own answer for a character with no arts.
     fn dome_art_catalog(&self) -> Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)> {
         let character = self.world.caster_character(0);
-        crate::muscle_dome::art_catalog_for(&self.world.art_records, character)
+        crate::muscle_dome::art_catalog_for(&self.world.tables.art_records, character)
     }
 
     /// PROT 0980's baked step chart -> a live [`crate::dance::DanceGame`].

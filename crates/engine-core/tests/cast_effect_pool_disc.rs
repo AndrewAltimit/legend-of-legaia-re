@@ -292,7 +292,7 @@ fn a_live_cast_stages_its_module_records() {
     let pool = Arc::new(build_pool(&dir));
 
     let mut w = build_world();
-    w.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
+    w.tables.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
     // Teach the caster the whole player block at level 1.
     {
         let rec = &mut w.roster.members[0];
