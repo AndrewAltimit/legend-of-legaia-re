@@ -148,7 +148,7 @@ impl BattleRound {
     /// PORT: FUN_801d88cc
     /// REF: FUN_801db8b4 (loop B's re-pick), FUN_801d0748 (the call site)
     pub fn boundary(world: &mut World) {
-        let party_count = (world.party_count as usize).max(1);
+        let party_count = (world.party.party_count as usize).max(1);
         let slots = world.actors.len().min(8);
 
         // Re-arm the picker's once-per-pass monster flee checkpoint: retail
@@ -197,7 +197,7 @@ impl BattleRound {
     ///
     /// PORT: FUN_801db8b4
     fn first_living_monster(world: &World) -> u8 {
-        let party_count = (world.party_count as usize).max(1);
+        let party_count = (world.party.party_count as usize).max(1);
         let end = world.actors.len().min(8);
         (party_count..end)
             .find(|&i| world.actors[i].battle.liveness != 0)
@@ -499,7 +499,7 @@ mod tests {
         use legaia_engine_vm::status_effects::StatusKind;
         let mut world = World::new();
         world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
-        world.live_gameplay_loop = true;
+        world.toggles.live_gameplay_loop = true;
         world.battle.player_driven = false;
         world.battle.speed[0] = 10;
         world.battle.speed[1] = 10;

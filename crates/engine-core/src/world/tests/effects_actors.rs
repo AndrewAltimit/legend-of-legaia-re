@@ -276,7 +276,7 @@ fn notify_art_used_emits_event_and_sets_banner() {
             art_id: 3
         }
     );
-    let banner = world.current_art_banner.as_ref().expect("banner set");
+    let banner = world.party.current_art_banner.as_ref().expect("banner set");
     assert!(banner.text.contains("Art #3"));
     assert_eq!(
         banner.frames_remaining,
@@ -290,12 +290,12 @@ fn notify_art_used_no_event_for_innate_ids() {
     // character's innate band never produces a learn event however often it
     // is performed.
     let mut world = World::default();
-    world.tactical_arts.set_innate_cap(0, 5);
+    world.party.tactical_arts.set_innate_cap(0, 5);
     for _ in 0..4 {
         world.notify_art_used(0, 1);
     }
     assert!(world.drain_battle_events().is_empty());
-    assert!(world.current_art_banner.is_none());
+    assert!(world.party.current_art_banner.is_none());
 }
 
 #[test]
@@ -304,13 +304,13 @@ fn banner_countdown_clears_after_frames() {
     // Art id 0 is retail's zero-id edge: it passes the cap gate and inserts.
     world.notify_art_used(0, 0);
     // Banner starts at DEFAULT_FRAMES.
-    assert!(world.current_art_banner.is_some());
+    assert!(world.party.current_art_banner.is_some());
     // Tick DEFAULT_FRAMES times; banner should reach 0 and clear.
     for _ in 0..=crate::tactical_arts::ArtLearnedBanner::DEFAULT_FRAMES {
         world.tick();
     }
     assert!(
-        world.current_art_banner.is_none(),
+        world.party.current_art_banner.is_none(),
         "banner should have cleared"
     );
 }

@@ -7,7 +7,7 @@ fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
 
     let mut world = offensive_item_world(500, 7);
     // Bomb (0x13) deals 200 HP to an enemy.
-    world.inventory.insert(0x13, 1);
+    world.party.inventory.insert(0x13, 1);
     world.battle.item_menu = Some(world.build_battle_item_session());
     {
         let m = world.battle.item_menu.as_ref().unwrap();
@@ -37,7 +37,11 @@ fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
     world.tick_battle_item_menu();
 
     assert_eq!(world.actors[1].battle.hp, 300, "500 -> 300 after Bomb");
-    assert_eq!(world.inventory.get(&0x13).copied(), None, "Bomb consumed");
+    assert_eq!(
+        world.party.inventory.get(&0x13).copied(),
+        None,
+        "Bomb consumed"
+    );
     assert!(world.battle.item_menu.is_none(), "menu closed after use");
     // The use arms the action SM's Item band (retail category 1 through
     // `FUN_801E295C`'s item arm) rather than parking at EndOfAction - the
@@ -73,7 +77,7 @@ fn heal_item_target_panel_lists_party_rows_only() {
 
     let mut world = offensive_item_world(500, 7);
     world.actors[0].battle.hp = 120; // hurt, so the heal is admissible
-    world.inventory.insert(0x01, 1); // Heal (ally-side).
+    world.party.inventory.insert(0x01, 1); // Heal (ally-side).
     world.battle.item_menu = Some(world.build_battle_item_session());
     // The session roster still carries both sides (the offensive items
     // need the enemy rows) - the model is where the side rule lands.
@@ -87,7 +91,7 @@ fn heal_item_target_panel_lists_party_rows_only() {
     assert_eq!(cursor, 0);
     // The mirror side: the Bomb's panel lists only the enemy.
     let mut world = offensive_item_world(500, 7);
-    world.inventory.insert(0x13, 1);
+    world.party.inventory.insert(0x13, 1);
     world.battle.item_menu = Some(world.build_battle_item_session());
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
@@ -103,7 +107,7 @@ fn battle_item_bomb_downs_a_low_hp_enemy() {
     use crate::input::PadButton;
 
     let mut world = offensive_item_world(120, 7);
-    world.inventory.insert(0x13, 1); // Bomb, 200 dmg vs 120 HP.
+    world.party.inventory.insert(0x13, 1); // Bomb, 200 dmg vs 120 HP.
     world.battle.item_menu = Some(world.build_battle_item_session());
 
     world.set_pad(0);
@@ -126,7 +130,7 @@ fn battle_item_capture_downs_a_weakened_enemy_and_logs_the_id() {
     let mut world = offensive_item_world(500, 42);
     world.actors[1].battle.hp = 10;
     world.rng_state = 0;
-    world.inventory.insert(0x11, 1); // Genocide Crystal (capture).
+    world.party.inventory.insert(0x11, 1); // Genocide Crystal (capture).
     world.battle.item_menu = Some(world.build_battle_item_session());
 
     world.set_pad(0);
@@ -152,7 +156,7 @@ fn battle_item_escape_returns_to_field() {
     use crate::input::PadButton;
 
     let mut world = offensive_item_world(500, 7);
-    world.inventory.insert(0x12, 1); // Goblin Foot (escape).
+    world.party.inventory.insert(0x12, 1); // Goblin Foot (escape).
     world.battle.item_menu = Some(world.build_battle_item_session());
 
     world.set_pad(0);
@@ -177,7 +181,11 @@ fn battle_item_escape_returns_to_field() {
         "the escape arm is armed"
     );
     assert!(world.battle.item_menu.is_none(), "battle menus cleared");
-    assert_eq!(world.inventory.get(&0x12).copied(), None, "item consumed");
+    assert_eq!(
+        world.party.inventory.get(&0x12).copied(),
+        None,
+        "item consumed"
+    );
     let mut exit_tick = None;
     for i in 1..=(usize::from(World::VICTORY_EXIT_PHASE) + 8) {
         world.tick();
@@ -202,7 +210,10 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
     use legaia_engine_vm::battle_action::ActionState;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.battle.player_driven = true;
@@ -223,7 +234,7 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
     list.count = 1;
     list.ids[0] = 0x20;
     party.members[0].set_spell_list(list);
-    world.roster = party;
+    world.party.roster = party;
 
     // Open the spell submenu for the caster.
     world.battle_ctx.active_actor = 0;
@@ -290,7 +301,7 @@ fn silenced_caster_cannot_open_the_magic_submenu() {
     list.count = 1;
     list.ids[0] = 0x20;
     party.members[0].set_spell_list(list);
-    world.roster = party;
+    world.party.roster = party;
 
     // No status: the Magic submenu builds.
     assert!(
@@ -316,7 +327,10 @@ fn battle_magic_cast_applies_mp_half_ability_bit() {
     use crate::spells::SpellCatalog;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.battle.player_driven = true;
@@ -331,14 +345,14 @@ fn battle_magic_cast_applies_mp_half_ability_bit() {
     world.actors[1].battle.hp = 300;
     world.actors[1].battle.liveness = 1;
     // MP-half accessory bit (0x20) on the caster's character record.
-    world.character_ability_bits[0] = 0x20;
+    world.party.character_ability_bits[0] = 0x20;
 
     let mut party = legaia_save::Party::zeroed(1);
     let mut list = party.members[0].spell_list();
     list.count = 1;
     list.ids[0] = 0x20; // Flame, 5 MP
     party.members[0].set_spell_list(list);
-    world.roster = party;
+    world.party.roster = party;
 
     world.battle_ctx.active_actor = 0;
     world.battle.spell_menu = world.build_battle_spell_session(0);
@@ -365,7 +379,10 @@ fn refresh_party_ability_bits_derives_and_propagates_party_wide() {
     use crate::accessory_passives::AccessoryPassives;
 
     let mut world = World {
-        party_count: 2,
+        party: crate::world::PartyState {
+            party_count: 2,
+            ..Default::default()
+        },
         ..World::default()
     };
     // Synthetic catalog: item 0x50 grants wearer-only passive 0x05 (the
@@ -381,36 +398,45 @@ fn refresh_party_ability_bits_derives_and_propagates_party_wide() {
     let mut eq = party.members[1].equipment();
     eq.slots[5] = 0x51;
     party.members[1].set_equipment(eq);
-    world.roster = party;
+    world.party.roster = party;
 
     world.refresh_party_ability_bits();
 
     // Wearer-only bit lands on member 0 only.
-    assert_eq!(world.character_ability_bits[0] & 0x20, 0x20);
-    assert_eq!(world.character_ability_bits[1] & 0x20, 0);
+    assert_eq!(world.party.character_ability_bits[0] & 0x20, 0x20);
+    assert_eq!(world.party.character_ability_bits[1] & 0x20, 0);
     // Party-wide bit (index 0x0E) propagates into every member's effective
     // mask, and into the global mask (the FUN_800431D0 port).
-    assert_eq!(world.character_ability_bits[0] & (1 << 0x0E), 1 << 0x0E);
-    assert_eq!(world.character_ability_bits[1] & (1 << 0x0E), 1 << 0x0E);
+    assert_eq!(
+        world.party.character_ability_bits[0] & (1 << 0x0E),
+        1 << 0x0E
+    );
+    assert_eq!(
+        world.party.character_ability_bits[1] & (1 << 0x0E),
+        1 << 0x0E
+    );
     assert!(world.party_has_ability(0x0E));
     assert!(!world.party_has_ability(0x06));
     // The record-side bitfield is rebuilt with each wearer's OWN bits.
-    assert_eq!(world.roster.members[0].ability_bits()[0], 0x20);
-    assert_eq!(world.roster.members[1].ability_bits()[1], 0x40); // bit 14
+    assert_eq!(world.party.roster.members[0].ability_bits()[0], 0x20);
+    assert_eq!(world.party.roster.members[1].ability_bits()[1], 0x40); // bit 14
 }
 
 #[test]
 fn refresh_party_ability_bits_noops_without_a_catalog() {
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.roster = legaia_save::Party::zeroed(1);
+    world.party.roster = legaia_save::Party::zeroed(1);
     // Synthetic setups write the bits directly; an empty catalog must not
     // clobber them.
-    world.character_ability_bits[0] = 0x20;
+    world.party.character_ability_bits[0] = 0x20;
     world.refresh_party_ability_bits();
-    assert_eq!(world.character_ability_bits[0], 0x20);
+    assert_eq!(world.party.character_ability_bits[0], 0x20);
 }
 
 #[test]
@@ -418,7 +444,10 @@ fn seed_party_battle_stats_applies_accessory_stat_and_hp_boosts() {
     use crate::accessory_passives::AccessoryPassives;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     // Item 0x52 grants passive 0x06 (ATK +20%); item 0x53 grants passive
@@ -465,7 +494,7 @@ fn seed_party_battle_stats_applies_accessory_stat_and_hp_boosts() {
     // Max HP +10% of the base, applied to the live battle actor.
     assert_eq!(world.actors[0].battle.max_hp, 110);
     // The ability bits are populated for the MP-cost consumers.
-    assert_eq!(world.character_ability_bits[0] & 0x41, 0x41); // bits 0 + 6
+    assert_eq!(world.party.character_ability_bits[0] & 0x41, 0x41); // bits 0 + 6
 }
 
 #[test]
@@ -574,7 +603,10 @@ fn battle_magic_capture_downs_a_weakened_monster_and_logs_the_id() {
     use crate::spells::SpellOutcome;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Battle;
@@ -600,7 +632,10 @@ fn battle_magic_capture_downs_a_weakened_monster_and_logs_the_id() {
     // A near-full-HP monster has a tiny effective chance -> the same roll
     // misses and the monster is untouched.
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Battle;
@@ -626,7 +661,10 @@ fn battle_magic_escape_returns_to_field() {
     use crate::spells::SpellCatalog;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.battle.player_driven = true;

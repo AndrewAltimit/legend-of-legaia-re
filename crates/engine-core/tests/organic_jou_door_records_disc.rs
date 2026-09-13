@@ -136,7 +136,7 @@ fn jouinc_doors_hold_and_release_the_busy_mutex_organically() {
         // so "one slice" is "tick until a display frame fires", not one tick.
         for _ in 0..8 {
             host.tick().expect("tick");
-            if host.world.field_frame_step == 1 {
+            if host.world.clock.display_frame_step == 1 {
                 break;
             }
         }

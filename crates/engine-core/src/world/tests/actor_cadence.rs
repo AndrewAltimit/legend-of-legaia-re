@@ -45,7 +45,7 @@ const EXPECTED_VSYNCS: i32 = 120;
 fn cadence_world(frame_step: u8) -> World {
     let mut w = World::new();
     w.mode = SceneMode::Title;
-    w.frame_step = frame_step;
+    w.clock.frame_step = frame_step;
     w.actors[0].active = true;
     w.actors[0].set_physics_dispatch(0x00);
     w.actors[0].physics.accel = [64, 0, 0];
@@ -214,7 +214,7 @@ fn ambient_ops_respond_to_cadence_the_way_retail_does() {
     for cadence in [1u8, 2, 4] {
         // 0x04: 8 stepping ticks regardless of the scalar.
         let mut w = World::new();
-        w.frame_step = cadence;
+        w.clock.frame_step = cadence;
         with_ambient(&mut w, 1, vec![0x04, 0x02, 0x08], 0x000);
         for _ in 0..8 {
             w.tick_field_npc_ambient();
@@ -232,7 +232,7 @@ fn ambient_ops_respond_to_cadence_the_way_retail_does() {
         // 0x0D: a 32-vsync duration retires in 32/cadence stepping ticks
         // plus the terminal one - the duration in VSYNCS is invariant.
         let mut w = World::new();
-        w.frame_step = cadence;
+        w.clock.frame_step = cadence;
         with_ambient(&mut w, 1, vec![0x0D, 0x02, 0x20, 0x00], 0x000);
         let mut ticks = 0;
         for _ in 0..128 {

@@ -120,8 +120,8 @@ fn world_with_tables(restrictions: bool) -> World {
         w.install_hub_equip_restrictions(&DiscEquipInfo::from_disc(&equip));
     }
 
-    w.roster = legaia_save::Party::zeroed(2);
-    for member in w.roster.members.iter_mut() {
+    w.party.roster = legaia_save::Party::zeroed(2);
+    for member in w.party.roster.members.iter_mut() {
         let mut stats = member.live_stats();
         stats.atk = BASE_ATK;
         stats.udf = BASE_UDF;
@@ -133,7 +133,7 @@ fn world_with_tables(restrictions: bool) -> World {
         eq.slots[2] = ID_ARMOR;
         member.set_equipment(eq);
     }
-    w.active_party = vec![0];
+    w.party.active_party = vec![0];
     w
 }
 
@@ -247,10 +247,10 @@ fn the_rows_print_the_characters_own_stats_plus_the_equipped_bonuses() {
 fn each_entry_gets_its_own_characters_numbers() {
     let mut w = world_with_tables(false);
     // Give the second member a different loadout: armour only.
-    let mut eq = w.roster.members[1].equipment();
+    let mut eq = w.party.roster.members[1].equipment();
     eq.slots[0] = 0;
-    w.roster.members[1].set_equipment(eq);
-    w.active_party = vec![0, 1];
+    w.party.roster.members[1].set_equipment(eq);
+    w.party.active_party = vec![0, 1];
 
     let panel = painted(&mut w);
     let v = values(&panel);
@@ -266,7 +266,7 @@ fn each_entry_gets_its_own_characters_numbers() {
 #[test]
 fn an_empty_slot_adds_nothing_without_the_port_special_casing_id_zero() {
     let mut w = world_with_tables(false);
-    for member in w.roster.members.iter_mut() {
+    for member in w.party.roster.members.iter_mut() {
         let mut eq = member.equipment();
         eq.slots = [0; 8];
         member.set_equipment(eq);
@@ -319,9 +319,9 @@ fn a_kind_one_candidate_the_character_can_equip_draws_the_comparison_columns() {
 fn a_weaker_candidate_lowers_the_row() {
     let mut w = world_with_tables(true);
     // Swap the loadout to the strong blade so the plain sword is a downgrade.
-    let mut eq = w.roster.members[0].equipment();
+    let mut eq = w.party.roster.members[0].equipment();
     eq.slots[0] = ID_VAHN_BLADE;
-    w.roster.members[0].set_equipment(eq);
+    w.party.roster.members[0].set_equipment(eq);
 
     let panel = painted_with_candidate(&mut w, EQUIP_MODE_DIRECT, i32::from(ID_SWORD));
     assert_eq!(arrows(&panel), vec![EQUIP_GLYPH_LOWER]);
@@ -338,7 +338,7 @@ fn a_kind_one_candidate_the_character_cannot_equip_replaces_the_panel() {
     let mut w = world_with_tables(true);
     // Entry code 1 is the second roster slot, whose mask bit the Vahn-only
     // blade does not carry.
-    w.active_party = vec![1];
+    w.party.active_party = vec![1];
     let panel = painted_with_candidate(&mut w, EQUIP_MODE_DIRECT, i32::from(ID_VAHN_BLADE));
 
     assert_eq!(panel.len(), 1, "the reject arm draws one line and returns");
@@ -422,16 +422,16 @@ fn the_blank_mode_compares_against_an_empty_loadout() {
 #[test]
 fn the_bag_modes_index_the_worlds_own_inventory() {
     let mut w = world_with_tables(true);
-    w.inventory.insert(ID_VAHN_BLADE, 1);
-    w.inventory.insert(ID_POTION, 3);
+    w.party.inventory.insert(ID_VAHN_BLADE, 1);
+    w.party.inventory.insert(ID_POTION, 3);
     // The bag list is id-ordered, so slot 0 is the blade.
     let panel = painted_with_candidate(&mut w, EQUIP_MODE_INVENTORY[0], 0);
     assert_eq!(values(&panel).len(), 6, "slot 0 named the equippable blade");
     assert_eq!(arrows(&panel).len(), 1);
 
     let mut w = world_with_tables(true);
-    w.inventory.insert(ID_VAHN_BLADE, 1);
-    w.inventory.insert(ID_POTION, 3);
+    w.party.inventory.insert(ID_VAHN_BLADE, 1);
+    w.party.inventory.insert(ID_POTION, 3);
     let panel = painted_with_candidate(&mut w, EQUIP_MODE_INVENTORY[1], 1);
     assert_eq!(
         values(&panel).len(),

@@ -31,7 +31,7 @@ fn build_world() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
     // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
     w.load_party(legaia_save::Party::zeroed(3));
@@ -62,7 +62,7 @@ fn build_world() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w.battle.player_driven = true;
     w
 }
@@ -131,7 +131,7 @@ fn assured_escape_runs_the_run_band_and_leaves_the_battle() {
     w.battle
         .status_effects
         .apply_with_duration(1, StatusKind::Stone, 255);
-    let xp_before = w.roster.members[0].raw.to_vec();
+    let xp_before = w.party.roster.members[0].raw.to_vec();
 
     // Round prompt: Circle takes Run without a confirm (retail state 0x1E).
     let mut trace: Vec<u8> = Vec::new();
@@ -164,7 +164,7 @@ fn assured_escape_runs_the_run_band_and_leaves_the_battle() {
         v
     };
     assert_eq!(
-        masked(&w.roster.members[0].raw),
+        masked(&w.party.roster.members[0].raw),
         masked(&xp_before),
         "fleeing grants no loot / XP (no victory record write)"
     );
@@ -193,7 +193,7 @@ fn failed_escape_consumes_the_turn_and_the_battle_goes_on() {
         w.battle.speed[i] = 0;
         w.actors[i].battle.hp = w.actors[i].battle.max_hp;
     }
-    let monster_slot = w.party_count as usize;
+    let monster_slot = w.party.party_count as usize;
     w.battle.speed[monster_slot] = 20000;
     w.rng_state = 0xDEAD_BEEF;
 

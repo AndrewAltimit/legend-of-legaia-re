@@ -120,24 +120,24 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
 
     // 4. Commit a name: type one glyph (so the name is non-empty), then go to
     //    End → confirm opens on No (retail) → Up to Yes → confirm.
-    host.world.name_entry.as_mut().unwrap().cursor = 0; // 'A'
+    host.world.party.name_entry.as_mut().unwrap().cursor = 0; // 'A'
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
         ..Default::default()
     });
     let end = legaia_engine_core::name_entry::CONTROL_ANCHORS[2];
-    host.world.name_entry.as_mut().unwrap().cursor = end;
+    host.world.party.name_entry.as_mut().unwrap().cursor = end;
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
         ..Default::default()
     });
     assert_eq!(
-        host.world.name_entry.as_ref().unwrap().state,
+        host.world.party.name_entry.as_ref().unwrap().state,
         NameEntryState::Confirm,
         "End opens the Yes/No confirm"
     );
     assert!(
-        !host.world.name_entry.as_ref().unwrap().confirm_yes,
+        !host.world.party.name_entry.as_ref().unwrap().confirm_yes,
         "the confirm prompt opens with the hand on No (retail default)"
     );
     host.world.step_name_entry(NameEntryInput {

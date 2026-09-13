@@ -258,6 +258,7 @@ impl PlayWindowApp {
             .session
             .host
             .world
+            .party
             .roster
             .members
             .first()
@@ -702,7 +703,7 @@ impl PlayWindowApp {
         // decode fails. Each character's decoded battle palette overlays the
         // rows its mesh CBA samples (= 481 + slot after relocation).
         let mut party_bound = 0usize;
-        let party_count = self.session.host.world.party_count as usize;
+        let party_count = self.session.host.world.party.party_count as usize;
         if party_count > 0
             && let Ok(pack_raw) = self
                 .session
@@ -1073,7 +1074,7 @@ impl PlayWindowApp {
             return;
         }
         let world = &self.session.host.world;
-        let pc = world.party_count as usize;
+        let pc = world.party.party_count as usize;
         let cam = self.battle_dome_camera_mvp(4.0 / 3.0)
             * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE));
         eprintln!(
@@ -1159,6 +1160,7 @@ impl PlayWindowApp {
             .session
             .host
             .world
+            .party
             .roster
             .members
             .get(cslot)
@@ -1426,7 +1428,7 @@ impl PlayWindowApp {
         // the battle camera frames it distinct from the enemies it attacks.
         let slot = self
             .summon_actor_slot
-            .unwrap_or_else(|| 8 + (self.session.host.world.party_count as usize));
+            .unwrap_or_else(|| 8 + (self.session.host.world.party.party_count as usize));
         self.summon_actor_slot = Some(slot);
         if let Some(a) = self.session.host.world.actors.get_mut(slot) {
             a.active = true;
@@ -1938,6 +1940,7 @@ impl PlayWindowApp {
             // rebuilt ability bytes (byte 5 bit 0x20).
             let world = &self.session.host.world;
             let force_neutral_mouth = world
+                .party
                 .roster
                 .members
                 .get(world.party_roster_slot(mf.actor_slot))
@@ -2115,7 +2118,8 @@ impl PlayWindowApp {
     /// The party leader whose name opens the spoils line.
     fn battle_spoils_leader(&self) -> String {
         let w = &self.session.host.world;
-        w.roster
+        w.party
+            .roster
             .members
             .get(w.party_roster_slot(0))
             .map(|m| m.name())

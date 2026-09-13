@@ -25,7 +25,7 @@ fn build_world() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
     // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
     w.load_party(legaia_save::Party::zeroed(3));
@@ -56,7 +56,7 @@ fn build_world() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w.battle.player_driven = true;
     w
 }
@@ -107,7 +107,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     w.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
     // Teach the acting character Gimard at level 1.
     {
-        let rec = &mut w.roster.members[0];
+        let rec = &mut w.party.roster.members[0];
         let mut list = rec.spell_list();
         list.count = 1;
         list.ids[0] = 0x81;
@@ -130,7 +130,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     // accrues 0 per cast exactly as in retail. 300 max HP puts the ~195-damage
     // placeholder cast at ~7 XP for the first hit and the full 12 for the
     // kill hit - two casts cross the 17 threshold strictly.
-    let ms = w.party_count as usize;
+    let ms = w.party.party_count as usize;
     w.actors[ms].battle.max_hp = 300;
     w.actors[ms].battle.hp = 300;
     // The enemy-side flee checkpoint (FUN_801EC0DC) can remove the monster on
@@ -138,7 +138,8 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     // retail's own gate for it (ctx+0x287, tested at the roll's head).
     w.battle.no_escape = true;
 
-    let rec_xp = |w: &World| legaia_engine_core::magic_xp::spell_xp(&w.roster.members[0], 0usize);
+    let rec_xp =
+        |w: &World| legaia_engine_core::magic_xp::spell_xp(&w.party.roster.members[0], 0usize);
     assert_eq!(rec_xp(&w), 0);
 
     let mut leveled: Vec<(u8, u8, u8)> = Vec::new();
@@ -154,7 +155,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
                 w.battle.item_menu.is_some(),
                 w.battle.arts_menu.is_some(),
                 w.mode,
-                w.actors[w.party_count as usize].battle.hp,
+                w.actors[w.party.party_count as usize].battle.hp,
             );
         }
         // A round-open session sits on the `Begin | Run` prompt; a mid-round
@@ -228,7 +229,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     assert_eq!(leveled[0].1, 0x81, "the leveled spell");
     assert_eq!(leveled[0].2, 2, "level 1 -> 2");
     assert_eq!(
-        w.roster.members[0].spell_list().levels[0],
+        w.party.roster.members[0].spell_list().levels[0],
         2,
         "the record's +0x161 level byte was bumped"
     );
@@ -250,6 +251,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         .map(|d| d.name.clone())
         .unwrap();
     let banner = w
+        .party
         .current_art_banner
         .as_ref()
         .expect("the level-up staged the retail banner");

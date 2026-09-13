@@ -21,7 +21,7 @@ fn battle_with(monster: MonsterDef, party_spd: u16) -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
@@ -62,7 +62,7 @@ fn round_one_opens_on_the_fastest_combatant_not_slot_zero() {
     speedy.speed = 400;
     let w = battle_with(speedy, 5);
     assert_eq!(
-        w.battle_ctx.active_actor, w.party_count,
+        w.battle_ctx.active_actor, w.party.party_count,
         "the fast monster must take the opening turn; slot 0 opening again \
          means the seeder is consuming its key",
     );
@@ -76,7 +76,7 @@ fn a_fast_party_still_opens_against_a_slow_monster() {
     sluggish.speed = 3;
     let w = battle_with(sluggish, 300);
     assert!(
-        w.battle_ctx.active_actor < w.party_count,
+        w.battle_ctx.active_actor < w.party.party_count,
         "a party 100x the monster's SPD must open, got slot {}",
         w.battle_ctx.active_actor
     );
@@ -129,7 +129,7 @@ fn party_battle_speed_keeps_the_resolved_spd() {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 1;
+    w.party.party_count = 1;
     let mut party = legaia_save::Party::zeroed(1);
     let rec = &mut party.members[0];
     let mut live = rec.live_stats();

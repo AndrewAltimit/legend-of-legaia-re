@@ -117,7 +117,7 @@ impl World {
     /// REF: FUN_80016B6C
     pub fn tick_actor_physics(&mut self) {
         let listener = ListenerState::unicast(0, 0, 0);
-        let cadence = vm::actor_tick::FrameCadence::from_raw(self.frame_step);
+        let cadence = vm::actor_tick::FrameCadence::from_raw(self.clock.frame_step);
         self.tick_actor_physics_with(TickScalars::for_cadence(cadence, 1), &listener);
     }
 
@@ -1363,7 +1363,8 @@ impl World {
     /// or the ordinal runs past it - the historical slot-`i`-is-character-`i`
     /// behaviour every synthetic test relies on.
     pub fn party_roster_slot(&self, member: usize) -> usize {
-        self.active_party
+        self.party
+            .active_party
             .get(member)
             .map(|&s| s as usize)
             .unwrap_or(member)
@@ -1384,7 +1385,7 @@ impl World {
         let mut active = slots;
         active.truncate(3);
         for (member, &rslot) in active.iter().enumerate() {
-            let Some(rec) = self.roster.members.get(rslot as usize) else {
+            let Some(rec) = self.party.roster.members.get(rslot as usize) else {
                 continue;
             };
             let hms = rec.hp_mp_sp();
@@ -1400,9 +1401,9 @@ impl World {
             }
         }
         if !active.is_empty() {
-            self.party_count = active.len() as u8;
+            self.party.party_count = active.len() as u8;
         }
-        self.active_party = active;
+        self.party.active_party = active;
     }
 
     /// Place the world into [`SceneMode::Battle`] and populate the actor
@@ -1427,11 +1428,12 @@ impl World {
     pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
         self.battle.monster_flee_attempted = false;
-        self.party_count = party_count.min(3);
+        self.party.party_count = party_count.min(3);
         let monster_count = monster_count.min(5);
-        let actor_count = ((self.party_count as usize) + (monster_count as usize)).min(MAX_ACTORS);
-        for i in 0..(self.party_count as usize).min(actor_count) {
-            let s = crate::battle_seats::party_seat(self.party_count, i);
+        let actor_count =
+            ((self.party.party_count as usize) + (monster_count as usize)).min(MAX_ACTORS);
+        for i in 0..(self.party.party_count as usize).min(actor_count) {
+            let s = crate::battle_seats::party_seat(self.party.party_count, i);
             let actor = self.spawn_actor(i);
             actor.move_state.world_x = s.x;
             actor.move_state.world_y = s.y;
@@ -1442,10 +1444,10 @@ impl World {
             // per-action bearing writes once actions run.
             actor.battle.facing_angle = 0;
         }
-        for i in (self.party_count as usize)..actor_count {
+        for i in (self.party.party_count as usize)..actor_count {
             let s = crate::battle_seats::monster_seat(
                 monster_count,
-                i - self.party_count as usize,
+                i - self.party.party_count as usize,
                 false,
             );
             let actor = self.spawn_actor(i);

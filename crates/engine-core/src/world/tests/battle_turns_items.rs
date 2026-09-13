@@ -4,10 +4,13 @@ use super::*;
 fn monsters_take_turns_and_can_wipe_the_party() {
     use legaia_engine_vm::battle_action::ActionState;
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     world.mode = SceneMode::Battle;
     // Lone party member: low HP, weak attack so the fight lasts several
     // rounds and the monster gets turns.
@@ -59,10 +62,13 @@ fn monsters_take_turns_and_can_wipe_the_party() {
 fn multi_monster_battle_all_monsters_act_and_party_can_win() {
     use legaia_engine_vm::battle_action::ActionState;
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     world.mode = SceneMode::Battle;
     // Lone party member: enough HP to survive three weak monsters, enough
     // attack to chip each down over a few rounds.
@@ -117,7 +123,10 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     use legaia_engine_vm::battle_action::ActionState;
 
     let mut world = World {
-        party_count: 2,
+        party: crate::world::PartyState {
+            party_count: 2,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.battle.player_driven = true;
@@ -135,7 +144,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     world.actors[2].battle.hp = 80;
     world.actors[2].battle.liveness = 1;
     // Healing Leaf (id 0x01) heals 100 HP; hold two.
-    world.inventory.insert(0x01, 2);
+    world.party.inventory.insert(0x01, 2);
 
     // Open the item submenu for the active party member.
     world.battle_ctx.active_actor = 0;
@@ -159,7 +168,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu();
     assert_eq!(
-        world.inventory.get(&0x01).copied(),
+        world.party.inventory.get(&0x01).copied(),
         Some(1),
         "one Healing Leaf consumed at the commit"
     );
@@ -222,7 +231,10 @@ fn battle_item_menu_cancel_reopens_command_menu() {
     use crate::input::PadButton;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.battle.player_driven = true;
@@ -231,7 +243,7 @@ fn battle_item_menu_cancel_reopens_command_menu() {
     world.actors[0].battle.max_hp = 100;
     world.actors[0].battle.hp = 100;
     world.actors[0].battle.liveness = 1;
-    world.inventory.insert(0x01, 1);
+    world.party.inventory.insert(0x01, 1);
 
     world.battle_ctx.active_actor = 0;
     world.battle.item_menu = Some(world.build_battle_item_session());
@@ -248,5 +260,5 @@ fn battle_item_menu_cancel_reopens_command_menu() {
     );
     assert_eq!(world.battle.command.as_ref().unwrap().actor, 0);
     // No item was consumed on a cancel.
-    assert_eq!(world.inventory.get(&0x01).copied(), Some(1));
+    assert_eq!(world.party.inventory.get(&0x01).copied(), Some(1));
 }

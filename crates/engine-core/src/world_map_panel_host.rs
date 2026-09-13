@@ -1096,12 +1096,12 @@ pub struct FieldHudMemberData {
 /// zero for a party that has never fought), and a field readout that only
 /// works after the first battle is worse than none.
 pub fn field_party_hud_members(world: &crate::world::World) -> Vec<FieldHudMemberData> {
-    let count = (world.party_count as usize).min(3);
+    let count = (world.party.party_count as usize).min(3);
     let fallback = crate::field_menu_dispatch::roster_names(world);
     (0..count)
         .filter_map(|ordinal| {
             let slot = world.party_roster_slot(ordinal);
-            let rec = world.roster.members.get(slot)?;
+            let rec = world.party.roster.members.get(slot)?;
             let hms = rec.hp_mp_sp();
             // The record's own `+0x2A7` display name is what retail draws
             // (it carries the name the player typed for Vahn); the canonical
@@ -1597,8 +1597,8 @@ mod tests {
     #[test]
     fn the_text_box_confirm_restores_the_partys_hp_and_mp() {
         let mut w = world_on_the_overworld();
-        w.roster = legaia_save::Party::zeroed(3);
-        for m in w.roster.members.iter_mut() {
+        w.party.roster = legaia_save::Party::zeroed(3);
+        for m in w.party.roster.members.iter_mut() {
             m.raw[0x104..0x106].copy_from_slice(&300u16.to_le_bytes()); // hp max
             m.raw[0x106..0x108].copy_from_slice(&1u16.to_le_bytes()); // hp cur
             m.raw[0x108..0x10A].copy_from_slice(&80u16.to_le_bytes()); // mp max
@@ -1615,7 +1615,7 @@ mod tests {
         }
         w.set_pad(crate::input::PadButton::Cross.mask());
         let _ = w.tick();
-        for m in w.roster.members.iter() {
+        for m in w.party.roster.members.iter() {
             assert_eq!(u16::from_le_bytes([m.raw[0x106], m.raw[0x107]]), 300);
             assert_eq!(u16::from_le_bytes([m.raw[0x10A], m.raw[0x10B]]), 80);
         }

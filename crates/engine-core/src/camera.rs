@@ -489,7 +489,7 @@ impl Camera {
     /// PORT: FUN_801DC0BC
     /// REF: FUN_801DBE9C
     fn tick_globals(&mut self, world: &World) {
-        let now = world.field_frames;
+        let now = world.clock.display_frames;
         let dt = now.saturating_sub(self.last_field_frame) as i32;
         self.last_field_frame = now;
 
@@ -1025,7 +1025,7 @@ mod tests {
         );
 
         // Advance 50 of the 100 display frames - halfway on a linear curve.
-        w.field_frames = 50;
+        w.clock.display_frames = 50;
         c.tick(&w);
         let mid = c.globals.tr_eye()[2];
         assert!(
@@ -1034,7 +1034,7 @@ mod tests {
         );
 
         // Run out the duration: exact arrival, and the one-shot mover retires.
-        w.field_frames = 100;
+        w.clock.display_frames = 100;
         c.tick(&w);
         assert_eq!(c.globals.tr_eye()[2], 17420, "glide arrives exactly");
         assert!(c.mover.is_none(), "the mover is one-shot");

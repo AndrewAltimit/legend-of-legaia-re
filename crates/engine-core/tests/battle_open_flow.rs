@@ -286,7 +286,7 @@ fn a_battle_item_heal_keeps_the_readout_and_the_turn_pump_alive() {
 
     let mut world = player_driven_battle();
     world.set_item_catalog(ItemCatalog::vanilla());
-    world.inventory.insert(HEALING_LEAF, 3);
+    world.party.inventory.insert(HEALING_LEAF, 3);
     // Durable on both sides: the assertion below is "the fight keeps handing
     // out commands", and a fight that simply ended would satisfy a weaker one.
     for slot in 0..5 {
@@ -336,7 +336,7 @@ fn a_battle_item_heal_keeps_the_readout_and_the_turn_pump_alive() {
     let healed = world.actors[0].battle.hp;
     assert!(healed > 20000, "the item healed nothing (hp {healed})");
     assert_eq!(
-        world.inventory.get(&HEALING_LEAF).copied(),
+        world.party.inventory.get(&HEALING_LEAF).copied(),
         Some(2),
         "one Healing Leaf consumed"
     );

@@ -12,7 +12,7 @@ use super::*;
 fn field_world() -> World {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.field_frame_step = 1;
+    world.clock.display_frame_step = 1;
     world
 }
 

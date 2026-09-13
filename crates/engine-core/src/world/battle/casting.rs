@@ -86,8 +86,9 @@ impl World {
         // Quarter when both bits are set, dump-confirmed against the retail
         // state-0x28 block (FUN_801E295C 0x801E3D0C) - routed through the shared
         // battle_formulas helper so all three cast paths agree.
-        let ability_bits = if (caster as usize) < self.party_count as usize {
-            self.character_ability_bits
+        let ability_bits = if (caster as usize) < self.party.party_count as usize {
+            self.party
+                .character_ability_bits
                 .get(caster as usize)
                 .copied()
                 .unwrap_or(0)
@@ -133,7 +134,7 @@ impl World {
         // [`crate::summon::SERU_SUMMON_IDS`] block, so those are the ids that
         // accrue. `group_target` mirrors the summon's target byte (`+0x1DD`
         // = 8/9 for a group cast): the per-hit unit drops from 12 to 4.
-        let is_party_summon_cast = (caster as usize) < self.party_count as usize
+        let is_party_summon_cast = (caster as usize) < self.party.party_count as usize
             && crate::summon::SERU_SUMMON_IDS.contains(&def.id);
         // Shiny bonus: when the casting character learned this Seru's spell
         // from a shiny capture, every cast deals +35% damage (on top of the
@@ -373,7 +374,7 @@ impl World {
             .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
             .unwrap_or(7);
-        let target_is_party = target < self.party_count;
+        let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
             predamage: atk.saturating_sub(def).clamp(1, 9999),
             attacker_slot: 3,
@@ -476,7 +477,7 @@ impl World {
             .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
             .unwrap_or(7);
-        let target_is_party = target < self.party_count;
+        let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
             predamage: atk.saturating_sub(def).clamp(1, 9999),
             attacker_slot: 3,
@@ -646,7 +647,7 @@ impl World {
             .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
             .unwrap_or(7);
-        let target_is_party = target < self.party_count;
+        let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
             predamage: atk.saturating_sub(def).clamp(1, 9999),
             attacker_slot: 3,
@@ -720,6 +721,7 @@ impl World {
         const RETAIL_SEARCH_BOUND: usize = 0x20;
         // Battle ordinal -> the occupying character's record.
         let Some(record) = self
+            .party
             .roster
             .members
             .get(self.party_roster_slot(caster as usize))
@@ -778,7 +780,7 @@ impl World {
             summon_predamage_lazy,
         };
 
-        if (caster as usize) >= self.party_count as usize {
+        if (caster as usize) >= self.party.party_count as usize {
             return None;
         }
         let creature = self.summon_creature_def(spell_id)?;
@@ -829,7 +831,7 @@ impl World {
         let finish = DamageFinish {
             predamage,
             attacker_slot: 7,
-            defender_slot: 3 + target.saturating_sub(self.party_count),
+            defender_slot: 3 + target.saturating_sub(self.party.party_count),
             attacker_element: summon_element,
             defender_resist: DefenderResist::default(),
             defender_guarding: false,
@@ -890,7 +892,7 @@ impl World {
     /// back to neutral.
     pub(in crate::world) fn battle_slot_element(&self, slot: u8) -> Option<u8> {
         let aff = self.tables.element_affinity.as_ref()?;
-        if (slot as usize) < self.party_count as usize {
+        if (slot as usize) < self.party.party_count as usize {
             aff.character_element(slot + 1)
         } else {
             let id = self.actors.get(slot as usize)?.battle_monster_id?;
@@ -960,7 +962,7 @@ impl World {
     /// move-power table is installed (disc-real battles), keeping disc-free /
     /// synthetic battles on the placeholder path with an unchanged RNG stream.
     fn enemy_move_power(&self, caster: u8, move_id: u8) -> Option<i32> {
-        if (caster as usize) < self.party_count as usize {
+        if (caster as usize) < self.party.party_count as usize {
             return None;
         }
         self.tables.move_power.as_ref()?.power_for_move_id(move_id)
@@ -1110,7 +1112,10 @@ mod capture_bypass_tests {
     /// caster of element 0. Same seed every time.
     fn world_with_resisting_party() -> World {
         let mut world = World {
-            party_count: 1,
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
             ..World::default()
         };
         world.mode = SceneMode::Battle;
@@ -1125,7 +1130,7 @@ mod capture_bypass_tests {
         // that would run. Loaded before the actor stats: `load_party` reseeds
         // the battle mirrors from the record.
         world.load_party(legaia_save::Party::zeroed(1));
-        if let Some(m) = world.roster.members.get_mut(0) {
+        if let Some(m) = world.party.roster.members.get_mut(0) {
             let mut bits = m.ability_bits();
             bits[3] |= 0x20;
             bits[4..8].fill(0);
@@ -1180,7 +1185,7 @@ mod capture_bypass_tests {
     /// finisher's ladder has nothing to match.
     fn damage_without_resist(move_id: u8) -> u16 {
         let mut world = world_with_resisting_party();
-        if let Some(m) = world.roster.members.get_mut(0) {
+        if let Some(m) = world.party.roster.members.get_mut(0) {
             let mut bits = m.ability_bits();
             bits[3] &= !0x20;
             m.set_ability_bits(bits);
@@ -1318,7 +1323,7 @@ mod capture_bypass_tests {
     fn a_capture_class_respecting_cast_still_takes_the_resist_ladder() {
         let mut world = world_with_resisting_party();
         with_capture_class(&mut world, RESPECT_MOVE_ID);
-        if let Some(m) = world.roster.members.get_mut(0) {
+        if let Some(m) = world.party.roster.members.get_mut(0) {
             let mut bits = m.ability_bits();
             bits[3] &= !0x20;
             m.set_ability_bits(bits);
@@ -1397,7 +1402,7 @@ mod capture_bypass_tests {
     fn the_bonus_arm_floor_makes_a_bypass_hit_defence_insensitive() {
         let with_defence = |move_id: u8, defence: u16| -> i32 {
             let mut world = world_with_resisting_party();
-            if let Some(m) = world.roster.members.get_mut(0) {
+            if let Some(m) = world.party.roster.members.get_mut(0) {
                 let mut bits = m.ability_bits();
                 bits[3] &= !0x20;
                 m.set_ability_bits(bits);
@@ -1589,7 +1594,7 @@ mod one_spell_model_tests {
     #[test]
     fn both_cast_paths_quote_the_same_price_so_a_double_charge_would_be_visible() {
         let mut world = World::new();
-        world.party_count = 1;
+        world.party.party_count = 1;
         world.set_spell_catalog(crate::retail_magic::retail_seru_magic_catalog());
         for i in 0..2usize {
             let a = world.spawn_actor(i);

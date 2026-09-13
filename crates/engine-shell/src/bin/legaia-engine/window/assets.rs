@@ -830,7 +830,7 @@ impl PlayWindowApp {
         if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
             && let Some(pslot) = world.player_actor_slot
         {
-            let lead = world.active_party.first().copied().unwrap_or(0) as usize;
+            let lead = world.party.active_party.first().copied().unwrap_or(0) as usize;
             let gtmd = world
                 .global_tmd_pool
                 .get(lead)

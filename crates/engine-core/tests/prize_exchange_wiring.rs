@@ -100,7 +100,7 @@ fn redeem_and_exit_through_the_menu_runtime() {
         w.minigames.casino_coins, 500,
         "price debited from the coin bank"
     );
-    assert_eq!(w.inventory.get(&0x20), Some(&1), "prize granted");
+    assert_eq!(w.party.inventory.get(&0x20), Some(&1), "prize granted");
     assert!(
         w.system_flag_test(0x36),
         "the one-shot gate flag raised on commit"
@@ -142,7 +142,7 @@ fn a_short_coin_bank_refuses_without_mutation() {
     menu.open_prize_exchange(session);
     press(&mut menu, &mut w, |i| i.cross = true);
     assert_eq!(w.minigames.casino_coins, 10);
-    assert!(w.inventory.is_empty());
+    assert!(w.party.inventory.is_empty());
     assert!(
         menu.prize_session.is_some(),
         "still browsing after the buzz"

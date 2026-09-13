@@ -353,8 +353,8 @@ mod tests {
         let mut rt = roundtrip_runtime();
         {
             let w = rt.world_mut();
-            w.money = 777;
-            w.inventory.insert(0x77, 5);
+            w.party.money = 777;
+            w.party.inventory.insert(0x77, 5);
             w.load_party(legaia_save::Party {
                 members: vec![legaia_save::CharacterRecord::zeroed()],
             });
@@ -365,17 +365,21 @@ mod tests {
         let mut rt2 = roundtrip_runtime();
         let summary = rt2.import_save_core(&bytes).expect("import");
         assert!(summary.contains("\"money\":777"), "{summary}");
-        assert_eq!(rt2.world_mut().money, 777);
-        assert_eq!(rt2.world_mut().inventory.get(&0x77).copied(), Some(5));
+        assert_eq!(rt2.world_mut().party.money, 777);
+        assert_eq!(rt2.world_mut().party.inventory.get(&0x77).copied(), Some(5));
     }
 
     #[test]
     fn import_save_rejects_garbage_without_touching_the_world() {
         let mut rt = roundtrip_runtime();
-        rt.world_mut().money = 1234;
+        rt.world_mut().party.money = 1234;
         assert!(rt.import_save_core(&[0u8; 64]).is_err());
         assert!(rt.import_save_core(b"LGSFgarbage").is_err());
-        assert_eq!(rt.world_mut().money, 1234, "failed import changes nothing");
+        assert_eq!(
+            rt.world_mut().party.money,
+            1234,
+            "failed import changes nothing"
+        );
     }
 
     #[test]
@@ -445,8 +449,8 @@ mod tests {
         let summary = rt.import_card_save_core(&patched, 1).expect("card import");
         assert!(summary.contains("\"kind\":\"card\""), "{summary}");
         assert!(summary.contains("\"coins\":1234"), "{summary}");
-        assert_eq!(rt.world_mut().money, 900);
-        assert_eq!(rt.world_mut().roster.members.len(), 1);
+        assert_eq!(rt.world_mut().party.money, 900);
+        assert_eq!(rt.world_mut().party.roster.members.len(), 1);
     }
 
     #[test]

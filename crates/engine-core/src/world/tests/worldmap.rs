@@ -167,10 +167,13 @@ fn world_map_region_walk_triggers_battle() {
     use crate::region_encounter::{EncounterRegion, RegionEncounterTable};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     world.enter_world_map();
     // Frame the camera at a quarter turn (azimuth 1024) so the camera-relative
     // remap maps a held Right cleanly to world +X (keeps this test's "walk +X
@@ -325,10 +328,13 @@ fn world_map_encounter_flips_to_battle_returning_to_world_map() {
     use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     world.enter_world_map();
     // A capable lone party member.
     world.actors[0].active = true;
@@ -419,10 +425,13 @@ fn world_map_encounter_zone_uses_its_own_formation() {
     use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     world.enter_world_map();
     world.actors[0].active = true;
     world.actors[0].battle.hp = 400;

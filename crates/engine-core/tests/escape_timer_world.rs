@@ -21,9 +21,9 @@ use legaia_engine_vm::escape_timer::TimerInk;
 /// wants `n` drained frames has to run more ticks than that. Run until the
 /// world's own retail-frame counter has advanced `frames`.
 fn advance_retail_frames(world: &mut World, frames: u64) {
-    let target = world.field_frames + frames;
+    let target = world.clock.display_frames + frames;
     let mut guard = 0;
-    while world.field_frames < target {
+    while world.clock.display_frames < target {
         let _ = world.tick();
         guard += 1;
         assert!(guard < 100_000, "retail-frame clock did not advance");

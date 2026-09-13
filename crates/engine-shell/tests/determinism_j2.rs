@@ -48,8 +48,8 @@ fn synthetic_world(rng_seed: u32) -> World {
     }
     world.rng_state = rng_seed;
     world.mode = SceneMode::Title;
-    world.money = 0;
-    world.party_count = 3;
+    world.party.money = 0;
+    world.party.party_count = 3;
     // Three party slots with retail-shaped HP so the digest exercises
     // the per-actor channel. Use spawn_actor so battle flags line up
     // with the synthetic-loop pattern; the determinism gate exercises
@@ -97,7 +97,7 @@ fn sample_world(world: &World, pad: u16) -> StateSample {
         scene_mode: scene_mode_name(world.mode).to_string(),
         pad,
         rng_state: world.rng_state,
-        money: world.money,
+        money: world.party.money,
         party_hp_total,
         dialog_active: world.dialog.current.is_some(),
     }

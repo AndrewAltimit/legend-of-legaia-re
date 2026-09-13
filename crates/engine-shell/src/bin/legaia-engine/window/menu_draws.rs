@@ -759,6 +759,7 @@ impl PlayWindowApp {
             self.session
                 .host
                 .world
+                .party
                 .roster
                 .members
                 .get(slot as usize)

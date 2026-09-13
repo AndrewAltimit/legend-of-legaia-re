@@ -53,7 +53,7 @@ impl World {
     /// REF: FUN_801E6968, FUN_80055B6C, FUN_801DA51C
     pub fn battle_stage_id(&self) -> u8 {
         if let Some(id) = self.formation_slot0_monster_id() {
-            let first_seat = self.party_count.max(1) as usize;
+            let first_seat = self.party.party_count.max(1) as usize;
             let seat_liveness = self
                 .actors
                 .get(first_seat)

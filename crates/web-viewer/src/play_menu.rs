@@ -475,11 +475,11 @@ impl LegaiaRuntime {
         let resume_mode = match self.scene_host.as_mut() {
             Some(host) => {
                 let world = &mut host.world;
-                session.money = world.money.max(0) as u32;
-                session.play_time_seconds = world.play_time_seconds;
+                session.money = world.party.money.max(0) as u32;
+                session.play_time_seconds = world.clock.play_time_seconds;
                 session.set_gate(FieldMenuGate {
                     entry_context_kind: world.menu_entry_context_kind(),
-                    save_allowed: world.scene_save_allowed,
+                    save_allowed: world.party.scene_save_allowed,
                 });
                 // Same entry decode the native window runs: a locked context
                 // opens on the notice panel, not on the root picker.
@@ -575,7 +575,7 @@ impl LegaiaRuntime {
     pub fn play_scene_save_allowed(&self) -> bool {
         self.scene_host
             .as_ref()
-            .is_some_and(|h| h.world.scene_save_allowed)
+            .is_some_and(|h| h.world.party.scene_save_allowed)
     }
 
     /// Take the CDNAME scene label an in-canvas card **Load** landed in, if

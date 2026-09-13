@@ -1103,7 +1103,7 @@ impl World {
         if self.ambient.clut_fx.is_empty() {
             return false;
         }
-        let dt = self.frame_step.max(1);
+        let dt = self.clock.frame_step.max(1);
         let mut wrote = false;
         let mut clear_halt = false;
         let mut still: Vec<ClutCellFx> = Vec::new();

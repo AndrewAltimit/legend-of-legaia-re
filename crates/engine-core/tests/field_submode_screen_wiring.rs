@@ -42,7 +42,7 @@ fn tick_until(w: &mut World, limit: usize, mut done: impl FnMut(&World) -> bool)
 #[test]
 fn world_tick_runs_the_submode_dispatcher() {
     let mut w = field_world();
-    w.money = 50_000;
+    w.party.money = 50_000;
     w.open_coin_counter();
 
     // One `World::tick` must reach `tick_handler_actors` -> the dispatcher.
@@ -66,7 +66,7 @@ fn world_tick_runs_the_submode_dispatcher() {
 #[test]
 fn the_coin_counter_draws_the_panel_its_own_descriptor_installs() {
     let mut w = field_world();
-    w.money = 50_000;
+    w.party.money = 50_000;
     w.open_coin_counter();
     assert!(tick_until(&mut w, 16, |w| w
         .field_vm
@@ -101,7 +101,7 @@ fn the_coin_counter_draws_the_panel_its_own_descriptor_installs() {
 #[test]
 fn buying_coins_through_the_frame_loop_moves_gold_into_the_coin_bank() {
     let mut w = field_world();
-    w.money = 5_000;
+    w.party.money = 5_000;
     w.minigames.casino_coins = 7;
     w.open_coin_counter();
 
@@ -142,7 +142,7 @@ fn buying_coins_through_the_frame_loop_moves_gold_into_the_coin_bank() {
         "12 coins credited to the casino bank"
     );
     assert_eq!(
-        w.money,
+        w.party.money,
         5_000 - 12 * GOLD_PER_COIN,
         "gold paid 100 per coin, and nothing else touched it"
     );
@@ -151,7 +151,7 @@ fn buying_coins_through_the_frame_loop_moves_gold_into_the_coin_bank() {
 #[test]
 fn an_unaffordable_amount_never_reaches_the_bank() {
     let mut w = field_world();
-    w.money = 250; // two coins' worth
+    w.party.money = 250; // two coins' worth
     w.minigames.casino_coins = 0;
     w.open_coin_counter();
     assert!(tick_until(&mut w, 16, |w| w
@@ -170,7 +170,7 @@ fn an_unaffordable_amount_never_reaches_the_bank() {
         w.minigames.casino_coins, 0,
         "the refusal buzz banks nothing"
     );
-    assert_eq!(w.money, 250);
+    assert_eq!(w.party.money, 250);
     assert_ne!(
         w.field_vm.submode_screen.actor.sub, 2,
         "an over-budget accept must not open the confirm panel"
@@ -317,14 +317,14 @@ fn an_idle_world_pays_nothing_for_the_new_pass() {
     // The dispatcher must be inert with no screen up: no draws, no actions,
     // and no change to the money model.
     let mut w = field_world();
-    w.money = 1_234;
+    w.party.money = 1_234;
     w.minigames.casino_coins = 5;
     for _ in 0..32 {
         w.tick();
     }
     assert!(w.field_vm.submode_screen.frame.actions.is_empty());
     assert!(w.field_vm.submode_screen.draws().is_empty());
-    assert_eq!(w.money, 1_234);
+    assert_eq!(w.party.money, 1_234);
     assert_eq!(w.minigames.casino_coins, 5);
     assert!(
         w.find_actor_by_handler(ActorHandler::SubmodeDriver)
@@ -342,7 +342,7 @@ fn an_idle_world_pays_nothing_for_the_new_pass() {
 #[test]
 fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
     let mut w = field_world();
-    w.money = 5_000;
+    w.party.money = 5_000;
     w.minigames.casino_coins = 7;
     w.open_coin_counter();
     assert!(tick_until(&mut w, 16, |w| w
@@ -384,7 +384,7 @@ fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
         "the pad-driven Yes never committed - the state-2 softlock is back"
     );
     assert_eq!(w.minigames.casino_coins, 19);
-    assert_eq!(w.money, 5_000 - 12 * GOLD_PER_COIN);
+    assert_eq!(w.party.money, 5_000 - 12 * GOLD_PER_COIN);
     w.input.set_pad(0);
     assert!(
         tick_until(&mut w, 64, |w| w.field_vm.submode_screen.is_done()),

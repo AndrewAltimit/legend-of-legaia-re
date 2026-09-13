@@ -62,11 +62,14 @@ fn spawn_enemy0_for_formation(decoded_man: &[u8], formation_id: u16) -> Option<u
     let (table, defs) = scene_encounter_from_man("oracle", decoded_man)?;
 
     let mut world = World {
-        party_count: 1,
+        party: legaia_engine_core::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Field;
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     // A capable lone party member so `enter_battle_from_formation` has a side to
     // place (the monster slot is what we read; the party slot just needs to exist).
     world.actors[0].active = true;
@@ -90,7 +93,7 @@ fn spawn_enemy0_for_formation(decoded_man: &[u8], formation_id: u16) -> Option<u
             // Enemy slot 0 is battle actor `party_count + 0`.
             return world
                 .actors
-                .get(world.party_count as usize)
+                .get(world.party.party_count as usize)
                 .and_then(|a| a.battle_monster_id);
         }
     }

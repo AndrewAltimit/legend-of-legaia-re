@@ -61,7 +61,10 @@ fn run_scene(index: &ProtIndex, name: &str) -> Option<Run> {
         return None;
     }
     let mut world = World {
-        frame_step: 2,
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     world.install_field_stagers(scripts.bytes);

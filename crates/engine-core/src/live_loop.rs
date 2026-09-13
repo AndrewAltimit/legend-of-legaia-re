@@ -78,7 +78,7 @@ impl World {
         }
 
         if opts.live_loop {
-            self.live_gameplay_loop = true;
+            self.toggles.live_gameplay_loop = true;
         }
         self.set_battle_bgm(opts.battle_bgm);
         if opts.player_battle {
@@ -86,7 +86,7 @@ impl World {
             self.set_seru_registry(crate::seru_learning::SeruRegistry::retail());
         }
         self.refresh_encounter_rollable();
-        if self.live_gameplay_loop && !self.encounters.scene_rollable {
+        if self.toggles.live_gameplay_loop && !self.encounters.scene_rollable {
             self.encounters.scene_hint_frames = Self::ENCOUNTER_HINT_FRAMES;
             log::info!(
                 "live loop armed on '{scene}', but the scene rolls no random encounters \
@@ -107,7 +107,7 @@ impl World {
     /// encounters" hint this frame.
     pub fn show_encounter_hint(&self) -> bool {
         self.encounters.scene_hint_frames > 0
-            && self.live_gameplay_loop
+            && self.toggles.live_gameplay_loop
             && !self.encounters.scene_rollable
             && matches!(self.mode, SceneMode::Field | SceneMode::WorldMap)
     }
@@ -144,7 +144,7 @@ impl World {
     /// ([`Self::finish_battle`]), dropping a wiped party straight back into
     /// the field would just re-wipe on the next encounter.
     pub fn revive_party_full(&mut self) {
-        for rec in self.roster.members.iter_mut() {
+        for rec in self.party.roster.members.iter_mut() {
             let mut hms = rec.hp_mp_sp();
             hms.hp_cur = hms.hp_max;
             hms.mp_cur = hms.mp_max;

@@ -154,7 +154,8 @@ fn with_battle_item_frame<R>(
 
 /// The party leader whose name opens the post-battle spoils line.
 fn battle_spoils_leader(w: &legaia_engine_core::world::World) -> String {
-    w.roster
+    w.party
+        .roster
         .members
         .get(w.party_roster_slot(0))
         .map(|m| m.name())
@@ -676,13 +677,14 @@ impl LegaiaRuntime {
     fn battle_banner_message(&self, assets: &crate::play_menu::PlayMenuAssets) -> Option<String> {
         assets.chrome_rects()?;
         let w = &self.scene_host.as_ref()?.world;
-        if let Some(b) = &w.current_level_up_banner {
+        if let Some(b) = &w.party.current_level_up_banner {
             // Name the character, not their roster ordinal - `P3` is an index
             // only this codebase knows. `char_id` is the ROSTER slot the
             // level-up applier wrote, so it indexes `roster.members`
             // directly (not the battle order). Twin of the native window's
             // `battle_banner_message`.
             let who = w
+                .party
                 .roster
                 .members
                 .get(b.char_id as usize)
@@ -694,7 +696,8 @@ impl LegaiaRuntime {
                 b.new_level, b.hp_gained, b.mp_gained
             ));
         }
-        w.current_capture_banner
+        w.party
+            .current_capture_banner
             .as_ref()
             .and_then(|b| b.current_banner())
     }
@@ -1358,7 +1361,7 @@ impl LegaiaRuntime {
     pub fn set_live_battles(&mut self, on: bool) {
         self.live_battles = on;
         if let Some(h) = self.scene_host.as_mut() {
-            h.world.live_gameplay_loop = on;
+            h.world.toggles.live_gameplay_loop = on;
             h.world.battle.player_driven = on;
         }
     }
@@ -1439,8 +1442,8 @@ impl LegaiaRuntime {
             ));
             return false;
         };
-        if !host.world.live_gameplay_loop {
-            host.world.live_gameplay_loop = true;
+        if !host.world.toggles.live_gameplay_loop {
+            host.world.toggles.live_gameplay_loop = true;
             host.world.battle.player_driven = true;
         }
         host.world.force_encounter(id)
@@ -1671,7 +1674,7 @@ mod live_hud_tests {
                 Some(legaia_engine_core::battle_input::CommandPhase::Targeting { .. })
             );
             if !targeting {
-                let pc = w.party_count.clamp(1, 3) as usize;
+                let pc = w.party.party_count.clamp(1, 3) as usize;
                 let monsters: Vec<(usize, u16, u16, u16)> = w
                     .actors
                     .iter()
@@ -1911,7 +1914,7 @@ impl LegaiaRuntime {
                 let mvp = glam::Mat4::from_cols_array(&vp)
                     * glam::Mat4::from_scale(glam::Vec3::splat(scale));
                 let party = world.battle_ctx.active_actor < 3;
-                let frame = world.field_frames as u32;
+                let frame = world.clock.display_frames as u32;
                 for q in streak_quads_scheduled(&src, &mvp, frame, block.counter_word, party) {
                     out.push(q.to_screen_prim(MOVE_FX_STREAK_OT));
                 }

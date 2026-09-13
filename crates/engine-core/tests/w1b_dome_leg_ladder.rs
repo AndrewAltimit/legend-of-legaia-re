@@ -221,6 +221,7 @@ fn rungs2to4_a_played_leg_reports_into_the_ladder_and_pays_its_rows() {
 
     // Rung 3: reporting it advances the ladder and rolls the four rows.
     let before_hp = w
+        .party
         .roster
         .members
         .first()
@@ -253,8 +254,9 @@ fn rungs2to4_a_played_leg_reports_into_the_ladder_and_pays_its_rows() {
 
     // Rung 4: the recovery reaches the fighter's record, and the contest is
     // left ready for the next leg (or settling).
-    if report_survived(state) && !w.roster.members.is_empty() {
+    if report_survived(state) && !w.party.roster.members.is_empty() {
         let after_hp = w
+            .party
             .roster
             .members
             .first()

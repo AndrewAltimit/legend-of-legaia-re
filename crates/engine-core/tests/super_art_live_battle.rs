@@ -49,7 +49,7 @@ fn build_world() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
     // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
     w.load_party(legaia_save::Party::zeroed(3));
@@ -76,8 +76,8 @@ fn build_world() -> World {
     // writes `0x1A` over the starter of an art this very performance learns
     // (`FUN_801EFBFC` verdict 2), so the component arts must already be
     // known - retail's own "no NEW arts in a Super" rule.
-    w.tactical_arts.mark_known(0, 0x27);
-    w.tactical_arts.mark_known(0, 0x1F);
+    w.party.tactical_arts.mark_known(0, 0x27);
+    w.party.tactical_arts.mark_known(0, 0x1F);
     // Seven presses on the disc-free 100-AP pool: 14 each spends 98, the
     // eighth is unaffordable and the entry ends by itself.
     w.battle.swing_costs[0] = [14; 4];
@@ -100,13 +100,13 @@ fn build_world() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w.battle.player_driven = true;
     w
 }
 
 fn monster_hp_total(w: &World) -> u32 {
-    (w.party_count as usize..w.actors.len())
+    (w.party.party_count as usize..w.actors.len())
         .map(|i| w.actors[i].battle.hp as u32)
         .sum()
 }

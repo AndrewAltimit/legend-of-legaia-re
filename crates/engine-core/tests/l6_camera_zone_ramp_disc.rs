@@ -115,7 +115,7 @@ fn world_at(site: &Site) -> World {
         mode: SceneMode::Field,
         ..World::default()
     };
-    world.roster = legaia_save::Party::zeroed(3);
+    world.party.roster = legaia_save::Party::zeroed(3);
     let slot = 0usize;
     world.spawn_actor(slot);
     world.player_actor_slot = Some(slot as u8);

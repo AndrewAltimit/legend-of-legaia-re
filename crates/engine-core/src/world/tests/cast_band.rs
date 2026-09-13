@@ -11,7 +11,10 @@ use legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN;
 /// Seru-magic catalog, the spell submenu open on the caster.
 fn seru_cast_world() -> World {
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     // A live session seats the creature above the eight battle slots.
@@ -40,7 +43,7 @@ fn seru_cast_world() -> World {
     list.count = 1;
     list.ids[0] = 0x81;
     party.members[0].set_spell_list(list);
-    world.roster = party;
+    world.party.roster = party;
     world.battle_ctx.active_actor = 0;
     world.battle.spell_menu = world.build_battle_spell_session(0);
     world
@@ -216,7 +219,10 @@ fn a_monster_cast_runs_the_magic_band_and_folds_on_leaving_the_wait() {
     use crate::spells::SpellCatalog;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Battle;
@@ -325,7 +331,10 @@ fn a_party_cast_raises_no_spell_name_label() {
 /// that pose `actor_table[7]` have something to write.
 fn module_code_world() -> World {
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     while world.actors.len() < 12 {

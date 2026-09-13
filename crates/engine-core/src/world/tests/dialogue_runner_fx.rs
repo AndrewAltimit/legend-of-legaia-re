@@ -83,7 +83,7 @@ fn vm_dialogue_drives_inline_runner_via_tick_and_tears_down() {
     let inline = vec![0x00u8, 0x56, 0x00, 0x1F, b'H', b'i', 0x00];
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.use_vm_dialogue = true;
+    world.toggles.use_vm_dialogue = true;
     world.dialog.current = Some(DialogRequest {
         text_id: 0,
         inline,
@@ -137,7 +137,7 @@ fn simple_dialogue_opt_out_leaves_runner_untouched() {
     let inline = vec![0x00u8, 0x56, 0x00, 0x1F, b'H', b'i', 0x00];
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.use_vm_dialogue = false;
+    world.toggles.use_vm_dialogue = false;
     world.dialog.current = Some(DialogRequest {
         text_id: 0,
         inline,
@@ -202,7 +202,10 @@ fn battle_special_attack_requests_move_fx_spawn() {
 
     fn run(with_fx: bool) -> Option<(u8, [i16; 3])> {
         let mut world = World {
-            party_count: 1,
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
             ..World::default()
         };
         world.mode = SceneMode::Battle;

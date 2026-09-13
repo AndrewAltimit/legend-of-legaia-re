@@ -744,7 +744,7 @@ fn the_save_row_is_reachable_by_pad_on_a_kingdom_overworld() {
 
     // The overworld is where saving is legal...
     assert!(
-        s.host.world.scene_save_allowed,
+        s.host.world.party.scene_save_allowed,
         "map01's MAN sets the save-allow bit"
     );
     assert_eq!(
@@ -791,7 +791,7 @@ fn a_town_still_refuses_the_save_row_after_the_open_gate_widened() {
     };
     assert_eq!(s.host.world.mode, SceneMode::Field);
     assert!(
-        !s.host.world.scene_save_allowed,
+        !s.host.world.party.scene_save_allowed,
         "town01's MAN clears the bit"
     );
 

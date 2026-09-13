@@ -44,7 +44,7 @@ fn opening_the_pause_menu_in_a_no_save_scene_greys_the_save_row() {
         .expect("enter town01 live");
 
     assert!(
-        !session.host.world.scene_save_allowed,
+        !session.host.world.party.scene_save_allowed,
         "town01's MAN clears the save-allow bit"
     );
 

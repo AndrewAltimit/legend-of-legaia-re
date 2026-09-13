@@ -318,7 +318,10 @@ fn bake_vdf_pulse_anim(
 
     // The same setup `SceneHost::enter_field_scene` runs before arming.
     let mut w = crate::world::World {
-        frame_step: 2,
+        clock: crate::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     if let Some(scripts) = scene.find_event_scripts() {

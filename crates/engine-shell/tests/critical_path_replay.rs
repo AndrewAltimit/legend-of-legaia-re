@@ -1069,10 +1069,10 @@ impl FightPolicy {
     /// in the bag to spend on them?
     fn wants_heal(&self, host: &SceneHost) -> bool {
         let w = &host.world;
-        if w.inventory.get(&self.heal_item).copied().unwrap_or(0) == 0 {
+        if w.party.inventory.get(&self.heal_item).copied().unwrap_or(0) == 0 {
             return false;
         }
-        (0..w.party_count.clamp(1, 3) as usize).any(|i| {
+        (0..w.party.party_count.clamp(1, 3) as usize).any(|i| {
             let a = &w.actors[i].battle;
             a.max_hp > 0
                 && a.hp > 0
@@ -1180,13 +1180,13 @@ fn drain_battle(host: &mut SceneHost, resume: SceneMode, policy: &FightPolicy) -
 /// consult, and a report keyed on the record would be a frame behind them.
 fn fight_snapshot(host: &SceneHost) -> String {
     let w = &host.world;
-    let party: Vec<String> = (0..w.party_count.clamp(1, 3) as usize)
+    let party: Vec<String> = (0..w.party.party_count.clamp(1, 3) as usize)
         .map(|i| {
             let a = &w.actors[i].battle;
             format!("{}/{}", a.hp, a.max_hp)
         })
         .collect();
-    let monsters: Vec<String> = (w.party_count.clamp(1, 3) as usize..w.actors.len())
+    let monsters: Vec<String> = (w.party.party_count.clamp(1, 3) as usize..w.actors.len())
         .filter(|&i| w.actors[i].battle.max_hp > 0)
         .map(|i| {
             let a = &w.actors[i].battle;
@@ -1202,8 +1202,8 @@ fn fight_snapshot(host: &SceneHost) -> String {
             format!("F{}[{}]", f.formation_id, ids.join(","))
         })
         .unwrap_or_else(|| "F-".to_string());
-    let lvl = w.roster.members.first().map_or(0, |r| r.level());
-    let bag: usize = w.inventory.values().map(|&n| n as usize).sum();
+    let lvl = w.party.roster.members.first().map_or(0, |r| r.level());
+    let bag: usize = w.party.inventory.values().map(|&n| n as usize).sum();
     format!(
         "{formation} party[{}] mob[{}] Lv{lvl} bag{bag}",
         party.join(" "),
@@ -2076,14 +2076,17 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
         // than through `arm_live_loop`, whose `encounter.is_none()` arm would
         // install the *fabricated* vanilla formation table over the scene's
         // own.
-        host.world.live_gameplay_loop = true;
+        host.world.toggles.live_gameplay_loop = true;
         host.world
             .set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
         // Leave Rim Elm with the purse spent on healing. See [`BAG_HEAL_COUNT`]
         // for why five, and why this is the model's one non-pad input.
         if fight.bag {
-            host.world.inventory.insert(BAG_HEAL_ITEM, BAG_HEAL_COUNT);
-            host.world.money -= BAG_HEAL_PRICE * i32::from(BAG_HEAL_COUNT);
+            host.world
+                .party
+                .inventory
+                .insert(BAG_HEAL_ITEM, BAG_HEAL_COUNT);
+            host.world.party.money -= BAG_HEAL_PRICE * i32::from(BAG_HEAL_COUNT);
         }
     }
 
@@ -2327,7 +2330,7 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
         eprintln!(
             "[fight] keikoku encounter model: live_loop {} rollable {} region_tracker {} \
              session {} formations {:?}",
-            host.world.live_gameplay_loop,
+            host.world.toggles.live_gameplay_loop,
             host.world.encounters.scene_rollable,
             host.world.terrain.region_tracker.is_some(),
             host.world.encounters.session.is_some(),

@@ -135,7 +135,7 @@ fn world_at(site: &Site) -> World {
         mode: SceneMode::Field,
         ..World::default()
     };
-    world.roster = legaia_save::Party::zeroed(3);
+    world.party.roster = legaia_save::Party::zeroed(3);
     world.load_field_script_at(site.body.clone(), site.pc);
     world
 }
@@ -219,8 +219,8 @@ fn three_actor_talk_section(sites: &[Site]) {
 
     // ---- first arm: the lock is clear -------------------------------------
     let mut world = world_at(site);
-    world.party_actor_slots = vec![Some(0), Some(1), Some(2)];
-    world.party_leader_slot = Some(1);
+    world.party.party_actor_slots = vec![Some(0), Some(1), Some(2)];
+    world.party.party_leader_slot = Some(1);
     // Seed live placements for whichever participants the disc names, so the
     // capture half is falsifiable rather than three `None`s.
     for (i, id) in ids.iter().enumerate() {
@@ -240,7 +240,7 @@ fn three_actor_talk_section(sites: &[Site]) {
         site.scene
     );
     assert_eq!(
-        world.party_actor_slots,
+        world.party.party_actor_slots,
         vec![Some(1)],
         "{}: the story party collapses to its leader",
         site.scene
@@ -298,7 +298,7 @@ fn three_actor_talk_section(sites: &[Site]) {
     // The re-arm must NOT collapse the party a second time (it is already
     // collapsed) - and, more to the point, must not re-run the flag
     // choreography, because the leader is whoever the first arm chose.
-    assert_eq!(world.party_actor_slots, vec![Some(1)]);
+    assert_eq!(world.party.party_actor_slots, vec![Some(1)]);
 }
 
 /// What actually ends a `43 02` talk - and what does not.
@@ -345,10 +345,14 @@ fn a_three_actor_talk_ends_when_the_lock_drops_not_on_a_timer() {
     let site = sites.first().expect("a `43 02` carrier").clone();
 
     let mut world = world_at(&site);
-    world.party_actor_slots = vec![Some(0), Some(1), Some(2)];
-    world.party_leader_slot = Some(0);
+    world.party.party_actor_slots = vec![Some(0), Some(1), Some(2)];
+    world.party.party_leader_slot = Some(0);
     world.step_field().expect("step the `43 02` instruction");
-    assert_eq!(world.party_actor_slots.len(), 1, "the talk collapses first");
+    assert_eq!(
+        world.party.party_actor_slots.len(),
+        1,
+        "the talk collapses first"
+    );
     assert!(world.system_flag_test(0xD), "and raises the lock");
 
     // ---- no timer: the arming script parks -------------------------------
@@ -377,7 +381,7 @@ fn a_three_actor_talk_ends_when_the_lock_drops_not_on_a_timer() {
         site.scene
     );
     assert_eq!(
-        world.party_actor_slots.len(),
+        world.party.party_actor_slots.len(),
         1,
         "{}: so the party is still the leader alone",
         site.scene
@@ -395,12 +399,16 @@ fn a_three_actor_talk_ends_when_the_lock_drops_not_on_a_timer() {
         site.scene
     );
     assert_eq!(
-        world.party_actor_slots.len(),
+        world.party.party_actor_slots.len(),
         3,
         "{}: and the story party comes back",
         site.scene
     );
-    assert_eq!(world.party_leader_slot, Some(0), "with its arm-time leader");
+    assert_eq!(
+        world.party.party_leader_slot,
+        Some(0),
+        "with its arm-time leader"
+    );
 }
 
 // ---------------------------------------------------------------------------

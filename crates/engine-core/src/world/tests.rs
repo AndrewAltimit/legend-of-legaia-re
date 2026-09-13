@@ -132,7 +132,10 @@ fn full_test_catalog() -> crate::items::ItemCatalog {
 #[cfg(test)]
 fn offensive_item_world(monster_hp: u16, monster_id: u16) -> World {
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.battle.player_driven = true;
@@ -157,12 +160,15 @@ fn capture_world(party_count: u8) -> World {
     use crate::seru_learning::{SeruDef, SeruRegistry};
 
     let mut world = World {
-        party_count,
+        party: crate::world::PartyState {
+            party_count,
+            ..Default::default()
+        },
         ..World::default()
     };
     // Zeroed roster (empty spell lists) so `build_battle_spell_session`
     // resolves a member per party slot; learned spells come from the log.
-    world.roster = legaia_save::Party::zeroed(party_count.max(1) as usize);
+    world.party.roster = legaia_save::Party::zeroed(party_count.max(1) as usize);
     let mut reg = SeruRegistry::new();
     reg.insert(SeruDef {
         id: 1,
@@ -199,12 +205,15 @@ fn capture_world(party_count: u8) -> World {
 fn summon_xp_world(enemy_hp: u16, enemy_max_hp: u16) -> World {
     use legaia_save::Party;
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Battle;
-    world.roster = Party::zeroed(1);
-    let rec = &mut world.roster.members[0];
+    world.party.roster = Party::zeroed(1);
+    let rec = &mut world.party.roster.members[0];
     let mut list = rec.spell_list();
     list.count = 1;
     list.ids[0] = 0x81;

@@ -77,7 +77,7 @@ impl ActionValidatorHost for WorldActionValidator<'_> {
 
     /// `DAT_80084594` - the present-party member count.
     fn party_count(&self) -> u8 {
-        self.world.party_count.clamp(1, 3)
+        self.world.party.party_count.clamp(1, 3)
     }
 }
 
@@ -116,7 +116,7 @@ impl World {
         [crate::target_picker::SlotState; 5],
     ) {
         use crate::target_picker::SlotState;
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         let slots: Vec<u8> = (0..(party_count as usize + 5).min(8) as u8).collect();
         let mask = self.action_validity_mask(ARM_ALIVE, 0, &slots);
         let slot_at = |idx: usize| -> SlotState {

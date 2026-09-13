@@ -83,7 +83,7 @@ fn koin1_prize_counter_interact_arms_the_exchange_through_the_runner() {
         !host.world.shops.prize_blocks.is_empty(),
         "prize table installed"
     );
-    host.world.use_vm_dialogue = true;
+    host.world.toggles.use_vm_dialogue = true;
 
     // The prize counter is the NPC whose interaction record carries the
     // `49 07 00` counter op (P1[5]; keyed by content, not slot order).

@@ -614,7 +614,7 @@ impl LegaiaRuntime {
         // Seat the summon in a free high actor slot (>= 8) so it never
         // collides with the party / monster battle slots, on the party side
         // in front of the party - the native seating law.
-        let party_count = host.world.party_count as usize;
+        let party_count = host.world.party.party_count as usize;
         let slot = self.summon_actor_slot.unwrap_or(8 + party_count);
         self.summon_actor_slot = Some(slot);
 
@@ -785,7 +785,7 @@ impl LegaiaRuntime {
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.as_ref()) else {
             return Vec::new();
         };
-        let frame = host.world.field_frames as f32;
+        let frame = host.world.clock.display_frames as f32;
         let mut out = Vec::with_capacity(br.actor_slots().len() * 6);
         for actor_idx in br.actor_slots() {
             let b = host.world.actors.get(actor_idx).map(|a| &a.battle);

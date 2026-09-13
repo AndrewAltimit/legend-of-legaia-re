@@ -674,7 +674,7 @@ mod tests {
     fn save_into_existing_block_round_trips_and_preserves_the_rest() {
         let original = card_with_save(3, "Vahn", 900);
         let mut rt = rt_with_card(0, original.clone());
-        rt.world_mut().money = 4321;
+        rt.world_mut().party.money = 4321;
         rt.world_mut().load_party(legaia_save::Party {
             members: vec![{
                 let mut r = legaia_save::CharacterRecord::zeroed();
@@ -719,7 +719,7 @@ mod tests {
         // A free block has no directory frame, so the save must stamp one or
         // the emulator's card browser will not see the save at all.
         let mut rt = rt_with_card(0, blank_card());
-        rt.world_mut().money = 77;
+        rt.world_mut().party.money = 77;
         rt.world_mut().load_party(legaia_save::Party {
             members: vec![{
                 let mut r = legaia_save::CharacterRecord::zeroed();
@@ -753,7 +753,7 @@ mod tests {
     fn saving_never_duplicates_a_filename_already_on_the_card() {
         // Retail card: block 1 holds save number 3.
         let mut rt = rt_with_card(0, card_with_numbered_save(1, 3, "Vahn", 100));
-        rt.world_mut().money = 5;
+        rt.world_mut().party.money = 5;
         rt.world_mut().load_party(legaia_save::Party {
             members: vec![{
                 let mut r = legaia_save::CharacterRecord::zeroed();
@@ -828,9 +828,9 @@ mod tests {
     fn load_from_card_lifts_the_block_into_the_world() {
         let mut rt = rt_with_card(1, card_with_save(2, "Gala", 555));
         rt.load_session_from_card(1, 2).expect("load");
-        assert_eq!(rt.world_mut().money, 555);
-        assert_eq!(rt.world_mut().roster.members.len(), 1);
-        assert_eq!(rt.world_mut().roster.members[0].name(), "Gala");
+        assert_eq!(rt.world_mut().party.money, 555);
+        assert_eq!(rt.world_mut().party.roster.members.len(), 1);
+        assert_eq!(rt.world_mut().party.roster.members[0].name(), "Gala");
     }
 
     #[test]

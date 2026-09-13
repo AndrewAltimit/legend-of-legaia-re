@@ -54,7 +54,7 @@ fn a_reported_leg_advances_the_ladder_and_banks_its_cell() {
 #[test]
 fn the_between_leg_restore_lands_on_the_fighters_record() {
     let mut w = world_with_contest();
-    let Some(rec) = w.roster.members.first_mut() else {
+    let Some(rec) = w.party.roster.members.first_mut() else {
         // A default world may carry no party; the restore has nothing to do
         // and the ladder must still advance.
         assert!(w.report_muscle_leg(cleared()).is_some());
@@ -66,7 +66,7 @@ fn the_between_leg_restore_lands_on_the_fighters_record() {
     rec.set_hp_mp_sp(hms);
 
     w.report_muscle_leg(cleared()).expect("a contest is open");
-    let after = w.roster.members[0].hp_mp_sp();
+    let after = w.party.roster.members[0].hp_mp_sp();
     assert!(
         after.hp_cur > 100,
         "the recovery lanes healed the fighter (was 100, now {})",
@@ -161,7 +161,7 @@ fn the_master_prize_lands_in_the_bag_once() {
     let out = w.settle_muscle_contest().expect("the run finished");
     assert!(out.award_prize);
     assert_eq!(
-        w.inventory.get(&md::CONTEST_PRIZE_ITEM_ID).copied(),
+        w.party.inventory.get(&md::CONTEST_PRIZE_ITEM_ID).copied(),
         Some(1),
         "the War God Icon is in the bag"
     );

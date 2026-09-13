@@ -35,10 +35,10 @@ fn build_world_with_party() -> World {
     // Wire vanilla monster + formation tables.
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     // Money + a placeholder party so save_full produces valid data.
-    w.money = 1234;
+    w.party.money = 1234;
     w.flags.story_flags = 0xCAFE;
     w.load_party(legaia_save::Party::zeroed(3));
-    w.play_time_seconds = 4500;
+    w.clock.play_time_seconds = 4500;
     w
 }
 
@@ -221,9 +221,9 @@ fn save_full_load_full_round_trips_v2_extension() {
     let mut w = build_world_with_party();
     // Force a specific learned-art bit so we can verify the mask survives.
     // Retail learns on the first successful use, so one call is enough.
-    let _ = w.tactical_arts.notify_art_used(0, 5);
+    let _ = w.party.tactical_arts.notify_art_used(0, 5);
     // Add a saved chain.
-    w.saved_chains.push(legaia_save::SavedChainRecord {
+    w.party.saved_chains.push(legaia_save::SavedChainRecord {
         char_slot: 1,
         name: "Combo A".into(),
         sequence: vec![0x10, 0x20, 0x30],
@@ -257,12 +257,12 @@ fn save_full_load_full_round_trips_v2_extension() {
     }
     let _ = runtime.load_from_slot(&mut w2, 0).expect("load_from_slot");
     assert_eq!(w2.flags.story_flags, 0xCAFE);
-    assert_eq!(w2.money, 1234);
-    assert_eq!(w2.play_time_seconds, 4500);
-    assert!(!w2.saved_chains.is_empty());
-    assert_eq!(w2.saved_chains[0].name, "Combo A");
+    assert_eq!(w2.party.money, 1234);
+    assert_eq!(w2.clock.play_time_seconds, 4500);
+    assert!(!w2.party.saved_chains.is_empty());
+    assert_eq!(w2.party.saved_chains[0].name, "Combo A");
     // Tactical-arts learned bit re-marked.
-    assert!(w2.tactical_arts.is_learned(0, 5));
+    assert!(w2.party.tactical_arts.is_learned(0, 5));
 }
 
 #[test]
@@ -527,8 +527,8 @@ fn full_loop_title_then_encounter_then_battle_then_save_then_load() {
         w2.actors.push(Actor::default());
     }
     let _ = runtime.load_from_slot(&mut w2, 0).expect("load");
-    assert_eq!(w2.money, 1234);
+    assert_eq!(w2.party.money, 1234);
     assert_eq!(w2.flags.story_flags, 0xCAFE);
-    assert_eq!(w2.play_time_seconds, 4500);
+    assert_eq!(w2.clock.play_time_seconds, 4500);
     assert!(path.exists());
 }

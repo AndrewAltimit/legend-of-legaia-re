@@ -74,7 +74,10 @@ fn seru_trade_runtime_swaps_and_reseeds() {
         .read_named_file("SCUS_942.54")
         .expect("SCUS present on disc");
     let mut w0 = World {
-        roster: party_for(seed),
+        party: legaia_engine_core::world::PartyState {
+            roster: party_for(seed),
+            ..Default::default()
+        },
         ..World::default()
     };
     assert!(
@@ -94,8 +97,14 @@ fn seru_trade_runtime_swaps_and_reseeds() {
         .expect("SCUS present after patch");
 
     let mut w = World {
-        roster: party_for(seed),
-        play_time_seconds: 0,
+        party: legaia_engine_core::world::PartyState {
+            roster: party_for(seed),
+            ..Default::default()
+        },
+        clock: legaia_engine_core::world::FrameClock {
+            play_time_seconds: 0,
+            ..Default::default()
+        },
         ..World::default()
     };
     assert!(
@@ -133,7 +142,7 @@ fn seru_trade_runtime_swaps_and_reseeds() {
     // --- Confirm + apply the first line; the runtime rewrites the owner. ---
     let trade = session.offers[0];
     let owner = trade.owner_slot as usize;
-    let before = w.roster.members[owner].spell_list();
+    let before = w.party.roster.members[owner].spell_list();
     assert!(
         before.ids[..before.count as usize].contains(&trade.given_id),
         "owner really holds the seru being given"
@@ -149,7 +158,7 @@ fn seru_trade_runtime_swaps_and_reseeds() {
         }
     );
 
-    let after = w.roster.members[owner].spell_list();
+    let after = w.party.roster.members[owner].spell_list();
     let pos = after.ids[..after.count as usize]
         .iter()
         .position(|&id| id == trade.received_id)
@@ -177,7 +186,7 @@ fn seru_trade_runtime_swaps_and_reseeds() {
     // --- Reseed: advancing past a bucket boundary changes the standing offer. ---
     let mut reseeded = false;
     for bucket in 1..16u32 {
-        w.play_time_seconds = bucket * SECONDS_PER_RESEED;
+        w.clock.play_time_seconds = bucket * SECONDS_PER_RESEED;
         let later = w.open_seru_trade(vendor_id).unwrap();
         if later.offer != expected_offer {
             reseeded = true;

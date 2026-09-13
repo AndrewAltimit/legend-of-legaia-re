@@ -19,7 +19,7 @@ use legaia_engine_core::world::{PROLOGUE_HANDOFF_FLAG, SceneMode, World};
 fn step_frame(w: &mut World) {
     for _ in 0..8 {
         let _ = w.tick();
-        if w.field_frame_step == 1 {
+        if w.clock.display_frame_step == 1 {
             return;
         }
     }
@@ -172,7 +172,7 @@ fn opening_timeline_op49_opens_name_entry_then_resumes() {
 
     // Simulate the name committing: the overlay closes, op-0x49 reports Done,
     // the timeline resumes past it and (running off the end) completes + drops.
-    w.name_entry = None;
+    w.party.name_entry = None;
     let mut ticks = 0;
     while w.cutscene.timeline.is_some() && ticks < 100 {
         step_frame(&mut w);

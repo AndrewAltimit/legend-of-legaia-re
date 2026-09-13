@@ -23,14 +23,18 @@ use legaia_engine_vm::status_effects::StatusKind;
 /// emits a row for it (rows with `hp_max == 0` are filtered out).
 fn world_with_one_member() -> World {
     let mut w = World {
-        party_count: 1,
+        party: legaia_engine_core::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..Default::default()
     };
     // `World::default()` starts with an empty roster; seed one claimed slot.
-    w.roster
+    w.party
+        .roster
         .members
         .push(legaia_save::CharacterRecord::zeroed());
-    let m = &mut w.roster.members[0];
+    let m = &mut w.party.roster.members[0];
     m.set_hp_mp_sp(legaia_save::HpMpSp {
         hp_cur: 120,
         hp_max: 120,

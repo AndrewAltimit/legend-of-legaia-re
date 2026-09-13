@@ -39,7 +39,10 @@ fn disc_accessory_passives_drive_bits_boosts_and_party_wide_mask() {
     };
 
     let mut world = World {
-        party_count: 3,
+        party: legaia_engine_core::world::PartyState {
+            party_count: 3,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.set_accessory_passives(passives);
@@ -97,7 +100,7 @@ fn disc_accessory_passives_drive_bits_boosts_and_party_wide_mask() {
     // (`World::cast_spell_on_slots` / `BattleSpellSession::new` / the
     // battle-action VM host all route through `MpCostModifier`).
     use legaia_engine_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
-    let bits = world.character_ability_bits[0];
+    let bits = world.party.character_ability_bits[0];
     assert_eq!(bits & 0x20, 0x20, "Spirit Talisman sets the Half-cost bit");
     let modifier = MpCostModifier::from_ability_flags(bits);
     assert_eq!(modifier, MpCostModifier::Half);
@@ -129,7 +132,7 @@ fn disc_accessory_passives_drive_bits_boosts_and_party_wide_mask() {
         "Golden Book sets the party-wide Gold Boost bit"
     );
     assert_eq!(
-        world.roster.members[1].ability_bits()[6] & 0x01,
+        world.party.roster.members[1].ability_bits()[6] & 0x01,
         0x01,
         "the wearer's record carries the Gold Boost byte"
     );

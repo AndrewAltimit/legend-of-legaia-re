@@ -26,8 +26,8 @@ fn disc_scus() -> Option<Vec<u8>> {
 
 fn world_with_disc_text(scus: &[u8]) -> World {
     let mut world = World::new();
-    world.roster = legaia_save::Party::zeroed(1);
-    let member = &mut world.roster.members[0];
+    world.party.roster = legaia_save::Party::zeroed(1);
+    let member = &mut world.party.roster.members[0];
     let mut hms = member.hp_mp_sp();
     hms.hp_max = 100;
     hms.hp_cur = 100;
@@ -48,8 +48,8 @@ fn items_screen_resolves_disc_names_counts_and_descriptions() {
     };
     let mut world = world_with_disc_text(&scus);
     // Healing Berry x3 + Healing Leaf x9 (real consumable ids).
-    world.inventory.insert(0x79, 3);
-    world.inventory.insert(0x77, 9);
+    world.party.inventory.insert(0x79, 3);
+    world.party.inventory.insert(0x77, 9);
 
     let mut s = build_pause_items_session(&world);
     // Rows are id-sorted: 0x77 first.
@@ -90,7 +90,7 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
     // Learn Gimard (0x81), Vera (0x83) and the Ra-Seru Horn (0x9c) at
     // levels 2 / 1 / 1.
     {
-        let member = &mut world.roster.members[0];
+        let member = &mut world.party.roster.members[0];
         let mut list = member.spell_list();
         list.count = 3;
         list.ids[..3].copy_from_slice(&[0x81, 0x83, 0x9c]);

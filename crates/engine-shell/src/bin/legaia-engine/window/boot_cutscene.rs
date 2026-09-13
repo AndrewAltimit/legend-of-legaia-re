@@ -276,7 +276,7 @@ impl PlayWindowApp {
                                     log::info!(
                                         "new game: seeded party_count={}, entered opening cutscene \
                                          '{cutscene}' (mode={mode:?})",
-                                        self.session.host.world.party_count,
+                                        self.session.host.world.party.party_count,
                                     );
                                     // The host swapped to the prologue scene:
                                     // rebuild the render-side scene state so its

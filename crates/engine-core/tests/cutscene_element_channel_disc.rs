@@ -135,7 +135,7 @@ fn the_channel_advances_from_the_worlds_own_frame_tick() {
     // lives here because it is the other half of the claim above.
     let mut w = World::new();
     w.mode = SceneMode::Field;
-    w.field_frame_step = 1;
+    w.clock.display_frame_step = 1;
     w.npcs.positions.insert(2, (0, 0));
     w.spawn_element_position_tween(
         ElementLink::Placement(2),

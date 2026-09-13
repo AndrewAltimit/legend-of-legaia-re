@@ -155,7 +155,7 @@ pub fn build_field_scene_anim(
             );
             if !installs.is_empty() {
                 let mut world = Box::new(legaia_engine_core::world::World::default());
-                world.frame_step = frame_step;
+                world.clock.frame_step = frame_step;
                 world.install_field_stagers(&stager_bytes);
                 // VDF buffer before the spawn: flag-gated installer records
                 // resolve morph lanes at spawn-run.

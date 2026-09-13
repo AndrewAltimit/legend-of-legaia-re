@@ -29,7 +29,7 @@ fn active_party_maps_battle_ordinals_to_characters() {
     // Noa + Terra present: battle ordinal 0 = roster slot 1, ordinal 1 =
     // roster slot 3 (the live-verified retail Terra-party shape).
     world.set_active_party(vec![1, 3]);
-    assert_eq!(world.party_count, 2);
+    assert_eq!(world.party.party_count, 2);
     assert_eq!(world.party_roster_slot(0), 1);
     assert_eq!(world.party_roster_slot(1), 3);
     // Actor mirrors reseeded per the mapping.
@@ -83,14 +83,20 @@ fn battle_xp_routes_to_composed_characters() {
     world.apply_battle_xp(100);
     // The 3/4-scaled split lands on the OCCUPYING characters' XP wells
     // (roster slots 2 + 3), not on slots 0/1.
-    assert_eq!(world.level_up_tracker.xp[0], 0, "Vahn (absent) gets none");
-    assert_eq!(world.level_up_tracker.xp[1], 0, "Noa (absent) gets none");
+    assert_eq!(
+        world.party.level_up_tracker.xp[0], 0,
+        "Vahn (absent) gets none"
+    );
+    assert_eq!(
+        world.party.level_up_tracker.xp[1], 0,
+        "Noa (absent) gets none"
+    );
     assert!(
-        world.level_up_tracker.xp[2] > 0,
+        world.party.level_up_tracker.xp[2] > 0,
         "Gala (ordinal 0) earns XP"
     );
     assert!(
-        world.level_up_tracker.xp[3] > 0,
+        world.party.level_up_tracker.xp[3] > 0,
         "Terra (ordinal 1) earns XP"
     );
 }
@@ -111,8 +117,8 @@ fn active_party_survives_save_roundtrip_and_maps_hp_writeback() {
 
     let mut fresh = World::new();
     fresh.load_full(sf);
-    assert_eq!(fresh.active_party, vec![1, 3]);
-    assert_eq!(fresh.party_count, 2);
+    assert_eq!(fresh.party.active_party, vec![1, 3]);
+    assert_eq!(fresh.party.party_count, 2);
     assert_eq!(fresh.actors[0].battle.hp, 150, "Noa's HP back on ordinal 0");
 }
 
@@ -126,8 +132,8 @@ fn identity_save_keeps_legacy_party_semantics() {
     let mut fresh = World::new();
     fresh.load_full(sf);
     assert!(
-        fresh.active_party.is_empty(),
+        fresh.party.active_party.is_empty(),
         "identity order restores as the identity default"
     );
-    assert_eq!(fresh.party_count, 4, "legacy party_count preserved");
+    assert_eq!(fresh.party.party_count, 4, "legacy party_count preserved");
 }

@@ -540,11 +540,11 @@ impl World {
         // One record per distinct entry code. The code is a character index
         // (retail multiplies it by `0x414` against the save block), and the
         // engine's roster is that same index space.
-        for &code in &self.active_party {
+        for &code in &self.party.active_party {
             if env.records.iter().any(|r| r.code == code) {
                 continue;
             }
-            let Some(rec) = self.roster.members.get(usize::from(code)) else {
+            let Some(rec) = self.party.roster.members.get(usize::from(code)) else {
                 continue;
             };
             let live = rec.live_stats();
@@ -559,6 +559,7 @@ impl World {
         // Retail's is the item window's own slot order; the engine's bag is a
         // map, so this is the id order `World::save_party` also writes.
         let mut bag: Vec<u8> = self
+            .party
             .inventory
             .iter()
             .filter(|&(_, &count)| count > 0)
@@ -662,9 +663,9 @@ impl World {
             // `DAT_80084594` / `DAT_80084598..` are the present-party roster;
             // the engine's mirror of retail's `0x8007BD10` list is
             // `World::active_party`.
-            entry_count: self.active_party.len().min(u8::MAX as usize) as u8,
-            entry_codes: self.active_party.clone(),
-            gold: self.money,
+            entry_count: self.party.active_party.len().min(u8::MAX as usize) as u8,
+            entry_codes: self.party.active_party.clone(),
+            gold: self.party.money,
             coin_bank: self.minigames.casino_coins.min(i32::MAX as u32) as i32,
             // Everything the entry list's per-entry sub-draw `FUN_801E5B4C`
             // reads out of RAM - see [`World::submode_equip_env`].
@@ -689,7 +690,7 @@ impl World {
                         .casino_coins
                         .saturating_add(coins as u32)
                         .min(hub::COIN_BANK_MAX as u32);
-                    self.money = self.money.saturating_sub(gold_cost).max(0);
+                    self.party.money = self.party.money.saturating_sub(gold_cost).max(0);
                 }
                 HubAction::ClearCursorRow => self.field_vm.submode_screen.counter.cursor = 0,
                 _ => {}
@@ -909,7 +910,7 @@ mod tests {
     #[test]
     fn the_coin_counter_moves_coins_and_gold_through_a_world_tick() {
         let mut w = world_with_driver();
-        w.money = 5_000;
+        w.party.money = 5_000;
         w.minigames.casino_coins = 7;
         w.open_coin_counter();
 
@@ -938,7 +939,7 @@ mod tests {
             7 + 12,
             "coins land in the casino bank"
         );
-        assert_eq!(w.money, 5_000 - 1_200, "gold pays 100 per coin");
+        assert_eq!(w.party.money, 5_000 - 1_200, "gold pays 100 per coin");
     }
 
     #[test]
@@ -962,7 +963,7 @@ mod tests {
     #[test]
     fn a_painted_screen_emits_draws() {
         let mut w = world_with_driver();
-        w.money = 100_000;
+        w.party.money = 100_000;
         w.open_coin_counter();
         // The entry arm installs the counter's idle panel, whose record has
         // no painter here; the confirm installs the three-line one, which

@@ -68,7 +68,7 @@ fn steal_for(monster_id: u16, table: &StealTable) -> Option<u8> {
     let granted = world.apply_steal(monster_id, table);
     if let Some(item) = granted {
         assert!(
-            world.inventory.get(&item).copied().unwrap_or(0) >= 1,
+            world.party.inventory.get(&item).copied().unwrap_or(0) >= 1,
             "stolen item 0x{item:02x} must be in the bag"
         );
     }

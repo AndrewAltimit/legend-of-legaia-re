@@ -114,7 +114,7 @@ fn world_at(site: &Site) -> World {
         mode: SceneMode::Field,
         ..World::default()
     };
-    world.roster = legaia_save::Party::zeroed(3);
+    world.party.roster = legaia_save::Party::zeroed(3);
     world.spawn_actor(0);
     world.player_actor_slot = Some(0);
     world.load_field_script_at(site.body.clone(), site.pc);
@@ -228,7 +228,7 @@ fn a_surviving_0d_park_opens_the_notice_panel_and_the_ready_check() {
         let mut session = FieldMenuSession::new();
         session.set_gate(FieldMenuGate {
             entry_context_kind: kind,
-            save_allowed: world.scene_save_allowed,
+            save_allowed: world.party.scene_save_allowed,
         });
         session.open_entry_screen();
         assert!(

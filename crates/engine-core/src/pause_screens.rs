@@ -1439,7 +1439,7 @@ pub fn target_panel_view_model(
     for (m, row) in model.members.iter_mut().zip(s.inner.targets.iter()) {
         // Party rows index the roster by slot; monster rows (battle-side
         // targets) have no character record and keep the zeroed fields.
-        let Some(rec) = world.roster.members.get(row.slot as usize) else {
+        let Some(rec) = world.party.roster.members.get(row.slot as usize) else {
             continue;
         };
         if row.is_enemy {
@@ -2675,7 +2675,7 @@ mod tests {
         live.spd = 46;
         live.int = 47;
         rec.set_live_stats(live);
-        world.roster.members = vec![rec];
+        world.party.roster.members = vec![rec];
 
         let m = target_panel_view_model(&s, &world).expect("target select stages the panel");
         // No disc effect table on this world - the plain panel.

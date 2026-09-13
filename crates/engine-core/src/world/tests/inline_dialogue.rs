@@ -277,7 +277,7 @@ fn vm_dialogue_tick_executes_branch_through_field_vm() {
     // option B must run its branch's SET (flag 6) through the field VM.
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.use_vm_dialogue = true;
+    world.toggles.use_vm_dialogue = true;
     world.dialog.current = Some(DialogRequest {
         text_id: 0,
         inline: ab_menu_inline_script(),

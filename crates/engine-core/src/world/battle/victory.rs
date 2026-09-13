@@ -446,7 +446,10 @@ impl World {
     /// win, `0x8004FBA4` on a wipe), mirrored onto the world liveness so the
     /// field return sees a standing member.
     fn floor_downed_party_hp(&mut self) {
-        for slot in 0..(self.party_count as usize).min(3).min(self.actors.len()) {
+        for slot in 0..(self.party.party_count as usize)
+            .min(3)
+            .min(self.actors.len())
+        {
             let b = &mut self.actors[slot].battle;
             if b.max_hp > 0 && b.hp == 0 {
                 b.hp = 1;

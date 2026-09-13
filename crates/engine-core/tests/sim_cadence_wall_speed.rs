@@ -168,12 +168,15 @@ fn one_sim_tick_is_exactly_one_retail_display_frame() {
     for _ in 0..300 {
         let _ = w.tick();
         assert_eq!(
-            w.field_frame_step, 1,
+            w.clock.display_frame_step, 1,
             "every sim tick maps to a retail display frame"
         );
         fired += 1;
     }
-    assert_eq!(w.field_frames, fired, "300 ticks = 300 retail frames");
+    assert_eq!(
+        w.clock.display_frames, fired,
+        "300 ticks = 300 retail frames"
+    );
     assert_eq!(w.frame, fired, "and the sim-tick counter agrees");
 }
 
@@ -228,8 +231,8 @@ fn gated_and_ungated_consumers_share_one_denominator() {
 fn the_walk_speed_is_invariant_under_the_retail_cadence() {
     for cadence in 1..=4u8 {
         let mut w = walking_world();
-        w.frame_step = cadence;
-        w.frame_step_floor = cadence;
+        w.clock.frame_step = cadence;
+        w.clock.frame_step_floor = cadence;
         let (_, dz) = hold(&mut w, input::PadButton::Up.mask(), RETAIL_FPS);
         assert_eq!(
             dz, RETAIL_WALK_UNITS_PER_SEC,

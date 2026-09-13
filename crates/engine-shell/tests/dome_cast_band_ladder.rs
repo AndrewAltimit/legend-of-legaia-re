@@ -193,7 +193,10 @@ fn a_player_seru_cast_reaches_a_ported_module_kernel() {
     // Two combatants is all the seam needs: the caster and something to
     // retarget onto.
     let mut world = World {
-        party_count: 1,
+        party: legaia_engine_core::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     while world.actors.len() < 8 {

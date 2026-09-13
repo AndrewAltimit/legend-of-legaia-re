@@ -50,11 +50,11 @@ fn new_game_seeds_vahn_from_disc_template() {
     let world = &session.host.world;
 
     // Exactly Vahn has joined.
-    assert_eq!(world.party_count, 1, "only Vahn joins at a New Game");
-    assert_eq!(world.roster.members.len(), 1);
+    assert_eq!(world.party.party_count, 1, "only Vahn joins at a New Game");
+    assert_eq!(world.party.roster.members.len(), 1);
 
     // Vahn's seeded record carries his real starting stats.
-    let vahn = &world.roster.members[0];
+    let vahn = &world.party.roster.members[0];
     let hms = vahn.hp_mp_sp();
     assert_eq!(hms.hp_max, 180);
     assert_eq!(hms.mp_max, 20);
@@ -82,7 +82,7 @@ fn boot_installs_the_real_retail_xp_curve_from_disc() {
     // The boot installs the disc-parsed SCUS curve (DAT_80076AF4 +
     // FUN_801E9504's formula). The first thresholds are byte-validated
     // against a captured retail level-up.
-    let xp = &session.host.world.level_up_tracker.xp_table;
+    let xp = &session.host.world.party.level_up_tracker.xp_table;
     assert_eq!(xp.len(), 98, "98 per-level thresholds (MAX_LEVEL - 1)");
     assert_eq!(&xp[0..3], &[121, 365, 730], "real retail XP thresholds");
 
@@ -111,7 +111,7 @@ fn boot_installs_the_real_per_character_growth_curves_from_disc() {
     let session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
 
     use legaia_engine_core::levelup::StatGrowthCurve;
-    let curves = &session.host.world.level_up_tracker.stat_curves;
+    let curves = &session.host.world.party.level_up_tracker.stat_curves;
 
     // Vahn/Noa/Gala get real per-level curves; the placeholder flat rate is gone.
     for (slot, curve) in curves.iter().take(3).enumerate() {
@@ -156,8 +156,8 @@ fn new_game_seeds_vahn_straight_from_disc_image() {
 
     session.begin_new_game();
     let world = &session.host.world;
-    assert_eq!(world.party_count, 1);
-    assert_eq!(world.roster.members[0].hp_mp_sp().hp_max, 180);
+    assert_eq!(world.party.party_count, 1);
+    assert_eq!(world.party.roster.members[0].hp_mp_sp().hp_max, 180);
 }
 
 #[test]

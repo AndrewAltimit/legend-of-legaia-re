@@ -320,13 +320,13 @@ fn interacting_with_a_door_runs_its_record() {
             world.mode = SceneMode::Field;
             world.install_field_carriers_from_man(&mf, man);
             world.install_field_player(0);
-            world.use_vm_dialogue = true;
+            world.toggles.use_vm_dialogue = true;
             // A stocked purse, so an affordability gate inside the record
             // (`koin1` / `balden` compare the coin bank with `0x4E` sub-9)
             // takes its *pass* branch - otherwise the run measures the refusal
             // path and reports a boundary the record did not actually hit.
             world.minigames.casino_coins = 500;
-            world.money = 50_000;
+            world.party.money = 50_000;
 
             let prologue = world
                 .npcs

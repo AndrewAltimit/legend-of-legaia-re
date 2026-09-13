@@ -37,7 +37,7 @@ fn marker(va: u32) -> String {
 
 fn tutorial_battle_world() -> World {
     let mut world = World::new();
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     world.battle.player_driven = true;
     world.prime_battle_tutorial(synthetic_script());
     world.enter_battle(3, 2);

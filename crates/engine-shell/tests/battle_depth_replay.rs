@@ -203,7 +203,7 @@ fn settle_until(session: &mut BootSession, ticks: usize, f: impl Fn(&BootSession
 
 fn monster_hp_total(session: &BootSession) -> u32 {
     let w = &session.host.world;
-    (w.party_count as usize..w.actors.len())
+    (w.party.party_count as usize..w.actors.len())
         .map(|i| w.actors[i].battle.hp as u32)
         .sum()
 }
@@ -243,7 +243,7 @@ fn surface_report(session: &BootSession) -> String {
     // Party / monster HP are in the report because the two ways a battle
     // stops handing out command sessions - the party is wiped, or the
     // opponent is dead - look identical from the surfaces alone.
-    let party_hp: u32 = (0..w.party_count as usize)
+    let party_hp: u32 = (0..w.party.party_count as usize)
         .map(|i| w.actors[i].battle.hp as u32)
         .sum();
     format!(
@@ -403,8 +403,8 @@ fn reset_to_field(session: &mut BootSession) -> bool {
 /// ring and presses the button that uses it.
 fn stock_player(session: &mut BootSession) {
     let w = &mut session.host.world;
-    w.inventory.insert(ITEM_HEALING_LEAF, 9);
-    for member in w.roster.members.iter_mut() {
+    w.party.inventory.insert(ITEM_HEALING_LEAF, 9);
+    for member in w.party.roster.members.iter_mut() {
         // Prepend order fixes the menu rows: the last one prepended sits at
         // row 0, so the summon is row 0 and the MP-rung spell is row 1.
         legaia_engine_core::magic_xp::learn_spell_prepend(member, SPELL_FOR_MP_RUNG);
@@ -422,7 +422,7 @@ fn stock_player(session: &mut BootSession) {
     // before the late rungs. Below max because a heal item on a full-HP party
     // is a legitimately refused selection, and the Item rung would then be
     // measuring the usability gate rather than the Item arm.
-    for i in 0..w.party_count as usize {
+    for i in 0..w.party.party_count as usize {
         w.actors[i].battle.max_hp = 60000;
         w.actors[i].battle.hp = 30000;
         w.actors[i].battle.mp = 999;
@@ -456,7 +456,7 @@ fn enter_battle(session: &mut BootSession) -> bool {
     // command surface, and every rung still reaches its outcome by pressing
     // the button that causes it.
     let w = &mut session.host.world;
-    for i in w.party_count as usize..w.actors.len() {
+    for i in w.party.party_count as usize..w.actors.len() {
         if w.actors[i].battle.max_hp > 0 {
             w.actors[i].battle.max_hp = 60000;
             w.actors[i].battle.hp = 60000;
@@ -730,6 +730,7 @@ fn battle_depth_ladder() {
         let carried = session
             .host
             .world
+            .party
             .inventory
             .get(&ITEM_HEALING_LEAF)
             .copied()
@@ -758,6 +759,7 @@ fn battle_depth_ladder() {
         if !settle_until(&mut session, SETTLE_TICKS, |s| {
             s.host
                 .world
+                .party
                 .inventory
                 .get(&ITEM_HEALING_LEAF)
                 .copied()

@@ -59,7 +59,7 @@ fn boss_world() -> World {
     while w.actors.len() < 2 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 1;
+    w.party.party_count = 1;
     w.enter_battle(1, 1);
     for i in 0..2 {
         w.actors[i].battle.hp = 400;

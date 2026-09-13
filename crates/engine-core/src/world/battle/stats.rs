@@ -18,10 +18,11 @@ impl World {
         &self,
         slot: u8,
     ) -> vm::battle_formulas::DefenderResist {
-        if slot >= self.party_count {
+        if slot >= self.party.party_count {
             return Default::default();
         }
         let Some(member) = self
+            .party
             .roster
             .members
             .get(self.party_roster_slot(slot as usize))
@@ -85,7 +86,7 @@ impl World {
         use vm::battle_formulas::{
             EscapeActor, EscapeFlags, escape_enemy_score, escape_party_score, escape_roll,
         };
-        let party_n = (self.party_count as usize).min(self.actors.len());
+        let party_n = (self.party.party_count as usize).min(self.actors.len());
         let fold = |i: usize| EscapeActor {
             speed: self.battle.speed.get(i).copied().unwrap_or(0),
             hp: self.actors[i].battle.hp,
@@ -107,7 +108,7 @@ impl World {
             if self.actors[slot].battle.liveness == 0 {
                 continue;
             }
-            if let Some(member) = self.roster.members.get(self.party_roster_slot(slot)) {
+            if let Some(member) = self.party.roster.members.get(self.party_roster_slot(slot)) {
                 let bits = member.ability_bits();
                 flags.fold_ability_word1(u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]));
             }
@@ -142,7 +143,7 @@ impl World {
     /// REF: FUN_801EC0DC
     pub(in crate::world) fn monster_flee_roll(&mut self, slot: u8) -> bool {
         use vm::battle_formulas::FleeActor;
-        let pc = (self.party_count as usize).min(self.actors.len());
+        let pc = (self.party.party_count as usize).min(self.actors.len());
         let fold = |world: &Self, i: usize| FleeActor {
             hp: world.actors[i].battle.hp,
             max_hp: world.actors[i].battle.max_hp,
@@ -152,7 +153,8 @@ impl World {
         let monsters: Vec<FleeActor> = (pc..self.actors.len()).map(|i| fold(self, i)).collect();
         let ability_word1: Vec<u32> = (0..pc)
             .map(|i| {
-                self.roster
+                self.party
+                    .roster
                     .members
                     .get(self.party_roster_slot(i))
                     .map(|m| {
@@ -195,7 +197,7 @@ impl World {
     ///
     /// PORT: FUN_801ddb30 (spirit-gauge stage)
     pub(in crate::world) fn accrue_spirit_gauge(&mut self, defender_slot: u8, over: u16) {
-        let defender_is_party = defender_slot < self.party_count;
+        let defender_is_party = defender_slot < self.party.party_count;
         let resist = self.defender_resist(defender_slot);
         let Some(a) = self.actors.get_mut(defender_slot as usize) else {
             return;

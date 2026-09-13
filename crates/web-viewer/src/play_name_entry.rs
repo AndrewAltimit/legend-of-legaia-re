@@ -154,7 +154,7 @@ impl LegaiaRuntime {
         let Some(entry) = self
             .scene_host
             .as_ref()
-            .and_then(|h| h.world.name_entry.as_ref())
+            .and_then(|h| h.world.party.name_entry.as_ref())
         else {
             return r#"{"open":false}"#.to_string();
         };
@@ -210,7 +210,7 @@ impl LegaiaRuntime {
         let Some(h) = self.scene_host.as_ref() else {
             return CLOSED.to_string();
         };
-        let Some(entry) = h.world.name_entry.as_ref() else {
+        let Some(entry) = h.world.party.name_entry.as_ref() else {
             return CLOSED.to_string();
         };
         let Some(assets) = self.menu_assets.as_ref() else {

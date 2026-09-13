@@ -210,7 +210,7 @@ fn rung2_the_named_state_machine_runs_and_emits_its_first_frame() {
     );
 
     let mut w = field_world();
-    w.money = 12_345;
+    w.party.money = 12_345;
     w.load_field_script(op49_script(6, [0, 0, 0]));
     assert!(tick_until(&mut w, 8, |w| w
         .field_vm
@@ -262,7 +262,7 @@ fn rung3_the_installed_descriptor_selects_the_painter() {
     // The coin counter's confirm panel is the three-line record. Reached with
     // the pad alone: Up bumps the selected digit, Cross accepts.
     let mut w = field_world();
-    w.money = 100_000;
+    w.party.money = 100_000;
     w.load_field_script(op49_script(6, [0, 0, 0]));
     assert!(tick_until(&mut w, 8, |w| w
         .field_vm
@@ -340,7 +340,7 @@ fn rung4_a_confirm_hands_back_and_the_script_resumes() {
 #[test]
 fn rung5_pad_entered_digits_buy_coins_through_the_script_opened_screen() {
     let mut w = field_world();
-    w.money = 5_000;
+    w.party.money = 5_000;
     w.minigames.casino_coins = 7;
     w.load_field_script(op49_script(6, [0, 0, 0]));
     assert!(tick_until(&mut w, 8, |w| w
@@ -374,7 +374,7 @@ fn rung5_pad_entered_digits_buy_coins_through_the_script_opened_screen() {
         "coins land in the casino bank"
     );
     assert_eq!(
-        w.money,
+        w.party.money,
         5_000 - 3 * GOLD_PER_COIN,
         "gold pays {GOLD_PER_COIN} per coin"
     );
@@ -418,7 +418,7 @@ fn the_host_pinned_windows_paint_inside_the_frame_loop() {
             "record {index} selects the wrong painter"
         );
         let mut w = field_world();
-        w.active_party = vec![0, 1];
+        w.party.active_party = vec![0, 1];
         w.open_field_submode_screen(slot::DRAW_TICK, Some(index));
         assert!(
             tick_until(&mut w, 16, |w| !w

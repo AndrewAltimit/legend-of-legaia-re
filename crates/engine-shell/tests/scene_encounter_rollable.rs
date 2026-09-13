@@ -150,7 +150,7 @@ fn both_hosts_option_shapes_arm_the_same_world_state() {
 
     let a = &native.host.world;
     let b = &browserish.host.world;
-    assert_eq!(a.live_gameplay_loop, b.live_gameplay_loop);
+    assert_eq!(a.toggles.live_gameplay_loop, b.toggles.live_gameplay_loop);
     assert_eq!(a.battle.player_driven, b.battle.player_driven);
     assert_eq!(a.encounters.scene_rollable, b.encounters.scene_rollable);
     assert_eq!(a.active_scene_label, b.active_scene_label);
@@ -217,7 +217,7 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
         panic!("map03 reported rollable but no unshadowed rate-bearing region centre");
     };
     world.seat_player_at_tile_rescued(cx, cz);
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     // Auto-resolve the battle: this test is about the loop reaching a
     // terminal state, not about the command menu.
     world.battle.player_driven = false;
@@ -246,6 +246,7 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     );
 
     let hp_before: Vec<u16> = world
+        .party
         .roster
         .members
         .iter()
@@ -262,10 +263,10 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
             // held standing with the displayed bar force-synced (a live-HP
             // write leaving `hp != hp_display` pending is absorbing - the
             // SM's `0x51` bar-drain gate parks the battle on it).
-            for slot in 0..world.party_count {
+            for slot in 0..world.party.party_count {
                 world.set_battle_attack(slot, 30_000);
             }
-            for slot in 0..world.party_count as usize {
+            for slot in 0..world.party.party_count as usize {
                 let a = &mut world.actors[slot].battle;
                 if a.max_hp > 0 {
                     let max = a.max_hp;
@@ -293,8 +294,8 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     // (records held) - what must NOT happen is a full-HP reset that erases a
     // real loss, so assert against the live mirrors instead of a constant.
     for (i, before) in hp_before.iter().enumerate() {
-        let after = world.roster.members[i].hp_mp_sp().hp_cur;
-        if i < world.party_count as usize {
+        let after = world.party.roster.members[i].hp_mp_sp().hp_cur;
+        if i < world.party.party_count as usize {
             assert_eq!(
                 after, world.actors[i].battle.hp,
                 "slot {i} record and field actor must agree after the battle"

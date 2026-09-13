@@ -16,9 +16,9 @@ use legaia_engine_core::world::{SceneMode, World};
 /// Give roster slot 0 a record with the three walk passives set and every
 /// pool one bump short of full, and make it the whole present party.
 fn party_with_walk_passives(world: &mut World, ability_hi: u32) {
-    world.roster = legaia_save::Party::zeroed(1);
-    world.party_count = 1;
-    let rec = &mut world.roster.members[0];
+    world.party.roster = legaia_save::Party::zeroed(1);
+    world.party.party_count = 1;
+    let rec = &mut world.party.roster.members[0];
     let mut bits = [0u8; legaia_save::ABILITY_BITS_LEN];
     bits[4..8].copy_from_slice(&ability_hi.to_le_bytes());
     rec.set_ability_bits(bits);
@@ -33,7 +33,7 @@ fn party_with_walk_passives(world: &mut World, ability_hi: u32) {
 }
 
 fn pools(world: &World) -> (u16, u16, u16) {
-    let h = world.roster.members[0].hp_mp_sp();
+    let h = world.party.roster.members[0].hp_mp_sp();
     (h.hp_cur, h.mp_cur, h.sp_cur)
 }
 

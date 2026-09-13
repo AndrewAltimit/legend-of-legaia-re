@@ -29,7 +29,7 @@ fn world_in_a_battle() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -41,7 +41,7 @@ fn world_in_a_battle() -> World {
     w.load_party(legaia_save::Party::zeroed(3));
     // `load_party` overwrites the mirrors from the (zeroed) records; put the
     // synthetic combat stats back and keep the records in step.
-    let mut party = w.roster.clone();
+    let mut party = w.party.roster.clone();
     for rec in party.members.iter_mut() {
         let mut hms = rec.hp_mp_sp();
         hms.hp_cur = 100;
@@ -53,7 +53,7 @@ fn world_in_a_battle() -> World {
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     w.mode = SceneMode::Field;
     assert!(
-        !w.live_gameplay_loop,
+        !w.toggles.live_gameplay_loop,
         "the default must stay off - that is what this test is about"
     );
     w
@@ -133,12 +133,12 @@ fn party_hp_and_mp_survive_the_battle() {
     assert_ne!(w.mode, SceneMode::Battle, "battle must have resolved");
 
     assert_eq!(
-        w.roster.members[0].hp_mp_sp().hp_cur,
+        w.party.roster.members[0].hp_mp_sp().hp_cur,
         37,
         "post-battle HP must be persisted into the character record"
     );
     assert_eq!(
-        w.roster.members[0].hp_mp_sp().mp_cur,
+        w.party.roster.members[0].hp_mp_sp().mp_cur,
         11,
         "post-battle MP must be persisted into the character record"
     );
@@ -149,7 +149,7 @@ fn party_hp_and_mp_survive_the_battle() {
     );
     assert_eq!(w.actors[0].battle.mp, 11, "same for MP");
     // Untouched members keep theirs.
-    assert_eq!(w.roster.members[1].hp_mp_sp().hp_cur, 100);
+    assert_eq!(w.party.roster.members[1].hp_mp_sp().hp_cur, 100);
 }
 
 /// A party wipe must raise `game_over` (the flag both hosts now read) rather
@@ -196,7 +196,7 @@ fn a_party_wipe_raises_game_over_and_leaves_the_party_down() {
     // with the party standing, and a real wipe hands the CARD flow a
     // 1-HP party. Neither is a heal.
     assert_eq!(
-        w.roster.members[0].hp_mp_sp().hp_cur,
+        w.party.roster.members[0].hp_mp_sp().hp_cur,
         1,
         "losing floors the party at 1 HP, never heals it"
     );
@@ -205,7 +205,7 @@ fn a_party_wipe_raises_game_over_and_leaves_the_party_down() {
     // `revive_party_full` is what a host's "Retry" row runs; without it the
     // party would re-wipe on the next encounter.
     w.revive_party_full();
-    assert_eq!(w.roster.members[0].hp_mp_sp().hp_cur, 100);
+    assert_eq!(w.party.roster.members[0].hp_mp_sp().hp_cur, 100);
     assert_eq!(w.actors[0].battle.hp, 100);
     assert_eq!(w.actors[0].battle.liveness, 1);
 }
@@ -343,7 +343,7 @@ fn a_monster_cast_does_not_park_the_action_sm() {
 
     let mut w = World::new();
     w.mode = SceneMode::Battle;
-    w.party_count = 3;
+    w.party.party_count = 3;
     // A **priced** catalog, so the band's MP debit is a real subtraction and
     // not the zero an unwired `spell_mp_cost` used to hand it. Flame is 5 MP.
     w.set_spell_catalog(legaia_engine_core::spells::SpellCatalog::vanilla());
@@ -411,7 +411,7 @@ fn a_party_seru_cast_runs_the_summon_band_out_and_pays_once() {
 
     let mut w = World::new();
     w.mode = SceneMode::Battle;
-    w.party_count = 3;
+    w.party.party_count = 3;
     // Gimard is 10 MP byte-exact from SCUS.
     w.set_spell_catalog(legaia_engine_core::retail_magic::retail_seru_magic_catalog());
     for i in 0..8 {

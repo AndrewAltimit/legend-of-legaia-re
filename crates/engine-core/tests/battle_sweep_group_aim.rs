@@ -103,7 +103,7 @@ fn expected_facing(world: &World, caster: u8, code: u8) -> u16 {
         x: 0,
         z: 0,
     }; 8];
-    let party_count = world.party_count;
+    let party_count = world.party.party_count;
     for (retail_slot, out) in slots.iter_mut().enumerate() {
         let retail_slot = retail_slot as u8;
         let engine_slot = if retail_slot < 3 {

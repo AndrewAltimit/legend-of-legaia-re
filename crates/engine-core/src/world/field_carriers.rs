@@ -706,7 +706,7 @@ impl World {
         self.field_return = Some(FieldReturnState {
             actors: self.actors.clone(),
             player_actor_slot: self.player_actor_slot,
-            party_count: self.party_count,
+            party_count: self.party.party_count,
         });
         self.battle.return_mode = SceneMode::WorldMap;
         // `enter_battle_from_formation` swaps to the battle BGM itself.

@@ -73,7 +73,7 @@ impl World {
             return;
         };
 
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         // Target-row selectability: the per-slot validity byte the retail
         // validator (`FUN_8003FB10` arm `0x05`) writes, not an inline liveness
         // test - see `super::validator_host`.
@@ -87,7 +87,7 @@ impl World {
             cross: self.input.just_pressed(PadButton::Cross),
             circle: self.input.just_pressed(PadButton::Circle),
             // The ring's Attack arm reads the option word with the pad.
-            select_attack: self.battle_select_attack,
+            select_attack: self.toggles.select_attack,
         };
         session.input(ev, party, monsters);
         // Target-cursor tint: retail stamps the four monster slots bright /
@@ -301,7 +301,7 @@ impl World {
     /// PORT: FUN_80053CB8 (`0x800541D0..0x80054274`, via
     /// [`vm::battle_action::miracle_marker_armed`])
     pub(in crate::world) fn miracle_marker_armed_for(&self, roster_slot: u8) -> bool {
-        let Some(record) = self.roster.members.get(roster_slot as usize) else {
+        let Some(record) = self.party.roster.members.get(roster_slot as usize) else {
             return false;
         };
         // Retail's table `0x8007BD10` holds a **1-based** char id; the
@@ -362,7 +362,7 @@ impl World {
             CURSOR_BLEND_ON, CURSOR_COLOR_BRIGHT, CURSOR_COLOR_DIM, CURSOR_FLAG_DIMMED,
             CURSOR_FLAG_SELECTED,
         };
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         let enable = match session.picker().map(|p| p.state()) {
             Some(PickerState::Cursor {
                 row: CursorRow::Enemy,
@@ -518,6 +518,7 @@ impl World {
         };
         let char_slot = self.party_roster_slot(actor as usize) as u8;
         let pool = self
+            .party
             .roster
             .members
             .get(char_slot as usize)
@@ -683,9 +684,9 @@ impl World {
                 continue;
             };
             let id = art.as_byte();
-            let known = self.tactical_arts.is_learned(roster, id);
+            let known = self.party.tactical_arts.is_learned(roster, id);
             self.notify_art_used(roster, id);
-            if !known && self.tactical_arts.is_learned(roster, id) {
+            if !known && self.party.tactical_arts.is_learned(roster, id) {
                 bytes[i] = ActionConstant::SpecialStarter.as_byte();
             }
         }
@@ -758,7 +759,8 @@ impl World {
     /// word reached through a battle ordinal; this one takes the roster slot,
     /// which is what the arts paths already carry.
     pub(in crate::world) fn character_ability_bits_word1(&self, roster: u8) -> u32 {
-        self.roster
+        self.party
+            .roster
             .members
             .get(roster as usize)
             .map(|m| {
@@ -827,7 +829,7 @@ impl World {
         target_slot: u8,
     ) {
         use crate::target_picker::CursorRow;
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         let target = match target_row {
             CursorRow::Enemy => party_count + target_slot,
             CursorRow::Ally => target_slot,
@@ -1067,7 +1069,7 @@ impl World {
         // CHARACTER occupying it (roster slot per the present-party
         // composition). Live mirrors (MP, ability bits) stay ordinal-keyed.
         let char_slot = self.party_roster_slot(caster as usize) as u8;
-        let member = self.roster.members.get(char_slot as usize)?;
+        let member = self.party.roster.members.get(char_slot as usize)?;
         let list = member.spell_list();
         let n = (list.count as usize).min(list.ids.len());
         // Union the roster's saved spell list with anything learned via Seru
@@ -1087,6 +1089,7 @@ impl World {
         // Pass the caster's MP-saver ability bits so the menu greys rows by the
         // effective (reduced) cost the cast charges, not the raw spell cost.
         let ability_bits = self
+            .party
             .character_ability_bits
             .get(caster as usize)
             .copied()
@@ -1173,11 +1176,12 @@ impl World {
         use crate::inventory_use::{InventoryContext, InventoryUseSession, TargetRow};
         let names = crate::field_menu_dispatch::roster_names(self);
         let items: Vec<u8> = self
+            .party
             .inventory
             .iter()
             .filter_map(|(id, qty)| (*qty > 0).then_some(*id))
             .collect();
-        let pc = self.party_count.clamp(1, 3) as usize;
+        let pc = self.party.party_count.clamp(1, 3) as usize;
         let mut targets: Vec<TargetRow> = (0..pc)
             .filter_map(|i| {
                 let a = self.actors.get(i)?;
@@ -1452,10 +1456,10 @@ impl World {
     /// Remove one copy of `item_id` from the inventory, dropping the entry
     /// when the count reaches zero. No-op when the player holds none.
     pub fn consume_item(&mut self, item_id: u8) {
-        if let Some(qty) = self.inventory.get_mut(&item_id) {
+        if let Some(qty) = self.party.inventory.get_mut(&item_id) {
             *qty = qty.saturating_sub(1);
             if *qty == 0 {
-                self.inventory.remove(&item_id);
+                self.party.inventory.remove(&item_id);
             }
         }
     }
@@ -1497,7 +1501,7 @@ mod ap_used_down_tests {
         while w.actors.len() < 4 {
             w.actors.push(crate::world::Actor::default());
         }
-        w.party_count = 1;
+        w.party.party_count = 1;
         let mut party = legaia_save::Party::zeroed(1);
         party.members[0].set_ability_bits(bits);
         w.load_party(party);

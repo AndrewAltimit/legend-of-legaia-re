@@ -61,7 +61,7 @@ fn the_entry_list_window_record_selects_the_entry_list_painter() {
 #[test]
 fn a_live_frame_loop_paints_the_per_entry_equipment_panel() {
     let mut w = field_world();
-    w.active_party = vec![0, 1];
+    w.party.active_party = vec![0, 1];
     w.open_field_submode_screen(slot::DRAW_TICK, Some(ENTRY_LIST_WINDOW));
 
     assert!(
@@ -89,7 +89,7 @@ fn the_painted_rows_carry_retails_column_geometry() {
     };
 
     let mut w = field_world();
-    w.active_party = vec![0];
+    w.party.active_party = vec![0];
     w.open_field_submode_screen(slot::DRAW_TICK, Some(ENTRY_LIST_WINDOW));
     assert!(tick_until(&mut w, 16, |w| !sub_panel(w).is_empty()));
 

@@ -148,7 +148,7 @@ fn world_at(site: &Site) -> World {
     // A default `World` has an empty roster, and an empty roster makes the
     // take-item fallback vacuously "not strip the worn copy" - the shape
     // that reads like a pass and measures nothing.
-    world.roster = legaia_save::Party::zeroed(3);
+    world.party.roster = legaia_save::Party::zeroed(3);
     world.load_field_script_at(site.body.clone(), site.pc);
     world
 }
@@ -289,7 +289,7 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
 
         // Branch A - the bag holds it. Equipment must be left alone.
         let mut world = world_at(site);
-        world.inventory.insert(item_id, 3);
+        world.party.inventory.insert(item_id, 3);
         assert!(
             seat_accessory(&mut world, item_id),
             "the fixture must actually wear the id, or the \"leaves \
@@ -297,7 +297,7 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
         );
         world.step_field().expect("step take-item (bag hit)");
         assert_eq!(
-            world.inventory.get(&item_id).copied(),
+            world.party.inventory.get(&item_id).copied(),
             Some(2),
             "{}: a bag hit must decrement the bag",
             site.scene
@@ -311,7 +311,7 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
 
         // Branch B - bag miss, the copy is worn. The fallback strips it.
         let mut world = world_at(site);
-        world.inventory.remove(&item_id);
+        world.party.inventory.remove(&item_id);
         if !seat_accessory(&mut world, item_id) {
             continue;
         }
@@ -417,7 +417,7 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
 /// fallback has something to strip. `false` when the roster has no member
 /// to dress.
 fn seat_accessory(world: &mut World, item_id: u8) -> bool {
-    let Some(member) = world.roster.members.first_mut() else {
+    let Some(member) = world.party.roster.members.first_mut() else {
         return false;
     };
     let mut equip = member.equipment();
@@ -432,6 +432,7 @@ fn seat_accessory(world: &mut World, item_id: u8) -> bool {
 /// Every equipped id across the roster.
 fn worn_ids(world: &World) -> Vec<u8> {
     world
+        .party
         .roster
         .members
         .iter()

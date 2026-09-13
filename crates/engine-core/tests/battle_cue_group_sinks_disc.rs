@@ -127,7 +127,7 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
     };
 
     // Seat a 3-party / 2-monster formation and commit the item action.
-    world.party_count = 3;
+    world.party.party_count = 3;
     for slot in 0..5u8 {
         let a = world
             .actors

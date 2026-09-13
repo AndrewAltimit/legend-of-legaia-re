@@ -76,7 +76,7 @@ fn ext_party_member_lookup_returns_table_position() {
     world.actors[5].move_state.world_x = 100;
     world.actors[5].move_state.world_y = 50;
     world.actors[5].move_state.world_z = 200;
-    world.party_actor_slots = vec![None, Some(5), None];
+    world.party.party_actor_slots = vec![None, Some(5), None];
     // Sub-op 0x3B: dst = pc + op_w(3) + 4. We use op_w(2)=1 (party slot 1)
     // and op_w(3)=0 so dst = u16[4..7].
     let bc = vec![

@@ -68,7 +68,7 @@ fn read_dialog_hud(world: &World) {
 fn drive_record(body: &[u8], entry_pc: usize, first_segment: usize, seed: u64) {
     let mut rng = seed;
     let mut world = World::new();
-    world.use_vm_dialogue = true;
+    world.toggles.use_vm_dialogue = true;
     // Randomized story state so the prologue's flag-gated branches all get a
     // chance to execute across seeds.
     world.flags.story_flags = mix(&mut rng) as u32;
@@ -190,7 +190,7 @@ fn faithful_dialogue_tick_never_errors() {
         if is_world_map_scene(scene_name) {
             continue;
         }
-        host.world.use_vm_dialogue = true;
+        host.world.toggles.use_vm_dialogue = true;
         host.world.locomotion.follow_terrain_height = true;
         host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;
@@ -297,7 +297,7 @@ fn scene_change_destinations_all_enter_without_error() {
     let mut entered_ok = 0usize;
     for dest in &destinations {
         // Same play-page arming + world-map routing `SceneHost::tick` uses.
-        host.world.use_vm_dialogue = true;
+        host.world.toggles.use_vm_dialogue = true;
         host.world.locomotion.follow_terrain_height = true;
         host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;

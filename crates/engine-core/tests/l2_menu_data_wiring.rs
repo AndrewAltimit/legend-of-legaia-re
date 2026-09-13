@@ -47,8 +47,8 @@ fn press(s: &mut PauseItemsSession, b: PadButton) {
 /// admissible) and the vanilla item catalog.
 fn field_world() -> World {
     let mut world = World::new();
-    world.roster = legaia_save::Party::zeroed(3);
-    for member in &mut world.roster.members {
+    world.party.roster = legaia_save::Party::zeroed(3);
+    for member in &mut world.party.roster.members {
         let mut hms = member.hp_mp_sp();
         hms.hp_cur = 50;
         hms.hp_max = 100;
@@ -56,7 +56,7 @@ fn field_world() -> World {
         hms.mp_max = 30;
         member.set_hp_mp_sp(hms);
     }
-    world.party_leader_slot = Some(0);
+    world.party.party_leader_slot = Some(0);
     world.set_item_catalog(ItemCatalog::vanilla());
     world
 }
@@ -88,7 +88,7 @@ fn use_list_confirm(s: &mut PauseItemsSession, id: u8) {
 #[test]
 fn an_ordinary_use_takes_exactly_one_copy_out_of_the_bag() {
     let mut world = field_world();
-    world.inventory.insert(HEALING_LEAF, 3);
+    world.party.inventory.insert(HEALING_LEAF, 3);
 
     let mut s = build_pause_items_session(&world);
     use_list_confirm(&mut s, HEALING_LEAF);
@@ -98,7 +98,7 @@ fn an_ordinary_use_takes_exactly_one_copy_out_of_the_bag() {
 
     apply_inventory_outcome(&s.inner, &mut world);
     assert_eq!(
-        world.inventory.get(&HEALING_LEAF),
+        world.party.inventory.get(&HEALING_LEAF),
         Some(&2),
         "one copy leaves the bag per completed use"
     );
@@ -109,7 +109,7 @@ fn an_ordinary_use_takes_exactly_one_copy_out_of_the_bag() {
     press(&mut s, PadButton::Circle);
     assert!(s.is_done());
     apply_inventory_outcome(&s.inner, &mut world);
-    assert_eq!(world.inventory.get(&HEALING_LEAF), Some(&2));
+    assert_eq!(world.party.inventory.get(&HEALING_LEAF), Some(&2));
 }
 
 /// The last copy of an item leaves the bag entry entirely, rather than
@@ -117,12 +117,12 @@ fn an_ordinary_use_takes_exactly_one_copy_out_of_the_bag() {
 #[test]
 fn using_the_last_copy_removes_the_bag_entry() {
     let mut world = field_world();
-    world.inventory.insert(HEALING_LEAF, 1);
+    world.party.inventory.insert(HEALING_LEAF, 1);
     let mut s = build_pause_items_session(&world);
     use_list_confirm(&mut s, HEALING_LEAF);
     press(&mut s, PadButton::Cross);
     apply_inventory_outcome(&s.inner, &mut world);
-    assert_eq!(world.inventory.get(&HEALING_LEAF), None);
+    assert_eq!(world.party.inventory.get(&HEALING_LEAF), None);
     assert!(
         build_pause_items_session(&world).bag_empty(),
         "an emptied bag greys the command window"
@@ -141,7 +141,7 @@ fn each_special_route_commits_its_own_fixed_id() {
         (INCENSE_ITEM_ID, None),
     ] {
         let mut world = field_world();
-        world.inventory.insert(id, 2);
+        world.party.inventory.insert(id, 2);
 
         // Cancel first: the baseline that proves the confirm is doing it.
         let mut s = build_pause_items_session(&world);
@@ -149,7 +149,7 @@ fn each_special_route_commits_its_own_fixed_id() {
         press(&mut s, PadButton::Circle);
         apply_pause_items_outcome(&s, &mut world);
         assert_eq!(
-            world.inventory.get(&id),
+            world.party.inventory.get(&id),
             Some(&2),
             "{id:#04X}: a cancelled route consumed a copy"
         );
@@ -159,7 +159,7 @@ fn each_special_route_commits_its_own_fixed_id() {
         press(&mut s, PadButton::Cross); // Yes (both routes seed on Yes)
         assert_eq!(apply_pause_items_outcome(&s, &mut world), exit);
         assert_eq!(
-            world.inventory.get(&id),
+            world.party.inventory.get(&id),
             Some(&1),
             "{id:#04X}: the confirm did not reach the bag"
         );
@@ -171,14 +171,14 @@ fn each_special_route_commits_its_own_fixed_id() {
 #[test]
 fn only_the_escape_route_raises_the_field_escape_handoff() {
     let mut world = field_world();
-    world.inventory.insert(INCENSE_ITEM_ID, 1);
+    world.party.inventory.insert(INCENSE_ITEM_ID, 1);
     let mut s = build_pause_items_session(&world);
     use_list_confirm(&mut s, INCENSE_ITEM_ID);
     press(&mut s, PadButton::Cross);
     apply_pause_items_outcome(&s, &mut world);
     assert!(!world.menu.pending_escape);
 
-    world.inventory.insert(DOOR_OF_LIGHT_ITEM_ID, 1);
+    world.party.inventory.insert(DOOR_OF_LIGHT_ITEM_ID, 1);
     let mut s = build_pause_items_session(&world);
     use_list_confirm(&mut s, DOOR_OF_LIGHT_ITEM_ID);
     press(&mut s, PadButton::Cross);
@@ -265,7 +265,7 @@ fn the_landmark_walk_gates_on_the_flag_and_dedupes_on_the_last_accepted_name() {
 #[test]
 fn a_door_of_wind_pick_consumes_the_item_and_stages_the_destination() {
     let mut world = field_world();
-    world.inventory.insert(DOOR_OF_WIND_ITEM_ID, 2);
+    world.party.inventory.insert(DOOR_OF_WIND_ITEM_ID, 2);
     world.menu.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
         names: vec!["Rim Elm".into(), "Drake Castle".into()],
         placements: vec![placement(0, 0, 0x10, 0x0055), placement(1, 1, 0x11, 0x0162)],
@@ -282,7 +282,7 @@ fn a_door_of_wind_pick_consumes_the_item_and_stages_the_destination() {
         apply_pause_items_outcome(&s, &mut world),
         Some(MENU_EXIT_CODE_WORLD_MAP_WARP)
     );
-    assert_eq!(world.inventory.get(&DOOR_OF_WIND_ITEM_ID), Some(&1));
+    assert_eq!(world.party.inventory.get(&DOOR_OF_WIND_ITEM_ID), Some(&1));
     assert_eq!(
         world.menu.pending_warp,
         Some(StagedWarp {
@@ -298,7 +298,7 @@ fn a_door_of_wind_pick_consumes_the_item_and_stages_the_destination() {
 #[test]
 fn backing_out_of_the_destination_list_consumes_nothing() {
     let mut world = field_world();
-    world.inventory.insert(DOOR_OF_WIND_ITEM_ID, 1);
+    world.party.inventory.insert(DOOR_OF_WIND_ITEM_ID, 1);
     world.menu.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
         names: vec!["Rim Elm".into()],
         placements: vec![placement(0, 0, 0x10, 0x0055)],
@@ -310,7 +310,7 @@ fn backing_out_of_the_destination_list_consumes_nothing() {
     press(&mut s, PadButton::Circle);
     assert!(!s.is_done(), "a cancel returns to the Use list");
     assert_eq!(apply_pause_items_outcome(&s, &mut world), None);
-    assert_eq!(world.inventory.get(&DOOR_OF_WIND_ITEM_ID), Some(&1));
+    assert_eq!(world.party.inventory.get(&DOOR_OF_WIND_ITEM_ID), Some(&1));
     assert_eq!(world.menu.pending_warp, None);
 }
 
@@ -320,7 +320,7 @@ fn backing_out_of_the_destination_list_consumes_nothing() {
 #[test]
 fn no_landmark_table_means_an_empty_list_not_an_invented_one() {
     let mut world = field_world();
-    world.inventory.insert(DOOR_OF_WIND_ITEM_ID, 1);
+    world.party.inventory.insert(DOOR_OF_WIND_ITEM_ID, 1);
     assert!(world.menu.worldmap_menu.is_none());
 
     let mut s = build_pause_items_session(&world);
@@ -328,7 +328,7 @@ fn no_landmark_table_means_an_empty_list_not_an_invented_one() {
     assert!(s.warp_destinations().is_empty());
     press(&mut s, PadButton::Cross);
     assert_eq!(apply_pause_items_outcome(&s, &mut world), None);
-    assert_eq!(world.inventory.get(&DOOR_OF_WIND_ITEM_ID), Some(&1));
+    assert_eq!(world.party.inventory.get(&DOOR_OF_WIND_ITEM_ID), Some(&1));
 }
 
 // ---------------------------------------------------------------------------
@@ -356,8 +356,8 @@ const STRONG_WEAPON: u8 = 0x06;
 
 fn weapon_world() -> (World, EquipmentTable) {
     let mut world = field_world();
-    world.inventory.insert(FAVOURED_WEAPON, 1);
-    world.inventory.insert(STRONG_WEAPON, 1);
+    world.party.inventory.insert(FAVOURED_WEAPON, 1);
+    world.party.inventory.insert(STRONG_WEAPON, 1);
     let mut table = EquipmentTable::new();
     table.set(
         FAVOURED_WEAPON,
@@ -377,7 +377,7 @@ fn weapon_world() -> (World, EquipmentTable) {
 }
 
 fn best_weapon_for(world: &mut World, equipment: &EquipmentTable, leader: u8) -> u8 {
-    world.party_leader_slot = Some(leader);
+    world.party.party_leader_slot = Some(leader);
     let sub = FieldMenuSubsession::build(
         FieldMenuRow::Equip,
         world,

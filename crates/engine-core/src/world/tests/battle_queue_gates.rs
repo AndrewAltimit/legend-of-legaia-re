@@ -21,7 +21,7 @@ fn arts_world(equip: [u8; 8]) -> World {
     while w.actors.len() < 4 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 1;
+    w.party.party_count = 1;
     let mut party = legaia_save::Party::zeroed(1);
     let mut eq = party.members[0].equipment();
     eq.slots = equip;
@@ -205,7 +205,7 @@ fn the_war_god_carry_arm_fires_from_the_attackers_own_ability_word() {
         w.hit_apply_mode(0, 1, &run, 0),
         vm::battle_action::APPLY_MODE_NORMAL
     );
-    w.character_ability_bits[0] = vm::battle_action::WAR_GOD_ATTACK_X2_BIT;
+    w.party.character_ability_bits[0] = vm::battle_action::WAR_GOD_ATTACK_X2_BIT;
     assert_eq!(
         w.hit_apply_mode(0, 1, &run, 0),
         vm::battle_action::APPLY_MODE_CARRY,
@@ -280,8 +280,8 @@ fn a_party_target_never_leaves_the_ordinary_apply_arm() {
     // look-ahead and before the War God arm, so a counter / confused hit on
     // an ally is always the ordinary arm.
     let mut w = arts_world([0u8; 8]);
-    w.party_count = 3;
-    w.character_ability_bits[0] = vm::battle_action::WAR_GOD_ATTACK_X2_BIT;
+    w.party.party_count = 3;
+    w.party.character_ability_bits[0] = vm::battle_action::WAR_GOD_ATTACK_X2_BIT;
     w.actors[0].battle.strike_index = vm::battle_action::STRIKE_CURSOR_PARKED;
     assert_eq!(
         w.hit_apply_mode(0, 1, &[0x05, 0, 0, 0], 0),

@@ -99,7 +99,7 @@ fn glare_lands_stone_and_the_clut_pass_greys_the_party_row() {
 fn stone_guard_blocks_the_roll_and_curse_moves_apply_curse() {
     let mut w = stone_world();
     // Stone Guard (passive 0x1A) on the target: the landing roll is vetoed.
-    w.character_ability_bits[0] = 1 << 0x1A;
+    w.party.character_ability_bits[0] = 1 << 0x1A;
     w.apply_enemy_agl_status(3, 0x3C, &[0]);
     assert!(
         w.battle.status_effects.statuses(0).is_empty(),
@@ -139,7 +139,7 @@ fn stone_refunds_the_reserved_item_and_cancels_the_queued_turn() {
 
     let mut w = stone_world();
     const HEALING_LEAF: u8 = 0x01;
-    w.inventory.insert(HEALING_LEAF, 2);
+    w.party.inventory.insert(HEALING_LEAF, 2);
     // Party slot 0 has an Item action queued and has not acted yet.
     w.actors[0].battle.action_category = ActionCategory::Item.as_byte();
     w.actors[0].battle.params[0] = HEALING_LEAF;
@@ -165,7 +165,7 @@ fn stone_refunds_the_reserved_item_and_cancels_the_queued_turn() {
         "`sb zero,0x1de` - the queued turn is cancelled"
     );
     assert_eq!(
-        w.inventory.get(&HEALING_LEAF).copied(),
+        w.party.inventory.get(&HEALING_LEAF).copied(),
         Some(3),
         "`FUN_800421D4(+0x1DF, 1)` put the reserved item back"
     );
@@ -181,22 +181,22 @@ fn stone_refund_is_gated_on_the_item_category_and_a_live_initiative_key() {
 
     // Category 3 (Attack): nothing to refund.
     let mut w = stone_world();
-    w.inventory.insert(HEALING_LEAF, 2);
+    w.party.inventory.insert(HEALING_LEAF, 2);
     w.actors[0].battle.action_category = 3;
     w.actors[0].battle.params[0] = HEALING_LEAF;
     w.actors[0].battle.init_key = 40;
     w.apply_enemy_agl_status(3, 0x3C, &[0]);
-    assert_eq!(w.inventory.get(&HEALING_LEAF).copied(), Some(2));
+    assert_eq!(w.party.inventory.get(&HEALING_LEAF).copied(), Some(2));
     assert_eq!(w.actors[0].battle.action_category, 0);
 
     // Item, but the key is spent.
     let mut w = stone_world();
-    w.inventory.insert(HEALING_LEAF, 2);
+    w.party.inventory.insert(HEALING_LEAF, 2);
     w.actors[0].battle.action_category = ActionCategory::Item.as_byte();
     w.actors[0].battle.params[0] = HEALING_LEAF;
     w.actors[0].battle.init_key = 0;
     w.apply_enemy_agl_status(3, 0x3C, &[0]);
-    assert_eq!(w.inventory.get(&HEALING_LEAF).copied(), Some(2));
+    assert_eq!(w.party.inventory.get(&HEALING_LEAF).copied(), Some(2));
     assert_eq!(w.actors[0].battle.action_category, 0);
 }
 
@@ -209,7 +209,7 @@ fn curse_leaves_the_queued_turn_and_the_item_alone() {
     const HEALING_LEAF: u8 = 0x01;
 
     let mut w = stone_world();
-    w.inventory.insert(HEALING_LEAF, 2);
+    w.party.inventory.insert(HEALING_LEAF, 2);
     w.actors[0].battle.action_category = ActionCategory::Item.as_byte();
     w.actors[0].battle.params[0] = HEALING_LEAF;
     w.actors[0].battle.init_key = 40;
@@ -228,5 +228,5 @@ fn curse_leaves_the_queued_turn_and_the_item_alone() {
         ActionCategory::Item.as_byte(),
         "Curse does not clear +0x1DE"
     );
-    assert_eq!(w.inventory.get(&HEALING_LEAF).copied(), Some(2));
+    assert_eq!(w.party.inventory.get(&HEALING_LEAF).copied(), Some(2));
 }

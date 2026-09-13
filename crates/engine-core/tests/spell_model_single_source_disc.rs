@@ -38,7 +38,7 @@ fn scus() -> Option<Vec<u8>> {
 fn armed_battle(scus: &[u8], spell_id: u8, mp: u16) -> World {
     let mut w = World::new();
     w.mode = SceneMode::Battle;
-    w.party_count = 3;
+    w.party.party_count = 3;
     w.set_spell_catalog(
         legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(scus)
             .expect("SCUS parses as a PSX-EXE"),

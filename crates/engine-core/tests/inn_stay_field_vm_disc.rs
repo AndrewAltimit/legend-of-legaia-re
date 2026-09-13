@@ -99,10 +99,10 @@ fn retock_world() -> Option<(World, u32, u8)> {
     // The faithful dialogue path - the shell's default and the browser play
     // page's only mode. The simplified typewriter never executes the record's
     // bytecode, so it cannot reach a gate or a restore at all.
-    world.use_vm_dialogue = true;
-    world.money = PURSE;
-    world.roster = legaia_save::Party::zeroed(PARTY_SLOTS);
-    for m in world.roster.members.iter_mut() {
+    world.toggles.use_vm_dialogue = true;
+    world.party.money = PURSE;
+    world.party.roster = legaia_save::Party::zeroed(PARTY_SLOTS);
+    for m in world.party.roster.members.iter_mut() {
         let mut h = m.hp_mp_sp();
         h.hp_max = FULL_HP;
         h.hp_cur = HURT_HP;
@@ -110,7 +110,7 @@ fn retock_world() -> Option<(World, u32, u8)> {
         h.mp_cur = HURT_MP;
         m.set_hp_mp_sp(h);
     }
-    world.party_count = PARTY_SLOTS as u8;
+    world.party.party_count = PARTY_SLOTS as u8;
     Some((world, cost, slot))
 }
 
@@ -175,6 +175,7 @@ fn stay_at_the_inn(world: &mut World, slot: u8, option: usize) -> u32 {
 
 fn pools(world: &World) -> Vec<(u16, u16)> {
     world
+        .party
         .roster
         .members
         .iter()
@@ -198,7 +199,7 @@ fn inn_stay_charges_the_scripted_gold_and_restores_the_party() {
     // The debit is the record's own op-`0x3A` `ADD_MONEY` with the negative
     // charge, reached only because the op-`0x4E` sub-3 gate read a real purse.
     assert_eq!(
-        world.money,
+        world.party.money,
         PURSE - cost as i32,
         "the stay's scripted gold gate + debit did not run"
     );
@@ -220,7 +221,7 @@ fn declining_the_inn_leaves_gold_and_pools_untouched() {
     stay_at_the_inn(&mut world, slot, 1);
 
     assert_eq!(
-        world.money, PURSE,
+        world.party.money, PURSE,
         "declining charged {cost} G anyway - the No branch reached the debit"
     );
     assert_eq!(
@@ -237,13 +238,13 @@ fn a_broke_party_is_turned_away_and_keeps_its_last_coin() {
     };
     // One gold short: the gate's own compare (`gold < literal`) is what
     // decides, so this exercises the read the whole flow hangs on.
-    world.money = cost as i32 - 1;
+    world.party.money = cost as i32 - 1;
     let before = pools(&world);
 
     stay_at_the_inn(&mut world, slot, 0);
 
     assert_eq!(
-        world.money,
+        world.party.money,
         cost as i32 - 1,
         "the can't-afford branch still charged"
     );

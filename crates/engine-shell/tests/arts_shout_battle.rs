@@ -74,7 +74,7 @@ fn build_world(with_record: bool) -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // Records first: `load_party` seeds HP / liveness from them (zero here),
     // and retail's member walk (`FUN_801DB81C`) hands no ring to an HP-0
     // member - the per-slot seeding below has to come after.
@@ -109,7 +109,7 @@ fn build_world(with_record: bool) -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w.battle.player_driven = true;
     w
 }

@@ -813,10 +813,10 @@ impl PlayWindowApp {
         }
         // Only the sim ticks that map to a retail vsync advance the clock
         // (the 100 Hz sim carries ~60 vsyncs/s; see `World::field_frame_step`).
-        if self.session.host.world.field_frame_step == 0 {
+        if self.session.host.world.clock.display_frame_step == 0 {
             return;
         }
-        let dt = u32::from(self.session.host.world.frame_step.max(1));
+        let dt = u32::from(self.session.host.world.clock.frame_step.max(1));
         // First pass under the animation borrow: bank the game tick and
         // collect the fired copies; second pass applies them to the VRAM.
         let mut copies: Vec<(u16, u16, u16, u16)> = Vec::new();

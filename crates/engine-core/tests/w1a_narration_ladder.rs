@@ -172,7 +172,7 @@ fn npc_conversations_run_through_the_inline_field_vm() {
 
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     // The faithful path both browser and native hosts arm.
-    host.world.use_vm_dialogue = true;
+    host.world.toggles.use_vm_dialogue = true;
 
     const SCENE_BUDGET: usize = 4;
     let mut scenes_driven = 0usize;
@@ -187,7 +187,7 @@ fn npc_conversations_run_through_the_inline_field_vm() {
         if is_world_map_scene(scene) {
             continue;
         }
-        host.world.use_vm_dialogue = true;
+        host.world.toggles.use_vm_dialogue = true;
         if host.enter_field_scene(scene, 0).is_err() {
             continue;
         }

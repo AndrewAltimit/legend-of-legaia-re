@@ -67,7 +67,7 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
     // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
     w.load_party(legaia_save::Party::zeroed(3));
@@ -93,7 +93,7 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w.battle.player_driven = true;
 
     let up = InputState::mask_of([PadButton::Up]);

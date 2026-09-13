@@ -200,7 +200,7 @@ fn build_world() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
@@ -228,7 +228,7 @@ fn build_world() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w.battle.player_driven = true;
     w.battle.no_escape = true;
     w
@@ -278,7 +278,7 @@ fn refill(w: &mut World) {
         w.actors[i].battle.liveness = 1;
         w.actors[i].battle.mp = 250;
     }
-    let ms = w.party_count as usize;
+    let ms = w.party.party_count as usize;
     w.actors[ms].battle.max_hp = 9000;
     w.actors[ms].battle.set_hp_synced(9000);
 }
@@ -295,7 +295,7 @@ fn a_live_cast_stages_its_module_records() {
     w.tables.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
     // Teach the caster the whole player block at level 1.
     {
-        let rec = &mut w.roster.members[0];
+        let rec = &mut w.party.roster.members[0];
         let mut list = rec.spell_list();
         list.count = SERU_IDS.len() as u8;
         for (i, id) in SERU_IDS.iter().enumerate() {
@@ -327,7 +327,7 @@ fn a_live_cast_stages_its_module_records() {
                 w.battle.spell_menu.is_some(),
                 w.battle.arts_menu.is_some(),
                 w.battle.item_menu.is_some(),
-                w.actors[w.party_count as usize].battle.hp,
+                w.actors[w.party.party_count as usize].battle.hp,
                 (0..3).map(|i| w.actors[i].battle.hp).collect::<Vec<_>>(),
             );
         }

@@ -1227,7 +1227,7 @@ impl ModeSeat {
             world.input.clear_edges();
         }
         // `gp+0x3D8`.
-        world.frame_begin_skip = false;
+        world.clock.frame_begin_skip = false;
         self.previous = to;
         self.edges += 1;
         Some(ModeChangeEdge {
@@ -2162,19 +2162,19 @@ mod tests {
         let mut w = World::default();
         let input = InputState::default();
 
-        let before = w.field_frame_accum;
-        w.frame_begin_skip = true;
+        let before = w.clock.sim_ticks;
+        w.clock.frame_begin_skip = true;
         d.tick(&mut Noop, &mut w, &input);
         assert_eq!(
-            w.field_frame_accum, before,
+            w.clock.sim_ticks, before,
             "FUN_8001698C returned 1 - no frame ran"
         );
-        assert!(!w.frame_begin_skip, "the request is consumed");
+        assert!(!w.clock.frame_begin_skip, "the request is consumed");
         assert_eq!(d.last_stage().unwrap().body, FrameBody::Master { param: 1 });
 
         // Default (nothing set) is the ordinary every-frame tick.
         d.tick(&mut Noop, &mut w, &input);
-        assert!(w.field_frame_accum != before);
+        assert!(w.clock.sim_ticks != before);
     }
 
     #[test]
@@ -2187,11 +2187,11 @@ mod tests {
         }
         let mut d = ModeDriver::new(GameMode::CardInit);
         let mut w = World::default();
-        let before = w.field_frame_accum;
-        w.frame_begin_skip = true;
+        let before = w.clock.sim_ticks;
+        w.clock.frame_begin_skip = true;
         d.tick(&mut Noop, &mut w, &InputState::default());
         assert!(
-            w.field_frame_accum != before,
+            w.clock.sim_ticks != before,
             "only the per-frame handlers carry the early-out"
         );
         assert!(d.last_stage().is_none());
@@ -2200,11 +2200,14 @@ mod tests {
     #[test]
     fn resolve_frame_step_installs_the_floor_when_frameskip_is_off() {
         let mut w = World {
-            frame_step_floor: 3,
+            clock: crate::world::FrameClock {
+                frame_step_floor: 3,
+                ..Default::default()
+            },
             ..Default::default()
         };
         assert_eq!(w.resolve_frame_step(0x400, false), 3);
-        assert_eq!(w.frame_step, 3);
+        assert_eq!(w.clock.frame_step, 3);
         // With the gate on, a spike raises past the floor for one frame.
         assert_eq!(w.resolve_frame_step(0x400, true), 4);
         assert_eq!(w.resolve_frame_step(0x10, true), 3, "then decays to it");

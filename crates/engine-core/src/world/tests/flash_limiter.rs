@@ -61,7 +61,7 @@ fn row_at(vram: &legaia_tim::Vram) -> Vec<u16> {
 #[test]
 fn limiter_snaps_first_then_slews() {
     let mut w = World::new();
-    assert!(w.reduce_flashing, "guard must default ON");
+    assert!(w.toggles.reduce_flashing, "guard must default ON");
     // First application snaps to the simulated target (scene-entry state).
     let first = w.limit_flash(strobe_fx(-256), 1);
     assert_eq!(first.v_add, -256);
@@ -103,7 +103,7 @@ fn guard_on_writes_the_limited_texels() {
 #[test]
 fn guard_off_applies_retail_exact_targets_and_keeps_no_state() {
     let mut w = World::new();
-    w.reduce_flashing = false;
+    w.toggles.reduce_flashing = false;
     let mut vram = seeded_vram();
     let pristine = row_at(&vram);
     w.ambient.fx.push(part_with(strobe_fx(-256)));

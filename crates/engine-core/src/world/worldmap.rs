@@ -470,7 +470,7 @@ impl World {
         let Some(mut ctrl) = self.world_map.ctrl.take() else {
             return;
         };
-        let frame_step = self.frame_step;
+        let frame_step = self.clock.frame_step;
         let lut = &self.cos_lut;
         ctrl.run_horizon_emitter(frame_step, &|i| lut.get(i as usize).copied().unwrap_or(0));
         self.world_map.ctrl = Some(ctrl);
@@ -515,7 +515,7 @@ impl World {
         let raw_edge = raw_held & !self.input.pad_prev();
         let held = packed_pad(raw_held);
         let edge = packed_pad(raw_edge);
-        let frame_step = self.frame_step;
+        let frame_step = self.clock.frame_step;
         let player_tile = self.player_actor_slot.and_then(|slot| {
             self.actors.get(slot as usize).map(|a| {
                 (
@@ -671,7 +671,7 @@ impl World {
     fn restore_party_hp_mp(&mut self) {
         const PAIRS: [(usize, usize); 2] = [(0x104, 0x106), (0x108, 0x10A)];
         let mut restored = 0usize;
-        for member in self.roster.members.iter_mut().take(3) {
+        for member in self.party.roster.members.iter_mut().take(3) {
             let raw = &mut member.raw;
             if raw.len() < 0x10C {
                 continue;

@@ -33,7 +33,7 @@ fn build_world() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
     // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
     w.load_party(legaia_save::Party::zeroed(3));
@@ -64,7 +64,7 @@ fn build_world() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w.battle.player_driven = true;
     w
 }
@@ -109,7 +109,7 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
     // catalog defaults empty (disc-installed at boot); the port's vanilla
     // catalog carries the Healing Leaf entry the menu filter needs.
     w.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
-    w.inventory.insert(0x77, 2);
+    w.party.inventory.insert(0x77, 2);
 
     enter_battle(&mut w);
     // Battle entry reseeds party stats from the (zeroed) roster records -
@@ -155,7 +155,7 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
         "the commit stamps the category-1 action on the member"
     );
     assert_eq!(
-        w.inventory.get(&0x77).copied(),
+        w.party.inventory.get(&0x77).copied(),
         Some(1),
         "exactly one copy consumed at the commit"
     );
@@ -251,7 +251,7 @@ fn summon_flute_item_reroutes_to_the_summon_band_and_completes() {
         // same way before staging params[0]).
         a.battle.params = Default::default();
         a.battle.strike_index = 0;
-        a.battle.active_target = w.party_count; // first monster slot
+        a.battle.active_target = w.party.party_count; // first monster slot
         a.battle.action_category = ActionCategory::Item.as_byte();
         a.battle.params[0] = 0x98; // SummonFlute
     }

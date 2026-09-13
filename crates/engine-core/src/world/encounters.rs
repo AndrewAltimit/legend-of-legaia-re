@@ -343,14 +343,14 @@ impl World {
         if self.tables.accessory_passives.is_empty() {
             return;
         }
-        let pc = (self.party_count.min(3) as usize).min(self.roster.members.len());
+        let pc = (self.party.party_count.min(3) as usize).min(self.party.roster.members.len());
         let mut own = [[0u32; ABILITY_WORDS]; 3];
         let mut global = [0u32; ABILITY_WORDS];
         for (slot, own_words) in own.iter_mut().enumerate().take(pc) {
             // `slot` is the battle ordinal; the equipment that sources the
             // bits belongs to the character occupying it.
             let rslot = self.party_roster_slot(slot);
-            let Some(member) = self.roster.members.get(rslot) else {
+            let Some(member) = self.party.roster.members.get(rslot) else {
                 continue;
             };
             let equip = member.equipment().slots;
@@ -362,18 +362,19 @@ impl World {
             for (w, word) in words.iter().enumerate() {
                 bytes[w * 4..w * 4 + 4].copy_from_slice(&word.to_le_bytes());
             }
-            self.roster.members[rslot].set_ability_bits(bytes);
+            self.party.roster.members[rslot].set_ability_bits(bytes);
             for (g, w) in global.iter_mut().zip(words.iter()) {
                 *g |= *w;
             }
             *own_words = words;
         }
-        self.party_ability_mask = global;
+        self.party.party_ability_mask = global;
         // Effective per-member mask for the u32 consumers: own bits plus the
         // party-wide-scoped bits any member contributes (the engine shape of
         // "consumers test the global mask for party-wide passives").
         let pw = self.tables.accessory_passives.party_wide_mask();
         for (bits, own_words) in self
+            .party
             .character_ability_bits
             .iter_mut()
             .zip(own.iter())
@@ -394,7 +395,8 @@ impl World {
     /// party-wide passives (encounter rate, escape, battle-end rewards) call
     /// this.
     pub fn party_has_ability(&self, index: u8) -> bool {
-        self.party_ability_mask
+        self.party
+            .party_ability_mask
             .get((index >> 5) as usize)
             .is_some_and(|w| w & (1u32 << (index & 0x1F)) != 0)
     }
@@ -437,11 +439,11 @@ impl World {
         // so both the stat fold below and the MP-cost consumers read fresh
         // equipment-derived bits, mirroring retail's single-pass aggregator.
         self.refresh_party_ability_bits();
-        let pc = self.party_count.min(3) as usize;
+        let pc = self.party.party_count.min(3) as usize;
         for slot in 0..pc {
             // `slot` stays the battle ordinal for every live mirror written
             // below; the stats are read off the occupying character's record.
-            let Some(rec) = self.roster.members.get(self.party_roster_slot(slot)) else {
+            let Some(rec) = self.party.roster.members.get(self.party_roster_slot(slot)) else {
                 continue;
             };
             let live = rec.live_stats();

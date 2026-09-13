@@ -38,8 +38,8 @@ impl World {
                 *s = rec.live_stats().spd;
             }
         }
-        self.party_count = n as u8;
-        self.roster = party;
+        self.party.party_count = n as u8;
+        self.party.roster = party;
         // Hydrate the level-up tracker's per-slot cumulative XP and level
         // from the installed records. Without this the tracker keeps its
         // default 0-XP / level-1 state even when the record has the party
@@ -47,10 +47,10 @@ impl World {
         // curve from L1. Level prefers the engine cell (+0x100), falling
         // back to the retail displayed-level byte (+0x130) for records
         // lifted from retail saves.
-        for (slot, rec) in self.roster.members.iter().enumerate() {
-            if slot < self.level_up_tracker.level.len() {
-                self.level_up_tracker.xp[slot] = rec.cumulative_xp();
-                self.level_up_tracker.level[slot] = rec.level().max(rec.magic_rank()).max(1);
+        for (slot, rec) in self.party.roster.members.iter().enumerate() {
+            if slot < self.party.level_up_tracker.level.len() {
+                self.party.level_up_tracker.xp[slot] = rec.cumulative_xp();
+                self.party.level_up_tracker.level[slot] = rec.level().max(rec.magic_rank()).max(1);
             }
         }
         // Adopt each record's stored display name (`+0x2A7`) so a loaded save's
@@ -60,15 +60,15 @@ impl World {
         // one-member roster, and truncating here would drop the Noa / Gala /
         // Terra defaults `seed_starting_party` installs for the slots that have
         // not joined yet.
-        for (slot, rec) in self.roster.members.iter().enumerate() {
+        for (slot, rec) in self.party.roster.members.iter().enumerate() {
             let name = rec.name();
             if name.is_empty() {
                 continue;
             }
-            if self.party_names.len() <= slot {
-                self.party_names.resize(slot + 1, String::new());
+            if self.party.party_names.len() <= slot {
+                self.party.party_names.resize(slot + 1, String::new());
             }
-            self.party_names[slot] = name;
+            self.party.party_names[slot] = name;
         }
     }
 
@@ -86,15 +86,15 @@ impl World {
         // present party keep their record values untouched. The identity
         // default resyncs every record from its same-index actor, the
         // historical behaviour.
-        let members = if self.active_party.is_empty() {
-            self.roster.members.len().min(self.actors.len())
+        let members = if self.party.active_party.is_empty() {
+            self.party.roster.members.len().min(self.actors.len())
         } else {
-            self.active_party.len().min(self.actors.len())
+            self.party.active_party.len().min(self.actors.len())
         };
         for member in 0..members {
             let rslot = self.party_roster_slot(member);
             let a = &self.actors[member];
-            if let Some(rec) = self.roster.members.get_mut(rslot) {
+            if let Some(rec) = self.party.roster.members.get_mut(rslot) {
                 let mut hms = rec.hp_mp_sp();
                 hms.hp_cur = a.battle.hp;
                 hms.hp_max = a.battle.max_hp;
@@ -102,7 +102,7 @@ impl World {
                 rec.set_hp_mp_sp(hms);
             }
         }
-        self.roster.clone()
+        self.party.roster.clone()
     }
 
     /// Write the **battle party's** live HP / MP into their roster records.
@@ -118,14 +118,14 @@ impl World {
     ///   move during a fight, and the level-up applier has already written
     ///   the post-victory maxima into the records by the time this runs.
     pub(in crate::world) fn persist_battle_party_hp(&mut self) {
-        let n = (self.party_count as usize).min(self.actors.len());
+        let n = (self.party.party_count as usize).min(self.actors.len());
         for member in 0..n {
             let rslot = self.party_roster_slot(member);
             let (hp, mp) = {
                 let a = &self.actors[member].battle;
                 (a.hp, a.mp)
             };
-            if let Some(rec) = self.roster.members.get_mut(rslot) {
+            if let Some(rec) = self.party.roster.members.get_mut(rslot) {
                 let mut hms = rec.hp_mp_sp();
                 hms.hp_cur = hp;
                 hms.mp_cur = mp;
@@ -147,16 +147,16 @@ impl World {
     /// slots past the party band are NPCs, and pushing a character record's
     /// HP onto an NPC's mirrors is never right.
     pub fn resync_party_actors_from_roster(&mut self) {
-        let members = (self.party_count as usize).min(self.actors.len()).min(
-            if self.active_party.is_empty() {
-                self.roster.members.len()
+        let members = (self.party.party_count as usize)
+            .min(self.actors.len())
+            .min(if self.party.active_party.is_empty() {
+                self.party.roster.members.len()
             } else {
-                self.active_party.len()
-            },
-        );
+                self.party.active_party.len()
+            });
         for member in 0..members {
             let rslot = self.party_roster_slot(member);
-            let Some(hms) = self.roster.members.get(rslot).map(|r| r.hp_mp_sp()) else {
+            let Some(hms) = self.party.roster.members.get(rslot).map(|r| r.hp_mp_sp()) else {
                 continue;
             };
             let a = &mut self.actors[member];
@@ -174,6 +174,7 @@ impl World {
     pub fn save_full(&mut self) -> legaia_save::SaveFile {
         let party = self.save_party();
         let mut inventory: Vec<(u8, u8)> = self
+            .party
             .inventory
             .iter()
             .map(|(&id, &count)| (id, count))
@@ -184,10 +185,10 @@ impl World {
         // The present-party composition persists when installed; the
         // identity default serialises as the full roster order (the
         // historical encoding, which `load_full` treats as identity).
-        let active_party: Vec<u8> = if self.active_party.is_empty() {
+        let active_party: Vec<u8> = if self.party.active_party.is_empty() {
             (0..party.members.len() as u8).collect()
         } else {
-            self.active_party.clone()
+            self.party.active_party.clone()
         };
         let mut per_char: Vec<(u8, legaia_save::CharSaveExt)> = Vec::new();
         for slot in 0..party.members.len() as u8 {
@@ -195,7 +196,7 @@ impl World {
             // Learned arts: derive from TacticalArtsTracker - bit i is
             // set when art id i has crossed the learn threshold.
             for art_id in 0..32u8 {
-                if self.tactical_arts.is_learned(slot, art_id) {
+                if self.party.tactical_arts.is_learned(slot, art_id) {
                     ce.learned_arts_mask |= 1u32 << art_id;
                 }
             }
@@ -223,7 +224,7 @@ impl World {
                 .collect();
             ce.shiny_spells.sort_unstable();
             // Active-chain selection still lives in the per-char ext mirror.
-            if let Some((_, src)) = self.per_char_ext.iter().find(|(s, _)| *s == slot) {
+            if let Some((_, src)) = self.party.per_char_ext.iter().find(|(s, _)| *s == slot) {
                 ce.active_chains = src.active_chains;
             }
             per_char.push((slot, ce));
@@ -250,14 +251,14 @@ impl World {
             ext: legaia_save::SaveExt {
                 story_flags: self.flags.story_flags,
                 story_flag_bits,
-                money: self.money,
+                money: self.party.money,
                 inventory,
             },
             ext_v2: legaia_save::SaveExtV2 {
-                play_time_seconds: self.play_time_seconds,
+                play_time_seconds: self.clock.play_time_seconds,
                 active_party,
                 per_char,
-                saved_chains: self.saved_chains.clone(),
+                saved_chains: self.party.saved_chains.clone(),
             },
         }
     }
@@ -274,11 +275,11 @@ impl World {
         // order (what `save_full` writes when no composition is installed)
         // stays the identity default rather than a 3-cap reorder, so legacy
         // saves keep their historical party_count.
-        let identity: Vec<u8> = (0..self.roster.members.len() as u8).collect();
+        let identity: Vec<u8> = (0..self.party.roster.members.len() as u8).collect();
         if sf.ext_v2.active_party != identity {
             self.set_active_party(sf.ext_v2.active_party.clone());
         } else {
-            self.active_party.clear();
+            self.party.active_party.clear();
         }
         self.flags.story_flags = sf.ext.story_flags;
         self.flags.story_flag_bits = sf.ext.story_flag_bits;
@@ -292,28 +293,28 @@ impl World {
             let window = self.flags.story_flag_bits[0x158..].to_vec();
             self.flags.system_flags = window;
         }
-        self.money = sf.ext.money;
-        self.inventory.clear();
+        self.party.money = sf.ext.money;
+        self.party.inventory.clear();
         for (id, count) in sf.ext.inventory {
             if count > 0 {
-                self.inventory.insert(id, count);
+                self.party.inventory.insert(id, count);
             }
         }
         // (The level-up tracker's per-slot XP + level are hydrated from the
         // records inside `load_party`.)
         // V2 ext block - repopulate engine-side trackers.
-        self.play_time_seconds = sf.ext_v2.play_time_seconds;
-        self.saved_chains = sf.ext_v2.saved_chains.clone();
-        self.per_char_ext = sf.ext_v2.per_char.clone();
+        self.clock.play_time_seconds = sf.ext_v2.play_time_seconds;
+        self.party.saved_chains = sf.ext_v2.saved_chains.clone();
+        self.party.per_char_ext = sf.ext_v2.per_char.clone();
         // Reset trackers so reloads don't accumulate stale state.
-        self.tactical_arts = TacticalArtsTracker::new();
+        self.party.tactical_arts = TacticalArtsTracker::new();
         self.seru.log = crate::seru_learning::SeruCaptureLog::new();
         for (slot, ce) in &sf.ext_v2.per_char {
             // Re-mark learned arts so the tracker doesn't re-fire the
             // "first time learned" event for arts the save already has.
             for art_id in 0..32u8 {
                 if ce.learned_arts_mask & (1u32 << art_id) != 0 {
-                    self.tactical_arts.mark_known(*slot, art_id);
+                    self.party.tactical_arts.mark_known(*slot, art_id);
                 }
             }
             // Restore per-Seru capture-point progress. When the registry is
@@ -377,7 +378,7 @@ impl World {
         &mut self,
         man: Option<&legaia_asset::man_section::ManFile>,
     ) {
-        self.scene_save_allowed = man.is_some_and(|m| m.header.low_flag);
+        self.party.scene_save_allowed = man.is_some_and(|m| m.header.low_flag);
     }
 
     /// Kind byte of the op-`0x49` entry context the pause menu tests - the

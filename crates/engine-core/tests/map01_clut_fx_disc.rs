@@ -89,9 +89,9 @@ fn scene_entry_pins_the_frame_step_factor() {
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
     host.enter_field_scene("map01", 0).expect("enter map01");
-    assert_eq!(host.world.frame_step, 3, "overworld dt = 3");
+    assert_eq!(host.world.clock.frame_step, 3, "overworld dt = 3");
     host.enter_field_scene("town01", 0).expect("enter town01");
-    assert_eq!(host.world.frame_step, 2, "town dt = 2");
+    assert_eq!(host.world.clock.frame_step, 2, "town dt = 2");
 }
 
 /// Drive one of map01's real fade ops through the engine kernel on a scratch
@@ -139,7 +139,7 @@ fn map01_fade_completes_in_128_vsyncs_at_either_frame_step() {
 
     for (dt, expect_game_ticks) in [(3u8, 43u32), (2, 64)] {
         let mut world = World::new();
-        world.frame_step = dt;
+        world.clock.frame_step = dt;
         let mut vram = legaia_tim::Vram::new();
         // Seed distinct A / B rows: park cell = a red ramp, strip cell = a
         // blue ramp.
@@ -165,7 +165,7 @@ fn map01_fade_completes_in_128_vsyncs_at_either_frame_step() {
             sim_ticks += 1;
             assert!(sim_ticks < 1000, "fade never completed (dt={dt})");
             world.tick();
-            if world.field_frame_step == 1 {
+            if world.clock.display_frame_step == 1 {
                 vsyncs += 1;
             }
             game_ticks += world.ambient.clut_pending_game_ticks;
@@ -217,7 +217,7 @@ fn map01_one_shots_copy_the_strip_cell_immediately() {
     let sites = legaia_engine_core::man_field_scripts::scene_clut_cell_fx(&mf, &man);
 
     let mut world = World::new();
-    world.frame_step = 3;
+    world.clock.frame_step = 3;
     let mut vram = legaia_tim::Vram::new();
     let mut bytes = [0u8; 32];
     for i in 0..16u16 {

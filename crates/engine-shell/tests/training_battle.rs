@@ -134,7 +134,7 @@ fn training_encounter_reaches_battle_with_real_monster() {
 
     // The enemy slot carries the training opponent with its real HP.
     let world = &session.host.world;
-    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,
         Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
@@ -230,7 +230,7 @@ fn training_reaches_battle_via_man_formation_index() {
     // The enemy slot is Tetsu with the real archive HP (999) merged at scene
     // entry - no manual catalog seeding needed on this path.
     let world = &session.host.world;
-    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,
         Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
@@ -330,7 +330,7 @@ fn training_reaches_battle_via_field_carrier_sm() {
     // The enemy slot is Tetsu with the real archive HP merged at scene entry.
     let world = &session.host.world;
     assert_eq!(world.battle.return_mode, SceneMode::Field);
-    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,
         Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
@@ -461,7 +461,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         "confirming the fight option (\"...practice...\") flips Field -> Battle"
     );
 
-    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,
         Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
@@ -582,7 +582,7 @@ fn training_reaches_battle_via_interaction_probe() {
         "the interaction probe (talk + navigate to the fight option + confirm) flips Field -> Battle"
     );
     let world = &session.host.world;
-    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,
         Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),

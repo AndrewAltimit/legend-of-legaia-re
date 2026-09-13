@@ -98,7 +98,7 @@ fn rim_elm_conversations_end() {
     session
         .enter_field_live("town01", &FieldLiveOpts::default())
         .expect("enter town01 live");
-    session.host.world.use_vm_dialogue = true;
+    session.host.world.toggles.use_vm_dialogue = true;
 
     let mut slots: Vec<u8> = session
         .host

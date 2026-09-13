@@ -26,7 +26,7 @@ fn battle_world(monsters: usize) -> World {
     while w.actors.len() < 3 + monsters {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 200;
@@ -41,7 +41,7 @@ fn battle_world(monsters: usize) -> World {
         w.actors[i].battle.liveness = 1;
     }
     w.mode = SceneMode::Battle;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w.battle.player_driven = true;
     // Park the SM where the live loop re-arms, so the next tick hands the
     // turn to the player and opens the command session.

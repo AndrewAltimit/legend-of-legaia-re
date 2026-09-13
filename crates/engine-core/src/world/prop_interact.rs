@@ -391,9 +391,9 @@ impl World {
                     // `0xC1 99` = current party leader; other args index the
                     // roster order.
                     let name = if arg == 99 {
-                        self.party_names.first()
+                        self.party.party_names.first()
                     } else {
-                        self.party_names.get(arg as usize)
+                        self.party.party_names.get(arg as usize)
                     };
                     if let Some(name) = name {
                         map.entry((1, arg))

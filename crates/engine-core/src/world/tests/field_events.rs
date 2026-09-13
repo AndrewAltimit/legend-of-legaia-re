@@ -83,14 +83,14 @@ fn dialog_advance_no_op_when_no_dialog() {
 #[test]
 fn field_op_3a_clamps_and_emits_add_money() {
     let mut world = World::new();
-    world.money = 100;
+    world.party.money = 100;
     world.mode = SceneMode::Field;
     // 0x3A op0=0xFF op1=0xFF op2=0xFF (24-bit -1) → delta = -1.
     // The op handler reads the 3-byte payload; sign-extend to i32.
     let bytecode = vec![0x3A, 0xFF, 0xFF, 0xFF];
     world.load_field_script(bytecode);
     let _ = world.tick();
-    assert!(world.money >= 0, "money clamps to non-negative");
+    assert!(world.party.money >= 0, "money clamps to non-negative");
     let evs = world.drain_field_events();
     assert!(
         evs.iter().any(|e| matches!(e, FieldEvent::AddMoney { .. })),
@@ -108,8 +108,8 @@ fn field_op_3c_party_add_first_member_becomes_leader() {
     let bytecode = vec![0x3C, 0x07];
     world.load_field_script(bytecode);
     let _ = world.tick();
-    assert_eq!(world.party_actor_slots, vec![Some(7)]);
-    assert_eq!(world.party_leader_slot, Some(7));
+    assert_eq!(world.party.party_actor_slots, vec![Some(7)]);
+    assert_eq!(world.party.party_leader_slot, Some(7));
     let evs = world.drain_field_events();
     assert!(
         evs.iter().any(|e| matches!(
@@ -511,12 +511,12 @@ fn field_op_4c_d8_with_global_tmd_pool_populates_tmd_ref() {
 fn field_op_4c_82_restores_the_named_slot_to_full() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.roster = legaia_save::Party::zeroed(3);
+    world.party.roster = legaia_save::Party::zeroed(3);
 
     // Damage two members so a real restore is observable, and leave a third
     // untouched so the literal-operand addressing is non-vacuous.
     for slot in 0..3usize {
-        let Some(m) = world.roster.members.get_mut(slot) else {
+        let Some(m) = world.party.roster.members.get_mut(slot) else {
             continue;
         };
         let mut hms = m.hp_mp_sp();
@@ -535,11 +535,11 @@ fn field_op_4c_82_restores_the_named_slot_to_full() {
     }
 
     for slot in 0..2usize {
-        let hms = world.roster.members[slot].hp_mp_sp();
+        let hms = world.party.roster.members[slot].hp_mp_sp();
         assert_eq!(hms.hp_cur, hms.hp_max, "slot {slot} HP restored to full");
         assert_eq!(hms.mp_cur, hms.mp_max, "slot {slot} MP restored to full");
     }
-    let untouched = world.roster.members[2].hp_mp_sp();
+    let untouched = world.party.roster.members[2].hp_mp_sp();
     assert_eq!(
         (untouched.hp_cur, untouched.mp_cur),
         (7, 3),
@@ -553,8 +553,8 @@ fn field_op_4c_82_restores_the_named_slot_to_full() {
 fn field_op_4c_82_ignores_a_slot_past_the_roster() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.roster = legaia_save::Party::zeroed(2);
-    let n = world.roster.members.len() as u8;
+    world.party.roster = legaia_save::Party::zeroed(2);
+    let n = world.party.roster.members.len() as u8;
     world.load_field_script(vec![0x4C, 0x82, n.saturating_add(4)]);
     let _ = world.tick();
 }
@@ -568,10 +568,10 @@ fn field_op_4c_82_ignores_a_slot_past_the_roster() {
 fn field_inn_stay_gate_debits_gold_then_restores_the_party() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.roster = legaia_save::Party::zeroed(2);
-    world.money = 1000;
+    world.party.roster = legaia_save::Party::zeroed(2);
+    world.party.money = 1000;
     for slot in 0..2usize {
-        let Some(m) = world.roster.members.get_mut(slot) else {
+        let Some(m) = world.party.roster.members.get_mut(slot) else {
             continue;
         };
         let mut hms = m.hp_mp_sp();
@@ -594,9 +594,12 @@ fn field_inn_stay_gate_debits_gold_then_restores_the_party() {
         let _ = world.tick();
     }
 
-    assert_eq!(world.money, 760, "the scripted 240 G charge is debited");
+    assert_eq!(
+        world.party.money, 760,
+        "the scripted 240 G charge is debited"
+    );
     for slot in 0..2usize {
-        let hms = world.roster.members[slot].hp_mp_sp();
+        let hms = world.party.roster.members[slot].hp_mp_sp();
         assert_eq!(hms.hp_cur, 250, "slot {slot} leaves the inn at full HP");
         assert_eq!(hms.mp_cur, 60, "slot {slot} leaves the inn at full MP");
     }

@@ -22,8 +22,11 @@ use legaia_engine_vm::battle_formulas::{
 
 fn build_world() -> World {
     let mut world = World {
+        party: legaia_engine_core::world::PartyState {
+            party_count: 3,
+            ..Default::default()
+        },
         mode: SceneMode::Battle,
-        party_count: 3,
         ..World::default()
     };
     // 3 party slots (alive) + 1 monster slot (alive). Slots 4..7 stay

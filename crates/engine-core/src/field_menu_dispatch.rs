@@ -214,7 +214,7 @@ pub fn apply_equip_outcome(
         added,
         removed,
     } = outcome
-        && let Some(member) = world.roster.members.get_mut(char_slot as usize)
+        && let Some(member) = world.party.roster.members.get_mut(char_slot as usize)
     {
         let mut eq = member.equipment();
         if (slot as usize) < eq.slots.len() {
@@ -225,15 +225,15 @@ pub fn apply_equip_outcome(
             // swapped-out item (if any) returns to it. Without this the equipped
             // item stays in the bag (duplication) and the old one is lost.
             if added != 0
-                && let Some(qty) = world.inventory.get_mut(&added)
+                && let Some(qty) = world.party.inventory.get_mut(&added)
             {
                 *qty = qty.saturating_sub(1);
                 if *qty == 0 {
-                    world.inventory.remove(&added);
+                    world.party.inventory.remove(&added);
                 }
             }
             if removed != 0 {
-                *world.inventory.entry(removed).or_insert(0) += 1;
+                *world.party.inventory.entry(removed).or_insert(0) += 1;
             }
         }
         // An equipment change can add / remove an accessory passive; rebuild
@@ -270,7 +270,7 @@ pub fn apply_equip_outcome(
 pub fn apply_inventory_outcome(session: &InventoryUseSession, world: &mut World) {
     use crate::inventory_use::InventoryUseState;
     for id in &session.thrown_items {
-        world.inventory.remove(id);
+        world.party.inventory.remove(id);
     }
     for &id in &session.consumed_items {
         world.consume_item(id);
@@ -353,13 +353,13 @@ pub fn apply_spell_outcome(
     };
     let def = session.catalog().get(spell_id).cloned();
     let mp_cost = def.as_ref().map(|d| d.mp_cost).unwrap_or(0);
-    if let Some(caster) = world.roster.members.get_mut(caster_slot as usize) {
+    if let Some(caster) = world.party.roster.members.get_mut(caster_slot as usize) {
         let mut hms = caster.hp_mp_sp();
         hms.mp_cur = hms.mp_cur.saturating_sub(mp_cost as u16);
         caster.set_hp_mp_sp(hms);
     }
     let mut healed: Option<u16> = None;
-    if let Some(target) = world.roster.members.get_mut(target_slot as usize) {
+    if let Some(target) = world.party.roster.members.get_mut(target_slot as usize) {
         let mut hms = target.hp_mp_sp();
         match outcome {
             crate::spells::SpellOutcome::Heal { amount, .. } => {
@@ -387,7 +387,7 @@ pub fn apply_spell_outcome(
     // `min(nominal, deficit)`).
     let gain = crate::magic_xp::menu_heal_xp_gain(group_cast, healed == nominal);
     let thresholds = world.tables.magic_xp_thresholds;
-    let record = world.roster.members.get_mut(caster_slot as usize)?;
+    let record = world.party.roster.members.get_mut(caster_slot as usize)?;
     let up = crate::magic_xp::accrue_and_level(
         record,
         spell_id,
@@ -585,7 +585,7 @@ pub fn try_open_arts_editor(sub: &mut FieldMenuSubsession, pressed: u16, world: 
 /// Resolve the slot of the active leader. Falls back to slot 0 when no
 /// leader is set or when the roster is empty.
 pub fn active_leader_slot(world: &World) -> u8 {
-    world.party_leader_slot.unwrap_or_default()
+    world.party.party_leader_slot.unwrap_or_default()
 }
 
 /// Build a [`StatusSnapshot`] for every roster member that has a non-zero
@@ -595,7 +595,7 @@ pub fn active_leader_slot(world: &World) -> u8 {
 pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
     let names = roster_names(world);
     let mut out = Vec::new();
-    for (i, member) in world.roster.members.iter().enumerate() {
+    for (i, member) in world.party.roster.members.iter().enumerate() {
         let hms = member.hp_mp_sp();
         if hms.hp_max == 0 {
             continue;
@@ -706,6 +706,7 @@ fn default_element_views() -> Vec<ElementRankView> {
 pub fn roster_names(world: &World) -> Vec<String> {
     let canonical = ["Vahn", "Noa", "Gala"];
     world
+        .party
         .roster
         .members
         .iter()
@@ -722,6 +723,7 @@ pub fn roster_names(world: &World) -> Vec<String> {
 fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSession {
     let names = roster_names(world);
     let party: Vec<SpellCasterSlot> = world
+        .party
         .roster
         .members
         .iter()
@@ -743,7 +745,12 @@ fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSessio
                 // Per-caster MP-cost ability bits (record `+0xF4`, kept live
                 // in `character_ability_bits`) so the Magic screen displays the
                 // MP-saver-discounted cost (`FUN_80035394`).
-                ability_bits: world.character_ability_bits.get(i).copied().unwrap_or(0),
+                ability_bits: world
+                    .party
+                    .character_ability_bits
+                    .get(i)
+                    .copied()
+                    .unwrap_or(0),
                 // Retail resolves the Ra-Seru slot through the
                 // per-character offset table at 0x8007B424; the engine's
                 // roster always carries the Ra-Seru equipped, so the
@@ -753,6 +760,7 @@ fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSessio
         })
         .collect();
     let targets: Vec<SpellTargetRow> = world
+        .party
         .roster
         .members
         .iter()
@@ -775,12 +783,14 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
     // Id-sorted, one entry per distinct held id (the paired PauseItemRow
     // list is built in the same order - keep these in lockstep).
     let mut items: Vec<u8> = world
+        .party
         .inventory
         .iter()
         .filter_map(|(id, qty)| if *qty > 0 { Some(*id) } else { None })
         .collect();
     items.sort_unstable();
     let targets: Vec<InvTargetRow> = world
+        .party
         .roster
         .members
         .iter()
@@ -840,7 +850,7 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
             PauseItemRow {
                 id,
                 name,
-                count: world.inventory.get(&id).copied().unwrap_or(0),
+                count: world.party.inventory.get(&id).copied().unwrap_or(0),
                 desc,
                 passive,
             }
@@ -906,6 +916,7 @@ pub fn warp_destinations(world: &World) -> Vec<crate::pause_screens::WarpDestina
 
 fn build_equip_session(world: &World, char_slot: u8, equipment: &EquipmentTable) -> EquipSession {
     let record = world
+        .party
         .roster
         .members
         .get(char_slot as usize)
@@ -913,7 +924,7 @@ fn build_equip_session(world: &World, char_slot: u8, equipment: &EquipmentTable)
         .unwrap_or_default();
     let session = EquipSession::new(
         record,
-        world.inventory.clone(),
+        world.party.inventory.clone(),
         equipment.clone(),
         StatusModifiers::default(),
         Vec::new(),
@@ -954,8 +965,8 @@ mod tests {
         let mut world = World::new();
         // Three placeholder records with non-zero max HP/MP so the
         // status / spell builders include them.
-        world.roster = legaia_save::Party::zeroed(3);
-        for member in &mut world.roster.members {
+        world.party.roster = legaia_save::Party::zeroed(3);
+        for member in &mut world.party.roster.members {
             let mut hms = member.hp_mp_sp();
             hms.hp_cur = 50;
             hms.hp_max = 100;
@@ -963,8 +974,8 @@ mod tests {
             hms.mp_max = 30;
             member.set_hp_mp_sp(hms);
         }
-        world.inventory.insert(0x77, 3); // Healing Leaf (real item id)
-        world.party_leader_slot = Some(0);
+        world.party.inventory.insert(0x77, 3); // Healing Leaf (real item id)
+        world.party.party_leader_slot = Some(0);
         world.set_item_catalog(crate::items::ItemCatalog::vanilla());
         world
     }
@@ -1019,7 +1030,7 @@ mod tests {
         assert!(s.is_done());
         apply_inventory_outcome(&s.inner, &mut w);
         assert!(
-            !w.inventory.contains_key(&0x77),
+            !w.party.inventory.contains_key(&0x77),
             "the whole stack is discarded"
         );
     }
@@ -1028,9 +1039,9 @@ mod tests {
     fn build_status_snapshots_skip_empty_roster_slots() {
         let mut w = fresh_world();
         // Zero one member's max HP - they should drop out of the snapshot.
-        let mut hms = w.roster.members[2].hp_mp_sp();
+        let mut hms = w.party.roster.members[2].hp_mp_sp();
         hms.hp_max = 0;
-        w.roster.members[2].set_hp_mp_sp(hms);
+        w.party.roster.members[2].set_hp_mp_sp(hms);
         let snaps = status_snapshots(&w);
         assert_eq!(snaps.len(), 2);
     }
@@ -1064,7 +1075,7 @@ mod tests {
     #[test]
     fn build_equip_uses_active_leader() {
         let mut w = fresh_world();
-        w.party_leader_slot = Some(2);
+        w.party.party_leader_slot = Some(2);
         let s = build(FieldMenuRow::Equip, &w);
         match s {
             FieldMenuSubsession::Equip { char_slot, .. } => assert_eq!(char_slot, 2),
@@ -1238,8 +1249,8 @@ mod tests {
         // 3 bits (slot = id >> 5). Use 0x25 for slot 1 so we don't
         // collide with the Healing Leaf (id 0x01, which also sorts into
         // slot 0).
-        w.inventory.clear();
-        w.inventory.insert(0x25, 1);
+        w.party.inventory.clear();
+        w.party.inventory.insert(0x25, 1);
         let mut equip_table = EquipmentTable::new();
         equip_table.set(0x25, crate::battle_stats::ItemModifier::default());
         let mut s = FieldMenuSubsession::build(
@@ -1265,11 +1276,11 @@ mod tests {
             let outcome = apply_equip_outcome(session, *char_slot, &mut w);
             assert!(matches!(outcome, Some(EquipOutcome::Committed { .. })));
             // Roster member 0's slot 1 byte now matches the equipped id.
-            assert_eq!(w.roster.members[0].equipment().slots[1], 0x25);
+            assert_eq!(w.party.roster.members[0].equipment().slots[1], 0x25);
             // ...and the equipped item LEFT the bag (no duplication). Slot 1 was
             // empty, so nothing is returned.
             assert_eq!(
-                w.inventory.get(&0x25),
+                w.party.inventory.get(&0x25),
                 None,
                 "equipped item must be removed from the bag (no duplication)"
             );
@@ -1283,12 +1294,12 @@ mod tests {
     #[test]
     fn apply_equip_outcome_returns_the_swapped_out_item_to_the_bag() {
         let mut w = fresh_world();
-        w.inventory.clear();
-        w.inventory.insert(0x25, 1);
+        w.party.inventory.clear();
+        w.party.inventory.insert(0x25, 1);
         // Pre-equip a different slot-1 item (0x26 >> 5 == 1) on member 0.
-        let mut eq = w.roster.members[0].equipment();
+        let mut eq = w.party.roster.members[0].equipment();
         eq.slots[1] = 0x26;
-        w.roster.members[0].set_equipment(eq);
+        w.party.roster.members[0].set_equipment(eq);
 
         let mut equip_table = EquipmentTable::new();
         equip_table.set(0x25, crate::battle_stats::ItemModifier::default());
@@ -1325,11 +1336,15 @@ mod tests {
                 ..
             })
         ));
-        assert_eq!(w.roster.members[0].equipment().slots[1], 0x25);
+        assert_eq!(w.party.roster.members[0].equipment().slots[1], 0x25);
         // 0x25 left the bag, 0x26 came back into it.
-        assert_eq!(w.inventory.get(&0x25), None, "equipped item left the bag");
         assert_eq!(
-            w.inventory.get(&0x26),
+            w.party.inventory.get(&0x25),
+            None,
+            "equipped item left the bag"
+        );
+        assert_eq!(
+            w.party.inventory.get(&0x26),
             Some(&1),
             "swapped-out item returned to the bag"
         );

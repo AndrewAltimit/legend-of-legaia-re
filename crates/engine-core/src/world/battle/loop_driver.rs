@@ -147,7 +147,7 @@ impl World {
     pub(in crate::world) fn apply_final_heal_revives(&mut self) {
         const LOST_GRAIL: u8 = 0xE7;
         const FINAL_HEAL_WORD1_BIT: u32 = 0x80; // ability bit 0x27 (39)
-        let pc = (self.party_count.min(3) as usize).min(self.actors.len());
+        let pc = (self.party.party_count.min(3) as usize).min(self.actors.len());
         for slot in 0..pc {
             let (max_hp, down) = {
                 let a = &self.actors[slot].battle;
@@ -159,7 +159,7 @@ impl World {
             // The Lost Grail + ability bit live on the occupying character's
             // record; the revive itself targets the battle ordinal's mirrors.
             let char_slot = self.party_roster_slot(slot);
-            let Some(record) = self.roster.members.get_mut(char_slot) else {
+            let Some(record) = self.party.roster.members.get_mut(char_slot) else {
                 continue;
             };
             let mut bits = record.ability_bits();
@@ -672,7 +672,7 @@ impl World {
 
     /// `true` while each side still has a member who is not defeated.
     pub(in crate::world) fn battle_both_sides_alive(&self) -> bool {
-        let party_count = self.party_count.max(1);
+        let party_count = self.party.party_count.max(1);
         let n = self.actors.len() as u8;
         let party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
         let monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
@@ -812,7 +812,7 @@ impl World {
     /// PORT: FUN_801DB81C
     /// REF: FUN_801DBA04
     pub(in crate::world) fn next_member_owing_command(&self, after: Option<u8>) -> Option<u8> {
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         let start = after.map_or(0, |a| a.saturating_add(1));
         (start..party_count).find(|&slot| {
             let alive = self
@@ -840,7 +840,7 @@ impl World {
         action: crate::battle_round::PendingPartyAction,
     ) {
         use crate::battle_round::PendingPartyAction;
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         let run = matches!(action, PendingPartyAction::Run);
         if let Some(slot) = self.battle.round_flow.pending.get_mut(usize::from(actor)) {
             *slot = Some(action);
@@ -875,7 +875,7 @@ impl World {
     /// REF: FUN_801E295C (state `0x0C`: `FUN_801EED1C` for a party slot, the
     /// `0x380` re-target for a delegated one)
     fn dispatch_battle_turn(&mut self, next: u8) {
-        let party_count = self.party_count.max(1);
+        let party_count = self.party.party_count.max(1);
         // Start-of-turn: age this actor's buffs / debuffs, reverting any
         // that expire this turn.
         self.tick_battle_buffs_on_turn(next);
@@ -960,7 +960,7 @@ impl World {
     /// REF: FUN_801EC3E4
     pub(in crate::world) fn apply_basic_attack(&mut self) {
         let attacker = self.battle_ctx.active_actor;
-        let party_count = self.party_count.max(1);
+        let party_count = self.party.party_count.max(1);
         let strikes = if attacker >= party_count {
             self.battle.monster_strike_budget.max(1)
         } else {
@@ -1179,7 +1179,7 @@ impl World {
         // for the seated party width. A party target therefore always takes
         // the ordinary arm - which is what makes the record-direct
         // `0x801C9348[target - 3]` read in the decision well-defined.
-        if usize::from(target) < usize::from(self.party_count.clamp(1, 3)) {
+        if usize::from(target) < usize::from(self.party.party_count.clamp(1, 3)) {
             return vm::battle_action::APPLY_MODE_NORMAL;
         }
         let cursor = a.battle.strike_index;
@@ -1195,7 +1195,8 @@ impl World {
         // Icon bit; a monster attacker has no character record, so the word
         // reads 0 and the carry arm cannot fire for it.
         let ability = if a.battle_monster_id.is_none() {
-            self.character_ability_bits
+            self.party
+                .character_ability_bits
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0)
@@ -1422,7 +1423,7 @@ impl World {
         // Low, slot 2 / 3 for the two arm commands, all five for an art).
         // Party attackers only; the monster branch performs no fold.
         let mut attack = self.battle.attack.get(attacker_i).copied().unwrap_or(0);
-        if attacker < self.party_count
+        if attacker < self.party.party_count
             && let Some(bonuses) = self.battle.equip_atk.get(attacker_i)
         {
             let fold_command = if committed > vm::battle_formulas::ART_ANIM_THRESHOLD {
@@ -1455,7 +1456,7 @@ impl World {
         let mut raw = vm::battle_formulas::physical_predamage(&hit_inputs, &mut || {
             (self.next_rng() & 0x7FFF) as u16
         });
-        if self.use_damage_finish {
+        if self.toggles.use_damage_finish {
             // The finisher's *post* stages only: the defender's equipment
             // elemental-guard / All-Guard ladder, the 9999 cap and the
             // rand-based no-damage floor. `defender_guarding` is passed
@@ -1468,8 +1469,8 @@ impl World {
             } else {
                 0
             };
-            let attacker_is_party = attacker < self.party_count;
-            let target_is_party = target < self.party_count;
+            let attacker_is_party = attacker < self.party.party_count;
+            let target_is_party = target < self.party.party_count;
             let defender_resist = self.defender_resist(target);
             raw = vm::battle_formulas::damage_finish(&vm::battle_formulas::DamageFinish {
                 predamage: u32::from(raw),
@@ -1686,7 +1687,7 @@ impl World {
     /// `party_count..`, so any retail kernel that switches on "is this index a
     /// party slot" needs the re-based value, not the seat.
     fn retail_actor_category(&self, slot: u8) -> u8 {
-        let pc = self.party_count.min(3);
+        let pc = self.party.party_count.min(3);
         if slot < pc {
             slot
         } else {
@@ -1696,7 +1697,7 @@ impl World {
 
     /// Inverse of [`Self::retail_actor_category`].
     fn engine_slot_of_retail_category(&self, category: u8) -> u8 {
-        let pc = self.party_count.min(3);
+        let pc = self.party.party_count.min(3);
         if category < 3 {
             category
         } else {

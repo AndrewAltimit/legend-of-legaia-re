@@ -29,7 +29,7 @@ fn world_in_a_battle() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -39,7 +39,7 @@ fn world_in_a_battle() -> World {
         w.set_battle_attack(i as u8, 60);
     }
     w.load_party(legaia_save::Party::zeroed(3));
-    let mut party = w.roster.clone();
+    let mut party = w.party.roster.clone();
     for rec in party.members.iter_mut() {
         let mut hms = rec.hp_mp_sp();
         hms.hp_cur = 100;

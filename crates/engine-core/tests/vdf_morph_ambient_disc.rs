@@ -57,7 +57,10 @@ fn ambient_world(
     let man_file = legaia_asset::man_section::parse(&man_bytes).ok()?;
 
     let mut world = World {
-        frame_step: 2,
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     world.install_field_stagers(&stager_bytes);

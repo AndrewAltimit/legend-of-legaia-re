@@ -1006,7 +1006,7 @@ impl PlayWindowApp {
             *d = (n % 10) as u8;
             n /= 10;
         }
-        let gold = self.session.host.world.money;
+        let gold = self.session.host.world.party.money;
         let quote = coin_exchange_quote(&digits, gold, BALANCE_CAP);
         if !quote.is_valid() {
             log::info!(
@@ -1017,7 +1017,7 @@ impl PlayWindowApp {
             );
             return None;
         }
-        self.session.host.world.money = gold - quote.cost;
+        self.session.host.world.party.money = gold - quote.cost;
         let bank = self.session.host.world.minigames.casino_coins as i32 + quote.coins;
         self.session.host.world.minigames.casino_coins = bank.max(0) as u32;
         log::info!(
@@ -1193,7 +1193,7 @@ impl PlayWindowApp {
             let archive = self.monster_archive_bytes()?;
             legaia_asset::monster_archive::record(&archive, r.monster_id as u16).ok()?
         });
-        let lead = self.session.host.world.roster.members.first();
+        let lead = self.session.host.world.party.roster.members.first();
         let player_hp = lead
             .map(|r| r.hp_mp_sp().hp_max as i32)
             .filter(|&hp| hp > 0)

@@ -18,7 +18,11 @@ impl World {
     /// committed, otherwise the template default seeded at
     /// [`Self::seed_starting_party`]. Empty string when the slot is unknown.
     pub fn party_name(&self, slot: usize) -> &str {
-        self.party_names.get(slot).map(String::as_str).unwrap_or("")
+        self.party
+            .party_names
+            .get(slot)
+            .map(String::as_str)
+            .unwrap_or("")
     }
 
     /// Open the name-entry overlay for `slot`, seeded with the slot's current
@@ -27,12 +31,12 @@ impl World {
     /// with [`Self::step_name_entry`] and renders from [`Self::name_entry`].
     pub fn open_name_entry(&mut self, slot: usize) {
         let initial = self.party_name(slot).to_string();
-        self.name_entry = Some(crate::name_entry::NameEntry::new(slot, &initial));
+        self.party.name_entry = Some(crate::name_entry::NameEntry::new(slot, &initial));
     }
 
     /// `true` while the name-entry overlay is active.
     pub fn name_entry_active(&self) -> bool {
-        self.name_entry.is_some()
+        self.party.name_entry.is_some()
     }
 
     /// Advance the active name-entry overlay by one input frame. On commit
@@ -41,24 +45,24 @@ impl World {
     /// and `true` is returned so the host can resume the field script.
     /// Returns `false` while the overlay stays open (or when none is active).
     pub fn step_name_entry(&mut self, input: crate::name_entry::NameEntryInput) -> bool {
-        let Some(entry) = self.name_entry.as_mut() else {
+        let Some(entry) = self.party.name_entry.as_mut() else {
             return false;
         };
         entry.step(input);
         if entry.state == crate::name_entry::NameEntryState::Done {
             let slot = entry.char_index;
             let name = entry.committed_name();
-            if self.party_names.len() <= slot {
-                self.party_names.resize(slot + 1, String::new());
+            if self.party.party_names.len() <= slot {
+                self.party.party_names.resize(slot + 1, String::new());
             }
-            self.party_names[slot] = name.clone();
+            self.party.party_names[slot] = name.clone();
             // Stamp the record too, so the committed name survives a
             // save/load round trip - retail's carrier is the record's
             // `+0x2A7`, not a side table.
-            if let Some(rec) = self.roster.members.get_mut(slot) {
+            if let Some(rec) = self.party.roster.members.get_mut(slot) {
                 rec.set_name(&name);
             }
-            self.name_entry = None;
+            self.party.name_entry = None;
             true
         } else {
             false
@@ -704,7 +708,7 @@ impl World {
     // REF: FUN_8002519C
     // REF: FUN_801DC0BC
     pub fn step_spawned_record_contexts(&mut self) {
-        if self.field_frame_step != 1 {
+        if self.clock.display_frame_step != 1 {
             return;
         }
         self.step_cutscene_timeline();
@@ -2612,7 +2616,7 @@ impl World {
     /// (clearing `current_dialog`) when the conversation ends. No-op when the
     /// flag is off, so the default simplified path is untouched.
     pub fn drive_inline_dialogue(&mut self) {
-        if !self.use_vm_dialogue {
+        if !self.toggles.use_vm_dialogue {
             return;
         }
         // A prop-bound record run (door / cupboard) is stepped by its own

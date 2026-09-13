@@ -87,7 +87,10 @@ fn town_shop_buy_grants_patched_item() {
 
     // Baseline: a buy at cursor 0 of the unpatched shop grants the original id.
     let mut w0 = World {
-        money: 1_000_000,
+        party: legaia_engine_core::world::PartyState {
+            money: 1_000_000,
+            ..Default::default()
+        },
         ..World::default()
     };
     assert_eq!(
@@ -95,7 +98,7 @@ fn town_shop_buy_grants_patched_item() {
         Some(orig_id),
         "baseline: unpatched shop sells its original first item"
     );
-    assert_eq!(w0.inventory.get(&orig_id).copied(), Some(1));
+    assert_eq!(w0.party.inventory.get(&orig_id).copied(), Some(1));
 
     // A distinct replacement id (a real consumable, != original).
     let new_id = if orig_id == 0x80 { 0x77 } else { 0x80 };
@@ -121,7 +124,10 @@ fn town_shop_buy_grants_patched_item() {
     assert_eq!(patched_ids[0], new_id, "patched stock holds the new id");
 
     let mut w1 = World {
-        money: 1_000_000,
+        party: legaia_engine_core::world::PartyState {
+            money: 1_000_000,
+            ..Default::default()
+        },
         ..World::default()
     };
     let granted = buy_cursor(&mut w1, session_over(&patched_ids), 0);
@@ -130,7 +136,11 @@ fn town_shop_buy_grants_patched_item() {
         Some(new_id),
         "runtime sells the PATCHED shop item, not the original"
     );
-    assert_eq!(w1.inventory.get(&new_id).copied(), Some(1), "bag got it");
+    assert_eq!(
+        w1.party.inventory.get(&new_id).copied(),
+        Some(1),
+        "bag got it"
+    );
     assert_ne!(new_id, orig_id, "non-vacuous: the id actually changed");
 }
 
@@ -155,7 +165,10 @@ fn casino_buy_grants_patched_prize() {
 
     // Baseline: buying prize 0 of the unpatched table grants the original id.
     let mut w0 = World {
-        money: 9_999_999,
+        party: legaia_engine_core::world::PartyState {
+            money: 9_999_999,
+            ..Default::default()
+        },
         ..World::default()
     };
     assert_eq!(
@@ -197,7 +210,10 @@ fn casino_buy_grants_patched_prize() {
     );
 
     let mut w1 = World {
-        money: 9_999_999,
+        party: legaia_engine_core::world::PartyState {
+            money: 9_999_999,
+            ..Default::default()
+        },
         ..World::default()
     };
     let granted = buy_cursor(&mut w1, session_over(&patched_prizes), 0);
@@ -206,6 +222,10 @@ fn casino_buy_grants_patched_prize() {
         Some(new_id),
         "runtime grants the PATCHED casino prize, not the original"
     );
-    assert_eq!(w1.inventory.get(&new_id).copied(), Some(1), "bag got it");
+    assert_eq!(
+        w1.party.inventory.get(&new_id).copied(),
+        Some(1),
+        "bag got it"
+    );
     assert_ne!(new_id, orig_id, "non-vacuous: the prize actually changed");
 }

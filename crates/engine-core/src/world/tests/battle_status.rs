@@ -5,7 +5,7 @@ fn enter_battle_populates_party_and_monsters() {
     let mut world = World::default();
     world.enter_battle(3, 5);
     assert_eq!(world.mode, SceneMode::Battle);
-    assert_eq!(world.party_count, 3);
+    assert_eq!(world.party.party_count, 3);
     // 3 party + 5 monsters = 8 active.
     let active_count = world.actors.iter().filter(|a| a.active).count();
     assert_eq!(active_count, 8);
@@ -35,7 +35,7 @@ fn enter_battle_caps_party_at_three() {
     let mut world = World::default();
     // Even if asked for more party than the cap, we clamp to 3.
     world.enter_battle(8, 0);
-    assert_eq!(world.party_count, 3);
+    assert_eq!(world.party.party_count, 3);
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn status_block_helpers_classify_by_kind() {
 fn confuse_retargets_a_monster_strike_to_its_own_band() {
     use legaia_engine_vm::status_effects::StatusKind;
     let mut world = World::new();
-    world.party_count = 3;
+    world.party.party_count = 3;
     // Party slots 0..2 + monster slots 3,4 alive; everything else stays dead.
     for i in 0..5 {
         world.actors[i].active = true;
@@ -114,7 +114,7 @@ fn confuse_retargets_a_monster_strike_to_its_own_band() {
 fn confuse_retargets_a_party_strike_to_a_living_ally() {
     use legaia_engine_vm::status_effects::StatusKind;
     let mut world = World::new();
-    world.party_count = 3;
+    world.party.party_count = 3;
     for i in 0..5 {
         world.actors[i].active = true;
         world.actors[i].battle.liveness = 1;
@@ -138,7 +138,7 @@ fn confuse_retargets_a_party_strike_to_a_living_ally() {
 fn confused_party_member_auto_acts_instead_of_opening_the_command_menu() {
     use legaia_engine_vm::status_effects::StatusKind;
     let mut world = World::new();
-    world.party_count = 3;
+    world.party.party_count = 3;
     world.battle.player_driven = true;
     for i in 0..5 {
         world.actors[i].active = true;
@@ -166,7 +166,7 @@ fn confused_party_member_auto_acts_instead_of_opening_the_command_menu() {
 fn confuse_retargets_a_monster_cast_to_the_opposite_side() {
     use legaia_engine_vm::status_effects::StatusKind;
     let mut world = World::new();
-    world.party_count = 3;
+    world.party.party_count = 3;
     for i in 0..5 {
         world.actors[i].active = true;
         world.actors[i].battle.liveness = 1;
@@ -229,7 +229,7 @@ fn petrified_target_absorbs_art_strike_damage() {
     use crate::art_strike::ArtStrikeOutcome;
     use legaia_engine_vm::status_effects::StatusKind;
     let mut world = World::new();
-    world.party_count = 4;
+    world.party.party_count = 4;
     for slot in 0..4 {
         world.actors[slot].active = true;
         world.actors[slot].battle.hp = 200;
@@ -309,7 +309,7 @@ fn asleep_monster_loses_its_turn_and_never_attacks() {
     fn party_took_damage(asleep: bool) -> bool {
         let mut world = World::new();
         world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
-        world.live_gameplay_loop = true; // route tick() through live_battle_tick
+        world.toggles.live_gameplay_loop = true; // route tick() through live_battle_tick
         world.battle.player_driven = false; // both sides auto-act
         // Big monster HP so it survives long enough to take many turns; the
         // party HP is what we watch.
@@ -386,7 +386,7 @@ fn live_loop_ticks_dot_at_the_round_boundary() {
     fn party_lost_hp(poisoned: bool) -> bool {
         let mut world = World::new();
         world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
-        world.live_gameplay_loop = true;
+        world.toggles.live_gameplay_loop = true;
         world.battle.player_driven = false;
         // Both sides carry SPD so the initiative round boundary engages (the DoT
         // tick is gated on it); seed up front so battle start isn't mistaken for

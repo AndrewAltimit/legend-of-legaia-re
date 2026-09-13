@@ -17,7 +17,7 @@ fn tick_retail_frames(world: &mut World, n: usize) {
     let mut fired = 0;
     while fired < n {
         let _ = world.tick();
-        if world.field_frame_step == 1 {
+        if world.clock.display_frame_step == 1 {
             fired += 1;
         }
     }
@@ -317,7 +317,7 @@ fn interaction_prologue_npc_run_walks_the_interacted_npc() {
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.use_vm_dialogue = true;
+    world.toggles.use_vm_dialogue = true;
     world.npcs.positions.insert(3, (target_x - 80, target_z));
     world.npcs.dialog.insert(3, body[first_segment..].to_vec());
     world.npcs.dialog_prologue.insert(

@@ -50,7 +50,7 @@ impl PlayWindowApp {
         // When the inline-script field-VM runner owns dialogue, it manages its
         // own box (rendered from `world.inline_dialogue`); don't also open the
         // simplified panel.
-        if self.session.host.world.use_vm_dialogue {
+        if self.session.host.world.toggles.use_vm_dialogue {
             self.active_dialog = None;
             return;
         }
@@ -656,7 +656,7 @@ impl PlayWindowApp {
             // index comes from the retail ownership gate, which re-points a
             // stale selection at the next owned lure.
             use legaia_engine_core::fishing::{lure_item_id, select_owned_rod};
-            let inventory = &self.session.host.world.inventory;
+            let inventory = &self.session.host.world.party.inventory;
             let count_of = |id: u32| *inventory.get(&(id as u8)).unwrap_or(&0) as i32;
             let mut rod_index = 0;
             let has_rod = select_owned_rod(&mut rod_index, count_of);
@@ -736,7 +736,7 @@ impl PlayWindowApp {
             out.extend(text_draws_for(&ly, (px, py), white));
             let first = ex.first_visible(world.minigames.fishing_points);
             for (i, r) in ex.rows.iter().enumerate().skip(first) {
-                let owned = *world.inventory.get(&r.item_id).unwrap_or(&0) as u32;
+                let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
                 let avail = ex.is_available(
                     i,
                     world.minigames.fishing_points,
@@ -1024,7 +1024,7 @@ impl PlayWindowApp {
             if let Some(shop) = &self.menu_runtime.shop_session {
                 let state = MenuState::from_byte(self.menu_runtime.ctx_state());
                 let cursor = self.menu_runtime.cursor() as usize;
-                let gold = self.session.host.world.money;
+                let gold = self.session.host.world.party.money;
                 // The seru-trade screens carry dynamic, owned-string labels, so
                 // render them directly (the generic `(title, rows)` path below
                 // only handles `'static` labels).
@@ -1186,7 +1186,7 @@ impl PlayWindowApp {
                     .as_ref()
                     .map(|s| s.cost)
                     .unwrap_or(0);
-                let gold = self.session.host.world.money;
+                let gold = self.session.host.world.party.money;
                 match state {
                     Some(MenuState::InnConfirm) => {
                         let title = format!("INN  Rest for {}G?", cost);
@@ -1586,7 +1586,7 @@ impl PlayWindowApp {
                 out.extend(rows);
             }
             None => {
-                if let Some(banner) = &self.session.host.world.current_level_up_banner {
+                if let Some(banner) = &self.session.host.world.party.current_level_up_banner {
                     out.extend(level_up_draws_for(
                         &self.font,
                         banner.char_id,
@@ -1596,7 +1596,7 @@ impl PlayWindowApp {
                         LEVEL_UP_BANNER_PEN,
                     ));
                 }
-                if let Some(banner) = &self.session.host.world.current_capture_banner
+                if let Some(banner) = &self.session.host.world.party.current_capture_banner
                     && let Some(text) = banner.current_banner()
                 {
                     out.extend(capture_banner_draws_for(
@@ -1647,7 +1647,7 @@ impl PlayWindowApp {
         // and upscaled with the same stage transform the window chrome
         // uses (`name_entry_chrome_sprite_draws`) so text and frames stay
         // locked together.
-        if let Some(entry) = &self.session.host.world.name_entry {
+        if let Some(entry) = &self.session.host.world.party.name_entry {
             let view = self.name_entry_view(entry);
             let mut draws = legaia_engine_render::name_entry_draws_for(&self.font, &view);
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
@@ -2085,7 +2085,7 @@ impl PlayWindowApp {
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
-        let Some(entry) = self.session.host.world.name_entry.as_ref() else {
+        let Some(entry) = self.session.host.world.party.name_entry.as_ref() else {
             return Vec::new();
         };
         let view = self.name_entry_view(entry);
@@ -2263,12 +2263,13 @@ impl PlayWindowApp {
     pub(super) fn battle_banner_message(&self) -> Option<String> {
         self.save_menu.as_ref()?;
         let w = &self.session.host.world;
-        if let Some(b) = &w.current_level_up_banner {
+        if let Some(b) = &w.party.current_level_up_banner {
             // Name the character, not their roster ordinal: the banner reads
             // to a player, and `P3` is an index only this codebase knows.
             // `char_id` is the ROSTER slot the level-up applier wrote, so it
             // indexes `roster.members` directly (not the battle order).
             let who = w
+                .party
                 .roster
                 .members
                 .get(b.char_id as usize)
@@ -2280,7 +2281,8 @@ impl PlayWindowApp {
                 b.new_level, b.hp_gained, b.mp_gained
             ));
         }
-        w.current_capture_banner
+        w.party
+            .current_capture_banner
             .as_ref()
             .and_then(|b| b.current_banner())
     }
@@ -3152,7 +3154,7 @@ mod battle_hud_wiring_tests {
         use legaia_engine_core::world::World;
 
         let mut world = World::new();
-        world.party_count = 1;
+        world.party.party_count = 1;
         world.actors[0].active = true;
         world.actors[0].battle.liveness = 1;
         world.actors[0].battle.hp = 250;

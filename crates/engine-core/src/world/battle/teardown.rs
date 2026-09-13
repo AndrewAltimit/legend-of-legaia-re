@@ -56,6 +56,7 @@ impl World {
             .map(|lu| {
                 let slot = lu.char_id as usize;
                 let name = self
+                    .party
                     .roster
                     .members
                     .get(slot)
@@ -240,7 +241,7 @@ impl World {
         if let Some(ret) = self.field_return.take() {
             self.actors = ret.actors;
             self.player_actor_slot = ret.player_actor_slot;
-            self.party_count = ret.party_count;
+            self.party.party_count = ret.party_count;
             self.resync_party_actors_from_roster();
         }
         // Return to the mode the battle was entered from (the field for a
@@ -269,7 +270,7 @@ impl World {
         if let Some(ret) = self.field_return.take() {
             self.actors = ret.actors;
             self.player_actor_slot = ret.player_actor_slot;
-            self.party_count = ret.party_count;
+            self.party.party_count = ret.party_count;
             self.resync_party_actors_from_roster();
         }
         self.mode = self.battle.return_mode;
@@ -290,7 +291,7 @@ impl World {
         if !matches!(self.mode, SceneMode::Battle) {
             return Vec::new();
         }
-        let first_monster = self.party_count as usize;
+        let first_monster = self.party.party_count as usize;
         self.actors
             .iter()
             .enumerate()

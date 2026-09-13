@@ -48,6 +48,7 @@ fn capture_sets_the_banner_and_it_clears_on_tick() {
 
     // The banner opens on the capture phase naming the captured Seru.
     let banner = world
+        .party
         .current_capture_banner
         .as_ref()
         .expect("capture banner set");
@@ -63,7 +64,7 @@ fn capture_sets_the_banner_and_it_clears_on_tick() {
         world.tick();
     }
     assert!(
-        world.current_capture_banner.is_none(),
+        world.party.current_capture_banner.is_none(),
         "banner clears after its phases elapse"
     );
 }
@@ -75,6 +76,7 @@ fn sub_threshold_capture_banner_shows_no_learn_line() {
     world.finish_battle();
 
     let banner = world
+        .party
         .current_capture_banner
         .as_ref()
         .expect("capture banner set even without a learn");
@@ -87,7 +89,10 @@ fn battle_bgm_swaps_on_encounter_and_restores_on_finish() {
     use crate::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
@@ -138,7 +143,10 @@ fn playable_default_swaps_to_the_standard_battle_theme() {
     use crate::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
@@ -168,7 +176,10 @@ fn battle_bgm_unset_leaves_music_untouched() {
     use crate::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
@@ -194,7 +205,10 @@ fn battle_bgm_with_silent_field_stops_on_finish() {
     use crate::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
@@ -279,7 +293,10 @@ fn arts_editor_chain_round_trips_through_save_into_the_battle_menu() {
     // A field-side session: the player opens the Tactical Arts editor and
     // composes a brand-new chain for character slot 0 (Down, Up, Up).
     let mut field = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     let mut lib = field.chain_library();
@@ -329,7 +346,10 @@ fn arts_editor_chain_round_trips_through_save_into_the_battle_menu() {
 
     // ...and a fresh boot that loads the save can offer it in battle.
     let mut battle = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     battle.load_full(save);
@@ -349,7 +369,10 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     use legaia_engine_vm::battle_action::ActionState;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.battle.player_driven = true;
@@ -364,11 +387,14 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     world.set_battle_defense(1, 10);
     // One saved chain, 3 directional commands (Left, Right, Down) -> 3 hits.
     // No art record staged, so the row uses the synthetic ×12 profile.
-    world.saved_chains.push(legaia_save::SavedChainRecord {
-        char_slot: 0,
-        name: "Combo".into(),
-        sequence: vec![1, 2, 3],
-    });
+    world
+        .party
+        .saved_chains
+        .push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "Combo".into(),
+            sequence: vec![1, 2, 3],
+        });
 
     world.battle_ctx.active_actor = 0;
     world.battle.arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
@@ -465,7 +491,10 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     use legaia_engine_vm::battle_action::ActionState;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.battle.player_driven = true;
@@ -501,11 +530,14 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     world.set_art_record(legaia_art::Character::Vahn, ActionConstant::Art1F, rec);
 
     // Saved chain ending in the art's command string (Up, Up).
-    world.saved_chains.push(legaia_save::SavedChainRecord {
-        char_slot: 0,
-        name: "Burning Combo".into(),
-        sequence: vec![1, 4, 4], // Left, Up, Up
-    });
+    world
+        .party
+        .saved_chains
+        .push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "Burning Combo".into(),
+            sequence: vec![1, 4, 4], // Left, Up, Up
+        });
 
     let rows = world.build_battle_arts_rows(0);
     assert_eq!(rows[0].hits(), 2, "two damage strikes from the record");
@@ -623,14 +655,20 @@ fn build_battle_arts_rows_resolves_miracle_finisher_profile() {
     // No art records staged: each of Vahn's Craze's six component arts
     // (Art22/28/23/27/20/2A) degrades to one synthetic ×12 strike.
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.saved_chains.push(legaia_save::SavedChainRecord {
-        char_slot: 0,
-        name: "MyCraze".into(),
-        sequence: craze_seq.clone(),
-    });
+    world
+        .party
+        .saved_chains
+        .push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "MyCraze".into(),
+            sequence: craze_seq.clone(),
+        });
     let rows = world.build_battle_arts_rows(0);
     assert_eq!(rows.len(), 1);
     assert_eq!(
@@ -709,7 +747,10 @@ fn build_battle_arts_rows_fires_super_from_recognized_art_sequence() {
     }
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     stage_art(&mut world, ActionConstant::Art27, Command::Up, 2);
@@ -717,11 +758,14 @@ fn build_battle_arts_rows_fires_super_from_recognized_art_sequence() {
 
     // Chain Up Down Up -> Somersault Cyclone Somersault.
     // (Left=1 Right=2 Down=3 Up=4.)
-    world.saved_chains.push(legaia_save::SavedChainRecord {
-        char_slot: 0,
-        name: "TriSom".into(),
-        sequence: vec![4, 3, 4],
-    });
+    world
+        .party
+        .saved_chains
+        .push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "TriSom".into(),
+            sequence: vec![4, 3, 4],
+        });
     let rows = world.build_battle_arts_rows(0);
     assert_eq!(rows.len(), 1);
     assert_eq!(
@@ -736,12 +780,15 @@ fn build_battle_arts_rows_fires_super_from_recognized_art_sequence() {
 
     // Connector abstraction: a stray Left/Right between the arts (matching no
     // staged art) is skipped, so the same Super still fires.
-    world.saved_chains.clear();
-    world.saved_chains.push(legaia_save::SavedChainRecord {
-        char_slot: 0,
-        name: "TriSomLoose".into(),
-        sequence: vec![4, 1, 3, 2, 4], // Up [Left] Down [Right] Up
-    });
+    world.party.saved_chains.clear();
+    world
+        .party
+        .saved_chains
+        .push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "TriSomLoose".into(),
+            sequence: vec![4, 1, 3, 2, 4], // Up [Left] Down [Right] Up
+        });
     let rows = world.build_battle_arts_rows(0);
     assert_eq!(
         rows[0].super_art,
@@ -752,10 +799,13 @@ fn build_battle_arts_rows_fires_super_from_recognized_art_sequence() {
     // With no art catalog staged the recognizer can't run, so no Super is
     // detected and the chain falls back to a plain/synthetic row.
     let mut bare = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    bare.saved_chains.push(legaia_save::SavedChainRecord {
+    bare.party.saved_chains.push(legaia_save::SavedChainRecord {
         char_slot: 0,
         name: "TriSom".into(),
         sequence: vec![4, 3, 4],

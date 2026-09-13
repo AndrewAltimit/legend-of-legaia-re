@@ -52,7 +52,7 @@ fn battle_world(seed: u32) -> World {
     while w.actors.len() < (PARTY + MONSTERS) as usize {
         w.actors.push(Actor::default());
     }
-    w.party_count = PARTY;
+    w.party.party_count = PARTY;
     w.load_party(legaia_save::Party::zeroed(PARTY as usize));
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     w.enter_battle(PARTY, MONSTERS);
@@ -64,7 +64,7 @@ fn battle_world(seed: u32) -> World {
         w.set_battle_attack(i as u8, 40);
     }
     w.mode = SceneMode::Battle;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w.rng_state = seed;
     w
 }

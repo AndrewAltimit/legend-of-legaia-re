@@ -195,7 +195,7 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
     let no_running = script.text(tut::msg::NO_RUNNING).unwrap().to_string();
 
     let mut world = World::new();
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     world.battle.player_driven = true;
     world.prime_battle_tutorial(script);
     world.enter_battle(3, 2);

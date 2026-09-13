@@ -30,8 +30,8 @@ use legaia_engine_core::world::World;
 
 fn fresh_world() -> World {
     let mut world = World::new();
-    world.roster = legaia_save::Party::zeroed(3);
-    for member in &mut world.roster.members {
+    world.party.roster = legaia_save::Party::zeroed(3);
+    for member in &mut world.party.roster.members {
         let mut hms = member.hp_mp_sp();
         hms.hp_cur = 50;
         hms.hp_max = 100;
@@ -39,10 +39,10 @@ fn fresh_world() -> World {
         hms.mp_max = 30;
         member.set_hp_mp_sp(hms);
     }
-    world.party_leader_slot = Some(0);
+    world.party.party_leader_slot = Some(0);
     world.set_item_catalog(ItemCatalog::vanilla());
-    world.inventory.insert(0x77, 3); // Healing Leaf (real item id)
-    world.money = 100;
+    world.party.inventory.insert(0x77, 3); // Healing Leaf (real item id)
+    world.party.money = 100;
     world
 }
 
@@ -153,7 +153,7 @@ fn field_menu_items_row_drains_to_inventory_session() {
 #[test]
 fn field_menu_equip_row_uses_active_leader() {
     let mut world = fresh_world();
-    world.party_leader_slot = Some(1);
+    world.party.party_leader_slot = Some(1);
     let _menu = open_field_menu_at(FieldMenuRow::Equip);
     let sub = build(FieldMenuRow::Equip, &world, &OptionsState::default());
     if let FieldMenuSubsession::Equip { char_slot, .. } = &sub {
@@ -195,14 +195,14 @@ fn arts_chain_editor_variant_builds_directly_for_leader() {
 #[test]
 fn apply_inventory_outcome_does_nothing_on_cancel() {
     let mut world = fresh_world();
-    let world_money_before = world.money;
+    let world_money_before = world.party.money;
     let mut sub = build(FieldMenuRow::Items, &world, &OptionsState::default());
     sub.tick_pad_edge(PadButton::Circle.mask());
     assert!(sub.is_done());
     if let FieldMenuSubsession::Items(s) = sub {
         apply_inventory_outcome(&s.inner, &mut world);
     }
-    assert_eq!(world.money, world_money_before);
+    assert_eq!(world.party.money, world_money_before);
 }
 
 #[test]
@@ -210,8 +210,8 @@ fn apply_equip_outcome_writes_back_to_roster() {
     let mut world = fresh_world();
     // Insert an item that the placeholder (`id >> 5 == slot`) rule lands
     // in slot 1 to avoid the Healing-Leaf collision in slot 0.
-    world.inventory.clear();
-    world.inventory.insert(0x25, 1);
+    world.party.inventory.clear();
+    world.party.inventory.insert(0x25, 1);
     let mut equip_table = EquipmentTable::new();
     equip_table.set(
         0x25,
@@ -236,7 +236,7 @@ fn apply_equip_outcome_writes_back_to_roster() {
     assert!(sub.is_done());
     if let FieldMenuSubsession::Equip { session, char_slot } = &sub {
         let _ = apply_equip_outcome(session, *char_slot, &mut world);
-        assert_eq!(world.roster.members[0].equipment().slots[1], 0x25);
+        assert_eq!(world.party.roster.members[0].equipment().slots[1], 0x25);
     } else {
         panic!("expected Equip sub");
     }
@@ -246,18 +246,18 @@ fn apply_equip_outcome_writes_back_to_roster() {
 fn apply_spell_outcome_zeroes_caster_mp_after_heal() {
     let mut world = fresh_world();
     // Wound member 1 so a heal has effect.
-    let mut hms = world.roster.members[1].hp_mp_sp();
+    let mut hms = world.party.roster.members[1].hp_mp_sp();
     hms.hp_cur = 1;
-    world.roster.members[1].set_hp_mp_sp(hms);
+    world.party.roster.members[1].set_hp_mp_sp(hms);
     // Give member 0 a spell list with one heal spell (id 0x07 = Spark Arrow,
     // but we want a heal - use 0x05 / 0x09 / 0x0E from the vanilla catalog
     // depending on what's heal). The vanilla catalog's first heal-effect
     // spell ID can be found via SpellCatalog::vanilla.iter, but for the
     // test we just install a known-heal id 0x09 in the spell list.
-    let mut spells = world.roster.members[0].spell_list();
+    let mut spells = world.party.roster.members[0].spell_list();
     spells.count = 1;
     spells.ids[0] = 0x09;
-    world.roster.members[0].set_spell_list(spells);
+    world.party.roster.members[0].set_spell_list(spells);
     let mut sub = build(FieldMenuRow::Magic, &world, &OptionsState::default());
     // Cross on caster → spell select; Cross on spell → target select; Down to
     // pick member 1; Cross to cast.
@@ -290,17 +290,17 @@ fn menu_heal_cast_accrues_spell_xp_and_levels_with_notice() {
     world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
     // Wound member 1 far past the vanilla Heal amount (60) so the heal runs
     // at full power (deficit >= nominal -> the +12 grant).
-    let mut hms = world.roster.members[1].hp_mp_sp();
+    let mut hms = world.party.roster.members[1].hp_mp_sp();
     hms.hp_cur = 1;
-    world.roster.members[1].set_hp_mp_sp(hms);
+    world.party.roster.members[1].set_hp_mp_sp(hms);
     // Caster carries the vanilla Heal (id 0x10) at level 1 with 12 XP
     // already accrued - one more full-power cast lands 24 > 17.
-    let mut spells = world.roster.members[0].spell_list();
+    let mut spells = world.party.roster.members[0].spell_list();
     spells.count = 1;
     spells.ids[0] = 0x10;
     spells.levels[0] = 1;
-    world.roster.members[0].set_spell_list(spells);
-    legaia_engine_core::magic_xp::add_spell_xp(&mut world.roster.members[0], 0, 12);
+    world.party.roster.members[0].set_spell_list(spells);
+    legaia_engine_core::magic_xp::add_spell_xp(&mut world.party.roster.members[0], 0, 12);
 
     let cast = |world: &mut World| -> Option<legaia_engine_core::magic_xp::SpellLevelNotice> {
         let mut sub = build(FieldMenuRow::Magic, world, &OptionsState::default());
@@ -323,22 +323,22 @@ fn menu_heal_cast_accrues_spell_xp_and_levels_with_notice() {
     assert_eq!(notice.line, "Heal's magic level increased.");
     // Both writes are in the SAVED record bytes (LGSF round-trips them):
     // the +0x8 XP accumulator and the +0x161 level byte.
-    let rec = &world.roster.members[0];
+    let rec = &world.party.roster.members[0];
     assert_eq!(legaia_engine_core::magic_xp::spell_xp(rec, 0), 24);
     assert_eq!(rec.spell_list().levels[0], 2);
     assert_eq!(rec.raw[0x161], 2);
 
     // A second cast accrues (24 + 12 = 36 < 50) but does not level - no
     // notice, no window 7.
-    let mut hms = world.roster.members[1].hp_mp_sp();
+    let mut hms = world.party.roster.members[1].hp_mp_sp();
     hms.hp_cur = 1;
-    world.roster.members[1].set_hp_mp_sp(hms);
+    world.party.roster.members[1].set_hp_mp_sp(hms);
     assert!(cast(&mut world).is_none());
     assert_eq!(
-        legaia_engine_core::magic_xp::spell_xp(&world.roster.members[0], 0),
+        legaia_engine_core::magic_xp::spell_xp(&world.party.roster.members[0], 0),
         36
     );
-    assert_eq!(world.roster.members[0].spell_list().levels[0], 2);
+    assert_eq!(world.party.roster.members[0].spell_list().levels[0], 2);
 }
 
 /// A clipped heal (the target's deficit is smaller than the spell's nominal
@@ -349,11 +349,11 @@ fn menu_heal_cast_accrues_partial_grant_when_clipped() {
     let mut world = fresh_world();
     world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
     // Deficit 50 < the vanilla Heal's 60 -> partial power.
-    let mut spells = world.roster.members[0].spell_list();
+    let mut spells = world.party.roster.members[0].spell_list();
     spells.count = 1;
     spells.ids[0] = 0x10;
     spells.levels[0] = 1;
-    world.roster.members[0].set_spell_list(spells);
+    world.party.roster.members[0].set_spell_list(spells);
 
     let mut sub = build(FieldMenuRow::Magic, &world, &OptionsState::default());
     sub.tick_pad_edge(PadButton::Cross.mask()); // caster 0
@@ -366,7 +366,7 @@ fn menu_heal_cast_accrues_partial_grant_when_clipped() {
     assert!(s.is_done());
     assert!(apply_spell_outcome(s, &mut world).is_none(), "4 < 17");
     assert_eq!(
-        legaia_engine_core::magic_xp::spell_xp(&world.roster.members[0], 0),
+        legaia_engine_core::magic_xp::spell_xp(&world.party.roster.members[0], 0),
         4
     );
 }
@@ -426,7 +426,7 @@ fn the_rack_kind_carries_card_slots_mode_through_the_dispatcher() {
 fn spell_swap_permutes_the_magic_screen_order() {
     use legaia_engine_core::save_subscreen::sub15_swap_rows;
     let mut world = fresh_world();
-    let member = &mut world.roster.members[0];
+    let member = &mut world.party.roster.members[0];
     let mut list = member.spell_list();
     list.count = 3;
     list.ids[..3].copy_from_slice(&[0x81, 0x82, 0x83]);
@@ -454,14 +454,14 @@ fn spell_swap_permutes_the_magic_screen_order() {
     };
 
     assert_eq!(ids_on_screen(&world), vec![0x81, 0x82, 0x83]);
-    sub15_swap_rows(&mut world.roster.members[0].raw, 0, 2);
+    sub15_swap_rows(&mut world.party.roster.members[0].raw, 0, 2);
     assert_eq!(
         ids_on_screen(&world),
         vec![0x83, 0x82, 0x81],
         "the swap reaches the Magic screen through the record, not through a \
          separate reorderable array"
     );
-    let levels = world.roster.members[0].spell_list().levels;
+    let levels = world.party.roster.members[0].spell_list().levels;
     assert_eq!(
         &levels[..3],
         &[3, 2, 1],

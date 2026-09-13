@@ -10,13 +10,16 @@ fn apply_battle_loot_never_drops_when_rate_zero() {
     cat.insert(def);
     let formation = FormationDef::new(1000, vec![FormationSlot::new(7)]);
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
     let rewards = world.apply_battle_loot(&formation, &cat);
     assert!(rewards.drops.is_empty());
-    assert!(!world.inventory.contains_key(&0x42));
+    assert!(!world.party.inventory.contains_key(&0x42));
 }
 
 #[test]
@@ -33,11 +36,11 @@ fn load_full_hydrates_level_up_tracker_from_record_levels() {
     };
     let mut world = World::new();
     // Tracker defaults to 1 for every slot.
-    assert_eq!(world.level_up_tracker.level[0], 1);
+    assert_eq!(world.party.level_up_tracker.level[0], 1);
     world.load_full(sf);
-    assert_eq!(world.level_up_tracker.level[0], 7);
-    assert_eq!(world.level_up_tracker.level[1], 12);
-    assert_eq!(world.level_up_tracker.level[2], 25);
+    assert_eq!(world.party.level_up_tracker.level[0], 7);
+    assert_eq!(world.party.level_up_tracker.level[1], 12);
+    assert_eq!(world.party.level_up_tracker.level[2], 25);
 }
 
 #[test]
@@ -52,14 +55,17 @@ fn load_full_zero_level_record_clamps_to_one() {
     };
     let mut world = World::new();
     world.load_full(sf);
-    assert_eq!(world.level_up_tracker.level[0], 1);
-    assert_eq!(world.level_up_tracker.level[1], 1);
+    assert_eq!(world.party.level_up_tracker.level[0], 1);
+    assert_eq!(world.party.level_up_tracker.level[1], 1);
 }
 
 #[test]
 fn apply_battle_xp_scales_three_quarters_and_ceils() {
     let mut world = World {
-        party_count: 3,
+        party: crate::world::PartyState {
+            party_count: 3,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
@@ -69,25 +75,28 @@ fn apply_battle_xp_scales_three_quarters_and_ceils() {
     // ceil(76 / 3 alive) = 26 each (floor would give 25). Below the 50 L2
     // threshold, so it just accumulates.
     let _ = world.apply_battle_xp(101);
-    assert_eq!(world.level_up_tracker.xp[0], 26);
-    assert_eq!(world.level_up_tracker.xp[1], 26);
-    assert_eq!(world.level_up_tracker.xp[2], 26);
+    assert_eq!(world.party.level_up_tracker.xp[0], 26);
+    assert_eq!(world.party.level_up_tracker.xp[1], 26);
+    assert_eq!(world.party.level_up_tracker.xp[2], 26);
 }
 
 #[test]
 fn level_up_banner_countdown_clears() {
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
     world.apply_battle_xp(161); // 3/4-scaled to 121 >= the 121 L2 threshold
-    assert!(world.current_level_up_banner.is_some());
+    assert!(world.party.current_level_up_banner.is_some());
     for _ in 0..=crate::levelup::LevelUpBanner::DEFAULT_FRAMES {
         world.tick();
     }
     assert!(
-        world.current_level_up_banner.is_none(),
+        world.party.current_level_up_banner.is_none(),
         "level-up banner should have cleared"
     );
 }
@@ -95,12 +104,15 @@ fn level_up_banner_countdown_clears() {
 #[test]
 fn no_level_up_banner_when_xp_insufficient() {
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
     world.apply_battle_xp(160); // 3/4-scaled to 120 < 121 (L2 threshold)
-    assert!(world.current_level_up_banner.is_none());
+    assert!(world.party.current_level_up_banner.is_none());
 }
 
 #[test]
@@ -213,7 +225,7 @@ fn fold_battle_event_apply_art_strike_subtracts_hp_and_records_status() {
     use legaia_engine_vm::battle_action::ArtStrikeInfo;
 
     let mut world = World::new();
-    world.party_count = 4;
+    world.party.party_count = 4;
     for slot in 0..4 {
         world.actors[slot].active = true;
         world.actors[slot].battle.hp = 200;
@@ -264,7 +276,7 @@ fn fold_battle_event_surfaces_art_strike_sound_cues() {
     use crate::art_strike::{ArtStrikeOutcome, ScheduledCue};
 
     let mut world = World::new();
-    world.party_count = 4;
+    world.party.party_count = 4;
     for slot in 0..4 {
         world.actors[slot].active = true;
         world.actors[slot].battle.hp = 200;
@@ -316,7 +328,7 @@ fn fold_battle_event_surfaces_art_strike_sound_cues() {
 #[test]
 fn fold_battle_event_other_variants_dont_modify_state() {
     let mut world = World::new();
-    world.party_count = 1;
+    world.party.party_count = 1;
     world.actors[0].active = true;
     world.actors[0].battle.hp = 100;
     let r = world.fold_battle_event(&BattleEvent::CameraBounds);
@@ -332,7 +344,7 @@ fn fold_battle_event_other_variants_dont_modify_state() {
 fn spell_anim_trigger_stages_the_summon_route_and_the_stager_requests_the_spawn() {
     use crate::world::vm_hosts::BattleHostImpl;
     let mut world = World::new();
-    world.party_count = 1;
+    world.party.party_count = 1;
     world.actors[0].active = true;
 
     {
@@ -385,7 +397,7 @@ fn spell_anim_trigger_stages_the_summon_route_and_the_stager_requests_the_spawn(
 #[test]
 fn use_item_heals_hp_clamped_to_max() {
     let mut world = World::new();
-    world.party_count = 1;
+    world.party.party_count = 1;
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 50;
     world.set_item_catalog(full_test_catalog());
@@ -403,7 +415,7 @@ fn use_item_heals_hp_clamped_to_max() {
 #[test]
 fn use_item_heal_all_fills_to_max() {
     let mut world = World::new();
-    world.party_count = 1;
+    world.party.party_count = 1;
     world.actors[0].battle.max_hp = 300;
     world.actors[0].battle.hp = 100;
     world.set_item_catalog(full_test_catalog());
@@ -419,7 +431,7 @@ fn use_item_heal_all_fills_to_max() {
 #[test]
 fn use_item_unknown_id_returns_no_effect() {
     let mut world = World::new();
-    world.party_count = 1;
+    world.party.party_count = 1;
     world.set_item_catalog(full_test_catalog());
     let outcome = world.use_item(99, 0);
     assert!(matches!(outcome, crate::items::ItemOutcome::NoEffect));
@@ -428,7 +440,7 @@ fn use_item_unknown_id_returns_no_effect() {
 #[test]
 fn use_item_revive_writes_hp_after() {
     let mut world = World::new();
-    world.party_count = 1;
+    world.party.party_count = 1;
     world.actors[0].battle.max_hp = 400;
     world.actors[0].battle.hp = 0; // dead
     world.set_item_catalog(full_test_catalog());
@@ -456,7 +468,7 @@ fn use_item_hp_max_boost_raises_record_and_live_actor() {
         crate::items::ItemOutcome::StatRaised { .. }
     ));
     // Persistent record raised, current HP refilled by the gained amount.
-    let rec_hms = world.roster.members[0].hp_mp_sp();
+    let rec_hms = world.party.roster.members[0].hp_mp_sp();
     assert_eq!(rec_hms.hp_max, 110);
     assert_eq!(rec_hms.hp_cur, 60);
     // Live battle actor raised too.
@@ -481,7 +493,7 @@ fn use_item_attack_boost_raises_persistent_record_and_live_stat() {
         crate::items::ItemOutcome::StatRaised { .. }
     ));
     assert_eq!(
-        world.roster.members[0].live_stats().atk,
+        world.party.roster.members[0].live_stats().atk,
         21,
         "persistent attack raised"
     );
@@ -516,7 +528,7 @@ fn use_item_stat_boost_caps_at_cap_constant() {
     world.set_item_catalog(cat);
     world.use_item(0x50, 0);
     assert_eq!(
-        world.roster.members[0].live_stats().atk,
+        world.party.roster.members[0].live_stats().atk,
         100,
         "capped at the per-stat cap constant"
     );
@@ -582,7 +594,7 @@ fn use_item_fury_boost_on_non_party_slot_is_noop() {
 fn use_item_cure_clears_status() {
     use legaia_art::record::EnemyEffect;
     let mut world = World::new();
-    world.party_count = 1;
+    world.party.party_count = 1;
     world.actors[0].battle.max_hp = 100;
     world.actors[0].battle.hp = 50;
     // Apply a Toxic status, then cure it via CureAll.
@@ -606,7 +618,7 @@ fn fold_battle_event_clamps_to_zero_hp() {
     use legaia_engine_vm::battle_action::ArtStrikeInfo;
 
     let mut world = World::new();
-    world.party_count = 4;
+    world.party.party_count = 4;
     world.actors[3].active = true;
     world.actors[3].battle.hp = 30;
     world.actors[3].battle.max_hp = 30;
@@ -644,7 +656,7 @@ fn fold_battle_event_pushes_status_into_tracker() {
     use legaia_engine_vm::status_effects::StatusKind;
 
     let mut world = World::new();
-    world.party_count = 4;
+    world.party.party_count = 4;
     world.actors[3].active = true;
     world.actors[3].battle.hp = 100;
     world.actors[3].battle.max_hp = 100;
@@ -736,7 +748,7 @@ fn field_heal_lands_on_the_roster_record() {
         outcome,
         crate::items::ItemOutcome::HealedHp { .. }
     ));
-    let hms = world.roster.members[1].hp_mp_sp();
+    let hms = world.party.roster.members[1].hp_mp_sp();
     assert!(
         hms.hp_cur > 50,
         "the roster record holds the heal (got {})",
@@ -751,15 +763,15 @@ fn field_heal_lands_on_the_roster_record() {
 #[test]
 fn field_revive_lands_on_the_roster_record() {
     let mut world = rostered_world();
-    let mut hms = world.roster.members[2].hp_mp_sp();
+    let mut hms = world.party.roster.members[2].hp_mp_sp();
     hms.hp_cur = 0;
-    world.roster.members[2].set_hp_mp_sp(hms);
+    world.party.roster.members[2].set_hp_mp_sp(hms);
     world.actors[2].battle.hp = 0;
     world.actors[2].battle.liveness = 0;
 
     let outcome = world.use_item(0x0C, 2); // Revive { factor: 128 }
     assert!(matches!(outcome, crate::items::ItemOutcome::Revived { .. }));
-    let hms = world.roster.members[2].hp_mp_sp();
+    let hms = world.party.roster.members[2].hp_mp_sp();
     assert!(hms.hp_cur > 0, "roster record revived");
     assert_eq!(world.actors[2].battle.hp, hms.hp_cur);
     assert_eq!(
@@ -782,7 +794,7 @@ fn battle_heal_writes_the_mirror_not_the_roster() {
     ));
     assert!(world.actors[0].battle.hp > 20, "mirror healed");
     assert_eq!(
-        world.roster.members[0].hp_mp_sp().hp_cur,
+        world.party.roster.members[0].hp_mp_sp().hp_cur,
         50,
         "roster untouched mid-battle"
     );
@@ -798,7 +810,7 @@ fn battle_hp_flows_back_to_the_roster_at_teardown() {
     world.actors[0].battle.hp = 37;
     world.actors[0].battle.mp = 2;
     world.finish_battle();
-    let hms = world.roster.members[0].hp_mp_sp();
+    let hms = world.party.roster.members[0].hp_mp_sp();
     assert_eq!(hms.hp_cur, 37, "battle HP persisted to the roster");
     assert_eq!(hms.mp_cur, 2, "battle MP persisted to the roster");
 }

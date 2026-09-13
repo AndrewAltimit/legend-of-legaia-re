@@ -111,7 +111,7 @@ fn battle_world(monsters: &[MonsterDef], slots: &[FormationSlot]) -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
@@ -155,7 +155,7 @@ fn a_monster_slot_carries_both_defence_facets() {
     lopsided.udf = 90;
     lopsided.ldf = 10;
     let w = battle_world(&[lopsided], &[FormationSlot::new(1)]);
-    let mslot = w.party_count; // first monster
+    let mslot = w.party.party_count; // first monster
 
     assert_eq!(
         w.battle.defense_split[mslot as usize],

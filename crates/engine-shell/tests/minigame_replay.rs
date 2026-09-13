@@ -273,9 +273,9 @@ enum DoorPath {
 /// a coin; this is the "player who has been to the casino before" state.
 fn seed_venue_state(host: &mut SceneHost) {
     host.world.minigames.casino_coins = 5_000;
-    host.world.money = 50_000;
+    host.world.party.money = 50_000;
     for id in 0u8..=255 {
-        host.world.inventory.insert(id, 20);
+        host.world.party.inventory.insert(id, 20);
     }
 }
 

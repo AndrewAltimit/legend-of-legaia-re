@@ -43,7 +43,7 @@ fn battle_awaiting_command() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
     // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
     w.load_party(legaia_save::Party::zeroed(3));
@@ -74,7 +74,7 @@ fn battle_awaiting_command() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w.battle.player_driven = true;
 
     let up = InputState::mask_of([PadButton::Up]);
@@ -92,7 +92,7 @@ fn battle_awaiting_command() -> World {
     );
     // Make every seated monster tanky enough that the measured Attack can't
     // wipe the formation mid-action.
-    for i in w.party_count as usize..w.actors.len() {
+    for i in w.party.party_count as usize..w.actors.len() {
         let a = &mut w.actors[i].battle;
         if a.max_hp > 0 {
             a.hp = 30_000;
@@ -314,7 +314,10 @@ fn damage_lands_exactly_once_per_queued_swing() {
     let queued = queued_swings(&w, slot);
     assert_eq!(queued.len(), 2);
     let target = w.actors[slot].battle.active_target as usize;
-    assert!(target >= w.party_count as usize, "Attack targets a monster");
+    assert!(
+        target >= w.party.party_count as usize,
+        "Attack targets a monster"
+    );
 
     let hp_before = w.actors[target].battle.hp;
     let mut hits: Vec<u16> = Vec::new();
@@ -373,7 +376,7 @@ fn an_unseeded_actor_still_resolves_a_single_strike() {
     }
     w.set_battle_attack(1, 120);
     w.set_battle_defense(0, 10);
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     // Arm the monster's physical strike directly, leaving its stream empty.
     w.battle_ctx.active_actor = 1;
     w.battle_ctx.queued_action = 3;

@@ -12,7 +12,10 @@ fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
     use legaia_engine_vm::battle_action::ActionState;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Battle;
@@ -74,7 +77,10 @@ fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
 fn smarter_targeting_redirects_to_lowest_hp_without_moving_rng() {
     fn world3() -> World {
         let mut w = World {
-            party_count: 3,
+            party: crate::world::PartyState {
+                party_count: 3,
+                ..Default::default()
+            },
             ..World::default()
         };
         w.mode = SceneMode::Battle;
@@ -107,7 +113,7 @@ fn smarter_targeting_redirects_to_lowest_hp_without_moving_rng() {
         let frng = faithful.rng_state;
 
         let mut smart = world3();
-        smart.smarter_monster_targeting = true;
+        smart.toggles.smarter_monster_targeting = true;
         smart.rng_state = seed;
         let st = target_of(smart.pick_monster_action(3));
         let srng = smart.rng_state;
@@ -162,7 +168,10 @@ fn move_power_table_drives_monster_special_attack_damage() {
 
     fn run(install_table: bool) -> u16 {
         let mut world = World {
-            party_count: 1,
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
             ..World::default()
         };
         world.mode = SceneMode::Battle;
@@ -245,7 +254,10 @@ fn elemental_guard_accessory_halves_matching_monster_special() {
     // passive index is `idx` equipped in the Goods slot.
     fn run(guard_passive: Option<u8>) -> u16 {
         let mut world = World {
-            party_count: 1,
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
             ..World::default()
         };
         world.mode = SceneMode::Battle;
@@ -281,7 +293,7 @@ fn elemental_guard_accessory_halves_matching_monster_special() {
             eq.slots[7] = 0x50;
             party.members[0].set_equipment(eq);
         }
-        world.roster = party;
+        world.party.roster = party;
         world.refresh_party_ability_bits();
         world.rng_state = 0;
 
@@ -315,7 +327,10 @@ fn ap_boost_accessory_accelerates_spirit_gauge() {
 
     fn gauge_after_hit(ap_boost_passive: Option<u8>) -> u16 {
         let mut world = World {
-            party_count: 1,
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
             ..World::default()
         };
         world.actors[0].battle.max_hp = 500;
@@ -328,7 +343,7 @@ fn ap_boost_accessory_accelerates_spirit_gauge() {
             eq.slots[7] = 0x50;
             party.members[0].set_equipment(eq);
         }
-        world.roster = party;
+        world.party.roster = party;
         world.refresh_party_ability_bits();
         world.accrue_spirit_gauge(0, 200); // pct = 200*100/500 = 40
         world.actors[0].battle.spirit_gauge
@@ -348,7 +363,10 @@ fn escape_world(party_speed: u16, enemy_speed: u16, passive: Option<u8>) -> Worl
     use crate::accessory_passives::AccessoryPassives;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Battle;
@@ -367,7 +385,7 @@ fn escape_world(party_speed: u16, enemy_speed: u16, passive: Option<u8>) -> Worl
         eq.slots[7] = 0x50;
         party.members[0].set_equipment(eq);
     }
-    world.roster = party;
+    world.party.roster = party;
     world.refresh_party_ability_bits();
     world
 }
@@ -517,7 +535,7 @@ fn seed_then_latch_feeds_both_formation_consumers() {
     use legaia_engine_vm::battle_formulas::FormationAdvantage;
 
     let mut w = escape_world(40, 40, None);
-    w.party_count = 3;
+    w.party.party_count = 3;
     for slot in 0..7 {
         w.actors[slot].battle.liveness = 1;
         w.actors[slot].battle.hp = 100;
@@ -570,7 +588,7 @@ fn side_lockout_follows_party_count_not_the_fixed_retail_boundary() {
         (FormationAdvantage::Preemptive, false),
     ] {
         let mut w = escape_world(40, 40, None);
-        w.party_count = 1; // slot 0 party, slots 1..=6 monsters
+        w.party.party_count = 1; // slot 0 party, slots 1..=6 monsters
         for slot in 0..7 {
             w.actors[slot].battle.liveness = 1;
             w.actors[slot].battle.hp = 100;
@@ -610,7 +628,7 @@ fn side_lockout_follows_party_count_not_the_fixed_retail_boundary() {
 fn initiative_keys_carry_the_wounded_bonus_from_the_kernel() {
     for seed in 0..40u32 {
         let mut w = escape_world(10, 10, None);
-        w.party_count = 2;
+        w.party.party_count = 2;
         w.rng_state = seed;
         for slot in 0..2 {
             w.actors[slot].battle.liveness = 1;
@@ -692,7 +710,10 @@ fn element_affinity_scales_monster_special_attack_damage() {
     // monster's element row vs the party member's element column.
     fn run(affinity_pct: Option<u8>) -> u16 {
         let mut world = World {
-            party_count: 1,
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
             ..World::default()
         };
         world.mode = SceneMode::Battle;
@@ -791,7 +812,10 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
 
     fn run(affinity_pct: Option<u8>) -> u16 {
         let mut world = World {
-            party_count: 1,
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
             ..World::default()
         };
         world.mode = SceneMode::Battle;
@@ -878,7 +902,10 @@ fn player_summon_cast_matches_the_summon_kernel_composition() {
 
     fn build_world() -> World {
         let mut world = World {
-            party_count: 1,
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
             ..World::default()
         };
         world.mode = SceneMode::Battle;
@@ -986,7 +1013,10 @@ fn spell_less_monster_always_arms_physical_strike() {
     use legaia_engine_vm::battle_action::ActionState;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Battle;
@@ -1053,7 +1083,10 @@ fn flame_caster_battle(impact: u8) -> World {
     use crate::spells::SpellCatalog;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Battle;
@@ -1151,7 +1184,7 @@ fn enemy_special_rot_is_blocked_by_rot_guard_and_master_guard() {
 
     for bit in [1u32 << 0x18, 1u32 << 0x1C] {
         let mut world = flame_caster_battle(5);
-        world.character_ability_bits[0] = bit;
+        world.party.character_ability_bits[0] = bit;
         world.take_monster_turn(1);
         tick_until_cast_folds(&mut world);
         assert!(
@@ -1161,7 +1194,7 @@ fn enemy_special_rot_is_blocked_by_rot_guard_and_master_guard() {
     }
     // An unrelated passive bit does not block it.
     let mut world = flame_caster_battle(5);
-    world.character_ability_bits[0] = 1 << 0x10; // Steal Attack
+    world.party.character_ability_bits[0] = 1 << 0x10; // Steal Attack
     world.take_monster_turn(1);
     tick_until_cast_folds(&mut world);
     assert!(

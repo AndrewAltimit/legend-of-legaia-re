@@ -162,7 +162,7 @@ fn derive_battle_cam(
             .actors
             .get(usize::from(acting_slot))
             .map_or(0, |a| a.battle.action_category),
-        party_slot: usize::from(acting_slot) < world.party_count as usize,
+        party_slot: usize::from(acting_slot) < world.party.party_count as usize,
         target_dead: target.is_some_and(|t| !t.live),
     };
     let phase = script::phase_for_state(
@@ -214,7 +214,7 @@ fn derive_battle_cam(
     // per-host mesh binding would let two hosts derive different formations
     // from one identical `World`. Pinned against the native host by
     // `the_formation_box_is_a_world_fact_not_a_render_fact`.
-    let pc = world.party_count as usize;
+    let pc = world.party.party_count as usize;
     let mut formation: Option<script::FormationBox> = None;
     for (i, a) in world.actors.iter().enumerate() {
         if !(i < pc || a.battle_monster_id.is_some()) {
@@ -271,7 +271,7 @@ fn attack_channels(
     acting_slot: u8,
 ) -> Option<legaia_engine_vm::battle_cam_script::AttackCamChannels> {
     use legaia_engine_vm::battle_attack_camera as cam;
-    if usize::from(acting_slot) >= world.party_count as usize {
+    if usize::from(acting_slot) >= world.party.party_count as usize {
         return None;
     }
     let a = world.actors.get(acting_slot as usize)?;
@@ -701,7 +701,7 @@ impl LegaiaRuntime {
         // the content (player file 863 + cslot), the ORDINAL picks the
         // runtime texture band - the live-verified retail rule the native
         // window applies.
-        let party_count = host.world.party_count as usize;
+        let party_count = host.world.party.party_count as usize;
         let pack = host
             .index
             .entry_bytes(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
@@ -839,7 +839,7 @@ impl LegaiaRuntime {
             &mut br.camera,
             active,
             inputs,
-            world.field_frames,
+            world.clock.display_frames,
             tracks.as_ref(),
         );
     }
@@ -870,6 +870,7 @@ impl LegaiaRuntime {
         // zeroed record assembles the all-default (unequipped) sections.
         let equipped: [u8; 5] = host
             .world
+            .party
             .roster
             .members
             .get(cslot)
@@ -1582,7 +1583,7 @@ mod battle_cam_web_tests {
 
         let mut world = World::default();
         world.mode = SceneMode::Battle;
-        world.party_count = 1;
+        world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
         vahn.move_state.world_x = 600;
@@ -1634,7 +1635,7 @@ mod battle_cam_web_tests {
     fn web_formation_box_is_a_world_fact_not_a_render_fact() {
         let mut world = World::default();
         world.mode = SceneMode::Battle;
-        world.party_count = 1;
+        world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
         vahn.move_state.world_z = -800;
@@ -1676,7 +1677,7 @@ mod battle_cam_web_tests {
     fn web_pose_matches_the_native_recipe() {
         let mut world = World::default();
         world.mode = SceneMode::Battle;
-        world.party_count = 1;
+        world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
         vahn.move_state.world_x = 0;

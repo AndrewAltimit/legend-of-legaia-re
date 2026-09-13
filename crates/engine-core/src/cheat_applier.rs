@@ -171,15 +171,15 @@ fn apply_world(world: &mut World, field: WorldField, code: CheatCode) {
             // Gold is a u32; cheat-database entries are u16 writes.
             // Combine the LE u16 value with the high half preserved
             // from world state.
-            let new = (world.money as u32 & 0xFFFF_0000) | (code.value as u32);
-            world.money = new as i32;
+            let new = (world.party.money as u32 & 0xFFFF_0000) | (code.value as u32);
+            world.party.money = new as i32;
         }
         WorldField::PlayTimeSeconds => {
             // Cheat sets `0x80084570 0` to zero the clock.
             if code.value == 0 {
-                world.play_time_seconds = 0;
+                world.clock.play_time_seconds = 0;
             } else {
-                world.play_time_seconds = code.value as u32;
+                world.clock.play_time_seconds = code.value as u32;
             }
         }
         WorldField::Coins => {
@@ -202,7 +202,7 @@ fn apply_world(world: &mut World, field: WorldField, code: CheatCode) {
 }
 
 fn apply_char_record(world: &mut World, slot: u8, offset: u16, width: u8, code: CheatCode) {
-    let Some(record) = world.roster.members.get_mut(slot as usize) else {
+    let Some(record) = world.party.roster.members.get_mut(slot as usize) else {
         return;
     };
     let off = offset as usize;
@@ -235,7 +235,7 @@ mod tests {
         let mut w = World::new();
         // World::new() leaves the roster empty; populate four zeroed
         // records so per-character cheat applies have a target.
-        w.roster = legaia_save::character::Party::zeroed(4);
+        w.party.roster = legaia_save::character::Party::zeroed(4);
         w
     }
 
@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn applier_writes_gold_from_infinite_gold_cheat() {
         let mut world = empty_world();
-        world.money = 0;
+        world.party.money = 0;
         let mut db = Database::new();
         db.entries.push(entry(
             "Infinite Gold",
@@ -262,7 +262,7 @@ mod tests {
         ));
         let r = apply(&mut world, &db, ApplyOptions::default());
         assert_eq!(r.applied, 1);
-        assert_eq!(world.money, 0xFFFF);
+        assert_eq!(world.party.money, 0xFFFF);
     }
 
     #[test]
@@ -280,7 +280,7 @@ mod tests {
         ));
         let r = apply(&mut world, &db, ApplyOptions::default());
         assert_eq!(r.applied, 1);
-        let bytes = &world.roster.members[0].raw[0x106..0x108];
+        let bytes = &world.party.roster.members[0].raw[0x106..0x108];
         assert_eq!(bytes, &[0x0F, 0x27]);
     }
 
@@ -299,7 +299,7 @@ mod tests {
         ));
         let r = apply(&mut world, &db, ApplyOptions::default());
         assert_eq!(r.applied, 1);
-        assert_eq!(world.roster.members[1].magic_rank(), 99);
+        assert_eq!(world.party.roster.members[1].magic_rank(), 99);
     }
 
     #[test]
@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn applier_honours_play_time_zero_cheat() {
         let mut world = empty_world();
-        world.play_time_seconds = 12345;
+        world.clock.play_time_seconds = 12345;
         let mut db = Database::new();
         db.entries.push(entry(
             "Game Time 0:00:00",
@@ -336,7 +336,7 @@ mod tests {
         ));
         let r = apply(&mut world, &db, ApplyOptions::default());
         assert_eq!(r.applied, 1);
-        assert_eq!(world.play_time_seconds, 0);
+        assert_eq!(world.clock.play_time_seconds, 0);
     }
 
     #[test]

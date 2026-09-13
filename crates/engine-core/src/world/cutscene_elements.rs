@@ -342,7 +342,7 @@ mod tests {
     fn world() -> World {
         let mut w = World::new();
         w.mode = SceneMode::Field;
-        w.field_frame_step = 1;
+        w.clock.display_frame_step = 1;
         w
     }
 

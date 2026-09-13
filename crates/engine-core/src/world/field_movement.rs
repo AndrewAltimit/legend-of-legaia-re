@@ -1577,7 +1577,7 @@ impl World {
         if self.npcs.ambient.is_empty() {
             return;
         }
-        let speed = self.frame_step.max(1);
+        let speed = self.clock.frame_step.max(1);
         // The walk half's collision service. Retail's two probes
         // (`FUN_801cf8ac` direct for the directional steps, `FUN_801d5a68`'s
         // three-point fan for the wander) both box-test against the
@@ -2498,7 +2498,7 @@ impl World {
                 self.locomotion.walk_regen_steps = self
                     .locomotion
                     .walk_regen_steps
-                    .saturating_add(self.field_frame_step as i32);
+                    .saturating_add(self.clock.display_frame_step as i32);
             }
         }
 

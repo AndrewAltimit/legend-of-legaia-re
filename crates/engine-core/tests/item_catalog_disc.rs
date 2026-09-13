@@ -172,7 +172,7 @@ fn water_line_stat_up_items_seed_and_apply_from_disc() {
     // Life Water (tier 0): Max HP +16, current HP refilled by the gain.
     let outcome = world.use_item(0x82, 0);
     assert_eq!(outcome, ItemOutcome::StatsRaised { count: 1 });
-    assert_eq!(world.roster.members[0].hp_mp_sp().hp_max, 116);
+    assert_eq!(world.party.roster.members[0].hp_mp_sp().hp_max, 116);
     assert_eq!(world.actors[0].battle.max_hp, 116);
 
     // Power Water (tier 1): ATK +4.
@@ -180,13 +180,13 @@ fn water_line_stat_up_items_seed_and_apply_from_disc() {
         world.use_item(0x83, 0),
         ItemOutcome::StatsRaised { count: 1 }
     );
-    assert_eq!(world.roster.members[0].live_stats().atk, 24);
+    assert_eq!(world.party.roster.members[0].live_stats().atk, 24);
 
     // Swift Water (tier 3): SPD +4; Wisdom Water (tier 4): INT +4.
     world.use_item(0x85, 0);
     world.use_item(0x86, 0);
-    assert_eq!(world.roster.members[0].live_stats().spd, 14);
-    assert_eq!(world.roster.members[0].live_stats().int, 16);
+    assert_eq!(world.party.roster.members[0].live_stats().spd, 14);
+    assert_eq!(world.party.roster.members[0].live_stats().int, 16);
 
     // Honey (tier 6, all stats): Defence expands to both facets, so the seven
     // record changes become eight individual raises.

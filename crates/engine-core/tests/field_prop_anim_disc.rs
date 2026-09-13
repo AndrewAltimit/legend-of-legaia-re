@@ -474,6 +474,7 @@ fn the_cupboard_opens_on_interact_grants_once_and_closes_on_dismiss() {
         assert_eq!(opened, frames - 1, "{name}: the cupboard must open fully");
         assert!(saw_box, "{name}: the search message must open");
         let granted: Vec<u8> = w
+            .party
             .inventory
             .iter()
             .filter(|&(_, &n)| n > 0)
@@ -510,7 +511,7 @@ fn the_cupboard_opens_on_interact_grants_once_and_closes_on_dismiss() {
         let (_, box_again) = drive_interaction_to_end(&mut w, anchor, frames * 20 + 4000);
         assert!(box_again, "{name}: the empty-arm message must open");
         assert_eq!(
-            w.inventory.get(&item).copied().unwrap_or(0),
+            w.party.inventory.get(&item).copied().unwrap_or(0),
             1,
             "{name}: the searched-flag guard must block a second grant"
         );

@@ -148,8 +148,8 @@ fn synthetic_world(rng_seed: u32) -> World {
     }
     world.rng_state = rng_seed;
     world.mode = SceneMode::Title;
-    world.money = 0;
-    world.party_count = 3;
+    world.party.money = 0;
+    world.party.party_count = 3;
     for slot in 0..3 {
         let actor = world.spawn_actor(slot);
         actor.battle.liveness = 1;
@@ -192,7 +192,7 @@ fn sample_world(world: &World, pad: u16) -> StateSample {
         scene_mode: scene_mode_name(world.mode).to_string(),
         pad,
         rng_state: world.rng_state,
-        money: world.money,
+        money: world.party.money,
         party_hp_total: world.actors.iter().map(|a| a.battle.hp as u32).sum(),
         dialog_active: world.dialog.current.is_some(),
     }
@@ -599,7 +599,7 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
         SceneMode::Field,
         "new-game cold boot reaches the field"
     );
-    assert_eq!(w.party_count, 1, "the opening party is Vahn alone");
+    assert_eq!(w.party.party_count, 1, "the opening party is Vahn alone");
     assert_eq!(
         w.actors[0].battle.max_hp, 180,
         "Vahn seeded from the new-game template (180 HP)"
@@ -653,7 +653,7 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
         w.actors[0].battle.max_hp, 180,
         "Vahn survives the field -> battle handoff"
     );
-    let monster_slot = w.party_count.clamp(1, 3) as usize;
+    let monster_slot = w.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         w.actors[monster_slot].battle_monster_id,
         Some(TETSU),
@@ -830,7 +830,7 @@ fn v0_1_battle_leg_walk_talk_accept() {
         "walk + talk + accept flips Field -> Battle (fully emergent)"
     );
     let world = &session.host.world;
-    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,
         Some(TETSU),

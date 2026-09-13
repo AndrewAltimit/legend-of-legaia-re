@@ -198,9 +198,9 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
     // The transition is drained by the live field tick, so the loop has to be
     // on for the armed fight to open at all. `--battle` is an explicit request
     // for a fight; honour it over `--no-live-loop`.
-    if !world.live_gameplay_loop {
+    if !world.toggles.live_gameplay_loop {
         log::info!("play-window: --battle turns the live loop on (it drains the transition)");
-        world.live_gameplay_loop = true;
+        world.toggles.live_gameplay_loop = true;
     }
     // A scripted carrier's fight is entered by its own record, and that
     // record can raise a one-shot system-flag arm on the way in - the Rim
@@ -400,11 +400,11 @@ pub(super) fn cmd_play_window_with_record(
     let mut session = crate::shared::open_boot_session(scene, enable_audio, extracted_root, disc)?;
     // Scene-entry VDF pulse (enhancement) gate - must land before the first
     // `enter_field_scene`, which is where the installer runs.
-    session.host.world.entry_pulse_enabled = entry_pulse;
+    session.host.world.toggles.entry_pulse_enabled = entry_pulse;
     // Drive field dialogue through the inline-script field-VM runner so branch
     // handlers execute (flag-sets / scene-changes / GIVE_ITEM). On by default;
     // `--simple-dialogue` clears it to fall back to the plain typewriter panel.
-    session.host.world.use_vm_dialogue = vm_dialogue;
+    session.host.world.toggles.use_vm_dialogue = vm_dialogue;
     // Opt-in: snap the player's Y to the per-scene floor height each
     // locomotion step. Off by default → flat-Y behaviour preserved.
     session.host.world.locomotion.follow_terrain_height = terrain_y;
@@ -418,12 +418,12 @@ pub(super) fn cmd_play_window_with_record(
     // Retail always runs the damage finisher (`FUN_801ddb30`) after the
     // melee roll, so it is the default; `--no-damage-finish` keeps the flat
     // pre-finisher path for comparison.
-    session.host.world.use_damage_finish = damage_finish;
+    session.host.world.toggles.use_damage_finish = damage_finish;
     // Opt-in, NON-FAITHFUL QoL: redirect a monster's single-target attack to
     // the lowest-HP living party member (the faithful default is a uniform
     // random target). Enable with `LEGAIA_SMART_MONSTERS=1`. The RNG stream is
     // unchanged, so determinism within a run is preserved.
-    session.host.world.smarter_monster_targeting =
+    session.host.world.toggles.smarter_monster_targeting =
         std::env::var_os("LEGAIA_SMART_MONSTERS").is_some();
     // Field-live arming, built once and reused: at startup for the direct path
     // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
@@ -474,7 +474,7 @@ pub(super) fn cmd_play_window_with_record(
     // scene intact.
     if seed_party {
         session.begin_new_game();
-        let seeded = session.host.world.roster.members.len();
+        let seeded = session.host.world.party.roster.members.len();
         log::info!("play-window: --seed-party seeded {seeded} roster member(s)");
     }
 
@@ -492,7 +492,7 @@ pub(super) fn cmd_play_window_with_record(
         };
         let mut learned = 0usize;
         for id in list.split(',').filter_map(parse) {
-            if let Some(lead) = session.host.world.roster.members.first_mut() {
+            if let Some(lead) = session.host.world.party.roster.members.first_mut() {
                 legaia_engine_core::magic_xp::learn_spell_prepend(lead, id);
                 learned += 1;
             }
@@ -606,7 +606,7 @@ pub(super) fn cmd_play_window_with_record(
                 // town01 story script.
                 if forced == "now" {
                     let world = &mut session.host.world;
-                    let pc = world.party_count.clamp(1, 3);
+                    let pc = world.party.party_count.clamp(1, 3);
                     world.enter_battle(pc, 1);
                     // Seed only the combatant slots - the field scene's other
                     // actors keep whatever the scene gave them.
@@ -643,19 +643,19 @@ pub(super) fn cmd_play_window_with_record(
 
     if player_battle {
         let world = &mut session.host.world;
-        if world.inventory.is_empty() {
-            world.inventory.insert(0x01, 5); // Healing Leaf
-            world.inventory.insert(0x13, 3); // Bomb (offensive)
+        if world.party.inventory.is_empty() {
+            world.party.inventory.insert(0x01, 5); // Healing Leaf
+            world.party.inventory.insert(0x13, 3); // Bomb (offensive)
         }
-        if world.saved_chains.is_empty() {
+        if world.party.saved_chains.is_empty() {
             use legaia_save::SavedChainRecord;
             for slot in 0u8..3 {
-                world.saved_chains.push(SavedChainRecord {
+                world.party.saved_chains.push(SavedChainRecord {
                     char_slot: slot,
                     name: "Quick".into(),
                     sequence: vec![1, 2],
                 });
-                world.saved_chains.push(SavedChainRecord {
+                world.party.saved_chains.push(SavedChainRecord {
                     char_slot: slot,
                     name: "Combo".into(),
                     sequence: vec![1, 2, 3, 4],
@@ -734,11 +734,11 @@ pub(super) fn cmd_play_window_with_record(
         }
         let world = &mut session.host.world;
         world.set_active_party(slots.clone());
-        if world.active_party.len() != slots.len() {
+        if world.party.active_party.len() != slots.len() {
             log::warn!(
                 "play-window: --party {spec}: kept the first {} of {slots:?} \
                  (3 on-screen positions)",
-                world.active_party.len()
+                world.party.active_party.len()
             );
         }
         // Fold the freshly-seeded records into the battle stat mirrors
@@ -747,9 +747,10 @@ pub(super) fn cmd_play_window_with_record(
         world.seed_party_battle_stats();
         // The MP ceiling the battle HUD draws is the only one the world
         // carries and nothing else seeds it from a record.
-        for member in 0..world.active_party.len() {
+        for member in 0..world.party.active_party.len() {
             let rslot = world.party_roster_slot(member);
             let mp_max = world
+                .party
                 .roster
                 .members
                 .get(rslot)
@@ -759,7 +760,7 @@ pub(super) fn cmd_play_window_with_record(
         }
         log::info!(
             "play-window: present party = {:?} (roster slots, battle order)",
-            world.active_party
+            world.party.active_party
         );
     }
 

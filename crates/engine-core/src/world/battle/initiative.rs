@@ -51,7 +51,7 @@ impl World {
     /// (`< party_count`) oppose the monster band (`party_count..`); monster
     /// slots oppose the party. `None` if that side is wiped.
     pub(in crate::world) fn first_living_opponent_of(&self, attacker: u8) -> Option<u8> {
-        let pc = self.party_count.max(1);
+        let pc = self.party.party_count.max(1);
         let n = self.actors.len() as u8;
         let (lo, hi) = if attacker < pc { (pc, n) } else { (0, pc) };
         (lo..hi).find(|&i| {
@@ -121,7 +121,7 @@ impl World {
     /// `battle_formulas::seed_initiative`)
     pub(in crate::world) fn reseed_initiative(&mut self) {
         use vm::battle_formulas::{InitiativeActor, initiative_roll_modulus, seed_initiative};
-        let party_count = self.party_count as usize;
+        let party_count = self.party.party_count as usize;
         if !self.any_battle_speed() {
             // No SPD anywhere (the synthetic catalog, the disc-free tests):
             // there is nothing to roll, so every living slot gets one flat
@@ -187,7 +187,7 @@ impl World {
         // The kernel stays the retail-layout reference; this is the engine's
         // seating adapter, not a different rule.
         let lockout = self.battle_formation();
-        let party_count = self.party_count as usize;
+        let party_count = self.party.party_count as usize;
         for slot in 0..BATTLE_SLOTS {
             let locked = match lockout {
                 vm::battle_formulas::FormationAdvantage::None => false,
@@ -207,7 +207,7 @@ impl World {
     /// passives ([`vm::battle_formulas::InitiativeAbility`]). Unresolvable slots
     /// carry no bits.
     fn initiative_ability_bits(&self, slot: usize) -> u32 {
-        let Some(member) = self.roster.members.get(self.party_roster_slot(slot)) else {
+        let Some(member) = self.party.roster.members.get(self.party_roster_slot(slot)) else {
             return 0;
         };
         let bits = member.ability_bits();
@@ -255,7 +255,7 @@ impl World {
         formation: &crate::monster_catalog::FormationDef,
     ) {
         use vm::battle_formulas::{FormationInputs, roll_formation_advantage};
-        let party_n = (self.party_count as usize).min(self.actors.len());
+        let party_n = (self.party.party_count as usize).min(self.actors.len());
         let party_spd: Vec<u16> = (0..party_n)
             .filter(|&i| self.actors[i].battle.liveness != 0)
             .map(|i| self.battle.speed.get(i).copied().unwrap_or(0))
@@ -269,7 +269,7 @@ impl World {
             if self.actors[slot].battle.liveness == 0 {
                 continue;
             }
-            if let Some(member) = self.roster.members.get(self.party_roster_slot(slot)) {
+            if let Some(member) = self.party.roster.members.get(self.party_roster_slot(slot)) {
                 let b = member.ability_bits();
                 ability_bits |= u32::from_le_bytes([b[4], b[5], b[6], b[7]]);
             }
@@ -316,7 +316,7 @@ impl World {
         // below clears it - retail reads it in state `0x0A` (`FUN_801D9D3C`),
         // one state before the action SM's `0x00` latch runs.
         self.raise_battle_open_banner();
-        let party = self.party_count;
+        let party = self.party.party_count;
         // `ctx[+0x01]` is the seated monster count, not the width of the
         // 8-slot table - the tail of it is empty in most formations.
         let monsters = ((party as usize)..self.actors.len())
@@ -342,7 +342,7 @@ impl World {
     pub fn raise_battle_open_banner(&mut self) {
         use crate::battle_open::{BANNER_BOX_STYLE, BANNER_FRAMES, FormationBanner};
         let Some(banner) =
-            FormationBanner::for_formation(self.battle_formation(), self.party_count)
+            FormationBanner::for_formation(self.battle_formation(), self.party.party_count)
         else {
             return;
         };
@@ -350,6 +350,7 @@ impl World {
         // the operand it writes after the `0xC1` token is
         // `DAT_8007BD10[0] - 1`.
         let leader = self
+            .party
             .roster
             .members
             .get(self.party_roster_slot(0))

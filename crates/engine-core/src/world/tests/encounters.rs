@@ -398,11 +398,14 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
     use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Field;
-    world.live_gameplay_loop = true; // auto-resolve the battle leg
+    world.toggles.live_gameplay_loop = true; // auto-resolve the battle leg
     world.set_active_scene_label("town01");
     // A capable lone party member so the battle can resolve.
     world.actors[0].active = true;
@@ -488,7 +491,10 @@ fn field_carrier_unengaged_never_fires() {
     use crate::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Field;
@@ -517,11 +523,11 @@ fn begin_new_game_clears_state_and_enters_field() {
     world.mode = SceneMode::Battle;
     world.flags.story_flags = 0xDEAD_BEEF;
     world.flags.story_flag_bits = vec![1, 2, 3];
-    world.money = 4242;
-    world.inventory.insert(0x10, 5);
+    world.party.money = 4242;
+    world.party.inventory.insert(0x10, 5);
     world.encounters.scripted_armed = true;
     world.game_over = true;
-    world.play_time_seconds = 9999;
+    world.clock.play_time_seconds = 9999;
 
     world.begin_new_game();
 
@@ -530,12 +536,12 @@ fn begin_new_game_clears_state_and_enters_field() {
     assert_eq!(world.flags.story_flags, 0);
     assert!(world.flags.story_flag_bits.is_empty());
     // New-game gold is the retail constant (FUN_80034A6C), not zero.
-    assert_eq!(world.money, NEW_GAME_STARTING_GOLD);
-    assert!(world.inventory.is_empty());
+    assert_eq!(world.party.money, NEW_GAME_STARTING_GOLD);
+    assert!(world.party.inventory.is_empty());
     assert!(!world.encounters.scripted_armed);
     assert!(world.encounters.session.is_none());
     assert!(!world.game_over);
-    assert_eq!(world.play_time_seconds, 0);
+    assert_eq!(world.clock.play_time_seconds, 0);
 }
 
 #[test]

@@ -20,8 +20,11 @@ use legaia_engine_vm::battle_formulas::{CAMERA_HEIGHT_MAX, CAMERA_HEIGHT_MIN};
 /// attacker will frame on, and run the battle SM until it seeds an action.
 fn frame_height_for(size_class: u8) -> (i16, bool) {
     let mut world = World {
+        party: legaia_engine_core::world::PartyState {
+            party_count: 3,
+            ..Default::default()
+        },
         mode: SceneMode::Battle,
-        party_count: 3,
         ..World::default()
     };
     for i in 0..8 {

@@ -398,7 +398,7 @@ fn a_scene_fade_arm_runs_against_the_scenes_own_vram() {
     // carrier of this family; `enter_field_scene` is what pins `dt` and
     // populates the scene VRAM.
     host.enter_field_scene("map01", 0).expect("enter map01");
-    assert_eq!(host.world.frame_step, 3, "overworld dt");
+    assert_eq!(host.world.clock.frame_step, 3, "overworld dt");
 
     let man = host
         .scene
@@ -501,7 +501,7 @@ fn a_scene_fade_arm_runs_against_the_scenes_own_vram() {
     let final_row = read_row(&resources.vram, fade.op.dest);
     // The fade advances by `dt` vsyncs per game tick, so a `frames`-vsync
     // operand takes `ceil(frames / dt)` ticks - and each tick writes once.
-    let dt = u32::from(host.world.frame_step.max(1));
+    let dt = u32::from(host.world.clock.frame_step.max(1));
     let expect_writes = (fade.op.frames as u32).div_ceil(dt);
     eprintln!(
         "[w1e-clut] frames={frames} writes={writes} (expect {expect_writes} at dt={dt}) \

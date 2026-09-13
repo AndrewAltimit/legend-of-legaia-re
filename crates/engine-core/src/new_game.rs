@@ -113,7 +113,7 @@ impl World {
         // nothing and the panel emits nothing for an absent entry. The roster
         // deliberately stays Vahn-alone (retail's New Game party), so this
         // touches display names only - `party_count` is untouched.
-        self.party_names = starting.members().iter().map(|m| m.name.clone()).collect();
+        self.party.party_names = starting.members().iter().map(|m| m.name.clone()).collect();
         self.seed_party_battle_stats();
     }
 
@@ -145,24 +145,24 @@ impl World {
             return 0;
         };
         let need = highest as usize + 1;
-        while self.roster.members.len() < need {
-            self.roster.members.push(CharacterRecord::zeroed());
+        while self.party.roster.members.len() < need {
+            self.party.roster.members.push(CharacterRecord::zeroed());
         }
         let mut seeded = 0usize;
         for &slot in slots {
             let idx = slot as usize;
-            if self.roster.members[idx].hp_mp_sp().hp_max != 0 {
+            if self.party.roster.members[idx].hp_mp_sp().hp_max != 0 {
                 continue;
             }
             let Some(tpl) = starting.member(idx) else {
                 continue;
             };
-            self.roster.members[idx] = starting_record(tpl);
-            if self.party_names.len() <= idx {
-                self.party_names.resize(idx + 1, String::new());
+            self.party.roster.members[idx] = starting_record(tpl);
+            if self.party.party_names.len() <= idx {
+                self.party.party_names.resize(idx + 1, String::new());
             }
-            if self.party_names[idx].is_empty() {
-                self.party_names[idx] = tpl.name.clone();
+            if self.party.party_names[idx].is_empty() {
+                self.party.party_names[idx] = tpl.name.clone();
             }
             seeded += 1;
         }
@@ -171,7 +171,7 @@ impl World {
             // what activates the actor, copies HP / MP into the battle
             // mirrors and hydrates the level-up tracker. Cloning the roster
             // through it keeps this module from re-stating that mapping.
-            let roster = self.roster.clone();
+            let roster = self.party.roster.clone();
             self.load_party(roster);
         }
         seeded
@@ -189,7 +189,7 @@ impl World {
             if id == 0 || count == 0 {
                 continue;
             }
-            let slot = self.inventory.entry(id).or_insert(0);
+            let slot = self.party.inventory.entry(id).or_insert(0);
             *slot = slot.saturating_add(count);
         }
     }
@@ -215,21 +215,21 @@ impl World {
     /// entry path) can never reset state - the roster guard makes the seed
     /// once-only anyway. Returns `true` when the seed fired.
     pub fn seed_cold_boot_defaults(&mut self, defaults: &NewGameDefaults) -> bool {
-        if !self.roster.members.is_empty() {
+        if !self.party.roster.members.is_empty() {
             return false;
         }
         self.seed_starting_party(&defaults.party);
-        if self.roster.members.is_empty() {
+        if self.party.roster.members.is_empty() {
             // Empty template (unreadable SCUS) - nothing was seeded.
             return false;
         }
-        if self.inventory.is_empty()
+        if self.party.inventory.is_empty()
             && let Some(inv) = &defaults.inventory
         {
             self.seed_starting_inventory(inv);
         }
-        if self.money == 0 {
-            self.money = crate::world::NEW_GAME_STARTING_GOLD;
+        if self.party.money == 0 {
+            self.party.money = crate::world::NEW_GAME_STARTING_GOLD;
         }
         true
     }
@@ -427,8 +427,11 @@ mod tests {
         let mut world = World::new();
         world.begin_new_game();
         world.seed_starting_party(&starting);
-        assert_eq!(world.party_count, 1, "only Vahn has joined at a New Game");
-        assert_eq!(world.roster.members.len(), 1);
+        assert_eq!(
+            world.party.party_count, 1,
+            "only Vahn has joined at a New Game"
+        );
+        assert_eq!(world.party.roster.members.len(), 1);
         assert_eq!(world.actors[0].battle.max_hp, 180);
         assert!(world.actors[0].active);
     }
@@ -486,8 +489,11 @@ mod tests {
         // 'a' = row 0 col 6 = cell 6. Drive the cursor + confirm each.
         let typed = [(37usize, 'N'), (44, 'o'), (6, 'a')];
         for (cell, g) in typed {
-            world.name_entry.as_mut().unwrap().cursor = cell;
-            assert_eq!(world.name_entry.as_ref().unwrap().glyph_at(cell), Some(g));
+            world.party.name_entry.as_mut().unwrap().cursor = cell;
+            assert_eq!(
+                world.party.name_entry.as_ref().unwrap().glyph_at(cell),
+                Some(g)
+            );
             world.step_name_entry(NameEntryInput {
                 confirm: true,
                 ..Default::default()
@@ -495,13 +501,13 @@ mod tests {
         }
         // Move to End and confirm twice (End -> Confirm -> Done).
         let end = crate::name_entry::CHAR_CELLS + 16;
-        world.name_entry.as_mut().unwrap().cursor = end;
+        world.party.name_entry.as_mut().unwrap().cursor = end;
         world.step_name_entry(NameEntryInput {
             confirm: true,
             ..Default::default()
         });
         assert_eq!(
-            world.name_entry.as_ref().unwrap().state,
+            world.party.name_entry.as_ref().unwrap().state,
             NameEntryState::Confirm
         );
         // The prompt opens on No (retail); Up moves the hand to Yes.
@@ -518,18 +524,18 @@ mod tests {
         assert_eq!(world.party_name(0), "Noa");
         // Retail's carrier is the record, so the committed name has to land
         // there too or it is lost across a save/load round trip.
-        assert_eq!(world.roster.members[0].name(), "Noa");
+        assert_eq!(world.party.roster.members[0].name(), "Noa");
     }
 
     #[test]
     fn seed_starting_inventory_fills_the_bag() {
         let mut world = World::new();
         world.begin_new_game();
-        assert!(world.inventory.is_empty(), "new game clears the bag");
+        assert!(world.party.inventory.is_empty(), "new game clears the bag");
         // Vanilla-shaped single slot.
         world.seed_starting_inventory(&StartingInventory::from_items(vec![(0x77, 5)]));
-        assert_eq!(world.inventory.get(&0x77).copied(), Some(5));
-        assert_eq!(world.inventory.len(), 1);
+        assert_eq!(world.party.inventory.get(&0x77).copied(), Some(5));
+        assert_eq!(world.party.inventory.len(), 1);
     }
 
     #[test]
@@ -542,7 +548,12 @@ mod tests {
             (0x8a, 1),
             (0x7e, 0), // count 0 skipped
         ]));
-        let mut got: Vec<(u8, u8)> = world.inventory.iter().map(|(k, v)| (*k, *v)).collect();
+        let mut got: Vec<(u8, u8)> = world
+            .party
+            .inventory
+            .iter()
+            .map(|(k, v)| (*k, *v))
+            .collect();
         got.sort_unstable();
         assert_eq!(got, vec![(0x80, 2), (0x8a, 1)]);
     }
@@ -555,30 +566,30 @@ mod tests {
         };
         // Fresh world: seed fires - party + bag + gold.
         let mut world = World::new();
-        assert!(world.roster.members.is_empty());
+        assert!(world.party.roster.members.is_empty());
         assert!(world.seed_cold_boot_defaults(&defaults));
-        assert_eq!(world.party_count, 1);
-        assert_eq!(world.roster.members.len(), 1);
+        assert_eq!(world.party.party_count, 1);
+        assert_eq!(world.party.roster.members.len(), 1);
         assert_eq!(world.actors[0].battle.max_hp, 180);
-        assert_eq!(world.inventory.get(&0x77).copied(), Some(5));
-        assert_eq!(world.money, crate::world::NEW_GAME_STARTING_GOLD);
+        assert_eq!(world.party.inventory.get(&0x77).copied(), Some(5));
+        assert_eq!(world.party.money, crate::world::NEW_GAME_STARTING_GOLD);
         // Second entry (a door transition re-runs scene entry): no-op.
-        world.money = 42;
-        world.inventory.insert(0x80, 1);
+        world.party.money = 42;
+        world.party.inventory.insert(0x80, 1);
         assert!(!world.seed_cold_boot_defaults(&defaults));
-        assert_eq!(world.money, 42, "re-entry must not reset gold");
-        assert_eq!(world.inventory.get(&0x77).copied(), Some(5));
+        assert_eq!(world.party.money, 42, "re-entry must not reset gold");
+        assert_eq!(world.party.inventory.get(&0x77).copied(), Some(5));
 
         // A world with a loaded party (a save) never seeds.
         let mut loaded = World::new();
         loaded.load_party(Party {
             members: vec![CharacterRecord::zeroed()],
         });
-        loaded.money = 9999;
+        loaded.party.money = 9999;
         assert!(!loaded.seed_cold_boot_defaults(&defaults));
-        assert_eq!(loaded.money, 9999);
+        assert_eq!(loaded.party.money, 9999);
         assert!(
-            loaded.inventory.is_empty(),
+            loaded.party.inventory.is_empty(),
             "bag untouched on a loaded save"
         );
     }
@@ -591,12 +602,12 @@ mod tests {
         };
         let mut world = World::new();
         assert!(!world.seed_cold_boot_defaults(&defaults));
-        assert!(world.roster.members.is_empty());
+        assert!(world.party.roster.members.is_empty());
         assert!(
-            world.inventory.is_empty(),
+            world.party.inventory.is_empty(),
             "no bag seed without a party seed"
         );
-        assert_eq!(world.money, 0);
+        assert_eq!(world.party.money, 0);
     }
 
     #[test]
@@ -607,7 +618,7 @@ mod tests {
         let mut world = World::new();
         world.begin_new_game();
         world.seed_starting_party(&StartingParty::from_members(vec![]));
-        assert!(world.roster.members.is_empty());
+        assert!(world.party.roster.members.is_empty());
     }
 
     /// The four-row template, for the multi-member seeding cases.
@@ -652,8 +663,8 @@ mod tests {
 
         // Retail's New Game party is Vahn alone; names are display state, not
         // membership, so neither the roster nor the party count may move.
-        assert_eq!(world.roster.members.len(), 1);
-        assert_eq!(world.party_count, 1);
+        assert_eq!(world.party.roster.members.len(), 1);
+        assert_eq!(world.party.party_count, 1);
     }
 
     /// A loaded save's custom names reach the display list, and loading a
@@ -668,7 +679,7 @@ mod tests {
         world.begin_new_game();
         world.seed_starting_party(&four_row_template());
 
-        let mut rec = world.roster.members[0].clone();
+        let mut rec = world.party.roster.members[0].clone();
         rec.set_name("Zed");
         world.load_party(Party { members: vec![rec] });
 
@@ -695,21 +706,21 @@ mod tests {
         world.begin_new_game();
         world.seed_starting_party(&template);
         assert_eq!(
-            world.roster.members.len(),
+            world.party.roster.members.len(),
             1,
             "retail New Game is Vahn only"
         );
 
         assert_eq!(world.seed_party_members(&template, &[0, 1, 2]), 2);
-        assert_eq!(world.roster.members.len(), 3);
+        assert_eq!(world.party.roster.members.len(), 3);
         for (slot, hp, mp) in [(0usize, 180u16, 20u16), (1, 150, 10), (2, 210, 40)] {
-            let hms = world.roster.members[slot].hp_mp_sp();
+            let hms = world.party.roster.members[slot].hp_mp_sp();
             assert_eq!(hms.hp_max, hp, "slot {slot} max HP");
             assert_eq!(hms.hp_cur, hp, "slot {slot} starts at full");
             assert_eq!(hms.mp_max, mp, "slot {slot} max MP");
         }
-        assert_eq!(world.party_names[1], "Noa");
-        assert_eq!(world.party_names[2], "Gala");
+        assert_eq!(world.party.party_names[1], "Noa");
+        assert_eq!(world.party.party_names[2], "Gala");
         // `load_party`'s projection ran, so the actors carry live mirrors.
         for slot in 0..3 {
             assert!(world.actors[slot].active, "actor {slot} inactive");
@@ -736,9 +747,9 @@ mod tests {
             1,
             "only the empty slot 0 is seeded"
         );
-        assert_eq!(world.roster.members[1].hp_mp_sp().hp_max, 999);
-        assert_eq!(world.roster.members[1].hp_mp_sp().hp_cur, 42);
-        assert_eq!(world.roster.members[0].hp_mp_sp().hp_max, 180);
+        assert_eq!(world.party.roster.members[1].hp_mp_sp().hp_max, 999);
+        assert_eq!(world.party.roster.members[1].hp_mp_sp().hp_cur, 42);
+        assert_eq!(world.party.roster.members[0].hp_mp_sp().hp_max, 180);
     }
 
     /// A slot the spec skips stays addressable but unseeded, and a spec with
@@ -748,15 +759,15 @@ mod tests {
         let template = four_row_template();
         let mut world = World::new();
         assert_eq!(world.seed_party_members(&template, &[]), 0);
-        assert!(world.roster.members.is_empty());
+        assert!(world.party.roster.members.is_empty());
 
         assert_eq!(world.seed_party_members(&template, &[0, 2]), 2);
-        assert_eq!(world.roster.members.len(), 3, "grown to cover slot 2");
+        assert_eq!(world.party.roster.members.len(), 3, "grown to cover slot 2");
         assert_eq!(
-            world.roster.members[1].hp_mp_sp().hp_max,
+            world.party.roster.members[1].hp_mp_sp().hp_max,
             0,
             "the unnamed middle slot is not seeded"
         );
-        assert_eq!(world.roster.members[2].hp_mp_sp().hp_max, 210);
+        assert_eq!(world.party.roster.members[2].hp_mp_sp().hp_max, 210);
     }
 }

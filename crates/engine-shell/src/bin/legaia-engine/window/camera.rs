@@ -172,7 +172,7 @@ impl PlayWindowApp {
     /// animated monsters centre-frame and at a useful size.
     pub(super) fn battle_camera_mvp(&self, aspect: f32) -> Mat4 {
         let world = &self.session.host.world;
-        let pc = world.party_count as usize;
+        let pc = world.party.party_count as usize;
         let mut lo = [f32::INFINITY; 3];
         let mut hi = [f32::NEG_INFINITY; 3];
         let mut any = false;
@@ -233,7 +233,7 @@ impl PlayWindowApp {
             &mut self.battle_camera,
             active,
             inputs,
-            world.field_frames,
+            world.clock.display_frames,
             tracks.as_ref(),
         );
         // `LEGAIA_DIAG_BATCAM=1`: one line per camera tick with the framing
@@ -249,7 +249,7 @@ impl PlayWindowApp {
             let world = &self.session.host.world;
             eprintln!(
                 "BATCAM f={} phase={:?} st=0x{:02X} act={} pitch={} yaw={} tr={:?} focus={:?}",
-                world.field_frames,
+                world.clock.display_frames,
                 c.phase(),
                 world.battle_ctx.action_state,
                 world.battle_ctx.active_actor,
@@ -342,7 +342,7 @@ impl PlayWindowApp {
     fn battle_formation_box(
         world: &legaia_engine_core::world::World,
     ) -> Option<super::battle_cam::FormationBox> {
-        let pc = world.party_count as usize;
+        let pc = world.party.party_count as usize;
         let mut bbox: Option<super::battle_cam::FormationBox> = None;
         for (i, a) in world.actors.iter().enumerate() {
             if !(i < pc || a.battle_monster_id.is_some()) {
@@ -943,7 +943,7 @@ pub(super) fn battle_done_band(
             .actors
             .get(usize::from(acting_slot))
             .map_or(0, |a| a.battle.action_category),
-        party_slot: usize::from(acting_slot) < world.party_count as usize,
+        party_slot: usize::from(acting_slot) < world.party.party_count as usize,
         target_dead: battle_post_action_target(world, acting_slot).is_some_and(|t| !t.live),
     }
 }
@@ -980,7 +980,7 @@ pub(super) fn battle_attack_channels(
     acting_slot: u8,
 ) -> Option<legaia_engine_vm::battle_cam_script::AttackCamChannels> {
     use legaia_engine_vm::battle_attack_camera as cam;
-    let party = usize::from(acting_slot) < world.party_count as usize;
+    let party = usize::from(acting_slot) < world.party.party_count as usize;
     if !party {
         return None;
     }
@@ -1029,7 +1029,7 @@ pub(super) fn battle_action_framing(
     world: &legaia_engine_core::world::World,
     acting_slot: u8,
 ) -> legaia_engine_vm::battle_cam_script::ActionFraming {
-    let party = usize::from(acting_slot) < world.party_count as usize;
+    let party = usize::from(acting_slot) < world.party.party_count as usize;
     legaia_engine_vm::battle_cam_script::ActionFraming {
         party_slot: party,
         battle_over: false,
@@ -1185,7 +1185,7 @@ mod battle_cam_shared_tests {
     fn native_pose_matches_the_shared_recipe() {
         let mut world = World::default();
         world.mode = SceneMode::Battle;
-        world.party_count = 1;
+        world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
         vahn.move_state.world_x = 0;
@@ -1261,7 +1261,7 @@ mod battle_cam_shared_tests {
 
         let mut world = World::default();
         world.mode = SceneMode::Battle;
-        world.party_count = 1;
+        world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
         // An off-axis seat: neither on the arena centre line nor square to it.
@@ -1331,7 +1331,7 @@ mod battle_cam_shared_tests {
     fn the_formation_box_is_a_world_fact_not_a_render_fact() {
         let mut world = World::default();
         world.mode = SceneMode::Battle;
-        world.party_count = 1;
+        world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
         vahn.move_state.world_z = -800;
@@ -1385,7 +1385,7 @@ mod battle_cam_shared_tests {
     fn host_derivation_selects_the_action_phase_and_frames_the_actor() {
         let mut world = World::default();
         world.mode = SceneMode::Battle;
-        world.party_count = 1;
+        world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
         vahn.move_state.world_z = -800;
@@ -1444,7 +1444,7 @@ mod battle_cam_shared_tests {
     fn host_derivation_carries_the_field_vm_shake_amplitude() {
         let mut world = World::default();
         world.mode = SceneMode::Battle;
-        world.party_count = 1;
+        world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
         world.actors = vec![vahn];

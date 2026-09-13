@@ -800,7 +800,7 @@ struct SlotRow {
 /// anchoring off the same index space, so compacting here would mis-anchor
 /// every damage number.
 pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
-    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     let party_names = crate::field_menu_dispatch::roster_names(world);
 
     // Party rows. `character_max_mp` is the only MP ceiling the world carries
@@ -836,6 +836,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
                 // record's `+0x130` beside the base marker (`FUN_8002C2E4`
                 // reads it as the display record's `+0x6F8`).
                 level: world
+                    .party
                     .roster
                     .members
                     .get(world.party_roster_slot(i))
@@ -932,7 +933,7 @@ pub fn battle_enemy_target_rows(
     world: &crate::world::World,
 ) -> Vec<crate::target_picker::EnemyMenuRow> {
     use crate::target_picker::{DEDUP_GLYPH_FALLBACK, FORMATION_SLOTS, enemy_menu_rows};
-    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     let mut ids = [0u8; FORMATION_SLOTS];
     let mut names: Vec<String> = vec![String::new(); FORMATION_SLOTS];
     for i in 0..FORMATION_SLOTS {
@@ -1159,7 +1160,7 @@ fn command_entry_actor(world: &crate::world::World) -> Option<u8> {
 
 /// Seated party count, clamped to the actor table.
 fn party_count(world: &crate::world::World) -> usize {
-    (world.party_count.clamp(1, 3) as usize).min(world.actors.len())
+    (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len())
 }
 
 /// A party member's display name by battle ordinal.
@@ -1490,6 +1491,7 @@ pub fn battle_member_has_raseru(world: &crate::world::World, ordinal: u8) -> boo
         RASERU_EQUIP_SLOT
     };
     world
+        .party
         .roster
         .members
         .get(roster)
@@ -1782,7 +1784,7 @@ pub fn subdraw_step(image: &[u8], base_va: u32, step: usize) -> Option<SubdrawSt
 /// monster frames (`Gimard`), and the party ones (`Vahn`, `Noa`) do not.
 pub fn battle_plaque_element_badge(world: &crate::world::World) -> Option<u8> {
     let (slot, _) = battle_active_actor(world)?;
-    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     if (slot as usize) < pc {
         return None;
     }
@@ -1832,7 +1834,7 @@ pub fn encounter_banner_enabled() -> bool {
 /// `Field -> Battle` edge - so hosts arm it only when
 /// [`encounter_banner_enabled`] says so.
 pub fn encounter_banner_label(world: &crate::world::World) -> String {
-    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     // `World::actors` is the fixed 64-slot table, not a battle-sized list;
     // a formation seats at most 5 monsters directly after the party
     // (`World::enter_battle`), so only those slots can be formation members.
@@ -2387,7 +2389,7 @@ mod tests {
         while w.actors.len() < 8 {
             w.actors.push(Actor::default());
         }
-        w.party_count = 1;
+        w.party.party_count = 1;
         w.tables
             .monster_catalog
             .insert(MonsterDef::new(7, "Gimard", 40, 5));
@@ -2431,7 +2433,7 @@ mod tests {
         while w.actors.len() < 4 {
             w.actors.push(Actor::default());
         }
-        w.party_count = 1;
+        w.party.party_count = 1;
         w.actors[0].battle.hp = 100;
         w.actors[0].battle.max_hp = 200;
         w.actors[0].battle.liveness = 1;
@@ -2475,7 +2477,7 @@ mod tests {
             w.actors.push(Actor::default());
         }
         w.mode = SceneMode::Battle;
-        w.party_count = party;
+        w.party.party_count = party;
         w.load_party(legaia_save::Party::zeroed(3));
         for i in 0..usize::from(party) {
             w.actors[i].battle.hp = 100;
@@ -2537,9 +2539,9 @@ mod tests {
         // Equip a Ra-Seru in the record's `+0x199` slot: the gate flips and
         // the label leaves the `-` entry. Without the overlay strings the
         // port's own word stands in for the disc name.
-        let mut eq = w.roster.members[0].equipment();
+        let mut eq = w.party.roster.members[0].equipment();
         eq.slots[RASERU_EQUIP_SLOT] = 1;
-        w.roster.members[0].set_equipment(eq);
+        w.party.roster.members[0].set_equipment(eq);
         assert!(battle_member_has_raseru(&w, 0));
         let chips = battle_command_chips(&w).expect("ring chips");
         let (label, enabled) = &chips.chips[2];
@@ -2552,22 +2554,22 @@ mod tests {
         // `FUN_80053CB8`'s `beq v0,a3` arm: character id 2 reads `+0x198`,
         // every other id `+0x199`.
         let mut w = battle_world(2);
-        let mut eq = w.roster.members[1].equipment();
+        let mut eq = w.party.roster.members[1].equipment();
         eq.slots[RASERU_EQUIP_SLOT] = 1;
-        w.roster.members[1].set_equipment(eq);
+        w.party.roster.members[1].set_equipment(eq);
         assert!(
             !battle_member_has_raseru(&w, 1),
             "Noa's gate does not read +0x199"
         );
-        let mut eq = w.roster.members[1].equipment();
+        let mut eq = w.party.roster.members[1].equipment();
         eq.slots[RASERU_EQUIP_SLOT] = 0;
         eq.slots[RASERU_EQUIP_SLOT_NOA] = 1;
-        w.roster.members[1].set_equipment(eq);
+        w.party.roster.members[1].set_equipment(eq);
         assert!(battle_member_has_raseru(&w, 1), "Noa's gate reads +0x198");
         // Vahn's arm is unaffected by the +0x198 byte.
-        let mut eq = w.roster.members[0].equipment();
+        let mut eq = w.party.roster.members[0].equipment();
         eq.slots[RASERU_EQUIP_SLOT_NOA] = 1;
-        w.roster.members[0].set_equipment(eq);
+        w.party.roster.members[0].set_equipment(eq);
         assert!(!battle_member_has_raseru(&w, 0));
     }
 

@@ -158,7 +158,7 @@ impl World {
     ) -> Vec<u8> {
         use crate::spells::SpellTarget;
         use crate::target_picker::CursorRow;
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         match def.target {
             SpellTarget::OneEnemy | SpellTarget::OneAlly | SpellTarget::SelfOnly => {
                 let abs = match target_row {
@@ -179,7 +179,7 @@ impl World {
     fn cast_target_code(&self, def: &crate::spells::SpellDef, targets: &[u8], caster: u8) -> u8 {
         use crate::spells::SpellTarget;
         use vm::battle_target_group::{TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY};
-        let caster_is_party = caster < self.party_count;
+        let caster_is_party = caster < self.party.party_count;
         match def.target {
             // Codes are in retail's absolute numbering: 8 = party, 9 = the
             // enemy row - whichever side the caster stands on.
@@ -322,7 +322,7 @@ impl World {
         };
         let hit_fx_start = self.battle.hit_fx.len();
         self.cast_spell_on_slots_prepaid(pc.caster, &def, &pc.targets);
-        if pc.caster >= self.party_count {
+        if pc.caster >= self.party.party_count {
             self.apply_enemy_move_status(pc.caster, def.id, hit_fx_start);
             self.apply_enemy_agl_status(pc.caster, def.id, &pc.targets);
         }
@@ -1267,20 +1267,20 @@ impl World {
         // the voided accessory is cleared out of the character record and
         // handed back (retail's record write plus `FUN_80042558`).
         if let Some(item) = run.item_refund {
-            *self.inventory.entry(item).or_insert(0) += 1;
+            *self.party.inventory.entry(item).or_insert(0) += 1;
         }
         if let Some(out) = run.voided_accessory
             && let Some(id) = out.voided
         {
             let rslot = self.party_roster_slot(victim_slot as usize);
-            if let Some(rec) = self.roster.members.get_mut(rslot) {
+            if let Some(rec) = self.party.roster.members.get_mut(rslot) {
                 let mut eq = rec.equipment();
                 if let Some(slot) = eq.slots.get_mut(ACCESSORY_EQUIP_SLOT_0 + out.slot as usize) {
                     *slot = 0;
                 }
                 rec.set_equipment(eq);
             }
-            *self.inventory.entry(id).or_insert(0) += 1;
+            *self.party.inventory.entry(id).or_insert(0) += 1;
             self.refresh_party_ability_bits();
         }
         Some(run)
@@ -1506,6 +1506,7 @@ impl World {
     fn cast_victim_accessories(&self, slot: u8) -> [u8; 3] {
         let mut out = [0u8; 3];
         let Some(rec) = self
+            .party
             .roster
             .members
             .get(self.party_roster_slot(slot as usize))
@@ -1583,7 +1584,10 @@ mod capture_hold_tests {
 
     fn band_world() -> World {
         let mut world = World {
-            party_count: 3,
+            party: crate::world::PartyState {
+                party_count: 3,
+                ..Default::default()
+            },
             ..World::default()
         };
         while world.actors.len() < 8 {

@@ -98,7 +98,7 @@ impl World {
         self.field_return = Some(FieldReturnState {
             actors: self.actors.clone(),
             player_actor_slot: self.player_actor_slot,
-            party_count: self.party_count,
+            party_count: self.party.party_count,
         });
         self.battle.return_mode = SceneMode::Field;
         // No engine-side battle staging: a scripted boss fight's transient
@@ -179,7 +179,7 @@ impl World {
         &mut self,
         formation: &crate::monster_catalog::FormationDef,
     ) {
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         let monster_count = formation.slots.len().min(5) as u8;
         // Drop any field dialogue left open across the transition. The
         // engage conversation already played in the field; a leftover

@@ -69,7 +69,7 @@ fn move_vm_kick_drives_cursor_advance_against_installed_pool() {
     // into the dispatcher's `frame_delta` (retail `DAT_1F800393`), so the
     // per-tick arithmetic below is only meaningful against a stated cadence.
     // `World::new()` defaults to the field floor of 2.
-    world.frame_step = 1;
+    world.clock.frame_step = 1;
     world.tick_actor_physics();
     // MoveVmKick emitted.
     let (_, res) = &world.move_vm.last_tick_events[0];
@@ -98,7 +98,7 @@ fn move_buffer_phase_advances_per_vsync_not_per_tick() {
     for cadence in [1u8, 2, 4] {
         let mut world = World::new();
         world.set_move_buffer_root(make_move_pool(3, 0x1010, 8, 1));
-        world.frame_step = cadence;
+        world.clock.frame_step = cadence;
         world.actors[0].active = true;
         world.actors[0].set_physics_dispatch(0x06);
         world.actors[0].physics.move_vm_kick = 1;
@@ -155,7 +155,7 @@ fn world_tick_runs_physics_pass_on_the_actor_game_tick() {
     // `DAT_1F800393` per frame and the actor pool runs per game tick.)
     let mut world = World::new();
     world.set_move_buffer_root(make_move_pool(1, 0x1010, 8, 1));
-    world.frame_step = 1; // one game tick per vsync
+    world.clock.frame_step = 1; // one game tick per vsync
     world.actors[0].active = true;
     world.actors[0].set_physics_dispatch(0x06);
     world.actors[0].physics.move_vm_kick = 1;
@@ -206,13 +206,13 @@ fn apply_steal_grants_item_on_hit_and_respects_non_stealable() {
     };
     let got = world.apply_steal(3, &table);
     assert_eq!(got, Some(0x8a), "100% steal lands and grants the item");
-    assert_eq!(world.inventory.get(&0x8a).copied(), Some(1));
+    assert_eq!(world.party.inventory.get(&0x8a).copied(), Some(1));
 
     // A non-stealable monster (0% chance) never grants and consumes no roll.
     let mut world = World::default();
     let rng_before = world.rng_state;
     assert_eq!(world.apply_steal(2, &table), None);
-    assert!(world.inventory.is_empty());
+    assert!(world.party.inventory.is_empty());
     assert_eq!(
         world.rng_state, rng_before,
         "no roll for a non-stealable monster"
@@ -538,7 +538,7 @@ fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
     list.ids[0] = bucket0.want_id;
     list.count = 1;
     lead.set_spell_list(list);
-    world.roster = legaia_save::Party {
+    world.party.roster = legaia_save::Party {
         members: vec![lead],
     };
 

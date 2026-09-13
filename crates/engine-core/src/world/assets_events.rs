@@ -386,7 +386,7 @@ impl World {
                 // mirror it onto the world HP so the live loop's hp==0 dead
                 // scan doesn't re-down the member - a downed member leaves
                 // the battle alive at 1 HP.
-                for slot in 0..self.party_count.min(3) as usize {
+                for slot in 0..self.party.party_count.min(3) as usize {
                     let b = &mut self.actors[slot].battle;
                     if b.max_hp > 0 && b.hp == 0 {
                         b.hp = 1;

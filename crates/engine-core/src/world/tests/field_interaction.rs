@@ -630,8 +630,8 @@ fn talk_op(ids: [u8; 3], word: u16, byte: u8) -> Vec<u8> {
 fn three_actor_talk_first_arm_collapses_party_and_sets_flags() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.party_actor_slots = vec![Some(1), Some(0), Some(2)];
-    world.party_leader_slot = Some(1);
+    world.party.party_actor_slots = vec![Some(1), Some(0), Some(2)];
+    world.party.party_leader_slot = Some(1);
     world.npcs.positions.insert(5, (100, 200));
     world.npcs.headings.insert(5, 0x400);
 
@@ -644,7 +644,7 @@ fn three_actor_talk_first_arm_collapses_party_and_sets_flags() {
     }
 
     // Party collapsed to the leader (retail count=1, ids=[leader,0,0,0]).
-    assert_eq!(world.party_actor_slots, vec![Some(1)]);
+    assert_eq!(world.party.party_actor_slots, vec![Some(1)]);
     // Talk lock + per-character flag choreography.
     assert!(world.system_flag_test(0xD), "talk-active lock set");
     assert!(!world.system_flag_test(0x10));
@@ -663,7 +663,7 @@ fn three_actor_talk_first_arm_collapses_party_and_sets_flags() {
 fn three_actor_talk_rearm_restores_saved_positions() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.party_leader_slot = Some(0);
+    world.party.party_leader_slot = Some(0);
     world.npcs.positions.insert(5, (100, 200));
     world.npcs.headings.insert(5, 0x400);
 
@@ -698,8 +698,8 @@ fn three_actor_talk_rearm_restores_saved_positions() {
 fn three_actor_talk_end_restores_party_and_drops_lock() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.party_actor_slots = vec![Some(1), Some(0), Some(2)];
-    world.party_leader_slot = Some(1);
+    world.party.party_actor_slots = vec![Some(1), Some(0), Some(2)];
+    world.party.party_leader_slot = Some(1);
 
     let op = talk_op([5, 6, 7], 1, 10);
     let mut ctx = FieldCtx::default();
@@ -708,7 +708,7 @@ fn three_actor_talk_end_restores_party_and_drops_lock() {
         let _ = vm::field::step(&mut host, &mut ctx, &op, 0);
     }
     assert_eq!(
-        world.party_actor_slots,
+        world.party.party_actor_slots,
         vec![Some(1)],
         "the arm collapsed the party"
     );
@@ -716,7 +716,7 @@ fn three_actor_talk_end_restores_party_and_drops_lock() {
 
     // A frame with the lock still up changes nothing.
     let _ = world.tick();
-    assert_eq!(world.party_actor_slots, vec![Some(1)]);
+    assert_eq!(world.party.party_actor_slots, vec![Some(1)]);
     assert!(world.dialog.three_actor_talk.is_some());
 
     // The script ends the talk by clearing the lock (retail: the generic
@@ -724,11 +724,11 @@ fn three_actor_talk_end_restores_party_and_drops_lock() {
     world.system_flag_clear(0xD);
     let _ = world.tick();
     assert_eq!(
-        world.party_actor_slots,
+        world.party.party_actor_slots,
         vec![Some(1), Some(0), Some(2)],
         "party count restored from the pre-collapse snapshot"
     );
-    assert_eq!(world.party_leader_slot, Some(1), "leader restored");
+    assert_eq!(world.party.party_leader_slot, Some(1), "leader restored");
     assert!(!world.system_flag_test(0xD), "lock stays down");
     assert!(
         world.dialog.three_actor_talk.is_none(),
@@ -742,8 +742,8 @@ fn three_actor_talk_end_restores_party_and_drops_lock() {
 fn three_actor_talk_rearm_preserves_the_party_snapshot() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.party_actor_slots = vec![Some(0), Some(2)];
-    world.party_leader_slot = Some(0);
+    world.party.party_actor_slots = vec![Some(0), Some(2)];
+    world.party.party_leader_slot = Some(0);
 
     let op = talk_op([5, 6, 7], 1, 10);
     let mut ctx = FieldCtx::default();
@@ -754,8 +754,8 @@ fn three_actor_talk_rearm_preserves_the_party_snapshot() {
     }
     world.system_flag_clear(0xD);
     let _ = world.tick();
-    assert_eq!(world.party_actor_slots, vec![Some(0), Some(2)]);
-    assert_eq!(world.party_leader_slot, Some(0));
+    assert_eq!(world.party.party_actor_slots, vec![Some(0), Some(2)]);
+    assert_eq!(world.party.party_leader_slot, Some(0));
 }
 
 #[test]
@@ -768,7 +768,7 @@ fn three_actor_talk_first_arm_without_leader_defaults_to_slot_zero() {
     let mut ctx = FieldCtx::default();
     let mut host = FieldHostImpl { world: &mut world };
     let _ = vm::field::step(&mut host, &mut ctx, &op, 0);
-    assert_eq!(world.party_actor_slots, vec![Some(0)]);
+    assert_eq!(world.party.party_actor_slots, vec![Some(0)]);
     assert!(world.system_flag_test(0x10), "flag 0x10 + leader(0)");
 }
 
@@ -786,8 +786,8 @@ fn talk_world_with_participants() -> World {
     world.actors[0].move_state.world_x = 500;
     world.actors[0].move_state.world_z = 600;
     world.actors[0].move_state.render_26 = 0x200;
-    world.party_actor_slots = vec![Some(0), Some(1), Some(2)];
-    world.party_leader_slot = Some(0);
+    world.party.party_actor_slots = vec![Some(0), Some(1), Some(2)];
+    world.party.party_leader_slot = Some(0);
     for (slot, pos, heading) in [
         (5u8, (100i16, 200i16), 0x400i16),
         (6, (300, 400), 0x600),
@@ -842,8 +842,8 @@ fn three_actor_talk_switch_cycles_leader_and_returns_to_poll() {
     assert!(world.system_flag_test(0xD), "talk lock still up");
 
     // Leadership moved to slot 1 (scan from leader+1; flag 0x11 was clear).
-    assert_eq!(world.party_leader_slot, Some(1));
-    assert_eq!(world.party_actor_slots, vec![Some(1)]);
+    assert_eq!(world.party.party_leader_slot, Some(1));
+    assert_eq!(world.party.party_actor_slots, vec![Some(1)]);
     assert!(!world.system_flag_test(0x10));
     assert!(world.system_flag_test(0x11), "flag 0x10 + new leader set");
     assert!(!world.system_flag_test(0x12));
@@ -901,12 +901,16 @@ fn three_actor_talk_switch_skips_flagged_participant() {
             .dialog
             .three_actor_talk
             .is_some_and(|t| t.swap.phase == 0)
-            && world.party_leader_slot != Some(0)
+            && world.party.party_leader_slot != Some(0)
         {
             break;
         }
     }
-    assert_eq!(world.party_leader_slot, Some(2), "search skipped slot 1");
+    assert_eq!(
+        world.party.party_leader_slot,
+        Some(2),
+        "search skipped slot 1"
+    );
     assert!(world.system_flag_test(0x12), "flag re-pointed at slot 2");
     // The player stands where participant 7 stood.
     let ms = &world.actors[0].move_state;
@@ -940,7 +944,7 @@ fn three_actor_talk_lock_drop_mid_swap_waits_for_the_poll() {
         "poll despawned the talk"
     );
     assert_eq!(
-        world.party_actor_slots,
+        world.party.party_actor_slots,
         vec![Some(0), Some(1), Some(2)],
         "pre-collapse party restored"
     );
@@ -1001,7 +1005,7 @@ fn three_actor_talk_switch_arms_from_a_square_pad_edge() {
             break;
         }
     }
-    assert_eq!(world.party_leader_slot, Some(1), "one swap happened");
+    assert_eq!(world.party.party_leader_slot, Some(1), "one swap happened");
     world.set_pad(crate::input::PadButton::Square.mask());
     world.tick_three_actor_talk();
     assert_eq!(
@@ -1028,13 +1032,13 @@ fn three_actor_talk_switch_arms_from_a_square_pad_edge() {
 fn a_square_press_outside_a_talk_does_nothing() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.party_actor_slots = vec![Some(0), Some(1), Some(2)];
-    world.party_leader_slot = Some(0);
+    world.party.party_actor_slots = vec![Some(0), Some(1), Some(2)];
+    world.party.party_leader_slot = Some(0);
     world.set_pad(crate::input::PadButton::Square.mask());
     world.tick_three_actor_talk();
     assert!(world.dialog.three_actor_talk.is_none());
-    assert_eq!(world.party_leader_slot, Some(0));
-    assert_eq!(world.party_actor_slots.len(), 3);
+    assert_eq!(world.party.party_leader_slot, Some(0));
+    assert_eq!(world.party.party_actor_slots.len(), 3);
 }
 
 // ---- the walk-up talk: engagement, loop, locomotion, facing ----
@@ -1075,7 +1079,7 @@ fn seat_prologue_npc(w: &mut World, slot: u8) {
             first_segment: 0,
         },
     );
-    w.use_vm_dialogue = true;
+    w.toggles.use_vm_dialogue = true;
 }
 
 /// Tick `n` frames with `mask` held. The pad mask is republished every frame

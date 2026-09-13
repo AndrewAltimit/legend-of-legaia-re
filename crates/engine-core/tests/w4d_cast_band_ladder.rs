@@ -48,7 +48,10 @@ fn extracted_dir() -> Option<PathBuf> {
 /// arm the ladder is here to enter.
 fn battle_world() -> World {
     let mut world = World {
-        party_count: 1,
+        party: legaia_engine_core::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     while world.actors.len() < 12 {

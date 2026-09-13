@@ -25,7 +25,7 @@ use legaia_engine_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
 fn unseeded_battle_world() -> World {
     let mut world = World::new();
     assert!(
-        world.roster.members.is_empty(),
+        world.party.roster.members.is_empty(),
         "premise: a fresh world has no roster"
     );
     world.enter_battle(3, 2);

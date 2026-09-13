@@ -263,12 +263,12 @@ impl PlayWindowApp {
             // Photosensitivity guard over the ambient palette cyclers -
             // host policy like the two above (default ON; see
             // `OptionsState::reduce_flashing`).
-            self.session.host.world.reduce_flashing = self.options_state.reduce_flashing;
+            self.session.host.world.toggles.reduce_flashing = self.options_state.reduce_flashing;
             // Battle "Select Attack" (config word `0x800846C4`): whether the
             // ring's Attack arm shows the Auto | Command prompt, goes
             // straight to the target cursor, or straight to the arts entry.
             // Host policy like the rows above.
-            self.session.host.world.battle_select_attack = self.options_state.battle_select_attack;
+            self.session.host.world.toggles.select_attack = self.options_state.battle_select_attack;
             // `set_pad` also latches the run button off the same word, so
             // there is nothing host-side to keep in sync.
             self.session.host.world.set_pad(field_pad);
@@ -606,7 +606,7 @@ impl PlayWindowApp {
             self.replay_camera_snap_beats();
             let apply = self.session.host.world.camera.state.apply_trigger;
             let mode = self.session.host.world.camera.state.mode;
-            let now = self.session.host.world.field_frames;
+            let now = self.session.host.world.clock.display_frames;
             let steps = u32::try_from(now.saturating_sub(self.cutscene_cam_frames))
                 .unwrap_or(u32::MAX)
                 .max(1);

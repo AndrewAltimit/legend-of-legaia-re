@@ -43,7 +43,7 @@ const LETTERBOX: u8 = 0x15;
 fn field_world(script: Vec<u8>) -> World {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.field_frame_step = 1;
+    world.clock.display_frame_step = 1;
     world.load_field_script(script);
     world
 }
@@ -334,7 +334,7 @@ mod on_disc {
             let run = |start: usize, ticks: usize| {
                 let mut world = World::new();
                 world.mode = SceneMode::Field;
-                world.field_frame_step = 1;
+                world.clock.display_frame_step = 1;
                 world.load_field_script_at(body.clone(), start);
                 let mut spawned = false;
                 for _ in 0..ticks {

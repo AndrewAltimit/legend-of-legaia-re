@@ -517,7 +517,7 @@ impl MenuRuntime {
             input.down || input.right,
         );
         let coins = world.minigames.casino_coins;
-        let inventory = &world.inventory;
+        let inventory = &world.party.inventory;
         let event = session.tick(buttons, coins, |id| {
             inventory.get(&id).copied().unwrap_or(0)
         });
@@ -530,7 +530,7 @@ impl MenuRuntime {
                 let flags = &mut world.flags.system_flags;
                 let applied = crate::prize_exchange::apply_redeem(
                     &mut world.minigames.casino_coins,
-                    &mut world.inventory,
+                    &mut world.party.inventory,
                     &mut |g| {
                         // `World::system_flag_set`, inlined over the split
                         // borrow (MSB-first, idx >> 3).
@@ -583,12 +583,12 @@ impl MenuRuntime {
     /// past the 99-per-id stack cap the buy paths share. `false` when the
     /// refusal fired and nothing changed.
     fn apply_recipient_bag_buy(world: &mut World, item_id: u8, cost: i32) -> bool {
-        let owned = *world.inventory.get(&item_id).unwrap_or(&0);
-        if owned >= crate::shop::SHOP_HELD_CAP || world.money < cost {
+        let owned = *world.party.inventory.get(&item_id).unwrap_or(&0);
+        if owned >= crate::shop::SHOP_HELD_CAP || world.party.money < cost {
             return false;
         }
-        world.money = (world.money - cost).clamp(0, crate::shop::GOLD_CAP);
-        *world.inventory.entry(item_id).or_insert(0) += 1;
+        world.party.money = (world.party.money - cost).clamp(0, crate::shop::GOLD_CAP);
+        *world.party.inventory.entry(item_id).or_insert(0) += 1;
         true
     }
 
@@ -611,7 +611,7 @@ impl MenuRuntime {
         let Some(entry) = self.equip_info.as_ref().and_then(|i| i.entry(item_id)) else {
             return false;
         };
-        if world.money < cost {
+        if world.party.money < cost {
             return false;
         }
         let slot = match entry.category {
@@ -621,7 +621,7 @@ impl MenuRuntime {
             Disc::Footwear => EquipSlot::Boot,
         };
         let idx = slot.as_index() as usize;
-        let Some(record) = world.roster.members.get_mut(party_index as usize) else {
+        let Some(record) = world.party.roster.members.get_mut(party_index as usize) else {
             return false;
         };
         let mut equip = record.equipment();
@@ -629,9 +629,9 @@ impl MenuRuntime {
         equip.slots[idx] = item_id;
         record.set_equipment(equip);
         if displaced != 0 {
-            *world.inventory.entry(displaced).or_insert(0) += 1;
+            *world.party.inventory.entry(displaced).or_insert(0) += 1;
         }
-        world.money = (world.money - cost).clamp(0, crate::shop::GOLD_CAP);
+        world.party.money = (world.party.money - cost).clamp(0, crate::shop::GOLD_CAP);
         world.refresh_party_ability_bits();
         true
     }
@@ -694,6 +694,7 @@ impl MenuRuntime {
     /// the `StatusMagic` screen rows.
     pub fn spell_view(&self, world: &World) -> Option<SpellList> {
         world
+            .party
             .roster
             .members
             .get(self.selected_char)
@@ -705,6 +706,7 @@ impl MenuRuntime {
     /// the `StatusEquipment` screen rows.
     pub fn equipment_view(&self, world: &World) -> Option<EquipmentSlots> {
         world
+            .party
             .roster
             .members
             .get(self.selected_char)
@@ -716,6 +718,7 @@ impl MenuRuntime {
     /// call this to populate the `StatusInventory` screen rows.
     pub fn inventory_items(world: &World) -> Vec<(u8, u8)> {
         let mut items: Vec<(u8, u8)> = world
+            .party
             .inventory
             .iter()
             .filter(|(_, c)| **c > 0)
@@ -830,7 +833,7 @@ impl MenuRuntimeHost<'_> {
         let price = u16::try_from(item.price).unwrap_or(u16::MAX);
         Some(crate::shop::buy_list_confirm_route(
             kind,
-            self.world.money,
+            self.world.party.money,
             price,
         ))
     }
@@ -855,7 +858,7 @@ impl MenuRuntimeHost<'_> {
         let Some(info) = self.equip_info.as_ref() else {
             return;
         };
-        let can_equip: Vec<bool> = (0..self.world.roster.members.len().min(3))
+        let can_equip: Vec<bool> = (0..self.world.party.roster.members.len().min(3))
             .map(|i| info.can_equip(item.item_id, i as u8))
             .collect();
         let price = u16::try_from(item.price).unwrap_or(u16::MAX);
@@ -873,7 +876,7 @@ impl MenuRuntimeHost<'_> {
     fn commit_status_equipment(&mut self, slot: u8) {
         let idx = *self.selected_char;
         let mut removed = 0u8;
-        if let Some(record) = self.world.roster.members.get_mut(idx) {
+        if let Some(record) = self.world.party.roster.members.get_mut(idx) {
             let mut equip = record.equipment();
             if (slot as usize) < equip.slots.len() {
                 removed = equip.slots[slot as usize];
@@ -884,7 +887,7 @@ impl MenuRuntimeHost<'_> {
         // Return the unequipped item to the bag (retail puts it back);
         // zeroing the slot without crediting it destroyed the item.
         if removed != 0 {
-            *self.world.inventory.entry(removed).or_insert(0) += 1;
+            *self.world.party.inventory.entry(removed).or_insert(0) += 1;
         }
         // Unequipping can remove an accessory passive; rebuild the
         // ability bitfields so the bit (and any party-wide grant)
@@ -896,6 +899,7 @@ impl MenuRuntimeHost<'_> {
     fn commit_status_inventory(&mut self, slot: u8) {
         let mut items: Vec<(u8, u8)> = self
             .world
+            .party
             .inventory
             .iter()
             .filter(|(_, c)| **c > 0)
@@ -904,9 +908,9 @@ impl MenuRuntimeHost<'_> {
         items.sort_by_key(|&(id, _)| id);
         if let Some(&(item_id, count)) = items.get(slot as usize) {
             if count > 1 {
-                self.world.inventory.insert(item_id, count - 1);
+                self.world.party.inventory.insert(item_id, count - 1);
             } else {
-                self.world.inventory.remove(&item_id);
+                self.world.party.inventory.remove(&item_id);
             }
         }
     }
@@ -926,6 +930,7 @@ impl MenuRuntimeHost<'_> {
         let sell_items: Vec<(u8, u8)> = {
             let mut v: Vec<(u8, u8)> = self
                 .world
+                .party
                 .inventory
                 .iter()
                 .filter(|(_, c)| **c > 0)
@@ -964,13 +969,19 @@ impl MenuRuntimeHost<'_> {
                     self.credit_point_card(price, i32::from(qty));
                 }
             } else if let Some(item_id) = session.pending_item_id {
-                let held = self.world.inventory.get(&item_id).copied().unwrap_or(0);
+                let held = self
+                    .world
+                    .party
+                    .inventory
+                    .get(&item_id)
+                    .copied()
+                    .unwrap_or(0);
                 if let Some((item_id, qty, delta)) = session.try_sell(held) {
-                    self.world.money = (self.world.money + delta).clamp(0, 9_999_999);
-                    let entry = self.world.inventory.entry(item_id).or_insert(0);
+                    self.world.party.money = (self.world.party.money + delta).clamp(0, 9_999_999);
+                    let entry = self.world.party.inventory.entry(item_id).or_insert(0);
                     *entry = entry.saturating_sub(qty);
                     if *entry == 0 {
-                        self.world.inventory.remove(&item_id);
+                        self.world.party.inventory.remove(&item_id);
                     }
                 }
             }
@@ -986,9 +997,9 @@ impl MenuRuntimeHost<'_> {
             .and_then(|t| t.offers.get(*self.trade_pending_offer).copied());
         if let Some(offer) = offer {
             self.world.apply_seru_trade(&offer);
-            let pt = self.world.play_time_seconds;
+            let pt = self.world.clock.play_time_seconds;
             if let Some(t) = self.trade_session.as_mut() {
-                t.refresh(pt, &self.world.roster.members);
+                t.refresh(pt, &self.world.party.roster.members);
             }
         }
     }
@@ -1001,12 +1012,12 @@ impl MenuRuntimeHost<'_> {
             let can = self
                 .inn_session
                 .as_ref()
-                .is_some_and(|s| s.can_afford(self.world.money));
+                .is_some_and(|s| s.can_afford(self.world.party.money));
             if can {
                 let cost = self.inn_session.as_ref().unwrap().cost as i32;
-                self.world.money -= cost;
+                self.world.party.money -= cost;
                 // Restore HP/MP for all active party members.
-                let party_count = self.world.party_count as usize;
+                let party_count = self.world.party.party_count as usize;
                 for i in 0..party_count {
                     let max_hp = self
                         .world
@@ -1016,6 +1027,7 @@ impl MenuRuntimeHost<'_> {
                         .unwrap_or(0);
                     let mp_max = self
                         .world
+                        .party
                         .roster
                         .members
                         .get(i)
@@ -1042,7 +1054,7 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
         match state {
             MenuState::StatusTop => 8, // Character / Equip / Items / Magic / Arts / Config / Save / Load
             MenuState::StatusCharacter => {
-                self.world.roster.members.len().min(u8::MAX as usize) as u8
+                self.world.party.roster.members.len().min(u8::MAX as usize) as u8
             }
             MenuState::StatusEquipment => 8,
             MenuState::SavePickSlot | MenuState::LoadSlot => self.slot_count.max(1),
@@ -1053,6 +1065,7 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                 .unwrap_or(8),
             MenuState::ShopSell => self
                 .world
+                .party
                 .inventory
                 .values()
                 .filter(|c| **c > 0)
@@ -1069,6 +1082,7 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             MenuState::ShopTradeConfirm => 2, // slot 0 = yes, 1 = no
             MenuState::StatusInventory => self
                 .world
+                .party
                 .inventory
                 .values()
                 .filter(|c| **c > 0)
@@ -1286,10 +1300,10 @@ mod tests {
         let equip = EquipmentSlots {
             slots: [1, 2, 3, 4, 5, 6, 7, 8],
         };
-        world.roster.members[0].set_equipment(equip);
+        world.party.roster.members[0].set_equipment(equip);
 
         // Slot 2 holds item id 3; it must come back to the bag on unequip.
-        let before = world.inventory.get(&3).copied().unwrap_or(0);
+        let before = world.party.inventory.get(&3).copied().unwrap_or(0);
 
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.selected_char = 0;
@@ -1303,13 +1317,13 @@ mod tests {
             },
         );
 
-        let updated = world.roster.members[0].equipment();
+        let updated = world.party.roster.members[0].equipment();
         assert_eq!(updated.slots[2], 0, "slot 2 unequipped");
         assert_eq!(updated.slots[0], 1, "other slots unchanged");
         assert_eq!(updated.slots[7], 8, "other slots unchanged");
         // The unequipped item returned to the bag (not destroyed).
         assert_eq!(
-            world.inventory.get(&3).copied().unwrap_or(0),
+            world.party.inventory.get(&3).copied().unwrap_or(0),
             before + 1,
             "unequipped item 3 returned to inventory"
         );
@@ -1335,7 +1349,7 @@ mod tests {
     #[test]
     fn inventory_commit_decrements_item_count() {
         let mut world = World::default();
-        world.inventory.insert(5, 3);
+        world.party.inventory.insert(5, 3);
 
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.ctx.state = MenuState::StatusInventory.as_byte();
@@ -1348,13 +1362,13 @@ mod tests {
             },
         );
 
-        assert_eq!(world.inventory.get(&5), Some(&2));
+        assert_eq!(world.party.inventory.get(&5), Some(&2));
     }
 
     #[test]
     fn inventory_commit_removes_last_item() {
         let mut world = World::default();
-        world.inventory.insert(10, 1);
+        world.party.inventory.insert(10, 1);
 
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.ctx.state = MenuState::StatusInventory.as_byte();
@@ -1367,7 +1381,7 @@ mod tests {
             },
         );
 
-        assert!(!world.inventory.contains_key(&10));
+        assert!(!world.party.inventory.contains_key(&10));
     }
 
     #[test]
@@ -1395,7 +1409,7 @@ mod tests {
         };
         list.ids[0] = 7;
         list.ids[1] = 14;
-        world.roster.members[1].set_spell_list(list);
+        world.party.roster.members[1].set_spell_list(list);
 
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.selected_char = 1;
@@ -1420,7 +1434,7 @@ mod tests {
         let equip = EquipmentSlots {
             slots: [9, 8, 7, 6, 5, 4, 3, 2],
         };
-        world.roster.members[0].set_equipment(equip);
+        world.party.roster.members[0].set_equipment(equip);
 
         let runtime = MenuRuntime::new("/tmp/legaia-test");
         let view = runtime.equipment_view(&world).expect("char 0 exists");
@@ -1430,9 +1444,9 @@ mod tests {
     #[test]
     fn inventory_items_sorted_by_id_filters_zeros() {
         let mut world = World::default();
-        world.inventory.insert(30, 5);
-        world.inventory.insert(2, 1);
-        world.inventory.insert(15, 3);
+        world.party.inventory.insert(30, 5);
+        world.party.inventory.insert(2, 1);
+        world.party.inventory.insert(15, 3);
 
         let items = MenuRuntime::inventory_items(&world);
         assert_eq!(items, vec![(2, 1), (15, 3), (30, 5)]);
@@ -1536,7 +1550,7 @@ mod tests {
 
         // The owner's spell list now holds the received seru - at the offered
         // level - and no longer the given one.
-        let list = world.roster.members[offer.owner_slot as usize].spell_list();
+        let list = world.party.roster.members[offer.owner_slot as usize].spell_list();
         let ids = &list.ids[..list.count as usize];
         let pos = ids
             .iter()
@@ -1573,7 +1587,7 @@ mod tests {
         use crate::shop::{ShopInventory, ShopItem, ShopSession};
 
         let mut world = world_with_party(1);
-        world.money = 500;
+        world.party.money = 500;
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.open_shop(ShopSession::new(ShopInventory::new(
             1,
@@ -1594,8 +1608,12 @@ mod tests {
         runtime.tick(&mut world, cross());
         assert_eq!(runtime.ctx.state, MenuState::ShopBuy.as_byte());
 
-        assert_eq!(world.money, 400, "100 gold deducted");
-        assert_eq!(world.inventory.get(&10), Some(&1), "one item 10 granted");
+        assert_eq!(world.party.money, 400, "100 gold deducted");
+        assert_eq!(
+            world.party.inventory.get(&10),
+            Some(&1),
+            "one item 10 granted"
+        );
         assert!(runtime.shop_session.is_some(), "still shopping");
     }
 
@@ -1608,8 +1626,8 @@ mod tests {
         use crate::shop::{POINT_CARD_ITEM_ID, ShopInventory, ShopItem, ShopSession};
 
         let mut world = world_with_party(1);
-        world.money = 500;
-        world.inventory.insert(POINT_CARD_ITEM_ID, 1);
+        world.party.money = 500;
+        world.party.inventory.insert(POINT_CARD_ITEM_ID, 1);
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.open_shop(ShopSession::new(ShopInventory::new(
             1,
@@ -1624,7 +1642,7 @@ mod tests {
         runtime.tick(&mut world, cross()); // ShopQuantity -> ShopConfirm
         runtime.tick(&mut world, cross()); // ShopConfirm (yes): the commit
 
-        assert_eq!(world.money, 400, "the gold debit still runs");
+        assert_eq!(world.party.money, 400, "the gold debit still runs");
         assert_eq!(world.minigames.point_card, 5, "100 / 20 * 1 banked");
         assert_eq!(
             runtime.point_card_toast(),
@@ -1682,7 +1700,7 @@ mod tests {
         use crate::shop::{ShopInventory, ShopItem, ShopSession};
 
         let mut world = world_with_party(1);
-        world.money = 500;
+        world.party.money = 500;
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.open_shop(ShopSession::new(ShopInventory::new(
             1,
@@ -1696,7 +1714,11 @@ mod tests {
         runtime.tick(&mut world, cross());
         runtime.tick(&mut world, cross());
 
-        assert_eq!(world.inventory.get(&10), Some(&1), "the buy still lands");
+        assert_eq!(
+            world.party.inventory.get(&10),
+            Some(&1),
+            "the buy still lands"
+        );
         assert_eq!(world.minigames.point_card, 0);
         assert_eq!(runtime.point_card_toast(), None);
         assert_eq!(
@@ -1713,8 +1735,8 @@ mod tests {
         use crate::shop::{POINT_CARD_ITEM_ID, ShopInventory, ShopItem, ShopSession};
 
         let mut world = world_with_party(1);
-        world.money = 50;
-        world.inventory.insert(POINT_CARD_ITEM_ID, 1);
+        world.party.money = 50;
+        world.party.inventory.insert(POINT_CARD_ITEM_ID, 1);
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.open_shop(ShopSession::new(ShopInventory::new(
             1,
@@ -1738,7 +1760,7 @@ mod tests {
         // refuses at the list (`slt gold, price` + buzz) - no pending
         // item, no quantity screen, hand still on the confirmed row.
         let mut world = world_with_party(1);
-        world.money = 50;
+        world.party.money = 50;
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.open_shop(ShopSession::new(ShopInventory::new(
             1,
@@ -1771,7 +1793,7 @@ mod tests {
             "no pending item was staged"
         );
         // An affordable row still routes into the quantity picker.
-        world.money = 500;
+        world.party.money = 500;
         runtime.tick(&mut world, cross());
         assert_eq!(runtime.ctx.state, MenuState::ShopQuantity.as_byte());
     }
@@ -1783,11 +1805,11 @@ mod tests {
         use legaia_asset::equip_stats::EquipSlot as Disc;
 
         let mut world = world_with_party(2);
-        world.money = 300;
+        world.party.money = 300;
         // Party member 1 already wears item 7 in the weapon slot.
-        let mut eq = world.roster.members[1].equipment();
+        let mut eq = world.party.roster.members[1].equipment();
         eq.slots[crate::equipment::EquipSlot::Weapon.as_index() as usize] = 7;
-        world.roster.members[1].set_equipment(eq);
+        world.party.roster.members[1].set_equipment(eq);
 
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.retail_equipment_buy = true;
@@ -1827,20 +1849,20 @@ mod tests {
         // post-commit return).
         runtime.tick(&mut world, MenuInput::default());
         assert!(runtime.recipient_session.is_none(), "picker closed");
-        assert_eq!(world.money, 180, "120 gold debited");
+        assert_eq!(world.party.money, 180, "120 gold debited");
         assert_eq!(
-            world.roster.members[1].equipment().slots
+            world.party.roster.members[1].equipment().slots
                 [crate::equipment::EquipSlot::Weapon.as_index() as usize],
             0x30,
             "bought piece equipped directly"
         );
         assert_eq!(
-            world.inventory.get(&7).copied(),
+            world.party.inventory.get(&7).copied(),
             Some(1),
             "displaced weapon returned to the bag"
         );
         assert_eq!(
-            world.inventory.get(&0x30),
+            world.party.inventory.get(&0x30),
             None,
             "the purchase never entered the bag"
         );
@@ -1853,7 +1875,7 @@ mod tests {
         use legaia_asset::equip_stats::EquipSlot as Disc;
 
         let mut world = world_with_party(1);
-        world.money = 200;
+        world.party.money = 200;
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.retail_equipment_buy = true;
         runtime.install_equip_info(DiscEquipInfo::from_entries([(
@@ -1878,8 +1900,8 @@ mod tests {
         // Row 0 (the bag) is the seeded cursor; confirm buys one copy.
         runtime.tick(&mut world, MenuInput::default()); // Init frame
         runtime.tick(&mut world, cross());
-        assert_eq!(world.money, 140);
-        assert_eq!(world.inventory.get(&0x31).copied(), Some(1));
+        assert_eq!(world.party.money, 140);
+        assert_eq!(world.party.inventory.get(&0x31).copied(), Some(1));
         runtime.tick(&mut world, MenuInput::default()); // exit beat
         assert!(runtime.recipient_session.is_none());
     }
@@ -1891,7 +1913,7 @@ mod tests {
         use legaia_asset::equip_stats::EquipSlot as Disc;
 
         let mut world = world_with_party(1);
-        world.money = 500;
+        world.party.money = 500;
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         // Equip info installed, but the retail flow not opted into: the
         // legacy quantity route must survive (the native window has no
@@ -1949,8 +1971,8 @@ mod tests {
     #[test]
     fn inn_rest_drives_through_tick_restores_hp_and_charges_gold() {
         let mut world = world_with_party(1);
-        world.money = 50;
-        world.party_count = 1;
+        world.party.money = 50;
+        world.party.party_count = 1;
         world.actors[0].active = true;
         world.actors[0].battle.max_hp = 100;
         world.actors[0].battle.hp = 10;
@@ -1962,7 +1984,7 @@ mod tests {
         // InnConfirm (cursor 0 = yes) -> InnSleep, rest applied.
         runtime.tick(&mut world, cross());
         assert_eq!(runtime.ctx.state, MenuState::InnSleep.as_byte());
-        assert_eq!(world.money, 40, "10 gold charged");
+        assert_eq!(world.party.money, 40, "10 gold charged");
         assert_eq!(world.actors[0].battle.hp, 100, "HP restored to max");
         assert!(runtime.inn_session.is_none(), "inn session cleared");
 
@@ -1976,7 +1998,7 @@ mod tests {
     #[test]
     fn inn_decline_closes_without_charging() {
         let mut world = world_with_party(1);
-        world.money = 50;
+        world.party.money = 50;
         let mut runtime = MenuRuntime::new("/tmp/legaia-test");
         runtime.open_inn(10);
         runtime.ctx.state = MenuState::InnConfirm.as_byte();
@@ -1984,7 +2006,7 @@ mod tests {
 
         runtime.tick(&mut world, cross());
         assert_eq!(runtime.ctx.state, MenuState::Closing.as_byte());
-        assert_eq!(world.money, 50, "no gold charged on decline");
+        assert_eq!(world.party.money, 50, "no gold charged on decline");
         assert!(runtime.inn_session.is_none(), "inn session cleared");
     }
 

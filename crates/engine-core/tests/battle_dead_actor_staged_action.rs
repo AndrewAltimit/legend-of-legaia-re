@@ -34,7 +34,7 @@ fn world_entering_battle() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -42,7 +42,7 @@ fn world_entering_battle() -> World {
         w.actors[i].battle.liveness = 1;
     }
     w.load_party(legaia_save::Party::zeroed(3));
-    let mut party = w.roster.clone();
+    let mut party = w.party.roster.clone();
     for rec in party.members.iter_mut() {
         let mut hms = rec.hp_mp_sp();
         hms.hp_cur = 100;
@@ -52,7 +52,7 @@ fn world_entering_battle() -> World {
     w.load_party(party);
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w
 }
 

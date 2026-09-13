@@ -239,19 +239,19 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
 
     // Commit a name -> the timeline resumes, completes, and un-parks the
     // townsfolk the establishing shot hid.
-    host.world.name_entry.as_mut().unwrap().cursor = 0;
+    host.world.party.name_entry.as_mut().unwrap().cursor = 0;
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
         ..Default::default()
     });
     let end = legaia_engine_core::name_entry::CHAR_CELLS + 16;
-    host.world.name_entry.as_mut().unwrap().cursor = end;
+    host.world.party.name_entry.as_mut().unwrap().cursor = end;
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
         ..Default::default()
     });
     assert_eq!(
-        host.world.name_entry.as_ref().unwrap().state,
+        host.world.party.name_entry.as_ref().unwrap().state,
         NameEntryState::Confirm,
         "End opens the Yes/No confirm"
     );

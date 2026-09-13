@@ -738,8 +738,8 @@ impl BootSession {
         // later). Set once at boot; begin_new_game doesn't reset the tracker,
         // so it persists across New Game.
         if let Some((curve, corrections)) = read_retail_xp_curve(&source) {
-            host.world.level_up_tracker.xp_table = curve;
-            host.world.level_up_tracker.xp_corrections = corrections;
+            host.world.party.level_up_tracker.xp_table = curve;
+            host.world.party.level_up_tracker.xp_corrections = corrections;
         }
 
         // Install the real per-character HP/MP growth curves (static SCUS
@@ -747,8 +747,8 @@ impl BootSession {
         // core) over the flat 10/5 placeholder, when the executable is
         // reachable. Persists across New Game like the XP curve.
         if let Some(tables) = read_retail_growth_tables(&source) {
-            let tracker = std::mem::take(&mut host.world.level_up_tracker);
-            host.world.level_up_tracker = tracker.with_growth_tables(&tables);
+            let tracker = std::mem::take(&mut host.world.party.level_up_tracker);
+            host.world.party.level_up_tracker = tracker.with_growth_tables(&tables);
         }
 
         // Install the static-SCUS victory-pose table (`0x800788A0`) the
@@ -951,8 +951,8 @@ impl BootSession {
         }
         let world = &mut self.host.world;
         let mut session = FieldMenuSession::new();
-        session.money = world.money.max(0) as u32;
-        session.play_time_seconds = world.play_time_seconds;
+        session.money = world.party.money.max(0) as u32;
+        session.play_time_seconds = world.clock.play_time_seconds;
         // Sample the two row gates retail keeps as globals and reads at every
         // draw: the op-`0x49` entry context (`*_DAT_8007B450`, which blocks
         // Load) and the scene's save permission (`_DAT_8007B6A8`, seeded at
@@ -961,7 +961,7 @@ impl BootSession {
         // open is equivalent to retail's per-frame re-read.
         session.set_gate(FieldMenuGate {
             entry_context_kind: world.menu_entry_context_kind(),
-            save_allowed: world.scene_save_allowed,
+            save_allowed: world.party.scene_save_allowed,
         });
         // Retail's driver picks the *starting* sub-screen off that same kind
         // byte, so a locked context opens on the notice panel rather than on
@@ -1462,7 +1462,7 @@ impl BootSession {
         self.enter_field_live(scene, opts)?;
         self.host.world.load_full(save);
         log::info!("seeded world from save ({} party records)", {
-            self.host.world.party_count
+            self.host.world.party.party_count
         });
         Ok(self.host.world.mode)
     }

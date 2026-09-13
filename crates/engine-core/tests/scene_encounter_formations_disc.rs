@@ -223,7 +223,7 @@ fn a_region_scene_still_reaches_battle_after_the_new_game_reset() {
             panic!("{scene} has no unshadowed rate-bearing region to stand in");
         };
         world.seat_player_at_tile_rescued(cx, cz);
-        world.live_gameplay_loop = true;
+        world.toggles.live_gameplay_loop = true;
         world.battle.player_driven = false;
 
         let mut triggered = false;
@@ -270,7 +270,7 @@ fn force_encounter_drives_a_named_row_through_the_normal_transition() {
         return;
     }
     host.world.arm_live_loop(scene, &LiveLoopOpts::playable());
-    host.world.live_gameplay_loop = true;
+    host.world.toggles.live_gameplay_loop = true;
     host.world.battle.player_driven = false;
     let world = &mut host.world;
 

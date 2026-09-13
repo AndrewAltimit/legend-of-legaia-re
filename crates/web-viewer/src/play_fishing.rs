@@ -166,7 +166,7 @@ impl LegaiaRuntime {
         let inventory = self
             .scene_host
             .as_ref()
-            .map(|h| &h.world.inventory)
+            .map(|h| &h.world.party.inventory)
             .expect("fishing_session() proved the host exists");
         let count_of = |id: u32| *inventory.get(&(id as u8)).unwrap_or(&0) as i32;
         let mut rod_index = 0;
@@ -399,7 +399,7 @@ impl LegaiaRuntime {
             .iter()
             .enumerate()
             .map(|(i, r)| {
-                let owned = *world.inventory.get(&r.item_id).unwrap_or(&0) as u32;
+                let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
                 serde_json::json!({
                     "name": r.name.clone().unwrap_or_else(|| format!("item {:#04x}", r.item_id)),
                     "price": r.price,

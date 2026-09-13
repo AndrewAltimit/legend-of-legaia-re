@@ -207,7 +207,7 @@ impl LegaiaRuntime {
         let state = MenuState::from_byte(self.menu.ctx_state());
         let cursor = self.menu.cursor() as usize;
         let world = self.scene_host.as_ref().map(|h| &h.world)?;
-        let gold = world.money;
+        let gold = world.party.money;
 
         // Owned label storage: the ShopRow view borrows &str, so the
         // resolved names have to outlive the row vector.
@@ -335,7 +335,11 @@ impl LegaiaRuntime {
         let cursor = self.menu.cursor() as usize;
         match state {
             Some(MenuState::InnConfirm) => {
-                let gold = self.scene_host.as_ref().map(|h| h.world.money).unwrap_or(0);
+                let gold = self
+                    .scene_host
+                    .as_ref()
+                    .map(|h| h.world.party.money)
+                    .unwrap_or(0);
                 let title = format!("INN  Rest for {cost}G?");
                 let rows = vec![ShopRow::new("Yes", None), ShopRow::new("No", None)];
                 Some(ui::shop_draws_for(
@@ -384,7 +388,7 @@ impl LegaiaRuntime {
         let owner_of = |slot: u8| -> String {
             self.scene_host
                 .as_ref()
-                .and_then(|h| h.world.roster.members.get(slot as usize))
+                .and_then(|h| h.world.party.roster.members.get(slot as usize))
                 .map(|m| m.name())
                 .filter(|n| !n.is_empty())
                 .unwrap_or_else(|| format!("P{slot}"))
@@ -551,7 +555,7 @@ impl LegaiaRuntime {
                 .map(|r| px::PrizeRow {
                     name: self.shop_item_label(r.item_id),
                     price: r.price,
-                    held: *world.inventory.get(&r.item_id).unwrap_or(&0),
+                    held: *world.party.inventory.get(&r.item_id).unwrap_or(&0),
                 })
                 .collect(),
             cursor: session.cursor(),
@@ -589,7 +593,7 @@ impl LegaiaRuntime {
             digits: screen.counter.digits.to_vec(),
             cursor: screen.counter.cursor,
             ceiling: screen.counter.ceiling,
-            gold: world.money,
+            gold: world.party.money,
             coins: world.minigames.casino_coins,
             confirm_cursor: (screen.actor.sub == 2).then_some((screen.counter.yes_no & 1) as u8),
         };
@@ -651,7 +655,7 @@ impl LegaiaRuntime {
             (purse, purse.and_then(ui::painter_for))
         {
             let value = match source {
-                ui::CounterSource::PartyGold => world.money.max(0) as u64,
+                ui::CounterSource::PartyGold => world.party.money.max(0) as u64,
                 ui::CounterSource::CasinoCoins => world.minigames.casino_coins as u64,
             };
             let rect = ui::painter_rect(d);
@@ -993,6 +997,7 @@ impl LegaiaRuntime {
         };
         let item_id = session.item_id;
         let members: Vec<&legaia_save::CharacterRecord> = world
+            .party
             .roster
             .members
             .iter()
@@ -1119,7 +1124,7 @@ impl LegaiaRuntime {
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
             return out;
         };
-        if let Some(b) = world.current_level_up_banner.as_ref() {
+        if let Some(b) = world.party.current_level_up_banner.as_ref() {
             out.extend(ui::level_up_draws_for(
                 font,
                 b.char_id,
@@ -1129,7 +1134,7 @@ impl LegaiaRuntime {
                 LEVEL_UP_PEN,
             ));
         }
-        if let Some(b) = world.current_capture_banner.as_ref()
+        if let Some(b) = world.party.current_capture_banner.as_ref()
             && let Some(text) = b.current_banner()
         {
             out.extend(ui::capture_banner_draws_for(font, &text, CAPTURE_PEN));
@@ -1219,7 +1224,7 @@ impl LegaiaRuntime {
         if items.is_empty() {
             return false;
         }
-        host.world.money = legaia_engine_core::shop::GOLD_CAP;
+        host.world.party.money = legaia_engine_core::shop::GOLD_CAP;
         let inv = legaia_engine_core::shop::ShopInventory::new(0, items);
         host.world.shops.shop_armed = true;
         host.world.shops.shop_open = true;

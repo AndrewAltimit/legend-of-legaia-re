@@ -188,7 +188,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     let Some(extracted) = gated() else { return };
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     seed_new_game_party(&mut host.world, &extracted);
-    host.world.live_gameplay_loop = true;
+    host.world.toggles.live_gameplay_loop = true;
     host.enter_field_scene("rikuroa", 0).expect("enter rikuroa");
 
     // Baseline (non-vacuous): every flag in the chain is clear.
@@ -295,7 +295,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     );
     // The monster actor carries the PROT 867 archive stats (merged at scene
     // entry for every MAN-formation monster id, Caruban included).
-    let party = host.world.party_count as usize;
+    let party = host.world.party.party_count as usize;
     let caruban = host
         .world
         .actors
@@ -347,7 +347,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
         // still retires against the party during the teardown ticks; keep
         // the seeded party standing so the forced win cannot be converted
         // into a party wipe by a monster the test already declared dead.
-        for slot in 0..host.world.party_count as usize {
+        for slot in 0..host.world.party.party_count as usize {
             let a = &mut host.world.actors[slot].battle;
             if a.max_hp > 0 {
                 // Route the force-heal through the synced writer: a bare

@@ -56,7 +56,7 @@ const MONSTERS: u8 = 3;
 fn live_three_monster_battle() -> World {
     let mut world = World::new();
     world.enter_battle(PARTY, MONSTERS);
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     world.battle.player_driven = false;
     for slot in 0..(PARTY + MONSTERS) as usize {
         if let Some(s) = world.battle.speed.get_mut(slot) {

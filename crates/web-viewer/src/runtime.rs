@@ -582,7 +582,7 @@ impl LegaiaRuntime {
         // GIVE_ITEM, scene changes - actually execute), retail's leading-edge
         // wall footprint, solid NPC bodies, per-step terrain follow, and NPCs
         // walking their MAN-authored routes.
-        host.world.use_vm_dialogue = true;
+        host.world.toggles.use_vm_dialogue = true;
         host.world.locomotion.follow_terrain_height = true;
         host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;
@@ -890,15 +890,15 @@ impl LegaiaRuntime {
             return "null".to_string();
         };
         let w = &h.world;
-        let order: Vec<usize> = if w.active_party.is_empty() {
-            (0..w.roster.members.len()).collect()
+        let order: Vec<usize> = if w.party.active_party.is_empty() {
+            (0..w.party.roster.members.len()).collect()
         } else {
-            w.active_party.iter().map(|&s| s as usize).collect()
+            w.party.active_party.iter().map(|&s| s as usize).collect()
         };
         let party: Vec<serde_json::Value> = order
             .iter()
             .filter_map(|&slot| {
-                let m = w.roster.members.get(slot)?;
+                let m = w.party.roster.members.get(slot)?;
                 // A never-populated roster slot decodes to an all-zero record
                 // (empty name) - skip it so the menu shows only real members.
                 let name = m.name();
@@ -926,7 +926,7 @@ impl LegaiaRuntime {
                 serde_json::json!({ "id": id, "name": name, "count": count })
             })
             .collect();
-        serde_json::json!({ "gold": w.money, "party": party, "items": items }).to_string()
+        serde_json::json!({ "gold": w.party.money, "party": party, "items": items }).to_string()
     }
 
     /// Attempt to start the WebAudio backend. Must be called from a user-gesture
@@ -1258,7 +1258,7 @@ impl LegaiaRuntime {
                 }
                 self.field_vram_anim = Some(crate::field_scene::FieldSceneAnim::walker_only(
                     table,
-                    host.world.frame_step.max(1),
+                    host.world.clock.frame_step.max(1),
                 ));
                 break;
             }
@@ -1547,7 +1547,7 @@ impl LegaiaRuntime {
         if host.world.mode != SceneMode::Field {
             return;
         }
-        let lead = host.world.active_party.first().copied().unwrap_or(0) as usize;
+        let lead = host.world.party.active_party.first().copied().unwrap_or(0) as usize;
         let Some(g) = host
             .world
             .global_tmd_pool
@@ -1981,11 +1981,11 @@ impl LegaiaRuntime {
                 self.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
             // Photosensitivity guard over the ambient palette cyclers
             // (default ON; see `OptionsState::reduce_flashing`).
-            host.world.reduce_flashing = self.options_state.reduce_flashing;
+            host.world.toggles.reduce_flashing = self.options_state.reduce_flashing;
             // Battle "Select Attack" (config word `0x800846C4`): whether the
             // ring's Attack arm shows the Auto | Command prompt, goes
             // straight to the target cursor, or straight to the arts entry.
-            host.world.battle_select_attack = self.options_state.battle_select_attack;
+            host.world.toggles.select_attack = self.options_state.battle_select_attack;
         }
     }
 }

@@ -42,7 +42,7 @@ fn buy_commits_points_mask_and_inventory() {
     assert_eq!((p.item_id, p.cost), (0xC5, 4_000));
     assert_eq!(world.minigames.fishing_points, 1_000);
     assert_eq!(world.minigames.fishing_prizes_purchased, 1 << 9);
-    assert_eq!(world.inventory.get(&0xC5), Some(&1));
+    assert_eq!(world.party.inventory.get(&0xC5), Some(&1));
     // Re-buying the latched row refuses even though it's affordable.
     assert!(world.fishing_exchange_buy(1, 1).is_none());
 
@@ -50,7 +50,7 @@ fn buy_commits_points_mask_and_inventory() {
     let p = world.fishing_exchange_buy(2, 4).expect("repeatable buys");
     assert_eq!((p.qty, p.cost), (4, 800));
     assert_eq!(world.minigames.fishing_points, 200);
-    assert_eq!(world.inventory.get(&0x98), Some(&4));
+    assert_eq!(world.party.inventory.get(&0x98), Some(&4));
     // Over-quantity refuses (only 1 more affordable).
     assert!(world.fishing_exchange_buy(2, 2).is_none());
 }

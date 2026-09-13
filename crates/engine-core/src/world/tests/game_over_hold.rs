@@ -17,7 +17,10 @@ use vm::battle_action::BattleEndCause;
 /// a field snapshot captured, ready for `finish_battle`.
 fn wiped_battle_world() -> World {
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
@@ -27,7 +30,7 @@ fn wiped_battle_world() -> World {
     world.field_return = Some(FieldReturnState {
         actors: world.actors.clone(),
         player_actor_slot: world.player_actor_slot,
-        party_count: world.party_count,
+        party_count: world.party.party_count,
     });
     world.battle.return_mode = SceneMode::Field;
     world.enter_battle_from_formation(&formation);

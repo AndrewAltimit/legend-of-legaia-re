@@ -366,7 +366,7 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
     // covered by `organic_beat_records_disc.rs`). Toggle confirm so the
     // record's inline dialog pages advance.
     host.world.system_flag_set(RIKUROA_ARRIVAL_FLAG);
-    host.world.live_gameplay_loop = true;
+    host.world.toggles.live_gameplay_loop = true;
     host.world
         .seat_player_at_tile(RIKUROA_STAGER_STATION_TILE.0, RIKUROA_STAGER_STATION_TILE.1);
     let cross = legaia_engine_core::input::PadButton::Cross.mask();
@@ -387,7 +387,7 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
         reached_battle,
         "approaching the stager runs P1[3] and its `3E FF 11` flips Field -> Battle"
     );
-    let monster_slot = host.world.party_count.clamp(1, 3) as usize;
+    let monster_slot = host.world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         host.world.actors[monster_slot].battle_monster_id,
         Some(CARUBAN_MONSTER_ID),
@@ -422,7 +422,7 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
     // scene-entry script, whose staged-marker arm spawns the post-victory
     // record P2[50] through the C1-gated dispatch - its own `51 42` script
     // bytes SET the gate flag (and `62 89` clears the marker).
-    let party = host.world.party_count as usize;
+    let party = host.world.party.party_count as usize;
     // Auto-resolve the remaining battle frames: with a live (seeded) party
     // the player-driven command menu would otherwise open on Vahn's turn and
     // hold the Done band's menu floor forever - the subject is the flag
@@ -448,7 +448,7 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
         // seeded party standing (bar force-synced - see the organic sibling)
         // so the forced win cannot be converted into a party wipe by a
         // monster the test already declared dead.
-        for slot in 0..host.world.party_count as usize {
+        for slot in 0..host.world.party.party_count as usize {
             let a = &mut host.world.actors[slot].battle;
             if a.max_hp > 0 {
                 let max = a.max_hp;

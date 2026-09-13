@@ -320,7 +320,7 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     // --- ext sub-op 0x3B party-member position lookup ------------------
 
     fn ext_party_member_lookup(&self, slot: i16) -> Option<[i16; 3]> {
-        let actor_slot = *self.world.party_actor_slots.get(slot as usize)?;
+        let actor_slot = *self.world.party.party_actor_slots.get(slot as usize)?;
         let actor_slot = actor_slot? as usize;
         let st = &self.world.actors[actor_slot].move_state;
         Some([st.world_x, st.world_y, st.world_z])
@@ -923,20 +923,21 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // the talk lock drops - retail's post-talk membership comes from
             // the script's own party ops), then collapse it to its leader.
             let mut saved_party = [None; 4];
-            let saved_party_len = w.party_actor_slots.len().min(4) as u8;
+            let saved_party_len = w.party.party_actor_slots.len().min(4) as u8;
             for (dst, src) in saved_party
                 .iter_mut()
-                .zip(w.party_actor_slots.iter().copied())
+                .zip(w.party.party_actor_slots.iter().copied())
             {
                 *dst = src;
             }
-            let saved_leader = w.party_leader_slot;
+            let saved_leader = w.party.party_leader_slot;
             let leader = w
+                .party
                 .party_leader_slot
-                .or_else(|| w.party_actor_slots.first().copied().flatten())
+                .or_else(|| w.party.party_actor_slots.first().copied().flatten())
                 .unwrap_or(0);
-            w.party_actor_slots = vec![Some(leader)];
-            w.party_leader_slot = Some(leader);
+            w.party.party_actor_slots = vec![Some(leader)];
+            w.party.party_leader_slot = Some(leader);
             w.system_flag_clear(0x10);
             w.system_flag_clear(0x11);
             w.system_flag_clear(0x12);
@@ -1131,7 +1132,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             && self.world.field_vm.free_roam_staging
             && self
                 .world
-                .field_frames
+                .clock
+                .display_frames
                 .saturating_sub(self.world.field_vm.free_roam_entry_frame)
                 < crate::world::FREE_ROAM_ENTRY_PAUSE_WINDOW
         {
@@ -1145,7 +1147,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     fn give_item(&mut self, item_id: u8) {
         // Op 0x39 GIVE_ITEM: add one of `item_id` to the inventory, capacity-
         // checked like the retail add-by-id primitive FUN_800421D4(item_id, 1).
-        let slot = self.world.inventory.entry(item_id).or_insert(0);
+        let slot = self.world.party.inventory.entry(item_id).or_insert(0);
         *slot = slot.saturating_add(1).min(legaia_save::STACK_CAP);
         self.world
             .pending_field_events
@@ -1183,19 +1185,22 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         let held = if item_id == 0 {
             None
         } else {
-            self.world.inventory.get(&item_id).copied()
+            self.world.party.inventory.get(&item_id).copied()
         };
         match held {
             Some(count) if count > 0 => {
                 let left = count - 1;
                 if left == 0 {
-                    self.world.inventory.remove(&item_id);
+                    self.world.party.inventory.remove(&item_id);
                 } else {
-                    self.world.inventory.insert(item_id, left);
+                    self.world.party.inventory.insert(item_id, left);
                 }
             }
             _ => {
-                crate::equipment::party_unequip_accessory_by_id(&mut self.world.roster, item_id);
+                crate::equipment::party_unequip_accessory_by_id(
+                    &mut self.world.party.roster,
+                    item_id,
+                );
             }
         }
     }
@@ -1289,8 +1294,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn add_money(&mut self, delta: i32) {
-        let new_total = (self.world.money as i64 + delta as i64).clamp(0, 9_999_999) as i32;
-        self.world.money = new_total;
+        let new_total = (self.world.party.money as i64 + delta as i64).clamp(0, 9_999_999) as i32;
+        self.world.party.money = new_total;
         self.world
             .pending_field_events
             .push(FieldEvent::AddMoney { delta });
@@ -1311,15 +1316,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     fn party_bank_value(&self, sub_op: u8) -> i32 {
         match sub_op {
             11 => self.world.minigames.casino_coins.min(i32::MAX as u32) as i32,
-            _ => self.world.money,
+            _ => self.world.party.money,
         }
     }
 
     fn set_item_count(&mut self, slot_byte: u8, count: u8) {
         if count == 0 {
-            self.world.inventory.remove(&slot_byte);
+            self.world.party.inventory.remove(&slot_byte);
         } else {
-            self.world.inventory.insert(slot_byte, count);
+            self.world.party.inventory.insert(slot_byte, count);
         }
         self.world
             .pending_field_events
@@ -1333,17 +1338,18 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // `party_actor_slots` + `party_leader_slot`.
         let already_present = self
             .world
+            .party
             .party_actor_slots
             .iter()
             .any(|s| matches!(s, Some(id) if *id == char_id));
         let accepted = if already_present {
             false
-        } else if self.world.party_actor_slots.len() < 4 {
-            self.world.party_actor_slots.push(Some(char_id));
+        } else if self.world.party.party_actor_slots.len() < 4 {
+            self.world.party.party_actor_slots.push(Some(char_id));
             // First member also becomes the leader (matches retail's
             // `count == 0` arm).
-            if self.world.party_leader_slot.is_none() {
-                self.world.party_leader_slot = Some(char_id);
+            if self.world.party.party_leader_slot.is_none() {
+                self.world.party.party_leader_slot = Some(char_id);
             }
             true
         } else {
@@ -1357,11 +1363,18 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
 
     fn party_remove(&mut self, char_id: u8) {
         self.world
+            .party
             .party_actor_slots
             .retain(|s| !matches!(s, Some(id) if *id == char_id));
-        if matches!(self.world.party_leader_slot, Some(id) if id == char_id) {
+        if matches!(self.world.party.party_leader_slot, Some(id) if id == char_id) {
             // Promote next member or clear.
-            self.world.party_leader_slot = self.world.party_actor_slots.first().copied().flatten();
+            self.world.party.party_leader_slot = self
+                .world
+                .party
+                .party_actor_slots
+                .first()
+                .copied()
+                .flatten();
         }
         self.world
             .pending_field_events
@@ -1600,7 +1613,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn set_party_leader(&mut self, leader_id: u8) {
-        self.world.party_leader_slot = Some(leader_id);
+        self.world.party.party_leader_slot = Some(leader_id);
         self.world
             .pending_field_events
             .push(FieldEvent::SetPartyLeader { leader_id });
@@ -1973,7 +1986,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// of the roster is a no-op, matching a write into a record the game
     /// never populated.
     fn op4c_n8_sub2_restore_party_slot(&mut self, slot: u8) {
-        let Some(member) = self.world.roster.members.get_mut(slot as usize) else {
+        let Some(member) = self.world.party.roster.members.get_mut(slot as usize) else {
             return;
         };
         let mut hms = member.hp_mp_sp();
@@ -2295,6 +2308,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn character_ability_bits(&self, slot: u8) -> u32 {
         let i = slot as usize;
         self.world
+            .party
             .character_ability_bits
             .get(i)
             .copied()
@@ -2355,7 +2369,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .push(BattleEvent::BattleEnd { cause });
     }
     fn party_count(&self) -> u8 {
-        self.world.party_count
+        self.world.party.party_count
     }
     /// Retail's wipe scan iterates the seated-count byte's worth of actor
     /// pointers (`*(0x8007BD24)+0` over `0x801C9370`, `0x801E6510..`), and
@@ -2369,10 +2383,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// A stamped-but-hollow slot (no record, `max_hp == 0`) is the port-only
     /// unseeded state the wipe scan must not read as a dead party.
     fn slot_seated(&self, slot: u8) -> bool {
-        if slot >= self.world.party_count {
+        if slot >= self.world.party.party_count {
             return true;
         }
         self.world
+            .party
             .roster
             .members
             .get(self.world.party_roster_slot(slot as usize))
@@ -2604,7 +2619,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// roster index the character record sits at. Monster slots report `4`,
     /// the value the cast-cue dispatcher's enemy leg tests for.
     fn roster_character_id(&self, slot: u8) -> u8 {
-        if slot < self.world.party_count {
+        if slot < self.world.party.party_count {
             self.world.party_roster_slot(slot as usize) as u8 + 1
         } else {
             4
@@ -2711,22 +2726,22 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// follow-up guard. Party slots only - retail reaches the record through
     /// `DAT_8007BD10[slot] - 1` and a monster slot has none.
     fn caster_spell_list(&self, party_slot: u8) -> Option<(Vec<u8>, Vec<u8>)> {
-        if party_slot >= self.world.party_count {
+        if party_slot >= self.world.party.party_count {
             return None;
         }
         let rslot = self.world.party_roster_slot(party_slot as usize);
-        let list = self.world.roster.members.get(rslot)?.spell_list();
+        let list = self.world.party.roster.members.get(rslot)?.spell_list();
         Some((list.ids.to_vec(), list.levels.to_vec()))
     }
     /// Character record `+0xF8` - word 1 of the 4-word accessory-passive
     /// bitfield [`World::refresh_party_ability_bits`] rebuilds from equipment.
     /// Distinct from `character_ability_bits`, which is word 0 (`+0xF4`).
     fn character_ability_bits_high(&self, party_slot: u8) -> u32 {
-        if party_slot >= self.world.party_count {
+        if party_slot >= self.world.party.party_count {
             return 0;
         }
         let rslot = self.world.party_roster_slot(party_slot as usize);
-        let Some(member) = self.world.roster.members.get(rslot) else {
+        let Some(member) = self.world.party.roster.members.get(rslot) else {
             return 0;
         };
         let bits = member.ability_bits();
@@ -2735,11 +2750,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// Character record `+0x185` count / `+0x186..` ids - the displayed-skill
     /// list the AI auto-fill arm draws its queue bytes from.
     fn learned_arts(&self, party_slot: u8) -> Vec<u8> {
-        if party_slot >= self.world.party_count {
+        if party_slot >= self.world.party.party_count {
             return Vec::new();
         }
         let rslot = self.world.party_roster_slot(party_slot as usize);
-        let Some(member) = self.world.roster.members.get(rslot) else {
+        let Some(member) = self.world.party.roster.members.get(rslot) else {
             return Vec::new();
         };
         let skills = member.displayed_skills();

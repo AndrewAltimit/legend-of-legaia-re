@@ -61,7 +61,7 @@ fn build_world() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
@@ -72,7 +72,7 @@ fn build_world() -> World {
     }
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     stage_somersault(&mut w);
-    w.tactical_arts.mark_known(0, SOMERSAULT);
+    w.party.tactical_arts.mark_known(0, SOMERSAULT);
     // Three presses spend 99 of the disc-free 100-AP pool and a fourth is
     // unaffordable, so the entry auto-ends on the third exactly - retail's
     // `0x50 -> 0x5A` edge, reached with no confirm to time.
@@ -96,7 +96,7 @@ fn build_world() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w.battle.player_driven = true;
     w
 }

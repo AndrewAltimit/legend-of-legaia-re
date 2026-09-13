@@ -167,8 +167,8 @@ impl World {
         Some(crate::seru_trade::SeruTradeSession::open(
             config,
             vendor_offset,
-            self.play_time_seconds,
-            &self.roster.members,
+            self.clock.play_time_seconds,
+            &self.party.roster.members,
         ))
     }
 
@@ -180,7 +180,7 @@ impl World {
         &mut self,
         trade: &legaia_asset::seru_trade::OwnerTrade,
     ) -> crate::seru_trade::TradeResult {
-        crate::seru_trade::apply_trade(&mut self.roster.members, trade)
+        crate::seru_trade::apply_trade(&mut self.party.roster.members, trade)
     }
 
     /// Drain the summon-magic level-up events (`(party_slot, spell_id,
@@ -221,7 +221,7 @@ impl World {
         // Battle ordinal -> the occupying character's record (the XP holder).
         let char_slot = self.party_roster_slot(caster as usize);
         let thresholds = self.tables.magic_xp_thresholds;
-        let Some(record) = self.roster.members.get_mut(char_slot) else {
+        let Some(record) = self.party.roster.members.get_mut(char_slot) else {
             return;
         };
         // Shared accrue-then-level kernel (`magic_xp::accrue_and_level`) -
@@ -260,7 +260,7 @@ impl World {
                 .get(spell_id)
                 .map(|d| d.name.clone())
                 .unwrap_or_else(|| format!("Spell {spell_id:#04X}"));
-            self.current_art_banner = Some(crate::tactical_arts::ArtLearnedBanner {
+            self.party.current_art_banner = Some(crate::tactical_arts::ArtLearnedBanner {
                 text: crate::magic_xp::magic_level_increased_message(&spell_name),
                 frames_remaining: crate::tactical_arts::ArtLearnedBanner::DEFAULT_FRAMES,
             });
@@ -281,13 +281,13 @@ impl World {
     pub(super) fn resolve_captures(&mut self) {
         let captures = std::mem::take(&mut self.seru.battle_captures);
         self.seru.last_capture_outcomes.clear();
-        self.current_capture_banner = None;
+        self.party.current_capture_banner = None;
         if captures.is_empty() || self.seru.registry.is_empty() {
             return;
         }
         // Capture progress banks against CHARACTERS, not battle ordinals -
         // resolve the present party to roster slots before recording.
-        let party_slots: Vec<u8> = (0..self.party_count.clamp(1, 3))
+        let party_slots: Vec<u8> = (0..self.party.party_count.clamp(1, 3))
             .map(|i| self.party_roster_slot(i as usize) as u8)
             .collect();
         let seru_ids: Vec<u16> = captures
@@ -310,7 +310,7 @@ impl World {
                 // happen here or a save round-trip loses the spell's own
                 // level / XP slots.
                 for learn in &outcome.learns {
-                    if let Some(rec) = self.roster.members.get_mut(learn.char_slot as usize) {
+                    if let Some(rec) = self.party.roster.members.get_mut(learn.char_slot as usize) {
                         crate::magic_xp::learn_spell_prepend(rec, learn.spell_id);
                     }
                 }
@@ -344,7 +344,7 @@ impl World {
                     (char_name, spell_name)
                 },
             );
-            self.current_capture_banner = Some(banner);
+            self.party.current_capture_banner = Some(banner);
         }
 
         // Mark shiny: every Seru captured as shiny flags its spell shiny for
@@ -355,7 +355,7 @@ impl World {
         // know still upgrades it). Mirrors the retail `+0x161` high-bit flag.
         let shiny = std::mem::take(&mut self.seru.shiny_captures);
         if !shiny.is_empty() {
-            let party_slots: Vec<u8> = (0..self.party_count.clamp(1, 3))
+            let party_slots: Vec<u8> = (0..self.party.party_count.clamp(1, 3))
                 .map(|i| self.party_roster_slot(i as usize) as u8)
                 .collect();
             for mid in shiny {

@@ -14,7 +14,7 @@ use super::*;
 fn world_with_player() -> World {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.field_frame_step = 1;
+    world.clock.display_frame_step = 1;
     world.player_actor_slot = Some(0);
     world.actors[0].active = true;
     world.actors[0].move_state.world_x = 2624;

@@ -242,7 +242,7 @@ impl SceneHost {
         /// PROT entries of the three weapon-carrying player battle files.
         const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];
         for (slot, &prot) in PLAYER_FILE_PROT.iter().enumerate() {
-            let Some(record) = self.world.roster.members.get(slot) else {
+            let Some(record) = self.world.party.roster.members.get(slot) else {
                 continue;
             };
             // The assembler keys sections off the first five equipment
@@ -285,7 +285,7 @@ impl SceneHost {
         // script, whose authored pause has the same no-choreography problem
         // as the picked scene's).
         if self.world.field_vm.free_roam_staging {
-            self.world.field_vm.free_roam_entry_frame = self.world.field_frames;
+            self.world.field_vm.free_roam_entry_frame = self.world.clock.display_frames;
         }
         // Drop any cutscene timeline from a previous scene; only `opdeene`
         // re-installs one below, so it must not leak into the scene we hand off
@@ -357,12 +357,12 @@ impl SceneHost {
         self.world.ambient.script_vram_moves.clear();
         // Retail installs this as the per-mode floor `DAT_8007B9D8`; the
         // adaptive resolver (`World::resolve_frame_step`) can only raise it.
-        self.world.frame_step_floor = if crate::scene::is_world_map_scene(name) {
+        self.world.clock.frame_step_floor = if crate::scene::is_world_map_scene(name) {
             3
         } else {
             2
         };
-        self.world.frame_step = self.world.frame_step_floor;
+        self.world.clock.frame_step = self.world.clock.frame_step_floor;
         let (record_bytes, stager_entry_bytes): (Vec<u8>, Vec<u8>) = {
             let scene = self
                 .scene

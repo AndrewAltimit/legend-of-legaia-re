@@ -49,8 +49,8 @@ use legaia_engine_core::world::World;
 /// Reusable: lane W1-F2's confirm-window draw tests need exactly this state.
 fn world_holding(ids: &[u8]) -> World {
     let mut world = World::new();
-    world.roster = legaia_save::Party::zeroed(3);
-    for member in &mut world.roster.members {
+    world.party.roster = legaia_save::Party::zeroed(3);
+    for member in &mut world.party.roster.members {
         let mut hms = member.hp_mp_sp();
         hms.hp_cur = 50;
         hms.hp_max = 100;
@@ -60,11 +60,11 @@ fn world_holding(ids: &[u8]) -> World {
     }
     // 0x77 sorts below every special id, so the special rows are never row 0
     // and the ladder has to actually walk the hand down to them.
-    world.inventory.insert(0x77, 3);
+    world.party.inventory.insert(0x77, 3);
     for &id in ids {
-        world.inventory.insert(id, 1);
+        world.party.inventory.insert(id, 1);
     }
-    world.party_leader_slot = Some(0);
+    world.party.party_leader_slot = Some(0);
     world.set_item_catalog(ItemCatalog::vanilla());
     world
 }
@@ -304,7 +304,7 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
 
     // The bag is the measurable output: exactly one Door of Wind leaves it.
     apply_pause_items_outcome(&s, &mut world);
-    assert_eq!(world.inventory.get(&DOOR_OF_WIND_ITEM_ID), None);
+    assert_eq!(world.party.inventory.get(&DOOR_OF_WIND_ITEM_ID), None);
     assert_eq!(
         world.menu.pending_warp,
         Some(legaia_engine_core::pause_screens::StagedWarp {

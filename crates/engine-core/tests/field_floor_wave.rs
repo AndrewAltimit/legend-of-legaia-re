@@ -73,7 +73,7 @@ fn arm_rung(rung: u8) -> Vec<u8> {
 fn world_on_ladder(man_lut: [i16; 16], script: Vec<u8>) -> World {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.field_frame_step = 1;
+    world.clock.display_frame_step = 1;
     world.terrain.floor_height_lut = man_lut.map(i16::wrapping_neg);
     world.load_field_script(script);
     world

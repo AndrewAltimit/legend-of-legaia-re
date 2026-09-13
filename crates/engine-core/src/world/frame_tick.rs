@@ -15,7 +15,7 @@ impl World {
     /// drive this from the frame loop's wall-clock delta. Mirrors the
     /// retail "play time" field shown on the save screen.
     pub fn advance_play_time(&mut self, delta_seconds: u32) {
-        self.play_time_seconds = self.play_time_seconds.saturating_add(delta_seconds);
+        self.clock.play_time_seconds = self.clock.play_time_seconds.saturating_add(delta_seconds);
     }
 
     /// Commit a host font measurement of the live `4C E1` balloon's line, so
@@ -415,7 +415,7 @@ impl World {
         } else {
             false
         };
-        let leader = self.party_leader_slot.unwrap_or(0).min(2);
+        let leader = self.party.party_leader_slot.unwrap_or(0).min(2);
         let swap_world = LeaderSwapWorld {
             leader,
             // Host substitution for the retail suppressor pair
@@ -431,7 +431,7 @@ impl World {
             pad: 0,
             request_byte: if request { LEADER_SWAP_REQUEST_BIT } else { 0 },
         };
-        let step = self.frame_step.max(1);
+        let step = self.clock.frame_step.max(1);
         // Same MSB-first bank layout as `Self::system_flag_test` (the SCUS
         // helper `FUN_8003CE64` the controller calls).
         let flags = &self.flags.system_flags;
@@ -497,8 +497,8 @@ impl World {
                     // `801d2ae8..801d2b1c`: leader byte + collapsed id list
                     // re-point at the incoming slot; flags 0x10..=0x12
                     // cleared, `0x10 + slot` set.
-                    self.party_leader_slot = Some(slot);
-                    self.party_actor_slots = vec![Some(slot)];
+                    self.party.party_leader_slot = Some(slot);
+                    self.party.party_actor_slots = vec![Some(slot)];
                     self.system_flag_clear(0x10);
                     self.system_flag_clear(0x11);
                     self.system_flag_clear(0x12);
@@ -599,10 +599,11 @@ impl World {
         };
         self.system_flag_clear(0xD);
         if talk.saved_party_len > 0 {
-            self.party_actor_slots = talk.saved_party[..talk.saved_party_len as usize].to_vec();
-            self.party_leader_slot = talk
+            self.party.party_actor_slots =
+                talk.saved_party[..talk.saved_party_len as usize].to_vec();
+            self.party.party_leader_slot = talk
                 .saved_leader
-                .or_else(|| self.party_actor_slots.first().copied().flatten());
+                .or_else(|| self.party.party_actor_slots.first().copied().flatten());
         }
     }
 
@@ -734,7 +735,7 @@ impl World {
     /// PORT: FUN_8001698c (the frame-skip return; the ring-aging half of the
     /// same function is `legaia_engine_audio::sfx_ring::SfxCueRing::age`)
     pub fn take_frame_begin_skip(&mut self) -> bool {
-        std::mem::take(&mut self.frame_begin_skip)
+        std::mem::take(&mut self.clock.frame_begin_skip)
     }
 
     /// Arm the scripted countdown the field VM installs with `0x4C 0xD3`
@@ -852,13 +853,13 @@ impl World {
     /// path behind the boot config word `gp+0x4CE == 0x10`); until then
     /// [`Self::frame_step`] is scene-driven and this has nothing to resolve.
     pub fn resolve_frame_step(&mut self, elapsed_hblanks: i32, frameskip_enabled: bool) -> u8 {
-        let cadence = self.frame_step_telemetry.resolve(
+        let cadence = self.clock.frame_step_telemetry.resolve(
             elapsed_hblanks,
             frameskip_enabled,
-            self.frame_step_floor,
+            self.clock.frame_step_floor,
         );
-        self.frame_step = cadence.vsyncs_per_tick();
-        self.frame_step
+        self.clock.frame_step = cadence.vsyncs_per_tick();
+        self.clock.frame_step
     }
 
     /// The `VSync(n)` argument retail would pass this frame - **last** frame's
@@ -867,7 +868,7 @@ impl World {
     ///
     /// REF: FUN_80016B6C
     pub fn frame_step_vsync_wait(&self) -> u8 {
-        self.frame_step_telemetry.vsync_wait()
+        self.clock.frame_step_telemetry.vsync_wait()
     }
 
     /// Increment the deterministic LCG and return the new value.
@@ -1061,12 +1062,12 @@ impl World {
             SIM_HZ == RETAIL_FPS,
             "one sim tick is one retail display frame"
         );
-        self.field_frame_step = 1;
-        self.field_frames += 1;
+        self.clock.display_frame_step = 1;
+        self.clock.display_frames += 1;
         // Kept advancing as the cheap "a world frame ran" witness (the mode
         // driver's frame-begin-skip test probes it); the fixed-point phase it
         // used to carry is gone with the 1:1 denomination.
-        self.field_frame_accum = self.field_frame_accum.wrapping_add(1);
+        self.clock.sim_ticks = self.clock.sim_ticks.wrapping_add(1);
         // Retail game-tick clock for the scripted CLUT-cell effects: one game
         // tick spans `frame_step` vsyncs (the adaptive `DAT_1F800393` factor
         // written by `FUN_80016B6C`; see [`Self::frame_step`]). Count the sim
@@ -1074,9 +1075,9 @@ impl World {
         // `frame_step` of them; [`Self::step_clut_fx`] drains the bank
         // against the host's VRAM. Only accumulates while effects are live
         // (capped so an undrained host can't wind up a backlog).
-        if self.field_frame_step == 1 && !self.ambient.clut_fx.is_empty() {
+        if self.clock.display_frame_step == 1 && !self.ambient.clut_fx.is_empty() {
             self.ambient.clut_vsync_accum += 1;
-            if self.ambient.clut_vsync_accum >= self.frame_step.max(1) {
+            if self.ambient.clut_vsync_accum >= self.clock.frame_step.max(1) {
                 self.ambient.clut_vsync_accum = 0;
                 self.ambient.clut_pending_game_ticks =
                     (self.ambient.clut_pending_game_ticks + 1).min(600);
@@ -1085,9 +1086,9 @@ impl World {
         // Same game-tick law for the ambient move-VM effect parts (jou's
         // CLUT-cell cyclers / lightning director); drained by the host's
         // `step_ambient_fx` against its VRAM.
-        if self.field_frame_step == 1 && !self.ambient.fx.is_empty() {
+        if self.clock.display_frame_step == 1 && !self.ambient.fx.is_empty() {
             self.ambient.vsync_accum += 1;
-            if self.ambient.vsync_accum >= self.frame_step.max(1) {
+            if self.ambient.vsync_accum >= self.clock.frame_step.max(1) {
                 self.ambient.vsync_accum = 0;
                 self.ambient.pending_game_ticks = (self.ambient.pending_game_ticks + 1).min(600);
             }
@@ -1096,8 +1097,8 @@ impl World {
         // auto-release before anything else in the frame (`FUN_800267FC`,
         // called at `0x800169FC`). Its accumulator advances by the frame step,
         // so drive it on the sim ticks that map to a retail vsync.
-        if self.field_frame_step == 1 {
-            let step = self.frame_step.max(1);
+        if self.clock.display_frame_step == 1 {
+            let step = self.clock.frame_step.max(1);
             // The teardown gates (`record[+8]` active, `_DAT_8007B868`) live
             // in the libsnd voice binding the engine replaces, so the engine
             // arm is "release when it fires" unconditionally.
@@ -1145,7 +1146,7 @@ impl World {
         // is one sweep per sim tick; the gate names the clock the walker's
         // wait counters are denominated in rather than thinning them.
         // REF: FUN_801E0088
-        if self.field_frame_step == 1 && runs_master_driver {
+        if self.clock.display_frame_step == 1 && runs_master_driver {
             self.tick_effects();
         }
         if runs_master_driver {
@@ -1169,13 +1170,13 @@ impl World {
         // intermediate poses over the same wall-clock span.
         //
         // REF: FUN_80016B6C (cadence resolver), FUN_801D6704 (field floor)
-        if self.field_frame_step == 1 && runs_master_driver {
-            self.actor_vsync_accum += 1;
+        if self.clock.display_frame_step == 1 && runs_master_driver {
+            self.clock.actor_vsync_accum += 1;
         }
-        let cadence = self.frame_step.max(1);
-        let actor_tick_fired = self.actor_vsync_accum >= cadence && runs_master_driver;
+        let cadence = self.clock.frame_step.max(1);
+        let actor_tick_fired = self.clock.actor_vsync_accum >= cadence && runs_master_driver;
         if actor_tick_fired {
-            self.actor_vsync_accum = 0;
+            self.clock.actor_vsync_accum = 0;
             self.tick_actor_physics();
             // The `jalr node[+0x0C]` arm of the same walk: run the ported
             // per-frame handler kernels (today the colour tween) and drop the
@@ -1193,32 +1194,33 @@ impl World {
         // Retail's scheduler runs once per display frame off the play clock,
         // so drive it on the same retail-frame sub-clock the other 60 Hz
         // consumers use.
-        if self.field_frame_step == 1 {
+        if self.clock.display_frame_step == 1 {
             self.tick_escape_timer();
         }
         // Tick art-learned banner countdown - clear when it reaches zero.
-        if let Some(banner) = &mut self.current_art_banner {
+        if let Some(banner) = &mut self.party.current_art_banner {
             if banner.frames_remaining > 0 {
                 banner.frames_remaining -= 1;
             } else {
-                self.current_art_banner = None;
+                self.party.current_art_banner = None;
             }
         }
         // Tick level-up banner countdown; when it expires the next member who
         // levelled in the same fight takes the slot (see
         // `World::pending_level_up_banners`).
-        if let Some(banner) = &mut self.current_level_up_banner {
+        if let Some(banner) = &mut self.party.current_level_up_banner {
             if banner.frames_remaining > 0 {
                 banner.frames_remaining -= 1;
             } else {
-                self.current_level_up_banner = self.pending_level_up_banners.pop_front();
+                self.party.current_level_up_banner =
+                    self.party.pending_level_up_banners.pop_front();
             }
         }
         // Advance the post-battle Seru-capture banner; clear when it finishes.
-        if let Some(banner) = &mut self.current_capture_banner {
+        if let Some(banner) = &mut self.party.current_capture_banner {
             banner.tick_frame();
             if banner.is_done() {
-                self.current_capture_banner = None;
+                self.party.current_capture_banner = None;
             }
         }
         // Advance the opening-cutscene narration roller. The crawl is
@@ -1233,7 +1235,7 @@ impl World {
         // under the 1:1 denomination (at the old 100 Hz premise it delivered
         // 36, and the crawl ran at 0.6x its own pinned figure).
         if let Some(narration) = &mut self.cutscene.narration
-            && !narration.tick(self.field_frame_step as u32)
+            && !narration.tick(self.clock.display_frame_step as u32)
         {
             self.cutscene.narration = None;
         }
@@ -1279,7 +1281,7 @@ impl World {
         let balloon_engaged = self.dialogue_owns_input();
         if runs_master_driver && let Some(balloon) = self.cutscene.text_balloon.as_mut() {
             let engaged = balloon_engaged;
-            let cadence = self.field_frame_step as i16;
+            let cadence = self.clock.display_frame_step as i16;
             if balloon.tick(engaged, cadence) == crate::text_balloon::BalloonTick::Killed {
                 self.cutscene.text_balloon = None;
             }
@@ -1306,7 +1308,7 @@ impl World {
         // same gate for the same reason: all three are `+0x0C` handlers on
         // that one effect-actor list.
         if runs_master_driver {
-            let delta = self.field_frame_step.min(u16::from(u8::MAX)) as u8;
+            let delta = self.clock.display_frame_step.min(u16::from(u8::MAX)) as u8;
             self.tick_field_timer_actors(delta);
             // The script-cutscene element channel rides the same gate for the
             // same reason - its three handlers are `+0x0C` handlers on that one
@@ -1446,7 +1448,7 @@ impl World {
                 // `FUN_8003774C` once per game tick and multiplies each leg by
                 // `DAT_1F800393` (`0x80037868 lbu s2,0x393(s2)`).
                 // REF: FUN_8003774C
-                if self.field_frame_step == 1 {
+                if self.clock.display_frame_step == 1 {
                     self.tick_field_npc_motions();
                 }
                 // Ambient facing channels (`FUN_80038158` ops 0x04 / 0x0D):
@@ -1512,7 +1514,7 @@ impl World {
                 // the ending-scene op-0x43 family) tick after the script step
                 // that may have spawned them this frame.
                 self.tick_screen_fx();
-                if self.live_gameplay_loop {
+                if self.toggles.live_gameplay_loop {
                     self.live_field_tick();
                 } else {
                     // `--no-live-loop` gates the encounter *roll* only: a
@@ -1633,11 +1635,11 @@ impl World {
         if self.locomotion.walk_regen_steps <= crate::walk_regen::WALK_REGEN_STEP_COST {
             return;
         }
-        let count = (self.party_count.min(3) as usize).min(self.roster.members.len());
+        let count = (self.party.party_count.min(3) as usize).min(self.party.roster.members.len());
         let slots: Vec<usize> = (0..count).map(|i| self.party_roster_slot(i)).collect();
         let mut members: Vec<WalkRegenMember> = Vec::with_capacity(slots.len());
         for &rslot in &slots {
-            let Some(rec) = self.roster.members.get(rslot) else {
+            let Some(rec) = self.party.roster.members.get(rslot) else {
                 continue;
             };
             let hms = rec.hp_mp_sp();
@@ -1668,7 +1670,7 @@ impl World {
         self.locomotion.walk_regen_steps = counter;
         self.locomotion.walk_regen_window = window;
         for (&rslot, m) in slots.iter().zip(members.iter()) {
-            let Some(rec) = self.roster.members.get_mut(rslot) else {
+            let Some(rec) = self.party.roster.members.get_mut(rslot) else {
                 continue;
             };
             let mut hms = rec.hp_mp_sp();
@@ -2092,7 +2094,7 @@ impl World {
     ) -> Option<crate::fishing::PrizePurchase> {
         let ex = self.minigames.fishing_exchange.as_ref()?;
         let item_id = ex.rows.get(row)?.item_id;
-        let owned = *self.inventory.get(&item_id).unwrap_or(&0) as u32;
+        let owned = *self.party.inventory.get(&item_id).unwrap_or(&0) as u32;
         let purchase = ex.buy(
             row,
             qty,
@@ -2104,7 +2106,7 @@ impl World {
         if let Some(bit) = purchase.latched_bit {
             self.minigames.fishing_prizes_purchased |= 1 << bit;
         }
-        let count = self.inventory.entry(purchase.item_id).or_insert(0);
+        let count = self.party.inventory.entry(purchase.item_id).or_insert(0);
         *count = count.saturating_add(purchase.qty.min(255) as u8);
         if let Some(s) = &mut self.minigames.fishing {
             s.set_points(self.minigames.fishing_points);
@@ -2510,7 +2512,7 @@ impl World {
             .muscle_contest
             .as_mut()
             .and_then(|c| c.take_start_restore())
-            && let Some(rec) = self.roster.members.first_mut()
+            && let Some(rec) = self.party.roster.members.first_mut()
         {
             crate::muscle_dome::apply_contest_start_restore(rec, restore);
         }
@@ -2555,6 +2557,7 @@ impl World {
         use crate::muscle_dome::ContestState;
         let flags = self.muscle_contest_flags();
         let hp_max = self
+            .party
             .roster
             .members
             .first()
@@ -2576,7 +2579,7 @@ impl World {
                 // `+0x6CE` pair, which is the lead party record's own
                 // `+0x104` / `+0x106` HP pair (`0x80084708 - 0x80084140 =
                 // 0x5C8`).
-                let mut hms = match self.roster.members.first() {
+                let mut hms = match self.party.roster.members.first() {
                     Some(r) => r.hp_mp_sp(),
                     None => break,
                 };
@@ -2585,7 +2588,7 @@ impl World {
                     .muscle_contest
                     .as_mut()?
                     .take_hp_restore(hms.hp_cur, hp_max);
-                if let Some(rec) = self.roster.members.first_mut() {
+                if let Some(rec) = self.party.roster.members.first_mut() {
                     rec.set_hp_mp_sp(hms);
                 }
                 return Some(self.minigames.muscle_contest.as_ref()?.state());
@@ -2644,7 +2647,11 @@ impl World {
         }
         if out.award_prize {
             self.system_flag_set(md::CONTEST_PRIZE_FLAG);
-            let slot = self.inventory.entry(md::CONTEST_PRIZE_ITEM_ID).or_insert(0);
+            let slot = self
+                .party
+                .inventory
+                .entry(md::CONTEST_PRIZE_ITEM_ID)
+                .or_insert(0);
             *slot = slot.saturating_add(1).min(legaia_save::STACK_CAP);
         }
         Some(out)

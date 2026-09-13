@@ -145,7 +145,8 @@ impl World {
         // occupying CHARACTER (roster slot per the present-party composition).
         let char_slot = self.party_roster_slot(caster as usize) as u8;
         let character = self.caster_character(char_slot);
-        self.saved_chains
+        self.party
+            .saved_chains
             .iter()
             .filter(|c| c.char_slot == char_slot)
             .map(|c| {
@@ -344,7 +345,7 @@ impl World {
     /// Arts menu (via `Self::build_battle_arts_rows`) and the next save
     /// (via [`Self::saved_chains`]).
     pub fn chain_library(&self) -> crate::tactical_arts_editor::ChainLibrary {
-        crate::tactical_arts_editor::ChainLibrary::from_records(&self.saved_chains)
+        crate::tactical_arts_editor::ChainLibrary::from_records(&self.party.saved_chains)
     }
 
     /// Write an edited [`crate::tactical_arts_editor::ChainLibrary`] back into
@@ -353,7 +354,7 @@ impl World {
     /// once stored, a chain composed in the editor is selectable in battle and
     /// persists across `save_full` / `load_full`.
     pub fn store_chain_library(&mut self, lib: &crate::tactical_arts_editor::ChainLibrary) {
-        self.saved_chains = lib.to_records();
+        self.party.saved_chains = lib.to_records();
     }
 
     /// Use an item from the catalog against a target slot. Wraps the
@@ -406,7 +407,8 @@ impl World {
         //   the field menu (which re-reads the roster) showing no change.
         //   The mapped party actor's mirror, when one is live, is refreshed
         //   too so field-side consumers of the projection stay consistent.
-        let field_roster = self.mode != SceneMode::Battle && self.roster.members.get(idx).is_some();
+        let field_roster =
+            self.mode != SceneMode::Battle && self.party.roster.members.get(idx).is_some();
         // BattleActor holds `mp` but not `max_mp`; engines that wire the
         // character record into the actor populate it via a sibling field.
         // For the snapshot we use the character_max_mp accessor (defaults
@@ -419,7 +421,7 @@ impl World {
             .iter()
             .fold(0u8, |m, s| m | crate::items::status_bit(s.kind));
         let snapshot = if field_roster {
-            let hms = self.roster.members[idx].hp_mp_sp();
+            let hms = self.party.roster.members[idx].hp_mp_sp();
             crate::items::TargetSnapshot {
                 hp: hms.hp_cur,
                 hp_max: hms.hp_max,
@@ -450,7 +452,7 @@ impl World {
         match outcome {
             crate::items::ItemOutcome::HealedHp { amount } => {
                 if field_roster {
-                    let rec = &mut self.roster.members[idx];
+                    let rec = &mut self.party.roster.members[idx];
                     let mut hms = rec.hp_mp_sp();
                     hms.hp_cur = hms.hp_cur.saturating_add(amount).min(hms.hp_max);
                     rec.set_hp_mp_sp(hms);
@@ -461,7 +463,7 @@ impl World {
             }
             crate::items::ItemOutcome::HealedMp { amount } => {
                 if field_roster {
-                    let rec = &mut self.roster.members[idx];
+                    let rec = &mut self.party.roster.members[idx];
                     let mut hms = rec.hp_mp_sp();
                     hms.mp_cur = hms.mp_cur.saturating_add(amount).min(hms.mp_max);
                     rec.set_hp_mp_sp(hms);
@@ -484,7 +486,7 @@ impl World {
             }
             crate::items::ItemOutcome::Revived { hp_after } => {
                 if field_roster {
-                    let rec = &mut self.roster.members[idx];
+                    let rec = &mut self.party.roster.members[idx];
                     let mut hms = rec.hp_mp_sp();
                     hms.hp_cur = hp_after.min(hms.hp_max);
                     rec.set_hp_mp_sp(hms);
@@ -540,11 +542,11 @@ impl World {
     /// projection of it must not keep the stale value. No-op when no party
     /// ordinal maps to the slot (e.g. a reserve member).
     fn mirror_roster_hp_mp(&mut self, rslot: usize) {
-        let Some(rec) = self.roster.members.get(rslot) else {
+        let Some(rec) = self.party.roster.members.get(rslot) else {
             return;
         };
         let hms = rec.hp_mp_sp();
-        let n = (self.party_count as usize).min(self.actors.len());
+        let n = (self.party.party_count as usize).min(self.actors.len());
         for member in 0..n {
             if self.party_roster_slot(member) == rslot {
                 let a = &mut self.actors[member].battle;
@@ -704,13 +706,13 @@ impl World {
         use crate::items::StatBoostTarget as T;
         const STAT_CAP_FALLBACK: u16 = 999;
         const HPMP_CAP: u16 = 9999;
-        if self.roster.members.get(idx).is_none() {
+        if self.party.roster.members.get(idx).is_none() {
             return;
         }
         match target {
             T::HpMax => {
                 {
-                    let rec = &mut self.roster.members[idx];
+                    let rec = &mut self.party.roster.members[idx];
                     let mut hms = rec.hp_mp_sp();
                     hms.hp_max = hms.hp_max.saturating_add(delta).min(HPMP_CAP);
                     hms.hp_cur = hms.hp_cur.saturating_add(delta).min(hms.hp_max);
@@ -727,7 +729,7 @@ impl World {
             T::MpMax => {
                 let new_max;
                 {
-                    let rec = &mut self.roster.members[idx];
+                    let rec = &mut self.party.roster.members[idx];
                     let mut hms = rec.hp_mp_sp();
                     hms.mp_max = hms.mp_max.saturating_add(delta).min(HPMP_CAP);
                     hms.mp_cur = hms.mp_cur.saturating_add(delta).min(hms.mp_max);
@@ -755,7 +757,7 @@ impl World {
             | T::Speed
             | T::Intelligence => {
                 {
-                    let rec = &mut self.roster.members[idx];
+                    let rec = &mut self.party.roster.members[idx];
                     let cap = match rec.record_stats().cap_constant {
                         0 => STAT_CAP_FALLBACK,
                         c => c,
@@ -875,7 +877,7 @@ impl World {
     /// (e.g. a Phoenix Down style revive-after-victory), the split degenerates
     /// to a no-op - there are no alive recipients.
     pub fn apply_battle_xp(&mut self, xp_reward: u32) -> Vec<LevelUpResult> {
-        let party_count = self.party_count as usize;
+        let party_count = self.party.party_count as usize;
         // Living-member count drives the divisor. We pull HP from
         // `BattleActor` (the live mirror) so the resolver sees the
         // post-battle state, not the record's saved HP.
@@ -898,7 +900,7 @@ impl World {
             // XP / level state belongs to the CHARACTER (roster slot), while
             // the live HP/MP resync targets the battle ordinal's actor mirror.
             let char_id = self.party_roster_slot(member as usize) as u8;
-            let result = self.level_up_tracker.grant_xp(char_id, per_member_xp);
+            let result = self.party.level_up_tracker.grant_xp(char_id, per_member_xp);
             // Retail (`FUN_801E9504`) maintains the record's cumulative XP
             // (+0x0), next-level threshold (+0x4, slots-1/2 corrected), and
             // displayed-level byte (+0x130) on every grant; the Status menu
@@ -906,14 +908,15 @@ impl World {
             // engine's status screen stays truthful even when no threshold
             // was crossed.
             let slot = char_id as usize;
-            if slot < self.level_up_tracker.level.len() {
-                let cur_level = self.level_up_tracker.level[slot];
+            if slot < self.party.level_up_tracker.level.len() {
+                let cur_level = self.party.level_up_tracker.level[slot];
                 let next = self
+                    .party
                     .level_up_tracker
                     .threshold_for(slot, cur_level)
                     .unwrap_or(0);
-                if let Some(rec) = self.roster.members.get_mut(slot) {
-                    rec.set_cumulative_xp(self.level_up_tracker.xp[slot]);
+                if let Some(rec) = self.party.roster.members.get_mut(slot) {
+                    rec.set_cumulative_xp(self.party.level_up_tracker.xp[slot]);
                     rec.set_next_level_xp(next);
                     rec.set_magic_rank(cur_level);
                 }
@@ -921,10 +924,11 @@ impl World {
             let Some(result) = result else {
                 continue;
             };
-            if let Some(rec) = self.roster.members.get_mut(char_id as usize) {
+            if let Some(rec) = self.party.roster.members.get_mut(char_id as usize) {
                 LevelUpTracker::apply_to_record(&result, rec);
             }
             let new_hms = self
+                .party
                 .roster
                 .members
                 .get(char_id as usize)
@@ -958,10 +962,10 @@ impl World {
                 mp_gained: result.mp_gained,
                 frames_remaining: LevelUpBanner::DEFAULT_FRAMES,
             };
-            if self.current_level_up_banner.is_none() {
-                self.current_level_up_banner = Some(banner);
+            if self.party.current_level_up_banner.is_none() {
+                self.party.current_level_up_banner = Some(banner);
             } else {
-                self.pending_level_up_banners.push_back(banner);
+                self.party.pending_level_up_banners.push_back(banner);
             }
             results.push(result);
         }
@@ -1009,7 +1013,7 @@ impl World {
                 let roll = (self.next_rng() & 0xFF) as u8;
                 if roll < def.drop_rate_q8 {
                     drops.push(item_id);
-                    let entry = self.inventory.entry(item_id).or_insert(0);
+                    let entry = self.party.inventory.entry(item_id).or_insert(0);
                     *entry = entry.saturating_add(1);
                 }
             }
@@ -1021,10 +1025,11 @@ impl World {
         // Book - see `docs/formats/accessory-passive-table.md`). "Living" =
         // post-battle battle HP > 0, the same set `apply_battle_xp` divides
         // EXP among.
-        let party_count = self.party_count as usize;
+        let party_count = self.party.party_count as usize;
         let more_gold = (0..party_count).any(|i| {
             self.actors.get(i).is_some_and(|a| a.battle.hp > 0)
                 && self
+                    .party
                     .roster
                     .members
                     .get(self.party_roster_slot(i))
@@ -1037,8 +1042,8 @@ impl World {
         } else {
             Vec::new()
         };
-        let new_money = (self.money as i64).saturating_add(gold_credited as i64);
-        self.money = new_money.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        let new_money = (self.party.money as i64).saturating_add(gold_credited as i64);
+        self.party.money = new_money.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
         // NB: no scripted-boss "victory latch" here. The first-visit gate
         // flag (rikuroa Caruban = `0x142`) lands by EXECUTING the scene's
         // post-victory partition-2 record: the post-battle field return
@@ -1076,7 +1081,7 @@ impl World {
         let entry = steal_table.entry(monster_id).filter(|e| e.is_stealable())?;
         let roll = (self.next_rng() % 100) as u8;
         if roll < entry.chance_pct {
-            let slot = self.inventory.entry(entry.item_id).or_insert(0);
+            let slot = self.party.inventory.entry(entry.item_id).or_insert(0);
             *slot = slot.saturating_add(1);
             Some(entry.item_id)
         } else {
@@ -1098,17 +1103,17 @@ impl World {
     /// straight from the scene's field-VM script (op `0x49`) the randomizer
     /// edits, so a patched shop id flows through here into the bag.
     pub fn buy_from_shop(&mut self, session: &crate::shop::ShopSession) -> Option<(u8, u8, i32)> {
-        let (item_id, qty, delta) = session.try_buy(self.money)?;
+        let (item_id, qty, delta) = session.try_buy(self.party.money)?;
         // Retail fills a stack at 99: the buy list dims a row at 99 held
         // and the quantity picker clamps to `99 - held`
         // ([`crate::shop::SHOP_HELD_CAP`]); refuse instead of silently
         // clamping so the menu's confirm mirrors the retail gate.
-        let owned = *self.inventory.get(&item_id).unwrap_or(&0);
+        let owned = *self.party.inventory.get(&item_id).unwrap_or(&0);
         if owned.saturating_add(qty) > crate::shop::SHOP_HELD_CAP {
             return None;
         }
-        self.money = (self.money + delta).clamp(0, 9_999_999);
-        let count = self.inventory.entry(item_id).or_insert(0);
+        self.party.money = (self.party.money + delta).clamp(0, 9_999_999);
+        let count = self.party.inventory.entry(item_id).or_insert(0);
         *count = count.saturating_add(qty);
         Some((item_id, qty, delta))
     }
@@ -1260,9 +1265,9 @@ impl World {
     ///
     /// Subsequent calls for the same `(char_id, art_id)` pair are no-ops.
     pub fn notify_art_used(&mut self, char_id: u8, art_id: u8) {
-        if let Some(ev) = self.tactical_arts.notify_art_used(char_id, art_id) {
+        if let Some(ev) = self.party.tactical_arts.notify_art_used(char_id, art_id) {
             let text = format!("Learned {}!", ev.name);
-            self.current_art_banner = Some(ArtLearnedBanner {
+            self.party.current_art_banner = Some(ArtLearnedBanner {
                 text,
                 frames_remaining: ArtLearnedBanner::DEFAULT_FRAMES,
             });

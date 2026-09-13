@@ -190,7 +190,7 @@ impl PlayWindowApp {
             (purse, purse.and_then(legaia_engine_render::painter_for))
         {
             let value = match source {
-                legaia_engine_render::CounterSource::PartyGold => world.money.max(0) as u64,
+                legaia_engine_render::CounterSource::PartyGold => world.party.money.max(0) as u64,
                 legaia_engine_render::CounterSource::CasinoCoins => {
                     world.minigames.casino_coins as u64
                 }
@@ -383,6 +383,7 @@ impl PlayWindowApp {
         let world = &self.session.host.world;
         let item_id = session.item_id;
         let members: Vec<&legaia_save::CharacterRecord> = world
+            .party
             .roster
             .members
             .iter()
@@ -517,7 +518,7 @@ impl PlayWindowApp {
                 .map(|r| px::PrizeRow {
                     name: self.shop_item_name(r.item_id),
                     price: r.price,
-                    held: *world.inventory.get(&r.item_id).unwrap_or(&0),
+                    held: *world.party.inventory.get(&r.item_id).unwrap_or(&0),
                 })
                 .collect(),
             cursor: session.cursor(),
@@ -554,7 +555,7 @@ impl PlayWindowApp {
             digits: screen.counter.digits.to_vec(),
             cursor: screen.counter.cursor,
             ceiling: screen.counter.ceiling,
-            gold: world.money,
+            gold: world.party.money,
             coins: world.minigames.casino_coins,
             confirm_cursor: (screen.actor.sub == 2).then_some((screen.counter.yes_no & 1) as u8),
         };

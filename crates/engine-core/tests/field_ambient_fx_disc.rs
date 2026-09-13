@@ -57,7 +57,10 @@ fn jou_ambient_tree_spawns_and_cycles_clut_cells_or_skip() {
     assert_eq!(installs, vec![0], "jou ambient install census");
 
     let mut world = World {
-        frame_step: 2, // town cadence
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2, // town cadence
+            ..Default::default()
+        },
         ..Default::default()
     };
     world.install_field_stagers(&stager_bytes);
@@ -152,7 +155,10 @@ fn jou_ambient_cyclers_pulse_forever_or_skip() {
     let scene = Scene::load(&index, "jou").expect("load jou");
     let scripts = scene.find_event_scripts().expect("jou event scripts");
     let mut world = World {
-        frame_step: 2,
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     world.install_field_stagers(scripts.bytes);

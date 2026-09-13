@@ -274,13 +274,16 @@ impl World {
         // `cursor_advance` gate). This is what moves the `+0xA0` lane
         // weights the VDF render substitution reads back.
         if state.flags & legaia_engine_vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0 {
-            legaia_engine_vm::vdf_morph::envelope_tick_actor(&mut state, self.frame_step.max(1));
+            legaia_engine_vm::vdf_morph::envelope_tick_actor(
+                &mut state,
+                self.clock.frame_step.max(1),
+            );
         }
 
         // Mode-3 render tail: the `0x4000` render-mode node's CLUT-cell
         // integrator runs every game tick regardless of the wait timer.
         let cell_fx = if model_sel == legaia_asset::summon_overlay::RENDER_NODE_MODE_A {
-            clut_cell_fx::mode3_integrate(&mut state, self.frame_step.max(1))
+            clut_cell_fx::mode3_integrate(&mut state, self.clock.frame_step.max(1))
         } else {
             None
         };
@@ -289,7 +292,7 @@ impl World {
         // on `+0x5A == 4` alone (`0x80022CB8`) - no `model_sel` condition,
         // and jou's carrier is a plain transform node (`model_sel = -1`).
         let scroll_fx = (state.move_submode == vram_scroll::RENDER_MODE_SCROLL)
-            .then(|| vram_scroll::mode4_integrate(&mut state, self.frame_step.max(1)))
+            .then(|| vram_scroll::mode4_integrate(&mut state, self.clock.frame_step.max(1)))
             .flatten();
 
         // VDF morph dirty tracking: when an armed part's lane weights moved
@@ -448,7 +451,7 @@ impl World {
         // The wait-timer drain per game tick: retail decrements `+0x54` by
         // `DAT_1F800393 * DAT_1F80037D` (frame step x the pinned 0x10 speed
         // scalar) per tick.
-        let drain = u16::from(self.frame_step.max(1)) * clut_cell_fx::SPEED_SCALAR as u16;
+        let drain = u16::from(self.clock.frame_step.max(1)) * clut_cell_fx::SPEED_SCALAR as u16;
         let count = self.ambient.fx.len();
         for idx in 0..count {
             if self.ambient.fx[idx].finished {
@@ -459,7 +462,7 @@ impl World {
         }
         // The scene-entry VDF pulse (enhancement - `crate::vdf_pulse`) rides
         // the same ambient game tick.
-        let step = self.frame_step.max(1);
+        let step = self.clock.frame_step.max(1);
         if let Some(pulse) = self.ambient.entry_vdf_pulse.as_mut() {
             let dirty = pulse.tick(step);
             self.ambient.morph_dirty_slots.extend(dirty);
@@ -544,7 +547,7 @@ impl World {
     /// where retail's own entry ambience has no morph carrier (jou).
     pub fn install_entry_vdf_pulse(&mut self, pack_objects: &[Vec<usize>]) -> bool {
         self.ambient.entry_vdf_pulse = None;
-        if !self.entry_pulse_enabled {
+        if !self.toggles.entry_pulse_enabled {
             return false;
         }
         if !self.ambient_morph_parts().is_empty() {
@@ -605,7 +608,7 @@ impl World {
                     .flatten()
             })
             .collect();
-        if !self.reduce_flashing && !self.ambient.flash_applied.is_empty() {
+        if !self.toggles.reduce_flashing && !self.ambient.flash_applied.is_empty() {
             self.ambient.flash_applied.clear();
         }
         for f in fx {
@@ -613,7 +616,7 @@ impl World {
             if w == 0 || h == 0 || w > 256 || h > 64 {
                 continue;
             }
-            let f = if self.reduce_flashing {
+            let f = if self.toggles.reduce_flashing {
                 self.limit_flash(f, ticks)
             } else {
                 f

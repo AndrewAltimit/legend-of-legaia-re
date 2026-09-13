@@ -69,7 +69,10 @@ fn mode3_cycler(x: u16, y: u16) -> (i16, Vec<u16>) {
 #[test]
 fn runtime_op34_sub3_stages_into_the_ambient_pool_with_its_render_tail() {
     let mut world = World {
-        frame_step: 2,
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     // Record 0 stands in for the per-scene SFX descriptor bank (never a
@@ -126,7 +129,10 @@ fn runtime_op34_sub3_stages_into_the_ambient_pool_with_its_render_tail() {
     // through the old pool produces no render-tail output at all, however long
     // it is ticked.
     let mut old = World {
-        frame_step: 2,
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     install_records(&mut old, &[(-1, vec![0x08]), mode3_cycler(0x10, 0x1F6)]);
@@ -162,7 +168,10 @@ fn halted_parts_are_freed_so_a_spawn_loop_stays_bounded() {
 
     // Child that halts on its own first run: the ordinary particle shape.
     let mut halting = World {
-        frame_step: 2,
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     install_records(
@@ -189,7 +198,10 @@ fn halted_parts_are_freed_so_a_spawn_loop_stays_bounded() {
     // the bound above comes from the free path, not from the emitter failing
     // to spawn.
     let mut parking = World {
-        frame_step: 2,
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     install_records(
