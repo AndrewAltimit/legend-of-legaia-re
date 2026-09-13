@@ -183,7 +183,7 @@ impl World {
     /// `FUN_801D6628`). `bytecode` is disc bytes resolved by
     /// [`World::install_menu_overlay_tables`].
     pub fn run_menu_widget_bytes(&mut self, bytecode: &[u8]) -> Result<usize, vm::VmError> {
-        vm::run(&mut self.menu_widgets, bytecode)
+        vm::run(&mut self.menu.widgets, bytecode)
     }
 
     /// Retail `FUN_801DAFD4`'s shop-picker open: interpret the resolved
@@ -191,7 +191,8 @@ impl World {
     /// (and leaves the list untouched) when no overlay scripts installed.
     pub fn run_shop_widget_open(&mut self) -> bool {
         let Some(bytes) = self
-            .menu_widget_scripts
+            .menu
+            .widget_scripts
             .as_ref()
             .map(|s| s.shop_open.clone())
         else {
@@ -205,7 +206,8 @@ impl World {
     /// while the gold + vendor plates stay.
     pub fn run_shop_widget_sell_away(&mut self) -> bool {
         let Some(bytes) = self
-            .menu_widget_scripts
+            .menu
+            .widget_scripts
             .as_ref()
             .map(|s| s.shop_sell_away.clone())
         else {

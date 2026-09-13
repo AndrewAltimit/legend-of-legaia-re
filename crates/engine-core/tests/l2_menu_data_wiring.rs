@@ -176,14 +176,14 @@ fn only_the_escape_route_raises_the_field_escape_handoff() {
     use_list_confirm(&mut s, INCENSE_ITEM_ID);
     press(&mut s, PadButton::Cross);
     apply_pause_items_outcome(&s, &mut world);
-    assert!(!world.pending_menu_escape);
+    assert!(!world.menu.pending_escape);
 
     world.inventory.insert(DOOR_OF_LIGHT_ITEM_ID, 1);
     let mut s = build_pause_items_session(&world);
     use_list_confirm(&mut s, DOOR_OF_LIGHT_ITEM_ID);
     press(&mut s, PadButton::Cross);
     apply_pause_items_outcome(&s, &mut world);
-    assert!(world.pending_menu_escape);
+    assert!(world.menu.pending_escape);
 }
 
 // ---------------------------------------------------------------------------
@@ -217,7 +217,7 @@ fn placement(
 #[test]
 fn the_landmark_walk_gates_on_the_flag_and_dedupes_on_the_last_accepted_name() {
     let mut world = field_world();
-    world.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
+    world.menu.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
         names: vec!["Rim Elm".into(), "Drake Castle".into(), "Sol".into()],
         placements: vec![
             placement(0, 0, 0x10, 0x0055), // Rim Elm, locked below
@@ -266,7 +266,7 @@ fn the_landmark_walk_gates_on_the_flag_and_dedupes_on_the_last_accepted_name() {
 fn a_door_of_wind_pick_consumes_the_item_and_stages_the_destination() {
     let mut world = field_world();
     world.inventory.insert(DOOR_OF_WIND_ITEM_ID, 2);
-    world.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
+    world.menu.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
         names: vec!["Rim Elm".into(), "Drake Castle".into()],
         placements: vec![placement(0, 0, 0x10, 0x0055), placement(1, 1, 0x11, 0x0162)],
     });
@@ -284,7 +284,7 @@ fn a_door_of_wind_pick_consumes_the_item_and_stages_the_destination() {
     );
     assert_eq!(world.inventory.get(&DOOR_OF_WIND_ITEM_ID), Some(&1));
     assert_eq!(
-        world.pending_menu_warp,
+        world.menu.pending_warp,
         Some(StagedWarp {
             scene_id: 0x0162,
             menu_x: 0x11,
@@ -299,7 +299,7 @@ fn a_door_of_wind_pick_consumes_the_item_and_stages_the_destination() {
 fn backing_out_of_the_destination_list_consumes_nothing() {
     let mut world = field_world();
     world.inventory.insert(DOOR_OF_WIND_ITEM_ID, 1);
-    world.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
+    world.menu.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
         names: vec!["Rim Elm".into()],
         placements: vec![placement(0, 0, 0x10, 0x0055)],
     });
@@ -311,7 +311,7 @@ fn backing_out_of_the_destination_list_consumes_nothing() {
     assert!(!s.is_done(), "a cancel returns to the Use list");
     assert_eq!(apply_pause_items_outcome(&s, &mut world), None);
     assert_eq!(world.inventory.get(&DOOR_OF_WIND_ITEM_ID), Some(&1));
-    assert_eq!(world.pending_menu_warp, None);
+    assert_eq!(world.menu.pending_warp, None);
 }
 
 /// Without the executable the landmark table is absent, and the route then
@@ -321,7 +321,7 @@ fn backing_out_of_the_destination_list_consumes_nothing() {
 fn no_landmark_table_means_an_empty_list_not_an_invented_one() {
     let mut world = field_world();
     world.inventory.insert(DOOR_OF_WIND_ITEM_ID, 1);
-    assert!(world.worldmap_menu.is_none());
+    assert!(world.menu.worldmap_menu.is_none());
 
     let mut s = build_pause_items_session(&world);
     use_list_confirm(&mut s, DOOR_OF_WIND_ITEM_ID);
@@ -406,7 +406,7 @@ fn the_category_table_makes_best_equipment_prefer_the_favoured_weapon() {
     let (mut world, equipment) = weapon_world();
 
     // No table: raw ATK decides, so the strong weapon wins for everyone.
-    assert!(world.menu_item_category.is_empty());
+    assert!(world.menu.item_category.is_empty());
     for leader in 0..3 {
         assert_eq!(
             best_weapon_for(&mut world, &equipment, leader),
@@ -421,7 +421,7 @@ fn the_category_table_makes_best_equipment_prefer_the_favoured_weapon() {
         item_id: FAVOURED_WEAPON,
         mask: 0x20,
     }]));
-    assert_eq!(world.menu_item_category.len(), 1);
+    assert_eq!(world.menu.item_category.len(), 1);
 
     assert_eq!(
         best_weapon_for(&mut world, &equipment, 1),

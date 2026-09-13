@@ -193,7 +193,7 @@ impl LegaiaRuntime {
     fn shop_item_label(&self, id: u8) -> String {
         self.scene_host
             .as_ref()
-            .and_then(|h| h.world.menu_text.as_ref())
+            .and_then(|h| h.world.menu.text.as_ref())
             .and_then(|t| t.item_name(id))
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("Item {id:02X}"))
@@ -507,7 +507,7 @@ impl LegaiaRuntime {
         let Some(text) = self
             .scene_host
             .as_ref()
-            .and_then(|h| h.world.menu_text.as_ref())
+            .and_then(|h| h.world.menu.text.as_ref())
         else {
             return String::new();
         };
@@ -955,7 +955,7 @@ impl LegaiaRuntime {
         if let Some((name, line)) = panel.passive.and_then(|_| {
             self.scene_host
                 .as_ref()
-                .and_then(|h| h.world.menu_text.as_ref())
+                .and_then(|h| h.world.menu.text.as_ref())
                 .and_then(|t| t.item_passive_lines(id))
         }) {
             text(&mut out, &name, panel.passive_name_pen, ui::MENU_TEXT_GREEN);

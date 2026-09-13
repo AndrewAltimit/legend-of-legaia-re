@@ -1245,7 +1245,7 @@ impl World {
         let view = menu.menu_view();
         let description = view
             .selected_id
-            .and_then(|id| self.menu_text.as_ref().and_then(|t| t.item_desc(id)))
+            .and_then(|id| self.menu.text.as_ref().and_then(|t| t.item_desc(id)))
             .map(str::to_string);
         let actor = self.battle_ctx.active_actor;
         let actor_name = menu

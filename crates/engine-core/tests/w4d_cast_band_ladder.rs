@@ -120,7 +120,7 @@ fn every_reachable_cast_band_id_steps_its_module_code() {
             // A fresh caster/victim state per arm: a tick body that lands a
             // kill would otherwise make every later arm early-out.
             let mut w = battle_world();
-            w.menu_text = world.menu_text.clone();
+            w.menu.text = world.menu.text.clone();
             w.cast_effect_pool = world.cast_effect_pool.clone();
             let Some(run) = w.run_cast_module_code(id, arm) else {
                 continue;

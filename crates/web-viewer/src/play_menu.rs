@@ -975,7 +975,7 @@ impl LegaiaRuntime {
             return false;
         };
         let ctx = assets.menu_ctx(origin, scale);
-        let labels = &world.menu_context_labels;
+        let labels = &world.menu.context_labels;
         let out = if menu.session.notice_is_up() {
             let lines: Vec<&str> = labels.notice_lines.iter().map(String::as_str).collect();
             pause_screen_draws(&ctx, PauseScreen::ContextNotice { lines: &lines })
@@ -1626,7 +1626,7 @@ impl LegaiaRuntime {
         let ctx = assets.menu_ctx(origin, scale);
         let model = legaia_engine_core::pause_screens::magic_screen_model(
             s,
-            self.menu_world().and_then(|w| w.menu_text.as_ref()),
+            self.menu_world().and_then(|w| w.menu.text.as_ref()),
         );
         if !model.target_select {
             let casters: Vec<ui::PauseMagicCaster<'_>> = model

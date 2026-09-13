@@ -54,7 +54,7 @@ impl PlayWindowApp {
             return PauseMenuDraws::default();
         };
         let ctx = self.menu_ctx(surface_w, surface_h);
-        let labels = &self.session.host.world.menu_context_labels;
+        let labels = &self.session.host.world.menu.context_labels;
         if menu.notice_is_up() {
             let lines: Vec<&str> = labels.notice_lines.iter().map(String::as_str).collect();
             return pause_screen_draws(&ctx, PauseScreen::ContextNotice { lines: &lines });
@@ -335,7 +335,7 @@ impl PlayWindowApp {
         use legaia_engine_core::spell_menu::SpellMenuPhase;
         let world = &self.session.host.world;
         let model =
-            legaia_engine_core::pause_screens::magic_screen_model(s, world.menu_text.as_ref());
+            legaia_engine_core::pause_screens::magic_screen_model(s, world.menu.text.as_ref());
         if !model.target_select {
             let casters: Vec<legaia_engine_render::PauseMagicCaster<'_>> = model
                 .casters

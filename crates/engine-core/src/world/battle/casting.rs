@@ -518,7 +518,8 @@ impl World {
     /// compares the byte against `0x14`). The battle-action host reaches it
     /// through `BattleActionHost::spell_class_byte`.
     pub(in crate::world) fn spell_table_class(&self, move_id: u8) -> Option<u8> {
-        self.menu_text
+        self.menu
+            .text
             .as_ref()
             .and_then(|t| t.spell_names.as_ref())
             .and_then(|t| t.entry(move_id))
@@ -529,7 +530,8 @@ impl World {
     /// action commit stamps into `actor[+0x1E8]` / `[+0x1E9]`, which selects
     /// which cue group an executing cast expands to.
     pub(in crate::world) fn spell_table_sub_class(&self, move_id: u8) -> Option<u8> {
-        self.menu_text
+        self.menu
+            .text
             .as_ref()
             .and_then(|t| t.spell_names.as_ref())
             .and_then(|t| t.entry(move_id))
@@ -1225,7 +1227,7 @@ mod capture_bypass_tests {
         use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
         let mut entries = vec![SpellEntry::default(); 0x100];
         entries[id as usize].class = CAPTURE_CLASS;
-        world.menu_text = Some(crate::pause_screens::MenuTextTables {
+        world.menu.text = Some(crate::pause_screens::MenuTextTables {
             spell_names: Some(SpellNameTable::from_entries(entries)),
             ..Default::default()
         });
@@ -1524,7 +1526,7 @@ mod one_spell_model_tests {
         let mut world = World::new();
         let mut entries = vec![SpellEntry::default(); 0x100];
         entries[ID as usize].class = CAPTURE_CLASS;
-        world.menu_text = Some(crate::pause_screens::MenuTextTables {
+        world.menu.text = Some(crate::pause_screens::MenuTextTables {
             spell_names: Some(SpellNameTable::from_entries(entries)),
             ..Default::default()
         });
@@ -1549,7 +1551,7 @@ mod one_spell_model_tests {
         let mut entries = vec![SpellEntry::default(); 0x100];
         entries[0x10].class = 0x02; // < 0x14, id < 0x65 -> Spirit band
         entries[0x11].class = 0x32; // >= 0x14          -> magic band
-        world.menu_text = Some(crate::pause_screens::MenuTextTables {
+        world.menu.text = Some(crate::pause_screens::MenuTextTables {
             spell_names: Some(SpellNameTable::from_entries(entries)),
             ..Default::default()
         });

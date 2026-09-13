@@ -252,7 +252,7 @@ impl World {
     /// Items / Magic pause screens read it through
     /// [`crate::pause_screens::MenuTextTables`].
     pub fn install_menu_text(&mut self, scus: &[u8]) {
-        self.menu_text = Some(crate::pause_screens::MenuTextTables::from_scus(scus));
+        self.menu.text = Some(crate::pause_screens::MenuTextTables::from_scus(scus));
         // The same image carries the quick-travel landmark tables
         // (`DAT_80073A98` placements + `DAT_80073B18` names). Installing
         // them on this one call means both hosts get the pause menu's Door
@@ -260,7 +260,7 @@ impl World {
         // neither can ship the route with an empty list while the other
         // fills it.
         if let Ok(menu) = legaia_asset::worldmap_menu::parse_scus(scus) {
-            self.worldmap_menu = Some(menu);
+            self.menu.worldmap_menu = Some(menu);
         }
     }
 
@@ -271,7 +271,7 @@ impl World {
     /// window-descriptor parse when the overlay entry is reachable.
     pub fn install_menu_overlay_tables(&mut self, overlay: &[u8]) {
         if let Ok(rank) = crate::menu_arrange::parse_arrange_rank_table(overlay) {
-            self.menu_arrange_rank = Some(rank);
+            self.menu.arrange_rank = Some(rank);
         }
         // The weapon category / favour table `FUN_801DD0C0` walks
         // (`DAT_801E4B88`). Without it the Best-Equipment chooser scores
@@ -279,7 +279,7 @@ impl World {
         // retail's empty-table arm, not a fallback the engine invented, but
         // it is also not what a retail disc produces.
         if let Ok(table) = crate::menu_item_category::parse_category_table(overlay) {
-            self.menu_item_category = table;
+            self.menu.item_category = table;
         }
         // The same image carries the two entry-context screens' label
         // strings (`FUN_801D6360` / `FUN_801D61B0` load them straight out of
@@ -289,7 +289,7 @@ impl World {
         // draws them.
         let labels = crate::pause_screens::ContextLockedLabels::from_menu_overlay(overlay);
         if labels.is_installed() {
-            self.menu_context_labels = labels;
+            self.menu.context_labels = labels;
         }
         // The window-widget bytecode programs the window-script VM
         // (`legaia_engine_vm::run`, retail `FUN_801D6628`) interprets -
@@ -298,7 +298,7 @@ impl World {
         // positions (the per-instruction `x`/`y` pair the VM reads off the
         // record).
         if let Ok(table) = legaia_asset::menu_windows::parse(overlay) {
-            self.menu_widgets.set_defaults_from_table(&table);
+            self.menu.widgets.set_defaults_from_table(&table);
         }
         // The casino prize table (file `0x15D00`, four 0x60-byte blocks) -
         // the record base window 44's renderer (`FUN_801D5DE0`) indexes.
@@ -308,7 +308,7 @@ impl World {
         }
         if let Some(scripts) = crate::menu_widget::MenuWidgetScripts::resolve_from_overlay(overlay)
         {
-            self.menu_widget_scripts = Some(scripts);
+            self.menu.widget_scripts = Some(scripts);
         }
     }
 

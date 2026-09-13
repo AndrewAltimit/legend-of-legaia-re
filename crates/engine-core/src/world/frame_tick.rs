@@ -633,7 +633,7 @@ impl World {
     /// REF: FUN_801D8B90 (stage), FUN_801D8A58 (escape exit code),
     /// FUN_801EE328 (arrival tile math + UNFIND diagnostic)
     pub fn drain_staged_menu_warp(&mut self) {
-        if let Some(warp) = self.pending_menu_warp.take() {
+        if let Some(warp) = self.menu.pending_warp.take() {
             match self.scene_toc_names.get(&u32::from(warp.scene_id)) {
                 Some(name) => {
                     self.pending_named_scene_transition =
@@ -645,8 +645,8 @@ impl World {
                 }
             }
         }
-        if self.pending_menu_escape {
-            self.pending_menu_escape = false;
+        if self.menu.pending_escape {
+            self.menu.pending_escape = false;
             let visited = self
                 .world_map_ctrl
                 .as_ref()

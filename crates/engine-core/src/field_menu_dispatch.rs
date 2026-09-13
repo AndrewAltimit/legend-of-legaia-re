@@ -305,10 +305,10 @@ pub fn apply_pause_items_outcome(
 ) -> Option<u32> {
     apply_inventory_outcome(&session.inner, world);
     if let Some(warp) = session.staged_warp() {
-        world.pending_menu_warp = Some(warp);
+        world.menu.pending_warp = Some(warp);
     }
     if session.exit_code() == Some(crate::pause_screens::MENU_EXIT_CODE_FIELD_ESCAPE) {
-        world.pending_menu_escape = true;
+        world.menu.pending_escape = true;
     }
     session.exit_code()
 }
@@ -815,7 +815,7 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
 /// with catalog + raw-id fallbacks).
 pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
     let inner = build_inventory_session(world);
-    let text = world.menu_text.as_ref();
+    let text = world.menu.text.as_ref();
     let rows: Vec<PauseItemRow> = inner
         .items
         .iter()
@@ -840,7 +840,7 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
         })
         .collect();
     PauseItemsSession::new(inner, rows)
-        .with_arrange_rank(world.menu_arrange_rank.clone())
+        .with_arrange_rank(world.menu.arrange_rank.clone())
         .with_warp_destinations(warp_destinations(world))
 }
 
@@ -869,7 +869,7 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
 ///
 /// PORT: FUN_80030628 (case 0x19: the landmark-list build)
 pub fn warp_destinations(world: &World) -> Vec<crate::pause_screens::WarpDestination> {
-    let Some(menu) = world.worldmap_menu.as_ref() else {
+    let Some(menu) = world.menu.worldmap_menu.as_ref() else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -919,7 +919,7 @@ fn build_equip_session(world: &World, char_slot: u8, equipment: &EquipmentTable)
     // fills it, so both hosts get it from the boot call they already make.
     session
         .with_active_party_slot(char_slot)
-        .with_weapon_category(world.menu_item_category.clone())
+        .with_weapon_category(world.menu.item_category.clone())
 }
 
 fn stat_record_from_character(c: &legaia_save::CharacterRecord) -> StatRecord {

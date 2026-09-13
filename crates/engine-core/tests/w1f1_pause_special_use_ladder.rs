@@ -247,7 +247,7 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
     let mut world = world_holding(&[DOOR_OF_WIND_ITEM_ID]);
     // Two landmarks the walk will accept, one it will not: the placement
     // table is disc data, so the flags are what the ladder controls.
-    world.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
+    world.menu.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
         names: vec!["Rim Elm".into(), "Drake Castle".into(), "Sol".into()],
         placements: vec![
             placement(0, 0, 0x10, 0x0055),
@@ -306,7 +306,7 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
     apply_pause_items_outcome(&s, &mut world);
     assert_eq!(world.inventory.get(&DOOR_OF_WIND_ITEM_ID), None);
     assert_eq!(
-        world.pending_menu_warp,
+        world.menu.pending_warp,
         Some(legaia_engine_core::pause_screens::StagedWarp {
             scene_id: 0x0201,
             menu_x: 0x40,
@@ -321,7 +321,7 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
 #[test]
 fn the_staged_warp_has_no_drain_yet() {
     let mut world = world_holding(&[]);
-    world.pending_menu_warp = Some(legaia_engine_core::pause_screens::StagedWarp {
+    world.menu.pending_warp = Some(legaia_engine_core::pause_screens::StagedWarp {
         scene_id: 0x0055,
         menu_x: 1,
         menu_y: 2,
@@ -329,7 +329,7 @@ fn the_staged_warp_has_no_drain_yet() {
     // A scene transition is the channel a warp would have to use, and the
     // menu warp does not feed it.
     assert_eq!(world.pending_scene_transition, None);
-    assert!(world.pending_menu_warp.is_some());
+    assert!(world.menu.pending_warp.is_some());
 }
 
 fn placement(

@@ -114,7 +114,7 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
     };
 
     // Caster focus: level + mp/mp_max plumb from the record.
-    let m = magic_screen_model(&s, world.menu_text.as_ref());
+    let m = magic_screen_model(&s, world.menu.text.as_ref());
     assert!(!m.focus_list);
     assert_eq!(m.casters.len(), 1);
     let (_, level, mp, mp_max) = &m.casters[0];
@@ -130,7 +130,7 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
         cross: true,
         ..Default::default()
     });
-    let m = magic_screen_model(&s, world.menu_text.as_ref());
+    let m = magic_screen_model(&s, world.menu.text.as_ref());
     assert!(m.focus_list);
     let info = m.info.expect("hovered spell staged");
     assert_eq!(info.name, "Gimard");

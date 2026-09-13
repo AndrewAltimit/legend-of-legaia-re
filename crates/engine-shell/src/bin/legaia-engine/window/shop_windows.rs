@@ -568,7 +568,8 @@ impl PlayWindowApp {
         self.session
             .host
             .world
-            .menu_text
+            .menu
+            .text
             .as_ref()
             .and_then(|t| t.item_name(id))
             .map(str::to_string)
@@ -584,7 +585,7 @@ impl PlayWindowApp {
     /// (`legaia_asset::accessory_passive`, which applies the sentinel bound),
     /// so a `Some` there is the accessory arm and a `None` is the item arm.
     fn shop_item_description(&self, id: u8) -> String {
-        let Some(text) = self.session.host.world.menu_text.as_ref() else {
+        let Some(text) = self.session.host.world.menu.text.as_ref() else {
             return String::new();
         };
         if let Some((_, desc)) = text.item_passive_lines(id) {
@@ -700,7 +701,7 @@ impl PlayWindowApp {
         }
         if let Some((name, line)) = panel
             .passive
-            .and(world.menu_text.as_ref())
+            .and(world.menu.text.as_ref())
             .and_then(|t| t.item_passive_lines(id))
         {
             text(

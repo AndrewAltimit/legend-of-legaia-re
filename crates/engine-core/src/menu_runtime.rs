@@ -367,7 +367,7 @@ impl MenuRuntime {
                 world.run_shop_widget_sell_away();
             }
             Some(MenuState::Closed) | Some(MenuState::Deactivate) => {
-                world.menu_widgets.reset();
+                world.menu.widgets.reset();
             }
             _ => {}
         }

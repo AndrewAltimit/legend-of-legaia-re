@@ -38,13 +38,13 @@ fn toc_map() -> legaia_prot::cdname::IndexMap {
 fn a_staged_door_of_wind_warp_drains_to_a_named_scene_transition() {
     let mut w = World::new();
     w.install_scene_toc_names(toc_map());
-    w.pending_menu_warp = Some(StagedWarp {
+    w.menu.pending_warp = Some(StagedWarp {
         scene_id: 0x55,
         menu_x: 96,
         menu_y: 25,
     });
     let _ = w.tick();
-    assert!(w.pending_menu_warp.is_none(), "the stage is consumed");
+    assert!(w.menu.pending_warp.is_none(), "the stage is consumed");
     assert_eq!(
         w.pending_named_scene_transition,
         Some(("map01".to_string(), 96, 25, 0)),
@@ -60,7 +60,7 @@ fn a_field_scene_destination_resolves_too() {
     // the kingdom bases.
     let mut w = World::new();
     w.install_scene_toc_names(toc_map());
-    w.pending_menu_warp = Some(StagedWarp {
+    w.menu.pending_warp = Some(StagedWarp {
         scene_id: 0x162,
         menu_x: 22,
         menu_y: 62,
@@ -77,13 +77,13 @@ fn an_unresolvable_scene_word_is_dropped_not_invented() {
     // Retail's miss arm is the `UNFIND MAP NUMBER %d` park (`FUN_801EE328`
     // phase 0x63): nothing warps. No TOC map installed = every id misses.
     let mut w = World::new();
-    w.pending_menu_warp = Some(StagedWarp {
+    w.menu.pending_warp = Some(StagedWarp {
         scene_id: 0x55,
         menu_x: 96,
         menu_y: 25,
     });
     let _ = w.tick();
-    assert!(w.pending_menu_warp.is_none(), "consumed either way");
+    assert!(w.menu.pending_warp.is_none(), "consumed either way");
     assert_eq!(
         w.pending_named_scene_transition, None,
         "no invented destination"
@@ -101,9 +101,9 @@ fn a_staged_escape_returns_to_the_visited_kingdom_tile() {
         .note_visit(1, 40, 50);
     // Back in a field scene (a dungeon), the Door of Light commits.
     w.mode = SceneMode::Field;
-    w.pending_menu_escape = true;
+    w.menu.pending_escape = true;
     let _ = w.tick();
-    assert!(!w.pending_menu_escape, "the stage is consumed");
+    assert!(!w.menu.pending_escape, "the stage is consumed");
     assert_eq!(
         w.pending_named_scene_transition,
         Some(("map02".to_string(), 40, 50, 0)),
@@ -114,9 +114,9 @@ fn a_staged_escape_returns_to_the_visited_kingdom_tile() {
 #[test]
 fn an_escape_with_no_visited_record_is_dropped() {
     let mut w = World::new();
-    w.pending_menu_escape = true;
+    w.menu.pending_escape = true;
     let _ = w.tick();
-    assert!(!w.pending_menu_escape);
+    assert!(!w.menu.pending_escape);
     assert_eq!(w.pending_named_scene_transition, None);
 }
 

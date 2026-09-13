@@ -1388,14 +1388,16 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
     } else if cat == ActionCategory::Magic.as_byte() {
         let id = actor.battle.params[0];
         world
-            .menu_text
+            .menu
+            .text
             .as_ref()
             .and_then(|t| t.spell_name(id))
             .map(str::to_string)
     } else if cat == ActionCategory::Item.as_byte() {
         let id = actor.battle.params[0];
         world
-            .menu_text
+            .menu
+            .text
             .as_ref()
             .and_then(|t| t.item_name(id))
             .map(str::to_string)

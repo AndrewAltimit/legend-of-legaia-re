@@ -52,12 +52,14 @@ use vm_hosts::{
 };
 
 mod config;
+mod menu_state;
 mod shop_state;
 mod state;
 mod tile_board_state;
 mod types;
 
 pub use config::*;
+pub use menu_state::MenuState;
 pub use shop_state::ShopState;
 pub use state::*;
 pub use tile_board_state::TileBoardState;

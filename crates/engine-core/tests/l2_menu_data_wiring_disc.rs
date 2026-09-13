@@ -61,17 +61,17 @@ fn the_overlay_hook_installs_the_real_category_table() {
     };
     let world = booted_world(&path);
     assert!(
-        !world.menu_item_category.is_empty(),
+        !world.menu.item_category.is_empty(),
         "the boot hook left the category table empty"
     );
 
     // Every retail entry favours somebody, or the table would be inert
     // data. Find the (item, char, group) triple the check scores on.
     let mut scored = 0usize;
-    for e in &world.menu_item_category {
+    for e in &world.menu.item_category {
         for c in 0..3u32 {
             for g in 0..2u32 {
-                if category_check(&world.menu_item_category, c, e.item_id, g)
+                if category_check(&world.menu.item_category, c, e.item_id, g)
                     == CATEGORY_MATCH_SCORE
                 {
                     scored += 1;
@@ -87,10 +87,10 @@ fn the_overlay_hook_installs_the_real_category_table() {
 
     // The baseline: without the hook the same ids score nothing.
     let bare = World::new();
-    assert!(bare.menu_item_category.is_empty());
-    for e in &world.menu_item_category {
+    assert!(bare.menu.item_category.is_empty());
+    for e in &world.menu.item_category {
         for c in 0..3u32 {
-            assert_eq!(category_check(&bare.menu_item_category, c, e.item_id, 0), 0);
+            assert_eq!(category_check(&bare.menu.item_category, c, e.item_id, 0), 0);
         }
     }
 }
@@ -105,6 +105,7 @@ fn the_scus_hook_installs_the_landmark_tables() {
     };
     let world = booted_world(&path);
     let menu = world
+        .menu
         .worldmap_menu
         .as_ref()
         .expect("the boot hook left the landmark tables absent");
@@ -146,7 +147,7 @@ fn the_destination_list_is_gated_on_the_live_discovery_flags() {
         "a world with no story flags offered a destination"
     );
 
-    let first = world.worldmap_menu.as_ref().unwrap().placements[0].clone();
+    let first = world.menu.worldmap_menu.as_ref().unwrap().placements[0].clone();
     world.system_flag_set(u16::from(first.discovery_flag) + 0x20);
     let d = legaia_engine_core::field_menu_dispatch::warp_destinations(&world);
     assert_eq!(d.len(), 1, "one flag should unlock exactly one landmark");

@@ -1042,7 +1042,8 @@ impl PlayWindowApp {
                     self.session
                         .host
                         .world
-                        .menu_text
+                        .menu
+                        .text
                         .as_ref()
                         .and_then(|t| t.item_name(id))
                         .map(|s| s.to_string())
