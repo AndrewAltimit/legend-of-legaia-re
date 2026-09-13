@@ -90,14 +90,14 @@ fn hue_and_saturation_pass_through_unlimited() {
 fn guard_on_writes_the_limited_texels() {
     let mut w = World::new();
     let mut vram = seeded_vram();
-    w.ambient_fx.push(part_with(strobe_fx(-256)));
+    w.ambient.fx.push(part_with(strobe_fx(-256)));
     // No banked ticks: apply-only (the part survives; the walk never runs).
     assert!(w.step_ambient_fx(&mut vram));
     // First application snapped to the target.
-    let src = w.ambient_cell_captures[&RECT].clone();
+    let src = w.ambient.cell_captures[&RECT].clone();
     let expect = crate::clut_cell_fx::apply_hsv_cell(&src, &strobe_fx(-256));
     assert_eq!(row_at(&vram), expect);
-    assert_eq!(w.ambient_flash_applied[&RECT], (-256, 0));
+    assert_eq!(w.ambient.flash_applied[&RECT], (-256, 0));
 }
 
 #[test]
@@ -106,20 +106,20 @@ fn guard_off_applies_retail_exact_targets_and_keeps_no_state() {
     w.reduce_flashing = false;
     let mut vram = seeded_vram();
     let pristine = row_at(&vram);
-    w.ambient_fx.push(part_with(strobe_fx(-256)));
+    w.ambient.fx.push(part_with(strobe_fx(-256)));
     assert!(w.step_ambient_fx(&mut vram));
-    let src = w.ambient_cell_captures[&RECT].clone();
+    let src = w.ambient.cell_captures[&RECT].clone();
     assert_eq!(src, pristine);
     assert_eq!(
         row_at(&vram),
         crate::clut_cell_fx::apply_hsv_cell(&src, &strobe_fx(-256))
     );
     // Back to the other strobe phase: applied verbatim (pristine row).
-    w.ambient_fx[0].cell_fx = Some(strobe_fx(0));
+    w.ambient.fx[0].cell_fx = Some(strobe_fx(0));
     assert!(w.step_ambient_fx(&mut vram));
     assert_eq!(row_at(&vram), pristine);
     assert!(
-        w.ambient_flash_applied.is_empty(),
+        w.ambient.flash_applied.is_empty(),
         "guard off keeps no state"
     );
 }

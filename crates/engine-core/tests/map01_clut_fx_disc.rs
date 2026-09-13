@@ -155,21 +155,21 @@ fn map01_fade_completes_in_128_vsyncs_at_either_frame_step() {
         let b_row: Vec<u16> = (0..16).map(|i| vram.pixel(112 + i, 499)).collect();
 
         world.spawn_clut_cell_fx(&payload);
-        assert_eq!(world.clut_fx.len(), 1);
+        assert_eq!(world.ambient.clut_fx.len(), 1);
 
         let mut vsyncs = 0u32;
         let mut game_ticks = 0u32;
         let mut saw_mid_row = false;
         let mut sim_ticks = 0u32;
-        while !world.clut_fx.is_empty() {
+        while !world.ambient.clut_fx.is_empty() {
             sim_ticks += 1;
             assert!(sim_ticks < 1000, "fade never completed (dt={dt})");
             world.tick();
             if world.field_frame_step == 1 {
                 vsyncs += 1;
             }
-            game_ticks += world.clut_pending_game_ticks;
-            if world.step_clut_fx(&mut vram) && !world.clut_fx.is_empty() {
+            game_ticks += world.ambient.clut_pending_game_ticks;
+            if world.step_clut_fx(&mut vram) && !world.ambient.clut_fx.is_empty() {
                 // Mid-fade write: the destination must be neither pure A
                 // nor pure B (a genuinely interpolated row).
                 let cur: Vec<u16> = (0..16).map(|i| vram.pixel(i, 498)).collect();
@@ -244,9 +244,12 @@ fn map01_one_shots_copy_the_strip_cell_immediately() {
         }
         world.spawn_clut_cell_fx(&payload);
     }
-    assert_eq!(world.clut_fx.len(), 4);
+    assert_eq!(world.ambient.clut_fx.len(), 4);
     assert!(world.step_clut_fx(&mut vram), "one-shots wrote VRAM");
-    assert!(world.clut_fx.is_empty(), "one-shots retire immediately");
+    assert!(
+        world.ambient.clut_fx.is_empty(),
+        "one-shots retire immediately"
+    );
     for x0 in [0usize, 16, 32, 48] {
         let row: Vec<u16> = (0..16).map(|i| vram.pixel(x0 + i, 498)).collect();
         assert_eq!(row, strip, "park cell ({x0}, 498) holds the strip cell");

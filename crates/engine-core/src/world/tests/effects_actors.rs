@@ -337,7 +337,7 @@ fn op_4c_60_move_image_queues_and_stamps_vram() {
         other => panic!("4C 60 should advance 14 bytes, got {other:?}"),
     }
     assert_eq!(
-        world.script_vram_moves,
+        world.ambient.script_vram_moves,
         vec![ScriptVramMove {
             src: (852, 336),
             size: (6, 16),
@@ -355,7 +355,7 @@ fn op_4c_60_move_image_queues_and_stamps_vram() {
     }
     vram.write_block(852, 336, 6, 16, &bytes);
     assert!(world.apply_script_vram_moves(&mut vram), "stamp wrote VRAM");
-    assert!(world.script_vram_moves.is_empty(), "queue drained");
+    assert!(world.ambient.script_vram_moves.is_empty(), "queue drained");
     for row in 0..16usize {
         for col in 0..6usize {
             assert_eq!(
@@ -385,5 +385,5 @@ fn script_vram_move_rejects_degenerate_rects() {
         !world.apply_script_vram_moves(&mut vram),
         "all rects dropped"
     );
-    assert!(world.script_vram_moves.is_empty());
+    assert!(world.ambient.script_vram_moves.is_empty());
 }

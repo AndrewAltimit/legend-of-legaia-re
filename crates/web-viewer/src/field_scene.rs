@@ -180,7 +180,7 @@ pub fn build_field_scene_anim(
                     })
                     .collect();
                 world.install_entry_vdf_pulse(&pack_objects);
-                if !world.ambient_fx.is_empty() {
+                if !world.ambient.fx.is_empty() {
                     ambient = Some(world);
                 }
             }
@@ -259,7 +259,7 @@ impl FieldSceneAnim {
         }
         // Ambient move-VM tree: bank the game ticks and drain against VRAM.
         if let Some(world) = self.ambient.as_mut() {
-            world.ambient_pending_game_ticks += game_ticks;
+            world.ambient.pending_game_ticks += game_ticks;
             if world.step_ambient_fx(vram) {
                 wrote = true;
             }
@@ -276,7 +276,7 @@ impl FieldSceneAnim {
                 .unwrap_or(0),
             self.ambient
                 .as_ref()
-                .map(|w| w.ambient_fx.len())
+                .map(|w| w.ambient.fx.len())
                 .unwrap_or(0),
         )
     }

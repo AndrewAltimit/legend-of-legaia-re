@@ -128,7 +128,7 @@ fn mode4_seat_rotates_a_vram_rect_through_step_ambient_fx() {
     // The seat itself fired one rotate (the spawn-time slice runs the render
     // tail, as the mode-3 sibling does). Period 3 at frame step 2 then fires
     // on ticks 2 and 4 of the next four: 3 fires x (dx*2, dy*2) = (4, 2).
-    world.ambient_pending_game_ticks = 4;
+    world.ambient.pending_game_ticks = 4;
     assert!(
         world.step_ambient_fx(&mut vram),
         "the scroller rewrites VRAM texels"
@@ -159,7 +159,7 @@ fn mode4_seat_rotates_a_vram_rect_through_step_ambient_fx() {
 
     // A part with no mode-4 seat never queues a rotate.
     let mut idle = World::new();
-    idle.ambient_pending_game_ticks = 4;
+    idle.ambient.pending_game_ticks = 4;
     assert!(!idle.step_ambient_fx(&mut vram), "no parts, no writes");
 }
 
@@ -197,7 +197,7 @@ fn jou_record23_seats_the_scroller_and_rotates_its_rect_or_skip() {
 
     // Period 1 at frame step 2 underflows every tick, so the spawn slice plus
     // three banked ticks are four fires of `dy * frame_step` = 2 rows.
-    world.ambient_pending_game_ticks = 3;
+    world.ambient.pending_game_ticks = 3;
     assert!(
         world.step_ambient_fx(&mut vram),
         "jou's scroller rewrites VRAM texels"
@@ -215,7 +215,7 @@ fn jou_record23_seats_the_scroller_and_rotates_its_rect_or_skip() {
     // And it keeps running - the record parks in an infinite `0x1A`/`0x1B`
     // wait loop, so the render tail scrolls forever.
     for _ in 0..200 {
-        world.ambient_pending_game_ticks = 1;
+        world.ambient.pending_game_ticks = 1;
         world.step_ambient_fx(&mut vram);
     }
     assert_eq!(

@@ -86,7 +86,7 @@ fn runtime_op34_sub3_stages_into_the_ambient_pool_with_its_render_tail() {
     world.step_field();
 
     assert_eq!(
-        world.ambient_fx.len(),
+        world.ambient.fx.len(),
         1,
         "the install lands in the ambient pool"
     );
@@ -94,7 +94,7 @@ fn runtime_op34_sub3_stages_into_the_ambient_pool_with_its_render_tail() {
         world.active_field_fx.is_empty(),
         "and not in the SummonScene field-stager pool (the debug exerciser's)"
     );
-    let part = &world.ambient_fx[0];
+    let part = &world.ambient.fx[0];
     assert_eq!(
         (
             part.state.world_x,
@@ -173,7 +173,7 @@ fn halted_parts_are_freed_so_a_spawn_loop_stays_bounded() {
     let mut peak = 0usize;
     for _ in 0..600 {
         halting.tick_ambient_fx();
-        peak = peak.max(halting.ambient_fx.len());
+        peak = peak.max(halting.ambient.fx.len());
     }
     assert!(
         peak <= 4,
@@ -205,7 +205,7 @@ fn halted_parts_are_freed_so_a_spawn_loop_stays_bounded() {
         parking.tick_ambient_fx();
     }
     assert_eq!(
-        parking.ambient_fx.len(),
+        parking.ambient.fx.len(),
         MAX_AMBIENT_PARTS,
         "parts that never halt accumulate to the pool ceiling"
     );

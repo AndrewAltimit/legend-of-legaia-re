@@ -912,9 +912,9 @@ impl PlayWindowApp {
         if self.session.host.world.mode == SceneMode::Battle {
             return;
         }
-        if self.session.host.world.clut_fx.is_empty()
-            && self.session.host.world.script_vram_moves.is_empty()
-            && self.session.host.world.ambient_fx.is_empty()
+        if self.session.host.world.ambient.clut_fx.is_empty()
+            && self.session.host.world.ambient.script_vram_moves.is_empty()
+            && self.session.host.world.ambient.fx.is_empty()
         {
             return;
         }

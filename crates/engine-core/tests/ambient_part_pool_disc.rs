@@ -70,16 +70,16 @@ fn run_scene(index: &ProtIndex, name: &str) -> Option<Run> {
         world.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
     }
     let mut run = Run {
-        peak: world.ambient_fx.len(),
-        first_half_peak: world.ambient_fx.len(),
+        peak: world.ambient.fx.len(),
+        first_half_peak: world.ambient.fx.len(),
         second_half_peak: 0,
         retired: false,
         exhausted: world.ambient_pool_exhausted(),
     };
-    let mut prev = world.ambient_fx.len();
+    let mut prev = world.ambient.fx.len();
     for i in 0..TICKS {
         world.tick_ambient_fx();
-        let n = world.ambient_fx.len();
+        let n = world.ambient.fx.len();
         run.peak = run.peak.max(n);
         if i < TICKS / 2 {
             run.first_half_peak = run.first_half_peak.max(n);

@@ -342,19 +342,19 @@ impl SceneHost {
         // writes): live poll baselines run field/town scenes at 2 (30 fps)
         // and the overworld kingdom scenes (`mapNN`) at 3 (20 fps). See
         // `World::frame_step`.
-        self.world.clut_fx.clear();
-        self.world.clut_vsync_accum = 0;
-        self.world.clut_pending_game_ticks = 0;
+        self.world.ambient.clut_fx.clear();
+        self.world.ambient.clut_vsync_accum = 0;
+        self.world.ambient.clut_pending_game_ticks = 0;
         // Ambient move-VM effect parts (jou's flesh cyclers / lightning) are
         // per-scene; the auto-spawn below re-seeds the new scene's tree.
-        self.world.ambient_fx.clear();
-        self.world.ambient_vsync_accum = 0;
-        self.world.ambient_pending_game_ticks = 0;
-        self.world.ambient_cell_captures.clear();
-        self.world.ambient_flash_applied.clear();
+        self.world.ambient.fx.clear();
+        self.world.ambient.vsync_accum = 0;
+        self.world.ambient.pending_game_ticks = 0;
+        self.world.ambient.cell_captures.clear();
+        self.world.ambient.flash_applied.clear();
         // Same scene-scoping for the sibling `4C 60` MoveImage stamps: any
         // still-queued rect operands belong to the previous scene's MAN.
-        self.world.script_vram_moves.clear();
+        self.world.ambient.script_vram_moves.clear();
         // Retail installs this as the per-mode floor `DAT_8007B9D8`; the
         // adaptive resolver (`World::resolve_frame_step`) can only raise it.
         self.world.frame_step_floor = if crate::scene::is_world_map_scene(name) {

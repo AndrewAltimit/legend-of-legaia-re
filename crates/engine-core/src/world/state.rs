@@ -1500,24 +1500,8 @@ pub struct World {
     /// through [`World::active_field_fx_render_nodes`]. A `Vec` because several
     /// can be live at once (the prescript triggers them independently).
     pub active_field_fx: Vec<crate::summon::SummonScene>,
-    /// Live **ambient** move-VM effect parts - the scene-entry effect tree
-    /// the MAN partition-1 effect-actor scripts install (jou's pulsating
-    /// flesh / lightning director). Unlike [`Self::active_field_fx`] these
-    /// parts read + self-modify the shared prescript bundle in place
-    /// (retail `_DAT_8007B8D0`) and spawn op-`0x25` children. Spawned by
-    /// [`World::spawn_ambient_record`] at scene entry, ticked on the retail
-    /// game-tick clock by [`World::step_ambient_fx`].
-    pub ambient_fx: Vec<crate::world::ambient::AmbientPart>,
-    /// Retail game ticks banked for the ambient effect parts (the sibling
-    /// of [`Self::clut_pending_game_ticks`], same clock law).
-    pub ambient_pending_game_ticks: u32,
-    /// Vsync sub-accumulator for the ambient game-tick bank.
-    pub ambient_vsync_accum: u8,
-    /// Per-rect VRAM capture cache for the ambient CLUT-cell cyclers: the
-    /// texels op `0x2C` stored (`FUN_8005842C` StoreImage) keyed by the
-    /// captured rect. Filled lazily by [`World::step_ambient_fx`] from the
-    /// host's VRAM the first time a cell fires; cleared on scene entry.
-    pub ambient_cell_captures: std::collections::HashMap<(u16, u16, u16, u16), Vec<u16>>,
+    /// Field ambient animation state: the CLUT-walk / CLUT-cell cyclers, VDF pulse, script VRAM moves and their vsync accumulators.
+    pub ambient: AmbientFxState,
     /// Photosensitivity guard over the ambient CLUT-cell cyclers (see
     /// [`crate::options::OptionsState::reduce_flashing`]). When `true`
     /// (the default - a host that never plumbs options stays safe),
@@ -1528,21 +1512,6 @@ pub struct World {
     /// through untouched. The move-VM state itself always advances
     /// retail-exact - this only shapes the VRAM presentation.
     pub reduce_flashing: bool,
-    /// The limiter's per-rect applied `(v_add, white)` state - what the
-    /// last [`World::step_ambient_fx`] actually wrote, keyed like
-    /// [`Self::ambient_cell_captures`] and cleared with it on scene entry.
-    pub ambient_flash_applied: std::collections::HashMap<(u16, u16, u16, u16), (i16, i16)>,
-    /// Scene-entry **VDF pulse** (enhancement): a rolling ramp envelope over
-    /// the scene's populated VDF pack for scenes whose entry-ambient tree
-    /// arms no morph lanes of its own (jou). Installed by
-    /// [`World::install_entry_vdf_pulse`], ticked with the ambient bank,
-    /// surfaced through [`World::current_morph_deltas`]. `None` = retail
-    /// behaviour (see `docs/subsystems/field-ambient-fx.md`).
-    pub entry_vdf_pulse: Option<crate::vdf_pulse::EntryVdfPulse>,
-    /// `(pack_slot, group)` pairs whose morph deltas changed during the last
-    /// ambient drain - the renderer-facing dirty set
-    /// ([`World::take_morph_dirty_slots`]).
-    pub morph_dirty_slots: std::collections::BTreeSet<(usize, u32)>,
 
     /// Adaptive frame-step factor `dt` - the retail scratchpad byte
     /// `DAT_1F800393`, the number of *vsyncs per game tick*. The frame-flip
@@ -1624,10 +1593,6 @@ pub struct World {
     /// [`World::resolve_frame_step`]; a host with no frame-time telemetry
     /// leaves it untouched and keeps the deterministic floor.
     pub frame_step_telemetry: vm::actor_tick::FrameStepTelemetry,
-    /// Vsyncs accumulated toward the next retail *game tick* (a game tick
-    /// spans [`Self::frame_step`] vsyncs). Advanced by [`World::tick`] on the
-    /// sim ticks that map to a retail vsync ([`Self::field_frame_step`]).
-    pub clut_vsync_accum: u8,
     /// Vsyncs accumulated toward the next **actor** game tick. Same clock as
     /// [`Self::clut_vsync_accum`] and the same law - retail resolves one
     /// `DAT_1F800393` per frame and runs the actor pool once per game tick,
@@ -1640,25 +1605,6 @@ pub struct World {
     ///
     /// REF: FUN_80016B6C (cadence resolver), FUN_801D6704 (field floor = 2)
     pub actor_vsync_accum: u8,
-    /// Retail game ticks elapsed since the host last drained the scripted
-    /// CLUT effects ([`World::step_clut_fx`] consumes these). Only
-    /// accumulates while [`Self::clut_fx`] is non-empty, and saturates at a
-    /// small cap so a host that never drains can't wind up an unbounded
-    /// backlog.
-    pub clut_pending_game_ticks: u32,
-    /// Live scripted CLUT-cell effects (field-VM `0x4C` n6 sub-`0x61`):
-    /// pending one-shot cell writes and in-flight cross-fades. Spawned by
-    /// [`World::spawn_clut_cell_fx`] (the `op4c_n6_sub_61_emitter` host
-    /// hook), stepped + applied against the host's software VRAM by
-    /// [`World::step_clut_fx`], cleared on scene entry.
-    pub clut_fx: Vec<crate::world::ClutCellFx>,
-    /// Queued field-VM `4C 60` literal-operand VRAM `MoveImage` stamps (the
-    /// sibling of [`Self::clut_fx`] - retail's one-shot face-frame stamps
-    /// onto the player texture atlas). Queued by
-    /// [`World::queue_script_vram_move`] (the `op4c_n6_sub0_emitter6` host
-    /// hook), drained against the host's software VRAM by
-    /// [`World::apply_script_vram_moves`], cleared on scene entry.
-    pub script_vram_moves: Vec<crate::world::ScriptVramMove>,
 
     /// Pending move-FX sound cue id (`+0x0d`), set by [`World::spawn_move_fx`]
     /// when the move carries a non-zero cue. The host drains it via
@@ -2373,14 +2319,8 @@ impl World {
             field_stagers: Vec::new(),
             field_stager_bytes: Vec::new(),
             active_field_fx: Vec::new(),
-            ambient_fx: Vec::new(),
-            ambient_pending_game_ticks: 0,
-            ambient_vsync_accum: 0,
-            ambient_cell_captures: std::collections::HashMap::new(),
+            ambient: AmbientFxState::new(),
             reduce_flashing: true,
-            ambient_flash_applied: std::collections::HashMap::new(),
-            entry_vdf_pulse: None,
-            morph_dirty_slots: std::collections::BTreeSet::new(),
             // Field/town baseline; scene entry re-pins (`mapNN` -> 3).
             frame_step: 2,
             frame_step_floor: 2,
@@ -2390,11 +2330,7 @@ impl World {
             battle_intro_mode_handoff: false,
             frame_begin_skip: false,
             frame_step_telemetry: vm::actor_tick::FrameStepTelemetry::new(),
-            clut_vsync_accum: 0,
             actor_vsync_accum: 0,
-            clut_pending_game_ticks: 0,
-            clut_fx: Vec::new(),
-            script_vram_moves: Vec::new(),
             pending_move_fx_cue: None,
             shops: ShopState::new(),
             menu: MenuState::new(),

@@ -1073,21 +1073,22 @@ impl World {
         // `frame_step` of them; [`Self::step_clut_fx`] drains the bank
         // against the host's VRAM. Only accumulates while effects are live
         // (capped so an undrained host can't wind up a backlog).
-        if self.field_frame_step == 1 && !self.clut_fx.is_empty() {
-            self.clut_vsync_accum += 1;
-            if self.clut_vsync_accum >= self.frame_step.max(1) {
-                self.clut_vsync_accum = 0;
-                self.clut_pending_game_ticks = (self.clut_pending_game_ticks + 1).min(600);
+        if self.field_frame_step == 1 && !self.ambient.clut_fx.is_empty() {
+            self.ambient.clut_vsync_accum += 1;
+            if self.ambient.clut_vsync_accum >= self.frame_step.max(1) {
+                self.ambient.clut_vsync_accum = 0;
+                self.ambient.clut_pending_game_ticks =
+                    (self.ambient.clut_pending_game_ticks + 1).min(600);
             }
         }
         // Same game-tick law for the ambient move-VM effect parts (jou's
         // CLUT-cell cyclers / lightning director); drained by the host's
         // `step_ambient_fx` against its VRAM.
-        if self.field_frame_step == 1 && !self.ambient_fx.is_empty() {
-            self.ambient_vsync_accum += 1;
-            if self.ambient_vsync_accum >= self.frame_step.max(1) {
-                self.ambient_vsync_accum = 0;
-                self.ambient_pending_game_ticks = (self.ambient_pending_game_ticks + 1).min(600);
+        if self.field_frame_step == 1 && !self.ambient.fx.is_empty() {
+            self.ambient.vsync_accum += 1;
+            if self.ambient.vsync_accum >= self.frame_step.max(1) {
+                self.ambient.vsync_accum = 0;
+                self.ambient.pending_game_ticks = (self.ambient.pending_game_ticks + 1).min(600);
             }
         }
         // Retail's frame-begin driver services the timed sound-source

@@ -472,7 +472,11 @@ fn a_scene_fade_arm_runs_against_the_scenes_own_vram() {
     );
 
     host.world.spawn_clut_cell_fx(&payload);
-    assert_eq!(host.world.clut_fx.len(), 1, "the fade actor spawned");
+    assert_eq!(
+        host.world.ambient.clut_fx.len(),
+        1,
+        "the fade actor spawned"
+    );
 
     // Host frame loop: tick the world, then hand the scene VRAM to the CLUT
     // driver - exactly the order `window/field_render.rs` and the browser
@@ -480,13 +484,13 @@ fn a_scene_fade_arm_runs_against_the_scenes_own_vram() {
     let mut frames = 0u32;
     let mut writes = 0u32;
     let mut saw_intermediate = false;
-    while !host.world.clut_fx.is_empty() {
+    while !host.world.ambient.clut_fx.is_empty() {
         frames += 1;
         assert!(frames < 2000, "the fade never completed");
         host.world.tick();
         if host.world.step_clut_fx(&mut resources.vram) {
             writes += 1;
-            if !host.world.clut_fx.is_empty() {
+            if !host.world.ambient.clut_fx.is_empty() {
                 let row = read_row(&resources.vram, fade.op.dest);
                 if row != b_row && row != a_row {
                     saw_intermediate = true;

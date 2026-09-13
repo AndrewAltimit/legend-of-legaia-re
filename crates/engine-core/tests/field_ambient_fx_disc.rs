@@ -71,7 +71,7 @@ fn jou_ambient_tree_spawns_and_cycles_clut_cells_or_skip() {
     assert!(world.spawn_ambient_record(installs[0] as usize + 1, [0, 0, 0]));
     // Installer + director + 15 cyclers + lightning palette + rec23 beam +
     // the SFX loop = 20 parts.
-    assert_eq!(world.ambient_fx.len(), 20, "jou ambient fan-out");
+    assert_eq!(world.ambient.fx.len(), 20, "jou ambient fan-out");
 
     // The fifteen row-502 cyclers tile the CLUT row: the self-modifying
     // ext-0x1E spawn stepping gives each instance its own 16-halfword cell.
@@ -131,7 +131,7 @@ fn jou_ambient_tree_spawns_and_cycles_clut_cells_or_skip() {
             .collect();
         vram.write_block(x, y, 256 - x, 1, &row[..usize::from(256 - x) * 2]);
     }
-    world.ambient_pending_game_ticks = 2;
+    world.ambient.pending_game_ticks = 2;
     let wrote = world.step_ambient_fx(&mut vram);
     assert!(wrote, "ambient CLUT-cell step rewrites VRAM texels");
 }
@@ -185,7 +185,7 @@ fn jou_ambient_cyclers_pulse_forever_or_skip() {
         zero_returns >= 2,
         "the pulse recycles (adds decayed back to zero {zero_returns} time(s) - a run-to-halt script freezes after one)"
     );
-    let finished = world.ambient_fx.iter().filter(|p| p.finished).count();
+    let finished = world.ambient.fx.iter().filter(|p| p.finished).count();
     assert!(
         finished <= 1,
         "only the installer may retire; {finished} parts finished"

@@ -1074,7 +1074,7 @@ impl World {
         } else {
             ClutCellFxPhase::Pending
         };
-        self.clut_fx.push(ClutCellFx { op, phase });
+        self.ambient.clut_fx.push(ClutCellFx { op, phase });
     }
 
     /// Drive the live scripted CLUT-cell effects against `vram` (the host's
@@ -1094,15 +1094,15 @@ impl World {
     ///
     /// PORT: FUN_801E4794
     pub fn step_clut_fx(&mut self, vram: &mut legaia_tim::Vram) -> bool {
-        let ticks = std::mem::take(&mut self.clut_pending_game_ticks);
-        if self.clut_fx.is_empty() {
+        let ticks = std::mem::take(&mut self.ambient.clut_pending_game_ticks);
+        if self.ambient.clut_fx.is_empty() {
             return false;
         }
         let dt = self.frame_step.max(1);
         let mut wrote = false;
         let mut clear_halt = false;
         let mut still: Vec<ClutCellFx> = Vec::new();
-        for fx in std::mem::take(&mut self.clut_fx) {
+        for fx in std::mem::take(&mut self.ambient.clut_fx) {
             let ClutCellFx { op, phase } = fx;
             let mut fade = match phase {
                 ClutCellFxPhase::Immediate => {
@@ -1149,7 +1149,7 @@ impl World {
                 still.push(ClutCellFx { op, phase });
             }
         }
-        self.clut_fx = still;
+        self.ambient.clut_fx = still;
         if clear_halt {
             self.field_ctx.flags &= !0x400;
         }
@@ -1199,7 +1199,8 @@ impl World {
     /// renderer-free, mirroring the [`Self::spawn_clut_cell_fx`] /
     /// [`Self::step_clut_fx`] split of the sibling sub-`0x61` family.
     pub fn queue_script_vram_move(&mut self, words: [i16; 6]) {
-        self.script_vram_moves
+        self.ambient
+            .script_vram_moves
             .push(ScriptVramMove::from_words(words));
     }
 
@@ -1216,7 +1217,7 @@ impl World {
     /// handler arm 0x801E1B28..0x801E1B90 of FUN_801DE840)
     pub fn apply_script_vram_moves(&mut self, vram: &mut legaia_tim::Vram) -> bool {
         let mut wrote = false;
-        for mv in std::mem::take(&mut self.script_vram_moves) {
+        for mv in std::mem::take(&mut self.ambient.script_vram_moves) {
             let (sx, sy) = mv.src;
             let (w, h) = mv.size;
             let (dx, dy) = mv.dst;
