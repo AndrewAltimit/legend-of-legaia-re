@@ -186,17 +186,8 @@ pub struct World {
     /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
     pub battle: BattleState,
 
-    /// Screen-shake amplitude - retail `_DAT_8007B630`.
-    ///
-    /// Written by exactly one thing in retail: the field-VM opcode
-    /// `0x4C` outer-nibble `8` sub-`4` (`[4C, 0x84, amplitude]`), ported at
-    /// [`legaia_engine_vm::field::FieldHost::op4c_n8_sub4_set_b630`]. It is
-    /// the only input to the LCG camera jitter `FUN_801D9D30`
-    /// ([`legaia_engine_vm::battle_camera::apply_shake`]): `0` is the resting
-    /// state and `1..=0x15` widens the jitter window.
-    ///
-    /// REF: FUN_801D9D30
-    pub camera_shake_amplitude: u8,
+    /// Field camera rig: the saved camera snapshot, scene offset + ease, shake amplitude and the zone-ramp register file.
+    pub camera: CameraRig,
 
     /// Audio-side state: BGM selection and resume, the SFX cue / delay slots, sound-bank handshakes and the battle SFX / XA / shout cue queues.
     pub audio: AudioState,
@@ -312,26 +303,6 @@ pub struct World {
     /// Field dialogue state: the simplified dialog panel, the inline field-VM dialogue runner and the interact / talk latches.
     pub dialog: DialogState,
 
-    /// Scene control block `+0x4A` (`_DAT_801C6EA4 + 0x4A`) - the camera
-    /// vertical offset the current scene asks for, in the player actor's
-    /// `+0x16` footing units. Written by the field VM's op `0x4C`
-    /// outer-nibble-4 sub-9 (all three arms) and read once a frame by
-    /// [`Self::tick_camera_offset_ease`].
-    pub camera_scene_offset: i16,
-    /// `_DAT_8007BCAC` - the smoothed camera vertical offset
-    /// [`crate::camera_ease::ease_camera_offset`] walks toward
-    /// `camera_scene_offset - player_footing`. Seeded to `0x3C` by retail's
-    /// per-scene initialiser `FUN_801D6704`, which is why the engine seeds it
-    /// there too. The op `0x4C` n4 sub-9 **delta** arm snaps it instead of
-    /// letting the easing arrive.
-    pub camera_offset_ease: i32,
-    /// Previous tick's player `(world_y, world_z)`. Stands in for the
-    /// `+0x1E`/`+0x20` slots retail's settle test compares `+0x16`/`+0x18`
-    /// against; the question the comparison asks is whether the actor has
-    /// stopped moving in Y and Z, and this answers it without asserting what
-    /// retail keeps in those two slots. `None` until the first tick.
-    pub camera_ease_prev_yz: Option<(i16, i16)>,
-
     /// Field props + triggers: prop colliders and bank, walk-touch records, the scene's move-VM stager tables, boss stagers, live field effects and the resolved cold spawn.
     pub props: FieldPropState,
 
@@ -353,11 +324,6 @@ pub struct World {
     /// op 0x3B (`(slot >> 4) * 0x414 + (slot & 0xF)` in retail). Engines
     /// can re-key this to their own inventory model.
     pub inventory: std::collections::HashMap<u8, u8>,
-
-    /// Last camera state snapshot - filled by `camera_save`, applied by
-    /// `camera_apply` / `camera_load`. Engines that draw a camera read
-    /// this between frames.
-    pub camera_state: CameraState,
 
     /// Frame counter incremented every [`World::tick`].
     pub frame: u64,
@@ -444,19 +410,6 @@ pub struct World {
     /// Cutscene tick while any widget is live ([`Self::tick_screen_fx`]).
     /// Renderers composite these 2D overlays above the scene.
     pub screen_fx_frame: crate::screen_fx::ScreenFxFrame,
-
-    /// Live camera-register zone-ramp records spawned by the field-VM op
-    /// `0x43` sub-3..6 (retail `FUN_8003C6A4` actors on the effect list).
-    /// [`World::tick_register_ramps`] runs each one's `FUN_80037018` handler
-    /// against the player's position every field frame. See
-    /// [`crate::register_ramp`].
-    pub register_ramps: Vec<crate::register_ramp::RegisterRamp>,
-
-    /// The four field camera-configuration registers
-    /// (`0x8007B60C`/`B610`/`B614`/`B618`) the ramps above write. Seeded to
-    /// [`crate::camera::CAMERA_ZONE_DEFAULTS`] on scene entry; consumed by
-    /// [`crate::camera::Camera::tick`].
-    pub camera_registers: crate::register_ramp::CameraRegisterFile,
 
     /// The live cinematic bar emitter (field-VM op `0x43` sub-`0xC`, retail
     /// template `0x801F2858` / tick `FUN_801DD784`). One at a time, because
@@ -834,7 +787,7 @@ impl World {
             cos_lut: Vec::new(),
             character_ability_bits: [0; 8],
             battle: BattleState::new(),
-            camera_shake_amplitude: 0,
+            camera: CameraRig::new(),
             audio: AudioState::new(),
             party_count: 3,
             active_party: Vec::new(),
@@ -850,15 +803,11 @@ impl World {
             pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),
             dialog: DialogState::new(),
-            camera_scene_offset: 0,
-            camera_offset_ease: crate::camera_ease::CAMERA_OFFSET_EASE_SEED,
-            camera_ease_prev_yz: None,
             props: FieldPropState::new(),
             actor_motions: std::collections::BTreeMap::new(),
             party_leader_slot: None,
             money: 0,
             inventory: std::collections::HashMap::new(),
-            camera_state: CameraState::default(),
             frame: 0,
             input: input::InputState::default(),
             move_outcomes: Vec::new(),
@@ -872,10 +821,8 @@ impl World {
             board: TileBoardState::new(),
             screen_fx: Default::default(),
             screen_fx_frame: Default::default(),
-            register_ramps: Vec::new(),
             cinematic_bars: None,
             cinematic_bar: 0,
-            camera_registers: Default::default(),
             minigames: MinigameState::new(),
             tables: DiscTables::new(),
             seru: SeruState::new(),
@@ -1068,8 +1015,8 @@ impl World {
         // retire sweep (`FUN_8003AEB0` at `0x8003B414`) is keyed on the ramp
         // actor's own handler VA, and the zone-miss defaults are reinstalled
         // by `FUN_801DBE9C`. Both happen on scene entry.
-        self.register_ramps.clear();
-        self.camera_registers = Default::default();
+        self.camera.register_ramps.clear();
+        self.camera.registers = Default::default();
         // The three frame-delta timer templates are scene content too: the
         // MAN loader's retire sweep drops every pool actor, and a bar
         // envelope or a floor-rung bob left running across a scene change

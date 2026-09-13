@@ -350,17 +350,20 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
     );
     for site in &ramps {
         let mut world = world_at(site);
-        assert!(world.register_ramps.is_empty(), "ramp list starts empty");
+        assert!(
+            world.camera.register_ramps.is_empty(),
+            "ramp list starts empty"
+        );
         world.step_field().expect("step the register ramp");
         assert_eq!(
-            world.register_ramps.len(),
+            world.camera.register_ramps.len(),
             1,
             "{} entry={} pc={:#x}: the ramp instruction installed no ramp",
             site.scene,
             site.entry_idx,
             site.pc
         );
-        let ramp = &world.register_ramps[0];
+        let ramp = &world.camera.register_ramps[0];
         // The instruction's own operands must be what landed - a ramp built
         // from defaults would pass a bare "is_empty() == false" check.
         let InsnInfo::ActorCtrl {

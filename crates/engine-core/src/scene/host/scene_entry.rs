@@ -327,7 +327,7 @@ impl SceneHost {
         // cutscene shots start clean (the params now MERGE per-slot across beats
         // in `camera_configure`, so a stale set would leak the prior scene's
         // focus / depth into a beat that omits those slots).
-        self.world.camera_state.params.clear();
+        self.world.camera.state.params.clear();
         // The op-0x34 effect-global tint is scene-scoped (the opening
         // timeline's between-beat black fades); drop any in flight. The
         // op-0x4C-0x12 global screen tint (`World::screen_tint`) deliberately

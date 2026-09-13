@@ -199,7 +199,7 @@ impl LegaiaRuntime {
         let Some(w) = self.world() else {
             return "null".to_string();
         };
-        let params = &w.camera_state.params;
+        let params = &w.camera.state.params;
         let param = |slot: u8| {
             params
                 .iter()

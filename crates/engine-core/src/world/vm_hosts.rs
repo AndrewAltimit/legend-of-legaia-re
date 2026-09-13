@@ -662,7 +662,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // it is raised the easing returns before its first store.
     // REF: FUN_801DA390 (the easing), FUN_801D6704 (seeds the accumulator)
     fn op4c_n4_sub9_default_write(&mut self, target: i16) {
-        self.world.camera_scene_offset = target;
+        self.world.camera.scene_offset = target;
     }
     fn op4c_n4_sub9_default_ramp(&mut self, target: i16, ticks: u16) {
         // Retail schedules a ramp over `ticks` frames through the register
@@ -672,19 +672,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // frame either way, so the visible difference is the shape of the
         // last few frames, not the destination.
         let _ = ticks;
-        self.world.camera_scene_offset = target;
+        self.world.camera.scene_offset = target;
     }
     fn op4c_n4_sub9_delta_write_or_ramp(&mut self, target: i16, ticks: u16) {
         let _ = ticks;
-        self.world.camera_scene_offset = target;
+        self.world.camera.scene_offset = target;
         let footing = self.world.camera_ease_player_footing();
-        self.world.camera_offset_ease = i32::from(target.wrapping_sub(footing));
+        self.world.camera.offset_ease = i32::from(target.wrapping_sub(footing));
     }
     fn op4c_n4_sub9_player_relative_write(&mut self, target: i16, ticks: u16) {
         let _ = ticks;
         let footing = self.world.camera_ease_player_footing();
-        self.world.camera_scene_offset = target.wrapping_add(footing);
-        self.world.camera_offset_ease = i32::from(target);
+        self.world.camera.scene_offset = target.wrapping_add(footing);
+        self.world.camera.offset_ease = i32::from(target);
     }
 
     // Op `0x4C` outer-nibble-4 subs `0xA..=0xD` - four scene globals written
@@ -877,7 +877,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // REF: FUN_8003C6A4 (kernel PORT lives in crate::register_ramp)
     fn op43_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
         if let Some(ramp) = crate::register_ramp::spawn_register_ramp(sub_op, zone, start, end) {
-            self.world.register_ramps.push(ramp);
+            self.world.camera.register_ramps.push(ramp);
         }
     }
 
@@ -1617,18 +1617,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         for p in params {
             if let Some(existing) = self
                 .world
-                .camera_state
+                .camera
+                .state
                 .params
                 .iter_mut()
                 .find(|e| e.slot == p.slot)
             {
                 existing.value = p.value;
             } else {
-                self.world.camera_state.params.push(*p);
+                self.world.camera.state.params.push(*p);
             }
         }
-        self.world.camera_state.apply_trigger = apply_trigger;
-        self.world.camera_state.mode = mode;
+        self.world.camera.state.apply_trigger = apply_trigger;
+        self.world.camera.state.mode = mode;
         // The event still carries only THIS beat's params (the per-beat delta):
         // the `Camera` controller's `route_camera_events` applies them per-axis
         // onto its own persistent eye/look-at, matching the same retail model.
@@ -1642,7 +1643,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn camera_load(&mut self, payload: &[u8]) {
-        self.world.camera_state.loaded_payload = payload.to_vec();
+        self.world.camera.state.loaded_payload = payload.to_vec();
         self.world
             .pending_field_events
             .push(FieldEvent::CameraLoad {
@@ -1654,7 +1655,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Snapshot what we have currently - engines that model real camera
         // matrices can override this on a custom host wrapper. For now we
         // write a placeholder so save/load round-trip behaves.
-        self.world.camera_state.saved = self.world.camera_state.loaded_payload.clone();
+        self.world.camera.state.saved = self.world.camera.state.loaded_payload.clone();
         self.world.pending_field_events.push(FieldEvent::CameraSave);
     }
 
@@ -1981,7 +1982,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// of a camera shake. The world holds it for the camera to read; see
     /// [`crate::world::World::camera_shake_amplitude`].
     fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
-        self.world.camera_shake_amplitude = value;
+        self.world.camera.shake_amplitude = value;
     }
 
     fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {

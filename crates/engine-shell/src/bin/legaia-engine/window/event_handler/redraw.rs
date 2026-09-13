@@ -570,7 +570,7 @@ impl PlayWindowApp {
         // Drake mist-wall force-walk bands) keeps the ordinary walk camera.
         let cutscene_cam = if self.session.host.world.cutscene_timeline_active()
             && (self.session.host.world.mode != SceneMode::WorldMap
-                || !self.session.host.world.camera_state.params.is_empty())
+                || !self.session.host.world.camera.state.params.is_empty())
         {
             let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
             // Glide pacing from the op-`0x45` `apply_trigger` (retail
@@ -604,8 +604,8 @@ impl PlayWindowApp {
             // mover snaps to an `apply 0` beat, then glides from there when
             // a same-tick follow-up beat re-stages - the map01 fly-in pair).
             self.replay_camera_snap_beats();
-            let apply = self.session.host.world.camera_state.apply_trigger;
-            let mode = self.session.host.world.camera_state.mode;
+            let apply = self.session.host.world.camera.state.apply_trigger;
+            let mode = self.session.host.world.camera.state.mode;
             let now = self.session.host.world.field_frames;
             let steps = u32::try_from(now.saturating_sub(self.cutscene_cam_frames))
                 .unwrap_or(u32::MAX)
@@ -628,7 +628,7 @@ impl PlayWindowApp {
                     "DIAG cutcam: frame {} apply {} target focus={focus:?} pitch={pitch:.3} \
                      yaw={yaw:.3} roll={roll:.3} h={h} tr_eye={tr_eye:?} | eased focus={:?} \
                      pitch={:.3} yaw={:.3} roll={:.3} h={} tr_eye={:?} | params={:?}",
-                    w.frame, apply, out.0, out.1, out.2, out.3, out.4, out.5, w.camera_state.params
+                    w.frame, apply, out.0, out.1, out.2, out.3, out.4, out.5, w.camera.state.params
                 );
             }
             Some(out)

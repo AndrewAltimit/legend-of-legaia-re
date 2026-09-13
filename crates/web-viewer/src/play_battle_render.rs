@@ -252,7 +252,7 @@ fn derive_battle_cam(
         // nothing on the battle-entry path zeroes it - a fight inherits the
         // live azimuth (see `BattleCamInputs::entry_yaw`).
         entry_yaw: f32::from(world.locomotion.camera_azimuth & 0xFFF),
-        shake_amplitude: world.camera_shake_amplitude,
+        shake_amplitude: world.camera.shake_amplitude,
         attack: attack_channels(world, world.battle_ctx.active_actor),
         // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's
         // state edges (`BattleCamera::observe_action_state`) - same field

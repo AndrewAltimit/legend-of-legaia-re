@@ -81,7 +81,7 @@ impl World {
     ///
     /// REF: FUN_80037018
     pub fn tick_register_ramps(&mut self) {
-        if self.register_ramps.is_empty() {
+        if self.camera.register_ramps.is_empty() {
             return;
         }
         let Some(slot) = self.player_actor_slot else {
@@ -94,7 +94,7 @@ impl World {
         let engaged = self.dialogue_owns_input();
         let mut writes: Vec<(crate::register_ramp::RampSlot, i32)> = Vec::new();
         let mut retire: Vec<usize> = Vec::new();
-        for (i, ramp) in self.register_ramps.iter().enumerate() {
+        for (i, ramp) in self.camera.register_ramps.iter().enumerate() {
             match ramp.tick(px, pz, engaged) {
                 legaia_engine_vm::ambient_motion::ZoneRampTick::Write { value, .. } => {
                     writes.push((ramp.slot, value));
@@ -105,10 +105,10 @@ impl World {
             }
         }
         for (slot, value) in writes {
-            self.camera_registers.set(slot, value);
+            self.camera.registers.set(slot, value);
         }
         for i in retire.into_iter().rev() {
-            self.register_ramps.remove(i);
+            self.camera.register_ramps.remove(i);
         }
     }
 
@@ -166,15 +166,15 @@ impl World {
                 (ms.world_y, ms.world_z)
             }
             None => {
-                self.camera_ease_prev_yz = None;
+                self.camera.ease_prev_yz = None;
                 return;
             }
         };
-        let (prev_y, prev_z) = self.camera_ease_prev_yz.unwrap_or((y, z));
-        self.camera_offset_ease =
+        let (prev_y, prev_z) = self.camera.ease_prev_yz.unwrap_or((y, z));
+        self.camera.offset_ease =
             crate::camera_ease::ease_camera_offset(crate::camera_ease::CameraEaseInput {
                 pad: self.story_flags,
-                scene_target: self.camera_scene_offset as u16,
+                scene_target: self.camera.scene_offset as u16,
                 player_footing: y as u16,
                 footing_settled: prev_y,
                 z,
@@ -185,9 +185,9 @@ impl World {
                 // same 12-units-a-frame cap, only without pinning the step
                 // while the gap is small.
                 fast_flags: 0,
-                current: self.camera_offset_ease,
+                current: self.camera.offset_ease,
             });
-        self.camera_ease_prev_yz = Some((y, z));
+        self.camera.ease_prev_yz = Some((y, z));
     }
 
     pub fn tick_field_timer_actors(&mut self, frame_delta: u8) {

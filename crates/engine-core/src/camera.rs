@@ -535,10 +535,10 @@ impl Camera {
         // ungated feed would re-frame every ramp-free scene. A scripted glide
         // still wins - it is the shot the script staged.
         // REF: FUN_801DABA4 (the field-overlay camera composer)
-        if !gliding && world.camera_registers.written() {
+        if !gliding && world.camera.registers.written() {
             for slot in crate::register_ramp::RampSlot::ALL {
                 let axis = slot.camera_axis();
-                let v = world.camera_registers.get(slot);
+                let v = world.camera.registers.get(slot);
                 // Retail's eye-back store is a halfword whose sign the
                 // composer folds into the yaw (it picks which side of the
                 // player the orbit sits on), so the depth axis takes the

@@ -631,7 +631,8 @@ fn camera_configure_merges_params_across_beats() {
         host.camera_configure(&val(&[0, 1, 2, 3, 4, 5, 6, 8, 9], 111), 0, 0);
     }
     let get = |w: &World, slot: u8| {
-        w.camera_state
+        w.camera
+            .state
             .params
             .iter()
             .find(|p| p.slot == slot)
@@ -662,7 +663,7 @@ fn camera_configure_merges_params_across_beats() {
         Some(111),
         "eye-depth survives the H-only beat"
     );
-    assert_eq!(world.camera_state.params.len(), 9, "no slot dropped");
+    assert_eq!(world.camera.state.params.len(), 9, "no slot dropped");
 }
 
 #[test]
@@ -682,8 +683,8 @@ fn field_vm_op43_ramp_subops_spawn_register_ramps() {
             other => panic!("ramp sub-op should advance, got {other:?}"),
         }
     }
-    assert_eq!(world.register_ramps.len(), 1);
-    let r = &world.register_ramps[0];
+    assert_eq!(world.camera.register_ramps.len(), 1);
+    let r = &world.camera.register_ramps[0];
     assert_eq!(r.slot, RampSlot::Dat8007B618, "sub-3 targets DAT_8007B618");
     // The four tile corners land in world units (tile * 0x80 + 0x40).
     assert_eq!(
@@ -703,6 +704,6 @@ fn field_vm_op43_ramp_subops_spawn_register_ramps() {
         let mut host = FieldHostImpl { world: &mut world };
         let _ = vm::field::step(&mut host, &mut ctx, &op6, 0);
     }
-    assert_eq!(world.register_ramps.len(), 2);
-    assert_eq!(world.register_ramps[1].slot, RampSlot::Dat8007B610);
+    assert_eq!(world.camera.register_ramps.len(), 2);
+    assert_eq!(world.camera.register_ramps[1].slot, RampSlot::Dat8007B610);
 }

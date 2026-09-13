@@ -141,7 +141,8 @@ pub fn sample_frame(session: &BootSession) -> SimTraceFrame {
     // camera doesn't model them.
     let slot = |s: u8| {
         world
-            .camera_state
+            .camera
+            .state
             .params
             .iter()
             .find(|p| p.slot == s)

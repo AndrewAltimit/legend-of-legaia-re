@@ -570,7 +570,7 @@ impl PlayWindowApp {
         // (base matrix `DAT_8007BF10` = `24576*I`); the engine renders at 1x.
         const CUTSCENE_WORLD_SCALE: f32 = 6.0;
         let world = &self.session.host.world;
-        let params = &world.camera_state.params;
+        let params = &world.camera.state.params;
         let param = |slot: u8| {
             params
                 .iter()
@@ -791,7 +791,7 @@ pub(super) fn battle_cam_inputs(
         // nothing on the battle-entry path zeroes it - a fight inherits the
         // live azimuth (see `BattleCamInputs::entry_yaw`).
         entry_yaw: battle_entry_yaw(world),
-        shake_amplitude: world.camera_shake_amplitude,
+        shake_amplitude: world.camera.shake_amplitude,
         attack: battle_attack_channels(world, world.battle_ctx.active_actor),
         // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's
         // state edges (`BattleCamera::observe_action_state`).
@@ -1449,7 +1449,7 @@ mod battle_cam_shared_tests {
         vahn.active = true;
         world.actors = vec![vahn];
         assert_eq!(battle_cam_inputs(&world).shake_amplitude, 0);
-        world.camera_shake_amplitude = 9;
+        world.camera.shake_amplitude = 9;
         let inputs = battle_cam_inputs(&world);
         assert_eq!(inputs.shake_amplitude, 9);
         let mut slot = None;

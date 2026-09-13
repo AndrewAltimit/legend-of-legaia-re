@@ -34,7 +34,7 @@ fn sub9_default(target: i16) -> Vec<u8> {
 #[test]
 fn the_accumulator_starts_at_the_initialisers_seed() {
     assert_eq!(
-        World::new().camera_offset_ease,
+        World::new().camera.offset_ease,
         crate::camera_ease::CAMERA_OFFSET_EASE_SEED
     );
 }
@@ -48,17 +48,17 @@ fn op_4c_49_posts_the_offset_and_the_frame_easing_walks_to_it() {
     world.load_field_script(sub9_default(0x200));
     let _ = world.tick();
     assert_eq!(
-        world.camera_scene_offset, 0x200,
+        world.camera.scene_offset, 0x200,
         "the sub-9 default arm is the writer of scene_ctrl[+0x4A]"
     );
 
-    let start = world.camera_offset_ease;
+    let start = world.camera.offset_ease;
     assert!(start < 0x200, "the seed is below the posted target");
     let mut prev = start;
     let mut arrived = None;
     for frame in 0..512 {
         let _ = world.tick();
-        let cur = world.camera_offset_ease;
+        let cur = world.camera.offset_ease;
         assert!(
             cur >= prev,
             "frame {frame}: eased backwards {prev} -> {cur}"
@@ -73,7 +73,7 @@ fn op_4c_49_posts_the_offset_and_the_frame_easing_walks_to_it() {
         arrived.is_some(),
         "the easing must arrive; it stalled at {prev}"
     );
-    assert_eq!(world.camera_offset_ease, 0x200, "and then hold");
+    assert_eq!(world.camera.offset_ease, 0x200, "and then hold");
 }
 
 /// The target is a *difference*: the player's `+0x16` footing is subtracted
@@ -90,7 +90,7 @@ fn the_settled_value_is_the_posted_offset_minus_the_players_footing() {
         for _ in 0..512 {
             let _ = world.tick();
         }
-        settled.push(world.camera_offset_ease);
+        settled.push(world.camera.offset_ease);
     }
     assert_eq!(settled, vec![0x100, 0x100 + 192, 0x100 - 64]);
 }
@@ -110,19 +110,19 @@ fn the_bit_24_arm_posts_both_globals_because_the_easing_is_locked_out() {
     world.load_field_script(sub9_default(0x200));
     let _ = world.tick();
     assert_eq!(
-        world.camera_scene_offset,
+        world.camera.scene_offset,
         0x200 - 192,
         "scene ctrl +0x4A takes target + player[+0x16]"
     );
     assert_eq!(
-        world.camera_offset_ease, 0x200,
+        world.camera.offset_ease, 0x200,
         "and the accumulator target"
     );
     for _ in 0..64 {
         let _ = world.tick();
     }
     assert_eq!(
-        world.camera_offset_ease, 0x200,
+        world.camera.offset_ease, 0x200,
         "the lock keeps the easing off the accumulator"
     );
 }
@@ -137,9 +137,9 @@ fn the_delta_arm_snaps_the_accumulator_instead_of_easing_to_it() {
     world.story_flags = 0x0200_0000;
     world.load_field_script(sub9_default(0x100));
     let _ = world.tick();
-    assert_eq!(world.camera_scene_offset, 0x100);
+    assert_eq!(world.camera.scene_offset, 0x100);
     assert_eq!(
-        world.camera_offset_ease,
+        world.camera.offset_ease,
         0x100 + 192,
         "one frame, not the ~30 the easing would take"
     );
