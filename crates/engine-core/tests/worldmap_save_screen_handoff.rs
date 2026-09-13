@@ -45,7 +45,7 @@ const SAVE_SCREEN_POOL: u32 = 0x8007_C34C;
 fn overworld() -> World {
     let mut world = World::new();
     world.mode = SceneMode::WorldMap;
-    world.world_map_ctrl = Some(WorldMapController {
+    world.world_map.ctrl = Some(WorldMapController {
         debug_enabled: true,
         ..WorldMapController::default()
     });
@@ -60,11 +60,11 @@ fn tap(world: &mut World, button: PadButton) {
 }
 
 fn panels(world: &World) -> &legaia_engine_core::world_map_panel_host::PanelActorHost {
-    &world.world_map_ctrl.as_ref().expect("controller").panels
+    &world.world_map.ctrl.as_ref().expect("controller").panels
 }
 
 fn panels_mut(world: &mut World) -> &mut legaia_engine_core::world_map_panel_host::PanelActorHost {
-    &mut world.world_map_ctrl.as_mut().expect("controller").panels
+    &mut world.world_map.ctrl.as_mut().expect("controller").panels
 }
 
 /// Run ticks until `f` holds, or fail. Returns how many ticks it took.

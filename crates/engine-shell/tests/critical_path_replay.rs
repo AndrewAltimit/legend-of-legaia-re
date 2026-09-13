@@ -601,7 +601,7 @@ fn world_map_pad_for_world_step(azimuth: i32, dwx: i16, dwz: i16) -> u16 {
 fn pad_for_step(host: &SceneHost, dwx: i16, dwz: i16) -> u16 {
     match host.world.mode {
         SceneMode::WorldMap => world_map_pad_for_world_step(
-            host.world.world_map_ctrl.as_ref().map_or(0, |c| c.azimuth),
+            host.world.world_map.ctrl.as_ref().map_or(0, |c| c.azimuth),
             dwx,
             dwz,
         ),
@@ -1498,9 +1498,10 @@ fn portal_tile(host: &SceneHost, dest: &str, avoid: &HashSet<(i32, i32)>) -> Opt
         cell_of(x, z)
     };
     host.world
-        .world_map_entity_configs
+        .world_map
+        .entity_configs
         .iter()
-        .zip(host.world.world_map_entity_positions.iter())
+        .zip(host.world.world_map.entity_positions.iter())
         .filter_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal { scene_name, .. } if scene_name == dest => {
                 Some(tile_of(x, z))
@@ -1537,9 +1538,10 @@ fn portal_tile(host: &SceneHost, dest: &str, avoid: &HashSet<(i32, i32)>) -> Opt
 /// half-tile band of the hazard open.
 fn portal_hazards(host: &SceneHost, dest: &str) -> HashSet<(i32, i32)> {
     host.world
-        .world_map_entity_configs
+        .world_map
+        .entity_configs
         .iter()
-        .zip(host.world.world_map_entity_positions.iter())
+        .zip(host.world.world_map.entity_positions.iter())
         .filter_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal { scene_name, .. } if scene_name != dest => {
                 Some(dispatch_tile(x, z))
@@ -1653,9 +1655,10 @@ fn ablate_rung4_inputs(host: &mut SceneHost, hazards: &HashSet<(i32, i32)>) {
     };
     let goals: Vec<(i16, i16)> = host
         .world
-        .world_map_entity_configs
+        .world_map
+        .entity_configs
         .iter()
-        .zip(host.world.world_map_entity_positions.iter())
+        .zip(host.world.world_map.entity_positions.iter())
         .filter_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal { scene_name, .. } if scene_name == "keikoku" => {
                 Some(tile_of(x, z))
@@ -1954,9 +1957,10 @@ fn probe_rung4_lattice(host: &SceneHost) {
     let (px, pz) = player_world(host);
     let portals: Vec<(String, (i16, i16))> = host
         .world
-        .world_map_entity_configs
+        .world_map
+        .entity_configs
         .iter()
-        .zip(host.world.world_map_entity_positions.iter())
+        .zip(host.world.world_map.entity_positions.iter())
         .filter_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal { scene_name, .. } => {
                 Some((scene_name.clone(), (x, z)))

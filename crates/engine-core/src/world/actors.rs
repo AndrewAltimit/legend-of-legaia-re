@@ -1489,8 +1489,8 @@ impl World {
     /// it.
     pub fn enter_world_map(&mut self) {
         self.mode = SceneMode::WorldMap;
-        if self.world_map_ctrl.is_none() {
-            self.world_map_ctrl = Some(WorldMapController::new());
+        if self.world_map.ctrl.is_none() {
+            self.world_map.ctrl = Some(WorldMapController::new());
         }
     }
 

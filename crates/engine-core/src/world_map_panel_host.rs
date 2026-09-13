@@ -1558,7 +1558,7 @@ mod tests {
     fn world_on_the_overworld() -> crate::world::World {
         let mut w = crate::world::World::default();
         w.enter_world_map();
-        w.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+        w.world_map.ctrl.as_mut().unwrap().debug_enabled = true;
         w
     }
 
@@ -1570,10 +1570,10 @@ mod tests {
         let mut w = world_on_the_overworld();
         w.set_pad(0);
         let _ = w.tick();
-        assert!(!w.world_map_ctrl.as_ref().unwrap().panels.is_active());
+        assert!(!w.world_map.ctrl.as_ref().unwrap().panels.is_active());
         w.set_pad(crate::input::PadButton::Square.mask());
         let _ = w.tick();
-        let panels = &w.world_map_ctrl.as_ref().unwrap().panels;
+        let panels = &w.world_map.ctrl.as_ref().unwrap().panels;
         assert!(panels.is_active(), "Square installs the sub-list");
         assert!(
             panels.windows.is_open(SUBLIST_PANEL_INDEX),
@@ -1589,7 +1589,7 @@ mod tests {
         w.enter_world_map();
         w.set_pad(crate::input::PadButton::Square.mask());
         let _ = w.tick();
-        assert!(!w.world_map_ctrl.as_ref().unwrap().panels.is_active());
+        assert!(!w.world_map.ctrl.as_ref().unwrap().panels.is_active());
     }
 
     /// The text box's confirm arm has to reach the *records*, not just the
@@ -1609,7 +1609,7 @@ mod tests {
         w.set_pad(crate::input::PadButton::R2.mask());
         let _ = w.tick();
         {
-            let p = &mut w.world_map_ctrl.as_mut().unwrap().panels;
+            let p = &mut w.world_map.ctrl.as_mut().unwrap().panels;
             assert_eq!(p.kind, Some(PanelActorKind::TextBox));
             assert_eq!(p.phase, 1, "installed straight at the prompt");
         }
@@ -1635,7 +1635,7 @@ mod tests {
         // Freeze the return point, then teleport the player somewhere else and
         // let the art run.
         {
-            let p = &mut w.world_map_ctrl.as_mut().unwrap().panels;
+            let p = &mut w.world_map.ctrl.as_mut().unwrap().panels;
             assert_eq!(p.visited.len(), 1, "the idle tick recorded the tile");
             p.install(PanelActorKind::TravelArt(TravelArt::Riremito), 0x1A);
         }
@@ -1643,7 +1643,7 @@ mod tests {
         for _ in 0..400 {
             w.set_pad(0);
             let _ = w.tick();
-            if !w.world_map_ctrl.as_ref().unwrap().panels.is_active() {
+            if !w.world_map.ctrl.as_ref().unwrap().panels.is_active() {
                 break;
             }
         }
@@ -1660,7 +1660,7 @@ mod tests {
         let mut w = world_on_the_overworld();
         w.system_flag_set(0x0003);
         {
-            let p = &mut w.world_map_ctrl.as_mut().unwrap().panels;
+            let p = &mut w.world_map.ctrl.as_mut().unwrap().panels;
             p.flag_desc = FlagWindowDescriptor {
                 count: 8,
                 first_visible: 0,
@@ -1678,7 +1678,7 @@ mod tests {
         let _ = w.tick();
         w.set_pad(crate::input::PadButton::Cross.mask());
         let _ = w.tick();
-        let picked = w.world_map_ctrl.as_ref().unwrap().panels.cursor;
+        let picked = w.world_map.ctrl.as_ref().unwrap().panels.cursor;
         assert!(
             w.system_flag_test(picked as u16),
             "the confirm set flag {picked} in the world bank"

@@ -27,14 +27,14 @@ fn press_top_view_chord(world: &mut World) {
 #[test]
 fn enter_world_map_installs_controller() {
     let mut world = World::default();
-    assert!(world.world_map_ctrl.is_none());
+    assert!(world.world_map.ctrl.is_none());
     world.enter_world_map();
     assert_eq!(world.mode, SceneMode::WorldMap);
-    assert!(world.world_map_ctrl.is_some());
+    assert!(world.world_map.ctrl.is_some());
     // Idempotent: re-entry keeps the existing controller + state.
-    world.world_map_ctrl.as_mut().unwrap().camera_x = 42;
+    world.world_map.ctrl.as_mut().unwrap().camera_x = 42;
     world.enter_world_map();
-    assert_eq!(world.world_map_ctrl.as_ref().unwrap().camera_x, 42);
+    assert_eq!(world.world_map.ctrl.as_ref().unwrap().camera_x, 42);
 }
 
 /// The top-view screen-dim pass (`FUN_801E75DC`) must be produced by the
@@ -48,29 +48,30 @@ fn enter_world_map_installs_controller() {
 fn world_tick_emits_top_view_screen_dim() {
     let mut world = World::default();
     world.enter_world_map();
-    world.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+    world.world_map.ctrl.as_mut().unwrap().debug_enabled = true;
 
     // Walk mode (view_mode == 0): retail's first branch skips the whole
     // top-view block, so no dim regardless of the anim flags.
-    world.world_map_ctrl.as_mut().unwrap().anim_flags = 1;
+    world.world_map.ctrl.as_mut().unwrap().anim_flags = 1;
     world.set_pad(0);
     let _ = world.tick();
     assert!(
-        world.world_map_ctrl.as_ref().unwrap().screen_dim.is_none(),
+        world.world_map.ctrl.as_ref().unwrap().screen_dim.is_none(),
         "walk mode must not dim"
     );
 
     // Flip into top view with the debug combo, keeping anim bit 0 set.
     press_top_view_chord(&mut world);
-    assert!(world.world_map_ctrl.as_ref().unwrap().is_top_view());
+    assert!(world.world_map.ctrl.as_ref().unwrap().is_top_view());
     // The chord itself carries R1|R2 held, and the anim toggles stand down
     // while a shoulder is held, so bit 0 survives the toggle frame.
-    world.world_map_ctrl.as_mut().unwrap().anim_flags = 1;
+    world.world_map.ctrl.as_mut().unwrap().anim_flags = 1;
 
     world.set_pad(0);
     let _ = world.tick();
     let dim = world
-        .world_map_ctrl
+        .world_map
+        .ctrl
         .as_ref()
         .unwrap()
         .screen_dim
@@ -85,10 +86,10 @@ fn world_tick_emits_top_view_screen_dim() {
 
     // Clearing anim bit 0 stops the pass on the very next tick - retail's
     // second branch - and the stale pass must not linger.
-    world.world_map_ctrl.as_mut().unwrap().anim_flags = 0;
+    world.world_map.ctrl.as_mut().unwrap().anim_flags = 0;
     let _ = world.tick();
     assert!(
-        world.world_map_ctrl.as_ref().unwrap().screen_dim.is_none(),
+        world.world_map.ctrl.as_ref().unwrap().screen_dim.is_none(),
         "anim bit 0 clear must stop the dim and clear the stale pass"
     );
 }
@@ -101,12 +102,12 @@ fn world_tick_drives_world_map_from_pad() {
     // tick path, not via a host-side controller.
     let mut world = World::default();
     world.enter_world_map();
-    world.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+    world.world_map.ctrl.as_mut().unwrap().debug_enabled = true;
 
     // Frames 1-2: the toggle chord (packed 0x4A held / 0x40 pressed) flips
     // the view into top-view.
     press_top_view_chord(&mut world);
-    assert!(world.world_map_ctrl.as_ref().unwrap().is_top_view());
+    assert!(world.world_map.ctrl.as_ref().unwrap().is_top_view());
 
     // Next: in top-view, the camera bank needs the L1 modifier held
     // alongside the direction (packed 0x4 | 0x1000). Releasing the toggle
@@ -115,7 +116,7 @@ fn world_tick_drives_world_map_from_pad() {
     let _ = world.tick();
     world.set_pad(raw_pad(0x0004 | 0x1000));
     let _ = world.tick();
-    assert_eq!(world.world_map_ctrl.as_ref().unwrap().camera_x, -8);
+    assert_eq!(world.world_map.ctrl.as_ref().unwrap().camera_x, -8);
 }
 
 #[test]
@@ -131,12 +132,12 @@ fn world_map_tick_is_deterministic_across_identical_pad_streams() {
     let drive = |stream: &[u16]| {
         let mut world = World::default();
         world.enter_world_map();
-        world.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+        world.world_map.ctrl.as_mut().unwrap().debug_enabled = true;
         for &pad in stream {
             world.set_pad(pad);
             let _ = world.tick();
         }
-        let c = world.world_map_ctrl.unwrap();
+        let c = world.world_map.ctrl.unwrap();
         (c.view_mode, c.camera_x, c.camera_z, c.azimuth, c.zoom)
     };
     assert_eq!(drive(&pad_stream), drive(&pad_stream));
@@ -154,7 +155,7 @@ fn world_map_without_entities_never_encounters() {
         let _ = world.tick();
     }
     assert_eq!(world.mode, SceneMode::WorldMap);
-    assert!(world.pending_world_map_encounter.is_none());
+    assert!(world.world_map.pending_encounter.is_none());
 }
 
 /// Walking the overworld player across tiles rolls the region-keyed encounter
@@ -174,7 +175,7 @@ fn world_map_region_walk_triggers_battle() {
     // Frame the camera at a quarter turn (azimuth 1024) so the camera-relative
     // remap maps a held Right cleanly to world +X (keeps this test's "walk +X
     // across tiles" intent readable; at the default azimuth 0 Right maps to -Z).
-    if let Some(ctrl) = world.world_map_ctrl.as_mut() {
+    if let Some(ctrl) = world.world_map.ctrl.as_mut() {
         ctrl.azimuth = 1024;
     }
     world.install_field_player(0); // player_actor_slot = 0, actor active
@@ -312,7 +313,7 @@ fn world_map_without_regions_or_entities_never_encounters() {
         let _ = world.tick();
     }
     assert_eq!(world.mode, SceneMode::WorldMap);
-    assert!(world.pending_world_map_encounter.is_none());
+    assert!(world.world_map.pending_encounter.is_none());
 }
 
 /// An installed overworld entity whose shared countdown reaches zero (with

@@ -119,11 +119,11 @@ fn overworld() -> World {
 }
 
 fn ctrl(w: &World) -> &legaia_engine_core::world_map::WorldMapController {
-    w.world_map_ctrl.as_ref().expect("world-map controller")
+    w.world_map.ctrl.as_ref().expect("world-map controller")
 }
 
 fn ctrl_mut(w: &mut World) -> &mut legaia_engine_core::world_map::WorldMapController {
-    w.world_map_ctrl.as_mut().expect("world-map controller")
+    w.world_map.ctrl.as_mut().expect("world-map controller")
 }
 
 /// The developer opt-in the native window takes from its `--world-map` arm

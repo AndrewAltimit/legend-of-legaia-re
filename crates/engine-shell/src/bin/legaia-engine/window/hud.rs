@@ -323,7 +323,7 @@ impl PlayWindowApp {
             );
             let layout2 = self.font.layout_ascii(&line2);
             out.extend(text_draws_for(&layout2, (8, 26), dim));
-            if let Some(ctrl) = &self.session.host.world.world_map_ctrl {
+            if let Some(ctrl) = &self.session.host.world.world_map.ctrl {
                 let mode_str = if ctrl.is_top_view() {
                     "top-view"
                 } else {

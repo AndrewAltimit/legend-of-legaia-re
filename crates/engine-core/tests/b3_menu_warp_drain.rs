@@ -94,7 +94,8 @@ fn an_unresolvable_scene_word_is_dropped_not_invented() {
 fn a_staged_escape_returns_to_the_visited_kingdom_tile() {
     let mut w = World::new();
     w.enter_world_map();
-    w.world_map_ctrl
+    w.world_map
+        .ctrl
         .as_mut()
         .expect("controller installed")
         .panels

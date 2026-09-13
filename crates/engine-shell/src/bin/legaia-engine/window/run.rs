@@ -446,7 +446,7 @@ pub(super) fn cmd_play_window_with_record(
         // Start in walk mode so the d-pad walks the overworld player (and the
         // per-tile encounter roll fires). The top-view debug camera (orbit /
         // zoom / pan) stays reachable via the toggle combo (debug_enabled).
-        if let Some(ctrl) = session.host.world.world_map_ctrl.as_mut() {
+        if let Some(ctrl) = session.host.world.world_map.ctrl.as_mut() {
             ctrl.debug_enabled = true;
             ctrl.view_mode = 0;
         }

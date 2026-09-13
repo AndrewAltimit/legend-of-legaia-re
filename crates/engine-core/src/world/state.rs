@@ -1231,9 +1231,8 @@ pub struct World {
     /// [`Self::current_level_up_banner`].
     pub current_capture_banner: Option<crate::seru_learning::SeruCaptureSession>,
 
-    /// World-map camera and entity state. `Some` when `mode == SceneMode::WorldMap`,
-    /// `None` otherwise.
-    pub world_map_ctrl: Option<WorldMapController>,
+    /// Overworld state: the world-map controller, its entity state machines and the encounter / region trackers.
+    pub world_map: WorldMapState,
 
     /// Tile-board grid-mode state (the op-0x49 puzzle board, not town locomotion).
     pub board: TileBoardState,
@@ -2281,61 +2280,6 @@ pub struct World {
     /// loop.
     pub field_last_tile: Option<(i16, i16)>,
 
-    /// Per-entity world-map state machines (the port of `FUN_801DA51C` in
-    /// [`vm::world_map`]). One [`vm::world_map::WorldMapEntityCtx`] per
-    /// installed overworld entity (encounter zones / town portals / NPCs).
-    /// Empty unless [`Self::install_world_map_entities`] seeded them, so
-    /// world-map mode without gameplay (camera-only) keeps ticking untouched.
-    /// Driven each [`SceneMode::WorldMap`] tick by `Self::tick_world_map`.
-    pub world_map_entities: Vec<vm::world_map::WorldMapEntityCtx>,
-
-    /// Per-entity role config, paired by index with [`Self::world_map_entities`].
-    /// Empty (or shorter than the entity list) means an entity has no specific
-    /// role: its encounters fall back to [`Self::world_map_encounter`]'s shared
-    /// formation and it surfaces a plain interaction. Installed together with
-    /// the entities via [`Self::install_world_map_entities_with_configs`].
-    pub world_map_entity_configs: Vec<WorldMapEntityConfig>,
-
-    /// Per-entity overworld world position `(x, z)`, paired by index with
-    /// [`Self::world_map_entities`]. Populated only by
-    /// [`Self::install_world_map_entities_at`] (the disc placement seeding);
-    /// the config-only installers leave it empty. When present, it drives the
-    /// **auto-engage-on-walkover** trigger in `Self::tick_world_map`: the
-    /// player stepping onto a `Portal` entity's tile fires its transition with
-    /// no host call, the port-side stand-in for retail's per-entity
-    /// player-position-in-zone check.
-    pub world_map_entity_positions: Vec<(i16, i16)>,
-
-    /// Shared overworld encounter-rate state - the retail globals the
-    /// world-map entity SM reads (`DAT_8007b604` countdown, `DAT_8007b5f8`
-    /// enable flag) plus the formation an overworld encounter spawns.
-    pub world_map_encounter: WorldMapEncounterState,
-
-    /// Whether the player is moving on the overworld this tick (the entity
-    /// SM's `_DAT_8007c364[+0x10] & 0x80000` player-walking gate). Set from
-    /// the pad each world-map tick; a stationary player lets the interaction
-    /// check fire.
-    pub world_map_player_walking: bool,
-
-    /// Overworld encounter pending resolution into a battle: the formation id
-    /// an entity SM's encounter handler latched this frame. Drained at the end
-    /// of `Self::tick_world_map` to flip into [`SceneMode::Battle`]. `None`
-    /// between encounters.
-    pub pending_world_map_encounter: Option<u16>,
-
-    /// Region-keyed random-encounter state for the overworld (the
-    /// `FUN_801D9E1C` port, [`crate::region_encounter`]). When set,
-    /// `Self::tick_world_map` rolls it once per 128-unit tile the player
-    /// crosses, latching [`Self::pending_world_map_encounter`] on a trigger.
-    /// `None` on a camera-only world map (no region data routed).
-    ///
-    /// REF: FUN_801D9E1C
-    pub world_map_region_tracker: Option<crate::region_encounter::RegionEncounterTracker>,
-
-    /// Player tile (`world >> 7`) at the previous overworld step check, for
-    /// per-tile step detection. `None` until the first world-map tick seeds it.
-    pub world_map_last_tile: Option<(i32, i32)>,
-
     /// Region-keyed random-encounter state for the current FIELD scene (the
     /// same [`crate::region_encounter`] `FUN_801D9E1C` port the overworld
     /// uses, [`Self::world_map_region_tracker`]). When set,
@@ -2349,10 +2293,6 @@ pub struct World {
     ///
     /// REF: FUN_801D9E1C
     pub field_region_tracker: Option<crate::region_encounter::RegionEncounterTracker>,
-
-    /// Overworld player walk speed in world units per frame (per held d-pad
-    /// direction). Default [`Self::WORLD_MAP_PLAYER_SPEED`].
-    pub world_map_player_speed: i16,
 
     /// Scene mode to return to when the current battle finishes. Captured at
     /// the transition into [`SceneMode::Battle`]; `Self::finish_battle`
@@ -2834,7 +2774,7 @@ impl World {
             current_level_up_banner: None,
             pending_level_up_banners: std::collections::VecDeque::new(),
             current_capture_banner: None,
-            world_map_ctrl: None,
+            world_map: WorldMapState::new(),
             board: TileBoardState::new(),
             screen_fx: Default::default(),
             screen_fx_frame: Default::default(),
@@ -2974,16 +2914,7 @@ impl World {
             game_over_hold: false,
             field_return: None,
             field_last_tile: None,
-            world_map_entities: Vec::new(),
-            world_map_entity_configs: Vec::new(),
-            world_map_entity_positions: Vec::new(),
-            world_map_encounter: WorldMapEncounterState::default(),
-            world_map_player_walking: false,
-            pending_world_map_encounter: None,
-            world_map_region_tracker: None,
-            world_map_last_tile: None,
             field_region_tracker: None,
-            world_map_player_speed: Self::WORLD_MAP_PLAYER_SPEED,
             battle_return_mode: SceneMode::Field,
             field_carriers: Vec::new(),
             field_carrier_configs: Vec::new(),
@@ -3160,7 +3091,7 @@ impl World {
         if let Some(t) = self.field_region_tracker.as_mut() {
             t.reset();
         }
-        if let Some(t) = self.world_map_region_tracker.as_mut() {
+        if let Some(t) = self.world_map.region_tracker.as_mut() {
             t.reset();
         }
         self.battle_end = None;

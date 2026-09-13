@@ -431,7 +431,7 @@ impl World {
     /// actor's current plane (the placements are 2D), so markers sit on the
     /// player's walking plane rather than at an arbitrary `y = 0`.
     pub fn world_map_entity_markers(&self) -> Vec<WorldMapEntityMarker> {
-        if self.world_map_entity_positions.is_empty() {
+        if self.world_map.entity_positions.is_empty() {
             return Vec::new();
         }
         let base_y = self
@@ -439,11 +439,12 @@ impl World {
             .and_then(|s| self.actors.get(s as usize))
             .map(|a| a.move_state.world_y as f32)
             .unwrap_or(0.0);
-        self.world_map_entity_positions
+        self.world_map
+            .entity_positions
             .iter()
             .enumerate()
             .map(|(i, &(x, z))| {
-                let kind = match self.world_map_entity_configs.get(i) {
+                let kind = match self.world_map.entity_configs.get(i) {
                     Some(WorldMapEntityConfig::EncounterZone { .. }) => {
                         WorldMapEntityKind::EncounterZone
                     }

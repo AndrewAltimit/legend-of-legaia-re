@@ -648,7 +648,8 @@ impl World {
         if self.menu.pending_escape {
             self.menu.pending_escape = false;
             let visited = self
-                .world_map_ctrl
+                .world_map
+                .ctrl
                 .as_ref()
                 .and_then(|c| c.panels.visited.last().copied());
             match visited {

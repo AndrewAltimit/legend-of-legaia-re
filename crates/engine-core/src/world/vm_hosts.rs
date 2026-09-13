@@ -368,25 +368,25 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
         true
     }
     fn encounter_countdown(&self) -> i8 {
-        self.world.world_map_encounter.countdown
+        self.world.world_map.encounter.countdown
     }
     fn set_encounter_countdown(&mut self, v: i8) {
-        self.world.world_map_encounter.countdown = v;
+        self.world.world_map.encounter.countdown = v;
     }
     fn encounter_enabled(&self) -> bool {
-        self.world.world_map_encounter.enabled
+        self.world.world_map.encounter.enabled
     }
     fn on_encounter(&mut self, entity_idx: usize, _resolver_result: u32) {
         // Latch a formation for resolution into a battle at the end of the
         // world-map tick. Prefer this entity's own encounter-zone formation;
         // fall back to the map-wide shared formation. Pace the next encounter
         // by resetting the shared countdown.
-        let formation_id = match self.world.world_map_entity_configs.get(entity_idx) {
+        let formation_id = match self.world.world_map.entity_configs.get(entity_idx) {
             Some(WorldMapEntityConfig::EncounterZone { formation_id }) => *formation_id,
-            _ => self.world.world_map_encounter.formation_id,
+            _ => self.world.world_map.encounter.formation_id,
         };
-        self.world.pending_world_map_encounter = Some(formation_id);
-        self.world.world_map_encounter.countdown = self.world.world_map_encounter.reset_to;
+        self.world.world_map.pending_encounter = Some(formation_id);
+        self.world.world_map.encounter.countdown = self.world.world_map.encounter.reset_to;
     }
     fn on_activating(&mut self, _entity_idx: usize) {
         // Pending scene/portal data copy - no engine-side scene buffer yet.
@@ -395,7 +395,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
         // A portal entity reached the transition state. Which of the two
         // portal shapes it is decides where the number goes - and they are
         // *different id spaces*, which is the whole reason this arm is split.
-        match self.world.world_map_entity_configs.get(entity_idx) {
+        match self.world.world_map.entity_configs.get(entity_idx) {
             // A **minigame door** on the overworld (the `map02` / `map03`
             // fishing signboards): its payload is the op-`0x3E` `op0 - 100`
             // mode-24 sub-id, so it arms the door warp exactly as the field
@@ -436,10 +436,10 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
         self.world.dialogue_owns_input()
     }
     fn player_walking(&self) -> bool {
-        self.world.world_map_player_walking
+        self.world.world_map.player_walking
     }
     fn on_interact(&mut self, entity_idx: usize) {
-        let interact_id = match self.world.world_map_entity_configs.get(entity_idx) {
+        let interact_id = match self.world.world_map.entity_configs.get(entity_idx) {
             Some(WorldMapEntityConfig::Npc { interact_id, .. }) => *interact_id,
             _ => 0,
         };
@@ -702,7 +702,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // REF: FUN_801D1344 (the gate arm), FUN_801DE840 (these four arms)
     fn op4c_nibble4_global_write(&mut self, sub: u8, target: i32, ticks: u16) {
         let _ = ticks;
-        let Some(ctrl) = self.world.world_map_ctrl.as_mut() else {
+        let Some(ctrl) = self.world.world_map.ctrl.as_mut() else {
             return;
         };
         let v = target as u32;

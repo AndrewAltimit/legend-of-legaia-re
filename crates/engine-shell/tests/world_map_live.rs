@@ -51,7 +51,7 @@ fn world_map_live_installs_regions_and_player() {
     assert_eq!(mode, SceneMode::WorldMap, "ends in world-map mode");
     let world = &session.host.world;
     assert!(
-        world.world_map_region_tracker.is_some(),
+        world.world_map.region_tracker.is_some(),
         "the scene's region table is routed onto the overworld"
     );
     assert!(
@@ -59,7 +59,8 @@ fn world_map_live_installs_regions_and_player() {
         "an overworld player actor is installed"
     );
     let regions = world
-        .world_map_region_tracker
+        .world_map
+        .region_tracker
         .as_ref()
         .map(|t| t.table().regions.len())
         .unwrap_or(0);
@@ -181,7 +182,8 @@ fn world_map_live_walk_reaches_battle() {
     // azimuth 0 maps screen-right to world Z-), so resolve the actual world
     // axis the walk will travel before picking a start tile.
     let azimuth = world
-        .world_map_ctrl
+        .world_map
+        .ctrl
         .as_ref()
         .map(|c| c.azimuth)
         .unwrap_or(0);
@@ -202,7 +204,8 @@ fn world_map_live_walk_reaches_battle() {
     // tile-stride scan skips alternate sub-cells and picks runs the 2-unit
     // stepper blocks on immediately.
     let rects: Vec<(u8, u8, u8, u8)> = world
-        .world_map_region_tracker
+        .world_map
+        .region_tracker
         .as_ref()
         .map(|t| {
             t.table()
@@ -247,7 +250,7 @@ fn world_map_live_walk_reaches_battle() {
         a.move_state.world_z = pz;
     }
     // Re-seed the step latch so the move above isn't counted as a crossing.
-    world.world_map_last_tile = None;
+    world.world_map.last_tile = None;
 
     // Hold Right; each 128-unit tile crossing rolls the region. A real
     // region's rate is modest, so allow a generous budget.
@@ -269,14 +272,15 @@ fn world_map_live_walk_reaches_battle() {
             (ms.world_x, ms.world_z)
         };
         let out_of_region = world
-            .world_map_region_tracker
+            .world_map
+            .region_tracker
             .as_ref()
             .and_then(|t| t.table().region_at_world(cur.0, cur.1))
             .is_none();
         if out_of_region || cur == last_pos {
             world.actors[slot].move_state.world_x = px;
             world.actors[slot].move_state.world_z = pz;
-            world.world_map_last_tile = None;
+            world.world_map.last_tile = None;
             last_pos = (px, pz);
         } else {
             last_pos = cur;
@@ -379,11 +383,11 @@ fn world_map_scene_transition_auto_enters_world_map() {
         "an overworld transition lands in world-map mode, not plain Field"
     );
     assert!(
-        world.world_map_region_tracker.is_some(),
+        world.world_map.region_tracker.is_some(),
         "the overworld region table is seeded on the transition path"
     );
     assert!(
-        world.world_map_ctrl.is_some(),
+        world.world_map.ctrl.is_some(),
         "the world-map camera controller is installed"
     );
     let walls: usize = world
@@ -439,7 +443,8 @@ fn world_map_walking_onto_real_minigame_door_arms_the_warp() {
         let world = &mut session.host.world;
         // Find the first installed door entity and its placement position.
         let door = world
-            .world_map_entity_configs
+            .world_map
+            .entity_configs
             .iter()
             .enumerate()
             .find_map(|(i, c)| match c {
@@ -450,7 +455,7 @@ fn world_map_walking_onto_real_minigame_door_arms_the_warp() {
             eprintln!("[{scene}] no minigame-door entity installed");
             continue;
         };
-        let (px, pz) = world.world_map_entity_positions[idx];
+        let (px, pz) = world.world_map.entity_positions[idx];
         // Teleport the player onto the door tile, then tick: auto-engage
         // should arm the warp within a couple of frames.
         if let Some(slot) = world.player_actor_slot {
@@ -527,7 +532,8 @@ fn world_map_talking_to_real_npc_renders_inline_dialogue() {
         let npc = session
             .host
             .world
-            .world_map_entity_configs
+            .world_map
+            .entity_configs
             .iter()
             .enumerate()
             .find_map(|(i, c)| match c {
@@ -538,7 +544,7 @@ fn world_map_talking_to_real_npc_renders_inline_dialogue() {
             eprintln!("[{scene}] no talkable NPC entity with inline text installed");
             continue;
         };
-        let (nx, nz) = session.host.world.world_map_entity_positions[idx];
+        let (nx, nz) = session.host.world.world_map.entity_positions[idx];
         if let Some(slot) = session.host.world.player_actor_slot {
             let a = &mut session.host.world.actors[slot as usize];
             a.move_state.world_x = nx;
@@ -546,7 +552,7 @@ fn world_map_talking_to_real_npc_renders_inline_dialogue() {
         }
         // Don't count the teleport as a tile crossing (avoids a stray region
         // roll flipping us into Battle before the confirm).
-        session.host.world.world_map_last_tile = None;
+        session.host.world.world_map.last_tile = None;
 
         // Settle a no-input frame so the confirm press is a clean edge, then talk.
         session.host.world.set_pad(0);

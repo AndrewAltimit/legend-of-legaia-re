@@ -314,9 +314,10 @@ fn main() {
     assert_eq!(host.world.mode, SceneMode::WorldMap);
     let mouths: Vec<((i16, i16), (u8, u8))> = host
         .world
-        .world_map_entity_configs
+        .world_map
+        .entity_configs
         .iter()
-        .zip(host.world.world_map_entity_positions.iter())
+        .zip(host.world.world_map.entity_positions.iter())
         .filter_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal {
                 scene_name,

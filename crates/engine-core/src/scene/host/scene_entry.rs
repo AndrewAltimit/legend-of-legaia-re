@@ -1816,7 +1816,7 @@ impl SceneHost {
                 entry_z,
                 dir,
                 ..
-            }) = self.world.world_map_entity_configs.get(slot as usize)
+            }) = self.world.world_map.entity_configs.get(slot as usize)
             {
                 let name = scene_name.clone();
                 let (entry_x, entry_z, dir) = (*entry_x, *entry_z, *dir);

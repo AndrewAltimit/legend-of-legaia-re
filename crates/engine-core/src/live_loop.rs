@@ -127,9 +127,9 @@ impl World {
             t.select_group(|flag| self.system_flag_test(flag));
             self.field_region_tracker = Some(t);
         }
-        if let Some(mut t) = self.world_map_region_tracker.take() {
+        if let Some(mut t) = self.world_map.region_tracker.take() {
             t.select_group(|flag| self.system_flag_test(flag));
-            self.world_map_region_tracker = Some(t);
+            self.world_map.region_tracker = Some(t);
         }
         self.scene_encounters_rollable = self.scene_can_roll_encounters();
     }
@@ -175,7 +175,8 @@ impl World {
     pub fn scene_can_roll_encounters(&self) -> bool {
         if matches!(self.mode, SceneMode::WorldMap) {
             return self
-                .world_map_region_tracker
+                .world_map
+                .region_tracker
                 .as_ref()
                 .is_some_and(|t| t.table().any_rollable());
         }
