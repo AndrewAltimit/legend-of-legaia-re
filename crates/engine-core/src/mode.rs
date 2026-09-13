@@ -2222,9 +2222,9 @@ mod tests {
         }
         let mut d = ModeDriver::new(GameMode::ConfigInit);
         let mut w = World::default();
-        assert!(!w.sound_detach.is_detached());
+        assert!(!w.audio.sound_detach.is_detached());
         d.tick(&mut Noop, &mut w, &InputState::default());
-        assert!(w.sound_detach.is_detached());
+        assert!(w.audio.sound_detach.is_detached());
         // A second frame in the same mode must not re-run it.
         assert!(!w.detach_sound());
 
@@ -2232,7 +2232,7 @@ mod tests {
         let mut d = ModeDriver::new(GameMode::MainInit);
         let mut w = World::default();
         d.tick(&mut Noop, &mut w, &InputState::default());
-        assert!(!w.sound_detach.is_detached());
+        assert!(!w.audio.sound_detach.is_detached());
     }
 
     /// The sound-release deadline is counted in vsyncs by `World::tick`, so
@@ -2249,7 +2249,7 @@ mod tests {
             }
         }
         assert_eq!(fired, 1, "the deadline fires once and disarms");
-        assert!(!w.sound_release.armed);
+        assert!(!w.audio.sound_release.armed);
     }
 
     #[test]

@@ -91,15 +91,15 @@ fn battle_bgm_swaps_on_encounter_and_restores_on_finish() {
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
-    world.current_bgm = Some(0x0A); // field track playing
+    world.audio.current_bgm = Some(0x0A); // field track playing
     world.set_battle_bgm(Some(0x40)); // configured battle track
     let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
 
     world.enter_battle_from_formation(&formation);
 
     // Swapped to the battle track, with a start event queued for the host.
-    assert_eq!(world.current_bgm, Some(0x40));
-    assert!(world.battle_bgm_active);
+    assert_eq!(world.audio.current_bgm, Some(0x40));
+    assert!(world.audio.battle_bgm_active);
     let evs = world.drain_field_events();
     assert!(
         evs.iter().any(|e| matches!(
@@ -114,8 +114,8 @@ fn battle_bgm_swaps_on_encounter_and_restores_on_finish() {
 
     // Finish (no formation/loot) restores the field track + queues its start.
     world.finish_battle();
-    assert_eq!(world.current_bgm, Some(0x0A));
-    assert!(!world.battle_bgm_active);
+    assert_eq!(world.audio.current_bgm, Some(0x0A));
+    assert!(!world.audio.battle_bgm_active);
     let evs = world.drain_field_events();
     assert!(
         evs.iter().any(|e| matches!(
@@ -142,10 +142,10 @@ fn playable_default_swaps_to_the_standard_battle_theme() {
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
-    world.current_bgm = Some(2007); // a field track from the global pool
+    world.audio.current_bgm = Some(2007); // a field track from the global pool
     world.arm_live_loop("town01", &crate::live_loop::LiveLoopOpts::playable());
     assert_eq!(
-        world.battle_bgm,
+        world.audio.battle_bgm,
         Some(crate::music_labels::BATTLE_THEME_1_BGM_ID),
         "playable() installs the retail battle theme by default"
     );
@@ -153,14 +153,14 @@ fn playable_default_swaps_to_the_standard_battle_theme() {
     let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
     world.enter_battle_from_formation(&formation);
     assert_eq!(
-        world.current_bgm,
+        world.audio.current_bgm,
         Some(crate::music_labels::BATTLE_THEME_1_BGM_ID)
     );
-    assert!(world.battle_bgm_active);
+    assert!(world.audio.battle_bgm_active);
 
     world.finish_battle();
-    assert_eq!(world.current_bgm, Some(2007), "field track restored");
-    assert!(!world.battle_bgm_active);
+    assert_eq!(world.audio.current_bgm, Some(2007), "field track restored");
+    assert!(!world.audio.battle_bgm_active);
 }
 
 #[test]
@@ -172,12 +172,12 @@ fn battle_bgm_unset_leaves_music_untouched() {
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
-    world.current_bgm = Some(0x0A);
+    world.audio.current_bgm = Some(0x0A);
     // No battle_bgm configured (default None) -> no swap, no events.
     let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
     world.enter_battle_from_formation(&formation);
-    assert_eq!(world.current_bgm, Some(0x0A));
-    assert!(!world.battle_bgm_active);
+    assert_eq!(world.audio.current_bgm, Some(0x0A));
+    assert!(!world.audio.battle_bgm_active);
     assert!(
         !world
             .drain_field_events()
@@ -186,7 +186,7 @@ fn battle_bgm_unset_leaves_music_untouched() {
         "no BGM events when battle_bgm is unset"
     );
     world.finish_battle();
-    assert_eq!(world.current_bgm, Some(0x0A));
+    assert_eq!(world.audio.current_bgm, Some(0x0A));
 }
 
 #[test]
@@ -198,17 +198,17 @@ fn battle_bgm_with_silent_field_stops_on_finish() {
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
-    world.current_bgm = None; // no field music playing
+    world.audio.current_bgm = None; // no field music playing
     world.set_battle_bgm(Some(0x40));
     let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
 
     world.enter_battle_from_formation(&formation);
-    assert_eq!(world.current_bgm, Some(0x40));
+    assert_eq!(world.audio.current_bgm, Some(0x40));
     let _ = world.drain_field_events();
 
     world.finish_battle();
     // Nothing to resume -> battle music stops (sub-op 4) and id clears.
-    assert_eq!(world.current_bgm, None);
+    assert_eq!(world.audio.current_bgm, None);
     let evs = world.drain_field_events();
     assert!(
         evs.iter()

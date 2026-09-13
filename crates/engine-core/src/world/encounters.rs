@@ -1194,7 +1194,8 @@ impl World {
             // static SFX descriptor index both hosts' schedulers key their
             // banks by; slot fields are HUD context only - no actor is
             // attacking during the spin.
-            self.battle_sfx_cues
+            self.audio
+                .battle_sfx_cues
                 .push(crate::battle_events::BattleSfxCue {
                     kind: cue,
                     timing_frames: 0,

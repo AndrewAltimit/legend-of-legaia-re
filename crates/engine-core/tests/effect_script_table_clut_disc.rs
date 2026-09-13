@@ -95,7 +95,7 @@ fn draining_table_spawns_stages_the_real_clut_map_bytes_under_the_retail_gates()
         spawn(staged, true),
     ];
     world.battle_clut_stages.clear();
-    world.battle_sfx_cues.clear();
+    world.audio.battle_sfx_cues.clear();
 
     let drained = world.drain_battle_effect_spawns();
     assert_eq!(drained.len(), 4, "the drain still returns every spawn");
@@ -107,7 +107,7 @@ fn draining_table_spawns_stages_the_real_clut_map_bytes_under_the_retail_gates()
         "exactly the in-gate staging table spawn queues, with the map's byte"
     );
     assert!(
-        world.battle_sfx_cues.is_empty(),
+        world.audio.battle_sfx_cues.is_empty(),
         "the palette arm submits no sound - `FUN_80058490` is MoveImage"
     );
 

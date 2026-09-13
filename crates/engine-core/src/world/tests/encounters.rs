@@ -677,7 +677,7 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
         world.battle_intro_effects
     );
     assert_eq!(
-        world.current_bgm,
+        world.audio.current_bgm,
         Some(2001),
         "the BGM swap runs during the spin, not at battle entry"
     );
@@ -757,10 +757,13 @@ fn the_bgm_op_sub_5_arms_the_timed_sound_release() {
     // vsyncs, not a volume set.
     let mut world = World::new();
     world.arm_sound_release(4);
-    let arm = world.sound_arm.expect("the arm half latches its cells");
+    let arm = world
+        .audio
+        .sound_arm
+        .expect("the arm half latches its cells");
     assert_eq!(arm.deadline, 4);
     assert_eq!(arm.shim_deadline(), 5, "deadline | 1");
-    assert!(world.sound_release.armed);
+    assert!(world.audio.sound_release.armed);
 }
 
 #[test]
@@ -768,15 +771,18 @@ fn the_sfx_cue_delay_lands_on_the_slot_the_enqueue_parked() {
     // Two enqueues park slots 0 then 1; the op-0x36 sub-4 delay writes slot 1.
     let mut world = World::new();
     for _ in 0..2 {
-        let slot = world.sfx_cue_cursor;
-        world.sfx_cue_cursor = world.sfx_cue_delays.park(slot);
-        world.sfx_parked_slot = slot;
+        let slot = world.audio.sfx_cue_cursor;
+        world.audio.sfx_cue_cursor = world.audio.sfx_cue_delays.park(slot);
+        world.audio.sfx_parked_slot = slot;
     }
-    assert_eq!(world.sfx_parked_slot, 1);
-    assert_eq!(world.sfx_cue_cursor, 2);
-    world.sfx_cue_delays.set_delay(world.sfx_parked_slot, 0x30);
-    assert_eq!(world.sfx_cue_delays.delay(1), Some(0x30));
-    assert_eq!(world.sfx_cue_delays.delay(0), Some(0));
+    assert_eq!(world.audio.sfx_parked_slot, 1);
+    assert_eq!(world.audio.sfx_cue_cursor, 2);
+    world
+        .audio
+        .sfx_cue_delays
+        .set_delay(world.audio.sfx_parked_slot, 0x30);
+    assert_eq!(world.audio.sfx_cue_delays.delay(1), Some(0x30));
+    assert_eq!(world.audio.sfx_cue_delays.delay(0), Some(0));
 }
 
 #[test]

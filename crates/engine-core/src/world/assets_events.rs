@@ -205,7 +205,7 @@ impl World {
     /// `(clip_slot, channel, duration_sectors)` triple in the retail
     /// starter's own terms.
     pub fn drain_battle_xa_cues(&mut self) -> Vec<crate::sfx_cue::XaVoiceClip> {
-        std::mem::take(&mut self.battle_xa_cues)
+        std::mem::take(&mut self.audio.battle_xa_cues)
     }
 
     /// Drain the hit events the attack band resolved
@@ -216,7 +216,7 @@ impl World {
     }
 
     pub fn drain_battle_sfx_cues(&mut self) -> Vec<BattleSfxCue> {
-        std::mem::take(&mut self.battle_sfx_cues)
+        std::mem::take(&mut self.audio.battle_sfx_cues)
     }
 
     /// Drain the battle **effect-script spawn requests** queued this frame -
@@ -276,7 +276,7 @@ impl World {
     /// resolves each against its arts-voice bank and plays the CD-XA shout
     /// clip; nothing here mutates gameplay state.
     pub fn drain_battle_shout_cues(&mut self) -> Vec<crate::battle_events::BattleShoutCue> {
-        std::mem::take(&mut self.battle_shout_cues)
+        std::mem::take(&mut self.audio.battle_shout_cues)
     }
 
     /// Apply the gameplay-state side of a single battle event - currently
@@ -316,7 +316,7 @@ impl World {
                 // crates/engine-core/src/action_effect_script.rs)
                 for cue in &outcome.cues {
                     if cue.is_sound() {
-                        self.battle_sfx_cues.push(BattleSfxCue {
+                        self.audio.battle_sfx_cues.push(BattleSfxCue {
                             kind: cue.kind,
                             timing_frames: cue.timing_frames,
                             actor_slot: *actor_slot,

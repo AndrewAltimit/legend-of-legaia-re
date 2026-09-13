@@ -51,6 +51,7 @@ use vm_hosts::{
     MoveVmHostImpl, WorldMapEntityHostImpl,
 };
 
+mod audio_state;
 mod config;
 mod cutscene_state;
 mod field_carrier_state;
@@ -62,6 +63,7 @@ mod tile_board_state;
 mod types;
 mod world_map_state;
 
+pub use audio_state::AudioState;
 pub use config::*;
 pub use cutscene_state::CutsceneState;
 pub use field_carrier_state::FieldCarrierState;

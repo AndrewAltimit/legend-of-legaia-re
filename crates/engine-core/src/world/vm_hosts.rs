@@ -1096,10 +1096,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // (pause / stop / volume / etc.) - we still surface the event so
         // the engine can route them, just without overwriting current_bgm.
         if sub_op == 1 || sub_op == 9 {
-            self.world.current_bgm = Some(text_id);
+            self.world.audio.current_bgm = Some(text_id);
         } else if sub_op == 4 {
             // 4 = stop.
-            self.world.current_bgm = None;
+            self.world.audio.current_bgm = None;
         } else if sub_op == 5 {
             // Sub-5 is the timed release: retail's handler is
             // `FUN_800267A8(0, s16_operand)` at `0x801E01B4` (the operand is
@@ -1687,7 +1687,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // `crate::scus_leaf_kernels::SfxCueDelays`)
         // REF: FUN_80035B50
         // REF: FUN_800243F0 (the driver that settles the pair)
-        let dev_gate = self.world.dual_mode_gate != 0;
+        let dev_gate = self.world.audio.dual_mode_gate != 0;
         if op0_word & 0x8000 != 0 {
             if dev_gate {
                 // Retail never reaches this: the arm is skipped whole and
@@ -1699,39 +1699,47 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             }
             match op0_word & 0x7FFF {
                 0 => {
-                    if !self.world.sound_stream.is_settled() {
+                    if !self.world.audio.sound_stream.is_settled() {
                         return SceneFadeResult::Busy;
                     }
                     // The enqueue writes the slot the cursor names, parks it,
                     // then advances the cursor - so the parked slot stays the
                     // written one until the next enqueue.
-                    let slot = self.world.sfx_cue_cursor;
-                    self.world.sfx_cue_cursor = self.world.sfx_cue_delays.park(slot);
-                    self.world.sfx_parked_slot = slot;
+                    let slot = self.world.audio.sfx_cue_cursor;
+                    self.world.audio.sfx_cue_cursor = self.world.audio.sfx_cue_delays.park(slot);
+                    self.world.audio.sfx_parked_slot = slot;
                 }
                 1 => {
-                    if !self.world.sound_stream.request(i32::from(op1_word as i16)) {
+                    if !self
+                        .world
+                        .audio
+                        .sound_stream
+                        .request(i32::from(op1_word as i16))
+                    {
                         return SceneFadeResult::Busy;
                     }
                     // Synchronous host: the driver's latch lands in the same
                     // call, so a following sub-`2` barrier is satisfied on
                     // arrival.
-                    self.world.sound_stream.settle();
+                    self.world.audio.sound_stream.settle();
                 }
                 2 => {
-                    if !self.world.sound_stream.is_settled() {
+                    if !self.world.audio.sound_stream.is_settled() {
                         return SceneFadeResult::Busy;
                     }
                 }
                 4 => {
-                    let parked = self.world.sfx_parked_slot;
-                    self.world.sfx_cue_delays.set_delay(parked, op1_word as i16);
+                    let parked = self.world.audio.sfx_parked_slot;
+                    self.world
+                        .audio
+                        .sfx_cue_delays
+                        .set_delay(parked, op1_word as i16);
                 }
                 // Sub `3` (`FUN_801D8450`) and every sub `>= 5` advance
                 // unconditionally.
                 _ => {}
             }
-        } else if !dev_gate && !self.world.sound_stream.is_settled() {
+        } else if !dev_gate && !self.world.audio.sound_stream.is_settled() {
             return SceneFadeResult::Busy;
         }
         self.world
@@ -2239,7 +2247,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world.prev_action_cleared
     }
     fn sound_bank_ready(&self, _: u8) -> bool {
-        self.world.sound_bank_ready
+        self.world.audio.sound_bank_ready
     }
     /// The disc spell table's class byte, read off the same
     /// [`crate::pause_screens::MenuTextTables`] copy the live cast path
@@ -2669,6 +2677,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn one_shot_sfx(&mut self, cue_id: u16) {
         let slot = self.world.battle_ctx.active_actor;
         self.world
+            .audio
             .battle_sfx_cues
             .push(crate::battle_events::BattleSfxCue {
                 kind: cue_id,

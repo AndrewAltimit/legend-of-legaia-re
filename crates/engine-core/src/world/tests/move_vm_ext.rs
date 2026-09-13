@@ -181,7 +181,7 @@ fn field_op_35_sub1_emits_bgm_event_and_pins_current() {
         )),
         "expected Bgm event, got {evs:?}"
     );
-    assert_eq!(world.current_bgm, Some(0x42));
+    assert_eq!(world.audio.current_bgm, Some(0x42));
 }
 
 /// Op 0x3F is the **named scene-change** (not dialog): it stages a pending

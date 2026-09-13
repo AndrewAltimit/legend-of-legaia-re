@@ -1036,7 +1036,8 @@ impl World {
             return;
         }
         for action in actions {
-            self.battle_shout_cues
+            self.audio
+                .battle_shout_cues
                 .push(crate::battle_events::BattleShoutCue {
                     cslot: cslot as u8,
                     action: action.as_byte(),

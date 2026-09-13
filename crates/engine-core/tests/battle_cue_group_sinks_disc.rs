@@ -141,7 +141,7 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
     world.actors[1].battle.active_target = 3;
     world.battle_ctx.active_actor = 1;
     world.battle_ctx.action_state = ActionState::SpiritPreArm.as_byte();
-    world.battle_sfx_cues.clear();
+    world.audio.battle_sfx_cues.clear();
     let pool_before = world.effect_pool.active_count();
 
     for _ in 0..0x60 {
@@ -210,7 +210,7 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
         !group_clut_rows.is_empty(),
         "fixture picked a group with no CLUT row"
     );
-    let got: Vec<u16> = world.battle_sfx_cues.iter().map(|c| c.kind).collect();
+    let got: Vec<u16> = world.audio.battle_sfx_cues.iter().map(|c| c.kind).collect();
     assert_eq!(got, want, "item {item_id:#04x} group {}", site.group);
     for row in &group_clut_rows {
         assert!(

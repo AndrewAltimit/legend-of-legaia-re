@@ -703,9 +703,9 @@ impl World {
     /// PORT: FUN_800267A8
     /// REF: FUN_800267FC, FUN_80062004
     pub fn arm_sound_release(&mut self, deadline_vsyncs: i32) {
-        self.sound_release.arm(deadline_vsyncs);
-        self.pending_sound_release = false;
-        self.sound_arm = Some(crate::scus_leaf_kernels::TimedSoundArm::arm(
+        self.audio.sound_release.arm(deadline_vsyncs);
+        self.audio.pending_sound_release = false;
+        self.audio.sound_arm = Some(crate::scus_leaf_kernels::TimedSoundArm::arm(
             0,
             deadline_vsyncs.max(0) as u32,
             crate::new_game::GAME_STATE_COLD_RESET.audio_level,
@@ -714,7 +714,7 @@ impl World {
 
     /// Drain the "the sound-release deadline expired" event.
     pub fn take_pending_sound_release(&mut self) -> bool {
-        std::mem::take(&mut self.pending_sound_release)
+        std::mem::take(&mut self.audio.pending_sound_release)
     }
 
     /// Run the one-shot sound detach (`FUN_8002689C`). Returns `true` only on
@@ -723,7 +723,7 @@ impl World {
     ///
     /// PORT: FUN_8002689c
     pub fn detach_sound(&mut self) -> bool {
-        self.sound_detach.detach()
+        self.audio.sound_detach.detach()
     }
 
     /// Consume the frame-begin skip request, returning whether this frame
@@ -1100,9 +1100,9 @@ impl World {
             // in the libsnd voice binding the engine replaces, so the engine
             // arm is "release when it fires" unconditionally.
             if let crate::sound_state::SoundReleaseTick::Fired { .. } =
-                self.sound_release.tick(step, true, false)
+                self.audio.sound_release.tick(step, true, false)
             {
-                self.pending_sound_release = true;
+                self.audio.pending_sound_release = true;
             }
         }
         // Step the active full-screen fade. A template with a hold countdown

@@ -859,7 +859,7 @@ impl LegaiaRuntime {
         let requested = self
             .scene_host
             .as_ref()
-            .and_then(|h| h.world.current_bgm)
+            .and_then(|h| h.world.audio.current_bgm)
             .map(serde_json::Value::from)
             .unwrap_or(serde_json::Value::Null);
         #[cfg(target_arch = "wasm32")]

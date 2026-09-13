@@ -176,6 +176,7 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
     // The flash cue rode the SFX queue.
     assert!(
         world
+            .audio
             .battle_sfx_cues
             .iter()
             .any(|c| c.kind == legaia_engine_vm::battle_action::SUMMON_FLASH_CUE),

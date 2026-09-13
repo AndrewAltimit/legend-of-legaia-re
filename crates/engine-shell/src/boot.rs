@@ -760,7 +760,7 @@ impl BootSession {
                 legaia_asset::victory_pose::victory_pose_table_from_scus(&scus);
             // The XA cue duration table (`DAT_800788B8`) the sound funnel's
             // voice leg reads for its read span.
-            host.world.xa_cue_durations =
+            host.world.audio.xa_cue_durations =
                 legaia_asset::xa_cue_table::xa_cue_durations_from_scus(&scus);
         }
 
@@ -1198,7 +1198,7 @@ impl BootSession {
     /// global-pool id. The slot machine + fishing don't need this: they never
     /// replaced the director's bank.
     pub fn restore_field_bgm(&mut self) {
-        if let Some(id) = self.host.world.current_bgm {
+        if let Some(id) = self.host.world.audio.current_bgm {
             self.start_global_bgm(id);
         }
     }

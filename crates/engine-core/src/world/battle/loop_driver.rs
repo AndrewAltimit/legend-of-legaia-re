@@ -211,7 +211,7 @@ impl World {
         use vm::battle_action::{ActionState, ActorFlags};
 
         // The modelled CD drive: one clip read span elapses per frame.
-        self.battle_xa_busy_frames = self.battle_xa_busy_frames.saturating_sub(1);
+        self.audio.battle_xa_busy_frames = self.audio.battle_xa_busy_frames.saturating_sub(1);
 
         // The battle has ended and its presentation owns the frame: retail's
         // battle tick runs the results sequencer instead of the action SM
@@ -1357,7 +1357,8 @@ impl World {
         if let Some(cue) = cue
             && cue.is_sound()
         {
-            self.battle_sfx_cues
+            self.audio
+                .battle_sfx_cues
                 .push(crate::battle_events::BattleSfxCue {
                     kind: cue.kind,
                     timing_frames: 0,
@@ -1636,7 +1637,7 @@ impl World {
             let slot = self.engine_slot_of_retail_category(cat);
             self.battle_slot_element(slot).unwrap_or(NEUTRAL_ELEMENT)
         };
-        let durations = self.xa_cue_durations.as_deref();
+        let durations = self.audio.xa_cue_durations.as_deref();
         let xa_duration_raw = |n: u32| {
             durations
                 .and_then(|t| t.get(n as usize).copied())
@@ -1646,12 +1647,13 @@ impl World {
             element_of: &element_of,
             xa_duration_raw: &xa_duration_raw,
             tutorial_active: self.battle_tutorial.is_some(),
-            cd_read_busy: self.battle_xa_busy_frames > 0,
+            cd_read_busy: self.audio.battle_xa_busy_frames > 0,
         };
         let mut ring = crate::sfx_cue::SfxCueRing::default();
         let out = crate::sfx_cue::route_sfx_cue(&mut ring, MELEE_IMPACT_CUE, category, &src);
         if let Some(id) = out.enqueued {
-            self.battle_sfx_cues
+            self.audio
+                .battle_sfx_cues
                 .push(crate::battle_events::BattleSfxCue {
                     kind: id,
                     timing_frames: 0,
@@ -1670,8 +1672,8 @@ impl World {
     /// read span (`dur` vsyncs - see [`World::battle_xa_busy_frames`]).
     /// REF: FUN_8003D53C
     fn push_battle_xa_cue(&mut self, cue: crate::sfx_cue::XaVoiceClip) {
-        self.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
-        self.battle_xa_cues.push(cue);
+        self.audio.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
+        self.audio.battle_xa_cues.push(cue);
     }
 
     /// An engine seat index in **retail's** actor-table index space: party
@@ -1880,7 +1882,7 @@ mod melee_cue_tests {
     #[test]
     fn an_ordinary_party_swing_grunts_and_requests_no_sting() {
         let mut w = duel();
-        w.xa_cue_durations = Some(durations_with_melee_entry());
+        w.audio.xa_cue_durations = Some(durations_with_melee_entry());
         w.battle_ctx.active_actor = 0; // the party member attacks
         assert_eq!(
             w.monster_ai_state.flag_bd84, 0,
@@ -1902,7 +1904,7 @@ mod melee_cue_tests {
             (0x1D, 0, 0x26)
         );
         assert_eq!(
-            w.battle_xa_busy_frames, 0x26,
+            w.audio.battle_xa_busy_frames, 0x26,
             "the modelled drive stays busy for the read span"
         );
     }
@@ -1946,7 +1948,7 @@ mod melee_cue_tests {
     fn a_flagged_party_swing_takes_the_xa_leg_and_enqueues_nothing() {
         let mut w = duel();
         w.monster_ai_state.flag_bd84 = 1;
-        w.xa_cue_durations = Some(durations_with_melee_entry());
+        w.audio.xa_cue_durations = Some(durations_with_melee_entry());
         w.battle_ctx.active_actor = 0; // the party member attacks
         w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false);
         assert!(
@@ -1966,11 +1968,11 @@ mod melee_cue_tests {
     fn a_flagged_party_swing_is_dropped_while_the_drive_is_busy() {
         let mut w = duel();
         w.monster_ai_state.flag_bd84 = 1;
-        w.xa_cue_durations = Some(durations_with_melee_entry());
+        w.audio.xa_cue_durations = Some(durations_with_melee_entry());
         w.battle_ctx.active_actor = 0;
         // `FUN_8003DE7C(1) != 0` at `0x8004FE9C`: a read in flight drops the
         // voice leg's request.
-        w.battle_xa_busy_frames = 5;
+        w.audio.battle_xa_busy_frames = 5;
         {
             let atk = w.battle_ctx.active_actor;
             w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);

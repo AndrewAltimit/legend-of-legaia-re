@@ -120,7 +120,7 @@ impl World {
     /// and restores the field track on battle end); `None` disables it. See
     /// [`World::battle_bgm`].
     pub fn set_battle_bgm(&mut self, bgm_id: Option<u16>) {
-        self.battle_bgm = bgm_id;
+        self.audio.battle_bgm = bgm_id;
     }
 
     /// Switch to the configured battle track at encounter start. No-op when
@@ -128,15 +128,15 @@ impl World {
     /// the current field track for [`World::restore_field_bgm`] and queues a
     /// `FieldEvent::Bgm` start so the host's BGM director cross-fades to it.
     pub(crate) fn swap_to_battle_bgm(&mut self) {
-        let Some(battle) = self.battle_bgm else {
+        let Some(battle) = self.audio.battle_bgm else {
             return;
         };
-        if self.battle_bgm_active || self.current_bgm == Some(battle) {
+        if self.audio.battle_bgm_active || self.audio.current_bgm == Some(battle) {
             return;
         }
-        self.field_bgm_resume = self.current_bgm;
-        self.current_bgm = Some(battle);
-        self.battle_bgm_active = true;
+        self.audio.field_bgm_resume = self.audio.current_bgm;
+        self.audio.current_bgm = Some(battle);
+        self.audio.battle_bgm_active = true;
         self.pending_field_events.push(FieldEvent::Bgm {
             text_id: battle,
             sub_op: 1,
@@ -148,20 +148,20 @@ impl World {
     /// `FieldEvent::Bgm` start for the stashed track, or a stop (sub-op 4)
     /// when no field track was playing at encounter start.
     pub(crate) fn restore_field_bgm(&mut self) {
-        if !self.battle_bgm_active {
+        if !self.audio.battle_bgm_active {
             return;
         }
-        self.battle_bgm_active = false;
-        match self.field_bgm_resume.take() {
+        self.audio.battle_bgm_active = false;
+        match self.audio.field_bgm_resume.take() {
             Some(track) => {
-                self.current_bgm = Some(track);
+                self.audio.current_bgm = Some(track);
                 self.pending_field_events.push(FieldEvent::Bgm {
                     text_id: track,
                     sub_op: 1,
                 });
             }
             None => {
-                self.current_bgm = None;
+                self.audio.current_bgm = None;
                 self.pending_field_events.push(FieldEvent::Bgm {
                     text_id: 0,
                     sub_op: 4,

@@ -166,8 +166,8 @@ impl World {
             // the scripted `4C EA` trigger routes) and the CARD / title flow
             // owns audio from there. Drop the swap bookkeeping so nothing
             // later cross-fades back to the field track.
-            self.battle_bgm_active = false;
-            self.field_bgm_resume = None;
+            self.audio.battle_bgm_active = false;
+            self.audio.field_bgm_resume = None;
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::Bgm {
                     text_id: 0,
@@ -207,10 +207,10 @@ impl World {
         // encounter / field.
         self.battle_hit_fx.clear();
         self.battle_hit_events.clear();
-        self.battle_sfx_cues.clear();
+        self.audio.battle_sfx_cues.clear();
         self.battle_clut_stages.clear();
         self.battle_effect_spawns.clear();
-        self.battle_shout_cues.clear();
+        self.audio.battle_shout_cues.clear();
         // Post-battle grace + suppression on the session.
         self.end_encounter_battle();
         // Persist the battle's party HP / MP into the roster records BEFORE the

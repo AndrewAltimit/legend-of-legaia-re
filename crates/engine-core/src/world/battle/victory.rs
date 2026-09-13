@@ -420,7 +420,7 @@ impl World {
                     self.battle_loot_applied = true;
                     if levelled {
                         // `FUN_8004FCC8(0x50)` at `0x8004F6E8`.
-                        self.battle_sfx_cues.push(BattleSfxCue {
+                        self.audio.battle_sfx_cues.push(BattleSfxCue {
                             kind: LEVEL_UP_CUE,
                             timing_frames: 0,
                             actor_slot: seq.pose_actor as u8,

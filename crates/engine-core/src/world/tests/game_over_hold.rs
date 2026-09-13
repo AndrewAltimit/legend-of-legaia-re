@@ -21,7 +21,7 @@ fn wiped_battle_world() -> World {
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
-    world.current_bgm = Some(0x0A); // field track playing
+    world.audio.current_bgm = Some(0x0A); // field track playing
     world.set_battle_bgm(Some(0x40));
     let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
     world.field_return = Some(FieldReturnState {
@@ -53,7 +53,7 @@ fn party_wipe_pauses_bgm_and_defers_the_field_restore() {
         world.field_return.is_some(),
         "field actor snapshot is NOT restored before the hand-off"
     );
-    assert!(!world.battle_bgm_active, "swap bookkeeping dropped");
+    assert!(!world.audio.battle_bgm_active, "swap bookkeeping dropped");
     let evs = world.drain_field_events();
     assert!(
         evs.iter()
