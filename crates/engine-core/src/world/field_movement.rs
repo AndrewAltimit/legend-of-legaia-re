@@ -243,7 +243,7 @@ impl World {
         let world_map_mode = self.mode == SceneMode::WorldMap;
         let (mask, attrs) =
             crate::field_regions::refresh_region_attributes(table.as_ref(), tx, tz, world_map_mode);
-        self.extra_flags = mask;
+        self.flags.extra_flags = mask;
         self.terrain.region_attributes = attrs;
         if let Some(result) = crate::field_regions::zone_query(
             &self.terrain.zone_table,
@@ -254,7 +254,7 @@ impl World {
         ) {
             // Retail rewrites `_DAT_8007B8F4` from the zone query's own
             // rebuild too (identical recomputation).
-            self.extra_flags = result.region_mask;
+            self.flags.extra_flags = result.region_mask;
             self.terrain.zone_record = result.record.map(|r| {
                 let mut rec = [0u8; crate::field_regions::ZONE_RECORD_STRIDE];
                 rec.copy_from_slice(r);
@@ -1997,7 +1997,7 @@ impl World {
             .and_then(|record| {
                 let man = self.field_vm.channels_man.clone()?;
                 let man_file = legaia_asset::man_section::parse(&man).ok()?;
-                let flags = self.system_flags.clone();
+                let flags = self.flags.system_flags.clone();
                 let test = |idx: u16| -> bool {
                     let byte = usize::from(idx >> 3);
                     byte < flags.len() && flags[byte] & (0x80u8 >> (idx & 7)) != 0

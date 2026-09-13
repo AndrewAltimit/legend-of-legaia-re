@@ -77,7 +77,7 @@ fn load_party_caps_at_max_actors() {
 fn save_full_round_trips_globals() {
     let mut world = World::new();
     world.load_party(legaia_save::Party::zeroed(2));
-    world.story_flags = 0xCAFE_F00D;
+    world.flags.story_flags = 0xCAFE_F00D;
     world.money = 54321;
     world.inventory.insert(3, 9);
     world.inventory.insert(77, 1);
@@ -93,7 +93,7 @@ fn save_full_round_trips_globals() {
 
     let mut world2 = World::new();
     world2.load_full(parsed);
-    assert_eq!(world2.story_flags, 0xCAFE_F00D);
+    assert_eq!(world2.flags.story_flags, 0xCAFE_F00D);
     assert_eq!(world2.money, 54321);
     assert_eq!(world2.inventory.get(&3), Some(&9));
     assert_eq!(world2.inventory.get(&77), Some(&1));

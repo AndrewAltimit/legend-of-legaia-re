@@ -205,7 +205,7 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
     let mut armed = false;
     for _ in 0..600 {
         let _ = host.tick();
-        if host.world.story_flags & legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG != 0 {
+        if host.world.flags.story_flags & legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG != 0 {
             armed = true;
             break;
         }

@@ -43,12 +43,12 @@ fn timeline_fires_handoff_bit_by_execution() {
     w.cutscene.timeline =
         Some(CutsceneTimeline::new(vec![0x2E, 0x1A, 0x37], 0).arming_prologue_handoff());
     assert!(w.cutscene_timeline_active());
-    assert_eq!(w.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    assert_eq!(w.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 
     step_frame(&mut w);
 
     assert!(
-        w.story_flags & PROLOGUE_HANDOFF_FLAG != 0,
+        w.flags.story_flags & PROLOGUE_HANDOFF_FLAG != 0,
         "executing GFLAG_SET 26 arms the hand-off bit"
     );
     assert!(
@@ -95,7 +95,7 @@ fn timeline_safety_net_arms_when_execution_stalls() {
         "a stalled timeline is forced complete by the frame cap (ticked {ticks})"
     );
     assert!(
-        w.story_flags & PROLOGUE_HANDOFF_FLAG != 0,
+        w.flags.story_flags & PROLOGUE_HANDOFF_FLAG != 0,
         "the safety net arms the hand-off bit when execution can't reach it"
     );
 }
@@ -117,10 +117,10 @@ fn completed_timeline_is_idempotent() {
 
     // Clear the bit and tick again: a done timeline must not re-execute and
     // re-set it.
-    w.story_flags &= !PROLOGUE_HANDOFF_FLAG;
+    w.flags.story_flags &= !PROLOGUE_HANDOFF_FLAG;
     step_frame(&mut w);
     assert_eq!(
-        w.story_flags & PROLOGUE_HANDOFF_FLAG,
+        w.flags.story_flags & PROLOGUE_HANDOFF_FLAG,
         0,
         "a completed timeline does not re-run"
     );
@@ -155,7 +155,7 @@ fn opening_timeline_op49_opens_name_entry_then_resumes() {
         "the timeline parks on the op-0x49"
     );
     assert_eq!(
-        w.story_flags & PROLOGUE_HANDOFF_FLAG,
+        w.flags.story_flags & PROLOGUE_HANDOFF_FLAG,
         0,
         "the opening timeline never arms a prologue scene hand-off"
     );

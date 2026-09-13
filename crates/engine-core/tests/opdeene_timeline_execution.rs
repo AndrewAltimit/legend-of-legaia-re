@@ -52,7 +52,7 @@ fn opdeene_timeline_executes_arms_skip_and_chains_to_opstati() {
         "entering opdeene installs the cutscene timeline"
     );
     assert_eq!(
-        host.world.story_flags & PROLOGUE_HANDOFF_FLAG,
+        host.world.flags.story_flags & PROLOGUE_HANDOFF_FLAG,
         0,
         "the hand-off bit is NOT statically armed at scene entry - it fires by execution",
     );
@@ -67,7 +67,7 @@ fn opdeene_timeline_executes_arms_skip_and_chains_to_opstati() {
     while ticks < budget {
         let _ = host.world.tick();
         ticks += 1;
-        if armed_at.is_none() && host.world.story_flags & PROLOGUE_HANDOFF_FLAG != 0 {
+        if armed_at.is_none() && host.world.flags.story_flags & PROLOGUE_HANDOFF_FLAG != 0 {
             armed_at = Some(ticks);
         }
         if let Some((name, _, _, _)) = host.world.pending_named_scene_transition.as_ref() {

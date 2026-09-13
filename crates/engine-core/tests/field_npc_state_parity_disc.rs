@@ -469,7 +469,7 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
         // ---- Engine side: seed the capture's flag bank, cold-enter. ----
         let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
-        host.world.system_flags = cap.flag_bank.clone();
+        host.world.flags.system_flags = cap.flag_bank.clone();
         if let Err(err) = host.enter_field_scene(&cap.scene, 0) {
             divergences.push(Divergence {
                 label: cap.label.clone(),
@@ -605,7 +605,7 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
         total_parked_both += parked_both;
 
         // ---- Story-flag bank: engine entry must be a no-op vs the capture. ----
-        let bank = &host.world.system_flags;
+        let bank = &host.world.flags.system_flags;
         for (byte, (&e, &r)) in bank.iter().zip(cap.flag_bank.iter()).enumerate() {
             if e == r {
                 continue;

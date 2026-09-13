@@ -173,7 +173,7 @@ impl World {
         let (prev_y, prev_z) = self.camera.ease_prev_yz.unwrap_or((y, z));
         self.camera.offset_ease =
             crate::camera_ease::ease_camera_offset(crate::camera_ease::CameraEaseInput {
-                pad: self.story_flags,
+                pad: self.flags.story_flags,
                 scene_target: self.camera.scene_offset as u16,
                 player_footing: y as u16,
                 footing_settled: prev_y,
@@ -434,7 +434,7 @@ impl World {
         let step = self.frame_step.max(1);
         // Same MSB-first bank layout as `Self::system_flag_test` (the SCUS
         // helper `FUN_8003CE64` the controller calls).
-        let flags = &self.system_flags;
+        let flags = &self.flags.system_flags;
         let tick = talk.swap.step(&swap_world, step, |idx| {
             let byte = (idx >> 3) as usize;
             flags

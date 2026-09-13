@@ -71,9 +71,9 @@ fn drive_record(body: &[u8], entry_pc: usize, first_segment: usize, seed: u64) {
     world.use_vm_dialogue = true;
     // Randomized story state so the prologue's flag-gated branches all get a
     // chance to execute across seeds.
-    world.story_flags = mix(&mut rng) as u32;
-    world.extra_flags = mix(&mut rng) as u32;
-    world.system_flags = (0..32).map(|_| mix(&mut rng) as u8).collect();
+    world.flags.story_flags = mix(&mut rng) as u32;
+    world.flags.extra_flags = mix(&mut rng) as u32;
+    world.flags.system_flags = (0..32).map(|_| mix(&mut rng) as u8).collect();
 
     world.start_inline_dialogue_with_prologue(body.to_vec(), entry_pc, first_segment);
 

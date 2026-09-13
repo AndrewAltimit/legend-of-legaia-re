@@ -1217,7 +1217,7 @@ impl World {
         };
         // Retail state 0: `FUN_8003CE08(8)` on entry.
         self.system_flag_set(crate::prize_exchange::PRIZE_EXCHANGE_VISITED_FLAG);
-        let flags = &self.system_flags;
+        let flags = &self.flags.system_flags;
         let session = crate::prize_exchange::PrizeExchangeSession::new(block, |f| {
             // The same bit layout as `World::system_flag_test` (idx >> 3,
             // MSB-first), inlined so the visible-row walk can read the bank

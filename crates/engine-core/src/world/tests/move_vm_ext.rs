@@ -6,7 +6,7 @@ fn field_vm_extra_flags_op42_reads_world() {
     // Set bit 5 in extra_flags; op_42 with op1=5 should take the jump.
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.extra_flags = 1 << 5;
+    world.flags.extra_flags = 1 << 5;
     // [0x42, mode=0, op1=5, lo=4, hi=0] - header_size + 4 = 5 byte total
     // for skip path; jump path = pc + header_size + 2 + delta.
     world.load_field_script(vec![0x42, 0, 5, 4, 0]);

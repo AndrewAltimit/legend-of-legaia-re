@@ -193,7 +193,7 @@ impl World {
     /// `GFLAG_SET 26` would, so the downstream gate stays faithful.
     // REF: FUN_801D1344
     pub fn arm_prologue_handoff(&mut self) {
-        self.story_flags |= PROLOGUE_HANDOFF_FLAG;
+        self.flags.story_flags |= PROLOGUE_HANDOFF_FLAG;
     }
 
     /// Arm the prologue -> Rim Elm hand-off **only when** the scene's MAN
@@ -257,10 +257,10 @@ impl World {
     // REF: FUN_8001FD44
     pub fn take_prologue_handoff(&mut self, confirm: bool) -> Option<&'static str> {
         if confirm
-            && self.story_flags & PROLOGUE_HANDOFF_FLAG != 0
+            && self.flags.story_flags & PROLOGUE_HANDOFF_FLAG != 0
             && self.cutscene.opening_chain_active
         {
-            self.story_flags &= !PROLOGUE_HANDOFF_FLAG;
+            self.flags.story_flags &= !PROLOGUE_HANDOFF_FLAG;
             // Tear down whatever leg of the opening is mid-flight - the skip
             // abandons the remaining narration + choreography wholesale.
             self.cutscene.narration = None;
@@ -1659,7 +1659,7 @@ impl World {
             // Safety net: if the record terminated without executing its
             // `GFLAG_SET 26`, arm the hand-off statically so the prologue
             // can't stall.
-            if tl.done && self.story_flags & PROLOGUE_HANDOFF_FLAG == 0 {
+            if tl.done && self.flags.story_flags & PROLOGUE_HANDOFF_FLAG == 0 {
                 self.arm_prologue_handoff();
             }
             self.cutscene.timeline = Some(tl);
@@ -3130,7 +3130,7 @@ mod tests {
         );
         w.step_helper_contexts();
         assert_ne!(
-            w.story_flags & crate::world::PROLOGUE_HANDOFF_FLAG,
+            w.flags.story_flags & crate::world::PROLOGUE_HANDOFF_FLAG,
             0,
             "the helper record's GFLAG_SET executed"
         );

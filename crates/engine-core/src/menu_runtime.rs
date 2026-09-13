@@ -527,7 +527,7 @@ impl MenuRuntime {
                 price,
                 gate,
             } => {
-                let flags = &mut world.system_flags;
+                let flags = &mut world.flags.system_flags;
                 let applied = crate::prize_exchange::apply_redeem(
                     &mut world.minigames.casino_coins,
                     &mut world.inventory,
@@ -545,7 +545,7 @@ impl MenuRuntime {
                     gate,
                 );
                 if applied {
-                    let flags = &world.system_flags;
+                    let flags = &world.flags.system_flags;
                     session.rebuild(|g| {
                         let byte = (g >> 3) as usize;
                         flags

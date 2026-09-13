@@ -515,8 +515,8 @@ fn begin_new_game_clears_state_and_enters_field() {
     let mut world = World::new();
     // Dirty the world as if a prior session had been played.
     world.mode = SceneMode::Battle;
-    world.story_flags = 0xDEAD_BEEF;
-    world.story_flag_bits = vec![1, 2, 3];
+    world.flags.story_flags = 0xDEAD_BEEF;
+    world.flags.story_flag_bits = vec![1, 2, 3];
     world.money = 4242;
     world.inventory.insert(0x10, 5);
     world.encounters.scripted_armed = true;
@@ -527,8 +527,8 @@ fn begin_new_game_clears_state_and_enters_field() {
 
     // The retail field-launch (master mode 3) clean slate.
     assert_eq!(world.mode, SceneMode::Field);
-    assert_eq!(world.story_flags, 0);
-    assert!(world.story_flag_bits.is_empty());
+    assert_eq!(world.flags.story_flags, 0);
+    assert!(world.flags.story_flag_bits.is_empty());
     // New-game gold is the retail constant (FUN_80034A6C), not zero.
     assert_eq!(world.money, NEW_GAME_STARTING_GOLD);
     assert!(world.inventory.is_empty());
@@ -548,11 +548,11 @@ fn prologue_handoff_fires_once_on_confirm_in_the_opening_chain() {
     assert_eq!(world.take_prologue_handoff(true), None);
 
     world.arm_prologue_handoff();
-    assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    assert_ne!(world.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 
     // Armed but no confirm: stays in the cutscene.
     assert_eq!(world.take_prologue_handoff(false), None);
-    assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    assert_ne!(world.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 
     // Armed + confirm: skips to town01 and clears the bit (fire-once). This
     // is the retail intro-skip - it fires mid-narration too.
@@ -561,7 +561,7 @@ fn prologue_handoff_fires_once_on_confirm_in_the_opening_chain() {
         world.take_prologue_handoff(true),
         Some(legaia_asset::new_game::OPENING_SCENE)
     );
-    assert_eq!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    assert_eq!(world.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
     assert!(
         world.cutscene.narration.is_none(),
         "the skip tears down the playing narration"
@@ -582,7 +582,7 @@ fn prologue_handoff_only_fires_while_the_opening_chain_plays() {
     world.arm_prologue_handoff();
     assert_eq!(world.take_prologue_handoff(true), None);
     // Bit is left intact for the gate to fire only during the opening.
-    assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    assert_ne!(world.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 }
 
 // ---- boss-stager placements (approach/interact -> record execution) ----

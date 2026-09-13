@@ -114,47 +114,12 @@ pub struct World {
     /// ext sub-op 0x29 (per-frame ramp / immediate write). Stored as i16
     /// pairs (target, current); engines apply per-frame interpolation.
     pub scratchpad_targets: [i16; 16],
-    /// Shared system flag bank at `_DAT_80085758` - bitfield read / written
-    /// by:
-    /// - field VM high-byte default routes 0x5x / 0x6x / 0x7x
-    ///   (`system_flag_set` / `system_flag_clear` / `system_flag_test`)
-    /// - move-VM ext sub-ops 0x13 / 0x14 / 0x1C / 0x1D
-    ///   (`ext_query_flag_bank` / `ext_set_flag_bank` / `ext_clear_flag_bank`)
-    ///
-    /// Lazily grown on write - the field VM's opcode-encoded idx ranges over
-    /// `0..=0x87FF`, so a fixed 256-bit array is too small.
-    pub system_flags: Vec<u8>,
-    /// Field-VM `extra_flags` register read by op 0x42 mode 0 - the
-    /// `_DAT_8007B8F4` **region-type mask**: bit `n` set when the player's
-    /// tile sits inside a type-`n` region of the scene `.MAP` region table.
-    /// Rebuilt per tile crossing by [`World::refresh_field_regions`] (the
-    /// `FUN_800180EC` / `FUN_801DBA20` ports in [`crate::field_regions`])
-    /// when the per-scene tables are installed; otherwise host-owned
-    /// scene-local state.
-    pub extra_flags: u32,
+    /// Story / system flag words: the retail flag arrays and the story-flag bit image the scripts test and set.
+    pub flags: StoryFlagState,
     /// Field-VM `screen_mode` register read by op 0x42 mode 1 - packed mode
     /// bits (bits 4 / 5 / 6 / 7 individually testable; bits 12..15 indexed
     /// against `screen_mode_table`).
     pub screen_mode: u32,
-    /// Field-VM scratchpad flag word (`_DAT_1F800394` in retail). Set
-    /// by op `0x2E` GFLAG_SET; cleared by op `0x2F` GFLAG_CLR; tested
-    /// by op `0x30` GFLAG_TST.
-    ///
-    /// Independent of [`Self::story_flag_bits`]: retail seeds this from
-    /// the game-mode descriptor table on mode init (low 16 bits of
-    /// `mode_table[mode_idx].param`) and the SC save/load bulk copy
-    /// from RAM `0x80084340` never reaches scratchpad, so the bitmap
-    /// and this word are not mirror copies of each other.
-    pub story_flags: u32,
-    /// Full 512-byte story-flag bitmap mirroring retail RAM
-    /// `0x80085600..0x80085800` (SC block offset `0x14C0`). This is the
-    /// narrative-progress bitmap the SC block persists, separate from
-    /// the per-mode scratchpad word [`Self::story_flags`].
-    ///
-    /// Empty (`vec![]`) when the engine hasn't been booted from a retail
-    /// SC block; populated via [`Self::load_full`] when a retail-shaped
-    /// [`legaia_save::SaveFile`] is restored.
-    pub story_flag_bits: Vec<u8>,
 
     /// PRNG state consumed by every VM that calls `host.rng()`. Default uses
     /// a deterministic LCG so tests are reproducible.
@@ -722,11 +687,8 @@ impl World {
             presentation: ScreenFxState::new(),
             move_dat_8007b9d8: 0,
             scratchpad_targets: [0; 16],
-            system_flags: Vec::new(),
-            extra_flags: 0,
+            flags: StoryFlagState::new(),
             screen_mode: 0,
-            story_flags: 0,
-            story_flag_bits: Vec::new(),
             rng_state: 0x1234_5678,
             casting: CastFxState::new(),
             sin_lut: Vec::new(),
@@ -907,13 +869,13 @@ impl World {
     // REF: FUN_800560B4
     // REF: FUN_8004F0E8
     pub fn begin_new_game(&mut self) {
-        self.story_flags = 0;
-        self.story_flag_bits.clear();
+        self.flags.story_flags = 0;
+        self.flags.story_flag_bits.clear();
         // A NEW GAME is the opening chain, not a free-roam picker visit: the
         // authored entry pauses / pre-event scenery are the point. Any flags
         // an earlier picker staging seeded reset with the bank.
         self.field_vm.free_roam_staging = false;
-        self.system_flags.clear();
+        self.flags.system_flags.clear();
         self.money = NEW_GAME_STARTING_GOLD;
         self.minigames.point_card = 0;
         self.inventory.clear();

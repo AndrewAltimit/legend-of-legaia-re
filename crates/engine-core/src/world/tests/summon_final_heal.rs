@@ -35,7 +35,7 @@ fn field_tile_crossing_refreshes_region_state() {
     world.load_field_region_tables(&block, &zone);
 
     // Initial refresh: inside the type-4 region, no zone match.
-    assert_eq!(world.extra_flags, 1 << 4);
+    assert_eq!(world.flags.extra_flags, 1 << 4);
     assert!(world.terrain.zone_record.is_none());
 
     // Prime the tile latch, then cross into the type-5 region.
@@ -43,7 +43,11 @@ fn field_tile_crossing_refreshes_region_state() {
     world.actors[0].move_state.world_x = 0x40 + 9 * 0x80;
     world.tick();
 
-    assert_eq!(world.extra_flags, 1 << 5, "mask rebuilt on tile crossing");
+    assert_eq!(
+        world.flags.extra_flags,
+        1 << 5,
+        "mask rebuilt on tile crossing"
+    );
     let rec = world
         .terrain
         .zone_record

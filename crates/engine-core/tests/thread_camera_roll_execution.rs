@@ -392,9 +392,9 @@ fn exec_census(corpus: &[Record], flags_set: bool) -> Census {
             ..World::default()
         };
         if flags_set {
-            world.story_flags = u32::MAX;
-            world.extra_flags = u32::MAX;
-            world.system_flags = vec![0xFF; world.system_flags.len().max(0x200)];
+            world.flags.story_flags = u32::MAX;
+            world.flags.extra_flags = u32::MAX;
+            world.flags.system_flags = vec![0xFF; world.flags.system_flags.len().max(0x200)];
         }
         world.load_field_script_at(body.clone(), *pc0);
         let mut last_pc = usize::MAX;

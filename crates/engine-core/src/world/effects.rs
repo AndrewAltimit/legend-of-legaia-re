@@ -29,10 +29,10 @@ impl World {
     /// SCUS helper at `FUN_8003CE08`). The bank grows lazily as needed.
     pub fn system_flag_set(&mut self, idx: u16) {
         let byte = (idx >> 3) as usize;
-        if byte >= self.system_flags.len() {
-            self.system_flags.resize(byte + 1, 0);
+        if byte >= self.flags.system_flags.len() {
+            self.flags.system_flags.resize(byte + 1, 0);
         }
-        self.system_flags[byte] |= 0x80u8 >> (idx & 7);
+        self.flags.system_flags[byte] |= 0x80u8 >> (idx & 7);
     }
 
     /// Clear bit `idx` in the shared system flag bank. See [`system_flag_set`].
@@ -41,8 +41,8 @@ impl World {
     /// [`system_flag_set`]: World::system_flag_set
     pub fn system_flag_clear(&mut self, idx: u16) {
         let byte = (idx >> 3) as usize;
-        if byte < self.system_flags.len() {
-            self.system_flags[byte] &= !(0x80u8 >> (idx & 7));
+        if byte < self.flags.system_flags.len() {
+            self.flags.system_flags[byte] &= !(0x80u8 >> (idx & 7));
         }
     }
 
@@ -50,8 +50,8 @@ impl World {
     /// indices past the currently-grown size.
     pub fn system_flag_test(&self, idx: u16) -> bool {
         let byte = (idx >> 3) as usize;
-        if byte < self.system_flags.len() {
-            self.system_flags[byte] & (0x80u8 >> (idx & 7)) != 0
+        if byte < self.flags.system_flags.len() {
+            self.flags.system_flags[byte] & (0x80u8 >> (idx & 7)) != 0
         } else {
             false
         }

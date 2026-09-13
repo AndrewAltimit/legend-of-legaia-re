@@ -106,7 +106,7 @@ fn the_settled_value_is_the_posted_offset_minus_the_players_footing() {
 fn the_bit_24_arm_posts_both_globals_because_the_easing_is_locked_out() {
     let mut world = world_with_player();
     world.actors[0].move_state.world_y = -192;
-    world.story_flags = crate::camera_ease::PAD_INPUT_LOCKED;
+    world.flags.story_flags = crate::camera_ease::PAD_INPUT_LOCKED;
     world.load_field_script(sub9_default(0x200));
     let _ = world.tick();
     assert_eq!(
@@ -134,7 +134,7 @@ fn the_bit_24_arm_posts_both_globals_because_the_easing_is_locked_out() {
 fn the_delta_arm_snaps_the_accumulator_instead_of_easing_to_it() {
     let mut world = world_with_player();
     world.actors[0].move_state.world_y = -192;
-    world.story_flags = 0x0200_0000;
+    world.flags.story_flags = 0x0200_0000;
     world.load_field_script(sub9_default(0x100));
     let _ = world.tick();
     assert_eq!(world.camera.scene_offset, 0x100);

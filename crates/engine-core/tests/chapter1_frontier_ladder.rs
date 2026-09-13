@@ -424,13 +424,13 @@ struct FlagBaseline {
 impl FlagBaseline {
     fn snapshot(host: &SceneHost) -> Self {
         Self {
-            system: host.world.system_flags.clone(),
-            story: host.world.story_flags,
+            system: host.world.flags.system_flags.clone(),
+            story: host.world.flags.story_flags,
         }
     }
     fn restore(&self, host: &mut SceneHost) {
-        host.world.system_flags.clone_from(&self.system);
-        host.world.story_flags = self.story;
+        host.world.flags.system_flags.clone_from(&self.system);
+        host.world.flags.story_flags = self.story;
     }
 }
 
@@ -1148,13 +1148,13 @@ fn part_b_chapter1_scene_frontier_ladder() {
     // Every scene is scored from the same starting state: the flag banks are
     // snapshotted and restored, so a verdict is a property of the scene and
     // not of whatever the previous scene latched.
-    let flags0 = host.world.system_flags.clone();
-    let story0 = host.world.story_flags;
+    let flags0 = host.world.flags.system_flags.clone();
+    let story0 = host.world.flags.story_flags;
 
     let mut verdicts: Vec<Verdict> = Vec::new();
     for name in &order {
-        host.world.system_flags = flags0.clone();
-        host.world.story_flags = story0;
+        host.world.flags.system_flags = flags0.clone();
+        host.world.flags.story_flags = story0;
         verdicts.push(score_scene(&mut host, name));
     }
 

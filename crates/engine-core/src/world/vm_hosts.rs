@@ -622,10 +622,10 @@ pub(super) struct FieldHostImpl<'a> {
 
 impl<'a> FieldHost for FieldHostImpl<'a> {
     fn global_flags(&self) -> u32 {
-        self.world.story_flags
+        self.world.flags.story_flags
     }
     fn set_global_flags(&mut self, value: u32) {
-        self.world.story_flags = value;
+        self.world.flags.story_flags = value;
     }
     fn frame_delta(&self) -> u16 {
         // Default world ticks one logical frame per `tick()`. Engines that
@@ -633,7 +633,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         1
     }
     fn extra_flags(&self) -> u32 {
-        self.world.extra_flags
+        self.world.flags.extra_flags
     }
 
     // Op-0x49 STATE_RESUME, scoped to the `town01` opening cutscene timeline.

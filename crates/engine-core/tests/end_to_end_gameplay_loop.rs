@@ -330,7 +330,7 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
     }
 
     let pre_money = world.money;
-    let pre_story_flags = world.story_flags;
+    let pre_story_flags = world.flags.story_flags;
     let pre_inventory: std::collections::HashMap<u8, u8> = world.inventory.clone();
     let pre_levels: Vec<u8> = world.level_up_tracker.level[..3].to_vec();
 
@@ -452,7 +452,7 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
     reloaded.load_full(parsed);
 
     assert_eq!(
-        reloaded.story_flags, pre_story_flags,
+        reloaded.flags.story_flags, pre_story_flags,
         "story flags must round-trip"
     );
     // The battle-end results frame sets story flag `0x35` in the system-flag
@@ -461,11 +461,11 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
     // image the save wrote, not the pre-battle capture, is what has to come
     // back, and the bank itself has to survive the reload.
     assert_eq!(
-        reloaded.story_flag_bits, saved.ext.story_flag_bits,
+        reloaded.flags.story_flag_bits, saved.ext.story_flag_bits,
         "retail-sized story-flag bitmap must round-trip"
     );
     assert_eq!(
-        reloaded.system_flags, world.system_flags,
+        reloaded.flags.system_flags, world.flags.system_flags,
         "the system-flag bank (the results frame's story flag) must round-trip"
     );
     assert_eq!(

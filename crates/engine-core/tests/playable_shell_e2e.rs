@@ -36,7 +36,7 @@ fn build_world_with_party() -> World {
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     // Money + a placeholder party so save_full produces valid data.
     w.money = 1234;
-    w.story_flags = 0xCAFE;
+    w.flags.story_flags = 0xCAFE;
     w.load_party(legaia_save::Party::zeroed(3));
     w.play_time_seconds = 4500;
     w
@@ -256,7 +256,7 @@ fn save_full_load_full_round_trips_v2_extension() {
         w2.actors.push(Actor::default());
     }
     let _ = runtime.load_from_slot(&mut w2, 0).expect("load_from_slot");
-    assert_eq!(w2.story_flags, 0xCAFE);
+    assert_eq!(w2.flags.story_flags, 0xCAFE);
     assert_eq!(w2.money, 1234);
     assert_eq!(w2.play_time_seconds, 4500);
     assert!(!w2.saved_chains.is_empty());
@@ -528,7 +528,7 @@ fn full_loop_title_then_encounter_then_battle_then_save_then_load() {
     }
     let _ = runtime.load_from_slot(&mut w2, 0).expect("load");
     assert_eq!(w2.money, 1234);
-    assert_eq!(w2.story_flags, 0xCAFE);
+    assert_eq!(w2.flags.story_flags, 0xCAFE);
     assert_eq!(w2.play_time_seconds, 4500);
     assert!(path.exists());
 }

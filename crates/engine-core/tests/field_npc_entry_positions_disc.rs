@@ -128,7 +128,7 @@ fn town01_entry_positions_match_retail_actor_list() {
     // `DAT_80085758` system-flag bank, byte-for-byte (engine layout matches:
     // byte `idx>>3`, bit `0x80 >> (idx&7)`).
     let bank_off = (0x8008_5758 & RAM_MASK) as usize;
-    host.world.system_flags = ram[bank_off..bank_off + 0x1100].to_vec();
+    host.world.flags.system_flags = ram[bank_off..bank_off + 0x1100].to_vec();
     host.enter_field_scene("town01", 0)
         .expect("enter town01 field scene");
 
