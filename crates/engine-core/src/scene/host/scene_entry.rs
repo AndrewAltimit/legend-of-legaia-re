@@ -53,9 +53,9 @@ impl SceneHost {
             let r = b.record(anim.checked_sub(1)? as usize).ok()?;
             Some((r.frame_count, (r.a >> 8) & 1 != 0, (r.flag & 0xFF) as u8))
         };
-        self.world.field_prop_bank =
+        self.world.props.bank =
             crate::field_env::PropAnimBank::build(&placements, &binds, man_file, man_bytes, clip);
-        self.world.field_prop_colliders = placements
+        self.world.props.colliders = placements
             .iter()
             .map(|p| {
                 let anchor = (p.anchor_col, p.anchor_row);
@@ -526,7 +526,7 @@ impl SceneHost {
         // Remembered for the helper-context teardown rescue: a spawned
         // record that ends with the player inside a wall re-seats them here
         // (see `World::step_helper_contexts`).
-        self.world.resolved_cold_spawn = Some(resolved);
+        self.world.props.resolved_cold_spawn = Some(resolved);
         if resolved
             != (
                 crate::world::FIELD_COLD_SPAWN_XZ,
@@ -577,9 +577,9 @@ impl SceneHost {
         // prop's collision class and its touch script). Cleared here so a
         // stale scene's props never leak across a transition into a scene
         // whose MAN fails to parse.
-        self.world.field_prop_colliders = Vec::new();
-        self.world.field_prop_bank = Default::default();
-        self.world.pending_prop_touch = None;
+        self.world.props.colliders = Vec::new();
+        self.world.props.bank = Default::default();
+        self.world.props.pending_touch = None;
         // The 16-entry floor-height LUT the collision grid's low nibble
         // indexes - resident so the floor-height sampler
         // (`World::sample_field_floor_height`, port of `FUN_80019278`) can

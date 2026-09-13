@@ -148,7 +148,8 @@ fn casino_floor_is_walkable() {
 
     let cabinets: Vec<(u8, (i16, i16))> = host
         .world
-        .field_walk_touch
+        .props
+        .walk_touch
         .iter()
         .map(|(&s, &(p, _))| (s, p))
         .collect();

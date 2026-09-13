@@ -202,7 +202,8 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
             let byte = (base + word_off) * 2;
             return self
                 .world
-                .field_stager_bytes
+                .props
+                .stager_bytes
                 .get(byte..byte + 2)
                 .map(|b| u16::from_le_bytes([b[0], b[1]]))
                 .unwrap_or(0);

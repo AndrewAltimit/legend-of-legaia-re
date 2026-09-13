@@ -192,7 +192,8 @@ fn walk_touch_warp_posts_the_interact_but_does_not_enter_the_minigame() {
     world.actors[0].move_state.world_x = 1000;
     world.actors[0].move_state.world_z = 2000;
     world
-        .field_walk_touch
+        .props
+        .walk_touch
         .insert(5, ((1200, 2000), WalkTouchEvent::Warp { sub_id: 3 }));
 
     // Baseline: standing outside the ±80 contact box posts nothing.
@@ -253,7 +254,7 @@ fn walk_touch_player_moveto_teleports_player() {
     world.install_field_player(0);
     world.actors[0].move_state.world_x = 1000;
     world.actors[0].move_state.world_z = 2000;
-    world.field_walk_touch.insert(
+    world.props.walk_touch.insert(
         7,
         (
             (1150, 2000),
@@ -296,7 +297,7 @@ fn walk_touch_player_moveto_teleports_player() {
     // the edge latch releases for the next approach.
     let _ = world.tick();
     assert!(
-        world.active_walk_touch.is_none(),
+        world.props.active_walk_touch.is_none(),
         "the teleport leaves the contact box, releasing the latch"
     );
 }

@@ -590,7 +590,7 @@ fn prologue_handoff_only_fires_while_the_opening_chain_plays() {
 #[test]
 fn run_boss_stager_refuses_when_the_park_gate_is_latched() {
     let mut world = World::new();
-    world.field_boss_stagers.insert(
+    world.props.boss_stagers.insert(
         3,
         crate::world::FieldBossStager {
             record: 3,
@@ -603,7 +603,7 @@ fn run_boss_stager_refuses_when_the_park_gate_is_latched() {
         "a latched park gate refuses the launch"
     );
     assert!(
-        !world.field_boss_stagers.contains_key(&3),
+        !world.props.boss_stagers.contains_key(&3),
         "the stale binding is dropped"
     );
 }
@@ -611,7 +611,7 @@ fn run_boss_stager_refuses_when_the_park_gate_is_latched() {
 #[test]
 fn run_boss_stager_requires_a_resident_scene_man() {
     let mut world = World::new();
-    world.field_boss_stagers.insert(
+    world.props.boss_stagers.insert(
         3,
         crate::world::FieldBossStager {
             record: 3,
@@ -621,7 +621,7 @@ fn run_boss_stager_requires_a_resident_scene_man() {
     // No `field_channels_man` installed: nothing to execute.
     assert!(!world.run_boss_stager_record(3));
     assert!(
-        world.field_boss_stagers.contains_key(&3),
+        world.props.boss_stagers.contains_key(&3),
         "an unresolvable launch keeps the binding for a later approach"
     );
 }

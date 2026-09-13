@@ -1433,7 +1433,7 @@ fn walk_to(
             if since_progress >= STALL_FRAMES {
                 let (sx, sz) = player_world(host);
                 if std::env::var_os("LEGAIA_CPR_DEBUG").is_some() {
-                    for c in &host.world.field_prop_colliders {
+                    for c in &host.world.props.colliders {
                         if (c.center.0 - i32::from(sx)).abs() < 400
                             && (c.center.1 - i32::from(sz)).abs() < 400
                         {
@@ -1685,7 +1685,7 @@ fn ablate_rung4_inputs(host: &mut SceneHost, hazards: &HashSet<(i32, i32)>) {
     };
 
     let none: HashSet<(i32, i32)> = HashSet::new();
-    let n_props = host.world.field_prop_colliders.len();
+    let n_props = host.world.props.colliders.len();
     let n_npcs = host.world.npcs.positions.len();
     eprintln!(
         "[ablate] map01 from {from:?}: {} keikoku mouths, {n_props} props, {n_npcs} npcs, \
@@ -1908,7 +1908,7 @@ fn ablate_rung4_inputs(host: &mut SceneHost, hazards: &HashSet<(i32, i32)>) {
     row("as-is (all inputs live)", host, hazards);
     row("hazards cleared", host, &none);
 
-    let props = std::mem::take(&mut host.world.field_prop_colliders);
+    let props = std::mem::take(&mut host.world.props.colliders);
     row("props cleared", host, hazards);
     row("props+hazards cleared", host, &none);
 
@@ -1916,7 +1916,7 @@ fn ablate_rung4_inputs(host: &mut SceneHost, hazards: &HashSet<(i32, i32)>) {
     row("props+npcs+hazards (walls)", host, &none);
 
     host.world.npcs.positions = npcs;
-    host.world.field_prop_colliders = props;
+    host.world.props.colliders = props;
     row("restored (sanity, == as-is)", host, hazards);
 }
 

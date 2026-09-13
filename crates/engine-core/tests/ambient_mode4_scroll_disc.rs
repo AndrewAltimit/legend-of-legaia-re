@@ -103,8 +103,8 @@ fn mode4_seat_rotates_a_vram_rect_through_step_ambient_fx() {
         frame_step: 2,
         ..Default::default()
     };
-    world.field_stager_bytes = bytes.clone();
-    world.field_stagers = vec![SummonPart {
+    world.props.stager_bytes = bytes.clone();
+    world.props.stagers = vec![SummonPart {
         record_off: 0,
         model_sel: -1,
         flags: 0,

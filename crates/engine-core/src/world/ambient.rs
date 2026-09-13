@@ -189,9 +189,9 @@ impl World {
             );
             return None;
         }
-        let rec = self.field_stagers.get(id)?;
+        let rec = self.props.stagers.get(id)?;
         let (record_off, end) = (rec.record_off, rec.bytecode.end);
-        let bytes = self.field_stager_bytes.get(record_off..end)?;
+        let bytes = self.props.stager_bytes.get(record_off..end)?;
         let buf: Vec<u16> = bytes
             .chunks_exact(2)
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
@@ -254,7 +254,7 @@ impl World {
         // `_DAT_8007B8D0` memory directly) and this part's own snapshot.
         for (word, value) in writes {
             let byte = (record_words + word) * 2;
-            if let Some(b) = self.field_stager_bytes.get_mut(byte..byte + 2) {
+            if let Some(b) = self.props.stager_bytes.get_mut(byte..byte + 2) {
                 b.copy_from_slice(&value.to_le_bytes());
             }
             if let Some(slot) = self.ambient.fx[idx].buf.get_mut(word) {
@@ -555,8 +555,8 @@ impl World {
         // retail owns those morphs; the pulse is only for packs retail
         // never arms from the ambient tree (jou).
         if crate::vdf_pulse::stager_records_arm_morphs(
-            &self.field_stagers,
-            &self.field_stager_bytes,
+            &self.props.stagers,
+            &self.props.stager_bytes,
         ) {
             return false;
         }

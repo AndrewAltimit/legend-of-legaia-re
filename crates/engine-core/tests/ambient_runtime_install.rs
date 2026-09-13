@@ -44,8 +44,8 @@ fn install_records(world: &mut World, records: &[(i16, Vec<u16>)]) {
             bytecode: bc_start..bytes.len(),
         });
     }
-    world.field_stager_bytes = bytes;
-    world.field_stagers = parts;
+    world.props.stager_bytes = bytes;
+    world.props.stagers = parts;
 }
 
 /// A mode-3 CLUT-cell record: capture the cell, arm nonzero HSV velocities,
@@ -91,7 +91,7 @@ fn runtime_op34_sub3_stages_into_the_ambient_pool_with_its_render_tail() {
         "the install lands in the ambient pool"
     );
     assert!(
-        world.active_field_fx.is_empty(),
+        world.props.active_fx.is_empty(),
         "and not in the SummonScene field-stager pool (the debug exerciser's)"
     );
     let part = &world.ambient.fx[0];

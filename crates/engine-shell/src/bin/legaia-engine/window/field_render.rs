@@ -195,7 +195,7 @@ impl PlayWindowApp {
             &self.session.host.world.hidden_object_records(),
         );
 
-        let bank = &self.session.host.world.field_prop_bank;
+        let bank = &self.session.host.world.props.bank;
         let mut props = Vec::new();
         for d in &draws {
             if d.anim_id == 0 || !bank.props.contains_key(&d.anchor) {
@@ -431,7 +431,8 @@ impl PlayWindowApp {
                 .session
                 .host
                 .world
-                .field_prop_bank
+                .props
+                .bank
                 .frame(p.anchor)
                 .unwrap_or(0);
             if frame == 0 {

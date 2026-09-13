@@ -227,16 +227,14 @@ fn solid_field_props_block_at_retail_static_standoff() {
     let press = |solid: bool, prop: (i32, i32), start: (i16, i16)| {
         let mut world = World::new();
         world.install_field_player(0);
-        world
-            .field_prop_colliders
-            .push(crate::world::FieldPropCollider {
-                anchor: None,
-                center: prop,
-                live: prop,
-                moving_box: false,
-                interact: false,
-                solid,
-            });
+        world.props.colliders.push(crate::world::FieldPropCollider {
+            anchor: None,
+            center: prop,
+            live: prop,
+            moving_box: false,
+            interact: false,
+            solid,
+        });
         world.actors[0].move_state.world_x = start.0;
         world.actors[0].move_state.world_z = start.1;
         for _ in 0..100 {
@@ -264,22 +262,23 @@ fn interact_class_props_block_without_posting_a_touch() {
     let press = |interact: bool| {
         let mut world = World::new();
         world.install_field_player(0);
-        world
-            .field_prop_colliders
-            .push(crate::world::FieldPropCollider {
-                anchor: Some((10, 20)),
-                center: (2000, 2526),
-                live: (2000, 2526),
-                moving_box: false,
-                interact,
-                solid: true,
-            });
+        world.props.colliders.push(crate::world::FieldPropCollider {
+            anchor: Some((10, 20)),
+            center: (2000, 2526),
+            live: (2000, 2526),
+            moving_box: false,
+            interact,
+            solid: true,
+        });
         world.actors[0].move_state.world_x = 1800;
         world.actors[0].move_state.world_z = 2526;
         for _ in 0..100 {
             world.advance_with_collision(0, 0x2000, 8);
         }
-        (world.actors[0].move_state.world_x, world.pending_prop_touch)
+        (
+            world.actors[0].move_state.world_x,
+            world.props.pending_touch,
+        )
     };
     // Interact class: blocked at the same standoff, no touch posted.
     assert_eq!(press(true), (2000 - 142, None));

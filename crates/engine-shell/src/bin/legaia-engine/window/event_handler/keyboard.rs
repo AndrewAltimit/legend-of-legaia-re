@@ -277,7 +277,7 @@ impl PlayWindowApp {
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {
-            let count = self.session.host.world.field_stagers.len();
+            let count = self.session.host.world.props.stagers.len();
             if count == 0 {
                 log::info!("field-FX spawn (J): no prescript stager table for this scene");
                 return;
@@ -302,7 +302,7 @@ impl PlayWindowApp {
             let id = FIELD_FX_CYCLE.fetch_add(1, Ordering::Relaxed) % count;
             // Debug ergonomics: isolate one record per press (the
             // production op-0x34-sub-3 path lets them stack).
-            self.session.host.world.active_field_fx.clear();
+            self.session.host.world.props.active_fx.clear();
             if self.session.host.world.spawn_field_stager(id, origin) {
                 let mesh: Vec<usize> = self
                     .session

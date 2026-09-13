@@ -1057,7 +1057,7 @@ impl World {
         {
             return true;
         }
-        self.field_prop_colliders.iter().any(|c| {
+        self.props.colliders.iter().any(|c| {
             if !c.solid {
                 return false;
             }
@@ -1108,13 +1108,13 @@ impl World {
     /// REF: FUN_801CF754, FUN_801D5B5C
     pub(crate) fn field_prop_dir_probe(&self, x: i16, z: i16, dir: usize) -> PropDirProbe {
         let mut out = PropDirProbe::default();
-        if self.field_prop_colliders.is_empty() {
+        if self.props.colliders.is_empty() {
             return out;
         }
         for &(dx, dz) in &FIELD_ACTOR_PROBES[dir & 3] {
             let px = x.saturating_add(dx) as i32;
             let pz = z.saturating_sub(dz) as i32;
-            for c in &self.field_prop_colliders {
+            for c in &self.props.colliders {
                 if !c.solid {
                     continue;
                 }
@@ -1186,7 +1186,7 @@ impl World {
         // interaction record and are not already NPC anchors, which is the door
         // set and nothing else.
         // REF: FUN_801cf9f4 (the actor-list walk), FUN_80039B7C
-        for (&slot, &((ax, az), _)) in &self.field_walk_touch {
+        for (&slot, &((ax, az), _)) in &self.props.walk_touch {
             if self.npcs.positions.contains_key(&slot)
                 || !self.npcs.dialog_prologue.contains_key(&slot)
             {
@@ -1935,8 +1935,8 @@ impl World {
     ///
     /// REF: FUN_801d5b5c, FUN_801cfc40
     fn check_field_walk_touch(&mut self) {
-        if self.field_walk_touch.is_empty() {
-            self.active_walk_touch = None;
+        if self.props.walk_touch.is_empty() {
+            self.props.active_walk_touch = None;
             return;
         }
         let Some(slot) = self.player_actor_slot else {
@@ -1963,7 +1963,8 @@ impl World {
             }
         }
         let hit = self
-            .field_walk_touch
+            .props
+            .walk_touch
             .iter()
             .find(|(_, ((wx, wz), _))| {
                 points.iter().any(|&(qx, qz)| {
@@ -1973,13 +1974,13 @@ impl World {
             })
             .map(|(&s, &(_, event))| (s, event));
         let Some((touch_slot, event)) = hit else {
-            self.active_walk_touch = None;
+            self.props.active_walk_touch = None;
             return;
         };
-        if self.active_walk_touch == Some(touch_slot) {
+        if self.props.active_walk_touch == Some(touch_slot) {
             return; // still inside the same contact - already posted
         }
-        self.active_walk_touch = Some(touch_slot);
+        self.props.active_walk_touch = Some(touch_slot);
         // A door record is a field-VM script, not a constant: its opening
         // `SysFlag.Test` chain picks which arm runs (teleport into the
         // interior vs. spawn the story beat). Retail resumes the record on
@@ -1988,7 +1989,8 @@ impl World {
         // to that decode when the record can't be re-walked.
         // REF: FUN_801d5b5c (contact resumes the object's script)
         let event = self
-            .field_walk_touch_records
+            .props
+            .walk_touch_records
             .get(&touch_slot)
             .copied()
             .and_then(|record| {
@@ -3064,9 +3066,9 @@ impl World {
     fn probe_props_for_step(&mut self, x: i16, z: i16, dir: usize) -> bool {
         let probe = self.field_prop_dir_probe(x, z, dir);
         if let Some(anchor) = probe.touch
-            && self.pending_prop_touch.is_none()
+            && self.props.pending_touch.is_none()
         {
-            self.pending_prop_touch = Some(anchor);
+            self.props.pending_touch = Some(anchor);
         }
         probe.blocked
     }

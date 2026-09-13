@@ -23,8 +23,8 @@ fn field_stager_spawn_splits_sound_node_off_the_mesh_draws() {
     bytes.extend_from_slice(&0u16.to_le_bytes());
     bytes.extend_from_slice(&0x08u16.to_le_bytes()); // HALT
 
-    world.field_stager_bytes = bytes.clone();
-    world.field_stagers = vec![
+    world.props.stager_bytes = bytes.clone();
+    world.props.stagers = vec![
         SummonPart {
             record_off: 0,
             model_sel: -1,
@@ -41,7 +41,7 @@ fn field_stager_spawn_splits_sound_node_off_the_mesh_draws() {
 
     // Spawn the 0x4001 sound node (id 1) at a world position.
     assert!(world.spawn_field_stager(1, [5, 6, 7]));
-    assert_eq!(world.active_field_fx.len(), 1);
+    assert_eq!(world.props.active_fx.len(), 1);
 
     // It surfaces as a SoundEmitter render node, NOT a mesh draw.
     let nodes = world.active_field_fx_render_nodes();
@@ -59,14 +59,14 @@ fn field_stager_spawn_splits_sound_node_off_the_mesh_draws() {
     // rather than draining the same frame it halts).
     world.tick_field_fx(0x0400);
     assert_eq!(
-        world.active_field_fx.len(),
+        world.props.active_fx.len(),
         1,
         "a finished field effect is kept (held at its final pose), not drained"
     );
     // Scene entry (install) clears live effects.
     world.install_field_stagers(&bytes);
     assert!(
-        world.active_field_fx.is_empty(),
+        world.props.active_fx.is_empty(),
         "scene entry clears live field effects"
     );
 }

@@ -39,9 +39,9 @@ impl World {
         self.npcs.glide_speeds.clear();
         self.npcs.default_moves.clear();
         self.npcs.motions.clear();
-        self.field_walk_touch.clear();
-        self.field_boss_stagers.clear();
-        self.active_walk_touch = None;
+        self.props.walk_touch.clear();
+        self.props.boss_stagers.clear();
+        self.props.active_walk_touch = None;
         self.dialog.stepping_inline_npc = None;
         self.dialog.active_inline_slot = None;
     }
@@ -232,7 +232,8 @@ impl World {
             if let Some(event) =
                 crate::man_field_scripts::placement_walk_touch_event(man_file, man, &placement)
             {
-                self.field_walk_touch
+                self.props
+                    .walk_touch
                     .insert(slot, ((placement.world_x, placement.world_z), event));
             }
         }
@@ -295,17 +296,19 @@ impl World {
             Option<usize>,
         )],
     ) {
-        self.field_walk_touch
+        self.props
+            .walk_touch
             .retain(|slot, _| *slot < Self::TRIGGER_WALK_TOUCH_SLOT_BASE);
-        self.field_walk_touch_records
+        self.props
+            .walk_touch_records
             .retain(|slot, _| *slot < Self::TRIGGER_WALK_TOUCH_SLOT_BASE);
         for (i, (pos, event, record)) in binds.iter().enumerate() {
             let Some(slot) = Self::TRIGGER_WALK_TOUCH_SLOT_BASE.checked_add(i as u8) else {
                 break;
             };
-            self.field_walk_touch.insert(slot, (*pos, *event));
+            self.props.walk_touch.insert(slot, (*pos, *event));
             if let Some(record) = record {
-                self.field_walk_touch_records.insert(slot, *record);
+                self.props.walk_touch_records.insert(slot, *record);
             }
         }
     }
@@ -324,7 +327,7 @@ impl World {
         // dispatch resuming the parked stager script. The record's own bytes
         // stage the fight (`52 89` marker SET -> `3E FF <row>` battle entry),
         // so no dialog panel opens here.
-        if self.field_boss_stagers.contains_key(&slot) && self.run_boss_stager_record(slot) {
+        if self.props.boss_stagers.contains_key(&slot) && self.run_boss_stager_record(slot) {
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::FieldInteract { interact_id, slot });
             return;

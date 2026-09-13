@@ -341,7 +341,8 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
     );
     let binding = host
         .world
-        .field_boss_stagers
+        .props
+        .boss_stagers
         .get(&RIKUROA_STAGER_SLOT)
         .copied()
         .expect("rikuroa entry installs the P1[3] stager binding");
@@ -493,7 +494,8 @@ fn part_c_rikuroa_does_not_rearm_caruban_once_the_gate_flag_is_set() {
     assert!(
         !host
             .world
-            .field_boss_stagers
+            .props
+            .boss_stagers
             .contains_key(&RIKUROA_STAGER_SLOT),
         "with the gate flag set, re-entering rikuroa installs no Caruban stager"
     );

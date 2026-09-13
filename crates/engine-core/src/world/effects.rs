@@ -588,9 +588,9 @@ impl World {
     /// REF: the prescript bundle the retail `FUN_800252EC` indexes
     /// (`legaia_asset::scene_event_scripts::move_stager_records`).
     pub fn install_field_stagers(&mut self, entry_bytes: &[u8]) {
-        self.active_field_fx.clear();
-        self.field_stager_bytes = entry_bytes.to_vec();
-        self.field_stagers =
+        self.props.active_fx.clear();
+        self.props.stager_bytes = entry_bytes.to_vec();
+        self.props.stagers =
             legaia_asset::scene_event_scripts::move_stager_records(entry_bytes).unwrap_or_default();
     }
 
@@ -604,7 +604,7 @@ impl World {
     ///
     /// PORT: FUN_800252EC (id → `offsets[id]` record → part-stager spawn)
     pub fn spawn_field_stager(&mut self, id: usize, origin: [i16; 3]) -> bool {
-        let Some(part) = self.field_stagers.get(id).cloned() else {
+        let Some(part) = self.props.stagers.get(id).cloned() else {
             return false;
         };
         // One stager record = one scene-graph part, staged exactly like a summon
@@ -618,8 +618,8 @@ impl World {
         // scene-pack list directly. Most field stager records are transform /
         // render-mode (particle / sound) nodes that bind no mesh.
         let scene =
-            crate::summon::SummonScene::spawn_parts(&[part], &self.field_stager_bytes, 0, origin);
-        self.active_field_fx.push(scene);
+            crate::summon::SummonScene::spawn_parts(&[part], &self.props.stager_bytes, 0, origin);
+        self.props.active_fx.push(scene);
         true
     }
 
@@ -633,10 +633,10 @@ impl World {
     /// per-effect teardown (when retail removes a finished field effect) is a
     /// future refinement. No-op when none are live.
     pub fn tick_field_fx(&mut self, frame_delta: u16) {
-        if self.active_field_fx.is_empty() {
+        if self.props.active_fx.is_empty() {
             return;
         }
-        let mut scenes = std::mem::take(&mut self.active_field_fx);
+        let mut scenes = std::mem::take(&mut self.props.active_fx);
         for scene in &mut scenes {
             let mut host = MoveVmHostImpl {
                 world: self,
@@ -647,14 +647,15 @@ impl World {
             };
             scene.tick(&mut host, frame_delta);
         }
-        self.active_field_fx = scenes;
+        self.props.active_fx = scenes;
     }
 
     /// Per-part mesh draws across all live field move-VM effects (the visual
     /// parts). The non-visual nodes (`0x4001` sound emitter) never appear here -
     /// see [`Self::active_field_fx_render_nodes`].
     pub fn active_field_fx_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
-        self.active_field_fx
+        self.props
+            .active_fx
             .iter()
             .flat_map(|s| s.part_draws())
             .collect()
@@ -665,7 +666,8 @@ impl World {
     /// for the renderer / audio host (the sound emitter is *not* a draw). Mirrors
     /// `FUN_80021DF4`'s `+0x5A` split of these nodes off the mesh draw path.
     pub fn active_field_fx_render_nodes(&self) -> Vec<crate::summon::SpecialRenderNode> {
-        self.active_field_fx
+        self.props
+            .active_fx
             .iter()
             .flat_map(|s| s.special_render_nodes())
             .collect()

@@ -92,7 +92,8 @@ fn koin1_cabinet_walk_touch_posts_the_interact_but_does_not_enter() {
     // (Baka Fighter) and P1[9] as sub-id 5 (Muscle Dome). So the payload is a
     // mode-24 overlay selector, not a map id - see `minigame_entry`.
     let warps: Vec<(u8, (i16, i16), u8)> = world
-        .field_walk_touch
+        .props
+        .walk_touch
         .iter()
         .filter_map(|(&slot, &(pos, event))| match event {
             WalkTouchEvent::Warp { sub_id } => Some((slot, pos, sub_id)),
@@ -170,7 +171,8 @@ fn cave01_guard_walk_touch_teleports_the_player() {
     // fixed tile.
     type Throw = (u8, (i16, i16), (i16, i16));
     let throws: Vec<Throw> = world
-        .field_walk_touch
+        .props
+        .walk_touch
         .iter()
         .filter_map(|(&slot, &(pos, event))| match event {
             WalkTouchEvent::PlayerMoveTo {

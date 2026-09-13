@@ -62,9 +62,9 @@ fn jou_ambient_tree_spawns_and_cycles_clut_cells_or_skip() {
     };
     world.install_field_stagers(&stager_bytes);
     assert!(
-        world.field_stagers.len() >= 47,
+        world.props.stagers.len() >= 47,
         "jou prescript records ({})",
-        world.field_stagers.len()
+        world.props.stagers.len()
     );
 
     // Spawn the ambient tree (arg 0 → record 1, the FUN_800252EC id law).

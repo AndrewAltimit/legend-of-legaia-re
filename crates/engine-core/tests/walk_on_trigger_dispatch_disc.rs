@@ -285,7 +285,8 @@ fn house_door_binds_teleport_on_contact() {
     // landing (12480, 6976) = tile (97, 54).
     let bind = host
         .world
-        .field_walk_touch
+        .props
+        .walk_touch
         .iter()
         .find(|(s, _)| **s >= World::TRIGGER_WALK_TOUCH_SLOT_BASE)
         .map(|(_, &(pos, event))| (pos, event));
@@ -293,7 +294,8 @@ fn house_door_binds_teleport_on_contact() {
     let doorway = (2240i16, 3728i16);
     let target = host
         .world
-        .field_walk_touch
+        .props
+        .walk_touch
         .values()
         .find_map(|&((wx, wz), event)| {
             if (wx, wz) != doorway {

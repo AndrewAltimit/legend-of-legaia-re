@@ -230,7 +230,7 @@ fn the_action_probe_reaches_a_door_placement() {
             world.mode = SceneMode::Field;
             world.install_field_carriers_from_man(&mf, man);
             world.install_field_player(0);
-            let Some(&(anchor, _)) = world.field_walk_touch.get(&d.slot) else {
+            let Some(&(anchor, _)) = world.props.walk_touch.get(&d.slot) else {
                 // A parked placement has no touchable body and so no anchor;
                 // the probe cannot reach it either. Reported, not asserted.
                 eprintln!("[probe]  {scene:<8} P1[{:3}] no walk-touch anchor", d.slot);

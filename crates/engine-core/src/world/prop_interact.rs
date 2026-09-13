@@ -56,9 +56,9 @@ impl World {
     pub fn tick_prop_interactions(&mut self) {
         // The per-actor anim tick runs unconditionally (`FUN_800204F8` from
         // the actor tick) - the windmill turns during dialogs too.
-        self.field_prop_bank.tick_anims();
+        self.props.bank.tick_anims();
         self.step_prop_interaction();
-        if let Some(anchor) = self.pending_prop_touch.take() {
+        if let Some(anchor) = self.props.pending_touch.take() {
             self.start_prop_interaction(anchor);
         }
     }
@@ -74,7 +74,7 @@ impl World {
         if self.dialogue_owns_input() || self.cutscene_timeline_active() {
             return false;
         }
-        let Some(prop) = self.field_prop_bank.props.get(&anchor) else {
+        let Some(prop) = self.props.bank.props.get(&anchor) else {
             return false;
         };
         if prop.collision_exempt() {
@@ -119,12 +119,12 @@ impl World {
         let px = ms.world_x.saturating_add(dx) as i32;
         let pz = ms.world_z.saturating_sub(dz) as i32;
         let mut best: Option<(i32, (u8, u8))> = None;
-        for c in &self.field_prop_colliders {
+        for c in &self.props.colliders {
             if !c.solid || !c.interact {
                 continue;
             }
             let Some(anchor) = c.anchor else { continue };
-            if !self.field_prop_bank.props.contains_key(&anchor) {
+            if !self.props.bank.props.contains_key(&anchor) {
                 continue;
             }
             let ((cx, cz), half) = if c.moving_box {
@@ -225,7 +225,7 @@ impl World {
         // No box: sync the prop's live state into the context (the per-frame
         // anim tick may have latched the clip's end since the last slice),
         // then run a VM slice.
-        if let Some(prop) = self.field_prop_bank.props.get(&anchor) {
+        if let Some(prop) = self.props.bank.props.get(&anchor) {
             id.ctx.local_flags = prop.anim.flags;
         }
         let mut parked = false;
@@ -326,7 +326,7 @@ impl World {
         anchor: (u8, u8),
     ) {
         self.sync_prop_from_ctx(anchor, &id.ctx);
-        if let Some(prop) = self.field_prop_bank.props.get_mut(&anchor)
+        if let Some(prop) = self.props.bank.props.get_mut(&anchor)
             && id.pc < prop.record_body.len()
         {
             prop.parked_pc = id.pc;
@@ -342,7 +342,7 @@ impl World {
     /// as `FUN_801CF754` / `FUN_801CF9F4` skip `flags & 3` actors from then
     /// on.
     fn sync_prop_from_ctx(&mut self, anchor: (u8, u8), ctx: &FieldCtx) {
-        let Some(prop) = self.field_prop_bank.props.get_mut(&anchor) else {
+        let Some(prop) = self.props.bank.props.get_mut(&anchor) else {
             return;
         };
         prop.anim.flags = ctx.local_flags;
@@ -351,7 +351,7 @@ impl World {
         }
         prop.cflags = ctx.flags;
         if prop.collision_exempt() {
-            for c in &mut self.field_prop_colliders {
+            for c in &mut self.props.colliders {
                 if c.anchor == Some(anchor) {
                     c.solid = false;
                 }

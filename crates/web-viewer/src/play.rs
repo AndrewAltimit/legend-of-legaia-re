@@ -593,7 +593,8 @@ impl LegaiaRuntime {
                     return -1;
                 }
                 h.world
-                    .field_prop_bank
+                    .props
+                    .bank
                     .frame(d.anchor)
                     .map(|fr| fr as i32)
                     .unwrap_or(-1)

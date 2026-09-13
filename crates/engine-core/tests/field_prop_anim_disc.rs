@@ -161,8 +161,8 @@ fn scene_props(index: &Arc<ProtIndex>, name: &str) -> SceneProps {
 fn world_with_props(p: &SceneProps) -> World {
     let mut w = World::new();
     w.install_field_player(0);
-    w.field_prop_bank = p.bank.clone();
-    w.field_prop_colliders = p.colliders.clone();
+    w.props.bank = p.bank.clone();
+    w.props.colliders = p.colliders.clone();
     w
 }
 
@@ -186,7 +186,7 @@ fn drive_interaction_to_end(w: &mut World, anchor: (u8, u8), budget: usize) -> (
             0
         };
         prop_tick(w, pad);
-        max_frame = max_frame.max(w.field_prop_bank.frame(anchor).unwrap_or(0));
+        max_frame = max_frame.max(w.props.bank.frame(anchor).unwrap_or(0));
         saw_box |= w.dialog.inline.as_ref().is_some_and(|d| d.panel.is_some());
         if w.dialog.inline.is_none() {
             return (max_frame, saw_box);
@@ -332,14 +332,14 @@ fn walking_into_a_house_door_opens_it_and_drops_its_collision() {
         let mut w = world_with_props(&p);
         // Isolate the door's collider (a real town packs neighbouring props
         // whose boxes would block the approach line before the door does).
-        w.field_prop_colliders.retain(|c| c.anchor == Some(anchor));
+        w.props.colliders.retain(|c| c.anchor == Some(anchor));
         // Stand west of the contact box and press into it: the step is
         // refused at the retail standoff AND the touch posts.
         w.actors[0].move_state.world_x = (cx - 400) as i16;
         w.actors[0].move_state.world_z = cz as i16;
         for _ in 0..200 {
             w.advance_with_collision(0, 0x2000, 8);
-            if w.pending_prop_touch.is_some() {
+            if w.props.pending_touch.is_some() {
                 break;
             }
         }
@@ -349,7 +349,7 @@ fn walking_into_a_house_door_opens_it_and_drops_its_collision() {
             "{name}: the closed door must block at the retail static standoff"
         );
         assert_eq!(
-            w.pending_prop_touch,
+            w.props.pending_touch,
             Some(anchor),
             "{name}: the blocked step must post the door touch"
         );
@@ -359,7 +359,7 @@ fn walking_into_a_house_door_opens_it_and_drops_its_collision() {
         for _ in 0..(frames as usize * 2 + 16) {
             prop_tick(&mut w, 0);
         }
-        let open = &w.field_prop_bank.props[&anchor];
+        let open = &w.props.bank.props[&anchor];
         assert_eq!(
             open.anim.frame(),
             frames as usize - 1,
@@ -382,7 +382,8 @@ fn walking_into_a_house_door_opens_it_and_drops_its_collision() {
             "{name}: the record's `31 00` must set +0x10 bit 0"
         );
         let row = w
-            .field_prop_colliders
+            .props
+            .colliders
             .iter()
             .find(|c| c.anchor == Some(anchor))
             .expect("door collider row");
@@ -433,7 +434,7 @@ fn the_cupboard_opens_on_interact_grants_once_and_closes_on_dismiss() {
 
         let mut w = world_with_props(&p);
         // Isolate the cupboard's collider (see the door test).
-        w.field_prop_colliders.retain(|c| c.anchor == Some(anchor));
+        w.props.colliders.retain(|c| c.anchor == Some(anchor));
         // Walk into the cupboard from the south: blocked, NO touch posted
         // (interact class), stays shut.
         w.actors[0].move_state.world_x = cx as i16;
@@ -448,7 +449,7 @@ fn the_cupboard_opens_on_interact_grants_once_and_closes_on_dismiss() {
             "{name}: the cupboard must block at the retail static standoff"
         );
         assert_eq!(
-            w.field_prop_bank.frame(anchor),
+            w.props.bank.frame(anchor),
             Some(0),
             "{name}: walking into the cupboard must NOT open it"
         );
@@ -487,7 +488,7 @@ fn the_cupboard_opens_on_interact_grants_once_and_closes_on_dismiss() {
         for _ in 0..(frames * 4 + 16) {
             prop_tick(&mut w, 0); // let the close swing settle
         }
-        let shut = &w.field_prop_bank.props[&anchor];
+        let shut = &w.props.bank.props[&anchor];
         assert_eq!(
             shut.anim.frame(),
             0,
@@ -517,16 +518,16 @@ fn the_cupboard_opens_on_interact_grants_once_and_closes_on_dismiss() {
             prop_tick(&mut w, 0);
         }
         assert_eq!(
-            w.field_prop_bank.frame(anchor),
+            w.props.bank.frame(anchor),
             Some(0),
             "{name}: the re-searched cupboard must close again"
         );
 
         // Only the touched cupboard moved; its siblings stay shut.
-        for (other, s) in &w.field_prop_bank.props {
+        for (other, s) in &w.props.bank.props {
             if *other != anchor && s.anim.anim_id == CUPBOARD_ANIM {
                 assert_eq!(
-                    w.field_prop_bank.frame(*other),
+                    w.props.bank.frame(*other),
                     Some(0),
                     "{name}: cupboard {other:?} moved without being touched"
                 );

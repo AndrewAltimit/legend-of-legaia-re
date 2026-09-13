@@ -833,7 +833,7 @@ impl World {
         man_file: &legaia_asset::man_section::ManFile,
         man: &[u8],
     ) {
-        self.field_boss_stagers.clear();
+        self.props.boss_stagers.clear();
         for site in crate::man_field_scripts::boss_stager_placements(man_file, man) {
             // The row must be a registered scene formation (scene entry merged
             // the MAN rows + their archive stats) - a desync phantom is not.
@@ -862,7 +862,7 @@ impl World {
                 // Parked with no station leg: no reachable approach point.
                 None => continue,
             };
-            self.field_boss_stagers.insert(
+            self.props.boss_stagers.insert(
                 slot,
                 FieldBossStager {
                     record: slot,
@@ -870,7 +870,7 @@ impl World {
                 },
             );
             self.npcs.positions.insert(slot, station);
-            self.field_walk_touch.insert(
+            self.props.walk_touch.insert(
                 slot,
                 (
                     station,
@@ -904,14 +904,14 @@ impl World {
     /// scene MAN is resident.
     // REF: FUN_801d5b5c, FUN_801cf9f4, FUN_8003BDE0 (context install)
     pub fn run_boss_stager_record(&mut self, slot: u8) -> bool {
-        let Some(&FieldBossStager { record, park_gate }) = self.field_boss_stagers.get(&slot)
+        let Some(&FieldBossStager { record, park_gate }) = self.props.boss_stagers.get(&slot)
         else {
             return false;
         };
         if park_gate.is_some_and(|flag| self.system_flag_test(flag)) {
             // Latched mid-visit (the fight resolved): drop the stale binding.
-            self.field_boss_stagers.remove(&slot);
-            self.field_walk_touch.remove(&slot);
+            self.props.boss_stagers.remove(&slot);
+            self.props.walk_touch.remove(&slot);
             return false;
         }
         if self.cutscene_timeline_active() {
@@ -926,8 +926,8 @@ impl World {
         let installed =
             self.install_cutscene_timeline_record(&man_file, &man, 1, record as usize, false);
         if installed {
-            self.field_boss_stagers.remove(&slot);
-            self.field_walk_touch.remove(&slot);
+            self.props.boss_stagers.remove(&slot);
+            self.props.walk_touch.remove(&slot);
             log::info!("field: boss stager P1[{record}] launched as the beat timeline");
         }
         installed

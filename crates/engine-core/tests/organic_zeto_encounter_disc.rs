@@ -162,7 +162,7 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
         "baseline: nothing pre-armed at scene entry"
     );
     assert!(
-        host.world.field_boss_stagers.is_empty(),
+        host.world.props.boss_stagers.is_empty(),
         "garmel has no P1 boss-stager placement - the fight is P2-record-borne"
     );
 

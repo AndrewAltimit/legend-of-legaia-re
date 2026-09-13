@@ -1721,7 +1721,7 @@ impl World {
         if dropped
             && self.helper_contexts.is_empty()
             && matches!(self.mode, crate::world::SceneMode::Field)
-            && let Some((sx, sz)) = self.resolved_cold_spawn
+            && let Some((sx, sz)) = self.props.resolved_cold_spawn
             && let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get(slot as usize)
             && self.field_walk_component_size(actor.move_state.world_x, actor.move_state.world_z)
@@ -2292,7 +2292,7 @@ impl World {
         // ticks. Runs before the slice below for the same reason retail's
         // actor tick runs before the dialog SM: the spin must see the latch the
         // clip earned on *this* frame, not last frame's.
-        self.field_prop_bank.tick_actor_clips_for_frame();
+        self.props.bank.tick_actor_clips_for_frame();
 
         // A box is open: tick the typewriter + route input.
         if let Some(panel) = id.panel.as_mut() {
@@ -2450,7 +2450,8 @@ impl World {
             {
                 let fallback = host.world.player_clip_frames_hint();
                 host.world
-                    .field_prop_bank
+                    .props
+                    .bank
                     .bind_actor_clip(target, move_id, fallback);
                 if target == crate::field_env::PLAYER_ANCHOR_TARGET && move_id > 2 {
                     host.world.locomotion.player_move_cues.push(move_id);
@@ -2473,12 +2474,9 @@ impl World {
                 .filter(|&target| {
                     let flags = if target == crate::field_env::PLAYER_ANCHOR_TARGET {
                         let hint = host.world.player_clip_frames_hint();
-                        Some(host.world.field_prop_bank.player_clip(hint).flags)
+                        Some(host.world.props.bank.player_clip(hint).flags)
                     } else {
-                        host.world
-                            .field_prop_bank
-                            .actor_clip(target)
-                            .map(|a| a.flags)
+                        host.world.props.bank.actor_clip(target).map(|a| a.flags)
                     };
                     match flags {
                         Some(f) => {
@@ -2490,7 +2488,7 @@ impl World {
                 });
             let step = vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc);
             if let Some(target) = bound
-                && let Some(actor) = host.world.field_prop_bank.actor_clip_mut(target)
+                && let Some(actor) = host.world.props.bank.actor_clip_mut(target)
             {
                 actor.flags = id.ctx.local_flags;
                 id.ctx.local_flags = saved_local_flags;

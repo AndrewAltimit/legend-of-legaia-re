@@ -230,7 +230,8 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     );
     assert!(
         host.world
-            .field_boss_stagers
+            .props
+            .boss_stagers
             .contains_key(&CARUBAN_STAGER_SLOT),
         "the P1[3] stager binding is installed from the MAN"
     );
@@ -404,7 +405,8 @@ fn rikuroa_stager_and_p2_50_are_blocked_by_the_gate_flag_once_set() {
     assert!(
         !host
             .world
-            .field_boss_stagers
+            .props
+            .boss_stagers
             .contains_key(&CARUBAN_STAGER_SLOT),
         "the beaten boss's stager does not re-arm (park gate 0x142 set)"
     );
