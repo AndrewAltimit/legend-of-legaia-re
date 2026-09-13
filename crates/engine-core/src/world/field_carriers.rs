@@ -22,17 +22,17 @@ impl World {
     /// [`Self::install_world_map_entities_with_configs`]; retail builds the
     /// same per-entity records from the scene's MAN actor-placement partition.
     pub fn install_field_carriers(&mut self, configs: Vec<FieldCarrierConfig>) {
-        self.field_carriers = (0..configs.len())
+        self.carriers.entities = (0..configs.len())
             .map(|_| vm::world_map::WorldMapEntityCtx::default())
             .collect();
-        self.field_carrier_configs = configs;
-        self.pending_field_carrier_battle = None;
+        self.carriers.configs = configs;
+        self.carriers.pending_battle = None;
         // The slot map is only meaningful for a MAN-derived install; a
         // hand-built set has no placement slots. Clear it (and any armed engage)
         // so a re-install never leaves a stale slot pointing at the old set.
-        self.field_carrier_slots.clear();
-        self.pending_carrier_engage = None;
-        self.carrier_menu = None;
+        self.carriers.slots.clear();
+        self.carriers.pending_engage = None;
+        self.carriers.menu = None;
         // NPC motion + walk-touch state is placement-keyed too: never let a
         // previous scene's routes / in-flight legs / door events leak.
         self.field_npc_routes.clear();
@@ -82,7 +82,7 @@ impl World {
 
         self.install_field_carriers(derived.into_iter().map(|d| d.config).collect());
         // install_field_carriers cleared the slot map; repopulate for this set.
-        self.field_carrier_slots = carrier_slots;
+        self.carriers.slots = carrier_slots;
 
         // The system flags this scene's own records SET on their way into a
         // `3E FF <row>` scripted battle entry - the disc-side half of a
@@ -351,18 +351,18 @@ impl World {
         // - dialogue with the 4-option spar picker -> a `CarrierMenu` gates the
         //   engage on the fight option (faithful);
         // - dialogue without a picker -> the any-accept `pending_carrier_engage`.
-        if let Some(&carrier_idx) = self.field_carrier_slots.get(&slot) {
+        if let Some(&carrier_idx) = self.carriers.slots.get(&slot) {
             if !opened_dialog {
                 self.engage_field_carrier(carrier_idx);
             } else if let Some((n, fight_option)) = inline.as_deref().and_then(spar_menu_of) {
-                self.carrier_menu = Some(CarrierMenu {
+                self.carriers.menu = Some(CarrierMenu {
                     carrier_idx,
                     n,
                     fight_option,
                     cursor: 0,
                 });
             } else {
-                self.pending_carrier_engage = Some(carrier_idx);
+                self.carriers.pending_engage = Some(carrier_idx);
             }
         }
         self.pending_field_events
@@ -402,10 +402,10 @@ impl World {
         use crate::input::PadButton;
         if self.current_dialog.is_none() {
             // Box closed elsewhere; drop a stale menu.
-            self.carrier_menu = None;
+            self.carriers.menu = None;
             return false;
         }
-        let Some(menu) = self.carrier_menu else {
+        let Some(menu) = self.carriers.menu else {
             return false;
         };
         if self.dialog_input_consumed {
@@ -415,7 +415,7 @@ impl World {
         let cancel = self.input.just_pressed(PadButton::Circle);
         if confirm || cancel {
             self.dialog_input_consumed = true;
-            self.carrier_menu = None;
+            self.carriers.menu = None;
             self.current_dialog = None;
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::DialogDismissed);
@@ -434,7 +434,7 @@ impl World {
             if down && m.cursor + 1 < m.n {
                 m.cursor += 1;
             }
-            self.carrier_menu = Some(m);
+            self.carriers.menu = Some(m);
             self.dialog_input_consumed = true;
         }
         true
@@ -501,7 +501,7 @@ impl World {
                 self.current_dialog = None;
                 self.pending_field_events
                     .push(crate::field_events::FieldEvent::DialogDismissed);
-                if let Some(idx) = self.pending_carrier_engage.take() {
+                if let Some(idx) = self.carriers.pending_engage.take() {
                     self.engage_field_carrier(idx);
                 }
             }
@@ -553,7 +553,7 @@ impl World {
     ///
     /// REF: FUN_801DA51C
     pub fn engage_field_carrier(&mut self, idx: usize) {
-        if let Some(ctx) = self.field_carriers.get_mut(idx)
+        if let Some(ctx) = self.carriers.entities.get_mut(idx)
             && ctx.state == vm::world_map::EntityState::Idle as u16
         {
             ctx.state = vm::world_map::EntityState::Activating as u16;
@@ -569,19 +569,19 @@ impl World {
     ///
     /// REF: FUN_801DA51C
     pub(crate) fn tick_field_carriers(&mut self) {
-        if !self.field_carriers.is_empty() {
-            let mut carriers = std::mem::take(&mut self.field_carriers);
+        if !self.carriers.entities.is_empty() {
+            let mut carriers = std::mem::take(&mut self.carriers.entities);
             for (idx, ctx) in carriers.iter_mut().enumerate() {
                 let mut host = FieldCarrierHostImpl { world: self };
                 vm::world_map::step(idx, ctx, &mut host);
             }
-            self.field_carriers = carriers;
+            self.carriers.entities = carriers;
         }
 
         // The latched battle entry is shared with the field-VM op-`3E FF`
         // scripted-battle arm ([`Self::trigger_scripted_battle`]), which can
         // fire in a scene with no installed carriers - drain it regardless.
-        if let Some(formation_id) = self.pending_field_carrier_battle.take() {
+        if let Some(formation_id) = self.carriers.pending_battle.take() {
             self.begin_field_carrier_battle(formation_id);
         }
     }

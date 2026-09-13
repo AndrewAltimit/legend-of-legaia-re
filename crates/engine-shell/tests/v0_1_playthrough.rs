@@ -608,7 +608,7 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
     // Cold boot installed town01's sparring carrier: exactly one scripted-
     // encounter slot.
     let slot = {
-        let mut slots: Vec<u8> = w.field_carrier_slots.keys().copied().collect();
+        let mut slots: Vec<u8> = w.carriers.slots.keys().copied().collect();
         slots.sort_unstable();
         assert_eq!(
             slots.len(),
@@ -752,7 +752,8 @@ fn v0_1_battle_leg_walk_talk_accept() {
     let slot = *session
         .host
         .world
-        .field_carrier_slots
+        .carriers
+        .slots
         .keys()
         .next()
         .expect("town01 installs the scripted-encounter carrier slot");

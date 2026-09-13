@@ -52,6 +52,7 @@ use vm_hosts::{
 };
 
 mod config;
+mod field_carrier_state;
 mod menu_state;
 mod minigame_state;
 mod shop_state;
@@ -61,6 +62,7 @@ mod types;
 mod world_map_state;
 
 pub use config::*;
+pub use field_carrier_state::FieldCarrierState;
 pub use menu_state::MenuState;
 pub use minigame_state::MinigameState;
 pub use shop_state::ShopState;

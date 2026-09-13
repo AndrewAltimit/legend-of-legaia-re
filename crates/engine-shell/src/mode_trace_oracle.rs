@@ -231,13 +231,7 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
     // The cold boot installs exactly one scripted-encounter carrier slot
     // (the sparring partner). Drive its dialogue-accept op.
     let slot = {
-        let mut slots: Vec<u8> = session
-            .host
-            .world
-            .field_carrier_slots
-            .keys()
-            .copied()
-            .collect();
+        let mut slots: Vec<u8> = session.host.world.carriers.slots.keys().copied().collect();
         slots.sort_unstable();
         slots.first().copied().context(
             "scene installs no scripted-encounter carrier slot (cannot drive the Battle leg)",

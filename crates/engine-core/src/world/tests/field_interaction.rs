@@ -80,7 +80,7 @@ fn field_dialogue_accept_auto_arms_scripted_carrier() {
         FieldCarrierConfig::ScriptedEncounter { formation_id: 1 },
         FieldCarrierConfig::Npc { interact_id: 7 },
     ]);
-    world.field_carrier_slots.insert(3, 0);
+    world.carriers.slots.insert(3, 0);
     world
         .field_npc_dialog
         .insert(3, vec![0x1F, b'h', b'i', 0x00]);
@@ -97,7 +97,7 @@ fn field_dialogue_accept_auto_arms_scripted_carrier() {
         "interacting with the carrier opens its dialogue"
     );
     assert_eq!(
-        world.pending_carrier_engage,
+        world.carriers.pending_engage,
         Some(0),
         "the scripted carrier's engage is armed, waiting for the accept"
     );
@@ -112,7 +112,7 @@ fn field_dialogue_accept_auto_arms_scripted_carrier() {
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
     assert!(
-        world.pending_carrier_engage.is_none(),
+        world.carriers.pending_engage.is_none(),
         "the armed engage is consumed on the accept"
     );
     world.input.set_pad(0);
@@ -277,7 +277,7 @@ fn interaction_probe_walk_up_to_scripted_carrier_starts_fight() {
     world.install_field_carriers(vec![FieldCarrierConfig::ScriptedEncounter {
         formation_id: 1,
     }]);
-    world.field_carrier_slots.insert(5, 0);
+    world.carriers.slots.insert(5, 0);
     world
         .field_npc_dialog
         .insert(5, vec![0x1F, b'h', b'i', 0x00]);
@@ -290,7 +290,7 @@ fn interaction_probe_walk_up_to_scripted_carrier_starts_fight() {
         world.current_dialog.is_some(),
         "walking up + action button opens the carrier's dialogue"
     );
-    assert_eq!(world.pending_carrier_engage, Some(0), "engage armed");
+    assert_eq!(world.carriers.pending_engage, Some(0), "engage armed");
     assert_eq!(
         world.mode,
         SceneMode::Field,
@@ -474,7 +474,7 @@ fn world_with_spar_carrier() -> World {
     world.install_field_carriers(vec![FieldCarrierConfig::ScriptedEncounter {
         formation_id: 1,
     }]);
-    world.field_carrier_slots.insert(5, 0);
+    world.carriers.slots.insert(5, 0);
     world.field_npc_dialog.insert(5, spar_dialogue());
     world.field_npc_positions.insert(5, (2752, 2624));
     world
@@ -494,10 +494,10 @@ fn carrier_spar_menu_gates_engage_on_the_fight_option() {
     let _ = world.tick();
     assert!(world.current_dialog.is_some(), "carrier dialogue opens");
     assert!(
-        world.pending_carrier_engage.is_none(),
+        world.carriers.pending_engage.is_none(),
         "the menu path is used, not the any-accept arm"
     );
-    let menu = world.carrier_menu.expect("the spar's 4-option menu is up");
+    let menu = world.carriers.menu.expect("the spar's 4-option menu is up");
     assert_eq!(menu.n, 4, "4-option picker");
     assert_eq!(
         menu.fight_option, 2,
@@ -516,7 +516,7 @@ fn carrier_spar_menu_gates_engage_on_the_fight_option() {
         SceneMode::Field,
         "confirming a non-fight option does not start the fight"
     );
-    assert!(world.carrier_menu.is_none(), "the menu closed");
+    assert!(world.carriers.menu.is_none(), "the menu closed");
     assert!(world.current_dialog.is_none(), "the box closed");
 }
 
@@ -529,7 +529,7 @@ fn carrier_spar_menu_fight_option_starts_battle() {
     let mut world = world_with_spar_carrier();
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
-    let fight = world.carrier_menu.expect("menu up").fight_option;
+    let fight = world.carriers.menu.expect("menu up").fight_option;
 
     // Move the cursor down to the fight option (one fresh Down edge per step).
     for _ in 0..fight {
@@ -539,7 +539,7 @@ fn carrier_spar_menu_fight_option_starts_battle() {
         let _ = world.tick();
     }
     assert_eq!(
-        world.carrier_menu.expect("menu still up").cursor,
+        world.carriers.menu.expect("menu still up").cursor,
         fight,
         "cursor on the fight option"
     );
@@ -617,7 +617,7 @@ fn field_dialogue_accept_on_plain_npc_does_not_arm_battle() {
         "plain NPC opens its dialogue"
     );
     assert_eq!(
-        world.pending_carrier_engage, None,
+        world.carriers.pending_engage, None,
         "a plain NPC arms no engage"
     );
 

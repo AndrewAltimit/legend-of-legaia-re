@@ -284,7 +284,8 @@ fn training_reaches_battle_via_field_carrier_sm() {
     let sparring_idx = session
         .host
         .world
-        .field_carrier_configs
+        .carriers
+        .configs
         .iter()
         .position(|c| {
             matches!(
@@ -382,7 +383,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
     // one scripted-encounter (sparring) carrier carries an interact-slot entry,
     // and that slot holds the sparring partner's inline dialogue.
     let slot = {
-        let mut slots: Vec<u8> = world.field_carrier_slots.keys().copied().collect();
+        let mut slots: Vec<u8> = world.carriers.slots.keys().copied().collect();
         slots.sort_unstable();
         assert_eq!(
             slots.len(),
@@ -407,7 +408,8 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
     // The carrier presents its real 4-option spar menu (the faithful path); the
     // engage is gated on the index-2 fight option, not on any accept.
     let menu = world
-        .carrier_menu
+        .carriers
+        .menu
         .expect("the sparring partner's 4-option spar menu is up");
     assert_eq!(menu.n, 4, "4-option picker");
     assert_eq!(
@@ -415,7 +417,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         "fight option = index 2 (\"...practice...\")"
     );
     assert!(
-        world.pending_carrier_engage.is_none(),
+        world.carriers.pending_engage.is_none(),
         "the menu gates the engage; the any-accept arm is not used"
     );
     assert_eq!(
@@ -432,7 +434,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         let _ = world.tick();
     }
     assert_eq!(
-        world.carrier_menu.expect("menu still up").cursor,
+        world.carriers.menu.expect("menu still up").cursor,
         2,
         "cursor moved to the fight option"
     );
@@ -512,7 +514,8 @@ fn training_reaches_battle_via_interaction_probe() {
     let (slot, cx, cz) = {
         let w = &session.host.world;
         let slot = *w
-            .field_carrier_slots
+            .carriers
+            .slots
             .keys()
             .next()
             .expect("town01 installs the scripted-encounter carrier slot");
@@ -541,12 +544,13 @@ fn training_reaches_battle_via_interaction_probe() {
     let fight = session
         .host
         .world
-        .carrier_menu
+        .carriers
+        .menu
         .expect("the spar's 4-option menu is up")
         .fight_option;
     assert_eq!(fight, 2, "fight option = index 2 (\"...practice...\")");
     assert!(
-        session.host.world.pending_carrier_engage.is_none(),
+        session.host.world.carriers.pending_engage.is_none(),
         "the menu gates the engage (no any-accept arm)"
     );
 

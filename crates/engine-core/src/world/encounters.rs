@@ -726,7 +726,7 @@ impl World {
             return false;
         }
         log::info!("field: op-0x3E scripted battle entry -> formation row {row}");
-        self.pending_field_carrier_battle = Some(formation_id);
+        self.carriers.pending_battle = Some(formation_id);
         // Scripted rows carry a non-zero first header byte the retail reader
         // ORs `0x80` into a battle-setup flag for; the staged fight refuses
         // the Run command (the `ctx+0x287` no-escape input of the escape

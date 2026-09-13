@@ -503,9 +503,9 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
         // the carrier's MAN formation (by index, so the scene's merged monster
         // stats stand) for direct resolution at the end of the tick.
         if let Some(FieldCarrierConfig::ScriptedEncounter { formation_id }) =
-            self.world.field_carrier_configs.get(entity_idx).cloned()
+            self.world.carriers.configs.get(entity_idx).cloned()
         {
-            self.world.pending_field_carrier_battle = Some(formation_id);
+            self.world.carriers.pending_battle = Some(formation_id);
         }
     }
     fn dialog_active(&self) -> bool {
@@ -522,7 +522,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
     fn on_interact(&mut self, entity_idx: usize) {
         // Reached only once a future proximity model opens the gate; surfaces
         // the carrier's interaction id for the host.
-        let interact_id = match self.world.field_carrier_configs.get(entity_idx) {
+        let interact_id = match self.world.carriers.configs.get(entity_idx) {
             Some(FieldCarrierConfig::Npc { interact_id }) => *interact_id,
             _ => 0,
         };
@@ -1242,7 +1242,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         }
         // A carrier's spar menu owns the dialog input while it is up: navigate +
         // confirm the fight option (engages only then), vs the any-accept path.
-        if self.world.carrier_menu.is_some() {
+        if self.world.carriers.menu.is_some() {
             self.world.handle_carrier_menu();
             return self.world.current_dialog.is_some();
         }
@@ -1261,7 +1261,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // `tick_field_carriers`. (The tutorial fight is forced, so any
             // dismiss is the accept; the undecoded Yes/No box-selection logic
             // would gate this once pinned.)
-            if let Some(idx) = self.world.pending_carrier_engage.take() {
+            if let Some(idx) = self.world.carriers.pending_engage.take() {
                 self.world.engage_field_carrier(idx);
             }
             return false;

@@ -417,7 +417,7 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
         SceneMode::Field,
         "an idle scripted carrier never self-fires"
     );
-    assert_eq!(world.field_carriers[0].state, 0, "carrier still Idle");
+    assert_eq!(world.carriers.entities[0].state, 0, "carrier still Idle");
 
     // The dialogue-accept advances the carrier to Activating; the next tick
     // runs the state-1 body (formation copy) and the case 2/3 fall-through
@@ -439,7 +439,7 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
         "Tetsu in the enemy slot"
     );
     assert_eq!(
-        world.field_carriers[0].state,
+        world.carriers.entities[0].state,
         vm::world_map::EntityState::Terminal as u16,
         "carrier retired to Terminal after the transition"
     );
@@ -457,7 +457,7 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
     assert_eq!(world.mode, SceneMode::Field, "returns to the field");
     // The carrier stays Terminal - the scripted fight fires exactly once.
     assert_eq!(
-        world.field_carriers[0].state,
+        world.carriers.entities[0].state,
         vm::world_map::EntityState::Terminal as u16
     );
 }
@@ -487,7 +487,7 @@ fn field_carrier_unengaged_never_fires() {
         assert_eq!(world.mode, SceneMode::Field);
     }
     assert!(world.field_return.is_none());
-    assert!(world.pending_field_carrier_battle.is_none());
+    assert!(world.carriers.pending_battle.is_none());
 }
 
 #[test]
