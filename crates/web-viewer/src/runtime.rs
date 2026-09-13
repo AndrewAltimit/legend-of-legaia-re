@@ -1147,7 +1147,7 @@ impl LegaiaRuntime {
         let Some(h) = self.scene_host.as_ref() else {
             return serde_json::Value::Null;
         };
-        let Some(id) = h.world.inline_dialogue.as_ref() else {
+        let Some(id) = h.world.dialog.inline.as_ref() else {
             return serde_json::Value::Null;
         };
         let ascii = |bytes: &[u8]| -> String {

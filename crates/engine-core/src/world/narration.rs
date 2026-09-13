@@ -648,7 +648,7 @@ impl World {
     ///
     /// REF: FUN_801D01B0 (`0x801D01F0`, the engaged-bit branch), FUN_801D5B5C
     pub fn dialogue_owns_input(&self) -> bool {
-        self.current_dialog.is_some() || self.inline_dialogue.is_some()
+        self.dialog.current.is_some() || self.dialog.inline.is_some()
     }
 
     /// Step the opening-cutscene timeline one frame.
@@ -2240,7 +2240,7 @@ impl World {
     /// actor's interaction-script bytes (e.g. [`DialogRequest::inline`]), which
     /// begin at the first `0x1F` text segment. Replaces any running script.
     pub fn start_inline_dialogue(&mut self, inline: Vec<u8>) {
-        self.inline_dialogue = Some(crate::inline_dialogue::InlineDialogue::from_inline(inline));
+        self.dialog.inline = Some(crate::inline_dialogue::InlineDialogue::from_inline(inline));
     }
 
     /// Start the inline-script runner on a full interaction record, executing the
@@ -2255,7 +2255,7 @@ impl World {
         entry_pc: usize,
         first_segment: usize,
     ) {
-        self.inline_dialogue = Some(crate::inline_dialogue::InlineDialogue::with_prologue(
+        self.dialog.inline = Some(crate::inline_dialogue::InlineDialogue::with_prologue(
             std::sync::Arc::new(body),
             entry_pc,
             first_segment,
@@ -2278,11 +2278,11 @@ impl World {
     //      stop mapped to the loop's end paths)
     pub fn step_inline_dialogue(&mut self, confirm: bool, up: bool, down: bool) {
         use crate::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
-        let Some(mut id) = self.inline_dialogue.take() else {
+        let Some(mut id) = self.dialog.inline.take() else {
             return;
         };
         if id.done {
-            self.inline_dialogue = Some(id);
+            self.dialog.inline = Some(id);
             return;
         }
         // The cross-context clip cursors advance once per frame. The field
@@ -2363,14 +2363,14 @@ impl World {
                     }
                 }
             }
-            self.inline_dialogue = Some(id);
+            self.dialog.inline = Some(id);
             return;
         }
 
         // No box open: step the VM until the next text segment or an end.
         // Expose the record's NPC slot so the host's `0x4C 0x51` NPC-run hook
         // can route the prologue's walk ops to the interacted actor.
-        self.stepping_inline_npc = id.npc_slot;
+        self.dialog.stepping_inline_npc = id.npc_slot;
         let mut host = FieldHostImpl { world: self };
         let mut budget = INLINE_DIALOGUE_STEP_BUDGET;
         while budget > 0 {
@@ -2597,8 +2597,8 @@ impl World {
                 }
             }
         }
-        self.stepping_inline_npc = None;
-        self.inline_dialogue = Some(id);
+        self.dialog.stepping_inline_npc = None;
+        self.dialog.inline = Some(id);
     }
 
     /// Live-loop bridge for the inline-script runner: when [`Self::use_vm_dialogue`]
@@ -2615,7 +2615,8 @@ impl World {
         // driver ([`Self::step_prop_interaction`]) with prop-actor bridging;
         // stepping it here too would double-run its VM slices.
         if self
-            .inline_dialogue
+            .dialog
+            .inline
             .as_ref()
             .is_some_and(|id| id.prop_anchor.is_some())
         {
@@ -2625,20 +2626,20 @@ impl World {
         // NPC carries a prologue record, run it from the entry PC so the
         // interaction prologue (segment selection) executes; otherwise start at
         // the first segment from the request's inline buffer.
-        if self.inline_dialogue.is_none() {
-            if let Some(prologue) = self.active_inline_prologue.take() {
+        if self.dialog.inline.is_none() {
+            if let Some(prologue) = self.dialog.active_inline_prologue.take() {
                 let mut runner = crate::inline_dialogue::InlineDialogue::with_prologue(
                     std::sync::Arc::new(prologue.body),
                     prologue.entry_pc,
                     prologue.first_segment,
                 );
-                runner.npc_slot = self.active_inline_slot.take();
-                self.inline_dialogue = Some(runner);
-            } else if let Some(req) = self.current_dialog.as_ref() {
+                runner.npc_slot = self.dialog.active_inline_slot.take();
+                self.dialog.inline = Some(runner);
+            } else if let Some(req) = self.dialog.current.as_ref() {
                 if !req.inline.is_empty() {
-                    let slot = self.active_inline_slot.take();
+                    let slot = self.dialog.active_inline_slot.take();
                     self.start_inline_dialogue(req.inline.clone());
-                    if let Some(runner) = self.inline_dialogue.as_mut() {
+                    if let Some(runner) = self.dialog.inline.as_mut() {
                         runner.npc_slot = slot;
                     }
                 } else {
@@ -2653,9 +2654,9 @@ impl World {
         let up = self.input.just_pressed(input::PadButton::Up);
         let down = self.input.just_pressed(input::PadButton::Down);
         self.step_inline_dialogue(confirm, up, down);
-        if self.inline_dialogue.as_ref().is_some_and(|d| d.is_done()) {
-            self.inline_dialogue = None;
-            self.current_dialog = None;
+        if self.dialog.inline.as_ref().is_some_and(|d| d.is_done()) {
+            self.dialog.inline = None;
+            self.dialog.current = None;
             // Drop the interaction's staging slots with it. They are consumed
             // by `take()` when the runner starts, so a leftover is always a
             // *second* arm of the same interaction - and this function's own
@@ -2665,8 +2666,8 @@ impl World {
             // here makes the restart unrepresentable rather than merely
             // unreachable, because any future caller of
             // `trigger_field_interact` would otherwise re-open the same trap.
-            self.active_inline_prologue = None;
-            self.active_inline_slot = None;
+            self.dialog.active_inline_prologue = None;
+            self.dialog.active_inline_slot = None;
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::DialogDismissed);
         }

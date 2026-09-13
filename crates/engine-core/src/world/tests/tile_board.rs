@@ -60,7 +60,7 @@ fn tile_board_blocked_by_wall() {
 #[test]
 fn tile_board_gated_by_dialog() {
     let mut w = tile_board_world();
-    w.current_dialog = Some(DialogRequest {
+    w.dialog.current = Some(DialogRequest {
         text_id: 0,
         inline: Vec::new(),
         world_x: 0,

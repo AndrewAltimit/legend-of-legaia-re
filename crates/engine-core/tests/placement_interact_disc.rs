@@ -358,7 +358,7 @@ fn interacting_with_a_door_runs_its_record() {
 
             world.trigger_field_interact(0, d.slot);
             assert!(
-                world.active_inline_prologue.is_some(),
+                world.dialog.active_inline_prologue.is_some(),
                 "{scene} P1[{}]: the interact armed no record run",
                 d.slot
             );
@@ -374,18 +374,19 @@ fn interacting_with_a_door_runs_its_record() {
                 });
                 let _ = world.tick();
                 if world
-                    .inline_dialogue
+                    .dialog
+                    .inline
                     .as_ref()
                     .is_some_and(|r| r.panel.is_some())
                 {
                     opened_box = true;
                 }
-                if world.minigames.pending_warp.is_some() || world.inline_dialogue.is_none() {
+                if world.minigames.pending_warp.is_some() || world.dialog.inline.is_none() {
                     break;
                 }
             }
             let armed = world.minigames.pending_warp;
-            let rest = world.inline_dialogue.as_ref().map(|r| {
+            let rest = world.dialog.inline.as_ref().map(|r| {
                 (
                     r.pc,
                     r.bytecode.get(r.pc).copied().unwrap_or(0),

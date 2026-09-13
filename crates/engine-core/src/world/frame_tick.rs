@@ -336,7 +336,7 @@ impl World {
     /// pad word to press - a scripted timeline, a replay fixture, a test.
     // REF: FUN_801D27E0 (state-0 arm gate, request-byte route)
     pub fn request_talk_leader_switch(&mut self) {
-        self.talk_switch_requested = true;
+        self.dialog.talk_switch_requested = true;
     }
 
     /// Per-frame step of the three-actor-talk controller SM
@@ -398,10 +398,10 @@ impl World {
         use crate::cutscene_script_elements::{
             LEADER_ACTOR_POSE_SENTINEL, LEADER_SWAP_REQUEST_BIT, LeaderSwapEffect, LeaderSwapWorld,
         };
-        let Some(mut talk) = self.three_actor_talk else {
+        let Some(mut talk) = self.dialog.three_actor_talk else {
             // No live talk: a stale switch request must not outlive the
             // session that could consume it.
-            self.talk_switch_requested = false;
+            self.dialog.talk_switch_requested = false;
             return;
         };
         let request = if talk.swap.phase == 0 {
@@ -409,7 +409,7 @@ impl World {
             // pressed) plus the scripted latch. `take` runs first and
             // unconditionally, so a latch set outside phase 0 is not left to
             // fire into a later swap.
-            let latched = core::mem::take(&mut self.talk_switch_requested);
+            let latched = core::mem::take(&mut self.dialog.talk_switch_requested);
             latched || self.input.just_pressed(input::PadButton::Square)
         } else {
             false
@@ -443,7 +443,7 @@ impl World {
         if talk.swap.phase == 5 {
             // State-0 poll saw the talk lock down: despawn (retail runs the
             // state-5 body one frame later; the engine folds it).
-            self.three_actor_talk = Some(talk);
+            self.dialog.three_actor_talk = Some(talk);
             self.end_three_actor_talk();
             return;
         }
@@ -556,13 +556,13 @@ impl World {
                     // to clear.
                 }
                 LeaderSwapEffect::RetireController => {
-                    self.three_actor_talk = Some(talk);
+                    self.dialog.three_actor_talk = Some(talk);
                     self.end_three_actor_talk();
                     return;
                 }
             }
         }
-        self.three_actor_talk = Some(talk);
+        self.dialog.three_actor_talk = Some(talk);
     }
 
     /// Resolve a talk-instruction participant id to the engine's field-NPC
@@ -593,7 +593,7 @@ impl World {
     /// No-op without an active session.
     // REF: FUN_801D27E0 (state-5 despawn), FUN_801D2D38 (the collapse this undoes)
     pub fn end_three_actor_talk(&mut self) {
-        let Some(talk) = self.three_actor_talk.take() else {
+        let Some(talk) = self.dialog.three_actor_talk.take() else {
             return;
         };
         self.system_flag_clear(0xD);
@@ -1357,14 +1357,14 @@ impl World {
                 // simplified `current_dialog` box on the field / overworld
                 // dismiss idiom (`op4c_n_5_sub_4_dialog_advance` /
                 // `tick_world_map_npc_dialog`).
-                if self.inline_dialogue.is_some() {
+                if self.dialog.inline.is_some() {
                     self.drive_inline_dialogue();
                     None
-                } else if self.current_dialog.is_some() {
+                } else if self.dialog.current.is_some() {
                     if self.input.just_pressed(input::PadButton::Cross)
                         || self.input.just_pressed(input::PadButton::Circle)
                     {
-                        self.current_dialog = None;
+                        self.dialog.current = None;
                         self.pending_field_events
                             .push(crate::field_events::FieldEvent::DialogDismissed);
                     }
@@ -1407,7 +1407,7 @@ impl World {
                 //
                 // Per-tick: one Cross/Circle edge feeds at most one of the
                 // script's 0x4C dialog poll or the interaction probe.
-                self.dialog_input_consumed = false;
+                self.dialog.input_consumed = false;
                 // Retail-frame paced (see `step_spawned_record_contexts`).
                 self.step_spawned_record_contexts();
                 // Per-actor script channels (spawned with a cutscene
@@ -1501,7 +1501,7 @@ impl World {
                 // path). Placed after the runner start above, so the frame the
                 // talk begins already counts as engaged and the save survives.
                 // REF: FUN_80039B7C
-                if !self.dialogue_owns_input() && self.active_inline_prologue.is_none() {
+                if !self.dialogue_owns_input() && self.dialog.active_inline_prologue.is_none() {
                     self.release_talk_facing();
                 }
                 // Screen-effect widgets (mask / sprite / panel / letterbox,

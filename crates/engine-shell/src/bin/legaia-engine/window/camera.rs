@@ -729,7 +729,7 @@ pub(super) fn battle_cam_inputs(
     // framebuffers that separate them). `battle_command` is the port's
     // Begin/Run + per-character command row, which retail frames wide.
     let phase = script::phase_for_state(
-        world.current_dialog.is_some() || world.inline_dialogue.is_some(),
+        world.dialog.current.is_some() || world.dialog.inline.is_some(),
         world.battle.arts_menu.is_some()
             || world.battle.spell_menu.is_some()
             || world.battle.item_menu.is_some(),

@@ -84,7 +84,7 @@ fn gives_for_slot(decoded_man: &[u8], slot: u8) -> Vec<u8> {
                 gives.push(item_id);
             }
         }
-        if world.inline_dialogue.as_ref().is_none_or(|d| d.is_done()) {
+        if world.dialog.inline.as_ref().is_none_or(|d| d.is_done()) {
             break;
         }
     }

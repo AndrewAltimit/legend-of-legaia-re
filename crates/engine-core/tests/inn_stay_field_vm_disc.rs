@@ -129,19 +129,22 @@ fn stay_at_the_inn(world: &mut World, slot: u8, option: usize) -> u32 {
     // 90 display frames) plus the clip-end spins. The runner is started by the
     // first `drive_inline_dialogue` call, so the liveness test only applies
     // from the second frame on.
-    while frames < 4000 && (frames == 0 || world.inline_dialogue.is_some()) {
+    while frames < 4000 && (frames == 0 || world.dialog.inline.is_some()) {
         let menu = world
-            .inline_dialogue
+            .dialog
+            .inline
             .as_ref()
             .and_then(|d| d.panel.as_ref())
             .is_some_and(|p| p.menu_active());
         let waiting = world
-            .inline_dialogue
+            .dialog
+            .inline
             .as_ref()
             .and_then(|d| d.panel.as_ref())
             .is_some_and(|p| p.is_waiting_for_input() || p.is_done());
         let cursor = world
-            .inline_dialogue
+            .dialog
+            .inline
             .as_ref()
             .and_then(|d| d.panel.as_ref())
             .map(|p| p.picker_cursor())

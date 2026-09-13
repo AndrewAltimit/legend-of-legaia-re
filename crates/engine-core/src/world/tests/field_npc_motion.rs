@@ -98,7 +98,7 @@ fn autonomous_legs_pause_during_dialogue_scripted_legs_run() {
     // A dialogue is up: the autonomous patrol must not start (retail's
     // interaction motion-pause), but a script-started leg (the interaction
     // partner's own prologue walk) keeps stepping.
-    world.current_dialog = Some(DialogRequest {
+    world.dialog.current = Some(DialogRequest {
         text_id: 0,
         inline: vec![],
         world_x: 0,
@@ -119,7 +119,7 @@ fn autonomous_legs_pause_during_dialogue_scripted_legs_run() {
     );
 
     // Box dismissed: the patrol resumes.
-    world.current_dialog = None;
+    world.dialog.current = None;
     tick_retail_frames(&mut world, 10);
     let &(x, _) = world.npcs.positions.get(&1).unwrap();
     assert!(x > 1000, "patrol resumes once the dialogue clears");

@@ -169,7 +169,7 @@ fn world_with_props(p: &SceneProps) -> World {
 /// One field tick of the prop layer with the given pad mask.
 fn prop_tick(w: &mut World, pad: u16) {
     w.input.set_pad(pad);
-    w.dialog_input_consumed = false;
+    w.dialog.input_consumed = false;
     w.tick_prop_interactions();
 }
 
@@ -187,11 +187,8 @@ fn drive_interaction_to_end(w: &mut World, anchor: (u8, u8), budget: usize) -> (
         };
         prop_tick(w, pad);
         max_frame = max_frame.max(w.field_prop_bank.frame(anchor).unwrap_or(0));
-        saw_box |= w
-            .inline_dialogue
-            .as_ref()
-            .is_some_and(|d| d.panel.is_some());
-        if w.inline_dialogue.is_none() {
+        saw_box |= w.dialog.inline.as_ref().is_some_and(|d| d.panel.is_some());
+        if w.dialog.inline.is_none() {
             return (max_frame, saw_box);
         }
     }
@@ -394,7 +391,7 @@ fn walking_into_a_house_door_opens_it_and_drops_its_collision() {
             "{name}: the opened door must stop blocking (FUN_801CF754 skips flags&3)"
         );
         assert!(
-            w.inline_dialogue.is_none(),
+            w.dialog.inline.is_none(),
             "{name}: the door run must complete and release the player"
         );
         assert_eq!(
@@ -455,7 +452,7 @@ fn the_cupboard_opens_on_interact_grants_once_and_closes_on_dismiss() {
             Some(0),
             "{name}: walking into the cupboard must NOT open it"
         );
-        assert!(w.inline_dialogue.is_none());
+        assert!(w.dialog.inline.is_none());
 
         // Face it (the walk pressed Z-, so face Z- = engine heading 0x800)
         // and press confirm: the facing probe hits the interact box and

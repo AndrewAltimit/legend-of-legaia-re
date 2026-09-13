@@ -39,8 +39,8 @@ impl LegaiaRuntime {
         let w = &h.world;
         !matches!(w.mode, SceneMode::Field | SceneMode::WorldMap)
             || self.menu.is_open()
-            || w.current_dialog.is_some()
-            || w.inline_dialogue.is_some()
+            || w.dialog.current.is_some()
+            || w.dialog.inline.is_some()
             || w.cutscene.text_balloon.is_some()
             || w.cutscene_timeline_active()
     }

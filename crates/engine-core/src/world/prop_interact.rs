@@ -90,7 +90,7 @@ impl World {
         runner.ctx.local_flags = prop.anim.flags;
         runner.ctx.flags = prop.cflags;
         runner.ctx.field_6a = prop.anim.rate;
-        self.inline_dialogue = Some(runner);
+        self.dialog.inline = Some(runner);
         // Engaged: locomotion input is suppressed until the run completes
         // (retail: `FUN_801D5B5C` raises `player+0x10 |= 0x80000`, the dialog
         // SM teardown clears it).
@@ -150,7 +150,8 @@ impl World {
     pub(crate) fn step_prop_interaction(&mut self) {
         use crate::input::PadButton;
         let is_prop_run = self
-            .inline_dialogue
+            .dialog
+            .inline
             .as_ref()
             .is_some_and(|id| id.prop_anchor.is_some());
         if !is_prop_run {
@@ -161,7 +162,7 @@ impl World {
         let up = self.input.just_pressed(PadButton::Up);
         let down = self.input.just_pressed(PadButton::Down);
 
-        let Some(mut id) = self.inline_dialogue.take() else {
+        let Some(mut id) = self.dialog.inline.take() else {
             return;
         };
         let anchor = id.prop_anchor.expect("checked above");
@@ -183,7 +184,7 @@ impl World {
             let menu_was_open = panel.menu_active();
             panel.tick();
             if confirm {
-                self.dialog_input_consumed = true;
+                self.dialog.input_consumed = true;
                 if panel.menu_active() && !menu_was_open {
                     // Opened this frame: nothing to commit yet.
                 } else if panel.menu_active() {
@@ -217,7 +218,7 @@ impl World {
                 self.finish_prop_interaction(&mut id, anchor);
                 return;
             }
-            self.inline_dialogue = Some(id);
+            self.dialog.inline = Some(id);
             return;
         }
 
@@ -312,7 +313,7 @@ impl World {
         if id.done {
             self.finish_prop_interaction(&mut id, anchor);
         } else {
-            self.inline_dialogue = Some(id);
+            self.dialog.inline = Some(id);
         }
     }
 
@@ -331,7 +332,7 @@ impl World {
             prop.parked_pc = id.pc;
         }
         self.set_player_engaged(false);
-        self.inline_dialogue = None;
+        self.dialog.inline = None;
     }
 
     /// Copy the executing context's actor words back onto the live prop and

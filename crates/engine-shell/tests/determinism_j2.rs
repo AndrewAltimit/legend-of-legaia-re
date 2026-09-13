@@ -99,7 +99,7 @@ fn sample_world(world: &World, pad: u16) -> StateSample {
         rng_state: world.rng_state,
         money: world.money,
         party_hp_total,
-        dialog_active: world.current_dialog.is_some(),
+        dialog_active: world.dialog.current.is_some(),
     }
 }
 

@@ -43,7 +43,7 @@ fn gesture_record(target: u8, clip: u8) -> Vec<u8> {
 
 /// The record's own flag word, as an observer between frames sees it.
 fn record_flags(w: &World) -> u16 {
-    w.inline_dialogue.as_ref().map_or(0, |d| d.ctx.local_flags)
+    w.dialog.inline.as_ref().map_or(0, |d| d.ctx.local_flags)
 }
 
 fn player_cursor(w: &World) -> i16 {
@@ -141,7 +141,7 @@ fn a_stalled_clip_never_lets_the_spin_through() {
         );
     }
     assert!(
-        w.inline_dialogue.as_ref().is_some_and(|d| !d.is_done()),
+        w.dialog.inline.as_ref().is_some_and(|d| !d.is_done()),
         "the spin is still parked (the timeout net is far longer than this)"
     );
 }

@@ -25,14 +25,14 @@ fn dialog_advance_halts_then_clears_on_just_pressed_cross() {
 
     // Tick 1: open the dialog. The 4C 54 poll runs next tick.
     let _ = world.tick();
-    assert!(world.current_dialog.is_some(), "dialog should be open");
+    assert!(world.dialog.current.is_some(), "dialog should be open");
 
     // No buttons pressed: the poll halts at the same PC.
     world.input.set_pad(0);
     let pc_before = world.field_pc;
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_some(),
+        world.dialog.current.is_some(),
         "dialog persists with no input"
     );
     assert_eq!(
@@ -45,7 +45,7 @@ fn dialog_advance_halts_then_clears_on_just_pressed_cross() {
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_none(),
+        world.dialog.current.is_none(),
         "dialog should clear on just-pressed Cross",
     );
     let evs = world.drain_field_events();

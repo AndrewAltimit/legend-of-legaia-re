@@ -165,11 +165,11 @@ fn field_interact_slot_opens_real_npc_dialogue() {
     let mut verified = 0usize;
     for (idx, inline) in &expected {
         let slot = *idx as u8;
-        world.current_dialog = None;
+        world.dialog.current = None;
         let _ = world.drain_field_events();
         world.load_field_script(vec![0x3E, 0x05, slot]);
         let _ = world.tick();
-        let req = world.current_dialog.as_ref().unwrap_or_else(|| {
+        let req = world.dialog.current.as_ref().unwrap_or_else(|| {
             panic!("field-interact on NPC slot {slot} must open a dialogue box")
         });
         assert_eq!(
@@ -280,11 +280,11 @@ fn field_interact_slot_mapping_holds_across_field_scene_corpus() {
         world.mode = SceneMode::Field;
         for (idx, inline) in &expected {
             let slot = *idx as u8;
-            world.current_dialog = None;
+            world.dialog.current = None;
             let _ = world.drain_field_events();
             world.load_field_script(vec![0x3E, 0x05, slot]);
             let _ = world.tick();
-            let req = world.current_dialog.as_ref().unwrap_or_else(|| {
+            let req = world.dialog.current.as_ref().unwrap_or_else(|| {
                 panic!("[{name}] field-interact on NPC slot {slot} must open a dialogue box")
             });
             assert_eq!(

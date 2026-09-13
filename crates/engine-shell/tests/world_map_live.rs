@@ -564,7 +564,8 @@ fn world_map_talking_to_real_npc_renders_inline_dialogue() {
             session
                 .host
                 .world
-                .current_dialog
+                .dialog
+                .current
                 .as_ref()
                 .is_some_and(|d| !d.inline.is_empty()),
             "[{scene}] talking to the NPC opens a dialog carrying inline text"

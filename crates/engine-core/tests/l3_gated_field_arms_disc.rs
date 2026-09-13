@@ -250,6 +250,7 @@ fn three_actor_talk_section(sites: &[Site]) {
     assert!(!world.system_flag_test(0x12));
 
     let talk = world
+        .dialog
         .three_actor_talk
         .expect("the session record is installed");
     assert_eq!(talk.actor_ids, ids, "the disc's own participant ids");
@@ -389,7 +390,7 @@ fn a_three_actor_talk_ends_when_the_lock_drops_not_on_a_timer() {
     world.system_flag_clear(0xD);
     world.tick();
     assert!(
-        world.three_actor_talk.is_none(),
+        world.dialog.three_actor_talk.is_none(),
         "{}: the controller retires on the flag drop",
         site.scene
     );

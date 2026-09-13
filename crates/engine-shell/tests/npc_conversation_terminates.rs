@@ -47,11 +47,11 @@ const FRAME_BUDGET: usize = 20_000;
 /// Returns `(boxes_shown, terminated, opened_a_picker)`.
 fn play(session: &mut BootSession, slot: u8, pick_last_option: bool) -> (usize, bool, bool) {
     let w = &mut session.host.world;
-    w.inline_dialogue = None;
-    w.current_dialog = None;
-    w.active_inline_prologue = None;
+    w.dialog.inline = None;
+    w.dialog.current = None;
+    w.dialog.active_inline_prologue = None;
     w.trigger_field_interact(0, slot);
-    let Some(pr) = w.active_inline_prologue.take() else {
+    let Some(pr) = w.dialog.active_inline_prologue.take() else {
         return (0, true, false);
     };
     w.start_inline_dialogue_with_prologue(pr.body, pr.entry_pc, pr.first_segment);
@@ -61,7 +61,7 @@ fn play(session: &mut BootSession, slot: u8, pick_last_option: bool) -> (usize, 
     let mut saw_picker = false;
     for f in 0..FRAME_BUDGET {
         let w = &mut session.host.world;
-        let Some(d) = w.inline_dialogue.as_ref() else {
+        let Some(d) = w.dialog.inline.as_ref() else {
             return (boxes, true, saw_picker);
         };
         let panel_up = d.panel.is_some();
@@ -76,8 +76,8 @@ fn play(session: &mut BootSession, slot: u8, pick_last_option: bool) -> (usize, 
         saw_picker |= menu;
         let down = pick_last_option && menu && !confirm;
         w.step_inline_dialogue(confirm, false, down);
-        if w.inline_dialogue.as_ref().is_some_and(|d| d.is_done()) {
-            w.inline_dialogue = None;
+        if w.dialog.inline.as_ref().is_some_and(|d| d.is_done()) {
+            w.dialog.inline = None;
             return (boxes, true, saw_picker);
         }
     }

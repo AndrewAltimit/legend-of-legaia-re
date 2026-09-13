@@ -194,7 +194,7 @@ fn sample_world(world: &World, pad: u16) -> StateSample {
         rng_state: world.rng_state,
         money: world.money,
         party_hp_total: world.actors.iter().map(|a| a.battle.hp as u32).sum(),
-        dialog_active: world.current_dialog.is_some(),
+        dialog_active: world.dialog.current.is_some(),
     }
 }
 
@@ -795,7 +795,7 @@ fn v0_1_battle_leg_walk_talk_accept() {
     session.host.world.input.set_pad(PadButton::Cross.mask());
     let _ = session.host.world.tick();
     assert!(
-        session.host.world.current_dialog.is_some(),
+        session.host.world.dialog.current.is_some(),
         "walking up + action button opens the sparring partner's dialogue"
     );
 

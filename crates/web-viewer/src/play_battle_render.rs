@@ -166,7 +166,7 @@ fn derive_battle_cam(
         target_dead: target.is_some_and(|t| !t.live),
     };
     let phase = script::phase_for_state(
-        world.current_dialog.is_some() || world.inline_dialogue.is_some(),
+        world.dialog.current.is_some() || world.dialog.inline.is_some(),
         world.battle.arts_menu.is_some()
             || world.battle.spell_menu.is_some()
             || world.battle.item_menu.is_some(),

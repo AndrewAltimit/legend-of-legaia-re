@@ -33,20 +33,20 @@ fn inline_dialogue_runs_branch_flag_set_through_field_vm() {
 
     // Tick until the menu box is awaiting a choice.
     let mut guard = 0;
-    while !world.inline_dialogue.as_ref().unwrap().menu_active() {
+    while !world.dialog.inline.as_ref().unwrap().menu_active() {
         world.step_inline_dialogue(false, false, false);
         guard += 1;
         assert!(guard < 50, "menu never became active");
     }
     // Move the cursor to option B and confirm.
     world.step_inline_dialogue(false, false, true);
-    assert_eq!(world.inline_dialogue.as_ref().unwrap().last_choice, None);
+    assert_eq!(world.dialog.inline.as_ref().unwrap().last_choice, None);
     world.step_inline_dialogue(true, false, false);
-    assert_eq!(world.inline_dialogue.as_ref().unwrap().last_choice, Some(1));
+    assert_eq!(world.dialog.inline.as_ref().unwrap().last_choice, Some(1));
 
     // The VM should run branch B (SET flag 6) and surface the "b" reply.
     let mut guard = 0;
-    while world.inline_dialogue.as_ref().unwrap().page_bytes() != b"b" {
+    while world.dialog.inline.as_ref().unwrap().page_bytes() != b"b" {
         world.step_inline_dialogue(false, false, false);
         guard += 1;
         assert!(guard < 50, "branch reply never typed");
@@ -63,7 +63,7 @@ fn inline_dialogue_runs_branch_flag_set_through_field_vm() {
     // Confirming the reply ends the conversation.
     world.step_inline_dialogue(true, false, false);
     world.step_inline_dialogue(false, false, false);
-    assert!(world.inline_dialogue.as_ref().unwrap().is_done());
+    assert!(world.dialog.inline.as_ref().unwrap().is_done());
 }
 
 /// Step the inline runner until a box is open and the typewriter has fully
@@ -74,7 +74,7 @@ fn run_inline_until_box(world: &mut World) -> Vec<u8> {
     let mut stable = 0;
     for _ in 0..400 {
         world.step_inline_dialogue(false, false, false);
-        let pb = world.inline_dialogue.as_ref().unwrap().page_bytes();
+        let pb = world.dialog.inline.as_ref().unwrap().page_bytes();
         if pb.is_empty() {
             continue;
         }
@@ -164,7 +164,7 @@ fn inline_dialogue_resident_loop_ends_after_one_pass() {
     // rule ends the conversation (one pass, like retail's park).
     world.step_inline_dialogue(true, false, false);
     let mut guard = 0;
-    while !world.inline_dialogue.as_ref().unwrap().is_done() {
+    while !world.dialog.inline.as_ref().unwrap().is_done() {
         world.step_inline_dialogue(false, false, false);
         guard += 1;
         assert!(
@@ -210,7 +210,7 @@ fn inline_dialogue_menu_reemission_survives_wrap_rule() {
     let mut world = World::new();
     world.start_inline_dialogue(b);
     let mut guard = 0;
-    while !world.inline_dialogue.as_ref().unwrap().menu_active() {
+    while !world.dialog.inline.as_ref().unwrap().menu_active() {
         world.step_inline_dialogue(false, false, false);
         guard += 1;
         assert!(guard < 50, "menu never became active");
@@ -218,11 +218,11 @@ fn inline_dialogue_menu_reemission_survives_wrap_rule() {
     // Pick option A: reply "a" plays, then the record jumps back to the menu.
     world.step_inline_dialogue(true, false, false);
     let mut guard = 0;
-    while world.inline_dialogue.as_ref().unwrap().page_bytes() != b"a" {
+    while world.dialog.inline.as_ref().unwrap().page_bytes() != b"a" {
         world.step_inline_dialogue(false, false, false);
         guard += 1;
         if guard >= 80 {
-            let id = world.inline_dialogue.as_ref().unwrap();
+            let id = world.dialog.inline.as_ref().unwrap();
             panic!(
                 "branch reply never typed: pc={} done={} page={:?} menu={}",
                 id.pc,
@@ -236,9 +236,9 @@ fn inline_dialogue_menu_reemission_survives_wrap_rule() {
     // map was cleared by the picker commit), not end the conversation.
     world.step_inline_dialogue(true, false, false);
     let mut guard = 0;
-    while !world.inline_dialogue.as_ref().unwrap().menu_active() {
+    while !world.dialog.inline.as_ref().unwrap().menu_active() {
         assert!(
-            !world.inline_dialogue.as_ref().unwrap().is_done(),
+            !world.dialog.inline.as_ref().unwrap().is_done(),
             "menu re-emission must survive the wrap rule"
         );
         world.step_inline_dialogue(false, false, false);
@@ -278,7 +278,7 @@ fn vm_dialogue_tick_executes_branch_through_field_vm() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.use_vm_dialogue = true;
-    world.current_dialog = Some(DialogRequest {
+    world.dialog.current = Some(DialogRequest {
         text_id: 0,
         inline: ab_menu_inline_script(),
         world_x: 0,
@@ -289,7 +289,8 @@ fn vm_dialogue_tick_executes_branch_through_field_vm() {
     // Tick (no input) until the menu is awaiting a choice.
     let mut guard = 0;
     while !world
-        .inline_dialogue
+        .dialog
+        .inline
         .as_ref()
         .is_some_and(|d| d.menu_active())
     {
@@ -333,7 +334,7 @@ fn inline_dialogue_raw_0x21_ends_the_conversation() {
     world.start_inline_dialogue(b);
     world.step_inline_dialogue(false, false, false);
 
-    let id = world.inline_dialogue.as_ref().unwrap();
+    let id = world.dialog.inline.as_ref().unwrap();
     assert!(id.is_done(), "0x21 ends the conversation");
     assert!(id.panel.is_none(), "the trailing segment never opened");
     assert!(world.system_flag_test(5), "ops before the 0x21 still ran");
@@ -349,7 +350,7 @@ fn inline_dialogue_extended_0xa1_nop_runs_through() {
     world.start_inline_dialogue(b);
     world.step_inline_dialogue(false, false, false);
 
-    let id = world.inline_dialogue.as_ref().unwrap();
+    let id = world.dialog.inline.as_ref().unwrap();
     assert!(!id.is_done(), "0xA1 is not a conversation end");
     assert!(id.panel.is_some(), "the segment after the 0xA1 opened");
 }

@@ -404,7 +404,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
     world.input.set_pad(0);
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_some(),
+        world.dialog.current.is_some(),
         "the field-interact opens the sparring partner's dialogue"
     );
     // The carrier presents its real 4-option spar menu (the faithful path); the
@@ -539,7 +539,7 @@ fn training_reaches_battle_via_interaction_probe() {
     session.host.world.input.set_pad(PadButton::Cross.mask());
     let _ = session.host.world.tick();
     assert!(
-        session.host.world.current_dialog.is_some(),
+        session.host.world.dialog.current.is_some(),
         "the interaction probe opens the sparring partner's dialogue (slot {slot})"
     );
     // The carrier presents its 4-option spar menu; the engage is gated on the

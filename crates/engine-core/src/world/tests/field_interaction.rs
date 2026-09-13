@@ -14,7 +14,8 @@ fn field_interact_opens_actor_inline_dialogue() {
     world.load_field_script(vec![0x3E, 0x05, 0x03]);
     let _ = world.tick();
     let req = world
-        .current_dialog
+        .dialog
+        .current
         .as_ref()
         .expect("field_interact on an actor with inline text must open dialogue");
     assert_eq!(req.inline, vec![0x1F, b'h', b'i', 0x00]);
@@ -45,7 +46,7 @@ fn field_interact_without_inline_text_opens_no_dialogue() {
     world.load_field_script(vec![0x3E, 0x05, 0x07]);
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_none(),
+        world.dialog.current.is_none(),
         "no inline text for slot 7 -> no dialogue"
     );
 }
@@ -87,7 +88,7 @@ fn field_dialogue_accept_auto_arms_scripted_carrier() {
     world.input.set_pad(0);
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_some(),
+        world.dialog.current.is_some(),
         "interacting with the carrier opens its dialogue"
     );
     assert_eq!(
@@ -150,7 +151,8 @@ fn interaction_probe_talks_to_adjacent_npc_only() {
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
     let req = world
-        .current_dialog
+        .dialog
+        .current
         .as_ref()
         .expect("action button near an NPC opens its dialogue");
     assert_eq!(
@@ -185,7 +187,7 @@ fn interaction_probe_requires_facing_the_npc() {
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_none(),
+        world.dialog.current.is_none(),
         "an NPC beside the player is not talked to while facing away"
     );
 }
@@ -208,7 +210,7 @@ fn interaction_probe_no_npc_in_range_opens_nothing() {
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_none(),
+        world.dialog.current.is_none(),
         "no NPC near the facing probe point -> the action button opens no dialogue"
     );
 }
@@ -235,7 +237,7 @@ fn interaction_probe_matches_tetsu_capture_geometry() {
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_some(),
+        world.dialog.current.is_some(),
         "the captured press-rest position talks to Tetsu through the facing probe"
     );
 }
@@ -273,7 +275,7 @@ fn interaction_probe_walk_up_to_scripted_carrier_starts_fight() {
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_some(),
+        world.dialog.current.is_some(),
         "walking up + action button opens the carrier's dialogue"
     );
     assert_eq!(world.carriers.pending_engage, Some(0), "engage armed");
@@ -403,7 +405,7 @@ fn inline_runner_resumes_across_wait_frames_to_run_the_post_wait_effect() {
 
     // Tick until the first box is fully revealed, then confirm to dismiss it.
     let mut guard = 0;
-    while world.inline_dialogue.as_ref().unwrap().page_bytes() != b"hi" {
+    while world.dialog.inline.as_ref().unwrap().page_bytes() != b"hi" {
         world.step_inline_dialogue(false, false, false);
         guard += 1;
         assert!(guard < 50, "first box never typed");
@@ -414,7 +416,7 @@ fn inline_runner_resumes_across_wait_frames_to_run_the_post_wait_effect() {
     // and the effect behind it must not have run yet.
     world.step_inline_dialogue(false, false, false);
     assert!(
-        !world.inline_dialogue.as_ref().unwrap().is_done(),
+        !world.dialog.inline.as_ref().unwrap().is_done(),
         "WaitFrames must suspend, not end, the conversation"
     );
     assert!(
@@ -428,7 +430,7 @@ fn inline_runner_resumes_across_wait_frames_to_run_the_post_wait_effect() {
     for _ in 0..40 {
         world.step_inline_dialogue(false, false, false);
         assert!(
-            !world.inline_dialogue.as_ref().unwrap().is_done(),
+            !world.dialog.inline.as_ref().unwrap().is_done(),
             "conversation ended before the post-wait effect ran"
         );
         if world.system_flag_test(7) {
@@ -478,7 +480,7 @@ fn carrier_spar_menu_gates_engage_on_the_fight_option() {
     // Talk: opens the menu (not the any-accept engage).
     world.input.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
-    assert!(world.current_dialog.is_some(), "carrier dialogue opens");
+    assert!(world.dialog.current.is_some(), "carrier dialogue opens");
     assert!(
         world.carriers.pending_engage.is_none(),
         "the menu path is used, not the any-accept arm"
@@ -503,7 +505,7 @@ fn carrier_spar_menu_gates_engage_on_the_fight_option() {
         "confirming a non-fight option does not start the fight"
     );
     assert!(world.carriers.menu.is_none(), "the menu closed");
-    assert!(world.current_dialog.is_none(), "the box closed");
+    assert!(world.dialog.current.is_none(), "the box closed");
 }
 
 /// Navigating the spar menu down to the index-2 fight option and confirming
@@ -597,7 +599,7 @@ fn field_dialogue_accept_on_plain_npc_does_not_arm_battle() {
     world.input.set_pad(0);
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_some(),
+        world.dialog.current.is_some(),
         "plain NPC opens its dialogue"
     );
     assert_eq!(
@@ -649,7 +651,7 @@ fn three_actor_talk_first_arm_collapses_party_and_sets_flags() {
     assert!(world.system_flag_test(0x11), "flag 0x10 + leader(1) set");
     assert!(!world.system_flag_test(0x12));
     // Session record captured, including actor 5's live position.
-    let talk = world.three_actor_talk.expect("session installed");
+    let talk = world.dialog.three_actor_talk.expect("session installed");
     assert_eq!(talk.actor_ids, [5, 6, 7]);
     assert_eq!(talk.script_id, 0x3412);
     assert_eq!(talk.duration, 0xAB);
@@ -715,7 +717,7 @@ fn three_actor_talk_end_restores_party_and_drops_lock() {
     // A frame with the lock still up changes nothing.
     let _ = world.tick();
     assert_eq!(world.party_actor_slots, vec![Some(1)]);
-    assert!(world.three_actor_talk.is_some());
+    assert!(world.dialog.three_actor_talk.is_some());
 
     // The script ends the talk by clearing the lock (retail: the generic
     // field-VM flag-clear op); the controller's next poll despawns.
@@ -728,7 +730,10 @@ fn three_actor_talk_end_restores_party_and_drops_lock() {
     );
     assert_eq!(world.party_leader_slot, Some(1), "leader restored");
     assert!(!world.system_flag_test(0xD), "lock stays down");
-    assert!(world.three_actor_talk.is_none(), "controller despawned");
+    assert!(
+        world.dialog.three_actor_talk.is_none(),
+        "controller despawned"
+    );
 }
 
 /// A re-arm mid-talk must not clobber the pre-collapse snapshot: the
@@ -811,7 +816,7 @@ fn three_actor_talk_switch_cycles_leader_and_returns_to_poll() {
 
     world.request_talk_leader_switch();
     world.tick_three_actor_talk();
-    let talk = world.three_actor_talk.expect("talk stays live");
+    let talk = world.dialog.three_actor_talk.expect("talk stays live");
     assert_eq!(talk.swap.phase, 1, "request arms the fade-out state");
     assert!(
         world.screen_fade.is_some(),
@@ -821,11 +826,18 @@ fn three_actor_talk_switch_cycles_leader_and_returns_to_poll() {
     // Run the SM through the fade / swap / fade cycle back to the poll.
     for _ in 0..100 {
         world.tick_three_actor_talk();
-        if world.three_actor_talk.is_some_and(|t| t.swap.phase == 0) {
+        if world
+            .dialog
+            .three_actor_talk
+            .is_some_and(|t| t.swap.phase == 0)
+        {
             break;
         }
     }
-    let talk = world.three_actor_talk.expect("talk still live after cycle");
+    let talk = world
+        .dialog
+        .three_actor_talk
+        .expect("talk still live after cycle");
     assert_eq!(talk.swap.phase, 0, "SM returned to the state-0 poll");
     assert!(world.system_flag_test(0xD), "talk lock still up");
 
@@ -856,7 +868,7 @@ fn three_actor_talk_switch_blocked_when_all_participants_flagged() {
     world.system_flag_set(0x12);
     world.request_talk_leader_switch();
     world.tick_three_actor_talk();
-    let talk = world.three_actor_talk.expect("talk stays live");
+    let talk = world.dialog.three_actor_talk.expect("talk stays live");
     assert_eq!(talk.swap.phase, 0, "arm gate blocks with all flags set");
     assert!(world.screen_fade.is_none(), "no fade spawned");
 }
@@ -872,7 +884,7 @@ fn three_actor_talk_switch_two_flagged_needs_leader_flag() {
     world.system_flag_set(0x12);
     world.request_talk_leader_switch();
     world.tick_three_actor_talk();
-    let talk = world.three_actor_talk.expect("talk stays live");
+    let talk = world.dialog.three_actor_talk.expect("talk stays live");
     assert_eq!(talk.swap.phase, 0, "two-set gate needs the leader's flag");
 }
 
@@ -885,7 +897,10 @@ fn three_actor_talk_switch_skips_flagged_participant() {
     world.request_talk_leader_switch();
     for _ in 0..100 {
         world.tick_three_actor_talk();
-        if world.three_actor_talk.is_some_and(|t| t.swap.phase == 0)
+        if world
+            .dialog
+            .three_actor_talk
+            .is_some_and(|t| t.swap.phase == 0)
             && world.party_leader_slot != Some(0)
         {
             break;
@@ -905,22 +920,25 @@ fn three_actor_talk_lock_drop_mid_swap_waits_for_the_poll() {
     let mut world = talk_world_with_participants();
     world.request_talk_leader_switch();
     world.tick_three_actor_talk();
-    assert_eq!(world.three_actor_talk.unwrap().swap.phase, 1);
+    assert_eq!(world.dialog.three_actor_talk.unwrap().swap.phase, 1);
 
     world.system_flag_clear(0xD);
     world.tick_three_actor_talk();
     assert!(
-        world.three_actor_talk.is_some(),
+        world.dialog.three_actor_talk.is_some(),
         "states 1..=4 never poll the lock"
     );
     // Back at state 0, the next poll despawns and restores the party.
     for _ in 0..100 {
         world.tick_three_actor_talk();
-        if world.three_actor_talk.is_none() {
+        if world.dialog.three_actor_talk.is_none() {
             break;
         }
     }
-    assert!(world.three_actor_talk.is_none(), "poll despawned the talk");
+    assert!(
+        world.dialog.three_actor_talk.is_none(),
+        "poll despawned the talk"
+    );
     assert_eq!(
         world.party_actor_slots,
         vec![Some(0), Some(1), Some(2)],
@@ -933,7 +951,7 @@ fn three_actor_talk_lock_drop_mid_swap_waits_for_the_poll() {
 #[test]
 fn three_actor_talk_switch_suppressed_under_dialogue() {
     let mut world = talk_world_with_participants();
-    world.current_dialog = Some(crate::world::DialogRequest {
+    world.dialog.current = Some(crate::world::DialogRequest {
         text_id: 0,
         inline: vec![0x1F, b'x', 0x00],
         world_x: 0,
@@ -943,7 +961,7 @@ fn three_actor_talk_switch_suppressed_under_dialogue() {
     world.request_talk_leader_switch();
     world.tick_three_actor_talk();
     assert_eq!(
-        world.three_actor_talk.unwrap().swap.phase,
+        world.dialog.three_actor_talk.unwrap().swap.phase,
         0,
         "no switch arms under an open text box"
     );
@@ -966,7 +984,7 @@ fn three_actor_talk_switch_arms_from_a_square_pad_edge() {
     world.set_pad(crate::input::PadButton::Square.mask());
     world.tick_three_actor_talk();
     assert_eq!(
-        world.three_actor_talk.unwrap().swap.phase,
+        world.dialog.three_actor_talk.unwrap().swap.phase,
         1,
         "the pad edge armed the fade-out"
     );
@@ -975,7 +993,11 @@ fn three_actor_talk_switch_arms_from_a_square_pad_edge() {
     for _ in 0..100 {
         world.set_pad(crate::input::PadButton::Square.mask());
         world.tick_three_actor_talk();
-        if world.three_actor_talk.is_some_and(|t| t.swap.phase == 0) {
+        if world
+            .dialog
+            .three_actor_talk
+            .is_some_and(|t| t.swap.phase == 0)
+        {
             break;
         }
     }
@@ -983,7 +1005,7 @@ fn three_actor_talk_switch_arms_from_a_square_pad_edge() {
     world.set_pad(crate::input::PadButton::Square.mask());
     world.tick_three_actor_talk();
     assert_eq!(
-        world.three_actor_talk.unwrap().swap.phase,
+        world.dialog.three_actor_talk.unwrap().swap.phase,
         0,
         "a held button is not a second request"
     );
@@ -994,7 +1016,7 @@ fn three_actor_talk_switch_arms_from_a_square_pad_edge() {
     world.set_pad(crate::input::PadButton::Square.mask());
     world.tick_three_actor_talk();
     assert_eq!(
-        world.three_actor_talk.unwrap().swap.phase,
+        world.dialog.three_actor_talk.unwrap().swap.phase,
         1,
         "a fresh press is a fresh request"
     );
@@ -1010,7 +1032,7 @@ fn a_square_press_outside_a_talk_does_nothing() {
     world.party_leader_slot = Some(0);
     world.set_pad(crate::input::PadButton::Square.mask());
     world.tick_three_actor_talk();
-    assert!(world.three_actor_talk.is_none());
+    assert!(world.dialog.three_actor_talk.is_none());
     assert_eq!(world.party_leader_slot, Some(0));
     assert_eq!(world.party_actor_slots.len(), 3);
 }
@@ -1107,7 +1129,7 @@ fn probe_talk_ends_and_does_not_reopen_under_a_held_confirm() {
 
     hold(&mut world, PadButton::Cross.mask(), 1);
     assert!(
-        world.inline_dialogue.is_some(),
+        world.dialog.inline.is_some(),
         "the facing probe must open the NPC's interaction record"
     );
     // Let it type; a held button is not a second press.
@@ -1145,7 +1167,7 @@ fn probe_talk_ends_and_does_not_reopen_under_a_held_confirm() {
         );
     }
     assert!(
-        world.active_inline_prologue.is_none(),
+        world.dialog.active_inline_prologue.is_none(),
         "no interaction staging may survive the conversation"
     );
 
@@ -1154,7 +1176,7 @@ fn probe_talk_ends_and_does_not_reopen_under_a_held_confirm() {
     hold(&mut world, 0, 1);
     hold(&mut world, PadButton::Cross.mask(), 1);
     assert!(
-        world.inline_dialogue.is_some(),
+        world.dialog.inline.is_some(),
         "a new press re-opens the conversation"
     );
 }
@@ -1181,7 +1203,7 @@ fn player_cannot_walk_while_the_inline_runner_owns_the_frame() {
     let mut world = walkable_talk_scene();
     seat_prologue_npc(&mut world, 3);
     hold(&mut world, PadButton::Cross.mask(), 1);
-    assert!(world.inline_dialogue.is_some(), "the conversation opened");
+    assert!(world.dialog.inline.is_some(), "the conversation opened");
     let seat = (
         world.actors[0].move_state.world_x,
         world.actors[0].move_state.world_z,
@@ -1256,8 +1278,8 @@ fn dialogue_owns_input_covers_both_channels() {
         w.dialogue_owns_input(),
         "the inline runner alone must count - it is the ordinary NPC talk"
     );
-    w.inline_dialogue = None;
-    w.current_dialog = Some(crate::world::DialogRequest {
+    w.dialog.inline = None;
+    w.dialog.current = Some(crate::world::DialogRequest {
         text_id: 0,
         inline: Vec::new(),
         world_x: 0,

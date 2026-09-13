@@ -204,7 +204,7 @@ fn field_op_3f_stages_named_scene_transition() {
     );
     // It is NOT a dialog opener.
     assert!(
-        world.current_dialog.is_none(),
+        world.dialog.current.is_none(),
         "0x3F must not open a dialog box"
     );
 }

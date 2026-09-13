@@ -132,7 +132,7 @@ fn a_dialogue_still_refuses_the_menu_on_the_overworld() {
          the overworld too"
     );
 
-    world.inline_dialogue = None;
+    world.dialog.inline = None;
     assert!(
         world.field_menu_open_allowed(),
         "the refusal is scoped to the conversation, not permanent"

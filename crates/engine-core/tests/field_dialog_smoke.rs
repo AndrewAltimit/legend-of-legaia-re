@@ -31,7 +31,8 @@ fn field_interact_opens_dialog_and_panel_emits_glyphs() {
     // Step once - the field-interact op should open the actor's dialogue.
     let _ = world.step_field();
     let req = world
-        .current_dialog
+        .dialog
+        .current
         .as_ref()
         .expect("field-interact on an actor with inline text must open current_dialog");
     assert_eq!(req.inline, vec![0x1F, b'h', b'i', 0x00]);
@@ -67,7 +68,7 @@ fn dialog_clear_unblocks_world() {
     world.npcs.dialog.insert(3, vec![0x1F, b'h', b'i', 0x00]);
     world.load_field_record(&[0x3E, 0x05, 0x03]);
     let _ = world.step_field();
-    assert!(world.current_dialog.is_some());
-    world.current_dialog = None;
-    assert!(world.current_dialog.is_none());
+    assert!(world.dialog.current.is_some());
+    world.dialog.current = None;
+    assert!(world.dialog.current.is_none());
 }

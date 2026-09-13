@@ -444,8 +444,8 @@ fn enter_raw(host: &mut SceneHost, name: &str) -> bool {
     // hands that dialogue to the next scene, whose rung-4 verdict then reports
     // its predecessor's park - `jouine` scored a rung-4 stall it does not have
     // when entered on its own. A verdict has to be a property of the scene.
-    host.world.current_dialog = None;
-    host.world.inline_dialogue = None;
+    host.world.dialog.current = None;
+    host.world.dialog.inline = None;
     host.world.cutscene.timeline = None;
     host.world.helper_contexts.clear();
     let r = if is_world_map_scene(name) {
@@ -1712,8 +1712,8 @@ fn part_e2_do_those_scenes_carry_a_record_that_exits_at_all() {
                     base.restore(&mut host);
                     host.world.helper_contexts.clear();
                     host.world.cutscene.timeline = None;
-                    host.world.current_dialog = None;
-                    host.world.inline_dialogue = None;
+                    host.world.dialog.current = None;
+                    host.world.dialog.inline = None;
                 }
                 ran_total += 1;
                 // Install the record the way the walk-on dispatch installs one

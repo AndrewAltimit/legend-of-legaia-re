@@ -92,13 +92,13 @@ fn the_koin4_price_menu_confirms_through_the_option_jump() {
     // dialog request (`World::current_dialog`) from the NPC's inline record.
     host.world.trigger_field_interact(0, slot);
     let mut ticks = 0u32;
-    while host.world.current_dialog.is_none() && ticks < 240 {
+    while host.world.dialog.current.is_none() && ticks < 240 {
         host.world.set_pad(0);
         let _ = host.world.tick();
         ticks += 1;
     }
     assert!(
-        host.world.current_dialog.is_some(),
+        host.world.dialog.current.is_some(),
         "the interact raised a dialog request within {ticks} ticks"
     );
 

@@ -1567,7 +1567,7 @@ pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommand
     if world.mode != crate::world::SceneMode::Battle {
         return None;
     }
-    if world.current_dialog.is_some() || world.inline_dialogue.is_some() {
+    if world.dialog.current.is_some() || world.dialog.inline.is_some() {
         return None;
     }
     if world.arts_input_active()

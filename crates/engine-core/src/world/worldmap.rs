@@ -693,11 +693,11 @@ impl World {
         // the same button edge that is advancing the first.
         if self.dialogue_owns_input() {
             // The inline-script runner, when active, owns dismissal.
-            if self.inline_dialogue.is_none()
+            if self.dialog.inline.is_none()
                 && (self.input.just_pressed(input::PadButton::Cross)
                     || self.input.just_pressed(input::PadButton::Circle))
             {
-                self.current_dialog = None;
+                self.dialog.current = None;
                 self.pending_field_events.push(FieldEvent::DialogDismissed);
             }
             return;
@@ -740,7 +740,7 @@ impl World {
             }
         }
         if let Some((text_id, inline)) = open {
-            self.current_dialog = Some(DialogRequest {
+            self.dialog.current = Some(DialogRequest {
                 text_id,
                 inline: inline.clone(),
                 world_x: 0,

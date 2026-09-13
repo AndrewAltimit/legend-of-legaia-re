@@ -511,35 +511,8 @@ pub struct World {
     /// [`BattleEvent`]: crate::battle_events::BattleEvent
     pub pending_battle_events: Vec<BattleEvent>,
 
-    /// Active dialog request - populated by the field-VM op 0x3F handler,
-    /// cleared by the engine after the user dismisses the box. The MES
-    /// renderer reads `text_id` + `inline`; the world-coords + depth feed
-    /// the box placement.
-    pub current_dialog: Option<DialogRequest>,
-
-    /// Active 3-actor talk session (field-VM op `0x43` sub-2; retail talk
-    /// controller from `FUN_801D2D38`). Refreshed on every sub-2
-    /// instruction; the paired system flag `0xD` is the retail talk-active
-    /// lock. See [`ThreeActorTalk`].
-    pub three_actor_talk: Option<ThreeActorTalk>,
-
-    /// Host-latched "switch character" request for the active three-actor
-    /// talk - the engine input standing in for retail's pad-derived word
-    /// `_DAT_8007B874` bit `0x80` (the request route of `FUN_801D27E0`'s
-    /// state-0 arm gate). Hosts latch it from their pad handler via
-    /// [`World::request_talk_leader_switch`]; the controller poll
-    /// ([`World::tick_three_actor_talk`]) consumes it on its next state-0
-    /// frame and drops it when no talk is live.
-    pub talk_switch_requested: bool,
-
-    /// Last `field_interact` request. Cleared by the engine when handled
-    /// (set to `None`).
-    pub last_field_interact: Option<(u8, u8)>,
-
-    /// The interaction-prologue record for the dialogue [`Self::trigger_field_interact`]
-    /// most recently opened (taken by [`Self::drive_inline_dialogue`] when it
-    /// starts the runner). `None` when the opened NPC has no prologue record.
-    pub active_inline_prologue: Option<crate::man_field_scripts::InlineDialogPrologue>,
+    /// Field dialogue state: the simplified dialog panel, the inline field-VM dialogue runner and the interact / talk latches.
+    pub dialog: DialogState,
 
     /// Last frame's field position for every actor the motion detector
     /// tracks - the player (from its [`crate::vm::ActorMoveState`]) and every
@@ -704,28 +677,11 @@ pub struct World {
     /// frame that did not start a hop.
     pub field_ledge_hop: Option<FieldLedgeHop>,
 
-    /// While [`Self::step_inline_dialogue`] is stepping the field VM over an
-    /// NPC's interaction record, this carries that NPC's placement slot so the
-    /// `0x4C 0x51` NPC-run host hook can route the walk to the right actor
-    /// (the engine's stand-in for retail's per-actor script context pointer).
-    pub stepping_inline_npc: Option<u8>,
-
-    /// The placement slot [`Self::trigger_field_interact`] most recently
-    /// opened a dialogue for; consumed by [`Self::drive_inline_dialogue`] so
-    /// the inline runner knows which NPC its record belongs to.
-    pub active_inline_slot: Option<u8>,
-
     /// Actor-VM glide targets (op `0x09` `MotionAt` → `start_motion`,
     /// retail `FUN_800358c0`), keyed by actor slot: each entry glides the
     /// actor's `move_state` `(world_x, world_y)` toward the target through
     /// the motion VM, one step per tick (`Self::tick_actor_motions`).
     pub actor_motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
-
-    /// Per-tick guard: set when a Cross/Circle press is consumed by a field
-    /// dialogue open or dismiss this tick, so the script's `0x4C` dialog poll
-    /// and the interaction probe can't both act on the same edge (double
-    /// open/dismiss). Reset at the top of each [`SceneMode::Field`] tick.
-    pub dialog_input_consumed: bool,
 
     /// Active party slot for the leader (op 0x4C sub-0 writes here, plus
     /// `party_add` populates it on the first member).
@@ -1248,13 +1204,6 @@ pub struct World {
     /// actor-slot pool). A completed context is dropped the frame it ends.
     pub helper_contexts: Vec<crate::cutscene_timeline::CutsceneTimeline>,
 
-    /// A running inline interaction script driven through the field VM (the
-    /// faithful dialogue path). Opt-in alternative to the simplified
-    /// [`Self::current_dialog`] / `OwnedDialogPanel` path: it *executes* the
-    /// prologue flag tests, branch flag-sets, and scene changes between text
-    /// boxes. See [`crate::inline_dialogue`] and [`Self::step_inline_dialogue`].
-    pub inline_dialogue: Option<crate::inline_dialogue::InlineDialogue>,
-
     /// Monotonic count of sim ticks that ran, advanced once per
     /// [`Self::tick`]. It is the world's cheapest "a frame actually ran"
     /// witness - the mode driver's frame-begin-skip test probes it to tell an
@@ -1440,11 +1389,7 @@ impl World {
             pending_field_events: Vec::new(),
             pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),
-            current_dialog: None,
-            three_actor_talk: None,
-            talk_switch_requested: false,
-            last_field_interact: None,
-            active_inline_prologue: None,
+            dialog: DialogState::new(),
             field_motion_prev: std::collections::HashMap::new(),
             field_actor_moving: std::collections::HashSet::new(),
             field_entry_prerun: false,
@@ -1462,10 +1407,7 @@ impl World {
             field_step_delta: (0, 0),
             field_vertical_settle: false,
             field_ledge_hop: None,
-            stepping_inline_npc: None,
-            active_inline_slot: None,
             actor_motions: std::collections::BTreeMap::new(),
-            dialog_input_consumed: false,
             party_leader_slot: None,
             money: 0,
             inventory: std::collections::HashMap::new(),
@@ -1532,7 +1474,6 @@ impl World {
             party_names: Vec::new(),
             name_entry: None,
             helper_contexts: Vec::new(),
-            inline_dialogue: None,
             // Every sim tick is a retail display frame under the 1:1
             // denomination, so there is no phase to prime: a world that ticks
             // exactly once advances the roller and the retail-frame-paced

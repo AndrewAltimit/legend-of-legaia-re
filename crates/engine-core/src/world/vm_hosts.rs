@@ -955,7 +955,12 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // snapshot carries over unchanged - retail's else branch never
             // re-collapses (`FUN_801D2D38` `801d2dd4` skips the count/ids
             // stores when the flag is up).
-            let prior = w.three_actor_talk.as_ref().copied().unwrap_or_default();
+            let prior = w
+                .dialog
+                .three_actor_talk
+                .as_ref()
+                .copied()
+                .unwrap_or_default();
             for (i, &id) in actor_ids.iter().enumerate() {
                 if let Some((pos, heading)) = prior.saved[i] {
                     let slot = resolve(w, id);
@@ -971,7 +976,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             )
         };
         w.system_flag_set(0xD);
-        w.three_actor_talk = Some(ThreeActorTalk {
+        w.dialog.three_actor_talk = Some(ThreeActorTalk {
             actor_ids,
             script_id: arg_word,
             duration: arg_byte,
@@ -1202,7 +1207,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         depth_id: u8,
     ) {
         let inline_vec = inline.to_vec();
-        self.world.current_dialog = Some(DialogRequest {
+        self.world.dialog.current = Some(DialogRequest {
             text_id,
             inline: inline_vec.clone(),
             world_x,
@@ -1238,21 +1243,21 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // When the inline-script field-VM runner owns the box, it advances /
         // dismisses it (see `World::drive_inline_dialogue`); the simplified
         // dialog-advance must not clear the box out from under it.
-        if self.world.current_dialog.is_none() || self.world.inline_dialogue.is_some() {
+        if self.world.dialog.current.is_none() || self.world.dialog.inline.is_some() {
             return false;
         }
         // A carrier's spar menu owns the dialog input while it is up: navigate +
         // confirm the fight option (engages only then), vs the any-accept path.
         if self.world.carriers.menu.is_some() {
             self.world.handle_carrier_menu();
-            return self.world.current_dialog.is_some();
+            return self.world.dialog.current.is_some();
         }
         let dismissed = (self.world.input.just_pressed(input::PadButton::Cross)
             || self.world.input.just_pressed(input::PadButton::Circle))
-            && !self.world.dialog_input_consumed;
+            && !self.world.dialog.input_consumed;
         if dismissed {
-            self.world.dialog_input_consumed = true;
-            self.world.current_dialog = None;
+            self.world.dialog.input_consumed = true;
+            self.world.dialog.current = None;
             self.world
                 .pending_field_events
                 .push(FieldEvent::DialogDismissed);
@@ -2119,7 +2124,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             });
             return;
         }
-        if let Some(slot) = self.world.stepping_inline_npc {
+        if let Some(slot) = self.world.dialog.stepping_inline_npc {
             self.world
                 .start_field_npc_motion(slot, world_x as i16, world_z as i16);
             self.world.carry_npc_run_anim(slot, move_id);

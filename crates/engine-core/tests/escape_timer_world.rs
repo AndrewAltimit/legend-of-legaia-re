@@ -130,7 +130,7 @@ fn a_modal_dialog_freezes_the_countdown() {
     let before = world.battle.escape_timer.remaining;
     assert!(before < 600);
 
-    world.current_dialog = Some(legaia_engine_core::world::DialogRequest {
+    world.dialog.current = Some(legaia_engine_core::world::DialogRequest {
         text_id: 0,
         inline: Vec::new(),
         world_x: 0,
@@ -143,7 +143,7 @@ fn a_modal_dialog_freezes_the_countdown() {
         "a busy frame leaves the counter alone"
     );
 
-    world.current_dialog = None;
+    world.dialog.current = None;
     advance_retail_frames(&mut world, 3);
     assert!(
         world.battle.escape_timer.remaining < before,

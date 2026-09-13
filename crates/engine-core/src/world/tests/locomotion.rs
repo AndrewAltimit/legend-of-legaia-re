@@ -218,7 +218,7 @@ fn locomotion_gated_by_active_dialog() {
     world.mode = SceneMode::Field;
     world.install_field_player(0);
     world.actors[0].move_state.world_z = 200;
-    world.current_dialog = Some(DialogRequest {
+    world.dialog.current = Some(DialogRequest {
         text_id: 1,
         inline: Vec::new(),
         world_x: 0,

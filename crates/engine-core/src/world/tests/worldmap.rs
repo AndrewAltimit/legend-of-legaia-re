@@ -722,14 +722,14 @@ fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
     // Settle a frame with no input so the next Cross press is a clean edge.
     world.set_pad(0);
     let _ = world.tick();
-    assert!(world.current_dialog.is_none(), "no box before talking");
+    assert!(world.dialog.current.is_none(), "no box before talking");
 
     // Confirm press next to the NPC opens its dialogue, carrying the inline
     // text through (the host renders it via `OwnedDialogPanel::from_inline_dialog`).
     world.set_pad(cross);
     let _ = world.tick();
     assert_eq!(
-        world.current_dialog.as_ref().map(|d| d.inline.clone()),
+        world.dialog.current.as_ref().map(|d| d.inline.clone()),
         Some(inline.clone()),
         "talk-to opens the NPC's inline dialogue text"
     );
@@ -746,7 +746,7 @@ fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
     world.set_pad(cross);
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_some(),
+        world.dialog.current.is_some(),
         "no dismiss without a new edge"
     );
 
@@ -755,7 +755,7 @@ fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
     let _ = world.tick();
     world.set_pad(cross);
     let _ = world.tick();
-    assert!(world.current_dialog.is_none(), "confirm dismisses the box");
+    assert!(world.dialog.current.is_none(), "confirm dismisses the box");
     assert!(
         world
             .drain_field_events()

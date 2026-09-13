@@ -84,7 +84,7 @@ fn vm_dialogue_drives_inline_runner_via_tick_and_tears_down() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.use_vm_dialogue = true;
-    world.current_dialog = Some(DialogRequest {
+    world.dialog.current = Some(DialogRequest {
         text_id: 0,
         inline,
         world_x: 0,
@@ -110,7 +110,7 @@ fn vm_dialogue_drives_inline_runner_via_tick_and_tears_down() {
         {
             dismissed = true;
         }
-        if world.current_dialog.is_none() && world.inline_dialogue.is_none() {
+        if world.dialog.current.is_none() && world.dialog.inline.is_none() {
             break;
         }
     }
@@ -119,11 +119,11 @@ fn vm_dialogue_drives_inline_runner_via_tick_and_tears_down() {
         "the VM-driven dialogue must emit DialogDismissed on completion"
     );
     assert!(
-        world.current_dialog.is_none(),
+        world.dialog.current.is_none(),
         "current_dialog cleared after the VM dialogue ends"
     );
     assert!(
-        world.inline_dialogue.is_none(),
+        world.dialog.inline.is_none(),
         "inline runner torn down after completion"
     );
 }
@@ -138,7 +138,7 @@ fn simple_dialogue_opt_out_leaves_runner_untouched() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.use_vm_dialogue = false;
-    world.current_dialog = Some(DialogRequest {
+    world.dialog.current = Some(DialogRequest {
         text_id: 0,
         inline,
         world_x: 0,
@@ -154,12 +154,12 @@ fn simple_dialogue_opt_out_leaves_runner_untouched() {
         world.set_pad(0);
         let _ = world.tick();
         assert!(
-            world.inline_dialogue.is_none(),
+            world.dialog.inline.is_none(),
             "opt-out must never start the VM runner"
         );
     }
     assert!(
-        world.current_dialog.is_some(),
+        world.dialog.current.is_some(),
         "the request stays with the simplified panel when VM dialogue is off"
     );
 }

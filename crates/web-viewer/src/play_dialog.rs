@@ -146,7 +146,7 @@ impl LegaiaRuntime {
         {
             return Some(snap);
         }
-        if let Some(id) = h.world.inline_dialogue.as_ref()
+        if let Some(id) = h.world.dialog.inline.as_ref()
             && let Some(panel) = id.panel.as_ref()
         {
             return from_panel(panel, true);

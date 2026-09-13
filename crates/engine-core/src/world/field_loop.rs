@@ -187,8 +187,8 @@ impl World {
         // segment bank over the battle (and nothing in battle mode owns
         // its input). Retail's in-battle tutorial boxes are a separate
         // stage-overlay (extraction 967) channel, not the field box.
-        self.inline_dialogue = None;
-        self.current_dialog = None;
+        self.dialog.inline = None;
+        self.dialog.current = None;
         self.carriers.menu = None;
         self.carriers.pending_engage = None;
         // Reuse the placement helper for actor spawn + seating, then overlay

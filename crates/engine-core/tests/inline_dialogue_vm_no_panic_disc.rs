@@ -50,7 +50,7 @@ fn mix(state: &mut u64) -> u64 {
 /// (`web_viewer::runtime::LegaiaRuntime::dialog_value`): read the live panel's
 /// glyph page + picker options. Another panic surface.
 fn read_dialog_hud(world: &World) {
-    if let Some(id) = world.inline_dialogue.as_ref() {
+    if let Some(id) = world.dialog.inline.as_ref() {
         let _ = id.page_bytes();
         let _ = id.menu_active();
         let _ = id.picker_cursor();
@@ -87,7 +87,7 @@ fn drive_record(body: &[u8], entry_pc: usize, first_segment: usize, seed: u64) {
         let down = i % 7 == 3;
         world.step_inline_dialogue(confirm, up, down);
         read_dialog_hud(&world);
-        match world.inline_dialogue.as_ref() {
+        match world.dialog.inline.as_ref() {
             Some(id) if id.is_done() => break,
             Some(_) => {}
             None => break,
@@ -225,15 +225,15 @@ fn faithful_dialogue_tick_never_errors() {
                     panic!("host.tick() Err in scene {scene_name} NPC slot {slot}: {e:#}")
                 });
                 read_dialog_hud(&host.world);
-                if host.world.inline_dialogue.is_none()
-                    && host.world.current_dialog.is_none()
+                if host.world.dialog.inline.is_none()
+                    && host.world.dialog.current.is_none()
                     && i > 2
                 {
                     break;
                 }
             }
-            host.world.inline_dialogue = None;
-            host.world.current_dialog = None;
+            host.world.dialog.inline = None;
+            host.world.dialog.current = None;
             npcs_driven += 1;
         }
     }

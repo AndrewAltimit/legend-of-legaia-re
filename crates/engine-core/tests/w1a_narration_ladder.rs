@@ -221,7 +221,7 @@ fn npc_conversations_run_through_the_inline_field_vm() {
                 host.world.set_pad(mask);
                 host.tick()
                     .unwrap_or_else(|e| panic!("{scene} slot {slot}: tick failed: {e:#}"));
-                if let Some(id) = host.world.inline_dialogue.as_ref() {
+                if let Some(id) = host.world.dialog.inline.as_ref() {
                     ran_inline = true;
                     vm_steps += 1;
                     // The host's per-frame read surface.
@@ -239,8 +239,8 @@ fn npc_conversations_run_through_the_inline_field_vm() {
             if ran_inline {
                 conversations += 1;
             }
-            host.world.inline_dialogue = None;
-            host.world.current_dialog = None;
+            host.world.dialog.inline = None;
+            host.world.dialog.current = None;
         }
     }
 

@@ -54,7 +54,7 @@ impl PlayWindowApp {
             self.active_dialog = None;
             return;
         }
-        if self.session.host.world.current_dialog.is_none() {
+        if self.session.host.world.dialog.current.is_none() {
             self.active_dialog = None;
             return;
         }
@@ -113,8 +113,8 @@ impl PlayWindowApp {
             || self.menu_runtime.is_open()
             || self.cutscene.is_some()
             || w.cutscene_timeline_active()
-            || w.current_dialog.is_some()
-            || w.inline_dialogue.is_some()
+            || w.dialog.current.is_some()
+            || w.dialog.inline.is_some()
             || w.cutscene.text_balloon.is_some()
             || self.active_dialog.is_some()
     }
@@ -1284,7 +1284,7 @@ impl PlayWindowApp {
             // text; the battle tick parks the SM and the camera holds the
             // dialogue close-up), the menus are hidden - retail shows no
             // command chrome under the tutorial box.
-            let dialogue_up = bw.current_dialog.is_some() || bw.inline_dialogue.is_some();
+            let dialogue_up = bw.dialog.current.is_some() || bw.dialog.inline.is_some();
             if dialogue_up {
                 // Dialogue box up: no menu chrome.
             } else if let Some(view) = bw.arts_input_view() {
@@ -1797,7 +1797,7 @@ impl PlayWindowApp {
         {
             return Some(snap);
         }
-        if let Some(id) = self.session.host.world.inline_dialogue.as_ref()
+        if let Some(id) = self.session.host.world.dialog.inline.as_ref()
             && let Some(panel) = id.panel.as_ref()
         {
             return from_panel(panel, true);
@@ -2213,8 +2213,8 @@ impl PlayWindowApp {
                 // pen - so while it is up the plaque must not draw, or the
                 // two text runs land on the same pixels.
                 plaque_seat_taken: self.battle_tutorial_stage_rect().is_some()
-                    || w_ref.current_dialog.is_some()
-                    || w_ref.inline_dialogue.is_some(),
+                    || w_ref.dialog.current.is_some()
+                    || w_ref.dialog.inline.is_some(),
                 badges: badges.as_ref(),
                 // The same box, tested against the party surfaces' own rows:
                 // a bottom-anchored prompt lands on the active-actor bar

@@ -42,8 +42,8 @@ impl World {
         self.field_walk_touch.clear();
         self.field_boss_stagers.clear();
         self.active_walk_touch = None;
-        self.stepping_inline_npc = None;
-        self.active_inline_slot = None;
+        self.dialog.stepping_inline_npc = None;
+        self.dialog.active_inline_slot = None;
     }
 
     /// Install the scene's field carriers **derived from its MAN actor-placement
@@ -317,7 +317,7 @@ impl World {
     /// surfaces a [`FieldEvent::FieldInteract`]. Shared by the field VM host and
     /// `Self::tick_field_interaction_probe`.
     pub fn trigger_field_interact(&mut self, interact_id: u8, slot: u8) {
-        self.last_field_interact = Some((interact_id, slot));
+        self.dialog.last_field_interact = Some((interact_id, slot));
         // A boss-stager placement (rikuroa's Caruban stager P1[3]): the
         // approach / interact runs the placement's own partition-1 record
         // through the field VM - the engine mirror of retail's touch
@@ -337,10 +337,10 @@ impl World {
         // Stash this slot's untruncated record (if any) so the opt-in VM-dialogue
         // runner can execute its interaction prologue. Always reassigned (to
         // `None` when absent) so a prior interaction's prologue can't leak.
-        self.active_inline_prologue = self.npcs.dialog_prologue.get(&slot).cloned();
+        self.dialog.active_inline_prologue = self.npcs.dialog_prologue.get(&slot).cloned();
         // Remember which NPC this interaction belongs to: the inline runner
         // routes the prologue's `0x4C 0x51` NPC-run ops to this slot.
-        self.active_inline_slot = Some(slot);
+        self.dialog.active_inline_slot = Some(slot);
         let inline = self.npcs.dialog.get(&slot).cloned();
         let opened_dialog = if let Some(ref text) = inline {
             self.open_field_dialog(text.clone());
@@ -376,7 +376,7 @@ impl World {
     /// box coords are zero). Sets [`Self::current_dialog`] and surfaces a
     /// [`FieldEvent::OpenDialog`].
     fn open_field_dialog(&mut self, inline: Vec<u8>) {
-        self.current_dialog = Some(DialogRequest {
+        self.dialog.current = Some(DialogRequest {
             text_id: 0,
             inline: inline.clone(),
             world_x: 0,
@@ -402,7 +402,7 @@ impl World {
     /// without closing. Mirrors the retail inline-picker cursor.
     pub(crate) fn handle_carrier_menu(&mut self) -> bool {
         use crate::input::PadButton;
-        if self.current_dialog.is_none() {
+        if self.dialog.current.is_none() {
             // Box closed elsewhere; drop a stale menu.
             self.carriers.menu = None;
             return false;
@@ -410,15 +410,15 @@ impl World {
         let Some(menu) = self.carriers.menu else {
             return false;
         };
-        if self.dialog_input_consumed {
+        if self.dialog.input_consumed {
             return true; // already handled this tick
         }
         let confirm = self.input.just_pressed(PadButton::Cross);
         let cancel = self.input.just_pressed(PadButton::Circle);
         if confirm || cancel {
-            self.dialog_input_consumed = true;
+            self.dialog.input_consumed = true;
             self.carriers.menu = None;
-            self.current_dialog = None;
+            self.dialog.current = None;
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::DialogDismissed);
             if confirm && menu.cursor == menu.fight_option {
@@ -437,7 +437,7 @@ impl World {
                 m.cursor += 1;
             }
             self.carriers.menu = Some(m);
-            self.dialog_input_consumed = true;
+            self.dialog.input_consumed = true;
         }
         true
     }
@@ -473,7 +473,8 @@ impl World {
         // input: its own stepper routes the confirm edges
         // ([`Self::step_prop_interaction`]).
         if self
-            .inline_dialogue
+            .dialog
+            .inline
             .as_ref()
             .is_some_and(|id| id.prop_anchor.is_some())
         {
@@ -497,10 +498,9 @@ impl World {
                 return;
             }
             // The inline-script runner, when active, owns box dismissal.
-            if self.inline_dialogue.is_none() && (confirm || cancel) && !self.dialog_input_consumed
-            {
-                self.dialog_input_consumed = true;
-                self.current_dialog = None;
+            if self.dialog.inline.is_none() && (confirm || cancel) && !self.dialog.input_consumed {
+                self.dialog.input_consumed = true;
+                self.dialog.current = None;
                 self.pending_field_events
                     .push(crate::field_events::FieldEvent::DialogDismissed);
                 if let Some(idx) = self.carriers.pending_engage.take() {
@@ -510,7 +510,7 @@ impl World {
             return;
         }
 
-        if self.dialog_input_consumed || !confirm {
+        if self.dialog.input_consumed || !confirm {
             return;
         }
         // Retail geometry: a single facing-indexed compass probe 64 units
@@ -523,7 +523,7 @@ impl World {
         if !self.npcs.positions.is_empty()
             && let Some(npc_slot) = self.field_interact_probe_slot()
         {
-            self.dialog_input_consumed = true;
+            self.dialog.input_consumed = true;
             self.trigger_field_interact(0, npc_slot);
             self.face_field_npc(npc_slot);
             return;
@@ -537,7 +537,7 @@ impl World {
         if let Some(anchor) = self.field_interact_prop_anchor()
             && self.start_prop_interaction(anchor)
         {
-            self.dialog_input_consumed = true;
+            self.dialog.input_consumed = true;
         }
     }
 

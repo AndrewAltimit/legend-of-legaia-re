@@ -643,7 +643,7 @@ impl LegaiaRuntime {
                 // the native window suppresses on.
                 plaque_seat_taken: self.battle_tutorial_stage_rect(font).is_some()
                     || world
-                        .is_some_and(|w| w.current_dialog.is_some() || w.inline_dialogue.is_some()),
+                        .is_some_and(|w| w.dialog.current.is_some() || w.dialog.inline.is_some()),
                 badges: badges.as_ref(),
                 // The same tutorial box that takes the plaque's seat also
                 // sits on a party surface's row; naming its rect is what
@@ -854,7 +854,7 @@ impl LegaiaRuntime {
         // open, so it takes priority over the command menu. While an
         // in-battle dialogue box owns the frame (the tutorial text), the
         // menus are hidden - retail shows no command chrome under it.
-        let dialogue_up = bw.current_dialog.is_some() || bw.inline_dialogue.is_some();
+        let dialogue_up = bw.dialog.current.is_some() || bw.dialog.inline.is_some();
         if dialogue_up {
             // Dialogue box up: no menu chrome.
         } else if let Some(arts) = &bw.battle.arts_menu {
@@ -1687,8 +1687,8 @@ mod live_hud_tests {
                         .command
                         .as_ref()
                         .map(|c| std::mem::discriminant(&c.phase)),
-                    w.current_dialog.is_some(),
-                    w.inline_dialogue.is_some(),
+                    w.dialog.current.is_some(),
+                    w.dialog.inline.is_some(),
                 );
             }
             assert!(targeting, "Cross on Attack opens the target picker");

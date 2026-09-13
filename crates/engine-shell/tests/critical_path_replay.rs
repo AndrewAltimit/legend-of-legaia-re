@@ -1409,8 +1409,8 @@ fn walk_to(
                             tile_of(x, z),
                             dispatch_tile(x, z),
                             host.world.cutscene_timeline_active(),
-                            host.world.current_dialog.is_some(),
-                            host.world.inline_dialogue.is_some(),
+                            host.world.dialog.current.is_some(),
+                            host.world.dialog.inline.is_some(),
                         );
                     }
                     return Leg::InputLocked { at: (x, z) };

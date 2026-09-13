@@ -1249,7 +1249,7 @@ impl World {
         if self.mode != crate::world::SceneMode::Battle {
             return None;
         }
-        if self.current_dialog.is_some() || self.inline_dialogue.is_some() {
+        if self.dialog.current.is_some() || self.dialog.inline.is_some() {
             return None;
         }
         let menu = self.battle.item_menu.as_ref()?;
