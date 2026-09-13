@@ -490,8 +490,8 @@ impl SceneHost {
                 );
             }
             None => {
-                self.world.field_object_cells.clear();
-                self.world.field_elevation_overrides.clear();
+                self.world.terrain.object_cells.clear();
+                self.world.terrain.elevation_overrides.clear();
             }
         }
         // Resolve the provisional cold spawn against the just-loaded collision
@@ -597,7 +597,7 @@ impl SceneHost {
             .map(|s| s.field_floor_height_lut(&self.index))
         {
             Some(Ok(Some(lut))) => {
-                self.world.field_floor_height_lut = lut.map(|v| v.wrapping_neg());
+                self.world.terrain.floor_height_lut = lut.map(|v| v.wrapping_neg());
             }
             Some(Err(err)) => eprintln!("[scene] field floor-height LUT load skipped: {err:#}"),
             _ => {}

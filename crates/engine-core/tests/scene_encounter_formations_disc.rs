@@ -201,7 +201,8 @@ fn a_region_scene_still_reaches_battle_after_the_new_game_reset() {
         }
         let world = &mut host.world;
         let Some(table) = world
-            .field_region_tracker
+            .terrain
+            .region_tracker
             .as_ref()
             .map(|t| t.table().clone())
         else {

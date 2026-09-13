@@ -55,7 +55,7 @@ fn player_xz(host: &SceneHost) -> (i16, i16) {
 /// consumer `FUN_80019278` uses. `0` is sea level.
 fn floor_tier(host: &SceneHost, x: i16, z: i16) -> u8 {
     let (tx, tz) = ((x >> 7) as usize, (z >> 7) as usize);
-    host.world.field_collision_grid[tz * 0x80 + tx] & 0x0F
+    host.world.terrain.collision_grid[tz * 0x80 + tx] & 0x0F
 }
 
 fn skip() -> bool {
@@ -179,8 +179,8 @@ fn only_the_overworlds_are_reseated_and_town01_is_byte_identical() {
         if host.enter_field_scene(&scene, 0).is_err() {
             continue;
         }
-        if host.world.field_collision_grid.len() < 0x4000
-            || host.world.field_object_cells.len() < 0x4000
+        if host.world.terrain.collision_grid.len() < 0x4000
+            || host.world.terrain.object_cells.len() < 0x4000
         {
             continue;
         }
@@ -227,7 +227,8 @@ fn a_seat_on_an_unwalkable_tile_is_rescued() {
 
     let Some(table) = host
         .world
-        .field_region_tracker
+        .terrain
+        .region_tracker
         .as_ref()
         .map(|t| t.table().clone())
     else {

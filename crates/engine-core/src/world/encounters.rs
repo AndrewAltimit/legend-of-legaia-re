@@ -181,7 +181,7 @@ impl World {
             session.reset();
             session.tracker_mut().clear_suppression();
         }
-        if let Some(t) = self.field_region_tracker.as_mut() {
+        if let Some(t) = self.terrain.region_tracker.as_mut() {
             t.clear_suppression();
         }
         let roll = crate::encounter::EncounterRoll {
@@ -981,7 +981,7 @@ impl World {
         // [`crate::encounter::EncounterSession::on_step`]'s own gate) and feed
         // a trigger through [`crate::encounter::EncounterSession::trigger_with`].
         // REF: FUN_801D9E1C (ported in crate::region_encounter)
-        if self.field_region_tracker.is_some() {
+        if self.terrain.region_tracker.is_some() {
             // The region roll owns the rate AND the formation pick; the
             // session owns nothing but the frames between trigger and battle.
             // A host that dropped the session after scene entry (the New Game
@@ -1010,7 +1010,7 @@ impl World {
             };
             // Take the tracker out so the RNG closure can borrow `self`
             // (same borrow-window pattern as `live_world_map_tick`).
-            let mut tracker = self.field_region_tracker.take().expect("is_some checked");
+            let mut tracker = self.terrain.region_tracker.take().expect("is_some checked");
             tracker.set_modifiers(self.encounter_rate_modifiers());
             // Re-run the scene's condition walk against the live story-flag
             // bank before rolling. Retail does this every step, and it is not
@@ -1027,7 +1027,7 @@ impl World {
                 "field step at ({wx}, {wz}): region counter {}",
                 tracker.counter()
             );
-            self.field_region_tracker = Some(tracker);
+            self.terrain.region_tracker = Some(tracker);
             return match roll {
                 Some(r) => {
                     let er = crate::encounter::EncounterRoll {

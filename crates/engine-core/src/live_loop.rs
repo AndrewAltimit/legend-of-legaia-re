@@ -123,9 +123,9 @@ impl World {
         // regions exist at all is a function of the live flag bank, so a
         // rollability answer taken against a stale group is an answer about a
         // different story state.
-        if let Some(mut t) = self.field_region_tracker.take() {
+        if let Some(mut t) = self.terrain.region_tracker.take() {
             t.select_group(|flag| self.system_flag_test(flag));
-            self.field_region_tracker = Some(t);
+            self.terrain.region_tracker = Some(t);
         }
         if let Some(mut t) = self.world_map.region_tracker.take() {
             t.select_group(|flag| self.system_flag_test(flag));
@@ -184,7 +184,7 @@ impl World {
         // lazily on the first roll, so an `encounter.is_none()` early return
         // ahead of this branch reports "no encounters in this scene" for a
         // region scene that has not rolled yet.
-        if let Some(t) = self.field_region_tracker.as_ref() {
+        if let Some(t) = self.terrain.region_tracker.as_ref() {
             return t.table().any_rollable();
         }
         if self.encounters.session.is_none() {

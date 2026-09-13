@@ -76,18 +76,18 @@ fn op_4c_90_oscillates_a_floor_height_rung_the_ladder_installed() {
 
     let _ = world.tick(); // 4C 9E
     assert_eq!(
-        world.field_floor_height_lut[4],
+        world.terrain.floor_height_lut[4],
         -(4 * 0x20),
         "the install writes the negated ladder, matching the MAN-header seed"
     );
-    let installed = world.field_floor_height_lut[4];
+    let installed = world.terrain.floor_height_lut[4];
 
     let _ = world.tick(); // 4C 90 spawns
-    assert_eq!(world.floor_tier_bobs.len(), 1);
+    assert_eq!(world.terrain.floor_tier_bobs.len(), 1);
     let mut seen = Vec::new();
     for _ in 0..96 {
         let _ = world.tick();
-        seen.push(world.field_floor_height_lut[4]);
+        seen.push(world.terrain.floor_height_lut[4]);
     }
     let hi = *seen.iter().max().unwrap();
     let lo = *seen.iter().min().unwrap();
@@ -97,7 +97,7 @@ fn op_4c_90_oscillates_a_floor_height_rung_the_ladder_installed() {
     );
     assert!(lo < hi, "and swing back: span {lo}..{hi}");
     // Untouched rungs stay where the install put them.
-    assert_eq!(world.field_floor_height_lut[5], -(5 * 0x20));
+    assert_eq!(world.terrain.floor_height_lut[5], -(5 * 0x20));
 }
 
 /// `4C 9F` is a retire sweep over the same handler, so it cancels every
@@ -112,7 +112,7 @@ fn op_4c_9f_cancels_the_running_rung_oscillators() {
     for _ in 0..4 {
         let _ = spawn_only.tick();
     }
-    assert_eq!(spawn_only.floor_tier_bobs.len(), 2);
+    assert_eq!(spawn_only.terrain.floor_tier_bobs.len(), 2);
 
     // The same script with the sweep appended leaves none - which is the
     // contrast that makes the assertion non-vacuous.
@@ -123,7 +123,7 @@ fn op_4c_9f_cancels_the_running_rung_oscillators() {
         let _ = swept.tick();
     }
     assert!(
-        swept.floor_tier_bobs.is_empty(),
+        swept.terrain.floor_tier_bobs.is_empty(),
         "4C 9F sweeps the handler class"
     );
 }
@@ -200,11 +200,11 @@ fn the_man_load_sweep_drops_every_live_timer_record() {
     let _ = world.tick();
     let _ = world.tick();
     assert!(world.cinematic_bars.is_some());
-    assert_eq!(world.floor_tier_bobs.len(), 1);
+    assert_eq!(world.terrain.floor_tier_bobs.len(), 1);
     let _ = world.man_load_actor_reset();
     assert!(world.cinematic_bars.is_none());
     assert_eq!(world.cinematic_bar, 0);
-    assert!(world.floor_tier_bobs.is_empty());
+    assert!(world.terrain.floor_tier_bobs.is_empty());
     assert!(world.eased_moves.is_empty());
 }
 

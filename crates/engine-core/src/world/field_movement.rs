@@ -132,8 +132,8 @@ impl World {
     /// overwrites it with the disc base - see
     /// `docs/subsystems/field-locomotion.md`.
     pub fn reset_field_collision_grid(&mut self) {
-        self.field_collision_grid.clear();
-        self.field_collision_grid.resize(FIELD_GRID_LEN, 0);
+        self.terrain.collision_grid.clear();
+        self.terrain.collision_grid.resize(FIELD_GRID_LEN, 0);
     }
 
     /// Load the per-scene base collision/floor grid from the field map file's
@@ -148,9 +148,9 @@ impl World {
     /// field buffer at `*(_DAT_1f8003ec)`. Byte-exact vs live RAM (town01).
     pub fn load_field_collision_grid(&mut self, grid: &[u8]) {
         let n = grid.len().min(FIELD_GRID_LEN);
-        self.field_collision_grid.clear();
-        self.field_collision_grid.resize(FIELD_GRID_LEN, 0);
-        self.field_collision_grid[..n].copy_from_slice(&grid[..n]);
+        self.terrain.collision_grid.clear();
+        self.terrain.collision_grid.resize(FIELD_GRID_LEN, 0);
+        self.terrain.collision_grid[..n].copy_from_slice(&grid[..n]);
     }
 
     /// Load the per-scene `.MAP` **object-grid** cell words (`+0x8000`, one
@@ -161,9 +161,9 @@ impl World {
     /// the rest zero (a plain bilinear tile).
     pub fn load_field_object_cells(&mut self, cells: &[u8]) {
         let n = (cells.len() / 2).min(FIELD_GRID_LEN);
-        self.field_object_cells.clear();
-        self.field_object_cells.resize(FIELD_GRID_LEN, 0);
-        for (i, slot) in self.field_object_cells[..n].iter_mut().enumerate() {
+        self.terrain.object_cells.clear();
+        self.terrain.object_cells.resize(FIELD_GRID_LEN, 0);
+        for (i, slot) in self.terrain.object_cells[..n].iter_mut().enumerate() {
             *slot = u16::from_le_bytes([cells[i * 2], cells[i * 2 + 1]]);
         }
         // Which bit this scene records its authored floor with. See
@@ -171,8 +171,9 @@ impl World {
         // author `CELL_VISIBLE` and never `CELL_WALK_VISIBLE`, and reading
         // those as floorless makes the cold-spawn resolver inert in exactly
         // the scenes whose retail seat is a wall.
-        self.field_floor_cell_bit = if self
-            .field_object_cells
+        self.terrain.floor_cell_bit = if self
+            .terrain
+            .object_cells
             .iter()
             .any(|c| c & legaia_asset::field_objects::CELL_WALK_VISIBLE != 0)
         {
@@ -190,7 +191,7 @@ impl World {
     ///
     /// PORT: FUN_801D5630 (kind 2) / FUN_801D5AE0
     pub fn load_field_elevation_overrides(&mut self, primary: &[u8], fallback: &[u8]) {
-        self.field_elevation_overrides =
+        self.terrain.elevation_overrides =
             crate::world::field_elevation::parse_elevation_overrides(primary)
                 .into_iter()
                 .chain(crate::world::field_elevation::parse_elevation_overrides(
@@ -206,8 +207,8 @@ impl World {
     /// attribute block to the default fill, so stale tables never leak
     /// across a transition.
     pub fn load_field_region_tables(&mut self, map_region_block: &[u8], zone_table: &[u8]) {
-        self.field_map_region_block = map_region_block.to_vec();
-        self.field_zone_table = zone_table.to_vec();
+        self.terrain.map_region_block = map_region_block.to_vec();
+        self.terrain.zone_table = zone_table.to_vec();
         self.refresh_field_regions();
     }
 
@@ -224,7 +225,7 @@ impl World {
     ///
     /// REF: FUN_800180EC, FUN_801DBA20 (ports in [`crate::field_regions`])
     pub fn refresh_field_regions(&mut self) {
-        if self.field_map_region_block.is_empty() && self.field_zone_table.is_empty() {
+        if self.terrain.map_region_block.is_empty() && self.terrain.zone_table.is_empty() {
             // No per-scene tables installed - leave `extra_flags` to the
             // host (e.g. tests that drive op 0x42 directly).
             return;
@@ -238,25 +239,29 @@ impl World {
         };
         let tx = (wx as i32 - 0x40) >> 7;
         let tz = (wz as i32 - 0x40) >> 7;
-        let table = crate::field_regions::RegionTable::parse(&self.field_map_region_block);
+        let table = crate::field_regions::RegionTable::parse(&self.terrain.map_region_block);
         let world_map_mode = self.mode == SceneMode::WorldMap;
         let (mask, attrs) =
             crate::field_regions::refresh_region_attributes(table.as_ref(), tx, tz, world_map_mode);
         self.extra_flags = mask;
-        self.field_region_attributes = attrs;
-        if let Some(result) =
-            crate::field_regions::zone_query(&self.field_zone_table, table.as_ref(), &attrs, tx, tz)
-        {
+        self.terrain.region_attributes = attrs;
+        if let Some(result) = crate::field_regions::zone_query(
+            &self.terrain.zone_table,
+            table.as_ref(),
+            &attrs,
+            tx,
+            tz,
+        ) {
             // Retail rewrites `_DAT_8007B8F4` from the zone query's own
             // rebuild too (identical recomputation).
             self.extra_flags = result.region_mask;
-            self.field_zone_record = result.record.map(|r| {
+            self.terrain.zone_record = result.record.map(|r| {
                 let mut rec = [0u8; crate::field_regions::ZONE_RECORD_STRIDE];
                 rec.copy_from_slice(r);
                 rec
             });
         } else {
-            self.field_zone_record = None;
+            self.terrain.zone_record = None;
         }
     }
 
@@ -306,7 +311,7 @@ impl World {
     ///
     /// PORT: FUN_80019278
     pub fn sample_field_floor_height(&self, world_x: i32, world_z: i32) -> i32 {
-        if self.field_collision_grid.len() < FIELD_GRID_LEN {
+        if self.terrain.collision_grid.len() < FIELD_GRID_LEN {
             return 0;
         }
         let tile_x = world_x >> 7;
@@ -320,8 +325,8 @@ impl World {
             return 0;
         }
         let base = tile_z as usize * FIELD_GRID_STRIDE + tile_x as usize;
-        let g = &self.field_collision_grid;
-        let lut = &self.field_floor_height_lut;
+        let g = &self.terrain.collision_grid;
+        let lut = &self.terrain.floor_height_lut;
         // Low nibble = elevation tier; LUT-index it for each of the 4 corners.
         let c00 = (g[base] & 0x0F) as usize;
         let c01 = (g[base + 1] & 0x0F) as usize;
@@ -337,7 +342,7 @@ impl World {
         if self.field_tile_has_elevation_override(tile_x, tile_z) {
             let mean = (l00 + l01 + l10 + l11) >> 2;
             let delta = crate::world::field_elevation::lookup_elevation_override(
-                &self.field_elevation_overrides,
+                &self.terrain.elevation_overrides,
                 tile_x as u8,
                 tile_z as u8,
             )
@@ -371,7 +376,8 @@ impl World {
             return false;
         }
         let idx = tile_z as usize * FIELD_GRID_STRIDE + tile_x as usize;
-        self.field_object_cells
+        self.terrain
+            .object_cells
             .get(idx)
             .is_some_and(|c| c & CELL_ELEVATION_OVERRIDE != 0)
     }
@@ -383,7 +389,7 @@ impl World {
         z_range: (u8, u8),
         mask: u8,
     ) {
-        if self.field_collision_grid.len() < FIELD_GRID_LEN {
+        if self.terrain.collision_grid.len() < FIELD_GRID_LEN {
             self.reset_field_collision_grid();
         }
         let hi = mask << 4;
@@ -391,7 +397,7 @@ impl World {
             let row_base = (row as usize) * FIELD_GRID_STRIDE;
             for col in x_range.0..x_range.1 {
                 let idx = row_base + col as usize;
-                let Some(byte) = self.field_collision_grid.get_mut(idx) else {
+                let Some(byte) = self.terrain.collision_grid.get_mut(idx) else {
                     continue;
                 };
                 match sub {
@@ -454,7 +460,7 @@ impl World {
     /// four-way quadrant-bit select out of the high nibble, and the
     /// `sltu zero, masked` "non-zero means blocked" return)
     pub fn field_tile_is_wall(&self, x: i16, z: i16) -> bool {
-        if self.field_collision_grid.len() < FIELD_GRID_LEN {
+        if self.terrain.collision_grid.len() < FIELD_GRID_LEN {
             return false;
         }
         if x < 0 || z < 0 {
@@ -465,7 +471,7 @@ impl World {
         let col = (xc / 2) & 0x7F;
         let row = ((zc - (zc >> 31)) >> 1) & 0x7F;
         let idx = (col + row * FIELD_GRID_STRIDE as i32) as usize;
-        let Some(&byte) = self.field_collision_grid.get(idx) else {
+        let Some(&byte) = self.terrain.collision_grid.get(idx) else {
             return false;
         };
         let quad = ((zc & 1) << 1 | (xc & 1)) as u32;
@@ -494,9 +500,10 @@ impl World {
         if tx >= FIELD_GRID_STRIDE || tz >= FIELD_GRID_STRIDE {
             return false;
         }
-        self.field_object_cells
+        self.terrain
+            .object_cells
             .get(tz * FIELD_GRID_STRIDE + tx)
-            .is_some_and(|c| c & self.field_floor_cell_bit != 0)
+            .is_some_and(|c| c & self.terrain.floor_cell_bit != 0)
     }
 
     /// Is world `(x, z)` a valid cold-entry standing spot - on the authored
@@ -627,8 +634,8 @@ impl World {
     /// Scenes with no collision grid loaded (`field_spawn_is_valid` reads
     /// every tile as off-floor there) pass straight through.
     pub fn nearest_standable_seat(&self, x: i16, z: i16) -> (i16, i16) {
-        if self.field_collision_grid.len() < FIELD_GRID_LEN
-            || self.field_object_cells.len() < FIELD_GRID_LEN
+        if self.terrain.collision_grid.len() < FIELD_GRID_LEN
+            || self.terrain.object_cells.len() < FIELD_GRID_LEN
             || self.field_spawn_is_valid(x, z)
         {
             return (x, z);

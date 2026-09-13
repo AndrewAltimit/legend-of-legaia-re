@@ -48,7 +48,7 @@ fn world_with_npc_at(npc: (i16, i16)) -> World {
     world.install_field_player(0);
     world.actors[0].move_state.world_x = 320;
     world.actors[0].move_state.world_z = 320;
-    world.field_collision_grid = vec![0u8; GRID_LEN];
+    world.terrain.collision_grid = vec![0u8; GRID_LEN];
 
     let mut vm = AmbientMotion::new(1, 0x000).with_position(npc.0, npc.1);
     vm.default_move = DEFAULT_MOVE;

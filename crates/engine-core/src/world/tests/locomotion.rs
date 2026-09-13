@@ -178,10 +178,10 @@ fn locomotion_follows_terrain_height_only_when_gated_on() {
     world.actors[0].move_state.world_y = 20;
     // Floor tier 3 -> -40 across the 2x2 block around tile (1,1), which the
     // +Z walk lands in (x=200, z=208 -> tile (1,1)).
-    world.field_floor_height_lut[3] = -40;
+    world.terrain.floor_height_lut[3] = -40;
     let base = STRIDE + 1;
     for &i in &[base, base + 1, base + STRIDE, base + STRIDE + 1] {
-        world.field_collision_grid[i] = 0x03; // low nibble = tier 3, walkable
+        world.terrain.collision_grid[i] = 0x03; // low nibble = tier 3, walkable
     }
 
     // Gate off (default): Y stays at the sentinel, flat-Y behaviour preserved.
@@ -427,15 +427,15 @@ fn ledge_world(height: i16) -> World {
     world.install_field_player(0);
     world.actors[0].move_state.world_x = 320;
     world.actors[0].move_state.world_z = 320;
-    world.field_collision_grid = vec![0u8; FIELD_GRID_LEN];
+    world.terrain.collision_grid = vec![0u8; FIELD_GRID_LEN];
     // Opt into the retail glide so the settle is observable; it is off by
     // default so the flat-Y locomotion oracles keep their exact positions.
     world.field_vertical_settle = true;
-    world.field_floor_height_lut = [0i16; 16];
-    world.field_floor_height_lut[1] = height;
+    world.terrain.floor_height_lut = [0i16; 16];
+    world.terrain.floor_height_lut[1] = height;
     // The floor sampler reads the 2x2 corner block at tile (2, 2).
     for (tx, tz) in [(2usize, 2usize), (3, 2), (2, 3), (3, 3)] {
-        world.field_collision_grid[tz * FIELD_GRID_STRIDE + tx] = 0x01;
+        world.terrain.collision_grid[tz * FIELD_GRID_STRIDE + tx] = 0x01;
     }
     world
 }
@@ -513,7 +513,7 @@ fn ledge_hop_refused_when_wall_ahead() {
     let zc = ((pz as i32) >> 6) + 2;
     let idx = ((xc / 2) & 0x7F) as usize + (zc >> 1) as usize * FIELD_GRID_STRIDE;
     let quad = ((zc & 1) << 1 | (xc & 1)) as u32;
-    world.field_collision_grid[idx] |= 0x10 << quad;
+    world.terrain.collision_grid[idx] |= 0x10 << quad;
     assert!(
         world.field_tile_is_wall(px, pz),
         "the forward probe point now reads as a wall"

@@ -70,17 +70,17 @@ fn field_tile_is_wall_matches_retail_subcell_derivation() {
     ] {
         let (rc, rr, rm) = retail_subcell(x, z);
         let idx = (rc + rr * (FIELD_GRID_STRIDE as i32)) as usize;
-        world.field_collision_grid[idx] = rm << 4;
+        world.terrain.collision_grid[idx] = rm << 4;
         assert!(
             world.field_tile_is_wall(x as i16, z as i16),
             "engine reads the retail cell at ({x},{z}) -> ({rc},{rr}) m{rm:04b}"
         );
-        world.field_collision_grid[idx] = (!rm & 0xF) << 4;
+        world.terrain.collision_grid[idx] = (!rm & 0xF) << 4;
         assert!(
             !world.field_tile_is_wall(x as i16, z as i16),
             "engine reads the retail QUAD at ({x},{z}) (other quads of the byte don't block)"
         );
-        world.field_collision_grid[idx] = 0;
+        world.terrain.collision_grid[idx] = 0;
     }
 
     // The quadrant-MASK formula is retail's branchy `bVar5` for every
@@ -129,7 +129,7 @@ fn leading_edge_wall_probes_rest_at_retail_standoff() {
     };
     let wall_col_13 = |world: &mut World| {
         for row in 0..0x80usize {
-            world.field_collision_grid[13 + row * FIELD_GRID_STRIDE] = 0xF0;
+            world.terrain.collision_grid[13 + row * FIELD_GRID_STRIDE] = 0xF0;
         }
     };
     // dir 1 (X-): edge at x-47. Probes hit while x <= 1839; rest = 1838
@@ -150,7 +150,7 @@ fn leading_edge_wall_probes_rest_at_retail_standoff() {
     // crossing distance); rest = 2606, the rimelm_wall_press_down rest.
     let wall_row_20 = |world: &mut World| {
         for col in 0..0x80usize {
-            world.field_collision_grid[col + 20 * FIELD_GRID_STRIDE] = 0xF0;
+            world.terrain.collision_grid[col + 20 * FIELD_GRID_STRIDE] = 0xF0;
         }
     };
     assert_eq!(
@@ -168,7 +168,7 @@ fn leading_edge_wall_probes_rest_at_retail_standoff() {
     // leaving the centre + x-16 columns clear.
     let wall_lateral = |world: &mut World| {
         let (c, r, m) = retail_subcell(3402, 2559);
-        world.field_collision_grid[(c + r * FIELD_GRID_STRIDE as i32) as usize] = m << 4;
+        world.terrain.collision_grid[(c + r * FIELD_GRID_STRIDE as i32) as usize] = m << 4;
     };
     assert_eq!(
         press(true, 0x4000, (3386, 2700), &wall_lateral),
@@ -307,10 +307,10 @@ fn sample_field_floor_height_flat_returns_lut_value() {
     const STRIDE: usize = 0x80;
     let mut world = World::new();
     world.reset_field_collision_grid();
-    world.field_floor_height_lut[5] = -50;
+    world.terrain.floor_height_lut[5] = -50;
     // Set the 2x2 block around tile (0,0) all to elevation tier 5.
     for &i in &[0usize, 1, STRIDE, STRIDE + 1] {
-        world.field_collision_grid[i] = 0x05; // low nibble = tier 5
+        world.terrain.collision_grid[i] = 0x05; // low nibble = tier 5
     }
     // Any sub-tile position in tile (0,0): all four corners match -> LUT[5].
     assert_eq!(world.sample_field_floor_height(10, 10), -50);
@@ -322,13 +322,13 @@ fn sample_field_floor_height_bilinear_interpolates() {
     const STRIDE: usize = 0x80;
     let mut world = World::new();
     world.reset_field_collision_grid();
-    world.field_floor_height_lut[1] = 0;
-    world.field_floor_height_lut[2] = 256;
+    world.terrain.floor_height_lut[1] = 0;
+    world.terrain.floor_height_lut[2] = 256;
     // Corners of tile (0,0): c00=1(0), c01=2(256), c10=1(0), c11=1(0).
-    world.field_collision_grid[0] = 0x01;
-    world.field_collision_grid[1] = 0x02;
-    world.field_collision_grid[STRIDE] = 0x01;
-    world.field_collision_grid[STRIDE + 1] = 0x01;
+    world.terrain.collision_grid[0] = 0x01;
+    world.terrain.collision_grid[1] = 0x02;
+    world.terrain.collision_grid[STRIDE] = 0x01;
+    world.terrain.collision_grid[STRIDE + 1] = 0x01;
     // Top edge (wz=0): height interpolates linearly from c00 (0) to c01 (256)
     // across the sub-tile, i.e. 2 * wx.
     assert_eq!(world.sample_field_floor_height(0, 0), 0); // wx=0
@@ -350,7 +350,7 @@ fn sample_field_floor_height_uses_the_kind2_elevation_override() {
     world.reset_field_collision_grid();
     // Sea-level nibble-0 corners, exactly like a real ramp tile: the bilinear
     // model would put this whole tile at 0.
-    world.field_floor_height_lut[0] = 0;
+    world.terrain.floor_height_lut[0] = 0;
     // Tile (1,1) carries the override bit; its neighbour (2,1) does not.
     let mut cells = vec![0u8; STRIDE * STRIDE * 2];
     let cell = |c: usize, r: usize| (r * STRIDE + c) * 2;
@@ -385,13 +385,13 @@ fn elevation_override_bit_without_a_record_flattens_the_tile() {
     const STRIDE: usize = 0x80;
     let mut world = World::new();
     world.reset_field_collision_grid();
-    world.field_floor_height_lut[1] = 0;
-    world.field_floor_height_lut[2] = 256;
+    world.terrain.floor_height_lut[1] = 0;
+    world.terrain.floor_height_lut[2] = 256;
     // Corners of tile (0,0): c00=0, c01=256, c10=0, c11=0 -> mean 64.
-    world.field_collision_grid[0] = 0x01;
-    world.field_collision_grid[1] = 0x02;
-    world.field_collision_grid[STRIDE] = 0x01;
-    world.field_collision_grid[STRIDE + 1] = 0x01;
+    world.terrain.collision_grid[0] = 0x01;
+    world.terrain.collision_grid[1] = 0x02;
+    world.terrain.collision_grid[STRIDE] = 0x01;
+    world.terrain.collision_grid[STRIDE + 1] = 0x01;
     let mut cells = vec![0u8; STRIDE * STRIDE * 2];
     cells[0..2].copy_from_slice(&CELL_ELEVATION_OVERRIDE.to_le_bytes());
     world.load_field_object_cells(&cells);
@@ -436,7 +436,10 @@ fn load_field_collision_grid_copies_map_region_and_nibble7_layers_on_top() {
     assert!(world.field_tile_is_wall(700, 700), "base grid wall loaded");
     assert!(!world.field_tile_is_wall(700, 600), "other tiles walkable");
     // Low nibble (floor tier) is preserved, not treated as a wall bit.
-    assert_eq!(world.field_collision_grid[6 * FIELD_GRID_STRIDE + 5], 0xF2);
+    assert_eq!(
+        world.terrain.collision_grid[6 * FIELD_GRID_STRIDE + 5],
+        0xF2
+    );
     // A nibble-7 paint layers a delta on top of the loaded base.
     world.paint_field_collision(1, (8, 9), (8, 9), 0);
     assert!(world.field_tile_is_wall(8 * 128 + 10, 8 * 128 - 10));
@@ -452,7 +455,7 @@ fn load_field_collision_grid_pads_short_input() {
     let mut short = vec![0u8; 0x81];
     short[0x80] = 0xF0;
     world.load_field_collision_grid(&short);
-    assert_eq!(world.field_collision_grid.len(), FIELD_GRID_LEN);
+    assert_eq!(world.terrain.collision_grid.len(), FIELD_GRID_LEN);
     assert!(
         world.field_tile_is_wall(10, 10),
         "row-1 wall from the short input"

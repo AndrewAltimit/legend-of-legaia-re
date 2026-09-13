@@ -48,9 +48,9 @@ fn flat_world(ground: i16) -> World {
     world.install_field_player(0);
     world.actors[0].move_state.world_x = 320;
     world.actors[0].move_state.world_z = 480;
-    world.field_collision_grid = vec![TIER_GROUND; GRID_LEN];
-    world.field_floor_height_lut = [0i16; 16];
-    world.field_floor_height_lut[TIER_GROUND as usize] = ground;
+    world.terrain.collision_grid = vec![TIER_GROUND; GRID_LEN];
+    world.terrain.floor_height_lut = [0i16; 16];
+    world.terrain.floor_height_lut[TIER_GROUND as usize] = ground;
     world
 }
 
@@ -58,10 +58,10 @@ fn flat_world(ground: i16) -> World {
 /// step running clean across the fixture, so the classifier's `+32` sample
 /// crosses a genuine ledge.
 fn raise_from_row(world: &mut World, tz: usize, height: i16) {
-    world.field_floor_height_lut[TIER_RAISED as usize] = height;
+    world.terrain.floor_height_lut[TIER_RAISED as usize] = height;
     for row in tz..GRID_STRIDE {
         for col in 0..GRID_STRIDE {
-            world.field_collision_grid[row * GRID_STRIDE + col] = TIER_RAISED;
+            world.terrain.collision_grid[row * GRID_STRIDE + col] = TIER_RAISED;
         }
     }
 }
@@ -70,7 +70,7 @@ fn raise_from_row(world: &mut World, tz: usize, height: i16) {
 fn wall_from_row(world: &mut World, tz: usize) {
     for row in tz..GRID_STRIDE {
         for col in 0..GRID_STRIDE {
-            world.field_collision_grid[row * GRID_STRIDE + col] |= 0xF0;
+            world.terrain.collision_grid[row * GRID_STRIDE + col] |= 0xF0;
         }
     }
 }

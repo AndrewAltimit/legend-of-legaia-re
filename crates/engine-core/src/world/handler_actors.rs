@@ -295,7 +295,7 @@ impl World {
         // rung left oscillating would keep writing into the next scene's
         // ladder. Its two siblings on the same list go with it: a bar
         // envelope and an eased move are both scene content.
-        self.floor_tier_bobs.clear();
+        self.terrain.floor_tier_bobs.clear();
         self.cinematic_bars = None;
         self.cinematic_bar = 0;
         self.eased_moves.clear();

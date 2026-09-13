@@ -321,7 +321,8 @@ impl World {
         &mut self,
         table: Option<crate::region_encounter::RegionEncounterTable>,
     ) {
-        self.field_region_tracker = table.map(crate::region_encounter::RegionEncounterTracker::new);
+        self.terrain.region_tracker =
+            table.map(crate::region_encounter::RegionEncounterTracker::new);
         self.refresh_encounter_rollable();
     }
 

@@ -218,7 +218,7 @@ fn load_wall_press(label: &str) -> Option<WallPress> {
             session.host.world.set_pad(0);
             let _ = session.host.world.tick();
         }
-        let engine_grid = &session.host.world.field_collision_grid;
+        let engine_grid = &session.host.world.terrain.collision_grid;
         let diffs = live_grid
             .iter()
             .zip(engine_grid)

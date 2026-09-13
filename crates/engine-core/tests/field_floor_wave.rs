@@ -74,7 +74,7 @@ fn world_on_ladder(man_lut: [i16; 16], script: Vec<u8>) -> World {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.field_frame_step = 1;
-    world.field_floor_height_lut = man_lut.map(i16::wrapping_neg);
+    world.terrain.floor_height_lut = man_lut.map(i16::wrapping_neg);
     world.load_field_script(script);
     world
 }
@@ -121,7 +121,8 @@ fn op_4c_90_moves_the_drawn_ground_under_the_rung_it_arms() {
     let mut untouched_moved = false;
     for _ in 0..128 {
         let _ = world.tick();
-        let Some(wave) = FloorWave::from_scene_and_world(Some(man), &world.field_floor_height_lut)
+        let Some(wave) =
+            FloorWave::from_scene_and_world(Some(man), &world.terrain.floor_height_lut)
         else {
             continue;
         };
@@ -134,7 +135,11 @@ fn op_4c_90_moves_the_drawn_ground_under_the_rung_it_arms() {
             }
         }
     }
-    assert_eq!(world.floor_tier_bobs.len(), 1, "the rung must be armed");
+    assert_eq!(
+        world.terrain.floor_tier_bobs.len(),
+        1,
+        "the rung must be armed"
+    );
     assert!(
         span[0].1 > span[0].0,
         "the terrain cell on rung 4 must swing: {:?}",
@@ -167,7 +172,7 @@ fn the_worlds_copy_is_the_scratchpad_frame_not_the_man_frame() {
     for _ in 0..40 {
         let _ = world.tick();
     }
-    let live_scratch = world.field_floor_height_lut;
+    let live_scratch = world.terrain.floor_height_lut;
     let right = FloorWave::from_scene_and_world(Some(man), &live_scratch)
         .expect("the rung has moved")
         .offset(&d[0].floor);
@@ -201,7 +206,7 @@ fn op_4c_9e_reinstalls_the_ladder_and_the_draws_follow() {
     }
     let mut world = world_on_ladder(man, script);
     let _ = world.tick();
-    let wave = FloorWave::from_scene_and_world(Some(man), &world.field_floor_height_lut)
+    let wave = FloorWave::from_scene_and_world(Some(man), &world.terrain.floor_height_lut)
         .expect("the install moved the ladder");
     // The install writes `-words[i]` into the scratchpad, i.e. `words[i]` in
     // the MAN frame, so rung 2's draw height goes from `0` to `-(2 * 0x20)`.

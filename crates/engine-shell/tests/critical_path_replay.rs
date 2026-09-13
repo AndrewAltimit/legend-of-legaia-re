@@ -2329,11 +2329,11 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
              session {} formations {:?}",
             host.world.live_gameplay_loop,
             host.world.encounters.scene_rollable,
-            host.world.field_region_tracker.is_some(),
+            host.world.terrain.region_tracker.is_some(),
             host.world.encounters.session.is_some(),
             host.world.registered_formation_ids(),
         );
-        if let Some(t) = host.world.field_region_tracker.as_ref() {
+        if let Some(t) = host.world.terrain.region_tracker.as_ref() {
             for r in &t.table().regions {
                 eprintln!(
                     "[fight]   region x{}..{} z{}..{} rate {} formations {}..+{}",

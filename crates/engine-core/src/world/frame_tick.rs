@@ -236,17 +236,17 @@ impl World {
         // The floor-height ladder. Each record owns one rung; a rung index
         // past the LUT is retail writing off the end of a 16-entry array,
         // which the port declines to do.
-        if !self.floor_tier_bobs.is_empty() {
-            let mut bobs = std::mem::take(&mut self.floor_tier_bobs);
+        if !self.terrain.floor_tier_bobs.is_empty() {
+            let mut bobs = std::mem::take(&mut self.terrain.floor_tier_bobs);
             for bob in bobs.iter_mut() {
                 if let Some(height) = bob.step(frame_delta)
-                    && let Some(rung) = self.field_floor_height_lut.get_mut(bob.slot as usize)
+                    && let Some(rung) = self.terrain.floor_height_lut.get_mut(bob.slot as usize)
                 {
                     *rung = height;
                 }
             }
-            bobs.append(&mut self.floor_tier_bobs);
-            self.floor_tier_bobs = bobs;
+            bobs.append(&mut self.terrain.floor_tier_bobs);
+            self.terrain.floor_tier_bobs = bobs;
         }
     }
 
@@ -524,7 +524,7 @@ impl World {
                             a.move_state.world_z = nz;
                             a.move_state.render_26 = heading;
                         }
-                        self.map_origin_xz = (-i32::from(nx), -i32::from(nz));
+                        self.terrain.map_origin_xz = (-i32::from(nx), -i32::from(nz));
                     }
                 }
                 LeaderSwapEffect::ClearIncomingPose { slot } => {

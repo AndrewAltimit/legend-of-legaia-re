@@ -170,7 +170,7 @@ fn a_walking_player_fights_in_scenes_whose_regions_are_flag_gated() {
             eprintln!("[{scene}] not enterable as a field scene (skip)");
             continue;
         }
-        let Some(tracker) = host.world.field_region_tracker.as_ref() else {
+        let Some(tracker) = host.world.terrain.region_tracker.as_ref() else {
             eprintln!("[{scene}] no region tracker installed (skip)");
             continue;
         };
@@ -319,7 +319,7 @@ fn scenes_with_one_unconditional_rate_zero_group_are_silent_by_data() {
             eprintln!("[{scene}] not enterable as a field scene (skip)");
             continue;
         }
-        let Some(tracker) = host.world.field_region_tracker.as_ref() else {
+        let Some(tracker) = host.world.terrain.region_tracker.as_ref() else {
             eprintln!("[{scene}] no region tracker installed (skip)");
             continue;
         };

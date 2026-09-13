@@ -51,7 +51,7 @@ struct Candidate {
 /// `field_locomotion_disc.rs` pins independently.
 fn plus_z_candidates(host: &SceneHost) -> Vec<Candidate> {
     let mut out = Vec::new();
-    if host.world.field_collision_grid.len() < 0x4000 {
+    if host.world.terrain.collision_grid.len() < 0x4000 {
         return out;
     }
     // The step-delta probe scale: `s0 = dz << 2` with `dz = 8`.

@@ -70,14 +70,15 @@ fn world_map_live_installs_regions_and_player() {
     // grid means the overworld collision path is genuinely exercised; an empty
     // grid means the scene has no MAP block and the player roams unbounded.
     let wall_nibbles: usize = world
-        .field_collision_grid
+        .terrain
+        .collision_grid
         .iter()
         .map(|b| (b >> 4).count_ones() as usize)
         .sum();
     eprintln!(
         "[map03] world-map live: {regions} regions, player installed, \
          collision grid {} bytes ({wall_nibbles} wall sub-cells)",
-        world.field_collision_grid.len()
+        world.terrain.collision_grid.len()
     );
 }
 
@@ -325,7 +326,8 @@ fn overworld_scenes_load_nonempty_walkability_grid() {
         let walls: usize = session
             .host
             .world
-            .field_collision_grid
+            .terrain
+            .collision_grid
             .iter()
             .map(|b| (b >> 4).count_ones() as usize)
             .sum();
@@ -391,7 +393,8 @@ fn world_map_scene_transition_auto_enters_world_map() {
         "the world-map camera controller is installed"
     );
     let walls: usize = world
-        .field_collision_grid
+        .terrain
+        .collision_grid
         .iter()
         .map(|b| (b >> 4).count_ones() as usize)
         .sum();

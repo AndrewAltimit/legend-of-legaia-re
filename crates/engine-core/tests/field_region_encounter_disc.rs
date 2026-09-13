@@ -100,7 +100,7 @@ fn field_entry_routes_per_region_encounters() {
         if host.enter_field_scene(scene, 0).is_err() {
             continue; // battle / menu / cutscene labels that aren't field scenes.
         }
-        if host.world.field_region_tracker.is_none() {
+        if host.world.terrain.region_tracker.is_none() {
             continue; // towns etc. - no encounter-region section; mean path stays.
         }
         installed += 1;
@@ -116,7 +116,8 @@ fn field_entry_routes_per_region_encounters() {
             .expect("region table re-decodes for a region-tracked scene");
         let installed_regions = &host
             .world
-            .field_region_tracker
+            .terrain
+            .region_tracker
             .as_ref()
             .expect("tracker present")
             .table()
@@ -147,7 +148,8 @@ fn field_entry_routes_per_region_encounters() {
         if drivable.is_none() && host.world.encounters.session.is_some() {
             let table = host
                 .world
-                .field_region_tracker
+                .terrain
+                .region_tracker
                 .as_ref()
                 .expect("tracker present")
                 .table();
@@ -182,7 +184,8 @@ fn field_entry_routes_per_region_encounters() {
 
     let max_formation = host
         .world
-        .field_region_tracker
+        .terrain
+        .region_tracker
         .as_ref()
         .expect("tracker present on re-entry")
         .table()

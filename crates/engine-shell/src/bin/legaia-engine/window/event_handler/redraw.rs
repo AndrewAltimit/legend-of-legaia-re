@@ -514,7 +514,7 @@ impl PlayWindowApp {
                 ..
             } = self;
             field_floor_wave.apply(
-                &session.host.world.field_floor_height_lut,
+                &session.host.world.terrain.floor_height_lut,
                 [
                     field_terrain_draws,
                     field_terrain_color_draws,

@@ -673,7 +673,7 @@ impl LegaiaRuntime {
         };
         let Some(wave) = field_env::FloorWave::from_scene_and_world(
             f.floor_lut,
-            &h.world.field_floor_height_lut,
+            &h.world.terrain.floor_height_lut,
         ) else {
             return Vec::new();
         };

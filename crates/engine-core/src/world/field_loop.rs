@@ -31,16 +31,16 @@ impl World {
             && let Some(actor) = self.actors.get(slot as usize)
         {
             let tile = (actor.move_state.world_x >> 7, actor.move_state.world_z >> 7);
-            match self.field_last_tile {
+            match self.terrain.last_tile {
                 Some(prev) if prev != tile => {
-                    self.field_last_tile = Some(tile);
+                    self.terrain.last_tile = Some(tile);
                     // Per-tile region refresh (the `FUN_800180EC` /
                     // `FUN_801DBA20` grain - retail re-runs the region scan
                     // when the player tile changes).
                     self.refresh_field_regions();
                     self.on_field_step();
                 }
-                None => self.field_last_tile = Some(tile),
+                None => self.terrain.last_tile = Some(tile),
                 _ => {}
             }
         }

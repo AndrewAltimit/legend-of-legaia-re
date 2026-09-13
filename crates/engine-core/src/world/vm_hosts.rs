@@ -246,7 +246,7 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         }
     }
     fn move_fixed_origin_xz(&self) -> (i32, i32) {
-        self.world.map_origin_xz
+        self.world.terrain.map_origin_xz
     }
     fn move_axis_threshold(&self) -> i16 {
         self.world.move_axis_threshold
@@ -1426,7 +1426,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // floor-height-ladder oscillator this scene spawned (sub-`0..2`),
         // and registers nothing. Retiring the engine's records is the whole
         // of that half.
-        self.world.floor_tier_bobs.clear();
+        self.world.terrain.floor_tier_bobs.clear();
         self.world.retire_floor_ladder_oscillators();
         // During the New-Game opening chain the sweep's script effect (the
         // park at PC) resolves within a frame in retail - the whole opening
@@ -1524,7 +1524,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// linear ramp `i * 0x20` here and then sets rungs `4..` oscillating -
     /// the undulating organic floor.
     fn op4c_n9_sub_e_table_copy(&mut self, words: [i16; 16]) {
-        for (rung, w) in self.world.field_floor_height_lut.iter_mut().zip(words) {
+        for (rung, w) in self.world.terrain.floor_height_lut.iter_mut().zip(words) {
             *rung = w.wrapping_neg();
         }
     }
@@ -1540,20 +1540,21 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     fn op4c_n9_sub0_2_dde34(&mut self, sub: u8, b1: u8, words: [i16; 3]) {
         let seed = self
             .world
-            .field_floor_height_lut
+            .terrain
+            .floor_height_lut
             .get(b1 as usize)
             .copied()
             .unwrap_or(0);
-        self.world
-            .floor_tier_bobs
-            .push(legaia_engine_vm::field_actor_timers::FloorTierBob::spawn(
+        self.world.terrain.floor_tier_bobs.push(
+            legaia_engine_vm::field_actor_timers::FloorTierBob::spawn(
                 u16::from(b1),
                 sub,
                 words[0],
                 words[1],
                 words[2],
                 seed,
-            ));
+            ),
+        );
     }
 
     fn op44_spawn_scene_record(&mut self, global_index: u8) {

@@ -857,7 +857,7 @@ impl FloorSampler {
         if let Ok(Some(lut)) = scene.field_floor_height_lut(index) {
             // The MAN header stores POSITIVE tiers; every runtime consumer
             // assumes the negated (PSX Y-down) copy (`FUN_8003AEB0`).
-            world.field_floor_height_lut = lut.map(|v| v.wrapping_neg());
+            world.terrain.floor_height_lut = lut.map(|v| v.wrapping_neg());
         }
         Self { world }
     }

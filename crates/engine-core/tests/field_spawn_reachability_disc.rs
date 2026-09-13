@@ -104,10 +104,11 @@ fn cold_spawn_is_reachable_across_all_field_scenes() {
         }
         let has_floor = host
             .world
-            .field_object_cells
+            .terrain
+            .object_cells
             .iter()
             .any(|c| *c & legaia_asset::field_objects::CELL_WALK_VISIBLE != 0);
-        if !has_floor || host.world.field_collision_grid.len() < 0x80 * 0x80 {
+        if !has_floor || host.world.terrain.collision_grid.len() < 0x80 * 0x80 {
             // No walkability data (cutscene-only shells like `dream` /
             // `kor*`): the resolver keeps the retail seat, nothing to sweep.
             continue;

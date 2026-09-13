@@ -89,7 +89,7 @@ fn town01_has_rollable_regions_in_a_story_state_it_is_not_in() {
         return;
     };
     let town = boot(&extracted, "town01");
-    let Some(tracker) = town.host.world.field_region_tracker.as_ref() else {
+    let Some(tracker) = town.host.world.terrain.region_tracker.as_ref() else {
         eprintln!("[skip] town01 installed no region tracker on this build of extracted/");
         return;
     };
@@ -190,7 +190,8 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     // rate-bearing and unshadowed, so the walk below actually rolls.
     let world = &mut session.host.world;
     let table = world
-        .field_region_tracker
+        .terrain
+        .region_tracker
         .as_ref()
         .expect("map03 routes a field region tracker")
         .table()

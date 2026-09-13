@@ -36,7 +36,7 @@ fn field_tile_crossing_refreshes_region_state() {
 
     // Initial refresh: inside the type-4 region, no zone match.
     assert_eq!(world.extra_flags, 1 << 4);
-    assert!(world.field_zone_record.is_none());
+    assert!(world.terrain.zone_record.is_none());
 
     // Prime the tile latch, then cross into the type-5 region.
     world.tick();
@@ -45,7 +45,8 @@ fn field_tile_crossing_refreshes_region_state() {
 
     assert_eq!(world.extra_flags, 1 << 5, "mask rebuilt on tile crossing");
     let rec = world
-        .field_zone_record
+        .terrain
+        .zone_record
         .expect("kind-5 zone record selected");
     assert_eq!(rec[0], 5);
     assert_eq!(rec[5], 0xAB, "payload carried through");

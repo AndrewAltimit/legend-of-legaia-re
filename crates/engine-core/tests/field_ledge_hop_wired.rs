@@ -46,12 +46,12 @@ fn ledge_world(height: i16) -> World {
     world.install_field_player(0);
     world.actors[0].move_state.world_x = 320;
     world.actors[0].move_state.world_z = 320;
-    world.field_collision_grid = vec![0u8; GRID_LEN];
+    world.terrain.collision_grid = vec![0u8; GRID_LEN];
     world.field_vertical_settle = true;
-    world.field_floor_height_lut = [0i16; 16];
-    world.field_floor_height_lut[1] = height;
+    world.terrain.floor_height_lut = [0i16; 16];
+    world.terrain.floor_height_lut[1] = height;
     for (tx, tz) in [(2usize, 2usize), (3, 2), (2, 3), (3, 3)] {
-        world.field_collision_grid[tz * GRID_STRIDE + tx] = 0x01;
+        world.terrain.collision_grid[tz * GRID_STRIDE + tx] = 0x01;
     }
     world
 }

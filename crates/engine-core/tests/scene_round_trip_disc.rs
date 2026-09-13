@@ -134,7 +134,7 @@ fn gate_paints_match_retail_live_grid() {
     for _ in 0..150 {
         host.tick().expect("tick");
     }
-    let sealed = host.world.field_collision_grid[25 + 47 * 0x80] >> 4;
+    let sealed = host.world.terrain.collision_grid[25 + 47 * 0x80] >> 4;
     assert_ne!(
         sealed, 0,
         "a fresh New Game leaves Rim Elm's gate walled (the story seal)"
@@ -143,7 +143,7 @@ fn gate_paints_match_retail_live_grid() {
     // Post-story: the gate opens, and the grid equals the retail live grid.
     let mut host = open_host().expect("host");
     enter_rim_elm(&mut host, "town0c");
-    let g = &host.world.field_collision_grid;
+    let g = &host.world.terrain.collision_grid;
     let cell = |col: usize, row: usize| g[col + row * 0x80] >> 4;
     // Retail live grid (from the door_warp_town01_to_map01 capture's
     // `*(_DAT_1f8003ec) + 0x4000` region) at the gate:
