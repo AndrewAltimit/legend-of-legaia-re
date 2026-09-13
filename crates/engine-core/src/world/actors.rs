@@ -313,7 +313,7 @@ impl World {
         // The move-FX streak counter walk (retail `FUN_801E09F8` phase 1):
         // `ctx[+0x6C6]` falls 4 per frame, shrinking the trail's half-width
         // and scheduling the afterimage -> ribbon emitter handoff.
-        self.move_fx_streak.tick_counter();
+        self.casting.move_fx_streak.tick_counter();
     }
 
     /// Walk actor `i`'s committed effect script for one frame and queue the
@@ -400,7 +400,7 @@ impl World {
                 .map(|off| (off / fx::MOVE_POWER_STRIDE) as u8)
                 .and_then(|id| self.tables.move_power.as_ref()?.record_for_move_id(id))
                 .map(|rec| rec.counter_init());
-            self.move_fx_streak.install(&step, counter);
+            self.casting.move_fx_streak.install(&step, counter);
         }
         if let Some(actor) = self.actors.get_mut(i) {
             actor.battle_effect_cursor = cursor;
@@ -412,7 +412,7 @@ impl World {
     /// The render layer projects the afterimage streak from it; `is_armed()`
     /// is `false` until a terminator has run.
     pub fn move_fx_streak(&self) -> crate::action_effect_script::MoveFxStreak {
-        self.move_fx_streak
+        self.casting.move_fx_streak
     }
 
     /// Plan this frame's arts after-image ghosts - the engine seat of the

@@ -344,7 +344,7 @@ fn spell_anim_trigger_stages_the_summon_route_and_the_stager_requests_the_spawn(
         "no summon route below 0x25"
     );
     assert_eq!(world.actors[0].battle.params[1], 0xFF, "stream terminated");
-    assert!(world.summon_stager.is_none());
+    assert!(world.casting.summon_stager.is_none());
     assert!(!world.summon_stager_tick(), "nothing armed: not busy");
     assert!(world.take_pending_summon_spawn().is_none());
 
@@ -360,7 +360,7 @@ fn spell_anim_trigger_stages_the_summon_route_and_the_stager_requests_the_spawn(
     assert_eq!(world.actors[0].battle.params[1], 0x12, "+0x1E1 = 0x12");
     assert_eq!(world.actors[0].battle.params[2], 0xFF, "+0x1E2 = 0xFF");
     assert!(
-        world.summon_stager.is_some(),
+        world.casting.summon_stager.is_some(),
         "the stager is armed, not run"
     );
     assert!(

@@ -462,7 +462,7 @@ fn a_party_seru_cast_runs_the_summon_band_out_and_pays_once() {
          band must end: {visited:02x?}"
     );
     assert!(
-        w.summon_stager.is_none(),
+        w.casting.summon_stager.is_none(),
         "the stager retired with the band"
     );
     assert_eq!(

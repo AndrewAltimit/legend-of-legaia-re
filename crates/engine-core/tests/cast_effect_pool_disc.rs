@@ -181,7 +181,7 @@ fn every_player_seru_cast_and_a_capture_cast_resolve_a_record_set() {
         "the capture module's records stage"
     );
     assert_eq!(
-        w.active_summon.as_ref().map(|s| s.parts.len()),
+        w.casting.active_summon.as_ref().map(|s| s.parts.len()),
         Some(13),
         "PROT 958's 13 records are the staged scene"
     );
@@ -381,18 +381,18 @@ fn a_live_cast_stages_its_module_records() {
         let mut seen: Option<usize> = None;
         for _ in 0..0x400 {
             if seen.is_none()
-                && let Some(scene) = w.active_summon.as_ref()
+                && let Some(scene) = w.casting.active_summon.as_ref()
             {
                 seen = Some(scene.parts.len());
             }
-            if w.pending_cast.is_none() {
+            if w.casting.pending_cast.is_none() {
                 break;
             }
             let _ = w.take_pending_summon_spawn();
             w.set_pad(0);
             let _ = w.tick();
         }
-        assert!(w.pending_cast.is_none(), "cast {cast} never folded");
+        assert!(w.casting.pending_cast.is_none(), "cast {cast} never folded");
         // The id the menu actually committed, not the row we aimed at.
         let id = picked;
         assert_eq!(id, SERU_IDS[row], "row {row} is this cast's spell");
@@ -400,7 +400,7 @@ fn a_live_cast_stages_its_module_records() {
             .unwrap_or_else(|| panic!("cast {cast} (spell {id:#04x}) staged no cast-module scene"));
         staged.push((id, parts));
         // Clear the scene so the next cast's staging is its own.
-        w.active_summon = None;
+        w.casting.active_summon = None;
     }
 
     assert_eq!(

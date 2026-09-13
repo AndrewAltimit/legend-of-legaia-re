@@ -234,8 +234,8 @@ fn battle_special_attack_requests_move_fx_spawn() {
         // The request rides the fold, which is the band's 0x29 exit.
         tick_until_cast_folds(&mut world);
         // A non-summon move never requests a summon-creature spawn.
-        assert!(world.pending_summon_spawn.is_none());
-        world.pending_move_fx_spawn
+        assert!(world.casting.pending_summon_spawn.is_none());
+        world.casting.pending_move_fx_spawn
     }
 
     // FX record -> a move-FX spawn request at the target's position.

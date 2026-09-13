@@ -196,7 +196,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         // The outcome (and its XP) folds at the stager's strike, inside the
         // summon band - run the band out before reading the record.
         for _ in 0..0x400 {
-            if w.pending_cast.is_none() {
+            if w.casting.pending_cast.is_none() {
                 break;
             }
             if w.take_pending_summon_spawn().is_some() {
@@ -205,7 +205,10 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
             w.set_pad(0);
             let _ = w.tick();
         }
-        assert!(w.pending_cast.is_none(), "cast {casts} never folded");
+        assert!(
+            w.casting.pending_cast.is_none(),
+            "cast {casts} never folded"
+        );
         leveled.extend(w.drain_magic_level_ups());
         if !leveled.is_empty() {
             break;

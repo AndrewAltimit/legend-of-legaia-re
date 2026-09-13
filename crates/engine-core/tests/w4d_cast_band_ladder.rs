@@ -93,7 +93,7 @@ fn every_reachable_cast_band_id_steps_its_module_code() {
         }
         pool.insert(idx, &bytes);
     }
-    world.cast_effect_pool = Some(std::sync::Arc::new(pool));
+    world.casting.effect_pool = Some(std::sync::Arc::new(pool));
 
     // One representative id per band entry, taken from the engine's own
     // resolver rather than from a hand-written map - so the ladder tracks the
@@ -121,7 +121,7 @@ fn every_reachable_cast_band_id_steps_its_module_code() {
             // kill would otherwise make every later arm early-out.
             let mut w = battle_world();
             w.menu.text = world.menu.text.clone();
-            w.cast_effect_pool = world.cast_effect_pool.clone();
+            w.casting.effect_pool = world.casting.effect_pool.clone();
             let Some(run) = w.run_cast_module_code(id, arm) else {
                 continue;
             };

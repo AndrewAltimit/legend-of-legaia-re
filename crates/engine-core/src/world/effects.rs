@@ -532,7 +532,7 @@ impl World {
         model_base: usize,
         origin: [i16; 3],
     ) {
-        self.active_summon = Some(crate::summon::SummonScene::spawn(
+        self.casting.active_summon = Some(crate::summon::SummonScene::spawn(
             overlay,
             record_bytes,
             model_base,
@@ -544,7 +544,7 @@ impl World {
     /// summon is playing; drains the scene once every part has finished.
     /// `frame_delta` is the per-part wait-timer drain (anim-speed × frame-rate).
     pub fn tick_summon(&mut self, frame_delta: u16) {
-        let Some(mut scene) = self.active_summon.take() else {
+        let Some(mut scene) = self.casting.active_summon.take() else {
             return;
         };
         {
@@ -562,7 +562,7 @@ impl World {
             scene.tick(&mut host, frame_delta);
         }
         if !scene.finished() {
-            self.active_summon = Some(scene);
+            self.casting.active_summon = Some(scene);
         }
     }
 
@@ -571,7 +571,8 @@ impl World {
     /// [`Self::global_tmd_pool`]. See [`crate::summon::SummonScene::part_draws`]
     /// for the faithful-tick / interpreted-transform boundary.
     pub fn active_summon_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
-        self.active_summon
+        self.casting
+            .active_summon
             .as_ref()
             .map(|s| s.part_draws())
             .unwrap_or_default()
@@ -745,7 +746,7 @@ impl World {
                     .filter(|p| wanted.contains(&p.record_off))
                     .collect();
                 if !parts.is_empty() {
-                    self.active_move_fx = Some(crate::summon::SummonScene::spawn_parts(
+                    self.casting.active_move_fx = Some(crate::summon::SummonScene::spawn_parts(
                         &parts,
                         &overlay,
                         crate::scene::EFFECT_MODEL_LIBRARY_BASE,
@@ -756,9 +757,9 @@ impl World {
                     // (`+0x0b`) and the sound cue (`+0x0d`). The texpage is
                     // scene-scoped (dropped when the scene drains), so it
                     // only surfaces when a scene actually stages.
-                    self.active_move_fx_trail_texpage = Some(trail_texpage);
+                    self.casting.move_fx_trail_texpage = Some(trail_texpage);
                     if sound_cue_id != 0 {
-                        self.pending_move_fx_cue = Some(sound_cue_id);
+                        self.casting.pending_move_fx_cue = Some(sound_cue_id);
                     }
                     staged_scene = true;
                 }
@@ -807,7 +808,7 @@ impl World {
     // PORT: FUN_801DEA50 (the table-form spawn arm; the pool allocator it
     // calls, FUN_80050ED4, is modeled by the scene list + cap).
     pub fn spawn_action_table_effect(&mut self, effect_id: u8, origin: [i16; 3]) -> bool {
-        if self.active_action_fx.len() >= Self::ACTION_FX_CAP {
+        if self.casting.active_action_fx.len() >= Self::ACTION_FX_CAP {
             return false;
         }
         let Some(off) = self
@@ -833,7 +834,8 @@ impl World {
         if parts.is_empty() {
             return false;
         }
-        self.active_action_fx
+        self.casting
+            .active_action_fx
             .push(crate::summon::SummonScene::spawn_parts(
                 &parts,
                 &overlay,
@@ -848,14 +850,14 @@ impl World {
     /// (the `FUN_8004fcc8` dispatch) → the SFX ring / voice trigger. Returns
     /// `None` when no cue is pending.
     pub fn take_pending_move_fx_cue(&mut self) -> Option<u8> {
-        self.pending_move_fx_cue.take()
+        self.casting.pending_move_fx_cue.take()
     }
 
     /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
     /// move-FX scene, or `None` when none is playing. The render layer applies
     /// it to the move's streak pass.
     pub fn active_move_fx_trail_texpage(&self) -> Option<u16> {
-        self.active_move_fx_trail_texpage
+        self.casting.move_fx_trail_texpage
     }
 
     /// Advance the active move-FX scene one frame through the move VM (the
@@ -864,7 +866,7 @@ impl World {
     pub fn tick_move_fx(&mut self, frame_delta: u16) {
         // Effect-script table-form scenes advance on the same clock. Take
         // the list, tick each, keep the unfinished.
-        let mut action_fx = std::mem::take(&mut self.active_action_fx);
+        let mut action_fx = std::mem::take(&mut self.casting.active_action_fx);
         for scene in &mut action_fx {
             let mut host = MoveVmHostImpl {
                 world: self,
@@ -876,9 +878,9 @@ impl World {
             scene.tick(&mut host, frame_delta);
         }
         action_fx.retain(|s| !s.finished());
-        self.active_action_fx = action_fx;
+        self.casting.active_action_fx = action_fx;
 
-        let Some(mut scene) = self.active_move_fx.take() else {
+        let Some(mut scene) = self.casting.active_move_fx.take() else {
             return;
         };
         {
@@ -892,10 +894,10 @@ impl World {
             scene.tick(&mut host, frame_delta);
         }
         if !scene.finished() {
-            self.active_move_fx = Some(scene);
+            self.casting.active_move_fx = Some(scene);
         } else {
             // Scene drained: drop the trail texpage with it.
-            self.active_move_fx_trail_texpage = None;
+            self.casting.move_fx_trail_texpage = None;
         }
     }
 
@@ -907,11 +909,12 @@ impl World {
     /// (the PROT 0871 effect-model library).
     pub fn active_move_fx_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
         let mut out = self
+            .casting
             .active_move_fx
             .as_ref()
             .map(|s| s.part_draws())
             .unwrap_or_default();
-        for scene in &self.active_action_fx {
+        for scene in &self.casting.active_action_fx {
             out.extend(scene.part_draws());
         }
         out
@@ -922,7 +925,7 @@ impl World {
     /// `spell_id` to the overlay PROT entry (extraction `903 + (spell_id - 0x81)`), loads
     /// it, and calls [`Self::spawn_summon`]. See [`Self::pending_summon_spawn`].
     pub fn take_pending_summon_spawn(&mut self) -> Option<(u8, [i16; 3])> {
-        self.pending_summon_spawn.take()
+        self.casting.pending_summon_spawn.take()
     }
 
     /// Request a summon spawn for `spell_id` at `origin` if it is a player
@@ -935,14 +938,14 @@ impl World {
         if crate::summon::SERU_SUMMON_IDS.contains(&spell_id)
             || crate::summon::EVOLVED_SUMMON_IDS.contains(&spell_id)
         {
-            self.pending_summon_spawn = Some((spell_id, origin));
+            self.casting.pending_summon_spawn = Some((spell_id, origin));
         }
     }
 
     /// Drain a pending non-summon move-FX spawn request (the host calls
     /// [`Self::spawn_move_fx`] with it). See [`Self::pending_move_fx_spawn`].
     pub fn take_pending_move_fx_spawn(&mut self) -> Option<(u8, [i16; 3])> {
-        self.pending_move_fx_spawn.take()
+        self.casting.pending_move_fx_spawn.take()
     }
 
     /// Request a move-FX spawn for the non-summon move `move_id` at `origin`,
@@ -958,7 +961,7 @@ impl World {
             .as_ref()
             .is_some_and(|cat| cat.move_has_spawn_fx(move_id))
         {
-            self.pending_move_fx_spawn = Some((move_id, origin));
+            self.casting.pending_move_fx_spawn = Some((move_id, origin));
         }
     }
 

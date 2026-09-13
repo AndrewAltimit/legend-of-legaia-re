@@ -14,7 +14,7 @@ use vm::battle_action::BattleActionHost;
 /// returns at once.
 fn tick_until_cast_folds(w: &mut World) {
     for _ in 0..0x400 {
-        if w.pending_cast.is_none() {
+        if w.casting.pending_cast.is_none() {
             return;
         }
         w.set_pad(0);

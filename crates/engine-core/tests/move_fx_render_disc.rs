@@ -154,11 +154,11 @@ fn move_fx_spawns_library_mesh_parts_from_real_overlay() {
     // does, the trail texpage clears.
     for _ in 0..600 {
         world.tick_move_fx(0x100);
-        if world.active_move_fx.is_none() {
+        if world.casting.active_move_fx.is_none() {
             break;
         }
     }
-    if world.active_move_fx.is_none() {
+    if world.casting.active_move_fx.is_none() {
         assert_eq!(
             world.active_move_fx_trail_texpage(),
             None,
@@ -199,8 +199,8 @@ fn spawnable_move_ids_match_what_actually_renders() {
             !world.active_move_fx_part_draws().is_empty(),
             "spawnable move {id:#04x} stages parts"
         );
-        world.active_move_fx = None;
-        world.active_move_fx_trail_texpage = None;
+        world.casting.active_move_fx = None;
+        world.casting.move_fx_trail_texpage = None;
     }
 }
 

@@ -216,16 +216,19 @@ fn a_player_seru_cast_reaches_a_ported_module_kernel() {
         .expect("the Seru dispatch names a band entry");
     assert_eq!(entry, 909, "0x87 pages PROT 903 + (0x87 - 0x81)");
     world.arm_summon_stager(0, PORTED_SERU_SPELL);
-    assert_eq!(world.cast_module_phase, 0, "the arm zeroes the phase pair");
+    assert_eq!(
+        world.casting.module_phase, 0,
+        "the arm zeroes the phase pair"
+    );
 
     let busy = world.summon_stager_tick();
     assert!(busy, "the stager holds while it choreographs");
     assert_eq!(
-        world.cast_module_phase, 1,
+        world.casting.module_phase, 1,
         "PROT 0909's ported kernel advanced the module phase at the band seam"
     );
     eprintln!(
         "[ok] cast {PORTED_SERU_SPELL:#04x} -> PROT {entry}, module phase {}",
-        world.cast_module_phase
+        world.casting.module_phase
     );
 }
