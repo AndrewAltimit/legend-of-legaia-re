@@ -500,12 +500,12 @@ impl crate::world::World {
         self.scene_control_block = SCENE_CONTROL_BLOCK_RESET;
         // `_DAT_8007B450 = 0` - the tile-board descriptor and everything the
         // engine hangs off it.
-        self.tile_board = None;
-        self.tile_board_header = None;
-        self.tile_board_target = None;
-        self.tile_board_armed = false;
-        self.tile_actor_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
-        self.tile_board_draw_list.clear();
+        self.board.grid = None;
+        self.board.header = None;
+        self.board.target = None;
+        self.board.armed = false;
+        self.board.actor_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
+        self.board.draw_list.clear();
     }
 }
 

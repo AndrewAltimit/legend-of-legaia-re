@@ -1701,19 +1701,19 @@ impl World {
             return;
         };
         let slot = player_slot as usize;
-        if self.tile_board.is_none() || slot >= self.actors.len() {
+        if self.board.grid.is_none() || slot >= self.actors.len() {
             return;
         }
 
         // Interpolating toward a committed target tile.
-        if let Some((tx, tz)) = self.tile_board_target {
+        if let Some((tx, tz)) = self.board.target {
             let ms = &mut self.actors[slot].move_state;
             let nx = step_toward(ms.world_x as i32, tx, TILE_BOARD_SPEED);
             let nz = step_toward(ms.world_z as i32, tz, TILE_BOARD_SPEED);
             ms.world_x = nx as i16;
             ms.world_z = nz as i16;
             if nx == tx && nz == tz {
-                self.tile_board_target = None;
+                self.board.target = None;
                 self.tile_board_arrival();
             }
             return;
@@ -1723,8 +1723,8 @@ impl World {
         let Some(dir) = tile_step_from_input(&self.input) else {
             return;
         };
-        if let Some((tx, tz)) = self.tile_board.as_mut().and_then(|b| b.try_step(dir)) {
-            self.tile_board_target = Some((tx, tz));
+        if let Some((tx, tz)) = self.board.grid.as_mut().and_then(|b| b.try_step(dir)) {
+            self.board.target = Some((tx, tz));
         }
     }
 
@@ -1762,7 +1762,7 @@ impl World {
         use crate::tile_board::{
             CELL_ANIM_FIRST, CELL_ANIM_LAST, CELL_EVENT_FIRST, CELL_EVENT_LAST,
         };
-        let Some(board) = self.tile_board.as_mut() else {
+        let Some(board) = self.board.grid.as_mut() else {
             return;
         };
         let (col, row) = (board.player_col as i32, board.player_row as i32);
@@ -1774,8 +1774,8 @@ impl World {
             // stays set so the op-49 tristate reads Done and the field
             // script resumes past the install op. Despawn the tile actors
             // so they don't leak into the next scene.
-            self.tile_board = None;
-            self.tile_board_header = None;
+            self.board.grid = None;
+            self.board.header = None;
             self.despawn_tile_actors();
         } else if (CELL_ANIM_FIRST..=CELL_ANIM_LAST).contains(&cell) {
             let next = if cell == CELL_ANIM_LAST {
@@ -1807,7 +1807,7 @@ impl World {
     /// per-cell tile-actor spawns are a renderer concern)
     /// REF: overlay_0897_801de840 (op 0x49 arm, `_DAT_8007b450 = pbVar47`)
     pub fn try_install_tile_board(&mut self, instr: &[u8]) -> bool {
-        if self.tile_board_armed || self.tile_board.is_some() {
+        if self.board.armed || self.board.grid.is_some() {
             return false;
         }
         let Some(window) = instr.get(1..) else {
@@ -1861,11 +1861,11 @@ impl World {
             }
         }
 
-        self.tile_actor_slots = tile_slots;
-        self.tile_board_target = None;
-        self.tile_board = Some(board);
-        self.tile_board_header = Some(header);
-        self.tile_board_armed = true;
+        self.board.actor_slots = tile_slots;
+        self.board.target = None;
+        self.board.grid = Some(board);
+        self.board.header = Some(header);
+        self.board.armed = true;
         true
     }
 
@@ -1878,14 +1878,14 @@ impl World {
     /// case 8 -> board free).
     fn despawn_tile_actors(&mut self) {
         for value in crate::tile_board::CELL_DRAW_FIRST..=crate::tile_board::CELL_DRAW_LAST {
-            if let Some(slot) = self.tile_actor_slots[value as usize]
+            if let Some(slot) = self.board.actor_slots[value as usize]
                 && let Some(a) = self.actors.get_mut(slot as usize)
             {
                 *a = Actor::new();
             }
         }
-        self.tile_actor_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
-        self.tile_board_draw_list.clear();
+        self.board.actor_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
+        self.board.draw_list.clear();
     }
 
     /// Rebuild the per-frame tile-board draw list (retail
@@ -1900,12 +1900,12 @@ impl World {
     /// player actor is drawn by the normal field path, so it is not seated
     /// here (that would fight the step interpolation).
     fn refresh_tile_board_draw_list(&mut self) {
-        let Some(header) = self.tile_board_header else {
-            self.tile_board_draw_list.clear();
+        let Some(header) = self.board.header else {
+            self.board.draw_list.clear();
             return;
         };
-        let Some(board) = self.tile_board.as_ref() else {
-            self.tile_board_draw_list.clear();
+        let Some(board) = self.board.grid.as_ref() else {
+            self.board.draw_list.clear();
             return;
         };
         let mut list = Vec::new();
@@ -1916,7 +1916,7 @@ impl World {
             if !crate::tile_board::is_drawable_cell(cell) {
                 continue;
             }
-            let Some(slot) = self.tile_actor_slots[cell as usize] else {
+            let Some(slot) = self.board.actor_slots[cell as usize] else {
                 continue;
             };
             let (world_x, world_z) = board.tile_world(col, row);
@@ -1935,7 +1935,7 @@ impl World {
                 a.move_state.world_z = d.world_z as i16;
             }
         }
-        self.tile_board_draw_list = list;
+        self.board.draw_list = list;
     }
 
     /// Enter the Noa dance (rhythm) minigame on `game`, suspending the current

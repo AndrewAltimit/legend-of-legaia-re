@@ -33,8 +33,8 @@ fn tile_board_world() -> World {
     w.actors[0].active = true;
     let cells = vec![1, 1, 1, 1, crate::tile_board::CELL_WALL, 1, 1, 1, 1];
     let board = crate::tile_board::TileBoard::new(3, 3, 0, 0, cells);
-    w.tile_board = Some(board);
-    let (x, z) = w.tile_board.as_ref().unwrap().player_world();
+    w.board.grid = Some(board);
+    let (x, z) = w.board.grid.as_ref().unwrap().player_world();
     w.actors[0].move_state.world_x = x as i16;
     w.actors[0].move_state.world_z = z as i16;
     w

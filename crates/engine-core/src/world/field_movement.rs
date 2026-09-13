@@ -2396,7 +2396,7 @@ impl World {
         // without a `current_dialog` whenever the record selects its segment
         // from a prologue - so a `current_dialog`-only test left the pad
         // walking the player around under the box.
-        if self.dialogue_owns_input() || self.tile_board.is_some() {
+        if self.dialogue_owns_input() || self.board.grid.is_some() {
             return;
         }
         // Lock pad-driven locomotion while an opening-cutscene timeline owns

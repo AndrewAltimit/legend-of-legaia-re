@@ -461,7 +461,7 @@ impl World {
         if self.field_shop_armed {
             return Some(0);
         }
-        if self.tile_board_armed {
+        if self.board.armed {
             return Some(5);
         }
         None

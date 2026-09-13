@@ -335,16 +335,16 @@ fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
             "op-0x49 sub-5 suspends the script while the board mode runs"
         );
     }
-    let board = world.tile_board.as_ref().expect("board installed");
+    let board = world.board.grid.as_ref().expect("board installed");
     assert_eq!((board.width, board.height), (4, 4));
     assert_eq!(board.cells.len(), 16);
     // The retail fill only produces cells in the known value classes.
     assert!(board.cells.iter().all(|&c| (2..=0xE).contains(&c)));
-    let header = world.tile_board_header.expect("header kept");
+    let header = world.board.header.expect("header kept");
     assert_eq!(header.player_template, 0x21);
     assert_eq!(header.tile_template_base, 0x30);
     // The player actor was seated at the start-cell centre.
-    let (px, pz) = world.tile_board.as_ref().unwrap().player_world();
+    let (px, pz) = world.board.grid.as_ref().unwrap().player_world();
     assert_eq!(world.actors[0].move_state.world_x as i32, px);
     assert_eq!(world.actors[0].move_state.world_z as i32, pz);
 
@@ -359,16 +359,16 @@ fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
     // Simulate the walk reaching an event/transition cell: plant one under
     // the player and run the arrival pass (the interpolation-complete path).
     {
-        let b = world.tile_board.as_mut().unwrap();
+        let b = world.board.grid.as_mut().unwrap();
         let idx = b.player_row as usize * b.width as usize + b.player_col as usize;
         b.cells[idx] = crate::tile_board::CELL_EVENT_FIRST;
         let (tx, tz) = b.player_world();
-        world.tile_board_target = Some((tx, tz));
+        world.board.target = Some((tx, tz));
         world.set_pad(0);
         let _ = world.tick();
     }
     assert!(
-        world.tile_board.is_none(),
+        world.board.grid.is_none(),
         "landing on an event cell exits the board mode"
     );
 
@@ -383,7 +383,7 @@ fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
             other => panic!("expected Advance, got {other:?}"),
         }
     }
-    assert!(!world.tile_board_armed, "the arm clears on resume");
+    assert!(!world.board.armed, "the arm clears on resume");
 }
 
 #[test]
@@ -392,15 +392,15 @@ fn tile_board_animated_cell_cycles_on_arrival() {
     // Plant an animated tile at the player's cell and run the arrival pass
     // via a completed interpolation.
     {
-        let b = w.tile_board.as_mut().unwrap();
+        let b = w.board.grid.as_mut().unwrap();
         b.cells[0] = crate::tile_board::CELL_ANIM_LAST; // 0xE wraps to 0xB
         let (tx, tz) = b.player_world();
-        w.tile_board_target = Some((tx, tz));
+        w.board.target = Some((tx, tz));
     }
     w.set_pad(0);
     let _ = w.tick();
     assert_eq!(
-        w.tile_board.as_ref().unwrap().cells[0],
+        w.board.grid.as_ref().unwrap().cells[0],
         crate::tile_board::CELL_ANIM_FIRST,
         "0xE cycles back to 0xB on arrival"
     );

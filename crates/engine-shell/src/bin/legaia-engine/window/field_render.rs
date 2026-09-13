@@ -1162,7 +1162,7 @@ impl PlayWindowApp {
             return;
         }
         let world = &mut self.session.host.world;
-        if world.mode != SceneMode::Field || world.tile_board.is_some() || world.tile_board_armed {
+        if world.mode != SceneMode::Field || world.board.grid.is_some() || world.board.armed {
             return;
         }
         let Some(pslot) = world.player_actor_slot else {
@@ -1189,7 +1189,7 @@ impl PlayWindowApp {
             log::info!(
                 "play-window: demo tile board installed at tile ({origin_x},{origin_z}) \
                  ({} draw-list cells)",
-                world.tile_board_draw_list.len()
+                world.board.draw_list.len()
             );
         }
     }

@@ -1235,48 +1235,8 @@ pub struct World {
     /// `None` otherwise.
     pub world_map_ctrl: Option<WorldMapController>,
 
-    /// Tile-board grid (puzzle / board minigame mode; movement +
-    /// collision). `Some` when a field scene has installed a tile board
-    /// (retail field-VM op `0x49`). Drives discrete cell-to-cell player
-    /// movement in the `SceneMode::Field` tick. This is *not* general
-    /// town locomotion (Legaia towns use free movement). See
-    /// [`crate::tile_board`].
-    pub tile_board: Option<crate::tile_board::TileBoard>,
-
-    /// While stepping on a tile board, the world `(x, z)` the player
-    /// actor is interpolating toward (the destination tile centre).
-    /// `None` when the player is idle and ready to accept a new
-    /// direction. Mirrors the walk SM's "interpolate to target" state
-    /// (`overlay_0897_801ef2b0` case 2).
-    pub tile_board_target: Option<(i32, i32)>,
-
-    /// `true` while a field-VM op-0x49 sub-5 board install holds the
-    /// script suspended (the engine face of retail's `_DAT_8007b450`
-    /// arm for the board consumer). The op reads `Armed` while
-    /// [`Self::tile_board`] is installed and `Done` once the board
-    /// exits (an event cell landing), then clears this on resume.
-    pub tile_board_armed: bool,
-
-    /// The parsed op-49 board header (radius / mode flag / actor
-    /// template ids) kept for the render + event consumers while the
-    /// board is installed.
-    pub tile_board_header: Option<crate::tile_board::TileBoardHeader>,
-
-    /// Per-cell-value tile-actor table (retail `DAT_801f35bc`, 15 entries).
-    /// Index = cell value: slot `0` = the player actor, `2..=14` = the
-    /// per-value tile actors spawned at board install from
-    /// `tile_template_base + (value - 2)`. Each entry is the actor-pool
-    /// slot holding that value's instance, or `None` when the value is not
-    /// present on the board / the pool was exhausted. Cleared on teardown.
-    pub tile_actor_slots: [Option<u8>; crate::tile_board::TILE_ACTOR_TABLE_LEN],
-
-    /// Per-frame tile-board draw list: one entry per drawn cell, naming the
-    /// tile actor to draw and the world-centre position to draw it at
-    /// (`overlay_0897_801e0f3c`). Refreshed every field tick while a board
-    /// is installed (honouring the header `+6` full-vs-windowed mode and
-    /// `+5` radius); empty otherwise. The deferred renderer consumes this
-    /// to draw each tile actor's mesh at every listed cell.
-    pub tile_board_draw_list: Vec<crate::tile_board::TileDraw>,
+    /// Tile-board grid-mode state (the op-0x49 puzzle board, not town locomotion).
+    pub board: TileBoardState,
 
     /// Screen-effect widget host (the PROT-0900 mask / sprite / panel /
     /// letterbox family), driven by the field-VM op `0x43` sub-ops
@@ -3110,12 +3070,7 @@ impl World {
             pending_level_up_banners: std::collections::VecDeque::new(),
             current_capture_banner: None,
             world_map_ctrl: None,
-            tile_board: None,
-            tile_board_target: None,
-            tile_board_armed: false,
-            tile_board_header: None,
-            tile_actor_slots: [None; crate::tile_board::TILE_ACTOR_TABLE_LEN],
-            tile_board_draw_list: Vec::new(),
+            board: TileBoardState::new(),
             screen_fx: Default::default(),
             screen_fx_frame: Default::default(),
             register_ramps: Vec::new(),

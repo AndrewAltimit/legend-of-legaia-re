@@ -738,8 +738,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // A sub-5 tile-board install (`World::try_install_tile_board`): Armed
         // while the board mode runs, Done once an event cell exits it, so the
         // script suspends across the whole board segment.
-        if self.world.tile_board_armed {
-            return if self.world.tile_board.is_some() {
+        if self.world.board.armed {
+            return if self.world.board.grid.is_some() {
                 Op49State::Armed
             } else {
                 Op49State::Done
@@ -790,7 +790,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Same for a finished prize exchange (sub-7).
         self.world.prize_exchange_armed = false;
         // A finished tile-board segment resumes the same way.
-        self.world.tile_board_armed = false;
+        self.world.board.armed = false;
         // The submode screen's Done is one-shot: consume it so the next
         // op-0x49 opens a fresh screen rather than resuming instantly. Only
         // the context that armed the park may consume it - the name-entry

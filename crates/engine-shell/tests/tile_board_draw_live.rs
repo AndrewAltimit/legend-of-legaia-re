@@ -218,7 +218,7 @@ fn tile_board_draw_assembly_covers_every_drawable_cell() {
     // One field tick rebuilds the per-frame draw list.
     session.tick().expect("field tick");
     let world = &session.host.world;
-    let board = world.tile_board.as_ref().expect("board installed");
+    let board = world.board.grid.as_ref().expect("board installed");
 
     // Every drawable cell on the (full-draw, mode 0) board appears in the
     // draw list, and the shell assembly mirrors it 1:1 with the cell-centre
@@ -232,14 +232,14 @@ fn tile_board_draw_assembly_covers_every_drawable_cell() {
         drawable_cells > 0,
         "procedural fill produced no drawable cells"
     );
-    assert_eq!(world.tile_board_draw_list.len(), drawable_cells);
+    assert_eq!(world.board.draw_list.len(), drawable_cells);
     let draws = tile_board_draws::tile_board_actor_draws(world);
     assert_eq!(
         draws.len(),
         drawable_cells,
         "assembly drops draw-list cells"
     );
-    for (d, td) in world.tile_board_draw_list.iter().zip(&draws) {
+    for (d, td) in world.board.draw_list.iter().zip(&draws) {
         assert_eq!(d.slot, td.slot);
         assert_eq!(d.cell_value, td.cell_value);
         assert_eq!(td.world[0], d.world_x as f32);
@@ -255,7 +255,7 @@ fn tile_board_draw_assembly_covers_every_drawable_cell() {
     // slot exactly once.
     let need = tile_board_draws::tile_actor_slots_needing_mesh(world);
     let distinct_slots: std::collections::BTreeSet<u8> =
-        world.tile_board_draw_list.iter().map(|d| d.slot).collect();
+        world.board.draw_list.iter().map(|d| d.slot).collect();
     assert_eq!(
         need.len(),
         distinct_slots.len(),
@@ -304,7 +304,7 @@ fn tile_board_unresolved_templates_degrade_gracefully() {
     assert!(world.try_install_tile_board(&instr));
     session.tick().expect("field tick");
     let world = &session.host.world;
-    assert!(!world.tile_board_draw_list.is_empty());
+    assert!(!world.board.draw_list.is_empty());
     assert!(
         tile_board_draws::tile_actor_slots_needing_mesh(world).is_empty(),
         "unresolved templates must not enter the upload queue"
@@ -313,6 +313,6 @@ fn tile_board_unresolved_templates_degrade_gracefully() {
     // live); the bin-side drained-slot gate is what keeps them off-screen.
     assert_eq!(
         tile_board_draws::tile_board_actor_draws(world).len(),
-        world.tile_board_draw_list.len()
+        world.board.draw_list.len()
     );
 }

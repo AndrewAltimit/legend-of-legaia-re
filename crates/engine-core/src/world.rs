@@ -53,10 +53,12 @@ use vm_hosts::{
 
 mod config;
 mod state;
+mod tile_board_state;
 mod types;
 
 pub use config::*;
 pub use state::*;
+pub use tile_board_state::TileBoardState;
 pub use types::*;
 
 mod actors;

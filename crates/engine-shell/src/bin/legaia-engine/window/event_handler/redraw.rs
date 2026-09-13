@@ -914,7 +914,7 @@ impl PlayWindowApp {
             // later board's re-used slots re-queue.
             {
                 let world = &self.session.host.world;
-                if world.tile_board_draw_list.is_empty() {
+                if world.board.draw_list.is_empty() {
                     self.tile_slots_queued.clear();
                 } else {
                     for slot in

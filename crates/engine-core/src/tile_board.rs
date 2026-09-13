@@ -401,7 +401,8 @@ pub struct TileActorDraw {
 /// reposition halves live in `World::refresh_tile_board_draw_list`)
 pub fn tile_board_actor_draws(world: &crate::world::World) -> Vec<TileActorDraw> {
     world
-        .tile_board_draw_list
+        .board
+        .draw_list
         .iter()
         .filter(|d| world.actors.get(d.slot as usize).is_some_and(|a| a.active))
         .map(|d| {
@@ -422,7 +423,7 @@ pub fn tile_board_actor_draws(world: &crate::world::World) -> Vec<TileActorDraw>
 /// nothing to upload.
 pub fn tile_actor_slots_needing_mesh(world: &crate::world::World) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::new();
-    for d in &world.tile_board_draw_list {
+    for d in &world.board.draw_list {
         if out.contains(&d.slot) {
             continue;
         }
@@ -444,7 +445,7 @@ pub fn tile_actor_slots_needing_mesh(world: &crate::world::World) -> Vec<u8> {
 /// player) is not board-owned: the normal field path draws it.
 pub fn is_tile_actor_slot(world: &crate::world::World, slot: usize) -> bool {
     (CELL_DRAW_FIRST..=CELL_DRAW_LAST)
-        .any(|v| world.tile_actor_slots[v as usize].is_some_and(|s| s as usize == slot))
+        .any(|v| world.board.actor_slots[v as usize].is_some_and(|s| s as usize == slot))
 }
 
 #[cfg(test)]

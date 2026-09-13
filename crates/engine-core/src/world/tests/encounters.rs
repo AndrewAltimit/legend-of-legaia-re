@@ -785,7 +785,7 @@ fn a_scene_load_clears_the_tile_board_with_the_control_block() {
     // part of the per-scene control-block reset, so a board cannot survive a
     // scene change.
     let mut world = World::new();
-    world.tile_board = Some(crate::tile_board::TileBoard::from_header(
+    world.board.grid = Some(crate::tile_board::TileBoard::from_header(
         &crate::tile_board::TileBoardHeader {
             width: 2,
             height: 2,
@@ -793,10 +793,10 @@ fn a_scene_load_clears_the_tile_board_with_the_control_block() {
         },
         vec![0; 4],
     ));
-    world.tile_board_armed = true;
+    world.board.armed = true;
     world.reset_scene_control_block();
-    assert!(world.tile_board.is_none());
-    assert!(!world.tile_board_armed);
+    assert!(world.board.grid.is_none());
+    assert!(!world.board.armed);
     assert_eq!(
         world.scene_control_block,
         crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET
