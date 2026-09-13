@@ -1382,7 +1382,7 @@ impl LegaiaRuntime {
     pub fn scene_rolls_encounters(&self) -> bool {
         self.scene_host
             .as_ref()
-            .is_some_and(|h| h.world.scene_encounters_rollable)
+            .is_some_and(|h| h.world.encounters.scene_rollable)
     }
 
     /// The formation rows the current scene registered, as a JSON array of
@@ -1801,7 +1801,7 @@ impl LegaiaRuntime {
             self.drop_battle_intro();
             return None;
         };
-        let phase = host.world.encounter.as_ref().map(|s| s.phase());
+        let phase = host.world.encounters.session.as_ref().map(|s| s.phase());
         let Some(EncounterPhase::Transition { roll, .. }) = phase else {
             self.drop_battle_intro();
             return None;
@@ -1814,7 +1814,8 @@ impl LegaiaRuntime {
         };
         let total = host
             .world
-            .encounter
+            .encounters
+            .session
             .as_ref()
             .map(|s| i32::from(s.transition_frames))
             .unwrap_or(0);

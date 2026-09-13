@@ -221,7 +221,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     host.enter_field_scene("rikuroa", 0)
         .expect("re-enter rikuroa");
     assert!(
-        !host.world.scripted_formation_pending,
+        !host.world.encounters.scripted_formation_pending,
         "no forced formation is pre-armed at scene entry"
     );
     assert!(
@@ -409,7 +409,7 @@ fn rikuroa_stager_and_p2_50_are_blocked_by_the_gate_flag_once_set() {
         "the beaten boss's stager does not re-arm (park gate 0x142 set)"
     );
     assert!(
-        !host.world.scripted_formation_pending,
+        !host.world.encounters.scripted_formation_pending,
         "nothing is pre-armed either"
     );
     // Simulate a stale staged marker (the state a fled/lost fight would leave):

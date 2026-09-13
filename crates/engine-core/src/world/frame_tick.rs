@@ -991,7 +991,7 @@ impl World {
         // Age the post-battle spoils panel (armed by `finish_battle`) and the
         // no-encounters-here hint (armed by `arm_live_loop`).
         self.battle.spoils_frames = self.battle.spoils_frames.saturating_sub(1);
-        self.scene_encounter_hint_frames = self.scene_encounter_hint_frames.saturating_sub(1);
+        self.encounters.scene_hint_frames = self.encounters.scene_hint_frames.saturating_sub(1);
         // ------------------------------------------------------------------
         // The simulation clock's denomination.
         //

@@ -69,7 +69,8 @@ fn field_entry_installs_man_encounter_table() {
                 // The table installed at scene entry must be exactly this one.
                 let session = host
                     .world
-                    .encounter
+                    .encounters
+                    .session
                     .as_ref()
                     .expect("enter_field_scene installs the MAN encounter session");
                 assert_eq!(

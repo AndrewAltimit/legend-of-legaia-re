@@ -144,7 +144,7 @@ fn field_entry_routes_per_region_encounters() {
 
         // Drivable = a live mean session (the SM the region roll feeds) plus a
         // reachable rollable region centre.
-        if drivable.is_none() && host.world.encounter.is_some() {
+        if drivable.is_none() && host.world.encounters.session.is_some() {
             let table = host
                 .world
                 .field_region_tracker
@@ -220,7 +220,7 @@ fn field_entry_routes_per_region_encounters() {
     );
     assert!(
         matches!(
-            host.world.encounter.as_ref().map(|s| s.phase()),
+            host.world.encounters.session.as_ref().map(|s| s.phase()),
             Some(EncounterPhase::Transition { .. })
         ),
         "[{scene}] region trigger drove the mean session into its Transition SM"
@@ -236,7 +236,7 @@ fn field_entry_routes_per_region_encounters() {
         }
         assert!(
             !matches!(
-                host.world.encounter.as_ref().map(|s| s.phase()),
+                host.world.encounters.session.as_ref().map(|s| s.phase()),
                 Some(EncounterPhase::Idle)
             ),
             "[{scene}] transition must reach Triggered, not fall back to Idle"

@@ -594,7 +594,7 @@ impl World {
     /// No-op when nothing is queued. Called by [`Self::step_field`] once the
     /// field-VM borrow has ended.
     pub fn drain_pending_scripted_encounter(&mut self) {
-        if let Some(record) = self.pending_scripted_encounter.take() {
+        if let Some(record) = self.encounters.pending_scripted.take() {
             self.install_scripted_encounter(&record);
         }
     }

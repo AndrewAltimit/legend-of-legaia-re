@@ -7,7 +7,7 @@ fn install_encounter_for_scene_resolves_field_pattern() {
     let r = vanilla_encounter_registry();
     let installed = world.install_encounter_for_scene(&r, "map01");
     assert!(installed, "field pattern should match");
-    assert!(world.encounter.is_some());
+    assert!(world.encounters.session.is_some());
 }
 
 #[test]
@@ -18,7 +18,7 @@ fn install_encounter_for_scene_quiets_in_towns() {
     let installed = world.install_encounter_for_scene(&r, "town01");
     assert!(!installed, "town pattern resolves but is quiet");
     assert!(
-        world.encounter.is_some(),
+        world.encounters.session.is_some(),
         "session installed for nil checks"
     );
 }
@@ -30,7 +30,7 @@ fn install_encounter_for_scene_returns_false_with_no_default() {
     let r = EncounterRegistry::new(); // empty, no default
     let installed = world.install_encounter_for_scene(&r, "anything");
     assert!(!installed);
-    assert!(world.encounter.is_none());
+    assert!(world.encounters.session.is_none());
 }
 
 #[test]
@@ -41,9 +41,10 @@ fn install_encounter_for_scene_replaces_active_session() {
     // Install a field session, then a town session - the town call
     // should replace the field session even though it's quiet.
     world.install_encounter_for_scene(&r, "map01");
-    assert!(world.encounter.is_some());
+    assert!(world.encounters.session.is_some());
     let initial_table_label = world
-        .encounter
+        .encounters
+        .session
         .as_ref()
         .unwrap()
         .tracker()
@@ -52,7 +53,8 @@ fn install_encounter_for_scene_replaces_active_session() {
         .clone();
     world.install_encounter_for_scene(&r, "town01");
     let new_table_label = world
-        .encounter
+        .encounters
+        .session
         .as_ref()
         .unwrap()
         .tracker()
@@ -84,7 +86,11 @@ fn install_encounter_from_record_registers_and_arms() {
     assert_eq!(formation.slots[0].monster_id, 4);
     assert_eq!(formation.slots[1].monster_id, 4);
     // Session installed and rate forced high.
-    let session = world.encounter.as_ref().expect("session installed");
+    let session = world
+        .encounters
+        .session
+        .as_ref()
+        .expect("session installed");
     assert_eq!(session.tracker().table().trigger_rate_q8, 0xFF);
     assert_eq!(session.tracker().table().entries.len(), 1);
     assert_eq!(
@@ -109,7 +115,7 @@ fn install_scripted_encounter_parses_window_and_arms_battle() {
         .install_scripted_encounter(&window)
         .expect("non-empty record installs a formation");
     // Fire-once: a successful install disarms the carrier flag.
-    assert!(!world.scripted_encounter_armed);
+    assert!(!world.encounters.scripted_armed);
     // Formation registered with the window's two ids.
     let formation = world
         .tables
@@ -122,7 +128,8 @@ fn install_scripted_encounter_parses_window_and_arms_battle() {
     // Session installed at the forced-high rate.
     assert_eq!(
         world
-            .encounter
+            .encounters
+            .session
             .as_ref()
             .unwrap()
             .tracker()
@@ -148,7 +155,7 @@ fn install_scripted_encounter_empty_or_short_window_returns_none() {
     world.set_active_scene_label("town01");
     // count = 0 -> empty record -> no install.
     assert_eq!(world.install_scripted_encounter(&[0, 0, 0, 0]), None);
-    assert!(world.encounter.is_none());
+    assert!(world.encounters.session.is_none());
     // Too short to even hold the count byte -> parse fails.
     assert_eq!(world.install_scripted_encounter(&[0, 0]), None);
 }
@@ -342,12 +349,12 @@ fn drain_pending_scripted_encounter_only_when_queued() {
     world.set_active_scene_label("town01");
     // Nothing queued -> no-op.
     world.drain_pending_scripted_encounter();
-    assert!(world.encounter.is_none());
+    assert!(world.encounters.session.is_none());
     // Queue a window (as the armed forwarded-PC hook would) and drain.
-    world.pending_scripted_encounter = Some(vec![0, 0, 0, 1, 0x12, 0, 0, 0]);
+    world.encounters.pending_scripted = Some(vec![0, 0, 0, 1, 0x12, 0, 0, 0]);
     world.drain_pending_scripted_encounter();
-    assert!(world.pending_scripted_encounter.is_none());
-    assert!(world.encounter.is_some());
+    assert!(world.encounters.pending_scripted.is_none());
+    assert!(world.encounters.session.is_some());
 }
 
 #[test]
@@ -357,7 +364,7 @@ fn install_encounter_from_record_empty_returns_none() {
     let id = world.install_encounter_from_record("map01", &EncounterRecord::EMPTY);
     assert!(id.is_none());
     // No session installed.
-    assert!(world.encounter.is_none());
+    assert!(world.encounters.session.is_none());
 }
 
 #[test]
@@ -374,11 +381,11 @@ fn install_man_formation_forces_registered_row() {
 
     // Unknown id -> None, no session.
     assert!(world.install_man_formation(9).is_none());
-    assert!(world.encounter.is_none());
+    assert!(world.encounters.session.is_none());
 
     // Registered id installs a forced-rate session that triggers next step.
     assert_eq!(world.install_man_formation(4), Some(4));
-    assert!(world.encounter.is_some());
+    assert!(world.encounters.session.is_some());
     assert!(
         world.on_field_step(),
         "forced-rate session triggers on the next step"
@@ -512,7 +519,7 @@ fn begin_new_game_clears_state_and_enters_field() {
     world.story_flag_bits = vec![1, 2, 3];
     world.money = 4242;
     world.inventory.insert(0x10, 5);
-    world.scripted_encounter_armed = true;
+    world.encounters.scripted_armed = true;
     world.game_over = true;
     world.play_time_seconds = 9999;
 
@@ -525,8 +532,8 @@ fn begin_new_game_clears_state_and_enters_field() {
     // New-game gold is the retail constant (FUN_80034A6C), not zero.
     assert_eq!(world.money, NEW_GAME_STARTING_GOLD);
     assert!(world.inventory.is_empty());
-    assert!(!world.scripted_encounter_armed);
-    assert!(world.encounter.is_none());
+    assert!(!world.encounters.scripted_armed);
+    assert!(world.encounters.session.is_none());
     assert!(!world.game_over);
     assert_eq!(world.play_time_seconds, 0);
 }
@@ -700,12 +707,12 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
     // Leaving the phase drops the entity. The transition's length is retail's
     // `DAT_801D2458` (`battle_intro_styles::INTRO_DURATION_FRAMES`), so the
     // bound is read off the session rather than written as a literal.
-    let frames = world.encounter.as_ref().unwrap().transition_frames;
+    let frames = world.encounters.session.as_ref().unwrap().transition_frames;
     for _ in 0..frames + 4 {
         world.tick_encounter();
     }
     assert!(matches!(
-        world.encounter.as_ref().unwrap().phase(),
+        world.encounters.session.as_ref().unwrap().phase(),
         EncounterPhase::Triggered(_)
     ));
     assert!(world.battle.intro.is_none());

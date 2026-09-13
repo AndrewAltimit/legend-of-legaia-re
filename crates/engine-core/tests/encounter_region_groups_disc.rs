@@ -258,7 +258,7 @@ fn a_walking_player_fights_in_scenes_whose_regions_are_flag_gated() {
         );
         assert!(
             matches!(
-                host.world.encounter.as_ref().map(|s| s.phase()),
+                host.world.encounters.session.as_ref().map(|s| s.phase()),
                 Some(EncounterPhase::Transition { .. })
             ),
             "[{scene}] the region roll drove the session's transition SM"

@@ -58,7 +58,7 @@ fn a_field_area_rolls_and_the_opening_town_does_not() {
 
     let field = boot(&extracted, "map03");
     assert!(
-        field.host.world.scene_encounters_rollable,
+        field.host.world.encounters.scene_rollable,
         "map03 is a field area with rate-bearing encounter regions"
     );
     assert!(
@@ -68,7 +68,7 @@ fn a_field_area_rolls_and_the_opening_town_does_not() {
 
     let town = boot(&extracted, "town01");
     assert!(
-        !town.host.world.scene_encounters_rollable,
+        !town.host.world.encounters.scene_rollable,
         "town01's rate-bearing regions belong to a story state the flag bank \
          is not in - this is retail scene data, and the reason a default boot \
          looks quiet"
@@ -152,7 +152,7 @@ fn both_hosts_option_shapes_arm_the_same_world_state() {
     let b = &browserish.host.world;
     assert_eq!(a.live_gameplay_loop, b.live_gameplay_loop);
     assert_eq!(a.battle.player_driven, b.battle.player_driven);
-    assert_eq!(a.scene_encounters_rollable, b.scene_encounters_rollable);
+    assert_eq!(a.encounters.scene_rollable, b.encounters.scene_rollable);
     assert_eq!(a.active_scene_label, b.active_scene_label);
 }
 

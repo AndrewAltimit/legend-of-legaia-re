@@ -2328,9 +2328,9 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
             "[fight] keikoku encounter model: live_loop {} rollable {} region_tracker {} \
              session {} formations {:?}",
             host.world.live_gameplay_loop,
-            host.world.scene_encounters_rollable,
+            host.world.encounters.scene_rollable,
             host.world.field_region_tracker.is_some(),
-            host.world.encounter.is_some(),
+            host.world.encounters.session.is_some(),
             host.world.registered_formation_ids(),
         );
         if let Some(t) = host.world.field_region_tracker.as_ref() {

@@ -1495,7 +1495,8 @@ impl PlayWindowApp {
             .session
             .host
             .world
-            .encounter
+            .encounters
+            .session
             .as_ref()
             .map(|s| s.phase());
         let Some(EncounterPhase::Transition { roll, .. }) = phase else {
@@ -1510,7 +1511,8 @@ impl PlayWindowApp {
             .session
             .host
             .world
-            .encounter
+            .encounters
+            .session
             .as_ref()
             .map(|s| i32::from(s.transition_frames))
             .unwrap_or(0);

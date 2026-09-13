@@ -21,7 +21,7 @@ impl World {
     /// scene. Engines call this on scene-enter once the per-scene encounter
     /// table is known. `None` disables encounters for the active scene.
     pub fn set_encounter_session(&mut self, session: Option<crate::encounter::EncounterSession>) {
-        self.encounter = session;
+        self.encounters.session = session;
     }
 
     /// Install an encounter session resolved from a registry against the
@@ -50,11 +50,11 @@ impl World {
                 let tracker = crate::encounter::EncounterTracker::new(table.clone());
                 let session = crate::encounter::EncounterSession::new(tracker);
                 let nonempty = !table.is_empty();
-                self.encounter = Some(session);
+                self.encounters.session = Some(session);
                 nonempty
             }
             None => {
-                self.encounter = None;
+                self.encounters.session = None;
                 false
             }
         }
@@ -106,7 +106,7 @@ impl World {
         }
         let nonempty = !table.is_empty();
         let tracker = crate::encounter::EncounterTracker::new(table);
-        self.encounter = Some(crate::encounter::EncounterSession::new(tracker));
+        self.encounters.session = Some(crate::encounter::EncounterSession::new(tracker));
         nonempty
     }
 
@@ -125,7 +125,7 @@ impl World {
         let table = crate::encounter::EncounterTable::new(label);
         debug_assert!(table.is_empty(), "the bracket table must never self-roll");
         let tracker = crate::encounter::EncounterTracker::new(table);
-        self.encounter = Some(crate::encounter::EncounterSession::new(tracker));
+        self.encounters.session = Some(crate::encounter::EncounterSession::new(tracker));
         // `scene_can_roll_encounters` answers `false` while no session is
         // installed, so the cached answer (and the "no random encounters in
         // this scene" hint a host draws from it) has to be re-taken now that
@@ -174,10 +174,10 @@ impl World {
             );
             return false;
         }
-        if self.encounter.is_none() {
+        if self.encounters.session.is_none() {
             self.install_encounter_bracket();
         }
-        if let Some(session) = self.encounter.as_mut() {
+        if let Some(session) = self.encounters.session.as_mut() {
             session.reset();
             session.tracker_mut().clear_suppression();
         }
@@ -190,7 +190,8 @@ impl World {
             roll_q8: 0,
         };
         let armed = self
-            .encounter
+            .encounters
+            .session
             .as_mut()
             .map(|s| s.trigger_with(roll))
             .unwrap_or(false);
@@ -637,10 +638,10 @@ impl World {
         table.set_trigger_rate(0xFF);
         table.push(EncounterEntry::new(formation_id, 1));
         let tracker = EncounterTracker::new(table);
-        self.encounter = Some(EncounterSession::new(tracker));
+        self.encounters.session = Some(EncounterSession::new(tracker));
         // One-shot override: fire on the next field step regardless of any
         // installed per-region random tracker.
-        self.scripted_formation_pending = true;
+        self.encounters.scripted_formation_pending = true;
         Some(formation_id)
     }
 
@@ -685,10 +686,10 @@ impl World {
         table.set_trigger_rate(0xFF);
         table.push(EncounterEntry::new(formation_id, 1));
         let tracker = EncounterTracker::new(table);
-        self.encounter = Some(EncounterSession::new(tracker));
+        self.encounters.session = Some(EncounterSession::new(tracker));
         // One-shot override: fire on the next field step even when a per-region
         // random tracker is installed (town01 is 0% random). See the field.
-        self.scripted_formation_pending = true;
+        self.encounters.scripted_formation_pending = true;
         Some(formation_id)
     }
 
@@ -752,7 +753,7 @@ impl World {
     /// dedicated encounter opcode; the consuming entity SM is the retail
     /// discriminator).
     pub fn arm_scripted_encounter(&mut self, on: bool) {
-        self.scripted_encounter_armed = on;
+        self.encounters.scripted_armed = on;
     }
 
     /// Install a scripted encounter from the inline bytecode window the field
@@ -785,7 +786,7 @@ impl World {
         // Fire-once: retail clears `entity[+0x94]` after the formation copy so
         // the arm fires exactly once. Disarm the engine-side carrier flag too.
         if let Some(id) = id {
-            self.scripted_encounter_armed = false;
+            self.encounters.scripted_armed = false;
             // The record's `record[+0]` here is the *install opcode itself*
             // (the record overlays the opcode), so it is non-zero by
             // construction and the confirm state raises the per-battle
@@ -951,10 +952,10 @@ impl World {
         // the random-roll path (`FUN_801D9E1C`), so a 0%-random scene still
         // starts the scripted fight. Drive the forced 0xFF session directly and
         // consume the flag.
-        if self.scripted_formation_pending {
-            self.scripted_formation_pending = false;
+        if self.encounters.scripted_formation_pending {
+            self.encounters.scripted_formation_pending = false;
             let rng = self.next_rng();
-            return match self.encounter.as_mut() {
+            return match self.encounters.session.as_mut() {
                 Some(session) => {
                     // Retail's scripted path bypasses the rate math entirely;
                     // keep the forced 0xFF-rate roll free of the accessory /
@@ -989,11 +990,12 @@ impl World {
             // re-seeds its counter on a trigger, so a discarded roll is a
             // fight that happened and then didn't. Re-install the bare
             // bracket instead.
-            if self.encounter.is_none() {
+            if self.encounters.session.is_none() {
                 self.install_encounter_bracket();
             }
             let idle = self
-                .encounter
+                .encounters
+                .session
                 .as_ref()
                 .is_none_or(|s| matches!(s.phase(), crate::encounter::EncounterPhase::Idle));
             if !idle {
@@ -1038,7 +1040,7 @@ impl World {
                         self.active_scene_label,
                         r.formation_id
                     );
-                    match self.encounter.as_mut() {
+                    match self.encounters.session.as_mut() {
                         Some(s) => s.trigger_with(er),
                         None => {
                             // Unreachable: the bracket is installed above.
@@ -1055,7 +1057,7 @@ impl World {
         }
         let rng = self.next_rng();
         let modifiers = self.encounter_rate_modifiers();
-        match self.encounter.as_mut() {
+        match self.encounters.session.as_mut() {
             Some(session) => {
                 session.tracker_mut().set_rate_modifiers(modifiers);
                 session.on_step(rng)
@@ -1068,7 +1070,7 @@ impl World {
     /// `Transition` and `Grace` countdowns, and - while the session is in
     /// `Transition` - the field-to-battle intro state machine.
     pub fn tick_encounter(&mut self) {
-        if let Some(session) = self.encounter.as_mut() {
+        if let Some(session) = self.encounters.session.as_mut() {
             session.tick_frame();
         }
         self.tick_battle_intro();
@@ -1110,7 +1112,7 @@ impl World {
             TransitionEffect, TransitionGlobals, TransitionResponses, tick_transition,
         };
 
-        let phase = self.encounter.as_ref().map(|s| s.phase());
+        let phase = self.encounters.session.as_ref().map(|s| s.phase());
         let Some(EncounterPhase::Transition {
             frames_remaining,
             roll,
@@ -1122,7 +1124,8 @@ impl World {
             return;
         };
         let total = self
-            .encounter
+            .encounters
+            .session
             .as_ref()
             .map(|s| s.transition_frames)
             .unwrap_or(0);
@@ -1235,7 +1238,7 @@ impl World {
     /// False outside a transition, so nothing else is gated by it.
     pub fn battle_mode_word_held(&self) -> bool {
         matches!(
-            self.encounter.as_ref().map(|s| s.phase()),
+            self.encounters.session.as_ref().map(|s| s.phase()),
             Some(crate::encounter::EncounterPhase::Transition { .. })
         ) && !self.battle.intro_mode_handoff
     }
@@ -1246,14 +1249,17 @@ impl World {
     /// concrete monster set; the session advances to `Battling` as a
     /// side-effect.
     pub fn drain_encounter_formation(&mut self) -> Option<crate::encounter::EncounterRoll> {
-        self.encounter.as_mut().and_then(|s| s.drain_triggered())
+        self.encounters
+            .session
+            .as_mut()
+            .and_then(|s| s.drain_triggered())
     }
 
     /// Mark that the active battle finished. Engines call this from the
     /// post-battle resolution path so the session enters its grace window
     /// (suppresses encounters for `grace_frames` frames).
     pub fn end_encounter_battle(&mut self) {
-        if let Some(session) = self.encounter.as_mut() {
+        if let Some(session) = self.encounters.session.as_mut() {
             session.end_battle();
         }
     }

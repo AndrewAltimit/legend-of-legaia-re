@@ -68,7 +68,7 @@ impl World {
     pub fn arm_live_loop(&mut self, scene: &str, opts: &LiveLoopOpts) {
         self.set_active_scene_label(scene);
 
-        if self.encounter.is_none() && matches!(self.mode, SceneMode::Field) {
+        if self.encounters.session.is_none() && matches!(self.mode, SceneMode::Field) {
             self.set_formation_table(
                 crate::monster_catalog::vanilla_formation_table(),
                 crate::monster_catalog::vanilla_monster_catalog(),
@@ -86,14 +86,14 @@ impl World {
             self.set_seru_registry(crate::seru_learning::SeruRegistry::retail());
         }
         self.refresh_encounter_rollable();
-        if self.live_gameplay_loop && !self.scene_encounters_rollable {
-            self.scene_encounter_hint_frames = Self::ENCOUNTER_HINT_FRAMES;
+        if self.live_gameplay_loop && !self.encounters.scene_rollable {
+            self.encounters.scene_hint_frames = Self::ENCOUNTER_HINT_FRAMES;
             log::info!(
                 "live loop armed on '{scene}', but the scene rolls no random encounters \
                  (all regions rate 0 or shadowed) - this is retail scene data, not a fault"
             );
         } else {
-            self.scene_encounter_hint_frames = 0;
+            self.encounters.scene_hint_frames = 0;
         }
     }
 
@@ -106,9 +106,9 @@ impl World {
     /// Whether a host should be drawing the "this scene rolls no random
     /// encounters" hint this frame.
     pub fn show_encounter_hint(&self) -> bool {
-        self.scene_encounter_hint_frames > 0
+        self.encounters.scene_hint_frames > 0
             && self.live_gameplay_loop
-            && !self.scene_encounters_rollable
+            && !self.encounters.scene_rollable
             && matches!(self.mode, SceneMode::Field | SceneMode::WorldMap)
     }
 
@@ -131,7 +131,7 @@ impl World {
             t.select_group(|flag| self.system_flag_test(flag));
             self.world_map.region_tracker = Some(t);
         }
-        self.scene_encounters_rollable = self.scene_can_roll_encounters();
+        self.encounters.scene_rollable = self.scene_can_roll_encounters();
     }
 
     /// Restore every roster record's HP / MP to its maximum and re-seed the
@@ -187,10 +187,11 @@ impl World {
         if let Some(t) = self.field_region_tracker.as_ref() {
             return t.table().any_rollable();
         }
-        if self.encounter.is_none() {
+        if self.encounters.session.is_none() {
             return false;
         }
-        self.encounter
+        self.encounters
+            .session
             .as_ref()
             .is_some_and(|s| !s.tracker().table().is_empty())
     }

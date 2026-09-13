@@ -1042,14 +1042,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn is_scripted_encounter_armed(&self) -> bool {
-        self.world.scripted_encounter_armed
+        self.world.encounters.scripted_armed
     }
 
     fn install_scripted_encounter(&mut self, window: &[u8]) {
         // Queue the record window for the field-step driver to install after
         // the VM borrow ends (we can't mutate the encounter session while the
         // field bytecode is still borrowed).
-        self.world.pending_scripted_encounter = Some(window.to_vec());
+        self.world.encounters.pending_scripted = Some(window.to_vec());
     }
 
     // PORT: FUN_8003C7EC

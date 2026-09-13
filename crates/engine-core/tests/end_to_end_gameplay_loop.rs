@@ -1039,7 +1039,7 @@ fn real_battle_data_encounter_drives_loop() {
     let formation_id = world
         .install_encounter_from_record(&format!("prot_entry_{entry_idx}"), &record)
         .expect("non-empty record should install");
-    if let Some(session) = world.encounter.as_mut() {
+    if let Some(session) = world.encounters.session.as_mut() {
         session.transition_frames = 0;
         session.grace_frames = 0;
     }

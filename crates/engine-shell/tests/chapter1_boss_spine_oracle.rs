@@ -336,7 +336,7 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
         "the staged marker stays clear until P1[3] itself runs"
     );
     assert!(
-        !host.world.scripted_formation_pending,
+        !host.world.encounters.scripted_formation_pending,
         "no forced formation is pre-armed at scene entry"
     );
     let binding = host
@@ -498,7 +498,7 @@ fn part_c_rikuroa_does_not_rearm_caruban_once_the_gate_flag_is_set() {
         "with the gate flag set, re-entering rikuroa installs no Caruban stager"
     );
     assert!(
-        !host.world.scripted_formation_pending,
+        !host.world.encounters.scripted_formation_pending,
         "nothing is pre-armed either"
     );
     eprintln!("[ok] Part C: post-victory rikuroa revisit does not re-arm the boss");

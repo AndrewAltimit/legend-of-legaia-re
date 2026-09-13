@@ -481,37 +481,8 @@ pub struct World {
     /// Cutscene presentation state: narration, timeline, caption / card / balloon overlays, FMV handoff and the opening-chain latches.
     pub cutscene: CutsceneState,
 
-    /// Pending scripted-encounter install (field-VM bare arm-encounter op
-    /// `0x37`/`0x41`). When that op runs and [`Self::scripted_encounter_armed`]
-    /// is set, the host records the bounded record window overlaying the opcode
-    /// here; the field-step driver drains it after the VM borrow ends and feeds
-    /// it to [`Self::install_scripted_encounter`]. `None` between installs.
-    ///
-    /// Retail writes the install opcode pointer into `actor[+0x94]`
-    /// (`0x801DEEDC`) and the 5-state `FUN_801DA51C` SM reads it as a formation
-    /// record once it reaches the encounter-confirm state. There is no
-    /// dedicated encounter opcode - the consuming entity SM is the
-    /// discriminator. `scripted_encounter_armed` is the engine-side stand-in
-    /// for "the active entity is an encounter carrier" until the per-scene
-    /// carrier identity / SM-confirm trigger is pinned from disc bytecode.
-    pub pending_scripted_encounter: Option<Vec<u8>>,
-
-    /// When `true`, the field VM's bare arm-encounter op (`0x37`/`0x41`) is
-    /// treated as a scripted-encounter install: the record window overlaying
-    /// the opcode is parsed as an [`crate::encounter_record::EncounterRecord`]
-    /// and installed via [`Self::install_scripted_encounter`], which then
-    /// disarms (fire-once). Default `false` so generic script yields are never
-    /// mistaken for encounter arms. See [`Self::arm_scripted_encounter`].
-    pub scripted_encounter_armed: bool,
-
-    /// One-shot override: a scripted/forced formation has been installed
-    /// ([`Self::install_man_formation`] / [`Self::install_encounter_from_record`])
-    /// and the next [`Self::on_field_step`] must fire it regardless of any
-    /// per-region random rate. Retail copies the carrier's `entity[+0x94]`
-    /// formation into the battle cell independent of the random-roll path
-    /// (`FUN_801D9E1C`), so a 0%-random scene (e.g. town01's Rim Elm tutorial)
-    /// still starts the scripted fight. Cleared when the step consumes it.
-    pub scripted_formation_pending: bool,
+    /// Random / scripted encounter state: the per-scene encounter session, the scripted-encounter arm and the roll gates.
+    pub encounters: EncounterState,
 
     /// Field-VM side-effects emitted this frame. Engines drain after
     /// [`World::tick`] to dispatch BGM, dialog, money, party, camera, etc.
@@ -929,15 +900,6 @@ pub struct World {
     /// [`World::tick_handler_actors`].
     pub submode_screen: crate::field_submode_screen::SubmodeScreen,
 
-    /// Active encounter session - bracketed transition + grace machine for
-    /// step-driven random battles. `Some` when an encounter table is
-    /// installed; `None` in scenes where encounters are disabled
-    /// (towns / cutscenes / world-map). Engines call
-    /// [`World::on_field_step`] from the field-step path (player walks one
-    /// tile) to advance the tracker; the resulting [`crate::encounter::EncounterPhase`]
-    /// drives the camera-shake / fade / battle-load chain.
-    pub encounter: Option<crate::encounter::EncounterSession>,
-
     /// Per-character v2 save extension data. Mirrors `SaveExtV2` shape;
     /// engines populate from in-memory state at save time and consume on
     /// load. Index 0..=2 = main characters; entries beyond are story
@@ -1258,21 +1220,6 @@ pub struct World {
     /// engine-stamped).
     pub field_boss_stagers: std::collections::HashMap<u8, crate::world::FieldBossStager>,
 
-    /// Cached answer to [`World::scene_can_roll_encounters`] for the scene
-    /// currently installed, refreshed by
-    /// [`World::refresh_encounter_rollable`] whenever the encounter tables
-    /// change. Hosts read it per frame (the underlying scan walks region
-    /// AABBs, so it is not a per-frame query) to tell the player that a
-    /// scene has no random encounters *by design* - several retail scenes,
-    /// `town01` among them, have every rollable region shadowed by an
-    /// earlier rate-0 row.
-    pub scene_encounters_rollable: bool,
-
-    /// Frames left on the "no random encounters in this scene" hint, armed by
-    /// [`World::arm_live_loop`] when the loop lands on such a scene and aged
-    /// by [`World::tick`]. Read through [`World::show_encounter_hint`].
-    pub scene_encounter_hint_frames: u16,
-
     /// Set when a battle resolves to [`BattleEndCause::PartyWipe`]. Hosts
     /// read it to raise their defeat state (native
     /// `BootUiState::GameOver`, the browser's game-over overlay) and clear it
@@ -1534,9 +1481,7 @@ impl World {
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
             pending_named_scene_transition: None,
-            pending_scripted_encounter: None,
-            scripted_encounter_armed: false,
-            scripted_formation_pending: false,
+            encounters: EncounterState::new(),
             pending_field_events: Vec::new(),
             pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),
@@ -1598,7 +1543,6 @@ impl World {
             shiny_enemy_slots: std::collections::HashSet::new(),
             shiny_captures: Vec::new(),
             magic_level_ups: Vec::new(),
-            encounter: None,
             per_char_ext: Vec::new(),
             saved_chains: Vec::new(),
             seru_log: crate::seru_learning::SeruCaptureLog::new(),
@@ -1631,8 +1575,6 @@ impl World {
             scene_battle_entry_arms: Vec::new(),
             battle_select_attack: crate::options::SelectAttackOpt::default(),
             field_boss_stagers: std::collections::HashMap::new(),
-            scene_encounters_rollable: false,
-            scene_encounter_hint_frames: 0,
             game_over: false,
             game_over_hold: false,
             field_return: None,
@@ -1776,9 +1718,9 @@ impl World {
         self.pending_scene_transition = None;
         self.pending_named_scene_transition = None;
         self.cutscene.pending_fmv_trigger = None;
-        self.pending_scripted_encounter = None;
-        self.scripted_encounter_armed = false;
-        self.scripted_formation_pending = false;
+        self.encounters.pending_scripted = None;
+        self.encounters.scripted_armed = false;
+        self.encounters.scripted_formation_pending = false;
         // Reset the encounter session rather than dropping it. Dropping it
         // left the per-region trackers installed with their sink gone: a
         // region roll is destructive (it draws RNG, latches the pick and
@@ -1788,7 +1730,7 @@ impl World {
         // cache. The runtime self-heals now (`World::on_field_step` installs a
         // bracket), but a live session must survive the reset for the scene's
         // own table to keep driving it.
-        if let Some(session) = self.encounter.as_mut() {
+        if let Some(session) = self.encounters.session.as_mut() {
             session.reset();
         }
         if let Some(t) = self.field_region_tracker.as_mut() {

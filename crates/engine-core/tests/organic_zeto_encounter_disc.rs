@@ -158,7 +158,7 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
         "baseline: gate flag 0x198 clear on first visit"
     );
     assert!(
-        !host.world.scripted_formation_pending,
+        !host.world.encounters.scripted_formation_pending,
         "baseline: nothing pre-armed at scene entry"
     );
     assert!(

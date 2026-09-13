@@ -39,7 +39,7 @@ fn transitioning_world() -> World {
         }),
         "an Idle session takes an externally-rolled trigger"
     );
-    world.encounter = Some(session);
+    world.encounters.session = Some(session);
     // What the port does at the trigger: the battle scene is already up.
     world.mode = SceneMode::Battle;
     world

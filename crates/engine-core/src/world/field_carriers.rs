@@ -604,18 +604,19 @@ impl World {
         };
         // Towns roll nothing of their own and may have no session installed:
         // a bare bracket carries the transition + grace state machine only.
-        if self.encounter.is_none() {
+        if self.encounters.session.is_none() {
             self.install_encounter_bracket();
         }
         // A post-battle grace window suppresses step rolls, never a story
         // fight - reset it and arm.
-        if let Some(s) = self.encounter.as_mut()
+        if let Some(s) = self.encounters.session.as_mut()
             && matches!(s.phase(), crate::encounter::EncounterPhase::Grace { .. })
         {
             s.reset();
         }
         let armed = self
-            .encounter
+            .encounters
+            .session
             .as_mut()
             .is_some_and(|s| s.trigger_with(roll));
         if !armed {
@@ -657,18 +658,19 @@ impl World {
         };
         // The overworld may have no step-roll session installed: a bare
         // bracket carries the transition + grace state machine only.
-        if self.encounter.is_none() {
+        if self.encounters.session.is_none() {
             self.install_encounter_bracket();
         }
         // A post-battle grace window suppresses step rolls, not a contact
         // the entity SM already committed to - reset it and arm.
-        if let Some(s) = self.encounter.as_mut()
+        if let Some(s) = self.encounters.session.as_mut()
             && matches!(s.phase(), crate::encounter::EncounterPhase::Grace { .. })
         {
             s.reset();
         }
         let armed = self
-            .encounter
+            .encounters
+            .session
             .as_mut()
             .is_some_and(|s| s.trigger_with(roll));
         if !armed {

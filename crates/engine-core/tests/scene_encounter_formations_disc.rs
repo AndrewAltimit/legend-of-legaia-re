@@ -186,17 +186,17 @@ fn a_region_scene_still_reaches_battle_after_the_new_game_reset() {
         }
         host.world.arm_live_loop(scene, &LiveLoopOpts::playable());
         if reset != Reset::None {
-            let had_session = host.world.encounter.is_some();
+            let had_session = host.world.encounters.session.is_some();
             // The exact call `BootSession::begin_new_game` makes.
             host.world.begin_new_game();
             assert_eq!(
-                host.world.encounter.is_some(),
+                host.world.encounters.session.is_some(),
                 had_session,
                 "{scene}: the new-game reset must reset the encounter session, not drop it - \
                  a dropped session strands the region tracker and silently eats its rolls"
             );
             if reset == Reset::NewGameSessionDropped {
-                host.world.encounter = None;
+                host.world.encounters.session = None;
             }
         }
         let world = &mut host.world;
@@ -283,7 +283,8 @@ fn force_encounter_drives_a_named_row_through_the_normal_transition() {
     assert!(!world.force_encounter(bogus));
     assert!(matches!(
         world
-            .encounter
+            .encounters
+            .session
             .as_ref()
             .map(|s| s.phase())
             .unwrap_or(legaia_engine_core::encounter::EncounterPhase::Idle),
