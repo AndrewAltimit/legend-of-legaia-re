@@ -446,10 +446,17 @@ fn field_vm_op43_widget_subops_drive_screen_fx_frame() {
             other => panic!("widget sub-op should advance, got {other:?}"),
         }
     }
-    assert!(world.screen_fx.mask.is_some(), "mask widget spawned");
-    assert!(world.screen_fx.letterbox.is_some(), "letterbox configured");
-    assert!(world.screen_fx.panel.is_some(), "panel spawned");
-    assert_eq!(world.screen_fx.sprites.len(), 1, "sprite widget spawned");
+    assert!(world.presentation.fx.mask.is_some(), "mask widget spawned");
+    assert!(
+        world.presentation.fx.letterbox.is_some(),
+        "letterbox configured"
+    );
+    assert!(world.presentation.fx.panel.is_some(), "panel spawned");
+    assert_eq!(
+        world.presentation.fx.sprites.len(),
+        1,
+        "sprite widget spawned"
+    );
 
     // One world tick publishes the frame: 4 mask border quads, 2 letterbox
     // bands, 2 gradient strips, 1 panel quad (128px wide - no split), 1 sprite.
@@ -459,7 +466,7 @@ fn field_vm_op43_widget_subops_drive_screen_fx_frame() {
     // (`+0x1c` vs `+0x4`); batching them into one list drew the bands behind
     // every sprite the same scene spawns.
     let _ = world.tick();
-    let frame = &world.screen_fx_frame;
+    let frame = &world.presentation.fx_frame;
     assert_eq!(frame.solid_quads.len(), 4, "4 mask border quads");
     assert_eq!(frame.band_quads.len(), 2, "2 letterbox bands");
     assert_eq!(frame.gradient_quads.len(), 2);
@@ -485,7 +492,7 @@ fn field_vm_op43_widget_subops_drive_screen_fx_frame() {
         let r = vm::field::step(&mut host, &mut ctx, &move_op, 0);
         assert!(matches!(r, FieldStepResult::Advance { .. }));
     }
-    let p = world.screen_fx.panel.as_ref().unwrap();
+    let p = world.presentation.fx.panel.as_ref().unwrap();
     assert_eq!(p.target[0], 200);
     assert_eq!(p.target[2], 64, "0x0800 (4.12) halves the 128px base width");
 }

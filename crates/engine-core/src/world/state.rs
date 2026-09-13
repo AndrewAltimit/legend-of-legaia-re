@@ -105,10 +105,8 @@ pub struct World {
     /// world-coords of the actor at that slot. Default empty (the lookup
     /// returns `None`, which forces sub-op 0x3B's "skip" path).
     pub party_actor_slots: Vec<Option<u8>>,
-    /// Last fade colour requested by move-VM ext sub-op 0x3C - engines
-    /// drain this each frame to drive the screen fade. `None` when no
-    /// fade is pending.
-    pub pending_fade: Option<FadeRequest>,
+    /// Full-screen presentation state: fades, tints, the screen-effect widget host and the cinematic bars.
+    pub presentation: ScreenFxState,
     /// Move-VM `_DAT_8007B9D8` - globally-shared 32-bit slot written by ext
     /// sub-op 0x2F. Engines read this on whatever frame-tick they want.
     pub move_dat_8007b9d8: i32,
@@ -211,36 +209,6 @@ pub struct World {
 
     /// Disc-parsed static tables installed at boot / scene load (items, spells, arts, monsters, formations, move power, equipment, thresholds, CDNAME map).
     pub tables: DiscTables,
-
-    /// Active full-screen fade, staged by the battle SM's escape teardown
-    /// (retail state `0x66` spawns the `DAT_801C9070` black→white ramp via
-    /// the fade-primitive spawner `FUN_80024E80`). Stepped once per
-    /// [`World::tick`]; dropped when the ramp completes. Hosts draw an
-    /// overlay from [`crate::fade::FadeState::rgb`] while this is `Some`.
-    pub screen_fade: Option<crate::fade::FadeState>,
-
-    /// Effect-layer global colour (op `0x34` sub-0, `FUN_801E1FB0`; neutral
-    /// operand `0xFF`, stored normalized). The opening timeline ramps it in
-    /// the crawl gaps (`34 05 00 00 00 D2 00` = to black over 210 frames,
-    /// `34 01 FF FF FF 00 00` = instant neutral). Stepped once per
-    /// [`World::tick`]; dropped once it lands on the neutral identity.
-    /// **Not a screen fade**: the retail cold-boot capture holds the lit
-    /// villager tableau across the span where the timeline's black ramp
-    /// would blank a full-screen fade, so this value feeds the effect layer
-    /// (the creation-glow planes; consumer still an open thread) and stays
-    /// out of [`World::scene_screen_tint`]. Scene-local: reset on scene
-    /// entry. Distinct from [`Self::screen_fade`] (the battle escape ramp).
-    pub effect_tint: Option<crate::fade::SceneTintRamp>,
-
-    /// Global multiply screen tint (op `0x4C 0x12` → `DAT_8007BCB8/B9/BA`,
-    /// neutral operand `0x80`, stored normalized; ramp via `FUN_8003C5F0`).
-    /// The scene-entry fade-in from black - every field scene `P1[0]`'s
-    /// `0x52F` arrival arm: `4C 12 00 00 00 00 00` (instant black) then
-    /// `4C 12 80 80 80 44 00` (ramp to neutral over 68 frames) - lives here.
-    /// Persists across scene changes (retail's cross-scene fade continuity:
-    /// a departure fade-to-black carries into the next scene's fade-in).
-    /// Stepped once per [`World::tick`]; dropped once neutral.
-    pub screen_tint: Option<crate::fade::SceneTintRamp>,
 
     /// Field-VM execution state beyond the main context: per-record channels, helper contexts, spawn requests, the op-0x49 submode block / screen, eased moves and the entry / free-roam latches.
     pub field_vm: FieldVmState,
@@ -399,28 +367,6 @@ pub struct World {
 
     /// Tile-board grid-mode state (the op-0x49 puzzle board, not town locomotion).
     pub board: TileBoardState,
-
-    /// Screen-effect widget host (the PROT-0900 mask / sprite / panel /
-    /// letterbox family), driven by the field-VM op `0x43` sub-ops
-    /// `0x10`/`0x11`/`0x13`/`0x14`/`0x15` - the ending-scene widget
-    /// path. See [`crate::screen_fx`].
-    pub screen_fx: crate::screen_fx::ScreenFxHost,
-
-    /// The current frame's widget draw list, refreshed by the Field /
-    /// Cutscene tick while any widget is live ([`Self::tick_screen_fx`]).
-    /// Renderers composite these 2D overlays above the scene.
-    pub screen_fx_frame: crate::screen_fx::ScreenFxFrame,
-
-    /// The live cinematic bar emitter (field-VM op `0x43` sub-`0xC`, retail
-    /// template `0x801F2858` / tick `FUN_801DD784`). One at a time, because
-    /// its spawner is the one op that allocates it and its envelope retires
-    /// itself; [`World::tick_field_timer_actors`] steps it and
-    /// [`Self::cinematic_bar`] is what the two hosts draw from.
-    pub cinematic_bars: Option<legaia_engine_vm::field_actor_timers::ShutterBars>,
-
-    /// This frame's bar height in scanlines, republished every tick so a
-    /// renderer reads a value rather than re-stepping the envelope.
-    pub cinematic_bar: i16,
 
     /// Minigame sessions (dance, fishing, slot machine, Baka Fighter, Muscle Dome) plus the casino coin / point-card wallet.
     pub minigames: MinigameState,
@@ -773,7 +719,7 @@ impl World {
             npcs: FieldNpcState::new(),
             entry_pulse_enabled: true,
             party_actor_slots: Vec::new(),
-            pending_fade: None,
+            presentation: ScreenFxState::new(),
             move_dat_8007b9d8: 0,
             scratchpad_targets: [0; 16],
             system_flags: Vec::new(),
@@ -791,9 +737,6 @@ impl World {
             audio: AudioState::new(),
             party_count: 3,
             active_party: Vec::new(),
-            screen_fade: None,
-            effect_tint: None,
-            screen_tint: None,
             field_vm: FieldVmState::new(),
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
@@ -819,10 +762,6 @@ impl World {
             current_capture_banner: None,
             world_map: WorldMapState::new(),
             board: TileBoardState::new(),
-            screen_fx: Default::default(),
-            screen_fx_frame: Default::default(),
-            cinematic_bars: None,
-            cinematic_bar: 0,
             minigames: MinigameState::new(),
             tables: DiscTables::new(),
             seru: SeruState::new(),
@@ -1021,8 +960,8 @@ impl World {
         // MAN loader's retire sweep drops every pool actor, and a bar
         // envelope or a floor-rung bob left running across a scene change
         // would keep writing into the new scene's ladder.
-        self.cinematic_bars = None;
-        self.cinematic_bar = 0;
+        self.presentation.cinematic_bars = None;
+        self.presentation.cinematic_bar = 0;
         self.field_vm.eased_moves.clear();
         self.terrain.floor_tier_bobs.clear();
         self.cutscene.prologue_naming_pending = false;

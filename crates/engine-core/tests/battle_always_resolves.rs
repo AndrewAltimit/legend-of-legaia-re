@@ -262,7 +262,7 @@ fn a_victory_arms_the_spoils_panel() {
         "the win pose is staged on the pose actor"
     );
     assert!(
-        w.screen_fade.is_none(),
+        w.presentation.fade.is_none(),
         "the exit fade waits for the results hold"
     );
     let banner = w
@@ -297,7 +297,8 @@ fn a_victory_arms_the_spoils_panel() {
         }) = w.battle.victory
         {
             let fade = w
-                .screen_fade
+                .presentation
+                .fade
                 .expect("the exit fade is live while the phase halfword counts");
             assert_eq!(fade.kind, 2, "the escape / results template is kind 2");
             assert_eq!(fade.abr(), 2, "kind 2 draws B - F: a fade to black");
@@ -313,7 +314,7 @@ fn a_victory_arms_the_spoils_panel() {
         "the fade is up for every counted phase frame before the gate"
     );
     assert!(
-        w.screen_fade.is_none(),
+        w.presentation.fade.is_none(),
         "the fade actor dies with the battle: the teardown clears it"
     );
     assert!(

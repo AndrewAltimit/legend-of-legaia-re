@@ -112,7 +112,7 @@ fn ext_fade_color_records_pending_request() {
     world.set_move_bytecode(0, Some(bc.clone()));
     let _ = world.step_move_vm(0, &bc);
     assert_eq!(
-        world.pending_fade,
+        world.presentation.pending_fade,
         Some(FadeRequest {
             rgb: [0xAB, 0xCD, 0xEF],
             ticks: 4

@@ -334,7 +334,7 @@ impl SceneHost {
         // PERSISTS - retail's cross-scene fade continuity: a departure
         // fade-to-black carries into the next scene, whose `P1[0]` arrival
         // arm fades back in.
-        self.world.effect_tint = None;
+        self.world.presentation.effect_tint = None;
         // Scripted CLUT-cell effects are scene-scoped (their cell operands
         // came from the previous scene's MAN); drop any in flight and re-pin
         // the frame-step factor `dt` (retail `DAT_1F800393`, the adaptive

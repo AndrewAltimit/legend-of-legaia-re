@@ -157,7 +157,7 @@ impl World {
     /// That op ramps the effect-layer colour (`FUN_801E1FB0`); its consumer
     /// (the creation-glow effect planes) is a separate open thread.
     pub fn scene_screen_tint(&self) -> Option<[f32; 3]> {
-        self.screen_tint.as_ref().map(|t| t.factor())
+        self.presentation.tint.as_ref().map(|t| t.factor())
     }
 
     /// Skip the active narration to its next page (a confirm press). Clears

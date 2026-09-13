@@ -328,7 +328,7 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     // --- ext sub-op 0x3C fade colour -----------------------------------
 
     fn ext_fade_color(&mut self, rgb: [u8; 3], ticks: u16) {
-        self.world.pending_fade = Some(FadeRequest { rgb, ticks });
+        self.world.presentation.pending_fade = Some(FadeRequest { rgb, ticks });
     }
 
     // `ext_dispatch` uses the default trait impl, which routes through
@@ -854,19 +854,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // REF: FUN_801F8004 / FUN_801F8D4C / FUN_801F88FC / FUN_801F8E6C /
     // FUN_801F8F28 (spawn + control APIs)
     fn op43_widget_sprite_spawn(&mut self, payload: &[u8]) {
-        self.world.screen_fx.sprite_spawn(payload);
+        self.world.presentation.fx.sprite_spawn(payload);
     }
     fn op43_widget_mask_rect(&mut self, words: [u16; 5]) {
-        self.world.screen_fx.mask_rect(words);
+        self.world.presentation.fx.mask_rect(words);
     }
     fn op43_widget_letterbox(&mut self, payload: &[u8]) {
-        self.world.screen_fx.letterbox_config(payload);
+        self.world.presentation.fx.letterbox_config(payload);
     }
     fn op43_widget_panel_spawn(&mut self, payload: &[u8; 13]) {
-        self.world.screen_fx.panel_spawn(payload);
+        self.world.presentation.fx.panel_spawn(payload);
     }
     fn op43_widget_panel_move(&mut self, words: [i16; 4]) {
-        self.world.screen_fx.panel_move(words);
+        self.world.presentation.fx.panel_move(words);
     }
 
     // Op-0x43 sub-3..6 camera-register zone-ramp spawn (retail
@@ -1453,12 +1453,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// would then both emit; the engine keeps one, because a second envelope
     /// over the first is a script defect rather than an effect.
     fn op43_alloc_scripted_actor(&mut self, b1: u8, b2: u8, b3: u8) {
-        self.world.cinematic_bars = Some(legaia_engine_vm::field_actor_timers::ShutterBars::spawn(
-            i16::from(b1),
-            i16::from(b2),
-            i16::from(b3),
-        ));
-        self.world.cinematic_bar = 0;
+        self.world.presentation.cinematic_bars =
+            Some(legaia_engine_vm::field_actor_timers::ShutterBars::spawn(
+                i16::from(b1),
+                i16::from(b2),
+                i16::from(b3),
+            ));
+        self.world.presentation.cinematic_bar = 0;
     }
 
     /// Op `0x43` sub-9 with a non-zero tick count - the three-axis eased
@@ -1777,8 +1778,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             rgb[2] as f32 / 255.0,
         ];
         let frames = intensity.max(0) as u16;
-        let current = self.world.effect_tint.as_ref().map(|t| t.factor());
-        self.world.effect_tint = Some(crate::fade::SceneTintRamp::to_target(
+        let current = self
+            .world
+            .presentation
+            .effect_tint
+            .as_ref()
+            .map(|t| t.factor());
+        self.world.presentation.effect_tint = Some(crate::fade::SceneTintRamp::to_target(
             current, target, frames,
         ));
         self.world
@@ -1836,8 +1842,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 (payload[2] as f32 / 128.0).min(2.0),
             ];
             let frames = u16::from_le_bytes([payload[3], payload[4]]);
-            let current = self.world.screen_tint.as_ref().map(|t| t.factor());
-            self.world.screen_tint = Some(crate::fade::SceneTintRamp::to_target(
+            let current = self.world.presentation.tint.as_ref().map(|t| t.factor());
+            self.world.presentation.tint = Some(crate::fade::SceneTintRamp::to_target(
                 current, target, frames,
             ));
         }
@@ -2565,13 +2571,14 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     ///
     /// PORT: FUN_80024E80
     fn spawn_screen_fade(&mut self, template: &vm::battle_action::SummonFadeTemplate, id: i16) {
-        self.world.screen_fade = Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
-            kind: template.kind,
-            duration: template.duration,
-            start_rgb: template.start_rgb,
-            end_rgb: template.end_rgb,
-            mode: [template.delay, template.hold, id],
-        }));
+        self.world.presentation.fade =
+            Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
+                kind: template.kind,
+                duration: template.duration,
+                start_rgb: template.start_rgb,
+                end_rgb: template.end_rgb,
+                mode: [template.delay, template.hold, id],
+            }));
     }
     fn summon_stager_tick(&mut self) -> bool {
         self.world.summon_stager_tick()

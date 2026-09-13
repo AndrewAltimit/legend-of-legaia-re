@@ -31,7 +31,7 @@ fn op_43_0c_runs_the_camera_shutter_wipe_to_full_and_back() {
     let mut heights = Vec::new();
     for _ in 0..64 {
         let _ = world.tick();
-        heights.push(world.cinematic_bar);
+        heights.push(world.presentation.cinematic_bar);
     }
     let peak = *heights.iter().max().unwrap();
     assert_eq!(
@@ -44,7 +44,7 @@ fn op_43_0c_runs_the_camera_shutter_wipe_to_full_and_back() {
         0,
         "and the record must retire: {heights:?}"
     );
-    assert!(world.cinematic_bars.is_none());
+    assert!(world.presentation.cinematic_bars.is_none());
 }
 
 /// At full envelope the two bars cover a 224-line screen twice over - the
@@ -203,11 +203,11 @@ fn the_man_load_sweep_drops_every_live_timer_record() {
     ]);
     let _ = world.tick();
     let _ = world.tick();
-    assert!(world.cinematic_bars.is_some());
+    assert!(world.presentation.cinematic_bars.is_some());
     assert_eq!(world.terrain.floor_tier_bobs.len(), 1);
     let _ = world.man_load_actor_reset();
-    assert!(world.cinematic_bars.is_none());
-    assert_eq!(world.cinematic_bar, 0);
+    assert!(world.presentation.cinematic_bars.is_none());
+    assert_eq!(world.presentation.cinematic_bar, 0);
     assert!(world.terrain.floor_tier_bobs.is_empty());
     assert!(world.field_vm.eased_moves.is_empty());
 }

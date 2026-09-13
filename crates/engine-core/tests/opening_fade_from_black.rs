@@ -65,7 +65,8 @@ fn new_game_opdeene_entry_fades_in_from_black() {
     let _ = host.tick();
     let t0 = host
         .world
-        .screen_tint
+        .presentation
+        .tint
         .as_ref()
         .map(|t| t.factor())
         .expect("opdeene entry fires the 4C 12 fade arm on the load frame");
@@ -83,7 +84,7 @@ fn new_game_opdeene_entry_fades_in_from_black() {
     let mut prev = t0[0];
     for tick in 1..120u32 {
         let _ = host.tick();
-        match host.world.screen_tint.as_ref().map(|t| t.factor()) {
+        match host.world.presentation.tint.as_ref().map(|t| t.factor()) {
             Some(t) => {
                 assert!(
                     t[0] >= prev - 1e-3,
@@ -132,7 +133,13 @@ fn opdeene_timeline_fires_between_beat_black_fades() {
     let mut saw_recover = false;
     for _ in 0..4000u32 {
         let _ = host.tick();
-        match host.world.effect_tint.as_ref().map(|t| t.factor()) {
+        match host
+            .world
+            .presentation
+            .effect_tint
+            .as_ref()
+            .map(|t| t.factor())
+        {
             Some(t) if t[0] < 0.5 => saw_dark = true,
             _ => {
                 if saw_dark {

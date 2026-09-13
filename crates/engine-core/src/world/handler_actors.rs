@@ -296,8 +296,8 @@ impl World {
         // ladder. Its two siblings on the same list go with it: a bar
         // envelope and an eased move are both scene content.
         self.terrain.floor_tier_bobs.clear();
-        self.cinematic_bars = None;
-        self.cinematic_bar = 0;
+        self.presentation.cinematic_bars = None;
+        self.presentation.cinematic_bar = 0;
         self.field_vm.eased_moves.clear();
         let present = self
             .find_actor_by_handler(ActorHandler::SubmodeDriver)

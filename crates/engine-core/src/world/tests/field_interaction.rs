@@ -819,7 +819,7 @@ fn three_actor_talk_switch_cycles_leader_and_returns_to_poll() {
     let talk = world.dialog.three_actor_talk.expect("talk stays live");
     assert_eq!(talk.swap.phase, 1, "request arms the fade-out state");
     assert!(
-        world.screen_fade.is_some(),
+        world.presentation.fade.is_some(),
         "state 0 spawned the fade-to-white"
     );
 
@@ -870,7 +870,7 @@ fn three_actor_talk_switch_blocked_when_all_participants_flagged() {
     world.tick_three_actor_talk();
     let talk = world.dialog.three_actor_talk.expect("talk stays live");
     assert_eq!(talk.swap.phase, 0, "arm gate blocks with all flags set");
-    assert!(world.screen_fade.is_none(), "no fade spawned");
+    assert!(world.presentation.fade.is_none(), "no fade spawned");
 }
 
 /// Exactly two flags set requires the current leader's own flag among them

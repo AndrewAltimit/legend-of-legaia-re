@@ -193,14 +193,14 @@ impl World {
     pub fn tick_field_timer_actors(&mut self, frame_delta: u8) {
         // The bar envelope. It retires itself at phase 3, and the published
         // height is what both hosts' screen-prim pass reads.
-        if let Some(bars) = self.cinematic_bars.as_mut() {
-            self.cinematic_bar = bars.step(frame_delta);
+        if let Some(bars) = self.presentation.cinematic_bars.as_mut() {
+            self.presentation.cinematic_bar = bars.step(frame_delta);
             if bars.retired {
-                self.cinematic_bars = None;
-                self.cinematic_bar = 0;
+                self.presentation.cinematic_bars = None;
+                self.presentation.cinematic_bar = 0;
             }
         } else {
-            self.cinematic_bar = 0;
+            self.presentation.cinematic_bar = 0;
         }
 
         // The eased moves. Retail writes the target's `+0x14/+0x16/+0x18`
@@ -468,7 +468,7 @@ impl World {
                     // `801d29c8..801d2a00`: kind 2, 0x20 frames, black ->
                     // white, no start delay, a `-1` hold - the landed white
                     // persists until the state-2 fade-in replaces it.
-                    self.screen_fade =
+                    self.presentation.fade =
                         Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
                             kind: 2,
                             duration: crate::cutscene_script_elements::LEADER_SWAP_FADE_FRAMES
@@ -541,7 +541,7 @@ impl World {
                 LeaderSwapEffect::SpawnFadeIn => {
                     // `801d2c24..801d2c54`: kind 2, 0x20 frames, white ->
                     // black.
-                    self.screen_fade =
+                    self.presentation.fade =
                         Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
                             kind: 2,
                             duration: crate::cutscene_script_elements::LEADER_SWAP_FADE_FRAMES
@@ -1112,18 +1112,21 @@ impl World {
         // whose hold word is `-1` - the battle-end / escape template - keeps
         // its end colour up until the battle teardown clears it
         // (`FadeState::holds_at_end`, `finish_battle`).
-        if let Some(fade) = &mut self.screen_fade
+        if let Some(fade) = &mut self.presentation.fade
             && !fade.step()
             && !fade.holds_at_end()
         {
-            self.screen_fade = None;
+            self.presentation.fade = None;
         }
         // Step the two scripted scene-tint channels (op 0x34 sub-0 effect
         // tint + op 0x4C 0x12 global screen tint). A ramp that lands on a
         // non-neutral target HOLDS there (a screen faded to black stays
         // black until a new op replaces it); one that lands on the neutral
         // identity is dropped so the render path returns to untouched.
-        for tint in [&mut self.effect_tint, &mut self.screen_tint] {
+        for tint in [
+            &mut self.presentation.effect_tint,
+            &mut self.presentation.tint,
+        ] {
             if let Some(t) = tint {
                 t.step();
                 if t.is_identity() {
@@ -1739,15 +1742,15 @@ impl World {
     /// `DAT_1F800393`); the sprite scripts' flag waits probe the shared
     /// system flag bank ([`Self::system_flag_test`], `FUN_8003CE64`).
     fn tick_screen_fx(&mut self) {
-        if !self.screen_fx.is_active() {
-            if !self.screen_fx_frame.is_empty() {
-                self.screen_fx_frame = Default::default();
+        if !self.presentation.fx.is_active() {
+            if !self.presentation.fx_frame.is_empty() {
+                self.presentation.fx_frame = Default::default();
             }
             return;
         }
-        let mut fx = std::mem::take(&mut self.screen_fx);
-        self.screen_fx_frame = fx.tick(1, |idx| self.system_flag_test(idx));
-        self.screen_fx = fx;
+        let mut fx = std::mem::take(&mut self.presentation.fx);
+        self.presentation.fx_frame = fx.tick(1, |idx| self.system_flag_test(idx));
+        self.presentation.fx = fx;
     }
 
     /// Walk-SM arrival pass (`overlay_0897_801ef2b0` case 3), run when the

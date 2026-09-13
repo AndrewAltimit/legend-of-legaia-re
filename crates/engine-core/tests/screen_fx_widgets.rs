@@ -81,8 +81,11 @@ fn op_43_11_spawns_the_iris_mask_and_it_draws_four_borders() {
     for _ in 0..4 {
         let _ = world.tick();
     }
-    assert!(world.screen_fx.mask.is_some(), "the sub-op must spawn it");
-    let quads = world.screen_fx_frame.draw_quads();
+    assert!(
+        world.presentation.fx.mask.is_some(),
+        "the sub-op must spawn it"
+    );
+    let quads = world.presentation.fx_frame.draw_quads();
     assert_eq!(quads.len(), 4, "four border bands: {quads:?}");
     assert!(quads.iter().all(|q| ot_of(q) == OT_MASK));
     // Every border is flat black, and none of them is degenerate.
@@ -105,8 +108,8 @@ fn op_43_15_letterbox_links_in_front_of_the_mask_not_beside_it() {
     for _ in 0..4 {
         let _ = world.tick();
     }
-    assert!(world.screen_fx.letterbox.is_some());
-    let quads = world.screen_fx_frame.draw_quads();
+    assert!(world.presentation.fx.letterbox.is_some());
+    let quads = world.presentation.fx_frame.draw_quads();
     let band_ots: Vec<u32> = quads.iter().map(ot_of).collect();
     assert!(
         band_ots.contains(&OT_MASK) && band_ots.contains(&OT_LETTERBOX),
@@ -170,7 +173,8 @@ fn the_four_kinds_paint_in_retail_ordering_table_order() {
         let _ = world.tick();
     }
     let ots: Vec<u32> = world
-        .screen_fx_frame
+        .presentation
+        .fx_frame
         .draw_quads()
         .iter()
         .map(ot_of)
@@ -190,8 +194,8 @@ fn an_idle_scene_emits_nothing() {
     for _ in 0..4 {
         let _ = world.tick();
     }
-    assert!(!world.screen_fx.is_active());
-    assert!(world.screen_fx_frame.draw_quads().is_empty());
+    assert!(!world.presentation.fx.is_active());
+    assert!(world.presentation.fx_frame.draw_quads().is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -335,7 +339,7 @@ mod on_disc {
                 let mut spawned = false;
                 for _ in 0..ticks {
                     let _ = world.tick();
-                    if world.screen_fx.is_active() {
+                    if world.presentation.fx.is_active() {
                         spawned = true;
                         break;
                     }
@@ -358,7 +362,7 @@ mod on_disc {
                 let _ = world.tick();
             }
             assert!(
-                !world.screen_fx_frame.draw_quads().is_empty(),
+                !world.presentation.fx_frame.draw_quads().is_empty(),
                 "sub 0x{sub:02X} spawned in '{scene}' but drew nothing"
             );
             drew += 1;

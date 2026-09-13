@@ -288,8 +288,8 @@ impl World {
             BattleEndCause::Escaped => {
                 // The command-flow escape paths (spell / item) reach here
                 // without the SM's `0x66` arm; give them its fade.
-                if self.screen_fade.is_none() {
-                    self.screen_fade = Some(crate::fade::FadeState::load(
+                if self.presentation.fade.is_none() {
+                    self.presentation.fade = Some(crate::fade::FadeState::load(
                         &crate::fade::escape_fade_template(),
                     ));
                 }
@@ -346,7 +346,7 @@ impl World {
                     // twin at `0x8004FB1C`): the same kind-2 template the
                     // escape teardown spawns - `B - F`, black -> white, a
                     // fade to black both hosts draw off `screen_fade`.
-                    self.screen_fade = Some(crate::fade::FadeState::load(
+                    self.presentation.fade = Some(crate::fade::FadeState::load(
                         &crate::fade::escape_fade_template(),
                     ));
                     if seq.cause == BattleEndCause::PartyWipe {

@@ -2336,7 +2336,7 @@ impl PlayWindowApp {
             // through the same shared emitter the browser play page uses so
             // the two bars cannot drift between hosts.
             screen_prims.extend(legaia_engine_render::screen_overlay::cinematic_bar_prims(
-                self.session.host.world.cinematic_bar,
+                self.session.host.world.presentation.cinematic_bar,
                 legaia_engine_render::screen_overlay::PSX_DISPLAY_H,
             ));
             let target = |scene| present_target(scene, &screen_prims);

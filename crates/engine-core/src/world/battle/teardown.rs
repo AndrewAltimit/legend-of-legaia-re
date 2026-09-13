@@ -131,7 +131,7 @@ impl World {
         // The fade actor dies with the battle scene: the held black of the
         // exit / escape template (`holds_at_end`) comes down here, never in
         // the world tick.
-        self.screen_fade = None;
+        self.presentation.fade = None;
         // `true` only on the wipe-to-title arm; a wipe under the
         // scripted-loss latch takes the ordinary field return below.
         let mut wipe_to_title = false;

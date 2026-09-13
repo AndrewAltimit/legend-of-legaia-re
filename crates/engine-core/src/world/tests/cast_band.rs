@@ -120,7 +120,7 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
             // The summon seat is never hidden by the band.
             assert_ne!(world.actors[9].battle.render_flag, RENDER_FLAG_HIDDEN);
         }
-        if world.screen_fade.is_some() && world.screen_fade_draw().is_none() {
+        if world.presentation.fade.is_some() && world.screen_fade_draw().is_none() {
             fade_delay_seen = true;
         }
         if let Some((rgb, abr, ot)) = world.screen_fade_draw()

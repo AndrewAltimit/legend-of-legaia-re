@@ -374,7 +374,7 @@ impl World {
                 // Retail escape teardown (battle SM state 0x66): stage the
                 // 0x40-frame black→white screen fade the SM spawns through
                 // the fade primitive before the battle unloads.
-                self.screen_fade = Some(crate::fade::FadeState::load(
+                self.presentation.fade = Some(crate::fade::FadeState::load(
                     &crate::fade::escape_fade_template(),
                 ));
                 // A petrified member returns to normal when the party

@@ -694,7 +694,7 @@ impl World {
     /// OT index the id `FUN_80024E80` stamped (`AddPrim(ot + id*4, ..)` in
     /// `FUN_80024EE4`).
     pub fn screen_fade_draw(&self) -> Option<(u32, u8, u32)> {
-        let f = self.screen_fade.as_ref()?;
+        let f = self.presentation.fade.as_ref()?;
         if !f.visible() {
             return None;
         }

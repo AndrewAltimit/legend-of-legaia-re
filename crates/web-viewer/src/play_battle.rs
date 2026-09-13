@@ -1768,14 +1768,14 @@ impl LegaiaRuntime {
         // rect calculations that can drift.
         if let Some(host) = self.scene_host.as_ref() {
             prims.extend(legaia_engine_ui::screen_prim::cinematic_bar_prims(
-                host.world.cinematic_bar,
+                host.world.presentation.cinematic_bar,
                 legaia_engine_ui::screen_prim::PSX_DISPLAY_H,
             ));
             // The PROT-0900 screen-effect widgets - iris mask, scripted
             // sprites, image panel, letterbox bands - which the native window
             // draws and this page did not. Geometry, culling and ordering come
             // out of the shared `screen_fx` kernel; this only re-wraps.
-            prims.extend(screen_fx_prims(&host.world.screen_fx_frame));
+            prims.extend(screen_fx_prims(&host.world.presentation.fx_frame));
         }
         self.battle_intro_geom = (!prims.is_empty()).then(|| {
             (
