@@ -5,16 +5,16 @@ fn capture_banks_points_and_learns_on_finish_battle() {
     let mut world = capture_world(2);
     // Two monsters captured this battle: Killer Bee (Seru 1, learns) and
     // Wolf (no Seru, banks nothing).
-    world.battle_captures = vec![7, 9];
+    world.seru.battle_captures = vec![7, 9];
 
     world.finish_battle();
 
     // battle_captures always drained.
-    assert!(world.battle_captures.is_empty());
+    assert!(world.seru.battle_captures.is_empty());
     // Both party slots learned Spark (id 0x20).
-    assert!(world.seru_log.has_learned(0, 1));
-    assert!(world.seru_log.has_learned(1, 1));
-    assert_eq!(world.seru_log.learned_spells(0), &[0x20]);
+    assert!(world.seru.log.has_learned(0, 1));
+    assert!(world.seru.log.has_learned(1, 1));
+    assert_eq!(world.seru.log.learned_spells(0), &[0x20]);
     // One accepted outcome (the Wolf had no Seru), with two learn events.
     let outcomes = world.drain_last_capture_outcomes();
     assert_eq!(outcomes.len(), 1);
@@ -26,12 +26,12 @@ fn capture_banks_points_and_learns_on_finish_battle() {
 #[test]
 fn capture_below_threshold_banks_points_without_learning() {
     let mut world = capture_world(1);
-    world.battle_captures = vec![8]; // Slime -> Seru 2, 40 < 100
+    world.seru.battle_captures = vec![8]; // Slime -> Seru 2, 40 < 100
 
     world.finish_battle();
 
-    assert!(!world.seru_log.has_learned(0, 2), "not learned yet");
-    assert_eq!(world.seru_log.row(0, 2).points, 40, "points banked");
+    assert!(!world.seru.log.has_learned(0, 2), "not learned yet");
+    assert_eq!(world.seru.log.row(0, 2).points, 40, "points banked");
     let outcomes = world.drain_last_capture_outcomes();
     assert_eq!(outcomes.len(), 1);
     assert!(outcomes[0].learns.is_empty());
@@ -43,11 +43,12 @@ fn capture_sets_the_banner_and_it_clears_on_tick() {
 
     let mut world = capture_world(1);
     world.set_spell_catalog(crate::spells::SpellCatalog::vanilla());
-    world.battle_captures = vec![7]; // Killer Bee -> Seru 1 (Spark), learns
+    world.seru.battle_captures = vec![7]; // Killer Bee -> Seru 1 (Spark), learns
     world.finish_battle();
 
     // The banner opens on the capture phase naming the captured Seru.
     let banner = world
+        .party
         .current_capture_banner
         .as_ref()
         .expect("capture banner set");
@@ -63,7 +64,7 @@ fn capture_sets_the_banner_and_it_clears_on_tick() {
         world.tick();
     }
     assert!(
-        world.current_capture_banner.is_none(),
+        world.party.current_capture_banner.is_none(),
         "banner clears after its phases elapse"
     );
 }
@@ -71,10 +72,11 @@ fn capture_sets_the_banner_and_it_clears_on_tick() {
 #[test]
 fn sub_threshold_capture_banner_shows_no_learn_line() {
     let mut world = capture_world(1);
-    world.battle_captures = vec![8]; // Slime -> Seru 2, 40 < 100, no learn
+    world.seru.battle_captures = vec![8]; // Slime -> Seru 2, 40 < 100, no learn
     world.finish_battle();
 
     let banner = world
+        .party
         .current_capture_banner
         .as_ref()
         .expect("capture banner set even without a learn");
@@ -87,19 +89,22 @@ fn battle_bgm_swaps_on_encounter_and_restores_on_finish() {
     use crate::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
-    world.current_bgm = Some(0x0A); // field track playing
+    world.audio.current_bgm = Some(0x0A); // field track playing
     world.set_battle_bgm(Some(0x40)); // configured battle track
     let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
 
     world.enter_battle_from_formation(&formation);
 
     // Swapped to the battle track, with a start event queued for the host.
-    assert_eq!(world.current_bgm, Some(0x40));
-    assert!(world.battle_bgm_active);
+    assert_eq!(world.audio.current_bgm, Some(0x40));
+    assert!(world.audio.battle_bgm_active);
     let evs = world.drain_field_events();
     assert!(
         evs.iter().any(|e| matches!(
@@ -114,8 +119,8 @@ fn battle_bgm_swaps_on_encounter_and_restores_on_finish() {
 
     // Finish (no formation/loot) restores the field track + queues its start.
     world.finish_battle();
-    assert_eq!(world.current_bgm, Some(0x0A));
-    assert!(!world.battle_bgm_active);
+    assert_eq!(world.audio.current_bgm, Some(0x0A));
+    assert!(!world.audio.battle_bgm_active);
     let evs = world.drain_field_events();
     assert!(
         evs.iter().any(|e| matches!(
@@ -138,14 +143,17 @@ fn playable_default_swaps_to_the_standard_battle_theme() {
     use crate::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
-    world.current_bgm = Some(2007); // a field track from the global pool
+    world.audio.current_bgm = Some(2007); // a field track from the global pool
     world.arm_live_loop("town01", &crate::live_loop::LiveLoopOpts::playable());
     assert_eq!(
-        world.battle_bgm,
+        world.audio.battle_bgm,
         Some(crate::music_labels::BATTLE_THEME_1_BGM_ID),
         "playable() installs the retail battle theme by default"
     );
@@ -153,14 +161,14 @@ fn playable_default_swaps_to_the_standard_battle_theme() {
     let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
     world.enter_battle_from_formation(&formation);
     assert_eq!(
-        world.current_bgm,
+        world.audio.current_bgm,
         Some(crate::music_labels::BATTLE_THEME_1_BGM_ID)
     );
-    assert!(world.battle_bgm_active);
+    assert!(world.audio.battle_bgm_active);
 
     world.finish_battle();
-    assert_eq!(world.current_bgm, Some(2007), "field track restored");
-    assert!(!world.battle_bgm_active);
+    assert_eq!(world.audio.current_bgm, Some(2007), "field track restored");
+    assert!(!world.audio.battle_bgm_active);
 }
 
 #[test]
@@ -168,16 +176,19 @@ fn battle_bgm_unset_leaves_music_untouched() {
     use crate::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
-    world.current_bgm = Some(0x0A);
+    world.audio.current_bgm = Some(0x0A);
     // No battle_bgm configured (default None) -> no swap, no events.
     let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
     world.enter_battle_from_formation(&formation);
-    assert_eq!(world.current_bgm, Some(0x0A));
-    assert!(!world.battle_bgm_active);
+    assert_eq!(world.audio.current_bgm, Some(0x0A));
+    assert!(!world.audio.battle_bgm_active);
     assert!(
         !world
             .drain_field_events()
@@ -186,7 +197,7 @@ fn battle_bgm_unset_leaves_music_untouched() {
         "no BGM events when battle_bgm is unset"
     );
     world.finish_battle();
-    assert_eq!(world.current_bgm, Some(0x0A));
+    assert_eq!(world.audio.current_bgm, Some(0x0A));
 }
 
 #[test]
@@ -194,21 +205,24 @@ fn battle_bgm_with_silent_field_stops_on_finish() {
     use crate::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
-    world.current_bgm = None; // no field music playing
+    world.audio.current_bgm = None; // no field music playing
     world.set_battle_bgm(Some(0x40));
     let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
 
     world.enter_battle_from_formation(&formation);
-    assert_eq!(world.current_bgm, Some(0x40));
+    assert_eq!(world.audio.current_bgm, Some(0x40));
     let _ = world.drain_field_events();
 
     world.finish_battle();
     // Nothing to resume -> battle music stops (sub-op 4) and id clears.
-    assert_eq!(world.current_bgm, None);
+    assert_eq!(world.audio.current_bgm, None);
     let evs = world.drain_field_events();
     assert!(
         evs.iter()
@@ -223,7 +237,7 @@ fn learned_spell_is_offered_in_the_battle_spell_session() {
     world.set_spell_catalog(crate::spells::SpellCatalog::vanilla());
     // Caster has an empty roster spell list; learning Spark via capture
     // should still surface it in the battle spell menu.
-    world.battle_captures = vec![7];
+    world.seru.battle_captures = vec![7];
     world.finish_battle();
     world.actors[0].battle.mp = 99;
 
@@ -243,31 +257,31 @@ fn capture_progress_round_trips_through_save_load() {
     // has the registry installed, and confirm the points + learned state
     // survive.
     let mut world = capture_world(1);
-    world.battle_captures = vec![7, 8]; // Seru 1 learns; Seru 2 banks 40
+    world.seru.battle_captures = vec![7, 8]; // Seru 1 learns; Seru 2 banks 40
     world.finish_battle();
-    assert!(world.seru_log.has_learned(0, 1));
-    assert_eq!(world.seru_log.row(0, 2).points, 40);
+    assert!(world.seru.log.has_learned(0, 1));
+    assert_eq!(world.seru.log.row(0, 2).points, 40);
 
     let save = world.save_full();
 
     let mut reloaded = capture_world(1);
     reloaded.load_full(save);
     assert!(
-        reloaded.seru_log.has_learned(0, 1),
+        reloaded.seru.log.has_learned(0, 1),
         "learned Spark restored"
     );
     assert_eq!(
-        reloaded.seru_log.learned_spells(0),
+        reloaded.seru.log.learned_spells(0),
         &[0x20],
         "spell list restored"
     );
     assert_eq!(
-        reloaded.seru_log.row(0, 2).points,
+        reloaded.seru.log.row(0, 2).points,
         40,
         "sub-threshold progress restored"
     );
     assert!(
-        !reloaded.seru_log.has_learned(0, 2),
+        !reloaded.seru.log.has_learned(0, 2),
         "still below threshold after reload"
     );
 }
@@ -279,7 +293,10 @@ fn arts_editor_chain_round_trips_through_save_into_the_battle_menu() {
     // A field-side session: the player opens the Tactical Arts editor and
     // composes a brand-new chain for character slot 0 (Down, Up, Up).
     let mut field = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     let mut lib = field.chain_library();
@@ -329,7 +346,10 @@ fn arts_editor_chain_round_trips_through_save_into_the_battle_menu() {
 
     // ...and a fresh boot that loads the save can offer it in battle.
     let mut battle = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     battle.load_full(save);
@@ -349,10 +369,13 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     use legaia_engine_vm::battle_action::ActionState;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.battle_player_driven = true;
+    world.battle.player_driven = true;
     world.mode = SceneMode::Battle;
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 200;
@@ -364,32 +387,35 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     world.set_battle_defense(1, 10);
     // One saved chain, 3 directional commands (Left, Right, Down) -> 3 hits.
     // No art record staged, so the row uses the synthetic ×12 profile.
-    world.saved_chains.push(legaia_save::SavedChainRecord {
-        char_slot: 0,
-        name: "Combo".into(),
-        sequence: vec![1, 2, 3],
-    });
+    world
+        .party
+        .saved_chains
+        .push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "Combo".into(),
+            sequence: vec![1, 2, 3],
+        });
 
     world.battle_ctx.active_actor = 0;
-    world.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
+    world.battle.arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
         0,
         0,
         world.build_battle_arts_rows(0),
     ));
-    assert_eq!(world.battle_arts_menu.as_ref().unwrap().arts[0].hits(), 3);
+    assert_eq!(world.battle.arts_menu.as_ref().unwrap().arts[0].hits(), 3);
 
     // Frame 1: Cross opens the target cursor.
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
-    assert!(world.battle_arts_menu.is_some(), "still picking a target");
+    assert!(world.battle.arts_menu.is_some(), "still picking a target");
 
     // Frame 2: Cross confirms the monster; the art runs.
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
 
-    assert!(world.battle_arts_menu.is_none(), "arts menu closed");
+    assert!(world.battle.arts_menu.is_none(), "arts menu closed");
     // The confirm arms the SM's attack band with the queue the builder made
     // of the three arrows - three swings and the terminator, retail's own
     // answer to a string that matches no art (`0x0B + dir`).
@@ -406,7 +432,7 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     let mut ended = false;
     for _ in 0..400 {
         if world.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
-            || world.battle_command.is_some()
+            || world.battle.command.is_some()
         {
             ended = true;
             break;
@@ -465,10 +491,13 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     use legaia_engine_vm::battle_action::ActionState;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.battle_player_driven = true;
+    world.battle.player_driven = true;
     world.mode = SceneMode::Battle;
     world.actors[0].battle.liveness = 1;
     world.set_battle_attack(0, 64);
@@ -501,18 +530,21 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     world.set_art_record(legaia_art::Character::Vahn, ActionConstant::Art1F, rec);
 
     // Saved chain ending in the art's command string (Up, Up).
-    world.saved_chains.push(legaia_save::SavedChainRecord {
-        char_slot: 0,
-        name: "Burning Combo".into(),
-        sequence: vec![1, 4, 4], // Left, Up, Up
-    });
+    world
+        .party
+        .saved_chains
+        .push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "Burning Combo".into(),
+            sequence: vec![1, 4, 4], // Left, Up, Up
+        });
 
     let rows = world.build_battle_arts_rows(0);
     assert_eq!(rows[0].hits(), 2, "two damage strikes from the record");
     assert_eq!(rows[0].enemy_effect, EnemyEffect::Toxic);
 
     world.battle_ctx.active_actor = 0;
-    world.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(0, 0, rows));
+    world.battle.arts_menu = Some(crate::battle_arts::BattleArtsSession::new(0, 0, rows));
 
     // Open the target cursor, then confirm.
     world.set_pad(0);
@@ -556,7 +588,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     // HP read has to land before the turn moves on.
     for _ in 0..400 {
         if world.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
-            || world.battle_command.is_some()
+            || world.battle.command.is_some()
             || world.battle_ctx.active_actor != 0
         {
             break;
@@ -594,7 +626,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     assert!(hits.iter().all(|h| h.damage > 0), "ATK 64 lands every hit");
     assert_eq!(u32::from(world.actors[1].battle.hp), 4000 - total);
     assert!(
-        world.status_effects.is_afflicted(1),
+        world.battle.status_effects.is_afflicted(1),
         "the art's Toxic effect was applied to the target"
     );
     // Through the SM the popups are per hit, like the melee seam's, rather
@@ -623,14 +655,20 @@ fn build_battle_arts_rows_resolves_miracle_finisher_profile() {
     // No art records staged: each of Vahn's Craze's six component arts
     // (Art22/28/23/27/20/2A) degrades to one synthetic ×12 strike.
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.saved_chains.push(legaia_save::SavedChainRecord {
-        char_slot: 0,
-        name: "MyCraze".into(),
-        sequence: craze_seq.clone(),
-    });
+    world
+        .party
+        .saved_chains
+        .push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "MyCraze".into(),
+            sequence: craze_seq.clone(),
+        });
     let rows = world.build_battle_arts_rows(0);
     assert_eq!(rows.len(), 1);
     assert_eq!(
@@ -709,7 +747,10 @@ fn build_battle_arts_rows_fires_super_from_recognized_art_sequence() {
     }
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     stage_art(&mut world, ActionConstant::Art27, Command::Up, 2);
@@ -717,11 +758,14 @@ fn build_battle_arts_rows_fires_super_from_recognized_art_sequence() {
 
     // Chain Up Down Up -> Somersault Cyclone Somersault.
     // (Left=1 Right=2 Down=3 Up=4.)
-    world.saved_chains.push(legaia_save::SavedChainRecord {
-        char_slot: 0,
-        name: "TriSom".into(),
-        sequence: vec![4, 3, 4],
-    });
+    world
+        .party
+        .saved_chains
+        .push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "TriSom".into(),
+            sequence: vec![4, 3, 4],
+        });
     let rows = world.build_battle_arts_rows(0);
     assert_eq!(rows.len(), 1);
     assert_eq!(
@@ -736,12 +780,15 @@ fn build_battle_arts_rows_fires_super_from_recognized_art_sequence() {
 
     // Connector abstraction: a stray Left/Right between the arts (matching no
     // staged art) is skipped, so the same Super still fires.
-    world.saved_chains.clear();
-    world.saved_chains.push(legaia_save::SavedChainRecord {
-        char_slot: 0,
-        name: "TriSomLoose".into(),
-        sequence: vec![4, 1, 3, 2, 4], // Up [Left] Down [Right] Up
-    });
+    world.party.saved_chains.clear();
+    world
+        .party
+        .saved_chains
+        .push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "TriSomLoose".into(),
+            sequence: vec![4, 1, 3, 2, 4], // Up [Left] Down [Right] Up
+        });
     let rows = world.build_battle_arts_rows(0);
     assert_eq!(
         rows[0].super_art,
@@ -752,10 +799,13 @@ fn build_battle_arts_rows_fires_super_from_recognized_art_sequence() {
     // With no art catalog staged the recognizer can't run, so no Super is
     // detected and the chain falls back to a plain/synthetic row.
     let mut bare = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    bare.saved_chains.push(legaia_save::SavedChainRecord {
+    bare.party.saved_chains.push(legaia_save::SavedChainRecord {
         char_slot: 0,
         name: "TriSom".into(),
         sequence: vec![4, 3, 4],

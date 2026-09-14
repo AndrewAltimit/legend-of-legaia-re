@@ -168,7 +168,7 @@ fn boosted_catalog() -> MonsterCatalog {
 /// triggered. Mirrors the boilerplate the real shell will use.
 fn enter_battle(world: &mut World, formation: &FormationDef, catalog: &MonsterCatalog) {
     world.mode = SceneMode::Battle;
-    world.party_count = 3;
+    world.party.party_count = 3;
     // Party slots 0..=2 stay populated from `load_full`. Reset action
     // category to Attack so the SM picks up `Begin → AttackChain` on the
     // first tick.
@@ -281,7 +281,7 @@ fn drive_battle_to_victory(world: &mut World) -> Result<u32, String> {
         {
             world.battle_ctx.queued_action = 3;
             world.battle_ctx.action_state = ActionState::Begin.as_byte();
-            let next = (world.battle_ctx.active_actor + 1) % world.party_count.max(1);
+            let next = (world.battle_ctx.active_actor + 1) % world.party.party_count.max(1);
             world.battle_ctx.active_actor = next;
             let target = (3..8)
                 .find(|&i| world.actors[i as usize].battle.liveness != 0)
@@ -322,17 +322,17 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
     // Replace the tracker with the deterministic test fixture, then
     // re-hydrate per-slot levels from the loaded records (load_full's
     // hydration only touches the active tracker, which we just swapped).
-    world.level_up_tracker = deterministic_level_up_tracker();
+    world.party.level_up_tracker = deterministic_level_up_tracker();
     for (i, rec) in starting_save.party.members.iter().enumerate() {
-        if i < world.level_up_tracker.level.len() {
-            world.level_up_tracker.level[i] = rec.level().max(1);
+        if i < world.party.level_up_tracker.level.len() {
+            world.party.level_up_tracker.level[i] = rec.level().max(1);
         }
     }
 
-    let pre_money = world.money;
-    let pre_story_flags = world.story_flags;
-    let pre_inventory: std::collections::HashMap<u8, u8> = world.inventory.clone();
-    let pre_levels: Vec<u8> = world.level_up_tracker.level[..3].to_vec();
+    let pre_money = world.party.money;
+    let pre_story_flags = world.flags.story_flags;
+    let pre_inventory: std::collections::HashMap<u8, u8> = world.party.inventory.clone();
+    let pre_levels: Vec<u8> = world.party.level_up_tracker.level[..3].to_vec();
 
     // 2. Walk the field - install encounter, step until trigger.
     world.mode = SceneMode::Field;
@@ -356,11 +356,12 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
 
     // 3. Trigger the encounter - populate monsters from the formation.
     let formation = world
+        .tables
         .formation_table
         .formation(roll.formation_id)
         .expect("formation present in vanilla table")
         .clone();
-    let catalog = world.monster_catalog.clone();
+    let catalog = world.tables.monster_catalog.clone();
     enter_battle(&mut world, &formation, &catalog);
 
     // 4. Drive the battle SM until victory.
@@ -386,7 +387,7 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
     // engine was failing to do.
     for slot in 0..3usize {
         assert_eq!(
-            world.roster.members[slot].hp_mp_sp().hp_cur,
+            world.party.roster.members[slot].hp_mp_sp().hp_cur,
             world.actors[slot].battle.hp,
             "slot {slot}: finish_battle must persist post-battle HP into the record"
         );
@@ -401,12 +402,12 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
         rewards
     );
     assert!(
-        world.money > pre_money,
+        world.party.money > pre_money,
         "gold reward should bump money: pre={} post={}",
         pre_money,
-        world.money
+        world.party.money
     );
-    let post_levels: Vec<u8> = world.level_up_tracker.level[..3].to_vec();
+    let post_levels: Vec<u8> = world.party.level_up_tracker.level[..3].to_vec();
     assert!(
         post_levels
             .iter()
@@ -422,7 +423,7 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
     for result in &rewards.level_ups {
         let slot = result.char_id as usize;
         let pre_hp_max = starting_save.party.members[slot].hp_mp_sp().hp_max;
-        let live_hp_max = world.roster.members[slot].hp_mp_sp().hp_max;
+        let live_hp_max = world.party.roster.members[slot].hp_mp_sp().hp_max;
         assert!(
             live_hp_max >= pre_hp_max + result.hp_gained,
             "slot {} HP_max should grow by ≥{} (pre={}, post={})",
@@ -451,7 +452,7 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
     reloaded.load_full(parsed);
 
     assert_eq!(
-        reloaded.story_flags, pre_story_flags,
+        reloaded.flags.story_flags, pre_story_flags,
         "story flags must round-trip"
     );
     // The battle-end results frame sets story flag `0x35` in the system-flag
@@ -460,35 +461,35 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
     // image the save wrote, not the pre-battle capture, is what has to come
     // back, and the bank itself has to survive the reload.
     assert_eq!(
-        reloaded.story_flag_bits, saved.ext.story_flag_bits,
+        reloaded.flags.story_flag_bits, saved.ext.story_flag_bits,
         "retail-sized story-flag bitmap must round-trip"
     );
     assert_eq!(
-        reloaded.system_flags, world.system_flags,
+        reloaded.flags.system_flags, world.flags.system_flags,
         "the system-flag bank (the results frame's story flag) must round-trip"
     );
     assert_eq!(
-        reloaded.money, world.money,
+        reloaded.party.money, world.party.money,
         "money post-battle must round-trip ({} ≠ {})",
-        reloaded.money, world.money
+        reloaded.party.money, world.party.money
     );
     assert_eq!(
-        reloaded.inventory.len(),
+        reloaded.party.inventory.len(),
         pre_inventory.len(),
         "inventory size must round-trip"
     );
     for (k, v) in &pre_inventory {
-        assert_eq!(reloaded.inventory.get(k).copied(), Some(*v));
+        assert_eq!(reloaded.party.inventory.get(k).copied(), Some(*v));
     }
     // Per-character HP / MP / level survives the cycle.
-    for (slot, rec) in reloaded.roster.members.iter().enumerate() {
-        let live = world.roster.members[slot].hp_mp_sp();
+    for (slot, rec) in reloaded.party.roster.members.iter().enumerate() {
+        let live = world.party.roster.members[slot].hp_mp_sp();
         let post = rec.hp_mp_sp();
         assert_eq!(post.hp_max, live.hp_max, "slot {slot} HP_max round-trip");
         assert_eq!(post.mp_max, live.mp_max, "slot {slot} MP_max round-trip");
         assert_eq!(
             rec.level(),
-            world.roster.members[slot].level(),
+            world.party.roster.members[slot].level(),
             "slot {slot} level round-trip"
         );
     }
@@ -634,11 +635,11 @@ fn synthetic_party_loop_round_trips_via_retail_sc_block() {
     let expected_money = parsed.ext.money;
     reloaded.load_full(parsed);
     assert_eq!(
-        reloaded.money, expected_money,
+        reloaded.party.money, expected_money,
         "World::load_full carries the SC-slot gold"
     );
     assert_eq!(
-        reloaded.play_time_seconds, 0,
+        reloaded.clock.play_time_seconds, 0,
         "World::load_full sees play_time as engine-only"
     );
 }
@@ -670,6 +671,7 @@ fn battle_session_phase_transitions_during_loop() {
     world.tick_encounter();
     let roll = world.drain_encounter_formation().expect("triggered");
     let formation = world
+        .tables
         .formation_table
         .formation(roll.formation_id)
         .expect("vanilla formation")
@@ -697,7 +699,7 @@ fn battle_session_phase_transitions_during_loop() {
             },
         );
     }
-    let catalog = world.monster_catalog.clone();
+    let catalog = world.tables.monster_catalog.clone();
     for (i, slot) in formation.slots.iter().enumerate() {
         let def = catalog.get(slot.monster_id).expect("monster");
         let actor_idx = 3 + i;
@@ -752,10 +754,10 @@ fn battle_session_drives_action_sm_to_monster_wipe() {
     }
     world.load_full(synthetic_save_file());
     world.set_formation_table(vanilla_formation_table(), boosted_catalog());
-    world.level_up_tracker = deterministic_level_up_tracker();
+    world.party.level_up_tracker = deterministic_level_up_tracker();
     for (i, rec) in synthetic_party().members.iter().enumerate() {
-        if i < world.level_up_tracker.level.len() {
-            world.level_up_tracker.level[i] = rec.level().max(1);
+        if i < world.party.level_up_tracker.level.len() {
+            world.party.level_up_tracker.level[i] = rec.level().max(1);
         }
     }
 
@@ -773,13 +775,14 @@ fn battle_session_drives_action_sm_to_monster_wipe() {
     world.tick_encounter();
     let roll = world.drain_encounter_formation().expect("triggered");
     let formation = world
+        .tables
         .formation_table
         .formation(roll.formation_id)
         .expect("vanilla formation")
         .clone();
 
     world.mode = SceneMode::Battle;
-    world.party_count = 3;
+    world.party.party_count = 3;
 
     // Spawn party actors at non-zero HP so the SM treats them as alive.
     for i in 0..3 {
@@ -814,7 +817,7 @@ fn battle_session_drives_action_sm_to_monster_wipe() {
             },
         );
     }
-    let catalog = world.monster_catalog.clone();
+    let catalog = world.tables.monster_catalog.clone();
     for (i, slot) in formation.slots.iter().take(5).enumerate() {
         let def = catalog.get(slot.monster_id).expect("monster def");
         let actor_idx = 3 + i;
@@ -914,7 +917,7 @@ fn battle_session_drives_action_sm_to_monster_wipe() {
     let _ = world.save_party();
     let rewards = world.apply_battle_loot(&formation, &catalog);
     assert!(rewards.xp > 0);
-    assert!(world.money > 0);
+    assert!(world.party.money > 0);
     world.end_encounter_battle();
 }
 
@@ -1026,17 +1029,17 @@ fn real_battle_data_encounter_drives_loop() {
     world.load_full(synthetic_save_file());
     let formation_table = vanilla_formation_table();
     world.set_formation_table(formation_table, catalog.clone());
-    world.level_up_tracker = deterministic_level_up_tracker();
+    world.party.level_up_tracker = deterministic_level_up_tracker();
     for (i, rec) in synthetic_party().members.iter().enumerate() {
-        if i < world.level_up_tracker.level.len() {
-            world.level_up_tracker.level[i] = rec.level().max(1);
+        if i < world.party.level_up_tracker.level.len() {
+            world.party.level_up_tracker.level[i] = rec.level().max(1);
         }
     }
     world.mode = SceneMode::Field;
     let formation_id = world
         .install_encounter_from_record(&format!("prot_entry_{entry_idx}"), &record)
         .expect("non-empty record should install");
-    if let Some(session) = world.encounter.as_mut() {
+    if let Some(session) = world.encounters.session.as_mut() {
         session.transition_frames = 0;
         session.grace_frames = 0;
     }
@@ -1052,6 +1055,7 @@ fn real_battle_data_encounter_drives_loop() {
         .expect("disc-derived formation should yield a roll");
     assert_eq!(roll.formation_id, formation_id);
     let formation = world
+        .tables
         .formation_table
         .formation(roll.formation_id)
         .expect("synthesized formation registered")
@@ -1066,7 +1070,7 @@ fn real_battle_data_encounter_drives_loop() {
 
     let rewards = world.apply_battle_loot(&formation, &catalog);
     assert!(rewards.xp > 0);
-    assert!(world.money > 0);
+    assert!(world.party.money > 0);
     world.end_encounter_battle();
 }
 

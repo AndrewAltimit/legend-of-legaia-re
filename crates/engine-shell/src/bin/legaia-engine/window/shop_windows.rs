@@ -12,7 +12,7 @@
 //! | Id | Renderer | Content this host feeds it |
 //! |---|---|---|
 //! | 33 (`0x21`) | `FUN_801DCF14` | the vendor plate - the scene MAN shop record's trailing name |
-//! | 32 (`0x20`) | `FUN_801DCF84` | the purse - `World::money` (retail `_DAT_8008459C`) |
+//! | 32 (`0x20`) | `FUN_801DCF84` | the purse - `World::party.money` (retail `_DAT_8008459C`) |
 //! | 34 (`0x22`) | `FUN_801D4A80` | the hovered item's name / owned count / description |
 //! | 35 (`0x23`) | `FUN_801D5510` | the buy quantity, held count, unit price and running total |
 //! | 37 (`0x25`) | `FUN_801D5944` | the sell quantity, held count and halved gold total |
@@ -104,12 +104,12 @@ impl PlayWindowApp {
     ///
     /// The engine's `ShopSession` keeps the priced stock but not that name, so
     /// the host recovers it by matching the session's stock against the
-    /// scene's decoded shops (`World::scene_shops`); a scene with one merchant
+    /// scene's decoded shops (`World::shops.scene_shops`); a scene with one merchant
     /// resolves on the first entry.
     ///
     /// REF: FUN_801DCF14
     fn shop_vendor_name(&self, shop: &ShopSession) -> Option<&str> {
-        let shops = &self.session.host.world.scene_shops;
+        let shops = &self.session.host.world.shops.scene_shops;
         shops
             .iter()
             .find(|s| {
@@ -190,8 +190,10 @@ impl PlayWindowApp {
             (purse, purse.and_then(legaia_engine_render::painter_for))
         {
             let value = match source {
-                legaia_engine_render::CounterSource::PartyGold => world.money.max(0) as u64,
-                legaia_engine_render::CounterSource::CasinoCoins => world.casino_coins as u64,
+                legaia_engine_render::CounterSource::PartyGold => world.party.money.max(0) as u64,
+                legaia_engine_render::CounterSource::CasinoCoins => {
+                    world.minigames.casino_coins as u64
+                }
             };
             let rect = legaia_engine_render::painter_rect(d);
             let (digits, pic) = counter_panel_draws_for(&self.font, rect, pictogram, value);
@@ -250,6 +252,7 @@ impl PlayWindowApp {
             // the product; the shop's stock list is not consulted, so a bag
             // item the merchant does not stock still prices correctly.
             let unit_price = world
+                .shops
                 .item_shop_data
                 .as_ref()
                 .map(|d| u32::from(d.price(id)))
@@ -323,7 +326,7 @@ impl PlayWindowApp {
             })
             .map(|(d, _)| legaia_engine_render::painter_rect(d));
         if let Some(rect) = toast {
-            let points = world.point_card.max(0) as u64;
+            let points = world.minigames.point_card.max(0) as u64;
             let (text, cur) = amount_prompt_draws_for(
                 &self.font,
                 rect,
@@ -380,6 +383,7 @@ impl PlayWindowApp {
         let world = &self.session.host.world;
         let item_id = session.item_id;
         let members: Vec<&legaia_save::CharacterRecord> = world
+            .party
             .roster
             .members
             .iter()
@@ -419,11 +423,13 @@ impl PlayWindowApp {
             |rec: &legaia_save::CharacterRecord, current: EquipStatBlock| -> EquipStatBlock {
                 let displaced = slot_idx.map(|idx| rec.equipment().slots[idx]).unwrap_or(0);
                 let old_m = world
+                    .tables
                     .equipment_table
                     .get(displaced)
                     .copied()
                     .unwrap_or_default();
                 let new_m = world
+                    .tables
                     .equipment_table
                     .get(item_id)
                     .copied()
@@ -512,11 +518,11 @@ impl PlayWindowApp {
                 .map(|r| px::PrizeRow {
                     name: self.shop_item_name(r.item_id),
                     price: r.price,
-                    held: *world.inventory.get(&r.item_id).unwrap_or(&0),
+                    held: *world.party.inventory.get(&r.item_id).unwrap_or(&0),
                 })
                 .collect(),
             cursor: session.cursor(),
-            coins: world.casino_coins,
+            coins: world.minigames.casino_coins,
             confirm_cursor: session.confirming().then(|| session.confirm_cursor()),
         };
         let (mut out, sprites, pict) = px::prize_exchange_draws_for(&self.font, table, &view);
@@ -538,7 +544,7 @@ impl PlayWindowApp {
             return Vec::new();
         };
         let world = &self.session.host.world;
-        let screen = &world.submode_screen;
+        let screen = &world.field_vm.submode_screen;
         if !screen.is_open()
             || screen.actor.state != legaia_engine_vm::baka_hub_actors::slot::COIN_COUNTER
         {
@@ -549,8 +555,8 @@ impl PlayWindowApp {
             digits: screen.counter.digits.to_vec(),
             cursor: screen.counter.cursor,
             ceiling: screen.counter.ceiling,
-            gold: world.money,
-            coins: world.casino_coins,
+            gold: world.party.money,
+            coins: world.minigames.casino_coins,
             confirm_cursor: (screen.actor.sub == 2).then_some((screen.counter.yes_no & 1) as u8),
         };
         let (mut out, sprites, pict) = px::coin_counter_draws_for(&self.font, table, &view);
@@ -567,7 +573,8 @@ impl PlayWindowApp {
         self.session
             .host
             .world
-            .menu_text
+            .menu
+            .text
             .as_ref()
             .and_then(|t| t.item_name(id))
             .map(str::to_string)
@@ -583,7 +590,7 @@ impl PlayWindowApp {
     /// (`legaia_asset::accessory_passive`, which applies the sentinel bound),
     /// so a `Some` there is the accessory arm and a `None` is the item arm.
     fn shop_item_description(&self, id: u8) -> String {
-        let Some(text) = self.session.host.world.menu_text.as_ref() else {
+        let Some(text) = self.session.host.world.menu.text.as_ref() else {
             return String::new();
         };
         if let Some((_, desc)) = text.item_passive_lines(id) {
@@ -627,11 +634,12 @@ impl PlayWindowApp {
         let rect = legaia_engine_render::painter_rect(d);
         let id = staged.unwrap_or(0);
         let price = world
+            .shops
             .item_shop_data
             .as_ref()
             .map(|t| t.price(id))
             .unwrap_or(0);
-        let passive = world.item_effects.as_ref().and_then(|effects| {
+        let passive = world.tables.item_effects.as_ref().and_then(|effects| {
             legaia_engine_core::shop::item_passive_index(
                 effects.kind(id),
                 effects.subtype(id),
@@ -698,7 +706,7 @@ impl PlayWindowApp {
         }
         if let Some((name, line)) = panel
             .passive
-            .and(world.menu_text.as_ref())
+            .and(world.menu.text.as_ref())
             .and_then(|t| t.item_passive_lines(id))
         {
             text(

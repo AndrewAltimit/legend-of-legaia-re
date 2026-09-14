@@ -6,7 +6,7 @@
 //! on a scene whose MAN carries encounter regions, from the region's
 //! `[formation_range_base, +formation_range_count)` slice (the faithful
 //! `FUN_801D9E1C` model). The **battle** then looks that index up in
-//! `World::formation_table`, which `install_man_encounter` populates from the
+//! `World::tables.formation_table`, which `install_man_encounter` populates from the
 //! same MAN. If the two ever disagree the roll evaporates in
 //! `begin_encounter_battle` and the player walks on with no fight and nothing
 //! on screen to explain it.
@@ -17,7 +17,7 @@
 //! fight".
 //!
 //! The second test is the regression for the defect that produced this file:
-//! a host that cleared `World::encounter` after scene entry (the New Game
+//! a host that cleared `World::encounters.session` after scene entry (the New Game
 //! reset does exactly that) used to leave the region tracker rolling into a
 //! null sink, so every roll was consumed - RNG drawn, anti-repeat latched,
 //! counter re-seeded - and thrown away.
@@ -109,7 +109,7 @@ fn every_rollable_formation_resolves_across_the_scene_corpus() {
         rows_checked += want.len();
 
         for id in &want {
-            match host.world.formation_table.formation(*id) {
+            match host.world.tables.formation_table.formation(*id) {
                 None => failures.push(format!(
                     "{scene}: rollable formation row {id} is not registered (registered {registered:?})"
                 )),
@@ -141,7 +141,7 @@ fn every_rollable_formation_resolves_across_the_scene_corpus() {
 
 /// A New Game runs *after* scene entry (`play-window --seed-party` does
 /// exactly that), so it lands on a world whose per-region tracker is already
-/// installed. It used to null `World::encounter` outright, leaving that
+/// installed. It used to null `World::encounters.session` outright, leaving that
 /// tracker with nothing to trigger into - and because a region roll is
 /// destructive (RNG drawn, pick latched, counter re-seeded, all before the
 /// return), every roll it produced was a fight that happened and was thrown
@@ -186,22 +186,23 @@ fn a_region_scene_still_reaches_battle_after_the_new_game_reset() {
         }
         host.world.arm_live_loop(scene, &LiveLoopOpts::playable());
         if reset != Reset::None {
-            let had_session = host.world.encounter.is_some();
+            let had_session = host.world.encounters.session.is_some();
             // The exact call `BootSession::begin_new_game` makes.
             host.world.begin_new_game();
             assert_eq!(
-                host.world.encounter.is_some(),
+                host.world.encounters.session.is_some(),
                 had_session,
                 "{scene}: the new-game reset must reset the encounter session, not drop it - \
                  a dropped session strands the region tracker and silently eats its rolls"
             );
             if reset == Reset::NewGameSessionDropped {
-                host.world.encounter = None;
+                host.world.encounters.session = None;
             }
         }
         let world = &mut host.world;
         let Some(table) = world
-            .field_region_tracker
+            .terrain
+            .region_tracker
             .as_ref()
             .map(|t| t.table().clone())
         else {
@@ -222,8 +223,8 @@ fn a_region_scene_still_reaches_battle_after_the_new_game_reset() {
             panic!("{scene} has no unshadowed rate-bearing region to stand in");
         };
         world.seat_player_at_tile_rescued(cx, cz);
-        world.live_gameplay_loop = true;
-        world.battle_player_driven = false;
+        world.toggles.live_gameplay_loop = true;
+        world.battle.player_driven = false;
 
         let mut triggered = false;
         for _ in 0..40_000 {
@@ -269,8 +270,8 @@ fn force_encounter_drives_a_named_row_through_the_normal_transition() {
         return;
     }
     host.world.arm_live_loop(scene, &LiveLoopOpts::playable());
-    host.world.live_gameplay_loop = true;
-    host.world.battle_player_driven = false;
+    host.world.toggles.live_gameplay_loop = true;
+    host.world.battle.player_driven = false;
     let world = &mut host.world;
 
     // An unregistered row changes nothing.
@@ -283,7 +284,8 @@ fn force_encounter_drives_a_named_row_through_the_normal_transition() {
     assert!(!world.force_encounter(bogus));
     assert!(matches!(
         world
-            .encounter
+            .encounters
+            .session
             .as_ref()
             .map(|s| s.phase())
             .unwrap_or(legaia_engine_core::encounter::EncounterPhase::Idle),
@@ -295,6 +297,7 @@ fn force_encounter_drives_a_named_row_through_the_normal_transition() {
     // `0x80`). Force it and require the battle to open with that monster.
     let row = 17u16;
     let expect_ids: Vec<u16> = world
+        .tables
         .formation_table
         .formation(row)
         .map(|d| d.slots.iter().map(|s| s.monster_id).collect())
@@ -305,6 +308,7 @@ fn force_encounter_drives_a_named_row_through_the_normal_transition() {
     );
     assert_ne!(
         world
+            .tables
             .formation_table
             .formation(row)
             .map(|d| d.per_battle_flags())

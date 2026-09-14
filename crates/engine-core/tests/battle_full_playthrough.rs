@@ -19,8 +19,11 @@ const TARGET_DEF: i32 = 12;
 
 fn build_world() -> World {
     let mut world = World {
+        party: legaia_engine_core::world::PartyState {
+            party_count: 3,
+            ..Default::default()
+        },
         mode: SceneMode::Battle,
-        party_count: 3,
         ..World::default()
     };
     // Slots 0..2 = party (3 alive heroes). action_category = 3 (Attack) so
@@ -142,7 +145,7 @@ fn battle_runs_to_completion_with_monster_wipe() {
             world.battle_ctx.action_state = ActionState::Begin.as_byte();
             // Re-arm next attacker (round-robin party slot 0..2). Re-target
             // first alive monster.
-            let next = (world.battle_ctx.active_actor + 1) % world.party_count;
+            let next = (world.battle_ctx.active_actor + 1) % world.party.party_count;
             world.battle_ctx.active_actor = next;
             let target = (3..5)
                 .find(|&i| world.actors[i as usize].battle.liveness != 0)
@@ -192,7 +195,7 @@ fn battle_party_wipe_resolves_to_party_wipe_cause() {
 
     // The cause byte, read at the step that raises it.
     assert_eq!(world.step_battle(), StepOutcome::BattleComplete);
-    assert_eq!(world.battle_end, Some(BattleEndCause::PartyWipe));
+    assert_eq!(world.battle.end, Some(BattleEndCause::PartyWipe));
 
     // And the same wipe through `tick`, which resolves the battle in the
     // frame it completes (consuming `battle_end` and latching `game_over`) -

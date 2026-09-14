@@ -48,7 +48,10 @@ fn extracted_dir() -> Option<PathBuf> {
 /// arm the ladder is here to enter.
 fn battle_world() -> World {
     let mut world = World {
-        party_count: 1,
+        party: legaia_engine_core::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     while world.actors.len() < 12 {
@@ -93,7 +96,7 @@ fn every_reachable_cast_band_id_steps_its_module_code() {
         }
         pool.insert(idx, &bytes);
     }
-    world.cast_effect_pool = Some(std::sync::Arc::new(pool));
+    world.casting.effect_pool = Some(std::sync::Arc::new(pool));
 
     // One representative id per band entry, taken from the engine's own
     // resolver rather than from a hand-written map - so the ladder tracks the
@@ -120,8 +123,8 @@ fn every_reachable_cast_band_id_steps_its_module_code() {
             // A fresh caster/victim state per arm: a tick body that lands a
             // kill would otherwise make every later arm early-out.
             let mut w = battle_world();
-            w.menu_text = world.menu_text.clone();
-            w.cast_effect_pool = world.cast_effect_pool.clone();
+            w.menu.text = world.menu.text.clone();
+            w.casting.effect_pool = world.casting.effect_pool.clone();
             let Some(run) = w.run_cast_module_code(id, arm) else {
                 continue;
             };

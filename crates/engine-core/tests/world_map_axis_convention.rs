@@ -77,7 +77,7 @@ fn clear_overworld() -> World {
 /// normalised to signs.
 fn walk_one_tick(azimuth: i32, pad: u16) -> (i32, i32) {
     let mut world = clear_overworld();
-    world.world_map_ctrl.as_mut().unwrap().azimuth = azimuth;
+    world.world_map.ctrl.as_mut().unwrap().azimuth = azimuth;
     let before = {
         let ms = &world.actors[0].move_state;
         (i32::from(ms.world_x), i32::from(ms.world_z))

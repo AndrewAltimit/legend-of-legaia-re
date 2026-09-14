@@ -377,7 +377,7 @@ enum Flow {
 /// The specific missing input narrows to **one** of [`ProgramEnv`]'s middle
 /// three fields: the BGM request/acknowledge pair `_DAT_8007BABC` /
 /// `_DAT_8007BAA0`. The engine's BGM model is synchronous - `BgmDirector`'s
-/// calls do not return an acknowledgement and `World::current_bgm` is a single
+/// calls do not return an acknowledgement and `World::audio.current_bgm` is a single
 /// latch - so there is no `request == ack` condition for states `0x02`,
 /// `0x16` and `0x19` to park on, and a step driven with an invented value
 /// would either stall the program forever or run it through its voice line in

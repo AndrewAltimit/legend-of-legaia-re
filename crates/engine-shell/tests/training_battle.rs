@@ -101,6 +101,7 @@ fn training_encounter_reaches_battle_with_real_monster() {
         let formation = session
             .host
             .world
+            .tables
             .formation_table
             .formation(formation_id)
             .expect("formation registered");
@@ -133,7 +134,7 @@ fn training_encounter_reaches_battle_with_real_monster() {
 
     // The enemy slot carries the training opponent with its real HP.
     let world = &session.host.world;
-    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,
         Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
@@ -185,6 +186,7 @@ fn training_reaches_battle_via_man_formation_index() {
         let formation = session
             .host
             .world
+            .tables
             .formation_table
             .formation(RIM_ELM_TRAINING_FORMATION_ID)
             .expect("town01 MAN carries formation_id 4");
@@ -228,7 +230,7 @@ fn training_reaches_battle_via_man_formation_index() {
     // The enemy slot is Tetsu with the real archive HP (999) merged at scene
     // entry - no manual catalog seeding needed on this path.
     let world = &session.host.world;
-    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,
         Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
@@ -284,7 +286,8 @@ fn training_reaches_battle_via_field_carrier_sm() {
     let sparring_idx = session
         .host
         .world
-        .field_carrier_configs
+        .carriers
+        .configs
         .iter()
         .position(|c| {
             matches!(
@@ -326,8 +329,8 @@ fn training_reaches_battle_via_field_carrier_sm() {
 
     // The enemy slot is Tetsu with the real archive HP merged at scene entry.
     let world = &session.host.world;
-    assert_eq!(world.battle_return_mode, SceneMode::Field);
-    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    assert_eq!(world.battle.return_mode, SceneMode::Field);
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,
         Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
@@ -382,7 +385,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
     // one scripted-encounter (sparring) carrier carries an interact-slot entry,
     // and that slot holds the sparring partner's inline dialogue.
     let slot = {
-        let mut slots: Vec<u8> = world.field_carrier_slots.keys().copied().collect();
+        let mut slots: Vec<u8> = world.carriers.slots.keys().copied().collect();
         slots.sort_unstable();
         assert_eq!(
             slots.len(),
@@ -392,7 +395,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         slots[0]
     };
     assert!(
-        world.field_npc_dialog.contains_key(&slot),
+        world.npcs.dialog.contains_key(&slot),
         "the sparring carrier's slot carries inline dialogue"
     );
 
@@ -401,13 +404,14 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
     world.input.set_pad(0);
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_some(),
+        world.dialog.current.is_some(),
         "the field-interact opens the sparring partner's dialogue"
     );
     // The carrier presents its real 4-option spar menu (the faithful path); the
     // engage is gated on the index-2 fight option, not on any accept.
     let menu = world
-        .carrier_menu
+        .carriers
+        .menu
         .expect("the sparring partner's 4-option spar menu is up");
     assert_eq!(menu.n, 4, "4-option picker");
     assert_eq!(
@@ -415,7 +419,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         "fight option = index 2 (\"...practice...\")"
     );
     assert!(
-        world.pending_carrier_engage.is_none(),
+        world.carriers.pending_engage.is_none(),
         "the menu gates the engage; the any-accept arm is not used"
     );
     assert_eq!(
@@ -432,7 +436,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         let _ = world.tick();
     }
     assert_eq!(
-        world.carrier_menu.expect("menu still up").cursor,
+        world.carriers.menu.expect("menu still up").cursor,
         2,
         "cursor moved to the fight option"
     );
@@ -457,7 +461,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         "confirming the fight option (\"...practice...\") flips Field -> Battle"
     );
 
-    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,
         Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
@@ -512,12 +516,14 @@ fn training_reaches_battle_via_interaction_probe() {
     let (slot, cx, cz) = {
         let w = &session.host.world;
         let slot = *w
-            .field_carrier_slots
+            .carriers
+            .slots
             .keys()
             .next()
             .expect("town01 installs the scripted-encounter carrier slot");
         let &(cx, cz) = w
-            .field_npc_positions
+            .npcs
+            .positions
             .get(&slot)
             .expect("the carrier slot carries a placement position");
         (slot, cx, cz)
@@ -533,7 +539,7 @@ fn training_reaches_battle_via_interaction_probe() {
     session.host.world.input.set_pad(PadButton::Cross.mask());
     let _ = session.host.world.tick();
     assert!(
-        session.host.world.current_dialog.is_some(),
+        session.host.world.dialog.current.is_some(),
         "the interaction probe opens the sparring partner's dialogue (slot {slot})"
     );
     // The carrier presents its 4-option spar menu; the engage is gated on the
@@ -541,12 +547,13 @@ fn training_reaches_battle_via_interaction_probe() {
     let fight = session
         .host
         .world
-        .carrier_menu
+        .carriers
+        .menu
         .expect("the spar's 4-option menu is up")
         .fight_option;
     assert_eq!(fight, 2, "fight option = index 2 (\"...practice...\")");
     assert!(
-        session.host.world.pending_carrier_engage.is_none(),
+        session.host.world.carriers.pending_engage.is_none(),
         "the menu gates the engage (no any-accept arm)"
     );
 
@@ -575,7 +582,7 @@ fn training_reaches_battle_via_interaction_probe() {
         "the interaction probe (talk + navigate to the fight option + confirm) flips Field -> Battle"
     );
     let world = &session.host.world;
-    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,
         Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),

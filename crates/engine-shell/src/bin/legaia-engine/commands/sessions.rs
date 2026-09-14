@@ -72,7 +72,7 @@ pub(crate) fn cmd_battle(
         world.actors[i].battle.hp = 100;
         world.actors[i].battle.max_hp = 100;
         world.actors[i].battle.mp = 30;
-        world.ap_gauges[i] = ApGauge::with_base(8);
+        world.battle.ap_gauges[i] = ApGauge::with_base(8);
     }
     for i in 0..monster_count as usize {
         world.actors[3 + i].battle.hp = monster_hp;

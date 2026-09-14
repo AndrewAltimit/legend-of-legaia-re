@@ -18,10 +18,11 @@ impl World {
         &self,
         slot: u8,
     ) -> vm::battle_formulas::DefenderResist {
-        if slot >= self.party_count {
+        if slot >= self.party.party_count {
             return Default::default();
         }
         let Some(member) = self
+            .party
             .roster
             .members
             .get(self.party_roster_slot(slot as usize))
@@ -43,18 +44,18 @@ impl World {
     /// Both party slots ([`Self::seed_party_battle_stats`]) and monster slots
     /// (battle entry, from the catalog's UDF / LDF pair) carry a real split.
     /// A slot with none configured - a synthetic battle that wrote only
-    /// [`Self::battle_defense`] - falls back to that scalar, so both halves
+    /// [`crate::world::BattleState::defense`] - falls back to that scalar, so both halves
     /// answer the same value and the parity pick is a no-op for it.
     pub fn physical_defense_of(&self, slot: u8, command: u8) -> u16 {
         let idx = slot as usize;
-        if let Some(Some((udf, ldf))) = self.battle_defense_split.get(idx) {
+        if let Some(Some((udf, ldf))) = self.battle.defense_split.get(idx) {
             return if vm::battle_formulas::physical_defense_is_udf(command) {
                 *udf
             } else {
                 *ldf
             };
         }
-        self.battle_defense.get(idx).copied().unwrap_or(0)
+        self.battle.defense.get(idx).copied().unwrap_or(0)
     }
 
     /// Roll the Run command's escape chance - the retail `FUN_801E791C`
@@ -74,7 +75,7 @@ impl World {
     /// scripted no-flee battle is caught anyway.
     ///
     /// The scripted no-escape flag (`ctx+0x287`) is the engine's
-    /// [`World::battle_no_escape`], set at scripted-battle entry
+    /// [`crate::world::BattleState::no_escape`], set at scripted-battle entry
     /// ([`World::trigger_scripted_battle`] - the boss fights); the forced
     /// flee `_DAT_8007bac0 & 0x100` passes as unset.
     ///
@@ -85,16 +86,16 @@ impl World {
         use vm::battle_formulas::{
             EscapeActor, EscapeFlags, escape_enemy_score, escape_party_score, escape_roll,
         };
-        let party_n = (self.party_count as usize).min(self.actors.len());
+        let party_n = (self.party.party_count as usize).min(self.actors.len());
         let fold = |i: usize| EscapeActor {
-            speed: self.battle_speed.get(i).copied().unwrap_or(0),
+            speed: self.battle.speed.get(i).copied().unwrap_or(0),
             hp: self.actors[i].battle.hp,
             max_hp: self.actors[i].battle.max_hp,
         };
         let party: Vec<EscapeActor> = (0..party_n).map(fold).collect();
         let enemies: Vec<EscapeActor> = (party_n..self.actors.len()).map(fold).collect();
         let mut flags = EscapeFlags {
-            no_escape: self.battle_no_escape,
+            no_escape: self.battle.no_escape,
             ..EscapeFlags::default()
         };
         // `ctx+0x291` - the latched formation advantage. A pre-emptive strike
@@ -107,7 +108,7 @@ impl World {
             if self.actors[slot].battle.liveness == 0 {
                 continue;
             }
-            if let Some(member) = self.roster.members.get(self.party_roster_slot(slot)) {
+            if let Some(member) = self.party.roster.members.get(self.party_roster_slot(slot)) {
                 let bits = member.ability_bits();
                 flags.fold_ability_word1(u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]));
             }
@@ -129,7 +130,7 @@ impl World {
     /// `FUN_801EC0DC` with the monster's pool slot).
     ///
     /// Side scores fold live HP/max-HP off the actors and live ATK off the
-    /// [`World::battle_attack`] sidecar (retail reads actor `+0x158`); the
+    /// [`crate::world::BattleState::attack`] sidecar (retail reads actor `+0x158`); the
     /// party's No Escape / Chicken Guard bit folds from each living member's
     /// second ability word exactly as [`Self::roll_battle_escape`] folds its
     /// escape accessories. The fleeing monster's INT (`+0x168`) comes from the
@@ -142,17 +143,18 @@ impl World {
     /// REF: FUN_801EC0DC
     pub(in crate::world) fn monster_flee_roll(&mut self, slot: u8) -> bool {
         use vm::battle_formulas::FleeActor;
-        let pc = (self.party_count as usize).min(self.actors.len());
+        let pc = (self.party.party_count as usize).min(self.actors.len());
         let fold = |world: &Self, i: usize| FleeActor {
             hp: world.actors[i].battle.hp,
             max_hp: world.actors[i].battle.max_hp,
-            atk: world.battle_attack.get(i).copied().unwrap_or(0),
+            atk: world.battle.attack.get(i).copied().unwrap_or(0),
         };
         let party: Vec<FleeActor> = (0..pc).map(|i| fold(self, i)).collect();
         let monsters: Vec<FleeActor> = (pc..self.actors.len()).map(|i| fold(self, i)).collect();
         let ability_word1: Vec<u32> = (0..pc)
             .map(|i| {
-                self.roster
+                self.party
+                    .roster
                     .members
                     .get(self.party_roster_slot(i))
                     .map(|m| {
@@ -167,10 +169,10 @@ impl World {
             .actors
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.intel)
             .unwrap_or(0);
-        let no_escape = u8::from(self.battle_no_escape);
+        let no_escape = u8::from(self.battle.no_escape);
         vm::battle_formulas::monster_escape_roll(
             no_escape,
             &party,
@@ -195,7 +197,7 @@ impl World {
     ///
     /// PORT: FUN_801ddb30 (spirit-gauge stage)
     pub(in crate::world) fn accrue_spirit_gauge(&mut self, defender_slot: u8, over: u16) {
-        let defender_is_party = defender_slot < self.party_count;
+        let defender_is_party = defender_slot < self.party.party_count;
         let resist = self.defender_resist(defender_slot);
         let Some(a) = self.actors.get_mut(defender_slot as usize) else {
             return;
@@ -230,7 +232,7 @@ impl World {
     /// Apply (or refresh) a stat buff / debuff on `slot`. The delta is written
     /// straight into the matching per-slot battle scalar so it changes damage
     /// the same frame: `Attack`/`MagicAttack`/`Defense` map to
-    /// [`Self::battle_attack`] / [`Self::battle_magic`] / [`Self::battle_defense`]
+    /// [`crate::world::BattleState::attack`] / [`crate::world::BattleState::magic`] / [`crate::world::BattleState::defense`]
     /// (`MagicDefense` reuses `battle_defense`, the spell-defense proxy).
     ///
     /// **Stat-up buffs (`magnitude > 0`) use the retail multiplicative ramp.**
@@ -257,11 +259,12 @@ impl World {
     ) {
         // Refresh: revert + drop any existing buff on this (slot, stat).
         if let Some(pos) = self
-            .battle_buffs
+            .battle
+            .buffs
             .iter()
             .position(|b| b.slot == slot && b.stat == stat)
         {
-            let old = self.battle_buffs.remove(pos);
+            let old = self.battle.buffs.remove(pos);
             self.add_to_buff_scalar(old.slot, old.stat, -old.applied_delta);
         }
         if turns == 0 {
@@ -274,7 +277,7 @@ impl World {
             // Debuff: additive (retail factor unpinned), saturating at 0.
             self.add_to_buff_scalar(slot, stat, magnitude)
         };
-        self.battle_buffs.push(BattleBuff {
+        self.battle.buffs.push(BattleBuff {
             slot,
             stat,
             applied_delta,
@@ -287,21 +290,21 @@ impl World {
     /// Stats with no live-loop scalar (Accuracy / Evasion / Speed) return `0`.
     ///
     /// A Defense ramp is taken from the slot's **UDF half** when it carries a
-    /// [`Self::battle_defense_split`] - see [`Self::move_defense_split`] for why
+    /// [`crate::world::BattleState::defense_split`] - see [`Self::move_defense_split`] for why
     /// the scalar alone is the wrong basis.
     fn ramp_buff_scalar(&mut self, slot: u8, stat: crate::spells::BuffStat) -> i16 {
         use crate::spells::BuffStat;
         if matches!(stat, BuffStat::Defense | BuffStat::MagicDefense)
-            && let Some(Some((udf, _))) = self.battle_defense_split.get(slot as usize).copied()
+            && let Some(Some((udf, _))) = self.battle.defense_split.get(slot as usize).copied()
         {
             let delta = (i32::from(vm::battle_formulas::buff_ramp(udf)) - i32::from(udf)) as i16;
             return self.add_to_buff_scalar(slot, stat, delta);
         }
         let scalar = match stat {
-            BuffStat::Attack => self.battle_attack.get_mut(slot as usize),
-            BuffStat::MagicAttack => self.battle_magic.get_mut(slot as usize),
+            BuffStat::Attack => self.battle.attack.get_mut(slot as usize),
+            BuffStat::MagicAttack => self.battle.magic.get_mut(slot as usize),
             BuffStat::Defense | BuffStat::MagicDefense => {
-                self.battle_defense.get_mut(slot as usize)
+                self.battle.defense.get_mut(slot as usize)
             }
             BuffStat::Accuracy | BuffStat::Evasion | BuffStat::Speed => None,
         };
@@ -327,10 +330,10 @@ impl World {
             self.move_defense_split(slot, delta);
         }
         let scalar = match stat {
-            BuffStat::Attack => self.battle_attack.get_mut(slot as usize),
-            BuffStat::MagicAttack => self.battle_magic.get_mut(slot as usize),
+            BuffStat::Attack => self.battle.attack.get_mut(slot as usize),
+            BuffStat::MagicAttack => self.battle.magic.get_mut(slot as usize),
             BuffStat::Defense | BuffStat::MagicDefense => {
-                self.battle_defense.get_mut(slot as usize)
+                self.battle.defense.get_mut(slot as usize)
             }
             BuffStat::Accuracy | BuffStat::Evasion | BuffStat::Speed => None,
         };
@@ -344,7 +347,7 @@ impl World {
     /// Move both halves of `slot`'s defence split by `delta`, saturating at
     /// zero. No-op for a slot with no split.
     ///
-    /// The physical path reads the split, not the [`Self::battle_defense`]
+    /// The physical path reads the split, not the [`crate::world::BattleState::defense`]
     /// scalar ([`Self::physical_defense_of`]), so a Defense buff that touched
     /// only the scalar changed nothing a swing could see. That was already true
     /// for every party slot - [`Self::seed_party_battle_stats`] writes the split
@@ -358,7 +361,7 @@ impl World {
     /// `applied_delta` stays a single exactly-reversible number, so a buff that
     /// expires restores the pair it found.
     fn move_defense_split(&mut self, slot: u8, delta: i16) {
-        if let Some(Some((udf, ldf))) = self.battle_defense_split.get_mut(slot as usize) {
+        if let Some(Some((udf, ldf))) = self.battle.defense_split.get_mut(slot as usize) {
             let shift = |v: &mut u16| {
                 *v = (i32::from(*v) + i32::from(delta)).clamp(0, i32::from(u16::MAX)) as u16;
             };
@@ -371,7 +374,7 @@ impl World {
     /// revert + drop those that reach zero.
     pub(in crate::world) fn tick_battle_buffs_on_turn(&mut self, slot: u8) {
         let mut expired: Vec<BattleBuff> = Vec::new();
-        self.battle_buffs.retain_mut(|b| {
+        self.battle.buffs.retain_mut(|b| {
             if b.slot != slot {
                 return true;
             }

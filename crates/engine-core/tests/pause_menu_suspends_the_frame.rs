@@ -64,7 +64,7 @@ fn a_timed_section_advances_zero_frames_under_the_pause_menu() {
     for _ in 0..10 {
         world.tick();
     }
-    let running = world.escape_timer.remaining;
+    let running = world.battle.escape_timer.remaining;
     assert!(running < 600, "the countdown has to be live to be frozen");
 
     world.mode = SceneMode::Menu;
@@ -72,7 +72,7 @@ fn a_timed_section_advances_zero_frames_under_the_pause_menu() {
         world.tick();
     }
     assert_eq!(
-        world.escape_timer.remaining, running,
+        world.battle.escape_timer.remaining, running,
         "the countdown drained while the pause menu owned the frame"
     );
 
@@ -81,7 +81,10 @@ fn a_timed_section_advances_zero_frames_under_the_pause_menu() {
     for _ in 0..10 {
         world.tick();
     }
-    assert!(world.escape_timer.remaining < running, "and it resumes");
+    assert!(
+        world.battle.escape_timer.remaining < running,
+        "and it resumes"
+    );
 }
 
 /// The actor pool does not advance under the menu. `wait_timer` is the

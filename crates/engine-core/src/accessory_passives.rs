@@ -21,7 +21,7 @@
 //! *derivation* ([`AccessoryPassives::bits_for_equipment`]) mirrors the
 //! retail loop exactly; the stat-percent rebuild lives in
 //! [`crate::battle_stats::compute_battle_stats_with_passives`] and the
-//! global mask in `World::party_ability_mask` /
+//! global mask in `World::party.party_ability_mask` /
 //! `World::refresh_party_ability_bits`.
 
 use std::collections::HashMap;

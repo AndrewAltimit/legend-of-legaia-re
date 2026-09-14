@@ -88,7 +88,7 @@ const MAX_PENDING_SCROLLS: usize = 64;
 #[derive(Debug, Clone)]
 pub struct AmbientPart {
     /// Byte offset of the part's record inside the shared stager bundle
-    /// (`World::field_stager_bytes`) - the base `move_bytecode_*` word
+    /// (`World::props.stager_bytes`) - the base `move_bytecode_*` word
     /// offsets translate against.
     pub record_off: usize,
     /// `record[+0]` mesh selector (`-1` transform node, `0x4000`/`0x4001`
@@ -154,7 +154,7 @@ impl World {
             return false;
         };
         {
-            let st = &mut self.ambient_fx[idx].state;
+            let st = &mut self.ambient.fx[idx].state;
             st.render_24 = rot[0];
             st.render_26 = rot[1];
             st.render_28 = rot[2];
@@ -168,13 +168,13 @@ impl World {
     /// stack empty; retail's own caller treats that as an error rather than
     /// as a quota, and so does this - see [`MAX_AMBIENT_PARTS`].
     pub fn ambient_pool_exhausted(&self) -> bool {
-        self.ambient_fx.len() >= MAX_AMBIENT_PARTS
+        self.ambient.fx.len() >= MAX_AMBIENT_PARTS
     }
 
     /// Seat record `id` as a new ambient part (no first run). Returns the
     /// part index.
     fn push_ambient_part(&mut self, id: usize, origin: [i16; 3]) -> Option<usize> {
-        if self.ambient_fx.len() >= MAX_AMBIENT_PARTS {
+        if self.ambient.fx.len() >= MAX_AMBIENT_PARTS {
             // Not a silent truncation: an ambient tree that reaches the pool
             // ceiling has stopped animating whatever it could not seat. No
             // retail scene comes near it once halted parts are freed - the
@@ -189,9 +189,9 @@ impl World {
             );
             return None;
         }
-        let rec = self.field_stagers.get(id)?;
+        let rec = self.props.stagers.get(id)?;
         let (record_off, end) = (rec.record_off, rec.bytecode.end);
-        let bytes = self.field_stager_bytes.get(record_off..end)?;
+        let bytes = self.props.stager_bytes.get(record_off..end)?;
         let buf: Vec<u16> = bytes
             .chunks_exact(2)
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
@@ -205,7 +205,7 @@ impl World {
         state.world_z = origin[2];
         state.world_y_mirror = origin[1];
         state.wait_timer = -1;
-        self.ambient_fx.push(AmbientPart {
+        self.ambient.fx.push(AmbientPart {
             record_off,
             model_sel: rec.model_sel,
             flags: rec.flags,
@@ -216,7 +216,7 @@ impl World {
             scroll_fx: Vec::new(),
             prev_morph_weights: Vec::new(),
         });
-        Some(self.ambient_fx.len() - 1)
+        Some(self.ambient.fx.len() - 1)
     }
 
     /// Tick one ambient part: drain the wait timer, run the move VM, flush
@@ -227,7 +227,7 @@ impl World {
         if depth > MAX_SPAWN_DEPTH {
             return;
         }
-        let Some(part) = self.ambient_fx.get(idx) else {
+        let Some(part) = self.ambient.fx.get(idx) else {
             return;
         };
         if part.finished {
@@ -254,10 +254,10 @@ impl World {
         // `_DAT_8007B8D0` memory directly) and this part's own snapshot.
         for (word, value) in writes {
             let byte = (record_words + word) * 2;
-            if let Some(b) = self.field_stager_bytes.get_mut(byte..byte + 2) {
+            if let Some(b) = self.props.stager_bytes.get_mut(byte..byte + 2) {
                 b.copy_from_slice(&value.to_le_bytes());
             }
-            if let Some(slot) = self.ambient_fx[idx].buf.get_mut(word) {
+            if let Some(slot) = self.ambient.fx[idx].buf.get_mut(word) {
                 *slot = value;
             }
         }
@@ -274,13 +274,16 @@ impl World {
         // `cursor_advance` gate). This is what moves the `+0xA0` lane
         // weights the VDF render substitution reads back.
         if state.flags & legaia_engine_vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0 {
-            legaia_engine_vm::vdf_morph::envelope_tick_actor(&mut state, self.frame_step.max(1));
+            legaia_engine_vm::vdf_morph::envelope_tick_actor(
+                &mut state,
+                self.clock.frame_step.max(1),
+            );
         }
 
         // Mode-3 render tail: the `0x4000` render-mode node's CLUT-cell
         // integrator runs every game tick regardless of the wait timer.
         let cell_fx = if model_sel == legaia_asset::summon_overlay::RENDER_NODE_MODE_A {
-            clut_cell_fx::mode3_integrate(&mut state, self.frame_step.max(1))
+            clut_cell_fx::mode3_integrate(&mut state, self.clock.frame_step.max(1))
         } else {
             None
         };
@@ -289,7 +292,7 @@ impl World {
         // on `+0x5A == 4` alone (`0x80022CB8`) - no `model_sel` condition,
         // and jou's carrier is a plain transform node (`model_sel = -1`).
         let scroll_fx = (state.move_submode == vram_scroll::RENDER_MODE_SCROLL)
-            .then(|| vram_scroll::mode4_integrate(&mut state, self.frame_step.max(1)))
+            .then(|| vram_scroll::mode4_integrate(&mut state, self.clock.frame_step.max(1)))
             .flatten();
 
         // VDF morph dirty tracking: when an armed part's lane weights moved
@@ -301,7 +304,7 @@ impl World {
         {
             let lanes = legaia_engine_vm::vdf_morph::actor_morph_lanes(&state);
             let weights: Vec<u16> = lanes.iter().map(|&(_, w)| w).collect();
-            if self.ambient_fx[idx].prev_morph_weights != weights {
+            if self.ambient.fx[idx].prev_morph_weights != weights {
                 for &(vdf_idx, _) in &lanes {
                     if let Some(entry) = self.vdf_record_bytes(vdf_idx) {
                         for rec in legaia_engine_vm::vdf_morph::parse_vdf_morph_records(entry) {
@@ -314,10 +317,10 @@ impl World {
                 new_weights = Some(weights);
             }
         }
-        self.morph_dirty_slots.extend(dirty);
+        self.ambient.morph_dirty_slots.extend(dirty);
 
         {
-            let part = &mut self.ambient_fx[idx];
+            let part = &mut self.ambient.fx[idx];
             part.state = state;
             part.finished = finished;
             if cell_fx.is_some() {
@@ -407,14 +410,15 @@ impl World {
     /// REF: FUN_800204A4, FUN_80020454, FUN_800203EC
     fn retire_finished_ambient_parts(&mut self) {
         if !self
-            .ambient_fx
+            .ambient
+            .fx
             .iter()
             .any(|p| p.finished && p.scroll_fx.is_empty())
         {
             return;
         }
         let mut retired_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
-        self.ambient_fx.retain(|p| {
+        self.ambient.fx.retain(|p| {
             if p.finished && p.scroll_fx.is_empty() {
                 if let Some(fx) = p.cell_fx {
                     retired_rects.push(fx.rect);
@@ -430,11 +434,12 @@ impl World {
         // keyed by rect and several parts may share one).
         for rect in retired_rects {
             if !self
-                .ambient_fx
+                .ambient
+                .fx
                 .iter()
                 .any(|p| p.cell_fx.is_some_and(|f| f.rect == rect))
             {
-                self.ambient_cell_captures.remove(&rect);
+                self.ambient.cell_captures.remove(&rect);
             }
         }
     }
@@ -446,21 +451,21 @@ impl World {
         // The wait-timer drain per game tick: retail decrements `+0x54` by
         // `DAT_1F800393 * DAT_1F80037D` (frame step x the pinned 0x10 speed
         // scalar) per tick.
-        let drain = u16::from(self.frame_step.max(1)) * clut_cell_fx::SPEED_SCALAR as u16;
-        let count = self.ambient_fx.len();
+        let drain = u16::from(self.clock.frame_step.max(1)) * clut_cell_fx::SPEED_SCALAR as u16;
+        let count = self.ambient.fx.len();
         for idx in 0..count {
-            if self.ambient_fx[idx].finished {
+            if self.ambient.fx[idx].finished {
                 continue;
             }
-            move_vm::decrement_wait_timer(&mut self.ambient_fx[idx].state, drain);
+            move_vm::decrement_wait_timer(&mut self.ambient.fx[idx].state, drain);
             self.tick_ambient_part(idx, 0);
         }
         // The scene-entry VDF pulse (enhancement - `crate::vdf_pulse`) rides
         // the same ambient game tick.
-        let step = self.frame_step.max(1);
-        if let Some(pulse) = self.entry_vdf_pulse.as_mut() {
+        let step = self.clock.frame_step.max(1);
+        if let Some(pulse) = self.ambient.entry_vdf_pulse.as_mut() {
             let dirty = pulse.tick(step);
-            self.morph_dirty_slots.extend(dirty);
+            self.ambient.morph_dirty_slots.extend(dirty);
         }
     }
 
@@ -468,7 +473,8 @@ impl World {
     /// (`+0x10` bit `0x1000`, op `0x0A`) - the retail VDF morph carriers
     /// (town0e's flesh lumps, rikuroa's generator sacs).
     pub fn ambient_morph_parts(&self) -> Vec<AmbientMorphPart> {
-        self.ambient_fx
+        self.ambient
+            .fx
             .iter()
             .filter(|p| {
                 !p.finished
@@ -516,7 +522,7 @@ impl World {
                 lanes.extend(part.lanes);
             }
         }
-        if let Some(pulse) = self.entry_vdf_pulse.as_ref() {
+        if let Some(pulse) = self.ambient.entry_vdf_pulse.as_ref() {
             lanes.extend(pulse.lanes_for(pack_slot, group));
         }
         if lanes.is_empty() {
@@ -529,8 +535,8 @@ impl World {
     /// since the last call - the renderer re-stages just those meshes'
     /// positions (`current_morph_deltas` + the authored vertices).
     pub fn take_morph_dirty_slots(&mut self) -> Vec<(usize, u32)> {
-        let out: Vec<(usize, u32)> = self.morph_dirty_slots.iter().copied().collect();
-        self.morph_dirty_slots.clear();
+        let out: Vec<(usize, u32)> = self.ambient.morph_dirty_slots.iter().copied().collect();
+        self.ambient.morph_dirty_slots.clear();
         out
     }
 
@@ -540,8 +546,8 @@ impl World {
     /// tree already armed retail morph lanes - the pulse only stands in
     /// where retail's own entry ambience has no morph carrier (jou).
     pub fn install_entry_vdf_pulse(&mut self, pack_objects: &[Vec<usize>]) -> bool {
-        self.entry_vdf_pulse = None;
-        if !self.entry_pulse_enabled {
+        self.ambient.entry_vdf_pulse = None;
+        if !self.toggles.entry_pulse_enabled {
             return false;
         }
         if !self.ambient_morph_parts().is_empty() {
@@ -552,8 +558,8 @@ impl World {
         // retail owns those morphs; the pulse is only for packs retail
         // never arms from the ambient tree (jou).
         if crate::vdf_pulse::stager_records_arm_morphs(
-            &self.field_stagers,
-            &self.field_stager_bytes,
+            &self.props.stagers,
+            &self.props.stager_bytes,
         ) {
             return false;
         }
@@ -568,16 +574,17 @@ impl World {
         let entries: Vec<&[u8]> = (0..count.min(u8::MAX as usize))
             .filter_map(|i| self.vdf_record_bytes(i as u8))
             .collect();
-        self.entry_vdf_pulse = crate::vdf_pulse::EntryVdfPulse::build(&entries, pack_objects);
-        self.entry_vdf_pulse.is_some()
+        self.ambient.entry_vdf_pulse =
+            crate::vdf_pulse::EntryVdfPulse::build(&entries, pack_objects);
+        self.ambient.entry_vdf_pulse.is_some()
     }
 
     /// Drain the banked game ticks and apply the live CLUT-cell effects to
     /// `vram`. Returns `true` when any texels changed (the caller re-uploads
     /// its GPU copy). The renderer-facing sibling of [`World::step_clut_fx`].
     pub fn step_ambient_fx(&mut self, vram: &mut legaia_tim::Vram) -> bool {
-        let ticks = std::mem::take(&mut self.ambient_pending_game_ticks);
-        if self.ambient_fx.is_empty() {
+        let ticks = std::mem::take(&mut self.ambient.pending_game_ticks);
+        if self.ambient.fx.is_empty() {
             return false;
         }
         let mut wrote = false;
@@ -592,7 +599,8 @@ impl World {
         // VRAM surface) still lands, in queue order.
         wrote |= self.apply_ambient_scrolls(vram);
         let fx: Vec<ClutCellFx> = self
-            .ambient_fx
+            .ambient
+            .fx
             .iter()
             .filter_map(|p| {
                 (!p.finished || p.cell_fx.is_some())
@@ -600,21 +608,22 @@ impl World {
                     .flatten()
             })
             .collect();
-        if !self.reduce_flashing && !self.ambient_flash_applied.is_empty() {
-            self.ambient_flash_applied.clear();
+        if !self.toggles.reduce_flashing && !self.ambient.flash_applied.is_empty() {
+            self.ambient.flash_applied.clear();
         }
         for f in fx {
             let (x, y, w, h) = f.rect;
             if w == 0 || h == 0 || w > 256 || h > 64 {
                 continue;
             }
-            let f = if self.reduce_flashing {
+            let f = if self.toggles.reduce_flashing {
                 self.limit_flash(f, ticks)
             } else {
                 f
             };
             let src = self
-                .ambient_cell_captures
+                .ambient
+                .cell_captures
                 .entry(f.rect)
                 .or_insert_with(|| read_rect(vram, x, y, w, h))
                 .clone();
@@ -647,7 +656,8 @@ impl World {
             (i32::from(cur) + d) as i16
         };
         let applied = self
-            .ambient_flash_applied
+            .ambient
+            .flash_applied
             .entry(f.rect)
             .or_insert((f.v_add, f.white));
         if ticks > 0 {
@@ -668,11 +678,11 @@ impl World {
     /// LoadImage trio, `0x80022D08..` and `0x80022DF8..`)
     fn apply_ambient_scrolls(&mut self, vram: &mut legaia_tim::Vram) -> bool {
         let mut wrote = false;
-        for idx in 0..self.ambient_fx.len() {
-            if self.ambient_fx[idx].scroll_fx.is_empty() {
+        for idx in 0..self.ambient.fx.len() {
+            if self.ambient.fx[idx].scroll_fx.is_empty() {
                 continue;
             }
-            let queued = std::mem::take(&mut self.ambient_fx[idx].scroll_fx);
+            let queued = std::mem::take(&mut self.ambient.fx[idx].scroll_fx);
             for fx in queued {
                 let (x, y, w, h) = fx.rect;
                 if w == 0 || h == 0 || w > 1024 || h > 512 {
@@ -691,7 +701,7 @@ impl World {
                     // A rotated rect invalidates any mode-3 capture keyed on
                     // exactly this rect (no retail scene pairs the two on one
                     // rect; this keeps the cache honest if one ever did).
-                    self.ambient_cell_captures.remove(&fx.rect);
+                    self.ambient.cell_captures.remove(&fx.rect);
                     wrote = true;
                 }
             }
@@ -702,14 +712,15 @@ impl World {
     /// Snapshot of the live ambient CLUT-cell effects (for tests and the
     /// web viewer's status line).
     pub fn active_ambient_cell_fx(&self) -> Vec<ClutCellFx> {
-        self.ambient_fx.iter().filter_map(|p| p.cell_fx).collect()
+        self.ambient.fx.iter().filter_map(|p| p.cell_fx).collect()
     }
 
     /// The VRAM rects the live mode-4 scroller parts animate, with each
     /// part's authored per-period steps - the seated `+0xD0..+0xD6` rect and
     /// `+0xCC`/`+0xCE` (for tests and viewer status lines).
     pub fn active_ambient_scroll_rects(&self) -> Vec<vram_scroll::ScrollSeat> {
-        self.ambient_fx
+        self.ambient
+            .fx
             .iter()
             .filter(|p| !p.finished && p.state.move_submode == vram_scroll::RENDER_MODE_SCROLL)
             .map(|p| {

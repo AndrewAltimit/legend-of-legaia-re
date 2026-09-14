@@ -18,47 +18,51 @@ impl World {
     /// committed, otherwise the template default seeded at
     /// [`Self::seed_starting_party`]. Empty string when the slot is unknown.
     pub fn party_name(&self, slot: usize) -> &str {
-        self.party_names.get(slot).map(String::as_str).unwrap_or("")
+        self.party
+            .party_names
+            .get(slot)
+            .map(String::as_str)
+            .unwrap_or("")
     }
 
     /// Open the name-entry overlay for `slot`, seeded with the slot's current
     /// display name (e.g. the template `Vahn`). Mirrors the opening `town01`
     /// script's lead-character naming prompt. The host drives it each frame
-    /// with [`Self::step_name_entry`] and renders from [`Self::name_entry`].
+    /// with [`Self::step_name_entry`] and renders from [`crate::world::PartyState::name_entry`].
     pub fn open_name_entry(&mut self, slot: usize) {
         let initial = self.party_name(slot).to_string();
-        self.name_entry = Some(crate::name_entry::NameEntry::new(slot, &initial));
+        self.party.name_entry = Some(crate::name_entry::NameEntry::new(slot, &initial));
     }
 
     /// `true` while the name-entry overlay is active.
     pub fn name_entry_active(&self) -> bool {
-        self.name_entry.is_some()
+        self.party.name_entry.is_some()
     }
 
     /// Advance the active name-entry overlay by one input frame. On commit
     /// (the player confirms "Is this name okay?") the entered name is written
-    /// into [`Self::party_names`] for the entry's slot, the session is closed,
+    /// into [`crate::world::PartyState::party_names`] for the entry's slot, the session is closed,
     /// and `true` is returned so the host can resume the field script.
     /// Returns `false` while the overlay stays open (or when none is active).
     pub fn step_name_entry(&mut self, input: crate::name_entry::NameEntryInput) -> bool {
-        let Some(entry) = self.name_entry.as_mut() else {
+        let Some(entry) = self.party.name_entry.as_mut() else {
             return false;
         };
         entry.step(input);
         if entry.state == crate::name_entry::NameEntryState::Done {
             let slot = entry.char_index;
             let name = entry.committed_name();
-            if self.party_names.len() <= slot {
-                self.party_names.resize(slot + 1, String::new());
+            if self.party.party_names.len() <= slot {
+                self.party.party_names.resize(slot + 1, String::new());
             }
-            self.party_names[slot] = name.clone();
+            self.party.party_names[slot] = name.clone();
             // Stamp the record too, so the committed name survives a
             // save/load round trip - retail's carrier is the record's
             // `+0x2A7`, not a side table.
-            if let Some(rec) = self.roster.members.get_mut(slot) {
+            if let Some(rec) = self.party.roster.members.get_mut(slot) {
                 rec.set_name(&name);
             }
-            self.name_entry = None;
+            self.party.name_entry = None;
             true
         } else {
             false
@@ -70,7 +74,7 @@ impl World {
     /// script; see [`crate::man_field_scripts::collect_partition_narration`]).
     /// A presenter with no pages installs nothing - a scene that carries no
     /// inline narration simply never shows one. The host renders the active
-    /// page from [`Self::cutscene_narration`]; [`Self::tick`] advances its
+    /// page from [`crate::world::CutsceneState::narration`]; [`Self::tick`] advances its
     /// per-page timer.
     pub fn open_cutscene_narration(&mut self, pages: Vec<String>) {
         if pages.is_empty() {
@@ -79,7 +83,7 @@ impl World {
         // Per-scene crawl geometry / speed (capture-pinned; see
         // `RollerParams::for_scene`).
         let params = crate::cutscene_narration::RollerParams::for_scene(&self.active_scene_label);
-        self.cutscene_narration = Some(crate::cutscene_narration::CutsceneNarration::with_params(
+        self.cutscene.narration = Some(crate::cutscene_narration::CutsceneNarration::with_params(
             pages, params,
         ));
         // Monotonic "which crawl block is showing" counter. Because a
@@ -87,14 +91,15 @@ impl World {
         // one scrolls out (continuous crawl, no blank frame), a rising-edge
         // `active && !was_active` observer can miss a block; observers count
         // this instead. Never reset within a scene's opening.
-        self.cutscene_narration_seq = self.cutscene_narration_seq.wrapping_add(1);
+        self.cutscene.narration_seq = self.cutscene.narration_seq.wrapping_add(1);
     }
 
     /// `true` while the opening-cutscene narration is on screen (not yet
     /// stepped past its last page). Hosts gate the prologue hand-off on this:
     /// the narration plays first, the Rim Elm hand-off follows.
     pub fn cutscene_narration_active(&self) -> bool {
-        self.cutscene_narration
+        self.cutscene
+            .narration
             .as_ref()
             .is_some_and(|n| !n.is_complete())
     }
@@ -156,7 +161,7 @@ impl World {
     /// That op ramps the effect-layer colour (`FUN_801E1FB0`); its consumer
     /// (the creation-glow effect planes) is a separate open thread.
     pub fn scene_screen_tint(&self) -> Option<[f32; 3]> {
-        self.screen_tint.as_ref().map(|t| t.factor())
+        self.presentation.tint.as_ref().map(|t| t.factor())
     }
 
     /// Skip the active narration to its next page (a confirm press). Clears
@@ -164,12 +169,12 @@ impl World {
     /// narration is still on screen, `false` once it completes (so the host
     /// lets the confirm fall through to [`Self::take_prologue_handoff`]).
     pub fn skip_cutscene_narration(&mut self) -> bool {
-        let Some(narration) = self.cutscene_narration.as_mut() else {
+        let Some(narration) = self.cutscene.narration.as_mut() else {
             return false;
         };
         let still_active = narration.skip_page();
         if !still_active {
-            self.cutscene_narration = None;
+            self.cutscene.narration = None;
         }
         still_active
     }
@@ -180,7 +185,7 @@ impl World {
     /// timeline (a field-VM record in the MAN's third record partition)
     /// that ends with `GFLAG_SET 26` - field-VM op `0x2E` with operand
     /// `0x1A`, which sets bit 26 (`0x0400_0000`) of the scratchpad flag
-    /// word `_DAT_1F800394` (the engine's [`Self::story_flags`]) right
+    /// word `_DAT_1F800394` (the engine's [`crate::world::StoryFlagState::story_flags`]) right
     /// after staging the closing camera + actor moves. Once that bit is
     /// set, the per-frame field controller `FUN_801D1344` waits for the
     /// player's confirm press and then issues a name-based scene-change
@@ -192,7 +197,7 @@ impl World {
     /// `GFLAG_SET 26` would, so the downstream gate stays faithful.
     // REF: FUN_801D1344
     pub fn arm_prologue_handoff(&mut self) {
-        self.story_flags |= PROLOGUE_HANDOFF_FLAG;
+        self.flags.story_flags |= PROLOGUE_HANDOFF_FLAG;
     }
 
     /// Arm the prologue -> Rim Elm hand-off **only when** the scene's MAN
@@ -241,7 +246,7 @@ impl World {
     ///
     /// Returns the skip target scene ([`legaia_asset::new_game::OPENING_SCENE`]
     /// = `town01`) once - when the opening cutscene chain is playing
-    /// ([`Self::opening_chain_active`], set at the `opdeene` entry and carried
+    /// ([`crate::world::CutsceneState::opening_chain_active`], set at the `opdeene` entry and carried
     /// through its `opstati` / `opurud` legs), the trigger bit is set
     /// ([`Self::arm_prologue_handoff`] - `opdeene`'s timeline raises it near
     /// its top, so the skip is available almost immediately), and the caller
@@ -255,19 +260,22 @@ impl World {
     // REF: FUN_801D1344
     // REF: FUN_8001FD44
     pub fn take_prologue_handoff(&mut self, confirm: bool) -> Option<&'static str> {
-        if confirm && self.story_flags & PROLOGUE_HANDOFF_FLAG != 0 && self.opening_chain_active {
-            self.story_flags &= !PROLOGUE_HANDOFF_FLAG;
+        if confirm
+            && self.flags.story_flags & PROLOGUE_HANDOFF_FLAG != 0
+            && self.cutscene.opening_chain_active
+        {
+            self.flags.story_flags &= !PROLOGUE_HANDOFF_FLAG;
             // Tear down whatever leg of the opening is mid-flight - the skip
             // abandons the remaining narration + choreography wholesale.
-            self.cutscene_narration = None;
-            self.cutscene_card = None;
-            self.cutscene_timeline = None;
+            self.cutscene.narration = None;
+            self.cutscene.card = None;
+            self.cutscene.timeline = None;
             self.pending_named_scene_transition = None;
-            self.opening_chain_active = false;
+            self.cutscene.opening_chain_active = false;
             // Mark the upcoming `town01` entry as the new-game opening so it
             // installs the opening cutscene timeline (which opens name entry at
             // its pinned op-`0x49`); a normal `town01` visit never sets this.
-            self.entering_town01_opening = true;
+            self.cutscene.entering_town01_opening = true;
             Some(legaia_asset::new_game::OPENING_SCENE)
         } else {
             None
@@ -311,8 +319,8 @@ impl World {
         }
         // opdeene's terminal `GFLAG_SET 26` arms the `town01` hand-off; mark the
         // timeline so its completion / frame-cap safety net does so.
-        if let Some(tl) = self.cutscene_timeline.take() {
-            self.cutscene_timeline = Some(tl.arming_prologue_handoff());
+        if let Some(tl) = self.cutscene.timeline.take() {
+            self.cutscene.timeline = Some(tl.arming_prologue_handoff());
         }
         true
     }
@@ -320,11 +328,11 @@ impl World {
     /// `true` when story flag `flag` is set in the partition-2 gate bitmap
     /// (retail `DAT_80085758`). That base is the **system-flag bank** the
     /// field VM's `0x50`/`0x60`/`0x70` SET/CLEAR/TEST opcodes operate on
-    /// ([`Self::system_flags`], same `byte = flag >> 3`,
+    /// ([`crate::world::StoryFlagState::system_flags`], same `byte = flag >> 3`,
     /// `bit = 0x80 >> (flag & 7)` addressing - `FUN_8003BDE0`'s test), so the
     /// gate check and the VM writes share one store. It also sits at offset
     /// `0x158` of the `0x80085600..0x80085800` save-bitmap window
-    /// ([`Self::story_flag_bits`]); the save/load paths sync that overlap so
+    /// ([`crate::world::StoryFlagState::story_flag_bits`]); the save/load paths sync that overlap so
     /// gate state persists (see [`Self::save_full`] / [`Self::load_full`]).
     // REF: FUN_8003BDE0
     pub fn p2_gate_flag_set(&self, flag: u16) -> bool {
@@ -389,7 +397,7 @@ impl World {
     }
 
     /// Install a field-VM op-`0x44` SPAWN_RECORD request as a **concurrent
-    /// helper context** ([`Self::helper_contexts`]): re-base the GLOBAL record
+    /// helper context** ([`crate::world::FieldVmState::helper_contexts`]): re-base the GLOBAL record
     /// index into partition 2 (`global - N0 - N1`, retail `FUN_8003BDE0`),
     /// check the record's C1/C2 story-flag gates, and push the record as an
     /// independent spawned context. Returns `true` when a context installed.
@@ -434,7 +442,7 @@ impl World {
         man: &[u8],
         record_idx: usize,
     ) -> bool {
-        if self.helper_contexts.len() >= crate::world::SPAWNED_CONTEXT_SLOTS {
+        if self.field_vm.helper_contexts.len() >= crate::world::SPAWNED_CONTEXT_SLOTS {
             return false;
         }
         match crate::man_field_scripts::partition2_record_gates(man_file, man, record_idx) {
@@ -453,7 +461,8 @@ impl World {
         let Some(body) = man.get(script_start..script_start + body_len) else {
             return false;
         };
-        self.helper_contexts
+        self.field_vm
+            .helper_contexts
             .push(crate::cutscene_timeline::CutsceneTimeline::new(
                 body.to_vec(),
                 pc0,
@@ -514,11 +523,11 @@ impl World {
         // The opening hides the town for its establishing shot; free-roam
         // follows with no scene reload, so completion must drop the hide-box
         // overrides (see `CutsceneTimeline::restore_hidden_on_complete`).
-        if let Some(tl) = self.cutscene_timeline.as_mut() {
+        if let Some(tl) = self.cutscene.timeline.as_mut() {
             tl.restore_hidden_on_complete = true;
         }
-        self.prologue_naming_pending = true;
-        self.prologue_naming_armed = false;
+        self.cutscene.prologue_naming_pending = true;
+        self.cutscene.prologue_naming_armed = false;
         true
     }
 
@@ -578,7 +587,7 @@ impl World {
         if trace || std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some() {
             tl = tl.with_trace();
         }
-        self.cutscene_timeline = Some(tl);
+        self.cutscene.timeline = Some(tl);
         // Spawn the per-actor channels (one per partition-1 placement,
         // retail `FUN_8003AEB0`'s spawn loop) so the timeline's cross-context
         // pokes land on real per-actor contexts - the vignette mechanism -
@@ -592,20 +601,22 @@ impl World {
         // town01 Mei beat's opening `SET 550` re-routed her prologue to its
         // post-beat seat, fighting the beat's own door-tile seat poke.
         let same_man = self
-            .field_channels_man
+            .field_vm
+            .channels_man
             .as_deref()
             .is_some_and(|m| m.as_slice() == man);
-        if !same_man || self.field_channels.is_empty() {
-            self.field_channels = crate::field_channels::spawn_channels(man_file, man);
-            let binds = std::mem::take(&mut self.object_channel_binds);
-            self.field_channels
+        if !same_man || self.field_vm.channels.is_empty() {
+            self.field_vm.channels = crate::field_channels::spawn_channels(man_file, man);
+            let binds = std::mem::take(&mut self.field_vm.object_channel_binds);
+            self.field_vm
+                .channels
                 .extend(crate::field_channels::spawn_object_channels(
                     man_file, man, &binds,
                 ));
-            self.object_channel_binds = binds;
-            self.field_channels_man = Some(std::sync::Arc::new(man.to_vec()));
+            self.field_vm.object_channel_binds = binds;
+            self.field_vm.channels_man = Some(std::sync::Arc::new(man.to_vec()));
         }
-        self.field_npc_anim_cues.clear();
+        self.npcs.anim_cues.clear();
         true
     }
 
@@ -613,7 +624,8 @@ impl World {
     /// and not yet complete). Diagnostics / tests read this; the hand-off gate
     /// itself keys off the scratchpad flag the timeline sets, not this.
     pub fn cutscene_timeline_active(&self) -> bool {
-        self.cutscene_timeline
+        self.cutscene
+            .timeline
             .as_ref()
             .is_some_and(|t| !t.is_done())
     }
@@ -621,8 +633,8 @@ impl World {
     /// `true` while a dialogue engagement owns the pad and the player.
     ///
     /// The engine has **two** dialogue channels and either one can be live on
-    /// its own. [`Self::current_dialog`] is the simplified request the probe /
-    /// world map open; [`Self::inline_dialogue`] is the faithful field-VM
+    /// its own. [`crate::world::DialogState::current`] is the simplified request the probe /
+    /// world map open; [`crate::world::DialogState::inline`] is the faithful field-VM
     /// runner ([`crate::inline_dialogue`]), which the ordinary NPC-talk path
     /// runs and which can hold a box open with no `current_dialog` at all -
     /// an interaction record whose prologue selects its segment never sets
@@ -643,7 +655,7 @@ impl World {
     ///
     /// REF: FUN_801D01B0 (`0x801D01F0`, the engaged-bit branch), FUN_801D5B5C
     pub fn dialogue_owns_input(&self) -> bool {
-        self.current_dialog.is_some() || self.inline_dialogue.is_some()
+        self.dialog.current.is_some() || self.dialog.inline.is_some()
     }
 
     /// Step the opening-cutscene timeline one frame.
@@ -687,7 +699,7 @@ impl World {
     /// The engine's sim clock runs at 100 Hz, so stepping the timeline once
     /// per sim tick drained every `WaitFrames` 1.67x too fast. The narration
     /// roller was already corrected onto the retail-frame sub-clock
-    /// ([`crate::world::World::field_frame_step`]); the timeline is paced off
+    /// ([`crate::world::FrameClock::display_frame_step`]); the timeline is paced off
     /// the same sub-clock here so wait-dominated legs keep retail wall-time
     /// too. (Measured against a headless retail capture of the New Game
     /// opening chain: before, the roller-bound `opdeene` leg matched retail
@@ -696,7 +708,7 @@ impl World {
     // REF: FUN_8002519C
     // REF: FUN_801DC0BC
     pub fn step_spawned_record_contexts(&mut self) {
-        if self.field_frame_step != 1 {
+        if self.clock.display_frame_step != 1 {
             return;
         }
         self.step_cutscene_timeline();
@@ -705,18 +717,18 @@ impl World {
 
     // REF: FUN_8003BDE0
     pub fn step_cutscene_timeline(&mut self) {
-        let Some(mut tl) = self.cutscene_timeline.take() else {
+        let Some(mut tl) = self.cutscene.timeline.take() else {
             return;
         };
         if tl.done {
-            self.cutscene_timeline = Some(tl);
+            self.cutscene.timeline = Some(tl);
             return;
         }
         // Freeze the timeline while the name-entry overlay it spawned is open:
         // its op-`0x49` STATE_RESUME is suspended until the player commits a
         // name, so neither the VM nor the frame cap advances meanwhile.
         if self.name_entry_active() {
-            self.cutscene_timeline = Some(tl);
+            self.cutscene.timeline = Some(tl);
             return;
         }
         // Parked at an inline dialog box (a `0x1F` glyph segment the record's
@@ -774,12 +786,12 @@ impl World {
                 }
             }
             if tl.dialog.is_some() && !tl.done {
-                self.cutscene_timeline = Some(tl);
+                self.cutscene.timeline = Some(tl);
                 return;
             }
             if tl.done {
                 let restore = tl.restore_hidden_on_complete;
-                self.cutscene_timeline = None;
+                self.cutscene.timeline = None;
                 if restore {
                     self.restore_hidden_field_npcs();
                 }
@@ -792,7 +804,7 @@ impl World {
         // clears the parent's halt bit when every page has scrolled off.
         if tl.narration_pc.is_some() {
             if self.cutscene_narration_active() {
-                self.cutscene_timeline = Some(tl);
+                self.cutscene.timeline = Some(tl);
                 return;
             }
             // The prior roller drained: clear the hold and leave the PC AT
@@ -806,7 +818,7 @@ impl World {
         } else {
             // Still parked on the channel-completion handshake: keep the
             // timeline installed and re-test next tick.
-            self.cutscene_timeline = Some(tl);
+            self.cutscene.timeline = Some(tl);
         }
     }
 
@@ -820,7 +832,7 @@ impl World {
     /// the spawned per-actor channels, the channel-completion handshake park
     /// (`B3 <id> <bit>`), the flag-test step-past rules, and the
     /// backward-wrap completion detection. Only `modal` differences apply:
-    /// - `modal` sets [`Self::in_cutscene_timeline`] while the VM steps (the
+    /// - `modal` sets [`crate::world::CutsceneState::in_timeline`] while the VM steps (the
     ///   op-49 name-entry / narration-draw host-hook scoping); a helper
     ///   context runs with ordinary field-VM host semantics.
     /// - a `0x1F` inline-dialog segment parks a modal timeline on an owned
@@ -840,9 +852,9 @@ impl World {
         modal: bool,
     ) -> bool {
         tl.frames = tl.frames.saturating_add(1);
-        self.in_cutscene_timeline = modal;
-        self.in_spawned_record_slice = true;
-        let mut channels = std::mem::take(&mut self.field_channels);
+        self.cutscene.in_timeline = modal;
+        self.field_vm.in_spawned_record_slice = true;
+        let mut channels = std::mem::take(&mut self.field_vm.channels);
         let channel_pre_pos: Vec<(u16, u16)> = channels
             .iter()
             .map(|c| (c.ctx.world_x, c.ctx.world_z))
@@ -863,9 +875,9 @@ impl World {
                 Some(false) if wait.frames < CHANNEL_WAIT_PARK_TIMEOUT => {
                     wait.frames += 1;
                     tl.channel_wait = Some(wait);
-                    self.field_channels = channels;
-                    self.in_cutscene_timeline = false;
-                    self.in_spawned_record_slice = false;
+                    self.field_vm.channels = channels;
+                    self.cutscene.in_timeline = false;
+                    self.field_vm.in_spawned_record_slice = false;
                     return false;
                 }
                 // The channel raised the flag (resume), the target is gone, or
@@ -895,9 +907,9 @@ impl World {
             tl.player_move_frames = tl.player_move_frames.saturating_sub(1);
             if tl.player_move_frames > 0 {
                 tl.player_wait = Some(width);
-                self.field_channels = channels;
-                self.in_cutscene_timeline = false;
-                self.in_spawned_record_slice = false;
+                self.field_vm.channels = channels;
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
                 return false;
             }
             tl.pc += width;
@@ -919,7 +931,7 @@ impl World {
         if let Some(mut walk) = tl.walk_wait.take() {
             walk.frames += 1;
             let arrived = match walk.slot {
-                Some(slot) => !self.field_npc_motions.contains_key(&slot),
+                Some(slot) => !self.npcs.motions.contains_key(&slot),
                 None => {
                     // Step the player toward the target at the op's speed.
                     if let Some(p) = self.player_actor_slot
@@ -958,9 +970,9 @@ impl World {
             };
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 tl.walk_wait = Some(walk);
-                self.field_channels = channels;
-                self.in_cutscene_timeline = false;
-                self.in_spawned_record_slice = false;
+                self.field_vm.channels = channels;
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
                 // A walk park is real playout progress, not a hang: don't let
                 // it accumulate toward the anti-hang frame cap (a long leg -
                 // tower P2[2]'s `C7 F8 0D 45` covers ~7500 units at 4/tick -
@@ -974,8 +986,8 @@ impl World {
             if !arrived {
                 match walk.slot {
                     Some(slot) => {
-                        self.field_npc_motions.remove(&slot);
-                        self.field_npc_positions.insert(slot, walk.target);
+                        self.npcs.motions.remove(&slot);
+                        self.npcs.positions.insert(slot, walk.target);
                     }
                     None => {
                         if let Some(p) = self.player_actor_slot
@@ -1008,13 +1020,13 @@ impl World {
             if fw.state.yaw_written {
                 // Raw write-back (`yaw` may sit outside 0..0xFFF mid-ramp,
                 // exactly as retail's `+0x26` does); render consumers mask.
-                self.field_npc_headings.insert(fw.slot, fw.state.yaw as i16);
+                self.npcs.headings.insert(fw.slot, fw.state.yaw as i16);
             }
             if r != vm::motion_vm::StepResult::Done && fw.frames < WALK_PARK_TIMEOUT {
                 tl.facing_wait = Some(fw);
-                self.field_channels = channels;
-                self.in_cutscene_timeline = false;
-                self.in_spawned_record_slice = false;
+                self.field_vm.channels = channels;
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
                 // Like the walk park: a rotate park is real playout progress,
                 // not a hang - keep it off the anti-hang frame cap.
                 tl.frames = tl.frames.saturating_sub(1);
@@ -1064,7 +1076,7 @@ impl World {
                         }
                         legaia_asset::cutscene_text::NarrationKind::Card => {
                             let blank = site.pages.iter().all(|p| p.trim().is_empty());
-                            host.world.cutscene_card = if blank {
+                            host.world.cutscene.card = if blank {
                                 None
                             } else {
                                 Some(site.pages.clone())
@@ -1230,7 +1242,7 @@ impl World {
                             }
                             if parked_sentinel {
                                 // Despawn: seat at the hide box, no playout.
-                                host.world.field_npc_positions.insert(
+                                host.world.npcs.positions.insert(
                                     s,
                                     (
                                         crate::world::FIELD_OFFMAP_HIDE_XZ,
@@ -1241,14 +1253,14 @@ impl World {
                                 continue;
                             }
                             if host.world.start_field_npc_motion(s, tx, tz) {
-                                if let Some(m) = host.world.field_npc_motions.get_mut(&s) {
+                                if let Some(m) = host.world.npcs.motions.get_mut(&s) {
                                     m.state.speed = speed;
                                     m.route_cursor = None;
                                 }
                             } else {
                                 // No surfaced live position to glide from:
                                 // seat directly (the pre-park fallback).
-                                host.world.field_npc_positions.insert(s, (tx, tz));
+                                host.world.npcs.positions.insert(s, (tx, tz));
                                 tl.pc = pc + 5;
                                 continue;
                             }
@@ -1295,7 +1307,7 @@ impl World {
                         if let Some(h) =
                             crate::man_field_scripts::facing_index_to_engine_heading(op0 & 0xF)
                         {
-                            host.world.field_npc_headings.insert(slot, h);
+                            host.world.npcs.headings.insert(slot, h);
                         }
                         tl.pc = pc + 4;
                         continue;
@@ -1305,7 +1317,8 @@ impl World {
                     // spawn default 0 = engine 0x800.
                     let cur = host
                         .world
-                        .field_npc_headings
+                        .npcs
+                        .headings
                         .get(&slot)
                         .copied()
                         .unwrap_or(0x800);
@@ -1340,7 +1353,7 @@ impl World {
                         // post-naming `A2 F8 30`/`31` land the retail anim
                         // pointer on scene records 47/48 for one playthrough
                         // each).
-                        host.world.field_player_move_cues.push(move_id);
+                        host.world.locomotion.player_move_cues.push(move_id);
                         tl.player_move_frames = CHANNEL_WAIT_PARK_TIMEOUT;
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
@@ -1375,7 +1388,7 @@ impl World {
                     // `placement_index` is a flat record index - never
                     // attribute placement-keyed side effects (anim cues,
                     // seat write-throughs) to them.
-                    host.world.executing_channel =
+                    host.world.field_vm.executing_channel =
                         (!channels[ci].object_bind).then_some(channels[ci].placement_index as u8);
                     // The timeline is the acquirer: it halt-acquired these
                     // channels earlier (the `4C 85` freeze sweep) and now
@@ -1393,7 +1406,7 @@ impl World {
                         &tl.bytecode,
                         pc,
                     );
-                    host.world.executing_channel = None;
+                    host.world.field_vm.executing_channel = None;
                     r
                 } else {
                     vm::field::step(&mut host, &mut tl.ctx, &tl.bytecode, pc)
@@ -1604,15 +1617,15 @@ impl World {
         // placement-keyed.
         for (c, pre) in channels.iter().zip(channel_pre_pos) {
             if !c.object_bind && (c.ctx.world_x, c.ctx.world_z) != pre {
-                self.field_npc_positions.insert(
+                self.npcs.positions.insert(
                     c.placement_index as u8,
                     (c.ctx.world_x as i16, c.ctx.world_z as i16),
                 );
             }
         }
-        self.field_channels = channels;
-        self.in_cutscene_timeline = false;
-        self.in_spawned_record_slice = false;
+        self.field_vm.channels = channels;
+        self.cutscene.in_timeline = false;
+        self.field_vm.in_spawned_record_slice = false;
         true
     }
 
@@ -1638,7 +1651,7 @@ impl World {
         // frames of choreography), so the tight anti-hang cap would cut the
         // chain mid-scene. `town01`'s opening (chain flag already cleared)
         // keeps the tight cap.
-        let cap = if tl.arms_prologue_handoff || self.opening_chain_active {
+        let cap = if tl.arms_prologue_handoff || self.cutscene.opening_chain_active {
             PROLOGUE_TIMELINE_MAX_FRAMES
         } else {
             CUTSCENE_TIMELINE_MAX_FRAMES
@@ -1650,15 +1663,15 @@ impl World {
             // Safety net: if the record terminated without executing its
             // `GFLAG_SET 26`, arm the hand-off statically so the prologue
             // can't stall.
-            if tl.done && self.story_flags & PROLOGUE_HANDOFF_FLAG == 0 {
+            if tl.done && self.flags.story_flags & PROLOGUE_HANDOFF_FLAG == 0 {
                 self.arm_prologue_handoff();
             }
-            self.cutscene_timeline = Some(tl);
+            self.cutscene.timeline = Some(tl);
         } else if tl.done {
             // Timeline finished (or capped): drop it so the view reverts
             // from the cutscene camera to normal field gameplay.
             let restore = tl.restore_hidden_on_complete;
-            self.cutscene_timeline = None;
+            self.cutscene.timeline = None;
             // The town01 OPENING choreography `MoveTo`s the townsfolk to the
             // off-map hide box to clear the establishing shot. Nothing
             // reloads the scene between the cutscene and free-roam, so that
@@ -1672,11 +1685,11 @@ impl World {
                 self.restore_hidden_field_npcs();
             }
         } else {
-            self.cutscene_timeline = Some(tl);
+            self.cutscene.timeline = Some(tl);
         }
     }
 
-    /// Step every concurrent helper context ([`Self::helper_contexts`]) one
+    /// Step every concurrent helper context ([`crate::world::FieldVmState::helper_contexts`]) one
     /// frame slice - the per-frame sweep over the mid-play spawned records,
     /// running each through the shared [`Self::run_spawned_record_slice`]
     /// core (`modal = false`). Helper contexts execute alongside the modal
@@ -1686,10 +1699,10 @@ impl World {
     /// [`CUTSCENE_TIMELINE_MAX_FRAMES`] cap) is dropped from the table.
     // REF: FUN_8003BDE0
     pub fn step_helper_contexts(&mut self) {
-        if self.helper_contexts.is_empty() {
+        if self.field_vm.helper_contexts.is_empty() {
             return;
         }
-        let mut contexts = std::mem::take(&mut self.helper_contexts);
+        let mut contexts = std::mem::take(&mut self.field_vm.helper_contexts);
         for tl in contexts.iter_mut() {
             if tl.done {
                 continue;
@@ -1701,7 +1714,7 @@ impl World {
         }
         let dropped = contexts.iter().any(|tl| tl.done);
         contexts.retain(|tl| !tl.done);
-        self.helper_contexts = contexts;
+        self.field_vm.helper_contexts = contexts;
         // Stranded-player rescue: a spawned record can `MoveTo` the PLAYER as
         // part of its choreography (izumi's first-visit record parks the
         // party at the spring pocket, a spot the base collision grid walls
@@ -1713,9 +1726,9 @@ impl World {
         // partially-executed record can never strand the player where no
         // direction unblocks.
         if dropped
-            && self.helper_contexts.is_empty()
+            && self.field_vm.helper_contexts.is_empty()
             && matches!(self.mode, crate::world::SceneMode::Field)
-            && let Some((sx, sz)) = self.resolved_cold_spawn
+            && let Some((sx, sz)) = self.props.resolved_cold_spawn
             && let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get(slot as usize)
             && self.field_walk_component_size(actor.move_state.world_x, actor.move_state.world_z)
@@ -1743,7 +1756,7 @@ impl World {
 
     /// Un-park every field NPC a cutscene left at the off-map hide box
     /// ([`crate::world::FIELD_OFFMAP_HIDE_XZ`]), dropping its
-    /// [`Self::field_npc_positions`] / [`Self::field_npc_headings`] overrides so
+    /// [`crate::world::FieldNpcState::positions`] / [`crate::world::FieldNpcState::headings`] overrides so
     /// the field render falls back to the NPC's MAN spawn tile.
     ///
     /// The `town01` opening cutscene hides the townsfolk at that box for its
@@ -1754,7 +1767,8 @@ impl World {
     fn restore_hidden_field_npcs(&mut self) {
         let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
         let restored: Vec<u8> = self
-            .field_npc_positions
+            .npcs
+            .positions
             .iter()
             .filter(|&(_, &(x, z))| x == hide && z == hide)
             .map(|(&slot, _)| slot)
@@ -1766,13 +1780,13 @@ impl World {
             // be the hide box) rather than resurrecting it at the raw MAN
             // spawn tile - the exact ghost the prologue park exists to
             // prevent.
-            match self.field_npc_entry_positions.get(&slot) {
+            match self.npcs.entry_positions.get(&slot) {
                 Some(&entry_pos) => {
-                    self.field_npc_positions.insert(slot, entry_pos);
+                    self.npcs.positions.insert(slot, entry_pos);
                 }
                 None => {
-                    self.field_npc_positions.remove(&slot);
-                    self.field_npc_headings.remove(&slot);
+                    self.npcs.positions.remove(&slot);
+                    self.npcs.headings.remove(&slot);
                 }
             }
         }
@@ -1800,7 +1814,7 @@ impl World {
     /// scripted initial facings, idle/`WAIT`-loop cadence, local-flag setup.
     ///
     /// After stepping, each channel whose context position changed writes
-    /// through to [`Self::field_npc_positions`] so the field render / probes
+    /// through to [`crate::world::FieldNpcState::positions`] so the field render / probes
     /// follow the scripted move. On free-roam the engine's waypoint patroller
     /// ([`Self::tick_field_npc_motions`]) owns any placement carrying a route,
     /// so a channel's move (and the heading derived from it) is only surfaced
@@ -1819,7 +1833,8 @@ impl World {
     // REF: FUN_8001ADA4 (scale-vector compose, disasm 8001b240..8001b28c)
     // REF: FUN_80020de0 (actor_free: +0x72 = 0x1000 at birth)
     pub fn field_npc_render_scale(&self, placement_index: usize) -> Option<u16> {
-        self.field_channels
+        self.field_vm
+            .channels
             .iter()
             .find(|c| !c.object_bind && c.placement_index == placement_index)
             .map(|c| c.ctx.field_72)
@@ -1836,7 +1851,8 @@ impl World {
     // REF: FUN_8003A55C (bind-time prologue pre-run seats/parks the actor)
     pub fn hidden_object_records(&self) -> std::collections::HashSet<usize> {
         let hide = crate::world::FIELD_OFFMAP_HIDE_XZ as u16;
-        self.field_channels
+        self.field_vm
+            .channels
             .iter()
             .filter(|c| c.object_bind)
             .filter(|c| (c.ctx.world_x == hide && c.ctx.world_z == hide) || c.ctx.field_72 == 0)
@@ -1861,7 +1877,7 @@ impl World {
         // timeline (whose choreography drives the channels), plus the
         // opt-in `animate_field_npcs` liveliness approximation.
         // REF: FUN_8003BC08 (the `+0x10 & 0x100` dispatch gate)
-        if !self.cutscene_timeline_active() && !self.animate_field_npcs {
+        if !self.cutscene_timeline_active() && !self.npcs.animate {
             return;
         }
         self.step_field_channels_inner(false);
@@ -1890,15 +1906,15 @@ impl World {
     /// facing ops.
     ///
     /// Call at scene entry after the carrier/channel install; the resulting
-    /// positions snapshot into [`Self::field_npc_entry_positions`], the state
+    /// positions snapshot into [`crate::world::FieldNpcState::entry_positions`], the state
     /// a cutscene teardown restores to.
     // PORT: FUN_8003A1E4 (spawn-prologue pre-run -> initial actor positions)
     // REF: FUN_8003AEB0, FUN_80039B7C
     pub fn pre_run_field_channel_prologues(&mut self) {
-        self.field_entry_prerun = true;
+        self.field_vm.entry_prerun = true;
         self.step_field_channels_inner(true);
-        self.field_entry_prerun = false;
-        self.field_npc_entry_positions = self.field_npc_positions.clone();
+        self.field_vm.entry_prerun = false;
+        self.npcs.entry_positions = self.npcs.positions.clone();
         // The ambient motion channels installed with the carriers still hold
         // the raw MAN header tiles; re-seat them on the story-true positions
         // this pre-run just resolved. The `0x18` wander's containment box is
@@ -1907,13 +1923,13 @@ impl World {
     }
 
     fn step_field_channels_inner(&mut self, entry_prerun: bool) {
-        if self.field_channels.is_empty() {
+        if self.field_vm.channels.is_empty() {
             return;
         }
-        let Some(man) = self.field_channels_man.clone() else {
+        let Some(man) = self.field_vm.channels_man.clone() else {
             return;
         };
-        let mut channels = std::mem::take(&mut self.field_channels);
+        let mut channels = std::mem::take(&mut self.field_vm.channels);
         let pre_pos: Vec<(u16, u16)> = channels
             .iter()
             .map(|c| (c.ctx.world_x, c.ctx.world_z))
@@ -1961,7 +1977,7 @@ impl World {
                     let ci = crate::field_channels::resolve_target(&channels, t)?;
                     (ci != i).then_some(ci)
                 });
-                self.executing_channel = match target {
+                self.field_vm.executing_channel = match target {
                     // Object-bind targets carry a flat record index, not a
                     // placement slot - no placement-keyed attribution.
                     Some(ci) if channels[ci].object_bind => None,
@@ -1990,7 +2006,7 @@ impl World {
                         }
                     }
                 };
-                self.executing_channel = None;
+                self.field_vm.executing_channel = None;
                 match result {
                     FieldStepResult::Advance { next_pc } => {
                         let stalled = next_pc == pc;
@@ -2052,7 +2068,7 @@ impl World {
                 let (nx, nz) = (nx as i16, nz as i16);
                 let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
                 let parked = (nx, nz) == (hide, hide);
-                let outside_route = self.field_npc_routes.get(&slot).is_some_and(|route| {
+                let outside_route = self.npcs.routes.get(&slot).is_some_and(|route| {
                     route.iter().all(|&(wx, wz)| {
                         let (dx, dz) =
                             ((wx as i32 - nx as i32).abs(), (wz as i32 - nz as i32).abs());
@@ -2060,15 +2076,15 @@ impl World {
                     })
                 });
                 if parked || outside_route {
-                    self.field_npc_routes.remove(&slot);
-                    self.field_npc_glide_speeds.remove(&slot);
-                    self.field_npc_motions.remove(&slot);
+                    self.npcs.routes.remove(&slot);
+                    self.npcs.glide_speeds.remove(&slot);
+                    self.npcs.motions.remove(&slot);
                 }
-                self.field_npc_positions.insert(slot, (nx, nz));
+                self.npcs.positions.insert(slot, (nx, nz));
                 continue;
             }
             if patroller_active {
-                if self.field_npc_routes.contains_key(&slot) {
+                if self.npcs.routes.contains_key(&slot) {
                     continue;
                 }
                 // Surface a facing from the scripted move so a never-walked NPC
@@ -2083,13 +2099,12 @@ impl World {
                     i32::from(nz) - i32::from(pre.1),
                 );
                 if let Some(yaw) = vm::motion_vm::walk_facing_yaw(dx, dz) {
-                    self.field_npc_headings.insert(slot, yaw as i16);
+                    self.npcs.headings.insert(slot, yaw as i16);
                 }
             }
-            self.field_npc_positions
-                .insert(slot, (nx as i16, nz as i16));
+            self.npcs.positions.insert(slot, (nx as i16, nz as i16));
         }
-        self.field_channels = channels;
+        self.field_vm.channels = channels;
     }
 
     /// Seed the per-actor field-VM channels for **ordinary free-roam** scene
@@ -2117,16 +2132,16 @@ impl World {
         man_file: &legaia_asset::man_section::ManFile,
         man: &[u8],
     ) {
-        self.field_channels = crate::field_channels::spawn_channels(man_file, man);
-        self.field_channels_man = if man.is_empty() {
+        self.field_vm.channels = crate::field_channels::spawn_channels(man_file, man);
+        self.field_vm.channels_man = if man.is_empty() {
             None
         } else {
             Some(std::sync::Arc::new(man.to_vec()))
         };
         // A new scene's binds are installed by `seed_object_channels` after
         // the trigger tables resolve; drop the previous scene's.
-        self.object_channel_binds.clear();
-        self.field_npc_anim_cues.clear();
+        self.field_vm.object_channel_binds.clear();
+        self.npcs.anim_cues.clear();
     }
 
     /// Append the `.MAP` **object-bind** channels (retail scene-init
@@ -2142,7 +2157,7 @@ impl World {
     /// loop), so the object context carries its init state (the door-angle
     /// `4C 41` ramp seed) before the first poke.
     ///
-    /// Binds are remembered on [`Self::object_channel_binds`] so a
+    /// Binds are remembered on [`crate::world::FieldVmState::object_channel_binds`] so a
     /// cutscene-timeline install that has to respawn the channel set
     /// re-appends them. Call after [`Self::seed_field_channels`]; no-op when
     /// that seeded nothing (a scene without a MAN).
@@ -2153,9 +2168,10 @@ impl World {
         man: &[u8],
         binds: &[(usize, (i16, i16))],
     ) {
-        self.object_channel_binds = binds.to_vec();
+        self.field_vm.object_channel_binds = binds.to_vec();
         let same_man = self
-            .field_channels_man
+            .field_vm
+            .channels_man
             .as_deref()
             .is_some_and(|m| m.as_slice() == man);
         if !same_man {
@@ -2163,7 +2179,7 @@ impl World {
         }
         let mut obj = crate::field_channels::spawn_object_channels(man_file, man, binds);
         self.pre_run_object_channel_prologues(&mut obj, man);
-        self.field_channels.extend(obj);
+        self.field_vm.channels.extend(obj);
     }
 
     /// The `FUN_8003A55C` bind-time prologue pre-run: for each object-bind
@@ -2234,7 +2250,7 @@ impl World {
     /// actor's interaction-script bytes (e.g. [`DialogRequest::inline`]), which
     /// begin at the first `0x1F` text segment. Replaces any running script.
     pub fn start_inline_dialogue(&mut self, inline: Vec<u8>) {
-        self.inline_dialogue = Some(crate::inline_dialogue::InlineDialogue::from_inline(inline));
+        self.dialog.inline = Some(crate::inline_dialogue::InlineDialogue::from_inline(inline));
     }
 
     /// Start the inline-script runner on a full interaction record, executing the
@@ -2249,7 +2265,7 @@ impl World {
         entry_pc: usize,
         first_segment: usize,
     ) {
-        self.inline_dialogue = Some(crate::inline_dialogue::InlineDialogue::with_prologue(
+        self.dialog.inline = Some(crate::inline_dialogue::InlineDialogue::with_prologue(
             std::sync::Arc::new(body),
             entry_pc,
             first_segment,
@@ -2272,11 +2288,11 @@ impl World {
     //      stop mapped to the loop's end paths)
     pub fn step_inline_dialogue(&mut self, confirm: bool, up: bool, down: bool) {
         use crate::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
-        let Some(mut id) = self.inline_dialogue.take() else {
+        let Some(mut id) = self.dialog.inline.take() else {
             return;
         };
         if id.done {
-            self.inline_dialogue = Some(id);
+            self.dialog.inline = Some(id);
             return;
         }
         // The cross-context clip cursors advance once per frame. The field
@@ -2286,7 +2302,7 @@ impl World {
         // ticks. Runs before the slice below for the same reason retail's
         // actor tick runs before the dialog SM: the spin must see the latch the
         // clip earned on *this* frame, not last frame's.
-        self.field_prop_bank.tick_actor_clips_for_frame();
+        self.props.bank.tick_actor_clips_for_frame();
 
         // A box is open: tick the typewriter + route input.
         if let Some(panel) = id.panel.as_mut() {
@@ -2357,14 +2373,14 @@ impl World {
                     }
                 }
             }
-            self.inline_dialogue = Some(id);
+            self.dialog.inline = Some(id);
             return;
         }
 
         // No box open: step the VM until the next text segment or an end.
         // Expose the record's NPC slot so the host's `0x4C 0x51` NPC-run hook
         // can route the prologue's walk ops to the interacted actor.
-        self.stepping_inline_npc = id.npc_slot;
+        self.dialog.stepping_inline_npc = id.npc_slot;
         let mut host = FieldHostImpl { world: self };
         let mut budget = INLINE_DIALOGUE_STEP_BUDGET;
         while budget > 0 {
@@ -2436,7 +2452,7 @@ impl World {
             // target's clip cursor in the bank, which is what the following
             // `AC <target> 08` / `AD <target> 08` end-latch spin then waits on.
             // For the player the windowed / browser hosts additionally draw the
-            // gesture off `World::field_player_move_cues` (moves 1/2 are the
+            // gesture off `World::locomotion.player_move_cues` (moves 1/2 are the
             // locomotion clips their own controller already animates).
             if (b & 0x7F) == 0x22
                 && let Some(target) = ext_target
@@ -2444,10 +2460,11 @@ impl World {
             {
                 let fallback = host.world.player_clip_frames_hint();
                 host.world
-                    .field_prop_bank
+                    .props
+                    .bank
                     .bind_actor_clip(target, move_id, fallback);
                 if target == crate::field_env::PLAYER_ANCHOR_TARGET && move_id > 2 {
-                    host.world.field_player_move_cues.push(move_id);
+                    host.world.locomotion.player_move_cues.push(move_id);
                 }
             }
             // Bind the poked actor's `+0x62` into the executing context for the
@@ -2467,12 +2484,9 @@ impl World {
                 .filter(|&target| {
                     let flags = if target == crate::field_env::PLAYER_ANCHOR_TARGET {
                         let hint = host.world.player_clip_frames_hint();
-                        Some(host.world.field_prop_bank.player_clip(hint).flags)
+                        Some(host.world.props.bank.player_clip(hint).flags)
                     } else {
-                        host.world
-                            .field_prop_bank
-                            .actor_clip(target)
-                            .map(|a| a.flags)
+                        host.world.props.bank.actor_clip(target).map(|a| a.flags)
                     };
                     match flags {
                         Some(f) => {
@@ -2484,7 +2498,7 @@ impl World {
                 });
             let step = vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc);
             if let Some(target) = bound
-                && let Some(actor) = host.world.field_prop_bank.actor_clip_mut(target)
+                && let Some(actor) = host.world.props.bank.actor_clip_mut(target)
             {
                 actor.flags = id.ctx.local_flags;
                 id.ctx.local_flags = saved_local_flags;
@@ -2591,25 +2605,26 @@ impl World {
                 }
             }
         }
-        self.stepping_inline_npc = None;
-        self.inline_dialogue = Some(id);
+        self.dialog.stepping_inline_npc = None;
+        self.dialog.inline = Some(id);
     }
 
-    /// Live-loop bridge for the inline-script runner: when [`Self::use_vm_dialogue`]
+    /// Live-loop bridge for the inline-script runner: when [`crate::world::WorldToggles::use_vm_dialogue`]
     /// is set, this starts the runner the frame a field dialogue opens (from
-    /// [`Self::current_dialog`]'s inline buffer), steps it from the current pad
+    /// [`crate::world::DialogState::current`]'s inline buffer), steps it from the current pad
     /// edges (Cross/Circle = confirm, Up/Down = menu cursor), and tears it down
     /// (clearing `current_dialog`) when the conversation ends. No-op when the
     /// flag is off, so the default simplified path is untouched.
     pub fn drive_inline_dialogue(&mut self) {
-        if !self.use_vm_dialogue {
+        if !self.toggles.use_vm_dialogue {
             return;
         }
         // A prop-bound record run (door / cupboard) is stepped by its own
         // driver ([`Self::step_prop_interaction`]) with prop-actor bridging;
         // stepping it here too would double-run its VM slices.
         if self
-            .inline_dialogue
+            .dialog
+            .inline
             .as_ref()
             .is_some_and(|id| id.prop_anchor.is_some())
         {
@@ -2619,20 +2634,20 @@ impl World {
         // NPC carries a prologue record, run it from the entry PC so the
         // interaction prologue (segment selection) executes; otherwise start at
         // the first segment from the request's inline buffer.
-        if self.inline_dialogue.is_none() {
-            if let Some(prologue) = self.active_inline_prologue.take() {
+        if self.dialog.inline.is_none() {
+            if let Some(prologue) = self.dialog.active_inline_prologue.take() {
                 let mut runner = crate::inline_dialogue::InlineDialogue::with_prologue(
                     std::sync::Arc::new(prologue.body),
                     prologue.entry_pc,
                     prologue.first_segment,
                 );
-                runner.npc_slot = self.active_inline_slot.take();
-                self.inline_dialogue = Some(runner);
-            } else if let Some(req) = self.current_dialog.as_ref() {
+                runner.npc_slot = self.dialog.active_inline_slot.take();
+                self.dialog.inline = Some(runner);
+            } else if let Some(req) = self.dialog.current.as_ref() {
                 if !req.inline.is_empty() {
-                    let slot = self.active_inline_slot.take();
+                    let slot = self.dialog.active_inline_slot.take();
                     self.start_inline_dialogue(req.inline.clone());
-                    if let Some(runner) = self.inline_dialogue.as_mut() {
+                    if let Some(runner) = self.dialog.inline.as_mut() {
                         runner.npc_slot = slot;
                     }
                 } else {
@@ -2647,9 +2662,9 @@ impl World {
         let up = self.input.just_pressed(input::PadButton::Up);
         let down = self.input.just_pressed(input::PadButton::Down);
         self.step_inline_dialogue(confirm, up, down);
-        if self.inline_dialogue.as_ref().is_some_and(|d| d.is_done()) {
-            self.inline_dialogue = None;
-            self.current_dialog = None;
+        if self.dialog.inline.as_ref().is_some_and(|d| d.is_done()) {
+            self.dialog.inline = None;
+            self.dialog.current = None;
             // Drop the interaction's staging slots with it. They are consumed
             // by `take()` when the runner starts, so a leftover is always a
             // *second* arm of the same interaction - and this function's own
@@ -2659,8 +2674,8 @@ impl World {
             // here makes the restart unrepresentable rather than merely
             // unreachable, because any future caller of
             // `trigger_field_interact` would otherwise re-open the same trap.
-            self.active_inline_prologue = None;
-            self.active_inline_slot = None;
+            self.dialog.active_inline_prologue = None;
+            self.dialog.active_inline_slot = None;
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::DialogDismissed);
         }
@@ -2677,31 +2692,31 @@ mod tests {
         // Two townsfolk parked off-map by the opening cutscene, one NPC left at
         // a real tile (e.g. a mid-scene walker), plus stale headings for all.
         let hide = FIELD_OFFMAP_HIDE_XZ;
-        w.field_npc_positions.insert(1, (hide, hide));
-        w.field_npc_positions.insert(2, (hide, hide));
-        w.field_npc_positions.insert(3, (2880, 5440));
-        w.field_npc_headings.insert(1, 0x800);
-        w.field_npc_headings.insert(2, 0x000);
-        w.field_npc_headings.insert(3, 0x400);
+        w.npcs.positions.insert(1, (hide, hide));
+        w.npcs.positions.insert(2, (hide, hide));
+        w.npcs.positions.insert(3, (2880, 5440));
+        w.npcs.headings.insert(1, 0x800);
+        w.npcs.headings.insert(2, 0x000);
+        w.npcs.headings.insert(3, 0x400);
 
         w.restore_hidden_field_npcs();
 
         // The hide-box NPCs lose their overrides (render falls back to the MAN
         // spawn); the on-tile NPC and its heading are untouched.
-        assert!(!w.field_npc_positions.contains_key(&1));
-        assert!(!w.field_npc_positions.contains_key(&2));
-        assert!(!w.field_npc_headings.contains_key(&1));
-        assert!(!w.field_npc_headings.contains_key(&2));
-        assert_eq!(w.field_npc_positions.get(&3), Some(&(2880, 5440)));
-        assert_eq!(w.field_npc_headings.get(&3), Some(&0x400));
+        assert!(!w.npcs.positions.contains_key(&1));
+        assert!(!w.npcs.positions.contains_key(&2));
+        assert!(!w.npcs.headings.contains_key(&1));
+        assert!(!w.npcs.headings.contains_key(&2));
+        assert_eq!(w.npcs.positions.get(&3), Some(&(2880, 5440)));
+        assert_eq!(w.npcs.headings.get(&3), Some(&0x400));
     }
 
     #[test]
     fn restore_hidden_field_npcs_noop_when_none_parked() {
         let mut w = World::default();
-        w.field_npc_positions.insert(5, (1000, 2000));
+        w.npcs.positions.insert(5, (1000, 2000));
         w.restore_hidden_field_npcs();
-        assert_eq!(w.field_npc_positions.get(&5), Some(&(1000, 2000)));
+        assert_eq!(w.npcs.positions.get(&5), Some(&(1000, 2000)));
     }
 
     #[test]
@@ -2757,7 +2772,7 @@ mod tests {
         let mut w = World::new();
         // `B3 05 03` (3 bytes) then `4A FF 7F` (WAIT_FRAMES target 0x7FFF).
         let bc = vec![0xB3, 0x05, 0x03, 0x4A, 0xFF, 0x7F];
-        w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
         let mut ctx = FieldCtx {
             script_id: 5,
             ..FieldCtx::default()
@@ -2765,7 +2780,7 @@ mod tests {
         if channel_flag_bit3 {
             ctx.flags |= 1 << 3;
         }
-        w.field_channels = vec![FieldChannel {
+        w.field_vm.channels = vec![FieldChannel {
             placement_index: 5,
             ctx,
             record_offset: 0,
@@ -2784,7 +2799,8 @@ mod tests {
         w.step_cutscene_timeline();
         {
             let tl = w
-                .cutscene_timeline
+                .cutscene
+                .timeline
                 .as_ref()
                 .expect("timeline still installed");
             assert!(tl.channel_wait.is_some(), "parks on the channel handshake");
@@ -2797,7 +2813,7 @@ mod tests {
             w.step_cutscene_timeline();
         }
         {
-            let tl = w.cutscene_timeline.as_ref().unwrap();
+            let tl = w.cutscene.timeline.as_ref().unwrap();
             assert!(
                 tl.channel_wait.is_some(),
                 "stays parked while the flag is clear"
@@ -2806,10 +2822,11 @@ mod tests {
         }
         // The awaited channel raises the completion flag: the very next step
         // resolves the park and resumes PAST the 3-byte flag-test op.
-        w.field_channels[0].ctx.flags |= 1 << 3;
+        w.field_vm.channels[0].ctx.flags |= 1 << 3;
         w.step_cutscene_timeline();
         let tl = w
-            .cutscene_timeline
+            .cutscene
+            .timeline
             .as_ref()
             .expect("timeline still installed");
         assert!(
@@ -2834,7 +2851,8 @@ mod tests {
         let mut resumed = false;
         for _ in 0..(cap + 4) {
             w.step_cutscene_timeline();
-            if w.cutscene_timeline
+            if w.cutscene
+                .timeline
                 .as_ref()
                 .is_some_and(|tl| tl.channel_wait.is_none() && tl.pc == 3)
             {
@@ -2859,8 +2877,8 @@ mod tests {
 
         let mut w = World::new();
         let bc = vec![0xB8, 0x05, op0, op1, 0x4A, 0xFF, 0x7F];
-        w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
-        w.field_channels = vec![FieldChannel {
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.field_vm.channels = vec![FieldChannel {
             placement_index: 5,
             ctx: FieldCtx {
                 script_id: 5,
@@ -2871,8 +2889,8 @@ mod tests {
             done: false,
             object_bind: false,
         }];
-        w.field_npc_positions.insert(5, (1000, 1000));
-        w.field_npc_headings.insert(5, start);
+        w.npcs.positions.insert(5, (1000, 1000));
+        w.npcs.headings.insert(5, start);
         w
     }
 
@@ -2889,7 +2907,8 @@ mod tests {
         let mut w = timeline_with_npc_facing_op(0x06, 0x12, 0xE00);
         w.step_cutscene_timeline(); // reaches the op, arms the rotate park
         assert!(
-            w.cutscene_timeline
+            w.cutscene
+                .timeline
                 .as_ref()
                 .is_some_and(|tl| tl.facing_wait.is_some()),
             "budgeted facing op parks the timeline on the rotate leg"
@@ -2897,13 +2916,14 @@ mod tests {
         let mut headings = Vec::new();
         for _ in 0..18 {
             assert!(
-                w.cutscene_timeline
+                w.cutscene
+                    .timeline
                     .as_ref()
                     .is_some_and(|tl| tl.facing_wait.is_some()),
                 "the park holds for the op's whole frame budget"
             );
             w.step_cutscene_timeline();
-            headings.push(*w.field_npc_headings.get(&5).expect("heading written"));
+            headings.push(*w.npcs.headings.get(&5).expect("heading written"));
         }
         // Linear at arc/budget = 0x600/18 = 85 units/frame (floor-divide
         // pattern 85 85 85 86 ... as the live arc feeds back), raw values
@@ -2918,7 +2938,7 @@ mod tests {
             Some(&0x0400),
             "terminal frame snaps exactly onto the compass entry"
         );
-        let tl = w.cutscene_timeline.as_ref().expect("timeline installed");
+        let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
         assert!(tl.facing_wait.is_none(), "ramp done: park released");
         assert_eq!(tl.pc, 4, "record resumed past the 4-byte yield op");
     }
@@ -2930,11 +2950,11 @@ mod tests {
         let mut w = timeline_with_npc_facing_op(0x02, 0x00, 0x000);
         w.step_cutscene_timeline();
         assert_eq!(
-            w.field_npc_headings.get(&5),
+            w.npcs.headings.get(&5),
             Some(&0x0C00),
             "LUT index 2 (-X) written outright"
         );
-        let tl = w.cutscene_timeline.as_ref().expect("timeline installed");
+        let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
         assert!(tl.facing_wait.is_none(), "no park on the simple path");
     }
 
@@ -2956,7 +2976,7 @@ mod tests {
             0x3F, 0x8F, 0x02, 0x06, b'j', b'o', b'u', b'i', b'n', b'a', 0x84, 0x14, 0x00,
         ]);
         bc.extend_from_slice(&[0x21, 0x26, 0xFE, 0xFF]); // Nop + JmpRel-to-self park
-        w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
         w
     }
 
@@ -2973,7 +2993,8 @@ mod tests {
         w.step_cutscene_timeline();
         {
             let tl = w
-                .cutscene_timeline
+                .cutscene
+                .timeline
                 .as_ref()
                 .expect("timeline still installed");
             assert!(
@@ -2998,7 +3019,7 @@ mod tests {
         // inside the frame cap.
         let cap = crate::world::CHANNEL_WAIT_PARK_TIMEOUT;
         let mut ticks = 0;
-        while w.cutscene_timeline.is_some() && ticks < cap + 8 {
+        while w.cutscene.timeline.is_some() && ticks < cap + 8 {
             w.step_cutscene_timeline();
             ticks += 1;
         }
@@ -3010,7 +3031,7 @@ mod tests {
             "the trailing 0x3F scene change fired"
         );
         assert!(
-            w.cutscene_timeline.is_none(),
+            w.cutscene.timeline.is_none(),
             "the timeline completed without hitting the frame cap"
         );
         assert!(
@@ -3034,10 +3055,11 @@ mod tests {
             0xC3, 0xF8, 0x00, 0x5E, 0xE2, 0x00, 0x00, 0x00, 0x00, // halt-acquire sub-0
             0x4A, 0xFF, 0x7F, // WAIT_FRAMES target 0x7FFF (keeps it installed)
         ];
-        w.cutscene_timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
         w.step_cutscene_timeline();
         let tl = w
-            .cutscene_timeline
+            .cutscene
+            .timeline
             .as_ref()
             .expect("timeline still installed");
         assert!(tl.player_wait.is_none(), "no park without a move in flight");
@@ -3105,19 +3127,19 @@ mod tests {
         let (mf, man) = man_with_p2_records(&[p2_record(&[], &[0x2E, 0x1A])], 0, 0);
         let mut w = World::new();
         assert!(w.install_helper_record(&mf, &man, 0));
-        assert_eq!(w.helper_contexts.len(), 1);
+        assert_eq!(w.field_vm.helper_contexts.len(), 1);
         assert!(
             !w.cutscene_timeline_active(),
             "a helper spawn never installs the modal cutscene timeline"
         );
         w.step_helper_contexts();
         assert_ne!(
-            w.story_flags & crate::world::PROLOGUE_HANDOFF_FLAG,
+            w.flags.story_flags & crate::world::PROLOGUE_HANDOFF_FLAG,
             0,
             "the helper record's GFLAG_SET executed"
         );
         assert!(
-            w.helper_contexts.is_empty(),
+            w.field_vm.helper_contexts.is_empty(),
             "a completed helper context is dropped from the table"
         );
     }
@@ -3129,13 +3151,13 @@ mod tests {
         let (mf, man) = man_with_p2_records(&[p2_record(&[0x0193], &[0x21])], 0, 0);
         let mut w = World::new();
         assert!(w.install_helper_record(&mf, &man, 0), "clear flag: spawns");
-        w.helper_contexts.clear();
+        w.field_vm.helper_contexts.clear();
         w.system_flag_set(0x0193);
         assert!(
             !w.install_helper_record(&mf, &man, 0),
             "latched C1 flag blocks the spawn"
         );
-        assert!(w.helper_contexts.is_empty());
+        assert!(w.field_vm.helper_contexts.is_empty());
     }
 
     #[test]
@@ -3151,18 +3173,18 @@ mod tests {
             0,
         );
         let mut w = World::new();
-        w.cutscene_timeline = Some(CutsceneTimeline::new(long_wait.to_vec(), 0));
+        w.cutscene.timeline = Some(CutsceneTimeline::new(long_wait.to_vec(), 0));
         assert!(w.cutscene_timeline_active());
         assert!(w.install_helper_record(&mf, &man, 0));
         assert!(w.install_helper_record(&mf, &man, 1));
         assert_eq!(
-            w.helper_contexts.len(),
+            w.field_vm.helper_contexts.len(),
             2,
             "concurrent spawns coexist with the modal timeline"
         );
         w.step_helper_contexts();
         assert_eq!(
-            w.helper_contexts.len(),
+            w.field_vm.helper_contexts.len(),
             2,
             "waiting helper contexts stay installed across a frame"
         );
@@ -3180,7 +3202,10 @@ mod tests {
             !w.install_helper_record(&mf, &man, 0),
             "a full context table refuses further spawns"
         );
-        assert_eq!(w.helper_contexts.len(), crate::world::SPAWNED_CONTEXT_SLOTS);
+        assert_eq!(
+            w.field_vm.helper_contexts.len(),
+            crate::world::SPAWNED_CONTEXT_SLOTS
+        );
     }
 
     #[test]
@@ -3194,6 +3219,6 @@ mod tests {
             "a global index below N0+N1 cannot re-base"
         );
         assert!(w.install_spawned_helper_record(&mf, &man, 7));
-        assert_eq!(w.helper_contexts.len(), 1);
+        assert_eq!(w.field_vm.helper_contexts.len(), 1);
     }
 }

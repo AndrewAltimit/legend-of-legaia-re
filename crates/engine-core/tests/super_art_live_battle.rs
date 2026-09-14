@@ -49,7 +49,7 @@ fn build_world() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
     // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
     w.load_party(legaia_save::Party::zeroed(3));
@@ -76,17 +76,17 @@ fn build_world() -> World {
     // writes `0x1A` over the starter of an art this very performance learns
     // (`FUN_801EFBFC` verdict 2), so the component arts must already be
     // known - retail's own "no NEW arts in a Super" rule.
-    w.tactical_arts.mark_known(0, 0x27);
-    w.tactical_arts.mark_known(0, 0x1F);
+    w.party.tactical_arts.mark_known(0, 0x27);
+    w.party.tactical_arts.mark_known(0, 0x1F);
     // Seven presses on the disc-free 100-AP pool: 14 each spends 98, the
     // eighth is unaffordable and the entry ends by itself.
-    w.battle_swing_costs[0] = [14; 4];
+    w.battle.swing_costs[0] = [14; 4];
 
     w.player_actor_slot = Some(0);
     w.actors[0].move_state.world_x = 300;
     w.actors[0].move_state.world_z = 300;
     w.actors[0].move_state.field_72 = 4096;
-    w.field_camera_azimuth = 0;
+    w.locomotion.camera_azimuth = 0;
 
     use legaia_engine_core::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
@@ -100,13 +100,13 @@ fn build_world() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.toggles.live_gameplay_loop = true;
+    w.battle.player_driven = true;
     w
 }
 
 fn monster_hp_total(w: &World) -> u32 {
-    (w.party_count as usize..w.actors.len())
+    (w.party.party_count as usize..w.actors.len())
         .map(|i| w.actors[i].battle.hp as u32)
         .sum()
 }
@@ -129,7 +129,7 @@ fn live_arts_input_types_and_fires_a_super() {
         }
     }
     assert!(entered, "walking should trigger Field -> Battle");
-    assert!(w.battle_command.is_some(), "battle opens a command session");
+    assert!(w.battle.command.is_some(), "battle opens a command session");
     let hp_before = monster_hp_total(&w);
     assert!(hp_before > 0, "monster alive on entry");
 
@@ -178,7 +178,7 @@ fn live_arts_input_types_and_fires_a_super() {
                     InputState::mask_of([PadButton::Cross])
                 }
             }
-        } else if let Some(cmd) = w.battle_command.as_ref() {
+        } else if let Some(cmd) = w.battle.command.as_ref() {
             // Retail's open flow: `Begin` on the round prompt, the ring's
             // `Attack` arm, then the `Auto | Command` prompt - `Command` is
             // the directional arts entry, `Auto` the plain swing. Cross takes
@@ -217,7 +217,7 @@ fn live_arts_input_types_and_fires_a_super() {
             arts_turns += 1;
         }
         shouts.extend(w.drain_battle_shout_cues());
-        if w.mode == SceneMode::Field && w.last_battle_rewards.is_some() {
+        if w.mode == SceneMode::Field && w.battle.last_rewards.is_some() {
             resolved = true;
             break;
         }
@@ -253,7 +253,8 @@ fn live_arts_input_types_and_fires_a_super() {
     );
     assert_eq!(w.mode, SceneMode::Field, "return to field after the wipe");
     let rewards = w
-        .last_battle_rewards
+        .battle
+        .last_rewards
         .as_ref()
         .expect("victory records rewards");
     assert!(rewards.xp > 0, "victory grants XP: {rewards:?}");

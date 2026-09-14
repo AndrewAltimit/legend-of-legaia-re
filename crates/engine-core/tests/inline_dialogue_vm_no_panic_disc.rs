@@ -50,7 +50,7 @@ fn mix(state: &mut u64) -> u64 {
 /// (`web_viewer::runtime::LegaiaRuntime::dialog_value`): read the live panel's
 /// glyph page + picker options. Another panic surface.
 fn read_dialog_hud(world: &World) {
-    if let Some(id) = world.inline_dialogue.as_ref() {
+    if let Some(id) = world.dialog.inline.as_ref() {
         let _ = id.page_bytes();
         let _ = id.menu_active();
         let _ = id.picker_cursor();
@@ -68,12 +68,12 @@ fn read_dialog_hud(world: &World) {
 fn drive_record(body: &[u8], entry_pc: usize, first_segment: usize, seed: u64) {
     let mut rng = seed;
     let mut world = World::new();
-    world.use_vm_dialogue = true;
+    world.toggles.use_vm_dialogue = true;
     // Randomized story state so the prologue's flag-gated branches all get a
     // chance to execute across seeds.
-    world.story_flags = mix(&mut rng) as u32;
-    world.extra_flags = mix(&mut rng) as u32;
-    world.system_flags = (0..32).map(|_| mix(&mut rng) as u8).collect();
+    world.flags.story_flags = mix(&mut rng) as u32;
+    world.flags.extra_flags = mix(&mut rng) as u32;
+    world.flags.system_flags = (0..32).map(|_| mix(&mut rng) as u8).collect();
 
     world.start_inline_dialogue_with_prologue(body.to_vec(), entry_pc, first_segment);
 
@@ -87,7 +87,7 @@ fn drive_record(body: &[u8], entry_pc: usize, first_segment: usize, seed: u64) {
         let down = i % 7 == 3;
         world.step_inline_dialogue(confirm, up, down);
         read_dialog_hud(&world);
-        match world.inline_dialogue.as_ref() {
+        match world.dialog.inline.as_ref() {
             Some(id) if id.is_done() => break,
             Some(_) => {}
             None => break,
@@ -190,21 +190,22 @@ fn faithful_dialogue_tick_never_errors() {
         if is_world_map_scene(scene_name) {
             continue;
         }
-        host.world.use_vm_dialogue = true;
-        host.world.follow_terrain_height = true;
-        host.world.leading_edge_wall_probes = true;
-        host.world.solid_field_npcs = true;
-        host.world.animate_field_npcs = true;
+        host.world.toggles.use_vm_dialogue = true;
+        host.world.locomotion.follow_terrain_height = true;
+        host.world.locomotion.leading_edge_wall_probes = true;
+        host.world.npcs.solid = true;
+        host.world.npcs.animate = true;
         if host.enter_field_scene(scene_name, 0).is_err() {
             continue;
         }
 
         let mut slots: Vec<u8> = host
             .world
-            .field_npc_dialog_prologue
+            .npcs
+            .dialog_prologue
             .keys()
             .copied()
-            .chain(host.world.field_npc_dialog.keys().copied())
+            .chain(host.world.npcs.dialog.keys().copied())
             .collect();
         slots.sort_unstable();
         slots.dedup();
@@ -224,15 +225,15 @@ fn faithful_dialogue_tick_never_errors() {
                     panic!("host.tick() Err in scene {scene_name} NPC slot {slot}: {e:#}")
                 });
                 read_dialog_hud(&host.world);
-                if host.world.inline_dialogue.is_none()
-                    && host.world.current_dialog.is_none()
+                if host.world.dialog.inline.is_none()
+                    && host.world.dialog.current.is_none()
                     && i > 2
                 {
                     break;
                 }
             }
-            host.world.inline_dialogue = None;
-            host.world.current_dialog = None;
+            host.world.dialog.inline = None;
+            host.world.dialog.current = None;
             npcs_driven += 1;
         }
     }
@@ -296,11 +297,11 @@ fn scene_change_destinations_all_enter_without_error() {
     let mut entered_ok = 0usize;
     for dest in &destinations {
         // Same play-page arming + world-map routing `SceneHost::tick` uses.
-        host.world.use_vm_dialogue = true;
-        host.world.follow_terrain_height = true;
-        host.world.leading_edge_wall_probes = true;
-        host.world.solid_field_npcs = true;
-        host.world.animate_field_npcs = true;
+        host.world.toggles.use_vm_dialogue = true;
+        host.world.locomotion.follow_terrain_height = true;
+        host.world.locomotion.leading_edge_wall_probes = true;
+        host.world.npcs.solid = true;
+        host.world.npcs.animate = true;
         let res = if is_world_map_scene(dest) {
             host.enter_world_map_scene(dest)
         } else {

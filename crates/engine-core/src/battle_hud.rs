@@ -779,7 +779,7 @@ struct SlotRow {
     hp_max: u16,
     mp: u16,
     mp_max: u16,
-    /// Index into `World::ap_gauges` for party rows; `None` for monsters.
+    /// Index into `World::battle.ap_gauges` for party rows; `None` for monsters.
     ap_slot: Option<usize>,
     /// Displayed level (char record `+0x130`) for party rows; `0` for
     /// monsters, which retail's status element never draws a count for.
@@ -800,7 +800,7 @@ struct SlotRow {
 /// anchoring off the same index space, so compacting here would mis-anchor
 /// every damage number.
 pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
-    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     let party_names = crate::field_menu_dispatch::roster_names(world);
 
     // Party rows. `character_max_mp` is the only MP ceiling the world carries
@@ -830,12 +830,13 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
                 hp: a.battle.hp_display.unwrap_or(a.battle.hp),
                 hp_max: a.battle.max_hp,
                 mp: a.battle.mp,
-                mp_max: world.character_max_mp.get(i).copied().unwrap_or(0),
-                ap_slot: (i < world.ap_gauges.len()).then_some(i),
+                mp_max: world.tables.character_max_mp.get(i).copied().unwrap_or(0),
+                ap_slot: (i < world.battle.ap_gauges.len()).then_some(i),
                 // The status element's no-ailment arm draws the character
                 // record's `+0x130` beside the base marker (`FUN_8002C2E4`
                 // reads it as the display record's `+0x6F8`).
                 level: world
+                    .party
                     .roster
                     .members
                     .get(world.party_roster_slot(i))
@@ -857,7 +858,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
         }
         let name = a
             .battle_monster_id
-            .and_then(|id| world.monster_catalog.get(id))
+            .and_then(|id| world.tables.monster_catalog.get(id))
             .map(|d| d.name.clone())
             .unwrap_or_else(|| format!("M{}", slot - pc + 1));
         rows.push((
@@ -884,7 +885,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
     }
 
     for (slot, name, row) in &rows {
-        let ap = row.ap_slot.map(|i| &world.ap_gauges[i]);
+        let ap = row.ap_slot.map(|i| &world.battle.ap_gauges[i]);
         hud.sync_slot(
             *slot,
             SlotSyncInfo {
@@ -932,7 +933,7 @@ pub fn battle_enemy_target_rows(
     world: &crate::world::World,
 ) -> Vec<crate::target_picker::EnemyMenuRow> {
     use crate::target_picker::{DEDUP_GLYPH_FALLBACK, FORMATION_SLOTS, enemy_menu_rows};
-    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     let mut ids = [0u8; FORMATION_SLOTS];
     let mut names: Vec<String> = vec![String::new(); FORMATION_SLOTS];
     for i in 0..FORMATION_SLOTS {
@@ -944,7 +945,7 @@ pub fn battle_enemy_target_rows(
         }
         let name = a
             .battle_monster_id
-            .and_then(|id| world.monster_catalog.get(id))
+            .and_then(|id| world.tables.monster_catalog.get(id))
             .map(|d| d.name.clone())
             .unwrap_or_else(|| format!("M{}", i + 1));
         let pos = names[..i].iter().position(|n| !n.is_empty() && n == &name);
@@ -1024,13 +1025,13 @@ pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
         return BattleHudPhase::Idle;
     }
     if world.arts_input_active()
-        || world.battle_arts_menu.is_some()
-        || world.battle_spell_menu.is_some()
-        || world.battle_item_menu.is_some()
+        || world.battle.arts_menu.is_some()
+        || world.battle.spell_menu.is_some()
+        || world.battle.item_menu.is_some()
     {
         return BattleHudPhase::CommandEntry;
     }
-    if let Some(cmd) = world.battle_command.as_ref() {
+    if let Some(cmd) = world.battle.command.as_ref() {
         return match cmd.phase {
             CommandPhase::RoundPrompt { .. } => BattleHudPhase::RoundPrompt,
             _ => BattleHudPhase::CommandEntry,
@@ -1101,10 +1102,10 @@ pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurf
     if world.arts_input_active() {
         return Some(CommandSurface::ArtsInput);
     }
-    if world.battle_arts_menu.is_some() {
+    if world.battle.arts_menu.is_some() {
         return Some(CommandSurface::ArtsList);
     }
-    if let Some(m) = world.battle_spell_menu.as_ref() {
+    if let Some(m) = world.battle.spell_menu.as_ref() {
         return Some(match &m.phase {
             crate::battle_magic::SpellPhase::Targeting { picker, .. } => {
                 CommandSurface::SpellTarget(match picker.state() {
@@ -1118,7 +1119,7 @@ pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurf
             _ => CommandSurface::SpellBrowse,
         });
     }
-    if let Some(menu) = world.battle_item_menu.as_ref() {
+    if let Some(menu) = world.battle.item_menu.as_ref() {
         let view = menu.menu_view();
         return Some(if view.target_select {
             CommandSurface::ItemTarget(
@@ -1131,7 +1132,7 @@ pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurf
             CommandSurface::ItemBrowse
         });
     }
-    let cmd = world.battle_command.as_ref()?;
+    let cmd = world.battle.command.as_ref()?;
     Some(match cmd.phase {
         CommandPhase::Menu { .. } => CommandSurface::Ring,
         CommandPhase::AttackMode { .. } => CommandSurface::AttackMode,
@@ -1145,21 +1146,21 @@ fn command_entry_actor(world: &crate::world::World) -> Option<u8> {
     if let Some(slot) = world.arts_input_actor() {
         return Some(slot);
     }
-    if let Some(m) = world.battle_arts_menu.as_ref() {
+    if let Some(m) = world.battle.arts_menu.as_ref() {
         return Some(m.actor);
     }
-    if let Some(m) = world.battle_spell_menu.as_ref() {
+    if let Some(m) = world.battle.spell_menu.as_ref() {
         return Some(m.actor);
     }
-    if world.battle_item_menu.is_some() {
+    if world.battle.item_menu.is_some() {
         return Some(world.battle_ctx.active_actor);
     }
-    world.battle_command.as_ref().map(|c| c.actor)
+    world.battle.command.as_ref().map(|c| c.actor)
 }
 
 /// Seated party count, clamped to the actor table.
 fn party_count(world: &crate::world::World) -> usize {
-    (world.party_count.clamp(1, 3) as usize).min(world.actors.len())
+    (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len())
 }
 
 /// A party member's display name by battle ordinal.
@@ -1179,7 +1180,7 @@ fn monster_name(world: &crate::world::World, slot: u8) -> String {
         .actors
         .get(slot as usize)
         .and_then(|a| a.battle_monster_id)
-        .and_then(|id| world.monster_catalog.get(id))
+        .and_then(|id| world.tables.monster_catalog.get(id))
         .map(|d| d.name.clone())
         .unwrap_or_else(|| format!("M{}", (slot as usize).saturating_sub(pc) + 1))
 }
@@ -1342,7 +1343,7 @@ pub fn battle_ring_ap_plate_value(world: &crate::world::World) -> Option<u8> {
     if battle_command_surface(world) != Some(CommandSurface::Ring) {
         return None;
     }
-    let actor = world.battle_command.as_ref()?.actor;
+    let actor = world.battle.command.as_ref()?.actor;
     Some(world.spirit_gauge(actor).min(100) as u8)
 }
 
@@ -1388,14 +1389,16 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
     } else if cat == ActionCategory::Magic.as_byte() {
         let id = actor.battle.params[0];
         world
-            .menu_text
+            .menu
+            .text
             .as_ref()
             .and_then(|t| t.spell_name(id))
             .map(str::to_string)
     } else if cat == ActionCategory::Item.as_byte() {
         let id = actor.battle.params[0];
         world
-            .menu_text
+            .menu
+            .text
             .as_ref()
             .and_then(|t| t.item_name(id))
             .map(str::to_string)
@@ -1449,6 +1452,7 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
 fn monster_element_badge(world: &crate::world::World, slot: u8) -> Option<u8> {
     let actor = world.actors.get(slot as usize)?;
     let def = world
+        .tables
         .monster_catalog
         .get(actor.battle_monster_id?)
         .filter(|d| (d.element as usize) < legaia_asset::element_affinity::ELEMENT_COUNT)?;
@@ -1487,6 +1491,7 @@ pub fn battle_member_has_raseru(world: &crate::world::World, ordinal: u8) -> boo
         RASERU_EQUIP_SLOT
     };
     world
+        .party
         .roster
         .members
         .get(roster)
@@ -1502,7 +1507,7 @@ pub fn battle_member_has_raseru(world: &crate::world::World, ordinal: u8) -> boo
 /// Ra-Seru (`Meta` / `Terra` / `Ozma` for `char_id` `1..=3`) - and index 4
 /// of the same run, a lone `-`, when it is clear; a character past the
 /// three (Terra is `char_id` 4) lands on the `-` entry. The label comes off
-/// the disc (`World::battle_ui_strings`) and falls back to the port's own
+/// the disc (`World::battle.ui_strings`) and falls back to the port's own
 /// word only when the overlay strings were not read. `enabled` is the
 /// same gate: retail draws the `-` chip and refuses the arm.
 pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, bool) {
@@ -1515,7 +1520,8 @@ pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, b
         4
     };
     let label = world
-        .battle_ui_strings
+        .battle
+        .ui_strings
         .raseru_label(idx)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
@@ -1563,18 +1569,18 @@ pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommand
     if world.mode != crate::world::SceneMode::Battle {
         return None;
     }
-    if world.current_dialog.is_some() || world.inline_dialogue.is_some() {
+    if world.dialog.current.is_some() || world.dialog.inline.is_some() {
         return None;
     }
     if world.arts_input_active()
-        || world.battle_arts_menu.is_some()
-        || world.battle_spell_menu.is_some()
-        || world.battle_item_menu.is_some()
+        || world.battle.arts_menu.is_some()
+        || world.battle.spell_menu.is_some()
+        || world.battle.item_menu.is_some()
     {
         return None;
     }
-    let cmd = world.battle_command.as_ref()?;
-    let no_escape = world.battle_no_escape;
+    let cmd = world.battle.command.as_ref()?;
+    let no_escape = world.battle.no_escape;
     let chip = |label: &str, enabled: bool| (label.to_string(), enabled);
     match cmd.phase {
         CommandPhase::RoundPrompt { cursor } => Some(BattleCommandChips {
@@ -1778,12 +1784,12 @@ pub fn subdraw_step(image: &[u8], base_va: u32, step: usize) -> Option<SubdrawSt
 /// monster frames (`Gimard`), and the party ones (`Vahn`, `Noa`) do not.
 pub fn battle_plaque_element_badge(world: &crate::world::World) -> Option<u8> {
     let (slot, _) = battle_active_actor(world)?;
-    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     if (slot as usize) < pc {
         return None;
     }
     let actor = world.actors.get(slot as usize)?;
-    let def = world.monster_catalog.get(actor.battle_monster_id?)?;
+    let def = world.tables.monster_catalog.get(actor.battle_monster_id?)?;
     def.plaque_badge
         .filter(|b| usize::from(*b) < BATTLE_PLAQUE_BADGE_COUNT)
 }
@@ -1828,7 +1834,7 @@ pub fn encounter_banner_enabled() -> bool {
 /// `Field -> Battle` edge - so hosts arm it only when
 /// [`encounter_banner_enabled`] says so.
 pub fn encounter_banner_label(world: &crate::world::World) -> String {
-    let pc = (world.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     // `World::actors` is the fixed 64-slot table, not a battle-sized list;
     // a formation seats at most 5 monsters directly after the party
     // (`World::enter_battle`), so only those slots can be formation members.
@@ -1846,7 +1852,7 @@ pub fn encounter_banner_label(world: &crate::world::World) -> String {
         }
         let name = a
             .battle_monster_id
-            .and_then(|id| world.monster_catalog.get(id))
+            .and_then(|id| world.tables.monster_catalog.get(id))
             .map(|d| d.name.clone())
             .unwrap_or_else(|| format!("M{}", i - pc + 1));
         names.push(name);
@@ -2383,10 +2389,12 @@ mod tests {
         while w.actors.len() < 8 {
             w.actors.push(Actor::default());
         }
-        w.party_count = 1;
-        w.monster_catalog
+        w.party.party_count = 1;
+        w.tables
+            .monster_catalog
             .insert(MonsterDef::new(7, "Gimard", 40, 5));
-        w.monster_catalog
+        w.tables
+            .monster_catalog
             .insert(MonsterDef::new(9, "Zenoir", 40, 5));
         // Slots 1..=3: Gimard, Gimard, Zenoir. Slot 2's twin is dead.
         for (i, (id, hp)) in [(7u16, 40u16), (7, 40), (9, 40)].iter().enumerate() {
@@ -2425,7 +2433,7 @@ mod tests {
         while w.actors.len() < 4 {
             w.actors.push(Actor::default());
         }
-        w.party_count = 1;
+        w.party.party_count = 1;
         w.actors[0].battle.hp = 100;
         w.actors[0].battle.max_hp = 200;
         w.actors[0].battle.liveness = 1;
@@ -2469,7 +2477,7 @@ mod tests {
             w.actors.push(Actor::default());
         }
         w.mode = SceneMode::Battle;
-        w.party_count = party;
+        w.party.party_count = party;
         w.load_party(legaia_save::Party::zeroed(3));
         for i in 0..usize::from(party) {
             w.actors[i].battle.hp = 100;
@@ -2478,7 +2486,7 @@ mod tests {
         }
         let mut gimard = MonsterDef::new(7, "Gimard", 40, 5);
         gimard.element = 2;
-        w.monster_catalog.insert(gimard);
+        w.tables.monster_catalog.insert(gimard);
         w.actors[3].battle.hp = 40;
         w.actors[3].battle.max_hp = 40;
         w.actors[3].battle.liveness = 1;
@@ -2490,7 +2498,7 @@ mod tests {
     fn round_prompt_is_panels_only() {
         use crate::battle_input::BattleCommandSession;
         let mut w = battle_world(1);
-        w.battle_command = Some(BattleCommandSession::new_round_open(0, 0, false));
+        w.battle.command = Some(BattleCommandSession::new_round_open(0, 0, false));
         assert_eq!(battle_hud_phase(&w), BattleHudPhase::RoundPrompt);
         assert!(battle_panels_visible(&w));
         assert_eq!(battle_readout_bar_slot(&w), None);
@@ -2507,7 +2515,7 @@ mod tests {
         use crate::battle_input::BattleCommandSession;
         let mut w = battle_world(1);
         w.actors[0].battle.spirit_gauge = 37;
-        w.battle_command = Some(BattleCommandSession::new(0, 0));
+        w.battle.command = Some(BattleCommandSession::new(0, 0));
         assert_eq!(battle_command_surface(&w), Some(CommandSurface::Ring));
         assert!(!battle_panels_visible(&w));
         assert_eq!(battle_readout_bar_slot(&w), Some(0));
@@ -2520,7 +2528,7 @@ mod tests {
     fn the_magic_chip_reads_dash_without_a_raseru_and_the_disc_name_with_one() {
         use crate::battle_input::BattleCommandSession;
         let mut w = battle_world(1);
-        w.battle_command = Some(BattleCommandSession::new(0, 0));
+        w.battle.command = Some(BattleCommandSession::new(0, 0));
         let chips = battle_command_chips(&w).expect("ring chips");
         assert_eq!(chips.phase, CommandChipPhase::CommandRing);
         assert_eq!(chips.chips.len(), 4);
@@ -2531,9 +2539,9 @@ mod tests {
         // Equip a Ra-Seru in the record's `+0x199` slot: the gate flips and
         // the label leaves the `-` entry. Without the overlay strings the
         // port's own word stands in for the disc name.
-        let mut eq = w.roster.members[0].equipment();
+        let mut eq = w.party.roster.members[0].equipment();
         eq.slots[RASERU_EQUIP_SLOT] = 1;
-        w.roster.members[0].set_equipment(eq);
+        w.party.roster.members[0].set_equipment(eq);
         assert!(battle_member_has_raseru(&w, 0));
         let chips = battle_command_chips(&w).expect("ring chips");
         let (label, enabled) = &chips.chips[2];
@@ -2546,22 +2554,22 @@ mod tests {
         // `FUN_80053CB8`'s `beq v0,a3` arm: character id 2 reads `+0x198`,
         // every other id `+0x199`.
         let mut w = battle_world(2);
-        let mut eq = w.roster.members[1].equipment();
+        let mut eq = w.party.roster.members[1].equipment();
         eq.slots[RASERU_EQUIP_SLOT] = 1;
-        w.roster.members[1].set_equipment(eq);
+        w.party.roster.members[1].set_equipment(eq);
         assert!(
             !battle_member_has_raseru(&w, 1),
             "Noa's gate does not read +0x199"
         );
-        let mut eq = w.roster.members[1].equipment();
+        let mut eq = w.party.roster.members[1].equipment();
         eq.slots[RASERU_EQUIP_SLOT] = 0;
         eq.slots[RASERU_EQUIP_SLOT_NOA] = 1;
-        w.roster.members[1].set_equipment(eq);
+        w.party.roster.members[1].set_equipment(eq);
         assert!(battle_member_has_raseru(&w, 1), "Noa's gate reads +0x198");
         // Vahn's arm is unaffected by the +0x198 byte.
-        let mut eq = w.roster.members[0].equipment();
+        let mut eq = w.party.roster.members[0].equipment();
         eq.slots[RASERU_EQUIP_SLOT_NOA] = 1;
-        w.roster.members[0].set_equipment(eq);
+        w.party.roster.members[0].set_equipment(eq);
         assert!(!battle_member_has_raseru(&w, 0));
     }
 
@@ -2571,7 +2579,7 @@ mod tests {
         let mut w = battle_world(1);
         let mut cmd = BattleCommandSession::new(0, 0);
         cmd.phase = CommandPhase::AttackMode { cursor: 0 };
-        w.battle_command = Some(cmd);
+        w.battle.command = Some(cmd);
         assert_eq!(battle_command_surface(&w), Some(CommandSurface::AttackMode));
         assert_eq!(battle_readout_bar_slot(&w), None);
         assert!(!battle_panels_visible(&w));
@@ -2597,7 +2605,7 @@ mod tests {
             vec![TargetRow::new(0, "Vahn"), TargetRow::new(1, "Noa")],
             InventoryContext::Battle,
         );
-        w.battle_item_menu = Some(menu.clone());
+        w.battle.item_menu = Some(menu.clone());
         assert_eq!(battle_command_surface(&w), Some(CommandSurface::ItemBrowse));
         assert!(
             battle_panels_visible(&w),
@@ -2619,7 +2627,7 @@ mod tests {
             item_cursor: 0,
             cursor: 0,
         };
-        w.battle_item_menu = Some(menu);
+        w.battle.item_menu = Some(menu);
         assert_eq!(
             battle_command_surface(&w),
             Some(CommandSurface::ItemTarget(Some(0)))
@@ -2633,7 +2641,7 @@ mod tests {
     }
 
     fn arm_action(w: &mut crate::world::World, actor: u8, category: u8, target: u8) {
-        w.battle_command = None;
+        w.battle.command = None;
         w.battle_ctx.active_actor = actor;
         w.battle_ctx.action_state = 0x20;
         let a = &mut w.actors[usize::from(actor)].battle;

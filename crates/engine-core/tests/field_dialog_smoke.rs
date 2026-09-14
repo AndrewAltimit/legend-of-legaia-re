@@ -1,6 +1,6 @@
 //! Field-VM → dialog panel wiring: the **field-interact op** (`0x3E` with
 //! `op0 < 100`) opens the interacted actor's inline interaction-script
-//! dialogue into `World::current_dialog`; `OwnedDialogPanel::from_inline_dialog`
+//! dialogue into `World::dialog.current`; `OwnedDialogPanel::from_inline_dialog`
 //! renders it; ticking the panel emits the glyphs.
 //!
 //! Field dialogue has no dedicated opcode - it is the actor's own inline MES
@@ -23,9 +23,7 @@ fn field_interact_opens_dialog_and_panel_emits_glyphs() {
     // Seed actor slot 3's inline interaction-script dialogue: a single
     // `0x1F`-lead segment carrying "hi" (the MES glyph bytes for 'h' 'i'),
     // `0x00`-terminated.
-    world
-        .field_npc_dialog
-        .insert(3, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.dialog.insert(3, vec![0x1F, b'h', b'i', 0x00]);
 
     // Field VM op 0x3E with op0 = 5 (< 100 -> field interact), op1 = slot 3.
     world.load_field_record(&[0x3E, 0x05, 0x03]);
@@ -33,7 +31,8 @@ fn field_interact_opens_dialog_and_panel_emits_glyphs() {
     // Step once - the field-interact op should open the actor's dialogue.
     let _ = world.step_field();
     let req = world
-        .current_dialog
+        .dialog
+        .current
         .as_ref()
         .expect("field-interact on an actor with inline text must open current_dialog");
     assert_eq!(req.inline, vec![0x1F, b'h', b'i', 0x00]);
@@ -66,12 +65,10 @@ fn dialog_clear_unblocks_world() {
         mode: SceneMode::Field,
         ..World::default()
     };
-    world
-        .field_npc_dialog
-        .insert(3, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.dialog.insert(3, vec![0x1F, b'h', b'i', 0x00]);
     world.load_field_record(&[0x3E, 0x05, 0x03]);
     let _ = world.step_field();
-    assert!(world.current_dialog.is_some());
-    world.current_dialog = None;
-    assert!(world.current_dialog.is_none());
+    assert!(world.dialog.current.is_some());
+    world.dialog.current = None;
+    assert!(world.dialog.current.is_none());
 }

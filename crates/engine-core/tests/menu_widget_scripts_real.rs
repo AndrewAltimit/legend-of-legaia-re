@@ -76,20 +76,20 @@ fn shop_open_edge_runs_disc_open_script() {
     };
     let mut world = world_with_overlay(&overlay);
     // Non-vacuity: the overlay resolved into programs.
-    assert!(world.menu_widget_scripts.is_some(), "scripts not resolved");
-    assert!(!world.menu_widgets.any_open());
+    assert!(world.menu.widget_scripts.is_some(), "scripts not resolved");
+    assert!(!world.menu.widgets.any_open());
 
     let mut runtime = shop_runtime();
     runtime.tick(&mut world, IDLE);
 
     // The disc open script (`DAT_801E4E38`) opened the five shop windows.
     assert_eq!(
-        world.menu_widgets.open_ids(),
+        world.menu.widgets.open_ids(),
         vec![0x20, 0x21, 0x22, 0x28, 0x2A]
     );
     // Home positions come from the window descriptor table: the gold box
     // (0x20) targets its descriptor rect, not the origin.
-    let gold = world.menu_widgets.window(0x20).expect("gold window open");
+    let gold = world.menu.widgets.window(0x20).expect("gold window open");
     assert_ne!(
         (gold.target.x, gold.target.y),
         (0, 0),
@@ -106,7 +106,7 @@ fn sell_transition_runs_disc_slide_away_script() {
     let mut world = world_with_overlay(&overlay);
     let mut runtime = shop_runtime();
     runtime.tick(&mut world, IDLE);
-    assert_eq!(world.menu_widgets.open_ids().len(), 5);
+    assert_eq!(world.menu.widgets.open_ids().len(), 5);
 
     // Drive the picker to the Sell row (Buy / Sell / Exit) and confirm.
     runtime.tick(&mut world, MenuInput { down: true, ..IDLE });
@@ -125,7 +125,7 @@ fn sell_transition_runs_disc_slide_away_script() {
 
     // The slide-away script (`DAT_801E4E54`) closed the picker windows,
     // keeping the gold (0x20) + vendor plate (0x21).
-    assert_eq!(world.menu_widgets.open_ids(), vec![0x20, 0x21]);
+    assert_eq!(world.menu.widgets.open_ids(), vec![0x20, 0x21]);
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn every_scanned_program_executes_through_the_interpreter() {
         return;
     };
     let world = world_with_overlay(&overlay);
-    let scripts = world.menu_widget_scripts.as_ref().expect("resolved");
+    let scripts = world.menu.widget_scripts.as_ref().expect("resolved");
     // Non-vacuity: a real program table, executed end-to-end.
     assert!(scripts.programs.len() >= 30);
     let mut executed = 0usize;

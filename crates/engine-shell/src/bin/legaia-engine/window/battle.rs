@@ -227,7 +227,7 @@ impl PlayWindowApp {
             self.sync_battle_hud_rows();
             for slot in 0..self.battle_hud.slots.len() as u8 {
                 self.battle_hud
-                    .sync_status(slot, &self.session.host.world.status_effects);
+                    .sync_status(slot, &self.session.host.world.battle.status_effects);
             }
         }
         self.battle_hud.tick();
@@ -258,6 +258,7 @@ impl PlayWindowApp {
             .session
             .host
             .world
+            .party
             .roster
             .members
             .first()
@@ -702,7 +703,7 @@ impl PlayWindowApp {
         // decode fails. Each character's decoded battle palette overlays the
         // rows its mesh CBA samples (= 481 + slot after relocation).
         let mut party_bound = 0usize;
-        let party_count = self.session.host.world.party_count as usize;
+        let party_count = self.session.host.world.party.party_count as usize;
         if party_count > 0
             && let Ok(pack_raw) = self
                 .session
@@ -761,7 +762,7 @@ impl PlayWindowApp {
             // char_slot` (raw TOC 0x361-0x364; see docs/formats/cdname.md
             // numbering space) - while the present-party ORDINAL picks the
             // runtime texture band (`relocate_tsb_cba` x = 0x200 + i*0x80,
-            // CLUT row 481 + i). `World::active_party` supplies the mapping;
+            // CLUT row 481 + i). `World::party.active_party` supplies the mapping;
             // empty = the identity Vahn/Noa/Gala default.
             for member in 0..party_count.min(3) {
                 let cslot = self.session.host.world.party_roster_slot(member);
@@ -1073,7 +1074,7 @@ impl PlayWindowApp {
             return;
         }
         let world = &self.session.host.world;
-        let pc = world.party_count as usize;
+        let pc = world.party.party_count as usize;
         let cam = self.battle_dome_camera_mvp(4.0 / 3.0)
             * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE));
         eprintln!(
@@ -1159,6 +1160,7 @@ impl PlayWindowApp {
             .session
             .host
             .world
+            .party
             .roster
             .members
             .get(cslot)
@@ -1426,7 +1428,7 @@ impl PlayWindowApp {
         // the battle camera frames it distinct from the enemies it attacks.
         let slot = self
             .summon_actor_slot
-            .unwrap_or_else(|| 8 + (self.session.host.world.party_count as usize));
+            .unwrap_or_else(|| 8 + (self.session.host.world.party.party_count as usize));
         self.summon_actor_slot = Some(slot);
         if let Some(a) = self.session.host.world.actors.get_mut(slot) {
             a.active = true;
@@ -1477,7 +1479,7 @@ impl PlayWindowApp {
     /// This is the host half of `legaia_engine_render::battle_intro`. The
     /// simulation half is already live: `World::tick_encounter` runs
     /// `tick_transition` every frame the session sits in `Transition`, and
-    /// `World::battle_intro` carries the entity whose `+0x1A` clock the styles
+    /// `World::battle.intro` carries the entity whose `+0x1A` clock the styles
     /// ride. What was missing was an owner for the per-style working set and
     /// a route from its output into a draw call - both of which land here.
     ///
@@ -1495,7 +1497,8 @@ impl PlayWindowApp {
             .session
             .host
             .world
-            .encounter
+            .encounters
+            .session
             .as_ref()
             .map(|s| s.phase());
         let Some(EncounterPhase::Transition { roll, .. }) = phase else {
@@ -1503,14 +1506,15 @@ impl PlayWindowApp {
             self.battle_intro_vram = None;
             return (None, Vec::new());
         };
-        let Some(entity) = self.session.host.world.battle_intro else {
+        let Some(entity) = self.session.host.world.battle.intro else {
             return (self.battle_intro.take(), Vec::new());
         };
         let total = self
             .session
             .host
             .world
-            .encounter
+            .encounters
+            .session
             .as_ref()
             .map(|s| i32::from(s.transition_frames))
             .unwrap_or(0);
@@ -1577,6 +1581,7 @@ impl PlayWindowApp {
         // unreachable. Resolve the row instead, and keep the live table as the
         // in-battle re-arm path.
         let slot0 = world
+            .tables
             .formation_table
             .formation(formation_id)
             .and_then(|d| d.slots.first())
@@ -1598,6 +1603,7 @@ impl PlayWindowApp {
         // flag selects. Passing a hard `0` here pinned every fight to the
         // TileShatter default.
         let battle_flags = world
+            .tables
             .formation_table
             .formation(formation_id)
             .map(|d| d.per_battle_flags())
@@ -1883,7 +1889,7 @@ impl PlayWindowApp {
         // still on screen" stands in for them. Escapes also raise 0xFE
         // but never set the celebration flag, so they stay excluded.
         let victory_window =
-            self.session.host.world.battle_end == Some(BattleEndCause::MonsterWipe);
+            self.session.host.world.battle.end == Some(BattleEndCause::MonsterWipe);
         let mut changed = false;
         for mf in &mut self.battle_faces {
             let Some(actor) = self.session.host.world.actors.get(mf.actor_slot) else {
@@ -1934,6 +1940,7 @@ impl PlayWindowApp {
             // rebuilt ability bytes (byte 5 bit 0x20).
             let world = &self.session.host.world;
             let force_neutral_mouth = world
+                .party
                 .roster
                 .members
                 .get(world.party_roster_slot(mf.actor_slot))
@@ -2111,7 +2118,8 @@ impl PlayWindowApp {
     /// The party leader whose name opens the spoils line.
     fn battle_spoils_leader(&self) -> String {
         let w = &self.session.host.world;
-        w.roster
+        w.party
+            .roster
             .members
             .get(w.party_roster_slot(0))
             .map(|m| m.name())

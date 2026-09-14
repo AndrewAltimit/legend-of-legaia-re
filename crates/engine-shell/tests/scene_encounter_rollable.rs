@@ -58,7 +58,7 @@ fn a_field_area_rolls_and_the_opening_town_does_not() {
 
     let field = boot(&extracted, "map03");
     assert!(
-        field.host.world.scene_encounters_rollable,
+        field.host.world.encounters.scene_rollable,
         "map03 is a field area with rate-bearing encounter regions"
     );
     assert!(
@@ -68,7 +68,7 @@ fn a_field_area_rolls_and_the_opening_town_does_not() {
 
     let town = boot(&extracted, "town01");
     assert!(
-        !town.host.world.scene_encounters_rollable,
+        !town.host.world.encounters.scene_rollable,
         "town01's rate-bearing regions belong to a story state the flag bank \
          is not in - this is retail scene data, and the reason a default boot \
          looks quiet"
@@ -89,7 +89,7 @@ fn town01_has_rollable_regions_in_a_story_state_it_is_not_in() {
         return;
     };
     let town = boot(&extracted, "town01");
-    let Some(tracker) = town.host.world.field_region_tracker.as_ref() else {
+    let Some(tracker) = town.host.world.terrain.region_tracker.as_ref() else {
         eprintln!("[skip] town01 installed no region tracker on this build of extracted/");
         return;
     };
@@ -150,9 +150,9 @@ fn both_hosts_option_shapes_arm_the_same_world_state() {
 
     let a = &native.host.world;
     let b = &browserish.host.world;
-    assert_eq!(a.live_gameplay_loop, b.live_gameplay_loop);
-    assert_eq!(a.battle_player_driven, b.battle_player_driven);
-    assert_eq!(a.scene_encounters_rollable, b.scene_encounters_rollable);
+    assert_eq!(a.toggles.live_gameplay_loop, b.toggles.live_gameplay_loop);
+    assert_eq!(a.battle.player_driven, b.battle.player_driven);
+    assert_eq!(a.encounters.scene_rollable, b.encounters.scene_rollable);
     assert_eq!(a.active_scene_label, b.active_scene_label);
 }
 
@@ -190,7 +190,8 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     // rate-bearing and unshadowed, so the walk below actually rolls.
     let world = &mut session.host.world;
     let table = world
-        .field_region_tracker
+        .terrain
+        .region_tracker
         .as_ref()
         .expect("map03 routes a field region tracker")
         .table()
@@ -216,10 +217,10 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
         panic!("map03 reported rollable but no unshadowed rate-bearing region centre");
     };
     world.seat_player_at_tile_rescued(cx, cz);
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     // Auto-resolve the battle: this test is about the loop reaching a
     // terminal state, not about the command menu.
-    world.battle_player_driven = false;
+    world.battle.player_driven = false;
     // map03's roster is late-game (four-figure monster HP and four-figure
     // swings) and the boot party is a fresh Vahn: faithfully he chips for 1
     // damage AND dies long before the fight ends - either way no field
@@ -245,6 +246,7 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     );
 
     let hp_before: Vec<u16> = world
+        .party
         .roster
         .members
         .iter()
@@ -261,10 +263,10 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
             // held standing with the displayed bar force-synced (a live-HP
             // write leaving `hp != hp_display` pending is absorbing - the
             // SM's `0x51` bar-drain gate parks the battle on it).
-            for slot in 0..world.party_count {
+            for slot in 0..world.party.party_count {
                 world.set_battle_attack(slot, 30_000);
             }
-            for slot in 0..world.party_count as usize {
+            for slot in 0..world.party.party_count as usize {
                 let a = &mut world.actors[slot].battle;
                 if a.max_hp > 0 {
                     let max = a.max_hp;
@@ -292,8 +294,8 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     // (records held) - what must NOT happen is a full-HP reset that erases a
     // real loss, so assert against the live mirrors instead of a constant.
     for (i, before) in hp_before.iter().enumerate() {
-        let after = world.roster.members[i].hp_mp_sp().hp_cur;
-        if i < world.party_count as usize {
+        let after = world.party.roster.members[i].hp_mp_sp().hp_cur;
+        if i < world.party.party_count as usize {
             assert_eq!(
                 after, world.actors[i].battle.hp,
                 "slot {i} record and field actor must agree after the battle"

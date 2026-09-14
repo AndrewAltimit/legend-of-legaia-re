@@ -31,8 +31,8 @@ fn dirty_block() -> Vec<u8> {
 
 fn a_world() -> World {
     let mut world = World::new();
-    world.roster = legaia_save::Party::zeroed(4);
-    for (i, member) in world.roster.members.iter_mut().enumerate() {
+    world.party.roster = legaia_save::Party::zeroed(4);
+    for (i, member) in world.party.roster.members.iter_mut().enumerate() {
         let mut hms = member.hp_mp_sp();
         hms.hp_cur = 40 + i as u16;
         hms.hp_max = 120;
@@ -40,9 +40,9 @@ fn a_world() -> World {
         hms.mp_max = 33;
         member.set_hp_mp_sp(hms);
     }
-    world.party_count = 4;
-    world.money = 4321;
-    world.inventory.insert(0x77, 5);
+    world.party.party_count = 4;
+    world.party.money = 4321;
+    world.party.inventory.insert(0x77, 5);
     world
 }
 

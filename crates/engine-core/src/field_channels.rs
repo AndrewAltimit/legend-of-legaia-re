@@ -29,7 +29,7 @@
 //! A channel can set an actor's facing without moving via field-VM op 0x43
 //! sub-7 (the VM writes `ctx.face_rotation = face_id`, mirror of `actor+0x6D`).
 //! The engine does not convert that to a renderer heading
-//! ([`crate::world::World::field_npc_headings`], the 12-bit `render_26`
+//! ([`crate::world::FieldNpcState::headings`], the 12-bit `render_26`
 //! convention), so a never-walked-but-turned NPC stays at its default facing.
 //!
 //! There is **no static `face_id -> heading` table to pin**. Op 0x43 sub-7
@@ -60,7 +60,7 @@ use legaia_engine_vm::field::FieldCtx;
 #[derive(Debug, Clone)]
 pub struct FieldChannel {
     /// Partition-1 record index (`1..N1`; record 0 is the scene controller).
-    /// Also the key [`crate::world::World::field_npc_positions`] and the
+    /// Also the key [`crate::world::FieldNpcState::positions`] and the
     /// windowed host's NPC clip players track.
     pub placement_index: usize,
     /// The context. `script_id` carries the retail id
@@ -86,7 +86,7 @@ pub struct FieldChannel {
     /// are poke targets only: the engine does not step them autonomously
     /// (their interaction bodies are driven by the touch/interact dispatch),
     /// and their state never writes through to the placement-keyed NPC
-    /// surfaces ([`crate::world::World::field_npc_positions`]).
+    /// surfaces ([`crate::world::FieldNpcState::positions`]).
     pub object_bind: bool,
 }
 

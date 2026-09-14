@@ -82,7 +82,7 @@ impl SceneHost {
     /// [`SceneHost::clear_dialog`] cleans it up when the user dismisses
     /// the box.
     pub fn open_pending_dialog(&mut self) -> Option<crate::dialog::OwnedDialogPanel> {
-        let req = self.world.current_dialog.as_ref()?;
+        let req = self.world.dialog.current.as_ref()?;
         // Placement-NPC / event dialogue carries its text inline (the field-VM
         // `0x3F` op's buffer); its `text_id` is a box-config id, not an MES
         // index, so it never resolves through the scene MES. Prefer the inline
@@ -100,7 +100,7 @@ impl SceneHost {
     /// Clear the world's pending dialog request. Call after the user
     /// dismisses the box (the field VM resumes the next frame).
     pub fn clear_dialog(&mut self) {
-        self.world.current_dialog = None;
+        self.world.dialog.current = None;
     }
 
     /// Drain the world's pending BGM events through `director`, resolving

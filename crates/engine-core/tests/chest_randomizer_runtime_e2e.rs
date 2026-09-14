@@ -65,7 +65,7 @@ fn gives_for_slot(decoded_man: &[u8], slot: u8) -> Vec<u8> {
 
     // The chest actor's full interaction record (prologue selects the segment per
     // story flags; with a fresh world all flags are zero = chest unopened).
-    let Some(prologue) = world.field_npc_dialog_prologue.get(&slot).cloned() else {
+    let Some(prologue) = world.npcs.dialog_prologue.get(&slot).cloned() else {
         return Vec::new();
     };
     world.start_inline_dialogue_with_prologue(
@@ -84,7 +84,7 @@ fn gives_for_slot(decoded_man: &[u8], slot: u8) -> Vec<u8> {
                 gives.push(item_id);
             }
         }
-        if world.inline_dialogue.as_ref().is_none_or(|d| d.is_done()) {
+        if world.dialog.inline.as_ref().is_none_or(|d| d.is_done()) {
             break;
         }
     }
@@ -96,7 +96,7 @@ fn slot_granting(decoded_man: &[u8], item: u8) -> Option<u8> {
     let man_file = parse_man(decoded_man).ok()?;
     let mut world = World::new();
     world.install_field_carriers_from_man(&man_file, decoded_man);
-    let slots: Vec<u8> = world.field_npc_dialog_prologue.keys().copied().collect();
+    let slots: Vec<u8> = world.npcs.dialog_prologue.keys().copied().collect();
     slots
         .into_iter()
         .find(|&slot| gives_for_slot(decoded_man, slot).contains(&item))

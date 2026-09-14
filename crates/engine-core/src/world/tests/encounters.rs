@@ -7,7 +7,7 @@ fn install_encounter_for_scene_resolves_field_pattern() {
     let r = vanilla_encounter_registry();
     let installed = world.install_encounter_for_scene(&r, "map01");
     assert!(installed, "field pattern should match");
-    assert!(world.encounter.is_some());
+    assert!(world.encounters.session.is_some());
 }
 
 #[test]
@@ -18,7 +18,7 @@ fn install_encounter_for_scene_quiets_in_towns() {
     let installed = world.install_encounter_for_scene(&r, "town01");
     assert!(!installed, "town pattern resolves but is quiet");
     assert!(
-        world.encounter.is_some(),
+        world.encounters.session.is_some(),
         "session installed for nil checks"
     );
 }
@@ -30,7 +30,7 @@ fn install_encounter_for_scene_returns_false_with_no_default() {
     let r = EncounterRegistry::new(); // empty, no default
     let installed = world.install_encounter_for_scene(&r, "anything");
     assert!(!installed);
-    assert!(world.encounter.is_none());
+    assert!(world.encounters.session.is_none());
 }
 
 #[test]
@@ -41,9 +41,10 @@ fn install_encounter_for_scene_replaces_active_session() {
     // Install a field session, then a town session - the town call
     // should replace the field session even though it's quiet.
     world.install_encounter_for_scene(&r, "map01");
-    assert!(world.encounter.is_some());
+    assert!(world.encounters.session.is_some());
     let initial_table_label = world
-        .encounter
+        .encounters
+        .session
         .as_ref()
         .unwrap()
         .tracker()
@@ -52,7 +53,8 @@ fn install_encounter_for_scene_replaces_active_session() {
         .clone();
     world.install_encounter_for_scene(&r, "town01");
     let new_table_label = world
-        .encounter
+        .encounters
+        .session
         .as_ref()
         .unwrap()
         .tracker()
@@ -76,6 +78,7 @@ fn install_encounter_from_record_registers_and_arms() {
         .expect("non-empty record produces an id");
     // Formation registered.
     let formation = world
+        .tables
         .formation_table
         .formation(formation_id)
         .expect("formation registered");
@@ -83,7 +86,11 @@ fn install_encounter_from_record_registers_and_arms() {
     assert_eq!(formation.slots[0].monster_id, 4);
     assert_eq!(formation.slots[1].monster_id, 4);
     // Session installed and rate forced high.
-    let session = world.encounter.as_ref().expect("session installed");
+    let session = world
+        .encounters
+        .session
+        .as_ref()
+        .expect("session installed");
     assert_eq!(session.tracker().table().trigger_rate_q8, 0xFF);
     assert_eq!(session.tracker().table().entries.len(), 1);
     assert_eq!(
@@ -108,9 +115,10 @@ fn install_scripted_encounter_parses_window_and_arms_battle() {
         .install_scripted_encounter(&window)
         .expect("non-empty record installs a formation");
     // Fire-once: a successful install disarms the carrier flag.
-    assert!(!world.scripted_encounter_armed);
+    assert!(!world.encounters.scripted_armed);
     // Formation registered with the window's two ids.
     let formation = world
+        .tables
         .formation_table
         .formation(formation_id)
         .expect("formation registered");
@@ -120,7 +128,8 @@ fn install_scripted_encounter_parses_window_and_arms_battle() {
     // Session installed at the forced-high rate.
     assert_eq!(
         world
-            .encounter
+            .encounters
+            .session
             .as_ref()
             .unwrap()
             .tracker()
@@ -146,7 +155,7 @@ fn install_scripted_encounter_empty_or_short_window_returns_none() {
     world.set_active_scene_label("town01");
     // count = 0 -> empty record -> no install.
     assert_eq!(world.install_scripted_encounter(&[0, 0, 0, 0]), None);
-    assert!(world.encounter.is_none());
+    assert!(world.encounters.session.is_none());
     // Too short to even hold the count byte -> parse fails.
     assert_eq!(world.install_scripted_encounter(&[0, 0]), None);
 }
@@ -191,24 +200,24 @@ fn seed_party_battle_stats_folds_live_stats_and_equipment() {
     // Retail seeds the actor's ATK without equipment (`FUN_80053CB8` folds
     // UDF / LDF / SPD only); the weapon's +7 reaches a swing at execution
     // time as `+7 >> 1` for the command that reads its slot.
-    assert_eq!(world.battle_attack[0], 30, "base ATK, no equipment fold");
+    assert_eq!(world.battle.attack[0], 30, "base ATK, no equipment fold");
     assert_eq!(
-        world.battle_equip_atk[0],
+        world.battle.equip_atk[0],
         [7, 0, 0, 0, 0],
         "per-slot equipment attack bytes"
     );
     assert_eq!(
-        legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(0x11, &world.battle_equip_atk[0]),
+        legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(0x11, &world.battle.equip_atk[0]),
         Some(3),
         "an art folds half the sum of all five slots"
     );
     assert_eq!(
-        legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(0x0C, &world.battle_equip_atk[0]),
+        legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(0x0C, &world.battle.equip_atk[0]),
         Some(0),
         "the left-arm command reads slot 2, which is empty here"
     );
     assert_eq!(
-        world.battle_defense_split[0],
+        world.battle.defense_split[0],
         Some((13, 10)),
         "(10+3) UDF, (8+2) LDF"
     );
@@ -222,8 +231,8 @@ fn seed_party_battle_stats_skips_zeroed_roster() {
     world.set_battle_attack(0, 60);
     world.load_party(legaia_save::Party::zeroed(3));
     world.seed_party_battle_stats();
-    assert_eq!(world.battle_attack[0], 60, "zeroed roster leaves it intact");
-    assert_eq!(world.battle_defense_split[0], None);
+    assert_eq!(world.battle.attack[0], 60, "zeroed roster leaves it intact");
+    assert_eq!(world.battle.defense_split[0], None);
 }
 
 #[test]
@@ -248,14 +257,20 @@ fn seed_party_battle_stats_scales_ap_base_with_level() {
     world.load_party(party);
 
     world.seed_party_battle_stats();
-    assert_eq!(world.ap_gauges[0].base_ap, 4, "level 1 -> base 4");
-    assert_eq!(world.ap_gauges[1].base_ap, 6, "level 23 -> 4 + 23/10 = 6");
-    assert_eq!(world.ap_gauges[2].base_ap, 10, "level 99 -> capped at 10");
+    assert_eq!(world.battle.ap_gauges[0].base_ap, 4, "level 1 -> base 4");
+    assert_eq!(
+        world.battle.ap_gauges[1].base_ap, 6,
+        "level 23 -> 4 + 23/10 = 6"
+    );
+    assert_eq!(
+        world.battle.ap_gauges[2].base_ap, 10,
+        "level 99 -> capped at 10"
+    );
 
     // The round-start reset picks up the seeded base as the per-turn budget.
     world.reset_party_ap();
-    assert_eq!(world.ap_gauges[1].current_ap, 6);
-    assert_eq!(world.ap_gauges[2].current_ap, 10);
+    assert_eq!(world.battle.ap_gauges[1].current_ap, 6);
+    assert_eq!(world.battle.ap_gauges[2].current_ap, 10);
 }
 
 #[test]
@@ -297,8 +312,8 @@ fn seed_party_battle_stats_seeds_the_mp_ceiling_from_the_record() {
     world.load_party(party);
 
     world.seed_party_battle_stats();
-    assert_eq!(world.character_max_mp.first().copied(), Some(20));
-    assert_eq!(world.character_max_mp.get(1).copied(), Some(35));
+    assert_eq!(world.tables.character_max_mp.first().copied(), Some(20));
+    assert_eq!(world.tables.character_max_mp.get(1).copied(), Some(35));
 }
 
 #[test]
@@ -321,7 +336,7 @@ fn seed_party_battle_stats_leaves_a_synthetic_mp_ceiling_alone() {
     world.set_character_max_mp(0, 99);
 
     world.seed_party_battle_stats();
-    assert_eq!(world.character_max_mp.first().copied(), Some(99));
+    assert_eq!(world.tables.character_max_mp.first().copied(), Some(99));
 }
 
 #[test]
@@ -334,12 +349,12 @@ fn drain_pending_scripted_encounter_only_when_queued() {
     world.set_active_scene_label("town01");
     // Nothing queued -> no-op.
     world.drain_pending_scripted_encounter();
-    assert!(world.encounter.is_none());
+    assert!(world.encounters.session.is_none());
     // Queue a window (as the armed forwarded-PC hook would) and drain.
-    world.pending_scripted_encounter = Some(vec![0, 0, 0, 1, 0x12, 0, 0, 0]);
+    world.encounters.pending_scripted = Some(vec![0, 0, 0, 1, 0x12, 0, 0, 0]);
     world.drain_pending_scripted_encounter();
-    assert!(world.pending_scripted_encounter.is_none());
-    assert!(world.encounter.is_some());
+    assert!(world.encounters.pending_scripted.is_none());
+    assert!(world.encounters.session.is_some());
 }
 
 #[test]
@@ -349,7 +364,7 @@ fn install_encounter_from_record_empty_returns_none() {
     let id = world.install_encounter_from_record("map01", &EncounterRecord::EMPTY);
     assert!(id.is_none());
     // No session installed.
-    assert!(world.encounter.is_none());
+    assert!(world.encounters.session.is_none());
 }
 
 #[test]
@@ -360,16 +375,17 @@ fn install_man_formation_forces_registered_row() {
     world.set_active_scene_label("town01");
     // Register a lone-monster formation at id 4 (town01's Tetsu row shape).
     world
+        .tables
         .formation_table
         .insert(FormationDef::new(4, vec![FormationSlot::new(0x4F)]));
 
     // Unknown id -> None, no session.
     assert!(world.install_man_formation(9).is_none());
-    assert!(world.encounter.is_none());
+    assert!(world.encounters.session.is_none());
 
     // Registered id installs a forced-rate session that triggers next step.
     assert_eq!(world.install_man_formation(4), Some(4));
-    assert!(world.encounter.is_some());
+    assert!(world.encounters.session.is_some());
     assert!(
         world.on_field_step(),
         "forced-rate session triggers on the next step"
@@ -382,11 +398,14 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
     use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Field;
-    world.live_gameplay_loop = true; // auto-resolve the battle leg
+    world.toggles.live_gameplay_loop = true; // auto-resolve the battle leg
     world.set_active_scene_label("town01");
     // A capable lone party member so the battle can resolve.
     world.actors[0].active = true;
@@ -395,7 +414,7 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
     world.actors[0].battle.liveness = 1;
     world.set_battle_attack(0, 80);
     // town01's Tetsu row: formation index 4 = lone monster id 0x4F.
-    world.formation_table.insert(FormationDef::new(
+    world.tables.formation_table.insert(FormationDef::new(
         RIM_ELM_TRAINING_FORMATION_ID,
         vec![FormationSlot::new(0x4F)],
     ));
@@ -417,7 +436,7 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
         SceneMode::Field,
         "an idle scripted carrier never self-fires"
     );
-    assert_eq!(world.field_carriers[0].state, 0, "carrier still Idle");
+    assert_eq!(world.carriers.entities[0].state, 0, "carrier still Idle");
 
     // The dialogue-accept advances the carrier to Activating; the next tick
     // runs the state-1 body (formation copy) and the case 2/3 fall-through
@@ -431,15 +450,19 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
         world.tick();
     }
     assert_eq!(world.mode, SceneMode::Battle);
-    assert_eq!(world.battle_return_mode, SceneMode::Field);
+    assert_eq!(world.battle.return_mode, SceneMode::Field);
     assert!(world.field_return.is_some());
-    let formation = world.active_formation.as_ref().expect("active formation");
+    let formation = world
+        .battle
+        .active_formation
+        .as_ref()
+        .expect("active formation");
     assert_eq!(
         formation.slots[0].monster_id, 0x4F,
         "Tetsu in the enemy slot"
     );
     assert_eq!(
-        world.field_carriers[0].state,
+        world.carriers.entities[0].state,
         vm::world_map::EntityState::Terminal as u16,
         "carrier retired to Terminal after the transition"
     );
@@ -457,7 +480,7 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
     assert_eq!(world.mode, SceneMode::Field, "returns to the field");
     // The carrier stays Terminal - the scripted fight fires exactly once.
     assert_eq!(
-        world.field_carriers[0].state,
+        world.carriers.entities[0].state,
         vm::world_map::EntityState::Terminal as u16
     );
 }
@@ -468,12 +491,15 @@ fn field_carrier_unengaged_never_fires() {
     use crate::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Field;
     world.set_active_scene_label("town01");
-    world.formation_table.insert(FormationDef::new(
+    world.tables.formation_table.insert(FormationDef::new(
         RIM_ELM_TRAINING_FORMATION_ID,
         vec![FormationSlot::new(0x4F)],
     ));
@@ -487,7 +513,7 @@ fn field_carrier_unengaged_never_fires() {
         assert_eq!(world.mode, SceneMode::Field);
     }
     assert!(world.field_return.is_none());
-    assert!(world.pending_field_carrier_battle.is_none());
+    assert!(world.carriers.pending_battle.is_none());
 }
 
 #[test]
@@ -495,44 +521,44 @@ fn begin_new_game_clears_state_and_enters_field() {
     let mut world = World::new();
     // Dirty the world as if a prior session had been played.
     world.mode = SceneMode::Battle;
-    world.story_flags = 0xDEAD_BEEF;
-    world.story_flag_bits = vec![1, 2, 3];
-    world.money = 4242;
-    world.inventory.insert(0x10, 5);
-    world.scripted_encounter_armed = true;
+    world.flags.story_flags = 0xDEAD_BEEF;
+    world.flags.story_flag_bits = vec![1, 2, 3];
+    world.party.money = 4242;
+    world.party.inventory.insert(0x10, 5);
+    world.encounters.scripted_armed = true;
     world.game_over = true;
-    world.play_time_seconds = 9999;
+    world.clock.play_time_seconds = 9999;
 
     world.begin_new_game();
 
     // The retail field-launch (master mode 3) clean slate.
     assert_eq!(world.mode, SceneMode::Field);
-    assert_eq!(world.story_flags, 0);
-    assert!(world.story_flag_bits.is_empty());
+    assert_eq!(world.flags.story_flags, 0);
+    assert!(world.flags.story_flag_bits.is_empty());
     // New-game gold is the retail constant (FUN_80034A6C), not zero.
-    assert_eq!(world.money, NEW_GAME_STARTING_GOLD);
-    assert!(world.inventory.is_empty());
-    assert!(!world.scripted_encounter_armed);
-    assert!(world.encounter.is_none());
+    assert_eq!(world.party.money, NEW_GAME_STARTING_GOLD);
+    assert!(world.party.inventory.is_empty());
+    assert!(!world.encounters.scripted_armed);
+    assert!(world.encounters.session.is_none());
     assert!(!world.game_over);
-    assert_eq!(world.play_time_seconds, 0);
+    assert_eq!(world.clock.play_time_seconds, 0);
 }
 
 #[test]
 fn prologue_handoff_fires_once_on_confirm_in_the_opening_chain() {
     let mut world = World::new();
     world.set_active_scene_label(legaia_asset::new_game::OPENING_CUTSCENE_SCENE);
-    world.opening_chain_active = true;
+    world.cutscene.opening_chain_active = true;
 
     // Not armed yet: confirm does nothing.
     assert_eq!(world.take_prologue_handoff(true), None);
 
     world.arm_prologue_handoff();
-    assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    assert_ne!(world.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 
     // Armed but no confirm: stays in the cutscene.
     assert_eq!(world.take_prologue_handoff(false), None);
-    assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    assert_ne!(world.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 
     // Armed + confirm: skips to town01 and clears the bit (fire-once). This
     // is the retail intro-skip - it fires mid-narration too.
@@ -541,13 +567,13 @@ fn prologue_handoff_fires_once_on_confirm_in_the_opening_chain() {
         world.take_prologue_handoff(true),
         Some(legaia_asset::new_game::OPENING_SCENE)
     );
-    assert_eq!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    assert_eq!(world.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
     assert!(
-        world.cutscene_narration.is_none(),
+        world.cutscene.narration.is_none(),
         "the skip tears down the playing narration"
     );
-    assert!(world.entering_town01_opening);
-    assert!(!world.opening_chain_active);
+    assert!(world.cutscene.entering_town01_opening);
+    assert!(!world.cutscene.opening_chain_active);
 
     // A second confirm does not re-fire.
     assert_eq!(world.take_prologue_handoff(true), None);
@@ -562,7 +588,7 @@ fn prologue_handoff_only_fires_while_the_opening_chain_plays() {
     world.arm_prologue_handoff();
     assert_eq!(world.take_prologue_handoff(true), None);
     // Bit is left intact for the gate to fire only during the opening.
-    assert_ne!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    assert_ne!(world.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 }
 
 // ---- boss-stager placements (approach/interact -> record execution) ----
@@ -570,7 +596,7 @@ fn prologue_handoff_only_fires_while_the_opening_chain_plays() {
 #[test]
 fn run_boss_stager_refuses_when_the_park_gate_is_latched() {
     let mut world = World::new();
-    world.field_boss_stagers.insert(
+    world.props.boss_stagers.insert(
         3,
         crate::world::FieldBossStager {
             record: 3,
@@ -583,7 +609,7 @@ fn run_boss_stager_refuses_when_the_park_gate_is_latched() {
         "a latched park gate refuses the launch"
     );
     assert!(
-        !world.field_boss_stagers.contains_key(&3),
+        !world.props.boss_stagers.contains_key(&3),
         "the stale binding is dropped"
     );
 }
@@ -591,7 +617,7 @@ fn run_boss_stager_refuses_when_the_park_gate_is_latched() {
 #[test]
 fn run_boss_stager_requires_a_resident_scene_man() {
     let mut world = World::new();
-    world.field_boss_stagers.insert(
+    world.props.boss_stagers.insert(
         3,
         crate::world::FieldBossStager {
             record: 3,
@@ -601,7 +627,7 @@ fn run_boss_stager_requires_a_resident_scene_man() {
     // No `field_channels_man` installed: nothing to execute.
     assert!(!world.run_boss_stager_record(3));
     assert!(
-        world.field_boss_stagers.contains_key(&3),
+        world.props.boss_stagers.contains_key(&3),
         "an unresolvable launch keeps the binding for a later approach"
     );
 }
@@ -615,6 +641,7 @@ fn boss_battle_entry_writes_no_flags() {
     let mut world = World::new();
     world.set_active_scene_label("rikuroa");
     world
+        .tables
         .formation_table
         .insert(FormationDef::new(17, vec![FormationSlot::new(73)]));
     world.mode = SceneMode::Field;
@@ -628,7 +655,7 @@ fn boss_battle_entry_writes_no_flags() {
     }
     assert!(matches!(world.mode, SceneMode::Battle));
     // The scripted fight refuses the Run command (retail `ctx+0x287`).
-    assert!(world.battle_no_escape, "scripted battle sets no-escape");
+    assert!(world.battle.no_escape, "scripted battle sets no-escape");
     assert!(
         !world.system_flag_test(0x289),
         "no engine stamp: the marker comes from the record's bytes"
@@ -636,7 +663,7 @@ fn boss_battle_entry_writes_no_flags() {
     assert!(!world.system_flag_test(0x142), "no victory latch either");
     // Loot resolution also writes no flags.
     let cat = crate::monster_catalog::MonsterCatalog::new();
-    let formation = world.formation_table.formation(17).cloned().unwrap();
+    let formation = world.tables.formation_table.formation(17).cloned().unwrap();
     let _ = world.apply_battle_loot(&formation, &cat);
     assert!(!world.system_flag_test(0x289));
     assert!(!world.system_flag_test(0x142));
@@ -663,21 +690,22 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
     // BGM + bundle load - three ticks reach it.
     world.tick_encounter();
     assert!(
-        world.battle_intro.is_some(),
+        world.battle.intro.is_some(),
         "armed on the transition frame"
     );
     world.tick_encounter();
     world.tick_encounter();
     assert!(
         world
-            .battle_intro_effects
+            .battle
+            .intro_effects
             .iter()
             .any(|e| matches!(e, TransitionEffect::LoadBattleBgm { battle_id: 3 })),
         "phase 2 loads the battle BGM: {:?}",
-        world.battle_intro_effects
+        world.battle.intro_effects
     );
     assert_eq!(
-        world.current_bgm,
+        world.audio.current_bgm,
         Some(2001),
         "the BGM swap runs during the spin, not at battle entry"
     );
@@ -685,15 +713,15 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
     // Leaving the phase drops the entity. The transition's length is retail's
     // `DAT_801D2458` (`battle_intro_styles::INTRO_DURATION_FRAMES`), so the
     // bound is read off the session rather than written as a literal.
-    let frames = world.encounter.as_ref().unwrap().transition_frames;
+    let frames = world.encounters.session.as_ref().unwrap().transition_frames;
     for _ in 0..frames + 4 {
         world.tick_encounter();
     }
     assert!(matches!(
-        world.encounter.as_ref().unwrap().phase(),
+        world.encounters.session.as_ref().unwrap().phase(),
         EncounterPhase::Triggered(_)
     ));
-    assert!(world.battle_intro.is_none());
+    assert!(world.battle.intro.is_none());
 }
 
 #[test]
@@ -730,6 +758,7 @@ fn the_battle_intro_phase_zero_enqueues_the_battle_start_cue() {
     // exactly one cue - 0x4D - reaches the queue.
     let mut world = World::new();
     world
+        .tables
         .formation_table
         .insert(crate::monster_catalog::FormationDef::new(9, Vec::new()).with_header_flags(1));
     let mut session = crate::encounter::EncounterSession::new(
@@ -757,10 +786,13 @@ fn the_bgm_op_sub_5_arms_the_timed_sound_release() {
     // vsyncs, not a volume set.
     let mut world = World::new();
     world.arm_sound_release(4);
-    let arm = world.sound_arm.expect("the arm half latches its cells");
+    let arm = world
+        .audio
+        .sound_arm
+        .expect("the arm half latches its cells");
     assert_eq!(arm.deadline, 4);
     assert_eq!(arm.shim_deadline(), 5, "deadline | 1");
-    assert!(world.sound_release.armed);
+    assert!(world.audio.sound_release.armed);
 }
 
 #[test]
@@ -768,15 +800,18 @@ fn the_sfx_cue_delay_lands_on_the_slot_the_enqueue_parked() {
     // Two enqueues park slots 0 then 1; the op-0x36 sub-4 delay writes slot 1.
     let mut world = World::new();
     for _ in 0..2 {
-        let slot = world.sfx_cue_cursor;
-        world.sfx_cue_cursor = world.sfx_cue_delays.park(slot);
-        world.sfx_parked_slot = slot;
+        let slot = world.audio.sfx_cue_cursor;
+        world.audio.sfx_cue_cursor = world.audio.sfx_cue_delays.park(slot);
+        world.audio.sfx_parked_slot = slot;
     }
-    assert_eq!(world.sfx_parked_slot, 1);
-    assert_eq!(world.sfx_cue_cursor, 2);
-    world.sfx_cue_delays.set_delay(world.sfx_parked_slot, 0x30);
-    assert_eq!(world.sfx_cue_delays.delay(1), Some(0x30));
-    assert_eq!(world.sfx_cue_delays.delay(0), Some(0));
+    assert_eq!(world.audio.sfx_parked_slot, 1);
+    assert_eq!(world.audio.sfx_cue_cursor, 2);
+    world
+        .audio
+        .sfx_cue_delays
+        .set_delay(world.audio.sfx_parked_slot, 0x30);
+    assert_eq!(world.audio.sfx_cue_delays.delay(1), Some(0x30));
+    assert_eq!(world.audio.sfx_cue_delays.delay(0), Some(0));
 }
 
 #[test]
@@ -785,7 +820,7 @@ fn a_scene_load_clears_the_tile_board_with_the_control_block() {
     // part of the per-scene control-block reset, so a board cannot survive a
     // scene change.
     let mut world = World::new();
-    world.tile_board = Some(crate::tile_board::TileBoard::from_header(
+    world.board.grid = Some(crate::tile_board::TileBoard::from_header(
         &crate::tile_board::TileBoardHeader {
             width: 2,
             height: 2,
@@ -793,10 +828,10 @@ fn a_scene_load_clears_the_tile_board_with_the_control_block() {
         },
         vec![0; 4],
     ));
-    world.tile_board_armed = true;
+    world.board.armed = true;
     world.reset_scene_control_block();
-    assert!(world.tile_board.is_none());
-    assert!(!world.tile_board_armed);
+    assert!(world.board.grid.is_none());
+    assert!(!world.board.armed);
     assert_eq!(
         world.scene_control_block,
         crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET

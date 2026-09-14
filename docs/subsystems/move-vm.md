@@ -398,8 +398,8 @@ disc-gated `screen_fx_disc` test.
 
 The family is **live in the engine**: the field-VM op-0x43 sub-op handlers
 route to `engine-core`'s aggregate widget host (`screen_fx::ScreenFxHost` on
-`World::screen_fx` - spawn/control per sub-op, one `tick` per Field/Cutscene
-frame publishing `World::screen_fx_frame`), and `play-window` composites the
+`World::presentation.fx` - spawn/control per sub-op, one `tick` per Field/Cutscene
+frame publishing `World::presentation.fx_frame`), and `play-window` composites the
 frame above the 3D scene under an orthographic screen-space MVP (solid
 border/band quads on the colour pipeline; panel + sprite quads on the VRAM
 pipeline, depth-layered per the retail OT slots). Residue: the letterbox

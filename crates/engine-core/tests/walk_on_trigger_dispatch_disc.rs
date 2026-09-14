@@ -57,7 +57,7 @@ fn seat_at_tile(world: &mut World, tile_x: i16, tile_z: i16) {
 /// Run the `town01` opening to free-roam: prologue hand-off entry, tick to
 /// the name-entry park, commit a name, tick the timeline to completion.
 fn run_opening_to_freeroam(host: &mut SceneHost) {
-    host.world.entering_town01_opening = true;
+    host.world.cutscene.entering_town01_opening = true;
     host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
     let mut ticks = 0u32;
@@ -68,12 +68,12 @@ fn run_opening_to_freeroam(host: &mut SceneHost) {
     assert!(host.world.name_entry_active(), "name entry opens");
     // Type one glyph, go to End; the confirm opens on No (retail), so Up
     // moves the hand to Yes before the committing confirm.
-    host.world.name_entry.as_mut().unwrap().cursor = 0;
+    host.world.party.name_entry.as_mut().unwrap().cursor = 0;
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
         ..Default::default()
     });
-    host.world.name_entry.as_mut().unwrap().cursor =
+    host.world.party.name_entry.as_mut().unwrap().cursor =
         legaia_engine_core::name_entry::CONTROL_ANCHORS[2];
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
@@ -88,12 +88,12 @@ fn run_opening_to_freeroam(host: &mut SceneHost) {
         ..Default::default()
     });
     let mut more = 0u32;
-    while host.world.cutscene_timeline.is_some() && more < 12000 {
+    while host.world.cutscene.timeline.is_some() && more < 12000 {
         tick_pressing_through_dialogs(&mut host.world, more);
         more += 1;
     }
     assert!(
-        host.world.cutscene_timeline.is_none(),
+        host.world.cutscene.timeline.is_none(),
         "opening timeline completes"
     );
 }
@@ -162,7 +162,7 @@ fn post_naming_story_beat_spawns_on_walk_on() {
         host.world.set_pad(pad);
         host.tick().expect("tick");
         n += 1;
-        if let Some(&p) = host.world.field_npc_positions.get(&34)
+        if let Some(&p) = host.world.npcs.positions.get(&34)
             && mei_positions.last() != Some(&p)
         {
             mei_positions.push(p);
@@ -285,7 +285,8 @@ fn house_door_binds_teleport_on_contact() {
     // landing (12480, 6976) = tile (97, 54).
     let bind = host
         .world
-        .field_walk_touch
+        .props
+        .walk_touch
         .iter()
         .find(|(s, _)| **s >= World::TRIGGER_WALK_TOUCH_SLOT_BASE)
         .map(|(_, &(pos, event))| (pos, event));
@@ -293,7 +294,8 @@ fn house_door_binds_teleport_on_contact() {
     let doorway = (2240i16, 3728i16);
     let target = host
         .world
-        .field_walk_touch
+        .props
+        .walk_touch
         .values()
         .find_map(|&((wx, wz), event)| {
             if (wx, wz) != doorway {
@@ -404,7 +406,8 @@ fn gate_flags_survive_save_roundtrip() {
 /// completion, it is a hang recovery.
 fn tick_pressing_through_dialogs(world: &mut legaia_engine_core::world::World, tick: u32) {
     let parked = world
-        .cutscene_timeline
+        .cutscene
+        .timeline
         .as_ref()
         .is_some_and(|t| t.dialog.is_some());
     if parked && tick.is_multiple_of(2) {

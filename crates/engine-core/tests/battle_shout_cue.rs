@@ -51,7 +51,7 @@ fn build_world(with_record: bool) -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
     // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
     w.load_party(legaia_save::Party::zeroed(3));
@@ -71,7 +71,7 @@ fn build_world(with_record: bool) -> World {
     w.actors[0].move_state.world_x = 300;
     w.actors[0].move_state.world_z = 300;
     w.actors[0].move_state.field_72 = 4096;
-    w.field_camera_azimuth = 0;
+    w.locomotion.camera_azimuth = 0;
 
     use legaia_engine_core::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
@@ -85,8 +85,8 @@ fn build_world(with_record: bool) -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.toggles.live_gameplay_loop = true;
+    w.battle.player_driven = true;
     w
 }
 
@@ -146,7 +146,7 @@ fn drive_arts_entry_and_collect_shouts(
                 // Cross walks all three.
                 _ => InputState::mask_of([PadButton::Cross]),
             }
-        } else if let Some(cmd) = w.battle_command.as_ref() {
+        } else if let Some(cmd) = w.battle.command.as_ref() {
             // Retail's open flow: `Begin` on the round prompt, the ring's
             // `Attack` arm, then the `Auto | Command` prompt - `Command` is
             // the directional arts entry, `Auto` the plain swing. Cross takes
@@ -187,7 +187,7 @@ fn drive_arts_entry_and_collect_shouts(
             arts_turns += 1;
         }
         shouts.extend(w.drain_battle_shout_cues());
-        if w.mode == SceneMode::Field && w.last_battle_rewards.is_some() {
+        if w.mode == SceneMode::Field && w.battle.last_rewards.is_some() {
             break;
         }
     }
@@ -201,7 +201,7 @@ fn drive_arts_entry_and_collect_shouts(
     // wrong reason.
     assert_eq!(w.mode, SceneMode::Field, "the battle resolved");
     assert!(
-        w.last_battle_rewards.is_some(),
+        w.battle.last_rewards.is_some(),
         "the party won, so an art actually landed"
     );
     shouts
@@ -243,7 +243,7 @@ fn synthetic_art_without_record_emits_no_shout_cue() {
 fn every_art_in_a_multi_art_entry_gets_its_own_shout_cue() {
     use PadButton::{Down, Up};
     let mut w = build_world(true);
-    w.battle_swing_costs[0] = [11; 4];
+    w.battle.swing_costs[0] = [11; 4];
     let shouts =
         drive_arts_entry_and_collect_shouts(&mut w, &[Up, Down, Up, Up, Down, Up, Up, Down, Up]);
     assert_eq!(

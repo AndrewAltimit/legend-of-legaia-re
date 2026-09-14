@@ -41,7 +41,7 @@ use crate::bgm::AudioBgmDirector;
 #[derive(Debug, Clone, Default)]
 pub struct FieldLiveOpts {
     /// Arm the step-driven random-encounter roll
-    /// (`World::live_gameplay_loop`). Independent of `player_battle`: a
+    /// (`World::toggles.live_gameplay_loop`). Independent of `player_battle`: a
     /// battle the engine is already in is always driven to resolution either
     /// way, so this decides only whether one *starts* on its own.
     pub live_loop: bool,
@@ -738,8 +738,8 @@ impl BootSession {
         // later). Set once at boot; begin_new_game doesn't reset the tracker,
         // so it persists across New Game.
         if let Some((curve, corrections)) = read_retail_xp_curve(&source) {
-            host.world.level_up_tracker.xp_table = curve;
-            host.world.level_up_tracker.xp_corrections = corrections;
+            host.world.party.level_up_tracker.xp_table = curve;
+            host.world.party.level_up_tracker.xp_corrections = corrections;
         }
 
         // Install the real per-character HP/MP growth curves (static SCUS
@@ -747,8 +747,8 @@ impl BootSession {
         // core) over the flat 10/5 placeholder, when the executable is
         // reachable. Persists across New Game like the XP curve.
         if let Some(tables) = read_retail_growth_tables(&source) {
-            let tracker = std::mem::take(&mut host.world.level_up_tracker);
-            host.world.level_up_tracker = tracker.with_growth_tables(&tables);
+            let tracker = std::mem::take(&mut host.world.party.level_up_tracker);
+            host.world.party.level_up_tracker = tracker.with_growth_tables(&tables);
         }
 
         // Install the static-SCUS victory-pose table (`0x800788A0`) the
@@ -756,11 +756,11 @@ impl BootSession {
         // (`world::battle::victory`). Best-effort: absent on a disc-free
         // build, where the pose actor keeps its idle.
         if let Some(scus) = read_scus(&source) {
-            host.world.victory_pose_table =
+            host.world.tables.victory_pose_table =
                 legaia_asset::victory_pose::victory_pose_table_from_scus(&scus);
             // The XA cue duration table (`DAT_800788B8`) the sound funnel's
             // voice leg reads for its read span.
-            host.world.xa_cue_durations =
+            host.world.audio.xa_cue_durations =
                 legaia_asset::xa_cue_table::xa_cue_durations_from_scus(&scus);
         }
 
@@ -775,7 +775,7 @@ impl BootSession {
             // `Run`, `Attack`, ... and the sparring fight's opening caption).
             // The overlay half merges in when a player battle is requested
             // (`window/run.rs`); twin of the browser runtime's `load_disc`.
-            host.world.battle_ui_strings.merge_scus(&scus);
+            host.world.battle.ui_strings.merge_scus(&scus);
             // Pause-menu text: item names + info-window descriptions,
             // spell names / descriptions, accessory passive lines. The
             // Items / Magic pause screens resolve their strings here.
@@ -792,7 +792,7 @@ impl BootSession {
         // at real prices (populated per scene by `enter_field_scene`). Persists
         // across New Game; absent on disc-free builds (stock stays host-supplied).
         if let Some(shop_data) = read_shop_item_data(&source) {
-            host.world.item_shop_data = Some(shop_data);
+            host.world.shops.item_shop_data = Some(shop_data);
         }
 
         // Install the real item-effect descriptor table so the item catalog's
@@ -951,8 +951,8 @@ impl BootSession {
         }
         let world = &mut self.host.world;
         let mut session = FieldMenuSession::new();
-        session.money = world.money.max(0) as u32;
-        session.play_time_seconds = world.play_time_seconds;
+        session.money = world.party.money.max(0) as u32;
+        session.play_time_seconds = world.clock.play_time_seconds;
         // Sample the two row gates retail keeps as globals and reads at every
         // draw: the op-`0x49` entry context (`*_DAT_8007B450`, which blocks
         // Load) and the scene's save permission (`_DAT_8007B6A8`, seeded at
@@ -961,7 +961,7 @@ impl BootSession {
         // open is equivalent to retail's per-frame re-read.
         session.set_gate(FieldMenuGate {
             entry_context_kind: world.menu_entry_context_kind(),
-            save_allowed: world.scene_save_allowed,
+            save_allowed: world.party.scene_save_allowed,
         });
         // Retail's driver picks the *starting* sub-screen off that same kind
         // byte, so a locked context opens on the notice panel rather than on
@@ -1089,8 +1089,8 @@ impl BootSession {
                     &self.options_state,
                     &self.save_rack,
                     &chain_library,
-                    &world.spell_catalog,
-                    &world.equipment_table,
+                    &world.tables.spell_catalog,
+                    &world.tables.equipment_table,
                 ));
             }
         }
@@ -1193,12 +1193,12 @@ impl BootSession {
     /// Restart the field scene's BGM after a minigame that took over the
     /// director with its own global track (dance / Baka Fighter / Muscle
     /// Dome). Re-plays whatever op-`0x35` track the scene had running
-    /// ([`World::current_bgm`](legaia_engine_core::world::World::current_bgm)),
+    /// ([`legaia_engine_core::world::AudioState::current_bgm`](legaia_engine_core::world::AudioState::current_bgm)),
     /// re-uploading its VAB. No-op when the scene had no track or it isn't a
     /// global-pool id. The slot machine + fishing don't need this: they never
     /// replaced the director's bank.
     pub fn restore_field_bgm(&mut self) {
-        if let Some(id) = self.host.world.current_bgm {
+        if let Some(id) = self.host.world.audio.current_bgm {
             self.start_global_bgm(id);
         }
     }
@@ -1267,7 +1267,7 @@ impl BootSession {
         // scripted yaw, the user's manual drag-orbit, and the host
         // renderer's fixed framing bias (`Camera::compass_azimuth_units`);
         // all three default to 0, which maps straight to world +Z.
-        self.host.world.field_camera_azimuth = self.camera.compass_azimuth_units();
+        self.host.world.locomotion.camera_azimuth = self.camera.compass_azimuth_units();
         let event = self.host.tick()?;
         self.camera.route_camera_events(&mut self.host.world);
         if let Some(bgm) = self.bgm.as_mut() {
@@ -1462,7 +1462,7 @@ impl BootSession {
         self.enter_field_live(scene, opts)?;
         self.host.world.load_full(save);
         log::info!("seeded world from save ({} party records)", {
-            self.host.world.party_count
+            self.host.world.party.party_count
         });
         Ok(self.host.world.mode)
     }

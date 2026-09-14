@@ -6,7 +6,7 @@ fn field_vm_extra_flags_op42_reads_world() {
     // Set bit 5 in extra_flags; op_42 with op1=5 should take the jump.
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.extra_flags = 1 << 5;
+    world.flags.extra_flags = 1 << 5;
     // [0x42, mode=0, op1=5, lo=4, hi=0] - header_size + 4 = 5 byte total
     // for skip path; jump path = pc + header_size + 2 + delta.
     world.load_field_script(vec![0x42, 0, 5, 4, 0]);
@@ -29,7 +29,7 @@ fn move_vm_ext_set_8007b9d8_writes_world_field() {
     let _ = world.step_move_vm(0, &bc);
     // Whatever the sub-op handler writes, world.move_dat_8007b9d8 should
     // pick up a non-zero value.
-    assert_ne!(world.move_dat_8007b9d8, 0);
+    assert_ne!(world.move_vm.dat_8007b9d8, 0);
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn ext_compute_angle_matches_quadrant_when_player_set() {
     let _ = world.step_move_vm(0, &bc);
     // angle 0 (player due-east) should produce ~0 in the dst slot.
     assert_eq!(
-        world.move_bytecode[0][3], 0,
+        world.move_vm.bytecode[0][3], 0,
         "angle to due-east player should be 0"
     );
 }
@@ -64,7 +64,7 @@ fn ext_compute_angle_returns_zero_when_no_player() {
     let bc = vec![0x002F, 0x003A, 0, 0xFFFF];
     world.set_move_bytecode(0, Some(bc.clone()));
     let _ = world.step_move_vm(0, &bc);
-    assert_eq!(world.move_bytecode[0][3], 0);
+    assert_eq!(world.move_vm.bytecode[0][3], 0);
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn ext_party_member_lookup_returns_table_position() {
     world.actors[5].move_state.world_x = 100;
     world.actors[5].move_state.world_y = 50;
     world.actors[5].move_state.world_z = 200;
-    world.party_actor_slots = vec![None, Some(5), None];
+    world.party.party_actor_slots = vec![None, Some(5), None];
     // Sub-op 0x3B: dst = pc + op_w(3) + 4. We use op_w(2)=1 (party slot 1)
     // and op_w(3)=0 so dst = u16[4..7].
     let bc = vec![
@@ -84,9 +84,9 @@ fn ext_party_member_lookup_returns_table_position() {
     ];
     world.set_move_bytecode(0, Some(bc.clone()));
     let _ = world.step_move_vm(0, &bc);
-    assert_eq!(world.move_bytecode[0][4], 100u16);
-    assert_eq!(world.move_bytecode[0][5], 50u16);
-    assert_eq!(world.move_bytecode[0][6], 200u16);
+    assert_eq!(world.move_vm.bytecode[0][4], 100u16);
+    assert_eq!(world.move_vm.bytecode[0][5], 50u16);
+    assert_eq!(world.move_vm.bytecode[0][6], 200u16);
 }
 
 #[test]
@@ -98,9 +98,9 @@ fn ext_party_member_lookup_skips_when_none() {
     world.set_move_bytecode(0, Some(bc.clone()));
     let _ = world.step_move_vm(0, &bc);
     // Dst slots pre-cleared even when lookup returns None.
-    assert_eq!(world.move_bytecode[0][4], 0);
-    assert_eq!(world.move_bytecode[0][5], 0);
-    assert_eq!(world.move_bytecode[0][6], 0);
+    assert_eq!(world.move_vm.bytecode[0][4], 0);
+    assert_eq!(world.move_vm.bytecode[0][5], 0);
+    assert_eq!(world.move_vm.bytecode[0][6], 0);
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn ext_fade_color_records_pending_request() {
     world.set_move_bytecode(0, Some(bc.clone()));
     let _ = world.step_move_vm(0, &bc);
     assert_eq!(
-        world.pending_fade,
+        world.presentation.pending_fade,
         Some(FadeRequest {
             rgb: [0xAB, 0xCD, 0xEF],
             ticks: 4
@@ -181,7 +181,7 @@ fn field_op_35_sub1_emits_bgm_event_and_pins_current() {
         )),
         "expected Bgm event, got {evs:?}"
     );
-    assert_eq!(world.current_bgm, Some(0x42));
+    assert_eq!(world.audio.current_bgm, Some(0x42));
 }
 
 /// Op 0x3F is the **named scene-change** (not dialog): it stages a pending
@@ -204,7 +204,7 @@ fn field_op_3f_stages_named_scene_transition() {
     );
     // It is NOT a dialog opener.
     assert!(
-        world.current_dialog.is_none(),
+        world.dialog.current.is_none(),
         "0x3F must not open a dialog box"
     );
 }

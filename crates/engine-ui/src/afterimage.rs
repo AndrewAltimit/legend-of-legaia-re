@@ -18,7 +18,7 @@
 //!   words are written by the action effect script `FUN_801DEA50`, whose
 //!   terminator arm is ported at
 //!   `legaia_engine_core::action_effect_script::MoveFxStreak` - installed by
-//!   the live per-frame walk and read back through `World::move_fx_streak`.
+//!   the live per-frame walk and read back through `World::casting.move_fx_streak`.
 //! * **The trail id reaches a pass.** It used to be printed as a log line;
 //!   [`crate::streak_pass::streak_quads`] now turns
 //!   [`legaia_engine_core::World::active_move_fx_trail_texpage`] into this

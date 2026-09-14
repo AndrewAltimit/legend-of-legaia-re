@@ -184,8 +184,8 @@ fn report(host: &mut SceneHost, mouth: (i16, i16), entry: (u8, u8)) {
     host.enter_field_scene("keikoku", 0).expect("enter keikoku");
     // The collision model both shipped hosts run; a bare `World` defaults both
     // off and would be a third model no player meets.
-    host.world.leading_edge_wall_probes = true;
-    host.world.solid_field_npcs = true;
+    host.world.locomotion.leading_edge_wall_probes = true;
+    host.world.npcs.solid = true;
     host.world.seat_player_at_tile(entry.0, entry.1);
     let slot = host.world.player_actor_slot.expect("player slot") as usize;
     let ms = &host.world.actors[slot].move_state;
@@ -314,9 +314,10 @@ fn main() {
     assert_eq!(host.world.mode, SceneMode::WorldMap);
     let mouths: Vec<((i16, i16), (u8, u8))> = host
         .world
-        .world_map_entity_configs
+        .world_map
+        .entity_configs
         .iter()
-        .zip(host.world.world_map_entity_positions.iter())
+        .zip(host.world.world_map.entity_positions.iter())
         .filter_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal {
                 scene_name,

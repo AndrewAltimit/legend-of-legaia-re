@@ -70,11 +70,12 @@ fn tick_move_vms_records_halt_outcome() {
     world.tick_move_vms();
     assert!(
         world
-            .move_outcomes
+            .move_vm
+            .outcomes
             .iter()
             .any(|(s, o)| *s == 0 && matches!(o, vm::move_vm::ActorTickOutcome::Halted)),
         "expected actor 0 to halt, got {:?}",
-        world.move_outcomes
+        world.move_vm.outcomes
     );
 }
 
@@ -91,7 +92,7 @@ fn tick_move_vms_with_delta_decrements_then_gates() {
     // After delta=1: wait_timer = 2, still >= 0 -> Waiting.
     assert_eq!(world.actors[0].move_state.wait_timer, 2);
     assert!(matches!(
-        world.move_outcomes[0],
+        world.move_vm.outcomes[0],
         (0, vm::move_vm::ActorTickOutcome::Waiting)
     ));
     // After three more ticks (delta=1 each): wait_timer goes 1, 0, -1.
@@ -101,7 +102,7 @@ fn tick_move_vms_with_delta_decrements_then_gates() {
     world.tick_move_vms_with_delta(1);
     // The last tick should have entered the VM and Halted.
     assert!(matches!(
-        world.move_outcomes[0],
+        world.move_vm.outcomes[0],
         (0, vm::move_vm::ActorTickOutcome::Halted)
     ));
 }
@@ -275,7 +276,7 @@ fn notify_art_used_emits_event_and_sets_banner() {
             art_id: 3
         }
     );
-    let banner = world.current_art_banner.as_ref().expect("banner set");
+    let banner = world.party.current_art_banner.as_ref().expect("banner set");
     assert!(banner.text.contains("Art #3"));
     assert_eq!(
         banner.frames_remaining,
@@ -289,12 +290,12 @@ fn notify_art_used_no_event_for_innate_ids() {
     // character's innate band never produces a learn event however often it
     // is performed.
     let mut world = World::default();
-    world.tactical_arts.set_innate_cap(0, 5);
+    world.party.tactical_arts.set_innate_cap(0, 5);
     for _ in 0..4 {
         world.notify_art_used(0, 1);
     }
     assert!(world.drain_battle_events().is_empty());
-    assert!(world.current_art_banner.is_none());
+    assert!(world.party.current_art_banner.is_none());
 }
 
 #[test]
@@ -303,13 +304,13 @@ fn banner_countdown_clears_after_frames() {
     // Art id 0 is retail's zero-id edge: it passes the cap gate and inserts.
     world.notify_art_used(0, 0);
     // Banner starts at DEFAULT_FRAMES.
-    assert!(world.current_art_banner.is_some());
+    assert!(world.party.current_art_banner.is_some());
     // Tick DEFAULT_FRAMES times; banner should reach 0 and clear.
     for _ in 0..=crate::tactical_arts::ArtLearnedBanner::DEFAULT_FRAMES {
         world.tick();
     }
     assert!(
-        world.current_art_banner.is_none(),
+        world.party.current_art_banner.is_none(),
         "banner should have cleared"
     );
 }
@@ -337,7 +338,7 @@ fn op_4c_60_move_image_queues_and_stamps_vram() {
         other => panic!("4C 60 should advance 14 bytes, got {other:?}"),
     }
     assert_eq!(
-        world.script_vram_moves,
+        world.ambient.script_vram_moves,
         vec![ScriptVramMove {
             src: (852, 336),
             size: (6, 16),
@@ -355,7 +356,7 @@ fn op_4c_60_move_image_queues_and_stamps_vram() {
     }
     vram.write_block(852, 336, 6, 16, &bytes);
     assert!(world.apply_script_vram_moves(&mut vram), "stamp wrote VRAM");
-    assert!(world.script_vram_moves.is_empty(), "queue drained");
+    assert!(world.ambient.script_vram_moves.is_empty(), "queue drained");
     for row in 0..16usize {
         for col in 0..6usize {
             assert_eq!(
@@ -385,5 +386,5 @@ fn script_vram_move_rejects_degenerate_rects() {
         !world.apply_script_vram_moves(&mut vram),
         "all rects dropped"
     );
-    assert!(world.script_vram_moves.is_empty());
+    assert!(world.ambient.script_vram_moves.is_empty());
 }

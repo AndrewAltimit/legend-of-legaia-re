@@ -108,11 +108,16 @@ fn script_opens(sub_op: u8, entries: [u8; 3]) -> World {
     let mut w = field_world();
     w.load_field_script(op49_script(sub_op, entries));
     assert!(
-        tick_until(&mut w, 8, |w| w.submode_screen.is_open()),
+        tick_until(&mut w, 8, |w| w.field_vm.submode_screen.is_open()),
         "sub-op {sub_op:#x}: the field VM never armed a submode screen"
     );
     assert!(
-        tick_until(&mut w, 8, |w| !w.submode_screen.frame.actions.is_empty()),
+        tick_until(&mut w, 8, |w| !w
+            .field_vm
+            .submode_screen
+            .frame
+            .actions
+            .is_empty()),
         "sub-op {sub_op:#x}: the dispatcher never ran the opened handler"
     );
     w
@@ -135,9 +140,9 @@ fn rung1_a_script_sub_op_opens_the_handler_retail_names() {
     for (sub_op, want) in cases {
         let w = script_opens(sub_op, [0, 0, 0]);
         assert_eq!(
-            w.submode_screen.actor.state, want,
+            w.field_vm.submode_screen.actor.state, want,
             "sub-op {sub_op:#x} opened handler {:#x}, not {want:#x}",
-            w.submode_screen.actor.state
+            w.field_vm.submode_screen.actor.state
         );
         assert_eq!(
             slot_for_op49_sub_op(sub_op),
@@ -161,7 +166,7 @@ fn rung2_the_named_state_machine_runs_and_emits_its_first_frame() {
     // sting; the sub-menu clears the cursor row; the coin counter publishes
     // the clamped buyable amount.
     let w = script_opens(8, [1, 1, 0]);
-    let acts = || w.submode_screen.frame.actions.clone();
+    let acts = || w.field_vm.submode_screen.frame.actions.clone();
     assert!(
         acts()
             .iter()
@@ -185,7 +190,8 @@ fn rung2_the_named_state_machine_runs_and_emits_its_first_frame() {
 
     let w = script_opens(9, [0, 0, 0]);
     assert!(
-        w.submode_screen
+        w.field_vm
+            .submode_screen
             .frame
             .actions
             .iter()
@@ -195,7 +201,8 @@ fn rung2_the_named_state_machine_runs_and_emits_its_first_frame() {
 
     let w = script_opens(0xB, [0, 0, 0]);
     assert!(
-        w.submode_screen
+        w.field_vm
+            .submode_screen
             .frame
             .actions
             .contains(&HubAction::ClearCursorRow),
@@ -203,21 +210,26 @@ fn rung2_the_named_state_machine_runs_and_emits_its_first_frame() {
     );
 
     let mut w = field_world();
-    w.money = 12_345;
+    w.party.money = 12_345;
     w.load_field_script(op49_script(6, [0, 0, 0]));
-    assert!(tick_until(&mut w, 8, |w| w.submode_screen.is_open()));
+    assert!(tick_until(&mut w, 8, |w| w
+        .field_vm
+        .submode_screen
+        .is_open()));
     assert!(tick_until(&mut w, 8, |w| !w
+        .field_vm
         .submode_screen
         .frame
         .actions
         .is_empty()));
     assert!(
-        w.submode_screen
+        w.field_vm
+            .submode_screen
             .frame
             .actions
             .contains(&HubAction::SetCoinAmount(12_345 / GOLD_PER_COIN)),
         "the coin counter never published its clamped amount: {:?}",
-        w.submode_screen.frame.actions
+        w.field_vm.submode_screen.frame.actions
     );
 }
 
@@ -232,45 +244,51 @@ fn rung3_the_installed_descriptor_selects_the_painter() {
     // The sub-menu's idle panel is the single-label record.
     let w = script_opens(0xB, [0, 0, 0]);
     assert_eq!(
-        w.submode_screen.installed_windows,
+        w.field_vm.submode_screen.installed_windows,
         vec![window::SINGLE_LABEL],
         "the sub-menu installed {:?}",
-        w.submode_screen.installed_windows
+        w.field_vm.submode_screen.installed_windows
     );
     assert!(
-        w.submode_screen
+        w.field_vm
+            .submode_screen
             .draws()
             .iter()
             .any(|d| matches!(d, HubDraw::Text { .. } | HubDraw::ShortText { .. })),
         "the single-label painter drew nothing: {:?}",
-        w.submode_screen.draws()
+        w.field_vm.submode_screen.draws()
     );
 
     // The coin counter's confirm panel is the three-line record. Reached with
     // the pad alone: Up bumps the selected digit, Cross accepts.
     let mut w = field_world();
-    w.money = 100_000;
+    w.party.money = 100_000;
     w.load_field_script(op49_script(6, [0, 0, 0]));
-    assert!(tick_until(&mut w, 8, |w| w.submode_screen.actor.sub == 1));
+    assert!(tick_until(&mut w, 8, |w| w
+        .field_vm
+        .submode_screen
+        .actor
+        .sub
+        == 1));
     press(&mut w, PAD_CURSOR_UP as u16);
     assert_eq!(
-        w.submode_screen.counter.entered(),
+        w.field_vm.submode_screen.counter.entered(),
         1,
         "a pad Up edge never reached the digit cells"
     );
     press(&mut w, SUBMODE_ACCEPT_MASK as u16);
     assert_eq!(
-        w.submode_screen.actor.sub, 2,
+        w.field_vm.submode_screen.actor.sub, 2,
         "the accept never opened the confirm"
     );
     assert_eq!(
-        w.submode_screen.installed_windows,
+        w.field_vm.submode_screen.installed_windows,
         vec![window::THREE_LINE],
         "the coin confirm installed {:?}",
-        w.submode_screen.installed_windows
+        w.field_vm.submode_screen.installed_windows
     );
     assert!(
-        !w.submode_screen.draws().is_empty(),
+        !w.field_vm.submode_screen.draws().is_empty(),
         "the three-line painter drew nothing"
     );
 }
@@ -293,11 +311,11 @@ fn rung4_a_confirm_hands_back_and_the_script_resumes() {
         // The confirm edge; then the hand-back's draw tick clears the gate.
         press(&mut w, SUBMODE_ACCEPT_MASK as u16);
         assert!(
-            tick_until(&mut w, 16, |w| !w.submode_screen.is_open()),
+            tick_until(&mut w, 16, |w| !w.field_vm.submode_screen.is_open()),
             "sub-op {sub_op:#x}: the screen never handed back"
         );
         assert_eq!(
-            w.submode_screen.actor.state,
+            w.field_vm.submode_screen.actor.state,
             slot::DRAW_TICK,
             "a hand-back re-arms `+0x50` to the draw tick"
         );
@@ -322,29 +340,41 @@ fn rung4_a_confirm_hands_back_and_the_script_resumes() {
 #[test]
 fn rung5_pad_entered_digits_buy_coins_through_the_script_opened_screen() {
     let mut w = field_world();
-    w.money = 5_000;
-    w.casino_coins = 7;
+    w.party.money = 5_000;
+    w.minigames.casino_coins = 7;
     w.load_field_script(op49_script(6, [0, 0, 0]));
-    assert!(tick_until(&mut w, 8, |w| w.submode_screen.actor.sub == 1));
+    assert!(tick_until(&mut w, 8, |w| w
+        .field_vm
+        .submode_screen
+        .actor
+        .sub
+        == 1));
 
     // Three Up edges on the units cell: three coins.
     for _ in 0..3 {
         press(&mut w, PAD_CURSOR_UP as u16);
     }
-    assert_eq!(w.submode_screen.counter.entered(), 3);
+    assert_eq!(w.field_vm.submode_screen.counter.entered(), 3);
 
     press(&mut w, SUBMODE_ACCEPT_MASK as u16);
-    assert_eq!(w.submode_screen.actor.sub, 2, "the Yes/No panel is up");
+    assert_eq!(
+        w.field_vm.submode_screen.actor.sub, 2,
+        "the Yes/No panel is up"
+    );
 
     // `FUN_801E9DC8`'s return is the one value the port has no body for; the
     // host supplies it, as the module documents.
-    w.submode_screen.picker_result = PICK_ACCEPT;
-    w.submode_screen.counter.yes_no = 0;
-    assert!(tick_until(&mut w, 16, |w| w.casino_coins != 7));
+    w.field_vm.submode_screen.picker_result = PICK_ACCEPT;
+    w.field_vm.submode_screen.counter.yes_no = 0;
+    assert!(tick_until(&mut w, 16, |w| w.minigames.casino_coins != 7));
 
-    assert_eq!(w.casino_coins, 7 + 3, "coins land in the casino bank");
     assert_eq!(
-        w.money,
+        w.minigames.casino_coins,
+        7 + 3,
+        "coins land in the casino bank"
+    );
+    assert_eq!(
+        w.party.money,
         5_000 - 3 * GOLD_PER_COIN,
         "gold pays {GOLD_PER_COIN} per coin"
     );
@@ -353,7 +383,7 @@ fn rung5_pad_entered_digits_buy_coins_through_the_script_opened_screen() {
     // `is_done` is one-shot - the resuming op-`0x49` consumes it - so the
     // durable observation is that the screen closed and the PC moved.
     assert!(
-        tick_until(&mut w, 256, |w| !w.submode_screen.is_open()),
+        tick_until(&mut w, 256, |w| !w.field_vm.submode_screen.is_open()),
         "the committed counter never handed back"
     );
     assert!(
@@ -388,10 +418,14 @@ fn the_host_pinned_windows_paint_inside_the_frame_loop() {
             "record {index} selects the wrong painter"
         );
         let mut w = field_world();
-        w.active_party = vec![0, 1];
+        w.party.active_party = vec![0, 1];
         w.open_field_submode_screen(slot::DRAW_TICK, Some(index));
         assert!(
-            tick_until(&mut w, 16, |w| !w.submode_screen.draws().is_empty()),
+            tick_until(&mut w, 16, |w| !w
+                .field_vm
+                .submode_screen
+                .draws()
+                .is_empty()),
             "record {index} ({painter:?}) drew nothing in a live frame loop"
         );
     }
@@ -407,10 +441,20 @@ fn the_deactivate_handler_picks_its_re_arm_state_from_the_progress_flags() {
     // Progress clear -> the deactivate state.
     let mut w = field_world();
     w.open_field_submode_screen(slot::DEACTIVATE, None);
-    assert!(tick_until(&mut w, 16, |w| w.submode_screen.actor.state
+    assert!(tick_until(&mut w, 16, |w| w
+        .field_vm
+        .submode_screen
+        .actor
+        .state
         != slot::DEACTIVATE));
-    assert_eq!(w.submode_screen.actor.state, hub::HUB_DEACTIVATE_STATE);
-    assert_eq!(w.submode_screen.cursor.handback, -1, "the hand-back is set");
+    assert_eq!(
+        w.field_vm.submode_screen.actor.state,
+        hub::HUB_DEACTIVATE_STATE
+    );
+    assert_eq!(
+        w.field_vm.submode_screen.cursor.handback, -1,
+        "the hand-back is set"
+    );
 
     // The skip arm needs a progress flag, which the world's env does not
     // publish; the kernel's own arm is asserted directly so the branch is
@@ -437,7 +481,7 @@ fn the_back_button_also_hands_a_prompt_screen_back() {
     let mut w = script_opens(9, [0, 0, 0]);
     press(&mut w, SUBMODE_BACK_MASK as u16);
     assert!(
-        tick_until(&mut w, 16, |w| !w.submode_screen.is_open()),
+        tick_until(&mut w, 16, |w| !w.field_vm.submode_screen.is_open()),
         "Circle never handed the prompt back"
     );
     assert!(

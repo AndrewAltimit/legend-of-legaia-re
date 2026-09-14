@@ -148,14 +148,16 @@ fn casino_floor_is_walkable() {
 
     let cabinets: Vec<(u8, (i16, i16))> = host
         .world
-        .field_walk_touch
+        .props
+        .walk_touch
         .iter()
         .map(|(&s, &(p, _))| (s, p))
         .collect();
     // NPCs parked at the off-map stow coordinate are not on the floor.
     let npcs: Vec<(u8, (i16, i16))> = host
         .world
-        .field_npc_positions
+        .npcs
+        .positions
         .iter()
         .map(|(&s, &p)| (s, p))
         .filter(|(_, p)| p.0 < 16000 && p.1 < 16000)
@@ -222,7 +224,7 @@ fn every_minigame_can_be_left_by_pad() {
         // and let the host's mode-24 init drain it. Nothing calls `enter_*`,
         // so this measures the entry a player would actually reach.
         host.world.arm_minigame_warp();
-        host.world.pending_minigame_warp = Some(slot.sub_id());
+        host.world.minigames.pending_warp = Some(slot.sub_id());
         let _ = host.tick();
         let mode = host.world.mode;
         if mode == SceneMode::Field {

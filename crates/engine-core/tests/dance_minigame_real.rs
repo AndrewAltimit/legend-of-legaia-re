@@ -230,6 +230,7 @@ fn playwindow_load_path_enters_and_scores_a_dance() {
         // `tick_dance` advances the clock then judges this frame's press, so a
         // press on any in-window frame carrying a note scores.
         let want = world
+            .minigames
             .dance
             .as_ref()
             .filter(|g| !g.in_dead_zone())

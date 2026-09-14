@@ -601,11 +601,11 @@ fn world_map_pad_for_world_step(azimuth: i32, dwx: i16, dwz: i16) -> u16 {
 fn pad_for_step(host: &SceneHost, dwx: i16, dwz: i16) -> u16 {
     match host.world.mode {
         SceneMode::WorldMap => world_map_pad_for_world_step(
-            host.world.world_map_ctrl.as_ref().map_or(0, |c| c.azimuth),
+            host.world.world_map.ctrl.as_ref().map_or(0, |c| c.azimuth),
             dwx,
             dwz,
         ),
-        _ => pad_for_world_step(host.world.field_camera_azimuth, dwx, dwz),
+        _ => pad_for_world_step(host.world.locomotion.camera_azimuth, dwx, dwz),
     }
 }
 
@@ -1025,10 +1025,10 @@ impl FightPolicy {
         }
         let w = &host.world;
         // A message box owns the frame ahead of everything else.
-        if !w.battle_tutorial_boxes.is_empty() {
+        if !w.battle.tutorial_boxes.is_empty() {
             return PadButton::Cross.mask();
         }
-        if let Some(menu) = w.battle_item_menu.as_ref() {
+        if let Some(menu) = w.battle.item_menu.as_ref() {
             return match menu.state {
                 InventoryUseState::Browsing { .. } => {
                     if menu.filtered_items.is_empty() {
@@ -1047,7 +1047,7 @@ impl FightPolicy {
                 _ => 0,
             };
         }
-        if let Some(session) = w.battle_command.as_ref() {
+        if let Some(session) = w.battle.command.as_ref() {
             return match &session.phase {
                 CommandPhase::RoundPrompt { .. } => PadButton::Left.mask(), // Begin
                 CommandPhase::Menu { .. } => {
@@ -1069,10 +1069,10 @@ impl FightPolicy {
     /// in the bag to spend on them?
     fn wants_heal(&self, host: &SceneHost) -> bool {
         let w = &host.world;
-        if w.inventory.get(&self.heal_item).copied().unwrap_or(0) == 0 {
+        if w.party.inventory.get(&self.heal_item).copied().unwrap_or(0) == 0 {
             return false;
         }
-        (0..w.party_count.clamp(1, 3) as usize).any(|i| {
+        (0..w.party.party_count.clamp(1, 3) as usize).any(|i| {
             let a = &w.actors[i].battle;
             a.max_hp > 0
                 && a.hp > 0
@@ -1104,7 +1104,7 @@ impl FightPolicy {
 ///
 /// The first version of this held the pad neutral for the whole battle. That
 /// is not "no fighting model", it is a specific one: with
-/// [`World::battle_player_driven`] off the live loop auto-commits
+/// [`legaia_engine_core::world::BattleState::player_driven`] off the live loop auto-commits
 /// `arm_party_physical` for every party turn - a two-swing basic attack at the
 /// first living monster, retail's own AI-party queue
 /// (`FUN_801EED1C`'s `(&DAT_8007BD10)[slot] == 4` arm) - and nothing else. No
@@ -1113,7 +1113,7 @@ impl FightPolicy {
 /// fighter is incompetent", which is exactly what the wipe on the
 /// `map01 -> suimon` leg had been reporting.
 ///
-/// So the fighter drives [`World::battle_command`] - the same
+/// So the fighter drives [`legaia_engine_core::world::BattleState::command`] - the same
 /// [`crate::battle_input::BattleCommandSession`] the windowed host binds its
 /// keyboard to - with **pad presses only** ([`FightPolicy::pad_for`]). No
 /// engine API is called to pick a command, choose a target or use an item;
@@ -1180,13 +1180,13 @@ fn drain_battle(host: &mut SceneHost, resume: SceneMode, policy: &FightPolicy) -
 /// consult, and a report keyed on the record would be a frame behind them.
 fn fight_snapshot(host: &SceneHost) -> String {
     let w = &host.world;
-    let party: Vec<String> = (0..w.party_count.clamp(1, 3) as usize)
+    let party: Vec<String> = (0..w.party.party_count.clamp(1, 3) as usize)
         .map(|i| {
             let a = &w.actors[i].battle;
             format!("{}/{}", a.hp, a.max_hp)
         })
         .collect();
-    let monsters: Vec<String> = (w.party_count.clamp(1, 3) as usize..w.actors.len())
+    let monsters: Vec<String> = (w.party.party_count.clamp(1, 3) as usize..w.actors.len())
         .filter(|&i| w.actors[i].battle.max_hp > 0)
         .map(|i| {
             let a = &w.actors[i].battle;
@@ -1194,6 +1194,7 @@ fn fight_snapshot(host: &SceneHost) -> String {
         })
         .collect();
     let formation = w
+        .battle
         .active_formation
         .as_ref()
         .map(|f| {
@@ -1201,8 +1202,8 @@ fn fight_snapshot(host: &SceneHost) -> String {
             format!("F{}[{}]", f.formation_id, ids.join(","))
         })
         .unwrap_or_else(|| "F-".to_string());
-    let lvl = w.roster.members.first().map_or(0, |r| r.level());
-    let bag: usize = w.inventory.values().map(|&n| n as usize).sum();
+    let lvl = w.party.roster.members.first().map_or(0, |r| r.level());
+    let bag: usize = w.party.inventory.values().map(|&n| n as usize).sum();
     format!(
         "{formation} party[{}] mob[{}] Lv{lvl} bag{bag}",
         party.join(" "),
@@ -1235,7 +1236,7 @@ fn wait_for_input(host: &mut SceneHost) -> bool {
 /// suspected. Rim Elm's opening is not a property of loading `town01`; it is
 /// partition-2 record 3, whose header gate is "system flag `0x225` is clear",
 /// and the engine installs it only on the New Game hand-off
-/// (`World::entering_town01_opening` / `opening_chain_active`). This ladder
+/// (`World::cutscene.entering_town01_opening` / `opening_chain_active`). This ladder
 /// walks a *route*, so it enters Rim Elm the way a returning player does, and
 /// a returning player gets no opening - retail's own scene-entry script
 /// (`town01` P1[0]) likewise reads `0x225` and skips its first-visit arms once
@@ -1369,7 +1370,7 @@ fn walk_to(
             eprintln!(
                 "[trace] w=({wx},{wz}) tile={here:?} goal={goal:?} want={:?} pad={pad:04x} az={} scripted={scripted} tl={} dlg={}",
                 path.first().map(|&c| tile_of_cell(c)),
-                host.world.field_camera_azimuth,
+                host.world.locomotion.camera_azimuth,
                 host.world.cutscene_timeline_active(),
                 host.world.dialogue_owns_input(),
             );
@@ -1408,8 +1409,8 @@ fn walk_to(
                             tile_of(x, z),
                             dispatch_tile(x, z),
                             host.world.cutscene_timeline_active(),
-                            host.world.current_dialog.is_some(),
-                            host.world.inline_dialogue.is_some(),
+                            host.world.dialog.current.is_some(),
+                            host.world.dialog.inline.is_some(),
                         );
                     }
                     return Leg::InputLocked { at: (x, z) };
@@ -1432,7 +1433,7 @@ fn walk_to(
             if since_progress >= STALL_FRAMES {
                 let (sx, sz) = player_world(host);
                 if std::env::var_os("LEGAIA_CPR_DEBUG").is_some() {
-                    for c in &host.world.field_prop_colliders {
+                    for c in &host.world.props.colliders {
                         if (c.center.0 - i32::from(sx)).abs() < 400
                             && (c.center.1 - i32::from(sz)).abs() < 400
                         {
@@ -1442,7 +1443,8 @@ fn walk_to(
                     eprintln!(
                         "[dbg] npc positions near: {:?}",
                         host.world
-                            .field_npc_positions
+                            .npcs
+                            .positions
                             .values()
                             .filter(|&&(ax, az)| (i32::from(ax) - i32::from(sx)).abs() < 400
                                 && (i32::from(az) - i32::from(sz)).abs() < 400)
@@ -1498,9 +1500,10 @@ fn portal_tile(host: &SceneHost, dest: &str, avoid: &HashSet<(i32, i32)>) -> Opt
         cell_of(x, z)
     };
     host.world
-        .world_map_entity_configs
+        .world_map
+        .entity_configs
         .iter()
-        .zip(host.world.world_map_entity_positions.iter())
+        .zip(host.world.world_map.entity_positions.iter())
         .filter_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal { scene_name, .. } if scene_name == dest => {
                 Some(tile_of(x, z))
@@ -1537,9 +1540,10 @@ fn portal_tile(host: &SceneHost, dest: &str, avoid: &HashSet<(i32, i32)>) -> Opt
 /// half-tile band of the hazard open.
 fn portal_hazards(host: &SceneHost, dest: &str) -> HashSet<(i32, i32)> {
     host.world
-        .world_map_entity_configs
+        .world_map
+        .entity_configs
         .iter()
-        .zip(host.world.world_map_entity_positions.iter())
+        .zip(host.world.world_map.entity_positions.iter())
         .filter_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal { scene_name, .. } if scene_name != dest => {
                 Some(dispatch_tile(x, z))
@@ -1653,9 +1657,10 @@ fn ablate_rung4_inputs(host: &mut SceneHost, hazards: &HashSet<(i32, i32)>) {
     };
     let goals: Vec<(i16, i16)> = host
         .world
-        .world_map_entity_configs
+        .world_map
+        .entity_configs
         .iter()
-        .zip(host.world.world_map_entity_positions.iter())
+        .zip(host.world.world_map.entity_positions.iter())
         .filter_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal { scene_name, .. } if scene_name == "keikoku" => {
                 Some(tile_of(x, z))
@@ -1680,8 +1685,8 @@ fn ablate_rung4_inputs(host: &mut SceneHost, hazards: &HashSet<(i32, i32)>) {
     };
 
     let none: HashSet<(i32, i32)> = HashSet::new();
-    let n_props = host.world.field_prop_colliders.len();
-    let n_npcs = host.world.field_npc_positions.len();
+    let n_props = host.world.props.colliders.len();
+    let n_npcs = host.world.npcs.positions.len();
     eprintln!(
         "[ablate] map01 from {from:?}: {} keikoku mouths, {n_props} props, {n_npcs} npcs, \
          {} hazards",
@@ -1903,15 +1908,15 @@ fn ablate_rung4_inputs(host: &mut SceneHost, hazards: &HashSet<(i32, i32)>) {
     row("as-is (all inputs live)", host, hazards);
     row("hazards cleared", host, &none);
 
-    let props = std::mem::take(&mut host.world.field_prop_colliders);
+    let props = std::mem::take(&mut host.world.props.colliders);
     row("props cleared", host, hazards);
     row("props+hazards cleared", host, &none);
 
-    let npcs = std::mem::take(&mut host.world.field_npc_positions);
+    let npcs = std::mem::take(&mut host.world.npcs.positions);
     row("props+npcs+hazards (walls)", host, &none);
 
-    host.world.field_npc_positions = npcs;
-    host.world.field_prop_colliders = props;
+    host.world.npcs.positions = npcs;
+    host.world.props.colliders = props;
     row("restored (sanity, == as-is)", host, hazards);
 }
 
@@ -1954,9 +1959,10 @@ fn probe_rung4_lattice(host: &SceneHost) {
     let (px, pz) = player_world(host);
     let portals: Vec<(String, (i16, i16))> = host
         .world
-        .world_map_entity_configs
+        .world_map
+        .entity_configs
         .iter()
-        .zip(host.world.world_map_entity_positions.iter())
+        .zip(host.world.world_map.entity_positions.iter())
         .filter_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal { scene_name, .. } => {
                 Some((scene_name.clone(), (x, z)))
@@ -2060,7 +2066,7 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     // here too: **an empty item catalog makes every bag row inadmissible**,
     // which is a silent way for a healing policy to do nothing at all.
     if fight.driven {
-        host.world.battle_player_driven = true;
+        host.world.battle.player_driven = true;
         // Arm the **field** side of the loop as well, which is what both play
         // hosts do (`BootSession::enter_field_live`) and what makes a dungeon
         // roll its own encounters. It is inert on this route today - see the
@@ -2070,14 +2076,17 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
         // than through `arm_live_loop`, whose `encounter.is_none()` arm would
         // install the *fabricated* vanilla formation table over the scene's
         // own.
-        host.world.live_gameplay_loop = true;
+        host.world.toggles.live_gameplay_loop = true;
         host.world
             .set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
         // Leave Rim Elm with the purse spent on healing. See [`BAG_HEAL_COUNT`]
         // for why five, and why this is the model's one non-pad input.
         if fight.bag {
-            host.world.inventory.insert(BAG_HEAL_ITEM, BAG_HEAL_COUNT);
-            host.world.money -= BAG_HEAL_PRICE * i32::from(BAG_HEAL_COUNT);
+            host.world
+                .party
+                .inventory
+                .insert(BAG_HEAL_ITEM, BAG_HEAL_COUNT);
+            host.world.party.money -= BAG_HEAL_PRICE * i32::from(BAG_HEAL_COUNT);
         }
     }
 
@@ -2098,8 +2107,8 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     // consulting `field_actor_dir_blocked` as well: with solid NPCs and a
     // wall-only planner, a Rim Elm townsperson parked in the route stalls
     // rung 2 at tile `(25, 22)`. The two edits belong together.
-    host.world.leading_edge_wall_probes = true;
-    host.world.solid_field_npcs = true;
+    host.world.locomotion.leading_edge_wall_probes = true;
+    host.world.npcs.solid = true;
 
     // Rim Elm's south exit is **story-locked**, and correctly so - but the
     // lock is the gate's own collision, not a script gate on the `0x3F`. The
@@ -2321,13 +2330,13 @@ fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
         eprintln!(
             "[fight] keikoku encounter model: live_loop {} rollable {} region_tracker {} \
              session {} formations {:?}",
-            host.world.live_gameplay_loop,
-            host.world.scene_encounters_rollable,
-            host.world.field_region_tracker.is_some(),
-            host.world.encounter.is_some(),
+            host.world.toggles.live_gameplay_loop,
+            host.world.encounters.scene_rollable,
+            host.world.terrain.region_tracker.is_some(),
+            host.world.encounters.session.is_some(),
             host.world.registered_formation_ids(),
         );
-        if let Some(t) = host.world.field_region_tracker.as_ref() {
+        if let Some(t) = host.world.terrain.region_tracker.as_ref() {
             for r in &t.table().regions {
                 eprintln!(
                     "[fight]   region x{}..{} z{}..{} rate {} formations {}..+{}",

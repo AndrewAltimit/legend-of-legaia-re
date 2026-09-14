@@ -502,7 +502,7 @@ impl LegaiaRuntime {
         // The walk clip stays running when a step is blocked by a wall, which
         // is retail's walk-in-place; take either signal as "moving".
         let walking = host
-            .and_then(|h| h.world.field_player_anim.as_ref())
+            .and_then(|h| h.world.locomotion.player_anim.as_ref())
             .is_some_and(|f| f.walking);
         if walking || displaced {
             WALK_SPEED_UNITS

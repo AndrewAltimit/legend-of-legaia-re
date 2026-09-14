@@ -44,8 +44,8 @@ fn install_records(world: &mut World, records: &[(i16, Vec<u16>)]) {
             bytecode: bc_start..bytes.len(),
         });
     }
-    world.field_stager_bytes = bytes;
-    world.field_stagers = parts;
+    world.props.stager_bytes = bytes;
+    world.props.stagers = parts;
 }
 
 /// A mode-3 CLUT-cell record: capture the cell, arm nonzero HSV velocities,
@@ -69,7 +69,10 @@ fn mode3_cycler(x: u16, y: u16) -> (i16, Vec<u16>) {
 #[test]
 fn runtime_op34_sub3_stages_into_the_ambient_pool_with_its_render_tail() {
     let mut world = World {
-        frame_step: 2,
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     // Record 0 stands in for the per-scene SFX descriptor bank (never a
@@ -86,15 +89,15 @@ fn runtime_op34_sub3_stages_into_the_ambient_pool_with_its_render_tail() {
     world.step_field();
 
     assert_eq!(
-        world.ambient_fx.len(),
+        world.ambient.fx.len(),
         1,
         "the install lands in the ambient pool"
     );
     assert!(
-        world.active_field_fx.is_empty(),
+        world.props.active_fx.is_empty(),
         "and not in the SummonScene field-stager pool (the debug exerciser's)"
     );
-    let part = &world.ambient_fx[0];
+    let part = &world.ambient.fx[0];
     assert_eq!(
         (
             part.state.world_x,
@@ -126,7 +129,10 @@ fn runtime_op34_sub3_stages_into_the_ambient_pool_with_its_render_tail() {
     // through the old pool produces no render-tail output at all, however long
     // it is ticked.
     let mut old = World {
-        frame_step: 2,
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     install_records(&mut old, &[(-1, vec![0x08]), mode3_cycler(0x10, 0x1F6)]);
@@ -162,7 +168,10 @@ fn halted_parts_are_freed_so_a_spawn_loop_stays_bounded() {
 
     // Child that halts on its own first run: the ordinary particle shape.
     let mut halting = World {
-        frame_step: 2,
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     install_records(
@@ -173,7 +182,7 @@ fn halted_parts_are_freed_so_a_spawn_loop_stays_bounded() {
     let mut peak = 0usize;
     for _ in 0..600 {
         halting.tick_ambient_fx();
-        peak = peak.max(halting.ambient_fx.len());
+        peak = peak.max(halting.ambient.fx.len());
     }
     assert!(
         peak <= 4,
@@ -189,7 +198,10 @@ fn halted_parts_are_freed_so_a_spawn_loop_stays_bounded() {
     // the bound above comes from the free path, not from the emitter failing
     // to spawn.
     let mut parking = World {
-        frame_step: 2,
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     install_records(
@@ -205,7 +217,7 @@ fn halted_parts_are_freed_so_a_spawn_loop_stays_bounded() {
         parking.tick_ambient_fx();
     }
     assert_eq!(
-        parking.ambient_fx.len(),
+        parking.ambient.fx.len(),
         MAX_AMBIENT_PARTS,
         "parts that never halt accumulate to the pool ceiling"
     );

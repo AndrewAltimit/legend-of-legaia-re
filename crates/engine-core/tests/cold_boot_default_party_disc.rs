@@ -60,7 +60,7 @@ fn cold_scene_boot_seeds_new_game_defaults_and_round_trips() {
     bare.enter_field_scene("town01", 0)
         .expect("enter town01 (bare)");
     assert!(
-        bare.world.roster.members.is_empty(),
+        bare.world.party.roster.members.is_empty(),
         "no defaults installed -> no seed"
     );
 
@@ -70,9 +70,12 @@ fn cold_scene_boot_seeds_new_game_defaults_and_round_trips() {
     host.new_game_defaults = Some(defaults.clone());
     host.enter_field_scene("town01", 0).expect("enter town01");
     let w = &mut host.world;
-    assert_eq!(w.party_count, 1, "retail New Game roster is Vahn alone");
-    assert_eq!(w.roster.members.len(), 1);
-    let rec = &w.roster.members[0];
+    assert_eq!(
+        w.party.party_count, 1,
+        "retail New Game roster is Vahn alone"
+    );
+    assert_eq!(w.party.roster.members.len(), 1);
+    let rec = &w.party.roster.members[0];
     let hms = rec.hp_mp_sp();
     assert_eq!(
         hms.hp_max, template_vahn.hp_max,
@@ -85,13 +88,13 @@ fn cold_scene_boot_seeds_new_game_defaults_and_round_trips() {
     assert_eq!(ls.atk, template_vahn.atk);
     assert_eq!(ls.spd, template_vahn.spd);
     assert_eq!(w.party_name(0), template_vahn.name, "template name seeds");
-    assert_eq!(w.money, NEW_GAME_STARTING_GOLD);
+    assert_eq!(w.party.money, NEW_GAME_STARTING_GOLD);
     for &(id, count) in &seed_items {
         if id == 0 || count == 0 {
             continue;
         }
         assert_eq!(
-            w.inventory.get(&id).copied(),
+            w.party.inventory.get(&id).copied(),
             Some(count),
             "starting-bag item {id:#04x} seeds with count {count}"
         );
@@ -102,23 +105,23 @@ fn cold_scene_boot_seeds_new_game_defaults_and_round_trips() {
     let parsed = legaia_save::SaveFile::parse(&bytes).expect("LGSF parses");
     let mut fresh = legaia_engine_core::world::World::new();
     fresh.load_full(parsed);
-    assert_eq!(fresh.roster.members.len(), 1);
+    assert_eq!(fresh.party.roster.members.len(), 1);
     assert_eq!(
-        fresh.roster.members[0].hp_mp_sp().hp_max,
+        fresh.party.roster.members[0].hp_mp_sp().hp_max,
         template_vahn.hp_max
     );
-    assert_eq!(fresh.money, NEW_GAME_STARTING_GOLD);
+    assert_eq!(fresh.party.money, NEW_GAME_STARTING_GOLD);
     for &(id, count) in &seed_items {
         if id == 0 || count == 0 {
             continue;
         }
-        assert_eq!(fresh.inventory.get(&id).copied(), Some(count));
+        assert_eq!(fresh.party.inventory.get(&id).copied(), Some(count));
     }
 
     // --- And the guard: re-entering a scene (a door transition) never
     // re-seeds over live state.
-    host.world.money = 4321;
+    host.world.party.money = 4321;
     host.enter_field_scene("town01", 0)
         .expect("re-enter town01");
-    assert_eq!(host.world.money, 4321, "re-entry must not reset gold");
+    assert_eq!(host.world.party.money, 4321, "re-entry must not reset gold");
 }

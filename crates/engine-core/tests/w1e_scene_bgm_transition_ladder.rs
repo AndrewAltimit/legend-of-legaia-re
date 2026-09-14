@@ -398,7 +398,7 @@ fn a_scene_fade_arm_runs_against_the_scenes_own_vram() {
     // carrier of this family; `enter_field_scene` is what pins `dt` and
     // populates the scene VRAM.
     host.enter_field_scene("map01", 0).expect("enter map01");
-    assert_eq!(host.world.frame_step, 3, "overworld dt");
+    assert_eq!(host.world.clock.frame_step, 3, "overworld dt");
 
     let man = host
         .scene
@@ -472,7 +472,11 @@ fn a_scene_fade_arm_runs_against_the_scenes_own_vram() {
     );
 
     host.world.spawn_clut_cell_fx(&payload);
-    assert_eq!(host.world.clut_fx.len(), 1, "the fade actor spawned");
+    assert_eq!(
+        host.world.ambient.clut_fx.len(),
+        1,
+        "the fade actor spawned"
+    );
 
     // Host frame loop: tick the world, then hand the scene VRAM to the CLUT
     // driver - exactly the order `window/field_render.rs` and the browser
@@ -480,13 +484,13 @@ fn a_scene_fade_arm_runs_against_the_scenes_own_vram() {
     let mut frames = 0u32;
     let mut writes = 0u32;
     let mut saw_intermediate = false;
-    while !host.world.clut_fx.is_empty() {
+    while !host.world.ambient.clut_fx.is_empty() {
         frames += 1;
         assert!(frames < 2000, "the fade never completed");
         host.world.tick();
         if host.world.step_clut_fx(&mut resources.vram) {
             writes += 1;
-            if !host.world.clut_fx.is_empty() {
+            if !host.world.ambient.clut_fx.is_empty() {
                 let row = read_row(&resources.vram, fade.op.dest);
                 if row != b_row && row != a_row {
                     saw_intermediate = true;
@@ -497,7 +501,7 @@ fn a_scene_fade_arm_runs_against_the_scenes_own_vram() {
     let final_row = read_row(&resources.vram, fade.op.dest);
     // The fade advances by `dt` vsyncs per game tick, so a `frames`-vsync
     // operand takes `ceil(frames / dt)` ticks - and each tick writes once.
-    let dt = u32::from(host.world.frame_step.max(1));
+    let dt = u32::from(host.world.clock.frame_step.max(1));
     let expect_writes = (fade.op.frames as u32).div_ceil(dt);
     eprintln!(
         "[w1e-clut] frames={frames} writes={writes} (expect {expect_writes} at dt={dt}) \

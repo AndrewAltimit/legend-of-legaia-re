@@ -101,7 +101,7 @@ pub(crate) struct NpcRender {
 /// slot, advanced in **sim-tick** time (one [`LegaiaRuntime::tick_frame`] =
 /// one 60 Hz tick) so the clip plays at the retail cadence regardless of the
 /// display refresh rate, and re-targeted by channel op-`0x4B` ANIMATE cues
-/// (drained from `World::field_npc_anim_cues`) so scripted actors perform
+/// (drained from `World::npcs.anim_cues`) so scripted actors perform
 /// their beats instead of looping the placement clip.
 ///
 /// [`FieldClipPlayer`]: legaia_engine_core::field_anim::FieldClipPlayer
@@ -593,7 +593,8 @@ impl LegaiaRuntime {
                     return -1;
                 }
                 h.world
-                    .field_prop_bank
+                    .props
+                    .bank
                     .frame(d.anchor)
                     .map(|fr| fr as i32)
                     .unwrap_or(-1)
@@ -673,7 +674,7 @@ impl LegaiaRuntime {
         };
         let Some(wave) = field_env::FloorWave::from_scene_and_world(
             f.floor_lut,
-            &h.world.field_floor_height_lut,
+            &h.world.terrain.floor_height_lut,
         ) else {
             return Vec::new();
         };
@@ -1133,7 +1134,8 @@ impl LegaiaRuntime {
             let slot = e.placement.index as u8;
             let (mut x, mut z) = h
                 .world
-                .field_npc_positions
+                .npcs
+                .positions
                 .get(&slot)
                 .copied()
                 .unwrap_or((e.placement.world_x, e.placement.world_z));
@@ -1151,12 +1153,7 @@ impl LegaiaRuntime {
             // composes `rot = -(facing + 2048)` (the half-turn the walker
             // convention carries), so identity is `facing = 2048`, not `0` -
             // `0` would draw every prologue-less NPC turned half a revolution.
-            let facing = h
-                .world
-                .field_npc_headings
-                .get(&slot)
-                .copied()
-                .unwrap_or(2048) as f32;
+            let facing = h.world.npcs.headings.get(&slot).copied().unwrap_or(2048) as f32;
             let y = h.world.sample_field_floor_height(x as i32, z as i32) as f32;
             out.extend_from_slice(&[x as f32, y, z as f32, facing]);
         }

@@ -54,7 +54,7 @@ impl PlayWindowApp {
             return PauseMenuDraws::default();
         };
         let ctx = self.menu_ctx(surface_w, surface_h);
-        let labels = &self.session.host.world.menu_context_labels;
+        let labels = &self.session.host.world.menu.context_labels;
         if menu.notice_is_up() {
             let lines: Vec<&str> = labels.notice_lines.iter().map(String::as_str).collect();
             return pause_screen_draws(&ctx, PauseScreen::ContextNotice { lines: &lines });
@@ -335,7 +335,7 @@ impl PlayWindowApp {
         use legaia_engine_core::spell_menu::SpellMenuPhase;
         let world = &self.session.host.world;
         let model =
-            legaia_engine_core::pause_screens::magic_screen_model(s, world.menu_text.as_ref());
+            legaia_engine_core::pause_screens::magic_screen_model(s, world.menu.text.as_ref());
         if !model.target_select {
             let casters: Vec<legaia_engine_render::PauseMagicCaster<'_>> = model
                 .casters
@@ -549,7 +549,7 @@ impl PlayWindowApp {
                     .info
                     .as_ref()
                     .filter(|i| i.is_point_card)
-                    .map(|_| self.session.host.world.point_card.max(0) as u32),
+                    .map(|_| self.session.host.world.minigames.point_card.max(0) as u32),
                 throw_confirm: throw.as_ref(),
                 special_confirm: model.special_confirm.as_ref().map(|sc| SpecialConfirmView {
                     lines: &special_lines,
@@ -759,6 +759,7 @@ impl PlayWindowApp {
             self.session
                 .host
                 .world
+                .party
                 .roster
                 .members
                 .get(slot as usize)

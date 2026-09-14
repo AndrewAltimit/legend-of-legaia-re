@@ -57,16 +57,22 @@ fn freeroam_channels_seed_and_execute() {
 
     // 2. Channels seeded from the placement partition (the new behaviour; empty
     //    outside a cutscene before this change).
-    let n = host.world.field_channels.len();
+    let n = host.world.field_vm.channels.len();
     assert!(
         n > 0,
         "free-roam scene entry seeds one channel per partition-1 placement"
     );
     assert!(
-        host.world.field_channels_man.is_some(),
+        host.world.field_vm.channels_man.is_some(),
         "the seeded channels carry their MAN buffer so they can step"
     );
-    for c in host.world.field_channels.iter().filter(|c| !c.object_bind) {
+    for c in host
+        .world
+        .field_vm
+        .channels
+        .iter()
+        .filter(|c| !c.object_bind)
+    {
         assert!(
             c.ctx.script_id > 0,
             "script id = partition-0 count + record index (>= 1 for a real placement)"
@@ -76,12 +82,13 @@ fn freeroam_channels_seed_and_execute() {
     // trigger's FLAT record index into `actor+0x50`) ride alongside as
     // poke targets; their id space starts at 0 (partition-0 record 0).
     assert!(
-        host.world.field_channels.iter().any(|c| c.object_bind),
+        host.world.field_vm.channels.iter().any(|c| c.object_bind),
         "town01 seeds `.MAP` object-bind channels (house doors et al.)"
     );
     let spawn_state: Vec<_> = host
         .world
-        .field_channels
+        .field_vm
+        .channels
         .iter()
         .map(|c| {
             (
@@ -98,7 +105,8 @@ fn freeroam_channels_seed_and_execute() {
     eprintln!(
         "[town01] {n} free-roam channels seeded, script ids {:?}",
         host.world
-            .field_channels
+            .field_vm
+            .channels
             .iter()
             .map(|c| c.ctx.script_id)
             .collect::<Vec<_>>()
@@ -108,13 +116,13 @@ fn freeroam_channels_seed_and_execute() {
     //    gated behind the engine's NPC-animation switch (the same master gate
     //    the waypoint patroller honours), so enable it to exercise execution -
     //    seeding (parts 1-2) is unconditional and already asserted above.
-    host.world.animate_field_npcs = true;
-    let headings_before = host.world.field_npc_headings.len();
+    host.world.npcs.animate = true;
+    let headings_before = host.world.npcs.headings.len();
     let mut any_advanced = false;
     let mut any_state_changed = false;
     for _ in 0..600 {
         let _ = host.world.tick();
-        for (c, s) in host.world.field_channels.iter().zip(&spawn_state) {
+        for (c, s) in host.world.field_vm.channels.iter().zip(&spawn_state) {
             if c.pc != s.0 {
                 any_advanced = true;
             }
@@ -140,7 +148,7 @@ fn freeroam_channels_seed_and_execute() {
         any_state_changed,
         "at least one channel's context state changed (facing / wait / flag setup applied)"
     );
-    let headings_after = host.world.field_npc_headings.len();
+    let headings_after = host.world.npcs.headings.len();
     eprintln!(
         "[town01] channels advanced; NPC headings before={headings_before} after={headings_after}"
     );

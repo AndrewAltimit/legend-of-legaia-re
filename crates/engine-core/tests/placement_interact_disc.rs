@@ -230,7 +230,7 @@ fn the_action_probe_reaches_a_door_placement() {
             world.mode = SceneMode::Field;
             world.install_field_carriers_from_man(&mf, man);
             world.install_field_player(0);
-            let Some(&(anchor, _)) = world.field_walk_touch.get(&d.slot) else {
+            let Some(&(anchor, _)) = world.props.walk_touch.get(&d.slot) else {
                 // A parked placement has no touchable body and so no anchor;
                 // the probe cannot reach it either. Reported, not asserted.
                 eprintln!("[probe]  {scene:<8} P1[{:3}] no walk-touch anchor", d.slot);
@@ -238,7 +238,7 @@ fn the_action_probe_reaches_a_door_placement() {
             };
             // Clear the NPC anchors so the assertion is about the door arm and
             // not about which of two adjacent actors won the distance tie.
-            world.field_npc_positions.clear();
+            world.npcs.positions.clear();
             if let Some(p) = world.player_actor_slot
                 && let Some(actor) = world.actors.get_mut(p as usize)
             {
@@ -254,7 +254,7 @@ fn the_action_probe_reaches_a_door_placement() {
             );
             // Contrast: without an interaction record the same seat probes
             // nothing, so the arm above is what the hit came from.
-            world.field_npc_dialog_prologue.remove(&d.slot);
+            world.npcs.dialog_prologue.remove(&d.slot);
             assert_eq!(
                 world.field_interact_probe_slot(),
                 None,
@@ -320,16 +320,17 @@ fn interacting_with_a_door_runs_its_record() {
             world.mode = SceneMode::Field;
             world.install_field_carriers_from_man(&mf, man);
             world.install_field_player(0);
-            world.use_vm_dialogue = true;
+            world.toggles.use_vm_dialogue = true;
             // A stocked purse, so an affordability gate inside the record
             // (`koin1` / `balden` compare the coin bank with `0x4E` sub-9)
             // takes its *pass* branch - otherwise the run measures the refusal
             // path and reports a boundary the record did not actually hit.
-            world.casino_coins = 500;
-            world.money = 50_000;
+            world.minigames.casino_coins = 500;
+            world.party.money = 50_000;
 
             let prologue = world
-                .field_npc_dialog_prologue
+                .npcs
+                .dialog_prologue
                 .get(&d.slot)
                 .cloned()
                 .unwrap_or_else(|| {
@@ -357,7 +358,7 @@ fn interacting_with_a_door_runs_its_record() {
 
             world.trigger_field_interact(0, d.slot);
             assert!(
-                world.active_inline_prologue.is_some(),
+                world.dialog.active_inline_prologue.is_some(),
                 "{scene} P1[{}]: the interact armed no record run",
                 d.slot
             );
@@ -373,18 +374,19 @@ fn interacting_with_a_door_runs_its_record() {
                 });
                 let _ = world.tick();
                 if world
-                    .inline_dialogue
+                    .dialog
+                    .inline
                     .as_ref()
                     .is_some_and(|r| r.panel.is_some())
                 {
                     opened_box = true;
                 }
-                if world.pending_minigame_warp.is_some() || world.inline_dialogue.is_none() {
+                if world.minigames.pending_warp.is_some() || world.dialog.inline.is_none() {
                     break;
                 }
             }
-            let armed = world.pending_minigame_warp;
-            let rest = world.inline_dialogue.as_ref().map(|r| {
+            let armed = world.minigames.pending_warp;
+            let rest = world.dialog.inline.as_ref().map(|r| {
                 (
                     r.pc,
                     r.bytecode.get(r.pc).copied().unwrap_or(0),

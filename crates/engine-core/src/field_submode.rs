@@ -225,12 +225,12 @@ pub struct PanelRow {
 /// The context clause an earlier reading carried ("the context block it reads
 /// is the same one [`open_submode`] cannot reach") is false, and contradicts
 /// this module's own header: `open_submode` **is** live, its ten seeds land in
-/// `World::submode_context`, and `World::submode_env` reads that block every
+/// `World::field_vm.submode_context`, and `World::submode_env` reads that block every
 /// frame. The row inputs are live with it - the cursor and entry count this
 /// pass wants are already projected into `HubEnv`.
 ///
 /// What has no consumer is the output. The submode screen's own draw list
-/// (`World::submode_screen.draws()`, built by the ported panel-window
+/// (`World::field_vm.submode_screen.draws()`, built by the ported panel-window
 /// painters) is not read by any host: neither `engine-shell` nor the browser
 /// page renders the op-`0x49` screen at all. So a `PanelRow` would join a
 /// draw list nothing paints. The prerequisite is a host consumer for that

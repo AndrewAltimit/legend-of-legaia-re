@@ -27,14 +27,14 @@ fn press_top_view_chord(world: &mut World) {
 #[test]
 fn enter_world_map_installs_controller() {
     let mut world = World::default();
-    assert!(world.world_map_ctrl.is_none());
+    assert!(world.world_map.ctrl.is_none());
     world.enter_world_map();
     assert_eq!(world.mode, SceneMode::WorldMap);
-    assert!(world.world_map_ctrl.is_some());
+    assert!(world.world_map.ctrl.is_some());
     // Idempotent: re-entry keeps the existing controller + state.
-    world.world_map_ctrl.as_mut().unwrap().camera_x = 42;
+    world.world_map.ctrl.as_mut().unwrap().camera_x = 42;
     world.enter_world_map();
-    assert_eq!(world.world_map_ctrl.as_ref().unwrap().camera_x, 42);
+    assert_eq!(world.world_map.ctrl.as_ref().unwrap().camera_x, 42);
 }
 
 /// The top-view screen-dim pass (`FUN_801E75DC`) must be produced by the
@@ -48,29 +48,30 @@ fn enter_world_map_installs_controller() {
 fn world_tick_emits_top_view_screen_dim() {
     let mut world = World::default();
     world.enter_world_map();
-    world.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+    world.world_map.ctrl.as_mut().unwrap().debug_enabled = true;
 
     // Walk mode (view_mode == 0): retail's first branch skips the whole
     // top-view block, so no dim regardless of the anim flags.
-    world.world_map_ctrl.as_mut().unwrap().anim_flags = 1;
+    world.world_map.ctrl.as_mut().unwrap().anim_flags = 1;
     world.set_pad(0);
     let _ = world.tick();
     assert!(
-        world.world_map_ctrl.as_ref().unwrap().screen_dim.is_none(),
+        world.world_map.ctrl.as_ref().unwrap().screen_dim.is_none(),
         "walk mode must not dim"
     );
 
     // Flip into top view with the debug combo, keeping anim bit 0 set.
     press_top_view_chord(&mut world);
-    assert!(world.world_map_ctrl.as_ref().unwrap().is_top_view());
+    assert!(world.world_map.ctrl.as_ref().unwrap().is_top_view());
     // The chord itself carries R1|R2 held, and the anim toggles stand down
     // while a shoulder is held, so bit 0 survives the toggle frame.
-    world.world_map_ctrl.as_mut().unwrap().anim_flags = 1;
+    world.world_map.ctrl.as_mut().unwrap().anim_flags = 1;
 
     world.set_pad(0);
     let _ = world.tick();
     let dim = world
-        .world_map_ctrl
+        .world_map
+        .ctrl
         .as_ref()
         .unwrap()
         .screen_dim
@@ -85,10 +86,10 @@ fn world_tick_emits_top_view_screen_dim() {
 
     // Clearing anim bit 0 stops the pass on the very next tick - retail's
     // second branch - and the stale pass must not linger.
-    world.world_map_ctrl.as_mut().unwrap().anim_flags = 0;
+    world.world_map.ctrl.as_mut().unwrap().anim_flags = 0;
     let _ = world.tick();
     assert!(
-        world.world_map_ctrl.as_ref().unwrap().screen_dim.is_none(),
+        world.world_map.ctrl.as_ref().unwrap().screen_dim.is_none(),
         "anim bit 0 clear must stop the dim and clear the stale pass"
     );
 }
@@ -101,12 +102,12 @@ fn world_tick_drives_world_map_from_pad() {
     // tick path, not via a host-side controller.
     let mut world = World::default();
     world.enter_world_map();
-    world.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+    world.world_map.ctrl.as_mut().unwrap().debug_enabled = true;
 
     // Frames 1-2: the toggle chord (packed 0x4A held / 0x40 pressed) flips
     // the view into top-view.
     press_top_view_chord(&mut world);
-    assert!(world.world_map_ctrl.as_ref().unwrap().is_top_view());
+    assert!(world.world_map.ctrl.as_ref().unwrap().is_top_view());
 
     // Next: in top-view, the camera bank needs the L1 modifier held
     // alongside the direction (packed 0x4 | 0x1000). Releasing the toggle
@@ -115,7 +116,7 @@ fn world_tick_drives_world_map_from_pad() {
     let _ = world.tick();
     world.set_pad(raw_pad(0x0004 | 0x1000));
     let _ = world.tick();
-    assert_eq!(world.world_map_ctrl.as_ref().unwrap().camera_x, -8);
+    assert_eq!(world.world_map.ctrl.as_ref().unwrap().camera_x, -8);
 }
 
 #[test]
@@ -131,12 +132,12 @@ fn world_map_tick_is_deterministic_across_identical_pad_streams() {
     let drive = |stream: &[u16]| {
         let mut world = World::default();
         world.enter_world_map();
-        world.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+        world.world_map.ctrl.as_mut().unwrap().debug_enabled = true;
         for &pad in stream {
             world.set_pad(pad);
             let _ = world.tick();
         }
-        let c = world.world_map_ctrl.unwrap();
+        let c = world.world_map.ctrl.unwrap();
         (c.view_mode, c.camera_x, c.camera_z, c.azimuth, c.zoom)
     };
     assert_eq!(drive(&pad_stream), drive(&pad_stream));
@@ -154,7 +155,7 @@ fn world_map_without_entities_never_encounters() {
         let _ = world.tick();
     }
     assert_eq!(world.mode, SceneMode::WorldMap);
-    assert!(world.pending_world_map_encounter.is_none());
+    assert!(world.world_map.pending_encounter.is_none());
 }
 
 /// Walking the overworld player across tiles rolls the region-keyed encounter
@@ -166,15 +167,18 @@ fn world_map_region_walk_triggers_battle() {
     use crate::region_encounter::{EncounterRegion, RegionEncounterTable};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     world.enter_world_map();
     // Frame the camera at a quarter turn (azimuth 1024) so the camera-relative
     // remap maps a held Right cleanly to world +X (keeps this test's "walk +X
     // across tiles" intent readable; at the default azimuth 0 Right maps to -Z).
-    if let Some(ctrl) = world.world_map_ctrl.as_mut() {
+    if let Some(ctrl) = world.world_map.ctrl.as_mut() {
         ctrl.azimuth = 1024;
     }
     world.install_field_player(0); // player_actor_slot = 0, actor active
@@ -185,6 +189,7 @@ fn world_map_region_walk_triggers_battle() {
 
     // Formation 5 spawns one weak monster (id 100).
     world
+        .tables
         .formation_table
         .insert(FormationDef::new(5, vec![FormationSlot::new(100)]));
     let mut cat = MonsterCatalog::new();
@@ -219,7 +224,7 @@ fn world_map_region_walk_triggers_battle() {
         entered_battle,
         "walking the overworld triggers a region encounter"
     );
-    assert_eq!(world.battle_return_mode, SceneMode::WorldMap);
+    assert_eq!(world.battle.return_mode, SceneMode::WorldMap);
 }
 
 /// The overworld player is bounded by the scene's walkability grid, exactly
@@ -312,7 +317,7 @@ fn world_map_without_regions_or_entities_never_encounters() {
         let _ = world.tick();
     }
     assert_eq!(world.mode, SceneMode::WorldMap);
-    assert!(world.pending_world_map_encounter.is_none());
+    assert!(world.world_map.pending_encounter.is_none());
 }
 
 /// An installed overworld entity whose shared countdown reaches zero (with
@@ -323,10 +328,13 @@ fn world_map_encounter_flips_to_battle_returning_to_world_map() {
     use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     world.enter_world_map();
     // A capable lone party member.
     world.actors[0].active = true;
@@ -336,6 +344,7 @@ fn world_map_encounter_flips_to_battle_returning_to_world_map() {
     world.set_battle_attack(0, 80);
     // Formation 7 spawns one weak monster (id 100); register its stats.
     world
+        .tables
         .formation_table
         .insert(FormationDef::new(7, vec![FormationSlot::new(100)]));
     let mut cat = MonsterCatalog::new();
@@ -356,7 +365,7 @@ fn world_map_encounter_flips_to_battle_returning_to_world_map() {
         let _ = world.tick();
     }
     assert_eq!(world.mode, SceneMode::Battle);
-    assert_eq!(world.battle_return_mode, SceneMode::WorldMap);
+    assert_eq!(world.battle.return_mode, SceneMode::WorldMap);
     assert!(world.field_return.is_some());
 
     // Drive the fight to completion; it must return to the world map, not
@@ -416,10 +425,13 @@ fn world_map_encounter_zone_uses_its_own_formation() {
     use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     world.enter_world_map();
     world.actors[0].active = true;
     world.actors[0].battle.hp = 400;
@@ -428,9 +440,11 @@ fn world_map_encounter_zone_uses_its_own_formation() {
     world.set_battle_attack(0, 80);
     // Register both the zone's formation (9) and a decoy shared one (7).
     world
+        .tables
         .formation_table
         .insert(FormationDef::new(9, vec![FormationSlot::new(100)]));
     world
+        .tables
         .formation_table
         .insert(FormationDef::new(7, vec![FormationSlot::new(101)]));
     let mut cat = MonsterCatalog::new();
@@ -453,7 +467,11 @@ fn world_map_encounter_zone_uses_its_own_formation() {
     }
     assert_eq!(world.mode, SceneMode::Battle);
     assert_eq!(
-        world.active_formation.as_ref().map(|f| f.formation_id),
+        world
+            .battle
+            .active_formation
+            .as_ref()
+            .map(|f| f.formation_id),
         Some(9),
         "the zone's own formation spawns, not the shared one"
     );
@@ -479,12 +497,12 @@ fn world_map_minigame_door_engage_arms_the_door_warp() {
     world.engage_world_map_entity(0);
     let _ = world.tick();
     assert_eq!(
-        world.pending_minigame_warp,
+        world.minigames.pending_warp,
         Some(5),
         "the door arms its minigame sub-id"
     );
     assert!(
-        world.minigame_scene_backup.is_some(),
+        world.minigames.scene_backup.is_some(),
         "the departure scene is backed up for the return trip"
     );
     assert!(
@@ -523,7 +541,7 @@ fn world_map_walking_onto_minigame_door_auto_engages() {
     let mut armed = false;
     for _ in 0..200 {
         let _ = world.tick();
-        if world.pending_minigame_warp == Some(3) {
+        if world.minigames.pending_warp == Some(3) {
             armed = true;
             break;
         }
@@ -563,7 +581,7 @@ fn world_map_walking_onto_npc_does_not_transition() {
         "an NPC is not auto-engaged by walking onto its tile"
     );
     assert_eq!(
-        world.pending_minigame_warp, None,
+        world.minigames.pending_warp, None,
         "nor does it arm a door warp"
     );
 }
@@ -713,14 +731,14 @@ fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
     // Settle a frame with no input so the next Cross press is a clean edge.
     world.set_pad(0);
     let _ = world.tick();
-    assert!(world.current_dialog.is_none(), "no box before talking");
+    assert!(world.dialog.current.is_none(), "no box before talking");
 
     // Confirm press next to the NPC opens its dialogue, carrying the inline
     // text through (the host renders it via `OwnedDialogPanel::from_inline_dialog`).
     world.set_pad(cross);
     let _ = world.tick();
     assert_eq!(
-        world.current_dialog.as_ref().map(|d| d.inline.clone()),
+        world.dialog.current.as_ref().map(|d| d.inline.clone()),
         Some(inline.clone()),
         "talk-to opens the NPC's inline dialogue text"
     );
@@ -737,7 +755,7 @@ fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
     world.set_pad(cross);
     let _ = world.tick();
     assert!(
-        world.current_dialog.is_some(),
+        world.dialog.current.is_some(),
         "no dismiss without a new edge"
     );
 
@@ -746,7 +764,7 @@ fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
     let _ = world.tick();
     world.set_pad(cross);
     let _ = world.tick();
-    assert!(world.current_dialog.is_none(), "confirm dismisses the box");
+    assert!(world.dialog.current.is_none(), "confirm dismisses the box");
     assert!(
         world
             .drain_field_events()

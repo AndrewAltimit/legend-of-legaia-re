@@ -2,7 +2,7 @@
 //!
 //! `SceneHost::enter_field_scene` builds the per-region encounter table from the
 //! scene's MAN (`region_encounter_table_from_man`) and installs it on
-//! `World::field_region_tracker`, so a field step rolls against the player's
+//! `World::terrain.region_tracker`, so a field step rolls against the player's
 //! *active region* (per-region rate increment + formation-range pick,
 //! `FUN_801D9E1C`) instead of the aggregated mean-rate `EncounterSession`. This
 //! is the field counterpart to the world-map `set_world_map_regions` path, which
@@ -100,7 +100,7 @@ fn field_entry_routes_per_region_encounters() {
         if host.enter_field_scene(scene, 0).is_err() {
             continue; // battle / menu / cutscene labels that aren't field scenes.
         }
-        if host.world.field_region_tracker.is_none() {
+        if host.world.terrain.region_tracker.is_none() {
             continue; // towns etc. - no encounter-region section; mean path stays.
         }
         installed += 1;
@@ -116,7 +116,8 @@ fn field_entry_routes_per_region_encounters() {
             .expect("region table re-decodes for a region-tracked scene");
         let installed_regions = &host
             .world
-            .field_region_tracker
+            .terrain
+            .region_tracker
             .as_ref()
             .expect("tracker present")
             .table()
@@ -144,10 +145,11 @@ fn field_entry_routes_per_region_encounters() {
 
         // Drivable = a live mean session (the SM the region roll feeds) plus a
         // reachable rollable region centre.
-        if drivable.is_none() && host.world.encounter.is_some() {
+        if drivable.is_none() && host.world.encounters.session.is_some() {
             let table = host
                 .world
-                .field_region_tracker
+                .terrain
+                .region_tracker
                 .as_ref()
                 .expect("tracker present")
                 .table();
@@ -182,7 +184,8 @@ fn field_entry_routes_per_region_encounters() {
 
     let max_formation = host
         .world
-        .field_region_tracker
+        .terrain
+        .region_tracker
         .as_ref()
         .expect("tracker present on re-entry")
         .table()
@@ -220,7 +223,7 @@ fn field_entry_routes_per_region_encounters() {
     );
     assert!(
         matches!(
-            host.world.encounter.as_ref().map(|s| s.phase()),
+            host.world.encounters.session.as_ref().map(|s| s.phase()),
             Some(EncounterPhase::Transition { .. })
         ),
         "[{scene}] region trigger drove the mean session into its Transition SM"
@@ -236,7 +239,7 @@ fn field_entry_routes_per_region_encounters() {
         }
         assert!(
             !matches!(
-                host.world.encounter.as_ref().map(|s| s.phase()),
+                host.world.encounters.session.as_ref().map(|s| s.phase()),
                 Some(EncounterPhase::Idle)
             ),
             "[{scene}] transition must reach Triggered, not fall back to Idle"

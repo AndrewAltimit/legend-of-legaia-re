@@ -12,7 +12,7 @@ use super::*;
 fn field_world() -> World {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.field_frame_step = 1;
+    world.clock.display_frame_step = 1;
     world
 }
 
@@ -31,7 +31,7 @@ fn op_43_0c_runs_the_camera_shutter_wipe_to_full_and_back() {
     let mut heights = Vec::new();
     for _ in 0..64 {
         let _ = world.tick();
-        heights.push(world.cinematic_bar);
+        heights.push(world.presentation.cinematic_bar);
     }
     let peak = *heights.iter().max().unwrap();
     assert_eq!(
@@ -44,7 +44,7 @@ fn op_43_0c_runs_the_camera_shutter_wipe_to_full_and_back() {
         0,
         "and the record must retire: {heights:?}"
     );
-    assert!(world.cinematic_bars.is_none());
+    assert!(world.presentation.cinematic_bars.is_none());
 }
 
 /// At full envelope the two bars cover a 224-line screen twice over - the
@@ -76,18 +76,18 @@ fn op_4c_90_oscillates_a_floor_height_rung_the_ladder_installed() {
 
     let _ = world.tick(); // 4C 9E
     assert_eq!(
-        world.field_floor_height_lut[4],
+        world.terrain.floor_height_lut[4],
         -(4 * 0x20),
         "the install writes the negated ladder, matching the MAN-header seed"
     );
-    let installed = world.field_floor_height_lut[4];
+    let installed = world.terrain.floor_height_lut[4];
 
     let _ = world.tick(); // 4C 90 spawns
-    assert_eq!(world.floor_tier_bobs.len(), 1);
+    assert_eq!(world.terrain.floor_tier_bobs.len(), 1);
     let mut seen = Vec::new();
     for _ in 0..96 {
         let _ = world.tick();
-        seen.push(world.field_floor_height_lut[4]);
+        seen.push(world.terrain.floor_height_lut[4]);
     }
     let hi = *seen.iter().max().unwrap();
     let lo = *seen.iter().min().unwrap();
@@ -97,7 +97,7 @@ fn op_4c_90_oscillates_a_floor_height_rung_the_ladder_installed() {
     );
     assert!(lo < hi, "and swing back: span {lo}..{hi}");
     // Untouched rungs stay where the install put them.
-    assert_eq!(world.field_floor_height_lut[5], -(5 * 0x20));
+    assert_eq!(world.terrain.floor_height_lut[5], -(5 * 0x20));
 }
 
 /// `4C 9F` is a retire sweep over the same handler, so it cancels every
@@ -112,7 +112,7 @@ fn op_4c_9f_cancels_the_running_rung_oscillators() {
     for _ in 0..4 {
         let _ = spawn_only.tick();
     }
-    assert_eq!(spawn_only.floor_tier_bobs.len(), 2);
+    assert_eq!(spawn_only.terrain.floor_tier_bobs.len(), 2);
 
     // The same script with the sweep appended leaves none - which is the
     // contrast that makes the assertion non-vacuous.
@@ -123,7 +123,7 @@ fn op_4c_9f_cancels_the_running_rung_oscillators() {
         let _ = swept.tick();
     }
     assert!(
-        swept.floor_tier_bobs.is_empty(),
+        swept.terrain.floor_tier_bobs.is_empty(),
         "4C 9F sweeps the handler class"
     );
 }
@@ -146,7 +146,11 @@ fn op_43_09_with_ticks_eases_the_player_to_the_target() {
     ]);
     world.field_ctx.flags |= 0x0100_0000;
     let _ = world.tick();
-    assert_eq!(world.eased_moves.len(), 1, "the tween record spawned");
+    assert_eq!(
+        world.field_vm.eased_moves.len(),
+        1,
+        "the tween record spawned"
+    );
 
     let mut xs = Vec::new();
     for _ in 0..8 {
@@ -162,7 +166,7 @@ fn op_43_09_with_ticks_eases_the_player_to_the_target() {
         "t^2/d^2 keeps the halfway sample below the midpoint: {xs:?}"
     );
     assert!(
-        world.eased_moves.is_empty(),
+        world.field_vm.eased_moves.is_empty(),
         "the record retires on arrival"
     );
 }
@@ -199,13 +203,13 @@ fn the_man_load_sweep_drops_every_live_timer_record() {
     ]);
     let _ = world.tick();
     let _ = world.tick();
-    assert!(world.cinematic_bars.is_some());
-    assert_eq!(world.floor_tier_bobs.len(), 1);
+    assert!(world.presentation.cinematic_bars.is_some());
+    assert_eq!(world.terrain.floor_tier_bobs.len(), 1);
     let _ = world.man_load_actor_reset();
-    assert!(world.cinematic_bars.is_none());
-    assert_eq!(world.cinematic_bar, 0);
-    assert!(world.floor_tier_bobs.is_empty());
-    assert!(world.eased_moves.is_empty());
+    assert!(world.presentation.cinematic_bars.is_none());
+    assert_eq!(world.presentation.cinematic_bar, 0);
+    assert!(world.terrain.floor_tier_bobs.is_empty());
+    assert!(world.field_vm.eased_moves.is_empty());
 }
 
 /// The `+0x8E` inverted-Y mirror reaches a consumer.
@@ -230,14 +234,14 @@ fn op_43_09_mirror_flag_holds_the_eased_y_against_the_terrain_follow() {
     // Y write (into the physics seat) does not reach `move_state`.
     let mut plain = field_world();
     plain.player_actor_slot = Some(1);
-    plain.follow_terrain_height = true;
+    plain.locomotion.follow_terrain_height = true;
     plain.spawn_actor(1);
     plain.load_field_script(script.clone());
     plain.field_ctx.flags |= 0x0100_0000;
     for _ in 0..4 {
         let _ = plain.tick();
     }
-    assert_eq!(plain.field_eased_mirror_y, None, "no flag, no latch");
+    assert_eq!(plain.locomotion.eased_mirror_y, None, "no flag, no latch");
     let floor = plain.sample_field_floor_height(
         plain.actors[1].move_state.world_x as i32,
         plain.actors[1].move_state.world_z as i32,
@@ -250,7 +254,7 @@ fn op_43_09_mirror_flag_holds_the_eased_y_against_the_terrain_follow() {
     // With the flag: the latch carries `-Y` and the height arm writes `Y`.
     let mut mirrored = field_world();
     mirrored.player_actor_slot = Some(1);
-    mirrored.follow_terrain_height = true;
+    mirrored.locomotion.follow_terrain_height = true;
     mirrored.spawn_actor(1);
     mirrored.load_field_script(script);
     mirrored.field_ctx.flags |= 0x0100_0000 | EASE_TARGET_INVERT_Y;
@@ -258,7 +262,8 @@ fn op_43_09_mirror_flag_holds_the_eased_y_against_the_terrain_follow() {
         let _ = mirrored.tick();
     }
     let latch = mirrored
-        .field_eased_mirror_y
+        .locomotion
+        .eased_mirror_y
         .expect("the mirror flag arms the latch");
     let eased_y = mirrored.actors[1].physics.world_y;
     assert_eq!(latch, eased_y.wrapping_neg(), "the latch is the negated Y");
@@ -276,6 +281,12 @@ fn op_43_09_mirror_flag_holds_the_eased_y_against_the_terrain_follow() {
     for _ in 0..16 {
         let _ = mirrored.tick();
     }
-    assert!(mirrored.eased_moves.is_empty(), "the tween retired");
-    assert_eq!(mirrored.field_eased_mirror_y, None, "the latch retired too");
+    assert!(
+        mirrored.field_vm.eased_moves.is_empty(),
+        "the tween retired"
+    );
+    assert_eq!(
+        mirrored.locomotion.eased_mirror_y, None,
+        "the latch retired too"
+    );
 }

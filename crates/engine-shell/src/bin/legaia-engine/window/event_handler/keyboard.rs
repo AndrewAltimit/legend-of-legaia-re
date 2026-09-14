@@ -204,6 +204,7 @@ impl PlayWindowApp {
                 .session
                 .host
                 .world
+                .tables
                 .move_power
                 .as_ref()
                 .map(|c| c.spawnable_move_ids())
@@ -276,7 +277,7 @@ impl PlayWindowApp {
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {
-            let count = self.session.host.world.field_stagers.len();
+            let count = self.session.host.world.props.stagers.len();
             if count == 0 {
                 log::info!("field-FX spawn (J): no prescript stager table for this scene");
                 return;
@@ -301,7 +302,7 @@ impl PlayWindowApp {
             let id = FIELD_FX_CYCLE.fetch_add(1, Ordering::Relaxed) % count;
             // Debug ergonomics: isolate one record per press (the
             // production op-0x34-sub-3 path lets them stack).
-            self.session.host.world.active_field_fx.clear();
+            self.session.host.world.props.active_fx.clear();
             if self.session.host.world.spawn_field_stager(id, origin) {
                 let mesh: Vec<usize> = self
                     .session
@@ -409,14 +410,14 @@ impl PlayWindowApp {
             let world = &mut self.session.host.world;
             match code {
                 KeyCode::KeyP => {
-                    if world.fishing_exchange.is_some() {
+                    if world.minigames.fishing_exchange.is_some() {
                         world.close_fishing_exchange();
                     } else if let Some(venues) = &self.fishing_prize_venues {
                         // Bank the LIVE session's points before opening the
                         // counter. Retail credits its point pool
                         // (`_DAT_8008444C`) as each catch lands, so the
                         // counter spends what this session just earned; the
-                        // port credits `World::fishing_points` only inside
+                        // port credits `World::minigames.fishing_points` only inside
                         // `exit_fishing`, and the counter is reachable only
                         // while fishing is still active - so without this it
                         // always reads the PREVIOUS session's total (0 on a
@@ -424,8 +425,10 @@ impl PlayWindowApp {
                         // much the player caught. `fishing_exchange_buy`
                         // pushes the spent total back into the session
                         // record, so the round trip stays consistent.
-                        if let Some(points) = world.fishing.as_ref().map(|s| s.record().points) {
-                            world.fishing_points = points;
+                        if let Some(points) =
+                            world.minigames.fishing.as_ref().map(|s| s.record().points)
+                        {
+                            world.minigames.fishing_points = points;
                         }
                         world.open_fishing_exchange(venues[0].clone());
                     } else {
@@ -433,9 +436,11 @@ impl PlayWindowApp {
                     }
                     return;
                 }
-                KeyCode::ArrowUp | KeyCode::ArrowDown if world.fishing_exchange.is_some() => {
-                    let points = world.fishing_points;
-                    if let Some(ex) = &mut world.fishing_exchange {
+                KeyCode::ArrowUp | KeyCode::ArrowDown
+                    if world.minigames.fishing_exchange.is_some() =>
+                {
+                    let points = world.minigames.fishing_points;
+                    if let Some(ex) = &mut world.minigames.fishing_exchange {
                         let floor = ex.first_visible(points);
                         let last = ex.rows.len().saturating_sub(1);
                         ex.cursor = if matches!(code, KeyCode::ArrowUp) {
@@ -446,17 +451,20 @@ impl PlayWindowApp {
                     }
                     return;
                 }
-                KeyCode::ArrowLeft | KeyCode::ArrowRight if world.fishing_exchange.is_some() => {
-                    if let (Some(open), Some(venues)) =
-                        (&world.fishing_exchange, &self.fishing_prize_venues)
-                    {
+                KeyCode::ArrowLeft | KeyCode::ArrowRight
+                    if world.minigames.fishing_exchange.is_some() =>
+                {
+                    if let (Some(open), Some(venues)) = (
+                        &world.minigames.fishing_exchange,
+                        &self.fishing_prize_venues,
+                    ) {
                         let other = venues[1 - open.venue.min(1)].clone();
                         world.open_fishing_exchange(other);
                     }
                     return;
                 }
-                KeyCode::Enter if world.fishing_exchange.is_some() => {
-                    let row = world.fishing_exchange.as_ref().map(|e| e.cursor);
+                KeyCode::Enter if world.minigames.fishing_exchange.is_some() => {
+                    let row = world.minigames.fishing_exchange.as_ref().map(|e| e.cursor);
                     if let Some(row) = row {
                         match world.fishing_exchange_buy(row, 1) {
                             Some(p) => log::info!(
@@ -464,7 +472,7 @@ impl PlayWindowApp {
                                 p.item_id,
                                 p.qty,
                                 p.cost,
-                                world.fishing_points
+                                world.minigames.fishing_points
                             ),
                             None => log::info!(
                                 "fishing exchange: row {row} unavailable (points/limit/one-time)"
@@ -491,7 +499,7 @@ impl PlayWindowApp {
                     log::info!(
                         "slots: cashed out {} coins into the bank (now {})",
                         m.balance(),
-                        self.session.host.world.casino_coins
+                        self.session.host.world.minigames.casino_coins
                     );
                 }
             } else if self.start_slot_minigame() {
@@ -562,7 +570,7 @@ impl PlayWindowApp {
                         Some(0) => log::info!(
                             "baka: match WON - {} coins banked (bank now {})",
                             f.gold_reward(),
-                            self.session.host.world.casino_coins
+                            self.session.host.world.minigames.casino_coins
                         ),
                         Some(_) => log::info!("baka: match lost"),
                         None => log::info!("baka: match aborted"),
@@ -728,7 +736,7 @@ impl PlayWindowApp {
         {
             let on = !self.options_state.precise_movement;
             self.options_state.precise_movement = on;
-            self.session.host.world.precise_movement = on;
+            self.session.host.world.locomotion.precise_movement = on;
             self.persist_and_apply_options();
             log::info!(
                 "movement: precise {}",

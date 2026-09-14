@@ -114,7 +114,7 @@ fn world_at(site: &Site) -> World {
         mode: SceneMode::Field,
         ..World::default()
     };
-    world.roster = legaia_save::Party::zeroed(3);
+    world.party.roster = legaia_save::Party::zeroed(3);
     world.spawn_actor(0);
     world.player_actor_slot = Some(0);
     world.load_field_script_at(site.body.clone(), site.pc);
@@ -163,7 +163,7 @@ fn op49_sub_0d_park_survives_and_a_handler_row_still_unparks() {
         // The reason it survives: no screen was opened for it. A screen is
         // what used to retire and take the park with it.
         assert!(
-            !world.submode_screen.open,
+            !world.field_vm.submode_screen.open,
             "{}: sub-0x0D opened a submode screen - retail's table row is -1",
             site.scene
         );
@@ -186,7 +186,7 @@ fn op49_sub_0d_park_survives_and_a_handler_row_still_unparks() {
     for site in &handled {
         let mut world = world_at(site);
         let _ = world.step_field();
-        if world.submode_screen.open {
+        if world.field_vm.submode_screen.open {
             opened += 1;
         }
     }
@@ -228,7 +228,7 @@ fn a_surviving_0d_park_opens_the_notice_panel_and_the_ready_check() {
         let mut session = FieldMenuSession::new();
         session.set_gate(FieldMenuGate {
             entry_context_kind: kind,
-            save_allowed: world.scene_save_allowed,
+            save_allowed: world.party.scene_save_allowed,
         });
         session.open_entry_screen();
         assert!(

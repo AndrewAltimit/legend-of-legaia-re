@@ -78,7 +78,10 @@ fn town0e_morph_tree_spawns_from_a_placed_actors_prologue_or_skip() {
     );
 
     let mut world = World {
-        frame_step: 2,
+        clock: legaia_engine_core::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     world.install_field_stagers(&stager_bytes);
@@ -86,7 +89,7 @@ fn town0e_morph_tree_spawns_from_a_placed_actors_prologue_or_skip() {
     for arg in scene_entry_ambient_installs(&man_file, &man_bytes) {
         world.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
     }
-    assert_eq!(world.ambient_fx.len(), 7, "town0e's record-1 fan-out");
+    assert_eq!(world.ambient.fx.len(), 7, "town0e's record-1 fan-out");
 
     // The morph carriers. Two mesh records arm an envelope: one binds
     // env-pack slot 113 (`model_sel 118 - 5`) with op-`0x0A` lanes 10 / 11,

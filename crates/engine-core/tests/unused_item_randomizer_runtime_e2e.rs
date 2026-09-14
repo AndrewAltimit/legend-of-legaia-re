@@ -50,7 +50,10 @@ fn drops_for_monster(archive: &[u8], monster_id: u16) -> Vec<u8> {
     let catalog = catalog_from_monster_archive(archive, &[monster_id]);
     let formation = FormationDef::new(0, vec![FormationSlot::new(monster_id)]);
     let mut world = World {
-        party_count: 1,
+        party: legaia_engine_core::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.actors[0].battle.hp = 100;
@@ -58,7 +61,7 @@ fn drops_for_monster(archive: &[u8], monster_id: u16) -> Vec<u8> {
     let rewards = world.apply_battle_loot(&formation, &catalog);
     for &item in &rewards.drops {
         assert!(
-            world.inventory.get(&item).copied().unwrap_or(0) >= 1,
+            world.party.inventory.get(&item).copied().unwrap_or(0) >= 1,
             "dropped item 0x{item:02x} must be in the bag"
         );
     }

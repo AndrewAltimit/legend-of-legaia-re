@@ -47,7 +47,7 @@ pub const CONFIG_LEN: usize = 0x18;
 
 /// In-game seconds between offer reseeds (two hours). Matches the retail
 /// play-time counter at `0x80084570` (mirrored by the engine as
-/// `World::play_time_seconds`); the time bucket is `play_time / this`.
+/// `World::clock.play_time_seconds`); the time bucket is `play_time / this`.
 pub const SECONDS_PER_RESEED: u32 = 2 * 60 * 60;
 
 /// First seru id in the player Seru-magic block (base seru, e.g. `Gimard`).

@@ -186,7 +186,7 @@ pub enum HandlerKernel {
     ColourTween,
     /// [`crate::cutscene_narration::CutsceneNarration`] - driven by the
     /// world's narration channel rather than by the actor loop, because the
-    /// engine spawns the roller as host state (`World::cutscene_narration`)
+    /// engine spawns the roller as host state (`World::cutscene.narration`)
     /// and not as a pool node.
     NarrationRoller,
     /// [`crate::text_balloon::TextBalloon`] - same shape as

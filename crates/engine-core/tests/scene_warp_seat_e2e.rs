@@ -131,11 +131,11 @@ fn named_warp_preserves_story_flags_and_bag() {
     host.enter_field_scene("town01", 0).expect("enter town01");
 
     // Seed persistent state the opening scripts would have written.
-    host.world.story_flags |= 0x40; // scratchpad word bit (the 0x3F flag)
-    host.world.story_flag_bits = vec![1, 2, 3]; // per-bit story bank
+    host.world.flags.story_flags |= 0x40; // scratchpad word bit (the 0x3F flag)
+    host.world.flags.story_flag_bits = vec![1, 2, 3]; // per-bit story bank
     host.world.system_flag_set(0x123); // _DAT_80085758 bank bit
-    host.world.inventory.insert(0x03, 5); // 5x Healing Flask
-    host.world.money = 777;
+    host.world.party.inventory.insert(0x03, 5); // 5x Healing Flask
+    host.world.party.money = 777;
 
     host.world.pending_named_scene_transition = Some(("keikoku".to_string(), 10, 20, 2));
     match host.tick().expect("transition tick") {
@@ -144,12 +144,12 @@ fn named_warp_preserves_story_flags_and_bag() {
     }
 
     assert_eq!(
-        host.world.story_flags & 0x40,
+        host.world.flags.story_flags & 0x40,
         0x40,
         "scratchpad story-flag word must survive the door warp"
     );
     assert_eq!(
-        host.world.story_flag_bits,
+        host.world.flags.story_flag_bits,
         vec![1, 2, 3],
         "story flag bank must survive the door warp"
     );
@@ -158,9 +158,12 @@ fn named_warp_preserves_story_flags_and_bag() {
         "system flag bank bit must survive the door warp"
     );
     assert_eq!(
-        host.world.inventory.get(&0x03).copied(),
+        host.world.party.inventory.get(&0x03).copied(),
         Some(5),
         "bag must survive the door warp"
     );
-    assert_eq!(host.world.money, 777, "purse must survive the door warp");
+    assert_eq!(
+        host.world.party.money, 777,
+        "purse must survive the door warp"
+    );
 }

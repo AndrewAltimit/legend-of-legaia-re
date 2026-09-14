@@ -192,7 +192,7 @@ impl World {
     /// mutation has already happened, so they are never re-applied. Returns
     /// the FX in the order they were resolved this frame.
     pub fn drain_battle_hit_fx(&mut self) -> Vec<BattleHitFx> {
-        std::mem::take(&mut self.battle_hit_fx)
+        std::mem::take(&mut self.battle.hit_fx)
     }
 
     /// Drain the battle sound cues queued this frame (the art-strike `HitCue`
@@ -200,23 +200,23 @@ impl World {
     /// its `SfxBank::play_one_shot` at the cue's `timing_frames` delay; nothing
     /// here mutates gameplay state. Returns them in resolve order.
     /// Take this tick's CD-XA clip requests (see
-    /// [`World::battle_xa_cues`]). A host with a staged
+    /// [`crate::world::AudioState::battle_xa_cues`]). A host with a staged
     /// `legaia_engine_audio::XaClipBank` plays each one; the request is a
     /// `(clip_slot, channel, duration_sectors)` triple in the retail
     /// starter's own terms.
     pub fn drain_battle_xa_cues(&mut self) -> Vec<crate::sfx_cue::XaVoiceClip> {
-        std::mem::take(&mut self.battle_xa_cues)
+        std::mem::take(&mut self.audio.battle_xa_cues)
     }
 
     /// Drain the hit events the attack band resolved
     /// ([`crate::battle_events::BattleHitEvent`]; one per damage-kernel
     /// resolution). Cosmetic: the accumulate / apply has already happened.
     pub fn drain_battle_hit_events(&mut self) -> Vec<crate::battle_events::BattleHitEvent> {
-        std::mem::take(&mut self.battle_hit_events)
+        std::mem::take(&mut self.battle.hit_events)
     }
 
     pub fn drain_battle_sfx_cues(&mut self) -> Vec<BattleSfxCue> {
-        std::mem::take(&mut self.battle_sfx_cues)
+        std::mem::take(&mut self.audio.battle_sfx_cues)
     }
 
     /// Drain the battle **effect-script spawn requests** queued this frame -
@@ -231,7 +231,7 @@ impl World {
     /// state beyond the SFX queue below. Returns them in walk order.
     ///
     /// Draining also queues each table-form spawn's **per-effect CLUT stage**
-    /// onto [`World::battle_clut_stages`], mirroring retail's table arm: only
+    /// onto [`crate::world::BattleState::clut_stages`], mirroring retail's table arm: only
     /// a plain code below
     /// [`crate::action_effect_script::TABLE_CLUT_GATE`] consults the
     /// `0x801F6418` map, and only a non-zero byte performs the copy. The map
@@ -240,7 +240,7 @@ impl World {
     /// disc-free battle degrades to unstaged palettes exactly as it degrades
     /// to no spawns.
     ///
-    /// That byte was pushed into [`World::battle_sfx_cues`] as a sound cue id
+    /// That byte was pushed into [`crate::world::AudioState::battle_sfx_cues`] as a sound cue id
     /// while `0x801F6418` was read as an SFX map and `FUN_80058490` as the
     /// sound-driver command lane. Both readings are false - the byte is a
     /// VRAM x and the call is `MoveImage` - so the SFX scheduler was being
@@ -250,16 +250,22 @@ impl World {
     /// PORT: FUN_801DEA50 (`0x801df0d4..0x801df134`, the CLUT-stage arm)
     /// REF: FUN_80058490 (`MoveImage` - the blit the `RECT` reaches)
     pub fn drain_battle_effect_spawns(&mut self) -> Vec<crate::battle_events::BattleEffectSpawn> {
-        if let Some(aux) = self.move_power.as_ref().and_then(|cat| cat.aux_tables()) {
+        if let Some(aux) = self
+            .tables
+            .move_power
+            .as_ref()
+            .and_then(|cat| cat.aux_tables())
+        {
             let stages: Vec<u8> = self
-                .battle_effect_spawns
+                .battle
+                .effect_spawns
                 .iter()
                 .filter(|s| !s.direct && s.effect < crate::action_effect_script::TABLE_CLUT_GATE)
                 .filter_map(|s| aux.effect_clut_x(s.effect).filter(|&b| b != 0))
                 .collect();
-            self.battle_clut_stages.extend(stages);
+            self.battle.clut_stages.extend(stages);
         }
-        std::mem::take(&mut self.battle_effect_spawns)
+        std::mem::take(&mut self.battle.effect_spawns)
     }
 
     /// Drain the battle **effect CLUT stages** queued this frame - one source
@@ -268,7 +274,7 @@ impl World {
     /// [`crate::battle_effect_clut::stage_effect_clut`] against its battle
     /// VRAM and re-uploads; purely cosmetic, like the spawns themselves.
     pub fn drain_battle_clut_stages(&mut self) -> Vec<u8> {
-        std::mem::take(&mut self.battle_clut_stages)
+        std::mem::take(&mut self.battle.clut_stages)
     }
 
     /// Drain the Tactical-Arts shout cues queued this frame (one per executed
@@ -276,7 +282,7 @@ impl World {
     /// resolves each against its arts-voice bank and plays the CD-XA shout
     /// clip; nothing here mutates gameplay state.
     pub fn drain_battle_shout_cues(&mut self) -> Vec<crate::battle_events::BattleShoutCue> {
-        std::mem::take(&mut self.battle_shout_cues)
+        std::mem::take(&mut self.audio.battle_shout_cues)
     }
 
     /// Apply the gameplay-state side of a single battle event - currently
@@ -316,7 +322,7 @@ impl World {
                 // crates/engine-core/src/action_effect_script.rs)
                 for cue in &outcome.cues {
                     if cue.is_sound() {
-                        self.battle_sfx_cues.push(BattleSfxCue {
+                        self.audio.battle_sfx_cues.push(BattleSfxCue {
                             kind: cue.kind,
                             timing_frames: cue.timing_frames,
                             actor_slot: *actor_slot,
@@ -334,13 +340,14 @@ impl World {
                         target.battle.hp = target.battle.hp.saturating_sub(dmg);
                         // Damage clears Sleep / Numb on the target (matches
                         // retail - the unit wakes when hit).
-                        self.status_effects.on_damaged(*target_slot);
+                        self.battle.status_effects.on_damaged(*target_slot);
                     }
                     let applied = if outcome.enemy_effect != legaia_art::record::EnemyEffect::None {
                         target.pending_status = Some(outcome.enemy_effect);
                         // Push the status into the tracker so it
                         // subsequently ticks per-turn.
-                        self.status_effects
+                        self.battle
+                            .status_effects
                             .apply_from_enemy_effect(*target_slot, outcome.enemy_effect)
                     } else {
                         None
@@ -350,7 +357,7 @@ impl World {
                     // the retail `1 << (rand%3 + 3)` bit pick).
                     if applied == Some(legaia_engine_vm::status_effects::StatusKind::Rot) {
                         let limb = (self.next_rng() % 3) as u8;
-                        self.status_effects.set_rot_limb(*target_slot, limb);
+                        self.battle.status_effects.set_rot_limb(*target_slot, limb);
                     }
                     return Some((*target_slot, hp));
                 }
@@ -367,19 +374,19 @@ impl World {
                 // Retail escape teardown (battle SM state 0x66): stage the
                 // 0x40-frame black→white screen fade the SM spawns through
                 // the fade primitive before the battle unloads.
-                self.screen_fade = Some(crate::fade::FadeState::load(
+                self.presentation.fade = Some(crate::fade::FadeState::load(
                     &crate::fade::escape_fade_template(),
                 ));
                 // A petrified member returns to normal when the party
                 // escapes (retail's run band floors every downed party
                 // slot's HP at 1 on a successful escape; the tracker-level
                 // Stone clear is the engine's model of that restore).
-                self.status_effects.cure_stone_on_escape();
+                self.battle.status_effects.cure_stone_on_escape();
                 // The run band's floor writes the VM-side liveness (`+0x14C`);
                 // mirror it onto the world HP so the live loop's hp==0 dead
                 // scan doesn't re-down the member - a downed member leaves
                 // the battle alive at 1 HP.
-                for slot in 0..self.party_count.min(3) as usize {
+                for slot in 0..self.party.party_count.min(3) as usize {
                     let b = &mut self.actors[slot].battle;
                     if b.max_hp > 0 && b.hp == 0 {
                         b.hp = 1;
@@ -412,7 +419,7 @@ impl World {
             if max == 0 {
                 continue;
             }
-            let dmg = self.status_effects.tick_actor(slot, cur, max);
+            let dmg = self.battle.status_effects.tick_actor(slot, cur, max);
             if dmg > 0
                 && let Some(actor) = self.actors.get_mut(slot as usize)
             {

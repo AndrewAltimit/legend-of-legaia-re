@@ -59,7 +59,7 @@ fn boss_world() -> World {
     while w.actors.len() < 2 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 1;
+    w.party.party_count = 1;
     w.enter_battle(1, 1);
     for i in 0..2 {
         w.actors[i].battle.hp = 400;
@@ -67,7 +67,7 @@ fn boss_world() -> World {
         w.actors[i].battle.liveness = 1;
     }
     w.mode = SceneMode::Battle;
-    w.active_formation = Some(FormationDef::new(
+    w.battle.active_formation = Some(FormationDef::new(
         0x0B5,
         vec![FormationSlot::new(BOSS_TRANSITION_MONSTER_ID.into())],
     ));
@@ -95,7 +95,7 @@ fn the_world_resolver_walks_stage_2_then_3_as_the_phase_1_seat_dies() {
 #[test]
 fn an_ordinary_formation_reads_stage_zero_alive_or_dead() {
     let mut w = boss_world();
-    w.active_formation = Some(FormationDef::new(1, vec![FormationSlot::new(0x04)]));
+    w.battle.active_formation = Some(FormationDef::new(1, vec![FormationSlot::new(0x04)]));
     assert_eq!(w.battle_stage_id(), 0);
     w.actors[1].battle.liveness = 0;
     assert_eq!(

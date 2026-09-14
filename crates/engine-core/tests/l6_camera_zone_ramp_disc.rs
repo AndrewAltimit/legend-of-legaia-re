@@ -9,7 +9,7 @@
 //! Everything here is measured on state **after** a `World::tick`, never on a
 //! call: the ramp is stepped from the disc instruction, the player is walked
 //! to the two edges and the middle of the authored zone, and the assertion is
-//! on `World::camera_registers` and on `Camera::globals`.
+//! on `World::camera.registers` and on `Camera::globals`.
 //!
 //! Non-vacuity is by contrast throughout: the same world with the player
 //! *outside* the zone must leave the register alone, and a world with no ramp
@@ -115,7 +115,7 @@ fn world_at(site: &Site) -> World {
         mode: SceneMode::Field,
         ..World::default()
     };
-    world.roster = legaia_save::Party::zeroed(3);
+    world.party.roster = legaia_save::Party::zeroed(3);
     let slot = 0usize;
     world.spawn_actor(slot);
     world.player_actor_slot = Some(slot as u8);
@@ -165,12 +165,12 @@ fn camera_zone_ramp_tracks_the_player_across_its_authored_zone() {
         let mut world = world_at(site);
         world.step_field().expect("step the ramp instruction");
         assert_eq!(
-            world.register_ramps.len(),
+            world.camera.register_ramps.len(),
             1,
             "{}: the ramp instruction installed no ramp",
             site.scene
         );
-        let ramp = world.register_ramps[0];
+        let ramp = world.camera.register_ramps[0];
         // A degenerate Z window would trap in retail; no on-disc ramp is
         // authored that way, and the assertions below need a real span.
         assert!(
@@ -181,25 +181,25 @@ fn camera_zone_ramp_tracks_the_player_across_its_authored_zone() {
         // The register file must still be at the zone-miss defaults - the
         // spawn writes nothing.
         assert_eq!(
-            world.camera_registers.get(ramp.slot),
+            world.camera.registers.get(ramp.slot),
             CameraRegisterFile::DEFAULTS[ramp.slot.index()],
             "{}: the spawn must not write the register",
             site.scene
         );
-        assert!(!world.camera_registers.written());
+        assert!(!world.camera.registers.written());
 
         // --- outside the zone: the handler's AABB gate rejects -----------
         let outside_x = ramp.x_hi.saturating_add(0x400);
         put_player(&mut world, outside_x, ramp.z_lo);
         world.tick();
         assert_eq!(
-            world.camera_registers.get(ramp.slot),
+            world.camera.registers.get(ramp.slot),
             CameraRegisterFile::DEFAULTS[ramp.slot.index()],
             "{}: a player outside the X gate must not move the register",
             site.scene
         );
         assert!(
-            !world.camera_registers.written(),
+            !world.camera.registers.written(),
             "{}: gated tick must not mark the file written",
             site.scene
         );
@@ -209,7 +209,7 @@ fn camera_zone_ramp_tracks_the_player_across_its_authored_zone() {
         put_player(&mut world, ramp.x_lo, ramp.z_lo);
         world.tick();
         assert_eq!(
-            world.camera_registers.get(ramp.slot),
+            world.camera.registers.get(ramp.slot),
             i32::from(start),
             "{}: at the low Z edge the register must read the instruction's \
              start value",
@@ -220,7 +220,7 @@ fn camera_zone_ramp_tracks_the_player_across_its_authored_zone() {
         put_player(&mut world, ramp.x_hi, ramp.z_hi);
         world.tick();
         assert_eq!(
-            world.camera_registers.get(ramp.slot),
+            world.camera.registers.get(ramp.slot),
             i32::from(end),
             "{}: at the high Z edge the register must read the instruction's \
              end value",
@@ -232,7 +232,7 @@ fn camera_zone_ramp_tracks_the_player_across_its_authored_zone() {
             let mid_z = ramp.z_lo + (ramp.z_hi - ramp.z_lo) / 2;
             put_player(&mut world, ramp.x_lo, mid_z);
             world.tick();
-            let v = world.camera_registers.get(ramp.slot);
+            let v = world.camera.registers.get(ramp.slot);
             let (lo, hi) = if start < end {
                 (i32::from(start), i32::from(end))
             } else {
@@ -253,7 +253,7 @@ fn camera_zone_ramp_tracks_the_player_across_its_authored_zone() {
 
         // The ramp never completes - it is still live after every tick.
         assert_eq!(
-            world.register_ramps.len(),
+            world.camera.register_ramps.len(),
             1,
             "{}: a zone ramp must not retire itself",
             site.scene
@@ -316,7 +316,7 @@ fn camera_globals_follow_the_ramped_registers_and_hold_without_one() {
     for site in &sites {
         let mut world = world_at(site);
         world.step_field().expect("step the ramp instruction");
-        let ramp = world.register_ramps[0];
+        let ramp = world.camera.register_ramps[0];
         let axis = ramp.slot.camera_axis();
         let mut cam = Camera::default();
         // Baseline: the camera has not seen a written register yet.
@@ -326,9 +326,9 @@ fn camera_globals_follow_the_ramped_registers_and_hold_without_one() {
         world.tick();
         cam.tick(&world);
         let want = if axis == 5 {
-            world.camera_registers.get(ramp.slot).abs()
+            world.camera.registers.get(ramp.slot).abs()
         } else {
-            world.camera_registers.get(ramp.slot)
+            world.camera.registers.get(ramp.slot)
         };
         assert_eq!(
             cam.globals.0[axis], want,
@@ -356,7 +356,7 @@ fn camera_globals_follow_the_ramped_registers_and_hold_without_one() {
         .filter(|site| {
             let mut world = world_at(site);
             world.step_field().expect("step");
-            let ramp = world.register_ramps[0];
+            let ramp = world.camera.register_ramps[0];
             put_player(&mut world, ramp.x_lo, ramp.z_lo);
             world.tick();
             let mut cam = Camera::default();

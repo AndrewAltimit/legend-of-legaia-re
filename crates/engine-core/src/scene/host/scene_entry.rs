@@ -53,9 +53,9 @@ impl SceneHost {
             let r = b.record(anim.checked_sub(1)? as usize).ok()?;
             Some((r.frame_count, (r.a >> 8) & 1 != 0, (r.flag & 0xFF) as u8))
         };
-        self.world.field_prop_bank =
+        self.world.props.bank =
             crate::field_env::PropAnimBank::build(&placements, &binds, man_file, man_bytes, clip);
-        self.world.field_prop_colliders = placements
+        self.world.props.colliders = placements
             .iter()
             .map(|p| {
                 let anchor = (p.anchor_col, p.anchor_row);
@@ -131,7 +131,7 @@ impl SceneHost {
     /// Install the battle-action move-power table onto the world from PROT
     /// entry 0898 (the battle-action overlay), once per host. The monster
     /// special-attack damage path reads it to roll faithful per-move damage;
-    /// a read/parse failure leaves [`crate::world::World::move_power`] `None`
+    /// a read/parse failure leaves [`crate::world::DiscTables::move_power`] `None`
     /// (the placeholder damage path stays active) and is not retried.
     fn ensure_move_power_table(&mut self) {
         if self.move_power_loaded {
@@ -142,10 +142,11 @@ impl SceneHost {
         match self.index.entry_bytes(entry) {
             Ok(bytes) => {
                 if let Some(cat) = crate::move_power::MovePowerCatalog::from_overlay_0898(&bytes) {
-                    self.world.move_power = Some(cat);
+                    self.world.tables.move_power = Some(cat);
                     // Retain the overlay so the move-FX render path can read the
                     // 0x801f6324 prototype records' move-VM bytecode.
-                    self.world.move_power_overlay = Some(std::sync::Arc::from(bytes.as_slice()));
+                    self.world.tables.move_power_overlay =
+                        Some(std::sync::Arc::from(bytes.as_slice()));
                 } else {
                     eprintln!(
                         "[scene] move-power table (PROT {entry}) parse failed - placeholder damage stays active"
@@ -155,7 +156,7 @@ impl SceneHost {
                 // sibling static data in the same overlay, so parse them from the
                 // same bytes. A failure leaves the neutral 100% multiplier active.
                 if let Some(aff) = legaia_asset::element_affinity::parse(&bytes) {
-                    self.world.element_affinity = Some(aff);
+                    self.world.tables.element_affinity = Some(aff);
                 } else {
                     eprintln!(
                         "[scene] element-affinity tables (PROT {entry}) parse failed - neutral affinity stays active"
@@ -165,7 +166,7 @@ impl SceneHost {
                 // is sibling static data in the same overlay. A failure leaves
                 // the camera on its single traced fallback height.
                 if let Some(heights) = legaia_asset::battle_camera_table::parse(&bytes) {
-                    self.world.battle_camera_heights = Some(heights);
+                    self.world.tables.battle_camera_heights = Some(heights);
                 } else {
                     eprintln!(
                         "[scene] battle-camera height table (PROT {entry}) parse failed - fallback height stays active"
@@ -216,7 +217,7 @@ impl SceneHost {
             .install_cast_effect_pool(std::sync::Arc::new(pool));
     }
 
-    /// Refresh [`crate::world::World::battle_swing_costs`] from the player
+    /// Refresh [`crate::world::BattleState::swing_costs`] from the player
     /// battle files: for each roster character (Vahn / Noa / Gala = PROT
     /// 863 / 864 / 865), splice that character's *equipped* sections and
     /// read each swing record's `+0x74` AP cost
@@ -241,7 +242,7 @@ impl SceneHost {
         /// PROT entries of the three weapon-carrying player battle files.
         const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];
         for (slot, &prot) in PLAYER_FILE_PROT.iter().enumerate() {
-            let Some(record) = self.world.roster.members.get(slot) else {
+            let Some(record) = self.world.party.roster.members.get(slot) else {
                 continue;
             };
             // The assembler keys sections off the first five equipment
@@ -261,7 +262,7 @@ impl SceneHost {
             };
             for (i, c) in costs.iter().enumerate() {
                 if let Some(c) = c {
-                    self.world.battle_swing_costs[slot][i] = *c as u16;
+                    self.world.battle.swing_costs[slot][i] = *c as u16;
                 }
             }
         }
@@ -283,28 +284,28 @@ impl SceneHost {
         // door walked through in free roam runs the next scene's entry
         // script, whose authored pause has the same no-choreography problem
         // as the picked scene's).
-        if self.world.free_roam_staging {
-            self.world.free_roam_entry_frame = self.world.field_frames;
+        if self.world.field_vm.free_roam_staging {
+            self.world.field_vm.free_roam_entry_frame = self.world.clock.display_frames;
         }
         // Drop any cutscene timeline from a previous scene; only `opdeene`
         // re-installs one below, so it must not leak into the scene we hand off
         // to (Rim Elm). The per-actor channels are timeline-scoped and drop
         // with it.
-        self.world.cutscene_timeline = None;
+        self.world.cutscene.timeline = None;
         // Concurrent spawned-record contexts (and any not-yet-drained op-0x44
         // requests) are scene-scoped like the timeline: their bytecode slices
         // came from the previous scene's MAN.
-        self.world.helper_contexts.clear();
-        self.world.pending_record_spawns.clear();
-        self.world.cutscene_card = None;
+        self.world.field_vm.helper_contexts.clear();
+        self.world.field_vm.pending_record_spawns.clear();
+        self.world.cutscene.card = None;
         // Drop the previous scene's caption image (only `opdeene` re-decodes one
         // below); reset its fade + hold so a re-entry starts hidden.
-        self.world.cutscene_caption = None;
-        self.world.cutscene_caption_alpha = 0.0;
-        self.world.cutscene_caption_shown_frames = 0;
-        self.world.field_channels.clear();
-        self.world.field_channels_man = None;
-        self.world.field_npc_anim_cues.clear();
+        self.world.cutscene.caption = None;
+        self.world.cutscene.caption_alpha = 0.0;
+        self.world.cutscene.caption_shown_frames = 0;
+        self.world.field_vm.channels.clear();
+        self.world.field_vm.channels_man = None;
+        self.world.npcs.anim_cues.clear();
         // An in-flight ledge hop is scene-scoped, and its steering lock is
         // one-way: `start_field_ledge_hop` ORs `0x0008_0000` into the player's
         // `move_state.flags` (retail `0x801D25A8..0x801D25B8` on the player
@@ -316,7 +317,7 @@ impl SceneHost {
         // of the session. Retail cannot reach the state (the hop always
         // finishes before a transition); the port can, so scene entry drops
         // the hop and its lock together.
-        self.world.field_ledge_hop = None;
+        self.world.locomotion.ledge_hop = None;
         if let Some(slot) = self.world.player_actor_slot
             && let Some(actor) = self.world.actors.get_mut(slot as usize)
         {
@@ -326,42 +327,42 @@ impl SceneHost {
         // cutscene shots start clean (the params now MERGE per-slot across beats
         // in `camera_configure`, so a stale set would leak the prior scene's
         // focus / depth into a beat that omits those slots).
-        self.world.camera_state.params.clear();
+        self.world.camera.state.params.clear();
         // The op-0x34 effect-global tint is scene-scoped (the opening
         // timeline's between-beat black fades); drop any in flight. The
-        // op-0x4C-0x12 global screen tint (`World::screen_tint`) deliberately
+        // op-0x4C-0x12 global screen tint (`World::presentation.tint`) deliberately
         // PERSISTS - retail's cross-scene fade continuity: a departure
         // fade-to-black carries into the next scene, whose `P1[0]` arrival
         // arm fades back in.
-        self.world.effect_tint = None;
+        self.world.presentation.effect_tint = None;
         // Scripted CLUT-cell effects are scene-scoped (their cell operands
         // came from the previous scene's MAN); drop any in flight and re-pin
         // the frame-step factor `dt` (retail `DAT_1F800393`, the adaptive
         // vsyncs-per-game-tick factor the frame-flip path `FUN_80016B6C`
         // writes): live poll baselines run field/town scenes at 2 (30 fps)
         // and the overworld kingdom scenes (`mapNN`) at 3 (20 fps). See
-        // `World::frame_step`.
-        self.world.clut_fx.clear();
-        self.world.clut_vsync_accum = 0;
-        self.world.clut_pending_game_ticks = 0;
+        // `World::clock.frame_step`.
+        self.world.ambient.clut_fx.clear();
+        self.world.ambient.clut_vsync_accum = 0;
+        self.world.ambient.clut_pending_game_ticks = 0;
         // Ambient move-VM effect parts (jou's flesh cyclers / lightning) are
         // per-scene; the auto-spawn below re-seeds the new scene's tree.
-        self.world.ambient_fx.clear();
-        self.world.ambient_vsync_accum = 0;
-        self.world.ambient_pending_game_ticks = 0;
-        self.world.ambient_cell_captures.clear();
-        self.world.ambient_flash_applied.clear();
+        self.world.ambient.fx.clear();
+        self.world.ambient.vsync_accum = 0;
+        self.world.ambient.pending_game_ticks = 0;
+        self.world.ambient.cell_captures.clear();
+        self.world.ambient.flash_applied.clear();
         // Same scene-scoping for the sibling `4C 60` MoveImage stamps: any
         // still-queued rect operands belong to the previous scene's MAN.
-        self.world.script_vram_moves.clear();
+        self.world.ambient.script_vram_moves.clear();
         // Retail installs this as the per-mode floor `DAT_8007B9D8`; the
         // adaptive resolver (`World::resolve_frame_step`) can only raise it.
-        self.world.frame_step_floor = if crate::scene::is_world_map_scene(name) {
+        self.world.clock.frame_step_floor = if crate::scene::is_world_map_scene(name) {
             3
         } else {
             2
         };
-        self.world.frame_step = self.world.frame_step_floor;
+        self.world.clock.frame_step = self.world.clock.frame_step_floor;
         let (record_bytes, stager_entry_bytes): (Vec<u8>, Vec<u8>) = {
             let scene = self
                 .scene
@@ -489,8 +490,8 @@ impl SceneHost {
                 );
             }
             None => {
-                self.world.field_object_cells.clear();
-                self.world.field_elevation_overrides.clear();
+                self.world.terrain.object_cells.clear();
+                self.world.terrain.elevation_overrides.clear();
             }
         }
         // Resolve the provisional cold spawn against the just-loaded collision
@@ -525,7 +526,7 @@ impl SceneHost {
         // Remembered for the helper-context teardown rescue: a spawned
         // record that ends with the player inside a wall re-seats them here
         // (see `World::step_helper_contexts`).
-        self.world.resolved_cold_spawn = Some(resolved);
+        self.world.props.resolved_cold_spawn = Some(resolved);
         if resolved
             != (
                 crate::world::FIELD_COLD_SPAWN_XZ,
@@ -576,9 +577,9 @@ impl SceneHost {
         // prop's collision class and its touch script). Cleared here so a
         // stale scene's props never leak across a transition into a scene
         // whose MAN fails to parse.
-        self.world.field_prop_colliders = Vec::new();
-        self.world.field_prop_bank = Default::default();
-        self.world.pending_prop_touch = None;
+        self.world.props.colliders = Vec::new();
+        self.world.props.bank = Default::default();
+        self.world.props.pending_touch = None;
         // The 16-entry floor-height LUT the collision grid's low nibble
         // indexes - resident so the floor-height sampler
         // (`World::sample_field_floor_height`, port of `FUN_80019278`) can
@@ -596,7 +597,7 @@ impl SceneHost {
             .map(|s| s.field_floor_height_lut(&self.index))
         {
             Some(Ok(Some(lut))) => {
-                self.world.field_floor_height_lut = lut.map(|v| v.wrapping_neg());
+                self.world.terrain.floor_height_lut = lut.map(|v| v.wrapping_neg());
             }
             Some(Err(err)) => eprintln!("[scene] field floor-height LUT load skipped: {err:#}"),
             _ => {}
@@ -669,7 +670,7 @@ impl SceneHost {
             {
                 let cat = crate::monster_catalog::catalog_from_monster_archive(&archive, &ids);
                 for def in cat.by_id.into_values() {
-                    self.world.monster_catalog.insert(def);
+                    self.world.tables.monster_catalog.insert(def);
                 }
                 // Pair the per-move power table with the just-merged monster
                 // stats so the special-attack damage path can resolve real
@@ -1059,15 +1060,15 @@ impl SceneHost {
             // the `opstati` / `opurud` legs the timelines chain into), a
             // confirm press with the hand-off bit armed skips the whole
             // remaining opening to `town01` (retail `FUN_801D1344`).
-            self.world.opening_chain_active = true;
+            self.world.cutscene.opening_chain_active = true;
             // Decode the "It was the Seru." caption image from the scene's
             // geometry pack (PROT 0749). It is a baked TIM, not text - the host
             // blits it, faded, in the gap between the two narration crawls (see
             // `crate::cutscene_caption`). `None` when the disc / entry is absent.
             if let Some(scene) = self.scene.as_ref() {
-                self.world.cutscene_caption =
+                self.world.cutscene.caption =
                     crate::cutscene_caption::decode_opdeene_caption(scene);
-                if self.world.cutscene_caption.is_some() {
+                if self.world.cutscene.caption.is_some() {
                     log::info!("prologue: decoded 'It was the Seru.' caption image (PROT 0749)");
                 }
             }
@@ -1110,7 +1111,7 @@ impl SceneHost {
                         // presenter when its PC reaches the block's op and
                         // suspends the timeline until the crawl completes
                         // (retail `FUN_80037174`). Nothing to install here.
-                        if let Some(tl) = self.world.cutscene_timeline.as_ref() {
+                        if let Some(tl) = self.world.cutscene.timeline.as_ref() {
                             log::info!(
                                 "prologue: '{}' timeline carries {} narration block(s)",
                                 legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
@@ -1131,14 +1132,15 @@ impl SceneHost {
         // (rather than the host opening it blindly at the hand-off). One-shot:
         // consume the flag so re-entering `town01` later never re-runs it.
         if name == legaia_asset::new_game::OPENING_SCENE
-            && (self.world.entering_town01_opening || self.world.opening_chain_active)
+            && (self.world.cutscene.entering_town01_opening
+                || self.world.cutscene.opening_chain_active)
         {
-            self.world.entering_town01_opening = false;
+            self.world.cutscene.entering_town01_opening = false;
             // Arriving at Rim Elm ends the opening cutscene chain, whether via
             // the skip packet or the natural scene-change chain.
-            self.world.opening_chain_active = false;
-            self.world.cutscene_narration = None;
-            self.world.cutscene_card = None;
+            self.world.cutscene.opening_chain_active = false;
+            self.world.cutscene.narration = None;
+            self.world.cutscene.card = None;
             match self
                 .scene
                 .as_ref()
@@ -1191,8 +1193,8 @@ impl SceneHost {
     }
 
     /// Decode the active scene's gold shops from its MAN(s) and park them on
-    /// [`crate::world::World::scene_shops`], priced from
-    /// [`crate::world::World::item_shop_data`]. Scans every entry in the scene's
+    /// [`crate::world::ShopState::scene_shops`], priced from
+    /// [`crate::world::ShopState::item_shop_data`]. Scans every entry in the scene's
     /// CDNAME block (most carry one bundle MAN); cheap for non-bundle entries -
     /// the locator returns early without decompressing when an entry isn't a
     /// scene bundle with a MAN. No-op shop list when the disc / item data is
@@ -1201,11 +1203,11 @@ impl SceneHost {
         let entry_idxs: Vec<u32> = match self.scene.as_ref() {
             Some(s) => s.entries.iter().map(|e| e.idx).collect(),
             None => {
-                self.world.scene_shops.clear();
+                self.world.shops.scene_shops.clear();
                 return;
             }
         };
-        let item_data = self.world.item_shop_data.clone();
+        let item_data = self.world.shops.item_shop_data.clone();
         let mut shops = Vec::new();
         for idx in entry_idxs {
             let bytes = match self.index.entry_bytes_extended(idx) {
@@ -1218,7 +1220,7 @@ impl SceneHost {
                 item_data.as_ref(),
             ));
         }
-        self.world.scene_shops = shops;
+        self.world.shops.scene_shops = shops;
     }
 
     /// Enter `name` as the **overworld** (world-map) scene.
@@ -1413,7 +1415,7 @@ impl SceneHost {
     /// instead and never reach this path.
     // REF: FUN_801D1EC4, FUN_801D5630, FUN_8003BDE0
     fn spawn_arrival_trigger_record(&mut self, tile_x: u8, tile_z: u8) {
-        if !self.world.opening_chain_active || self.world.cutscene_timeline_active() {
+        if !self.world.cutscene.opening_chain_active || self.world.cutscene_timeline_active() {
             return;
         }
         let Some(scene) = self.scene.as_ref() else {
@@ -1468,7 +1470,7 @@ impl SceneHost {
     /// Skipped while a modal cutscene timeline owns the frame (a walk-on beat
     /// record is cutscene-class: it seizes the camera and locks locomotion,
     /// one at a time) and while any dialog or name entry is up. Concurrent
-    /// helper contexts ([`crate::world::World::helper_contexts`]) do NOT
+    /// helper contexts ([`crate::world::FieldVmState::helper_contexts`]) do NOT
     /// block the dispatch.
     ///
     /// Runs in both plain field mode **and** the overworld (world-map) mode.
@@ -1526,7 +1528,7 @@ impl SceneHost {
         if self.world.cutscene_timeline_active()
             || self.world.name_entry_active()
             || self.world.dialogue_owns_input()
-            || self.world.tile_board.is_some()
+            || self.world.board.grid.is_some()
             || self.world.active_fmv().is_some()
         {
             return;
@@ -1716,7 +1718,7 @@ impl SceneHost {
         // camera + locomotion lock + the chain's beat sequencing); an
         // ordinary scene's mid-play helper spawn installs as a concurrent
         // helper context that executes without seizing either.
-        let pending_spawns = std::mem::take(&mut self.world.pending_record_spawns);
+        let pending_spawns = std::mem::take(&mut self.world.field_vm.pending_record_spawns);
         if !pending_spawns.is_empty()
             && let Some(Ok(Some(man_bytes))) = self
                 .scene
@@ -1725,7 +1727,7 @@ impl SceneHost {
             && let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes)
         {
             for global_index in pending_spawns {
-                if self.world.opening_chain_active {
+                if self.world.cutscene.opening_chain_active {
                     // Opening-chain sequencing: one modal beat at a time. A
                     // request issued while a beat still plays is dropped -
                     // the retail opening never issues one - preserving the
@@ -1816,7 +1818,7 @@ impl SceneHost {
                 entry_z,
                 dir,
                 ..
-            }) = self.world.world_map_entity_configs.get(slot as usize)
+            }) = self.world.world_map.entity_configs.get(slot as usize)
             {
                 let name = scene_name.clone();
                 let (entry_x, entry_z, dir) = (*entry_x, *entry_z, *dir);

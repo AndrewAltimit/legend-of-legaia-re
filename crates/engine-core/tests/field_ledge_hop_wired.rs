@@ -22,7 +22,7 @@
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::world::{SceneMode, World};
 
-/// Collision-grid geometry (`World::field_collision_grid` is a `0x80 x 0x80`
+/// Collision-grid geometry (`World::terrain.collision_grid` is a `0x80 x 0x80`
 /// byte grid; the crate-private constants are mirrored here because this is an
 /// integration test).
 const GRID_STRIDE: usize = 0x80;
@@ -46,12 +46,12 @@ fn ledge_world(height: i16) -> World {
     world.install_field_player(0);
     world.actors[0].move_state.world_x = 320;
     world.actors[0].move_state.world_z = 320;
-    world.field_collision_grid = vec![0u8; GRID_LEN];
-    world.field_vertical_settle = true;
-    world.field_floor_height_lut = [0i16; 16];
-    world.field_floor_height_lut[1] = height;
+    world.terrain.collision_grid = vec![0u8; GRID_LEN];
+    world.locomotion.vertical_settle = true;
+    world.terrain.floor_height_lut = [0i16; 16];
+    world.terrain.floor_height_lut[1] = height;
     for (tx, tz) in [(2usize, 2usize), (3, 2), (2, 3), (3, 3)] {
-        world.field_collision_grid[tz * GRID_STRIDE + tx] = 0x01;
+        world.terrain.collision_grid[tz * GRID_STRIDE + tx] = 0x01;
     }
     world
 }
@@ -72,7 +72,8 @@ fn a_posted_hop_carries_the_player_to_the_landing_point() {
     // Non-vacuous, as the superseded gap test was: the hop really is detected,
     // and its landing point is a real position 96 units ahead.
     let hop = world
-        .field_ledge_hop
+        .locomotion
+        .ledge_hop
         .expect("the vertical controller starts the hop");
     assert!(hop.is_up(), "a raised tile is retail hop class 0x18");
     let (start_x, start_y, start_z) = {
@@ -99,7 +100,7 @@ fn a_posted_hop_carries_the_player_to_the_landing_point() {
     let mut released_at = None;
     for frame in 1..64 {
         let _ = world.tick();
-        let Some(h) = world.field_ledge_hop else {
+        let Some(h) = world.locomotion.ledge_hop else {
             break;
         };
         match h.sfx {
@@ -155,7 +156,7 @@ fn a_posted_hop_carries_the_player_to_the_landing_point() {
     // the player again.
     let _ = world.tick();
     assert!(
-        world.field_ledge_hop.is_none(),
+        world.locomotion.ledge_hop.is_none(),
         "a finished session is reaped on the next tick"
     );
     assert!(!locked(&world), "and the player is free to walk");
@@ -167,7 +168,7 @@ fn the_drop_class_lands_on_its_target_too() {
     let mut world = ledge_world(200);
     world.set_pad(PadButton::Up.mask());
     let _ = world.tick();
-    let hop = world.field_ledge_hop.expect("a drop is a ledge too");
+    let hop = world.locomotion.ledge_hop.expect("a drop is a ledge too");
     assert!(!hop.is_up(), "a floor below is retail hop class 0x10");
     assert_eq!(hop.kind, 0x10);
 
@@ -189,12 +190,13 @@ fn the_hop_record_outlives_the_frame_that_started_it() {
     let mut world = ledge_world(-200);
     world.set_pad(PadButton::Up.mask());
     let _ = world.tick();
-    let first = world.field_ledge_hop.expect("started while walking");
+    let first = world.locomotion.ledge_hop.expect("started while walking");
 
     world.set_pad(0);
     let _ = world.tick();
     let second = world
-        .field_ledge_hop
+        .locomotion
+        .ledge_hop
         .expect("the record survives a frame - it is stepped, not cleared");
     assert_eq!(
         (second.target_x, second.target_y, second.target_z),

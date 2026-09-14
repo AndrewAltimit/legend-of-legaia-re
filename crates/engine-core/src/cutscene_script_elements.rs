@@ -709,7 +709,7 @@ impl LeaderSwap {
     /// retail's three resident party actors -
     /// [`LeaderSwapEffect::StoreOutgoingPose`] /
     /// [`LeaderSwapEffect::ClearIncomingPose`] read and write
-    /// `World::field_npc_positions`, and the session's saved-pose table is
+    /// `World::npcs.positions`, and the session's saved-pose table is
     /// the `0x800845E4` mirror.
     pub fn step(
         &mut self,

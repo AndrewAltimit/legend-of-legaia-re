@@ -19,8 +19,8 @@ impl World {
     /// Set / clear the move-VM bytecode for `slot`. `None` clears the
     /// buffer; subsequent ticks won't run the move VM on this actor.
     pub fn set_move_bytecode(&mut self, slot: usize, bytecode: Option<Vec<u16>>) {
-        if slot < self.move_bytecode.len() {
-            self.move_bytecode[slot] = bytecode.unwrap_or_default();
+        if slot < self.move_vm.bytecode.len() {
+            self.move_vm.bytecode[slot] = bytecode.unwrap_or_default();
         }
     }
 
@@ -29,10 +29,10 @@ impl World {
     /// SCUS helper at `FUN_8003CE08`). The bank grows lazily as needed.
     pub fn system_flag_set(&mut self, idx: u16) {
         let byte = (idx >> 3) as usize;
-        if byte >= self.system_flags.len() {
-            self.system_flags.resize(byte + 1, 0);
+        if byte >= self.flags.system_flags.len() {
+            self.flags.system_flags.resize(byte + 1, 0);
         }
-        self.system_flags[byte] |= 0x80u8 >> (idx & 7);
+        self.flags.system_flags[byte] |= 0x80u8 >> (idx & 7);
     }
 
     /// Clear bit `idx` in the shared system flag bank. See [`system_flag_set`].
@@ -41,8 +41,8 @@ impl World {
     /// [`system_flag_set`]: World::system_flag_set
     pub fn system_flag_clear(&mut self, idx: u16) {
         let byte = (idx >> 3) as usize;
-        if byte < self.system_flags.len() {
-            self.system_flags[byte] &= !(0x80u8 >> (idx & 7));
+        if byte < self.flags.system_flags.len() {
+            self.flags.system_flags[byte] &= !(0x80u8 >> (idx & 7));
         }
     }
 
@@ -50,8 +50,8 @@ impl World {
     /// indices past the currently-grown size.
     pub fn system_flag_test(&self, idx: u16) -> bool {
         let byte = (idx >> 3) as usize;
-        if byte < self.system_flags.len() {
-            self.system_flags[byte] & (0x80u8 >> (idx & 7)) != 0
+        if byte < self.flags.system_flags.len() {
+            self.flags.system_flags[byte] & (0x80u8 >> (idx & 7)) != 0
         } else {
             false
         }
@@ -183,7 +183,7 @@ impl World {
     /// `FUN_801D6628`). `bytecode` is disc bytes resolved by
     /// [`World::install_menu_overlay_tables`].
     pub fn run_menu_widget_bytes(&mut self, bytecode: &[u8]) -> Result<usize, vm::VmError> {
-        vm::run(&mut self.menu_widgets, bytecode)
+        vm::run(&mut self.menu.widgets, bytecode)
     }
 
     /// Retail `FUN_801DAFD4`'s shop-picker open: interpret the resolved
@@ -191,7 +191,8 @@ impl World {
     /// (and leaves the list untouched) when no overlay scripts installed.
     pub fn run_shop_widget_open(&mut self) -> bool {
         let Some(bytes) = self
-            .menu_widget_scripts
+            .menu
+            .widget_scripts
             .as_ref()
             .map(|s| s.shop_open.clone())
         else {
@@ -205,7 +206,8 @@ impl World {
     /// while the gold + vendor plates stay.
     pub fn run_shop_widget_sell_away(&mut self) -> bool {
         let Some(bytes) = self
-            .menu_widget_scripts
+            .menu
+            .widget_scripts
             .as_ref()
             .map(|s| s.shop_sell_away.clone())
         else {
@@ -241,7 +243,7 @@ impl World {
         let result = vm::move_vm::step(&mut host, actor_state, bytecode);
         let writes = std::mem::take(&mut host.deferred_writes);
         if !writes.is_empty()
-            && let Some(buf) = self.move_bytecode.get_mut(slot)
+            && let Some(buf) = self.move_vm.bytecode.get_mut(slot)
         {
             for (off, value) in writes {
                 if off >= buf.len() {
@@ -423,13 +425,13 @@ impl World {
     ///
     /// Returns an empty vector unless the disc-placement seeding
     /// ([`Self::install_world_map_entities_at`]) populated
-    /// [`Self::world_map_entity_positions`] - the config-only installers
+    /// [`crate::world::WorldMapState::entity_positions`] - the config-only installers
     /// (which leave positions empty) produce no markers, so a camera-only or
     /// synthetic world map degrades cleanly. The marker `y` is the player
     /// actor's current plane (the placements are 2D), so markers sit on the
     /// player's walking plane rather than at an arbitrary `y = 0`.
     pub fn world_map_entity_markers(&self) -> Vec<WorldMapEntityMarker> {
-        if self.world_map_entity_positions.is_empty() {
+        if self.world_map.entity_positions.is_empty() {
             return Vec::new();
         }
         let base_y = self
@@ -437,11 +439,12 @@ impl World {
             .and_then(|s| self.actors.get(s as usize))
             .map(|a| a.move_state.world_y as f32)
             .unwrap_or(0.0);
-        self.world_map_entity_positions
+        self.world_map
+            .entity_positions
             .iter()
             .enumerate()
             .map(|(i, &(x, z))| {
-                let kind = match self.world_map_entity_configs.get(i) {
+                let kind = match self.world_map.entity_configs.get(i) {
                     Some(WorldMapEntityConfig::EncounterZone { .. }) => {
                         WorldMapEntityKind::EncounterZone
                     }
@@ -529,7 +532,7 @@ impl World {
         model_base: usize,
         origin: [i16; 3],
     ) {
-        self.active_summon = Some(crate::summon::SummonScene::spawn(
+        self.casting.active_summon = Some(crate::summon::SummonScene::spawn(
             overlay,
             record_bytes,
             model_base,
@@ -541,7 +544,7 @@ impl World {
     /// summon is playing; drains the scene once every part has finished.
     /// `frame_delta` is the per-part wait-timer drain (anim-speed × frame-rate).
     pub fn tick_summon(&mut self, frame_delta: u16) {
-        let Some(mut scene) = self.active_summon.take() else {
+        let Some(mut scene) = self.casting.active_summon.take() else {
             return;
         };
         {
@@ -559,7 +562,7 @@ impl World {
             scene.tick(&mut host, frame_delta);
         }
         if !scene.finished() {
-            self.active_summon = Some(scene);
+            self.casting.active_summon = Some(scene);
         }
     }
 
@@ -568,7 +571,8 @@ impl World {
     /// [`Self::global_tmd_pool`]. See [`crate::summon::SummonScene::part_draws`]
     /// for the faithful-tick / interpreted-transform boundary.
     pub fn active_summon_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
-        self.active_summon
+        self.casting
+            .active_summon
             .as_ref()
             .map(|s| s.part_draws())
             .unwrap_or_default()
@@ -584,23 +588,23 @@ impl World {
     /// REF: the prescript bundle the retail `FUN_800252EC` indexes
     /// (`legaia_asset::scene_event_scripts::move_stager_records`).
     pub fn install_field_stagers(&mut self, entry_bytes: &[u8]) {
-        self.active_field_fx.clear();
-        self.field_stager_bytes = entry_bytes.to_vec();
-        self.field_stagers =
+        self.props.active_fx.clear();
+        self.props.stager_bytes = entry_bytes.to_vec();
+        self.props.stagers =
             legaia_asset::scene_event_scripts::move_stager_records(entry_bytes).unwrap_or_default();
     }
 
     /// Spawn one field move-VM stager record by id at `origin` (world units),
     /// mirroring the field-VM op `0x34` sub-3 → `FUN_800252EC(id)` →
     /// `FUN_80021B04` → move VM chain. `id` is the installer argument
-    /// (`operand + 1`); it indexes [`Self::field_stagers`] (= the bundle's
+    /// (`operand + 1`); it indexes [`crate::world::FieldPropState::stagers`] (= the bundle's
     /// `offsets[id]` record). No-ops (returns `false`) when the id is out of
     /// range or no table is installed, matching the retail bounds behaviour.
     /// Tick the spawned effect with [`Self::tick_field_fx`].
     ///
     /// PORT: FUN_800252EC (id → `offsets[id]` record → part-stager spawn)
     pub fn spawn_field_stager(&mut self, id: usize, origin: [i16; 3]) -> bool {
-        let Some(part) = self.field_stagers.get(id).cloned() else {
+        let Some(part) = self.props.stagers.get(id).cloned() else {
             return false;
         };
         // One stager record = one scene-graph part, staged exactly like a summon
@@ -614,8 +618,8 @@ impl World {
         // scene-pack list directly. Most field stager records are transform /
         // render-mode (particle / sound) nodes that bind no mesh.
         let scene =
-            crate::summon::SummonScene::spawn_parts(&[part], &self.field_stager_bytes, 0, origin);
-        self.active_field_fx.push(scene);
+            crate::summon::SummonScene::spawn_parts(&[part], &self.props.stager_bytes, 0, origin);
+        self.props.active_fx.push(scene);
         true
     }
 
@@ -629,10 +633,10 @@ impl World {
     /// per-effect teardown (when retail removes a finished field effect) is a
     /// future refinement. No-op when none are live.
     pub fn tick_field_fx(&mut self, frame_delta: u16) {
-        if self.active_field_fx.is_empty() {
+        if self.props.active_fx.is_empty() {
             return;
         }
-        let mut scenes = std::mem::take(&mut self.active_field_fx);
+        let mut scenes = std::mem::take(&mut self.props.active_fx);
         for scene in &mut scenes {
             let mut host = MoveVmHostImpl {
                 world: self,
@@ -643,14 +647,15 @@ impl World {
             };
             scene.tick(&mut host, frame_delta);
         }
-        self.active_field_fx = scenes;
+        self.props.active_fx = scenes;
     }
 
     /// Per-part mesh draws across all live field move-VM effects (the visual
     /// parts). The non-visual nodes (`0x4001` sound emitter) never appear here -
     /// see [`Self::active_field_fx_render_nodes`].
     pub fn active_field_fx_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
-        self.active_field_fx
+        self.props
+            .active_fx
             .iter()
             .flat_map(|s| s.part_draws())
             .collect()
@@ -661,7 +666,8 @@ impl World {
     /// for the renderer / audio host (the sound emitter is *not* a draw). Mirrors
     /// `FUN_80021DF4`'s `+0x5A` split of these nodes off the mesh draw path.
     pub fn active_field_fx_render_nodes(&self) -> Vec<crate::summon::SpecialRenderNode> {
-        self.active_field_fx
+        self.props
+            .active_fx
             .iter()
             .flat_map(|s| s.special_render_nodes())
             .collect()
@@ -686,7 +692,7 @@ impl World {
     /// move carries no spawnable effect entries. Replaces any in-flight
     /// move-FX scene. Tick with [`Self::tick_move_fx`].
     pub fn spawn_move_fx(&mut self, move_id: u8, origin: [i16; 3]) -> bool {
-        let Some(cat) = self.move_power.as_ref() else {
+        let Some(cat) = self.tables.move_power.as_ref() else {
             return false;
         };
         let Some(fx) = cat.fx_for_move_id(move_id) else {
@@ -734,7 +740,7 @@ impl World {
             // reference. Bounding against only this move's subset would
             // over-run each record into the next selected one rather than the
             // next packed one.
-            if let Some(overlay) = self.move_power_overlay.clone()
+            if let Some(overlay) = self.tables.move_power_overlay.clone()
                 && let Some(all_parts) = move_power::parse_effect_proto_records(&overlay)
             {
                 let parts: Vec<legaia_asset::summon_overlay::SummonPart> = all_parts
@@ -742,7 +748,7 @@ impl World {
                     .filter(|p| wanted.contains(&p.record_off))
                     .collect();
                 if !parts.is_empty() {
-                    self.active_move_fx = Some(crate::summon::SummonScene::spawn_parts(
+                    self.casting.active_move_fx = Some(crate::summon::SummonScene::spawn_parts(
                         &parts,
                         &overlay,
                         crate::scene::EFFECT_MODEL_LIBRARY_BASE,
@@ -753,9 +759,9 @@ impl World {
                     // (`+0x0b`) and the sound cue (`+0x0d`). The texpage is
                     // scene-scoped (dropped when the scene drains), so it
                     // only surfaces when a scene actually stages.
-                    self.active_move_fx_trail_texpage = Some(trail_texpage);
+                    self.casting.move_fx_trail_texpage = Some(trail_texpage);
                     if sound_cue_id != 0 {
-                        self.pending_move_fx_cue = Some(sound_cue_id);
+                        self.casting.pending_move_fx_cue = Some(sound_cue_id);
                     }
                     staged_scene = true;
                 }
@@ -783,7 +789,7 @@ impl World {
     /// The per-effect **CLUT source x** the same arm reads (`0x801F6418[id]`,
     /// `0x801df0ec..0x801df134`) is not staged here but at the queue's drain:
     /// `World::drain_battle_effect_spawns` pushes it onto
-    /// [`World::battle_clut_stages`] under the retail gate (plain code below
+    /// [`crate::world::BattleState::clut_stages`] under the retail gate (plain code below
     /// `0x32`, non-zero map byte), so callers routing an effect-script spawn
     /// through this get the palette swap without a second copy. It is a 16x1
     /// `MoveImage` onto `(224, 476)`, not a sound cue - see
@@ -804,10 +810,11 @@ impl World {
     // PORT: FUN_801DEA50 (the table-form spawn arm; the pool allocator it
     // calls, FUN_80050ED4, is modeled by the scene list + cap).
     pub fn spawn_action_table_effect(&mut self, effect_id: u8, origin: [i16; 3]) -> bool {
-        if self.active_action_fx.len() >= Self::ACTION_FX_CAP {
+        if self.casting.active_action_fx.len() >= Self::ACTION_FX_CAP {
             return false;
         }
         let Some(off) = self
+            .tables
             .move_power
             .as_ref()
             .and_then(|cat| cat.aux_tables())
@@ -815,7 +822,7 @@ impl World {
         else {
             return false;
         };
-        let Some(overlay) = self.move_power_overlay.clone() else {
+        let Some(overlay) = self.tables.move_power_overlay.clone() else {
             return false;
         };
         use legaia_asset::move_power;
@@ -829,7 +836,8 @@ impl World {
         if parts.is_empty() {
             return false;
         }
-        self.active_action_fx
+        self.casting
+            .active_action_fx
             .push(crate::summon::SummonScene::spawn_parts(
                 &parts,
                 &overlay,
@@ -844,14 +852,14 @@ impl World {
     /// (the `FUN_8004fcc8` dispatch) → the SFX ring / voice trigger. Returns
     /// `None` when no cue is pending.
     pub fn take_pending_move_fx_cue(&mut self) -> Option<u8> {
-        self.pending_move_fx_cue.take()
+        self.casting.pending_move_fx_cue.take()
     }
 
     /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
     /// move-FX scene, or `None` when none is playing. The render layer applies
     /// it to the move's streak pass.
     pub fn active_move_fx_trail_texpage(&self) -> Option<u16> {
-        self.active_move_fx_trail_texpage
+        self.casting.move_fx_trail_texpage
     }
 
     /// Advance the active move-FX scene one frame through the move VM (the
@@ -860,7 +868,7 @@ impl World {
     pub fn tick_move_fx(&mut self, frame_delta: u16) {
         // Effect-script table-form scenes advance on the same clock. Take
         // the list, tick each, keep the unfinished.
-        let mut action_fx = std::mem::take(&mut self.active_action_fx);
+        let mut action_fx = std::mem::take(&mut self.casting.active_action_fx);
         for scene in &mut action_fx {
             let mut host = MoveVmHostImpl {
                 world: self,
@@ -872,9 +880,9 @@ impl World {
             scene.tick(&mut host, frame_delta);
         }
         action_fx.retain(|s| !s.finished());
-        self.active_action_fx = action_fx;
+        self.casting.active_action_fx = action_fx;
 
-        let Some(mut scene) = self.active_move_fx.take() else {
+        let Some(mut scene) = self.casting.active_move_fx.take() else {
             return;
         };
         {
@@ -888,26 +896,27 @@ impl World {
             scene.tick(&mut host, frame_delta);
         }
         if !scene.finished() {
-            self.active_move_fx = Some(scene);
+            self.casting.active_move_fx = Some(scene);
         } else {
             // Scene drained: drop the trail texpage with it.
-            self.active_move_fx_trail_texpage = None;
+            self.casting.move_fx_trail_texpage = None;
         }
     }
 
     /// Per-part render draws for the active move-FX scene's mesh-bearing parts
     /// plus the live effect-script table-form scenes
-    /// ([`Self::active_action_fx`]) - one render seam so hosts that already
+    /// ([`crate::world::CastFxState::active_action_fx`]) - one render seam so hosts that already
     /// draw move FX draw the effect-script spawns too. Empty when nothing is
     /// playing. Each draw's `model_index` indexes [`Self::global_tmd_pool`]
     /// (the PROT 0871 effect-model library).
     pub fn active_move_fx_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
         let mut out = self
+            .casting
             .active_move_fx
             .as_ref()
             .map(|s| s.part_draws())
             .unwrap_or_default();
-        for scene in &self.active_action_fx {
+        for scene in &self.casting.active_action_fx {
             out.extend(scene.part_draws());
         }
         out
@@ -916,9 +925,9 @@ impl World {
     /// Take the pending production summon-spawn request, if a player Seru-magic
     /// cast set one this step. Returns `(spell_id, origin)`; the host maps
     /// `spell_id` to the overlay PROT entry (extraction `903 + (spell_id - 0x81)`), loads
-    /// it, and calls [`Self::spawn_summon`]. See [`Self::pending_summon_spawn`].
+    /// it, and calls [`Self::spawn_summon`]. See [`crate::world::CastFxState::pending_summon_spawn`].
     pub fn take_pending_summon_spawn(&mut self) -> Option<(u8, [i16; 3])> {
-        self.pending_summon_spawn.take()
+        self.casting.pending_summon_spawn.take()
     }
 
     /// Request a summon spawn for `spell_id` at `origin` if it is a player
@@ -931,14 +940,14 @@ impl World {
         if crate::summon::SERU_SUMMON_IDS.contains(&spell_id)
             || crate::summon::EVOLVED_SUMMON_IDS.contains(&spell_id)
         {
-            self.pending_summon_spawn = Some((spell_id, origin));
+            self.casting.pending_summon_spawn = Some((spell_id, origin));
         }
     }
 
     /// Drain a pending non-summon move-FX spawn request (the host calls
-    /// [`Self::spawn_move_fx`] with it). See [`Self::pending_move_fx_spawn`].
+    /// [`Self::spawn_move_fx`] with it). See [`crate::world::CastFxState::pending_move_fx_spawn`].
     pub fn take_pending_move_fx_spawn(&mut self) -> Option<(u8, [i16; 3])> {
-        self.pending_move_fx_spawn.take()
+        self.casting.pending_move_fx_spawn.take()
     }
 
     /// Request a move-FX spawn for the non-summon move `move_id` at `origin`,
@@ -949,11 +958,12 @@ impl World {
     /// [`Self::request_summon_spawn`]; Seru-summon ids go through that instead.
     pub(crate) fn request_move_fx_spawn(&mut self, move_id: u8, origin: [i16; 3]) {
         if self
+            .tables
             .move_power
             .as_ref()
             .is_some_and(|cat| cat.move_has_spawn_fx(move_id))
         {
-            self.pending_move_fx_spawn = Some((move_id, origin));
+            self.casting.pending_move_fx_spawn = Some((move_id, origin));
         }
     }
 
@@ -1069,14 +1079,14 @@ impl World {
         } else {
             ClutCellFxPhase::Pending
         };
-        self.clut_fx.push(ClutCellFx { op, phase });
+        self.ambient.clut_fx.push(ClutCellFx { op, phase });
     }
 
     /// Drive the live scripted CLUT-cell effects against `vram` (the host's
     /// software VRAM - play-window's `cpu_vram_base`, a test's scratch
     /// [`legaia_tim::Vram`]). One-shots apply immediately; fades consume the
     /// retail game ticks [`World::tick`] accumulated since the last call,
-    /// each advancing the fade by [`Self::frame_step`] vsyncs (the retail
+    /// each advancing the fade by [`crate::world::FrameClock::frame_step`] vsyncs (the retail
     /// `counter += DAT_1F800393` cadence) and writing the interpolated row to
     /// the destination cell. A completed fade performs the final cell-B copy
     /// / flat fill and clears the script context's halt bit, matching the
@@ -1089,15 +1099,15 @@ impl World {
     ///
     /// PORT: FUN_801E4794
     pub fn step_clut_fx(&mut self, vram: &mut legaia_tim::Vram) -> bool {
-        let ticks = std::mem::take(&mut self.clut_pending_game_ticks);
-        if self.clut_fx.is_empty() {
+        let ticks = std::mem::take(&mut self.ambient.clut_pending_game_ticks);
+        if self.ambient.clut_fx.is_empty() {
             return false;
         }
-        let dt = self.frame_step.max(1);
+        let dt = self.clock.frame_step.max(1);
         let mut wrote = false;
         let mut clear_halt = false;
         let mut still: Vec<ClutCellFx> = Vec::new();
-        for fx in std::mem::take(&mut self.clut_fx) {
+        for fx in std::mem::take(&mut self.ambient.clut_fx) {
             let ClutCellFx { op, phase } = fx;
             let mut fade = match phase {
                 ClutCellFxPhase::Immediate => {
@@ -1144,7 +1154,7 @@ impl World {
                 still.push(ClutCellFx { op, phase });
             }
         }
-        self.clut_fx = still;
+        self.ambient.clut_fx = still;
         if clear_halt {
             self.field_ctx.flags &= !0x400;
         }
@@ -1194,7 +1204,8 @@ impl World {
     /// renderer-free, mirroring the [`Self::spawn_clut_cell_fx`] /
     /// [`Self::step_clut_fx`] split of the sibling sub-`0x61` family.
     pub fn queue_script_vram_move(&mut self, words: [i16; 6]) {
-        self.script_vram_moves
+        self.ambient
+            .script_vram_moves
             .push(ScriptVramMove::from_words(words));
     }
 
@@ -1211,7 +1222,7 @@ impl World {
     /// handler arm 0x801E1B28..0x801E1B90 of FUN_801DE840)
     pub fn apply_script_vram_moves(&mut self, vram: &mut legaia_tim::Vram) -> bool {
         let mut wrote = false;
-        for mv in std::mem::take(&mut self.script_vram_moves) {
+        for mv in std::mem::take(&mut self.ambient.script_vram_moves) {
             let (sx, sy) = mv.src;
             let (w, h) = mv.size;
             let (dx, dy) = mv.dst;

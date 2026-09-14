@@ -11,7 +11,7 @@
 //! [`crate::cutscene_timeline`] interprets a cutscene record's cross-context
 //! yields directly and so has nowhere to hang an element; this module is that
 //! missing seat. It follows the shape `World` already uses for the field
-//! overlay's other plain-template actors ([`crate::world::World::eased_moves`],
+//! overlay's other plain-template actors ([`crate::world::FieldVmState::eased_moves`],
 //! `floor_tier_bobs`): one `Vec` per family on the world, advanced together on
 //! the same frame delta, retired when the kernel says so.
 //!
@@ -87,7 +87,7 @@ pub const AMBIENT_EMITTER_SCENE_ARM: i16 = 1;
 pub enum ElementLink {
     /// The party leader's pool slot.
     Player,
-    /// A scene NPC placement, keyed the way `World::field_npc_positions` is.
+    /// A scene NPC placement, keyed the way `World::npcs.positions` is.
     Placement(u8),
     /// The camera object. The one link the `+0x8E` mirror is NOT written for.
     Camera,
@@ -175,7 +175,7 @@ impl World {
         end: ElementVec,
         rate: i16,
     ) {
-        self.cutscene_elements.push(CutsceneElement {
+        self.cutscene.elements.push(CutsceneElement {
             link,
             kind: ElementKind::PositionTween(PositionTween {
                 start,
@@ -198,7 +198,7 @@ impl World {
         owns_camera: i16,
         flag_mask: u32,
     ) {
-        self.cutscene_elements.push(CutsceneElement {
+        self.cutscene.elements.push(CutsceneElement {
             link,
             kind: ElementKind::Teardown(ElementTeardown {
                 restore_armed,
@@ -215,7 +215,7 @@ impl World {
     ///
     /// REF: FUN_801D6058, FUN_80024C88
     pub fn spawn_ambient_emitter(&mut self, scene: AmbientScene) {
-        self.cutscene_elements.push(CutsceneElement {
+        self.cutscene.elements.push(CutsceneElement {
             link: ElementLink::None,
             kind: ElementKind::AmbientEmitter {
                 emitter: AmbientEmitter {
@@ -234,7 +234,7 @@ impl World {
     ///
     /// REF: FUN_801D6058
     pub fn spawn_ambient_emitter_at(&mut self, scene: AmbientScene, x: i16, y: i16) {
-        self.cutscene_elements.push(CutsceneElement {
+        self.cutscene.elements.push(CutsceneElement {
             link: ElementLink::None,
             kind: ElementKind::AmbientEmitter {
                 emitter: AmbientEmitter {
@@ -258,10 +258,11 @@ impl World {
     fn element_link_done(&self, link: ElementLink) -> bool {
         match link {
             ElementLink::Player => !self
+                .field_vm
                 .eased_moves
                 .iter()
                 .any(|r| matches!(r.target, EasedMoveTarget::Player)),
-            ElementLink::Placement(p) => !self.field_npc_positions.contains_key(&p),
+            ElementLink::Placement(p) => !self.npcs.positions.contains_key(&p),
             ElementLink::Camera | ElementLink::None => false,
         }
     }
@@ -276,14 +277,14 @@ impl World {
     /// *during* it is spliced in rather than overwritten, the same way the
     /// eased-move pass handles a spawn from its own frame.
     pub fn tick_cutscene_elements(&mut self, frame_step: u8, mut rand: impl FnMut() -> u32) {
-        if self.cutscene_elements.is_empty() {
-            if !self.cutscene_element_frame.is_empty() {
-                self.cutscene_element_frame = ElementFrame::default();
+        if self.cutscene.elements.is_empty() {
+            if !self.cutscene.element_frame.is_empty() {
+                self.cutscene.element_frame = ElementFrame::default();
             }
             return;
         }
         let mut frame = ElementFrame::default();
-        let mut live = std::mem::take(&mut self.cutscene_elements);
+        let mut live = std::mem::take(&mut self.cutscene.elements);
         for el in live.iter_mut() {
             let linked_done = self.element_link_done(el.link);
             match &mut el.kind {
@@ -312,8 +313,8 @@ impl World {
         let before = live.len();
         live.retain(|el| !el.done);
         frame.retired = before - live.len();
-        live.append(&mut self.cutscene_elements);
-        self.cutscene_elements = live;
+        live.append(&mut self.cutscene.elements);
+        self.cutscene.elements = live;
         // Apply the tween writes through the same seats the eased-move pass
         // uses, so the two families cannot disagree about where an object is.
         for (link, pos, _) in &frame.tween_writes {
@@ -324,12 +325,12 @@ impl World {
                     self.field_ctx.world_z = pos.z as u16;
                 }
                 Some(EasedMoveTarget::Placement(slot)) => {
-                    self.field_npc_positions.insert(slot, (pos.x, pos.z));
+                    self.npcs.positions.insert(slot, (pos.x, pos.z));
                 }
                 None => {}
             }
         }
-        self.cutscene_element_frame = frame;
+        self.cutscene.element_frame = frame;
     }
 }
 
@@ -341,14 +342,14 @@ mod tests {
     fn world() -> World {
         let mut w = World::new();
         w.mode = SceneMode::Field;
-        w.field_frame_step = 1;
+        w.clock.display_frame_step = 1;
         w
     }
 
     #[test]
     fn a_position_tween_blends_then_snaps_and_retires() {
         let mut w = world();
-        w.field_npc_positions.insert(3, (0, 0));
+        w.npcs.positions.insert(3, (0, 0));
         w.spawn_element_position_tween(
             ElementLink::Placement(3),
             ElementVec::default(),
@@ -363,18 +364,18 @@ mod tests {
         let mut seen = Vec::new();
         for _ in 0..16 {
             w.tick_cutscene_elements(1, || 0);
-            if let Some((_, pos, _)) = w.cutscene_element_frame.tween_writes.first() {
+            if let Some((_, pos, _)) = w.cutscene.element_frame.tween_writes.first() {
                 seen.push((pos.x, pos.z));
             }
-            if w.cutscene_elements.is_empty() {
+            if w.cutscene.elements.is_empty() {
                 break;
             }
         }
-        assert!(w.cutscene_elements.is_empty(), "the element must retire");
+        assert!(w.cutscene.elements.is_empty(), "the element must retire");
         assert_eq!(*seen.last().unwrap(), (400, 800), "it must reach the end");
         assert!(seen.len() > 2, "and pass through the middle: {seen:?}");
         // The write landed on the linked placement, not just on the frame.
-        assert_eq!(w.field_npc_positions.get(&3), Some(&(400, 800)));
+        assert_eq!(w.npcs.positions.get(&3), Some(&(400, 800)));
     }
 
     #[test]
@@ -388,10 +389,10 @@ mod tests {
         };
         w.spawn_element_position_tween(ElementLink::Camera, ElementVec::default(), end, 0x800);
         w.tick_cutscene_elements(1, || 0);
-        assert_eq!(w.cutscene_element_frame.tween_writes[0].2, None);
+        assert_eq!(w.cutscene.element_frame.tween_writes[0].2, None);
 
         let mut w = world();
-        w.field_npc_positions.insert(1, (0, 0));
+        w.npcs.positions.insert(1, (0, 0));
         w.spawn_element_position_tween(
             ElementLink::Placement(1),
             ElementVec::default(),
@@ -399,7 +400,7 @@ mod tests {
             0x800,
         );
         w.tick_cutscene_elements(1, || 0);
-        let (_, pos, mirror) = w.cutscene_element_frame.tween_writes[0];
+        let (_, pos, mirror) = w.cutscene.element_frame.tween_writes[0];
         assert_eq!(mirror, Some(pos.y.wrapping_neg()));
     }
 
@@ -417,26 +418,26 @@ mod tests {
             0x100,
         );
         w.tick_cutscene_elements(1, || 0);
-        assert!(w.cutscene_element_frame.tween_writes.is_empty());
-        assert_eq!(w.cutscene_element_frame.retired, 1);
-        assert!(w.cutscene_elements.is_empty());
+        assert!(w.cutscene.element_frame.tween_writes.is_empty());
+        assert_eq!(w.cutscene.element_frame.retired, 1);
+        assert!(w.cutscene.elements.is_empty());
     }
 
     #[test]
     fn the_teardown_restores_the_camera_every_frame_and_clears_flags_once() {
         let mut w = world();
         w.spawn_element_teardown(ElementLink::Placement(4), 1, 1, 0x0000_0080);
-        w.field_npc_positions.insert(4, (0, 0));
+        w.npcs.positions.insert(4, (0, 0));
         w.tick_cutscene_elements(1, || 0);
-        let a = w.cutscene_element_frame.teardowns[0];
+        let a = w.cutscene.element_frame.teardowns[0];
         assert!(a.restore_camera && !a.clear_target_flags);
-        assert_eq!(w.cutscene_elements.len(), 1, "still armed");
+        assert_eq!(w.cutscene.elements.len(), 1, "still armed");
         // The linked placement goes away: that is its done bit.
-        w.field_npc_positions.remove(&4);
+        w.npcs.positions.remove(&4);
         w.tick_cutscene_elements(1, || 0);
-        let a = w.cutscene_element_frame.teardowns[0];
+        let a = w.cutscene.element_frame.teardowns[0];
         assert!(a.clear_target_flags && a.clear_camera_flags);
-        assert!(w.cutscene_elements.is_empty(), "one-shot");
+        assert!(w.cutscene.elements.is_empty(), "one-shot");
     }
 
     #[test]
@@ -463,18 +464,18 @@ mod tests {
         let mut total = 0;
         for _ in 0..64 {
             w.tick_cutscene_elements(1, &mut rand);
-            total += w.cutscene_element_frame.particles.len();
+            total += w.cutscene.element_frame.particles.len();
         }
         assert!(total > 0, "the scene arm must emit something in 64 frames");
         // The emitter never retires itself - it is a scene ambience, not a
         // one-shot - so it must still be on the channel.
-        assert_eq!(w.cutscene_elements.len(), 1);
+        assert_eq!(w.cutscene.elements.len(), 1);
     }
 
     #[test]
     fn an_empty_channel_publishes_an_empty_frame() {
         let mut w = world();
         w.tick_cutscene_elements(1, || 0);
-        assert!(w.cutscene_element_frame.is_empty());
+        assert!(w.cutscene.element_frame.is_empty());
     }
 }

@@ -2,9 +2,9 @@ use super::*;
 
 fn live_battle_world_3v2() -> World {
     let mut world = World::new();
-    world.party_count = 3;
-    world.battle_player_driven = true;
-    world.live_gameplay_loop = true;
+    world.party.party_count = 3;
+    world.battle.player_driven = true;
+    world.toggles.live_gameplay_loop = true;
     world.mode = SceneMode::Battle;
     for i in 0..5 {
         world.actors[i].active = true;
@@ -19,7 +19,7 @@ fn live_battle_world_3v2() -> World {
 fn spirit_command_charges_ap_and_raises_the_guard_stance() {
     use crate::battle_input::{BattleCommandSession, CommandPhase};
     let mut world = live_battle_world_3v2();
-    world.battle_command = Some(BattleCommandSession {
+    world.battle.command = Some(BattleCommandSession {
         actor: 0,
         party_slot: 0,
         no_escape: false,
@@ -30,18 +30,19 @@ fn spirit_command_charges_ap_and_raises_the_guard_stance() {
     // `+0x1DE = 4`, which every monster that dispatches ahead of this member
     // reads - while the AP charge is the Spirit band's own, at dispatch.
     assert!(
-        world.battle_guarding[0],
+        world.battle.guarding[0],
         "guard stance raised at the commit"
     );
     assert!(
-        !world.ap_gauges[0].spirit_charged,
+        !world.battle.ap_gauges[0].spirit_charged,
         "the AP charge waits for the member's dispatch"
     );
     // The commit walks the ring on to the next member that owes a command
     // (retail's ten-site idiom at `0x801D16AC`): slot 0's session does not
     // linger, slot 1's opens.
     let next = world
-        .battle_command
+        .battle
+        .command
         .as_ref()
         .expect("the ring walks on to the next member");
     assert_eq!(next.actor, 1, "slot 1 owes the next command");
@@ -50,7 +51,7 @@ fn spirit_command_charges_ap_and_raises_the_guard_stance() {
     // order (flat tokens - no SPD here), each Spirit band charging its own
     // gauge.
     for actor in 1..3u8 {
-        world.battle_command = Some(BattleCommandSession {
+        world.battle.command = Some(BattleCommandSession {
             actor,
             party_slot: actor,
             no_escape: false,
@@ -59,12 +60,12 @@ fn spirit_command_charges_ap_and_raises_the_guard_stance() {
         world.tick_battle_command();
     }
     assert!(
-        world.battle_command.is_none(),
+        world.battle.command.is_none(),
         "the last commit begins the round"
     );
     for slot in 0..3 {
         assert!(
-            world.ap_gauges[slot].spirit_charged,
+            world.battle.ap_gauges[slot].spirit_charged,
             "+5 AP spirit charge at slot {slot}'s dispatch"
         );
     }
@@ -85,13 +86,13 @@ fn guard_stance_reduces_basic_attack_damage() {
     let strike = |guarding: bool| -> u16 {
         let mut world = live_battle_world_3v2();
         world.rng_state = 0x1234_5678;
-        world.battle_attack[3] = 200;
-        world.battle_defense[0] = 40;
+        world.battle.attack[3] = 200;
+        world.battle.defense[0] = 40;
         world.actors[0].battle.max_hp = 9999;
         world.actors[0].battle.hp = 9999;
         world.actors[3].battle.active_target = 0;
         world.battle_ctx.active_actor = 3;
-        world.battle_guarding[0] = guarding;
+        world.battle.guarding[0] = guarding;
         world.apply_basic_attack();
         9999 - world.actors[0].battle.hp
     };
@@ -116,10 +117,10 @@ fn enemy_agl_budget_drives_multi_strike_and_gates_on_agl() {
     cat.insert(def);
 
     let mut world = live_battle_world_3v2();
-    world.monster_catalog = cat;
+    world.tables.monster_catalog = cat;
     world.actors[3].battle_monster_id = Some(42);
-    world.battle_attack[3] = 50;
-    world.battle_defense[0] = 10;
+    world.battle.attack[3] = 50;
+    world.battle.defense[0] = 10;
     world.actors[3].battle.active_target = 0;
     world.actors[0].battle.max_hp = 9999;
     world.actors[0].battle.hp = 9999;
@@ -127,7 +128,7 @@ fn enemy_agl_budget_drives_multi_strike_and_gates_on_agl() {
     // The picker's budget loop lands 3 swings (60 / 20).
     world.arm_monster_strike_budget(3);
     assert_eq!(
-        world.monster_strike_budget, 3,
+        world.battle.monster_strike_budget, 3,
         "AGL gauge 60 / swing cost 20 = 3 swings"
     );
     world.battle_ctx.active_actor = 3;
@@ -145,12 +146,12 @@ fn enemy_agl_budget_drives_multi_strike_and_gates_on_agl() {
     // disc-free / synthetic catalog case) - one strike, RNG-free budget.
     let mut world = live_battle_world_3v2();
     world.actors[3].battle_monster_id = Some(1); // no catalog entry installed
-    world.battle_attack[3] = 50;
-    world.battle_defense[0] = 10;
+    world.battle.attack[3] = 50;
+    world.battle.defense[0] = 10;
     world.actors[3].battle.active_target = 0;
     world.arm_monster_strike_budget(3);
     assert_eq!(
-        world.monster_strike_budget, 1,
+        world.battle.monster_strike_budget, 1,
         "no AGL data -> single swing"
     );
     world.battle_ctx.active_actor = 3;
@@ -166,14 +167,14 @@ fn enemy_agl_budget_drives_multi_strike_and_gates_on_agl() {
 fn run_command_arms_the_run_band() {
     use crate::battle_input::{BattleCommandSession, CommandPhase};
     let mut world = live_battle_world_3v2();
-    world.battle_command = Some(BattleCommandSession {
+    world.battle.command = Some(BattleCommandSession {
         actor: 0,
         party_slot: 0,
         no_escape: false,
         phase: CommandPhase::RunAway,
     });
     world.tick_battle_command();
-    assert!(world.battle_command.is_none(), "session resolved");
+    assert!(world.battle.command.is_none(), "session resolved");
     assert_eq!(world.actors[0].battle.action_category, 5, "Run category");
     assert_eq!(world.battle_ctx.queued_action, 5);
     assert_eq!(
@@ -214,7 +215,7 @@ fn successful_run_escapes_the_battle_without_loot() {
         "escape floors a downed member's liveness at 1"
     );
     assert!(
-        world.last_battle_rewards.is_none(),
+        world.battle.last_rewards.is_none(),
         "an escape grants no loot"
     );
     assert!(!world.game_over, "an escape is not a wipe");
@@ -238,12 +239,12 @@ fn round_boundary_state_is_not_a_spurious_victory() {
             !matches!(out, Some(StepOutcome::BattleComplete)),
             "both sides alive: the round boundary must not complete the battle"
         );
-        if world.battle_command.is_some() {
+        if world.battle.command.is_some() {
             break; // the loop armed the next turn - the battle continues
         }
     }
-    assert!(world.battle_end.is_none(), "no battle-end cause staged");
-    assert!(world.last_battle_rewards.is_none(), "no spurious loot");
+    assert!(world.battle.end.is_none(), "no battle-end cause staged");
+    assert!(world.battle.last_rewards.is_none(), "no spurious loot");
     assert_eq!(world.mode, SceneMode::Battle, "still in battle");
 }
 
@@ -263,11 +264,11 @@ fn failed_run_consumes_the_turn_and_the_battle_continues() {
         ) {
             panic!("a failed run must not end the battle");
         }
-        if world.battle_command.is_some() {
+        if world.battle.command.is_some() {
             break; // the loop cycled to the next party turn - battle continues
         }
     }
-    assert!(world.battle_end.is_none(), "no battle-end cause staged");
+    assert!(world.battle.end.is_none(), "no battle-end cause staged");
 }
 
 #[test]
@@ -277,7 +278,7 @@ fn shop_buy_fills_the_stack_at_99_and_refuses_past_it() {
     // case) and the quantity max clamps to 99 - held (li a0,0x63 at
     // 0x801db8d0, FUN_801DB7F4) - so a stack tops off at exactly 99.
     let mut world = World::new();
-    world.money = 1_000_000;
+    world.party.money = 1_000_000;
     let inv = crate::shop::ShopInventory::new(
         0,
         vec![crate::shop::ShopItem {
@@ -289,18 +290,18 @@ fn shop_buy_fills_the_stack_at_99_and_refuses_past_it() {
     session.select_buy_item(0);
 
     // 95 held + 4 more = 99: allowed, exactly at the cap.
-    world.inventory.insert(0x77, 95);
+    world.party.inventory.insert(0x77, 95);
     session.set_quantity(3); // qty 4
     let (_, qty, _) = world.buy_from_shop(&session).expect("cap-exact buy lands");
     assert_eq!(qty, 4);
-    assert_eq!(world.inventory.get(&0x77), Some(&99));
+    assert_eq!(world.party.inventory.get(&0x77), Some(&99));
 
     // 99 held: one more refuses, inventory and gold untouched.
-    let money = world.money;
+    let money = world.party.money;
     session.set_quantity(0); // qty 1
     assert!(world.buy_from_shop(&session).is_none());
-    assert_eq!(world.inventory.get(&0x77), Some(&99));
-    assert_eq!(world.money, money);
+    assert_eq!(world.party.inventory.get(&0x77), Some(&99));
+    assert_eq!(world.party.money, money);
 
     // The retail quantity kernel agrees: at 95 held the picker maxes at 4.
     assert_eq!(crate::shop::buy_qty_max(1_000_000, 10, Some(95)), 4);
@@ -315,7 +316,7 @@ fn encounter_rate_modifiers_resolve_from_passives_and_flags() {
     assert!(world.encounter_rate_modifiers().is_neutral());
 
     // Ability bit 0x3B (High Encounter - Bad Luck Bell / Nemesis Gem).
-    world.party_ability_mask[(0x3B >> 5) as usize] |= 1 << (0x3B & 0x1F);
+    world.party.party_ability_mask[(0x3B >> 5) as usize] |= 1 << (0x3B & 0x1F);
     // System flag 0x1E (rate down).
     world.system_flag_set(0x1E);
     let m = world.encounter_rate_modifiers();
@@ -331,8 +332,8 @@ fn npc_walk_steps_track_heading_and_keep_it_after_arrival() {
     // render_26 convention) and keep facing that way once the leg ends.
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.field_npc_positions.insert(1, (1000, 1000));
-    assert!(!world.field_npc_headings.contains_key(&1));
+    world.npcs.positions.insert(1, (1000, 1000));
+    assert!(!world.npcs.headings.contains_key(&1));
 
     // Walk X+ : heading = quarter turn (0x400). NPC glide steps only on the
     // retail-frame ticks (~60 of every 100), so budget extra sim ticks.
@@ -340,20 +341,20 @@ fn npc_walk_steps_track_heading_and_keep_it_after_arrival() {
     for _ in 0..70 {
         let _ = world.tick();
     }
-    assert_eq!(world.field_npc_positions.get(&1), Some(&(1200, 1000)));
-    assert_eq!(world.field_npc_headings.get(&1), Some(&0x400));
-    assert!(world.field_npc_motions.is_empty(), "leg ended");
+    assert_eq!(world.npcs.positions.get(&1), Some(&(1200, 1000)));
+    assert_eq!(world.npcs.headings.get(&1), Some(&0x400));
+    assert!(world.npcs.motions.is_empty(), "leg ended");
 
     // Facing persists while standing.
     for _ in 0..5 {
         let _ = world.tick();
     }
-    assert_eq!(world.field_npc_headings.get(&1), Some(&0x400));
+    assert_eq!(world.npcs.headings.get(&1), Some(&0x400));
 
     // Walk Z- : heading = half turn (0x800).
     assert!(world.start_field_npc_motion(1, 1200, 800));
     for _ in 0..70 {
         let _ = world.tick();
     }
-    assert_eq!(world.field_npc_headings.get(&1), Some(&0x800));
+    assert_eq!(world.npcs.headings.get(&1), Some(&0x800));
 }

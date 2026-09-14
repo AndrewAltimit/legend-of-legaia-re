@@ -119,11 +119,11 @@ fn overworld() -> World {
 }
 
 fn ctrl(w: &World) -> &legaia_engine_core::world_map::WorldMapController {
-    w.world_map_ctrl.as_ref().expect("world-map controller")
+    w.world_map.ctrl.as_ref().expect("world-map controller")
 }
 
 fn ctrl_mut(w: &mut World) -> &mut legaia_engine_core::world_map::WorldMapController {
-    w.world_map_ctrl.as_mut().expect("world-map controller")
+    w.world_map.ctrl.as_mut().expect("world-map controller")
 }
 
 /// The developer opt-in the native window takes from its `--world-map` arm
@@ -469,8 +469,8 @@ fn rung8_flag_window(w: &mut World) -> Result<(), String> {
 /// phase (phase 0 is the arrival path and parks with no exit), its confirm
 /// arm restores the party's HP and MP from the live records.
 fn rung9_text_box(w: &mut World) -> Result<(), String> {
-    w.roster = legaia_save::Party::zeroed(3);
-    for m in w.roster.members.iter_mut() {
+    w.party.roster = legaia_save::Party::zeroed(3);
+    for m in w.party.roster.members.iter_mut() {
         m.raw[0x104..0x106].copy_from_slice(&300u16.to_le_bytes()); // hp max
         m.raw[0x106..0x108].copy_from_slice(&1u16.to_le_bytes()); // hp cur
         m.raw[0x108..0x10A].copy_from_slice(&80u16.to_le_bytes()); // mp max
@@ -491,7 +491,7 @@ fn rung9_text_box(w: &mut World) -> Result<(), String> {
     }
     frame(w, 0);
     tap(w, PadButton::Cross.mask());
-    for m in w.roster.members.iter() {
+    for m in w.party.roster.members.iter() {
         if u16::from_le_bytes([m.raw[0x106], m.raw[0x107]]) != 300 {
             return Err("the confirm arm did not restore HP".into());
         }
@@ -844,13 +844,14 @@ fn w1d_submode_frame_loop_reaches_the_equipment_sub_panel() {
         HubPainter::for_window(ENTRY_LIST_WINDOW),
         Some(HubPainter::EntryList)
     );
-    w.active_party = vec![0, 1];
+    w.party.active_party = vec![0, 1];
     w.open_field_submode_screen(slot::DRAW_TICK, Some(ENTRY_LIST_WINDOW));
 
     let mut painted = 0usize;
     for _ in 0..16 {
         w.tick();
         painted = w
+            .field_vm
             .submode_screen
             .draws()
             .iter()

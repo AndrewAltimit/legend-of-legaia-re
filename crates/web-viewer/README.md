@@ -495,7 +495,7 @@ the same two-layer chrome+font shape the pause menu uses).
 The screen lands **with its state**, which is the whole point: the
 establishing timeline's pinned op-`0x49` opens it and stays suspended while
 `name_entry_is_active()` holds, so the committed name has to reach
-`World::party_names` for the script to resume at all. It is not an overlay
+`World::party.party_names` for the script to resume at all. It is not an overlay
 that could be skipped - skipping it would park the opening forever, the same
 failure an unclosable field shop produces. Retail behaviours inherited from
 the SM: the middle control button **restores the template default** (it is not

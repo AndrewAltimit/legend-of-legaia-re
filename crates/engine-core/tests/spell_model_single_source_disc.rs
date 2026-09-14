@@ -2,7 +2,7 @@
 //! the live cast path does, sourced from the user's own `SCUS_942.54`.
 //!
 //! Two questions, one table record each. What a cast costs is the record's
-//! `+3` byte, which boot folds into `World::spell_catalog`
+//! `+3` byte, which boot folds into `World::tables.spell_catalog`
 //! (`retail_magic::seru_magic_catalog_from_scus`) and which
 //! `World::cast_spell_on_slots` charges. Whether a cast is capture-class is the
 //! same record's `+0` class byte, which routes both the damage-kernel pick and
@@ -38,7 +38,7 @@ fn scus() -> Option<Vec<u8>> {
 fn armed_battle(scus: &[u8], spell_id: u8, mp: u16) -> World {
     let mut w = World::new();
     w.mode = SceneMode::Battle;
-    w.party_count = 3;
+    w.party.party_count = 3;
     w.set_spell_catalog(
         legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(scus)
             .expect("SCUS parses as a PSX-EXE"),
@@ -97,7 +97,7 @@ fn the_state_machine_charges_the_discs_own_mp_cost() {
 
     let mut w = armed_battle(&scus, GIMARD, 200);
     assert_eq!(
-        w.spell_catalog.mp_cost(GIMARD) as u16,
+        w.tables.spell_catalog.mp_cost(GIMARD) as u16,
         disc_mp,
         "boot folds the disc's own +3 byte into the catalog"
     );

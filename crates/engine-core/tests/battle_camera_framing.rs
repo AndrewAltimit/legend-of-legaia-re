@@ -5,7 +5,7 @@
 //! `clamp(size << 7, 0x0C00, 0x1400)`. The chain under test is
 //! `record +0x1F` -> `MonsterRecord::size_class` -> `MonsterDef::size_class` ->
 //! the `BattleActionHost::monster_size_class` hook -> the port's
-//! `camera_height_for_frame` at action seed -> `World::battle_camera_frame_height`.
+//! `camera_height_for_frame` at action seed -> `World::battle.camera_frame_height`.
 //!
 //! The first test is disc-free (synthetic catalog); the second is disc-gated
 //! and pins the chain to real records.
@@ -20,8 +20,11 @@ use legaia_engine_vm::battle_formulas::{CAMERA_HEIGHT_MAX, CAMERA_HEIGHT_MIN};
 /// attacker will frame on, and run the battle SM until it seeds an action.
 fn frame_height_for(size_class: u8) -> (i16, bool) {
     let mut world = World {
+        party: legaia_engine_core::world::PartyState {
+            party_count: 3,
+            ..Default::default()
+        },
         mode: SceneMode::Battle,
-        party_count: 3,
         ..World::default()
     };
     for i in 0..8 {
@@ -32,7 +35,7 @@ fn frame_height_for(size_class: u8) -> (i16, bool) {
     world.actors[3].battle_monster_id = Some(1);
     let mut def = MonsterDef::new(1, "Test Bulk", 500, 40);
     def.size_class = size_class;
-    world.monster_catalog.insert(def);
+    world.tables.monster_catalog.insert(def);
 
     // Party slot 0 attacks monster slot 3 - retail's target-side arm.
     world.actors[0].battle.active_target = 3;
@@ -54,12 +57,12 @@ fn frame_height_for(size_class: u8) -> (i16, bool) {
                 framed = Some(height);
                 // The event and the world field are written together by the
                 // host hook, so they must agree at this instant.
-                assert_eq!(height, world.battle_camera_frame_height);
+                assert_eq!(height, world.battle.camera_frame_height);
             }
         }
     }
     (
-        framed.unwrap_or(world.battle_camera_frame_height),
+        framed.unwrap_or(world.battle.camera_frame_height),
         framed.is_some(),
     )
 }
@@ -89,7 +92,7 @@ fn action_seed_frames_the_camera_on_the_target_size_class() {
 #[test]
 fn default_world_seeds_the_retail_floor() {
     assert_eq!(
-        World::default().battle_camera_frame_height,
+        World::default().battle.camera_frame_height,
         CAMERA_HEIGHT_MIN
     );
 }

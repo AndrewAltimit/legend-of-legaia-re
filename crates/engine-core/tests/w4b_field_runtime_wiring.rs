@@ -16,9 +16,9 @@ use legaia_engine_core::world::{SceneMode, World};
 /// Give roster slot 0 a record with the three walk passives set and every
 /// pool one bump short of full, and make it the whole present party.
 fn party_with_walk_passives(world: &mut World, ability_hi: u32) {
-    world.roster = legaia_save::Party::zeroed(1);
-    world.party_count = 1;
-    let rec = &mut world.roster.members[0];
+    world.party.roster = legaia_save::Party::zeroed(1);
+    world.party.party_count = 1;
+    let rec = &mut world.party.roster.members[0];
     let mut bits = [0u8; legaia_save::ABILITY_BITS_LEN];
     bits[4..8].copy_from_slice(&ability_hi.to_le_bytes());
     rec.set_ability_bits(bits);
@@ -33,7 +33,7 @@ fn party_with_walk_passives(world: &mut World, ability_hi: u32) {
 }
 
 fn pools(world: &World) -> (u16, u16, u16) {
-    let h = world.roster.members[0].hp_mp_sp();
+    let h = world.party.roster.members[0].hp_mp_sp();
     (h.hp_cur, h.mp_cur, h.sp_cur)
 }
 
@@ -46,11 +46,14 @@ fn field_tick_drains_the_walk_regen_accumulator_and_bumps_the_gauges() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     party_with_walk_passives(&mut world, HP_WALK_MASK | MP_WALK_MASK | AP_WALK_MASK);
-    world.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
+    world.locomotion.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
 
     world.tick();
 
-    assert_eq!(world.walk_regen_steps, 1, "the tick drained 0x20");
+    assert_eq!(
+        world.locomotion.walk_regen_steps, 1,
+        "the tick drained 0x20"
+    );
     assert_eq!(pools(&world), (58, 22, 11), "HP +8 / MP +2 / AP +1");
 }
 
@@ -69,7 +72,7 @@ fn walk_regen_gates_are_per_passive_and_a_bare_party_is_untouched() {
         let mut world = World::new();
         world.mode = SceneMode::Field;
         party_with_walk_passives(&mut world, mask);
-        world.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
+        world.locomotion.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
         world.tick();
         assert_eq!(pools(&world), want, "mask {mask:#x}");
     }
@@ -83,9 +86,12 @@ fn field_tick_walk_regen_is_gated_on_the_retail_step_cost() {
         let mut world = World::new();
         world.mode = SceneMode::Field;
         party_with_walk_passives(&mut world, HP_WALK_MASK);
-        world.walk_regen_steps = start;
+        world.locomotion.walk_regen_steps = start;
         world.tick();
-        assert_eq!(world.walk_regen_steps, start, "counter untouched");
+        assert_eq!(
+            world.locomotion.walk_regen_steps, start,
+            "counter untouched"
+        );
         assert_eq!(pools(&world), (50, 20, 10), "no bump below the cost");
     }
 }
@@ -131,8 +137,8 @@ fn locomotion_actor_gate_routes_through_the_combined_probe() {
     let press = |solid: bool| {
         let mut world = World::new();
         world.install_field_player(0);
-        world.solid_field_npcs = solid;
-        world.field_npc_positions.insert(1, (2000, 2526));
+        world.npcs.solid = solid;
+        world.npcs.positions.insert(1, (2000, 2526));
         world.actors[0].move_state.world_x = 1800;
         world.actors[0].move_state.world_z = 2526;
         for _ in 0..100 {
@@ -146,7 +152,7 @@ fn locomotion_actor_gate_routes_through_the_combined_probe() {
 
     // And the direct probe agrees with what the gate did.
     let mut world = World::new();
-    world.field_npc_positions.insert(1, (2000, 2526));
+    world.npcs.positions.insert(1, (2000, 2526));
     assert!(
         world.field_actor_dir_blocked(2000 - 102, 2526, 3),
         "X+ into the NPC reads blocked"

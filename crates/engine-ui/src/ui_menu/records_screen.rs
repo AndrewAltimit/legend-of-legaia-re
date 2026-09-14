@@ -56,7 +56,7 @@
 //! (`window/dev_menu.rs`) and the browser play page behind its session-only
 //! Dev-menu checkbox (`web-viewer/src/play_dev_menu.rs`). Both feed the six
 //! per-character counters through [`RecordCounters`] and the play clock from
-//! `World::play_time_seconds`. The lifetime battle and escape
+//! `World::clock.play_time_seconds`. The lifetime battle and escape
 //! counters and the treasure census are state the engine does not keep yet,
 //! so those two fields read zero and the treasure line stays hidden - which
 //! is also what retail draws on a save that has never incremented them.

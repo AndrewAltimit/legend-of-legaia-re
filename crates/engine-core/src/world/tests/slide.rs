@@ -8,7 +8,7 @@ use super::*;
 fn open_field() -> World {
     let mut w = World::new();
     w.mode = SceneMode::Field;
-    w.field_collision_grid = vec![0u8; FIELD_GRID_LEN];
+    w.terrain.collision_grid = vec![0u8; FIELD_GRID_LEN];
     w
 }
 
@@ -19,7 +19,7 @@ fn set_wall(w: &mut World, x: i16, z: i16) {
     let zc = ((z as i32) >> 6) + 2;
     let idx = ((xc / 2) & 0x7F) as usize + ((zc >> 1) as usize) * FIELD_GRID_STRIDE;
     let quad = ((zc & 1) << 1 | (xc & 1)) as u32;
-    w.field_collision_grid[idx] |= 0x10u8 << quad;
+    w.terrain.collision_grid[idx] |= 0x10u8 << quad;
 }
 
 // ---- FUN_800467e8 : camera-relative pad-direction ring remap -------------

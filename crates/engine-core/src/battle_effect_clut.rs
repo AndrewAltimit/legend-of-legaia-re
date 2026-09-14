@@ -34,7 +34,7 @@
 //! `0x801F6418` was read across this repo as a per-effect **SFX cue map**, on
 //! the strength of `FUN_80058490` being "the sound-driver command lane". Both
 //! halves are false. The engine consequence was concrete: the effect-script
-//! drain pushed the table byte into `World::battle_sfx_cues` as a cue id, so
+//! drain pushed the table byte into `World::audio.battle_sfx_cues` as a cue id, so
 //! the SFX scheduler was handed the values `0xB0` / `0xC0` / `0xD0` - VRAM x
 //! coordinates - to look up in a sound bank. `docs/subsystems/battle-action.md`
 //! and `docs/formats/move-power.md` carry the settled reading.

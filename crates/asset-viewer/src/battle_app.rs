@@ -219,7 +219,7 @@ impl BattleSceneApp {
             }
             Some(StepOutcome::BattleComplete) => {
                 self.battle_stats.complete += 1;
-                self.battle_stats.last_complete_cause = self.world.battle_end;
+                self.battle_stats.last_complete_cause = self.world.battle.end;
             }
             Some(StepOutcome::UnknownState { state }) => {
                 self.battle_stats.unknown += 1;

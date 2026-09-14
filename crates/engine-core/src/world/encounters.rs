@@ -21,7 +21,7 @@ impl World {
     /// scene. Engines call this on scene-enter once the per-scene encounter
     /// table is known. `None` disables encounters for the active scene.
     pub fn set_encounter_session(&mut self, session: Option<crate::encounter::EncounterSession>) {
-        self.encounter = session;
+        self.encounters.session = session;
     }
 
     /// Install an encounter session resolved from a registry against the
@@ -50,11 +50,11 @@ impl World {
                 let tracker = crate::encounter::EncounterTracker::new(table.clone());
                 let session = crate::encounter::EncounterSession::new(tracker);
                 let nonempty = !table.is_empty();
-                self.encounter = Some(session);
+                self.encounters.session = Some(session);
                 nonempty
             }
             None => {
-                self.encounter = None;
+                self.encounters.session = None;
                 false
             }
         }
@@ -86,10 +86,11 @@ impl World {
         formations: Vec<crate::monster_catalog::FormationDef>,
     ) -> bool {
         for def in formations {
-            self.formation_table.insert(def);
+            self.tables.formation_table.insert(def);
         }
         for entry in &table.entries {
             if self
+                .tables
                 .formation_table
                 .formation(entry.formation_id)
                 .is_none_or(|d| d.slots.is_empty())
@@ -105,7 +106,7 @@ impl World {
         }
         let nonempty = !table.is_empty();
         let tracker = crate::encounter::EncounterTracker::new(table);
-        self.encounter = Some(crate::encounter::EncounterSession::new(tracker));
+        self.encounters.session = Some(crate::encounter::EncounterSession::new(tracker));
         nonempty
     }
 
@@ -124,7 +125,7 @@ impl World {
         let table = crate::encounter::EncounterTable::new(label);
         debug_assert!(table.is_empty(), "the bracket table must never self-roll");
         let tracker = crate::encounter::EncounterTracker::new(table);
-        self.encounter = Some(crate::encounter::EncounterSession::new(tracker));
+        self.encounters.session = Some(crate::encounter::EncounterSession::new(tracker));
         // `scene_can_roll_encounters` answers `false` while no session is
         // installed, so the cached answer (and the "no random encounters in
         // this scene" hint a host draws from it) has to be re-taken now that
@@ -157,7 +158,7 @@ impl World {
     /// Clears any post-battle grace / suppression first so a second call
     /// straight after a fight still lands.
     pub fn force_encounter(&mut self, formation_id: u16) -> bool {
-        let Some(def) = self.formation_table.formation(formation_id) else {
+        let Some(def) = self.tables.formation_table.formation(formation_id) else {
             log::error!(
                 "encounter: forced formation {formation_id} is not registered for scene '{}' \
                  (registered rows: {:?})",
@@ -173,14 +174,14 @@ impl World {
             );
             return false;
         }
-        if self.encounter.is_none() {
+        if self.encounters.session.is_none() {
             self.install_encounter_bracket();
         }
-        if let Some(session) = self.encounter.as_mut() {
+        if let Some(session) = self.encounters.session.as_mut() {
             session.reset();
             session.tracker_mut().clear_suppression();
         }
-        if let Some(t) = self.field_region_tracker.as_mut() {
+        if let Some(t) = self.terrain.region_tracker.as_mut() {
             t.clear_suppression();
         }
         let roll = crate::encounter::EncounterRoll {
@@ -189,7 +190,8 @@ impl World {
             roll_q8: 0,
         };
         let armed = self
-            .encounter
+            .encounters
+            .session
             .as_mut()
             .map(|s| s.trigger_with(roll))
             .unwrap_or(false);
@@ -202,11 +204,11 @@ impl World {
         armed
     }
 
-    /// Every `formation_id` currently registered in [`Self::formation_table`],
+    /// Every `formation_id` currently registered in [`crate::world::DiscTables::formation_table`],
     /// sorted. The answer to "which rows can `--battle` name" and the list the
     /// unresolved-formation diagnostics print.
     pub fn registered_formation_ids(&self) -> Vec<u16> {
-        let mut ids: Vec<u16> = self.formation_table.by_id.keys().copied().collect();
+        let mut ids: Vec<u16> = self.tables.formation_table.by_id.keys().copied().collect();
         ids.sort_unstable();
         ids
     }
@@ -215,7 +217,8 @@ impl World {
     /// `None` when the scene registered none. What `--battle first` resolves.
     pub fn first_rollable_formation_id(&self) -> Option<u16> {
         self.registered_formation_ids().into_iter().find(|id| {
-            self.formation_table
+            self.tables
+                .formation_table
                 .formation(*id)
                 .is_some_and(|d| !d.slots.is_empty())
         })
@@ -226,14 +229,14 @@ impl World {
     /// not stat blocks, so the host installs the stat catalog separately when
     /// the formations come from [`Self::install_man_encounter`].
     pub fn set_monster_catalog(&mut self, catalog: crate::monster_catalog::MonsterCatalog) {
-        self.monster_catalog = catalog;
+        self.tables.monster_catalog = catalog;
     }
 
     /// Install the per-item battle-stat modifier table (weapon / armor /
     /// accessory bonuses). Boot wires this once; [`Self::seed_party_battle_stats`]
     /// folds the equipped items onto each party combatant at battle entry.
     pub fn set_equipment_table(&mut self, table: crate::battle_stats::EquipmentTable) {
-        self.equipment_table = table;
+        self.tables.equipment_table = table;
     }
 
     /// Install the accessory ("Goods") passive-effect catalog (item id →
@@ -243,7 +246,7 @@ impl World {
     /// per-character ability bitfields from it and
     /// [`Self::seed_party_battle_stats`] applies the percent stat boosts.
     pub fn set_accessory_passives(&mut self, p: crate::accessory_passives::AccessoryPassives) {
-        self.accessory_passives = p;
+        self.tables.accessory_passives = p;
     }
 
     /// Install the pause-menu text tables (item names/descriptions, spell
@@ -252,7 +255,7 @@ impl World {
     /// Items / Magic pause screens read it through
     /// [`crate::pause_screens::MenuTextTables`].
     pub fn install_menu_text(&mut self, scus: &[u8]) {
-        self.menu_text = Some(crate::pause_screens::MenuTextTables::from_scus(scus));
+        self.menu.text = Some(crate::pause_screens::MenuTextTables::from_scus(scus));
         // The same image carries the quick-travel landmark tables
         // (`DAT_80073A98` placements + `DAT_80073B18` names). Installing
         // them on this one call means both hosts get the pause menu's Door
@@ -260,7 +263,7 @@ impl World {
         // neither can ship the route with an empty list while the other
         // fills it.
         if let Ok(menu) = legaia_asset::worldmap_menu::parse_scus(scus) {
-            self.worldmap_menu = Some(menu);
+            self.menu.worldmap_menu = Some(menu);
         }
     }
 
@@ -271,7 +274,7 @@ impl World {
     /// window-descriptor parse when the overlay entry is reachable.
     pub fn install_menu_overlay_tables(&mut self, overlay: &[u8]) {
         if let Ok(rank) = crate::menu_arrange::parse_arrange_rank_table(overlay) {
-            self.menu_arrange_rank = Some(rank);
+            self.menu.arrange_rank = Some(rank);
         }
         // The weapon category / favour table `FUN_801DD0C0` walks
         // (`DAT_801E4B88`). Without it the Best-Equipment chooser scores
@@ -279,7 +282,7 @@ impl World {
         // retail's empty-table arm, not a fallback the engine invented, but
         // it is also not what a retail disc produces.
         if let Ok(table) = crate::menu_item_category::parse_category_table(overlay) {
-            self.menu_item_category = table;
+            self.menu.item_category = table;
         }
         // The same image carries the two entry-context screens' label
         // strings (`FUN_801D6360` / `FUN_801D61B0` load them straight out of
@@ -289,7 +292,7 @@ impl World {
         // draws them.
         let labels = crate::pause_screens::ContextLockedLabels::from_menu_overlay(overlay);
         if labels.is_installed() {
-            self.menu_context_labels = labels;
+            self.menu.context_labels = labels;
         }
         // The window-widget bytecode programs the window-script VM
         // (`legaia_engine_vm::run`, retail `FUN_801D6628`) interprets -
@@ -298,17 +301,17 @@ impl World {
         // positions (the per-instruction `x`/`y` pair the VM reads off the
         // record).
         if let Ok(table) = legaia_asset::menu_windows::parse(overlay) {
-            self.menu_widgets.set_defaults_from_table(&table);
+            self.menu.widgets.set_defaults_from_table(&table);
         }
         // The casino prize table (file `0x15D00`, four 0x60-byte blocks) -
         // the record base window 44's renderer (`FUN_801D5DE0`) indexes.
         // Feeds `World::try_arm_prize_exchange` (op-0x49 sub-7).
         if let Some(blocks) = crate::prize_exchange::parse_blocks(overlay) {
-            self.prize_blocks = blocks;
+            self.shops.prize_blocks = blocks;
         }
         if let Some(scripts) = crate::menu_widget::MenuWidgetScripts::resolve_from_overlay(overlay)
         {
-            self.menu_widget_scripts = Some(scripts);
+            self.menu.widget_scripts = Some(scripts);
         }
     }
 
@@ -321,14 +324,14 @@ impl World {
     /// `+0xF4` 4×u32 field is zeroed and re-derived from the eight equipment
     /// slots ([`crate::accessory_passives::AccessoryPassives::bits_for_equipment`]),
     /// then all members' words OR into the global mask (the engine's
-    /// [`Self::party_ability_mask`], mirroring `DAT_80074358`). The rebuilt
-    /// word 0 also lands in [`Self::character_ability_bits`] - the mask the
+    /// [`crate::world::PartyState::party_ability_mask`], mirroring `DAT_80074358`). The rebuilt
+    /// word 0 also lands in [`crate::world::PartyState::character_ability_bits`] - the mask the
     /// MP-cost consumers read (`Self::build_battle_spell_session` /
     /// `cast_spell_on_slots` / the battle-action VM host) - together with the
     /// party-wide-scoped bits any member contributes, so a party-wide passive
     /// is visible through every member's effective mask.
     ///
-    /// No-op while [`Self::accessory_passives`] is empty (the disc-free
+    /// No-op while [`crate::world::DiscTables::accessory_passives`] is empty (the disc-free
     /// default), so synthetic setups that write `character_ability_bits`
     /// directly keep their values.
     ///
@@ -337,21 +340,21 @@ impl World {
     /// rebuild-on-every-aggregator-pass behaviour.
     pub fn refresh_party_ability_bits(&mut self) {
         use crate::accessory_passives::ABILITY_WORDS;
-        if self.accessory_passives.is_empty() {
+        if self.tables.accessory_passives.is_empty() {
             return;
         }
-        let pc = (self.party_count.min(3) as usize).min(self.roster.members.len());
+        let pc = (self.party.party_count.min(3) as usize).min(self.party.roster.members.len());
         let mut own = [[0u32; ABILITY_WORDS]; 3];
         let mut global = [0u32; ABILITY_WORDS];
         for (slot, own_words) in own.iter_mut().enumerate().take(pc) {
             // `slot` is the battle ordinal; the equipment that sources the
             // bits belongs to the character occupying it.
             let rslot = self.party_roster_slot(slot);
-            let Some(member) = self.roster.members.get(rslot) else {
+            let Some(member) = self.party.roster.members.get(rslot) else {
                 continue;
             };
             let equip = member.equipment().slots;
-            let words = self.accessory_passives.bits_for_equipment(&equip);
+            let words = self.tables.accessory_passives.bits_for_equipment(&equip);
             // Rebuild the record-side bitfield (retail zeroes `+0xF4..+0x103`
             // and re-derives it from equipment on every pass). Bytes past the
             // four words stay zero - passive indices live below 0x40.
@@ -359,18 +362,19 @@ impl World {
             for (w, word) in words.iter().enumerate() {
                 bytes[w * 4..w * 4 + 4].copy_from_slice(&word.to_le_bytes());
             }
-            self.roster.members[rslot].set_ability_bits(bytes);
+            self.party.roster.members[rslot].set_ability_bits(bytes);
             for (g, w) in global.iter_mut().zip(words.iter()) {
                 *g |= *w;
             }
             *own_words = words;
         }
-        self.party_ability_mask = global;
+        self.party.party_ability_mask = global;
         // Effective per-member mask for the u32 consumers: own bits plus the
         // party-wide-scoped bits any member contributes (the engine shape of
         // "consumers test the global mask for party-wide passives").
-        let pw = self.accessory_passives.party_wide_mask();
+        let pw = self.tables.accessory_passives.party_wide_mask();
         for (bits, own_words) in self
+            .party
             .character_ability_bits
             .iter_mut()
             .zip(own.iter())
@@ -387,11 +391,12 @@ impl World {
     ///
     /// The port of retail's global-mask bit test
     /// (`DAT_80074358[index >> 5] & 1 << (index & 0x1F)`), against the
-    /// engine's [`Self::party_ability_mask`]. Point-of-use consumers of the
+    /// engine's [`crate::world::PartyState::party_ability_mask`]. Point-of-use consumers of the
     /// party-wide passives (encounter rate, escape, battle-end rewards) call
     /// this.
     pub fn party_has_ability(&self, index: u8) -> bool {
-        self.party_ability_mask
+        self.party
+            .party_ability_mask
             .get((index >> 5) as usize)
             .is_some_and(|w| w & (1u32 << (index & 0x1F)) != 0)
     }
@@ -418,11 +423,11 @@ impl World {
     /// attack `> 0`), this resolves a [`crate::battle_stats::BattleStats`] from
     /// the character's base attack / UDF / LDF and the modifiers of the items
     /// in its equipment slots ([`crate::battle_stats::compute_battle_stats_default`]
-    /// against [`Self::equipment_table`]), then writes
-    /// [`Self::battle_attack`] (= the attack **without** the equipment sum,
+    /// against [`crate::world::DiscTables::equipment_table`]), then writes
+    /// [`crate::world::BattleState::attack`] (= the attack **without** the equipment sum,
     /// which retail folds per command at swing time - see
-    /// [`Self::battle_equip_atk`]) and
-    /// [`Self::battle_defense_split`] (= resolved UDF / LDF). Slots with a
+    /// [`crate::world::BattleState::equip_atk`]) and
+    /// [`crate::world::BattleState::defense_split`] (= resolved UDF / LDF). Slots with a
     /// zeroed roster record are left untouched, so synthetic battles that set
     /// `battle_attack` directly keep their values.
     ///
@@ -434,11 +439,11 @@ impl World {
         // so both the stat fold below and the MP-cost consumers read fresh
         // equipment-derived bits, mirroring retail's single-pass aggregator.
         self.refresh_party_ability_bits();
-        let pc = self.party_count.min(3) as usize;
+        let pc = self.party.party_count.min(3) as usize;
         for slot in 0..pc {
             // `slot` stays the battle ordinal for every live mirror written
             // below; the stats are read off the occupying character's record.
-            let Some(rec) = self.roster.members.get(self.party_roster_slot(slot)) else {
+            let Some(rec) = self.party.roster.members.get(self.party_roster_slot(slot)) else {
                 continue;
             };
             let live = rec.live_stats();
@@ -476,7 +481,7 @@ impl World {
             // remains the better effective source.
             let recs = rec.record_stats();
             let (agl, atk, udf, ldf, spd, int) =
-                if !self.accessory_passives.is_empty() && recs.atk != 0 {
+                if !self.tables.accessory_passives.is_empty() && recs.atk != 0 {
                     (recs.agl, recs.atk, recs.udf, recs.ldf, recs.spd, recs.int)
                 } else {
                     (live.agl, live.atk, live.udf, live.ldf, live.spd, live.int)
@@ -498,8 +503,8 @@ impl World {
             };
             let stats = crate::battle_stats::compute_battle_stats_with_passives(
                 &record,
-                &self.equipment_table,
-                &self.accessory_passives,
+                &self.tables.equipment_table,
+                &self.tables.accessory_passives,
                 &[],
                 &crate::battle_stats::StatusModifiers::default(),
             );
@@ -510,7 +515,10 @@ impl World {
             // keep their values. (Retail's max-MP boosts, indices 0x02/0x03,
             // have no engine consumer yet: the battle actor carries current
             // MP only, no max-MP mirror.)
-            let pwords = self.accessory_passives.bits_for_equipment(&record.equip);
+            let pwords = self
+                .tables
+                .accessory_passives
+                .bits_for_equipment(&record.equip);
             if pwords[0] & 0x3 != 0 {
                 let mut max_hp = base_max_hp;
                 if pwords[0] & 0x1 != 0 {
@@ -542,22 +550,22 @@ impl World {
                 if id == 0 {
                     continue;
                 }
-                if let Some(m) = self.equipment_table.get(id) {
+                if let Some(m) = self.tables.equipment_table.get(id) {
                     let b = m.atk.clamp(0, 255) as u8;
                     equip_atk[i] = b;
                     equip_atk_sum = equip_atk_sum.saturating_add(u16::from(b));
                 }
             }
-            if let Some(s) = self.battle_attack.get_mut(slot) {
+            if let Some(s) = self.battle.attack.get_mut(slot) {
                 *s = stats.atk.saturating_sub(equip_atk_sum);
             }
-            if let Some(s) = self.battle_equip_atk.get_mut(slot) {
+            if let Some(s) = self.battle.equip_atk.get_mut(slot) {
                 *s = equip_atk;
             }
-            if let Some(s) = self.battle_accuracy.get_mut(slot) {
+            if let Some(s) = self.battle.accuracy.get_mut(slot) {
                 *s = stats.acc;
             }
-            if let Some(s) = self.battle_evasion.get_mut(slot) {
+            if let Some(s) = self.battle.evasion.get_mut(slot) {
                 *s = stats.eva;
             }
             // Resolved SPD (base + the equipment table's footwear bonus). This
@@ -567,7 +575,7 @@ impl World {
             // so every SPD point a party member's gear granted was invisible to
             // turn order, the formation-advantage roll and the escape roll, all
             // three of which read `battle_speed`.
-            if let Some(s) = self.battle_speed.get_mut(slot) {
+            if let Some(s) = self.battle.speed.get_mut(slot) {
                 *s = stats.spd;
             }
             self.set_battle_defense_split(slot as u8, Some((stats.udf, stats.ldf)));
@@ -577,7 +585,7 @@ impl World {
             // mid-battle (a permanent stat-up item also calls this) is a no-op:
             // the level is unchanged, so the base is rewritten to the same value
             // and the live balance is untouched.
-            if let Some(g) = self.ap_gauges.get_mut(slot) {
+            if let Some(g) = self.battle.ap_gauges.get_mut(slot) {
                 g.set_base_ap(ap_base);
             }
             // Only when the record carries a real ceiling: a zeroed one would
@@ -596,8 +604,8 @@ impl World {
         table: crate::monster_catalog::FormationTable,
         catalog: crate::monster_catalog::MonsterCatalog,
     ) {
-        self.formation_table = table;
-        self.monster_catalog = catalog;
+        self.tables.formation_table = table;
+        self.tables.monster_catalog = catalog;
     }
 
     /// Install a [`crate::encounter_record::EncounterRecord`] decoded from
@@ -622,7 +630,7 @@ impl World {
         }
         let formation = record.to_formation_def(scene_label);
         let formation_id = formation.formation_id;
-        self.formation_table.insert(formation);
+        self.tables.formation_table.insert(formation);
 
         use crate::encounter::{
             EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
@@ -632,10 +640,10 @@ impl World {
         table.set_trigger_rate(0xFF);
         table.push(EncounterEntry::new(formation_id, 1));
         let tracker = EncounterTracker::new(table);
-        self.encounter = Some(EncounterSession::new(tracker));
+        self.encounters.session = Some(EncounterSession::new(tracker));
         // One-shot override: fire on the next field step regardless of any
         // installed per-region random tracker.
-        self.scripted_formation_pending = true;
+        self.encounters.scripted_formation_pending = true;
         Some(formation_id)
     }
 
@@ -663,6 +671,7 @@ impl World {
     /// REF: FUN_801DA51C
     pub fn install_man_formation(&mut self, formation_id: u16) -> Option<u16> {
         let has_slots = self
+            .tables
             .formation_table
             .formation(formation_id)
             .is_some_and(|def| !def.slots.is_empty());
@@ -679,10 +688,10 @@ impl World {
         table.set_trigger_rate(0xFF);
         table.push(EncounterEntry::new(formation_id, 1));
         let tracker = EncounterTracker::new(table);
-        self.encounter = Some(EncounterSession::new(tracker));
+        self.encounters.session = Some(EncounterSession::new(tracker));
         // One-shot override: fire on the next field step even when a per-region
         // random tracker is installed (town01 is 0% random). See the field.
-        self.scripted_formation_pending = true;
+        self.encounters.scripted_formation_pending = true;
         Some(formation_id)
     }
 
@@ -701,7 +710,7 @@ impl World {
     /// the record copy and the battle transition without any player step.
     /// The engine models that confirm-and-transition with the same immediate
     /// latch the field-carrier SM resolution uses
-    /// ([`Self::pending_field_carrier_battle`], drained by
+    /// ([`crate::world::FieldCarrierState::pending_battle`], drained by
     /// `Self::tick_field_carriers` in the same frame): the formation must
     /// already be registered by [`Self::install_man_encounter`] (the
     /// scene-entry MAN install, which also merges the row's monster ids'
@@ -718,6 +727,7 @@ impl World {
     pub fn trigger_scripted_battle(&mut self, row: u8) -> bool {
         let formation_id = u16::from(row);
         let has_slots = self
+            .tables
             .formation_table
             .formation(formation_id)
             .is_some_and(|def| !def.slots.is_empty());
@@ -726,12 +736,12 @@ impl World {
             return false;
         }
         log::info!("field: op-0x3E scripted battle entry -> formation row {row}");
-        self.pending_field_carrier_battle = Some(formation_id);
+        self.carriers.pending_battle = Some(formation_id);
         // Scripted rows carry a non-zero first header byte the retail reader
         // ORs `0x80` into a battle-setup flag for; the staged fight refuses
         // the Run command (the `ctx+0x287` no-escape input of the escape
         // roll `FUN_801E791C`). Cleared by `finish_battle`.
-        self.battle_no_escape = true;
+        self.battle.no_escape = true;
         true
     }
 
@@ -741,11 +751,11 @@ impl World {
     /// the record window overlaying the opcode to the host, which parses it as
     /// an [`crate::encounter_record::EncounterRecord`] and routes it through
     /// [`Self::install_scripted_encounter`]. See
-    /// [`Self::scripted_encounter_armed`] for why this gate exists (there is no
+    /// [`crate::world::EncounterState::scripted_armed`] for why this gate exists (there is no
     /// dedicated encounter opcode; the consuming entity SM is the retail
     /// discriminator).
     pub fn arm_scripted_encounter(&mut self, on: bool) {
-        self.scripted_encounter_armed = on;
+        self.encounters.scripted_armed = on;
     }
 
     /// Install a scripted encounter from the inline bytecode window the field
@@ -778,13 +788,13 @@ impl World {
         // Fire-once: retail clears `entity[+0x94]` after the formation copy so
         // the arm fires exactly once. Disarm the engine-side carrier flag too.
         if let Some(id) = id {
-            self.scripted_encounter_armed = false;
+            self.encounters.scripted_armed = false;
             // The record's `record[+0]` here is the *install opcode itself*
             // (the record overlays the opcode), so it is non-zero by
             // construction and the confirm state raises the per-battle
             // `0x80`. Carry it onto the synthesized def so the intro style
             // and the transition's audio cue see the scripted battle.
-            if let Some(def) = self.formation_table.by_id.get_mut(&id) {
+            if let Some(def) = self.tables.formation_table.by_id.get_mut(&id) {
                 def.header_flags = record_bytes.first().copied().unwrap_or(0);
             }
         }
@@ -805,12 +815,12 @@ impl World {
     /// - park-gate flag (the record's own head `SysFlag.Test`, e.g. `0x142`)
     ///   is still clear (the beaten-boss one-shot),
     ///
-    /// this registers the placement slot in [`Self::field_boss_stagers`] and
+    /// this registers the placement slot in [`crate::world::FieldPropState::boss_stagers`] and
     /// stations its approach point - the record's own `0x4C 0x51` NPC-run
     /// destination (Noa at the nest tile), or the placement spawn tile when
     /// the record has no station leg - as an interact-probe position
-    /// ([`Self::field_npc_positions`]) plus a walk-touch contact
-    /// ([`Self::field_walk_touch`],
+    /// ([`crate::world::FieldNpcState::positions`]) plus a walk-touch contact
+    /// ([`crate::world::FieldPropState::walk_touch`],
     /// [`crate::man_field_scripts::WalkTouchEvent::StagerBeat`]). Walking
     /// into / interacting with the placed actor then runs the record itself
     /// ([`Self::run_boss_stager_record`]) - the engine mirror of retail's
@@ -825,11 +835,12 @@ impl World {
         man_file: &legaia_asset::man_section::ManFile,
         man: &[u8],
     ) {
-        self.field_boss_stagers.clear();
+        self.props.boss_stagers.clear();
         for site in crate::man_field_scripts::boss_stager_placements(man_file, man) {
             // The row must be a registered scene formation (scene entry merged
             // the MAN rows + their archive stats) - a desync phantom is not.
             let row_ok = self
+                .tables
                 .formation_table
                 .formation(u16::from(site.formation_row))
                 .is_some_and(|def| !def.slots.is_empty());
@@ -853,15 +864,15 @@ impl World {
                 // Parked with no station leg: no reachable approach point.
                 None => continue,
             };
-            self.field_boss_stagers.insert(
+            self.props.boss_stagers.insert(
                 slot,
                 FieldBossStager {
                     record: slot,
                     park_gate: site.park_gate_flag,
                 },
             );
-            self.field_npc_positions.insert(slot, station);
-            self.field_walk_touch.insert(
+            self.npcs.positions.insert(slot, station);
+            self.props.walk_touch.insert(
                 slot,
                 (
                     station,
@@ -895,20 +906,20 @@ impl World {
     /// scene MAN is resident.
     // REF: FUN_801d5b5c, FUN_801cf9f4, FUN_8003BDE0 (context install)
     pub fn run_boss_stager_record(&mut self, slot: u8) -> bool {
-        let Some(&FieldBossStager { record, park_gate }) = self.field_boss_stagers.get(&slot)
+        let Some(&FieldBossStager { record, park_gate }) = self.props.boss_stagers.get(&slot)
         else {
             return false;
         };
         if park_gate.is_some_and(|flag| self.system_flag_test(flag)) {
             // Latched mid-visit (the fight resolved): drop the stale binding.
-            self.field_boss_stagers.remove(&slot);
-            self.field_walk_touch.remove(&slot);
+            self.props.boss_stagers.remove(&slot);
+            self.props.walk_touch.remove(&slot);
             return false;
         }
         if self.cutscene_timeline_active() {
             return false;
         }
-        let Some(man) = self.field_channels_man.clone() else {
+        let Some(man) = self.field_vm.channels_man.clone() else {
             return false;
         };
         let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
@@ -917,8 +928,8 @@ impl World {
         let installed =
             self.install_cutscene_timeline_record(&man_file, &man, 1, record as usize, false);
         if installed {
-            self.field_boss_stagers.remove(&slot);
-            self.field_walk_touch.remove(&slot);
+            self.props.boss_stagers.remove(&slot);
+            self.props.walk_touch.remove(&slot);
             log::info!("field: boss stager P1[{record}] launched as the beat timeline");
         }
         installed
@@ -943,10 +954,10 @@ impl World {
         // the random-roll path (`FUN_801D9E1C`), so a 0%-random scene still
         // starts the scripted fight. Drive the forced 0xFF session directly and
         // consume the flag.
-        if self.scripted_formation_pending {
-            self.scripted_formation_pending = false;
+        if self.encounters.scripted_formation_pending {
+            self.encounters.scripted_formation_pending = false;
             let rng = self.next_rng();
-            return match self.encounter.as_mut() {
+            return match self.encounters.session.as_mut() {
                 Some(session) => {
                     // Retail's scripted path bypasses the rate math entirely;
                     // keep the forced 0xFF-rate roll free of the accessory /
@@ -972,7 +983,7 @@ impl World {
         // [`crate::encounter::EncounterSession::on_step`]'s own gate) and feed
         // a trigger through [`crate::encounter::EncounterSession::trigger_with`].
         // REF: FUN_801D9E1C (ported in crate::region_encounter)
-        if self.field_region_tracker.is_some() {
+        if self.terrain.region_tracker.is_some() {
             // The region roll owns the rate AND the formation pick; the
             // session owns nothing but the frames between trigger and battle.
             // A host that dropped the session after scene entry (the New Game
@@ -981,11 +992,12 @@ impl World {
             // re-seeds its counter on a trigger, so a discarded roll is a
             // fight that happened and then didn't. Re-install the bare
             // bracket instead.
-            if self.encounter.is_none() {
+            if self.encounters.session.is_none() {
                 self.install_encounter_bracket();
             }
             let idle = self
-                .encounter
+                .encounters
+                .session
                 .as_ref()
                 .is_none_or(|s| matches!(s.phase(), crate::encounter::EncounterPhase::Idle));
             if !idle {
@@ -1000,7 +1012,7 @@ impl World {
             };
             // Take the tracker out so the RNG closure can borrow `self`
             // (same borrow-window pattern as `live_world_map_tick`).
-            let mut tracker = self.field_region_tracker.take().expect("is_some checked");
+            let mut tracker = self.terrain.region_tracker.take().expect("is_some checked");
             tracker.set_modifiers(self.encounter_rate_modifiers());
             // Re-run the scene's condition walk against the live story-flag
             // bank before rolling. Retail does this every step, and it is not
@@ -1017,7 +1029,7 @@ impl World {
                 "field step at ({wx}, {wz}): region counter {}",
                 tracker.counter()
             );
-            self.field_region_tracker = Some(tracker);
+            self.terrain.region_tracker = Some(tracker);
             return match roll {
                 Some(r) => {
                     let er = crate::encounter::EncounterRoll {
@@ -1030,7 +1042,7 @@ impl World {
                         self.active_scene_label,
                         r.formation_id
                     );
-                    match self.encounter.as_mut() {
+                    match self.encounters.session.as_mut() {
                         Some(s) => s.trigger_with(er),
                         None => {
                             // Unreachable: the bracket is installed above.
@@ -1047,7 +1059,7 @@ impl World {
         }
         let rng = self.next_rng();
         let modifiers = self.encounter_rate_modifiers();
-        match self.encounter.as_mut() {
+        match self.encounters.session.as_mut() {
             Some(session) => {
                 session.tracker_mut().set_rate_modifiers(modifiers);
                 session.on_step(rng)
@@ -1060,7 +1072,7 @@ impl World {
     /// `Transition` and `Grace` countdowns, and - while the session is in
     /// `Transition` - the field-to-battle intro state machine.
     pub fn tick_encounter(&mut self) {
-        if let Some(session) = self.encounter.as_mut() {
+        if let Some(session) = self.encounters.session.as_mut() {
             session.tick_frame();
         }
         self.tick_battle_intro();
@@ -1083,12 +1095,12 @@ impl World {
     /// is the battle-start sound: retail stores the cue id (`0x1F` plain,
     /// `0x4D` for a flagged/boss row) straight into slot 0 of the pending SFX
     /// ring `_DAT_8007B6D8`, and the engine's carrier for that ring is
-    /// [`World::battle_sfx_cues`] - the queue both hosts drain into their SFX
+    /// [`crate::world::AudioState::battle_sfx_cues`] - the queue both hosts drain into their SFX
     /// scheduler every frame - so the cue is pushed there. Because retail's
     /// store is a slot-0 **overwrite** (no ring-counter bump), only the last
     /// `SetAudioCue` of the tick is pushed. The remaining effects (mesh
     /// assembly, the bundle read, the load waits) are recorded in
-    /// [`World::battle_intro_effects`] for a host that owns those reads.
+    /// [`crate::world::BattleState::intro_effects`] for a host that owns those reads.
     ///
     /// The kernel's own load-wait response is reported idle: the engine has
     /// already resolved the formation by the time the session reaches
@@ -1102,23 +1114,24 @@ impl World {
             TransitionEffect, TransitionGlobals, TransitionResponses, tick_transition,
         };
 
-        let phase = self.encounter.as_ref().map(|s| s.phase());
+        let phase = self.encounters.session.as_ref().map(|s| s.phase());
         let Some(EncounterPhase::Transition {
             frames_remaining,
             roll,
         }) = phase
         else {
-            self.battle_intro = None;
-            self.battle_intro_effects.clear();
-            self.battle_intro_mode_handoff = false;
+            self.battle.intro = None;
+            self.battle.intro_effects.clear();
+            self.battle.intro_mode_handoff = false;
             return;
         };
         let total = self
-            .encounter
+            .encounters
+            .session
             .as_ref()
             .map(|s| s.transition_frames)
             .unwrap_or(0);
-        let mut entity = self.battle_intro.take().unwrap_or_default();
+        let mut entity = self.battle.intro.take().unwrap_or_default();
         // `+0x1A` counts display frames against `DAT_801D2458`; the session's
         // own countdown is the same clock read the other way round.
         entity.elapsed = total.saturating_sub(frames_remaining) as i16;
@@ -1146,6 +1159,7 @@ impl World {
             // makes the flagged battle-start cue (`0x4D`) overwrite the plain
             // one (`0x1F`) in ring slot 0.
             battle_flags: self
+                .tables
                 .formation_table
                 .formation(roll.formation_id)
                 .map(|d| d.per_battle_flags())
@@ -1169,7 +1183,7 @@ impl World {
             ..Default::default()
         };
         let tick = tick_transition(&mut entity, &globals, &TransitionResponses::default());
-        self.battle_intro = Some(entity);
+        self.battle.intro = Some(entity);
         let mut battle_start_cue = None;
         for effect in &tick.effects {
             match effect {
@@ -1194,7 +1208,8 @@ impl World {
             // static SFX descriptor index both hosts' schedulers key their
             // banks by; slot fields are HUD context only - no actor is
             // attacking during the spin.
-            self.battle_sfx_cues
+            self.audio
+                .battle_sfx_cues
                 .push(crate::battle_events::BattleSfxCue {
                     kind: cue,
                     timing_frames: 0,
@@ -1202,11 +1217,11 @@ impl World {
                     target_slot: 0,
                 });
         }
-        self.battle_intro_effects = tick.effects;
+        self.battle.intro_effects = tick.effects;
         // The master mode hand-off (`_DAT_8007B83C = 0x14` at `0x801CF8F8`).
         // Latching, not level-triggered: retail writes the word once, at the
         // end of the spin, and never unwrites it inside the transition.
-        self.battle_intro_mode_handoff |= tick.entered_battle_mode;
+        self.battle.intro_mode_handoff |= tick.entered_battle_mode;
     }
 
     /// Whether the battle-intro spin is still holding the master mode word
@@ -1225,9 +1240,9 @@ impl World {
     /// False outside a transition, so nothing else is gated by it.
     pub fn battle_mode_word_held(&self) -> bool {
         matches!(
-            self.encounter.as_ref().map(|s| s.phase()),
+            self.encounters.session.as_ref().map(|s| s.phase()),
             Some(crate::encounter::EncounterPhase::Transition { .. })
-        ) && !self.battle_intro_mode_handoff
+        ) && !self.battle.intro_mode_handoff
     }
 
     /// Return the resolved [`crate::monster_catalog::FormationDef`] for the
@@ -1236,14 +1251,17 @@ impl World {
     /// concrete monster set; the session advances to `Battling` as a
     /// side-effect.
     pub fn drain_encounter_formation(&mut self) -> Option<crate::encounter::EncounterRoll> {
-        self.encounter.as_mut().and_then(|s| s.drain_triggered())
+        self.encounters
+            .session
+            .as_mut()
+            .and_then(|s| s.drain_triggered())
     }
 
     /// Mark that the active battle finished. Engines call this from the
     /// post-battle resolution path so the session enters its grace window
     /// (suppresses encounters for `grace_frames` frames).
     pub fn end_encounter_battle(&mut self) {
-        if let Some(session) = self.encounter.as_mut() {
+        if let Some(session) = self.encounters.session.as_mut() {
             session.end_battle();
         }
     }

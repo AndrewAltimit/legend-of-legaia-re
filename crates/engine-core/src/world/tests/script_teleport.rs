@@ -100,7 +100,7 @@ fn unresolvable_script_id_leaves_ctx_untouched() {
 }
 
 /// Full host path: `[0x4C, 0xC3]` stepped through [`FieldHostImpl`] resolves
-/// the world's resident MAN ([`World::field_channels_man`]), applies the
+/// the world's resident MAN ([`crate::world::FieldVmState::channels_man`]), applies the
 /// teleport, and advances PC by 2.
 #[test]
 fn field_vm_op_4c_c3_teleports_through_the_host() {
@@ -109,7 +109,7 @@ fn field_vm_op_4c_c3_teleports_through_the_host() {
         [0x00, 2, 0x10, 0x90], // record 1: bz high bit -> half tile
     ]);
     let mut world = World::new();
-    world.field_channels_man = Some(std::sync::Arc::new(man));
+    world.field_vm.channels_man = Some(std::sync::Arc::new(man));
     let mut ctx = FieldCtx {
         script_id: 1,
         ..Default::default()

@@ -488,13 +488,13 @@ impl FieldApp {
         self.tick_active_dialog();
     }
 
-    /// If `world.current_dialog` carries a pending request and no panel is
+    /// If `world.dialog.current` carries a pending request and no panel is
     /// active yet, build one from the scene's MES container.
     fn maybe_open_dialog(&mut self) {
         if self.active_dialog.is_some() {
             return;
         }
-        let Some(req) = self.world.current_dialog.as_ref() else {
+        let Some(req) = self.world.dialog.current.as_ref() else {
             return;
         };
         let Some(mes) = self.scene_mes.as_ref() else {
@@ -504,7 +504,7 @@ impl FieldApp {
                 "field VM: OpenDialog text_id={:#x} but scene has no MES container",
                 req.text_id
             );
-            self.world.current_dialog = None;
+            self.world.dialog.current = None;
             return;
         };
         if let Some(mut panel) =
@@ -522,7 +522,7 @@ impl FieldApp {
                 "field VM: text_id {:#x} out of MES range; clearing request",
                 req.text_id
             );
-            self.world.current_dialog = None;
+            self.world.dialog.current = None;
         }
     }
 
@@ -535,7 +535,7 @@ impl FieldApp {
         panel.tick();
         if panel.is_done() {
             self.active_dialog = None;
-            self.world.current_dialog = None;
+            self.world.dialog.current = None;
         }
     }
 

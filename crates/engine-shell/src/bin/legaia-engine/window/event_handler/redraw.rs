@@ -186,7 +186,7 @@ impl PlayWindowApp {
             // ticking so the crawl advances and the timeline's terminal
             // SceneChange can fire (rebuilding render state on a swap).
             if self.session.host.world.cutscene_narration_active()
-                || self.session.host.world.cutscene_card.is_some()
+                || self.session.host.world.cutscene.card.is_some()
             {
                 self.session.host.world.set_pad(0);
                 match self.session.tick() {
@@ -253,21 +253,22 @@ impl PlayWindowApp {
             // Re-assert the precise-movement toggle each tick: scene / New
             // Game transitions can reseed world state, and the toggle is
             // host policy (options file + `R` key), not world state.
-            self.session.host.world.precise_movement = self.options_state.precise_movement;
+            self.session.host.world.locomotion.precise_movement =
+                self.options_state.precise_movement;
             // Field Move default (pause-menu Walk / Run) + the run button
             // that inverts it. Re-asserted per tick for the same reason as
             // precise movement: it is host policy over reseeded world state.
-            self.session.host.world.field_move_run_default =
+            self.session.host.world.locomotion.run_default =
                 self.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
             // Photosensitivity guard over the ambient palette cyclers -
             // host policy like the two above (default ON; see
             // `OptionsState::reduce_flashing`).
-            self.session.host.world.reduce_flashing = self.options_state.reduce_flashing;
+            self.session.host.world.toggles.reduce_flashing = self.options_state.reduce_flashing;
             // Battle "Select Attack" (config word `0x800846C4`): whether the
             // ring's Attack arm shows the Auto | Command prompt, goes
             // straight to the target cursor, or straight to the arts entry.
             // Host policy like the rows above.
-            self.session.host.world.battle_select_attack = self.options_state.battle_select_attack;
+            self.session.host.world.toggles.select_attack = self.options_state.battle_select_attack;
             // `set_pad` also latches the run button off the same word, so
             // there is nothing host-side to keep in sync.
             self.session.host.world.set_pad(field_pad);
@@ -459,14 +460,14 @@ impl PlayWindowApp {
             // A field-VM-triggered shop the player has now closed: tell
             // the world so the suspended op-0x49 resumes (Armed -> Done)
             // and the field VM advances past the merchant op next tick.
-            if self.session.host.world.field_shop_open && !self.menu_runtime.is_open() {
+            if self.session.host.world.shops.shop_open && !self.menu_runtime.is_open() {
                 self.session.host.world.finish_field_shop();
             }
             // Safety net for the prize exchange (its own Exit already calls
             // `finish_prize_exchange` through the runtime tick): if the menu
             // closed by any other path, unpark the suspended counter script
             // rather than wedge it.
-            if self.session.host.world.prize_exchange_open && !self.menu_runtime.is_open() {
+            if self.session.host.world.shops.prize_exchange_open && !self.menu_runtime.is_open() {
                 self.session.host.world.finish_prize_exchange();
             }
             self.prev_pad = self.pad;
@@ -514,7 +515,7 @@ impl PlayWindowApp {
                 ..
             } = self;
             field_floor_wave.apply(
-                &session.host.world.field_floor_height_lut,
+                &session.host.world.terrain.floor_height_lut,
                 [
                     field_terrain_draws,
                     field_terrain_color_draws,
@@ -569,7 +570,7 @@ impl PlayWindowApp {
         // Drake mist-wall force-walk bands) keeps the ordinary walk camera.
         let cutscene_cam = if self.session.host.world.cutscene_timeline_active()
             && (self.session.host.world.mode != SceneMode::WorldMap
-                || !self.session.host.world.camera_state.params.is_empty())
+                || !self.session.host.world.camera.state.params.is_empty())
         {
             let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
             // Glide pacing from the op-`0x45` `apply_trigger` (retail
@@ -603,9 +604,9 @@ impl PlayWindowApp {
             // mover snaps to an `apply 0` beat, then glides from there when
             // a same-tick follow-up beat re-stages - the map01 fly-in pair).
             self.replay_camera_snap_beats();
-            let apply = self.session.host.world.camera_state.apply_trigger;
-            let mode = self.session.host.world.camera_state.mode;
-            let now = self.session.host.world.field_frames;
+            let apply = self.session.host.world.camera.state.apply_trigger;
+            let mode = self.session.host.world.camera.state.mode;
+            let now = self.session.host.world.clock.display_frames;
             let steps = u32::try_from(now.saturating_sub(self.cutscene_cam_frames))
                 .unwrap_or(u32::MAX)
                 .max(1);
@@ -627,7 +628,7 @@ impl PlayWindowApp {
                     "DIAG cutcam: frame {} apply {} target focus={focus:?} pitch={pitch:.3} \
                      yaw={yaw:.3} roll={roll:.3} h={h} tr_eye={tr_eye:?} | eased focus={:?} \
                      pitch={:.3} yaw={:.3} roll={:.3} h={} tr_eye={:?} | params={:?}",
-                    w.frame, apply, out.0, out.1, out.2, out.3, out.4, out.5, w.camera_state.params
+                    w.frame, apply, out.0, out.1, out.2, out.3, out.4, out.5, w.camera.state.params
                 );
             }
             Some(out)
@@ -660,14 +661,14 @@ impl PlayWindowApp {
             // Disjoint fields: `r` borrows `win.renderer`, the image lives under
             // `session`, the cache is `caption_atlas`.
             if self.caption_atlas.is_none()
-                && let Some(cap) = self.session.host.world.cutscene_caption.as_ref()
+                && let Some(cap) = self.session.host.world.cutscene.caption.as_ref()
             {
                 match r.upload_sprite_atlas(&cap.rgba, cap.width, cap.height) {
                     Ok(atlas) => self.caption_atlas = Some((atlas, cap.width, cap.height)),
                     Err(e) => log::warn!("caption atlas upload: {e:#}"),
                 }
             } else if self.caption_atlas.is_some()
-                && self.session.host.world.cutscene_caption.is_none()
+                && self.session.host.world.cutscene.caption.is_none()
             {
                 self.caption_atlas = None;
             }
@@ -914,7 +915,7 @@ impl PlayWindowApp {
             // later board's re-used slots re-queue.
             {
                 let world = &self.session.host.world;
-                if world.tile_board_draw_list.is_empty() {
+                if world.board.draw_list.is_empty() {
                     self.tile_slots_queued.clear();
                 } else {
                     for slot in
@@ -1048,7 +1049,8 @@ impl PlayWindowApp {
                 // whose record doesn't resolve (e.g. the low walk-move
                 // ids the locomotion controller already covers) drop out
                 // harmlessly.
-                let move_cues = std::mem::take(&mut self.session.host.world.field_player_move_cues);
+                let move_cues =
+                    std::mem::take(&mut self.session.host.world.locomotion.player_move_cues);
                 if !move_cues.is_empty()
                     && let Some(bundle) = self.npc_anim_bundles.0.as_ref()
                 {
@@ -1066,19 +1068,14 @@ impl PlayWindowApp {
                                 bundle,
                                 id as usize - 1,
                             )
-                            && let Some(anim) = self.session.host.world.field_player_anim.as_mut()
+                            && let Some(anim) =
+                                self.session.host.world.locomotion.player_anim.as_mut()
                         {
                             anim.push_scripted(clip);
                         }
                     }
                 }
-                let cues: Vec<_> = self
-                    .session
-                    .host
-                    .world
-                    .field_npc_anim_cues
-                    .drain()
-                    .collect();
+                let cues: Vec<_> = self.session.host.world.npcs.anim_cues.drain().collect();
                 for (slot, (_count, base_id, _frames)) in cues {
                     if !self.npc_anim_srcs.contains_key(&slot) {
                         continue;
@@ -1571,11 +1568,7 @@ impl PlayWindowApp {
                     // the spawn tile), floor-snapped like the player.
                     let w = &self.session.host.world;
                     for d in self.field_npc_draws.iter().filter(|_| layer_on("npc")) {
-                        let (x, z) = w
-                            .field_npc_positions
-                            .get(&d.slot)
-                            .copied()
-                            .unwrap_or(d.spawn);
+                        let (x, z) = w.npcs.positions.get(&d.slot).copied().unwrap_or(d.spawn);
                         // Story-parked actor (spawn-prologue `MoveTo` to the
                         // off-map hide box, or a cutscene hide): not drawn -
                         // retail parks despawned actors at the far-corner
@@ -1603,7 +1596,7 @@ impl PlayWindowApp {
                         // seeded into `field_npc_headings` (facing-0
                         // / prologue-less records render at
                         // identity).
-                        let rot = match w.field_npc_headings.get(&d.slot) {
+                        let rot = match w.npcs.headings.get(&d.slot) {
                             Some(&h) => Mat4::from_rotation_y(
                                 std::f32::consts::PI + (h as f32) / 4096.0 * std::f32::consts::TAU,
                             ),
@@ -1943,7 +1936,7 @@ impl PlayWindowApp {
             hud.extend(field_hud_draws.text.iter().copied());
             // Post-battle spoils panel. The XP / gold / drops a victory
             // credits used to land with no on-screen acknowledgement at all
-            // (`World::last_battle_rewards` had no reader outside its own
+            // (`World::battle.last_rewards` had no reader outside its own
             // declaration); this is the shared `engine-ui` builder both hosts
             // draw. Suppressed while a boot-UI panel owns the frame.
             if !self.boot_ui.is_active() {
@@ -2031,7 +2024,7 @@ impl PlayWindowApp {
                 draws: &muscle_hub_draw_vec,
             });
             // Opening-cutscene "It was the Seru." caption: the opdeene baked TIM
-            // (`World::cutscene_caption`) blitted centered and faded
+            // (`World::cutscene.caption`) blitted centered and faded
             // (`cutscene_caption_alpha`) over the gap between the two narration
             // crawls. One textured quad sampling the caption atlas - the
             // background palette entry is transparent, so only the white text
@@ -2039,7 +2032,7 @@ impl PlayWindowApp {
             // preserve the PSX 320x240 framing (retail centers it horizontally,
             // mid-screen ~y110 over the villager tableau).
             let caption_draw_vec: Vec<legaia_engine_render::SpriteDraw> = {
-                let alpha = self.session.host.world.cutscene_caption_alpha;
+                let alpha = self.session.host.world.cutscene.caption_alpha;
                 match self.caption_atlas.as_ref() {
                     Some((_, cw, ch)) if alpha > 0.001 => {
                         let scale = h as f32 / 240.0;
@@ -2343,7 +2336,7 @@ impl PlayWindowApp {
             // through the same shared emitter the browser play page uses so
             // the two bars cannot drift between hosts.
             screen_prims.extend(legaia_engine_render::screen_overlay::cinematic_bar_prims(
-                self.session.host.world.cinematic_bar,
+                self.session.host.world.presentation.cinematic_bar,
                 legaia_engine_render::screen_overlay::PSX_DISPLAY_H,
             ));
             let target = |scene| present_target(scene, &screen_prims);

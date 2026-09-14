@@ -4,7 +4,7 @@
 //! Unlike `end_to_end_gameplay_loop.rs` - which composes the encounter /
 //! battle / loot pieces with test-side glue (manual `on_field_step`,
 //! `enter_battle`, a hand-rolled `drive_battle_to_victory` damage loop) -
-//! this test sets [`World::live_gameplay_loop`] and then does nothing but
+//! this test sets [`crate::world::WorldToggles::live_gameplay_loop`] and then does nothing but
 //! hold a d-pad direction and call [`World::tick`]. The engine itself must:
 //!
 //!   1. Walk the player on the held pad (field locomotion).
@@ -31,7 +31,7 @@ fn build_field_world() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
 
     // Party battle stats. `spawn_actor` (called inside the transition) does
     // not reset these, so they carry into battle. Attack 60 vs a Goblin's
@@ -55,7 +55,7 @@ fn build_field_world() -> World {
     w.actors[0].move_state.world_x = 300;
     w.actors[0].move_state.world_z = 300;
     w.actors[0].move_state.field_72 = 4096;
-    w.field_camera_azimuth = 0;
+    w.locomotion.camera_azimuth = 0;
 
     // Encounter session: rate 0xFF (every step rolls a battle), one row =
     // formation 1. Short transition / grace timers keep the test brisk.
@@ -68,7 +68,7 @@ fn build_field_world() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
+    w.toggles.live_gameplay_loop = true;
     w
 }
 
@@ -76,7 +76,7 @@ fn build_field_world() -> World {
 fn walking_triggers_battle_and_returns_to_field_with_loot() {
     let mut w = build_field_world();
     let start_z = w.actors[0].move_state.world_z;
-    let pre_money = w.money;
+    let pre_money = w.party.money;
     let up = InputState::mask_of([PadButton::Up]);
 
     let mut entered_battle = false;
@@ -91,7 +91,7 @@ fn walking_triggers_battle_and_returns_to_field_with_loot() {
             moved = true;
         }
         // Stop once we've fought and come back to the field with rewards.
-        if entered_battle && w.mode == SceneMode::Field && w.last_battle_rewards.is_some() {
+        if entered_battle && w.mode == SceneMode::Field && w.battle.last_rewards.is_some() {
             break;
         }
     }
@@ -111,13 +111,14 @@ fn walking_triggers_battle_and_returns_to_field_with_loot() {
     );
 
     let rewards = w
-        .last_battle_rewards
+        .battle
+        .last_rewards
         .as_ref()
         .expect("victory should record rewards");
     assert!(rewards.gold > 0, "Goblin formation drops gold: {rewards:?}");
     assert!(rewards.xp > 0, "Goblin formation grants XP: {rewards:?}");
     assert_eq!(
-        w.money,
+        w.party.money,
         pre_money + rewards.gold as i32,
         "gold added to money"
     );
@@ -127,7 +128,7 @@ fn walking_triggers_battle_and_returns_to_field_with_loot() {
     );
     assert!(!w.game_over, "a monster wipe is not a party wipe");
     assert!(
-        w.active_formation.is_none(),
+        w.battle.active_formation.is_none(),
         "formation cleared after battle"
     );
 }
@@ -158,7 +159,7 @@ fn battle_tags_monster_slots_for_rendering() {
     let (actor_idx, monster_id, battle_slot) = slots[0];
     assert_eq!(battle_slot, 0, "first monster is battle slot 0");
     assert_eq!(
-        actor_idx, w.party_count as usize,
+        actor_idx, w.party.party_count as usize,
         "monster actors follow the party slots"
     );
     assert!(monster_id > 0, "monster id is the 1-based archive id");
@@ -180,7 +181,7 @@ fn live_loop_off_never_transitions_on_its_own() {
     // encounter or enter battle. Guards the opt-in contract that keeps
     // existing Field-mode tick callers unaffected.
     let mut w = build_field_world();
-    w.live_gameplay_loop = false;
+    w.toggles.live_gameplay_loop = false;
     let up = InputState::mask_of([PadButton::Up]);
     for _ in 0..2000 {
         w.set_pad(up);
@@ -191,5 +192,5 @@ fn live_loop_off_never_transitions_on_its_own() {
             "must stay in field when loop is off"
         );
     }
-    assert!(w.last_battle_rewards.is_none());
+    assert!(w.battle.last_rewards.is_none());
 }

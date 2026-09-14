@@ -6,7 +6,7 @@
 use super::*;
 
 impl World {
-    /// First synthetic [`Self::field_walk_touch`] slot for gate-0
+    /// First synthetic [`crate::world::FieldPropState::walk_touch`] slot for gate-0
     /// tile-trigger binds ([`Self::install_trigger_walk_touch`]). Partition-1
     /// placement indices (the natural walk-touch keys) stay well below this
     /// in the retail corpus, so the two key spaces never collide.
@@ -22,28 +22,28 @@ impl World {
     /// [`Self::install_world_map_entities_with_configs`]; retail builds the
     /// same per-entity records from the scene's MAN actor-placement partition.
     pub fn install_field_carriers(&mut self, configs: Vec<FieldCarrierConfig>) {
-        self.field_carriers = (0..configs.len())
+        self.carriers.entities = (0..configs.len())
             .map(|_| vm::world_map::WorldMapEntityCtx::default())
             .collect();
-        self.field_carrier_configs = configs;
-        self.pending_field_carrier_battle = None;
+        self.carriers.configs = configs;
+        self.carriers.pending_battle = None;
         // The slot map is only meaningful for a MAN-derived install; a
         // hand-built set has no placement slots. Clear it (and any armed engage)
         // so a re-install never leaves a stale slot pointing at the old set.
-        self.field_carrier_slots.clear();
-        self.pending_carrier_engage = None;
-        self.carrier_menu = None;
+        self.carriers.slots.clear();
+        self.carriers.pending_engage = None;
+        self.carriers.menu = None;
         // NPC motion + walk-touch state is placement-keyed too: never let a
         // previous scene's routes / in-flight legs / door events leak.
-        self.field_npc_routes.clear();
-        self.field_npc_glide_speeds.clear();
-        self.field_npc_default_moves.clear();
-        self.field_npc_motions.clear();
-        self.field_walk_touch.clear();
-        self.field_boss_stagers.clear();
-        self.active_walk_touch = None;
-        self.stepping_inline_npc = None;
-        self.active_inline_slot = None;
+        self.npcs.routes.clear();
+        self.npcs.glide_speeds.clear();
+        self.npcs.default_moves.clear();
+        self.npcs.motions.clear();
+        self.props.walk_touch.clear();
+        self.props.boss_stagers.clear();
+        self.props.active_walk_touch = None;
+        self.dialog.stepping_inline_npc = None;
+        self.dialog.active_inline_slot = None;
     }
 
     /// Install the scene's field carriers **derived from its MAN actor-placement
@@ -82,7 +82,7 @@ impl World {
 
         self.install_field_carriers(derived.into_iter().map(|d| d.config).collect());
         // install_field_carriers cleared the slot map; repopulate for this set.
-        self.field_carrier_slots = carrier_slots;
+        self.carriers.slots = carrier_slots;
 
         // The system flags this scene's own records SET on their way into a
         // `3E FF <row>` scripted battle entry - the disc-side half of a
@@ -115,16 +115,16 @@ impl World {
         // so `field_interact` can open the interacted actor's real dialogue.
         // This is the actor's own inline MES text (retail `actor[+0x90]`), the
         // mechanism `0x3F` was wrongly standing in for.
-        self.field_npc_dialog.clear();
-        self.field_npc_dialog_prologue.clear();
-        self.field_npc_positions.clear();
-        self.field_npc_entry_positions.clear();
-        self.field_npc_headings.clear();
+        self.npcs.dialog.clear();
+        self.npcs.dialog_prologue.clear();
+        self.npcs.positions.clear();
+        self.npcs.entry_positions.clear();
+        self.npcs.headings.clear();
         // Motion state is per-scene: a snapshot carried across a scene change
         // would diff the warp itself as one enormous step and start every
         // actor - the player included - walking on the landing frame.
-        self.field_motion_prev.clear();
-        self.field_actor_moving.clear();
+        self.locomotion.motion_prev.clear();
+        self.locomotion.actor_moving.clear();
         for (placement, kind) in crate::man_field_scripts::classify_placements(man_file, man) {
             let Ok(slot) = u8::try_from(placement.index) else {
                 continue;
@@ -140,7 +140,8 @@ impl World {
             // them); a parked anchor draws nothing and collides with nothing,
             // so free-roam behaviour is unchanged.
             if placement.special_model {
-                self.field_npc_positions
+                self.npcs
+                    .positions
                     .insert(slot, (placement.world_x, placement.world_z));
             }
             // A **minigame door** placement (`PlacementKind::Portal`, i.e. a
@@ -160,25 +161,26 @@ impl World {
                     man_file, man, &placement,
                 )
             {
-                self.field_npc_dialog_prologue.insert(slot, record);
+                self.npcs.dialog_prologue.insert(slot, record);
             }
             if let crate::man_field_scripts::PlacementKind::Npc {
                 dialog_inline: Some(inline),
                 ..
             } = kind
             {
-                self.field_npc_dialog.insert(slot, inline);
+                self.npcs.dialog.insert(slot, inline);
                 // Stash the untruncated record so the opt-in field-VM runner can
                 // execute the interaction prologue (segment selection) - purely
                 // additive; the default path keeps using `field_npc_dialog`.
                 if let Some(prologue) =
                     crate::man_field_scripts::placement_inline_prologue(man_file, man, &placement)
                 {
-                    self.field_npc_dialog_prologue.insert(slot, prologue);
+                    self.npcs.dialog_prologue.insert(slot, prologue);
                 }
                 // The interaction probe box-tests the player against this spawn
                 // position (= runtime actor frame; see `field_npc_positions`).
-                self.field_npc_positions
+                self.npcs
+                    .positions
                     .insert(slot, (placement.world_x, placement.world_z));
                 // The placement's autonomous walk route (its own pre-text
                 // `0x4C 0x51` move-to-tile ops), driven through the motion VM
@@ -206,7 +208,7 @@ impl World {
                     route
                 };
                 if !route.is_empty() {
-                    self.field_npc_routes.insert(slot, route);
+                    self.npcs.routes.insert(slot, route);
                 }
                 // Faithful per-leg glide speed from the placement's real
                 // walk-kernel operands: the bound tail-section-1
@@ -221,7 +223,7 @@ impl World {
                 if let Some(speed) =
                     crate::man_field_scripts::placement_glide_speed(man_file, man, &placement)
                 {
-                    self.field_npc_glide_speeds.insert(slot, speed);
+                    self.npcs.glide_speeds.insert(slot, speed);
                 }
             }
             // Walk-touch events ride any non-parked placement (door warps are
@@ -230,7 +232,8 @@ impl World {
             if let Some(event) =
                 crate::man_field_scripts::placement_walk_touch_event(man_file, man, &placement)
             {
-                self.field_walk_touch
+                self.props
+                    .walk_touch
                     .insert(slot, ((placement.world_x, placement.world_z), event));
             }
         }
@@ -241,7 +244,7 @@ impl World {
         // motion-pause kick (`legaia_engine_vm::motion_pause`) a real table.
         // REF: FUN_80038158 (case 0x17), FUN_8003C9AC
         for (slot, pair) in crate::man_field_scripts::motion_default_move_writes(man_file, man) {
-            self.field_npc_default_moves.insert(slot, pair);
+            self.npcs.default_moves.insert(slot, pair);
         }
 
         // Seed the per-actor field-VM channels from the same placement partition
@@ -284,7 +287,7 @@ impl World {
 
     /// [`Self::install_trigger_walk_touch`] plus each bind's **flat MAN record
     /// index**, so the touch dispatch can re-resolve the record's story-flag
-    /// branch at contact time (see [`Self::field_walk_touch_records`]).
+    /// branch at contact time (see [`crate::world::FieldPropState::walk_touch_records`]).
     pub fn install_trigger_walk_touch_with_records(
         &mut self,
         binds: &[(
@@ -293,17 +296,19 @@ impl World {
             Option<usize>,
         )],
     ) {
-        self.field_walk_touch
+        self.props
+            .walk_touch
             .retain(|slot, _| *slot < Self::TRIGGER_WALK_TOUCH_SLOT_BASE);
-        self.field_walk_touch_records
+        self.props
+            .walk_touch_records
             .retain(|slot, _| *slot < Self::TRIGGER_WALK_TOUCH_SLOT_BASE);
         for (i, (pos, event, record)) in binds.iter().enumerate() {
             let Some(slot) = Self::TRIGGER_WALK_TOUCH_SLOT_BASE.checked_add(i as u8) else {
                 break;
             };
-            self.field_walk_touch.insert(slot, (*pos, *event));
+            self.props.walk_touch.insert(slot, (*pos, *event));
             if let Some(record) = record {
-                self.field_walk_touch_records.insert(slot, *record);
+                self.props.walk_touch_records.insert(slot, *record);
             }
         }
     }
@@ -315,14 +320,14 @@ impl World {
     /// surfaces a [`FieldEvent::FieldInteract`]. Shared by the field VM host and
     /// `Self::tick_field_interaction_probe`.
     pub fn trigger_field_interact(&mut self, interact_id: u8, slot: u8) {
-        self.last_field_interact = Some((interact_id, slot));
+        self.dialog.last_field_interact = Some((interact_id, slot));
         // A boss-stager placement (rikuroa's Caruban stager P1[3]): the
         // approach / interact runs the placement's own partition-1 record
         // through the field VM - the engine mirror of retail's touch
         // dispatch resuming the parked stager script. The record's own bytes
         // stage the fight (`52 89` marker SET -> `3E FF <row>` battle entry),
         // so no dialog panel opens here.
-        if self.field_boss_stagers.contains_key(&slot) && self.run_boss_stager_record(slot) {
+        if self.props.boss_stagers.contains_key(&slot) && self.run_boss_stager_record(slot) {
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::FieldInteract { interact_id, slot });
             return;
@@ -335,11 +340,11 @@ impl World {
         // Stash this slot's untruncated record (if any) so the opt-in VM-dialogue
         // runner can execute its interaction prologue. Always reassigned (to
         // `None` when absent) so a prior interaction's prologue can't leak.
-        self.active_inline_prologue = self.field_npc_dialog_prologue.get(&slot).cloned();
+        self.dialog.active_inline_prologue = self.npcs.dialog_prologue.get(&slot).cloned();
         // Remember which NPC this interaction belongs to: the inline runner
         // routes the prologue's `0x4C 0x51` NPC-run ops to this slot.
-        self.active_inline_slot = Some(slot);
-        let inline = self.field_npc_dialog.get(&slot).cloned();
+        self.dialog.active_inline_slot = Some(slot);
+        let inline = self.npcs.dialog.get(&slot).cloned();
         let opened_dialog = if let Some(ref text) = inline {
             self.open_field_dialog(text.clone());
             true
@@ -351,18 +356,18 @@ impl World {
         // - dialogue with the 4-option spar picker -> a `CarrierMenu` gates the
         //   engage on the fight option (faithful);
         // - dialogue without a picker -> the any-accept `pending_carrier_engage`.
-        if let Some(&carrier_idx) = self.field_carrier_slots.get(&slot) {
+        if let Some(&carrier_idx) = self.carriers.slots.get(&slot) {
             if !opened_dialog {
                 self.engage_field_carrier(carrier_idx);
             } else if let Some((n, fight_option)) = inline.as_deref().and_then(spar_menu_of) {
-                self.carrier_menu = Some(CarrierMenu {
+                self.carriers.menu = Some(CarrierMenu {
                     carrier_idx,
                     n,
                     fight_option,
                     cursor: 0,
                 });
             } else {
-                self.pending_carrier_engage = Some(carrier_idx);
+                self.carriers.pending_engage = Some(carrier_idx);
             }
         }
         self.pending_field_events
@@ -371,10 +376,10 @@ impl World {
 
     /// Open a field dialogue box from an inline interaction-script buffer (the
     /// text is the buffer itself; the retail box geometry isn't pinned, so the
-    /// box coords are zero). Sets [`Self::current_dialog`] and surfaces a
+    /// box coords are zero). Sets [`crate::world::DialogState::current`] and surfaces a
     /// [`FieldEvent::OpenDialog`].
     fn open_field_dialog(&mut self, inline: Vec<u8>) {
-        self.current_dialog = Some(DialogRequest {
+        self.dialog.current = Some(DialogRequest {
             text_id: 0,
             inline: inline.clone(),
             world_x: 0,
@@ -400,23 +405,23 @@ impl World {
     /// without closing. Mirrors the retail inline-picker cursor.
     pub(crate) fn handle_carrier_menu(&mut self) -> bool {
         use crate::input::PadButton;
-        if self.current_dialog.is_none() {
+        if self.dialog.current.is_none() {
             // Box closed elsewhere; drop a stale menu.
-            self.carrier_menu = None;
+            self.carriers.menu = None;
             return false;
         }
-        let Some(menu) = self.carrier_menu else {
+        let Some(menu) = self.carriers.menu else {
             return false;
         };
-        if self.dialog_input_consumed {
+        if self.dialog.input_consumed {
             return true; // already handled this tick
         }
         let confirm = self.input.just_pressed(PadButton::Cross);
         let cancel = self.input.just_pressed(PadButton::Circle);
         if confirm || cancel {
-            self.dialog_input_consumed = true;
-            self.carrier_menu = None;
-            self.current_dialog = None;
+            self.dialog.input_consumed = true;
+            self.carriers.menu = None;
+            self.dialog.current = None;
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::DialogDismissed);
             if confirm && menu.cursor == menu.fight_option {
@@ -434,8 +439,8 @@ impl World {
             if down && m.cursor + 1 < m.n {
                 m.cursor += 1;
             }
-            self.carrier_menu = Some(m);
-            self.dialog_input_consumed = true;
+            self.carriers.menu = Some(m);
+            self.dialog.input_consumed = true;
         }
         true
     }
@@ -456,7 +461,7 @@ impl World {
     ///   [`Self::trigger_field_interact`] and turns the player toward it
     ///   ([`Self::face_field_npc`]).
     ///
-    /// The [`Self::dialog_input_consumed`] per-tick guard keeps this and the
+    /// The [`crate::world::DialogState::input_consumed`] per-tick guard keeps this and the
     /// field VM's `0x4C` dialog poll from both acting on the same button edge.
     /// No-op without a player actor or installed NPC positions.
     ///
@@ -471,7 +476,8 @@ impl World {
         // input: its own stepper routes the confirm edges
         // ([`Self::step_prop_interaction`]).
         if self
-            .inline_dialogue
+            .dialog
+            .inline
             .as_ref()
             .is_some_and(|id| id.prop_anchor.is_some())
         {
@@ -495,20 +501,19 @@ impl World {
                 return;
             }
             // The inline-script runner, when active, owns box dismissal.
-            if self.inline_dialogue.is_none() && (confirm || cancel) && !self.dialog_input_consumed
-            {
-                self.dialog_input_consumed = true;
-                self.current_dialog = None;
+            if self.dialog.inline.is_none() && (confirm || cancel) && !self.dialog.input_consumed {
+                self.dialog.input_consumed = true;
+                self.dialog.current = None;
                 self.pending_field_events
                     .push(crate::field_events::FieldEvent::DialogDismissed);
-                if let Some(idx) = self.pending_carrier_engage.take() {
+                if let Some(idx) = self.carriers.pending_engage.take() {
                     self.engage_field_carrier(idx);
                 }
             }
             return;
         }
 
-        if self.dialog_input_consumed || !confirm {
+        if self.dialog.input_consumed || !confirm {
             return;
         }
         // Retail geometry: a single facing-indexed compass probe 64 units
@@ -518,10 +523,10 @@ impl World {
         // face-the-NPC step retail applies to moving-class partners
         // (`flags & 0x20010 == 0x20000`), which every talk NPC is
         // (capture-pinned by `rimelm_npc_press_tetsu`).
-        if !self.field_npc_positions.is_empty()
+        if !self.npcs.positions.is_empty()
             && let Some(npc_slot) = self.field_interact_probe_slot()
         {
-            self.dialog_input_consumed = true;
+            self.dialog.input_consumed = true;
             self.trigger_field_interact(0, npc_slot);
             self.face_field_npc(npc_slot);
             return;
@@ -535,7 +540,7 @@ impl World {
         if let Some(anchor) = self.field_interact_prop_anchor()
             && self.start_prop_interaction(anchor)
         {
-            self.dialog_input_consumed = true;
+            self.dialog.input_consumed = true;
         }
     }
 
@@ -553,7 +558,7 @@ impl World {
     ///
     /// REF: FUN_801DA51C
     pub fn engage_field_carrier(&mut self, idx: usize) {
-        if let Some(ctx) = self.field_carriers.get_mut(idx)
+        if let Some(ctx) = self.carriers.entities.get_mut(idx)
             && ctx.state == vm::world_map::EntityState::Idle as u16
         {
             ctx.state = vm::world_map::EntityState::Activating as u16;
@@ -569,19 +574,19 @@ impl World {
     ///
     /// REF: FUN_801DA51C
     pub(crate) fn tick_field_carriers(&mut self) {
-        if !self.field_carriers.is_empty() {
-            let mut carriers = std::mem::take(&mut self.field_carriers);
+        if !self.carriers.entities.is_empty() {
+            let mut carriers = std::mem::take(&mut self.carriers.entities);
             for (idx, ctx) in carriers.iter_mut().enumerate() {
                 let mut host = FieldCarrierHostImpl { world: self };
                 vm::world_map::step(idx, ctx, &mut host);
             }
-            self.field_carriers = carriers;
+            self.carriers.entities = carriers;
         }
 
         // The latched battle entry is shared with the field-VM op-`3E FF`
         // scripted-battle arm ([`Self::trigger_scripted_battle`]), which can
         // fire in a scene with no installed carriers - drain it regardless.
-        if let Some(formation_id) = self.pending_field_carrier_battle.take() {
+        if let Some(formation_id) = self.carriers.pending_battle.take() {
             self.begin_field_carrier_battle(formation_id);
         }
     }
@@ -602,18 +607,19 @@ impl World {
         };
         // Towns roll nothing of their own and may have no session installed:
         // a bare bracket carries the transition + grace state machine only.
-        if self.encounter.is_none() {
+        if self.encounters.session.is_none() {
             self.install_encounter_bracket();
         }
         // A post-battle grace window suppresses step rolls, never a story
         // fight - reset it and arm.
-        if let Some(s) = self.encounter.as_mut()
+        if let Some(s) = self.encounters.session.as_mut()
             && matches!(s.phase(), crate::encounter::EncounterPhase::Grace { .. })
         {
             s.reset();
         }
         let armed = self
-            .encounter
+            .encounters
+            .session
             .as_mut()
             .is_some_and(|s| s.trigger_with(roll));
         if !armed {
@@ -635,11 +641,16 @@ impl World {
     /// nothing ever sees - the same shape of defect that made nine consecutive
     /// field rolls vanish.
     pub(crate) fn begin_world_map_encounter(&mut self, formation_id: u16) {
-        if self.formation_table.formation(formation_id).is_none() {
+        if self
+            .tables
+            .formation_table
+            .formation(formation_id)
+            .is_none()
+        {
             log::error!(
                 "world-map encounter: formation {formation_id} is not registered \
                  ({} rows in the table) - the roll is dropped",
-                self.formation_table.len()
+                self.tables.formation_table.len()
             );
             return;
         }
@@ -650,18 +661,19 @@ impl World {
         };
         // The overworld may have no step-roll session installed: a bare
         // bracket carries the transition + grace state machine only.
-        if self.encounter.is_none() {
+        if self.encounters.session.is_none() {
             self.install_encounter_bracket();
         }
         // A post-battle grace window suppresses step rolls, not a contact
         // the entity SM already committed to - reset it and arm.
-        if let Some(s) = self.encounter.as_mut()
+        if let Some(s) = self.encounters.session.as_mut()
             && matches!(s.phase(), crate::encounter::EncounterPhase::Grace { .. })
         {
             s.reset();
         }
         let armed = self
-            .encounter
+            .encounters
+            .session
             .as_mut()
             .is_some_and(|s| s.trigger_with(roll));
         if !armed {
@@ -677,7 +689,12 @@ impl World {
     /// flip into the battle, snapshotting the world-map context so
     /// [`Self::finish_battle`] returns to [`SceneMode::WorldMap`].
     pub(crate) fn enter_world_map_battle(&mut self, roll: crate::encounter::EncounterRoll) {
-        let Some(formation) = self.formation_table.formation(roll.formation_id).cloned() else {
+        let Some(formation) = self
+            .tables
+            .formation_table
+            .formation(roll.formation_id)
+            .cloned()
+        else {
             log::error!(
                 "world-map encounter: drained formation {} vanished from the table - the \
                  battle is dropped",
@@ -689,11 +706,11 @@ impl World {
         self.field_return = Some(FieldReturnState {
             actors: self.actors.clone(),
             player_actor_slot: self.player_actor_slot,
-            party_count: self.party_count,
+            party_count: self.party.party_count,
         });
-        self.battle_return_mode = SceneMode::WorldMap;
+        self.battle.return_mode = SceneMode::WorldMap;
         // `enter_battle_from_formation` swaps to the battle BGM itself.
         self.enter_battle_from_formation(&formation);
-        self.active_formation = Some(formation);
+        self.battle.active_formation = Some(formation);
     }
 }

@@ -43,11 +43,12 @@ fn gesture_record(target: u8, clip: u8) -> Vec<u8> {
 
 /// The record's own flag word, as an observer between frames sees it.
 fn record_flags(w: &World) -> u16 {
-    w.inline_dialogue.as_ref().map_or(0, |d| d.ctx.local_flags)
+    w.dialog.inline.as_ref().map_or(0, |d| d.ctx.local_flags)
 }
 
 fn player_cursor(w: &World) -> i16 {
-    w.field_prop_bank
+    w.props
+        .bank
         .actor_clip(PLAYER_ANCHOR_TARGET)
         .expect("the ExecMove bound the player's clip cursor")
         .cursor
@@ -68,7 +69,8 @@ fn the_clip_cursor_latches_and_the_runner_only_waits() {
         "the beat behind the spin must not run on the frame the spin is reached"
     );
     let clip = w
-        .field_prop_bank
+        .props
+        .bank
         .actor_clip(PLAYER_ANCHOR_TARGET)
         .expect("`A2 F8 <clip>` bound a cursor for the player anchor");
     assert_eq!(clip.anim_id, 4, "the poke bound the clip it names");
@@ -98,7 +100,8 @@ fn the_clip_cursor_latches_and_the_runner_only_waits() {
         "the spin never fell through - the clip's end latch never landed"
     );
     assert!(
-        w.field_prop_bank
+        w.props
+            .bank
             .actor_clip(PLAYER_ANCHOR_TARGET)
             .is_some_and(|a| a.at_end()),
         "what let the spin through is the latch on the player's clip cursor"
@@ -124,7 +127,8 @@ fn a_stalled_clip_never_lets_the_spin_through() {
         // Stall the cursor: rate 0 means the tick advances nothing, so no end
         // is ever reached. (Held every frame because the record's own ops are
         // free to write the control word.)
-        w.field_prop_bank
+        w.props
+            .bank
             .actor_clip_mut(PLAYER_ANCHOR_TARGET)
             .expect("cursor bound")
             .rate = 0;
@@ -141,7 +145,7 @@ fn a_stalled_clip_never_lets_the_spin_through() {
         );
     }
     assert!(
-        w.inline_dialogue.as_ref().is_some_and(|d| !d.is_done()),
+        w.dialog.inline.as_ref().is_some_and(|d| !d.is_done()),
         "the spin is still parked (the timeout net is far longer than this)"
     );
 }
@@ -191,13 +195,14 @@ fn a_third_actor_poke_binds_that_actor_s_own_cursor() {
 
     w.step_inline_dialogue(false, false, false);
     let clip = w
-        .field_prop_bank
+        .props
+        .bank
         .actor_clip(OTHER)
         .expect("`A2 05 <clip>` bound a cursor for target 5");
     assert_eq!(clip.anim_id, 9);
     assert!(!clip.at_end(), "its own `AC 05 08` cleared its own latch");
     assert!(
-        w.field_prop_bank.actor_clip(PLAYER_ANCHOR_TARGET).is_none(),
+        w.props.bank.actor_clip(PLAYER_ANCHOR_TARGET).is_none(),
         "a poke at another actor must not touch the player's cursor"
     );
 
@@ -212,9 +217,7 @@ fn a_third_actor_poke_binds_that_actor_s_own_cursor() {
         "the third-actor spin never fell through"
     );
     assert!(
-        w.field_prop_bank
-            .actor_clip(OTHER)
-            .is_some_and(|a| a.at_end()),
+        w.props.bank.actor_clip(OTHER).is_some_and(|a| a.at_end()),
         "the latch landed on the poked actor's cursor"
     );
 }

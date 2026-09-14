@@ -4,7 +4,7 @@
 //! character record's `+0x12E` battle-status halfword is non-zero (read as
 //! `lh v0,0x6f6(v1)` off `0x80084140 + slot*0x414`; see
 //! `docs/formats/save-record.md`). The port's equivalent latch is
-//! `World::status_effects`, whose `display_flags` packs the same bit word that
+//! `World::battle.status_effects`, whose `display_flags` packs the same bit word that
 //! retail's `FUN_80047430` mirrors into the record every frame a party actor
 //! ticks - and it is never cleared, so an ailment walks out of the battle the
 //! way retail's does.
@@ -23,14 +23,18 @@ use legaia_engine_vm::status_effects::StatusKind;
 /// emits a row for it (rows with `hp_max == 0` are filtered out).
 fn world_with_one_member() -> World {
     let mut w = World {
-        party_count: 1,
+        party: legaia_engine_core::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..Default::default()
     };
     // `World::default()` starts with an empty roster; seed one claimed slot.
-    w.roster
+    w.party
+        .roster
         .members
         .push(legaia_save::CharacterRecord::zeroed());
-    let m = &mut w.roster.members[0];
+    let m = &mut w.party.roster.members[0];
     m.set_hp_mp_sp(legaia_save::HpMpSp {
         hp_cur: 120,
         hp_max: 120,
@@ -59,7 +63,7 @@ fn snapshots_publish_a_clean_party_as_status_zero() {
 #[test]
 fn an_applied_ailment_reaches_the_snapshot_status_word() {
     let mut w = world_with_one_member();
-    w.status_effects.apply(0, StatusKind::Toxic);
+    w.battle.status_effects.apply(0, StatusKind::Toxic);
 
     let snaps = legaia_engine_core::field_menu_dispatch::status_snapshots(&w);
     assert!(
@@ -74,7 +78,7 @@ fn an_applied_ailment_reaches_the_snapshot_status_word() {
     );
     assert_eq!(
         flags,
-        w.status_effects.display_flags(0),
+        w.battle.status_effects.display_flags(0),
         "the snapshot must carry the tracker's own packed word verbatim"
     );
 }

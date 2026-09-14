@@ -5,7 +5,7 @@
 //! Anchored on the Rim Elm "Variety Store", whose 10 ids are pinned from a live
 //! capture (shared ground truth with the randomizer's `shop_patch_real` test).
 //! Also drives the live wiring: entering the scene that holds the shop populates
-//! [`World::scene_shops`] with the priced inventory. Skips without
+//! [`crate::world::ShopState::scene_shops`] with the priced inventory. Skips without
 //! `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 
 use legaia_engine_core::Vfs;
@@ -113,11 +113,12 @@ fn gold_shops_decode_from_disc_with_real_prices() {
         .expect("Variety Store entry resolves to a CDNAME scene")
         .to_string();
     let mut host = host;
-    host.world.item_shop_data = Some(data);
+    host.world.shops.item_shop_data = Some(data);
     host.enter_field_scene(&label, 0)
         .unwrap_or_else(|e| panic!("enter field scene '{label}': {e:#}"));
     let live = host
         .world
+        .shops
         .scene_shops
         .iter()
         .find(|s| s.name.starts_with("Variety"))

@@ -15,7 +15,7 @@ impl World {
     /// drive this from the frame loop's wall-clock delta. Mirrors the
     /// retail "play time" field shown on the save screen.
     pub fn advance_play_time(&mut self, delta_seconds: u32) {
-        self.play_time_seconds = self.play_time_seconds.saturating_add(delta_seconds);
+        self.clock.play_time_seconds = self.clock.play_time_seconds.saturating_add(delta_seconds);
     }
 
     /// Commit a host font measurement of the live `4C E1` balloon's line, so
@@ -34,7 +34,7 @@ impl World {
     ///
     /// REF: FUN_8003C764 (`0x8003C7C0..0x8003C7DC`, the measure + centre)
     pub fn commit_text_balloon_width(&mut self, text_width_px: i16) -> Option<(i32, i32)> {
-        let balloon = self.text_balloon.as_mut()?;
+        let balloon = self.cutscene.text_balloon.as_mut()?;
         if balloon.x.is_none() {
             balloon.center_with_width(text_width_px);
         }
@@ -48,7 +48,7 @@ impl World {
     /// The startup band (`timer < 1`) draws nothing in retail, so a host that
     /// keys on `text_balloon.is_some()` shows the balloon one frame early.
     pub fn text_balloon_drawing(&self) -> Option<&[u8]> {
-        let b = self.text_balloon.as_ref()?;
+        let b = self.cutscene.text_balloon.as_ref()?;
         (!b.killed && b.timer >= 1 && b.timer < b.total).then_some(b.text.as_slice())
     }
 
@@ -57,9 +57,9 @@ impl World {
     /// driven off the player's world position.
     ///
     /// Retail runs one of these actors per spawned ramp off the effect-actor
-    /// list; the engine holds the records on [`World::register_ramps`] and
+    /// list; the engine holds the records on [`crate::world::CameraRig::register_ramps`] and
     /// steps them here. What a tick writes lands in
-    /// [`World::camera_registers`], the four field camera-configuration
+    /// [`crate::world::CameraRig::registers`], the four field camera-configuration
     /// registers `0x8007B60C`/`B610`/`B614`/`B618`.
     ///
     /// Two retail gates come first, both inside
@@ -81,7 +81,7 @@ impl World {
     ///
     /// REF: FUN_80037018
     pub fn tick_register_ramps(&mut self) {
-        if self.register_ramps.is_empty() {
+        if self.camera.register_ramps.is_empty() {
             return;
         }
         let Some(slot) = self.player_actor_slot else {
@@ -94,7 +94,7 @@ impl World {
         let engaged = self.dialogue_owns_input();
         let mut writes: Vec<(crate::register_ramp::RampSlot, i32)> = Vec::new();
         let mut retire: Vec<usize> = Vec::new();
-        for (i, ramp) in self.register_ramps.iter().enumerate() {
+        for (i, ramp) in self.camera.register_ramps.iter().enumerate() {
             match ramp.tick(px, pz, engaged) {
                 legaia_engine_vm::ambient_motion::ZoneRampTick::Write { value, .. } => {
                     writes.push((ramp.slot, value));
@@ -105,10 +105,10 @@ impl World {
             }
         }
         for (slot, value) in writes {
-            self.camera_registers.set(slot, value);
+            self.camera.registers.set(slot, value);
         }
         for i in retire.into_iter().rev() {
-            self.register_ramps.remove(i);
+            self.camera.register_ramps.remove(i);
         }
     }
 
@@ -147,7 +147,7 @@ impl World {
     /// player actor. Two of them stand in for retail slots the engine does not
     /// carry: `+0x1E` / `+0x20` become the previous tick's `(world_y,
     /// world_z)`, so the settle test still answers "has the actor stopped
-    /// moving in Y and Z". The pad word is [`Self::story_flags`] - the same
+    /// moving in Y and Z". The pad word is [`crate::world::StoryFlagState::story_flags`] - the same
     /// `_DAT_1F800394` scratchpad word retail reads the input lock and the
     /// fast-arm bit out of - and `_DAT_8007B850` is passed as `0`, which
     /// leaves the fast arm disengaged (see the comment at the call).
@@ -166,15 +166,15 @@ impl World {
                 (ms.world_y, ms.world_z)
             }
             None => {
-                self.camera_ease_prev_yz = None;
+                self.camera.ease_prev_yz = None;
                 return;
             }
         };
-        let (prev_y, prev_z) = self.camera_ease_prev_yz.unwrap_or((y, z));
-        self.camera_offset_ease =
+        let (prev_y, prev_z) = self.camera.ease_prev_yz.unwrap_or((y, z));
+        self.camera.offset_ease =
             crate::camera_ease::ease_camera_offset(crate::camera_ease::CameraEaseInput {
-                pad: self.story_flags,
-                scene_target: self.camera_scene_offset as u16,
+                pad: self.flags.story_flags,
+                scene_target: self.camera.scene_offset as u16,
                 player_footing: y as u16,
                 footing_settled: prev_y,
                 z,
@@ -185,29 +185,29 @@ impl World {
                 // same 12-units-a-frame cap, only without pinning the step
                 // while the gap is small.
                 fast_flags: 0,
-                current: self.camera_offset_ease,
+                current: self.camera.offset_ease,
             });
-        self.camera_ease_prev_yz = Some((y, z));
+        self.camera.ease_prev_yz = Some((y, z));
     }
 
     pub fn tick_field_timer_actors(&mut self, frame_delta: u8) {
         // The bar envelope. It retires itself at phase 3, and the published
         // height is what both hosts' screen-prim pass reads.
-        if let Some(bars) = self.cinematic_bars.as_mut() {
-            self.cinematic_bar = bars.step(frame_delta);
+        if let Some(bars) = self.presentation.cinematic_bars.as_mut() {
+            self.presentation.cinematic_bar = bars.step(frame_delta);
             if bars.retired {
-                self.cinematic_bars = None;
-                self.cinematic_bar = 0;
+                self.presentation.cinematic_bars = None;
+                self.presentation.cinematic_bar = 0;
             }
         } else {
-            self.cinematic_bar = 0;
+            self.presentation.cinematic_bar = 0;
         }
 
         // The eased moves. Retail writes the target's `+0x14/+0x16/+0x18`
         // straight through the back-link; the engine writes the same triple
         // wherever that target lives.
-        if !self.eased_moves.is_empty() {
-            let mut records = std::mem::take(&mut self.eased_moves);
+        if !self.field_vm.eased_moves.is_empty() {
+            let mut records = std::mem::take(&mut self.field_vm.eased_moves);
             for rec in records.iter_mut() {
                 let frame = rec.ease.step(frame_delta, rec.target_flags);
                 self.apply_eased_move(rec.target, &frame);
@@ -215,8 +215,8 @@ impl World {
             records.retain(|r| !r.ease.retired);
             // A spawn that landed during this pass appended to the (empty)
             // live list, so splice rather than overwrite.
-            records.append(&mut self.eased_moves);
-            self.eased_moves = records;
+            records.append(&mut self.field_vm.eased_moves);
+            self.field_vm.eased_moves = records;
             // Drop the `+0x8E` latch once the last mirrored player move has
             // retired. Retail's byte is sticky and its reader gates on the
             // actor flag `+0x10 & 0x20000000` instead, which a script clears;
@@ -225,28 +225,29 @@ impl World {
             // scene - a softlock class, not a fidelity gain. The armed window
             // is otherwise identical: every frame of the move, and no other.
             if !self
+                .field_vm
                 .eased_moves
                 .iter()
                 .any(|r| matches!(r.target, crate::world::EasedMoveTarget::Player))
             {
-                self.field_eased_mirror_y = None;
+                self.locomotion.eased_mirror_y = None;
             }
         }
 
         // The floor-height ladder. Each record owns one rung; a rung index
         // past the LUT is retail writing off the end of a 16-entry array,
         // which the port declines to do.
-        if !self.floor_tier_bobs.is_empty() {
-            let mut bobs = std::mem::take(&mut self.floor_tier_bobs);
+        if !self.terrain.floor_tier_bobs.is_empty() {
+            let mut bobs = std::mem::take(&mut self.terrain.floor_tier_bobs);
             for bob in bobs.iter_mut() {
                 if let Some(height) = bob.step(frame_delta)
-                    && let Some(rung) = self.field_floor_height_lut.get_mut(bob.slot as usize)
+                    && let Some(rung) = self.terrain.floor_height_lut.get_mut(bob.slot as usize)
                 {
                     *rung = height;
                 }
             }
-            bobs.append(&mut self.floor_tier_bobs);
-            self.floor_tier_bobs = bobs;
+            bobs.append(&mut self.terrain.floor_tier_bobs);
+            self.terrain.floor_tier_bobs = bobs;
         }
     }
 
@@ -257,7 +258,7 @@ impl World {
     /// `move_to` host resolves - see [`crate::world::EasedMoveTarget`].
     ///
     /// The `+0x8E` **inverted-Y mirror** is published too, into
-    /// [`crate::world::World::field_eased_mirror_y`]. It used to be dropped
+    /// [`crate::world::FieldLocomotion::eased_mirror_y`]. It used to be dropped
     /// here for want of a consumer; the consumer is retail's own, and it was
     /// mis-read rather than missing. `FUN_8003BC08`'s height arm tests the
     /// same `0x20000000` flag before either of its ground-height arms
@@ -265,7 +266,7 @@ impl World {
     /// `+0x16`, which is the Y **position** the eased move itself writes - so
     /// the mirror is a hold: it re-asserts the scripted Y against the
     /// per-frame floor follow. The engine's two height controllers
-    /// (`World::field_vertical_settle` and `World::follow_terrain_height`)
+    /// (`World::locomotion.vertical_settle` and `World::locomotion.follow_terrain_height`)
     /// are the ports of that routine's other two arms and both stand down
     /// while the latch is armed.
     ///
@@ -285,7 +286,7 @@ impl World {
                 // Published whether or not a seat resolves: the latch is a
                 // property of the move, and retail's store goes through the
                 // back-link ahead of anything that reads the seat.
-                self.field_eased_mirror_y = frame.mirror_y;
+                self.locomotion.eased_mirror_y = frame.mirror_y;
                 let Some(slot) = self.player_actor_slot else {
                     return;
                 };
@@ -311,7 +312,7 @@ impl World {
                 }
             }
             crate::world::EasedMoveTarget::Placement(slot) => {
-                let cur = self.field_npc_positions.get(&slot).copied();
+                let cur = self.npcs.positions.get(&slot).copied();
                 let (mut x, mut z) = cur.unwrap_or((0, 0));
                 if let Some(nx) = frame.axis[0] {
                     x = nx;
@@ -319,7 +320,7 @@ impl World {
                 if let Some(nz) = frame.axis[2] {
                     z = nz;
                 }
-                self.field_npc_positions.insert(slot, (x, z));
+                self.npcs.positions.insert(slot, (x, z));
             }
         }
     }
@@ -336,7 +337,7 @@ impl World {
     /// pad word to press - a scripted timeline, a replay fixture, a test.
     // REF: FUN_801D27E0 (state-0 arm gate, request-byte route)
     pub fn request_talk_leader_switch(&mut self) {
-        self.talk_switch_requested = true;
+        self.dialog.talk_switch_requested = true;
     }
 
     /// Per-frame step of the three-actor-talk controller SM
@@ -366,13 +367,13 @@ impl World {
     ///   arms under an open text box.
     ///
     ///   The port latches its field **run** modifier off the same pad word
-    ///   ([`Self::field_run_button_held`], mask
-    ///   [`Self::field_run_button_mask`]), so inside an armed talk one press
+    ///   ([`crate::world::FieldLocomotion::run_button_held`], mask
+    ///   [`crate::world::FieldLocomotion::run_button_mask`]), so inside an armed talk one press
     ///   does both. Retail behaves the same way - its run mask word
     ///   `0x800846DC` is `0x48` = Cross | R1, and Cross is also the talk
     ///   button - so this is the retail overlap, not a port divergence.
     /// - **1** - hold [`LEADER_SWAP_FADE_FRAMES`] behind the fade-to-white
-    ///   ([`Self::screen_fade`] carries the retail template: kind 2, `0x20`
+    ///   ([`crate::world::ScreenFxState::fade`] carries the retail template: kind 2, `0x20`
     ///   frames, black -> white, `801d29c8..801d2a00`).
     /// - **2** - the swap (`801d2a54..801d2c7c`): the outgoing leader's
     ///   participant NPC takes the player's pose (retail: camera `+0x14..`
@@ -380,9 +381,9 @@ impl World {
     ///   reads clear becomes leader (wrap-scan from `leader+1`), flags
     ///   `0x10..=0x12` are re-pointed at the new leader, the player takes
     ///   the incoming participant's pose (+ the negated map origin
-    ///   `_DAT_80089118/20` = [`Self::map_origin_xz`]), the incoming NPC is
+    ///   `_DAT_80089118/20` = [`crate::world::FieldTerrain::map_origin_xz`]), the incoming NPC is
     ///   parked at the `0x3F80` sentinel, and the fade-back-in spawns.
-    /// - **3** - release the fade object (engine: [`Self::screen_fade`]
+    /// - **3** - release the fade object (engine: [`crate::world::ScreenFxState::fade`]
     ///   steps itself; nothing to do).
     /// - **4** - hold the fade-in, then clear the camera-busy latch and
     ///   return to state 0 (the poll).
@@ -398,10 +399,10 @@ impl World {
         use crate::cutscene_script_elements::{
             LEADER_ACTOR_POSE_SENTINEL, LEADER_SWAP_REQUEST_BIT, LeaderSwapEffect, LeaderSwapWorld,
         };
-        let Some(mut talk) = self.three_actor_talk else {
+        let Some(mut talk) = self.dialog.three_actor_talk else {
             // No live talk: a stale switch request must not outlive the
             // session that could consume it.
-            self.talk_switch_requested = false;
+            self.dialog.talk_switch_requested = false;
             return;
         };
         let request = if talk.swap.phase == 0 {
@@ -409,12 +410,12 @@ impl World {
             // pressed) plus the scripted latch. `take` runs first and
             // unconditionally, so a latch set outside phase 0 is not left to
             // fire into a later swap.
-            let latched = core::mem::take(&mut self.talk_switch_requested);
+            let latched = core::mem::take(&mut self.dialog.talk_switch_requested);
             latched || self.input.just_pressed(input::PadButton::Square)
         } else {
             false
         };
-        let leader = self.party_leader_slot.unwrap_or(0).min(2);
+        let leader = self.party.party_leader_slot.unwrap_or(0).min(2);
         let swap_world = LeaderSwapWorld {
             leader,
             // Host substitution for the retail suppressor pair
@@ -430,10 +431,10 @@ impl World {
             pad: 0,
             request_byte: if request { LEADER_SWAP_REQUEST_BIT } else { 0 },
         };
-        let step = self.frame_step.max(1);
+        let step = self.clock.frame_step.max(1);
         // Same MSB-first bank layout as `Self::system_flag_test` (the SCUS
         // helper `FUN_8003CE64` the controller calls).
-        let flags = &self.system_flags;
+        let flags = &self.flags.system_flags;
         let tick = talk.swap.step(&swap_world, step, |idx| {
             let byte = (idx >> 3) as usize;
             flags
@@ -443,7 +444,7 @@ impl World {
         if talk.swap.phase == 5 {
             // State-0 poll saw the talk lock down: despawn (retail runs the
             // state-5 body one frame later; the engine folds it).
-            self.three_actor_talk = Some(talk);
+            self.dialog.three_actor_talk = Some(talk);
             self.end_three_actor_talk();
             return;
         }
@@ -457,8 +458,8 @@ impl World {
                     // arm-time capture.
                     for (i, &id) in ids.iter().enumerate() {
                         let slot = self.talk_participant_slot(id);
-                        if let Some(&pos) = self.field_npc_positions.get(&slot) {
-                            let heading = self.field_npc_headings.get(&slot).copied().unwrap_or(0);
+                        if let Some(&pos) = self.npcs.positions.get(&slot) {
+                            let heading = self.npcs.headings.get(&slot).copied().unwrap_or(0);
                             talk.saved[i] = Some((pos, heading));
                         }
                     }
@@ -467,7 +468,7 @@ impl World {
                     // `801d29c8..801d2a00`: kind 2, 0x20 frames, black ->
                     // white, no start delay, a `-1` hold - the landed white
                     // persists until the state-2 fade-in replaces it.
-                    self.screen_fade =
+                    self.presentation.fade =
                         Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
                             kind: 2,
                             duration: crate::cutscene_script_elements::LEADER_SWAP_FADE_FRAMES
@@ -488,16 +489,16 @@ impl World {
                             .map(|a| a.move_state.render_26)
                             .unwrap_or(0);
                         let npc = self.talk_participant_slot(ids[usize::from(slot.min(2))]);
-                        self.field_npc_positions.insert(npc, (px, pz));
-                        self.field_npc_headings.insert(npc, heading);
+                        self.npcs.positions.insert(npc, (px, pz));
+                        self.npcs.headings.insert(npc, heading);
                     }
                 }
                 LeaderSwapEffect::CommitLeader { slot } => {
                     // `801d2ae8..801d2b1c`: leader byte + collapsed id list
                     // re-point at the incoming slot; flags 0x10..=0x12
                     // cleared, `0x10 + slot` set.
-                    self.party_leader_slot = Some(slot);
-                    self.party_actor_slots = vec![Some(slot)];
+                    self.party.party_leader_slot = Some(slot);
+                    self.party.party_actor_slots = vec![Some(slot)];
                     self.system_flag_clear(0x10);
                     self.system_flag_clear(0x11);
                     self.system_flag_clear(0x12);
@@ -512,8 +513,8 @@ impl World {
                     // (`801d2b3c..801d2c04`), and the map origin follows
                     // (`_DAT_80089118/20` = negated pose).
                     let npc = self.talk_participant_slot(ids[usize::from(slot.min(2))]);
-                    if let Some(&(nx, nz)) = self.field_npc_positions.get(&npc) {
-                        let heading = self.field_npc_headings.get(&npc).copied().unwrap_or(0);
+                    if let Some(&(nx, nz)) = self.npcs.positions.get(&npc) {
+                        let heading = self.npcs.headings.get(&npc).copied().unwrap_or(0);
                         let ny = self.sample_field_floor_height(i32::from(nx), i32::from(nz));
                         if let Some(a) = self
                             .player_actor_slot
@@ -524,7 +525,7 @@ impl World {
                             a.move_state.world_z = nz;
                             a.move_state.render_26 = heading;
                         }
-                        self.map_origin_xz = (-i32::from(nx), -i32::from(nz));
+                        self.terrain.map_origin_xz = (-i32::from(nx), -i32::from(nz));
                     }
                 }
                 LeaderSwapEffect::ClearIncomingPose { slot } => {
@@ -532,7 +533,7 @@ impl World {
                     // parked at the 0x3F80 sentinel (the player object now
                     // represents them).
                     let npc = self.talk_participant_slot(ids[usize::from(slot.min(2))]);
-                    self.field_npc_positions.insert(
+                    self.npcs.positions.insert(
                         npc,
                         (LEADER_ACTOR_POSE_SENTINEL, LEADER_ACTOR_POSE_SENTINEL),
                     );
@@ -540,7 +541,7 @@ impl World {
                 LeaderSwapEffect::SpawnFadeIn => {
                     // `801d2c24..801d2c54`: kind 2, 0x20 frames, white ->
                     // black.
-                    self.screen_fade =
+                    self.presentation.fade =
                         Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
                             kind: 2,
                             duration: crate::cutscene_script_elements::LEADER_SWAP_FADE_FRAMES
@@ -552,17 +553,17 @@ impl World {
                 }
                 LeaderSwapEffect::ReleaseFadeObject | LeaderSwapEffect::ClearCameraBusy => {
                     // The engine fade steps + drops itself
-                    // ([`Self::screen_fade`]); no modelled camera flag word
+                    // ([`crate::world::ScreenFxState::fade`]); no modelled camera flag word
                     // to clear.
                 }
                 LeaderSwapEffect::RetireController => {
-                    self.three_actor_talk = Some(talk);
+                    self.dialog.three_actor_talk = Some(talk);
                     self.end_three_actor_talk();
                     return;
                 }
             }
         }
-        self.three_actor_talk = Some(talk);
+        self.dialog.three_actor_talk = Some(talk);
     }
 
     /// Resolve a talk-instruction participant id to the engine's field-NPC
@@ -570,8 +571,8 @@ impl World {
     /// performs (retail `FUN_8003C83C`); an unmatched id passes through raw.
     // REF: FUN_8003C83C (id resolve)
     fn talk_participant_slot(&self, id: u8) -> u8 {
-        crate::field_channels::resolve_target(&self.field_channels, id)
-            .map(|ci| self.field_channels[ci].placement_index as u8)
+        crate::field_channels::resolve_target(&self.field_vm.channels, id)
+            .map(|ci| self.field_vm.channels[ci].placement_index as u8)
             .unwrap_or(id)
     }
 
@@ -593,26 +594,27 @@ impl World {
     /// No-op without an active session.
     // REF: FUN_801D27E0 (state-5 despawn), FUN_801D2D38 (the collapse this undoes)
     pub fn end_three_actor_talk(&mut self) {
-        let Some(talk) = self.three_actor_talk.take() else {
+        let Some(talk) = self.dialog.three_actor_talk.take() else {
             return;
         };
         self.system_flag_clear(0xD);
         if talk.saved_party_len > 0 {
-            self.party_actor_slots = talk.saved_party[..talk.saved_party_len as usize].to_vec();
-            self.party_leader_slot = talk
+            self.party.party_actor_slots =
+                talk.saved_party[..talk.saved_party_len as usize].to_vec();
+            self.party.party_leader_slot = talk
                 .saved_leader
-                .or_else(|| self.party_actor_slots.first().copied().flatten());
+                .or_else(|| self.party.party_actor_slots.first().copied().flatten());
         }
     }
 
     /// Drain a menu-staged transition into the named scene transition the
     /// scene host consumes ([`Self::pending_named_scene_transition`]).
     ///
-    /// **Door of Wind** ([`Self::pending_menu_warp`]): the staged triple is
+    /// **Door of Wind** ([`crate::world::MenuState::pending_warp`]): the staged triple is
     /// retail's `0x80084628` scene word + `0x80084624`/`0x8008462C` tile
     /// pair (`FUN_801D8B90` phase 3, from quick-travel placement record
     /// bytes `+2/+4/+5`). The scene word is the destination scene's raw
-    /// CDNAME TOC index ([`Self::scene_toc_names`]); the tile pair seats
+    /// CDNAME TOC index ([`crate::world::DiscTables::scene_toc_names`]); the tile pair seats
     /// the party at `(tile << 7) + 0x40`, the same conversion the world-map
     /// arrival kernel applies (`FUN_801EE328`: `0x80073EF4/EF8` stores).
     /// The named-transition drain performs exactly that seat
@@ -622,7 +624,7 @@ impl World {
     /// `UNFIND MAP NUMBER %d` diagnostic (the `FUN_801EE328` phase-`0x63`
     /// park) and drops the warp.
     ///
-    /// **Door of Light** ([`Self::pending_menu_escape`]): retail hands the
+    /// **Door of Light** ([`crate::world::MenuState::pending_escape`]): retail hands the
     /// outer menu SM exit code 4 (`FUN_801D8A58`) - the dungeon-escape
     /// handoff, whose overlay-side consumer is not yet pinned. The engine
     /// routes it onto the last visited-map record (the return point the
@@ -633,8 +635,8 @@ impl World {
     /// REF: FUN_801D8B90 (stage), FUN_801D8A58 (escape exit code),
     /// FUN_801EE328 (arrival tile math + UNFIND diagnostic)
     pub fn drain_staged_menu_warp(&mut self) {
-        if let Some(warp) = self.pending_menu_warp.take() {
-            match self.scene_toc_names.get(&u32::from(warp.scene_id)) {
+        if let Some(warp) = self.menu.pending_warp.take() {
+            match self.tables.scene_toc_names.get(&u32::from(warp.scene_id)) {
                 Some(name) => {
                     self.pending_named_scene_transition =
                         Some((name.clone(), warp.menu_x, warp.menu_y, 0));
@@ -645,10 +647,11 @@ impl World {
                 }
             }
         }
-        if self.pending_menu_escape {
-            self.pending_menu_escape = false;
+        if self.menu.pending_escape {
+            self.menu.pending_escape = false;
             let visited = self
-                .world_map_ctrl
+                .world_map
+                .ctrl
                 .as_ref()
                 .and_then(|c| c.panels.visited.last().copied());
             match visited {
@@ -681,7 +684,7 @@ impl World {
     /// scene host wires this once at construction from the same parsed
     /// `CDNAME.TXT` its own scene loads use.
     pub fn install_scene_toc_names(&mut self, map: legaia_prot::cdname::IndexMap) {
-        self.scene_toc_names = map;
+        self.tables.scene_toc_names = map;
     }
 
     /// Arm the timed sound-source auto-release for `deadline` vsyncs
@@ -693,7 +696,7 @@ impl World {
     /// **audio level** `_DAT_8007B910` (`lw a1,-0x46f0(a1)` at `0x800267B0`
     /// into `gp+0x80C`), then tail-calls the libsnd volume shim
     /// `FUN_80062004(*(i16*)0x80070536, (level << 15) >> 16, deadline | 1)`
-    /// (`0x800267E4`). Those two extra cells land in [`Self::sound_arm`] so a
+    /// (`0x800267E4`). Those two extra cells land in [`crate::world::AudioState::sound_arm`] so a
     /// host driving the shim has the exact arguments; the engine has no live
     /// volume ramp of its own, so the latched level is the cold-reset value
     /// retail boots `_DAT_8007B910` to - `0xD7`, carried on
@@ -702,9 +705,9 @@ impl World {
     /// PORT: FUN_800267A8
     /// REF: FUN_800267FC, FUN_80062004
     pub fn arm_sound_release(&mut self, deadline_vsyncs: i32) {
-        self.sound_release.arm(deadline_vsyncs);
-        self.pending_sound_release = false;
-        self.sound_arm = Some(crate::scus_leaf_kernels::TimedSoundArm::arm(
+        self.audio.sound_release.arm(deadline_vsyncs);
+        self.audio.pending_sound_release = false;
+        self.audio.sound_arm = Some(crate::scus_leaf_kernels::TimedSoundArm::arm(
             0,
             deadline_vsyncs.max(0) as u32,
             crate::new_game::GAME_STATE_COLD_RESET.audio_level,
@@ -713,7 +716,7 @@ impl World {
 
     /// Drain the "the sound-release deadline expired" event.
     pub fn take_pending_sound_release(&mut self) -> bool {
-        std::mem::take(&mut self.pending_sound_release)
+        std::mem::take(&mut self.audio.pending_sound_release)
     }
 
     /// Run the one-shot sound detach (`FUN_8002689C`). Returns `true` only on
@@ -722,17 +725,17 @@ impl World {
     ///
     /// PORT: FUN_8002689c
     pub fn detach_sound(&mut self) -> bool {
-        self.sound_detach.detach()
+        self.audio.sound_detach.detach()
     }
 
     /// Consume the frame-begin skip request, returning whether this frame
     /// should be abandoned. Models `FUN_8001698C`'s non-zero return; see
-    /// [`Self::frame_begin_skip`].
+    /// [`crate::world::FrameClock::frame_begin_skip`].
     ///
     /// PORT: FUN_8001698c (the frame-skip return; the ring-aging half of the
     /// same function is `legaia_engine_audio::sfx_ring::SfxCueRing::age`)
     pub fn take_frame_begin_skip(&mut self) -> bool {
-        std::mem::take(&mut self.frame_begin_skip)
+        std::mem::take(&mut self.clock.frame_begin_skip)
     }
 
     /// Arm the scripted countdown the field VM installs with `0x4C 0xD3`
@@ -753,13 +756,13 @@ impl World {
     ///
     /// REF: FUN_801DE840 case 0xD sub 3 (the installer)
     pub fn schedule_timed_flags(&mut self, ab: u32, cd: u32, ef: u32) {
-        self.escape_timer_flag_word = ab;
-        self.escape_timer = vm::escape_timer::EscapeTimer {
+        self.battle.escape_timer_flag_word = ab;
+        self.battle.escape_timer = vm::escape_timer::EscapeTimer {
             remaining: cd as i32,
             warn_threshold: ef as i32,
             armed: cd != 0,
         };
-        self.escape_timer_hud = None;
+        self.battle.escape_timer_hud = None;
     }
 
     /// Whether this frame is one of the ones retail's timed-flag scheduler
@@ -794,44 +797,44 @@ impl World {
     /// the timer) and for the below-threshold flag under `_DAT_800845BC`,
     /// then decomposes the remaining count into MM:SS.ff and picks the
     /// readout ink from it. The decomposition and ink are therefore products
-    /// of the tick, not of a renderer - [`World::escape_timer_hud`] caches
+    /// of the tick, not of a renderer - [`crate::world::BattleState::escape_timer_hud`] caches
     /// this frame's.
     ///
     /// The delta is one retail frame per call (the caller gates on
-    /// [`World::field_frame_step`]); retail reads it as
+    /// [`crate::world::FrameClock::display_frame_step`]); retail reads it as
     /// `_DAT_80084570 - _DAT_80073ED4`, a clock that also advances one step
     /// per display frame.
     ///
     /// REF: FUN_801D2EBC (scheduler + HUD decomposition; the ports are
     /// `legaia_engine_vm::escape_timer::EscapeTimer` and `timer_ink`)
     fn tick_escape_timer(&mut self) {
-        if !self.escape_timer.armed {
-            self.escape_timer_hud = None;
+        if !self.battle.escape_timer.armed {
+            self.battle.escape_timer_hud = None;
             return;
         }
         let busy = self.escape_timer_busy();
-        let flag_word = self.escape_timer_flag_word;
-        let events = self.escape_timer.tick(1, flag_word, busy);
+        let flag_word = self.battle.escape_timer_flag_word;
+        let events = self.battle.escape_timer.tick(1, flag_word, busy);
         if let Some(flag) = events.expiry_flag {
             self.system_flag_set(flag);
         }
         if let Some(flag) = events.warning_flag {
             self.system_flag_set(flag);
         }
-        let (minutes, seconds, hundredths) = self.escape_timer.hud_fields();
-        let ink = vm::escape_timer::timer_ink(self.escape_timer.remaining);
-        self.escape_timer_hud = Some((minutes, seconds, hundredths, ink));
+        let (minutes, seconds, hundredths) = self.battle.escape_timer.hud_fields();
+        let ink = vm::escape_timer::timer_ink(self.battle.escape_timer.remaining);
+        self.battle.escape_timer_hud = Some((minutes, seconds, hundredths, ink));
     }
 
     /// Resolve this frame's cadence the way `FUN_80016B6C` does and install
-    /// it into [`Self::frame_step`].
+    /// it into [`crate::world::FrameClock::frame_step`].
     ///
     /// PORT: FUN_80016b6c (the `0x80017044 .. 0x800171D8` cadence block; the
     /// telemetry state machine lives in
     /// [`legaia_engine_vm::actor_tick::FrameStepTelemetry`]).
     ///
     /// `elapsed_hblanks` is the frame time retail samples with `VSync(1)`
-    /// through `FUN_800173BC`. The floor is [`Self::frame_step_floor`]
+    /// through `FUN_800173BC`. The floor is [`crate::world::FrameClock::frame_step_floor`]
     /// (`DAT_8007B9D8`), installed per scene, and the resolver can only raise
     /// the cadence above it - never below.
     ///
@@ -848,15 +851,15 @@ impl World {
     /// loader installed it. Wiring it needs a host frame-time sampler **and**
     /// a decision that the adaptive cadence is on (retail gates the whole
     /// path behind the boot config word `gp+0x4CE == 0x10`); until then
-    /// [`Self::frame_step`] is scene-driven and this has nothing to resolve.
+    /// [`crate::world::FrameClock::frame_step`] is scene-driven and this has nothing to resolve.
     pub fn resolve_frame_step(&mut self, elapsed_hblanks: i32, frameskip_enabled: bool) -> u8 {
-        let cadence = self.frame_step_telemetry.resolve(
+        let cadence = self.clock.frame_step_telemetry.resolve(
             elapsed_hblanks,
             frameskip_enabled,
-            self.frame_step_floor,
+            self.clock.frame_step_floor,
         );
-        self.frame_step = cadence.vsyncs_per_tick();
-        self.frame_step
+        self.clock.frame_step = cadence.vsyncs_per_tick();
+        self.clock.frame_step
     }
 
     /// The `VSync(n)` argument retail would pass this frame - **last** frame's
@@ -865,7 +868,7 @@ impl World {
     ///
     /// REF: FUN_80016B6C
     pub fn frame_step_vsync_wait(&self) -> u8 {
-        self.frame_step_telemetry.vsync_wait()
+        self.clock.frame_step_telemetry.vsync_wait()
     }
 
     /// Increment the deterministic LCG and return the new value.
@@ -883,14 +886,14 @@ impl World {
     /// [`input::InputState`] at the call site. Hosts that drive the
     /// world from a scripted timeline (`legaia-engine replay`, the
     /// v0.1 playthrough oracle) call this before each [`Self::tick`].
-    /// Also latches [`Self::field_run_button_held`] off the same word, so the
+    /// Also latches [`crate::world::FieldLocomotion::run_button_held`] off the same word, so the
     /// run modifier reaches every host that feeds a pad - native window,
     /// browser play page, replay driver - without any of them wiring it
     /// separately. Deriving it here rather than per-host is deliberate: a
     /// per-host derivation is exactly the shape the UI-drift gate exists to
     /// catch, and this way there is nothing to keep in sync.
     ///
-    /// The buttons are [`Self::field_run_button_mask`], which **defaults to
+    /// The buttons are [`crate::world::FieldLocomotion::run_button_mask`], which **defaults to
     /// retail's** `Cross | R1` (the config word `0x800846DC` = `0x48`, seeded
     /// by `FUN_80034A6C` and read at `0x801D0364`), plus Square as an
     /// alternate. Square alone was the port's binding for a while and is not
@@ -902,7 +905,7 @@ impl World {
     /// REF: FUN_80034A6C
     pub fn set_pad(&mut self, mask: u16) {
         self.input.set_pad(mask);
-        self.field_run_button_held = mask & self.field_run_button_mask != 0;
+        self.locomotion.run_button_held = mask & self.locomotion.run_button_mask != 0;
     }
 
     /// Per-frame world tick. Drives whichever scene-mode VMs are live.
@@ -989,8 +992,8 @@ impl World {
         self.latch_submode_pad_edge();
         // Age the post-battle spoils panel (armed by `finish_battle`) and the
         // no-encounters-here hint (armed by `arm_live_loop`).
-        self.battle_spoils_frames = self.battle_spoils_frames.saturating_sub(1);
-        self.scene_encounter_hint_frames = self.scene_encounter_hint_frames.saturating_sub(1);
+        self.battle.spoils_frames = self.battle.spoils_frames.saturating_sub(1);
+        self.encounters.scene_hint_frames = self.encounters.scene_hint_frames.saturating_sub(1);
         // ------------------------------------------------------------------
         // The simulation clock's denomination.
         //
@@ -1059,49 +1062,50 @@ impl World {
             SIM_HZ == RETAIL_FPS,
             "one sim tick is one retail display frame"
         );
-        self.field_frame_step = 1;
-        self.field_frames += 1;
+        self.clock.display_frame_step = 1;
+        self.clock.display_frames += 1;
         // Kept advancing as the cheap "a world frame ran" witness (the mode
         // driver's frame-begin-skip test probes it); the fixed-point phase it
         // used to carry is gone with the 1:1 denomination.
-        self.field_frame_accum = self.field_frame_accum.wrapping_add(1);
+        self.clock.sim_ticks = self.clock.sim_ticks.wrapping_add(1);
         // Retail game-tick clock for the scripted CLUT-cell effects: one game
         // tick spans `frame_step` vsyncs (the adaptive `DAT_1F800393` factor
-        // written by `FUN_80016B6C`; see [`Self::frame_step`]). Count the sim
+        // written by `FUN_80016B6C`; see [`crate::world::FrameClock::frame_step`]). Count the sim
         // ticks that map to a retail vsync and bank a game tick every
         // `frame_step` of them; [`Self::step_clut_fx`] drains the bank
         // against the host's VRAM. Only accumulates while effects are live
         // (capped so an undrained host can't wind up a backlog).
-        if self.field_frame_step == 1 && !self.clut_fx.is_empty() {
-            self.clut_vsync_accum += 1;
-            if self.clut_vsync_accum >= self.frame_step.max(1) {
-                self.clut_vsync_accum = 0;
-                self.clut_pending_game_ticks = (self.clut_pending_game_ticks + 1).min(600);
+        if self.clock.display_frame_step == 1 && !self.ambient.clut_fx.is_empty() {
+            self.ambient.clut_vsync_accum += 1;
+            if self.ambient.clut_vsync_accum >= self.clock.frame_step.max(1) {
+                self.ambient.clut_vsync_accum = 0;
+                self.ambient.clut_pending_game_ticks =
+                    (self.ambient.clut_pending_game_ticks + 1).min(600);
             }
         }
         // Same game-tick law for the ambient move-VM effect parts (jou's
         // CLUT-cell cyclers / lightning director); drained by the host's
         // `step_ambient_fx` against its VRAM.
-        if self.field_frame_step == 1 && !self.ambient_fx.is_empty() {
-            self.ambient_vsync_accum += 1;
-            if self.ambient_vsync_accum >= self.frame_step.max(1) {
-                self.ambient_vsync_accum = 0;
-                self.ambient_pending_game_ticks = (self.ambient_pending_game_ticks + 1).min(600);
+        if self.clock.display_frame_step == 1 && !self.ambient.fx.is_empty() {
+            self.ambient.vsync_accum += 1;
+            if self.ambient.vsync_accum >= self.clock.frame_step.max(1) {
+                self.ambient.vsync_accum = 0;
+                self.ambient.pending_game_ticks = (self.ambient.pending_game_ticks + 1).min(600);
             }
         }
         // Retail's frame-begin driver services the timed sound-source
         // auto-release before anything else in the frame (`FUN_800267FC`,
         // called at `0x800169FC`). Its accumulator advances by the frame step,
         // so drive it on the sim ticks that map to a retail vsync.
-        if self.field_frame_step == 1 {
-            let step = self.frame_step.max(1);
+        if self.clock.display_frame_step == 1 {
+            let step = self.clock.frame_step.max(1);
             // The teardown gates (`record[+8]` active, `_DAT_8007B868`) live
             // in the libsnd voice binding the engine replaces, so the engine
             // arm is "release when it fires" unconditionally.
             if let crate::sound_state::SoundReleaseTick::Fired { .. } =
-                self.sound_release.tick(step, true, false)
+                self.audio.sound_release.tick(step, true, false)
             {
-                self.pending_sound_release = true;
+                self.audio.pending_sound_release = true;
             }
         }
         // Step the active full-screen fade. A template with a hold countdown
@@ -1109,18 +1113,21 @@ impl World {
         // whose hold word is `-1` - the battle-end / escape template - keeps
         // its end colour up until the battle teardown clears it
         // (`FadeState::holds_at_end`, `finish_battle`).
-        if let Some(fade) = &mut self.screen_fade
+        if let Some(fade) = &mut self.presentation.fade
             && !fade.step()
             && !fade.holds_at_end()
         {
-            self.screen_fade = None;
+            self.presentation.fade = None;
         }
         // Step the two scripted scene-tint channels (op 0x34 sub-0 effect
         // tint + op 0x4C 0x12 global screen tint). A ramp that lands on a
         // non-neutral target HOLDS there (a screen faded to black stays
         // black until a new op replaces it); one that lands on the neutral
         // identity is dropped so the render path returns to untouched.
-        for tint in [&mut self.effect_tint, &mut self.screen_tint] {
+        for tint in [
+            &mut self.presentation.effect_tint,
+            &mut self.presentation.tint,
+        ] {
             if let Some(t) = tint {
                 t.step();
                 if t.is_identity() {
@@ -1139,7 +1146,7 @@ impl World {
         // is one sweep per sim tick; the gate names the clock the walker's
         // wait counters are denominated in rather than thinning them.
         // REF: FUN_801E0088
-        if self.field_frame_step == 1 && runs_master_driver {
+        if self.clock.display_frame_step == 1 && runs_master_driver {
             self.tick_effects();
         }
         if runs_master_driver {
@@ -1163,13 +1170,13 @@ impl World {
         // intermediate poses over the same wall-clock span.
         //
         // REF: FUN_80016B6C (cadence resolver), FUN_801D6704 (field floor)
-        if self.field_frame_step == 1 && runs_master_driver {
-            self.actor_vsync_accum += 1;
+        if self.clock.display_frame_step == 1 && runs_master_driver {
+            self.clock.actor_vsync_accum += 1;
         }
-        let cadence = self.frame_step.max(1);
-        let actor_tick_fired = self.actor_vsync_accum >= cadence && runs_master_driver;
+        let cadence = self.clock.frame_step.max(1);
+        let actor_tick_fired = self.clock.actor_vsync_accum >= cadence && runs_master_driver;
         if actor_tick_fired {
-            self.actor_vsync_accum = 0;
+            self.clock.actor_vsync_accum = 0;
             self.tick_actor_physics();
             // The `jalr node[+0x0C]` arm of the same walk: run the ported
             // per-frame handler kernels (today the colour tween) and drop the
@@ -1187,32 +1194,33 @@ impl World {
         // Retail's scheduler runs once per display frame off the play clock,
         // so drive it on the same retail-frame sub-clock the other 60 Hz
         // consumers use.
-        if self.field_frame_step == 1 {
+        if self.clock.display_frame_step == 1 {
             self.tick_escape_timer();
         }
         // Tick art-learned banner countdown - clear when it reaches zero.
-        if let Some(banner) = &mut self.current_art_banner {
+        if let Some(banner) = &mut self.party.current_art_banner {
             if banner.frames_remaining > 0 {
                 banner.frames_remaining -= 1;
             } else {
-                self.current_art_banner = None;
+                self.party.current_art_banner = None;
             }
         }
         // Tick level-up banner countdown; when it expires the next member who
         // levelled in the same fight takes the slot (see
-        // `World::pending_level_up_banners`).
-        if let Some(banner) = &mut self.current_level_up_banner {
+        // `World::party.pending_level_up_banners`).
+        if let Some(banner) = &mut self.party.current_level_up_banner {
             if banner.frames_remaining > 0 {
                 banner.frames_remaining -= 1;
             } else {
-                self.current_level_up_banner = self.pending_level_up_banners.pop_front();
+                self.party.current_level_up_banner =
+                    self.party.pending_level_up_banners.pop_front();
             }
         }
         // Advance the post-battle Seru-capture banner; clear when it finishes.
-        if let Some(banner) = &mut self.current_capture_banner {
+        if let Some(banner) = &mut self.party.current_capture_banner {
             banner.tick_frame();
             if banner.is_done() {
-                self.current_capture_banner = None;
+                self.party.current_capture_banner = None;
             }
         }
         // Advance the opening-cutscene narration roller. The crawl is
@@ -1226,10 +1234,10 @@ impl World {
         // has to deliver a full 60 retail frames a second - which it does only
         // under the 1:1 denomination (at the old 100 Hz premise it delivered
         // 36, and the crawl ran at 0.6x its own pinned figure).
-        if let Some(narration) = &mut self.cutscene_narration
-            && !narration.tick(self.field_frame_step as u32)
+        if let Some(narration) = &mut self.cutscene.narration
+            && !narration.tick(self.clock.display_frame_step as u32)
         {
-            self.cutscene_narration = None;
+            self.cutscene.narration = None;
         }
         // Fade the "It was the Seru." caption image (opdeene's baked-TIM
         // caption, `Self::cutscene_caption`). It is target-visible in the
@@ -1247,22 +1255,22 @@ impl World {
         // beat: once it has been fully shown for `CAPTION_HOLD_FRAMES`, fade
         // it back out and keep it hidden (the counter never resets within
         // the scene, so the caption shows exactly once).
-        if self.cutscene_caption.is_some() {
+        if self.cutscene.caption.is_some() {
             const CAPTION_FADE_STEP: f32 = 0.06;
             const CAPTION_HOLD_FRAMES: u32 = 180;
-            let in_gap = self.cutscene_narration_seq >= 1 && !self.cutscene_narration_active();
-            if in_gap && self.cutscene_caption_alpha >= 1.0 {
-                self.cutscene_caption_shown_frames =
-                    self.cutscene_caption_shown_frames.saturating_add(1);
+            let in_gap = self.cutscene.narration_seq >= 1 && !self.cutscene_narration_active();
+            if in_gap && self.cutscene.caption_alpha >= 1.0 {
+                self.cutscene.caption_shown_frames =
+                    self.cutscene.caption_shown_frames.saturating_add(1);
             }
-            let hold_elapsed = self.cutscene_caption_shown_frames >= CAPTION_HOLD_FRAMES;
+            let hold_elapsed = self.cutscene.caption_shown_frames >= CAPTION_HOLD_FRAMES;
             let target = if in_gap && !hold_elapsed { 1.0 } else { 0.0 };
-            if self.cutscene_caption_alpha < target {
-                self.cutscene_caption_alpha =
-                    (self.cutscene_caption_alpha + CAPTION_FADE_STEP).min(target);
-            } else if self.cutscene_caption_alpha > target {
-                self.cutscene_caption_alpha =
-                    (self.cutscene_caption_alpha - CAPTION_FADE_STEP).max(target);
+            if self.cutscene.caption_alpha < target {
+                self.cutscene.caption_alpha =
+                    (self.cutscene.caption_alpha + CAPTION_FADE_STEP).min(target);
+            } else if self.cutscene.caption_alpha > target {
+                self.cutscene.caption_alpha =
+                    (self.cutscene.caption_alpha - CAPTION_FADE_STEP).max(target);
             }
         }
         // Tick the live `4C E1` text balloon (FUN_801DA7F0 handler; see
@@ -1271,11 +1279,11 @@ impl World {
         // live"; the cadence is the 60 fps sub-clock step, matching the
         // narration roller above.
         let balloon_engaged = self.dialogue_owns_input();
-        if runs_master_driver && let Some(balloon) = self.text_balloon.as_mut() {
+        if runs_master_driver && let Some(balloon) = self.cutscene.text_balloon.as_mut() {
             let engaged = balloon_engaged;
-            let cadence = self.field_frame_step as i16;
+            let cadence = self.clock.display_frame_step as i16;
             if balloon.tick(engaged, cadence) == crate::text_balloon::BalloonTick::Killed {
-                self.text_balloon = None;
+                self.cutscene.text_balloon = None;
             }
         }
         // Run every live camera-register zone ramp (op `0x43` sub-3..6). Same
@@ -1300,7 +1308,7 @@ impl World {
         // same gate for the same reason: all three are `+0x0C` handlers on
         // that one effect-actor list.
         if runs_master_driver {
-            let delta = self.field_frame_step.min(u16::from(u8::MAX)) as u8;
+            let delta = self.clock.display_frame_step.min(u16::from(u8::MAX)) as u8;
             self.tick_field_timer_actors(delta);
             // The script-cutscene element channel rides the same gate for the
             // same reason - its three handlers are `+0x0C` handlers on that one
@@ -1355,14 +1363,14 @@ impl World {
                 // simplified `current_dialog` box on the field / overworld
                 // dismiss idiom (`op4c_n_5_sub_4_dialog_advance` /
                 // `tick_world_map_npc_dialog`).
-                if self.inline_dialogue.is_some() {
+                if self.dialog.inline.is_some() {
                     self.drive_inline_dialogue();
                     None
-                } else if self.current_dialog.is_some() {
+                } else if self.dialog.current.is_some() {
                     if self.input.just_pressed(input::PadButton::Cross)
                         || self.input.just_pressed(input::PadButton::Circle)
                     {
-                        self.current_dialog = None;
+                        self.dialog.current = None;
                         self.pending_field_events
                             .push(crate::field_events::FieldEvent::DialogDismissed);
                     }
@@ -1373,7 +1381,7 @@ impl World {
                     // concept - once the battle scene is up it always runs
                     // the full per-frame driver until a wipe resolves it.
                     // This arm used to be gated on
-                    // [`Self::live_gameplay_loop`], falling back to a bare
+                    // [`crate::world::WorldToggles::live_gameplay_loop`], falling back to a bare
                     // [`Self::step_battle`] that applies no damage, arms no
                     // turn and never calls [`Self::finish_battle`] - while
                     // battle *entry* (a field carrier's `3E FF` scripted
@@ -1405,7 +1413,7 @@ impl World {
                 //
                 // Per-tick: one Cross/Circle edge feeds at most one of the
                 // script's 0x4C dialog poll or the interaction probe.
-                self.dialog_input_consumed = false;
+                self.dialog.input_consumed = false;
                 // Retail-frame paced (see `step_spawned_record_contexts`).
                 self.step_spawned_record_contexts();
                 // Per-actor script channels (spawned with a cutscene
@@ -1440,7 +1448,7 @@ impl World {
                 // `FUN_8003774C` once per game tick and multiplies each leg by
                 // `DAT_1F800393` (`0x80037868 lbu s2,0x393(s2)`).
                 // REF: FUN_8003774C
-                if self.field_frame_step == 1 {
+                if self.clock.display_frame_step == 1 {
                     self.tick_field_npc_motions();
                 }
                 // Ambient facing channels (`FUN_80038158` ops 0x04 / 0x0D):
@@ -1499,14 +1507,14 @@ impl World {
                 // path). Placed after the runner start above, so the frame the
                 // talk begins already counts as engaged and the save survives.
                 // REF: FUN_80039B7C
-                if !self.dialogue_owns_input() && self.active_inline_prologue.is_none() {
+                if !self.dialogue_owns_input() && self.dialog.active_inline_prologue.is_none() {
                     self.release_talk_facing();
                 }
                 // Screen-effect widgets (mask / sprite / panel / letterbox,
                 // the ending-scene op-0x43 family) tick after the script step
                 // that may have spawned them this frame.
                 self.tick_screen_fx();
-                if self.live_gameplay_loop {
+                if self.toggles.live_gameplay_loop {
                     self.live_field_tick();
                 } else {
                     // `--no-live-loop` gates the encounter *roll* only: a
@@ -1527,7 +1535,7 @@ impl World {
                 // ([`active_fmv`] set), the field VM is suspended - retail
                 // hands the frame to the cutscene/MDEC overlay - and the host
                 // drives playback, calling [`finish_cutscene`] when it ends.
-                if self.active_fmv.is_none() {
+                if self.cutscene.active_fmv.is_none() {
                     self.step_spawned_record_contexts();
                     self.step_field_channels();
                     self.step_field_frame_slice();
@@ -1590,7 +1598,7 @@ impl World {
 
     /// Field walk-regen driver: project the present party onto the
     /// [`crate::walk_regen`] kernel, run one tick against
-    /// [`Self::walk_regen_steps`], and write the bumped gauges back into the
+    /// [`crate::world::FieldLocomotion::walk_regen_steps`], and write the bumped gauges back into the
     /// roster records.
     ///
     /// REF: FUN_801D0B90
@@ -1609,13 +1617,13 @@ impl World {
     /// controller: `FUN_801D01B0`'s tail at `0x801D0910..0x801D0928` adds
     /// `DAT_1F800393` to `_DAT_801F2274` behind the step-delta-non-zero test at
     /// `0x801D08F4..0x801D090C` - one unit per vsync whose step committed.
-    /// [`Self::step_field_locomotion`] adds [`Self::field_frame_step`] once per
+    /// [`Self::step_field_locomotion`] adds [`crate::world::FrameClock::display_frame_step`] once per
     /// sim tick, which is the same rate under the 1:1 denomination.
     ///
     /// One honest gap remains:
     ///
     /// - The kernel's return value is the edge where retail arms a
-    ///   dialog-window callback off [`Self::walk_regen_window`]
+    ///   dialog-window callback off [`crate::world::FieldLocomotion::walk_regen_window`]
     ///   (`_DAT_8007B600`). The engine has no such window slot and nothing
     ///   arms the countdown, so the edge cannot fire and the result is
     ///   dropped here.
@@ -1624,14 +1632,14 @@ impl World {
     /// at `0x80084598`), resolved through [`Self::party_roster_slot`].
     fn tick_field_walk_regen(&mut self) {
         use crate::walk_regen::{WalkGauge, WalkRegenMember};
-        if self.walk_regen_steps <= crate::walk_regen::WALK_REGEN_STEP_COST {
+        if self.locomotion.walk_regen_steps <= crate::walk_regen::WALK_REGEN_STEP_COST {
             return;
         }
-        let count = (self.party_count.min(3) as usize).min(self.roster.members.len());
+        let count = (self.party.party_count.min(3) as usize).min(self.party.roster.members.len());
         let slots: Vec<usize> = (0..count).map(|i| self.party_roster_slot(i)).collect();
         let mut members: Vec<WalkRegenMember> = Vec::with_capacity(slots.len());
         for &rslot in &slots {
-            let Some(rec) = self.roster.members.get(rslot) else {
+            let Some(rec) = self.party.roster.members.get(rslot) else {
                 continue;
             };
             let hms = rec.hp_mp_sp();
@@ -1655,14 +1663,14 @@ impl World {
                 },
             });
         }
-        let mut counter = self.walk_regen_steps;
-        let mut window = self.walk_regen_window;
+        let mut counter = self.locomotion.walk_regen_steps;
+        let mut window = self.locomotion.walk_regen_window;
         // The dialog-window arm edge (see the note above) has no consumer.
         let _armed = crate::walk_regen::tick_walk_regen(&mut counter, &mut members, &mut window);
-        self.walk_regen_steps = counter;
-        self.walk_regen_window = window;
+        self.locomotion.walk_regen_steps = counter;
+        self.locomotion.walk_regen_window = window;
         for (&rslot, m) in slots.iter().zip(members.iter()) {
-            let Some(rec) = self.roster.members.get_mut(rslot) else {
+            let Some(rec) = self.party.roster.members.get_mut(rslot) else {
                 continue;
             };
             let mut hms = rec.hp_mp_sp();
@@ -1701,19 +1709,19 @@ impl World {
             return;
         };
         let slot = player_slot as usize;
-        if self.tile_board.is_none() || slot >= self.actors.len() {
+        if self.board.grid.is_none() || slot >= self.actors.len() {
             return;
         }
 
         // Interpolating toward a committed target tile.
-        if let Some((tx, tz)) = self.tile_board_target {
+        if let Some((tx, tz)) = self.board.target {
             let ms = &mut self.actors[slot].move_state;
             let nx = step_toward(ms.world_x as i32, tx, TILE_BOARD_SPEED);
             let nz = step_toward(ms.world_z as i32, tz, TILE_BOARD_SPEED);
             ms.world_x = nx as i16;
             ms.world_z = nz as i16;
             if nx == tx && nz == tz {
-                self.tile_board_target = None;
+                self.board.target = None;
                 self.tile_board_arrival();
             }
             return;
@@ -1723,28 +1731,28 @@ impl World {
         let Some(dir) = tile_step_from_input(&self.input) else {
             return;
         };
-        if let Some((tx, tz)) = self.tile_board.as_mut().and_then(|b| b.try_step(dir)) {
-            self.tile_board_target = Some((tx, tz));
+        if let Some((tx, tz)) = self.board.grid.as_mut().and_then(|b| b.try_step(dir)) {
+            self.board.target = Some((tx, tz));
         }
     }
 
     /// Advance the screen-effect widgets one frame and refresh
-    /// [`Self::screen_fx_frame`]. Runs in the Field / Cutscene tick after
+    /// [`crate::world::ScreenFxState::fx_frame`]. Runs in the Field / Cutscene tick after
     /// the script step (so a sub-op spawned this frame draws this frame,
     /// matching retail's actor-pool order). The engine ticks the widget
     /// clocks by 1 per world tick (retail's per-frame byte
     /// `DAT_1F800393`); the sprite scripts' flag waits probe the shared
     /// system flag bank ([`Self::system_flag_test`], `FUN_8003CE64`).
     fn tick_screen_fx(&mut self) {
-        if !self.screen_fx.is_active() {
-            if !self.screen_fx_frame.is_empty() {
-                self.screen_fx_frame = Default::default();
+        if !self.presentation.fx.is_active() {
+            if !self.presentation.fx_frame.is_empty() {
+                self.presentation.fx_frame = Default::default();
             }
             return;
         }
-        let mut fx = std::mem::take(&mut self.screen_fx);
-        self.screen_fx_frame = fx.tick(1, |idx| self.system_flag_test(idx));
-        self.screen_fx = fx;
+        let mut fx = std::mem::take(&mut self.presentation.fx);
+        self.presentation.fx_frame = fx.tick(1, |idx| self.system_flag_test(idx));
+        self.presentation.fx = fx;
     }
 
     /// Walk-SM arrival pass (`overlay_0897_801ef2b0` case 3), run when the
@@ -1762,7 +1770,7 @@ impl World {
         use crate::tile_board::{
             CELL_ANIM_FIRST, CELL_ANIM_LAST, CELL_EVENT_FIRST, CELL_EVENT_LAST,
         };
-        let Some(board) = self.tile_board.as_mut() else {
+        let Some(board) = self.board.grid.as_mut() else {
             return;
         };
         let (col, row) = (board.player_col as i32, board.player_row as i32);
@@ -1774,8 +1782,8 @@ impl World {
             // stays set so the op-49 tristate reads Done and the field
             // script resumes past the install op. Despawn the tile actors
             // so they don't leak into the next scene.
-            self.tile_board = None;
-            self.tile_board_header = None;
+            self.board.grid = None;
+            self.board.header = None;
             self.despawn_tile_actors();
         } else if (CELL_ANIM_FIRST..=CELL_ANIM_LAST).contains(&cell) {
             let next = if cell == CELL_ANIM_LAST {
@@ -1807,7 +1815,7 @@ impl World {
     /// per-cell tile-actor spawns are a renderer concern)
     /// REF: overlay_0897_801de840 (op 0x49 arm, `_DAT_8007b450 = pbVar47`)
     pub fn try_install_tile_board(&mut self, instr: &[u8]) -> bool {
-        if self.tile_board_armed || self.tile_board.is_some() {
+        if self.board.armed || self.board.grid.is_some() {
             return false;
         }
         let Some(window) = instr.get(1..) else {
@@ -1861,11 +1869,11 @@ impl World {
             }
         }
 
-        self.tile_actor_slots = tile_slots;
-        self.tile_board_target = None;
-        self.tile_board = Some(board);
-        self.tile_board_header = Some(header);
-        self.tile_board_armed = true;
+        self.board.actor_slots = tile_slots;
+        self.board.target = None;
+        self.board.grid = Some(board);
+        self.board.header = Some(header);
+        self.board.armed = true;
         true
     }
 
@@ -1878,14 +1886,14 @@ impl World {
     /// case 8 -> board free).
     fn despawn_tile_actors(&mut self) {
         for value in crate::tile_board::CELL_DRAW_FIRST..=crate::tile_board::CELL_DRAW_LAST {
-            if let Some(slot) = self.tile_actor_slots[value as usize]
+            if let Some(slot) = self.board.actor_slots[value as usize]
                 && let Some(a) = self.actors.get_mut(slot as usize)
             {
                 *a = Actor::new();
             }
         }
-        self.tile_actor_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
-        self.tile_board_draw_list.clear();
+        self.board.actor_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
+        self.board.draw_list.clear();
     }
 
     /// Rebuild the per-frame tile-board draw list (retail
@@ -1900,12 +1908,12 @@ impl World {
     /// player actor is drawn by the normal field path, so it is not seated
     /// here (that would fight the step interpolation).
     fn refresh_tile_board_draw_list(&mut self) {
-        let Some(header) = self.tile_board_header else {
-            self.tile_board_draw_list.clear();
+        let Some(header) = self.board.header else {
+            self.board.draw_list.clear();
             return;
         };
-        let Some(board) = self.tile_board.as_ref() else {
-            self.tile_board_draw_list.clear();
+        let Some(board) = self.board.grid.as_ref() else {
+            self.board.draw_list.clear();
             return;
         };
         let mut list = Vec::new();
@@ -1916,7 +1924,7 @@ impl World {
             if !crate::tile_board::is_drawable_cell(cell) {
                 continue;
             }
-            let Some(slot) = self.tile_actor_slots[cell as usize] else {
+            let Some(slot) = self.board.actor_slots[cell as usize] else {
                 continue;
             };
             let (world_x, world_z) = board.tile_world(col, row);
@@ -1935,7 +1943,7 @@ impl World {
                 a.move_state.world_z = d.world_z as i16;
             }
         }
-        self.tile_board_draw_list = list;
+        self.board.draw_list = list;
     }
 
     /// Enter the Noa dance (rhythm) minigame on `game`, suspending the current
@@ -1951,10 +1959,10 @@ impl World {
         // Don't stack a suspend: if the dance is already running, just swap the
         // game so a re-entry keeps the true return mode.
         if self.mode != SceneMode::Dance {
-            self.dance_return_mode = self.mode;
+            self.minigames.dance_return_mode = self.mode;
         }
-        self.dance = Some(game);
-        self.dance_last_judge = None;
+        self.minigames.dance = Some(game);
+        self.minigames.dance_last_judge = None;
         self.mode = SceneMode::Dance;
         if crate::dance::dance_scene_stage().clear_pad_latch {
             self.input.clear_edges();
@@ -1968,15 +1976,15 @@ impl World {
     /// installed for one frame so the host can read it - this take clears it.
     pub fn exit_dance(&mut self) -> Option<crate::dance::DanceGame> {
         if self.mode == SceneMode::Dance {
-            self.mode = self.dance_return_mode;
+            self.mode = self.minigames.dance_return_mode;
         }
-        self.dance_last_judge = None;
+        self.minigames.dance_last_judge = None;
         // The stager runs on teardown as well as on entry, so the press that
         // leaves the hall does not carry into the restored field mode.
         if crate::dance::dance_scene_stage().clear_pad_latch {
             self.input.clear_edges();
         }
-        self.dance.take()
+        self.minigames.dance.take()
     }
 
     /// Advance the dance minigame one frame: step the beat clock, judge this
@@ -1993,9 +2001,9 @@ impl World {
     /// PORT: the dance overlay's per-frame driver (`FUN_801cf470` beat clock ->
     /// `FUN_801d1960` hit judge), one advance + one judged press pass per frame.
     fn tick_dance(&mut self) {
-        let Some(game) = self.dance.as_mut() else {
+        let Some(game) = self.minigames.dance.as_mut() else {
             // Mode is Dance but no game installed - drop back to a sane mode.
-            self.mode = self.dance_return_mode;
+            self.mode = self.minigames.dance_return_mode;
             return;
         };
         game.advance(1);
@@ -2014,12 +2022,12 @@ impl World {
             .into_iter()
             .find(|d| pressed & d.pad_bit() != 0);
         if let Some(dir) = dir {
-            self.dance_last_judge = Some(game.judge_press(dir));
+            self.minigames.dance_last_judge = Some(game.judge_press(dir));
         }
         if game.song_over() {
             // Song finished: restore the interrupted mode, leaving `dance`
             // in place so the host can read the final score before clearing.
-            self.mode = self.dance_return_mode;
+            self.mode = self.minigames.dance_return_mode;
         }
     }
 
@@ -2028,55 +2036,55 @@ impl World {
     /// suspend contract, the interrupted field state stays intact underneath.
     pub fn enter_fishing(&mut self, session: crate::fishing::FishingSession) {
         if self.mode != SceneMode::Fishing {
-            self.fishing_return_mode = self.mode;
+            self.minigames.fishing_return_mode = self.mode;
         }
-        self.fishing = Some(session);
+        self.minigames.fishing = Some(session);
         self.mode = SceneMode::Fishing;
     }
 
     /// Leave the fishing minigame and restore the interrupted mode, returning
     /// the session so the host can read the final [`FishingRecord`]. The
     /// record's point total is banked into the persistent
-    /// [`World::fishing_points`] pool (retail credits `_DAT_8008444C`
+    /// [`crate::world::MinigameState::fishing_points`] pool (retail credits `_DAT_8008444C`
     /// directly; hosts seed the next session's record from the pool). No-op
     /// when fishing isn't active.
     ///
     /// [`FishingRecord`]: crate::fishing::FishingRecord
     pub fn exit_fishing(&mut self) -> Option<crate::fishing::FishingSession> {
         if self.mode == SceneMode::Fishing {
-            self.mode = self.fishing_return_mode;
+            self.mode = self.minigames.fishing_return_mode;
         }
-        let session = self.fishing.take();
-        self.fishing_exchange = None;
+        let session = self.minigames.fishing.take();
+        self.minigames.fishing_exchange = None;
         if let Some(s) = &session {
-            self.fishing_points = s.record().points;
+            self.minigames.fishing_points = s.record().points;
         }
         session
     }
 
     /// Open the fishing point-exchange (prize shop) list on `exchange`.
-    /// The host renders [`World::fishing_exchange`] and commits buys through
+    /// The host renders [`crate::world::MinigameState::fishing_exchange`] and commits buys through
     /// [`World::fishing_exchange_buy`].
     pub fn open_fishing_exchange(&mut self, mut exchange: crate::fishing::PrizeExchange) {
         // Row 0 hides until strictly affordable - floor the cursor to the
         // first visible row for the current point pool.
         exchange.cursor = exchange
             .cursor
-            .max(exchange.first_visible(self.fishing_points));
-        self.fishing_exchange = Some(exchange);
+            .max(exchange.first_visible(self.minigames.fishing_points));
+        self.minigames.fishing_exchange = Some(exchange);
     }
 
     /// Close the point-exchange list.
     pub fn close_fishing_exchange(&mut self) {
-        self.fishing_exchange = None;
+        self.minigames.fishing_exchange = None;
     }
 
     /// Commit a point-exchange purchase of `qty` units of `row`
     /// (`FUN_801d06c8`'s Yes arm): validates through
     /// [`crate::fishing::PrizeExchange::buy`] against the persistent pool /
     /// purchased mask / live inventory count, then deducts
-    /// [`World::fishing_points`], latches the one-time bit, and grants the
-    /// item into [`World::inventory`]. While a fishing session is live its
+    /// [`crate::world::MinigameState::fishing_points`], latches the one-time bit, and grants the
+    /// item into [`crate::world::PartyState::inventory`]. While a fishing session is live its
     /// record is synced to the reduced pool so the on-screen point total
     /// matches. `None` when no exchange is open or the buy doesn't validate.
     pub fn fishing_exchange_buy(
@@ -2084,24 +2092,24 @@ impl World {
         row: usize,
         qty: u32,
     ) -> Option<crate::fishing::PrizePurchase> {
-        let ex = self.fishing_exchange.as_ref()?;
+        let ex = self.minigames.fishing_exchange.as_ref()?;
         let item_id = ex.rows.get(row)?.item_id;
-        let owned = *self.inventory.get(&item_id).unwrap_or(&0) as u32;
+        let owned = *self.party.inventory.get(&item_id).unwrap_or(&0) as u32;
         let purchase = ex.buy(
             row,
             qty,
-            self.fishing_points,
+            self.minigames.fishing_points,
             owned,
-            self.fishing_prizes_purchased,
+            self.minigames.fishing_prizes_purchased,
         )?;
-        self.fishing_points -= purchase.cost as i32;
+        self.minigames.fishing_points -= purchase.cost as i32;
         if let Some(bit) = purchase.latched_bit {
-            self.fishing_prizes_purchased |= 1 << bit;
+            self.minigames.fishing_prizes_purchased |= 1 << bit;
         }
-        let count = self.inventory.entry(purchase.item_id).or_insert(0);
+        let count = self.party.inventory.entry(purchase.item_id).or_insert(0);
         *count = count.saturating_add(purchase.qty.min(255) as u8);
-        if let Some(s) = &mut self.fishing {
-            s.set_points(self.fishing_points);
+        if let Some(s) = &mut self.minigames.fishing {
+            s.set_points(self.minigames.fishing_points);
         }
         Some(purchase)
     }
@@ -2130,18 +2138,18 @@ impl World {
         use crate::fishing::{FishingPhase, ReelInput};
         /// Per-frame casting-meter step (see the method note - not byte-pinned).
         const FISHING_CAST_STEP: i32 = 0x80;
-        let Some(phase) = self.fishing.as_ref().map(|s| s.phase()) else {
+        let Some(phase) = self.minigames.fishing.as_ref().map(|s| s.phase()) else {
             // Mode is Fishing but no session installed - drop back to a sane mode.
-            self.mode = self.fishing_return_mode;
+            self.mode = self.minigames.fishing_return_mode;
             return;
         };
         match phase {
             FishingPhase::Casting => {
-                if let Some(s) = self.fishing.as_mut() {
+                if let Some(s) = self.minigames.fishing.as_mut() {
                     s.advance_cast(FISHING_CAST_STEP);
                 }
                 if self.input.just_pressed(input::PadButton::Cross)
-                    && let Some(s) = self.fishing.as_mut()
+                    && let Some(s) = self.minigames.fishing.as_mut()
                 {
                     s.lock_cast();
                 }
@@ -2158,13 +2166,13 @@ impl World {
                     held |= crate::fishing::REEL_B_PAD_BIT;
                 }
                 let input = ReelInput::from_pad_mask(held);
-                if let Some(s) = self.fishing.as_mut() {
+                if let Some(s) = self.minigames.fishing.as_mut() {
                     s.reel(input, 1);
                 }
             }
             FishingPhase::Done => {
                 if self.input.just_pressed(input::PadButton::Cross)
-                    && let Some(s) = self.fishing.as_mut()
+                    && let Some(s) = self.minigames.fishing.as_mut()
                 {
                     s.recast();
                 }
@@ -2178,24 +2186,24 @@ impl World {
     /// field state stays intact underneath.
     pub fn enter_slot_machine(&mut self, machine: crate::slot_machine::SlotMachine) {
         if self.mode != SceneMode::SlotMachine {
-            self.slot_return_mode = self.mode;
+            self.minigames.slot_return_mode = self.mode;
         }
-        self.slot_machine = Some(machine);
+        self.minigames.slot_machine = Some(machine);
         self.mode = SceneMode::SlotMachine;
     }
 
     /// Leave the slot machine and restore the interrupted mode, committing
     /// the session's final balance into the casino coin bank
-    /// ([`World::casino_coins`] - the retail state-100 assignment
+    /// ([`crate::world::MinigameState::casino_coins`] - the retail state-100 assignment
     /// `_DAT_800845A4 = DAT_801d4114`). Returns the session so the host can
     /// read the final state. No-op when the machine isn't active.
     pub fn exit_slot_machine(&mut self) -> Option<crate::slot_machine::SlotMachine> {
         if self.mode == SceneMode::SlotMachine {
-            self.mode = self.slot_return_mode;
+            self.mode = self.minigames.slot_return_mode;
         }
-        let mut machine = self.slot_machine.take();
+        let mut machine = self.minigames.slot_machine.take();
         if let Some(m) = machine.as_mut() {
-            self.casino_coins = m.cash_out().max(0) as u32;
+            self.minigames.casino_coins = m.cash_out().max(0) as u32;
         }
         machine
     }
@@ -2257,7 +2265,7 @@ impl World {
         }
         // Close the mode-24 round trip when the entry came through the door
         // warp (`exit_baka_fighter` already does its own).
-        if self.minigame_scene_backup.is_some() {
+        if self.minigames.scene_backup.is_some() {
             self.minigame_return_warp();
         }
     }
@@ -2274,8 +2282,8 @@ impl World {
     // REF: FUN_80025980 (scene-name backup half), FUN_801DE840 case 0x3E
     //      (winnings-accumulator zero half)
     pub fn arm_minigame_warp(&mut self) {
-        self.minigame_scene_backup = Some(self.active_scene_label.clone());
-        self.minigame_winnings = 0;
+        self.minigames.scene_backup = Some(self.active_scene_label.clone());
+        self.minigames.winnings = 0;
     }
 
     /// Mode-24 minigame exit / return-warp: restore the backed-up scene name
@@ -2296,11 +2304,12 @@ impl World {
     /// unconditional); only the name restore needs the backup.
     // PORT: FUN_80026018
     pub fn minigame_return_warp(&mut self) {
-        self.casino_coins = self
+        self.minigames.casino_coins = self
+            .minigames
             .casino_coins
-            .saturating_add(self.minigame_winnings)
+            .saturating_add(self.minigames.winnings)
             .min(9_999_999);
-        if let Some(name) = self.minigame_scene_backup.take() {
+        if let Some(name) = self.minigames.scene_backup.take() {
             self.active_scene_label = name;
         }
         self.mode = SceneMode::Field;
@@ -2323,13 +2332,13 @@ impl World {
     /// the confirmed kernels live in [`crate::slot_machine`]).
     fn tick_slot_machine(&mut self) {
         use crate::slot_machine::SlotPhase;
-        let Some(phase) = self.slot_machine.as_ref().map(|m| m.phase()) else {
+        let Some(phase) = self.minigames.slot_machine.as_ref().map(|m| m.phase()) else {
             // Mode is SlotMachine but no session installed - drop back.
-            self.mode = self.slot_return_mode;
+            self.mode = self.minigames.slot_return_mode;
             return;
         };
         let confirm = self.input.just_pressed(input::PadButton::Cross);
-        let Some(m) = self.slot_machine.as_mut() else {
+        let Some(m) = self.minigames.slot_machine.as_mut() else {
             return;
         };
         m.tick();
@@ -2353,7 +2362,7 @@ impl World {
             SlotPhase::CashedOut => {
                 // Committed: restore the interrupted mode (the host reads the
                 // session out via [`World::exit_slot_machine`]).
-                self.mode = self.slot_return_mode;
+                self.mode = self.minigames.slot_return_mode;
             }
         }
     }
@@ -2364,23 +2373,23 @@ impl World {
     /// state stays intact underneath.
     pub fn enter_baka_fighter(&mut self, fight: crate::baka_fighter::BakaFight) {
         if self.mode != SceneMode::BakaFighter {
-            self.baka_return_mode = self.mode;
+            self.minigames.baka_return_mode = self.mode;
         }
         // Retail reaches the duel through the mode-24 door warp: the field-VM
         // `0x3E` arm zeroes the winnings accumulator `_DAT_80084440` and the
         // mode-24 OTHER-INIT `FUN_80025980` backs up the active scene name.
         // Only a field entry goes through that warp; an engine-only entry from
         // another mode keeps the plain suspend/restore contract.
-        if self.baka_return_mode == SceneMode::Field {
+        if self.minigames.baka_return_mode == SceneMode::Field {
             self.arm_minigame_warp();
         }
-        self.baka_fighter = Some(fight);
+        self.minigames.baka_fighter = Some(fight);
         self.mode = SceneMode::BakaFighter;
     }
 
     /// Leave the Baka Fighter duel through the mode-24 return warp
     /// ([`Self::minigame_return_warp`], retail `FUN_80026018`): the winnings
-    /// accumulator is banked into [`Self::casino_coins`], the backed-up scene
+    /// accumulator is banked into [`crate::world::MinigameState::casino_coins`], the backed-up scene
     /// name is restored and the mode drops back to the field.
     ///
     /// On a decided match with a player win, whatever prize the end-of-match
@@ -2393,14 +2402,14 @@ impl World {
     /// Returns the fight so the host can read the final state. No-op when no
     /// duel is active.
     pub fn exit_baka_fighter(&mut self) -> Option<crate::baka_fighter::BakaFight> {
-        let fight = self.baka_fighter.take();
+        let fight = self.minigames.baka_fighter.take();
         if let Some(f) = fight.as_ref()
             && f.winner() == Some(0)
         {
             let owed = f.tally_gold_remaining().max(0) as u32;
-            self.minigame_winnings = self.minigame_winnings.saturating_add(owed);
+            self.minigames.winnings = self.minigames.winnings.saturating_add(owed);
         }
-        let return_mode = self.baka_return_mode;
+        let return_mode = self.minigames.baka_return_mode;
         if self.mode == SceneMode::BakaFighter {
             // The warp's own mode write is retail's mode-2 (field) latch. An
             // engine-only entry from another mode restores that mode instead,
@@ -2430,9 +2439,9 @@ impl World {
     /// type commit; `FUN_801d3468` resolution SM via `BakaFight::tick`).
     fn tick_baka_fighter(&mut self) {
         use crate::baka_fighter::BakaAttack;
-        let Some(fight) = self.baka_fighter.as_ref() else {
+        let Some(fight) = self.minigames.baka_fighter.as_ref() else {
             // Mode is BakaFighter but no fight installed - drop back.
-            self.mode = self.baka_return_mode;
+            self.mode = self.minigames.baka_return_mode;
             return;
         };
         if fight.match_over() {
@@ -2450,11 +2459,11 @@ impl World {
             ]
             .iter()
             .any(|&b| self.input.just_pressed(b));
-            if let Some(f) = self.baka_fighter.as_mut() {
+            if let Some(f) = self.minigames.baka_fighter.as_mut() {
                 f.tick_with_input(1, face);
                 let paid = f.take_tally_gold();
                 if paid > 0 {
-                    self.minigame_winnings = self.minigame_winnings.saturating_add(paid as u32);
+                    self.minigames.winnings = self.minigames.winnings.saturating_add(paid as u32);
                 }
             }
             if self.input.just_pressed(input::PadButton::Cross) {
@@ -2473,7 +2482,7 @@ impl World {
         } else {
             None
         };
-        if let Some(fight) = self.baka_fighter.as_mut() {
+        if let Some(fight) = self.minigames.baka_fighter.as_mut() {
             if let Some(attack) = attack {
                 fight.choose(0, attack);
             }
@@ -2496,17 +2505,18 @@ impl World {
     /// `muscle_dome::apply_contest_start_restore`)
     pub fn enter_muscle_dome(&mut self, session: crate::muscle_dome::MuscleDomeSession) {
         if self.mode != SceneMode::MuscleDome {
-            self.muscle_return_mode = self.mode;
+            self.minigames.muscle_return_mode = self.mode;
         }
         if let Some(restore) = self
+            .minigames
             .muscle_contest
             .as_mut()
             .and_then(|c| c.take_start_restore())
-            && let Some(rec) = self.roster.members.first_mut()
+            && let Some(rec) = self.party.roster.members.first_mut()
         {
             crate::muscle_dome::apply_contest_start_restore(rec, restore);
         }
-        self.muscle_dome = Some(session);
+        self.minigames.muscle_dome = Some(session);
         self.mode = SceneMode::MuscleDome;
     }
 
@@ -2526,9 +2536,9 @@ impl World {
     /// Returns the session so the host can read the final state.
     pub fn exit_muscle_dome(&mut self) -> Option<crate::muscle_dome::MuscleDomeSession> {
         if self.mode == SceneMode::MuscleDome {
-            self.mode = self.muscle_return_mode;
+            self.mode = self.minigames.muscle_return_mode;
         }
-        self.muscle_dome.take()
+        self.minigames.muscle_dome.take()
     }
 
     /// Report the finished leg to the open contest and step the between-leg
@@ -2547,13 +2557,14 @@ impl World {
         use crate::muscle_dome::ContestState;
         let flags = self.muscle_contest_flags();
         let hp_max = self
+            .party
             .roster
             .members
             .first()
             .map(|r| r.hp_mp_sp().hp_max)
             .filter(|&hp| hp > 0)
             .unwrap_or(500);
-        let contest = self.muscle_contest.as_mut()?;
+        let contest = self.minigames.muscle_contest.as_mut()?;
         contest.finish_leg(report, hp_max, &flags);
         // The three recovery lanes drain, then the restore state hands the
         // total back to the fighter - a dome contest costs no permanent HP.
@@ -2568,18 +2579,19 @@ impl World {
                 // `+0x6CE` pair, which is the lead party record's own
                 // `+0x104` / `+0x106` HP pair (`0x80084708 - 0x80084140 =
                 // 0x5C8`).
-                let mut hms = match self.roster.members.first() {
+                let mut hms = match self.party.roster.members.first() {
                     Some(r) => r.hp_mp_sp(),
                     None => break,
                 };
                 hms.hp_cur = self
+                    .minigames
                     .muscle_contest
                     .as_mut()?
                     .take_hp_restore(hms.hp_cur, hp_max);
-                if let Some(rec) = self.roster.members.first_mut() {
+                if let Some(rec) = self.party.roster.members.first_mut() {
                     rec.set_hp_mp_sp(hms);
                 }
-                return Some(self.muscle_contest.as_ref()?.state());
+                return Some(self.minigames.muscle_contest.as_ref()?.state());
             }
         }
         Some(contest.state())
@@ -2611,14 +2623,15 @@ impl World {
     pub fn settle_muscle_contest(&mut self) -> Option<crate::muscle_dome::ContestSettlement> {
         use crate::muscle_dome as md;
         let flags = self.muscle_contest_flags();
-        let contest = self.muscle_contest.as_mut()?;
+        let contest = self.minigames.muscle_contest.as_mut()?;
         if !contest.over() {
             return None;
         }
         let out = contest.settle(&flags);
-        self.muscle_contest = None;
-        self.muscle_settlement = Some(out);
-        self.casino_coins = md::credit_casino_coins(self.casino_coins, out.score);
+        self.minigames.muscle_contest = None;
+        self.minigames.muscle_settlement = Some(out);
+        self.minigames.casino_coins =
+            md::credit_casino_coins(self.minigames.casino_coins, out.score);
         if out.set_continue_flag {
             self.system_flag_set(md::CONTEST_CONTINUE_FLAG);
         } else {
@@ -2634,7 +2647,11 @@ impl World {
         }
         if out.award_prize {
             self.system_flag_set(md::CONTEST_PRIZE_FLAG);
-            let slot = self.inventory.entry(md::CONTEST_PRIZE_ITEM_ID).or_insert(0);
+            let slot = self
+                .party
+                .inventory
+                .entry(md::CONTEST_PRIZE_ITEM_ID)
+                .or_insert(0);
             *slot = slot.saturating_add(1).min(legaia_save::STACK_CAP);
         }
         Some(out)
@@ -2677,8 +2694,8 @@ impl World {
     /// resolve), with the presentation left to the host.
     fn tick_muscle_dome(&mut self) {
         use crate::muscle_dome::MusclePhase;
-        let Some(phase) = self.muscle_dome.as_ref().map(|s| s.phase()) else {
-            self.mode = self.muscle_return_mode;
+        let Some(phase) = self.minigames.muscle_dome.as_ref().map(|s| s.phase()) else {
+            self.mode = self.minigames.muscle_return_mode;
             return;
         };
         let confirm = self.input.just_pressed(input::PadButton::Cross);
@@ -2699,12 +2716,12 @@ impl World {
                     cancel: self.input.just_pressed(input::PadButton::Circle),
                     magic: self.input.just_pressed(input::PadButton::Triangle),
                 };
-                if let Some(s) = self.muscle_dome.as_mut() {
+                if let Some(s) = self.minigames.muscle_dome.as_mut() {
                     s.select_input(pad);
                 }
             }
             MusclePhase::Resolve => {
-                if let Some(s) = self.muscle_dome.as_mut() {
+                if let Some(s) = self.minigames.muscle_dome.as_mut() {
                     // With no disc tables staged this closes the turn without
                     // damage rather than substituting invented numbers - and
                     // rather than parking the leg in `Resolve` forever.
@@ -2720,7 +2737,7 @@ impl World {
                 // executing during a leg, so a confirm gate here was a silent
                 // one-press stall with nothing on screen to explain it.
                 // REF: FUN_801e295c (turn-top arm)
-                if let Some(s) = self.muscle_dome.as_mut() {
+                if let Some(s) = self.minigames.muscle_dome.as_mut() {
                     s.next_turn();
                 }
             }
@@ -2729,7 +2746,7 @@ impl World {
                     let report = crate::muscle_dome::LegReport {
                         survived: phase == MusclePhase::Won,
                         outcome: 0,
-                        turns_taken: self.muscle_dome.as_ref().map_or(0, |s| s.turn()),
+                        turns_taken: self.minigames.muscle_dome.as_ref().map_or(0, |s| s.turn()),
                     };
                     self.exit_muscle_dome();
                     self.report_muscle_leg(report);

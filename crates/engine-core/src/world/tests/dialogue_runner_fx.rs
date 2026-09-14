@@ -23,8 +23,8 @@ fn field_stager_spawn_splits_sound_node_off_the_mesh_draws() {
     bytes.extend_from_slice(&0u16.to_le_bytes());
     bytes.extend_from_slice(&0x08u16.to_le_bytes()); // HALT
 
-    world.field_stager_bytes = bytes.clone();
-    world.field_stagers = vec![
+    world.props.stager_bytes = bytes.clone();
+    world.props.stagers = vec![
         SummonPart {
             record_off: 0,
             model_sel: -1,
@@ -41,7 +41,7 @@ fn field_stager_spawn_splits_sound_node_off_the_mesh_draws() {
 
     // Spawn the 0x4001 sound node (id 1) at a world position.
     assert!(world.spawn_field_stager(1, [5, 6, 7]));
-    assert_eq!(world.active_field_fx.len(), 1);
+    assert_eq!(world.props.active_fx.len(), 1);
 
     // It surfaces as a SoundEmitter render node, NOT a mesh draw.
     let nodes = world.active_field_fx_render_nodes();
@@ -59,14 +59,14 @@ fn field_stager_spawn_splits_sound_node_off_the_mesh_draws() {
     // rather than draining the same frame it halts).
     world.tick_field_fx(0x0400);
     assert_eq!(
-        world.active_field_fx.len(),
+        world.props.active_fx.len(),
         1,
         "a finished field effect is kept (held at its final pose), not drained"
     );
     // Scene entry (install) clears live effects.
     world.install_field_stagers(&bytes);
     assert!(
-        world.active_field_fx.is_empty(),
+        world.props.active_fx.is_empty(),
         "scene entry clears live field effects"
     );
 }
@@ -83,8 +83,8 @@ fn vm_dialogue_drives_inline_runner_via_tick_and_tears_down() {
     let inline = vec![0x00u8, 0x56, 0x00, 0x1F, b'H', b'i', 0x00];
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.use_vm_dialogue = true;
-    world.current_dialog = Some(DialogRequest {
+    world.toggles.use_vm_dialogue = true;
+    world.dialog.current = Some(DialogRequest {
         text_id: 0,
         inline,
         world_x: 0,
@@ -110,7 +110,7 @@ fn vm_dialogue_drives_inline_runner_via_tick_and_tears_down() {
         {
             dismissed = true;
         }
-        if world.current_dialog.is_none() && world.inline_dialogue.is_none() {
+        if world.dialog.current.is_none() && world.dialog.inline.is_none() {
             break;
         }
     }
@@ -119,11 +119,11 @@ fn vm_dialogue_drives_inline_runner_via_tick_and_tears_down() {
         "the VM-driven dialogue must emit DialogDismissed on completion"
     );
     assert!(
-        world.current_dialog.is_none(),
+        world.dialog.current.is_none(),
         "current_dialog cleared after the VM dialogue ends"
     );
     assert!(
-        world.inline_dialogue.is_none(),
+        world.dialog.inline.is_none(),
         "inline runner torn down after completion"
     );
 }
@@ -137,8 +137,8 @@ fn simple_dialogue_opt_out_leaves_runner_untouched() {
     let inline = vec![0x00u8, 0x56, 0x00, 0x1F, b'H', b'i', 0x00];
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.use_vm_dialogue = false;
-    world.current_dialog = Some(DialogRequest {
+    world.toggles.use_vm_dialogue = false;
+    world.dialog.current = Some(DialogRequest {
         text_id: 0,
         inline,
         world_x: 0,
@@ -154,18 +154,18 @@ fn simple_dialogue_opt_out_leaves_runner_untouched() {
         world.set_pad(0);
         let _ = world.tick();
         assert!(
-            world.inline_dialogue.is_none(),
+            world.dialog.inline.is_none(),
             "opt-out must never start the VM runner"
         );
     }
     assert!(
-        world.current_dialog.is_some(),
+        world.dialog.current.is_some(),
         "the request stays with the simplified panel when VM dialogue is off"
     );
 }
 
 /// A non-summon battle move whose move-power record carries a spawnable effect
-/// entry requests a move-FX spawn (`World::pending_move_fx_spawn`) at the
+/// entry requests a move-FX spawn (`World::casting.pending_move_fx_spawn`) at the
 /// target's battle position when it resolves through the shared cast path
 /// (`cast_spell_on_slots`) - the engine-side wiring the host drains to call
 /// `spawn_move_fx`. A move with NO effect entry requests nothing (the gate).
@@ -202,12 +202,15 @@ fn battle_special_attack_requests_move_fx_spawn() {
 
     fn run(with_fx: bool) -> Option<(u8, [i16; 3])> {
         let mut world = World {
-            party_count: 1,
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
             ..World::default()
         };
         world.mode = SceneMode::Battle;
         world.set_spell_catalog(SpellCatalog::vanilla());
-        world.monster_catalog = vanilla_monster_catalog();
+        world.tables.monster_catalog = vanilla_monster_catalog();
         // Party target at slot 0 with a distinct battle position so the request
         // origin is provably the target's position, not a constant.
         world.actors[0].battle.max_hp = 4000;
@@ -216,17 +219,17 @@ fn battle_special_attack_requests_move_fx_spawn() {
         world.actors[0].move_state.world_x = 100;
         world.actors[0].move_state.world_y = -50;
         world.actors[0].move_state.world_z = 200;
-        world.battle_accuracy[0] = 30;
-        world.battle_defense[0] = 40;
+        world.battle.accuracy[0] = 30;
+        world.battle.defense[0] = 40;
         // Bandit Boss (id 5) at slot 1 casts Flame (0x20) on seed 0.
         world.actors[1].battle.max_hp = 120;
         world.actors[1].battle.hp = 120;
         world.actors[1].battle.mp = 10;
         world.actors[1].battle.liveness = 1;
         world.actors[1].battle_monster_id = Some(5);
-        world.battle_accuracy[1] = 25;
+        world.battle.accuracy[1] = 25;
         world.set_battle_magic(1, 40);
-        world.move_power = MovePowerCatalog::from_overlay_0898(&overlay(with_fx));
+        world.tables.move_power = MovePowerCatalog::from_overlay_0898(&overlay(with_fx));
         world.rng_state = 0;
 
         world.take_monster_turn(1);
@@ -234,8 +237,8 @@ fn battle_special_attack_requests_move_fx_spawn() {
         // The request rides the fold, which is the band's 0x29 exit.
         tick_until_cast_folds(&mut world);
         // A non-summon move never requests a summon-creature spawn.
-        assert!(world.pending_summon_spawn.is_none());
-        world.pending_move_fx_spawn
+        assert!(world.casting.pending_summon_spawn.is_none());
+        world.casting.pending_move_fx_spawn
     }
 
     // FX record -> a move-FX spawn request at the target's position.

@@ -16,8 +16,8 @@
 //!   both written by the action effect script's terminator
 //!   (`FUN_801DEA50`, `0x801DF290` / `0x801DF2B4`). Those writes now have a
 //!   sink: `legaia_engine_core::action_effect_script::MoveFxStreak`, installed
-//!   by the live battle tick and read back through `World::move_fx_streak`.
-//! * **Nothing emitted a per-frame pass.** `World::active_move_fx_trail_texpage`
+//!   by the live battle tick and read back through `World::casting.move_fx_streak`.
+//! * **Nothing emitted a per-frame pass.** `World::casting.move_fx_trail_texpage`
 //!   was read only as a log line. [`streak_quads`] is the pass; the native
 //!   window's screen-FX builder calls it every battle frame and appends the
 //!   quads to the same screen-space textured batch the widget overlays ride.
@@ -65,8 +65,8 @@ pub const HALF_HEIGHT: f32 = 256.0;
 
 /// Everything one frame's streak needs, lifted out of the engine world.
 ///
-/// Hosts build this from `World::move_fx_streak()` (the launch point and the
-/// half-width) plus `World::active_move_fx_trail_texpage()` (the trail id).
+/// Hosts build this from `World::casting.move_fx_streak()` (the launch point and the
+/// half-width) plus `World::casting.move_fx_trail_texpage()` (the trail id).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StreakSource {
     /// `ctx[+0x1144]` - the world-space launch position the streak centres
@@ -81,7 +81,7 @@ pub struct StreakSource {
 
 impl StreakSource {
     /// Build from the engine's context block and the active move's trail
-    /// texpage word (`0x7700 + id`, as `World::active_move_fx_trail_texpage`
+    /// texpage word (`0x7700 + id`, as `World::casting.move_fx_trail_texpage`
     /// reports it). Returns `None` when the block is not armed - i.e. no
     /// terminator has staged a launch point this action.
     pub fn from_block(

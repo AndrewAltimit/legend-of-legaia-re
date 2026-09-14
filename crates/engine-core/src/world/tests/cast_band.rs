@@ -11,16 +11,19 @@ use legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN;
 /// Seru-magic catalog, the spell submenu open on the caster.
 fn seru_cast_world() -> World {
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     // A live session seats the creature above the eight battle slots.
     while world.actors.len() < 12 {
         world.actors.push(Actor::default());
     }
-    world.battle_player_driven = true;
+    world.battle.player_driven = true;
     world.mode = SceneMode::Battle;
-    world.spell_catalog = crate::retail_magic::retail_seru_magic_catalog();
+    world.tables.spell_catalog = crate::retail_magic::retail_seru_magic_catalog();
     world.actors[0].active = true;
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 200;
@@ -40,9 +43,9 @@ fn seru_cast_world() -> World {
     list.count = 1;
     list.ids[0] = 0x81;
     party.members[0].set_spell_list(list);
-    world.roster = party;
+    world.party.roster = party;
     world.battle_ctx.active_actor = 0;
-    world.battle_spell_menu = world.build_battle_spell_session(0);
+    world.battle.spell_menu = world.build_battle_spell_session(0);
     world
 }
 
@@ -61,12 +64,12 @@ fn confirm_cast(world: &mut World) {
 #[test]
 fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
     let mut world = seru_cast_world();
-    let cost = u16::from(world.spell_catalog.get(0x81).unwrap().mp_cost);
+    let cost = u16::from(world.tables.spell_catalog.get(0x81).unwrap().mp_cost);
     assert!(cost > 0);
     confirm_cast(&mut world);
 
     // The confirm armed the band, not the fold: nothing has landed yet.
-    assert!(world.battle_spell_menu.is_none(), "spell menu closed");
+    assert!(world.battle.spell_menu.is_none(), "spell menu closed");
     assert_eq!(
         world.actors[0].battle.mp, 50,
         "no MP charged at the confirm"
@@ -78,7 +81,10 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
         legaia_engine_vm::battle_action::ActionCategory::Magic.as_byte()
     );
     assert_eq!(world.actors[0].battle.params[0], 0x81);
-    assert!(world.pending_cast.is_some(), "the cast's outcome is owed");
+    assert!(
+        world.casting.pending_cast.is_some(),
+        "the cast's outcome is owed"
+    );
 
     let mut states = Vec::new();
     let mut spawn_requests = 0;
@@ -101,7 +107,7 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
             assert_eq!(origin[2], -542 - crate::world::battle::SUMMON_SPAWN_BEHIND);
             // A host seats it; the world adopts the seat.
             world.seat_summon_actor(9);
-            assert_eq!(world.summon_actor_slot, Some(9));
+            assert_eq!(world.casting.summon_actor_slot, Some(9));
             assert_eq!(world.actors[9].move_state.world_z, origin[2]);
             // The band's 0x28 re-faced the caster at its target; the seat
             // wears that live facing (the capture's slot-7 `0xFD9` = slot 0's).
@@ -117,7 +123,7 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
             // The summon seat is never hidden by the band.
             assert_ne!(world.actors[9].battle.render_flag, RENDER_FLAG_HIDDEN);
         }
-        if world.screen_fade.is_some() && world.screen_fade_draw().is_none() {
+        if world.presentation.fade.is_some() && world.screen_fade_draw().is_none() {
             fade_delay_seen = true;
         }
         if let Some((rgb, abr, ot)) = world.screen_fade_draw()
@@ -127,10 +133,10 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
             assert_eq!(abr, 1, "additive flash");
             assert_eq!(ot, 1, "the id the band stamps");
         }
-        if folded_at.is_none() && world.pending_cast.is_none() {
+        if folded_at.is_none() && world.casting.pending_cast.is_none() {
             folded_at = Some(tick);
         }
-        if world.battle_command.is_some() || world.battle_ctx.active_actor != 0 {
+        if world.battle.command.is_some() || world.battle_ctx.active_actor != 0 {
             break;
         }
     }
@@ -172,10 +178,11 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
     assert_ne!(world.actors[0].battle.render_flag, RENDER_FLAG_HIDDEN);
     assert_ne!(world.actors[1].battle.render_flag, RENDER_FLAG_HIDDEN);
     assert!(!world.actors[9].active, "the creature was despawned");
-    assert!(world.summon_stager.is_none());
+    assert!(world.casting.summon_stager.is_none());
     // The flash cue rode the SFX queue.
     assert!(
         world
+            .audio
             .battle_sfx_cues
             .iter()
             .any(|c| c.kind == legaia_engine_vm::battle_action::SUMMON_FLASH_CUE),
@@ -193,16 +200,16 @@ fn a_seru_cast_with_no_host_seat_still_folds_and_ends() {
         let _ = world.tick();
         // Nobody seats the creature (a headless driver).
         let _ = world.take_pending_summon_spawn();
-        if world.pending_cast.is_none() {
+        if world.casting.pending_cast.is_none() {
             folded = true;
         }
-        if folded && world.summon_stager.is_none() {
+        if folded && world.casting.summon_stager.is_none() {
             break;
         }
     }
     assert!(folded, "the unseated grace folded the cast");
     assert!(world.actors[1].battle.hp < 300);
-    assert!(world.summon_stager.is_none(), "the stager retired");
+    assert!(world.casting.summon_stager.is_none(), "the stager retired");
 }
 
 #[test]
@@ -212,12 +219,15 @@ fn a_monster_cast_runs_the_magic_band_and_folds_on_leaving_the_wait() {
     use crate::spells::SpellCatalog;
 
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Battle;
     world.set_spell_catalog(SpellCatalog::vanilla());
-    world.monster_catalog = vanilla_monster_catalog();
+    world.tables.monster_catalog = vanilla_monster_catalog();
     world.actors[0].active = true;
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 200;
@@ -255,9 +265,9 @@ fn a_monster_cast_runs_the_magic_band_and_folds_on_leaving_the_wait() {
             && states.contains(&ActionState::MagicPreCastWait.as_byte())
             && s != ActionState::MagicPreCastWait.as_byte()
         {
-            from_wait = Some((s, world.pending_cast.is_none()));
+            from_wait = Some((s, world.casting.pending_cast.is_none()));
         }
-        if world.pending_cast.is_none() {
+        if world.casting.pending_cast.is_none() {
             break;
         }
     }
@@ -269,7 +279,7 @@ fn a_monster_cast_runs_the_magic_band_and_folds_on_leaving_the_wait() {
     assert!(world.actors[0].battle.hp < 200, "the party took the hit");
     assert_eq!(
         world.actors[1].battle.mp,
-        10 - u16::from(world.spell_catalog.get(0x20).unwrap().mp_cost),
+        10 - u16::from(world.tables.spell_catalog.get(0x20).unwrap().mp_cost),
         "MP charged once, by the band's 0x28"
     );
     let fx = world.drain_battle_hit_fx();
@@ -321,7 +331,10 @@ fn a_party_cast_raises_no_spell_name_label() {
 /// that pose `actor_table[7]` have something to write.
 fn module_code_world() -> World {
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     while world.actors.len() < 12 {
@@ -346,7 +359,7 @@ fn module_code_world() -> World {
 fn the_viguro_stager_runs_from_the_cast_band_seam() {
     let mut world = module_code_world();
     assert_eq!(world.cast_module_for(0x87), Some(909));
-    world.summon_actor_slot = Some(7);
+    world.casting.summon_actor_slot = Some(7);
     world.actors[7].battle.active_target = 2;
     world.actors[7].battle.render_flag = 0xFF;
 
@@ -363,7 +376,7 @@ fn the_viguro_stager_runs_from_the_cast_band_seam() {
         world.actors[7].battle.render_flag, 0,
         "and makes it visible"
     );
-    assert_eq!(world.cast_module_phase, 1, "arm 0 advances ctx+0x279");
+    assert_eq!(world.casting.module_phase, 1, "arm 0 advances ctx+0x279");
 }
 
 /// PROT 0922 (Puera, spell `0x94`) writes one byte and nothing else, and only
@@ -373,9 +386,9 @@ fn the_puera_stager_writes_ctx_278_only_on_arm_zero() {
     let mut world = module_code_world();
     assert_eq!(world.cast_module_for(0x94), Some(922));
     world.run_cast_module_code(0x94, 1).unwrap();
-    assert_eq!(world.cast_module_ctx_278, 0);
+    assert_eq!(world.casting.module_ctx_278, 0);
     world.run_cast_module_code(0x94, 0).unwrap();
-    assert_eq!(world.cast_module_ctx_278, 3);
+    assert_eq!(world.casting.module_ctx_278, 3);
 }
 
 /// PROT 0927 (Juggernaut, spell `0x99`) sweeps the enemy row with the
@@ -419,18 +432,18 @@ fn the_juggernaut_sweep_spares_the_party_and_never_kills() {
 #[test]
 fn arming_the_stager_zeroes_the_module_phase() {
     let mut world = module_code_world();
-    world.cast_module_phase = 9;
-    world.cast_module_ctx_278 = 7;
+    world.casting.module_phase = 9;
+    world.casting.module_ctx_278 = 7;
     world.arm_summon_stager(0, 0x87);
-    assert_eq!(world.cast_module_phase, 0);
-    assert_eq!(world.cast_module_ctx_278, 0);
-    world.summon_actor_slot = Some(7);
+    assert_eq!(world.casting.module_phase, 0);
+    assert_eq!(world.casting.module_ctx_278, 0);
+    world.casting.summon_actor_slot = Some(7);
     assert!(
         world.summon_stager_tick(),
         "the stager is busy from tick one"
     );
     assert_eq!(
-        world.cast_module_phase, 1,
+        world.casting.module_phase, 1,
         "the stager tick re-entered PROT 0909's module code"
     );
 }

@@ -47,11 +47,14 @@ fn load_disc() -> Option<Vec<u8>> {
 fn spawn_enemy0_for_formation(decoded_man: &[u8], formation_id: u16) -> Option<u16> {
     let (table, defs) = scene_encounter_from_man("oracle", decoded_man)?;
     let mut world = World {
-        party_count: 1,
+        party: legaia_engine_core::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Field;
-    world.live_gameplay_loop = true;
+    world.toggles.live_gameplay_loop = true;
     world.actors[0].active = true;
     world.actors[0].battle.hp = 400;
     world.actors[0].battle.max_hp = 400;
@@ -65,7 +68,7 @@ fn spawn_enemy0_for_formation(decoded_man: &[u8], formation_id: u16) -> Option<u
         if world.mode == SceneMode::Battle {
             return world
                 .actors
-                .get(world.party_count as usize)
+                .get(world.party.party_count as usize)
                 .and_then(|a| a.battle_monster_id);
         }
     }

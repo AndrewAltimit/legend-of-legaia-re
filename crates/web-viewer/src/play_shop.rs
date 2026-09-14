@@ -33,7 +33,7 @@
 //!   behaviour.
 //!
 //! And one that is **not** a divergence, though it once was: both hosts now
-//! resolve their row labels from the disc item table (`World::menu_text`), so
+//! resolve their row labels from the disc item table (`World::menu.text`), so
 //! a name that appears on one appears on the other.
 //!
 //! Row inks come from the retail kernels
@@ -63,7 +63,7 @@
 //! | Id | Renderer | Content |
 //! |---|---|---|
 //! | 33 (`0x21`) | `FUN_801DCF14` | vendor plate - the scene MAN shop record's trailing name |
-//! | 32 (`0x20`) | `FUN_801DCF84` | purse - `World::money` (retail `_DAT_8008459C`) |
+//! | 32 (`0x20`) | `FUN_801DCF84` | purse - `World::party.money` (retail `_DAT_8008459C`) |
 //! | 34 (`0x22`) | `FUN_801D4A80` | hovered item's name / owned count / description |
 //! | 37 (`0x25`) | `FUN_801D5944` | sell quantity, held count, halved gold total |
 //!
@@ -193,7 +193,7 @@ impl LegaiaRuntime {
     fn shop_item_label(&self, id: u8) -> String {
         self.scene_host
             .as_ref()
-            .and_then(|h| h.world.menu_text.as_ref())
+            .and_then(|h| h.world.menu.text.as_ref())
             .and_then(|t| t.item_name(id))
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("Item {id:02X}"))
@@ -207,7 +207,7 @@ impl LegaiaRuntime {
         let state = MenuState::from_byte(self.menu.ctx_state());
         let cursor = self.menu.cursor() as usize;
         let world = self.scene_host.as_ref().map(|h| &h.world)?;
-        let gold = world.money;
+        let gold = world.party.money;
 
         // Owned label storage: the ShopRow view borrows &str, so the
         // resolved names have to outlive the row vector.
@@ -335,7 +335,11 @@ impl LegaiaRuntime {
         let cursor = self.menu.cursor() as usize;
         match state {
             Some(MenuState::InnConfirm) => {
-                let gold = self.scene_host.as_ref().map(|h| h.world.money).unwrap_or(0);
+                let gold = self
+                    .scene_host
+                    .as_ref()
+                    .map(|h| h.world.party.money)
+                    .unwrap_or(0);
                 let title = format!("INN  Rest for {cost}G?");
                 let rows = vec![ShopRow::new("Yes", None), ShopRow::new("No", None)];
                 Some(ui::shop_draws_for(
@@ -384,7 +388,7 @@ impl LegaiaRuntime {
         let owner_of = |slot: u8| -> String {
             self.scene_host
                 .as_ref()
-                .and_then(|h| h.world.roster.members.get(slot as usize))
+                .and_then(|h| h.world.party.roster.members.get(slot as usize))
                 .map(|m| m.name())
                 .filter(|n| !n.is_empty())
                 .unwrap_or_else(|| format!("P{slot}"))
@@ -460,7 +464,7 @@ impl LegaiaRuntime {
     ///
     /// REF: FUN_801DCF14
     fn shop_vendor_name<'a>(&'a self, shop: &ShopSession) -> Option<&'a str> {
-        let shops = &self.scene_host.as_ref()?.world.scene_shops;
+        let shops = &self.scene_host.as_ref()?.world.shops.scene_shops;
         shops
             .iter()
             .find(|s| {
@@ -507,7 +511,7 @@ impl LegaiaRuntime {
         let Some(text) = self
             .scene_host
             .as_ref()
-            .and_then(|h| h.world.menu_text.as_ref())
+            .and_then(|h| h.world.menu.text.as_ref())
         else {
             return String::new();
         };
@@ -551,11 +555,11 @@ impl LegaiaRuntime {
                 .map(|r| px::PrizeRow {
                     name: self.shop_item_label(r.item_id),
                     price: r.price,
-                    held: *world.inventory.get(&r.item_id).unwrap_or(&0),
+                    held: *world.party.inventory.get(&r.item_id).unwrap_or(&0),
                 })
                 .collect(),
             cursor: session.cursor(),
-            coins: world.casino_coins,
+            coins: world.minigames.casino_coins,
             confirm_cursor: session.confirming().then(|| session.confirm_cursor()),
         };
         let (mut out, sprites, pict) = px::prize_exchange_draws_for(font, table, &view);
@@ -578,7 +582,7 @@ impl LegaiaRuntime {
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
             return Vec::new();
         };
-        let screen = &world.submode_screen;
+        let screen = &world.field_vm.submode_screen;
         if !screen.is_open()
             || screen.actor.state != legaia_engine_vm::baka_hub_actors::slot::COIN_COUNTER
         {
@@ -589,8 +593,8 @@ impl LegaiaRuntime {
             digits: screen.counter.digits.to_vec(),
             cursor: screen.counter.cursor,
             ceiling: screen.counter.ceiling,
-            gold: world.money,
-            coins: world.casino_coins,
+            gold: world.party.money,
+            coins: world.minigames.casino_coins,
             confirm_cursor: (screen.actor.sub == 2).then_some((screen.counter.yes_no & 1) as u8),
         };
         let (mut out, sprites, pict) = px::coin_counter_draws_for(font, table, &view);
@@ -651,8 +655,8 @@ impl LegaiaRuntime {
             (purse, purse.and_then(ui::painter_for))
         {
             let value = match source {
-                ui::CounterSource::PartyGold => world.money.max(0) as u64,
-                ui::CounterSource::CasinoCoins => world.casino_coins as u64,
+                ui::CounterSource::PartyGold => world.party.money.max(0) as u64,
+                ui::CounterSource::CasinoCoins => world.minigames.casino_coins as u64,
             };
             let rect = ui::painter_rect(d);
             let (digits, pic) = counter_panel_draws_for(font, rect, pictogram, value);
@@ -702,6 +706,7 @@ impl LegaiaRuntime {
             // product; the merchant's stock list is not consulted, so a bag
             // item the shop does not sell still prices correctly.
             let unit_price = world
+                .shops
                 .item_shop_data
                 .as_ref()
                 .map(|t| u32::from(t.price(id)))
@@ -765,7 +770,7 @@ impl LegaiaRuntime {
                 font,
                 ui::painter_rect(d),
                 painters::POINT_CARD_HEADING,
-                world.point_card.max(0) as u64,
+                world.minigames.point_card.max(0) as u64,
                 painters::POINT_CARD_UNIT_LABEL,
             );
             out.extend(text);
@@ -868,13 +873,14 @@ impl LegaiaRuntime {
         let rect = ui::painter_rect(d);
         let id = staged.unwrap_or(0);
         let price = world
+            .shops
             .item_shop_data
             .as_ref()
             .map(|t| t.price(id))
             .unwrap_or(0);
         // The renderer's passive chain: item kind picks which table the
         // subtype indexes (equip record `+5` vs effect record `+3`).
-        let passive = world.item_effects.as_ref().and_then(|effects| {
+        let passive = world.tables.item_effects.as_ref().and_then(|effects| {
             legaia_engine_core::shop::item_passive_index(
                 effects.kind(id),
                 effects.subtype(id),
@@ -887,6 +893,7 @@ impl LegaiaRuntime {
                 },
                 |sub| {
                     world
+                        .tables
                         .item_effects
                         .as_ref()
                         .and_then(|t| t.descriptor(sub))
@@ -953,7 +960,7 @@ impl LegaiaRuntime {
         if let Some((name, line)) = panel.passive.and_then(|_| {
             self.scene_host
                 .as_ref()
-                .and_then(|h| h.world.menu_text.as_ref())
+                .and_then(|h| h.world.menu.text.as_ref())
                 .and_then(|t| t.item_passive_lines(id))
         }) {
             text(&mut out, &name, panel.passive_name_pen, ui::MENU_TEXT_GREEN);
@@ -990,6 +997,7 @@ impl LegaiaRuntime {
         };
         let item_id = session.item_id;
         let members: Vec<&legaia_save::CharacterRecord> = world
+            .party
             .roster
             .members
             .iter()
@@ -1030,11 +1038,13 @@ impl LegaiaRuntime {
          -> ui::EquipStatBlock {
             let displaced = slot_idx.map(|idx| rec.equipment().slots[idx]).unwrap_or(0);
             let old_m = world
+                .tables
                 .equipment_table
                 .get(displaced)
                 .copied()
                 .unwrap_or_default();
             let new_m = world
+                .tables
                 .equipment_table
                 .get(item_id)
                 .copied()
@@ -1114,7 +1124,7 @@ impl LegaiaRuntime {
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
             return out;
         };
-        if let Some(b) = world.current_level_up_banner.as_ref() {
+        if let Some(b) = world.party.current_level_up_banner.as_ref() {
             out.extend(ui::level_up_draws_for(
                 font,
                 b.char_id,
@@ -1124,7 +1134,7 @@ impl LegaiaRuntime {
                 LEVEL_UP_PEN,
             ));
         }
-        if let Some(b) = world.current_capture_banner.as_ref()
+        if let Some(b) = world.party.current_capture_banner.as_ref()
             && let Some(text) = b.current_banner()
         {
             out.extend(ui::capture_banner_draws_for(font, &text, CAPTURE_PEN));
@@ -1143,14 +1153,14 @@ impl LegaiaRuntime {
     pub fn debug_has_shop_catalog(&self) -> bool {
         self.scene_host
             .as_ref()
-            .is_some_and(|h| h.world.item_shop_data.is_some())
+            .is_some_and(|h| h.world.shops.item_shop_data.is_some())
     }
 
     /// Is the op-`0x49` shop gate still held (i.e. the field VM suspended)?
     pub fn debug_field_shop_gate_held(&self) -> bool {
         self.scene_host
             .as_ref()
-            .is_some_and(|h| h.world.field_shop_open)
+            .is_some_and(|h| h.world.shops.shop_open)
     }
 
     /// Arm + open a shop the way a merchant's op-`0x49` sub-0 record would,
@@ -1160,7 +1170,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return false;
         };
-        let Some(data) = host.world.item_shop_data.as_ref() else {
+        let Some(data) = host.world.shops.item_shop_data.as_ref() else {
             return false;
         };
         // First few genuinely priced ids - enough rows to prove the panel
@@ -1179,8 +1189,8 @@ impl LegaiaRuntime {
         let inv = legaia_engine_core::shop::ShopInventory::new(0, items);
         // Mirror the arm the field VM performs, so closing the shop has a
         // gate to release.
-        host.world.field_shop_armed = true;
-        host.world.field_shop_open = true;
+        host.world.shops.shop_armed = true;
+        host.world.shops.shop_open = true;
         self.menu
             .open_shop_menu(legaia_engine_core::shop::ShopSession::new(inv));
         true
@@ -1200,7 +1210,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return false;
         };
-        let Some(data) = host.world.item_shop_data.as_ref() else {
+        let Some(data) = host.world.shops.item_shop_data.as_ref() else {
             return false;
         };
         let items: Vec<legaia_engine_core::shop::ShopItem> = (1u8..=255)
@@ -1214,10 +1224,10 @@ impl LegaiaRuntime {
         if items.is_empty() {
             return false;
         }
-        host.world.money = legaia_engine_core::shop::GOLD_CAP;
+        host.world.party.money = legaia_engine_core::shop::GOLD_CAP;
         let inv = legaia_engine_core::shop::ShopInventory::new(0, items);
-        host.world.field_shop_armed = true;
-        host.world.field_shop_open = true;
+        host.world.shops.shop_armed = true;
+        host.world.shops.shop_open = true;
         self.menu
             .open_shop_menu(legaia_engine_core::shop::ShopSession::new(inv));
         true
@@ -1242,7 +1252,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return false;
         };
-        host.world.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
+        host.world.tables.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
             enabled: true,
             seed,
             ..Default::default()
@@ -1283,7 +1293,7 @@ impl LegaiaRuntime {
         }
         if self.menu.shop_session.is_none()
             && let Some(host) = self.scene_host.as_mut()
-            && host.world.field_shop_open
+            && host.world.shops.shop_open
         {
             host.world.finish_field_shop();
         }
@@ -1291,7 +1301,7 @@ impl LegaiaRuntime {
         // tick; this is the same safety net the shop keeps.
         if self.menu.prize_session.is_none()
             && let Some(host) = self.scene_host.as_mut()
-            && host.world.prize_exchange_open
+            && host.world.shops.prize_exchange_open
         {
             host.world.finish_prize_exchange();
         }

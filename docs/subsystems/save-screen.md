@@ -280,7 +280,7 @@ root_menu_cancel_route}`.
 row for the row's ink and once on confirm for advance-vs-buzz - the same
 double read that keeps retail's renderer and confirm arm from disagreeing.
 Its gate inputs are sampled off the world when the menu opens: the scene's
-save permission (`World::scene_save_allowed`, seeded at scene load by
+save permission (`World::party.scene_save_allowed`, seeded at scene load by
 `World::install_scene_save_permission`) and the entry-context kind
 (`World::menu_entry_context_kind`). Both halves are fed.
 

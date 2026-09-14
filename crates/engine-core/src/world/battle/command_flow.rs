@@ -15,11 +15,11 @@ impl World {
     /// Open the player-driven command menu for party member `actor` and park
     /// the action SM. The action context's `active_actor` is set now; the
     /// queued action / target is filled in by [`Self::tick_battle_command`]
-    /// once the player confirms. No-op unless [`Self::battle_player_driven`].
+    /// once the player confirms. No-op unless [`crate::world::BattleState::player_driven`].
     pub(in crate::world) fn open_battle_command(&mut self, actor: u8) {
         use crate::battle_flow::BattleFlowState as Flow;
         use crate::battle_input::BattleCommandSession;
-        if !self.battle_player_driven {
+        if !self.battle.player_driven {
             return;
         }
         self.battle_ctx.active_actor = actor;
@@ -47,13 +47,13 @@ impl World {
         // open on the ring.
         //
         // REF: FUN_801D0748 (states 0x14 / 0x1E / 0x28)
-        let round_open = matches!(self.battle_flow, Flow::Idle | Flow::TurnPrompt);
-        self.battle_command = Some(if round_open {
-            BattleCommandSession::new_round_open(actor, actor, self.battle_no_escape)
+        let round_open = matches!(self.battle.flow, Flow::Idle | Flow::TurnPrompt);
+        self.battle.command = Some(if round_open {
+            BattleCommandSession::new_round_open(actor, actor, self.battle.no_escape)
         } else {
             BattleCommandSession::new(actor, actor)
         });
-        if self.battle_flow == Flow::Idle {
+        if self.battle.flow == Flow::Idle {
             self.set_battle_flow(Flow::TurnPrompt);
         }
     }
@@ -69,11 +69,11 @@ impl World {
         use crate::input::PadButton;
         use crate::target_picker::CursorRow;
 
-        let Some(mut session) = self.battle_command.take() else {
+        let Some(mut session) = self.battle.command.take() else {
             return;
         };
 
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         // Target-row selectability: the per-slot validity byte the retail
         // validator (`FUN_8003FB10` arm `0x05`) writes, not an inline liveness
         // test - see `super::validator_host`.
@@ -87,7 +87,7 @@ impl World {
             cross: self.input.just_pressed(PadButton::Cross),
             circle: self.input.just_pressed(PadButton::Circle),
             // The ring's Attack arm reads the option word with the pad.
-            select_attack: self.battle_select_attack,
+            select_attack: self.toggles.select_attack,
         };
         session.input(ev, party, monsters);
         // Target-cursor tint: retail stamps the four monster slots bright /
@@ -104,7 +104,7 @@ impl World {
         if resolution.is_none() {
             self.sync_battle_flow(Some(&session.phase));
         }
-        if self.battle_tutorial.is_some()
+        if self.battle.tutorial.is_some()
             && let Some(res) = resolution
         {
             use crate::battle_flow::BattleFlowState as Flow;
@@ -160,7 +160,7 @@ impl World {
                 self.battle_ctx.active_actor = session.actor;
                 if std::env::var_os("LEGAIA_ARTS_SAVED_LIST").is_some() {
                     let rows = self.build_battle_arts_rows(session.actor);
-                    self.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
+                    self.battle.arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
                         session.actor,
                         session.actor,
                         rows,
@@ -175,7 +175,7 @@ impl World {
                 // player casts (turn cycles via EndOfAction) or backs out.
                 self.battle_ctx.active_actor = session.actor;
                 match self.build_battle_spell_session(session.actor) {
-                    Some(menu) => self.battle_spell_menu = Some(menu),
+                    Some(menu) => self.battle.spell_menu = Some(menu),
                     // No caster record / no catalog - don't strand the SM;
                     // reopen the command menu so the player can pick again.
                     None => self.open_battle_command(session.actor),
@@ -188,7 +188,7 @@ impl World {
                 // uses an item (turn cycles via EndOfAction) or backs out
                 // (the command menu reopens for the same actor).
                 self.battle_ctx.active_actor = session.actor;
-                self.battle_item_menu = Some(self.build_battle_item_session());
+                self.battle.item_menu = Some(self.build_battle_item_session());
             }
             Some(Resolution::SpiritGuard) => {
                 // Player picked Spirit: the guard stance (retail's pending
@@ -201,7 +201,7 @@ impl World {
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.action_category = 4;
                 }
-                if let Some(guard) = self.battle_guarding.get_mut(actor as usize) {
+                if let Some(guard) = self.battle.guarding.get_mut(actor as usize) {
                     *guard = true;
                 }
                 self.commit_party_command(actor, PendingPartyAction::Spirit);
@@ -228,7 +228,7 @@ impl World {
             }
             None => {
                 // Still selecting - keep the session open for the next frame.
-                self.battle_command = Some(session);
+                self.battle.command = Some(session);
             }
         }
     }
@@ -244,7 +244,7 @@ impl World {
     /// falls straight through to recovery, which is a strike-less turn - no
     /// weapon swing staged, no equipment clip committed, no effect script
     /// installed, and therefore no move-power record for the weapon-trail
-    /// pass to project from ([`World::move_fx_streak`], whose `action` key is
+    /// pass to project from ([`crate::world::CastFxState::move_fx_streak`], whose `action` key is
     /// this stream's first byte).
     ///
     /// The bytes come from [`vm::battle_action::basic_attack_queue`], the port
@@ -257,7 +257,7 @@ impl World {
     /// applies. The alternative - the player's own recorded chain, retail
     /// `FUN_801DA34C` / [`vm::battle_action::preseed_action_queue`] - is
     /// closer than this note used to say: the chains themselves *are* carried
-    /// live, as `World::saved_chains` (LGSF v2, edited by
+    /// live, as `World::party.saved_chains` (LGSF v2, edited by
     /// `tactical_arts_editor`, read by the battle arts path). What is missing
     /// is the **record projection** retail preseeds from: the pair of 16-byte
     /// slots at record-relative `+0x1A7` / `+0x1B7` that its
@@ -301,7 +301,7 @@ impl World {
     /// PORT: FUN_80053CB8 (`0x800541D0..0x80054274`, via
     /// [`vm::battle_action::miracle_marker_armed`])
     pub(in crate::world) fn miracle_marker_armed_for(&self, roster_slot: u8) -> bool {
-        let Some(record) = self.roster.members.get(roster_slot as usize) else {
+        let Some(record) = self.party.roster.members.get(roster_slot as usize) else {
             return false;
         };
         // Retail's table `0x8007BD10` holds a **1-based** char id; the
@@ -329,7 +329,8 @@ impl World {
         else {
             return 0;
         };
-        self.monster_catalog
+        self.tables
+            .monster_catalog
             .get(id)
             .map(|d| d.swing_class)
             .unwrap_or(0)
@@ -361,7 +362,7 @@ impl World {
             CURSOR_BLEND_ON, CURSOR_COLOR_BRIGHT, CURSOR_COLOR_DIM, CURSOR_FLAG_DIMMED,
             CURSOR_FLAG_SELECTED,
         };
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         let enable = match session.picker().map(|p| p.state()) {
             Some(PickerState::Cursor {
                 row: CursorRow::Enemy,
@@ -417,7 +418,7 @@ impl World {
         use crate::battle_arts::{ArtsResolution, BattleArtsInput};
         use crate::input::PadButton;
 
-        let Some(mut menu) = self.battle_arts_menu.take() else {
+        let Some(mut menu) = self.battle.arts_menu.take() else {
             return;
         };
 
@@ -456,7 +457,7 @@ impl World {
                 self.open_battle_command(actor);
             }
             None => {
-                self.battle_arts_menu = Some(menu);
+                self.battle.arts_menu = Some(menu);
             }
         }
     }
@@ -478,7 +479,7 @@ impl World {
     /// § Arts command input), so a host's battle-HUD strip reads this and
     /// emits nothing while it holds.
     pub fn arts_input_active(&self) -> bool {
-        self.battle_arts_input.is_some()
+        self.battle.arts_input.is_some()
     }
 
     /// The actor-table index of the party member entering commands, or
@@ -487,14 +488,14 @@ impl World {
     /// that owns the pad - so a host needs the *which*, not just the
     /// *whether*.
     pub fn arts_input_actor(&self) -> Option<u8> {
-        self.battle_arts_input.as_ref().map(|s| s.actor)
+        self.battle.arts_input.as_ref().map(|s| s.actor)
     }
 
     /// Renderer-agnostic view of the open Arts command input, or `None`
     /// when no session is up. Both hosts build the pinned chrome from
     /// this and nothing else.
     pub fn arts_input_view(&self) -> Option<crate::arts_command_input::ArtsInputView<'_>> {
-        let s = self.battle_arts_input.as_ref()?;
+        let s = self.battle.arts_input.as_ref()?;
         Some(crate::arts_command_input::ArtsInputView {
             buffer: &s.buffer,
             spent: &s.spent,
@@ -517,6 +518,7 @@ impl World {
         };
         let char_slot = self.party_roster_slot(actor as usize) as u8;
         let pool = self
+            .party
             .roster
             .members
             .get(char_slot as usize)
@@ -526,18 +528,20 @@ impl World {
         // Cost order = Command byte order (Left, Right, Down, Up) = the
         // runtime action slots `0xC..=0xF` the disc bytes are keyed by.
         let costs = self
-            .battle_swing_costs
+            .battle
+            .swing_costs
             .get(char_slot as usize)
             .copied()
             .unwrap_or([FAVORED_COST; 4]);
         let character = self.caster_character(char_slot);
         let n_arts = self
+            .tables
             .art_records
             .iter()
             .filter(|((ch, _), rec)| *ch == character && !rec.commands.is_empty())
             .count();
         let pages = n_arts.div_ceil(ARTS_LIST_ROWS_PER_PAGE) as u8;
-        self.battle_arts_input = Some(ArtsCommandInputSession::new(
+        self.battle.arts_input = Some(ArtsCommandInputSession::new(
             actor, actor, pool, costs, pages,
         ));
     }
@@ -553,7 +557,7 @@ impl World {
         use crate::arts_command_input::{ArtsCommandPad, ArtsInputResolution};
         use crate::input::PadButton;
 
-        let Some(mut session) = self.battle_arts_input.take() else {
+        let Some(mut session) = self.battle.arts_input.take() else {
             return;
         };
         let (party, monsters) = self.battle_target_rows();
@@ -581,7 +585,7 @@ impl World {
                 self.open_battle_command(actor);
             }
             None => {
-                self.battle_arts_input = Some(session);
+                self.battle.arts_input = Some(session);
             }
         }
     }
@@ -627,6 +631,7 @@ impl World {
         // The character's art catalog in grid order (ascending constant),
         // the order the builder's inner loop walks (`s3 = 0xB..`).
         let mut catalog: Vec<(ActionConstant, Vec<legaia_art::Command>)> = self
+            .tables
             .art_records
             .iter()
             .filter(|((ch, action), rec)| {
@@ -679,9 +684,9 @@ impl World {
                 continue;
             };
             let id = art.as_byte();
-            let known = self.tactical_arts.is_learned(roster, id);
+            let known = self.party.tactical_arts.is_learned(roster, id);
             self.notify_art_used(roster, id);
-            if !known && self.tactical_arts.is_learned(roster, id) {
+            if !known && self.party.tactical_arts.is_learned(roster, id) {
                 bytes[i] = ActionConstant::SpecialStarter.as_byte();
             }
         }
@@ -754,7 +759,8 @@ impl World {
     /// word reached through a battle ordinal; this one takes the roster slot,
     /// which is what the arts paths already carry.
     pub(in crate::world) fn character_ability_bits_word1(&self, roster: u8) -> u32 {
-        self.roster
+        self.party
+            .roster
             .members
             .get(roster as usize)
             .map(|m| {
@@ -788,7 +794,7 @@ impl World {
         }
         let roster = self.party_roster_slot(caster as usize) as u8;
         let character = self.caster_character(roster);
-        let catalog = crate::battle_arts::spirit_catalog(&self.art_records, character);
+        let catalog = crate::battle_arts::spirit_catalog(&self.tables.art_records, character);
         // Retail's halving gate (`srl t4,t4,0x1` at `0x801EF378`) reads the
         // **character record's** `+0xF8` - word 1 of the accessory-passive
         // ability bitfield - and tests bit `0x800`, i.e. passive `0x2B`
@@ -823,7 +829,7 @@ impl World {
         target_slot: u8,
     ) {
         use crate::target_picker::CursorRow;
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         let target = match target_row {
             CursorRow::Enemy => party_count + target_slot,
             CursorRow::Ally => target_slot,
@@ -916,7 +922,7 @@ impl World {
                 // (`World::settle_cast_band` / the stager's strike). An
                 // escape spell's success ends the encounter from the live
                 // loop the frame it folds, through the escape teardown.
-                match self.spell_catalog.get(spell_id).cloned() {
+                match self.tables.spell_catalog.get(spell_id).cloned() {
                     Some(def) => {
                         let targets = self.spell_targets_for(&def, target_row, target_slot);
                         self.arm_player_cast(actor, &def, targets);
@@ -938,11 +944,11 @@ impl World {
                     let outcome = self.apply_battle_item(item_id, target_slot);
                     self.push_item_use_fx(target_slot, outcome);
                 }
-                if self.battle_escaped {
+                if self.battle.escaped {
                     // Escape item succeeded: leave the encounter (no loot, no
                     // game-over) through the escape teardown's fade + exit
                     // hold instead of cycling the turn.
-                    self.battle_end = Some(BattleEndCause::Escaped);
+                    self.battle.end = Some(BattleEndCause::Escaped);
                     self.begin_battle_end_sequence();
                     return;
                 }
@@ -977,10 +983,10 @@ impl World {
                 // The AP charge (+5, idempotent per turn - the retail
                 // Square-press kernel). The guard stance has been up since
                 // the commit.
-                if let Some(gauge) = self.ap_gauges.get_mut(actor as usize) {
+                if let Some(gauge) = self.battle.ap_gauges.get_mut(actor as usize) {
                     gauge.charge_spirit();
                 }
-                if let Some(guard) = self.battle_guarding.get_mut(actor as usize) {
+                if let Some(guard) = self.battle.guarding.get_mut(actor as usize) {
                     *guard = true;
                 }
                 self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
@@ -1036,7 +1042,8 @@ impl World {
             return;
         }
         for action in actions {
-            self.battle_shout_cues
+            self.audio
+                .battle_shout_cues
                 .push(crate::battle_events::BattleShoutCue {
                     cslot: cslot as u8,
                     action: action.as_byte(),
@@ -1062,14 +1069,14 @@ impl World {
         // CHARACTER occupying it (roster slot per the present-party
         // composition). Live mirrors (MP, ability bits) stay ordinal-keyed.
         let char_slot = self.party_roster_slot(caster as usize) as u8;
-        let member = self.roster.members.get(char_slot as usize)?;
+        let member = self.party.roster.members.get(char_slot as usize)?;
         let list = member.spell_list();
         let n = (list.count as usize).min(list.ids.len());
         // Union the roster's saved spell list with anything learned via Seru
         // capture this session, so a freshly-learned spell is immediately
         // castable without waiting for a save/load round-trip.
         let mut learned: Vec<u8> = list.ids[..n].to_vec();
-        for &sid in self.seru_log.learned_spells(char_slot) {
+        for &sid in self.seru.log.learned_spells(char_slot) {
             if !learned.contains(&sid) {
                 learned.push(sid);
             }
@@ -1082,6 +1089,7 @@ impl World {
         // Pass the caster's MP-saver ability bits so the menu greys rows by the
         // effective (reduced) cost the cast charges, not the raw spell cost.
         let ability_bits = self
+            .party
             .character_ability_bits
             .get(caster as usize)
             .copied()
@@ -1090,7 +1098,7 @@ impl World {
             caster,
             caster,
             &learned,
-            &self.spell_catalog,
+            &self.tables.spell_catalog,
             caster_mp,
             ability_bits,
         ))
@@ -1108,7 +1116,7 @@ impl World {
         use crate::battle_magic::{BattleSpellInput, SpellResolution};
         use crate::input::PadButton;
 
-        let Some(mut menu) = self.battle_spell_menu.take() else {
+        let Some(mut menu) = self.battle.spell_menu.take() else {
             return;
         };
 
@@ -1123,7 +1131,7 @@ impl World {
             cross: self.input.just_pressed(PadButton::Cross),
             circle: self.input.just_pressed(PadButton::Circle),
         };
-        menu.input(ev, &self.spell_catalog, party, monsters);
+        menu.input(ev, &self.tables.spell_catalog, party, monsters);
 
         match menu.resolved() {
             Some(SpellResolution::Confirmed {
@@ -1151,7 +1159,7 @@ impl World {
                 self.open_battle_command(actor);
             }
             None => {
-                self.battle_spell_menu = Some(menu);
+                self.battle.spell_menu = Some(menu);
             }
         }
     }
@@ -1168,11 +1176,12 @@ impl World {
         use crate::inventory_use::{InventoryContext, InventoryUseSession, TargetRow};
         let names = crate::field_menu_dispatch::roster_names(self);
         let items: Vec<u8> = self
+            .party
             .inventory
             .iter()
             .filter_map(|(id, qty)| (*qty > 0).then_some(*id))
             .collect();
-        let pc = self.party_count.clamp(1, 3) as usize;
+        let pc = self.party.party_count.clamp(1, 3) as usize;
         let mut targets: Vec<TargetRow> = (0..pc)
             .filter_map(|i| {
                 let a = self.actors.get(i)?;
@@ -1180,7 +1189,7 @@ impl World {
                 if a.battle.max_hp == 0 {
                     return None;
                 }
-                let mp_max = self.character_max_mp.get(i).copied().unwrap_or(0);
+                let mp_max = self.tables.character_max_mp.get(i).copied().unwrap_or(0);
                 // Row label = the occupying character's name (roster_names is
                 // roster-slot keyed; `i` is the battle ordinal).
                 let name = names
@@ -1189,7 +1198,13 @@ impl World {
                     .unwrap_or_else(|| format!("P{}", i + 1));
                 let mut row = TargetRow::new(i as u8, name)
                     .with_stats(a.battle.hp, a.battle.max_hp, a.battle.mp, mp_max)
-                    .with_statuses(self.status_effects.statuses(i as u8).iter().map(|s| s.kind));
+                    .with_statuses(
+                        self.battle
+                            .status_effects
+                            .statuses(i as u8)
+                            .iter()
+                            .map(|s| s.kind),
+                    );
                 row.alive = a.battle.liveness != 0;
                 Some(row)
             })
@@ -1205,7 +1220,7 @@ impl World {
             }
             let name = a
                 .battle_monster_id
-                .and_then(|id| self.monster_catalog.get(id))
+                .and_then(|id| self.tables.monster_catalog.get(id))
                 .map(|d| d.name.clone())
                 .unwrap_or_else(|| format!("Enemy {}", slot - pc + 1));
             let mut row = TargetRow::new(slot as u8, name)
@@ -1215,7 +1230,7 @@ impl World {
             targets.push(row);
         }
         InventoryUseSession::new(
-            self.item_catalog.clone(),
+            self.tables.item_catalog.clone(),
             items,
             targets,
             InventoryContext::Battle,
@@ -1238,14 +1253,14 @@ impl World {
         if self.mode != crate::world::SceneMode::Battle {
             return None;
         }
-        if self.current_dialog.is_some() || self.inline_dialogue.is_some() {
+        if self.dialog.current.is_some() || self.dialog.inline.is_some() {
             return None;
         }
-        let menu = self.battle_item_menu.as_ref()?;
+        let menu = self.battle.item_menu.as_ref()?;
         let view = menu.menu_view();
         let description = view
             .selected_id
-            .and_then(|id| self.menu_text.as_ref().and_then(|t| t.item_desc(id)))
+            .and_then(|id| self.menu.text.as_ref().and_then(|t| t.item_desc(id)))
             .map(str::to_string);
         let actor = self.battle_ctx.active_actor;
         let actor_name = menu
@@ -1311,7 +1326,7 @@ impl World {
         use crate::input::PadButton;
         use crate::inventory_use::{InventoryUseInput, InventoryUseState};
 
-        let Some(mut menu) = self.battle_item_menu.take() else {
+        let Some(mut menu) = self.battle.item_menu.take() else {
             return;
         };
 
@@ -1387,7 +1402,7 @@ impl World {
             }
             _ => {
                 // Still browsing / target-selecting - keep the menu open.
-                self.battle_item_menu = Some(menu);
+                self.battle.item_menu = Some(menu);
             }
         }
     }
@@ -1441,10 +1456,10 @@ impl World {
     /// Remove one copy of `item_id` from the inventory, dropping the entry
     /// when the count reaches zero. No-op when the player holds none.
     pub fn consume_item(&mut self, item_id: u8) {
-        if let Some(qty) = self.inventory.get_mut(&item_id) {
+        if let Some(qty) = self.party.inventory.get_mut(&item_id) {
             *qty = qty.saturating_sub(1);
             if *qty == 0 {
-                self.inventory.remove(&item_id);
+                self.party.inventory.remove(&item_id);
             }
         }
     }
@@ -1466,7 +1481,7 @@ impl World {
         if amount == 0 {
             return;
         }
-        self.battle_hit_fx.push(BattleHitFx {
+        self.battle.hit_fx.push(BattleHitFx {
             target_slot,
             amount,
             is_heal,
@@ -1486,7 +1501,7 @@ mod ap_used_down_tests {
         while w.actors.len() < 4 {
             w.actors.push(crate::world::Actor::default());
         }
-        w.party_count = 1;
+        w.party.party_count = 1;
         let mut party = legaia_save::Party::zeroed(1);
         party.members[0].set_ability_bits(bits);
         w.load_party(party);

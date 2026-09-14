@@ -119,7 +119,7 @@ pub const SAVE_FILE_EXT4_MAGIC: [u8; 4] = *b"LGX4";
 /// - `inventory` mirrors the 144-byte 72-slot pair array at `0x1818`
 ///   (RAM `0x80085958..0x800859E8`).
 ///
-/// [`Self::story_flags`] is a separate 32-bit flag word at
+/// [`legaia_engine_core::world::StoryFlagState::story_flags`] is a separate 32-bit flag word at
 /// `_DAT_1F800394` (PSX scratchpad) that the field VM operates on via
 /// opcodes `0x2E` / `0x2F` / `0x30`. It is **not** a cache of the wide
 /// retail bitmap: retail seeds it from the game-mode descriptor table
@@ -132,7 +132,7 @@ pub struct SaveExt {
     /// Field-VM scratchpad flag word (`_DAT_1F800394` in retail). Read
     /// by op `0x30` (test bit); set by op `0x2E`; cleared by op `0x2F`.
     /// Seeded on mode init from `mode_table[mode_idx].param` low 16
-    /// bits; not synced to or from [`Self::story_flag_bits`].
+    /// bits; not synced to or from [`legaia_engine_core::world::StoryFlagState::story_flag_bits`].
     pub story_flags: u32,
     /// Full 512-byte story-flag bitmap from retail SC offset `0x14C0`,
     /// mirroring live RAM `0x80085600..0x80085800`. Empty (`vec![]`) means
@@ -141,7 +141,7 @@ pub struct SaveExt {
     /// [`crate::card::read_retail_story_flags`] /
     /// [`crate::card::write_retail_story_flags`].
     pub story_flag_bits: Vec<u8>,
-    /// Running gold total mirroring `World::money`. Field-VM op `0x3A`
+    /// Running gold total mirroring `World::party.money`. Field-VM op `0x3A`
     /// mutates this; clamped to `[0, 9_999_999]` at runtime.
     pub money: i32,
     /// Per-item-ID inventory counts. Pairs are sorted by `item_id`.

@@ -830,7 +830,7 @@ impl PlayWindowApp {
         if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
             && let Some(pslot) = world.player_actor_slot
         {
-            let lead = world.active_party.first().copied().unwrap_or(0) as usize;
+            let lead = world.party.active_party.first().copied().unwrap_or(0) as usize;
             let gtmd = world
                 .global_tmd_pool
                 .get(lead)
@@ -1266,7 +1266,7 @@ impl PlayWindowApp {
         // while the town ground sits at a LUT-elevated tier - it renders
         // buried under (or floating over) the terrain until it first moves.
         // Snap every bound actor that still has the flat default.
-        if world.follow_terrain_height
+        if world.locomotion.follow_terrain_height
             && matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
         {
             for i in 0..world.actors.len() {

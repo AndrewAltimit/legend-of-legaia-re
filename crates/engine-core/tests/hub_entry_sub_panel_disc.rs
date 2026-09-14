@@ -68,13 +68,14 @@ fn disc_world(scus: &[u8]) -> World {
         .map(starting_record)
         .collect();
     assert_eq!(members.len(), 2, "the template carries four records");
-    w.roster = legaia_save::Party { members };
-    w.active_party = vec![0];
+    w.party.roster = legaia_save::Party { members };
+    w.party.active_party = vec![0];
     w
 }
 
 fn sub_panel(w: &World) -> Vec<EquipPanelDraw> {
-    w.submode_screen
+    w.field_vm
+        .submode_screen
         .draws()
         .iter()
         .filter_map(|d| match d {
@@ -87,7 +88,7 @@ fn sub_panel(w: &World) -> Vec<EquipPanelDraw> {
 fn painted(w: &mut World, mode: u32, cursor: i32) -> Vec<EquipPanelDraw> {
     w.open_field_submode_screen(slot::DRAW_TICK, Some(ENTRY_LIST_WINDOW));
     w.set_hub_equip_mode(mode);
-    w.submode_screen.counter.cursor = cursor;
+    w.field_vm.submode_screen.counter.cursor = cursor;
     for _ in 0..16 {
         w.tick();
         let panel = sub_panel(w);
@@ -116,11 +117,11 @@ fn the_panel_prints_the_template_records_stats_plus_the_disc_bonus_bytes() {
     };
     let mut w = disc_world(&scus);
 
-    let mut eq = w.roster.members[0].equipment();
+    let mut eq = w.party.roster.members[0].equipment();
     eq.slots[0] = ID_CHAOS_BREAKER; // engine weapon slot
     eq.slots[2] = ID_MASTER_ARMOR; // engine body-armour slot
-    w.roster.members[0].set_equipment(eq);
-    let base = w.roster.members[0].live_stats();
+    w.party.roster.members[0].set_equipment(eq);
+    let base = w.party.roster.members[0].live_stats();
 
     // The bonus bytes straight off the disc, so the expectation is not a
     // hand-copied number.
@@ -164,7 +165,7 @@ fn the_empty_slot_sentinel_resolves_to_a_zero_row_on_the_disc() {
     assert_ne!(sentinel_row, 0, "id 0 names a row past the table's head");
 
     let mut w = disc_world(&scus);
-    let base = w.roster.members[0].live_stats();
+    let base = w.party.roster.members[0].live_stats();
     let panel = painted(&mut w, 0, 0);
     assert_eq!(
         values(&panel),
@@ -202,7 +203,7 @@ fn a_real_vahn_only_candidate_is_accepted_for_vahn_and_rejected_for_noa() {
 
     // Entry code 1 = Noa: the mask misses and one line replaces the panel.
     let mut w = disc_world(&scus);
-    w.active_party = vec![1];
+    w.party.active_party = vec![1];
     let panel = painted(&mut w, EQUIP_MODE_DIRECT, i32::from(ID_CHAOS_BREAKER));
     assert_eq!(panel.len(), 1);
     match panel[0] {
@@ -238,11 +239,12 @@ fn a_real_kind_two_candidate_draws_the_plain_rows_and_an_unhandled_kind_draws_no
     let mut w = disc_world(&scus);
     w.open_field_submode_screen(slot::DRAW_TICK, Some(ENTRY_LIST_WINDOW));
     w.set_hub_equip_mode(EQUIP_MODE_DIRECT);
-    w.submode_screen.counter.cursor = 0;
+    w.field_vm.submode_screen.counter.cursor = 0;
     let mut ran = false;
     for _ in 0..16 {
         w.tick();
-        if w.submode_screen
+        if w.field_vm
+            .submode_screen
             .draws()
             .iter()
             .any(|d| matches!(d, HubDraw::Text { .. }))

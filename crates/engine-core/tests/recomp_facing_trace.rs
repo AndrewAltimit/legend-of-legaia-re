@@ -352,22 +352,24 @@ fn mei_dinner_beat_facing_matches_the_recomp_trace_frame_exact() {
         world.mode = SceneMode::Field;
         let slot = 1u8;
         world
-            .field_npc_positions
+            .npcs
+            .positions
             .insert(slot, (l.x0 as i16, l.z0 as i16));
         world
-            .field_npc_headings
+            .npcs
+            .headings
             .insert(slot, (l.ph.wrapping_add(0x800) & 0xFFF) as i16);
-        world.field_npc_glide_speeds.insert(slot, speed);
+        world.npcs.glide_speeds.insert(slot, speed);
         assert!(world.start_field_npc_motion(slot, target.x, target.z));
         for (t, &(ex, ez)) in l.ticks.iter().enumerate() {
             let _ = world.tick();
             assert_eq!(
-                world.field_npc_positions.get(&slot),
+                world.npcs.positions.get(&slot),
                 Some(&(ex as i16, ez as i16)),
                 "leg {n} tick {t}: NPC-tick position"
             );
             assert_eq!(
-                world.field_npc_headings.get(&slot),
+                world.npcs.headings.get(&slot),
                 Some(&((l.h.wrapping_add(0x800) & 0xFFF) as i16)),
                 "leg {n} tick {t}: NPC-tick render heading"
             );

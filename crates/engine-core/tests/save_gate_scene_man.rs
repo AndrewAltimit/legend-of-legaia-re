@@ -9,7 +9,7 @@
 //! This drives the engine's real chain on disc data:
 //!
 //! 1. `SceneHost::enter_field_scene` -> `load_scene` seeds
-//!    `World::scene_save_allowed` from the scene's own MAN header.
+//!    `World::party.scene_save_allowed` from the scene's own MAN header.
 //! 2. The menu-open sample (`FieldMenuGate`, what
 //!    `BootSession::open_field_menu` builds) turns that into the row's ink.
 //!
@@ -41,7 +41,7 @@ fn menu_for(world: &legaia_engine_core::world::World) -> FieldMenuSession {
     let mut s = FieldMenuSession::new();
     s.set_gate(FieldMenuGate {
         entry_context_kind: world.menu_entry_context_kind(),
-        save_allowed: world.scene_save_allowed,
+        save_allowed: world.party.scene_save_allowed,
     });
     s
 }
@@ -83,7 +83,7 @@ fn the_save_allow_bit_splits_the_scene_corpus() {
             no_man += 1;
             continue;
         }
-        if host.world.scene_save_allowed {
+        if host.world.party.scene_save_allowed {
             allow.push(name.clone());
         } else {
             block.push(name.clone());
@@ -142,7 +142,7 @@ fn scene_entry_seeds_the_save_row_ink() {
     // A field scene: the MAN clears the bit, so Save greys and buzzes.
     host.enter_field_scene("town01", 0).expect("enter town01");
     assert!(
-        !host.world.scene_save_allowed,
+        !host.world.party.scene_save_allowed,
         "town01's MAN clears the save-allow bit"
     );
     let mut menu = menu_for(&host.world);
@@ -177,7 +177,7 @@ fn scene_entry_seeds_the_save_row_ink() {
     // A world map: the same chain the other way.
     host.enter_field_scene("map01", 0).expect("enter map01");
     assert!(
-        host.world.scene_save_allowed,
+        host.world.party.scene_save_allowed,
         "map01's MAN sets the save-allow bit"
     );
     let mut menu = menu_for(&host.world);
@@ -203,5 +203,5 @@ fn scene_entry_seeds_the_save_row_ink() {
     // a latch.
     host.enter_field_scene("town01", 0)
         .expect("re-enter town01");
-    assert!(!host.world.scene_save_allowed);
+    assert!(!host.world.party.scene_save_allowed);
 }

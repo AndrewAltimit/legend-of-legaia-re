@@ -113,7 +113,11 @@ fn play_leg(world: &mut World) -> md::LegReport {
     loop {
         frames += 1;
         assert!(frames < 20_000, "the leg never decided");
-        let s = world.muscle_dome.as_ref().expect("session installed");
+        let s = world
+            .minigames
+            .muscle_dome
+            .as_ref()
+            .expect("session installed");
         if s.decided() {
             break;
         }
@@ -139,7 +143,11 @@ fn play_leg(world: &mut World) -> md::LegReport {
         world.input.set_pad(pad);
         let _ = world.tick();
     }
-    let s = world.muscle_dome.as_ref().expect("session installed");
+    let s = world
+        .minigames
+        .muscle_dome
+        .as_ref()
+        .expect("session installed");
     md::LegReport {
         survived: matches!(s.phase(), MusclePhase::Won),
         outcome: 0,
@@ -169,9 +177,9 @@ fn rung1_the_disc_course_ladder_opens_a_contest() {
 
     let mut w = World::new();
     let flags = w.muscle_contest_flags();
-    w.muscle_contest =
+    w.minigames.muscle_contest =
         Some(md::DomeContest::from_overlay(&t.arena, &flags).expect("the contest opens"));
-    let run = w.muscle_contest.as_ref().unwrap();
+    let run = w.minigames.muscle_contest.as_ref().unwrap();
     assert_eq!(run.round(), 0, "a fresh contest starts before leg one");
     assert_eq!(
         run.state(),
@@ -198,9 +206,9 @@ fn rungs2to4_a_played_leg_reports_into_the_ladder_and_pays_its_rows() {
     let mut w = World::new();
     w.mode = SceneMode::Field;
     let flags = w.muscle_contest_flags();
-    w.muscle_contest =
+    w.minigames.muscle_contest =
         Some(md::DomeContest::from_overlay(&t.arena, &flags).expect("the contest opens"));
-    let course = w.muscle_contest.as_ref().unwrap().course();
+    let course = w.minigames.muscle_contest.as_ref().unwrap().course();
     w.enter_muscle_dome(session_from(&t));
     assert_eq!(w.mode, SceneMode::MuscleDome);
 
@@ -213,13 +221,18 @@ fn rungs2to4_a_played_leg_reports_into_the_ladder_and_pays_its_rows() {
 
     // Rung 3: reporting it advances the ladder and rolls the four rows.
     let before_hp = w
+        .party
         .roster
         .members
         .first()
         .map(|r| r.hp_mp_sp().hp_cur)
         .unwrap_or(0);
     let state = w.report_muscle_leg(report).expect("a contest is open");
-    let run = w.muscle_contest.as_ref().expect("the contest survives");
+    let run = w
+        .minigames
+        .muscle_contest
+        .as_ref()
+        .expect("the contest survives");
     assert_eq!(run.round(), 1, "the ladder advanced one leg");
     let rows = run.rows();
     assert_eq!(
@@ -241,8 +254,9 @@ fn rungs2to4_a_played_leg_reports_into_the_ladder_and_pays_its_rows() {
 
     // Rung 4: the recovery reaches the fighter's record, and the contest is
     // left ready for the next leg (or settling).
-    if report_survived(state) && !w.roster.members.is_empty() {
+    if report_survived(state) && !w.party.roster.members.is_empty() {
         let after_hp = w
+            .party
             .roster
             .members
             .first()
@@ -255,7 +269,7 @@ fn rungs2to4_a_played_leg_reports_into_the_ladder_and_pays_its_rows() {
     }
     assert!(
         matches!(
-            w.muscle_contest.as_ref().unwrap().state(),
+            w.minigames.muscle_contest.as_ref().unwrap().state(),
             ContestState::Fight | ContestState::Restore | ContestState::Settle
         ),
         "the hub landed somewhere the next leg can start from"

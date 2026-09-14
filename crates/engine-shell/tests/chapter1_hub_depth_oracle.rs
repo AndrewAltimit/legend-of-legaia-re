@@ -111,9 +111,10 @@ fn drive_town01_to_map01() -> Option<SceneHost> {
 /// Tile of the first overworld portal to `dest` on the currently-loaded map.
 fn find_portal_tile(host: &SceneHost, dest: &str) -> Option<(u8, u8)> {
     host.world
-        .world_map_entity_configs
+        .world_map
+        .entity_configs
         .iter()
-        .zip(host.world.world_map_entity_positions.iter())
+        .zip(host.world.world_map.entity_positions.iter())
         .find_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal { scene_name, .. } if scene_name == dest => {
                 Some(((x >> 7) as u8, (z >> 7) as u8))

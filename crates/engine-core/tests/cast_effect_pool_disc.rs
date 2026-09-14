@@ -181,7 +181,7 @@ fn every_player_seru_cast_and_a_capture_cast_resolve_a_record_set() {
         "the capture module's records stage"
     );
     assert_eq!(
-        w.active_summon.as_ref().map(|s| s.parts.len()),
+        w.casting.active_summon.as_ref().map(|s| s.parts.len()),
         Some(13),
         "PROT 958's 13 records are the staged scene"
     );
@@ -200,7 +200,7 @@ fn build_world() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
@@ -214,7 +214,7 @@ fn build_world() -> World {
     w.actors[0].move_state.world_x = 300;
     w.actors[0].move_state.world_z = 300;
     w.actors[0].move_state.field_72 = 4096;
-    w.field_camera_azimuth = 0;
+    w.locomotion.camera_azimuth = 0;
 
     use legaia_engine_core::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
@@ -228,9 +228,9 @@ fn build_world() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
-    w.battle_no_escape = true;
+    w.toggles.live_gameplay_loop = true;
+    w.battle.player_driven = true;
+    w.battle.no_escape = true;
     w
 }
 
@@ -256,7 +256,7 @@ fn press(w: &mut World, b: PadButton) {
 fn wait_for_prompt(w: &mut World) -> bool {
     for _ in 0..0x400 {
         let _ = w.take_pending_summon_spawn();
-        if w.battle_command.is_some() {
+        if w.battle.command.is_some() {
             return true;
         }
         w.set_pad(0);
@@ -278,7 +278,7 @@ fn refill(w: &mut World) {
         w.actors[i].battle.liveness = 1;
         w.actors[i].battle.mp = 250;
     }
-    let ms = w.party_count as usize;
+    let ms = w.party.party_count as usize;
     w.actors[ms].battle.max_hp = 9000;
     w.actors[ms].battle.set_hp_synced(9000);
 }
@@ -292,10 +292,10 @@ fn a_live_cast_stages_its_module_records() {
     let pool = Arc::new(build_pool(&dir));
 
     let mut w = build_world();
-    w.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
+    w.tables.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
     // Teach the caster the whole player block at level 1.
     {
-        let rec = &mut w.roster.members[0];
+        let rec = &mut w.party.roster.members[0];
         let mut list = rec.spell_list();
         list.count = SERU_IDS.len() as u8;
         for (i, id) in SERU_IDS.iter().enumerate() {
@@ -307,7 +307,7 @@ fn a_live_cast_stages_its_module_records() {
     enter_battle(&mut w);
     w.install_cast_effect_pool(pool.clone());
     refill(&mut w);
-    w.battle_magic[0] = 80;
+    w.battle.magic[0] = 80;
 
     let mut cast = 0usize;
     let mut staged: Vec<(u8, usize)> = Vec::new();
@@ -324,15 +324,15 @@ fn a_live_cast_stages_its_module_records() {
                 w.mode,
                 w.battle_ctx.action_state,
                 w.battle_ctx.active_actor,
-                w.battle_spell_menu.is_some(),
-                w.battle_arts_menu.is_some(),
-                w.battle_item_menu.is_some(),
-                w.actors[w.party_count as usize].battle.hp,
+                w.battle.spell_menu.is_some(),
+                w.battle.arts_menu.is_some(),
+                w.battle.item_menu.is_some(),
+                w.actors[w.party.party_count as usize].battle.hp,
                 (0..3).map(|i| w.actors[i].battle.hp).collect::<Vec<_>>(),
             );
         }
         if matches!(
-            w.battle_command.as_ref().map(|s| &s.phase),
+            w.battle.command.as_ref().map(|s| &s.phase),
             Some(legaia_engine_core::battle_input::CommandPhase::RoundPrompt { .. })
         ) {
             press(&mut w, PadButton::Cross);
@@ -344,7 +344,7 @@ fn a_live_cast_stages_its_module_records() {
         let row = staged.len();
         press(&mut w, PadButton::Right); // ring: Magic
         assert!(
-            w.battle_spell_menu.is_some(),
+            w.battle.spell_menu.is_some(),
             "the Magic arm opens the list"
         );
         // The list cursor is per-session, so walk from the top each time.
@@ -352,7 +352,8 @@ fn a_live_cast_stages_its_module_records() {
             press(&mut w, PadButton::Down); // walk to this cast's row
         }
         let picked = w
-            .battle_spell_menu
+            .battle
+            .spell_menu
             .as_ref()
             .and_then(|s| s.menu_spell())
             .map(|r| r.id)
@@ -360,7 +361,8 @@ fn a_live_cast_stages_its_module_records() {
         press(&mut w, PadButton::Cross); // pick the spell
         // A single-target shape opens the picker; a group shape commits
         // straight away, so only confirm when there is something to confirm.
-        if w.battle_spell_menu
+        if w.battle
+            .spell_menu
             .as_ref()
             .and_then(|s| s.picker())
             .is_some()
@@ -369,7 +371,7 @@ fn a_live_cast_stages_its_module_records() {
         }
         cast += 1;
         for _ in 0..3 {
-            if w.battle_command.is_none() {
+            if w.battle.command.is_none() {
                 break;
             }
             press(&mut w, PadButton::Down);
@@ -379,18 +381,18 @@ fn a_live_cast_stages_its_module_records() {
         let mut seen: Option<usize> = None;
         for _ in 0..0x400 {
             if seen.is_none()
-                && let Some(scene) = w.active_summon.as_ref()
+                && let Some(scene) = w.casting.active_summon.as_ref()
             {
                 seen = Some(scene.parts.len());
             }
-            if w.pending_cast.is_none() {
+            if w.casting.pending_cast.is_none() {
                 break;
             }
             let _ = w.take_pending_summon_spawn();
             w.set_pad(0);
             let _ = w.tick();
         }
-        assert!(w.pending_cast.is_none(), "cast {cast} never folded");
+        assert!(w.casting.pending_cast.is_none(), "cast {cast} never folded");
         // The id the menu actually committed, not the row we aimed at.
         let id = picked;
         assert_eq!(id, SERU_IDS[row], "row {row} is this cast's spell");
@@ -398,7 +400,7 @@ fn a_live_cast_stages_its_module_records() {
             .unwrap_or_else(|| panic!("cast {cast} (spell {id:#04x}) staged no cast-module scene"));
         staged.push((id, parts));
         // Clear the scene so the next cast's staging is its own.
-        w.active_summon = None;
+        w.casting.active_summon = None;
     }
 
     assert_eq!(

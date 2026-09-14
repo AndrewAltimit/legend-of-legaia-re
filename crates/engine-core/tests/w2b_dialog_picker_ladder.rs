@@ -23,7 +23,7 @@
 //! menu) is inline-runner content instead.
 //!
 //! The drive is the native host's own contract, stage by stage: a field
-//! interact on the NPC raises `World::current_dialog` (session path),
+//! interact on the NPC raises `World::dialog.current` (session path),
 //! `SceneHost::open_pending_dialog` builds the panel exactly as
 //! `sync_dialog_panel` does, the typewriter ticks until the menu arms,
 //! Up/Down move the cursor, and the confirm calls `confirm_menu` - the
@@ -74,7 +74,7 @@ fn the_koin4_price_menu_confirms_through_the_option_jump() {
     // number is disc data; keying by content keeps the ladder honest if the
     // placement table's order ever re-derives.
     let mut offer_slot = None;
-    for (&slot, inline) in &host.world.field_npc_dialog {
+    for (&slot, inline) in &host.world.npcs.dialog {
         if let Some(panel) = OwnedDialogPanel::from_inline_dialog(inline)
             && let Some(pk) = panel.picker()
             && pk.n == 3
@@ -89,16 +89,16 @@ fn the_koin4_price_menu_confirms_through_the_option_jump() {
     let slot = offer_slot.expect("koin4 carries the merchant's two-price offer");
 
     // Interact through the session path: the world raises the pre-decoded
-    // dialog request (`World::current_dialog`) from the NPC's inline record.
+    // dialog request (`World::dialog.current`) from the NPC's inline record.
     host.world.trigger_field_interact(0, slot);
     let mut ticks = 0u32;
-    while host.world.current_dialog.is_none() && ticks < 240 {
+    while host.world.dialog.current.is_none() && ticks < 240 {
         host.world.set_pad(0);
         let _ = host.world.tick();
         ticks += 1;
     }
     assert!(
-        host.world.current_dialog.is_some(),
+        host.world.dialog.current.is_some(),
         "the interact raised a dialog request within {ticks} ticks"
     );
 

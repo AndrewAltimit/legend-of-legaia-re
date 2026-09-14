@@ -44,7 +44,7 @@ fn opening_the_pause_menu_in_a_no_save_scene_greys_the_save_row() {
         .expect("enter town01 live");
 
     assert!(
-        !session.host.world.scene_save_allowed,
+        !session.host.world.party.scene_save_allowed,
         "town01's MAN clears the save-allow bit"
     );
 
@@ -138,10 +138,10 @@ fn start_is_inert_while_a_dialogue_owns_the_player() {
         !session.field_menu_is_open(),
         "Start must be refused while the inline dialogue runner owns the player"
     );
-    session.host.world.inline_dialogue = None;
+    session.host.world.dialog.inline = None;
 
     // And the simplified request channel.
-    session.host.world.current_dialog = Some(legaia_engine_core::world::DialogRequest {
+    session.host.world.dialog.current = Some(legaia_engine_core::world::DialogRequest {
         text_id: 0,
         inline: Vec::new(),
         world_x: 0,
@@ -155,7 +155,7 @@ fn start_is_inert_while_a_dialogue_owns_the_player() {
     );
 
     // Once the box is gone, Start works again.
-    session.host.world.current_dialog = None;
+    session.host.world.dialog.current = None;
     session.open_field_menu();
     assert!(
         session.field_menu_is_open(),

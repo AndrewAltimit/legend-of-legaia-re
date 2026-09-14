@@ -13,7 +13,7 @@ impl World {
     /// - activates the actor,
     /// - copies HP / MP from the record's [`HpMpSp`] block into the
     ///   `BattleActor` mirrors,
-    /// - stows the full record bytes via [`World::roster`] for later
+    /// - stows the full record bytes via [`crate::world::PartyState::roster`] for later
     ///   round-trip via [`World::save_party`].
     ///
     /// The `legaia-save` crate's [`legaia_save::CharacterRecord::parse`] is
@@ -34,12 +34,12 @@ impl World {
             // Seed the per-slot turn-order SPD from the record's live stats so
             // a battle's next-actor selector can run the initiative scheme.
             // A zeroed record leaves SPD at 0 -> round-robin fallback.
-            if let Some(s) = self.battle_speed.get_mut(slot) {
+            if let Some(s) = self.battle.speed.get_mut(slot) {
                 *s = rec.live_stats().spd;
             }
         }
-        self.party_count = n as u8;
-        self.roster = party;
+        self.party.party_count = n as u8;
+        self.party.roster = party;
         // Hydrate the level-up tracker's per-slot cumulative XP and level
         // from the installed records. Without this the tracker keeps its
         // default 0-XP / level-1 state even when the record has the party
@@ -47,10 +47,10 @@ impl World {
         // curve from L1. Level prefers the engine cell (+0x100), falling
         // back to the retail displayed-level byte (+0x130) for records
         // lifted from retail saves.
-        for (slot, rec) in self.roster.members.iter().enumerate() {
-            if slot < self.level_up_tracker.level.len() {
-                self.level_up_tracker.xp[slot] = rec.cumulative_xp();
-                self.level_up_tracker.level[slot] = rec.level().max(rec.magic_rank()).max(1);
+        for (slot, rec) in self.party.roster.members.iter().enumerate() {
+            if slot < self.party.level_up_tracker.level.len() {
+                self.party.level_up_tracker.xp[slot] = rec.cumulative_xp();
+                self.party.level_up_tracker.level[slot] = rec.level().max(rec.magic_rank()).max(1);
             }
         }
         // Adopt each record's stored display name (`+0x2A7`) so a loaded save's
@@ -60,15 +60,15 @@ impl World {
         // one-member roster, and truncating here would drop the Noa / Gala /
         // Terra defaults `seed_starting_party` installs for the slots that have
         // not joined yet.
-        for (slot, rec) in self.roster.members.iter().enumerate() {
+        for (slot, rec) in self.party.roster.members.iter().enumerate() {
             let name = rec.name();
             if name.is_empty() {
                 continue;
             }
-            if self.party_names.len() <= slot {
-                self.party_names.resize(slot + 1, String::new());
+            if self.party.party_names.len() <= slot {
+                self.party.party_names.resize(slot + 1, String::new());
             }
-            self.party_names[slot] = name;
+            self.party.party_names[slot] = name;
         }
     }
 
@@ -81,20 +81,20 @@ impl World {
     /// the HP/MP resync (which is a no-op when no battle has run yet).
     pub fn save_party(&mut self) -> legaia_save::Party {
         // Actor slot -> roster record follows the present-party composition:
-        // under an [`World::active_party`] mapping, actor ordinal `i` mirrors
+        // under an [`crate::world::PartyState::active_party`] mapping, actor ordinal `i` mirrors
         // the character at `active_party[i]`, and characters NOT in the
         // present party keep their record values untouched. The identity
         // default resyncs every record from its same-index actor, the
         // historical behaviour.
-        let members = if self.active_party.is_empty() {
-            self.roster.members.len().min(self.actors.len())
+        let members = if self.party.active_party.is_empty() {
+            self.party.roster.members.len().min(self.actors.len())
         } else {
-            self.active_party.len().min(self.actors.len())
+            self.party.active_party.len().min(self.actors.len())
         };
         for member in 0..members {
             let rslot = self.party_roster_slot(member);
             let a = &self.actors[member];
-            if let Some(rec) = self.roster.members.get_mut(rslot) {
+            if let Some(rec) = self.party.roster.members.get_mut(rslot) {
                 let mut hms = rec.hp_mp_sp();
                 hms.hp_cur = a.battle.hp;
                 hms.hp_max = a.battle.max_hp;
@@ -102,7 +102,7 @@ impl World {
                 rec.set_hp_mp_sp(hms);
             }
         }
-        self.roster.clone()
+        self.party.roster.clone()
     }
 
     /// Write the **battle party's** live HP / MP into their roster records.
@@ -110,7 +110,7 @@ impl World {
     /// The narrow sibling of [`Self::save_party`], for
     /// [`Self::finish_battle`]. Two differences, both deliberate:
     ///
-    /// - It stops at [`Self::party_count`]. In battle the actor slots past
+    /// - It stops at [`crate::world::PartyState::party_count`]. In battle the actor slots past
     ///   the party band hold *monsters*, and `save_party`'s identity default
     ///   walks the whole roster - so running it verbatim at battle end would
     ///   copy a monster's HP into the fourth character's record.
@@ -118,14 +118,14 @@ impl World {
     ///   move during a fight, and the level-up applier has already written
     ///   the post-victory maxima into the records by the time this runs.
     pub(in crate::world) fn persist_battle_party_hp(&mut self) {
-        let n = (self.party_count as usize).min(self.actors.len());
+        let n = (self.party.party_count as usize).min(self.actors.len());
         for member in 0..n {
             let rslot = self.party_roster_slot(member);
             let (hp, mp) = {
                 let a = &self.actors[member].battle;
                 (a.hp, a.mp)
             };
-            if let Some(rec) = self.roster.members.get_mut(rslot) {
+            if let Some(rec) = self.party.roster.members.get_mut(rslot) {
                 let mut hms = rec.hp_mp_sp();
                 hms.hp_cur = hp;
                 hms.mp_cur = mp;
@@ -143,20 +143,20 @@ impl World {
     /// records (just written by [`Self::persist_battle_party_hp`]) hold the
     /// post-battle truth.
     ///
-    /// Bounded by [`Self::party_count`]: in the restored *field* table the
+    /// Bounded by [`crate::world::PartyState::party_count`]: in the restored *field* table the
     /// slots past the party band are NPCs, and pushing a character record's
     /// HP onto an NPC's mirrors is never right.
     pub fn resync_party_actors_from_roster(&mut self) {
-        let members = (self.party_count as usize).min(self.actors.len()).min(
-            if self.active_party.is_empty() {
-                self.roster.members.len()
+        let members = (self.party.party_count as usize)
+            .min(self.actors.len())
+            .min(if self.party.active_party.is_empty() {
+                self.party.roster.members.len()
             } else {
-                self.active_party.len()
-            },
-        );
+                self.party.active_party.len()
+            });
         for member in 0..members {
             let rslot = self.party_roster_slot(member);
-            let Some(hms) = self.roster.members.get(rslot).map(|r| r.hp_mp_sp()) else {
+            let Some(hms) = self.party.roster.members.get(rslot).map(|r| r.hp_mp_sp()) else {
                 continue;
             };
             let a = &mut self.actors[member];
@@ -174,6 +174,7 @@ impl World {
     pub fn save_full(&mut self) -> legaia_save::SaveFile {
         let party = self.save_party();
         let mut inventory: Vec<(u8, u8)> = self
+            .party
             .inventory
             .iter()
             .map(|(&id, &count)| (id, count))
@@ -184,10 +185,10 @@ impl World {
         // The present-party composition persists when installed; the
         // identity default serialises as the full roster order (the
         // historical encoding, which `load_full` treats as identity).
-        let active_party: Vec<u8> = if self.active_party.is_empty() {
+        let active_party: Vec<u8> = if self.party.active_party.is_empty() {
             (0..party.members.len() as u8).collect()
         } else {
-            self.active_party.clone()
+            self.party.active_party.clone()
         };
         let mut per_char: Vec<(u8, legaia_save::CharSaveExt)> = Vec::new();
         for slot in 0..party.members.len() as u8 {
@@ -195,17 +196,18 @@ impl World {
             // Learned arts: derive from TacticalArtsTracker - bit i is
             // set when art id i has crossed the learn threshold.
             for art_id in 0..32u8 {
-                if self.tactical_arts.is_learned(slot, art_id) {
+                if self.party.tactical_arts.is_learned(slot, art_id) {
                     ce.learned_arts_mask |= 1u32 << art_id;
                 }
             }
             // Spells: the per-character learned spell list from the seru log.
-            ce.spells = self.seru_log.learned_spells(slot).to_vec();
+            ce.spells = self.seru.log.learned_spells(slot).to_vec();
             // Seru captures: export the live log's per-Seru capture-point
             // progress (real seru_id -> points) so sub-threshold progress
             // survives a save/load. Sorted for deterministic output.
             ce.seru_captures = self
-                .seru_log
+                .seru
+                .log
                 .iter_rows()
                 .filter(|(s, _, _)| *s == slot)
                 .map(|(_, sid, row)| (sid, row.points))
@@ -214,14 +216,15 @@ impl World {
             // Shiny spells: spell ids this character learned from a shiny
             // capture (+35% damage). Persisted in the LGSF v4 LGX4 block.
             ce.shiny_spells = self
-                .seru_log
+                .seru
+                .log
                 .iter_shiny()
                 .filter(|(s, _)| *s == slot)
                 .map(|(_, spell_id)| spell_id)
                 .collect();
             ce.shiny_spells.sort_unstable();
             // Active-chain selection still lives in the per-char ext mirror.
-            if let Some((_, src)) = self.per_char_ext.iter().find(|(s, _)| *s == slot) {
+            if let Some((_, src)) = self.party.per_char_ext.iter().find(|(s, _)| *s == slot) {
                 ce.active_chains = src.active_chains;
             }
             per_char.push((slot, ce));
@@ -233,29 +236,29 @@ impl World {
         // Mirror the live bank into that window so gate/progression state
         // survives a save (the LGX3 block stores a u16-length bitmap, so a
         // bank longer than the retail 512-byte window still fits).
-        let mut story_flag_bits = self.story_flag_bits.clone();
-        if !self.system_flags.is_empty() {
-            let need = 0x158 + self.system_flags.len();
+        let mut story_flag_bits = self.flags.story_flag_bits.clone();
+        if !self.flags.system_flags.is_empty() {
+            let need = 0x158 + self.flags.system_flags.len();
             if story_flag_bits.len() < need {
                 story_flag_bits.resize(need, 0);
             }
-            for (k, b) in self.system_flags.iter().enumerate() {
+            for (k, b) in self.flags.system_flags.iter().enumerate() {
                 story_flag_bits[0x158 + k] |= b;
             }
         }
         legaia_save::SaveFile {
             party,
             ext: legaia_save::SaveExt {
-                story_flags: self.story_flags,
+                story_flags: self.flags.story_flags,
                 story_flag_bits,
-                money: self.money,
+                money: self.party.money,
                 inventory,
             },
             ext_v2: legaia_save::SaveExtV2 {
-                play_time_seconds: self.play_time_seconds,
+                play_time_seconds: self.clock.play_time_seconds,
                 active_party,
                 per_char,
-                saved_chains: self.saved_chains.clone(),
+                saved_chains: self.party.saved_chains.clone(),
             },
         }
     }
@@ -272,46 +275,46 @@ impl World {
         // order (what `save_full` writes when no composition is installed)
         // stays the identity default rather than a 3-cap reorder, so legacy
         // saves keep their historical party_count.
-        let identity: Vec<u8> = (0..self.roster.members.len() as u8).collect();
+        let identity: Vec<u8> = (0..self.party.roster.members.len() as u8).collect();
         if sf.ext_v2.active_party != identity {
             self.set_active_party(sf.ext_v2.active_party.clone());
         } else {
-            self.active_party.clear();
+            self.party.active_party.clear();
         }
-        self.story_flags = sf.ext.story_flags;
-        self.story_flag_bits = sf.ext.story_flag_bits;
+        self.flags.story_flags = sf.ext.story_flags;
+        self.flags.story_flag_bits = sf.ext.story_flag_bits;
         // Seed the live system-flag bank from the saved bitmap's `+0x158`
         // window (the retail overlap `save_full` mirrors into) so partition-2
         // record gates - story-progression one-shots, door cutscene beats -
         // resolve the same after a reload. OR-merge: a retail SC import that
         // populated `story_flag_bits` alone seeds the bank the same way.
-        self.system_flags.clear();
-        if self.story_flag_bits.len() > 0x158 {
-            let window = self.story_flag_bits[0x158..].to_vec();
-            self.system_flags = window;
+        self.flags.system_flags.clear();
+        if self.flags.story_flag_bits.len() > 0x158 {
+            let window = self.flags.story_flag_bits[0x158..].to_vec();
+            self.flags.system_flags = window;
         }
-        self.money = sf.ext.money;
-        self.inventory.clear();
+        self.party.money = sf.ext.money;
+        self.party.inventory.clear();
         for (id, count) in sf.ext.inventory {
             if count > 0 {
-                self.inventory.insert(id, count);
+                self.party.inventory.insert(id, count);
             }
         }
         // (The level-up tracker's per-slot XP + level are hydrated from the
         // records inside `load_party`.)
         // V2 ext block - repopulate engine-side trackers.
-        self.play_time_seconds = sf.ext_v2.play_time_seconds;
-        self.saved_chains = sf.ext_v2.saved_chains.clone();
-        self.per_char_ext = sf.ext_v2.per_char.clone();
+        self.clock.play_time_seconds = sf.ext_v2.play_time_seconds;
+        self.party.saved_chains = sf.ext_v2.saved_chains.clone();
+        self.party.per_char_ext = sf.ext_v2.per_char.clone();
         // Reset trackers so reloads don't accumulate stale state.
-        self.tactical_arts = TacticalArtsTracker::new();
-        self.seru_log = crate::seru_learning::SeruCaptureLog::new();
+        self.party.tactical_arts = TacticalArtsTracker::new();
+        self.seru.log = crate::seru_learning::SeruCaptureLog::new();
         for (slot, ce) in &sf.ext_v2.per_char {
             // Re-mark learned arts so the tracker doesn't re-fire the
             // "first time learned" event for arts the save already has.
             for art_id in 0..32u8 {
                 if ce.learned_arts_mask & (1u32 << art_id) != 0 {
-                    self.tactical_arts.mark_known(*slot, art_id);
+                    self.party.tactical_arts.mark_known(*slot, art_id);
                 }
             }
             // Restore per-Seru capture-point progress. When the registry is
@@ -319,25 +322,26 @@ impl World {
             // learned (with its spell), so a later capture doesn't re-fire
             // the learn event.
             for &(sid, pts) in &ce.seru_captures {
-                let def = self.seru_registry.get(sid);
+                let def = self.seru.registry.get(sid);
                 let learned = def.is_some_and(|d| pts >= d.learn_threshold);
                 let spell_id = def.map(|d| d.spell_id);
-                self.seru_log
+                self.seru
+                    .log
                     .restore_row(*slot, sid, pts, 0, learned, spell_id);
             }
             // Ensure every persisted learned spell lands in the learned list,
             // even with no registry installed: map it back to its teaching
             // Seru when known, else key by the spell id as a surrogate.
             for &spell_id in &ce.spells {
-                if let Some(def) = self.seru_registry.seru_for_spell(spell_id) {
-                    self.seru_log.mark_learned(*slot, def.id, spell_id);
+                if let Some(def) = self.seru.registry.seru_for_spell(spell_id) {
+                    self.seru.log.mark_learned(*slot, def.id, spell_id);
                 } else {
-                    self.seru_log.mark_learned(*slot, spell_id as u16, spell_id);
+                    self.seru.log.mark_learned(*slot, spell_id as u16, spell_id);
                 }
             }
             // Restore the shiny set (+35% damage spells).
             for &spell_id in &ce.shiny_spells {
-                self.seru_log.mark_shiny(*slot, spell_id);
+                self.seru.log.mark_shiny(*slot, spell_id);
             }
         }
     }
@@ -347,7 +351,7 @@ impl World {
 /// gate inputs the retail root command picker reads before it lets a row
 /// through.
 impl World {
-    /// Seed [`World::scene_save_allowed`] from the scene MAN just loaded.
+    /// Seed [`crate::world::PartyState::scene_save_allowed`] from the scene MAN just loaded.
     ///
     /// Retail's MAN loader does this inline, one instruction after it takes
     /// the header's status word: it reads byte `+1` of the resident MAN
@@ -374,7 +378,7 @@ impl World {
         &mut self,
         man: Option<&legaia_asset::man_section::ManFile>,
     ) {
-        self.scene_save_allowed = man.is_some_and(|m| m.header.low_flag);
+        self.party.scene_save_allowed = man.is_some_and(|m| m.header.low_flag);
     }
 
     /// Kind byte of the op-`0x49` entry context the pause menu tests - the
@@ -444,7 +448,7 @@ impl World {
     /// / `sw zero,0x138(gp)` / `jr ra` - the live-window list head and the
     /// entry-context word cleared together, which is what releases the park).
     pub fn release_menu_entry_context_park(&mut self) -> bool {
-        let Some(sub_op) = self.submode_screen.park_sub_op else {
+        let Some(sub_op) = self.field_vm.submode_screen.park_sub_op else {
             return false;
         };
         if !crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS.contains(&sub_op) {
@@ -455,13 +459,13 @@ impl World {
     }
 
     pub fn menu_entry_context_kind(&self) -> Option<u8> {
-        if let Some(sub_op) = self.submode_screen.park_sub_op {
+        if let Some(sub_op) = self.field_vm.submode_screen.park_sub_op {
             return Some(sub_op);
         }
-        if self.field_shop_armed {
+        if self.shops.shop_armed {
             return Some(0);
         }
-        if self.tile_board_armed {
+        if self.board.armed {
             return Some(5);
         }
         None
@@ -529,7 +533,7 @@ impl World {
     ///
     /// Note this is the *open* gate only. Whether the opened menu's **Save**
     /// row then accepts is a separate, per-scene question answered by
-    /// [`World::scene_save_allowed`](crate::world::World::scene_save_allowed)
+    /// [`crate::world::PartyState::scene_save_allowed`](crate::world::PartyState::scene_save_allowed)
     /// at the row's confirm, exactly as retail keeps `_DAT_800846D8` (which
     /// button opens the menu) and `_DAT_8007B6A8` (whether Save is legal
     /// here) as two independent globals.

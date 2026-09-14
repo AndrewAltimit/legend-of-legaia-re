@@ -318,7 +318,10 @@ fn bake_vdf_pulse_anim(
 
     // The same setup `SceneHost::enter_field_scene` runs before arming.
     let mut w = crate::world::World {
-        frame_step: 2,
+        clock: crate::world::FrameClock {
+            frame_step: 2,
+            ..Default::default()
+        },
         ..Default::default()
     };
     if let Some(scripts) = scene.find_event_scripts() {
@@ -350,11 +353,11 @@ fn bake_vdf_pulse_anim(
 
     // Per targeted env slot: the lanes that touch it (each lane = one morph
     // target) and the groups each lane moves.
-    let all_targets = w.entry_vdf_pulse.as_ref()?.all_targets();
+    let all_targets = w.ambient.entry_vdf_pulse.as_ref()?.all_targets();
     let mut slot_lanes: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
     let mut lane_groups: BTreeMap<(usize, u8), Vec<u32>> = BTreeMap::new();
     for &(slot, group) in &all_targets {
-        for (lane, _) in w.entry_vdf_pulse.as_ref()?.lanes_for(slot, group) {
+        for (lane, _) in w.ambient.entry_vdf_pulse.as_ref()?.lanes_for(slot, group) {
             let lanes = slot_lanes.entry(slot).or_default();
             if !lanes.contains(&lane) {
                 lanes.push(lane);
@@ -428,6 +431,7 @@ fn bake_vdf_pulse_anim(
     const MAX_TICKS: usize = 3600;
     let sample_lanes = |w: &crate::world::World, lanes: &[u8]| -> Vec<f32> {
         let (weights, _, _) = w
+            .ambient
             .entry_vdf_pulse
             .as_ref()
             .map(|p| p.phase_fingerprint())
@@ -441,7 +445,7 @@ fn bake_vdf_pulse_anim(
             })
             .collect()
     };
-    let start = w.entry_vdf_pulse.as_ref()?.phase_fingerprint();
+    let start = w.ambient.entry_vdf_pulse.as_ref()?.phase_fingerprint();
     let mut times: Vec<f32> = Vec::new();
     let mut tracks: BTreeMap<usize, Vec<f32>> = BTreeMap::new();
     for tick in 0..=MAX_TICKS {
@@ -453,7 +457,7 @@ fn bake_vdf_pulse_anim(
                 .extend(sample_lanes(&w, lanes));
         }
         w.tick_ambient_fx();
-        if w.entry_vdf_pulse.as_ref()?.phase_fingerprint() == start {
+        if w.ambient.entry_vdf_pulse.as_ref()?.phase_fingerprint() == start {
             // The state has returned to key 0's - one more key with those
             // weights closes the loop seamlessly under LINEAR interpolation.
             times.push((tick + 1) as f32 / PULSE_TICK_HZ);
@@ -856,7 +860,7 @@ impl FloorSampler {
         if let Ok(Some(lut)) = scene.field_floor_height_lut(index) {
             // The MAN header stores POSITIVE tiers; every runtime consumer
             // assumes the negated (PSX Y-down) copy (`FUN_8003AEB0`).
-            world.field_floor_height_lut = lut.map(|v| v.wrapping_neg());
+            world.terrain.floor_height_lut = lut.map(|v| v.wrapping_neg());
         }
         Self { world }
     }

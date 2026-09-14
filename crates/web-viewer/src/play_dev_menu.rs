@@ -95,6 +95,7 @@ impl LegaiaRuntime {
 
         {
             let mut records: Vec<&mut [u8]> = world
+                .party
                 .roster
                 .members
                 .iter_mut()
@@ -109,16 +110,16 @@ impl LegaiaRuntime {
             && edge & legaia_engine_core::dev_menu::PACK_CROSS != 0
         {
             let character = session.chars.character as usize;
-            let weapon_slots: Vec<i16> = vec![2; world.roster.members.len().max(4)];
-            if let Some(member) = world.roster.members.get_mut(character) {
+            let weapon_slots: Vec<i16> = vec![2; world.party.roster.members.len().max(4)];
+            if let Some(member) = world.party.roster.members.get_mut(character) {
                 let mut raw = std::mem::take(&mut member.raw);
                 let mut equip_host = WorldEquipHost {
-                    inventory: &mut world.inventory,
+                    inventory: &mut world.party.inventory,
                     sfx: Vec::new(),
                 };
                 let _ = session.commit_equip_row(&mut equip_host, &mut raw, &weapon_slots);
                 let cues = std::mem::take(&mut equip_host.sfx);
-                world.roster.members[character].raw = raw;
+                world.party.roster.members[character].raw = raw;
                 session.pending_sfx.extend(cues);
             }
         }
@@ -142,13 +143,14 @@ impl LegaiaRuntime {
         };
         let world = &scene.world;
         let records: Vec<&[u8]> = world
+            .party
             .roster
             .members
             .iter()
             .take(3)
             .map(|m| m.raw.as_slice())
             .collect();
-        let model = dev_records_model(&records, world.play_time_seconds);
+        let model = dev_records_model(&records, world.clock.play_time_seconds);
         ui::records_screen_draws_for(font, &records_view(&model), DEV_RECORDS_PEN)
     }
 }

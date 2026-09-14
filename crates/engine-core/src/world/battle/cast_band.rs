@@ -49,7 +49,7 @@
 //! So the retail creature walks **in from behind the party** toward the
 //! target while its effect parts play, and the damage lands mid-walk. The
 //! stager here does the same with the pieces the engine has: it requests the
-//! namesake creature spawn ([`World::pending_summon_spawn`]) at the spawn
+//! namesake creature spawn ([`crate::world::CastFxState::pending_summon_spawn`]) at the spawn
 //! point, idles it, stages the walk clip and glides it to the strike point,
 //! folds the outcome there, lingers, and despawns it.
 //!
@@ -158,7 +158,7 @@ impl World {
     ) -> Vec<u8> {
         use crate::spells::SpellTarget;
         use crate::target_picker::CursorRow;
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         match def.target {
             SpellTarget::OneEnemy | SpellTarget::OneAlly | SpellTarget::SelfOnly => {
                 let abs = match target_row {
@@ -179,7 +179,7 @@ impl World {
     fn cast_target_code(&self, def: &crate::spells::SpellDef, targets: &[u8], caster: u8) -> u8 {
         use crate::spells::SpellTarget;
         use vm::battle_target_group::{TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY};
-        let caster_is_party = caster < self.party_count;
+        let caster_is_party = caster < self.party.party_count;
         match def.target {
             // Codes are in retail's absolute numbering: 8 = party, 9 = the
             // enemy row - whichever side the caster stands on.
@@ -225,7 +225,7 @@ impl World {
             a.battle.params[0] = def.id;
             a.battle.sub_route = 0;
         }
-        self.pending_cast = Some(PendingCast {
+        self.casting.pending_cast = Some(PendingCast {
             caster,
             spell_id: def.id,
             targets,
@@ -268,7 +268,7 @@ impl World {
             a.battle.params[2] = 0xFF;
             a.battle.sub_route = 0;
         }
-        self.pending_cast = Some(PendingCast {
+        self.casting.pending_cast = Some(PendingCast {
             caster: slot,
             spell_id: def.id,
             targets,
@@ -282,7 +282,7 @@ impl World {
     /// (`0x28`), so the fold is the prepaid one; a monster cast also rolls
     /// its move's impact-status and AGL-status procs onto what it reached.
     pub(in crate::world) fn fold_pending_cast(&mut self) {
-        let Some(pc) = self.pending_cast.take() else {
+        let Some(pc) = self.casting.pending_cast.take() else {
             return;
         };
         // Two casts in the band do not fold through the catalog at all:
@@ -313,16 +313,16 @@ impl World {
             && let Some(body) = vm::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
             && vm::cast_module_ticks::tick_body_owns_the_fold(body)
             && let Some(arm) = vm::cast_module_ticks::sweep_arm_for(body)
-            && self.cast_module_phase > arm
+            && self.casting.module_phase > arm
         {
             return;
         }
-        let Some(def) = self.spell_catalog.get(pc.spell_id).cloned() else {
+        let Some(def) = self.tables.spell_catalog.get(pc.spell_id).cloned() else {
             return;
         };
-        let hit_fx_start = self.battle_hit_fx.len();
+        let hit_fx_start = self.battle.hit_fx.len();
         self.cast_spell_on_slots_prepaid(pc.caster, &def, &pc.targets);
-        if pc.caster >= self.party_count {
+        if pc.caster >= self.party.party_count {
             self.apply_enemy_move_status(pc.caster, def.id, hit_fx_start);
             self.apply_enemy_agl_status(pc.caster, def.id, &pc.targets);
         }
@@ -341,7 +341,7 @@ impl World {
     ///   branch) folds whatever is still owed, so a cast never spends its MP
     ///   for nothing.
     pub(in crate::world) fn settle_cast_band(&mut self, outcome: &StepOutcome) {
-        let Some(pc) = &self.pending_cast else {
+        let Some(pc) = &self.casting.pending_cast else {
             return;
         };
         if pc.caster != self.battle_ctx.active_actor {
@@ -381,9 +381,9 @@ impl World {
             .unwrap_or((0, 0, -542));
         // Retail's cast-start site `0x801E4B1C` zeroes `ctx+0x278` and the
         // module phase `ctx+0x279` before the first tick.
-        self.cast_module_phase = 0;
-        self.cast_module_ctx_278 = 0;
-        self.summon_stager = Some(SummonStager {
+        self.casting.module_phase = 0;
+        self.casting.module_ctx_278 = 0;
+        self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
             phase: SummonPhase::Armed,
@@ -398,7 +398,7 @@ impl World {
     /// capture's slot-7 record), and mark it active. Hosts call this right
     /// after binding the creature's mesh, idle player and clip set.
     pub fn seat_summon_actor(&mut self, slot: usize) {
-        let staged = self.summon_stager.as_ref().map(|st| {
+        let staged = self.casting.summon_stager.as_ref().map(|st| {
             (
                 st.spawn,
                 self.actors
@@ -407,7 +407,7 @@ impl World {
                     .unwrap_or(0),
             )
         });
-        self.summon_actor_slot = Some(slot as u8);
+        self.casting.summon_actor_slot = Some(slot as u8);
         let Some(a) = self.actors.get_mut(slot) else {
             return;
         };
@@ -427,14 +427,14 @@ impl World {
     /// Install the cast-effect pool - the DATA half of the slot-B cast-module
     /// band (PROT 0903..0966), parsed off the disc by the scene host (which
     /// holds the PROT index; `World` is index-agnostic, the same split
-    /// [`Self::pending_summon_spawn`](crate::world::World::pending_summon_spawn)
+    /// [`crate::world::CastFxState::pending_summon_spawn`](crate::world::CastFxState::pending_summon_spawn)
     /// uses). Idempotent; a host that never calls it leaves every cast staging
     /// no module records, which is the disc-free behaviour.
     pub fn install_cast_effect_pool(
         &mut self,
         pool: std::sync::Arc<legaia_asset::cast_effect_pool::CastEffectPool>,
     ) {
-        self.cast_effect_pool = Some(pool);
+        self.casting.effect_pool = Some(pool);
     }
 
     /// The band entry a cast of `spell_id` pages - the **pool handle** PROT
@@ -470,8 +470,12 @@ impl World {
     /// ([`crate::spells::SpellDef::effect_class`], which
     /// [`crate::retail_magic`] fills from `SCUS_942.54`).
     pub fn spell_effect_class(&self, spell_id: u8) -> Option<u8> {
-        self.spell_table_sub_class(spell_id)
-            .or_else(|| self.spell_catalog.get(spell_id).map(|d| d.effect_class))
+        self.spell_table_sub_class(spell_id).or_else(|| {
+            self.tables
+                .spell_catalog
+                .get(spell_id)
+                .map(|d| d.effect_class)
+        })
     }
 
     /// Stage the cast module's **spawn records** at `origin` - the engine's
@@ -503,7 +507,7 @@ impl World {
         let Some(entry) = self.cast_module_for(spell_id) else {
             return false;
         };
-        let Some(pool) = self.cast_effect_pool.clone() else {
+        let Some(pool) = self.casting.effect_pool.clone() else {
             return false;
         };
         let Some(module) = pool.module(entry) else {
@@ -512,7 +516,7 @@ impl World {
         if module.parts.is_empty() {
             return false;
         }
-        self.active_summon = Some(crate::summon::SummonScene::spawn_parts(
+        self.casting.active_summon = Some(crate::summon::SummonScene::spawn_parts(
             &module.parts,
             &module.bytes,
             crate::scene::EFFECT_MODEL_LIBRARY_BASE,
@@ -529,18 +533,18 @@ impl World {
     /// PORT: FUN_801F1ED4 (the dispatch seam; the choreography is the
     /// engine's - see the module docs)
     pub fn summon_stager_tick(&mut self) -> bool {
-        let Some(mut st) = self.summon_stager.take() else {
+        let Some(mut st) = self.casting.summon_stager.take() else {
             return false;
         };
         // Retail re-enters the paged module every frame from this seam; the
         // band's PORT rows are the code that runs there.
-        let module_arm = self.cast_module_phase;
+        let module_arm = self.casting.module_phase;
         let _ = self.run_cast_module_code(st.spell_id, module_arm);
         let busy = match st.phase {
             SummonPhase::Armed => {
                 // Phase 0: seat the creature (retail: the stager's
                 // `FUN_801F19EC` installs the streamed record as slot 7).
-                self.pending_summon_spawn = Some((st.spell_id, st.spawn));
+                self.casting.pending_summon_spawn = Some((st.spell_id, st.spawn));
                 // ...and stage the module's own effect parts. This is the
                 // `0x801E4B1C` site's other half: `FUN_801F1ED4` dispatches
                 // into the paged module, whose spawn records are the cast's
@@ -554,6 +558,7 @@ impl World {
             SummonPhase::Approach => {
                 st.frames = st.frames.saturating_add(1);
                 let seat = self
+                    .casting
                     .summon_actor_slot
                     .filter(|&s| self.actors.get(s as usize).is_some_and(|a| a.active));
                 let strike = match seat {
@@ -573,7 +578,7 @@ impl World {
             SummonPhase::Linger => {
                 st.frames = st.frames.saturating_add(1);
                 if st.frames == 1
-                    && let Some(slot) = self.summon_actor_slot
+                    && let Some(slot) = self.casting.summon_actor_slot
                     && let Some(a) = self.actors.get_mut(slot as usize)
                 {
                     // Back to the idle loop for the hold.
@@ -588,7 +593,7 @@ impl World {
             SummonPhase::Done => false,
         };
         if busy {
-            self.summon_stager = Some(st);
+            self.casting.summon_stager = Some(st);
         }
         busy
     }
@@ -613,19 +618,19 @@ impl World {
     /// PORT: FUN_801F2160 (the dispatch seam; the per-module tick bodies are
     /// [`legaia_engine_vm::cast_module_ticks`])
     pub fn capture_stager_tick(&mut self) -> bool {
-        let Some(spell_id) = self.capture_cast_spell else {
+        let Some(spell_id) = self.casting.capture_spell else {
             return false;
         };
-        let arm = self.cast_module_phase;
+        let arm = self.casting.module_phase;
         let Some(run) = self.run_cast_module_code(spell_id, arm) else {
-            self.capture_cast_spell = None;
+            self.casting.capture_spell = None;
             return false;
         };
         if run.tick_ported && run.busy {
             return true;
         }
         // The band is leaving `0x70`; the module stops being re-entered.
-        self.capture_cast_spell = None;
+        self.casting.capture_spell = None;
         false
     }
 
@@ -637,9 +642,9 @@ impl World {
         if self.cast_module_for(spell_id).is_none() {
             return;
         }
-        self.cast_module_phase = 0;
-        self.cast_module_ctx_278 = 0;
-        self.capture_cast_spell = Some(spell_id);
+        self.casting.module_phase = 0;
+        self.casting.module_ctx_278 = 0;
+        self.casting.capture_spell = Some(spell_id);
     }
 
     /// Stage the walk clip (id `1`, the looping approach - the capture's
@@ -670,7 +675,7 @@ impl World {
     /// stop drawing it (native: the `active` gate of the battle draw loop;
     /// browser: the transform row's `active` float).
     pub(in crate::world) fn despawn_summon_actor(&mut self) {
-        if let Some(slot) = self.summon_actor_slot.take()
+        if let Some(slot) = self.casting.summon_actor_slot.take()
             && let Some(a) = self.actors.get_mut(slot as usize)
         {
             a.active = false;
@@ -689,7 +694,7 @@ impl World {
     /// OT index the id `FUN_80024E80` stamped (`AddPrim(ot + id*4, ..)` in
     /// `FUN_80024EE4`).
     pub fn screen_fade_draw(&self) -> Option<(u32, u8, u32)> {
-        let f = self.screen_fade.as_ref()?;
+        let f = self.presentation.fade.as_ref()?;
         if !f.visible() {
             return None;
         }
@@ -798,18 +803,18 @@ impl World {
             // halfword is still zero - `seed_party_battle_stats` fills the
             // mirrors, not the actor - so a debuff computes on a real number
             // instead of underflowing zero.
-            spd: nonzero_or(a.battle.spd, self.battle_speed.get(slot as usize).copied()),
+            spd: nonzero_or(a.battle.spd, self.battle.speed.get(slot as usize).copied()),
             spd_base: nonzero_or(
                 a.battle.spd_base,
-                self.battle_speed.get(slot as usize).copied(),
+                self.battle.speed.get(slot as usize).copied(),
             ),
             intel: nonzero_or(
                 a.battle.intel,
-                self.battle_accuracy.get(slot as usize).copied(),
+                self.battle.accuracy.get(slot as usize).copied(),
             ),
             intel_base: nonzero_or(
                 a.battle.intel_base,
-                self.battle_accuracy.get(slot as usize).copied(),
+                self.battle.accuracy.get(slot as usize).copied(),
             ),
             init_key: a.battle.init_key,
             action_category: a.battle.action_category,
@@ -824,7 +829,8 @@ impl World {
     /// per-slot defence split (the same store the physical-defence facet
     /// reads).
     fn cast_defence_split(&self, slot: u8) -> (u16, u16) {
-        self.battle_defense_split
+        self.battle
+            .defense_split
             .get(slot as usize)
             .copied()
             .flatten()
@@ -842,7 +848,7 @@ impl World {
         self.actors
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.agl)
             .unwrap_or_else(|| {
                 self.actors
@@ -863,7 +869,7 @@ impl World {
             .actors
             .get(FIRST_MONSTER_SEAT as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
         else {
             return 0xFF;
@@ -892,7 +898,7 @@ impl World {
         else {
             return;
         };
-        if let Some(def) = self.monster_catalog.by_id.get_mut(&id) {
+        if let Some(def) = self.tables.monster_catalog.by_id.get_mut(&id) {
             def.element = element;
         }
     }
@@ -923,13 +929,13 @@ impl World {
         // ...and back into the mirrors the rest of the engine reads, so a
         // five-stat debuff is visible to turn order and the accuracy seed
         // rather than only to the next module tick.
-        if let Some(s) = self.battle_speed.get_mut(slot as usize) {
+        if let Some(s) = self.battle.speed.get_mut(slot as usize) {
             *s = st.spd;
         }
-        if let Some(s) = self.battle_accuracy.get_mut(slot as usize) {
+        if let Some(s) = self.battle.accuracy.get_mut(slot as usize) {
             *s = st.intel;
         }
-        if let Some(s) = self.battle_defense_split.get_mut(slot as usize)
+        if let Some(s) = self.battle.defense_split.get_mut(slot as usize)
             && s.is_some()
         {
             *s = Some((st.udf, st.ldf));
@@ -954,8 +960,8 @@ impl World {
                 .filter(|&s| self.actors[s].active)
                 .count() as u8,
             caster_seat: self.battle_ctx.active_actor,
-            ctx_278: self.cast_module_ctx_278,
-            phase: self.cast_module_phase,
+            ctx_278: self.casting.module_ctx_278,
+            phase: self.casting.module_phase,
             ctx_0d: 0,
             turn_cursor: self.battle_ctx.turn_cursor,
             ctx_27a: 0,
@@ -998,7 +1004,7 @@ impl World {
             .get(caster_slot as usize)
             .map(|a| a.battle.active_target)
             .unwrap_or(0);
-        let seat_slot = self.summon_actor_slot.unwrap_or(ticks::SUMMON_SEAT);
+        let seat_slot = self.casting.summon_actor_slot.unwrap_or(ticks::SUMMON_SEAT);
 
         let mut caster = self.cast_actor_state(caster_slot);
         let mut victim = self.cast_actor_state(victim_slot);
@@ -1249,8 +1255,8 @@ impl World {
         self.write_cast_actor_state(caster_slot, &caster);
         self.write_cast_actor_state(victim_slot, &victim);
         self.write_cast_actor_state(seat_slot, &seat);
-        self.cast_module_ctx_278 = ctx.ctx_278;
-        self.cast_module_phase = ctx.phase;
+        self.casting.module_ctx_278 = ctx.ctx_278;
+        self.casting.module_phase = ctx.phase;
         // The turn-steal arms bump `ctx[+0x1A]`; it is a context byte, so it
         // has to travel back out of the view.
         self.battle_ctx.turn_cursor = ctx.turn_cursor;
@@ -1261,20 +1267,20 @@ impl World {
         // the voided accessory is cleared out of the character record and
         // handed back (retail's record write plus `FUN_80042558`).
         if let Some(item) = run.item_refund {
-            *self.inventory.entry(item).or_insert(0) += 1;
+            *self.party.inventory.entry(item).or_insert(0) += 1;
         }
         if let Some(out) = run.voided_accessory
             && let Some(id) = out.voided
         {
             let rslot = self.party_roster_slot(victim_slot as usize);
-            if let Some(rec) = self.roster.members.get_mut(rslot) {
+            if let Some(rec) = self.party.roster.members.get_mut(rslot) {
                 let mut eq = rec.equipment();
                 if let Some(slot) = eq.slots.get_mut(ACCESSORY_EQUIP_SLOT_0 + out.slot as usize) {
                     *slot = 0;
                 }
                 rec.set_equipment(eq);
             }
-            *self.inventory.entry(id).or_insert(0) += 1;
+            *self.party.inventory.entry(id).or_insert(0) += 1;
             self.refresh_party_ability_bits();
         }
         Some(run)
@@ -1396,12 +1402,14 @@ impl World {
         let a = WrapperAttacker {
             hp: attacker_hp,
             agl: self
-                .battle_accuracy
+                .battle
+                .accuracy
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),
             spell_power: self
-                .battle_attack
+                .battle
+                .attack
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),
@@ -1498,6 +1506,7 @@ impl World {
     fn cast_victim_accessories(&self, slot: u8) -> [u8; 3] {
         let mut out = [0u8; 3];
         let Some(rec) = self
+            .party
             .roster
             .members
             .get(self.party_roster_slot(slot as usize))
@@ -1575,7 +1584,10 @@ mod capture_hold_tests {
 
     fn band_world() -> World {
         let mut world = World {
-            party_count: 3,
+            party: crate::world::PartyState {
+                party_count: 3,
+                ..Default::default()
+            },
             ..World::default()
         };
         while world.actors.len() < 8 {
@@ -1596,7 +1608,7 @@ mod capture_hold_tests {
     #[test]
     fn an_unarmed_band_is_never_busy() {
         let mut world = band_world();
-        assert!(world.capture_cast_spell.is_none());
+        assert!(world.casting.capture_spell.is_none());
         assert!(!world.capture_stager_tick());
     }
 
@@ -1605,12 +1617,12 @@ mod capture_hold_tests {
     #[test]
     fn arming_resets_the_module_phase_pair() {
         let mut world = band_world();
-        world.cast_module_phase = 9;
-        world.cast_module_ctx_278 = 7;
+        world.casting.module_phase = 9;
+        world.casting.module_ctx_278 = 7;
         world.arm_capture_cast_module(0x87);
-        assert_eq!(world.capture_cast_spell, Some(0x87));
-        assert_eq!(world.cast_module_phase, 0);
-        assert_eq!(world.cast_module_ctx_278, 0);
+        assert_eq!(world.casting.capture_spell, Some(0x87));
+        assert_eq!(world.casting.module_phase, 0);
+        assert_eq!(world.casting.module_ctx_278, 0);
     }
 
     /// A spell that names no band entry arms nothing, so no host can be
@@ -1619,7 +1631,7 @@ mod capture_hold_tests {
     fn a_spell_with_no_module_arms_nothing() {
         let mut world = band_world();
         world.arm_capture_cast_module(0x00);
-        assert!(world.capture_cast_spell.is_none());
+        assert!(world.casting.capture_spell.is_none());
         assert!(!world.capture_stager_tick());
     }
 
@@ -1642,7 +1654,7 @@ mod capture_hold_tests {
             "so the band is not held on it"
         );
         assert!(
-            world.capture_cast_spell.is_none(),
+            world.casting.capture_spell.is_none(),
             "and the module stops being re-entered"
         );
     }

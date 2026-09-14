@@ -51,7 +51,7 @@ struct Candidate {
 /// `field_locomotion_disc.rs` pins independently.
 fn plus_z_candidates(host: &SceneHost) -> Vec<Candidate> {
     let mut out = Vec::new();
-    if host.world.field_collision_grid.len() < 0x4000 {
+    if host.world.terrain.collision_grid.len() < 0x4000 {
         return out;
     }
     // The step-delta probe scale: `s0 = dz << 2` with `dz = 8`.
@@ -91,13 +91,13 @@ fn drive_into(host: &mut SceneHost, cand: Candidate) -> Option<HopRun> {
     host.world.actors[0].move_state.world_x = cand.x as i16;
     host.world.actors[0].move_state.world_z = (cand.z - 64) as i16;
     host.world.actors[0].move_state.flags &= !MOVE_LOCK;
-    host.world.field_ledge_hop = None;
+    host.world.locomotion.ledge_hop = None;
 
     let mut started = None;
     for _ in 0..24 {
         host.world.set_pad(PadButton::Up.mask());
         let _ = host.world.tick();
-        if let Some(h) = host.world.field_ledge_hop {
+        if let Some(h) = host.world.locomotion.ledge_hop {
             started = Some(h);
             break;
         }
@@ -120,7 +120,7 @@ fn drive_into(host: &mut SceneHost, cand: Candidate) -> Option<HopRun> {
     for frame in 1..64 {
         host.world.set_pad(0);
         let _ = host.world.tick();
-        let Some(h) = host.world.field_ledge_hop else {
+        let Some(h) = host.world.locomotion.ledge_hop else {
             break;
         };
         let ms = &host.world.actors[0].move_state;
@@ -175,7 +175,7 @@ fn a_real_scene_ledge_starts_and_completes_a_hop() {
         host.enter_field_scene(scene, 0)
             .unwrap_or_else(|e| panic!("enter_field_scene('{scene}') failed: {e:#}"));
         assert!(matches!(host.world.mode, SceneMode::Field));
-        host.world.follow_terrain_height = true;
+        host.world.locomotion.follow_terrain_height = true;
         // Let the scene prescript run: it is what paints the story-conditional
         // wall deltas on top of the base grid.
         for _ in 0..600 {

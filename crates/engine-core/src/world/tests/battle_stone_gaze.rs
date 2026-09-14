@@ -24,9 +24,9 @@ fn stone_world() -> World {
     for i in 0..3usize {
         w.actors[i].battle.hp = 200;
         w.actors[i].battle.max_hp = 200;
-        w.battle_accuracy[i] = 0; // pass line at zero: any non-zero roll lands
+        w.battle.accuracy[i] = 0; // pass line at zero: any non-zero roll lands
     }
-    w.battle_accuracy[3] = 60;
+    w.battle.accuracy[3] = 60;
     w.rng_state = 0x0BAD_F00D;
     w
 }
@@ -55,7 +55,8 @@ fn glare_lands_stone_and_the_clut_pass_greys_the_party_row() {
     w.apply_enemy_agl_status(3, def.id, &[0]);
 
     assert!(
-        w.status_effects
+        w.battle
+            .status_effects
             .statuses(0)
             .iter()
             .any(|s| s.kind == StatusKind::Stone),
@@ -68,7 +69,7 @@ fn glare_lands_stone_and_the_clut_pass_greys_the_party_row() {
     // the CLUT latch (retail actor[+0x220]); step() snapshots the pristine
     // row and LoadImages the greyed copy over CLUT row 481 + slot.
     let mut hud = crate::battle_hud::BattleHud::new();
-    hud.sync_status(0, &w.status_effects);
+    hud.sync_status(0, &w.battle.status_effects);
     assert!(hud.status_clut.armed(), "the Stone edge arms the latch");
 
     let mut vram = legaia_tim::Vram::new();
@@ -90,7 +91,7 @@ fn glare_lands_stone_and_the_clut_pass_greys_the_party_row() {
         );
     }
     // The latch is spent - the recolour is once per affliction, not per frame.
-    hud.sync_status(0, &w.status_effects);
+    hud.sync_status(0, &w.battle.status_effects);
     assert!(!hud.status_clut.armed());
 }
 
@@ -98,17 +99,18 @@ fn glare_lands_stone_and_the_clut_pass_greys_the_party_row() {
 fn stone_guard_blocks_the_roll_and_curse_moves_apply_curse() {
     let mut w = stone_world();
     // Stone Guard (passive 0x1A) on the target: the landing roll is vetoed.
-    w.character_ability_bits[0] = 1 << 0x1A;
+    w.party.character_ability_bits[0] = 1 << 0x1A;
     w.apply_enemy_agl_status(3, 0x3C, &[0]);
     assert!(
-        w.status_effects.statuses(0).is_empty(),
+        w.battle.status_effects.statuses(0).is_empty(),
         "Stone Guard nullifies the petrify"
     );
 
     // Curse All (0x53) is the class-10 twin: same roll, Curse bit.
     w.apply_enemy_agl_status(3, 0x53, &[1]);
     assert!(
-        w.status_effects
+        w.battle
+            .status_effects
             .statuses(1)
             .iter()
             .any(|s| s.kind == StatusKind::Curse),
@@ -119,11 +121,11 @@ fn stone_guard_blocks_the_roll_and_curse_moves_apply_curse() {
     let rng_before = w.rng_state;
     w.apply_enemy_agl_status(3, 0x99, &[2]);
     assert_eq!(w.rng_state, rng_before);
-    assert!(w.status_effects.statuses(2).is_empty());
+    assert!(w.battle.status_effects.statuses(2).is_empty());
 
     // Monster targets are outside the party gate (retail `sltiu v0,s0,0x3`).
     w.apply_enemy_agl_status(3, 0x3C, &[4]);
-    assert!(w.status_effects.statuses(4).is_empty());
+    assert!(w.battle.status_effects.statuses(4).is_empty());
 }
 
 /// The class-9 arm's tail, which the class-10 one does not have
@@ -137,7 +139,7 @@ fn stone_refunds_the_reserved_item_and_cancels_the_queued_turn() {
 
     let mut w = stone_world();
     const HEALING_LEAF: u8 = 0x01;
-    w.inventory.insert(HEALING_LEAF, 2);
+    w.party.inventory.insert(HEALING_LEAF, 2);
     // Party slot 0 has an Item action queued and has not acted yet.
     w.actors[0].battle.action_category = ActionCategory::Item.as_byte();
     w.actors[0].battle.params[0] = HEALING_LEAF;
@@ -147,7 +149,8 @@ fn stone_refunds_the_reserved_item_and_cancels_the_queued_turn() {
     w.apply_enemy_agl_status(3, 0x3C, &[0]);
 
     assert!(
-        w.status_effects
+        w.battle
+            .status_effects
             .statuses(0)
             .iter()
             .any(|s| s.kind == StatusKind::Stone),
@@ -162,7 +165,7 @@ fn stone_refunds_the_reserved_item_and_cancels_the_queued_turn() {
         "`sb zero,0x1de` - the queued turn is cancelled"
     );
     assert_eq!(
-        w.inventory.get(&HEALING_LEAF).copied(),
+        w.party.inventory.get(&HEALING_LEAF).copied(),
         Some(3),
         "`FUN_800421D4(+0x1DF, 1)` put the reserved item back"
     );
@@ -178,22 +181,22 @@ fn stone_refund_is_gated_on_the_item_category_and_a_live_initiative_key() {
 
     // Category 3 (Attack): nothing to refund.
     let mut w = stone_world();
-    w.inventory.insert(HEALING_LEAF, 2);
+    w.party.inventory.insert(HEALING_LEAF, 2);
     w.actors[0].battle.action_category = 3;
     w.actors[0].battle.params[0] = HEALING_LEAF;
     w.actors[0].battle.init_key = 40;
     w.apply_enemy_agl_status(3, 0x3C, &[0]);
-    assert_eq!(w.inventory.get(&HEALING_LEAF).copied(), Some(2));
+    assert_eq!(w.party.inventory.get(&HEALING_LEAF).copied(), Some(2));
     assert_eq!(w.actors[0].battle.action_category, 0);
 
     // Item, but the key is spent.
     let mut w = stone_world();
-    w.inventory.insert(HEALING_LEAF, 2);
+    w.party.inventory.insert(HEALING_LEAF, 2);
     w.actors[0].battle.action_category = ActionCategory::Item.as_byte();
     w.actors[0].battle.params[0] = HEALING_LEAF;
     w.actors[0].battle.init_key = 0;
     w.apply_enemy_agl_status(3, 0x3C, &[0]);
-    assert_eq!(w.inventory.get(&HEALING_LEAF).copied(), Some(2));
+    assert_eq!(w.party.inventory.get(&HEALING_LEAF).copied(), Some(2));
     assert_eq!(w.actors[0].battle.action_category, 0);
 }
 
@@ -206,7 +209,7 @@ fn curse_leaves_the_queued_turn_and_the_item_alone() {
     const HEALING_LEAF: u8 = 0x01;
 
     let mut w = stone_world();
-    w.inventory.insert(HEALING_LEAF, 2);
+    w.party.inventory.insert(HEALING_LEAF, 2);
     w.actors[0].battle.action_category = ActionCategory::Item.as_byte();
     w.actors[0].battle.params[0] = HEALING_LEAF;
     w.actors[0].battle.init_key = 40;
@@ -214,7 +217,8 @@ fn curse_leaves_the_queued_turn_and_the_item_alone() {
     w.apply_enemy_agl_status(3, 0x53, &[0]);
 
     assert!(
-        w.status_effects
+        w.battle
+            .status_effects
             .statuses(0)
             .iter()
             .any(|s| s.kind == StatusKind::Curse)
@@ -224,5 +228,5 @@ fn curse_leaves_the_queued_turn_and_the_item_alone() {
         ActionCategory::Item.as_byte(),
         "Curse does not clear +0x1DE"
     );
-    assert_eq!(w.inventory.get(&HEALING_LEAF).copied(), Some(2));
+    assert_eq!(w.party.inventory.get(&HEALING_LEAF).copied(), Some(2));
 }

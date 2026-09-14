@@ -1091,17 +1091,17 @@ pub struct FieldHudMemberData {
 /// Retail's draw loop walks the present-party list at `0x80084598` for
 /// `0x80084594` entries and indexes the character records with it; the engine
 /// mirror is [`crate::world::World::party_roster_slot`] over
-/// [`crate::world::World::party_count`]. Every number comes from the *record*,
+/// [`crate::world::PartyState::party_count`]. Every number comes from the *record*,
 /// not from a battle actor: outside a fight the battle mirrors are stale (or
 /// zero for a party that has never fought), and a field readout that only
 /// works after the first battle is worse than none.
 pub fn field_party_hud_members(world: &crate::world::World) -> Vec<FieldHudMemberData> {
-    let count = (world.party_count as usize).min(3);
+    let count = (world.party.party_count as usize).min(3);
     let fallback = crate::field_menu_dispatch::roster_names(world);
     (0..count)
         .filter_map(|ordinal| {
             let slot = world.party_roster_slot(ordinal);
-            let rec = world.roster.members.get(slot)?;
+            let rec = world.party.roster.members.get(slot)?;
             let hms = rec.hp_mp_sp();
             // The record's own `+0x2A7` display name is what retail draws
             // (it carries the name the player typed for Vahn); the canonical
@@ -1558,7 +1558,7 @@ mod tests {
     fn world_on_the_overworld() -> crate::world::World {
         let mut w = crate::world::World::default();
         w.enter_world_map();
-        w.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+        w.world_map.ctrl.as_mut().unwrap().debug_enabled = true;
         w
     }
 
@@ -1570,10 +1570,10 @@ mod tests {
         let mut w = world_on_the_overworld();
         w.set_pad(0);
         let _ = w.tick();
-        assert!(!w.world_map_ctrl.as_ref().unwrap().panels.is_active());
+        assert!(!w.world_map.ctrl.as_ref().unwrap().panels.is_active());
         w.set_pad(crate::input::PadButton::Square.mask());
         let _ = w.tick();
-        let panels = &w.world_map_ctrl.as_ref().unwrap().panels;
+        let panels = &w.world_map.ctrl.as_ref().unwrap().panels;
         assert!(panels.is_active(), "Square installs the sub-list");
         assert!(
             panels.windows.is_open(SUBLIST_PANEL_INDEX),
@@ -1589,7 +1589,7 @@ mod tests {
         w.enter_world_map();
         w.set_pad(crate::input::PadButton::Square.mask());
         let _ = w.tick();
-        assert!(!w.world_map_ctrl.as_ref().unwrap().panels.is_active());
+        assert!(!w.world_map.ctrl.as_ref().unwrap().panels.is_active());
     }
 
     /// The text box's confirm arm has to reach the *records*, not just the
@@ -1597,8 +1597,8 @@ mod tests {
     #[test]
     fn the_text_box_confirm_restores_the_partys_hp_and_mp() {
         let mut w = world_on_the_overworld();
-        w.roster = legaia_save::Party::zeroed(3);
-        for m in w.roster.members.iter_mut() {
+        w.party.roster = legaia_save::Party::zeroed(3);
+        for m in w.party.roster.members.iter_mut() {
             m.raw[0x104..0x106].copy_from_slice(&300u16.to_le_bytes()); // hp max
             m.raw[0x106..0x108].copy_from_slice(&1u16.to_le_bytes()); // hp cur
             m.raw[0x108..0x10A].copy_from_slice(&80u16.to_le_bytes()); // mp max
@@ -1609,13 +1609,13 @@ mod tests {
         w.set_pad(crate::input::PadButton::R2.mask());
         let _ = w.tick();
         {
-            let p = &mut w.world_map_ctrl.as_mut().unwrap().panels;
+            let p = &mut w.world_map.ctrl.as_mut().unwrap().panels;
             assert_eq!(p.kind, Some(PanelActorKind::TextBox));
             assert_eq!(p.phase, 1, "installed straight at the prompt");
         }
         w.set_pad(crate::input::PadButton::Cross.mask());
         let _ = w.tick();
-        for m in w.roster.members.iter() {
+        for m in w.party.roster.members.iter() {
             assert_eq!(u16::from_le_bytes([m.raw[0x106], m.raw[0x107]]), 300);
             assert_eq!(u16::from_le_bytes([m.raw[0x10A], m.raw[0x10B]]), 80);
         }
@@ -1635,7 +1635,7 @@ mod tests {
         // Freeze the return point, then teleport the player somewhere else and
         // let the art run.
         {
-            let p = &mut w.world_map_ctrl.as_mut().unwrap().panels;
+            let p = &mut w.world_map.ctrl.as_mut().unwrap().panels;
             assert_eq!(p.visited.len(), 1, "the idle tick recorded the tile");
             p.install(PanelActorKind::TravelArt(TravelArt::Riremito), 0x1A);
         }
@@ -1643,7 +1643,7 @@ mod tests {
         for _ in 0..400 {
             w.set_pad(0);
             let _ = w.tick();
-            if !w.world_map_ctrl.as_ref().unwrap().panels.is_active() {
+            if !w.world_map.ctrl.as_ref().unwrap().panels.is_active() {
                 break;
             }
         }
@@ -1660,7 +1660,7 @@ mod tests {
         let mut w = world_on_the_overworld();
         w.system_flag_set(0x0003);
         {
-            let p = &mut w.world_map_ctrl.as_mut().unwrap().panels;
+            let p = &mut w.world_map.ctrl.as_mut().unwrap().panels;
             p.flag_desc = FlagWindowDescriptor {
                 count: 8,
                 first_visible: 0,
@@ -1678,7 +1678,7 @@ mod tests {
         let _ = w.tick();
         w.set_pad(crate::input::PadButton::Cross.mask());
         let _ = w.tick();
-        let picked = w.world_map_ctrl.as_ref().unwrap().panels.cursor;
+        let picked = w.world_map.ctrl.as_ref().unwrap().panels.cursor;
         assert!(
             w.system_flag_test(picked as u16),
             "the confirm set flag {picked} in the world bank"

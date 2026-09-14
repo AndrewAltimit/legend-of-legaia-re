@@ -8,7 +8,7 @@
 //! `legaia_engine_core::action_effect_script::move_power_record_offset` over
 //! the id-index map at `0x801F4E63` (PROT 0898). An Attack that leaves that
 //! byte at `0` resolves nothing, `MoveFxStreak` is never installed, and
-//! `World::active_move_fx_trail_texpage` stays `None` - the streak pass emits
+//! `World::casting.move_fx_trail_texpage` stays `None` - the streak pass emits
 //! zero quads for the whole fight.
 //!
 //! This pins the two halves against the real table: the pre-fix value `0`
@@ -67,7 +67,7 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
     // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
     w.load_party(legaia_save::Party::zeroed(3));
@@ -93,8 +93,8 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.toggles.live_gameplay_loop = true;
+    w.battle.player_driven = true;
 
     let up = InputState::mask_of([PadButton::Up]);
     for _ in 0..8000 {
@@ -111,14 +111,14 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
     // round two. Settle with no input until a session is up: nothing acts
     // on a prompt without a press, so the first open is the one observed.
     let advantage = w.battle_formation_latched();
-    let mut opened = w.battle_command.is_some();
+    let mut opened = w.battle.command.is_some();
     for _ in 0..4000 {
         if opened {
             break;
         }
         w.set_pad(0);
         w.tick();
-        opened = w.battle_command.is_some();
+        opened = w.battle.command.is_some();
     }
     assert!(
         opened,
@@ -136,7 +136,7 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
     let left = InputState::mask_of([PadButton::Left]);
     let mut release = false;
     for _ in 0..256 {
-        let Some(session) = w.battle_command.as_ref() else {
+        let Some(session) = w.battle.command.as_ref() else {
             break;
         };
         let pad = if release {
@@ -155,7 +155,7 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
         w.set_pad(pad);
         w.tick();
     }
-    assert!(w.battle_command.is_none(), "Attack was never confirmed");
+    assert!(w.battle.command.is_none(), "Attack was never confirmed");
 
     // The effect script's move-power key is the stream head byte.
     let action = w.actors[slot].battle.params[0];

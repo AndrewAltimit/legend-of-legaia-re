@@ -27,7 +27,7 @@
 //! split on the actor's `+0x10`):
 //!
 //! - **auto-touch** (bit `4`, doors): the movement probe both refuses the
-//!   step and posts the touch - [`World::pending_prop_touch`] set by
+//!   step and posts the touch - [`crate::world::FieldPropState::pending_touch`] set by
 //!   [`World::advance_with_collision`];
 //! - **interact-gated** (bit `1`, `+0x10 & 0x40020000`, cupboards): only the
 //!   just-pressed-confirm facing probe posts it
@@ -56,9 +56,9 @@ impl World {
     pub fn tick_prop_interactions(&mut self) {
         // The per-actor anim tick runs unconditionally (`FUN_800204F8` from
         // the actor tick) - the windmill turns during dialogs too.
-        self.field_prop_bank.tick_anims();
+        self.props.bank.tick_anims();
         self.step_prop_interaction();
-        if let Some(anchor) = self.pending_prop_touch.take() {
+        if let Some(anchor) = self.props.pending_touch.take() {
             self.start_prop_interaction(anchor);
         }
     }
@@ -74,7 +74,7 @@ impl World {
         if self.dialogue_owns_input() || self.cutscene_timeline_active() {
             return false;
         }
-        let Some(prop) = self.field_prop_bank.props.get(&anchor) else {
+        let Some(prop) = self.props.bank.props.get(&anchor) else {
             return false;
         };
         if prop.collision_exempt() {
@@ -90,7 +90,7 @@ impl World {
         runner.ctx.local_flags = prop.anim.flags;
         runner.ctx.flags = prop.cflags;
         runner.ctx.field_6a = prop.anim.rate;
-        self.inline_dialogue = Some(runner);
+        self.dialog.inline = Some(runner);
         // Engaged: locomotion input is suppressed until the run completes
         // (retail: `FUN_801D5B5C` raises `player+0x10 |= 0x80000`, the dialog
         // SM teardown clears it).
@@ -119,12 +119,12 @@ impl World {
         let px = ms.world_x.saturating_add(dx) as i32;
         let pz = ms.world_z.saturating_sub(dz) as i32;
         let mut best: Option<(i32, (u8, u8))> = None;
-        for c in &self.field_prop_colliders {
+        for c in &self.props.colliders {
             if !c.solid || !c.interact {
                 continue;
             }
             let Some(anchor) = c.anchor else { continue };
-            if !self.field_prop_bank.props.contains_key(&anchor) {
+            if !self.props.bank.props.contains_key(&anchor) {
                 continue;
             }
             let ((cx, cz), half) = if c.moving_box {
@@ -150,7 +150,8 @@ impl World {
     pub(crate) fn step_prop_interaction(&mut self) {
         use crate::input::PadButton;
         let is_prop_run = self
-            .inline_dialogue
+            .dialog
+            .inline
             .as_ref()
             .is_some_and(|id| id.prop_anchor.is_some());
         if !is_prop_run {
@@ -161,7 +162,7 @@ impl World {
         let up = self.input.just_pressed(PadButton::Up);
         let down = self.input.just_pressed(PadButton::Down);
 
-        let Some(mut id) = self.inline_dialogue.take() else {
+        let Some(mut id) = self.dialog.inline.take() else {
             return;
         };
         let anchor = id.prop_anchor.expect("checked above");
@@ -183,7 +184,7 @@ impl World {
             let menu_was_open = panel.menu_active();
             panel.tick();
             if confirm {
-                self.dialog_input_consumed = true;
+                self.dialog.input_consumed = true;
                 if panel.menu_active() && !menu_was_open {
                     // Opened this frame: nothing to commit yet.
                 } else if panel.menu_active() {
@@ -217,14 +218,14 @@ impl World {
                 self.finish_prop_interaction(&mut id, anchor);
                 return;
             }
-            self.inline_dialogue = Some(id);
+            self.dialog.inline = Some(id);
             return;
         }
 
         // No box: sync the prop's live state into the context (the per-frame
         // anim tick may have latched the clip's end since the last slice),
         // then run a VM slice.
-        if let Some(prop) = self.field_prop_bank.props.get(&anchor) {
+        if let Some(prop) = self.props.bank.props.get(&anchor) {
             id.ctx.local_flags = prop.anim.flags;
         }
         let mut parked = false;
@@ -312,7 +313,7 @@ impl World {
         if id.done {
             self.finish_prop_interaction(&mut id, anchor);
         } else {
-            self.inline_dialogue = Some(id);
+            self.dialog.inline = Some(id);
         }
     }
 
@@ -325,13 +326,13 @@ impl World {
         anchor: (u8, u8),
     ) {
         self.sync_prop_from_ctx(anchor, &id.ctx);
-        if let Some(prop) = self.field_prop_bank.props.get_mut(&anchor)
+        if let Some(prop) = self.props.bank.props.get_mut(&anchor)
             && id.pc < prop.record_body.len()
         {
             prop.parked_pc = id.pc;
         }
         self.set_player_engaged(false);
-        self.inline_dialogue = None;
+        self.dialog.inline = None;
     }
 
     /// Copy the executing context's actor words back onto the live prop and
@@ -341,7 +342,7 @@ impl World {
     /// as `FUN_801CF754` / `FUN_801CF9F4` skip `flags & 3` actors from then
     /// on.
     fn sync_prop_from_ctx(&mut self, anchor: (u8, u8), ctx: &FieldCtx) {
-        let Some(prop) = self.field_prop_bank.props.get_mut(&anchor) else {
+        let Some(prop) = self.props.bank.props.get_mut(&anchor) else {
             return;
         };
         prop.anim.flags = ctx.local_flags;
@@ -350,7 +351,7 @@ impl World {
         }
         prop.cflags = ctx.flags;
         if prop.collision_exempt() {
-            for c in &mut self.field_prop_colliders {
+            for c in &mut self.props.colliders {
                 if c.anchor == Some(anchor) {
                     c.solid = false;
                 }
@@ -390,9 +391,9 @@ impl World {
                     // `0xC1 99` = current party leader; other args index the
                     // roster order.
                     let name = if arg == 99 {
-                        self.party_names.first()
+                        self.party.party_names.first()
                     } else {
-                        self.party_names.get(arg as usize)
+                        self.party.party_names.get(arg as usize)
                     };
                     if let Some(name) = name {
                         map.entry((1, arg))
@@ -400,7 +401,7 @@ impl World {
                     }
                 }
                 0xC2 | 0xC4 => {
-                    if let Some(entry) = self.item_catalog.get(arg) {
+                    if let Some(entry) = self.tables.item_catalog.get(arg) {
                         map.entry((2, arg))
                             .or_insert_with(|| entry.name.as_bytes().to_vec());
                     }

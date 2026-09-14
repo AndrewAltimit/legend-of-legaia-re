@@ -66,7 +66,7 @@ pub struct FieldScenePack {
 ///    jou's pulsating-flesh palette cyclers + lightning).
 ///
 /// Both run on the retail game-tick clock: a game tick every
-/// [`Self::frame_step`] vsyncs (`DAT_1F800393`; 2 in towns, 3 on the
+/// [`legaia_engine_core::world::FrameClock::frame_step`] vsyncs (`DAT_1F800393`; 2 in towns, 3 on the
 /// overworld).
 pub struct FieldSceneAnim {
     /// Parsed walker table + per-entry `(accumulator, frame_index)` state.
@@ -155,7 +155,7 @@ pub fn build_field_scene_anim(
             );
             if !installs.is_empty() {
                 let mut world = Box::new(legaia_engine_core::world::World::default());
-                world.frame_step = frame_step;
+                world.clock.frame_step = frame_step;
                 world.install_field_stagers(&stager_bytes);
                 // VDF buffer before the spawn: flag-gated installer records
                 // resolve morph lanes at spawn-run.
@@ -180,7 +180,7 @@ pub fn build_field_scene_anim(
                     })
                     .collect();
                 world.install_entry_vdf_pulse(&pack_objects);
-                if !world.ambient_fx.is_empty() {
+                if !world.ambient.fx.is_empty() {
                     ambient = Some(world);
                 }
             }
@@ -259,7 +259,7 @@ impl FieldSceneAnim {
         }
         // Ambient move-VM tree: bank the game ticks and drain against VRAM.
         if let Some(world) = self.ambient.as_mut() {
-            world.ambient_pending_game_ticks += game_ticks;
+            world.ambient.pending_game_ticks += game_ticks;
             if world.step_ambient_fx(vram) {
                 wrote = true;
             }
@@ -276,7 +276,7 @@ impl FieldSceneAnim {
                 .unwrap_or(0),
             self.ambient
                 .as_ref()
-                .map(|w| w.ambient_fx.len())
+                .map(|w| w.ambient.fx.len())
                 .unwrap_or(0),
         )
     }

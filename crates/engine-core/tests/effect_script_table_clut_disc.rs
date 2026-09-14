@@ -1,13 +1,13 @@
 //! The effect-script walk's table-form **CLUT-stage** lane, against the real
-//! overlay: draining `World::battle_effect_spawns` queues each qualifying
-//! table-form spawn's `0x801F6418` byte onto `World::battle_clut_stages` -
+//! overlay: draining `World::battle.effect_spawns` queues each qualifying
+//! table-form spawn's `0x801F6418` byte onto `World::battle.clut_stages` -
 //! the engine seat of retail `FUN_801DEA50`'s palette arm
 //! (`0x801df0d4..0x801df134`), whose two gates the tests pin: only plain
 //! codes below `0x32` consult the map, and only a non-zero map byte copies.
 //!
 //! The map is a CLUT source-x table, not a sound table: the byte is `rect.x`
 //! of the 16x1 `RECT` `FUN_80058490` (`MoveImage`) blits onto `(224, 476)`.
-//! This file previously asserted the byte reaching `World::battle_sfx_cues`
+//! This file previously asserted the byte reaching `World::audio.battle_sfx_cues`
 //! as a sound-cue id - it was asserting the defect.
 //!
 //! Skips and passes without `LEGAIA_DISC_BIN` / `extracted/`; the no-catalog
@@ -62,8 +62,9 @@ fn draining_table_spawns_stages_the_real_clut_map_bytes_under_the_retail_gates()
     };
     let overlay = overlay_0898(&dir);
     let mut world = World::new();
-    world.move_power = Some(MovePowerCatalog::from_overlay_0898(&overlay).expect("catalog"));
+    world.tables.move_power = Some(MovePowerCatalog::from_overlay_0898(&overlay).expect("catalog"));
     let aux = world
+        .tables
         .move_power
         .as_ref()
         .unwrap()
@@ -88,18 +89,18 @@ fn draining_table_spawns_stages_the_real_clut_map_bytes_under_the_retail_gates()
     // the gate (>= 0x32 never consults the map - the arm that makes the
     // spreadsheet's 0x4C code copy nothing), and a direct-form spawn (2D
     // pool, which has no palette arm at all).
-    world.battle_effect_spawns = vec![
+    world.battle.effect_spawns = vec![
         spawn(staged, false),
         spawn(no_copy, false),
         spawn(TABLE_CLUT_GATE, false),
         spawn(staged, true),
     ];
-    world.battle_clut_stages.clear();
-    world.battle_sfx_cues.clear();
+    world.battle.clut_stages.clear();
+    world.audio.battle_sfx_cues.clear();
 
     let drained = world.drain_battle_effect_spawns();
     assert_eq!(drained.len(), 4, "the drain still returns every spawn");
-    assert!(world.battle_effect_spawns.is_empty());
+    assert!(world.battle.effect_spawns.is_empty());
 
     assert_eq!(
         world.drain_battle_clut_stages(),
@@ -107,7 +108,7 @@ fn draining_table_spawns_stages_the_real_clut_map_bytes_under_the_retail_gates()
         "exactly the in-gate staging table spawn queues, with the map's byte"
     );
     assert!(
-        world.battle_sfx_cues.is_empty(),
+        world.audio.battle_sfx_cues.is_empty(),
         "the palette arm submits no sound - `FUN_80058490` is MoveImage"
     );
 
@@ -127,9 +128,9 @@ fn draining_without_a_catalog_returns_the_spawns_and_stages_nothing() {
     // drain hands back the spawns and queues nothing - the same shape as the
     // table spawner itself, which stages nothing without the overlay.
     let mut world = World::new();
-    world.battle_effect_spawns = vec![spawn(0x01, false), spawn(0x01, true)];
-    world.battle_clut_stages.clear();
+    world.battle.effect_spawns = vec![spawn(0x01, false), spawn(0x01, true)];
+    world.battle.clut_stages.clear();
     let drained = world.drain_battle_effect_spawns();
     assert_eq!(drained.len(), 2);
-    assert!(world.battle_clut_stages.is_empty());
+    assert!(world.battle.clut_stages.is_empty());
 }

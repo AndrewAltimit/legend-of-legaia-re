@@ -218,9 +218,9 @@ fn world_spawns_and_ticks_a_summon() {
     // Drive the whole spawn -> tick -> draw path through World (exercises the
     // borrow-split tick that runs the move VM with the World's host).
     let mut world = World::new();
-    assert!(world.active_summon.is_none());
+    assert!(world.casting.active_summon.is_none());
     world.spawn_summon(&overlay, &bytes, GIMARD_TAIL_FIRE_MODEL_INDEX, [0, 0, 0]);
-    assert!(world.active_summon.is_some(), "summon spawned");
+    assert!(world.casting.active_summon.is_some(), "summon spawned");
     assert!(
         !world.active_summon_part_draws().is_empty(),
         "PROT {idx:04} has a mesh-bearing part, so it must produce draws",
@@ -234,12 +234,12 @@ fn world_spawns_and_ticks_a_summon() {
         for d in world.active_summon_part_draws() {
             assert!(d.model_index >= GIMARD_TAIL_FIRE_MODEL_INDEX);
         }
-        if world.active_summon.is_none() {
+        if world.casting.active_summon.is_none() {
             break;
         }
     }
     eprintln!(
         "World summon tick (PROT {idx:04}): active_after_600={}",
-        world.active_summon.is_some()
+        world.casting.active_summon.is_some()
     );
 }

@@ -30,15 +30,15 @@ fn build_world_with_party() -> World {
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
         w.actors[i].battle.mp = 30;
-        w.ap_gauges[i] = legaia_engine_core::ap_gauge::ApGauge::with_base(8);
+        w.battle.ap_gauges[i] = legaia_engine_core::ap_gauge::ApGauge::with_base(8);
     }
     // Wire vanilla monster + formation tables.
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     // Money + a placeholder party so save_full produces valid data.
-    w.money = 1234;
-    w.story_flags = 0xCAFE;
+    w.party.money = 1234;
+    w.flags.story_flags = 0xCAFE;
     w.load_party(legaia_save::Party::zeroed(3));
-    w.play_time_seconds = 4500;
+    w.clock.play_time_seconds = 4500;
     w
 }
 
@@ -117,11 +117,13 @@ fn encounter_trigger_resolves_to_formation_def() {
     assert_eq!(roll.formation_id, 1);
 
     let formation = w
+        .tables
         .formation_table
         .formation(roll.formation_id)
         .expect("vanilla formation 1");
     assert_eq!(formation.slots[0].monster_id, 1);
     let monster = w
+        .tables
         .monster_catalog
         .get(formation.slots[0].monster_id)
         .expect("vanilla goblin");
@@ -219,9 +221,9 @@ fn save_full_load_full_round_trips_v2_extension() {
     let mut w = build_world_with_party();
     // Force a specific learned-art bit so we can verify the mask survives.
     // Retail learns on the first successful use, so one call is enough.
-    let _ = w.tactical_arts.notify_art_used(0, 5);
+    let _ = w.party.tactical_arts.notify_art_used(0, 5);
     // Add a saved chain.
-    w.saved_chains.push(legaia_save::SavedChainRecord {
+    w.party.saved_chains.push(legaia_save::SavedChainRecord {
         char_slot: 1,
         name: "Combo A".into(),
         sequence: vec![0x10, 0x20, 0x30],
@@ -254,13 +256,13 @@ fn save_full_load_full_round_trips_v2_extension() {
         w2.actors.push(Actor::default());
     }
     let _ = runtime.load_from_slot(&mut w2, 0).expect("load_from_slot");
-    assert_eq!(w2.story_flags, 0xCAFE);
-    assert_eq!(w2.money, 1234);
-    assert_eq!(w2.play_time_seconds, 4500);
-    assert!(!w2.saved_chains.is_empty());
-    assert_eq!(w2.saved_chains[0].name, "Combo A");
+    assert_eq!(w2.flags.story_flags, 0xCAFE);
+    assert_eq!(w2.party.money, 1234);
+    assert_eq!(w2.clock.play_time_seconds, 4500);
+    assert!(!w2.party.saved_chains.is_empty());
+    assert_eq!(w2.party.saved_chains[0].name, "Combo A");
     // Tactical-arts learned bit re-marked.
-    assert!(w2.tactical_arts.is_learned(0, 5));
+    assert!(w2.party.tactical_arts.is_learned(0, 5));
 }
 
 #[test]
@@ -469,6 +471,7 @@ fn full_loop_title_then_encounter_then_battle_then_save_then_load() {
 
     // 4. Resolve a battle session against the formation.
     let formation = w
+        .tables
         .formation_table
         .formation(roll.formation_id)
         .expect("vanilla formation")
@@ -487,7 +490,11 @@ fn full_loop_title_then_encounter_then_battle_then_save_then_load() {
         );
     }
     for (i, slot) in formation.slots.iter().enumerate() {
-        let monster = w.monster_catalog.get(slot.monster_id).expect("monster def");
+        let monster = w
+            .tables
+            .monster_catalog
+            .get(slot.monster_id)
+            .expect("monster def");
         let actor_idx = 3 + i;
         w.actors[actor_idx].battle.hp = monster.hp;
         w.actors[actor_idx].battle.max_hp = monster.hp;
@@ -520,8 +527,8 @@ fn full_loop_title_then_encounter_then_battle_then_save_then_load() {
         w2.actors.push(Actor::default());
     }
     let _ = runtime.load_from_slot(&mut w2, 0).expect("load");
-    assert_eq!(w2.money, 1234);
-    assert_eq!(w2.story_flags, 0xCAFE);
-    assert_eq!(w2.play_time_seconds, 4500);
+    assert_eq!(w2.party.money, 1234);
+    assert_eq!(w2.flags.story_flags, 0xCAFE);
+    assert_eq!(w2.clock.play_time_seconds, 4500);
     assert!(path.exists());
 }

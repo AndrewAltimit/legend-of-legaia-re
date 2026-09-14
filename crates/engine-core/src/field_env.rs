@@ -159,7 +159,7 @@ impl FloorAnchor {
 /// Both LUTs are held in the **MAN-header frame** (the frame
 /// [`crate::scene::Scene::field_floor_height_lut`] returns and
 /// [`Placement::world_y`] consumes), which is the negation of the runtime
-/// scratchpad frame `World::field_floor_height_lut` holds
+/// scratchpad frame `World::terrain.floor_height_lut` holds
 /// (`0x1F80035C`; `FUN_8003AEB0` installs sixteen negated shorts).
 /// [`Self::from_scene_and_world`] does that conversion, so a host never has to
 /// pick a sign.
@@ -172,7 +172,7 @@ pub struct FloorWave {
 impl FloorWave {
     /// The wave between the scene's baked ladder (`scene_lut`, MAN frame) and
     /// the world's live one (`world_lut`, scratchpad frame - i.e.
-    /// `World::field_floor_height_lut`).
+    /// `World::terrain.floor_height_lut`).
     ///
     /// `None` when the two agree, which is every frame of every scene whose
     /// script never touches the ladder: a host that short-circuits on `None`
@@ -639,7 +639,7 @@ pub const LOCOMOTION_MOVE_ID: u8 = 1;
 
 /// Half-extent of the prop contact box, in world units. Same box the field
 /// locomotion's static-entity collision arm uses for a placed record
-/// (`World::field_prop_colliders` / `FIELD_PROP_BOX_HALF`); retail's
+/// (`World::props.colliders` / `FIELD_PROP_BOX_HALF`); retail's
 /// `FUN_801CFC40` links the player and the touched actor through their `+0x98`
 /// partner slots and `FUN_801D5B5C` then resumes the touched actor's script.
 pub const PROP_TOUCH_BOX_HALF: i32 = 0x40 + 0x10;

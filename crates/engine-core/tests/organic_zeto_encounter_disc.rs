@@ -148,7 +148,7 @@ fn garmel_man_carries_the_zeto_formation_row_and_beat_record() {
 fn zeto_battle_enters_organically_from_the_beat_record() {
     let Some(extracted) = gated() else { return };
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
-    host.world.live_gameplay_loop = true;
+    host.world.toggles.live_gameplay_loop = true;
     host.enter_field_scene("garmel", 0).expect("enter garmel");
 
     // Baseline (non-vacuous): the gate flag is clear, no boss pre-armed, and
@@ -158,11 +158,11 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
         "baseline: gate flag 0x198 clear on first visit"
     );
     assert!(
-        !host.world.scripted_formation_pending,
+        !host.world.encounters.scripted_formation_pending,
         "baseline: nothing pre-armed at scene entry"
     );
     assert!(
-        host.world.field_boss_stagers.is_empty(),
+        host.world.props.boss_stagers.is_empty(),
         "garmel has no P1 boss-stager placement - the fight is P2-record-borne"
     );
 
@@ -216,6 +216,7 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
     // The active formation is the MAN table row - id 9, lone Zeto slot.
     let formation = host
         .world
+        .battle
         .active_formation
         .as_ref()
         .expect("active formation set");
@@ -228,7 +229,7 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
 
     // The monster actor carries the PROT 867 archive stats (merged at scene
     // entry for every MAN-formation monster id, Zeto included).
-    let party = host.world.party_count as usize;
+    let party = host.world.party.party_count as usize;
     let zeto = host
         .world
         .actors
@@ -238,6 +239,7 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
         .expect("Zeto battle actor spawned");
     let archive = host
         .world
+        .tables
         .monster_catalog
         .get(ZETO_MONSTER_ID)
         .expect("archive stats merged for Zeto");

@@ -177,8 +177,8 @@ pub(crate) fn cmd_save(
     let mut world = World::default();
     let members = (0..party_size).map(|_| CharacterRecord::zeroed()).collect();
     world.load_party(Party { members });
-    world.story_flags = 0;
-    world.money = 0;
+    world.flags.story_flags = 0;
+    world.party.money = 0;
     let runtime = MenuRuntime::new(save_dir.to_path_buf());
     let path = runtime.save_to_slot(&mut world, slot)?;
     let sf = world.save_full();
@@ -205,10 +205,10 @@ pub(crate) fn cmd_load(save_dir: &std::path::Path, slot: u8) -> Result<()> {
         "loaded slot {} from {} (party={}, story_flags={:#010X}, money={}, inventory={}, actors={})",
         slot,
         path.display(),
-        world.roster.members.len(),
-        world.story_flags,
-        world.money,
-        world.inventory.len(),
+        world.party.roster.members.len(),
+        world.flags.story_flags,
+        world.party.money,
+        world.party.inventory.len(),
         world.actors.iter().filter(|a| a.active).count()
     );
     Ok(())

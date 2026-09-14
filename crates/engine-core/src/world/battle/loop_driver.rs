@@ -90,7 +90,7 @@ impl World {
     }
 
     /// Per-frame battle-side driver for the live gameplay loop. Gated by
-    /// [`Self::live_gameplay_loop`] in [`Self::tick`].
+    /// [`crate::world::WorldToggles::live_gameplay_loop`] in [`Self::tick`].
     ///
     /// Wraps [`Self::step_battle`] with the host-side glue retail performs
     /// through the render + animation systems, so the battle resolves from
@@ -147,7 +147,7 @@ impl World {
     pub(in crate::world) fn apply_final_heal_revives(&mut self) {
         const LOST_GRAIL: u8 = 0xE7;
         const FINAL_HEAL_WORD1_BIT: u32 = 0x80; // ability bit 0x27 (39)
-        let pc = (self.party_count.min(3) as usize).min(self.actors.len());
+        let pc = (self.party.party_count.min(3) as usize).min(self.actors.len());
         for slot in 0..pc {
             let (max_hp, down) = {
                 let a = &self.actors[slot].battle;
@@ -159,7 +159,7 @@ impl World {
             // The Lost Grail + ability bit live on the occupying character's
             // record; the revive itself targets the battle ordinal's mirrors.
             let char_slot = self.party_roster_slot(slot);
-            let Some(record) = self.roster.members.get_mut(char_slot) else {
+            let Some(record) = self.party.roster.members.get_mut(char_slot) else {
                 continue;
             };
             let mut bits = record.ability_bits();
@@ -184,7 +184,7 @@ impl World {
             record.set_ability_bits(bits);
             // Full revive (FUN_800402F4 class 4, tier 1): max HP + statuses
             // cleared; liveness restored so the SM's scans see them alive.
-            self.status_effects.cure_all(slot as u8);
+            self.battle.status_effects.cure_all(slot as u8);
             let a = &mut self.actors[slot].battle;
             let before = a.hp;
             a.hp = max_hp;
@@ -198,7 +198,7 @@ impl World {
             if delta != 0 {
                 a.assign_hp_bar(delta.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16);
             }
-            self.battle_hit_fx.push(BattleHitFx {
+            self.battle.hit_fx.push(BattleHitFx {
                 target_slot: slot as u8,
                 amount: max_hp,
                 is_heal: true,
@@ -211,7 +211,7 @@ impl World {
         use vm::battle_action::{ActionState, ActorFlags};
 
         // The modelled CD drive: one clip read span elapses per frame.
-        self.battle_xa_busy_frames = self.battle_xa_busy_frames.saturating_sub(1);
+        self.audio.battle_xa_busy_frames = self.audio.battle_xa_busy_frames.saturating_sub(1);
 
         // The battle has ended and its presentation owns the frame: retail's
         // battle tick runs the results sequencer instead of the action SM
@@ -219,7 +219,7 @@ impl World {
         // `0x800470D0`), and nothing else - no round prompt, no turn cycling,
         // no menu - until the exit gate fires.
         // REF: FUN_80046A20
-        if self.battle_victory.is_some() {
+        if self.battle.victory.is_some() {
             self.tick_battle_end_sequence();
             return None;
         }
@@ -261,7 +261,7 @@ impl World {
         // the action SM is parked - the per-press entry / review / Begin
         // flow owns the pad until the entered sequence runs (turn cycles)
         // or the player backs out (reopens the command menu).
-        if self.battle_arts_input.is_some() {
+        if self.battle.arts_input.is_some() {
             self.tick_battle_arts_input();
             return None;
         }
@@ -269,7 +269,7 @@ impl World {
         // Player-driven: while the Arts submenu is open the action SM is
         // parked - drive it from the pad and return until the player runs an
         // art (turn cycles) or backs out (reopens the command menu).
-        if self.battle_arts_menu.is_some() {
+        if self.battle.arts_menu.is_some() {
             self.tick_battle_arts_menu();
             return None;
         }
@@ -277,7 +277,7 @@ impl World {
         // Player-driven: while the spell submenu is open the action SM is
         // parked - drive it from the pad and return until the player casts
         // (turn cycles) or backs out (reopens the command menu).
-        if self.battle_spell_menu.is_some() {
+        if self.battle.spell_menu.is_some() {
             self.tick_battle_spell_menu();
             return None;
         }
@@ -285,7 +285,7 @@ impl World {
         // Player-driven: while the inventory submenu is open the action SM is
         // parked - drive it from the pad and return until the player uses an
         // item (turn cycles) or backs out (reopens the command menu).
-        if self.battle_item_menu.is_some() {
+        if self.battle.item_menu.is_some() {
             self.tick_battle_item_menu();
             return None;
         }
@@ -293,7 +293,7 @@ impl World {
         // Player-driven: while a command session is open the action SM is
         // parked - drive the command picker from the pad and return without
         // advancing the SM until the player confirms.
-        if self.battle_command.is_some() {
+        if self.battle.command.is_some() {
             self.tick_battle_command();
             return None;
         }
@@ -302,7 +302,7 @@ impl World {
         // frame, which is retail's flow band outside the selection states.
         // Returning to Idle here is what lets the next turn's
         // `open_battle_command` raise the turn-start prompt again.
-        if self.battle_tutorial.is_some() {
+        if self.battle.tutorial.is_some() {
             self.set_battle_flow(crate::battle_flow::BattleFlowState::Idle);
         }
 
@@ -405,7 +405,7 @@ impl World {
                 if let Some(dmg) = outcome.damage
                     && dmg > 0
                 {
-                    self.battle_hit_fx.push(BattleHitFx {
+                    self.battle.hit_fx.push(BattleHitFx {
                         target_slot: *target_slot,
                         amount: dmg,
                         is_heal: false,
@@ -589,10 +589,10 @@ impl World {
         // An escape spell that folded this tick (Warp and its item twins
         // land here through the band) ends the encounter now - no loot, no
         // game-over - the way the item path does on its own fold.
-        if self.battle_escaped && self.mode == SceneMode::Battle {
+        if self.battle.escaped && self.mode == SceneMode::Battle {
             // Through the escape teardown's fade + exit hold, like the item
             // path - not the instant finish the results sequencer retired.
-            self.battle_end = Some(BattleEndCause::Escaped);
+            self.battle.end = Some(BattleEndCause::Escaped);
             self.begin_battle_end_sequence();
             return Some(outcome);
         }
@@ -650,7 +650,7 @@ impl World {
         if !self.battle_both_sides_alive() {
             return;
         }
-        match self.battle_round_flow.phase {
+        match self.battle.round_flow.phase {
             // The flow SM owns the frame; the command tick advances it.
             RoundPhase::Command => {}
             // Battle entry without the formation path (`World::enter_battle`
@@ -672,7 +672,7 @@ impl World {
 
     /// `true` while each side still has a member who is not defeated.
     pub(in crate::world) fn battle_both_sides_alive(&self) -> bool {
-        let party_count = self.party_count.max(1);
+        let party_count = self.party.party_count.max(1);
         let n = self.actors.len() as u8;
         let party_alive = (0..party_count).any(|i| !self.actor_effectively_defeated(i));
         let monsters_alive = (party_count..n).any(|i| !self.actor_effectively_defeated(i));
@@ -723,7 +723,7 @@ impl World {
         if self.raise_sparring_caption_if_due() {
             return;
         }
-        self.battle_round_flow.flat_walk_last = None;
+        self.battle.round_flow.flat_walk_last = None;
         // The actor sweep (`FUN_801D88CC`): action-gauge restore, the
         // `+0x1DF` action-stream clear, and the party band's stale-target
         // re-pick + category clear. Retail runs it *before* the initiative
@@ -732,12 +732,12 @@ impl World {
         crate::battle_round::BattleRound::boundary(self);
         // The Spirit stance is the `+0x1DE == 4` category the sweep just
         // cleared - it lasts exactly one round.
-        self.battle_guarding = [false; 3];
+        self.battle.guarding = [false; 3];
         if !self.any_living_initiative_key() {
             self.reseed_initiative();
         }
-        self.battle_round_flow.clear_pending();
-        self.battle_round_flow.cursor = 0;
+        self.battle.round_flow.clear_pending();
+        self.battle.round_flow.cursor = 0;
         // `FUN_801E752C` - the per-round status DoT ticker, skipped on round
         // 0 (`beq v0,zero` on `ctx[+0x28A]` at `0x801D0EFC`). RNG-free.
         if self.battle_mode() != 0 {
@@ -755,10 +755,10 @@ impl World {
             self.begin_round_execution();
             return;
         }
-        self.battle_round_flow.phase = RoundPhase::Command;
+        self.battle.round_flow.phase = RoundPhase::Command;
         // `0x14 -> 0x1E`, unconditional.
         self.set_battle_flow(BattleFlowState::TurnPrompt);
-        if !self.battle_player_driven {
+        if !self.battle.player_driven {
             // No pad drives the rings: every member strikes at its dispatch
             // (the auto-fight arm `FUN_801EED1C` seeds), so the round is
             // armed at once.
@@ -784,9 +784,9 @@ impl World {
         use crate::battle_flow::BattleFlowState;
         use crate::battle_round::RoundPhase;
         use vm::battle_action::ActionState;
-        self.battle_round_flow.phase = RoundPhase::Execute;
-        self.battle_round_flow.flat_walk_last = None;
-        self.battle_command = None;
+        self.battle.round_flow.phase = RoundPhase::Execute;
+        self.battle.round_flow.flat_walk_last = None;
+        self.battle.command = None;
         self.set_battle_flow(BattleFlowState::Idle);
         // A round entered without its start (a host or test that opened a
         // command surface on a hand-built battle) has no keys yet; retail
@@ -812,7 +812,7 @@ impl World {
     /// PORT: FUN_801DB81C
     /// REF: FUN_801DBA04
     pub(in crate::world) fn next_member_owing_command(&self, after: Option<u8>) -> Option<u8> {
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         let start = after.map_or(0, |a| a.saturating_add(1));
         (start..party_count).find(|&slot| {
             let alive = self
@@ -820,7 +820,7 @@ impl World {
                 .get(usize::from(slot))
                 .is_some_and(|a| a.battle.liveness != 0 && a.battle.hp != 0);
             alive
-                && !self.battle_round_flow.committed(slot)
+                && !self.battle.round_flow.committed(slot)
                 && !self.actor_blocked_from_acting(slot)
                 && !self.actor_is_confused(slot)
         })
@@ -840,12 +840,12 @@ impl World {
         action: crate::battle_round::PendingPartyAction,
     ) {
         use crate::battle_round::PendingPartyAction;
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         let run = matches!(action, PendingPartyAction::Run);
-        if let Some(slot) = self.battle_round_flow.pending.get_mut(usize::from(actor)) {
+        if let Some(slot) = self.battle.round_flow.pending.get_mut(usize::from(actor)) {
             *slot = Some(action);
         }
-        self.battle_round_flow.cursor = actor;
+        self.battle.round_flow.cursor = actor;
         if run {
             for slot in 0..party_count {
                 let alive = self
@@ -853,7 +853,7 @@ impl World {
                     .get(usize::from(slot))
                     .is_some_and(|a| a.battle.liveness != 0);
                 if alive {
-                    self.battle_round_flow.pending[usize::from(slot)] =
+                    self.battle.round_flow.pending[usize::from(slot)] =
                         Some(PendingPartyAction::Run);
                 }
             }
@@ -875,7 +875,7 @@ impl World {
     /// REF: FUN_801E295C (state `0x0C`: `FUN_801EED1C` for a party slot, the
     /// `0x380` re-target for a delegated one)
     fn dispatch_battle_turn(&mut self, next: u8) {
-        let party_count = self.party_count.max(1);
+        let party_count = self.party.party_count.max(1);
         // Start-of-turn: age this actor's buffs / debuffs, reverting any
         // that expire this turn.
         self.tick_battle_buffs_on_turn(next);
@@ -902,7 +902,7 @@ impl World {
             self.arm_party_physical(next);
             return;
         }
-        match self.battle_round_flow.pending[usize::from(next)].take() {
+        match self.battle.round_flow.pending[usize::from(next)].take() {
             Some(action) => self.dispatch_pending_party_action(next, action),
             None => self.arm_party_physical(next),
         }
@@ -932,11 +932,11 @@ impl World {
     fn arm_round_open_prompt(&mut self) {
         use crate::battle_flow::BattleFlowState;
         use crate::battle_input::CommandPhase;
-        if self.battle_flow != BattleFlowState::TurnPrompt {
+        if self.battle.flow != BattleFlowState::TurnPrompt {
             return;
         }
-        let no_escape = self.battle_no_escape;
-        if let Some(session) = self.battle_command.as_mut()
+        let no_escape = self.battle.no_escape;
+        if let Some(session) = self.battle.command.as_mut()
             && matches!(session.phase, CommandPhase::Menu { .. })
         {
             session.no_escape = no_escape;
@@ -960,9 +960,9 @@ impl World {
     /// REF: FUN_801EC3E4
     pub(in crate::world) fn apply_basic_attack(&mut self) {
         let attacker = self.battle_ctx.active_actor;
-        let party_count = self.party_count.max(1);
+        let party_count = self.party.party_count.max(1);
         let strikes = if attacker >= party_count {
-            self.monster_strike_budget.max(1)
+            self.battle.monster_strike_budget.max(1)
         } else {
             1
         };
@@ -1137,7 +1137,8 @@ impl World {
             hit.power_byte,
             self.actors[attacker as usize].battle.strike_index
         );
-        self.battle_hit_events
+        self.battle
+            .hit_events
             .push(crate::battle_events::BattleHitEvent {
                 attacker_slot: attacker,
                 target_slot: target,
@@ -1178,7 +1179,7 @@ impl World {
         // for the seated party width. A party target therefore always takes
         // the ordinary arm - which is what makes the record-direct
         // `0x801C9348[target - 3]` read in the decision well-defined.
-        if usize::from(target) < usize::from(self.party_count.clamp(1, 3)) {
+        if usize::from(target) < usize::from(self.party.party_count.clamp(1, 3)) {
             return vm::battle_action::APPLY_MODE_NORMAL;
         }
         let cursor = a.battle.strike_index;
@@ -1194,7 +1195,8 @@ impl World {
         // Icon bit; a monster attacker has no character record, so the word
         // reads 0 and the carry arm cannot fire for it.
         let ability = if a.battle_monster_id.is_none() {
-            self.character_ability_bits
+            self.party
+                .character_ability_bits
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0)
@@ -1277,7 +1279,7 @@ impl World {
         let mut hits: Vec<u8> = Vec::new();
         if let Some(art) = art {
             let character = self.actors[attacker as usize].battle.character;
-            if let Some(rec) = self.art_records.get(&(character, art)) {
+            if let Some(rec) = self.tables.art_records.get(&(character, art)) {
                 hits.extend(rec.power.iter().filter_map(|p| match p {
                     // Re-encode the decoded power byte for the kernel.
                     legaia_art::PowerByte::Damage(ap) => Some(power_byte_of(*ap)),
@@ -1310,7 +1312,8 @@ impl World {
                 self.apply_combo_total(target);
             }
             let running_total = self.actors[target as usize].battle.damage_accum;
-            self.battle_hit_events
+            self.battle
+                .hit_events
                 .push(crate::battle_events::BattleHitEvent {
                     attacker_slot: attacker,
                     target_slot: target,
@@ -1337,7 +1340,7 @@ impl World {
         dmg: u16,
     ) {
         let character = self.actors[attacker as usize].battle.character;
-        let Some(rec) = self.art_records.get(&(character, art)) else {
+        let Some(rec) = self.tables.art_records.get(&(character, art)) else {
             return;
         };
         let effect = rec.enemy_effect;
@@ -1346,18 +1349,22 @@ impl World {
             && effect != legaia_art::EnemyEffect::None
             && self.actors[target as usize].battle.liveness != 0
         {
-            let applied = self.status_effects.apply_from_enemy_effect(target, effect);
+            let applied = self
+                .battle
+                .status_effects
+                .apply_from_enemy_effect(target, effect);
             // Rot's applier rolls the disabled limb (`rand % 3`, the retail
             // `1 << (rand%3 + 3)` bit pick).
             if applied == Some(legaia_engine_vm::status_effects::StatusKind::Rot) {
                 let limb = (self.next_rng() % 3) as u8;
-                self.status_effects.set_rot_limb(target, limb);
+                self.battle.status_effects.set_rot_limb(target, limb);
             }
         }
         if let Some(cue) = cue
             && cue.is_sound()
         {
-            self.battle_sfx_cues
+            self.audio
+                .battle_sfx_cues
                 .push(crate::battle_events::BattleSfxCue {
                     kind: cue.kind,
                     timing_frames: 0,
@@ -1415,9 +1422,9 @@ impl World {
         // reads (`FUN_801EC3E4`'s `PTR_801CF4B4` arms - footwear for High /
         // Low, slot 2 / 3 for the two arm commands, all five for an art).
         // Party attackers only; the monster branch performs no fold.
-        let mut attack = self.battle_attack.get(attacker_i).copied().unwrap_or(0);
-        if attacker < self.party_count
-            && let Some(bonuses) = self.battle_equip_atk.get(attacker_i)
+        let mut attack = self.battle.attack.get(attacker_i).copied().unwrap_or(0);
+        if attacker < self.party.party_count
+            && let Some(bonuses) = self.battle.equip_atk.get(attacker_i)
         {
             let fold_command = if committed > vm::battle_formulas::ART_ANIM_THRESHOLD {
                 vm::battle_formulas::ARMS_ART_COMMAND
@@ -1431,7 +1438,7 @@ impl World {
         let defense = self.physical_defense_of(target, power_byte);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
-        let target_guarding = self.battle_guarding.get(target_i).copied().unwrap_or(false);
+        let target_guarding = self.battle.guarding.get(target_i).copied().unwrap_or(false);
         let hp = self
             .actors
             .get(attacker_i)
@@ -1449,7 +1456,7 @@ impl World {
         let mut raw = vm::battle_formulas::physical_predamage(&hit_inputs, &mut || {
             (self.next_rng() & 0x7FFF) as u16
         });
-        if self.use_damage_finish {
+        if self.toggles.use_damage_finish {
             // The finisher's *post* stages only: the defender's equipment
             // elemental-guard / All-Guard ladder, the 9999 cap and the
             // rand-based no-damage floor. `defender_guarding` is passed
@@ -1462,8 +1469,8 @@ impl World {
             } else {
                 0
             };
-            let attacker_is_party = attacker < self.party_count;
-            let target_is_party = target < self.party_count;
+            let attacker_is_party = attacker < self.party.party_count;
+            let target_is_party = target < self.party.party_count;
             let defender_resist = self.defender_resist(target);
             raw = vm::battle_formulas::damage_finish(&vm::battle_formulas::DamageFinish {
                 predamage: u32::from(raw),
@@ -1500,7 +1507,7 @@ impl World {
             t.damage_accum < u32::from(t.hp)
         };
         // Surface the strike for HUD damage popups.
-        self.battle_hit_fx.push(BattleHitFx {
+        self.battle.hit_fx.push(BattleHitFx {
             target_slot: target,
             amount: dmg,
             is_heal: false,
@@ -1585,7 +1592,7 @@ impl World {
     /// target playing a plain action-table clip (`+0x1D9 < 0x10`,
     /// `0x801EEB88`) and, inside the funnel, the drive being idle
     /// (`FUN_8003DE7C(1) == 0` at `0x8004FE9C`, modelled as
-    /// [`World::battle_xa_busy_frames`]).
+    /// [`crate::world::AudioState::battle_xa_busy_frames`]).
     ///
     /// The ring is transient by design. Its slots are drained in retail by
     /// `FUN_80016B6C`, which the port does not model (the hosts' own SFX
@@ -1596,7 +1603,7 @@ impl World {
     /// PORT: FUN_801EC3E4 (`0x801EEA80..0x801EEBEC`, the two sound sites)
     fn fire_melee_impact_cue(&mut self, attacker: u8, target: u8) {
         let category = self.retail_actor_category(attacker);
-        if self.monster_ai_state.flag_bd84 == 0 {
+        if self.battle.monster_ai_state.flag_bd84 == 0 {
             // The grunt arm. `XA30` channel + read span per character id
             // (`DAT_8007BD10[seat]`, 1-based); a monster seat names no
             // character and falls out of the switch silent (`0x801EEAFC`).
@@ -1636,7 +1643,7 @@ impl World {
             let slot = self.engine_slot_of_retail_category(cat);
             self.battle_slot_element(slot).unwrap_or(NEUTRAL_ELEMENT)
         };
-        let durations = self.xa_cue_durations.as_deref();
+        let durations = self.audio.xa_cue_durations.as_deref();
         let xa_duration_raw = |n: u32| {
             durations
                 .and_then(|t| t.get(n as usize).copied())
@@ -1645,13 +1652,14 @@ impl World {
         let src = crate::sfx_cue::SfxCueSources {
             element_of: &element_of,
             xa_duration_raw: &xa_duration_raw,
-            tutorial_active: self.battle_tutorial.is_some(),
-            cd_read_busy: self.battle_xa_busy_frames > 0,
+            tutorial_active: self.battle.tutorial.is_some(),
+            cd_read_busy: self.audio.battle_xa_busy_frames > 0,
         };
         let mut ring = crate::sfx_cue::SfxCueRing::default();
         let out = crate::sfx_cue::route_sfx_cue(&mut ring, MELEE_IMPACT_CUE, category, &src);
         if let Some(id) = out.enqueued {
-            self.battle_sfx_cues
+            self.audio
+                .battle_sfx_cues
                 .push(crate::battle_events::BattleSfxCue {
                     kind: id,
                     timing_frames: 0,
@@ -1667,11 +1675,11 @@ impl World {
     }
 
     /// Queue one CD-XA clip start and hold the modelled drive busy for its
-    /// read span (`dur` vsyncs - see [`World::battle_xa_busy_frames`]).
+    /// read span (`dur` vsyncs - see [`crate::world::AudioState::battle_xa_busy_frames`]).
     /// REF: FUN_8003D53C
     fn push_battle_xa_cue(&mut self, cue: crate::sfx_cue::XaVoiceClip) {
-        self.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
-        self.battle_xa_cues.push(cue);
+        self.audio.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
+        self.audio.battle_xa_cues.push(cue);
     }
 
     /// An engine seat index in **retail's** actor-table index space: party
@@ -1679,7 +1687,7 @@ impl World {
     /// `party_count..`, so any retail kernel that switches on "is this index a
     /// party slot" needs the re-based value, not the seat.
     fn retail_actor_category(&self, slot: u8) -> u8 {
-        let pc = self.party_count.min(3);
+        let pc = self.party.party_count.min(3);
         if slot < pc {
             slot
         } else {
@@ -1689,7 +1697,7 @@ impl World {
 
     /// Inverse of [`Self::retail_actor_category`].
     fn engine_slot_of_retail_category(&self, category: u8) -> u8 {
-        let pc = self.party_count.min(3);
+        let pc = self.party.party_count.min(3);
         if category < 3 {
             category
         } else {
@@ -1740,7 +1748,8 @@ impl World {
     /// by [`legaia_engine_vm::status_effects::StatusKind::blocks_actions`]; the
     /// battle turn loop ([`Self::advance_battle_mode`]) enforces it here.
     pub(in crate::world) fn actor_blocked_from_acting(&self, slot: u8) -> bool {
-        self.status_effects
+        self.battle
+            .status_effects
             .statuses(slot)
             .iter()
             .any(|s| s.kind.blocks_actions())
@@ -1750,7 +1759,8 @@ impl World {
     /// Faint). A blocked caster falls back to a physical strike rather
     /// than casting.
     pub(in crate::world) fn actor_blocked_from_magic(&self, slot: u8) -> bool {
-        self.status_effects
+        self.battle
+            .status_effects
             .statuses(slot)
             .iter()
             .any(|s| s.kind.blocks_magic())
@@ -1759,7 +1769,8 @@ impl World {
     /// True if `slot` is petrified (Stone). A petrified actor can't be damaged
     /// (the wiki: it is "no longer able to be damaged") and counts as defeated.
     pub(crate) fn actor_is_petrified(&self, slot: u8) -> bool {
-        self.status_effects
+        self.battle
+            .status_effects
             .statuses(slot)
             .iter()
             .any(|s| s.kind == vm::status_effects::StatusKind::Stone)
@@ -1880,10 +1891,10 @@ mod melee_cue_tests {
     #[test]
     fn an_ordinary_party_swing_grunts_and_requests_no_sting() {
         let mut w = duel();
-        w.xa_cue_durations = Some(durations_with_melee_entry());
+        w.audio.xa_cue_durations = Some(durations_with_melee_entry());
         w.battle_ctx.active_actor = 0; // the party member attacks
         assert_eq!(
-            w.monster_ai_state.flag_bd84, 0,
+            w.battle.monster_ai_state.flag_bd84, 0,
             "the `_DAT_8007BD84` word is zero at battle start"
         );
         {
@@ -1902,7 +1913,7 @@ mod melee_cue_tests {
             (0x1D, 0, 0x26)
         );
         assert_eq!(
-            w.battle_xa_busy_frames, 0x26,
+            w.audio.battle_xa_busy_frames, 0x26,
             "the modelled drive stays busy for the read span"
         );
     }
@@ -1927,7 +1938,7 @@ mod melee_cue_tests {
         let mut w = duel();
         // Non-zero word: `bne v0,zero,0x801EEB70` at `0x801EEAC8` takes the
         // cue arm.
-        w.monster_ai_state.flag_bd84 = 1;
+        w.battle.monster_ai_state.flag_bd84 = 1;
         w.battle_ctx.active_actor = 1; // the monster attacks
         w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false);
         let cues = w.drain_battle_sfx_cues();
@@ -1945,8 +1956,8 @@ mod melee_cue_tests {
     #[test]
     fn a_flagged_party_swing_takes_the_xa_leg_and_enqueues_nothing() {
         let mut w = duel();
-        w.monster_ai_state.flag_bd84 = 1;
-        w.xa_cue_durations = Some(durations_with_melee_entry());
+        w.battle.monster_ai_state.flag_bd84 = 1;
+        w.audio.xa_cue_durations = Some(durations_with_melee_entry());
         w.battle_ctx.active_actor = 0; // the party member attacks
         w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false);
         assert!(
@@ -1965,12 +1976,12 @@ mod melee_cue_tests {
     #[test]
     fn a_flagged_party_swing_is_dropped_while_the_drive_is_busy() {
         let mut w = duel();
-        w.monster_ai_state.flag_bd84 = 1;
-        w.xa_cue_durations = Some(durations_with_melee_entry());
+        w.battle.monster_ai_state.flag_bd84 = 1;
+        w.audio.xa_cue_durations = Some(durations_with_melee_entry());
         w.battle_ctx.active_actor = 0;
         // `FUN_8003DE7C(1) != 0` at `0x8004FE9C`: a read in flight drops the
         // voice leg's request.
-        w.battle_xa_busy_frames = 5;
+        w.audio.battle_xa_busy_frames = 5;
         {
             let atk = w.battle_ctx.active_actor;
             w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
@@ -1982,7 +1993,7 @@ mod melee_cue_tests {
     #[test]
     fn a_target_playing_an_art_bank_clip_is_silent() {
         let mut w = duel();
-        w.monster_ai_state.flag_bd84 = 1;
+        w.battle.monster_ai_state.flag_bd84 = 1;
         w.battle_ctx.active_actor = 1;
         // Retail gate `0x801EEB88`: the cue is submitted only while the target
         // is playing a plain action-table clip.

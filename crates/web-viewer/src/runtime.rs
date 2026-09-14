@@ -521,7 +521,7 @@ impl LegaiaRuntime {
             .as_ref()
             .and_then(|s| legaia_engine_core::shop_catalog::ShopItemData::from_scus(s))
         {
-            host.world.item_shop_data = Some(shop_data);
+            host.world.shops.item_shop_data = Some(shop_data);
         }
 
         // Battle chip / banner labels off the user's own disc - the
@@ -529,13 +529,13 @@ impl LegaiaRuntime {
         // per-character Ra-Seru name the command ring's magic arm carries.
         // Twin of the native window's read in `window/run.rs`; without it the
         // browser draws the port's own fallback wording instead.
-        host.world.battle_ui_strings =
+        host.world.battle.ui_strings =
             legaia_engine_core::battle_open::battle_ui_strings_from_prot(&host.index);
         // ... and the SCUS half - the chip words plus the sparring fight's
         // opening caption (`FUN_80056208` -> `0x80078CB4`), which the tutorial
         // side-band raises off `battle_ui_strings`.
         if let Some(s) = scus.as_ref() {
-            host.world.battle_ui_strings.merge_scus(s);
+            host.world.battle.ui_strings.merge_scus(s);
         }
 
         // Keep the executable bytes for the battle render's per-stage SCUS
@@ -582,15 +582,15 @@ impl LegaiaRuntime {
         // GIVE_ITEM, scene changes - actually execute), retail's leading-edge
         // wall footprint, solid NPC bodies, per-step terrain follow, and NPCs
         // walking their MAN-authored routes.
-        host.world.use_vm_dialogue = true;
-        host.world.follow_terrain_height = true;
-        host.world.leading_edge_wall_probes = true;
-        host.world.solid_field_npcs = true;
-        host.world.animate_field_npcs = true;
+        host.world.toggles.use_vm_dialogue = true;
+        host.world.locomotion.follow_terrain_height = true;
+        host.world.locomotion.leading_edge_wall_probes = true;
+        host.world.npcs.solid = true;
+        host.world.npcs.animate = true;
         // Free-roam story staging for PICKER entries only: the opening
         // chain's legs re-enter through here too, and their authored
         // presentation (silent dawn, pre-event scenery) must stay untouched.
-        if !host.world.opening_chain_active && !host.world.cutscene_timeline_active() {
+        if !host.world.cutscene.opening_chain_active && !host.world.cutscene_timeline_active() {
             host.world.seed_free_roam_story_baseline(name);
         }
         if legaia_engine_core::scene::is_world_map_scene(name) {
@@ -607,10 +607,9 @@ impl LegaiaRuntime {
         // The seat heuristic is for interactive free-roam entry; the opening
         // chain's cutscene legs stage their own tableau (the timeline owns
         // actor placement) and must not have the anchor relocated under it.
-        let in_opening = self
-            .scene_host
-            .as_ref()
-            .is_some_and(|h| h.world.opening_chain_active || h.world.cutscene_timeline_active());
+        let in_opening = self.scene_host.as_ref().is_some_and(|h| {
+            h.world.cutscene.opening_chain_active || h.world.cutscene_timeline_active()
+        });
         if !in_opening {
             self.seat_player();
         }
@@ -640,7 +639,7 @@ impl LegaiaRuntime {
     }
 
     /// Opt in / out of the engine's continuous locomotion decode
-    /// ([`legaia_engine_core::world::World::precise_movement`]): the camera
+    /// ([`legaia_engine_core::world::FieldLocomotion::precise_movement`]): the camera
     /// azimuth rotates the movement vector at full angular resolution and the
     /// left analog stick ([`Self::set_left_stick`]) supplies an arbitrary
     /// screen angle. The play page's VR first-person mode drives this so
@@ -648,8 +647,8 @@ impl LegaiaRuntime {
     /// path keeps the retail quantised 8-way remap.
     pub fn set_precise_movement(&mut self, on: bool) {
         match self.scene_host.as_mut() {
-            Some(h) => h.world.precise_movement = on,
-            None => self.world.precise_movement = on,
+            Some(h) => h.world.locomotion.precise_movement = on,
+            None => self.world.locomotion.precise_movement = on,
         }
     }
 
@@ -669,7 +668,7 @@ impl LegaiaRuntime {
     /// controller quantises it to the nearest quarter-turn, as retail does.
     pub fn set_camera_azimuth(&mut self, units: u16) {
         if let Some(h) = self.scene_host.as_mut() {
-            h.world.field_camera_azimuth = units % 4096;
+            h.world.locomotion.camera_azimuth = units % 4096;
         }
     }
 
@@ -689,7 +688,7 @@ impl LegaiaRuntime {
         // would otherwise park the world forever. Finish it immediately -
         // the 3D cutscene / field resumes, minus the movie.
         let mut fmv_handoff_scene = String::new();
-        if host.world.mode == SceneMode::Cutscene && host.world.active_fmv.is_some() {
+        if host.world.mode == SceneMode::Cutscene && host.world.cutscene.active_fmv.is_some() {
             host.world.finish_cutscene();
             // Skipping the *movie* is not skipping the *hand-off*. Retail's
             // master dispatch writes a next-scene label after playback
@@ -831,7 +830,7 @@ impl LegaiaRuntime {
                     "y": a.move_state.world_y,
                     "z": a.move_state.world_z,
                     "facing": a.move_state.render_26,
-                    "walking": w.field_player_anim.as_ref().is_some_and(|f| f.walking),
+                    "walking": w.locomotion.player_anim.as_ref().is_some_and(|f| f.walking),
                 })
             })
             .unwrap_or(serde_json::Value::Null);
@@ -860,7 +859,7 @@ impl LegaiaRuntime {
         let requested = self
             .scene_host
             .as_ref()
-            .and_then(|h| h.world.current_bgm)
+            .and_then(|h| h.world.audio.current_bgm)
             .map(serde_json::Value::from)
             .unwrap_or(serde_json::Value::Null);
         #[cfg(target_arch = "wasm32")]
@@ -891,15 +890,15 @@ impl LegaiaRuntime {
             return "null".to_string();
         };
         let w = &h.world;
-        let order: Vec<usize> = if w.active_party.is_empty() {
-            (0..w.roster.members.len()).collect()
+        let order: Vec<usize> = if w.party.active_party.is_empty() {
+            (0..w.party.roster.members.len()).collect()
         } else {
-            w.active_party.iter().map(|&s| s as usize).collect()
+            w.party.active_party.iter().map(|&s| s as usize).collect()
         };
         let party: Vec<serde_json::Value> = order
             .iter()
             .filter_map(|&slot| {
-                let m = w.roster.members.get(slot)?;
+                let m = w.party.roster.members.get(slot)?;
                 // A never-populated roster slot decodes to an all-zero record
                 // (empty name) - skip it so the menu shows only real members.
                 let name = m.name();
@@ -927,7 +926,7 @@ impl LegaiaRuntime {
                 serde_json::json!({ "id": id, "name": name, "count": count })
             })
             .collect();
-        serde_json::json!({ "gold": w.money, "party": party, "items": items }).to_string()
+        serde_json::json!({ "gold": w.party.money, "party": party, "items": items }).to_string()
     }
 
     /// Attempt to start the WebAudio backend. Must be called from a user-gesture
@@ -1111,7 +1110,7 @@ impl LegaiaRuntime {
     /// Advance the mode seat one frame and reconcile it with the live world.
     ///
     /// Mirrors `BootSession::tick`: `ModeSeat::frame` takes any pending edge
-    /// (which is what clears `World::frame_begin_skip` and performs retail's
+    /// (which is what clears `World::clock.frame_begin_skip` and performs retail's
     /// transition-block bookkeeping), then `adopt_world_mode` moves the word
     /// to wherever the scene session left the world - honouring the
     /// battle-intro hold, so a browser encounter takes the mode edge at the
@@ -1148,7 +1147,7 @@ impl LegaiaRuntime {
         let Some(h) = self.scene_host.as_ref() else {
             return serde_json::Value::Null;
         };
-        let Some(id) = h.world.inline_dialogue.as_ref() else {
+        let Some(id) = h.world.dialog.inline.as_ref() else {
             return serde_json::Value::Null;
         };
         let ascii = |bytes: &[u8]| -> String {
@@ -1259,7 +1258,7 @@ impl LegaiaRuntime {
                 }
                 self.field_vram_anim = Some(crate::field_scene::FieldSceneAnim::walker_only(
                     table,
-                    host.world.frame_step.max(1),
+                    host.world.clock.frame_step.max(1),
                 ));
                 break;
             }
@@ -1340,10 +1339,10 @@ impl LegaiaRuntime {
     /// the display refresh - the native window's sim-tick anim contract.
     fn drive_npc_clips(&mut self) {
         /// One drained ANIMATE cue: `(slot, (count, base_anim_id, frames))`,
-        /// the `World::field_npc_anim_cues` entry shape.
+        /// the `World::npcs.anim_cues` entry shape.
         type AnimCue = (u8, (u8, u8, Vec<u8>));
         let cues: Vec<AnimCue> = match self.scene_host.as_mut() {
-            Some(h) => h.world.field_npc_anim_cues.drain().collect(),
+            Some(h) => h.world.npcs.anim_cues.drain().collect(),
             None => return,
         };
         for (slot, (_count, base_id, _frames)) in cues {
@@ -1371,7 +1370,7 @@ impl LegaiaRuntime {
         self.drive_player_move_cues();
     }
 
-    /// Drain `World::field_player_move_cues` - the cross-context ExecMove
+    /// Drain `World::locomotion.player_move_cues` - the cross-context ExecMove
     /// pokes a script aims at the **player** channel (`A2 F8 <move_id>`) -
     /// and queue each as a scripted one-shot over the idle/walk pair, the
     /// browser twin of the native window's cue drain in
@@ -1389,7 +1388,7 @@ impl LegaiaRuntime {
     /// already animates; the native drain skips them and so does this one.
     fn drive_player_move_cues(&mut self) {
         let cues: Vec<u8> = match self.scene_host.as_mut() {
-            Some(h) => std::mem::take(&mut h.world.field_player_move_cues),
+            Some(h) => std::mem::take(&mut h.world.locomotion.player_move_cues),
             None => return,
         };
         for id in cues {
@@ -1408,7 +1407,7 @@ impl LegaiaRuntime {
             if let Some(anim) = self
                 .scene_host
                 .as_mut()
-                .and_then(|h| h.world.field_player_anim.as_mut())
+                .and_then(|h| h.world.locomotion.player_anim.as_mut())
             {
                 anim.push_scripted(clip);
             }
@@ -1548,7 +1547,7 @@ impl LegaiaRuntime {
         if host.world.mode != SceneMode::Field {
             return;
         }
-        let lead = host.world.active_party.first().copied().unwrap_or(0) as usize;
+        let lead = host.world.party.active_party.first().copied().unwrap_or(0) as usize;
         let Some(g) = host
             .world
             .global_tmd_pool
@@ -1924,7 +1923,7 @@ impl LegaiaRuntime {
     /// Whole seconds only, and by delta rather than absolutely, so a loaded
     /// save keeps its accumulated total. The page used to substitute
     /// `world.frame / 60` at the one place the clock was *drawn*, which left
-    /// [`legaia_engine_core::world::World::play_time_seconds`] frozen at
+    /// [`legaia_engine_core::world::FrameClock::play_time_seconds`] frozen at
     /// whatever a load put there - so the H:MM:SS box reset on every page
     /// load, ignored a loaded save's hours, and, worse, a save written from
     /// the browser recorded the *loaded* play time rather than the played one.
@@ -1974,19 +1973,19 @@ impl LegaiaRuntime {
             audio.set_muted(self.options_state.muted);
         }
         if let Some(host) = self.scene_host.as_mut() {
-            host.world.precise_movement = self.options_state.precise_movement;
+            host.world.locomotion.precise_movement = self.options_state.precise_movement;
             // Field Move (pause-menu Walk / Run). Only the DEFAULT lands
             // here; the run button that inverts it is latched by
             // `World::set_pad`, so this page needs no per-frame wiring.
-            host.world.field_move_run_default =
+            host.world.locomotion.run_default =
                 self.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
             // Photosensitivity guard over the ambient palette cyclers
             // (default ON; see `OptionsState::reduce_flashing`).
-            host.world.reduce_flashing = self.options_state.reduce_flashing;
+            host.world.toggles.reduce_flashing = self.options_state.reduce_flashing;
             // Battle "Select Attack" (config word `0x800846C4`): whether the
             // ring's Attack arm shows the Auto | Command prompt, goes
             // straight to the target cursor, or straight to the arts entry.
-            host.world.battle_select_attack = self.options_state.battle_select_attack;
+            host.world.toggles.select_attack = self.options_state.battle_select_attack;
         }
     }
 }

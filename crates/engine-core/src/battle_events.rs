@@ -27,7 +27,7 @@ pub enum BattleEvent {
     /// `BattleActionHost::camera_frame_height` - the per-action camera framing
     /// height / distance (`ctx+0x6D0`) the port of `FUN_801F0348` resolved from
     /// the acting actor's and target's monster size class. Mirrored on
-    /// [`crate::world::World::battle_camera_frame_height`].
+    /// [`crate::world::BattleState::camera_frame_height`].
     CameraFrameHeight { height: i16 },
     /// `BattleActionHost::party_setup` - per-party-slot init hook
     /// (`FUN_801EED1C` in retail).
@@ -84,7 +84,7 @@ pub enum BattleEvent {
     /// `World::notify_art_used` - a character's Tactical Art use count
     /// crossed the learn threshold for the first time. Engines display a
     /// HUD banner; the art is already marked learned in
-    /// `World::tactical_arts` when this fires.
+    /// `World::party.tactical_arts` when this fires.
     TacticalArtLearned { char_id: u8, art_id: u8 },
     /// `World::apply_battle_xp` - a character's XP crossed a level threshold.
     /// HP/MP maxima have already been bumped in the roster record and the live

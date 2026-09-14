@@ -21,9 +21,9 @@ use legaia_engine_vm::escape_timer::TimerInk;
 /// wants `n` drained frames has to run more ticks than that. Run until the
 /// world's own retail-frame counter has advanced `frames`.
 fn advance_retail_frames(world: &mut World, frames: u64) {
-    let target = world.field_frames + frames;
+    let target = world.clock.display_frames + frames;
     let mut guard = 0;
-    while world.field_frames < target {
+    while world.clock.display_frames < target {
         let _ = world.tick();
         guard += 1;
         assert!(guard < 100_000, "retail-frame clock did not advance");
@@ -41,16 +41,16 @@ fn armed_world(duration: u32, threshold: u32, expiry: u16, below: u16) -> World 
 #[test]
 fn the_installer_arms_the_counter_and_the_tick_drains_it() {
     let mut world = armed_world(2400, 910, 0x04C7, 0x0123);
-    assert!(world.escape_timer.armed);
-    assert_eq!(world.escape_timer.remaining, 2400);
-    assert_eq!(world.escape_timer.warn_threshold, 910);
+    assert!(world.battle.escape_timer.armed);
+    assert_eq!(world.battle.escape_timer.remaining, 2400);
+    assert_eq!(world.battle.escape_timer.warn_threshold, 910);
 
     advance_retail_frames(&mut world, 100);
     assert_eq!(
-        world.escape_timer.remaining, 2300,
+        world.battle.escape_timer.remaining, 2300,
         "one count per retail frame"
     );
-    assert!(world.escape_timer.armed);
+    assert!(world.battle.escape_timer.armed);
     assert!(
         !world.system_flag_test(0x0123),
         "the below-threshold flag stays low above the threshold"
@@ -70,7 +70,7 @@ fn crossing_the_threshold_raises_the_below_flag_only() {
         "below-threshold flag raised"
     );
     assert!(!world.system_flag_test(0x04C7), "expiry has not fired");
-    assert!(world.escape_timer.armed);
+    assert!(world.battle.escape_timer.armed);
 }
 
 #[test]
@@ -78,16 +78,19 @@ fn running_out_raises_the_expiry_flag_and_disarms() {
     let mut world = armed_world(30, 20, 0x04C7, 0x0123);
     advance_retail_frames(&mut world, 30);
     assert!(world.system_flag_test(0x04C7), "expiry flag raised");
-    assert!(!world.escape_timer.armed, "the timer disarms at zero");
     assert!(
-        world.escape_timer_hud.is_none() || world.escape_timer.remaining <= 0,
+        !world.battle.escape_timer.armed,
+        "the timer disarms at zero"
+    );
+    assert!(
+        world.battle.escape_timer_hud.is_none() || world.battle.escape_timer.remaining <= 0,
         "a disarmed timer stops producing a readout"
     );
 
     // A disarmed timer does not keep counting.
-    let settled = world.escape_timer.remaining;
+    let settled = world.battle.escape_timer.remaining;
     advance_retail_frames(&mut world, 10);
-    assert_eq!(world.escape_timer.remaining, settled);
+    assert_eq!(world.battle.escape_timer.remaining, settled);
 }
 
 #[test]
@@ -96,7 +99,7 @@ fn the_tick_publishes_the_hud_readout_and_its_ink() {
     let mut world = armed_world(2401, 910, 0x04C7, 0x0123);
     advance_retail_frames(&mut world, 1);
     assert_eq!(
-        world.escape_timer_hud,
+        world.battle.escape_timer_hud,
         Some((0, 40, 0, TimerInk::Safe)),
         "the drain publishes the decomposition retail computes in the same pass"
     );
@@ -104,16 +107,16 @@ fn the_tick_publishes_the_hud_readout_and_its_ink() {
     // Under 0x707 the ink switches to the warning colour.
     let mut world = armed_world(0x708, 0, 0x04C7, 0x0123);
     advance_retail_frames(&mut world, 1);
-    let (_, _, _, ink) = world.escape_timer_hud.expect("readout published");
+    let (_, _, _, ink) = world.battle.escape_timer_hud.expect("readout published");
     assert_eq!(ink, TimerInk::Warning);
 }
 
 #[test]
 fn a_zero_duration_leaves_the_timer_disarmed() {
     let mut world = armed_world(0, 100, 0x04C7, 0x0123);
-    assert!(!world.escape_timer.armed);
+    assert!(!world.battle.escape_timer.armed);
     advance_retail_frames(&mut world, 10);
-    assert!(world.escape_timer_hud.is_none());
+    assert!(world.battle.escape_timer_hud.is_none());
     assert!(
         !world.system_flag_test(0x04C7),
         "nothing fires while disarmed"
@@ -124,10 +127,10 @@ fn a_zero_duration_leaves_the_timer_disarmed() {
 fn a_modal_dialog_freezes_the_countdown() {
     let mut world = armed_world(600, 100, 0x04C7, 0x0123);
     advance_retail_frames(&mut world, 5);
-    let before = world.escape_timer.remaining;
+    let before = world.battle.escape_timer.remaining;
     assert!(before < 600);
 
-    world.current_dialog = Some(legaia_engine_core::world::DialogRequest {
+    world.dialog.current = Some(legaia_engine_core::world::DialogRequest {
         text_id: 0,
         inline: Vec::new(),
         world_x: 0,
@@ -136,13 +139,16 @@ fn a_modal_dialog_freezes_the_countdown() {
     });
     advance_retail_frames(&mut world, 20);
     assert_eq!(
-        world.escape_timer.remaining, before,
+        world.battle.escape_timer.remaining, before,
         "a busy frame leaves the counter alone"
     );
 
-    world.current_dialog = None;
+    world.dialog.current = None;
     advance_retail_frames(&mut world, 3);
-    assert!(world.escape_timer.remaining < before, "and resumes after");
+    assert!(
+        world.battle.escape_timer.remaining < before,
+        "and resumes after"
+    );
 }
 
 #[test]
@@ -150,9 +156,9 @@ fn rearming_replaces_the_whole_triple() {
     let mut world = armed_world(600, 100, 0x04C7, 0x0123);
     advance_retail_frames(&mut world, 10);
     world.schedule_timed_flags(0x0055_0044, 90, 30);
-    assert_eq!(world.escape_timer.remaining, 90);
-    assert_eq!(world.escape_timer.warn_threshold, 30);
-    assert_eq!(world.escape_timer_flag_word, 0x0055_0044);
+    assert_eq!(world.battle.escape_timer.remaining, 90);
+    assert_eq!(world.battle.escape_timer.warn_threshold, 30);
+    assert_eq!(world.battle.escape_timer_flag_word, 0x0055_0044);
     advance_retail_frames(&mut world, 90);
     assert!(world.system_flag_test(0x0055), "the new expiry flag fires");
     assert!(

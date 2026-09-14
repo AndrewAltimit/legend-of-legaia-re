@@ -412,18 +412,18 @@ pub fn magic_loadout_for(
     roster_slot: usize,
     special: u32,
 ) -> Option<DomeMagic> {
-    let member = world.roster.members.get(roster_slot)?;
+    let member = world.party.roster.members.get(roster_slot)?;
     let list = member.spell_list();
     let n = (list.count as usize).min(list.ids.len());
     let mut learned: Vec<u8> = list.ids[..n].to_vec();
-    for &sid in world.seru_log.learned_spells(roster_slot as u8) {
+    for &sid in world.seru.log.learned_spells(roster_slot as u8) {
         if !learned.contains(&sid) {
             learned.push(sid);
         }
     }
     let spells: Vec<crate::spells::SpellDef> = learned
         .iter()
-        .filter_map(|id| world.spell_catalog.get(*id).cloned())
+        .filter_map(|id| world.tables.spell_catalog.get(*id).cloned())
         .collect();
     let live = member.live_stats();
     let gauge = member.hp_mp_sp();
@@ -445,6 +445,7 @@ pub fn magic_loadout_for(
         mp: gauge.mp_cur,
         mp_max: gauge.mp_max,
         ability_bits: world
+            .party
             .character_ability_bits
             .get(roster_slot)
             .copied()

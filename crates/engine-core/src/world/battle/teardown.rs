@@ -27,23 +27,24 @@ impl World {
     /// The post-battle spoils panel a host should be drawing this frame, or
     /// `None` when the panel is not up.
     ///
-    /// Resolves drop item ids through [`Self::item_catalog`] and level-up
-    /// character slots through [`Self::roster`], so a host needs no table of
+    /// Resolves drop item ids through [`crate::world::DiscTables::item_catalog`] and level-up
+    /// character slots through [`crate::world::PartyState::roster`], so a host needs no table of
     /// its own. Falls back to `Item <id>` / `Member <n>` when a name is
     /// unavailable (a disc-free build's synthetic catalog).
     pub fn battle_spoils_banner(&self) -> Option<BattleSpoilsBanner> {
         // Up for the results frame through the exit while the end-of-battle
         // sequence runs (retail's windows come down with the battle), and for
         // the aging window a direct `finish_battle` still arms.
-        if self.battle_spoils_frames == 0 && !self.battle_result_screen_active() {
+        if self.battle.spoils_frames == 0 && !self.battle_result_screen_active() {
             return None;
         }
-        let r = self.last_battle_rewards.as_ref()?;
+        let r = self.battle.last_rewards.as_ref()?;
         let drops = r
             .drops
             .iter()
             .map(|&id| {
-                self.item_catalog
+                self.tables
+                    .item_catalog
                     .get(id)
                     .map(|it| it.name.to_string())
                     .unwrap_or_else(|| format!("Item {id}"))
@@ -55,6 +56,7 @@ impl World {
             .map(|lu| {
                 let slot = lu.char_id as usize;
                 let name = self
+                    .party
                     .roster
                     .members
                     .get(slot)
@@ -104,37 +106,37 @@ impl World {
             // keeps ticking the world re-runs the action SM's wipe scan and
             // re-raises `battle_end` every tick. The fold already happened;
             // consume the repeat and keep the hold frozen.
-            self.battle_end = None;
+            self.battle.end = None;
             return;
         }
         // A battle that ran the end-of-battle presentation credited its
         // rewards on the results frame (`world::battle::victory`); a direct
         // caller (the runner path, tests) credits them here and arms the
         // aging spoils window instead.
-        let loot_done = std::mem::replace(&mut self.battle_loot_applied, false);
+        let loot_done = std::mem::replace(&mut self.battle.loot_applied, false);
         if !loot_done
-            && self.battle_end == Some(BattleEndCause::MonsterWipe)
-            && let Some(formation) = self.active_formation.clone()
+            && self.battle.end == Some(BattleEndCause::MonsterWipe)
+            && let Some(formation) = self.battle.active_formation.clone()
         {
             // `apply_battle_loot` borrows the catalog while mutating self, so
             // swap it out and back around the call.
-            let catalog = std::mem::take(&mut self.monster_catalog);
+            let catalog = std::mem::take(&mut self.tables.monster_catalog);
             let rewards = self.apply_battle_loot(&formation, &catalog);
-            self.monster_catalog = catalog;
-            self.last_battle_rewards = Some(rewards);
+            self.tables.monster_catalog = catalog;
+            self.battle.last_rewards = Some(rewards);
             // Arm the spoils panel. The numbers were always applied; nothing
             // ever told the player about them.
-            self.battle_spoils_frames = Self::SPOILS_BANNER_FRAMES;
+            self.battle.spoils_frames = Self::SPOILS_BANNER_FRAMES;
         }
-        self.battle_victory = None;
+        self.battle.victory = None;
         // The fade actor dies with the battle scene: the held black of the
         // exit / escape template (`holds_at_end`) comes down here, never in
         // the world tick.
-        self.screen_fade = None;
+        self.presentation.fade = None;
         // `true` only on the wipe-to-title arm; a wipe under the
         // scripted-loss latch takes the ordinary field return below.
         let mut wipe_to_title = false;
-        if self.battle_end == Some(BattleEndCause::PartyWipe) {
+        if self.battle.end == Some(BattleEndCause::PartyWipe) {
             // Clear the survived-last-battle flag (story-flag index 1) on
             // either wipe arm - retail `0x8003B5A0` `andi 0xbf`.
             self.system_flag_clear(1);
@@ -148,17 +150,17 @@ impl World {
                 wipe_to_title = true;
             }
         }
-        self.active_formation = None;
-        self.battle_end = None;
+        self.battle.active_formation = None;
+        self.battle.end = None;
         // Drop the battle seat anchors - the next battle's setup re-seats
         // the actors and the first locomotion tick re-seeds the pair
         // (`World::tick_battle_locomotion`).
         for a in self.actors.iter_mut() {
             a.battle.seat = None;
         }
-        self.battle_escaped = false;
-        self.battle_no_escape = false;
-        self.battle_guarding = [false; 3];
+        self.battle.escaped = false;
+        self.battle.no_escape = false;
+        self.battle.guarding = [false; 3];
         if wipe_to_title {
             // Retail's wipe hand-off never resumes the field track: the arm
             // pauses the sequencer (`jal 0x800266E0(0x8007052C)` at
@@ -166,8 +168,8 @@ impl World {
             // the scripted `4C EA` trigger routes) and the CARD / title flow
             // owns audio from there. Drop the swap bookkeeping so nothing
             // later cross-fades back to the field track.
-            self.battle_bgm_active = false;
-            self.field_bgm_resume = None;
+            self.audio.battle_bgm_active = false;
+            self.audio.field_bgm_resume = None;
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::Bgm {
                     text_id: 0,
@@ -181,15 +183,15 @@ impl World {
         // Revert any lingering buff deltas so the per-slot scalars return to
         // base, then drop the trackers + captured-id log (a new battle re-inits
         // these).
-        let buffs = std::mem::take(&mut self.battle_buffs);
+        let buffs = std::mem::take(&mut self.battle.buffs);
         for b in buffs {
             self.add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
         }
         // Revert any Fury Boost AP-gauge extension (class-5 item) and clear the
         // per-slot flags, so the next battle starts from the base gauge.
-        for idx in 0..self.ap_gauges.len() {
-            if let Some(delta) = self.fury_boost[idx].take() {
-                let gauge = &mut self.ap_gauges[idx];
+        for idx in 0..self.battle.ap_gauges.len() {
+            if let Some(delta) = self.battle.fury_boost[idx].take() {
+                let gauge = &mut self.battle.ap_gauges[idx];
                 gauge.base_ap = gauge.base_ap.saturating_sub(delta);
                 gauge.current_ap = gauge.current_ap.min(gauge.ceiling());
             }
@@ -198,19 +200,19 @@ impl World {
         self.resolve_captures();
         // Drop any open command / item / spell session - they belong to the
         // finished battle.
-        self.battle_command = None;
-        self.battle_item_menu = None;
-        self.battle_spell_menu = None;
-        self.battle_arts_menu = None;
-        self.battle_arts_input = None;
+        self.battle.command = None;
+        self.battle.item_menu = None;
+        self.battle.spell_menu = None;
+        self.battle.arts_menu = None;
+        self.battle.arts_input = None;
         // Stale damage popups + sound cues must not bleed into the next
         // encounter / field.
-        self.battle_hit_fx.clear();
-        self.battle_hit_events.clear();
-        self.battle_sfx_cues.clear();
-        self.battle_clut_stages.clear();
-        self.battle_effect_spawns.clear();
-        self.battle_shout_cues.clear();
+        self.battle.hit_fx.clear();
+        self.battle.hit_events.clear();
+        self.audio.battle_sfx_cues.clear();
+        self.battle.clut_stages.clear();
+        self.battle.effect_spawns.clear();
+        self.audio.battle_shout_cues.clear();
         // Post-battle grace + suppression on the session.
         self.end_encounter_battle();
         // Persist the battle's party HP / MP into the roster records BEFORE the
@@ -239,18 +241,18 @@ impl World {
         if let Some(ret) = self.field_return.take() {
             self.actors = ret.actors;
             self.player_actor_slot = ret.player_actor_slot;
-            self.party_count = ret.party_count;
+            self.party.party_count = ret.party_count;
             self.resync_party_actors_from_roster();
         }
         // Return to the mode the battle was entered from (the field for a
         // field encounter, the overworld for a world-map encounter), then
         // reset the latch so a subsequent direct `enter_battle` defaults back
         // to the field.
-        self.mode = self.battle_return_mode;
-        self.battle_return_mode = SceneMode::Field;
+        self.mode = self.battle.return_mode;
+        self.battle.return_mode = SceneMode::Field;
         // Reset step tracking so the post-battle position doesn't count as a
         // step on the next field tick.
-        self.field_last_tile = None;
+        self.terrain.last_tile = None;
     }
 
     /// Complete the field restore [`Self::finish_battle`]'s party-wipe arm
@@ -268,12 +270,12 @@ impl World {
         if let Some(ret) = self.field_return.take() {
             self.actors = ret.actors;
             self.player_actor_slot = ret.player_actor_slot;
-            self.party_count = ret.party_count;
+            self.party.party_count = ret.party_count;
             self.resync_party_actors_from_roster();
         }
-        self.mode = self.battle_return_mode;
-        self.battle_return_mode = SceneMode::Field;
-        self.field_last_tile = None;
+        self.mode = self.battle.return_mode;
+        self.battle.return_mode = SceneMode::Field;
+        self.terrain.last_tile = None;
     }
 
     /// Active enemy actors in the current battle as `(actor_index,
@@ -289,7 +291,7 @@ impl World {
         if !matches!(self.mode, SceneMode::Battle) {
             return Vec::new();
         }
-        let first_monster = self.party_count as usize;
+        let first_monster = self.party.party_count as usize;
         self.actors
             .iter()
             .enumerate()

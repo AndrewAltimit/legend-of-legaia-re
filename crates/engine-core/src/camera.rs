@@ -475,7 +475,7 @@ impl Camera {
     /// The mover is clocked in **display frames**, not sim ticks - retail
     /// credits `DAT_1F800393` (the adaptive frame-skip factor) per logic tick,
     /// which banks exactly one unit per display frame, making every authored
-    /// `apply` a duration in 60 Hz frames. `World::field_frames` is the
+    /// `apply` a duration in 60 Hz frames. `World::clock.display_frames` is the
     /// engine's display-frame counter, so diffing it is the faithful clock
     /// (the same thing the renderer's glide does).
     ///
@@ -489,7 +489,7 @@ impl Camera {
     /// PORT: FUN_801DC0BC
     /// REF: FUN_801DBE9C
     fn tick_globals(&mut self, world: &World) {
-        let now = world.field_frames;
+        let now = world.clock.display_frames;
         let dt = now.saturating_sub(self.last_field_frame) as i32;
         self.last_field_frame = now;
 
@@ -535,10 +535,10 @@ impl Camera {
         // ungated feed would re-frame every ramp-free scene. A scripted glide
         // still wins - it is the shot the script staged.
         // REF: FUN_801DABA4 (the field-overlay camera composer)
-        if !gliding && world.camera_registers.written() {
+        if !gliding && world.camera.registers.written() {
             for slot in crate::register_ramp::RampSlot::ALL {
                 let axis = slot.camera_axis();
-                let v = world.camera_registers.get(slot);
+                let v = world.camera.registers.get(slot);
                 // Retail's eye-back store is a halfword whose sign the
                 // composer folds into the yaw (it picks which side of the
                 // player the orbit sits on), so the depth axis takes the
@@ -560,7 +560,7 @@ impl Camera {
     }
 
     /// The camera azimuth to feed
-    /// [`World::field_camera_azimuth`](crate::world::World::field_camera_azimuth)
+    /// [`crate::world::FieldLocomotion::camera_azimuth`](crate::world::FieldLocomotion::camera_azimuth)
     /// this frame, in PSX 12-bit units (`4096` = full turn): scripted yaw +
     /// the user's manual orbit + the host renderer's fixed framing bias.
     /// This is what keeps the d-pad -> world-direction remap ("screen up
@@ -589,7 +589,7 @@ impl Camera {
     /// [`Self::route_camera_events`]). That stale cinematic yaw must not leak
     /// into free-roam: a renderer frames free-roam field with a fixed follow
     /// camera, and hosts feed [`Self::yaw`] into
-    /// [`World::field_camera_azimuth`](crate::world::World::field_camera_azimuth)
+    /// [`crate::world::FieldLocomotion::camera_azimuth`](crate::world::FieldLocomotion::camera_azimuth)
     /// to remap the d-pad camera-relative - so a non-zero leaked yaw rotates
     /// the controls off the on-screen camera (the New Game prologue → Rim Elm
     /// hand-off left the d-pad ~180deg inverted). Retail returns control on the
@@ -1025,7 +1025,7 @@ mod tests {
         );
 
         // Advance 50 of the 100 display frames - halfway on a linear curve.
-        w.field_frames = 50;
+        w.clock.display_frames = 50;
         c.tick(&w);
         let mid = c.globals.tr_eye()[2];
         assert!(
@@ -1034,7 +1034,7 @@ mod tests {
         );
 
         // Run out the duration: exact arrival, and the one-shot mover retires.
-        w.field_frames = 100;
+        w.clock.display_frames = 100;
         c.tick(&w);
         assert_eq!(c.globals.tr_eye()[2], 17420, "glide arrives exactly");
         assert!(c.mover.is_none(), "the mover is one-shot");

@@ -89,9 +89,9 @@ fn scene_entry_pins_the_frame_step_factor() {
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
     host.enter_field_scene("map01", 0).expect("enter map01");
-    assert_eq!(host.world.frame_step, 3, "overworld dt = 3");
+    assert_eq!(host.world.clock.frame_step, 3, "overworld dt = 3");
     host.enter_field_scene("town01", 0).expect("enter town01");
-    assert_eq!(host.world.frame_step, 2, "town dt = 2");
+    assert_eq!(host.world.clock.frame_step, 2, "town dt = 2");
 }
 
 /// Drive one of map01's real fade ops through the engine kernel on a scratch
@@ -139,7 +139,7 @@ fn map01_fade_completes_in_128_vsyncs_at_either_frame_step() {
 
     for (dt, expect_game_ticks) in [(3u8, 43u32), (2, 64)] {
         let mut world = World::new();
-        world.frame_step = dt;
+        world.clock.frame_step = dt;
         let mut vram = legaia_tim::Vram::new();
         // Seed distinct A / B rows: park cell = a red ramp, strip cell = a
         // blue ramp.
@@ -155,21 +155,21 @@ fn map01_fade_completes_in_128_vsyncs_at_either_frame_step() {
         let b_row: Vec<u16> = (0..16).map(|i| vram.pixel(112 + i, 499)).collect();
 
         world.spawn_clut_cell_fx(&payload);
-        assert_eq!(world.clut_fx.len(), 1);
+        assert_eq!(world.ambient.clut_fx.len(), 1);
 
         let mut vsyncs = 0u32;
         let mut game_ticks = 0u32;
         let mut saw_mid_row = false;
         let mut sim_ticks = 0u32;
-        while !world.clut_fx.is_empty() {
+        while !world.ambient.clut_fx.is_empty() {
             sim_ticks += 1;
             assert!(sim_ticks < 1000, "fade never completed (dt={dt})");
             world.tick();
-            if world.field_frame_step == 1 {
+            if world.clock.display_frame_step == 1 {
                 vsyncs += 1;
             }
-            game_ticks += world.clut_pending_game_ticks;
-            if world.step_clut_fx(&mut vram) && !world.clut_fx.is_empty() {
+            game_ticks += world.ambient.clut_pending_game_ticks;
+            if world.step_clut_fx(&mut vram) && !world.ambient.clut_fx.is_empty() {
                 // Mid-fade write: the destination must be neither pure A
                 // nor pure B (a genuinely interpolated row).
                 let cur: Vec<u16> = (0..16).map(|i| vram.pixel(i, 498)).collect();
@@ -217,7 +217,7 @@ fn map01_one_shots_copy_the_strip_cell_immediately() {
     let sites = legaia_engine_core::man_field_scripts::scene_clut_cell_fx(&mf, &man);
 
     let mut world = World::new();
-    world.frame_step = 3;
+    world.clock.frame_step = 3;
     let mut vram = legaia_tim::Vram::new();
     let mut bytes = [0u8; 32];
     for i in 0..16u16 {
@@ -244,9 +244,12 @@ fn map01_one_shots_copy_the_strip_cell_immediately() {
         }
         world.spawn_clut_cell_fx(&payload);
     }
-    assert_eq!(world.clut_fx.len(), 4);
+    assert_eq!(world.ambient.clut_fx.len(), 4);
     assert!(world.step_clut_fx(&mut vram), "one-shots wrote VRAM");
-    assert!(world.clut_fx.is_empty(), "one-shots retire immediately");
+    assert!(
+        world.ambient.clut_fx.is_empty(),
+        "one-shots retire immediately"
+    );
     for x0 in [0usize, 16, 32, 48] {
         let row: Vec<u16> = (0..16).map(|i| vram.pixel(x0 + i, 498)).collect();
         assert_eq!(row, strip, "park cell ({x0}, 498) holds the strip cell");

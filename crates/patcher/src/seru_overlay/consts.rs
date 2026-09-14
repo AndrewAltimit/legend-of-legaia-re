@@ -600,7 +600,7 @@ pub const BUCKET_TABLE_LEN: usize = legaia_asset::seru_trade::BUCKET_TABLE_LEN;
 
 /// Retail play-time counter `_DAT_80084570` (u32 game-time seconds). The handler
 /// reads it to pick the current bucket; the engine mirrors it as
-/// `World::play_time_seconds`.
+/// `World::clock.play_time_seconds`.
 pub const PLAY_TIME_VA: u32 = 0x8008_4570;
 /// The armed op-0x49 menu state `_DAT_8007B450`: while a shop is open it holds
 /// the operand pointer to the shop record `[sub_op][?][count][ids...][name\0]`

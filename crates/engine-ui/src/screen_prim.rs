@@ -315,7 +315,7 @@ pub fn cinematic_bar_prims(bar: i16, screen_h: i16) -> Vec<ScreenPrim> {
 /// (the template's trailing id word).
 ///
 /// Both hosts push this into their screen-overlay pass while
-/// `World::screen_fade` is live; a host that hand-rolls the quad is how the
+/// `World::presentation.fade` is live; a host that hand-rolls the quad is how the
 /// blend mode gets lost.
 // REF: FUN_80024EE4, FUN_80025000
 pub fn screen_fade_prim(rgb: [u8; 3], kind: u8, layer: u8) -> ScreenPrim {

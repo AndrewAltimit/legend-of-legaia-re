@@ -183,7 +183,7 @@ fn a_dome_cast_the_gauge_cannot_cover_is_refused() {
 /// per-frame seam and a **ported** module kernel runs there.
 ///
 /// The observable is the resident module's own phase byte (`ctx+0x279`,
-/// mirrored as `World::cast_module_phase`): the band arms it at zero, and
+/// mirrored as `World::casting.module_phase`): the band arms it at zero, and
 /// only a ported tick body advances it. An entry whose code half is unported
 /// leaves it at zero, which is what makes this assertion non-vacuous.
 #[test]
@@ -193,7 +193,10 @@ fn a_player_seru_cast_reaches_a_ported_module_kernel() {
     // Two combatants is all the seam needs: the caster and something to
     // retarget onto.
     let mut world = World {
-        party_count: 1,
+        party: legaia_engine_core::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     while world.actors.len() < 8 {
@@ -205,7 +208,7 @@ fn a_player_seru_cast_reaches_a_ported_module_kernel() {
         a.battle.max_hp = 400;
         a.battle.liveness = 1;
     }
-    world.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
+    world.tables.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
     world.battle_ctx.active_actor = 0;
 
     // The band's own arming seam, the one `spell_anim_trigger` runs for a
@@ -216,16 +219,19 @@ fn a_player_seru_cast_reaches_a_ported_module_kernel() {
         .expect("the Seru dispatch names a band entry");
     assert_eq!(entry, 909, "0x87 pages PROT 903 + (0x87 - 0x81)");
     world.arm_summon_stager(0, PORTED_SERU_SPELL);
-    assert_eq!(world.cast_module_phase, 0, "the arm zeroes the phase pair");
+    assert_eq!(
+        world.casting.module_phase, 0,
+        "the arm zeroes the phase pair"
+    );
 
     let busy = world.summon_stager_tick();
     assert!(busy, "the stager holds while it choreographs");
     assert_eq!(
-        world.cast_module_phase, 1,
+        world.casting.module_phase, 1,
         "PROT 0909's ported kernel advanced the module phase at the band seam"
     );
     eprintln!(
         "[ok] cast {PORTED_SERU_SPELL:#04x} -> PROT {entry}, module phase {}",
-        world.cast_module_phase
+        world.casting.module_phase
     );
 }

@@ -134,7 +134,7 @@ fn town01_opening_record_face_stamps_pinned_and_stamp_lands_in_vram() {
         world.queue_script_vram_move(*words);
     }
     assert_eq!(
-        world.script_vram_moves,
+        world.ambient.script_vram_moves,
         PINNED.map(|(_, w)| ScriptVramMove::from_words(w)).to_vec(),
         "both stamps queued in script order"
     );

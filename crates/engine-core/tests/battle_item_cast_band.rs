@@ -33,7 +33,7 @@ fn build_world() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
     // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
     w.load_party(legaia_save::Party::zeroed(3));
@@ -50,7 +50,7 @@ fn build_world() -> World {
     w.actors[0].move_state.world_x = 300;
     w.actors[0].move_state.world_z = 300;
     w.actors[0].move_state.field_72 = 4096;
-    w.field_camera_azimuth = 0;
+    w.locomotion.camera_azimuth = 0;
 
     use legaia_engine_core::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
@@ -64,8 +64,8 @@ fn build_world() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.toggles.live_gameplay_loop = true;
+    w.battle.player_driven = true;
     w
 }
 
@@ -109,7 +109,7 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
     // catalog defaults empty (disc-installed at boot); the port's vanilla
     // catalog carries the Healing Leaf entry the menu filter needs.
     w.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
-    w.inventory.insert(0x77, 2);
+    w.party.inventory.insert(0x77, 2);
 
     enter_battle(&mut w);
     // Battle entry reseeds party stats from the (zeroed) roster records -
@@ -128,14 +128,14 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
     // Round prompt (`Begin | Run`): Cross takes Begin -> the command ring.
     press(&mut w, PadButton::Cross, &mut trace);
     assert!(
-        w.battle_command.is_some(),
+        w.battle.command.is_some(),
         "command session should be open on the party turn"
     );
     // Ring seat order is up/left/right/down = Item/Attack/Magic/Spirit; the
     // Up press itself commits the Item arm (retail state 0x28 dispatch).
     press(&mut w, PadButton::Up, &mut trace);
     assert!(
-        w.battle_item_menu.is_some(),
+        w.battle.item_menu.is_some(),
         "the Item arm should hand off to the inventory submenu"
     );
 
@@ -155,7 +155,7 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
         "the commit stamps the category-1 action on the member"
     );
     assert_eq!(
-        w.inventory.get(&0x77).copied(),
+        w.party.inventory.get(&0x77).copied(),
         Some(1),
         "exactly one copy consumed at the commit"
     );
@@ -164,13 +164,13 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
     // begins; with flat turn tokens slot 0 dispatches first.
     for _ in 0..2 {
         assert!(
-            w.battle_command.is_some(),
+            w.battle.command.is_some(),
             "the ring walks on to the next member"
         );
         press(&mut w, PadButton::Down, &mut trace);
     }
     assert!(
-        w.battle_command.is_none(),
+        w.battle.command.is_none(),
         "the last commit begins the round"
     );
 
@@ -217,7 +217,7 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
     for _ in 0..0x200 {
         w.set_pad(0);
         let _ = w.tick();
-        if w.battle_command.is_some() {
+        if w.battle.command.is_some() {
             reopened = true;
             break;
         }
@@ -238,20 +238,20 @@ fn summon_flute_item_reroutes_to_the_summon_band_and_completes() {
     for _ in 0..0x40 {
         w.set_pad(0);
         let _ = w.tick();
-        if w.battle_command.is_some() {
+        if w.battle.command.is_some() {
             opened = true;
             break;
         }
     }
     assert!(opened, "no command session opened");
-    let actor = w.battle_command.as_ref().unwrap().actor;
-    w.battle_command = None;
+    let actor = w.battle.command.as_ref().unwrap().actor;
+    w.battle.command = None;
     if let Some(a) = w.actors.get_mut(actor as usize) {
         // Fresh action stream (the live loop's own arming sites clear it the
         // same way before staging params[0]).
         a.battle.params = Default::default();
         a.battle.strike_index = 0;
-        a.battle.active_target = w.party_count; // first monster slot
+        a.battle.active_target = w.party.party_count; // first monster slot
         a.battle.action_category = ActionCategory::Item.as_byte();
         a.battle.params[0] = 0x98; // SummonFlute
     }

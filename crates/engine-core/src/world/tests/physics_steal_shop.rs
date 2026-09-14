@@ -27,7 +27,7 @@ fn tick_actor_physics_skips_inactive_slots() {
     let mut world = World::new();
     // No actor active; should be a no-op (no panics, no events).
     world.tick_actor_physics();
-    assert!(world.last_tick_events.is_empty());
+    assert!(world.move_vm.last_tick_events.is_empty());
 }
 
 #[test]
@@ -41,8 +41,8 @@ fn tick_actor_physics_records_keyframe_event_for_active_actor() {
     world.actors[0].physics.set_bone_count(8);
     world.tick_actor_physics();
     // One slot fired; events vector non-empty.
-    assert_eq!(world.last_tick_events.len(), 1);
-    let (slot, res) = &world.last_tick_events[0];
+    assert_eq!(world.move_vm.last_tick_events.len(), 1);
+    let (slot, res) = &world.move_vm.last_tick_events[0];
     assert_eq!(*slot, 0);
     assert!(
         res.events
@@ -69,10 +69,10 @@ fn move_vm_kick_drives_cursor_advance_against_installed_pool() {
     // into the dispatcher's `frame_delta` (retail `DAT_1F800393`), so the
     // per-tick arithmetic below is only meaningful against a stated cadence.
     // `World::new()` defaults to the field floor of 2.
-    world.frame_step = 1;
+    world.clock.frame_step = 1;
     world.tick_actor_physics();
     // MoveVmKick emitted.
-    let (_, res) = &world.last_tick_events[0];
+    let (_, res) = &world.move_vm.last_tick_events[0];
     assert!(
         res.events
             .iter()
@@ -98,7 +98,7 @@ fn move_buffer_phase_advances_per_vsync_not_per_tick() {
     for cadence in [1u8, 2, 4] {
         let mut world = World::new();
         world.set_move_buffer_root(make_move_pool(3, 0x1010, 8, 1));
-        world.frame_step = cadence;
+        world.clock.frame_step = cadence;
         world.actors[0].active = true;
         world.actors[0].set_physics_dispatch(0x06);
         world.actors[0].physics.move_vm_kick = 1;
@@ -155,7 +155,7 @@ fn world_tick_runs_physics_pass_on_the_actor_game_tick() {
     // `DAT_1F800393` per frame and the actor pool runs per game tick.)
     let mut world = World::new();
     world.set_move_buffer_root(make_move_pool(1, 0x1010, 8, 1));
-    world.frame_step = 1; // one game tick per vsync
+    world.clock.frame_step = 1; // one game tick per vsync
     world.actors[0].active = true;
     world.actors[0].set_physics_dispatch(0x06);
     world.actors[0].physics.move_vm_kick = 1;
@@ -206,13 +206,13 @@ fn apply_steal_grants_item_on_hit_and_respects_non_stealable() {
     };
     let got = world.apply_steal(3, &table);
     assert_eq!(got, Some(0x8a), "100% steal lands and grants the item");
-    assert_eq!(world.inventory.get(&0x8a).copied(), Some(1));
+    assert_eq!(world.party.inventory.get(&0x8a).copied(), Some(1));
 
     // A non-stealable monster (0% chance) never grants and consumes no roll.
     let mut world = World::default();
     let rng_before = world.rng_state;
     assert_eq!(world.apply_steal(2, &table), None);
-    assert!(world.inventory.is_empty());
+    assert!(world.party.inventory.is_empty());
     assert_eq!(
         world.rng_state, rng_before,
         "no roll for a non-stealable monster"
@@ -241,7 +241,7 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
     let mut prices = [0u16; 256];
     prices[0x22] = 50;
     prices[0x34] = 120;
-    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
 
     let code = shop_op49_script();
     let mut ctx = FieldCtx::default();
@@ -258,7 +258,7 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
         );
     }
     assert!(
-        world.field_shop_armed && world.field_shop_open,
+        world.shops.shop_armed && world.shops.shop_open,
         "shop armed"
     );
     // The opened shop carries the priced inline stock.
@@ -294,7 +294,7 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
         }
     }
     assert!(
-        !world.field_shop_armed,
+        !world.shops.shop_armed,
         "the arm clears so a later op-0x49 can open the next merchant"
     );
 }
@@ -335,16 +335,16 @@ fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
             "op-0x49 sub-5 suspends the script while the board mode runs"
         );
     }
-    let board = world.tile_board.as_ref().expect("board installed");
+    let board = world.board.grid.as_ref().expect("board installed");
     assert_eq!((board.width, board.height), (4, 4));
     assert_eq!(board.cells.len(), 16);
     // The retail fill only produces cells in the known value classes.
     assert!(board.cells.iter().all(|&c| (2..=0xE).contains(&c)));
-    let header = world.tile_board_header.expect("header kept");
+    let header = world.board.header.expect("header kept");
     assert_eq!(header.player_template, 0x21);
     assert_eq!(header.tile_template_base, 0x30);
     // The player actor was seated at the start-cell centre.
-    let (px, pz) = world.tile_board.as_ref().unwrap().player_world();
+    let (px, pz) = world.board.grid.as_ref().unwrap().player_world();
     assert_eq!(world.actors[0].move_state.world_x as i32, px);
     assert_eq!(world.actors[0].move_state.world_z as i32, pz);
 
@@ -359,16 +359,16 @@ fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
     // Simulate the walk reaching an event/transition cell: plant one under
     // the player and run the arrival pass (the interpolation-complete path).
     {
-        let b = world.tile_board.as_mut().unwrap();
+        let b = world.board.grid.as_mut().unwrap();
         let idx = b.player_row as usize * b.width as usize + b.player_col as usize;
         b.cells[idx] = crate::tile_board::CELL_EVENT_FIRST;
         let (tx, tz) = b.player_world();
-        world.tile_board_target = Some((tx, tz));
+        world.board.target = Some((tx, tz));
         world.set_pad(0);
         let _ = world.tick();
     }
     assert!(
-        world.tile_board.is_none(),
+        world.board.grid.is_none(),
         "landing on an event cell exits the board mode"
     );
 
@@ -383,7 +383,7 @@ fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
             other => panic!("expected Advance, got {other:?}"),
         }
     }
-    assert!(!world.tile_board_armed, "the arm clears on resume");
+    assert!(!world.board.armed, "the arm clears on resume");
 }
 
 #[test]
@@ -392,15 +392,15 @@ fn tile_board_animated_cell_cycles_on_arrival() {
     // Plant an animated tile at the player's cell and run the arrival pass
     // via a completed interpolation.
     {
-        let b = w.tile_board.as_mut().unwrap();
+        let b = w.board.grid.as_mut().unwrap();
         b.cells[0] = crate::tile_board::CELL_ANIM_LAST; // 0xE wraps to 0xB
         let (tx, tz) = b.player_world();
-        w.tile_board_target = Some((tx, tz));
+        w.board.target = Some((tx, tz));
     }
     w.set_pad(0);
     let _ = w.tick();
     assert_eq!(
-        w.tile_board.as_ref().unwrap().cells[0],
+        w.board.grid.as_ref().unwrap().cells[0],
         crate::tile_board::CELL_ANIM_FIRST,
         "0xE cycles back to 0xB on arrival"
     );
@@ -446,10 +446,17 @@ fn field_vm_op43_widget_subops_drive_screen_fx_frame() {
             other => panic!("widget sub-op should advance, got {other:?}"),
         }
     }
-    assert!(world.screen_fx.mask.is_some(), "mask widget spawned");
-    assert!(world.screen_fx.letterbox.is_some(), "letterbox configured");
-    assert!(world.screen_fx.panel.is_some(), "panel spawned");
-    assert_eq!(world.screen_fx.sprites.len(), 1, "sprite widget spawned");
+    assert!(world.presentation.fx.mask.is_some(), "mask widget spawned");
+    assert!(
+        world.presentation.fx.letterbox.is_some(),
+        "letterbox configured"
+    );
+    assert!(world.presentation.fx.panel.is_some(), "panel spawned");
+    assert_eq!(
+        world.presentation.fx.sprites.len(),
+        1,
+        "sprite widget spawned"
+    );
 
     // One world tick publishes the frame: 4 mask border quads, 2 letterbox
     // bands, 2 gradient strips, 1 panel quad (128px wide - no split), 1 sprite.
@@ -459,7 +466,7 @@ fn field_vm_op43_widget_subops_drive_screen_fx_frame() {
     // (`+0x1c` vs `+0x4`); batching them into one list drew the bands behind
     // every sprite the same scene spawns.
     let _ = world.tick();
-    let frame = &world.screen_fx_frame;
+    let frame = &world.presentation.fx_frame;
     assert_eq!(frame.solid_quads.len(), 4, "4 mask border quads");
     assert_eq!(frame.band_quads.len(), 2, "2 letterbox bands");
     assert_eq!(frame.gradient_quads.len(), 2);
@@ -485,7 +492,7 @@ fn field_vm_op43_widget_subops_drive_screen_fx_frame() {
         let r = vm::field::step(&mut host, &mut ctx, &move_op, 0);
         assert!(matches!(r, FieldStepResult::Advance { .. }));
     }
-    let p = world.screen_fx.panel.as_ref().unwrap();
+    let p = world.presentation.fx.panel.as_ref().unwrap();
     assert_eq!(p.target[0], 200);
     assert_eq!(p.target[2], 64, "0x0800 (4.12) halves the 128px base width");
 }
@@ -499,7 +506,7 @@ fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
     prices[0x34] = 120;
 
     let mut world = World::new();
-    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
     assert!(world.try_arm_field_shop(&shop_op49_script()));
     let sess = world.take_pending_field_shop().expect("shop opened");
 
@@ -521,7 +528,7 @@ fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
         expected_offset as u32,
         &legaia_asset::seru_trade::default_pool(),
     );
-    world.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
+    world.tables.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
         enabled: true,
         seed,
         max_offers: 4,
@@ -531,7 +538,7 @@ fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
     list.ids[0] = bucket0.want_id;
     list.count = 1;
     lead.set_spell_list(list);
-    world.roster = legaia_save::Party {
+    world.party.roster = legaia_save::Party {
         members: vec![lead],
     };
 
@@ -553,7 +560,7 @@ fn field_vm_op49_non_shop_payload_does_not_open_a_shop() {
     // mask rejects it as not a gold shop.
     let mut prices = [0u16; 256];
     prices[0x22] = 50;
-    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
     let mut code = vec![0x49, 0x00, 0x00, 0x02, 0x34, 0x22];
     code.extend_from_slice(b"Shop\0");
     let mut ctx = FieldCtx::default();
@@ -562,7 +569,7 @@ fn field_vm_op49_non_shop_payload_does_not_open_a_shop() {
         let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
     }
     assert!(
-        !world.field_shop_armed,
+        !world.shops.shop_armed,
         "a payload that doesn't lead with a sellable item is not a gold shop"
     );
     assert!(world.take_pending_field_shop().is_none());
@@ -576,7 +583,7 @@ fn field_vm_op49_trims_unsellable_padding_to_the_sellable_stock() {
     let mut prices = [0u16; 256];
     prices[0x22] = 50;
     prices[0x34] = 120;
-    world.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
     let mut code = vec![0x49, 0x00, 0x00, 0x03, 0x22, 0x34, 0x03];
     code.extend_from_slice(b"Shop\0");
     let mut ctx = FieldCtx::default();
@@ -607,7 +614,7 @@ fn field_vm_op49_without_item_data_never_opens_a_shop() {
         let mut host = FieldHostImpl { world: &mut world };
         let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
     }
-    assert!(!world.field_shop_armed);
+    assert!(!world.shops.shop_armed);
     assert!(world.take_pending_field_shop().is_none());
 }
 
@@ -631,7 +638,8 @@ fn camera_configure_merges_params_across_beats() {
         host.camera_configure(&val(&[0, 1, 2, 3, 4, 5, 6, 8, 9], 111), 0, 0);
     }
     let get = |w: &World, slot: u8| {
-        w.camera_state
+        w.camera
+            .state
             .params
             .iter()
             .find(|p| p.slot == slot)
@@ -662,7 +670,7 @@ fn camera_configure_merges_params_across_beats() {
         Some(111),
         "eye-depth survives the H-only beat"
     );
-    assert_eq!(world.camera_state.params.len(), 9, "no slot dropped");
+    assert_eq!(world.camera.state.params.len(), 9, "no slot dropped");
 }
 
 #[test]
@@ -682,8 +690,8 @@ fn field_vm_op43_ramp_subops_spawn_register_ramps() {
             other => panic!("ramp sub-op should advance, got {other:?}"),
         }
     }
-    assert_eq!(world.register_ramps.len(), 1);
-    let r = &world.register_ramps[0];
+    assert_eq!(world.camera.register_ramps.len(), 1);
+    let r = &world.camera.register_ramps[0];
     assert_eq!(r.slot, RampSlot::Dat8007B618, "sub-3 targets DAT_8007B618");
     // The four tile corners land in world units (tile * 0x80 + 0x40).
     assert_eq!(
@@ -703,6 +711,6 @@ fn field_vm_op43_ramp_subops_spawn_register_ramps() {
         let mut host = FieldHostImpl { world: &mut world };
         let _ = vm::field::step(&mut host, &mut ctx, &op6, 0);
     }
-    assert_eq!(world.register_ramps.len(), 2);
-    assert_eq!(world.register_ramps[1].slot, RampSlot::Dat8007B610);
+    assert_eq!(world.camera.register_ramps.len(), 2);
+    assert_eq!(world.camera.register_ramps[1].slot, RampSlot::Dat8007B610);
 }

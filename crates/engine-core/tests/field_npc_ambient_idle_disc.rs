@@ -68,11 +68,11 @@ fn town_scenes_install_ambient_facing_channels() {
     };
 
     assert!(
-        !world.field_npc_ambient.is_empty(),
+        !world.npcs.ambient.is_empty(),
         "town01 binds motion records to placements, so channels must install \
          (0 of {placements} placements got one - the binding law is wrong)"
     );
-    for (slot, chan) in &world.field_npc_ambient {
+    for (slot, chan) in &world.npcs.ambient {
         assert!(
             !chan.variants.is_empty(),
             "slot {slot} installed with no variants"
@@ -112,7 +112,7 @@ fn town01_authors_its_facing_ramps_in_flag_gated_variants() {
 
     let mut gated_sites = 0usize;
     let mut default_sites = 0usize;
-    for chan in world.field_npc_ambient.values() {
+    for chan in world.npcs.ambient.values() {
         for (sel, code) in &chan.variants {
             let n = facing_sites(code).len();
             if *sel == SELECTOR_DEFAULT {
@@ -156,7 +156,8 @@ fn a_flag_gated_facing_stream_turns_its_npc() {
     // Find a placement whose gated variant carries facing ops, and the flag
     // that selects it.
     let (slot, gate) = world
-        .field_npc_ambient
+        .npcs
+        .ambient
         .iter()
         .find_map(|(slot, chan)| {
             chan.variants
@@ -167,12 +168,12 @@ fn a_flag_gated_facing_stream_turns_its_npc() {
         .expect("town01 has a flag-gated facing stream");
 
     // Fresh state: the default variant runs and the NPC holds its heading.
-    let posed = world.field_npc_headings.get(&slot).copied().unwrap_or(0);
+    let posed = world.npcs.headings.get(&slot).copied().unwrap_or(0);
     for _ in 0..60 {
         world.tick_field_npc_ambient();
     }
     assert_eq!(
-        world.field_npc_headings.get(&slot).copied().unwrap_or(0),
+        world.npcs.headings.get(&slot).copied().unwrap_or(0),
         posed,
         "slot {slot}'s default variant carries no facing op, so it must not turn"
     );
@@ -182,7 +183,7 @@ fn a_flag_gated_facing_stream_turns_its_npc() {
     let mut turned = false;
     for _ in 0..240 {
         world.tick_field_npc_ambient();
-        if world.field_npc_headings.get(&slot).copied().unwrap_or(0) != posed {
+        if world.npcs.headings.get(&slot).copied().unwrap_or(0) != posed {
             turned = true;
             break;
         }
@@ -193,8 +194,8 @@ fn a_flag_gated_facing_stream_turns_its_npc() {
          the render heading - the channel is installed and not driving"
     );
     assert_eq!(
-        world.field_npc_ambient[&slot].live,
-        world.field_npc_ambient[&slot]
+        world.npcs.ambient[&slot].live,
+        world.npcs.ambient[&slot]
             .variants
             .iter()
             .position(|(sel, _)| *sel != SELECTOR_DEFAULT && (*sel & 0x0FFF) == gate),
@@ -202,7 +203,7 @@ fn a_flag_gated_facing_stream_turns_its_npc() {
     );
 
     // Every heading the channel produced is a live 12-bit render heading.
-    for (slot, h) in &world.field_npc_headings {
+    for (slot, h) in &world.npcs.headings {
         assert!(
             (0..=0x0FFF).contains(h),
             "slot {slot} heading {h:#X} outside the 12-bit render space"
@@ -227,17 +228,17 @@ fn idle_channels_do_not_clobber_externally_posed_headings() {
 
     // Pose every NPC at a distinctive bearing, as an interact would.
     const POSED: i16 = 0x0333;
-    let slots: Vec<u8> = world.field_npc_ambient.keys().copied().collect();
+    let slots: Vec<u8> = world.npcs.ambient.keys().copied().collect();
     assert!(!slots.is_empty(), "non-vacuous: town01 installs channels");
     for &slot in &slots {
-        world.field_npc_headings.insert(slot, POSED);
+        world.npcs.headings.insert(slot, POSED);
     }
 
     // One tick: any slot whose stream opens on a wait must still read POSED.
     world.tick_field_npc_ambient();
     let held = slots
         .iter()
-        .filter(|s| world.field_npc_headings.get(s) == Some(&POSED))
+        .filter(|s| world.npcs.headings.get(s) == Some(&POSED))
         .count();
     assert!(
         held > 0,

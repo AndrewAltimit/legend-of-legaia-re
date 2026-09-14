@@ -106,7 +106,7 @@ fn map01_leg_stages_the_retail_flyin_camera_beats() {
                 assert_eq!(beat(9), Some(368), "fly-in GTE H");
             }
         }
-        if host.world.camera_state.mode == 2 && host.world.camera_state.apply_trigger == 900 {
+        if host.world.camera.state.mode == 2 && host.world.camera.state.apply_trigger == 900 {
             saw_mode2_descent = true;
         }
         // The transition tick clears camera_state (scene entry), so only
@@ -114,7 +114,8 @@ fn map01_leg_stages_the_retail_flyin_camera_beats() {
         if host.world.active_scene_label == "map01" {
             last = host
                 .world
-                .camera_state
+                .camera
+                .state
                 .params
                 .iter()
                 .map(|p| (p.slot, p.value as i16))

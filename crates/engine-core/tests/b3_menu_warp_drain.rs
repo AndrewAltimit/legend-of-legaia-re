@@ -1,8 +1,8 @@
 //! Lane B3: the menu-staged transitions actually drain.
 //!
 //! A committed Door of Wind pick stages retail's `0x80084628`/`24`/`2C`
-//! triple on [`World::pending_menu_warp`]; a committed Door of Light stages
-//! [`World::pending_menu_escape`]. Both were disclosed as undrained. The
+//! triple on [`crate::world::MenuState::pending_warp`]; a committed Door of Light stages
+//! [`crate::world::MenuState::pending_escape`]. Both were disclosed as undrained. The
 //! world tick's `World::drain_staged_menu_warp` now converts them into the
 //! named scene transition the scene host consumes
 //! ([`World::pending_named_scene_transition`]).
@@ -38,13 +38,13 @@ fn toc_map() -> legaia_prot::cdname::IndexMap {
 fn a_staged_door_of_wind_warp_drains_to_a_named_scene_transition() {
     let mut w = World::new();
     w.install_scene_toc_names(toc_map());
-    w.pending_menu_warp = Some(StagedWarp {
+    w.menu.pending_warp = Some(StagedWarp {
         scene_id: 0x55,
         menu_x: 96,
         menu_y: 25,
     });
     let _ = w.tick();
-    assert!(w.pending_menu_warp.is_none(), "the stage is consumed");
+    assert!(w.menu.pending_warp.is_none(), "the stage is consumed");
     assert_eq!(
         w.pending_named_scene_transition,
         Some(("map01".to_string(), 96, 25, 0)),
@@ -60,7 +60,7 @@ fn a_field_scene_destination_resolves_too() {
     // the kingdom bases.
     let mut w = World::new();
     w.install_scene_toc_names(toc_map());
-    w.pending_menu_warp = Some(StagedWarp {
+    w.menu.pending_warp = Some(StagedWarp {
         scene_id: 0x162,
         menu_x: 22,
         menu_y: 62,
@@ -77,13 +77,13 @@ fn an_unresolvable_scene_word_is_dropped_not_invented() {
     // Retail's miss arm is the `UNFIND MAP NUMBER %d` park (`FUN_801EE328`
     // phase 0x63): nothing warps. No TOC map installed = every id misses.
     let mut w = World::new();
-    w.pending_menu_warp = Some(StagedWarp {
+    w.menu.pending_warp = Some(StagedWarp {
         scene_id: 0x55,
         menu_x: 96,
         menu_y: 25,
     });
     let _ = w.tick();
-    assert!(w.pending_menu_warp.is_none(), "consumed either way");
+    assert!(w.menu.pending_warp.is_none(), "consumed either way");
     assert_eq!(
         w.pending_named_scene_transition, None,
         "no invented destination"
@@ -94,16 +94,17 @@ fn an_unresolvable_scene_word_is_dropped_not_invented() {
 fn a_staged_escape_returns_to_the_visited_kingdom_tile() {
     let mut w = World::new();
     w.enter_world_map();
-    w.world_map_ctrl
+    w.world_map
+        .ctrl
         .as_mut()
         .expect("controller installed")
         .panels
         .note_visit(1, 40, 50);
     // Back in a field scene (a dungeon), the Door of Light commits.
     w.mode = SceneMode::Field;
-    w.pending_menu_escape = true;
+    w.menu.pending_escape = true;
     let _ = w.tick();
-    assert!(!w.pending_menu_escape, "the stage is consumed");
+    assert!(!w.menu.pending_escape, "the stage is consumed");
     assert_eq!(
         w.pending_named_scene_transition,
         Some(("map02".to_string(), 40, 50, 0)),
@@ -114,9 +115,9 @@ fn a_staged_escape_returns_to_the_visited_kingdom_tile() {
 #[test]
 fn an_escape_with_no_visited_record_is_dropped() {
     let mut w = World::new();
-    w.pending_menu_escape = true;
+    w.menu.pending_escape = true;
     let _ = w.tick();
-    assert!(!w.pending_menu_escape);
+    assert!(!w.menu.pending_escape);
     assert_eq!(w.pending_named_scene_transition, None);
 }
 
@@ -139,7 +140,7 @@ fn every_disc_placement_scene_id_resolves_through_the_installed_toc_map() {
     };
     let host = legaia_engine_core::scene::SceneHost::open_disc(&path).expect("open disc");
     assert!(
-        !host.world.scene_toc_names.is_empty(),
+        !host.world.tables.scene_toc_names.is_empty(),
         "SceneHost::new installed the CDNAME TOC map into the world"
     );
     let scus = legaia_engine_core::DiscVfs::open(&path)
@@ -151,6 +152,7 @@ fn every_disc_placement_scene_id_resolves_through_the_installed_toc_map() {
     for p in &menu.placements {
         let name = host
             .world
+            .tables
             .scene_toc_names
             .get(&u32::from(p.scene_id))
             .unwrap_or_else(|| {

@@ -39,7 +39,7 @@ fn loaded_in_town() -> Option<LegaiaRuntime> {
 }
 
 /// The same, in an arbitrary scene. The **Save** row is scene-gated on both
-/// hosts (`World::scene_save_allowed`, seeded from the MAN header bit retail
+/// hosts (`World::party.scene_save_allowed`, seeded from the MAN header bit retail
 /// copies into `_DAT_8007B6A8`), and across the disc that bit is set only on
 /// the three kingdom world maps - so a test that needs to reach the save
 /// screen through the menu has to stand in one of them, exactly as a player

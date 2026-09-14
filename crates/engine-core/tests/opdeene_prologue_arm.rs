@@ -93,9 +93,9 @@ fn opdeene_partition2_carries_the_gflag_set_26_handoff_arm() {
     world.set_active_scene_label(cutscene);
     // The scene entry marks the opening chain as playing (the skip gate's
     // scope); mirror it here since this test drives World directly.
-    world.opening_chain_active = true;
+    world.cutscene.opening_chain_active = true;
     assert_eq!(
-        world.story_flags & PROLOGUE_HANDOFF_FLAG,
+        world.flags.story_flags & PROLOGUE_HANDOFF_FLAG,
         0,
         "bit clear before the arm"
     );
@@ -104,7 +104,7 @@ fn opdeene_partition2_carries_the_gflag_set_26_handoff_arm() {
         "arm derives from the real opdeene bytecode"
     );
     assert_ne!(
-        world.story_flags & PROLOGUE_HANDOFF_FLAG,
+        world.flags.story_flags & PROLOGUE_HANDOFF_FLAG,
         0,
         "bit set after the data-driven arm"
     );
@@ -113,7 +113,11 @@ fn opdeene_partition2_carries_the_gflag_set_26_handoff_arm() {
         world.take_prologue_handoff(true),
         Some(legaia_asset::new_game::OPENING_SCENE),
     );
-    assert_eq!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0, "fire-once");
+    assert_eq!(
+        world.flags.story_flags & PROLOGUE_HANDOFF_FLAG,
+        0,
+        "fire-once"
+    );
 }
 
 #[test]
@@ -143,5 +147,5 @@ fn town01_partition2_has_no_prologue_handoff_arm() {
         !world.arm_prologue_handoff_from_man(&man_file, &man),
         "town01 carries no GFLAG_SET {PROLOGUE_HANDOFF_BIT}; the arm must not fire",
     );
-    assert_eq!(world.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    assert_eq!(world.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
 }

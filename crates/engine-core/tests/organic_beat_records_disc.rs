@@ -188,7 +188,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     let Some(extracted) = gated() else { return };
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     seed_new_game_party(&mut host.world, &extracted);
-    host.world.live_gameplay_loop = true;
+    host.world.toggles.live_gameplay_loop = true;
     host.enter_field_scene("rikuroa", 0).expect("enter rikuroa");
 
     // Baseline (non-vacuous): every flag in the chain is clear.
@@ -221,7 +221,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     host.enter_field_scene("rikuroa", 0)
         .expect("re-enter rikuroa");
     assert!(
-        !host.world.scripted_formation_pending,
+        !host.world.encounters.scripted_formation_pending,
         "no forced formation is pre-armed at scene entry"
     );
     assert!(
@@ -230,7 +230,8 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     );
     assert!(
         host.world
-            .field_boss_stagers
+            .props
+            .boss_stagers
             .contains_key(&CARUBAN_STAGER_SLOT),
         "the P1[3] stager binding is installed from the MAN"
     );
@@ -278,6 +279,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     // not a synthetic boss id.
     let formation = host
         .world
+        .battle
         .active_formation
         .as_ref()
         .expect("active formation set");
@@ -293,7 +295,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     );
     // The monster actor carries the PROT 867 archive stats (merged at scene
     // entry for every MAN-formation monster id, Caruban included).
-    let party = host.world.party_count as usize;
+    let party = host.world.party.party_count as usize;
     let caruban = host
         .world
         .actors
@@ -303,6 +305,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
         .expect("Caruban battle actor spawned");
     let archive = host
         .world
+        .tables
         .monster_catalog
         .get(CARUBAN_MONSTER_ID)
         .expect("archive stats merged for Caruban");
@@ -319,7 +322,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     // the player-driven command menu would otherwise open on Vahn's turn and
     // hold the Done band's `0x51` menu floor forever - this test is about the
     // flag chain, not the command UI.
-    host.world.battle_player_driven = false;
+    host.world.battle.player_driven = false;
     for a in host.world.actors.iter_mut().skip(party) {
         if a.battle_monster_id.is_some() {
             let delta = i32::from(a.battle.hp);
@@ -344,7 +347,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
         // still retires against the party during the teardown ticks; keep
         // the seeded party standing so the forced win cannot be converted
         // into a party wipe by a monster the test already declared dead.
-        for slot in 0..host.world.party_count as usize {
+        for slot in 0..host.world.party.party_count as usize {
             let a = &mut host.world.actors[slot].battle;
             if a.max_hp > 0 {
                 // Route the force-heal through the synced writer: a bare
@@ -402,12 +405,13 @@ fn rikuroa_stager_and_p2_50_are_blocked_by_the_gate_flag_once_set() {
     assert!(
         !host
             .world
-            .field_boss_stagers
+            .props
+            .boss_stagers
             .contains_key(&CARUBAN_STAGER_SLOT),
         "the beaten boss's stager does not re-arm (park gate 0x142 set)"
     );
     assert!(
-        !host.world.scripted_formation_pending,
+        !host.world.encounters.scripted_formation_pending,
         "nothing is pre-armed either"
     );
     // Simulate a stale staged marker (the state a fled/lost fight would leave):
@@ -457,7 +461,7 @@ fn town01_p2_3_sets_flag_549_by_record_execution() {
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     // New-game prologue hand-off into Rim Elm (the path that installs the
     // opening cutscene timeline record P2[3]).
-    host.world.entering_town01_opening = true;
+    host.world.cutscene.entering_town01_opening = true;
     host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
     assert!(

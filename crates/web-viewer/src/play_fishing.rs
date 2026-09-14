@@ -17,7 +17,7 @@
 //!    (reel A), Square reels harder (reel B), Cross recasts when the cast is
 //!    done. The ported reel decoder `ReelInput::from_pad_mask` classifies the
 //!    two held bits, so holding both resolves the way retail does.
-//! 3. **A point record.** `World::fishing_points` is the persistent pool
+//! 3. **A point record.** `World::minigames.fishing_points` is the persistent pool
 //!    (retail `_DAT_8008444C`); the session seeds from it and `exit_fishing`
 //!    banks back into it, so points survive leaving and re-entering.
 //!
@@ -77,7 +77,7 @@ impl LegaiaRuntime {
         let Some(session) = self
             .scene_host
             .as_ref()
-            .and_then(|h| h.world.fishing.as_ref())
+            .and_then(|h| h.world.minigames.fishing.as_ref())
         else {
             self.fishing_banners = Default::default();
             self.fishing_banner_draws.clear();
@@ -109,7 +109,7 @@ impl LegaiaRuntime {
     /// The live fishing session, when one is installed on the scene host's
     /// world.
     fn fishing_session(&self) -> Option<&FishingSession> {
-        self.scene_host.as_ref()?.world.fishing.as_ref()
+        self.scene_host.as_ref()?.world.minigames.fishing.as_ref()
     }
 
     /// The phase / prompt status rows the native window prints above the retail
@@ -166,7 +166,7 @@ impl LegaiaRuntime {
         let inventory = self
             .scene_host
             .as_ref()
-            .map(|h| &h.world.inventory)
+            .map(|h| &h.world.party.inventory)
             .expect("fishing_session() proved the host exists");
         let count_of = |id: u32| *inventory.get(&(id as u8)).unwrap_or(&0) as i32;
         let mut rod_index = 0;
@@ -232,10 +232,10 @@ impl LegaiaRuntime {
     /// mode. Returns `false` (and leaves the world untouched) when no disc is
     /// loaded or the fishing overlay's species table does not decode.
     ///
-    /// The session's point pool resumes [`World::fishing_points`], so leaving
+    /// The session's point pool resumes [`legaia_engine_core::world::MinigameState::fishing_points`], so leaving
     /// and re-entering keeps the running total.
     ///
-    /// [`World::fishing_points`]: legaia_engine_core::world::World::fishing_points
+    /// [`legaia_engine_core::world::MinigameState::fishing_points`]: legaia_engine_core::world::World::fishing_points
     pub fn play_fishing_start(&mut self) -> bool {
         use legaia_asset::{fishing_species, static_overlay};
         let Some(host) = self.scene_host.as_mut() else {
@@ -262,7 +262,7 @@ impl LegaiaRuntime {
             [0usize, 1].map(|venue| PrizeExchange::from_asset(venue, &ex.venues[venue], names))
         });
         let record = FishingRecord {
-            points: host.world.fishing_points,
+            points: host.world.minigames.fishing_points,
             ..Default::default()
         };
         host.world
@@ -286,7 +286,7 @@ impl LegaiaRuntime {
         self.fishing_banners = Default::default();
         self.fishing_banner_draws.clear();
         self.fishing_prev_phase = None;
-        host.world.fishing_points
+        host.world.minigames.fishing_points
     }
 
     /// Is a fishing session live on the world this frame?
@@ -399,7 +399,7 @@ impl LegaiaRuntime {
             .iter()
             .enumerate()
             .map(|(i, r)| {
-                let owned = *world.inventory.get(&r.item_id).unwrap_or(&0) as u32;
+                let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
                 serde_json::json!({
                     "name": r.name.clone().unwrap_or_else(|| format!("item {:#04x}", r.item_id)),
                     "price": r.price,
@@ -407,17 +407,17 @@ impl LegaiaRuntime {
                     "owned": owned,
                     "available": ex.is_available(
                         i,
-                        world.fishing_points,
+                        world.minigames.fishing_points,
                         owned,
-                        world.fishing_prizes_purchased,
+                        world.minigames.fishing_prizes_purchased,
                     ),
                 })
             })
             .collect();
         serde_json::json!({
             "venue": ex.venue,
-            "points": world.fishing_points,
-            "first_visible": ex.first_visible(world.fishing_points),
+            "points": world.minigames.fishing_points,
+            "first_visible": ex.first_visible(world.minigames.fishing_points),
             "rows": rows,
         })
         .to_string()
@@ -437,6 +437,10 @@ impl LegaiaRuntime {
         host.world.open_fishing_exchange(exchange);
         let ok = host.world.fishing_exchange_buy(row, 1).is_some();
         host.world.close_fishing_exchange();
-        if ok { host.world.fishing_points } else { -1 }
+        if ok {
+            host.world.minigames.fishing_points
+        } else {
+            -1
+        }
     }
 }

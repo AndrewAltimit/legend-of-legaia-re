@@ -138,14 +138,15 @@ impl LegaiaRuntime {
         let h = self.scene_host.as_ref()?;
         if let Some(panel) = h
             .world
-            .cutscene_timeline
+            .cutscene
+            .timeline
             .as_ref()
             .and_then(|tl| tl.dialog.as_ref())
             && let Some(snap) = from_panel(panel, true)
         {
             return Some(snap);
         }
-        if let Some(id) = h.world.inline_dialogue.as_ref()
+        if let Some(id) = h.world.dialog.inline.as_ref()
             && let Some(panel) = id.panel.as_ref()
         {
             return from_panel(panel, true);
@@ -172,7 +173,7 @@ impl LegaiaRuntime {
             .to_vec();
         let width = ui::text_balloon_text_width(self.menu_assets.as_ref()?.font_ref(), &text);
         let host = self.scene_host.as_mut()?;
-        let rect = host.world.text_balloon.as_ref()?.frame_rect();
+        let rect = host.world.cutscene.text_balloon.as_ref()?.frame_rect();
         let pen = host.world.commit_text_balloon_width(width)?;
         Some((text, pen, rect))
     }
@@ -370,8 +371,16 @@ mod tests {
         let line: &[u8] = b"BALLOON";
         {
             let host = rt.scene_host.as_mut().expect("scene host");
-            host.world.text_balloon = Some(TextBalloon::spawn(line));
-            assert!(host.world.text_balloon.as_ref().unwrap().x.is_none());
+            host.world.cutscene.text_balloon = Some(TextBalloon::spawn(line));
+            assert!(
+                host.world
+                    .cutscene
+                    .text_balloon
+                    .as_ref()
+                    .unwrap()
+                    .x
+                    .is_none()
+            );
             // Startup band: retail's handler draws nothing on the first tick.
             assert!(host.world.text_balloon_drawing().is_none());
         }
@@ -398,7 +407,13 @@ mod tests {
         // The measurement round-trip landed on the record, and it is the
         // font's own width - not a default.
         let world = &rt.scene_host.as_ref().unwrap().world;
-        let x = world.text_balloon.as_ref().unwrap().x.expect("centred");
+        let x = world
+            .cutscene
+            .text_balloon
+            .as_ref()
+            .unwrap()
+            .x
+            .expect("centred");
         let font_w = legaia_engine_ui::text_balloon_text_width(
             rt.menu_assets.as_ref().unwrap().font_ref(),
             line,
@@ -416,7 +431,13 @@ mod tests {
             let _ = rt.tick_frame();
         }
         assert!(
-            rt.scene_host.as_ref().unwrap().world.text_balloon.is_none(),
+            rt.scene_host
+                .as_ref()
+                .unwrap()
+                .world
+                .cutscene
+                .text_balloon
+                .is_none(),
             "the balloon must retire itself"
         );
         let after: serde_json::Value =

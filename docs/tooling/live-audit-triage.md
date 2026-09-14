@@ -459,7 +459,7 @@ why the obvious placement was wrong. Where each one lives now:
 
 - `minigame_return_warp` - both halves of the two-part wire exist in
   `crates/engine-core/src/world/frame_tick.rs`: the Baka tally drains into
-  `World::minigame_winnings` and the warp pair (`arm_minigame_warp` /
+  `World::minigames.winnings` and the warp pair (`arm_minigame_warp` /
   `minigame_return_warp`) banks it into the casino coin bank on the
   `enter_baka_fighter` / `exit_baka_fighter` path.
 - `fmv_post_play_handoff` - consumed by `apply_fmv_handoff` in
@@ -488,7 +488,7 @@ and the `// PORT: FUN_801d4040` tag sits on `DanceDir::pad_bit` in `dance.rs`.
 **`minigame_return_warp`** (`80026018`). **This row's original reasoning was wrong and
 is corrected here**, because acting on it as written produces a double credit.
 
-It claimed "the state they touch already exists". It does not: `World::minigame_winnings`
+It claimed "the state they touch already exists". It does not: `World::minigames.winnings`
 is assigned a non-zero value only in tests, so nothing in production fills it, and the
 `exit_slot_machine` path already performs its own coin assignment. Wiring the pair beside
 that call therefore credits the bank twice.
@@ -497,7 +497,7 @@ What retail actually does, read off the dumps: `FUN_801D239C` (`0x801d2894..0x80
 drains each Baka tally into the prize accumulator `_DAT_80084440`, and `FUN_80026018`
 (`0x80026050..0x80026078`) adds that accumulator into the **casino coin bank**
 `0x800845A4`, clamped at 9,999,999 - not party gold `0x8008459C`. The port pays the tally
-into `World::money` instead, which is why the accumulator never fills.
+into `World::party.money` instead, which is why the accumulator never fills.
 
 So this is a real `WIRE`, but a **two-part** one that no single lane can land: the Baka
 tally must be redirected from party money to a coin accumulator (in
@@ -1102,7 +1102,7 @@ old reason got wrong.
 | `motion_pause_kick` (`8003c9ac`) | no view can be projected to gate the sweep | both gates and the default-move table are projectable from the per-slot maps |
 | `state_pick` (`801f1f4c`) | the engine models neither actor `+0x50` nor `+0x54` | `Actor::state_50` and `Actor::state_54`, at those offsets |
 | `field_audio_release_steps` (`801d8450`) | no per-voice stop, no `0x80091508` table | `SustainedSfx::stop_voice` and `SeqResourceTable::release`, the module's own two `REF:` addresses |
-| `submode_panel_rows` (`801e6984`) | the context block `open_submode` cannot reach | `open_submode` is live and seeds `World::submode_context`, which is read every frame |
+| `submode_panel_rows` (`801e6984`) | the context block `open_submode` cannot reach | `open_submode` is live and seeds `World::field_vm.submode_context`, which is read every frame |
 | `field_actor_plan` (`8003bc08`) | the engine has no `+0x10` flag word | `move_vm::ActorState::flags` is that word, tested in production on pool actors |
 | `tick_reflection` (`801e5154`) | the actor carries none of the fields this reads | `ActorState` carries all but `+0x64`, at retail offsets |
 | `refresh_object_grid_marks` (`80017bec`) | the engine keeps no `.MAP` image | three of four regions are resident, and the collision grid is mutated live |
@@ -1189,7 +1189,7 @@ the arc unconditionally on the acquire's success side (`0x801DF410` takes the
 PC-advance path only on failure), building the landing triple from the operand's
 two tile bytes and falling back to the actor's own position when both are zero.
 The port already forwards those coords to `FieldHost::field_halt_acquire_apply`,
-so the hook is live; the gap is that `World::field_ledge_hop` is the *player's*
+so the hook is live; the gap is that `World::locomotion.ledge_hop` is the *player's*
 single `Option`, and this entry arcs whichever actor the script runs on.
 
 **The camera row's two inputs are both absent, and one is upstream of the
@@ -1879,8 +1879,8 @@ not have to re-derive it.
 | Anchors | Waiting on |
 |---|---|
 | `effect_ribbon` x3 (`801CFA48`) | an actor render-mode channel carrying the `+0x9E` flag word, and a GPU packet chain for the geometry to fill. `engine-render` has no battle effect pass that asks a kernel for per-frame geometry, so the emitter is pure by design and the consumer does not exist on either host. |
-| `menu_list_rows` x4 (`80030628`) | `World::inventory` becoming slot-indexed (families 3 and `0x22`), and the shop session adopting the class-tagged `[class][dim][id]` row word (families 2 and `0x0B`). The order kernel `shop_buy_row_order` beside them is already live. |
-| `fade::spawn_fade` / `fade_ramp` x3 | the fade's *lifetime*, not a call: `World::screen_fade` drops a ramp when `step()` reports it complete, and the retail escape template never reports complete (hold word `-1`). Substituting moves the clear from the world tick to the battle teardown. |
+| `menu_list_rows` x4 (`80030628`) | `World::party.inventory` becoming slot-indexed (families 3 and `0x22`), and the shop session adopting the class-tagged `[class][dim][id]` row word (families 2 and `0x0B`). The order kernel `shop_buy_row_order` beside them is already live. |
+| `fade::spawn_fade` / `fade_ramp` x3 | the fade's *lifetime*, not a call: `World::presentation.fade` drops a ramp when `step()` reports it complete, and the retail escape template never reports complete (hold word `-1`). Substituting moves the clear from the world tick to the battle teardown. |
 | `move_vm::spawn` x3 (`80021B04`, `80050E74`) | a producer, not a host impl. `impl MoveSpawnHost for World` exists, but no engine path *starts from a move buffer*; and the part-pool pair needs retail's `DAT_801C90F0` seat table, which the world's generational actor vec replaced. |
 | `vram_rect_copy::build_packet` / `enqueue` | an actor kind that draws by VRAM rect copy. The field-VM sub-op `0x12` route fires on no on-disc script, so the honest prerequisite is the actor tick's kind-7 arm, not a renderer hook. |
 | `scus_leaf_kernels` x3, `scene_name_sync` x3, `chunk_install`, `morph_weight_apply` x2 | a retail-shaped producer in each case - the sprite index buffer, an `initmap.txt` boot override, the `[type, size, data]` side band, an actor whose morph set is a block. Each reason already names it. |
@@ -1930,7 +1930,7 @@ actor prototype at `0x801D7670`.
 
 ## Three rows closed, and one whose blocker was the wrong shape
 
-### `World::frame_begin_skip` has no producer because **retail** has none
+### `World::clock.frame_begin_skip` has no producer because **retail** has none
 
 `take_frame_begin_skip` (`FUN_8001698C`) reads a request flag that nothing in
 the engine sets, and the gap was carried as "a host frame-time sampler is
@@ -1956,7 +1956,7 @@ the new-press word's bit `0x800`: R1 held plus Start pressed. A second arm
 So the channel is a **debug pause**, and `crates/engine-core/src/retail_pad.rs`
 already says so about the same tail. The verdict stays `DISCLOSE`, but the
 prerequisite it names changes from "a frame-time sampler" to "the port's own
-debug surface" - the tag on `World::frame_begin_skip` now carries the three
+debug surface" - the tag on `World::clock.frame_begin_skip` now carries the three
 sites and the gate.
 
 ### The battle-intro mode hand-off gained its consumer
@@ -1975,7 +1975,7 @@ what keeps a second host from getting a different edge for free.
 ### The effect-script `0x801F6418` arm was queueing sound cues, and is a palette copy
 
 `World::drain_battle_effect_spawns` pushed each table-form spawn's
-`0x801F6418` byte into `World::battle_sfx_cues` as a cue id. The byte is a VRAM
+`0x801F6418` byte into `World::audio.battle_sfx_cues` as a cue id. The byte is a VRAM
 **x** and `FUN_80058490` is `MoveImage`, so the SFX scheduler was being handed
 palette columns to look up in a sound bank. The arm is now
 `engine-core::battle_effect_clut::stage_effect_clut` - a 16x1 copy from

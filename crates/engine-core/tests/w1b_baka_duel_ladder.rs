@@ -94,7 +94,11 @@ fn press(w: &mut World, mask: u16) {
 /// world's pad mapping, and a landed special is an unbeatable exchange.
 fn play_to_player_win(w: &mut World) {
     for _ in 0..100_000 {
-        if w.baka_fighter.as_ref().is_none_or(|f| f.match_over()) {
+        if w.minigames
+            .baka_fighter
+            .as_ref()
+            .is_none_or(|f| f.match_over())
+        {
             return;
         }
         press(w, PadButton::Down.mask());
@@ -120,7 +124,7 @@ fn rung1_a_cabinet_entered_at_boot_animates_the_intro_title_card() {
     let mut announcer = 0usize;
     for _ in 0..600 {
         step(&mut w, 0);
-        let Some(f) = w.baka_fighter.as_ref() else {
+        let Some(f) = w.minigames.baka_fighter.as_ref() else {
             break;
         };
         let frame = f.chrome_frame();
@@ -153,7 +157,7 @@ fn a_duel_entered_mid_cabinet_runs_no_title_card() {
     let mut w = world_with(fight());
     for _ in 0..200 {
         step(&mut w, 0);
-        let Some(f) = w.baka_fighter.as_ref() else {
+        let Some(f) = w.minigames.baka_fighter.as_ref() else {
             break;
         };
         assert!(
@@ -211,11 +215,21 @@ fn rung2_the_disc_bonus_tables_reach_the_per_round_score_rows() {
     // And through a live duel: the rows only move when the tables are there.
     let mut with_tables = world_with(fight().with_score_tables(tables));
     play_to_player_win(&mut with_tables);
-    let scored = with_tables.baka_fighter.as_ref().unwrap().score_rows();
+    let scored = with_tables
+        .minigames
+        .baka_fighter
+        .as_ref()
+        .unwrap()
+        .score_rows();
 
     let mut without = world_with(fight());
     play_to_player_win(&mut without);
-    let unscored = without.baka_fighter.as_ref().unwrap().score_rows();
+    let unscored = without
+        .minigames
+        .baka_fighter
+        .as_ref()
+        .unwrap()
+        .score_rows();
 
     assert_eq!(unscored, [0, 0, 0], "no tables, no score channel");
     assert!(
@@ -236,7 +250,11 @@ fn rung3_a_won_match_drains_its_tally_over_frames() {
     let mut w = world_with(fight());
     play_to_player_win(&mut w);
 
-    let f = w.baka_fighter.as_ref().expect("the fight is live");
+    let f = w
+        .minigames
+        .baka_fighter
+        .as_ref()
+        .expect("the fight is live");
     assert_eq!(f.winner(), Some(0), "the player took the match");
     assert!(matches!(f.phase(), MatchPhase::MatchOver(0)));
     let tally = f.tally().expect("a won match installs the tally");
@@ -259,7 +277,7 @@ fn rung3_a_won_match_drains_its_tally_over_frames() {
     let mut paid = 0i32;
     for i in 0..4_000 {
         step(&mut w, 0);
-        let Some(f) = w.baka_fighter.as_ref() else {
+        let Some(f) = w.minigames.baka_fighter.as_ref() else {
             break;
         };
         let Some(t) = f.tally() else { break };
@@ -345,6 +363,7 @@ fn rung4_the_drain_rate_takes_every_band() {
         step(&mut slow, 0);
         slow_frames = i + 1;
         if slow
+            .minigames
             .baka_fighter
             .as_ref()
             .and_then(|f| f.tally())
@@ -361,6 +380,7 @@ fn rung4_the_drain_rate_takes_every_band() {
         press(&mut fast, PadButton::Triangle.mask());
         fast_frames = i + 1;
         if fast
+            .minigames
             .baka_fighter
             .as_ref()
             .and_then(|f| f.tally())

@@ -9,7 +9,7 @@ impl World {
     // --- live gameplay loop: Field <-> Battle round trip ------------------
 
     /// Per-frame field-side driver for the live gameplay loop. Gated by
-    /// [`Self::live_gameplay_loop`] in [`Self::tick`]; never called when the
+    /// [`crate::world::WorldToggles::live_gameplay_loop`] in [`Self::tick`]; never called when the
     /// flag is off.
     ///
     /// Composes the already-existing encounter pieces into the per-frame
@@ -31,16 +31,16 @@ impl World {
             && let Some(actor) = self.actors.get(slot as usize)
         {
             let tile = (actor.move_state.world_x >> 7, actor.move_state.world_z >> 7);
-            match self.field_last_tile {
+            match self.terrain.last_tile {
                 Some(prev) if prev != tile => {
-                    self.field_last_tile = Some(tile);
+                    self.terrain.last_tile = Some(tile);
                     // Per-tile region refresh (the `FUN_800180EC` /
                     // `FUN_801DBA20` grain - retail re-runs the region scan
                     // when the player tile changes).
                     self.refresh_field_regions();
                     self.on_field_step();
                 }
-                None => self.field_last_tile = Some(tile),
+                None => self.terrain.last_tile = Some(tile),
                 _ => {}
             }
         }
@@ -67,7 +67,12 @@ impl World {
     /// same pairing at scene entry; if this ever fires, that check was bypassed
     /// or the table was replaced after it ran.
     pub(crate) fn begin_encounter_battle(&mut self, roll: crate::encounter::EncounterRoll) {
-        let Some(formation) = self.formation_table.formation(roll.formation_id).cloned() else {
+        let Some(formation) = self
+            .tables
+            .formation_table
+            .formation(roll.formation_id)
+            .cloned()
+        else {
             log::error!(
                 "encounter: rolled formation {} in scene '{}' is not registered - the battle is \
                  dropped and the field resumes (registered rows: {:?})",
@@ -93,16 +98,16 @@ impl World {
         self.field_return = Some(FieldReturnState {
             actors: self.actors.clone(),
             player_actor_slot: self.player_actor_slot,
-            party_count: self.party_count,
+            party_count: self.party.party_count,
         });
-        self.battle_return_mode = SceneMode::Field;
+        self.battle.return_mode = SceneMode::Field;
         // No engine-side battle staging: a scripted boss fight's transient
         // staged marker (rikuroa's `0x289`) is SET by the stager record's own
         // script bytes (`P1[3]`'s `52 89`, executed through
         // [`Self::run_boss_stager_record`]) immediately before its `3E FF`
         // battle-entry op reaches this path.
         self.enter_battle_from_formation(&formation);
-        self.active_formation = Some(formation);
+        self.battle.active_formation = Some(formation);
     }
 
     /// Seed the battle actor table from `formation` and enter
@@ -110,7 +115,7 @@ impl World {
     ///
     /// Party slots `0..party_count` keep their HP / MP (seeded from the
     /// roster by the boot path); monster slots take HP / attack / defense
-    /// from [`Self::monster_catalog`]. Every combatant is marked alive,
+    /// from [`crate::world::DiscTables::monster_catalog`]. Every combatant is marked alive,
     /// `action_category = Attack`, and party members target the first
     /// monster. The battle-action context is seeded at `Begin` with the
     /// Attack action queued. This is the live-loop counterpart to the
@@ -118,25 +123,25 @@ impl World {
     /// Configure the battle BGM track id. `Some(id)` enables the
     /// Battle↔Field music swap (the live loop switches to `id` on encounter
     /// and restores the field track on battle end); `None` disables it. See
-    /// [`World::battle_bgm`].
+    /// [`crate::world::AudioState::battle_bgm`].
     pub fn set_battle_bgm(&mut self, bgm_id: Option<u16>) {
-        self.battle_bgm = bgm_id;
+        self.audio.battle_bgm = bgm_id;
     }
 
     /// Switch to the configured battle track at encounter start. No-op when
-    /// [`World::battle_bgm`] is `None` or the swap is already active. Stashes
+    /// [`crate::world::AudioState::battle_bgm`] is `None` or the swap is already active. Stashes
     /// the current field track for [`World::restore_field_bgm`] and queues a
     /// `FieldEvent::Bgm` start so the host's BGM director cross-fades to it.
     pub(crate) fn swap_to_battle_bgm(&mut self) {
-        let Some(battle) = self.battle_bgm else {
+        let Some(battle) = self.audio.battle_bgm else {
             return;
         };
-        if self.battle_bgm_active || self.current_bgm == Some(battle) {
+        if self.audio.battle_bgm_active || self.audio.current_bgm == Some(battle) {
             return;
         }
-        self.field_bgm_resume = self.current_bgm;
-        self.current_bgm = Some(battle);
-        self.battle_bgm_active = true;
+        self.audio.field_bgm_resume = self.audio.current_bgm;
+        self.audio.current_bgm = Some(battle);
+        self.audio.battle_bgm_active = true;
         self.pending_field_events.push(FieldEvent::Bgm {
             text_id: battle,
             sub_op: 1,
@@ -148,20 +153,20 @@ impl World {
     /// `FieldEvent::Bgm` start for the stashed track, or a stop (sub-op 4)
     /// when no field track was playing at encounter start.
     pub(crate) fn restore_field_bgm(&mut self) {
-        if !self.battle_bgm_active {
+        if !self.audio.battle_bgm_active {
             return;
         }
-        self.battle_bgm_active = false;
-        match self.field_bgm_resume.take() {
+        self.audio.battle_bgm_active = false;
+        match self.audio.field_bgm_resume.take() {
             Some(track) => {
-                self.current_bgm = Some(track);
+                self.audio.current_bgm = Some(track);
                 self.pending_field_events.push(FieldEvent::Bgm {
                     text_id: track,
                     sub_op: 1,
                 });
             }
             None => {
-                self.current_bgm = None;
+                self.audio.current_bgm = None;
                 self.pending_field_events.push(FieldEvent::Bgm {
                     text_id: 0,
                     sub_op: 4,
@@ -174,7 +179,7 @@ impl World {
         &mut self,
         formation: &crate::monster_catalog::FormationDef,
     ) {
-        let party_count = self.party_count.clamp(1, 3);
+        let party_count = self.party.party_count.clamp(1, 3);
         let monster_count = formation.slots.len().min(5) as u8;
         // Drop any field dialogue left open across the transition. The
         // engage conversation already played in the field; a leftover
@@ -182,10 +187,10 @@ impl World {
         // segment bank over the battle (and nothing in battle mode owns
         // its input). Retail's in-battle tutorial boxes are a separate
         // stage-overlay (extraction 967) channel, not the field box.
-        self.inline_dialogue = None;
-        self.current_dialog = None;
-        self.carrier_menu = None;
-        self.pending_carrier_engage = None;
+        self.dialog.inline = None;
+        self.dialog.current = None;
+        self.carriers.menu = None;
+        self.carriers.pending_engage = None;
         // Reuse the placement helper for actor spawn + seating, then overlay
         // per-slot stats.
         self.enter_battle(party_count, monster_count);
@@ -208,17 +213,18 @@ impl World {
         // held a party member in the previous battle carries that member's
         // (UDF, LDF) pair, and a formation whose monster id misses the catalog
         // would otherwise keep defending with it.
-        for s in self.battle_speed.iter_mut().skip(party_count as usize) {
+        for s in self.battle.speed.iter_mut().skip(party_count as usize) {
             *s = 0;
         }
-        for s in self.battle_accuracy.iter_mut().skip(party_count as usize) {
+        for s in self.battle.accuracy.iter_mut().skip(party_count as usize) {
             *s = 0;
         }
-        for s in self.battle_evasion.iter_mut().skip(party_count as usize) {
+        for s in self.battle.evasion.iter_mut().skip(party_count as usize) {
             *s = 0;
         }
         for s in self
-            .battle_defense_split
+            .battle
+            .defense_split
             .iter_mut()
             .skip(party_count as usize)
         {
@@ -232,7 +238,7 @@ impl World {
             // Tag the slot with its monster id so a renderer can fetch the
             // battle mesh, even if the catalog has no stats for it.
             self.actors[mslot].battle_monster_id = Some(fslot.monster_id);
-            if let Some(def) = self.monster_catalog.get(fslot.monster_id) {
+            if let Some(def) = self.tables.monster_catalog.get(fslot.monster_id) {
                 let speed = def.speed;
                 let a = &mut self.actors[mslot];
                 a.battle.hp = def.hp;
@@ -246,7 +252,7 @@ impl World {
                 // it.
                 a.battle.agl_base = def.agl;
                 a.battle.agl = def.agl;
-                if let Some(s) = self.battle_attack.get_mut(mslot) {
+                if let Some(s) = self.battle.attack.get_mut(mslot) {
                     *s = def.attack;
                 }
                 // Both defence facets, not one collapsed scalar. Retail's melee
@@ -256,21 +262,21 @@ impl World {
                 // only `max(udf, ldf)` made every enemy defend with its better
                 // half against every swing and left the kernel's parity branch
                 // dead for the whole monster band.
-                if let Some(s) = self.battle_defense_split.get_mut(mslot) {
+                if let Some(s) = self.battle.defense_split.get_mut(mslot) {
                     *s = Some((def.udf, def.ldf));
                 }
-                if let Some(s) = self.battle_defense.get_mut(mslot) {
+                if let Some(s) = self.battle.defense.get_mut(mslot) {
                     // Kept as the scalar fallback (and the Defense-buff target);
                     // the split above is what the physical path reads.
                     *s = def.udf.max(def.ldf);
                 }
-                if let Some(s) = self.battle_speed.get_mut(mslot) {
+                if let Some(s) = self.battle.speed.get_mut(mslot) {
                     *s = speed;
                 }
-                if let Some(s) = self.battle_accuracy.get_mut(mslot) {
+                if let Some(s) = self.battle.accuracy.get_mut(mslot) {
                     *s = def.accuracy as u16;
                 }
-                if let Some(s) = self.battle_evasion.get_mut(mslot) {
+                if let Some(s) = self.battle.evasion.get_mut(mslot) {
                     *s = def.evasion as u16;
                 }
             }
@@ -278,8 +284,8 @@ impl World {
         // Roll for a rare shiny capturable enemy now that every monster slot
         // carries its stats + id (so capturability + the +35% boost see final
         // values). Clears last battle's flags first.
-        self.shiny_enemy_slots.clear();
-        self.shiny_captures.clear();
+        self.seru.shiny_enemy_slots.clear();
+        self.seru.shiny_captures.clear();
         self.roll_shiny_enemy(first_monster);
 
         // Roll this battle's formation advantage (`FUN_80051D84` -> `ctx+0x290`)
@@ -289,14 +295,14 @@ impl World {
         // `enter_battle` above installs a fresh `battle_ctx`, so `+0x290` /
         // `+0x291` (and the arm's one-shot flag) are already zero - there is
         // one copy of each and it lives there.
-        if !self.battle_no_escape {
+        if !self.battle.no_escape {
             self.roll_battle_formation(formation);
         }
 
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.active_actor = 0;
         // Fresh battle: clear the monster-AI cooldowns / phase counter / ring.
-        self.monster_ai_state.reset();
+        self.battle.monster_ai_state.reset();
         // Seed the turn-order initiative keys for this battle. When real SPD is
         // present the next-actor selector runs the initiative scheme from the
         // very first turn (see the opener pick below). A no-SPD battle leaves
@@ -317,7 +323,7 @@ impl World {
         // for the round's first party command. Nobody - whoever won
         // initiative - acts before the last member commits
         // (`World::begin_battle_round`).
-        self.battle_round_flow = crate::battle_round::RoundFlow::default();
+        self.battle.round_flow = crate::battle_round::RoundFlow::default();
         self.begin_battle_round();
     }
 
@@ -336,8 +342,8 @@ impl World {
             actor.active = true;
             actor.move_state.field_72 = FIELD_PLAYER_SPEED_MULT;
         }
-        if self.move_ramp_ratio == 0 {
-            self.move_ramp_ratio = 1;
+        if self.move_vm.ramp_ratio == 0 {
+            self.move_vm.ramp_ratio = 1;
         }
         self.reset_field_collision_grid();
     }
@@ -588,7 +594,7 @@ impl World {
     /// No-op when nothing is queued. Called by [`Self::step_field`] once the
     /// field-VM borrow has ended.
     pub fn drain_pending_scripted_encounter(&mut self) {
-        if let Some(record) = self.pending_scripted_encounter.take() {
+        if let Some(record) = self.encounters.pending_scripted.take() {
             self.install_scripted_encounter(&record);
         }
     }

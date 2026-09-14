@@ -57,7 +57,7 @@ impl<'a> ActorVmHost for ActorVmHostImpl<'a> {
         // slot - walks that NPC in the field frame (y → z).
         // PORT: FUN_800358c0
         self.world.start_actor_motion(actor_id, target);
-        if self.world.field_npc_positions.contains_key(&actor_id) {
+        if self.world.npcs.positions.contains_key(&actor_id) {
             self.world
                 .start_field_npc_motion(actor_id, target.x, target.y);
         }
@@ -121,7 +121,7 @@ pub(super) struct MoveVmHostImpl<'a> {
     pub(super) deferred_writes: std::collections::BTreeMap<usize, u16>,
     /// When set, this host is ticking an **ambient field-fx part** whose
     /// bytecode is a window of the shared prescript stager bundle
-    /// (`world.field_stager_bytes`) starting at this u16-word offset.
+    /// (`world.props.stager_bytes`) starting at this u16-word offset.
     /// Routes `move_bytecode_read_u16` to the shared bundle (retail's
     /// `_DAT_8007B8D0`-resident copy, which the self-modifying ext ops
     /// 0x04/0x1B/0x1E patch in place) and arms `spawn_child` collection.
@@ -152,16 +152,16 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     // --- ext-VM globals -----------------------------------------------
 
     fn move_global_predicate_get(&self) -> u32 {
-        self.world.move_predicate
+        self.world.move_vm.predicate
     }
     fn move_global_predicate_set(&mut self, value: u32) {
-        self.world.move_predicate = value;
+        self.world.move_vm.predicate = value;
     }
     fn move_global_counter_get(&self) -> u16 {
-        self.world.move_counter
+        self.world.move_vm.counter
     }
     fn move_global_counter_set(&mut self, value: u16) {
-        self.world.move_counter = value;
+        self.world.move_vm.counter = value;
     }
 
     // --- ext-VM 16-slot scratch table ---------------------------------
@@ -169,24 +169,24 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     fn move_slot_load_u32(&self, slot: u16, dword_off: u8) -> u32 {
         let i = (slot & 0x0F) as usize;
         let off = (dword_off & 0x4) as usize; // 0 or 4
-        let bytes = &self.world.move_slot_table[i][off..off + 4];
+        let bytes = &self.world.move_vm.slot_table[i][off..off + 4];
         u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
     }
     fn move_slot_save_u32(&mut self, slot: u16, dword_off: u8, value: u32) {
         let i = (slot & 0x0F) as usize;
         let off = (dword_off & 0x4) as usize;
-        self.world.move_slot_table[i][off..off + 4].copy_from_slice(&value.to_le_bytes());
+        self.world.move_vm.slot_table[i][off..off + 4].copy_from_slice(&value.to_le_bytes());
     }
     fn move_slot_load_u16(&self, slot: u16, byte_off: u8) -> u16 {
         let i = (slot & 0x0F) as usize;
         let off = (byte_off & 0x6) as usize; // even, 0..6
-        let bytes = &self.world.move_slot_table[i][off..off + 2];
+        let bytes = &self.world.move_vm.slot_table[i][off..off + 2];
         u16::from_le_bytes([bytes[0], bytes[1]])
     }
     fn move_slot_save_u16(&mut self, slot: u16, byte_off: u8, value: u16) {
         let i = (slot & 0x0F) as usize;
         let off = (byte_off & 0x6) as usize;
-        self.world.move_slot_table[i][off..off + 2].copy_from_slice(&value.to_le_bytes());
+        self.world.move_vm.slot_table[i][off..off + 2].copy_from_slice(&value.to_le_bytes());
     }
 
     // --- bytecode self-modify (0x04 / 0x1B / 0x1E) --------------------
@@ -202,7 +202,8 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
             let byte = (base + word_off) * 2;
             return self
                 .world
-                .field_stager_bytes
+                .props
+                .stager_bytes
                 .get(byte..byte + 2)
                 .map(|b| u16::from_le_bytes([b[0], b[1]]))
                 .unwrap_or(0);
@@ -211,7 +212,8 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
             return 0;
         };
         self.world
-            .move_bytecode
+            .move_vm
+            .bytecode
             .get(slot)
             .and_then(|bc| bc.get(word_off))
             .copied()
@@ -246,13 +248,13 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         }
     }
     fn move_fixed_origin_xz(&self) -> (i32, i32) {
-        self.world.map_origin_xz
+        self.world.terrain.map_origin_xz
     }
     fn move_axis_threshold(&self) -> i16 {
-        self.world.move_axis_threshold
+        self.world.move_vm.axis_threshold
     }
     fn move_dat_1f800393(&self) -> u8 {
-        self.world.move_ramp_ratio
+        self.world.move_vm.ramp_ratio
     }
 
     // --- shared system flag bank --------------------------------------
@@ -275,20 +277,20 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
 
     fn ext_scratchpad_write(&mut self, slot_index: i16, value: i16) {
         let i = (slot_index as u16 & 0x0F) as usize;
-        self.world.scratchpad_targets[i] = value;
+        self.world.move_vm.scratchpad_targets[i] = value;
     }
     fn ext_scratchpad_ramp(&mut self, slot_index: i16, target: i16, _ticks: i16) {
         // Default world has no per-frame ramp scheduler; record the target
         // immediately so reads see the final state. Engines override to
         // model the per-frame interpolation.
         let i = (slot_index as u16 & 0x0F) as usize;
-        self.world.scratchpad_targets[i] = target;
+        self.world.move_vm.scratchpad_targets[i] = target;
     }
 
     // --- ext sub-op 0x2F global slot ---------------------------------
 
     fn ext_set_8007b9d8(&mut self, value: i32) {
-        self.world.move_dat_8007b9d8 = value;
+        self.world.move_vm.dat_8007b9d8 = value;
     }
 
     // --- ext sub-op 0x3A angle-to-player ------------------------------
@@ -318,7 +320,7 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     // --- ext sub-op 0x3B party-member position lookup ------------------
 
     fn ext_party_member_lookup(&self, slot: i16) -> Option<[i16; 3]> {
-        let actor_slot = *self.world.party_actor_slots.get(slot as usize)?;
+        let actor_slot = *self.world.party.party_actor_slots.get(slot as usize)?;
         let actor_slot = actor_slot? as usize;
         let st = &self.world.actors[actor_slot].move_state;
         Some([st.world_x, st.world_y, st.world_z])
@@ -327,7 +329,7 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     // --- ext sub-op 0x3C fade colour -----------------------------------
 
     fn ext_fade_color(&mut self, rgb: [u8; 3], ticks: u16) {
-        self.world.pending_fade = Some(FadeRequest { rgb, ticks });
+        self.world.presentation.pending_fade = Some(FadeRequest { rgb, ticks });
     }
 
     // `ext_dispatch` uses the default trait impl, which routes through
@@ -368,25 +370,25 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
         true
     }
     fn encounter_countdown(&self) -> i8 {
-        self.world.world_map_encounter.countdown
+        self.world.world_map.encounter.countdown
     }
     fn set_encounter_countdown(&mut self, v: i8) {
-        self.world.world_map_encounter.countdown = v;
+        self.world.world_map.encounter.countdown = v;
     }
     fn encounter_enabled(&self) -> bool {
-        self.world.world_map_encounter.enabled
+        self.world.world_map.encounter.enabled
     }
     fn on_encounter(&mut self, entity_idx: usize, _resolver_result: u32) {
         // Latch a formation for resolution into a battle at the end of the
         // world-map tick. Prefer this entity's own encounter-zone formation;
         // fall back to the map-wide shared formation. Pace the next encounter
         // by resetting the shared countdown.
-        let formation_id = match self.world.world_map_entity_configs.get(entity_idx) {
+        let formation_id = match self.world.world_map.entity_configs.get(entity_idx) {
             Some(WorldMapEntityConfig::EncounterZone { formation_id }) => *formation_id,
-            _ => self.world.world_map_encounter.formation_id,
+            _ => self.world.world_map.encounter.formation_id,
         };
-        self.world.pending_world_map_encounter = Some(formation_id);
-        self.world.world_map_encounter.countdown = self.world.world_map_encounter.reset_to;
+        self.world.world_map.pending_encounter = Some(formation_id);
+        self.world.world_map.encounter.countdown = self.world.world_map.encounter.reset_to;
     }
     fn on_activating(&mut self, _entity_idx: usize) {
         // Pending scene/portal data copy - no engine-side scene buffer yet.
@@ -395,7 +397,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
         // A portal entity reached the transition state. Which of the two
         // portal shapes it is decides where the number goes - and they are
         // *different id spaces*, which is the whole reason this arm is split.
-        match self.world.world_map_entity_configs.get(entity_idx) {
+        match self.world.world_map.entity_configs.get(entity_idx) {
             // A **minigame door** on the overworld (the `map02` / `map03`
             // fishing signboards): its payload is the op-`0x3E` `op0 - 100`
             // mode-24 sub-id, so it arms the door warp exactly as the field
@@ -406,7 +408,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
             Some(WorldMapEntityConfig::MinigameDoor { sub_id }) => {
                 let sub_id = *sub_id;
                 self.world.arm_minigame_warp();
-                self.world.pending_minigame_warp = Some(sub_id);
+                self.world.minigames.pending_warp = Some(sub_id);
             }
             // An overworld town/dungeon entrance (the `0x3F`-bridge portal) -
             // the only producer of `WorldMapTransition`. The event carries the
@@ -436,10 +438,10 @@ impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
         self.world.dialogue_owns_input()
     }
     fn player_walking(&self) -> bool {
-        self.world.world_map_player_walking
+        self.world.world_map.player_walking
     }
     fn on_interact(&mut self, entity_idx: usize) {
-        let interact_id = match self.world.world_map_entity_configs.get(entity_idx) {
+        let interact_id = match self.world.world_map.entity_configs.get(entity_idx) {
             Some(WorldMapEntityConfig::Npc { interact_id, .. }) => *interact_id,
             _ => 0,
         };
@@ -503,9 +505,9 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
         // the carrier's MAN formation (by index, so the scene's merged monster
         // stats stand) for direct resolution at the end of the tick.
         if let Some(FieldCarrierConfig::ScriptedEncounter { formation_id }) =
-            self.world.field_carrier_configs.get(entity_idx).cloned()
+            self.world.carriers.configs.get(entity_idx).cloned()
         {
-            self.world.pending_field_carrier_battle = Some(formation_id);
+            self.world.carriers.pending_battle = Some(formation_id);
         }
     }
     fn dialog_active(&self) -> bool {
@@ -522,7 +524,7 @@ impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
     fn on_interact(&mut self, entity_idx: usize) {
         // Reached only once a future proximity model opens the gate; surfaces
         // the carrier's interaction id for the host.
-        let interact_id = match self.world.field_carrier_configs.get(entity_idx) {
+        let interact_id = match self.world.carriers.configs.get(entity_idx) {
             Some(FieldCarrierConfig::Npc { interact_id }) => *interact_id,
             _ => 0,
         };
@@ -621,10 +623,10 @@ pub(super) struct FieldHostImpl<'a> {
 
 impl<'a> FieldHost for FieldHostImpl<'a> {
     fn global_flags(&self) -> u32 {
-        self.world.story_flags
+        self.world.flags.story_flags
     }
     fn set_global_flags(&mut self, value: u32) {
-        self.world.story_flags = value;
+        self.world.flags.story_flags = value;
     }
     fn frame_delta(&self) -> u16 {
         // Default world ticks one logical frame per `tick()`. Engines that
@@ -632,7 +634,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         1
     }
     fn extra_flags(&self) -> u32 {
-        self.world.extra_flags
+        self.world.flags.extra_flags
     }
 
     // Op-0x49 STATE_RESUME, scoped to the `town01` opening cutscene timeline.
@@ -661,7 +663,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // it is raised the easing returns before its first store.
     // REF: FUN_801DA390 (the easing), FUN_801D6704 (seeds the accumulator)
     fn op4c_n4_sub9_default_write(&mut self, target: i16) {
-        self.world.camera_scene_offset = target;
+        self.world.camera.scene_offset = target;
     }
     fn op4c_n4_sub9_default_ramp(&mut self, target: i16, ticks: u16) {
         // Retail schedules a ramp over `ticks` frames through the register
@@ -671,19 +673,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // frame either way, so the visible difference is the shape of the
         // last few frames, not the destination.
         let _ = ticks;
-        self.world.camera_scene_offset = target;
+        self.world.camera.scene_offset = target;
     }
     fn op4c_n4_sub9_delta_write_or_ramp(&mut self, target: i16, ticks: u16) {
         let _ = ticks;
-        self.world.camera_scene_offset = target;
+        self.world.camera.scene_offset = target;
         let footing = self.world.camera_ease_player_footing();
-        self.world.camera_offset_ease = i32::from(target.wrapping_sub(footing));
+        self.world.camera.offset_ease = i32::from(target.wrapping_sub(footing));
     }
     fn op4c_n4_sub9_player_relative_write(&mut self, target: i16, ticks: u16) {
         let _ = ticks;
         let footing = self.world.camera_ease_player_footing();
-        self.world.camera_scene_offset = target.wrapping_add(footing);
-        self.world.camera_offset_ease = i32::from(target);
+        self.world.camera.scene_offset = target.wrapping_add(footing);
+        self.world.camera.offset_ease = i32::from(target);
     }
 
     // Op `0x4C` outer-nibble-4 subs `0xA..=0xD` - four scene globals written
@@ -702,7 +704,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // REF: FUN_801D1344 (the gate arm), FUN_801DE840 (these four arms)
     fn op4c_nibble4_global_write(&mut self, sub: u8, target: i32, ticks: u16) {
         let _ = ticks;
-        let Some(ctrl) = self.world.world_map_ctrl.as_mut() else {
+        let Some(ctrl) = self.world.world_map.ctrl.as_mut() else {
             return;
         };
         let v = target as u32;
@@ -718,8 +720,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // the resume the same way name-entry does: Armed while the shop UI is
         // up, Done once the host closes it (`finish_field_shop`), so the VM
         // suspends across the shop and then advances past the merchant op.
-        if self.world.field_shop_armed {
-            return if self.world.field_shop_open {
+        if self.world.shops.shop_armed {
+            return if self.world.shops.shop_open {
                 Op49State::Armed
             } else {
                 Op49State::Done
@@ -728,8 +730,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // A sub-7 casino prize exchange (`World::try_arm_prize_exchange`):
         // same shape as the gold shop - Armed while the exchange UI is up,
         // Done once the host closes it (`finish_prize_exchange`).
-        if self.world.prize_exchange_armed {
-            return if self.world.prize_exchange_open {
+        if self.world.shops.prize_exchange_armed {
+            return if self.world.shops.prize_exchange_open {
                 Op49State::Armed
             } else {
                 Op49State::Done
@@ -738,14 +740,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // A sub-5 tile-board install (`World::try_install_tile_board`): Armed
         // while the board mode runs, Done once an event cell exits it, so the
         // script suspends across the whole board segment.
-        if self.world.tile_board_armed {
-            return if self.world.tile_board.is_some() {
+        if self.world.board.armed {
+            return if self.world.board.grid.is_some() {
                 Op49State::Armed
             } else {
                 Op49State::Done
             };
         }
-        if self.world.in_cutscene_timeline && self.world.prologue_naming_armed {
+        if self.world.cutscene.in_timeline && self.world.cutscene.prologue_naming_armed {
             if self.world.name_entry_active() {
                 Op49State::Armed
             } else {
@@ -764,9 +766,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // the field script must not park the cutscene timeline's own
             // op-`0x49` - which is the town01 name-entry hand-off.
             let owner = self.world.op49_park_owner();
-            if self.world.submode_screen.is_open_for(owner) {
+            if self.world.field_vm.submode_screen.is_open_for(owner) {
                 Op49State::Armed
-            } else if self.world.submode_screen.is_done_for(owner) {
+            } else if self.world.field_vm.submode_screen.is_done_for(owner) {
                 Op49State::Done
             } else {
                 Op49State::Idle
@@ -786,11 +788,11 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.clear_op49_park();
         // The shop op's resume ran: drop the arm so a later op-0x49 can open
         // the next merchant. (Name-entry clears via its own pending flags.)
-        self.world.field_shop_armed = false;
+        self.world.shops.shop_armed = false;
         // Same for a finished prize exchange (sub-7).
-        self.world.prize_exchange_armed = false;
+        self.world.shops.prize_exchange_armed = false;
         // A finished tile-board segment resumes the same way.
-        self.world.tile_board_armed = false;
+        self.world.board.armed = false;
         // The submode screen's Done is one-shot: consume it so the next
         // op-0x49 opens a fresh screen rather than resuming instantly. Only
         // the context that armed the park may consume it - the name-entry
@@ -798,8 +800,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // another context's pending Done would strand it back on Idle and
         // re-open the screen it had just finished.
         let owner = self.world.op49_park_owner();
-        if self.world.submode_screen.owner == owner {
-            self.world.submode_screen.done = false;
+        if self.world.field_vm.submode_screen.owner == owner {
+            self.world.field_vm.submode_screen.done = false;
         }
     }
     fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
@@ -831,15 +833,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         }
     }
     fn op49_invoke_setup(&mut self) {
-        if self.world.in_cutscene_timeline
-            && self.world.prologue_naming_pending
-            && !self.world.prologue_naming_armed
+        if self.world.cutscene.in_timeline
+            && self.world.cutscene.prologue_naming_pending
+            && !self.world.cutscene.prologue_naming_armed
             && !self.world.name_entry_active()
         {
             // Lead character (party slot 0 = Vahn) is the one named at the
             // opening, matching the retail char-record pointer `_DAT_8007B450`.
             self.world.open_name_entry(0);
-            self.world.prologue_naming_armed = true;
+            self.world.cutscene.prologue_naming_armed = true;
         }
     }
     fn screen_mode(&self) -> u32 {
@@ -849,34 +851,34 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // Op-0x43 screen-effect widget sub-ops (the PROT-0900 mask / sprite /
     // panel / letterbox family, exercised by the ten ending scenes).
     // Each routes to the world's widget host; the Field / Cutscene tick
-    // advances the widgets and publishes `World::screen_fx_frame`.
+    // advances the widgets and publishes `World::presentation.fx_frame`.
     // REF: FUN_801F8004 / FUN_801F8D4C / FUN_801F88FC / FUN_801F8E6C /
     // FUN_801F8F28 (spawn + control APIs)
     fn op43_widget_sprite_spawn(&mut self, payload: &[u8]) {
-        self.world.screen_fx.sprite_spawn(payload);
+        self.world.presentation.fx.sprite_spawn(payload);
     }
     fn op43_widget_mask_rect(&mut self, words: [u16; 5]) {
-        self.world.screen_fx.mask_rect(words);
+        self.world.presentation.fx.mask_rect(words);
     }
     fn op43_widget_letterbox(&mut self, payload: &[u8]) {
-        self.world.screen_fx.letterbox_config(payload);
+        self.world.presentation.fx.letterbox_config(payload);
     }
     fn op43_widget_panel_spawn(&mut self, payload: &[u8; 13]) {
-        self.world.screen_fx.panel_spawn(payload);
+        self.world.presentation.fx.panel_spawn(payload);
     }
     fn op43_widget_panel_move(&mut self, words: [i16; 4]) {
-        self.world.screen_fx.panel_move(words);
+        self.world.presentation.fx.panel_move(words);
     }
 
     // Op-0x43 sub-3..6 camera-register zone-ramp spawn (retail
     // `FUN_8003C6A4` actor on the effect list). The record's
     // parameterization is the ported kernel; the world holds the spawned
-    // records ([`World::register_ramps`]) and ticks each one's
+    // records ([`crate::world::CameraRig::register_ramps`]) and ticks each one's
     // `FUN_80037018` handler per frame ([`World::tick_register_ramps`]).
     // REF: FUN_8003C6A4 (kernel PORT lives in crate::register_ramp)
     fn op43_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
         if let Some(ramp) = crate::register_ramp::spawn_register_ramp(sub_op, zone, start, end) {
-            self.world.register_ramps.push(ramp);
+            self.world.camera.register_ramps.push(ramp);
         }
     }
 
@@ -910,8 +912,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // state is keyed by; an unmatched id passes through raw (tests /
         // channel-less scenes).
         fn resolve(world: &World, id: u8) -> u8 {
-            crate::field_channels::resolve_target(&world.field_channels, id)
-                .map(|ci| world.field_channels[ci].placement_index as u8)
+            crate::field_channels::resolve_target(&world.field_vm.channels, id)
+                .map(|ci| world.field_vm.channels[ci].placement_index as u8)
                 .unwrap_or(id)
         }
         let w = &mut *self.world;
@@ -921,20 +923,21 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // the talk lock drops - retail's post-talk membership comes from
             // the script's own party ops), then collapse it to its leader.
             let mut saved_party = [None; 4];
-            let saved_party_len = w.party_actor_slots.len().min(4) as u8;
+            let saved_party_len = w.party.party_actor_slots.len().min(4) as u8;
             for (dst, src) in saved_party
                 .iter_mut()
-                .zip(w.party_actor_slots.iter().copied())
+                .zip(w.party.party_actor_slots.iter().copied())
             {
                 *dst = src;
             }
-            let saved_leader = w.party_leader_slot;
+            let saved_leader = w.party.party_leader_slot;
             let leader = w
+                .party
                 .party_leader_slot
-                .or_else(|| w.party_actor_slots.first().copied().flatten())
+                .or_else(|| w.party.party_actor_slots.first().copied().flatten())
                 .unwrap_or(0);
-            w.party_actor_slots = vec![Some(leader)];
-            w.party_leader_slot = Some(leader);
+            w.party.party_actor_slots = vec![Some(leader)];
+            w.party.party_leader_slot = Some(leader);
             w.system_flag_clear(0x10);
             w.system_flag_clear(0x11);
             w.system_flag_clear(0x12);
@@ -943,9 +946,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // restore (retail: controller SM state 0).
             let saved = actor_ids.map(|id| {
                 let slot = resolve(w, id);
-                w.field_npc_positions
+                w.npcs
+                    .positions
                     .get(&slot)
-                    .map(|&pos| (pos, w.field_npc_headings.get(&slot).copied().unwrap_or(0)))
+                    .map(|&pos| (pos, w.npcs.headings.get(&slot).copied().unwrap_or(0)))
             });
             (saved, saved_party, saved_party_len, saved_leader)
         } else {
@@ -954,12 +958,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // snapshot carries over unchanged - retail's else branch never
             // re-collapses (`FUN_801D2D38` `801d2dd4` skips the count/ids
             // stores when the flag is up).
-            let prior = w.three_actor_talk.as_ref().copied().unwrap_or_default();
+            let prior = w
+                .dialog
+                .three_actor_talk
+                .as_ref()
+                .copied()
+                .unwrap_or_default();
             for (i, &id) in actor_ids.iter().enumerate() {
                 if let Some((pos, heading)) = prior.saved[i] {
                     let slot = resolve(w, id);
-                    w.field_npc_positions.insert(slot, pos);
-                    w.field_npc_headings.insert(slot, heading);
+                    w.npcs.positions.insert(slot, pos);
+                    w.npcs.headings.insert(slot, heading);
                 }
             }
             (
@@ -970,7 +979,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             )
         };
         w.system_flag_set(0xD);
-        w.three_actor_talk = Some(ThreeActorTalk {
+        w.dialog.three_actor_talk = Some(ThreeActorTalk {
             actor_ids,
             script_id: arg_word,
             duration: arg_byte,
@@ -1018,7 +1027,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // The mode change itself is deferred like every other transition: the
         // field bytecode is still borrowed for this step, and entering a
         // minigame swaps the world's scene mode out from under it.
-        self.world.pending_minigame_warp = Some(sub_id);
+        self.world.minigames.pending_warp = Some(sub_id);
     }
 
     // PORT: FUN_8001FD44 (the name-based scene-change packet)
@@ -1041,14 +1050,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn is_scripted_encounter_armed(&self) -> bool {
-        self.world.scripted_encounter_armed
+        self.world.encounters.scripted_armed
     }
 
     fn install_scripted_encounter(&mut self, window: &[u8]) {
         // Queue the record window for the field-step driver to install after
         // the VM borrow ends (we can't mutate the encounter session while the
         // field bytecode is still borrowed).
-        self.world.pending_scripted_encounter = Some(window.to_vec());
+        self.world.encounters.pending_scripted = Some(window.to_vec());
     }
 
     // PORT: FUN_8003C7EC
@@ -1074,7 +1083,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // measurement; the tick lives in `World::tick`
         // (`crate::text_balloon::TextBalloon::tick`).
         let _ = script_id;
-        self.world.text_balloon = Some(crate::text_balloon::TextBalloon::spawn(text_buf));
+        self.world.cutscene.text_balloon = Some(crate::text_balloon::TextBalloon::spawn(text_buf));
     }
 
     fn op4c_n_e_sub2_fmv_trigger(&mut self, fmv_id: i16) {
@@ -1084,7 +1093,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // record the request here so the SceneHost / engine driver can
         // pop it after the field step returns and switch its scene
         // mode without invalidating the field-VM borrow.
-        self.world.pending_fmv_trigger = Some(fmv_id);
+        self.world.cutscene.pending_fmv_trigger = Some(fmv_id);
         self.world
             .pending_field_events
             .push(FieldEvent::FmvTrigger { fmv_id });
@@ -1096,10 +1105,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // (pause / stop / volume / etc.) - we still surface the event so
         // the engine can route them, just without overwriting current_bgm.
         if sub_op == 1 || sub_op == 9 {
-            self.world.current_bgm = Some(text_id);
+            self.world.audio.current_bgm = Some(text_id);
         } else if sub_op == 4 {
             // 4 = stop.
-            self.world.current_bgm = None;
+            self.world.audio.current_bgm = None;
         } else if sub_op == 5 {
             // Sub-5 is the timed release: retail's handler is
             // `FUN_800267A8(0, s16_operand)` at `0x801E01B4` (the operand is
@@ -1120,11 +1129,12 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Pauses issued after the window (dialog / cutscene beats the
         // player triggers) route normally.
         if sub_op == 2
-            && self.world.free_roam_staging
+            && self.world.field_vm.free_roam_staging
             && self
                 .world
-                .field_frames
-                .saturating_sub(self.world.free_roam_entry_frame)
+                .clock
+                .display_frames
+                .saturating_sub(self.world.field_vm.free_roam_entry_frame)
                 < crate::world::FREE_ROAM_ENTRY_PAUSE_WINDOW
         {
             return;
@@ -1137,7 +1147,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     fn give_item(&mut self, item_id: u8) {
         // Op 0x39 GIVE_ITEM: add one of `item_id` to the inventory, capacity-
         // checked like the retail add-by-id primitive FUN_800421D4(item_id, 1).
-        let slot = self.world.inventory.entry(item_id).or_insert(0);
+        let slot = self.world.party.inventory.entry(item_id).or_insert(0);
         *slot = slot.saturating_add(1).min(legaia_save::STACK_CAP);
         self.world
             .pending_field_events
@@ -1175,19 +1185,22 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         let held = if item_id == 0 {
             None
         } else {
-            self.world.inventory.get(&item_id).copied()
+            self.world.party.inventory.get(&item_id).copied()
         };
         match held {
             Some(count) if count > 0 => {
                 let left = count - 1;
                 if left == 0 {
-                    self.world.inventory.remove(&item_id);
+                    self.world.party.inventory.remove(&item_id);
                 } else {
-                    self.world.inventory.insert(item_id, left);
+                    self.world.party.inventory.insert(item_id, left);
                 }
             }
             _ => {
-                crate::equipment::party_unequip_accessory_by_id(&mut self.world.roster, item_id);
+                crate::equipment::party_unequip_accessory_by_id(
+                    &mut self.world.party.roster,
+                    item_id,
+                );
             }
         }
     }
@@ -1201,7 +1214,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         depth_id: u8,
     ) {
         let inline_vec = inline.to_vec();
-        self.world.current_dialog = Some(DialogRequest {
+        self.world.dialog.current = Some(DialogRequest {
             text_id,
             inline: inline_vec.clone(),
             world_x,
@@ -1237,21 +1250,21 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // When the inline-script field-VM runner owns the box, it advances /
         // dismisses it (see `World::drive_inline_dialogue`); the simplified
         // dialog-advance must not clear the box out from under it.
-        if self.world.current_dialog.is_none() || self.world.inline_dialogue.is_some() {
+        if self.world.dialog.current.is_none() || self.world.dialog.inline.is_some() {
             return false;
         }
         // A carrier's spar menu owns the dialog input while it is up: navigate +
         // confirm the fight option (engages only then), vs the any-accept path.
-        if self.world.carrier_menu.is_some() {
+        if self.world.carriers.menu.is_some() {
             self.world.handle_carrier_menu();
-            return self.world.current_dialog.is_some();
+            return self.world.dialog.current.is_some();
         }
         let dismissed = (self.world.input.just_pressed(input::PadButton::Cross)
             || self.world.input.just_pressed(input::PadButton::Circle))
-            && !self.world.dialog_input_consumed;
+            && !self.world.dialog.input_consumed;
         if dismissed {
-            self.world.dialog_input_consumed = true;
-            self.world.current_dialog = None;
+            self.world.dialog.input_consumed = true;
+            self.world.dialog.current = None;
             self.world
                 .pending_field_events
                 .push(FieldEvent::DialogDismissed);
@@ -1261,7 +1274,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // `tick_field_carriers`. (The tutorial fight is forced, so any
             // dismiss is the accept; the undecoded Yes/No box-selection logic
             // would gate this once pinned.)
-            if let Some(idx) = self.world.pending_carrier_engage.take() {
+            if let Some(idx) = self.world.carriers.pending_engage.take() {
                 self.world.engage_field_carrier(idx);
             }
             return false;
@@ -1281,8 +1294,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn add_money(&mut self, delta: i32) {
-        let new_total = (self.world.money as i64 + delta as i64).clamp(0, 9_999_999) as i32;
-        self.world.money = new_total;
+        let new_total = (self.world.party.money as i64 + delta as i64).clamp(0, 9_999_999) as i32;
+        self.world.party.money = new_total;
         self.world
             .pending_field_events
             .push(FieldEvent::AddMoney { delta });
@@ -1302,16 +1315,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// table, so this read is what makes the charge reachable at all.
     fn party_bank_value(&self, sub_op: u8) -> i32 {
         match sub_op {
-            11 => self.world.casino_coins.min(i32::MAX as u32) as i32,
-            _ => self.world.money,
+            11 => self.world.minigames.casino_coins.min(i32::MAX as u32) as i32,
+            _ => self.world.party.money,
         }
     }
 
     fn set_item_count(&mut self, slot_byte: u8, count: u8) {
         if count == 0 {
-            self.world.inventory.remove(&slot_byte);
+            self.world.party.inventory.remove(&slot_byte);
         } else {
-            self.world.inventory.insert(slot_byte, count);
+            self.world.party.inventory.insert(slot_byte, count);
         }
         self.world
             .pending_field_events
@@ -1325,17 +1338,18 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // `party_actor_slots` + `party_leader_slot`.
         let already_present = self
             .world
+            .party
             .party_actor_slots
             .iter()
             .any(|s| matches!(s, Some(id) if *id == char_id));
         let accepted = if already_present {
             false
-        } else if self.world.party_actor_slots.len() < 4 {
-            self.world.party_actor_slots.push(Some(char_id));
+        } else if self.world.party.party_actor_slots.len() < 4 {
+            self.world.party.party_actor_slots.push(Some(char_id));
             // First member also becomes the leader (matches retail's
             // `count == 0` arm).
-            if self.world.party_leader_slot.is_none() {
-                self.world.party_leader_slot = Some(char_id);
+            if self.world.party.party_leader_slot.is_none() {
+                self.world.party.party_leader_slot = Some(char_id);
             }
             true
         } else {
@@ -1349,11 +1363,18 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
 
     fn party_remove(&mut self, char_id: u8) {
         self.world
+            .party
             .party_actor_slots
             .retain(|s| !matches!(s, Some(id) if *id == char_id));
-        if matches!(self.world.party_leader_slot, Some(id) if id == char_id) {
+        if matches!(self.world.party.party_leader_slot, Some(id) if id == char_id) {
             // Promote next member or clear.
-            self.world.party_leader_slot = self.world.party_actor_slots.first().copied().flatten();
+            self.world.party.party_leader_slot = self
+                .world
+                .party
+                .party_actor_slots
+                .first()
+                .copied()
+                .flatten();
         }
         self.world
             .pending_field_events
@@ -1420,7 +1441,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // floor-height-ladder oscillator this scene spawned (sub-`0..2`),
         // and registers nothing. Retiring the engine's records is the whole
         // of that half.
-        self.world.floor_tier_bobs.clear();
+        self.world.terrain.floor_tier_bobs.clear();
         self.world.retire_floor_ladder_oscillators();
         // During the New-Game opening chain the sweep's script effect (the
         // park at PC) resolves within a frame in retail - the whole opening
@@ -1428,7 +1449,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // and let the entry script proceed to its op-0x44 record spawn.
         // Outside the opening the faithful halt-until-callback park is kept
         // (returning `false`).
-        self.world.opening_chain_active
+        self.world.cutscene.opening_chain_active
     }
 
     // -- the three frame-delta timer templates ---------------------------
@@ -1446,12 +1467,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// would then both emit; the engine keeps one, because a second envelope
     /// over the first is a script defect rather than an effect.
     fn op43_alloc_scripted_actor(&mut self, b1: u8, b2: u8, b3: u8) {
-        self.world.cinematic_bars = Some(legaia_engine_vm::field_actor_timers::ShutterBars::spawn(
-            i16::from(b1),
-            i16::from(b2),
-            i16::from(b3),
-        ));
-        self.world.cinematic_bar = 0;
+        self.world.presentation.cinematic_bars =
+            Some(legaia_engine_vm::field_actor_timers::ShutterBars::spawn(
+                i16::from(b1),
+                i16::from(b2),
+                i16::from(b3),
+            ));
+        self.world.presentation.cinematic_bar = 0;
     }
 
     /// Op `0x43` sub-9 with a non-zero tick count - the three-axis eased
@@ -1476,10 +1498,11 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 })
                 .unwrap_or([ctx.world_x as i16, ctx.world_y as i16, ctx.world_z as i16]);
             (EasedMoveTarget::Player, seat)
-        } else if let Some(placement) = self.world.executing_channel {
+        } else if let Some(placement) = self.world.field_vm.executing_channel {
             let seat = self
                 .world
-                .field_npc_positions
+                .npcs
+                .positions
                 .get(&placement)
                 .copied()
                 .unwrap_or((ctx.world_x as i16, ctx.world_z as i16));
@@ -1494,7 +1517,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             // actor would be worse than none.
             return;
         };
-        self.world.eased_moves.push(FieldEasedMove {
+        self.world.field_vm.eased_moves.push(FieldEasedMove {
             target,
             target_flags: ctx.flags,
             ease: legaia_engine_vm::field_actor_timers::EasedMove::spawn(
@@ -1517,7 +1540,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// linear ramp `i * 0x20` here and then sets rungs `4..` oscillating -
     /// the undulating organic floor.
     fn op4c_n9_sub_e_table_copy(&mut self, words: [i16; 16]) {
-        for (rung, w) in self.world.field_floor_height_lut.iter_mut().zip(words) {
+        for (rung, w) in self.world.terrain.floor_height_lut.iter_mut().zip(words) {
             *rung = w.wrapping_neg();
         }
     }
@@ -1529,24 +1552,25 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// `b1` is the rung (`0..16`, the low nibble of a collision byte);
     /// `words` are the half-period, the amplitude and the burst-arm word.
     /// Retail seeds both the position and the rest height from the rung's
-    /// current value, which is `World::field_floor_height_lut` here.
+    /// current value, which is `World::terrain.floor_height_lut` here.
     fn op4c_n9_sub0_2_dde34(&mut self, sub: u8, b1: u8, words: [i16; 3]) {
         let seed = self
             .world
-            .field_floor_height_lut
+            .terrain
+            .floor_height_lut
             .get(b1 as usize)
             .copied()
             .unwrap_or(0);
-        self.world
-            .floor_tier_bobs
-            .push(legaia_engine_vm::field_actor_timers::FloorTierBob::spawn(
+        self.world.terrain.floor_tier_bobs.push(
+            legaia_engine_vm::field_actor_timers::FloorTierBob::spawn(
                 u16::from(b1),
                 sub,
                 words[0],
                 words[1],
                 words[2],
                 seed,
-            ));
+            ),
+        );
     }
 
     fn op44_spawn_scene_record(&mut self, global_index: u8) {
@@ -1559,8 +1583,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // another record executes is not dropped - retail's context table
         // holds several concurrent spawned records.
         // REF: FUN_8003BDE0
-        if self.world.pending_record_spawns.len() < crate::world::SPAWNED_CONTEXT_SLOTS {
-            self.world.pending_record_spawns.push(global_index);
+        if self.world.field_vm.pending_record_spawns.len() < crate::world::SPAWNED_CONTEXT_SLOTS {
+            self.world.field_vm.pending_record_spawns.push(global_index);
         }
         self.world
             .pending_field_events
@@ -1573,9 +1597,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // actor's anim-slot array (`+0xB0`, `FUN_801DE840` case 0x4B) with two
         // u16 params per entry. Raise a cue keyed by the placement so the
         // windowed host re-targets that NPC's clip player.
-        if let Some(placement) = self.world.executing_channel {
+        if let Some(placement) = self.world.field_vm.executing_channel {
             self.world
-                .field_npc_anim_cues
+                .npcs
+                .anim_cues
                 .insert(placement, (count, base_id, frames.to_vec()));
         }
         self.world
@@ -1588,7 +1613,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn set_party_leader(&mut self, leader_id: u8) {
-        self.world.party_leader_slot = Some(leader_id);
+        self.world.party.party_leader_slot = Some(leader_id);
         self.world
             .pending_field_events
             .push(FieldEvent::SetPartyLeader { leader_id });
@@ -1607,18 +1632,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         for p in params {
             if let Some(existing) = self
                 .world
-                .camera_state
+                .camera
+                .state
                 .params
                 .iter_mut()
                 .find(|e| e.slot == p.slot)
             {
                 existing.value = p.value;
             } else {
-                self.world.camera_state.params.push(*p);
+                self.world.camera.state.params.push(*p);
             }
         }
-        self.world.camera_state.apply_trigger = apply_trigger;
-        self.world.camera_state.mode = mode;
+        self.world.camera.state.apply_trigger = apply_trigger;
+        self.world.camera.state.mode = mode;
         // The event still carries only THIS beat's params (the per-beat delta):
         // the `Camera` controller's `route_camera_events` applies them per-axis
         // onto its own persistent eye/look-at, matching the same retail model.
@@ -1632,7 +1658,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn camera_load(&mut self, payload: &[u8]) {
-        self.world.camera_state.loaded_payload = payload.to_vec();
+        self.world.camera.state.loaded_payload = payload.to_vec();
         self.world
             .pending_field_events
             .push(FieldEvent::CameraLoad {
@@ -1644,7 +1670,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Snapshot what we have currently - engines that model real camera
         // matrices can override this on a custom host wrapper. For now we
         // write a placeholder so save/load round-trip behaves.
-        self.world.camera_state.saved = self.world.camera_state.loaded_payload.clone();
+        self.world.camera.state.saved = self.world.camera.state.loaded_payload.clone();
         self.world.pending_field_events.push(FieldEvent::CameraSave);
     }
 
@@ -1669,8 +1695,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Two gates ride on top of the sub-switch, both read off
         // `0x801E030C..0x801E0444` and both keyed on the side-band
         // request/acknowledge pair `_DAT_8007BABC` / `_DAT_8007BAA0`
-        // (`World::sound_stream`) plus the dev/dual-mode word
-        // `_DAT_8007B868` (`World::dual_mode_gate`, `0` in retail):
+        // (`World::audio.sound_stream`) plus the dev/dual-mode word
+        // `_DAT_8007B868` (`World::audio.dual_mode_gate`, `0` in retail):
         //
         // * bit-15 **set**: `_DAT_8007B868 != 0` skips the whole sub-switch
         //   (`bnez v0,0x801DF898` at `0x801E031C`). Subs `0`, `1` and `2`
@@ -1687,7 +1713,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // `crate::scus_leaf_kernels::SfxCueDelays`)
         // REF: FUN_80035B50
         // REF: FUN_800243F0 (the driver that settles the pair)
-        let dev_gate = self.world.dual_mode_gate != 0;
+        let dev_gate = self.world.audio.dual_mode_gate != 0;
         if op0_word & 0x8000 != 0 {
             if dev_gate {
                 // Retail never reaches this: the arm is skipped whole and
@@ -1699,39 +1725,47 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             }
             match op0_word & 0x7FFF {
                 0 => {
-                    if !self.world.sound_stream.is_settled() {
+                    if !self.world.audio.sound_stream.is_settled() {
                         return SceneFadeResult::Busy;
                     }
                     // The enqueue writes the slot the cursor names, parks it,
                     // then advances the cursor - so the parked slot stays the
                     // written one until the next enqueue.
-                    let slot = self.world.sfx_cue_cursor;
-                    self.world.sfx_cue_cursor = self.world.sfx_cue_delays.park(slot);
-                    self.world.sfx_parked_slot = slot;
+                    let slot = self.world.audio.sfx_cue_cursor;
+                    self.world.audio.sfx_cue_cursor = self.world.audio.sfx_cue_delays.park(slot);
+                    self.world.audio.sfx_parked_slot = slot;
                 }
                 1 => {
-                    if !self.world.sound_stream.request(i32::from(op1_word as i16)) {
+                    if !self
+                        .world
+                        .audio
+                        .sound_stream
+                        .request(i32::from(op1_word as i16))
+                    {
                         return SceneFadeResult::Busy;
                     }
                     // Synchronous host: the driver's latch lands in the same
                     // call, so a following sub-`2` barrier is satisfied on
                     // arrival.
-                    self.world.sound_stream.settle();
+                    self.world.audio.sound_stream.settle();
                 }
                 2 => {
-                    if !self.world.sound_stream.is_settled() {
+                    if !self.world.audio.sound_stream.is_settled() {
                         return SceneFadeResult::Busy;
                     }
                 }
                 4 => {
-                    let parked = self.world.sfx_parked_slot;
-                    self.world.sfx_cue_delays.set_delay(parked, op1_word as i16);
+                    let parked = self.world.audio.sfx_parked_slot;
+                    self.world
+                        .audio
+                        .sfx_cue_delays
+                        .set_delay(parked, op1_word as i16);
                 }
                 // Sub `3` (`FUN_801D8450`) and every sub `>= 5` advance
                 // unconditionally.
                 _ => {}
             }
-        } else if !dev_gate && !self.world.sound_stream.is_settled() {
+        } else if !dev_gate && !self.world.audio.sound_stream.is_settled() {
             return SceneFadeResult::Busy;
         }
         self.world
@@ -1758,8 +1792,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             rgb[2] as f32 / 255.0,
         ];
         let frames = intensity.max(0) as u16;
-        let current = self.world.effect_tint.as_ref().map(|t| t.factor());
-        self.world.effect_tint = Some(crate::fade::SceneTintRamp::to_target(
+        let current = self
+            .world
+            .presentation
+            .effect_tint
+            .as_ref()
+            .map(|t| t.factor());
+        self.world.presentation.effect_tint = Some(crate::fade::SceneTintRamp::to_target(
             current, target, frames,
         ));
         self.world
@@ -1817,8 +1856,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 (payload[2] as f32 / 128.0).min(2.0),
             ];
             let frames = u16::from_le_bytes([payload[3], payload[4]]);
-            let current = self.world.screen_tint.as_ref().map(|t| t.factor());
-            self.world.screen_tint = Some(crate::fade::SceneTintRamp::to_target(
+            let current = self.world.presentation.tint.as_ref().map(|t| t.factor());
+            self.world.presentation.tint = Some(crate::fade::SceneTintRamp::to_target(
                 current, target, frames,
             ));
         }
@@ -1841,7 +1880,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // prologue that flips its own ctx class bit would otherwise
         // teleport the player to the record's seat at scene load (seen as
         // `suimon`'s cold spawn landing in the off-map hide box).
-        if self.world.field_entry_prerun {
+        if self.world.field_vm.entry_prerun {
             let _ = ctx;
             return;
         }
@@ -1860,8 +1899,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // for the `4C 51` form; the slice's write-through surfaces the move
         // into the placement-keyed NPC state.
         // REF: FUN_8003C83C (cross-context target resolve)
-        if self.world.in_spawned_record_slice
-            && let Some(_slot) = self.world.executing_channel
+        if self.world.field_vm.in_spawned_record_slice
+            && let Some(_slot) = self.world.field_vm.executing_channel
         {
             ctx.world_x = world_x;
             ctx.world_z = world_z;
@@ -1894,9 +1933,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Mei visibly WALK (clip 61) then idle (clip 60) through her town01
         // walk-on beat instead of sliding in a frozen pose.
         // REF: FUN_80024E08, FUN_800204F8
-        if let Some(slot) = self.world.executing_channel {
+        if let Some(slot) = self.world.field_vm.executing_channel {
             self.world
-                .field_npc_anim_cues
+                .npcs
+                .anim_cues
                 .insert(slot, (1, move_id, Vec::new()));
         }
         self.world
@@ -1946,7 +1986,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// of the roster is a no-op, matching a write into a record the game
     /// never populated.
     fn op4c_n8_sub2_restore_party_slot(&mut self, slot: u8) {
-        let Some(member) = self.world.roster.members.get_mut(slot as usize) else {
+        let Some(member) = self.world.party.roster.members.get_mut(slot as usize) else {
             return;
         };
         let mut hms = member.hp_mp_sp();
@@ -1960,9 +2000,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// This opcode is the global's only retail writer and the global is the
     /// only input to `FUN_801D9D30`, so the field script is the sole source
     /// of a camera shake. The world holds it for the camera to read; see
-    /// [`crate::world::World::camera_shake_amplitude`].
+    /// [`crate::world::CameraRig::shake_amplitude`].
     fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
-        self.world.camera_shake_amplitude = value;
+        self.world.camera.shake_amplitude = value;
     }
 
     fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
@@ -1971,7 +2011,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // `CutsceneNarration` presenter owns those pages. Suppress the spawn
         // side-effect while the cutscene timeline steps; the VM still advances
         // the PC past the page bytes on its own.
-        if self.world.in_cutscene_timeline {
+        if self.world.cutscene.in_timeline {
             return;
         }
         // Walk `count` variable-length records out of `tail` using the
@@ -2048,7 +2088,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // The player arm is suppressed too - at install the op belongs to
         // the spawned actor, and a record whose ctx carries the player-class
         // bit must not yank the player at scene load (see `move_to`).
-        if self.world.field_entry_prerun {
+        if self.world.field_vm.entry_prerun {
             ctx.world_x = world_x;
             ctx.world_z = world_z;
             return;
@@ -2066,15 +2106,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // channel's context here; the slice's write-through surfaces the
         // move into the placement-keyed NPC state.
         // REF: FUN_8003C83C (cross-context target resolve)
-        if self.world.in_spawned_record_slice
-            && let Some(slot) = self.world.executing_channel
+        if self.world.field_vm.in_spawned_record_slice
+            && let Some(slot) = self.world.field_vm.executing_channel
         {
             ctx.world_x = world_x;
             ctx.world_z = world_z;
             if let Some(heading) =
                 crate::man_field_scripts::facing_index_to_engine_heading(depth_byte & 0xF)
             {
-                self.world.field_npc_headings.insert(slot, heading);
+                self.world.npcs.headings.insert(slot, heading);
             }
             return;
         }
@@ -2107,7 +2147,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             });
             return;
         }
-        if let Some(slot) = self.world.stepping_inline_npc {
+        if let Some(slot) = self.world.dialog.stepping_inline_npc {
             self.world
                 .start_field_npc_motion(slot, world_x as i16, world_z as i16);
             self.world.carry_npc_run_anim(slot, move_id);
@@ -2119,7 +2159,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // `4C 51` run dispatch plays a move clip toward the tile). Falls
         // back to a direct ctx seat when the slot has no surfaced position
         // yet (the glide needs a start point).
-        if let Some(slot) = self.world.executing_channel {
+        if let Some(slot) = self.world.field_vm.executing_channel {
             if self
                 .world
                 .start_field_npc_motion(slot, world_x as i16, world_z as i16)
@@ -2142,7 +2182,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Resolve against the scene's resident MAN (kept on the world while
         // per-actor channels run). Without one the trait's default no-op
         // semantics stand - there is no partition table to resolve against.
-        let Some(man) = self.world.field_channels_man.clone() else {
+        let Some(man) = self.world.field_vm.channels_man.clone() else {
             return;
         };
         let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
@@ -2236,10 +2276,10 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world.input.retail_pad().pressed as u16
     }
     fn previous_action_cleared(&self, _: u8) -> bool {
-        self.world.prev_action_cleared
+        self.world.battle.prev_action_cleared
     }
     fn sound_bank_ready(&self, _: u8) -> bool {
-        self.world.sound_bank_ready
+        self.world.audio.sound_bank_ready
     }
     /// The disc spell table's class byte, read off the same
     /// [`crate::pause_screens::MenuTextTables`] copy the live cast path
@@ -2257,17 +2297,18 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// the number [`World::cast_spell_on_slots`] deducts (`def.mp_cost`),
     /// before the shared ability-bit fold the SM applies on top.
     ///
-    /// `World::spell_catalog` is seeded from the user's `SCUS_942.54` at boot
+    /// `World::tables.spell_catalog` is seeded from the user's `SCUS_942.54` at boot
     /// ([`crate::retail_magic::seru_magic_catalog_from_scus`]), so on a real
     /// disc this *is* the retail `+3` byte; disc-free it is the port's
     /// catalog. Either way there is one price per spell in this engine, and
     /// this is where the state machine reads it.
     fn spell_mp_cost(&self, id: u8) -> u8 {
-        self.world.spell_catalog.mp_cost(id)
+        self.world.tables.spell_catalog.mp_cost(id)
     }
     fn character_ability_bits(&self, slot: u8) -> u32 {
         let i = slot as usize;
         self.world
+            .party
             .character_ability_bits
             .get(i)
             .copied()
@@ -2322,13 +2363,13 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         }
     }
     fn battle_end(&mut self, cause: BattleEndCause) {
-        self.world.battle_end = Some(cause);
+        self.world.battle.end = Some(cause);
         self.world
             .pending_battle_events
             .push(BattleEvent::BattleEnd { cause });
     }
     fn party_count(&self) -> u8 {
-        self.world.party_count
+        self.world.party.party_count
     }
     /// Retail's wipe scan iterates the seated-count byte's worth of actor
     /// pointers (`*(0x8007BD24)+0` over `0x801C9370`, `0x801E6510..`), and
@@ -2342,10 +2383,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// A stamped-but-hollow slot (no record, `max_hp == 0`) is the port-only
     /// unseeded state the wipe scan must not read as a dead party.
     fn slot_seated(&self, slot: u8) -> bool {
-        if slot >= self.world.party_count {
+        if slot >= self.world.party.party_count {
             return true;
         }
         self.world
+            .party
             .roster
             .members
             .get(self.world.party_roster_slot(slot as usize))
@@ -2421,12 +2463,13 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             return 0;
         };
         self.world
+            .tables
             .monster_catalog
             .get(id)
             .map_or(0, |def| def.size_class)
     }
     fn camera_frame_height(&mut self, height: i16) {
-        self.world.battle_camera_frame_height = height;
+        self.world.battle.camera_frame_height = height;
         self.world
             .pending_battle_events
             .push(BattleEvent::CameraFrameHeight { height });
@@ -2544,13 +2587,14 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     ///
     /// PORT: FUN_80024E80
     fn spawn_screen_fade(&mut self, template: &vm::battle_action::SummonFadeTemplate, id: i16) {
-        self.world.screen_fade = Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
-            kind: template.kind,
-            duration: template.duration,
-            start_rgb: template.start_rgb,
-            end_rgb: template.end_rgb,
-            mode: [template.delay, template.hold, id],
-        }));
+        self.world.presentation.fade =
+            Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
+                kind: template.kind,
+                duration: template.duration,
+                start_rgb: template.start_rgb,
+                end_rgb: template.end_rgb,
+                mode: [template.delay, template.hold, id],
+            }));
     }
     fn summon_stager_tick(&mut self) -> bool {
         self.world.summon_stager_tick()
@@ -2575,7 +2619,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// roster index the character record sits at. Monster slots report `4`,
     /// the value the cast-cue dispatcher's enemy leg tests for.
     fn roster_character_id(&self, slot: u8) -> u8 {
-        if slot < self.world.party_count {
+        if slot < self.world.party.party_count {
             self.world.party_roster_slot(slot as usize) as u8 + 1
         } else {
             4
@@ -2583,11 +2627,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
     /// `(class, tier)` of the item's descriptor in the disc item-effect table
     /// (`0x800752C0`, resolved through the item property record's `+1`
-    /// subtype) - `World::item_effects`, the same table the field/battle item
+    /// subtype) - `World::tables.item_effects`, the same table the field/battle item
     /// menus gate usability on. `None` without a disc image.
     ///
     fn item_effect_class_pair(&self, item_id: u8) -> Option<(u8, u8)> {
-        let eff = self.world.item_effects.as_ref()?.effect(item_id)?;
+        let eff = self.world.tables.item_effects.as_ref()?.effect(item_id)?;
         Some((eff.class, eff.tier))
     }
     /// The spell-side sibling: `+1` of the same 12-byte spell record
@@ -2604,7 +2648,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// prototypes from, so the group ids, the SFX map and the prototypes all
     /// come from one parse of one overlay.
     fn cue_tables(&self) -> Option<(&[u8], &[u8])> {
-        let aux = self.world.move_power.as_ref()?.aux_tables()?;
+        let aux = self.world.tables.move_power.as_ref()?.aux_tables()?;
         Some((aux.cue_group_bytes(), aux.clut_map()))
     }
     /// Place one expanded cue.
@@ -2647,7 +2691,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             // `clut_x` is a VRAM x coordinate, not a cue id: retail's arm
             // is `MoveImage({x = clut_x, y = 476, w = 16, h = 1}, 224, 476)`
             // - a 16-entry palette-row swap. It was pushed into
-            // `World::battle_sfx_cues` while the table was read as an SFX
+            // `World::audio.battle_sfx_cues` while the table was read as an SFX
             // map, which fed the SFX scheduler the values `0xB0` / `0xC0` /
             // `0xD0`. The engine has no VRAM CLUT-row swap on this seam, so
             // the copy is dropped rather than mis-routed.
@@ -2669,6 +2713,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn one_shot_sfx(&mut self, cue_id: u16) {
         let slot = self.world.battle_ctx.active_actor;
         self.world
+            .audio
             .battle_sfx_cues
             .push(crate::battle_events::BattleSfxCue {
                 kind: cue_id,
@@ -2681,22 +2726,22 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// follow-up guard. Party slots only - retail reaches the record through
     /// `DAT_8007BD10[slot] - 1` and a monster slot has none.
     fn caster_spell_list(&self, party_slot: u8) -> Option<(Vec<u8>, Vec<u8>)> {
-        if party_slot >= self.world.party_count {
+        if party_slot >= self.world.party.party_count {
             return None;
         }
         let rslot = self.world.party_roster_slot(party_slot as usize);
-        let list = self.world.roster.members.get(rslot)?.spell_list();
+        let list = self.world.party.roster.members.get(rslot)?.spell_list();
         Some((list.ids.to_vec(), list.levels.to_vec()))
     }
     /// Character record `+0xF8` - word 1 of the 4-word accessory-passive
     /// bitfield [`World::refresh_party_ability_bits`] rebuilds from equipment.
     /// Distinct from `character_ability_bits`, which is word 0 (`+0xF4`).
     fn character_ability_bits_high(&self, party_slot: u8) -> u32 {
-        if party_slot >= self.world.party_count {
+        if party_slot >= self.world.party.party_count {
             return 0;
         }
         let rslot = self.world.party_roster_slot(party_slot as usize);
-        let Some(member) = self.world.roster.members.get(rslot) else {
+        let Some(member) = self.world.party.roster.members.get(rslot) else {
             return 0;
         };
         let bits = member.ability_bits();
@@ -2705,11 +2750,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// Character record `+0x185` count / `+0x186..` ids - the displayed-skill
     /// list the AI auto-fill arm draws its queue bytes from.
     fn learned_arts(&self, party_slot: u8) -> Vec<u8> {
-        if party_slot >= self.world.party_count {
+        if party_slot >= self.world.party.party_count {
             return Vec::new();
         }
         let rslot = self.world.party_roster_slot(party_slot as usize);
-        let Some(member) = self.world.roster.members.get(rslot) else {
+        let Some(member) = self.world.party.roster.members.get(rslot) else {
             return Vec::new();
         };
         let skills = member.displayed_skills();
@@ -2717,7 +2762,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         skills.ids[..n].to_vec()
     }
     /// The disc-parsed [`legaia_art::ArtRecord`] for `(character, action)` -
-    /// `World::art_records`, the same map the entry resolver reads its
+    /// `World::tables.art_records`, the same map the entry resolver reads its
     /// per-strike power profile out of.
     ///
     /// The record supplies an art hit's side data - the status effect and
@@ -2730,7 +2775,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         character: legaia_art::Character,
         action: legaia_art::ActionConstant,
     ) -> Option<&legaia_art::ArtRecord> {
-        self.world.art_records.get(&(character, action))
+        self.world.tables.art_records.get(&(character, action))
     }
     fn apply_art_strike(&mut self, info: legaia_engine_vm::battle_action::ArtStrikeInfo) {
         // Resolve per-slot weapon attack and the defense the art targets.
@@ -2739,11 +2784,12 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         // attack bytes (`FUN_801EC3E4`, `PTR_801CF4B4[5]`).
         let mut attack = self
             .world
-            .battle_attack
+            .battle
+            .attack
             .get(info.actor_slot as usize)
             .copied()
             .unwrap_or(0);
-        if let Some(bonuses) = self.world.battle_equip_atk.get(info.actor_slot as usize)
+        if let Some(bonuses) = self.world.battle.equip_atk.get(info.actor_slot as usize)
             && let Some(fold) = legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(
                 legaia_engine_vm::battle_formulas::ARMS_ART_COMMAND,
                 bonuses,

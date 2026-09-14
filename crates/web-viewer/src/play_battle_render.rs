@@ -73,7 +73,7 @@
 //! latch is armed here too, via `BattleHud::sync_status`; only the drain is
 //! missing. The effect **CLUT stage** (`engine-core::battle_effect_clut`,
 //! `FUN_801DEA50`'s palette arm) is the third rider on that same missing
-//! channel: `World::battle_clut_stages` fills here exactly as it does
+//! channel: `World::battle.clut_stages` fills here exactly as it does
 //! natively, and nothing drains it. Growing the channel lights up all three
 //! at once.
 
@@ -128,7 +128,8 @@ fn derive_battle_cam(
     // The submenu close-up frames whoever owns the menu; the action framing
     // frames whoever is acting (`ctx[+0x13]`).
     let acting_slot = world
-        .battle_command
+        .battle
+        .command
         .as_ref()
         .map(|c| c.actor)
         .unwrap_or(world.battle_ctx.active_actor);
@@ -161,14 +162,14 @@ fn derive_battle_cam(
             .actors
             .get(usize::from(acting_slot))
             .map_or(0, |a| a.battle.action_category),
-        party_slot: usize::from(acting_slot) < world.party_count as usize,
+        party_slot: usize::from(acting_slot) < world.party.party_count as usize,
         target_dead: target.is_some_and(|t| !t.live),
     };
     let phase = script::phase_for_state(
-        world.current_dialog.is_some() || world.inline_dialogue.is_some(),
-        world.battle_arts_menu.is_some()
-            || world.battle_spell_menu.is_some()
-            || world.battle_item_menu.is_some(),
+        world.dialog.current.is_some() || world.dialog.inline.is_some(),
+        world.battle.arts_menu.is_some()
+            || world.battle.spell_menu.is_some()
+            || world.battle.item_menu.is_some(),
         world.battle_ctx.action_state,
         done,
     );
@@ -179,6 +180,7 @@ fn derive_battle_cam(
         // order, so the row index + 1 is the same id.
         let height = party_slot.and_then(|p| {
             world
+                .tables
                 .battle_camera_heights
                 .as_ref()
                 .and_then(|t| t.height_for_char_id(p + 1))
@@ -200,7 +202,7 @@ fn derive_battle_cam(
             height,
         })
     };
-    let acting = match world.battle_command.as_ref() {
+    let acting = match world.battle.command.as_ref() {
         Some(c) => actor_at(c.actor, Some(c.party_slot)),
         None => actor_at(acting_slot, None),
     };
@@ -212,7 +214,7 @@ fn derive_battle_cam(
     // per-host mesh binding would let two hosts derive different formations
     // from one identical `World`. Pinned against the native host by
     // `the_formation_box_is_a_world_fact_not_a_render_fact`.
-    let pc = world.party_count as usize;
+    let pc = world.party.party_count as usize;
     let mut formation: Option<script::FormationBox> = None;
     for (i, a) in world.actors.iter().enumerate() {
         if !(i < pc || a.battle_monster_id.is_some()) {
@@ -241,7 +243,7 @@ fn derive_battle_cam(
         action: script::ActionFraming {
             party_slot: party,
             battle_over: false,
-            depth_raw: world.battle_camera_frame_height as i32,
+            depth_raw: world.battle.camera_frame_height as i32,
             yaw_base: 0,
             style: world.battle_ctx.camera_variant,
             char_id: if party { acting_slot + 1 } else { 0 },
@@ -249,8 +251,8 @@ fn derive_battle_cam(
         // `_DAT_8007B792` is one global shared with the field camera, and
         // nothing on the battle-entry path zeroes it - a fight inherits the
         // live azimuth (see `BattleCamInputs::entry_yaw`).
-        entry_yaw: f32::from(world.field_camera_azimuth & 0xFFF),
-        shake_amplitude: world.camera_shake_amplitude,
+        entry_yaw: f32::from(world.locomotion.camera_azimuth & 0xFFF),
+        shake_amplitude: world.camera.shake_amplitude,
         attack: attack_channels(world, world.battle_ctx.active_actor),
         // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's
         // state edges (`BattleCamera::observe_action_state`) - same field
@@ -269,7 +271,7 @@ fn attack_channels(
     acting_slot: u8,
 ) -> Option<legaia_engine_vm::battle_cam_script::AttackCamChannels> {
     use legaia_engine_vm::battle_attack_camera as cam;
-    if usize::from(acting_slot) >= world.party_count as usize {
+    if usize::from(acting_slot) >= world.party.party_count as usize {
         return None;
     }
     let a = world.actors.get(acting_slot as usize)?;
@@ -298,7 +300,7 @@ fn attack_channels(
 fn attack_tracks(
     world: &legaia_engine_core::world::World,
 ) -> Option<legaia_asset::battle_attack_camera_table::AttackCameraTracks> {
-    let overlay = world.move_power_overlay.as_ref()?;
+    let overlay = world.tables.move_power_overlay.as_ref()?;
     legaia_asset::battle_attack_camera_table::parse(overlay)
 }
 
@@ -699,7 +701,7 @@ impl LegaiaRuntime {
         // the content (player file 863 + cslot), the ORDINAL picks the
         // runtime texture band - the live-verified retail rule the native
         // window applies.
-        let party_count = host.world.party_count as usize;
+        let party_count = host.world.party.party_count as usize;
         let pack = host
             .index
             .entry_bytes(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
@@ -837,7 +839,7 @@ impl LegaiaRuntime {
             &mut br.camera,
             active,
             inputs,
-            world.field_frames,
+            world.clock.display_frames,
             tracks.as_ref(),
         );
     }
@@ -868,6 +870,7 @@ impl LegaiaRuntime {
         // zeroed record assembles the all-default (unequipped) sections.
         let equipped: [u8; 5] = host
             .world
+            .party
             .roster
             .members
             .get(cslot)
@@ -1580,7 +1583,7 @@ mod battle_cam_web_tests {
 
         let mut world = World::default();
         world.mode = SceneMode::Battle;
-        world.party_count = 1;
+        world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
         vahn.move_state.world_x = 600;
@@ -1594,13 +1597,13 @@ mod battle_cam_web_tests {
         tetsu.battle_monster_id = Some(1);
         tetsu.tmd_binding = Some(0);
         world.actors = vec![vahn, tetsu];
-        world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
+        world.battle.command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
             0, 0,
         ));
         // The **arts input** picker is what arms retail's case-0 close-up;
         // the command chooser alone keeps the far framing (see
         // `script::phase_for_state`). Same recipe as the native mirror.
-        world.battle_arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
+        world.battle.arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
             0,
             0,
             Vec::new(),
@@ -1632,7 +1635,7 @@ mod battle_cam_web_tests {
     fn web_formation_box_is_a_world_fact_not_a_render_fact() {
         let mut world = World::default();
         world.mode = SceneMode::Battle;
-        world.party_count = 1;
+        world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
         vahn.move_state.world_z = -800;
@@ -1674,7 +1677,7 @@ mod battle_cam_web_tests {
     fn web_pose_matches_the_native_recipe() {
         let mut world = World::default();
         world.mode = SceneMode::Battle;
-        world.party_count = 1;
+        world.party.party_count = 1;
         let mut vahn = legaia_engine_core::world::Actor::default();
         vahn.active = true;
         vahn.move_state.world_x = 0;
@@ -1687,13 +1690,13 @@ mod battle_cam_web_tests {
         tetsu.battle_monster_id = Some(1);
         tetsu.tmd_binding = Some(0);
         world.actors = vec![vahn, tetsu];
-        world.battle_command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
+        world.battle.command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
             0, 0,
         ));
         // The **arts input** picker is what arms retail's case-0 close-up;
         // the command chooser alone keeps the far framing (see
         // `script::phase_for_state`). Same recipe as the native mirror.
-        world.battle_arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
+        world.battle.arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
             0,
             0,
             Vec::new(),

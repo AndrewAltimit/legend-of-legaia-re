@@ -69,7 +69,10 @@ impl World {
         else {
             return 0;
         };
-        self.monster_catalog.get(id).map_or(0, |def| def.size_class)
+        self.tables
+            .monster_catalog
+            .get(id)
+            .map_or(0, |def| def.size_class)
     }
 
     /// The slot's seat (anchor) pair - retail `+0x3C`/`+0x40`. Falls back to
@@ -102,7 +105,7 @@ impl World {
         ) else {
             return 1;
         };
-        let pc = self.party_count;
+        let pc = self.party.party_count;
         let attacker_party = attacker < pc;
         let target_party = target < pc;
         let attacker_pos = (att.move_state.world_x, att.move_state.world_z);
@@ -373,7 +376,7 @@ impl World {
         for (i, sep) in seps.iter_mut().enumerate().take(n) {
             let a = &self.actors[i];
             alive[i] = a.battle.liveness != 0;
-            let radius = if (i as u8) < self.party_count {
+            let radius = if (i as u8) < self.party.party_count {
                 PARTY_SEPARATION_RADIUS
             } else {
                 i16::from(self.battle_size_class_of(i as u8)) << 5

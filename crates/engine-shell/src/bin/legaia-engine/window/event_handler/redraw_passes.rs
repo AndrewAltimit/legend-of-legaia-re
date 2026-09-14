@@ -53,7 +53,8 @@ impl PlayWindowApp {
         } else if in_world_map {
             let world = &self.session.host.world;
             let (az, zoom, px, pz, walk_mode) = world
-                .world_map_ctrl
+                .world_map
+                .ctrl
                 .as_ref()
                 .map(|c| (c.azimuth, c.zoom, c.camera_x, c.camera_z, !c.is_top_view()))
                 .unwrap_or((0, 0, 0, 0, true));
@@ -793,7 +794,7 @@ impl PlayWindowApp {
         let mut screen_fx_solid = None;
         let mut screen_fx_tex = None;
         let streak = self.move_fx_streak_quads(r);
-        let fx_quads = self.session.host.world.screen_fx_frame.draw_quads();
+        let fx_quads = self.session.host.world.presentation.fx_frame.draw_quads();
         if fx_quads.is_empty() && streak.is_empty() {
             return (None, None);
         }

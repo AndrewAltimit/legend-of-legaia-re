@@ -69,7 +69,7 @@ fn map03_conditional_wall_fires_when_story_flag_seeded() {
         host.enter_field_scene("map03", 0).expect("enter map03");
         run_prescript(&mut host, 600);
         assert_eq!(
-            wall_nibble(&host.world.field_collision_grid, 66, 102),
+            wall_nibble(&host.world.terrain.collision_grid, 66, 102),
             0xC,
             "with no story flags, tile (66,102) keeps the base grid's 0xC nibble"
         );
@@ -84,7 +84,7 @@ fn map03_conditional_wall_fires_when_story_flag_seeded() {
         run_prescript(&mut host, 600);
         // The paint targets exactly that tile (block-all sets the high nibble).
         assert_eq!(
-            wall_nibble(&host.world.field_collision_grid, 66, 102),
+            wall_nibble(&host.world.terrain.collision_grid, 66, 102),
             0xF,
             "seeding story flag 0x6C2 must fire the block-all paint at (66,102)"
         );

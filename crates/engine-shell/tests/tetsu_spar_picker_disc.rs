@@ -61,7 +61,7 @@ fn rim_elm_spar_menu_decodes_as_a_four_option_picker() {
 
     // Scan every field-NPC dialogue for a 4-option picker.
     let mut four_opt = Vec::new();
-    for (slot, bytes) in &session.host.world.field_npc_dialog {
+    for (slot, bytes) in &session.host.world.npcs.dialog {
         for p in legaia_mes::scan_pickers(bytes) {
             if p.n == 4 {
                 let labels: Vec<String> = p.options.iter().map(|o| label_text(&o.label)).collect();
@@ -141,7 +141,7 @@ fn rim_elm_spar_fight_option_is_disc_derived_from_the_battle_install() {
     // Find a field dialogue the shipped derivation reads as a spar menu, and
     // confirm its fight option's branch carries the exact Tetsu install.
     let mut proven = false;
-    for (slot, bytes) in &session.host.world.field_npc_dialog {
+    for (slot, bytes) in &session.host.world.npcs.dialog {
         let Some((n, fight_option)) = legaia_engine_core::world::spar_menu_of(bytes) else {
             continue;
         };

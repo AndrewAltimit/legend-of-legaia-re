@@ -26,8 +26,8 @@ fn disc_scus() -> Option<Vec<u8>> {
 
 fn world_with_disc_text(scus: &[u8]) -> World {
     let mut world = World::new();
-    world.roster = legaia_save::Party::zeroed(1);
-    let member = &mut world.roster.members[0];
+    world.party.roster = legaia_save::Party::zeroed(1);
+    let member = &mut world.party.roster.members[0];
     let mut hms = member.hp_mp_sp();
     hms.hp_max = 100;
     hms.hp_cur = 100;
@@ -48,8 +48,8 @@ fn items_screen_resolves_disc_names_counts_and_descriptions() {
     };
     let mut world = world_with_disc_text(&scus);
     // Healing Berry x3 + Healing Leaf x9 (real consumable ids).
-    world.inventory.insert(0x79, 3);
-    world.inventory.insert(0x77, 9);
+    world.party.inventory.insert(0x79, 3);
+    world.party.inventory.insert(0x77, 9);
 
     let mut s = build_pause_items_session(&world);
     // Rows are id-sorted: 0x77 first.
@@ -90,15 +90,16 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
     // Learn Gimard (0x81), Vera (0x83) and the Ra-Seru Horn (0x9c) at
     // levels 2 / 1 / 1.
     {
-        let member = &mut world.roster.members[0];
+        let member = &mut world.party.roster.members[0];
         let mut list = member.spell_list();
         list.count = 3;
         list.ids[..3].copy_from_slice(&[0x81, 0x83, 0x9c]);
         list.levels[..3].copy_from_slice(&[2, 1, 1]);
         member.set_spell_list(list);
     }
-    world.spell_catalog = legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
-        .expect("disc spell catalog");
+    world.tables.spell_catalog =
+        legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
+            .expect("disc spell catalog");
 
     let sub = FieldMenuSubsession::build(
         FieldMenuRow::Magic,
@@ -106,7 +107,7 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
         &legaia_engine_core::options::OptionsState::default(),
         &legaia_engine_core::save_select::SaveRack::Blocks(Vec::new()),
         &legaia_engine_core::tactical_arts_editor::ChainLibrary::new(),
-        &world.spell_catalog,
+        &world.tables.spell_catalog,
         &legaia_engine_core::battle_stats::EquipmentTable::new(),
     );
     let FieldMenuSubsession::Spells(mut s) = sub else {
@@ -114,7 +115,7 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
     };
 
     // Caster focus: level + mp/mp_max plumb from the record.
-    let m = magic_screen_model(&s, world.menu_text.as_ref());
+    let m = magic_screen_model(&s, world.menu.text.as_ref());
     assert!(!m.focus_list);
     assert_eq!(m.casters.len(), 1);
     let (_, level, mp, mp_max) = &m.casters[0];
@@ -130,7 +131,7 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
         cross: true,
         ..Default::default()
     });
-    let m = magic_screen_model(&s, world.menu_text.as_ref());
+    let m = magic_screen_model(&s, world.menu.text.as_ref());
     assert!(m.focus_list);
     let info = m.info.expect("hovered spell staged");
     assert_eq!(info.name, "Gimard");

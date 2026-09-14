@@ -37,8 +37,8 @@ fn marker(va: u32) -> String {
 
 fn tutorial_battle_world() -> World {
     let mut world = World::new();
-    world.live_gameplay_loop = true;
-    world.battle_player_driven = true;
+    world.toggles.live_gameplay_loop = true;
+    world.battle.player_driven = true;
     world.prime_battle_tutorial(synthetic_script());
     world.enter_battle(3, 2);
     for i in 0..5 {
@@ -51,7 +51,8 @@ fn tutorial_battle_world() -> World {
 /// Texts of the boxes currently queued, front first.
 fn queued(world: &World) -> Vec<String> {
     world
-        .battle_tutorial_boxes
+        .battle
+        .tutorial_boxes
         .iter()
         .map(|b| b.text.clone())
         .collect()
@@ -60,16 +61,16 @@ fn queued(world: &World) -> Vec<String> {
 #[test]
 fn priming_arms_the_machine_at_battle_entry() {
     let world = tutorial_battle_world();
-    assert!(world.battle_tutorial.is_some(), "tutorial armed");
+    assert!(world.battle.tutorial.is_some(), "tutorial armed");
     assert_eq!(
         world.battle_tutorial_lesson(),
         Some(TutorialLesson::Attacks)
     );
-    assert_eq!(world.battle_flow, BattleFlowState::Idle);
+    assert_eq!(world.battle.flow, BattleFlowState::Idle);
     // A battle entered without priming stays clean.
     let mut plain = World::new();
     plain.enter_battle(3, 2);
-    assert!(plain.battle_tutorial.is_none());
+    assert!(plain.battle.tutorial.is_none());
 }
 
 /// Retail's own condition - the one-shot system-flag arm the entity SM's
@@ -90,7 +91,7 @@ fn the_disc_arm_flag_runs_the_tutorial_for_exactly_one_battle() {
     // condition, which is the confusion the old host gate encoded.
     world.enter_battle(3, 2);
     assert!(
-        world.battle_tutorial.is_none(),
+        world.battle.tutorial.is_none(),
         "an unarmed battle must not run the tutorial"
     );
 
@@ -99,7 +100,7 @@ fn the_disc_arm_flag_runs_the_tutorial_for_exactly_one_battle() {
     world.system_flag_set(TUTORIAL_ARM_FLAG);
     world.enter_battle(3, 2);
     assert!(
-        world.battle_tutorial.is_some(),
+        world.battle.tutorial.is_some(),
         "the disc arm must run the tutorial in the very next battle"
     );
     assert_eq!(
@@ -114,7 +115,7 @@ fn the_disc_arm_flag_runs_the_tutorial_for_exactly_one_battle() {
     // ...and only that battle. A second fight is an ordinary one.
     world.enter_battle(3, 2);
     assert!(
-        world.battle_tutorial.is_none(),
+        world.battle.tutorial.is_none(),
         "the arm is one-shot; the fight after the spar is ordinary"
     );
 }
@@ -129,11 +130,11 @@ fn a_forced_tutorial_consumes_the_disc_arm_too() {
     world.prime_battle_tutorial(synthetic_script());
     world.system_flag_set(TUTORIAL_ARM_FLAG);
     world.enter_battle(3, 2);
-    assert!(world.battle_tutorial.is_some());
+    assert!(world.battle.tutorial.is_some());
     assert!(!world.system_flag_test(TUTORIAL_ARM_FLAG), "arm consumed");
     world.enter_battle(3, 2);
     assert!(
-        world.battle_tutorial.is_none(),
+        world.battle.tutorial.is_none(),
         "neither the force nor the arm may survive into the next battle"
     );
 }
@@ -163,7 +164,7 @@ fn the_stage_id_resolver_matches_the_overlay_dispatch() {
 fn opening_a_turn_raises_the_turn_prompt_and_queues_the_lesson_intro() {
     let mut world = tutorial_battle_world();
     world.open_battle_command(0);
-    assert_eq!(world.battle_flow, BattleFlowState::TurnPrompt);
+    assert_eq!(world.battle.flow, BattleFlowState::TurnPrompt);
     // Retail state 30 / lesson 0: the intro plus the first-visit directional
     // explainer.
     assert_eq!(
@@ -188,11 +189,11 @@ fn the_command_menu_raises_the_category_prompt_after_begin_is_taken() {
     let mut world = tutorial_battle_world();
     world.open_battle_command(0);
     // Drain the two intro boxes (the second waits for input).
-    world.battle_tutorial_boxes.clear();
+    world.battle.tutorial_boxes.clear();
     // The turn opens on `Begin | Run`; the ring is behind it.
-    assert_eq!(world.battle_flow, BattleFlowState::TurnPrompt);
+    assert_eq!(world.battle.flow, BattleFlowState::TurnPrompt);
     take_begin(&mut world);
-    assert_eq!(world.battle_flow, BattleFlowState::CategoryMenu);
+    assert_eq!(world.battle.flow, BattleFlowState::CategoryMenu);
     // Lesson 0 names [Attack] as the category to pick.
     assert_eq!(queued(&world), vec![marker(msg::PICK_ATTACK)]);
 }
@@ -201,10 +202,10 @@ fn the_command_menu_raises_the_category_prompt_after_begin_is_taken() {
 fn a_hook_fires_once_per_entry_into_its_flow_state() {
     let mut world = tutorial_battle_world();
     world.open_battle_command(0);
-    world.battle_tutorial_boxes.clear();
+    world.battle.tutorial_boxes.clear();
     take_begin(&mut world);
     assert_eq!(queued(&world).len(), 1);
-    world.battle_tutorial_boxes.clear();
+    world.battle.tutorial_boxes.clear();
     // Still in the category menu: the one-shot latch swallows the re-dispatch.
     world.tick_battle_command();
     assert!(queued(&world).is_empty(), "latched - no second emission");
@@ -214,8 +215,8 @@ fn a_hook_fires_once_per_entry_into_its_flow_state() {
 fn picking_the_item_window_during_the_attack_lesson_rewinds() {
     let mut world = tutorial_battle_world();
     world.open_battle_command(0);
-    world.battle_tutorial_boxes.clear();
-    world.battle_command = Some(BattleCommandSession {
+    world.battle.tutorial_boxes.clear();
+    world.battle.command = Some(BattleCommandSession {
         actor: 0,
         party_slot: 0,
         no_escape: false,
@@ -224,25 +225,25 @@ fn picking_the_item_window_during_the_attack_lesson_rewinds() {
     world.tick_battle_command();
     // The item submenu never opens; the rewind box names the taught lesson and
     // the command menu is back up.
-    assert!(world.battle_item_menu.is_none(), "item window rejected");
+    assert!(world.battle.item_menu.is_none(), "item window rejected");
     assert_eq!(queued(&world), vec![marker(msg::WRONG_ATTACKS)]);
-    assert!(world.battle_command.is_some(), "command menu reopened");
+    assert!(world.battle.command.is_some(), "command menu reopened");
 }
 
 #[test]
 fn the_item_window_is_allowed_once_the_item_lesson_is_running() {
     let mut world = tutorial_battle_world();
-    world.battle_tutorial.as_mut().unwrap().lesson = TutorialLesson::Items.raw();
+    world.battle.tutorial.as_mut().unwrap().lesson = TutorialLesson::Items.raw();
     world.open_battle_command(0);
-    world.battle_tutorial_boxes.clear();
-    world.battle_command = Some(BattleCommandSession {
+    world.battle.tutorial_boxes.clear();
+    world.battle.command = Some(BattleCommandSession {
         actor: 0,
         party_slot: 0,
         no_escape: false,
         phase: CommandPhase::OpenItemMenu,
     });
     world.tick_battle_command();
-    assert!(world.battle_item_menu.is_some(), "item window opens");
+    assert!(world.battle.item_menu.is_some(), "item window opens");
     assert_eq!(
         queued(&world),
         vec![marker(msg::SELECT_ITEM), marker(msg::ITEM_WINDOW_EXPLAIN)]
@@ -259,10 +260,10 @@ fn run_is_rejected_for_the_whole_sparring_fight() {
         TutorialLesson::HyperArts,
     ] {
         let mut world = std::mem::replace(&mut world, tutorial_battle_world());
-        world.battle_tutorial.as_mut().unwrap().lesson = lesson.raw();
+        world.battle.tutorial.as_mut().unwrap().lesson = lesson.raw();
         world.open_battle_command(0);
-        world.battle_tutorial_boxes.clear();
-        world.battle_command = Some(BattleCommandSession {
+        world.battle.tutorial_boxes.clear();
+        world.battle.command = Some(BattleCommandSession {
             actor: 0,
             party_slot: 0,
             no_escape: false,
@@ -274,7 +275,7 @@ fn run_is_rejected_for_the_whole_sparring_fight() {
             vec![marker(msg::NO_RUNNING)],
             "lesson {lesson:?} should refuse to flee"
         );
-        assert!(world.battle_command.is_some(), "back at the command menu");
+        assert!(world.battle.command.is_some(), "back at the command menu");
     }
 }
 
@@ -282,9 +283,9 @@ fn run_is_rejected_for_the_whole_sparring_fight() {
 fn committing_the_taught_category_is_accepted_and_advances_the_lesson() {
     let mut world = tutorial_battle_world();
     world.open_battle_command(0);
-    world.battle_tutorial_boxes.clear();
+    world.battle.tutorial_boxes.clear();
     // Attack confirmed on a monster - retail category 3, which lesson 0 teaches.
-    world.battle_command = Some(BattleCommandSession {
+    world.battle.command = Some(BattleCommandSession {
         actor: 0,
         party_slot: 0,
         no_escape: false,
@@ -299,15 +300,15 @@ fn committing_the_taught_category_is_accepted_and_advances_the_lesson() {
     // The strike commits and the ring walks on to the next member that owes
     // a command (three are seated here), so slot 0's session is gone.
     assert!(
-        world.battle_command.as_ref().is_none_or(|s| s.actor != 0),
+        world.battle.command.as_ref().is_none_or(|s| s.actor != 0),
         "the strike commits"
     );
-    assert!(world.battle_tutorial.as_ref().unwrap().pending_advance);
+    assert!(world.battle.tutorial.as_ref().unwrap().pending_advance);
 
     // The bump lands at the next turn start, so lesson 1's intro is what the
     // following turn opens with.
-    world.battle_tutorial_boxes.clear();
-    world.battle_flow = BattleFlowState::Idle;
+    world.battle.tutorial_boxes.clear();
+    world.battle.flow = BattleFlowState::Idle;
     world.open_battle_command(0);
     assert_eq!(world.battle_tutorial_lesson(), Some(TutorialLesson::Items));
     assert_eq!(queued(&world), vec![marker(msg::LESSON1_INTRO)]);
@@ -331,31 +332,31 @@ fn a_waiting_box_dismisses_on_cross_and_a_plain_one_times_out() {
     let mut world = tutorial_battle_world();
     world.open_battle_command(0);
     // Box 0 is style 0 (no wait); box 1 is style 3 (waits).
-    assert!(!world.battle_tutorial_boxes[0].waits_for_input);
-    assert!(world.battle_tutorial_boxes[1].waits_for_input);
+    assert!(!world.battle.tutorial_boxes[0].waits_for_input);
+    assert!(world.battle.tutorial_boxes[1].waits_for_input);
 
     // The plain box ages out on its own.
-    let frames = world.battle_tutorial_boxes[0].frames_remaining;
+    let frames = world.battle.tutorial_boxes[0].frames_remaining;
     for _ in 0..frames {
         world.tick_battle_tutorial_boxes();
     }
-    assert_eq!(world.battle_tutorial_boxes.len(), 1, "plain box expired");
+    assert_eq!(world.battle.tutorial_boxes.len(), 1, "plain box expired");
 
     // The waiting box sits there until Cross.
     for _ in 0..600 {
         world.tick_battle_tutorial_boxes();
     }
-    assert_eq!(world.battle_tutorial_boxes.len(), 1, "still waiting");
+    assert_eq!(world.battle.tutorial_boxes.len(), 1, "still waiting");
     world.input.set_pad(PadButton::Cross.mask());
     world.tick_battle_tutorial_boxes();
-    assert!(world.battle_tutorial_boxes.is_empty(), "acknowledged");
+    assert!(world.battle.tutorial_boxes.is_empty(), "acknowledged");
 }
 
 #[test]
 fn every_queued_box_carries_a_decodable_retail_placement() {
     let mut world = tutorial_battle_world();
     world.open_battle_command(0);
-    for b in &world.battle_tutorial_boxes {
+    for b in &world.battle.tutorial_boxes {
         let pos = b.position(96).expect("style inside the retail 0..=9 table");
         assert!(pos.0 >= 0 && pos.1 >= 0, "box {b:?} placed off-screen");
     }
@@ -365,8 +366,8 @@ fn every_queued_box_carries_a_decodable_retail_placement() {
 fn the_fourth_completed_lesson_closes_the_fight_out() {
     let mut world = tutorial_battle_world();
     // Lesson 3 done: the counter reaches 4 and the completion tail runs.
-    world.battle_tutorial.as_mut().unwrap().lesson = TutorialLesson::HyperArts.raw();
-    world.battle_tutorial.as_mut().unwrap().pending_advance = true;
+    world.battle.tutorial.as_mut().unwrap().lesson = TutorialLesson::HyperArts.raw();
+    world.battle.tutorial.as_mut().unwrap().pending_advance = true;
     world.open_battle_command(0);
     assert!(
         queued(&world).contains(&marker(msg::PRACTICE_OVER)),
@@ -374,7 +375,7 @@ fn the_fourth_completed_lesson_closes_the_fight_out() {
         queued(&world)
     );
     assert!(
-        world.battle_tutorial.is_none(),
+        world.battle.tutorial.is_none(),
         "the machine disarms once the fight is closed"
     );
 }

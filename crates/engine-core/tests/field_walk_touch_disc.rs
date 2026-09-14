@@ -92,7 +92,8 @@ fn koin1_cabinet_walk_touch_posts_the_interact_but_does_not_enter() {
     // (Baka Fighter) and P1[9] as sub-id 5 (Muscle Dome). So the payload is a
     // mode-24 overlay selector, not a map id - see `minigame_entry`.
     let warps: Vec<(u8, (i16, i16), u8)> = world
-        .field_walk_touch
+        .props
+        .walk_touch
         .iter()
         .filter_map(|(&slot, &(pos, event))| match event {
             WalkTouchEvent::Warp { sub_id } => Some((slot, pos, sub_id)),
@@ -137,10 +138,10 @@ fn koin1_cabinet_walk_touch_posts_the_interact_but_does_not_enter() {
     //   so walking up to an NPC to talk dropped the player into a minigame.
     let _ = sub_id;
     walk_into(&mut world, pos, |w| {
-        w.pending_minigame_warp.is_some() || w.pending_scene_transition.is_some()
+        w.minigames.pending_warp.is_some() || w.pending_scene_transition.is_some()
     });
     assert_eq!(
-        world.pending_minigame_warp, None,
+        world.minigames.pending_warp, None,
         "brushing a koin1 cabinet must not enter its minigame"
     );
     assert_eq!(
@@ -148,7 +149,7 @@ fn koin1_cabinet_walk_touch_posts_the_interact_but_does_not_enter() {
         "a cabinet's sub-id must not reach the map-id resolver"
     );
     assert!(
-        world.minigame_scene_backup.is_none(),
+        world.minigames.scene_backup.is_none(),
         "no mode-24 round trip is armed by a brush"
     );
     let events = world.drain_field_events();
@@ -170,7 +171,8 @@ fn cave01_guard_walk_touch_teleports_the_player() {
     // fixed tile.
     type Throw = (u8, (i16, i16), (i16, i16));
     let throws: Vec<Throw> = world
-        .field_walk_touch
+        .props
+        .walk_touch
         .iter()
         .filter_map(|(&slot, &(pos, event))| match event {
             WalkTouchEvent::PlayerMoveTo {

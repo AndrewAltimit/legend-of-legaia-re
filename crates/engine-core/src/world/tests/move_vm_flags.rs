@@ -20,9 +20,9 @@ fn move_vm_global_predicate_round_trips_through_world() {
     world.actors[0].active = true;
     // Move bytecode: 0x2F sub-op 0x08 (set predicate to 1), then HALT.
     world.set_move_bytecode(0, Some(vec![0x002F, 0x0008, 0x0008]));
-    let _ = world.step_move_vm(0, &world.move_bytecode[0].clone());
+    let _ = world.step_move_vm(0, &world.move_vm.bytecode[0].clone());
     assert_eq!(
-        world.move_predicate, 1,
+        world.move_vm.predicate, 1,
         "ext sub-op 0x08 should set move_predicate to 1"
     );
 }
@@ -32,10 +32,10 @@ fn move_vm_global_counter_set_and_get() {
     let mut world = World::new();
     world.actors[0].active = true;
     // 0x2F sub-op 0x0F clears counter, then HALT.
-    world.move_counter = 5;
+    world.move_vm.counter = 5;
     world.set_move_bytecode(0, Some(vec![0x002F, 0x000F, 0x0008]));
-    let _ = world.step_move_vm(0, &world.move_bytecode[0].clone());
-    assert_eq!(world.move_counter, 0);
+    let _ = world.step_move_vm(0, &world.move_vm.bytecode[0].clone());
+    assert_eq!(world.move_vm.counter, 0);
 }
 
 #[test]
@@ -49,10 +49,10 @@ fn move_vm_slot_table_save_and_load_round_trip() {
     world.actors[0].move_state.field_86 = 0x0003; // slot index = 3
     // 0x2F sub-op 0x11 - save world coords into slot 3, then HALT.
     world.set_move_bytecode(0, Some(vec![0x002F, 0x0011, 0x0008]));
-    let _ = world.step_move_vm(0, &world.move_bytecode[0].clone());
+    let _ = world.step_move_vm(0, &world.move_vm.bytecode[0].clone());
     // Verify the bytes landed in slot 3.
-    let lo = u32::from_le_bytes(world.move_slot_table[3][0..4].try_into().unwrap());
-    let hi = u32::from_le_bytes(world.move_slot_table[3][4..8].try_into().unwrap());
+    let lo = u32::from_le_bytes(world.move_vm.slot_table[3][0..4].try_into().unwrap());
+    let hi = u32::from_le_bytes(world.move_vm.slot_table[3][4..8].try_into().unwrap());
     assert_eq!(lo & 0xFFFF, 0x1234);
     assert_eq!((lo >> 16) & 0xFFFF, 0x5678);
     assert_eq!(hi & 0xFFFF, 0x9ABC);
@@ -74,9 +74,9 @@ fn move_vm_bytecode_write_persists_after_step() {
     world.set_move_bytecode(0, Some(bc.clone()));
     let _ = world.step_move_vm(0, &bc);
     // After step, the world's stored bytecode should reflect the writes.
-    assert_eq!(world.move_bytecode[0][5], 100u16);
-    assert_eq!(world.move_bytecode[0][6], 200u16);
-    assert_eq!(world.move_bytecode[0][7], 50u16);
+    assert_eq!(world.move_vm.bytecode[0][5], 100u16);
+    assert_eq!(world.move_vm.bytecode[0][6], 200u16);
+    assert_eq!(world.move_vm.bytecode[0][7], 50u16);
 }
 
 #[test]
@@ -93,14 +93,14 @@ fn move_vm_bytecode_inplace_add_sees_prior_step_writes() {
     world.set_move_bytecode(0, Some(bc.clone()));
     // First step: bytecode[0 + 0 + 4] (= 0) += 5 → 5.
     let _ = world.step_move_vm(0, &bc);
-    assert_eq!(world.move_bytecode[0][4], 5);
+    assert_eq!(world.move_vm.bytecode[0][4], 5);
     // Step again with a fresh-cloned bytecode read of the world's buffer.
-    let bc2 = world.move_bytecode[0].clone();
+    let bc2 = world.move_vm.bytecode[0].clone();
     // PC has advanced; reset for the same op to fire again.
     world.actors[0].move_state.pc = 0;
     let _ = world.step_move_vm(0, &bc2);
     assert_eq!(
-        world.move_bytecode[0][4], 10,
+        world.move_vm.bytecode[0][4], 10,
         "second 0x1E should see flushed write from first step"
     );
 }

@@ -349,7 +349,7 @@ What the engine got wrong before this check: it seeded a party member's
 attack from the **menu** aggregate (base plus every equipped item's full ATK)
 and fed that to the kernel, over-stating Vahn's first hit above from 237 to 472
 before the roll. The port now seeds the base and folds the halved slot per
-command (`World::battle_equip_atk`, `arms_weapon_atk_fold`).
+command (`World::battle.equip_atk`, `arms_weapon_atk_fold`).
 
 ### The angle term is bounded at `atk / 32`
 
@@ -431,7 +431,7 @@ hit - party and monster, swing and art - through both, once per hit event the
 anim tick admits: the attacker's `battle_attack` is the un-equipped base
 (`seed_party_battle_stats` subtracts the equipment sum the menu aggregator
 adds) and the fold adds the halved slot for the committed command from
-`World::battle_equip_atk` (a committed art clip, `+0x1D9 > 0x10`, takes the
+`World::battle.equip_atk` (a committed art clip, `+0x1D9 > 0x10`, takes the
 `0x11` all-slots arm). RNG draws follow retail
 call order: attack roll, guard roll, then the rewrite draw and the chip-floor
 draw only when those arms fire. The finisher's *post* stages (equipment
@@ -570,7 +570,7 @@ instructions) splits: its **closed-form finalisation arithmetic** now ports too 
 `battle_formulas::damage_finish` (the six damage-rewrite stages above) and
 `spirit_gauge_fill` (the gauge accrual), both with hand-checked unit tests. The
 engine routes the live basic-attack damage through `damage_finish` by default
-(`World::use_damage_finish`; the `--no-damage-finish` play-window flag keeps
+(`World::toggles.use_damage_finish`; the `--no-damage-finish` play-window flag keeps
 the flat path): the raw roll feeds the finisher so the 9999 cap and the
 `rand()%9+8` no-damage floor apply. The **defender resist inputs are live**: `World::defender_resist` reads
 the two resist words off the occupying character's rebuilt ability bitfield
@@ -593,7 +593,7 @@ whose percent the stager `FUN_801F3D3C` leaves in `0x801F6960`) - reads/writes
 
 **Engine wiring.** The arts/physical kernel is wired into the live loop for
 **monster special-attacks**: the move-power table loads from PROT 0898 onto
-`World::move_power` (the engine wrapper `move_power::MovePowerCatalog`), and when
+`World::tables.move_power` (the engine wrapper `move_power::MovePowerCatalog`), and when
 a monster's chosen move id resolves to a power record, `cast_spell_on_slots`
 overrides the cast's damage magnitude with `arts_physical_predamage` seeded by
 that move's power (`World::enemy_move_predamage`, `engine-core::world::battle`).
@@ -807,7 +807,7 @@ checked first, because a shared module dispatches per spell and the class byte
 cannot separate two ticks of one module.
 
 **Engine wiring.** The matrix + per-character table load from the same PROT 0898
-overlay as the move-power table (`World::element_affinity`), and the monster
+overlay as the move-power table (`World::tables.element_affinity`), and the monster
 special-attack path scales by `matrix[enemy_element][party_member_element]`
 (`World::enemy_affinity_pct` → `enemy_move_predamage`): the enemy element from
 `MonsterDef::element`, the defender from the active party member's element (the

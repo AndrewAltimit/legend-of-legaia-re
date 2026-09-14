@@ -17,8 +17,8 @@ use crate::scus_leaf_kernels::SoundStreamRequest;
 fn run_op36(sel: u16, arg: u16, pair: SoundStreamRequest, dual_mode: i32) -> (World, usize) {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.sound_stream = pair;
-    world.dual_mode_gate = dual_mode;
+    world.audio.sound_stream = pair;
+    world.audio.dual_mode_gate = dual_mode;
     let s = sel.to_le_bytes();
     let a = arg.to_le_bytes();
     world.load_field_script(vec![0x36, s[0], s[1], a[0], a[1], 0x00]);
@@ -58,9 +58,9 @@ fn sub1_request_is_guarded_and_the_idle_sentinel_is_the_escape() {
     };
     let (world, pc) = run_op36(0x8001, 0x0022, settled, 0);
     assert_eq!(pc, 5);
-    assert_eq!(world.sound_stream.requested, 0x22);
+    assert_eq!(world.audio.sound_stream.requested, 0x22);
     assert!(
-        world.sound_stream.is_settled(),
+        world.audio.sound_stream.is_settled(),
         "the synchronous host settles the request in the same call"
     );
 
@@ -72,7 +72,7 @@ fn sub1_request_is_guarded_and_the_idle_sentinel_is_the_escape() {
     };
     let (world, pc) = run_op36(0x8001, 0x0033, idle, 0);
     assert_eq!(pc, 5);
-    assert_eq!(world.sound_stream.requested, 0x33);
+    assert_eq!(world.audio.sound_stream.requested, 0x33);
 
     // Neither settled nor idle: retail parks on the instruction.
     let busy = SoundStreamRequest {
@@ -82,7 +82,7 @@ fn sub1_request_is_guarded_and_the_idle_sentinel_is_the_escape() {
     let (world, pc) = run_op36(0x8001, 0x0044, busy, 0);
     assert_eq!(pc, 0);
     assert_eq!(
-        world.sound_stream.requested, 12,
+        world.audio.sound_stream.requested, 12,
         "a refused request leaves the cell alone"
     );
 }
@@ -100,7 +100,7 @@ fn subs_3_and_4_are_ungated() {
 
     let (world, pc) = run_op36(0x8004, 0x0030, busy, 0);
     assert_eq!(pc, 5, "sub 4 advances with the pair unsettled");
-    assert_eq!(world.sfx_cue_delays.delay(0), Some(0x30));
+    assert_eq!(world.audio.sfx_cue_delays.delay(0), Some(0x30));
 }
 
 /// Sub-`0`, the SFX enqueue, is gated: `bne a0,v0,0x801DEE4C` at
@@ -113,12 +113,12 @@ fn sub0_enqueue_waits_for_the_pair() {
     };
     let (world, pc) = run_op36(0x8000, 0x0011, busy, 0);
     assert_eq!(pc, 0);
-    assert_eq!(world.sfx_cue_cursor, 0, "the enqueue never ran");
+    assert_eq!(world.audio.sfx_cue_cursor, 0, "the enqueue never ran");
 
     let settled = SoundStreamRequest::IDLE_PAIR;
     let (world, pc) = run_op36(0x8000, 0x0011, settled, 0);
     assert_eq!(pc, 5);
-    assert_eq!(world.sfx_cue_cursor, 1);
+    assert_eq!(world.audio.sfx_cue_cursor, 1);
 }
 
 /// The bit-15-**clear** arm carries the same barrier, which is the half
@@ -139,7 +139,7 @@ fn the_xa_arm_waits_for_the_pair_too() {
 /// `_DAT_8007B868` moves in opposite directions on the two halves: it
 /// *skips* the whole bit-15-set arm and *bypasses* the bit-15-clear
 /// barrier. Retail boots it `0`, so neither fires in play - the engine
-/// keeps `World::dual_mode_gate` at `0` for that reason.
+/// keeps `World::audio.dual_mode_gate` at `0` for that reason.
 #[test]
 fn the_dual_mode_gate_skips_one_arm_and_opens_the_other() {
     let busy = SoundStreamRequest {
@@ -152,8 +152,11 @@ fn the_dual_mode_gate_skips_one_arm_and_opens_the_other() {
     assert_eq!(pc, 5);
     let (world0, pc0) = run_op36(0x8000, 0x0011, busy, 1);
     assert_eq!(pc0, 5);
-    assert_eq!(world0.sfx_cue_cursor, 0, "the skipped arm enqueues nothing");
-    assert_eq!(world.sound_stream, busy, "and writes no cell");
+    assert_eq!(
+        world0.audio.sfx_cue_cursor, 0,
+        "the skipped arm enqueues nothing"
+    );
+    assert_eq!(world.audio.sound_stream, busy, "and writes no cell");
 
     // Bit-15 clear: the same word lets the XA arm through.
     let (_, pc) = run_op36(0x0001, 0x0010, busy, 1);
@@ -166,8 +169,8 @@ fn the_dual_mode_gate_skips_one_arm_and_opens_the_other() {
 #[test]
 fn a_fresh_world_boots_with_the_pair_settled() {
     let world = World::new();
-    assert!(world.sound_stream.is_settled());
-    assert_eq!(world.dual_mode_gate, 0);
+    assert!(world.audio.sound_stream.is_settled());
+    assert_eq!(world.audio.dual_mode_gate, 0);
     assert_eq!(
         SoundStreamRequest::FIELD_INIT,
         SoundStreamRequest {

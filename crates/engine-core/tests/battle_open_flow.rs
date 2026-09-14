@@ -35,10 +35,8 @@ use legaia_engine_vm::battle_formulas::FormationAdvantage;
 
 /// A 3-party / 2-monster battle with the player driving.
 fn player_driven_battle() -> World {
-    let mut world = World {
-        battle_player_driven: true,
-        ..Default::default()
-    };
+    let mut world = World::default();
+    world.battle.player_driven = true;
     world.enter_battle(3, 2);
     world
 }
@@ -60,7 +58,7 @@ fn tap(world: &mut World, button: PadButton) {
 fn commit_attacks_for_rest_of_round(world: &mut World) {
     use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
     for _ in 0..64 {
-        let Some(session) = world.battle_command.as_ref() else {
+        let Some(session) = world.battle.command.as_ref() else {
             break;
         };
         let button = match session.phase {
@@ -72,7 +70,7 @@ fn commit_attacks_for_rest_of_round(world: &mut World) {
         tap(world, button);
     }
     assert!(
-        world.battle_command.is_none(),
+        world.battle.command.is_none(),
         "the round never began - a member is still on a command surface"
     );
 }
@@ -97,10 +95,10 @@ fn the_prompt_is_per_round_not_per_turn() {
 
     // Round open: the flow byte parks at TurnPrompt, which is what arms the
     // prompt on the next live tick.
-    world.battle_flow = BattleFlowState::TurnPrompt;
-    world.battle_command = Some(BattleCommandSession::new(0, 0));
+    world.battle.flow = BattleFlowState::TurnPrompt;
+    world.battle.command = Some(BattleCommandSession::new(0, 0));
     world.tick();
-    let session = world.battle_command.as_ref().expect("session still open");
+    let session = world.battle.command.as_ref().expect("session still open");
     assert!(
         matches!(session.phase, CommandPhase::RoundPrompt { .. }),
         "the round's first party command should open on Begin | Run, got {:?}",
@@ -109,13 +107,13 @@ fn the_prompt_is_per_round_not_per_turn() {
     assert_eq!(session.round_choice(), Some(RoundChoice::Begin));
 
     // Take Begin: the flow leaves TurnPrompt and the ring is up.
-    world.battle_command.as_mut().unwrap().phase = CommandPhase::Menu { cursor: 0 };
-    world.battle_flow = BattleFlowState::CategoryMenu;
+    world.battle.command.as_mut().unwrap().phase = CommandPhase::Menu { cursor: 0 };
+    world.battle.flow = BattleFlowState::CategoryMenu;
 
     // A second member's session in the same round is left on the ring.
-    world.battle_command = Some(BattleCommandSession::new(1, 1));
+    world.battle.command = Some(BattleCommandSession::new(1, 1));
     world.tick();
-    let session = world.battle_command.as_ref().expect("session still open");
+    let session = world.battle.command.as_ref().expect("session still open");
     assert!(
         matches!(session.phase, CommandPhase::Menu { .. }),
         "a later member of the same round must not re-ask Begin | Run, got {:?}",
@@ -154,7 +152,7 @@ fn an_ambush_announces_itself_and_costs_the_party_the_round() {
     // lockout) is live rather than the round-robin fallback.
     let mut world = player_driven_battle();
     for slot in 0..5 {
-        world.battle_speed[slot] = 20;
+        world.battle.speed[slot] = 20;
     }
     world.set_battle_formation(FormationAdvantage::BackAttack);
     world.seed_battle_initiative();
@@ -189,7 +187,7 @@ fn a_preemptive_strike_announces_itself_and_costs_the_monsters_the_round() {
     let mut world = World::default();
     world.enter_battle(3, 2);
     for slot in 0..5 {
-        world.battle_speed[slot] = 20;
+        world.battle.speed[slot] = 20;
     }
     world.set_battle_formation(FormationAdvantage::Preemptive);
     world.seed_battle_initiative();
@@ -239,24 +237,24 @@ fn the_round_prompt_is_up_on_the_frame_the_session_opens() {
     }
 
     assert!(
-        settle_until(&mut world, 600, |w| w.battle_command.is_some()),
+        settle_until(&mut world, 600, |w| w.battle.command.is_some()),
         "a player-driven battle never handed the pad a command session"
     );
-    let session = world.battle_command.as_ref().expect("session open");
+    let session = world.battle.command.as_ref().expect("session open");
     assert!(
         matches!(session.phase, CommandPhase::RoundPrompt { .. }),
         "the first frame a session exists must already be the round prompt, got {:?}",
         session.phase
     );
     assert_eq!(session.round_choice(), Some(RoundChoice::Begin));
-    assert_eq!(world.battle_flow, BattleFlowState::TurnPrompt);
+    assert_eq!(world.battle.flow, BattleFlowState::TurnPrompt);
     // Run is on this prompt and on no other surface, which is why a frame that
     // skips it costs the player the command entirely.
     assert_eq!(RoundChoice::PROMPT[1], RoundChoice::Run);
 
     // Begin walks it to the ring - retail's `0x1E -> 0x28`.
     tap(&mut world, PadButton::Cross);
-    let session = world.battle_command.as_ref().expect("session still open");
+    let session = world.battle.command.as_ref().expect("session still open");
     assert!(
         matches!(session.phase, CommandPhase::Menu { .. }),
         "Begin must drop into the four-arm ring, got {:?}",
@@ -288,7 +286,7 @@ fn a_battle_item_heal_keeps_the_readout_and_the_turn_pump_alive() {
 
     let mut world = player_driven_battle();
     world.set_item_catalog(ItemCatalog::vanilla());
-    world.inventory.insert(HEALING_LEAF, 3);
+    world.party.inventory.insert(HEALING_LEAF, 3);
     // Durable on both sides: the assertion below is "the fight keeps handing
     // out commands", and a fight that simply ended would satisfy a weaker one.
     for slot in 0..5 {
@@ -304,23 +302,23 @@ fn a_battle_item_heal_keeps_the_readout_and_the_turn_pump_alive() {
     }
 
     assert!(
-        settle_until(&mut world, 600, |w| w.battle_command.is_some()),
+        settle_until(&mut world, 600, |w| w.battle.command.is_some()),
         "no command session to drive"
     );
     // Begin -> the ring, whose first arm is Item.
     tap(&mut world, PadButton::Cross);
     assert_eq!(
-        world.battle_command.as_ref().and_then(|s| s.menu_command()),
+        world.battle.command.as_ref().and_then(|s| s.menu_command()),
         Some(BattleCommand::Item),
         "the ring's seated arm should be Item"
     );
     tap(&mut world, PadButton::Cross);
     assert!(
-        world.battle_item_menu.is_some(),
+        world.battle.item_menu.is_some(),
         "the Item arm opened no item menu"
     );
     for _ in 0..8 {
-        if world.battle_item_menu.is_none() {
+        if world.battle.item_menu.is_none() {
             break;
         }
         tap(&mut world, PadButton::Cross);
@@ -338,7 +336,7 @@ fn a_battle_item_heal_keeps_the_readout_and_the_turn_pump_alive() {
     let healed = world.actors[0].battle.hp;
     assert!(healed > 20000, "the item healed nothing (hp {healed})");
     assert_eq!(
-        world.inventory.get(&HEALING_LEAF).copied(),
+        world.party.inventory.get(&HEALING_LEAF).copied(),
         Some(2),
         "one Healing Leaf consumed"
     );
@@ -357,7 +355,7 @@ fn a_battle_item_heal_keeps_the_readout_and_the_turn_pump_alive() {
     );
     // ... and the turn pump survived it.
     assert!(
-        settle_until(&mut world, 9000, |w| w.battle_command.is_some()),
+        settle_until(&mut world, 9000, |w| w.battle.command.is_some()),
         "no further command session after an item use - the fight parked"
     );
 }

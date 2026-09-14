@@ -131,7 +131,8 @@ fn seat(host: &mut SceneHost, wx: i16, wz: i16) {
 /// The `.MAP`-object door bind whose contact box is centred at `contact`.
 fn bind_at(host: &SceneHost, contact: (i16, i16)) -> Option<(i16, i16, Option<i16>)> {
     host.world
-        .field_walk_touch
+        .props
+        .walk_touch
         .iter()
         .filter(|&(&slot, _)| slot >= World::TRIGGER_WALK_TOUCH_SLOT_BASE)
         .find_map(|(_, &(pos, event))| match event {

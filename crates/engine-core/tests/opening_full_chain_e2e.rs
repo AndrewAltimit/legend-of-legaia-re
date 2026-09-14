@@ -53,7 +53,7 @@ fn new_game_opening_chains_naturally_with_zero_input() {
     host.world.begin_new_game();
     host.enter_field_scene(opdeene, 0).expect("enter opdeene");
     assert!(host.world.cutscene_timeline_active());
-    assert!(host.world.opening_chain_active);
+    assert!(host.world.cutscene.opening_chain_active);
     assert!(
         !host.world.cutscene_narration_active(),
         "narration is script-driven, not a scene-entry install"
@@ -66,16 +66,17 @@ fn new_game_opening_chains_naturally_with_zero_input() {
     // next block open the same tick the prior scrolls out (continuous crawl,
     // no blank frame), which a rising-edge watch would merge into one block.
     let mut seen_block_pages: Vec<usize> = Vec::new();
-    let mut last_seq = host.world.cutscene_narration_seq;
+    let mut last_seq = host.world.cutscene.narration_seq;
     let mut ticks = 0u32;
     while host.world.active_scene_label == opdeene && ticks < 30_000 {
         let _ = host.tick();
         ticks += 1;
-        let seq = host.world.cutscene_narration_seq;
+        let seq = host.world.cutscene.narration_seq;
         if seq != last_seq {
             seen_block_pages.push(
                 host.world
-                    .cutscene_narration
+                    .cutscene
+                    .narration
                     .as_ref()
                     .map(|n| n.page_count())
                     .unwrap_or(0),
@@ -95,16 +96,17 @@ fn new_game_opening_chains_naturally_with_zero_input() {
 
     // --- opstati: its entry script op-0x44 spawns P2[0]; crawls 3 + 6 ---
     let mut seen: Vec<usize> = Vec::new();
-    last_seq = host.world.cutscene_narration_seq;
+    last_seq = host.world.cutscene.narration_seq;
     ticks = 0;
     while host.world.active_scene_label == "opstati" && ticks < 30_000 {
         let _ = host.tick();
         ticks += 1;
-        let seq = host.world.cutscene_narration_seq;
+        let seq = host.world.cutscene.narration_seq;
         if seq != last_seq {
             seen.push(
                 host.world
-                    .cutscene_narration
+                    .cutscene
+                    .narration
                     .as_ref()
                     .map(|n| n.page_count())
                     .unwrap_or(0),
@@ -120,12 +122,12 @@ fn new_game_opening_chains_naturally_with_zero_input() {
 
     // --- opurud: op-0x44 spawns P2[9]; three Mist crawls; chains to map01 ---
     let mut blocks = 0usize;
-    last_seq = host.world.cutscene_narration_seq;
+    last_seq = host.world.cutscene.narration_seq;
     ticks = 0;
     while host.world.active_scene_label == "opurud" && ticks < 30_000 {
         let _ = host.tick();
         ticks += 1;
-        let seq = host.world.cutscene_narration_seq;
+        let seq = host.world.cutscene.narration_seq;
         if seq != last_seq {
             blocks += 1;
             last_seq = seq;
@@ -145,12 +147,12 @@ fn new_game_opening_chains_naturally_with_zero_input() {
         "map01's opening record installs off the arrival tile trigger"
     );
     let mut fly_blocks = 0usize;
-    last_seq = host.world.cutscene_narration_seq;
+    last_seq = host.world.cutscene.narration_seq;
     ticks = 0;
     while host.world.active_scene_label == "map01" && ticks < 30_000 {
         let _ = host.tick();
         ticks += 1;
-        let seq = host.world.cutscene_narration_seq;
+        let seq = host.world.cutscene.narration_seq;
         if seq != last_seq {
             fly_blocks += 1;
             last_seq = seq;
@@ -169,7 +171,7 @@ fn new_game_opening_chains_naturally_with_zero_input() {
     // --- town01: arriving through the natural chain ends the opening chain
     //     and installs the opening timeline; name entry opens at op-0x49. ---
     assert!(
-        !host.world.opening_chain_active,
+        !host.world.cutscene.opening_chain_active,
         "the chain ends at Rim Elm"
     );
     assert!(
@@ -203,7 +205,7 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
     let mut armed = false;
     for _ in 0..600 {
         let _ = host.tick();
-        if host.world.story_flags & legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG != 0 {
+        if host.world.flags.story_flags & legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG != 0 {
             armed = true;
             break;
         }
@@ -213,7 +215,7 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
     // The skip fires mid-opening (mid-narration included).
     let target = host.world.take_prologue_handoff(true);
     assert_eq!(target, Some(town01), "confirm skips the opening to Rim Elm");
-    assert!(host.world.entering_town01_opening);
+    assert!(host.world.cutscene.entering_town01_opening);
 
     // --- town01: opening timeline installs, name entry opens at op-0x49 ---
     host.enter_field_scene(town01, 0).expect("enter town01");
@@ -221,8 +223,8 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
         host.world.cutscene_timeline_active(),
         "town01's opening timeline installs off the hand-off flag"
     );
-    assert!(!host.world.entering_town01_opening);
-    assert!(!host.world.opening_chain_active);
+    assert!(!host.world.cutscene.entering_town01_opening);
+    assert!(!host.world.cutscene.opening_chain_active);
     assert!(!host.world.cutscene_narration_active());
 
     let mut sweep = 0u32;
@@ -237,19 +239,19 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
 
     // Commit a name -> the timeline resumes, completes, and un-parks the
     // townsfolk the establishing shot hid.
-    host.world.name_entry.as_mut().unwrap().cursor = 0;
+    host.world.party.name_entry.as_mut().unwrap().cursor = 0;
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
         ..Default::default()
     });
     let end = legaia_engine_core::name_entry::CHAR_CELLS + 16;
-    host.world.name_entry.as_mut().unwrap().cursor = end;
+    host.world.party.name_entry.as_mut().unwrap().cursor = end;
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
         ..Default::default()
     });
     assert_eq!(
-        host.world.name_entry.as_ref().unwrap().state,
+        host.world.party.name_entry.as_ref().unwrap().state,
         NameEntryState::Confirm,
         "End opens the Yes/No confirm"
     );
@@ -267,19 +269,20 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
 
     let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
     let parked_at_hide = |w: &legaia_engine_core::world::World| {
-        w.field_npc_positions
+        w.npcs
+            .positions
             .values()
             .any(|&(x, z)| x == hide && z == hide)
     };
     let mut more = 0u32;
     let mut saw_hidden = false;
-    while host.world.cutscene_timeline.is_some() && more < 12000 {
+    while host.world.cutscene.timeline.is_some() && more < 12000 {
         tick_pressing_through_dialogs(&mut host.world, more);
         saw_hidden |= parked_at_hide(&host.world);
         more += 1;
     }
     assert!(
-        host.world.cutscene_timeline.is_none(),
+        host.world.cutscene.timeline.is_none(),
         "the opening timeline completes after naming (ticked {more})"
     );
     assert!(saw_hidden, "the establishing shot parks townsfolk off-map");
@@ -291,7 +294,8 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
     // be one the scene-entry pre-run itself parked.
     let leftover: Vec<u8> = host
         .world
-        .field_npc_positions
+        .npcs
+        .positions
         .iter()
         .filter(|&(_, &(x, z))| x == hide && z == hide)
         .map(|(&slot, _)| slot)
@@ -299,7 +303,7 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
     assert!(
         leftover
             .iter()
-            .all(|slot| host.world.field_npc_entry_positions.get(slot) == Some(&(hide, hide))),
+            .all(|slot| host.world.npcs.entry_positions.get(slot) == Some(&(hide, hide))),
         "free-roam restores every cutscene-hidden villager (story-parked slots stay): {leftover:?}"
     );
     eprintln!("[opening] skip path reached town01 name entry + free-roam");
@@ -312,7 +316,8 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
 /// completion, it is a hang recovery.
 fn tick_pressing_through_dialogs(world: &mut legaia_engine_core::world::World, tick: u32) {
     let parked = world
-        .cutscene_timeline
+        .cutscene
+        .timeline
         .as_ref()
         .is_some_and(|t| t.dialog.is_some());
     if parked && tick.is_multiple_of(2) {

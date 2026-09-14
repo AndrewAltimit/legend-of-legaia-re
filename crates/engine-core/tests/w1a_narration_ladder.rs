@@ -86,7 +86,8 @@ fn the_opening_prologue_roller_crawls_under_a_pad_driven_tick() {
     );
     let pages = host
         .world
-        .cutscene_narration
+        .cutscene
+        .narration
         .as_ref()
         .map(|n| n.page_count())
         .unwrap_or(0);
@@ -105,7 +106,7 @@ fn the_opening_prologue_roller_crawls_under_a_pad_driven_tick() {
     for _ in 0..1_200 {
         host.world.set_pad(0);
         let _ = host.tick();
-        let Some(n) = host.world.cutscene_narration.as_ref() else {
+        let Some(n) = host.world.cutscene.narration.as_ref() else {
             break;
         };
         admitted = admitted.max(n.current_index() + 1);
@@ -171,7 +172,7 @@ fn npc_conversations_run_through_the_inline_field_vm() {
 
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     // The faithful path both browser and native hosts arm.
-    host.world.use_vm_dialogue = true;
+    host.world.toggles.use_vm_dialogue = true;
 
     const SCENE_BUDGET: usize = 4;
     let mut scenes_driven = 0usize;
@@ -186,16 +187,17 @@ fn npc_conversations_run_through_the_inline_field_vm() {
         if is_world_map_scene(scene) {
             continue;
         }
-        host.world.use_vm_dialogue = true;
+        host.world.toggles.use_vm_dialogue = true;
         if host.enter_field_scene(scene, 0).is_err() {
             continue;
         }
         let mut slots: Vec<u8> = host
             .world
-            .field_npc_dialog_prologue
+            .npcs
+            .dialog_prologue
             .keys()
             .copied()
-            .chain(host.world.field_npc_dialog.keys().copied())
+            .chain(host.world.npcs.dialog.keys().copied())
             .collect();
         slots.sort_unstable();
         slots.dedup();
@@ -219,7 +221,7 @@ fn npc_conversations_run_through_the_inline_field_vm() {
                 host.world.set_pad(mask);
                 host.tick()
                     .unwrap_or_else(|e| panic!("{scene} slot {slot}: tick failed: {e:#}"));
-                if let Some(id) = host.world.inline_dialogue.as_ref() {
+                if let Some(id) = host.world.dialog.inline.as_ref() {
                     ran_inline = true;
                     vm_steps += 1;
                     // The host's per-frame read surface.
@@ -237,8 +239,8 @@ fn npc_conversations_run_through_the_inline_field_vm() {
             if ran_inline {
                 conversations += 1;
             }
-            host.world.inline_dialogue = None;
-            host.world.current_dialog = None;
+            host.world.dialog.inline = None;
+            host.world.dialog.current = None;
         }
     }
 

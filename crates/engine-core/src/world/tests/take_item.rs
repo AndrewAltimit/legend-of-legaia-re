@@ -41,11 +41,11 @@ fn field_world() -> World {
 #[test]
 fn take_item_consumes_one_from_the_bag() {
     let mut world = field_world();
-    world.inventory.insert(0x42, 3);
+    world.party.inventory.insert(0x42, 3);
     world.load_field_script(take_script(0x42));
     let _ = world.tick();
     assert_eq!(
-        world.inventory.get(&0x42).copied(),
+        world.party.inventory.get(&0x42).copied(),
         Some(2),
         "TAKE_ITEM should decrement the stack by one"
     );
@@ -57,13 +57,13 @@ fn take_item_consumes_one_from_the_bag() {
 #[test]
 fn taking_the_last_copy_clears_the_bag_entry() {
     let mut world = field_world();
-    world.inventory.insert(0x42, 1);
+    world.party.inventory.insert(0x42, 1);
     world.load_field_script(take_script(0x42));
     let _ = world.tick();
     assert!(
-        !world.inventory.contains_key(&0x42),
+        !world.party.inventory.contains_key(&0x42),
         "the last copy should leave no entry, got {:?}",
-        world.inventory.get(&0x42)
+        world.party.inventory.get(&0x42)
     );
 }
 
@@ -73,16 +73,16 @@ fn taking_the_last_copy_clears_the_bag_entry() {
 #[test]
 fn take_item_unequips_a_worn_accessory_when_the_bag_misses() {
     let mut world = field_world();
-    world.roster = party_with_goods(&[[0x11, 0x12, 0x13], [0, 0x99, 0]]);
+    world.party.roster = party_with_goods(&[[0x11, 0x12, 0x13], [0, 0x99, 0]]);
     world.load_field_script(take_script(0x99));
     let _ = world.tick();
     assert_eq!(
-        world.roster.members[1].equipment().slots[5..8],
+        world.party.roster.members[1].equipment().slots[5..8],
         [0, 0, 0],
         "a bag miss should unequip the worn copy"
     );
     assert_eq!(
-        world.roster.members[0].equipment().slots[5..8],
+        world.party.roster.members[0].equipment().slots[5..8],
         [0x11, 0x12, 0x13],
         "the scan stops at the first match"
     );
@@ -98,16 +98,16 @@ fn take_item_unequips_a_worn_accessory_when_the_bag_misses() {
 #[test]
 fn take_item_prefers_the_bag_over_the_worn_copy() {
     let mut world = field_world();
-    world.inventory.insert(0x42, 1);
-    world.roster = party_with_goods(&[[0x42, 0, 0]]);
+    world.party.inventory.insert(0x42, 1);
+    world.party.roster = party_with_goods(&[[0x42, 0, 0]]);
     world.load_field_script(take_script(0x42));
     let _ = world.tick();
     assert!(
-        !world.inventory.contains_key(&0x42),
+        !world.party.inventory.contains_key(&0x42),
         "the bag copy is the one that goes"
     );
     assert_eq!(
-        world.roster.members[0].equipment().slots[5],
+        world.party.roster.members[0].equipment().slots[5],
         0x42,
         "a bag hit must leave equipment alone"
     );
@@ -119,7 +119,7 @@ fn take_item_prefers_the_bag_over_the_worn_copy() {
 #[test]
 fn take_item_with_nothing_to_take_still_advances() {
     let mut world = field_world();
-    world.roster = party_with_goods(&[[0x11, 0x12, 0x13]]);
+    world.party.roster = party_with_goods(&[[0x11, 0x12, 0x13]]);
     // `[4C, 52, 0x99]` then GIVE_ITEM 7, then HALT. The give only runs if the
     // take advanced instead of halting in place, so the bag entry is the
     // evidence that the arm is 3 bytes wide and non-blocking.
@@ -128,12 +128,12 @@ fn take_item_with_nothing_to_take_still_advances() {
         let _ = world.tick();
     }
     assert_eq!(
-        world.inventory.get(&0x07).copied(),
+        world.party.inventory.get(&0x07).copied(),
         Some(1),
         "the instruction after TAKE_ITEM should have run"
     );
     assert_eq!(
-        world.roster.members[0].equipment().slots[5..8],
+        world.party.roster.members[0].equipment().slots[5..8],
         [0x11, 0x12, 0x13],
         "nothing carried the id, so nothing is unequipped"
     );

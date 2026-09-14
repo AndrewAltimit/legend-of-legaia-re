@@ -148,8 +148,8 @@ fn synthetic_world(rng_seed: u32) -> World {
     }
     world.rng_state = rng_seed;
     world.mode = SceneMode::Title;
-    world.money = 0;
-    world.party_count = 3;
+    world.party.money = 0;
+    world.party.party_count = 3;
     for slot in 0..3 {
         let actor = world.spawn_actor(slot);
         actor.battle.liveness = 1;
@@ -192,9 +192,9 @@ fn sample_world(world: &World, pad: u16) -> StateSample {
         scene_mode: scene_mode_name(world.mode).to_string(),
         pad,
         rng_state: world.rng_state,
-        money: world.money,
+        money: world.party.money,
         party_hp_total: world.actors.iter().map(|a| a.battle.hp as u32).sum(),
-        dialog_active: world.current_dialog.is_some(),
+        dialog_active: world.dialog.current.is_some(),
     }
 }
 
@@ -599,7 +599,7 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
         SceneMode::Field,
         "new-game cold boot reaches the field"
     );
-    assert_eq!(w.party_count, 1, "the opening party is Vahn alone");
+    assert_eq!(w.party.party_count, 1, "the opening party is Vahn alone");
     assert_eq!(
         w.actors[0].battle.max_hp, 180,
         "Vahn seeded from the new-game template (180 HP)"
@@ -608,7 +608,7 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
     // Cold boot installed town01's sparring carrier: exactly one scripted-
     // encounter slot.
     let slot = {
-        let mut slots: Vec<u8> = w.field_carrier_slots.keys().copied().collect();
+        let mut slots: Vec<u8> = w.carriers.slots.keys().copied().collect();
         slots.sort_unstable();
         assert_eq!(
             slots.len(),
@@ -620,7 +620,7 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
 
     // Drive the dialogue-accept: a real field-interact on the carrier's slot
     // opens its dialogue with the faithful 4-option spar picker
-    // (`World::carrier_menu`); the index-2 "practice" option is the one that
+    // (`World::carriers.menu`); the index-2 "practice" option is the one that
     // arms the fight, so navigate the cursor Down twice (releases between -
     // the menu keys off just-pressed edges), then confirm with Cross.
     let mut modes: Vec<SceneMode> = vec![w.mode];
@@ -653,7 +653,7 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
         w.actors[0].battle.max_hp, 180,
         "Vahn survives the field -> battle handoff"
     );
-    let monster_slot = w.party_count.clamp(1, 3) as usize;
+    let monster_slot = w.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         w.actors[monster_slot].battle_monster_id,
         Some(TETSU),
@@ -752,14 +752,16 @@ fn v0_1_battle_leg_walk_talk_accept() {
     let slot = *session
         .host
         .world
-        .field_carrier_slots
+        .carriers
+        .slots
         .keys()
         .next()
         .expect("town01 installs the scripted-encounter carrier slot");
     session
         .host
         .world
-        .field_npc_positions
+        .npcs
+        .positions
         .insert(slot, (TUT.0, TUT.1));
 
     // BFS a path from the player spawn to the carrier over the real collision
@@ -793,12 +795,12 @@ fn v0_1_battle_leg_walk_talk_accept() {
     session.host.world.input.set_pad(PadButton::Cross.mask());
     let _ = session.host.world.tick();
     assert!(
-        session.host.world.current_dialog.is_some(),
+        session.host.world.dialog.current.is_some(),
         "walking up + action button opens the sparring partner's dialogue"
     );
 
     // Accept: the spar dialogue carries the faithful 4-option picker
-    // (`World::carrier_menu`); index 2 ("I want to practice with you.") is
+    // (`World::carriers.menu`); index 2 ("I want to practice with you.") is
     // the option that arms the fight. Navigate the cursor Down twice
     // (releases in between - the menu keys off just-pressed edges), then
     // confirm -> dismiss -> engage -> Battle.
@@ -828,7 +830,7 @@ fn v0_1_battle_leg_walk_talk_accept() {
         "walk + talk + accept flips Field -> Battle (fully emergent)"
     );
     let world = &session.host.world;
-    let monster_slot = world.party_count.clamp(1, 3) as usize;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         world.actors[monster_slot].battle_monster_id,
         Some(TETSU),

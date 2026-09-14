@@ -58,7 +58,7 @@ impl World {
     pub(crate) fn tick_world_map(&mut self) {
         let pad = self.input.pad();
         let pad_held = pad & !self.input.pad_prev();
-        if let Some(ctrl) = &mut self.world_map_ctrl {
+        if let Some(ctrl) = &mut self.world_map.ctrl {
             ctrl.tick(pad, pad_held);
             // Retail runs the top-view screen-dim pass (`FUN_801E75DC`)
             // immediately after the toggle/camera block, gated on
@@ -76,7 +76,7 @@ impl World {
             | input::PadButton::Right as u16
             | input::PadButton::Down as u16
             | input::PadButton::Left as u16;
-        self.world_map_player_walking = pad & WORLD_MAP_DPAD != 0;
+        self.world_map.player_walking = pad & WORLD_MAP_DPAD != 0;
 
         // Talk-to: open / dismiss an adjacent NPC's dialogue on a confirm
         // press. Runs before locomotion so opening a box suppresses movement +
@@ -89,15 +89,15 @@ impl World {
         self.step_world_map_locomotion();
         self.auto_engage_world_map_portals();
 
-        if !self.world_map_entities.is_empty() {
+        if !self.world_map.entities.is_empty() {
             // Take the entity list out so the SM's host bridge can borrow the
             // world mutably (mirrors the monster-AI-state borrow window).
-            let mut entities = std::mem::take(&mut self.world_map_entities);
+            let mut entities = std::mem::take(&mut self.world_map.entities);
             for (idx, ctx) in entities.iter_mut().enumerate() {
                 let mut host = WorldMapEntityHostImpl { world: self };
                 vm::world_map::step(idx, ctx, &mut host);
             }
-            self.world_map_entities = entities;
+            self.world_map.entities = entities;
         }
 
         // Run the one-shot horizon / sky band emitter if something armed its
@@ -116,7 +116,7 @@ impl World {
 
         // Resolve a latched overworld encounter into a battle. Runs for both
         // the entity-SM countdown path and the region-roll path.
-        if let Some(formation_id) = self.pending_world_map_encounter.take() {
+        if let Some(formation_id) = self.world_map.pending_encounter.take() {
             self.begin_world_map_encounter(formation_id);
         }
     }
@@ -163,7 +163,8 @@ impl World {
         // In the top-view debug camera the d-pad scrolls the camera
         // ([`WorldMapController::tick`]); only walk the player in walk mode.
         if self
-            .world_map_ctrl
+            .world_map
+            .ctrl
             .as_ref()
             .is_some_and(|c| c.is_top_view())
         {
@@ -197,7 +198,7 @@ impl World {
         if pad & input::PadButton::Left.mask() != 0 {
             sx -= 1;
         }
-        let azimuth = self.world_map_ctrl.as_ref().map(|c| c.azimuth).unwrap_or(0);
+        let azimuth = self.world_map.ctrl.as_ref().map(|c| c.azimuth).unwrap_or(0);
         let dir_bits = world_map_camera_relative_bits(azimuth, sx, sy);
         if dir_bits == 0 {
             return;
@@ -216,7 +217,7 @@ impl World {
                 .rem_euclid(4096) as i16;
             self.actors[slot].move_state.render_26 = heading;
         }
-        let mut speed = self.world_map_player_speed.max(1) as i32;
+        let mut speed = self.world_map.player_speed.max(1) as i32;
         // Diagonal normalise: when both axes are moving, x0.75 - mirroring the
         // field controller (`FUN_801d01b0`) and the retail world-map walk
         // overlay (`speed -= speed >> 2`). `advance_with_collision` steps both
@@ -233,7 +234,7 @@ impl World {
         // under (or floats over) rising terrain. Same `.MAP` floor LUT the
         // drawn continent heightfield bakes (`FUN_80019278`), so the figure
         // stands on the rendered surface.
-        if self.follow_terrain_height {
+        if self.locomotion.follow_terrain_height {
             let (x, z) = {
                 let ms = &self.actors[slot].move_state;
                 (ms.world_x as i32, ms.world_z as i32)
@@ -250,7 +251,7 @@ impl World {
     /// (`world >> 7`); each step drives one
     /// [`crate::region_encounter::RegionEncounterTracker::on_step`] against the
     /// player's current position. A trigger latches
-    /// [`Self::pending_world_map_encounter`], which [`Self::tick_world_map`]
+    /// [`crate::world::WorldMapState::pending_encounter`], which [`Self::tick_world_map`]
     /// resolves into a battle. The RNG comes from the world's shared
     /// deterministic source, drawn only on the trigger branch, so replays stay
     /// bit-identical. No-op without a player actor or region tracker.
@@ -263,13 +264,13 @@ impl World {
             None => return,
         };
         let tile = ((wx as i32) >> 7, (wz as i32) >> 7);
-        let crossed = match self.world_map_last_tile {
+        let crossed = match self.world_map.last_tile {
             Some(prev) if prev != tile => {
-                self.world_map_last_tile = Some(tile);
+                self.world_map.last_tile = Some(tile);
                 true
             }
             None => {
-                self.world_map_last_tile = Some(tile);
+                self.world_map.last_tile = Some(tile);
                 false
             }
             _ => false,
@@ -279,16 +280,16 @@ impl World {
         }
         // Roll the active region. Take the tracker out so the RNG closure can
         // borrow `self` (same pattern as the entity-SM borrow window).
-        if let Some(mut tracker) = self.world_map_region_tracker.take() {
+        if let Some(mut tracker) = self.world_map.region_tracker.take() {
             tracker.set_modifiers(self.encounter_rate_modifiers());
             // Same per-step condition walk the field path runs: the kingdom
             // MANs carry four story-state variants of the overworld region
             // set, and only one is live.
             tracker.select_group(|flag| self.system_flag_test(flag));
             let roll = tracker.on_step(wx, wz, || self.next_rng());
-            self.world_map_region_tracker = Some(tracker);
+            self.world_map.region_tracker = Some(tracker);
             if let Some(roll) = roll {
-                self.pending_world_map_encounter = Some(roll.formation_id as u16);
+                self.world_map.pending_encounter = Some(roll.formation_id as u16);
             }
         }
     }
@@ -297,9 +298,9 @@ impl World {
     /// `Self::tick_world_map` rolls random encounters per region. Resets the
     /// step-tile latch. Pair with [`Self::enter_world_map`] (or call after it).
     pub fn set_world_map_regions(&mut self, table: crate::region_encounter::RegionEncounterTable) {
-        self.world_map_region_tracker =
+        self.world_map.region_tracker =
             Some(crate::region_encounter::RegionEncounterTracker::new(table));
-        self.world_map_last_tile = None;
+        self.world_map.last_tile = None;
         self.refresh_encounter_rollable();
     }
 
@@ -320,7 +321,8 @@ impl World {
         &mut self,
         table: Option<crate::region_encounter::RegionEncounterTable>,
     ) {
-        self.field_region_tracker = table.map(crate::region_encounter::RegionEncounterTracker::new);
+        self.terrain.region_tracker =
+            table.map(crate::region_encounter::RegionEncounterTracker::new);
         self.refresh_encounter_rollable();
     }
 
@@ -331,10 +333,10 @@ impl World {
     /// world takes the count and pairs it with the shared encounter state
     /// configured via [`Self::set_world_map_encounter`].
     pub fn install_world_map_entities(&mut self, count: usize) {
-        self.world_map_entities = (0..count)
+        self.world_map.entities = (0..count)
             .map(|_| vm::world_map::WorldMapEntityCtx::default())
             .collect();
-        self.world_map_entity_configs.clear();
+        self.world_map.entity_configs.clear();
     }
 
     /// Seed overworld entities with per-entity [`WorldMapEntityConfig`]s. One
@@ -342,11 +344,11 @@ impl World {
     /// their own formation and portals carry their own target map. Replaces any
     /// previously installed set.
     pub fn install_world_map_entities_with_configs(&mut self, configs: Vec<WorldMapEntityConfig>) {
-        self.world_map_entities = (0..configs.len())
+        self.world_map.entities = (0..configs.len())
             .map(|_| vm::world_map::WorldMapEntityCtx::default())
             .collect();
-        self.world_map_entity_configs = configs;
-        self.world_map_entity_positions.clear();
+        self.world_map.entity_configs = configs;
+        self.world_map.entity_positions.clear();
     }
 
     /// Seed overworld entities with a per-entity config **and** world position.
@@ -360,11 +362,11 @@ impl World {
         &mut self,
         entities: Vec<(WorldMapEntityConfig, (i16, i16))>,
     ) {
-        self.world_map_entities = (0..entities.len())
+        self.world_map.entities = (0..entities.len())
             .map(|_| vm::world_map::WorldMapEntityCtx::default())
             .collect();
-        self.world_map_entity_positions = entities.iter().map(|(_, pos)| *pos).collect();
-        self.world_map_entity_configs = entities.into_iter().map(|(cfg, _)| cfg).collect();
+        self.world_map.entity_positions = entities.iter().map(|(_, pos)| *pos).collect();
+        self.world_map.entity_configs = entities.into_iter().map(|(cfg, _)| cfg).collect();
     }
 
     /// Auto-engage any walk-onto overworld entity the player is standing on -
@@ -393,7 +395,7 @@ impl World {
     fn auto_engage_world_map_portals(&mut self) {
         if self.dialogue_owns_input()
             || self.cutscene_timeline_active()
-            || self.world_map_entity_positions.is_empty()
+            || self.world_map.entity_positions.is_empty()
         {
             return;
         }
@@ -411,18 +413,18 @@ impl World {
         // engage them - separated so the immutable scan drops before the
         // mutable `engage` borrow.
         let mut to_engage: Vec<usize> = Vec::new();
-        for (idx, ctx) in self.world_map_entities.iter().enumerate() {
+        for (idx, ctx) in self.world_map.entities.iter().enumerate() {
             if ctx.state != vm::world_map::EntityState::Idle as u16 {
                 continue;
             }
             if !matches!(
-                self.world_map_entity_configs.get(idx),
+                self.world_map.entity_configs.get(idx),
                 Some(WorldMapEntityConfig::MinigameDoor { .. })
                     | Some(WorldMapEntityConfig::OverworldPortal { .. })
             ) {
                 continue;
             }
-            let Some(&(ex, ez)) = self.world_map_entity_positions.get(idx) else {
+            let Some(&(ex, ez)) = self.world_map.entity_positions.get(idx) else {
                 continue;
             };
             if (ex as i32) >> 7 == px && (ez as i32) >> 7 == pz {
@@ -444,7 +446,7 @@ impl World {
     /// directly. Otherwise, a confirm press while the player stands within one
     /// tile of an [`WorldMapEntityConfig::Npc`] that carries inline dialog text
     /// (the `Dialog` op the placement walker found) opens that text against the
-    /// scene's MES container - sets [`Self::current_dialog`] and emits
+    /// scene's MES container - sets [`crate::world::DialogState::current`] and emits
     /// [`FieldEvent::OpenDialog`], which the host renders through
     /// [`crate::scene::SceneHost::open_pending_dialog`], the same panel path
     /// the field VM's op `0x3F` feeds.
@@ -465,13 +467,13 @@ impl World {
     /// REF: FUN_801c9688
     fn tick_world_map_horizon(&mut self) {
         // Take the controller out so the emitter can borrow `self.cos_lut`.
-        let Some(mut ctrl) = self.world_map_ctrl.take() else {
+        let Some(mut ctrl) = self.world_map.ctrl.take() else {
             return;
         };
-        let frame_step = self.frame_step;
+        let frame_step = self.clock.frame_step;
         let lut = &self.cos_lut;
         ctrl.run_horizon_emitter(frame_step, &|i| lut.get(i as usize).copied().unwrap_or(0));
-        self.world_map_ctrl = Some(ctrl);
+        self.world_map.ctrl = Some(ctrl);
     }
 
     /// Drive the world-map band's **panel screen** for one frame.
@@ -506,14 +508,14 @@ impl World {
         use crate::world_map_panel_host::{PanelActorKind, packed_pad};
         use legaia_engine_vm::travel_art_actor::TravelArt;
 
-        if self.world_map_ctrl.is_none() {
+        if self.world_map.ctrl.is_none() {
             return;
         }
         let raw_held = self.input.pad();
         let raw_edge = raw_held & !self.input.pad_prev();
         let held = packed_pad(raw_held);
         let edge = packed_pad(raw_edge);
-        let frame_step = self.frame_step;
+        let frame_step = self.clock.frame_step;
         let player_tile = self.player_actor_slot.and_then(|slot| {
             self.actors.get(slot as usize).map(|a| {
                 (
@@ -530,7 +532,7 @@ impl World {
 
         // Take the controller out so the flag-bank adapter can borrow the
         // world mutably (the same borrow window `tick_world_map_horizon` uses).
-        let Some(mut ctrl) = self.world_map_ctrl.take() else {
+        let Some(mut ctrl) = self.world_map.ctrl.take() else {
             return;
         };
         let walk_mode = ctrl.view_mode == 0;
@@ -597,7 +599,7 @@ impl World {
 
         let mut store = WorldPanelFlags { world: self };
         let frame = ctrl.panels.tick(edge, held, frame_step, &mut store);
-        self.world_map_ctrl = Some(ctrl);
+        self.world_map.ctrl = Some(ctrl);
 
         for cue in &frame.sfx {
             log::debug!("world-map panel: sfx cue {cue:#04x}");
@@ -608,7 +610,8 @@ impl World {
         if frame.retired {
             log::info!(
                 "world-map: panel actor retired ({} window(s) still open)",
-                self.world_map_ctrl
+                self.world_map
+                    .ctrl
                     .as_ref()
                     .map(|c| c.panels.windows.open_count())
                     .unwrap_or(0)
@@ -624,7 +627,7 @@ impl World {
             // dev handler-id table only, so Rula's installer here would be as
             // synthetic as this Riremito binding already is. One deliberate
             // binding, disclosed, rather than two.)
-            if let Some(ctrl) = self.world_map_ctrl.as_mut() {
+            if let Some(ctrl) = self.world_map.ctrl.as_mut() {
                 log::info!("world-map: sub-list hand-off -> Riremito travel art");
                 ctrl.panels
                     .install(PanelActorKind::TravelArt(TravelArt::Riremito), 0x1A);
@@ -647,7 +650,7 @@ impl World {
                 dest.x.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
             actor.move_state.world_z =
                 dest.z.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
-            self.world_map_last_tile = None;
+            self.world_map.last_tile = None;
             log::info!(
                 "world-map: travel art warped the party to ({}, {})",
                 dest.x,
@@ -668,7 +671,7 @@ impl World {
     fn restore_party_hp_mp(&mut self) {
         const PAIRS: [(usize, usize); 2] = [(0x104, 0x106), (0x108, 0x10A)];
         let mut restored = 0usize;
-        for member in self.roster.members.iter_mut().take(3) {
+        for member in self.party.roster.members.iter_mut().take(3) {
             let raw = &mut member.raw;
             if raw.len() < 0x10C {
                 continue;
@@ -691,20 +694,20 @@ impl World {
         // the same button edge that is advancing the first.
         if self.dialogue_owns_input() {
             // The inline-script runner, when active, owns dismissal.
-            if self.inline_dialogue.is_none()
+            if self.dialog.inline.is_none()
                 && (self.input.just_pressed(input::PadButton::Cross)
                     || self.input.just_pressed(input::PadButton::Circle))
             {
-                self.current_dialog = None;
+                self.dialog.current = None;
                 self.pending_field_events.push(FieldEvent::DialogDismissed);
             }
             return;
         }
         // Otherwise a confirm press next to a talkable NPC opens its dialogue.
-        if self.world_map_player_walking || !self.input.just_pressed(input::PadButton::Cross) {
+        if self.world_map.player_walking || !self.input.just_pressed(input::PadButton::Cross) {
             return;
         }
-        if self.world_map_entity_positions.is_empty() {
+        if self.world_map.entity_positions.is_empty() {
             return;
         }
         let Some(slot) = self.player_actor_slot else {
@@ -720,7 +723,7 @@ impl World {
         // First talkable NPC within one tile (Chebyshev) of the player. An NPC
         // is talkable when it carries inline dialog text or a box-config id.
         let mut open: Option<(u16, Vec<u8>)> = None;
-        for (idx, cfg) in self.world_map_entity_configs.iter().enumerate() {
+        for (idx, cfg) in self.world_map.entity_configs.iter().enumerate() {
             let (text_id, inline) = match cfg {
                 WorldMapEntityConfig::Npc {
                     text_id, inline, ..
@@ -729,7 +732,7 @@ impl World {
                 }
                 _ => continue,
             };
-            let Some(&(ex, ez)) = self.world_map_entity_positions.get(idx) else {
+            let Some(&(ex, ez)) = self.world_map.entity_positions.get(idx) else {
                 continue;
             };
             if ((ex as i32 >> 7) - px).abs() <= 1 && ((ez as i32 >> 7) - pz).abs() <= 1 {
@@ -738,7 +741,7 @@ impl World {
             }
         }
         if let Some((text_id, inline)) = open {
-            self.current_dialog = Some(DialogRequest {
+            self.dialog.current = Some(DialogRequest {
                 text_id,
                 inline: inline.clone(),
                 world_x: 0,
@@ -764,7 +767,7 @@ impl World {
     /// [`WorldMapEntityConfig::OverworldPortal`] surfaces a
     /// [`crate::field_events::FieldEvent::WorldMapTransition`], while a
     /// [`WorldMapEntityConfig::MinigameDoor`] arms
-    /// [`Self::pending_minigame_warp`] instead - its payload is a mode-24
+    /// [`crate::world::MinigameState::pending_warp`] instead - its payload is a mode-24
     /// sub-id, not a map id.
     ///
     /// Hosts can call this directly; `Self::auto_engage_world_map_portals`
@@ -773,7 +776,7 @@ impl World {
     /// via [`Self::install_world_map_entities_at`] fires on walk-over without a
     /// host call.
     pub fn engage_world_map_entity(&mut self, idx: usize) {
-        if let Some(ctx) = self.world_map_entities.get_mut(idx) {
+        if let Some(ctx) = self.world_map.entities.get_mut(idx) {
             // State 2 = Transitioning: the SM fires `on_scene_transition` and
             // retires the entity on the next tick.
             ctx.state = vm::world_map::EntityState::Transitioning as u16;
@@ -788,7 +791,7 @@ impl World {
     /// overworld-entrance engage the entity SM emitted (walk-onto its tile),
     /// leaving every other queued field event in place. `None` when no
     /// world-map transition is queued. The returned `slot` indexes
-    /// [`Self::world_map_entity_configs`], where the
+    /// [`crate::world::WorldMapState::entity_configs`], where the
     /// [`WorldMapEntityConfig::OverworldPortal`] that raised it carries the
     /// real CDNAME destination - `dest_index` is only that entrance's `0x3F`
     /// index, never a door-warp map id.
@@ -806,7 +809,7 @@ impl World {
     /// Configure the shared overworld encounter rate. `enabled` is the master
     /// gate, `start_countdown` the initial per-step counter, `formation_id`
     /// the formation an encounter spawns (resolved against
-    /// [`Self::formation_table`]), and `reset_to` the value the countdown is
+    /// [`crate::world::DiscTables::formation_table`]), and `reset_to` the value the countdown is
     /// reset to after each encounter fires.
     pub fn set_world_map_encounter(
         &mut self,
@@ -815,7 +818,7 @@ impl World {
         formation_id: u16,
         reset_to: i8,
     ) {
-        self.world_map_encounter = WorldMapEncounterState {
+        self.world_map.encounter = WorldMapEncounterState {
             enabled,
             countdown: start_countdown,
             formation_id,

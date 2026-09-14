@@ -33,7 +33,7 @@
 //! 2. **Execution.** [`exec_census`] loads the same records into a real
 //!    [`World`] and steps them, so a CONFIGURE counted there has run through
 //!    the whole engine chain - VM step, `camera_configure` host hook,
-//!    `FieldEvent::CameraConfigure`, `World::camera_state` merge. It runs
+//!    `FieldEvent::CameraConfigure`, `World::camera.state` merge. It runs
 //!    twice, once with the flag banks cleared and once full, so both arms of
 //!    every story-flag gate execute.
 //!
@@ -392,9 +392,9 @@ fn exec_census(corpus: &[Record], flags_set: bool) -> Census {
             ..World::default()
         };
         if flags_set {
-            world.story_flags = u32::MAX;
-            world.extra_flags = u32::MAX;
-            world.system_flags = vec![0xFF; world.system_flags.len().max(0x200)];
+            world.flags.story_flags = u32::MAX;
+            world.flags.extra_flags = u32::MAX;
+            world.flags.system_flags = vec![0xFF; world.flags.system_flags.len().max(0x200)];
         }
         world.load_field_script_at(body.clone(), *pc0);
         let mut last_pc = usize::MAX;

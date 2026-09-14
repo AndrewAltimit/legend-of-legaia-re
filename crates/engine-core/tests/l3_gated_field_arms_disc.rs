@@ -135,7 +135,7 @@ fn world_at(site: &Site) -> World {
         mode: SceneMode::Field,
         ..World::default()
     };
-    world.roster = legaia_save::Party::zeroed(3);
+    world.party.roster = legaia_save::Party::zeroed(3);
     world.load_field_script_at(site.body.clone(), site.pc);
     world
 }
@@ -219,15 +219,16 @@ fn three_actor_talk_section(sites: &[Site]) {
 
     // ---- first arm: the lock is clear -------------------------------------
     let mut world = world_at(site);
-    world.party_actor_slots = vec![Some(0), Some(1), Some(2)];
-    world.party_leader_slot = Some(1);
+    world.party.party_actor_slots = vec![Some(0), Some(1), Some(2)];
+    world.party.party_leader_slot = Some(1);
     // Seed live placements for whichever participants the disc names, so the
     // capture half is falsifiable rather than three `None`s.
     for (i, id) in ids.iter().enumerate() {
         world
-            .field_npc_positions
+            .npcs
+            .positions
             .insert(*id, (100 + i as i16 * 10, 200 + i as i16 * 10));
-        world.field_npc_headings.insert(*id, 0x100 * (i as i16 + 1));
+        world.npcs.headings.insert(*id, 0x100 * (i as i16 + 1));
     }
     assert!(!world.system_flag_test(0xD), "the lock starts clear");
 
@@ -239,7 +240,7 @@ fn three_actor_talk_section(sites: &[Site]) {
         site.scene
     );
     assert_eq!(
-        world.party_actor_slots,
+        world.party.party_actor_slots,
         vec![Some(1)],
         "{}: the story party collapses to its leader",
         site.scene
@@ -249,6 +250,7 @@ fn three_actor_talk_section(sites: &[Site]) {
     assert!(!world.system_flag_test(0x12));
 
     let talk = world
+        .dialog
         .three_actor_talk
         .expect("the session record is installed");
     assert_eq!(talk.actor_ids, ids, "the disc's own participant ids");
@@ -265,8 +267,8 @@ fn three_actor_talk_section(sites: &[Site]) {
     // ---- re-arm: the lock is up, so the same instruction restores ---------
     // Move every participant, then step the SAME real instruction again.
     for id in ids.iter() {
-        world.field_npc_positions.insert(*id, (-999, -999));
-        world.field_npc_headings.insert(*id, -1);
+        world.npcs.positions.insert(*id, (-999, -999));
+        world.npcs.headings.insert(*id, -1);
     }
     world.load_field_script_at(site.body.clone(), site.pc);
     world.step_field().expect("re-step the `43 02` instruction");
@@ -275,12 +277,12 @@ fn three_actor_talk_section(sites: &[Site]) {
     for (i, id) in ids.iter().enumerate() {
         if let Some((pos, heading)) = talk.saved[i] {
             assert_eq!(
-                world.field_npc_positions.get(id).copied(),
+                world.npcs.positions.get(id).copied(),
                 Some(pos),
                 "{}: participant {i} was not put back",
                 site.scene
             );
-            assert_eq!(world.field_npc_headings.get(id).copied(), Some(heading));
+            assert_eq!(world.npcs.headings.get(id).copied(), Some(heading));
             restored += 1;
         }
     }
@@ -296,7 +298,7 @@ fn three_actor_talk_section(sites: &[Site]) {
     // The re-arm must NOT collapse the party a second time (it is already
     // collapsed) - and, more to the point, must not re-run the flag
     // choreography, because the leader is whoever the first arm chose.
-    assert_eq!(world.party_actor_slots, vec![Some(1)]);
+    assert_eq!(world.party.party_actor_slots, vec![Some(1)]);
 }
 
 /// What actually ends a `43 02` talk - and what does not.
@@ -343,10 +345,14 @@ fn a_three_actor_talk_ends_when_the_lock_drops_not_on_a_timer() {
     let site = sites.first().expect("a `43 02` carrier").clone();
 
     let mut world = world_at(&site);
-    world.party_actor_slots = vec![Some(0), Some(1), Some(2)];
-    world.party_leader_slot = Some(0);
+    world.party.party_actor_slots = vec![Some(0), Some(1), Some(2)];
+    world.party.party_leader_slot = Some(0);
     world.step_field().expect("step the `43 02` instruction");
-    assert_eq!(world.party_actor_slots.len(), 1, "the talk collapses first");
+    assert_eq!(
+        world.party.party_actor_slots.len(),
+        1,
+        "the talk collapses first"
+    );
     assert!(world.system_flag_test(0xD), "and raises the lock");
 
     // ---- no timer: the arming script parks -------------------------------
@@ -375,7 +381,7 @@ fn a_three_actor_talk_ends_when_the_lock_drops_not_on_a_timer() {
         site.scene
     );
     assert_eq!(
-        world.party_actor_slots.len(),
+        world.party.party_actor_slots.len(),
         1,
         "{}: so the party is still the leader alone",
         site.scene
@@ -388,17 +394,21 @@ fn a_three_actor_talk_ends_when_the_lock_drops_not_on_a_timer() {
     world.system_flag_clear(0xD);
     world.tick();
     assert!(
-        world.three_actor_talk.is_none(),
+        world.dialog.three_actor_talk.is_none(),
         "{}: the controller retires on the flag drop",
         site.scene
     );
     assert_eq!(
-        world.party_actor_slots.len(),
+        world.party.party_actor_slots.len(),
         3,
         "{}: and the story party comes back",
         site.scene
     );
-    assert_eq!(world.party_leader_slot, Some(0), "with its arm-time leader");
+    assert_eq!(
+        world.party.party_leader_slot,
+        Some(0),
+        "with its arm-time leader"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -425,13 +435,13 @@ fn countdown_section(sites: &[Site]) {
     let mut expired_any = false;
     for site in sites {
         let mut world = world_at(site);
-        assert!(!world.escape_timer.armed, "starts disarmed");
+        assert!(!world.battle.escape_timer.armed, "starts disarmed");
         world.step_field().expect("step the `4C D3` instruction");
 
-        let armed = world.escape_timer.armed;
-        let duration = world.escape_timer.remaining;
-        let threshold = world.escape_timer.warn_threshold;
-        let flag_word = world.escape_timer_flag_word;
+        let armed = world.battle.escape_timer.armed;
+        let duration = world.battle.escape_timer.remaining;
+        let threshold = world.battle.escape_timer.warn_threshold;
+        let flag_word = world.battle.escape_timer_flag_word;
         eprintln!(
             "[4C D3] {} pc={:#x}: armed={armed} duration={duration} \
              threshold={threshold} flag_word={flag_word:#010x}",
@@ -471,7 +481,7 @@ fn countdown_section(sites: &[Site]) {
         };
         for _ in 0..budget {
             world.tick();
-            if let Some((m, s, hundredths, ink)) = world.escape_timer_hud {
+            if let Some((m, s, hundredths, ink)) = world.battle.escape_timer_hud {
                 saw_hud = true;
                 // The decomposition is a product of the tick, so it must stay
                 // a valid clock face for every frame it is published on.
@@ -491,9 +501,9 @@ fn countdown_section(sites: &[Site]) {
                 }
             }
             if warned_at.is_none() && world.system_flag_test(warn_flag) {
-                warned_at = Some(world.escape_timer.remaining);
+                warned_at = Some(world.battle.escape_timer.remaining);
             }
-            if !world.escape_timer.armed {
+            if !world.battle.escape_timer.armed {
                 break;
             }
         }
@@ -511,7 +521,7 @@ fn countdown_section(sites: &[Site]) {
         if !to_expiry {
             // Bounded drain: the counter must at least be moving.
             assert!(
-                world.escape_timer.remaining < duration,
+                world.battle.escape_timer.remaining < duration,
                 "{}: the countdown did not advance at all",
                 site.scene
             );
@@ -519,7 +529,7 @@ fn countdown_section(sites: &[Site]) {
         }
 
         assert!(
-            !world.escape_timer.armed,
+            !world.battle.escape_timer.armed,
             "{}: the countdown never expired within its own duration",
             site.scene
         );
@@ -570,7 +580,7 @@ fn countdown_section(sites: &[Site]) {
     // because the corpus scan above is what costs.
     let Some(site) = sites.iter().find(|s| {
         let mut w = world_at(s);
-        w.step_field().is_some() && w.escape_timer.armed
+        w.step_field().is_some() && w.battle.escape_timer.armed
     }) else {
         panic!("no `4C D3` carrier armed a countdown");
     };
@@ -581,19 +591,19 @@ fn countdown_section(sites: &[Site]) {
         world.tick();
     }
     assert!(
-        world.escape_timer.armed && world.escape_timer.remaining > 0,
+        world.battle.escape_timer.armed && world.battle.escape_timer.remaining > 0,
         "{}: the freeze below is only meaningful on a live countdown",
         site.scene
     );
 
     // A non-field mode is one of retail's three pause conditions.
     world.mode = SceneMode::Menu;
-    let before = world.escape_timer.remaining;
+    let before = world.battle.escape_timer.remaining;
     for _ in 0..30 {
         world.tick();
     }
     assert_eq!(
-        world.escape_timer.remaining, before,
+        world.battle.escape_timer.remaining, before,
         "{}: the countdown must not drain outside the field",
         site.scene
     );
@@ -602,7 +612,7 @@ fn countdown_section(sites: &[Site]) {
         world.tick();
     }
     assert!(
-        world.escape_timer.remaining < before,
+        world.battle.escape_timer.remaining < before,
         "{}: and it must resume afterwards",
         site.scene
     );

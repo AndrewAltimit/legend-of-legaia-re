@@ -4,7 +4,7 @@
 //!
 //! The page has drawn these boxes for a while - `play_battle.rs` builds the
 //! text + chrome and `play_shop.rs` folds both into the compose. Nothing on
-//! the page ever *armed* the machine, so `World::battle_tutorial` was `None`
+//! the page ever *armed* the machine, so `World::battle.tutorial` was `None`
 //! in every browser battle and the whole draw path was dead code. The only
 //! production arm lived in the native window, behind a CLI flag plus a
 //! hardcoded scene name plus an environment variable - a development shim,

@@ -605,7 +605,7 @@ impl Scene {
     /// Note that the entry script's `0x4C` nibble-7 wall-paint deltas are
     /// gated behind system-flag tests, so they only fire once the world's
     /// story flags are seeded to a matching scene-entry state; the base
-    /// collision grid ([`Self::field_collision_grid`]) is independent of the
+    /// collision grid ([`crate::world::FieldTerrain::collision_grid`]) is independent of the
     /// entry script.
     ///
     /// Resolution order matches [`Self::field_man_payload`]: the asset-table

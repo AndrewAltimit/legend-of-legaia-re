@@ -4,7 +4,7 @@
 //! `legaia_asset::battle_camera_table` is pinned against raw PROT 0898 bytes
 //! by the asset crate's own oracle; what this covers is the wiring - that
 //! entering a scene installs the parsed table on
-//! [`World::battle_camera_heights`], so the battle camera frames a non-Vahn
+//! [`crate::world::DiscTables::battle_camera_heights`], so the battle camera frames a non-Vahn
 //! seat at that character's own height instead of falling back to Vahn's.
 //! Skips and passes without `LEGAIA_DISC_BIN` (the workspace convention).
 
@@ -25,7 +25,7 @@ fn scene_entry_installs_the_battle_camera_height_table() {
     };
     let mut host = SceneHost::open_disc(&disc).expect("open disc host");
     assert!(
-        host.world.battle_camera_heights.is_none(),
+        host.world.tables.battle_camera_heights.is_none(),
         "the table is installed lazily on scene entry, not at host open"
     );
 
@@ -33,6 +33,7 @@ fn scene_entry_installs_the_battle_camera_height_table() {
 
     let table = host
         .world
+        .tables
         .battle_camera_heights
         .as_ref()
         .expect("scene entry installs the battle-camera height table");

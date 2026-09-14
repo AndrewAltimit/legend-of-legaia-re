@@ -59,7 +59,7 @@ impl LegaiaRuntime {
             return "null".to_string();
         };
         let narration = w.cutscene_narration_active();
-        let card = w.cutscene_card.is_some();
+        let card = w.cutscene.card.is_some();
         let grade = w
             .scene_color_grade()
             .map(|g| serde_json::json!({ "gold": g.gold, "strength": g.strength }));
@@ -71,11 +71,11 @@ impl LegaiaRuntime {
         });
         serde_json::json!({
             "locked": narration || card,
-            "chain": w.opening_chain_active,
+            "chain": w.cutscene.opening_chain_active,
             "narration": narration,
             "card": card,
-            "caption_alpha": if w.cutscene_caption.is_some() {
-                w.cutscene_caption_alpha
+            "caption_alpha": if w.cutscene.caption.is_some() {
+                w.cutscene.caption_alpha
             } else {
                 0.0
             },
@@ -96,7 +96,7 @@ impl LegaiaRuntime {
         const CLOSED: &str = r#"{"open":false,"texts":[]}"#;
         let has_text = self
             .world()
-            .is_some_and(|w| w.cutscene_narration_active() || w.cutscene_card.is_some());
+            .is_some_and(|w| w.cutscene_narration_active() || w.cutscene.card.is_some());
         if !has_text || !self.ensure_menu_assets() {
             return CLOSED.to_string();
         }
@@ -113,7 +113,7 @@ impl LegaiaRuntime {
         let mut texts: Vec<TextDraw> = Vec::new();
         // Bottom-up subtitle crawl: every visible line centred at its
         // current window Y (PSX 240-line space, scaled to the surface).
-        if let Some(narration) = w.cutscene_narration.as_ref() {
+        if let Some(narration) = w.cutscene.narration.as_ref() {
             for line in narration.visible_lines() {
                 let y = (line.y as f32 * scale) as i32;
                 if y < 0 || y > surface_h as i32 - 8 {
@@ -126,7 +126,7 @@ impl LegaiaRuntime {
         }
         // Static title card: the pages shown together, centred, at the
         // capture-pinned band y=92..130.
-        if let Some(card) = w.cutscene_card.as_ref() {
+        if let Some(card) = w.cutscene.card.as_ref() {
             for (i, text) in card.iter().enumerate() {
                 let y = ((92 + 16 * i as i32) as f32 * scale) as i32;
                 texts.extend(ui::cutscene_narration_draws_for(
@@ -166,7 +166,7 @@ impl LegaiaRuntime {
     /// current scene carries none.
     pub fn cutscene_caption_rgba(&self) -> Vec<u8> {
         self.world()
-            .and_then(|w| w.cutscene_caption.as_ref())
+            .and_then(|w| w.cutscene.caption.as_ref())
             .map(|c| c.rgba.clone())
             .unwrap_or_default()
     }
@@ -174,7 +174,7 @@ impl LegaiaRuntime {
     /// `[width, height]` of the caption image; `[0, 0]` when none.
     pub fn cutscene_caption_dims(&self) -> Vec<u32> {
         self.world()
-            .and_then(|w| w.cutscene_caption.as_ref())
+            .and_then(|w| w.cutscene.caption.as_ref())
             .map(|c| vec![c.width, c.height])
             .unwrap_or_else(|| vec![0, 0])
     }
@@ -199,7 +199,7 @@ impl LegaiaRuntime {
         let Some(w) = self.world() else {
             return "null".to_string();
         };
-        let params = &w.camera_state.params;
+        let params = &w.camera.state.params;
         let param = |slot: u8| {
             params
                 .iter()

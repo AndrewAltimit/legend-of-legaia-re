@@ -469,7 +469,7 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
         // ---- Engine side: seed the capture's flag bank, cold-enter. ----
         let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
-        host.world.system_flags = cap.flag_bank.clone();
+        host.world.flags.system_flags = cap.flag_bank.clone();
         if let Err(err) = host.enter_field_scene(&cap.scene, 0) {
             divergences.push(Divergence {
                 label: cap.label.clone(),
@@ -514,7 +514,8 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
             };
             let (ex, ez) = host
                 .world
-                .field_npc_positions
+                .npcs
+                .positions
                 .get(&pi)
                 .copied()
                 .unwrap_or((p.world_x, p.world_z));
@@ -581,7 +582,7 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
             // Heading: diagnostic only. Engine convention 0 = Z+, retail
             // 0 = Z- (engine = retail + 0x800 mod 0x1000); a walker keeps its
             // last travel direction, so drift is expected dynamics.
-            if let Some(&eh) = host.world.field_npc_headings.get(&pi) {
+            if let Some(&eh) = host.world.npcs.headings.get(&pi) {
                 heading_checked += 1;
                 let expected = ((ra.heading + 0x800) & 0xFFF) as i16;
                 if (eh & 0xFFF) != expected {
@@ -604,7 +605,7 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
         total_parked_both += parked_both;
 
         // ---- Story-flag bank: engine entry must be a no-op vs the capture. ----
-        let bank = &host.world.system_flags;
+        let bank = &host.world.flags.system_flags;
         for (byte, (&e, &r)) in bank.iter().zip(cap.flag_bank.iter()).enumerate() {
             if e == r {
                 continue;

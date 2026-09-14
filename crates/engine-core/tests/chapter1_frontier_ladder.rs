@@ -424,13 +424,13 @@ struct FlagBaseline {
 impl FlagBaseline {
     fn snapshot(host: &SceneHost) -> Self {
         Self {
-            system: host.world.system_flags.clone(),
-            story: host.world.story_flags,
+            system: host.world.flags.system_flags.clone(),
+            story: host.world.flags.story_flags,
         }
     }
     fn restore(&self, host: &mut SceneHost) {
-        host.world.system_flags.clone_from(&self.system);
-        host.world.story_flags = self.story;
+        host.world.flags.system_flags.clone_from(&self.system);
+        host.world.flags.story_flags = self.story;
     }
 }
 
@@ -444,10 +444,10 @@ fn enter_raw(host: &mut SceneHost, name: &str) -> bool {
     // hands that dialogue to the next scene, whose rung-4 verdict then reports
     // its predecessor's park - `jouine` scored a rung-4 stall it does not have
     // when entered on its own. A verdict has to be a property of the scene.
-    host.world.current_dialog = None;
-    host.world.inline_dialogue = None;
-    host.world.cutscene_timeline = None;
-    host.world.helper_contexts.clear();
+    host.world.dialog.current = None;
+    host.world.dialog.inline = None;
+    host.world.cutscene.timeline = None;
+    host.world.field_vm.helper_contexts.clear();
     let r = if is_world_map_scene(name) {
         host.enter_world_map_scene(name)
     } else {
@@ -488,7 +488,7 @@ fn settle(host: &mut SceneHost) -> Settle {
     for _ in 0..SETTLE_TICKS {
         if !host.world.cutscene_timeline_active()
             && !host.world.dialogue_owns_input()
-            && host.world.helper_contexts.is_empty()
+            && host.world.field_vm.helper_contexts.is_empty()
         {
             return Settle::Released;
         }
@@ -679,7 +679,7 @@ impl Fired {
 /// here on the tick after the step.
 fn world_idle(host: &SceneHost) -> bool {
     !host.world.cutscene_timeline_active()
-        && host.world.helper_contexts.is_empty()
+        && host.world.field_vm.helper_contexts.is_empty()
         && !host.world.dialogue_owns_input()
         && host.world.active_fmv().is_none()
 }
@@ -1148,13 +1148,13 @@ fn part_b_chapter1_scene_frontier_ladder() {
     // Every scene is scored from the same starting state: the flag banks are
     // snapshotted and restored, so a verdict is a property of the scene and
     // not of whatever the previous scene latched.
-    let flags0 = host.world.system_flags.clone();
-    let story0 = host.world.story_flags;
+    let flags0 = host.world.flags.system_flags.clone();
+    let story0 = host.world.flags.story_flags;
 
     let mut verdicts: Vec<Verdict> = Vec::new();
     for name in &order {
-        host.world.system_flags = flags0.clone();
-        host.world.story_flags = story0;
+        host.world.flags.system_flags = flags0.clone();
+        host.world.flags.story_flags = story0;
         verdicts.push(score_scene(&mut host, name));
     }
 
@@ -1710,10 +1710,10 @@ fn part_e2_do_those_scenes_carry_a_record_that_exits_at_all() {
                     // timeline and any dialogue it opened. A scene load per
                     // record turns this into a quarter-hour run.
                     base.restore(&mut host);
-                    host.world.helper_contexts.clear();
-                    host.world.cutscene_timeline = None;
-                    host.world.current_dialog = None;
-                    host.world.inline_dialogue = None;
+                    host.world.field_vm.helper_contexts.clear();
+                    host.world.cutscene.timeline = None;
+                    host.world.dialog.current = None;
+                    host.world.dialog.inline = None;
                 }
                 ran_total += 1;
                 // Install the record the way the walk-on dispatch installs one

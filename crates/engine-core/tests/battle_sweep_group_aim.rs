@@ -60,7 +60,7 @@ fn seated_battle() -> (World, BattleSession) {
         world.actors[slot].battle.max_hp = 100;
         world.actors[slot].battle.mp = 30;
     }
-    for gauge in world.ap_gauges.iter_mut().take(3) {
+    for gauge in world.battle.ap_gauges.iter_mut().take(3) {
         *gauge = ApGauge::with_base(8);
     }
 
@@ -103,7 +103,7 @@ fn expected_facing(world: &World, caster: u8, code: u8) -> u16 {
         x: 0,
         z: 0,
     }; 8];
-    let party_count = world.party_count;
+    let party_count = world.party.party_count;
     for (retail_slot, out) in slots.iter_mut().enumerate() {
         let retail_slot = retail_slot as u8;
         let engine_slot = if retail_slot < 3 {

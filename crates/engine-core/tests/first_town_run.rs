@@ -210,10 +210,10 @@ fn first_town_drives_scene_to_field_event_emission() {
     eprintln!(
         "[first-town] post-tick world state: frames={} bgm={:?} dialog={:?} party_leader={:?} money={}",
         host.world.frame,
-        host.world.current_bgm,
-        host.world.current_dialog.as_ref().map(|d| d.text_id),
-        host.world.party_leader_slot,
-        host.world.money
+        host.world.audio.current_bgm,
+        host.world.dialog.current.as_ref().map(|d| d.text_id),
+        host.world.party.party_leader_slot,
+        host.world.party.money
     );
 
     // Acceptance: the chain runs without panic, the asset bundle

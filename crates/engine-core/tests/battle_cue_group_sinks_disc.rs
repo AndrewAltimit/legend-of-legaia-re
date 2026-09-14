@@ -10,7 +10,7 @@
 //!   effect pool),
 //! * `CueSpawn::Effect` -> `World::spawn_action_table_effect` (`FUN_80050ED4`
 //!   over the `0x801F6324` prototypes), plus the SFX-map byte into
-//!   `World::battle_sfx_cues`.
+//!   `World::audio.battle_sfx_cues`.
 //!
 //! Skips and passes without `LEGAIA_DISC_BIN` / `extracted/`.
 
@@ -58,8 +58,8 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
         legaia_asset::item_effect::ItemEffectTable::from_scus(&scus).expect("item-effect table");
 
     let mut world = World::new();
-    world.move_power = Some(MovePowerCatalog::from_overlay_0898(&overlay).expect("catalog"));
-    world.move_power_overlay = Some(Arc::from(overlay.as_slice()));
+    world.tables.move_power = Some(MovePowerCatalog::from_overlay_0898(&overlay).expect("catalog"));
+    world.tables.move_power_overlay = Some(Arc::from(overlay.as_slice()));
     world.set_item_effects(items.clone());
     // A 32-entry effect catalog so the actor-cue arm has a pool to spawn in
     // (the real efect.dat is not loaded here).
@@ -82,6 +82,7 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
     }
 
     let aux = world
+        .tables
         .move_power
         .as_ref()
         .unwrap()
@@ -126,7 +127,7 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
     };
 
     // Seat a 3-party / 2-monster formation and commit the item action.
-    world.party_count = 3;
+    world.party.party_count = 3;
     for slot in 0..5u8 {
         let a = world
             .actors
@@ -141,7 +142,7 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
     world.actors[1].battle.active_target = 3;
     world.battle_ctx.active_actor = 1;
     world.battle_ctx.action_state = ActionState::SpiritPreArm.as_byte();
-    world.battle_sfx_cues.clear();
+    world.audio.battle_sfx_cues.clear();
     let pool_before = world.effect_pool.active_count();
 
     for _ in 0..0x60 {
@@ -210,7 +211,7 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
         !group_clut_rows.is_empty(),
         "fixture picked a group with no CLUT row"
     );
-    let got: Vec<u16> = world.battle_sfx_cues.iter().map(|c| c.kind).collect();
+    let got: Vec<u16> = world.audio.battle_sfx_cues.iter().map(|c| c.kind).collect();
     assert_eq!(got, want, "item {item_id:#04x} group {}", site.group);
     for row in &group_clut_rows {
         assert!(

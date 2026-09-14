@@ -231,13 +231,7 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
     // The cold boot installs exactly one scripted-encounter carrier slot
     // (the sparring partner). Drive its dialogue-accept op.
     let slot = {
-        let mut slots: Vec<u8> = session
-            .host
-            .world
-            .field_carrier_slots
-            .keys()
-            .copied()
-            .collect();
+        let mut slots: Vec<u8> = session.host.world.carriers.slots.keys().copied().collect();
         slots.sort_unstable();
         slots.first().copied().context(
             "scene installs no scripted-encounter carrier slot (cannot drive the Battle leg)",
@@ -257,7 +251,7 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
     let down = PadButton::Down.mask();
     for i in 0..frames {
         // Tick 0 opens the dialogue (pad 0). The spar dialogue carries the
-        // faithful 4-option picker (`World::carrier_menu`), whose index-2
+        // faithful 4-option picker (`World::carriers.menu`), whose index-2
         // "practice" option is the one that arms the fight - navigate the
         // cursor Down twice (releases in between: the menu keys off
         // just-pressed edges) before the Cross confirm. The transition

@@ -16,7 +16,7 @@ use legaia_engine_core::world::World;
 
 fn prize_world() -> World {
     let mut w = World::new();
-    w.prize_blocks = vec![
+    w.shops.prize_blocks = vec![
         vec![
             PrizeRecord {
                 item_id: 0x10,
@@ -49,8 +49,8 @@ fn sub_op_7_arms_a_session_over_the_scripted_block() {
     let mut w = prize_world();
     // koin1's counter op: `49 07 00` (block 0).
     assert!(w.try_arm_prize_exchange(&[0x49, 0x07, 0x00]));
-    assert!(w.prize_exchange_armed, "the op-0x49 gate armed");
-    assert!(w.prize_exchange_open);
+    assert!(w.shops.prize_exchange_armed, "the op-0x49 gate armed");
+    assert!(w.shops.prize_exchange_open);
     assert!(
         w.system_flag_test(PRIZE_EXCHANGE_VISITED_FLAG),
         "retail raises system flag 8 on entry (FUN_8003CE08(8))"
@@ -70,7 +70,7 @@ fn sub_op_7_arms_a_session_over_the_scripted_block() {
 fn without_a_prize_table_the_counter_refuses_rather_than_inventing_stock() {
     let mut w = World::new();
     assert!(!w.try_arm_prize_exchange(&[0x49, 0x07, 0x00]));
-    assert!(!w.prize_exchange_armed);
+    assert!(!w.shops.prize_exchange_armed);
     // Out-of-range block index on an installed table.
     let mut w = prize_world();
     assert!(!w.try_arm_prize_exchange(&[0x49, 0x07, 0x07]));
@@ -82,7 +82,7 @@ fn without_a_prize_table_the_counter_refuses_rather_than_inventing_stock() {
 #[test]
 fn redeem_and_exit_through_the_menu_runtime() {
     let mut w = prize_world();
-    w.casino_coins = 1_000;
+    w.minigames.casino_coins = 1_000;
     assert!(w.try_arm_prize_exchange(&[0x49, 0x07, 0x00]));
     let session = w.take_pending_prize_exchange().unwrap();
 
@@ -96,8 +96,11 @@ fn redeem_and_exit_through_the_menu_runtime() {
     press(&mut menu, &mut w, |i| i.up = true); // onto Yes
     press(&mut menu, &mut w, |i| i.cross = true); // commit
 
-    assert_eq!(w.casino_coins, 500, "price debited from the coin bank");
-    assert_eq!(w.inventory.get(&0x20), Some(&1), "prize granted");
+    assert_eq!(
+        w.minigames.casino_coins, 500,
+        "price debited from the coin bank"
+    );
+    assert_eq!(w.party.inventory.get(&0x20), Some(&1), "prize granted");
     assert!(
         w.system_flag_test(0x36),
         "the one-shot gate flag raised on commit"
@@ -110,7 +113,7 @@ fn redeem_and_exit_through_the_menu_runtime() {
     );
 
     // Cancel out: the session drops and the park flips Armed -> Done.
-    assert!(w.prize_exchange_open);
+    assert!(w.shops.prize_exchange_open);
     press(&mut menu, &mut w, |i| i.circle = true);
     assert!(
         menu.prize_session.is_none(),
@@ -118,10 +121,13 @@ fn redeem_and_exit_through_the_menu_runtime() {
     );
     assert!(!menu.is_open());
     assert!(
-        !w.prize_exchange_open,
+        !w.shops.prize_exchange_open,
         "finish_prize_exchange ran - the counter script resumes"
     );
-    assert!(w.prize_exchange_armed, "the arm clears on the VM's resume");
+    assert!(
+        w.shops.prize_exchange_armed,
+        "the arm clears on the VM's resume"
+    );
 }
 
 /// A refused redeem (short coins) leaves everything untouched and the
@@ -129,14 +135,14 @@ fn redeem_and_exit_through_the_menu_runtime() {
 #[test]
 fn a_short_coin_bank_refuses_without_mutation() {
     let mut w = prize_world();
-    w.casino_coins = 10;
+    w.minigames.casino_coins = 10;
     assert!(w.try_arm_prize_exchange(&[0x49, 0x07, 0x00]));
     let session = w.take_pending_prize_exchange().unwrap();
     let mut menu = MenuRuntime::new(std::env::temp_dir());
     menu.open_prize_exchange(session);
     press(&mut menu, &mut w, |i| i.cross = true);
-    assert_eq!(w.casino_coins, 10);
-    assert!(w.inventory.is_empty());
+    assert_eq!(w.minigames.casino_coins, 10);
+    assert!(w.party.inventory.is_empty());
     assert!(
         menu.prize_session.is_some(),
         "still browsing after the buzz"

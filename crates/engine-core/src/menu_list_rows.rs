@@ -58,7 +58,7 @@
 //!    holds.
 //! 3. NOT WIRED - and this one is a real gap with a visible consequence. The
 //!    three `FUN_80030628` builders want an **ordered bag-slot array** and a
-//!    per-row ink bit, and the engine has neither. `World::inventory` is a
+//!    per-row ink bit, and the engine has neither. `World::party.inventory` is a
 //!    `HashMap<u8, u8>` keyed by item id with no slot space at all, so the
 //!    `slot | ink` payload the builders emit has no index to carry;
 //!    `crate::field_menu_dispatch::build_pause_items_session` sorts the
@@ -366,7 +366,7 @@ pub struct UseListCtx<'a> {
 ///
 /// NOT WIRED: the owner is
 /// `crate::field_menu_dispatch::build_pause_items_session`, and it cannot
-/// call this until `World::inventory` is slot-indexed - see family 3 in the
+/// call this until `World::party.inventory` is slot-indexed - see family 3 in the
 /// module heading.
 ///
 /// Walks the bag slots (`bag_ids[i]` = the item-id byte at

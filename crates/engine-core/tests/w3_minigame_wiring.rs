@@ -22,16 +22,19 @@ use legaia_engine_core::world::{SceneMode, World};
 fn the_slot_exit_assigns_the_bank_and_leaves_the_accumulator_alone() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.casino_coins = 60;
+    world.minigames.casino_coins = 60;
 
     world.enter_slot_machine(slot_machine_for_test());
     assert_eq!(world.mode, SceneMode::SlotMachine);
     let machine = world.exit_slot_machine().expect("session returned");
     // The slot overlay's own state-100 commit is an assignment into the bank...
-    assert_eq!(world.casino_coins, machine.balance().max(0) as u32);
+    assert_eq!(
+        world.minigames.casino_coins,
+        machine.balance().max(0) as u32
+    );
     // ...and the mode-24 accumulator is untouched by it.
     assert_eq!(
-        world.minigame_winnings, 0,
+        world.minigames.winnings, 0,
         "the slot cash-out is not the mode-24 accumulator's producer"
     );
     // The suspend/restore contract, not a warp, is what carries the mode back.
@@ -61,29 +64,32 @@ fn the_baka_exit_runs_the_mode24_return_warp() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.active_scene_label = "sioro".to_string();
-    world.casino_coins = 40;
-    world.minigame_winnings = 999; // stale value from an earlier session
+    world.minigames.casino_coins = 40;
+    world.minigames.winnings = 999; // stale value from an earlier session
 
     world.enter_baka_fighter(baka_fight_for_test());
     assert_eq!(world.mode, SceneMode::BakaFighter);
     assert_eq!(
-        world.minigame_winnings, 0,
+        world.minigames.winnings, 0,
         "the warp arm zeroes the accumulator"
     );
     assert_eq!(
-        world.minigame_scene_backup.as_deref(),
+        world.minigames.scene_backup.as_deref(),
         Some("sioro"),
         "the warp arm backs up the scene name"
     );
 
     // Stand in for the tally drain, then leave.
-    world.minigame_winnings = 25;
+    world.minigames.winnings = 25;
     world.active_scene_label = "baka".to_string();
     world.exit_baka_fighter();
     assert_eq!(world.mode, SceneMode::Field);
-    assert_eq!(world.casino_coins, 65, "accumulator banked as a delta-add");
+    assert_eq!(
+        world.minigames.casino_coins, 65,
+        "accumulator banked as a delta-add"
+    );
     assert_eq!(world.active_scene_label, "sioro", "scene name restored");
-    assert!(world.minigame_scene_backup.is_none(), "backup consumed");
+    assert!(world.minigames.scene_backup.is_none(), "backup consumed");
 }
 
 fn baka_fight_for_test() -> legaia_engine_core::baka_fighter::BakaFight {

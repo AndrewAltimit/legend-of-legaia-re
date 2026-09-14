@@ -39,8 +39,9 @@ fn overlay_0898() -> Option<Vec<u8>> {
 
 fn world_with_move_power(bytes: &[u8]) -> World {
     let mut world = World::new();
-    world.move_power = Some(MovePowerCatalog::from_overlay_0898(bytes).expect("catalog parses"));
-    world.move_power_overlay = Some(Arc::from(bytes));
+    world.tables.move_power =
+        Some(MovePowerCatalog::from_overlay_0898(bytes).expect("catalog parses"));
+    world.tables.move_power_overlay = Some(Arc::from(bytes));
     world
 }
 
@@ -88,6 +89,7 @@ fn move_fx_spawns_library_mesh_parts_from_real_overlay() {
     let alt_count = {
         use legaia_asset::move_power::EffectListEntry;
         let fx = world
+            .tables
             .move_power
             .as_ref()
             .unwrap()
@@ -125,6 +127,7 @@ fn move_fx_spawns_library_mesh_parts_from_real_overlay() {
     // Presentation fields surface: the trail texpage (0x7700 + record +0x0b) and
     // the sound cue (record +0x0d) match the move's resolved descriptor.
     let fx = world
+        .tables
         .move_power
         .as_ref()
         .unwrap()
@@ -151,11 +154,11 @@ fn move_fx_spawns_library_mesh_parts_from_real_overlay() {
     // does, the trail texpage clears.
     for _ in 0..600 {
         world.tick_move_fx(0x100);
-        if world.active_move_fx.is_none() {
+        if world.casting.active_move_fx.is_none() {
             break;
         }
     }
-    if world.active_move_fx.is_none() {
+    if world.casting.active_move_fx.is_none() {
         assert_eq!(
             world.active_move_fx_trail_texpage(),
             None,
@@ -172,7 +175,12 @@ fn spawnable_move_ids_match_what_actually_renders() {
     };
     let mut world = world_with_move_power(&bytes);
 
-    let ids = world.move_power.as_ref().unwrap().spawnable_move_ids();
+    let ids = world
+        .tables
+        .move_power
+        .as_ref()
+        .unwrap()
+        .spawnable_move_ids();
 
     // The enumeration is non-empty, sorted + unique, and contains the 0x06
     // worked example the debug previewer starts from.
@@ -191,8 +199,8 @@ fn spawnable_move_ids_match_what_actually_renders() {
             !world.active_move_fx_part_draws().is_empty(),
             "spawnable move {id:#04x} stages parts"
         );
-        world.active_move_fx = None;
-        world.active_move_fx_trail_texpage = None;
+        world.casting.active_move_fx = None;
+        world.casting.move_fx_trail_texpage = None;
     }
 }
 
@@ -225,7 +233,7 @@ fn alt_effect_only_moves_still_fire_the_2d_pool() {
     // but no Spawn entry (the alt-only edge case).
     use legaia_asset::move_power::EffectListEntry;
     let alt_only: Vec<(u8, usize)> = {
-        let cat = world.move_power.as_ref().unwrap();
+        let cat = world.tables.move_power.as_ref().unwrap();
         (0x01..=0xFFu8)
             .filter_map(|id| cat.fx_for_move_id(id).map(|fx| (id, fx)))
             .filter_map(|(id, fx)| {

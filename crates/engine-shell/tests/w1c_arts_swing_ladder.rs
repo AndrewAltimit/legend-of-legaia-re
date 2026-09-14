@@ -63,7 +63,7 @@ fn world_with_somersault() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // Records first: `load_party` seeds HP / liveness from them (zero here),
     // and retail's member walk (`FUN_801DB81C`) hands no ring to an HP-0
     // member - the per-slot seeding below has to come after.
@@ -108,7 +108,7 @@ fn world_with_somersault() -> World {
     w.actors[0].move_state.world_x = 300;
     w.actors[0].move_state.world_z = 300;
     w.actors[0].move_state.field_72 = 4096;
-    w.field_camera_azimuth = 0;
+    w.locomotion.camera_azimuth = 0;
 
     use legaia_engine_core::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
@@ -122,8 +122,8 @@ fn world_with_somersault() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.toggles.live_gameplay_loop = true;
+    w.battle.player_driven = true;
     w
 }
 
@@ -176,7 +176,7 @@ fn drive_the_swing(w: &mut World) -> Swing {
                 }
                 _ => InputState::mask_of([PadButton::Cross]),
             }
-        } else if let Some(cmd) = w.battle_command.as_ref() {
+        } else if let Some(cmd) = w.battle.command.as_ref() {
             match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.menu_command() != Some(BattleCommand::Attack) => {
                     InputState::mask_of([PadButton::Left])
@@ -211,7 +211,7 @@ fn drive_the_swing(w: &mut World) -> Swing {
         if let Some(p) = w.actors.first().and_then(|a| a.battle_animation.as_ref()) {
             out.clip_frames.push((p.action_id(), p.current_frame()));
         }
-        if w.mode == SceneMode::Field && w.last_battle_rewards.is_some() {
+        if w.mode == SceneMode::Field && w.battle.last_rewards.is_some() {
             break;
         }
     }

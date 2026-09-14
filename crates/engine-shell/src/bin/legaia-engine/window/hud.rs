@@ -40,7 +40,7 @@ impl PlayWindowApp {
     /// the world's pending dialog request.
     ///
     /// The world owns dismissal: the field VM's op-`0x4C` dialog-advance hook
-    /// and the overworld talk-to handler both clear `World::current_dialog` on
+    /// and the overworld talk-to handler both clear `World::dialog.current` on
     /// a confirm/cancel press. This method only mirrors that state into a
     /// visible, typed-out box - it opens a panel from the scene's MES the frame
     /// a request appears, ticks its typewriter reveal, and drops the panel the
@@ -48,13 +48,13 @@ impl PlayWindowApp {
     /// itself, so it can't race the world's dismiss.
     pub(super) fn sync_dialog_panel(&mut self) {
         // When the inline-script field-VM runner owns dialogue, it manages its
-        // own box (rendered from `world.inline_dialogue`); don't also open the
+        // own box (rendered from `world.dialog.inline`); don't also open the
         // simplified panel.
-        if self.session.host.world.use_vm_dialogue {
+        if self.session.host.world.toggles.use_vm_dialogue {
             self.active_dialog = None;
             return;
         }
-        if self.session.host.world.current_dialog.is_none() {
+        if self.session.host.world.dialog.current.is_none() {
             self.active_dialog = None;
             return;
         }
@@ -85,13 +85,14 @@ impl PlayWindowApp {
     pub(super) fn sync_text_balloon(&mut self) {
         let world = &mut self.session.host.world;
         if world
+            .cutscene
             .text_balloon
             .as_ref()
             .is_none_or(|b| b.x.is_some() || b.killed)
         {
             return;
         }
-        let width = match world.text_balloon.as_ref() {
+        let width = match world.cutscene.text_balloon.as_ref() {
             Some(b) => legaia_engine_render::text_balloon_text_width(&self.font, &b.text),
             None => return,
         };
@@ -112,9 +113,9 @@ impl PlayWindowApp {
             || self.menu_runtime.is_open()
             || self.cutscene.is_some()
             || w.cutscene_timeline_active()
-            || w.current_dialog.is_some()
-            || w.inline_dialogue.is_some()
-            || w.text_balloon.is_some()
+            || w.dialog.current.is_some()
+            || w.dialog.inline.is_some()
+            || w.cutscene.text_balloon.is_some()
             || self.active_dialog.is_some()
     }
 
@@ -323,7 +324,7 @@ impl PlayWindowApp {
             );
             let layout2 = self.font.layout_ascii(&line2);
             out.extend(text_draws_for(&layout2, (8, 26), dim));
-            if let Some(ctrl) = &self.session.host.world.world_map_ctrl {
+            if let Some(ctrl) = &self.session.host.world.world_map.ctrl {
                 let mode_str = if ctrl.is_top_view() {
                     "top-view"
                 } else {
@@ -341,7 +342,7 @@ impl PlayWindowApp {
         // the arrow the current beat calls for, and the last press judgement.
         // The three arrows are the retail pad bits (Square/Circle/Triangle).
         if self.session.host.world.mode == SceneMode::Dance
-            && let Some(g) = &self.session.host.world.dance
+            && let Some(g) = &self.session.host.world.minigames.dance
         {
             let arrow = match g.required_symbol() {
                 Some(1) => "< (Square)",
@@ -350,7 +351,7 @@ impl PlayWindowApp {
                 _ => "- (rest)",
             };
             use legaia_engine_core::dance::Judge;
-            let judge = match self.session.host.world.dance_last_judge {
+            let judge = match self.session.host.world.minigames.dance_last_judge {
                 Some(Judge::Sequence { .. }) => "SEQUENCE!",
                 Some(Judge::Hit { .. }) => "HIT",
                 Some(Judge::Miss) => "miss",
@@ -587,7 +588,7 @@ impl PlayWindowApp {
         // casting; tension + strength while fighting; the catch result when
         // done) plus the running point total.
         if self.session.host.world.mode == SceneMode::Fishing
-            && let Some(s) = &self.session.host.world.fishing
+            && let Some(s) = &self.session.host.world.minigames.fishing
         {
             use legaia_engine_core::fishing::{FightOutcome, FishingPhase};
             let line = match s.phase() {
@@ -655,7 +656,7 @@ impl PlayWindowApp {
             // index comes from the retail ownership gate, which re-points a
             // stale selection at the next owned lure.
             use legaia_engine_core::fishing::{lure_item_id, select_owned_rod};
-            let inventory = &self.session.host.world.inventory;
+            let inventory = &self.session.host.world.party.inventory;
             let count_of = |id: u32| *inventory.get(&(id as u8)).unwrap_or(&0) as i32;
             let mut rod_index = 0;
             let has_rod = select_owned_rod(&mut rod_index, count_of);
@@ -714,7 +715,7 @@ impl PlayWindowApp {
         // gating (row 0 hidden until affordable, greyed unavailable rows,
         // one-time prizes latched after purchase).
         if self.session.host.world.mode == SceneMode::Fishing
-            && let Some(ex) = &self.session.host.world.fishing_exchange
+            && let Some(ex) = &self.session.host.world.minigames.fishing_exchange
         {
             let world = &self.session.host.world;
             // The venue sub-screen's panel frame (FUN_801d74b0): the retail
@@ -729,18 +730,18 @@ impl PlayWindowApp {
             let venue_name = if ex.venue == 0 { "Buma" } else { "Vidna" };
             let head = format!(
                 "PRIZE EXCHANGE ({venue_name})  points {}   (Enter = trade, Left/Right = venue, P = close)",
-                world.fishing_points
+                world.minigames.fishing_points
             );
             let ly = self.font.layout_ascii(&head);
             out.extend(text_draws_for(&ly, (px, py), white));
-            let first = ex.first_visible(world.fishing_points);
+            let first = ex.first_visible(world.minigames.fishing_points);
             for (i, r) in ex.rows.iter().enumerate().skip(first) {
-                let owned = *world.inventory.get(&r.item_id).unwrap_or(&0) as u32;
+                let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
                 let avail = ex.is_available(
                     i,
-                    world.fishing_points,
+                    world.minigames.fishing_points,
                     owned,
-                    world.fishing_prizes_purchased,
+                    world.minigames.fishing_prizes_purchased,
                 );
                 let cursor = if i == ex.cursor { ">" } else { " " };
                 let name = r
@@ -755,7 +756,7 @@ impl PlayWindowApp {
                 // seen reads as the row they already bought. Ask the latch on
                 // its own by re-testing with the two other gates open.
                 let sold = r.is_one_time()
-                    && !ex.is_available(i, i32::MAX, 0, world.fishing_prizes_purchased);
+                    && !ex.is_available(i, i32::MAX, 0, world.minigames.fishing_prizes_purchased);
                 let tag = if r.is_one_time() {
                     if sold { "sold" } else { "one-time" }
                 } else {
@@ -777,7 +778,7 @@ impl PlayWindowApp {
         // Slot-machine minigame HUD: the three payline symbols, the balance /
         // bet readout, and the phase-specific prompt.
         if self.session.host.world.mode == SceneMode::SlotMachine
-            && let Some(m) = &self.session.host.world.slot_machine
+            && let Some(m) = &self.session.host.world.minigames.slot_machine
         {
             use legaia_engine_core::slot_machine::SlotPhase;
             let reels = format!(
@@ -813,7 +814,7 @@ impl PlayWindowApp {
         // Baka Fighter minigame HUD: HP bars as numbers, round pips, the
         // last-exchange readout, and the input prompt.
         if self.session.host.world.mode == SceneMode::BakaFighter
-            && let Some(f) = &self.session.host.world.baka_fighter
+            && let Some(f) = &self.session.host.world.minigames.baka_fighter
         {
             use legaia_engine_core::baka_fighter::MatchPhase;
             let bl1 = format!(
@@ -911,13 +912,13 @@ impl PlayWindowApp {
         // it. A dome leg is an unbounded battle, so line 1 reports the turn
         // reached rather than a countdown to a limit that does not exist.
         if self.session.host.world.mode == SceneMode::MuscleDome
-            && let Some(s) = &self.session.host.world.muscle_dome
+            && let Some(s) = &self.session.host.world.minigames.muscle_dome
         {
             use legaia_engine_core::muscle_dome::MusclePhase;
             // Line 0 is the *contest*: which leg of which course this is and
             // what the run has banked. A leg pays nothing; the contest pays
             // coins, so the tally is the number that matters.
-            if let Some(c) = &self.session.host.world.muscle_contest {
+            if let Some(c) = &self.session.host.world.minigames.muscle_contest {
                 let flags = self.session.host.world.muscle_contest_flags();
                 let ml0 = format!(
                     "Course {}  Round {}/{}   Coins banked: {}",
@@ -1023,7 +1024,7 @@ impl PlayWindowApp {
             if let Some(shop) = &self.menu_runtime.shop_session {
                 let state = MenuState::from_byte(self.menu_runtime.ctx_state());
                 let cursor = self.menu_runtime.cursor() as usize;
-                let gold = self.session.host.world.money;
+                let gold = self.session.host.world.party.money;
                 // The seru-trade screens carry dynamic, owned-string labels, so
                 // render them directly (the generic `(title, rows)` path below
                 // only handles `'static` labels).
@@ -1042,7 +1043,8 @@ impl PlayWindowApp {
                     self.session
                         .host
                         .world
-                        .menu_text
+                        .menu
+                        .text
                         .as_ref()
                         .and_then(|t| t.item_name(id))
                         .map(|s| s.to_string())
@@ -1184,7 +1186,7 @@ impl PlayWindowApp {
                     .as_ref()
                     .map(|s| s.cost)
                     .unwrap_or(0);
-                let gold = self.session.host.world.money;
+                let gold = self.session.host.world.party.money;
                 match state {
                     Some(MenuState::InnConfirm) => {
                         let title = format!("INN  Rest for {}G?", cost);
@@ -1282,7 +1284,7 @@ impl PlayWindowApp {
             // text; the battle tick parks the SM and the camera holds the
             // dialogue close-up), the menus are hidden - retail shows no
             // command chrome under the tutorial box.
-            let dialogue_up = bw.current_dialog.is_some() || bw.inline_dialogue.is_some();
+            let dialogue_up = bw.dialog.current.is_some() || bw.dialog.inline.is_some();
             if dialogue_up {
                 // Dialogue box up: no menu chrome.
             } else if let Some(view) = bw.arts_input_view() {
@@ -1306,7 +1308,7 @@ impl PlayWindowApp {
                     origin,
                     scale,
                 ));
-            } else if let Some(arts) = &bw.battle_arts_menu {
+            } else if let Some(arts) = &bw.battle.arts_menu {
                 use legaia_engine_core::battle_arts::ArtsPhase;
                 let menu_x = 8i32;
                 let mut my = 210i32;
@@ -1378,7 +1380,7 @@ impl PlayWindowApp {
                     }
                     _ => {}
                 }
-            } else if let Some(spell) = &bw.battle_spell_menu {
+            } else if let Some(spell) = &bw.battle.spell_menu {
                 use legaia_engine_core::battle_magic::SpellPhase;
                 let menu_x = 8i32;
                 let mut my = 210i32;
@@ -1445,7 +1447,7 @@ impl PlayWindowApp {
                     }
                     _ => {}
                 }
-            } else if bw.battle_item_menu.is_some() {
+            } else if bw.battle.item_menu.is_some() {
                 // Retail's item window (state 0x3C): the packet-pinned list
                 // + description windows with breadcrumbs and the hand
                 // cursor. Text half here; the window chrome + hand ride the
@@ -1458,7 +1460,7 @@ impl PlayWindowApp {
                         )
                     }));
                 }
-            } else if let Some(cmd) = &bw.battle_command {
+            } else if let Some(cmd) = &bw.battle.command {
                 let menu_x = 8i32;
                 let mut my = 210i32;
                 match &cmd.phase {
@@ -1584,7 +1586,7 @@ impl PlayWindowApp {
                 out.extend(rows);
             }
             None => {
-                if let Some(banner) = &self.session.host.world.current_level_up_banner {
+                if let Some(banner) = &self.session.host.world.party.current_level_up_banner {
                     out.extend(level_up_draws_for(
                         &self.font,
                         banner.char_id,
@@ -1594,7 +1596,7 @@ impl PlayWindowApp {
                         LEVEL_UP_BANNER_PEN,
                     ));
                 }
-                if let Some(banner) = &self.session.host.world.current_capture_banner
+                if let Some(banner) = &self.session.host.world.party.current_capture_banner
                     && let Some(text) = banner.current_banner()
                 {
                     out.extend(capture_banner_draws_for(
@@ -1612,7 +1614,7 @@ impl PlayWindowApp {
         // cold-boot retail capture (multi-line, 0.5 px/frame; the earlier
         // one-caption-at-a-time reading measured the separate `4C E1`
         // balloon, not this crawl).
-        if let Some(narration) = &self.session.host.world.cutscene_narration {
+        if let Some(narration) = &self.session.host.world.cutscene.narration {
             let white = [1.0f32, 1.0, 1.0, 1.0];
             let center_x = (w / 2) as i32;
             let scale = h as f32 / 240.0;
@@ -1629,7 +1631,7 @@ impl PlayWindowApp {
         // Opening-cutscene static title card (`map01`'s "twilight of
         // humanity" beat): the pages shown together, centered, at the
         // capture-pinned band y=92..130.
-        if let Some(card) = &self.session.host.world.cutscene_card {
+        if let Some(card) = &self.session.host.world.cutscene.card {
             let white = [1.0f32, 1.0, 1.0, 1.0];
             let center_x = (w / 2) as i32;
             let scale = h as f32 / 240.0;
@@ -1645,7 +1647,7 @@ impl PlayWindowApp {
         // and upscaled with the same stage transform the window chrome
         // uses (`name_entry_chrome_sprite_draws`) so text and frames stay
         // locked together.
-        if let Some(entry) = &self.session.host.world.name_entry {
+        if let Some(entry) = &self.session.host.world.party.name_entry {
             let view = self.name_entry_view(entry);
             let mut draws = legaia_engine_render::name_entry_draws_for(&self.font, &view);
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
@@ -1720,6 +1722,7 @@ impl PlayWindowApp {
                 .session
                 .host
                 .world
+                .cutscene
                 .text_balloon
                 .as_ref()
                 .and_then(|b| b.pen())
@@ -1786,14 +1789,15 @@ impl PlayWindowApp {
             .session
             .host
             .world
-            .cutscene_timeline
+            .cutscene
+            .timeline
             .as_ref()
             .and_then(|tl| tl.dialog.as_ref())
             && let Some(snap) = from_panel(panel, true)
         {
             return Some(snap);
         }
-        if let Some(id) = self.session.host.world.inline_dialogue.as_ref()
+        if let Some(id) = self.session.host.world.dialog.inline.as_ref()
             && let Some(panel) = id.panel.as_ref()
         {
             return from_panel(panel, true);
@@ -1921,6 +1925,7 @@ impl PlayWindowApp {
                 .session
                 .host
                 .world
+                .cutscene
                 .text_balloon
                 .as_ref()
                 .map(|b| b.frame_rect())
@@ -2080,7 +2085,7 @@ impl PlayWindowApp {
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
-        let Some(entry) = self.session.host.world.name_entry.as_ref() else {
+        let Some(entry) = self.session.host.world.party.name_entry.as_ref() else {
             return Vec::new();
         };
         let view = self.name_entry_view(entry);
@@ -2199,7 +2204,7 @@ impl PlayWindowApp {
                 // frame draws one or the other, never both.
                 plaque: plaque
                     .as_ref()
-                    .filter(|_| w_ref.battle_item_menu.is_none())
+                    .filter(|_| w_ref.battle.item_menu.is_none())
                     .map(|(_, n)| n.as_str()),
                 plaque_badge: bh::battle_plaque_element_badge(w_ref),
                 banner: banner.as_deref(),
@@ -2208,8 +2213,8 @@ impl PlayWindowApp {
                 // pen - so while it is up the plaque must not draw, or the
                 // two text runs land on the same pixels.
                 plaque_seat_taken: self.battle_tutorial_stage_rect().is_some()
-                    || w_ref.current_dialog.is_some()
-                    || w_ref.inline_dialogue.is_some(),
+                    || w_ref.dialog.current.is_some()
+                    || w_ref.dialog.inline.is_some(),
                 badges: badges.as_ref(),
                 // The same box, tested against the party surfaces' own rows:
                 // a bottom-anchored prompt lands on the active-actor bar
@@ -2258,12 +2263,13 @@ impl PlayWindowApp {
     pub(super) fn battle_banner_message(&self) -> Option<String> {
         self.save_menu.as_ref()?;
         let w = &self.session.host.world;
-        if let Some(b) = &w.current_level_up_banner {
+        if let Some(b) = &w.party.current_level_up_banner {
             // Name the character, not their roster ordinal: the banner reads
             // to a player, and `P3` is an index only this codebase knows.
             // `char_id` is the ROSTER slot the level-up applier wrote, so it
             // indexes `roster.members` directly (not the battle order).
             let who = w
+                .party
                 .roster
                 .members
                 .get(b.char_id as usize)
@@ -2275,7 +2281,8 @@ impl PlayWindowApp {
                 b.new_level, b.hp_gained, b.mp_gained
             ));
         }
-        w.current_capture_banner
+        w.party
+            .current_capture_banner
             .as_ref()
             .and_then(|b| b.current_banner())
     }
@@ -3147,7 +3154,7 @@ mod battle_hud_wiring_tests {
         use legaia_engine_core::world::World;
 
         let mut world = World::new();
-        world.party_count = 1;
+        world.party.party_count = 1;
         world.actors[0].active = true;
         world.actors[0].battle.liveness = 1;
         world.actors[0].battle.hp = 250;

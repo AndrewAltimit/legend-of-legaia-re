@@ -570,7 +570,7 @@ pub fn menu_hp_ink(hp: u16, hp_max: u16) -> [f32; 4] {
 /// and [`StatusPanelView`] each carry the `+0x12E` word, filled from
 /// `legaia_engine_core::status_screen::StatusSnapshot::status_flags` -
 /// which `field_menu_dispatch::status_snapshots` reads off the live
-/// `World::status_effects` tracker (`display_flags`, the `+0x16E` mirror
+/// `World::battle.status_effects` tracker (`display_flags`, the `+0x16E` mirror
 /// retail's `FUN_80047430` copies into the record). The pause-menu party
 /// panel and the Status page both call this function directly, so test
 /// three fires from a real session whenever a party member carries an

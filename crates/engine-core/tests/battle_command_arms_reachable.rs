@@ -30,7 +30,7 @@ fn build_world() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     // The zeroed records seed HP 0 / no seat, so they go in FIRST: retail's
     // member walk (`FUN_801DB81C`) hands no ring to a member with no HP.
     w.load_party(legaia_save::Party::zeroed(3));
@@ -47,7 +47,7 @@ fn build_world() -> World {
     w.actors[0].move_state.world_x = 300;
     w.actors[0].move_state.world_z = 300;
     w.actors[0].move_state.field_72 = 4096;
-    w.field_camera_azimuth = 0;
+    w.locomotion.camera_azimuth = 0;
 
     use legaia_engine_core::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
@@ -61,8 +61,8 @@ fn build_world() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.toggles.live_gameplay_loop = true;
+    w.battle.player_driven = true;
     w
 }
 
@@ -76,7 +76,7 @@ fn tap(w: &mut World, button: PadButton) {
 }
 
 fn monster_hp_total(w: &World) -> u32 {
-    (w.party_count as usize..w.actors.len())
+    (w.party.party_count as usize..w.actors.len())
         .map(|i| w.actors[i].battle.hp as u32)
         .sum()
 }
@@ -92,7 +92,7 @@ fn enter_battle(w: &mut World) {
         }
     }
     assert_eq!(w.mode, SceneMode::Battle, "walking triggers an encounter");
-    assert!(w.battle_command.is_some(), "the turn opens a command menu");
+    assert!(w.battle.command.is_some(), "the turn opens a command menu");
 }
 
 /// Drive the open command session all the way to `want`, through whichever of
@@ -114,7 +114,7 @@ fn pick_command(w: &mut World, want: legaia_engine_core::battle_input::BattleCom
         _ => AttackMode::Auto,
     };
     for _ in 0..40 {
-        let Some(session) = w.battle_command.as_ref() else {
+        let Some(session) = w.battle.command.as_ref() else {
             return;
         };
         match session.phase {
@@ -165,13 +165,13 @@ fn open_surfaces(w: &World) -> Vec<&'static str> {
     if w.arts_input_active() {
         out.push("arts_input");
     }
-    if w.battle_arts_menu.is_some() {
+    if w.battle.arts_menu.is_some() {
         out.push("arts_menu");
     }
-    if w.battle_spell_menu.is_some() {
+    if w.battle.spell_menu.is_some() {
         out.push("spell_menu");
     }
-    if w.battle_item_menu.is_some() {
+    if w.battle.item_menu.is_some() {
         out.push("item_menu");
     }
     out
@@ -193,7 +193,7 @@ fn arts_command_opens_an_input_session_that_reads_directions() {
         "Arts opens the per-press input session and nothing else"
     );
     assert!(
-        w.battle_command.is_none(),
+        w.battle.command.is_none(),
         "the command session hands the pad over rather than staying up"
     );
     assert_eq!(
@@ -245,7 +245,7 @@ fn magic_and_item_arms_each_open_their_own_surface() {
             "{command:?} opens exactly its own surface"
         );
         assert!(
-            w.battle_command.is_none(),
+            w.battle.command.is_none(),
             "{command:?} hands the pad to its submenu"
         );
         assert_eq!(

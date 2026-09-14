@@ -153,9 +153,10 @@ fn drive_town01_to_map01_with_flags(flags: &[u16]) -> Option<SceneHost> {
 /// Tile of the first overworld portal to `dest` on the currently-loaded map.
 fn find_portal_tile(host: &SceneHost, dest: &str) -> Option<(u8, u8)> {
     host.world
-        .world_map_entity_configs
+        .world_map
+        .entity_configs
         .iter()
-        .zip(host.world.world_map_entity_positions.iter())
+        .zip(host.world.world_map.entity_positions.iter())
         .find_map(|(cfg, &(x, z))| match cfg {
             WorldMapEntityConfig::OverworldPortal { scene_name, .. } if scene_name == dest => {
                 Some(((x >> 7) as u8, (z >> 7) as u8))
@@ -335,12 +336,13 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
         "the staged marker stays clear until P1[3] itself runs"
     );
     assert!(
-        !host.world.scripted_formation_pending,
+        !host.world.encounters.scripted_formation_pending,
         "no forced formation is pre-armed at scene entry"
     );
     let binding = host
         .world
-        .field_boss_stagers
+        .props
+        .boss_stagers
         .get(&RIKUROA_STAGER_SLOT)
         .copied()
         .expect("rikuroa entry installs the P1[3] stager binding");
@@ -350,6 +352,7 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
     // formation install covers every row's monster ids, row 17 included).
     let caruban = host
         .world
+        .tables
         .monster_catalog
         .get(CARUBAN_MONSTER_ID)
         .expect("Caruban stats seeded from the monster archive");
@@ -363,7 +366,7 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
     // covered by `organic_beat_records_disc.rs`). Toggle confirm so the
     // record's inline dialog pages advance.
     host.world.system_flag_set(RIKUROA_ARRIVAL_FLAG);
-    host.world.live_gameplay_loop = true;
+    host.world.toggles.live_gameplay_loop = true;
     host.world
         .seat_player_at_tile(RIKUROA_STAGER_STATION_TILE.0, RIKUROA_STAGER_STATION_TILE.1);
     let cross = legaia_engine_core::input::PadButton::Cross.mask();
@@ -384,7 +387,7 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
         reached_battle,
         "approaching the stager runs P1[3] and its `3E FF 11` flips Field -> Battle"
     );
-    let monster_slot = host.world.party_count.clamp(1, 3) as usize;
+    let monster_slot = host.world.party.party_count.clamp(1, 3) as usize;
     assert_eq!(
         host.world.actors[monster_slot].battle_monster_id,
         Some(CARUBAN_MONSTER_ID),
@@ -406,7 +409,11 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
         "the gate flag 0x142 stays clear during the fight (no victory latch)"
     );
     assert_eq!(
-        host.world.active_formation.as_ref().map(|f| f.formation_id),
+        host.world
+            .battle
+            .active_formation
+            .as_ref()
+            .map(|f| f.formation_id),
         Some(RIKUROA_BOSS_FORMATION_ROW),
         "the battle formation is MAN row 17, not a synthetic boss id"
     );
@@ -415,12 +422,12 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
     // scene-entry script, whose staged-marker arm spawns the post-victory
     // record P2[50] through the C1-gated dispatch - its own `51 42` script
     // bytes SET the gate flag (and `62 89` clears the marker).
-    let party = host.world.party_count as usize;
+    let party = host.world.party.party_count as usize;
     // Auto-resolve the remaining battle frames: with a live (seeded) party
     // the player-driven command menu would otherwise open on Vahn's turn and
     // hold the Done band's menu floor forever - the subject is the flag
     // chain, not the command UI.
-    host.world.battle_player_driven = false;
+    host.world.battle.player_driven = false;
     for a in host.world.actors.iter_mut().skip(party) {
         if a.battle_monster_id.is_some() {
             let delta = i32::from(a.battle.hp);
@@ -441,7 +448,7 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
         // seeded party standing (bar force-synced - see the organic sibling)
         // so the forced win cannot be converted into a party wipe by a
         // monster the test already declared dead.
-        for slot in 0..host.world.party_count as usize {
+        for slot in 0..host.world.party.party_count as usize {
             let a = &mut host.world.actors[slot].battle;
             if a.max_hp > 0 {
                 let max = a.max_hp;
@@ -487,12 +494,13 @@ fn part_c_rikuroa_does_not_rearm_caruban_once_the_gate_flag_is_set() {
     assert!(
         !host
             .world
-            .field_boss_stagers
+            .props
+            .boss_stagers
             .contains_key(&RIKUROA_STAGER_SLOT),
         "with the gate flag set, re-entering rikuroa installs no Caruban stager"
     );
     assert!(
-        !host.world.scripted_formation_pending,
+        !host.world.encounters.scripted_formation_pending,
         "nothing is pre-armed either"
     );
     eprintln!("[ok] Part C: post-victory rikuroa revisit does not re-arm the boss");

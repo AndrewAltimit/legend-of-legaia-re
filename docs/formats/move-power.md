@@ -7,7 +7,7 @@ homing motion, hit reaction, sound cue and spawned effects.
 
 Parser: `legaia_asset::move_power`. CLI: `asset move-power <raw PROT 0898 entry>`.
 Engine consumer: `engine-core::move_power::MovePowerCatalog` pairs the table with
-the id→index map and loads it onto `World::move_power` from PROT 0898; the
+the id→index map and loads it onto `World::tables.move_power` from PROT 0898; the
 monster special-attack damage path rolls each move's `+0` power through the
 arts/physical kernel (see [battle-formulas.md](../subsystems/battle-formulas.md#arts--physical-branch-attacker_slot--7)).
 The catalog also resolves a move id to a full presentation/timing descriptor

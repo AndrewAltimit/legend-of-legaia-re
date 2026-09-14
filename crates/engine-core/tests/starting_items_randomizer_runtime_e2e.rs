@@ -47,7 +47,7 @@ fn seed_bag(inv: &StartingInventory) -> HashMap<u8, u8> {
     let mut world = World::default();
     world.begin_new_game(); // clears the bag, like the retail SC memset
     world.seed_starting_inventory(inv);
-    world.inventory.clone()
+    world.party.inventory.clone()
 }
 
 #[test]

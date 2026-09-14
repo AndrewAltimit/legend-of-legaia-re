@@ -108,7 +108,7 @@ impl World {
             } => {
                 // A confused caster's spell lands on the opposite side.
                 self.confuse_retarget_cast(slot, &mut targets);
-                let def = self.spell_catalog.get(spell_id).cloned();
+                let def = self.tables.spell_catalog.get(spell_id).cloned();
                 let mp = self
                     .actors
                     .get(slot as usize)
@@ -204,10 +204,11 @@ impl World {
         // The move-power table is the *enemy* special-attack table; a party
         // caster's art power comes from the art record instead, and its status
         // byte rides the `ApplyArtStrike` event (`World::fold_battle_event`).
-        if (caster as usize) < self.party_count as usize {
+        if (caster as usize) < self.party.party_count as usize {
             return;
         }
         let Some(selector) = self
+            .tables
             .move_power
             .as_ref()
             .and_then(|c| c.record_for_move_id(move_id))
@@ -217,14 +218,15 @@ impl World {
             return;
         };
         let targets: Vec<u8> = self
-            .battle_hit_fx
+            .battle
+            .hit_fx
             .get(hit_fx_start..)
             .unwrap_or(&[])
             .iter()
             .filter(|fx| !fx.is_heal)
             .map(|fx| fx.target_slot)
             .collect();
-        let party_count = self.party_count;
+        let party_count = self.party.party_count;
         for target in targets {
             // `sb v1,0x21f(...)` - the lingering status visual latches on the
             // selector itself, before and independent of the proc roll.
@@ -238,7 +240,8 @@ impl World {
             self.arm_impact_tint(target as usize, selector);
             let target_is_party = target < party_count;
             let ability_bits = if target_is_party {
-                self.character_ability_bits
+                self.party
+                    .character_ability_bits
                     .get(target as usize)
                     .copied()
                     .unwrap_or(0)
@@ -253,12 +256,13 @@ impl World {
                 continue;
             };
             let applied = self
+                .battle
                 .status_effects
                 .apply_from_enemy_effect(target, proc.effect);
             if let (Some(vm::status_effects::StatusKind::Rot), Some(limb)) =
                 (applied, proc.rot_limb)
             {
-                self.status_effects.set_rot_limb(target, limb);
+                self.battle.status_effects.set_rot_limb(target, limb);
             }
         }
     }
@@ -322,21 +326,22 @@ impl World {
             0x40 | 0x53 => StatusKind::Curse,
             _ => return,
         };
-        if (caster as usize) < self.party_count as usize {
+        if (caster as usize) < self.party.party_count as usize {
             return;
         }
         let attacker_agl = self
-            .battle_accuracy
+            .battle
+            .accuracy
             .get(caster as usize)
             .copied()
             .unwrap_or(0);
-        let pc = self.party_count;
+        let pc = self.party.party_count;
         for &t in targets {
             // Retail's `sltiu v0,s0,0x3` party gate (both arms).
             if t >= pc {
                 continue;
             }
-            let target_agl = self.battle_accuracy.get(t as usize).copied().unwrap_or(0);
+            let target_agl = self.battle.accuracy.get(t as usize).copied().unwrap_or(0);
             // One draw per rolled target, in retail call order.
             let rand = self.next_rng();
             if !agl_status_inflict_roll(attacker_agl, target_agl, rand) {
@@ -347,6 +352,7 @@ impl World {
                 _ => CURSE_GUARD_BIT,
             };
             let bits = self
+                .party
                 .character_ability_bits
                 .get(t as usize)
                 .copied()
@@ -354,7 +360,7 @@ impl World {
             if bits & (guard_bit | MASTER_GUARD_BIT) != 0 {
                 continue;
             }
-            self.status_effects.apply(t, kind);
+            self.battle.status_effects.apply(t, kind);
             if kind == StatusKind::Stone {
                 self.stone_cancels_queued_action(t);
             }
@@ -395,7 +401,7 @@ impl World {
         // refundable.
         actor.battle.action_category = 0;
         if let Some(item_id) = refund {
-            let slot = self.inventory.entry(item_id).or_insert(0);
+            let slot = self.party.inventory.entry(item_id).or_insert(0);
             *slot = slot.saturating_add(1).min(legaia_save::STACK_CAP);
         }
     }
@@ -440,7 +446,7 @@ impl World {
         if targets.len() == 1 && targets[0] == caster {
             return;
         }
-        let pc = self.party_count.max(1);
+        let pc = self.party.party_count.max(1);
         let n = self.actors.len() as u8;
         let opposite_is_monster = targets[0] < pc;
         let opp = if opposite_is_monster { pc..n } else { 0..pc };
@@ -464,7 +470,8 @@ impl World {
 
     /// True if `slot` carries the Confuse status.
     pub(in crate::world) fn actor_is_confused(&self, slot: u8) -> bool {
-        self.status_effects
+        self.battle
+            .status_effects
             .statuses(slot)
             .iter()
             .any(|s| s.kind == vm::status_effects::StatusKind::Confuse)
@@ -518,7 +525,7 @@ impl World {
             .actors
             .len()
             .min(crate::world::battle::cast_band::BATTLE_TABLE_SLOTS);
-        let monster_count = (self.party_count as usize..table)
+        let monster_count = (self.party.party_count as usize..table)
             .filter(|&s| self.actors[s].active)
             .count() as u8;
         let alive: Vec<bool> = (0..table).map(|s| self.actors[s].battle.hp != 0).collect();
@@ -526,7 +533,7 @@ impl World {
             .map(|s| {
                 self.actors[s]
                     .battle_monster_id
-                    .and_then(|id| self.monster_catalog.get(id))
+                    .and_then(|id| self.tables.monster_catalog.get(id))
                     .map(|d| d.swing_class)
                     .unwrap_or(0)
             })
@@ -656,7 +663,7 @@ impl World {
         let target = self.first_living_opponent_of(slot).unwrap_or(slot);
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.action_state = ActionState::Begin.as_byte();
-        let picks = std::mem::take(&mut self.monster_strike_entries);
+        let picks = std::mem::take(&mut self.battle.monster_strike_entries);
         if let Some(a) = self.actors.get_mut(slot as usize) {
             a.battle.active_target = target;
             a.battle.action_category = 3;
@@ -690,10 +697,10 @@ impl World {
             .actors
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| (d.agl, d.action_costs.clone(), d.action_entries.clone()))
             .unwrap_or((0, Vec::new(), Vec::new()));
-        self.monster_strike_entries.clear();
+        self.battle.monster_strike_entries.clear();
         // The gauge retail spends is the actor's **live** `+0x154`, which the
         // round boundary (`BattleRound::boundary`, the port of `FUN_801D88CC`)
         // restores from `+0x156` once per round. A slot whose base `+0x156` was
@@ -710,7 +717,7 @@ impl World {
         } else {
             catalog_agl
         };
-        self.monster_strike_budget = if agl > 0 && !costs.is_empty() {
+        self.battle.monster_strike_budget = if agl > 0 && !costs.is_empty() {
             let stream =
                 vm::battle_action::enemy_action_budget(agl, &costs, &mut || self.next_rng());
             // Retail's budget loop spends the gauge it walked. Only do so on
@@ -732,7 +739,7 @@ impl World {
             // of that entry are the swing's damage). Without the aligned
             // entry list (the synthetic catalog) the stream stays empty and
             // the budget count drives immediate swings instead.
-            self.monster_strike_entries = stream
+            self.battle.monster_strike_entries = stream
                 .iter()
                 .filter_map(|&pick| entries.get(pick as usize).copied())
                 .collect();
@@ -774,7 +781,7 @@ impl World {
     /// PORT: FUN_801E9FD4
     /// REF: FUN_801DABA4, FUN_801DA51C
     pub(in crate::world) fn pick_monster_action(&mut self, slot: u8) -> MonsterAction {
-        let pc = self.party_count.max(1);
+        let pc = self.party.party_count.max(1);
 
         // --- generic decision core ---
         // The monster's own castable global magic ids (parser already drops the
@@ -783,7 +790,7 @@ impl World {
             .actors
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.magic_attacks.clone())
             .unwrap_or_default();
         let mp = self
@@ -801,7 +808,7 @@ impl World {
         let mut target_class;
         if roll != 0 {
             let id = magic[(roll - 1) as usize];
-            if let Some(def) = self.spell_catalog.get(id).cloned()
+            if let Some(def) = self.tables.spell_catalog.get(id).cloned()
                 && mp >= def.mp_cost as u16
             {
                 category = 2;
@@ -856,7 +863,7 @@ impl World {
                     .map(|a| a.battle.spirit_gauge)
                     .unwrap_or(0),
             };
-            let mut ai = std::mem::take(&mut self.monster_ai_state);
+            let mut ai = std::mem::take(&mut self.battle.monster_ai_state);
             let mut spirit_writeback = None;
             if let Some(cast) = crate::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rng()) {
                 category = cast.category;
@@ -880,7 +887,7 @@ impl World {
                 &mut ai,
                 &mut || self.next_rng(),
             );
-            self.monster_ai_state = ai;
+            self.battle.monster_ai_state = ai;
         }
 
         // --- the once-per-pass flee checkpoint (`FUN_801E9FD4` loop bottom,
@@ -891,8 +898,8 @@ impl World {
         // 5 (`sb 5, 0x1de(s4)`). The `lw` gate on the battle-flag word
         // `0x8007BAC0` (roll only when it is zero) passes as unset here, the
         // same reading `roll_battle_escape` documents for its `forced` bit.
-        if !self.battle_monster_flee_attempted {
-            self.battle_monster_flee_attempted = true;
+        if !self.battle.monster_flee_attempted {
+            self.battle.monster_flee_attempted = true;
             if self.monster_flee_roll(slot) {
                 if let Some(a) = self.actors.get_mut(slot as usize) {
                     a.battle.action_category = 5;
@@ -908,7 +915,7 @@ impl World {
         // stream. We only redirect a single living-party target (`class < pc`)
         // to the lowest-HP living member; all-party (8) / monster-band (9) /
         // self targets are left exactly as the faithful path resolved them.
-        if self.smarter_monster_targeting
+        if self.toggles.smarter_monster_targeting
             && target_class < pc
             && let Some(low) = self.lowest_hp_living_party_member(pc)
         {
@@ -947,7 +954,7 @@ impl World {
     /// multi-phase bosses (`0xA8`, `0xB4`, `0xB5`, `0xB6`, `0xA2..=0xA4`, …)
     /// change which spell they cast as it advances. `0` in a normal battle.
     pub fn battle_mode(&self) -> u8 {
-        self.monster_ai_state.mode_flags
+        self.battle.monster_ai_state.mode_flags
     }
 
     /// Advance the battle-mode counter by one - the faithful port of the
@@ -960,7 +967,8 @@ impl World {
     ///
     /// PORT: FUN_801E295C
     pub fn advance_battle_mode(&mut self) {
-        self.monster_ai_state.mode_flags = self.monster_ai_state.mode_flags.wrapping_add(1);
+        self.battle.monster_ai_state.mode_flags =
+            self.battle.monster_ai_state.mode_flags.wrapping_add(1);
     }
 
     /// Target **class** the generic core picks for a monster casting `def`, by
@@ -970,7 +978,7 @@ impl World {
     /// `OneAlly` → the most-weakened living ally (or self); `SelfOnly` → self.
     fn monster_cast_target_class(&mut self, slot: u8, def: &crate::spells::SpellDef) -> u8 {
         use crate::spells::SpellTarget;
-        let pc = self.party_count.max(1);
+        let pc = self.party.party_count.max(1);
         let n = self.actors.len() as u8;
         match def.target {
             SpellTarget::OneEnemy => self.random_living_party_member(pc).unwrap_or(slot),
@@ -997,7 +1005,7 @@ impl World {
     /// living party, `9` = all living monsters, `< party_count` = that single
     /// party slot, otherwise that single monster/self slot.
     fn resolve_class_to_slots(&self, slot: u8, class: u8) -> Vec<u8> {
-        let pc = self.party_count.max(1);
+        let pc = self.party.party_count.max(1);
         let n = self.actors.len() as u8;
         let alive = |i: u8| {
             self.actors
@@ -1044,7 +1052,7 @@ impl World {
     /// Lowest-HP living party member (slot `0..party_count`), ties broken by
     /// the lower slot index. `None` only when the whole party is down.
     /// Consumes no RNG - used solely by the opt-in
-    /// [`World::smarter_monster_targeting`] override, which runs after the
+    /// [`crate::world::WorldToggles::smarter_monster_targeting`] override, which runs after the
     /// faithful random pick has already advanced the RNG stream.
     fn lowest_hp_living_party_member(&self, party_count: u8) -> Option<u8> {
         let pc = party_count.max(1);
@@ -1089,7 +1097,7 @@ impl World {
     /// PORT: FUN_801E7320
     /// REF: FUN_801E295C
     pub(in crate::world) fn resolve_monster_target(&mut self, slot: u8) {
-        let pc = self.party_count.max(1);
+        let pc = self.party.party_count.max(1);
         let mc = (self.actors.len() as u8).saturating_sub(pc).max(1);
         let class = match self.actors.get(slot as usize) {
             Some(a) => a.battle.active_target,

@@ -60,7 +60,7 @@ bank under a "Points Left" label instead of the accessory-passive lines, so
 the pause **Items** screen shows the running total whenever the hand is on
 the card.
 
-Port: `World::point_card` is the bank, with `World::point_card_held` /
+Port: `World::minigames.point_card` is the bank, with `World::point_card_held` /
 `World::credit_point_card` beside it (the accrual + clamp);
 `engine-core::shop::{point_card_credit, apply_point_card}` are the
 arithmetic kernels. `MenuRuntime` runs the accrual on its `ShopConfirm` buy
@@ -158,7 +158,7 @@ The two quantity **sessions** are not yet the hosts' quantity screen
 (the `ShopQuantity` list still drives `ShopSession::set_quantity`).
 The Point Card accrual and its window-31 toast *are* live on both the
 `ShopConfirm` commit and the recipient picker - `MenuRuntime` owns the
-gate and the beat, `World::point_card` the bank. It stays out of
+gate and the beat, `World::minigames.point_card` the bank. It stays out of
 `World::buy_from_shop` on purpose: that kernel is also the randomizer
 runtime oracles' entry point, and retail's own kernel-equivalent (the
 bag add plus the purse store, `FUN_801DB7F4` case 3) carries no accrual
@@ -480,7 +480,7 @@ a lone `0x03`) that the on-screen shop skips - see the sellable-mask note below.
 The shared scanner [`legaia_asset::shop_stock`] (a byte-scan, robust to the
 dialogue-picker jump tables a linear walk desyncs on) locates these records;
 [`legaia_engine_core::shop_catalog`] pairs them with item prices to build a priced
-[`ShopInventory`]. `SceneHost::enter_field_scene` populates `World::scene_shops`
+[`ShopInventory`]. `SceneHost::enter_field_scene` populates `World::shops.scene_shops`
 for the active scene, and `World::scene_shop_session(idx)` hands a host a
 ready-to-open [`ShopSession`].
 
@@ -515,7 +515,7 @@ Opening a merchant in-game is the field VM's own op `0x49` (`STATE_RESUME`).
 On the Idle->arm edge the VM hands the host the instruction bytes
 (`FieldHost::op49_menu_request`); `World::try_arm_field_shop` runs the same
 sellable-mask-gated record validation directly on those bytes, and on a match
-stages a priced `ShopSession` on `World::pending_field_shop` and arms the
+stages a priced `ShopSession` on `World::shops.pending_shop` and arms the
 op-0x49 tristate (so the script stays suspended exactly the way the name-entry
 overlay suspends it). The host drains `World::take_pending_field_shop`, drives
 the buy/sell UI (the engine's `MenuRuntime` shop screens), and calls
@@ -576,8 +576,8 @@ push the held count past `shop::SHOP_HELD_CAP` = 99; the picker side is
 
 ## Relationship to `legaia_save`
 
-Gold is stored at `_DAT_8008459C` in retail RAM and in `World::money` in the
-engine. Inventory is a `HashMap<u8, u8>` (`item_id → count`) in `World::inventory`.
+Gold is stored at `_DAT_8008459C` in retail RAM and in `World::party.money` in the
+engine. Inventory is a `HashMap<u8, u8>` (`item_id → count`) in `World::party.inventory`.
 `SaveFile` / `SaveExt` round-trips both through the `LGSF v2` format.
 
 ## See also

@@ -79,13 +79,16 @@ fn koin1_prize_counter_interact_arms_the_exchange_through_the_runner() {
         legaia_engine_core::scene::SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.enter_field_scene("koin1", 0).expect("enter koin1");
     host.world.install_menu_overlay_tables(&overlay);
-    assert!(!host.world.prize_blocks.is_empty(), "prize table installed");
-    host.world.use_vm_dialogue = true;
+    assert!(
+        !host.world.shops.prize_blocks.is_empty(),
+        "prize table installed"
+    );
+    host.world.toggles.use_vm_dialogue = true;
 
     // The prize counter is the NPC whose interaction record carries the
     // `49 07 00` counter op (P1[5]; keyed by content, not slot order).
     let mut counter_slot = None;
-    for (&slot, inline) in &host.world.field_npc_dialog {
+    for (&slot, inline) in &host.world.npcs.dialog {
         if inline.windows(3).any(|w| w == [0x49, 0x07, 0x00]) {
             counter_slot = Some(slot);
         }
@@ -96,7 +99,7 @@ fn koin1_prize_counter_interact_arms_the_exchange_through_the_runner() {
     // classification: a full 3-row box whose dispatch byte opens the
     // Yes/No menu with the box-geometry animation (`Dispatch::Picker(2)`).
     {
-        let inline = &host.world.field_npc_dialog[&slot];
+        let inline = &host.world.npcs.dialog[&slot];
         let lead = inline.iter().position(|&b| b == 0x1F).unwrap();
         let bx = legaia_mes::pack_box(inline, lead).unwrap();
         assert_eq!(bx.lines.len(), 3, "the Prize Counter greeting is 3 rows");
@@ -118,7 +121,7 @@ fn koin1_prize_counter_interact_arms_the_exchange_through_the_runner() {
         host.world
             .set_pad(if press { 0x4000 } else { 0 } /* PSX Cross */);
         let _ = host.world.tick();
-        if host.world.prize_exchange_armed {
+        if host.world.shops.prize_exchange_armed {
             armed_at = Some(tick);
             break;
         }
@@ -137,7 +140,7 @@ fn koin1_prize_counter_interact_arms_the_exchange_through_the_runner() {
         "the armed session walks real visible rows"
     );
     assert!(
-        host.world.prize_exchange_open,
+        host.world.shops.prize_exchange_open,
         "the op-0x49 park reads Armed while the exchange is up"
     );
 }
@@ -173,7 +176,7 @@ fn the_retail_prize_table_arms_both_counters() {
     let mut w = World::new();
     w.install_menu_overlay_tables(&overlay);
     assert_eq!(
-        w.prize_blocks.len(),
+        w.shops.prize_blocks.len(),
         legaia_engine_core::prize_exchange::PRIZE_BLOCK_COUNT,
         "the extended PROT 899 read reaches the table at 0x15D00"
     );
@@ -185,7 +188,7 @@ fn the_retail_prize_table_arms_both_counters() {
         (&[0x49u8, 0x07, 0x01][..], "balden (block 1)"),
     ] {
         let mut w2 = World::new();
-        w2.prize_blocks = w.prize_blocks.clone();
+        w2.shops.prize_blocks = w.shops.prize_blocks.clone();
         assert!(
             w2.try_arm_prize_exchange(instr),
             "{label}: the counter op must arm a session"

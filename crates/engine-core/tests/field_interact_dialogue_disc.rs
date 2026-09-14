@@ -4,7 +4,7 @@
 //! How a field NPC's line is shown (the mechanism the engine re-grounded to):
 //! each placed actor's dialogue is its own inline interaction-script MES (retail
 //! `actor[+0x90]`), keyed by the actor's **partition-1 placement index**. On
-//! field entry the engine populates [`World::field_npc_dialog`] from that real
+//! field entry the engine populates [`crate::world::FieldNpcState::dialog`] from that real
 //! placement table ([`World::install_field_carriers_from_man`]). A field-VM
 //! field-interact op (`0x3E` with `op0 < 100`) then carries that index as its
 //! `slot` operand, and the host opens `field_npc_dialog[slot]`.
@@ -107,7 +107,7 @@ fn field_interact_slot_opens_real_npc_dialogue() {
         "town01 derives the Rim Elm sparring carrier from its MAN"
     );
 
-    let installed = &world.field_npc_dialog;
+    let installed = &world.npcs.dialog;
     assert_eq!(
         installed.len(),
         expected.len(),
@@ -134,7 +134,8 @@ fn field_interact_slot_opens_real_npc_dialogue() {
     for (idx, inline) in &expected {
         let slot = *idx as u8;
         let prologue = world
-            .field_npc_dialog_prologue
+            .npcs
+            .dialog_prologue
             .get(&slot)
             .unwrap_or_else(|| panic!("field_npc_dialog_prologue[{slot}] must be populated"));
         assert!(
@@ -164,11 +165,11 @@ fn field_interact_slot_opens_real_npc_dialogue() {
     let mut verified = 0usize;
     for (idx, inline) in &expected {
         let slot = *idx as u8;
-        world.current_dialog = None;
+        world.dialog.current = None;
         let _ = world.drain_field_events();
         world.load_field_script(vec![0x3E, 0x05, slot]);
         let _ = world.tick();
-        let req = world.current_dialog.as_ref().unwrap_or_else(|| {
+        let req = world.dialog.current.as_ref().unwrap_or_else(|| {
             panic!("field-interact on NPC slot {slot} must open a dialogue box")
         });
         assert_eq!(
@@ -257,10 +258,10 @@ fn field_interact_slot_mapping_holds_across_field_scene_corpus() {
 
         // install == classify, and a lossless u8 slot space.
         assert_eq!(
-            world.field_npc_dialog.len(),
+            world.npcs.dialog.len(),
             expected.len(),
             "[{name}] install populated {} dialogue slots, classify found {}",
-            world.field_npc_dialog.len(),
+            world.npcs.dialog.len(),
             expected.len(),
         );
         for (idx, inline) in &expected {
@@ -269,7 +270,7 @@ fn field_interact_slot_mapping_holds_across_field_scene_corpus() {
                 "[{name}] NPC placement index {idx} exceeds the u8 field-interact slot space"
             );
             assert_eq!(
-                world.field_npc_dialog.get(&(*idx as u8)),
+                world.npcs.dialog.get(&(*idx as u8)),
                 Some(inline),
                 "[{name}] installed field_npc_dialog[{idx}] must equal the classify inline"
             );
@@ -279,11 +280,11 @@ fn field_interact_slot_mapping_holds_across_field_scene_corpus() {
         world.mode = SceneMode::Field;
         for (idx, inline) in &expected {
             let slot = *idx as u8;
-            world.current_dialog = None;
+            world.dialog.current = None;
             let _ = world.drain_field_events();
             world.load_field_script(vec![0x3E, 0x05, slot]);
             let _ = world.tick();
-            let req = world.current_dialog.as_ref().unwrap_or_else(|| {
+            let req = world.dialog.current.as_ref().unwrap_or_else(|| {
                 panic!("[{name}] field-interact on NPC slot {slot} must open a dialogue box")
             });
             assert_eq!(

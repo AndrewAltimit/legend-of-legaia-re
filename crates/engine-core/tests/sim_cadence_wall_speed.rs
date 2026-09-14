@@ -168,12 +168,15 @@ fn one_sim_tick_is_exactly_one_retail_display_frame() {
     for _ in 0..300 {
         let _ = w.tick();
         assert_eq!(
-            w.field_frame_step, 1,
+            w.clock.display_frame_step, 1,
             "every sim tick maps to a retail display frame"
         );
         fired += 1;
     }
-    assert_eq!(w.field_frames, fired, "300 ticks = 300 retail frames");
+    assert_eq!(
+        w.clock.display_frames, fired,
+        "300 ticks = 300 retail frames"
+    );
     assert_eq!(w.frame, fired, "and the sim-tick counter agrees");
 }
 
@@ -191,12 +194,12 @@ fn gated_and_ungated_consumers_share_one_denominator() {
     // Arm the scripted countdown (`0x4C 0xD3`) with a duration longer than the
     // run so it never disarms: flag word 0, 10 000 frames, no warn threshold.
     w.schedule_timed_flags(0, 10_000, 0);
-    let start = w.escape_timer.remaining;
+    let start = w.battle.escape_timer.remaining;
 
     let ticks = RETAIL_FPS * 3;
     let (_, dz) = hold(&mut w, input::PadButton::Up.mask(), ticks);
 
-    let gated_frames = start - w.escape_timer.remaining;
+    let gated_frames = start - w.battle.escape_timer.remaining;
     let ungated_frames = dz / 8; // locomotion committed `base_step` per frame
 
     assert_eq!(
@@ -218,7 +221,7 @@ fn gated_and_ungated_consumers_share_one_denominator() {
 
 /// Cadence invariance, the property that lets the engine run the controller
 /// once per vsync where retail runs it once per game tick: moving
-/// `World::frame_step` (retail `DAT_1F800393`'s resolved value, the field
+/// `World::clock.frame_step` (retail `DAT_1F800393`'s resolved value, the field
 /// floor being 2) must not move the player's wall speed.
 ///
 /// The engine's locomotion reads `move_ramp_ratio`, not `frame_step`, so this
@@ -228,8 +231,8 @@ fn gated_and_ungated_consumers_share_one_denominator() {
 fn the_walk_speed_is_invariant_under_the_retail_cadence() {
     for cadence in 1..=4u8 {
         let mut w = walking_world();
-        w.frame_step = cadence;
-        w.frame_step_floor = cadence;
+        w.clock.frame_step = cadence;
+        w.clock.frame_step_floor = cadence;
         let (_, dz) = hold(&mut w, input::PadButton::Up.mask(), RETAIL_FPS);
         assert_eq!(
             dz, RETAIL_WALK_UNITS_PER_SEC,

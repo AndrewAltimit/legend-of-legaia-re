@@ -87,7 +87,8 @@ fn frame(w: &mut World, pad: u16) {
 fn visited_after_three_kingdoms() -> Vec<VisitedMap> {
     let mut w = overworld();
     for (i, base) in KINGDOM_BASES.iter().enumerate() {
-        w.world_map_ctrl
+        w.world_map
+            .ctrl
             .as_mut()
             .expect("world-map controller")
             .scene_base = *base;
@@ -96,7 +97,8 @@ fn visited_after_three_kingdoms() -> Vec<VisitedMap> {
             frame(&mut w, 0);
         }
     }
-    w.world_map_ctrl
+    w.world_map
+        .ctrl
         .as_ref()
         .expect("controller")
         .panels
@@ -282,12 +284,13 @@ fn the_world_hand_off_installs_riremito_and_warps_to_the_frozen_tile() {
     // The end-to-end path a player takes: the sub-list picker's row-1 confirm
     // is retail's state-3 hand-off, which the port binds to the travel art.
     let mut w = overworld();
-    w.world_map_ctrl.as_mut().expect("controller").debug_enabled = true;
+    w.world_map.ctrl.as_mut().expect("controller").debug_enabled = true;
     for _ in 0..4 {
         frame(&mut w, 0);
     }
     let frozen: VisitedMap = *w
-        .world_map_ctrl
+        .world_map
+        .ctrl
         .as_ref()
         .expect("controller")
         .panels
@@ -298,7 +301,7 @@ fn the_world_hand_off_installs_riremito_and_warps_to_the_frozen_tile() {
     frame(&mut w, PadButton::Square.mask());
     frame(&mut w, 0);
     assert_eq!(
-        w.world_map_ctrl.as_ref().expect("controller").panels.kind,
+        w.world_map.ctrl.as_ref().expect("controller").panels.kind,
         Some(PanelActorKind::SubList),
         "Square opens the sub-list picker"
     );
@@ -313,13 +316,14 @@ fn the_world_hand_off_installs_riremito_and_warps_to_the_frozen_tile() {
     for _ in 0..900 {
         frame(&mut w, 0);
         if let Some(PanelActorKind::TravelArt(art)) =
-            w.world_map_ctrl.as_ref().expect("controller").panels.kind
+            w.world_map.ctrl.as_ref().expect("controller").panels.kind
         {
             installed_art = Some(art);
         }
         if installed_art.is_some()
             && !w
-                .world_map_ctrl
+                .world_map
+                .ctrl
                 .as_ref()
                 .expect("controller")
                 .panels

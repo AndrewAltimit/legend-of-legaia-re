@@ -10,11 +10,11 @@ use vm::battle_action::BattleActionHost;
 /// player actor in slot 0 placed at its start-tile centre.
 /// Run the live loop until the armed cast's owed outcome has folded - the
 /// band's `0x29` exit for a non-summon cast, the stager's strike for a Seru
-/// one (`World::pending_cast` goes `None`). A world with nothing armed
+/// one (`World::casting.pending_cast` goes `None`). A world with nothing armed
 /// returns at once.
 fn tick_until_cast_folds(w: &mut World) {
     for _ in 0..0x400 {
-        if w.pending_cast.is_none() {
+        if w.casting.pending_cast.is_none() {
             return;
         }
         w.set_pad(0);
@@ -33,8 +33,8 @@ fn tile_board_world() -> World {
     w.actors[0].active = true;
     let cells = vec![1, 1, 1, 1, crate::tile_board::CELL_WALL, 1, 1, 1, 1];
     let board = crate::tile_board::TileBoard::new(3, 3, 0, 0, cells);
-    w.tile_board = Some(board);
-    let (x, z) = w.tile_board.as_ref().unwrap().player_world();
+    w.board.grid = Some(board);
+    let (x, z) = w.board.grid.as_ref().unwrap().player_world();
     w.actors[0].move_state.world_x = x as i16;
     w.actors[0].move_state.world_z = z as i16;
     w
@@ -132,10 +132,13 @@ fn full_test_catalog() -> crate::items::ItemCatalog {
 #[cfg(test)]
 fn offensive_item_world(monster_hp: u16, monster_id: u16) -> World {
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
-    world.battle_player_driven = true;
+    world.battle.player_driven = true;
     world.mode = SceneMode::Battle;
     world.set_item_catalog(full_test_catalog());
     world.actors[0].battle.max_hp = 200;
@@ -157,12 +160,15 @@ fn capture_world(party_count: u8) -> World {
     use crate::seru_learning::{SeruDef, SeruRegistry};
 
     let mut world = World {
-        party_count,
+        party: crate::world::PartyState {
+            party_count,
+            ..Default::default()
+        },
         ..World::default()
     };
     // Zeroed roster (empty spell lists) so `build_battle_spell_session`
     // resolves a member per party slot; learned spells come from the log.
-    world.roster = legaia_save::Party::zeroed(party_count.max(1) as usize);
+    world.party.roster = legaia_save::Party::zeroed(party_count.max(1) as usize);
     let mut reg = SeruRegistry::new();
     reg.insert(SeruDef {
         id: 1,
@@ -199,12 +205,15 @@ fn capture_world(party_count: u8) -> World {
 fn summon_xp_world(enemy_hp: u16, enemy_max_hp: u16) -> World {
     use legaia_save::Party;
     let mut world = World {
-        party_count: 1,
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
         ..World::default()
     };
     world.mode = SceneMode::Battle;
-    world.roster = Party::zeroed(1);
-    let rec = &mut world.roster.members[0];
+    world.party.roster = Party::zeroed(1);
+    let rec = &mut world.party.roster.members[0];
     let mut list = rec.spell_list();
     list.count = 1;
     list.ids[0] = 0x81;
@@ -219,7 +228,7 @@ fn summon_xp_world(enemy_hp: u16, enemy_max_hp: u16) -> World {
     world.actors[1].battle.max_hp = enemy_max_hp;
     world.actors[1].battle.hp = enemy_hp;
     world.actors[1].battle.liveness = 1;
-    world.battle_defense[1] = 0;
+    world.battle.defense[1] = 0;
     world
 }
 

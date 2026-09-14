@@ -17,6 +17,23 @@
 //!
 //! Engines that want a different layout - say, ECS storage - should
 //! implement the VM `Host` traits themselves; this is the default.
+//!
+//! ## Layout
+//!
+//! [`World`] itself keeps the VM contexts, the actor table and the
+//! scene-flow latches as direct fields. Everything else is grouped one
+//! plain data struct per subsystem, each in its own `world/*_state.rs`
+//! file and reached as `world.<group>.<field>`: [`PartyState`],
+//! [`BattleState`], [`EncounterState`], [`SeruState`], [`CastFxState`],
+//! [`FieldTerrain`], [`FieldLocomotion`], [`FieldPropState`],
+//! [`FieldNpcState`], [`FieldVmState`], [`DialogState`], [`CutsceneState`],
+//! [`WorldMapState`], [`FieldCarrierState`], [`MinigameState`],
+//! [`ShopState`], [`MenuState`], [`TileBoardState`], [`CameraRig`],
+//! [`ScreenFxState`], [`AmbientFxState`], [`AudioState`],
+//! [`MoveVmGlobals`], [`FrameClock`], [`DiscTables`], [`StoryFlagState`]
+//! and [`WorldToggles`]. The groups carry no methods of their own - every
+//! `impl World` block reads and writes them directly, so a borrow of one
+//! group never conflicts with another.
 //! REF: FUN_8001E890, FUN_80021DF4, FUN_80026B4C, FUN_8003CA38, FUN_8003CE08, FUN_800520F0
 //! REF: FUN_801D65D8, FUN_801D77F4, FUN_801D8DE8, FUN_801DE840, FUN_801DFDF8
 //!
@@ -51,13 +68,67 @@ use vm_hosts::{
     MoveVmHostImpl, WorldMapEntityHostImpl,
 };
 
+mod ambient_fx_state;
+mod audio_state;
+mod battle_state;
+mod camera_rig;
+mod cast_fx_state;
 mod config;
+mod cutscene_state;
+mod dialog_state;
+mod disc_tables;
+mod encounter_state;
+mod field_carrier_state;
+mod field_locomotion;
+mod field_npc_state;
+mod field_prop_state;
+mod field_terrain;
+mod field_vm_state;
+mod frame_clock;
+mod menu_state;
+mod minigame_state;
+mod move_vm_globals;
+mod party_state;
+mod screen_fx_state;
+mod seru_state;
+mod shop_state;
 mod state;
+mod story_flag_state;
+mod tile_board_state;
 mod types;
+mod world_map_state;
+mod world_toggles;
 
+pub use ambient_fx_state::AmbientFxState;
+pub use audio_state::AudioState;
+pub use battle_state::BattleState;
+pub use camera_rig::CameraRig;
+pub use cast_fx_state::CastFxState;
 pub use config::*;
+pub use cutscene_state::CutsceneState;
+pub use dialog_state::DialogState;
+pub use disc_tables::DiscTables;
+pub use encounter_state::EncounterState;
+pub use field_carrier_state::FieldCarrierState;
+pub use field_locomotion::FieldLocomotion;
+pub use field_npc_state::FieldNpcState;
+pub use field_prop_state::FieldPropState;
+pub use field_terrain::FieldTerrain;
+pub use field_vm_state::FieldVmState;
+pub use frame_clock::FrameClock;
+pub use menu_state::MenuState;
+pub use minigame_state::MinigameState;
+pub use move_vm_globals::MoveVmGlobals;
+pub use party_state::PartyState;
+pub use screen_fx_state::ScreenFxState;
+pub use seru_state::SeruState;
+pub use shop_state::ShopState;
 pub use state::*;
+pub use story_flag_state::StoryFlagState;
+pub use tile_board_state::TileBoardState;
 pub use types::*;
+pub use world_map_state::WorldMapState;
+pub use world_toggles::WorldToggles;
 
 mod actors;
 pub mod ambient;

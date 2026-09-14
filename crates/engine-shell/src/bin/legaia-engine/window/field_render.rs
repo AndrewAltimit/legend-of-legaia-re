@@ -58,7 +58,7 @@ impl FieldFloorWave {
 
     /// Fold the world's live ladder into the four lists' Y translations.
     ///
-    /// `world_lut` is `World::field_floor_height_lut` - the runtime
+    /// `world_lut` is `World::terrain.floor_height_lut` - the runtime
     /// **scratchpad** frame, the negation of the MAN frame held here.
     /// Returns the number of draw matrices moved this frame.
     pub(super) fn apply(
@@ -154,7 +154,7 @@ impl PlayWindowApp {
     /// at spawn (`0x4C 0x35`) and its resumable body clears the hold bit when
     /// the touch / interact dispatch runs the record through the field VM. The
     /// **live animation bank lives on the world**
-    /// (`World::field_prop_bank`, installed at field entry and ticked by
+    /// (`World::props.bank`, installed at field entry and ticked by
     /// `World::tick_prop_interactions`) - the draw pass here only reads each
     /// prop's current frame.
     ///
@@ -195,7 +195,7 @@ impl PlayWindowApp {
             &self.session.host.world.hidden_object_records(),
         );
 
-        let bank = &self.session.host.world.field_prop_bank;
+        let bank = &self.session.host.world.props.bank;
         let mut props = Vec::new();
         for d in &draws {
             if d.anim_id == 0 || !bank.props.contains_key(&d.anchor) {
@@ -431,7 +431,8 @@ impl PlayWindowApp {
                 .session
                 .host
                 .world
-                .field_prop_bank
+                .props
+                .bank
                 .frame(p.anchor)
                 .unwrap_or(0);
             if frame == 0 {
@@ -780,8 +781,8 @@ impl PlayWindowApp {
 
     /// Advance the world-map water/CLUT-cell animation one sim tick, in
     /// retail vsync units: only the sim ticks that map to a retail vsync
-    /// (`World::field_frame_step`) advance the clock, and a retail *game
-    /// tick* lands every `World::frame_step` vsyncs (the adaptive
+    /// (`World::clock.display_frame_step`) advance the clock, and a retail *game
+    /// tick* lands every `World::clock.frame_step` vsyncs (the adaptive
     /// `DAT_1F800393` factor `FUN_80016B6C` writes - `3` on the overworld,
     /// `2` in towns).
     ///
@@ -811,11 +812,11 @@ impl PlayWindowApp {
             return;
         }
         // Only the sim ticks that map to a retail vsync advance the clock
-        // (the 100 Hz sim carries ~60 vsyncs/s; see `World::field_frame_step`).
-        if self.session.host.world.field_frame_step == 0 {
+        // (the 100 Hz sim carries ~60 vsyncs/s; see `World::clock.display_frame_step`).
+        if self.session.host.world.clock.display_frame_step == 0 {
             return;
         }
-        let dt = u32::from(self.session.host.world.frame_step.max(1));
+        let dt = u32::from(self.session.host.world.clock.frame_step.max(1));
         // First pass under the animation borrow: bank the game tick and
         // collect the fired copies; second pass applies them to the VRAM.
         let mut copies: Vec<(u16, u16, u16, u16)> = Vec::new();
@@ -912,9 +913,9 @@ impl PlayWindowApp {
         if self.session.host.world.mode == SceneMode::Battle {
             return;
         }
-        if self.session.host.world.clut_fx.is_empty()
-            && self.session.host.world.script_vram_moves.is_empty()
-            && self.session.host.world.ambient_fx.is_empty()
+        if self.session.host.world.ambient.clut_fx.is_empty()
+            && self.session.host.world.ambient.script_vram_moves.is_empty()
+            && self.session.host.world.ambient.fx.is_empty()
         {
             return;
         }
@@ -1162,7 +1163,7 @@ impl PlayWindowApp {
             return;
         }
         let world = &mut self.session.host.world;
-        if world.mode != SceneMode::Field || world.tile_board.is_some() || world.tile_board_armed {
+        if world.mode != SceneMode::Field || world.board.grid.is_some() || world.board.armed {
             return;
         }
         let Some(pslot) = world.player_actor_slot else {
@@ -1189,7 +1190,7 @@ impl PlayWindowApp {
             log::info!(
                 "play-window: demo tile board installed at tile ({origin_x},{origin_z}) \
                  ({} draw-list cells)",
-                world.tile_board_draw_list.len()
+                world.board.draw_list.len()
             );
         }
     }

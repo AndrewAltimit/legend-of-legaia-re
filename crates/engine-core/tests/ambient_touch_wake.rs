@@ -25,7 +25,7 @@ use legaia_engine_core::input::PadButton;
 use legaia_engine_core::world::{FieldNpcAmbient, SceneMode, World};
 use legaia_engine_vm::ambient_motion::AmbientMotion;
 
-/// `World::field_collision_grid` is a `0x80 x 0x80` byte grid; the
+/// `World::terrain.collision_grid` is a `0x80 x 0x80` byte grid; the
 /// crate-private constants are mirrored here because this is an integration
 /// test.
 const GRID_LEN: usize = 0x80 * 0x80;
@@ -48,13 +48,13 @@ fn world_with_npc_at(npc: (i16, i16)) -> World {
     world.install_field_player(0);
     world.actors[0].move_state.world_x = 320;
     world.actors[0].move_state.world_z = 320;
-    world.field_collision_grid = vec![0u8; GRID_LEN];
+    world.terrain.collision_grid = vec![0u8; GRID_LEN];
 
     let mut vm = AmbientMotion::new(1, 0x000).with_position(npc.0, npc.1);
     vm.default_move = DEFAULT_MOVE;
-    world.field_npc_positions.insert(1, npc);
-    world.field_npc_headings.insert(1, 0);
-    world.field_npc_ambient.insert(
+    world.npcs.positions.insert(1, npc);
+    world.npcs.headings.insert(1, 0);
+    world.npcs.ambient.insert(
         1,
         FieldNpcAmbient {
             variants: vec![(0xFFFF, PROGRAM.to_vec())],
@@ -78,11 +78,11 @@ fn run(world: &mut World, frames: usize) {
 }
 
 fn npc_heading(world: &World) -> u16 {
-    world.field_npc_ambient[&1].vm.heading
+    world.npcs.ambient[&1].vm.heading
 }
 
 fn npc_pc(world: &World) -> u16 {
-    world.field_npc_ambient[&1].vm.pc
+    world.npcs.ambient[&1].vm.pc
 }
 
 /// Baseline: an NPC the player never reaches stays in its wait. Without this
@@ -117,7 +117,7 @@ fn walking_into_an_npc_ends_its_ambient_wait() {
         "and the op behind the wait must run - the NPC turns on being bumped"
     );
     assert_eq!(
-        world.field_npc_ambient[&1].vm.pending_touch, None,
+        world.npcs.ambient[&1].vm.pending_touch, None,
         "the wait arm consumes the mailbox (retail's 0xFF sentinel store)"
     );
 }
@@ -128,7 +128,7 @@ fn walking_into_an_npc_ends_its_ambient_wait() {
 #[test]
 fn an_npc_with_no_default_move_record_is_not_woken_by_a_bump() {
     let mut world = world_with_npc_at((320, 350));
-    world.field_npc_ambient.get_mut(&1).unwrap().vm.default_move =
+    world.npcs.ambient.get_mut(&1).unwrap().vm.default_move =
         [legaia_engine_vm::ambient_motion::DEFAULT_MOVE_UNSET; 2];
     run(&mut world, 40);
     assert_eq!(

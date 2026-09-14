@@ -51,7 +51,7 @@ impl BattleSession {
             // Spirit press - adds +5 AP to the active party slot's gauge,
             // idempotent within a turn (the gauge tracks the spirit-pressed
             // bit internally).
-            if let Some(gauge) = world.ap_gauges.get_mut(active as usize)
+            if let Some(gauge) = world.battle.ap_gauges.get_mut(active as usize)
                 && gauge.charge_spirit()
             {
                 out.push(SessionEvent::SpiritCharged { slot: active });
@@ -60,9 +60,9 @@ impl BattleSession {
         }
         if input.circle {
             // Pop the most recent command. Refunds AP automatically.
-            let mut ap = world.ap_gauges[active as usize];
+            let mut ap = world.battle.ap_gauges[active as usize];
             if let Some(cmd) = self.runner.pop_command(&mut ap) {
-                world.ap_gauges[active as usize] = ap;
+                world.battle.ap_gauges[active as usize] = ap;
                 out.push(SessionEvent::CommandPopped {
                     slot: active,
                     command: cmd,
@@ -74,10 +74,10 @@ impl BattleSession {
         // Direction commands → admit one Command per direction press.
         let cmd = input_to_command(input);
         if let Some(cmd) = cmd {
-            let mut ap = world.ap_gauges[active as usize];
+            let mut ap = world.battle.ap_gauges[active as usize];
             match self.runner.push_command(&mut ap, cmd) {
                 Ok(()) => {
-                    world.ap_gauges[active as usize] = ap;
+                    world.battle.ap_gauges[active as usize] = ap;
                     out.push(SessionEvent::CommandPushed {
                         slot: active,
                         command: cmd,
@@ -125,16 +125,16 @@ impl BattleSession {
         // arm, 1 = Right arm, 2 = Low attack) - the engine's reading of the
         // retail `+0x16E` limb-disable bits (the retail consumer lives in the
         // undumped command-menu controller; see engine-vm::status_effects).
-        if let Some(limb) = world.status_effects.rot_limb(active) {
+        if let Some(limb) = world.battle.status_effects.rot_limb(active) {
             let blocked = [1u8, 2, 3][limb.min(2) as usize];
             if cmd.as_byte() == blocked {
                 return false;
             }
         }
-        let mut ap = world.ap_gauges[active as usize];
+        let mut ap = world.battle.ap_gauges[active as usize];
         let admit = self.runner.push_command(&mut ap, cmd).is_ok();
         if admit {
-            world.ap_gauges[active as usize] = ap;
+            world.battle.ap_gauges[active as usize] = ap;
         }
         admit
     }
@@ -143,10 +143,10 @@ impl BattleSession {
     /// [`BattleRunner::push_chained_art`].
     pub fn push_chained_art(&mut self, world: &mut World, art: ActionConstant) -> bool {
         let active = self.runner.active_party_slot();
-        let mut ap = world.ap_gauges[active as usize];
+        let mut ap = world.battle.ap_gauges[active as usize];
         let admit = self.runner.push_chained_art(&mut ap, art).is_ok();
         if admit {
-            world.ap_gauges[active as usize] = ap;
+            world.battle.ap_gauges[active as usize] = ap;
         }
         admit
     }

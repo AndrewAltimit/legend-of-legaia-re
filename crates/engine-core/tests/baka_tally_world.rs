@@ -49,7 +49,11 @@ fn press(world: &mut World, mask: u16) {
 /// unbeatable exchange win, until two rounds are taken.
 fn play_to_player_win(world: &mut World) {
     for _ in 0..100_000 {
-        let f = world.baka_fighter.as_ref().expect("fight installed");
+        let f = world
+            .minigames
+            .baka_fighter
+            .as_ref()
+            .expect("fight installed");
         if f.match_over() {
             return;
         }
@@ -72,7 +76,11 @@ fn the_prize_arrives_over_frames_not_in_one_step() {
     start(&mut world);
     play_to_player_win(&mut world);
 
-    let f = world.baka_fighter.as_ref().expect("fight installed");
+    let f = world
+        .minigames
+        .baka_fighter
+        .as_ref()
+        .expect("fight installed");
     assert_eq!(f.winner(), Some(0), "player takes the match");
     assert!(matches!(f.phase(), MatchPhase::MatchOver(0)));
     assert!(f.tally().is_some(), "a won match installs the tally screen");
@@ -81,20 +89,20 @@ fn the_prize_arrives_over_frames_not_in_one_step() {
     // result screen is up. If the world tick did not run the tally, the
     // accumulator would still be empty here and only fill on exit.
     assert_eq!(
-        world.minigame_winnings, 0,
+        world.minigames.winnings, 0,
         "nothing paid before the tally runs"
     );
     // The row must fade in before its first step, so an early frame pays 0.
     step(&mut world, 0);
     assert_eq!(
-        world.minigame_winnings, 0,
+        world.minigames.winnings, 0,
         "the row stalls while it fades in"
     );
 
     for _ in 0..TALLY_FADE_GATE {
         step(&mut world, 0);
     }
-    let partway = world.minigame_winnings;
+    let partway = world.minigames.winnings;
     assert!(partway > 0, "the tally has started paying: {partway}");
     assert!(
         partway < PRIZE,
@@ -106,24 +114,32 @@ fn the_prize_arrives_over_frames_not_in_one_step() {
         step(&mut world, 0);
     }
     assert_eq!(
-        world.minigame_winnings, PRIZE,
+        world.minigames.winnings, PRIZE,
         "the whole prize reaches the mode-24 accumulator"
     );
     assert_eq!(
-        world.baka_fighter.as_ref().unwrap().tally_gold_remaining(),
+        world
+            .minigames
+            .baka_fighter
+            .as_ref()
+            .unwrap()
+            .tally_gold_remaining(),
         0,
         "nothing left owed"
     );
     assert_eq!(
-        world.casino_coins, 0,
+        world.minigames.casino_coins, 0,
         "the coin bank only takes it on the exit warp"
     );
 
     // Leaving after a finished tally banks it once, and must not double-pay.
     step(&mut world, PadButton::Cross.mask());
-    assert!(world.baka_fighter.is_none(), "Cross leaves the duel");
+    assert!(
+        world.minigames.baka_fighter.is_none(),
+        "Cross leaves the duel"
+    );
     assert_eq!(
-        world.casino_coins, PRIZE,
+        world.minigames.casino_coins, PRIZE,
         "exit does not pay the prize twice"
     );
 }
@@ -137,13 +153,13 @@ fn a_face_button_snaps_the_tally_to_its_end_state() {
     for _ in 0..=TALLY_FADE_GATE {
         step(&mut world, 0);
     }
-    assert!(world.minigame_winnings < PRIZE, "tally still running");
+    assert!(world.minigames.winnings < PRIZE, "tally still running");
 
     // The retail fast-forward latch (`_DAT_8007b874 & 0xf0` → `DAT_801dbf00`)
     // moves the whole remainder in one step.
     step(&mut world, PadButton::Square.mask());
     assert_eq!(
-        world.minigame_winnings, PRIZE,
+        world.minigames.winnings, PRIZE,
         "a face button snaps the whole remainder into the accumulator"
     );
 }
@@ -158,13 +174,13 @@ fn leaving_mid_tally_still_banks_exactly_the_prize() {
     for _ in 0..(TALLY_FADE_GATE + 3) {
         step(&mut world, 0);
     }
-    let partway = world.minigame_winnings;
+    let partway = world.minigames.winnings;
     assert!(partway > 0 && partway < PRIZE, "mid-tally");
 
     step(&mut world, PadButton::Cross.mask());
-    assert!(world.baka_fighter.is_none(), "duel left");
+    assert!(world.minigames.baka_fighter.is_none(), "duel left");
     assert_eq!(
-        world.casino_coins, PRIZE,
+        world.minigames.casino_coins, PRIZE,
         "the undrained remainder is banked on exit - total is the prize"
     );
 }
@@ -179,12 +195,18 @@ fn a_lost_match_installs_no_tally_and_pays_nothing() {
     let fight = BakaFight::new(cfg(0, 1, 0), cfg(1, 4000, PRIZE), [0, 0], 0xBAA5EED);
     world.enter_baka_fighter(fight);
     for _ in 0..100_000 {
-        if world.baka_fighter.as_ref().expect("installed").match_over() {
+        if world
+            .minigames
+            .baka_fighter
+            .as_ref()
+            .expect("installed")
+            .match_over()
+        {
             break;
         }
         press(&mut world, PadButton::Left.mask());
     }
-    let f = world.baka_fighter.as_ref().expect("installed");
+    let f = world.minigames.baka_fighter.as_ref().expect("installed");
     assert_eq!(f.winner(), Some(1), "the CPU takes the match");
     assert!(f.tally().is_none(), "a beaten player gets no tally");
 
@@ -192,9 +214,9 @@ fn a_lost_match_installs_no_tally_and_pays_nothing() {
         step(&mut world, 0);
     }
     assert_eq!(
-        world.minigame_winnings, 0,
+        world.minigames.winnings, 0,
         "a loss pays nothing while on screen"
     );
     step(&mut world, PadButton::Cross.mask());
-    assert_eq!(world.casino_coins, 0, "and nothing on exit");
+    assert_eq!(world.minigames.casino_coins, 0, "and nothing on exit");
 }

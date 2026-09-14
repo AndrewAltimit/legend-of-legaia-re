@@ -15,7 +15,7 @@ use super::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlagBank {
     /// The 32-bit scratchpad story-flag word `_DAT_1F800394` (the engine's
-    /// [`crate::world::World::story_flags`]); reached by opcodes `0x2E`
+    /// [`crate::world::StoryFlagState::story_flags`]); reached by opcodes `0x2E`
     /// (`SET`) / `0x2F` (`CLEAR`). Flag numbers are bit indices `0..31`.
     Scratchpad,
     /// The wide SYSTEM-flag bitmap reached by the `0x50..=0x7F` op family

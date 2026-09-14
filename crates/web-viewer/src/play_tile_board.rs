@@ -67,7 +67,7 @@ impl LegaiaRuntime {
             return false;
         };
         let world = &mut host.world;
-        if world.mode != SceneMode::Field || world.tile_board.is_some() || world.tile_board_armed {
+        if world.mode != SceneMode::Field || world.board.grid.is_some() || world.board.armed {
             return false;
         }
         let Some(pslot) = world.player_actor_slot else {

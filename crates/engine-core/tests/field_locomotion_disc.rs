@@ -109,7 +109,7 @@ fn verify_scene(host: &mut SceneHost, scene: &str) {
 
     // The base walkable grid is loaded from the scene's `.MAP` file at
     // entry (before any tick). Every field/town scene carries one.
-    let base_walls = wall_byte_count(&host.world.field_collision_grid);
+    let base_walls = wall_byte_count(&host.world.terrain.collision_grid);
     eprintln!("[{scene}] base collision-grid wall tiles (from .MAP): {base_walls}");
     assert!(
         base_walls > 0,
@@ -118,7 +118,7 @@ fn verify_scene(host: &mut SceneHost, scene: &str) {
 
     // Pick a known-walkable spawn from the loaded grid so the axis checks
     // have room to move without clipping a real wall.
-    let (sx, sz) = open_spawn(&host.world.field_collision_grid);
+    let (sx, sz) = open_spawn(&host.world.terrain.collision_grid);
 
     // Whether this scene runs a real MAN-resolved scene-entry system
     // script (kingdom-bundle scenes) rather than falling back to event-
@@ -139,7 +139,7 @@ fn verify_scene(host: &mut SceneHost, scene: &str) {
     }
     eprintln!(
         "[{scene}] collision-grid wall tiles after prescript: {} (man_entry={has_man_entry}, distinct field PCs visited={})",
-        wall_byte_count(&host.world.field_collision_grid),
+        wall_byte_count(&host.world.terrain.collision_grid),
         visited.len()
     );
     if has_man_entry {
@@ -179,7 +179,7 @@ fn verify_scene(host: &mut SceneHost, scene: &str) {
     // Walls work: place the player one tile west of a real base wall and
     // walk hard into it. In open space 40 frames travels ~320 units; the
     // base wall (loaded from the .MAP) must stop the player well short.
-    if let Some((wx, wz)) = wall_to_east(&host.world.field_collision_grid) {
+    if let Some((wx, wz)) = wall_to_east(&host.world.terrain.collision_grid) {
         host.world.actors[0].move_state.world_x = wx;
         host.world.actors[0].move_state.world_z = wz;
         let into_wall = walk(host, PadButton::Right, 40);

@@ -45,7 +45,7 @@ const EXPECTED_VSYNCS: i32 = 120;
 fn cadence_world(frame_step: u8) -> World {
     let mut w = World::new();
     w.mode = SceneMode::Title;
-    w.frame_step = frame_step;
+    w.clock.frame_step = frame_step;
     w.actors[0].active = true;
     w.actors[0].set_physics_dispatch(0x00);
     w.actors[0].physics.accel = [64, 0, 0];
@@ -154,7 +154,7 @@ fn dispatcher_timers_drain_in_vsyncs_not_ticks() {
 
 /// Install a one-variant ambient channel on `slot` running `code`.
 fn with_ambient(w: &mut World, slot: u8, code: Vec<u8>, retail_heading: u16) {
-    w.field_npc_ambient.insert(
+    w.npcs.ambient.insert(
         slot,
         FieldNpcAmbient {
             walks: false,
@@ -178,7 +178,7 @@ fn ambient_ramp_turns_a_standing_npc_and_reaches_the_render_heading() {
     }
     let expected = (0x400u16.wrapping_add(0x800)) & 0x0FFF;
     assert_eq!(
-        w.field_npc_headings.get(&5).copied(),
+        w.npcs.headings.get(&5).copied(),
         Some(expected as i16),
         "the ambient turn's endpoint is mirrored into the render heading"
     );
@@ -193,12 +193,12 @@ fn an_idle_ambient_channel_does_not_clobber_a_posed_heading() {
     // A long wait: the channel ticks every frame but never moves `+0x26`.
     with_ambient(&mut w, 5, vec![0x05, 0x7F], 0x000);
     // Another writer poses the NPC (an interact bearing).
-    w.field_npc_headings.insert(5, 0x0A00);
+    w.npcs.headings.insert(5, 0x0A00);
     for _ in 0..16 {
         w.tick_field_npc_ambient();
     }
     assert_eq!(
-        w.field_npc_headings.get(&5).copied(),
+        w.npcs.headings.get(&5).copied(),
         Some(0x0A00),
         "a waiting ambient channel must not re-stamp its stale heading"
     );
@@ -214,31 +214,31 @@ fn ambient_ops_respond_to_cadence_the_way_retail_does() {
     for cadence in [1u8, 2, 4] {
         // 0x04: 8 stepping ticks regardless of the scalar.
         let mut w = World::new();
-        w.frame_step = cadence;
+        w.clock.frame_step = cadence;
         with_ambient(&mut w, 1, vec![0x04, 0x02, 0x08], 0x000);
         for _ in 0..8 {
             w.tick_field_npc_ambient();
         }
         assert_eq!(
-            w.field_npc_ambient[&1].vm.pc, 0,
+            w.npcs.ambient[&1].vm.pc, 0,
             "0x04 is still mid-leg after 8 ticks at cadence {cadence}"
         );
         w.tick_field_npc_ambient();
         assert_eq!(
-            w.field_npc_ambient[&1].vm.pc, 3,
+            w.npcs.ambient[&1].vm.pc, 3,
             "0x04 retires on its 9th tick at cadence {cadence}"
         );
 
         // 0x0D: a 32-vsync duration retires in 32/cadence stepping ticks
         // plus the terminal one - the duration in VSYNCS is invariant.
         let mut w = World::new();
-        w.frame_step = cadence;
+        w.clock.frame_step = cadence;
         with_ambient(&mut w, 1, vec![0x0D, 0x02, 0x20, 0x00], 0x000);
         let mut ticks = 0;
         for _ in 0..128 {
             w.tick_field_npc_ambient();
             ticks += 1;
-            if usize::from(w.field_npc_ambient[&1].vm.pc) >= 4 {
+            if usize::from(w.npcs.ambient[&1].vm.pc) >= 4 {
                 break;
             }
         }
@@ -249,7 +249,7 @@ fn ambient_ops_respond_to_cadence_the_way_retail_does() {
         );
         let expected = (0x400u16.wrapping_add(0x800)) & 0x0FFF;
         assert_eq!(
-            w.field_npc_headings.get(&1).copied(),
+            w.npcs.headings.get(&1).copied(),
             Some(expected as i16),
             "0x0D lands on its compass point at cadence {cadence}"
         );
@@ -263,7 +263,7 @@ fn ambient_ops_respond_to_cadence_the_way_retail_does() {
 #[test]
 fn variant_selection_follows_the_live_system_flag_bank() {
     let mut w = World::new();
-    w.field_npc_ambient.insert(
+    w.npcs.ambient.insert(
         3,
         FieldNpcAmbient {
             walks: false,
@@ -279,19 +279,19 @@ fn variant_selection_follows_the_live_system_flag_bank() {
     );
     // Flag clear: the default variant runs, so nothing turns.
     w.tick_field_npc_ambient();
-    assert_eq!(w.field_npc_ambient[&3].live, Some(1), "default variant");
-    assert!(!w.field_npc_headings.contains_key(&3));
+    assert_eq!(w.npcs.ambient[&3].live, Some(1), "default variant");
+    assert!(!w.npcs.headings.contains_key(&3));
 
     // Flag set: the gated variant takes over from its own first op.
     w.system_flag_set(0x10);
     w.tick_field_npc_ambient();
-    assert_eq!(w.field_npc_ambient[&3].live, Some(0), "gated variant wins");
+    assert_eq!(w.npcs.ambient[&3].live, Some(0), "gated variant wins");
     assert_eq!(
-        w.field_npc_ambient[&3].vm.pc, 0,
+        w.npcs.ambient[&3].vm.pc, 0,
         "a swap reseeds the cursor at the new variant's first op"
     );
     assert!(
-        w.field_npc_headings.contains_key(&3),
+        w.npcs.headings.contains_key(&3),
         "the gated variant's ramp turns the NPC"
     );
 }

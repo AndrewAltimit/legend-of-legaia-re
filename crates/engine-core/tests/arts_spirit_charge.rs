@@ -61,7 +61,7 @@ fn build_world() -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
@@ -72,17 +72,17 @@ fn build_world() -> World {
     }
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     stage_somersault(&mut w);
-    w.tactical_arts.mark_known(0, SOMERSAULT);
+    w.party.tactical_arts.mark_known(0, SOMERSAULT);
     // Three presses spend 99 of the disc-free 100-AP pool and a fourth is
     // unaffordable, so the entry auto-ends on the third exactly - retail's
     // `0x50 -> 0x5A` edge, reached with no confirm to time.
-    w.battle_swing_costs[0] = [33; 4];
+    w.battle.swing_costs[0] = [33; 4];
 
     w.player_actor_slot = Some(0);
     w.actors[0].move_state.world_x = 300;
     w.actors[0].move_state.world_z = 300;
     w.actors[0].move_state.field_72 = 4096;
-    w.field_camera_azimuth = 0;
+    w.locomotion.camera_azimuth = 0;
 
     use legaia_engine_core::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
@@ -96,8 +96,8 @@ fn build_world() -> World {
     w.set_encounter_session(Some(session));
 
     w.mode = SceneMode::Field;
-    w.live_gameplay_loop = true;
-    w.battle_player_driven = true;
+    w.toggles.live_gameplay_loop = true;
+    w.battle.player_driven = true;
     w
 }
 
@@ -141,7 +141,7 @@ fn spirit_drops_over_one_turn(w: &mut World, combo: &[PadButton]) -> (Vec<i32>, 
                 }
                 _ => InputState::mask_of([PadButton::Cross]),
             }
-        } else if let Some(cmd) = w.battle_command.as_ref() {
+        } else if let Some(cmd) = w.battle.command.as_ref() {
             match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.menu_command() != Some(BattleCommand::Attack) => {
                     InputState::mask_of([PadButton::Left])
@@ -216,7 +216,8 @@ fn a_committed_art_charges_its_body_out_of_spirit() {
     // queue stages the art rather than three plain swings.
     let action = legaia_art::ActionConstant::from_byte(SOMERSAULT).unwrap();
     assert_eq!(
-        w.art_records
+        w.tables
+            .art_records
             .get(&(legaia_art::Character::Vahn, action))
             .map(|r| r.commands.len()),
         Some(SOMERSAULT_COMMANDS),

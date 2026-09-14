@@ -372,12 +372,12 @@ pub fn parse_map_objects(map: &[u8]) -> Vec<MapObject> {
 /// load, not whether any of it does - "the engine does not keep one" is too
 /// strong and hides where the real gap is.
 ///
-/// Three of the four regions are resident. `World::field_collision_grid`
+/// Three of the four regions are resident. `World::terrain.collision_grid`
 /// holds `+0x4000..+0x8000` verbatim and is *mutated at runtime* by the
-/// field-VM `0x4C` nibble-7 wall paints; `World::field_map_region_block`
+/// field-VM `0x4C` nibble-7 wall paints; `World::terrain.map_region_block`
 /// holds `+0x10000..+0x12000` verbatim; and the whole image stays cached
 /// behind `ProtIndex::entry_cache` for the session, one clone from mutable.
-/// `World::field_object_cells` holds the `+0x8000` cell words, decoded to
+/// `World::terrain.object_cells` holds the `+0x8000` cell words, decoded to
 /// `u16` but bit-for-bit the same values passes 2 and 3 stamp.
 ///
 /// What is genuinely absent is the region pass 1 walks: the `+0x0000..0x4000`

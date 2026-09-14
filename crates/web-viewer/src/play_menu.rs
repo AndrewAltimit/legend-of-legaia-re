@@ -475,11 +475,11 @@ impl LegaiaRuntime {
         let resume_mode = match self.scene_host.as_mut() {
             Some(host) => {
                 let world = &mut host.world;
-                session.money = world.money.max(0) as u32;
-                session.play_time_seconds = world.play_time_seconds;
+                session.money = world.party.money.max(0) as u32;
+                session.play_time_seconds = world.clock.play_time_seconds;
                 session.set_gate(FieldMenuGate {
                     entry_context_kind: world.menu_entry_context_kind(),
-                    save_allowed: world.scene_save_allowed,
+                    save_allowed: world.party.scene_save_allowed,
                 });
                 // Same entry decode the native window runs: a locked context
                 // opens on the notice panel, not on the root picker.
@@ -567,7 +567,7 @@ impl LegaiaRuntime {
     }
 
     /// Whether the current scene permits a menu Save
-    /// ([`World::scene_save_allowed`](legaia_engine_core::world::World::scene_save_allowed),
+    /// ([`legaia_engine_core::world::PartyState::scene_save_allowed`](legaia_engine_core::world::PartyState::scene_save_allowed),
     /// seeded at scene load from the MAN header bit retail copies into
     /// `_DAT_8007B6A8`). The page shows the Save-here hint from this, and the
     /// menu's own Save row inks and buzzes from the same value through
@@ -575,7 +575,7 @@ impl LegaiaRuntime {
     pub fn play_scene_save_allowed(&self) -> bool {
         self.scene_host
             .as_ref()
-            .is_some_and(|h| h.world.scene_save_allowed)
+            .is_some_and(|h| h.world.party.scene_save_allowed)
     }
 
     /// Take the CDNAME scene label an in-canvas card **Load** landed in, if
@@ -827,8 +827,8 @@ impl LegaiaRuntime {
                     &self.options_state,
                     &rack,
                     &chain,
-                    &world.spell_catalog,
-                    &world.equipment_table,
+                    &world.tables.spell_catalog,
+                    &world.tables.equipment_table,
                 )))
             });
             if let Some(sub) = sub
@@ -975,7 +975,7 @@ impl LegaiaRuntime {
             return false;
         };
         let ctx = assets.menu_ctx(origin, scale);
-        let labels = &world.menu_context_labels;
+        let labels = &world.menu.context_labels;
         let out = if menu.session.notice_is_up() {
             let lines: Vec<&str> = labels.notice_lines.iter().map(String::as_str).collect();
             pause_screen_draws(&ctx, PauseScreen::ContextNotice { lines: &lines })
@@ -1591,7 +1591,7 @@ impl LegaiaRuntime {
         };
         let point_card = model.info.as_ref().filter(|i| i.is_point_card).map(|_| {
             self.menu_world()
-                .map(|w| w.point_card.max(0) as u32)
+                .map(|w| w.minigames.point_card.max(0) as u32)
                 .unwrap_or(0)
         });
         let out = pause_screen_draws(
@@ -1626,7 +1626,7 @@ impl LegaiaRuntime {
         let ctx = assets.menu_ctx(origin, scale);
         let model = legaia_engine_core::pause_screens::magic_screen_model(
             s,
-            self.menu_world().and_then(|w| w.menu_text.as_ref()),
+            self.menu_world().and_then(|w| w.menu.text.as_ref()),
         );
         if !model.target_select {
             let casters: Vec<ui::PauseMagicCaster<'_>> = model

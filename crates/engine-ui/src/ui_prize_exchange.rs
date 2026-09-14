@@ -163,9 +163,9 @@ pub fn prize_exchange_draws_for(
 
 /// View state of the casino **coin counter** (op-`0x49` sub-op 6, submode
 /// handler slot `0x25` = `FUN_801F0ADC`) - the buy-coins-with-gold screen the
-/// hosts draw off [`World::submode_screen`]'s counter cells.
+/// hosts draw off [`legaia_engine_core::world::FieldVmState::submode_screen`]'s counter cells.
 ///
-/// [`World::submode_screen`]: ../../legaia_engine_core/world/struct.World.html
+/// [`legaia_engine_core::world::FieldVmState::submode_screen`]: ../../legaia_engine_core/world/struct.World.html
 #[derive(Debug, Clone)]
 pub struct CoinCounterView {
     /// The entered amount, LSB-cell-first

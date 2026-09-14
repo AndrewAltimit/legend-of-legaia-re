@@ -111,7 +111,7 @@ fn battle_world(monsters: &[MonsterDef], slots: &[FormationSlot]) -> World {
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
@@ -155,10 +155,10 @@ fn a_monster_slot_carries_both_defence_facets() {
     lopsided.udf = 90;
     lopsided.ldf = 10;
     let w = battle_world(&[lopsided], &[FormationSlot::new(1)]);
-    let mslot = w.party_count; // first monster
+    let mslot = w.party.party_count; // first monster
 
     assert_eq!(
-        w.battle_defense_split[mslot as usize],
+        w.battle.defense_split[mslot as usize],
         Some((90, 10)),
         "battle entry must seed the monster band's (UDF, LDF) pair"
     );
@@ -189,7 +189,7 @@ fn battle_entry_clears_a_stale_monster_defence_split() {
     w.set_battle_defense_split(4, Some((999, 999)));
     let mut table = FormationTable::new();
     table.insert(FormationDef::new(2, vec![FormationSlot::new(77)])); // id 77 not in catalog
-    let catalog = w.monster_catalog.clone();
+    let catalog = w.tables.monster_catalog.clone();
     w.set_formation_table(table, catalog);
     w.mode = SceneMode::Field;
     assert!(w.trigger_scripted_battle(2));
@@ -201,7 +201,7 @@ fn battle_entry_clears_a_stale_monster_defence_split() {
     }
     assert_eq!(w.mode, SceneMode::Battle);
     assert_eq!(
-        w.battle_defense_split[4], None,
+        w.battle.defense_split[4], None,
         "a monster slot must not defend with the split a previous occupant left"
     );
 }

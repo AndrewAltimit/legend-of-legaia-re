@@ -54,7 +54,7 @@ fn menu_for(world: &World) -> FieldMenuSession {
     let mut s = FieldMenuSession::new();
     s.set_gate(FieldMenuGate {
         entry_context_kind: world.menu_entry_context_kind(),
-        save_allowed: world.scene_save_allowed,
+        save_allowed: world.party.scene_save_allowed,
     });
     s
 }
@@ -132,7 +132,7 @@ fn a_dialogue_still_refuses_the_menu_on_the_overworld() {
          the overworld too"
     );
 
-    world.inline_dialogue = None;
+    world.dialog.inline = None;
     assert!(
         world.field_menu_open_allowed(),
         "the refusal is scoped to the conversation, not permanent"
@@ -168,7 +168,7 @@ fn a_kingdom_overworld_both_opens_the_menu_and_offers_save() {
             "{name} is an overworld scene"
         );
         assert!(
-            host.world.scene_save_allowed,
+            host.world.party.scene_save_allowed,
             "{name}'s MAN sets the save-allow bit (_DAT_8007B6A8)"
         );
         assert!(
@@ -211,7 +211,7 @@ fn a_town_opens_the_menu_but_greys_the_save_row() {
         "a town has always opened the menu"
     );
     assert!(
-        !host.world.scene_save_allowed,
+        !host.world.party.scene_save_allowed,
         "town01's MAN clears the save-allow bit"
     );
 

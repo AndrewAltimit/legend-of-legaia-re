@@ -73,7 +73,7 @@ fn real_tables_drive_a_decided_match_and_bank_the_gold() {
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    let coins0 = world.casino_coins;
+    let coins0 = world.minigames.casino_coins;
     let fight = BakaFight::from_tables(&opponents, &actions, 0, opponent, 0xBAA5EED)
         .expect("fight builds from real tables");
     assert_eq!(fight.gold_reward(), prize);
@@ -88,7 +88,11 @@ fn real_tables_drive_a_decided_match_and_bank_the_gold() {
     loop {
         frames += 1;
         assert!(frames < 100_000, "match terminates");
-        let f = world.baka_fighter.as_ref().expect("fight installed");
+        let f = world
+            .minigames
+            .baka_fighter
+            .as_ref()
+            .expect("fight installed");
         if f.match_over() {
             break;
         }
@@ -103,7 +107,11 @@ fn real_tables_drive_a_decided_match_and_bank_the_gold() {
         };
         world.set_pad(pad);
         let _ = world.tick();
-        if let Some(r) = world.baka_fighter.as_ref().and_then(|f| f.last_exchange())
+        if let Some(r) = world
+            .minigames
+            .baka_fighter
+            .as_ref()
+            .and_then(|f| f.last_exchange())
             && r.winner == 0
             && !r.draw
             && r.damage > 0
@@ -113,7 +121,7 @@ fn real_tables_drive_a_decided_match_and_bank_the_gold() {
     }
     assert!(saw_player_damage, "counter play dealt real-table damage");
 
-    let f = world.baka_fighter.as_ref().unwrap();
+    let f = world.minigames.baka_fighter.as_ref().unwrap();
     assert_eq!(f.winner(), Some(0), "the counter strategy wins the match");
     assert_eq!(f.round_wins(0), baka_opponents::ROUND_WIN_TARGET);
     assert!(f.hp(1) < HP_START || matches!(f.phase(), MatchPhase::MatchOver(0)));
@@ -124,9 +132,12 @@ fn real_tables_drive_a_decided_match_and_bank_the_gold() {
     world.set_pad(PadButton::Cross.mask());
     let _ = world.tick();
     assert_eq!(world.mode, SceneMode::Field, "return mode restored");
-    assert!(world.baka_fighter.is_none(), "fight cleared on exit");
+    assert!(
+        world.minigames.baka_fighter.is_none(),
+        "fight cleared on exit"
+    );
     assert_eq!(
-        world.casino_coins,
+        world.minigames.casino_coins,
         coins0 + prize,
         "the opponent's parsed coin prize banked"
     );

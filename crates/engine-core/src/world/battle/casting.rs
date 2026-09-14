@@ -86,8 +86,9 @@ impl World {
         // Quarter when both bits are set, dump-confirmed against the retail
         // state-0x28 block (FUN_801E295C 0x801E3D0C) - routed through the shared
         // battle_formulas helper so all three cast paths agree.
-        let ability_bits = if (caster as usize) < self.party_count as usize {
-            self.character_ability_bits
+        let ability_bits = if (caster as usize) < self.party.party_count as usize {
+            self.party
+                .character_ability_bits
                 .get(caster as usize)
                 .copied()
                 .unwrap_or(0)
@@ -114,7 +115,7 @@ impl World {
                 a.battle.mp = a.battle.mp.saturating_sub(cost);
             }
         }
-        let caster_mag = self.battle_magic.get(caster as usize).copied().unwrap_or(0);
+        let caster_mag = self.battle.magic.get(caster as usize).copied().unwrap_or(0);
 
         // For a monster caster whose move id carries a real per-move power
         // record, the damage rolls through the faithful arts/physical kernel
@@ -133,7 +134,7 @@ impl World {
         // [`crate::summon::SERU_SUMMON_IDS`] block, so those are the ids that
         // accrue. `group_target` mirrors the summon's target byte (`+0x1DD`
         // = 8/9 for a group cast): the per-hit unit drops from 12 to 4.
-        let is_party_summon_cast = (caster as usize) < self.party_count as usize
+        let is_party_summon_cast = (caster as usize) < self.party.party_count as usize
             && crate::summon::SERU_SUMMON_IDS.contains(&def.id);
         // Shiny bonus: when the casting character learned this Seru's spell
         // from a shiny capture, every cast deals +35% damage (on top of the
@@ -141,7 +142,8 @@ impl World {
         // (`FUN_801dd864` `+0x161` high-bit read). Computed once per cast.
         let shiny_cast = is_party_summon_cast
             && self
-                .seru_log
+                .seru
+                .log
                 .is_shiny(self.party_roster_slot(caster as usize) as u8, def.id);
         let group_target = matches!(def.target, crate::spells::SpellTarget::AllEnemies);
         let mut summon_xp_gain: u32 = 0;
@@ -159,7 +161,7 @@ impl World {
                 caster_hp,
                 caster_max_hp,
                 caster_mp: caster_mp_before,
-                target_mdef: self.battle_defense.get(t as usize).copied().unwrap_or(0),
+                target_mdef: self.battle.defense.get(t as usize).copied().unwrap_or(0),
                 target_hp: actor.battle.hp,
                 target_hp_max: actor.battle.max_hp,
                 target_mp: actor.battle.mp,
@@ -268,8 +270,8 @@ impl World {
     /// Stat bridge (all read live off the actor arrays, faithful to the retail
     /// fields the kernel reads): attacker/target AGL = `battle_accuracy`
     /// (`+0x168`, the AGL-derived stat); HP = `battle.hp` (`+0x14c`); the two
-    /// defender defense terms (`+0x15c`/`+0x160`) = the [`Self::battle_defense_split`]
-    /// (UDF, LDF) pair, falling back to the single [`Self::battle_defense`].
+    /// defender defense terms (`+0x15c`/`+0x160`) = the [`crate::world::BattleState::defense_split`]
+    /// (UDF, LDF) pair, falling back to the single [`crate::world::BattleState::defense`].
     /// Element affinity comes from [`Self::enemy_affinity_pct`] when the
     /// affinity tables are installed (`matrix[enemy_element][party_element]`,
     /// `FUN_801dd864`), else 100 (neutral); status-weaken (`+0x16e`) and the
@@ -329,7 +331,8 @@ impl World {
         let attacker_roll = SummonRollActor {
             hp: a.battle.hp,
             agl: self
-                .battle_accuracy
+                .battle
+                .accuracy
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),
@@ -368,10 +371,10 @@ impl World {
             .actors
             .get(attacker as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
             .unwrap_or(7);
-        let target_is_party = target < self.party_count;
+        let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
             predamage: atk.saturating_sub(def).clamp(1, 9999),
             attacker_slot: 3,
@@ -379,7 +382,8 @@ impl World {
             attacker_element,
             defender_resist: self.defender_resist(target),
             defender_guarding: self
-                .battle_guarding
+                .battle
+                .guarding
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
@@ -421,7 +425,7 @@ impl World {
     /// slot element, so only the *defender's* resist stage is dropped.
     ///
     /// Stat bridge is the sibling paths' ([`Self::summon_roll_defender`] for
-    /// the defender, [`Self::battle_attack`] for the attacker's `+0x158`).
+    /// the defender, [`crate::world::BattleState::attack`] for the attacker's `+0x158`).
     /// `power` is the move-power table's `+0` scalar; retail's module bakes
     /// the per-hit constant into the call site instead, so the magnitude is
     /// the engine's own seed even though the arithmetic is the wrapper's.
@@ -442,7 +446,8 @@ impl World {
             // `+0x168` is not read on this path at all.
             agl: 0,
             spell_power: self
-                .battle_attack
+                .battle
+                .attack
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),
@@ -469,10 +474,10 @@ impl World {
             .actors
             .get(attacker as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
             .unwrap_or(7);
-        let target_is_party = target < self.party_count;
+        let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
             predamage: atk.saturating_sub(def).clamp(1, 9999),
             attacker_slot: 3,
@@ -480,7 +485,8 @@ impl World {
             attacker_element,
             defender_resist: self.defender_resist(target),
             defender_guarding: self
-                .battle_guarding
+                .battle
+                .guarding
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
@@ -518,7 +524,8 @@ impl World {
     /// compares the byte against `0x14`). The battle-action host reaches it
     /// through `BattleActionHost::spell_class_byte`.
     pub(in crate::world) fn spell_table_class(&self, move_id: u8) -> Option<u8> {
-        self.menu_text
+        self.menu
+            .text
             .as_ref()
             .and_then(|t| t.spell_names.as_ref())
             .and_then(|t| t.entry(move_id))
@@ -529,7 +536,8 @@ impl World {
     /// action commit stamps into `actor[+0x1E8]` / `[+0x1E9]`, which selects
     /// which cue group an executing cast expands to.
     pub(in crate::world) fn spell_table_sub_class(&self, move_id: u8) -> Option<u8> {
-        self.menu_text
+        self.menu
+            .text
             .as_ref()
             .and_then(|t| t.spell_names.as_ref())
             .and_then(|t| t.entry(move_id))
@@ -604,7 +612,8 @@ impl World {
         let a = WrapperAttacker {
             hp: attacker_hp,
             agl: self
-                .battle_accuracy
+                .battle
+                .accuracy
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),
@@ -635,10 +644,10 @@ impl World {
             .actors
             .get(attacker as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
             .unwrap_or(7);
-        let target_is_party = target < self.party_count;
+        let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
             predamage: atk.saturating_sub(def).clamp(1, 9999),
             attacker_slot: 3,
@@ -646,7 +655,8 @@ impl World {
             attacker_element,
             defender_resist: self.defender_resist(target),
             defender_guarding: self
-                .battle_guarding
+                .battle
+                .guarding
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
@@ -664,8 +674,8 @@ impl World {
     /// ([`Self::enemy_move_predamage`]) and the player summon roll
     /// ([`Self::player_summon_predamage`]). AGL = `battle_accuracy` (the
     /// `+0x168` AGL-derived stat); HP = `battle.hp` (`+0x14c`); the two
-    /// defense terms (`+0x15c`/`+0x160`) = the [`Self::battle_defense_split`]
-    /// (UDF, LDF) pair, falling back to the single [`Self::battle_defense`];
+    /// defense terms (`+0x15c`/`+0x160`) = the [`crate::world::BattleState::defense_split`]
+    /// (UDF, LDF) pair, falling back to the single [`crate::world::BattleState::defense`];
     /// status-weaken (`+0x16e`) and the guard byte (`+0x1de`) default to none.
     pub(in crate::world::battle) fn summon_roll_defender(
         &self,
@@ -673,20 +683,22 @@ impl World {
     ) -> Option<vm::battle_formulas::SummonRollActor> {
         let t = self.actors.get(slot as usize)?;
         let (stat_a, stat_b) = self
-            .battle_defense_split
+            .battle
+            .defense_split
             .get(slot as usize)
             .copied()
             .flatten()
             .unwrap_or_else(|| {
                 (
-                    self.battle_defense.get(slot as usize).copied().unwrap_or(0),
+                    self.battle.defense.get(slot as usize).copied().unwrap_or(0),
                     0,
                 )
             });
         Some(vm::battle_formulas::SummonRollActor {
             hp: t.battle.hp,
             agl: self
-                .battle_accuracy
+                .battle
+                .accuracy
                 .get(slot as usize)
                 .copied()
                 .unwrap_or(0),
@@ -709,6 +721,7 @@ impl World {
         const RETAIL_SEARCH_BOUND: usize = 0x20;
         // Battle ordinal -> the occupying character's record.
         let Some(record) = self
+            .party
             .roster
             .members
             .get(self.party_roster_slot(caster as usize))
@@ -767,7 +780,7 @@ impl World {
             summon_predamage_lazy,
         };
 
-        if (caster as usize) >= self.party_count as usize {
+        if (caster as usize) >= self.party.party_count as usize {
             return None;
         }
         let creature = self.summon_creature_def(spell_id)?;
@@ -780,7 +793,8 @@ impl World {
         };
         let summon_element = creature.element;
         let caster_agl = self
-            .battle_accuracy
+            .battle
+            .accuracy
             .get(caster as usize)
             .copied()
             .unwrap_or(0);
@@ -808,6 +822,7 @@ impl World {
         // per-caster 0x801F5468 table when the affinity tables are installed
         // (char id = slot + 1, same model as the element lookups), else 100.
         let summon_power_pct = self
+            .tables
             .element_affinity
             .as_ref()
             .and_then(|aff| aff.summon_power_pct(caster + 1, summon_element))
@@ -816,7 +831,7 @@ impl World {
         let finish = DamageFinish {
             predamage,
             attacker_slot: 7,
-            defender_slot: 3 + target.saturating_sub(self.party_count),
+            defender_slot: 3 + target.saturating_sub(self.party.party_count),
             attacker_element: summon_element,
             defender_resist: DefenderResist::default(),
             defender_guarding: false,
@@ -850,14 +865,14 @@ impl World {
     /// enemy→party direction; the status-weaken / guard-double / slot-7 summon
     /// stages of the full retail function are not part of this scalar)
     pub(in crate::world::battle) fn enemy_affinity_pct(&self, attacker: u8, target: u8) -> u8 {
-        let Some(aff) = self.element_affinity.as_ref() else {
+        let Some(aff) = self.tables.element_affinity.as_ref() else {
             return 100;
         };
         let Some(enemy_elem) = self
             .actors
             .get(attacker as usize)
             .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.monster_catalog.get(id))
+            .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| d.element)
         else {
             return 100;
@@ -876,12 +891,12 @@ impl World {
     /// affinity tables aren't installed or no element resolves, so callers fall
     /// back to neutral.
     pub(in crate::world) fn battle_slot_element(&self, slot: u8) -> Option<u8> {
-        let aff = self.element_affinity.as_ref()?;
-        if (slot as usize) < self.party_count as usize {
+        let aff = self.tables.element_affinity.as_ref()?;
+        if (slot as usize) < self.party.party_count as usize {
             aff.character_element(slot + 1)
         } else {
             let id = self.actors.get(slot as usize)?.battle_monster_id?;
-            Some(self.monster_catalog.get(id)?.element)
+            Some(self.tables.monster_catalog.get(id)?.element)
         }
     }
 
@@ -907,7 +922,8 @@ impl World {
             return None;
         }
         let name = crate::retail_magic::get(spell_id)?.name;
-        self.monster_catalog
+        self.tables
+            .monster_catalog
             .by_id
             .values()
             .filter(|d| d.name == name)
@@ -928,7 +944,7 @@ impl World {
     /// synthetic battles and non-summon casts are unaffected. Applied post-roll,
     /// so it never touches the RNG stream.
     fn cast_affinity_pct(&self, spell_id: u8, target: u8) -> u8 {
-        let Some(aff) = self.element_affinity.as_ref() else {
+        let Some(aff) = self.tables.element_affinity.as_ref() else {
             return 100;
         };
         let Some(atk_elem) = self.summon_attacker_element(spell_id) else {
@@ -946,10 +962,10 @@ impl World {
     /// move-power table is installed (disc-real battles), keeping disc-free /
     /// synthetic battles on the placeholder path with an unchanged RNG stream.
     fn enemy_move_power(&self, caster: u8, move_id: u8) -> Option<i32> {
-        if (caster as usize) < self.party_count as usize {
+        if (caster as usize) < self.party.party_count as usize {
             return None;
         }
-        self.move_power.as_ref()?.power_for_move_id(move_id)
+        self.tables.move_power.as_ref()?.power_for_move_id(move_id)
     }
 
     /// Fold a single-target [`crate::spells::SpellOutcome`] into live actor
@@ -958,7 +974,7 @@ impl World {
     /// target's status; buffs adjust a per-slot scalar with a turn timer
     /// ([`Self::apply_battle_buff`]); capture rolls vs the monster's weakened
     /// state ([`Self::resolve_capture`]); escape flags a return to the field
-    /// ([`Self::battle_escaped`]). `Failed` is a no-op (MP already spent).
+    /// ([`crate::world::BattleState::escaped`]). `Failed` is a no-op (MP already spent).
     pub(in crate::world) fn fold_spell_outcome(&mut self, outcome: crate::spells::SpellOutcome) {
         use crate::spells::SpellOutcome as O;
         match outcome {
@@ -982,7 +998,7 @@ impl World {
                 // `+0x14C`, so the bar can never outrun HP. That arm also
                 // picks the victim's reaction clip off `+0x1F2`.
                 self.apply_effect_child_hit(target as usize, i32::from(applied));
-                self.battle_hit_fx.push(BattleHitFx {
+                self.battle.hit_fx.push(BattleHitFx {
                     target_slot: target,
                     amount: applied,
                     is_heal: false,
@@ -1000,7 +1016,7 @@ impl World {
             O::Heal { target, amount } => {
                 self.apply_battle_hp_delta(target as usize, -i32::from(amount));
                 if amount > 0 {
-                    self.battle_hit_fx.push(BattleHitFx {
+                    self.battle.hit_fx.push(BattleHitFx {
                         target_slot: target,
                         amount,
                         is_heal: true,
@@ -1009,7 +1025,7 @@ impl World {
                 }
             }
             O::Cure { target, .. } => {
-                self.status_effects.cure_all(target);
+                self.battle.status_effects.cure_all(target);
             }
             O::Revive { target, hp } => {
                 if let Some(a) = self.actors.get_mut(target as usize) {
@@ -1032,7 +1048,7 @@ impl World {
                         );
                     }
                 }
-                self.battle_hit_fx.push(BattleHitFx {
+                self.battle.hit_fx.push(BattleHitFx {
                     target_slot: target,
                     amount: hp,
                     is_heal: true,
@@ -1051,7 +1067,7 @@ impl World {
                 self.resolve_capture(target, hit_pct);
             }
             O::Escape => {
-                self.battle_escaped = true;
+                self.battle.escaped = true;
             }
             // Multi-target variants aren't produced by per-slot casts; Failed
             // is a no-op (MP was already spent up front).
@@ -1096,7 +1112,10 @@ mod capture_bypass_tests {
     /// caster of element 0. Same seed every time.
     fn world_with_resisting_party() -> World {
         let mut world = World {
-            party_count: 1,
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
             ..World::default()
         };
         world.mode = SceneMode::Battle;
@@ -1104,14 +1123,14 @@ mod capture_bypass_tests {
         let mut caster = MonsterDef::new(5, "Boss", 4000, 200);
         caster.element = 0;
         catalog.insert(caster);
-        world.monster_catalog = catalog;
+        world.tables.monster_catalog = catalog;
 
         // Party slot 0 resists element 0 (`record+0xF4` bit 0x20000000) and
         // carries no All-Guard absorb bit, so the ladder's halve arm is the one
         // that would run. Loaded before the actor stats: `load_party` reseeds
         // the battle mirrors from the record.
         world.load_party(legaia_save::Party::zeroed(1));
-        if let Some(m) = world.roster.members.get_mut(0) {
+        if let Some(m) = world.party.roster.members.get_mut(0) {
             let mut bits = m.ability_bits();
             bits[3] |= 0x20;
             bits[4..8].fill(0);
@@ -1121,17 +1140,17 @@ mod capture_bypass_tests {
         world.actors[0].battle.max_hp = 9999;
         world.actors[0].battle.hp = 9999;
         world.actors[0].battle.liveness = 1;
-        world.battle_accuracy[0] = 5;
-        world.battle_defense[0] = 1;
+        world.battle.accuracy[0] = 5;
+        world.battle.defense[0] = 1;
 
         world.actors[1].battle.max_hp = 4000;
         world.actors[1].battle.hp = 4000;
         world.actors[1].battle.mp = 200;
         world.actors[1].battle.liveness = 1;
         world.actors[1].battle_monster_id = Some(5);
-        world.battle_accuracy[1] = 200;
+        world.battle.accuracy[1] = 200;
 
-        world.move_power = Some(
+        world.tables.move_power = Some(
             crate::move_power::MovePowerCatalog::from_overlay_0898(&overlay_with_two_ids(2000))
                 .expect("synthetic catalog parses"),
         );
@@ -1166,7 +1185,7 @@ mod capture_bypass_tests {
     /// finisher's ladder has nothing to match.
     fn damage_without_resist(move_id: u8) -> u16 {
         let mut world = world_with_resisting_party();
-        if let Some(m) = world.roster.members.get_mut(0) {
+        if let Some(m) = world.party.roster.members.get_mut(0) {
             let mut bits = m.ability_bits();
             bits[3] &= !0x20;
             m.set_ability_bits(bits);
@@ -1225,7 +1244,7 @@ mod capture_bypass_tests {
         use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
         let mut entries = vec![SpellEntry::default(); 0x100];
         entries[id as usize].class = CAPTURE_CLASS;
-        world.menu_text = Some(crate::pause_screens::MenuTextTables {
+        world.menu.text = Some(crate::pause_screens::MenuTextTables {
             spell_names: Some(SpellNameTable::from_entries(entries)),
             ..Default::default()
         });
@@ -1246,9 +1265,9 @@ mod capture_bypass_tests {
     /// arms fire and the two rebuilds differ.
     fn world_on_the_bonus_floor() -> World {
         let mut world = world_with_resisting_party();
-        world.battle_accuracy[1] = 20; // attacker `+0x168`
-        world.battle_defense[0] = 4000; // defender `+0x15C`
-        world.move_power = Some(
+        world.battle.accuracy[1] = 20; // attacker `+0x168`
+        world.battle.defense[0] = 4000; // defender `+0x15C`
+        world.tables.move_power = Some(
             crate::move_power::MovePowerCatalog::from_overlay_0898(&overlay_with_two_ids(40))
                 .expect("synthetic catalog parses"),
         );
@@ -1304,7 +1323,7 @@ mod capture_bypass_tests {
     fn a_capture_class_respecting_cast_still_takes_the_resist_ladder() {
         let mut world = world_with_resisting_party();
         with_capture_class(&mut world, RESPECT_MOVE_ID);
-        if let Some(m) = world.roster.members.get_mut(0) {
+        if let Some(m) = world.party.roster.members.get_mut(0) {
             let mut bits = m.ability_bits();
             bits[3] &= !0x20;
             m.set_ability_bits(bits);
@@ -1383,12 +1402,12 @@ mod capture_bypass_tests {
     fn the_bonus_arm_floor_makes_a_bypass_hit_defence_insensitive() {
         let with_defence = |move_id: u8, defence: u16| -> i32 {
             let mut world = world_with_resisting_party();
-            if let Some(m) = world.roster.members.get_mut(0) {
+            if let Some(m) = world.party.roster.members.get_mut(0) {
                 let mut bits = m.ability_bits();
                 bits[3] &= !0x20;
                 m.set_ability_bits(bits);
             }
-            world.battle_defense[0] = defence;
+            world.battle.defense[0] = defence;
             let before = world.actors[0].battle.hp as i32;
             world.cast_spell_on_slots(1, &spell(move_id), &[0]);
             before - world.actors[0].battle.hp as i32
@@ -1431,7 +1450,7 @@ mod capture_bypass_tests {
 /// and a `capture_spells` set that nothing ever wrote, the battle-action host
 /// answered `spell_mp_cost` / `is_capture_spell` from them, and the whole live
 /// cast path answered the same two questions from
-/// [`World::spell_catalog`] and the disc spell table instead. Both halves
+/// [`crate::world::DiscTables::spell_catalog`] and the disc spell table instead. Both halves
 /// compiled, both were tested, and the state-machine half was silently a
 /// free-magic stub.
 #[cfg(test)]
@@ -1455,6 +1474,7 @@ mod one_spell_model_tests {
         let mut world = World::new();
         world.set_spell_catalog(SpellCatalog::vanilla());
         let priced: Vec<(u8, u8)> = world
+            .tables
             .spell_catalog
             .iter()
             .map(|s| (s.id, s.mp_cost))
@@ -1524,7 +1544,7 @@ mod one_spell_model_tests {
         let mut world = World::new();
         let mut entries = vec![SpellEntry::default(); 0x100];
         entries[ID as usize].class = CAPTURE_CLASS;
-        world.menu_text = Some(crate::pause_screens::MenuTextTables {
+        world.menu.text = Some(crate::pause_screens::MenuTextTables {
             spell_names: Some(SpellNameTable::from_entries(entries)),
             ..Default::default()
         });
@@ -1549,7 +1569,7 @@ mod one_spell_model_tests {
         let mut entries = vec![SpellEntry::default(); 0x100];
         entries[0x10].class = 0x02; // < 0x14, id < 0x65 -> Spirit band
         entries[0x11].class = 0x32; // >= 0x14          -> magic band
-        world.menu_text = Some(crate::pause_screens::MenuTextTables {
+        world.menu.text = Some(crate::pause_screens::MenuTextTables {
             spell_names: Some(SpellNameTable::from_entries(entries)),
             ..Default::default()
         });
@@ -1574,7 +1594,7 @@ mod one_spell_model_tests {
     #[test]
     fn both_cast_paths_quote_the_same_price_so_a_double_charge_would_be_visible() {
         let mut world = World::new();
-        world.party_count = 1;
+        world.party.party_count = 1;
         world.set_spell_catalog(crate::retail_magic::retail_seru_magic_catalog());
         for i in 0..2usize {
             let a = world.spawn_actor(i);
@@ -1584,6 +1604,7 @@ mod one_spell_model_tests {
             a.battle.mp = 100;
         }
         let def = world
+            .tables
             .spell_catalog
             .get(0x82)
             .cloned()

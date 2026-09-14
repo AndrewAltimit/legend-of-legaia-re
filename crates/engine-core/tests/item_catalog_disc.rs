@@ -161,14 +161,18 @@ fn water_line_stat_up_items_seed_and_apply_from_disc() {
     world.set_item_effects(table); // seeds the Water line onto the catalog
 
     // Life Water is now offered: field-only, not battle.
-    let life = world.item_catalog.get(0x82).expect("Life Water seeded");
+    let life = world
+        .tables
+        .item_catalog
+        .get(0x82)
+        .expect("Life Water seeded");
     assert_eq!(life.name, "Life Water");
     assert!(life.usable_in_field && !life.usable_in_battle);
 
     // Life Water (tier 0): Max HP +16, current HP refilled by the gain.
     let outcome = world.use_item(0x82, 0);
     assert_eq!(outcome, ItemOutcome::StatsRaised { count: 1 });
-    assert_eq!(world.roster.members[0].hp_mp_sp().hp_max, 116);
+    assert_eq!(world.party.roster.members[0].hp_mp_sp().hp_max, 116);
     assert_eq!(world.actors[0].battle.max_hp, 116);
 
     // Power Water (tier 1): ATK +4.
@@ -176,13 +180,13 @@ fn water_line_stat_up_items_seed_and_apply_from_disc() {
         world.use_item(0x83, 0),
         ItemOutcome::StatsRaised { count: 1 }
     );
-    assert_eq!(world.roster.members[0].live_stats().atk, 24);
+    assert_eq!(world.party.roster.members[0].live_stats().atk, 24);
 
     // Swift Water (tier 3): SPD +4; Wisdom Water (tier 4): INT +4.
     world.use_item(0x85, 0);
     world.use_item(0x86, 0);
-    assert_eq!(world.roster.members[0].live_stats().spd, 14);
-    assert_eq!(world.roster.members[0].live_stats().int, 16);
+    assert_eq!(world.party.roster.members[0].live_stats().spd, 14);
+    assert_eq!(world.party.roster.members[0].live_stats().int, 16);
 
     // Honey (tier 6, all stats): Defence expands to both facets, so the seven
     // record changes become eight individual raises.
@@ -224,16 +228,20 @@ fn elixir_battle_buffs_seed_and_ramp_from_disc() {
     world.set_battle_defense(0, 50);
 
     // Power Elixir is battle-only and ramps ATK ×6/5: 100 -> 120.
-    let pe = world.item_catalog.get(0x8B).expect("Power Elixir seeded");
+    let pe = world
+        .tables
+        .item_catalog
+        .get(0x8B)
+        .expect("Power Elixir seeded");
     assert_eq!(pe.name, "Power Elixir");
     assert!(pe.usable_in_battle && !pe.usable_in_field);
     assert_eq!(world.use_item(0x8B, 0), ItemOutcome::Buffed { count: 1 });
-    assert_eq!(world.battle_attack[0], 120);
-    assert_eq!(world.battle_buffs.len(), 1);
+    assert_eq!(world.battle.attack[0], 120);
+    assert_eq!(world.battle.buffs.len(), 1);
 
     // Shield Elixir ramps DEF ×6/5: 50 -> 60.
     assert_eq!(world.use_item(0x8C, 0), ItemOutcome::Buffed { count: 1 });
-    assert_eq!(world.battle_defense[0], 60);
+    assert_eq!(world.battle.defense[0], 60);
 
     // Wonder Elixir buffs all four (SPD/DEF/ATK/AGL). ATK + DEF refresh (revert
     // the prior delta, re-ramp from base, no compounding), SPD + AGL are new but
@@ -241,11 +249,11 @@ fn elixir_battle_buffs_seed_and_ramp_from_disc() {
     // trackers.
     assert_eq!(world.use_item(0x8E, 0), ItemOutcome::Buffed { count: 4 });
     assert_eq!(
-        world.battle_attack[0], 120,
+        world.battle.attack[0], 120,
         "ATK refreshed from base, not compounded"
     );
-    assert_eq!(world.battle_defense[0], 60);
-    assert_eq!(world.battle_buffs.len(), 4);
+    assert_eq!(world.battle.defense[0], 60);
+    assert_eq!(world.battle.buffs.len(), 4);
 }
 
 /// Installing the disc table seeds Fury Boost (class 5, the action-gauge
@@ -275,13 +283,17 @@ fn fury_boost_seeds_and_extends_the_ap_gauge_from_disc() {
 
     let mut world = World::new();
     world.set_item_effects(table); // seeds Fury Boost onto the catalog
-    world.ap_gauges[0] = legaia_engine_core::ap_gauge::ApGauge::with_base(10);
+    world.battle.ap_gauges[0] = legaia_engine_core::ap_gauge::ApGauge::with_base(10);
 
     // Fury Boost is battle-only and extends the gauge: base 10 -> 14 (×7/5).
-    let fb = world.item_catalog.get(0x81).expect("Fury Boost seeded");
+    let fb = world
+        .tables
+        .item_catalog
+        .get(0x81)
+        .expect("Fury Boost seeded");
     assert_eq!(fb.name, "Fury Boost");
     assert!(fb.usable_in_battle && !fb.usable_in_field);
     assert_eq!(world.use_item(0x81, 0), ItemOutcome::ActionGaugeExtended);
-    assert_eq!(world.ap_gauges[0].base_ap, 14);
-    assert_eq!(world.fury_boost[0], Some(4));
+    assert_eq!(world.battle.ap_gauges[0].base_ap, 14);
+    assert_eq!(world.battle.fury_boost[0], Some(4));
 }

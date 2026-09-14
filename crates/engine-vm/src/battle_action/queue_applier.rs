@@ -483,7 +483,7 @@ pub fn apply_super_tail_replace(
 /// NOT WIRED, and the reason is narrower than it used to read. "The engine
 /// has no per-character saved arts-input string to preseed from" is
 /// **wrong**: it has one. `legaia_save::SavedChainRecord` persists a named
-/// per-character command sequence in the LGSF v2 ext block, `World::saved_chains`
+/// per-character command sequence in the LGSF v2 ext block, `World::party.saved_chains`
 /// carries it live, `tactical_arts_editor` edits it and `battle_arts` reads it
 /// in battle - and shipped non-test code fills it (`--player-battle` in the
 /// native window's `run.rs`).

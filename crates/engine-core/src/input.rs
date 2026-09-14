@@ -165,7 +165,7 @@ impl InputState {
     /// query keeps working unchanged.
     ///
     /// `vsync_delta` is `DAT_1F800393` - the adaptive frame step
-    /// ([`crate::world::World::frame_step`]), not a constant `1`. That is what
+    /// ([`crate::world::FrameClock::frame_step`]), not a constant `1`. That is what
     /// keeps the auto-repeat rate wall-clock-constant across a cadence change.
     ///
     /// NOT WIRED: no host produces [`crate::retail_pad::PadReport`]s. winit

@@ -623,8 +623,8 @@ pub fn rotate_toward_clamped(current: i16, target: i16, rate: i32) -> i16 {
 ///
 /// So the three live arms are a Y **override**, a Y **snap to floor**, and a
 /// Y **glide to floor**, in that priority. The engine's two field height
-/// controllers are the second and third (`World::follow_terrain_height` and
-/// `World::field_vertical_settle`); `World::field_eased_mirror_y` is the
+/// controllers are the second and third (`World::locomotion.follow_terrain_height` and
+/// `World::locomotion.vertical_settle`); `World::locomotion.eased_mirror_y` is the
 /// first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldActorHeight {

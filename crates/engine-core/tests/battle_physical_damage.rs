@@ -29,9 +29,9 @@ fn world_against(table: FormationTable, catalog: MonsterCatalog, atk: u16, row: 
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
-    w.party_count = 3;
+    w.party.party_count = 3;
     w.load_party(legaia_save::Party::zeroed(3));
-    let mut party = w.roster.clone();
+    let mut party = w.party.roster.clone();
     for rec in party.members.iter_mut() {
         let mut hms = rec.hp_mp_sp();
         hms.hp_cur = 180;
@@ -73,7 +73,7 @@ fn run_to_resolution(w: &mut World, max_frames: usize) -> (u32, u16, bool) {
     for _ in 0..max_frames {
         w.tick();
         for fx in w.drain_battle_hit_fx() {
-            if !fx.is_heal && fx.target_slot >= w.party_count {
+            if !fx.is_heal && fx.target_slot >= w.party.party_count {
                 swings += 1;
                 if first_hit == 0 {
                     first_hit = fx.amount;
@@ -140,14 +140,14 @@ fn a_monster_swing_is_not_whiffed_by_the_accuracy_gate() {
 
     let mut w = world_against(table, cat, 24, 1);
     for slot in 0..3usize {
-        w.battle_accuracy[slot] = 100;
-        w.battle_evasion[slot] = 100;
+        w.battle.accuracy[slot] = 100;
+        w.battle.evasion[slot] = 100;
     }
     let mut monster_swings = 0u32;
     for _ in 0..40_000 {
         w.tick();
         for fx in w.drain_battle_hit_fx() {
-            if !fx.is_heal && fx.target_slot < w.party_count {
+            if !fx.is_heal && fx.target_slot < w.party.party_count {
                 monster_swings += 1;
             }
         }

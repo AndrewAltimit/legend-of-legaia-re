@@ -179,7 +179,7 @@ pub enum FieldEvent {
     /// **Not a map id.** The `0x3E` door-warp id space is a mode-24 minigame
     /// sub-id and never reaches this event - a
     /// [`crate::world::WorldMapEntityConfig::MinigameDoor`] arms
-    /// `World::pending_minigame_warp` instead.
+    /// `World::minigames.pending_warp` instead.
     WorldMapTransition { dest_index: u16, slot: u8 },
 }
 

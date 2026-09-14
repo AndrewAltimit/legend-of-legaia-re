@@ -104,10 +104,11 @@ fn cold_spawn_is_reachable_across_all_field_scenes() {
         }
         let has_floor = host
             .world
-            .field_object_cells
+            .terrain
+            .object_cells
             .iter()
             .any(|c| *c & legaia_asset::field_objects::CELL_WALK_VISIBLE != 0);
-        if !has_floor || host.world.field_collision_grid.len() < 0x80 * 0x80 {
+        if !has_floor || host.world.terrain.collision_grid.len() < 0x80 * 0x80 {
             // No walkability data (cutscene-only shells like `dream` /
             // `kor*`): the resolver keeps the retail seat, nothing to sweep.
             continue;
@@ -143,7 +144,7 @@ fn cold_spawn_is_reachable_across_all_field_scenes() {
             budget -= 1;
             if budget == 0
                 || !matches!(host.world.mode, SceneMode::Field)
-                || (budget <= 1470 && host.world.helper_contexts.is_empty())
+                || (budget <= 1470 && host.world.field_vm.helper_contexts.is_empty())
             {
                 break;
             }
@@ -151,7 +152,8 @@ fn cold_spawn_is_reachable_across_all_field_scenes() {
         if !matches!(host.world.mode, SceneMode::Field) {
             continue; // a scripted transition took over; nothing to assert
         }
-        if !host.world.helper_contexts.is_empty() || host.world.cutscene_timeline.is_some() {
+        if !host.world.field_vm.helper_contexts.is_empty() || host.world.cutscene.timeline.is_some()
+        {
             // A spawned record or the scene's own cutscene timeline is still
             // playing (the ending scenes hide the player for a long authored
             // cinematic - `WaitFrames` holds no longer count toward the
@@ -226,7 +228,7 @@ fn izumi_spawn_is_walkable_and_pad_moves_the_player() {
     loop {
         let _ = host.tick();
         budget -= 1;
-        if budget == 0 || (budget <= 2550 && host.world.helper_contexts.is_empty()) {
+        if budget == 0 || (budget <= 2550 && host.world.field_vm.helper_contexts.is_empty()) {
             break;
         }
     }

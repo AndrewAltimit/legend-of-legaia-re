@@ -118,7 +118,7 @@ pub struct LegaiaMinigames {
     /// loop; see `minigames_fishing.rs`).
     fishing_pond: Option<legaia_engine_core::fishing::PondSession>,
     /// The page's persistent fishing record - the tab widget's stand-in for
-    /// `World::fishing_points`, which the play page and the native window both
+    /// `World::minigames.fishing_points`, which the play page and the native window both
     /// seed a session from. Without it every `fishing_start` began from
     /// `FishingRecord::default()`, so the points counter reset on every cast
     /// series and the prize exchange could never be reached from this page.
@@ -151,7 +151,7 @@ pub struct LegaiaMinigames {
     /// the native window run one model rather than two.
     muscle_run: Option<legaia_engine_core::muscle_dome::DomeContest>,
     /// The player's casino coin bank, so a settled contest has somewhere to
-    /// pay into (the native host banks into `World::casino_coins`).
+    /// pay into (the native host banks into `World::minigames.casino_coins`).
     muscle_coins: u32,
     /// The last settled contest, kept so the page can show the payout.
     muscle_settlement: Option<legaia_engine_core::muscle_dome::ContestSettlement>,

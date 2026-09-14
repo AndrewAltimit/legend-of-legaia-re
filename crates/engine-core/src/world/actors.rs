@@ -13,7 +13,7 @@ impl World {
     /// global frame-time `delta`, (2) run the move VM through
     /// [`vm::move_vm::actor_tick`], which gates on the resulting timer and
     /// inspects the HALT flag after the call. Outcomes are recorded in
-    /// [`World::move_outcomes`] so engines that want to react to per-actor
+    /// [`crate::world::MoveVmGlobals::outcomes`] so engines that want to react to per-actor
     /// halts / waits can read them after the world ticks.
     ///
     /// `delta` mirrors the retail product `_DAT_1f800393 * _DAT_1f80037D`
@@ -21,12 +21,12 @@ impl World {
     /// scalar; the default world tick uses `1` so a Wait of N consumes N
     /// frames.
     pub fn tick_move_vms_with_delta(&mut self, delta: u16) {
-        self.move_outcomes.clear();
+        self.move_vm.outcomes.clear();
         for slot in 0..self.actors.len() {
             if !self.actors[slot].active {
                 continue;
             }
-            let bc = self.move_bytecode.get(slot).cloned().unwrap_or_default();
+            let bc = self.move_vm.bytecode.get(slot).cloned().unwrap_or_default();
             if bc.is_empty() {
                 continue;
             }
@@ -34,7 +34,7 @@ impl World {
             // before the gate).
             vm::move_vm::decrement_wait_timer(&mut self.actors[slot].move_state, delta);
             let outcome = self.actor_tick_at(slot, &bc, MOVE_VM_BUDGET);
-            self.move_outcomes.push((slot as u8, outcome));
+            self.move_vm.outcomes.push((slot as u8, outcome));
         }
     }
 
@@ -69,7 +69,7 @@ impl World {
     ///
     /// The other event variants (audio cues, render submissions,
     /// unlink requests, keyframe pose writeback) are recorded in
-    /// [`World::last_tick_events`] for engines that want to consume
+    /// [`crate::world::MoveVmGlobals::last_tick_events`] for engines that want to consume
     /// them but otherwise no-op. Wiring those is orthogonal to the
     /// move-buffer cursor.
     ///
@@ -78,11 +78,11 @@ impl World {
     // PORT: FUN_8002519c (list-walk tick dispatch; pool-not-lists divergence
     //                     documented above)
     pub fn tick_actor_physics_with(&mut self, scalars: TickScalars, listener: &ListenerState) {
-        self.last_tick_events.clear();
+        self.move_vm.last_tick_events.clear();
         let host = move_buffer_host::WorldMoveBufferView {
-            move_buf: &self.move_buffer_root,
-            move2_buf: &self.move2_buffer_root,
-            alt_buf: &self.move_buffer_alt_root,
+            move_buf: &self.move_vm.buffer_root,
+            move2_buf: &self.move_vm.buffer2_root,
+            alt_buf: &self.move_vm.buffer_alt_root,
         };
         for (idx, actor) in self.actors.iter_mut().enumerate() {
             if !actor.active {
@@ -98,7 +98,7 @@ impl World {
                 if kicked {
                     cursor_advance(&mut actor.move_buffer, &host, scalars.frame_delta);
                 }
-                self.last_tick_events.push((idx as u8, res));
+                self.move_vm.last_tick_events.push((idx as u8, res));
             }
         }
     }
@@ -108,7 +108,7 @@ impl World {
     ///
     /// `frame_delta` is retail's `DAT_1F800393` - the vsyncs one game tick
     /// spans - not a constant `1`. [`World::tick`] fires this once every
-    /// [`World::frame_step`] vsyncs, so the two together conserve
+    /// [`crate::world::FrameClock::frame_step`] vsyncs, so the two together conserve
     /// vsyncs-per-second: the dispatcher integrates the same total delta over
     /// the same wall-clock span, just in fewer, larger steps. That is exactly
     /// retail's own trade, and it is why duration-based parity (the camera
@@ -117,7 +117,7 @@ impl World {
     /// REF: FUN_80016B6C
     pub fn tick_actor_physics(&mut self) {
         let listener = ListenerState::unicast(0, 0, 0);
-        let cadence = vm::actor_tick::FrameCadence::from_raw(self.frame_step);
+        let cadence = vm::actor_tick::FrameCadence::from_raw(self.clock.frame_step);
         self.tick_actor_physics_with(TickScalars::for_cadence(cadence, 1), &listener);
     }
 
@@ -127,20 +127,20 @@ impl World {
     /// an empty slice to clear it - the cursor's resolver will then
     /// return `None` for every requested id.
     pub fn set_move_buffer_root(&mut self, bytes: Vec<u8>) {
-        self.move_buffer_root = bytes;
+        self.move_vm.buffer_root = bytes;
     }
 
     /// Install the MOVE2 buffer pool root (retail `_DAT_8007B840`).
     /// Selected when an actor's `cursor_requested` is `>= 0x400`.
     pub fn set_move2_buffer_root(&mut self, bytes: Vec<u8>) {
-        self.move2_buffer_root = bytes;
+        self.move_vm.buffer2_root = bytes;
     }
 
     /// Install the alternate MOVE buffer pool root (retail
     /// `_DAT_8007B75C`). Selected when the actor's status flag word
     /// has [`vm::move_buffer::STATUS_FLAG_ALT_POOL`] set.
     pub fn set_move_buffer_alt_root(&mut self, bytes: Vec<u8>) {
-        self.move_buffer_alt_root = bytes;
+        self.move_vm.buffer_alt_root = bytes;
     }
 
     /// Advance all active actor animations one frame. Mirrors the
@@ -313,7 +313,7 @@ impl World {
         // The move-FX streak counter walk (retail `FUN_801E09F8` phase 1):
         // `ctx[+0x6C6]` falls 4 per frame, shrinking the trail's half-width
         // and scheduling the afterimage -> ribbon emitter handoff.
-        self.move_fx_streak.tick_counter();
+        self.casting.move_fx_streak.tick_counter();
     }
 
     /// Walk actor `i`'s committed effect script for one frame and queue the
@@ -326,7 +326,7 @@ impl World {
     /// is the installed [`crate::move_power::MovePowerCatalog`]'s id-index
     /// map when present.
     ///
-    /// The terminator's context writes land in [`Self::move_fx_streak`] -
+    /// The terminator's context writes land in [`crate::world::CastFxState::move_fx_streak`] -
     /// the `ctx[+0x1014]` / `+0x6C6` / `+0x1144` block the afterimage streak
     /// projects from ([`crate::action_effect_script::MoveFxStreak`]).
     // REF: FUN_80047430 (the retail caller this substitutes for)
@@ -365,6 +365,7 @@ impl World {
         // stepper's terminator reads the 0x801F4E64-based view (`map[action
         // - 1]`), so skip the first byte - same bytes, reconciled bases.
         let map = self
+            .tables
             .move_power
             .as_ref()
             .and_then(|cat| cat.id_index_map_bytes().get(1..))
@@ -378,7 +379,8 @@ impl World {
         );
         let cursor = step.cursor;
         for s in &step.spawns {
-            self.battle_effect_spawns
+            self.battle
+                .effect_spawns
                 .push(crate::battle_events::BattleEffectSpawn {
                     actor_slot: i as u8,
                     effect: s.effect & !fx::EFFECT_DIRECT_BIT,
@@ -396,9 +398,9 @@ impl World {
             let counter = step
                 .move_power_offset
                 .map(|off| (off / fx::MOVE_POWER_STRIDE) as u8)
-                .and_then(|id| self.move_power.as_ref()?.record_for_move_id(id))
+                .and_then(|id| self.tables.move_power.as_ref()?.record_for_move_id(id))
                 .map(|rec| rec.counter_init());
-            self.move_fx_streak.install(&step, counter);
+            self.casting.move_fx_streak.install(&step, counter);
         }
         if let Some(actor) = self.actors.get_mut(i) {
             actor.battle_effect_cursor = cursor;
@@ -410,7 +412,7 @@ impl World {
     /// The render layer projects the afterimage streak from it; `is_armed()`
     /// is `false` until a terminator has run.
     pub fn move_fx_streak(&self) -> crate::action_effect_script::MoveFxStreak {
-        self.move_fx_streak
+        self.casting.move_fx_streak
     }
 
     /// Plan this frame's arts after-image ghosts - the engine seat of the
@@ -493,6 +495,7 @@ impl World {
             return;
         }
         let word = self
+            .tables
             .move_power
             .as_ref()
             .and_then(|t| t.impact_table())
@@ -604,6 +607,7 @@ impl World {
             return;
         };
         let tint = self
+            .tables
             .move_power
             .as_ref()
             .and_then(|t| t.impact_table())
@@ -1170,7 +1174,7 @@ impl World {
     /// after the locomotion step; `None` (the default) leaves the player on
     /// the static rest pose.
     pub fn set_field_player_anim(&mut self, anim: Option<crate::field_anim::FieldPlayerAnim>) {
-        self.field_player_anim = anim;
+        self.locomotion.player_anim = anim;
     }
 
     /// Frame count to size a **cross-context** clip cursor with when the scene
@@ -1182,7 +1186,8 @@ impl World {
     /// the right order - the frames the player actually *sees* are the host
     /// clip player's, which is a different object.
     pub(crate) fn player_clip_frames_hint(&self) -> u16 {
-        self.field_player_anim
+        self.locomotion
+            .player_anim
             .as_ref()
             .map(|a| {
                 let clip = if a.walking { &a.walk } else { &a.idle };
@@ -1208,7 +1213,7 @@ impl World {
     /// the option picks the default and the button inverts it - hold to run
     /// when Walk is selected, hold to walk when Run is.
     pub fn field_run_active(&self) -> bool {
-        self.field_run_button_held != self.field_move_run_default
+        self.locomotion.run_button_held != self.locomotion.run_default
     }
 
     /// The frame's base step - retail's `$s4` before the `+0x72` multiply at
@@ -1222,7 +1227,7 @@ impl World {
     ///
     /// PORT: FUN_801d01b0 (base-step selector)
     pub fn field_base_step(&self) -> i32 {
-        if self.field_forced_slow {
+        if self.locomotion.forced_slow {
             return crate::world::config::FIELD_BASE_STEP_FORCED_SLOW;
         }
         if self.field_run_active() {
@@ -1231,7 +1236,7 @@ impl World {
         crate::world::config::FIELD_BASE_STEP
     }
 
-    /// Recompute [`World::field_actor_moving`] by diffing every tracked
+    /// Recompute [`crate::world::FieldLocomotion::actor_moving`] by diffing every tracked
     /// actor's live field position against last frame's, and fold the
     /// player's own bit into its locomotion animation.
     ///
@@ -1253,7 +1258,7 @@ impl World {
     /// timeline, or the frame after a scene load) seeds the snapshot and is
     /// NOT reported as moving - its arrival is a placement, not a step.
     pub(crate) fn detect_field_actor_motion(&mut self) {
-        self.field_actor_moving.clear();
+        self.locomotion.actor_moving.clear();
         let player_slot = self.player_actor_slot;
         // The player reads from its move_state (the locomotion commits
         // there); NPCs read from the live placement-position map.
@@ -1261,28 +1266,28 @@ impl World {
             .and_then(|s| self.actors.get(s as usize))
             .map(|a| (a.move_state.world_x, a.move_state.world_z));
         let mut seen: std::collections::HashSet<u8> =
-            std::collections::HashSet::with_capacity(self.field_npc_positions.len() + 1);
+            std::collections::HashSet::with_capacity(self.npcs.positions.len() + 1);
         let mut moved_player = false;
         if let (Some(slot), Some(pos)) = (player_slot, player_pos) {
             seen.insert(slot);
-            match self.field_motion_prev.insert(slot, pos) {
+            match self.locomotion.motion_prev.insert(slot, pos) {
                 Some(prev) if prev != pos => {
                     moved_player = true;
-                    self.field_actor_moving.insert(slot);
+                    self.locomotion.actor_moving.insert(slot);
                 }
                 _ => {}
             }
         }
-        for (&slot, &pos) in &self.field_npc_positions {
+        for (&slot, &pos) in &self.npcs.positions {
             if Some(slot) == player_slot {
                 // The player is tracked off its move_state above; a stale
                 // mirror of it here must not double-report.
                 continue;
             }
             seen.insert(slot);
-            match self.field_motion_prev.insert(slot, pos) {
+            match self.locomotion.motion_prev.insert(slot, pos) {
                 Some(prev) if prev != pos => {
-                    self.field_actor_moving.insert(slot);
+                    self.locomotion.actor_moving.insert(slot);
                 }
                 _ => {}
             }
@@ -1290,8 +1295,10 @@ impl World {
         // Drop slots that are no longer tracked (scene actors torn down), so
         // a later scene reusing the slot number starts from a fresh seed
         // instead of diffing against a dead actor's last position.
-        self.field_motion_prev.retain(|slot, _| seen.contains(slot));
-        if moved_player && let Some(anim) = &mut self.field_player_anim {
+        self.locomotion
+            .motion_prev
+            .retain(|slot, _| seen.contains(slot));
+        if moved_player && let Some(anim) = &mut self.locomotion.player_anim {
             anim.moved_this_frame = true;
         }
     }
@@ -1305,7 +1312,7 @@ impl World {
         let Some(slot) = self.player_actor_slot else {
             return;
         };
-        let Some(anim) = &mut self.field_player_anim else {
+        let Some(anim) = &mut self.locomotion.player_anim else {
             return;
         };
         let pose = anim.tick();
@@ -1338,7 +1345,7 @@ impl World {
         let outcome = vm::move_vm::actor_tick(&mut host, actor_state, bytecode, budget);
         let writes = std::mem::take(&mut host.deferred_writes);
         if !writes.is_empty()
-            && let Some(buf) = self.move_bytecode.get_mut(slot)
+            && let Some(buf) = self.move_vm.bytecode.get_mut(slot)
         {
             for (off, value) in writes {
                 if off >= buf.len() {
@@ -1352,11 +1359,12 @@ impl World {
 
     /// Resolve a battle/party ordinal (actor slot, HUD row, VRAM texture
     /// band) to the **roster slot** of the character occupying it, per
-    /// [`Self::active_party`]. Identity when no composition is installed
+    /// [`crate::world::PartyState::active_party`]. Identity when no composition is installed
     /// or the ordinal runs past it - the historical slot-`i`-is-character-`i`
     /// behaviour every synthetic test relies on.
     pub fn party_roster_slot(&self, member: usize) -> usize {
-        self.active_party
+        self.party
+            .active_party
             .get(member)
             .map(|&s| s as usize)
             .unwrap_or(member)
@@ -1366,7 +1374,7 @@ impl World {
     /// battle ordinal `i` (the engine mirror of retail's present-party
     /// list at `0x8007BD10`). The list caps at the 3 on-screen party
     /// positions (the runtime texture-band count). Sets
-    /// [`Self::party_count`] to the resulting length and, for each ordinal
+    /// [`crate::world::PartyState::party_count`] to the resulting length and, for each ordinal
     /// whose mapped roster record exists, reseeds the party actor's HP /
     /// MP / liveness / SPD mirror from it - the same projection
     /// [`Self::load_party`] performs for the identity mapping. Ordinals
@@ -1377,7 +1385,7 @@ impl World {
         let mut active = slots;
         active.truncate(3);
         for (member, &rslot) in active.iter().enumerate() {
-            let Some(rec) = self.roster.members.get(rslot as usize) else {
+            let Some(rec) = self.party.roster.members.get(rslot as usize) else {
                 continue;
             };
             let hms = rec.hp_mp_sp();
@@ -1388,14 +1396,14 @@ impl World {
                 a.battle.mp = hms.mp_cur;
                 a.battle.liveness = if hms.hp_cur > 0 { 1 } else { 0 };
             }
-            if let Some(s) = self.battle_speed.get_mut(member) {
+            if let Some(s) = self.battle.speed.get_mut(member) {
                 *s = rec.live_stats().spd;
             }
         }
         if !active.is_empty() {
-            self.party_count = active.len() as u8;
+            self.party.party_count = active.len() as u8;
         }
-        self.active_party = active;
+        self.party.active_party = active;
     }
 
     /// Place the world into [`SceneMode::Battle`] and populate the actor
@@ -1419,12 +1427,13 @@ impl World {
     // PORT: FUN_800513F0 (battle setup: seat stamping from the SCUS tables)
     pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
-        self.battle_monster_flee_attempted = false;
-        self.party_count = party_count.min(3);
+        self.battle.monster_flee_attempted = false;
+        self.party.party_count = party_count.min(3);
         let monster_count = monster_count.min(5);
-        let actor_count = ((self.party_count as usize) + (monster_count as usize)).min(MAX_ACTORS);
-        for i in 0..(self.party_count as usize).min(actor_count) {
-            let s = crate::battle_seats::party_seat(self.party_count, i);
+        let actor_count =
+            ((self.party.party_count as usize) + (monster_count as usize)).min(MAX_ACTORS);
+        for i in 0..(self.party.party_count as usize).min(actor_count) {
+            let s = crate::battle_seats::party_seat(self.party.party_count, i);
             let actor = self.spawn_actor(i);
             actor.move_state.world_x = s.x;
             actor.move_state.world_y = s.y;
@@ -1435,10 +1444,10 @@ impl World {
             // per-action bearing writes once actions run.
             actor.battle.facing_angle = 0;
         }
-        for i in (self.party_count as usize)..actor_count {
+        for i in (self.party.party_count as usize)..actor_count {
             let s = crate::battle_seats::monster_seat(
                 monster_count,
-                i - self.party_count as usize,
+                i - self.party.party_count as usize,
                 false,
             );
             let actor = self.spawn_actor(i);
@@ -1453,7 +1462,7 @@ impl World {
         // avoid pulling battle_action::ActionState into world.rs imports.
         self.battle_ctx = vm::battle_action::BattleActionCtx::new();
         self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
-        self.battle_end = None;
+        self.battle.end = None;
         // Effect pool is reused across scenes - reset to a fresh instance
         // (per-battle the head/free-list rebuilds from scratch).
         self.effect_pool = vm::effect_vm::Pool::new();
@@ -1464,15 +1473,15 @@ impl World {
         // (`World::prime_battle_tutorial`); both are evaluated so a forced
         // fight still consumes an armed flag rather than leaving it to fire
         // again on the next battle.
-        self.battle_tutorial = None;
-        self.battle_tutorial_boxes.clear();
-        self.battle_flow = crate::battle_flow::BattleFlowState::Idle;
-        self.battle_round_flow = crate::battle_round::RoundFlow::default();
+        self.battle.tutorial = None;
+        self.battle.tutorial_boxes.clear();
+        self.battle.flow = crate::battle_flow::BattleFlowState::Idle;
+        self.battle.round_flow = crate::battle_round::RoundFlow::default();
         // `ctx[+0x289]`: the side-band's stage-1 phase starts at 0 with the
         // rest of the battle context.
-        self.battle_sparring_phase = 0;
+        self.battle.sparring_phase = 0;
         let armed_by_disc = self.take_battle_tutorial_arm();
-        if self.battle_tutorial_pending || armed_by_disc {
+        if self.battle.tutorial_pending || armed_by_disc {
             self.arm_battle_tutorial();
         }
     }
@@ -1489,8 +1498,8 @@ impl World {
     /// it.
     pub fn enter_world_map(&mut self) {
         self.mode = SceneMode::WorldMap;
-        if self.world_map_ctrl.is_none() {
-            self.world_map_ctrl = Some(WorldMapController::new());
+        if self.world_map.ctrl.is_none() {
+            self.world_map.ctrl = Some(WorldMapController::new());
         }
     }
 
@@ -1506,16 +1515,16 @@ impl World {
     /// returns `None`) is a no-op transition - the field continues - which
     /// matches the engine's documented "treat a cut slot as a no-op" rule.
     pub(crate) fn maybe_enter_pending_cutscene(&mut self) {
-        let Some(fmv_id) = self.pending_fmv_trigger.take() else {
+        let Some(fmv_id) = self.cutscene.pending_fmv_trigger.take() else {
             return;
         };
         if self.mode != SceneMode::Field {
             return;
         }
         if crate::cutscene::fmv_index_to_str_filename(fmv_id).is_some() {
-            self.cutscene_return_mode = Some(self.mode);
+            self.cutscene.return_mode = Some(self.mode);
             self.mode = SceneMode::Cutscene;
-            self.active_fmv = Some(fmv_id);
+            self.cutscene.active_fmv = Some(fmv_id);
         }
     }
 
@@ -1523,14 +1532,15 @@ impl World {
     /// when no STR FMV is active. Hosts poll this after [`World::tick`] to
     /// learn which `MV*.STR` to open.
     pub fn active_fmv(&self) -> Option<i16> {
-        self.active_fmv
+        self.cutscene.active_fmv
     }
 
     /// The retail `MV*.STR` path of the active cutscene FMV, or `None` when
     /// no STR FMV is active. Convenience over
     /// [`crate::cutscene::fmv_index_to_str_filename`].
     pub fn active_fmv_str_filename(&self) -> Option<&'static str> {
-        self.active_fmv
+        self.cutscene
+            .active_fmv
             .and_then(crate::cutscene::fmv_index_to_str_filename)
     }
 
@@ -1547,15 +1557,15 @@ impl World {
     /// seven-entry list at `0x801CE8AC` into the next-scene name global
     /// `0x80084548` (+ spawn/door word `0x80084540`), e.g. `town01` triggers
     /// fmv 1 and lands in `town0b`. That transfer needs the host's asset
-    /// index, so this parks the finished id in [`World::finished_fmv`] and
+    /// index, so this parks the finished id in [`crate::world::CutsceneState::finished_fmv`] and
     /// [`crate::scene::SceneHost::apply_pending_fmv_handoff`] performs it -
     /// one drain, whichever host polls.
     // REF: FUN_801CEA3C
     pub fn finish_cutscene(&mut self) {
         if self.mode == SceneMode::Cutscene {
-            self.mode = self.cutscene_return_mode.take().unwrap_or(SceneMode::Field);
-            self.finished_fmv = self.active_fmv;
-            self.active_fmv = None;
+            self.mode = self.cutscene.return_mode.take().unwrap_or(SceneMode::Field);
+            self.cutscene.finished_fmv = self.cutscene.active_fmv;
+            self.cutscene.active_fmv = None;
         }
     }
 
@@ -1569,7 +1579,7 @@ impl World {
     /// is the only production caller. `take` semantics are what stop two
     /// hosts - or one host polling twice - from transferring control twice.
     pub fn take_finished_fmv(&mut self) -> Option<i16> {
-        self.finished_fmv.take()
+        self.cutscene.finished_fmv.take()
     }
 
     /// Build the per-frame sprite list for the renderer. One

@@ -8,8 +8,11 @@ use legaia_engine_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
 
 fn build_world(queued_action: u8) -> World {
     let mut world = World {
+        party: legaia_engine_core::world::PartyState {
+            party_count: 3,
+            ..Default::default()
+        },
         mode: SceneMode::Battle,
-        party_count: 3,
         ..World::default()
     };
     // 3 party + 5 monsters, all alive.
@@ -64,7 +67,7 @@ fn battle_complete_fires_on_party_wipe() {
     // in the same frame it completes, which consumes `battle_end` into
     // `game_over` (see `World::finish_battle`).
     assert_eq!(world.step_battle(), StepOutcome::BattleComplete);
-    assert_eq!(world.battle_end, Some(BattleEndCause::PartyWipe));
+    assert_eq!(world.battle.end, Some(BattleEndCause::PartyWipe));
 
     let mut world = build_world(3);
     for i in 0..3 {

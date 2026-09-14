@@ -254,7 +254,7 @@ impl FadeState {
 /// PORT: FUN_80024E80
 ///
 /// NOT WIRED: the engine's fades are host-driven state
-/// ([`crate::world::World::screen_fade`], a plain `Option<FadeState>`), not
+/// ([`crate::world::ScreenFxState::fade`], a plain `Option<FadeState>`), not
 /// entries in a fixed-capacity system-actor pool. The `slot_free` argument
 /// models a pool allocation outcome that no engine caller can supply an
 /// answer for, so every call site would have to invent `true`. Wiring it

@@ -61,7 +61,8 @@ fn spawn_xz(host: &SceneHost) -> (i16, i16) {
 /// Count of walk-visible floor cells in the loaded object grid.
 fn walk_visible_floor(host: &SceneHost) -> usize {
     host.world
-        .field_object_cells
+        .terrain
+        .object_cells
         .iter()
         .filter(|c| **c & WALK_VIS != 0)
         .count()
@@ -84,7 +85,7 @@ fn cold_field_entry_spawn_is_in_bounds_for_a_spread_of_scenes() {
             .unwrap_or_else(|e| panic!("enter_field_scene('{scene}') failed: {e:#}"));
 
         assert!(
-            host.world.field_collision_grid.len() >= STRIDE * STRIDE,
+            host.world.terrain.collision_grid.len() >= STRIDE * STRIDE,
             "[{scene}] expected a loaded collision grid"
         );
         let floor = walk_visible_floor(&host);

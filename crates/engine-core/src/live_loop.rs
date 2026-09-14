@@ -18,17 +18,17 @@ use crate::world::{SceneMode, World};
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LiveLoopOpts {
     /// Arm the field side of the Field<->Battle round trip
-    /// ([`World::live_gameplay_loop`]): walking a scene rolls step-driven
+    /// ([`crate::world::WorldToggles::live_gameplay_loop`]): walking a scene rolls step-driven
     /// random encounters.
     ///
     /// This does **not** gate battle *driving* - a battle the world is in is
-    /// always driven to resolution (see [`World::live_gameplay_loop`]) - and
+    /// always driven to resolution (see [`crate::world::WorldToggles::live_gameplay_loop`]) - and
     /// it is **independent of `player_battle`**. The two used to be
     /// entangled ("player battle implies the loop"), which made a
     /// "player-driven battles, no random encounters" configuration
     /// unexpressible: the implication silently re-armed the roll.
     pub live_loop: bool,
-    /// Make battles player-driven ([`World::battle_player_driven`]): each
+    /// Make battles player-driven ([`crate::world::BattleState::player_driven`]): each
     /// party turn opens the command menu instead of auto-attacking, and the
     /// Seru-learning registry a player-driven battle needs is installed.
     /// Orthogonal to `live_loop` - it decides how a battle is *played*, not
@@ -68,7 +68,7 @@ impl World {
     pub fn arm_live_loop(&mut self, scene: &str, opts: &LiveLoopOpts) {
         self.set_active_scene_label(scene);
 
-        if self.encounter.is_none() && matches!(self.mode, SceneMode::Field) {
+        if self.encounters.session.is_none() && matches!(self.mode, SceneMode::Field) {
             self.set_formation_table(
                 crate::monster_catalog::vanilla_formation_table(),
                 crate::monster_catalog::vanilla_monster_catalog(),
@@ -78,22 +78,22 @@ impl World {
         }
 
         if opts.live_loop {
-            self.live_gameplay_loop = true;
+            self.toggles.live_gameplay_loop = true;
         }
         self.set_battle_bgm(opts.battle_bgm);
         if opts.player_battle {
-            self.battle_player_driven = true;
+            self.battle.player_driven = true;
             self.set_seru_registry(crate::seru_learning::SeruRegistry::retail());
         }
         self.refresh_encounter_rollable();
-        if self.live_gameplay_loop && !self.scene_encounters_rollable {
-            self.scene_encounter_hint_frames = Self::ENCOUNTER_HINT_FRAMES;
+        if self.toggles.live_gameplay_loop && !self.encounters.scene_rollable {
+            self.encounters.scene_hint_frames = Self::ENCOUNTER_HINT_FRAMES;
             log::info!(
                 "live loop armed on '{scene}', but the scene rolls no random encounters \
                  (all regions rate 0 or shadowed) - this is retail scene data, not a fault"
             );
         } else {
-            self.scene_encounter_hint_frames = 0;
+            self.encounters.scene_hint_frames = 0;
         }
     }
 
@@ -106,13 +106,13 @@ impl World {
     /// Whether a host should be drawing the "this scene rolls no random
     /// encounters" hint this frame.
     pub fn show_encounter_hint(&self) -> bool {
-        self.scene_encounter_hint_frames > 0
-            && self.live_gameplay_loop
-            && !self.scene_encounters_rollable
+        self.encounters.scene_hint_frames > 0
+            && self.toggles.live_gameplay_loop
+            && !self.encounters.scene_rollable
             && matches!(self.mode, SceneMode::Field | SceneMode::WorldMap)
     }
 
-    /// Recompute the cached [`Self::scene_encounters_rollable`] answer.
+    /// Recompute the cached [`crate::world::EncounterState::scene_rollable`] answer.
     ///
     /// Called whenever the encounter tables change (scene entry's region
     /// routing, and [`Self::arm_live_loop`]). The underlying scan is a pass
@@ -123,15 +123,15 @@ impl World {
         // regions exist at all is a function of the live flag bank, so a
         // rollability answer taken against a stale group is an answer about a
         // different story state.
-        if let Some(mut t) = self.field_region_tracker.take() {
+        if let Some(mut t) = self.terrain.region_tracker.take() {
             t.select_group(|flag| self.system_flag_test(flag));
-            self.field_region_tracker = Some(t);
+            self.terrain.region_tracker = Some(t);
         }
-        if let Some(mut t) = self.world_map_region_tracker.take() {
+        if let Some(mut t) = self.world_map.region_tracker.take() {
             t.select_group(|flag| self.system_flag_test(flag));
-            self.world_map_region_tracker = Some(t);
+            self.world_map.region_tracker = Some(t);
         }
-        self.scene_encounters_rollable = self.scene_can_roll_encounters();
+        self.encounters.scene_rollable = self.scene_can_roll_encounters();
     }
 
     /// Restore every roster record's HP / MP to its maximum and re-seed the
@@ -144,7 +144,7 @@ impl World {
     /// ([`Self::finish_battle`]), dropping a wiped party straight back into
     /// the field would just re-wipe on the next encounter.
     pub fn revive_party_full(&mut self) {
-        for rec in self.roster.members.iter_mut() {
+        for rec in self.party.roster.members.iter_mut() {
             let mut hms = rec.hp_mp_sp();
             hms.hp_cur = hms.hp_max;
             hms.mp_cur = hms.mp_max;
@@ -175,7 +175,8 @@ impl World {
     pub fn scene_can_roll_encounters(&self) -> bool {
         if matches!(self.mode, SceneMode::WorldMap) {
             return self
-                .world_map_region_tracker
+                .world_map
+                .region_tracker
                 .as_ref()
                 .is_some_and(|t| t.table().any_rollable());
         }
@@ -183,13 +184,14 @@ impl World {
         // lazily on the first roll, so an `encounter.is_none()` early return
         // ahead of this branch reports "no encounters in this scene" for a
         // region scene that has not rolled yet.
-        if let Some(t) = self.field_region_tracker.as_ref() {
+        if let Some(t) = self.terrain.region_tracker.as_ref() {
             return t.table().any_rollable();
         }
-        if self.encounter.is_none() {
+        if self.encounters.session.is_none() {
             return false;
         }
-        self.encounter
+        self.encounters
+            .session
             .as_ref()
             .is_some_and(|s| !s.tracker().table().is_empty())
     }

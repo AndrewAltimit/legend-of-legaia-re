@@ -128,7 +128,7 @@ fn town01_entry_positions_match_retail_actor_list() {
     // `DAT_80085758` system-flag bank, byte-for-byte (engine layout matches:
     // byte `idx>>3`, bit `0x80 >> (idx&7)`).
     let bank_off = (0x8008_5758 & RAM_MASK) as usize;
-    host.world.system_flags = ram[bank_off..bank_off + 0x1100].to_vec();
+    host.world.flags.system_flags = ram[bank_off..bank_off + 0x1100].to_vec();
     host.enter_field_scene("town01", 0)
         .expect("enter town01 field scene");
 
@@ -165,7 +165,8 @@ fn town01_entry_positions_match_retail_actor_list() {
         };
         let (ex, ez) = host
             .world
-            .field_npc_positions
+            .npcs
+            .positions
             .get(&pi)
             .copied()
             .unwrap_or((p.world_x, p.world_z));
@@ -257,7 +258,8 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
     // (retail `FUN_8003A55C` writes `actor[+0x50] = 1`).
     assert!(
         host.world
-            .field_channels
+            .field_vm
+            .channels
             .iter()
             .any(|c| c.object_bind && c.ctx.script_id == 1),
         "the Vahn's-house door object (flat record 1) spawns as a resolvable channel"
@@ -266,7 +268,8 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
     let door = (17i16 * 128 + 0x40, 29i16 * 128 + 0x40);
     let entry = host
         .world
-        .field_npc_positions
+        .npcs
+        .positions
         .get(&mei)
         .copied()
         .expect("Mei's slot has an entry position");
@@ -284,7 +287,8 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
     }
     let during = host
         .world
-        .field_npc_positions
+        .npcs
+        .positions
         .get(&mei)
         .copied()
         .expect("Mei's slot still surfaced");
@@ -311,7 +315,8 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
     if std::env::var_os("LEGAIA_DIAG_MEI").is_some() {
         let ch = host
             .world
-            .field_channels
+            .field_vm
+            .channels
             .iter()
             .find(|c| !c.object_bind && c.placement_index == mei as usize);
         eprintln!(
@@ -326,8 +331,8 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
         );
         eprintln!(
             "[diag] motion: {:?} routes: {:?}",
-            host.world.field_npc_motions.get(&mei),
-            host.world.field_npc_routes.get(&mei)
+            host.world.npcs.motions.get(&mei),
+            host.world.npcs.routes.get(&mei)
         );
     }
     assert!(
@@ -342,7 +347,8 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
     // her ENTRY seat the moment the beat completed.
     let after = host
         .world
-        .field_npc_positions
+        .npcs
+        .positions
         .get(&mei)
         .copied()
         .expect("Mei's slot survives the beat");

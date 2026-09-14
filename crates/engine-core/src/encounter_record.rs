@@ -345,7 +345,7 @@ pub const BATTLE_ID_FALLBACK_MONSTER: u8 = 4;
 /// `DAT_8007b7fc` runs the id path, and a zero one runs this only when the
 /// formation cell `DAT_8007bd0c` is **still empty**, as the last-resort
 /// `[4, 4, 4, 4]` fill. The engine has no such stage: it resolves a battle
-/// through a typed `FormationDef` looked up in `World::formation_table`, so
+/// through a typed `FormationDef` looked up in `World::tables.formation_table`, so
 /// there is no four-byte cell that can be found empty and no fallback point
 /// for this to occupy.
 ///

@@ -26,7 +26,7 @@
 //! hands the menu exit code 5 with the destination triple staged.
 //!
 //! What it does not do is *enter* the world map at that landmark: the port has
-//! no drain for `World::pending_menu_warp`. The last test pins the reachable
+//! no drain for `World::menu.pending_warp`. The last test pins the reachable
 //! half and the staged-but-undrained half separately, so neither reads as the
 //! other.
 
@@ -49,8 +49,8 @@ use legaia_engine_core::world::World;
 /// Reusable: lane W1-F2's confirm-window draw tests need exactly this state.
 fn world_holding(ids: &[u8]) -> World {
     let mut world = World::new();
-    world.roster = legaia_save::Party::zeroed(3);
-    for member in &mut world.roster.members {
+    world.party.roster = legaia_save::Party::zeroed(3);
+    for member in &mut world.party.roster.members {
         let mut hms = member.hp_mp_sp();
         hms.hp_cur = 50;
         hms.hp_max = 100;
@@ -60,11 +60,11 @@ fn world_holding(ids: &[u8]) -> World {
     }
     // 0x77 sorts below every special id, so the special rows are never row 0
     // and the ladder has to actually walk the hand down to them.
-    world.inventory.insert(0x77, 3);
+    world.party.inventory.insert(0x77, 3);
     for &id in ids {
-        world.inventory.insert(id, 1);
+        world.party.inventory.insert(id, 1);
     }
-    world.party_leader_slot = Some(0);
+    world.party.party_leader_slot = Some(0);
     world.set_item_catalog(ItemCatalog::vanilla());
     world
 }
@@ -247,7 +247,7 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
     let mut world = world_holding(&[DOOR_OF_WIND_ITEM_ID]);
     // Two landmarks the walk will accept, one it will not: the placement
     // table is disc data, so the flags are what the ladder controls.
-    world.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
+    world.menu.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
         names: vec!["Rim Elm".into(), "Drake Castle".into(), "Sol".into()],
         placements: vec![
             placement(0, 0, 0x10, 0x0055),
@@ -304,9 +304,9 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
 
     // The bag is the measurable output: exactly one Door of Wind leaves it.
     apply_pause_items_outcome(&s, &mut world);
-    assert_eq!(world.inventory.get(&DOOR_OF_WIND_ITEM_ID), None);
+    assert_eq!(world.party.inventory.get(&DOOR_OF_WIND_ITEM_ID), None);
     assert_eq!(
-        world.pending_menu_warp,
+        world.menu.pending_warp,
         Some(legaia_engine_core::pause_screens::StagedWarp {
             scene_id: 0x0201,
             menu_x: 0x40,
@@ -316,12 +316,12 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
 }
 
 /// The residual, stated as a test so it cannot rot into a silent claim:
-/// nothing in the engine drains `World::pending_menu_warp`, so a committed
+/// nothing in the engine drains `World::menu.pending_warp`, so a committed
 /// Door of Wind stages its destination and the player stays put.
 #[test]
 fn the_staged_warp_has_no_drain_yet() {
     let mut world = world_holding(&[]);
-    world.pending_menu_warp = Some(legaia_engine_core::pause_screens::StagedWarp {
+    world.menu.pending_warp = Some(legaia_engine_core::pause_screens::StagedWarp {
         scene_id: 0x0055,
         menu_x: 1,
         menu_y: 2,
@@ -329,7 +329,7 @@ fn the_staged_warp_has_no_drain_yet() {
     // A scene transition is the channel a warp would have to use, and the
     // menu warp does not feed it.
     assert_eq!(world.pending_scene_transition, None);
-    assert!(world.pending_menu_warp.is_some());
+    assert!(world.menu.pending_warp.is_some());
 }
 
 fn placement(

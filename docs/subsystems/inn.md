@@ -154,8 +154,8 @@ inn session is cleared (`MenuRuntimeHost::commit` / `cancel`).
 
 On confirmation the engine calls `InnSession::can_afford(world_money)` before
 committing. The commit path (`commit_inn_confirm`):
-1. Deducts `InnSession::cost` from `World::money`.
-2. For each of the first `World::party_count` actor slots whose `active` flag
+1. Deducts `InnSession::cost` from `World::party.money`.
+2. For each of the first `World::party.party_count` actor slots whose `active` flag
    is set: restores `battle.hp` to `battle.max_hp` and `battle.mp` to the
    roster record's `mp_max`. Inactive slots and the reserve bench are
    untouched.
@@ -219,7 +219,7 @@ installs nothing for free-rest scenes) or directly by `open_inn(cost)`.
 
 ## Relationship to `legaia_save`
 
-Gold is stored at `_DAT_8008459C` in retail RAM and in `World::money` in the
+Gold is stored at `_DAT_8008459C` in retail RAM and in `World::party.money` in the
 engine. Per-character HP/MP live pools are the `(max, cur)` u16 pairs at
 `+0x104 / +0x106` (HP) and `+0x108 / +0x10A` (MP) within the 0x414-byte
 character record (see [`save-record.md`](../formats/save-record.md)).

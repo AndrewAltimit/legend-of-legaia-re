@@ -353,7 +353,7 @@ effect-class dispatcher `func_0x801F2160` on the capture side.
 and the monster AI's pick both *arm* the SM (`World::arm_player_cast` /
 `arm_monster_cast`: category `2`, the spell id at `params[0]`, the target byte,
 a monster's cast clip at `params[1]`) and park the resolved targets in one
-owner, `World::pending_cast`. The band then charges the ability-bit-folded MP at
+owner, `World::casting.pending_cast`. The band then charges the ability-bit-folded MP at
 `MagicCastBegin` and the outcome folds **once**, at retail's seam, through
 `cast_spell_on_slots_prepaid` (no second debit): a Seru cast folds in the
 engine's stager at its strike ([below](#the-engines-summon-stager)); anything
@@ -368,7 +368,7 @@ live loop on the same frame, as the item path's fold already did.
 A monster's cast is picked before the band is armed: `pick_monster_action`
 rolls the record's `+0x21..=+0x23` magic ids (retail's generic core of
 `FUN_801E9FD4`) and `take_monster_turn` keeps the pick only when
-`World::spell_catalog` resolves the id at an affordable cost - otherwise the
+`World::tables.spell_catalog` resolves the id at an affordable cost - otherwise the
 turn is a physical strike, silently. The boot catalog
 (`retail_magic::seru_magic_catalog_from_scus`) therefore carries every named,
 non-capture id below the player block as the SCUS table names it (Gimard's
@@ -424,7 +424,7 @@ through `World::seat_summon_actor`), idles it, stages clip `1` and glides it
 to `1064` behind the caster, folds the outcome there, lingers, and despawns
 it. The per-summon effect parts (the `0x180C` move-VM records) are not
 staged; the frame counts are the engine's, chosen to land the strike inside
-the band's `0x78`-frame sustain. The two flashes ride `World::screen_fade`
+the band's `0x78`-frame sustain. The two flashes ride `World::presentation.fade`
 (`FadeState`, which honours the templates' start delay and `-1` hold) and both
 hosts composite it through `fade_prim`; the band's hide (`RENDER_FLAG_HIDDEN`)
 is honoured by both hosts' draw gates.
@@ -2399,7 +2399,7 @@ Ported as `battle_formulas::camera_height_for_frame` (whole routine, gate includ
 `camera_height_from_size_class` (the `<< 7` + clamp arithmetic), and wired: the port runs at
 `ActionSeed` - the same edge as retail's call at `801e2d2c`, ahead of the gated
 `FUN_801EFE44` bounds walk - feeding `BattleActionHost::camera_frame_height` and landing on
-`World::battle_camera_frame_height`. The size input comes from the monster record's `+0x1F`
+`World::battle.camera_frame_height`. The size input comes from the monster record's `+0x1F`
 ([`monster-animation.md`](../formats/monster-animation.md), `MonsterRecord::size_class` ->
 `MonsterDef::size_class`) through the `BattleActionHost::monster_size_class` hook.
 
@@ -3145,7 +3145,7 @@ capture read it as `2` in one fight and `0` in the other.
 The port carries both halves now. `World::fire_melee_impact_cue` selects on
 `MonsterAiState::flag_bd84` (the port's mirror of the word - the damage finisher's
 enemy-defender halve): the grunt goes out as a `(clip, channel, dur)` request on
-`World::battle_xa_cues`, and the cue arm routes `0x10C` through `route_sfx_cue` with a modelled
+`World::audio.battle_xa_cues`, and the cue arm routes `0x10C` through `route_sfx_cue` with a modelled
 drive-busy flag (`dur` vsyncs after any clip start: `dur * 2.5` sectors at 150/s is `dur / 60`
 s) and the `0x800788B8` duration table parsed off the user's SCUS (`legaia_asset::xa_cue_table`). The native window plays the requests off a boot-staged
 `XaClipBank` (`XA27` / `XA30` demuxed + decoded, `crate::boot::read_battle_xa_clip_bank`)
@@ -3259,7 +3259,7 @@ be three-valued.
 The port carries the corrected reading in
 `legaia_engine_vm::battle_cue_group` (`CueTables::clut_map`,
 `CueSpawn::Effect::clut_x`), and the cue-group sink no longer pushes those
-bytes into `World::battle_sfx_cues`. The engine has no VRAM CLUT-row swap on
+bytes into `World::audio.battle_sfx_cues`. The engine has no VRAM CLUT-row swap on
 that seam, so the copy is dropped rather than mis-routed.
 
 The walker's prologue (`0x801DEA50..0x801DEBEC`) services the
@@ -3279,7 +3279,7 @@ terminator maths, `RetailRotationLut`), driven per battle frame by
 `World::drain_battle_effect_spawns` and route into the effect pool (direct
 form) / `World::spawn_action_table_effect` (table form), and the drain fires
 the table arm's `0x801F6418` byte under the retail `< 0x32` gate. That byte
-reaches `World::battle_sfx_cues` as a cue id, which is wrong for the reason
+reaches `World::audio.battle_sfx_cues` as a cue id, which is wrong for the reason
 [below](#0x801f6418-is-a-clut-row-map-not-an-sfx-map) - the walker's own sink
 still has to be moved off the SFX queue. Not yet modeled: the mesh-header scale + the
 per-code scale specials (the engine substitutes the q12 unit and the scene
@@ -3636,7 +3636,7 @@ strike, so a low swing and an arm swing no longer resolve against the same numbe
 
 When the active actor's `chosen_art` is set and `art_record` returns a record, `attack_chain` (state `0x1A`) calls a second host hook `apply_art_strike(ArtStrikeInfo)` alongside the existing `apply_damage`. `ArtStrikeInfo` carries the strike-indexed power byte, dmg_timing, hit cue, and the art's flat status effect. Engines drive HP deduction, status application, sound-effect scheduling, and visual hit-cue dispatch off this struct; tests feed synthetic `ArtRecord` instances and assert the per-strike `(power, timing, effect, cue)` resolution rather than going through `apply_damage`'s legacy `(icon, page, target, slot)` parameter pack.
 
-The engine-side translator at `crates/engine-core/src/art_strike.rs` (`apply_art_strike(attack, defense, info) -> ArtStrikeOutcome`) folds an `ArtStrikeInfo` into a concrete HP delta + status flag + scheduled SFX cues using the `art_strike_damage` formula in `legaia_engine_vm::battle_formulas`. The world's `BattleActionHost::apply_art_strike` impl resolves the per-slot weapon attack from `World::battle_attack` and the right defense (UDF or LDF, picked from `World::battle_defense_split`) before calling the translator, then emits a `BattleEvent::ApplyArtStrike` with the resolved `ArtStrikeOutcome`. Engines apply each strike's `damage` / `enemy_effect` / `cues` through whatever runtime they have for HP / status / SFX dispatch.
+The engine-side translator at `crates/engine-core/src/art_strike.rs` (`apply_art_strike(attack, defense, info) -> ArtStrikeOutcome`) folds an `ArtStrikeInfo` into a concrete HP delta + status flag + scheduled SFX cues using the `art_strike_damage` formula in `legaia_engine_vm::battle_formulas`. The world's `BattleActionHost::apply_art_strike` impl resolves the per-slot weapon attack from `World::battle.attack` and the right defense (UDF or LDF, picked from `World::battle.defense_split`) before calling the translator, then emits a `BattleEvent::ApplyArtStrike` with the resolved `ArtStrikeOutcome`. Engines apply each strike's `damage` / `enemy_effect` / `cues` through whatever runtime they have for HP / status / SFX dispatch.
 
 `World::fold_battle_event` folds the `ApplyArtStrike` outcome: HP / status into the target, and the outcome's **sound cues** (`cue.is_sound()`, the `HitCue::kind` SfxBank ids - distinct from the move-power `+0x0d` `FUN_8004fcc8` namespace) into a per-frame `BattleSfxCue` queue the host drains via `World::drain_battle_sfx_cues` (the audio sibling of `drain_battle_hit_fx`). The host plays each through `SfxBank::play_one_shot` at the cue's `timing_frames` delay. The live battle loop wires this end to end: the SFX bank is decoded from the user's executable at boot and the cues key on through the per-scene VAB (see [`battle.md`](battle.md#sfx-bank--scheduler)).
 

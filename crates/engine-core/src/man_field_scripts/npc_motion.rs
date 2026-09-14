@@ -492,7 +492,7 @@ pub fn placement_initial_facing(man_file: &ManFile, man: &[u8], p: &ActorPlaceme
 }
 
 /// Convert a spawn-prologue facing-LUT index (0..=7) to the engine's 12-bit
-/// render heading (`0` = Z+, the [`crate::world::World::field_npc_headings`]
+/// render heading (`0` = Z+, the [`crate::world::FieldNpcState::headings`]
 /// convention). `None` for indices 8..=15 - the SCUS LUT at `0x80073F04` has
 /// 16 addressable slots but only the first 8 are direction entries
 /// (`i * 0x200`); no authored prologue uses the upper half.
@@ -622,7 +622,7 @@ pub enum WalkTouchEvent {
     /// ordinal warps the player to an unrelated scene instead of into the
     /// venue. The field-VM arm and this walk-on arm are the same opcode
     /// reached two ways, so both post
-    /// [`crate::world::World::pending_minigame_warp`].
+    /// [`crate::world::MinigameState::pending_warp`].
     Warp { sub_id: u8 },
     /// The script teleports the **player** (cross-context `0x23 | 0x80` into
     /// the [`PLAYER_CHANNEL`]): walking into the placement snaps the player to

@@ -203,7 +203,7 @@ fn settle_until(session: &mut BootSession, ticks: usize, f: impl Fn(&BootSession
 
 fn monster_hp_total(session: &BootSession) -> u32 {
     let w = &session.host.world;
-    (w.party_count as usize..w.actors.len())
+    (w.party.party_count as usize..w.actors.len())
         .map(|i| w.actors[i].battle.hp as u32)
         .sum()
 }
@@ -216,16 +216,16 @@ fn open_surfaces(session: &BootSession) -> Vec<&'static str> {
     if w.arts_input_active() {
         out.push("arts_input");
     }
-    if w.battle_arts_menu.is_some() {
+    if w.battle.arts_menu.is_some() {
         out.push("arts_menu");
     }
-    if w.battle_spell_menu.is_some() {
+    if w.battle.spell_menu.is_some() {
         out.push("spell_menu");
     }
-    if w.battle_item_menu.is_some() {
+    if w.battle.item_menu.is_some() {
         out.push("item_menu");
     }
-    if w.battle_command.is_some() {
+    if w.battle.command.is_some() {
         out.push("command");
     }
     out
@@ -234,7 +234,7 @@ fn open_surfaces(session: &BootSession) -> Vec<&'static str> {
 /// A one-line description of what the pad is currently facing, for stalls.
 fn surface_report(session: &BootSession) -> String {
     let w = &session.host.world;
-    let phase = w.battle_command.as_ref().map(|s| match s.phase {
+    let phase = w.battle.command.as_ref().map(|s| match s.phase {
         CommandPhase::RoundPrompt { .. } => format!("RoundPrompt({:?})", s.round_choice()),
         CommandPhase::Menu { .. } => format!("Menu({:?})", s.menu_command()),
         CommandPhase::AttackMode { .. } => format!("AttackMode({:?})", s.attack_mode()),
@@ -243,7 +243,7 @@ fn surface_report(session: &BootSession) -> String {
     // Party / monster HP are in the report because the two ways a battle
     // stops handing out command sessions - the party is wiped, or the
     // opponent is dead - look identical from the surfaces alone.
-    let party_hp: u32 = (0..w.party_count as usize)
+    let party_hp: u32 = (0..w.party.party_count as usize)
         .map(|i| w.actors[i].battle.hp as u32)
         .sum();
     format!(
@@ -269,7 +269,7 @@ fn no_command(session: &BootSession, after: &str) -> String {
 /// Wait for a party turn to hand the pad a command session.
 fn wait_for_command(session: &mut BootSession) -> bool {
     settle_until(session, SETTLE_TICKS, |s| {
-        s.host.world.battle_command.is_some()
+        s.host.world.battle.command.is_some()
     })
 }
 
@@ -295,7 +295,7 @@ fn pick_command(session: &mut BootSession, want: BattleCommand) -> bool {
         // Decide the press with the borrow, then drop it - `tap` needs the
         // session mutably and the surface may change under it.
         let press = {
-            let Some(cmd) = session.host.world.battle_command.as_ref() else {
+            let Some(cmd) = session.host.world.battle.command.as_ref() else {
                 // The session handed the pad on - either to a submenu or to
                 // the action SM. Either way the walk is done.
                 return true;
@@ -348,7 +348,8 @@ fn confirm_target(session: &mut BootSession) {
         let up = session
             .host
             .world
-            .battle_command
+            .battle
+            .command
             .as_ref()
             .map(|s| matches!(s.phase, CommandPhase::Targeting { .. }))
             .unwrap_or(false);
@@ -364,7 +365,8 @@ fn at_round_prompt(session: &BootSession) -> bool {
     session
         .host
         .world
-        .battle_command
+        .battle
+        .command
         .as_ref()
         .map(|s| matches!(s.phase, CommandPhase::RoundPrompt { .. }))
         .unwrap_or(false)
@@ -401,8 +403,8 @@ fn reset_to_field(session: &mut BootSession) -> bool {
 /// ring and presses the button that uses it.
 fn stock_player(session: &mut BootSession) {
     let w = &mut session.host.world;
-    w.inventory.insert(ITEM_HEALING_LEAF, 9);
-    for member in w.roster.members.iter_mut() {
+    w.party.inventory.insert(ITEM_HEALING_LEAF, 9);
+    for member in w.party.roster.members.iter_mut() {
         // Prepend order fixes the menu rows: the last one prepended sits at
         // row 0, so the summon is row 0 and the MP-rung spell is row 1.
         legaia_engine_core::magic_xp::learn_spell_prepend(member, SPELL_FOR_MP_RUNG);
@@ -420,7 +422,7 @@ fn stock_player(session: &mut BootSession) {
     // before the late rungs. Below max because a heal item on a full-HP party
     // is a legitimately refused selection, and the Item rung would then be
     // measuring the usability gate rather than the Item arm.
-    for i in 0..w.party_count as usize {
+    for i in 0..w.party.party_count as usize {
         w.actors[i].battle.max_hp = 60000;
         w.actors[i].battle.hp = 30000;
         w.actors[i].battle.mp = 999;
@@ -454,7 +456,7 @@ fn enter_battle(session: &mut BootSession) -> bool {
     // command surface, and every rung still reaches its outcome by pressing
     // the button that causes it.
     let w = &mut session.host.world;
-    for i in w.party_count as usize..w.actors.len() {
+    for i in w.party.party_count as usize..w.actors.len() {
         if w.actors[i].battle.max_hp > 0 {
             w.actors[i].battle.max_hp = 60000;
             w.actors[i].battle.hp = 60000;
@@ -628,7 +630,8 @@ fn battle_depth_ladder() {
         let caster = session
             .host
             .world
-            .battle_command
+            .battle
+            .command
             .as_ref()
             .map(|s| s.actor as usize)
             .unwrap_or(0);
@@ -639,7 +642,7 @@ fn battle_depth_ladder() {
                 surface_report(&session)
             ));
         }
-        if session.host.world.battle_spell_menu.is_none() {
+        if session.host.world.battle.spell_menu.is_none() {
             return Err(format!(
                 "the magic arm opened no spell menu ({})",
                 surface_report(&session)
@@ -649,7 +652,7 @@ fn battle_depth_ladder() {
         // row 0 and the plain spell one below it.
         tap(&mut session, PadButton::Down);
         for _ in 0..12 {
-            if session.host.world.battle_spell_menu.is_none() {
+            if session.host.world.battle.spell_menu.is_none() {
                 break;
             }
             tap(&mut session, PadButton::Cross);
@@ -677,7 +680,7 @@ fn battle_depth_ladder() {
                 surface_report(&session)
             ));
         }
-        if session.host.world.battle_spell_menu.is_none() {
+        if session.host.world.battle.spell_menu.is_none() {
             return Err(format!(
                 "no spell menu for the summon ({})",
                 surface_report(&session)
@@ -685,7 +688,7 @@ fn battle_depth_ladder() {
         }
         // Row 0 is the summon (prepended last).
         for _ in 0..12 {
-            if session.host.world.battle_spell_menu.is_none() {
+            if session.host.world.battle.spell_menu.is_none() {
                 break;
             }
             tap(&mut session, PadButton::Cross);
@@ -727,6 +730,7 @@ fn battle_depth_ladder() {
         let carried = session
             .host
             .world
+            .party
             .inventory
             .get(&ITEM_HEALING_LEAF)
             .copied()
@@ -737,7 +741,7 @@ fn battle_depth_ladder() {
                 surface_report(&session)
             ));
         }
-        if session.host.world.battle_item_menu.is_none() {
+        if session.host.world.battle.item_menu.is_none() {
             return Err(format!(
                 "the Item arm opened no item menu ({})",
                 surface_report(&session)
@@ -747,7 +751,7 @@ fn battle_depth_ladder() {
         // no horizontal navigation and no page flip, so Cross is the whole
         // vocabulary for "use the seated row on the seated target".
         for _ in 0..12 {
-            if session.host.world.battle_item_menu.is_none() {
+            if session.host.world.battle.item_menu.is_none() {
                 break;
             }
             tap(&mut session, PadButton::Cross);
@@ -755,6 +759,7 @@ fn battle_depth_ladder() {
         if !settle_until(&mut session, SETTLE_TICKS, |s| {
             s.host
                 .world
+                .party
                 .inventory
                 .get(&ITEM_HEALING_LEAF)
                 .copied()
@@ -782,7 +787,8 @@ fn battle_depth_ladder() {
         let guard = session
             .host
             .world
-            .battle_command
+            .battle
+            .command
             .as_ref()
             .map(|s| s.actor)
             .unwrap_or(0);
@@ -801,7 +807,7 @@ fn battle_depth_ladder() {
         // the press. A rung that can pass without its own cause is not
         // measuring its command.
         let slot = guard as usize;
-        let ap_before = session.host.world.ap_gauges[slot].current_ap;
+        let ap_before = session.host.world.battle.ap_gauges[slot].current_ap;
         if !pick_command(&mut session, BattleCommand::Spirit) {
             return Err(format!(
                 "Spirit arm unreachable ({})",
@@ -812,14 +818,14 @@ fn battle_depth_ladder() {
         // is consumed the moment Spirit is picked, frames before the SM
         // applies it.
         if !settle_until(&mut session, SETTLE_TICKS, |s| {
-            s.host.world.ap_gauges[slot].current_ap > ap_before
+            s.host.world.battle.ap_gauges[slot].current_ap > ap_before
         }) {
             return Err(format!(
                 "Spirit charged no AP (stuck at {ap_before}, {})",
                 surface_report(&session)
             ));
         }
-        if !session.host.world.battle_guarding[slot] {
+        if !session.host.world.battle.guarding[slot] {
             return Err("Spirit charged AP but raised no guard stance".into());
         }
         cleared.push("spirit");
@@ -843,7 +849,7 @@ fn battle_depth_ladder() {
                 surface_report(&session)
             ));
         }
-        session.host.world.battle_no_escape = true;
+        session.host.world.battle.no_escape = true;
         if !enter_battle(&mut session) {
             return Err(format!(
                 "could not enter the no-escape battle ({})",
@@ -862,7 +868,8 @@ fn battle_depth_ladder() {
         if session
             .host
             .world
-            .battle_command
+            .battle
+            .command
             .as_ref()
             .map(|s| BattleCommand::Run.available(s.no_escape))
             != Some(false)
@@ -883,7 +890,7 @@ fn battle_depth_ladder() {
                 surface_report(&session)
             ));
         }
-        session.host.world.battle_no_escape = false;
+        session.host.world.battle.no_escape = false;
         if !enter_battle(&mut session) {
             return Err(format!(
                 "could not enter the escapable battle ({})",

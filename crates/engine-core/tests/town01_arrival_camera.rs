@@ -136,6 +136,6 @@ fn town01_arrival_stages_snap_then_two_mode4_glides() {
     );
 
     // The merged staging ends the H-glide beat holding mode 4 / apply 600.
-    assert_eq!(host.world.camera_state.mode, 4, "staged curve mode");
-    assert_eq!(host.world.camera_state.apply_trigger, 600, "staged apply");
+    assert_eq!(host.world.camera.state.mode, 4, "staged curve mode");
+    assert_eq!(host.world.camera.state.apply_trigger, 600, "staged apply");
 }

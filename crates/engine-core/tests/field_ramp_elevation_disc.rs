@@ -81,13 +81,13 @@ fn field_world(index: &ProtIndex, scene_name: &str) -> World {
     let mut world = World::new();
     world.install_field_player(0);
     world.load_field_collision_grid(&grid);
-    world.field_floor_height_lut = lut.map(|v| v.wrapping_neg());
+    world.terrain.floor_height_lut = lut.map(|v| v.wrapping_neg());
     world.load_field_object_cells(&map[OBJECT_GRID_OFFSET..]);
     world.load_field_elevation_overrides(
         &map[TRIGGER_BLOCK_OFFSET..],
         map.get(TRIGGER_FALLBACK_OFFSET..).unwrap_or_default(),
     );
-    world.follow_terrain_height = true;
+    world.locomotion.follow_terrain_height = true;
     world
 }
 
@@ -98,7 +98,7 @@ fn tile_centre(c: i32, r: i32) -> (i32, i32) {
 
 /// The collision-grid elevation nibble of tile `(c, r)`.
 fn nibble(world: &World, c: i32, r: i32) -> u8 {
-    world.field_collision_grid[(r * 0x80 + c) as usize] & 0x0F
+    world.terrain.collision_grid[(r * 0x80 + c) as usize] & 0x0F
 }
 
 /// Rim Elm's ramp tiles are flagged, carry kind-2 records, and their collision
@@ -109,7 +109,7 @@ fn rim_elm_ramp_tiles_are_override_tiles_over_sea_level_nibbles() {
     let world = field_world(&index, "town01");
 
     assert!(
-        !world.field_elevation_overrides.is_empty(),
+        !world.terrain.elevation_overrides.is_empty(),
         "town01 must parse a kind-2 elevation-override table"
     );
 
@@ -206,11 +206,11 @@ fn kind2_tables_are_well_formed_across_the_field_scenes() {
             continue;
         }
         let world = field_world(&index, name);
-        if world.field_elevation_overrides.is_empty() {
+        if world.terrain.elevation_overrides.is_empty() {
             continue;
         }
         scenes_with_overrides += 1;
-        for rec in &world.field_elevation_overrides {
+        for rec in &world.terrain.elevation_overrides {
             // A record whose tile is off the 128x128 grid means the stride /
             // offset math has drifted.
             assert!(
@@ -221,7 +221,7 @@ fn kind2_tables_are_well_formed_across_the_field_scenes() {
             // are two halves of one mechanism.
             let idx = (rec.tile_z as usize) * 0x80 + rec.tile_x as usize;
             assert!(
-                world.field_object_cells[idx] & CELL_ELEVATION_OVERRIDE != 0,
+                world.terrain.object_cells[idx] & CELL_ELEVATION_OVERRIDE != 0,
                 "{name}: kind-2 record {rec:?} names a tile with no 0x800 bit"
             );
         }

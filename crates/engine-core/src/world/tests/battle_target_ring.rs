@@ -30,7 +30,7 @@ fn seated_battle() -> World {
         w.actors.push(Actor::default());
     }
     w.enter_battle(1, 4);
-    w.battle_player_driven = true;
+    w.battle.player_driven = true;
     w.mode = SceneMode::Battle;
     // Roster first: `load_party` projects hp/liveness off the (zeroed)
     // records, so seeding it AFTER the stat loop left the acting party
@@ -53,13 +53,13 @@ fn seated_battle() -> World {
 /// Open the arts menu on slot 0 with one saved chain, then step to the target
 /// cursor. Returns the world with the picker live.
 fn open_target_cursor(w: &mut World) {
-    w.saved_chains.push(legaia_save::SavedChainRecord {
+    w.party.saved_chains.push(legaia_save::SavedChainRecord {
         char_slot: 0,
         name: "Combo".into(),
         sequence: vec![1, 2, 3],
     });
     w.battle_ctx.active_actor = 0;
-    w.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
+    w.battle.arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
         0,
         0,
         w.build_battle_arts_rows(0),
@@ -72,7 +72,8 @@ fn open_target_cursor(w: &mut World) {
 
 fn cursor_slot(w: &World) -> u8 {
     let picker = w
-        .battle_arts_menu
+        .battle
+        .arts_menu
         .as_ref()
         .and_then(|m| m.picker())
         .expect("target picker live");
@@ -104,7 +105,7 @@ fn run_armed_action(w: &mut World, cap: u32) -> Vec<BattleEvent> {
     let mut seen = Vec::new();
     for _ in 0..cap {
         if w.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
-            || w.battle_command.is_some()
+            || w.battle.command.is_some()
         {
             break;
         }
@@ -224,14 +225,14 @@ fn stage_somersault(w: &mut World) {
 fn open_somersault_menu(w: &mut World) {
     w.battle_ctx.active_actor = 0;
     let rows = w.build_battle_arts_rows(0);
-    w.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(0, 0, rows));
+    w.battle.arts_menu = Some(crate::battle_arts::BattleArtsSession::new(0, 0, rows));
 }
 
 #[test]
 fn performing_an_art_learns_it_once() {
     let mut w = seated_battle();
     stage_somersault(&mut w);
-    w.saved_chains.push(legaia_save::SavedChainRecord {
+    w.party.saved_chains.push(legaia_save::SavedChainRecord {
         char_slot: 0,
         name: "Som".into(),
         sequence: vec![4, 3, 4], // Up Down Up
@@ -247,7 +248,7 @@ fn performing_an_art_learns_it_once() {
 
     press(&mut w, PadButton::Cross); // open the target cursor
     press(&mut w, PadButton::Cross); // confirm - the art is armed
-    assert!(w.battle_arts_menu.is_none(), "arts menu closed");
+    assert!(w.battle.arts_menu.is_none(), "arts menu closed");
     // The confirm arms the SM's attack band; the learn-on-use check runs off
     // the strike that band produces, so the band has to be let run.
     // Retail's queue for a three-arrow art: the leading arrows stay swings,
@@ -278,12 +279,12 @@ fn performing_an_art_learns_it_once() {
         vec![(0u8, art_id)],
         "exactly one learn event, for the art actually performed"
     );
-    assert!(w.tactical_arts.is_learned(0, art_id));
-    assert_eq!(w.tactical_arts.learned_ids(0), vec![art_id]);
-    assert!(w.current_art_banner.is_some(), "HUD banner armed");
+    assert!(w.party.tactical_arts.is_learned(0, art_id));
+    assert_eq!(w.party.tactical_arts.learned_ids(0), vec![art_id]);
+    assert!(w.party.current_art_banner.is_some(), "HUD banner armed");
 
     // Perform it again: retail's membership scan hits, so nothing fires.
-    w.current_art_banner = None;
+    w.party.current_art_banner = None;
     open_somersault_menu(&mut w);
     press(&mut w, PadButton::Cross);
     press(&mut w, PadButton::Cross);
@@ -292,7 +293,7 @@ fn performing_an_art_learns_it_once() {
         .filter(|e| matches!(e, BattleEvent::TacticalArtLearned { .. }))
         .count();
     assert_eq!(again, 0, "a known art re-fires nothing");
-    assert!(w.current_art_banner.is_none());
+    assert!(w.party.current_art_banner.is_none());
 }
 
 #[test]
@@ -302,8 +303,8 @@ fn an_art_inside_the_innate_band_is_never_learned() {
     // character's starting arts out of the learn banner.
     let mut w = seated_battle();
     stage_somersault(&mut w);
-    w.tactical_arts.set_innate_cap(0, 0x30);
-    w.saved_chains.push(legaia_save::SavedChainRecord {
+    w.party.tactical_arts.set_innate_cap(0, 0x30);
+    w.party.saved_chains.push(legaia_save::SavedChainRecord {
         char_slot: 0,
         name: "Som".into(),
         sequence: vec![4],
@@ -316,5 +317,5 @@ fn an_art_inside_the_innate_band_is_never_learned() {
             .iter()
             .any(|e| matches!(e, BattleEvent::TacticalArtLearned { .. }))
     );
-    assert!(w.tactical_arts.learned_ids(0).is_empty());
+    assert!(w.party.tactical_arts.learned_ids(0).is_empty());
 }

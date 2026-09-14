@@ -63,7 +63,7 @@ impl BattleRound {
     /// 2. Computes per-slot [`BattleStats`] from each provided
     ///    [`StatRecord`] and the active status set.
     /// 3. Writes the resolved attack / defense values back into
-    ///    `World::battle_attack` / `battle_defense` so the strike
+    ///    `World::battle.attack` / `battle_defense` so the strike
     ///    resolver picks them up.
     pub fn begin(
         world: &mut World,
@@ -81,6 +81,7 @@ impl BattleRound {
                 continue;
             };
             let kinds: Vec<StatusKind> = world
+                .battle
                 .status_effects
                 .statuses(i as u8)
                 .iter()
@@ -147,12 +148,12 @@ impl BattleRound {
     /// PORT: FUN_801d88cc
     /// REF: FUN_801db8b4 (loop B's re-pick), FUN_801d0748 (the call site)
     pub fn boundary(world: &mut World) {
-        let party_count = (world.party_count as usize).max(1);
+        let party_count = (world.party.party_count as usize).max(1);
         let slots = world.actors.len().min(8);
 
         // Re-arm the picker's once-per-pass monster flee checkpoint: retail
         // re-enters `FUN_801E9FD4` each round with its balance counter cleared.
-        world.battle_monster_flee_attempted = false;
+        world.battle.monster_flee_attempted = false;
 
         // Loop A: every slot - gauge restore + action-stream clear.
         for slot in 0..slots {
@@ -196,7 +197,7 @@ impl BattleRound {
     ///
     /// PORT: FUN_801db8b4
     fn first_living_monster(world: &World) -> u8 {
-        let party_count = (world.party_count as usize).max(1);
+        let party_count = (world.party.party_count as usize).max(1);
         let end = world.actors.len().min(8);
         (party_count..end)
             .find(|&i| world.actors[i].battle.liveness != 0)
@@ -351,7 +352,7 @@ mod tests {
     fn begin_round_resets_ap_for_every_party_member() {
         let mut world = world_with_party();
         // Burn AP on every member.
-        for g in world.ap_gauges.iter_mut() {
+        for g in world.battle.ap_gauges.iter_mut() {
             *g = ApGauge::with_base(8);
             assert!(g.try_spend(2));
         }
@@ -362,7 +363,7 @@ mod tests {
             &EquipmentTable::new(),
             &StatusModifiers::default(),
         );
-        for g in world.ap_gauges.iter() {
+        for g in world.battle.ap_gauges.iter() {
             assert_eq!(g.current_ap, g.base_ap);
         }
     }
@@ -400,9 +401,9 @@ mod tests {
 
         assert_eq!(round.stats[0].atk, 107);
         // World snapshot the values for the strike resolver.
-        assert_eq!(world.battle_attack[0], 107);
+        assert_eq!(world.battle.attack[0], 107);
         // UDF / LDF split written.
-        let (udf, ldf) = world.battle_defense_split[0].expect("split written by begin");
+        let (udf, ldf) = world.battle.defense_split[0].expect("split written by begin");
         assert_eq!(udf, 50);
         assert_eq!(ldf, 40);
     }
@@ -414,6 +415,7 @@ mod tests {
         // since the 4/5 remap (4 = Toxic, 5 = Rot per the pinned appliers),
         // so apply the host-driven kind directly.
         world
+            .battle
             .status_effects
             .apply(1, legaia_engine_vm::status_effects::StatusKind::Sleep);
 
@@ -440,6 +442,7 @@ mod tests {
     fn begin_round_marks_magic_blocked_for_silenced_actor() {
         let mut world = world_with_party();
         world
+            .battle
             .status_effects
             .apply_from_enemy_effect(2, EnemyEffect::Other(6));
 
@@ -480,6 +483,7 @@ mod tests {
         }
         // Toxic raw tick = max_hp/16 = 6 >= the 5 HP left → clamped to 4.
         world
+            .battle
             .status_effects
             .apply_from_enemy_effect(0, EnemyEffect::Toxic);
         let deaths = BattleRound::end(&mut world);
@@ -495,11 +499,12 @@ mod tests {
         use legaia_engine_vm::status_effects::StatusKind;
         let mut world = World::new();
         world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
-        world.live_gameplay_loop = true;
-        world.battle_player_driven = false;
-        world.battle_speed[0] = 10;
-        world.battle_speed[1] = 10;
+        world.toggles.live_gameplay_loop = true;
+        world.battle.player_driven = false;
+        world.battle.speed[0] = 10;
+        world.battle.speed[1] = 10;
         world
+            .battle
             .status_effects
             .apply_with_duration(1, StatusKind::Sleep, 255);
         world.actors[0].battle.max_hp = 800;

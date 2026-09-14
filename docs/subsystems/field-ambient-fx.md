@@ -549,7 +549,7 @@ full-swing bright/black palette strobe at 15 Hz cycles on retail hardware
 authored behaviour, not a port bug, so the mitigation is an engine
 enhancement, defaulted to the safe side.
 
-`World::reduce_flashing` (default **on**, mirrored from
+`World::toggles.reduce_flashing` (default **on**, mirrored from
 `OptionsState::reduce_flashing` by the windowed hosts) gates a limiter
 inside `World::step_ambient_fx`, the one site where every mode-3
 `ClutCellFx` becomes texels on all three render surfaces. The move-VM
@@ -561,7 +561,7 @@ colored cone sweeps and hue wheels keep their full motion, and the
 bright/black strobe collapses to a low-amplitude shimmer (~0.9 Hz full
 cycles at the town clock). A drained backlog steps proportionally, so
 hosts that bank ticks catch up rather than slow down. The per-rect applied
-state (`World::ambient_flash_applied`) clears with the capture cache on
+state (`World::ambient.flash_applied`) clears with the capture cache on
 scene entry; turning the option off clears it and restores the
 retail-exact steps. Unit tests: `world/tests/flash_limiter.rs`.
 
