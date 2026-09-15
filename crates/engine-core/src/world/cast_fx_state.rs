@@ -51,6 +51,14 @@ pub struct CastFxState {
     /// The resident slot-B module's `ctx+0x278` scratch byte, written by
     /// three of the band's stagers.
     pub module_ctx_278: u8,
+    // --- W1-D: the fourteen trampoline arms ---
+    /// The `+0x1DD` value PROT 0940's split arm displaced off the caster,
+    /// which the module keeps in its own image word `0x801F8658` until the
+    /// `0xFF` arm puts it back
+    /// ([`legaia_engine_vm::cast_arm_ticks::glare_divide_split_tick`]).
+    /// `None` outside that choreography.
+    pub module_split_saved_target: Option<u8>,
+    // --- end W1-D ---
     /// The action id whose **capture-band** module is resident, i.e. the one
     /// battle phase `0x70` re-enters every frame through `FUN_801F2160`.
     ///
@@ -120,6 +128,9 @@ impl CastFxState {
             pending_cast: None,
             module_phase: 0,
             module_ctx_278: 0,
+            // --- W1-D ---
+            module_split_saved_target: None,
+            // --- end W1-D ---
             capture_spell: None,
             pending_move_fx_spawn: None,
             active_move_fx: None,

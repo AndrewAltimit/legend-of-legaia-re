@@ -266,3 +266,90 @@ from the `jal` that stops at the preceding branch loses them: PROT 0904's
 `0xFF` arm has the same shape for a non-damage constant - the animation rate it
 writes is the `li v0, 0x2` in the dispatch chain's delay slot at `0x801F6B44`,
 outside the arm entirely.
+
+<!-- W1-D -->
+
+## The fourteen trampoline-reached arms of PROT 0940..0962
+
+These are **entry rows**, not negative ones: every address below is a real
+function head of the image it is listed under, reached by that module's own
+trampoline. By this page's [three-way test](#the-three-way-test) their home is
+[`battle.md`](battle.md#slot-b-summon--cast-modules-prot-09030966), beside the
+twelve bodies already catalogued there; they are parked here so no address in
+the set is undocumented while the two pages are reconciled.
+
+A body VA is not a key. `801F6A04` is an arm in three of these images and
+frame-matches at three sizes, so each row names its PROT entry and its action
+id, and the port
+([`legaia_engine_vm::cast_arm_ticks`](../../../crates/engine-vm/src/cast_arm_ticks.rs))
+keys on the pair.
+
+| Address (entry / id) | Role |
+|---|---|
+| `801F7240` (940 / `0xAC`) | **Glare Divide, blind.** 8 arms, `sltiu 8`, table `0x801F69D8`. Arm 4 blanks the first monster seat's `+0x1EF..+0x1F3` reaction-clip run; arm 7 is terminal. No damage wrapper. The seat comes from `actor_table[3]` through a **reassigned** `s0` (`lui s0, 0x801d; addiu s0, s0, -0x6c90` at `0x801F7648`), not from `caster[+0x0C]`. |
+| `801F78B8` (940 / `0x50`, `0xAE`) | **Divide.** Chain over `{0,1,2,3,0xFF}`. Arm 2 allocates the seat `3 + ctx[+1]`, bumps `ctx[+1]` and `ctx[+0x1A]`, and writes the clone's `+0x16C = 0`, `+0x1DE = 2`, `+0x1DF = 0x50`, `+0x1DD = 9`, `+0x172 = +0x14C = caster[+0x14C]`. On id `0xAE` only, `rand() & 1` pins one of the two halves to HP 1 / ATK 1 / no MP / AGL `0x20`. Details [below](#the-divide-arm-allocates-a-battle-seat). |
+| `801F730C` (941 / `0x51`) | **Enemy Steal.** Chain over `{0,1,2,3,0xFF}`; **no** damage wrapper, contrary to the fourteen-arm table in [`cast-module.md`](../../subsystems/cast-module.md#the-fourteen-trampoline-arms-that-are-unported-tick-bodies). Arm 1 resolves the theft: a party victim loses a bag slot through `FUN_80042310`, a monster victim is rolled against the static steal table `0x80077828`. Details [below](#the-steal-arm-reaches-no-damage-wrapper). |
+| `801F6A04` (941 / `0xB9`) | **Whole-row sweep**, 5 arms, table `0x801F69D8`. Arm 2 rolls baked `0xC0` through `FUN_801DD4B0` per hittable seat (`0x801F6FA0` / `0x801F6FAC`), clamps unsigned at `0x801F6FD8`, stages `+0x1DA = +0x1F1` with `+0x1DC += 1` and puts every seat on `+0x21D = 2`. |
+| `801F6EF4` (943 / `0x40`) | **Curse, single target.** 5 arms, `sltiu 5`, table **`0x801F69F0`** (the module's other body owns `0x801F69D8`). Arm 3 is the whole point: `victim[+0x16E] |= 0x1000` at `0x801F7408`. No damage wrapper. |
+| `801F6A04` (943 / `0xB5`) | **Field-wide MP drain.** 5 arms, table `0x801F69D8`. Arm 2 walks `0 .. ctx[+0]` with no liveness guard at all: `+0x178 = +0x150`, then `+0x150 = 0` (`0x801F6D08`) and `+0x152 = 0` (`0x801F6D1C`). Those two stores are the ones [`cast-module.md`](../../subsystems/cast-module.md#the-band-has-eight-stat-block-writers-not-one) attributes to a routine at `0x801F69D8`; there is no routine there. |
+| `801F6A04` (944 / `0x37`) | **Guilty Cross.** 6 arms, `sltiu 6`, table `0x801F69D8`. Arm 0 takes the roll (`li a0, 0x38e` at `0x801F6AD0`, `jal 0x801DD6B4` - the **bypass** wrapper) and latches it in the image at `0x801F8370`, then picks its sound cue by whether it kills. Arm 3 applies it: unsigned clamp, `+0x10`, `+0x1DC = 1`, `+0x1DA = +0x1F1`, `+0x21D = 2`. |
+| `801F7470` (944 / `0x53`) | **Curse, scoped.** 5 arms, table `0x801F69F0`. Arm 3's `+0x16E |= 0x1000` covers one seat, `0 .. ctx[+0]` or the monster row `3 .. 3 + ctx[+1]`, by the caster's `+0x1DD` (`< 7` / `== 8` / else). No damage wrapper. |
+| `801F79F8` (950 / `0x5A`) | **Rolling Flare.** 5 arms, table **`0x801F6A10`**. Arm 3 rolls baked `0x100` through `FUN_801DD4B0` (`0x801F7F5C` / `0x801F7F80`); arm 4 is terminal and **waits on the victim's `+0x1D9`** - clip `8` when it died, `0` when it lived - before clearing `ctx[+0x0D]`. |
+| `801F6A24` (950 / `0xAB`) | **Whole-row sweep**, the band's longest arm map: 14 arms, `sltiu 0xE`, table `0x801F69D8`. Arm 10 rolls baked `0x29A` (`0x801F7700` / `0x801F770C`) per hittable seat with `+0x21D = 4`; arm 13 restores `+0x21D = 8` on every seat. |
+| `801F7298` (956 / `0x71`) | **Water Hazard**, the band's only two-wrapper arm. Chain over `{0,1,2,3,0xFF}`; arm 2 holds both sites, each baking `0xD0` into `FUN_801DD4B0` (`0x801F78C4` / `0x801F78D0` and `0x801F7A38` / `0x801F7A40`). Which row it sweeps is the caster's `+0x1DD`, and the monster leg skips the caster's own seat and picks `+0x1EF` over `+0x1F1` when the seat survives with `+0x1F2 == 0`. Either leg rolls `rand() & 7 == 0` per hit seat for `+0x16E |= 1`. |
+| `801F7AE4` (962 / `0xA2`) | **Blade Breath A.** Chain over `{0,1,2,3,4,0xFF}`. Windup clip `5`; arm 3 rolls baked `0x200` (`0x801F7F08` / `0x801F7F18`) and writes `victim[+0x21F] = 1`; arm 4 waits on the victim's `+0x1D9`. |
+| `801F74A0` (962 / `0xA3`) | **Blade Breath B.** Same chain. Windup clip `6` at `+0x21D = 3`; baked `0x200` at `0x801F787C` / `0x801F788C`, `victim[+0x21F] = 2`; arm 4 waits on the **caster's** clip and bumps `caster[+0x1DC]`. |
+| `801F6D54` (962 / `0xA4`) | **Blade Breath C.** Same chain. Windup clip `7` at `+0x21D = 4`; baked `0x200` at `0x801F72A0` / `0x801F72B4`; no `+0x21F` write; arm 4 waits on the victim's clip. |
+
+Arm `0` of all three PROT 0962 bodies **stores** `ctx[+0x279] = 1` outright
+rather than incrementing it, then advances again only once
+`FUN_8004E2F0(ctx[+0x13], caster[+0x1DD])` reports the caster has arrived - so
+the approach walk is a phase that re-enters itself.
+
+### The Divide arm allocates a battle seat
+
+`0x801F78B8` is the only routine in PROT 0903..0966 that adds an actor. The
+seat index is `ctx[+1]` read **before** the increment (`lbu v0, 1(v1);
+andi s3, v0, 0xff; addiu v0, v0, 1; sb v0, 1(v1)` at `0x801F7E08`), and the
+actor it writes is `actor_table[s3 + 3]`, i.e. the next free monster seat. The
+clone inherits the caster's monster record (`0x801C9348[s3] =
+0x801C9348[ctx[+0x13] - 3]`), its display object comes from `FUN_80054CB0` /
+`FUN_80024C88`, and its pose is `swl`/`swr`-copied out of the caster's
+`+0x34..+0x4B`.
+
+The `0xAE` branch is gated on the caster's queued id, read back off the actor
+table at `0x801F80EC` and compared with `li v0, 0xae`. It renames both halves
+(`FUN_8003CA38` to find the name end, `FUN_8003CA78` to append the module's own
+suffix) and then flips a coin: `rand() & 1 == 0` weakens the **clone**,
+otherwise it weakens the **caster**. Weakening is five halfwords - `+0x14C = 1`,
+`+0x150 = 0`, `+0x158 = 1`, `+0x156 = 0x20`, `+0x154 = 0x20`.
+
+Arm 3 does not advance the phase; it stores `0xFF` into `ctx[+0x279]`
+(`0x801F81EC`), and the `0xFF` arm restores the caster's `+0x1DD` from the
+image word `0x801F8658` before clearing the busy register.
+
+### The Steal arm reaches no damage wrapper
+
+`0x801F730C`'s ten distinct `jal` targets are `0x80019B28`, `0x8003CA78`,
+`0x8003CAC4`, `0x80042310`, `0x8004E2F0`, `0x8004FE5C`, `0x80050E2C`,
+`0x80056798`, `0x801D5854` and `0x801D8DE8`. None of them is `FUN_801DD0AC`,
+`FUN_801DD4B0` or `FUN_801DD6B4`, so the "one wrapper" cell for this row in
+[`cast-module.md`](../../subsystems/cast-module.md#the-fourteen-trampoline-arms-that-are-unported-tick-bodies)
+is wrong.
+
+What arm 1 does instead splits on the victim's seat. For a **party** seat
+(`< 3`) it rejection-samples the bag at `0x80085958`: `slot = rand() % 0x100`,
+index `slot * 2`, accept when the id byte, the count byte and the item table's
+record at `id * 0xC` are all non-zero, up to `0x400` draws; a second inner
+redraw floors the slot against `*(0x8007B5EA)` while `ctx[+0x11] == 4`. The
+accepted id is stashed at `0x801C8FE0 + (caster_seat - 3) * 4`, spliced into a
+message line, and removed from the bag with `FUN_80042310(id, 1)` - the
+inventory consume-by-id helper
+([`inventory.md`](../../subsystems/inventory.md)).
+
+For a **monster** seat it rolls `rand() % 100` against
+`0x80077828 + monster_id * 2`, the same `[chance, item]` pair
+[`steal-table.md`](../../formats/steal-table.md) documents for the player-side
+steal, and a hit also bumps a per-seat counter at
+`0x801C8FE0 + (caster_seat + 5) * 4`. Either way the arm ends with
+`ctx[+0x18] = 0x5B` and `FUN_801D8DE8(0x5B, 0)`, the message it displays.

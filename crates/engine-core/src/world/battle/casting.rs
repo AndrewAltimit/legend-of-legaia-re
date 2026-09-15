@@ -596,6 +596,19 @@ impl World {
     /// REF: FUN_801F85A8, FUN_801F8D64 (the sites the constants come from)
     fn baked_module_power(&self, move_id: u8) -> Option<i32> {
         let entry = self.cast_module_for(move_id)?;
+        // --- W1-D: the fourteen trampoline arms ---
+        // Seven more modules bake a power, and two of them bake a *different*
+        // one per body - PROT 0941 pairs a wrapper-free Steal against `0xC0`,
+        // PROT 0950 pairs `0x100` against `0x29A` - so the entry alone cannot
+        // answer for them. Resolve the body through the module's trampoline
+        // first and fall back to the entry-keyed table.
+        if let Some(body) = vm::cast_module_ticks::capture_tick_body(entry, move_id)
+            && let Some(shape) = vm::cast_arm_ticks::arm_damage_shape_for(entry, body)
+            && let Some(power) = shape.powers.first()
+        {
+            return Some(i32::from(*power));
+        }
+        // --- end W1-D ---
         vm::cast_module_ticks::baked_power_for(entry).map(i32::from)
     }
 

@@ -145,6 +145,30 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
         eprintln!("[skip] no move-power record for 0x37 on this image");
         return;
     };
+    // --- W1-D: the fourteen trampoline arms ---
+    // PROT 0944's `0x37` body now has a decoded damage shape, so the engine
+    // hands the wrapper the module's **baked** `a0` (`li a0, 0x38e` at
+    // `0x801F6AD0`, `jal 0x801DD6B4` at `0x801F6AD8`) rather than the
+    // move-power table's scalar - which is what retail does for every module
+    // whose site bakes a constant. The mirror below has to use the same
+    // number or it asserts the pre-correction routing.
+    // The non-vacuity control below deliberately keeps the move-power
+    // scalar: at the baked `0x38E` both kernels land on the same number, so
+    // reusing it there would make the control stop discriminating.
+    let baked = i32::from(
+        vm::cast_arm_ticks::arm_damage_shape_for(944, vm::cast_arm_ticks::GUILTY_CROSS_TICK)
+            .and_then(|s| s.powers.first().copied())
+            .expect("PROT 0944's 0x37 body has a baked power"),
+    );
+    assert_ne!(
+        baked, power,
+        "the baked power and the table scalar have to differ, or this test proves nothing"
+    );
+    // `folded_damage` returns `hp_before - hp_after`, so it saturates at the
+    // victim's live HP - and the baked power is large enough to reach it,
+    // where the table scalar was not.
+    let victim_hp = w.actors[0].battle.hp;
+    // --- end W1-D ---
     let dealt = folded_damage(&mut w, 0x37);
 
     // Mirror: the bypass wrapper's exact roll over the same stat bridge and
@@ -170,7 +194,7 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
         guard: 0,
     };
     let rng2 = [ds.draw(), ds.draw()];
-    let (atk, defv) = spell_wrapper_predamage(power.max(0) as u32, &a, &d, 100, rng2, || ds.draw());
+    let (atk, defv) = spell_wrapper_predamage(baked.max(0) as u32, &a, &d, 100, rng2, || ds.draw());
     let finish = DamageFinish {
         predamage: atk.saturating_sub(defv).clamp(1, 9999),
         attacker_slot: 3,
@@ -183,10 +207,10 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
         summon_power_pct: 100,
         floor_rand: 0,
     };
-    let expect = damage_finish_lazy(&finish, || ds.draw()).min(9999) as u16;
+    let expect = (damage_finish_lazy(&finish, || ds.draw()).min(9999) as u16).min(victim_hp);
     assert_eq!(
         dealt, expect,
-        "Guilty Cross folded through FUN_801DD6B4's roll"
+        "Guilty Cross folded through FUN_801DD6B4's roll on the module's baked 0x38E"
     );
 
     // Non-vacuity: the shared kernel over the SAME seed lands elsewhere, so
