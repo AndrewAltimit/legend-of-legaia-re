@@ -1089,8 +1089,7 @@ there in front of both calls.
 
 <a id="the-fourteen-trampoline-arms-that-are-unported-tick-bodies"></a>
 
-The twelve bodies above are one part of the band's code. The trampoline
-table
+The twelve bodies above are one part of the band's code. The trampoline table
 [above](#the-trampolines-are-their-own-port-and-one-cell-holds-six-spells)
 names fourteen more arms, tick bodies of exactly the same class as the eleven
 player-Seru ones below: whole choreographies, none small. All fourteen are
