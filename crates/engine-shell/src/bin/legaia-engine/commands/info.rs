@@ -278,13 +278,21 @@ pub(crate) fn cmd_list_scenes(
         // reads and what extracted/PROT/NNNN_*.BIN filenames use), not the
         // raw #define frame, so the listing matches the loaders.
         if let Some((start, end)) = cdname::block_range_for_name_extraction(&map, name) {
-            println!(
-                "  {:<24} PROT [{}..{}) ({} entries)",
-                name,
-                start,
-                end,
-                end - start
-            );
+            // The map's last block is open-ended: `cdname` returns a
+            // `u32::MAX`-derived end and leaves the clamp to whoever holds the
+            // TOC. This listing holds only the map, so it says so instead of
+            // printing a four-billion-entry count.
+            if end >= u32::MAX - 2 {
+                println!("  {:<24} PROT [{}..) (to the end of the TOC)", name, start);
+            } else {
+                println!(
+                    "  {:<24} PROT [{}..{}) ({} entries)",
+                    name,
+                    start,
+                    end,
+                    end - start
+                );
+            }
         }
     }
     Ok(())
