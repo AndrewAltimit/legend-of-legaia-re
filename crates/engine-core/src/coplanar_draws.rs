@@ -273,6 +273,40 @@ fn aabb_overlaps(a: &WorldPlane, b: &WorldPlane) -> bool {
     })
 }
 
+/// How far a manufactured in-plane slide can reach: the rank cap (16) times
+/// [`DRAW_NUDGE`]. A coplanar pair whose boxes are further apart than this
+/// can never be slid into each other by the lifts, so it is not worth
+/// tracking as an abutment.
+const SLIDE_REACH: f32 = DRAW_NUDGE * 16.0;
+
+/// Do two coplanar planes' boxes come within [`SLIDE_REACH`] of overlapping,
+/// measured in the plane only (the dominant-normal axis is what
+/// `MIN_SEP` judges, not this)?
+fn planes_within_slide_reach(a: &WorldPlane, b: &WorldPlane) -> bool {
+    let skip = dominant_axis(a.n);
+    (0..3)
+        .filter(|&ax| ax != skip)
+        .all(|ax| a.lo[ax] - SLIDE_REACH < b.hi[ax] && b.lo[ax] - SLIDE_REACH < a.hi[ax])
+}
+
+/// In-plane box overlap under per-draw offsets, with a hair-width margin.
+///
+/// [`aabb_overlaps`]'s 1.5-unit shrink exists to keep edge-adjacent tiles out
+/// of the *input* conflict graph. A slide the lift pass manufactures itself is
+/// one [`DRAW_NUDGE`] - smaller than that shrink - so the repair pass cannot
+/// reuse that test to see the overlap it just created, and needs this one.
+/// The dominant-normal axis is excluded: for a coplanar pair that axis is the
+/// plane's own thickness, which the repair judges with `MIN_SEP` instead.
+fn planes_overlap_shifted(a: &WorldPlane, oa: [f32; 3], b: &WorldPlane, ob: [f32; 3]) -> bool {
+    const EPS: f32 = 0.05;
+    let skip = dominant_axis(a.n);
+    (0..3).filter(|&ax| ax != skip).all(|ax| {
+        let (alo, ahi) = (a.lo[ax] + oa[ax], a.hi[ax] + oa[ax]);
+        let (blo, bhi) = (b.lo[ax] + ob[ax], b.hi[ax] + ob[ax]);
+        alo + EPS < bhi && blo + EPS < ahi
+    })
+}
+
 /// Detect cross-draw coplanar overlap clusters and return the world-space
 /// offset each affected draw should add to its translation. Draws without a
 /// conflict are absent from the map.
@@ -368,6 +402,10 @@ pub fn coplanar_draw_offsets(
     let mut seen: std::collections::HashSet<(usize, usize)> = Default::default();
     // Every accepted conflict pair, kept for the post-lift repair pass.
     let mut pairs: Vec<(usize, usize)> = Vec::new();
+    // Coplanar pairs that do NOT overlap as authored but sit close enough
+    // that a lift could slide them into each other (see the abutment note in
+    // the walk below).
+    let mut abutments: Vec<(usize, usize)> = Vec::new();
     // Sorted bucket walk: greedy family clustering is discovery-order
     // sensitive, and HashMap iteration order would make the offsets differ
     // run to run (the determinism-replay contract forbids that).
@@ -399,6 +437,28 @@ pub fn coplanar_draw_offsets(
                     continue;
                 }
                 if !aabb_overlaps(a, b) {
+                    // Coplanar but not overlapping: an **abutment**, two
+                    // strips of one surface meeting edge to edge. They are
+                    // not a conflict as authored - but a lift this pass hands
+                    // one of them is a slide *inside* their shared plane, and
+                    // a slide turns the abutment into a coplanar overlap that
+                    // was never in the art. Keep the pair so the repair below
+                    // can see one it manufactured.
+                    // Only a pair that is disjoint **in the plane** is an
+                    // abutment. A pair that overlaps in-plane and failed the
+                    // test on the normal axis instead is simply already
+                    // separated in depth - recording that as an abutment sets
+                    // the repair fighting itself, because the very lift that
+                    // separates it reads as a manufactured overlap to the
+                    // in-plane test (tunnela's res38 tunnel segments: the
+                    // abutment arm pushed a draw back onto the neighbour the
+                    // conflict arm had just lifted it off, every round).
+                    if planes_within_slide_reach(a, b)
+                        && !planes_overlap_shifted(a, [0.0; 3], b, [0.0; 3])
+                    {
+                        seen.insert((i, j));
+                        abutments.push((i, j));
+                    }
                     continue;
                 }
                 seen.insert((i, j));
@@ -495,10 +555,35 @@ pub fn coplanar_draw_offsets(
     // offsets and bump the smaller-plane draw of any still-coincident pair,
     // iterating until every pair separates (bounded; each round moves only
     // draws that still collide).
+    //
+    // The same loop also closes the pass's own manufactured coincidences.
+    // Each family lifts along its own normal, and a lift along one normal
+    // lies *inside* every plane perpendicular to it - so a draw lifted for
+    // its floor tie and again for a Z-facing wall slides its X-facing wall
+    // strip sideways, and an abutting neighbour's strip it merely touched
+    // becomes a `DRAW_NUDGE`-wide coplanar overlap. That is a z-fight the art
+    // does not contain and the detector never saw, because at input the pair
+    // did not overlap (koin4's res12/res34 wall sliver: a `[0, -0.75, -0.75]`
+    // sum with no component along the shared plane's `(1, 0, 0)` normal). The
+    // abutment pairs are therefore repaired too, but only once the offsets
+    // have actually pushed them into overlap.
     const MIN_SEP: f32 = 0.25;
+    // An abutment pair gets **one** lift for the whole loop. Without that cap
+    // an abutment and a conflict pair that share a mover and a normal family
+    // pull it in opposite directions once per round, forever: the conflict arm
+    // separates the pair, the abutment arm puts it back, and four rounds later
+    // the pair is coincident again (tunnela's res38 tunnel segments). Capped,
+    // the abutment fires once and the conflict arm - which runs first every
+    // round - has the last word.
+    let mut abutment_fired: Vec<bool> = vec![false; abutments.len()];
     for _ in 0..4 {
         let mut changed = false;
-        for &(i, j) in &pairs {
+        for (idx, (&(i, j), manufactured)) in pairs
+            .iter()
+            .map(|p| (p, false))
+            .chain(abutments.iter().map(|p| (p, true)))
+            .enumerate()
+        {
             let (a, b) = (&world[i], &world[j]);
             let (oa, ob) = (off_by_draw[a.draw], off_by_draw[b.draw]);
             let rel = [
@@ -508,6 +593,20 @@ pub fn coplanar_draw_offsets(
             ];
             if dot(a.n, rel).abs() >= MIN_SEP {
                 continue;
+            }
+            // An abutment is only owed a lift once the accumulated offsets
+            // have slid the two strips into each other; an untouched one
+            // still just touches, and lifting it would be the pass inventing
+            // a step in a flat surface.
+            if manufactured && !planes_overlap_shifted(a, oa, b, ob) {
+                continue;
+            }
+            if manufactured {
+                let slot = idx - pairs.len();
+                if abutment_fired[slot] {
+                    continue;
+                }
+                abutment_fired[slot] = true;
             }
             let (mover, vis) = if a.area <= b.area {
                 (a.draw, a.vis)
