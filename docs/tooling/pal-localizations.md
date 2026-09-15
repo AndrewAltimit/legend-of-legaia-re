@@ -72,6 +72,25 @@ and `DMY.DAT` are byte-identical, `PROT.DAT` grows ~150 KB, the exe ~4 KB, and
 the remainder is ISO sector overhead / padding. The localization did not
 restructure or re-author assets.
 
+## What the executables do not share
+
+The 1:1 parity above is a statement about the **containers**. The boot
+executable is not code-identical, and two of the differences change play:
+
+- **No battle-load stat boost.** `SCUS_942.54`'s `FUN_80054CB0` multiplies
+  ATK / UDF / LDF / INT as it installs each enemy (two profiles keyed on the
+  boss switch). Every PAL executable copies the record in untouched - see
+  [battle.md](../subsystems/battle.md#no-boost-on-the-pal-executables).
+- **Larger victory spoils.** The PAL spoils routine has neither the NTSC-U
+  second gold halving nor the 3/4 EXP cut: half the record gold and the whole
+  record EXP reach the party - see
+  [battle-formulas.md](../subsystems/battle-formulas.md#regional-difference---the-pal-executables-pay-more).
+
+Both are code-only: the monster archive (`PROT 0867`) reads the same stats and
+rewards on all four discs. Anything that fingerprints a disc by its executable
+bytes (`scus-pokes`, the static-overlay map, the port-catalog denominators) is
+USA-only by construction; a PAL image needs its own bases.
+
 ## Name-table alignment (SCES data segment)
 
 The five SCUS name tables (`docs/formats/item-table.md`, `spell-table.md`,

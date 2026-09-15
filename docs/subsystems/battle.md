@@ -1920,7 +1920,7 @@ All six stat names match the game's own labels + the fan bestiaries, cross-check
 | HP / MP / AGL / SPD | unchanged | unchanged |
 
 Both profiles boost; only the magnitude differs, so the raw record always understates
-the fight - but **which profile runs is the fight class**, not the region. `ctx[+0x287]`
+the fight - but **which profile runs is the fight class**, not the region. Within the NTSC-U build, that is - the PAL executables carry **no** boost at all ([below](#no-boost-on-the-pal-executables)). `ctx[+0x287]`
 is the scripted-fight flag (bit `0x80` of `DAT_8007BD60`, raised for a formation row
 with a non-zero header byte -
 [`encounter.md`](../formats/encounter.md#the-per-battle-flags-byte-dat_8007bd60)), and
@@ -1942,6 +1942,26 @@ gates which Seru-magic side-effect debuffs can ever land on the enemy - see
 The **engine port applies profile B in every fight**: `engine_core::monster_catalog::monster_def_from_record` seeds ATK / UDF / LDF / INT from `battle_stats()` (the random-encounter profile is not yet selected at battle entry - ready work in [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)) and AGL / SPD / HP / MP from the plain record fields, matching which stores the boost block does and does not touch. The accuracy / evasion bytes clamp the *boosted* INT, because the actor halfword the interrupt roll reads (`+0x168`) is the one the boost block's last store writes. Seeding from the raw accessors instead - which the port did - makes every enemy in the game materially weaker than retail.
 
 Battle entry also seeds **both defence facets** into `World::battle.defense_split`, not one collapsed `max(UDF, LDF)` scalar. The melee kernel picks UDF or LDF by the swing's command parity (`FUN_801EC3E4` at `0x801ECE14`), so a single scalar leaves that branch dead for the whole monster band and makes every enemy defend with its better half against every swing. A Defense buff moves both halves together, as retail's "Defense Up" does.
+
+
+#### No boost on the PAL executables
+
+The boost is specific to `SCUS_942.54`. In all three PAL executables
+(`SCES_019.44` / `.45` / `.46`) the record copy into the actor (`+0x14C..+0x16A`,
+the same store sequence as `0x8005516C..0x8005520C`) is followed **directly** by
+the `+0x4A` spell-list loop - no `ctx[+0x287]` test, no shift-add block for
+either profile; a byte search for the boss-profile arm (`lhu 0x12(s4); lhu
+0x15A(a0); srl 2`) and for the switch load (`lbu 0x287`) finds neither in any
+PAL image. `SCES_019.45`: copy at `0x80055FC0..0x80056060`, spell loop from
+`0x8005607C`. The monster records themselves are byte-identical across the four
+discs, so a PAL fight uses the raw record: Zeto meets the party at
+`ATK 108 / UDF 95 / LDF 76 / INT 117` on PAL and at `135 / 190 / 152 / 131` on
+the USA disc. Walkthrough bestiaries that print `108 / 165 / 133 / 146` for the
+same boss are showing the NTSC-U **random-encounter** profile (A) applied to
+the record - not a profile any Zeto fight installs, since his formation row
+carries the boss switch. The JP disc is unmeasured. The reward side of the same
+regional split is in
+[battle-formulas.md](battle-formulas.md#regional-difference---the-pal-executables-pay-more).
 
 ### The instant-death / status-resist gate (record `+0x20`)
 

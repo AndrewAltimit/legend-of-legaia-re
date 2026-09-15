@@ -1638,6 +1638,39 @@ party members' `+0xF4` ability bit `0x10000`; the per-battle no-gold flag
 (`_DAT_8007BAC0`, certain scripted fights) is the one remaining unmodelled gold
 gate.
 
+#### Regional difference - the PAL executables pay more
+
+The scaling above is the **NTSC-U** executable's. The record fields are the same
+bytes on every disc (`PROT 0867` is byte-identical USA / FR / DE / IT for the
+stat and reward columns - Zeto reads `8000` gold / `9000` EXP on all four), but
+the three PAL executables (`SCES_019.44` / `.45` / `.46`) run a shorter spoils
+routine. Read off the extracted executables (same register allocation, same
+`gp`-relative accumulator, the routine sits at `0x8004FE08..` in `SCES_019.45`):
+
+| Stage | `SCUS_942.54` | PAL (`SCES_019.45` VA) |
+|---|---|---|
+| Per dead enemy | `acc += gold >> 1` (`0x8004EFBC`) | `acc += gold >> 1` (`0x8004FE48`) - same |
+| Golden Book | `acc += acc >> 2` (`0x8004F094`) | `acc += acc >> 2` (`0x8004FF20`) - same |
+| Second halving | `credited = acc - (acc >> 1)` (`0x8004F0DC`) | **absent** - `purse += acc` (`0x8004FF60`) |
+| EXP cut | `sum -= sum >> 2` (`0x8004F0B8`) | **absent** - `sum` goes straight to the split |
+| Per-member split | `ceil(sum / alive)` (`0x8004F198`) | `ceil(sum / alive)` (`0x80050010`) - same |
+| Purse cap | `99,999,999` | `99,999,999` - same |
+
+So a lone enemy pays **half** its record gold on PAL (5/8 with the Golden Book)
+against a **quarter** on NTSC-U (5/16), and PAL splits the **whole** record EXP
+where NTSC-U splits three quarters. Zeto: NTSC-U banner `2000 G` + `2250 EXP`
+each for a party of three (`2500 G` with the book - the figure some
+walkthroughs print as the "gold" stat); PAL `4000 G` + `3000 EXP` each. That is
+the whole story behind community tables that show "double" gold: the larger
+number is the PAL / JP payout or the record, the smaller is what NTSC-U pays.
+The JP disc is unmeasured here; its payouts are assumed to match PAL because
+PAL inherits the JP build, but nothing on hand pins that. The same executables
+also install enemy stats **unboosted** -
+[battle.md](battle.md#no-boost-on-the-pal-executables).
+
+The engine's kernels (`victory_gold_finalize`, `victory_exp_per_member`) mirror
+the NTSC-U chain, the build the port is measured against.
+
 ### MP cost & ability-bit modifiers
 
 From battle-action.md state `0x28` (Magic / Item - cast begin):
