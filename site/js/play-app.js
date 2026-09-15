@@ -1995,7 +1995,12 @@ void main() {
        * VR first-person never fade (battle frames its own subjects; in
        * first-person the eye IS the player, nothing can sit between). */
       this.renderer.clearOcclusionFocus();
-      if (this._battleFrame(rt, skipDraw)) {
+      if (window.LegaiaPlayMinigames && window.LegaiaPlayMinigames.frame(rt, this, skipDraw)) {
+        /* An in-world minigame (casino slots, Muscle Dome, Baka Fighter,
+         * dance hall) owns the 3D frame; HUD/overlay below still run. Runs
+         * before the battle branch: it also handles the VRAM restore on
+         * exit and the fishing prize-exchange affordance. */
+      } else if (this._battleFrame(rt, skipDraw)) {
         /* Battle owns the 3D frame; FPS/HUD/overlay below still run. */
       } else {
       /* Live VRAM effects - water CLUT-walk shimmer, jou's ambient palette
