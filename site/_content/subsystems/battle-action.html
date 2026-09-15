@@ -165,7 +165,7 @@
     <tbody>
       <tr><td>party score</td><td>sum over slots (downed included) of <code>(SPD &times; 3) &gt;&gt; 1 + missingHP &gt;&gt; 4</code></td></tr>
       <tr><td>enemy score</td><td>sum of <code>SPD + missingHP &gt;&gt; 5</code></td></tr>
-      <tr><td>outcome</td><td>two BIOS-rand draws modulo each score; caught iff <code>roll_p &lt; roll_e</code>, or the scripted no-escape flag <code>ctx+0x287</code> is set</td></tr>
+      <tr><td>outcome</td><td>two BIOS-rand draws modulo each score; caught iff <code>roll_p &lt; roll_e</code>, or the scripted-fight flag <code>ctx+0x287</code> is set (the same per-battle byte the audio ducks and the counter-attack gate read)</td></tr>
       <tr><td>Chicken Heart (passive <code>0x34</code>)</td><td>party roll &times;1.5, from living members only</td></tr>
       <tr><td>Chicken King (passive <code>0x37</code>)</td><td>forces a tie - assured escape, still blocked by <code>ctx+0x287</code>, hence &ldquo;non-boss&rdquo;</td></tr>
     </tbody>

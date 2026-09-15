@@ -95,7 +95,8 @@
       <tr><td>+0x29..+0x2D</td><td>bytes</td><td>Active spell / move icon glyph escape</td></tr>
       <tr><td>+0x269</td><td>u8</td><td>Captured Seru id, set by the capture roll</td></tr>
       <tr><td>+0x279</td><td>u8</td><td>Cast-module phase byte (<a href="#cast-modules">below</a>)</td></tr>
-      <tr><td>+0x287</td><td>u8</td><td>No-escape flag, copied from the per-battle flags byte</td></tr>
+      <tr><td>+0x287</td><td>u8</td><td>Scripted-fight flag, derived once at battle init from the per-battle flags byte (<code>(flags &gt;&gt; 5) &amp; 4</code>). It gates the escape roll, both magic-capture audio ducks and the attack-return arm's counter-attack test - a per-battle property, not a per-action one</td></tr>
+      <tr><td>+0x288</td><td>u8</td><td>The counter-attack byte proper - the second term of the attack-return gate</td></tr>
       <tr><td>+0x28A</td><td>u8</td><td>Battle mode - the boss multi-phase gate the AI reads</td></tr>
       <tr><td>+0xA9..+0xEC</td><td>text</td><td>Battle message buffer</td></tr>
       <tr><td>+0x6D6 / +0x6D8 / +0x6DA</td><td>u16</td><td>Intro timer, Done-band countdown, drifting camera yaw</td></tr>
@@ -251,7 +252,7 @@
       <tr><td>Paging</td><td>Action phase <code>0x28</code> routes the action to <code>0x6E..0x71</code>; the module loads at slot-B base <code>0x801F69D8</code>. Phase <code>0x70</code> ticks it and advances only on a zero return - no timer, so an exit gate that cannot pass is a softlock</td></tr>
       <tr><td>Phase machine</td><td>The tick switches on context <code>+0x279</code> (<code>0..~0x11</code>, <code>0xFF</code> = done) - a second phase space under action phase <code>0x70</code></td></tr>
       <tr><td>Tick ABI</td><td>Caster = <code>table[ctx+0x13]</code>, victim = <code>table[caster+0x1DD]</code>; clips staged through actor <code>+0x1DA</code> / <code>+0x1DC</code></td></tr>
-      <tr><td>Damage</td><td>One call per hit into a roll wrapper with a power constant baked into the module image, so a capture cast never reads the move-power table for its magnitude. Two apply shapes: an unsigned clamp to HP (floor 0, can kill) in the tick bodies, and a signed clamp to HP&minus;1 (floor 1, never kills) in the two whole-row sweeps. In the three decoded exemplars the victim load is hardcoded to seat 0 at every apply site; the sweeps index by their own loop counter instead</td></tr>
+      <tr><td>Damage</td><td>One call per hit into a roll wrapper with a power constant baked into the module image, so a capture cast never reads the move-power table for its magnitude. <strong>Three</strong> apply shapes over the band's 79 wrapper call sites: an unsigned clamp to HP (floor 0, can kill) at 70 of them, a signed clamp to HP&minus;1 (floor 1, never kills, a negative roll heals) at the two whole-row sweep stagers, and an unsigned clamp to HP&minus;1 (never kills and never heals) at seven tick-body sites. PROT 0910's applier picks between the last two per hit, from its own slash counter. In the three decoded exemplars the victim load is hardcoded to seat 0 at every apply site; the sweeps index by their own loop counter instead</td></tr>
       <tr><td>Exemplars</td><td>PROT 958 Blazing Slash (Gi), 959 Megaton Press (Che), 960 Plasma Strike (Lu)</td></tr>
     </tbody>
   </table>

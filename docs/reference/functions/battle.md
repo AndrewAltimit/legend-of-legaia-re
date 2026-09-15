@@ -310,7 +310,8 @@ contiguous phase run the `beq`/`slti` chain or head table names, plus the
 
 PROT 0906's arm run has a hole at phase `5` that no arm names, and PROT 0911's
 arm `5` writes phase `9` directly, so its arms `6..8` are unreachable. PROT
-0913 is the band's largest tick body.
+0913 is the largest of the eleven; the band as a whole tops out at PROT
+0934's 10348-byte tick.
 
 `801F81DC` (PROT 0910, 2040 B) is the module's per-slash **applier**, reached
 by `jal` at `0x801F78E8` / `0x801F7928` / `0x801F7A08` and by nothing else. It
