@@ -1714,7 +1714,10 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        if host.world.mode != SceneMode::Field {
+        // The overworld draws the lead's field form too (retail walks the
+        // same mesh across the continent; the native window binds it on
+        // both), so a kingdom scene keeps the rig.
+        if !matches!(host.world.mode, SceneMode::Field | SceneMode::WorldMap) {
             return;
         }
         let lead = host.world.party.active_party.first().copied().unwrap_or(0) as usize;

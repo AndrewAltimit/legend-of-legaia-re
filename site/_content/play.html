@@ -772,7 +772,11 @@
     if (!rt || typeof rt.play_xa_wanted_files_json !== 'function') return;
     let wanted = [];
     try { wanted = JSON.parse(rt.play_xa_wanted_files_json()) || []; } catch (e) { return; }
-    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 50));
+    /* Not requestIdleCallback: the play loop's rAF + sim leave a heavy
+     * page with no idle time at all, so the callback never fired and the
+     * banks never installed. A macrotask per file yields to input and
+     * rendering between decodes just as well. */
+    const idle = (fn) => setTimeout(fn, 30);
     const next = () => {
       const path = wanted.shift();
       if (!path || window.__playRuntime !== rt) return;
