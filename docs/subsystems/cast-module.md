@@ -353,11 +353,11 @@ live seat is left at 1 HP at worst.
 
 ### The two AoE sweeps
 
-Those same two routines are the band's only whole-row appliers **among the
+Those same two routines are the band's only row-wide appliers **among the
 stagers**, and they are `0x801F6734` stagers, not tick bodies - the move
 script drives them through move-VM opcode `0x20`, so the damage lands from the
-spawn stager and not from the `ctx+0x279` machine. Three *tick* bodies sweep
-the whole row too, and none of them shares the never-kill clamp -
+spawn stager and not from the `ctx+0x279` machine. Three *tick* bodies sweep a
+row too, and none of them shares the never-kill clamp -
 [below](#the-twelve-bodies-the-trampoline-map-names).
 
 | | PROT 0927 (Juggernaut) | PROT 0966 (Evil Seru Magic) |
@@ -884,12 +884,12 @@ one is ported (`legaia_engine_vm::cast_module_ticks`, driven from
 
 | Body | Owner | Action id | Size | Phase bound | Damage |
 |---|---|---|---|---|---|
-| `0x801F726C` | 938 | `0x4E` Chaos Breath | 2004 B | `beq`/`slti` chain | `FUN_801DD4B0(0x274)` at `0x801F77C0`, **shape A**, whole row |
-| `0x801F69EC` | 938 | `0xB7` Mystic Circle | 2176 B | `sltiu 5`, table `0x801F69D8` | `FUN_801DD4B0(0x309)` at `0x801F70EC`, **shape A**, whole row |
+| `0x801F726C` | 938 | `0x4E` Chaos Breath | 2004 B | `beq`/`slti` chain | `FUN_801DD4B0(0x274)` at `0x801F77C0`, **shape A**, party row |
+| `0x801F69EC` | 938 | `0xB7` Mystic Circle | 2176 B | `sltiu 5`, table `0x801F69D8` | `FUN_801DD4B0(0x309)` at `0x801F70EC`, **shape A**, party row |
 | `0x801F6A20` | 951 | `0x36` Chaos Flare | 3528 B | `sltiu 0x0C`, table `0x801F69D8` | `FUN_801DD4B0(0x3A0)` at `0x801F7414`, **shape A** |
 | `0x801F77E8` | 951 | `0x5B` Scythe Wind | 2436 B | `sltiu 6`, table `0x801F6A08` | `FUN_801DD4B0(0x80)` at `0x801F7F88`, **shape A** |
 | `0x801F7118` | 952 | `0x5C` Bloody Horns | 2576 B | `sltiu 7`, table `0x801F69F0` | `FUN_801DD6B4(0x1D0)` at `0x801F7948`, **shape A** |
-| `0x801F69D8` | 965 | `0xB6` Doomsday | 4420 B | `beq`/`slti` chain | `FUN_801DD4B0(0x600)` at `0x801F77B4`, **shape A**, whole row |
+| `0x801F69D8` | 965 | `0xB6` Doomsday | 4420 B | `beq`/`slti` chain | `FUN_801DD4B0(0x600)` at `0x801F77B4`, **shape A**, party row |
 | `0x801F8F0C` | 955 | `0x60` White Shield | 920 B | `beq`/`slti` chain | none - a **defence buff**, [below](#the-four-prot-0955-bodies-that-write-no-damage) |
 | `0x801F86A4` | 955 | `0x6E` Kiss of Death | 2152 B | `beq`/`slti` chain | no wrapper; a coin flip, a status mark and a literal `-1` HP |
 | `0x801F7FA4` | 955 | `0x6F` Melt Spray | 1792 B | `beq`/`slti` chain | none - a **five-stat debuff** |
@@ -905,12 +905,13 @@ image - `0x801F69EC` runs `0x880` bytes to where the `0x4E` body opens, and
 
 Three corrections fall out of reading them.
 
-**The two AoE stagers are not the band's only whole-row appliers.** Three of
+**The two AoE stagers are not the band's only party-row appliers.** Three of
 the tick bodies above sweep `actor_table[0 .. ctx[+0]]` as well - PROT 0938's
 both bodies and PROT 0965's - and all three clamp
-[shape A](#the-two-clamp-shapes), so they **kill**. The pairing of "whole row"
+[shape A](#the-two-clamp-shapes), so they **kill**. The pairing of that sweep
 with the never-kill `HP - 1` clamp holds for `0x801F85A8` / `0x801F8D64` and
-for nothing else.
+for nothing else. (`ctx[+0]` is the [party count](#ctx0-is-the-party-count-not-the-actor-count),
+so "whole row" in earlier prose meant the party seats, not all eight.)
 
 The sweep arms are phase `2` (Chaos Breath, `0x801F7750`), phase `3` (Mystic
 Circle - table word 3 at `0x801F69E4`) and phase `0x0B` (Doomsday, the arm the
