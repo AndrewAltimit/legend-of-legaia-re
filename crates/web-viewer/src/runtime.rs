@@ -316,7 +316,7 @@ pub struct LegaiaRuntime {
     /// through this bank; a global-pool track (`>= 2000`) brings its own VAB
     /// and replaces it. `None` until a scene is staged with audio running.
     #[cfg(target_arch = "wasm32")]
-    bgm_bank: Option<legaia_engine_audio::VabBank>,
+    pub(crate) bgm_bank: Option<legaia_engine_audio::VabBank>,
     /// Last BGM id handed to [`WebAudioOut`], for the field VM's redundant
     /// op-`0x35` re-emit suppression - re-attaching the same track would drop
     /// the playhead. Reset on a deliberate [`Self::enter_field`] so re-booting
@@ -680,6 +680,9 @@ impl LegaiaRuntime {
         // the track that was already playing) and stage the new scene's VAB
         // bank. Both no-op until audio is live (`audio_init`), which itself
         // restages the current scene's bank.
+        // New scene -> drop any SFX cues still queued for the old one (the
+        // native boot's `clear_sfx` on scene entry).
+        self.on_scene_change_audio();
         #[cfg(target_arch = "wasm32")]
         {
             self.bgm_last_started = None;
@@ -873,6 +876,7 @@ impl LegaiaRuntime {
         // the new world.
         if !fmv_handoff_scene.is_empty() {
             self.rebuild_render_state()?;
+            self.on_scene_change_audio();
             #[cfg(target_arch = "wasm32")]
             self.stage_scene_bgm_bank();
             return Ok(fmv_handoff_scene);
@@ -886,6 +890,7 @@ impl LegaiaRuntime {
             // taught (a screen armed with nothing to finish it parks the
             // script dead).
             self.rebuild_render_state()?;
+            self.on_scene_change_audio();
             // A door swapped the scene: restage its VAB bank (a scene-local
             // start needs it) without resetting the dedupe latch, so a track
             // that carries across the transition keeps its playhead.

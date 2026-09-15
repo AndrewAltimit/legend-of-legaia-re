@@ -731,6 +731,7 @@
       /* The disc is up: re-render the save bar so it decodes the party
        * portrait faces + card icons now that WASM + disc bytes are available. */
       renderSavesStrip();
+      installXaBanks();
       /* ?resume=<id>: auto-resume a stored session once the disc is up. */
       if (resumePending) {
         const entry = LegaiaSaves.listSessions().find(s => s.id === resumePending);
@@ -758,6 +759,30 @@
     if (start >= end) return null;
     return bytes.subarray(start, end);
   };
+
+  /* CD-XA voice banks (the arts shouts on XA2/XA4/XA6, the battle stings
+   * and grunts on XA27/XA30): the engine names the files it stages natively,
+   * the page slices each out of the disc bytes it holds and hands the raw
+   * sectors over for decode. Pure decode, no audio needed, staggered onto
+   * idle time so the UI stays responsive (XA27 is the heavy one). */
+  function installXaBanks() {
+    const rt = runtime;
+    if (!rt || typeof rt.play_xa_wanted_files_json !== 'function') return;
+    let wanted = [];
+    try { wanted = JSON.parse(rt.play_xa_wanted_files_json()) || []; } catch (e) { return; }
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 50));
+    const next = () => {
+      const path = wanted.shift();
+      if (!path || window.__playRuntime !== rt) return;
+      try {
+        const sectors = window.__playSliceDiscFile(path);
+        if (sectors) rt.play_xa_install(path, sectors);
+      } catch (e) { console.warn('xa install', path, e); }
+      idle(next);
+    };
+    idle(next);
+  }
+  window.__playInstallXaBanks = installXaBanks;
 
   function enter(label) {
     if (!runtime) return;
@@ -1058,6 +1083,7 @@
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
       if (typeof window.__playApplyPreciseMove === 'function') window.__playApplyPreciseMove();
       if (typeof window.__playApplyBattleTools === 'function') window.__playApplyBattleTools();
+      installXaBanks();
 
       /* Too many failures in a short window -> the scene itself is the problem;
        * retreat to the opening scene, and if even that keeps failing, stop and
