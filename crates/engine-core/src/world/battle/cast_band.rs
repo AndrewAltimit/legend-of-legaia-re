@@ -995,6 +995,9 @@ impl World {
     /// spell that names no module).
     pub fn run_cast_module_code(&mut self, spell_id: u8, arm: u8) -> Option<CastModuleCodeRun> {
         use vm::cast_module_ticks as ticks;
+        // --- W1-B ---
+        use vm::cast_seru_ticks_a as ticks_a;
+        // --- end W1-B ---
 
         let entry = self.cast_module_for(spell_id)?;
         let mut ctx = self.cast_module_ctx();
@@ -1232,6 +1235,76 @@ impl World {
             }
         } else {
             match entry {
+                // --- W1-B: player Seru 0903..0908 ---
+                // The first six `0x801CF4EC` arms - the player Seru-magic tick
+                // bodies (`legaia_engine_vm::cast_seru_ticks_a`). Unlike the
+                // summon-creature ticks below, five of the six sweep or
+                // retarget seats other than the caster's own three, so they
+                // take the whole seat row and the run writes it back before
+                // the caster / victim / summon views are refreshed from it.
+                //
+                // No roll is fed in, for the same reason the bodies below take
+                // `None`: the engine folds a cast's HP outcome once at
+                // `cast_spell_on_slots_prepaid`, and PROT 0907's kill / confuse
+                // fork likewise stays on the fold's side - its roll kernel
+                // (`cast_seru_ticks_a::nighto_outcome`) is ported and tested
+                // but is not driven here, so the tick reports the resisted
+                // branch and writes no outcome.
+                903..=908 => {
+                    let who = ticks_a::SeruSeats {
+                        caster: caster_slot,
+                        victim: victim_slot,
+                        summon: seat_slot,
+                    };
+                    let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                        .map(|s| self.cast_actor_state(s))
+                        .collect();
+                    // Carry the three views into the row so a stager that ran
+                    // above this match is not thrown away.
+                    for (slot, view) in [
+                        (caster_slot, caster),
+                        (victim_slot, victim),
+                        (seat_slot, seat),
+                    ] {
+                        if let Some(s) = seats.get_mut(slot as usize) {
+                            *s = view;
+                        }
+                    }
+                    let (step, hits) = match entry {
+                        903 => ticks_a::gimard_tick(&mut ctx, &mut seats, who, None),
+                        904 => ticks_a::theeder_tick(&mut ctx, &mut seats, who, |_| None),
+                        905 => {
+                            let (step, _) = ticks_a::vera_tick(&mut ctx, &mut seats, who, None);
+                            (step, Vec::new())
+                        }
+                        906 => ticks_a::gizam_tick(&mut ctx, &mut seats, who, |_| None),
+                        907 => (
+                            ticks_a::nighto_tick(
+                                &mut ctx,
+                                &mut seats,
+                                who,
+                                ticks_a::NightoOutcome::Resisted,
+                            ),
+                            Vec::new(),
+                        ),
+                        _ => ticks_a::zenoir_tick(&mut ctx, &mut seats, who, |_| None),
+                    };
+                    for (slot, st) in seats.iter().enumerate() {
+                        self.write_cast_actor_state(slot as u8, st);
+                    }
+                    caster = seats.get(caster_slot as usize).copied().unwrap_or(caster);
+                    victim = seats.get(victim_slot as usize).copied().unwrap_or(victim);
+                    seat = seats.get(seat_slot as usize).copied().unwrap_or(seat);
+                    run.aoe_hits = hits
+                        .iter()
+                        .map(|h| ticks::AoeHit {
+                            seat: h.seat,
+                            applied: h.applied as i32,
+                        })
+                        .collect();
+                    Some(step)
+                }
+                // --- end W1-B ---
                 // The summon band's own tick bodies - no trampoline, the
                 // `0x801CF4EC` arm calls them directly.
                 918 => ticks::kemaro_tick(&mut ctx, &mut victim, None),

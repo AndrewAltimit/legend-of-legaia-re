@@ -205,3 +205,64 @@ each carry `lbu v0,0x279(v1); addiu v0,v0,1; sb v0,0x279(v1)` (`0x801F7BB8`
 and `0x801F7C48`). The choreography is a rendezvous between the per-frame tick
 and the effect script, and it is the only place in the band where a stager
 arm other than `0` advances the phase.
+
+<!-- W1-B -->
+
+## The player-Seru tick entries, and the VA four of them share
+
+The six addresses below **are** real entries of the images they are listed
+under - class 1 of the [three-way test](#the-three-way-test) - so their
+behaviour rows belong beside the band's other entries on
+[`battle.md`](battle.md#slot-b-summon--cast-modules-prot-09030966). They are
+disambiguated here because they are the sharpest case of the question this
+page exists to answer: **four of the six wear the load base `0x801F69D8`**, in
+four different images, and further images in the same band put capture-class
+bodies at that address as well. An address alone names none of them.
+
+Each is reached from PROT 0898's `0x801CF4EC` table through a 16-byte
+trampoline stub that does nothing but `jal` the module entry, keep the return
+in `s0` and jump to the shared tail `0x801F2128`. The stub addresses are read
+out of PROT 0898's own bytes at base `0x801CE818` (the table is file `+0xCD4`,
+the first stub file `+0x23724`), so the pairing does not depend on any dump.
+
+| Tick entry | PROT entry | spell id | `0x801CF4EC` stub | extent | arms | wrapper sites | port |
+|---|---|---|---|---|---|---|---|
+| `801F69D8` | 903 `summon_gimard` | `0x81` Gimard | `0x801F1F3C` | 3396 B | `0..=12`, `0xFF` | `0x801F74AC` | `cast_seru_ticks_a::gimard_tick` |
+| `801F69D8` | 904 `summon_theeder` | `0x82` Theeder | `0x801F1F4C` | 6020 B | `0..=14`, `0xFF` | `0x801F7D38` | `cast_seru_ticks_a::theeder_tick` |
+| `801F69D8` | 905 `summon_stager_x83` | `0x83` Vera | `0x801F1F5C` | 5792 B | `0..=10`, `0xFF` | none | `cast_seru_ticks_a::vera_tick` |
+| `801F69F4` | 906 `summon_gizam` | `0x84` Gizam | `0x801F1F6C` | 3404 B | `0..=4`, `6..=14`, `0xFF` | `0x801F7370` | `cast_seru_ticks_a::gizam_tick` |
+| `801F69E8` | 907 `summon_nighto` | `0x85` Nighto | `0x801F1F7C` | 5568 B | `0..=15`, `0xFF` | none | `cast_seru_ticks_a::nighto_tick` |
+| `801F69D8` | 908 `summon_zenoir` | `0x86` Zenoir | `0x801F1F8C` | 6456 B | `0..=12`, `0xFF` | three, below | `cast_seru_ticks_a::zenoir_tick` |
+
+Extents are the frame-matched size in the **owning** image
+(`disasm-overlay-fn.py <image> --base 0x801F69D8 --addr <va>`). "Arms" is the
+contiguous phase run the `beq`/`slti` chain names plus its `0xFF` terminal;
+PROT 0906's run has a hole at phase `5`, which no arm names.
+
+Two of the six hold no damage wrapper at all and are not therefore quiet: PROT
+0905 restores HP and cures status, and PROT 0907 sets HP to zero outright or
+sets the confuse bits. Their sites are in the port's module doc.
+
+### PROT 0908's three damage sites
+
+`0x801F69D8` in PROT 0908 is the only routine in the band whose sites scale the
+wrapper's return before clamping it, and the only one that mixes two clamp
+shapes inside one routine.
+
+| Site | arm | baked `a0` | scale | clamp |
+|---|---|---|---|---|
+| `0x801F76CC` | 8 | `0x12` | `dmg / 4` | `sltu` against `HP - 1` - cannot kill |
+| `0x801F7C14` | 11 | `0x10` | `dmg * 3 / 4` | `sltu` against live HP |
+| `0x801F7DF8` | 11 | `0x12` | `dmg * 2 / 3` | `sltu` against live HP |
+
+All three call `FUN_801DD0AC` with `a1 = 7` (the shared kernel's summon
+branch). The third sweeps `actor_table[3 ..= 6]` skipping the primary victim.
+
+### Delay-slot constants in this set
+
+Two of the baked powers are set in a **branch delay slot**, so a backward scan
+from the `jal` that stops at the preceding branch loses them: PROT 0904's
+`0x11` at `0x801F7D2C` and PROT 0906's `0x12` at `0x801F7364`. PROT 0907's
+`0xFF` arm has the same shape for a non-damage constant - the animation rate it
+writes is the `li v0, 0x2` in the dispatch chain's delay slot at `0x801F6B44`,
+outside the arm entirely.

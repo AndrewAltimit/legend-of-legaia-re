@@ -132,6 +132,9 @@ pub mod cast_module_ticks;
 // --- W1-C ---
 pub mod cast_seru_ticks_b;
 // --- end W1-C ---
+// --- W1-B ---
+pub mod cast_seru_ticks_a;
+// --- end W1-B ---
 pub mod code_lock_actor;
 pub mod cutscene_trigger;
 pub mod dance_marker;
