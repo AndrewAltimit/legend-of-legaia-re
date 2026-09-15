@@ -266,7 +266,7 @@ probe.run({
 
     on_capture = function(c, elapsed)
         local cx = ctxp()
-        local cs = actor(CASTER_SEAT)
+        local cs = actor(CASTER_SEAT == 255 and 0 or CASTER_SEAT)
         if cx == nil or cs == nil then return end
 
         probe.pad_release(probe.BTN.CROSS)
@@ -283,19 +283,31 @@ probe.run({
         -- parks it there forever; ctx[7] == INJECT_STATE is past that gate and
         -- before state 0x0C reads actor[+0x1DE] (battle-action.md).
         -- ctx[+0x13] is the ACTING seat; a monster often acts first, and an
-        -- injection into a seat that is not acting is simply ignored.
+        -- injection into a seat that is not acting is simply ignored. State
+        -- `0x0C` also RE-PICKS the actor before it reads the category, so on a
+        -- three-seat party the seat named at `0x0A` is not the seat that acts:
+        -- CASTER_SEAT = 255 writes the cast into every party seat instead.
         local acting = u8(cx + 0x13)
         local want = (INJECT_AT > 0 and elapsed >= INJECT_AT)
-            or (INJECT_AT == 0 and st7 == INJECT_STATE and acting == CASTER_SEAT)
+            or (INJECT_AT == 0 and st7 == INJECT_STATE
+                and (CASTER_SEAT == 255 or acting == CASTER_SEAT))
         if want and not injected then
             injected = true
             inject_vsync = elapsed
+            local seat_list = {}
+            if CASTER_SEAT == 255 then
+                for s = 0, 2 do seat_list[#seat_list + 1] = s end
+            else
+                seat_list[1] = CASTER_SEAT
+            end
             if LEARN_LEVEL > 0 then
-                local char_idx = u8(SEAT_CHAR + CASTER_SEAT)
-                if char_idx > 0 then
-                    local base = REC_BLOCK + (char_idx - 1) * REC_STRIDE
-                    probe.write_u8(base + REC_LEARNED + LEARN_SLOT, SPELL)
-                    probe.write_u8(base + REC_LEVEL + LEARN_SLOT, LEARN_LEVEL)
+                for _, s in ipairs(seat_list) do
+                    local char_idx = u8(SEAT_CHAR + s)
+                    if char_idx > 0 then
+                        local base = REC_BLOCK + (char_idx - 1) * REC_STRIDE
+                        probe.write_u8(base + REC_LEARNED + LEARN_SLOT, SPELL)
+                        probe.write_u8(base + REC_LEVEL + LEARN_SLOT, LEARN_LEVEL)
+                    end
                 end
             end
             dump_records()
@@ -316,9 +328,15 @@ probe.run({
                     probe.write_u16(v + 0x172, TARGET_HP)
                 end
             end
-            probe.write_u8(cs + 0x1DE, 2)
-            probe.write_u8(cs + 0x1DF, SPELL)
-            probe.write_u8(cs + 0x1DD, TARGET_SEAT)
+            for _, s in ipairs(seat_list) do
+                local a = actor(s)
+                if a ~= nil then
+                    if MP_TOPUP > 0 then probe.write_u16(a + 0x150, MP_TOPUP) end
+                    probe.write_u8(a + 0x1DE, 2)
+                    probe.write_u8(a + 0x1DF, SPELL)
+                    probe.write_u8(a + 0x1DD, TARGET_SEAT)
+                end
+            end
             PCSX.log(string.format("[inject t%d] +0x1DE->2 +0x1DF=0x%02X +0x1DD=%d ctx7=0x%02X ctx6=0x%02X",
                 elapsed, SPELL, TARGET_SEAT, st7, u8(cx + 6)))
         end

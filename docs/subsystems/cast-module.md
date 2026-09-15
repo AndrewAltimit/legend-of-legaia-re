@@ -1164,6 +1164,16 @@ countdown rather than a wait on another actor.
 of every cast measured here and decrements by exactly `1` per tick, so these
 figures are the arms' own lengths and not a stretched frame delta.
 
+Not every arm is a constant, though, and the one body measured in two different
+fights says which. PROT 0907 run again against a scripted boss (three party
+seats, `ctx[+0x287] = 4`) holds arms `0`, `1`, `4`, `7`, `9`, `11`, `12` and
+`13` for exactly the same `1, 1, 1, 15, 1, 33, 1, 41` ticks, and moves on every
+other arm - `2` from 1 to 5, `3` from 118 to 65, `5` from 34 to 30, `6` from 29
+to 22, `8` from 53 to 41, `10` from 51 to 39, `15` from 18 to 28. So the table
+above is one fight's timing: the arms that reproduce are the module's own
+countdowns, and the arms that move wait on something in the scene - a travel
+distance or a clip length - rather than on a literal.
+
 #### The damage numbers the same casts produced
 
 Every player-Seru wrapper call in these runs passed the **summon seat** `7` as
@@ -1192,6 +1202,20 @@ The two heals land exactly where their arithmetic says. At magic level `3`, PROT
 PROT 0911 restored `640` (`(3 << 6) + 0x1C0`) into the same shape. MP costs read
 off the same casts: `0x81` 10, `0x82` 24, `0x83` 6, `0x85` 13, `0x86` 36, `0x88`
 32, `0x89` 18.
+
+#### The Nighto immunity is forced, not rolled
+
+PROT 0907's resist word has two producers, and on a boss only one of them runs.
+`0x801F6BF0..0x801F6C24` reads `ctx[+0x287]`, and when it is set, indexes
+`0x801C9348[victim_seat - 3]` and tests the monster record's `+0x20`: a non-zero
+byte branches to `0x801F6CB8`, which stores a literal `1` into `0x801F853C` -
+the `rand()` throw at `0x801F6C28` never runs at all. Both inputs hold on the
+Gaza 2 fight (`ctx[+0x287] = 4`, record `+0x20 = 1`), and the cast driven there
+reads `0x801F853C = 1` on the first tick after arm `0`, leaves the boss's
+`+0x14C` at 15000 and its `+0x16E` at zero. The same monster record also carries
+the **scripted** boost profile live - record ATK 288 / UDF 222 / INT 220 install
+as 360 / 444 / 247, i.e. `x5/4`, `x2`, `x9/8` - against the random encounter's
+17 / 15 / 10 installing as 17 / 25 / 12.
 
 PROT 0907 writes no HP at all. Its fork read kill roll `0x801F8534 = 6` and
 resist `0x801F853C = 1`, and retail left `+0x14C`, `+0x16E` and `+0x21C`

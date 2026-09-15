@@ -2086,5 +2086,29 @@ mod tests {
         };
         assert_eq!(nighto_outcome(&roll), NightoOutcome::Resisted);
     }
+
+    /// The boss immunity is **forced**, not rolled. On the Gaza 2 fight the
+    /// two inputs the gate at `0x801F6BF0..0x801F6C24` reads both hold -
+    /// `ctx[+0x287] = 4` and the monster record's `+0x20 = 1` - so retail
+    /// branches to `0x801F6CB8`, stores a literal `1` into `0x801F853C` and
+    /// never draws the throw at `0x801F6C28`. The cast driven there reads that
+    /// `1` on the first tick after arm `0` and leaves the boss on 15000 HP.
+    /// `target_immune` is that branch, and it wins over any roll.
+    #[test]
+    fn w3a_retail_nighto_boss_immunity_beats_a_landing_roll() {
+        let land = NightoRoll {
+            kill_roll: 0,
+            resist_roll: 0,
+            magic_level: 3,
+            target_immune: false,
+            extra_roll: None,
+        };
+        assert_eq!(nighto_outcome(&land), NightoOutcome::Kill);
+        let immune = NightoRoll {
+            target_immune: true,
+            ..land
+        };
+        assert_eq!(nighto_outcome(&immune), NightoOutcome::Resisted);
+    }
     // --- end W3-A -----------------------------------------------------------
 }
