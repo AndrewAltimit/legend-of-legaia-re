@@ -1220,9 +1220,10 @@ the fold - Vera's `level * 0x20 + 0xE0` and Orb's `(level << 6) + 0x1C0` - so
 no body applies HP twice.
 
 Five VAs cover the eleven arms, because a module whose image opens with code
-puts its tick at the load base. `0x801F69D8` alone is the arm for five
-different modules here and a capture-class body in six more - which is the
-same reason the trampoline map has to be keyed on `(entry, body)`
+puts its tick at the load base. `0x801F69D8` alone is the arm for **six** of
+the eleven - PROT 0903, 0904, 0905, 0908, 0911 and 0912 - and a capture-class
+body in six more, which is the same reason the trampoline map has to be keyed
+on `(entry, body)`
 [above](#a-body-va-is-not-a-key---only-entry-body-is).
 
 ### The band has eight stat-block writers, not one
