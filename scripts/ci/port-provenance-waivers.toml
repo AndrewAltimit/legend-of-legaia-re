@@ -1321,18 +1321,6 @@ bytes. The signal keys on the VA and cannot see the image.
 """
 
 [[waiver]]
-key = "dual-label:801f69f4"
-reason = """
-One VA, three images. docs/reference/functions/battle.md's row is the PROT
-0968 evolved-Cort stage-module tick entry (jal from SCUS 0x80056498);
-docs/reference/functions/cast-modules.md's rows are the PROT 0906 Gizam and
-PROT 0909 Viguro tick bodies, which sit seven words into their own images at
-the same slot-B VA. Each row names its entry, each has its own per-image dump,
-and battle.md's row already lists the VA-aliasing hosts. The signal keys on
-the VA and cannot see the image.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-vm/src/seru_side_effect.rs:801f3d3c"
 reason = """
 The corroboration exists; the distinctiveness filter hides it. Read against
