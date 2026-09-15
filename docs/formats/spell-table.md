@@ -376,27 +376,39 @@ emits GPU display-list packets into scratchpad `0x1F800314`. It contains **no
 magnitude is in this jump table" hypothesis is **falsified**. The JT is animation /
 rendering only.
 
-The magnitude is applied by the paired **stager** overlay (PROT 0903..0915 - the file
-holding the `jal FUN_80021B04` part-spawn calls), in the *same function* that spawns
-the summon body parts. Each stager carries exactly one `actor+0x14c` (HP) writer, and
-they split cleanly into damage vs. heal:
+The magnitude is applied by the module's **tick body** - the routine PROT 0898's
+`0x801CF4EC` table names, not the spawn stager. Eight of the eleven player Seru
+modules reach a damage wrapper and two of them heal; the split is not the one
+this page carried, and the "same function that spawns the body parts" reading
+came from a census taken over the stagers alone
+([`functions/battle.md`](../reference/functions/battle.md#801dd0ac)).
 
-- **Damage summons** (PROT 0904 / 0912 / 0914, plus 0915's second arm) compute the
-  amount with the shared battle kernel **`FUN_801dd0ac`** (`a0` = a per-summon
-  move-type constant `0x10..0x12`, `a1 = 7`, `a2` = target slot), clamp it to the
-  target's current HP, add it to the damage-popup accumulator at `actor+0x10`, then
-  store `HP = curHP - amount` (`subu`). For the summon path (`param_2 == 7`) the
-  attacker roll is
+- **Damage** (PROT 0903, 0904, 0906, 0908, 0909, 0910, 0912, 0913, plus
+  0914/0915) computes the amount with the shared battle kernel
+  **`FUN_801dd0ac`** (`a0` = a baked per-module move-type constant `0x10..0x12`,
+  `a1 = 7`, `a2` = target slot), clamps it against the target's HP, adds it to
+  the damage-popup accumulator at `actor+0x10`, then stores `HP = curHP - amount`
+  (`subu`). For the summon path (`param_2 == 7`) the attacker roll is
   `rand % (INT@+0x168 + 1) + HP@+0x14c + DAT_801C9370[ctx+0x13]_INT@+0x168 * 2`
-  minus a defender-mitigation term (`FUN_801dd0ac` returns `roll - mitigation`) - i.e.
-  **caster/summon battle-state-derived, not a static per-spell scalar.**
-- **Heal summons** (PROT 0903 / 0905 / 0910 / 0911 / 0913, plus 0915's first arm)
-  compute the amount inline as `(power_byte << 5) + 0xe0` (= `power*32 + 224`), clamp
-  to `maxHP - curHP`, skip dead/flagged actors, then store `HP = curHP + amount`
-  (`addu`). `power_byte` is fetched from a table based at `0x80084140` (the
-  SC / character-record block) by a 32-slot search that matches the cast spell-id
-  (`actor+0x1df`) against an id list at `+0x705`, reading the parallel power byte at
-  `+0x729`.
+  minus a defender-mitigation term (`FUN_801dd0ac` returns `roll - mitigation`) -
+  i.e. **caster/summon battle-state-derived, not a static per-spell scalar.**
+  PROT 0910 is the one that keeps its damage in a callee (`0x801F81DC`), so a
+  per-function census reads its tick as damage-free.
+- **Heal** is **two** modules with **two** different formulas, both reading the
+  caster's per-magic **level** byte - fetched from the `0x80084140` character
+  record by a 32-slot search that matches the cast spell id (`actor+0x1df`)
+  against the id list at `+0x705` and reads the parallel byte at `+0x729`:
+  **Vera** (PROT 0905, spell `0x83`) restores `level * 0x20 + 0xE0`, clamped
+  against `maxHP - curHP` with a **signed** compare, skipping a dead or
+  `+0x16E & 4` actor, and stores the amount **negated** into the popup word
+  `+0x10` (`0x801F7C50`..`0x801F7D0C`); **Orb** (PROT 0911, spell `0x89`)
+  restores `(level << 6) + 0x1C0` over the party row with an **unsigned** clamp
+  (`0x801F7AD8`..`0x801F7AF4`), and at level 3 and above also clears status bits.
+  The single inline formula `(power_byte << 5) + 0xe0` this page used to give for
+  five modules is Vera's alone - and its input is a magic **level**, not a power
+  byte.
+- **Neither**: PROT 0907 (Nighto) reaches no wrapper and computes no amount -
+  it zeroes `+0x14C` outright on a kill roll, or sets the confuse bits.
 
 `FUN_801dd0ac`'s **non-summon** branch (`param_2 != 7`, the arts / physical path) reads
 a 26-byte-stride per-move power table at **`0x801F4F5C`** - that is where a genuine
