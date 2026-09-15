@@ -511,21 +511,22 @@ fn a_wide_texture_page_monster_resists_nighto_only_in_a_scripted_fight() {
         run_nighto_to_the_fork(&mut world);
         world.casting.module_nighto_outcome.expect("verdict drawn")
     };
-    assert_eq!(
-        verdict(1, 4),
-        NightoOutcome::Resisted,
+    // `resisted()`, not a variant compare: the resist is one of two
+    // independent bits, and the kill word still picks which leg the cast
+    // takes - so a forced resist is `KillResisted` or `ConfuseResisted`
+    // depending on a roll this test does not pin.
+    assert!(
+        verdict(1, 4).resisted(),
         "the byte plus the scripted flag forces the resist"
     );
     // Same monster, same rolls, random encounter: the gate is open, so the
     // fork runs. Whichever side it lands on, it is not the forced resist.
-    assert_ne!(
-        verdict(1, 0),
-        NightoOutcome::Resisted,
+    assert!(
+        !verdict(1, 0).resisted(),
         "a random encounter must not force the resist"
     );
-    assert_ne!(
-        verdict(0, 4),
-        NightoOutcome::Resisted,
+    assert!(
+        !verdict(0, 4).resisted(),
         "a monster without the byte must not force the resist"
     );
 }

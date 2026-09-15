@@ -1127,27 +1127,58 @@ pub fn nighto_outcome(roll: &NightoRoll) -> NightoOutcome {
     {
         resisted = true;
     }
-    if resisted {
-        return NightoOutcome::Resisted;
-    }
-    if roll.kill_roll.is_multiple_of(NIGHTO_KILL_MODULUS) {
-        NightoOutcome::Kill
-    } else {
-        NightoOutcome::Confuse
+    // Retail's arm 0 parks BOTH words unconditionally, and arm 13 forks on
+    // the kill word alone - so the resist is a second, independent axis, not
+    // a third outcome that replaces the fork.
+    let deadly = roll.kill_roll.is_multiple_of(NIGHTO_KILL_MODULUS);
+    match (deadly, resisted) {
+        (true, false) => NightoOutcome::Kill,
+        (true, true) => NightoOutcome::KillResisted,
+        (false, false) => NightoOutcome::Confuse,
+        (false, true) => NightoOutcome::ConfuseResisted,
     }
 }
 
-/// Which way PROT 0907's arm-13 fork went.
+/// Which way PROT 0907's arm-13 fork went, and whether the resist word
+/// suppressed its writes.
+///
+/// Two independent bits, not three outcomes. The `beqz` at `0x801F7E04`
+/// branches on the **kill** word `0x801F8534` alone, and that is what decides
+/// which phase the cast leaves arm 13 on. The resist word `0x801F853C` is
+/// tested separately *inside* each leg (`0x801F7E0C` on the confuse leg,
+/// `0x801F7E48` on the death leg, `0x801F7F38` again in arm 15) and only
+/// suppresses the victim writes - it never redirects the phase. A cast that
+/// rolled a non-zero kill word and resisted therefore still ends on arm 15
+/// with nothing written, which is what the capture shows (`13 -> 15` twice).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NightoOutcome {
-    /// The module-local word `0x801F8534` read zero: the victim dies outright.
+    /// `0x801F8534 == 0`, `0x801F853C == 0`: the death leg, and it writes -
+    /// HP zeroed, `+0x21C` / `+0x225` set to `2`, `+0x16E` cleared.
     Kill,
-    /// `0x801F8534` was non-zero and `0x801F853C` zero: the victim is
-    /// confused instead, through arm 15.
+    /// `0x801F8534 == 0`, `0x801F853C != 0`: the death leg with its writes
+    /// skipped (`bnez` at `0x801F7E50`). The phase still advances to
+    /// [`NIGHTO_KILL_SETTLE_ARM`].
+    KillResisted,
+    /// `0x801F8534 != 0`, `0x801F853C == 0`: the confuse leg - `+0x21C = 6`
+    /// here, the `+0x16E` bits in arm 15.
     Confuse,
-    /// `0x801F853C` was non-zero - the spell was resisted and neither branch
-    /// writes the victim.
-    Resisted,
+    /// `0x801F8534 != 0`, `0x801F853C != 0`: the confuse leg with both of its
+    /// victim writes skipped. Still [`NIGHTO_CONFUSE_ARM`].
+    ConfuseResisted,
+}
+
+impl NightoOutcome {
+    /// Did the kill word read zero? This is the arm-13 fork, and nothing
+    /// else.
+    pub fn deadly(self) -> bool {
+        matches!(self, Self::Kill | Self::KillResisted)
+    }
+
+    /// Did the resist word read non-zero? This suppresses the victim writes
+    /// on whichever leg the fork took.
+    pub fn resisted(self) -> bool {
+        matches!(self, Self::KillResisted | Self::ConfuseResisted)
+    }
 }
 
 /// PROT 0907 (Nighto, spell id `0x85`) tick body - 5568 bytes, 1392
@@ -1159,20 +1190,25 @@ pub enum NightoOutcome {
 /// implements.
 ///
 /// ```text
-/// arm 13: if (module[0x801F8534] == 0)                ; the kill branch
-///             if (module[0x801F853C] == 0)
+/// arm 13: if (module[0x801F8534] == 0)                ; 0x801F7E04, the fork
+///             if (module[0x801F853C] == 0)            ; 0x801F7E50
 ///                 victim[+0x14C] = 0                  ; 0x801F7E58
 ///                 victim[+0x21C] = victim[+0x225] = 2
 ///                 victim[+0x16E] = 0
-///             phase += 1                              ; -> arm 14, settle
-///         else if (module[0x801F853C] == 0)
-///             victim[+0x21C] = 6
-///             phase = 15                              ; -> the confuse arm
-/// arm 15: victim[+0x21C] = 0
-///         if (module[0x801F853C] == 0)
+///             phase += 1                              ; 0x801F7E88 -> arm 14
+///         else
+///             if (module[0x801F853C] == 0)            ; 0x801F7E14
+///                 victim[+0x21C] = 6
+///             phase = 15                              ; 0x801F7E28, UNCONDITIONAL
+/// arm 15: victim[+0x21C] = 0                          ; 0x801F7F34
+///         if (module[0x801F853C] == 0)                ; 0x801F7F40
 ///             victim[+0x16E] |= 0x380                 ; 0x801F7F50
 ///         phase = 0xFF
 /// ```
+///
+/// The fork is the **kill** word; the resist word only suppresses writes. An
+/// earlier port read a resisted cast as "advance to arm 14" for both legs,
+/// which a capture refuted (`13 -> 15` twice on a resisted Nighto).
 ///
 /// Both module words are written by arm 0, so the outcome is decided the
 /// frame the cast starts, not the frame it lands: `0x801F8534 = rand() % 8`
@@ -1227,21 +1263,23 @@ pub fn nighto_tick(
                 return CastArmStep::Advance;
             };
             v.anim_rate = 1;
-            match outcome {
-                NightoOutcome::Kill => {
+            if outcome.deadly() {
+                if !outcome.resisted() {
                     v.hp = 0;
                     // One `li v0, 0x2` feeds both stores at `0x801F7E54`.
                     v.render_flag = NIGHTO_KILL_RENDER_FLAG;
                     v.render_225 = NIGHTO_KILL_RENDER_FLAG;
                     v.flags = 0;
-                    CastArmStep::Advance
                 }
-                NightoOutcome::Confuse => {
+                CastArmStep::Advance
+            } else {
+                if !outcome.resisted() {
                     v.render_flag = NIGHTO_CONFUSE_RENDER_FLAG;
-                    c.phase = NIGHTO_CONFUSE_ARM;
-                    CastArmStep::Hold
                 }
-                NightoOutcome::Resisted => CastArmStep::Advance,
+                // `sb v0,0x279(s5)` at `0x801F7E28` is outside the resist
+                // test, so a resisted confuse leg lands on 15 all the same.
+                c.phase = NIGHTO_CONFUSE_ARM;
+                CastArmStep::Hold
             }
         }
         NIGHTO_KILL_SETTLE_ARM => {
@@ -1255,7 +1293,9 @@ pub fn nighto_tick(
             if let Some(v) = seats.get_mut(who.victim as usize) {
                 v.anim_rate = 1;
                 v.render_flag = 0;
-                if outcome == NightoOutcome::Confuse {
+                // Arm 15's own gate is the resist word alone (`bnez` at
+                // `0x801F7F40`), not "was this a confuse".
+                if !outcome.resisted() {
                     v.flags |= NIGHTO_CONFUSE_BITS;
                 }
             }
@@ -1878,7 +1918,7 @@ mod tests {
                 magic_level: 0,
                 ..land
             }),
-            NightoOutcome::Resisted
+            NightoOutcome::KillResisted
         );
         assert_eq!(
             nighto_outcome(&NightoRoll {
@@ -1894,7 +1934,16 @@ mod tests {
                 target_immune: true,
                 ..land
             }),
-            NightoOutcome::Resisted
+            NightoOutcome::KillResisted
+        );
+        // ...but only the WRITES: the kill word still decides which leg, so a
+        // resisted landing roll is `KillResisted`, never `ConfuseResisted`.
+        assert!(
+            nighto_outcome(&NightoRoll {
+                target_immune: true,
+                ..land
+            })
+            .deadly()
         );
         // And the one character index that takes the extra roll loses it on a
         // multiple of three.
@@ -1903,7 +1952,7 @@ mod tests {
                 extra_roll: Some(6),
                 ..land
             }),
-            NightoOutcome::Resisted
+            NightoOutcome::KillResisted
         );
         assert_eq!(
             nighto_outcome(&NightoRoll {
@@ -1916,14 +1965,48 @@ mod tests {
 
     #[test]
     fn nighto_resisted_writes_neither_outcome() {
+        for outcome in [NightoOutcome::KillResisted, NightoOutcome::ConfuseResisted] {
+            let mut seats = row();
+            let mut ctx = CastModuleCtx {
+                phase: NIGHTO_FORK_ARM,
+                ..Default::default()
+            };
+            nighto_tick(&mut ctx, &mut seats, WHO, outcome);
+            assert_eq!(seats[3].hp, 200, "{outcome:?} wrote HP");
+            assert_eq!(seats[3].flags, 0, "{outcome:?} wrote +0x16E");
+            assert_eq!(seats[3].render_flag, 0, "{outcome:?} wrote +0x21C");
+        }
+    }
+
+    /// The capture's own shape: a resisted cast whose kill word was non-zero
+    /// leaves arm 13 on **15**, not on 14 - the port advanced to 14 for every
+    /// resist until this fixture. Arm 15 then writes nothing and latches
+    /// `0xFF`.
+    #[test]
+    fn w3a_retail_a_resisted_nighto_still_forks_on_the_kill_word() {
         let mut seats = row();
         let mut ctx = CastModuleCtx {
             phase: NIGHTO_FORK_ARM,
             ..Default::default()
         };
-        nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Resisted);
+        nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted);
+        assert_eq!(ctx.phase, NIGHTO_CONFUSE_ARM, "13 -> 15");
+        nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted);
+        assert_eq!(ctx.phase, CHOREOGRAPHY_DONE_PHASE);
+        assert_eq!(
+            seats[3].flags & NIGHTO_CONFUSE_BITS,
+            0,
+            "arm 15 wrote +0x16E"
+        );
+        // The death leg's resist goes the other way: 13 -> 14, still silent.
+        let mut seats = row();
+        let mut ctx = CastModuleCtx {
+            phase: NIGHTO_FORK_ARM,
+            ..Default::default()
+        };
+        nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::KillResisted);
+        assert_eq!(ctx.phase, NIGHTO_KILL_SETTLE_ARM, "13 -> 14");
         assert_eq!(seats[3].hp, 200);
-        assert_eq!(seats[3].flags, 0);
     }
 
     #[test]
@@ -1971,7 +2054,7 @@ mod tests {
                 904 => theeder_tick(ctx, &mut seats, WHO, |_| None).0,
                 905 => vera_tick(ctx, &mut seats, WHO, None).0,
                 906 => gizam_tick(ctx, &mut seats, WHO, |_| None).0,
-                907 => nighto_tick(ctx, &mut seats, WHO, NightoOutcome::Resisted),
+                907 => nighto_tick(ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted),
                 _ => zenoir_tick(ctx, &mut seats, WHO, |_| None).0,
             });
             // Every chain walks its whole arm run before the terminal, and
@@ -1996,7 +2079,7 @@ mod tests {
                 904 => theeder_tick(&mut ctx, &mut seats, WHO, |_| None).0,
                 905 => vera_tick(&mut ctx, &mut seats, WHO, None).0,
                 906 => gizam_tick(&mut ctx, &mut seats, WHO, |_| None).0,
-                907 => nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Resisted),
+                907 => nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted),
                 _ => zenoir_tick(&mut ctx, &mut seats, WHO, |_| None).0,
             };
             assert_eq!(step, CastTickStep::Done, "PROT {entry}");
@@ -2117,7 +2200,7 @@ mod tests {
             target_immune: false,
             extra_roll: None,
         };
-        assert_eq!(nighto_outcome(&roll), NightoOutcome::Resisted);
+        assert_eq!(nighto_outcome(&roll), NightoOutcome::ConfuseResisted);
     }
 
     /// The boss immunity is **forced**, not rolled. On the Gaza 2 fight the
@@ -2141,7 +2224,12 @@ mod tests {
             target_immune: true,
             ..land
         };
-        assert_eq!(nighto_outcome(&immune), NightoOutcome::Resisted);
+        // The forced `1` in `0x801F853C` suppresses the writes; the kill word
+        // `0x801F8534` is untouched, so the cast still takes the death leg
+        // and settles through arm 14 - which is why the boss sits on 15000 HP
+        // rather than being confused.
+        assert_eq!(nighto_outcome(&immune), NightoOutcome::KillResisted);
+        assert!(nighto_outcome(&immune).resisted());
     }
     // --- end W3-A -----------------------------------------------------------
 }

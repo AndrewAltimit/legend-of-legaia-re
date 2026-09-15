@@ -535,6 +535,11 @@ pub const SWORDIE_KNOCKDOWN_SLASH: u8 = 3;
 /// beq v1,v0` at `0x801F88CC`, against the module counter at `0x801F8DAC`
 /// that the same block just incremented).
 pub const SWORDIE_LETHAL_HIT: u32 = 4;
+/// Right shift PROT 0910 applies to the damage wrapper's return before it
+/// clamps and stores it (`srl s1,s1,2` at `0x801F8898`) - so a Swordie slash
+/// deals a quarter of what `FUN_801DD0AC` handed back. See
+/// [`swordie_slash`].
+pub const SWORDIE_APPLIED_SHIFT: u32 = 2;
 
 /// PROT 0910 (Swordie, action id `0x88`) tick body.
 ///
@@ -637,13 +642,22 @@ pub fn swordie_tick(
 ///
 /// ```text
 /// counter = ++module[0x801F8DAC]
-/// roll    = FUN_801DD0AC(0x12, 7, caster[+0x1DD])
-/// 0x8007BD14 -= roll - (roll >> 2)                  ; the running total
+/// s1      = FUN_801DD0AC(0x12, 7, caster[+0x1DD])
+/// 0x8007BD14 -= s1 - (s1 >> 2)                       ; the running total
+/// s1      = s1 >> 2                                  ; 0x801F8898, LOGICAL
 /// cap = counter == 4 ? victim[+0x14C] : victim[+0x14C] - 1
-/// if cap < roll { roll = cap }                       ; UNSIGNED
-/// victim[+0x10]  += roll
-/// victim[+0x14C] -= roll
+/// if cap < s1 { s1 = cap }                           ; UNSIGNED, 0x801F88F0
+/// victim[+0x10]  += s1                               ; 0x801F8900
+/// victim[+0x14C] -= s1                               ; 0x801F890C
 /// ```
+///
+/// The `srl s1, s1, 2` at `0x801F8898` sits between the two operands of the
+/// running-total update and rewrites the **same register** the clamp and both
+/// stores then use, so a slash applies a *quarter* of the wrapper's return.
+/// It is also what the popup shows: the `jal 0x801F44A0` at `0x801F88C0`
+/// takes `(s1 << 16) >> 16` after the shift. Capture: one cast returned
+/// `427 / 427 / 380 / 384` from the single site `0x801F887C` and retail took
+/// `106 / 106 / 95 / 96` HP.
 ///
 /// The cap switch is the finding this routine carries: the first three
 /// slashes clamp to `HP - 1` and **cannot kill**, the fourth clamps to `HP`
@@ -655,6 +669,9 @@ pub fn swordie_tick(
 /// The reaction is staged with the OR restage form, and the knockdown clip
 /// only on `slash == 3`; on every other slash the victim takes the alternate
 /// reaction even when the gate `+0x1F2` is set.
+///
+/// `wrapper_return` is the wrapper's raw return, **before** the shift: the
+/// shift is this routine's, not its caller's.
 ///
 /// Returns the damage applied.
 ///
@@ -668,11 +685,20 @@ pub fn swordie_tick(
 /// `World::cast_spell_on_slots_prepaid`, so a second application here would
 /// double it. The kernel is exercised by this module's own tests.
 /// REF: FUN_801F69EC
-pub fn swordie_slash(victim: &mut CastActorState, slash: u8, hit_counter: u32, roll: i32) -> u32 {
+pub fn swordie_slash(
+    victim: &mut CastActorState,
+    slash: u8,
+    hit_counter: u32,
+    wrapper_return: i32,
+) -> u32 {
+    // `srl` is logical, so a negative return becomes a large positive one
+    // rather than staying negative - which matters because the clamp below
+    // is unsigned too.
+    let scaled = ((wrapper_return as u32) >> SWORDIE_APPLIED_SHIFT) as i32;
     let applied = if hit_counter == SWORDIE_LETHAL_HIT {
-        apply_hit_floor_zero(victim, roll)
+        apply_hit_floor_zero(victim, scaled)
     } else {
-        apply_hit_unsigned_floor_one(victim, roll)
+        apply_hit_unsigned_floor_one(victim, scaled)
     };
     if slash == SWORDIE_KNOCKDOWN_SLASH {
         stage_reaction_or(victim);
@@ -1313,12 +1339,12 @@ mod tests {
     fn swordie_slashes_switch_clamp_shape_on_the_last_hit() {
         for counter in 1..SWORDIE_LETHAL_HIT {
             let mut v = seats(1)[0];
-            let applied = swordie_slash(&mut v, 0, counter, 10_000);
+            let applied = swordie_slash(&mut v, 0, counter, 40_000);
             assert_eq!(applied, 399, "hit {counter} clamps to HP - 1");
             assert_eq!(v.hp, 1, "hit {counter} cannot kill");
         }
         let mut v = seats(1)[0];
-        let applied = swordie_slash(&mut v, SWORDIE_KNOCKDOWN_SLASH, SWORDIE_LETHAL_HIT, 10_000);
+        let applied = swordie_slash(&mut v, SWORDIE_KNOCKDOWN_SLASH, SWORDIE_LETHAL_HIT, 40_000);
         assert_eq!(applied, 400);
         assert_eq!(v.hp, 0, "the fourth hit clamps to HP and kills");
         assert_eq!(v.staged_anim, 0x20, "and stages the knockdown clip");
@@ -1543,24 +1569,36 @@ mod tests {
     ///
     /// The shift is `srl s1, s1, 2` at `0x801F8898`, between the two operands
     /// of the running-total update at `0x8007BD14`, and it rewrites the same
-    /// register the clamp and both stores then use. [`swordie_slash`] takes the
-    /// roll already applied, so this fixture exercises the clamp with the
-    /// retail-scaled input; the scale itself is a FINDING against the kernel.
+    /// register the clamp (`0x801F88F0`) and both stores (`0x801F8900` /
+    /// `0x801F890C`) then use. [`swordie_slash`] takes the wrapper's raw
+    /// return and applies the shift itself, so this fixture asserts the retail
+    /// HP against the **kernel** rather than against a clamp helper - which is
+    /// what let an unscaled kernel pass while the capture said otherwise.
     #[test]
     fn w3a_retail_swordie_slash_applies_a_quarter_of_the_wrapper_return() {
-        let rolls: [i32; 4] = [427, 427, 380, 384];
+        let returns: [i32; 4] = [427, 427, 380, 384];
         let applied: [u32; 4] = [106, 106, 95, 96];
+        let mut v = seats(1).remove(0);
+        v.hp = 9999;
         let mut hp: u32 = 9999;
-        for (i, (&roll, &want)) in rolls.iter().zip(applied.iter()).enumerate() {
-            assert_eq!((roll >> 2) as u32, want, "slash {i}");
-            let mut v = seats(1).remove(0);
-            v.hp = hp as u16;
-            let got = apply_hit_unsigned_floor_one(&mut v, roll >> 2);
-            assert_eq!(got, want, "slash {i}");
+        for (i, (&ret, &want)) in returns.iter().zip(applied.iter()).enumerate() {
+            let counter = i as u32 + 1;
+            let got = swordie_slash(&mut v, i as u8, counter, ret);
+            assert_eq!(got, want, "slash {i} applied the wrapper return unscaled");
             hp -= want;
-            assert_eq!(u32::from(v.hp), hp);
+            assert_eq!(u32::from(v.hp), hp, "slash {i}");
         }
         assert_eq!(hp, 9999 - 403);
+    }
+
+    /// The shift is logical, so a negative wrapper return does not heal: it
+    /// reads as a huge unsigned value, survives the shift as a huge value and
+    /// clamps to the cap.
+    #[test]
+    fn a_negative_wrapper_return_still_clamps_rather_than_healing() {
+        let mut v = seats(1)[0];
+        assert_eq!(swordie_slash(&mut v, 0, 1, -8), 399);
+        assert_eq!(v.hp, 1);
     }
     // --- end W3-A -----------------------------------------------------------
 }

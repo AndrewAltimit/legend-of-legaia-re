@@ -22,7 +22,7 @@
 //! | `+0x154` / `+0x156` | AGL working / base (the action gauge) | [`CastActorState::agl`] / [`CastActorState::agl_base`] |
 //! | `+0x21C` / `+0x21D` | render flag / animation-rate scalar | [`CastActorState::render_flag`] / [`CastActorState::anim_rate`] |
 //! | ctx `+0`, `+1` | party count, monster count | [`CastModuleCtx::party_count`] / [`CastModuleCtx::monster_count`] |
-//! | ctx `+0x13` | caster seat | [`CastModuleCtx::caster_seat`] |
+//! | ctx `+0x13` | caster seat (NOT the summon band's wrapper `a1`) | [`CastModuleCtx::caster_seat`] |
 //! | ctx `+0x278` | module scratch byte | [`CastModuleCtx::ctx_278`] |
 //! | ctx `+0x279` | the module phase | [`CastModuleCtx::phase`] |
 //!
@@ -226,7 +226,19 @@ pub struct CastModuleCtx {
     /// and `0x8005039C`, whose bodies index `actor_table[(i + 3)]`. The
     /// Juggernaut loop's bound.
     pub monster_count: u8,
-    /// `ctx+0x13` - the caster's seat, passed to every wrapper as `a1`.
+    /// `ctx+0x13` - the caster's seat.
+    ///
+    /// **Not** the wrapper's `a1` on the summon band. Every one of the 34
+    /// `jal 0x801DD0AC` sites in PROT `0903..=0934` bakes `addiu a1, zero, 7`
+    /// (the summon seat) instead (`0x801F74A8` in PROT 0903, `0x801F8880`
+    /// in PROT 0910, and so on through the band; the two that hide it in the
+    /// `jal` delay slot are 0910's and the copy of it in 0911's inherited
+    /// tail). The seat byte reaches a wrapper only on the capture-class
+    /// band's bypass sites, which spell it `lbu a1, 0x13(ctx)`
+    /// (`0x801F71E4` / `0x801F7A8C` / `0x801F7EB8` in PROT 0959, and the
+    /// same form in 0944 / 0952 / 0953 / 0958 / 0960). The band's own
+    /// kernels read it for `+0x1DD` target codes and record lookups, never
+    /// as a damage argument.
     pub caster_seat: u8,
     /// `ctx+0x278` - a module scratch byte; three of these routines write it.
     pub ctx_278: u8,
@@ -383,9 +395,19 @@ pub struct CastDamageShape {
 /// escalation does **not** continue.
 pub const BLAZING_SLASH_POWERS: [u16; 6] = [0x30, 0x38, 0x38, 0x38, 0x40, 0x30];
 
+/// PROT 0959's three baked powers, in call-site order (`0x801F71E8`,
+/// `0x801F7A90`, `0x801F7EBC`).
+///
+/// All three are `FUN_801DD6B4` sites inside the single arm body
+/// `FUN_801F69F0` that the trampoline's `0x7A` arm reaches, each followed by
+/// the shape-A clamp (`sltu` against the live `+0x14C` at `0x801F7214` /
+/// `0x801F7ABC` / `0x801F7EE8`), so every hit can kill. The third site is the
+/// one the module fires repeatedly.
+pub const MEGATON_PRESS_POWERS: [u16; 3] = [0x80, 0x80, 0x30];
+
 /// Every damage shape the band's PORT rows carry, read off the `a0` set
 /// before each `jal` into `0x801DD0AC` / `0x801DD4B0` / `0x801DD6B4`.
-pub const CAST_DAMAGE_SHAPES: [CastDamageShape; 6] = [
+pub const CAST_DAMAGE_SHAPES: [CastDamageShape; 7] = [
     CastDamageShape {
         prot_entry: 927,
         routine: 0x801F_85A8,
@@ -413,6 +435,13 @@ pub const CAST_DAMAGE_SHAPES: [CastDamageShape; 6] = [
         wrapper: CastWrapper::Bypass,
         never_kills: false,
         powers: &BLAZING_SLASH_POWERS,
+    },
+    CastDamageShape {
+        prot_entry: 959,
+        routine: 0x801F_69F0,
+        wrapper: CastWrapper::Bypass,
+        never_kills: false,
+        powers: &MEGATON_PRESS_POWERS,
     },
     CastDamageShape {
         prot_entry: 960,
@@ -3243,6 +3272,11 @@ mod tests {
             assert!(s.routine >= CAST_MODULE_LINK_BASE, "{s:?}");
         }
         assert_eq!(baked_power_for(960), Some(0x1C0), "Plasma Strike's burst");
+        // Megaton Press: three bypass-wrapper sites, `0x80 / 0x80 / 0x30`,
+        // the first being the seed a single-hit fold uses.
+        assert_eq!(baked_power_for(959), Some(0x80));
+        assert_eq!(damage_shape_for(959).unwrap().powers, &MEGATON_PRESS_POWERS);
+        assert!(!damage_shape_for(959).unwrap().never_kills);
         assert_eq!(baked_power_for(958), Some(0x30));
         assert_eq!(damage_shape_for(958).unwrap().powers, &BLAZING_SLASH_POWERS);
         assert_eq!(baked_power_for(903), None, "not a PORT row");

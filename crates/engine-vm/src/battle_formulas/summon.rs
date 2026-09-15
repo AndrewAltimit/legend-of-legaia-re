@@ -206,11 +206,21 @@ pub fn summon_predamage_lazy(
     (attacker, defender)
 }
 
-/// Recovery-summon healing amount, applied inline by the heal stagers (PROT
-/// 0903 / 0905 / 0910 / 0911 / 0913): `(power_byte << 5) + 0xE0` = `power_byte *
-/// 32 + 224`, clamped by the caller to `maxHP - curHP`. `power_byte` is the
-/// caster's magic-power stat (`SC + 0x729`, the same byte [`apply_magic_power`]
-/// reads). There is no roll and no RNG on the heal path.
-pub fn heal_summon_amount(power_byte: u8) -> u16 {
-    ((power_byte as u32) << 5) as u16 + 0xE0
+/// Vera's recovery amount: `(magic_level << 5) + 0xE0` = `magic_level * 32 +
+/// 224`, clamped by the caller to `maxHP - curHP`. No roll, no RNG.
+///
+/// `magic_level` is the caster's **per-magic level byte** - the record byte at
+/// `+0x729 + slot`, which PROT 0905's arm walks the learned-id list to find
+/// (`docs/formats/save-record.md`). It is not the magic-power stat
+/// [`apply_magic_power`] scales an attacker roll with; the two were conflated
+/// while the parameter was called `power_byte`.
+///
+/// Only **one** module in the band pages this formula. The band's heals are
+/// PROT 0905 (Vera, this one) and PROT 0911 (Orb), and Orb's is its own
+/// closed form `(magic_level << 6) + 0x1C0` on its tick body
+/// (`crate::cast_seru_ticks_b::orb_heal_amount`). PROT 0903 / 0910 / 0913
+/// were listed here as heal stagers and are not: all three roll damage
+/// through `FUN_801DD0AC(0x12, 7, seat)`.
+pub fn heal_summon_amount(magic_level: u8) -> u16 {
+    ((magic_level as u32) << 5) as u16 + 0xE0
 }

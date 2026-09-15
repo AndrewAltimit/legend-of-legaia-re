@@ -1679,7 +1679,7 @@ impl World {
                     let nighto_outcome = if entry == 907 {
                         self.nighto_verdict(caster_slot, victim_slot, spell_id)
                     } else {
-                        ticks_a::NightoOutcome::Resisted
+                        ticks_a::NightoOutcome::ConfuseResisted
                     };
                     let who = ticks_a::SeruSeats {
                         caster: caster_slot,
