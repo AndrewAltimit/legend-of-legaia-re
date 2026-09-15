@@ -306,6 +306,12 @@ the second address only.
 begins at `0x801DDB4C`): the `j 0x801DDBC8` and its delay slot `sh s1, 0x16(a1)`.
 Nothing references it.
 
+Both arms are **inside** `FUN_801DD9D4`, which runs `0x801DD9D4..0x801DDC20` -
+588 bytes, 147 instructions, ending at the `jr ra` at `0x801DDC18`. Every dump
+of it stops at 276 bytes, because the decompiler stops at the `jr v0` jump table
+at `0x801DDA88` and the `beq` at `0x801DDA78` branches past it, so the arms read
+as orphans of a body that appears to end before them.
+
 ### `801D2784`
 
 PROT 0979 and PROT 0976 are byte-identical from file offset `0x3C68` to the end
