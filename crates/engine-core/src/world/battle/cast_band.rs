@@ -1244,6 +1244,53 @@ impl World {
                 925 => Some(ticks::spikefish_tick(&mut ctx, &mut caster)),
                 927 => Some(ticks::juggernaut_tick(&mut ctx, &mut victim, None)),
                 949 => Some(ticks::water_crystals_tick(&mut ctx, &mut victim, None)),
+                // --- W1-C: player Seru 0909..0913 ---
+                // These five bodies read and write the whole actor table -
+                // the summon seat, the caster and the enemy row - so they
+                // take the table rather than the three locals above, and the
+                // locals are refreshed from it afterwards.
+                //
+                // PROT 0909 is the one entry in this band whose move-VM
+                // stager also advances `ctx[+0x279]` (its arms `0` and `1`).
+                // Retail reaches the stager from the effect script and the
+                // tick from `FUN_801F1ED4` - two call sites - while this seam
+                // runs both in one call, so the tick is skipped on a frame
+                // the stager already stepped the phase. `casting.module_phase`
+                // is not written back until the end of this function, so it
+                // still holds the phase this call started on.
+                909..=913 => {
+                    let stager_stepped = ctx.phase != self.casting.module_phase;
+                    let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                        .map(|s| self.cast_actor_state(s))
+                        .collect();
+                    let summon = seat_slot;
+                    let step = if entry == 909 && stager_stepped {
+                        None
+                    } else {
+                        let (step, hits) = self.run_seru_b_tick(
+                            entry,
+                            &mut ctx,
+                            &mut seats,
+                            caster_slot,
+                            summon,
+                            victim_slot,
+                        );
+                        run.aoe_hits.extend(hits);
+                        Some(step)
+                    };
+                    if step.is_some() {
+                        for (slot, st) in seats.iter().enumerate() {
+                            self.write_cast_actor_state(slot as u8, st);
+                        }
+                        // The three locals are written back below; take them
+                        // from the table so this arm's writes survive.
+                        caster = seats.get(caster_slot as usize).copied().unwrap_or(caster);
+                        victim = seats.get(victim_slot as usize).copied().unwrap_or(victim);
+                        seat = seats.get(summon as usize).copied().unwrap_or(seat);
+                    }
+                    step
+                }
+                // --- end W1-C ---
                 _ => None,
             }
         };
@@ -1285,6 +1332,77 @@ impl World {
         }
         Some(run)
     }
+
+    // --- W1-C: player Seru 0909..0913 ---
+    /// Dispatch one of the five player-Seru tick bodies for this frame
+    /// ([`legaia_engine_vm::cast_seru_ticks_b`], PROT 0909..0913, action ids
+    /// `0x87..=0x8B`).
+    ///
+    /// The damage and heal inputs are deliberately neutral. The engine folds
+    /// a cast's HP outcome exactly once, at
+    /// [`Self::cast_spell_on_slots_prepaid`], so what runs here is each
+    /// module's phase machine, its `ctx+0x278` discipline and its staging /
+    /// render writes; the damage step itself stays a tested kernel rather
+    /// than becoming a second application. That is the same posture every
+    /// other non-sweep tick body in the band takes, and it is why PROT 0911's
+    /// heal amount is passed as `0` - its real magnitude
+    /// (`cast_seru_ticks_b::orb_heal_amount` of the caster's per-magic level,
+    /// a character-record field) has no seam here yet.
+    fn run_seru_b_tick(
+        &mut self,
+        entry: u32,
+        ctx: &mut vm::cast_module_ticks::CastModuleCtx,
+        seats: &mut [vm::cast_module_ticks::CastActorState],
+        caster_slot: u8,
+        summon_slot: u8,
+        victim_slot: u8,
+    ) -> (
+        vm::cast_module_ticks::CastTickStep,
+        Vec<vm::cast_module_ticks::AoeHit>,
+    ) {
+        use legaia_engine_vm::cast_seru_ticks_b as seru;
+        use vm::cast_module_ticks::{AoeHit, SweepHit};
+
+        // The scratchpad frame-delta byte `0x1F80037D` every body in the band
+        // paces on. The engine ticks once per displayed frame, so it is `1`.
+        const FRAME_DELTA: u8 = 1;
+
+        fn lift(hits: &[SweepHit]) -> Vec<AoeHit> {
+            hits.iter()
+                .map(|h| AoeHit {
+                    seat: h.seat,
+                    applied: h.applied as i32,
+                })
+                .collect()
+        }
+        match entry {
+            909 => {
+                let (step, sweep) = seru::viguro_tick(ctx, seats, caster_slot, summon_slot, |_| 0);
+                (step, lift(&sweep.hits))
+            }
+            910 => (
+                seru::swordie_tick(ctx, seats, summon_slot, victim_slot, FRAME_DELTA),
+                Vec::new(),
+            ),
+            911 => {
+                let maxes: Vec<u16> = self.actors.iter().map(|a| a.battle.max_hp).collect();
+                let (step, _healed) = seru::orb_tick(ctx, seats, summon_slot, 0, None, |s| {
+                    maxes.get(s as usize).copied().unwrap_or(0)
+                });
+                (step, Vec::new())
+            }
+            912 => {
+                let (step, hits) = seru::freed_tick(ctx, seats, summon_slot, |_| 0);
+                (step, lift(&hits))
+            }
+            _ => {
+                let (step, hit) = seru::nova_tick(ctx, seats, summon_slot, victim_slot, 0);
+                let hits: Vec<SweepHit> = hit.into_iter().collect();
+                (step, lift(&hits))
+            }
+        }
+    }
+    // --- end W1-C ---
 
     /// Run the band's two whole-row AoE stagers - PROT 0927 (Juggernaut,
     /// `FUN_801F85A8`) and PROT 0966 (Evil Seru Magic, `FUN_801F8D64`) -
@@ -1642,13 +1760,18 @@ mod capture_hold_tests {
     #[test]
     fn an_unported_tick_body_never_holds_the_phase() {
         let mut world = band_world();
-        // PROT 0909's code half is a *stager*, not a tick body.
-        assert_eq!(world.cast_module_for(0x87), Some(909));
-        let run = world.run_cast_module_code(0x87, 0).unwrap();
+        // --- W1-C ---
+        // PROT 0914's tick body is one of the band's unported rows. (This
+        // test used to key on PROT 0909, whose tick body is now ported -
+        // `legaia_engine_vm::cast_seru_ticks_b::viguro_tick` - so keying on
+        // it would have made the assertion vacuous.)
+        assert_eq!(world.cast_module_for(0x8C), Some(914));
+        let run = world.run_cast_module_code(0x8C, 0).unwrap();
         assert!(run.busy, "the seeded value on its own says 'busy'");
         assert!(!run.tick_ported, "but no tick body ran");
 
-        world.arm_capture_cast_module(0x87);
+        world.arm_capture_cast_module(0x8C);
+        // --- end W1-C ---
         assert!(
             !world.capture_stager_tick(),
             "so the band is not held on it"

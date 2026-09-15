@@ -648,12 +648,22 @@ pub fn gizam_stager(ctx: &mut CastModuleCtx, summon_seat: &mut CastActorState, a
     }
 }
 
+// --- W1-C ---
+/// PROT 0909's stager arm that stages a clip and advances the phase - the
+/// second of its two state-touching arms.
+pub const VIGURO_STAGER_STAGE_ARM: u8 = 1;
+/// The clip that arm stores to the summon seat's `+0x1DA`
+/// (`addiu a1,zero,1` at `0x801F7BE8`, `move v0,a1` then `sb v0,0x1da(v1)` at
+/// `0x801F7BF8`), with no `+0x1DC` bump anywhere in the arm.
+pub const VIGURO_STAGER_ARM1_CLIP: u8 = 1;
+// --- end W1-C ---
+
 /// PROT 0909 (Viguro) spawn stager.
 ///
 /// Seven arms behind `sltiu a1, 7` through the head table at `0x801F69D8`
 /// (arm targets `0x801F7B2C`, `7BCC`, `7C64`, `7C78`, `7C8C`, `7CB8`,
-/// `7CA0`; arm 5 is the epilogue itself, i.e. a no-op). Arm `0` is the seat
-/// pose, and it is the one that touches state:
+/// `7CA0`; arm 5 is the epilogue itself, i.e. a no-op). **Two** arms touch
+/// state, not one - arm `0` is the seat pose:
 ///
 /// ```text
 /// jal FUN_801F19EC                        ; module init
@@ -668,17 +678,41 @@ pub fn gizam_stager(ctx: &mut CastModuleCtx, summon_seat: &mut CastActorState, a
 /// The `+0x34` / `+0x38` / `+0x46` / `+0x04` / `+0x21F` stores in the same arm
 /// are pose and render fields, left to the host's own seat placement.
 ///
+// --- W1-C ---
+/// Arm `1` (`0x801F7BCC`) is the second, and it is what releases the tick
+/// body's phase-`8` rendezvous ([`crate::cast_seru_ticks_b`]):
+///
+/// ```text
+/// summon[+0x176] = 0                      ; pose, unported
+/// summon[+0x21B] = 0                      ; pose, unported
+/// summon[+0x1DA] = 1                      ; 0x801F7BF8, no +0x1DC bump
+/// jal FUN_80024E80 -> ctx[+0x102C]        ; the pool's
+/// ctx[+0x279]   += 1                      ; 0x801F7C54
+/// summon[+0x21F] = 0                      ; pose, unported
+/// ```
+// --- end W1-C ---
+///
 /// Returns the `+0x1DD` value the arm displaced, which retail stashes for a
 /// later arm to restore.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
+// --- W1-C ---
+/// REF: FUN_80024E80
+// --- end W1-C ---
 /// PORT: FUN_801F7AF4 (state half)
 pub fn viguro_stager(
     ctx: &mut CastModuleCtx,
     summon_seat: &mut CastActorState,
     arm: u8,
 ) -> Option<u8> {
+    // --- W1-C ---
+    if arm == VIGURO_STAGER_STAGE_ARM {
+        summon_seat.staged_anim = VIGURO_STAGER_ARM1_CLIP;
+        advance_phase(ctx);
+        return None;
+    }
+    // --- end W1-C ---
     if arm != 0 {
         return None;
     }

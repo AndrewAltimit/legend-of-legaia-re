@@ -159,3 +159,49 @@ siblings.
 above: PROT 0949's own content ends at file `+0x1828` (VA `0x801F8200`), and the
 body at `0x801F8504` is PROT 0948's move-VM stager in 0949's inherited tail. It
 frame-matches there, which is why a dump row once named it under 0949.
+
+<!-- W1-C -->
+
+## The player-Seru band's tick bodies, PROT 0909..0913
+
+These six addresses are **class 1** by the test above - real entries of their
+own images, named by PROT 0898's `0x801CF4EC` table (or, for `0x801F81DC`, by
+three `jal` sites inside its own module). Their canonical home is therefore
+[`battle.md`](battle.md#slot-b-summon--cast-modules-prot-09030966), beside the
+band's other entry rows; the block is here because the grep for a slot-B VA
+lands on this page either way, and because five of the six VAs *also* have a
+class-2 or class-3 reading in a different image - `0x801F69D8` alone is a tick
+body in six modules, a world-map dispatcher in PROT 0901 and data in a
+save-state capture. The row that answers is the one whose `found in` column
+matches the image you are reading.
+
+| Entry (slot-B VA) | image | what it is | port |
+|---|---|---|---|
+| `801F69F4` | 0909 `summon_viguro` | Tick body, action id `0x87`. `beq`/`slti` chain over phases `0,1,2,4,5,6,7,9,0x0A..0x0E,0xFF`; enemy-row damage sweep at phase `0x0D` through `FUN_801DD0AC(0x12, 7, seat)`. The same VA in PROT 0968 is the boss stage-module tick on [`battle.md`](battle.md#801f69f4-hosts). | `legaia_engine_vm::cast_seru_ticks_b::viguro_tick` |
+| `801F69EC` | 0910 `summon_swordie` | Tick body, action id `0x88`. Eleven consecutive arms `0..=0x0A` plus `0xFF`; stages and poses only - it writes no HP and calls no damage wrapper. | `cast_seru_ticks_b::swordie_tick` |
+| `801F81DC` | 0910 `summon_swordie` | The module's per-slash **applier**, reached by `jal` at `0x801F78E8` / `0x801F7928` / `0x801F7A08`. Where PROT 0910's damage actually is. | `cast_seru_ticks_b::swordie_slash` |
+| `801F69D8` | 0911 `summon_orb` | Tick body, action id `0x89`. Phases `0..=5`, `9`, `0x0A`, `0xFF`; arm `5` writes phase `9` directly, so `6..8` are unreachable. Arm `9` is a whole-row **heal** plus a status cleanse. The same VA in PROT 0901 is the world-map dispatcher on [`renderer.md`](renderer.md#801f69d8). | `cast_seru_ticks_b::orb_tick` |
+| `801F69D8` | 0912 `summon_freed` | Tick body, action id `0x8A`. Twenty consecutive arms `0..=0x13` plus `0xFF`; enemy-row damage sweep at `0x11` through `FUN_801DD0AC(0x10, 7, seat)`. The same VA in PROT 0901 is the world-map dispatcher on [`renderer.md`](renderer.md#801f69d8). | `cast_seru_ticks_b::freed_tick` |
+| `801F69F0` | 0913 `summon_nova` | Tick body, action id `0x8B`, the band's largest at 7260 B. Twenty-one arms `0..=0x14` plus `0xFF`; single-victim damage at `0x13` through `FUN_801DD0AC(0x12, 7, caster[+0x1DD])`. | `cast_seru_ticks_b::nova_tick` |
+
+### Two of these VAs already have non-entry rows elsewhere
+
+`0x801F69D8` and `0x801F69EC` carry scope rows in
+[`scripts/ci/port-catalog-ignore.toml`](../../../scripts/ci/port-catalog-ignore.toml)
+naming PROT 0901's world-map terrain dispatcher and PROT 0900's minigame tile
+rasteriser, and `0x801F69F0` / `0x801F69F4` carry `worklist_data` rows taken
+from a save-state capture of the slot-B buffer. None of those rows is wrong
+and none of them is about these modules: they are the same address in a
+different resident. The ignore file's rows and this table coexist because the
+band's addresses are only meaningful as `(image, VA)` pairs, which is the same
+reason the trampoline map is keyed on `(entry, body)`.
+
+### The rendezvous phases
+
+PROT 0909's chain does not name phases `3` or `8`: both fall through to the
+epilogue with the busy register still `1`, so the tick parks. What releases
+them is the module's own move-VM stager `FUN_801F7AF4`, whose arms `0` and `1`
+each carry `lbu v0,0x279(v1); addiu v0,v0,1; sb v0,0x279(v1)` (`0x801F7BB8`
+and `0x801F7C48`). The choreography is a rendezvous between the per-frame tick
+and the effect script, and it is the only place in the band where a stager
+arm other than `0` advances the phase.
