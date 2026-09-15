@@ -981,6 +981,13 @@ impl World {
         use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
         let table = self.actors.len().min(BATTLE_TABLE_SLOTS);
         vm::cast_module_ticks::CastModuleCtx {
+            // KNOWN GAP: retail's `ctx[+0]` is the PARTY count, not the actor
+            // count - `0x8004B3F0` uses it to bound a loop that turns
+            // `DAT_8007BD10[i]` into a `0x414`-byte party record. Seeding it
+            // from the whole table makes Evil Seru Magic sweep the enemy row
+            // too, which retail's `ctx[+1]` sweep already covers. Narrowing it
+            // is a behaviour change, so it is disclosed rather than applied
+            // here; see `docs/subsystems/cast-module.md#ctx0-is-the-party-count-not-the-actor-count`.
             party_count: table as u8,
             monster_count: (FIRST_MONSTER_SEAT as usize..table)
                 .filter(|&s| self.actors[s].active)
