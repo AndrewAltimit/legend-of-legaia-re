@@ -65,7 +65,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import port_tag_reader  # noqa: E402  (sibling module, path set just above)
 
 REPO = Path(__file__).resolve().parent.parent.parent
-FUNCS_DIR = REPO / "ghidra" / "scripts" / "funcs"
+# Gitignored, so it exists only in the checkout that dumped it. `--funcs`
+# rebinds it by path; main() assigns the global before anything reads it.
+DEFAULT_FUNCS = REPO / "ghidra" / "scripts" / "funcs"
+FUNCS_DIR = DEFAULT_FUNCS
 DOCS_DIR = REPO / "docs"
 CRATES_DIR = REPO / "crates"
 OUT_DIR = REPO / "target" / "port-catalog"
@@ -1988,9 +1991,10 @@ def render_dashboard(
                 "",
                 "Each feature is a BFS over the citation graph starting from `roots`, bounded by `stop_at`.",
                 "Reachable counts widen as more dumps land - feature views start tight and grow.",
+                "**In scope** = Reachable minus Ignored, and it is the Port % denominator: an ignore-list row is an address this project will never port (PsyQ / BIOS / libgte mapped to a native equivalent), so counting it would cap a finished feature below 100%. **Ported** counts in-scope rows only.",
                 "",
-                "| Feature | Reachable | Ported | Port % | Missing | Ignored | Description |",
-                "|---|---:|---:|---:|---:|---:|---|",
+                "| Feature | Reachable | In scope | Ported | Port % | Missing | Ignored | Description |",
+                "|---|---:|---:|---:|---:|---:|---:|---|",
             ]
         )
         # Compute per-feature numbers and stash for the per-feature top-N
@@ -2016,10 +2020,23 @@ def render_dashboard(
                 and not r["ignored"]
             )
             n_ignored_f = sum(1 for r in f_rows if r["ignored"])
-            pct = (100.0 * n_ported_f / n_reach) if n_reach else 0.0
+            # Port % is over the addresses this project is ever going to port.
+            # An ignore-list row is one it is NOT: statically-linked PsyQ /
+            # BIOS / libgte mapped to a native equivalent. Counting those in
+            # the denominator caps a finished feature below 100% and makes the
+            # figure move when the ignore list grows, which is the opposite of
+            # what the list is for. Numerator drops the same rows, so a tagged
+            # PsyQ routine cannot push the ratio past 100%.
+            n_scope_f = n_reach - n_ignored_f
+            n_ported_scope_f = sum(
+                1 for r in f_rows if r["ported"] and not r["ignored"]
+            )
+            pct = (100.0 * n_ported_scope_f / n_scope_f) if n_scope_f else 0.0
             stats = {
                 "reachable": n_reach,
                 "ported": n_ported_f,
+                "in_scope": n_scope_f,
+                "ported_in_scope": n_ported_scope_f,
                 "pct": pct,
                 "missing": n_missing_f,
                 "ignored": n_ignored_f,
@@ -2027,8 +2044,8 @@ def render_dashboard(
             feature_stats.append((name, stats, f_rows))
             desc = body.get("description", "") or ""
             lines.append(
-                f"| `{name}` | {n_reach} | {n_ported_f} | {pct:.1f}% | "
-                f"{n_missing_f} | {n_ignored_f} | {desc} |"
+                f"| `{name}` | {n_reach} | {n_scope_f} | {n_ported_scope_f} | "
+                f"{pct:.1f}% | {n_missing_f} | {n_ignored_f} | {desc} |"
             )
         lines.append("")
 
@@ -2569,12 +2586,21 @@ def main() -> int:
         "run did not compute (say why in the commit message)",
     )
     ap.add_argument(
+        "--funcs",
+        default=str(DEFAULT_FUNCS),
+        help="dump corpus directory - point at a checkout that has one when "
+        "running from somewhere that does not (the corpus is gitignored)",
+    )
+    ap.add_argument(
         "--selftest",
         action="store_true",
         help="run the anchor-resolution / disclosure-precedence control suite "
         "on a synthetic corpus and exit (0 = pass, 2 = resolver broken)",
     )
     args = ap.parse_args()
+
+    global FUNCS_DIR
+    FUNCS_DIR = Path(args.funcs).expanduser()
 
     if args.selftest:
         print("port-catalog anchor-resolver self-test")
