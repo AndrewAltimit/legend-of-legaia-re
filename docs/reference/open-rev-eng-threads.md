@@ -117,7 +117,7 @@ cheapest place to look for a claim that is still wrong.
   power byte ([settled](re-settled-threads.md#battle--arts--level-up)).
 - **Three damage-clamp shapes, not two - and one module picks per hit.** The
   third shape caps at `HP - 1` with an *unsigned* compare, so it can neither
-  kill nor heal; seven sites take it and every one is a tick body. PROT 0910's
+  kill nor heal; seven sites take it and every one is a tick body or a body a tick calls. PROT 0910's
   applier chooses the cap from its own slash counter at `0x801F8DAC`, so kill
   capability there is a property of the hit, not of the module
   ([`cast-module.md`](../subsystems/cast-module.md#the-three-clamp-shapes)).
