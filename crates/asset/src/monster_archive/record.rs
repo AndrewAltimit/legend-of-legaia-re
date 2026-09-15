@@ -237,15 +237,7 @@ impl MonsterRecord {
     /// [`Self::battle_stats_random`] instead - both profiles boost, so the raw
     /// record always understates the fight, but they differ per stat.
     pub fn battle_stats(&self) -> [u16; 6] {
-        let s = self.stats;
-        [
-            s[0],                         // AGL  - copied unchanged
-            s[1].wrapping_add(s[1] >> 2), // ATK  + ATK>>2   (×5/4)
-            s[2].wrapping_mul(2),         // UDF  ×2
-            s[3].wrapping_mul(2),         // LDF  ×2
-            s[4].wrapping_add(s[4] >> 3), // INT  + INT>>3   (×9/8)
-            s[5],                         // SPD  - copied unchanged
-        ]
+        boost_profile(self.stats, true)
     }
 
     /// The six stats as the battle loader installs them in a **random
@@ -262,7 +254,47 @@ impl MonsterRecord {
     /// LDF 14 / INT 10) fights as ATK 17 / UDF 25 / LDF 24 / INT 12 with
     /// `ctx[+0x287] == 0`. The scripted profile is [`Self::battle_stats`].
     pub fn battle_stats_random(&self) -> [u16; 6] {
-        let s = self.stats;
+        boost_profile(self.stats, false)
+    }
+
+    /// The installed stat block for a fight class: [`Self::battle_stats`]
+    /// when `scripted`, else [`Self::battle_stats_random`].
+    pub fn battle_stats_for(&self, scripted: bool) -> [u16; 6] {
+        boost_profile(self.stats, scripted)
+    }
+}
+
+/// The battle loader's record -> actor stat boost applied to a raw
+/// `[AGL, ATK, UDF, LDF, INT, SPD]` block, picking the profile the way retail
+/// does: by the scripted-fight flag `ctx[+0x287]`.
+///
+/// `FUN_80054CB0` first copies each record halfword into **both** the actor's
+/// working and base halves (`sh` pairs at `+0x154`/`+0x156`, `+0x158`/`+0x15A`,
+/// `+0x15C`/`+0x15E`, `+0x160`/`+0x162`, `+0x164`/`+0x166`, `+0x168`/`+0x16A`),
+/// then branches on the flag (`lbu v0,0x287(v0)` / `beq v0,zero` at
+/// `0x80055234..0x8005523C`) and adds the profile's delta into both halves
+/// again. So the boosted value is what the working *and* the base half carry
+/// at battle start, which is what makes the base half a usable "has anything
+/// moved this stat since?" probe - see [`crate::seru_side_effect`].
+///
+/// Taking the raw block rather than a whole record lets a consumer that kept
+/// only the six stats (an engine's monster catalog) re-derive either profile.
+///
+/// REF: FUN_80054CB0 (`0x80055244..0x8005530C`, both boost profiles; the
+/// record -> actor copy this is the arithmetic of is ported at
+/// `legaia_engine_core::monster_catalog::monster_def_from_record`)
+pub fn boost_profile(stats: [u16; 6], scripted: bool) -> [u16; 6] {
+    let s = stats;
+    if scripted {
+        [
+            s[0],                         // AGL  - copied unchanged
+            s[1].wrapping_add(s[1] >> 2), // ATK  + ATK>>2   (×5/4)
+            s[2].wrapping_mul(2),         // UDF  ×2
+            s[3].wrapping_mul(2),         // LDF  ×2
+            s[4].wrapping_add(s[4] >> 3), // INT  + INT>>3   (×9/8)
+            s[5],                         // SPD  - copied unchanged
+        ]
+    } else {
         [
             s[0],                                         // AGL  - copied unchanged
             s[1],                                         // ATK  - copied unchanged
@@ -271,16 +303,6 @@ impl MonsterRecord {
             s[4].wrapping_add(s[4] >> 2),                 // INT  + INT>>2   (×5/4)
             s[5],                                         // SPD  - copied unchanged
         ]
-    }
-
-    /// The installed stat block for a fight class: [`Self::battle_stats`]
-    /// when `scripted`, else [`Self::battle_stats_random`].
-    pub fn battle_stats_for(&self, scripted: bool) -> [u16; 6] {
-        if scripted {
-            self.battle_stats()
-        } else {
-            self.battle_stats_random()
-        }
     }
 }
 

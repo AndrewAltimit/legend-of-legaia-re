@@ -287,6 +287,7 @@ mod party_composition;
 mod physics_steal_shop;
 mod save_state;
 mod script_teleport;
+mod seru_side_effect_live_disc;
 mod shiny;
 mod slide;
 mod sound_stream_gates;

@@ -994,9 +994,11 @@ pub struct BattleActionCtx {
     /// [`crate::move_no_effect_guard::queued_magic_message`] stay silent.
     ///
     /// It is a battle-overlay global rather than a `ctx` byte in retail; the
-    /// port keeps it here because its only reader and its only writer are
-    /// both inside this state machine's reach and it has the same lifetime as
-    /// the rest of the action context.
+    /// port keeps it here because it has the same lifetime as the rest of the
+    /// action context. Its writer is the Seru side-effect stager, which
+    /// `engine-core`'s `World::stage_seru_side_effect` runs at the cast fold:
+    /// it stores the staged percent here on every player Seru cast, `0` when
+    /// nothing staged.
     pub follow_up_pending: u8,
     /// `[+0x6D6]` - per-action ramp target (the state machine's "PC offset"
     /// cursor for the action body - separate from `action_state`).

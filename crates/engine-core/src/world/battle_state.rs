@@ -37,6 +37,39 @@ pub struct BattleState {
     /// class instead of [`crate::world::BattleState::defense`]. Engines that don't
     /// distinguish UDF / LDF can leave this `None`.
     pub defense_split: [Option<(u16, u16)>; 8],
+    /// Per-slot **base** halfword of each working stat above - retail's
+    /// second `sh` of every pair in the record -> actor copy
+    /// (`FUN_80054CB0` / `FUN_80053CB8`): ATK `+0x15A`, UDF `+0x15E`, LDF
+    /// `+0x162`, SPD `+0x166`, INT `+0x16A`.
+    ///
+    /// The working half is what the damage kernels read; the base half is
+    /// what **nothing during a fight writes except a debuff**, which is what
+    /// makes it retail's own "has anything moved this stat since battle
+    /// load?" probe - the compare the Seru side-effect stager gates on
+    /// ([`legaia_engine_vm::seru_side_effect::StatCompare`],
+    /// `FUN_801F3D3C`). Seeded working-equal by
+    /// [`crate::world::World::sync_battle_stat_bases`] at battle entry, so a
+    /// slot that never took a debuff answers "unchanged".
+    ///
+    /// AGL's pair is not here: it is the actor's own `agl` / `agl_base`
+    /// (`+0x154` / `+0x156`), and MP's base half (`+0x152`) is the monster
+    /// record's MP, which no battle write moves.
+    ///
+    /// REF: FUN_80054CB0, FUN_801F3D3C
+    pub attack_base: [u16; 8],
+    /// UDF / LDF base halves (`+0x15E` / `+0x162`) - see
+    /// [`crate::world::BattleState::attack_base`]. `None` on a slot with no
+    /// split configured, exactly like
+    /// [`crate::world::BattleState::defense_split`].
+    pub defense_base: [Option<(u16, u16)>; 8],
+    /// SPD base half (`+0x166`) - see
+    /// [`crate::world::BattleState::attack_base`].
+    pub speed_base: [u16; 8],
+    /// INT base half (`+0x16A`) - see
+    /// [`crate::world::BattleState::attack_base`]. Its working half is
+    /// [`crate::world::BattleState::accuracy`], which is the same retail
+    /// halfword (`+0x168`).
+    pub accuracy_base: [u16; 8],
     /// Per-slot SPD (turn-order initiative seed, retail actor `+0x164`).
     /// Party slots are seeded from each character record's live SPD in
     /// [`crate::world::World::load_party`]; monster slots from [`crate::monster_catalog::MonsterDef::speed`]
@@ -327,6 +360,31 @@ pub struct BattleState {
     /// battle tick returns to the field on the next pass (no loot, no
     /// game-over). Cleared by `World::finish_battle`.
     pub escaped: bool,
+    /// The **scripted-fight flag** `ctx[+0x287]` for the battle in progress.
+    ///
+    /// Retail derives it once, at battle init: `FUN_800513F0` reads the
+    /// per-battle flags byte `DAT_8007BD60` and stores `(flags >> 5) & 4`
+    /// into `ctx[+0x287]` (`0x800513F0..0x80051444`), so the flag is exactly
+    /// "bit `0x80` of the per-battle flags is set" - which the entity SM
+    /// raises for a formation row whose `record[+0]` header byte is non-zero
+    /// ([`crate::monster_catalog::FormationDef::per_battle_flags`],
+    /// `FUN_801DA51C`). Boss / story rows carry that byte; random-encounter
+    /// rows do not.
+    ///
+    /// Three kernels read it, and each reads a different thing off it: the
+    /// battle loader picks its stat boost profile
+    /// ([`crate::monster_catalog::MonsterDef::installed_stats`]), the escape
+    /// roll refuses to flee ([`crate::world::BattleState::no_escape`], which
+    /// is the port's older and narrower latch on the same byte - set by the
+    /// field VM's scripted-battle op rather than derived from the formation),
+    /// and the Seru side-effect stager runs its suppression roll and its
+    /// base-vs-record compares.
+    ///
+    /// Seeded at [`crate::world::World::enter_battle_from_formation`];
+    /// cleared by [`crate::world::World::finish_battle`].
+    ///
+    /// REF: FUN_800513F0, FUN_801DA51C, FUN_80054CB0, FUN_801F3D3C
+    pub scripted_fight: bool,
     /// Scripted "can't run from this battle" flag (retail battle ctx
     /// `+0x287`, the input `FUN_801E791C`'s escape roll tests). Set when a
     /// battle enters through the field-VM scripted-battle op
@@ -382,6 +440,10 @@ impl BattleState {
             magic: [0; 8],
             defense: [0; 8],
             defense_split: [None; 8],
+            attack_base: [0; 8],
+            defense_base: [None; 8],
+            speed_base: [0; 8],
+            accuracy_base: [0; 8],
             speed: [0; 8],
             camera_frame_height: legaia_engine_vm::battle_formulas::CAMERA_HEIGHT_MIN,
             accuracy: [0; 8],
@@ -403,6 +465,7 @@ impl BattleState {
             fury_boost: [None; 3],
             buffs: Vec::new(),
             escaped: false,
+            scripted_fight: false,
             no_escape: false,
             monster_flee_attempted: false,
             intro: None,

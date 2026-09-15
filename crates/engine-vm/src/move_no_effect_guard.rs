@@ -153,10 +153,10 @@ pub fn spell_index_of(spell_ids: &[u8], action: u8) -> usize {
 ///    [`BattleActionCtx::follow_up_pending`](crate::battle_action::BattleActionCtx::follow_up_pending).
 ///
 /// The latch's **writer** is the stager ([`crate::seru_side_effect::stage_side_effect`]),
-/// which the live loop does not yet run (see that module's wiring note), so
-/// in the port the latch is only ever read as clear: every levelled cast
-/// prints "No effect." where retail would print the effect banner instead.
-/// A one-branch difference, named here rather than papered over.
+/// which the live loop runs at its cast fold: `engine-core`'s
+/// `World::stage_seru_side_effect` stores the staged percent into
+/// `BattleActionCtx::follow_up_pending` on every player Seru cast (`0`
+/// when nothing staged), so this pass sees the latch retail would.
 pub fn queued_magic_message(
     action: u8,
     spell_ids: &[u8],

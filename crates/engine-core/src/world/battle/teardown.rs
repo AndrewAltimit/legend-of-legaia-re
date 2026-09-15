@@ -160,6 +160,7 @@ impl World {
         }
         self.battle.escaped = false;
         self.battle.no_escape = false;
+        self.battle.scripted_fight = false;
         self.battle.guarding = [false; 3];
         if wipe_to_title {
             // Retail's wipe hand-off never resumes the field track: the arm

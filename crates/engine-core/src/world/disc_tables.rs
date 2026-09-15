@@ -85,6 +85,31 @@ pub struct DiscTables {
     /// fallback height so an unpinned character frames like the measured case
     /// instead of jumping.
     pub battle_camera_heights: Option<legaia_asset::battle_camera_table::BattleCameraHeights>,
+    /// Seru-magic **side-effect** table
+    /// ([`legaia_asset::seru_side_effect`], runtime VA `0x801F6870`,
+    /// `[element][band]`): the percent a levelled player Seru cast's
+    /// secondary debuff shaves off the target's stat on every hit, and the
+    /// cure class light stages instead.
+    ///
+    /// Sibling static data in the same PROT 0898 overlay as
+    /// [`crate::world::DiscTables::move_power`], installed by
+    /// [`crate::scene::SceneHost`]. `None` on a disc-free host, which is the
+    /// gate that keeps the stager
+    /// ([`crate::world::World::stage_seru_side_effect`]) from running at
+    /// all - so a synthetic battle stages nothing and draws no `rand()`.
+    pub seru_side_effects: Option<legaia_asset::seru_side_effect::SeruSideEffectTable>,
+    /// Player Seru spell id (`0x81..=0x8B`) -> the **summon creature's**
+    /// record element (`+0x1D`), the byte the side-effect stager switches on
+    /// and the affinity scale reads as the attacker element.
+    ///
+    /// Resolved at scene entry from the monster archive through
+    /// [`crate::summon::summon_creature_id`]. It is a separate table from the
+    /// monster catalog on purpose: the catalog only ever holds the *scene's*
+    /// own monsters, so a summon creature is absent from it in almost every
+    /// fight, and the catalog-by-name lookup
+    /// (`World::summon_attacker_element`) answers `None` there. Empty on a
+    /// disc-free host.
+    pub summon_elements: std::collections::HashMap<u8, u8>,
     /// Per-item battle-stat modifier table (weapon / armor / accessory
     /// bonuses). Empty by default; install via [`crate::world::World::set_equipment_table`]
     /// so [`crate::world::World::seed_party_battle_stats`] folds equipped gear onto each
@@ -137,6 +162,8 @@ impl DiscTables {
             move_power_overlay: None,
             element_affinity: None,
             battle_camera_heights: None,
+            seru_side_effects: None,
+            summon_elements: std::collections::HashMap::new(),
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             accessory_passives: Default::default(),
             scene_toc_names: legaia_prot::cdname::IndexMap::new(),

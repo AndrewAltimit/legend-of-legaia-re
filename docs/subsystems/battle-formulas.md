@@ -1548,13 +1548,36 @@ already-landed effect is announced as a miss, and an unlevelled spell says
 nothing. Its early-out ids `0x85` / `0x8E` / `>= 0x96` are exactly the
 stager-free spells (Nighto, Aluru, the Ra-Seru band).
 
-Engine: the stager and the finisher switch are pure kernels with tests
-(`engine-vm::seru_side_effect::{stage, apply_hit}`; the banner pass is
-`engine-vm::move_no_effect_guard`, live from the SM's state `0x36`). The live
-loop does not yet apply them - `World` keeps one live scalar per stat with no
-base halfword to compare, no SPD / AGL scalar for a monster, and does not
-retain the scripted flag - which is the ready work recorded in
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+Engine: both halves run in the live loop. The stager
+(`engine-vm::seru_side_effect::stage_side_effect`) fires once per player Seru cast at the
+engine's single cast fold seam, through `World::stage_seru_side_effect`; the
+finisher switch (`apply_hit`) runs per damaged target in the same fold,
+through `World::apply_seru_side_effect`. The banner pass is
+`engine-vm::move_no_effect_guard`, live from the SM's state `0x36`.
+
+Three pieces of live state make that possible, and each is the port of a
+retail write rather than an engine convenience:
+
+- **The base halfwords.** `BattleState::attack_base` / `defense_base` /
+  `speed_base` / `accuracy_base` (plus the actor's own `agl_base`) are the
+  second `sh` of every pair in the record copy. `World::sync_battle_stat_bases`
+  writes them equal to the working halves at battle entry, and nothing in a
+  fight writes one afterwards except a debuff - which is exactly the property
+  the compare depends on.
+- **The scripted flag.** `BattleState::scripted_fight` is derived at battle
+  entry from the formation's `record[+0]` header byte, the way `FUN_800513F0`
+  derives `ctx[+0x287]` from `DAT_8007BD60`. The port's older `no_escape`
+  latch is the same retail byte reached from the field VM's scripted-battle
+  op, and is OR'd in so a boss fight entered that way still counts.
+- **The boost profile.** The enemy seed picks `MonsterDef::installed_stats`
+  by that same flag, so a random encounter installs profile **A** (`x7/4`
+  defence, unboosted ATK) rather than the boss one. The catalog is built at
+  scene entry, before a formation is chosen, so it keeps the raw record block
+  (`MonsterDef::raw_stats`) for the seed to re-derive either profile.
+
+A host with no disc installs no side-effect table and the stager returns
+before its one `rand()` draw, so a synthetic battle stages nothing and its RNG
+stream is unchanged.
 
 Dumps: `overlay_muscle_dome_801f3d3c.txt` (the stager - a 0898 body under a
 capture-named file, see `dump-corpus-integrity.md`),

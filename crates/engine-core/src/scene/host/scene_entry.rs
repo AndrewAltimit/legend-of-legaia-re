@@ -172,6 +172,18 @@ impl SceneHost {
                         "[scene] battle-camera height table (PROT {entry}) parse failed - fallback height stays active"
                     );
                 }
+                // The Seru side-effect table (0x801F6870) is sibling static
+                // data in the same overlay. A failure leaves the stager off,
+                // so levelled Seru casts carry no secondary debuff.
+                if let Some(side) =
+                    legaia_asset::seru_side_effect::SeruSideEffectTable::parse(&bytes)
+                {
+                    self.world.tables.seru_side_effects = Some(side);
+                } else {
+                    eprintln!(
+                        "[scene] Seru side-effect table (PROT {entry}) parse failed - levelled casts stage no debuff"
+                    );
+                }
             }
             Err(err) => {
                 eprintln!("[scene] battle-action overlay (PROT {entry}) load skipped: {err:#}");
@@ -671,6 +683,25 @@ impl SceneHost {
                 let cat = crate::monster_catalog::catalog_from_monster_archive(&archive, &ids);
                 for def in cat.by_id.into_values() {
                     self.world.tables.monster_catalog.insert(def);
+                }
+                // The eleven player Seru summons' creature elements. The
+                // catalog above is the scene's own monsters, so a summon
+                // creature is not in it; the side-effect stager needs that
+                // one byte and nothing else off the creature.
+                if self.world.tables.summon_elements.is_empty() {
+                    for spell_id in crate::summon::SERU_SUMMON_IDS {
+                        let Some(cid) = crate::summon::summon_creature_id(spell_id, &archive)
+                        else {
+                            continue;
+                        };
+                        if let Ok(Some(rec)) = legaia_asset::monster_archive::record(&archive, cid)
+                        {
+                            self.world
+                                .tables
+                                .summon_elements
+                                .insert(spell_id, rec.element);
+                        }
+                    }
                 }
                 // Pair the per-move power table with the just-merged monster
                 // stats so the special-attack damage path can resolve real

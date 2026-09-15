@@ -57,20 +57,33 @@
 //!
 //! ## Wiring
 //!
-//! NOT WIRED into the live battle loop. What the host lacks, on both sides:
+//! Both halves run in the live battle loop, on both hosts (they share one
+//! `World`):
 //!
-//! - `World` keeps **one live scalar per stat** (`battle_attack`,
-//!   `battle_defense_split`, `battle_accuracy`) that buffs write in place -
-//!   there is no base halfword to compare against the record, which is the
-//!   whole gate. It also keeps no live SPD or AGL scalar for a monster
-//!   (`MonsterDef` is read-only at battle time), so two of the six debuffs
-//!   have nothing to land on.
-//! - The scripted-fight flag (`FormationDef::per_battle_flags`) reaches only
-//!   the battle-intro transition; `World` does not retain it, and the enemy
-//!   stat seed takes the scripted boost profile in every fight.
+//! - [`stage`] runs once per player Seru cast, at the engine's single cast
+//!   fold seam `World::cast_spell_on_slots_prepaid`, through
+//!   `World::stage_seru_side_effect`. Its inputs are live: the caster's
+//!   per-spell magic level, the summon creature's record element, the
+//!   scripted-fight flag `World::battle.scripted_fight` (derived at battle
+//!   entry from the formation's header byte, the way `FUN_800513F0` derives
+//!   `ctx[+0x287]` from `DAT_8007BD60`), and the first enemy seat's
+//!   `(base halfword, raw record field)` pairs.
+//! - [`apply_hit`] runs per damaged target inside that same fold, through
+//!   `World::apply_seru_side_effect`, over the live stat pairs
+//!   (`BattleState::attack` / `attack_base` and siblings, the actor's own
+//!   `agl` / `agl_base`, and current MP).
 //!
-//! The kernels below are pure and tested; the pieces above are the ready
-//! work named in `docs/reference/open-rev-eng-threads.md`.
+//! The base halfwords the compare needs are real state now: retail's record
+//! copy writes both halves of every pair, which `World::sync_battle_stat_bases`
+//! reproduces at battle entry, and nothing but a debuff writes a base half
+//! afterwards. The enemy stat seed picks its boost profile from the same
+//! scripted flag (`MonsterDef::installed_stats`), so a random encounter's
+//! `x7/4` defence - and with it the whole "the compare passes in a random
+//! fight" half of the mechanism - is what the port actually installs.
+//!
+//! A host with no disc installs no table, and `World::stage_seru_side_effect`
+//! returns before drawing: a synthetic battle stages nothing and its RNG
+//! stream is unchanged.
 
 use legaia_asset::seru_side_effect::{
     MIN_LEVEL, RESIST_BYPASS_MIN_PCT, SeruSideEffectTable, SideEffectKind, level_band,
@@ -172,6 +185,11 @@ pub enum StagerOutcome {
 /// live" row was this collision, not a wire. See
 /// `docs/tooling/stale-not-wired-triage.md`.
 ///
+/// Reached live from `engine-core`'s `World::stage_seru_side_effect`, which
+/// the cast fold `World::cast_spell_on_slots_prepaid` calls once per player
+/// Seru cast - so the chain from a host root is `play-window` / the browser
+/// play page -> `World::tick` -> the battle loop's cast fold -> here.
+///
 /// PORT: FUN_801f3d3c
 pub fn stage_side_effect(
     table: &SeruSideEffectTable,
@@ -213,14 +231,13 @@ pub fn stage_side_effect(
 /// nothing is pending.
 ///
 /// PORT: FUN_801f3c34
-// NOT WIRED: nothing produces a [`StagerOutcome`] to test. The stager in this
-// module is itself unreached - the host keeps no per-stat base halfword for
-// its compare gate - and the banner emit this predicate gates,
-// [`crate::move_no_effect_guard::queued_magic_message`], has no live caller
-// either, so there is neither an input to test nor a message path to suppress.
-// Stated here rather than left to the module blanket, whose two bullets name
-// the stager's blockers and are true of this one only at second hand. (the level gate + latch read; the message emit is
-/// `crate::move_no_effect_guard::queued_magic_message`)
+/// REPLACED-BY: `crate::move_no_effect_guard::queued_magic_message`, the
+/// routine's live port - it runs the same level gate over the caster's own
+/// spell list and the same latch read, is called from the action SM's state
+/// `0x36` (`battle_action::summon::summon_return`), and returns the banner id
+/// rather than a bool. This is that gate restated over a [`StagerOutcome`],
+/// which is what the stager's own tests assert against; no host is owed a
+/// second call site.
 pub fn no_effect_banner_fires(level: u8, outcome: StagerOutcome) -> bool {
     level >= MIN_LEVEL && !matches!(outcome, StagerOutcome::Staged { .. })
 }

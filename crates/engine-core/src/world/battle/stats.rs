@@ -391,3 +391,249 @@ impl World {
         }
     }
 }
+
+impl World {
+    /// Copy every working stat halfword into its **base** twin, for every
+    /// seat - retail's record -> actor copy writing both `sh`s of each pair
+    /// (`FUN_80054CB0` for a monster, `FUN_80053CB8` for a party member).
+    ///
+    /// Called once at battle entry, after both sides' stats are seeded. From
+    /// there the base halves are frozen: nothing in a fight writes one except
+    /// a Seru side-effect debuff, which is exactly why the stager can use
+    /// "base != record" as its "something already moved this stat" gate
+    /// ([`Self::enemy_stat_compare`]).
+    ///
+    /// REF: FUN_80054CB0 (the `sh` pairs at `0x80055160..0x8005530C`; the
+    /// routine is ported at
+    /// [`crate::monster_catalog::monster_def_from_record`] and its arithmetic
+    /// at [`crate::monster_catalog::MonsterDef::installed_stats`])
+    pub(in crate::world) fn sync_battle_stat_bases(&mut self) {
+        for slot in 0..self.battle.attack.len() {
+            self.battle.attack_base[slot] = self.battle.attack[slot];
+            self.battle.defense_base[slot] = self.battle.defense_split[slot];
+            self.battle.speed_base[slot] = self.battle.speed[slot];
+            self.battle.accuracy_base[slot] = self.battle.accuracy[slot];
+        }
+    }
+
+    /// The `(base halfword, raw record field)` pairs the Seru side-effect
+    /// stager compares for an enemy seat.
+    ///
+    /// The record side is the monster archive record's own
+    /// `[AGL, ATK, UDF, LDF, INT, SPD]` block plus its MP - never the
+    /// installed stats - because the whole point of the compare is to notice
+    /// that the battle loader's boost profile (or an earlier debuff) moved
+    /// the actor off the record.
+    ///
+    /// `None` for a party seat, or a monster seat whose catalog entry carries
+    /// no record block (a synthetic monster): the stager's compare is then
+    /// skipped, which is the same answer retail gives for a party target.
+    ///
+    /// REF: FUN_801F3D3C (`0x801F3EB4` jump table, the six compare arms)
+    pub(in crate::world) fn enemy_stat_compare(
+        &self,
+        slot: u8,
+    ) -> Option<vm::seru_side_effect::EnemyCompare> {
+        use vm::seru_side_effect::{EnemyCompare, StatCompare};
+        if (slot as usize) < self.party.party_count as usize {
+            return None;
+        }
+        let id = self.actors.get(slot as usize)?.battle_monster_id?;
+        let def = self.tables.monster_catalog.get(id)?;
+        if def.raw_stats == [0u16; 6] {
+            return None;
+        }
+        let raw = def.raw_stats;
+        let i = slot as usize;
+        let (udf_base, _ldf_base) = self.battle.defense_base.get(i).copied().flatten()?;
+        let agl_base = self.actors.get(i)?.battle.agl_base;
+        Some(EnemyCompare {
+            udf: StatCompare {
+                base: udf_base,
+                record: raw[2],
+            },
+            agl: StatCompare {
+                base: agl_base,
+                record: raw[0],
+            },
+            atk: StatCompare {
+                base: self.battle.attack_base.get(i).copied().unwrap_or(0),
+                record: raw[1],
+            },
+            spd: StatCompare {
+                base: self.battle.speed_base.get(i).copied().unwrap_or(0),
+                record: raw[5],
+            },
+            int: StatCompare {
+                base: self.battle.accuracy_base.get(i).copied().unwrap_or(0),
+                record: raw[4],
+            },
+            // The dark compare reads the MP **base** half `+0x152`, which both
+            // boost profiles copy straight from the record and which no battle
+            // write moves (a dark hit shaves current MP `+0x150` only). So the
+            // pair is equal for the whole fight and dark always stages.
+            mp: StatCompare {
+                base: def.mp,
+                record: def.mp,
+            },
+        })
+    }
+
+    /// Run the Seru side-effect **stager** for one player Seru-magic cast and
+    /// return the `(kind, percent)` the damage finisher will subtract on every
+    /// hit of it, or `None` when nothing was staged.
+    ///
+    /// This is retail's `FUN_801F3D3C`, which the cast's summon module calls
+    /// once as the cast commits - not per hit. The port runs it at the same
+    /// seam: [`World::cast_spell_on_slots_prepaid`], right before the
+    /// per-target fold, so the single suppression `rand()` draw lands in the
+    /// same place in the stream.
+    ///
+    /// Inputs, each read off the live world:
+    /// - **level**: the caster's per-spell magic level (record `+0x161`
+    ///   parallel to the `+0x13D` id list), via
+    ///   [`Self::caster_magic_power_byte`]. Below `3` nothing stages and
+    ///   **no draw is taken**.
+    /// - **summon element**: the summon creature's record `+0x1D`.
+    /// - **scripted**: [`crate::world::BattleState::scripted_fight`].
+    /// - **affinity**: `matrix[summon element][first living enemy element]`,
+    ///   the scripted roll's bypass.
+    /// - **target**: the cast's first enemy seat's compare pairs, or
+    ///   `Party` for a party-side cast.
+    ///
+    /// Returns `None` with no draw when the side-effect table is not
+    /// installed (a disc-free host), so those battles keep a bit-identical
+    /// RNG stream.
+    ///
+    /// REF: FUN_801f3d3c (this is the live wiring; the routine itself is
+    /// ported at [`legaia_engine_vm::seru_side_effect::stage_side_effect`])
+    pub(in crate::world) fn stage_seru_side_effect(
+        &mut self,
+        caster: u8,
+        spell_id: u8,
+        targets: &[u8],
+    ) -> Option<(legaia_asset::seru_side_effect::SideEffectKind, u8)> {
+        use vm::seru_side_effect::{StagerInputs, StagerOutcome, StagerTarget, stage_side_effect};
+        let table = self.tables.seru_side_effects.clone()?;
+        let level = self.caster_magic_power_byte(caster, spell_id);
+        // The summon creature's record element. Prefer the disc-resolved
+        // per-spell map: the monster catalog only carries the scene's own
+        // monsters, so its by-name lookup answers `None` for the summon in
+        // nearly every fight.
+        let summon_element = self
+            .tables
+            .summon_elements
+            .get(&spell_id)
+            .copied()
+            .or_else(|| self.summon_attacker_element(spell_id))?;
+        // The stager's compare arm walks the enemy row for a group cast and
+        // takes the first living seat; a single-enemy cast compares that seat.
+        // A party-side target skips the compare entirely.
+        let first_enemy = targets
+            .iter()
+            .copied()
+            .find(|&t| (t as usize) >= self.party.party_count as usize);
+        let target = match first_enemy {
+            None => StagerTarget::Party,
+            Some(t) => match self.enemy_stat_compare(t) {
+                Some(cmp) => StagerTarget::Enemy(cmp),
+                None => StagerTarget::NoLivingEnemy,
+            },
+        };
+        // `matrix[summon element][target element]` - the same read
+        // `cast_affinity_pct` makes, but seeded from the element resolved
+        // above rather than from the catalog-by-name lookup.
+        let affinity_pct = match (first_enemy, self.tables.element_affinity.as_ref()) {
+            (Some(t), Some(aff)) => self
+                .battle_slot_element(t)
+                .and_then(|def_el| aff.affinity_pct(summon_element, def_el))
+                .unwrap_or(100),
+            _ => 100,
+        };
+        let inp = StagerInputs {
+            level,
+            summon_element,
+            scripted: self.battle.scripted_fight,
+            affinity_pct,
+            target,
+        };
+        // The one draw retail takes on this path (`jal 0x80056798` inside the
+        // scripted arm) comes off the shared cursor, lazily - `stage` calls
+        // the closure only on the arm that rolls, so a random encounter and a
+        // sub-level-3 cast advance it not at all.
+        let outcome = stage_side_effect(&table, &inp, || self.next_rng() as i32);
+        // The stager's own store: retail writes the staged percent into
+        // `0x801F6960` (`0x801F4444..`), which is the latch the summon's
+        // return-from-fade pass reads to decide whether to print
+        // "No effect." (`FUN_801F3C34`, ported at
+        // `legaia_engine_vm::move_no_effect_guard::queued_magic_message` and
+        // live from action state `0x36`). Nothing wrote the port's copy, so
+        // every levelled cast announced itself as a miss even when its effect
+        // had landed. Written on every player Seru cast - the percent when
+        // something staged, `0` otherwise - so it cannot go stale across
+        // casts.
+        self.battle_ctx.follow_up_pending = match outcome {
+            StagerOutcome::Staged { amount, .. } => amount,
+            _ => 0,
+        };
+        match outcome {
+            StagerOutcome::Staged { kind, amount, .. } => Some((kind, amount)),
+            _ => None,
+        }
+    }
+
+    /// Apply one hit's staged Seru side effect to `slot` - the finisher's
+    /// per-element stat switch, run over the live halfword pairs.
+    ///
+    /// Retail's `FUN_801DDB30` runs this on the summon path once per hit, and
+    /// a zero percent (nothing staged) subtracts zero, which is how a
+    /// suppressed cast stays inert without a second gate. The port only calls
+    /// it when the stager actually staged, so the zero case never arrives.
+    ///
+    /// The write-back mirrors retail's own halfword choice exactly: both
+    /// halves of each DEF / ATK / SPD / INT pair, the AGL **base** only, and
+    /// the **current** MP only.
+    ///
+    /// REF: FUN_801ddb30 (this is the live wiring of
+    /// `0x801DE60C..0x801DE8EC`; the switch itself is ported at
+    /// [`legaia_engine_vm::seru_side_effect::apply_hit`])
+    pub(in crate::world) fn apply_seru_side_effect(
+        &mut self,
+        slot: u8,
+        kind: legaia_asset::seru_side_effect::SideEffectKind,
+        pct: u8,
+    ) {
+        use vm::seru_side_effect::{TargetStats, apply_hit};
+        let i = slot as usize;
+        if i >= self.battle.attack.len() || i >= self.actors.len() {
+            return;
+        }
+        let (udf, ldf) = self.battle.defense_split[i]
+            .unwrap_or((self.battle.defense[i], self.battle.defense[i]));
+        let (udf_b, ldf_b) = self.battle.defense_base[i].unwrap_or((udf, ldf));
+        let mut s = TargetStats {
+            udf: (udf, udf_b),
+            ldf: (ldf, ldf_b),
+            atk: (self.battle.attack[i], self.battle.attack_base[i]),
+            spd: (self.battle.speed[i], self.battle.speed_base[i]),
+            int: (self.battle.accuracy[i], self.battle.accuracy_base[i]),
+            agl_base: self.actors[i].battle.agl_base,
+            mp: self.actors[i].battle.mp,
+        };
+        apply_hit(kind, pct, &mut s);
+        self.battle.defense_split[i] = Some((s.udf.0, s.ldf.0));
+        self.battle.defense_base[i] = Some((s.udf.1, s.ldf.1));
+        self.battle.defense[i] = s.udf.0.max(s.ldf.0);
+        self.battle.attack[i] = s.atk.0;
+        self.battle.attack_base[i] = s.atk.1;
+        self.battle.speed[i] = s.spd.0;
+        self.battle.speed_base[i] = s.spd.1;
+        self.battle.accuracy[i] = s.int.0;
+        self.battle.accuracy_base[i] = s.int.1;
+        // Evasion is the port's second name for the same retail halfword
+        // (`+0x168`), so it follows the working half rather than drifting.
+        self.battle.evasion[i] = s.int.0;
+        self.actors[i].battle.agl_base = s.agl_base;
+        self.actors[i].battle.mp = s.mp;
+    }
+}
