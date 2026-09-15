@@ -2424,6 +2424,16 @@ void main() {
       if (typeof rt.play_battle_vram_take_dirty === 'function' && rt.play_battle_vram_take_dirty()) {
         const vram = rt.play_battle_vram_bytes();
         if (vram.length) this.renderer.uploadVram(vram);
+        if (typeof rt.play_battle_vram_serial === 'function') b.vramSerial = rt.play_battle_vram_serial();
+      } else if (typeof rt.play_battle_vram_serial === 'function' &&
+                 b.vramSerial != null && rt.play_battle_vram_serial() !== b.vramSerial) {
+        /* Residency guard - the page-side half of the native
+         * `check_battle_vram_residency`: the engine's battle VRAM moved
+         * past the copy the GPU holds (a re-stamp the dirty edge did not
+         * report, or an upload the page missed), so re-upload it. */
+        const vram = rt.play_battle_vram_bytes();
+        if (vram.length) this.renderer.uploadVram(vram);
+        b.vramSerial = rt.play_battle_vram_serial();
       }
 
       const draws = [];
@@ -2672,6 +2682,8 @@ void main() {
       const vram = rt.play_battle_vram_bytes();
       if (!vram.length) return;
       this.renderer.uploadVram(vram);
+      const vramSerial = (typeof rt.play_battle_vram_serial === 'function')
+        ? rt.play_battle_vram_serial() : null;
       const up = (meshId, pos, uvs, ct, idx, flat) => {
         if (!pos.length || !idx.length) return 0;
         this.renderer.uploadSceneMesh(meshId, pos, uvs, ct, idx,
@@ -2680,6 +2692,7 @@ void main() {
       };
       const b = {
         gen,
+        vramSerial,
         scale: (typeof rt.play_battle_world_scale === 'function')
           ? rt.play_battle_world_scale() : 4.0,
         backdrop: 0, ground: 0, actors: [],
