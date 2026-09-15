@@ -46,8 +46,14 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import dump_header as _dump_header  # noqa: E402  (sibling module)
+
 REPO = Path(__file__).resolve().parents[2]
-FUNCS = REPO / "ghidra" / "scripts" / "funcs"
+DEFAULT_FUNCS = REPO / "ghidra" / "scripts" / "funcs"
+# Gitignored, so it exists only in the checkout that dumped it. `--funcs`
+# rebinds it by path; main() assigns the global before anything reads it.
+FUNCS = DEFAULT_FUNCS
 
 # Where committed prose lives. The dumps themselves are gitignored, and the
 # ignore list is in scope because its justifications quote dump statistics too.
@@ -90,7 +96,8 @@ def dump_header(name: str) -> tuple[int | None, int | None] | str:
     path = FUNCS / name
     if not path.exists():
         return "absent"
-    head = path.read_text(errors="replace").split("\n", 6)[:6]
+    text = path.read_text(errors="replace")
+    head = text.split("\n", 6)[:6]
     size = insn = None
     for line in head:
         m = SIZE_RE.search(line)
@@ -99,7 +106,18 @@ def dump_header(name: str) -> tuple[int | None, int | None] | str:
         m = INSN_RE.search(line)
         if m and insn is None:
             insn = as_int(m.group(1))
-    return "headerless" if size is None and insn is None else (size, insn)
+    if size is None and insn is None:
+        return "headerless"
+    # A stated extent the retail bytes refute is corrected in one place
+    # (`dump_header.EXTENT_FIXUPS`) and the correction has to reach this check
+    # too. Otherwise prose quoting the truncated figure agrees with the header
+    # it was copied from and reads as in sync forever - which is this
+    # checker's own failure mode one level up: the claim is stale against the
+    # disc rather than against a re-dump, and nothing says so.
+    dump, _reject = _dump_header.parse_text(text, str(path))
+    if dump is not None and dump.source == "corrected":
+        size, insn = dump.nbytes, dump.insns
+    return (size, insn)
 
 
 def scan_lines():
@@ -135,7 +153,16 @@ def main() -> int:
         action="store_true",
         help="suppress the summary when nothing drifted (for the pre-commit hook)",
     )
+    ap.add_argument(
+        "--funcs",
+        default=str(DEFAULT_FUNCS),
+        help="dump corpus directory - point at a checkout that has one when "
+        "running from somewhere that does not (the corpus is gitignored)",
+    )
     args = ap.parse_args()
+
+    global FUNCS
+    FUNCS = Path(args.funcs).expanduser()
 
     if not FUNCS.is_dir():
         print(f"# no dump corpus at {FUNCS} - nothing to check", file=sys.stderr)
