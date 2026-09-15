@@ -1329,3 +1329,16 @@ before clearing ctx+0x0D and returning zero - which is exactly what
 (0x801F81B8 / 0x801F88A0 / 0x801F88B4) are this image's own spawn records and
 countdown word, which no sibling module can share.
 """
+
+[[waiver]]
+key = "dual-label:801f7644"
+reason = """
+Two images, two routines, one VA. docs/reference/functions/world-map.md's row
+is a 500-byte leaf of the world-map render band in PROT 0901 (slot-B base
+0x801F69D8); docs/reference/functions/cast-modules.md's row is a 20-byte
+frameless leaf of PROT 0949's tint/anim-rate ramp at the same slot-B VA. Each
+page names its own image, and the dumps carry different bytes
+(overlay_world_map_render_0901_801f7644 vs overlay_cast_water_crystals_0949_801f7644),
+so the two descriptions do not compete. The signal keys on the VA alone and
+cannot see the image, so it still fires.
+"""
