@@ -31,11 +31,23 @@
 //! dump `overlay_menu_801cfa48.txt` is only a citation pointer (its own header
 //! says so) - the enclosing function there is a different one.
 //!
-//! NOT WIRED (whole module). Nothing in `engine-core` emits actor
-//! render-mode-4 primitives: there is no `actor[+0x9E]` flag word to select this
-//! arm from and no GPU packet chain to fill. The emitter takes its RNG and its
-//! two LUTs as parameters precisely so the eventual consumer can live in
-//! `engine-render` rather than here.
+//! NOT WIRED (whole module), and the missing pieces are two, not one.
+//!
+//! The first is the selector: no crate here emits actor render-mode-4
+//! primitives, so there is no `actor[+0x9E]` flag word for the `0x2000` arm to
+//! be picked off. The second is the parameters - nothing in the workspace
+//! produces a [`RibbonParams`], because its five fields are reads off an
+//! effect `src` record (`+0x0C` / `+0x18` / `+0x1A` / `+0x1C` / `+0x1E`) that
+//! no parser here decodes. A draw pass added now would have to invent both,
+//! which is why one is not added: the geometry is correct and the inputs do
+//! not exist.
+//!
+//! This is absent on **both** hosts, native and browser, so it is not a
+//! host-drift case - `check-ui-host-drift.py` has nothing to pair. What would
+//! close it is an effect-record parser for the five fields plus a render-mode
+//! channel on the battle actor; the emitter already takes its RNG and its two
+//! LUTs as parameters so the consumer can live in `engine-render` or
+//! `engine-ui` rather than here.
 //!
 //! REF: FUN_8001ADA4 (the render dispatcher arm that selects this emitter),
 //! FUN_80028158, FUN_8002A5A4 (the other two arms), FUN_801D0290 (the RNG)
