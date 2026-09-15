@@ -228,12 +228,13 @@ pub struct CastModuleCtx {
     pub monster_count: u8,
     /// `ctx+0x13` - the caster's seat.
     ///
-    /// **Not** the wrapper's `a1` on the summon band. Every one of the 34
-    /// `jal 0x801DD0AC` sites in PROT `0903..=0934` bakes `addiu a1, zero, 7`
-    /// (the summon seat) instead (`0x801F74A8` in PROT 0903, `0x801F8880`
-    /// in PROT 0910, and so on through the band; the two that hide it in the
-    /// `jal` delay slot are 0910's and the copy of it in 0911's inherited
-    /// tail). The seat byte reaches a wrapper only on the capture-class
+    /// **Not** the wrapper's `a1` on the summon band. Every `jal 0x801DD0AC`
+    /// word in that band bakes `addiu a1, zero, 7` (the summon seat) instead:
+    /// 34 sites over PROT `0903..=0934` and the inherited-tail copies of
+    /// them, `0x801F74A8` in PROT 0903, `0x801F7C98` in PROT 0933,
+    /// `0x801F8880` in PROT 0910 - the last being the only one in a `jal`
+    /// delay slot, along with the copy of it in PROT 0911's tail. The seat
+    /// byte reaches a wrapper only on the capture-class
     /// band's bypass sites, which spell it `lbu a1, 0x13(ctx)`
     /// (`0x801F71E4` / `0x801F7A8C` / `0x801F7EB8` in PROT 0959, and the
     /// same form in 0944 / 0952 / 0953 / 0958 / 0960). The band's own
