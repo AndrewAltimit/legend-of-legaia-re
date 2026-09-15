@@ -1707,17 +1707,20 @@ impl World {
     /// Drain one ambient channel's per-tick side effects, in the order the
     /// VM queued them.
     ///
-    /// Four of the six variants have an engine mechanism and are applied
-    /// here; the other two are carried but not consumed, and say so:
+    /// Five of the six variants have an engine mechanism and are applied
+    /// here; the last is carried but not consumed, and says so:
     ///
     /// - [`AmbientEffect::ModelSwap`] needs a per-placement mesh re-bind.
     ///   Neither host has one - the native window resolves an NPC's mesh
     ///   once at scene load (`field_npc_draws`) and the browser play page
     ///   bakes the same list - so a stream that swaps a villager's model
     ///   still draws the spawn mesh.
-    /// - [`AmbientEffect::MoveImage`] needs a VRAM blit reachable from a
-    ///   field-actor tick; `engine-render` owns the only VRAM and `World`
-    ///   has no path into it.
+    /// - [`AmbientEffect::MoveImage`] is applied: it is the same libgpu blit
+    ///   the field VM's `4C 60` emitter queues, so it goes on the same
+    ///   [`crate::world::AmbientFxState::script_vram_moves`] queue, which
+    ///   both hosts already drain into their software VRAM
+    ///   ([`Self::apply_script_vram_moves`]). The disc carries 24 `0x13`
+    ///   sites, all in `edkorout`.
     ///
     /// [`AmbientEffect::SfxCue`] runs the enqueue half of `FUN_80035B50` -
     /// the same cursor / parked-slot / delay-table update the field VM's op
@@ -1750,7 +1753,24 @@ impl World {
                     self.audio.sfx_cue_cursor = self.audio.sfx_cue_delays.park(cursor);
                     self.audio.sfx_parked_slot = cursor;
                 }
-                Fx::ModelSwap { .. } | Fx::MoveImage { .. } => {}
+                Fx::MoveImage { rect, dx, dy } => {
+                    // The same libgpu blit the field VM's `4C 60` emitter
+                    // queues, so it goes on the same queue - which both hosts
+                    // already drain into their software VRAM
+                    // (`World::apply_script_vram_moves`). `dx` / `dy` are
+                    // `MoveImage`'s destination ORIGIN, not a delta, which is
+                    // also how the `4C 60` operand words read.
+                    let clamp = |v: u16| i16::try_from(v).unwrap_or(i16::MAX);
+                    self.queue_script_vram_move([
+                        clamp(rect[0]),
+                        clamp(rect[1]),
+                        clamp(rect[2]),
+                        clamp(rect[3]),
+                        dx,
+                        dy,
+                    ]);
+                }
+                Fx::ModelSwap { .. } => {}
                 Fx::BitTargetFault => {}
             }
         }

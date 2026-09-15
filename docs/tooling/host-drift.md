@@ -571,10 +571,17 @@ dispatcher `FUN_8001ADA4`. Both hosts draw a field NPC with a single
 The disc-wide carrier census
 (`crates/engine-core/tests/ambient_motion_op_census_disc.rs`) bounds what that
 costs: over every scene MAN's tail-section-1 streams, op `0x15` has **zero**
-authored sites and op `0x16` has 45, all in one scene. So this is one scene's
-worth of presentation, and the blocking capability on the browser side is a
+authored sites and op `0x16` has 45, all in one scene - `juui1`, which is the
+same scene the placement-tilt kernel row above names for tilting all nine of
+its static placements about X. So the whole class is one scene's worth of
+presentation.
+
+Note the two are different surfaces: the **placement** tilt composition is
+wired on both hosts (that kernel row is what holds it there, and the page
+already has `placementModelEuler`), and it is the **actor** draw that reads
+yaw only. The blocking capability on the browser side is therefore a
 `rotX` / `rotZ` pair on the page's NPC draw record plus a switch from
-`placementModelScaledY` to `placementModelEuler` in its model build.
+`placementModelScaledY` to the Euler build it already carries.
 
 ### Screen-space PSX primitives across the two hosts
 

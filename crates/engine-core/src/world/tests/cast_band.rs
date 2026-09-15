@@ -592,3 +592,40 @@ fn the_module_context_takes_ctx0_from_the_party_row() {
     assert_eq!(ctx.party_count, 1);
     assert_eq!(ctx.monster_count, 5);
 }
+
+/// PROT 0904's ring sweep hits a seat when the bearing difference is within
+/// `+-0x30` **modulo a turn** - retail's `(|ref - seat| - 0x30)` compared
+/// unsigned against `0xFB1`, whose underflow is what makes the near end of
+/// the cone count. A cone that only tested one side would drop every seat on
+/// the wrapping edge.
+#[test]
+fn the_ring_cone_wraps_at_both_ends() {
+    use legaia_engine_vm::cast_seru_ticks_a::THEEDER_CONE_HALF_WIDTH;
+    let mut world = module_code_world();
+    // Seat three monsters around a centre at the origin: due +Z (bearing 0),
+    // just inside the cone's far edge, and well outside it.
+    let centre = (0i16, 0i16);
+    let place = |w: &mut World, slot: usize, x: i16, z: i16| {
+        w.actors[slot].battle.seat = Some((x, z));
+    };
+    place(&mut world, 3, 0, 1000); // bearing 0x000
+    place(&mut world, 4, 1000, 0); // bearing 0x400 - a quarter turn out
+    place(&mut world, 5, 0, -1000); // bearing 0x800 - half a turn out
+    // Seat 6 is in the swept range too; park it off the ray rather than at
+    // the centre, where a zero displacement would read as bearing 0 and sit
+    // inside every cone.
+    place(&mut world, 6, -1000, 0); // bearing 0xC00
+    // A ray pointing at seat 3 takes it and nothing else.
+    let hit = world.seats_in_cone(centre, 0x000, THEEDER_CONE_HALF_WIDTH, 3..7);
+    assert_eq!(hit, vec![3]);
+    // The same ray one unit the OTHER side of the wrap still takes seat 3:
+    // `0xFFF` is one step below a full turn, i.e. one step before bearing 0.
+    let hit = world.seats_in_cone(centre, 0x0FFF, THEEDER_CONE_HALF_WIDTH, 3..7);
+    assert_eq!(hit, vec![3], "the cone did not wrap at 0x1000");
+    // A ray a whole quarter turn away takes seat 4 instead.
+    let hit = world.seats_in_cone(centre, 0x0400, THEEDER_CONE_HALF_WIDTH, 3..7);
+    assert_eq!(hit, vec![4]);
+    // A ray between the seats takes nobody.
+    let hit = world.seats_in_cone(centre, 0x0200, THEEDER_CONE_HALF_WIDTH, 3..7);
+    assert!(hit.is_empty(), "the cone reached {hit:?} from a gap");
+}
