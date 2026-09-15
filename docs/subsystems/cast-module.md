@@ -551,12 +551,24 @@ the VA, established from the bytes, not from a dump's filename. Where the
 same VA carries a byte-identical routine in another image, the "also in"
 column says so; those copies are residue (below), not second call sites.
 
+**One of those "also in" cells was not residue.** Six of the seven pairs check
+out byte-for-byte at the same file offset - `0x801F8EAC` (904 in 908 and 910),
+`0x801F7F2C` (944 in 945), `0x801F8118` (942 in 943), `0x801F8504` (948 in
+949), `0x801F8578` (919 in 920) and `0x801F86B0` (960 in 961), each run ending
+exactly at the shorter image's length. `0x801F81DC` does not: PROT 0910's
+words there differ from PROT 0951's in the first instruction, and the identity
+run around the address is three bytes long. They are **two different
+routines** at one VA - 0951's 272-byte spawn stager and 0910's 2040-byte
+damage applier - so the table carries both, and a "DATA" verdict read off the
+address alone would have credited the applier to the spawn pool.
+
 | VA | owner | what the routine is | also present in | verdict |
 |---|---|---|---|---|
 | `801F6A14` | 957 (`summon_effect_table`) | cast tick body, reached from the module trampoline; damage roll (resist); writes HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC`, `ctx+0x278`, phase `ctx+0x279` | - | **PORT** |
 | `801F74E4` | 960 (`cast_plasma_strike`) | cast tick body, reached from the module trampoline; damage roll (bypass); writes `+0x0C`, HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC`, `ctx+0x278`, phase `ctx+0x279` | - | **PORT** |
 | `801F798C` | 957 (`summon_effect_table`) | cast tick body, reached from the module trampoline; writes `+0x0C`, HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC`, phase `ctx+0x279` | - | **PORT** |
-| `801F81DC` | 951 (`cast_chaos_flare`) | spawn stager, 4 spawn calls | also in 910 | **DATA** |
+| `801F81DC` | 951 (`cast_chaos_flare`) | spawn stager, 4 spawn calls | - | **DATA** |
+| `801F81DC` | 910 (`summon_swordie`) | per-slash damage applier, reached by three `jal`s from the tick; rolls `FUN_801DD0AC(0x12, 7)`, picks its cap from the module's slash counter, writes HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC` | - | **PORT** |
 | `801F8EAC` | 904 (`summon_theeder`) | spawn stager, 1 spawn call | also in 908,910 | **DATA** |
 | `801F6A0C` | 952 (`cast_bloody_horns`) | cast tick body, 5 phase arms; writes staged `+0x1DA`, restage `+0x1DC`, anim rate `+0x21D`, phase `ctx+0x279` | - | **PORT** |
 | `801F6DD8` | 958 (`cast_blazing_slash`) | cast tick body, reached from the module trampoline; damage roll (bypass); writes HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC`, `ctx+0x278` | - | **PORT** |

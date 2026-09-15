@@ -319,7 +319,9 @@ is where PROT 0910's damage is: `addiu a0, zero, 0x12` / `addiu a1, zero, 7` /
 `jal 0x801DD0AC` at `0x801F8874`..`0x801F887C`, a cap chosen from the module's
 own slash counter `0x801F8DAC` (`HP - 1` on slashes 1..3, live HP on slash 4),
 then `+0x10` and `sh` to `+0x14C` at `0x801F8910`. Port
-`cast_seru_ticks_b::swordie_slash`.
+`cast_seru_ticks_b::swordie_slash`. The same VA is PROT 0951's 272-byte spawn
+stager - a different routine, not a copy: the two images' words there differ in
+the first instruction, so `(entry, VA)` is the key here too.
 
 #### PROT 0908's three damage sites
 
