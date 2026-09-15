@@ -1089,11 +1089,11 @@ there in front of both calls.
 
 <a id="the-fourteen-trampoline-arms-that-are-unported-tick-bodies"></a>
 
-The twelve bodies above were the first ones the port carried. The trampoline
+The twelve bodies above are one half of the band's code. The trampoline
 table
 [above](#the-trampolines-are-their-own-port-and-one-cell-holds-six-spells)
 names fourteen more arms, tick bodies of exactly the same class as the eleven
-player-Seru ones below: whole choreographies, none small. All fourteen are now
+player-Seru ones below: whole choreographies, none small. All fourteen are
 ported as `legaia_engine_vm::cast_arm_ticks`, keyed on `(entry, body)`, and
 driven from `World::run_cast_module_code`; the per-arm behaviour rows are on
 [`functions/battle.md`](../reference/functions/battle.md#slot-b-summon--cast-modules-prot-09030966).
@@ -1206,7 +1206,7 @@ applier: `addiu a0, zero, 0x12` / `addiu a1, zero, 7` /
 `sh v1, 0x14C(s2)` at `0x801F8910`. A per-function census reads a caller's
 damage as absent; only the call closure sees it.
 
-All eleven are now ported, one function per body:
+All eleven are ported, one function per body:
 `legaia_engine_vm::cast_seru_ticks_a` carries PROT 0903..0908
 (`gimard_tick`, `theeder_tick`, `vera_tick`, `gizam_tick`, `nighto_tick`,
 `zenoir_tick`) and `cast_seru_ticks_b` carries PROT 0909..0913
