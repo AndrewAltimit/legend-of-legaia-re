@@ -11,7 +11,8 @@
 //! itself a third writer of the same placement table.
 //! REF: FUN_801D5854 - the inline record-41/42 move on that table.
 //!
-//! NOT WIRED, with a concrete prerequisite each:
+//! NOT WIRED, with a concrete prerequisite each - except the last, which is
+//! replaced rather than pending:
 //!
 //! * `FUN_801D32BC` is where retail's round reset picks whose turn it is:
 //!   `FUN_801D88CC` seeds `ctx[+0x13]` and `ctx[+0x1F]` to `0xFF` and calls it
@@ -43,10 +44,12 @@
 //!   oracles in `crates/asset/tests/`); `crate::battle_chrome`'s only mention
 //!   of the parser is `pub use legaia_asset::screen_elements`, a bare
 //!   re-export it never calls; and `engine-ui` does not import
-//!   `screen_elements` in any source file. The live draw path is
-//!   `engine-ui::battle_command_ui`, running on literals hand-mirrored out of
-//!   `battle_chrome`, whose own functions have no caller outside
-//!   `#[cfg(test)]` blocks. So the parsed table reaches no pixel today.
+//!   `screen_elements` in any source file. The live battle-chrome draw path is
+//!   `engine-ui::battle_command_ui` plus `engine-ui::ui_overlay`, which mirror
+//!   `battle_chrome`'s literals and call only its seat kernel
+//!   (`panel_seats` / `PANEL_TEXT_INSET`, from
+//!   `ui_overlay::party_panel_stage_x`); nothing on that path reads a parsed
+//!   record, so the disc table reaches no pixel today.
 //!
 //!   What that costs the wire, in order:
 //!
@@ -92,13 +95,16 @@
 //!   still the right name for a *different* thing, the actor's animation-pose
 //!   index (`battle_cue_group`, `charm_fix`, `docs/subsystems/battle.md`).
 //!   That collision is why the wrong name stuck here.
-//! * `FUN_801D9AE8` releases a `0x28`-slot tracked-widget pool. Both of its
-//!   arrays are *described* in the port - `crate::battle_value_readout` carries
-//!   the same `ctx[+0x1074]` pointer table and `ctx[+0x11B4]` `0xC`-stride
-//!   record as address constants - but a described offset is not a pool. No
-//!   engine structure owns widget slots: the battle UI is rebuilt from world
-//!   state every frame by the `engine-ui` draw-list builders, so no widget
-//!   outlives the frame that drew it and nothing has a lifetime to end.
+//! * `FUN_801D9AE8` is the exception - it releases a `0x28`-slot
+//!   tracked-widget pool, and no host is owed that call. Both of its arrays
+//!   are *described* in the port - `crate::battle_value_readout` carries the
+//!   same `ctx[+0x1074]` pointer table and `ctx[+0x11B4]` `0xC`-stride record
+//!   as address constants - but a described offset is not a pool. No engine
+//!   structure owns widget slots: the battle UI is rebuilt from world state
+//!   every frame by the `engine-ui` draw-list builders, so no widget outlives
+//!   the frame that drew it and nothing has a lifetime to end. That verdict
+//!   rides on [`release_widget_pool`]'s own `REPLACED-BY:` marker, which is
+//!   why this address is not part of the blanket above.
 //!
 //! ## Why one module for four functions
 //!
@@ -399,6 +405,11 @@ pub struct WidgetHandle {
 ///
 /// PORT: FUN_801D9AE8
 /// REF: FUN_800319A8 (the per-widget release the returned ids feed)
+///
+/// REPLACED-BY: `engine-ui`'s per-frame battle draw-list builders. Retail
+/// tracks battle-UI widgets in a `0x28`-slot pool with explicit lifetimes; the
+/// port rebuilds every readout from `World` state each frame, so no widget
+/// outlives its draw and there is no pool to release or scratch band to wipe.
 pub fn release_widget_pool(
     slots: &mut [WidgetSlot],
     scratch: &mut [u32; WIDGET_SCRATCH_WORDS],

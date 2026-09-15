@@ -761,11 +761,14 @@ pub const STORY_FLAGS_LEN: u32 = 0x200;
 /// are outside this pre-expander set.
 ///
 // PORT: FUN_80034a6c
-// NOT WIRED (by design, not by omission): this returns *code literals*, not
-// anything decoded from the disc, so routing the engine through it would move a
-// constant rather than improve fidelity. Fourteen of its fifteen offsets name
-// `SC` cells the typed engine `World` has no model for, and the one it does
-// model (gold) already carries the same 500.
+// REPLACED-BY: `legaia_engine_core::new_game` plus `world::state`'s new-game
+// reset, which seed a typed `World` (`party.money =
+// legaia_engine_core::world::NEW_GAME_STARTING_GOLD`) instead of writing
+// SC-block cells. This table is a description of the routine's own store set,
+// recovered from the instruction encodings, and its job here is to be the
+// disc-gated oracle that re-derives them; routing an engine through it would
+// move a constant, and the one cell the typed `World` models already carries
+// the same value.
 pub fn new_game_seed_words() -> Vec<SeededWord> {
     let w = |sc_offset: u32, value: u32, width: SeedWidth| SeededWord {
         sc_offset,

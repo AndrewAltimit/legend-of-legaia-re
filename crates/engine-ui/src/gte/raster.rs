@@ -207,19 +207,14 @@ pub fn interp_clip_vertex(out: &mut [u8], verts: &[u8], cur_off: usize, flags: u
 ///
 /// PORT: FUN_80036c4c
 ///
-/// NOT WIRED: the engine emits no `POLY_G3` / `POLY_G4` GPU packets, so there
-/// is no `packet` byte buffer whose `+4 + 8*i` colour fields want filling.
-/// Per-vertex colour reaches the wgpu pipeline as a vertex-buffer attribute
-/// built by the mesh uploader; the packed-packet layout this writes into
-/// exists only in the retail command stream. The prerequisite is a GPU-packet
-/// emitter (the same one [`interp_clip_vertex`] wants), not a caller.
-///
-/// Read that as "replaced", not "missing": the *capability* is present and
-/// live on the screen-space path, just carried typed rather than packed -
-/// `legaia_engine_ui::screen_prim::ScreenPrim::gouraud` is an
-/// `Option<[u32; 4]>` of per-corner modulation that `build_geometry` folds
-/// into vertices. So wiring this is a representation change (byte packets
-/// instead of typed prims), not a feature the port lacks.
+/// REPLACED-BY: `legaia_engine_ui::screen_prim::ScreenPrim::gouraud` -
+/// per-corner modulation carried as an `Option<[u32; 4]>` on the typed prim
+/// and folded into vertex colours by `build_geometry`, live on both hosts
+/// (`engine-shell` `window/event_handler/redraw_passes.rs`, `web-viewer`
+/// `play_battle.rs`, both through [`crate::battle_trail`]). The port emits no
+/// `POLY_G3` / `POLY_G4` byte packet, so there is no packed colour field at
+/// `+4 + 8*i` for a spreader to fill and nothing is owed a call; wiring it
+/// would be a representation change, not a capability the port lacks.
 ///
 /// `colors` is the source, one 4-byte word per vertex (`[R, G, B, code]`, LE);
 /// only the low three bytes are used. `count` is 3 (`POLY_G3`) or 4 (`POLY_G4`);

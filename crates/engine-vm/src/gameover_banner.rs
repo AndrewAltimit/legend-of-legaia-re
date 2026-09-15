@@ -80,13 +80,15 @@
 //!
 //! # NOT WIRED
 //!
-//! No engine path enters game-over mode. `engine-core::mode` models mode 18's
-//! stage plan (`mode_init_stage`, the port of the caller `FUN_80025B30`) but
-//! nothing dispatches to it, and the banner additionally needs the two inputs
-//! phases 1-2 supply: the nine-byte label the overlay carries and the letter
-//! mesh library the pak walk installs. This module takes the label as an
-//! argument for exactly that reason - the bytes are disc data and are not
-//! reproduced here.
+//! Nothing dispatches retail mode 18
+//! (`engine-core::mode::GameMode::GameOverInit`); `engine-core::mode` models
+//! its stage plan (`mode_init_stage`, the port of the caller `FUN_80025B30`)
+//! and nothing enters it. The port's party wipe is the mode-22 title hand-off
+//! in `engine-core::game_over`, which is a different screen and is already
+//! host-wired. Two inputs this stager needs also have no producer: the
+//! nine-byte label the PROT `0902` overlay carries and the letter-mesh library
+//! its pak walk installs - both disc data, which is why [`banner_slots`] takes
+//! the label as an argument and reproduces neither.
 
 /// Slots the banner lays out (`slti $v0, $s2, 9`).
 pub const BANNER_SLOTS: usize = 9;

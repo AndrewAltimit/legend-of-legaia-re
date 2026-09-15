@@ -59,11 +59,12 @@
 //! the missing piece is not the per-frame call but the **raiser**.
 //!
 //! Now that the four positions are identified, the raiser's engine-side home
-//! is too: the Super / Miracle chain match in `engine-core`'s battle command
-//! flow (`resolve_arts_input_entry`, which already calls `miracle_for_chain` /
-//! `super_for_chain`) is where a recognized chain would set `1..=4`. Retail's
-//! own writer is still unfound in the battle overlay, so a port that raises it
-//! there is choosing the trigger rather than reproducing one.
+//! is too: the Super / Miracle chain match in `World::build_battle_arts_rows`
+//! (`crates/engine-core/src/world/items_arts.rs`), which already calls
+//! `miracle_for_chain` / `super_for_chain`, is where a recognised chain would
+//! set the banner byte `1..=4`. Retail's own writer is still unfound in the
+//! battle overlay, so a port that raises it there is choosing the trigger
+//! rather than reproducing one.
 
 /// Stage values `1..=STAGE_DRAW_MAX` run the emit pass.
 pub const STAGE_DRAW_MAX: u8 = 4;
