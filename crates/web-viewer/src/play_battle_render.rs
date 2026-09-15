@@ -57,25 +57,20 @@
 //! `etmd` FX models, the move-VM scene-graph parts, the summon creature and
 //! the target-select cursor tint - lives in [`crate::play_battle_fx`].
 //!
-//! What the native battle render still has that this host lacks: the per-tick
-//! facial-animation VRAM re-stamps (`tick_battle_face_stamps`), the
+//! What the native battle render still has that this host lacks: the
 //! battle-intro screen-prim emitter, and the field move-VM stager parts
 //! (`build_field_fx_part_draws`, which resolve against the scene TMD pack the
 //! page does not upload while a battle is on screen).
 //!
-//! The first of those is one gap, not three: this host has **no mid-battle
-//! VRAM re-upload channel at all**. The page re-reads
-//! [`LegaiaRuntime::play_battle_vram_bytes`] only when
-//! [`LegaiaRuntime::play_battle_generation`] changes, and that bumps once per
-//! battle entry. So the status CLUT recolour
-//! (`engine-core::battle_status_clut`, `FUN_8004CE2C` pass 4) is native-only
-//! for the same reason the face stamps are - its model is shared and its
-//! latch is armed here too, via `BattleHud::sync_status`; only the drain is
-//! missing. The effect **CLUT stage** (`engine-core::battle_effect_clut`,
-//! `FUN_801DEA50`'s palette arm) is the third rider on that same missing
-//! channel: `World::battle.clut_stages` fills here exactly as it does
-//! natively, and nothing drains it. Growing the channel lights up all three
-//! at once.
+//! The mid-battle VRAM re-stamps - the per-tick facial animation
+//! (`tick_battle_face_stamps`), the status CLUT recolour
+//! (`engine-core::battle_status_clut`, `FUN_8004CE2C` pass 4) and the effect
+//! CLUT stage (`engine-core::battle_effect_clut`, `FUN_801DEA50`'s palette
+//! arm) - run here through [`crate::play_battle_vram`] against the
+//! [`BattleRender::vram`] copy, and the page re-uploads it on
+//! [`LegaiaRuntime::play_battle_vram_take_dirty`]. The party build below
+//! collects each member's face tracks ([`BattleRender::faces`]) for that
+//! channel, from the same player-file entries the native loader reads.
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::scene::{Scene, SceneHost};
@@ -411,6 +406,12 @@ pub(crate) struct BattleRender {
     /// Bumped per battle entry - and once more per mid-battle summon spawn -
     /// so the page knows to re-upload.
     pub(crate) generation: u32,
+    /// Party members the per-tick facial animator is registered for
+    /// ([`crate::play_battle_vram`]): only assembled members whose band
+    /// holds the REAL texture-pool pixels (the face-frame strip the stamps
+    /// copy from), chars 0..2 on bands 0..2 - the retail animator's own
+    /// coverage.
+    pub(crate) faces: Vec<crate::play_battle_vram::BattleMemberFace>,
 }
 
 impl BattleRender {
@@ -476,6 +477,13 @@ struct PendingClips {
     art_records: Vec<legaia_asset::battle_char_assembly::ArtAnimRecord>,
     /// Character slot the records belong to (`0..=2` = Vahn / Noa / Gala).
     cslot: usize,
+    /// Face tracks by action slot (record[0] entries + the spliced swings),
+    /// for the facial animator; `None` when the member is not a face
+    /// candidate (monster, PROT 1204 fallback, or a band with no real
+    /// texture-pool pixels to stamp from).
+    face_tracks: Option<Vec<Option<legaia_asset::face_anim::FaceTracks>>>,
+    /// Face tracks of the art-bank records' embedded entries, by record.
+    art_face_tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>>,
 }
 
 /// Flatten one animation frame to the `[tx, ty, tz, rx, ry, rz] x parts`
@@ -694,6 +702,8 @@ impl LegaiaRuntime {
                 art_bank: None,
                 art_records: Vec::new(),
                 cslot: usize::MAX,
+                face_tracks: None,
+                art_face_tracks: Vec::new(),
             });
         }
 
@@ -757,8 +767,29 @@ impl LegaiaRuntime {
         // engine's own `tick_battle_animations` (already running in the
         // browser tick) maintains `pose_frame` / reaction clips exactly as
         // it does under the native window.
+        let mut faces: Vec<crate::play_battle_vram::BattleMemberFace> = Vec::new();
+        // The battle boundary: retail rebuilds the battle context (the
+        // `+0x220` Stone latches and the per-slot palette copies) per
+        // fight, and the bands are re-assigned per fight here too - a
+        // pristine copy from the last fight would restage the wrong
+        // palette. The latch arm (`sync_status`) runs later this same tick.
+        self.battle_hud.status_clut.reset();
         if let Some(host) = self.scene_host.as_mut() {
             for p in pending {
+                // Facial animation (FUN_8004C7B4): register the member's
+                // per-action face tracks so the per-tick stamp pass
+                // (`tick_battle_vram_channel`) re-stamps the current
+                // eye/mouth frame onto the band's live face rows.
+                if let Some(tracks) = p.face_tracks {
+                    faces.push(crate::play_battle_vram::BattleMemberFace {
+                        actor_slot: p.actor_idx,
+                        char_index: p.cslot,
+                        tracks,
+                        art_tracks: p.art_face_tracks,
+                        last_stamps: None,
+                        art_counter: None,
+                    });
+                }
                 if let Some(idle) = &p.idle
                     && let Some(player) =
                         legaia_engine_core::battle_anim::MonsterAnimPlayer::new(idle)
@@ -790,10 +821,11 @@ impl LegaiaRuntime {
 
         self.battle_render_generation = self.battle_render_generation.wrapping_add(1);
         web_log(&format!(
-            "play battle: 3D render built ({} actor meshes, backdrop {}, grid {})",
+            "play battle: 3D render built ({} actor meshes, backdrop {}, grid {}, {} faces)",
             actors.len(),
             backdrop.is_some(),
-            ground.is_some()
+            ground.is_some(),
+            faces.len()
         ));
         self.battle_render = Some(BattleRender {
             vram,
@@ -804,6 +836,7 @@ impl LegaiaRuntime {
             tex_slots_used,
             camera: None,
             generation: self.battle_render_generation,
+            faces,
         });
     }
 
@@ -848,8 +881,9 @@ impl LegaiaRuntime {
     /// native `assembled_party_battle_mesh` + its caller loop (equipment
     /// splice, band relocation, texture-pool/palette uploads into `vram`,
     /// idle + action + swing + art-bank clips), with the PROT 1204 mesh +
-    /// PROT 1203 static rest pose as the fallback ladder. Facial-animation
-    /// tracks are not ported on this host (no per-tick VRAM re-stamp pass).
+    /// PROT 1203 static rest pose as the fallback ladder. The facial
+    /// tracks (entry `+0x8C` eyes / `+0x98` mouth) ride along for the
+    /// per-tick stamp pass in [`crate::play_battle_vram`].
     #[allow(clippy::too_many_arguments)]
     fn build_party_actor(
         &self,
@@ -898,6 +932,10 @@ impl LegaiaRuntime {
             // atlas pair approximates the band when the pool decode fails.
             let uploads = bca::character_texture_uploads(raw, fp, &equipped, member as u8)
                 .unwrap_or_default();
+            // The facial animator stamps VRAM-to-VRAM from the band's
+            // face-frame strip, which only the real texture-pool upload
+            // carries; the atlas-pair approximation has no strip to copy.
+            let real_band = !uploads.is_empty();
             if uploads.is_empty() {
                 for half in 0..2usize {
                     if let Some(atlas) = pack.atlases.get(cslot * 2 + half)
@@ -943,6 +981,19 @@ impl LegaiaRuntime {
             // attack-band swings play their real streams.
             let mut clips: Vec<Option<legaia_asset::monster_archive::MonsterAnimation>> =
                 vec![None; bca::ACTION_SLOT_COUNT];
+            // Per-action facial keyframe tracks (entry +0x8C eyes / +0x98
+            // mouth), keyed like `clips` by the playing clip's action_id;
+            // the per-frame facial animator looks the playing clip's tracks
+            // up here. Record[0] entries first, the equipment-spliced swing
+            // entries' tracks land on slots 0xC..0xF in the swing loop.
+            let mut faces: Vec<Option<legaia_asset::face_anim::FaceTracks>> =
+                vec![None; bca::ACTION_SLOT_COUNT];
+            match legaia_asset::face_anim::battle_face_tracks(raw) {
+                Ok(t) => faces = t,
+                Err(e) => web_log(&format!(
+                    "play battle: party {cslot} face-track decode: {e:#}"
+                )),
+            }
             if let Ok(anims) = bca::battle_animations(raw) {
                 for a in &anims {
                     if let Some(slot) = clips.get_mut(a.action_id as usize) {
@@ -955,11 +1006,22 @@ impl LegaiaRuntime {
                     if let Some(slot) = clips.get_mut(s.slot as usize) {
                         *slot = Some(bca::expand_animation_for_objects(&s.anim, &anm_bones));
                     }
+                    if let Some(face) = faces.get_mut(s.slot as usize) {
+                        *face = s.face;
+                    }
                 }
             }
             // Art-animation bank (record[0] +0x58) through the character's
-            // readef.DAT "ME" archives, so staged ids >= 0x10 resolve.
-            let (art_bank, art_records) = self.party_art_bank_web(host, raw, cslot, &anm_bones);
+            // readef.DAT "ME" archives, so staged ids >= 0x10 resolve; the
+            // records' embedded-entry face tracks ride along.
+            let (art_bank, art_face_tracks, art_records) =
+                self.party_art_bank_web(host, raw, cslot, &anm_bones);
+            // The retail animator covers chars 0..2 (Terra is skipped) on
+            // bands 0..2, and only a band holding the real strip can stamp.
+            let face_tracks = (real_band
+                && cslot < legaia_asset::face_anim::FACE_CHAR_COUNT
+                && member < legaia_asset::face_anim::FACE_SLOT_COUNT)
+                .then_some(faces);
             return Some((
                 BattleActorRender {
                     actor_idx: member,
@@ -975,6 +1037,8 @@ impl LegaiaRuntime {
                     art_bank: Some(art_bank),
                     art_records,
                     cslot,
+                    face_tracks,
+                    art_face_tracks,
                 },
             ));
         }
@@ -1023,6 +1087,8 @@ impl LegaiaRuntime {
                 art_bank: None,
                 art_records: Vec::new(),
                 cslot: usize::MAX,
+                face_tracks: None,
+                art_face_tracks: Vec::new(),
             },
         ))
     }
@@ -1063,9 +1129,10 @@ impl LegaiaRuntime {
         }
     }
 
-    /// One character's art-animation bank, commit-ready (the browser port of
-    /// the native `party_art_bank`, minus the face tracks this host has no
-    /// stamp pass for). Failures degrade per record / to an empty bank.
+    /// One character's art-animation bank, commit-ready, plus the records'
+    /// embedded-entry face tracks (both indexed by bank record) - the
+    /// browser port of the native `party_art_bank`. Failures degrade per
+    /// record / to an empty bank.
     fn party_art_bank_web(
         &self,
         host: &SceneHost,
@@ -1074,17 +1141,22 @@ impl LegaiaRuntime {
         anm_bones: &[u8],
     ) -> (
         Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
+        Vec<Option<legaia_asset::face_anim::FaceTracks>>,
         Vec<legaia_asset::battle_char_assembly::ArtAnimRecord>,
     ) {
         use legaia_asset::battle_char_assembly as bca;
         let Ok(record0) = bca::decode_record0(raw) else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         };
         let Ok(records) = bca::art_animation_bank(&record0) else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         };
+        // The embedded entries' face tracks (record +0xB0 / +0xBC) come
+        // straight off the bank records - no ME archive involved.
+        let faces: Vec<Option<legaia_asset::face_anim::FaceTracks>> =
+            records.iter().map(|r| r.face).collect();
         let Ok(readef) = host.index.entry_bytes_extended(READEF_PROT_INDEX) else {
-            return (Vec::new(), records);
+            return (Vec::new(), faces, records);
         };
         let main = bca::art_me_archive(&readef, cslot, false);
         let base = bca::art_me_archive(&readef, cslot, true);
@@ -1100,7 +1172,7 @@ impl LegaiaRuntime {
                 bank[rec.index] = Some(bca::expand_animation_for_objects(&anim, anm_bones));
             }
         }
-        (bank, records)
+        (bank, faces, records)
     }
 }
 

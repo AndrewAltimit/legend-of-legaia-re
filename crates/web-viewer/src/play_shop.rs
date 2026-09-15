@@ -1124,6 +1124,24 @@ impl LegaiaRuntime {
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
             return out;
         };
+        // The native window's arm (`window/hud.rs`): with the system-UI
+        // chrome loaded the message rides the framed banner - in battle
+        // `battle_hud_draws_for` already emitted it, outside battle the
+        // spoils report frames it - so the loose pens only fire on a
+        // chrome-less host. This page drew both, stacking a loose "LEVEL
+        // UP!" run on the battle HUD's own row at the same pen.
+        if self
+            .menu_assets
+            .as_ref()
+            .is_some_and(|a| a.chrome_rects().is_some())
+            && self
+                .menu_assets
+                .as_ref()
+                .and_then(|a| self.battle_banner_message(a))
+                .is_some()
+        {
+            return out;
+        }
         if let Some(b) = world.party.current_level_up_banner.as_ref() {
             out.extend(ui::level_up_draws_for(
                 font,
@@ -1378,6 +1396,10 @@ impl LegaiaRuntime {
         // `battle`, and empty whenever anything else owns the screen
         // ([`crate::play_field_hud`]).
         let (field_hud_sprites, field_hud_texts) = self.field_party_hud_draws(surface_w, surface_h);
+        // In-world minigame screens (casino / dance / arena), surface
+        // pixels ([`crate::play_minigames`]). Empty outside one.
+        let (minigame_sprites, minigame_texts) =
+            self.minigame_overlay_draws(font, surface_w, surface_h);
         if shop.is_none()
             && windows.is_empty()
             && banners.is_empty()
@@ -1385,6 +1407,8 @@ impl LegaiaRuntime {
             && tutorial.is_empty()
             && field_hud_sprites.is_empty()
             && field_hud_texts.is_empty()
+            && minigame_sprites.is_empty()
+            && minigame_texts.is_empty()
         {
             return CLOSED.to_string();
         }
@@ -1444,6 +1468,8 @@ impl LegaiaRuntime {
         texts.extend(battle);
         // The field HUD's names, likewise already in surface pixels.
         texts.extend(field_hud_texts);
+        sprites.extend(minigame_sprites);
+        texts.extend(minigame_texts);
 
         serde_json::json!({
             "open": true,

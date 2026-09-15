@@ -59,8 +59,10 @@
 //! REF: FUN_80018db0 (the footstep / ambient cadence this feeds movement into)
 
 use crate::runtime::LegaiaRuntime;
-use legaia_asset::sfx_table::{FALLBACK_VAB_SLOT, PINNED_SLOT_BANKS};
-use legaia_engine_audio::{PendingCue, SfxBank, SfxScheduler};
+use legaia_asset::sfx_table::{
+    FALLBACK_VAB_SLOT, PINNED_SLOT_BANKS, SLOT11_REWARD_BANK_PROT_INDEX,
+};
+use legaia_engine_audio::{CueDispatch, PendingCue, SfxBank, SfxScheduler, VabBank, classify_cue};
 use legaia_engine_core::world::SceneMode;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
@@ -81,6 +83,18 @@ use wasm_bindgen::prelude::*;
 pub const SFX_BANK_SPU_BYTES: u32 = 0x3D000;
 /// Bottom of the BGM region, matching the native boot's `SPU_RESERVED_BYTES`.
 pub const SPU_RESERVED_BYTES: u32 = 0x1000;
+
+/// `_DAT_8007B910`'s reference value (`0xD7`, seeded by the cold reset
+/// `FUN_8001FFA4`): the un-ducked BGM level the battle's `0x51` arm ramps
+/// back to. Same constant as the native director's `DUCK_LEVEL_REF`.
+pub(crate) const DUCK_LEVEL_REF: u8 = 0xD7;
+
+/// VAB slot the battle-end reward bank (PROT 0889, cue `0x50`) is installed
+/// in - retail streams it at results time (`FUN_8004E568` phase 4,
+/// `FUN_8001E54C(0xB, ...)`), and both hosts stage it transiently the same
+/// way ([`LegaiaRuntime::stage_transient_reward_bank`]). Same value as the
+/// native director's `TRANSIENT_REWARD_SLOT`.
+pub(crate) const TRANSIENT_REWARD_SLOT: u8 = 11;
 
 /// Cue id **retail's pause menu** fires when the list cursor moves.
 ///
@@ -281,7 +295,6 @@ pub struct StagedBankBytes {
 }
 
 /// Live state of the page's SFX channel.
-#[derive(Default)]
 pub struct PlaySfx {
     /// Descriptors decoded from the disc executable. Empty until `load_disc`.
     pub bank: SfxBank,
@@ -327,9 +340,138 @@ pub struct PlaySfx {
     pub last_fired: Option<(u16, u8)>,
     /// Whether the program banks uploaded into the live SPU.
     pub vab_staged: bool,
+    /// Whether [`LegaiaRuntime::load_sfx_bank_bytes`] has run against a
+    /// staged scene host. A flag rather than `bank_bytes.is_empty()` because
+    /// the transient reward slot can land in `bank_bytes` before any pinned
+    /// bank has been read, and must not make the pinned read look done.
+    pub bank_bytes_loaded: bool,
+    /// The battle audio duck, in retail's own units: `_DAT_8007B910` is the
+    /// live level (seeded [`DUCK_LEVEL_REF`]), ramped one unit per vsync
+    /// toward a target the action SM sets - `ref * 75 / 100` under a summon,
+    /// back to `ref` in the Done band's `0x51` arm - and applied to the BGM
+    /// through `SsSeqSetVol`. `duck_level` mirrors the cell; `duck_target`
+    /// the arm's clamp. The browser twin of the native director's pair.
+    pub duck_level: u8,
+    pub duck_target: u8,
+    /// SPU RAM base the transient reward bank (slot 11) was uploaded at,
+    /// `None` while it is not staged. It borrows the free tail of the BGM
+    /// region, so a track restage invalidates it
+    /// ([`LegaiaRuntime::reconcile_reward_bank`]).
+    pub reward_bank_base: Option<u32>,
+    /// Queued cues `classify_cue` routed to the CD-XA **voice** leg
+    /// (`id >= 0x100`) and this host dropped, because - like the native
+    /// window - it stages no bank for the cast-voice clip files. Counted so
+    /// the readout can say the cue reached the mixer and was declined,
+    /// rather than the cue never having been produced.
+    pub voice_cues_dropped: u32,
+    /// The CD-XA lane: arts-voice shouts + battle one-shot clips
+    /// ([`crate::play_xa`]).
+    pub xa: crate::play_xa::PlayXa,
+}
+
+impl Default for PlaySfx {
+    fn default() -> Self {
+        Self {
+            bank: SfxBank::default(),
+            cue_slots: BTreeMap::new(),
+            bank_bytes: BTreeMap::new(),
+            sched: SfxScheduler::default(),
+            cadence: Default::default(),
+            prev_pos: None,
+            cadence_steps: 0,
+            queued: 0,
+            menu_cue_requests: 0,
+            fired: 0,
+            last_fired: None,
+            vab_staged: false,
+            bank_bytes_loaded: false,
+            duck_level: DUCK_LEVEL_REF,
+            duck_target: DUCK_LEVEL_REF,
+            reward_bank_base: None,
+            voice_cues_dropped: 0,
+            xa: Default::default(),
+        }
+    }
+}
+
+/// How a queued cue id leaves the scheduler - the routing half of retail's
+/// cue dispatcher `FUN_8004FCC8` (`legaia_engine_audio::classify_cue`), applied
+/// **at fire time**, exactly where the native director applies it.
+///
+/// The queue is a `u16` because the battle cue space is - the action SM's
+/// cast cues run to `0x20E` - while the SFX descriptor table is `0x00..=0x63`.
+/// Truncating with `as u8` did not make an out-of-band cue silent, it made it
+/// play the **wrong** descriptor: `0x20C` became `0x0C`, `0x118` became `0x18`,
+/// and every one of those is a populated entry.
+///
+/// Only the `Voice` band is re-routed. The `Ring` band's `id - 1` resolution
+/// below `0x40` is retail's (`classify_cue`'s low leg) but the producers that
+/// feed this queue hand it an art-record `HitCue::kind` / a menu descriptor id
+/// the bank is already indexed by, so applying it would silently move every
+/// cue that works today. The native director makes the same choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CueRoute {
+    /// Key this descriptor id out of the bank its category names.
+    Descriptor(u8),
+    /// A streamed CD-XA voice trigger (`FUN_8003D53C`), not an SPU
+    /// descriptor: `channel` is the clip slot after the `1/3/5` remap,
+    /// `submode` the channel inside the file. Neither host stages a bank for
+    /// these files (the cast-voice `XA28` / `XA34`), so it is declined.
+    Voice { channel: u8, submode: u8 },
+}
+
+/// Route one queued cue id ([`CueRoute`]).
+pub(crate) fn route_cue(id: u16) -> CueRoute {
+    match classify_cue(u32::from(id)) {
+        CueDispatch::Voice {
+            channel, submode, ..
+        } => CueRoute::Voice { channel, submode },
+        // A `Ring` id that is out of the descriptor space could only come
+        // from a `0` cue wrapping to `0xFFFF`; keying descriptor `0xFF`
+        // is a no-op in every bank, so the narrowing loses nothing.
+        CueDispatch::Ring { .. } => CueRoute::Descriptor(id.min(0xFF) as u8),
+    }
+}
+
+/// Sample end of an uploaded bank in SPU RAM - one past the highest
+/// `addr + size` of its VAGs - or `fallback` for an empty / absent bank. The
+/// transient reward bank is placed at the 16-byte-aligned address above this.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub(crate) fn vab_bank_used_end(bank: Option<&VabBank>, fallback: u32) -> u32 {
+    bank.and_then(|b| b.samples.iter().flatten().map(|s| s.addr + s.size).max())
+        .unwrap_or(fallback)
 }
 
 impl PlaySfx {
+    /// The duck target as retail computes it from a percentage of the
+    /// reference level (`BattleEvent::DuckAudioLevel`): `75` under a summon /
+    /// magic capture, `100` when the Done band ramps it back. The ramp itself
+    /// runs in [`Self::tick_duck`].
+    pub fn set_duck_pct(&mut self, pct: u8) {
+        let pct = u32::from(pct.min(100));
+        self.duck_target = (u32::from(DUCK_LEVEL_REF) * pct / 100) as u8;
+    }
+
+    /// One frame of the duck ramp: step the live level one unit toward the
+    /// target (retail `DAT_1F800393` per vsync, the `0x35` / `0x51` arms) and
+    /// return the sequencer master volume to re-apply, `master_vol * level /
+    /// ref` - the `FUN_800267A8` -> `SsSeqSetVol` re-apply, which halves the
+    /// cell into the 0..127 volume domain the same way `master_vol` already
+    /// is. `None` when the level already sits at its target (nothing to
+    /// re-apply, and the native director skips the call too).
+    pub fn tick_duck(&mut self) -> Option<u8> {
+        if self.duck_level == self.duck_target {
+            return None;
+        }
+        self.duck_level = if self.duck_level < self.duck_target {
+            self.duck_level + 1
+        } else {
+            self.duck_level - 1
+        };
+        let vol = u32::from(crate::play_bgm::BGM_MASTER_VOL) * u32::from(self.duck_level)
+            / u32::from(DUCK_LEVEL_REF);
+        Some(vol.min(127) as u8)
+    }
     /// The VAB slot a cue's descriptor names, resolved through its `+4`
     /// category. `None` for an id the disc table doesn't carry.
     pub fn slot_for_cue(&self, id: u8) -> Option<u8> {
@@ -437,12 +579,13 @@ impl LegaiaRuntime {
     /// 0875 as slot 2's fallback. Each is tried at VAB offset `+4` (the entry
     /// is a chunk-header-prefixed stream) then `+0`. No-op once staged.
     pub(crate) fn load_sfx_bank_bytes(&mut self) {
-        if !self.sfx.bank_bytes.is_empty() {
+        if self.sfx.bank_bytes_loaded {
             return;
         }
         let Some(host) = self.scene_host.as_ref() else {
             return;
         };
+        self.sfx.bank_bytes_loaded = true;
         for (slot, prot) in PINNED_SLOT_BANKS.iter().copied() {
             // The class-2 slot has a documented alternate entry (`0875` when
             // `DAT_8007BD11 == 4`); the slot-0 system bank has no such swap, so
@@ -476,9 +619,173 @@ impl LegaiaRuntime {
     }
 
     /// Queue a cue to fire `frames` sim ticks from now (`0` = this frame).
-    pub(crate) fn enqueue_sfx(&mut self, id: u8, frames: u16) {
+    ///
+    /// The id is the full `u16` cue space (`FUN_8004FCC8`'s, which the
+    /// battle's cast cues reach at `0x118..` / `0x20C..`); it is classified at
+    /// fire time ([`route_cue`]), never truncated. `impl Into<u16>` so the
+    /// existing `u8` descriptor-id callers keep compiling unchanged.
+    pub(crate) fn enqueue_sfx(&mut self, id: impl Into<u16>, frames: u16) {
         self.sfx.queued += 1;
-        self.sfx.sched.enqueue(PendingCue::new(id as u16, frames));
+        self.sfx.sched.enqueue(PendingCue::new(id.into(), frames));
+    }
+
+    /// Queue a battle cue with its `(actor, target)` slots riding along -
+    /// the native `AudioBgmDirector::enqueue_sfx` signature. The slots are
+    /// HUD / trace context on both hosts: the native fire path pans nothing
+    /// off them, so neither does this one.
+    pub(crate) fn enqueue_battle_cue(&mut self, id: u16, frames: u16, actor: u8, target: u8) {
+        self.sfx.queued += 1;
+        self.sfx
+            .sched
+            .enqueue(PendingCue::new(id, frames).with_actors(actor, target));
+    }
+
+    /// Set the battle audio duck's target (`BattleEvent::DuckAudioLevel`).
+    /// The ramp runs in [`Self::tick_duck`], once per sim tick.
+    pub(crate) fn set_duck_pct(&mut self, pct: u8) {
+        self.sfx.set_duck_pct(pct);
+    }
+
+    /// One frame of the duck ramp, re-applied to the live sequencer. Ticked
+    /// from [`Self::tick_sfx`] so the ramp back to full after a battle keeps
+    /// running once the scene mode has left `Battle`. No-op off wasm (no
+    /// sequencer to re-apply to; the level still ramps, so the tests can read
+    /// it back).
+    pub(crate) fn tick_duck(&mut self) {
+        let _vol = self.sfx.tick_duck();
+        #[cfg(target_arch = "wasm32")]
+        if let (Some(vol), Some(out)) = (_vol, self.audio_out.as_ref()) {
+            out.set_sequencer_master_vol(vol);
+        }
+    }
+
+    /// Drop every queued SFX cue and the transient reward bank - the scene
+    /// transition / battle abort clear the native window runs as
+    /// `bgm.clear_sfx()` on every `SceneEntered` edge (`boot.rs`). Cues
+    /// queued against the departing scene's timing must not fire into the
+    /// next one, and the reward bank borrowed room in a BGM region the new
+    /// scene's VAB restage re-owns.
+    pub(crate) fn on_scene_change_audio(&mut self) {
+        self.sfx.sched.clear();
+        self.drop_reward_bank();
+    }
+
+    /// Forget the transient reward bank (slot 11) wherever it is recorded.
+    fn drop_reward_bank(&mut self) {
+        self.sfx.reward_bank_base = None;
+        self.sfx.bank_bytes.remove(&TRANSIENT_REWARD_SLOT);
+        #[cfg(target_arch = "wasm32")]
+        self.sfx_vabs.remove(&TRANSIENT_REWARD_SLOT);
+    }
+
+    /// Sample end of the staged BGM bank in SPU RAM (`LegaiaRuntime::bgm_bank`,
+    /// whichever of the two upload sites last filled the region), the address
+    /// the transient reward bank is placed above. An absent bank reads as the
+    /// region floor. `None` off wasm, where there is no SPU and no bank: the
+    /// reward bank then does not stage, and cue `0x50` takes the class-2
+    /// fallback it always took.
+    pub(crate) fn bgm_bank_used_end(&self) -> Option<u32> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            Some(vab_bank_used_end(
+                self.bgm_bank.as_ref(),
+                SPU_RESERVED_BYTES,
+            ))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            None
+        }
+    }
+
+    /// Whether the reward bank is staged in slot 11.
+    pub(crate) fn has_reward_bank(&self) -> bool {
+        self.sfx.reward_bank_base.is_some()
+    }
+
+    /// Drop the reward bank if a BGM restage has since grown into its room.
+    /// The two BGM upload sites (`stage_scene_bgm_bank` in the runtime and
+    /// `WebBgmDirector::stage_owned`) re-own the region wholesale, so the
+    /// bank is stale the moment the live bank's sample end passes its base -
+    /// the native director drops it inside those two sites; this host checks
+    /// at fire time instead, which needs no hook in either.
+    fn reconcile_reward_bank(&mut self) {
+        if let (Some(base), Some(used)) = (self.sfx.reward_bank_base, self.bgm_bank_used_end())
+            && used > base
+        {
+            self.drop_reward_bank();
+        }
+    }
+
+    /// Stage the battle-end reward bank (PROT 0889, cue `0x50`, category 11)
+    /// **behind the resident BGM bank**, in the free tail of the BGM region -
+    /// the port's version of retail's results-time load of PROT 0889 into
+    /// slot 11 (`FUN_8001FC00(0x37B, 0xB, ..)` + `FUN_8001E54C(0xB, ..)` in
+    /// `FUN_8004E568` phases 2 / 4), and the twin of the native
+    /// `AudioBgmDirector::stage_transient_sfx_vab`. The SFX region is full
+    /// (its two pinned banks leave ~2.5 KB and this VAB body is 19344 bytes),
+    /// so the reward bank borrows BGM room instead, exactly as long as the
+    /// current track leaves any. Idempotent while staged. Returns `false`
+    /// when the BGM occupancy is unknown, the entry has no VAB header, or the
+    /// tail is too small - cue `0x50` then keys the class-2 fallback.
+    ///
+    /// Off wasm there is no SPU: the bank is recorded as staged (so the
+    /// routing is testable) but nothing is uploaded.
+    // REF: FUN_8001E54C, FUN_8004E568
+    pub(crate) fn stage_transient_reward_bank(&mut self) -> bool {
+        self.reconcile_reward_bank();
+        if self.has_reward_bank() {
+            return true;
+        }
+        let Some(used_end) = self.bgm_bank_used_end() else {
+            return false;
+        };
+        let Some(host) = self.scene_host.as_ref() else {
+            return false;
+        };
+        let Ok(bytes) = host
+            .index
+            .entry_bytes_extended(SLOT11_REWARD_BANK_PROT_INDEX)
+        else {
+            return false;
+        };
+        let Some((report, vab_offset)) = [4usize, 0]
+            .into_iter()
+            .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
+        else {
+            return false;
+        };
+        let region_end = legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - SFX_BANK_SPU_BYTES;
+        let base = used_end.div_ceil(16) * 16;
+        if base >= region_end {
+            return false;
+        }
+        let body_total: u32 = report.vag_samples.iter().map(|v| v.size as u32).sum();
+        if body_total > region_end - base {
+            return false;
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let Some(out) = self.audio_out.as_ref() else {
+                return false;
+            };
+            let bank = out.with_spu(|spu| {
+                let mut alloc =
+                    legaia_engine_audio::spu::ram::SpuAllocator::new(base, region_end - base);
+                VabBank::upload(spu, &mut alloc, &report, &bytes[vab_offset..])
+            });
+            self.sfx_vabs.insert(TRANSIENT_REWARD_SLOT, bank);
+        }
+        self.sfx.bank_bytes.insert(
+            TRANSIENT_REWARD_SLOT,
+            StagedBankBytes {
+                prot: SLOT11_REWARD_BANK_PROT_INDEX,
+                bytes,
+                vab_offset,
+            },
+        );
+        self.sfx.reward_bank_base = Some(base);
+        true
     }
 
     /// This tick's movement magnitude for the footstep cadence: zero when the
@@ -535,6 +842,9 @@ impl LegaiaRuntime {
                 self.enqueue_sfx(cue, 0);
             }
         }
+        // The battle audio duck ramps one retail unit per vsync, whatever
+        // mode the scene is in (the ramp back to full outlives the battle).
+        self.tick_duck();
         self.fire_matured_sfx();
     }
 
@@ -544,14 +854,27 @@ impl LegaiaRuntime {
         // Off wasm there is no live SPU to key into (`WebAudioOut` is the only
         // audio device this crate has), so the scheduler still advances - which
         // is what the disc-gated tests exercise - but nothing sounds.
-        let _batch = self.sfx.sched.tick_frame();
+        let batch = self.sfx.sched.tick_frame();
+        if batch.is_empty() {
+            return;
+        }
+        // Classify first, on every target: a voice-leg cue is declined the
+        // same way whether or not there is a mixer, and the count is what the
+        // off-wasm tests read.
+        let mut descriptors: Vec<(u16, u8)> = Vec::with_capacity(batch.fired.len());
+        for cue in &batch.fired {
+            match route_cue(cue.id) {
+                CueRoute::Descriptor(id) => descriptors.push((cue.id, id)),
+                CueRoute::Voice { .. } => self.sfx.voice_cues_dropped += 1,
+            }
+        }
         #[cfg(target_arch = "wasm32")]
-        let batch = _batch;
-        #[cfg(target_arch = "wasm32")]
-        if !batch.is_empty() {
+        if !descriptors.is_empty() {
             if !self.stage_sfx_vab() {
                 return;
             }
+            // A BGM restage since the reward bank staged makes it stale.
+            self.reconcile_reward_bank();
             let Some(out) = self.audio_out.as_ref() else {
                 return;
             };
@@ -560,8 +883,7 @@ impl LegaiaRuntime {
             let vabs = &self.sfx_vabs;
             let mut fired = Vec::new();
             out.with_spu(|spu| {
-                for cue in &batch.fired {
-                    let id = cue.id as u8;
+                for &(queued_id, id) in &descriptors {
                     // Each cue keys the bank its own `+4` category names. The
                     // second `get` covers a slot whose bytes read but whose
                     // upload failed - the cue keeps its old sound rather than
@@ -573,7 +895,7 @@ impl LegaiaRuntime {
                         continue;
                     };
                     if let Some(voice) = bank.play_one_shot(id, spu, vab) {
-                        fired.push((cue.id, voice));
+                        fired.push((queued_id, voice));
                     }
                 }
             });
@@ -614,6 +936,10 @@ impl LegaiaRuntime {
             );
             let mut out_map = BTreeMap::new();
             for (slot, b) in self.sfx.bank_bytes.iter() {
+                // The reward bank lives behind the BGM, not in this region.
+                if *slot == TRANSIENT_REWARD_SLOT {
+                    continue;
+                }
                 let Ok(report) = legaia_vab::parse(&b.bytes, b.vab_offset) else {
                     continue;
                 };
@@ -647,12 +973,17 @@ impl LegaiaRuntime {
     /// This is the page's cue surface and the measurable one: a returned voice
     /// index is proof the live SPU accepted the note, not just that a queue
     /// accepted an id.
+    ///
+    /// `id` is the full `u16` dispatch space: a cast-voice id (`>= 0x100`)
+    /// is accepted, classified at fire time and declined on the voice leg
+    /// (counted in `voice_cues_dropped`), so the return is `false` for it -
+    /// never a truncated descriptor keyed by mistake.
     pub fn play_sfx(&mut self, id: u32) -> bool {
-        if id > u8::MAX as u32 {
+        let Ok(id) = u16::try_from(id) else {
             return false;
-        }
+        };
         let before = self.sfx.fired;
-        self.enqueue_sfx(id as u8, 0);
+        self.enqueue_sfx(id, 0);
         self.fire_matured_sfx();
         self.sfx.fired > before
     }
@@ -718,6 +1049,10 @@ impl LegaiaRuntime {
             "last_voice": self.sfx.last_fired.map(|(_, v)| v),
             "idle_voices": idle,
             "pending": self.sfx.sched.pending_count(),
+            "voice_cues_dropped": self.sfx.voice_cues_dropped,
+            "duck_level": self.sfx.duck_level,
+            "duck_target": self.sfx.duck_target,
+            "reward_bank_staged": self.sfx.reward_bank_base.is_some(),
         })
         .to_string()
     }
@@ -941,6 +1276,164 @@ mod tests {
                 "a BGM VAB that fits today ({body}) must still fit: budget {bgm_budget}"
             );
         }
+    }
+
+    /// The duck is retail's own arithmetic: a 75% target lands at
+    /// `0xD7 * 75 / 100`, the level steps one unit per tick toward it, and
+    /// each step re-applies `master_vol * level / ref` - so the volume the
+    /// sequencer is handed under a full summon duck is 75 of the 100 the
+    /// track started at, on this host exactly as on the native one.
+    #[test]
+    fn duck_ramps_one_unit_per_tick_and_scales_the_shared_master_vol() {
+        let mut sfx = PlaySfx::default();
+        assert_eq!(sfx.duck_level, DUCK_LEVEL_REF);
+        assert_eq!(sfx.tick_duck(), None, "at target: nothing to re-apply");
+        sfx.set_duck_pct(75);
+        let target = (u32::from(DUCK_LEVEL_REF) * 75 / 100) as u8;
+        assert_eq!(sfx.duck_target, target);
+        let first = sfx.tick_duck().expect("one step down");
+        assert_eq!(sfx.duck_level, DUCK_LEVEL_REF - 1);
+        assert_eq!(
+            first,
+            (100 * u32::from(DUCK_LEVEL_REF - 1) / u32::from(DUCK_LEVEL_REF)) as u8
+        );
+        let mut last = first;
+        let mut steps = 1;
+        while let Some(v) = sfx.tick_duck() {
+            last = v;
+            steps += 1;
+        }
+        assert_eq!(steps, u32::from(DUCK_LEVEL_REF - target));
+        assert_eq!(sfx.duck_level, target);
+        // Retail floors twice - `0xD7 * 75 / 100 = 161`, then
+        // `100 * 161 / 0xD7 = 74` - so a "75%" duck hands the sequencer 74,
+        // on this host exactly as the native director's `tick_duck` does.
+        let expected = (100 * u32::from(target) / u32::from(DUCK_LEVEL_REF)) as u8;
+        assert_eq!(expected, 74);
+        assert_eq!(
+            last, expected,
+            "the duck floor is retail's, not a rounded 75"
+        );
+        // Back to full ramps up the same way and lands on the seed volume.
+        sfx.set_duck_pct(100);
+        let mut last = 0;
+        while let Some(v) = sfx.tick_duck() {
+            last = v;
+        }
+        assert_eq!(last, crate::play_bgm::BGM_MASTER_VOL);
+        // Out-of-range percentages clamp rather than overflow.
+        sfx.set_duck_pct(250);
+        assert_eq!(sfx.duck_target, DUCK_LEVEL_REF);
+    }
+
+    /// A cast cue is a `FUN_8004FCC8` id (`0x118`, `0x20C`, ...), and the
+    /// dispatcher sends it to the CD-XA voice leg. Truncating it to a `u8`
+    /// would key descriptor `0x18` / `0x0C` - populated entries - so the
+    /// route must say **voice**, never a descriptor, for every id at or
+    /// above `0x100`; and every descriptor-space id must pass through
+    /// unchanged.
+    #[test]
+    fn cast_cues_route_to_the_voice_leg_not_a_truncated_descriptor() {
+        for id in [0x118u16, 0x119, 0x11A, 0x20C, 0x20D, 0x20E, 0x100, 0x1FF] {
+            match route_cue(id) {
+                CueRoute::Voice { .. } => {}
+                other => panic!("{id:#x} must route to the voice leg, got {other:?}"),
+            }
+        }
+        assert_eq!(
+            route_cue(0x118),
+            CueRoute::Voice {
+                channel: 0x1B,
+                submode: 0
+            }
+        );
+        assert_eq!(
+            route_cue(0x20E),
+            CueRoute::Voice {
+                channel: 0x21,
+                submode: 6
+            }
+        );
+        for id in [0x1Au16, 0x20, 0x21, 0x37, 0x50, 0x63, 0xFF] {
+            assert_eq!(route_cue(id), CueRoute::Descriptor(id as u8));
+        }
+    }
+
+    /// The reward bank goes above the highest staged VAG; an empty or
+    /// absent bank puts it at the region floor.
+    #[test]
+    fn bank_used_end_is_the_highest_vag_end() {
+        use legaia_engine_audio::UploadedVag;
+        let bank = VabBank {
+            master_vol: 127,
+            samples: vec![
+                Some(UploadedVag {
+                    addr: 0x1000,
+                    size: 0x200,
+                }),
+                None,
+                Some(UploadedVag {
+                    addr: 0x4000,
+                    size: 0x10,
+                }),
+            ],
+            programs: Vec::new(),
+        };
+        assert_eq!(vab_bank_used_end(Some(&bank), SPU_RESERVED_BYTES), 0x4010);
+        let empty = VabBank {
+            master_vol: 127,
+            samples: Vec::new(),
+            programs: Vec::new(),
+        };
+        assert_eq!(
+            vab_bank_used_end(Some(&empty), SPU_RESERVED_BYTES),
+            SPU_RESERVED_BYTES
+        );
+        assert_eq!(
+            vab_bank_used_end(None, SPU_RESERVED_BYTES),
+            SPU_RESERVED_BYTES
+        );
+    }
+
+    /// The scene-change clear empties the scheduler and forgets the reward
+    /// bank, so the next scene's cue `0x50` resolves to the fallback again
+    /// until a results frame restages it.
+    #[test]
+    fn scene_change_clears_the_queue_and_the_reward_bank() {
+        let mut rt = LegaiaRuntime::new();
+        rt.enqueue_sfx(0x21u8, 3);
+        rt.enqueue_battle_cue(0x118, 5, 0, 3);
+        rt.sfx.reward_bank_base = Some(0x8000);
+        rt.sfx.bank_bytes.insert(
+            TRANSIENT_REWARD_SLOT,
+            StagedBankBytes {
+                prot: SLOT11_REWARD_BANK_PROT_INDEX,
+                bytes: Vec::new(),
+                vab_offset: 0,
+            },
+        );
+        assert_eq!(rt.sfx.sched.pending_count(), 2);
+        assert!(rt.has_reward_bank());
+        rt.on_scene_change_audio();
+        assert_eq!(rt.sfx.sched.pending_count(), 0);
+        assert!(!rt.has_reward_bank());
+        assert!(!rt.sfx.bank_bytes.contains_key(&TRANSIENT_REWARD_SLOT));
+        // Without a BGM occupancy reading the bank refuses to stage: the
+        // conservative answer, and the one the routing then falls back on.
+        assert!(!rt.stage_transient_reward_bank());
+    }
+
+    /// A voice-leg cue that matures is counted as declined, on every
+    /// target, and never reaches the descriptor path.
+    #[test]
+    fn a_matured_voice_cue_is_declined_and_counted() {
+        let mut rt = LegaiaRuntime::new();
+        rt.enqueue_battle_cue(0x20C, 0, 3, 0);
+        rt.enqueue_sfx(0x118u16, 0);
+        assert_eq!(rt.sfx.voice_cues_dropped, 0);
+        rt.fire_matured_sfx();
+        assert_eq!(rt.sfx.voice_cues_dropped, 2);
+        assert_eq!(rt.sfx.queued, 2);
     }
 
     /// The fallback for an unstaged slot is the *previous* behaviour, and it

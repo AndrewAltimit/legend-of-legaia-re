@@ -28,6 +28,18 @@ use legaia_engine_audio::{
 use legaia_engine_core::scene::BgmDirector;
 use legaia_seq::Seq;
 
+/// The pause menu's cursor-step cue: `FUN_80032A44`'s ring write
+/// `_li a2,0x21` at `0x80032b9c` (`ghidra/scripts/funcs/80032a44.txt`). Its
+/// `sfx-table.md` descriptor is category `0`, so the director sounds it out
+/// of the slot-0 system bank (PROT 0868). Provenance `disc`: traced to the
+/// retail ring write, the same three ids the browser play page fires
+/// (`web-viewer::play_sfx`), so the two hosts blip alike.
+pub const RETAIL_MENU_CURSOR_CUE: u16 = 0x21;
+/// The enabled-row confirm cue: `li a1,0x20` at `0x80032d24` in `FUN_80032A44`.
+pub const RETAIL_MENU_CONFIRM_CUE: u16 = 0x20;
+/// The cancel cue: `_li a2,0x37` at `0x80032d74` in `FUN_80032A44`.
+pub const RETAIL_MENU_CANCEL_CUE: u16 = 0x37;
+
 /// BGM director that routes [`BgmDirector`] events into a live
 /// [`AudioOut`]. The director holds a clone of the audio handle (cpal stream
 /// is reference-counted internally via `Arc`) plus the active VAB bank.

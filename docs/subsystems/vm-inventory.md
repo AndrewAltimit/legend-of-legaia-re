@@ -165,8 +165,10 @@ The attract fire arm is wired on **both** hosts behind
 host with no movie destination would freeze input for the last sixteen frames
 of every idle period and then do nothing. The native window plays retail's
 `fmv_id 0` through the same MDEC path the field-VM FMV trigger uses; the
-browser play page enters the same `TitlePhase::Attract`, discloses that it has
-no STR/MDEC playback, and returns to the menu.
+browser play page enters the same `TitlePhase::Attract` and plays it through
+its own movie lane (`play_fmv`: the page slices the STR segment out of the
+disc bytes it holds, the engine decodes it), counting a skip only when the
+page never installed the segment.
 
 The mode-graph question of which sub-mode a cold boot shows is settled: `0x10`
 always. See [`boot.md`](boot.md#a-cold-boot-always-shows-sub-mode-0x10-never-0x02).

@@ -502,6 +502,55 @@ the same screen with the same model. The five *render* surfaces above are not
 - the dance hall and the fishing venue bake venue-specific geometry - so there
 the rule is the instrument, and this is not a plan to replace it.
 
+## Gaps the tiers were blind to, closed by reading the two hosts side by side
+
+One pass over both hosts, domain by domain, with every tier above green,
+found the classes below. Each is recorded for the shape it has, because the
+shape is what the next sweep should look for.
+
+**Same override set, different bodies (tier 4's declared blind spot, now
+a worked example).** `WebBgmDirector` and `AudioBgmDirector` overrode the
+same six `BgmDirector` methods, and the browser's duplicate-start guard was
+id-only where the native one also asks "unpaused, and a sequencer is live" -
+so a track that ended or was paused never restarted on the field VM's
+re-emit, and the field music did not return after a battle. The same pass
+found the sequencer master volume unset (127 against native's 100), the
+loop policy hard-coded, and `stop` leaving the pause gate closed. The tier
+cannot see any of these; only the paired bodies can.
+
+**A `SceneMode` with no `engine-ui` builder is invisible to tier 1.** Four
+minigame sessions install themselves on both hosts from a scene's own door
+warp (`World::minigames.pending_warp`, drained by the shared scene host), and
+the page landed in each with a frozen field and no screen, because their
+native presentation is text lines and a hand-rolled 3D scene rather than a
+builder the surface enumerates. The page now draws them; the shape to
+remember is that a mode can be reached without a single builder being named.
+
+**A queue only a consumer empties.** `World::pending_field_events` was drained
+on the page solely by the BGM router, which hands every non-BGM event back -
+so a browser session's queue grew with every camera beat, item grant and
+dialog open, and with audio down it grew with every BGM op too. The native
+window drains it every frame. No tier looks at what a host *fails to
+consume*.
+
+**Opposite defaults on one knob.** The three-probe wall footprint, solid NPC
+bodies and motion-VM patrol routes were on unconditionally in the browser and
+off by default natively (`--edge-collision` / `--solid-npcs` / `--live-npcs`
+opt-ins). The same engine, the same scene, two different games in a town.
+Native now defaults them on with `--no-*` opt-outs; a paired-defaults row
+would have caught it and none exists.
+
+**A typed channel narrowed at one host.** The web strike-SFX scheduler was
+`u8` end to end, so every cast cue the engine emits above `0xFF` was dropped
+by a `try_from` that looked like ordinary defensive code. The native
+scheduler is `u16` and classifies. Width mismatches on a shared event type
+are a diff-visible shape once named, and nothing had named it.
+
+**Simulated and never drawn.** The page ticked the field move-VM effects
+every frame and drew none of them, because its only FX draw call sat inside
+the battle branch. Tier 7 asks whether a render surface names a kernel; it
+does not ask whether a simulated layer has a draw site at all.
+
 ## What a waiver may say
 
 Both waiver files are validated for staleness on every run, so they cannot
@@ -533,9 +582,10 @@ about these is contested.
 
 | Gap | Shape |
 |---|---|
-| save-model unification | The two hosts build their save-slot model separately; tier 3's save-select row pairs only the `SaveRack` kind each declares, not the model around it. |
-| shared camera on web | The browser page runs its own orbit projection beside the engine's camera controller instead of consuming it. |
-| MDEC on web | `crates/mdec` decodes STR video for the native `play-str` path; the play page has no video decode, so an FMV beat has nothing to show. |
+| shared camera on web | The browser page runs its own orbit projection beside the engine's camera controller instead of consuming it - in the field, on the overworld (where the native window has a top-view debug camera the page does not) and for the op-`0x45` cutscene shots, which the page maps onto that orbit. |
+| retail numeral art on web | The battle's damage numerals and `N HIT` / `TOTAL` counter draw the shared layout from the font atlas; the native window samples the retail 24x24 cells out of VRAM through a screen-space sink the page has not grown. |
+| publisher logos on web | `engine_core::publisher_logos` + its atlas builder are in the shared crate; only the native `--boot-ui` chain plays them. |
+| key rebinding on **both** hosts | `KeyRebindSession` is complete and orphaned; native rebinds through `legaia-input.toml`, the page reads the engine's table and cannot rebind at all. See the waiver. |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | one-shot SPU voices on the minigames page | The page renders BGM to PCM and hands it to an `AudioBufferSourceNode`; it holds no live `Spu`, so no cue - id-keyed or explicit - can sound there. See [below](#one-shot-voices-on-the-minigames-page). |
 | per-actor pitch / roll on web | The page's NPC draw carries one rotation axis (`rotY`); a second and third would need the draw record and its model build to take the full Euler triple. See [below](#per-actor-pitch-and-roll-on-the-play-page). |
@@ -559,7 +609,9 @@ play page's `play_sfx` owns one - not a call insertion.
 
 The page's own tally screen is unaffected in every other respect: the row values
 and the four-step brightness ramp come from the same `ScoreTallyRamp` kernel on
-both hosts.
+both hosts. The in-world dome on the **play** page sits beside a live SPU
+(`play_sfx`), so the voice is one call away there; the standalone page is
+the host this gap names.
 
 ### Scripted mesh re-bind (op `0x0E`)
 

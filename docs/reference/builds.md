@@ -42,7 +42,7 @@ This explains the dev paths visible in `SCUS_942.54` strings (`H:\PROT\FIELD\<st
 | SCPS-91246 | ? | "PlayStation The Best" reissue |
 | SCPS-45340 | ? | Unknown JP variant |
 
-The four EU localisations (FR/DE/IT/ES) are likely identical engine + swapped MES tables. Cross-region testing priority: SCPS-10059 (original JP) → SCUS-94254 (anchor) → SCES-01752 (EU English).
+The FR / DE / IT discs are container-identical to USA (same PROT layout, same monster records) but their executables are **not** the NTSC-U engine with swapped text: they carry no battle-load stat boost and pay half the record gold + the whole record EXP where NTSC-U pays a quarter + three quarters. Details in [pal-localizations.md](../tooling/pal-localizations.md#what-the-executables-do-not-share). The JP original (SCPS-10059) matches the PAL behaviour on both counts, so both are NTSC-U additions. ES and the EU English disc are unmeasured. Cross-region testing priority: SCPS-10059 (original JP) → SCUS-94254 (anchor) → SCES-01752 (EU English).
 
 ## Debug flags
 

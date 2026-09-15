@@ -19,9 +19,10 @@
 //!   the whole remaining opening skips to `town01`).
 //!
 //! ### Browser deviations (documented, not drift)
-//! - The page has no STR/MDEC playback on the play path, so an FMV the
-//!   timeline triggers is auto-finished ([`LegaiaRuntime::tick_frame`] calls
-//!   `finish_cutscene` when `SceneMode::Cutscene` arms with an FMV pending).
+//! - An FMV the timeline triggers plays through [`crate::play_fmv`] (the
+//!   page slices the STR segment out of its disc bytes, the engine decodes
+//!   it, the page draws the frames); a page that never declares support
+//!   still auto-finishes the beat with the hand-off applied.
 //! - The cutscene camera the page builds from
 //!   [`LegaiaRuntime::play_cutscene_camera_json`] is the retail op-`0x45`
 //!   param decode (focus / pitch / yaw / H / eye trio - the native

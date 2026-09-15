@@ -32,6 +32,17 @@
 //! unconditionally and then discard the outcome, so both rows were dead on a
 //! host that could already load and persist saves. Publisher logos are still
 //! not wired.
+//!
+//! **The attract plays the movie.** Retail's `AttractIdle` arm hands the
+//! screen to `fmv_id 0` (`MV1.STR`) and re-enters the front end afterwards;
+//! the native window plays it through its MDEC path. This page arms the same
+//! movie through the play page's FMV lane ([`crate::play_fmv`]): the session
+//! is frozen in `TitlePhase::Attract` while the page installs and plays the
+//! sectors, and `finish_attract` runs when the page reports the end (or a
+//! face-button / Select edge aborts it - retail's `fmv_id 0` skip). A page
+//! without the FMV script never declares support, so the movie finishes the
+//! frame it arms and the countdown is counted as a skip
+//! ([`LegaiaRuntime::boot_title_attract_skips`]).
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
@@ -136,8 +147,8 @@ impl LegaiaRuntime {
             TitleSession::without_save_data()
         };
         // The attract hand-off is armed on this host too, so the idle
-        // countdown reaches the same state the native window reaches. What
-        // the page cannot do is decode the movie - see `boot_title_step`.
+        // countdown reaches the same state the native window reaches; the
+        // movie itself plays through the FMV lane - see `boot_title_step`.
         session.attract_enabled = true;
         session.skip_fade_in();
         self.boot_title = Some(session);
@@ -145,9 +156,12 @@ impl LegaiaRuntime {
     }
 
     /// How many times the attract countdown fired on this page since the
-    /// title opened, each of which skipped a movie the page cannot decode.
-    /// The page reads it to disclose the deviation rather than silently
-    /// looping the menu.
+    /// title opened **without the movie playing** - the page never declared
+    /// FMV support ([`LegaiaRuntime::play_fmv_set_supported`]), the install
+    /// timed out, or the movie was not on the loaded image. A real playback
+    /// (installed, drawn, finished by the page or the skip edge) does not
+    /// count. The page reads it to disclose the deviation rather than
+    /// silently looping the menu.
     pub fn boot_title_attract_skips(&self) -> u32 {
         self.boot_title_attract_skips
     }
@@ -194,35 +208,55 @@ impl LegaiaRuntime {
         };
         // The attract hand-off, browser side. Retail's `AttractIdle` arm
         // gives the screen to `fmv_id 0` and returns to the title; the
-        // native window plays that movie through its MDEC path. **This page
-        // has no STR/MDEC playback on the play path** (the deviation
-        // `crate::play_cutscene` already documents for field-VM FMV
-        // triggers), so it enters the same state, claims it, discloses the
-        // skip, and returns to the menu on the same frame.
-        let attract_fmv = {
+        // native window plays that movie through its MDEC path
+        // (`service_title_attract`). Here the movie is armed on the play
+        // page's FMV lane the frame the countdown fires, and the session
+        // stays frozen in `Attract` until that lane reports the end.
+        let (attract_fmv, attract_playing) = {
             let Some(session) = self.boot_title.as_mut() else {
                 return String::new();
             };
             let _ = session.tick(input);
-            match session.attract_pending() {
-                Some(fmv_id) => {
-                    session.mark_attract_started();
-                    session.finish_attract();
-                    Some(fmv_id)
-                }
-                None => None,
+            let pending = session.attract_pending();
+            if pending.is_some() {
+                session.mark_attract_started();
             }
+            (pending, session.attract_playing())
         };
         if let Some(fmv_id) = attract_fmv {
-            self.boot_title_attract_skips = self.boot_title_attract_skips.saturating_add(1);
-            web_sys::console::log_1(
-                &format!(
-                    "title attract: fmv_id={fmv_id} - the play page has no STR/MDEC playback; \
-                     returning to the title"
-                )
-                .into(),
+            self.fmv_arm(fmv_id, crate::play_fmv::FmvOrigin::Attract);
+        }
+        if attract_playing {
+            let fmv_id = self.fmv.armed_for().map_or(
+                legaia_engine_vm::title_overlay::ATTRACT_FMV_ID,
+                |(_, id)| id,
             );
-            return String::new();
+            // Retail's abort: `fmv_id 0` on a face button / Select
+            // (`FUN_801CF098`'s `_DAT_8007B850 & 0x1F0` test).
+            if crate::play_fmv::skip_edge_hit(fmv_id, edge) {
+                self.fmv.request_finish();
+            }
+            match self.fmv.poll() {
+                crate::play_fmv::FmvPoll::Hold => return String::new(),
+                crate::play_fmv::FmvPoll::Finished { played } => {
+                    self.fmv_audio_stop();
+                    if let Some(session) = self.boot_title.as_mut() {
+                        session.finish_attract();
+                    }
+                    if played {
+                        // Retail re-enters the front end through `Init`,
+                        // theme and all; the movie paused the sequencer.
+                        self.fmv_resume_sequencer();
+                    } else {
+                        self.boot_title_attract_skips =
+                            self.boot_title_attract_skips.saturating_add(1);
+                        crate::console_log(&format!(
+                            "title attract: fmv_id={fmv_id} finished unplayed; returning to the title"
+                        ));
+                    }
+                    return String::new();
+                }
+            }
         }
         let Some(session) = self.boot_title.as_mut() else {
             return String::new();

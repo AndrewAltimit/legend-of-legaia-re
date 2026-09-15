@@ -88,6 +88,51 @@
 //!   1    shiny_spell_count (S)
 //!   S    shiny spell ids (u8 each)
 //! ```
+//!
+//! ## Optional trailer: the resume point (`LGX5`)
+//!
+//! A save also names where it was written - the CDNAME label of the scene
+//! (what retail's loader resumes into) and the scene's banner name (what the
+//! save-select info panel prints as the location row). Neither is `World`
+//! state, so they ride as a sibling [`SaveResume`] rather than a `SaveFile`
+//! field, and the writer appends them **only when populated** so a file
+//! without a resume point is byte-identical to a v4 file (the scenario suite
+//! hashes those bytes). The version byte stays 4: a v4 reader stops at the
+//! end of `LGX4` and never sees the trailer; [`SaveFile::parse_with_resume`]
+//! looks past it for the magic.
+//!
+//! ```text
+//! ... v4 fields above ...
+//! 4      ext5_magic: b"LGX5" (absent when the resume point is empty)
+//! 4      ext5_total_size (u32 LE)
+//! 1      scene_len (N, <= 15)
+//! N      scene CDNAME label (ASCII)
+//! 1      location_len (M, <= 35)
+//! M      location display name (ASCII)
+//! ```
+//!
+//! ## The engine-ext blob inside a retail SC block (`LGXE`)
+//!
+//! Retail's composer copies `0x1A18` bytes of live game state to the front
+//! of the `0x2000`-byte block and memsets the rest, and its loader copies the
+//! same `0x1A18` bytes back - the bytes from
+//! [`crate::card::RETAIL_LIVE_STATE_SIZE`] up to the checksum word at
+//! [`crate::card::RETAIL_BLOCK_CHECKSUM_OFFSET`] are never read by the game.
+//! That `0x5E4`-byte tail is where a card written by this engine keeps the
+//! `LGX2` / `LGX4` payload retail has no slot for (the play clock, the party
+//! composition, the chain library), magic-guarded so a real retail block -
+//! all zeros there - reads as [`SaveExtV2::default`] exactly as before:
+//!
+//! ```text
+//! +0x1A18  4      b"LGXE"
+//! +0x1A1C  2      v2_len (u16 LE)   the LGX2 body, byte-identical to the file's
+//! +0x1A1E  N      v2 body
+//!          2      v4_len (u16 LE)   the LGX4 body
+//!          M      v4 body
+//! ```
+//!
+//! The block checksum covers the tail, so the writer restamps it like every
+//! other `write_retail_*` helper. See `docs/subsystems/save-screen.md`.
 
 use anyhow::{Context, Result, bail};
 
@@ -109,6 +154,25 @@ pub const SAVE_FILE_EXT_MAGIC: [u8; 4] = *b"LGX2";
 pub const SAVE_FILE_EXT3_MAGIC: [u8; 4] = *b"LGX3";
 /// Magic at the start of the v4 extension block (per-character shiny Seru list).
 pub const SAVE_FILE_EXT4_MAGIC: [u8; 4] = *b"LGX4";
+/// Magic of the optional resume-point trailer ([`SaveResume`]).
+pub const SAVE_FILE_EXT5_MAGIC: [u8; 4] = *b"LGX5";
+/// Magic of the engine-ext blob a retail SC block carries in its unread tail
+/// ([`SaveFile::write_engine_ext_into_retail_sc_block`]).
+pub const RETAIL_ENGINE_EXT_MAGIC: [u8; 4] = *b"LGXE";
+/// Byte offset of the engine-ext blob inside a retail SC block: the first
+/// byte past the `0x1A18`-byte live-state copy retail composes and loads.
+pub const RETAIL_ENGINE_EXT_OFFSET: usize = crate::card::RETAIL_LIVE_STATE_SIZE;
+/// Bytes available to the engine-ext blob: up to the block checksum word.
+pub const RETAIL_ENGINE_EXT_CAPACITY: usize =
+    crate::card::RETAIL_BLOCK_CHECKSUM_OFFSET - RETAIL_ENGINE_EXT_OFFSET;
+/// End of the engine-ext region = the block checksum word's offset.
+const RETAIL_BLOCK_CHECKSUM_END: usize = crate::card::RETAIL_BLOCK_CHECKSUM_OFFSET;
+/// Longest CDNAME label the resume trailer stores - one byte short of the
+/// retail `0x10`-byte NUL-terminated scene-label field.
+pub const RESUME_SCENE_MAX_LEN: usize = crate::card::RETAIL_SCENE_LABEL_LEN - 1;
+/// Longest location name the resume trailer stores - one byte short of the
+/// retail `0x24`-byte field.
+pub const RESUME_LOCATION_MAX_LEN: usize = crate::card::RETAIL_LOCATION_NAME_LEN - 1;
 
 /// Engine-wide global state that is not part of any per-character record.
 ///
@@ -196,6 +260,83 @@ pub struct SaveExtV2 {
     pub saved_chains: Vec<SavedChainRecord>,
 }
 
+/// Where a save was written: the scene to resume into and the name the
+/// save-select info panel prints for it.
+///
+/// Retail keeps both in the live-state window the SC block mirrors - the
+/// CDNAME label at [`crate::card::RETAIL_SCENE_LABEL_OFFSET`] (the scene its
+/// loader re-enters) and the scene MAN's section-2 banner name at
+/// [`crate::card::RETAIL_LOCATION_NAME_OFFSET`] (the info panel's location
+/// row). Neither lives on the engine's `World`, so this rides beside
+/// [`SaveFile`] rather than inside it: the LGSF writer appends it as the
+/// optional `LGX5` trailer ([`SaveFile::write_with_resume`]) and the
+/// retail-block bridge writes it into those two fields
+/// ([`SaveResume::write_into_retail_sc_block`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SaveResume {
+    /// CDNAME scene label (`town01`, ...). Empty = unknown.
+    pub scene: String,
+    /// Location display name (`Rim Elm`, ...). Empty = unknown.
+    pub location: String,
+}
+
+impl SaveResume {
+    /// `true` when neither field is set - the trailer is then not written.
+    pub fn is_empty(&self) -> bool {
+        self.scene.is_empty() && self.location.is_empty()
+    }
+
+    /// Read the resume point off a retail SC block: the CDNAME label at
+    /// `+0x408` and the location name at `+0x200`, each NUL-terminated.
+    /// Non-printable bytes end the string, so a never-written (free) block
+    /// reads as empty rather than as garbage.
+    pub fn from_retail_sc_block(sc_block: &[u8]) -> Self {
+        Self {
+            scene: crate::card::read_retail_scene_label(sc_block).unwrap_or_default(),
+            location: crate::card::read_retail_location_name(sc_block).unwrap_or_default(),
+        }
+    }
+
+    /// Write both fields into a retail SC block in place (NUL-padded to the
+    /// retail field widths, restamping the block checksum). Retail's own
+    /// composer copies the live scene label + banner name into exactly these
+    /// bytes, so a block written here is one retail resumes correctly.
+    pub fn write_into_retail_sc_block(&self, sc_block: &mut [u8]) -> Result<()> {
+        crate::card::write_retail_resume(sc_block, &self.scene, &self.location)
+    }
+}
+
+/// What the save-select info panel shows for a save's lead character - one
+/// derivation shared by every host so the native window and the browser
+/// page print the same slot the same way.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LeaderSummary {
+    /// Display name off the record's `+0x2A7` field.
+    pub name: String,
+    /// Level as the panel prints it - see [`displayed_level`].
+    pub level: u8,
+    /// `(current, max)` HP.
+    pub hp: (u16, u16),
+    /// `(current, max)` MP.
+    pub mp: (u16, u16),
+    /// Roster index of the lead (`0` = Vahn on every retail save: the lead
+    /// is record 0 of the SC character-record array).
+    pub char_id: u8,
+}
+
+/// The level the save-select panel prints for a record: retail's displayed
+/// level byte (`+0x130`, [`crate::CharacterRecord::magic_rank`]) when it is
+/// in `1..=99`, else the level the base XP curve implies for the record's
+/// cumulative XP ([`crate::level_for_cumulative_xp`]). The fallback covers
+/// records retail never displayed - a zeroed synthetic record, or one a tool
+/// seeded by XP alone - so a save never prints as level 0.
+pub fn displayed_level(record: &crate::CharacterRecord) -> u8 {
+    match record.magic_rank() {
+        l @ 1..=99 => l,
+        _ => crate::level_for_cumulative_xp(record.cumulative_xp()),
+    }
+}
+
 /// A complete engine save file: party records plus global state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaveFile {
@@ -218,33 +359,43 @@ impl Default for SaveFile {
 }
 
 impl SaveFile {
-    /// Serialise to `LGSF v2` bytes (v2 contains a v1-compatible
-    /// prelude - old readers can still consume the party + globals).
+    /// The lead character's info-panel summary, or `None` for a save with no
+    /// party records. See [`LeaderSummary`] / [`displayed_level`].
+    pub fn leader_summary(&self) -> Option<LeaderSummary> {
+        let leader = self.party.members.first()?;
+        let v = leader.hp_mp_sp();
+        Some(LeaderSummary {
+            name: leader.name(),
+            level: displayed_level(leader),
+            hp: (v.hp_cur, v.hp_max),
+            mp: (v.mp_cur, v.mp_max),
+            char_id: 0,
+        })
+    }
+
+    /// Serialise to `LGSF` bytes (a v1-compatible prelude, then the `LGX2`
+    /// / `LGX3` / `LGX4` blocks). No resume trailer: identical to
+    /// [`Self::write_with_resume`] with an empty [`SaveResume`].
     pub fn write(&self) -> Vec<u8> {
-        let party_bytes = self.party.write();
-        let inv = &self.ext.inventory;
-        let mut out = Vec::with_capacity(15 + inv.len() * 2 + party_bytes.len() + 256);
+        self.write_with_resume(&SaveResume::default())
+    }
 
-        out.extend_from_slice(&SAVE_FILE_MAGIC);
-        out.push(SAVE_FILE_VERSION);
-        out.extend_from_slice(&self.ext.story_flags.to_le_bytes());
-        out.extend_from_slice(&self.ext.money.to_le_bytes());
-        // Clamp the count byte AND the emitted pairs identically: the count is
-        // a single u8, so >255 entries would wrap (256 -> 0) while still writing
-        // every pair, misaligning the whole downstream parse. Every other
-        // length-prefixed field (party_count, spells, chains) clamps the same
-        // way; the v1 inventory loop must too.
-        let inv_count = inv.len().min(u8::MAX as usize);
-        out.push(inv_count as u8);
-        for &(id, count) in inv.iter().take(inv_count) {
-            out.push(id);
-            out.push(count);
+    /// [`Self::write`] plus the optional `LGX5` resume trailer, appended only
+    /// when `resume` carries a scene or a location (see the module doc).
+    pub fn write_with_resume(&self, resume: &SaveResume) -> Vec<u8> {
+        let mut out = self.write_v4_body();
+        if !resume.is_empty() {
+            let block = resume_block(resume);
+            out.extend_from_slice(&SAVE_FILE_EXT5_MAGIC);
+            out.extend_from_slice(&(block.len() as u32).to_le_bytes());
+            out.extend_from_slice(&block);
         }
-        let party_count = self.party.members.len().min(255) as u8;
-        out.push(party_count);
-        out.extend_from_slice(&party_bytes[..party_count as usize * CHARACTER_RECORD_SIZE]);
+        out
+    }
 
-        // V2 extension block.
+    /// The `LGX2` block body (no magic / size header) - the play clock,
+    /// party composition, per-character ext and chain library.
+    fn ext_v2_body(&self) -> Vec<u8> {
         let mut ext_block = Vec::new();
         ext_block.extend_from_slice(&self.ext_v2.play_time_seconds.to_le_bytes());
         let active_len = self.ext_v2.active_party.len().min(255) as u8;
@@ -282,7 +433,57 @@ impl SaveFile {
             ext_block.push(slen);
             ext_block.extend_from_slice(&ch.sequence[..slen as usize]);
         }
+        ext_block
+    }
 
+    /// The `LGX4` block body (no header) - per-character shiny-Seru lists;
+    /// only characters with at least one shiny spell are listed.
+    fn ext_v4_body(&self) -> Vec<u8> {
+        let mut ext4_block = Vec::new();
+        let shiny_chars: Vec<&(u8, CharSaveExt)> = self
+            .ext_v2
+            .per_char
+            .iter()
+            .filter(|(_, ce)| !ce.shiny_spells.is_empty())
+            .collect();
+        let shiny_count = shiny_chars.len().min(255) as u8;
+        ext4_block.push(shiny_count);
+        for (cs, ce) in shiny_chars.iter().take(shiny_count as usize) {
+            ext4_block.push(*cs);
+            let s_len = ce.shiny_spells.len().min(255) as u8;
+            ext4_block.push(s_len);
+            ext4_block.extend_from_slice(&ce.shiny_spells[..s_len as usize]);
+        }
+        ext4_block
+    }
+
+    /// Everything up to and including the `LGX4` block - the v4 file.
+    fn write_v4_body(&self) -> Vec<u8> {
+        let party_bytes = self.party.write();
+        let inv = &self.ext.inventory;
+        let mut out = Vec::with_capacity(15 + inv.len() * 2 + party_bytes.len() + 256);
+
+        out.extend_from_slice(&SAVE_FILE_MAGIC);
+        out.push(SAVE_FILE_VERSION);
+        out.extend_from_slice(&self.ext.story_flags.to_le_bytes());
+        out.extend_from_slice(&self.ext.money.to_le_bytes());
+        // Clamp the count byte AND the emitted pairs identically: the count is
+        // a single u8, so >255 entries would wrap (256 -> 0) while still writing
+        // every pair, misaligning the whole downstream parse. Every other
+        // length-prefixed field (party_count, spells, chains) clamps the same
+        // way; the v1 inventory loop must too.
+        let inv_count = inv.len().min(u8::MAX as usize);
+        out.push(inv_count as u8);
+        for &(id, count) in inv.iter().take(inv_count) {
+            out.push(id);
+            out.push(count);
+        }
+        let party_count = self.party.members.len().min(255) as u8;
+        out.push(party_count);
+        out.extend_from_slice(&party_bytes[..party_count as usize * CHARACTER_RECORD_SIZE]);
+
+        // V2 extension block.
+        let ext_block = self.ext_v2_body();
         out.extend_from_slice(&SAVE_FILE_EXT_MAGIC);
         let ext_total_size = ext_block.len() as u32;
         out.extend_from_slice(&ext_total_size.to_le_bytes());
@@ -301,23 +502,8 @@ impl SaveFile {
         out.extend_from_slice(&ext3_block);
 
         // V4 extension block: per-character shiny-Seru spell lists. Emit
-        // unconditionally so the LGX4 magic is a stable parse marker; only
-        // characters with at least one shiny spell are listed.
-        let mut ext4_block = Vec::new();
-        let shiny_chars: Vec<&(u8, CharSaveExt)> = self
-            .ext_v2
-            .per_char
-            .iter()
-            .filter(|(_, ce)| !ce.shiny_spells.is_empty())
-            .collect();
-        let shiny_count = shiny_chars.len().min(255) as u8;
-        ext4_block.push(shiny_count);
-        for (cs, ce) in shiny_chars.iter().take(shiny_count as usize) {
-            ext4_block.push(*cs);
-            let s_len = ce.shiny_spells.len().min(255) as u8;
-            ext4_block.push(s_len);
-            ext4_block.extend_from_slice(&ce.shiny_spells[..s_len as usize]);
-        }
+        // unconditionally so the LGX4 magic is a stable parse marker.
+        let ext4_block = self.ext_v4_body();
         out.extend_from_slice(&SAVE_FILE_EXT4_MAGIC);
         let ext4_total_size = ext4_block.len() as u32;
         out.extend_from_slice(&ext4_total_size.to_le_bytes());
@@ -326,23 +512,35 @@ impl SaveFile {
         out
     }
 
-    /// Parse `LGSF` bytes (v1 or v2), or fall back to the old party-only
-    /// format for save files written before this module existed.
+    /// Parse `LGSF` bytes (v1 through v4), or fall back to the old
+    /// party-only format for save files written before this module existed.
+    /// A resume trailer, if present, is skipped - see
+    /// [`Self::parse_with_resume`].
     pub fn parse(buf: &[u8]) -> Result<Self> {
+        Self::parse_with_resume(buf).map(|(sf, _)| sf)
+    }
+
+    /// [`Self::parse`] that also returns the `LGX5` resume trailer - an empty
+    /// [`SaveResume`] for a file written without one (every pre-trailer
+    /// file, and every file whose resume point was empty).
+    pub fn parse_with_resume(buf: &[u8]) -> Result<(Self, SaveResume)> {
         if buf.starts_with(&SAVE_FILE_MAGIC) {
             Self::parse_versioned(buf)
         } else {
             // Old format: raw party bytes, no ext data.
             let party = Party::parse(buf).context("parse legacy party-only save")?;
-            Ok(Self {
-                party,
-                ext: SaveExt::default(),
-                ext_v2: SaveExtV2::default(),
-            })
+            Ok((
+                Self {
+                    party,
+                    ext: SaveExt::default(),
+                    ext_v2: SaveExtV2::default(),
+                },
+                SaveResume::default(),
+            ))
         }
     }
 
-    fn parse_versioned(buf: &[u8]) -> Result<Self> {
+    fn parse_versioned(buf: &[u8]) -> Result<(Self, SaveResume)> {
         if buf.len() < 15 {
             bail!("LGSF: buffer too short ({} bytes)", buf.len());
         }
@@ -389,20 +587,26 @@ impl SaveFile {
 
         // V1 reads stop at party_end. V2/V3 may have one or two extension blocks.
         if version == SAVE_FILE_VERSION_V1 {
-            return Ok(Self {
-                party,
-                ext,
-                ext_v2: SaveExtV2::default(),
-            });
+            return Ok((
+                Self {
+                    party,
+                    ext,
+                    ext_v2: SaveExtV2::default(),
+                },
+                SaveResume::default(),
+            ));
         }
         let mut cursor = party_end;
         if cursor + 8 > buf.len() {
             // V2/V3 declared but no ext block - treat as empty.
-            return Ok(Self {
-                party,
-                ext,
-                ext_v2: SaveExtV2::default(),
-            });
+            return Ok((
+                Self {
+                    party,
+                    ext,
+                    ext_v2: SaveExtV2::default(),
+                },
+                SaveResume::default(),
+            ));
         }
         let magic = &buf[cursor..cursor + 4];
         if magic != SAVE_FILE_EXT_MAGIC {
@@ -463,9 +667,27 @@ impl SaveFile {
                 .filter(|&e| e <= buf.len())
                 .ok_or_else(|| anyhow::anyhow!("LGSF v4: LGX4 ext block truncated"))?;
             apply_ext_v4(&buf[cursor..ext4_end], &mut ext_v2).context("parse LGSF v4 ext block")?;
+            cursor = ext4_end;
         }
 
-        Ok(Self { party, ext, ext_v2 })
+        // Optional LGX5 resume trailer: present only when the writer had a
+        // scene / location to record. Absent = empty, never an error, so a
+        // pre-trailer v4 file and a trailer-less v4 file read the same.
+        let mut resume = SaveResume::default();
+        if cursor + 8 <= buf.len() && buf[cursor..cursor + 4] == SAVE_FILE_EXT5_MAGIC {
+            cursor += 4;
+            let ext5_total_size =
+                u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            let ext5_end = cursor
+                .checked_add(ext5_total_size)
+                .filter(|&e| e <= buf.len())
+                .ok_or_else(|| anyhow::anyhow!("LGSF: LGX5 resume trailer truncated"))?;
+            resume = parse_resume_block(&buf[cursor..ext5_end])
+                .context("parse LGSF LGX5 resume trailer")?;
+        }
+
+        Ok((Self { party, ext, ext_v2 }, resume))
     }
 
     /// Build a [`SaveFile`] from a retail SC save block (8 KiB block whose
@@ -498,6 +720,9 @@ impl SaveFile {
             .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
             .unwrap_or(0);
         let money = crate::card::read_retail_gold(sc_block).unwrap_or(0);
+        // The engine-ext blob in the block's unread tail. A retail block is
+        // zero there (no magic) and reads as the default, exactly as before.
+        let ext_v2 = Self::read_engine_ext_from_retail_sc_block(sc_block).unwrap_or_default();
         Ok(Self {
             party,
             ext: SaveExt {
@@ -506,8 +731,66 @@ impl SaveFile {
                 money,
                 inventory,
             },
-            ext_v2: SaveExtV2::default(),
+            ext_v2,
         })
+    }
+
+    /// Read the `LGXE` engine-ext blob off a retail SC block's unread tail
+    /// (see the module doc). `None` when the magic is absent - every retail
+    /// block - or the blob does not parse; the caller falls back to
+    /// [`SaveExtV2::default`], so a damaged blob costs the play clock, never
+    /// the save.
+    pub fn read_engine_ext_from_retail_sc_block(sc_block: &[u8]) -> Option<SaveExtV2> {
+        let tail = sc_block.get(RETAIL_ENGINE_EXT_OFFSET..RETAIL_BLOCK_CHECKSUM_END)?;
+        if tail.get(..4)? != RETAIL_ENGINE_EXT_MAGIC {
+            return None;
+        }
+        let mut p = 4usize;
+        let v2_len = u16::from_le_bytes(tail.get(p..p + 2)?.try_into().ok()?) as usize;
+        p += 2;
+        let v2 = tail.get(p..p + v2_len)?;
+        p += v2_len;
+        let v4_len = u16::from_le_bytes(tail.get(p..p + 2)?.try_into().ok()?) as usize;
+        p += 2;
+        let v4 = tail.get(p..p + v4_len)?;
+        let mut ext_v2 = parse_ext_v2(v2).ok()?;
+        apply_ext_v4(v4, &mut ext_v2).ok()?;
+        Some(ext_v2)
+    }
+
+    /// Write this save's `LGX2` / `LGX4` payload into a retail SC block's
+    /// unread tail (`0x1A18..0x1FFC`) and restamp the block checksum. Returns
+    /// `Ok(false)` - with the tail zeroed - when the blob does not fit the
+    /// `0x5E4`-byte capacity (a chain library of hundreds of named chains);
+    /// the retail regions are untouched either way. Deliberately not part of
+    /// [`Self::write_into_retail_sc_block`]: that composer's region list is
+    /// pinned by its own test, and this region is the one retail never reads.
+    pub fn write_engine_ext_into_retail_sc_block(&self, sc_block: &mut [u8]) -> Result<bool> {
+        let Some(tail) = sc_block.get_mut(RETAIL_ENGINE_EXT_OFFSET..RETAIL_BLOCK_CHECKSUM_END)
+        else {
+            bail!(
+                "sc_block too small for the engine-ext tail (need {RETAIL_BLOCK_CHECKSUM_END} bytes)"
+            );
+        };
+        tail.fill(0);
+        let v2 = self.ext_v2_body();
+        let v4 = self.ext_v4_body();
+        let need = 4 + 2 + v2.len() + 2 + v4.len();
+        let fits =
+            need <= tail.len() && v2.len() <= u16::MAX as usize && v4.len() <= u16::MAX as usize;
+        if fits {
+            tail[..4].copy_from_slice(&RETAIL_ENGINE_EXT_MAGIC);
+            let mut p = 4;
+            tail[p..p + 2].copy_from_slice(&(v2.len() as u16).to_le_bytes());
+            p += 2;
+            tail[p..p + v2.len()].copy_from_slice(&v2);
+            p += v2.len();
+            tail[p..p + 2].copy_from_slice(&(v4.len() as u16).to_le_bytes());
+            p += 2;
+            tail[p..p + v4.len()].copy_from_slice(&v4);
+        }
+        crate::card::restamp_sc_block_checksum(sc_block);
+        Ok(fits)
     }
 
     /// Write this save into a retail SC save block in place.
@@ -547,6 +830,56 @@ impl SaveFile {
         crate::card::write_retail_gold(sc_block, self.ext.money)?;
         Ok(())
     }
+}
+
+/// The `LGX5` body: two length-prefixed ASCII strings, each clamped to its
+/// retail field width so the same bytes fit the SC block's fields.
+fn resume_block(resume: &SaveResume) -> Vec<u8> {
+    let scene = ascii_clamped(&resume.scene, RESUME_SCENE_MAX_LEN);
+    let location = ascii_clamped(&resume.location, RESUME_LOCATION_MAX_LEN);
+    let mut out = Vec::with_capacity(2 + scene.len() + location.len());
+    out.push(scene.len() as u8);
+    out.extend_from_slice(&scene);
+    out.push(location.len() as u8);
+    out.extend_from_slice(&location);
+    out
+}
+
+/// A string as printable-ASCII bytes, non-ASCII folded to `?`, cut to `max`.
+fn ascii_clamped(s: &str, max: usize) -> Vec<u8> {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii() && !c.is_ascii_control() {
+                c as u8
+            } else {
+                b'?'
+            }
+        })
+        .take(max)
+        .collect()
+}
+
+fn parse_resume_block(buf: &[u8]) -> Result<SaveResume> {
+    let mut p = 0usize;
+    let scene_len = *buf
+        .get(p)
+        .ok_or_else(|| anyhow::anyhow!("LGX5: missing scene len"))? as usize;
+    p += 1;
+    let scene = buf
+        .get(p..p + scene_len)
+        .ok_or_else(|| anyhow::anyhow!("LGX5: scene truncated"))?;
+    p += scene_len;
+    let loc_len = *buf
+        .get(p)
+        .ok_or_else(|| anyhow::anyhow!("LGX5: missing location len"))? as usize;
+    p += 1;
+    let location = buf
+        .get(p..p + loc_len)
+        .ok_or_else(|| anyhow::anyhow!("LGX5: location truncated"))?;
+    Ok(SaveResume {
+        scene: scene.iter().map(|&b| b as char).collect(),
+        location: location.iter().map(|&b| b as char).collect(),
+    })
 }
 
 /// Parse the LGX4 shiny block and fold each char's shiny spell list into the

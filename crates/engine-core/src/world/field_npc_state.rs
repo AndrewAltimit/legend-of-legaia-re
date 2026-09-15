@@ -135,9 +135,10 @@ pub struct FieldNpcState {
     /// NPC holds one heading forever where retail NPCs slowly look around.
     pub ambient: std::collections::BTreeMap<u8, FieldNpcAmbient>,
     /// Drive autonomous NPC patrol routes ([`crate::world::FieldNpcState::routes`]) through
-    /// the motion VM. Off by default (NPCs rest at their placement anchors,
-    /// like the locomotion oracles expect); `play-window --live-npcs` enables
-    /// it. Script-started motion is NOT gated by this flag.
+    /// the motion VM. The engine default is off (NPCs rest at their placement
+    /// anchors, as the locomotion oracles expect); both play hosts turn it on
+    /// (`play-window --no-live-npcs` is the opt-out). Script-started motion
+    /// is NOT gated by this flag.
     pub animate: bool,
     /// Animation cues raised by channel scripts (op `0x4B` ANIMATE):
     /// `placement_index -> (count, base_id, keyframe bytes)`. The windowed

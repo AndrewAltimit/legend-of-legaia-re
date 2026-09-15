@@ -907,28 +907,29 @@ pub(crate) enum Cmd {
         /// No effect on the world-map walk.
         #[arg(long, default_value_t = false)]
         flat_y: bool,
-        /// Block field walking with retail's three-probe leading-edge wall
-        /// footprint (`FUN_801cfe4c`'s `DAT_801f2214` table): the player rests
-        /// ~47 units off a wall plane exactly like retail instead of walking
-        /// up to it. Off by default (candidate-centre test).
+        /// Disable retail's three-probe leading-edge wall footprint
+        /// (`FUN_801cfe4c`'s `DAT_801f2214` table) and block field walking on
+        /// the single candidate-centre test instead. The footprint is the
+        /// retail behaviour and the default on both hosts - the player rests
+        /// ~47 units off a wall plane; pass this to walk up to the plane (the
+        /// off-flag test the locomotion oracles and BFS nav drivers use).
         #[arg(long, default_value_t = false)]
-        edge_collision: bool,
-        /// Make field NPCs solid with retail's actor-collision probes
-        /// (`FUN_801cfc40`'s `DAT_801f21b4` table): walking into an NPC's
-        /// body box blocks the step, as in retail. Off by default
-        /// (walk-through). Placed PROPS (doors, cupboards) are solid
-        /// unconditionally - retail keeps them in the collision candidate
-        /// list until their script's `31 00` exempts them - so this flag
-        /// only gates the NPC arm.
+        no_edge_collision: bool,
+        /// Make field NPCs walk-through. By default NPCs are solid with
+        /// retail's actor-collision probes (`FUN_801cfc40`'s `DAT_801f21b4`
+        /// table): walking into an NPC's body box blocks the step. Placed
+        /// PROPS (doors, cupboards) are solid unconditionally - retail keeps
+        /// them in the collision candidate list until their script's `31 00`
+        /// exempts them - so this flag only gates the NPC arm.
         #[arg(long, default_value_t = false)]
-        solid_npcs: bool,
-        /// Animate field NPCs: drive each placement's authored walk route
-        /// (its script's `0x4C 0x51` move-to-tile ops) through the motion VM
-        /// so villagers patrol like retail. Off by default (NPCs rest at
-        /// their placement anchors). Pairs well with `--solid-npcs` (the
-        /// moving NPC's collision box follows its live position).
+        no_solid_npcs: bool,
+        /// Park field NPCs at their placement anchors. By default each
+        /// placement's authored walk route (its script's `0x4C 0x51`
+        /// move-to-tile ops) runs through the motion VM so villagers patrol
+        /// like retail, and a moving NPC's collision box follows its live
+        /// position. An interaction prologue's own walk runs either way.
         #[arg(long, default_value_t = false)]
-        live_npcs: bool,
+        no_live_npcs: bool,
         /// Skip the retail damage finisher (`FUN_801ddb30`) on live
         /// basic-attack damage. Retail always runs it - the party defender's
         /// equipment elemental-resistance ladder, the `rand()%9+8` floor on
@@ -1327,4 +1328,53 @@ pub(crate) enum ConfigCmd {
         #[arg(long, default_value = "legaia-cutscene-map.toml")]
         out: PathBuf,
     },
+}
+
+#[cfg(test)]
+mod locomotion_flag_tests {
+    use super::{Cli, Cmd};
+    use clap::Parser;
+
+    fn play_window(extra: &[&str]) -> (bool, bool, bool) {
+        let mut argv = vec!["legaia-engine", "play-window"];
+        argv.extend_from_slice(extra);
+        let cli = Cli::try_parse_from(argv).expect("play-window parses");
+        match cli.cmd {
+            Cmd::PlayWindow {
+                no_edge_collision,
+                no_solid_npcs,
+                no_live_npcs,
+                ..
+            } => (no_edge_collision, no_solid_npcs, no_live_npcs),
+            other => panic!("parsed {other:?}"),
+        }
+    }
+
+    /// The three retail locomotion behaviours - the leading-edge wall
+    /// footprint, solid NPCs, patrolling villagers - are ON by default, the
+    /// same three the browser play page sets unconditionally. The `--no-*`
+    /// spelling is what keeps a bare `play-window` on the browser's side.
+    #[test]
+    fn locomotion_knobs_default_on_and_the_no_flags_clear_them() {
+        assert_eq!(play_window(&[]), (false, false, false));
+        assert_eq!(play_window(&["--no-edge-collision"]), (true, false, false));
+        assert_eq!(play_window(&["--no-solid-npcs"]), (false, true, false));
+        assert_eq!(play_window(&["--no-live-npcs"]), (false, false, true));
+        assert_eq!(
+            play_window(&["--no-edge-collision", "--no-solid-npcs", "--no-live-npcs"]),
+            (true, true, true)
+        );
+    }
+
+    /// The opt-in spellings are gone, not aliased: a script still passing
+    /// them fails to parse rather than silently running the other default.
+    #[test]
+    fn the_old_opt_in_spellings_no_longer_parse() {
+        for old in ["--edge-collision", "--solid-npcs", "--live-npcs"] {
+            assert!(
+                Cli::try_parse_from(["legaia-engine", "play-window", old]).is_err(),
+                "{old} must not parse"
+            );
+        }
+    }
 }

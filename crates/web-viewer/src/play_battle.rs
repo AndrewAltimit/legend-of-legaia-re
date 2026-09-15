@@ -353,10 +353,6 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        // Drain world battle events. **Observation only** - the live battle
-        // loop owns the gameplay fold and re-publishes the stream, so folding
-        // again here would apply an art strike's HP twice.
-        let _events = host.world.drain_battle_events();
         // Floating damage / heal numbers: the live loop resolves HP itself
         // and queues a presentation-only FX per strike.
         let fx = host.world.drain_battle_hit_fx();
@@ -375,20 +371,6 @@ impl LegaiaRuntime {
         // Drained so the world never accumulates it; nothing on this host
         // consumes it yet (the popups above already carry each hit's number).
         let _hits = host.world.drain_battle_hit_events();
-        // Battle strike SFX cues route into the page's existing delay
-        // scheduler (`crate::play_sfx`); the arts-voice shouts are CD-XA
-        // clips this host has no demuxed channel bank for yet, so they are
-        // drained (the world must not accumulate them) and dropped.
-        let cues = host.world.drain_battle_sfx_cues();
-        let _ = host.world.drain_battle_shout_cues();
-        // NOT WIRED (browser): the melee grunt / attack sting are CD-XA clip
-        // requests (`drain_battle_xa_cues`), and the play page has no XA
-        // lane at all - the same gap that drops the arts shouts above. The
-        // prerequisite is an in-browser demux of `XA27` / `XA30` off the
-        // user's disc bytes into an `XaClipBank` and a `WebAudioOut` XA
-        // mixing path; until then the requests are consumed here so they
-        // cannot pile up across frames.
-        let _ = host.world.drain_battle_xa_cues();
         // Battle effect-script spawn requests (one per effect record the
         // per-actor effect-script walk consumed this tick). Routed into the
         // world's own spawn paths so the FX render layers
@@ -416,12 +398,14 @@ impl LegaiaRuntime {
                 self.encounter_banner = None;
             }
         }
-        // `enqueue_sfx` needs `&mut self`, so fire after the host borrow ends.
-        for cue in cues {
-            if let Ok(id) = u8::try_from(cue.kind) {
-                self.enqueue_sfx(id, cue.timing_frames);
-            }
-        }
+        // Audio side of the battle tick: typed battle events (audio duck),
+        // strike / cast SFX cues, arts-voice shouts, XA clip requests. Lives
+        // in [`crate::play_battle_audio`]; every queue is drained there so
+        // the world never accumulates one.
+        self.drain_battle_audio_cues();
+        // Mid-battle VRAM re-stamps (facial animation, status-effect actor
+        // recolour, effect CLUT stage) - [`crate::play_battle_vram`].
+        self.tick_battle_vram_channel();
     }
 
     /// Out-of-battle battle presentation, in **surface pixels**: the
@@ -674,7 +658,10 @@ impl LegaiaRuntime {
     ///
     /// `None` without the system-UI atlas - there is no frame to put a
     /// message in, so a chrome-less host keeps the loose pens instead.
-    fn battle_banner_message(&self, assets: &crate::play_menu::PlayMenuAssets) -> Option<String> {
+    pub(crate) fn battle_banner_message(
+        &self,
+        assets: &crate::play_menu::PlayMenuAssets,
+    ) -> Option<String> {
         assets.chrome_rects()?;
         let w = &self.scene_host.as_ref()?.world;
         if let Some(b) = &w.party.current_level_up_banner {
@@ -1364,6 +1351,105 @@ impl LegaiaRuntime {
             h.world.toggles.live_gameplay_loop = on;
             h.world.battle.player_driven = on;
         }
+    }
+
+    /// Player-driven vs auto-resolved party turns, independently of the
+    /// encounter roll - the browser twin of the native `--no-player-battle`
+    /// (the two are separate knobs there; `set_live_battles` sets both).
+    /// Off = each party turn auto-attacks the first living monster.
+    pub fn set_player_driven_battles(&mut self, on: bool) {
+        if let Some(h) = self.scene_host.as_mut() {
+            h.world.battle.player_driven = on;
+        }
+    }
+
+    /// Install a present-party composition - the browser twin of the native
+    /// `--party` flag. `spec` is comma-separated character names
+    /// (`vahn`/`noa`/`gala`/`terra`) or 0-based roster indices in battle
+    /// order, e.g. `noa,terra`. Roster slots the spec names that carry no
+    /// stats yet are seeded from the SCUS new-game template (the rows retail
+    /// seeds those characters from when they join); records already carrying
+    /// stats are left alone. Returns an empty string on success, else the
+    /// reason. Caps at the three on-screen positions.
+    pub fn set_active_party_spec(&mut self, spec: &str) -> String {
+        let parsed: Result<Vec<u8>, String> = spec
+            .split(',')
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+            .map(|t| match t.to_ascii_lowercase().as_str() {
+                "vahn" => Ok(0u8),
+                "noa" => Ok(1),
+                "gala" => Ok(2),
+                "terra" => Ok(3),
+                other => other.parse::<u8>().map_err(|_| {
+                    format!(
+                        "unknown party member '{t}' (use vahn/noa/gala/terra or a roster index)"
+                    )
+                }),
+            })
+            .collect();
+        let slots = match parsed {
+            Ok(s) if !s.is_empty() => s,
+            Ok(_) => return "empty party spec".to_string(),
+            Err(e) => return e,
+        };
+        let Some(host) = self.scene_host.as_mut() else {
+            return "no disc loaded".to_string();
+        };
+        if let Some(defaults) = host.new_game_defaults.as_ref() {
+            let starting = defaults.party.clone();
+            host.world.seed_party_members(&starting, &slots);
+        }
+        let world = &mut host.world;
+        world.set_active_party(slots);
+        // Fold the freshly-seeded records into the battle stat mirrors
+        // (attack / defence split / SPD / AP base) and seed the MP ceiling
+        // the HUD draws - the same two follow-ups the native flag runs.
+        world.seed_party_battle_stats();
+        for member in 0..world.party.active_party.len() {
+            let rslot = world.party_roster_slot(member);
+            let mp_max = world
+                .party
+                .roster
+                .members
+                .get(rslot)
+                .map(|r| r.hp_mp_sp().mp_max)
+                .unwrap_or(0);
+            world.set_character_max_mp(member as u8, mp_max);
+        }
+        String::new()
+    }
+
+    /// The present party as a JSON array of roster slots in battle order.
+    pub fn active_party_json(&self) -> String {
+        let slots = self
+            .scene_host
+            .as_ref()
+            .map(|h| h.world.party.active_party.clone())
+            .unwrap_or_default();
+        let body: Vec<String> = slots.iter().map(|i| i.to_string()).collect();
+        format!("[{}]", body.join(","))
+    }
+
+    /// Teach `spell_id` to the lead's roster record, prepended to the spell
+    /// list at level 1 - the browser twin of the native `--learn-spell`,
+    /// which is how the Magic arm is reachable in a test fight without
+    /// playing to the Seru. Returns `false` with no roster record.
+    pub fn learn_spell(&mut self, roster_slot: u8, spell_id: u8) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        let Some(record) = host
+            .world
+            .party
+            .roster
+            .members
+            .get_mut(roster_slot as usize)
+        else {
+            return false;
+        };
+        legaia_engine_core::magic_xp::learn_spell_prepend(record, spell_id);
+        true
     }
 
     /// Override the Battle<->Field BGM swap track (`0` disables the swap;

@@ -257,8 +257,8 @@ is the tie-breaker when the two disagree:
   So the disc is the raw ground truth and the curated table is the boss-fight
   view of every enemy - for a random native it overstates the in-battle defence
   by 8/7 and ATK by 5/4; the test pins all nine fields across 120+ enemies. This
-  cross-region difficulty difference (international retail vs. the raw / JP
-  record) was first surfaced by **Zetopheonix**. See
+  cross-region difficulty difference (NTSC-U retail vs. the raw record, which the
+  JP and PAL executables install unboosted) was first surfaced by **Zetopheonix**. See
   [`battle.md`](../subsystems/battle.md#monster-record-source-layout) (the
   *Battle-load stat boost* note),
   [`battle-formulas.md`](../subsystems/battle-formulas.md) and

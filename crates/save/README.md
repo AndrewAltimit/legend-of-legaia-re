@@ -65,6 +65,25 @@ want the whole `SaveFile` - including the party gold
 coin bank (`RETAIL_COINS_OFFSET` = SC `+0x464`, RAM `0x800845A4` - the
 slot-machine cash-out global).
 
+Two sibling writers complete a block the composer leaves alone:
+
+- `SaveResume` - the resume point (CDNAME scene label at SC `+0x408`,
+  banner / location name at `+0x200`, the two fields retail's loader and
+  info panel read). `SaveResume::from_retail_sc_block` /
+  `write_into_retail_sc_block`; in an LGSF file it is the optional `LGX5`
+  trailer (`SaveFile::write_with_resume` / `parse_with_resume`), appended
+  only when populated so `write()` bytes never change.
+- `SaveFile::write_engine_ext_into_retail_sc_block` - the `LGX2` / `LGX4`
+  bodies (play clock, party composition, per-character ext, chain library)
+  as an `LGXE` blob in the block's tail from `RETAIL_LIVE_STATE_SIZE`
+  (`0x1A18`) to the checksum word, the `0x5E4` bytes retail composes as
+  zeros and never copies back. `from_retail_sc_block` reads it magic-guarded,
+  so a retail block still parses to `SaveExtV2::default()`.
+
+`SaveFile::leader_summary` (`displayed_level`) is the one info-panel
+derivation - name, level, HP, MP off the lead record - both the native
+window's slot scanner and the browser's card rack print.
+
 ### The block checksum
 
 A card image carries **two** checksums, and an in-place SC edit has to
@@ -145,10 +164,12 @@ empties and whether it leaves a hole.
 
 ## What this is NOT
 
-- A drop-in replacement for the retail save format. The LGSF v2 / v3
+- A drop-in replacement for the retail save format. The LGSF v2 / v3 / v4
   extension blocks (party metadata, learned arts, saved chains) are the
-  engine's own layer; party records + story flags + inventory + gold
-  cross the retail-SC boundary today.
+  engine's own layer; party records + story flags + inventory + gold cross
+  the retail-SC boundary through the composer, the resume point through
+  retail's own two fields, and the rest only as the engine-tagged `LGXE`
+  blob a retail console ignores.
 
 ## Schema fixture
 

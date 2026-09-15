@@ -325,6 +325,9 @@ WEB_PLAY_MENU = "crates/web-viewer/src/play_menu.rs"
 WEB_PLAY_SHOP = "crates/web-viewer/src/play_shop.rs"
 NATIVE_BGM = "crates/engine-shell/src/bgm.rs"
 WEB_RUNTIME = "crates/web-viewer/src/runtime.rs"
+# The play page's BGM director (the browser twin of NATIVE_BGM's
+# `AudioBgmDirector`), carved out of runtime.rs so the audio lanes own it.
+WEB_BGM = "crates/web-viewer/src/play_bgm.rs"
 # The occlusion-fade tunables are the one paired set whose web half is a
 # plain script rather than a wasm crate - the browser play page holds them
 # in its GLSL module. `const NAME = <value>;` parses identically either way,
@@ -397,7 +400,7 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         "the whole cue; the browser held a 22050-sample serial cross-fade here "
         "long after the native host had measured that down to two frames",
         "native": (NATIVE_BGM, "TRANSITION_FADE_IN_SAMPLES"),
-        "web": (WEB_RUNTIME, "TRANSITION_FADE_IN_SAMPLES"),
+        "web": (WEB_BGM, "TRANSITION_FADE_IN_SAMPLES"),
     },
     # The camera-occlusion fade is not an engine-ui screen - the shared
     # kernel here is a pair of hand-written twin shaders, so these four
@@ -662,7 +665,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "which is nearly all intro",
         "sites": {
             "native": (NATIVE_BGM, "start_inner"),
-            "web": (WEB_RUNTIME, "play"),
+            "web": (WEB_BGM, "play"),
         },
         "mode": "symbols_all",
         "symbols": ["swap_bgm"],

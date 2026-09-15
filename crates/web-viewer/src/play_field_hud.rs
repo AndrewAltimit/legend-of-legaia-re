@@ -70,9 +70,18 @@ impl LegaiaRuntime {
             }
             None => (0, 0, None),
         };
-        // See the module docstring: this host has no view-projection, and the
-        // kernel's `None` means "staged load pending", not "unknown".
-        let projected_y = Some(ui::field_party_hud::NO_PROJECTION_STAND_IN);
+        // The page reports the lead's projected stage-Y off its own
+        // view-projection each frame (`set_field_player_screen_y`); until it
+        // has, the stand-in keeps the kernel's `None` meaning "staged load
+        // pending" rather than "unknown".
+        let projected_y = if suppressed {
+            None
+        } else {
+            Some(
+                self.field_hud_projected_y
+                    .unwrap_or(ui::field_party_hud::NO_PROJECTION_STAND_IN),
+            )
+        };
         self.field_party_hud
             .tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
     }

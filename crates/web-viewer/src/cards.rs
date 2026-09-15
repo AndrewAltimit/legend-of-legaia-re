@@ -33,7 +33,7 @@ use legaia_engine_core::save_select::{
     card_dir_slot_of, card_directory_scan, card_free_blocks, classify_card_directory,
 };
 use legaia_save::emu::{self, CardView};
-use legaia_save::{SaveFile, card};
+use legaia_save::{SaveFile, SaveResume, card};
 use wasm_bindgen::prelude::*;
 
 use crate::runtime::LegaiaRuntime;
@@ -80,25 +80,6 @@ impl InsertedCard {
     fn view(&self) -> Option<CardView> {
         emu::detect(&self.bytes).ok()
     }
-}
-
-/// Read a NUL-terminated ASCII field out of an SC block.
-fn sc_ascii(block: &[u8], offset: usize, max: usize) -> String {
-    block
-        .get(offset..offset + max)
-        .map(|b| {
-            b.iter()
-                .take_while(|&&c| c != 0)
-                .map(|&c| {
-                    if (0x20..=0x7E).contains(&c) {
-                        c as char
-                    } else {
-                        '?'
-                    }
-                })
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 impl LegaiaRuntime {
@@ -264,31 +245,34 @@ impl LegaiaRuntime {
                 let Ok(sf) = SaveFile::from_retail_sc_block(sc, 4) else {
                     return SlotSnapshot::foreign(cell);
                 };
-                let Some(leader) = sf.party.members.first() else {
+                // The lead record's name / level / HP / MP through the one
+                // derivation the native window's slot scanner uses too
+                // (`SaveFile::leader_summary`), so a save prints the same on
+                // both hosts. The location row is retail's own field
+                // (`game+0x000`, the scene banner name), which the engine's
+                // card Save now composes as well.
+                let Some(leader) = sf.leader_summary() else {
                     return SlotSnapshot::foreign(cell);
                 };
-                let hp = leader.hp_mp_sp();
-                let name = leader.name();
-                let location = sc_ascii(sc, card::RETAIL_LOCATION_NAME_OFFSET, 0x40);
+                let resume = SaveResume::from_retail_sc_block(sc);
                 SlotSnapshot {
                     slot: cell,
                     present: true,
                     content: SlotContent::LegaiaSave,
-                    label: if name.is_empty() {
+                    label: if leader.name.is_empty() {
                         format!("Block {block}")
                     } else {
-                        name.clone()
+                        leader.name.clone()
                     },
-                    // Retail's displayed level byte (record +0x130).
-                    party_lv: leader.magic_rank(),
-                    location,
+                    party_lv: leader.level,
+                    location: resume.location,
                     money: sf.ext.money.max(0) as u32,
-                    // The lead roster slot is Vahn on every retail save, and
-                    // the portrait set is Vahn / Noa / Gala in char order.
-                    leader_char_id: 0,
-                    leader_name: name,
-                    leader_hp: (hp.hp_cur, hp.hp_max),
-                    leader_mp: (hp.mp_cur, hp.mp_max),
+                    leader_char_id: leader.char_id,
+                    leader_name: leader.name,
+                    leader_hp: leader.hp,
+                    leader_mp: leader.mp,
+                    // Off the `LGXE` blob in the block's unread tail when this
+                    // engine wrote the block; 0 for a retail save.
                     play_time_seconds: sf.ext_v2.play_time_seconds,
                 }
             })
@@ -329,11 +313,12 @@ impl LegaiaRuntime {
     /// was free also gets its directory frame claimed.
     pub(crate) fn write_session_into_card(&mut self, slot: usize, block: u8) -> Result<(), String> {
         let sf = self.world_mut().save_full();
-        // Resolve the portrait before taking the mutable borrow on the rack:
-        // the icon read goes through the scene host, which lives on the same
-        // struct as the cards.
+        // Resolve the portrait and the resume point before taking the
+        // mutable borrow on the rack: both go through the scene host, which
+        // lives on the same struct as the cards.
         let save_slot = self.card_save_index(slot, block);
         let icon = self.save_block_icon(save_slot);
+        let resume = self.current_resume();
         let card_slot = self
             .cards
             .get_mut(slot)
@@ -345,6 +330,25 @@ impl LegaiaRuntime {
             .sc_block_mut(&mut card_slot.bytes, block)
             .ok_or_else(|| format!("card has no block {block}"))?;
         sf.write_into_retail_sc_block(sc)
+            .map_err(|e| format!("save: {e}"))?;
+        // The engine-only half of the save - play clock, party composition,
+        // per-character ext, chain library - into the block's unread tail
+        // (`0x1A18..0x1FFC`, zero on every retail card and never copied back
+        // by retail's loader), so a card round-trip keeps it. A blob too big
+        // for the tail is withheld rather than failing the save.
+        if !sf
+            .write_engine_ext_into_retail_sc_block(sc)
+            .map_err(|e| format!("save: {e}"))?
+        {
+            crate::console_log("play menu: engine ext too large for the card block; withheld");
+        }
+        // The resume point into retail's own fields: the scene label
+        // (`+0x408`) retail's loader re-enters and the banner name
+        // (`+0x200`) its info panel prints - the two fields a
+        // previously-free block otherwise inherited from whatever the card
+        // held there.
+        resume
+            .write_into_retail_sc_block(sc)
             .map_err(|e| format!("save: {e}"))?;
         // The payload writer cannot derive the block's *identity*: the save
         // number in the title and the slot's portrait icon. Without this a
@@ -408,9 +412,33 @@ impl LegaiaRuntime {
         if sf.party.members.is_empty() {
             return Err("that block holds no character records".to_string());
         }
-        let scene = sc_ascii(sc, card::RETAIL_SCENE_LABEL_OFFSET, 0x10);
+        let scene = SaveResume::from_retail_sc_block(sc).scene;
         self.world_mut().load_full(sf);
         Ok(scene)
+    }
+
+    /// Where a save written now would resume: the loaded scene's CDNAME
+    /// label and its banner name (the scene MAN's section 2). The same
+    /// derivation as the native window's
+    /// `BootSession::current_resume`; empty with no scene loaded.
+    fn current_resume(&self) -> SaveResume {
+        let Some(host) = self.scene_host.as_ref() else {
+            return SaveResume::default();
+        };
+        let Some(scene) = host.scene.as_ref() else {
+            return SaveResume::default();
+        };
+        let location = scene
+            .field_man_payload(&host.index)
+            .ok()
+            .flatten()
+            .and_then(|man| legaia_asset::place_names::scene_name(&man))
+            .map(|n| n.name)
+            .unwrap_or_default();
+        SaveResume {
+            scene: scene.name.clone(),
+            location,
+        }
     }
 }
 

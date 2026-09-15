@@ -84,27 +84,115 @@ impl PlayWindowApp {
     /// `slot_{i:02}` - a plain index, not the `i + 1` a real card's block 0
     /// directory forces. Any other port is unmounted and there is nothing to
     /// move.
-    fn apply_save_commit(&mut self, commit: legaia_engine_core::save_screen::SaveCommit) {
+    ///
+    /// A **Save** records the loaded scene as the file's resume point
+    /// ([`legaia_engine_shell::boot::BootSession::current_resume`]). A
+    /// **Load** re-enters that scene - retail resumes a save in the scene it
+    /// was written in, and the browser page does the same through its
+    /// `pending_load_scene` - and only then hydrates the world from the file,
+    /// so the field VM's first tick sees the saved story state in the saved
+    /// scene rather than in whatever `--scene` pre-booted. Returns `true`
+    /// when a scene was re-entered (the caller's screen state is stale then);
+    /// a file with no resume point, or a scene that fails to enter, loads
+    /// onto the current scene as before.
+    fn apply_save_commit(&mut self, commit: legaia_engine_core::save_screen::SaveCommit) -> bool {
         use legaia_engine_core::save_screen::SaveCommitKind;
         if commit.port != 0 {
             log::warn!(
                 "save screen: port {} holds no card; nothing written",
                 commit.port + 1
             );
-            return;
+            return false;
         }
-        let runtime = legaia_engine_core::menu_runtime::MenuRuntime::new(self.save_dir.clone());
         let slot = commit.cell;
-        let world = &mut self.session.host.world;
         match commit.kind {
-            SaveCommitKind::Load => match runtime.load_from_slot(world, slot) {
-                Ok(p) => log::info!("save screen: loaded slot {slot} from {}", p.display()),
+            SaveCommitKind::Load => match read_slot_save(&self.save_dir, slot) {
+                Ok((sf, resume)) => {
+                    if !resume.scene.is_empty() {
+                        match self.session.enter_field_live_from_save(
+                            &resume.scene,
+                            &self.field_live_opts,
+                            sf.clone(),
+                        ) {
+                            Ok(mode) => {
+                                log::info!(
+                                    "save screen: loaded slot {slot}, resumed in '{}' (mode={mode:?})",
+                                    resume.scene
+                                );
+                                // The host swapped scenes under the renderer:
+                                // rebuild the render-side scene state so the
+                                // saved scene's geometry replaces the boot
+                                // scene's.
+                                self.rebuild_scene_render_state();
+                                return true;
+                            }
+                            Err(e) => log::warn!(
+                                "save screen: slot {slot} names scene '{}' but entering it failed \
+                                 ({e:#}); loading onto the current scene",
+                                resume.scene
+                            ),
+                        }
+                    }
+                    self.session.host.world.load_full(sf);
+                    log::info!("save screen: loaded slot {slot} onto the current scene");
+                }
                 Err(e) => log::warn!("save screen: load slot {slot} failed: {e:#}"),
             },
-            SaveCommitKind::Save => match runtime.save_to_slot(world, slot) {
-                Ok(p) => log::info!("save screen: saved slot {slot} to {}", p.display()),
-                Err(e) => log::warn!("save screen: save slot {slot} failed: {e:#}"),
-            },
+            SaveCommitKind::Save => {
+                let resume = self.session.current_resume();
+                let sf = self.session.host.world.save_full();
+                match write_slot_save(&self.save_dir, slot, &sf, &resume) {
+                    Ok(p) => log::info!(
+                        "save screen: saved slot {slot} to {} (scene '{}', '{}')",
+                        p.display(),
+                        resume.scene,
+                        resume.location
+                    ),
+                    Err(e) => log::warn!("save screen: save slot {slot} failed: {e:#}"),
+                }
+            }
+        }
+        false
+    }
+
+    /// Fire the pause menu's own blips for this frame's pad edges - the
+    /// same three retail cues at the same edges the browser play page keys
+    /// (`play-app.js`: Cross = confirm, else Circle = cancel, else a
+    /// direction = cursor). Provenance on the constants in
+    /// [`legaia_engine_shell::bgm`]; every id is `disc`.
+    pub(super) fn fire_menu_cues(&mut self, pressed: u16) {
+        use legaia_engine_shell::bgm::{
+            RETAIL_MENU_CANCEL_CUE, RETAIL_MENU_CONFIRM_CUE, RETAIL_MENU_CURSOR_CUE,
+        };
+        const DIRS: u16 = 0x0010 | 0x0020 | 0x0040 | 0x0080;
+        let cue = if pressed & 0x4000 != 0 {
+            RETAIL_MENU_CONFIRM_CUE
+        } else if pressed & 0x2000 != 0 {
+            RETAIL_MENU_CANCEL_CUE
+        } else if pressed & DIRS != 0 {
+            RETAIL_MENU_CURSOR_CUE
+        } else {
+            return;
+        };
+        self.fire_menu_cue(cue);
+    }
+
+    /// Queue one menu cue on the director (no-op with audio off).
+    pub(super) fn fire_menu_cue(&mut self, cue: u16) {
+        if let Some(bgm) = self.session.bgm.as_mut() {
+            bgm.enqueue_sfx(cue, 0, 0, 0);
+        }
+    }
+
+    /// Advance the SFX scheduler while a boot-UI arm owns the frame. The
+    /// scene tick is skipped then, and with it `drain_and_log_battle_events`
+    /// (the only other place the scheduler ticks), so a menu cue queued on
+    /// the pause menu would otherwise wait for the menu to close to sound.
+    pub(super) fn tick_menu_sfx(&mut self) {
+        if let Some(bgm) = self.session.bgm.as_mut() {
+            for (id, voice) in bgm.tick_sfx_frame() {
+                log::debug!("menu SFX cue {id:#04x} fired on voice {voice}");
+            }
         }
     }
 
@@ -147,6 +235,18 @@ impl PlayWindowApp {
         // arm cannot call back into `self`.
         let cutscene_live = self.cutscene.is_some();
         let mut start_attract: Option<i16> = None;
+        // The pause menu's blips, off the raw edges before any screen
+        // consumes them - the browser page keys the same three the same way
+        // (Start closes the menu, so it blips as a cancel). Ahead of the
+        // match because the match holds `self.boot_ui` for the rest of the
+        // tick.
+        if matches!(self.boot_ui, BootUiState::FieldMenu { .. }) {
+            if start {
+                self.fire_menu_cue(legaia_engine_shell::bgm::RETAIL_MENU_CANCEL_CUE);
+            } else {
+                self.fire_menu_cues(pressed);
+            }
+        }
 
         let boot_ui_active = match &mut self.boot_ui {
             BootUiState::Inactive => false,
@@ -341,7 +441,10 @@ impl PlayWindowApp {
                         }
                         _ => {
                             if let Some(c) = commit {
-                                self.apply_save_commit(c);
+                                // A Load re-enters the save's own scene; the
+                                // pre-booted `--scene` is only the fallback
+                                // for a file with no resume point.
+                                let _ = self.apply_save_commit(c);
                             }
                             // Hand the score from the title theme to the
                             // loaded scene: stop, then re-play the world's
@@ -460,8 +563,20 @@ impl PlayWindowApp {
                             // the shared flow: the outcome names the card
                             // port, the grid names the block.
                             FieldMenuSubsession::Save(s) => {
-                                if let Some(c) = save_flow.commit(&s) {
-                                    self.apply_save_commit(c);
+                                if let Some(c) = save_flow.commit(&s)
+                                    && self.apply_save_commit(c)
+                                {
+                                    // The Load re-entered the save's scene:
+                                    // the menu was opened over a scene that
+                                    // is gone. Drop it and let the fresh
+                                    // scene's own mode stand rather than
+                                    // the one the menu suspended.
+                                    let mode = self.session.host.world.mode;
+                                    self.session.close_field_menu();
+                                    self.session.host.world.mode = mode;
+                                    self.session.mode_seat.adopt_scene_mode(mode);
+                                    self.boot_ui = BootUiState::Inactive;
+                                    return true;
                                 }
                             }
                             FieldMenuSubsession::Config(o) => {

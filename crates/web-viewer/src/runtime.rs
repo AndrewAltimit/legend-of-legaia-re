@@ -97,6 +97,19 @@ pub struct LegaiaRuntime {
     /// `Some` only while the encounter session sits in its `Transition`
     /// phase; owns the captured-field VRAM clone the style bodies sample.
     pub(crate) battle_intro: Option<legaia_engine_ui::battle_intro::BattleIntro>,
+    /// FMV (STR / MDEC) playback state ([`crate::play_fmv`]).
+    pub(crate) fmv: crate::play_fmv::FmvState,
+    /// In-world minigame presentation state ([`crate::play_minigames`]):
+    /// the draw/input side of the sessions `SceneHost::tick` installs when a
+    /// scene script warps into a casino / dance hall / arena.
+    pub(crate) minigame_ui: crate::play_minigames::MinigameUi,
+    /// Mid-battle VRAM re-upload channel ([`crate::play_battle_vram`]).
+    pub(crate) battle_vram: crate::play_battle_vram::BattleVramChannel,
+    /// Every file the ISO9660 walk found on the loaded disc image, with its
+    /// raw-sector extent, so the page can slice a named file (an `XA*.XA`
+    /// voice bank, a `MOV/MV*.STR` movie) out of the bytes it still holds
+    /// without the runtime keeping a second 700 MB copy.
+    pub(crate) disc_files: Vec<crate::disc::FileEntry>,
     /// The port's seat at the retail mode table (`_DAT_8007B83C`) - the same
     /// `legaia_engine_core::mode::ModeSeat` `engine-shell`'s `BootSession`
     /// holds. This host used to run its whole front end without a mode word,
@@ -115,6 +128,22 @@ pub struct LegaiaRuntime {
     /// retail's rearm arm rather than comparing the new scene's player
     /// position against the old one's.
     pub(crate) field_party_hud_scene: Option<String>,
+    /// The lead's projected stage-Y (240-line PSX space) the page reports
+    /// each frame off its own view-projection ([`Self::set_field_player_screen_y`]),
+    /// the twin of the native window's `field_hud_projected_player_y`. `None`
+    /// until the page reports one.
+    pub(crate) field_hud_projected_y: Option<i16>,
+    /// Actor slots a field-VM `0x4C 0xD8` spawn (`FieldEvent::ActorSpawned`)
+    /// gave a TMD reference this session - the native window's
+    /// `pending_dynamic_mesh_slots`. The page drains them through
+    /// [`Self::play_take_dynamic_mesh_slots`] and uploads each slot's mesh.
+    pub(crate) pending_dynamic_mesh_slots: Vec<u8>,
+    /// Actor slots the page has uploaded a dynamic (script-spawned) mesh
+    /// for, drawn each frame from `play_dynamic_actor_transforms`.
+    pub(crate) dynamic_mesh_slots: Vec<u8>,
+    /// The dynamic actor mesh staged for the page's upload, one slot at a
+    /// time (`play_dynamic_actor_mesh` + the `play_dynamic_mesh_*` reads).
+    pub(crate) dynamic_mesh_cur: Option<crate::play::StagedActorMesh>,
     /// This frame's transition primitives, already ordered into drawable
     /// geometry by the shared `screen_prim` builder. Built once per
     /// [`crate::play_battle`] intro tick (the emitter mutates working sets,
@@ -287,7 +316,7 @@ pub struct LegaiaRuntime {
     /// through this bank; a global-pool track (`>= 2000`) brings its own VAB
     /// and replaces it. `None` until a scene is staged with audio running.
     #[cfg(target_arch = "wasm32")]
-    bgm_bank: Option<legaia_engine_audio::VabBank>,
+    pub(crate) bgm_bank: Option<legaia_engine_audio::VabBank>,
     /// Last BGM id handed to [`WebAudioOut`], for the field VM's redundant
     /// op-`0x35` re-emit suppression - re-attaching the same track would drop
     /// the playhead. Reset on a deliberate [`Self::enter_field`] so re-booting
@@ -320,10 +349,18 @@ impl LegaiaRuntime {
             field_vram_anim: None,
             field_vram_dirty: false,
             battle_intro: None,
+            fmv: Default::default(),
+            minigame_ui: Default::default(),
+            battle_vram: Default::default(),
+            disc_files: Vec::new(),
             mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
             battle_intro_geom: None,
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
+            field_hud_projected_y: None,
+            pending_dynamic_mesh_slots: Vec::new(),
+            dynamic_mesh_slots: Vec::new(),
+            dynamic_mesh_cur: None,
             item_names: None,
             menu_font: None,
             menu_assets: None,
@@ -379,6 +416,7 @@ impl LegaiaRuntime {
     pub fn load_disc(&mut self, raw_bytes: Vec<u8>, cdname_text: String) -> Result<u32, JsValue> {
         use crate::disc::{extract_cdname_txt, extract_prot_dat, extract_scus, is_mode2_2352_disc};
 
+        self.disc_files = crate::disc::walk_iso_files(&raw_bytes);
         let (prot_bytes, auto_cdname, scus) = if is_mode2_2352_disc(&raw_bytes) {
             let prot = extract_prot_dat(&raw_bytes)
                 .ok_or_else(|| JsValue::from_str("load_disc: PROT.DAT not found in disc image"))?;
@@ -567,6 +605,21 @@ impl LegaiaRuntime {
         Ok(count)
     }
 
+    /// Raw-sector extent of a named file on the loaded disc image, as
+    /// `{"lba": N, "size": bytes}` (`null` when the disc walk found no such
+    /// path). `path` is relative to the ISO root, e.g. `XA2.XA` or
+    /// `MOV/MV3.STR`; the page slices `discBytes` at `lba * 2352` for
+    /// `ceil(size / 2048) * 2352` bytes and hands the sectors back through
+    /// the consumer's own install call.
+    pub fn disc_file_extent_json(&self, path: &str) -> String {
+        let want = path.trim_start_matches('/').to_ascii_uppercase();
+        self.disc_files
+            .iter()
+            .find(|f| f.path.to_ascii_uppercase() == want)
+            .map(|f| serde_json::json!({ "lba": f.lba, "size": f.size }).to_string())
+            .unwrap_or_else(|| "null".to_string())
+    }
+
     /// `true` if a disc has been loaded.
     pub fn disc_loaded(&self) -> bool {
         self.scene_host.is_some()
@@ -627,6 +680,9 @@ impl LegaiaRuntime {
         // the track that was already playing) and stage the new scene's VAB
         // bank. Both no-op until audio is live (`audio_init`), which itself
         // restages the current scene's bank.
+        // New scene -> drop any SFX cues still queued for the old one (the
+        // native boot's `clear_sfx` on scene entry).
+        self.on_scene_change_audio();
         #[cfg(target_arch = "wasm32")]
         {
             self.bgm_last_started = None;
@@ -658,6 +714,63 @@ impl LegaiaRuntime {
         match self.scene_host.as_mut() {
             Some(h) => h.world.locomotion.precise_movement = on,
             None => self.world.locomotion.precise_movement = on,
+        }
+        // Persist it like the native window's `R` toggle does
+        // (`legaia-options.toml`), so the page's checkbox survives a reload
+        // and a trap-recovery rebuild re-applies it.
+        if self.options_state.precise_movement != on {
+            self.options_state.precise_movement = on;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// Whether precise (free-angle) movement is on - the persisted option
+    /// the page's checkbox reflects on load.
+    pub fn precise_movement(&self) -> bool {
+        self.options_state.precise_movement
+    }
+
+    /// The lead's projected screen Y this frame in 240-line stage space, or
+    /// a negative value for "not projectable" - the browser twin of the
+    /// native window's `field_hud_projected_player_y`. The field party HUD's
+    /// decision kernel reads it (retail compares the projected player
+    /// against a band before the readout returns).
+    pub fn set_field_player_screen_y(&mut self, stage_y: i32) {
+        self.field_hud_projected_y = (stage_y >= 0).then(|| stage_y.min(i16::MAX as i32) as i16);
+    }
+
+    /// Establish a fresh New Game slate - the browser twin of the native
+    /// `BootSession::begin_new_game`: `World::begin_new_game` (flags, money,
+    /// bag, clock, pending transitions) plus the SCUS starting party + bag.
+    /// The page used to enter `opdeene` without this, so after a Continue,
+    /// a card import or a picker visit a "New game" kept the old roster,
+    /// gold and story flags.
+    pub fn begin_new_game(&mut self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            // The title theme hands the score to the field: stop it so the
+            // prologue's own BGM (or its scripted silence) owns the audio.
+            use legaia_engine_core::scene::BgmDirector;
+            if let Some(out) = self.audio_out.as_ref() {
+                let mut director = crate::play_bgm::WebBgmDirector {
+                    out,
+                    bank: &mut self.bgm_bank,
+                    last_started: &mut self.bgm_last_started,
+                };
+                director.stop();
+            }
+        }
+        self.play_clock_origin_ms = None;
+        let Some(host) = self.scene_host.as_mut() else {
+            self.world.begin_new_game();
+            return;
+        };
+        host.world.begin_new_game();
+        if let Some(defaults) = host.new_game_defaults.as_ref() {
+            host.world.seed_starting_party(&defaults.party);
+            if let Some(inv) = defaults.inventory.as_ref() {
+                host.world.seed_starting_inventory(inv);
+            }
         }
     }
 
@@ -692,28 +805,9 @@ impl LegaiaRuntime {
         let event = host
             .tick()
             .map_err(|e| JsValue::from_str(&format!("tick: {e:#}")))?;
-        // Browser FMV auto-skip: the play page has no STR/MDEC playback, so
-        // an FMV the field VM triggers (SceneMode::Cutscene + active_fmv)
-        // would otherwise park the world forever. Finish it immediately -
-        // the 3D cutscene / field resumes, minus the movie.
-        let mut fmv_handoff_scene = String::new();
-        if host.world.mode == SceneMode::Cutscene && host.world.cutscene.active_fmv.is_some() {
-            host.world.finish_cutscene();
-            // Skipping the *movie* is not skipping the *hand-off*. Retail's
-            // master dispatch writes a next-scene label after playback
-            // (`town01` -> fmv 1 -> `town0b`), so auto-skipping without this
-            // left the page in the trigger scene - a different place from
-            // where the other two hosts land. Same shared kernel, same
-            // one-shot `World::take_finished_fmv` edge.
-            if let Some(outcome) = host.apply_pending_fmv_handoff() {
-                if let legaia_engine_core::scene::FmvHandoffOutcome::Entered { scene, .. } =
-                    &outcome
-                {
-                    fmv_handoff_scene = (*scene).to_string();
-                }
-                web_sys::console::log_1(&format!("cutscene: {outcome}").into());
-            }
-        }
+        // FMV beats: the movie path lives in [`crate::play_fmv`]; it hands
+        // back the scene label when the post-movie hand-off entered one.
+        let fmv_handoff_scene = self.service_cutscene_fmv();
         // Advance the world's play clock off the page's wall clock, the same
         // delta-against-a-high-water-mark the native window runs. The `host`
         // borrow is dead from here, so this can re-borrow.
@@ -741,6 +835,9 @@ impl LegaiaRuntime {
         // edge, battle-event fold, HUD row refresh, popup aging
         // ([`crate::play_battle`]). Cheap no-op outside battle.
         self.tick_battle_presentation();
+        // In-world minigame presentation (casino / dance / arena sessions
+        // the scene host installed): the draw-side state the page reads.
+        self.tick_minigame_ui();
         // The field-to-battle intro emitter: armed while the encounter
         // session sits in `Transition`, dropped when it leaves; caches this
         // frame's screen-prim geometry for the page's pass. Cheap no-op
@@ -766,12 +863,20 @@ impl LegaiaRuntime {
         // dead here (not used past `finish_cutscene`), so this can re-borrow.
         #[cfg(target_arch = "wasm32")]
         self.route_bgm_wasm();
+        // Drain every field-VM event the BGM router handed back (and, with
+        // audio off, the BGM ones too) - the browser twin of the native
+        // `drain_and_route_field_events`. `World::pending_field_events` is
+        // only ever emptied by a consumer, and this host used to leave the
+        // non-BGM events on it forever: a session's queue grew with every
+        // camera beat, item grant and dialog open.
+        self.drain_and_route_field_events_web();
         // The FMV hand-off loaded a scene without going through the field
         // VM's transition op, so it produces no `SceneEntered` event - the
         // page still has to rebuild, or it draws the old scene's meshes over
         // the new world.
         if !fmv_handoff_scene.is_empty() {
             self.rebuild_render_state()?;
+            self.on_scene_change_audio();
             #[cfg(target_arch = "wasm32")]
             self.stage_scene_bgm_bank();
             return Ok(fmv_handoff_scene);
@@ -785,6 +890,7 @@ impl LegaiaRuntime {
             // taught (a screen armed with nothing to finish it parks the
             // script dead).
             self.rebuild_render_state()?;
+            self.on_scene_change_audio();
             // A door swapped the scene: restage its VAB bank (a scene-local
             // start needs it) without resetting the dedupe latch, so a track
             // that carries across the transition keeps its playhead.
@@ -999,7 +1105,7 @@ impl LegaiaRuntime {
         let Some(out) = self.audio_out.as_ref() else {
             return false;
         };
-        let mut director = WebBgmDirector {
+        let mut director = crate::play_bgm::WebBgmDirector {
             out,
             bank: &mut self.bgm_bank,
             last_started: &mut self.bgm_last_started,
@@ -1194,6 +1300,12 @@ impl LegaiaRuntime {
     /// the assembled map, the lead's posed mesh, the NPC catalog. Runs on scene
     /// entry and on every door the engine walks through.
     fn rebuild_render_state(&mut self) -> Result<(), JsValue> {
+        // A scene swap drops the previous scene's script-spawned actors
+        // with it (the MAN loader's retire sweep); the page re-uploads
+        // whatever the new scene spawns.
+        self.pending_dynamic_mesh_slots.clear();
+        self.dynamic_mesh_slots.clear();
+        self.dynamic_mesh_cur = None;
         self.field = None;
         self.player = None;
         self.npcs = None;
@@ -1255,21 +1367,70 @@ impl LegaiaRuntime {
         // The ambient move-VM tree needs no sibling here: the scene host
         // spawned it into the live world at scene entry, and
         // `step_field_vram_fx` drains it against the same VRAM.
+        self.field_vram_anim = None;
         if let Some(host) = self.scene_host.as_mut()
             && let (Some(scene), Some(res)) = (host.scene.as_ref(), host.resources.as_mut())
         {
-            for entry in &scene.entries {
-                let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
-                    continue;
-                };
-                for s in legaia_asset::clut_walk::scene_park_strips(&entry.bytes) {
-                    res.vram.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
+            let frame_step = host.world.clock.frame_step.max(1);
+            if legaia_engine_core::scene::is_world_map_scene(&scene.name) {
+                // Kingdom overworld: the ocean / shoreline shimmer is the
+                // kingdom bundle's slot-5 CLUT-walk table with its source
+                // strips in slot 0, plus the Drake complement rows the two
+                // later kingdoms inherit as VRAM residue (the native
+                // `resolve_ocean_anim` + `park_clut_walk_strips` pair).
+                for entry in &scene.entries {
+                    let Ok(table) = legaia_asset::clut_walk::from_kingdom_entry(&entry.bytes)
+                    else {
+                        continue;
+                    };
+                    if let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&entry.bytes, 0) {
+                        for s in legaia_asset::clut_walk::park_strips(&slot0) {
+                            res.vram.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
+                        }
+                    }
+                    let missing_rows: Vec<u16> = table
+                        .entries
+                        .iter()
+                        .flat_map(|e| e.frames.iter().map(|f| f.src_y))
+                        .filter(|&y| {
+                            !res.vram.region_has_data(
+                                0,
+                                y as usize,
+                                legaia_asset::clut_walk::COPY_WIDTH as usize,
+                                1,
+                            )
+                        })
+                        .collect();
+                    if !missing_rows.is_empty()
+                        && let Ok(drake) = host
+                            .index
+                            .entry_bytes(legaia_asset::kingdom_bundle::BUNDLE_ENTRIES[0])
+                        && let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&drake, 0)
+                    {
+                        for s in legaia_asset::clut_walk::park_strips(&slot0) {
+                            if missing_rows.contains(&s.fb_y) {
+                                res.vram.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
+                            }
+                        }
+                    }
+                    self.field_vram_anim = Some(crate::field_scene::FieldSceneAnim::walker_only(
+                        table, frame_step,
+                    ));
+                    break;
                 }
-                self.field_vram_anim = Some(crate::field_scene::FieldSceneAnim::walker_only(
-                    table,
-                    host.world.clock.frame_step.max(1),
-                ));
-                break;
+            } else {
+                for entry in &scene.entries {
+                    let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
+                        continue;
+                    };
+                    for s in legaia_asset::clut_walk::scene_park_strips(&entry.bytes) {
+                        res.vram.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
+                    }
+                    self.field_vram_anim = Some(crate::field_scene::FieldSceneAnim::walker_only(
+                        table, frame_step,
+                    ));
+                    break;
+                }
             }
         }
         Ok(())
@@ -1553,7 +1714,10 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        if host.world.mode != SceneMode::Field {
+        // The overworld draws the lead's field form too (retail walks the
+        // same mesh across the continent; the native window binds it on
+        // both), so a kingdom scene keeps the rig.
+        if !matches!(host.world.mode, SceneMode::Field | SceneMode::WorldMap) {
             return;
         }
         let lead = host.world.party.active_party.first().copied().unwrap_or(0) as usize;
@@ -1633,7 +1797,7 @@ impl LegaiaRuntime {
             Some(h) => h,
             None => return,
         };
-        let mut director = WebBgmDirector {
+        let mut director = crate::play_bgm::WebBgmDirector {
             out,
             bank: &mut self.bgm_bank,
             last_started: &mut self.bgm_last_started,
@@ -1687,135 +1851,33 @@ impl LegaiaRuntime {
     }
 }
 
-/// A [`legaia_engine_core::scene::BgmDirector`] that routes the field VM's
-/// op-`0x35` music events into a [`WebAudioOut`]: the browser twin of the
-/// native `AudioBgmDirector`. Borrows the runtime's audio handle plus its
-/// scene-local BGM bank + dedupe latch for the duration of one routing pass.
-///
-/// Scene-local starts (`bgm_id < 2000`) play their SEQ through the pre-staged
-/// scene bank (`bank`); global-pool tracks (`>= 2000`) carry their own
-/// `[chunk][pBAV VAB][pQES SEQ]` and upload it before playing - the path most
-/// real Legaia music takes. Both loop to the start and land through
-/// [`Self::play`]'s immediate swap.
-#[cfg(target_arch = "wasm32")]
-struct WebBgmDirector<'a> {
-    out: &'a WebAudioOut,
-    bank: &'a mut Option<legaia_engine_audio::VabBank>,
-    last_started: &'a mut Option<u16>,
-}
-
-#[cfg(target_arch = "wasm32")]
-impl WebBgmDirector<'_> {
-    /// Install a freshly-built, looping sequencer and let it sound from its
-    /// own first event, behind a click-guard ramp of ~2 frames at the SPU's
-    /// 44.1 kHz rate - the same `swap_bgm` call, with the same constant, the
-    /// native `AudioBgmDirector::start_inner` makes.
-    ///
-    /// Not `crossfade_to`. That one is a serial fade: with a track already
-    /// playing it parks the incoming sequencer in `pending_seq` and rolls the
-    /// outgoing one down to silence first, so the new track has not begun a
-    /// fade-length after the script asked for it. Retail BGM changes are hard
-    /// cuts, and a cutscene sting is mostly intro - half a second of the old
-    /// track fading is the whole hook gone.
-    fn play(&mut self, bgm_id: u16, seq: legaia_seq::Seq, bank: legaia_engine_audio::VabBank) {
-        // ~2 frames at 60 Hz (44100 / 60 * 2): long enough to guard an onset
-        // pop, far too short to hide an intro.
-        const TRANSITION_FADE_IN_SAMPLES: u32 = 1_470;
-        let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
-        sequencer.set_loop_to(0);
-        self.out.swap_bgm(sequencer, TRANSITION_FADE_IN_SAMPLES);
-        // Retail's start arm (op 0x35 sub-op 1, `0x801E0104`) clears the
-        // pause bit alongside the track select - a start issued while the
-        // gate is closed must reopen it, or the new track sits silent.
-        self.out.set_sequencer_paused(false);
-        *self.last_started = Some(bgm_id);
-    }
-
-    /// Split a global-pool `music_01` entry (`[chunk][pBAV VAB][pQES SEQ]`),
-    /// upload its own VAB into the SPU BGM region, stash it as the active bank,
-    /// and return the parsed SEQ. `None` when the pair is absent or a header
-    /// doesn't parse. Mirrors the native `AudioBgmDirector::stage_owned_vab`.
-    fn stage_owned(
-        &mut self,
-        entry_bytes: &[u8],
-    ) -> Option<(legaia_seq::Seq, legaia_engine_audio::VabBank)> {
-        let vab_off = entry_bytes.windows(4).position(|w| w == b"pBAV")?;
-        let seq_rel = entry_bytes[vab_off..]
-            .windows(4)
-            .position(|w| w == b"pQES")?;
-        let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
-        let body = &entry_bytes[vab_off..];
-        let bank = self.out.with_spu(|spu| {
-            // Cap the BGM region below the resident class-2 SFX bank at the
-            // top of SPU RAM, the way the native boot's `stage_scene_vab`
-            // does, so a BGM upload never stomps the SFX samples
-            // ([`crate::play_sfx`]).
-            let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
-                crate::play_sfx::SPU_RESERVED_BYTES,
-                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32
-                    - crate::play_sfx::SPU_RESERVED_BYTES
-                    - crate::play_sfx::SFX_BANK_SPU_BYTES,
-            );
-            legaia_engine_audio::VabBank::upload(spu, &mut alloc, &report, body)
-        });
-        let seq = legaia_seq::Seq::parse(&entry_bytes[vab_off + seq_rel..]).ok()?;
-        *self.bank = Some(bank.clone());
-        Some((seq, bank))
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-impl legaia_engine_core::scene::BgmDirector for WebBgmDirector<'_> {
-    fn start(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
-        if *self.last_started == Some(bgm_id) {
-            return;
-        }
-        let Some(bank) = self.bank.clone() else {
-            crate::console_log("play BGM: scene-local start with no scene VAB staged");
+impl LegaiaRuntime {
+    /// Consume this tick's remaining field-VM events - the browser twin of
+    /// the native window's `drain_and_route_field_events`
+    /// (`window/boot_cutscene.rs`). BGM events are normally consumed by
+    /// `route_bgm_wasm` first; while audio is down (no `WebAudioOut` yet) they
+    /// come through here and are dropped, exactly as an unheard retail
+    /// op-`0x35` would be. `ActorSpawned` is noted for the page's dynamic
+    /// mesh upload; everything else is presentation this host reads off the
+    /// world's own state instead (the cutscene camera params, the dialog box).
+    pub(crate) fn drain_and_route_field_events_web(&mut self) {
+        use legaia_engine_core::field_events::FieldEvent;
+        let Some(host) = self.scene_host.as_mut() else {
+            self.world.drain_field_events();
             return;
         };
-        match legaia_seq::Seq::parse(seq_bytes) {
-            Ok(seq) => self.play(bgm_id, seq, bank),
-            Err(e) => crate::console_log(&format!("play BGM: SEQ parse failed: {e}")),
+        for ev in host.world.drain_field_events() {
+            if let FieldEvent::ActorSpawned { slot, .. } = ev {
+                let has_tmd = host
+                    .world
+                    .actors
+                    .get(slot as usize)
+                    .is_some_and(|a| a.tmd_ref.is_some());
+                if has_tmd && !self.pending_dynamic_mesh_slots.contains(&slot) {
+                    self.pending_dynamic_mesh_slots.push(slot);
+                }
+            }
         }
-    }
-
-    fn start_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
-        if *self.last_started == Some(bgm_id) {
-            return;
-        }
-        match self.stage_owned(entry_bytes) {
-            Some((seq, bank)) => self.play(bgm_id, seq, bank),
-            None => crate::console_log("play BGM: global entry has no [VAB][SEQ] pair"),
-        }
-    }
-
-    fn pause(&mut self) {
-        self.out.set_sequencer_paused(true);
-    }
-
-    fn resume(&mut self) {
-        self.out.set_sequencer_paused(false);
-    }
-
-    fn stop(&mut self) {
-        self.out.detach_sequencer();
-        *self.last_started = None;
-    }
-
-    /// Sub-op `0xA` - the unhalt-pause swap-commit (retail `0x801E0264`):
-    /// if the gate is still closed no start intervened, so the paused
-    /// track is released the way retail's `FUN_800266E0` + `FUN_80026520`
-    /// pair detaches and closes the slot; the gate is then reopened
-    /// unconditionally (retail clears `_DAT_8007B750` bit 1 on every pass
-    /// through the arm). The browser twin of
-    /// `AudioBgmDirector::unhalt_pause`.
-    fn unhalt_pause(&mut self) {
-        if self.out.sequencer_paused() {
-            self.out.detach_sequencer();
-            *self.last_started = None;
-        }
-        self.out.set_sequencer_paused(false);
     }
 }
 
