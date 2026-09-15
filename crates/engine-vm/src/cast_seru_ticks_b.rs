@@ -1504,4 +1504,63 @@ mod tests {
             "PROT 0911 is a heal, not a damage module"
         );
     }
+
+    // --- W3-A ---------------------------------------------------------------
+    //
+    // Retail fixtures from live PCSX-Redux captures of PROT 0910 and PROT 0911
+    // driven end to end in a random encounter. Per-arm dwell for both bodies is
+    // in `docs/subsystems/cast-module.md` § "Frame gating, measured".
+
+    /// PROT 0911's heal, measured: magic level `3`, one party seat on `42` of
+    /// `999` HP, retail restored exactly `640` = `(3 << 6) + 0x1C0`.
+    #[test]
+    fn w3a_retail_orb_heals_six_hundred_and_forty_at_level_three() {
+        assert_eq!(orb_heal_amount(3), 640);
+        let mut s = seats(8);
+        s[0].hp = 42;
+        let mut ctx = ctx_at(9);
+        ctx.party_count = 1;
+        let (_, healed) = orb_tick(&mut ctx, &mut s, 7, orb_heal_amount(3), None, |_| 999);
+        assert_eq!(healed.len(), 1);
+        assert_eq!(healed[0].restored, 640);
+        assert_eq!(s[0].hp, 42 + 640);
+    }
+
+    /// PROT 0911's arm `5` jumps to `9`, which is exactly what the capture's
+    /// phase walk shows: `0,1,2,3,4,5,9,0x0A,0xFF` with `6..8` never entered.
+    #[test]
+    fn w3a_retail_orb_arm_five_jumps_over_six_to_eight() {
+        let mut s = seats(8);
+        let mut ctx = ctx_at(5);
+        orb_tick(&mut ctx, &mut s, 7, 0, None, |_| 999);
+        assert_eq!(ctx.phase, ORB_ARM5_TARGET_PHASE);
+        assert_eq!(ctx.ctx_278, ORB_ARM5_CTX_278);
+    }
+
+    /// PROT 0910's four slashes, measured in one cast: the wrapper returned
+    /// `427 / 427 / 380 / 384` from the single site `0x801F887C`, and retail
+    /// took `106 / 106 / 95 / 96` HP - each exactly `return >> 2`.
+    ///
+    /// The shift is `srl s1, s1, 2` at `0x801F8898`, between the two operands
+    /// of the running-total update at `0x8007BD14`, and it rewrites the same
+    /// register the clamp and both stores then use. [`swordie_slash`] takes the
+    /// roll already applied, so this fixture exercises the clamp with the
+    /// retail-scaled input; the scale itself is a FINDING against the kernel.
+    #[test]
+    fn w3a_retail_swordie_slash_applies_a_quarter_of_the_wrapper_return() {
+        let rolls: [i32; 4] = [427, 427, 380, 384];
+        let applied: [u32; 4] = [106, 106, 95, 96];
+        let mut hp: u32 = 9999;
+        for (i, (&roll, &want)) in rolls.iter().zip(applied.iter()).enumerate() {
+            assert_eq!((roll >> 2) as u32, want, "slash {i}");
+            let mut v = seats(1).remove(0);
+            v.hp = hp as u16;
+            let got = apply_hit_unsigned_floor_one(&mut v, roll >> 2);
+            assert_eq!(got, want, "slash {i}");
+            hp -= want;
+            assert_eq!(u32::from(v.hp), hp);
+        }
+        assert_eq!(hp, 9999 - 403);
+    }
+    // --- end W3-A -----------------------------------------------------------
 }

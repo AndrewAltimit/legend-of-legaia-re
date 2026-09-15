@@ -1085,6 +1085,139 @@ the end of 0952's `0x1800`-byte image. The old reading, that `a2` came from a
 saved register no static window could see, is refuted by the pairs being right
 there in front of both calls.
 
+### Frame gating, measured
+
+The [twelve bodies](#the-twelve-bodies-the-trampoline-map-names) and the
+[eleven player-Seru ticks](#the-player-seru-bands-tick-bodies-are-code-not-data)
+are decoded from their own bytes, but no static read gives *how long each arm
+holds*. That is a live measurement, and the unit it has to be taken in is
+**module ticks** - one per entry into the body's own routine - not VSyncs. The
+battle SM does not advance once per VSync, so a VSync dwell carries host timing:
+the same body measured twice differs by a few VSyncs per arm while its tick
+counts are the choreography's own.
+
+#### How the measurement is taken
+
+A mid-cast state cannot show the arms before it, and the per-spell mid-cast
+corpus is mednafen-only, so the cast is **driven** instead of resumed.
+`scripts/pcsx-redux/autorun_w3a_cast_oracle.lua` resumes an ordinary pre-cast
+battle state and rewrites the acting party seat's queued action into the cast
+under test - `actor[+0x1DE] = 2` (Magic), `+0x1DF = <action id>`,
+`+0x1DD = <target seat>` - after which retail pages the module in through the
+loader-B tracker `0x8007BC4C` and runs its own tick.
+
+Three things decide where that rewrite may happen.
+
+- **Not at the Begin/Reselect confirm.** The command-flow SM `ctx[+0x06]`
+  validates the queued actions at its confirm arm `0x6E`; a Magic action the
+  caster has not learned parks it there for good. The rewrite goes in at
+  `ctx[7] == 0x0A`, which is past that gate and before state `0x0C` reads the
+  category ([`battle-action.md`](battle-action.md)).
+- **Only into the acting seat.** `ctx[+0x13]` names it, and a monster commonly
+  acts first; a rewrite into a seat that is not acting is simply ignored.
+- **Live HP and displayed HP move together.** `+0x172` is the displayed HP the
+  party HUD ramps towards, and the `0x51` exit gate `FUN_801E7250` holds the
+  whole action band while a *party* target's `+0x14C` differs from it. Seeding
+  one without the other parks the battle at `0x51` forever - the same softlock
+  shape `battle-action.md` documents, reproduced here by a probe.
+
+The body's entry is then breakpointed. Five VAs are armed at once
+(`0x801F69D8`, `E8`, `EC`, `F0`, `F4`), because those are consecutive
+instructions in one prologue: a single tick trips every armed VA at or after the
+routine's real entry, so the **lowest VA that fires is the entry**, recovered
+from execution rather than from a dump's printed address.
+
+#### The arm table, read out of live RAM
+
+The same probe reads the 32-slot cast-tick arm table at `0x801CF4EC` and decodes
+the `jal` in each 16-byte PROT 0898 trampoline. Arms `0..=10` resolve to
+`0x801F69D8`, `69D8`, `69D8`, `69F4`, `69E8`, `69D8`, `69F4`, `69EC`, `69D8`,
+`69D8`, `69F0` - the pairing this page states for ids `0x81..=0x8B`, now
+confirmed from RAM. Each body's measured entry VA and the `ra` its tick returns
+to agree with it: PROT 0907 enters at `0x801F69E8` with `ra = 0x801F1F84`
+(stub 4 + 8), PROT 0910 at `0x801F69EC` with `ra = 0x801F1FB4`, PROT 0911 at
+`0x801F69D8` with `ra = 0x801F1FC4`.
+
+#### Per-arm dwell, in module ticks
+
+One cast per body, driven from `party_basic_attack_vs_gobu_gobu` (one party
+seat, one monster seat, scripted-fight flag `ctx[+0x287] = 0`). An arm absent
+from a row is one the walk never entered.
+
+| PROT | arm dwell, phase `0` upward |
+|---|---|
+| 0903 Gimard | 1, 1, 64, 1, 9, 8, 99, 1, 15, 8, 24, 16, 87, then `0xFF` |
+| 0904 Theeder | 1, 1, 119, 1, 6, 14, 54, 47, 1, 31, 1, 20, 16, 15, 24, then `0xFF` |
+| 0905 Vera | 1, 1, 32, 2, 10, 15, **jump to 8**, 45, 28, 38, then `0xFF` |
+| 0907 Nighto | 1, 1, 1, 118, 1, 34, 29, 15, 53, 1, 51, 33, 1, 41, **jump to 15**, 18, then `0xFF` |
+| 0908 Zenoir | 1, 1, 1, 118, 1, 32, 41, 56, 3, 1, 14, 14, 60, then `0xFF` |
+| 0910 Swordie | 1, 1, 4, 8, 17, 46, 1, 65, 1, 25, 53, then `0xFF` |
+| 0911 Orb | 1, 1, 4, 32, 25, 54, **jump to 9**, 76, 66, then `0xFF` |
+
+Three of the seven walks skip arms outright. PROT 0911's arm `5` jumps to `9`
+(the `sb s7,0x279` at `0x801F7780`), which this page already records; PROT 0905's
+arm `5` jumps to `8` the same way, and PROT 0907's fork arm `13` jumps to `15`.
+The rest advance one arm per taken tick, which is what makes a dwell above `1` a
+countdown rather than a wait on another actor.
+
+`ctx[+0x6D8]` is the countdown those arms ride. It reads `120` at the first tick
+of every cast measured here and decrements by exactly `1` per tick, so these
+figures are the arms' own lengths and not a stretched frame delta.
+
+#### The damage numbers the same casts produced
+
+Every player-Seru wrapper call in these runs passed the **summon seat** `7` as
+the attacker, never `ctx[+0x13]`: `addiu a1, zero, 7` is a literal at
+`0x801F74A8` (PROT 0903) and at `0x801F8880` (PROT 0910), and the capture reads
+`a1 = 7` with `ctx[+0x13] = 0` at every entry. All of them route through
+`FUN_801DD0AC`.
+
+| PROT | call site | `a0` | wrapper return | HP lost |
+|---|---|---|---|---|
+| 0903 | `0x801F74AC` | `0x12` | 247 / 417 | 76 (bar emptied) / 417 |
+| 0904 | `0x801F7D38` | `0x11` | 371 | 371 |
+| 0908 | `0x801F76CC` | `0x12` | 522 | 130 (a quarter) |
+| 0908 | `0x801F7C14` | `0x10` | 541 | 405 (three quarters) |
+| 0910 | `0x801F887C` | `0x12` | 427, 427, 380, 384 | 106, 106, 95, 96 |
+
+PROT 0910's four slashes all come from one site, and each takes
+`return >> 2`: the `srl s1, s1, 2` at `0x801F8898` sits between the two operands
+of the running-total update at `0x8007BD14` and rewrites the same register the
+clamp at `0x801F88F0` and both stores at `0x801F8900..0x801F8910` then use. A
+reader who takes the shift as belonging to the total alone reports the slash as
+unscaled.
+
+The two heals land exactly where their arithmetic says. At magic level `3`, PROT
+0905 restored `320` (`3 * 0x20 + 0xE0`) into a seat on `42` of `999` HP, and
+PROT 0911 restored `640` (`(3 << 6) + 0x1C0`) into the same shape. MP costs read
+off the same casts: `0x81` 10, `0x82` 24, `0x83` 6, `0x85` 13, `0x86` 36, `0x88`
+32, `0x89` 18.
+
+PROT 0907 writes no HP at all. Its fork read kill roll `0x801F8534 = 6` and
+resist `0x801F853C = 1`, and retail left `+0x14C`, `+0x16E` and `+0x21C`
+untouched while still walking `13 -> 15`. The phase target forks on the **kill
+roll alone** (`beqz v0, 0x801F7E48` at `0x801F7E04`): a non-zero roll takes the
+confuse path and its unconditional `sb 0xF, 0x279` at `0x801F7E28`, whatever the
+resist word says. The resist word only suppresses the victim writes inside each
+path.
+
+#### The one SCUS call into slot B, caught firing
+
+The same injection closes the frame question the
+[budget gate](#scus-calls-into-slot-b-at-one-fixed-va---and-only-prot-0920-arms-it)
+left open: driving action id `0x92` pages PROT 0920 in (loader tracker `25`) and
+`jal 0x801F7B88` at `0x800481A0` fires **212 times in one cast**, on ordinary
+in-battle frames with the battle-end signal `_DAT_8007BD71` reading `0xFF`
+throughout, across module phases `6`, `7`, `8`, `9`, `10` and once at `0xFF`.
+The callee is entered exactly as often as the call site.
+
+The budget `_DAT_8007BDC0` behaves as a budget and is touched by **five** sites
+in PROT 0920, not three: `0x801F6BBC` zeroes it before the cast, `0x801F6FEC`
+seeds `0x204` (516), `0x801F70CC` drains it by `8` per frame across 64 writes,
+`0x801F712C` floors it at `4`, and `0x801F7B4C` clears it at the end. Because of
+that floor the budget never reaches zero on its own - the module's own clear is
+what closes the arm, 1039 VSyncs after it opened.
+
 ### The fourteen trampoline arms that are the band's other tick bodies
 
 <a id="the-fourteen-trampoline-arms-that-are-unported-tick-bodies"></a>

@@ -1976,4 +1976,115 @@ mod tests {
         assert_eq!(seru_last_arm(908), Some(12));
         assert_eq!(seru_last_arm(909), None);
     }
+
+    // --- W3-A ---------------------------------------------------------------
+    //
+    // Retail fixtures: numbers read off live PCSX-Redux captures of each body
+    // driven end to end in an ordinary random encounter (one party seat, one
+    // monster seat). Each row is `(wrapper argument, wrapper return, HP the
+    // victim actually lost)` read at the wrapper's entry and its `jr ra`, so
+    // the site's baked power, its scale and its clamp are all pinned by the
+    // same observation. `docs/subsystems/cast-module.md` § "Frame gating,
+    // measured" carries the per-arm dwell these runs also produced.
+
+    /// Every player-Seru site passes the **summon seat** `7` as the attacker,
+    /// not the caster seat: retail's `addiu a1, zero, 7` at `0x801F74A8`
+    /// (PROT 0903) and `0x801F8880` (PROT 0910) are literal constants, and the
+    /// capture reads `a1 = 7` at all four wrapper entries with `ctx[+0x13] = 0`.
+    #[test]
+    fn w3a_retail_sites_bake_the_power_the_capture_read() {
+        for (site, power) in [
+            (0x801F_74ACu32, 0x12u16), // PROT 0903, a0 = 0x12 read live
+            (0x801F_7D38, 0x11),       // PROT 0904, a0 = 0x11 read live
+            (0x801F_76CC, 0x12),       // PROT 0908 opener
+            (0x801F_7C14, 0x10),       // PROT 0908 second site
+        ] {
+            let s = seru_hit_site(site).expect("site is in the table");
+            assert_eq!(s.power(), power, "site 0x{site:08X}");
+        }
+    }
+
+    /// PROT 0903's single hit: the wrapper returned `247` against a victim on
+    /// `76` HP and retail applied `76`, emptying the bar; against a victim on
+    /// `9999` HP it returned `417` and applied all of it.
+    #[test]
+    fn w3a_retail_gimard_hit_is_unscaled_and_kill_capable() {
+        let site = seru_hit_site(0x801F_74AC).unwrap();
+        let mut v = seat(76);
+        assert_eq!(site.apply(&mut v, 247), 76);
+        assert_eq!(v.hp, 0);
+        let mut v = seat(9999);
+        assert_eq!(site.apply(&mut v, 417), 417);
+        assert_eq!(v.hp, 9999 - 417);
+    }
+
+    /// PROT 0904's ring sweep: wrapper return `371`, applied `371`. The same
+    /// state produced the same roll on two separate runs, which is what makes
+    /// it usable as a fixture.
+    #[test]
+    fn w3a_retail_theeder_ring_hit_is_unscaled() {
+        let site = seru_hit_site(0x801F_7D38).unwrap();
+        let mut v = seat(9999);
+        assert_eq!(site.apply(&mut v, 371), 371);
+    }
+
+    /// PROT 0908's two reachable sites, measured in one cast: the opener
+    /// returned `522` and applied `130` (a quarter), the second returned `541`
+    /// and applied `405` (three quarters). The third site `0x801F7DF8` never
+    /// fired in the capture.
+    #[test]
+    fn w3a_retail_zenoir_scales_its_two_reachable_sites() {
+        let opener = seru_hit_site(0x801F_76CC).unwrap();
+        let mut v = seat(9999);
+        assert_eq!(opener.apply(&mut v, 522), 130);
+        let second = seru_hit_site(0x801F_7C14).unwrap();
+        let mut v = seat(9999 - 130);
+        assert_eq!(second.apply(&mut v, 541), 405);
+    }
+
+    /// PROT 0905's restore, measured twice: magic level `3`, target on `42` of
+    /// `999` HP, retail restored exactly `320` = `3 * 0x20 + 0xE0` with the
+    /// missing-HP clamp slack.
+    #[test]
+    fn w3a_retail_vera_restores_three_hundred_and_twenty_at_level_three() {
+        assert_eq!(vera_heal_amount(3, 42, 999), 320);
+        // And the clamp really is the missing HP, not the base: the same level
+        // against Vahn's own 128-point bar restores only what is missing.
+        assert_eq!(vera_heal_amount(3, 42, 128), 86);
+    }
+
+    /// The measured phase walks end on the arm this table names: PROT 0903 and
+    /// 0908 both latched `0xFF` out of arm `12`, PROT 0904 out of `14`, PROT
+    /// 0905 out of `10` and PROT 0907 out of `15`.
+    #[test]
+    fn w3a_retail_phase_walks_end_on_the_tabled_last_arm() {
+        assert_eq!(seru_last_arm(903), Some(12));
+        assert_eq!(seru_last_arm(904), Some(14));
+        assert_eq!(seru_last_arm(905), Some(10));
+        assert_eq!(seru_last_arm(907), Some(15));
+        assert_eq!(seru_last_arm(908), Some(12));
+    }
+
+    /// PROT 0907's fork, as the capture caught it: the kill roll
+    /// `0x801F8534` read `6` and the resist word `0x801F853C` read `1`, so
+    /// [`nighto_outcome`] classifies it `Resisted` - and retail left the
+    /// victim's HP and `+0x16E` untouched, which is what `Resisted` means.
+    ///
+    /// What the capture also showed, and this model cannot express, is that
+    /// retail's *phase target* forks on the kill roll alone (`beqz` at
+    /// `0x801F7E04`): a resisted cast whose kill roll is non-zero still takes
+    /// the confuse path's `sb 0xF, 0x279` at `0x801F7E28` and lands on arm
+    /// `15`, never on arm `14`. See the FINDINGS note on this module.
+    #[test]
+    fn w3a_retail_nighto_roll_six_with_resist_is_resisted() {
+        let roll = NightoRoll {
+            kill_roll: 6,
+            resist_roll: 9,
+            magic_level: 3,
+            target_immune: false,
+            extra_roll: None,
+        };
+        assert_eq!(nighto_outcome(&roll), NightoOutcome::Resisted);
+    }
+    // --- end W3-A -----------------------------------------------------------
 }
