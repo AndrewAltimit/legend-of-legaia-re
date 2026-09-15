@@ -1602,7 +1602,7 @@ impl World {
         // The VM's own position therefore drifts from the published seat
         // while the flag is off. That only shows if the flag is flipped
         // mid-scene, which no real entry path does - it is set once at boot
-        // (`play-window --live-npcs`).
+        // (`play-window`, opt-out `--no-live-npcs`).
         let live_walk = self.npcs.animate;
         let blocking = AmbientPlayerProbe {
             player: if live_walk {
