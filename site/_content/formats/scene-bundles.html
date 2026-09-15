@@ -236,7 +236,7 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
     <tbody>
       <tr><td><code>+0x00</code></td><td><code>u16 count</code></td><td>retail <code>2..=71</code></td></tr>
       <tr><td><code>+0x02</code></td><td><code>u16 offsets[count]</code></td><td><code>offsets[0] = 2 + count*2</code>, non-decreasing, in-bounds</td></tr>
-      <tr><td><code>+offsets[i]</code></td><td>record</td><td>16-bit-word-aligned move-VM stager: <code>[i16 model_sel][u16 flags][bytecode]</code>; most open <code>0xFFFF 0x0000</code> (a transform node) and end with the <code>0x0008</code> Halt word</td></tr>
+      <tr><td><code>+offsets[i]</code></td><td>record</td><td>16-bit-word-aligned move-VM stager: <code>[i16 model_sel][u16 reserved][bytecode]</code>; most open <code>0xFFFF 0x0000</code> (a transform node) and end with the <code>0x0008</code> Halt word</td></tr>
     </tbody>
   </table>
   <p class="hint"><strong>These records are not field-VM bytecode</strong>, however natural that looks. They are the per-scene sibling of the per-summon stagers (<code>legaia_asset::summon_overlay</code>): same record format, same consumer. Record 0 on towns is the scene's <em>master ambient stager</em> - a fixed 768-byte run of 8-byte spawn rows. The scene's field-VM scripts live in the MAN.</p>

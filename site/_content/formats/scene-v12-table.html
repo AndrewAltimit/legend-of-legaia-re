@@ -106,7 +106,7 @@
   <h2>The next entry: the event-script prescript</h2>
   <p>Raw TOC <code>n + 2</code> - directly after the <code>.PCH</code> - is the scene's <em>prescript</em>: <code>[u16 count][u16 offsets[count]]</code> then per-record bytecode. Same shape as the standalone <a href="scene-bundles.html#scene-event-scripts-prescript-only">scene_event_scripts</a> format. Parser <code>scene_v12_table::parse_prescript_entry</code>.</p>
   <ul class="bullets">
-    <li>The records are <strong>move-VM stager records</strong> (<code>[i16 model_sel][u16 flags][bytecode]</code>), not field-VM scripts; the common <code>0xFFFF 0x0000</code> lead is <code>model_sel = -1</code> (a pivot node), and <code>0x0008</code> terminates (move-VM Halt).</li>
+    <li>The records are <strong>move-VM stager records</strong> (<code>[i16 model_sel][u16 reserved][bytecode]</code>), not field-VM scripts; the common <code>0xFFFF 0x0000</code> lead is <code>model_sel = -1</code> (a pivot node), and <code>0x0008</code> terminates (move-VM Halt).</li>
     <li>The field VM installs one by id through the effect-tree stager (<a href="../subsystems/move-vm.html">move VM</a>). The real per-scene field scripts live in the MAN.</li>
     <li>All 97 scene blocks have one; <code>count</code> ranges 2..71. Town scenes' record 0 is the fixed 768-byte master ambient stager (<a href="scene-bundles.html">scene bundles</a>).</li>
   </ul>

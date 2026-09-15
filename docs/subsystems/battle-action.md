@@ -1967,7 +1967,7 @@ The summon overlay carries **no embedded TMD geometry** (no `0x80000002` magic).
   the same walk as the battle-teardown loop in `FUN_800480D8`.
   `record[+0]` (`model_sel`) drives the spawn-time render seat: `≥ 0` → library mesh `DAT_8007C018[model_sel + gp[0x754]]` (`actor[+0x5A] = 1`), any negative value (`-1` canonical) = no-mesh transform/pivot node (`actor[+0x56] = 0`, `actor[+0x5A] = 0`, draw-flag bit 2), `0x4000`/`0x4001` = special render-mode nodes (`actor[+0x5A] = 3` / `5`).
 - Three staging functions drive the spawn: **`FUN_801F16A0`** (phase 0 = a `do { FUN_80021B04(...) } while(< 8)` loop spawning **8** flame parts, each with `rand()`-seeded actor params - `actor[+0x84]`, `actor[+0xb4] = rng%15 + 16`, `actor[+0xb6] = rng%255 + 512`, `actor[+0x28]`; phase 1 = 1 more part), **`FUN_801F36A0`**, **`FUN_801F4DD0`**. The per-frame motion is the standard actor-tick consuming those RNG-seeded fields.
-- **Part records ARE in-file and move-VM bytecode (corrected link base).** Under the correct link base `0x801F69D8` (not `0x801F0000`), each `FUN_80021B04` call's record pointer resolves to PROT 905 **file `0x180C..0x1E00`** - a contiguous table of `[i16 model_sel][u16 flags][move-VM bytecode @+4]` records, recovered by `legaia_asset::summon_overlay` (disc-gated `summon_overlay_real`). This **supersedes** the two earlier wrong-link-base "FALSIFIED" readings - "the records are beyond the `0x5800` file / `0x180C` is only coincidentally record-shaped / parser reverted" and "there is no move VM here." The records *are* move-VM bytecode;
+- **Part records ARE in-file and move-VM bytecode (corrected link base).** Under the correct link base `0x801F69D8` (not `0x801F0000`), each `FUN_80021B04` call's record pointer resolves to PROT 905 **file `0x180C..0x1E00`** - a contiguous table of `[i16 model_sel][u16 reserved][move-VM bytecode @+4]` records, recovered by `legaia_asset::summon_overlay` (disc-gated `summon_overlay_real`). This **supersedes** the two earlier wrong-link-base "FALSIFIED" readings - "the records are beyond the `0x5800` file / `0x180C` is only coincidentally record-shaped / parser reverted" and "there is no move VM here." The records *are* move-VM bytecode;
   the reason PROT 905 has zero `jal 0x80023070` *inside the overlay* is simply that the `jal` lives in the SCUS stager `FUN_80021B04` (which seats `actor[+0x70] = 2` PC → bytecode at `record+4`, then ticks `FUN_80023070`), not in the overlay image.
 - **But the move-VM scene-graph is NOT how retail renders the player summon
   (live trace).** A PCSX-Redux trace of a player Gimard *Burning Attack* cast
@@ -2016,7 +2016,7 @@ scenes; see [`move-vm.md` § screen-effect widget family](move-vm.md#screen-effe
 The live effect is instead a single **move-VM part-actor** in the part pool
 `DAT_801C90F0`, ticked per frame by the generic SCUS actor tick `FUN_80021DF4`
 (→ `FUN_80023070`) - a live capture pinning that render-tail driver. Its
-`[i16 model_sel][u16 flags][bytecode]` record (`actor[+0x48]`) lives in the
+`[i16 model_sel][u16 reserved][bytecode]` record (`actor[+0x48]`) lives in the
 **battle overlay (0898)** resident data at `0x801F5xxx` (below the 0900 slot-B
 link base `0x801F69D8`), `model_sel` reading `-1` (transform node) / `5` (library
 mesh `DAT_8007C018[5 + base]`) - the summon part-record format, sourced from the

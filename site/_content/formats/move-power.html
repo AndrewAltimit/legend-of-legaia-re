@@ -127,7 +127,7 @@
       <tr><td><code>0x801F6470</code></td><td><code>0x27C58</code></td><td>cue-group table</td><td>13 records &times; 5 bytes, indexed by group id (<a href="#cue-groups">details</a>)</td></tr>
     </tbody>
   </table>
-  <p>A <code>0x01..=0x63</code> byte spawns a record that is <strong>byte-identical to a summon part record</strong> (<code>i16 model_sel</code>, <code>u16 flags</code>, then move-VM bytecode) through the same stager and <a href="../subsystems/move-vm.html">move VM</a> the summon renderer uses (<a href="#spawn-path">spawn path</a>). The join from effect back to triggering move is disc-derivable: <code>asset move-power --effect-index</code> emits it.</p>
+  <p>A <code>0x01..=0x63</code> byte spawns a record that is <strong>byte-identical to a summon part record</strong> (<code>i16 model_sel</code>, <code>u16 reserved</code>, then move-VM bytecode) through the same stager and <a href="../subsystems/move-vm.html">move VM</a> the summon renderer uses (<a href="#spawn-path">spawn path</a>). The join from effect back to triggering move is disc-derivable: <code>asset move-power --effect-index</code> emits it.</p>
 </section>
 
 <section class="doc-section" id="runtime-resolution">

@@ -352,7 +352,7 @@ Strict gate validates **both** the prescript and the inner asset table:
 
 The two-level gate is what makes this detector zero-false-positive: the prescript shape alone occasionally matches arbitrary `[count][offsets]`-shaped data, but the asset-table check at the next sector boundary is a strong second signal.
 
-The prescript is a **per-scene move-VM stager table** (summon-stager record format), **not** field-VM (`FUN_801DE840`) bytecode - see the [scene_event_scripts](#scene_event_scripts---prescript-only) section for the full chain. Each record is `[i16 model_sel][u16 flags][move-VM bytecode]` (the `0xFFFF 0x0000` lead = `model_sel = -1` transform node); installed by the field VM via `FUN_800252EC` and run by the move VM `FUN_80023070`. The genuine per-scene field-VM scripts live in the scene MAN sub-asset.
+The prescript is a **per-scene move-VM stager table** (summon-stager record format), **not** field-VM (`FUN_801DE840`) bytecode - see the [scene_event_scripts](#scene_event_scripts---prescript-only) section for the full chain. Each record is `[i16 model_sel][u16 reserved][move-VM bytecode]` (the `0xFFFF 0x0000` lead = `model_sel = -1` transform node); installed by the field VM via `FUN_800252EC` and run by the move VM `FUN_80023070`. The genuine per-scene field-VM scripts live in the scene MAN sub-asset.
 
 ## tmd_size_prefix - truncated TMD-prefix
 
@@ -433,10 +433,10 @@ Record 0 on towns is a fixed 768-byte run of 8-byte spawn rows - the scene's
 master ambient stager (see the consumer census below).
 The records still encode per-scene structure (actor/NPC placement, event triggers,
 interaction hooks). The records are **move-VM (`FUN_80023070`) records in the
-summon-stager format** - `[i16 model_sel][u16 flags][move-VM bytecode]`,
+summon-stager format** - `[i16 model_sel][u16 reserved][move-VM bytecode]`,
 byte-identical in shape to the per-summon stagers (`legaia_asset::summon_overlay`):
 the `0xFFFF 0x0000` lead is `model_sel = -1` (a transform/pivot node, the dominant
-kind) + `flags = 0`, and the `0x0008` terminator is move-VM opcode `0x08` (Halt).
+kind) + the zero `reserved` halfword, and the `0x0008` terminator is move-VM opcode `0x08` (Halt).
 
 Runtime chain: the per-scene field VM (`FUN_801DE840`) installs a record by id via
 the installer **`FUN_800252EC`** (`record = bundle_base + offsets[id]`, bundle base

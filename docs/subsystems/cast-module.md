@@ -421,7 +421,7 @@ module-resident pointer** and `a3` is a scale literal (`0x1000` at every 958 and
 in each module's data band and nowhere else: `0x801F8EB8..0x801F9348` in 958 (13
 distinct records for 15 sites), `0x801F884C..0x801F95CC` in 959 (41 for 41),
 `0x801F8768..0x801F8E0C` in 960 (21 for 24). What they point at is the **summon
-part-record shape** the whole spawn stack shares - `[i16 model_sel][u16 flags]
+part-record shape** the whole spawn stack shares - `[i16 model_sel][u16 reserved]
 [move-VM bytecode]`, `model_sel = -1` on the pure-transform records, a real index
 on the modelled ones (960's `0x801F8CB8` carries `27`) - i.e. byte-for-byte the
 shape of the art path's own effect prototypes
@@ -688,6 +688,18 @@ repo:
   to a tick body (PROT 0915, 0935 - the two images whose Ghidra import landed
   last, which is why the runs read as un-dumped rather than as interiors).
   Not one is an un-dumped function of the image it is filed under.
+
+**The boundary is measured per image, so a module word below it is the
+module's.** PROT 0912's tick reads and writes three module-local words at
+`0x801F92A8` / `0x801F92AC` / `0x801F92B0`, inside the run
+`0x801F8D2C..0x801F99D8` that the worklist files as inherited from PROT 0899.
+There is no contradiction and nothing is mis-credited: the byte-identical run
+with PROT 0899 is exactly file `+0x2908..+0x3000` (slot-B
+`0x801F92E0..0x801F99D8`, 1784 bytes), which is where the run's `tail from`
+column already puts the boundary. The three words sit at file `+0x28D0` /
+`+0x28D4` / `+0x28D8`, `0x38` bytes **below** it, and that whole `0x38`-byte
+window is zero in PROT 0912 while PROT 0899 carries code there - the image's
+own zero scratch, already counted as its own data.
 
 ## What the port runs
 

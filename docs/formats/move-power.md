@@ -483,7 +483,7 @@ args intact (the Ghidra C decomp drops them; the disassembly preserves
 - and drives it through the move VM (`jal 0x80023070`, `80021dc0`).
 
 So each `0x801f6324` record is **byte-identical to a summon part record**
-(`+0x00 i16 model_sel`, `+0x02 u16 flags`, `+0x04` move-VM bytecode) and reuses
+(`+0x00 i16 model_sel`, `+0x02 u16 reserved`, `+0x04` move-VM bytecode) and reuses
 the same stager, move VM, and `DAT_8007C018` TMD-pool bridge - see
 [`legaia_asset::summon_overlay`](../../crates/asset/src/summon_overlay.rs).
 `move_power::parse_effect_proto_records` decodes the whole table to part records

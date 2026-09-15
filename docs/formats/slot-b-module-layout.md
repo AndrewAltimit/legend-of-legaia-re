@@ -117,8 +117,17 @@ the `flags` half of that name is not a measurement. Nothing reads `+0x02`:
 move VM starts the program at halfword index 2 (`actor[+0x70] = 2`, `sll v0,1`
 at `0x800230B8`), so `+0x02` is stepped over rather than fetched. It is zero in
 every band record and in every PROT 0898 effect-prototype record. Confidence on
-the halfword is therefore **Unknown**, and this page names it `reserved`; the
-other pages still carry the older `flags` label.
+the halfword is therefore **Unknown**, and it is named `reserved` wherever the
+docs quote this record shape. Both legs of that evidence - `FUN_80021B04`
+loading only `($a2)`, and the move VM starting at halfword index 2 - are
+properties of the *record shape*, not of the band, so the rename covers every
+carrier of it: the summon stagers, the cast band, the PROT 0898 effect
+prototypes, the per-scene prescript stagers and the battle-overlay burst
+records. The Rust structs that still expose the halfword as `flags`
+(`legaia_asset::summon_overlay::SummonPart`,
+`legaia_engine_core::summon::SummonPartRuntime`,
+`legaia_engine_core::world::ambient::AmbientPart`,
+`legaia_engine_vm::battle_burst::BurstRecord`) have not been renamed.
 
 ### The filters, and which of them retail exercises
 

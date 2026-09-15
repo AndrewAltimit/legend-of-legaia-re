@@ -198,7 +198,7 @@ is given). Walker `slot_b_module`; parser
 | Claim | Owner | What it is |
 |---|---|---|
 | head jump table | `toc` | the leading run of in-image VA words, bounded by the first frame-matched function |
-| spawn record `i` | `record` | `[i16 model_sel][u16 flags][move-VM bytecode]`, bounded by the next record pointer or by the next function's prologue |
+| spawn record `i` | `record` | `[i16 model_sel][u16 reserved][move-VM bytecode]`, bounded by the next record pointer or by the next function's prologue |
 | spawn record `i`, *chained* | `record` | a record **above** the highest pointer-credited one, its start taken from the record below it and its end from its own program |
 
 The first two rest on addresses the module's own code computes and hands to
