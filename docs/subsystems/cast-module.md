@@ -362,14 +362,34 @@ the whole row too, and none of them shares the never-kill clamp -
 
 | | PROT 0927 (Juggernaut) | PROT 0966 (Evil Seru Magic) |
 |---|---|---|
-| seats swept | `actor_table[3 ..]`, the enemy row | `actor_table[0 ..]`, the whole table |
-| bound | `ctx[+1]` (monster count) | `ctx[+0]` (actor count) |
+| seats swept | `actor_table[3 ..]`, the enemy row | `actor_table[0 ..]`, the party row |
+| bound | `ctx[+1]` (monster count) | `ctx[+0]` (**party** count) |
 | skips | `+0x14C == 0`, `+0x16E & 4` | the same two |
 | wrapper | `FUN_801DD0AC(0x12, 7, seat)` | `FUN_801DD4B0(0x100, ctx[+0x13], seat)` |
 | also writes | - | `+0x1DA = +0x1F1`, `+0x1DC += 1`, `+0x21D = 2` |
 
-So Cort's ESM hits the party *and* the monsters, stages each victim's own
-knockdown reaction, and drops every hit seat into slow motion.
+So Cort's ESM hits the whole **party**, stages each victim's own knockdown
+reaction, and drops every hit seat into slow motion. The two sweeps partition
+the eight-slot table rather than overlapping on it.
+
+#### `ctx[+0]` is the party count, not the actor count
+
+The two bytes bound disjoint halves of `actor_table`, and both readings are
+pinned by what their consumers index:
+
+- **`ctx[+1]` = monster count.** The two party-wipe sweeps read it as the loop
+  bound (`lbu a1,1(ctx)` at `0x8004B10C`, `lbu v0,1(ctx)` at `0x8005039C`) and
+  index `actor_table[(i + 3)]` (`addiu v0,v0,3; sll v0,v0,2` at `0x8004B12C` /
+  `0x800503B4`) - the enemy row.
+- **`ctx[+0]` = party count.** `0x8004B3F0` reads it as the bound of a loop
+  whose body indexes `DAT_8007BD10[i]`, the per-seat **1-based party character
+  id**, and turns it into a `0x414`-byte party-record address:
+  `v1 = DAT_8007BD10[i] - 1`, then the shift/add chain at
+  `0x8004B430..0x8004B444` multiplies by `0x414` and adds `0x80084140`, reading
+  `+0x6C0` off it. Only the party seats have such a record, so the bound cannot
+  be the eight-slot actor count.
+
+Engine mirror: `legaia_engine_vm::cast_module_ticks::CastModuleCtx::party_count`.
 
 ### The seat-0 hardcode, and where it does not hold
 

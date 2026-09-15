@@ -1673,7 +1673,16 @@ wipe and one plain-formation wipe on the `map01` overworld):
 
 1. The battle tears down through `FUN_80046A20`'s ordinary store
    (`0x80046E0C`): `game_mode = 2` (MAIN INIT), wipe or no wipe. The
-   selector also leaves the battle-return marker `_DAT_8007B8B8 = 2`.
+   selector also leaves the battle-return marker `_DAT_8007B8B8 = 2`
+   - but that store (`0x80046E28`) is **conditional on the marker already
+   being non-zero** (`lw` at `0x80046E14`, `beqz` at `0x80046E1C`), and it
+   renormalises the `1` the field left there on the way in
+   (`FUN_80016230`, `0x80016414`; see
+   [`field-locomotion.md`](field-locomotion.md#who-writes-the-word)).
+   On the `== 0` arm a second `game_mode` store overrides the first -
+   `0x18` at `0x80046E50` with the arena bit set, `0` at `0x80046E60`
+   otherwise - so a battle entered without a field departure exits to
+   the debug menu rather than to the field.
 2. MAIN INIT's scene-setup flow `FUN_8003AEB0` carries the game-over
    gate, in its `_DAT_8007B8B8 == 2` back-from-battle arm: when
    `DAT_8007BD60 & 0x80` is clear **and** story-flag index 0

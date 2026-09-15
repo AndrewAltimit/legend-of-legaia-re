@@ -21,7 +21,7 @@
 //! | `+0x1F1` | the victim's own knockdown-reaction id | [`CastActorState::knockdown_anim`] |
 //! | `+0x154` / `+0x156` | AGL working / base (the action gauge) | [`CastActorState::agl`] / [`CastActorState::agl_base`] |
 //! | `+0x21C` / `+0x21D` | render flag / animation-rate scalar | [`CastActorState::render_flag`] / [`CastActorState::anim_rate`] |
-//! | ctx `+0`, `+1` | actor count, monster count | [`CastModuleCtx::actor_count`] / [`CastModuleCtx::monster_count`] |
+//! | ctx `+0`, `+1` | party count, monster count | [`CastModuleCtx::party_count`] / [`CastModuleCtx::monster_count`] |
 //! | ctx `+0x13` | caster seat | [`CastModuleCtx::caster_seat`] |
 //! | ctx `+0x278` | module scratch byte | [`CastModuleCtx::ctx_278`] |
 //! | ctx `+0x279` | the module phase | [`CastModuleCtx::phase`] |
@@ -199,9 +199,15 @@ pub struct CastActorState {
 /// `*0x8007BD24`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CastModuleCtx {
-    /// `ctx+0` - actor count. The Evil Seru Magic loop's bound.
-    pub actor_count: u8,
-    /// `ctx+1` - monster count. The Juggernaut loop's bound.
+    /// `ctx+0` - the **party** count, not the actor count. `FUN_8004B3E8`
+    /// reads it as the bound of a loop over `DAT_8007BD10[i]` (the per-seat,
+    /// 1-based party character id) whose body indexes the `0x414`-byte party
+    /// records at `0x80084140 + 0x6C0 + 0x414*(id-1)` (`0x8004B420..0x8004B448`),
+    /// so only the party seats are in range. The Evil Seru Magic loop's bound.
+    pub party_count: u8,
+    /// `ctx+1` - monster count: the bound of the wipe sweeps at `0x8004B10C`
+    /// and `0x8005039C`, whose bodies index `actor_table[(i + 3)]`. The
+    /// Juggernaut loop's bound.
     pub monster_count: u8,
     /// `ctx+0x13` - the caster's seat, passed to every wrapper as `a1`.
     pub caster_seat: u8,
@@ -824,7 +830,7 @@ pub fn evil_seru_magic_stager(
     if arm >= 9 {
         return hits;
     }
-    for seat in 0..ctx.actor_count {
+    for seat in 0..ctx.party_count {
         let Some(victim) = seats.get_mut(seat as usize) else {
             break;
         };
@@ -1441,7 +1447,7 @@ pub fn element_change_tick(
             CastArmStep::Advance
         }
         1 => {
-            let count = usize::from(c.actor_count).min(seats.len());
+            let count = usize::from(c.party_count).min(seats.len());
             for seat in seats.iter_mut().take(count) {
                 seat.render_flag = ELEMENT_CHANGE_HIDE_RENDER_FLAG;
             }
@@ -2146,7 +2152,7 @@ pub fn chaos_breath_tick(
             CastArmStep::Advance
         }
         2 => {
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 let Some(v) = seats.get_mut(seat as usize) else {
                     continue;
                 };
@@ -2210,7 +2216,7 @@ pub fn mystic_circle_tick(
     let mut hits = Vec::new();
     let step = run_tick_latched(ctx, |c| {
         if damage_arm {
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 let Some(v) = seats.get_mut(seat as usize) else {
                     continue;
                 };
@@ -2403,7 +2409,7 @@ pub fn doomsday_tick(
     let mut hits = Vec::new();
     let step = run_tick_latched(ctx, |c| {
         if damage_arm {
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 let Some(v) = seats.get_mut(seat as usize) else {
                     continue;
                 };
@@ -3126,7 +3132,7 @@ mod tests {
     #[test]
     fn the_esm_sweep_covers_the_whole_table_and_leaves_everyone_alive() {
         let ctx = CastModuleCtx {
-            actor_count: 5,
+            party_count: 5,
             caster_seat: 3,
             ..Default::default()
         };

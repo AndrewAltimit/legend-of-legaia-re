@@ -152,7 +152,7 @@ pub const FLAG_WATER_HAZARD_STATUS: u16 = crate::cast_module_ticks::FLAG_VENOM;
 /// property of `ctx[+0]`, not of these bodies: both readings survive the two
 /// range loops PROT 0944's `0x37` arm 0 runs, because that arm's first loop is
 /// also gated on the per-seat byte `0x8007BD10[i]`. The port takes
-/// [`CastModuleCtx::actor_count`] as the band already defines it.
+/// [`CastModuleCtx::party_count`] as the band already defines it.
 pub const TARGET_CODE_LOW_ROW: u8 = 8;
 
 /// The clone's action category, queued action and target code - the three
@@ -402,7 +402,7 @@ pub fn arm_target_seats(
     if target_code == TARGET_CODE_LOW_ROW
         || (low_row_below_three && target_code < FIRST_MONSTER_SEAT)
     {
-        return (0..ctx.actor_count).collect();
+        return (0..ctx.party_count).collect();
     }
     if target_code < 7 {
         return vec![target_code];
@@ -854,7 +854,7 @@ pub fn steal_sweep_tick(
             // expires. The port does not model the countdown, so it applies
             // the arm's **exit** state - the hide is one frame of
             // presentation and leaving it latched would blank the field.
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 if let Some(s) = seats.get_mut(seat as usize) {
                     s.render_flag = 0;
                 }
@@ -863,7 +863,7 @@ pub fn steal_sweep_tick(
         }
         2 => {
             if sweep {
-                for seat in 0..c.actor_count {
+                for seat in 0..c.party_count {
                     let Some(s) = seats.get_mut(seat as usize) else {
                         continue;
                     };
@@ -989,7 +989,7 @@ pub fn curse_mp_drain_tick(
     let mut drained = Vec::new();
     let step = run_arm_tick(ctx, 5, |c| match c.phase {
         0 => {
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 if let Some(s) = seats.get_mut(seat as usize) {
                     s.render_flag = 0xFF;
                 }
@@ -997,7 +997,7 @@ pub fn curse_mp_drain_tick(
             CastArmStep::Advance
         }
         2 => {
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 if let Some(s) = seats.get_mut(seat as usize) {
                     s.render_flag = 0;
                 }
@@ -1287,7 +1287,7 @@ pub fn rolling_flare_sweep_tick(
         1 => {
             // As in PROT 0941's sweep: the arm's countdown brackets a hide
             // and a show, and the port applies the exit state.
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 if let Some(s) = seats.get_mut(seat as usize) {
                     s.render_flag = 0;
                 }
@@ -1306,7 +1306,7 @@ pub fn rolling_flare_sweep_tick(
             caster.anim_rate = 2;
             caster.staged_anim = 0;
             if sweep {
-                for seat in 0..c.actor_count {
+                for seat in 0..c.party_count {
                     let Some(s) = seats.get_mut(seat as usize) else {
                         continue;
                     };
@@ -1320,7 +1320,7 @@ pub fn rolling_flare_sweep_tick(
             CastArmStep::Advance
         }
         13 => {
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 if let Some(s) = seats.get_mut(seat as usize) {
                     s.anim_rate = ANIM_RATE_NORMAL;
                 }
@@ -1625,7 +1625,7 @@ mod tests {
 
     fn ctx_with(phase: u8, actors: u8, monsters: u8) -> CastModuleCtx {
         CastModuleCtx {
-            actor_count: actors,
+            party_count: actors,
             monster_count: monsters,
             caster_seat: 3,
             phase,

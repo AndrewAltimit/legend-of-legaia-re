@@ -841,7 +841,7 @@ pub fn orb_tick(
                 s.render_flag = 0xFF;
             }
             let mask = cleanse.and_then(orb_cleanse_mask);
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 let cap = max_hp(seat);
                 let Some(v) = seats.get_mut(seat as usize) else {
                     continue;
@@ -1115,7 +1115,7 @@ pub fn nova_tick(
                     applied,
                 });
             }
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 if let Some(s) = seats.get_mut(seat as usize) {
                     s.render_flag = 0;
                 }
@@ -1172,7 +1172,7 @@ mod tests {
 
     fn ctx_at(phase: u8) -> CastModuleCtx {
         CastModuleCtx {
-            actor_count: 8,
+            party_count: 8,
             monster_count: 4,
             caster_seat: 0,
             phase,

@@ -981,7 +981,7 @@ impl World {
         use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
         let table = self.actors.len().min(BATTLE_TABLE_SLOTS);
         vm::cast_module_ticks::CastModuleCtx {
-            actor_count: table as u8,
+            party_count: table as u8,
             monster_count: (FIRST_MONSTER_SEAT as usize..table)
                 .filter(|&s| self.actors[s].active)
                 .count() as u8,
@@ -1767,7 +1767,7 @@ impl World {
         // so a dead or non-targetable seat draws nothing and the shared RNG
         // cursor must not advance for it either.
         let order: Vec<u8> = if entry == 966 {
-            (0..ctx.actor_count).collect()
+            (0..ctx.party_count).collect()
         } else {
             (0..ctx.monster_count)
                 .map(|i| ticks::FIRST_MONSTER_SEAT.saturating_add(i))
@@ -1909,7 +1909,7 @@ impl World {
         }
         let shape = ticks::sweep_damage_shape_for(body);
         let mut out = Vec::new();
-        for seat in 0..ctx.actor_count {
+        for seat in 0..ctx.party_count {
             let Some(s) = seats.get(seat as usize) else {
                 continue;
             };
@@ -1993,7 +1993,7 @@ impl World {
         let Some(shape) = vm::cast_arm_ticks::arm_damage_shape_for(entry, body) else {
             return Vec::new();
         };
-        let seats: Vec<vm::cast_module_ticks::CastActorState> = (0..ctx.actor_count)
+        let seats: Vec<vm::cast_module_ticks::CastActorState> = (0..ctx.party_count)
             .map(|s| self.cast_actor_state(s))
             .collect();
         let mut out = Vec::new();

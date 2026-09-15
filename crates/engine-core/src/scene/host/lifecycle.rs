@@ -103,9 +103,13 @@ impl SceneHost {
         self.release_sustained_sfx();
         // Scene-to-scene teardown sweep over the actor pool. Retail's field
         // initialiser `FUN_801D6704` runs `FUN_801D7518` once per actor list
-        // on a **warp** entry (`_DAT_8007B8B8 == 2`) and not on a cold one;
-        // "a scene is already loaded" is exactly that condition, so a cold
-        // boot skips it and every door / scene change takes it.
+        // on a **warp** entry (`_DAT_8007B8B8 == 2`) and not on a cold one -
+        // and retail's warp entry is a return from battle / a minigame / an
+        // FMV, NOT a door change (`docs/subsystems/field-locomotion.md`).
+        // "a scene is already loaded" is therefore a wider condition than
+        // retail's: it also covers the door changes retail takes the
+        // fresh-actor arm on. The engine has no surviving-actor pool across a
+        // scene load, so the sweep is the engine's teardown either way.
         // PORT: FUN_801D7518 (live wiring; kernel = `field_actor_kernels::sweep_actor`)
         if self.scene.is_some() {
             self.world.scene_transition_actor_sweep();
