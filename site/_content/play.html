@@ -1040,13 +1040,29 @@
            * returns to the title card. */
           handoff = '';
           frame._clock = 0;
+          frame._titleClock = 0;
           try { runtime.boot_title_start(); } catch (e) { return finish('new_game'); }
           statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
         }
         return;
       }
+      /* The title session counts retail frames - the attract countdown is
+       * 0x5DC of them, 25 s at 60 Hz - so it gets the same fixed-step
+       * catch-up as the menu branch above rather than one step per
+       * animation frame: a throttled or slow tab used to stretch the
+       * countdown to minutes and the attract movie never came. The pad
+       * edge lands on the first tick of the frame only. */
       let outcome = '';
-      try { outcome = runtime.boot_title_step(edge); } catch (e) { return finish('new_game'); }
+      {
+        let ticks = 1;
+        const now = performance.now();
+        if (!frame._titleClock) frame._titleClock = now;
+        ticks = Math.max(1, Math.min(30, Math.floor((now - frame._titleClock) / 16.667)));
+        frame._titleClock += ticks * 16.667;
+        try {
+          for (let i = 0; i < ticks && !outcome; i++) outcome = runtime.boot_title_step(i === 0 ? edge : 0);
+        } catch (e) { return finish('new_game'); }
+      }
       /* Draw the card: black backdrop, title bands, then any text stand-in. */
       let draws;
       try { draws = JSON.parse(runtime.boot_title_draws_json(menuCanvas.width, menuCanvas.height)); }
@@ -1063,6 +1079,7 @@
       if (outcome === 'continue' || outcome === 'options') {
         handoff = outcome;
         frame._clock = 0;
+        frame._titleClock = 0;
         statusEl.textContent = outcome === 'continue'
           ? 'Pick a memory-card port, then a save block. Z confirms, X backs out.'
           : 'Options. Up/Down picks a row, Z opens it, X returns to the title.';
