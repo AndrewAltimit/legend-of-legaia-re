@@ -496,7 +496,7 @@ impl World {
     /// Stage the cast module's **spawn records** at `origin` - the engine's
     /// answer to the dispatchers, and the half of a cast that is data.
     ///
-    /// Each record is `[i16 model_sel][u16 flags][move-VM bytecode]`, the shape
+    /// Each record is `[i16 model_sel][u16 reserved][move-VM bytecode]`, the shape
     /// the whole spawn stack shares, so the records run through the same
     /// [`crate::summon::SummonScene`] the summon and move-FX paths already use
     /// and both hosts draw and tick them with no host change

@@ -94,8 +94,8 @@ pub struct AmbientPart {
     /// `record[+0]` mesh selector (`-1` transform node, `0x4000`/`0x4001`
     /// render-mode nodes, `>= 0` library mesh).
     pub model_sel: i16,
-    /// `record[+2]` flags word.
-    pub flags: u16,
+    /// `record[+2]`, the reserved halfword.
+    pub reserved: u16,
     /// Snapshot of the record's u16 words (header + bytecode), taken from
     /// the live bundle at spawn time and kept in sync with flushed
     /// bytecode writes.
@@ -208,7 +208,7 @@ impl World {
         self.ambient.fx.push(AmbientPart {
             record_off,
             model_sel: rec.model_sel,
-            flags: rec.flags,
+            reserved: rec.reserved,
             buf,
             state,
             finished: false,

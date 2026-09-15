@@ -9,7 +9,7 @@
 //! +0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
 //!                                          ; monotonically non-decreasing,
 //!                                          ; all <= file size
-//! +offsets[i]        stager record         ; [i16 model_sel][u16 flags][move-VM
+//! +offsets[i]        stager record         ; [i16 model_sel][u16 reserved][move-VM
 //!                                          ; bytecode]; the bulk lead with
 //!                                          ; `model_sel = -1` (= the old
 //!                                          ; "0xFFFF 0x0000" lead, a transform
@@ -307,7 +307,7 @@ pub fn record_words(record: &[u8]) -> Option<Vec<u16>> {
 /// Parse the prescript records as **summon-stager-format move-VM records**.
 ///
 /// Each `[u16 count][u16 offsets]`-indexed record is
-/// `[i16 model_sel][u16 flags][move-VM bytecode]` - the same shape the per-summon
+/// `[i16 model_sel][u16 reserved][move-VM bytecode]` - the same shape the per-summon
 /// stagers use ([`crate::summon_overlay::SummonPart`]). At runtime the field VM
 /// (`FUN_801DE840`) installs a record by id via `FUN_800252EC`
 /// (`record = bundle_base + offsets[id]`) → the part-stager `FUN_80021B04`
@@ -326,11 +326,11 @@ pub fn move_stager_records(buf: &[u8]) -> Option<Vec<SummonPart>> {
             continue;
         }
         let model_sel = i16::from_le_bytes(buf[start..start + 2].try_into().ok()?);
-        let flags = u16::from_le_bytes(buf[start + 2..start + 4].try_into().ok()?);
+        let reserved = u16::from_le_bytes(buf[start + 2..start + 4].try_into().ok()?);
         out.push(SummonPart {
             record_off: start,
             model_sel,
-            flags,
+            reserved,
             bytecode: (start + 4)..end,
         });
     }

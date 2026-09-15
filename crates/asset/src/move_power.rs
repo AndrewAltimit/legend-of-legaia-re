@@ -229,7 +229,7 @@ pub const MOVE_ID_INDEX_NONE: u8 = 0xFF;
 /// effect-id lists index. Each `u32` entry is the spawn parameter `FUN_801e09f8`
 /// passes to the effect spawner `FUN_80050ed4` (→ the part-stager `FUN_80021B04`)
 /// - and it is a **pointer into this same overlay's data** at a move-VM part
-///   record `[i16 model_sel][u16 flags][bytecode]` (the summon part-record format).
+///   record `[i16 model_sel][u16 reserved][bytecode]` (the summon part-record format).
 ///   So the table is the move-FX **part-record index**: every entry resolves to a
 ///   scene-graph head the move VM then animates. Resolve entries with
 ///   [`EffectAuxTables::proto_record_offset`] / [`parse_effect_proto_records`].
@@ -864,7 +864,7 @@ impl EffectAuxTables {
     /// move-FX part-record **file offset** within PROT 0898, or `None` when the
     /// index is outside the table or the pointer does not land in this overlay.
     /// The record there is the summon part-record format
-    /// (`[i16 model_sel][u16 flags][move-VM bytecode]`).
+    /// (`[i16 model_sel][u16 reserved][move-VM bytecode]`).
     pub fn proto_record_offset(&self, index: u8) -> Option<usize> {
         let va = self.effect_proto(index)?;
         va.checked_sub(BATTLE_OVERLAY_BASE).map(|o| o as usize)
@@ -875,7 +875,7 @@ impl EffectAuxTables {
 /// straight out of the raw PROT 0898 (battle-action overlay) entry.
 ///
 /// Each of the table's [`EFFECT_AUX_TABLE_LEN`] entries is a pointer into this
-/// overlay's own data at a `[i16 model_sel][u16 flags][move-VM bytecode]` record
+/// overlay's own data at a `[i16 model_sel][u16 reserved][move-VM bytecode]` record
 /// - the same scene-graph part format the summon stagers use
 ///   ([`crate::summon_overlay`]). Entries can alias (several effect ids reuse one
 ///   record), so the returned parts are the **unique** records, sorted by offset,

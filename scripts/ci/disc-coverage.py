@@ -1101,7 +1101,7 @@ GAP_SHAPE_TEXT = {
                       "statistical test scores such a region as code, and a "
                       "function body is not half `nop`",
     "spawn_record_band": "one of the slot-B module band's spawn records - "
-                         "`[i16 model_sel][u16 flags][move-VM bytecode]`, both "
+                         "`[i16 model_sel][u16 reserved][move-VM bytecode]`, both "
                          "of whose ends the module's own code computes and "
                          "hands to `FUN_80021B04` / `FUN_80050ED4` in `$a2`. "
                          "Named by a parser (`legaia_asset::slot_b_module`), "

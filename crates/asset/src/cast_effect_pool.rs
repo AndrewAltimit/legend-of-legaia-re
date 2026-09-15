@@ -26,7 +26,7 @@
 //! half: the spawn records those `jal` sites pass as `a2`.
 //!
 //! The records are byte-for-byte the shape the whole spawn stack shares -
-//! `[i16 model_sel][u16 flags][move-VM bytecode]` - so recovering them needs no
+//! `[i16 model_sel][u16 reserved][move-VM bytecode]` - so recovering them needs no
 //! new reader: [`crate::summon_overlay::parse`] already scans both spawn-call
 //! forms and follows `a2`. This module is the band's *index* over that parser,
 //! not a second copy of it.

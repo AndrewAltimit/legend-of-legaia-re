@@ -89,7 +89,7 @@ fn row_values(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u1
 fn mode4_seat_rotates_a_vram_rect_through_step_ambient_fx() {
     use legaia_asset::summon_overlay::SummonPart;
 
-    // [i16 model_sel = -1][u16 flags] then: 0x1E period dx dy x y w h,
+    // [i16 model_sel = -1][u16 reserved] then: 0x1E period dx dy x y w h,
     // 0x1A 0x4000 (infinite loop latch), 0x09 wait, 0x1B (jump back).
     let words: [u16; 16] = [
         0xFFFF, 0x0000, // transform node, no flags
@@ -110,7 +110,7 @@ fn mode4_seat_rotates_a_vram_rect_through_step_ambient_fx() {
     world.props.stagers = vec![SummonPart {
         record_off: 0,
         model_sel: -1,
-        flags: 0,
+        reserved: 0,
         bytecode: 4..bytes.len(),
     }];
     assert!(world.spawn_ambient_record(0, [0, 0, 0]));

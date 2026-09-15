@@ -86,10 +86,10 @@ pub(crate) fn summon_overlay_cmd(input: &Path, base: u32, trim: Option<u32>) -> 
             SummonPartKind::Sentinel => format!("sentinel {:#06x}", p.model_sel as u16),
         };
         println!(
-            "  part {i:2}: rec @ file {:#06x} (rt {:#010x})  {kind}  flags {:#06x}  bytecode {:#x}..{:#x} ({} bytes)",
+            "  part {i:2}: rec @ file {:#06x} (rt {:#010x})  {kind}  reserved {:#06x}  bytecode {:#x}..{:#x} ({} bytes)",
             p.record_off,
             base.wrapping_add(p.record_off as u32),
-            p.flags,
+            p.reserved,
             p.bytecode.start,
             p.bytecode.end,
             p.bytecode.len(),
