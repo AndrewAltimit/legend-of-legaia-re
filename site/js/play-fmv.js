@@ -14,12 +14,17 @@
  *   1. `play_fmv_wanted_json()` non-null -> slice `window.__playDiscBytes` at
  *      `first_sector * 2352` for `sector_count` raw sectors and hand them to
  *      `play_fmv_install(sectors)`.
- *   2. `play_fmv_active()` -> take the PCM once (`play_fmv_audio_pcm_i16`),
- *      play it through an AudioContext, and draw `play_fmv_frame_rgba(idx)`
- *      onto an overlay canvas over the GL view. The frame index is clocked
- *      off `audioCtx.currentTime` - the native window's `due_video_frame`
- *      rule (the picture follows the soundtrack, never a free-running timer);
- *      a silent movie / suspended context falls back to the wall clock.
+ *   2. `play_fmv_active()` -> `play_fmv_audio_start()` puts the XA track on
+ *      the ENGINE mixer's XA lane (the native window's `play_xa`), so the
+ *      movie sits behind the same master trim and volume slider as BGM and
+ *      SFX - a second, untrimmed AudioContext is what made movies shout
+ *      over the rest of the game. Draw `play_fmv_frame_rgba(idx)` onto an
+ *      overlay canvas over the GL view, clocking the frame index off
+ *      `play_fmv_audio_cursor_secs()` - the native `due_video_frame` rule
+ *      (the picture follows the soundtrack, never a free-running timer). A
+ *      page with no engine audio up falls back to `play_fmv_audio_pcm_i16`
+ *      through its own context, trimmed by `LEGAIA_MASTER_TRIM`; a silent
+ *      movie or a cursor that never moves falls back to the wall clock.
  *   3. When the clock passes the last frame, `play_fmv_finish()`. The engine
  *      releases the world on its next tick / title step and runs the
  *      post-movie hand-off; the overlay tears down when `play_fmv_active()`
@@ -49,9 +54,10 @@
     ctx: null,
     frameCanvas: null, /* w x h scratch the RGBA frame lands on */
     frameCtx: null,
-    audioCtx: null,
+    audioCtx: null,    /* the FALLBACK context (no engine audio) */
     source: null,
-    audioStart: null,  /* audioCtx.currentTime when the PCM began, or null */
+    audioStart: null,  /* audioCtx.currentTime when fallback PCM began, or null */
+    engineAudio: false,/* the track is on the engine mixer; clock off its cursor */
     wallStart: 0,
     fps: 15,
     frameCount: 0,
@@ -107,8 +113,19 @@
     if (!ok) console.warn('fmv: engine rejected the movie', wanted.path);
   }
 
+  /* Wall-clock seconds the engine's XA cursor may sit at zero before the
+   * picture stops waiting for it (a suspended context never advances it). */
+  const CURSOR_STALL_SECS = 1.0;
+
   function startAudio(rt) {
     st.audioStart = null;
+    st.engineAudio = false;
+    if (typeof rt.play_fmv_audio_start === 'function') {
+      try { st.engineAudio = !!rt.play_fmv_audio_start(); } catch (e) { st.engineAudio = false; }
+      if (st.engineAudio) return;
+    }
+    /* Fallback: no engine audio to stage on (or a cached bundle without the
+     * export). Play the PCM here, behind the site's trim. */
     let pcm = null;
     try { pcm = rt.play_fmv_audio_pcm_i16(); } catch (e) { pcm = null; }
     const rate = rt.play_fmv_audio_rate();
@@ -130,7 +147,10 @@
       }
       const src = ctx.createBufferSource();
       src.buffer = buf;
-      src.connect(ctx.destination);
+      const trim = ctx.createGain();
+      trim.gain.value = (typeof window.LEGAIA_MASTER_TRIM === 'number') ? window.LEGAIA_MASTER_TRIM : 0.25;
+      src.connect(trim);
+      trim.connect(ctx.destination);
       src.start();
       st.source = src;
       st.audioStart = ctx.currentTime;
@@ -167,13 +187,23 @@
     draw(rt, 0);
   }
 
-  /* Audio-cursor clock while the context is running, wall clock otherwise
+  /* Audio-cursor clock while a track is playing, wall clock otherwise
    * (the native `due_video_frame(audio_secs, wall_elapsed, period)` rule). */
-  function clock() {
+  function clock(rt) {
+    const wall = performance.now() / 1000 - st.wallStart;
+    if (st.engineAudio) {
+      let secs = -1;
+      try { secs = rt.play_fmv_audio_cursor_secs(); } catch (e) { secs = -1; }
+      if (secs > 0) return secs;
+      /* The mixer has not consumed a sample yet: hold frame 0 briefly for
+       * the callback to come round, then stop waiting on it. */
+      if (secs === 0 && wall < CURSOR_STALL_SECS) return 0;
+      return wall;
+    }
     if (st.audioStart !== null && st.audioCtx && st.audioCtx.state === 'running') {
       return st.audioCtx.currentTime - st.audioStart;
     }
-    return performance.now() / 1000 - st.wallStart;
+    return wall;
   }
 
   function draw(rt, idx) {
@@ -192,6 +222,7 @@
   function teardown() {
     if (st.source) { try { st.source.stop(); } catch (e) {} st.source = null; }
     st.audioStart = null;
+    st.engineAudio = false;   /* the engine takes its own track off on finish */
     if (st.canvas) st.canvas.style.display = 'none';
     st.active = false;
     st.finished = false;
@@ -221,7 +252,7 @@
       return false;
     }
     if (!st.active) start(rt, host || st.host || document.body);
-    const idx = Math.floor(clock() * st.fps);
+    const idx = Math.floor(clock(rt) * st.fps);
     if (idx >= st.frameCount) {
       draw(rt, st.frameCount - 1);
       if (!st.finished) {
@@ -237,6 +268,8 @@
   window.LegaiaPlayFmv = {
     service: service,
     active: function () { return st.active; },
+    /* Which audio path the open movie took ('engine' / 'page' / 'none'). */
+    audioPath: function () { return !st.active ? 'none' : st.engineAudio ? 'engine' : (st.audioStart !== null ? 'page' : 'none'); },
     teardown: teardown,
   };
 }());

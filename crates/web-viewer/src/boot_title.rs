@@ -239,6 +239,7 @@ impl LegaiaRuntime {
             match self.fmv.poll() {
                 crate::play_fmv::FmvPoll::Hold => return String::new(),
                 crate::play_fmv::FmvPoll::Finished { played } => {
+                    self.fmv_audio_stop();
                     if let Some(session) = self.boot_title.as_mut() {
                         session.finish_attract();
                     }

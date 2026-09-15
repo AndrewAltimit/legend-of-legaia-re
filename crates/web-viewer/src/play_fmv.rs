@@ -22,10 +22,17 @@
 //!    the interleaved XA track to PCM - the media page's own `audio.rs`
 //!    kernels, so the play page and the media page share one STR reader.
 //! 3. **Play + finish.** The page draws [`LegaiaRuntime::play_fmv_frame_rgba`]
-//!    onto an overlay canvas, plays the PCM through WebAudio, clocks the
-//!    frame index off the audio cursor (the native `due_video_frame` rule)
-//!    and calls [`LegaiaRuntime::play_fmv_finish`] when the last frame has
-//!    shown. While a movie is open the world is **held**: the field VM stays
+//!    onto an overlay canvas, asks [`LegaiaRuntime::play_fmv_audio_start`]
+//!    to put the XA track on the engine mixer's XA lane - the native
+//!    window's `play_xa(track, 0x4000)`, so the movie sits behind the same
+//!    [`legaia_engine_audio::webaudio::WEB_MASTER_TRIM`] and volume slider
+//!    as BGM and SFX instead of a second, untrimmed `AudioContext` - clocks
+//!    the frame index off [`LegaiaRuntime::play_fmv_audio_cursor_secs`]
+//!    (the native `due_video_frame` rule: the picture follows the
+//!    soundtrack) and calls [`LegaiaRuntime::play_fmv_finish`] when the last
+//!    frame has shown. A page with no engine audio up falls back to
+//!    [`LegaiaRuntime::play_fmv_audio_pcm_i16`] and its own context, carrying
+//!    the site's trim itself. While a movie is open the world is **held**: the field VM stays
 //!    suspended under `SceneMode::Cutscene` and nothing finishes the cutscene
 //!    until the page says so. Then the existing post-movie hand-off
 //!    (`SceneHost::apply_pending_fmv_handoff`) runs exactly as before.
@@ -120,10 +127,14 @@ pub(crate) struct WantedFmv {
 pub(crate) struct OpenFmv {
     video: StrVideo,
     audio: Option<DecodedXa>,
-    /// The PCM is handed to the page exactly once; the descriptor
-    /// (rate / channels) stays readable.
+    /// The PCM is handed over exactly once - to the engine mixer
+    /// (`play_fmv_audio_start`) or to the page (`play_fmv_audio_pcm_i16`);
+    /// the descriptor (rate / channels) stays readable.
     audio_handed: bool,
 }
+
+/// Unity XA gain (Q1.14), what the native movie players pass.
+const FMV_XA_GAIN_UNITY: u16 = 0x4000;
 
 /// One armed movie, from arming to finish.
 pub(crate) struct FmvSlot {
@@ -154,6 +165,9 @@ pub(crate) struct FmvState {
     table: Option<FmvTable>,
     table_resolved: bool,
     slot: Option<FmvSlot>,
+    /// The open movie's track is on the engine mixer's XA lane, so the
+    /// finish (or skip) has to take it off again.
+    mixer_audio: bool,
 }
 
 impl FmvState {
@@ -386,6 +400,57 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Put the open movie's XA track on the engine mixer - the native
+    /// window's `out.play_xa(track, 0x4000)` - so it rides the page's
+    /// volume slider and the web master trim like every other sound. Hands
+    /// the PCM over once; `false` when there is nothing to stage or no engine
+    /// audio to stage it on (the page then falls back to its own context).
+    fn fmv_audio_stage(&mut self) -> bool {
+        let Some(open) = self.fmv.slot.as_mut().and_then(|s| s.open.as_mut()) else {
+            return false;
+        };
+        if open.audio_handed {
+            return false;
+        }
+        let Some(audio) = open.audio.as_ref() else {
+            return false;
+        };
+        #[cfg(target_arch = "wasm32")]
+        if let Some(out) = self.audio_out.as_ref() {
+            let channels = if audio.stereo {
+                legaia_xa::Channels::Stereo
+            } else {
+                legaia_xa::Channels::Mono
+            };
+            out.play_xa(
+                audio.pcm.clone(),
+                audio.sample_rate,
+                channels,
+                false,
+                FMV_XA_GAIN_UNITY,
+            );
+            open.audio_handed = true;
+            self.fmv.mixer_audio = true;
+            return true;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = (audio, FMV_XA_GAIN_UNITY);
+        false
+    }
+
+    /// Take a staged movie track off the mixer once the beat is over, so a
+    /// skipped movie does not keep talking under the scene it hands off to.
+    pub(crate) fn fmv_audio_stop(&mut self) {
+        if !self.fmv.mixer_audio {
+            return;
+        }
+        self.fmv.mixer_audio = false;
+        #[cfg(target_arch = "wasm32")]
+        if let Some(out) = self.audio_out.as_ref() {
+            out.stop_xa();
+        }
+    }
+
     /// Service an armed FMV beat once per [`LegaiaRuntime::tick_frame`].
     ///
     /// While `SceneMode::Cutscene` carries an `active_fmv`, arm the movie
@@ -424,9 +489,11 @@ impl LegaiaRuntime {
         if skip_edge_from_input(fmv_id, &host.world.input) {
             self.fmv.request_finish();
         }
+        let mut finished = false;
         match self.fmv.poll() {
             FmvPoll::Hold => {}
             FmvPoll::Finished { played } => {
+                finished = true;
                 host.world.finish_cutscene();
                 if !played {
                     crate::console_log(&format!("cutscene: fmv_id={fmv_id} finished unplayed"));
@@ -447,6 +514,9 @@ impl LegaiaRuntime {
                     crate::console_log(&format!("cutscene: {outcome}"));
                 }
             }
+        }
+        if finished {
+            self.fmv_audio_stop();
         }
         fmv_handoff_scene
     }
@@ -533,6 +603,30 @@ impl LegaiaRuntime {
             .as_ref()
             .map(|a| a.pcm.clone())
             .unwrap_or_default()
+    }
+
+    /// Start the open movie's audio on the engine mixer's XA lane (behind
+    /// the master trim and the volume slider, as the native window plays
+    /// it). `true` once the track is running there - clock the picture off
+    /// [`Self::play_fmv_audio_cursor_secs`]; `false` when the movie is
+    /// silent, the track was already handed over, or no engine audio is up,
+    /// in which case [`Self::play_fmv_audio_pcm_i16`] still offers the PCM.
+    pub fn play_fmv_audio_start(&mut self) -> bool {
+        self.fmv_audio_stage()
+    }
+
+    /// Seconds of the staged track the mixer has played - the device-paced
+    /// clock the frame index follows - or `-1` when no movie track is on
+    /// the mixer.
+    pub fn play_fmv_audio_cursor_secs(&self) -> f64 {
+        if !self.fmv.mixer_audio {
+            return -1.0;
+        }
+        #[cfg(target_arch = "wasm32")]
+        if let Some(secs) = self.audio_out.as_ref().and_then(|o| o.xa_cursor_secs()) {
+            return secs;
+        }
+        -1.0
     }
 
     /// Sample rate of the movie's audio track (0 when none).
@@ -722,6 +816,10 @@ mod tests {
                 Some(1)
             );
         }
+        // Off wasm there is no mixer to stage on: the engine declines and
+        // leaves the one-shot PCM hand-off for the page's own context.
+        assert!(!rt.play_fmv_audio_start());
+        assert_eq!(rt.play_fmv_audio_cursor_secs(), -1.0);
         // One-shot PCM hand-off.
         assert_eq!(rt.play_fmv_audio_pcm_i16(), vec![1, -1, 2, -2]);
         assert!(rt.play_fmv_audio_pcm_i16().is_empty());

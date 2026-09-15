@@ -35,7 +35,12 @@
 //!
 //! - [`TitlePhase::FadeIn`] / [`TitlePhase::PressStart`] are the port's
 //!   staging. Retail's own entry is `Init` -> `0x11` `AttractDelay` ->
-//!   `0x10` `AttractIdle`: the sub-mode **word** is `0x801F0204`
+//!   `0x10` `AttractIdle`, and the attract countdown runs from the moment
+//!   `AttractIdle` is up - so the port's prompt runs the same countdown by
+//!   the same rules (freeze band, any-bit re-arm, fire on underflow) and
+//!   a player who never presses Start still gets the movie. The movie
+//!   returns to whichever of the two the countdown fired from.
+//!   The sub-mode **word** is `0x801F0204`
 //!   (`0x801DD920` / `0x801DD97C` are the *instruction* addresses of the
 //!   two stores), and the `0x02` arm is unreachable on retail because
 //!   `init.pak` raises the entry word `_DAT_8007BB00` at `0x801CEB84`
@@ -151,6 +156,9 @@ pub struct TitleSession {
     /// each host for itself; both shipped hosts set it. See the module
     /// docs for why it is not on by default.
     pub attract_enabled: bool,
+    /// The attract fired from the port's Press Start prompt rather than
+    /// from the menu, so [`Self::finish_attract`] returns there.
+    attract_from_prompt: bool,
     /// Retail's own front-end tick state, stepped alongside the session so
     /// the host can ask which sub-mode of `FUN_801DD35C` the title is in.
     ///
@@ -173,6 +181,7 @@ impl TitleSession {
             continue_enabled: true,
             menu: legaia_engine_vm::title_overlay::TitleMenuState::new(),
             attract_enabled: false,
+            attract_from_prompt: false,
             tick: Self::cold_boot_tick(),
         }
     }
@@ -264,13 +273,39 @@ impl TitleSession {
                 }
             }
             TitlePhase::PressStart { blink_phase } => {
+                use legaia_engine_vm::title_overlay::{
+                    ATTRACT_FMV_ID, ATTRACT_INPUT_FREEZE_BELOW, COUNTDOWN_RESET_VALUE,
+                };
                 self.phase = TitlePhase::PressStart {
                     blink_phase: (blink_phase + 1) % self.blink_period,
                 };
-                if input.start || input.cross {
+                // Retail has no prompt phase - `AttractIdle`'s countdown
+                // runs from the moment the title is up - so the prompt
+                // spends the same countdown by the same rules as
+                // `TitleMenuState::step`: no input inside the freeze band,
+                // any held bit re-arms, one frame per tick, fire on
+                // underflow.
+                let (_, held) = Self::pad_words(input);
+                let frozen = self.menu.countdown < ATTRACT_INPUT_FREEZE_BELOW;
+                if !frozen && (input.start || input.cross) {
                     let cursor = if self.continue_enabled { 1 } else { 0 };
                     self.phase = TitlePhase::MainMenu { cursor };
                     events.push(TitleEvent::StartPressed);
+                }
+                if held != 0 {
+                    self.menu.countdown = COUNTDOWN_RESET_VALUE as i32;
+                }
+                self.menu.countdown -= 1;
+                if self.menu.countdown < 0 {
+                    if self.attract_enabled {
+                        events.push(TitleEvent::AttractTimeout);
+                        self.attract_from_prompt = true;
+                        self.phase = TitlePhase::Attract {
+                            fmv_id: ATTRACT_FMV_ID,
+                            playing: false,
+                        };
+                    }
+                    self.menu.countdown = COUNTDOWN_RESET_VALUE as i32;
                 }
             }
             TitlePhase::MainMenu { cursor } => {
@@ -331,6 +366,7 @@ impl TitleSession {
                         Vm::AttractFired => {
                             if self.attract_enabled {
                                 events.push(TitleEvent::AttractTimeout);
+                                self.attract_from_prompt = false;
                                 // Retail's arm hands the screen to the
                                 // opening movie: `_DAT_8007BA78 = 0` then
                                 // master game mode `0x1A`.
@@ -390,11 +426,13 @@ impl TitleSession {
         }
     }
 
-    /// Return from the attract movie to the menu, the way retail does:
+    /// Return from the attract movie to the title, the way retail does:
     /// the front-end re-enters through `Init` with the entry word at
     /// `2`, which still takes the `0x11` -> `0x10` arm, so the player
-    /// lands back on the live menu with the countdown re-armed and the
-    /// cursor on row 0.
+    /// lands back on the live title with the countdown re-armed and the
+    /// cursor on row 0. Which of the port's two staging phases that is
+    /// follows the one the countdown fired from: the menu, or the Press
+    /// Start prompt.
     pub fn finish_attract(&mut self) {
         if matches!(self.phase, TitlePhase::Attract { .. }) {
             self.menu = legaia_engine_vm::title_overlay::TitleMenuState::new();
@@ -402,7 +440,12 @@ impl TitleSession {
             // word still non-zero, so the sub-mode walks `0x11` -> `0x10`
             // again rather than resuming where the movie interrupted it.
             self.tick = Self::cold_boot_tick();
-            self.phase = TitlePhase::MainMenu { cursor: 0 };
+            self.phase = if self.attract_from_prompt {
+                TitlePhase::PressStart { blink_phase: 0 }
+            } else {
+                TitlePhase::MainMenu { cursor: 0 }
+            };
+            self.attract_from_prompt = false;
         }
     }
 
@@ -555,6 +598,97 @@ mod tests {
         assert!(events.contains(&TitleEvent::MenuConfirmed { row: 1 }));
         assert!(events.contains(&TitleEvent::ContinueSelected));
         assert_eq!(s.outcome(), Some(TitleOutcome::Continue));
+    }
+
+    #[test]
+    fn attract_fires_from_the_prompt_and_returns_to_it() {
+        use legaia_engine_vm::title_overlay::{ATTRACT_FMV_ID, COUNTDOWN_RESET_VALUE};
+        let mut s = TitleSession::new();
+        s.attract_enabled = true;
+        s.skip_fade_in();
+        let reset = COUNTDOWN_RESET_VALUE as i32;
+        let mut fired_at = None;
+        for frame in 0..=reset + 1 {
+            if s.tick(TitleInput::default())
+                .contains(&TitleEvent::AttractTimeout)
+            {
+                fired_at = Some(frame);
+                break;
+            }
+        }
+        assert_eq!(
+            fired_at,
+            Some(reset),
+            "0x5DC idle frames on the prompt fire it"
+        );
+        assert_eq!(s.attract_pending(), Some(ATTRACT_FMV_ID));
+        s.mark_attract_started();
+        assert!(s.attract_playing());
+        s.finish_attract();
+        assert!(
+            matches!(s.phase(), TitlePhase::PressStart { .. }),
+            "a movie that fired from the prompt returns to the prompt"
+        );
+        assert_eq!(s.attract_countdown(), reset);
+        // ...and one that fired from the menu returns to the menu.
+        s.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), TitlePhase::MainMenu { .. }));
+        for _ in 0..=reset + 1 {
+            if s.attract_pending().is_some() {
+                break;
+            }
+            s.tick(TitleInput::default());
+        }
+        assert!(s.attract_pending().is_some());
+        s.finish_attract();
+        assert!(matches!(s.phase(), TitlePhase::MainMenu { cursor: 0 }));
+    }
+
+    #[test]
+    fn prompt_countdown_re_arms_on_any_input_and_only_fires_when_enabled() {
+        use legaia_engine_vm::title_overlay::COUNTDOWN_RESET_VALUE;
+        let reset = COUNTDOWN_RESET_VALUE as i32;
+        let mut s = TitleSession::new();
+        s.skip_fade_in();
+        for _ in 0..100 {
+            s.tick(TitleInput::default());
+        }
+        assert_eq!(s.attract_countdown(), reset - 100);
+        // Down does nothing on the prompt except re-arm the countdown.
+        s.tick(TitleInput {
+            down: true,
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), TitlePhase::PressStart { .. }));
+        assert_eq!(s.attract_countdown(), reset - 1);
+        // With the flag off the underflow only re-arms.
+        let mut events = Vec::new();
+        for _ in 0..=reset + 1 {
+            events.extend(s.tick(TitleInput::default()));
+        }
+        assert!(matches!(s.phase(), TitlePhase::PressStart { .. }));
+        assert!(!events.contains(&TitleEvent::AttractTimeout));
+        assert!(s.attract_countdown() > 0);
+    }
+
+    #[test]
+    fn prompt_ignores_start_inside_the_freeze_band() {
+        use legaia_engine_vm::title_overlay::{ATTRACT_INPUT_FREEZE_BELOW, COUNTDOWN_RESET_VALUE};
+        let mut s = TitleSession::new();
+        s.attract_enabled = true;
+        s.skip_fade_in();
+        s.menu.countdown = ATTRACT_INPUT_FREEZE_BELOW - 1;
+        let events = s.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), TitlePhase::PressStart { .. }));
+        assert!(!events.contains(&TitleEvent::StartPressed));
+        // A held bit still re-arms inside the band, as in the menu kernel.
+        assert_eq!(s.attract_countdown(), COUNTDOWN_RESET_VALUE as i32 - 1);
     }
 
     #[test]

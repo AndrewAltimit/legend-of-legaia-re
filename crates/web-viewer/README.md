@@ -161,8 +161,11 @@ page slices those raw sectors out of the disc bytes it still holds
 (`window.__playDiscBytes` + `disc_file_extent_json`, so the runtime never
 keeps a second copy of the image), `play_fmv_install` demuxes the video and
 decodes the XA track through the media page's existing decoders, and
-`site/js/play-fmv.js` draws the frames over the GL view clocked off the audio
-context, then `play_fmv_finish` applies the same post-movie scene hand-off.
+`site/js/play-fmv.js` puts the XA track on the engine mixer's XA lane
+(`play_fmv_audio_start` - the native window's `play_xa`, so the movie sits
+behind the same master trim and volume slider as every other sound), draws
+the frames over the GL view clocked off `play_fmv_audio_cursor_secs`, then
+`play_fmv_finish` applies the same post-movie scene hand-off.
 The retail skip rule is engine-side (`fmv_id 0` only, on the packed
 face-button mask). A page that never declares support still auto-finishes the
 beat with the hand-off applied, which is what a cached bundle does. Disc-gated
@@ -498,8 +501,9 @@ controller runs before any scene exists, feeds the title edge-triggered pad
 words, and on the New Game outcome seeds the retail defaults + enters the
 opening prologue chain (`play_cutscene` above) - after `begin_new_game`
 establishes the fresh slate the native `BootSession` does. The title theme
-starts with the card and the attract countdown plays `MV1.STR` through
-`play_fmv`. Publisher logos are not yet wired on this host.
+starts with the card and the attract countdown - which runs at the Press
+Start prompt as well as on the menu, since retail has no prompt phase to
+wait behind - plays `MV1.STR` through `play_fmv`. Publisher logos are not yet wired on this host.
 
 ## In-world minigames (`play_minigames`)
 
