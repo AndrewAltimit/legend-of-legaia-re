@@ -609,12 +609,16 @@
    * retail's intro skip). */
   const OPENING_CUTSCENE_SCENE = 'opdeene';
 
-  /* Only categories whose scenes are actually walkable are offered. World-map
-   * blocks load but run a different controller; battle / audio / system blocks
-   * aren't scenes at all. */
+  /* Only categories whose scenes are actually walkable are offered: towns,
+   * field areas, and the three kingdom overworlds (the engine's world-map
+   * controller - encounters, ports and town doors - runs on this host too;
+   * the page frames it with its follow camera rather than the native
+   * window's top-view debug camera). Battle / audio / system blocks aren't
+   * scenes at all. */
   const GROUPS = [
     { key: 'town',  title: 'Towns' },
     { key: 'field', title: 'Field areas & dungeons' },
+    { key: 'world_map', title: 'World map' },
   ];
 
   fetch('scenes.json').then(r => r.ok ? r.json() : []).then(s => {

@@ -187,15 +187,19 @@ pub fn build_field_render(
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
     let (placement_records, terrain_records, binds) = if is_world_map {
-        (
-            scene
-                .walk_object_placements(index)
-                .ok()
-                .flatten()
-                .unwrap_or_default(),
-            Vec::new(),
-            None,
-        )
+        // Overworld: the walk-object placements plus the decoration sweep
+        // (trees, mountain groups) the native window's world-map branch
+        // appends (`field_render.rs`); the page used to draw the first
+        // layer only, so every kingdom lost its forests and ranges.
+        let mut tiles = scene
+            .walk_object_placements(index)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        if let Ok(Some(deco)) = scene.walk_decoration_placements(index) {
+            tiles.extend(deco);
+        }
+        (tiles, Vec::new(), None)
     } else {
         (
             scene
