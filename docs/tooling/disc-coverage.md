@@ -1084,6 +1084,13 @@ The refresh rule:
 - **Never let a hook rewrite it.** The number goes on a public page, so it is
   committed deliberately; a hook that regenerated it would publish an unreviewed
   figure from whatever local corpus happened to be present.
+- **`--funcs` / `--extracted` read another checkout's copies**, for the case
+  where the tree to refresh and the tree holding the corpora are not the same
+  one. One warning that is specific to this script: its disc-coverage half pairs
+  the live corpus with **this tree's** committed
+  `dump-extent-attribution.csv`, so pointing at a corpus while the tree's CSV is
+  a different vintage publishes numbers that describe neither tree. Prefer the
+  checkout that holds both.
 
 `scripts/ci/check-progress-metrics-freshness.py` is the warning. It compares the
 tiles' own rendered strings against `port-catalog-baseline.json` - two committed
