@@ -513,12 +513,21 @@ pub fn parse_at(bytes: &[u8], link_base: u32) -> SlotBLayout {
 /// can sit in the tail and frame-match there, so on PROT 0949 the code
 /// partition reaches `0x1B8C` while the image's own content stops at `0x1828`.
 ///
-/// One residue, stated rather than papered over: this is computed *without* the
-/// tail cut, because the cut is what it feeds. On the five images whose donor
-/// call sites resolve to a record of this image's (PROT 0908 / 0910 / 0920 /
-/// 0943 / 0961) the chain runs past the tail and the figure overshoots. It is
-/// used as a donor/recipient discriminator, where an overshoot can only make
-/// this image look less like a recipient - it never invents a tail.
+/// This walks whatever slice it is handed, and the slice matters: over a whole
+/// image the chain runs on into the donor's residue and the figure overshoots.
+/// Measured over the band, handing it the uncut image moves the figure on **10
+/// of 83** images (PROT 0908 / 0910 / 0919 / 0920 / 0932 / 0943 / 0960 / 0961,
+/// plus the slot-A pair 0974 / 0980, whose figure is the frame partition rather
+/// than a record chain). On five of those - 0908 / 0910 / 0920 / 0943 / 0961 -
+/// the overshoot also credits a spawn pointer that belongs to the donor.
+///
+/// The cut and this measurement are mutually recursive, so the band-level
+/// caller iterates them rather than taking the first estimate: see
+/// `scripts/ghidra-analysis/inherited_tail.py`'s `tail_starts_fixpoint`, and
+/// `crates/asset/tests/slot_b_record_bounds_real.rs` for the same loop on this
+/// side. It settles in two rounds and moves no tail cut - the asymmetry this
+/// comment used to argue for (an overshoot can only make an image look less
+/// like a recipient, never invent a tail) is now measured rather than asserted.
 pub fn content_end(bytes: &[u8], link_base: u32) -> usize {
     let layout = parse_at(bytes, link_base);
     let chained = layout.chained_records.last().map(|r| r.end);

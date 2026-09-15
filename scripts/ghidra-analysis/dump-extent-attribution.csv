@@ -673,7 +673,7 @@ entry,bytes,image,class,reason
 801dd864,144,-,misbased,"no image holds these bytes at this VA; they live at field(897) 0x801eb034 (delta +0xd7d0), field(897) 0x801eb1f4 (delta +0xd990), field(897) 0x801eb534 (delta +0xdcd0)"
 801dd864,716,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (content_bytes cut)
 801dd8f0,680,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801ec108 (delta +0xe818)
-801dd9d4,276,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
+801dd9d4,588,field(897),unique,own content of field(897) reproduces the 24-instruction window at this VA (inherited_tail(boot_init_pak) cut)
 801dda90,156,-,gapped,"printed addresses are non-contiguous, so the window matches no image as a contiguous run"
 801ddb30,20,-,short,"5 instructions: no image's own content reproduces this window at this VA, and the window is too short to search for it elsewhere"
 801ddb30,2456,battle_action(898),unique,own content of battle_action(898) reproduces the 24-instruction window at this VA (content_bytes cut)

@@ -132,6 +132,32 @@ attribution sweep. That sharing is not tidiness - it is the fix for a defect tha
 had made this page's own numbers wrong. See
 [an instrument's private header regex](#an-instruments-private-header-regex-is-a-claim-about-the-corpus).
 
+#### A stated extent can be wrong, and then the gap is the dumper's
+
+The interval is only as good as the `size=` line, and Ghidra's body walk stops
+at an indirect jump it cannot resolve. `FUN_801DD9D4` is the worked case: every
+one of its seven dumps states 276 bytes, because the walk hit the unrecovered
+jump table behind `jr v0` at `0x801DDA88` - while the routine's own
+`beq v0,zero,0x801DDBC8` four words earlier branches past that end, and the body
+runs `0x801DD9D4..0x801DDC20` (588 bytes) to a `jr ra` at `0x801DDC18`. The
+untouched 220 bytes then read as code no dump covers, which is a gap
+manufactured by the dumper rather than a gap in the corpus - and it was the last
+row on the whole dump worklist.
+
+`dump_header.EXTENT_FIXUPS` corrects such an extent from the retail bytes,
+keyed `(entry, stated_bytes)` so a re-dump that fixes the size stops matching
+and the row falls out rather than silently overriding a correct measurement.
+A row is a byte claim and carries byte evidence: disassemble the image at its
+own base (`scripts/ghidra-analysis/disasm-overlay-fn.py`) and read the
+terminating `jr ra`. `stale_fixups()` names rows that matched nothing, for the
+same reason the provenance waiver file lists its unused entries.
+
+The correction reaches the attribution CSV too, because the CSV is keyed on the
+same `(entry, bytes)` pair - so **regenerate
+`dump-extent-attribution.csv` after adding a fixup**. Correcting one without the
+other is worse than neither: the corrected extent has no attribution row, falls
+back to residue, and the whole body reads as VA-ambiguous.
+
 That remainder is then split into **code** and **data**, because a PS-X EXE's
 text segment carries its rodata inside the same span, and counting string tables
 and jump tables as "un-decompiled code" would understate coverage badly. Each
@@ -226,6 +252,34 @@ deliberately *not* the frame partition alone, because a donor's whole function
 can sit in the tail and frame-match there: PROT 0949's code partition reaches
 file `0x1B8C` while its own content stops at `0x1828`, and the body at
 `0x801F8504` in between is PROT 0948's stager.
+
+#### The measurement and the cut are mutually recursive
+
+That own-content end has to be measured over *something*, and measuring it over
+the whole image is measuring it over the residue as well: a record chain walks
+straight on into the donor's bytes and reports an end above the tail. Handing
+`content_end` the uncut image moves the figure on **10 of the 83** mapped images
+(PROT 0908 / 0910 / 0919 / 0920 / 0932 / 0943 / 0960 / 0961, plus the slot-A
+pair 0974 / 0980 whose figure is the frame partition rather than a record
+chain). On five of those - 0908 / 0910 / 0920 / 0943 / 0961 - the overshoot also
+credits a spawn pointer that belongs to the donor.
+
+So the pair is iterated rather than estimated once:
+`inherited_tail.tail_starts_fixpoint` re-measures every image's own-content end
+over the image **cut at the previous round's tail**, until the cuts stop moving.
+The band settles in two rounds, and the result is worth stating exactly because
+it is a negative: **no tail cut moves** - 79 images and 88,150 bytes either way.
+What changes is the standing of the claim. The asymmetry this used to rest on
+(an overshoot can only make an image look less like a recipient, never invent a
+tail) was an argument; it is now a measurement, and the residue paragraph it
+justified is gone.
+
+The iteration is bounded at eight rounds rather than trusted to converge: the
+two legs pull in opposite directions - cutting a recipient makes it more
+recipient-shaped, cutting a donor less donor-shaped - so a pathological pair
+could alternate. `tail_starts_fixpoint_rounds` reports how many were spent, and
+a run that reaches the cap is reporting round eight of an oscillation, not a
+fixpoint.
 
 Quote a tail figure with the rule it was measured under. Same base + strictly
 longer reports 66 of the 83 mapped images and 61,597 B; any base + strictly

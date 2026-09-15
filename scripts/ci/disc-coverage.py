@@ -844,9 +844,13 @@ def overlay_reports(extracted, extents, attrib=None):
     # which of the two owns the shared suffix. `own_ends` is that measurement:
     # for a slot-B module the top of its spawn-record chain, otherwise the end
     # of its frame-matched code partition.
-    own_ends = {label: slot_b_band.content_end(data, base)
-                for label, base, data in tail_inputs}
-    tails = inherited_tail.tail_starts(tail_inputs, own_ends=own_ends)
+    # Iterated rather than measured once. `content_end` walks the image, and
+    # the cut is what makes that walk stop at this module's own content, so the
+    # first estimate overshoots on the images whose record chain runs into the
+    # residue. `tail_starts_fixpoint` re-measures against each round's cut.
+    tails = inherited_tail.tail_starts_fixpoint(
+        tail_inputs,
+        lambda _label, base, data: slot_b_band.content_end(data, base))
 
     spans = []
     for row in rows:

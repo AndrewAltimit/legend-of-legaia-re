@@ -30,6 +30,11 @@ The minimum length keeps a two-word coincidence from cutting an image short: at
 the file, which no shared library routine does unless it is the last thing
 linked.
 
+The `own_ends` measurement below and the cut are mutually recursive - the cut
+needs the measurement, and the measurement is wrong until the cut is applied -
+so `tail_starts_fixpoint` iterates the pair instead of taking the first
+estimate. See its docstring for which images that matters on.
+
 Which siblings may be donors
 ----------------------------
 
@@ -114,3 +119,50 @@ def tail_starts(images, min_tail=MIN_TAIL_BYTES, own_ends=None):
         if best:
             out[key] = best
     return out
+
+
+def tail_starts_fixpoint(images, own_end, min_tail=MIN_TAIL_BYTES,
+                         max_rounds=8):
+    """`tail_starts` iterated until the cuts stop moving.
+
+    `own_end(key, base, data)` returns an image's structural own-content end in
+    bytes, and it is the input `tail_starts` gates its equal-extent leg on. The
+    first round has to measure it over the WHOLE image, because no cut is known
+    yet - and that is exactly where it overshoots: a slot-B module's spawn-record
+    chain walks straight on into its donor's residue and reports an own-content
+    end above the tail. Five images in the band do that (PROT 0908 / 0910 / 0920
+    / 0943 / 0961), and the overshoot is a claim about the donor question the
+    figure is there to answer.
+
+    So each round re-measures `own_end` over the image CUT at the tail the
+    previous round found. An overshoot that existed only because the residue was
+    still attached disappears; a record chain that really does reach that far is
+    unaffected, because its records lie below the cut.
+
+    Returns the same `{key: (offset, owner_key)}` mapping. The iteration is
+    bounded rather than trusted to converge: the two legs move in opposite
+    directions (cutting a recipient makes it more recipient-shaped, cutting a
+    donor less donor-shaped), so a pathological pair could alternate. Eight
+    rounds is far past the two the retail band needs; the last state is
+    returned either way, and `tail_starts_fixpoint_rounds` says how many were
+    spent so a caller can report a non-convergence instead of printing a number
+    that is really round eight of an oscillation.
+    """
+    global tail_starts_fixpoint_rounds
+    cuts = {}
+    for round_no in range(1, max_rounds + 1):
+        own = {}
+        for key, base, data in images:
+            cut = cuts.get(key)
+            own[key] = own_end(key, base, data[:cut[0]] if cut else data)
+        nxt = tail_starts(images, min_tail=min_tail, own_ends=own)
+        tail_starts_fixpoint_rounds = round_no
+        if nxt == cuts:
+            return cuts
+        cuts = nxt
+    return cuts
+
+
+# How many rounds the last `tail_starts_fixpoint` call spent. Equal to
+# `max_rounds` means it did not converge.
+tail_starts_fixpoint_rounds = 0

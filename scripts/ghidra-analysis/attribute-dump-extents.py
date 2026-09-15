@@ -204,10 +204,13 @@ def load_images(extracted):
     # PROT entry's sector extent, not the module's content - but only where the
     # bytes say which of the two owns the shared suffix. That is what
     # `own_ends` carries: each image's structural own-content end.
-    tails = inherited_tail.tail_starts(
+    # Iterated, not taken once: `content_end` is measured over the image and
+    # the cut is what makes that measurement right, so the first estimate
+    # overshoots wherever a record chain walks into the residue. See
+    # `inherited_tail.tail_starts_fixpoint`.
+    tails = inherited_tail.tail_starts_fixpoint(
         tail_inputs,
-        own_ends={label: slot_b_band.content_end(data, base)
-                  for label, base, data in tail_inputs})
+        lambda _label, base, data: slot_b_band.content_end(data, base))
     for im in images:
         cut = tails.get(im.label)
         if cut and cut[0] < im.own_end:

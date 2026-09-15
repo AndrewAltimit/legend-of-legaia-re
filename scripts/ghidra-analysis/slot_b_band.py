@@ -279,13 +279,18 @@ def content_end(image, base_va):
     in the tail and frame-match there, so PROT 0949's code partition reaches
     file `0x1B8C` while its own content stops at `0x1828`.
 
-    One residue, stated rather than papered over: this is computed WITHOUT the
-    tail cut, because the cut is what it feeds. On an image whose donor call
-    sites resolve to a record of this image's (PROT 0908 / 0910 / 0920 / 0943 /
-    0961) the chain therefore runs past the tail and the figure overshoots. It
-    is used as a donor/recipient DISCRIMINATOR for equal-extent pairs, where an
-    overshoot can only make this image look less like a recipient - it never
-    invents a tail.
+    This walks whatever slice it is handed. Over a WHOLE image the chain runs on
+    into the donor's residue and the figure overshoots - on 10 of the 83 mapped
+    images (PROT 0908 / 0910 / 0919 / 0920 / 0932 / 0943 / 0960 / 0961, and the
+    slot-A pair 0974 / 0980 whose figure is the frame partition rather than a
+    record chain). On five of those - 0908 / 0910 / 0920 / 0943 / 0961 - the
+    overshoot also credits a spawn pointer belonging to the donor.
+
+    The cut and this measurement are mutually recursive, so callers run
+    `inherited_tail.tail_starts_fixpoint` rather than measuring once. It settles
+    in two rounds and moves no tail cut, which turns the old asymmetry argument
+    (an overshoot can only make an image look less like a recipient) into a
+    measurement.
     """
     band = spawn_record_band(image, base_va) if base_va == SLOT_B_LINK_BASE else ()
     if band:

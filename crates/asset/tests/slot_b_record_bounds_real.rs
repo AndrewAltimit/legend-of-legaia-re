@@ -42,6 +42,12 @@ const CHAIN_EXACT_FLOOR_PERCENT: usize = 95;
 /// this test will call it residue. Matches `inherited_tail.MIN_TAIL_BYTES`.
 const MIN_TAIL_BYTES: usize = 0x40;
 
+/// Cap on the own-content/tail fixpoint below. The band settles in two rounds;
+/// the cap exists because the two legs pull in opposite directions (cutting a
+/// recipient makes it more recipient-shaped, cutting a donor less
+/// donor-shaped), so a pathological pair could alternate forever.
+const MAX_TAIL_ROUNDS: usize = 8;
+
 fn extracted_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
     for base in ["extracted", "../../extracted"] {
@@ -83,11 +89,36 @@ fn suffix_start(a: &[u8], b: &[u8]) -> usize {
 /// `scripts/ghidra-analysis/inherited_tail.py` states: any donor at any link
 /// base, strictly longer, or equal-extent when its own content reaches above
 /// the shared suffix and the recipient's does not.
+///
+/// `own` is the measurement that gates the equal-extent leg, and it is
+/// mutually recursive with the cut: measuring it over the whole image lets a
+/// record chain walk straight into the donor's residue. So it is iterated the
+/// way `inherited_tail.tail_starts_fixpoint` iterates it - each round
+/// re-measures `content_end` over the image cut at the previous round's tail.
 fn tail_starts(imgs: &[(u32, Vec<u8>)]) -> std::collections::HashMap<u32, (usize, u32)> {
-    let own: Vec<usize> = imgs
-        .iter()
-        .map(|(_, b)| slot_b_module::content_end(b, SLOT_B_LINK_BASE))
-        .collect();
+    let mut cuts: std::collections::HashMap<u32, (usize, u32)> = Default::default();
+    for _ in 0..MAX_TAIL_ROUNDS {
+        let own: Vec<usize> = imgs
+            .iter()
+            .map(|(idx, b)| {
+                let end = cuts.get(idx).map_or(b.len(), |(c, _)| *c);
+                slot_b_module::content_end(&b[..end], SLOT_B_LINK_BASE)
+            })
+            .collect();
+        let next = tail_starts_round(imgs, &own);
+        if next == cuts {
+            return cuts;
+        }
+        cuts = next;
+    }
+    cuts
+}
+
+/// One round of the tail rule at a fixed `own` measurement.
+fn tail_starts_round(
+    imgs: &[(u32, Vec<u8>)],
+    own: &[usize],
+) -> std::collections::HashMap<u32, (usize, u32)> {
     let mut out = std::collections::HashMap::new();
     for (i, (idx, data)) in imgs.iter().enumerate() {
         let mut best: Option<(usize, u32)> = None;
@@ -148,7 +179,11 @@ fn the_program_walk_reproduces_the_bounded_record_extents() {
     let imgs = band_images(&dir);
     assert!(imgs.len() >= 60, "band images: {}", imgs.len());
 
-    let (mut total, mut exact, mut over) = (0usize, 0usize, 0usize);
+    // `over` - the chain stepped PAST the measured end. `stalled` - it stopped
+    // below the end, on a halfword that is no opcode or on a non-terminating
+    // instruction the walk cannot step over. The two shapes are different
+    // residues and the page that quotes this figure has to say which it is.
+    let (mut total, mut exact, mut over, mut stalled) = (0usize, 0usize, 0usize, 0usize);
     for (idx, bytes) in &imgs {
         let layout = slot_b_module::parse(bytes);
         let top = layout.record_offsets.last().copied();
@@ -183,6 +218,8 @@ fn the_program_walk_reproduces_the_bounded_record_extents() {
             }
             if landed {
                 exact += 1;
+            } else if p < r.end {
+                stalled += 1;
             }
         }
         assert!(
@@ -197,7 +234,10 @@ fn the_program_walk_reproduces_the_bounded_record_extents() {
         "the program walk reproduces only {exact} of {total} bounded record \
          extents ({pct}%), {over} of them by overrunning the measured end"
     );
-    eprintln!("[ok] program walk lands exactly on {exact} of {total} bounded record extents");
+    eprintln!(
+        "[ok] program walk lands exactly on {exact} of {total} bounded record \
+         extents; {over} overran the measured end, {stalled} stalled below it"
+    );
 }
 
 /// 2. Every image's highest record is either bounded by its program or

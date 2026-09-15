@@ -211,11 +211,19 @@ very walk), and bounds the highest record on 58 of the 62 images that have one.
 The four that stay unbounded are where the walk meets a halfword that is no
 opcode before it meets a terminator; those records are reported, not claimed.
 
-The residue is a real one rather than a tolerance. A handful of records end on a
-**non-terminating** instruction - a `0x09` WAIT with a long operand is the
-common shape - and then only the next record's header fixes the end. For the
-highest record there is no next header, so for those images no static bound
-exists at all.
+The residue is a real one rather than a tolerance, and it has exactly one
+direction. Of the 36 extents the chain does not reproduce, **36 stall below the
+measured end and 0 run past it**: the walk stops on a halfword it cannot step
+over - a `0x09` WAIT with a long operand is the common shape, and the record
+then ends on a **non-terminating** instruction - and only the next record's
+header fixes where. So the rule never claims bytes the band does not bound; it
+declines to claim bytes the band does. For the highest record there is no next
+header, which is why a stall there leaves no static bound at all and the four
+such records are disclosed rather than claimed.
+
+That asymmetry is what makes the figure usable by the two consumers below. An
+over-claim would retire real code from the dump worklist; a stall only leaves
+an extent for the pointer bound that already exists.
 
 ## What this is for
 
