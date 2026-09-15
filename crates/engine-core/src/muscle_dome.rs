@@ -524,8 +524,12 @@ fn dome_command_of_action_byte(b: u8) -> Option<legaia_art::Command> {
 /// fresh entry from three story-flag tests in order (`jal 0x8003CE64`): flag
 /// `0x536` writes `0x101` (`0x801CEBA0`), `0x537` writes `0x111`
 /// (`0x801CEBB4`), `0x538` writes `0x321` (`0x801CEBC8`), the last match
-/// winning; the seed before them is `0` (`0x801CEB8C`). All three carry this
-/// bit, so **every seeded dome visit forbids the Item chip**. Thereafter the
+/// winning. The pre-test seed is **`1`**, not `0`: `0x801CEB8C` stores `$s2`,
+/// which `0x801CEAF8` loaded with `1` - the same constant
+/// [`CONTEST_ENTRY_WORD_DEFAULT`] already carried. All three *flagged* seeds
+/// carry this bit, so **every dome visit with a course unlocked forbids the
+/// Item chip**, while an arena with no course unlocked (word `1`) forbids
+/// nothing. Thereafter the
 /// arena stamps only the low byte (`FUN_801D0088` at
 /// `0x801D00B8..0x801D00E4` writes `(old & ~0xFF) + (course << 4) + round + 1`,
 /// preserving the high bits), and the battle round driver reads the high bits
@@ -533,9 +537,10 @@ fn dome_command_of_action_byte(b: u8) -> Option<legaia_art::Command> {
 /// `((word - 1) & 0xFF) >> 4` at `0x801CEBD4..0x801CEBE8` is `0` / `1` / `2`
 /// for the three seeds.
 ///
-/// No host seeds the word yet - both dome entry paths pass `0`, so the port's
-/// dome restricts neither chip. Seeding it needs the three story flags the
-/// arena's own entry reads.
+/// Both hosts seed the word at dome entry from those three story flags
+/// ([`contest_entry_word`]) and hand it to
+/// [`MuscleDomeSession::set_special_word`], so the chips gate exactly as the
+/// arena's own entry makes them.
 ///
 /// REF: FUN_801d0748 (`0x801D12C0..0x801D12D8` the mark; `0x801D1370..0x801D137C`
 /// the arm's refusal)
@@ -557,7 +562,9 @@ pub const SPECIAL_ITEM_FORBIDDEN: u32 = 0x100;
 /// `0x536` and `0x111` for flag `0x537`. `0x321` decodes to course `2`
 /// (Master) **plus this bit**, and every later write preserves the high bits,
 /// so once the Master course is unlocked every dome round in that visit
-/// crosses the Ra-Seru chip out. The earlier "no dome round raises it"
+/// crosses the Ra-Seru chip out - the bit
+/// [`MuscleDomeSession::set_special_word`] carries into the ring. The earlier
+/// "no dome round raises it"
 /// reading came from a `gp`-relative sweep that caps `lui`-to-use pairing at
 /// 24 instructions; the four seed stores sit 34..49 instructions past their
 /// `lui` and were invisible to it.
@@ -965,6 +972,17 @@ pub struct MuscleDomeSession {
     /// `Select`, so a host that never opens it behaves exactly as before.
     magic_open: bool,
     magic_cursor: u8,
+    /// The **special-battle word** `0x8007BAC0` for this leg
+    /// ([`Self::set_special_word`]).
+    ///
+    /// Retail keeps exactly one of these, and it is per *battle*, not per
+    /// fighter: `FUN_801CEA6C` seeds it once at arena entry and the ring's
+    /// mark / arm tests (`FUN_801D0748`, `0x801D12C0..`) read that one word
+    /// for whichever fighter is choosing. So the session owns it and
+    /// [`Self::ring`] overlays it on whatever a fighter's installed
+    /// [`DomeMagic`] carried, which is also what makes the Item chip gate for
+    /// a fighter with **no** magic loadout at all.
+    special: u32,
 }
 
 impl MuscleDomeSession {
@@ -995,7 +1013,27 @@ impl MuscleDomeSession {
             cast: [None, None],
             magic_open: false,
             magic_cursor: 0,
+            special: 0,
         }
+    }
+
+    /// Seed the leg's [`special`](Self::special) word - the value retail's
+    /// arena entry wrote to `0x8007BAC0`, i.e. [`contest_entry_word`] of the
+    /// visit's course-unlock flags.
+    ///
+    /// Both hosts call this at dome entry. Leaving it unset keeps the word at
+    /// `0`, which forbids nothing - the shape every synthetic session that
+    /// never seeds one keeps.
+    ///
+    /// REF: FUN_801cea6c (`0x801CEB88..0x801CEBC8`; the seed itself is ported
+    /// at [`contest_entry_word`])
+    pub fn set_special_word(&mut self, word: u32) {
+        self.special = word;
+    }
+
+    /// The leg's special-battle word.
+    pub fn special_word(&self) -> u32 {
+        self.special
     }
 
     /// Advance the round **time meter** one frame by the frame delta `dt`.
@@ -1370,10 +1408,18 @@ impl MuscleDomeSession {
         self.magic(slot).map_or(0, |m| m.mp)
     }
 
-    /// The fighter's command-ring gates - the default (`special = 0`,
-    /// `status = 0`, no Ra-Seru) when no loadout is installed.
+    /// The fighter's command-ring gates - the default (`status = 0`, no
+    /// Ra-Seru) when no loadout is installed.
+    ///
+    /// The word is the **session's** ([`Self::set_special_word`]), never the
+    /// installed loadout's, because retail has one per battle: a fighter with
+    /// no [`DomeMagic`] at all still has its Item chip crossed out on a
+    /// course that forbids it.
     pub fn ring(&self, slot: usize) -> DomeRing {
-        self.magic(slot).map(|m| m.ring).unwrap_or_default()
+        DomeRing {
+            special: self.special,
+            ..self.magic(slot).map(|m| m.ring).unwrap_or_default()
+        }
     }
 
     /// Whether `slot`'s ring arm for `chip` commits rather than refusing.
@@ -1455,16 +1501,17 @@ impl MuscleDomeSession {
         if self.phase != MusclePhase::Select {
             return Err(DomeCastRefusal::WrongPhase);
         }
-        let Some(m) = self.magic(slot) else {
+        if self.magic(slot).is_none() {
             return Err(DomeCastRefusal::NoLoadout);
-        };
-        if !m.ring.has_raseru {
+        }
+        let ring = self.ring(slot);
+        if !ring.has_raseru {
             return Err(DomeCastRefusal::NoRaSeru);
         }
-        if m.ring.status & STATUS_MAGIC_SEALED != 0 {
+        if ring.status & STATUS_MAGIC_SEALED != 0 {
             return Err(DomeCastRefusal::Sealed);
         }
-        if m.ring.special & SPECIAL_MAGIC_FORBIDDEN != 0 {
+        if ring.special & SPECIAL_MAGIC_FORBIDDEN != 0 {
             return Err(DomeCastRefusal::Forbidden);
         }
         self.magic_open = true;
@@ -3085,10 +3132,12 @@ mod tests {
         s.install_magic(0, sealed);
         assert!(!s.chip_enabled(0, DomeRingChip::RaSeru));
         assert_eq!(s.chip_mark(0, DomeRingChip::RaSeru), Some(ChipMark::Sealed));
-        // Forbidden: the red cross-out X, the same emitter Item's uses.
-        let mut banned = magic(60);
-        banned.ring.special = SPECIAL_MAGIC_FORBIDDEN;
-        s.install_magic(0, banned);
+        // Forbidden: the red cross-out X, the same emitter Item's uses. The
+        // word is the SESSION's, not the loadout's - retail has one per
+        // battle, which is why a fighter with no loadout at all still has its
+        // Item chip crossed out below.
+        s.install_magic(0, magic(60));
+        s.set_special_word(SPECIAL_MAGIC_FORBIDDEN);
         assert!(!s.chip_enabled(0, DomeRingChip::RaSeru));
         assert_eq!(
             s.chip_mark(0, DomeRingChip::RaSeru),
@@ -3103,9 +3152,16 @@ mod tests {
     #[test]
     fn the_item_chip_carries_its_own_bit() {
         let mut s = session();
-        let mut m = magic(60);
-        m.ring.special = SPECIAL_ITEM_FORBIDDEN;
-        s.install_magic(0, m);
+        // The word is per battle, so it gates the Item chip whether or not a
+        // magic loadout is installed - assert the no-loadout case first,
+        // which is the one a per-loadout word could not reach.
+        s.set_special_word(SPECIAL_ITEM_FORBIDDEN);
+        assert!(!s.chip_enabled(0, DomeRingChip::Item));
+        assert_eq!(
+            s.chip_mark(0, DomeRingChip::Item),
+            Some(ChipMark::Forbidden)
+        );
+        s.install_magic(0, magic(60));
         assert!(!s.chip_enabled(0, DomeRingChip::Item));
         assert_eq!(
             s.chip_mark(0, DomeRingChip::Item),
@@ -3203,9 +3259,8 @@ mod tests {
         m.ring.status = STATUS_MAGIC_SEALED;
         s.install_magic(0, m);
         assert_eq!(s.open_magic(0), Err(DomeCastRefusal::Sealed));
-        let mut m = magic(60);
-        m.ring.special = SPECIAL_MAGIC_FORBIDDEN;
-        s.install_magic(0, m);
+        s.install_magic(0, magic(60));
+        s.set_special_word(SPECIAL_MAGIC_FORBIDDEN);
         assert_eq!(s.open_magic(0), Err(DomeCastRefusal::Forbidden));
         assert!(!s.magic_open());
     }

@@ -731,6 +731,14 @@ impl LegaiaMinigames {
             hp,
             WEB_CAPTION_SERU,
         );
+        // The special-battle word retail's arena entry seeds from the three
+        // course-unlock story flags. This page has no save bank, so the word
+        // is whatever `muscle_contest_start` latched from its `unlock` mask
+        // (`0` - forbidding nothing - for a standalone leg opened without a
+        // contest). Same kernel, same bits as the native host's
+        // `World::dome_special_word`; only the flag *source* differs.
+        let special = self.muscle_special;
+        session.set_special_word(special);
         // NOT WIRED (this host only): no art catalog is installed, so this
         // panel's turn resolves the raw direction string rather than the
         // tokenizer's action queue. `MuscleDomeSession::install_art_catalog`
@@ -753,8 +761,7 @@ impl LegaiaMinigames {
         // is the *list*: a standalone contest has no save, so the fighter is
         // offered the disc's whole player Seru block (`0x81..=0x8b`) rather
         // than a record's learned ids, and the Ra-Seru gate is `true` because
-        // a party character reaching Sol Tower carries one. The special-battle
-        // word is `0`: no dome round raises either restriction bit.
+        // a party character reaching Sol Tower carries one.
         if let Some(catalog) = self
             .scus
             .as_ref()
@@ -772,7 +779,7 @@ impl LegaiaMinigames {
                 0,
                 legaia_engine_core::muscle_dome::DomeMagic {
                     ring: legaia_engine_core::muscle_dome::DomeRing {
-                        special: 0,
+                        special,
                         status: 0,
                         has_raseru: true,
                     },
@@ -861,6 +868,11 @@ impl LegaiaMinigames {
             return false;
         };
         let flags = web_contest_flags(unlock, gates, false);
+        // Latch the special-battle word this visit's unlocks seed, so every
+        // leg the contest stages gates its ring chips the way the arena's own
+        // entry would (`FUN_801CEA6C`). The native host reads the same three
+        // flags out of `World` instead.
+        self.muscle_special = legaia_engine_core::muscle_dome::contest_entry_word(&flags);
         match legaia_engine_core::muscle_dome::DomeContest::from_overlay(raw, &flags) {
             Some(c) => {
                 self.muscle_run = Some(c);
@@ -869,6 +881,13 @@ impl LegaiaMinigames {
             }
             None => false,
         }
+    }
+
+    /// The special-battle word (`0x8007BAC0`) the next leg opens on - `0`
+    /// until a contest latches one. Surfaced so the page can draw the ring's
+    /// crossed-out chips before a leg starts.
+    pub fn muscle_special_word(&self) -> u32 {
+        self.muscle_special
     }
 
     /// The `(course, round)` the open contest stages next, as

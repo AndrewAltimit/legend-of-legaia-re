@@ -237,14 +237,16 @@ impl SceneHost {
         if !catalog.is_empty() {
             session.install_art_catalog(0, catalog);
         }
-        // The Ra-Seru (magic) command class. The special-battle word is `0`
-        // because nothing here seeds it yet - not because retail leaves it
-        // clear. Retail's arena entry (`FUN_801CEA6C`) writes `0x101` / `0x111`
-        // / `0x321` from story flags `0x536` / `0x537` / `0x538`
-        // (`0x801CEBA0` / `0x801CEBB4` / `0x801CEBC8`), so a seeded visit
-        // forbids the Item chip on every course and the Ra-Seru chip on
-        // Master. See `muscle_dome::SPECIAL_ITEM_FORBIDDEN`.
-        if let Some(magic) = crate::muscle_dome::magic_loadout_for(&self.world, 0, 0) {
+        // The special-battle word retail's arena entry (`FUN_801CEA6C`)
+        // seeds: `0x101` / `0x111` / `0x321` from story flags `0x536` /
+        // `0x537` / `0x538`, `1` with none of them set. It forbids the Item
+        // chip on every unlocked course and the Ra-Seru chip on Master, and
+        // it is per battle rather than per fighter - so the session gets it
+        // whether or not a magic loadout follows.
+        let special = self.world.dome_special_word();
+        session.set_special_word(special);
+        // The Ra-Seru (magic) command class.
+        if let Some(magic) = crate::muscle_dome::magic_loadout_for(&self.world, 0, special) {
             session.install_magic(0, magic);
         }
         self.world.enter_muscle_dome(session);

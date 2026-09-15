@@ -2612,6 +2612,30 @@ impl World {
         flags
     }
 
+    /// The **special-battle word** `0x8007BAC0` a dome leg opens on, as
+    /// retail's arena entry seeds it: `1` with no course unlocked, then
+    /// `0x101` / `0x111` / `0x321` for story flags `0x536` / `0x537` /
+    /// `0x538`, the last set flag winning.
+    ///
+    /// The word is what crosses the ring's Item chip out on every unlocked
+    /// course and the Ra-Seru chip on Master
+    /// ([`crate::muscle_dome::SPECIAL_ITEM_FORBIDDEN`] /
+    /// [`crate::muscle_dome::SPECIAL_MAGIC_FORBIDDEN`]). Both dome entry
+    /// paths hand it to
+    /// [`crate::muscle_dome::MuscleDomeSession::set_special_word`].
+    ///
+    /// An arena re-entered with the word already non-zero only advances the
+    /// ladder cursor (`0x801CEC00`); the port keeps the cursor on
+    /// [`crate::muscle_dome::DomeContest`] instead, so every leg re-derives
+    /// the word from the same flags and the high bits are stable across the
+    /// contest - which is the property retail's low-byte-only restamp has.
+    ///
+    /// REF: FUN_801cea6c (`0x801CEB44..0x801CEBC8`; this samples the flag
+    /// bank for [`crate::muscle_dome::contest_entry_word`], which is the port)
+    pub fn dome_special_word(&self) -> u32 {
+        crate::muscle_dome::contest_entry_word(&self.muscle_contest_flags())
+    }
+
     /// Settle the open contest: pay the tally into the casino coin bank,
     /// apply the flags the settlement names, and hand over the one-shot
     /// Master-course prize when it is due.

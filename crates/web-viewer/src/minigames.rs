@@ -153,6 +153,14 @@ pub struct LegaiaMinigames {
     /// The player's casino coin bank, so a settled contest has somewhere to
     /// pay into (the native host banks into `World::minigames.casino_coins`).
     muscle_coins: u32,
+    /// The **special-battle word** `0x8007BAC0` the next leg opens on - the
+    /// value retail's arena entry seeds from the three course-unlock story
+    /// flags (`legaia_engine_core::muscle_dome::contest_entry_word`). The
+    /// native host reads the flags out of `World`; this page has no save, so
+    /// the word is latched from the `unlock` mask the page hands
+    /// `muscle_contest_start`. `0` until a contest is opened, which forbids
+    /// nothing.
+    muscle_special: u32,
     /// The last settled contest, kept so the page can show the payout.
     muscle_settlement: Option<legaia_engine_core::muscle_dome::ContestSettlement>,
     /// The Muscle Dome's cached battle tables (deck hand ids, move-power table
@@ -242,6 +250,7 @@ impl LegaiaMinigames {
             muscle: None,
             muscle_run: None,
             muscle_coins: 0,
+            muscle_special: 0,
             muscle_settlement: None,
             muscle_tables: None,
             scus: None,

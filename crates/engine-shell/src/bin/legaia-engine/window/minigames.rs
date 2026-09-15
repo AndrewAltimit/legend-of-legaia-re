@@ -1311,13 +1311,18 @@ impl PlayWindowApp {
                 session.install_art_catalog(0, catalog);
             }
         }
+        // The special-battle word the arena's own entry seeds from the three
+        // course-unlock story flags (`FUN_801CEA6C`, `0x801CEB88..0x801CEBC8`).
+        // The earlier "no dome round raises either restriction bit" note was
+        // wrong about the arena's **entry**: the ladder never raises one, but
+        // the entry seed does - every unlocked course forbids the Item chip
+        // and Master forbids the Ra-Seru chip too.
+        let special = self.session.host.world.dome_special_word();
+        session.set_special_word(special);
         // The Ra-Seru (magic) command class, through the same shared door the
-        // arena-door warp installs it with. The special-battle word is `0`:
-        // no dome round raises either restriction bit (the arena stamps only
-        // the word's low byte, and battle init's two `0x200` writers key on
-        // monster ids the ladder never stages).
+        // arena-door warp installs it with.
         if let Some(magic) =
-            legaia_engine_core::muscle_dome::magic_loadout_for(&self.session.host.world, 0, 0)
+            legaia_engine_core::muscle_dome::magic_loadout_for(&self.session.host.world, 0, special)
         {
             session.install_magic(0, magic);
         }

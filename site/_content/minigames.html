@@ -912,11 +912,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     Three fixed arenas, each a ladder of ordinary battles against one monster at a time -
     8 rounds on Beginner and Expert, 13 on Master. The walkthrough data below records
     Beginner and Expert disabling equipment and items but allowing magic, with Master adding
-    a magic ban; accessories are always permitted. Those are walkthrough labels, and the
-    magic half of them has no writer on the disc: the special-battle word's magic-forbidden
-    bit is raised only by the executable's battle init, keyed on the first enemy's monster
-    id, and the dome ladder never fields one of those ids. The line-ups are cross-checked
-    against the roster table on the disc, which agrees in every slot.
+    a magic ban; accessories are always permitted. The disc backs both bans, from the arena's
+    own entry: it seeds the special-battle word from the three course-unlock story flags, and
+    every one of those seeds carries the <em>Item</em>-forbidden bit while the Master one also
+    carries the magic-forbidden bit. (The executable's battle init raises the magic bit too,
+    but keyed on the first enemy's monster id - ids the dome ladder never fields.) The line-ups
+    are cross-checked against the roster table on the disc, which agrees in every slot.
   </p>
   <div id="muscle-dome-courses"></div>
 
