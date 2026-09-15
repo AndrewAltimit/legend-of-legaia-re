@@ -37,6 +37,12 @@ pub(crate) struct Cli {
     pub(crate) cmd: Cmd,
 }
 
+// `PlayWindow` carries the whole engine-runner option surface - render
+// toggles, capture scripting, party composition, debug seeds - so it dwarfs
+// the inspection subcommands beside it. Boxing it would only move the
+// allocation: clap parses exactly one variant per process. Same reasoning as
+// `legaia-patcher`'s `Randomize`.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand, Debug)]
 pub(crate) enum Cmd {
     /// Load one scene's assets headlessly and print a summary line.
