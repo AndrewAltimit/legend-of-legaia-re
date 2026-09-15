@@ -66,12 +66,17 @@
   record's measured extent and missing it by exactly 4 bytes, which is what an earlier reading recorded as
   evidence that no static bound existed. It bounds the top record on 58 of the 62 images that have one; the rest
   end on a non-terminating instruction and stay unclaimed.</p>
-  <p>The residue has one direction, which is what makes the rule safe to consume. Of the 1027 extents the band
-  itself bounds, the chain reproduces 991 exactly - and of the 36 it misses, <strong>36 stall below the measured
-  end and none runs past it</strong>. The walk stops on a halfword it cannot step over (a <code>0x09</code> WAIT
-  with a long operand is the common shape) and leaves the extent to the pointer bound that already exists. It
-  never claims bytes the band does not bound, so it cannot retire real code from the dump worklist; for the
-  highest record, where no next header exists, a stall simply leaves no static bound.</p>
+  <p>The residue has one direction, which is what makes the rule safe to consume - but the direction belongs to
+  the <em>claim</em>, not to the walk's program counter. Of the 1027 extents the band itself bounds, the chain
+  reproduces 991 exactly, and <strong>not one of the misses terminates above the measured end</strong>: they all
+  return unterminated, and only a <code>HALT</code> or an armed idle loop produces a claim. So the rule never
+  claims bytes the band does not bound and cannot retire real code from the dump worklist.</p>
+  <p>The program counter does run past the end, though. Most misses stop exactly on the measured end - the record
+  whose last instruction is non-terminating, the shape the rule was written for - a handful stop below it, and
+  fourteen step past it before dying on a halfword that is no opcode, having mis-stepped a width somewhere inside
+  the record. "Every miss stalls below the end" describes the first two groups only, and the <code>0x09</code>
+  WAIT it names is one cause among several. For the highest record, where no next header exists, a miss simply
+  leaves no static bound.</p>
 </section>
 
 <section class="doc-section" id="why">

@@ -191,7 +191,11 @@ Whichever arm ran, the initializer installs the camera view window and writes th
 - `_DAT_8007bacc == 0`: the window is installed on the anchor's own tile (`FUN_80017DD4(anchor >> 7, …, 0x0E, 0x10)` - the window is `0x0E` by `0x10` tiles, from the scratchpad pair `0x1F8003F8`/`0x1F8003FA`) and the player keeps the anchor's exact world coords.
 - `_DAT_8007bacc != 0`: the window is re-centred on the map origin (`_DAT_8007b76c + 0x0E/2 - 1`, `_DAT_8007b770 + 0x10/2`) and the player is seated at that tile's centre, `tile * 0x80 + 0x40`.
 
-**The second form is unreachable in retail.** `0x8007bacc` has exactly two references on the disc - the read at `0x801d6e88` and the clear at `0x801d6f50`, both inside this function - and **no writer** in any of the 84 images, under both reference scanners. `_DAT_8007b76c`, which only that arm reads, likewise has one reference (the read at `0x801d6ee0`) and no writer. So retail always takes the first form and the player always keeps the anchor's exact coordinates.
+**The second form is unreachable in retail**, but not for the reason "it has no writer" - it does have one, and saying otherwise contradicts the clear this page already names.
+
+`0x8007bacc` has exactly two references on the disc, both inside this function: the read at `0x801d6e88` and the store at `0x801d6f50`. That store is `sw zero`, and it sits in the delay slot of the `jal 0x800567a8` at `0x801d6f4c` - which is why a scanner that walks call targets, or reads only the instruction before a branch, does not see it. So the word's one and only writer stores `0`; nothing on the disc ever stores a non-zero value into it, and the `!= 0` arm can therefore never run.
+
+`_DAT_8007b76c`, which only that arm reads, has one reference (the read at `0x801d6ee0`) and genuinely no writer at all. Retail always takes the first form and the player always keeps the anchor's exact coordinates.
 
 Provenance: `ghidra/scripts/funcs/overlay_dialog_mc4_801d6704.txt` (the base-`0x801C0000` live-RAM capture; 901 instructions, epilogue at `0x801d7510`) and `ghidra/scripts/funcs/80024c88.txt` (sets `actor+0x14/16/18` from the arg vec). Engine port: `legaia_engine_core::mode_entry_init::field_spawn`, whose `FIELD_COLD_SPAWN` agrees with `legaia_engine_core::world::FIELD_COLD_SPAWN_XZ`; applied in `SceneHost::enter_field_scene`.
 

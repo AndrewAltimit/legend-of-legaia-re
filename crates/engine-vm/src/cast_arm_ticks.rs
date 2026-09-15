@@ -676,16 +676,20 @@ pub enum StealOutcome {
 /// tries = 0
 /// do {
 ///     slot = rand() % 0x100
-///     while ctx[+0x11] == 4 && slot < *(0x8007B5EA) { slot = rand() % 0x100 }
+///     while party_seat[1] == 4 && slot < *(0x8007B5EA) { slot = rand() % 0x100 }
 /// } while (bag[slot].id == 0 || bag[slot].count == 0 || !item_valid(bag[slot].id))
 ///          && ++tries < 0x400
 /// ```
 ///
 /// The index is `(slot << 16) >> 15`, i.e. `slot * 2` - a byte offset into the
 /// 256-slot, two-bytes-per-slot bag at `0x80085958`
-/// (`docs/subsystems/inventory.md`). The inner `0x8007B5EA` floor only arms
-/// when `ctx[+0x11] == 4`, which is how the module keeps a scripted fight from
-/// stealing out of the low half of the bag.
+/// (`docs/subsystems/inventory.md`). The inner `0x8007B5EA` floor arms on
+/// `lbu v1, 1(s5)` at `0x801F77E8` with `s5 = 0x8007BD10` (`0x801F77B0`), i.e.
+/// on `DAT_8007BD10[1] == 4` - the per-seat **character id** table, so the
+/// test is "battle seat 1 holds roster character 4", not a battle-context
+/// field. PROT 0941 makes no access at `+0x11` at all. That is the split-bag
+/// condition (`docs/subsystems/inventory.md`): it keeps the steal out of the
+/// half of the bag the other character's active window owns.
 ///
 /// Returns the chosen slot, or `None` when the `0x400` budget ran out.
 ///

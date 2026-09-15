@@ -212,14 +212,25 @@ The four that stay unbounded are where the walk meets a halfword that is no
 opcode before it meets a terminator; those records are reported, not claimed.
 
 The residue is a real one rather than a tolerance, and it has exactly one
-direction. Of the 36 extents the chain does not reproduce, **36 stall below the
-measured end and 0 run past it**: the walk stops on a halfword it cannot step
-over - a `0x09` WAIT with a long operand is the common shape, and the record
-then ends on a **non-terminating** instruction - and only the next record's
-header fixes where. So the rule never claims bytes the band does not bound; it
-declines to claim bytes the band does. For the highest record there is no next
-header, which is why a stall there leaves no static bound at all and the four
-such records are disclosed rather than claimed.
+direction - but the direction is a property of the **claim**, not of the walk's
+program counter, and the two are easy to confuse. What holds without exception
+is that no miss ever *terminates* above the measured end: every one of them
+returns `Unterminated`, and only a `HALT` or an armed idle loop produces a
+claim. So the rule never claims bytes the band does not bound; it declines to
+claim bytes the band does.
+
+The walk's PC is a different matter, and it does run past the end. Re-measured
+over the band's pointer-credited extents, the misses split three ways: the PC
+lands **exactly on** the measured end on the largest group - the record whose
+last instruction is non-terminating, which is the shape the rule was written
+for - stops **below** it on a handful, and steps **past** it on fourteen,
+before dying on a halfword that is no opcode. On those fourteen the widths
+mis-step somewhere inside the record, so by the time the walk fails it is
+reading the next record's bytes as operands. A page that says "every miss
+stalls below the end" is describing the first two groups only, and the `0x09`
+WAIT shape it names is one cause among several rather than the mechanism. For
+the highest record there is no next header, which is why a miss there leaves no
+static bound at all and those records are disclosed rather than claimed.
 
 That asymmetry is what makes the figure usable by the two consumers below. An
 over-claim would retire real code from the dump worklist; a stall only leaves
