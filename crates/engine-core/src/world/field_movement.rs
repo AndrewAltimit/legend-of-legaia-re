@@ -1449,6 +1449,11 @@ impl World {
             if let Some(&(x, z)) = self.npcs.positions.get(slot) {
                 chan.vm.x = x;
                 chan.vm.z = z;
+                // The anchor tile `+0x8C` / `+0x8D` re-seats with the
+                // position: op `0x06` measures its box relative to it, so a
+                // channel left holding the raw MAN header tile would bound a
+                // relocated villager against where it used to stand.
+                chan.vm.home_tile = (((x >> 7) & 0x7F) as u8, ((z >> 7) & 0x7F) as u8);
             }
         }
     }
@@ -1607,6 +1612,7 @@ impl World {
             },
         };
         let slots: Vec<u8> = self.npcs.ambient.keys().copied().collect();
+        let mut globals_in = self.flags.story_flags;
         for slot in slots {
             // Re-select against the live system-flag bank before stepping.
             let pick = self
@@ -1632,10 +1638,18 @@ impl World {
                 continue;
             };
             let before = vm.heading;
+            // Retail's `0x10` / `0x11` / `0x12` arms address the scratchpad
+            // global flag word directly, so the channel carries a copy for
+            // the tick and the drain below writes any change back. One
+            // channel ticks at a time, so no two can race the word.
+            vm.globals = globals_in;
             vm.tick_with(code, speed, &blocking);
             let moved = vm.moved && live_walk;
             let (nx, nz) = (vm.x, vm.z);
             let anim = vm.requested_move;
+            let globals_out = vm.globals;
+            let scale_out = vm.scale;
+            let effects: Vec<_> = vm.effects.drain(..).collect();
             // A walk op's heading write is walk-direction-implied facing: it
             // only means anything alongside the step it accompanies. With the
             // walking suppressed it must be suppressed too, or the NPC pivots
@@ -1655,10 +1669,90 @@ impl World {
                     self.carry_npc_run_anim(slot, id);
                 }
             }
-            if !turned {
-                continue; // idle op: leave whatever heading is posted standing
+            if turned {
+                self.npcs.headings.insert(slot, engine_heading as i16);
             }
-            self.npcs.headings.insert(slot, engine_heading as i16);
+            self.apply_ambient_motion_effects(slot, &effects);
+            if globals_out != globals_in {
+                self.flags.story_flags = globals_out;
+                globals_in = globals_out;
+            }
+            // Retail has one actor record; the engine splits the field-VM
+            // channel's copy of `+0x72` from the ambient channel's. Publish
+            // the ambient write into the field-VM channel so
+            // `World::field_npc_render_scale` - the one accessor both the
+            // native window and the browser play page consult before drawing
+            // an NPC - sees a `0x14` tween.
+            if let Some(scale) = scale_out {
+                self.publish_ambient_render_scale(slot, scale);
+            }
+        }
+    }
+
+    /// Publish an ambient channel's `actor+0x72` write into the field-VM
+    /// channel both hosts already read through
+    /// [`Self::field_npc_render_scale`].
+    fn publish_ambient_render_scale(&mut self, slot: u8, scale: u16) {
+        let idx = usize::from(slot);
+        if let Some(c) = self
+            .field_vm
+            .channels
+            .iter_mut()
+            .find(|c| !c.object_bind && c.placement_index == idx)
+        {
+            c.ctx.field_72 = scale;
+        }
+    }
+
+    /// Drain one ambient channel's per-tick side effects, in the order the
+    /// VM queued them.
+    ///
+    /// Four of the six variants have an engine mechanism and are applied
+    /// here; the other two are carried but not consumed, and say so:
+    ///
+    /// - [`AmbientEffect::ModelSwap`] needs a per-placement mesh re-bind.
+    ///   Neither host has one - the native window resolves an NPC's mesh
+    ///   once at scene load (`field_npc_draws`) and the browser play page
+    ///   bakes the same list - so a stream that swaps a villager's model
+    ///   still draws the spawn mesh.
+    /// - [`AmbientEffect::MoveImage`] needs a VRAM blit reachable from a
+    ///   field-actor tick; `engine-render` owns the only VRAM and `World`
+    ///   has no path into it.
+    ///
+    /// [`AmbientEffect::SfxCue`] runs the enqueue half of `FUN_80035B50` -
+    /// the same cursor / parked-slot / delay-table update the field VM's op
+    /// `0x36` sub-`0` runs - so a scripted beat's cue parks the slot a
+    /// following op-`0x36` sub-`4` delay write then targets. The cue **id**
+    /// stays on the channel's own ring copy: no host plays a field SFX cue.
+    ///
+    /// [`AmbientEffect::ModelSwap`]: legaia_engine_vm::ambient_motion_ops::AmbientEffect::ModelSwap
+    /// [`AmbientEffect::MoveImage`]: legaia_engine_vm::ambient_motion_ops::AmbientEffect::MoveImage
+    /// [`AmbientEffect::SfxCue`]: legaia_engine_vm::ambient_motion_ops::AmbientEffect::SfxCue
+    // REF: FUN_80035B50 (the enqueue the `SfxCue` arm reproduces)
+    fn apply_ambient_motion_effects(
+        &mut self,
+        slot: u8,
+        effects: &[legaia_engine_vm::ambient_motion_ops::AmbientEffect],
+    ) {
+        use legaia_engine_vm::ambient_motion_ops::AmbientEffect as Fx;
+        for fx in effects {
+            match *fx {
+                Fx::SystemFlagSet(idx) => self.system_flag_set(idx),
+                Fx::SystemFlagClear(idx) => self.system_flag_clear(idx),
+                Fx::Teleport { x, z, .. } => {
+                    // Not gated on the liveliness toggle: retail's `0x0F` is
+                    // scripted placement, not ambient walking, and the
+                    // spawn-prologue parks depend on it landing.
+                    self.npcs.positions.insert(slot, (x, z));
+                }
+                Fx::SfxCue(_) => {
+                    let cursor = self.audio.sfx_cue_cursor;
+                    self.audio.sfx_cue_cursor = self.audio.sfx_cue_delays.park(cursor);
+                    self.audio.sfx_parked_slot = cursor;
+                }
+                Fx::ModelSwap { .. } | Fx::MoveImage { .. } => {}
+                Fx::BitTargetFault => {}
+            }
         }
     }
 
