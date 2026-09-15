@@ -170,11 +170,9 @@ frame-matches there, which is why a dump row once named it under 0949.
 
 ## The band's entry rows live on `battle.md`
 
-The three sets of entry rows this page carried while the two pages were being
-reconciled - the eleven player-Seru tick bodies (PROT 0903..0913), PROT 0910's
-applier `0x801F81DC`, and the fourteen trampoline-reached arms of PROT
-0940..0962 - are **class 1** by the [three-way test](#the-three-way-test), so
-they are on
+The eleven player-Seru tick bodies (PROT 0903..0913), PROT 0910's applier
+`0x801F81DC` and the fourteen trampoline-reached arms of PROT 0940..0962 are
+**class 1** by the [three-way test](#the-three-way-test), so they live on
 [`battle.md`](battle.md#slot-b-summon--cast-modules-prot-09030966) with the
 band's other entries: [the eleven](battle.md#the-eleven-player-seru-tick-bodies)
 and [the fourteen](battle.md#the-fourteen-trampoline-reached-arms). What stays
@@ -182,8 +180,9 @@ here is the reason a grep for one of those VAs lands on this page anyway.
 
 ### The same VA, read in another image
 
-Five of the eleven tick VAs also have a class-2 or class-3 reading somewhere
-else, and `0x801F69D8` is the extreme case: it is a tick body in six modules
+The eleven ticks wear only **five** distinct VAs, and every one of the five
+also has a class-2 or class-3 reading in some other image. `0x801F69D8` is the
+extreme case: it is a tick body in six modules
 of this band, a capture-class body in six more, PROT 0901's world-map terrain
 dispatcher, PROT 0900's minigame tile rasteriser, and data in a save-state
 capture of the slot-B buffer. The row that answers a question is the one whose
@@ -191,8 +190,9 @@ image matches the image you are reading.
 
 `0x801F69D8` and `0x801F69EC` carry scope rows in
 [`scripts/ci/port-catalog-ignore.toml`](../../../scripts/ci/port-catalog-ignore.toml)
-naming the world-map and minigame residents, and `0x801F69F0` / `0x801F69F4`
-carry `worklist_data` rows taken from a save-state capture. None of those rows
+naming the world-map and minigame residents, and `0x801F69E8` / `0x801F69F0` /
+`0x801F69F4` carry `worklist_data` rows taken from a save-state capture of the
+slot-B buffer. None of those rows
 is wrong and none of them is about these modules: they are the same address in
 a different resident. The ignore file's rows and `battle.md`'s tables coexist
 because a band address is only meaningful as an `(image, VA)` pair, which is
