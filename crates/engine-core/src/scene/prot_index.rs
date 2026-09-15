@@ -291,7 +291,13 @@ impl ProtIndex {
     /// `legaia_prot::cdname::block_range_for_name_extraction`.
     pub fn block_range_extraction(&self, scene_name: &str) -> Option<(u32, u32)> {
         let map = self.cdname.as_ref()?;
-        cdname::block_range_for_name_extraction(map, scene_name)
+        let (start, end) = cdname::block_range_for_name_extraction(map, scene_name)?;
+        // The CDNAME map's last block is open-ended: `cdname` returns
+        // `u32::MAX` (shifted) for it and leaves the clamp to the caller. The
+        // TOC is the bound here - without it `other7` reads `1226..u32::MAX-2`
+        // and a `Vec::with_capacity(end - start)` reserves 64 GiB.
+        let count = u32::try_from(self.entry_count()).unwrap_or(u32::MAX);
+        Some((start.min(count), end.min(count)))
     }
 
     /// PROT entries in `scene_name`'s CDNAME block whose payload is a

@@ -99,6 +99,9 @@ impl Scene {
         let (start, end) = index
             .block_range_extraction(name)
             .ok_or_else(|| anyhow::anyhow!("scene '{}' not found in CDNAME map", name))?;
+        if end < start {
+            anyhow::bail!("scene '{name}' has an inverted CDNAME block range {start}..{end}");
+        }
         let mut entries = Vec::with_capacity((end - start) as usize);
         for idx in start..end {
             // Skip out-of-range indices defensively.
