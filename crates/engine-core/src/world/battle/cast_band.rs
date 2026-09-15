@@ -1585,12 +1585,29 @@ impl World {
                         .collect();
                     Some(step)
                 }
-                // `arrived = true` on all three: retail's arm 0 holds on
-                // `FUN_8004E2F0(ctx[+0x13], caster[+0x1DD])` and walks the
-                // caster in with `FUN_80050BB8` until it reports, and the
-                // engine's cast band drives no approach walk for a
-                // capture-class cast - the seats are already placed. Passing
-                // `false` would park the body on phase `1` forever.
+                // `arrived = true` on all three, and this is a disclosed
+                // divergence rather than a shortcut.
+                //
+                // Retail's predicate is `FUN_8004E2F0(ctx[+0x13],
+                // caster[+0x1DD]) == 0` - the **zero** side, not the non-zero
+                // one: `sll v0,v0,0x10; bne v0,zero,<hold>` at
+                // `0x801F7C0C` / `0x801F7D08` sends a non-zero metric to the
+                // "stage the run clip and hold" arm, so the metric reads
+                // "still out of reach" and zero is arrival. The engine has
+                // that metric (`Self::battle_range_metric`, the port of the
+                // same routine) and the 0x20 `FUN_80050BB8` calls the arrived
+                // path makes are ported too
+                // (`legaia_engine_vm::battle_separation`, a pairwise
+                // separation nudge - NOT the approach itself).
+                //
+                // What is missing is the approach: retail's caster is walked
+                // toward its target by the action SM before this body ever
+                // reads the metric, and the engine's cast band drives no such
+                // walk for a capture-class cast - it places the seats and
+                // leaves them. Feeding the live metric would therefore park
+                // the body on phase `1` forever wherever the placement does
+                // not already read as in-reach. The blocking capability is a
+                // caster approach leg on the band, not a call insertion.
                 (962, Some(arms::BLADE_BREATH_A_TICK)) => Some(arms::blade_breath_a_tick(
                     &mut ctx,
                     &mut caster,

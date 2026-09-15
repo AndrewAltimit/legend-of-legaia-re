@@ -927,8 +927,14 @@ pub const GIZAM_STATUS_BIT: u16 = 0x0001;
 /// `4`, and falls to the epilogue otherwise - so phase `5` reaches no arm.
 /// Arm 4 nevertheless advances into it (`0x801F7194`), and arm 2 can skip it
 /// (`ctx+0x6D8 != 0 ? phase += 1 : phase += 2` at `0x801F6CC0`), with arm 3
-/// setting `phase = 4` outright. Retail parks at phase 5 returning busy; the
-/// escape is outside this routine. **The port advances through phase 5** as a
+/// setting `phase = 4` outright. Retail parks at phase 5 returning busy, and
+/// the escape is the **stager**'s: `FUN_801F7740` arm `2`
+/// (`0x801F783C..0x801F7858`) is nothing but `ctx[+0x279] += 1`, and the
+/// module's head table at `0x801F69D8` - seven words `0x801F7788`, `780C`,
+/// `783C`, `785C`, `7920`, `7964`, `79A8`, read off the image - is what puts
+/// that body on arm 2. The port's [`crate::cast_module_ticks::gizam_stager`]
+/// already performs it; whether the band's arm cursor reaches 2 while the tick
+/// is parked at 5 is the per-arm frame gating this set has never measured. **The port advances through phase 5** as a
 /// no-op so the choreography reaches arm 13 - a deliberate divergence, taken
 /// because holding there would strand the cast.
 ///

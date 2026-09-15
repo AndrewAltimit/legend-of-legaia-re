@@ -1496,11 +1496,14 @@ pub const BLADE_BREATH_POWER: u16 = 0x0200;
 /// `{0, 1, 2, 3, 4, 0xFF}` and run the same five steps:
 ///
 /// * arm `0` - **stores** `ctx[+0x279] = 1` outright (not an increment), then
-///   tests arrival with `FUN_8004E2F0(ctx[+0x13], caster[+0x1DD])`. Arrived,
-///   it steps `FUN_80050BB8` 0x20 times and advances the phase again, so the
-///   walk is skipped; not arrived, it stages the run clip `1` with
-///   `+0x1DC += 1` and stays on phase `1`;
-/// * arm `1` - the same walk, advancing once arrival reports;
+///   tests arrival with `FUN_8004E2F0(ctx[+0x13], caster[+0x1DD])`. Arrival is
+///   the metric reading **zero**: `sll v0,v0,0x10; bne v0,zero,<hold>` at
+///   `0x801F7C0C` sends a non-zero metric to the hold arm, which stages the
+///   run clip `1` with `+0x1DC += 1` and stays on phase `1`. Arrived, it runs
+///   `FUN_80050BB8` - the pairwise **separation nudge**
+///   ([`crate::battle_separation`]), not the approach - 0x20 times and
+///   advances the phase again;
+/// * arm `1` - the same test, advancing once the metric reads zero;
 /// * arm `2` - the sound cue (`0x18B` / `0x18C` / `0x18D`), the facing, the
 ///   windup clip with `+0x1DC += 1`, and the windup animation rate;
 /// * arm `3` - gated on the caster object's `+0x68` reaching `0x300`, then
