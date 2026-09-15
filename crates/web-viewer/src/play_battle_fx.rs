@@ -100,10 +100,26 @@ fn outline_thickness(size: [f32; 2]) -> f32 {
     (size[0].max(size[1]) * OUTLINE_FRAC).max(OUTLINE_MIN)
 }
 
+/// Which mesh pool an [`FxModelDraw::tmd_index`] indexes.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(crate) enum FxModelSource {
+    /// `World::global_tmd_pool` (PROT 0871 effect library / `etmd.dat`):
+    /// the page decodes + caches the mesh per fight through the
+    /// `play_battle_fx_mesh_*` accessors.
+    #[default]
+    GlobalPool,
+    /// The scene's own TMD pack (a field move-VM stager part, native
+    /// `field_stager_tmds`): the page already holds env pack slot `i` as
+    /// scene mesh `i`, or uploads it on demand via `field_mesh_posed(i, 0)`.
+    ScenePack,
+}
+
 /// One 3D FX draw, already composed into the page's model-matrix space.
 pub(crate) struct FxModelDraw {
-    /// Index into `World::global_tmd_pool` - the page's mesh cache key.
+    /// Index into the pool [`Self::source`] names - the page's mesh cache key.
     pub tmd_index: usize,
+    /// The pool `tmd_index` indexes.
+    pub source: FxModelSource,
     /// `scale(4) * T(pos) * Ry * Rx * Rz * scale(1,-1,1)`, column-major. The
     /// page multiplies its battle VP by this, which reproduces the native
     /// `fx_cam * model` exactly.
@@ -516,6 +532,7 @@ impl LegaiaRuntime {
             let model = mat_mul(&world_scale, &mat_mul(&fx_translate(em.world_pos), &flip));
             frame.models.push(FxModelDraw {
                 tmd_index: em.tmd_index,
+                source: FxModelSource::GlobalPool,
                 model,
             });
         }
@@ -542,7 +559,188 @@ impl LegaiaRuntime {
             );
             frame.models.push(FxModelDraw {
                 tmd_index: sp.model_index,
+                source: FxModelSource::GlobalPool,
                 model,
+            });
+        }
+        self.battle_fx = frame;
+    }
+
+    /// The FIELD twin of [`Self::build_battle_fx`]: the effect-pool
+    /// billboards, the `etmd` effect models, the summon / move-FX parts and
+    /// the field move-VM stager parts that the native redraw draws on every
+    /// field frame (`redraw_passes.rs`: `build_effect_model_draws`,
+    /// `build_summon_and_move_fx_part_draws`, `build_field_fx_part_draws`,
+    /// all gated only on `!in_world_map`). The page used to simulate these
+    /// (`tick_world_effects`) and draw none of them, because its only FX
+    /// draw call sat inside the battle branch - every field sparkle, steam
+    /// vent and creation glow was invisible in the browser.
+    ///
+    /// `vp` is the page's field view-projection (column-major, the matrix
+    /// `buildWorldOrbitVp` built for this frame), in **page space**: the
+    /// retail world with Y negated, which is how every field draw on the
+    /// page lands (`placementModelScaledY`'s `-sc` row). So each native
+    /// model matrix is composed here and then flipped through `diag(1,-1,1)`
+    /// as the LAST factor, and the billboard centres are flipped the same
+    /// way before the camera-basis corners are added. Field FX carry no
+    /// world scale (the native `fx_scale` is `1.0` outside a stage-dome
+    /// battle), so half-extents are the raw pass-2 size.
+    fn build_field_fx(&mut self, vp: [f32; 16]) {
+        let mut frame = BattleFxFrame::default();
+        let Some(host) = self.scene_host.as_ref() else {
+            self.battle_fx = frame;
+            return;
+        };
+        let world = &host.world;
+        if matches!(world.mode, SceneMode::Battle | SceneMode::WorldMap) {
+            self.battle_fx = frame;
+            return;
+        }
+        let Some(inv) = mat4_inverse(&vp) else {
+            self.battle_fx = frame;
+            return;
+        };
+        let right = transform_dir(&inv, [1.0, 0.0, 0.0]);
+        let up = transform_dir(&inv, [0.0, 1.0, 0.0]);
+        let flip = |p: [f32; 3]| [p[0], -p[1], p[2]];
+        let push_vertex =
+            |f: &mut BattleFxFrame, p: [f32; 3], uv: [u8; 2], ct: [u16; 2], flat: [u8; 4]| {
+                f.positions.extend_from_slice(&p);
+                f.uvs.extend_from_slice(&uv);
+                f.cba_tsb.extend_from_slice(&ct);
+                f.flat.extend_from_slice(&flat);
+            };
+        for sprite in world.active_effect_sprites() {
+            let [u0, v0] = sprite.uv;
+            let u1 = u0
+                .saturating_add(sprite.uv_size[0].saturating_sub(1))
+                .min(255) as u8;
+            let v1 = v0
+                .saturating_add(sprite.uv_size[1].saturating_sub(1))
+                .min(255) as u8;
+            let (mut u0, mut u1) = ((u0 & 0xFF) as u8, u1);
+            let (mut v0, mut v1) = ((v0 & 0xFF) as u8, v1);
+            if sprite.flip_h {
+                std::mem::swap(&mut u0, &mut u1);
+            }
+            if sprite.flip_v {
+                std::mem::swap(&mut v0, &mut v1);
+            }
+            let c = flip(sprite.world_pos);
+            let (hw, hh) = legaia_engine_vm::effect_billboard::world_half_extents(sprite.size, 1.0);
+            let mut corners = [[0.0f32; 3]; 4];
+            for (i, (sr, su)) in [(-1.0f32, 1.0f32), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)]
+                .into_iter()
+                .enumerate()
+            {
+                for k in 0..3 {
+                    corners[i][k] = c[k] + right[k] * hw * sr + up[k] * hh * su;
+                }
+            }
+            let corner_uv = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
+            let ct = [sprite.clut, sprite.page];
+            let base = (frame.positions.len() / 3) as u32;
+            let b = sprite.brightness;
+            for (corner, uv) in corners.iter().zip(corner_uv) {
+                push_vertex(&mut frame, *corner, uv, ct, [b, b, b, 255]);
+            }
+            frame.indices.extend_from_slice(&[
+                base,
+                base + 1,
+                base + 2,
+                base + 2,
+                base + 1,
+                base + 3,
+            ]);
+        }
+
+        let flip_m: [f32; 16] = [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, -1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let fx_translate = |p: [f32; 3]| -> [f32; 16] {
+            [
+                1.0, 0.0, 0.0, 0.0, //
+                0.0, 1.0, 0.0, 0.0, //
+                0.0, 0.0, 1.0, 0.0, //
+                p[0], p[1], p[2], 1.0,
+            ]
+        };
+        let fx_rot_x = |a: f32| -> [f32; 16] {
+            let (sa, ca) = a.sin_cos();
+            [
+                1.0, 0.0, 0.0, 0.0, //
+                0.0, ca, sa, 0.0, //
+                0.0, -sa, ca, 0.0, //
+                0.0, 0.0, 0.0, 1.0,
+            ]
+        };
+        let fx_rot_y = |a: f32| -> [f32; 16] {
+            let (sa, ca) = a.sin_cos();
+            [
+                ca, 0.0, -sa, 0.0, //
+                0.0, 1.0, 0.0, 0.0, //
+                sa, 0.0, ca, 0.0, //
+                0.0, 0.0, 0.0, 1.0,
+            ]
+        };
+        let fx_rot_z = |a: f32| -> [f32; 16] {
+            let (sa, ca) = a.sin_cos();
+            [
+                ca, sa, 0.0, 0.0, //
+                -sa, ca, 0.0, 0.0, //
+                0.0, 0.0, 1.0, 0.0, //
+                0.0, 0.0, 0.0, 1.0,
+            ]
+        };
+        // Native field composition is `T * Ry * Rx * Rz` with an identity
+        // `fx_model_flip`; the page-space flip goes on the outside.
+        let part_model = |pos: [f32; 3], rot: [f32; 3]| -> [f32; 16] {
+            mat_mul(
+                &flip_m,
+                &mat_mul(
+                    &fx_translate(pos),
+                    &mat_mul(
+                        &fx_rot_y(rot[1]),
+                        &mat_mul(&fx_rot_x(rot[0]), &fx_rot_z(rot[2])),
+                    ),
+                ),
+            )
+        };
+        for em in world.active_effect_models() {
+            if world.global_tmd(em.tmd_index as i16).is_none() {
+                continue;
+            }
+            frame.models.push(FxModelDraw {
+                tmd_index: em.tmd_index,
+                source: FxModelSource::GlobalPool,
+                model: mat_mul(&flip_m, &fx_translate(em.world_pos)),
+            });
+        }
+        let parts = world
+            .active_summon_part_draws()
+            .into_iter()
+            .chain(world.active_move_fx_part_draws());
+        for sp in parts {
+            if world.global_tmd(sp.model_index as i16).is_none() {
+                continue;
+            }
+            frame.models.push(FxModelDraw {
+                tmd_index: sp.model_index,
+                source: FxModelSource::GlobalPool,
+                model: part_model(sp.world_pos, sp.rot),
+            });
+        }
+        // Field move-VM stager parts resolve against the SCENE's TMD pack
+        // (`model_sel` relative to the spawn base = pack slot), not the
+        // battle pool - the page holds that pack as its env meshes.
+        for fp in world.active_field_fx_part_draws() {
+            frame.models.push(FxModelDraw {
+                tmd_index: fp.model_index,
+                source: FxModelSource::ScenePack,
+                model: part_model(fp.world_pos, fp.rot),
             });
         }
         self.battle_fx = frame;
@@ -668,6 +866,36 @@ impl LegaiaRuntime {
     pub fn play_battle_fx_sync(&mut self, aspect: f32) -> u32 {
         self.build_battle_fx(aspect);
         (self.battle_fx.positions.len() / 3) as u32
+    }
+
+    /// The field-frame twin of [`Self::play_battle_fx_sync`]: rebuild this
+    /// frame's FIELD effect geometry (effect-pool billboards, `etmd` models,
+    /// summon / move-FX parts, field stager parts) against the page's field
+    /// view-projection `vp` (16 floats, column-major, page space) and return
+    /// the billboard vertex count. The same `play_battle_fx_*` accessors then
+    /// read the cache; a draw whose
+    /// [`Self::play_battle_fx_model_is_scene_pack`] is `true` indexes the
+    /// scene's env pack (already uploaded as scene mesh `tmd`) rather than
+    /// the battle FX mesh cache. Empty in battle / on the overworld.
+    pub fn play_field_fx_sync(&mut self, vp: &[f32]) -> u32 {
+        if vp.len() != 16 {
+            self.battle_fx = BattleFxFrame::default();
+            return 0;
+        }
+        let mut m = [0.0f32; 16];
+        m.copy_from_slice(vp);
+        self.build_field_fx(m);
+        (self.battle_fx.positions.len() / 3) as u32
+    }
+
+    /// Whether FX model draw `i` indexes the scene's TMD pack (a field
+    /// stager part) instead of the global effect pool. See
+    /// [`Self::play_field_fx_sync`].
+    pub fn play_battle_fx_model_is_scene_pack(&self, i: u32) -> bool {
+        self.battle_fx
+            .models
+            .get(i as usize)
+            .is_some_and(|m| m.source == FxModelSource::ScenePack)
     }
 
     /// Turn the per-billboard debug outline on or off (**off** by default).

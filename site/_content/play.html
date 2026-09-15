@@ -337,7 +337,33 @@
                  title="Dissolve walls and roofs between the camera and your character to a see-through dither so you can always spot yourself (the native window's default-on occlusion-fade enhancement; retail relies on authored camera framing instead). Presentation only - the simulation never changes.">
             <input type="checkbox" id="play-see-through" checked> See-through walls
           </label>
+          <label class="play-dev-menu"
+                 title="Precise (free-angle) movement: the movement vector follows the camera azimuth at full angular resolution instead of retail's quantised 8-way remap (the native window's R toggle, persisted like its other options). Simulation knob - off keeps the retail decode.">
+            <input type="checkbox" id="play-precise-move"> Precise movement
+          </label>
         </div>
+        <details class="play-battle-tools" id="play-battle-tools">
+          <summary>Battle tools</summary>
+          <div class="play-btn-row">
+            <label title="Present-party composition in battle order, the native --party flag: names (vahn, noa, gala, terra) or roster indices, comma-separated. Members without stats are seeded from the disc's new-game template.">
+              Party <input type="text" id="play-party" size="14" placeholder="vahn,noa,gala">
+            </label>
+            <button id="play-party-apply" type="button">Apply party</button>
+            <button id="play-force-battle" type="button"
+                    title="Arm a fight from this scene's own encounter table right now (the native --battle first).">Start a battle here</button>
+            <label title="Battle BGM id: 0 keeps the field track playing through the fight, blank restores the shipped default (2026). The native --battle-bgm flag.">
+              Battle BGM <input type="number" id="play-battle-bgm" min="0" max="9999" size="5" placeholder="2026">
+            </label>
+            <label class="play-dev-menu"
+                   title="Auto-resolve party turns (each member attacks the first living monster) instead of the player-driven command flow - the native --no-player-battle. Encounters still roll.">
+              <input type="checkbox" id="play-auto-battle"> Auto-battle
+            </label>
+            <label class="play-dev-menu"
+                   title="Turn OFF random encounters entirely (explore but never fight) - the native --no-live-loop.">
+              <input type="checkbox" id="play-no-encounters"> No encounters
+            </label>
+          </div>
+        </details>
       </div>
 
       <div class="play-rail">
@@ -644,6 +670,12 @@
           saveMsg('Continued from a memory-card save.');
           return;
         }
+        /* A fresh slate - flags, gold, bag, clock and the SCUS starting
+         * party - the way the native `BootSession::begin_new_game` does.
+         * Without it a New Game after a Continue / card import / picker
+         * session kept the old roster and story flags. */
+        try { if (typeof runtime.begin_new_game === 'function') runtime.begin_new_game(); }
+        catch (e) { console.warn('begin_new_game', e); }
         enter(OPENING_CUTSCENE_SCENE);
         if (active !== OPENING_CUTSCENE_SCENE || !window.__playState) {
           enter(OPENING_SCENE);
@@ -677,12 +709,20 @@
       /* Keep the raw disc bytes so a trapped engine can be rebuilt in place
        * (no re-upload) - see `recoverRuntime`. */
       discBytes = bytes;
+      /* The raw disc stays page-side: the runtime keeps only PROT.DAT + the
+       * executable, and hands back raw-sector extents (`disc_file_extent_json`)
+       * so a consumer can slice a named file - an XA voice bank, a movie -
+       * without the engine holding a second copy of the image. */
+      window.__playDiscBytes = bytes;
       const count = runtime.load_disc(bytes, '');
       prog.done(`${count} PROT entries. Pick a boot mode.`);
       statusEl.textContent = `Disc loaded (${count} PROT entries). Pick a boot mode.`;
       modesEl.style.display = 'grid';
       window.__playRuntime = runtime;
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
+      /* The precise-movement box reflects the engine's persisted option;
+       * the battle tools are session-only and start at the engine defaults. */
+      if (typeof window.__playSyncPreciseMove === 'function') window.__playSyncPreciseMove();
       setSaveUi(true);
       /* The disc is up: re-render the save bar so it decodes the party
        * portrait faces + card icons now that WASM + disc bytes are available. */
@@ -699,6 +739,21 @@
       console.warn(err);
     }
   }
+
+  /* Slice a named ISO file's raw Mode2/2352 sectors out of the disc bytes
+   * the page holds. `null` when no disc is up or the file is absent. */
+  window.__playSliceDiscFile = function (path) {
+    const bytes = window.__playDiscBytes;
+    if (!bytes || !runtime || typeof runtime.disc_file_extent_json !== 'function') return null;
+    let ext = null;
+    try { ext = JSON.parse(runtime.disc_file_extent_json(path)); } catch (e) { ext = null; }
+    if (!ext || ext.lba == null) return null;
+    const RAW = 2352;
+    const sectors = Math.ceil(ext.size / 2048);
+    const start = ext.lba * RAW, end = Math.min(bytes.length, start + sectors * RAW);
+    if (start >= end) return null;
+    return bytes.subarray(start, end);
+  };
 
   function enter(label) {
     if (!runtime) return;
@@ -814,6 +869,17 @@
     });
     try { runtime.boot_title_start(); } catch (e) { console.warn('boot title', e); then('new_game'); return; }
     if (!runtime.boot_title_is_active()) { then('new_game'); return; }   /* no disc art path */
+    /* Title theme: the native window starts it on every entry to the title
+     * card (`start_title_bgm`); the click that opened this flow is the user
+     * gesture the browser's autoplay policy wants, so audio can come up here. */
+    try {
+      if (typeof runtime.audio_init === 'function') {
+        if (typeof runtime.audio_ready !== 'function' || !runtime.audio_ready()) runtime.audio_init();
+        if (typeof runtime.audio_resume === 'function') runtime.audio_resume();
+        if (typeof window.__playApplyVolume === 'function') window.__playApplyVolume();
+        if (typeof runtime.play_title_bgm === 'function') runtime.play_title_bgm();
+      }
+    } catch (e) { console.warn('title bgm', e); }
     showStage();
     statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
     const ctx = menuCanvas.getContext('2d');
@@ -986,6 +1052,8 @@
       runtime = fresh;
       window.__playRuntime = runtime;
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
+      if (typeof window.__playApplyPreciseMove === 'function') window.__playApplyPreciseMove();
+      if (typeof window.__playApplyBattleTools === 'function') window.__playApplyBattleTools();
 
       /* Too many failures in a short window -> the scene itself is the problem;
        * retreat to the opening scene, and if even that keeps failing, stop and
@@ -1595,6 +1663,68 @@
   }
   seeThroughEl.addEventListener('change', () => { applySeeThrough(); canvas.focus(); });
   window.__playApplySeeThrough = applySeeThrough;
+
+  /* Precise (free-angle) movement - the native window's `R` toggle. The
+   * engine persists it with the rest of the options, so the box reflects the
+   * stored value once a runtime is up and re-applies on every rebuild. */
+  const preciseEl = document.getElementById('play-precise-move');
+  function applyPreciseMove() {
+    const rt = window.__playRuntime;
+    if (rt && typeof rt.set_precise_movement === 'function') {
+      try { rt.set_precise_movement(!!preciseEl.checked); } catch (e) {}
+    }
+  }
+  function syncPreciseMove() {
+    const rt = window.__playRuntime;
+    if (rt && typeof rt.precise_movement === 'function') {
+      try { preciseEl.checked = !!rt.precise_movement(); } catch (e) {}
+    }
+  }
+  preciseEl.addEventListener('change', () => { applyPreciseMove(); canvas.focus(); });
+  window.__playApplyPreciseMove = applyPreciseMove;
+  window.__playSyncPreciseMove = syncPreciseMove;
+
+  /* Battle tools - the native play-window's battle flags, exposed the way
+   * the page already exposes the dev menu: session-only, nothing persisted,
+   * every control a call the engine already exported. */
+  const partyEl = document.getElementById('play-party');
+  const battleBgmEl = document.getElementById('play-battle-bgm');
+  const autoBattleEl = document.getElementById('play-auto-battle');
+  const noEncEl = document.getElementById('play-no-encounters');
+  function applyBattleTools() {
+    const rt = window.__playRuntime;
+    if (!rt) return;
+    try {
+      if (typeof rt.set_live_battles === 'function') rt.set_live_battles(!noEncEl.checked);
+      if (typeof rt.set_player_driven_battles === 'function') rt.set_player_driven_battles(!autoBattleEl.checked);
+      if (typeof rt.set_battle_bgm === 'function') {
+        const v = battleBgmEl.value.trim();
+        if (v !== '') rt.set_battle_bgm(Math.max(0, parseInt(v, 10) || 0));
+      }
+    } catch (e) { console.warn('battle tools', e); }
+  }
+  autoBattleEl.addEventListener('change', () => { applyBattleTools(); canvas.focus(); });
+  noEncEl.addEventListener('change', () => { applyBattleTools(); canvas.focus(); });
+  battleBgmEl.addEventListener('change', () => { applyBattleTools(); canvas.focus(); });
+  document.getElementById('play-party-apply').addEventListener('click', () => {
+    const rt = window.__playRuntime;
+    if (!rt || typeof rt.set_active_party_spec !== 'function') return;
+    const spec = partyEl.value.trim();
+    if (!spec) return;
+    let err = '';
+    try { err = rt.set_active_party_spec(spec); } catch (e) { err = String(e); }
+    saveMsg(err ? `Party: ${err}` : `Party set to ${spec}.`, !!err);
+    canvas.focus();
+  });
+  document.getElementById('play-force-battle').addEventListener('click', () => {
+    const rt = window.__playRuntime;
+    if (!rt || typeof rt.debug_force_battle !== 'function') return;
+    let ok = false;
+    try { ok = !!rt.debug_force_battle(-1); } catch (e) { ok = false; }
+    saveMsg(ok ? 'Battle armed.' : 'This scene registers no encounter formation to start.', !ok);
+    canvas.focus();
+  });
+  window.__playApplyBattleTools = applyBattleTools;
 
   /* Fishing minigame. The engine suspends whatever mode the scene is in and
      restores it on exit, so this works from any staged scene - the disc's own

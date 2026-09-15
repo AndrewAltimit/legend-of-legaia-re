@@ -33,6 +33,11 @@
   const BATTLE_MESH_BASE = 930000;
   const BATTLE_FX_BILLBOARD_MESH = BATTLE_MESH_BASE + 2;
   const BATTLE_FX_MODEL_BASE = BATTLE_MESH_BASE + 256;
+  /* Field-frame FX: a scene-pack stager part uploaded on demand (slot i of
+   * the env pack that no placement drew), and script-spawned actor meshes
+   * keyed by actor slot. Both above every other id space. */
+  const FIELD_FX_PACK_MESH_BASE = 1200000;
+  const DYN_ACTOR_MESH_BASE = 1300000;
   /* Identity model matrix for draws whose transform the engine already folded
    * into the vertex stream (the FX billboard batch). */
   const IDENTITY_MODEL = new Float32Array([
@@ -502,6 +507,8 @@ void main() {
      * unused <canvas> in the DOM. `opts.onState` fires once per frame with the
      * engine's state JSON (already parsed) for the HUD. */
     constructor(runtime, canvas, opts) {
+      this._fieldFx = { fxMeshes: new Map(), packMeshes: new Map() };
+      this._dynActors = new Set();
       if (typeof window.TmdRenderer === 'undefined') {
         throw new Error('TmdRenderer global missing (webgl-tmd.js not loaded?)');
       }
@@ -818,6 +825,10 @@ void main() {
     /* Rebuild the GPU-side scene from whatever the engine currently holds.
      * Runs on entry and whenever the engine walks through a door. */
     _rebuild() {
+      /* Per-scene FX mesh caches + dynamic actor set (mesh ids are per
+       * scene upload; a rebuild replaces the whole scene mesh table). */
+      this._fieldFx = { fxMeshes: new Map(), packMeshes: new Map() };
+      this._dynActors = new Set();
       const rt = this.rt;
       this.renderer.clearScene();
       this.staticDraws = [];
@@ -2198,6 +2209,76 @@ void main() {
         } catch (e) { /* keep the follow camera */ }
       }
       if (!cutsceneCam) { this.cam.roll = 0; this._followCamera(pt); }
+
+      /* This frame's field view-projection, built exactly as the renderer
+       * will build it (`buildWorldOrbitVp`, or the VR/battle override). Two
+       * consumers below need it before the draw: the field FX billboards
+       * (camera-facing quads need the camera basis) and the field party
+       * HUD's projected player Y. */
+      let fieldVp = null;
+      try {
+        const c = this.renderer.canvas;
+        fieldVp = buildWorldOrbitVp(c.width, Math.max(c.height, 1), this._ext, this.cam);
+      } catch (e) { fieldVp = null; }
+
+      /* Field party-status HUD: retail's decision kernel compares the
+       * lead's PROJECTED screen Y against a band (the native window's
+       * `field_hud_projected_player_y`). Project the same point the native
+       * pass projects - the actor origin raised 128 units - through this
+       * frame's VP into 240-line stage space, and hand it to the engine. */
+      if (fieldVp && typeof rt.set_field_player_screen_y === 'function') {
+        const px = pt[0], py = -(pt[1] - 128), pz = pt[2];
+        const m = fieldVp;
+        const cy = m[1] * px + m[5] * py + m[9] * pz + m[13];
+        const cw = m[3] * px + m[7] * py + m[11] * pz + m[15];
+        rt.set_field_player_screen_y(cw > 0 ? Math.round((1 - cy / cw) * 120) : -1);
+      }
+
+      /* Script-spawned actors (field-VM 0x4C 0xD8): the engine hands over
+       * each slot that gained a TMD once; upload its rest pose and draw it
+       * from the live actor transform every frame after. The native window
+       * drains the same queue in its redraw pass. */
+      if (typeof rt.play_take_dynamic_mesh_slots === 'function') {
+        const fresh = rt.play_take_dynamic_mesh_slots();
+        for (let i = 0; i < fresh.length; i++) {
+          const slot = fresh[i];
+          try {
+            if (!rt.play_dynamic_actor_mesh(slot)) continue;
+            const pos = rt.play_dynamic_mesh_positions();
+            const idx = rt.play_dynamic_mesh_indices();
+            if (!pos.length || !idx.length) continue;
+            const flat = rt.play_dynamic_mesh_flat_rgba();
+            this.renderer.uploadSceneMesh(DYN_ACTOR_MESH_BASE + slot, pos,
+              rt.play_dynamic_mesh_uvs(), rt.play_dynamic_mesh_cba_tsb(), idx,
+              flat.length ? flat : null);
+            this._dynActors.add(slot);
+          } catch (e) { /* a slot with no drawable mesh just stays unlisted */ }
+        }
+        if (this._dynActors.size) {
+          const dt = rt.play_dynamic_actor_transforms();
+          for (let o = 0; o + 5 < dt.length; o += 6) {
+            const slot = dt[o] | 0;
+            if (!this._dynActors.has(slot) || dt[o + 5] < 0.5) continue;
+            if (this.tileActorSlots.has(slot)) continue;
+            draws.push({
+              meshId: DYN_ACTOR_MESH_BASE + slot,
+              x: dt[o + 1], y: -dt[o + 2], z: dt[o + 3],
+              rotY: -(dt[o + 4] + 2048) * A2R,
+              scale: 1.0,
+              noOccl: true,
+            });
+          }
+        }
+      }
+
+      /* Field effects - the effect-pool billboards, `etmd` models, summon /
+       * move-FX parts and the scene's own move-VM stager parts the native
+       * redraw draws on every field frame. The engine builds the geometry
+       * against this frame's VP (billboards face the camera that draws
+       * them); scene-pack parts reuse the env meshes already uploaded. */
+      if (fieldVp && typeof rt.play_field_fx_sync === 'function') {
+        this._fieldFxDraws(rt, fieldVp, draws);
+      }
       /* Prologue colour grade + gold depth-cue ramp (the native window's
        * per-frame set_color_grade / set_depth_cue_ramp staging). No-ops on
        * a renderer without the uniforms (cached JS). */
@@ -2485,6 +2566,66 @@ void main() {
      *    matrix. Meshes are cached per global-TMD-pool index for the fight.
      *
      * Silent no-op against a cached WASM without the FX exports. */
+    /* Field twin of `_battleFxDraws`: same accessors, same billboard mesh
+     * id, but the model draws split by source - a global-pool effect model
+     * goes through the per-scene FX mesh cache, a scene-pack stager part
+     * draws the env mesh the scene already uploaded (uploading the slot on
+     * demand when no placement used it). */
+    _fieldFxDraws(rt, vp, draws) {
+      let verts = 0;
+      try { verts = rt.play_field_fx_sync(vp); } catch (e) { return; }
+      if (verts > 0) {
+        this.renderer.uploadSceneMesh(BATTLE_FX_BILLBOARD_MESH,
+          rt.play_battle_fx_positions(), rt.play_battle_fx_uvs(),
+          rt.play_battle_fx_cba_tsb(), rt.play_battle_fx_indices(),
+          rt.play_battle_fx_flat_rgba());
+        draws.push({ meshId: BATTLE_FX_BILLBOARD_MESH, model: IDENTITY_MODEL, noOccl: true });
+      }
+      const n = rt.play_battle_fx_model_count();
+      if (!n) return;
+      const mats = rt.play_battle_fx_model_matrices();
+      const cache = this._fieldFx;
+      for (let i = 0; i < n; i++) {
+        const tmd = rt.play_battle_fx_model_tmd(i);
+        const scenePack = (typeof rt.play_battle_fx_model_is_scene_pack === 'function')
+          && rt.play_battle_fx_model_is_scene_pack(i);
+        let meshId;
+        if (scenePack) {
+          meshId = FIELD_FX_PACK_MESH_BASE + tmd;
+          if (!cache.packMeshes.has(tmd)) {
+            let ok = false;
+            try {
+              rt.field_mesh_posed(tmd, 0);
+              const pos = rt.field_mesh_positions();
+              const idx = rt.field_mesh_indices();
+              if (pos.length && idx.length) {
+                const flat = rt.field_mesh_flat_rgba();
+                this.renderer.uploadSceneMesh(meshId, pos, rt.field_mesh_uvs(),
+                  rt.field_mesh_cba_tsb(), idx, flat.length ? flat : null);
+                ok = true;
+              }
+            } catch (e) { ok = false; }
+            cache.packMeshes.set(tmd, ok);
+          }
+          if (!cache.packMeshes.get(tmd)) continue;
+        } else {
+          meshId = BATTLE_FX_MODEL_BASE + tmd;
+          if (!cache.fxMeshes.has(tmd)) {
+            const pos = rt.play_battle_fx_mesh_positions(tmd);
+            const idx = rt.play_battle_fx_mesh_indices(tmd);
+            cache.fxMeshes.set(tmd, !!(pos.length && idx.length));
+            if (pos.length && idx.length) {
+              this.renderer.uploadSceneMesh(meshId, pos,
+                rt.play_battle_fx_mesh_uvs(tmd), rt.play_battle_fx_mesh_cba_tsb(tmd),
+                idx, null);
+            }
+          }
+          if (!cache.fxMeshes.get(tmd)) continue;
+        }
+        draws.push({ meshId, model: mats.subarray(i * 16, i * 16 + 16), noOccl: true });
+      }
+    }
+
     _battleFxDraws(rt, b, draws) {
       if (typeof rt.play_battle_fx_sync !== 'function') return;
       const c = this.renderer.canvas;

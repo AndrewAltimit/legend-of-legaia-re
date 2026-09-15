@@ -1124,6 +1124,24 @@ impl LegaiaRuntime {
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
             return out;
         };
+        // The native window's arm (`window/hud.rs`): with the system-UI
+        // chrome loaded the message rides the framed banner - in battle
+        // `battle_hud_draws_for` already emitted it, outside battle the
+        // spoils report frames it - so the loose pens only fire on a
+        // chrome-less host. This page drew both, stacking a loose "LEVEL
+        // UP!" run on the battle HUD's own row at the same pen.
+        if self
+            .menu_assets
+            .as_ref()
+            .is_some_and(|a| a.chrome_rects().is_some())
+            && self
+                .menu_assets
+                .as_ref()
+                .and_then(|a| self.battle_banner_message(a))
+                .is_some()
+        {
+            return out;
+        }
         if let Some(b) = world.party.current_level_up_banner.as_ref() {
             out.extend(ui::level_up_draws_for(
                 font,

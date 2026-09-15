@@ -128,6 +128,22 @@ pub struct LegaiaRuntime {
     /// retail's rearm arm rather than comparing the new scene's player
     /// position against the old one's.
     pub(crate) field_party_hud_scene: Option<String>,
+    /// The lead's projected stage-Y (240-line PSX space) the page reports
+    /// each frame off its own view-projection ([`Self::set_field_player_screen_y`]),
+    /// the twin of the native window's `field_hud_projected_player_y`. `None`
+    /// until the page reports one.
+    pub(crate) field_hud_projected_y: Option<i16>,
+    /// Actor slots a field-VM `0x4C 0xD8` spawn (`FieldEvent::ActorSpawned`)
+    /// gave a TMD reference this session - the native window's
+    /// `pending_dynamic_mesh_slots`. The page drains them through
+    /// [`Self::play_take_dynamic_mesh_slots`] and uploads each slot's mesh.
+    pub(crate) pending_dynamic_mesh_slots: Vec<u8>,
+    /// Actor slots the page has uploaded a dynamic (script-spawned) mesh
+    /// for, drawn each frame from `play_dynamic_actor_transforms`.
+    pub(crate) dynamic_mesh_slots: Vec<u8>,
+    /// The dynamic actor mesh staged for the page's upload, one slot at a
+    /// time (`play_dynamic_actor_mesh` + the `play_dynamic_mesh_*` reads).
+    pub(crate) dynamic_mesh_cur: Option<crate::play::StagedActorMesh>,
     /// This frame's transition primitives, already ordered into drawable
     /// geometry by the shared `screen_prim` builder. Built once per
     /// [`crate::play_battle`] intro tick (the emitter mutates working sets,
@@ -341,6 +357,10 @@ impl LegaiaRuntime {
             battle_intro_geom: None,
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
+            field_hud_projected_y: None,
+            pending_dynamic_mesh_slots: Vec::new(),
+            dynamic_mesh_slots: Vec::new(),
+            dynamic_mesh_cur: None,
             item_names: None,
             menu_font: None,
             menu_assets: None,
@@ -692,6 +712,63 @@ impl LegaiaRuntime {
             Some(h) => h.world.locomotion.precise_movement = on,
             None => self.world.locomotion.precise_movement = on,
         }
+        // Persist it like the native window's `R` toggle does
+        // (`legaia-options.toml`), so the page's checkbox survives a reload
+        // and a trap-recovery rebuild re-applies it.
+        if self.options_state.precise_movement != on {
+            self.options_state.precise_movement = on;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// Whether precise (free-angle) movement is on - the persisted option
+    /// the page's checkbox reflects on load.
+    pub fn precise_movement(&self) -> bool {
+        self.options_state.precise_movement
+    }
+
+    /// The lead's projected screen Y this frame in 240-line stage space, or
+    /// a negative value for "not projectable" - the browser twin of the
+    /// native window's `field_hud_projected_player_y`. The field party HUD's
+    /// decision kernel reads it (retail compares the projected player
+    /// against a band before the readout returns).
+    pub fn set_field_player_screen_y(&mut self, stage_y: i32) {
+        self.field_hud_projected_y = (stage_y >= 0).then(|| stage_y.min(i16::MAX as i32) as i16);
+    }
+
+    /// Establish a fresh New Game slate - the browser twin of the native
+    /// `BootSession::begin_new_game`: `World::begin_new_game` (flags, money,
+    /// bag, clock, pending transitions) plus the SCUS starting party + bag.
+    /// The page used to enter `opdeene` without this, so after a Continue,
+    /// a card import or a picker visit a "New game" kept the old roster,
+    /// gold and story flags.
+    pub fn begin_new_game(&mut self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            // The title theme hands the score to the field: stop it so the
+            // prologue's own BGM (or its scripted silence) owns the audio.
+            use legaia_engine_core::scene::BgmDirector;
+            if let Some(out) = self.audio_out.as_ref() {
+                let mut director = crate::play_bgm::WebBgmDirector {
+                    out,
+                    bank: &mut self.bgm_bank,
+                    last_started: &mut self.bgm_last_started,
+                };
+                director.stop();
+            }
+        }
+        self.play_clock_origin_ms = None;
+        let Some(host) = self.scene_host.as_mut() else {
+            self.world.begin_new_game();
+            return;
+        };
+        host.world.begin_new_game();
+        if let Some(defaults) = host.new_game_defaults.as_ref() {
+            host.world.seed_starting_party(&defaults.party);
+            if let Some(inv) = defaults.inventory.as_ref() {
+                host.world.seed_starting_inventory(inv);
+            }
+        }
     }
 
     /// Route this frame's left analog stick into the engine. PSX convention:
@@ -783,6 +860,13 @@ impl LegaiaRuntime {
         // dead here (not used past `finish_cutscene`), so this can re-borrow.
         #[cfg(target_arch = "wasm32")]
         self.route_bgm_wasm();
+        // Drain every field-VM event the BGM router handed back (and, with
+        // audio off, the BGM ones too) - the browser twin of the native
+        // `drain_and_route_field_events`. `World::pending_field_events` is
+        // only ever emptied by a consumer, and this host used to leave the
+        // non-BGM events on it forever: a session's queue grew with every
+        // camera beat, item grant and dialog open.
+        self.drain_and_route_field_events_web();
         // The FMV hand-off loaded a scene without going through the field
         // VM's transition op, so it produces no `SceneEntered` event - the
         // page still has to rebuild, or it draws the old scene's meshes over
@@ -1211,6 +1295,12 @@ impl LegaiaRuntime {
     /// the assembled map, the lead's posed mesh, the NPC catalog. Runs on scene
     /// entry and on every door the engine walks through.
     fn rebuild_render_state(&mut self) -> Result<(), JsValue> {
+        // A scene swap drops the previous scene's script-spawned actors
+        // with it (the MAN loader's retire sweep); the page re-uploads
+        // whatever the new scene spawns.
+        self.pending_dynamic_mesh_slots.clear();
+        self.dynamic_mesh_slots.clear();
+        self.dynamic_mesh_cur = None;
         self.field = None;
         self.player = None;
         self.npcs = None;
@@ -1701,6 +1791,36 @@ impl LegaiaRuntime {
             legaia_engine_audio::VabBank::upload(spu, &mut alloc, &report, &vab_bytes)
         });
         self.bgm_bank = Some(bank);
+    }
+}
+
+impl LegaiaRuntime {
+    /// Consume this tick's remaining field-VM events - the browser twin of
+    /// the native window's `drain_and_route_field_events`
+    /// (`window/boot_cutscene.rs`). BGM events are normally consumed by
+    /// `route_bgm_wasm` first; while audio is down (no `WebAudioOut` yet) they
+    /// come through here and are dropped, exactly as an unheard retail
+    /// op-`0x35` would be. `ActorSpawned` is noted for the page's dynamic
+    /// mesh upload; everything else is presentation this host reads off the
+    /// world's own state instead (the cutscene camera params, the dialog box).
+    pub(crate) fn drain_and_route_field_events_web(&mut self) {
+        use legaia_engine_core::field_events::FieldEvent;
+        let Some(host) = self.scene_host.as_mut() else {
+            self.world.drain_field_events();
+            return;
+        };
+        for ev in host.world.drain_field_events() {
+            if let FieldEvent::ActorSpawned { slot, .. } = ev {
+                let has_tmd = host
+                    .world
+                    .actors
+                    .get(slot as usize)
+                    .is_some_and(|a| a.tmd_ref.is_some());
+                if has_tmd && !self.pending_dynamic_mesh_slots.contains(&slot) {
+                    self.pending_dynamic_mesh_slots.push(slot);
+                }
+            }
+        }
     }
 }
 
