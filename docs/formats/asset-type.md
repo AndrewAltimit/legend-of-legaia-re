@@ -54,7 +54,7 @@ Every return is a small bitfield:
 | 0x0F | `0xF00` (`type << 8`) - pure flag |
 | 0x14 | `0x1400` (`type << 8`) - pure flag |
 
-Both call sites (`FUN_8002541C` streaming-walker and `FUN_80020224` descriptor walker) **OR all returns into one accumulator** and return that union, so the FLAG sentinels become high bits in the streaming-walker's "what was in this stream" summary value:
+The two SCUS call sites (`FUN_8002541C` streaming-walker and `FUN_80020224` descriptor walker) **OR all returns into one accumulator** and return that union, so the FLAG sentinels become high bits in the streaming-walker's "what was in this stream" summary value:
 
 ```
 return_value & 0x00FF  = bit per data-bearing asset type seen
@@ -87,9 +87,54 @@ pub enum AssetType {
 }
 ```
 
+## What an `Unknown` type byte does
+
+`AssetType::Unknown(u8)` covers **242 of the 256** values: the seven in-range
+gaps `0x0C`, `0x0D`, `0x0E`, `0x10`, `0x11`, `0x12`, `0x13`, and everything
+from `0x15` upward. Both routes end at the same address:
+
+```text
+8001F0B4  sltiu $v0, $v1, 0x15      ; type < 0x15 ?
+8001F0B8  beqz  $v0, 0x8001f660     ; no  -> 0x8001F660
+8001F0C0  addiu $v0, $v0, 0x638     ; jump table @ 0x80010638, 21 entries
+8001F0D4  jr    $v0
+```
+
+and the jump table's entries for the seven in-range gaps are all
+`0x8001F660` as well.
+
+**`0x8001F660` is not a default handler - it is the function's return tail.**
+`$s4` is zeroed at `0x8001F084` and nothing on an unknown path writes it, so an
+unknown type byte **returns 0** having done nothing: no allocation, no
+`jal 0x8001A55C` (LZS), no `jal 0x8001A8B0` (copy), no registration. It also
+raises no error, unlike the allocation-failure paths, which set the error word
+and print. It is a silent no-op. (The three FLAG arms differ only in writing
+`$s4` before falling into the same tail - `0xA00` at `0x8001F574`, `0xF00` at
+`0x8001F60C`, `0x1400` at `0x8001F658` - which is why their return values are
+`type << 8`.)
+
+The table is never patched: a reference sweep over `[0x80010638, 0x8001068C)`
+across 84 images returns one hit, the `lui` at `0x8001F0BC` that indexes it.
+There is no store into it and no second index site, so no handler is installed
+into the empty slots at runtime.
+
 ## Where the dispatcher actually gets called
 
-In retail SCUS, only `FUN_8002541C`'s 0x14 (DATA_FIELD) branch reaches the dispatcher *from inside `SCUS_942.54`*. The other static call site is `FUN_80020224` - a descriptor-pair walker with zero static xrefs in SCUS. It IS called at runtime from the town/field overlay (`FUN_801D6704` → `0x801D6B0C` with `a0 = 0`); see [asset descriptor](asset-descriptor.md).
+**Three** `jal 0x8001F05C` sites exist on the disc (1234 images, 121.4 MB).
+Two are in SCUS: `FUN_8002541C` at `0x80025564`, reached only from its `0x14`
+(DATA_FIELD) branch, and `FUN_80020224` at `0x800202B4`, the descriptor-pair
+walker with zero static xrefs in SCUS, called at runtime from the town/field
+overlay (`FUN_801D6704` → `0x801D6B0C` with `a0 = 0`); see
+[asset descriptor](asset-descriptor.md).
+
+The third is **overlay-resident**: `0x801D4DA8` in PROT 0976
+(`baka_fighter`), an in-overlay re-implementation of the same DATA_FIELD walk
+with the same `advance = 4 + (size & ~3)` step. It passes `copy_only = 1` and
+**discards** the return value rather than folding it into an accumulator, so
+the FLAG bitfield above is a two-caller property, not a three-caller one. The
+`jal` itself is a byte fact (the target is encoded absolutely) at file offset
+`0x6590`, inside 0976's own `content_bytes`; the printed VA depends on that
+image's `static`-graded base.
 
 ## See also
 

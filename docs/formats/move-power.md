@@ -224,11 +224,19 @@ all and a searcher sees zero hits either way
 ([dump-corpus-integrity.md](../tooling/dump-corpus-integrity.md)).
 
 **Corpus.** `SCUS_942.54` (text base `0x80010000`, `t_size` from the PSX-EXE
-header, exhaustive over the segment) plus all 25 overlay images in
+header, exhaustive over the segment) plus every overlay image in
 [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml), each
 disassembled at its own recorded base. Every 4-byte word is decoded
 *independently*; a streaming disassemble stops at the first data word and
 silently returns nothing.
+
+**The one form an absolute-address scan cannot see is structurally impossible
+here.** `find-address-word-refs.py` is blind to `disp($gp)`, which is why its
+siblings exist - but `$gp` is `0x8007B318` (recovered from SCUS's own
+`lui`/`addiu` pair), and a signed-16 displacement off it reaches
+`0x80073318..0x80083317`. `0x801F4F5C` is about 1.5 MB outside that window, so
+no `gp`-relative instruction could ever have addressed this table. The
+negative does not rest on the scan having been re-run with the newer tool.
 
 **Instruction classes the sweep is sound for.** Overall word decode is ~95%; the
 undecodable remainder is data and COP2/GTE ops. Every word in the corpus whose
@@ -253,11 +261,32 @@ reach the field several other ways:
 `0x801dd1a0` and `0x801dd36c` (both `FUN_801dd0ac`) and `0x801df27c`
 (`FUN_801dea50`) - see [the split-pair site](#the-split-lui-addiu-site); no reference
 lands at a shifted offset, and no data word holds an in-table address. Offsets
-touched: `+0x00,02,04,06,08,09,0a,0b,0d,0e,12,16`. Not `+0x0c`. As a backstop,
-PROT 0898 contains only five byte-width loads at literal displacement `0xc`, and
-none is a record - two write `actor[+0x1dd]` from an unrelated struct, and the
-other three sit on a base that is *written* at `+0xc` a few instructions earlier
-(a RAM working struct; the record is read-only overlay data).
+touched: `+0x00,02,04,06,08,09,0a,0b,0d,0e,12,16`. Not `+0x0c`.
+
+Per consumer, from the row-pointer taint: `FUN_801dd0ac` (the damage kernel)
+reads `+0x00` and nothing else - three `lhu` at `0x801DD1C0`, `0x801DD38C`,
+`0x801DD3CC`. `FUN_801dea50` reads `+0x04` and `+0x0e`. `FUN_801e09f8` (the
+per-frame tick) supplies the rest through 24 derefs of `ctx+0x1014`. Every one
+of the 28 seeds - 26 `lw …,0x1014(…)` derefs plus the two base
+materialisations - produced at least one hit, so no deref is unaccounted for,
+and widening the propagation window to 4000 instructions changes nothing (the
+holding register is always clobbered within a few instructions). Denominators:
+84 based images, 2.07 MB, 30 memory operations enumerated across 12 distinct
+displacements.
+
+`+0x0d` is not in the same position: it **is** read, exactly once, as a byte -
+`lbu a0,0xd(v0)` at `0x801E184C`, feeding the cue dispatcher
+`jal 0x8004FCC8`. No wide load straddles `+0x0c` either: every load below
+`+0x0d` is an `lbu` at `+0x08`/`+0x09`/`+0x0a`/`+0x0b`, and the only wide loads
+are `lhu` at `+0x00`/`+0x02`/`+0x04`/`+0x06`.
+
+As a backstop, PROT 0898 contains only five byte-width *loads* at literal
+displacement `0xc` - the word "loads" is load-bearing there, because the image
+has 134 memory operations at that displacement, 43 of them byte-width, and the
+other 38 are `sb` stores. None of the five is a record: two write
+`actor[+0x1dd]` from an unrelated struct, and the other three sit on a base
+that is *written* at `+0xc` a few instructions earlier (a RAM working struct;
+the record is read-only overlay data).
 
 ### The split lui addiu site
 
@@ -274,12 +303,27 @@ with the same `x26` chain and reads only `+0x00` - but any future sweep that
 folds `lui`/`addiu` pairs must follow branch targets, not just adjacency, or it
 will under-count materialisation sites the same way.
 
-**Not swept: PROT 0896, 0965, 0971**, which have never been statically
-extracted. That gap is structurally closed rather than merely small: all three
-are **slot-A** entries, and the move-power table only exists in RAM while the
-battle-action overlay occupies slot A, so none can be co-resident with it. The
-slot-B overlays that *are* battle-co-resident - `battle_tutorial` (0967) and the
-summon stagers - were swept and reference the table nowhere.
+**The three formerly-unswept entries are covered.** PROT 0965 and 0971 are now
+in the static overlay map and inside the sweep. PROT 0896 is closed by bytes
+rather than by the slot-A argument: both encodings a reader would need - the
+`lui`+`addiu`/`ori`/load materialisation and the `lw …,0x1014(…)` deref - are
+base-independent, and `0896_bat_back_dat.BIN` produces zero hits in either. It
+is absent from the `0x1014` census entirely. (The slot-A argument still holds
+for anything not yet extracted: the table only exists in RAM while the
+battle-action overlay occupies slot A.)
+
+**The held pointer never leaves PROT 0898.** Over 1317 images, displacement
+`0x1014` appears in code images exactly 27 times, all in `0898/battle_action` -
+one writer (`sw v0,0x1014(a0)` at `0x801DF284`) and 26 readers - and zero times
+in SCUS. The split form (`addiu rD,rS,A` then a memop at `B(rD)` with
+`A + B == 0x1014`) returns nothing over 38 785 candidate `addiu` bases.
+
+**No pre-linked pointer into the table exists.** A byte-granular scan for every
+4-byte value in `[0x801F4F5C, 0x801F53D4)` over 1317 images / 123.1 MB / 1144
+target values returns 46 hits, all in base-less PROT data entries (34 of them
+unaligned) and none in SCUS or any based overlay image. A streamed entry with
+no load base cannot hold a link-time pointer, so those 46 are coincidental
+payload bytes.
 
 **Table extent, independently.** `0x801F4F5C + 44*26 = 0x801F53D4`, which is
 exactly where the `+0x0a` impact-config table begins. The record count is
