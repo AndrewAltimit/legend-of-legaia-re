@@ -74,13 +74,12 @@ cheapest place to look for a claim that is still wrong.
 
 - **One of the twenty ranked "un-dumped code" runs *was* code, so sixteen are
   not.** PROT 0949's `0x801F7630` run holds the bodies of an eight-arm leaf
-  table (`0x801F69F0..0x801F6A0C` inclusive, bounded by an `sltiu 0x8`): six
-  20-byte frameless leaves that store the phase byte in the `jr ra` delay slot,
-  and a seventh of 12 bytes with no `jr ra` at all, falling into the shared
-  epilogue at `0x801F76B4`. Frame matching cannot see any of them - a frameless
-  leaf has no prologue to match - and the first re-read of the run over-counted
-  the leaves by one for exactly that reason
-  ([settled](re-settled-threads.md#measurement--corpus)).
+  table (`0x801F69F0..0x801F6A0C` inclusive, bounded by an `sltiu 0x8`): seven
+  20-byte frameless leaves over `0x801F761C..0x801F7694`, each storing the phase
+  byte in its `jr ra` delay slot, and an eighth of 12 bytes at `0x801F76A8` with
+  no `jr ra` at all, falling into the shared epilogue at `0x801F76B4`. Frame
+  matching cannot see any of them, because a frameless leaf has no prologue to
+  match ([settled](re-settled-threads.md#measurement--corpus)).
 - **The donor-tail instrument carried two restrictions the fact never had.** A
   build-buffer tail was searched only in images sharing the load base and only
   in *longer* images, and neither holds: the mastering buffer is indexed by
@@ -296,7 +295,7 @@ process-matching helpers in
 | Thread | Status | What would close it |
 |---|---|---|
 | Which frames gate each **capture-class** tick body's arms? | partial (the player-Seru half is measured) | [details ↓](#which-frames-gate-a-tick-bodys-arms) |
-| Where does a slot-B module image's **highest** spawn record end? | mostly resolved (58 of 62 images bounded) | Its own move-VM program bounds it: walk the opcode widths to a terminator - `0x08` HALT, or an armed `0x19` / `0x1B` idle loop not immediately followed by one - and round the end up to 4, because the records are word-aligned. The old "within 4 bytes" reading was that missing alignment step, not the absence of a rule. Owed: the records ending on a non-terminating instruction (a long `0x09` WAIT), where only the next record's header fixes the end and the topmost has none - a residue that is **directional**, every miss stalling below the measured end and none overrunning it. See [`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#bounding-the-highest-record). |
+| Where does a slot-B module image's **highest** spawn record end? | mostly resolved (58 of 62 images bounded) | Its own move-VM program bounds it: walk the opcode widths to a terminator - `0x08` HALT, or an armed `0x19` / `0x1B` idle loop not immediately followed by one - and round the end up to 4, because the records are word-aligned. The old "within 4 bytes" reading was that missing alignment step, not the absence of a rule. Owed: the records ending on a non-terminating instruction, where only the next record's header fixes the end. Of 33 misses over 1023 extents, 14 walk **past** it, so the usable invariant is a terminator rule, not a direction: no miss *terminates* above the end. See [`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#bounding-the-highest-record). |
 
 Recently closed in this area: **the eleven player-Seru tick bodies**, all of
 which are now ported off their own disassembly rather than off the per-entry
