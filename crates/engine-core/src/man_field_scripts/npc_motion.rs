@@ -107,7 +107,7 @@ pub fn placement_motion_route(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlacementWalkStep {
     /// The carrying opcode. Tail-section-1 motion ops `0x03`/`0x19`/`0x20`
-    /// (directional step), `0x06` (pad-echo step), `0x18` (AABB wander); or
+    /// (directional step), `0x06` (home-relative step), `0x18` (AABB wander); or
     /// field-VM yield ops `0x37`/`0x41` (axis glide), `0x47` (walk-to-tile).
     pub op: u8,
     /// Raw base-step selector from the op's own operands.
@@ -118,7 +118,7 @@ pub struct PlacementWalkStep {
 
 /// The base-step selector of a `FUN_80038158` walk op at `code[0..width]`,
 /// or `None` when the op moves nothing. Directional steps `0x03`/`0x19`/
-/// `0x20` carry it in operand byte 1's low nibble; the pad-echo step `0x06`
+/// `0x20` carry it in operand byte 1's low nibble; the home-relative step `0x06`
 /// and the AABB wander `0x18` scatter a 4-bit selector over their four
 /// operand bytes' high bits (`(b1&0x80)>>4 | (b2&0x80)>>5 | (b3&0x80)>>6 |
 /// b4>>7`). Every arm steps `0x80 >> (2 + bits)` units per frame.
@@ -157,7 +157,7 @@ fn motion_walk_op_bits(code: &[u8]) -> Option<u8> {
 /// default - this decoder scans the **default variant first** (the
 /// fresh-game state), then the flag-gated variants in table order, and
 /// returns the first walk op found (`0x03`/`0x19`/`0x20` directional step,
-/// `0x06` pad-echo step, `0x18` AABB wander - all stepping
+/// `0x06` home-relative step, `0x18` AABB wander - all stepping
 /// `0x80 >> (2 + bits)` units per frame).
 // PORT: FUN_80038158 (walk-op base-step operands)
 // REF: FUN_8003A9D4 (binding installer), FUN_8003A1E4 (+0x50 = N0 + index)

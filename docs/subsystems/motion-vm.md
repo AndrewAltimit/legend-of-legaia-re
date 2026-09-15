@@ -21,15 +21,18 @@ Both are distinct from the other three members of
 [actor VM](actor-vm.md), the [move VM](move-vm.md), and the
 [field VM](script-vm.md).
 
-**What catches people out: the two motion VMs are ported in three places.**
-`FUN_8003774C` is [`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs).
-`FUN_80038158` splits: its *static* decode (which stream binds to which
-placement, wander pace, default-move harvest) is
+**What catches people out: the scripted VM has a static decoder alongside its
+interpreter.** `FUN_8003774C` is
+[`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs).
+`FUN_80038158`'s interpreter is
+[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs),
+which runs the whole op table (bodies split for length into
+[`ambient_motion_ops`](../../crates/engine-vm/src/ambient_motion_ops.rs)).
+Because its bytecode arrives as MAN tail-section data rather than through the
+actor tick's own buffer, a *static* decode of the same bytes exists too -
 [`legaia_engine_core::man_field_scripts::npc_motion`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs),
-because its bytecode arrives as MAN tail-section data rather than through the actor
-tick's own buffer; its *runtime facing channel* - the ambient idle turns of ops
-`0x04` and `0x0D`, plus the ramp scheduler they drive - is
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs).
+which answers which stream binds to which placement, at what wander pace, with
+what default-move harvest, without running anything.
 
 ## The driver: `FUN_8003BC08`
 
@@ -345,7 +348,9 @@ The only disc source of this bytecode is **MAN tail-section 1** (parser
 - `FUN_8003A9D4` walks the body as a record chain `[u8 count][s16
   next_delta][count x (u8 actor_id, u8 enable)][motion stream]`, terminated
   by `count == 0`. Per binding it installs `actor+0x80 = record + 3 +
-  2*count` and the enable byte at `+0x8A` (bit 0 gates the tick). Actor
+  2*count` and the second byte of the pair at `+0x8A`
+  ([what bit 0 actually gates](#the-0x8a-byte-is-a-suppression-mask-not-an-enable)).
+  Actor
   resolution: `0xF8` = player (`_DAT_8007C364`), `0xFB` = first
   `_DAT_8007C34C` node ticking the world-map entity SM `0x801DA51C`, else
   the `_DAT_8007C354` field actor whose `+0x50` equals the binding byte.
@@ -368,27 +373,73 @@ The only disc source of this bytecode is **MAN tail-section 1** (parser
   and `overlay_0896_801cd520` write `_DAT_8007C34C`-list nodes with different
   layouts; the field VM `FUN_801DE840` never writes it.
 
-### Op widths
+### The op table
 
-| width | ops |
-|---|---|
-| 1 | `0x01` end/loop-back |
-| 2 | `0x05` wait, `0x10`/`0x11`/`0x12` bit set/clear/wait |
-| 3 | `0x02` anim/timer, `0x03`/`0x19`/`0x20` directional step, `0x04` facing ramp, `0x07` SET flag, `0x08` CLEAR flag, `0x09` post u16 to the `DAT_8007B6D8` ring (`FUN_80035B50`), `0x0A`/`0x0B` actor-flag +/-`0x1000000`, `0x0E` model swap, `0x0F` tile teleport, `0x17` default-move pair write |
-| 4 | `0x0D` facing ramp + tween channel |
-| 5 | `0x06` pad-echo step, `0x14`/`0x15`/`0x16` tween installs, `0x18` AABB wander |
-| 8 | `0x0C` glide-channel install |
-| 13 | `0x13` `FUN_80058490` call |
+Dispatch is the 32-entry jump table at `0x80010FE8` indexed `op - 1`; the
+head rejects anything outside `0x01..=0x20` with `sltiu v1, 0x20`, and slots
+`0x1A..=0x1F` point at the loop test `0x80039B44` itself, which advances
+nothing - so those six bytes re-dispatch forever, exactly as a rejected byte
+does. Twenty-six op bytes are defined, across twenty-four case bodies: `0x19`
+and `0x20` share `0x03`'s.
+
+**Yields** is the column that decides how a stream reads. The interpreter is
+a `while (!did_work)` loop: the head at `0x800382F0` re-reads `actor+0x84`,
+jumps through the table, and the epilogue at `0x80039B44` loops back unless
+the arm executed `addiu s8, s8, 1`. An op that does not yield advances the PC
+and the **next op runs in the same frame**, which is why a stream can raise a
+story flag, swap a model and start three tweens between two frames.
+
+| op | width | yields | effect |
+|---|---|---|---|
+| `0x01` | 1 | no | jump back to the variant's first op, cursor cleared |
+| `0x02` | 3 | no | write the requested-move / anim pair `+0x88`/`+0x5C`, **only while the `0x801C6470` record is unset** |
+| `0x03` / `0x19` / `0x20` | 3 | yes | [directional step](#ops-0x03--0x19--0x20-op-b1-b2---the-directional-step) |
+| `0x04` | 3 | all but the terminal tick | [in-VM facing ramp](#op-0x04-04-b1-b2---the-in-vm-ramp) |
+| `0x05` | 2 | yes | wait, interruptible by [the touch post](#the-touch-post---fun_8003d038) |
+| `0x06` | 5 | yes | [one random full-tile step in a home-relative box](#op-0x06-06-b1-b2-b3-b4---the-home-relative-step) |
+| `0x07` | 3 | no | **set** system flag `(s16)(b1 \| b2 << 8)` in `DAT_80085758` |
+| `0x08` | 3 | no | **clear** the same |
+| `0x09` | 3 | no | `FUN_80035B50` - queue an **SFX cue** id in the four-slot `DAT_8007B6D8` ring ([`functions/audio.md`](../reference/functions/audio.md)) |
+| `0x0A` / `0x0B` | 3 | no | raise / drop the translucent-draw bit `0x0100_0000`, then the `0x02` tail; same unset-record gate |
+| `0x0C` | 8 | no | [tint + draw-mode fade](#op-0x0c---the-tint--draw-mode-fade) |
+| `0x0D` | 4 | all but the terminal tick | [pre-unwrap + tween](#op-0x0d-0d-b1-b2-b3---pre-unwrap--tween) |
+| `0x0E` | 3 | no | [model swap](#op-0x0e---the-model-swap) through `FUN_80024E08` ([`functions/renderer.md`](../reference/functions/renderer.md)) |
+| `0x0F` | 3 | no | [tile teleport + re-anchor](#op-0x0f---the-tile-teleport) |
+| `0x10` / `0x11` | 2 | no | [set / clear one bit of a selectable halfword](#ops-0x10--0x11--0x12---the-bit-ops) |
+| `0x12` | 2 | **always** | wait for that bit to **change** |
+| `0x13` | 13 | no | `FUN_80058490` - a libgpu `MoveImage` VRAM blit |
+| `0x14` / `0x15` / `0x16` | 5 | no | [tween `+0x72` / `+0x24` / `+0x28`](#ops-0x14--0x15--0x16---the-three-scalar-tweens) |
+| `0x17` | 3 | no | [per-actor default-move write](#op-0x17---the-per-actor-default-move-table) |
+| `0x18` | 5 | yes | [AABB wander](#op-0x18-18-b1-b2-b3-b4---the-aabb-wander) |
+
+### The `0x8A` byte is a suppression mask, not an enable
+
+The interpreter opens by testing `actor+0x8A & 1`, and the branch at
+`0x80038194` is `beq` - taken when the bit is **clear**, to `0x800381F8`,
+which is inside the variant preamble. So a zero byte runs the VM
+unconditionally. What the bit gates is the three suppression tests between
+`0x8003819C` and `0x800381F4`, every one of which returns without executing
+anything:
+
+- the player context `_DAT_8007C364` carries the engaged flag `+0x10 & 0x80000`
+  (the player is in a conversation, a menu or a scripted beat);
+- this actor's own `+0x10 & 0x500` is set (cutscene-script or pursue-VM busy);
+- the actor sits at the off-map park - **both** `+0x14` and `+0x18` at or above
+  `0x3F81`.
+
+So the byte reads "this stream defers to the player", not "this stream is
+switched on", and a binding that authors it zero keeps choreographing through
+a cutscene.
 
 ### Walk-op speed encoding
 
 Every walk op steps on the same `0x80 >> (2 + bits)` per-tick ladder as the
 `FUN_8003774C` yield ops, with the base-step selector carried in its own
 operands. The directional steps `0x03`/`0x19`/`0x20` hold `bits` in operand
-byte 1's low nibble; the pad-echo step `0x06` and the AABB wander `0x18`
+byte 1's low nibble; the home-relative step `0x06` and the AABB wander `0x18`
 scatter the same 4-bit selector over their four operand bytes' high bits
 (`(b1&0x80)>>4 | (b2&0x80)>>5 | (b3&0x80)>>6 | b4>>7`), leaving the low seven
-bits for the pad-echo offsets / wander-box tiles.
+bits for the home-box tile deltas / wander-box tiles.
 
 This is the disc source of a town NPC's ambient wander pace. The static
 decode is `man_field_scripts::placement_wander_step` →
@@ -534,7 +585,7 @@ Disc oracle:
 same two laws. Dispatch for both ramp ops is the 32-entry jump table at
 `0x80010FE8` indexed by `op - 1`.
 
-- **Snap.** The directional steps `0x03`/`0x19`/`0x20` and the wander/pad-echo
+- **Snap.** The directional steps `0x03`/`0x19`/`0x20` and the wander/home-step
   ops set the heading from their operand's LUT index as they move.
 - **Ramp.** Ops `0x04` and `0x0D`, below. Both aim at `LUT[b1 & 7]` and both
   read the direction from `b1 & 0x80` (set = decreasing). Neither has a
@@ -686,12 +737,11 @@ runs this tick per frame and `Camera::tick_globals` consumes the result.
 [`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
 executes both ops plus the `0x05` wait, the `0x01` restart, the `0x17`
 default-move write and the four [walk ops](#the-walk-half---the-directional-steps-and-the-aabb-wander),
-and carries the scheduler as `RampScheduler`. Ops it still does not model are
-stepped over by `legaia_asset::man_motion::op_width` without consuming the
-tick; a per-tick op budget stops a stream whose real yield op is one of those
-from spinning. The pool is ticked in slot order rather
-than through retail's linked list - observable only if two live ramps shared
-a destination, which one actor's heading channel cannot do.
+and carries the scheduler as `RampScheduler`; the other seventeen case bodies are in
+its `ambient_motion_ops` sibling
+([below](#the-whole-table-has-one-executing-home)). The pool is ticked in slot
+order rather than through retail's linked list - observable only if two live
+ramps shared a destination, which one actor's heading channel cannot do.
 
 #### Engine wiring
 
@@ -800,17 +850,183 @@ guard reads the live arena. End-to-end anchor:
 `crates/engine-core/tests/ambient_touch_wake.rs`, whose two cases differ only
 in where the NPC stands.
 
-### Ops the ambient channel steps over
-
-`AmbientMotion` executes `0x01`, `0x03`, `0x04`, `0x05`, `0x0D`, `0x17`,
-`0x18`, `0x19` and `0x20`. Every other op in `man_motion::op_width`'s space -
-`0x02`, `0x06`..`0x0C`, `0x0E`..`0x16` - is stepped over **by width without
-consuming the tick**, which is the correct answer for the facing channel the
-module drives and a disclosed gap for everything else. A per-tick op budget
-stops a stream whose only yielding op is one of those from spinning.
-
 Provenance: `ghidra/scripts/funcs/8003d038.txt`; the consumer at
 `0x8003882C` is inside `ghidra/scripts/funcs/80038158.txt`.
+
+### Op `0x06` `[06, b1, b2, b3, b4]` - the home-relative step
+
+Case body `0x800388C4`. One random cardinal step of a **full tile**, bounded
+by a box measured from the actor's own anchor pair `+0x8C` / `+0x8D` - the
+tiles the `0x0F` teleport and the spawner write.
+
+The four operand bytes carry the box in their low seven bits as **signed tile
+deltas from that anchor**, and the 4-bit pace selector scattered over their
+high bits exactly as `0x18` scatters it:
+
+```text
+bits  = (b1&0x80)>>4 | (b2&0x80)>>5 | (b3&0x80)>>6 | b4>>7
+x_lo  = ((b1 + home_x    ) & 0x7F) << 7
+z_lo  = ((b2 + home_z    ) & 0x7F) << 7
+x_hi  = ((b3 + home_x + 1) & 0x7F) << 7
+z_hi  = ((b4 + home_z + 1) & 0x7F) << 7
+```
+
+On the op's first tick (cursor zero) it draws `rand() & 6` - a cardinal,
+never a diagonal - and rejects the draw when the **whole-tile** destination
+(`±0x80`, not the wander's half tile) would leave that box, in which case the
+op retires. Otherwise the direction is stashed in `+0x86` bits 12-13, the same
+two bits the wander uses, and the op walks `0x80 >> (bits + 2)` units for
+`4 << bits` ticks - 128 units, a full tile, at any pace - and then retires.
+There is no turn phase and no continue-or-stop coin flip: the heading is
+snapped to the compass point every tick and the op runs exactly one leg.
+
+Collision is the wander's three-point fan `FUN_801D5A68`, not the directional
+step's single point. A blocked tick advances neither cursor nor PC, so a block
+on the first tick redraws next frame while a block mid-leg retries the same
+direction. Every path through the arm consumes the tick (`0x80038A1C` on the
+rejected draw, `0x80038A3C` on all the rest).
+
+The "pad-echo / bounded chase step" reading this op carried is **falsified**:
+no pad word is read anywhere in the arm, and the direction comes from the BIOS
+`rand()` at `0x80056798`.
+
+### Op `0x0C` - the tint / draw-mode fade
+
+`[0C, r, g, b, m_lo, m_hi, d_lo, d_hi]`, case body `0x8003918C`. Fades the
+actor's **packed RGB tint** `+0x74` and its companion draw-mode word `+0x78`
+over one shared duration. Both are arguments of the mesh submit
+`FUN_80043390` - the colour word in `a1` (bytes 0-2 are R/G/B and byte 3 ORs
+a bit into the mode) and the mode word in `a2` - and the actor spawn init
+`FUN_80020E3C` seeds them `0x00808080` (PSX-neutral) and `0`.
+
+Four branch shapes, at `0x800391BC` / `0x800391F4` / `0x80039220`:
+
+| duration | live `+0x78` | mode operand | behaviour |
+|---|---|---|---|
+| `0` | any | any | both written outright |
+| non-zero | `0` | any | tint written outright, mode ramped `0` -> operand |
+| non-zero | non-zero | `0` | tint untouched, mode ramped live -> `0` |
+| non-zero | non-zero | non-zero | both ramped |
+
+which is a fade-**in** that snaps the colour and opens the mode, and a
+fade-**out** that closes the mode and leaves the colour standing. The tint
+ramp is the scheduler's `kind 3` - the only caller of its three-lane packed-RGB
+lerp - and the mode ramp is `kind 4`, a `sw` over a field retail itself reads
+back with `lhu`.
+
+The "glide-channel install" reading is **falsified**: nothing in the arm
+touches a coordinate.
+
+### Op `0x0E` - the model swap
+
+`[0E, lo, hi]`, case body `0x800393A0`. Re-binds the actor's mesh through
+`FUN_80024E08`, which zeroes the anim cursor `+0x5C`, stores the resolved id
+at `+0x64` and reloads. The operand is compared **unsigned** against `0xF0`
+(`sltiu`), which splits the id space in two:
+
+- below `0xF0`: clear the translucent-draw bit `+0x10 & 0x0100_0000` and
+  resolve against `*(u16*)0x8007B6F8`, the scene's own model-bank base - the
+  same word the placement spawner `FUN_8003A1E4` adds a placement's model byte
+  to at `0x8003A2F0`;
+- `0xF0` and above, a negative operand included: raise that bit and resolve
+  `operand - 0xF0` against the second base `*(u16*)0x8007B824`.
+
+### Op `0x0F` - the tile teleport
+
+`[0F, b1, b2]`, case body `0x8003944C`. The grid decode is the field VM's
+`MoveTo` decode verbatim - `(b & 0x7F) * 0x80 + 0x40`, plus a further `0x40`
+when the byte's high bit is set - and the tile numbers are **also** written to
+the anchor pair `+0x8C` / `+0x8D`, which is what makes a following `0x06`
+measure its box from where the teleport landed. The footing is then re-sampled
+through the bilinear ground sampler `FUN_80019278` into `+0x16`, unless the
+actor carries the Y-override bit `+0x10 & 0x2000_0000`.
+
+### Ops `0x10` / `0x11` / `0x12` - the bit ops
+
+Three verbatim copies of one selector decode (`0x80039500`, `0x80039590`,
+`0x80039624`) on the single operand byte. `b1 & 0xC0` picks the word and
+`b1 & 0x30` picks which half of it, in the same sense both times: **non-zero
+selects the low halfword**.
+
+| `b1 & 0xC0` | `b1 & 0x30` | address | field |
+|---|---|---|---|
+| `0x00` | non-zero | `actor+0x10` | low half of the actor flag word |
+| `0x00` | zero | `actor+0x12` | high half of the same word |
+| `0x40` | any | `actor+0x62` | the motion-clip control word |
+| `0x80` | non-zero | `0x1F800394` | low half of the scratchpad global word |
+| `0x80` | zero | `0x1F800396` | high half of the same word |
+| `0xC0` | any | *(none)* | the assert arm - see below |
+
+The bit index is `b1 & 0x0F` in every case, so only bits `0..=15` of the
+selected halfword are reachable, which is what the high-half selectors are
+for: `0x80 | n` is how a stream reaches global bits `16..=31`. The
+`0xC0` arm stores the assert code `0x3039` at `0x8007B828` and leaves the
+pointer **null**, then reads and writes through it; no authored operand
+selects it.
+
+`0x12` is not a wait-for-set. On its first tick the cursor is seeded from the
+bit's *current* value at `0x800396B4` - `1` when already set, `2` when clear -
+and the op then waits for the **opposite** state, so the same authored byte
+means "wait for release" or "wait for signal" depending on what the flag holds
+when the stream arrives. It consumes the tick unconditionally: the
+`addiu s8, s8, 1` sits in the branch delay slot at `0x80039634`, ahead of the
+selector decode, so even the frame the wait retires costs a tick.
+
+### Ops `0x14` / `0x15` / `0x16` - the three scalar tweens
+
+`[op, v_lo, v_hi, d_lo, d_hi]` - three verbatim copies of one arm
+(`0x800397EC`, `0x800398F0`, `0x800399F4`) differing only in the destination
+halfword:
+
+| op | field | what it is |
+|---|---|---|
+| `0x14` | `actor+0x72` | uniform render scale, `0x1000` = 1.0 |
+| `0x15` | `actor+0x24` | the X Euler angle (pitch) |
+| `0x16` | `actor+0x28` | the Z Euler angle (roll) |
+
+A zero duration stores the value outright; otherwise a `kind 2` scheduler slot
+lerps the field from its live value over that many frame-scalar units. None of
+the three consumes the tick, so a stream can stack all three in one frame.
+
+`+0x72` is the field the animated renderer `FUN_8001B964` skips the draw on
+when it is zero (`0x8001B9A0`) and feeds to `ScaleMatrix` when it is anything
+but `0x1000` (`0x8001BA6C..0x8001BAA4`). The field locomotion controller reads
+the *same* halfword as its per-actor speed multiplier
+([`field-locomotion.md`](field-locomotion.md)), so the two readings of `+0x72`
+in this repo's docs are both right about one field with two consumers.
+
+### The whole table has one executing home
+
+[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
+runs all twenty-four case bodies. They are split across two files for length
+only - the facing ramps, the walk ops, the waits, the restart and the ramp
+scheduler in `ambient_motion.rs`; `0x02`, `0x06`..`0x0C` and `0x0E`..`0x16` in
+[`ambient_motion_ops.rs`](../../crates/engine-vm/src/ambient_motion_ops.rs) as
+further `impl AmbientMotion` blocks. Nothing is stepped over by width.
+
+The per-tick op budget (`MAX_OPS_PER_TICK`) stays, but its job has changed:
+retail has no budget and none is needed for the ops themselves, since every
+stream's yielding op now executes. What it guards is a stream of only
+non-yielding ops closed by a `0x01` restart, which hangs retail too.
+
+### What the host does with each op
+
+Several arms write state the engine does not consume yet. That is a *consumer*
+gap, not a port gap - the ops run, and their writes are observable on the
+channel - but it is the thing to check before filing "op X does nothing".
+
+| op | engine mechanism |
+|---|---|
+| `0x07` / `0x08` | `World::system_flag_set` / `system_flag_clear` - the same bank the variant preamble re-selects against, so a stream can swap its own variant |
+| `0x0F` | `World::npcs.positions`, ungated by the liveliness toggle |
+| `0x10` / `0x11` / `0x12` | the actor flag word and clip-control word on the channel; the global halves are seeded from and written back to `World::flags.story_flags` each tick |
+| `0x14` | published into the field-VM channel's `+0x72` so `World::field_npc_render_scale` - the accessor both hosts consult before drawing an NPC - sees it |
+| `0x02` / `0x0A` / `0x0B` | the requested-move pair reaches `carry_npc_run_anim`; the translucency bit has no consumer |
+| `0x09` | runs the same enqueue the field VM's op `0x36` sub-`0` runs - `World::audio.sfx_cue_cursor` / `sfx_parked_slot` / `sfx_cue_delays` - so a following delay write lands on the slot this op parked; the cue **id** is kept on the channel's ring copy and no host plays a field SFX cue yet |
+| `0x0C` | tint and draw-mode ramp on the channel; no NPC tint reaches either host's draw list |
+| `0x0E` | no per-placement mesh re-bind exists - both hosts resolve an NPC's mesh once at scene load |
+| `0x13` | no VRAM blit is reachable from a field-actor tick; `engine-render` owns the only VRAM |
+| `0x15` / `0x16` | no host applies pitch or roll to an NPC - both compose a Y rotation only |
 
 ### Flag census
 
@@ -841,6 +1057,16 @@ Disc-gated anchor test: `crates/engine-core/tests/motion_flag_census_disc.rs`.
   a different function at an aliased address).
 - `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d5a68.txt` - the
   wander's three-point fan over the same test.
+- `ghidra/scripts/funcs/80035b50.txt` - op `0x09`'s SFX-cue enqueue.
+- `ghidra/scripts/funcs/80024e08.txt` - op `0x0E`'s model re-bind.
+- `ghidra/scripts/funcs/80058490.txt` - op `0x13`'s `MoveImage`.
+- `ghidra/scripts/funcs/80019278.txt` - op `0x0F`'s ground resample.
+- `ghidra/scripts/funcs/8001698c.txt` - the per-frame sweep that ages the
+  cue ring op `0x09` posts into.
+- `ghidra/scripts/funcs/80043390.txt` - the mesh submit that consumes the
+  `+0x74` / `+0x78` pair op `0x0C` fades.
+- `ghidra/scripts/funcs/8001b964.txt` - the animated renderer that consumes
+  the `+0x72` op `0x14` tweens.
 - `ghidra/scripts/funcs/80036d80.txt` - the scheduler tick.
 - `ghidra/scripts/funcs/8003cda8.txt` - the scene-entry pool reset.
 - `ghidra/scripts/funcs/80037018.txt` - the player-zone ramp actor. The
