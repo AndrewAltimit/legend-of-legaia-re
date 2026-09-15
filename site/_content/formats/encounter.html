@@ -148,6 +148,7 @@
       <tr><td>Battle-intro style selector</td><td><code>SpinUpParticles</code> instead of the <code>TileShatter</code> default.</td></tr>
       <tr><td>Intro transition phase 0</td><td>Battle-start cue <code>0x4D</code> replaces the plain <code>0x1F</code> (<a href="../subsystems/cutscene.html">cutscene</a>).</td></tr>
       <tr><td>Enemy stat-boost profile</td><td>Picks the boost profile via <code>ctx[+0x287]</code>.</td></tr>
+      <tr><td>Summon instant-death / status resist</td><td>In a scripted fight, a monster whose record byte <code>+0x20</code> is set shrugs off the outcome of the three summons that test it. <code>+0x20</code> is not an immunity table - it is the double-width texture-page flag, reused as a "big model" proxy, and it is set on 37 of 186 records (<a href="../monsters.html#side-effects">enemy table</a>).</td></tr>
     </tbody>
   </table>
   <p>The engine keeps the bit as a property of the formation row: <code>monster_catalog::FormationDef::header_flags</code> feeds <code>per_battle_flags()</code>.</p>
