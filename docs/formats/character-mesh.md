@@ -95,14 +95,71 @@ The pack is `vdf` (extraction 872), whose header really is flat: count
 head of `player_data` - the same number 874 in the other index space,
 which is how the two entries were fused.
 
+### What can reach `0x808425F8`, and what cannot
+
+Two of the address forms the wild read could take are ruled out from the
+bytes.
+
+**Not a materialised constant.** `0x808425F8` sits `0x00800000` above the
+SCUS-resident `0x800425F8` (not `0x8000000` - that arithmetic is off by a
+digit). A pointer with that high half would have to come from a `lui rX,
+0x8084`, and there is **no `lui` with immediate `0x8084` or `0x8085` in any of
+the 84 images** (SCUS + the 83 mapped overlays, 2.1 MB). So the address is
+*computed* - a base plus a word read out of the container - and no base in the
+chain is within a small delta of it.
+
+**Not `FUN_80052FA0`'s in-place rebase, on its own.** The assembler does
+relocate `record[0]`'s `+0x58` / `+0x5C` in place
+(`lw v0,0x58(a0); addu v0,v0,a0; sw v0,0x58(a0)` at
+`0x800532BC..0x800532E4`, and the same pair for `+0x5C`), which is the classic
+double-relocation shape - but re-running it on an already-absolute word lands
+near `0x803xxxxx`, not `0x808xxxxx`, and the routine runs once per character.
+
+That leaves the two pack walks in the battle loader `FUN_800520F0`, which
+differ only in *which buffer* they walk. Both hand an unbounded
+`base + word-from-the-container` to a sub-asset consumer, so a container whose
+members no longer sit where its header says produces an arbitrary pointer from
+either:
+
+| | byte-offset walk | word-offset walk |
+|---|---|---|
+| site | `0x8005255C..0x8005259C` (phase `0x0C`) | `0x800525A0..0x80052600` |
+| base | `*0x8007B878` | `*(gp+0xA8C)`, the battle arena at `FUN_8005133C`'s `block + 0x1800` (`0x8005177C`) |
+| address | `base + [base + 4 + 4*i]` | `base + ([base + 4 + 4*i] << 2)` |
+| consumer | `FUN_8001FBCC` | `FUN_80026B4C` |
+
+The `<< 2` on the second makes it the easier of the two to put in the observed
+band: a ~21-bit garbage word off a `0x801xxxxx` base reaches `0x808425F8`
+directly.
+
+`0x8007B878` is the one pointer in the chain whose value is a **decoded
+size**, and it is worth naming because of what its census says. It has exactly
+four references on the disc, under both reference scanners: three writers -
+`0x8001F268` (in the sub-asset install dispatcher `FUN_8001F05C`'s **type-2**
+arm, `*0x8007B8CC + ((size + 3) & ~3)`, where `size` is the descriptor's low
+24 bits), `0x8005250C` and `0x80052538` (both `arena + streamed bytes`) - and
+one reader, the phase-`0x0C` walk above. And `0x8007B8CC`, that arm's
+destination, has exactly **one** reference on the whole disc: the `lw` at
+`0x8001F258`. Nothing writes it, and it is above SCUS's loaded extent
+(`0x80010000 + 0x6B800 = 0x8007B800`), i.e. `.bss`. So the type-2 arm's
+`s7 != 0` path is itself broken-or-dead in retail, and whichever of the two
+walks produces the wild read, it is reading a buffer nobody re-based.
+
+**The deciding observation** (for the emulator lane): a write-watch on
+`0x8007B878` across a rebuilt-container battle load, plus `$s2` at
+`0x8005255C` and `$a0` at `0x800525D8`. If `$s2` is the arena plus a streamed
+byte count the fault is the byte-offset walk; if `$a0` alone is out of range
+it is the word-offset walk.
+
 The editing contract is unchanged: `legaia_asset::party_swap::fieldize`
 keeps the first four words (`meta[0]`, `meta[1]`, `type<<24|size0`,
 `offset0`) byte-exact, which pins §0's decoded size at retail's 46 236
 bytes (pad the pack tail - retail itself pads ~19 KB in slot 4). A rebuild
 that changed §0's decoded size was observed to hang the next battle load
 (a wild read at `0x808425F8` under PCSX-Redux); with the VDF-pointer
-mechanism falsified that observation has no explanation yet, so the
-conservative rule stands until one is found.
+mechanism falsified, the address form is narrowed to the two pack walks
+[above](#what-can-reach-0x808425f8-and-what-cannot) and the conservative rule
+stands until a watchpoint picks between them.
 
 Byte-equality verified against a settled field-scene RAM snapshot at
 `DAT_8007C018[0..=4]` - see
