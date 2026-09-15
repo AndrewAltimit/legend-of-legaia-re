@@ -652,9 +652,16 @@ sweep (`scripts/ghidra-analysis/find-address-word-refs.py`), re-run over
 `SCUS_942.54` and all 83 mapped overlay images, reports no word, no `jal`, no
 `j`, no PC-relative branch and no `lui`+`addiu` pair for any of the three, and
 PROT 0909 holds no jump table that could reach them. Only `0x801F7948` is on
-the worklist, because only it has a dump. The finding has survived two
-independent re-runs, which is worth saying because "no caller found" and "no
-reference exists" are different claims and only the second one closes a row.
+the worklist, because only it has a dump.
+
+The sweep's only hits are **cross-image aliases**, and reading them as
+references is the mistake the tool's `--home` flag exists to prevent: a
+PC-relative branch inside PROT 0908 lands on `0x801F793C` and one inside PROT
+0949 on `0x801F7CD8`, neither of which can leave its own image, and PROT
+0958's 256-word head table carries `0x801F7D30` as one of its own arms. Three
+independent runs of the sweep agree, which is worth saying because "no caller
+found" and "no reference exists" are different claims and only the second one
+closes a row.
 
 ### SCUS calls into slot B at one fixed VA - and only PROT 0920 arms it
 

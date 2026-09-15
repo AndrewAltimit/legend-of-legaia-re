@@ -257,6 +257,13 @@ HP. Only the fourth (`0x801CF244`) drains into the coin tally `_DAT_80084440`.
 So three of the six rows on that screen are healing, not score, and a dome
 contest costs no permanent HP.
 
+The six rows are **not** one per lane, which is the reading that puts the
+wrong numbers on the screen: they are the three lane pendings, the shared HP
+accumulator `DAT_801D1AC8`, lane 3's pending and the running tally
+`_DAT_80084440`, and their brightness comes from only four fade counters in
+the order `[0, 1, 2, 0, 3, 3]`. Row by row, with the addresses:
+[`functions/minigames-debug.md`](../reference/functions/minigames-debug.md#the-contest-score-tally-screen-fun_801cf074).
+
 ### The between-leg restore
 
 Hub state `0x0C` (`0x801CFE7C..0x801CFEA8`) does
