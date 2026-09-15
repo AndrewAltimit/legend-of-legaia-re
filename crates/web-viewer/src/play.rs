@@ -1212,7 +1212,6 @@ fn env_positions(
 /// textured + colour mesh, its per-vertex bone ids and the packet-colour
 /// stream ([`crate::packet_color::hybrid`]).
 pub(crate) struct StagedActorMesh {
-    pub slot: u8,
     pub mesh: legaia_tmd::mesh::VramMesh,
     pub object_ids: Vec<u32>,
     pub flat: Vec<u8>,
@@ -1260,7 +1259,6 @@ impl LegaiaRuntime {
         }
         let flat = crate::packet_color::hybrid(&mesh, &shading);
         self.dynamic_mesh_cur = Some(StagedActorMesh {
-            slot,
             mesh,
             object_ids,
             flat,
