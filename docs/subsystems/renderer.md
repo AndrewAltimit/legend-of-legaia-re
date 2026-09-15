@@ -1409,7 +1409,30 @@ renderer and the site's WebGL viewers:
   coplanar overlapping pairs that survive - `DIAG_ALL=1` sweeps the whole
   field corpus. The known residual tail it tolerates: same-position stacks
   of *curved* shells (jouine's flesh walls), which no translation offset can
-  separate everywhere, and sub-cluster slivers below the detection floor.
+  separate everywhere, and slivers the lift itself manufactures - see below.
+
+  **The sliver residual is self-inflicted, not a missed plane.** koin4's one
+  survivor is two decoration meshes from its env pack (extraction PROT entry
+  571, offsets `0x5770` and `0x9AC8`, both placed unrotated) that share *two*
+  planes: `z = 12288`, where their wall faces genuinely coincide, and
+  `x = 13056`, where they meet edge to edge at exactly `z = 12288` with no
+  authored overlap at all. The lift that clears the first is `[0, -0.75,
+  -0.75]`, and both of its components lie *inside* the second plane, so it
+  cannot separate that pair - it only slides the abutment into a strip exactly
+  `DRAW_NUDGE` (`0.75`) wide. Measured 94.56 units against 0 at authored
+  positions, and 0 again with the offset zeroed. The lift is not optional:
+  dropping its Z component leaves 8 pairs / 32 604 units fighting on the real
+  plane. Detection is not the problem either - both meshes' planes are
+  hundreds of times `MIN_PLANE_AREA` (32 640 and 34 170 against 64), and the
+  kernel declines the pair because at authored positions `aabb_overlaps`
+  correctly reports edge-adjacent-not-overlapping. The strip is half the
+  kernel's own `1.5`-unit adjacency margin, so a re-run cannot see it. Retail
+  has nothing coincident at `x = 13056` to order. Corpus check: koin4's own
+  display list is unread (98 mednafen + 79 pcsx-redux states, zero koin4);
+  the nearest read, a koin3 field run, shows 4 screen-coincident groups above
+  16 px out of 1471 walked packets, every one a different texture family with
+  a stable winner - which speaks to the `z = 12288` half, not to a strip that
+  only exists after the lift.
 - **Depth precision** - the native renderer runs **reversed-Z**
   (`renderer/helpers.rs::reverse_z`: clip `z' = w - z`, depth cleared to 0,
   compares mirrored to Greater/GreaterEqual, applied centrally at the two MVP

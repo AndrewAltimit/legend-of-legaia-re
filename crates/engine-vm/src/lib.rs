@@ -89,6 +89,7 @@
 pub mod actor_alloc;
 pub mod actor_tick;
 pub mod ambient_motion;
+pub mod ambient_motion_ops;
 pub mod anim_vm;
 pub mod baka_hub_actors;
 pub mod battle_action;
@@ -129,6 +130,15 @@ pub mod battle_value_readout;
 pub mod camera_mover;
 pub mod camera_rel_actor;
 pub mod cast_module_ticks;
+// --- W1-C ---
+pub mod cast_seru_ticks_b;
+// --- end W1-C ---
+// --- W1-B ---
+pub mod cast_seru_ticks_a;
+// --- end W1-B ---
+// --- W1-D ---
+pub mod cast_arm_ticks;
+// --- end W1-D ---
 pub mod code_lock_actor;
 pub mod cutscene_trigger;
 pub mod dance_marker;

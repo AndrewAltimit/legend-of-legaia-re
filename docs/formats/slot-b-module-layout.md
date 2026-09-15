@@ -61,6 +61,31 @@ slot is `addiu sp, sp, +F` for the same `F`. This is the partition
 rule: a frameless leaf, an early `jr ra` inside a body, and a `jr ra` word that
 is data in the image's tail.
 
+### It does not find a frameless arm, and the head table does
+
+Frame matching answers "where does this body end", not "where do bodies
+start": a **frameless leaf** has no prologue, so nothing in the scan names it.
+The head jump table does, and a table word is the stronger evidence of the two -
+a routine reached only through a table is still a routine.
+
+PROT 0949 is the worked case, and it is also a worked case for reading the
+**consumer's** pointer-forming instruction rather than counting table words.
+Its stager `FUN_801F75BC` dispatches `sltiu v1, a1, 0x8` through a table based at
+`0x801F69F0` - six words into the image's leading VA run, not at the image head -
+so the table it owns is eight arms, `0x801F69F0..0x801F6A10`. Arm 0 is the
+fall-through body at `0x801F761C`, inside the stager's own extent; arms 1..7 are
+seven 20-byte frameless leaves at `0x801F7630 + (i-1)*0x14`.
+
+The eight arms are one eight-step ramp on the victim actor: `actor[+0x0C]` (the
+tint blend) `0x200` .. `0x1000` against `actor[+0x21D]` (the anim rate) `7` .. `0`.
+The frame scan sees none of the seven, so the 140-byte run they occupy read as
+"the module's own data region" and was filed under a settled thread saying the
+band's un-dumped runs are not code. It is code: see
+`ghidra/scripts/funcs/overlay_cast_water_crystals_0949_801f7630.txt` and its six
+siblings. When a band image's residue is being classified, read the dispatcher's
+`lui`/`addiu` table base and its `sltiu` bound before reading the frame
+partition.
+
 ## The spawn-record band
 
 A record is named by an **instruction**, never by a statistic. The module
@@ -85,15 +110,24 @@ entropy test.
 
 ### `+0x02` is reserved, not a flags word
 
-The wider docs quote this record as `[i16 model_sel][u16 flags][bytecode]`, and
-the `flags` half of that name is not a measurement. Nothing reads `+0x02`:
+A record header of the shape `[i16 model_sel][u16 ?]` reads as a flags word by
+default, and that default is not a measurement. Nothing reads `+0x02`:
 `FUN_80021B04` loads only `($a2)` (`lh` at `0x80021B2C`, `lhu` at
 `0x80021B30`, and again at `0x80021BD0` / `0x80021C98` / `0x80021CB4`), and the
 move VM starts the program at halfword index 2 (`actor[+0x70] = 2`, `sll v0,1`
 at `0x800230B8`), so `+0x02` is stepped over rather than fetched. It is zero in
 every band record and in every PROT 0898 effect-prototype record. Confidence on
-the halfword is therefore **Unknown**, and this page names it `reserved`; the
-other pages still carry the older `flags` label.
+the halfword is therefore **Unknown**, and it is named `reserved` wherever the
+docs quote this record shape. Both legs of that evidence - `FUN_80021B04`
+loading only `($a2)`, and the move VM starting at halfword index 2 - are
+properties of the *record shape*, not of the band, so the rename covers every
+carrier of it: the summon stagers, the cast band, the PROT 0898 effect
+prototypes, the per-scene prescript stagers and the battle-overlay burst
+records. The four Rust structs that carry the halfword
+(`legaia_asset::summon_overlay::SummonPart`,
+`legaia_engine_core::summon::SummonPartRuntime`,
+`legaia_engine_core::world::ambient::AmbientPart`,
+`legaia_engine_vm::battle_burst::BurstRecord`) name it `reserved` too.
 
 ### The filters, and which of them retail exercises
 
@@ -131,25 +165,76 @@ partition; in those six the frame is complete and the call passes. The filter
 is a partition test, not a truncation test, and where the residue frames
 cleanly it lets the donor's call through.
 
-No claimed byte comes from one today, and the reason is the *other* rule: in
-five of the six (0908, 0910, 0920, 0943, 0961) the donor's pointer is the
-image's **highest** offset, so the unbounded-record rule below drops it, and in
-PROT 0945 the pointer does not resolve at all. `asset account` reports the
-dropped offset for each - `0x26D8`, `0x26D8`, `0x1EF4`, `0x17E0`, `0x1DAC`. So
-the band's record bytes are sound while the call-site filter is narrower than
-its own description; a donor whose residue framed cleanly *and* whose record
-sat below one of this image's own would be credited here.
+The cut that closes this is the image's own **content end**: a call site at or
+above it is the donor's, whatever it frames as. `slot_b_module::parse_with_tail`
+takes that offset and drops every call site and every record target from there
+up. Over the band it removes a credited pointer on five images - 0908, 0910,
+0920, 0943, 0961 - at offsets `0x26D8`, `0x26D8`, `0x1EF4`, `0x17E0`, `0x1DAC`.
+PROT 0945 is the sixth image whose donor call site passes the frame test, and it
+loses nothing, because its pointer never resolved to a record in the first
+place. The content end comes from `inherited_tail.py` when the other images are
+in hand, and from `slot_b_module::content_end` when only this one is.
 
-### The one span the band cannot bound
+### Bounding the highest record
 
-The image's **highest** record has no next pointer above it. Nothing in the
-module computes an address past it, the record carries no length, and the
-move-VM program's own terminator (`0x08` HALT) is not a reliable static bound -
-walking the documented opcode widths from a known record start lands on the
-next record's start, within four bytes, for about three quarters of the band's
-records and misses on the rest. So the parser stops at the highest record and
-reports it rather than claiming it. Everything below it is bounded on both
-sides.
+The image's highest record has no next pointer above it, so the *band* cannot
+bound it - but its **program** can. A record's payload is a move-VM program,
+and a program ends where nothing above it can execute. Two words do that:
+
+| terminator | why nothing above it runs |
+|---|---|
+| `0x08` HALT | sets `flags \| 8` and drops out of the tick loop |
+| an armed `0x19` / `0x1B` | its paired `0x18` / `0x1A` loaded a counter carrying bit `0x4000`, which makes the branch back to the saved PC unconditional |
+
+Three details decide whether this reproduces the measured extents or misses
+them, and all three were needed:
+
+1. **Round the end up to 4.** The records are word-aligned, so a program whose
+   last halfword lands mid-word is followed by one halfword of padding. Without
+   this step the walk misses by exactly 4 bytes on a large minority of records -
+   which is the "within four bytes for about three quarters" figure an earlier
+   reading of this page recorded as evidence that no static bound exists. The
+   miss was the alignment rule, not the absence of one.
+2. **HALT outranks the idle loop.** Most records that idle-loop still emit the
+   record's `HALT` in the very next halfword, and the record ends after the
+   `HALT`. So an armed loop ends the program only when a `HALT` does not follow
+   it immediately.
+3. **Chain, don't assume one record per pointer.** Above the highest credited
+   record the bytes often keep reading as `[header][program]`, and those are
+   records the consumer reaches by some other route. The parser keeps them in
+   `chained_records`, apart from the pointer-credited ones.
+
+Under those three, chaining `[header][program]` from every record start
+reproduces 991 of the band's 1027 bounded record extents exactly (the band's
+own highest records are excluded from that count - their ends come from this
+very walk), and bounds the highest record on 58 of the 62 images that have one.
+The four that stay unbounded are where the walk meets a halfword that is no
+opcode before it meets a terminator; those records are reported, not claimed.
+
+The residue is a real one rather than a tolerance, and it has exactly one
+direction - but the direction is a property of the **claim**, not of the walk's
+program counter, and the two are easy to confuse. What holds without exception
+is that no miss ever *terminates* above the measured end: every one of them
+returns `Unterminated`, and only a `HALT` or an armed idle loop produces a
+claim. So the rule never claims bytes the band does not bound; it declines to
+claim bytes the band does.
+
+The walk's PC is a different matter, and it does run past the end. Re-measured
+over the band's pointer-credited extents, the misses split three ways: the PC
+lands **exactly on** the measured end on the largest group - the record whose
+last instruction is non-terminating, which is the shape the rule was written
+for - stops **below** it on a handful, and steps **past** it on fourteen,
+before dying on a halfword that is no opcode. On those fourteen the widths
+mis-step somewhere inside the record, so by the time the walk fails it is
+reading the next record's bytes as operands. A page that says "every miss
+stalls below the end" is describing the first two groups only, and the `0x09`
+WAIT shape it names is one cause among several rather than the mechanism. For
+the highest record there is no next header, which is why a miss there leaves no
+static bound at all and those records are disclosed rather than claimed.
+
+That asymmetry is what makes the figure usable by the two consumers below. An
+over-claim would retire real code from the dump worklist; a stall only leaves
+an extent for the pointer bound that already exists.
 
 ## What this is for
 

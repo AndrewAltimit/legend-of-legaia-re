@@ -123,14 +123,19 @@ Each script entry is `1 + N` bytes, with bit `0x80` of the op byte selecting a
 target actor first (`0xF8` = self, `0xFB` = linked); dispatch is a 22-entry
 jump table at `0x80010EE0` indexed by `(op & 0x7F) - 0x37`.
 
-`ambient_motion` is the second one, `FUN_80038158` - the ambient / idle
-**facing** channel whose bytecode arrives as MAN tail-section 1
-(`legaia_asset::man_motion`). Its two rotate ops both aim at the same
-eight-point compass LUT the walk ops snap to, so every ambient turn ends on a
-compass point. Without it an engine NPC holds one heading forever where a
-retail one slowly looks around. `motion_pause` is the sibling kick
-(`FUN_8003C9AC`) a field interaction tail-calls: it snaps every wandering
-moving-class NPC back onto its default motion cycle while the dialog runs.
+`ambient_motion` is the second one, `FUN_80038158` - the scripted-motion VM
+whose bytecode arrives as MAN tail-section 1 (`legaia_asset::man_motion`). It
+runs the whole 32-slot table: the idle facing ramps, the walk ops, the waits,
+the story-flag writes, the bit ops, the teleport, the model swap and the three
+scalar tweens. The op bodies split across two files for length only - the
+walks, waits, ramps and the ramp scheduler here, the rest in
+`ambient_motion_ops` as further `impl AmbientMotion` blocks - and nothing is
+stepped over by width. Its two rotate ops both aim at the same eight-point
+compass LUT the walk ops snap to, so every ambient turn ends on a compass
+point. Without it an engine NPC holds one heading forever where a retail one
+slowly looks around. `motion_pause` is the sibling kick (`FUN_8003C9AC`) a
+field interaction tail-calls: it snaps every wandering moving-class NPC back
+onto its default motion cycle while the dialog runs.
 
 ## `world_map` - `FUN_801DA51C`
 

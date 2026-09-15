@@ -7,7 +7,7 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | Address | Role |
 |---|---|
 | `8001822C` | **Per-frame pad pump** / debug dispatcher. Builds the packed held mask `_DAT_8007B850` from the libpad reports: digital `0x4x` decode `~(b2<<8\|b3)` (port 1 into the high half), DualShock `0x7x` stick fold-ins (right stick onto face buttons, left onto dpad; deadzone `<0x30`/`>0xD0`), then Left+Right / Up+Down SOCD-cancel. Retail (`_DAT_8007B98C == 0`) truncates to port 0's 16 bits and skips every debug binding. Edge words + the 32-vsync held ring / 8-vsync auto-repeat: see the memory-map debug-flags table. Ported as `legaia_engine_core::retail_pad::RetailPadState::pump`. `see ghidra/scripts/funcs/8001822c.txt`. |
-| `80016230` | Dev-print driver. Loads `program_no=%d` / `..\..\FIELD\PROGRAM\....\%d` strings only when debug enable is non-zero. |
+| `80016230` | **Mode-transition pass.** Runs on a game-mode change: reconciles the scene-name buffers, resets `_DAT_8007B9C4` outside modes 2/3, and - when the next mode is `8` / `0x14` / `0x18` / `0x1A` (battle intro / battle / minigame warp / STR) and `_DAT_8007B7AC == 3` - snapshots the player's X/Z into `_DAT_80084568` / `_DAT_8008456C` and writes the field-entry mode word `_DAT_8007B8B8 = 1` (`0x800163E0..0x80016418`). It also loads the `program_no=%d` / `..\..\FIELD\PROGRAM\....\%d` dev-print strings when debug enable is non-zero - which is the whole of the earlier "dev-print driver" reading. See [`field-locomotion.md`](../../subsystems/field-locomotion.md#who-writes-the-word). |
 | `8001AA68` | Fixed-cell debug string drawer - [details ↓](#8001aa68) |
 | `8001CE34` | **Dev 3-D line emitter.** `(x, y, z, dx, dy, dz)`. Projects both endpoints through the RTPS wrapper `FUN_8003D368`, writes a 3-word GP0 line packet (cmd = `DAT_8007B714` colour + `0x40000000`) at the scratchpad OT cursor `_DAT_1F8003A0` and links it (`FUN_8003D2C4`) into OT bucket `_DAT_1F8003F4 + 8`. All twelve static callers are `FUN_8001CAD8` - it is not a shared boot utility, despite the in-degree. No caller outside the dev-draw cluster in the captured corpus. `see ghidra/scripts/funcs/8001ce34.txt`. |
 | `8001CAD8` | **Dev wireframe-box drawer.** `(x, y, z, dx, dy, dz)`. Emits the 12 edges of the axis-aligned box spanned by the corner + extents via 12 `FUN_8001CE34` calls. Debug visualisation (bounding boxes / trigger volumes); zero callers across SCUS + the captured overlays. `see ghidra/scripts/funcs/8001cad8.txt`. |
@@ -305,6 +305,12 @@ the second address only.
 `801DDB44` is `0x24` bytes into slot 4's arm (`0x801DDB20`, whose successor slot
 begins at `0x801DDB4C`): the `j 0x801DDBC8` and its delay slot `sh s1, 0x16(a1)`.
 Nothing references it.
+
+Both arms are **inside** `FUN_801DD9D4`, which runs `0x801DD9D4..0x801DDC20` -
+588 bytes, 147 instructions, ending at the `jr ra` at `0x801DDC18`. Every dump
+of it stops at 276 bytes, because the decompiler stops at the `jr v0` jump table
+at `0x801DDA88` and the `beq` at `0x801DDA78` branches past it, so the arms read
+as orphans of a body that appears to end before them.
 
 ### `801D2784`
 

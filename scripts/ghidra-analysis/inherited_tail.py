@@ -25,24 +25,48 @@ Why this matters to two instruments at once:
   `0x1037` (VA `0x801F7A0F`) and 0x801F7D34 is 0x32D bytes past it, in PROT
   0942's residue.
 
-The rule is deliberately asymmetric. A *strictly longer* sibling is a candidate
-writer for the bytes; two images of equal length that share a suffix are both
-carrying somebody else's residue and neither can be named as its owner, so the
-run is left in both denominators rather than silently dropped from both. The
-minimum length keeps a two-word coincidence from cutting an image short: at
+The minimum length keeps a two-word coincidence from cutting an image short: at
 `MIN_TAIL_BYTES` the match is sixteen instructions long and runs to the end of
 the file, which no shared library routine does unless it is the last thing
 linked.
 
-Three restrictions, and a figure belongs to whichever set it was measured
-under. Donors are drawn only from images at the **same** `base_va`, and only
-from **strictly longer** ones, and the run must be at least `MIN_TAIL_BYTES`.
-Under all three, 66 of the 83 mapped images carry a tail, 61,597 bytes in
-total. Drop the first two and the same suffix test reports 79 of 83 and
-104,700 bytes - the extra 13 are 8 images whose donor is the same length and 5
-whose donor loads at a different base (PROT 0904 / 0912 / 0922's tails are PROT
-0899's menu code, and `gameover`'s is `world_map_render`'s). Neither figure is
-wrong; quote the rule with the number.
+The `own_ends` measurement below and the cut are mutually recursive - the cut
+needs the measurement, and the measurement is wrong until the cut is applied -
+so `tail_starts_fixpoint` iterates the pair instead of taking the first
+estimate. See its docstring for which images that matters on.
+
+Which siblings may be donors
+----------------------------
+
+The buffer the residue comes out of is indexed by FILE OFFSET, not by link
+address, so a donor need not be at this image's `base_va` - and it need not be
+longer either, only longer *in its own content*. Two earlier restrictions
+encoded the opposite and each lost real residue:
+
+* **Same `base_va`.** Dropped. The five images whose donor is at another base
+  are the loudest cases in the whole set: PROT 0904 / 0912 / 0917 / 0918 / 0922
+  end in PROT 0899's menu code, and `gameover`'s tail is `world_map_render`'s.
+  A 2000-byte byte-identical run at the same file offset in two unrelated
+  modules is residue whatever either one is linked at.
+* **Strictly longer.** Kept as the *default* leg, and joined by a second one
+  for the equal-extent case rather than dropped. `content_bytes` is the PROT
+  entry's sector extent, so two modules that round to the same number of
+  sectors both read as "equal length" while one of them really does hold more
+  content. That case is settled by a measurement, not by the extent: the
+  `own_ends` argument carries each image's structural own-content end (for a
+  slot-B module, the top of its spawn-record chain -
+  `legaia_asset::slot_b_module::content_end`), and an equal-extent donor is
+  admitted only when its own content reaches ABOVE the shared suffix while the
+  recipient's does not. That is what breaks the symmetry the old rule refused
+  to break: on PROT 0917 / 0918 it names 0917 the donor, because 0917's record
+  chain runs past the shared start and 0918's stops below it.
+
+A figure belongs to whichever rule it was measured under. Same base + strictly
+longer reports 66 of the 83 mapped images and 61,597 bytes; any base + strictly
+longer reports 79 and 76,916; adding the gated equal-extent leg reports 79 and
+88,150. The unguarded "any base, any length >=" variant reports 79 and 104,700
+and is NOT what this module does - it names a donor wherever a suffix matches,
+including the pairs where neither image can be shown to own the bytes.
 """
 
 MIN_TAIL_BYTES = 0x40
@@ -57,28 +81,88 @@ def _suffix_start(a: bytes, b: bytes) -> int:
     return i + 1
 
 
-def tail_starts(images, min_tail=MIN_TAIL_BYTES):
+def tail_starts(images, min_tail=MIN_TAIL_BYTES, own_ends=None):
     """`{key: (offset, owner_key)}` for every image with an inherited tail.
 
-    `images` is an iterable of `(key, base_va, content_bytes)` triples. Only
-    images sharing a `base_va` are compared, because only those are candidates
-    to have been written into one another's buffer.
+    `images` is an iterable of `(key, base_va, content_bytes)` triples; the
+    `base_va` is carried for the caller's convenience and is NOT used to
+    restrict donors (see the module docs - the mastering buffer is indexed by
+    file offset).
+
+    `own_ends` is `{key: structural own-content end in bytes}`. It gates the
+    equal-extent leg only: without it, equal-extent donors are not considered
+    and the result is the "any base, strictly longer" figure.
     """
-    by_base = {}
-    for key, base, data in images:
-        by_base.setdefault(base, []).append((key, data))
+    imgs = [(key, data) for key, _base, data in images]
+    own = own_ends or {}
     out = {}
-    for group in by_base.values():
-        for key, data in group:
-            best = None
-            for other_key, other in group:
-                if other_key == key or len(other) <= len(data):
-                    continue
-                start = _suffix_start(data, other[: len(data)])
-                if len(data) - start < min_tail:
-                    continue
-                if best is None or start < best[0]:
-                    best = (start, other_key)
-            if best:
-                out[key] = best
+    for key, data in imgs:
+        best = None
+        for other_key, other in imgs:
+            if other_key == key or len(other) < len(data):
+                continue
+            equal_extent = len(other) == len(data)
+            if equal_extent and not own_ends:
+                continue
+            start = _suffix_start(data, other[: len(data)])
+            if len(data) - start < min_tail:
+                continue
+            # An equal-extent sibling is a donor only where the bytes can say
+            # so: its own content must reach above the shared suffix and this
+            # image's must not. Absent either measurement, decline.
+            if equal_extent and not (
+                own.get(other_key, 0) > start and own.get(key, len(data)) <= start
+            ):
+                continue
+            if best is None or start < best[0]:
+                best = (start, other_key)
+        if best:
+            out[key] = best
     return out
+
+
+def tail_starts_fixpoint(images, own_end, min_tail=MIN_TAIL_BYTES,
+                         max_rounds=8):
+    """`tail_starts` iterated until the cuts stop moving.
+
+    `own_end(key, base, data)` returns an image's structural own-content end in
+    bytes, and it is the input `tail_starts` gates its equal-extent leg on. The
+    first round has to measure it over the WHOLE image, because no cut is known
+    yet - and that is exactly where it overshoots: a slot-B module's spawn-record
+    chain walks straight on into its donor's residue and reports an own-content
+    end above the tail. Five images in the band do that (PROT 0908 / 0910 / 0920
+    / 0943 / 0961), and the overshoot is a claim about the donor question the
+    figure is there to answer.
+
+    So each round re-measures `own_end` over the image CUT at the tail the
+    previous round found. An overshoot that existed only because the residue was
+    still attached disappears; a record chain that really does reach that far is
+    unaffected, because its records lie below the cut.
+
+    Returns the same `{key: (offset, owner_key)}` mapping. The iteration is
+    bounded rather than trusted to converge: the two legs move in opposite
+    directions (cutting a recipient makes it more recipient-shaped, cutting a
+    donor less donor-shaped), so a pathological pair could alternate. Eight
+    rounds is far past the two the retail band needs; the last state is
+    returned either way, and `tail_starts_fixpoint_rounds` says how many were
+    spent so a caller can report a non-convergence instead of printing a number
+    that is really round eight of an oscillation.
+    """
+    global tail_starts_fixpoint_rounds
+    cuts = {}
+    for round_no in range(1, max_rounds + 1):
+        own = {}
+        for key, base, data in images:
+            cut = cuts.get(key)
+            own[key] = own_end(key, base, data[:cut[0]] if cut else data)
+        nxt = tail_starts(images, min_tail=min_tail, own_ends=own)
+        tail_starts_fixpoint_rounds = round_no
+        if nxt == cuts:
+            return cuts
+        cuts = nxt
+    return cuts
+
+
+# How many rounds the last `tail_starts_fixpoint` call spent. Equal to
+# `max_rounds` means it did not converge.
+tail_starts_fixpoint_rounds = 0

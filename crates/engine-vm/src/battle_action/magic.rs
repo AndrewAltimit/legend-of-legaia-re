@@ -412,7 +412,7 @@ pub(super) fn magic_capture_fade<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
-    if ctx.counter_attack_a != 0 {
+    if ctx.scripted_fight != 0 {
         host.duck_audio_level(75);
     }
     // The camera pull-in. Unsigned in retail, so a long hold wraps rather
@@ -468,7 +468,7 @@ pub(super) fn magic_capture_phase2<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
-    if ctx.counter_attack_a != 0 {
+    if ctx.scripted_fight != 0 {
         host.duck_audio_level(75);
     }
     ctx.camera_variant = CAPTURE_CAMERA_VARIANT;

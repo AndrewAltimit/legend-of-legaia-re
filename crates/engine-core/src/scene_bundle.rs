@@ -685,14 +685,13 @@ pub struct FieldLoadEntryPlan {
 ///
 /// PORT: FUN_80020118
 ///
-/// NOT WIRED: the prerequisite is a staging buffer this engine does not have.
-/// Retail's entry step exists to decide whether to *request* the DATA_FIELD
-/// streaming bundle into `_DAT_8007B85C` before the `.MAP` walk; the port
-/// resolves a scene through [`crate::scene::Scene`] resources, which own their
-/// own bytes, so no caller ever needs the "is a stage needed" answer. The
-/// three call sites in the workspace are all in this file's `#[cfg(test)]`
-/// block. Wiring means giving the scene loader a staged-bundle mode, not
-/// inserting a call.
+/// NOT WIRED: the prerequisite is a staged-bundle mode the scene loader does
+/// not have. Retail's entry step exists only to decide whether to request the
+/// DATA_FIELD streaming bundle into `_DAT_8007B85C` ahead of the `.MAP` walk;
+/// the port hands each scene a [`crate::scene::Scene`] whose resources already
+/// own their bytes, so no caller ever forms the "is a stage needed" question.
+/// Every call site is in this file's own test module. Closing it means giving
+/// the scene loader a staging buffer, not inserting a call.
 pub fn field_load_entry_plan(field_record: i16, staged_index: i16) -> FieldLoadEntryPlan {
     FieldLoadEntryPlan {
         data_field_chunk: field_record + 3,

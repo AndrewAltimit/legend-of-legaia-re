@@ -202,6 +202,7 @@ face:
 | Enemy stat-boost profile (`FUN_80054CB0` via `ctx[+0x287]`) | Picks the boost profile; see [`legaia_asset::monster_archive`](../../crates/asset/src/monster_archive.rs). |
 | Seru-magic side-effect stager (`FUN_801F3D3C` via `ctx[+0x287]`) | Enables the 80% suppression roll and the base-vs-record compare that keeps a player's ATK / DEF / INT debuffs off a boss; see [battle-formulas.md](../subsystems/battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch). |
 | Escape roll (`FUN_801E791C` via `ctx[+0x287]`) | Blocks the party's escape ([battle-action.md](../subsystems/battle-action.md)). |
+| Summon instant-death / status resist (PROT 0907 / 0908 / 0916 via `ctx[+0x287]`) | Lets a monster whose record `+0x20` is set abandon the summon's outcome; see [battle.md](../subsystems/battle.md#the-instant-death--status-resist-gate-record-0x20). |
 
 The engine carries the bit as a property of the *formation row* rather than as
 a global: `legaia_engine_core::monster_catalog::FormationDef` keeps the row's

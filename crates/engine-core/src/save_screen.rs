@@ -373,16 +373,24 @@ impl SaveScreenFlow {
             ..Default::default()
         };
         self.machine_effects = machine.tick(sub_input, SAVE_SCREEN_FADE_DELTA);
-        // The fade's input threshold is **not** applied to this edge, and the
-        // reason is a boundary mismatch rather than a fidelity choice. Retail
-        // suppresses the pad while its outer fade is above
-        // `FADE_INPUT_THRESHOLD`, and by the time a player is choosing a card
-        // port that fade is long finished - the save UI faded in when the menu
-        // row opened it. The port's session starts *at* the pill row and the
-        // flow is constructed with it, so gating on the fade here swallows the
-        // port confirm instead of the press that opened the screen. Hosts that
-        // want the gate read [`Self::retail_fade`] and
+        // The fade's input threshold is applied to **one** edge, not to the
+        // whole frame, and the split is a boundary mismatch rather than a
+        // fidelity choice. Retail suppresses the pad while its outer fade is
+        // above `FADE_INPUT_THRESHOLD`; by the time a player is choosing a
+        // card port that fade is long finished, because the save UI faded in
+        // when the menu row opened it. The port's session starts *at* the pill
+        // row and the flow is constructed with it, so a blanket gate here
+        // swallows the port confirm instead of the press that opened the
+        // screen. The slot-select -> write edge is the one the port and retail
+        // do agree on: the grid comes up after the machine has entered its own
+        // card sub-screen, so its fade is in frame there, and that is where
+        // [`fade_gates_write`] applies it below. Hosts that want the rest of
+        // the gate read [`Self::retail_fade`] and
         // `SaveScreenMachine::input_active` for themselves.
+        let input_active = self
+            .machine
+            .as_ref()
+            .is_some_and(SaveScreenMachine::input_active);
         match session.phase() {
             SelectPhase::SlotPreview { .. } => {
                 self.grid_cursor = step_grid_cursor(self.grid_cursor, edge);
@@ -402,6 +410,13 @@ impl SaveScreenFlow {
             || edge & PadButton::Cross.mask() == 0
         {
             return edge;
+        }
+        // The slot-select -> write edge, gated on the outer fade the way
+        // retail gates every pad read. A confirm taken while the dispatcher is
+        // still fading is the one that commits a block the player has not seen
+        // drawn yet.
+        if fade_gates_write(input_active) {
+            return edge & !PadButton::Cross.mask();
         }
         // A confirm of either direction needs the card op to have completed:
         // retail's screens sit on the driver's result word and a write into a
@@ -440,6 +455,20 @@ impl SaveScreenFlow {
         };
         Some(SaveCommit { port, cell, kind })
     }
+}
+
+/// Whether the outer fade suppresses the slot-select confirm this frame.
+///
+/// Retail's dispatcher masks the pad globals whole-frame while its fade level
+/// is at or above `save_subscreen::FADE_INPUT_THRESHOLD`, so no sub-screen
+/// sees a press until the screen is nearly clear. The port applies that to the
+/// write confirm only - see the note in [`SaveScreenFlow::before_tick`] for
+/// why the rest of the frame cannot take it - and `input_active` is the
+/// machine's own reading of that same level.
+// REF: FUN_801DC6B4 (the dispatcher whose pad mask this reproduces; the level
+// test is `save_subscreen::SaveScreenMachine::input_active`)
+fn fade_gates_write(input_active: bool) -> bool {
+    !input_active
 }
 
 /// Step the 5x3 block-grid cursor for one pad edge. Columns wrap within a row

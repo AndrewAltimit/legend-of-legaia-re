@@ -535,8 +535,17 @@ port's single `spirit_gauge_fill` kernel is the correct shape for the engine
 (one function, two call sites); it is only the retail image that inlines it
 twice.
 
-Recovery summons skip the roll entirely and heal `(magic_power_byte << 5) + 0xE0`,
-clamped to `maxHP - curHP`.
+Recovery summons skip the roll entirely, and there are **two** of them with
+two different closed forms - both reading the caster record's `+0x729` byte
+for the cast spell (the per-magic **level**, `1..9`, found by the 32-slot scan
+of the `+0x705` id list; the same byte the magic-power tail above scales by).
+**Vera** (PROT 0905) heals `level * 0x20 + 0xE0`, clamped to `maxHP - curHP`
+with a signed compare, and stores the amount negated into the popup word
+`+0x10`. **Orb** (PROT 0911) heals `(level << 6) + 0x1C0` across the party row
+with an unsigned clamp. The single `(magic_power_byte << 5) + 0xE0` this
+section used to give for "recovery summons" is Vera's alone; the port's
+`heal_summon_amount` is that one formula, and Orb's lives with its tick body
+([cast-module.md](cast-module.md#the-player-seru-bands-tick-bodies-are-code-not-data)).
 
 #### Arts / physical branch (`attacker_slot != 7`)
 
@@ -1434,10 +1443,17 @@ the summon creature's element**: a stat debuff on the target for the six
 damaging elements, a cure class for light. It is the mechanism behind two
 things players report as per-enemy immunities - "this boss shrugs off
 ATK-down but SPD-down works", and "the effect sometimes just doesn't happen" -
-and **neither is a per-monster property**: the monster record carries no
-immunity field (its `+0x24..+0x43` tail is zero across the whole roster), and
-no overlay reads one. Both come out of one gate function and the fight's
-scripted flag.
+and **neither is a per-monster property**: the record carries no immunity
+field *for these debuffs* (its `+0x24..+0x43` tail is zero across the whole
+roster), and no overlay reads one. Both come out of one gate function and the
+fight's scripted flag.
+
+Scope that negative to the debuffs. The record does carry one byte three
+**summon** ticks read as a resist gate - `+0x20`, under the same scripted-fight
+flag, in PROT 0907 / 0908 / 0916 - but that byte is the monster's
+double-width texture-page flag, which those ticks reuse as a "big model"
+proxy; see [`battle.md`](battle.md#the-instant-death--status-resist-gate-record-0x20).
+It plays no part in the stat-debuff path here.
 
 Two halves, one table:
 
@@ -1541,13 +1557,36 @@ already-landed effect is announced as a miss, and an unlevelled spell says
 nothing. Its early-out ids `0x85` / `0x8E` / `>= 0x96` are exactly the
 stager-free spells (Nighto, Aluru, the Ra-Seru band).
 
-Engine: the stager and the finisher switch are pure kernels with tests
-(`engine-vm::seru_side_effect::{stage, apply_hit}`; the banner pass is
-`engine-vm::move_no_effect_guard`, live from the SM's state `0x36`). The live
-loop does not yet apply them - `World` keeps one live scalar per stat with no
-base halfword to compare, no SPD / AGL scalar for a monster, and does not
-retain the scripted flag - which is the ready work recorded in
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+Engine: both halves run in the live loop. The stager
+(`engine-vm::seru_side_effect::stage_side_effect`) fires once per player Seru cast at the
+engine's single cast fold seam, through `World::stage_seru_side_effect`; the
+finisher switch (`apply_hit`) runs per damaged target in the same fold,
+through `World::apply_seru_side_effect`. The banner pass is
+`engine-vm::move_no_effect_guard`, live from the SM's state `0x36`.
+
+Three pieces of live state make that possible, and each is the port of a
+retail write rather than an engine convenience:
+
+- **The base halfwords.** `BattleState::attack_base` / `defense_base` /
+  `speed_base` / `accuracy_base` (plus the actor's own `agl_base`) are the
+  second `sh` of every pair in the record copy. `World::sync_battle_stat_bases`
+  writes them equal to the working halves at battle entry, and nothing in a
+  fight writes one afterwards except a debuff - which is exactly the property
+  the compare depends on.
+- **The scripted flag.** `BattleState::scripted_fight` is derived at battle
+  entry from the formation's `record[+0]` header byte, the way `FUN_800513F0`
+  derives `ctx[+0x287]` from `DAT_8007BD60`. The port's older `no_escape`
+  latch is the same retail byte reached from the field VM's scripted-battle
+  op, and is OR'd in so a boss fight entered that way still counts.
+- **The boost profile.** The enemy seed picks `MonsterDef::installed_stats`
+  by that same flag, so a random encounter installs profile **A** (`x7/4`
+  defence, unboosted ATK) rather than the boss one. The catalog is built at
+  scene entry, before a formation is chosen, so it keeps the raw record block
+  (`MonsterDef::raw_stats`) for the seed to re-derive either profile.
+
+A host with no disc installs no side-effect table and the stager returns
+before its one `rand()` draw, so a synthetic battle stages nothing and its RNG
+stream is unchanged.
 
 Dumps: `overlay_muscle_dome_801f3d3c.txt` (the stager - a 0898 body under a
 capture-named file, see `dump-corpus-integrity.md`),
@@ -1662,7 +1701,7 @@ The from-scratch Rust module `crates/engine-vm/src/battle_formulas.rs` ports the
 | `arms_weapon_atk_fold` / `arms_command_equip_slots` / `arms_resolver_admits` | this doc, [base offense value](#base-offense-value-base-atk-plus-half-of-one-equipment-slot) (`FUN_801EC3E4`, the `PTR_801CF4B4` equipment fold) |
 | `damage_finish` / `spirit_gauge_fill` (+ `DamageFinish` / `DefenderResist`) | this doc, finisher closed-form stages (`FUN_801ddb30`) |
 | `summon_spell_xp_gain` / `summon_magic_levels_up` (+ `summon_magic_level_threshold`) | this doc, [summon spell XP + magic level-up](#summon-spell-xp--magic-level-up) (`FUN_801ddb30` tail / `FUN_801E70BC`) |
-| `heal_summon_amount` | this doc, recovery-summon closed form |
+| `heal_summon_amount` | this doc, Vera's recovery closed form (PROT 0905; Orb's is its own) |
 | `victory_gold_per_monster` / `victory_gold_finalize` / `victory_exp_per_member` | this doc, victory-spoils gold/EXP scaling (`FUN_8004E568`) |
 | `escape_roll` / `escape_party_score` / `escape_enemy_score` (+ `EscapeFlags`) | this doc, [run / escape roll](#run--escape-roll---fun_801e791c) (`FUN_801E791C`) |
 | `status_effects::toxic_tick_damage` / `venom_tick_damage` (module `engine-vm::status_effects`) | this doc, [per-round status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) (`FUN_801E752C`) |

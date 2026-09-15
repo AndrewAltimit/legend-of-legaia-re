@@ -686,11 +686,12 @@ pub struct AnimSlotInstall {
     pub full: bool,
 }
 
-// NOT WIRED: its only retail caller is the developer keyframe editor
-// `FUN_801D4FC8`, which runs in the `DAT_801DBF44 == 400..500` editor
-// sub-phase - a phase no shipping path enters and the port does not model.
-// Reaching it needs that editor tick plus the per-fighter animation slot
-// array it edits; `baka_fighter::FighterState` carries action ids, not slots.
+// NOT WIRED: its only caller is the overlay's keyframe-editor tick
+// `FUN_801D4FC8`, whose body runs only while the phase word `DAT_801DBF44`
+// sits in `400..500` (the gate at `0x801D5018..0x801D5028`). The port models
+// neither that phase nor the per-fighter animation-slot block it edits -
+// `BakaFight`'s fighter state carries action ids, not an 8-slot key array - so
+// there is no editor state for an installer to mutate.
 /// PORT: FUN_801D57BC - the animation-slot installer.
 ///
 /// `(bank, fighter, key)`: the routine resolves the fighter's slot block, then
@@ -751,9 +752,10 @@ pub struct AnimSlotDelete {
     pub count: i32,
 }
 
-// NOT WIRED beyond the editor: like its installer sibling, the only retail
-// caller is the developer keyframe editor `FUN_801D4FC8` in the
-// `DAT_801DBF44 == 400..500` sub-phase, which no shipping path enters.
+// NOT WIRED: same caller and same gate as its installer sibling -
+// `FUN_801D4FC8`, live only in the `DAT_801DBF44` `400..500` phase window,
+// which the port does not model and whose per-fighter slot block it does not
+// carry.
 /// PORT: FUN_801D58E0 - the animation-slot **remover**, sibling of
 /// [`anim_slot_install`].
 ///
@@ -1357,12 +1359,16 @@ pub fn editor_band_open(match_timer: i32) -> bool {
 // NOT WIRED: the editor is a leftover development screen, and it is *linked*
 // rather than dead - nothing `jal`s `0x801D4FC8`, but its address is the
 // callback word of the `0x18`-byte actor prototype at `0x801D7670`, the
-// immediate sibling of [`mirrored_sprite_pass`]'s. So it is spawnable; what
-// never happens is the gate. Its band (`DAT_801DBF44` in `400..=499`) is not a
-// phase any shipping path enters, and driving it needs the whole edit-cursor
-// global cluster (`DAT_801DBF04` action, `DAT_801DBF12` frame, `DAT_801DBF10`
-// mode, `DAT_801DBF0A..0E` TRS) plus a writable action table. `BakaFight` holds
-// parsed, read-only action sets.
+// immediate sibling of [`mirrored_sprite_pass`]'s. Its band is reachable too:
+// the overlay's phase dispatcher writes `400` into `DAT_801DBF44` at
+// `0x801D19DC` (`li v0,0x190; sw v0,-0x40bc(v1)`) on the arm taken when the
+// selection word `0x801DBF90` holds `4` under the pad-bit test at
+// `0x801D194C`, and the dispatcher carries explicit `0x190` / `0x191` /
+// `0x1F4` arms at `0x801CF654..0x801CF684`. What the port lacks is the state:
+// driving this needs the whole edit-cursor global cluster (`DAT_801DBF04`
+// action, `DAT_801DBF12` frame, `DAT_801DBF10` mode, `DAT_801DBF0A..0E` TRS)
+// plus a writable action table, and `BakaFight` holds parsed, read-only action
+// sets.
 /// PORT: FUN_801d4fc8 - the **developer action-table keyframe editor** tick.
 ///
 /// It is not the fight's pose path. Outside the [`editor_band_open`] window it

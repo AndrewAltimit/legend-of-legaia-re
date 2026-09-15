@@ -108,7 +108,7 @@
   <p>The loader resolves its argument in the raw TOC (<code>+ 0x381</code>), which is extraction entry <code>+ 0x37F</code> (<a href="../formats/prot.html">PROT</a>). The player and enemy arms of the same spell ship separate stagers. What a stager contains:</p>
   <ul class="bullets">
     <li><strong>No mesh geometry.</strong> The meshes are the separately loaded 30-entry model library <code>etmd.dat</code> (extraction 0871) that the battle loader registers at battle init; the flame atlas <code>etim.dat</code> is 0870 (<a href="../formats/effect.html#befect-cluster">effect cluster</a>).</li>
-    <li><strong>Part records</strong> - <code>[i16 model_sel][u16 flags][move-VM bytecode]</code> - handed to the executable&rsquo;s part-stager, which spawns a part-actor per record: <code>model_sel &ge; 0</code> seats a library mesh, <code>-1</code> is a transform node, <code>0x4000</code> / <code>0x4001</code> are special render modes. Parser <code>legaia_asset::summon_overlay</code>.</li>
+    <li><strong>Part records</strong> - <code>[i16 model_sel][u16 reserved][move-VM bytecode]</code> - handed to the executable&rsquo;s part-stager, which spawns a part-actor per record: <code>model_sel &ge; 0</code> seats a library mesh, <code>-1</code> is a transform node, <code>0x4000</code> / <code>0x4001</code> are special render modes. Parser <code>legaia_asset::summon_overlay</code>.</li>
     <li><strong>Motion is geometric.</strong> Gimard&rsquo;s flame is eight RNG-seeded part-actors moving; the palette is byte-identical across animation-distinct frames.</li>
     <li><strong>The player summon draws as an ordinary battle actor</strong> through the TRS-keyframe pipeline; the engine renders it that way (<code>monster_archive::battle_render_mesh</code> + <code>MonsterAnimPlayer</code>) and keeps the part records as the on-disc stager model.</li>
   </ul>
@@ -165,7 +165,7 @@
     <tbody>
       <tr><td>party score</td><td>sum over slots (downed included) of <code>(SPD &times; 3) &gt;&gt; 1 + missingHP &gt;&gt; 4</code></td></tr>
       <tr><td>enemy score</td><td>sum of <code>SPD + missingHP &gt;&gt; 5</code></td></tr>
-      <tr><td>outcome</td><td>two BIOS-rand draws modulo each score; caught iff <code>roll_p &lt; roll_e</code>, or the scripted no-escape flag <code>ctx+0x287</code> is set</td></tr>
+      <tr><td>outcome</td><td>two BIOS-rand draws modulo each score; caught iff <code>roll_p &lt; roll_e</code>, or the scripted-fight flag <code>ctx+0x287</code> is set (the same per-battle byte the audio ducks and the counter-attack gate read)</td></tr>
       <tr><td>Chicken Heart (passive <code>0x34</code>)</td><td>party roll &times;1.5, from living members only</td></tr>
       <tr><td>Chicken King (passive <code>0x37</code>)</td><td>forces a tie - assured escape, still blocked by <code>ctx+0x287</code>, hence &ldquo;non-boss&rdquo;</td></tr>
     </tbody>

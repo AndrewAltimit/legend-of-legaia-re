@@ -94,15 +94,18 @@ pub const CHARACTER_NAME_OFFSET: usize = 0x2A7;
 ///
 /// Locate the arts-name record for `(char_id, art_id)`.
 ///
-/// NOT WIRED: the live label does not walk this table. Retail's banner
-/// placer runs this walk over the runtime `0x14`-stride arts-name table to
-/// find the record whose name pointer it stamps; the engine has no staged
-/// copy of that runtime table, so `engine-core::battle_hud::battle_move_name`
-/// resolves the name through the static arts-name table
-/// (`legaia_art::tables::art_name`) and the spell / item catalogs instead,
-/// and seats it with this module's X law ([`banner_x`]). Wiring this walk
-/// means staging the runtime table (the `0x80076C10` placement block's
-/// arts-name run) on the battle host first.
+/// NOT WIRED: nothing consumes a record index into the raw table. The walk is
+/// over the static SCUS arts-name table `DAT_80075EC4` (20-byte records,
+/// `0x63` sentinel), which `legaia_art::arts_table::parse_from_scus` already
+/// decodes; what is missing is a reason to reach it as bytes. The live label
+/// comes from `engine-core::battle_hud::battle_move_name` via the typed
+/// catalog and is seated by [`banner_x`], so the placement law runs without
+/// this step. It acquires a caller only when a host stages the raw `0x14`-
+/// stride bytes to read a record's marked name - the `0xCF` nudge and the
+/// `0xC1` character-name prefix fire on lead bytes the curated names do not
+/// carry, so both arms here are unexercised until then. `engine-ui` does not
+/// depend on `legaia-art`, so the slice would have to be handed in by the
+/// host.
 ///
 /// `table` is the raw `0x14`-stride table starting at record 0. The walk
 /// stops at the first record whose byte `+0x0` is [`ARTS_TABLE_SENTINEL`];

@@ -21,8 +21,8 @@
 //! | `+0x1F1` | the victim's own knockdown-reaction id | [`CastActorState::knockdown_anim`] |
 //! | `+0x154` / `+0x156` | AGL working / base (the action gauge) | [`CastActorState::agl`] / [`CastActorState::agl_base`] |
 //! | `+0x21C` / `+0x21D` | render flag / animation-rate scalar | [`CastActorState::render_flag`] / [`CastActorState::anim_rate`] |
-//! | ctx `+0`, `+1` | actor count, monster count | [`CastModuleCtx::actor_count`] / [`CastModuleCtx::monster_count`] |
-//! | ctx `+0x13` | caster seat | [`CastModuleCtx::caster_seat`] |
+//! | ctx `+0`, `+1` | party count, monster count | [`CastModuleCtx::party_count`] / [`CastModuleCtx::monster_count`] |
+//! | ctx `+0x13` | caster seat (NOT the summon band's wrapper `a1`) | [`CastModuleCtx::caster_seat`] |
 //! | ctx `+0x278` | module scratch byte | [`CastModuleCtx::ctx_278`] |
 //! | ctx `+0x279` | the module phase | [`CastModuleCtx::phase`] |
 //!
@@ -190,6 +190,23 @@ pub struct CastActorState {
     pub reaction_alt: u8,
     /// See [`CastActorState::reaction_alt`].
     pub reaction_alt2: u8,
+    /// `+0x04` - the per-actor **mesh tint word** the band's hit sites stamp
+    /// alongside the HP write (PROT 0904's ring sweep stores `0x3FF0000`
+    /// there per hit). It is the same word
+    /// [`BattleActor::render_color`](crate::battle_action::BattleActor::render_color)
+    /// already models, so a store here reaches the renderer's tint pass
+    /// rather than stopping at this view.
+    pub present_04: u32,
+    /// `+0x21F` - the **impact-effect selector** a hit arm sets beside
+    /// [`Self::render_flag`] (`2` on PROT 0904's ring-sweep victims): which
+    /// entry of the impact-config table owns [`Self::present_04`]. Mirrors
+    /// [`BattleActor::impact_state`](crate::battle_action::BattleActor::impact_state).
+    pub render_21f: u8,
+    /// `+0x225` - the capture-state byte PROT 0907's kill arm writes together
+    /// with `+0x21C` (one `li v0,0x2` at `0x801F7E54` feeds both stores).
+    /// Mirrors
+    /// [`BattleActor::capture_state`](crate::battle_action::BattleActor::capture_state).
+    pub render_225: u8,
     /// `+0x1F2` - the gate that picks [`CastActorState::knockdown_anim`]
     /// over [`CastActorState::reaction_alt`].
     pub reaction_gate: u8,
@@ -199,11 +216,30 @@ pub struct CastActorState {
 /// `*0x8007BD24`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CastModuleCtx {
-    /// `ctx+0` - actor count. The Evil Seru Magic loop's bound.
-    pub actor_count: u8,
-    /// `ctx+1` - monster count. The Juggernaut loop's bound.
+    /// `ctx+0` - the **party** count, not the actor count. `FUN_8004B3E8`
+    /// reads it as the bound of a loop over `DAT_8007BD10[i]` (the per-seat,
+    /// 1-based party character id) whose body indexes the `0x414`-byte party
+    /// records at `0x80084140 + 0x6C0 + 0x414*(id-1)` (`0x8004B420..0x8004B448`),
+    /// so only the party seats are in range. The Evil Seru Magic loop's bound.
+    pub party_count: u8,
+    /// `ctx+1` - monster count: the bound of the wipe sweeps at `0x8004B10C`
+    /// and `0x8005039C`, whose bodies index `actor_table[(i + 3)]`. The
+    /// Juggernaut loop's bound.
     pub monster_count: u8,
-    /// `ctx+0x13` - the caster's seat, passed to every wrapper as `a1`.
+    /// `ctx+0x13` - the caster's seat.
+    ///
+    /// **Not** the wrapper's `a1` on the summon band. Every `jal 0x801DD0AC`
+    /// word in that band bakes `addiu a1, zero, 7` (the summon seat) instead:
+    /// 34 sites over PROT `0903..=0934` and the inherited-tail copies of
+    /// them, `0x801F74A8` in PROT 0903, `0x801F7C98` in PROT 0933,
+    /// `0x801F8880` in PROT 0910 - the last being the only one in a `jal`
+    /// delay slot, along with the copy of it in PROT 0911's tail. The seat
+    /// byte reaches a wrapper only on the capture-class
+    /// band's bypass sites, which spell it `lbu a1, 0x13(ctx)`
+    /// (`0x801F71E4` / `0x801F7A8C` / `0x801F7EB8` in PROT 0959, and the
+    /// same form in 0944 / 0952 / 0953 / 0958 / 0960). The band's own
+    /// kernels read it for `+0x1DD` target codes and record lookups, never
+    /// as a damage argument.
     pub caster_seat: u8,
     /// `ctx+0x278` - a module scratch byte; three of these routines write it.
     pub ctx_278: u8,
@@ -360,9 +396,19 @@ pub struct CastDamageShape {
 /// escalation does **not** continue.
 pub const BLAZING_SLASH_POWERS: [u16; 6] = [0x30, 0x38, 0x38, 0x38, 0x40, 0x30];
 
+/// PROT 0959's three baked powers, in call-site order (`0x801F71E8`,
+/// `0x801F7A90`, `0x801F7EBC`).
+///
+/// All three are `FUN_801DD6B4` sites inside the single arm body
+/// `FUN_801F69F0` that the trampoline's `0x7A` arm reaches, each followed by
+/// the shape-A clamp (`sltu` against the live `+0x14C` at `0x801F7214` /
+/// `0x801F7ABC` / `0x801F7EE8`), so every hit can kill. The third site is the
+/// one the module fires repeatedly.
+pub const MEGATON_PRESS_POWERS: [u16; 3] = [0x80, 0x80, 0x30];
+
 /// Every damage shape the band's PORT rows carry, read off the `a0` set
 /// before each `jal` into `0x801DD0AC` / `0x801DD4B0` / `0x801DD6B4`.
-pub const CAST_DAMAGE_SHAPES: [CastDamageShape; 6] = [
+pub const CAST_DAMAGE_SHAPES: [CastDamageShape; 7] = [
     CastDamageShape {
         prot_entry: 927,
         routine: 0x801F_85A8,
@@ -390,6 +436,13 @@ pub const CAST_DAMAGE_SHAPES: [CastDamageShape; 6] = [
         wrapper: CastWrapper::Bypass,
         never_kills: false,
         powers: &BLAZING_SLASH_POWERS,
+    },
+    CastDamageShape {
+        prot_entry: 959,
+        routine: 0x801F_69F0,
+        wrapper: CastWrapper::Bypass,
+        never_kills: false,
+        powers: &MEGATON_PRESS_POWERS,
     },
     CastDamageShape {
         prot_entry: 960,
@@ -569,9 +622,33 @@ pub fn roll_module_hit(
 /// `docs/subsystems/cast-module.md` grades this **PORT** for the `+0x0C`
 /// write and does not mention `+0x21D`; both stores are here.
 ///
+/// The eight arms are eight distinct entry addresses, not one body with a
+/// computed constant, so the catalog tracks each one. Arm 0 is the
+/// fall-through inside this routine's own extent; arms 1..7 are frameless
+/// leaves the jump table reaches and nothing else references:
+///
+/// | table slot | entry | `+0x0C` | `+0x21D` |
+/// |---:|---|---:|---:|
+/// | 0 | `0x801F761C` (interior of `0x801F75BC`) | `0x200` | 7 |
+/// | 1 | `0x801F7630` | `0x400` | 6 |
+/// | 2 | `0x801F7644` | `0x600` | 5 |
+/// | 3 | `0x801F7658` | `0x800` | 4 |
+/// | 4 | `0x801F766C` | `0xA00` | 3 |
+/// | 5 | `0x801F7680` | `0xC00` | 2 |
+/// | 6 | `0x801F7694` | `0xE00` | 1 |
+/// | 7 | `0x801F76A8` | `0x1000` | 0 |
+///
+/// Arms 1..6 are 20 bytes each - five instructions, the `sb` in the `jr ra`
+/// delay slot. Arm 7 is 12 bytes and has no `jr ra` of its own: it stores
+/// `0x1000` and `sb $zero` and falls into the routine's shared epilogue at
+/// `0x801F76B4`, which is also where the out-of-range `beqz` lands. The table
+/// itself is eight words at `0x801F69F0`, six words into the image's leading
+/// VA run, and `0x801F7644` is one of the VAs PROT 0901 also uses for a
+/// world-map draw leaf - different image, different bytes.
+///
 /// Wired: `World::run_cast_module_code`, at the cast band's staging seam.
 ///
-/// PORT: FUN_801F75BC
+/// PORT: FUN_801F75BC, FUN_801F7630, FUN_801F7644, FUN_801F7658, FUN_801F766C, FUN_801F7680, FUN_801F7694, FUN_801F76A8 (PROT 0949; the stager and its seven ramp arms)
 pub fn water_crystals_stager(victim: &mut CastActorState, arm: u8) {
     if arm >= 8 {
         return;
@@ -648,12 +725,22 @@ pub fn gizam_stager(ctx: &mut CastModuleCtx, summon_seat: &mut CastActorState, a
     }
 }
 
+// --- W1-C ---
+/// PROT 0909's stager arm that stages a clip and advances the phase - the
+/// second of its two state-touching arms.
+pub const VIGURO_STAGER_STAGE_ARM: u8 = 1;
+/// The clip that arm stores to the summon seat's `+0x1DA`
+/// (`addiu a1,zero,1` at `0x801F7BE8`, `move v0,a1` then `sb v0,0x1da(v1)` at
+/// `0x801F7BF8`), with no `+0x1DC` bump anywhere in the arm.
+pub const VIGURO_STAGER_ARM1_CLIP: u8 = 1;
+// --- end W1-C ---
+
 /// PROT 0909 (Viguro) spawn stager.
 ///
 /// Seven arms behind `sltiu a1, 7` through the head table at `0x801F69D8`
 /// (arm targets `0x801F7B2C`, `7BCC`, `7C64`, `7C78`, `7C8C`, `7CB8`,
-/// `7CA0`; arm 5 is the epilogue itself, i.e. a no-op). Arm `0` is the seat
-/// pose, and it is the one that touches state:
+/// `7CA0`; arm 5 is the epilogue itself, i.e. a no-op). **Two** arms touch
+/// state, not one - arm `0` is the seat pose:
 ///
 /// ```text
 /// jal FUN_801F19EC                        ; module init
@@ -668,17 +755,41 @@ pub fn gizam_stager(ctx: &mut CastModuleCtx, summon_seat: &mut CastActorState, a
 /// The `+0x34` / `+0x38` / `+0x46` / `+0x04` / `+0x21F` stores in the same arm
 /// are pose and render fields, left to the host's own seat placement.
 ///
+// --- W1-C ---
+/// Arm `1` (`0x801F7BCC`) is the second, and it is what releases the tick
+/// body's phase-`8` rendezvous ([`crate::cast_seru_ticks_b`]):
+///
+/// ```text
+/// summon[+0x176] = 0                      ; pose, unported
+/// summon[+0x21B] = 0                      ; pose, unported
+/// summon[+0x1DA] = 1                      ; 0x801F7BF8, no +0x1DC bump
+/// jal FUN_80024E80 -> ctx[+0x102C]        ; the pool's
+/// ctx[+0x279]   += 1                      ; 0x801F7C54
+/// summon[+0x21F] = 0                      ; pose, unported
+/// ```
+// --- end W1-C ---
+///
 /// Returns the `+0x1DD` value the arm displaced, which retail stashes for a
 /// later arm to restore.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
+// --- W1-C ---
+/// REF: FUN_80024E80
+// --- end W1-C ---
 /// PORT: FUN_801F7AF4 (state half)
 pub fn viguro_stager(
     ctx: &mut CastModuleCtx,
     summon_seat: &mut CastActorState,
     arm: u8,
 ) -> Option<u8> {
+    // --- W1-C ---
+    if arm == VIGURO_STAGER_STAGE_ARM {
+        summon_seat.staged_anim = VIGURO_STAGER_ARM1_CLIP;
+        advance_phase(ctx);
+        return None;
+    }
+    // --- end W1-C ---
     if arm != 0 {
         return None;
     }
@@ -790,7 +901,7 @@ pub fn evil_seru_magic_stager(
     if arm >= 9 {
         return hits;
     }
-    for seat in 0..ctx.actor_count {
+    for seat in 0..ctx.party_count {
         let Some(victim) = seats.get_mut(seat as usize) else {
             break;
         };
@@ -1407,7 +1518,7 @@ pub fn element_change_tick(
             CastArmStep::Advance
         }
         1 => {
-            let count = usize::from(c.actor_count).min(seats.len());
+            let count = usize::from(c.party_count).min(seats.len());
             for seat in seats.iter_mut().take(count) {
                 seat.render_flag = ELEMENT_CHANGE_HIDE_RENDER_FLAG;
             }
@@ -2112,7 +2223,7 @@ pub fn chaos_breath_tick(
             CastArmStep::Advance
         }
         2 => {
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 let Some(v) = seats.get_mut(seat as usize) else {
                     continue;
                 };
@@ -2176,7 +2287,7 @@ pub fn mystic_circle_tick(
     let mut hits = Vec::new();
     let step = run_tick_latched(ctx, |c| {
         if damage_arm {
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 let Some(v) = seats.get_mut(seat as usize) else {
                     continue;
                 };
@@ -2369,7 +2480,7 @@ pub fn doomsday_tick(
     let mut hits = Vec::new();
     let step = run_tick_latched(ctx, |c| {
         if damage_arm {
-            for seat in 0..c.actor_count {
+            for seat in 0..c.party_count {
                 let Some(v) = seats.get_mut(seat as usize) else {
                     continue;
                 };
@@ -3027,11 +3138,25 @@ mod tests {
 
     #[test]
     fn the_water_crystals_ramp_pairs_speed_with_rate() {
-        for arm in 0..8u8 {
+        // The literal arms as disassembled, not the implementation's own
+        // formula restated: `(slot, +0x0C, +0x21D)` for table slots 0..7 at
+        // `0x801F761C` / `7630` / `7644` / `7658` / `766C` / `7680` / `7694` /
+        // `76A8`.
+        const ARMS: [(u8, i32, u8); 8] = [
+            (0, 0x200, 7),
+            (1, 0x400, 6),
+            (2, 0x600, 5),
+            (3, 0x800, 4),
+            (4, 0xA00, 3),
+            (5, 0xC00, 2),
+            (6, 0xE00, 1),
+            (7, 0x1000, 0),
+        ];
+        for (arm, speed, rate) in ARMS {
             let mut v = actor(100);
             water_crystals_stager(&mut v, arm);
-            assert_eq!(v.root_speed, (i32::from(arm) + 1) * 0x200);
-            assert_eq!(v.anim_rate, 7 - arm);
+            assert_eq!(v.root_speed, speed, "arm {arm} +0x0C");
+            assert_eq!(v.anim_rate, rate, "arm {arm} +0x21D");
         }
         // Arm 8 is past `sltiu a1, 8` and writes nothing.
         let mut v = actor(100);
@@ -3092,7 +3217,7 @@ mod tests {
     #[test]
     fn the_esm_sweep_covers_the_whole_table_and_leaves_everyone_alive() {
         let ctx = CastModuleCtx {
-            actor_count: 5,
+            party_count: 5,
             caster_seat: 3,
             ..Default::default()
         };
@@ -3148,6 +3273,11 @@ mod tests {
             assert!(s.routine >= CAST_MODULE_LINK_BASE, "{s:?}");
         }
         assert_eq!(baked_power_for(960), Some(0x1C0), "Plasma Strike's burst");
+        // Megaton Press: three bypass-wrapper sites, `0x80 / 0x80 / 0x30`,
+        // the first being the seed a single-hit fold uses.
+        assert_eq!(baked_power_for(959), Some(0x80));
+        assert_eq!(damage_shape_for(959).unwrap().powers, &MEGATON_PRESS_POWERS);
+        assert!(!damage_shape_for(959).unwrap().never_kills);
         assert_eq!(baked_power_for(958), Some(0x30));
         assert_eq!(damage_shape_for(958).unwrap().powers, &BLAZING_SLASH_POWERS);
         assert_eq!(baked_power_for(903), None, "not a PORT row");

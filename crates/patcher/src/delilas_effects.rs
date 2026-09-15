@@ -10,7 +10,7 @@
 //! `docs/tooling/randomizer.md` § "Casting a sibling signature attack from a
 //! party slot"). What that module *provides* is separable: its 24
 //! `FUN_80050ED4` calls each hand the spawner a **move-VM part record** in the
-//! summon part format (`[i16 model_sel][u16 flags][bytecode]`) - byte-for-byte
+//! summon part format (`[i16 model_sel][u16 reserved][bytecode]`) - byte-for-byte
 //! the same class of record the retail `0x801F6324` prototype table points at,
 //! and the same class the game already spawns from a player art's own effect
 //! script. Retail proto ids `50..=60` (Maximum Blow, Fire Tackle, Power Slash,
@@ -462,7 +462,7 @@ pub fn apply(disc: &mut DiscPatcher, plan: &BurstPlan) -> Result<String> {
 mod tests {
     use super::*;
 
-    /// `[i16 model_sel][u16 flags]` then the given opcode words.
+    /// `[i16 model_sel][u16 reserved]` then the given opcode words.
     fn record(model_sel: i16, words: &[u16]) -> Vec<u8> {
         let mut v = model_sel.to_le_bytes().to_vec();
         v.extend_from_slice(&0u16.to_le_bytes());

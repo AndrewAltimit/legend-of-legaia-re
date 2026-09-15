@@ -494,6 +494,15 @@ impl LegaiaRuntime {
                 ));
             self.menu.retail_equipment_buy = true;
         }
+        // Static per-monster steal table (`DAT_80077828`) - the same install the
+        // native boot does, so PROT 0941's Steal resolves a monster-seat victim
+        // on this host too rather than drawing nothing.
+        if let Some(steal) = scus
+            .as_ref()
+            .and_then(|s| legaia_asset::steal_table::StealTable::from_scus(s))
+        {
+            host.world.set_steal_table(steal);
+        }
         host.world.set_spell_catalog(
             scus.as_ref()
                 .and_then(|s| legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(s))

@@ -21,7 +21,7 @@
 //!     `DAT_801C90F0`, ticked per frame by the SCUS actor tick
 //!     **`FUN_80021DF4`** (`actor[+0xC]`; the tick that steps the move VM
 //!     `FUN_80023070`) - a live capture of that render-tail driver.
-//!   - That part's `[i16 model_sel][u16 flags][move-VM bytecode @+4]` record
+//!   - That part's `[i16 model_sel][u16 reserved][move-VM bytecode @+4]` record
 //!     (`actor[+0x48]`) sits in the **battle overlay (0898)** resident data
 //!     (`0x801F5xxx`, below the 0900 slot-B link base `0x801F69D8`), not in a
 //!     0900 record. `model_sel` reads `-1` (transform/pivot node) / `5`

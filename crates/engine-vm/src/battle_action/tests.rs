@@ -974,8 +974,8 @@ fn attack_recovery_holds_until_advance_done_clears() {
 fn attack_return_with_counter_attack_loops_back_to_chain() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
     ctx.action_state = ActionState::AttackReturn.as_byte();
-    ctx.counter_attack_a = 1;
-    ctx.counter_attack_b = 1;
+    ctx.scripted_fight = 1;
+    ctx.counter_attack = 1;
     let out = step(&mut host, &mut ctx);
     assert!(matches!(
         out,
@@ -2980,7 +2980,7 @@ fn capture_phase2_pins_the_camera_variant() {
 fn capture_phase2_ducks_only_behind_the_counter_flag() {
     let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
     ctx.action_state = ActionState::MagicCapturePhase2.as_byte();
-    ctx.counter_attack_a = 0;
+    ctx.scripted_fight = 0;
     step(&mut host, &mut ctx);
     assert!(
         !host
@@ -2992,7 +2992,7 @@ fn capture_phase2_ducks_only_behind_the_counter_flag() {
 
     let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
     ctx.action_state = ActionState::MagicCapturePhase2.as_byte();
-    ctx.counter_attack_a = 1;
+    ctx.scripted_fight = 1;
     step(&mut host, &mut ctx);
     assert!(
         host.take().contains(&Event::Brightness(75)),

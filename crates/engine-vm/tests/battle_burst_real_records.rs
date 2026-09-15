@@ -54,7 +54,7 @@ fn both_arms_parse_as_transform_node_stager_records() {
     let (wide, narrow) = arms(&img);
     for (label, rec) in [("wide", &wide), ("narrow", &narrow)] {
         assert_eq!(rec.model_sel, -1, "{label}: transform/pivot node");
-        assert_eq!(rec.flags, 0, "{label}");
+        assert_eq!(rec.reserved, 0, "{label}");
         assert_eq!(
             rec.program.last().copied(),
             Some(OP_HALT),

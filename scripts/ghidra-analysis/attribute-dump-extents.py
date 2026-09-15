@@ -50,6 +50,7 @@ DEFAULT_OUT = os.path.join(HERE, "dump-extent-attribution.csv")
 sys.path.insert(0, HERE)
 import dump_header  # noqa: E402
 import inherited_tail  # noqa: E402
+import slot_b_band  # noqa: E402
 
 SCUS_BASE = 0x80010000
 SCUS_HEADER = 0x800
@@ -197,9 +198,19 @@ def load_images(extracted):
     # image's own content, and leaving them in makes a dump that lies wholly
     # inside one read `identical` (two images hold them) when exactly one owns
     # them. See `inherited_tail.py` for the rule and its asymmetry.
-    tails = inherited_tail.tail_starts(
-        [(im.label, im.base, im.data[:im.own_end]) for im in images
-         if im.prot is not None])
+    tail_inputs = [(im.label, im.base, im.data[:im.own_end]) for im in images
+                   if im.prot is not None]
+    # Equal-EXTENT siblings are donor candidates too - `content_bytes` is the
+    # PROT entry's sector extent, not the module's content - but only where the
+    # bytes say which of the two owns the shared suffix. That is what
+    # `own_ends` carries: each image's structural own-content end.
+    # Iterated, not taken once: `content_end` is measured over the image and
+    # the cut is what makes that measurement right, so the first estimate
+    # overshoots wherever a record chain walks into the residue. See
+    # `inherited_tail.tail_starts_fixpoint`.
+    tails = inherited_tail.tail_starts_fixpoint(
+        tail_inputs,
+        lambda _label, base, data: slot_b_band.content_end(data, base))
     for im in images:
         cut = tails.get(im.label)
         if cut and cut[0] < im.own_end:

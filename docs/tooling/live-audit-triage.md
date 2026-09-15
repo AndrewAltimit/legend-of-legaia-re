@@ -1985,6 +1985,104 @@ status-CLUT recolour. The browser host has no mid-battle VRAM channel, so it
 takes the same disclosure the face stamps and the status CLUT already carry in
 `web-viewer::play_battle_render`.
 
+## The rows this page had never reached
+
+Every verdict above was written for a row that already had one. The audit's
+disclosed-inert table is longer than this page, and the remainder had never been
+read at all: thirty-one files whose name appears nowhere above, carrying
+fifty-one anchors. They are settled here, and the split is worth stating before
+the rows, because it is not the split the page's earlier sections have.
+
+Most are **accurate as they stand**, and the last section below lists them.
+The disclosures written alongside the ports they describe are, on the whole,
+precise: they name a missing state shape, a missing parser column, a missing
+device layer, and they say what would have to exist first. That is the form
+this page asks for, and those rows need nothing but the record that they were
+checked.
+
+The rest divide into three shapes, one section each, and only one of the three
+is a wiring gap:
+
+* **Misclassified.** The reason argues replacement - "the port does this
+  differently, and correctly" - while wearing a `NOT WIRED:` marker, which
+  leaves the row on the wiring worklist forever.
+* **Stale.** The reason states something about the tree that is no longer true,
+  or was never true: a caller that does not exist, a table that is a different
+  table, a blocker that has since been built, a host that does stage the thing
+  the tag says nothing stages. Several of these defects span more than one
+  anchor, because a module blanket is read by every anchor under it.
+* **Genuinely open with a sharper reason.** The row is inert for the reason
+  given, but the reason names the weakest of several blockers and reads as a
+  closed door.
+
+No row in the set is a `WIRE`. That is itself the finding: the un-triaged tail
+of the wiring worklist is not a backlog of missing call sites, it is a backlog
+of *classification* - ports the engine has already replaced, and disclosures
+that drifted away from the code under them.
+
+### What "stale" meant here
+
+Each of these had a false sentence in a shipped tag. They are listed with what
+the sentence asserted and what the bytes or the tree say instead, because a
+withdrawn claim is only useful with its refutation attached.
+
+| Anchor | The claim that does not hold |
+|---|---|
+| `801de2b0` | Named a host hook for field-VM op `0x34` sub-0 as missing. The hook exists and is live (`World::op34_sub0_color_intensity_setup`), and both retail call sites are in that op's sub-0 arm - `jal 0x801DE2B0` at `0x801DFD68` and `0x801DFEE8`, on the `_DAT_1F800394 & 0x800000` default side of the fork. The real gap is a representation conflict: that impl models the op as a float ramp into `World::presentation.effect_tint`, and nothing reads `World::screen_tint_pushes`, so a spawned tween would draw nothing while the ramp kept applying. |
+| `801cee80` | Named `FUN_80025980` at `0x80025AA0` as the retail caller, ported in `engine-core::mode`. That `jal` is one arm of a seven-way jump table (`sltiu v0,v1,0x7`, base `lui v0,0x8001; addiu v0,v0,0xae4`) dispatching per minigame sub-id into the **slot-A overlay's own** routine at this VA, which has a real prologue. The body ported here is different bytes - its dump opens `sh a1,0x16(v0)`, mid-function code storing through a register nothing in the window sets. So the port has no identified caller, and whether the VA is a function entry wants a re-dump. |
+| `8004c650` | Called the walked table a runtime table and made staging it the prerequisite. The walk is over the **static** SCUS arts-name table `DAT_80075EC4` (`lbu v1,0x5ec4(a2)` at `0x8004C664`, 20-byte stride, `0x63` sentinel); `0x80076C10` is only the placement block the X is written into. `legaia_art::arts_table::parse_from_scus` already decodes that table and is live. |
+| `801d4c50` | Made "the duel host must stage art at all" the prerequisite. The browser minigames host stages the duel's art in full - both fighters' meshes, both anim banks, the stage set and the duel VRAM - and still does not call this walk, because `legaia_asset::baka_opponents::parse_fighter_pack` walks the same chunk chain into typed sub-assets. |
+| `801d57bc` / `801d58e0` | Asserted the keyframe-editor phase is one no shipping path enters. The Baka overlay's own dispatcher writes `400` into `DAT_801DBF44` at `0x801D19DC` (`li v0,0x190; sw v0,-0x40bc(v1)`) on the arm taken when the selection word `0x801DBF90` holds `4` under the pad test at `0x801D194C`, and the dispatcher carries explicit `0x190` / `0x191` / `0x1F4` arms at `0x801CF654..0x801CF684`. |
+| `801d6e5c` | Said the duel draws no fighter clip. The browser host plays both sides' clips; the native window stages none. That is an undisclosed per-host split, and neither host is the blocker - the action record's per-sub-keyframe `+0x26` column is undecoded, so the `frame_indices` slice cannot be built at all. |
+| `801da59c` | Said no engine-side chain slot exists to write back into. The port holds saved chains (`legaia_save::SavedChainRecord`, `World::party.saved_chains`, persisted and editable). The blocker is a mapping: `legaia_save`'s retail `0x414` record model declares no accessor at record-relative `+0x1A7` / `+0x1B7`. |
+| `801e2524` | Named `resolve_arts_input_entry` in the battle command flow as the raiser's engine-side home. No such function exists. The live chain matchers are in `World::build_battle_arts_rows`. |
+| `801d32bc` / `801d57e8` / `801d5778` / `801d9ae8` | One sentence of the shared module blanket said `engine-vm::battle_chrome`'s own functions have no caller outside test blocks. `engine-ui::ui_overlay::party_panel_stage_x` calls `battle_chrome::panel_seats` and reads `PANEL_TEXT_INSET` in production. The blanket's load-bearing claim - that no live path reads a *parsed* record, so the disc table reaches no pixel - is unaffected. |
+
+### The ones that were replacements wearing the wrong marker
+
+A `REPLACE` is not a softer `DISCLOSE`. It removes the row from the wiring
+worklist *and its denominator*, and each of these was already arguing the
+replacement case in its own prose.
+
+| Anchor | Mechanism that does the routine's job |
+|---|---|
+| `80036c4c` | `legaia_engine_ui::screen_prim::ScreenPrim::gouraud` - per-corner modulation carried on the typed prim and folded into vertex colours by the geometry builder. The port emits no `POLY_G3` / `POLY_G4` byte packet, so there is no packed colour field for a spreader to fill. |
+| `80034a6c` | `legaia_engine_core::new_game` plus the world's new-game reset, which seed a typed `World` instead of writing SC-block cells. The table's job here is to be the disc-gated oracle that re-derives the routine's own store set. |
+| `800597c8` | The renderer's single fixed-orientation wgpu surface. The port programs no PSX display environment - the retail caller is ignore-listed libgpu - so the mirror's two globals have no counterpart and the identity arm is the only reachable one. |
+| `801d9ae8` (fn) | `engine-ui`'s per-frame battle draw-list builders. Retail tracks battle-UI widgets in a `0x28`-slot pool with explicit lifetimes; the port rebuilds every readout from `World` state each frame, so no widget outlives its draw. The module blanket stays `NOT WIRED` for the file's other three addresses. |
+| `801d4c50` | `legaia_asset::baka_opponents::parse_fighter_pack`, which walks the same `[u32 (type<<24)|size][payload]` chain into typed sub-asset bytes. Retail's transient `0x46000` buffer and its dev-vs-CD load fork have no analogue to host. |
+| `801da6b4` | `World::apply_target_cursor_tint`, which stamps the same render-flag / colour / blend triple over the engine's *compacted* monster window. Retail's fixed actor-table slots `3..=6` are a property of retail's seating; run against the port's seating this kernel can only tint empty slots. |
+
+### The rows that hold as written
+
+Read and confirmed against the source, the crate graph and - where the tag made
+a retail claim - the disassembly. Nothing to paste; the record is that they were
+checked.
+
+`80016230`, `800195a8`, `8001d088`, `80020f88`, `8002174c`, `80029724`,
+`8003cb54` (both anchors), `8003cbf8`, `80046870`, `800480d8`, `8005126c`
+(both anchors), `80056208`, `80064090`, `801cf754`, `801d32bc` (both
+anchors), `801d4df8`, `801d65f8`, `801d820c`, `801d9ae8` (module), `801dcc20`,
+`801e4140`, `801ddb30`, `801de37c`, `801e0080`, `801e2650`, `801f81dc`.
+
+Two of them are worth singling out. `8005126c` is a documented **negative**, not
+a gap: the five-form reference sweep found no reference to the on-screen test
+anywhere, and two committed pages already record that. And `80029724`'s row
+declines a plausible `REPLACE` on purpose - hardware clipping is not retail's
+affine clip arithmetic, so the conservative reading is the accurate one.
+
+### The ones whose reason led with the wrong blocker
+
+Inert for real, but the sentence a reader met first named the least actionable
+of several causes. Rewritten to lead with the one that can move.
+
+| Anchor | Led with | Leads with now |
+|---|---|---|
+| `8004da00` | "the device half is not modelled" | No host builds the selector's inputs - two per-battle seat maps written at battle load and an unparsed voice-index table - and what it arms is a whole XA channel played from the file start, which the engine's pre-decoded clip bank has no player for. |
+| `801ce844` | Reads as "no engine path enters game-over" | Nothing dispatches retail mode 18; the port's party wipe is the mode-22 title hand-off, which is a different screen and is already host-wired. The stager's two disc inputs have no producer. |
+| `80020118` | A count of call sites in the workspace | The prerequisite is a staged-bundle mode the scene loader does not have; every scene here is handed resources that already own their bytes, so no caller forms the question. |
+| `801f3c34` | Inherited a blanket written for its module-mate | Nothing produces the outcome value it tests, and the banner emit it gates has no live caller either - both ends of the chain are open. |
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the

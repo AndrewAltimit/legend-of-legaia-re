@@ -29,7 +29,12 @@
 //! (`_DAT_8007C364`), `0xFB` = the first `_DAT_8007C34C`-list node whose tick
 //! is the world-map entity SM (`FUN_801DA51C`), anything else = the
 //! `_DAT_8007C354` field actor whose `+0x50` (placement index) matches. The
-//! `enable` byte lands in actor `+0x8A` (bit 0 gates the whole VM tick).
+//! second byte of the pair lands in actor `+0x8A`. Bit 0 does **not** gate the
+//! tick: the interpreter's `beq` at `0x80038194` is taken when the bit is
+//! *clear*, straight into the variant preamble, so a zero byte runs the VM
+//! unconditionally. What the bit gates is the three suppression tests at
+//! `0x8003819C..0x800381F4` (player engaged, this actor busy, this actor
+//! parked off-map), so it is a "defer to the player" mask.
 //!
 //! ## Motion stream layout (`FUN_80038158` preamble)
 //!
@@ -43,30 +48,34 @@
 //!
 //! ## Opcode width table (`FUN_80038158` switch)
 //!
+//! Full semantics per op, and which ones end the frame, are in
+//! [`docs/subsystems/motion-vm.md`](../../../docs/subsystems/motion-vm.md);
+//! the interpreter is `legaia_engine_vm::ambient_motion`.
+//!
 //! | op | width | effect |
 //! |----|-------|--------|
 //! | 0x01 | 1 | end / loop back to the variant's first opcode |
-//! | 0x02 | 3 | set anim/timer pair `+0x88/+0x5C` from u16 operand |
+//! | 0x02 | 3 | write `+0x88`/`+0x5C` from a u16 operand, only while the `0x801C6470` record is unset |
 //! | 0x03 | 3 | directional step (facing table `DAT_80073F04`) |
 //! | 0x04 | 3 | facing ramp toward table direction |
 //! | 0x05 | 2 | wait `operand` ticks |
-//! | 0x06 | 5 | pad-echo / bounded chase step |
+//! | 0x06 | 5 | one random full-tile step inside a box relative to `+0x8C`/`+0x8D` |
 //! | 0x07 | 3 | **SET system flag** `u16 LE operand` in `DAT_80085758` |
 //! | 0x08 | 3 | **CLEAR system flag** `u16 LE operand` |
-//! | 0x09 | 3 | post u16 to the 4-slot ring `DAT_8007B6D8` (`FUN_80035B50`) |
-//! | 0x0A | 3 | set actor flag `0x1000000` + op-2 body |
-//! | 0x0B | 3 | clear actor flag `0x1000000` + op-2 body |
-//! | 0x0C | 8 | glide channel install (u24 target + u16 + u16 duration) |
+//! | 0x09 | 3 | queue an SFX cue id in the 4-slot ring `DAT_8007B6D8` (`FUN_80035B50`) |
+//! | 0x0A | 3 | set actor flag `0x1000000` + op-2 body, same unset-record gate |
+//! | 0x0B | 3 | clear actor flag `0x1000000` + op-2 body, same gate |
+//! | 0x0C | 8 | fade the `+0x74` packed-RGB tint + the `+0x78` draw-mode word |
 //! | 0x0D | 4 | facing ramp with tween-channel install |
-//! | 0x0E | 3 | swap model (kingdom pool `DAT_8007B6F8` / `_DAT_8007B824`) |
-//! | 0x0F | 3 | teleport to tile (same `(b&0x7F)*0x80+0x40` grid decode) |
+//! | 0x0E | 3 | swap model (`DAT_8007B6F8` below id `0xF0`, `DAT_8007B824` above) |
+//! | 0x0F | 3 | teleport to tile (same `(b&0x7F)*0x80+0x40` grid decode) + re-anchor |
 //! | 0x10 | 2 | set bit in `+0x10`/`+0x12`/`+0x62`/scratch flag words |
 //! | 0x11 | 2 | clear bit (same targets) |
-//! | 0x12 | 2 | wait for bit state (same targets) |
-//! | 0x13 | 13 | `FUN_80058490` call (4 x u16 + 2 x u16 params) |
-//! | 0x14 | 5 | set / tween `+0x72` (speed) |
-//! | 0x15 | 5 | set / tween `+0x24` |
-//! | 0x16 | 5 | set / tween `+0x28` |
+//! | 0x12 | 2 | wait for that bit to **change** from its value at install |
+//! | 0x13 | 13 | `FUN_80058490` (`MoveImage`): a `RECT` + a destination corner |
+//! | 0x14 | 5 | set / tween `+0x72` (render scale; also the speed multiplier) |
+//! | 0x15 | 5 | set / tween `+0x24` (X Euler angle) |
+//! | 0x16 | 5 | set / tween `+0x28` (Z Euler angle) |
 //! | 0x17 | 3 | write per-actor pause-table pair (`0x801C6470`) |
 //! | 0x18 | 5 | bounded wander inside an AABB (4 tile bytes) |
 //! | 0x19 | 3 | directional step variant (shares the op-3 body) |
@@ -112,7 +121,9 @@ pub struct MotionBinding {
     /// `0xF8` player / `0xFB` world-map entity / else placement index
     /// matched against field-actor `+0x50`.
     pub actor_id: u8,
-    /// Written to actor `+0x8A`; bit 0 gates the motion-VM tick.
+    /// Written to actor `+0x8A`. Bit 0 does **not** gate the tick - it gates
+    /// the interpreter's three suppression tests (player engaged, actor
+    /// busy, actor parked off-map), so a zero byte runs unconditionally.
     pub enable: u8,
 }
 

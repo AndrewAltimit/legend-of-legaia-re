@@ -317,6 +317,21 @@ impl World {
         {
             return;
         }
+        // --- W1-D: the fourteen trampoline arms ---
+        // The same property for the three whole-row sweeps among them (PROT
+        // 0941's `0xB9`, 0950's `0xAB`, 0956's `0x71`): each rolls its own
+        // baked power per hittable seat and stores the clamped net into
+        // `+0x14C` itself, over a seat range the spell record cannot express.
+        // The `phase > arm` test is the same guard - a host that never drove
+        // the band past the sweep arm is still owed the generic fold.
+        if let Some(entry) = self.cast_module_for(pc.spell_id)
+            && let Some(body) = vm::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
+            && let Some(arm) = vm::cast_arm_ticks::arm_sweep_arm(entry, body)
+            && self.casting.module_phase > arm
+        {
+            return;
+        }
+        // --- end W1-D ---
         let Some(def) = self.tables.spell_catalog.get(pc.spell_id).cloned() else {
             return;
         };
@@ -383,6 +398,11 @@ impl World {
         // module phase `ctx+0x279` before the first tick.
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
+        // A new cast re-arms the Nighto verdict; the roll happens on the first
+        // tick of the module, the way retail's arm 0 draws it. The ring sweep
+        // starts from zero for the same reason.
+        self.casting.module_nighto_outcome = None;
+        self.casting.module_ring_angle = 0;
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
@@ -481,7 +501,7 @@ impl World {
     /// Stage the cast module's **spawn records** at `origin` - the engine's
     /// answer to the dispatchers, and the half of a cast that is data.
     ///
-    /// Each record is `[i16 model_sel][u16 flags][move-VM bytecode]`, the shape
+    /// Each record is `[i16 model_sel][u16 reserved][move-VM bytecode]`, the shape
     /// the whole spawn stack shares, so the records run through the same
     /// [`crate::summon::SummonScene`] the summon and move-FX paths already use
     /// and both hosts draw and tick them with no host change
@@ -750,6 +770,17 @@ pub struct CastModuleCodeRun {
     pub element_change: Option<(u8, u8)>,
 }
 
+// --- W1-D: the fourteen trampoline arms ---
+/// The clip PROT 0941's Steal stages on its caster in arm `0`.
+///
+/// Retail picks it with `FUN_80050E2C(record + 0x4C, 1, record[+0x4A])` - a
+/// draw over the monster record's own clip list, which the engine has no
+/// equivalent for. `1` is the approach clip every other body in the band
+/// stages, and the arm's own contribution - the **OR** restage `+0x1DC |= 1`
+/// rather than the band's usual bump - is what the port carries exactly.
+const CAST_STEAL_RUN_CLIP: u8 = 1;
+// --- end W1-D ---
+
 impl World {
     /// Lift one actor slot into the state view the slot-B kernels take.
     ///
@@ -780,6 +811,13 @@ impl World {
             // at `+0x1DF`.
             knockdown_anim: a.battle.params.get(0x1F1 - 0x1DF).copied().unwrap_or(0),
             render_flag: a.battle.render_flag,
+            // The three mirrors the band's hit arms stamp beside the HP write
+            // all have a home on the battle actor already, so they are seeded
+            // and written back like every other view field rather than being
+            // dropped at the seam.
+            present_04: a.battle.render_color,
+            render_21f: a.battle.impact_state,
+            render_225: a.battle.capture_state,
             anim_rate: a.battle.anim_rate.get(),
             // The whole `+0x158..+0x16A` stat block, five `(working, base)`
             // pairs, now has a home on the battle actor - so every one of
@@ -915,6 +953,9 @@ impl World {
         a.battle.queued_anim = st.staged_anim;
         a.battle.active_target = st.target_code;
         a.battle.render_flag = st.render_flag;
+        a.battle.render_color = st.present_04;
+        a.battle.impact_state = st.render_21f;
+        a.battle.capture_state = st.render_225;
         a.battle.anim_rate = AnimRate(st.anim_rate);
         a.battle.agl = st.agl;
         a.battle.agl_base = st.agl_base;
@@ -942,6 +983,120 @@ impl World {
         }
     }
 
+    /// The `(x, z)` pair a battle seat occupies - its anchor when the battle
+    /// loader seeded one, else its live position.
+    fn cast_seat_xz(&self, slot: u8) -> (i16, i16) {
+        self.actors
+            .get(slot as usize)
+            .map(|a| {
+                a.battle
+                    .seat
+                    .unwrap_or((a.move_state.world_x, a.move_state.world_z))
+            })
+            .unwrap_or((0, 0))
+    }
+
+    /// Which of `seats` lie inside a `+-half_width` cone about `bearing`, as
+    /// seen from `centre` - the geometry PROT 0904's expanding-ring sweep
+    /// gates each hit on, and the one thing the module's arm 12 needs from its
+    /// host.
+    ///
+    /// Retail's shape, read off `0x801F7CA0..0x801F7D14`: two calls to the
+    /// 12-bit atan2 `FUN_80019B28` against the **same** second point (the ring
+    /// centre) - one from the ring's rim point at angle `ctx+0x6D8`, one from
+    /// the seat - each `+0x800` and masked to `0xFFF`, then
+    /// `|ref - seat| - 0x30` compared **unsigned** against `0xFB1`. That
+    /// comparison is the wrap: a difference below `0x30` underflows past
+    /// `0xFB1` and a difference at or above `0xFE1` exceeds it, so both ends
+    /// of the cone are in and everything between is out. The `+0x800` cancels
+    /// in the difference and the bearings are measured toward the centre in
+    /// both calls, so measuring outward from the centre gives the same
+    /// difference.
+    ///
+    /// The atan2 is the ported `FUN_80019B28`
+    /// ([`vm::battle_action::bearing_12bit_approx`]) over the
+    /// approximated arctan LUT, the same one the enemy target cursor uses.
+    ///
+    /// REF: FUN_801F69D8 (PROT 0904 arm 12 cone gate), FUN_80019B28
+    pub fn seats_in_cone(
+        &self,
+        centre: (i16, i16),
+        bearing: u16,
+        half_width: u16,
+        seats: std::ops::Range<u8>,
+    ) -> Vec<u8> {
+        use vm::battle_action::bearing_12bit_approx;
+        const FULL_TURN: u16 = 0x1000;
+        seats
+            .filter(|&seat| {
+                let (sx, sz) = self.cast_seat_xz(seat);
+                let to_seat = bearing_12bit_approx(centre.1, centre.0, sz, sx);
+                let d = (to_seat.wrapping_sub(bearing)) & (FULL_TURN - 1);
+                d <= half_width || d >= FULL_TURN - half_width
+            })
+            .collect()
+    }
+
+    /// PROT 0907 (Nighto)'s kill / confuse / resist verdict for the resident
+    /// cast - drawn once and held on [`crate::world::CastFxState::module_nighto_outcome`].
+    ///
+    /// Retail's arm 0 draws both rolls off the SCUS RNG `FUN_80056798` and
+    /// parks them in the module's own words, so the outcome is settled the
+    /// frame the cast starts (`0x801F6B50` kill roll, `0x801F6C28` resist
+    /// throw, `0x801F6CF0` the third-character extra throw). This is the same
+    /// draw against this world's RNG cursor, and the arithmetic is the ported
+    /// kernel's ([`vm::cast_seru_ticks_a::nighto_outcome`]).
+    ///
+    /// The three inputs the roll needs beyond the dice:
+    ///
+    /// * the caster's **magic level** for this spell, the record byte both
+    ///   heal modules scan for ([`Self::caster_magic_power_byte`]);
+    /// * the victim's immunity - retail's `ctx[+0x287] != 0 && record[+0x20]
+    ///   != 0`, i.e. the scripted-fight flag AND the monster record's
+    ///   double-width texture-page byte read as a "big model" proxy
+    ///   ([`crate::monster_catalog::MonsterDef::wide_texture_page`]);
+    /// * whether the caster is character index `3`, the only one that takes
+    ///   the extra forced-resist throw. Retail reads `0x8007BD10[ctx+0x13]`,
+    ///   the **1-based** present-party character id; the engine's mirror of
+    ///   that list is [`crate::world::World::party_roster_slot`], so the id is
+    ///   its roster slot plus one.
+    ///
+    /// REF: FUN_801F69E8 (`0x801F6B50..0x801F6D28`, PROT 0907 arm 0)
+    fn nighto_verdict(
+        &mut self,
+        caster_slot: u8,
+        victim_slot: u8,
+        spell_id: u8,
+    ) -> vm::cast_seru_ticks_a::NightoOutcome {
+        if let Some(held) = self.casting.module_nighto_outcome {
+            return held;
+        }
+        use vm::cast_seru_ticks_a as ticks_a;
+        let magic_level = self.caster_magic_power_byte(caster_slot, spell_id);
+        let target_immune = self.battle_ctx.scripted_fight != 0
+            && self
+                .actors
+                .get(victim_slot as usize)
+                .and_then(|a| a.battle_monster_id)
+                .and_then(|id| self.tables.monster_catalog.get(id))
+                .is_some_and(|def| def.wide_texture_page != 0);
+        // Retail's character id is 1-based over the present-party list.
+        let caster_character = self.party_roster_slot(caster_slot as usize) as u8 + 1;
+        let kill_roll = self.next_rng();
+        let resist_roll = self.next_rng();
+        let extra_roll =
+            (caster_character == ticks_a::NIGHTO_EXTRA_ROLL_CHARACTER).then(|| self.next_rng());
+        let outcome = ticks_a::nighto_outcome(&ticks_a::NightoRoll {
+            kill_roll,
+            resist_roll,
+            magic_level,
+            target_immune,
+            extra_roll,
+        });
+        self.casting.module_nighto_outcome = Some(outcome);
+        outcome
+    }
+
     /// The context bytes the kernels read (`ctx+0`, `+1`, `+0x13`, `+0x278`,
     /// `+0x279`).
     ///
@@ -951,11 +1106,28 @@ impl World {
     /// not part of either sweep's range. The monster count starts at
     /// `cast_module_ticks::FIRST_MONSTER_SEAT`, the fixed base the Juggernaut
     /// sweep's `addiu s4, zero, 0xc` encodes.
-    fn cast_module_ctx(&self) -> vm::cast_module_ticks::CastModuleCtx {
+    pub(in crate::world) fn cast_module_ctx(&self) -> vm::cast_module_ticks::CastModuleCtx {
         use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
         let table = self.actors.len().min(BATTLE_TABLE_SLOTS);
         vm::cast_module_ticks::CastModuleCtx {
-            actor_count: table as u8,
+            // Retail's `ctx[+0]` is the **party** count, not the actor count:
+            // `0x8004B3F0` loads it as the bound of a loop that turns
+            // `DAT_8007BD10[i]` - the present-party char-id list - into a
+            // `0x414`-byte record (`0x8004B420..0x8004B484`, id-1 scaled by
+            // `0x414` onto `0x80084140`). So the seat range it names is the
+            // party row `0..FIRST_MONSTER_SEAT`, and nothing above it.
+            //
+            // The engine's mirror of that list is `PartyState::party_count`
+            // (the same ordinal space `World::party_roster_slot` resolves).
+            // Seeding this from the whole actor table instead made every
+            // `ctx[+0]` sweep - Evil Seru Magic's whole-row hit, the Orb heal,
+            // the Element Change hide - run over the monster rows as well,
+            // which retail's separate `ctx[+1]` sweep is what covers.
+            party_count: self
+                .party
+                .party_count
+                .min(FIRST_MONSTER_SEAT)
+                .min(table as u8),
             monster_count: (FIRST_MONSTER_SEAT as usize..table)
                 .filter(|&s| self.actors[s].active)
                 .count() as u8,
@@ -994,7 +1166,13 @@ impl World {
     /// Returns `None` when no band entry is resident (a disc-free host, or a
     /// spell that names no module).
     pub fn run_cast_module_code(&mut self, spell_id: u8, arm: u8) -> Option<CastModuleCodeRun> {
+        // --- W1-D ---
+        use vm::cast_arm_ticks as arms;
+        // --- end W1-D ---
         use vm::cast_module_ticks as ticks;
+        // --- W1-B ---
+        use vm::cast_seru_ticks_a as ticks_a;
+        // --- end W1-B ---
 
         let entry = self.cast_module_for(spell_id)?;
         let mut ctx = self.cast_module_ctx();
@@ -1224,6 +1402,234 @@ impl World {
                     }
                     Some(step)
                 }
+                // --- W1-D: fourteen arms ---
+                // PROT 0940 / 0941 / 0943 / 0944 / 0950 / 0956 / 0962, ported
+                // in `legaia_engine_vm::cast_arm_ticks`. Three of these bodies
+                // wear the VA `0x801F6A04` in three different images, which is
+                // why every arm below names its entry.
+                (940, Some(arms::GLARE_DIVIDE_BLIND_TICK)) => {
+                    use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
+                    let mut seat = self.cast_actor_state(FIRST_MONSTER_SEAT);
+                    let mut ext = self.cast_arm_ext_state(FIRST_MONSTER_SEAT);
+                    let step = arms::glare_divide_blind_tick(&mut ctx, &mut seat, &mut ext);
+                    self.write_cast_actor_state(FIRST_MONSTER_SEAT, &seat);
+                    self.write_cast_arm_ext_state(FIRST_MONSTER_SEAT, &ext);
+                    Some(step)
+                }
+                (940, Some(arms::GLARE_DIVIDE_SPLIT_TICK)) => {
+                    let ext = self.cast_arm_ext_state(caster_slot);
+                    let saved = self.casting.module_split_saved_target.unwrap_or(0);
+                    let roll = (ctx.phase == 2).then(|| self.next_rng());
+                    let (step, split) = arms::glare_divide_split_tick(
+                        &mut ctx,
+                        &mut caster,
+                        &ext,
+                        spell_id,
+                        saved,
+                        roll,
+                    );
+                    if let Some(sp) = split {
+                        self.casting.module_split_saved_target = Some(sp.saved_caster_target);
+                        self.apply_glare_divide_split(caster_slot, &sp);
+                    }
+                    Some(step)
+                }
+                (941, Some(arms::STEAL_TICK)) => {
+                    let outcome = (ctx.phase == 1)
+                        .then(|| self.roll_cast_steal(victim_slot))
+                        .flatten();
+                    let (step, taken) =
+                        arms::steal_tick(&mut ctx, &mut caster, CAST_STEAL_RUN_CLIP, outcome);
+                    if let Some(arms::StealOutcome::FromBag { item }) = taken {
+                        self.take_one_from_bag(item);
+                    }
+                    Some(step)
+                }
+                (941, Some(arms::STEAL_SWEEP_TICK)) => {
+                    let (step, hits) = self.run_cast_arm_sweep(
+                        &mut ctx,
+                        941,
+                        arms::STEAL_SWEEP_TICK,
+                        caster_slot,
+                        &mut caster,
+                    );
+                    run.aoe_hits = hits;
+                    Some(step)
+                }
+                (943, Some(arms::CURSE_SINGLE_TICK)) => {
+                    Some(arms::curse_single_tick(&mut ctx, &mut caster, &mut victim))
+                }
+                (943, Some(arms::CURSE_MP_DRAIN_TICK)) => {
+                    let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                        .map(|s| self.cast_actor_state(s))
+                        .collect();
+                    let mut exts: Vec<arms::CastArmExtState> = (0..self.actors.len() as u8)
+                        .map(|s| self.cast_arm_ext_state(s))
+                        .collect();
+                    let (step, _drained) =
+                        arms::curse_mp_drain_tick(&mut ctx, &mut seats, &mut exts);
+                    for (slot, st) in seats.iter().enumerate() {
+                        self.write_cast_actor_state(slot as u8, st);
+                    }
+                    for (slot, st) in exts.iter().enumerate() {
+                        self.write_cast_arm_ext_state(slot as u8, st);
+                    }
+                    Some(step)
+                }
+                (944, Some(arms::GUILTY_CROSS_TICK)) => Some(arms::guilty_cross_tick(
+                    &mut ctx,
+                    &mut caster,
+                    &mut victim,
+                    None,
+                )),
+                (944, Some(arms::GUILTY_CROSS_CURSE_TICK)) => {
+                    let code = caster.target_code;
+                    let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                        .map(|s| self.cast_actor_state(s))
+                        .collect();
+                    let (step, _marked) =
+                        arms::guilty_cross_curse_tick(&mut ctx, code, &mut caster, &mut seats);
+                    for (slot, st) in seats.iter().enumerate() {
+                        self.write_cast_actor_state(slot as u8, st);
+                    }
+                    Some(step)
+                }
+                (950, Some(arms::ROLLING_FLARE_TICK)) => Some(arms::rolling_flare_tick(
+                    &mut ctx,
+                    &mut caster,
+                    &mut victim,
+                    None,
+                )),
+                (950, Some(arms::ROLLING_FLARE_SWEEP_TICK)) => {
+                    let sweep = ctx.phase
+                        == arms::arm_sweep_arm(950, arms::ROLLING_FLARE_SWEEP_TICK).unwrap_or(0xFF);
+                    let rolls = self.cast_arm_sweep_rolls(
+                        &ctx,
+                        950,
+                        arms::ROLLING_FLARE_SWEEP_TICK,
+                        caster_slot,
+                    );
+                    let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                        .map(|s| self.cast_actor_state(s))
+                        .collect();
+                    let take = |seat: u8| {
+                        rolls
+                            .iter()
+                            .find(|(s, _)| *s == seat)
+                            .map(|(_, d)| *d)
+                            .unwrap_or(0)
+                    };
+                    let (step, hits) = arms::rolling_flare_sweep_tick(
+                        &mut ctx,
+                        &mut caster,
+                        &mut seats,
+                        sweep,
+                        take,
+                    );
+                    for (slot, st) in seats.iter().enumerate() {
+                        self.write_cast_actor_state(slot as u8, st);
+                    }
+                    run.aoe_hits = hits
+                        .iter()
+                        .map(|h| ticks::AoeHit {
+                            seat: h.seat,
+                            applied: h.applied as i32,
+                        })
+                        .collect();
+                    Some(step)
+                }
+                (956, Some(arms::WATER_HAZARD_TICK)) => {
+                    let code = caster.target_code;
+                    let rolls =
+                        self.cast_arm_sweep_rolls(&ctx, 956, arms::WATER_HAZARD_TICK, caster_slot);
+                    let status: Vec<(u8, u32)> = if ctx.phase == 2 {
+                        rolls.iter().map(|(s, _)| (*s, self.next_rng())).collect()
+                    } else {
+                        Vec::new()
+                    };
+                    let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                        .map(|s| self.cast_actor_state(s))
+                        .collect();
+                    let take = |seat: u8| {
+                        rolls
+                            .iter()
+                            .find(|(s, _)| *s == seat)
+                            .map(|(_, d)| *d)
+                            .unwrap_or(0)
+                    };
+                    let st = |seat: u8| {
+                        status
+                            .iter()
+                            .find(|(s, _)| *s == seat)
+                            .map(|(_, r)| *r)
+                            .unwrap_or(1)
+                    };
+                    let (step, hits) = arms::water_hazard_tick(
+                        &mut ctx,
+                        caster_slot,
+                        code,
+                        &mut caster,
+                        &mut seats,
+                        take,
+                        st,
+                    );
+                    for (slot, s) in seats.iter().enumerate() {
+                        self.write_cast_actor_state(slot as u8, s);
+                    }
+                    run.aoe_hits = hits
+                        .iter()
+                        .map(|h| ticks::AoeHit {
+                            seat: h.seat,
+                            applied: h.applied as i32,
+                        })
+                        .collect();
+                    Some(step)
+                }
+                // `arrived = true` on all three, and this is a disclosed
+                // divergence rather than a shortcut.
+                //
+                // Retail's predicate is `FUN_8004E2F0(ctx[+0x13],
+                // caster[+0x1DD]) == 0` - the **zero** side, not the non-zero
+                // one: `sll v0,v0,0x10; bne v0,zero,<hold>` at
+                // `0x801F7C0C` / `0x801F7D08` sends a non-zero metric to the
+                // "stage the run clip and hold" arm, so the metric reads
+                // "still out of reach" and zero is arrival. The engine has
+                // that metric (`Self::battle_range_metric`, the port of the
+                // same routine) and the 0x20 `FUN_80050BB8` calls the arrived
+                // path makes are ported too
+                // (`legaia_engine_vm::battle_separation`, a pairwise
+                // separation nudge - NOT the approach itself).
+                //
+                // What is missing is the approach: retail's caster is walked
+                // toward its target by the action SM before this body ever
+                // reads the metric, and the engine's cast band drives no such
+                // walk for a capture-class cast - it places the seats and
+                // leaves them. Feeding the live metric would therefore park
+                // the body on phase `1` forever wherever the placement does
+                // not already read as in-reach. The blocking capability is a
+                // caster approach leg on the band, not a call insertion.
+                (962, Some(arms::BLADE_BREATH_A_TICK)) => Some(arms::blade_breath_a_tick(
+                    &mut ctx,
+                    &mut caster,
+                    &mut victim,
+                    true,
+                    None,
+                )),
+                (962, Some(arms::BLADE_BREATH_B_TICK)) => Some(arms::blade_breath_b_tick(
+                    &mut ctx,
+                    &mut caster,
+                    &mut victim,
+                    true,
+                    None,
+                )),
+                (962, Some(arms::BLADE_BREATH_C_TICK)) => Some(arms::blade_breath_c_tick(
+                    &mut ctx,
+                    &mut caster,
+                    &mut victim,
+                    true,
+                    None,
+                )),
+                // --- end W1-D ---
                 // Every ported trampoline arm the band names. An arm whose
                 // body has no port ticks nothing, which is exactly what
                 // retail's fall-through does for an id the trampoline does
@@ -1232,6 +1638,109 @@ impl World {
             }
         } else {
             match entry {
+                // --- W1-B: player Seru 0903..0908 ---
+                // The first six `0x801CF4EC` arms - the player Seru-magic tick
+                // bodies (`legaia_engine_vm::cast_seru_ticks_a`). Unlike the
+                // summon-creature ticks below, five of the six sweep or
+                // retarget seats other than the caster's own three, so they
+                // take the whole seat row and the run writes it back before
+                // the caster / victim / summon views are refreshed from it.
+                //
+                // No damage roll is fed in: the engine folds a cast's HP
+                // outcome once at `cast_spell_on_slots_prepaid`, so the bodies
+                // below take `None`.
+                //
+                // PROT 0907's kill / confuse fork is the exception, because it
+                // is not a damage roll at all - it writes the victim's HP to
+                // zero or `+0x16E |= 0x380` and there is no magnitude for the
+                // fold to carry. Its verdict is drawn here, once per cast
+                // (`Self::nighto_verdict`), and held on the cast state for
+                // every later frame, mirroring retail's arm-0 draw into the
+                // module words `0x801F8534` / `0x801F853C`.
+                903..=908 => {
+                    // PROT 0904's ring sweep: advance the ray, then resolve
+                    // the cone once for this tick (both borrow `self`, which
+                    // the seat row below does not allow).
+                    let cone_seats: Vec<u8> = if entry == 904 {
+                        use vm::cast_seru_ticks_a::{MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH};
+                        let step = u16::from(self.clock.frame_step.max(1)) << 3;
+                        self.casting.module_ring_angle =
+                            self.casting.module_ring_angle.wrapping_add(step);
+                        let centre = self.cast_seat_xz(seat_slot);
+                        self.seats_in_cone(
+                            centre,
+                            self.casting.module_ring_angle & 0x0FFF,
+                            THEEDER_CONE_HALF_WIDTH,
+                            ticks::FIRST_MONSTER_SEAT..MONSTER_ROW_END,
+                        )
+                    } else {
+                        Vec::new()
+                    };
+                    let nighto_outcome = if entry == 907 {
+                        self.nighto_verdict(caster_slot, victim_slot, spell_id)
+                    } else {
+                        ticks_a::NightoOutcome::ConfuseResisted
+                    };
+                    let who = ticks_a::SeruSeats {
+                        caster: caster_slot,
+                        victim: victim_slot,
+                        summon: seat_slot,
+                    };
+                    let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                        .map(|s| self.cast_actor_state(s))
+                        .collect();
+                    // Carry the three views into the row so a stager that ran
+                    // above this match is not thrown away.
+                    for (slot, view) in [
+                        (caster_slot, caster),
+                        (victim_slot, victim),
+                        (seat_slot, seat),
+                    ] {
+                        if let Some(s) = seats.get_mut(slot as usize) {
+                            *s = view;
+                        }
+                    }
+                    let (step, hits) = match entry {
+                        903 => ticks_a::gimard_tick(&mut ctx, &mut seats, who, None),
+                        904 => {
+                            // Arm 12's cone gate is the host's: retail reads
+                            // the ring's rim bearing and every seat's, and the
+                            // module only ever sees "in" or "out". The damage
+                            // magnitude stays the fold's, so an in-cone seat
+                            // gets a zero roll and the arm's presentation half
+                            // (render flag, reaction bits) runs.
+                            let in_cone = cone_seats.clone();
+                            ticks_a::theeder_tick(&mut ctx, &mut seats, who, |seat| {
+                                in_cone.contains(&seat).then_some(0)
+                            })
+                        }
+                        905 => {
+                            let (step, _) = ticks_a::vera_tick(&mut ctx, &mut seats, who, None);
+                            (step, Vec::new())
+                        }
+                        906 => ticks_a::gizam_tick(&mut ctx, &mut seats, who, |_| None),
+                        907 => (
+                            ticks_a::nighto_tick(&mut ctx, &mut seats, who, nighto_outcome),
+                            Vec::new(),
+                        ),
+                        _ => ticks_a::zenoir_tick(&mut ctx, &mut seats, who, |_| None),
+                    };
+                    for (slot, st) in seats.iter().enumerate() {
+                        self.write_cast_actor_state(slot as u8, st);
+                    }
+                    caster = seats.get(caster_slot as usize).copied().unwrap_or(caster);
+                    victim = seats.get(victim_slot as usize).copied().unwrap_or(victim);
+                    seat = seats.get(seat_slot as usize).copied().unwrap_or(seat);
+                    run.aoe_hits = hits
+                        .iter()
+                        .map(|h| ticks::AoeHit {
+                            seat: h.seat,
+                            applied: h.applied as i32,
+                        })
+                        .collect();
+                    Some(step)
+                }
+                // --- end W1-B ---
                 // The summon band's own tick bodies - no trampoline, the
                 // `0x801CF4EC` arm calls them directly.
                 918 => ticks::kemaro_tick(&mut ctx, &mut victim, None),
@@ -1244,6 +1753,53 @@ impl World {
                 925 => Some(ticks::spikefish_tick(&mut ctx, &mut caster)),
                 927 => Some(ticks::juggernaut_tick(&mut ctx, &mut victim, None)),
                 949 => Some(ticks::water_crystals_tick(&mut ctx, &mut victim, None)),
+                // --- W1-C: player Seru 0909..0913 ---
+                // These five bodies read and write the whole actor table -
+                // the summon seat, the caster and the enemy row - so they
+                // take the table rather than the three locals above, and the
+                // locals are refreshed from it afterwards.
+                //
+                // PROT 0909 is the one entry in this band whose move-VM
+                // stager also advances `ctx[+0x279]` (its arms `0` and `1`).
+                // Retail reaches the stager from the effect script and the
+                // tick from `FUN_801F1ED4` - two call sites - while this seam
+                // runs both in one call, so the tick is skipped on a frame
+                // the stager already stepped the phase. `casting.module_phase`
+                // is not written back until the end of this function, so it
+                // still holds the phase this call started on.
+                909..=913 => {
+                    let stager_stepped = ctx.phase != self.casting.module_phase;
+                    let mut seats: Vec<ticks::CastActorState> = (0..self.actors.len() as u8)
+                        .map(|s| self.cast_actor_state(s))
+                        .collect();
+                    let summon = seat_slot;
+                    let step = if entry == 909 && stager_stepped {
+                        None
+                    } else {
+                        let (step, hits) = self.run_seru_b_tick(
+                            entry,
+                            &mut ctx,
+                            &mut seats,
+                            caster_slot,
+                            summon,
+                            victim_slot,
+                        );
+                        run.aoe_hits.extend(hits);
+                        Some(step)
+                    };
+                    if step.is_some() {
+                        for (slot, st) in seats.iter().enumerate() {
+                            self.write_cast_actor_state(slot as u8, st);
+                        }
+                        // The three locals are written back below; take them
+                        // from the table so this arm's writes survive.
+                        caster = seats.get(caster_slot as usize).copied().unwrap_or(caster);
+                        victim = seats.get(victim_slot as usize).copied().unwrap_or(victim);
+                        seat = seats.get(summon as usize).copied().unwrap_or(seat);
+                    }
+                    step
+                }
+                // --- end W1-C ---
                 _ => None,
             }
         };
@@ -1285,6 +1841,77 @@ impl World {
         }
         Some(run)
     }
+
+    // --- W1-C: player Seru 0909..0913 ---
+    /// Dispatch one of the five player-Seru tick bodies for this frame
+    /// ([`legaia_engine_vm::cast_seru_ticks_b`], PROT 0909..0913, action ids
+    /// `0x87..=0x8B`).
+    ///
+    /// The damage and heal inputs are deliberately neutral. The engine folds
+    /// a cast's HP outcome exactly once, at
+    /// [`Self::cast_spell_on_slots_prepaid`], so what runs here is each
+    /// module's phase machine, its `ctx+0x278` discipline and its staging /
+    /// render writes; the damage step itself stays a tested kernel rather
+    /// than becoming a second application. That is the same posture every
+    /// other non-sweep tick body in the band takes, and it is why PROT 0911's
+    /// heal amount is passed as `0` - its real magnitude
+    /// (`cast_seru_ticks_b::orb_heal_amount` of the caster's per-magic level,
+    /// a character-record field) has no seam here yet.
+    fn run_seru_b_tick(
+        &mut self,
+        entry: u32,
+        ctx: &mut vm::cast_module_ticks::CastModuleCtx,
+        seats: &mut [vm::cast_module_ticks::CastActorState],
+        caster_slot: u8,
+        summon_slot: u8,
+        victim_slot: u8,
+    ) -> (
+        vm::cast_module_ticks::CastTickStep,
+        Vec<vm::cast_module_ticks::AoeHit>,
+    ) {
+        use legaia_engine_vm::cast_seru_ticks_b as seru;
+        use vm::cast_module_ticks::{AoeHit, SweepHit};
+
+        // The scratchpad frame-delta byte `0x1F80037D` every body in the band
+        // paces on. The engine ticks once per displayed frame, so it is `1`.
+        const FRAME_DELTA: u8 = 1;
+
+        fn lift(hits: &[SweepHit]) -> Vec<AoeHit> {
+            hits.iter()
+                .map(|h| AoeHit {
+                    seat: h.seat,
+                    applied: h.applied as i32,
+                })
+                .collect()
+        }
+        match entry {
+            909 => {
+                let (step, sweep) = seru::viguro_tick(ctx, seats, caster_slot, summon_slot, |_| 0);
+                (step, lift(&sweep.hits))
+            }
+            910 => (
+                seru::swordie_tick(ctx, seats, summon_slot, victim_slot, FRAME_DELTA),
+                Vec::new(),
+            ),
+            911 => {
+                let maxes: Vec<u16> = self.actors.iter().map(|a| a.battle.max_hp).collect();
+                let (step, _healed) = seru::orb_tick(ctx, seats, summon_slot, 0, None, |s| {
+                    maxes.get(s as usize).copied().unwrap_or(0)
+                });
+                (step, Vec::new())
+            }
+            912 => {
+                let (step, hits) = seru::freed_tick(ctx, seats, summon_slot, |_| 0);
+                (step, lift(&hits))
+            }
+            _ => {
+                let (step, hit) = seru::nova_tick(ctx, seats, summon_slot, victim_slot, 0);
+                let hits: Vec<SweepHit> = hit.into_iter().collect();
+                (step, lift(&hits))
+            }
+        }
+    }
+    // --- end W1-C ---
 
     /// Run the band's two whole-row AoE stagers - PROT 0927 (Juggernaut,
     /// `FUN_801F85A8`) and PROT 0966 (Evil Seru Magic, `FUN_801F8D64`) -
@@ -1336,7 +1963,7 @@ impl World {
         // so a dead or non-targetable seat draws nothing and the shared RNG
         // cursor must not advance for it either.
         let order: Vec<u8> = if entry == 966 {
-            (0..ctx.actor_count).collect()
+            (0..ctx.party_count).collect()
         } else {
             (0..ctx.monster_count)
                 .map(|i| ticks::FIRST_MONSTER_SEAT.saturating_add(i))
@@ -1478,7 +2105,7 @@ impl World {
         }
         let shape = ticks::sweep_damage_shape_for(body);
         let mut out = Vec::new();
-        for seat in 0..ctx.actor_count {
+        for seat in 0..ctx.party_count {
             let Some(s) = seats.get(seat as usize) else {
                 continue;
             };
@@ -1499,6 +2126,260 @@ impl World {
             out.push((seat, damage, (self.next_rng(), self.next_rng())));
         }
         out
+    }
+
+    // --- W1-D: the fourteen trampoline arms ---
+
+    /// The five extra record fields
+    /// [`legaia_engine_vm::cast_arm_ticks::CastArmExtState`] carries, lifted
+    /// off one actor slot.
+    ///
+    /// Two of them have an engine home: `+0x150` is the actor's live MP and
+    /// `+0x172` its max HP. The other three do not, and the reason is that no
+    /// routine in PROT 0903..0966 reads them back - `+0x152` (the MP base) and
+    /// `+0x178` (where PROT 0943's drain stashes the old working MP) are
+    /// write-only in the band, and `+0x1F3` sits one byte past the end of the
+    /// engine's `+0x1DF..+0x1F2` action-parameter window. They round-trip
+    /// through the view for the tick's own arithmetic and are dropped here.
+    fn cast_arm_ext_state(&self, slot: u8) -> vm::cast_arm_ticks::CastArmExtState {
+        use vm::cast_arm_ticks::CastArmExtState;
+        let Some(a) = self.actors.get(slot as usize) else {
+            return CastArmExtState::default();
+        };
+        CastArmExtState {
+            mp: a.battle.mp,
+            mp_base: a.battle.mp,
+            mp_stash: 0,
+            max_hp: a.battle.max_hp,
+            reaction_extra: 0,
+        }
+    }
+
+    /// Write back the two halves of [`Self::cast_arm_ext_state`] the engine
+    /// actually carries.
+    fn write_cast_arm_ext_state(&mut self, slot: u8, st: &vm::cast_arm_ticks::CastArmExtState) {
+        let Some(a) = self.actors.get_mut(slot as usize) else {
+            return;
+        };
+        a.battle.mp = st.mp;
+        a.battle.max_hp = st.max_hp;
+    }
+
+    /// Pre-roll one whole-row sweep arm's per-seat damage, in the order retail
+    /// visits its seats.
+    ///
+    /// Only the body's own sweep arm draws anything
+    /// ([`legaia_engine_vm::cast_arm_ticks::arm_sweep_arm`]); rolling on every
+    /// re-entry would run the shared RNG cursor forward on frames retail never
+    /// draws. The sibling of [`Self::sweep_status_rolls`] for the arms
+    /// `cast_arm_ticks` carries.
+    fn cast_arm_sweep_rolls(
+        &mut self,
+        ctx: &vm::cast_module_ticks::CastModuleCtx,
+        entry: u32,
+        body: u32,
+        caster: u8,
+    ) -> Vec<(u8, i32)> {
+        let Some(arm) = vm::cast_arm_ticks::arm_sweep_arm(entry, body) else {
+            return Vec::new();
+        };
+        if ctx.phase != arm {
+            return Vec::new();
+        }
+        let Some(shape) = vm::cast_arm_ticks::arm_damage_shape_for(entry, body) else {
+            return Vec::new();
+        };
+        let seats: Vec<vm::cast_module_ticks::CastActorState> = (0..ctx.party_count)
+            .map(|s| self.cast_actor_state(s))
+            .collect();
+        let mut out = Vec::new();
+        for (seat, s) in seats.iter().enumerate() {
+            if !vm::cast_module_ticks::aoe_seat_is_hittable(s) {
+                continue;
+            }
+            let seat = seat as u8;
+            out.push((
+                seat,
+                self.capture_module_roll(shape, caster, seat).unwrap_or(0),
+            ));
+        }
+        out
+    }
+
+    /// Drive one of the two table-dispatched sweep arms end to end: roll,
+    /// tick, write the seats back.
+    fn run_cast_arm_sweep(
+        &mut self,
+        ctx: &mut vm::cast_module_ticks::CastModuleCtx,
+        entry: u32,
+        body: u32,
+        caster_slot: u8,
+        _caster: &mut vm::cast_module_ticks::CastActorState,
+    ) -> (
+        vm::cast_module_ticks::CastTickStep,
+        Vec<vm::cast_module_ticks::AoeHit>,
+    ) {
+        let sweep = Some(ctx.phase) == vm::cast_arm_ticks::arm_sweep_arm(entry, body);
+        let rolls = self.cast_arm_sweep_rolls(ctx, entry, body, caster_slot);
+        let mut seats: Vec<vm::cast_module_ticks::CastActorState> = (0..self.actors.len() as u8)
+            .map(|s| self.cast_actor_state(s))
+            .collect();
+        let take = |seat: u8| {
+            rolls
+                .iter()
+                .find(|(s, _)| *s == seat)
+                .map(|(_, d)| *d)
+                .unwrap_or(0)
+        };
+        let (step, hits) = vm::cast_arm_ticks::steal_sweep_tick(ctx, &mut seats, sweep, take);
+        for (slot, st) in seats.iter().enumerate() {
+            self.write_cast_actor_state(slot as u8, st);
+        }
+        (
+            step,
+            hits.iter()
+                .map(|h| vm::cast_module_ticks::AoeHit {
+                    seat: h.seat,
+                    applied: h.applied as i32,
+                })
+                .collect(),
+        )
+    }
+
+    /// PROT 0941's Steal resolution, both legs.
+    ///
+    /// **Monster seat** (`victim_slot >= FIRST_MONSTER_SEAT`): the static
+    /// `SCUS_942.54` steal table `0x80077828 + monster_id * 2`, fields
+    /// `[chance, item]` - the same table the player-side steal reads, and NOT
+    /// a field of the PROT 867 monster record (`docs/formats/steal-table.md`).
+    /// `rand() % 100 < chance` decides. `None` when no table is installed (a
+    /// disc-free host) or the victim carries no monster id, which keeps a
+    /// synthetic battle from inventing a steal and from drawing the roll.
+    ///
+    /// **Party seat**: the bag draw plus the consume. The rejection rule
+    /// (`id != 0 && count != 0 && the item table knows the id`, up to `0x400`
+    /// draws, one RNG draw per rejection so the shared cursor advances the way
+    /// retail's does) is the module's, byte for byte.
+    ///
+    /// The **array** it draws over is not. Retail samples the physical
+    /// 256-slot bag at `0x80085958` including its holes; the engine's bag is a
+    /// `HashMap<u8, u8>` with no slot coordinate, so this projects the
+    /// occupied ids into slots `0 ..= n-1` in id order. Two effects, both
+    /// disclosed in `docs/subsystems/inventory.md` ("What the port does, and
+    /// the one place the shape shows"): every draw hits an occupied slot, so
+    /// the first accepted draw wins where retail would reject its way past
+    /// holes; and the module's low-half floor (`ctx[+0x11] == 4` re-draws
+    /// while `slot < *(0x8007B5EA)`) is not applied, because a floor over slot
+    /// numbers means nothing over a projection with no holes - which is why no
+    /// `min_slot` is passed here. Closing it is a `PartyState` change, not a
+    /// change to this function.
+    fn roll_cast_steal(&mut self, victim_slot: u8) -> Option<vm::cast_arm_ticks::StealOutcome> {
+        use vm::cast_arm_ticks::StealOutcome;
+        use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
+        if victim_slot >= FIRST_MONSTER_SEAT {
+            let entry = self
+                .actors
+                .get(victim_slot as usize)
+                .and_then(|a| a.battle_monster_id)
+                .and_then(|id| self.tables.steal_table.as_ref()?.entry(id))?;
+            let roll = (self.next_rng() % 100) as u8;
+            return Some(StealOutcome::FromMonster {
+                chance: entry.chance_pct,
+                item: entry.item_id,
+                roll,
+                hit: roll < entry.chance_pct,
+            });
+        }
+        let mut bag: Vec<(u8, u8)> = vec![(0, 0); 256];
+        let mut ids: Vec<(u8, u8)> = self
+            .party
+            .inventory
+            .iter()
+            .map(|(id, n)| (*id, *n))
+            .collect();
+        ids.sort_unstable();
+        for (i, (id, n)) in ids.iter().enumerate() {
+            if i < bag.len() {
+                bag[i] = (*id, *n);
+            }
+        }
+        let known: Vec<u8> = ids.iter().map(|(id, _)| *id).collect();
+        // One `next_rng` per rejected slot, not a pre-drawn batch: retail
+        // advances the shared cursor once per draw, so over-drawing would
+        // desynchronise every later roll in the battle.
+        let mut slot = None;
+        for _ in 0..vm::cast_arm_ticks::STEAL_DRAW_BUDGET {
+            let draw = (self.next_rng() % 0x100) as u8;
+            if let Some(hit) =
+                vm::cast_arm_ticks::steal_bag_slot_from_draw(&bag, draw, |id| known.contains(&id))
+            {
+                slot = Some(hit);
+                break;
+            }
+        }
+        match slot.and_then(|s| bag.get(s as usize).copied()) {
+            Some((item, _)) => Some(StealOutcome::FromBag { item }),
+            None => Some(StealOutcome::BagEmpty),
+        }
+    }
+
+    /// The inventory consume PROT 0941's Steal performs (`FUN_80042310`).
+    fn take_one_from_bag(&mut self, item: u8) {
+        if let Some(n) = self.party.inventory.get_mut(&item) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                self.party.inventory.remove(&item);
+            }
+        }
+    }
+
+    /// Materialise the seat PROT 0940's split allocated.
+    ///
+    /// Retail builds a whole actor: it copies the caster's monster-record
+    /// pointer into `0x801C9348[seat]`, allocates a display object through
+    /// `FUN_80054CB0` / `FUN_80024C88`, and unaligned-copies the caster's
+    /// pose. The engine's equivalent is the caster's own actor record cloned
+    /// into the seat, and the five simulation writes the arm makes on top of
+    /// that (`+0x16C`, `+0x1DE`, `+0x1DF`, `+0x1DD`, `+0x14C` / `+0x172`) are
+    /// what this applies.
+    ///
+    /// Returns `false` when the table has no seat there, which is retail's own
+    /// bound: `ctx[+1]` indexes `actor_table` and the engine caps both counts
+    /// at [`BATTLE_TABLE_SLOTS`].
+    fn apply_glare_divide_split(
+        &mut self,
+        caster_slot: u8,
+        split: &vm::cast_arm_ticks::GlareDivideSplit,
+    ) -> bool {
+        use vm::cast_arm_ticks::{
+            SPLIT_CLONE_ACTION, SPLIT_CLONE_CATEGORY, SPLIT_WEAK_AGL, SplitWeakened,
+        };
+        let seat = split.clone_seat as usize;
+        if seat >= self.actors.len() || seat >= BATTLE_TABLE_SLOTS {
+            return false;
+        }
+        let Some(src) = self.actors.get(caster_slot as usize).cloned() else {
+            return false;
+        };
+        let mut clone = src;
+        clone.active = true;
+        clone.battle.init_key = 0;
+        clone.battle.action_category = SPLIT_CLONE_CATEGORY;
+        if let Some(p) = clone.battle.params.first_mut() {
+            *p = SPLIT_CLONE_ACTION;
+        }
+        clone.battle.active_target = vm::cast_module_ticks::TARGET_CODE_ENEMY_ROW;
+        clone.battle.hp = split.clone_hp;
+        clone.battle.max_hp = split.clone_hp;
+        if split.weakened == Some(SplitWeakened::Clone) {
+            clone.battle.hp = 1;
+            clone.battle.mp = 0;
+            clone.battle.atk_working = 1;
+            clone.battle.agl = SPLIT_WEAK_AGL;
+            clone.battle.agl_base = SPLIT_WEAK_AGL;
+        }
+        self.actors[seat] = clone;
+        true
     }
 
     /// The three accessory ids PROT 0955's Void Accessories rolls between -
@@ -1642,13 +2523,18 @@ mod capture_hold_tests {
     #[test]
     fn an_unported_tick_body_never_holds_the_phase() {
         let mut world = band_world();
-        // PROT 0909's code half is a *stager*, not a tick body.
-        assert_eq!(world.cast_module_for(0x87), Some(909));
-        let run = world.run_cast_module_code(0x87, 0).unwrap();
+        // --- W1-C ---
+        // PROT 0914's tick body is one of the band's unported rows. (This
+        // test used to key on PROT 0909, whose tick body is now ported -
+        // `legaia_engine_vm::cast_seru_ticks_b::viguro_tick` - so keying on
+        // it would have made the assertion vacuous.)
+        assert_eq!(world.cast_module_for(0x8C), Some(914));
+        let run = world.run_cast_module_code(0x8C, 0).unwrap();
         assert!(run.busy, "the seeded value on its own says 'busy'");
         assert!(!run.tick_ported, "but no tick body ran");
 
-        world.arm_capture_cast_module(0x87);
+        world.arm_capture_cast_module(0x8C);
+        // --- end W1-C ---
         assert!(
             !world.capture_stager_tick(),
             "so the band is not held on it"

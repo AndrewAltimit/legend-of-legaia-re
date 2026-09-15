@@ -537,6 +537,100 @@ about these is contested.
 | shared camera on web | The browser page runs its own orbit projection beside the engine's camera controller instead of consuming it. |
 | MDEC on web | `crates/mdec` decodes STR video for the native `play-str` path; the play page has no video decode, so an FMV beat has nothing to show. |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
+| one-shot SPU voices on the minigames page | The page renders BGM to PCM and hands it to an `AudioBufferSourceNode`; it holds no live `Spu`, so no cue - id-keyed or explicit - can sound there. See [below](#one-shot-voices-on-the-minigames-page). |
+| per-actor pitch / roll on web | The page's NPC draw carries one rotation axis (`rotY`); a second and third would need the draw record and its model build to take the full Euler triple. See [below](#per-actor-pitch-and-roll-on-the-play-page). |
+| scripted mesh re-bind on **both** hosts | Motion-VM op `0x0E` swaps an actor's model mid-scene; both hosts bind an NPC's mesh once, from its spawn model. Not a drift - neither host has it. See [below](#scripted-mesh-re-bind-op-0x0e). |
+
+### One-shot voices on the minigames page
+
+The Muscle Dome's between-leg tally keys a voice per drained lane, and it names
+no cue id: `FUN_801D1288` resolves a whole `(voice, VAB id, program, tone, note,
+fine, vol_l, vol_r)` set, which is why the catalog path
+(`SfxBank::play_one_shot`) could never sound it. `legaia_engine_audio::VoiceAttr`
++ `key_on_voice_attr` are that shape, and the native window drives them from the
+tally ramp through `AudioBgmDirector::key_on_voice_attr`.
+
+The browser minigames page cannot: it has no resident `Spu` at all. Its audio is
+a whole track rendered offline to interleaved PCM (`render_music01_bgm` /
+`render_music01_loop`) and handed to the page as a buffer, so there is no voice
+to key and no mixer running to key it into. The blocking capability is a live
+SPU on that page - a `WebAudioOut` the minigames entry point owns, the way the
+play page's `play_sfx` owns one - not a call insertion.
+
+The page's own tally screen is unaffected in every other respect: the row values
+and the four-step brightness ramp come from the same `ScoreTallyRamp` kernel on
+both hosts.
+
+### Scripted mesh re-bind (op `0x0E`)
+
+The scripted-motion VM's op `0x0E` re-binds the actor's mesh: the operand is
+compared **unsigned** against `0xF0`, below which it resolves against the
+scene's model-bank base `*(u16*)0x8007B6F8` and at or above which it resolves
+`operand - 0xF0` against `*(u16*)0x8007B824` and raises the translucent draw
+bit; either way `FUN_80024E08` zeroes the anim cursor `+0x5C`, stores the id at
+`+0x64` and reloads the mesh. The port decodes it
+(`ambient_motion_ops::step_op_model_swap` -> `AmbientEffect::ModelSwap`) and
+`World::apply_ambient_motion_effects` drops it, which is the only one of that
+enum's six variants with no engine mechanism behind it.
+
+Both hosts bind an NPC's mesh **once, from `placement.model_index`**: the
+native window uploads one GPU mesh per placement in `upload_assets` and holds
+the index on `FieldNpcDraw`, and the play page builds catalog entry `i`'s mesh
+in `play_npc_mesh` from the same field. Nothing on `World` carries a live
+per-slot model - `FieldNpcState` has `positions`, `headings`, `motions` and
+`glide_speeds`, and no `models`.
+
+What makes this a project rather than a wiring job is the measurement, which
+is why it is here and not in a waiver
+(`crates/engine-core/tests/ambient_motion_op_census_disc.rs`, disc-gated):
+
+| scene | sites | distinct targets | targets that are some placement's spawn model | scene TMD pack | targets that index the pack |
+|---|---|---|---|---|---|
+| `bubu1` | 9 | 9 | 0 | 174 | 9 |
+| `koin3` | 100 | 10 | 0 | 1 | 0 |
+| `edbubu` | 6 | 6 | 0 | 115 | 1 |
+| `other7` | 100 | 10 | 0 | 0 | 0 |
+
+**Zero of 215 sites** names a model that some placement in the same scene
+already binds, so the obvious cheap implementation - keep a
+`(bank, model id) -> uploaded mesh` map built from the placements a host
+already uploads - covers nothing at all. And the two scenes carrying 100 sites
+each resolve to scene TMD packs of 1 and 0 entries, so for 200 of the 215 the
+operand is not an index into the pack both hosts resolve a placement with.
+That last row is a reverse-engineering question, not an engineering one: either
+`SceneResources` resolves those two scenes' packs wrongly, or op `0x0E`'s Scene
+bank is a different pool from the placement spawner's.
+
+The blocking capability is therefore two things, in order: an answer to what
+`*(u16*)0x8007B6F8` indexes for `koin3` / `other7`, and then a live per-slot
+model override on `World` plus, on each host, a mesh resolver keyed by
+`(bank, id)` that can materialise a model **no placement spawns** - an upload
+path on native, a `play_npc_live_model` export the page consults before
+`play_npc_mesh` on web. Until the first is answered the second has nothing to
+fetch.
+
+### Per-actor pitch and roll on the play page
+
+The scripted-motion VM's ops `0x15` and `0x16` tween the actor's X and Z Euler
+angles (`+0x24` / `+0x28`), which retail composes through `RotMatrix`
+(`FUN_80026988`, whose stores decode to `Rx * Ry * Rz`) in the per-actor render
+dispatcher `FUN_8001ADA4`. Both hosts draw a field NPC with a single
+`Ry(heading)`, so neither shows a tilt.
+
+The disc-wide carrier census
+(`crates/engine-core/tests/ambient_motion_op_census_disc.rs`) bounds what that
+costs: over every scene MAN's tail-section-1 streams, op `0x15` has **zero**
+authored sites and op `0x16` has 45, all in one scene - `juui1`, which is the
+same scene the placement-tilt kernel row above names for tilting all nine of
+its static placements about X. So the whole class is one scene's worth of
+presentation.
+
+Note the two are different surfaces: the **placement** tilt composition is
+wired on both hosts (that kernel row is what holds it there, and the page
+already has `placementModelEuler`), and it is the **actor** draw that reads
+yaw only. The blocking capability on the browser side is therefore a
+`rotX` / `rotZ` pair on the page's NPC draw record plus a switch from
+`placementModelScaledY` to the Euler build it already carries.
 
 ### Screen-space PSX primitives across the two hosts
 

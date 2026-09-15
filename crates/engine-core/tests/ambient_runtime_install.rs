@@ -23,7 +23,7 @@ use legaia_engine_core::world::ambient::MAX_AMBIENT_PARTS;
 
 /// Assemble a stager bundle from `[model_sel, bytecode words]` records and
 /// install it on `world`. Each record is laid out as retail's
-/// `[i16 model_sel][u16 flags][u16 bytecode...]`; the parsed table is set
+/// `[i16 model_sel][u16 reserved][u16 bytecode...]`; the parsed table is set
 /// directly rather than round-tripped through a synthetic container, which is
 /// what `install_field_stagers` is for on real bytes.
 fn install_records(world: &mut World, records: &[(i16, Vec<u16>)]) {
@@ -40,7 +40,7 @@ fn install_records(world: &mut World, records: &[(i16, Vec<u16>)]) {
         parts.push(SummonPart {
             record_off,
             model_sel: *model_sel,
-            flags: 0,
+            reserved: 0,
             bytecode: bc_start..bytes.len(),
         });
     }

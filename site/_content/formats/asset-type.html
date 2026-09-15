@@ -141,14 +141,21 @@ return_value &amp; 0xFF00  = bit per FLAG-type marker seen</code></pre>
 
 <section class="doc-section" id="where-the-dispatcher-actually-gets-called">
   <h2>Who calls the dispatcher</h2>
-  <p>Two call sites exist, and only one is visible from the executable's static call graph. The other is reached from the town/field overlay - a chunk of MIPS code the game loads into RAM on demand, where most game logic lives. Zero static callers does not mean dead.</p>
+  <p>Three call sites exist, and only one is visible from the executable's static call graph. The others are reached from overlays - chunks of MIPS code the game loads into RAM on demand, where most game logic lives. Zero static callers does not mean dead.</p>
   <table>
     <thead><tr><th>Caller</th><th>Address</th><th>Reached from</th></tr></thead>
     <tbody>
       <tr><td>Streaming walker, <code>0x14</code> (DATA_FIELD) branch</td><td><code>FUN_8002541C</code></td><td><code>SCUS_942.54</code> static call graph</td></tr>
       <tr><td>Descriptor-pair walker</td><td><code>FUN_80020224</code></td><td>Town/field overlay: <code>FUN_801D6704</code> &rarr; <code>0x801D6B0C</code> with <code>a0 = 0</code>; see <a href="asset-descriptor.html">asset descriptor</a></td></tr>
+      <tr><td>In-overlay DATA_FIELD walk</td><td><code>0x801D4DA8</code></td><td>PROT 0976, the Baka Fighter minigame overlay. It re-implements the same walk, passes <code>copy_only = 1</code>, and discards the return value &mdash; so the flag bitfield below is a property of the two SCUS callers only.</td></tr>
     </tbody>
   </table>
+</section>
+
+<section class="doc-section" id="unknown-type-bytes">
+  <h2>What an unrecognised type byte does</h2>
+  <p>242 of the 256 possible bytes are unrecognised: the seven in-range gaps <code>0x0C</code>, <code>0x0D</code>, <code>0x0E</code>, <code>0x10</code>&ndash;<code>0x13</code>, and everything from <code>0x15</code> up. The range check <code>sltiu $v0, $v1, 0x15</code> sends the high ones to <code>0x8001F660</code>, and the jump table sends the seven gaps to exactly the same address.</p>
+  <p>That address is not a default handler &mdash; it is the function's return tail. The accumulator register is zeroed on entry and nothing on an unrecognised path writes it, so the call <strong>returns 0 having done nothing</strong>: no allocation, no decompression, no copy, no registration, and no error raised. It is a silent no-op. A reference sweep of the jump table's own address range across 84 images finds one hit, the instruction that indexes it, so nothing installs a handler into the empty slots at runtime.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

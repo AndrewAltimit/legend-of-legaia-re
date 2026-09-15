@@ -51,6 +51,33 @@ pub struct CastFxState {
     /// The resident slot-B module's `ctx+0x278` scratch byte, written by
     /// three of the band's stagers.
     pub module_ctx_278: u8,
+    /// PROT 0904's ring-sweep angle, retail's `ctx+0x6D8`.
+    ///
+    /// Arm 12 grows it by the frame delta times `8` every tick
+    /// (`0x801F7ADC..0x801F7AF0`) and gates each seat on lying inside a
+    /// `+-0x30` cone about it, so it is a **rotating ray**, not a radius: the
+    /// arm advances once it has passed `0x1000`, a full 12-bit turn. Reset
+    /// when a cast is armed.
+    pub module_ring_angle: u16,
+    /// PROT 0907 (Nighto)'s kill / confuse / resist verdict for the resident
+    /// cast, decided **once**.
+    ///
+    /// Retail draws both rolls in arm `0` and parks them in the module's own
+    /// words `0x801F8534` / `0x801F853C` (`0x801F6B50` / `0x801F6C28`), so the
+    /// outcome is settled the frame the cast starts and arm 13 only reads it.
+    /// The port keeps that shape: the band rolls on the first tick of a `0x85`
+    /// cast and holds the verdict here for every later frame, instead of
+    /// re-rolling per frame (which would make a resist flicker into a kill).
+    /// `None` while no Nighto cast is resident.
+    pub module_nighto_outcome: Option<legaia_engine_vm::cast_seru_ticks_a::NightoOutcome>,
+    // --- W1-D: the fourteen trampoline arms ---
+    /// The `+0x1DD` value PROT 0940's split arm displaced off the caster,
+    /// which the module keeps in its own image word `0x801F8658` until the
+    /// `0xFF` arm puts it back
+    /// ([`legaia_engine_vm::cast_arm_ticks::glare_divide_split_tick`]).
+    /// `None` outside that choreography.
+    pub module_split_saved_target: Option<u8>,
+    // --- end W1-D ---
     /// The action id whose **capture-band** module is resident, i.e. the one
     /// battle phase `0x70` re-enters every frame through `FUN_801F2160`.
     ///
@@ -120,6 +147,11 @@ impl CastFxState {
             pending_cast: None,
             module_phase: 0,
             module_ctx_278: 0,
+            module_ring_angle: 0,
+            module_nighto_outcome: None,
+            // --- W1-D ---
+            module_split_saved_target: None,
+            // --- end W1-D ---
             capture_spell: None,
             pending_move_fx_spawn: None,
             active_move_fx: None,

@@ -528,6 +528,83 @@ impl SfxScheduler {
     }
 }
 
+/// The eight arguments of retail's explicit voice key-on, `SsUtKeyOnV`
+/// (`FUN_80065034`), in the order it takes them.
+///
+/// The catalog path above ([`SfxBank::play_one_shot`]) covers a cue that
+/// names itself by **id** and looks its parameters up. This is the other
+/// shape: a caller that already knows the program, tone, note and volume and
+/// wants a specific voice slot keyed - the Muscle Dome tally roll's per-lane
+/// cue (`FUN_801D1288`, whose resolved call
+/// `legaia_engine_core::other_game_overlay::VoiceAttrCue` carries) is one, and
+/// the SCUS cue drainer `FUN_80016B6C` fills the same eight slots from a cue
+/// descriptor.
+///
+/// Argument order read off `0x80065034..0x80065120`: `a0` = voice (bounded
+/// `sltiu v0,v0,0x18`, so slots `0..=23`), `a1` = **VAB id** (sign-extended
+/// into the program-attr lookup `jal 0x80068B98`, *not* a mixer level),
+/// `a2` = program, `a3` = tone, then four stack words - `sp+0x50` note,
+/// `sp+0x54` fine, `sp+0x58` `vol_l`, `sp+0x5C` `vol_r`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VoiceAttr {
+    /// `a0` - SPU voice slot. Retail rejects `>= 24`.
+    pub voice: u8,
+    /// `a1` - VAB id the program/tone pair is resolved against. The port
+    /// resolves against the [`VabBank`] the caller hands in, so this is
+    /// carried for provenance and compared against nothing.
+    pub vab_id: i16,
+    /// `a2` - program within the bank.
+    pub program: u8,
+    /// `a3` - tone / ADSR region index within the program (an index, like
+    /// every other SFX-path tone; see [`VabBank::play_tone`]).
+    pub tone: u8,
+    /// `sp+0x50` - note the voice is keyed at.
+    pub note: u8,
+    /// `sp+0x54` - the pitch fine-tune byte (`0x40` at every retail call
+    /// site). Carried; the port's pitch math is [`VabBank::play_tone`]'s.
+    pub fine: i16,
+    /// `sp+0x58` / `sp+0x5C` - left / right volume, `0..=127`.
+    pub vol_l: i16,
+    pub vol_r: i16,
+}
+
+impl VoiceAttr {
+    /// The single velocity the port keys with: the mean of the volume pair,
+    /// clamped into the `0..=127` domain [`VabBank::play_tone`] takes.
+    ///
+    /// Retail splits the pair into a volume byte and a pan byte
+    /// (`0x80065100..0x80065118`: equal halves store the volume once and pan
+    /// `0x40`, centre; unequal ones divide to derive the pan). The port's
+    /// key-on chain sources its pan from the tone and program instead - the
+    /// same thing every other SFX cue here does - so the pair folds to one
+    /// level, which is exact for the equal-halves case every known caller
+    /// passes.
+    pub fn velocity(&self) -> u8 {
+        let mean = (i32::from(self.vol_l) + i32::from(self.vol_r)) / 2;
+        mean.clamp(0, 127) as u8
+    }
+}
+
+/// Key one voice from an explicit [`VoiceAttr`] set.
+///
+/// Returns `false` for retail's own rejection (voice slot `>= 24`) and for the
+/// port's (the bank holds no such program / tone / sample).
+///
+/// PORT: FUN_80065034
+pub fn key_on_voice_attr(attr: &VoiceAttr, spu: &mut Spu, vab: &VabBank) -> bool {
+    if usize::from(attr.voice) >= 24 {
+        return false;
+    }
+    vab.play_tone(
+        spu,
+        usize::from(attr.voice),
+        usize::from(attr.program),
+        usize::from(attr.tone),
+        attr.note,
+        attr.velocity(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

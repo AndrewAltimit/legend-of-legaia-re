@@ -189,7 +189,7 @@
     <div class="disclosure-body">
       <ul class="bullets">
         <li><strong>Effect id &rarr; name - as close as the disc gets.</strong> There is no string table, so an effect is named only by its space, its id, and the moves that fire it. That join is built and run: 38 of the move-power table's 44 populated records cite 28 distinct effect keys, and each space uses one small contiguous band rather than its whole range. Two of the 28 are the generic hit sprites - one is cited by thirteen moves, another by ten - while thirteen keys belong to a single move each.</li>
-        <li><strong>The low-band <code>readef.DAT</code> aux-slot consumer</strong> - see <a href="summon-readef.html">summon-readef</a>.</li>
+        <li><strong>The low-band <code>readef.DAT</code> aux-slot consumer &mdash; settled.</strong> The slot is an <code>&#39;M&#39; &#39;E&#39;</code> keyframe archive, streamed by <code>FUN_801F17F8</code> and read once outside the applier, at <code>0x8004BCA8</code> in <code>FUN_8004AD80</code>: the selected entry expands into the scratch at <code>gp[0xA24]</code> and that pointer becomes the art entry&rsquo;s <code>+0x88</code> stream pointer. See <a href="summon-readef.html">summon-readef</a>.</li>
         <li><strong>The <code>0x02018B0C</code> bundle's consumer</strong> is unreached.</li>
       </ul>
       <p>History: the side-band files were once placed at extraction 895 / 896 by comparing raw indices against extraction numbering; and under the over-reading entry window, 0871's pack body appeared to span an "extended footprint". See <a href="prot.html">prot</a>.</p>

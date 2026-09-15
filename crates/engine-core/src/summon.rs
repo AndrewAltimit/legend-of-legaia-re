@@ -424,8 +424,8 @@ pub struct SpecialRenderNode {
 pub struct SummonPartRuntime {
     /// `record[+0]` mesh selector (`-1` = transform/pivot node).
     pub model_sel: i16,
-    /// `record[+2]` flags.
-    pub flags: u16,
+    /// `record[+2]`, the reserved halfword.
+    pub reserved: u16,
     /// The part's move buffer (its record bytes as a u16 array; PC indexes this).
     pub buf: Vec<u16>,
     /// Live move-VM actor state.
@@ -623,7 +623,7 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
     state.wait_timer = -1;
     Some(SummonPartRuntime {
         model_sel: p.model_sel,
-        flags: p.flags,
+        reserved: p.reserved,
         buf,
         state,
         finished: false,
@@ -726,7 +726,7 @@ mod tests {
     /// move-VM program (`0x00 ANIM_BANK_SET 1,2,3` then `0x08 HALT`) - the
     /// anim banks are the per-part position the render-side latch reads.
     fn synthetic() -> (Vec<u8>, SummonOverlay) {
-        // Record layout: [i16 model_sel][u16 flags][u16 move-VM bytecode...].
+        // Record layout: [i16 model_sel][u16 reserved][u16 move-VM bytecode...].
         // Build two records back-to-back in one byte buffer.
         let mut bytes = Vec::new();
         // record 0 @ 0x00: model_sel = -1 (transform node)
@@ -753,13 +753,13 @@ mod tests {
                 SummonPart {
                     record_off: r0,
                     model_sel: -1,
-                    flags: 0,
+                    reserved: 0,
                     bytecode: (r0 + 4)..r1,
                 },
                 SummonPart {
                     record_off: r1,
                     model_sel: 0,
-                    flags: 0,
+                    reserved: 0,
                     bytecode: (r1 + 4)..bytes.len(),
                 },
             ],
@@ -1058,13 +1058,13 @@ mod tests {
         let mut part = |sel: i16| {
             let off = bytes.len();
             bytes.extend_from_slice(&sel.to_le_bytes());
-            bytes.extend_from_slice(&0u16.to_le_bytes()); // flags
+            bytes.extend_from_slice(&0u16.to_le_bytes()); // reserved
             bytes.extend_from_slice(&0x08u16.to_le_bytes()); // HALT
             bytes.extend_from_slice(&0u16.to_le_bytes()); // pad
             SummonPart {
                 record_off: off,
                 model_sel: sel,
-                flags: 0,
+                reserved: 0,
                 bytecode: (off + 4)..(off + 6),
             }
         };

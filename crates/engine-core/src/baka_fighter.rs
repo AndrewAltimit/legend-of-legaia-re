@@ -1521,12 +1521,14 @@ fn sra4_round_to_zero(v: i32) -> i32 {
     (if v < 0 { v + 0xF } else { v }) >> 4
 }
 
-// NOT WIRED: the concrete blocker is the parser. The `frame_indices` slice is the
-// action record's per-sub-keyframe `+0x26` column, and
-// `legaia_asset::baka_opponents::parse_actions` decodes the record's power and
-// keyframe *count* but not that column; and the duel has no animation host - the
-// port drives the fight from the rules state machine and draws no fighter clip,
-// so nothing asks which keyframe a frame range lands on.
+// NOT WIRED: nothing can build the `frame_indices` slice. It is the action
+// record's per-sub-keyframe `+0x26` column, and
+// `legaia_asset::baka_opponents::parse_actions` decodes only the record's power
+// and sub-keyframe count. The clip playback the browser duel does run walks ANM
+// frame indices directly - a different id space - and never asks which action
+// sub-keyframe a frame range covers, so adding a caller needs the parser column
+// first, not a host. The native window stages no fighter clip at all, so the row
+// is open on both hosts for different reasons.
 /// PORT: FUN_801d6e5c - action-table keyframe lookup by frame range.
 ///
 /// Returns the index of the first sub-keyframe whose whole-frame index (the
@@ -1796,11 +1798,12 @@ pub fn fighter_pack_entry(roster: usize) -> (usize, u32) {
     (folded, FIGHTER_PACK_TOC_BASE + folded as u32)
 }
 
-// NOT WIRED: the engine loads a fighter's art through
-// `legaia_asset::baka_opponents::parse_fighter_pack`, which takes the already
-// resolved PROT entry, so nothing calls the installer's own walk. Reaching it
-// needs the duel host to stage art at all - `BakaFight` is the rules layer and
-// holds no meshes.
+// REPLACED-BY: `legaia_asset::baka_opponents::parse_fighter_pack`. The port
+// resolves the fighter's PROT entry on demand and walks the same
+// `[u32 (type<<24)|size][payload]` chunk chain into typed sub-asset bytes
+// (TIM / TMD / ANM), which the browser duel host consumes directly; retail's
+// transient `0x46000` buffer, its dev-vs-CD load fork and its dispatcher
+// hand-off have no analogue to host.
 /// PORT: FUN_801d4c50 - the per-fighter **mesh installer**'s chunk walk.
 ///
 /// The installer allocates [`FIGHTER_PACK_BUFFER`] bytes, fills it either from

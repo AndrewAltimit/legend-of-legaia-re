@@ -65,7 +65,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import port_tag_reader  # noqa: E402  (sibling module, path set just above)
 
 REPO = Path(__file__).resolve().parent.parent.parent
-FUNCS_DIR = REPO / "ghidra" / "scripts" / "funcs"
+# Gitignored, so it exists only in the checkout that dumped it. `--funcs`
+# rebinds it by path; main() assigns the global before anything reads it.
+DEFAULT_FUNCS = REPO / "ghidra" / "scripts" / "funcs"
+FUNCS_DIR = DEFAULT_FUNCS
 DOCS_DIR = REPO / "docs"
 CRATES_DIR = REPO / "crates"
 OUT_DIR = REPO / "target" / "port-catalog"
@@ -297,6 +300,45 @@ FIELD_COLON_RE = re.compile(r"\s*:(?!:)")
 # module doc says "Consumers (not wired here):" while describing retail, which
 # is a statement about the *game*, not a disclosure about the port.
 NOT_WIRED_RE = re.compile(r"NOT\s+WIRED")
+# Same marker with a backtick or a quote immediately on each side. Prose that
+# *names* the marker ("this correct `NOT WIRED:` read as stale", "the audit's
+# \"tagged NOT WIRED but live\" row") is a disclosure again as far as the
+# unanchored search above is concerned - which is how a port that was wired and
+# then documented as wired went on reporting itself inert.
+#
+# This does NOT change the classification. The spellings a real disclosure is
+# written in here are far looser than the module-blanket ones - `// NOT WIRED:`,
+# `//! ## NOT WIRED`, `// NOT WIRED, AND UNWIREABLE`, `/// NOT WIRED. "No
+# caller" would be...` - so tightening the search would silently un-disclose
+# real inert ports, and 75 of the 240 matching comment lines in the tree are
+# mentions of one kind or another. It is a DIAGNOSTIC: when every occurrence in
+# an anchor's block sits inside backticks or quotes, the stale-tag row says so,
+# because the fix is in the prose (rewrite, never quote the marker) and not in
+# the wiring.
+_COMMENT_LEADER_RE = re.compile(r"^[ \t]*//[/!]?[ \t]?", re.MULTILINE)
+# A backtick span may NOT cross a newline and a quoted one may. The asymmetry
+# is the corpus's: an inline code span is short (`NOT WIRED:`) while a quoted
+# sentence wraps, and letting backticks wrap mis-pairs them across a whole
+# module doc - which reported `gameover_banner.rs`'s genuine `# NOT WIRED`
+# heading as a quotation. Both are length-capped for the same reason.
+_QUOTED_SPAN_RE = re.compile(r"`[^`\n]{0,200}`|\"[^\"]{0,200}?\"", re.DOTALL)
+
+
+def _not_wired_all_quoted(block: str) -> bool:
+    """Every `NOT WIRED` in `block` sits inside backticks or double quotes.
+
+    The comment leaders come off first, because a quoted phrase in a doc block
+    wraps across lines and a span scan run over the raw comment would see the
+    leader inside the quote.
+    """
+    prose = _COMMENT_LEADER_RE.sub("", block)
+    hits = list(NOT_WIRED_RE.finditer(prose))
+    if not hits:
+        return False
+    spans = [(m.start(), m.end()) for m in _QUOTED_SPAN_RE.finditer(prose)]
+    return all(
+        any(lo <= h.start() and h.end() <= hi for lo, hi in spans) for h in hits
+    )
 # A module-wide disclosure has to *open* a doc line to count. Some module docs
 # mention the marker while describing where the per-item notes live ("Individual
 # items carry a `NOT WIRED:` note"), and reading that as a blanket disclosure
@@ -1100,6 +1142,9 @@ def collect_port_anchors(
             # `WIRED:` in the tag's own block opts that item out of the blanket;
             # a per-item `NOT WIRED` still discloses regardless of either.
             own_not_wired = bool(NOT_WIRED_RE.search(block))
+            # Every occurrence quoted = the block talks ABOUT the marker rather
+            # than carrying one. Reported, not acted on - see the pattern.
+            quoted_only = own_not_wired and _not_wired_all_quoted(block)
             own_wired = (not is_module_tag) and bool(WIRED_ITEM_RE.search(block))
             module_doc = _module_doc_block(src)
             module_blanket = bool(MODULE_NOT_WIRED_RE.search(module_doc))
@@ -1132,6 +1177,7 @@ def collect_port_anchors(
                         "not_wired_tag": disclosed,
                         "replaced_tag": replaced,
                         "replaced_by": replaced_by,
+                        "quoted_marker_only": quoted_only,
                     }
                 )
     return anchors
@@ -1892,11 +1938,26 @@ def render_live_audit(rows: list[dict], out_path: Path | None) -> str:
         "the root set and the analysis's known false negatives.",
         "",
     ]
+    quoted = sum(1 for _r, a in stale if a.get("quoted_marker_only"))
+    note = (
+        "Either the tag is stale (the port got wired since) or the call graph "
+        "resolved a name-collision edge that does not exist. Check by hand."
+    )
+    if quoted:
+        note += (
+            f" **{quoted} of these carr{'ies' if quoted == 1 else 'y'} no marker "
+            "at all**: every `NOT WIRED` "
+            "in the anchor's doc block is quoted, so the block is describing "
+            "the marker rather than carrying one - usually a wiring note that "
+            "recounts the disclosure it replaced. The per-item search is "
+            "deliberately unanchored (the spellings a real disclosure uses are "
+            "too varied to anchor), so the fix is in the prose: rewrite, never "
+            "quote the marker text."
+        )
     lines += table(
         "Tagged `NOT WIRED` / `REPLACED-BY` but analysed live",
         stale,
-        "Either the tag is stale (the port got wired since) or the call graph "
-        "resolved a name-collision edge that does not exist. Check by hand.",
+        note,
     )
     lines += table(
         "Undisclosed inert ports",
@@ -1988,9 +2049,10 @@ def render_dashboard(
                 "",
                 "Each feature is a BFS over the citation graph starting from `roots`, bounded by `stop_at`.",
                 "Reachable counts widen as more dumps land - feature views start tight and grow.",
+                "**In scope** = Reachable minus Ignored, and it is the Port % denominator: an ignore-list row is an address this project will never port (PsyQ / BIOS / libgte mapped to a native equivalent), so counting it would cap a finished feature below 100%. **Ported** counts in-scope rows only.",
                 "",
-                "| Feature | Reachable | Ported | Port % | Missing | Ignored | Description |",
-                "|---|---:|---:|---:|---:|---:|---|",
+                "| Feature | Reachable | In scope | Ported | Port % | Missing | Ignored | Description |",
+                "|---|---:|---:|---:|---:|---:|---:|---|",
             ]
         )
         # Compute per-feature numbers and stash for the per-feature top-N
@@ -2016,10 +2078,23 @@ def render_dashboard(
                 and not r["ignored"]
             )
             n_ignored_f = sum(1 for r in f_rows if r["ignored"])
-            pct = (100.0 * n_ported_f / n_reach) if n_reach else 0.0
+            # Port % is over the addresses this project is ever going to port.
+            # An ignore-list row is one it is NOT: statically-linked PsyQ /
+            # BIOS / libgte mapped to a native equivalent. Counting those in
+            # the denominator caps a finished feature below 100% and makes the
+            # figure move when the ignore list grows, which is the opposite of
+            # what the list is for. Numerator drops the same rows, so a tagged
+            # PsyQ routine cannot push the ratio past 100%.
+            n_scope_f = n_reach - n_ignored_f
+            n_ported_scope_f = sum(
+                1 for r in f_rows if r["ported"] and not r["ignored"]
+            )
+            pct = (100.0 * n_ported_scope_f / n_scope_f) if n_scope_f else 0.0
             stats = {
                 "reachable": n_reach,
                 "ported": n_ported_f,
+                "in_scope": n_scope_f,
+                "ported_in_scope": n_ported_scope_f,
                 "pct": pct,
                 "missing": n_missing_f,
                 "ignored": n_ignored_f,
@@ -2027,8 +2102,8 @@ def render_dashboard(
             feature_stats.append((name, stats, f_rows))
             desc = body.get("description", "") or ""
             lines.append(
-                f"| `{name}` | {n_reach} | {n_ported_f} | {pct:.1f}% | "
-                f"{n_missing_f} | {n_ignored_f} | {desc} |"
+                f"| `{name}` | {n_reach} | {n_scope_f} | {n_ported_scope_f} | "
+                f"{pct:.1f}% | {n_missing_f} | {n_ignored_f} | {desc} |"
             )
         lines.append("")
 
@@ -2260,6 +2335,23 @@ pub fn both_markers() -> u32 {
 /// WIRED: referenced module-qualified from `main`.
 pub const QUAL_CONST: u32 = 6;
 
+/// A wiring note that RECOUNTS the disclosure it replaced. Every `NOT WIRED`
+/// here is quoted, so the block describes the marker rather than carrying one -
+/// the audit's "tagged NOT WIRED but analysed live" row was exactly this.
+/// PORT: FUN_8001bb70
+pub fn quoted_marker_only() -> u32 {
+    7
+}
+
+/// # NOT WIRED
+///
+/// A genuine markdown-heading disclosure in a block that also names
+/// `NOT WIRED:` in prose. The heading is unquoted, so this is a real marker.
+/// PORT: FUN_8001bb80
+pub fn heading_disclosure() -> u32 {
+    8
+}
+
 /// PORT: FUN_8001bb60
 /// REPLACED-BY:
 pub fn empty_mechanism() -> u32 {
@@ -2390,6 +2482,23 @@ def run_selftest() -> int:
     check(
         "WIRED_ITEM_RE does not match a NOT WIRED line",
         not WIRED_ITEM_RE.search("/// NOT WIRED: still a disclosure"),
+    )
+
+    # The quoted-marker DIAGNOSTIC. It must not change the classification (both
+    # anchors below still read disclosed), only say which of the two is a
+    # quotation - and it must not accuse a heading disclosure that happens to
+    # mention the marker in prose further down the same block.
+    a = one("8001bb70")
+    check(
+        "a block that only QUOTES the marker is flagged as a quotation",
+        a["not_wired_tag"] and a["quoted_marker_only"],
+        f"not_wired={a['not_wired_tag']} quoted={a.get('quoted_marker_only')}",
+    )
+    a = one("8001bb80")
+    check(
+        "a heading disclosure beside a quoted mention is not flagged",
+        a["not_wired_tag"] and not a["quoted_marker_only"],
+        f"not_wired={a['not_wired_tag']} quoted={a.get('quoted_marker_only')}",
     )
 
     a = one("8001dd20")
@@ -2569,12 +2678,21 @@ def main() -> int:
         "run did not compute (say why in the commit message)",
     )
     ap.add_argument(
+        "--funcs",
+        default=str(DEFAULT_FUNCS),
+        help="dump corpus directory - point at a checkout that has one when "
+        "running from somewhere that does not (the corpus is gitignored)",
+    )
+    ap.add_argument(
         "--selftest",
         action="store_true",
         help="run the anchor-resolution / disclosure-precedence control suite "
         "on a synthetic corpus and exit (0 = pass, 2 = resolver broken)",
     )
     args = ap.parse_args()
+
+    global FUNCS_DIR
+    FUNCS_DIR = Path(args.funcs).expanduser()
 
     if args.selftest:
         print("port-catalog anchor-resolver self-test")

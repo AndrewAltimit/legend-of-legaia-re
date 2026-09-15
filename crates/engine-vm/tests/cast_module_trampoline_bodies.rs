@@ -20,7 +20,7 @@ use legaia_engine_vm::cast_module_ticks::*;
 
 fn ctx(phase: u8, actors: u8) -> CastModuleCtx {
     CastModuleCtx {
-        actor_count: actors,
+        party_count: actors,
         monster_count: actors.saturating_sub(3),
         caster_seat: 3,
         phase,

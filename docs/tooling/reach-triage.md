@@ -4,9 +4,17 @@
 the pad-only replay ladders against the port catalog's `// PORT:` anchors and
 reports three sets. Two of them are defect lists and are normally empty. The
 third - *live but never entered* - is neither empty nor a defect list, and it is
-by far the largest: the static live count is several times what a playthrough
-executes. (A fourth bucket, *not observable (const)*, holds the item anchors -
-see the note under the buckets below.)
+the one this page is for. (A fourth bucket, *not observable (const)*, holds the
+item anchors - see the note under the buckets below.)
+
+Its size is a property of the ladder set, not of the port, and the ladder set is
+what has moved. When the union was one headless binary the static live count was
+several times what a run executed; over the full canonical union it is now a
+**minority** of live anchors that no run enters. Two things follow, and the
+second is the one that changes how the page reads: a row here is now much more
+likely to be a real gate than a missing fixture, and the page's own residue is
+concentrated rather than spread - see
+[the cast-module band](#the-cast-module-band-the-largest-cluster-on-this-page-and-the-one-with-no-rows).
 
 This page is the per-row verdict for that third set, so the question "is this a
 gap in the port, a gap in the ladders, or neither" is answered once per address
@@ -168,6 +176,14 @@ structurally cannot:
 | `engine-render` | 28 | 0 | 0 - a hard wgpu link `web-viewer` does not carry; a spawned `play-window` run is that link and does report executed regions (see the scoping note above) |
 | `engine-audio` | 20 | 0 | 3 - the page's SFX channel; the mixer output path has no producer in the union (see below) |
 | `mdec` | 6 | 0 | 0 - the play page has no STR playback (its FMV arm auto-skips) |
+
+Those two columns are the measurement that motivated the ladders below them, and
+they are kept as that: each is a union over one named subset, not over the
+canonical set. What the **full** union says about the same four crates is that
+the exclusion is gone rather than narrowed - across all of them together, a
+handful of anchors are left unentered, and every one is a specific routine
+rather than a crate-wide blank. Re-derive it with `replay-port-coverage.py`
+rather than from this table, which answers a different question.
 
 Three more structural exclusions matter as much and are easy to misread as port
 gaps:
@@ -372,8 +388,8 @@ descriptor drops.
 
 | group | n | addresses | why |
 |---|---|---|---|
-| `cd_dma.rs` | 7 | `8003de7c` `8003e800` `8003e8a8` `8003eb98` `8003f128` `8005ea84` `8003dda0` | `ProtCdDmaHost` is constructed only inside `#[cfg(test)]` and the disc-gated `cd_dma_real_prot` test; no crate outside `engine-core` names `cd_dma`, and `overlay_loader`'s only non-test implementor is that same test-only host. |
-| `stream_file.rs` | 5 | `800558fc` `80055a5c` `800559ec` `80055ac8` `8003e964` | `StreamFileHost` has exactly one production mention - its own `impl` line. Every construction is a unit test or the disc-gated `stream_file_real` oracle. |
+| `cd_dma.rs` | 7 | `8003de7c` `8003e800` `8003e8a8` `8003eb98` `8003f128` `8005ea84` `8003dda0` | **Re-verdicted `REPLACED-BY`** - see below. `ProtCdDmaHost` is constructed only inside `#[cfg(test)]` and the disc-gated `cd_dma_real_prot` test; no crate outside `engine-core` names `cd_dma`, and `overlay_loader`'s only non-test implementor is that same test-only host. |
+| `stream_file.rs` | 5 | `800558fc` `80055a5c` `800559ec` `80055ac8` `8003e964` | **Re-verdicted `REPLACED-BY`** - see below. `StreamFileHost` has exactly one production mention - its own `impl` line. Every construction is a unit test or the disc-gated `stream_file_real` oracle. |
 | `mode.rs` | 4 | `80017978` `80025eec` `80025f2c` `80025f74` | Closed: `mode::ModeSeat` wraps `ModeDriver` and `engine-shell`'s `BootSession` owns one, driving it every frame; `World::tick` resolves `runs_master_frame_driver` (and so `per_frame_stage`) on every host. |
 | `sound_state.rs` | 1 | `80020038` | `DRAW_ENV_INIT` is read at three sites, all inside that file's `#[cfg(test)]` block. |
 | `scene_bundle.rs` | 1 | `80020118` | `field_load_entry_plan` is called at three sites, all in that file's `#[cfg(test)]` block. |
@@ -388,6 +404,30 @@ port that is not reached rather than a port of dead code. A five-form
 four (two in SCUS, two in the battle-action overlay), and `FUN_80025EEC` in
 twelve slots of the game-mode table at `0x8007078C` - every other entry, which
 is the odd-indexed per-frame modes the port's own tag claims.
+
+#### Ten of these rows stopped being wiring gaps without being wired
+
+`replay-port-coverage.py --page-audit` joins every address this page cites
+against the catalog, and reports the ones that are ported but no longer live -
+because such a row belongs to `--live-audit`, not to a page about what a
+playthrough executes. It names **14**, and the split is the interesting half:
+
+- **Ten carry `REPLACED-BY:`** - `8003de7c` `8003e800` `8003e8a8` `8003e964`
+  `8003eb98` `8003f128` `800558fc` `80055a5c` `8005ea84` `801dbb8c`. The whole
+  `cd_dma.rs` / `stream_file.rs` cluster above is now exempt: a synchronous
+  read through `crate::scene::ProtIndex` has nothing left to wait for, so
+  `FUN_8003DE7C`'s 127 `jal` sites are a heavily-used *retail* routine whose
+  job the port does by construction, not a port nobody calls. `801dbb8c` is the
+  same shape one layer up - it registers a retained-mode SCUS text actor, and
+  `legaia_engine_ui::battle_hud_draws_for` rebuilds every `TextDraw` from the
+  live model each frame, so there is no handle to hold.
+- **Four carry `NOT WIRED:`** - `80020038` `80020118` `801d84c0` `801dbc30`.
+  These are still the declared wiring worklist and stay here.
+
+The distinction is not bookkeeping: a `REPLACED-BY` row is out of the wiring
+denominator entirely, so counting it as a gap states work that will never be
+done. Re-run `--page-audit` before quoting any row in this section - it needs
+no coverage export and answers in seconds.
 
 One rename fell out of the re-key pass and is worth knowing about, because it
 is a graph property rather than a style choice. `StreamFileHost::seek` was the
@@ -845,7 +885,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `battle_intro_styles.rs` | 1 | (a) | battle-render | `801d11d0` |
 | `battle_intro_swirl.rs` | 2 | (a) | battle-render | `801d1564` `801d1888` |
 | `battle_intro_transition.rs` | 1 | (a) | battle-render | `801cf1b0` |
-| `battle_party_panel.rs` | 3 | (c) | disclosed (`panel_labels`, the label-actor lifecycle, the cross-out mark) - see the [anchor note](#the-address-is-wired-and-its-anchor-is-not) | `801d84c0` `801dbb8c` `801dbc30` |
+| `battle_party_panel.rs` | 3 | (c) | `801d84c0` / `801dbc30` disclosed (`panel_labels`, the cross-out mark) - see the [anchor note](#the-address-is-wired-and-its-anchor-is-not); `801dbb8c`, the label-actor lifecycle, is `REPLACED-BY` the immediate-mode HUD and owes no host | `801d84c0` `801dbb8c` `801dbc30` |
 | `battle_stream_slot.rs` | 2 | (c) | disclosed | `80055b4c` `801f17f8` |
 | `battle_target_group.rs` | 1 | (a) | battle-target | `801dceac` |
 | `camera_mover.rs` | 1 | (a) | field-render | `801dd310` |
@@ -1190,13 +1230,20 @@ remaining proposal would still move:
 
 | ladder | rows | what it drives |
 |---|---|---|
-| FMV | 17 | any `fmv_id`; export the coverage of the existing `av_decode_oracle` / `w5_fmv_handoff` |
-| Baka Fighter hub | 13 | the PROT 0977 contest hub screen, not the duel the current ladder plays |
-| audio | 9 | a mixer-attached tick, so SFX enqueue, VAB upload and voice alloc run |
-| world-map panels | 8 | the panel-actor screens: sub-list, fill fade, text box, flag window |
-| world map | 5 | the overworld render pass: horizon, dim, CLUT fade, particle burst |
-| field actors | 4 | an effect that spawns a child actor through the allocator |
-| field render | 2 | posed field characters: camera mover, pack apply |
+| FMV | *built* | `w1a_fmv_ladder` plays every retail `fmv_id` and spawns `CARGO_BIN_EXE_mdec`; one `mdec` row is left |
+| Baka Fighter hub | *built* | `w1b_hub_ladder` opens the op-`0x49` submode screens; no `baka_hub_actors.rs` row is left |
+| audio | *built* | `w1e_audio_session_ladder` attaches the mixer; one `engine-audio` row is left |
+| world-map panels | *built* | `w1d_world_map_render_ladder` and the dev-menu ladder between them; the panel-actor cluster is gone |
+| world map | 2 | the overworld render pass - what is left is the horizon/dim leaf and the particle burst |
+| field actors | 3 | an effect that spawns a child actor through the allocator (`actor_alloc.rs`) |
+| field render | 1 | a posed field character's camera mover |
+
+Quote that table's *rows* column against a fresh
+`replay-port-coverage.py` run rather than as a standing figure: it is the count
+of this page's rows a ladder would move, and every ladder that lands changes it.
+The `built` rows are kept rather than deleted because a proposal that closed is
+the evidence for the next one - each named a denominator no existing ladder had,
+and that is what made it worth writing.
 
 The native window's composition is driven by **spawning** it -
 `w5_native_minigame_ladder` runs `play-window` per rung and the child's
@@ -1262,6 +1309,13 @@ verdicts:
   `NOT WIRED:` disclosure naming its own prerequisite (`engine-ui` does not
   model the four label buffers at all).
 
+The third address of the trio has since parted company with the other two.
+`801dbb8c` registers a **retained-mode** SCUS text actor and stashes its handle;
+the port's battle HUD rebuilds every `TextDraw` from the live model each frame
+on both hosts, so there is no handle to hold and no host is owed one. It carries
+`REPLACED-BY:` and is out of the wiring denominator, while `801d84c0` and
+`801dbc30` remain declared gaps.
+
 So every instrument that keys on the address answers for `panel_labels`, and
 the catalog reads `801d84c0` inert with a disclosure. Crediting the row as
 wired credited the *unported* half. The row is filed `(c) disclosed` with its
@@ -1276,11 +1330,35 @@ row.
 
 ## The cast-module band, the largest cluster on this page and the one with no rows
 
-`crates/engine-vm/src/cast_module_ticks.rs` supplies **31** of the never-entered
-addresses - roughly a third of the whole set, the largest single-file cluster in
-it by a factor of six, and the only cluster of any size not cited anywhere else
-on this page. That is a gap in the page, not in the port: the file arrived whole
-and so never went through the per-row pass the rest of the buckets did.
+`crates/engine-vm/src/cast_module_ticks.rs` is still the largest single-file
+cluster in the never-entered set, and it is still the only cluster of any size
+not cited anywhere else on this page - the file arrived whole and never went
+through the per-row pass the rest of the buckets did.
+
+What has closed is most of it, and the denominator worth quoting is **tagged
+bodies**, which is a property of the sources rather than of the ladder set. Over
+the four cast-band modules there are 53 `// PORT:` bodies, 52 of them statically
+live, and the full canonical union enters **41 of those 52**. All 11 that it does
+not are in `cast_module_ticks.rs`: `801f69f8` `801f6a0c` `801f6a14` `801f6a28`
+`801f7158` `801f767c` `801f77e8` `801f7fa4` `801f85a8` `801f86a4` `801f8d64`.
+The other three modules - `cast_arm_ticks.rs`, `cast_seru_ticks_a.rs`,
+`cast_seru_ticks_b.rs` - are at **zero** never-entered (10/10, 3/3, 4/4).
+
+Four ladders did that, and each is a different *denominator*, which is the
+transferable part:
+
+| ladder | denominated in | why the axis matters |
+|---|---|---|
+| `w4d_cast_band_ladder` | spell ids | asks whether a band entry's body is reached at all; blind to what runs inside it |
+| `w1b_seru_ticks_ladder` / `w1c_seru_ticks_ladder` | phase depth, ids `0x81..=0x8b` | those bodies are `beq` chains fifteen arms deep whose simulation writes live in the late arms |
+| `w1d_trampoline_arms_ladder` | `(PROT entry, action id)` pairs | a body is reached only through its module's trampoline, and one cell can hold two |
+| `w2c_cast_band_body_ladder` | `// PORT:` addresses scraped from the sources | cannot go stale when a later lane adds a body - the row table has to account for every one |
+
+All four were written before they were in `CANONICAL_LADDERS`, and until they
+were named there the export recipe did not produce a `cov-*.json` for them, so
+every row they drive kept reading *never entered* with the ladder green. **A
+ladder converts nothing until it is in that list**; when a lane adds one, it
+belongs there in the same commit.
 
 Every row is bucket **(b) GATED**, and they all share one gate. The engine
 reaches these bodies through `World::cast_module_for(spell_id)`
@@ -1295,15 +1373,14 @@ player reaches. A pad fixture cannot convert these rows however long it plays,
 because nothing about pad input selects a module; what converts one is a seeded
 cast of that id with the band resolved.
 
-Two things already do most of that and neither is in the union.
+The work was one integration ladder that seats a cast per id and steps it, and
+it converted rows in proportion to the ids it covered - four such ladders now
+exist and the table above says what each measures. The constraint that shaped
+them is still worth knowing:
 `crates/engine-core/src/world/tests/cast_band.rs` walks the id-to-module
-resolution per id, but it is a `#[cfg(test)]` module rather than a test binary,
-so it can never be named in `CANONICAL_LADDERS` at all - the list takes
-`--test <name>` integration targets. `crates/engine-core/tests/cast_effect_pool_disc.rs`
-IS such a target and already calls `cast_module_for`, but only for two ids and
-without driving the tick body. The work is one integration ladder that seats a
-cast per id and steps it, and it converts rows in proportion to the ids it
-covers.
+resolution per id and can **never** be a union member, because it is a
+`#[cfg(test)]` module rather than a test binary and the list takes
+`--test <name>` integration targets.
 
 `screen_fx.rs`'s ten rows had the same shape and are closed: the scene-frontier
 ladder enters them, which is the reading the table below predicted - they were
@@ -1313,7 +1390,7 @@ gated on a scene whose script spawns the effect, not on anything a pad does.
 
 | gate | rows | what has to happen |
 |---|---|---|
-| cast-module id | 31 | one cast per PROT `0903..=0966` spell / summon id, with the band resolved - see the section above |
+| cast-module id | 11 | one cast per PROT `0903..=0966` spell / summon id, with the band resolved - see the section above |
 | slot-bonus | 5 | the casino slot machine's bonus round and its marquee |
 | capture-class cast | 2 | a boss encounter seated with a capture-class caster |
 | summon cast / Seru capture | 2 | a party member who knows Seru magic, and a fight that lands a capture roll |

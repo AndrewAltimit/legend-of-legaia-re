@@ -138,6 +138,20 @@ pub struct MonsterDef {
     ///
     /// REF: FUN_801F0348
     pub size_class: u8,
+    /// Double-width **texture-page** flag (monster record `+0x20`; see
+    /// [`legaia_asset::monster_archive::MonsterRecord::wide_texture_page`]).
+    ///
+    /// Carried here for its **second** reader, not its first: three summon
+    /// ticks (PROT 0907 Nighto, 0908, 0916) read the byte record-direct
+    /// through `0x801C9348[seat - 3]` as a "big model" resist proxy, and
+    /// Nighto's kill / confuse roll
+    /// ([`legaia_engine_vm::cast_seru_ticks_a::NightoRoll::target_immune`])
+    /// forces the resist when it is non-zero **and** the fight is a scripted
+    /// one (`ctx[+0x287]`). Its first reader is the model upload's VRAM rect
+    /// widen, which the port's texture path does not consult.
+    ///
+    /// `0` for synthetic monsters, which is the "not immune" side.
+    pub wide_texture_page: u8,
     /// Element-badge strip index the battle name plaque wears, or `None`
     /// for a monster that wears no badge.
     ///
@@ -151,6 +165,21 @@ pub struct MonsterDef {
     /// escape yields - the disc-free catalog draws no badge, exactly as
     /// retail does for the same records.
     pub plaque_badge: Option<u8>,
+    /// The **raw** record stat block `[AGL, ATK, UDF, LDF, INT, SPD]`
+    /// (record `+0x0E`, `+0x12`, `+0x14`, `+0x16`, `+0x18`, `+0x1A`) before
+    /// either battle-load boost profile.
+    ///
+    /// The fields above carry the *installed* stats, and which profile
+    /// installed them is a property of the **fight**, not of the record:
+    /// `FUN_80054CB0` picks by `ctx[+0x287]`. The catalog is built at scene
+    /// entry, before any formation is chosen, so it bakes the scripted
+    /// profile and keeps the raw block here for the battle seed to re-derive
+    /// the random-encounter one ([`Self::installed_stats`]).
+    ///
+    /// `[0; 6]` on a synthetic [`MonsterDef::new`] monster, which is the
+    /// signal [`Self::installed_stats`] uses to answer with the built fields
+    /// unchanged - so a disc-free battle keeps exactly the stats it had.
+    pub raw_stats: [u16; 6],
 }
 
 impl MonsterDef {
@@ -179,8 +208,36 @@ impl MonsterDef {
             element: 7,
             swing_class: 0,
             size_class: 0,
+            wide_texture_page: 0,
             plaque_badge: None,
+            raw_stats: [0; 6],
         }
+    }
+
+    /// The six stats the battle loader installs for a fight of this class:
+    /// [`legaia_asset::monster_archive::boost_profile`] of
+    /// [`Self::raw_stats`], in `[AGL, ATK, UDF, LDF, INT, SPD]` order.
+    ///
+    /// `scripted` is the fight's `ctx[+0x287]`: set for a boss / story
+    /// formation (the row whose `record[+0]` header byte is non-zero), clear
+    /// for a random encounter. **Every random encounter in the game takes the
+    /// clear branch**, which is a materially different enemy - `x7/4` defence
+    /// and an unboosted ATK rather than `x2` defence and `x5/4` ATK.
+    ///
+    /// Falls back to the built fields when [`Self::raw_stats`] is all-zero (a
+    /// synthetic catalog), so a disc-free battle is bit-identical to before.
+    pub fn installed_stats(&self, scripted: bool) -> [u16; 6] {
+        if self.raw_stats == [0u16; 6] {
+            return [
+                self.agl,
+                self.attack,
+                self.udf,
+                self.ldf,
+                self.intel,
+                self.speed,
+            ];
+        }
+        legaia_asset::monster_archive::boost_profile(self.raw_stats, scripted)
     }
 
     /// Builder: attach a Seru id so a successful capture feeds the
@@ -292,6 +349,10 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     // carries is taken from here, never from the raw record accessors.
     let bs = rec.battle_stats();
     let mut def = MonsterDef::new(rec.id, rec.name.clone(), rec.hp, bs[1]);
+    // The raw block rides along so the battle seed can re-derive the
+    // random-encounter profile - the catalog is built before the fight class
+    // is known. See `MonsterDef::installed_stats`.
+    def.raw_stats = rec.stats;
     def.mp = rec.mp;
     def.plaque_badge = rec.plaque_badge;
     def.udf = bs[2];
@@ -325,6 +386,7 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     def.swing_class = rec.swing_class;
     // Record `+0x1F` - the battle camera's framing input (`FUN_801F0348`).
     def.size_class = rec.size_class;
+    def.wide_texture_page = rec.wide_texture_page;
     def
 }
 
@@ -529,7 +591,11 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             element: 7,
             swing_class: 0,
             size_class: 0,
+            wide_texture_page: 0,
             plaque_badge: None,
+            // No record behind a synthetic monster: `installed_stats` answers
+            // with the fields above whatever the fight class is.
+            raw_stats: [0; 6],
         };
         cat.insert(def_struct);
     }

@@ -15,38 +15,34 @@
 //! REF: FUN_8003CA78 (its sibling: the marked-up string copy that seeds the
 //! buffer `mes_append_escape` appends to)
 //! REF: FUN_800589D0 (`PutDispEnv` - the caller of `FUN_800597C8`, declined
-//! rather than pending; see below)
+//! rather than pending; see [`screen_x_mirror`])
 //!
 //! # NOT WIRED
 //!
-//! Each of these leaves is waiting on a different piece of engine state - and
-//! only one of them is waiting on a missing *caller*:
+//! Each of these leaves is waiting on a different piece of engine state:
 //!
 //! | Kernel | Retail caller | Call site | Port of the caller |
 //! |---|---|---|---|
 //! | [`mes_append_escape`] | `FUN_8004AD80` | `8004B2F8`, `8004B338`, … | no engine message **composer** |
-//! | [`screen_x_mirror`] | `FUN_800589D0` (`PutDispEnv`) | `80058A38` | none, and none is wanted |
 //! | [`advance_gauge`] | `FUN_800402F4` | `800421A0` | ported piecewise, no single-function port |
-//! | [`ease_quad_interp`] | `FUN_80025980` | `80025AA0` | `engine-core::mode` |
+//! | [`ease_quad_interp`] | unidentified - see below | - | - |
 //!
-//! [`screen_x_mirror`]'s row used to read "port `FUN_800589D0` and the mirror
-//! acquires a caller; nothing else has to move", and both halves were wrong.
+//! [`screen_x_mirror`] is not on that list: it is the file's one **replaced**
+//! anchor and carries its own `REPLACED-BY:` marker. Its retail caller
 //! `FUN_800589D0` is `PutDispEnv` - PsyQ libgpu, carried on the port-catalog
 //! ignore list (`scripts/ci/port-catalog-ignore.toml`) precisely because a
-//! port replaces the display-environment layer rather than
-//! reproducing it - and it is documented, in
-//! `docs/reference/functions/renderer.md`, which also records this kernel as
-//! its port. So the caller is not pending; it is declined. The real
-//! prerequisite is a mode: `DAT_80078D54` / `DAT_80078D57` select a **mirrored
-//! or half-width PSX display environment**, and the engine programs no display
-//! environment at all - one wgpu surface, one orientation - so there is no
-//! state for the `< 2` gate at `80058A2C` to read.
+//! port replaces the display-environment layer rather than reproducing it, and
+//! recorded alongside this kernel in `docs/reference/functions/renderer.md`.
+//! `DAT_80078D54` / `DAT_80078D57` select a **mirrored or half-width PSX
+//! display environment**, and the engine programs no display environment at
+//! all - one wgpu surface, one orientation - so there is no state for the
+//! `< 2` gate at `80058A2C` to read and no host is owed a call.
 //!
 //! `801CEE80` additionally sits in the VA-aliased band: the same address is a
 //! **jump-table slot** in overlay 0897 and ordinary mid-function code in the
 //! debug-menu and STR-FMV overlays, so a corpus grep for it returns three
-//! programs' unrelated bytes. The body ported here is the one whose entry is
-//! `801CEE80` (`sh a1,0x16(v0)`); see
+//! programs' unrelated bytes. The body ported here is the one whose dump opens
+//! `sh a1,0x16(v0)`; see
 //! [`docs/tooling/phantom-print-index.md`](../../../docs/tooling/phantom-print-index.md).
 //!
 //! - `FUN_8003CB54` ([`mes_string_end_offset`] / [`mes_append_escape`]) is
@@ -65,10 +61,6 @@
 //!   never **composes** a marked-up string, because every engine message is
 //!   assembled as resolved text. Nothing holds a byte buffer mid-compose for
 //!   the append to land in.
-//! - `FUN_800597C8` ([`screen_x_mirror`]) is selected by the orientation
-//!   globals `DAT_80078D54` / `DAT_80078D57`. The engine's renderer has one
-//!   battle view and no mirrored or half-width mode, so the transform has no
-//!   mode byte to be selected by.
 //! - `FUN_80046870` ([`advance_gauge`]) ramps the `gp + 0x2E8` word, which the
 //!   validator's arm-`0x82` gate `FUN_80046898` tests against `0xE0`. **That
 //!   word's identity is now settled, and it is not an inventory count.**
@@ -92,18 +84,19 @@
 //!   timer, and the expiry action the countdown fires (an install into
 //!   `_DAT_8007B450` plus a bit-set and a `FUN_80020DE0` call) is not ported,
 //!   so nothing would arm or observe the window.
-//! - `FUN_801CEE80` ([`ease_quad_interp`]) reads the tween quad `+0x18`
-//!   (start), `+0x28` (target, `-1` = disabled), `+0x50` (progress, `lhu`) and
-//!   `+0x9E` (duration), and stores the eased value through the **pointer** at
-//!   `+0x90` into that node's `+0x18`. "None of those offsets is on the port's
-//!   actor" is not the reason and is not true: `move_vm::ActorState` carries
-//!   `+0x18`, `+0x28`, `+0x50` and `+0x9E`, and ext op `0x0D` even increments
-//!   `+0x50`. `+0x90` is the discriminator that settles it - a **word pointer**
-//!   here, an `i16` tween source on `ActorState` - so this is a different actor
-//!   family (the VDF/render-node one whose `+0x90` is its vertex-pool node),
-//!   which the port does not model. Pinning which one, and whether this VA is
-//!   even a function entry, needs a re-dump: the dump's first instruction
-//!   stores through a `v0` nothing in the window sets.
+//! - `FUN_801CEE80` ([`ease_quad_interp`]) - no engine structure supplies the
+//!   indirection this writes through. The kernel reads a tween quad (`+0x18`
+//!   start, `+0x28` target with `-1` disabling, `+0x50` progress, `+0x9E`
+//!   duration) and stores the eased value through the word **pointer** at
+//!   `+0x90` into that node's `+0x18`. `move_vm::ActorState` carries the first
+//!   four offsets - ext op `0x0D` even advances `+0x50` - but its `+0x90` is an
+//!   `i16` tween source, so this belongs to the VDF / render-node actor family
+//!   whose node the port does not model. Its caller is also unidentified: the
+//!   arm at `0x80025AA0` is a per-sub-id jump-table entry into the slot-A
+//!   minigame overlay's own routine at this VA, not this fragment, and the
+//!   fragment's dump opens mid-function on a store through an unset register -
+//!   so whether this VA is a function entry at all wants a re-dump before a
+//!   caller search means anything.
 
 /// Byte offset of a MES-markup string's terminator - the write cursor
 /// [`mes_append_escape`] splices at.
@@ -189,6 +182,13 @@ impl ScreenOrient {
 /// transform used when the battle view is flipped or split.
 ///
 // PORT: FUN_800597c8
+///
+/// REPLACED-BY: `legaia_engine_render::renderer`'s single fixed-orientation
+/// wgpu surface. The port programs no PSX display environment - the retail
+/// caller `FUN_800589D0` is ignore-listed libgpu - so `DAT_80078D54` /
+/// `DAT_80078D57` have no counterpart, the identity arm is the only one
+/// reachable, and screen X reaches the surface unchanged. Nothing is owed a
+/// call.
 ///
 /// `x` is the entry's X (`param_1[0]`) and `width` is its box width
 /// (`param_1[2]`, i.e. the `u16` at byte offset 4). `mirror` corresponds to

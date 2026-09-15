@@ -12,7 +12,7 @@ fn field_stager_spawn_splits_sound_node_off_the_mesh_draws() {
     let mut world = World::new();
 
     // Two prescript records back-to-back: a transform node then a 0x4001 sound
-    // node. Each = [i16 model_sel][u16 flags][move-VM HALT].
+    // node. Each = [i16 model_sel][u16 reserved][move-VM HALT].
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&(-1i16).to_le_bytes());
     bytes.extend_from_slice(&0u16.to_le_bytes());
@@ -28,13 +28,13 @@ fn field_stager_spawn_splits_sound_node_off_the_mesh_draws() {
         SummonPart {
             record_off: 0,
             model_sel: -1,
-            flags: 0,
+            reserved: 0,
             bytecode: 4..8,
         },
         SummonPart {
             record_off: r1,
             model_sel: RENDER_NODE_MODE_B,
-            flags: 0,
+            reserved: 0,
             bytecode: (r1 + 4)..bytes.len(),
         },
     ];

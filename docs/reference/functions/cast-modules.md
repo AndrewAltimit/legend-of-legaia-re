@@ -63,7 +63,9 @@ mechanical - no judgement, no dump filename ([why a filename is not evidence:
 ## Worklist runs that own no dump
 
 Each row is a run `disc-coverage.py` reports as un-dumped **code** in the image
-named. None is. `tail from` is the first byte the run's inherited half starts
+named. All but one are not - the exception is PROT 0949's `0x801F7630`, seven
+frameless jump-table arms that are code and are now dumped
+([below](#prot-0949s-seven-frameless-ramp-arms---entries-after-all)). `tail from` is the first byte the run's inherited half starts
 at - everything below it in the run is that image's own data - and the last
 column says how much of that half a dump of the **source** image already
 covers, the balance in every partial case being the source image's own data
@@ -72,7 +74,7 @@ tail rather than a missing dump.
 | Run (slot-B VA) | image | tail from | inherited from | covered at the source |
 |---|---|---|---|---|
 | `0x801F74BC`..`0x801F7CBC` | 939 `cast_spore_gas` | `0x801F7B08` | 938 `cast_chaos_breath` | 192 of 436 B, `801F7AB8` |
-| `0x801F7630`..`0x801F7B30` | 949 `cast_water_crystals` | - | - (all its own data) | - |
+| `0x801F7630`..`0x801F7B30` | 949 `cast_water_crystals` | - | - (its own **code** below `0x801F76BC`, then its own record band) | - |
 | `0x801F7770`..`0x801F7D34` | 943 `cast_curse` | `0x801F7A0F` | 942 `cast_power_up` | all 805 B, `801F69F4` |
 | `0x801F7AB4`..`0x801F8638` | 961 `cast_dead_end_crisis` | `0x801F82F0` | 960 `cast_plasma_strike` | all 840 B, `801F74E4` |
 | `0x801F7BA8`..`0x801F816C` | 952 `cast_bloody_horns` | `0x801F7BC0` | 951 `cast_chaos_flare` | all 1452 B, `801F77E8` |
@@ -121,3 +123,81 @@ keeps a reader from re-walking them is the `NOT_CODE` block in
 which now carries the band; the worklist row itself is not a defect. See
 [`disc-coverage.md`](../../tooling/disc-coverage.md) for what the worklist is
 and is not.
+
+## PROT 0949's seven frameless ramp arms - entries after all
+
+These are the counter-example to this page: seven addresses a byte-denominated
+instrument reported in the band that **are** entries of the image they were
+reported under. They are frameless leaves, so the frame-matched partition names
+none of them, and the 140-byte run they occupy was filed under "the module's own
+data region". Their only reference is the jump table PROT 0949's stager
+`FUN_801F75BC` dispatches through - and a routine reached only through a table
+is still a routine.
+
+The table is not the one at the image head. The stager is itself frameless -
+`0x801F75BC` has no `addiu sp, sp, -F` at all - and it forms its base with
+`lui v0, 0x801F; addiu v0, v0, 0x69F0`, bounds the operand with
+`sltiu v1, a1, 0x8` and `jr`s through the word it loads (`0x801F7614`). The
+table is eight words, `0x801F69F0..0x801F6A0C` **inclusive**: `0x801F6A10` is
+the tick's own `addiu sp, sp, -0x50`, not a ninth arm. Arm 0 is the
+fall-through body at `0x801F761C`, immediately past the `jr`; arms 1..7 are the
+seven leaves. Together they are one eight-step ramp on the victim actor. `see
+ghidra/scripts/funcs/overlay_cast_water_crystals_0949_801f7630.txt` and
+siblings.
+
+Seven of the eight are 20 bytes and end in `jr ra` with the `sb` in its delay
+slot. Arm 7 is the exception: `0x801F76A8` is twelve bytes - tint, then
+`sb zero, 0x21D(a0)` - with **no** `jr ra` of its own, falling into the shared
+`jr ra` at `0x801F76B4` that the out-of-range `beqz` also targets. An extent
+census that assumes a uniform stride reports eight 20-byte leaves and runs four
+bytes past the last one.
+
+| Entry | Arm | `+0x0C` (tint blend) | `+0x21D` (anim rate) |
+|---|---:|---:|---:|
+| `0x801F761C` (interior of `801F75BC`) | 0 | `0x200` | 7 |
+| `801F7630` | 1 | `0x400` | 6 |
+| `801F7644` | 2 | `0x600` | 5 |
+| `801F7658` | 3 | `0x800` | 4 |
+| `801F766C` | 4 | `0xA00` | 3 |
+| `801F7680` | 5 | `0xC00` | 2 |
+| `801F7694` | 6 | `0xE00` | 1 |
+| `801F76A8` (12 B, shared exit) | 7 | `0x1000` | 0 |
+
+`0x801F8504` in the same image is the opposite case and belongs in the table
+above: PROT 0949's own content ends at file `+0x1828` (VA `0x801F8200`), and the
+body at `0x801F8504` is PROT 0948's move-VM stager in 0949's inherited tail. It
+frame-matches there, which is why a dump row once named it under 0949.
+
+## The band's entry rows live on `battle.md`
+
+The eleven player-Seru tick bodies (PROT 0903..0913), PROT 0910's applier
+`0x801F81DC` and the fourteen trampoline-reached arms of PROT 0940..0962 are
+**class 1** by the [three-way test](#the-three-way-test), so they live on
+[`battle.md`](battle.md#slot-b-summon--cast-modules-prot-09030966) with the
+band's other entries: [the eleven](battle.md#the-eleven-player-seru-tick-bodies)
+and [the fourteen](battle.md#the-fourteen-trampoline-reached-arms). What stays
+here is the reason a grep for one of those VAs lands on this page anyway.
+
+### The same VA, read in another image
+
+The eleven ticks wear only **five** distinct VAs, and every one of the five
+also has a class-2 or class-3 reading in some other image. `0x801F69D8` is the
+extreme case: it is a tick body in six modules
+of this band, a capture-class body in six more, PROT 0901's world-map terrain
+dispatcher, PROT 0900's minigame tile rasteriser, and data in a save-state
+capture of the slot-B buffer. The row that answers a question is the one whose
+image matches the image you are reading.
+
+`0x801F69D8` and `0x801F69EC` carry scope rows in
+[`scripts/ci/port-catalog-ignore.toml`](../../../scripts/ci/port-catalog-ignore.toml)
+naming the world-map and minigame residents, and `0x801F69E8` / `0x801F69F0` /
+`0x801F69F4` carry `worklist_data` rows taken from a save-state capture of the
+slot-B buffer. None of those rows
+is wrong and none of them is about these modules: they are the same address in
+a different resident. The ignore file's rows and `battle.md`'s tables coexist
+because a band address is only meaningful as an `(image, VA)` pair, which is
+the same reason the trampoline map is keyed on `(entry, body)`.
+
+`0x801F69F4` is the sharpest single case: in PROT 0909 it is the Viguro tick,
+and in PROT 0968 it is the boss stage-module tick - two unrelated routines, one
+VA, both real ([`battle.md`](battle.md#801f69f4-hosts)).

@@ -97,6 +97,43 @@ _LISTING_RE = re.compile(
 # `requested=... (INTERIOR ...)` or `NOTE:` line between the header and the size.
 _SIZE_SCAN_LINES = 4
 
+# Extents the dumper measured wrongly, corrected against the retail bytes.
+#
+# Ghidra's body walk stops at an indirect jump it cannot resolve, and the stated
+# `size=` is then the truncated body rather than the routine. The instruments
+# over this corpus all key on that pair, so the untouched tail reads as code no
+# dump covers - a gap manufactured by the dumper, not by the corpus.
+#
+# Keyed `(entry, stated_bytes) -> (true_bytes, why)`. The key carries the stated
+# size so a re-dump that fixes the extent stops matching and the row falls out,
+# rather than silently overriding a correct measurement. `stale_fixups()` names
+# any row that matched nothing in a run, for the same reason the provenance
+# waiver file lists its unused entries.
+#
+# A row here is a byte claim and needs byte evidence: disassemble the image at
+# its own base and read the terminating `jr ra`.
+EXTENT_FIXUPS = {
+    (0x801DD9D4, 276): (
+        588,
+        "body runs 0x801DD9D4..0x801DDC20 in overlay_field_0897 at base "
+        "0x801CE818 (jr ra at 0x801DDC18 + delay slot); Ghidra stopped at the "
+        "unrecovered jump table behind `jr v0` at 0x801DDA88, and the routine's "
+        "own `beq v0,zero,0x801DDBC8` at 0x801DDA78 branches past the stated "
+        "end",
+    ),
+}
+
+_FIXUPS_HIT = set()
+
+
+def stale_fixups():
+    """`EXTENT_FIXUPS` keys that matched no dump in this process's runs.
+
+    A fixup that matches nothing is a correction nobody can check: the dump it
+    corrected was re-dumped, renamed out of the corpus, or never existed.
+    """
+    return sorted(set(EXTENT_FIXUPS) - _FIXUPS_HIT)
+
 
 class Dump:
     """A parsed dump. `entry` and `nbytes` define the byte extent."""
@@ -114,9 +151,11 @@ class Dump:
         self.image = image
         self.printed_va = printed_va
         # "header" - the size line said so. "disassembly" - derived from the
-        # printed address stream because no size line exists. The distinction
-        # matters: a header extent is what the dumper measured, a derived one is
-        # what the file happens to show.
+        # printed address stream because no size line exists. "corrected" - the
+        # stated extent was wrong and `EXTENT_FIXUPS` replaced it from the
+        # retail bytes. The distinction matters: a header extent is what the
+        # dumper measured, a derived one is what the file happens to show, and a
+        # corrected one is what the image holds.
         self.source = source
 
     @property
@@ -257,6 +296,13 @@ def parse_text(text, path=""):
         entry = printed_va
     if entry is None:
         return None, "no_entry"
+
+    fix = EXTENT_FIXUPS.get((entry, nbytes))
+    if fix is not None:
+        _FIXUPS_HIT.add((entry, nbytes))
+        nbytes = fix[0]
+        insns = nbytes // 4
+        source = "corrected"
 
     label = head.lstrip("= ").split()[0] if head.lstrip("= ") else ""
     image = None

@@ -387,7 +387,7 @@ meaning and gains two lines under it, `of which infra-replaced` and
 by; `scripts/ci/update-progress-metrics.py` feeds it, not the raw inert count,
 into the site's wiring track.
 
-A row in the first section has one of four causes, and only the first is a
+A row in the first section has one of five causes, and only the first is a
 stale tag:
 
 1. **The port got wired** and nobody removed the tag.
@@ -399,9 +399,31 @@ stale tag:
 4. **Anchor granularity.** A `//! PORT:` block claims the file while the
    `NOT WIRED:` note next to it disclaims one specific function; one wired
    function elsewhere in the file reports the whole block live.
+5. **The block quotes the marker instead of carrying one.** The per-item search
+   is unanchored, so a wiring note that recounts the disclosure it replaced -
+   *the audit's "tagged NOT WIRED but analysed live" row was this collision* -
+   discloses the item all over again. The row then says a port is inert while
+   the paragraph raising it explains that it is wired.
 
-Causes 2-4 are properties of the analysis or the tag's granularity, not defects
+Causes 2-5 are properties of the analysis or the tag's granularity, not defects
 in the tree. Read the section as a queue of questions, not a defect list.
+
+Cause 5 is the one the report now names for you. When **every** `NOT WIRED` in
+an anchor's block sits inside backticks or quotes, the section's note says how
+many of its rows are that shape, because the fix is in the prose rather than in
+the wiring: **rewrite, never quote the marker text**.
+
+That stays a diagnostic and not a classification. The spellings a real per-item
+disclosure is written in are far looser than the module-blanket ones - `//! ##
+NOT WIRED`, `// NOT WIRED, AND UNWIREABLE`, `/// NOT WIRED. "No caller" would
+be the wrong reason` - so anchoring the search the way `MODULE_NOT_WIRED_RE` is
+anchored would silently un-disclose real inert ports. Of the 240 comment lines
+in `crates/` that match the marker, 75 are mentions of one kind or another; of
+the anchors those disclose, exactly one is disclosed *only* by a quotation. The
+diagnostic's own precision matters here too, and its first version failed it: a
+backtick span allowed to cross newlines mis-paired across a whole module doc and
+reported `gameover_banner.rs`'s genuine `# NOT WIRED` heading as a quotation, so
+backtick spans stop at the newline and only quoted ones wrap.
 
 Causes 2 and 4 are still usually closable, and in source rather than in the tool:
 a colliding symbol can be renamed and a coarse anchor can be moved onto the item
@@ -473,7 +495,20 @@ python3 scripts/ci/port-catalog.py --live-audit          # reachability vs the s
 python3 scripts/ci/port-catalog.py --check --live        # ratchet every baselined figure
 python3 scripts/ci/port-catalog.py --check --allow-uncompared   # fast pass, skips the disclosure gap
 python3 scripts/ci/port-catalog.py --live --update-baseline
+python3 scripts/ci/port-catalog.py --funcs /path/to/checkout/ghidra/scripts/funcs
 ```
+
+`--check` alone is **not** an invocation: it leaves `live/disclosure_gap`
+uncompared and exits 1 saying so. The two supported forms are the two above -
+`--check --live` when the commit could move the gap (the hook spends it when
+`crates/` is staged, and CI always does), `--check --allow-uncompared`
+otherwise. There is no third.
+
+`--funcs` points the `dumped` column at another checkout's dump corpus. The
+corpus is gitignored, so anywhere but the checkout that dumped it the catalog
+reports every row undumped - which turns `ported but NOT dumped` from 0 into
+the whole port set and makes a `--check` there meaningless. Reading it by path
+is the supported fix; copying it in would stage Sony bytes.
 
 Output is written to `target/port-catalog/` (gitignored):
 
@@ -679,9 +714,11 @@ dashboard combines four signals:
 1. **Global counts** - dumped / documented / ported / ignored / remaining port
    worklist.
 2. **Per-feature status table** - for each feature in
-   [`scripts/ci/features.toml`](../../scripts/ci/features.toml): reachable, ported,
-   port %, missing (port worklist within the feature, ignore-list excluded),
-   ignored.
+   [`scripts/ci/features.toml`](../../scripts/ci/features.toml): reachable, in
+   scope, ported, port %, missing (port worklist within the feature, ignore-list
+   excluded), ignored. See
+   [below](#port--is-over-what-will-be-ported-not-over-what-was-reached) for
+   what the percentage divides by.
 3. **Per-feature top-N missing-ports** - the highest-citation-count helpers
    reachable from each feature's roots that don't yet carry a `// PORT:` tag.
    Sorted high-leverage first, so a feature's blockers surface immediately.
@@ -695,6 +732,35 @@ The page is gitignored output (lives under `target/`). Re-run after landing a
 batch of ports to see which helpers are now top-of-list. The question-level
 companion - open *hunts* rather than per-function status - is
 [`docs/reference/open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+
+### Port % is over what will be ported, not over what was reached
+
+The denominator is **in scope** = reachable minus ignored, and the numerator
+counts in-scope ported rows only. An ignore-list row is an address this project
+is never going to port - statically-linked PsyQ / BIOS / libgte mapped to a
+native equivalent - so dividing by a set that includes them caps a finished
+feature far below 100% and makes the headline *fall* whenever the ignore list
+grows, which is the reverse of what the list is for. `cd-io` is the extreme
+case: 39 reachable addresses, 38 of them ignored libcd/libapi, so the one real
+routine read as 2.6%.
+
+The numerator needed the same cut. A handful of ignore-list rows do carry a
+`// PORT:` tag, so counting every ported row against an ignore-free denominator
+would have let the ratio pass 100%.
+
+Two consequences worth stating, because both look like defects:
+
+- **A feature can read under 100% with `Missing` at 0.** `Missing` counts the
+  port worklist - dumped *and* documented, not ported, not ignored - and that
+  is zero across the whole catalog. The remaining in-scope rows are addresses
+  that are documented but not dumped, or dumped but not documented; they are
+  the *dump* worklist, not port work. `battle-action`, `cast-module` and
+  `world-overview` are the three features where that residue is visible.
+- **The figure still moves with the corpus.** Reachability is a BFS over the
+  citation graph, which is dump-local (see
+  [Caveats](#caveats)), so a new dump can widen `Reachable` and lower the
+  percentage with nothing in `crates/` changing. It is not ratcheted, for that
+  reason.
 
 ## What the columns surface
 

@@ -34,19 +34,23 @@
 //!
 //! # Wiring status is per item, not per module
 //!
-//! This module carried a blanket `# NOT WIRED` heading saying that nothing
-//! called either kernel. That is no longer true of [`step_scale`], and a
-//! blanket is read unconditionally by every anchor in the file, so leaving it
-//! would make it assert something false about that one.
+//! Every kernel here is now on a live path, which is why this module carries
+//! no blanket: a blanket is read unconditionally by every anchor in the file,
+//! and there is nothing left for one to assert.
 //!
-//! [`step_scale`] is on the live path. `FUN_801D14B0` is not unique to this
-//! overlay: the Baka Fighter overlay links **the same 24 instructions** at
+//! [`step_scale`] is reached twice over. `FUN_801D14B0` is not unique to this
+//! overlay - the Baka Fighter overlay links **the same 24 instructions** at
 //! `FUN_801D6710`, and that copy paces the end-of-match tally
-//! ([`crate::baka_fighter::BakaTally::tick`]) both hosts run. The port keeps
-//! one implementation of the pair, and it is this one.
+//! ([`crate::baka_fighter::BakaTally::tick`]) both hosts run - and this
+//! overlay's own driver [`ScoreTallyRamp::tick`] now calls it as well. The
+//! port keeps one implementation of the pair, and it is this one.
 //!
-//! What is still absent is this overlay's *own* driver, and with it
-//! [`arena_voice_cue`]. See that function's tag for the exact ramp.
+//! What the cue does **not** have is a device. [`arena_voice_cue`] resolves the
+//! whole voice-attr call retail makes, and the ramp keys one per counted step,
+//! but `legaia-engine-audio` exposes no "key this voice with these attributes"
+//! entry point - it plays cue ids, pre-decoded clips and sequences - so the
+//! resolved cue is carried on [`ScoreTallyStep::cues`] and no host sounds it.
+//! That is a missing audio API, not a missing caller.
 
 /// Threshold above which the unslowed step is divided by five.
 pub const STEP_FAST_MIN: i32 = 6;
@@ -73,15 +77,14 @@ pub const STEP_MIN_FLOOR: i32 = 3;
 ///
 /// PORT: FUN_801d14b0
 // REF: FUN_801d6710 (the Baka Fighter overlay's copy of this same routine)
-// Wired, but not through this overlay's own tick. `FUN_801D6710` is the same
+// Wired from both of its retail callers' ports. `FUN_801D6710` is the same
 // 24 instructions linked into the Baka overlay - identical opcode for opcode
 // and register for register, differing only in the `lui`/`lw` pair that loads
 // the bypass flag (`DAT_801D1AB4` here, `DAT_801DBF00` there) and in the
 // relocated branch targets - and [`crate::baka_fighter::tally_drain_step`]
-// delegates here so the port holds one implementation. The live caller is
-// therefore the *Baka* tally, reached from both hosts; the dome hub's own
-// caller `FUN_801CF074` is still unported, so the `boost` argument is only
-// ever the Baka fast-forward latch and never `DAT_801D1AB4`.
+// delegates here so the port holds one implementation. The dome side is
+// [`ScoreTallyRamp::tick`], which passes each lane's remainder through this
+// on the frame it drains. Both hosts reach both.
 #[inline]
 pub fn step_scale(step: i32, boost: bool) -> i32 {
     if boost {
@@ -105,9 +108,15 @@ pub const CUE_VOICE_SLOTS: u32 = 4;
 /// Base of the rotating voice-slot range (`0x10 ..= 0x13`).
 pub const CUE_VOICE_BASE: u32 = 0x10;
 
-/// Channel mixer level the cue passes (argument 2). Literal `0` here; the
-/// SCUS cue drainer sources the same argument from its cue record.
-pub const CUE_LEVEL: i32 = 0;
+/// **VAB id** the cue keys against (argument 2). Literal `0` here; the SCUS
+/// cue drainer sources the same argument from its cue record.
+///
+/// Named `CUE_LEVEL` ("channel mixer level") until `FUN_80065034`'s own
+/// prologue was read: `a1` is sign-extended straight into the program-attr
+/// lookup `jal 0x80068B98` at `0x80065034..0x80065120`, which is
+/// `SsUtKeyOnV(voice, vabid, prog, tone, note, fine, voll, volr)`'s bank
+/// argument. Nothing in that routine mixes anything.
+pub const CUE_VAB_ID: i32 = 0;
 
 /// VAB program the cue keys (argument 3). Literal `0` here.
 pub const CUE_PROGRAM: i32 = 0;
@@ -118,25 +127,27 @@ pub const CUE_TONE: i32 = 1;
 /// Note the voice is keyed at (argument 5).
 pub const CUE_NOTE: i32 = 0x3C;
 
-/// Argument 6, `0x40` at every retail call site of the voice-attr primitive -
-/// including the SCUS cue drainer `FUN_80016B6C`.
-pub const CUE_ARG6: i32 = 0x40;
+/// The pitch **fine-tune** argument (argument 6, `sp+0x54`), `0x40` at every
+/// retail call site of the voice-attr primitive - including the SCUS cue
+/// drainer `FUN_80016B6C`. Carried; the port's pitch math is the tone's.
+pub const CUE_FINE: i32 = 0x40;
 
 /// One resolved voice-attr call, as handed to `FUN_80065034`.
 ///
-/// The retail signature the port follows is
-/// `FUN_80065034(voice, level, program, tone, note, 0x40, vol_l, vol_r)`,
-/// read off the SCUS cue drainer `FUN_80016B6C`, whose own call fills the
-/// same eight slots from a cue descriptor. This overlay's call hard-codes
-/// every slot but the voice and the volume pair.
+/// The retail signature is
+/// `FUN_80065034(voice, vab_id, program, tone, note, fine, vol_l, vol_r)` -
+/// libsnd's `SsUtKeyOnV`, read off `0x80065034..0x80065120` and confirmed
+/// against the SCUS cue drainer `FUN_80016B6C`, whose own call fills the same
+/// eight slots from a cue descriptor. This overlay's call hard-codes every
+/// slot but the voice and the volume pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VoiceAttrCue {
     /// Voice slot, `CUE_VOICE_BASE + (counter % 4)`.
     pub voice: u32,
-    /// [`CUE_LEVEL`] / [`CUE_PROGRAM`] / [`CUE_TONE`].
-    pub level_program_tone: (i32, i32, i32),
-    /// [`CUE_NOTE`] and [`CUE_ARG6`].
-    pub note_and_arg6: (i32, i32),
+    /// [`CUE_VAB_ID`] / [`CUE_PROGRAM`] / [`CUE_TONE`].
+    pub vab_program_tone: (i32, i32, i32),
+    /// [`CUE_NOTE`] and [`CUE_FINE`].
+    pub note_and_fine: (i32, i32),
     /// Left / right volume; both entries carry the same value, halved out of
     /// the voice-volume config word ([`cue_volume`]).
     pub volume: (i32, i32),
@@ -156,14 +167,10 @@ pub struct VoiceAttrCue {
 /// plain `>> 1`.
 ///
 /// PORT: FUN_801d1288 (volume decode)
-// NOT WIRED: this decode is correct and tested, but its only caller is
-// [`arena_voice_cue`] directly below, which is itself inert - so no host root
-// reaches this function either. The blocker is that one's, not a second
-// independent gap: the tally tick plus the two hosts holding its ramp state.
-// Read that tag for the named function and the full shape. Stated separately
-// because the
-// module's blanket heading was narrowed to the sites it actually described,
-// which left this anchor covered by nothing.
+// Reached through [`arena_voice_cue`], which [`ScoreTallyRamp::tick`] calls on
+// every counted step. The word it halves is the game state's voice-volume
+// setting; with no live mirror of that global the hosts pass its cold reset,
+// so the value is retail's boot value rather than a player-set one.
 #[inline]
 pub fn cue_volume(word: u32) -> i32 {
     ((word << 15) as i32) >> 16
@@ -182,36 +189,222 @@ pub fn cue_volume(word: u32) -> i32 {
 /// `docs/tooling/stale-not-wired-triage.md`.
 ///
 /// PORT: FUN_801d1288
-// NOT WIRED: the missing thing is one named function, `FUN_801CF074` - the
-// tally tick itself, which is what turns the settled lane values into a
-// per-frame count-up and blips this cue once per counted step. Its shape is
-// fully in the disassembly, so wiring is mechanical rather than exploratory:
-// four staged lanes, each with a fade accumulator (`DAT_801D1ABC` /
-// `..1AC0` / `..1AC4` / `..1AB8`) that advances by the frame delta
-// `DAT_1F800393` and clamps at `0x10`; a lane only starts accumulating once the
-// previous lane's *pending* word (`DAT_801D1ACC` / `..1AD0` / `..1AD4` /
-// `..1AAC`) has emptied; a lane past the clamp moves [`step_scale`] of its
-// remainder per frame and fires this cue on every step. Lanes 0..2 drain into
-// the HP accumulator `DAT_801D1AC8`, lane 3 into the running tally
-// `_DAT_80084440`, and the return word is `1` while anything is still pending.
-// Each lane's clamped accumulator doubles as its row brightness.
+// Reached from [`ScoreTallyRamp::tick`], the port of the tally tick
+// `FUN_801CF074` that keys this cue once per counted step, on both hosts: the
+// native window steps the ramp a frame at a time while the INTERVAL screen is
+// up, and the dome page replays it to the screen's own tick.
 //
-// What that costs is not the tick but the two hosts: both draw the tally at its
-// settled values in one frame (`window/minigames.rs`'s `muscle_interval_timer`
-// arm and the dome page's `score_tally_quads` call), so each has to hold the
-// ramp state and read the counted-up rows instead - and the browser side is a
-// change in the page's JavaScript, not only in the wasm surface. Until then a
-// port of `FUN_801CF074` would itself be inert, which is why the row is left
-// stated rather than half-built.
+// What the cue reaches is a struct, not a voice; the struct is carried on
+// [`ScoreTallyStep::cues`]. `legaia-engine-audio` grew the explicit key-on
+// that takes it (`VoiceAttr` / `key_on_voice_attr`, the port of
+// `FUN_80065034`), and the native window drains the queue into it through
+// `AudioBgmDirector::key_on_voice_attr`. The browser minigames page has no
+// resident `Spu` to key at all and drops the queue - disclosed under
+// "One-shot voices on the minigames page" in `docs/tooling/host-drift.md`.
+// The tally screen's audible per-lane "ka-ching" is a different mechanism
+// anyway: the hub's INTERVAL arm pre-schedules four cue ids on the staggered
+// vsync countdown ([`crate::muscle_dome::HUB_TALLY_CUE_STAGGER`]).
 pub fn arena_voice_cue(counter: &mut u32, volume_word: u32) -> VoiceAttrCue {
     let voice = CUE_VOICE_BASE | (*counter & (CUE_VOICE_SLOTS - 1));
     let v = cue_volume(volume_word);
     *counter = counter.wrapping_add(1);
     VoiceAttrCue {
         voice,
-        level_program_tone: (CUE_LEVEL, CUE_PROGRAM, CUE_TONE),
-        note_and_arg6: (CUE_NOTE, CUE_ARG6),
+        vab_program_tone: (CUE_VAB_ID, CUE_PROGRAM, CUE_TONE),
+        note_and_fine: (CUE_NOTE, CUE_FINE),
         volume: (v, v),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The score-tally roll-up, `FUN_801CF074`
+// ---------------------------------------------------------------------------
+
+/// Lanes the tally roll drains, in the order the routine chains them.
+pub const TALLY_LANES: usize = 4;
+
+/// Rows the tally screen draws.
+pub const TALLY_ROWS: usize = 6;
+
+/// A lane's fade counter must *exceed* this before the lane starts draining,
+/// and is reseeded to it on every draining frame
+/// ([`crate::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS`] is the `0x11` the
+/// `slti` compares against; this is the `0x10` the delay slot stores).
+pub const LANE_FADE_FULL: i32 = 0x10;
+
+/// Which lane's fade counter each of the six rows takes its brightness from.
+///
+/// Not one lane per row: the HP total shares lane `0`'s counter and both
+/// money rows share lane `3`'s, which is why the screen lights in four steps
+/// and not six.
+pub const ROW_FADE_LANE: [usize; TALLY_ROWS] = [0, 1, 2, 0, 3, 3];
+
+/// One frame of the tally roll.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScoreTallyStep {
+    /// The routine's return word: something is still counting.
+    pub rolling: bool,
+    /// What the score lane moved into the coin tally this frame.
+    pub tally_gain: i32,
+    /// The voice-attr cues the drained lanes keyed this frame (retail's
+    /// chaining lets at most one lane drain per frame, but the flow does not
+    /// forbid more, so this is a list).
+    pub cues: Vec<VoiceAttrCue>,
+}
+
+/// The between-leg score tally's roll-up state.
+///
+/// Four lanes drain one after another into two sinks, and the screen's six
+/// rows are windows onto them. Retail keeps the whole thing in overlay
+/// globals; the port keeps it here so both hosts read one model.
+///
+/// | field | retail |
+/// |---|---|
+/// | `fade[0..4]` | `DAT_801D1ABC` / `..1AC0` / `..1AC4` / `..1AB8` |
+/// | `pending[0..4]` | `DAT_801D1ACC` / `..1AD0` / `..1AD4` / `..1AAC` |
+/// | `hp_accum` | `DAT_801D1AC8` |
+/// | `cue_counter` | `DAT_801D1AE4` |
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScoreTallyRamp {
+    /// Per-lane fade counter, `0 ..=` [`LANE_FADE_FULL`] once clamped.
+    pub fade: [i32; TALLY_LANES],
+    /// Per-lane remaining amount, counting down to zero.
+    pub pending: [i32; TALLY_LANES],
+    /// The HP the first three lanes have drained so far.
+    pub hp_accum: i32,
+    /// Free-running voice-slot counter.
+    pub cue_counter: u32,
+}
+
+impl ScoreTallyRamp {
+    /// Arm the roll from a finished leg's four lane values.
+    ///
+    /// The lane order is the drain order, which is
+    /// [`crate::muscle_dome::LegScoreRows`]'s own field order: `DAT_801D1ACC`
+    /// takes the round lane and `DAT_801D1AD0` the turn lane. The arming
+    /// routine computes them in the other order and stores the turn lane
+    /// first, which reads as a swap until the two `lui` reloads in between
+    /// (`0x801D11E0` and `0x801D11F0`, both re-forming the `0x801D` base into
+    /// the register the store then uses) are followed - the operand register
+    /// is not the one that held the product.
+    ///
+    /// PORT: FUN_801d1184 (the store pairing; the lane values are
+    /// `muscle_dome::leg_score_rows`)
+    pub fn arm(rows: crate::muscle_dome::LegScoreRows) -> Self {
+        Self {
+            fade: [0; TALLY_LANES],
+            pending: [
+                rows.round_lane,
+                rows.turns_lane,
+                rows.outcome_lane,
+                rows.score_cell,
+            ],
+            hp_accum: 0,
+            cue_counter: 0,
+        }
+    }
+
+    /// Advance the roll one frame.
+    ///
+    /// `frame_delta` is the adaptive frame-skip byte `DAT_1F800393` every
+    /// counter step scales by; `boost` is the overlay's bypass flag
+    /// `DAT_801D1AB4`, which hands [`step_scale`] its own input unslowed;
+    /// `volume_word` is the voice-volume setting `_DAT_80084580` each cue
+    /// halves ([`cue_volume`]).
+    ///
+    /// The chain is what makes the screen roll one row at a time. A lane's
+    /// fade counter only advances in a frame where the *previous* lane has
+    /// nothing left to drain, so lane `n` cannot start until lane `n - 1` is
+    /// empty; and a lane past the fade clamp moves [`step_scale`] of its
+    /// remainder per frame and keys a cue on every step. Lanes `0..3` drain
+    /// into [`Self::hp_accum`], lane `3` into the caller's coin tally.
+    ///
+    /// The return word is the one retail's hub arm branches on: it is `1`
+    /// unless the frame reached lane `3` with nothing pending, which is the
+    /// only assignment of `0` in the routine.
+    ///
+    /// PORT: FUN_801cf074 (`0x801CF074..0x801CF294`, the simulation half; the
+    /// two emitter loops below it are `legaia_engine_ui::other_game_hud`)
+    pub fn tick(&mut self, frame_delta: u8, boost: bool, volume_word: u32) -> ScoreTallyStep {
+        let dt = i32::from(frame_delta);
+        let mut out = ScoreTallyStep {
+            rolling: true,
+            ..Default::default()
+        };
+        // Lane 0's counter is the only one that advances unconditionally.
+        self.fade[0] += dt;
+        for lane in 0..TALLY_LANES {
+            if self.fade[lane] <= LANE_FADE_FULL {
+                break;
+            }
+            self.fade[lane] = LANE_FADE_FULL;
+            if self.pending[lane] == 0 {
+                match self.fade.get_mut(lane + 1) {
+                    Some(next) => *next += dt,
+                    // Lane 3 empty is the routine's only `0` return.
+                    None => out.rolling = false,
+                }
+                continue;
+            }
+            let step = step_scale(self.pending[lane], boost);
+            self.pending[lane] -= step;
+            if lane + 1 == TALLY_LANES {
+                out.tally_gain += step;
+            } else {
+                self.hp_accum += step;
+            }
+            out.cues
+                .push(arena_voice_cue(&mut self.cue_counter, volume_word));
+            // A drained lane hands the frame to the next lane's own test.
+        }
+        out
+    }
+
+    /// Nothing is left to count.
+    pub fn settled(&self) -> bool {
+        self.pending.iter().all(|&p| p == 0)
+    }
+
+    /// The six values the screen draws, given the coin tally as it stands.
+    ///
+    /// Rows `0..3` are the three recovery lanes counting **down**, row `3` is
+    /// the HP they have counted **up** into, row `4` is the score lane
+    /// counting down and row `5` is the coin tally counting up. Retail reads
+    /// them at `0x801CF558` / `0x801CF59C` / `0x801CF5E0` / `0x801CF624` /
+    /// `0x801CF668` / `0x801CF6AC`.
+    ///
+    /// PORT: FUN_801cf074 (`0x801CF510..0x801CF6B8`, the value reads)
+    pub fn row_values(&self, tally: i32) -> [i32; TALLY_ROWS] {
+        [
+            self.pending[0],
+            self.pending[1],
+            self.pending[2],
+            self.hp_accum,
+            self.pending[3],
+            tally,
+        ]
+    }
+
+    /// Per-row brightness for a screen fade level of `fade` (`0 ..= 0x80`).
+    ///
+    /// Retail forms `lane_fade * (fade << 4)` and divides by `128` rounding
+    /// toward zero, so a lane at the clamp draws at twice the fade level -
+    /// `0x100` at a full screen fade, which the emitter then caps at `0xFF`
+    /// (`slti a3,0x100` at `0x801D08FC`). A settled tally is therefore drawn
+    /// at full white, not at the half-intensity the other hub screens pass.
+    ///
+    /// PORT: FUN_801cf074 (`0x801CF298..0x801CF2B8` and its fifteen repeats)
+    pub fn row_brightness(&self, fade: i32) -> [i32; TALLY_ROWS] {
+        let mul = fade << 4;
+        let mut out = [0; TALLY_ROWS];
+        for (row, slot) in out.iter_mut().enumerate() {
+            let lane = ROW_FADE_LANE[row];
+            let n = self.fade[lane] * mul;
+            // `bgez v0, +8; addiu v0,v0,0x7f; sra v0,v0,7` - a signed divide
+            // by 128 that truncates toward zero.
+            *slot = if n >= 0 { n >> 7 } else { (n + 0x7F) >> 7 };
+        }
+        out
     }
 }
 
@@ -303,13 +496,187 @@ mod tests {
         assert_eq!(cue_volume(boot as u32), 100);
     }
 
+    fn armed() -> (ScoreTallyRamp, crate::muscle_dome::LegScoreRows) {
+        let rows = crate::muscle_dome::LegScoreRows {
+            round_lane: 40,
+            turns_lane: 25,
+            outcome_lane: 12,
+            score_cell: 300,
+        };
+        (ScoreTallyRamp::arm(rows), rows)
+    }
+
+    /// Run the roll to a stop, returning `(frames, cues, tally gained)`.
+    fn roll_out(ramp: &mut ScoreTallyRamp) -> (usize, usize, i32) {
+        let (mut frames, mut cues, mut gain) = (0usize, 0usize, 0i32);
+        for _ in 0..4000 {
+            let step = ramp.tick(1, false, 200);
+            frames += 1;
+            cues += step.cues.len();
+            gain += step.tally_gain;
+            if !step.rolling {
+                return (frames, cues, gain);
+            }
+        }
+        panic!("the roll never reported done");
+    }
+
+    #[test]
+    fn a_lane_waits_for_the_one_before_it() {
+        let (mut r, _) = armed();
+        // Lane 1's counter must not move on any frame that opened with lane 0
+        // still owing - which is the chain, and is what makes the screen roll
+        // one row at a time rather than four at once.
+        let mut drained_while_lane1_dark = false;
+        for _ in 0..400 {
+            let owed = r.pending[0];
+            r.tick(1, false, 200);
+            if owed > 0 {
+                assert_eq!(
+                    r.fade[1], 0,
+                    "lane 1's counter moved while lane 0 still owed {owed}"
+                );
+                if r.pending[0] < owed {
+                    drained_while_lane1_dark = true;
+                }
+            }
+            if r.fade[1] > 0 {
+                break;
+            }
+        }
+        assert!(
+            drained_while_lane1_dark,
+            "lane 0 never drained, so the wait proved nothing"
+        );
+        assert_eq!(r.pending[0], 0, "lane 1 started before lane 0 emptied");
+        assert!(r.fade[1] > 0, "lane 1 never started at all");
+    }
+
+    #[test]
+    fn the_lead_in_is_seventeen_ticks_and_the_counter_reseeds() {
+        let (mut r, _) = armed();
+        for i in 1..=LANE_FADE_FULL {
+            r.tick(1, false, 200);
+            assert_eq!(r.fade[0], i, "the counter climbs one per frame");
+            assert_eq!(r.pending[0], 40, "nothing drains below the threshold");
+        }
+        // The frame that takes it past the clamp is the first draining one,
+        // and the counter is put back to the clamp.
+        r.tick(1, false, 200);
+        assert_eq!(r.fade[0], LANE_FADE_FULL);
+        assert!(r.pending[0] < 40);
+    }
+
+    #[test]
+    fn the_roll_conserves_every_lane_into_its_own_sink() {
+        let (mut r, rows) = armed();
+        let (frames, cues, gain) = roll_out(&mut r);
+        assert_eq!(r.pending, [0; TALLY_LANES], "every lane emptied");
+        assert_eq!(
+            r.hp_accum,
+            rows.round_lane + rows.turns_lane + rows.outcome_lane,
+            "the first three lanes are the HP restore"
+        );
+        assert_eq!(
+            gain, rows.score_cell,
+            "only the score lane reaches the tally"
+        );
+        assert_eq!(
+            r.hp_accum + gain,
+            rows.round_lane + rows.turns_lane + rows.outcome_lane + rows.score_cell,
+        );
+        // One cue per counted step, and the counter is free-running.
+        assert_eq!(r.cue_counter as usize, cues);
+        assert!(
+            cues > 0 && frames > cues,
+            "the lead-ins cost frames with no step"
+        );
+    }
+
+    #[test]
+    fn an_armed_roll_with_nothing_in_it_still_reports_done() {
+        let mut r = ScoreTallyRamp::arm(crate::muscle_dome::LegScoreRows::default());
+        let (frames, cues, gain) = roll_out(&mut r);
+        assert_eq!((cues, gain), (0, 0));
+        // The first lane costs a whole lead-in plus the frame that carries it
+        // past the clamp; every later lane costs one frame less, because the
+        // frame that clamps its predecessor is also the frame that hands it
+        // its first tick.
+        assert_eq!(
+            frames,
+            LANE_FADE_FULL as usize + 1 + (TALLY_LANES - 1) * LANE_FADE_FULL as usize
+        );
+        assert!(r.settled());
+    }
+
+    #[test]
+    fn the_six_rows_read_their_own_sources() {
+        let (mut r, rows) = armed();
+        // Before any frame: three lanes pending, nothing accumulated.
+        assert_eq!(
+            r.row_values(7),
+            [
+                rows.round_lane,
+                rows.turns_lane,
+                rows.outcome_lane,
+                0,
+                rows.score_cell,
+                7
+            ]
+        );
+        roll_out(&mut r);
+        assert_eq!(
+            r.row_values(7 + rows.score_cell),
+            [0, 0, 0, rows.hp_restore(), 0, 7 + rows.score_cell],
+            "a settled roll reads the totals the contest already holds"
+        );
+    }
+
+    #[test]
+    fn brightness_is_per_lane_and_doubles_the_screen_fade_at_the_clamp() {
+        let mut r = ScoreTallyRamp::arm(crate::muscle_dome::LegScoreRows::default());
+        assert_eq!(
+            r.row_brightness(0x80),
+            [0; TALLY_ROWS],
+            "an unlit lane is black"
+        );
+        r.fade = [LANE_FADE_FULL; TALLY_LANES];
+        assert_eq!(
+            r.row_brightness(0x80),
+            [0x100; TALLY_ROWS],
+            "the emitter caps this at 0xFF; it is not the 0x80 the other hub screens pass"
+        );
+        // The HP total shares lane 0 and both money rows share lane 3, which
+        // is why the screen lights in four steps and not six.
+        r.fade = [4, 0, 0, 8];
+        let b = r.row_brightness(0x80);
+        assert_eq!(b[3], b[0]);
+        assert_eq!(b[5], b[4]);
+        assert_ne!(b[0], b[4]);
+    }
+
+    #[test]
+    fn the_boost_flag_reaches_the_ramp() {
+        let (mut r, rows) = armed();
+        let (slow, _, _) = roll_out(&mut r);
+        let mut fast = ScoreTallyRamp::arm(rows);
+        let mut frames = 0usize;
+        for _ in 0..4000 {
+            frames += 1;
+            if !fast.tick(1, true, 200).rolling {
+                break;
+            }
+        }
+        assert!(frames < slow, "the bypass flag has to shorten the roll");
+    }
+
     #[test]
     fn the_cue_carries_the_hard_coded_argument_slots() {
         let mut c = 7;
         let cue = arena_voice_cue(&mut c, 8);
         assert_eq!(cue.voice, 0x13);
-        assert_eq!(cue.level_program_tone, (CUE_LEVEL, CUE_PROGRAM, CUE_TONE));
-        assert_eq!(cue.note_and_arg6, (CUE_NOTE, CUE_ARG6));
+        assert_eq!(cue.vab_program_tone, (CUE_VAB_ID, CUE_PROGRAM, CUE_TONE));
+        assert_eq!(cue.note_and_fine, (CUE_NOTE, CUE_FINE));
         assert_eq!(cue.volume, (4, 4));
     }
 }

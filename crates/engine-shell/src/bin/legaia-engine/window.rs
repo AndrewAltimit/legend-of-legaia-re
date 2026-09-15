@@ -61,6 +61,59 @@ pub(crate) struct ScreenshotConfig {
     pub key_script: std::collections::HashMap<u64, Vec<KeyCode>>,
 }
 
+/// Debug state `play-window` seeds before the first world tick, so a capture
+/// run can reach a surface an ordinary boot would have to be played into.
+///
+/// Both members are **debug affordances**, not player surfaces: they write
+/// game state a save would otherwise have to carry. They exist because the
+/// two screens the parity sweeps most need - a Seru cast and a Muscle Dome
+/// ring with a chip crossed out - are each gated on state no CLI flag could
+/// reach. A cast needs the caster to have *learned* the spell (the Magic arm
+/// parks on an unlearned action id), and the dome's magic ban is seeded at
+/// arena entry from story flags `0x536` / `0x537` / `0x538`
+/// (`legaia_engine_core::muscle_dome::COURSE_UNLOCK_FLAGS`), the last one set
+/// winning with `0x321` - course 2 plus
+/// `SPECIAL_MAGIC_FORBIDDEN`.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct DebugSeeds {
+    /// `--learn-spell <ID>`, repeatable: spell ids prepended (level 1) to the
+    /// lead party member's learned list, the same path the pre-existing
+    /// `LEGAIA_LEARN_SPELLS` env var takes.
+    pub learn_spells: Vec<u8>,
+    /// `--set-flag <N>`, repeatable: system/story-flag indices raised in the
+    /// shared bank `DAT_80085758`.
+    pub story_flags: Vec<u16>,
+}
+
+impl DebugSeeds {
+    /// Parse the two repeatable operands. Each accepts decimal or `0x` hex.
+    pub(crate) fn from_args(learn_spell: &[String], set_flag: &[String]) -> Result<Self> {
+        fn num(s: &str) -> Option<u32> {
+            let s = s.trim();
+            s.strip_prefix("0x")
+                .or_else(|| s.strip_prefix("0X"))
+                .map_or_else(
+                    || s.parse::<u32>().ok(),
+                    |h| u32::from_str_radix(h, 16).ok(),
+                )
+        }
+        let mut seeds = Self::default();
+        for s in learn_spell {
+            let v = num(s)
+                .filter(|v| *v <= u32::from(u8::MAX))
+                .with_context(|| format!("--learn-spell '{s}' is not a spell id (0..=0xFF)"))?;
+            seeds.learn_spells.push(v as u8);
+        }
+        for s in set_flag {
+            let v = num(s)
+                .filter(|v| *v <= u32::from(u16::MAX))
+                .with_context(|| format!("--set-flag '{s}' is not a flag index (0..=0xFFFF)"))?;
+            seeds.story_flags.push(v as u16);
+        }
+        Ok(seeds)
+    }
+}
+
 /// Periodic capture sweep for `play-window`: one PNG (`tick_%05d.png`) into
 /// [`Self::dir`] every [`Self::every`] ticks; the run exits after the
 /// capture at/past [`Self::last_tick`] (or when the window closes).
@@ -834,6 +887,10 @@ struct PlayWindowApp {
     /// The between-legs INTERVAL + score-tally screen's envelope, armed when
     /// a leg closes while its contest is (or just was) open.
     muscle_interval: Option<legaia_engine_core::muscle_dome::HubScreen>,
+    /// The score tally's roll-up state and the coin tally it counts up from,
+    /// armed with the INTERVAL screen and stepped once per frame while it is
+    /// up (`legaia_engine_core::other_game_overlay::ScoreTallyRamp`).
+    muscle_tally: Option<(legaia_engine_core::other_game_overlay::ScoreTallyRamp, i32)>,
     /// Last frame's `world.minigames.muscle_dome.is_some()`, for the leg edges above.
     muscle_prev_leg_open: bool,
     /// Last frame's `world.minigames.muscle_contest.is_some()`, distinguishing a fresh

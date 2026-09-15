@@ -1,6 +1,6 @@
 //! Disc-gated proof that the `scene_event_scripts` / `scene_v12_table` /
 //! `scene_scripted_asset_table` prescript records are **summon-stager-format
-//! move-VM records** - `[i16 model_sel][u16 flags][move-VM bytecode]`, the same
+//! move-VM records** - `[i16 model_sel][u16 reserved][move-VM bytecode]`, the same
 //! shape the per-summon stagers use - NOT a bespoke "scene event command VM".
 //!
 //! Runtime chain (pinned from disc + resident kingdom-overworld RAM): the field

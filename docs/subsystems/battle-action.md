@@ -1967,7 +1967,7 @@ The summon overlay carries **no embedded TMD geometry** (no `0x80000002` magic).
   the same walk as the battle-teardown loop in `FUN_800480D8`.
   `record[+0]` (`model_sel`) drives the spawn-time render seat: `≥ 0` → library mesh `DAT_8007C018[model_sel + gp[0x754]]` (`actor[+0x5A] = 1`), any negative value (`-1` canonical) = no-mesh transform/pivot node (`actor[+0x56] = 0`, `actor[+0x5A] = 0`, draw-flag bit 2), `0x4000`/`0x4001` = special render-mode nodes (`actor[+0x5A] = 3` / `5`).
 - Three staging functions drive the spawn: **`FUN_801F16A0`** (phase 0 = a `do { FUN_80021B04(...) } while(< 8)` loop spawning **8** flame parts, each with `rand()`-seeded actor params - `actor[+0x84]`, `actor[+0xb4] = rng%15 + 16`, `actor[+0xb6] = rng%255 + 512`, `actor[+0x28]`; phase 1 = 1 more part), **`FUN_801F36A0`**, **`FUN_801F4DD0`**. The per-frame motion is the standard actor-tick consuming those RNG-seeded fields.
-- **Part records ARE in-file and move-VM bytecode (corrected link base).** Under the correct link base `0x801F69D8` (not `0x801F0000`), each `FUN_80021B04` call's record pointer resolves to PROT 905 **file `0x180C..0x1E00`** - a contiguous table of `[i16 model_sel][u16 flags][move-VM bytecode @+4]` records, recovered by `legaia_asset::summon_overlay` (disc-gated `summon_overlay_real`). This **supersedes** the two earlier wrong-link-base "FALSIFIED" readings - "the records are beyond the `0x5800` file / `0x180C` is only coincidentally record-shaped / parser reverted" and "there is no move VM here." The records *are* move-VM bytecode;
+- **Part records ARE in-file and move-VM bytecode (corrected link base).** Under the correct link base `0x801F69D8` (not `0x801F0000`), each `FUN_80021B04` call's record pointer resolves to PROT 905 **file `0x180C..0x1E00`** - a contiguous table of `[i16 model_sel][u16 reserved][move-VM bytecode @+4]` records, recovered by `legaia_asset::summon_overlay` (disc-gated `summon_overlay_real`). This **supersedes** the two earlier wrong-link-base "FALSIFIED" readings - "the records are beyond the `0x5800` file / `0x180C` is only coincidentally record-shaped / parser reverted" and "there is no move VM here." The records *are* move-VM bytecode;
   the reason PROT 905 has zero `jal 0x80023070` *inside the overlay* is simply that the `jal` lives in the SCUS stager `FUN_80021B04` (which seats `actor[+0x70] = 2` PC → bytecode at `record+4`, then ticks `FUN_80023070`), not in the overlay image.
 - **But the move-VM scene-graph is NOT how retail renders the player summon
   (live trace).** A PCSX-Redux trace of a player Gimard *Burning Attack* cast
@@ -2016,7 +2016,7 @@ scenes; see [`move-vm.md` § screen-effect widget family](move-vm.md#screen-effe
 The live effect is instead a single **move-VM part-actor** in the part pool
 `DAT_801C90F0`, ticked per frame by the generic SCUS actor tick `FUN_80021DF4`
 (→ `FUN_80023070`) - a live capture pinning that render-tail driver. Its
-`[i16 model_sel][u16 flags][bytecode]` record (`actor[+0x48]`) lives in the
+`[i16 model_sel][u16 reserved][bytecode]` record (`actor[+0x48]`) lives in the
 **battle overlay (0898)** resident data at `0x801F5xxx` (below the 0900 slot-B
 link base `0x801F69D8`), `model_sel` reading `-1` (transform node) / `5` (library
 mesh `DAT_8007C018[5 + base]`) - the summon part-record format, sourced from the
@@ -2174,8 +2174,9 @@ the outcome, which is why Chicken King is "assured escape (non-boss)" (see the
 `_DAT_8007BAC0 & 0x100` forces the flee outright - it bypasses even `ctx[+0x287]` and skips
 the "No. of Escapes" Records counter (`_DAT_800846A8`) the normal success path increments.
 
-**Both ctx inputs are written at battle setup, not by the roll.** `ctx[+0x287]` (the scripted
-no-escape flag, also read by the state-`0x20` counter-attack gate) is latched by the SCUS
+**Both ctx inputs are written at battle setup, not by the roll.** `ctx[+0x287]` (the
+[scripted-fight flag](#ctx0x287-is-the-scripted-fight-flag-and-0x288-is-the-counter-attack-byte),
+also read by the state-`0x20` counter-attack gate) is latched by the SCUS
 battle-setup routine `FUN_800513F0` in its first instructions: `ctx[+0x287] = (DAT_8007BD60 >> 5)
 & 4` - it carries bit `0x80` of the battle-flags byte `DAT_8007BD60` (the same byte state `0x5A`
 masks with `&= 0x7F`), so a scripted "can't run" fight sets it to `4` at load (`0x801E5058` reads
@@ -2200,6 +2201,30 @@ state-`0x64` floor), and the camera move fires via `FUN_801D829C`. Ported:
 `engine-vm::battle_formulas::escape_roll` (+ `escape_party_score` / `escape_enemy_score` /
 `EscapeFlags`), rolled live by `engine-core::World::roll_battle_escape` when the command
 menu resolves Run.
+
+### `ctx[+0x287]` is the scripted-fight flag, and `+0x288` is the counter-attack byte
+
+The two bytes are adjacent and they are read together at the state-`0x20`
+gate, which is how they came to be described as one thing. They are not:
+
+- **`ctx[+0x287]`** is a per-**battle** property, derived once at battle init
+  and never written again during the fight - `(DAT_8007BD60 >> 5) & 4`, i.e.
+  bit `0x80` of the formation's per-battle flags byte. Everything it gates is
+  "is this a scripted fight": the escape roll above, the two magic-capture
+  audio-duck arms (states `0x6F` / `0x70`), and the attack-return arm's
+  counter-attack precondition. Calling it a counter-attack flag makes all four
+  reads look like one feature.
+- **`ctx[+0x288]`** is the counter-attack byte proper - the second term of the
+  state-`0x20` gate (`ctx[+0x287] != 0 && DAT_8007BD0D == 0 && ctx[+0x288] != 0`),
+  and the one a counter actually consumes.
+
+The distinction is load-bearing for the port rather than cosmetic. An engine
+that seeds `+0x287` per *action* leaves the two duck arms and the attack-return
+arm permanently unreachable, because an action-scoped byte is zero at the
+moments a battle-scoped one is set; seeding it from the formation row's own
+flags is what makes those arms run. The port derives it at battle entry from
+`FormationDef::per_battle_flags()`
+([battle-formulas.md](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)).
 
 ### The `_DAT_8007B910` ramps are an audio duck
 

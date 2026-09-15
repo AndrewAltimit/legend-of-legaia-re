@@ -32,18 +32,38 @@ disassembly (`sltiu` immediate before the `jr`), not off the port.
 | [Move VM](move-vm.md) | `FUN_80023070` | 71 opcodes `0x00..0x46`, JT `0x80010778` | resolved | yes - `move_vm` | yes |
 | [Move-VM `0x2F` extension](move-vm-overlay-ext.md) | `FUN_801D362C` | 61 sub-opcodes `0x00..0x3C`, JT `0x801CE868` | resolved | yes - `move_vm::ext` (live) + `move_vm_overlay_ext` (replaced) | **live** |
 | [Motion VM - pursue / patrol](motion-vm.md) | `FUN_8003774C` | 22-slot JT `0x80010EE0`, index `(op & 0x7F) - 0x37` | resolved | yes - `motion_vm` | yes |
-| [Motion VM - scripted](motion-vm.md#the-second-motion-vm---fun_80038158) | `FUN_80038158` | 32-slot JT `0x80010FE8`, ops `0x01..=0x20` | partial | split - see [below](#the-scripted-motion-vm-is-ported-in-three-pieces) | yes |
+| [Motion VM - scripted](motion-vm.md#the-second-motion-vm---fun_80038158) | `FUN_80038158` | 32-slot JT `0x80010FE8`, ops `0x01..=0x20` | resolved | yes - `ambient_motion` + `ambient_motion_ops` | yes |
 | [Field / event VM](script-vm.md) | `FUN_801DE840` | 43 opcodes `0x21..0x4F` with gaps | resolved | yes - `field` | yes |
 | [Field VM `0x4C` MENU_CTRL](script-vm-menuctrl.md) | inline in `FUN_801DE840` | 16 outer nibbles, nibble `B` undefined in retail | resolved | yes - `field::step::menu_ctrl` | yes |
 | [Effect VM](effect-vm.md) | `FUN_801E0088` | **none** - see [No opcode space](#the-effect-vm-has-no-opcode-space) | resolved | yes - `effect_vm` | yes |
 | [Battle-action SM](battle-action.md) | `FUN_801E295C` | 256-slot JT `0x801CED44`, sparse handled bands, no default arm | partial | yes - `battle_action` | yes |
 | [World-map entity SM](world-map.md) | `FUN_801DA51C` | 5 states | resolved | yes - `world_map` | yes |
 | [Tile-board walk SM](tile-board.md) | `overlay_0897_801EF2B0` | 15 states, JT at `0x801CF65C` | resolved | yes - `legaia_engine_core::tile_board` | yes |
+| [Cast-module phase machine](cast-module.md#the-module-phase-byte-ctx--0x279) | one tick body per PROT 0903..0966 image, named by 0898's `0x801CF4EC` / `0x801CF56C` | per-image: the `ctx+0x279` phase byte through a word table or a `beq`/`slti` chain | resolved | yes - `cast_module_ticks` + `cast_arm_ticks` + `cast_seru_ticks_a` / `_b` | yes - `World::run_cast_module_code` |
 | Per-actor anim dispatch | `FUN_80021DF4` | 7 dispatch bytes `0x01..=0x07` at `actor[+0x5A]` | resolved | yes - `anim_vm` / `actor_tick` | yes |
-| Ambient facing channel | `FUN_80038158` ops `0x04` / `0x0D` | 2 of the 32-slot table | resolved | yes - `ambient_motion` | yes |
+| Ambient facing channel | `FUN_80038158` ops `0x04` / `0x0D` | 2 of the 32-slot table | resolved | yes - `ambient_motion` (the same interpreter as the row above) | yes |
 | [Title-screen tick](#one-function-two-ports) | `FUN_801DD35C` | 25-slot JT `0x801CF244`, sub-mode word `+0x204` | resolved | yes - `title_overlay` | menu law only - see [below](#one-function-two-ports) |
 | Per-prim render dispatch | `FUN_80043390` | 20 kind slots × 4 alpha banks | resolved | yes - `prim_dispatch` | yes |
 | Status-effect ticker | `FUN_801E752C` | per-actor condition set | resolved | yes - `status_effects` | yes |
+
+## The cast band is 64 dispatchers, and one row
+
+The [cast-module band](cast-module.md) is the one entry above whose "op space"
+column cannot name a single table, because there is no single dispatcher: each
+of the 64 slot-B images carries its own tick body, and each body switches on
+the same battle-ctx byte `+0x279` through whichever shape its module was
+compiled with - a word table at the image head for some, a `beq` / `slti`
+chain for others, and per-module bounds running from five arms to
+thirty-two. What makes it one row rather than 64 is that the **phase byte is
+shared**: one battle context, one byte, re-entered every frame by the action SM until the
+resident body reports done.
+
+Two properties follow, and both are why the band belongs in this census rather
+than under "battle". A module phase whose exit gate can never pass is a
+softlock, because the drive loop has no timer. And a body is only meaningful
+as an `(entry, VA)` pair - `0x801F69D8` alone is the tick body of six modules -
+so a dispatcher keyed on the address runs the wrong choreography for five of
+them.
 
 ## The effect VM has no opcode space
 
@@ -59,16 +79,28 @@ recorded [resolved + ported](../reference/open-rev-eng-threads.md), and the
 port runs on the live path - `World::tick_effects` sweeps `Pool::tick_retail`
 once per retail frame from the per-frame tick.
 
-## The scripted motion VM is ported in three pieces
+## The scripted motion VM has one interpreter and one static decoder
 
-`FUN_80038158` is the one entry below whose port does not sit behind a single
-module, which is why its status reads differently depending on where a reader
-enters. Its static decode - which stream binds to which placement, wander pace,
-default-move harvest - is `legaia_engine_core::man_field_scripts::npc_motion`,
-because the bytecode arrives as MAN tail-section 1 rather than through the
-actor tick's own buffer. Its runtime facing channel is
-`legaia_engine_vm::ambient_motion`. The rest of the 32-slot table is decoded
-but has no port.
+`FUN_80038158` is the one entry above that reads as two rows, because its
+bytecode arrives as MAN tail-section 1 rather than through the actor tick's own
+buffer, so a *static* decode of the same bytes exists alongside the running VM.
+The two are not rival ports:
+
+- **The interpreter** is `legaia_engine_vm::ambient_motion`, whose loop reaches
+  all twenty-four case bodies the table's twenty-six defined op bytes select.
+  The bodies are split across two files for length only - the facing ramps, the
+  walk ops, the waits and the ramp scheduler in `ambient_motion.rs`, the rest in
+  `ambient_motion_ops.rs` as further `impl` blocks on the same type. Nothing is
+  stepped over by width.
+- **The static decoder** is `legaia_engine_core::man_field_scripts::npc_motion`,
+  which answers questions about a stream without running it: which placement a
+  record binds to, what pace its walk ops carry, what its first `0x17`
+  default-move write is. The scene loader uses it to seed the channels the
+  interpreter then ticks.
+
+Several arms write state no engine mechanism consumes yet; they are named in
+[`motion-vm.md`](motion-vm.md#what-the-host-does-with-each-op), which is the
+page to read before assuming an op is missing rather than un-consumed.
 
 ## One function, two ports
 

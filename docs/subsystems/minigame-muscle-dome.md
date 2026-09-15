@@ -257,6 +257,13 @@ HP. Only the fourth (`0x801CF244`) drains into the coin tally `_DAT_80084440`.
 So three of the six rows on that screen are healing, not score, and a dome
 contest costs no permanent HP.
 
+The six rows are **not** one per lane, which is the reading that puts the
+wrong numbers on the screen: they are the three lane pendings, the shared HP
+accumulator `DAT_801D1AC8`, lane 3's pending and the running tally
+`_DAT_80084440`, and their brightness comes from only four fade counters in
+the order `[0, 1, 2, 0, 3, 3]`. Row by row, with the addresses:
+[`functions/minigames-debug.md`](../reference/functions/minigames-debug.md#the-contest-score-tally-screen-fun_801cf074).
+
 ### The between-leg restore
 
 Hub state `0x0C` (`0x801CFE7C..0x801CFEA8`) does
@@ -1165,10 +1172,15 @@ bits. On the fresh-entry side of the `bnez` at `0x801CEB58`, `FUN_801CEA6C`
 seeds the whole word from three story-flag tests (`jal 0x8003CE64`): flag
 `0x536` writes `0x101` (`0x801CEBA0`), `0x537` writes `0x111` (`0x801CEBB4`)
 and `0x538` writes **`0x321`** (`0x801CEBC8`) - the last of which carries bit
-`0x200`. The seed before the three tests is `0` (`0x801CEB8C`), and the tests
-run in order with the last match winning. Note that **all three** seeds carry
-bit `0x100`, so a seeded dome visit forbids the **Item** chip on every course;
-and the low byte is where the course itself comes from,
+`0x200`. The seed before the three tests is **`1`**, not `0`: `0x801CEB8C`
+stores `$s2`, and `$s2` was loaded with `1` at `0x801CEAF8`, forty-three
+instructions earlier. (`1` decodes to course `0` with neither restriction bit,
+where a literal `0` would decode to course `0xF`; the same constant is
+`muscle_dome::CONTEST_ENTRY_WORD_DEFAULT`, which the contest layer already
+carried.) The tests run in order with the last match winning. Note that all
+three **flagged** seeds carry bit `0x100`, so a dome visit with any course
+unlocked forbids the **Item** chip; the low byte is where the course itself
+comes from,
 `((word - 1) & 0xFF) >> 4` at `0x801CEBD4..0x801CEBE8` giving `0` / `1` / `2`.
 Thereafter only the low byte moves: `FUN_801D0088`
 (`0x801D00B8..0x801D00E4`) writes `(old & ~0xFF) + (course << 4) + round + 1`
@@ -1218,6 +1230,17 @@ the pick, and `MuscleDomeSession::select_input` the shared surface both
 hosts drive. A dome cast resolves through `engine-core::spells::cast_spell`,
 the same rule the regular battle's cast band folds with, so the two cannot
 disagree about a spell's outcome.
+
+The word itself is the **session's**, not a fighter's: `set_special_word`
+seeds it at dome entry and `MuscleDomeSession::ring` overlays it on whatever
+the fighter's installed `DomeMagic` carried, which is what makes the Item chip
+gate for a fighter with no magic loadout at all. Both hosts seed it from the
+same three story flags through `contest_entry_word` - the native side reads
+them off the world's flag bank (`World::dome_special_word`), the browser dome
+page has no save and latches the word from the `unlock` mask its own
+`muscle_contest_start` is handed (`muscle_special_word` reads it back). A page
+that opens a standalone leg without a contest keeps the word at `0`, which
+forbids nothing.
 
 ### The command cluster is the battle cluster
 

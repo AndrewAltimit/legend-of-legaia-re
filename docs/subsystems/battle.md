@@ -1673,7 +1673,16 @@ wipe and one plain-formation wipe on the `map01` overworld):
 
 1. The battle tears down through `FUN_80046A20`'s ordinary store
    (`0x80046E0C`): `game_mode = 2` (MAIN INIT), wipe or no wipe. The
-   selector also leaves the battle-return marker `_DAT_8007B8B8 = 2`.
+   selector also leaves the battle-return marker `_DAT_8007B8B8 = 2`
+   - but that store (`0x80046E28`) is **conditional on the marker already
+   being non-zero** (`lw` at `0x80046E14`, `beqz` at `0x80046E1C`), and it
+   renormalises the `1` the field left there on the way in
+   (`FUN_80016230`, `0x80016414`; see
+   [`field-locomotion.md`](field-locomotion.md#who-writes-the-word)).
+   On the `== 0` arm a second `game_mode` store overrides the first -
+   `0x18` at `0x80046E50` with the arena bit set, `0` at `0x80046E60`
+   otherwise - so a battle entered without a field departure exits to
+   the debug menu rather than to the field.
 2. MAIN INIT's scene-setup flow `FUN_8003AEB0` carries the game-over
    gate, in its `_DAT_8007B8B8 == 2` back-from-battle arm: when
    `DAT_8007BD60 & 0x80` is clear **and** story-flag index 0
@@ -1887,6 +1896,7 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | `+0x1C` | u8 | **readef animation-group index** (`0..=25`). Read **record-direct** through the same `0x801C9348` pointer table, never copied to the actor. The per-turn initiative scheduler `FUN_801DABA4` turns it into the side-band streaming applier's base slot - `base = 3 * group`, then `ctx+0x277 = base` (`overlay_battle_action_801daba4.txt` `0x801db098` / `0x801db0c8`) - so the group names three `readef.DAT` slots. The AI spell picker `FUN_801E9FD4` reads the same byte as a monster-family tag (`0x801ebb90`: `group == 0x17` selects a hardcoded action id). Census + group semantics in [`summon-readef.md`](../formats/summon-readef.md#which-monsters-name-which-readef-group). Parser: `MonsterRecord::readef_group`. |
 | `+0x1D` | u8 | **Element id** (`0..=7`: earth / water / fire / wind / thunder / light / dark / neutral). Read record-direct through `0x801C9348` by the affinity scale `FUN_801DD864` (`overlay_battle_action_801dd864.txt` `0x801dd8dc`), never copied to the actor. Parser: `MonsterRecord::element`; matches `legaia_asset::element_affinity::Element`. |
 | `+0x1F` | u8 | **Size class** - body bulk. Read **record-direct** through the same `0x801C9348` pointer table, never copied to the actor: the battle camera's per-action framing `FUN_801F0348` computes `ctx+0x6D0 = clamp(size << 7, 0x0C00, 0x1400)` and the enemy stager `FUN_800513F0` writes `actor+0x58 = size << 5`. Spans `14..=48` across the roster with no zero and no outlier, and it tracks model bulk rather than any stat - Lapis is 64800 HP at size class `20` against Koru's `48`, so a byte tracking HP could not produce the column. Parser: `MonsterRecord::size_class`. |
+| `+0x20` | u8 | **Double-width texture page** flag, `0` or `1`. Read record-direct through `0x801C9348` twice over. Its primary reader is the monster model upload `0x801F1D0C` -> `FUN_80055468`, where a set byte widens the VRAM rect from `0x20` to `0x40` halfwords (`0x800554E0..0x800554F4`). Three slot-B summon ticks - PROT 0907 (Nighto), 0908 (Zenoir), 0916 (Aluru) - **also** read it, as a resist gate under the scripted-fight flag `ctx[+0x287]`; see [the instant-death gate](#the-instant-death--status-resist-gate-record-0x20) below. Set on 37 of 186 records. Parser: `MonsterRecord::wide_texture_page`; engine mirror `MonsterDef::wide_texture_page`, which feeds the Nighto roll's resist input. |
 | `+0x21` | u8[3] | **Magic-attack ids** (`+0x21..+0x23`): up to three **global** spell ids the enemy casts. A slot is live when its value is `> 1`. The AI spell picker `FUN_801E9FD4` (`overlay_0898`) reads `record[0x21 + slot]`, writes it into the live actor at `+0x1DF`, and the battle-action SM names it via `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). These global ids are **distinct** from the local `+0x4C` entry ids (which only gate the AGL cost); they are the names that appear on screen. Parser: `MonsterRecord::magic_attacks` + `legaia_asset::spell_names`. |
 | `+0x3E` | u8 | **Seru id** (`0` = not capturable). Read record-direct through `0x801C9348` by the [killing-blow capture roll](#the-retail-capture-roll-fun_801ec3e4); on success it is written to battle ctx `+0x269`, and the granted spell is global id `seru_id + 0x80` (Gimard's `1` → `0x81`). 63 records carry Seru ids `0x01..=0x15`. Parser: `MonsterRecord::seru_id`. |
 | `+0x3F` | u8 | **Seru catch chance** in percent (`rand() % 100 < pct`); rolled only when the blow kills and `+0x3E` is nonzero. Retail spans `1..=80`. Parser: `MonsterRecord::catch_rate_pct`. |
@@ -1932,6 +1942,40 @@ gates which Seru-magic side-effect debuffs can ever land on the enemy - see
 The **engine port applies profile B in every fight**: `engine_core::monster_catalog::monster_def_from_record` seeds ATK / UDF / LDF / INT from `battle_stats()` (the random-encounter profile is not yet selected at battle entry - ready work in [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)) and AGL / SPD / HP / MP from the plain record fields, matching which stores the boost block does and does not touch. The accuracy / evasion bytes clamp the *boosted* INT, because the actor halfword the interrupt roll reads (`+0x168`) is the one the boost block's last store writes. Seeding from the raw accessors instead - which the port did - makes every enemy in the game materially weaker than retail.
 
 Battle entry also seeds **both defence facets** into `World::battle.defense_split`, not one collapsed `max(UDF, LDF)` scalar. The melee kernel picks UDF or LDF by the swing's command parity (`FUN_801EC3E4` at `0x801ECE14`), so a single scalar leaves that branch dead for the whole monster band and makes every enemy defend with its better half against every swing. A Defense buff moves both halves together, as retail's "Defense Up" does.
+
+### The instant-death / status-resist gate (record `+0x20`)
+
+Three slot-B summon ticks share one gate, byte for byte:
+
+```text
+801F6BF0  lbu  v0,0x287(a1)          ; the scripted-fight flag
+801F6BF8  beqz v0, <roll>
+801F6C00  v1 = 0x801C9348
+801F6C04  v0 = victim_seat - 3
+801F6C10  v0 = [0x801C9348 + (seat-3)*4]  ; the monster RECORD pointer
+801F6C18  lbu  v0,0x20(v0)
+801F6C20  bnez v0, <resist>
+```
+
+PROT 0907 (Nighto) at `0x801F6BF0` / `0x801F6C18`, PROT 0908 (Zenoir) at
+`0x801F81F0` / `0x801F8208`, PROT 0916 (Aluru) at `0x801F6D44` / `0x801F6D70`.
+In PROT 0907 the resist arm sets the module word `0x801F853C`, which the
+arm-13 fork reads to abandon both the instant-death and the confuse outcome.
+PROT 0908 additionally tests the battle-phase byte `_DAT_8007BD0C` against
+`0x4D` / `0xAD` / `0xAE`.
+
+The sweep denominator: over 84 images with 113 materialisations of
+`0x801C9348`, exactly three loads at `+0x20` follow one (the controls `+0x1F`
+and `+0x3E` return 12 and 1 at their known sites), plus the model-upload site
+in PROT 0898.
+
+**This is not a dedicated immunity table.** `+0x20` is the texture-page width
+flag above, and the summons reuse it as a "big model" proxy. The set is 37 of
+186 records: every named boss plus the Evil Fly / Death Wings / Demon Fly
+family. The separate negative that
+[`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)
+records - no per-monster immunity for the Seru-magic **stat debuffs** - is
+about `+0x24..+0x43`, which is zero across the roster, and stands.
 
 **Rewards (EXP / gold / drop)** are inline in the record head at `+0x44..+0x49` (*not* at `+0x04`, which is the effect/animation data above). The victory-spoils function `FUN_8004E568` reads them from the per-enemy **record-pointer table at `0x801C9348`** (the loader `FUN_800542C8` populates it, so the actor *does* retain its record there - that's why monster-init never needed to copy the reward fields):
 

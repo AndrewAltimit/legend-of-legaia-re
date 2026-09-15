@@ -545,8 +545,12 @@ pub fn preseed_action_queue(
     }
 }
 
-/// NOT WIRED: same prerequisite as [`preseed_action_queue`] - no engine-side
-/// `+0x76F` / `+0x77F` chain slot to write back into.
+/// NOT WIRED: same prerequisite as [`preseed_action_queue`], and it is a
+/// mapping rather than missing data. The engine holds per-character command
+/// sequences (`World::party.saved_chains` / `legaia_save::SavedChainRecord`),
+/// but `legaia_save`'s retail `0x414` record model declares no accessor at
+/// record-relative `+0x1A7` / `+0x1B7`, so there is no addressable two-slot
+/// pair for the write-back to choose between.
 ///
 /// PORT: FUN_801DA59C - the write-back twin of [`preseed_action_queue`]:
 /// saves the actor's executed 16-byte arts-input string back into the

@@ -26,6 +26,20 @@ numbers, because the two families are not comparable:
 Usage:
     python3 scripts/ci/update-progress-metrics.py          # refresh + write
     python3 scripts/ci/update-progress-metrics.py --print  # show, don't write
+    python3 scripts/ci/update-progress-metrics.py \
+        --funcs /path/to/checkout/ghidra/scripts/funcs \
+        --extracted /path/to/checkout/extracted
+
+Both corpora are gitignored, so outside the checkout that holds them this
+script has nothing to read and says SKIPPED. `--funcs` / `--extracted` point it
+at another checkout's copies, which is the supported way to compute the figures
+from somewhere else - copying either corpus in would stage Sony bytes.
+
+One warning about doing that, because the failure is silent: the disc-coverage
+half pairs the live corpus with **this tree's** committed
+`dump-extent-attribution.csv`. Pointing at a corpus while the tree's CSV is a
+different vintage publishes numbers that describe neither. Refresh from a tree
+whose CSV matches the corpus, and prefer the checkout that holds both.
 """
 
 from __future__ import annotations
@@ -44,24 +58,28 @@ DISC_COVERAGE = os.path.join(REPO, "scripts", "ci", "disc-coverage.py")
 PORT_CATALOG = os.path.join(REPO, "scripts", "ci", "port-catalog.py")
 
 
-def load_disc_coverage():
+def load_disc_coverage(funcs=None, extracted=None):
     spec = importlib.util.spec_from_file_location("disc_coverage", DISC_COVERAGE)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    extents, _unparsed = mod.read_dump_extents(mod.DEFAULT_FUNCS)
+    funcs = funcs or mod.DEFAULT_FUNCS
+    extracted = extracted or mod.DEFAULT_EXTRACTED
+    extents, _unparsed = mod.read_dump_extents(funcs)
     if not extents:
         return None, None
-    scus = mod.scus_report(mod.DEFAULT_EXTRACTED, extents)
-    data = mod.data_report(mod.DEFAULT_EXTRACTED)
+    scus = mod.scus_report(extracted, extents)
+    data = mod.data_report(extracted)
     return scus, data
 
 
-def run_port_catalog():
+def run_port_catalog(funcs=None):
     """Parse the catalog's own summary block rather than re-deriving it."""
+    cmd = [sys.executable, PORT_CATALOG, "--live-audit"]
+    if funcs:
+        cmd += ["--funcs", funcs]
     try:
         proc = subprocess.run(
-            [sys.executable, PORT_CATALOG, "--live-audit"],
-            cwd=REPO, capture_output=True, text=True, timeout=3600)
+            cmd, cwd=REPO, capture_output=True, text=True, timeout=3600)
     except (OSError, subprocess.TimeoutExpired):
         return None
     text = proc.stdout + proc.stderr
@@ -173,14 +191,19 @@ def main():
     ap.add_argument("--print", dest="show", action="store_true")
     ap.add_argument("--skip-catalog", action="store_true",
                     help="skip the slow port-catalog pass and keep its committed tracks")
+    ap.add_argument("--funcs", default=None,
+                    help="dump corpus directory (default: this checkout's)")
+    ap.add_argument("--extracted", default=None,
+                    help="extracted disc directory (default: this checkout's)")
     args = ap.parse_args()
 
-    scus, data = load_disc_coverage()
+    scus, data = load_disc_coverage(args.funcs, args.extracted)
     if scus is None:
-        print("[progress] SKIPPED - no dump corpus / extracted tree; nothing to refresh.")
+        print("[progress] SKIPPED - no dump corpus / extracted tree; nothing to "
+              "refresh. Pass --funcs / --extracted to read another checkout's.")
         return 0
 
-    cat = None if args.skip_catalog else run_port_catalog()
+    cat = None if args.skip_catalog else run_port_catalog(args.funcs)
     if args.skip_catalog and os.path.exists(OUT):
         prev = json.load(open(OUT))
         keep = {t["key"]: t for t in prev.get("tracks", [])}

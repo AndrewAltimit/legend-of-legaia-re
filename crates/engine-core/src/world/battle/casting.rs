@@ -147,6 +147,20 @@ impl World {
                 .is_shiny(self.party_roster_slot(caster as usize) as u8, def.id);
         let group_target = matches!(def.target, crate::spells::SpellTarget::AllEnemies);
         let mut summon_xp_gain: u32 = 0;
+        // The Seru-magic **side-effect stager** (`FUN_801F3D3C`). Retail's
+        // summon module calls it once as the cast commits, before any hit, and
+        // the damage finisher then reads the staged percent on every hit - so
+        // it is staged here, once, and applied inside the per-target loop.
+        //
+        // It stages only on the summon path (retail keys on attacker slot 7),
+        // which is what `is_party_summon_cast` already identifies. `None` -
+        // and no `rand()` draw - for every other cast, for a caster below
+        // magic level 3, and on a host with no side-effect table installed.
+        let side_effect = if is_party_summon_cast {
+            self.stage_seru_side_effect(caster, def.id, targets)
+        } else {
+            None
+        };
 
         for &t in targets {
             let Some(actor) = self.actors.get(t as usize) else {
@@ -199,6 +213,19 @@ impl World {
                     }
                 }
             }
+            // The two **ally-side** player Seru casts do not roll a spell
+            // magnitude at all in retail: their module's own tick arm computes
+            // the restore from the caster's magic level and stores it. The
+            // spell catalog's scalar is a placeholder, so the tick kernel
+            // supplies the magnitude here - the same posture
+            // `player_summon_predamage` takes for the damaging ones.
+            if is_party_summon_cast
+                && let crate::spells::SpellOutcome::Heal { amount, .. } = &mut outcome
+                && let Some(a) =
+                    self.seru_tick_heal_amount(caster, def.id, snap.target_hp, snap.target_hp_max)
+            {
+                *amount = a;
+            }
             // Shiny Seru: +35% on the final magnitude (9999-capped), after the
             // affinity / summon roll so it stacks on the spell's normal output.
             if shiny_cast && let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome {
@@ -220,7 +247,14 @@ impl World {
                         group_target,
                     ));
             }
+            let damaged = matches!(outcome, crate::spells::SpellOutcome::Damage { .. });
             self.fold_spell_outcome(outcome);
+            // The finisher's per-element stat switch runs once per hit, on the
+            // hit's own target - a cure class (light) and a party target write
+            // nothing, which `apply_hit` already encodes.
+            if damaged && let Some((kind, pct)) = side_effect {
+                self.apply_seru_side_effect(t, kind, pct);
+            }
         }
         // Bank the accrued XP and run the once-per-cast level-up check
         // (FUN_801e70bc fires at summon return, state 0x36).
@@ -596,6 +630,19 @@ impl World {
     /// REF: FUN_801F85A8, FUN_801F8D64 (the sites the constants come from)
     fn baked_module_power(&self, move_id: u8) -> Option<i32> {
         let entry = self.cast_module_for(move_id)?;
+        // --- W1-D: the fourteen trampoline arms ---
+        // Seven more modules bake a power, and two of them bake a *different*
+        // one per body - PROT 0941 pairs a wrapper-free Steal against `0xC0`,
+        // PROT 0950 pairs `0x100` against `0x29A` - so the entry alone cannot
+        // answer for them. Resolve the body through the module's trampoline
+        // first and fall back to the entry-keyed table.
+        if let Some(body) = vm::cast_module_ticks::capture_tick_body(entry, move_id)
+            && let Some(shape) = vm::cast_arm_ticks::arm_damage_shape_for(entry, body)
+            && let Some(power) = shape.powers.first()
+        {
+            return Some(i32::from(*power));
+        }
+        // --- end W1-D ---
         vm::cast_module_ticks::baked_power_for(entry).map(i32::from)
     }
 
@@ -735,6 +782,65 @@ impl World {
             .position(|&id| id == spell_id)
             .map(|i| list.levels[i])
             .unwrap_or(1)
+    }
+
+    /// The restore a player Seru **heal** cast lands, straight off the owning
+    /// module's own tick kernel, or `None` for a cast whose module computes no
+    /// restore.
+    ///
+    /// Two of the eleven player Seru modules heal, and neither reads a
+    /// spell-table magnitude:
+    ///
+    /// * **Vera** (`0x83`, PROT 0905 arm 9): `magic_level * 0x20 + 0xE0`,
+    ///   clamped to the target's missing HP with retail's own signed compare
+    ///   ([`legaia_engine_vm::cast_seru_ticks_a::vera_heal_amount`]).
+    /// * **Orb** (`0x89`, PROT 0911 arm 9): `(magic_level << 6) + 0x1C0` -
+    ///   exactly twice `spell-table.md`'s band-wide `(power << 5) + 0xE0`, so
+    ///   the formula is per module
+    ///   ([`legaia_engine_vm::cast_seru_ticks_b::orb_heal_amount`]).
+    ///
+    /// The magic level is the caster's per-spell byte
+    /// ([`Self::caster_magic_power_byte`]), which is the record field both
+    /// modules scan for.
+    ///
+    /// # Why the magnitude comes here rather than out of the tick
+    ///
+    /// The engine folds a cast's HP outcome exactly once, at
+    /// [`Self::cast_spell_on_slots_prepaid`], and the band's tick bodies run
+    /// with their damage / heal inputs neutral so a driven band cannot apply
+    /// an outcome twice. Keeping that and routing the module's own number into
+    /// the fold gives retail's magnitude without a second owner - and it is
+    /// what the damage half already does
+    /// ([`Self::player_summon_predamage`] feeds the summon roll into the same
+    /// fold). The ticks stay the kernels; the fold stays the applier.
+    ///
+    /// REF: FUN_801F69D8 (PROT 0905 arm 9 restore, PROT 0911 arm 9 heal sweep)
+    fn seru_tick_heal_amount(
+        &self,
+        caster: u8,
+        spell_id: u8,
+        target_hp: u16,
+        target_hp_max: u16,
+    ) -> Option<u16> {
+        const VERA_SPELL_ID: u8 = 0x83;
+        const ORB_SPELL_ID: u8 = 0x89;
+        let level = self.caster_magic_power_byte(caster, spell_id);
+        match spell_id {
+            VERA_SPELL_ID => Some(vm::cast_seru_ticks_a::vera_heal_amount(
+                level,
+                target_hp,
+                target_hp_max,
+            )),
+            ORB_SPELL_ID => {
+                let want = vm::cast_seru_ticks_b::orb_heal_amount(level);
+                // Retail's sweep clamps each seat to its own missing HP before
+                // storing; the fold caps at max HP anyway, so clamping here
+                // only makes the reported amount the restored one.
+                let missing = u32::from(target_hp_max.saturating_sub(target_hp));
+                Some(want.min(missing).min(u32::from(u16::MAX)) as u16)
+            }
+            _ => None,
+        }
     }
 
     /// Roll a player Seru-magic summon's damage through the faithful summon
@@ -930,7 +1036,7 @@ impl World {
             .min_by_key(|d| d.id)
     }
 
-    fn summon_attacker_element(&self, spell_id: u8) -> Option<u8> {
+    pub(in crate::world) fn summon_attacker_element(&self, spell_id: u8) -> Option<u8> {
         self.summon_creature_def(spell_id).map(|d| d.element)
     }
 
@@ -943,7 +1049,7 @@ impl World {
     /// isn't a summon, or either element fails to resolve - so disc-free /
     /// synthetic battles and non-summon casts are unaffected. Applied post-roll,
     /// so it never touches the RNG stream.
-    fn cast_affinity_pct(&self, spell_id: u8, target: u8) -> u8 {
+    pub(in crate::world) fn cast_affinity_pct(&self, spell_id: u8, target: u8) -> u8 {
         let Some(aff) = self.tables.element_affinity.as_ref() else {
             return 100;
         };

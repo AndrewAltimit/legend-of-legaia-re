@@ -13,11 +13,12 @@
 //! triangles (bit-identical depth interpolation - stable overdraw).
 //!
 //! The assertion pins the scenes that regressed before: koin6 (the reported
-//! inn floor, clean) and koin4 (one sub-100-area wall sliver its detection
-//! floor still misses - bounded, not zero). The full-corpus sweep is the
+//! inn floor) and koin4 (whose wall sliver the lift pass manufactured itself
+//! and now repairs), both clean. The full-corpus sweep is the
 //! diagnostic mode: `DIAG_ALL=1 cargo test -p legaia-engine-core --release
 //! --test coplanar_residual_disc -- --nocapture` prints per-scene survivor
-//! tables; known residual classes live with the open threads in
+//! tables (`DIAG_SCENE=<name>` narrows that to one scene); known residual
+//! classes live with the open threads in
 //! `docs/reference/open-rev-eng-threads.md`.
 //!
 //! Skips when `LEGAIA_DISC_BIN` is unset (disc-gated convention).
@@ -152,6 +153,13 @@ fn coplanar_mitigation_leaves_no_fighting_pairs() {
         return;
     }
     let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    // `DIAG_SCENE=<name>` narrows the diagnostic to one scene - the whole-corpus
+    // sweep costs minutes, and a single regressing scene is what a bisect of the
+    // mitigation stack actually needs.
+    if let Some(name) = std::env::var_os("DIAG_SCENE") {
+        diag_scene(&index, &name.to_string_lossy());
+        return;
+    }
     if std::env::var_os("DIAG_ALL").is_some() {
         // Diagnostic sweep: print every field scene's survivors, assert
         // nothing (the corpus has a documented small-area tail).
@@ -174,14 +182,24 @@ fn coplanar_mitigation_leaves_no_fighting_pairs() {
         groups, 0,
         "koin6 has {groups} surviving coplanar overlap groups ({area:.0} area)"
     );
-    // koin4: one sub-100-area wall sliver sits below the cross-draw pass's
-    // plane-cluster detection floor. Bound it so a regression that re-opens
-    // the large floor/wall fights (12k+ area before the per-family lifts)
-    // cannot hide behind the known sliver.
-    let (_, area) = diag_scene(&index, "koin4");
-    assert!(
-        area < 500.0,
-        "koin4 residual coplanar overlap grew to {area:.0} area"
+    // koin4: the wall sliver here was never in the art - the per-family lifts
+    // slid one draw inside a plane it only abutted, and the repair pass's
+    // abutment arm closes that. Zero, not a bound: a non-zero reading means
+    // either that arm regressed or a real fight re-opened.
+    let (groups, area) = diag_scene(&index, "koin4");
+    assert_eq!(
+        groups, 0,
+        "koin4 has {groups} surviving coplanar overlap groups ({area:.0} area)"
+    );
+    // tunnela: the scene the abutment arm's first shape broke. Its res38
+    // tunnel segments are a coplanar conflict pair whose separation runs along
+    // the same normal an abutment of theirs wants to slide back, so an
+    // uncapped abutment lift and the conflict lift alternated every round and
+    // left the pair coincident. Keep it pinned.
+    let (groups, area) = diag_scene(&index, "tunnela");
+    assert_eq!(
+        groups, 0,
+        "tunnela has {groups} surviving coplanar overlap groups ({area:.0} area)"
     );
 }
 

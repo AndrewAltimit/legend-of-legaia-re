@@ -518,7 +518,7 @@ identity.
   - The atlas entry's `+4`/`+6` fields are CLUT/tpage, not tpage/CLUT (see the Field order note): `0x7680` is the CLUT (CBA → fb `(0,474)`), and the real tpage is the byte at `+6`.
   - A melee hit-spark capture confirms it - the spark draws as textured quads sampling the **PROT 870 flame atlas at `(320,0)`/`(448,0)`** (effect-band CLUTs), with no prim anywhere sampling page (0,0)/8bpp.
   - The engine now reads the atlas in the right order, so the billboards sample the resident PROT 870 / `etim` texels.
-- **summon.dat / readef.dat formats - RESOLVED.** Pinned to extraction PROT entries 893 / 894 and decoded; see [`summon-readef.md`](summon-readef.md). Still open there: the consumer of the low-band `readef.DAT` aux slots.
+- **summon.dat / readef.dat formats - RESOLVED.** Pinned to extraction PROT entries 893 / 894 and decoded; see [`summon-readef.md`](summon-readef.md), including the [low-band aux-slot consumer](summon-readef.md#the-low-band-aux-slot-consumer).
 
 ## The `0x01059B84` word is not this bundle's sibling magic
 

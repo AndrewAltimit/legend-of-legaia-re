@@ -170,10 +170,10 @@ Parser: `legaia_asset::scene_v12_table::parse_prescript_entry`.
 
 Identical shape to the standalone [scene_event_scripts](scene-bundles.md#scene_event_scripts---prescript-only)
 format: a `[u16 count][u16 offsets[count]]` table indexing **move-VM
-(`FUN_80023070`) records in the summon-stager format** (`[i16 model_sel][u16 flags][move-VM bytecode]`)
+(`FUN_80023070`) records in the summon-stager format** (`[i16 model_sel][u16 reserved][move-VM bytecode]`)
 - **not** field-VM (`FUN_801DE840`) bytecode (it disassembles as field-VM with a
 65–88 % error rate). The per-record `0xFFFF 0x0000` lead is `model_sel = -1`
-(a transform/pivot node) + `flags = 0`, and the `0x0008` terminator is move-VM
+(a transform/pivot node) + the zero `reserved` halfword, and the `0x0008` terminator is move-VM
 opcode `0x08` (Halt). The field VM installs a record by id via `FUN_800252EC`
 (→ part-stager `FUN_80021B04` → move VM); see the
 [scene_event_scripts](scene-bundles.md#scene_event_scripts---prescript-only)

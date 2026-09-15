@@ -27,7 +27,7 @@ fn part_with(fx: crate::clut_cell_fx::ClutCellFx) -> crate::world::ambient::Ambi
     crate::world::ambient::AmbientPart {
         record_off: 0,
         model_sel: 0x4000,
-        flags: 0,
+        reserved: 0,
         buf: Vec::new(),
         state: Default::default(),
         // Finished part holding a live cell_fx: `step_ambient_fx` still

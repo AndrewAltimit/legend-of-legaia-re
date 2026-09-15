@@ -515,15 +515,6 @@ row corrected: the sub-state switch on `+0x5A` is two switches, not one.
 
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f8b90"
-reason = """
-PROT 0923 (summon_gilium)'s move-VM spawn stager, 0x801F6734 row: three spawn
-calls and a write to ctx+0x278 (cast-module.md verdict table, PORT). Same
-band-structural reason as the 801f7740 waiver above: separate image, no
-internal jal, module-private record pointers.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/scene/host/scene_entry.rs:801d1ec4"
 reason = """
 The finding appeared when overlay_cutscene_str_0970_801cea3c.txt was dumped: the
@@ -1282,50 +1273,76 @@ tagged in world/field_movement.rs, another module. So the corroborator exists an
 sits behind the port's module partition.
 """
 
-# --- three more slot-B band members, surfaced by the inherited-tail cut -------
-#
-# These appeared when `dump-extent-attribution.csv` was regenerated with each
-# image cut at its own content: the consensus vote now runs only among the
-# OWNING image's dumps, so an address whose plurality used to come from a
-# sibling's residue reports a different body - and a different feature set.
-# Same band-structural cause as the 801f7740 / 801f8b90 waivers above: each
-# module is its own image with no internal `jal`, and its distinctive data is a
-# private pointer table at its own VAs, which no sibling can share.
-
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f7af4"
+key = "dual-label:801f7644"
 reason = """
-Viguro's spawn stager, same cause: five distinctive addresses, all in
-0x801F81F4..0x801F835C - this module's record pointers - and no callee. The
-corroboration test can only match on shared rare data or a shared callee, and a
-slot-B module has neither with its siblings by construction.
+Two images, two routines, one VA. docs/reference/functions/world-map.md's row
+is a 500-byte leaf of the world-map render band in PROT 0901 (slot-B base
+0x801F69D8); docs/reference/functions/cast-modules.md's row is a 20-byte
+frameless leaf of PROT 0949's tint/anim-rate ramp at the same slot-B VA. Each
+page names its own image, and the dumps carry different bytes
+(overlay_world_map_render_0901_801f7644 vs overlay_cast_water_crystals_0949_801f7644),
+so the two descriptions do not compete. The signal keys on the VA alone and
+cannot see the image, so it still fires.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f8d64"
+key = "module-orphan:crates/engine-vm/src/cast_arm_ticks.rs:801f7298"
 reason = """
-Evil Seru Magic's stager. Eleven distinctive addresses spanning
-0x801F93A0..0x801FA468 plus the band head 0x801F6A50, no callee - the largest
-private table in the module and the same band-structural shape as its
-neighbours. The only address it shares with anything is the head, which every
-module forms and which is therefore not distinctive.
+Reviewed against the disassembly. The signal corroborates a tag against its
+same-module siblings, and this module deliberately groups fourteen bodies from
+**seven** different slot-B images (PROT 0940, 0941, 0943, 0944, 0950, 0956,
+0962). Six of those contribute two or three bodies that corroborate each other;
+PROT 0956 contributes exactly one, so it structurally has no sibling in the
+image whose data it could share, and a shared address across two band images
+would be evidence of mis-attribution rather than of provenance.
+
+The addresses it does form are all inside PROT 0956's own image and match what
+the routine is: `0x801F7FC8`, `0x801F8024`, `0x801F809C`, `0x801F8110`,
+`0x801F8168` and `0x801F8218` are the spawn records arm 2's twelve-step
+`FUN_80021B04` ring hands the pool, and `0x801F86A0` is the module-resident
+frame countdown every arm decrements. Its two damage sites bake `0xD0` into
+`FUN_801DD4B0` at `0x801F78C4` / `0x801F78D0` and `0x801F7A38` / `0x801F7A40`,
+inside the frame-matched extent `0x801F7298..0x801F7E4C`, and PROT 0956's
+trampoline `0x801F7E4C` names `0x801F7298` for action `0x71`.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f7d34"
+key = "dual-label:801f69d8"
 reason = """
-PROT 0942's Power Up tick, in a file whose other 35 tagged siblings are other
-modules' bodies - so the signal has nothing to corroborate against and this row
-is the band's structural shape, not a defect. Re-derived against the bytes
-before waiving: 0x801F7D34 is file +0x135C of overlay_cast_power_up_0942.bin,
-inside that image's own content (which runs to +0x199C), and PROT 0943's copy
-of those bytes is inherited residue - 0943's own content ends at +0x1037, and
-0943 is byte-identical to 0942 from there to its end. The routine is 876 bytes
-and 219 instructions, and its terminal arm reads the monster record's +0x0E
-(`lhu v1,0xe(v0)` at 0x801F8060), computes `x * 3 >> 1` (0x801F8068..0x801F8070)
-and stores it to the caster's +0x156 AGL base (`sh v0,0x156(s0)` at 0x801F8074)
-before clearing ctx+0x0D and returning zero - which is exactly what
-`power_up_tick` implements. Its three distinctive data addresses
-(0x801F81B8 / 0x801F88A0 / 0x801F88B4) are this image's own spawn records and
-countdown word, which no sibling module can share.
+One VA, many images. docs/reference/functions/renderer.md's row is the world-map
+top-view tile-visibility dispatcher in PROT 0901 at the slot-B load base;
+docs/reference/functions/cast-modules.md's rows are the player-Seru tick bodies
+that PROT 0903 / 0904 / 0905 / 0908 / 0911 / 0912 each place at that same load
+base, and the page's own text says four of the six wear the base for that
+reason. Every row names its PROT entry and the dumps are per-image
+(overlay_<label>_<entry>_801f69d8), so the descriptions describe different
+bytes. The signal keys on the VA and cannot see the image.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/seru_side_effect.rs:801f3d3c"
+reason = """
+The corroboration exists; the distinctiveness filter hides it. Read against
+the disassembly, `FUN_801F3D3C` and its module sibling `FUN_801F3C34` form two
+of the same globals: the banner-string pointer `0x800775B4` (stager
+`lui v0,0x8007; sw a0,0x75b4(v0)` at 0x801F4448/0x801F444C, banner pass
+`lui v1,0x8007; sw v0,0x75b4(v1)` at 0x801F3D04/0x801F3D1C) and the
+side-effect latch `0x801F6960` (stager `lui v0,0x801f; sw v1,0x6960(v0)` at
+0x801F4470/0x801F4480, banner pass `lui v0,0x801f; lw v0,0x6960(v0)` at
+0x801F3CF4/0x801F3CF8). Both are formed by more routines than the signal's
+"at most 8 dumped routines" cut, so they drop out of the distinctive set and
+the pair reads as unrelated.
+
+The rest of the stager's distinctive set is this routine's own and matches
+what the Rust implements: `0x801F6870` is the `[element][band]` percent table
+`legaia_asset::seru_side_effect` parses, `0x801F6964` takes the literal `0xB4`
+hold (`li v0,0xb4; sw v0,0x6964(a0)` at 0x801F4468/0x801F446C), and the tail
+fires banner id `0x66` through `jal 0x801d8de8` at 0x801F447C. The port's
+`StagerOutcome::Staged { kind, amount, band }` is exactly that install set
+handed to the caller rather than written to fixed globals.
+
+`0x800775B4` also being formed by `FUN_801E295C` is not a rival claim: that is
+the battle-action state machine writing the same follow-up/banner pointer
+slot, which `docs/subsystems/battle-action.md` already records.
 """

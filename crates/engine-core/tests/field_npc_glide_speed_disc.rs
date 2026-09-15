@@ -7,7 +7,7 @@
 //!
 //! - MAN tail-section-1 motion streams (`FUN_80038158` - the ambient
 //!   town-NPC wander): directional steps `0x03`/`0x19`/`0x20` carry `bits`
-//!   in operand byte 1's low nibble; the pad-echo step `0x06` and the AABB
+//!   in operand byte 1's low nibble; the home-relative step `0x06` and the AABB
 //!   wander `0x18` scatter it over the four operand bytes' high bits. All
 //!   step `0x80 >> (2 + bits)`.
 //! - Field-VM yield ops interpreted in place by `FUN_8003774C` (scripted

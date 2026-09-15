@@ -194,6 +194,24 @@ impl World {
         // Reuse the placement helper for actor spawn + seating, then overlay
         // per-slot stats.
         self.enter_battle(party_count, monster_count);
+        // The scripted-fight flag `ctx[+0x287]`, derived the way retail's
+        // battle init does: `FUN_800513F0` stores `(DAT_8007BD60 >> 5) & 4`,
+        // i.e. "the formation's `record[+0]` header byte is non-zero"
+        // (`FUN_801DA51C` ORs `0x80` in for exactly those rows). The port's
+        // older `no_escape` latch is the same retail byte reached from the
+        // field VM's scripted-battle op, so a boss fight entered that way
+        // counts even where the formation table carries no header byte.
+        //
+        // It has to be settled here, before the monster seed below: the
+        // battle loader's stat boost profile is picked by this flag.
+        self.battle.scripted_fight = formation.per_battle_flags() != 0 || self.battle.no_escape;
+        let scripted = self.battle.scripted_fight;
+        // The same byte inside the action context, `ctx[+0x287]`. All three
+        // of `FUN_801E295C`'s reads of it (`0x801E4F94`, `0x801E5058`,
+        // `0x801E5554`) are gates on this flag - the counter-attack byte is
+        // `+0x288`. Retail's own value is `4` (`(DAT_8007BD60 >> 5) & 4`,
+        // `FUN_800513F0` `0x80051430`), not `1`.
+        self.battle_ctx.scripted_fight = if scripted { 4 } else { 0 };
         let first_monster = party_count;
         for slot in 0..party_count as usize {
             let a = &mut self.actors[slot];
@@ -239,7 +257,17 @@ impl World {
             // battle mesh, even if the catalog has no stats for it.
             self.actors[mslot].battle_monster_id = Some(fslot.monster_id);
             if let Some(def) = self.tables.monster_catalog.get(fslot.monster_id) {
-                let speed = def.speed;
+                // The installed stat block for THIS fight's class. The catalog
+                // is built at scene entry, before any formation is chosen, so
+                // it carries the scripted profile; a random encounter installs
+                // the other one (x7/4 defence, unboosted ATK) and that is
+                // every rollable fight in the game.
+                //
+                // `[AGL, ATK, UDF, LDF, INT, SPD]`.
+                let bs = def.installed_stats(scripted);
+                let (agl, attack, udf, ldf, intel, speed) =
+                    (bs[0], bs[1], bs[2], bs[3], bs[4], bs[5]);
+                let int_byte = intel.min(u8::MAX as u16);
                 let a = &mut self.actors[mslot];
                 a.battle.hp = def.hp;
                 a.battle.max_hp = def.hp;
@@ -250,10 +278,10 @@ impl World {
                 // round boundary restores the live one from the base each
                 // round (`FUN_801D88CC` loop A); the swing-budget loop spends
                 // it.
-                a.battle.agl_base = def.agl;
-                a.battle.agl = def.agl;
+                a.battle.agl_base = agl;
+                a.battle.agl = agl;
                 if let Some(s) = self.battle.attack.get_mut(mslot) {
-                    *s = def.attack;
+                    *s = attack;
                 }
                 // Both defence facets, not one collapsed scalar. Retail's melee
                 // kernel picks UDF (`+0x15C`) or LDF (`+0x160`) by the swing's
@@ -263,24 +291,30 @@ impl World {
                 // half against every swing and left the kernel's parity branch
                 // dead for the whole monster band.
                 if let Some(s) = self.battle.defense_split.get_mut(mslot) {
-                    *s = Some((def.udf, def.ldf));
+                    *s = Some((udf, ldf));
                 }
                 if let Some(s) = self.battle.defense.get_mut(mslot) {
                     // Kept as the scalar fallback (and the Defense-buff target);
                     // the split above is what the physical path reads.
-                    *s = def.udf.max(def.ldf);
+                    *s = udf.max(ldf);
                 }
                 if let Some(s) = self.battle.speed.get_mut(mslot) {
                     *s = speed;
                 }
                 if let Some(s) = self.battle.accuracy.get_mut(mslot) {
-                    *s = def.accuracy as u16;
+                    *s = int_byte;
                 }
                 if let Some(s) = self.battle.evasion.get_mut(mslot) {
-                    *s = def.evasion as u16;
+                    *s = int_byte;
                 }
             }
         }
+        // Retail's record -> actor copy writes each stat into BOTH halfwords
+        // of its pair, so every base half opens the fight equal to its working
+        // half. That is what makes the base half a usable "has a debuff moved
+        // this stat?" probe for the Seru side-effect stager.
+        self.sync_battle_stat_bases();
+
         // Roll for a rare shiny capturable enemy now that every monster slot
         // carries its stats + id (so capturability + the +35% boost see final
         // values). Clears last battle's flags first.

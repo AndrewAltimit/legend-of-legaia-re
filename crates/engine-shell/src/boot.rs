@@ -163,6 +163,13 @@ pub struct BootSession {
     /// battle spell catalog, so a randomized / translated disc is honoured;
     /// `None` on disc-free builds.
     pub spell_catalog: Option<legaia_engine_core::spells::SpellCatalog>,
+    /// Static per-monster **steal** table (`DAT_80077828`, fields
+    /// `[chance, item]`), parsed from the same `SCUS_942.54`
+    /// ([`legaia_asset::steal_table`]). Installed on the world beside the
+    /// equipment / spell / item catalogs so PROT 0941's Steal can resolve a
+    /// monster-seat victim; `None` on disc-free builds, which leaves that leg
+    /// drawing no roll at all.
+    pub steal_table: Option<legaia_asset::steal_table::StealTable>,
     /// The real retail proportional dialog font, decoded straight from the
     /// boot source (`PROT.DAT`'s 4bpp font TIM + the `SCUS_942.54` advance
     /// table at `0x80073F1C`) - **no mednafen save state required**.
@@ -697,6 +704,8 @@ impl BootSession {
             None => (None, None),
         };
         let spell_catalog = read_retail_spell_catalog(&source);
+        let steal_table = read_scus(&source)
+            .and_then(|scus| legaia_asset::steal_table::StealTable::from_scus(&scus));
         let mut host = match source {
             SceneSource::Extracted(root) => SceneHost::open_extracted(root)
                 .with_context(|| format!("open extracted dir {}", root.display()))?,
@@ -884,6 +893,7 @@ impl BootSession {
             equip_modifier_table,
             equip_restrictions,
             spell_catalog,
+            steal_table,
             dialog_font,
             field_menu: None,
             field_menu_sub: None,
@@ -1368,6 +1378,9 @@ impl BootSession {
                 .unwrap_or_else(legaia_engine_core::retail_magic::retail_seru_magic_catalog),
         );
         world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+        if let Some(steal) = self.steal_table.clone() {
+            world.set_steal_table(steal);
+        }
 
         // Scene label + encounter fallback + the loop / player-battle / BGM
         // arming are the browser host's business too, so they live in one

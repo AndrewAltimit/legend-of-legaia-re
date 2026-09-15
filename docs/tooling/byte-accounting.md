@@ -198,24 +198,26 @@ is given). Walker `slot_b_module`; parser
 | Claim | Owner | What it is |
 |---|---|---|
 | head jump table | `toc` | the leading run of in-image VA words, bounded by the first frame-matched function |
-| spawn record `i` | `record` | `[i16 model_sel][u16 flags][move-VM bytecode]`, bounded by the next record pointer or by the next function's prologue |
+| spawn record `i` | `record` | `[i16 model_sel][u16 reserved][move-VM bytecode]`, bounded by the next record pointer or by the next function's prologue |
+| spawn record `i`, *chained* | `record` | a record **above** the highest pointer-credited one, its start taken from the record below it and its end from its own program |
 
-Both ends of a record claim are addresses the module's own code computes and
-hands to `FUN_80021B04` / `FUN_80050ED4` in `$a2`, which is why these are
-structural claims and not `scan` ones. The image's **highest** record has
-nothing above it to bound it and stays residue; the walker's note says so per
-entry, and names the offset.
+The first two rest on addresses the module's own code computes and hands to
+`FUN_80021B04` / `FUN_80050ED4` in `$a2`, which is why they are structural claims
+and not `scan` ones. The third rests on the move-VM width walk instead - the
+reason line says so per claim, so the two kinds of evidence never blur. The
+image's **highest** record is bounded by its own program's terminator; on the
+four images where that walk does not terminate it stays residue and the walker's
+note names the offset.
 
 What the band measures, and why it is the cleanest class on the disc: all 64
 entries select this walker, over 616448 bytes, and every claim is structural -
 `scan_bytes` is **zero** across the band, so nothing in the figure rests on a
-magic guess. Residue is 80080 bytes (12.99%), and **none of it is slack**: the
-band has no `zero_pad` at all, so the unaccounted share is the unbounded top
-record in each image and nothing else. Per entry the accounted share runs 52.7%
-to 99.1% with a median of 87.2%, and the spread is a property of where each
-module's highest record sits rather than of the walker. The three classes the
-entries carry (`overlay_ptr_table` 39, `mips_overlay` 20, `overlay_data_blob` 5)
-are a statistic over the bytes and do **not** select the walker - the index does.
+magic guess. Residue is 67680 bytes (10.98%), of which only 440 bytes are
+`zero_pad`: the unaccounted share is almost entirely each image's inherited
+tail, not slack. Per entry the accounted share runs 71.2% to 100.0% with a
+median of 89.2%. The three classes the entries carry (`overlay_ptr_table` 39,
+`mips_overlay` 20, `overlay_data_blob` 5) are a statistic over the bytes and do
+**not** select the walker - the index does.
 
 ## Interpreting a report
 

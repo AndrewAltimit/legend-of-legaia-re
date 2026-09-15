@@ -483,7 +483,7 @@ pub fn arm_invariants_hold() -> bool {
 
 /// One of the two move-VM stager records the burst seats its children on.
 ///
-/// Layout is the shared move-buffer record format - `[i16 model_sel][u16 flags]
+/// Layout is the shared move-buffer record format - `[i16 model_sel][u16 reserved]
 /// [move-VM bytecode]`, terminated by op `0x08` HALT - documented under
 /// [`docs/subsystems/move-vm.md`](../../../docs/subsystems/move-vm.md), the same
 /// shape `legaia_asset::summon_overlay` and `legaia_asset::scene_event_scripts`
@@ -498,8 +498,8 @@ pub struct BurstRecord {
     /// `+0x00` - the seater's four-way selector. Both arms are the
     /// transform-node value.
     pub model_sel: i16,
-    /// `+0x02`.
-    pub flags: u16,
+    /// `+0x02`, the reserved halfword.
+    pub reserved: u16,
     /// `+0x04..` - the move-VM program in u16 units, including its terminating
     /// HALT word. This is what a host binds as the child's move buffer.
     pub program: Vec<u16>,
@@ -546,7 +546,7 @@ impl BurstRecord {
             Some(u16::from_le_bytes([b[0], b[1]]))
         };
         let model_sel = word(0)? as i16;
-        let flags = word(1)?;
+        let reserved = word(1)?;
 
         // Walk the bytecode with the ported dispatcher so the opcode sizes are
         // not restated here. `step` advances `state.pc` itself.
@@ -566,7 +566,7 @@ impl BurstRecord {
                     words.truncate(end);
                     return Some(Self {
                         model_sel,
-                        flags,
+                        reserved,
                         program: words,
                     });
                 }
@@ -1070,7 +1070,7 @@ mod tests {
         let img = image_with(base, va, &words);
         let rec = BurstRecord::parse(&img, base, BurstMode::Wide).expect("parses");
         assert_eq!(rec.model_sel, -1);
-        assert_eq!(rec.flags, 0);
+        assert_eq!(rec.reserved, 0);
         assert_eq!(rec.opcode_sequence(), vec![0x39, 0x06, 0x08]);
         assert_eq!(
             rec.program.last().copied(),

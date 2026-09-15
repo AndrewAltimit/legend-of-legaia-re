@@ -49,13 +49,43 @@
 //!   index below [`crate::summon_overlay::LIBRARY_MESH_SEL_MAX`], or the two
 //!   render-mode sentinels) is dropped - never fires on retail.
 //!
-//! ## The one span this cannot bound
+//! ## Bounding the highest record
 //!
-//! The image's **highest** record has no next pointer above it, and the module
-//! carries no length field, so its program's end is not derivable from the band
-//! itself. [`records`] therefore stops at the highest record and reports it as
-//! [`SlotBLayout::unbounded_record`] instead of claiming it. Everything below
-//! it is bounded on both sides.
+//! The image's highest record has no next pointer above it and the module
+//! carries no length field, so the *band* cannot bound it. Its **program** can:
+//! a record's payload is a move-VM program, and the move VM's own width table
+//! ([`move_program_end`]) walks it to its terminator. Two words terminate a
+//! program, and both of them mean "nothing above this ever executes":
+//!
+//! - `0x08` `HALT`, which sets `flags |= 8` and drops out of the tick loop; and
+//! - an **armed idle loop** - `0x19` (or its `0x1B` mirror) whose paired `0x18`
+//!   / `0x1A` loaded a counter with bit `0x4000` set. That bit makes the branch
+//!   back to the saved PC unconditional, so the VM never advances past it.
+//!
+//! The end is then rounded up to a 4-byte boundary, because the records are
+//! word-aligned: a program whose last halfword lands mid-word is followed by one
+//! halfword of padding before the next record's header. That alignment step is
+//! not cosmetic - it is the difference between reproducing a record's measured
+//! extent and missing it by exactly 4 bytes.
+//!
+//! The rule is checked against the records the band *does* bound: chaining
+//! `[header][program]` from each bounded record's start lands exactly on that
+//! record's measured end for 991 of the band's 1027 bounded extents. The 36
+//! that miss are a stated residue, not a rounding tolerance - see
+//! [`slot-b-module-layout.md`](https://andrewaltimit.github.io/legend-of-legaia-re/formats/slot-b-module-layout.html).
+//! Where the walk does **not** terminate, the record stays
+//! [`SlotBLayout::unbounded_record`] and is claimed by nothing.
+//!
+//! ## Inherited call sites
+//!
+//! The call-site filter above ("inside a framed body of this image") is
+//! necessary but not sufficient: a module's inherited tail is a byte-identical
+//! copy of a longer image's bytes, and a *whole function* of the donor can sit
+//! in it, frame-matching locally and issuing the donor's spawn calls. Six of the
+//! 64 images have such a site. [`parse_with_tail`] takes the image's own content
+//! end and drops every call site and every record target at or above it; the
+//! tail start comes from `scripts/ghidra-analysis/inherited_tail.py`, or from
+//! [`content_end`] when only the one image is in hand.
 //!
 //! Provenance: disassembly of the 64 extracted band images against
 //! `crates/asset/data/static-overlays.toml`; the frame-matched partition
@@ -141,11 +171,18 @@ pub struct SlotBLayout {
     /// `jal` sites into either spawn helper, resolvable or not.
     pub spawn_sites: usize,
     /// Credited record offsets, ascending - including the highest one, which
-    /// [`Self::records`] does not bound.
+    /// [`Self::records`] bounds only when its program terminates.
     pub record_offsets: Vec<usize>,
-    /// The bounded record extents.
+    /// The bounded record extents. Every start is an address the module's own
+    /// code hands to a spawn helper in `$a2`.
     pub records: Vec<RecordSpan>,
-    /// The highest credited record offset, whose end the band cannot derive.
+    /// Records **above** the highest consumer-credited one, each found by
+    /// chaining `[header][program]` from the end of the record below it. Their
+    /// starts are computed by [`move_program_end`], not by a pointer, so they
+    /// are kept apart from [`Self::records`].
+    pub chained_records: Vec<RecordSpan>,
+    /// The highest credited record offset, kept only when its program does not
+    /// terminate - then nothing bounds it and nothing claims it.
     pub unbounded_record: Option<usize>,
 }
 
@@ -279,6 +316,168 @@ fn resolve_a2(bytes: &[u8], site: usize) -> Option<u32> {
     a2
 }
 
+// ---------------------------------------------------------------------------
+// The move-VM program walk
+// ---------------------------------------------------------------------------
+
+/// Width in **halfwords** of every move-VM opcode `0x00..=0x46`, as the
+/// dispatcher `FUN_80023070` sets its per-arm `param_3`. `0` marks the five
+/// opcodes whose width is not a constant of the opcode alone, handled by name
+/// in [`move_program_end`]: `0x08` (`HALT`, no advance), `0x0A`
+/// (`3 + 3*count`), `0x0B` (the default break, no advance), `0x2F`
+/// (`OVERLAY_EXT`, the sub-op's width), `0x3C` (`2 + count*6`) and `0x3D`
+/// (`3 + count*6`).
+///
+/// Mirrors the widths in [`move-vm.md`](https://andrewaltimit.github.io/legend-of-legaia-re/subsystems/move-vm.html).
+const MOVE_OP_HALFWORDS: [u8; 0x47] = [
+    4, 4, 2, 2, 4, 4, 2, 4, // 0x00
+    0, 2, 0, 0, 6, 2, 2, 2, // 0x08
+    2, 2, 2, 16, 5, 2, 2, 2, // 0x10
+    2, 1, 2, 1, 2, 2, 8, 8, // 0x18
+    3, 7, 1, 13, 3, 2, 5, 3, // 0x20
+    2, 2, 2, 4, 5, 4, 4, 0, // 0x28
+    1, 2, 2, 1, 9, 3, 3, 3, // 0x30
+    2, 4, 1, 1, 0, 0, 2, 2, // 0x38
+    7, 2, 15, 1, 4, 8, 4, // 0x40
+];
+
+/// Width in halfwords of each `0x2F` `OVERLAY_EXT` sub-opcode `0x00..=0x3C`,
+/// from the extension dispatcher's jump table (`FUN_801D362C`, JT
+/// `0x801CE868`). Mirrors `move-vm-overlay-ext.md`.
+const MOVE_EXT_HALFWORDS: [u8; 0x3D] = [
+    16, 2, 2, 2, 3, 5, 7, 7, // 0x00
+    2, 2, 3, 3, 3, 3, 11, 2, // 0x08
+    2, 2, 8, 4, 4, 2, 2, 8, // 0x10
+    5, 8, 8, 5, 3, 3, 4, 5, // 0x18
+    5, 5, 5, 6, 8, 3, 3, 3, // 0x20
+    5, 5, 8, 6, 7, 6, 13, 3, // 0x28
+    5, 3, 3, 6, 3, 3, 4, 4, // 0x30
+    4, 4, 3, 4, 6, // 0x38
+];
+
+/// `HALT`.
+const MOVE_OP_HALT: u16 = 0x08;
+/// `LOOP_SET` / `LOOP_SET_B` - arm a counter the matching `0x19` / `0x1B` tests.
+const MOVE_OP_LOOP_SET_A: u16 = 0x18;
+const MOVE_OP_LOOP_SET_B: u16 = 0x1A;
+/// `LOOP_BACK` / `LOOP_BACK_B`.
+const MOVE_OP_LOOP_BACK_A: u16 = 0x19;
+const MOVE_OP_LOOP_BACK_B: u16 = 0x1B;
+/// The counter bit that makes a `LOOP_BACK` unconditional - the branch is taken
+/// forever and the program never advances past it.
+const MOVE_LOOP_FOREVER: u16 = 0x4000;
+/// Highest move-VM opcode; the dispatcher rejects anything above it.
+const MOVE_OP_MAX: u16 = 0x46;
+/// One past the highest `0x2F` sub-opcode.
+const MOVE_EXT_MAX: u16 = 0x3D;
+/// Guard on a walk that neither terminates nor advances off the end.
+const MOVE_WALK_MAX_STEPS: usize = 4096;
+
+/// How a move-VM program walk ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgramEnd {
+    /// `0x08` `HALT`. The payload is the word-aligned byte offset one past it.
+    Halt(usize),
+    /// An armed `0x19` / `0x1B` idle loop. Same payload.
+    IdleLoop(usize),
+    /// The walk ran into a halfword that is not a dispatchable opcode, or off
+    /// the end of the buffer, without meeting a terminator. The payload is the
+    /// offset it stopped at, which bounds nothing.
+    Unterminated(usize),
+}
+
+impl ProgramEnd {
+    /// The word-aligned end offset, for the two terminating outcomes.
+    pub fn bounded(self) -> Option<usize> {
+        match self {
+            ProgramEnd::Halt(e) | ProgramEnd::IdleLoop(e) => Some(e),
+            ProgramEnd::Unterminated(_) => None,
+        }
+    }
+}
+
+fn rd_u16(b: &[u8], o: usize) -> Option<u16> {
+    (o + 2 <= b.len()).then(|| u16::from_le_bytes([b[o], b[o + 1]]))
+}
+
+/// Walk the move-VM program that starts at byte offset `start`, returning where
+/// it ends.
+///
+/// This is a **static** walk: `0x19` / `0x1B` with the loop bit clear retire
+/// with width 1 rather than branching, and no `0x18` target is followed, so the
+/// walk is a width sum over the instruction stream rather than an execution.
+/// The one place control flow matters is the armed idle loop, which is a
+/// terminator precisely because its branch is unconditional.
+pub fn move_program_end(bytes: &[u8], start: usize) -> ProgramEnd {
+    let mut pc = start;
+    let mut loop_a = 0u16;
+    let mut loop_b = 0u16;
+    for _ in 0..MOVE_WALK_MAX_STEPS {
+        let Some(op) = rd_u16(bytes, pc) else {
+            return ProgramEnd::Unterminated(pc);
+        };
+        if op > MOVE_OP_MAX {
+            return ProgramEnd::Unterminated(pc);
+        }
+        let arg = |i: usize| rd_u16(bytes, pc + i * 2).unwrap_or(0);
+        match op {
+            MOVE_OP_HALT => return ProgramEnd::Halt(align4(pc + 2)),
+            MOVE_OP_LOOP_SET_A => loop_a = arg(1),
+            MOVE_OP_LOOP_SET_B => loop_b = arg(1),
+            // An armed idle loop ends the program - UNLESS the author emitted
+            // the record's `HALT` right behind it, which most of them do. The
+            // `HALT` is then the end and the loop is one halfword of body
+            // before it; taking the loop instead lands 4 bytes short.
+            MOVE_OP_LOOP_BACK_A | MOVE_OP_LOOP_BACK_B
+                if armed_idle_loop(op, loop_a, loop_b)
+                    && rd_u16(bytes, pc + 2) != Some(MOVE_OP_HALT) =>
+            {
+                return ProgramEnd::IdleLoop(align4(pc + 2));
+            }
+            _ => {}
+        }
+        let halfwords = match op {
+            // `KEYFRAME_LOAD`: a 3-halfword header then `count` 3-halfword
+            // lanes, `count` in the header's second operand.
+            0x0A => 3 + 3 * usize::from(arg(2)),
+            // `OVERLAY_EXT`: the sub-op at +1 carries the width.
+            0x2F => {
+                let sub = arg(1);
+                if sub >= MOVE_EXT_MAX {
+                    return ProgramEnd::Unterminated(pc);
+                }
+                usize::from(MOVE_EXT_HALFWORDS[sub as usize])
+            }
+            // `SCRATCH_WRITE` / anim interpolate: `count` 6-halfword slots.
+            0x3C => 2 + 6 * (arg(1) as i16).max(0) as usize,
+            0x3D => 3 + 6 * (arg(2) as i16).max(0) as usize,
+            _ => usize::from(MOVE_OP_HALFWORDS[op as usize]),
+        };
+        if halfwords == 0 {
+            // `0x0B` - the dispatcher's default break sets no width, so the PC
+            // does not move. Statically that is a stall, not an end.
+            return ProgramEnd::Unterminated(pc);
+        }
+        pc += halfwords * 2;
+    }
+    ProgramEnd::Unterminated(pc)
+}
+
+fn align4(x: usize) -> usize {
+    (x + 3) & !3
+}
+
+/// `true` when `op` is a `LOOP_BACK` whose paired counter carries the
+/// unconditional-branch bit, so the VM never advances past it.
+fn armed_idle_loop(op: u16, loop_a: u16, loop_b: u16) -> bool {
+    let counter = match op {
+        MOVE_OP_LOOP_BACK_A => loop_a,
+        MOVE_OP_LOOP_BACK_B => loop_b,
+        _ => return false,
+    };
+    counter & MOVE_LOOP_FOREVER != 0
+}
+
 /// `true` when `sel` is a value `FUN_80021B04` dispatches on.
 fn dispatchable_model_sel(sel: i16) -> bool {
     sel == crate::summon_overlay::MODEL_SEL_TRANSFORM_NODE
@@ -299,6 +498,54 @@ pub fn parse(bytes: &[u8]) -> SlotBLayout {
 /// the next entry resolves record pointers that belong to the neighbour's own
 /// load at the shared base.
 pub fn parse_at(bytes: &[u8], link_base: u32) -> SlotBLayout {
+    parse_with_tail(bytes, link_base, None)
+}
+
+/// Structural end of this image's **own** content, in file bytes.
+///
+/// The top of the spawn-record chain when the image has records, and the end of
+/// the frame-matched code partition otherwise. Everything above is either the
+/// module's trailing padding or a longer image's residue - and this is the
+/// figure that decides which of two equal-extent siblings owns a shared suffix
+/// (`scripts/ghidra-analysis/inherited_tail.py`).
+///
+/// It is deliberately *not* the frame partition alone: a donor's whole function
+/// can sit in the tail and frame-match there, so on PROT 0949 the code
+/// partition reaches `0x1B8C` while the image's own content stops at `0x1828`.
+///
+/// This walks whatever slice it is handed, and the slice matters: over a whole
+/// image the chain runs on into the donor's residue and the figure overshoots.
+/// Measured over the band, handing it the uncut image moves the figure on **10
+/// of 83** images (PROT 0908 / 0910 / 0919 / 0920 / 0932 / 0943 / 0960 / 0961,
+/// plus the slot-A pair 0974 / 0980, whose figure is the frame partition rather
+/// than a record chain). On five of those - 0908 / 0910 / 0920 / 0943 / 0961 -
+/// the overshoot also credits a spawn pointer that belongs to the donor.
+///
+/// The cut and this measurement are mutually recursive, so the band-level
+/// caller iterates them rather than taking the first estimate: see
+/// `scripts/ghidra-analysis/inherited_tail.py`'s `tail_starts_fixpoint`, and
+/// `crates/asset/tests/slot_b_record_bounds_real.rs` for the same loop on this
+/// side. It settles in two rounds and moves no tail cut - the asymmetry this
+/// comment used to argue for (an overshoot can only make an image look less
+/// like a recipient, never invent a tail) is now measured rather than asserted.
+pub fn content_end(bytes: &[u8], link_base: u32) -> usize {
+    let layout = parse_at(bytes, link_base);
+    let chained = layout.chained_records.last().map(|r| r.end);
+    let credited = layout.records.last().map(|r| r.end);
+    chained
+        .or(credited)
+        .or(layout.unbounded_record)
+        .unwrap_or_else(|| layout.code_end())
+}
+
+/// Walk one slot-B image, dropping everything at or above `tail_start`.
+///
+/// `tail_start` is the file offset at which the image stops being its own
+/// content. A spawn call site there belongs to the donor whose bytes those are,
+/// and so does the record pointer it forms - see the module docs. `None` runs
+/// the parse with no tail known, which is what [`parse_at`] does.
+pub fn parse_with_tail(bytes: &[u8], link_base: u32, tail_start: Option<usize>) -> SlotBLayout {
+    let limit = tail_start.unwrap_or(bytes.len()).min(bytes.len());
     let functions = framed_functions(bytes);
     let head_table = head_table(bytes, link_base, &functions);
 
@@ -307,7 +554,7 @@ pub fn parse_at(bytes: &[u8], link_base: u32) -> SlotBLayout {
     let mut spawn_sites = 0usize;
     let mut offsets: Vec<usize> = Vec::new();
     let mut o = 0usize;
-    while o + 4 <= bytes.len() {
+    while o + 4 <= limit {
         let w = rd_u32(bytes, o);
         if w == spawn || w == pooled {
             spawn_sites += 1;
@@ -319,7 +566,7 @@ pub fn parse_at(bytes: &[u8], link_base: u32) -> SlotBLayout {
             let own_call = functions.iter().any(|f| f.start <= o && o < f.end);
             if let (true, Some(a2)) = (own_call, resolve_a2(bytes, o)) {
                 let f = a2.wrapping_sub(link_base) as usize;
-                if f + 4 <= bytes.len()
+                if f + 4 <= limit
                     && !functions.iter().any(|fun| fun.start <= f && f < fun.end)
                     && dispatchable_model_sel(i16::from_le_bytes([bytes[f], bytes[f + 1]]))
                 {
@@ -333,29 +580,56 @@ pub fn parse_at(bytes: &[u8], link_base: u32) -> SlotBLayout {
     offsets.dedup();
 
     // Boundaries a record can end at: the next record, or the next framed
-    // function's prologue. The image length closes the set so the arithmetic
-    // is total, but the highest record is dropped rather than run to it - see
-    // the module docs.
+    // function's prologue. The image's own content end closes the set so the
+    // arithmetic is total.
     let mut bounds: Vec<usize> = offsets.clone();
-    bounds.extend(functions.iter().map(|f| f.start));
-    bounds.push(bytes.len());
+    bounds.extend(functions.iter().map(|f| f.start).filter(|&s| s <= limit));
+    bounds.push(limit);
     bounds.sort_unstable();
     bounds.dedup();
 
+    let span_at = |f: usize, end: usize| RecordSpan {
+        start: f,
+        end,
+        model_sel: i16::from_le_bytes([bytes[f], bytes[f + 1]]),
+        reserved: u16::from_le_bytes([bytes[f + 2], bytes[f + 3]]),
+    };
+
     let mut records = Vec::new();
+    let mut chained = Vec::new();
+    let mut unbounded = None;
     for (i, &f) in offsets.iter().enumerate() {
-        if i + 1 == offsets.len() {
-            break;
-        }
-        let Some(&end) = bounds.iter().find(|&&x| x > f) else {
+        let next_bound = bounds.iter().find(|&&x| x > f).copied();
+        if i + 1 < offsets.len() {
+            // Bounded below the top: the next consumer pointer (or the next
+            // function, whichever comes first) closes it.
+            if let Some(end) = next_bound {
+                records.push(span_at(f, end));
+            }
             continue;
-        };
-        records.push(RecordSpan {
-            start: f,
-            end,
-            model_sel: i16::from_le_bytes([bytes[f], bytes[f + 1]]),
-            reserved: u16::from_le_bytes([bytes[f + 2], bytes[f + 3]]),
-        });
+        }
+        // The top record. Nothing above computes an address, so its end comes
+        // from its own program - and the chain above it keeps going while the
+        // bytes keep reading as `[header][program]`.
+        let cap = next_bound.unwrap_or(limit);
+        match move_program_end(bytes, f + 4).bounded() {
+            Some(end) if end > f && end <= cap => {
+                records.push(span_at(f, end));
+                let mut p = end;
+                while p + 4 <= cap
+                    && dispatchable_model_sel(i16::from_le_bytes([bytes[p], bytes[p + 1]]))
+                {
+                    match move_program_end(bytes, p + 4).bounded() {
+                        Some(q) if q > p && q <= cap => {
+                            chained.push(span_at(p, q));
+                            p = q;
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            _ => unbounded = Some(f),
+        }
     }
 
     SlotBLayout {
@@ -363,9 +637,10 @@ pub fn parse_at(bytes: &[u8], link_base: u32) -> SlotBLayout {
         head_table,
         functions,
         spawn_sites,
-        unbounded_record: offsets.last().copied(),
+        unbounded_record: unbounded,
         record_offsets: offsets,
         records,
+        chained_records: chained,
     }
 }
 

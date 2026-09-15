@@ -228,9 +228,30 @@ The draw is six label strips (records `10..=15`, corner-anchored at `x=0x40`,
 `y=0x50` stepping `0x10`, scale `0x1000`) followed by six decimal values
 (`x=0xC0`, `y=0x55` stepping `0x10`), each set emitted twice - variant 1 then
 variant 2, and for the digits palette `0`/`2` then `1`/`3`, with record 9's
-`+0x0F` / `+0x13` bytes stamped between the passes. Every brightness is
-`fade * (alpha << 4) >> 7`. Port: `legaia_engine_ui::other_game_hud`
-(`HUB_SCORE_TALLY_LABELS`, `score_tally_quads`).
+`+0x0F` / `+0x13` bytes stamped between the passes.
+
+**Six rows, four lanes, three distinct sinks.** The rows are not one per lane,
+which is the reading that puts the wrong numbers on the screen. Read off the
+six value draws at `0x801CF560`..`0x801CF6B4` and the six label draws above
+them:
+
+| Row | Value cell | Brightness lane |
+|---|---|---|
+| 0 | `0x801D1ACC` - lane 0 pending | 0 (`0x801D1ABC`) |
+| 1 | `0x801D1AD0` - lane 1 pending | 1 (`0x801D1AC0`) |
+| 2 | `0x801D1AD4` - lane 2 pending | 2 (`0x801D1AC4`) |
+| 3 | `0x801D1AC8` - the shared sink lanes 0..2 drain into | 0 (`0x801D1ABC`) |
+| 4 | `0x801D1AAC` - lane 3 pending | 3 (`0x801D1AB8`) |
+| 5 | `0x80084440` (`0x80084140 + 0x300`) - the running contest tally | 3 (`0x801D1AB8`) |
+
+So the fade sequence is `[0, 1, 2, 0, 3, 3]` - **four** brightness steps across
+six rows, with rows 3 and 5 riding a lane whose own row sits elsewhere in the
+list. Every brightness is `fade * (alpha << 4) >> 7` (`sll s0, s3, 4` at
+`0x801CF298`, the `+0x7F` round before the `sra 7`), and with the fade counter
+clamped at `0x10` a full-alpha row computes `0x100`, which the emitter caps at
+`0xFF`. Port: the draw is `legaia_engine_ui::other_game_hud`
+(`HUB_SCORE_TALLY_LABELS`, `score_tally_quads`), the count-up itself
+`legaia_engine_core::other_game_overlay::ScoreTallyRamp`.
 
 ### PROT 0977 HUD primitives
 

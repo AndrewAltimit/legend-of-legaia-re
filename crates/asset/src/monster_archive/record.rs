@@ -154,6 +154,16 @@ pub struct MonsterRecord {
     /// family sits at `14`, Caruban at `46` and Koru at `48`, while Lapis
     /// (64800 HP) sits at `20`.
     pub size_class: u8,
+    /// Double-width **texture-page** flag (`+0x20`).
+    ///
+    /// Its primary reader is the enemy model upload `0x801F1D0C`, which hands
+    /// it to `FUN_80055468` and widens the VRAM rect `0x20 -> 0x40` when it is
+    /// non-zero - so it says "this monster's texture needs two pages", nothing
+    /// about its stats. Three of the summon ticks (PROT 0907 / 0908 / 0916)
+    /// borrow it as a "big model" **resist proxy**, reading it record-direct
+    /// through `0x801C9348[seat - 3]`; that is a second use of one byte, not
+    /// an instant-death-immunity field of its own.
+    pub wide_texture_page: u8,
     /// Spell-slot count (`+0x4A`).
     pub magic_count: u8,
     /// The `magic_count` spell entries the `+0x4C` offset array points at.
@@ -237,15 +247,7 @@ impl MonsterRecord {
     /// [`Self::battle_stats_random`] instead - both profiles boost, so the raw
     /// record always understates the fight, but they differ per stat.
     pub fn battle_stats(&self) -> [u16; 6] {
-        let s = self.stats;
-        [
-            s[0],                         // AGL  - copied unchanged
-            s[1].wrapping_add(s[1] >> 2), // ATK  + ATK>>2   (×5/4)
-            s[2].wrapping_mul(2),         // UDF  ×2
-            s[3].wrapping_mul(2),         // LDF  ×2
-            s[4].wrapping_add(s[4] >> 3), // INT  + INT>>3   (×9/8)
-            s[5],                         // SPD  - copied unchanged
-        ]
+        boost_profile(self.stats, true)
     }
 
     /// The six stats as the battle loader installs them in a **random
@@ -262,7 +264,47 @@ impl MonsterRecord {
     /// LDF 14 / INT 10) fights as ATK 17 / UDF 25 / LDF 24 / INT 12 with
     /// `ctx[+0x287] == 0`. The scripted profile is [`Self::battle_stats`].
     pub fn battle_stats_random(&self) -> [u16; 6] {
-        let s = self.stats;
+        boost_profile(self.stats, false)
+    }
+
+    /// The installed stat block for a fight class: [`Self::battle_stats`]
+    /// when `scripted`, else [`Self::battle_stats_random`].
+    pub fn battle_stats_for(&self, scripted: bool) -> [u16; 6] {
+        boost_profile(self.stats, scripted)
+    }
+}
+
+/// The battle loader's record -> actor stat boost applied to a raw
+/// `[AGL, ATK, UDF, LDF, INT, SPD]` block, picking the profile the way retail
+/// does: by the scripted-fight flag `ctx[+0x287]`.
+///
+/// `FUN_80054CB0` first copies each record halfword into **both** the actor's
+/// working and base halves (`sh` pairs at `+0x154`/`+0x156`, `+0x158`/`+0x15A`,
+/// `+0x15C`/`+0x15E`, `+0x160`/`+0x162`, `+0x164`/`+0x166`, `+0x168`/`+0x16A`),
+/// then branches on the flag (`lbu v0,0x287(v0)` / `beq v0,zero` at
+/// `0x80055234..0x8005523C`) and adds the profile's delta into both halves
+/// again. So the boosted value is what the working *and* the base half carry
+/// at battle start, which is what makes the base half a usable "has anything
+/// moved this stat since?" probe - see [`crate::seru_side_effect`].
+///
+/// Taking the raw block rather than a whole record lets a consumer that kept
+/// only the six stats (an engine's monster catalog) re-derive either profile.
+///
+/// REF: FUN_80054CB0 (`0x80055244..0x8005530C`, both boost profiles; the
+/// record -> actor copy this is the arithmetic of is ported at
+/// `legaia_engine_core::monster_catalog::monster_def_from_record`)
+pub fn boost_profile(stats: [u16; 6], scripted: bool) -> [u16; 6] {
+    let s = stats;
+    if scripted {
+        [
+            s[0],                         // AGL  - copied unchanged
+            s[1].wrapping_add(s[1] >> 2), // ATK  + ATK>>2   (×5/4)
+            s[2].wrapping_mul(2),         // UDF  ×2
+            s[3].wrapping_mul(2),         // LDF  ×2
+            s[4].wrapping_add(s[4] >> 3), // INT  + INT>>3   (×9/8)
+            s[5],                         // SPD  - copied unchanged
+        ]
+    } else {
         [
             s[0],                                         // AGL  - copied unchanged
             s[1],                                         // ATK  - copied unchanged
@@ -271,16 +313,6 @@ impl MonsterRecord {
             s[4].wrapping_add(s[4] >> 2),                 // INT  + INT>>2   (×5/4)
             s[5],                                         // SPD  - copied unchanged
         ]
-    }
-
-    /// The installed stat block for a fight class: [`Self::battle_stats`]
-    /// when `scripted`, else [`Self::battle_stats_random`].
-    pub fn battle_stats_for(&self, scripted: bool) -> [u16; 6] {
-        if scripted {
-            self.battle_stats()
-        } else {
-            self.battle_stats_random()
-        }
     }
 }
 
@@ -332,6 +364,7 @@ pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
     let element = *block.get(0x1D)?;
     let swing_class = *block.get(0x1E)?;
     let size_class = *block.get(0x1F)?;
+    let wide_texture_page = *block.get(0x20)?;
     let gold = legaia_bytes::u16_le(block, 0x44)?;
     let exp = legaia_bytes::u16_le(block, 0x46)?;
     let drop_item = *block.get(0x48)?;
@@ -356,6 +389,7 @@ pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         element,
         swing_class,
         size_class,
+        wide_texture_page,
         gold,
         exp,
         drop_item,
@@ -596,6 +630,7 @@ mod tests {
             element: 6,
             swing_class: 0,
             size_class: 26,
+            wide_texture_page: 0,
             gold: 30000,
             exp: 42000,
             drop_item: 0,

@@ -382,8 +382,10 @@ pub(super) fn attack_return<H: BattleActionHost + ?Sized>(
 ) -> StepOutcome {
     let slot = ctx.active_actor;
     host.pose(slot, Pose::Recover);
-    // Counter-attack window is gated by both context flags.
-    if ctx.counter_attack_a != 0 && ctx.counter_attack_b != 0 {
+    // The counter window's gate, retail's order (`0x801E5554..0x801E557C`):
+    // the scripted-fight flag `+0x287` first, then the counter byte `+0x288`.
+    // (Retail's middle term, `DAT_8007BD0D`, has no port field.)
+    if ctx.scripted_fight != 0 && ctx.counter_attack != 0 {
         // Counter-attack swap: advance the turn cursor past the counterer and
         // route back into AttackChain (retail `0x801E36D0`). Engines drive the
         // actual swap.

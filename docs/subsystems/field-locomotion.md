@@ -150,19 +150,68 @@ World coordinates are plain `s16` in 1-unit resolution; one collision tile is `0
 
 ## Spawn position on scene entry
 
-The player actor's spawn position is set by the per-scene initializer `FUN_801D6704` (MAIN_INIT), not by the locomotion controller. There are two cases, selected by the field-entry mode global `_DAT_8007b8b8`:
+The player actor's spawn position is set by the per-scene initializer `FUN_801D6704` (MAIN_INIT), not by the locomotion controller. The initializer's arms are selected by the field-entry mode word `_DAT_8007b8b8`, and the word is a **one-shot argument the departing mode leaves behind**, not a persistent latch: the initializer's own epilogue clears it (`sw zero,-0x4748(v0)` at `0x801d750c`, two instructions before `jr ra`), so every field entry reads what the previous mode wrote and hands the next entry a `0`. The spawn arm is therefore **per-scene, not boot-only**.
 
-- **Cold entry (`_DAT_8007b8b8 == 0`).** An actor is created at coords **`(0xA40, 0, 0xA40)`** - the centre of the camera view window - via `func_0x80024c88` from template `0x801F271C`, which writes `actor+0x14`/`+0x16`/`+0x18` from the arg vec. The player actor itself is *allocated* on this arm (`FUN_80020DE0` from the resident template, stored at the scene control block's `+0x1C`). **Cold entry only ever happens for the New Game opening scene (`town01`, Rim Elm)** - every other scene change is a warp - so `(0xA40, 0xA40)` is effectively Vahn's authored opening spawn. Byte-checked walkable against town01's base collision grid.
-- **Warp entry (`_DAT_8007b8b8 == 2`).** No actor is spawned. Instead the seven per-list actor sweeps run (`FUN_801D7518` once per list head), the existing player actor is reused, and the saved transition coords `_DAT_80084568`/`_DAT_8008456C` overwrite the MAN camera anchor that `FUN_8003AEB0` left on the stack. The landing position then comes from the window branch below.
+### Who writes the word
 
-**The sub-tile remainders are dead code.** An earlier reading had the warp landing built from the sub-tile offsets of the saved coords (`saved % 0x80 - 0x40` per axis) added into the spawn vector. Those remainders *are* computed - at `0x801d6e1c..0x801d6e78` - but that block is gated on `_DAT_8007b8b8 == 2`, and the only place the registers holding them are read is the `func_0x80024c88` vector at `0x801d6fc8`/`0x801d6fd0`, which is gated on `_DAT_8007b8b8 == 0`. The two gates are mutually exclusive, so the remainders never reach an actor write: the cold spawn is exactly `(0xA40, 0, 0xA40)`, and a warp's position comes from the branch below.
+Census over `SCUS_942.54` + the 83 mapped overlay images (84 images, 2.1 MB), from both reference scanners; the five-form absolute scan reports nothing at `0x8007b8b8`, so every reference is a `lui 0x8008` + `-0x4748` pair or the one `0x5a0(gp)` store. **Ten writers, twenty-five readers.**
 
-Whichever arm ran, the initializer then installs the camera view window and writes the player actor's position, choosing between two forms on the one-shot request flag `_DAT_8007bacc` (which it clears afterwards):
+| Site | Routine | Value |
+|---|---|---|
+| `0x80016414` | `FUN_80016230`, the mode-transition pass | **1** |
+| `0x80026094` | `FUN_80026018`, the minigame return warp | **2** |
+| `0x80046e28` | `FUN_80046A20`, the battle exit - **only when the word is already non-zero** | **2** |
+| `0x801cef18` | PROT 0970's FMV-exit "resume" arm (no scene-name write) | **2** |
+| `0x8001d530` | `FUN_8001D424`, the global reset | `0` |
+| `0x80025d10` | `FUN_80025CB4`, the shared core-state reset | `0` |
+| `0x801cef68` / `0x801cf020` | PROT 0970's two FMV-exit arms that name a new scene (by name / by id) | `0` |
+| `0x801ce9c4` | PROT 0971's debug-menu init | `0` |
+| `0x801d750c` | `FUN_801D6704`'s own epilogue | `0` |
+
+The value `1` is transient. `FUN_80016230` writes it when the next game mode is `8`, `0x14`, `0x18` or `0x1A` (battle intro, battle, minigame warp, STR cutscene) **and** `_DAT_8007b7ac == 3`, and in the same block snapshots the player's X/Z into `_DAT_80084568` / `_DAT_8008456C` (`0x800163e0..0x80016418`). Each of those modes' return handlers then renormalises `1` to `2`, which is why the initializer's `== 2` tests never see a `1` in retail.
+
+### The three tests are not the same predicate
+
+- `0x801d6d00`, `== 2` - **warp**: the seven `FUN_801D7518` retire sweeps run, one per actor-list head, and the existing player actor is reused. Otherwise `FUN_80020DE0` allocates a fresh player actor from the resident template into the scene control block's `+0x1C`.
+- `0x801d6e14`, `== 2` - **warp**: the saved transition coords `_DAT_80084568` / `_DAT_8008456C` overwrite the stack anchor pair `sp+0x20` / `sp+0x22`, and the sub-tile remainders (`saved % 0x80 - 0x40` per axis) are computed into `$s7` / `$fp`.
+- `0x801d6fb0`, `!= 0` - skip the ambient-emitter spawn below.
+
+### `(0xA40, 0, 0xA40)` is the ambient emitter, not the player
+
+The cold-only `func_0x80024c88` call at `0x801d6fd8` spawns template `0x801F271C`, whose handler word is `0x801D6058` - the **ambient particle emitter** (see [`cutscene.md`](cutscene.md)), started with `actor+0x1a = 1` at `0x801d6fe0`. `$s7` and `$fp` are still their `0` initialisers on that arm (`move $fp,$zero` at `0x801d6994`, `move $s7,$fp` at `0x801d69f8`), so its seat is the view-window centre. Spawning it only on a non-warp entry is what keeps a return from battle / a minigame / an FMV from stacking a second emitter on the one already alive.
+
+The **player's** seat is written on both arms, from the stack anchor, at `0x801d6f64` (`+0x14`) and `0x801d6f7c` (`+0x18`), with `+0x16` zeroed between them. `FUN_8003AEB0` fills that anchor from `_DAT_80073EF4` / `_DAT_80073EF8` (`0x8003b7b0..0x8003b7d4`) - the **destination entry coordinates** the field VM's `0x3F` scene change writes ([`script-vm.md`](script-vm.md)), and that the new-game data init seeds for `town01` at `0x80034ad4`. So a cold entry lands on the door's operand, a warp lands where the party left.
+
+**Falsified:** "cold entry only ever happens for the New Game opening scene, every other scene change is a warp, so `(0xA40, 0xA40)` is effectively Vahn's authored opening spawn." All three clauses fail. The epilogue clears the word and no field-side routine writes it, so *every* ordinary scene change enters with `0` and takes the cold arm; PROT 0970's FMV exit has two arms that zero it deliberately alongside a scene-name / scene-id write, i.e. retail asks for a cold entry into a named scene by hand; and `town01`'s New Game seat is `_DAT_80073EF4/EF8 = 0xE40 / 0x2DC0` ([`new-game-table.md`](../formats/new-game-table.md)), not `(0xA40, 0xA40)`.
+
+**The sub-tile remainders are still dead code**, for the reason the earlier reading gave: they are computed under `== 2` at `0x801d6e1c..0x801d6e78` and the only registers holding them are read under `!= 0` at `0x801d6fc8` / `0x801d6fd0`, and on that arm both are zero.
+
+Whichever arm ran, the initializer installs the camera view window and writes the player position, choosing between two forms on `_DAT_8007bacc` (which it clears afterwards at `0x801d6f50`):
 
 - `_DAT_8007bacc == 0`: the window is installed on the anchor's own tile (`FUN_80017DD4(anchor >> 7, …, 0x0E, 0x10)` - the window is `0x0E` by `0x10` tiles, from the scratchpad pair `0x1F8003F8`/`0x1F8003FA`) and the player keeps the anchor's exact world coords.
 - `_DAT_8007bacc != 0`: the window is re-centred on the map origin (`_DAT_8007b76c + 0x0E/2 - 1`, `_DAT_8007b770 + 0x10/2`) and the player is seated at that tile's centre, `tile * 0x80 + 0x40`.
 
+**The second form is unreachable in retail**, but not for the reason "it has no writer" - it does have one, and saying otherwise contradicts the clear this page already names.
+
+`0x8007bacc` has exactly two references on the disc, both inside this function: the read at `0x801d6e88` and the store at `0x801d6f50`. That store is `sw zero`, and it sits in the delay slot of the `jal 0x800567a8` at `0x801d6f4c` - which is why a scanner that walks call targets, or reads only the instruction before a branch, does not see it. So the word's one and only writer stores `0`; nothing on the disc ever stores a non-zero value into it, and the `!= 0` arm can therefore never run.
+
+`_DAT_8007b76c`, which only that arm reads, has one reference (the read at `0x801d6ee0`) and genuinely no writer at all. Retail always takes the first form and the player always keeps the anchor's exact coordinates.
+
 Provenance: `ghidra/scripts/funcs/overlay_dialog_mc4_801d6704.txt` (the base-`0x801C0000` live-RAM capture; 901 instructions, epilogue at `0x801d7510`) and `ghidra/scripts/funcs/80024c88.txt` (sets `actor+0x14/16/18` from the arg vec). Engine port: `legaia_engine_core::mode_entry_init::field_spawn`, whose `FIELD_COLD_SPAWN` agrees with `legaia_engine_core::world::FIELD_COLD_SPAWN_XZ`; applied in `SceneHost::enter_field_scene`.
+
+**What the port names differently from retail.** `FIELD_COLD_SPAWN` is the
+**ambient emitter's** seat, not retail's player cold seat; retail's is the
+destination-entry pair above. The engine keeps the constant as the *player's*
+fallback because its scene picker can enter a scene with no door operand at
+all, which retail never does - `World::resolve_cold_field_spawn` is a
+synthesis for that case, not a mirror of `0x801d6fd8`. Two engine claims
+follow the superseded reading and are wrong about retail rather than about
+the engine: `FieldEntryMode::Cold`'s "a fresh field entry (the New Game
+opening)" (`mode_entry_init.rs`), and `SceneHost::load_scene`'s reading of
+"a scene is already loaded" as retail's warp condition
+(`scene/host/lifecycle.rs`) - retail runs the `FUN_801D7518` sweeps only on a
+return from battle / a minigame / the FMV resume arm, and takes the
+fresh-actor arm on every door change.
 
 **Do not cite `overlay_0897_801d6704.txt` for this function.** That dump is base-correct (the static-overlay map puts `FUN_801D6704` at `0x801CE818 + 0x7EEC`) but **incomplete**: its instruction stream jumps `0x801d71b4 -> 0x801d72d4`, dropping the two-part-BGM arm entirely, and it carries no `jr ra`. The live-RAM captures agree with each other across all 901 instructions. See [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
 
@@ -1725,7 +1774,7 @@ every walk leg holds the single compass heading its step direction implies.
 An NPC's per-frame glide is NOT the player's `+0x72` walk step (that premise is falsified: `FUN_8003774C` never reads `+0x72`). Both walk kernels encode the base step **in the walk op's own operands**, on the shared ladder `numerator >> (2 + bits)` units per frame (base steps 32 / 16 / 8 / 4 / 2 / 1 for `bits` 0..5 at numerator `0x80`, floored at 1):
 
 - **Field-VM yield ops** (`FUN_8003774C` - scripted glide legs): per-frame magnitude `_DAT_1f800393 × numerator / (4 << bits)`. `bits = (op0>>5 & 4)|(op1>>6)` for the axis-glide ops 0x37/0x41, `b2 & 7` (high nibble = approach-mode selector) for the walk-to-tile op 0x47. The numerator is `0x80` for 0x37/0x47 but **`0x40` for 0x41** - half speed, the `li a1,0x40`/`li a1,0x80` split at `0x80037908`. `_DAT_1f800393` is taken at its cold-field value 1.
-- **Tail-section-1 motion streams** (`FUN_80038158` - the ambient town-NPC wander; see [motion-vm.md](motion-vm.md#the-second-motion-vm---fun_80038158)): the directional steps 0x03/0x19/0x20 carry `bits` in operand byte 1's low nibble; the pad-echo step 0x06 and the AABB wander 0x18 scatter a 4-bit selector over their four operand bytes' high bits (`(b1&0x80)>>4 | (b2&0x80)>>5 | (b3&0x80)>>6 | b4>>7`). All step `0x80 >> (2 + bits)`.
+- **Tail-section-1 motion streams** (`FUN_80038158` - the ambient town-NPC wander; see [motion-vm.md](motion-vm.md#the-second-motion-vm---fun_80038158)): the directional steps 0x03/0x19/0x20 carry `bits` in operand byte 1's low nibble; the home-relative step 0x06 and the AABB wander 0x18 scatter a 4-bit selector over their four operand bytes' high bits (`(b1&0x80)>>4 | (b2&0x80)>>5 | (b3&0x80)>>6 | b4>>7`). All step `0x80 >> (2 + bits)`.
 
 There is **no synthesised motion bytecode** for the yield ops: 0x37/0x41/0x47 are the field VM's own yield-class opcodes. The dispatcher parks the op's instruction pointer at actor `+0x94` (progress cursor `+0x54`, HALT flag `0x400`) and `FUN_8003774C` interprets the record bytes in place each frame, resolving the same `0x80` extended-target convention as the field VM ([script-vm.md](script-vm.md) § 0x37-0x42).
 

@@ -277,8 +277,9 @@ pub struct SummonPart {
     pub record_off: usize,
     /// `record[+0]` mesh selector ([`MODEL_SEL_TRANSFORM_NODE`] = transform node).
     pub model_sel: i16,
-    /// `record[+2]` flags word.
-    pub flags: u16,
+    /// `record[+2]`, the reserved halfword: nothing reads it and it is
+    /// zero in every record with no reader (see the format page).
+    pub reserved: u16,
     /// File-offset range of the part's move-VM bytecode (`record+4` up to the
     /// next part's record, bounded by the data region end).
     pub bytecode: Range<usize>,
@@ -430,12 +431,12 @@ pub fn parse(bytes: &[u8], link_base: u32) -> SummonOverlay {
         let in_region: Vec<usize> = offs.into_iter().filter(|&f| f >= ds).collect();
         for (i, &f) in in_region.iter().enumerate() {
             let model_sel = i16::from_le_bytes([bytes[f], bytes[f + 1]]);
-            let flags = u16::from_le_bytes([bytes[f + 2], bytes[f + 3]]);
+            let reserved = u16::from_le_bytes([bytes[f + 2], bytes[f + 3]]);
             let end = in_region.get(i + 1).copied().unwrap_or(bytes.len());
             parts.push(SummonPart {
                 record_off: f,
                 model_sel,
-                flags,
+                reserved,
                 bytecode: (f + 4)..end.max(f + 4),
             });
         }
@@ -470,12 +471,12 @@ pub fn parse_records_at(bytes: &[u8], offsets: &[usize]) -> Vec<SummonPart> {
     let mut parts = Vec::with_capacity(offs.len());
     for (i, &f) in offs.iter().enumerate() {
         let model_sel = i16::from_le_bytes([bytes[f], bytes[f + 1]]);
-        let flags = u16::from_le_bytes([bytes[f + 2], bytes[f + 3]]);
+        let reserved = u16::from_le_bytes([bytes[f + 2], bytes[f + 3]]);
         let end = offs.get(i + 1).copied().unwrap_or(bytes.len());
         parts.push(SummonPart {
             record_off: f,
             model_sel,
-            flags,
+            reserved,
             bytecode: (f + 4)..end.max(f + 4),
         });
     }
@@ -537,7 +538,7 @@ mod tests {
         let p = SummonPart {
             record_off: 0,
             model_sel: RENDER_NODE_MODE_A,
-            flags: 0,
+            reserved: 0,
             bytecode: 4..8,
         };
         assert!(p.is_render_mode_node());

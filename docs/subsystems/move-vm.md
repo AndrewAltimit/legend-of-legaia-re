@@ -41,7 +41,7 @@ How the move VM wires to the others:
 
 ### Move-buffer record sources
 
-The move buffer (`actor[+0x48]`) is seated from one of three record tables, all in the **same record format** `[i16 model_sel][u16 flags][move-VM bytecode]` (`model_sel = -1` transform node / `0x4000`-`0x4001` render-mode node / `>=0` library mesh; bytecode ends at op `0x08` Halt):
+The move buffer (`actor[+0x48]`) is seated from one of three record tables, all in the **same record format** `[i16 model_sel][u16 reserved][move-VM bytecode]` (`model_sel = -1` transform node / `0x4000`-`0x4001` render-mode node / `>=0` library mesh; bytecode ends at op `0x08` Halt):
 
 1. **`FUN_800204F8`** - the `EXEC_MOVE` path: a per-actor move record from the runtime root (`_DAT_8007B888` MOVE / `_DAT_8007B840` MOVE2).
 2. **Per-summon stagers** - `FUN_80021B04` spawns parts from a stager overlay's records (see [`formats/effect.md`](../formats/effect.md), `legaia_asset::summon_overlay`).
@@ -502,7 +502,7 @@ catalogued frames (`battle_gimard_tail_fire_a/_b`) finds **zero** live
 mask/sprite/panel/letterbox actors. The Fire Tail's live effect is instead a
 single **move-VM part-actor** in the part pool `DAT_801C90F0`, ticked each frame
 by the generic SCUS actor tick `FUN_80021DF4` (→ `FUN_80023070`); its
-`[i16 model_sel][u16 flags][bytecode]` record sits in the **battle overlay
+`[i16 model_sel][u16 reserved][bytecode]` record sits in the **battle overlay
 (0898)** resident data at `0x801F5xxx` (below the 0900 slot-B link base), with
 `model_sel` reading `-1` (transform node) / `5` (library mesh) - the summon
 part-record format, sourced from the battle overlay rather than a per-spell

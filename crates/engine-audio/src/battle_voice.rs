@@ -3,25 +3,19 @@
 //!
 //! PORT: FUN_8004DA00
 //!
-//! NOT WIRED: the device half is not modelled. The starter this hands its
-//! clip to, `FUN_8003EAE4`, cancels any in-flight read, positions the drive
-//! on the clip file (`FUN_8005C160(2, slot, ..)` = `CdlSetloc` shape) and
-//! issues CD command `0x15` (`li a0,0x15; jal 0x8005C034` at `0x8003EB68`,
-//! `CdlSeekL`), then raises `gp+0x908` / `gp+0x910` and stores the slot at
-//! `gp+0x890` - driver flags whose consumer (the CD-callback state machine
-//! that would chain a `CdlReadS` once the seek lands) is that ring. So the
-//! stream this arms is a drive-side sequence: a seek, then whatever the
-//! driver does with those flags. The engine has no drive to seek and no
-//! driver to poll them; its clips are pre-decoded
-//! (`legaia_engine_audio::XaClipBank`) and start after a modelled response
-//! delay. **The read chain is no longer untraced**: it is the eleven-state
-//! callback ring `FUN_8003D764`, decoded in [`crate::xa_transport`], whose
-//! sole state writer is `FUN_8003D53C`, and it is a scope row rather than a
-//! port gap (`[cd_transport_shims]`: every one of its states is a drive
-//! command). What that leaves is a transport the
-//! engine has no hardware for, not an unknown - the clip it streams is a
-//! whole `XA<n>` channel from the file start, not the cut one-shot the melee
-//! kernel's `FUN_8003D53C` requests take.
+//! NOT WIRED: no host builds the selector's inputs, and the clip shape has no
+//! player. Its three tables are runtime state - the seat maps `DAT_8007BD10`
+//! (seat -> party slot) and `DAT_8007BD09` (seat -> monster voice index),
+//! written at battle load, plus the voice-index -> clip table at `0x800787AF`,
+//! which nothing parses - so a caller would have nothing to hand over. What it
+//! arms is also a whole `XA<n>` channel played from the file start; the
+//! engine's [`crate::XaClipBank`] holds pre-decoded cut clips and
+//! `AudioBgmDirector` plays those, so there is no whole-channel stream player
+//! for the [`BattleVoiceStep::Arm`] outcome to reach. The drive-side transport
+//! (`FUN_8003EAE4`'s seek plus the `gp+0x908` / `gp+0x910` driver flags,
+//! serviced by the `FUN_8003D764` callback ring decoded in
+//! [`crate::xa_transport`]) is device layer the port replaces rather than
+//! reproduces, and is not what holds this row open.
 //!
 //! Retail reaches this pass through a **static actor template**
 //! (`docs/reference/functions/runtime-libs.md`), not a call: the battle

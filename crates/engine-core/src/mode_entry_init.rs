@@ -53,11 +53,17 @@ const TILE_UNITS: i32 = 0x80;
 /// carries.
 const TILE_CENTRE: i32 = 0x40;
 
-/// The cold-entry player seat: the centre of the camera view window.
+/// The centre of the camera view window.
 ///
-/// `FUN_801D6704` spawns the player actor at `(0xA40, 0, 0xA40)` on a cold
-/// entry, and [`crate::world::FIELD_COLD_SPAWN_XZ`] is the engine's mirror of
-/// the X/Z component.
+/// Retail spawns the **ambient particle emitter** here on a non-return field
+/// entry (`FUN_801D6704` `0x801D6FD8`, template `0x801F271C`, handler
+/// `FUN_801D6058`); it is not retail's player seat, which comes from the
+/// destination-entry pair `_DAT_80073EF4` / `_DAT_80073EF8` on both arms. The
+/// engine keeps the constant as the player's fallback because its scene picker
+/// can enter a scene with no door operand, which retail never does - see
+/// `World::resolve_cold_field_spawn` and
+/// `docs/subsystems/field-locomotion.md#spawn-position-on-scene-entry`.
+/// [`crate::world::FIELD_COLD_SPAWN_XZ`] is the X/Z component.
 pub const FIELD_COLD_SPAWN: (i16, i16, i16) = (0xA40, 0, 0xA40);
 
 /// How the field initialiser was entered - the field-entry mode global
@@ -68,18 +74,26 @@ pub const FIELD_COLD_SPAWN: (i16, i16, i16) = (0xA40, 0, 0xA40);
 /// positioned:
 ///
 /// - `Cold` (`0`): the player actor is **allocated** (from the resident
-///   template) and an extra actor is spawned at [`FIELD_COLD_SPAWN`].
+///   template) and the ambient emitter is spawned at [`FIELD_COLD_SPAWN`].
+///   Retail reaches this arm on **every ordinary scene change**, not only at
+///   New Game: the initialiser's epilogue clears the global, and no field-side
+///   routine writes it.
 /// - `Warp` (`2`): the seven per-list actor sweeps run instead (`FUN_801D7518`
 ///   once per list), the player actor is reused, and the saved transition
 ///   coords `_DAT_80084568` / `_DAT_8008456C` overwrite the MAN camera anchor.
+///   Retail reaches this arm only on a return from battle, a minigame, or the
+///   FMV resume arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldEntryMode {
-    /// `_DAT_8007B8B8 == 0` - a fresh field entry (the New Game opening).
+    /// `_DAT_8007B8B8 == 0` - a fresh field entry (any ordinary scene change).
     Cold,
-    /// `_DAT_8007B8B8 == 2` - a scene-to-scene warp.
+    /// `_DAT_8007B8B8 == 2` - a return from battle / a minigame / an FMV.
     Warp,
     /// Any other value. The initialiser's arms treat it as "neither": no
-    /// extra-actor spawn and no saved-coord override.
+    /// extra-actor spawn and no saved-coord override. Retail's one such value
+    /// is the transient `1` `FUN_80016230` writes on the way out of the field
+    /// (`0x80016414`), which every return handler renormalises to `2` before
+    /// the initialiser runs.
     Other(u32),
 }
 

@@ -321,7 +321,7 @@ pub(crate) const FIELD_NPC_MOTION_SPEED: u16 = 8;
 ///   = one retail update; the frame-step scalar is modelled by tick cadence,
 ///   not by scaling the step).
 /// - `FUN_80038158` (MAN tail-section-1 motion streams): the directional
-///   steps `0x03`/`0x19`/`0x20`, the pad-echo step `0x06`, and the AABB
+///   steps `0x03`/`0x19`/`0x20`, the home-relative step `0x06`, and the AABB
 ///   wander `0x18` all move `0x80 >> (2 + bits)` per frame.
 // PORT: FUN_8003774C (ops 0x37/0x41/0x47 step magnitude)
 // REF: FUN_80038158 (ops 0x03/0x06/0x18/0x19/0x20 step magnitude)

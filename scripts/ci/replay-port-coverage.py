@@ -472,6 +472,38 @@ CANONICAL_LADDERS = [
     # class byte, so without the executable every id falls to the action-id
     # dispatcher and half the band cannot be seated.
     ("w4d_cast_band_ladder", "legaia-engine-core"),
+    # --- lanes W1-B / W1-C / W1-D / W2-C: the cast band by DEPTH -------
+    # `w4d_cast_band_ladder` above is denominated in spell ids and steps two
+    # arms per band entry, which answers "was this body reached at all" and
+    # nothing about what runs inside it. These four are the depth axis, and
+    # each is a different denominator:
+    #
+    # `w1b_seru_ticks_ladder` / `w1c_seru_ticks_ladder` walk the player-Seru
+    # tick bodies of ids 0x81..=0x86 and 0x87..=0x8B through their whole phase
+    # chain. Those bodies are `beq` chains fifteen arms deep whose simulation
+    # writes live in the late arms, so an id-denominated ladder enters the
+    # body and exits it without executing the half that does the work.
+    #
+    # `w1d_trampoline_arms_ladder` is denominated in `(PROT entry, action id)`
+    # PAIRS, because those fourteen bodies are reached only through their
+    # module's trampoline: an id the trampoline does not name ticks nothing,
+    # and one cell can hold two bodies, so an entry-keyed ladder runs one of
+    # them and reports the cell covered.
+    #
+    # `w2c_cast_band_body_ladder` takes its denominator from the SOURCES
+    # rather than from a hand-written table: it scrapes every `// PORT:`
+    # address out of the three cast-band modules at compile time and fails if
+    # a body exists that its row table does not account for. That is the one
+    # member of this union whose coverage claim cannot silently go stale when
+    # a later lane adds a body.
+    #
+    # All four are disc-gated (`w1c` and `w1d` additionally on SCUS, since the
+    # resolver consults the spell table's class byte) and skip-pass without
+    # `LEGAIA_DISC_BIN`; export WITHOUT `--release`.
+    ("w1b_seru_ticks_ladder", "legaia-engine-core"),
+    ("w1c_seru_ticks_ladder", "legaia-engine-core"),
+    ("w1d_trampoline_arms_ladder", "legaia-engine-core"),
+    ("w2c_cast_band_body_ladder", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

@@ -560,7 +560,7 @@ overlay's play loop selects from, decoded straight from the overlay bytes.
   body part with a `FUN_80021B04` call passing a per-part record - directly or
   through the `FUN_80050ED4` pool wrapper (both scanned).
 - `parse(bytes, link_base)` scans those call sites and recovers the records
-  (`[i16 model_sel][u16 flags][move-VM bytecode]`, `model_sel == -1` =
+  (`[i16 model_sel][u16 reserved][move-VM bytecode]`, `model_sel == -1` =
   transform/pivot node, `0x4000`/`0x4001` = render-mode nodes). Records live
   in-file under link base `0x801F69D8`. The input must be one entry's bytes
   and no more; `unique_content_len` recomputes that bound from a start/next

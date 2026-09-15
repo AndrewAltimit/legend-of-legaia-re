@@ -257,7 +257,14 @@ reading as evidence:
     python3 scripts/ci/check-port-provenance.py --addr 801d5de0
     python3 scripts/ci/check-port-provenance.py --signal dual-label
     python3 scripts/ci/check-port-provenance.py --emit-waivers
+    python3 scripts/ci/check-port-provenance.py \
+        --funcs     /path/to/checkout/ghidra/scripts/funcs \
+        --extracted /path/to/checkout/extracted          # from a worktree
 
+Both corpora are gitignored, so a worktree has neither and the run there would
+otherwise examine nothing. `--funcs` / `--extracted` rebind them to another
+checkout's copies by path - which is the supported way to run the checker from
+a worktree, because *copying* either corpus in would stage Sony bytes.
 `--live-only` needs `target/port-catalog/catalog.csv`, which
 `port-catalog.py --live-only` writes. Prefer it: a wrong tag on an inert port is
 a doc bug, while a wrong tag on a live one also mis-credits disc coverage.
@@ -335,6 +342,15 @@ row's subject `s`:
 | adjacent-body | `c` and `s` fall in the same, or in two touching, `jr ra`-delimited bodies (the boundary words included) | "the ladder arms above it", "the nearest `jr ra` boundary above it" |
 | co-sited | `c` shares a body with another address the same row cites that *does* reach `s` | "the `sb rt,0x289(rs)` stores in the same caller" |
 | jump-table | the words at `c` hold `s`, or a co-cited address that reaches `s` | "arm 6 of the switch, jump table `0x80010AE4`" |
+| argument-setup | a `jal` to `s` sits within four words *after* `c`, in `c`'s own body | "the wide flag is the record's `+0x20` (`0x801F1D0C`)" - the `lbu` forming the argument, one word before the call |
+
+The argument-setup relation is the narrowest of the six and exists because a
+row that pins *which value* a call is handed cites the instruction that forms
+it, not the call word: `0x801F1D0C` is `lbu a2, 0x20(v0)` and the `jal
+0x80055468` it feeds is at `0x801F1D10`, so the citation missed the site test by
+one instruction. The window is capped at four words and confined to the
+citation's own `jr ra`-delimited body, so a coincidence has to be a call to the
+exact subject a handful of instructions away.
 
 A body is delimited by `jr ra` and its delay slot, inclusive on both ends -
 which is what makes "this address is interior to that body" and "this is the
@@ -448,8 +464,17 @@ corroborating siblings in a `--show-waived --signal module-orphan` run.
 
 ## An empty corpus is not a clean run
 
-`ghidra/scripts/funcs/` is gitignored, so a fresh clone or a git worktree has no
+`ghidra/scripts/funcs/` is gitignored, so a fresh clone or a worktree has no
 dumps and every port looks unimpeachable. The checker says so explicitly rather
 than printing a clean report, because this repo has already shipped the other
 kind: `check-port-tags.py` once printed "0 warnings across 0 file(s)", which
 reads as a pass and meant it had scanned nothing.
+
+Saying so was not enough on its own. The message printed and the run **exited
+zero**, so a reader working where the corpus is absent by construction rather
+than by accident could take a green exit status for a checked tree. A
+corpus-blind run now exits **2**, and the message names the directory it looked
+in and the `--funcs` flag that fixes it. `--allow-vacuous` restores the old exit
+0 for a caller that genuinely wants the no-op. Nothing in CI or pre-commit runs
+this checker, so the new exit code cannot turn a passing gate red; it only stops
+a hand-run from reading as a pass.

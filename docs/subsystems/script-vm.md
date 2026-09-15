@@ -103,8 +103,8 @@ Disc-gated pin: `engine-core/tests/field_npc_placements_disc.rs`.
 > (offset 0, or `+0x800` behind the v12 header) was long assumed to carry
 > field-VM scripts because its records open with `0xFFFF 0x0000`. It does not:
 > the records are **move-VM (`FUN_80023070`) records in the summon-stager format**
-> `[i16 model_sel][u16 flags][move-VM bytecode]` - the `0xFFFF 0x0000` lead is
-> `model_sel = -1` (a transform/pivot node) + `flags = 0`, and the `0x0008`
+> `[i16 model_sel][u16 reserved][move-VM bytecode]` - the `0xFFFF 0x0000` lead is
+> `model_sel = -1` (a transform/pivot node) + the zero `reserved` halfword, and the `0x0008`
 > terminator is move-VM opcode `0x08` (Halt). The runtime chain: the field VM
 > itself (`FUN_801DE840`) calls the installer **`FUN_800252EC(id)`**, which
 > resolves `record = _DAT_8007b8d0 + offsets[id]` and hands it to the part-stager
