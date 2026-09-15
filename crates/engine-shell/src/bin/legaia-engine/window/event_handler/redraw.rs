@@ -121,6 +121,9 @@ impl PlayWindowApp {
             // yet (or has paused into save-select).
             if self.boot_ui.is_active() {
                 let _ = self.tick_boot_ui();
+                // The scene tick (and its SFX drain) is skipped below, so
+                // the menu cues queued this frame fire here.
+                self.tick_menu_sfx();
                 self.prev_pad = self.pad;
                 continue;
             }
@@ -233,6 +236,10 @@ impl PlayWindowApp {
                 // stayed skipped.
                 self.session.open_field_menu();
                 if self.session.field_menu_is_open() {
+                    // The open blips as a confirm, as on the browser page;
+                    // a refused open blips nothing.
+                    self.fire_menu_cue(legaia_engine_shell::bgm::RETAIL_MENU_CONFIRM_CUE);
+                    self.tick_menu_sfx();
                     self.boot_ui = BootUiState::FieldMenu { sub: None };
                     self.prev_pad = self.pad;
                     continue;

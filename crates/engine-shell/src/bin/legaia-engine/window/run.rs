@@ -432,12 +432,15 @@ pub(super) fn cmd_play_window_with_record(
     // Opt-in: snap the player's Y to the per-scene floor height each
     // locomotion step. Off by default → flat-Y behaviour preserved.
     session.host.world.locomotion.follow_terrain_height = terrain_y;
-    // Opt-in: retail's three-probe leading-edge wall footprint (the
-    // `DAT_801f2214` standoff). Off by default → candidate-centre test.
+    // Retail's three-probe leading-edge wall footprint (the `DAT_801f2214`
+    // standoff), solid NPCs (the `DAT_801f21b4` actor probes) and the
+    // MAN-authored NPC patrol routes through the motion VM are all retail
+    // behaviour and default ON - the same three the browser play page sets
+    // unconditionally. `--no-edge-collision` / `--no-solid-npcs` /
+    // `--no-live-npcs` clear them (candidate-centre test, walk-through NPCs,
+    // NPCs parked at their placement anchors).
     session.host.world.locomotion.leading_edge_wall_probes = edge_collision;
     session.host.world.npcs.solid = solid_npcs;
-    // Opt-in: walk field NPCs along their MAN-authored routes through the
-    // motion VM. Off by default -> NPCs rest at their placement anchors.
     session.host.world.npcs.animate = live_npcs;
     // Retail always runs the damage finisher (`FUN_801ddb30`) after the
     // melee roll, so it is the default; `--no-damage-finish` keeps the flat

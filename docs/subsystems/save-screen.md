@@ -933,16 +933,43 @@ and is the sharp edge for a new one.
 
 The global game-data header at `RETAIL_GAME_DATA_OFFSET` carries the location
 name (`0x200`), the scene label (`0x408`) and the coin bank (`0x464`) beside
-the gold slot, and only gold is composed. A host that claims a previously-free
-card block and composes into it therefore ships a save whose location and
-scene label are whatever the card held there - `CardView::claim_block` writes
-the directory frame and does not clear the data block.
+the gold slot, and the composer itself writes only gold there. The location
+and scene label are the **resume point** and have their own writer,
+`SaveResume::write_into_retail_sc_block` (`card::write_retail_resume`): the
+CDNAME label NUL-padded to its `0x10`-byte field and the banner name to its
+`0x24`-byte field - the same two copies retail's own compose path makes, so a
+block written by a host that claims a previously-free card block no longer
+inherits whatever the card held there. The browser's card Save composes both
+after the payload; the coin bank stays the card's.
 
 Two properties keep the aliasing benign and are worth not re-deriving: slot 3
 (Terra)'s record tail overlaps the story-flag bitmap by design, and the
 composer's write order - records, then flags, then inventory - is what
-reclaims it. `engine-core/tests/save_block_checksum.rs` pins the region list,
-so extending the composer fails there rather than in a garbled info panel.
+reclaims it. `engine-core/tests/save_block_checksum.rs` pins the composer's
+region list, so extending *it* fails there rather than in a garbled info
+panel; the resume and engine-ext writers are siblings precisely so that list
+stays the list of regions retail reads.
+
+### The engine-ext blob in the unread tail
+
+The compose direction copies `0x1A18` bytes of live state to the front of the
+block and memsets the rest (`_li a2,0x1a18` at `0x801e1bd8`,
+`overlay_menu_801e1934.txt`); the read direction copies the same `0x1A18`
+bytes back (`_li a2,0x1a18` at `0x801dfaac`, `overlay_menu_801dd35c.txt`). So the
+`0x5E4` bytes from `0x1A18` up to the checksum word at `0x1FFC` are zero on
+every retail card and never reach RAM - the one place in the block the game
+does not read. `card::RETAIL_LIVE_STATE_SIZE` names the boundary.
+
+That is where a card written by this engine keeps the state retail has no
+slot for - the play clock, the present-party composition, the per-character
+ext and the chain library (the LGSF `LGX2` / `LGX4` bodies, byte-identical to
+the file's): `SaveFile::write_engine_ext_into_retail_sc_block` writes
+`"LGXE"`, a `u16` length and the `LGX2` body, then a `u16` length and the
+`LGX4` body, and restamps the checksum (the sum covers the tail). `from_retail_sc_block`
+reads it back magic-guarded, so a retail block still yields `SaveExtV2::default()`
+exactly as before, and a damaged blob costs the ext rather than the save. A
+blob too large for the tail is withheld and the tail zeroed - the retail
+regions are never at stake. Pinned by `crates/save/tests/resume_and_engine_ext.rs`.
 
 ### The PSX title frame
 
@@ -1023,15 +1050,17 @@ located via `block_offset = 0x200 + (ram_addr - 0x80084340)`.
 | `0x05C8` | 0x414 × 4 | character records (Vahn, Noa, Gala, Terra) - base `game+0x3C8` = live RAM `0x80084708` |
 | `0x14C0` | 0x200 | story-flag bitmap (mirrors RAM `0x80085600..0x80085800`) - overlaps record [3]'s tail |
 | `0x1818` | 0x90 | inventory array - 72 × `(item_id: u8, count: u8)` (mirrors RAM `0x80085958..0x800859E8`) - overlaps record [3]'s tail |
+| `0x1A18` | 0x5E4 | end of the live-state copy (`RETAIL_LIVE_STATE_SIZE`): zero on a retail card, never read back - the engine-ext blob's region ([above](#the-engine-ext-blob-in-the-unread-tail)) |
+| `0x1FFC` | 4 | additive block checksum ([above](#save-block-checksum-fun_801e38d8)) |
 
 **Display header** (`0x0200..0x05C7`):
 
 | Offset | Size | Field |
 |---|---|---|
-| `+0x000` | 8 | Current location name (ASCII, null-padded), e.g. `Rim Elm` |
+| `+0x000` | 0x24 | Current location name (ASCII, NUL-terminated), e.g. `Rim Elm` - retail's `0x24`-byte copy of the scene MAN's banner name ([place-names](../formats/place-names.md)), so the bytes after the NUL are whatever followed it in the MAN |
 | `+0x054` | 12 | Primary character display name (for save-select screen) |
-| `+0x208` | 8 | CDNAME label of most-recently-visited scene (e.g. `town0b`) |
-| `+0x218` | 8 | CDNAME label of previous scene (e.g. `town01`) |
+| `+0x208` | 0x10 | CDNAME label of most-recently-visited scene (e.g. `town0b`), NUL-padded - the scene the loader resumes into |
+| `+0x218` | 0x10 | CDNAME label of previous scene (e.g. `town01`) |
 | `+0x25C` | 4 | Party gold (mirrors RAM `0x8008459C`) |
 
 **Character records**: `CHARACTER_RECORD_SIZE` (0x414) bytes each. The SC block is a

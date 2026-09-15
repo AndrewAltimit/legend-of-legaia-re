@@ -270,9 +270,92 @@ pub(crate) fn disk_port_blocks(
     }
 }
 
-pub(crate) fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
+/// Path of `slot`'s LGSF file under `save_dir` - the shape
+/// `MenuRuntime::slot_path` writes (`slot_NN.<SAVE_EXT>`, zero-padded).
+pub(crate) fn slot_file_path(save_dir: &Path, slot: u8) -> std::path::PathBuf {
     use legaia_engine_core::menu_runtime::SAVE_EXT;
+    save_dir.join(format!("slot_{slot:02}.{SAVE_EXT}"))
+}
+
+/// Read and parse `slot`'s LGSF file together with its resume point (empty
+/// for a file written before the `LGX5` trailer existed).
+pub(crate) fn read_slot_save(
+    save_dir: &Path,
+    slot: u8,
+) -> anyhow::Result<(legaia_save::SaveFile, legaia_save::SaveResume)> {
+    use anyhow::Context;
+    let path = slot_file_path(save_dir, slot);
+    let bytes = std::fs::read(&path)
+        .with_context(|| format!("read save slot {slot} from {}", path.display()))?;
+    legaia_save::SaveFile::parse_with_resume(&bytes)
+        .with_context(|| format!("parse save slot {slot} ({} bytes)", bytes.len()))
+}
+
+/// Write `sf` + its resume point to `slot`'s LGSF file, creating `save_dir`.
+/// The counterpart of [`read_slot_save`]; the same file shape
+/// `MenuRuntime::save_to_slot` writes, plus the trailer that runtime has no
+/// scene to fill.
+pub(crate) fn write_slot_save(
+    save_dir: &Path,
+    slot: u8,
+    sf: &legaia_save::SaveFile,
+    resume: &legaia_save::SaveResume,
+) -> anyhow::Result<std::path::PathBuf> {
+    use anyhow::Context;
+    std::fs::create_dir_all(save_dir)
+        .with_context(|| format!("create save dir {}", save_dir.display()))?;
+    let path = slot_file_path(save_dir, slot);
+    std::fs::write(&path, sf.write_with_resume(resume))
+        .with_context(|| format!("write save slot {slot} to {}", path.display()))?;
+    Ok(path)
+}
+
+/// The [`SlotSnapshot`](legaia_engine_core::save_select::SlotSnapshot) a
+/// parsed save presents on the load screen: the lead record's own name /
+/// level / HP / MP through [`legaia_save::SaveFile::leader_summary`] - the
+/// one derivation the browser's card rack uses too - and the resume point's
+/// location row. A save with no party records is not loadable and reads as
+/// foreign.
+pub(crate) fn snapshot_for_save(
+    slot: u8,
+    sf: &legaia_save::SaveFile,
+    resume: &legaia_save::SaveResume,
+) -> legaia_engine_core::save_select::SlotSnapshot {
     use legaia_engine_core::save_select::{SlotContent, SlotSnapshot};
+    let Some(leader) = sf.leader_summary() else {
+        return SlotSnapshot::foreign(slot);
+    };
+    // The location row is the banner name retail prints; a save written
+    // before the resume trailer existed (or in a scene whose MAN has no
+    // printable banner) falls back to the scene label, then to nothing -
+    // never to an invented kingdom.
+    let location = if !resume.location.is_empty() {
+        resume.location.clone()
+    } else {
+        resume.scene.clone()
+    };
+    SlotSnapshot {
+        slot,
+        present: true,
+        content: SlotContent::LegaiaSave,
+        label: if leader.name.is_empty() {
+            format!("Slot {}", slot + 1)
+        } else {
+            leader.name.clone()
+        },
+        play_time_seconds: sf.ext_v2.play_time_seconds,
+        party_lv: leader.level,
+        location,
+        money: sf.ext.money.max(0) as u32,
+        leader_char_id: leader.char_id,
+        leader_name: leader.name,
+        leader_hp: leader.hp,
+        leader_mp: leader.mp,
+    }
+}
+
+pub(crate) fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
+    use legaia_engine_core::save_select::SlotSnapshot;
     // Scan up to 15 slots (one per retail PSX memory-card block) so
     // the load-screen 5×3 grid can render every potential slot.
     const MAX_SLOTS: u8 = 15;
@@ -284,7 +367,7 @@ pub(crate) fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_sel
         // save-select scanners must use the same shape; an earlier
         // mismatch (`slot_N.lgsf`) made every save invisible at boot,
         // greying out Continue even with valid saves on disk.
-        let path = save_dir.join(format!("slot_{slot:02}.{SAVE_EXT}"));
+        let path = slot_file_path(save_dir, slot);
         // Only a missing file proves the slot is free. Every other
         // outcome - an unreadable file, or one whose bytes don't parse -
         // means the slot is occupied by something we can't load, which
@@ -303,55 +386,8 @@ pub(crate) fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_sel
                 continue;
             }
         };
-        let snap = match legaia_save::SaveFile::parse(&bytes) {
-            Ok(sf) => {
-                // Prefer the record's retail displayed-level byte (+0x130);
-                // fall back to inferring from the cumulative XP word (+0x0)
-                // against the retail base curve.
-                let leader = sf.party.members.first();
-                let lv = leader
-                    .map(|r| match r.magic_rank() {
-                        l @ 1..=99 => l,
-                        _ => legaia_save::level_for_cumulative_xp(r.cumulative_xp()),
-                    })
-                    .unwrap_or(1);
-                let leader_hp = leader
-                    .map(|r| {
-                        let v = r.hp_mp_sp();
-                        (v.hp_cur, v.hp_max)
-                    })
-                    .unwrap_or((0, 0));
-                let leader_mp = leader
-                    .map(|r| {
-                        let v = r.hp_mp_sp();
-                        (v.mp_cur, v.mp_max)
-                    })
-                    .unwrap_or((0, 0));
-                // Retail saves serialise the scene name into the SC
-                // block (`+0x200..0x208`, ASCII null-padded). Our LGSF
-                // saves don't carry that field yet, so default to the
-                // most-common starting kingdom; engines that capture
-                // it can override.
-                let _ = sf.ext_v2.active_party.is_empty(); // kept-for-future-use
-                let location = "Drake Kingdom".to_string();
-                SlotSnapshot {
-                    slot,
-                    present: true,
-                    content: SlotContent::LegaiaSave,
-                    label: format!("Slot {slot}"),
-                    play_time_seconds: sf.ext_v2.play_time_seconds,
-                    party_lv: lv,
-                    location,
-                    money: sf.ext.money.max(0) as u32,
-                    // Lead char is always Vahn (char_id=0) in retail
-                    // Legaia - Vahn is the protagonist and slot 0 of
-                    // the SC character record array.
-                    leader_char_id: 0,
-                    leader_name: "Vahn".to_string(),
-                    leader_hp,
-                    leader_mp,
-                }
-            }
+        let snap = match legaia_save::SaveFile::parse_with_resume(&bytes) {
+            Ok((sf, resume)) => snapshot_for_save(slot, &sf, &resume),
             Err(_) => SlotSnapshot::foreign(slot),
         };
         out.push(snap);
@@ -605,5 +641,88 @@ mod save_rack_tests {
         assert!(!flat.is_card_ports());
         assert_eq!(flat.slots().len(), SLOT_GRID_CELLS as usize);
         assert_ne!(disk_save_rack(dir.path()).slots().len(), flat.slots().len());
+    }
+}
+
+#[cfg(test)]
+mod slot_model_tests {
+    use super::{read_slot_save, scan_save_dir, write_slot_save};
+    use legaia_engine_core::save_select::SlotContent;
+    use legaia_save::{CharacterRecord, HpMpSp, Party, SaveFile, SaveResume};
+
+    fn a_save() -> SaveFile {
+        let mut r = CharacterRecord::zeroed();
+        r.set_name("Vahn");
+        r.set_magic_rank(7);
+        r.set_hp_mp_sp(HpMpSp {
+            hp_cur: 90,
+            hp_max: 120,
+            mp_cur: 3,
+            mp_max: 9,
+            sp_cur: 0,
+            sp_max: 0,
+        });
+        SaveFile {
+            party: Party { members: vec![r] },
+            ..SaveFile::default()
+        }
+    }
+
+    /// The panel used to print `"Vahn"` / `"Drake Kingdom"` / `"Slot N"`
+    /// whatever the file held. It reads the record and the resume point now.
+    #[test]
+    fn the_load_screen_prints_the_record_and_the_saved_scene() {
+        let dir = tempfile::tempdir().unwrap();
+        let resume = SaveResume {
+            scene: "town01".into(),
+            location: "Rim Elm".into(),
+        };
+        write_slot_save(dir.path(), 2, &a_save(), &resume).unwrap();
+        let slots = scan_save_dir(dir.path());
+        let snap = &slots[2];
+        assert_eq!(snap.content, SlotContent::LegaiaSave);
+        assert_eq!(snap.leader_name, "Vahn");
+        assert_eq!(snap.label, "Vahn");
+        assert_eq!(snap.party_lv, 7);
+        assert_eq!(snap.leader_hp, (90, 120));
+        assert_eq!(snap.leader_mp, (3, 9));
+        assert_eq!(snap.location, "Rim Elm");
+        let (_, back) = read_slot_save(dir.path(), 2).unwrap();
+        assert_eq!(back, resume);
+    }
+
+    /// A file written before the trailer existed: the location row is the
+    /// scene label if any, else empty - not an invented kingdom.
+    #[test]
+    fn a_save_without_a_resume_point_prints_no_location() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(super::slot_file_path(dir.path(), 0), a_save().write()).unwrap();
+        let slots = scan_save_dir(dir.path());
+        assert!(slots[0].present);
+        assert_eq!(slots[0].location, "");
+        let scene_only = SaveResume {
+            scene: "town01".into(),
+            location: String::new(),
+        };
+        write_slot_save(dir.path(), 1, &a_save(), &scene_only).unwrap();
+        assert_eq!(scan_save_dir(dir.path())[1].location, "town01");
+    }
+
+    /// A zeroed record has no displayed level and no XP: it prints as level
+    /// 1 under the shared law, and a save with no records is not loadable.
+    #[test]
+    fn zeroed_record_prints_level_one_and_no_records_is_foreign() {
+        let dir = tempfile::tempdir().unwrap();
+        let sf = SaveFile {
+            party: Party {
+                members: vec![CharacterRecord::zeroed()],
+            },
+            ..SaveFile::default()
+        };
+        write_slot_save(dir.path(), 0, &sf, &SaveResume::default()).unwrap();
+        write_slot_save(dir.path(), 1, &SaveFile::default(), &SaveResume::default()).unwrap();
+        let slots = scan_save_dir(dir.path());
+        assert_eq!(slots[0].party_lv, 1);
+        assert_eq!(slots[1].content, SlotContent::Foreign);
     }
 }

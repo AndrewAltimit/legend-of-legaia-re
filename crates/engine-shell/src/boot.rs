@@ -1480,6 +1480,33 @@ impl BootSession {
         Ok(self.host.world.mode)
     }
 
+    /// Where a save written now would resume: the loaded scene's CDNAME
+    /// label and its banner name (the scene MAN's section 2, the string
+    /// retail's `FUN_8003AEB0` installs as the entry banner and copies into
+    /// the save-state location field - `docs/formats/place-names.md`). Both
+    /// empty when no scene is loaded; the location alone is empty for a
+    /// scene whose MAN carries no printable banner (the Shift-JIS endings).
+    ///
+    /// The MAN is re-read from the PROT index here rather than cached: it
+    /// runs once per save, and a cache would be one more thing to keep in
+    /// step with scene entry.
+    pub fn current_resume(&self) -> legaia_save::SaveResume {
+        let Some(scene) = self.host.scene.as_ref() else {
+            return legaia_save::SaveResume::default();
+        };
+        let location = scene
+            .field_man_payload(&self.host.index)
+            .ok()
+            .flatten()
+            .and_then(|man| legaia_asset::place_names::scene_name(&man))
+            .map(|n| n.name)
+            .unwrap_or_default();
+        legaia_save::SaveResume {
+            scene: scene.name.clone(),
+            location,
+        }
+    }
+
     /// Shut down the audio stream and clear the scene. Idempotent.
     pub fn shutdown(&mut self) {
         if let Some(audio) = self.audio.take() {

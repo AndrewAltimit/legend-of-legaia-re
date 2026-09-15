@@ -819,12 +819,102 @@ pub fn write_retail_coins(sc_block: &mut [u8], coins: u32) -> Result<()> {
 
 /// Byte offset from the SC block start to the most-recently-visited CDNAME
 /// scene label (NUL-terminated ASCII) - `game_data + 0x208`, the field the
-/// save-select screen reads for its location line's scene join.
+/// save-select screen reads for its location line's scene join and the
+/// scene retail's loader resumes into. The previous scene's label follows at
+/// `+0x418` (same width).
 pub const RETAIL_SCENE_LABEL_OFFSET: usize = 0x408;
+
+/// Width of the scene-label field: `0x10` bytes, NUL-terminated (the
+/// previous-scene label starts at `RETAIL_SCENE_LABEL_OFFSET + 0x10`).
+pub const RETAIL_SCENE_LABEL_LEN: usize = 0x10;
 
 /// Byte offset from the SC block start to the location display name
 /// (NUL-terminated ASCII at `game_data + 0x000`).
 pub const RETAIL_LOCATION_NAME_OFFSET: usize = RETAIL_GAME_DATA_OFFSET;
+
+/// Width of the location-name field. Retail installs the scene MAN's
+/// section-2 banner name here with a fixed `0x24`-byte copy
+/// (`FUN_8001A8B0(0x80084340, name, 0x24)` at `0x801E1A28`, see
+/// `docs/formats/place-names.md`), so whatever followed the name's NUL in the
+/// MAN rides along on a real card; a writer here NUL-pads the whole field.
+pub const RETAIL_LOCATION_NAME_LEN: usize = 0x24;
+
+/// Bytes of live game state a retail save block carries: the composer
+/// (`FUN_801E1934`) memsets its `0x2000`-byte buffer, copies `0x1A18` bytes
+/// from `0x80084140` over the front (`_li a2,0x1a18` at `0x801e1bd8`), and
+/// the loader (`FUN_801DD35C`) copies the same `0x1A18` bytes back
+/// (`_li a2,0x1a18` at `0x801dfaac`). Everything from here to the checksum
+/// word at [`RETAIL_BLOCK_CHECKSUM_OFFSET`] is zero on a retail card and
+/// never read by the game - the region the engine-ext blob
+/// (`crate::ext::RETAIL_ENGINE_EXT_OFFSET`) occupies.
+pub const RETAIL_LIVE_STATE_SIZE: usize = 0x1A18;
+
+/// A NUL-terminated printable-ASCII string at `at`, at most `width` bytes.
+/// Stops at the first NUL **or** non-printable byte - a free block's
+/// leftover bytes never come back as a name. `None` if `at` is out of range.
+fn retail_ascii_field(sc_block: &[u8], at: usize, width: usize) -> Option<String> {
+    let field = sc_block.get(at..at + width)?;
+    Some(
+        field
+            .iter()
+            .take_while(|&&b| (0x20..=0x7E).contains(&b))
+            .map(|&b| b as char)
+            .collect(),
+    )
+}
+
+/// The CDNAME scene label at [`RETAIL_SCENE_LABEL_OFFSET`], or `None` if the
+/// block is too short. Empty for a block nothing composed there.
+pub fn read_retail_scene_label(sc_block: &[u8]) -> Option<String> {
+    retail_ascii_field(sc_block, RETAIL_SCENE_LABEL_OFFSET, RETAIL_SCENE_LABEL_LEN)
+}
+
+/// The location display name at [`RETAIL_LOCATION_NAME_OFFSET`], or `None`
+/// if the block is too short. Empty for a block nothing composed there.
+pub fn read_retail_location_name(sc_block: &[u8]) -> Option<String> {
+    retail_ascii_field(
+        sc_block,
+        RETAIL_LOCATION_NAME_OFFSET,
+        RETAIL_LOCATION_NAME_LEN,
+    )
+}
+
+/// Write the resume point - the CDNAME `scene` label and the `location`
+/// display name - into their retail fields in place, NUL-padding each to its
+/// full width (truncating to `width - 1` so the terminator survives), and
+/// restamp the block checksum. Non-ASCII characters are written as `?`.
+/// `Err` if the block is too small to hold both fields.
+pub fn write_retail_resume(sc_block: &mut [u8], scene: &str, location: &str) -> Result<()> {
+    let need = RETAIL_SCENE_LABEL_OFFSET + RETAIL_SCENE_LABEL_LEN;
+    if sc_block.len() < need {
+        bail!("sc_block too small for the resume fields (need {need} bytes)");
+    }
+    let put = |sc_block: &mut [u8], at: usize, width: usize, text: &str| {
+        let field = &mut sc_block[at..at + width];
+        field.fill(0);
+        for (dst, c) in field.iter_mut().zip(text.chars()).take(width - 1) {
+            *dst = if c.is_ascii() && !c.is_ascii_control() {
+                c as u8
+            } else {
+                b'?'
+            };
+        }
+    };
+    put(
+        sc_block,
+        RETAIL_SCENE_LABEL_OFFSET,
+        RETAIL_SCENE_LABEL_LEN,
+        scene,
+    );
+    put(
+        sc_block,
+        RETAIL_LOCATION_NAME_OFFSET,
+        RETAIL_LOCATION_NAME_LEN,
+        location,
+    );
+    restamp_sc_block_checksum(sc_block);
+    Ok(())
+}
 
 /// RAM base address for the save game data block (`game_data[0]` in the SC block).
 ///
