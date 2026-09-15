@@ -154,6 +154,16 @@ pub struct MonsterRecord {
     /// family sits at `14`, Caruban at `46` and Koru at `48`, while Lapis
     /// (64800 HP) sits at `20`.
     pub size_class: u8,
+    /// Double-width **texture-page** flag (`+0x20`).
+    ///
+    /// Its primary reader is the enemy model upload `0x801F1D0C`, which hands
+    /// it to `FUN_80055468` and widens the VRAM rect `0x20 -> 0x40` when it is
+    /// non-zero - so it says "this monster's texture needs two pages", nothing
+    /// about its stats. Three of the summon ticks (PROT 0907 / 0908 / 0916)
+    /// borrow it as a "big model" **resist proxy**, reading it record-direct
+    /// through `0x801C9348[seat - 3]`; that is a second use of one byte, not
+    /// an instant-death-immunity field of its own.
+    pub wide_texture_page: u8,
     /// Spell-slot count (`+0x4A`).
     pub magic_count: u8,
     /// The `magic_count` spell entries the `+0x4C` offset array points at.
@@ -354,6 +364,7 @@ pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
     let element = *block.get(0x1D)?;
     let swing_class = *block.get(0x1E)?;
     let size_class = *block.get(0x1F)?;
+    let wide_texture_page = *block.get(0x20)?;
     let gold = legaia_bytes::u16_le(block, 0x44)?;
     let exp = legaia_bytes::u16_le(block, 0x46)?;
     let drop_item = *block.get(0x48)?;
@@ -378,6 +389,7 @@ pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         element,
         swing_class,
         size_class,
+        wide_texture_page,
         gold,
         exp,
         drop_item,
@@ -618,6 +630,7 @@ mod tests {
             element: 6,
             swing_class: 0,
             size_class: 26,
+            wide_texture_page: 0,
             gold: 30000,
             exp: 42000,
             drop_item: 0,

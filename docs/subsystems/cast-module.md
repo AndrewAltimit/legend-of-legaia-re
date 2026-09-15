@@ -434,7 +434,10 @@ pinned by what their consumers index:
   `+0x6C0` off it. Only the party seats have such a record, so the bound cannot
   be the eight-slot actor count.
 
-Engine mirror: `legaia_engine_vm::cast_module_ticks::CastModuleCtx::party_count`.
+Engine mirror: `legaia_engine_vm::cast_module_ticks::CastModuleCtx::party_count`,
+seeded at `World::cast_module_ctx` from the engine's present-party list
+(`PartyState::party_count`) clamped to the party row, not from the actor
+table's length.
 
 ### The seat-0 hardcode, and where it does not hold
 

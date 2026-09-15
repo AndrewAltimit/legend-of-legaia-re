@@ -926,10 +926,25 @@ pub struct BattleActionCtx {
     /// `[+0x278]` / `[+0x279]` - summon staging counters.
     pub summon_staging_a: u8,
     pub summon_staging_b: u8,
-    /// `[+0x287]` / `[+0x288]` - counter-attack trigger flags read at
-    /// `AttackReturn`.
-    pub counter_attack_a: u8,
-    pub counter_attack_b: u8,
+    /// `[+0x287]` - the **scripted-fight flag**. Battle init derives it from
+    /// the formation's per-battle flags (`FUN_800513F0` `0x80051430` stores
+    /// `(DAT_8007BD60 >> 5) & 4`, so the live value is `4`, not `1`), and the
+    /// field-VM's scripted-battle op reaches the same byte. All three of
+    /// `FUN_801E295C`'s reads are gates on it: the two capture-band audio
+    /// ducks (`0x801E4F94`, `0x801E5058`) and the `AttackReturn` counter
+    /// window (`0x801E5554`).
+    ///
+    /// It is **not** a counter-attack flag - that is [`Self::counter_attack`]
+    /// one byte up. Reading it as one left the ducks and the counter window
+    /// gated on a byte nothing wrote.
+    ///
+    /// REF: FUN_800513F0, FUN_801E295C
+    pub scripted_fight: u8,
+    /// `[+0x288]` - the **counter-attack** byte, the second half of the
+    /// `AttackReturn` window's three-way gate (`lbu v0,0x288(v1)` at
+    /// `0x801E5574`, after `+0x287` and `DAT_8007BD0D`). Cleared by the Done
+    /// band's menu arm (`sb zero,0x288(v1)` at `0x801E6114`).
+    pub counter_attack: u8,
     /// `[+0x290]` - the formation advantage the battle-setup roll
     /// (`FUN_80051D84`) wrote: `1` back attack, `2` pre-emptive strike. `Begin`
     /// **latches** it into [`Self::formation_latched`] and then clears it, so

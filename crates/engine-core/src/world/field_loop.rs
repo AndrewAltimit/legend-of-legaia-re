@@ -206,15 +206,12 @@ impl World {
         // battle loader's stat boost profile is picked by this flag.
         self.battle.scripted_fight = formation.per_battle_flags() != 0 || self.battle.no_escape;
         let scripted = self.battle.scripted_fight;
-        // The same byte inside the action context. `BattleActionCtx`'s field
-        // is named `counter_attack_a`, but all three of `FUN_801E295C`'s
-        // reads of `+0x287` (`0x801E4F94`, `0x801E5058`, `0x801E5554`) are
-        // gates on this flag - the counter-attack byte is `+0x288`. Nothing
-        // ever wrote the port's copy, so the two capture-cast arms that duck
-        // the audio on a scripted fight and the attack-return arm that pairs
-        // it with `+0x288` were unreachable. Retail's own value is `4`
-        // (`(DAT_8007BD60 >> 5) & 4`, `FUN_800513F0` `0x80051430`), not `1`.
-        self.battle_ctx.counter_attack_a = if scripted { 4 } else { 0 };
+        // The same byte inside the action context, `ctx[+0x287]`. All three
+        // of `FUN_801E295C`'s reads of it (`0x801E4F94`, `0x801E5058`,
+        // `0x801E5554`) are gates on this flag - the counter-attack byte is
+        // `+0x288`. Retail's own value is `4` (`(DAT_8007BD60 >> 5) & 4`,
+        // `FUN_800513F0` `0x80051430`), not `1`.
+        self.battle_ctx.scripted_fight = if scripted { 4 } else { 0 };
         let first_monster = party_count;
         for slot in 0..party_count as usize {
             let a = &mut self.actors[slot];

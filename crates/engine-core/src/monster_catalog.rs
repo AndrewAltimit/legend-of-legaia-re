@@ -138,6 +138,20 @@ pub struct MonsterDef {
     ///
     /// REF: FUN_801F0348
     pub size_class: u8,
+    /// Double-width **texture-page** flag (monster record `+0x20`; see
+    /// [`legaia_asset::monster_archive::MonsterRecord::wide_texture_page`]).
+    ///
+    /// Carried here for its **second** reader, not its first: three summon
+    /// ticks (PROT 0907 Nighto, 0908, 0916) read the byte record-direct
+    /// through `0x801C9348[seat - 3]` as a "big model" resist proxy, and
+    /// Nighto's kill / confuse roll
+    /// ([`legaia_engine_vm::cast_seru_ticks_a::NightoRoll::target_immune`])
+    /// forces the resist when it is non-zero **and** the fight is a scripted
+    /// one (`ctx[+0x287]`). Its first reader is the model upload's VRAM rect
+    /// widen, which the port's texture path does not consult.
+    ///
+    /// `0` for synthetic monsters, which is the "not immune" side.
+    pub wide_texture_page: u8,
     /// Element-badge strip index the battle name plaque wears, or `None`
     /// for a monster that wears no badge.
     ///
@@ -194,6 +208,7 @@ impl MonsterDef {
             element: 7,
             swing_class: 0,
             size_class: 0,
+            wide_texture_page: 0,
             plaque_badge: None,
             raw_stats: [0; 6],
         }
@@ -371,6 +386,7 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     def.swing_class = rec.swing_class;
     // Record `+0x1F` - the battle camera's framing input (`FUN_801F0348`).
     def.size_class = rec.size_class;
+    def.wide_texture_page = rec.wide_texture_page;
     def
 }
 
@@ -575,6 +591,7 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             element: 7,
             swing_class: 0,
             size_class: 0,
+            wide_texture_page: 0,
             plaque_badge: None,
             // No record behind a synthetic monster: `installed_stats` answers
             // with the fields above whatever the fight class is.

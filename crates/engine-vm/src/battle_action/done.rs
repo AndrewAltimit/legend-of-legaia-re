@@ -337,7 +337,7 @@ pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
         // `sb zero,0x288(v1)` at `0x801E6114` - the second counter-attack
         // trigger flag is cleared on the way out, so a counter armed during
         // this action cannot leak into the next one.
-        ctx.counter_attack_b = 0;
+        ctx.counter_attack = 0;
         if ctx.multi_cast_gate == 0 {
             transition(ctx, ActionState::EndOfAction)
         } else {

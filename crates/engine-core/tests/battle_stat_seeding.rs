@@ -36,6 +36,7 @@ fn gaza_record() -> MonsterRecord {
         element: 6,
         swing_class: 0,
         size_class: 26,
+        wide_texture_page: 0,
         gold: 30000,
         exp: 42000,
         drop_item: 0,

@@ -398,6 +398,9 @@ impl World {
         // module phase `ctx+0x279` before the first tick.
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
+        // A new cast re-arms the Nighto verdict; the roll happens on the first
+        // tick of the module, the way retail's arm 0 draws it.
+        self.casting.module_nighto_outcome = None;
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
@@ -968,6 +971,66 @@ impl World {
         }
     }
 
+    /// PROT 0907 (Nighto)'s kill / confuse / resist verdict for the resident
+    /// cast - drawn once and held on [`crate::world::CastFxState::module_nighto_outcome`].
+    ///
+    /// Retail's arm 0 draws both rolls off the SCUS RNG `FUN_80056798` and
+    /// parks them in the module's own words, so the outcome is settled the
+    /// frame the cast starts (`0x801F6B50` kill roll, `0x801F6C28` resist
+    /// throw, `0x801F6CF0` the third-character extra throw). This is the same
+    /// draw against this world's RNG cursor, and the arithmetic is the ported
+    /// kernel's ([`vm::cast_seru_ticks_a::nighto_outcome`]).
+    ///
+    /// The three inputs the roll needs beyond the dice:
+    ///
+    /// * the caster's **magic level** for this spell, the record byte both
+    ///   heal modules scan for ([`Self::caster_magic_power_byte`]);
+    /// * the victim's immunity - retail's `ctx[+0x287] != 0 && record[+0x20]
+    ///   != 0`, i.e. the scripted-fight flag AND the monster record's
+    ///   double-width texture-page byte read as a "big model" proxy
+    ///   ([`crate::monster_catalog::MonsterDef::wide_texture_page`]);
+    /// * whether the caster is character index `3`, the only one that takes
+    ///   the extra forced-resist throw. Retail reads `0x8007BD10[ctx+0x13]`,
+    ///   the **1-based** present-party character id; the engine's mirror of
+    ///   that list is [`crate::world::World::party_roster_slot`], so the id is
+    ///   its roster slot plus one.
+    ///
+    /// REF: FUN_801F69E8 (`0x801F6B50..0x801F6D28`, PROT 0907 arm 0)
+    fn nighto_verdict(
+        &mut self,
+        caster_slot: u8,
+        victim_slot: u8,
+        spell_id: u8,
+    ) -> vm::cast_seru_ticks_a::NightoOutcome {
+        if let Some(held) = self.casting.module_nighto_outcome {
+            return held;
+        }
+        use vm::cast_seru_ticks_a as ticks_a;
+        let magic_level = self.caster_magic_power_byte(caster_slot, spell_id);
+        let target_immune = self.battle_ctx.scripted_fight != 0
+            && self
+                .actors
+                .get(victim_slot as usize)
+                .and_then(|a| a.battle_monster_id)
+                .and_then(|id| self.tables.monster_catalog.get(id))
+                .is_some_and(|def| def.wide_texture_page != 0);
+        // Retail's character id is 1-based over the present-party list.
+        let caster_character = self.party_roster_slot(caster_slot as usize) as u8 + 1;
+        let kill_roll = self.next_rng();
+        let resist_roll = self.next_rng();
+        let extra_roll =
+            (caster_character == ticks_a::NIGHTO_EXTRA_ROLL_CHARACTER).then(|| self.next_rng());
+        let outcome = ticks_a::nighto_outcome(&ticks_a::NightoRoll {
+            kill_roll,
+            resist_roll,
+            magic_level,
+            target_immune,
+            extra_roll,
+        });
+        self.casting.module_nighto_outcome = Some(outcome);
+        outcome
+    }
+
     /// The context bytes the kernels read (`ctx+0`, `+1`, `+0x13`, `+0x278`,
     /// `+0x279`).
     ///
@@ -977,18 +1040,28 @@ impl World {
     /// not part of either sweep's range. The monster count starts at
     /// `cast_module_ticks::FIRST_MONSTER_SEAT`, the fixed base the Juggernaut
     /// sweep's `addiu s4, zero, 0xc` encodes.
-    fn cast_module_ctx(&self) -> vm::cast_module_ticks::CastModuleCtx {
+    pub(in crate::world) fn cast_module_ctx(&self) -> vm::cast_module_ticks::CastModuleCtx {
         use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
         let table = self.actors.len().min(BATTLE_TABLE_SLOTS);
         vm::cast_module_ticks::CastModuleCtx {
-            // KNOWN GAP: retail's `ctx[+0]` is the PARTY count, not the actor
-            // count - `0x8004B3F0` uses it to bound a loop that turns
-            // `DAT_8007BD10[i]` into a `0x414`-byte party record. Seeding it
-            // from the whole table makes Evil Seru Magic sweep the enemy row
-            // too, which retail's `ctx[+1]` sweep already covers. Narrowing it
-            // is a behaviour change, so it is disclosed rather than applied
-            // here; see `docs/subsystems/cast-module.md#ctx0-is-the-party-count-not-the-actor-count`.
-            party_count: table as u8,
+            // Retail's `ctx[+0]` is the **party** count, not the actor count:
+            // `0x8004B3F0` loads it as the bound of a loop that turns
+            // `DAT_8007BD10[i]` - the present-party char-id list - into a
+            // `0x414`-byte record (`0x8004B420..0x8004B484`, id-1 scaled by
+            // `0x414` onto `0x80084140`). So the seat range it names is the
+            // party row `0..FIRST_MONSTER_SEAT`, and nothing above it.
+            //
+            // The engine's mirror of that list is `PartyState::party_count`
+            // (the same ordinal space `World::party_roster_slot` resolves).
+            // Seeding this from the whole actor table instead made every
+            // `ctx[+0]` sweep - Evil Seru Magic's whole-row hit, the Orb heal,
+            // the Element Change hide - run over the monster rows as well,
+            // which retail's separate `ctx[+1]` sweep is what covers.
+            party_count: self
+                .party
+                .party_count
+                .min(FIRST_MONSTER_SEAT)
+                .min(table as u8),
             monster_count: (FIRST_MONSTER_SEAT as usize..table)
                 .filter(|&s| self.actors[s].active)
                 .count() as u8,
@@ -1490,14 +1563,23 @@ impl World {
                 // take the whole seat row and the run writes it back before
                 // the caster / victim / summon views are refreshed from it.
                 //
-                // No roll is fed in, for the same reason the bodies below take
-                // `None`: the engine folds a cast's HP outcome once at
-                // `cast_spell_on_slots_prepaid`, and PROT 0907's kill / confuse
-                // fork likewise stays on the fold's side - its roll kernel
-                // (`cast_seru_ticks_a::nighto_outcome`) is ported and tested
-                // but is not driven here, so the tick reports the resisted
-                // branch and writes no outcome.
+                // No damage roll is fed in: the engine folds a cast's HP
+                // outcome once at `cast_spell_on_slots_prepaid`, so the bodies
+                // below take `None`.
+                //
+                // PROT 0907's kill / confuse fork is the exception, because it
+                // is not a damage roll at all - it writes the victim's HP to
+                // zero or `+0x16E |= 0x380` and there is no magnitude for the
+                // fold to carry. Its verdict is drawn here, once per cast
+                // (`Self::nighto_verdict`), and held on the cast state for
+                // every later frame, mirroring retail's arm-0 draw into the
+                // module words `0x801F8534` / `0x801F853C`.
                 903..=908 => {
+                    let nighto_outcome = if entry == 907 {
+                        self.nighto_verdict(caster_slot, victim_slot, spell_id)
+                    } else {
+                        ticks_a::NightoOutcome::Resisted
+                    };
                     let who = ticks_a::SeruSeats {
                         caster: caster_slot,
                         victim: victim_slot,
@@ -1526,12 +1608,7 @@ impl World {
                         }
                         906 => ticks_a::gizam_tick(&mut ctx, &mut seats, who, |_| None),
                         907 => (
-                            ticks_a::nighto_tick(
-                                &mut ctx,
-                                &mut seats,
-                                who,
-                                ticks_a::NightoOutcome::Resisted,
-                            ),
+                            ticks_a::nighto_tick(&mut ctx, &mut seats, who, nighto_outcome),
                             Vec::new(),
                         ),
                         _ => ticks_a::zenoir_tick(&mut ctx, &mut seats, who, |_| None),
