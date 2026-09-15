@@ -515,15 +515,6 @@ row corrected: the sub-state switch on `+0x5A` is two switches, not one.
 
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f8b90"
-reason = """
-PROT 0923 (summon_gilium)'s move-VM spawn stager, 0x801F6734 row: three spawn
-calls and a write to ctx+0x278 (cast-module.md verdict table, PORT). Same
-band-structural reason as the 801f7740 waiver above: separate image, no
-internal jal, module-private record pointers.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/scene/host/scene_entry.rs:801d1ec4"
 reason = """
 The finding appeared when overlay_cutscene_str_0970_801cea3c.txt was dumped: the
@@ -1280,54 +1271,6 @@ words at 0x8003882C..0x80038830 are `lui a1,0x8007` / `lw v1,0x3f1c(a1)`), and
 the finding's own lift line says 0x80073F1C is also formed by FUN_80038158 -
 tagged in world/field_movement.rs, another module. So the corroborator exists and
 sits behind the port's module partition.
-"""
-
-# --- three more slot-B band members, surfaced by the inherited-tail cut -------
-#
-# These appeared when `dump-extent-attribution.csv` was regenerated with each
-# image cut at its own content: the consensus vote now runs only among the
-# OWNING image's dumps, so an address whose plurality used to come from a
-# sibling's residue reports a different body - and a different feature set.
-# Same band-structural cause as the 801f7740 / 801f8b90 waivers above: each
-# module is its own image with no internal `jal`, and its distinctive data is a
-# private pointer table at its own VAs, which no sibling can share.
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f7af4"
-reason = """
-Viguro's spawn stager, same cause: five distinctive addresses, all in
-0x801F81F4..0x801F835C - this module's record pointers - and no callee. The
-corroboration test can only match on shared rare data or a shared callee, and a
-slot-B module has neither with its siblings by construction.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f8d64"
-reason = """
-Evil Seru Magic's stager. Eleven distinctive addresses spanning
-0x801F93A0..0x801FA468 plus the band head 0x801F6A50, no callee - the largest
-private table in the module and the same band-structural shape as its
-neighbours. The only address it shares with anything is the head, which every
-module forms and which is therefore not distinctive.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/cast_module_ticks.rs:801f7d34"
-reason = """
-PROT 0942's Power Up tick, in a file whose other 35 tagged siblings are other
-modules' bodies - so the signal has nothing to corroborate against and this row
-is the band's structural shape, not a defect. Re-derived against the bytes
-before waiving: 0x801F7D34 is file +0x135C of overlay_cast_power_up_0942.bin,
-inside that image's own content (which runs to +0x199C), and PROT 0943's copy
-of those bytes is inherited residue - 0943's own content ends at +0x1037, and
-0943 is byte-identical to 0942 from there to its end. The routine is 876 bytes
-and 219 instructions, and its terminal arm reads the monster record's +0x0E
-(`lhu v1,0xe(v0)` at 0x801F8060), computes `x * 3 >> 1` (0x801F8068..0x801F8070)
-and stores it to the caster's +0x156 AGL base (`sh v0,0x156(s0)` at 0x801F8074)
-before clearing ctx+0x0D and returning zero - which is exactly what
-`power_up_tick` implements. Its three distinctive data addresses
-(0x801F81B8 / 0x801F88A0 / 0x801F88B4) are this image's own spawn records and
-countdown word, which no sibling module can share.
 """
 
 [[waiver]]

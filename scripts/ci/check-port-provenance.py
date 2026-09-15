@@ -93,6 +93,17 @@ pre-commit; `--strict` exists for a reader who has waived what they have read.
 Reviewed false positives go in `scripts/ci/port-provenance-waivers.toml`, one
 entry per finding key, each with a `reason`. `--strict` is the ratchet: it
 fails only on findings that carry no waiver.
+
+The two corpora are gitignored, so a git worktree has neither. Point the
+checker at another checkout's copies rather than reading a pass that examined
+nothing:
+
+    python3 scripts/ci/check-port-provenance.py \
+        --funcs /path/to/main/ghidra/scripts/funcs \
+        --extracted /path/to/main/extracted
+
+Without a funcs corpus the run exits 2 (`--allow-vacuous` downgrades that to
+the old exit 0), because a corpus-blind run reports every tag as unimpeachable.
 """
 
 from __future__ import annotations
@@ -115,12 +126,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import port_tag_reader  # noqa: E402  (sibling module, path set just above)
 
 REPO = Path(__file__).resolve().parent.parent.parent
-FUNCS_DIR = REPO / "ghidra" / "scripts" / "funcs"
 CRATES_DIR = REPO / "crates"
 WAIVERS = Path(__file__).resolve().parent / "port-provenance-waivers.toml"
 LIVE_CSV = REPO / "target" / "port-catalog" / "catalog.csv"
-EXTRACTED = REPO / "extracted"
 OVERLAY_MAP = CRATES_DIR / "asset" / "data" / "static-overlays.toml"
+
+# Both corpora are gitignored, so they are absent in a git worktree and in CI.
+# `--funcs` / `--extracted` rebind them to another checkout's copies; main()
+# assigns these before anything reads them.
+DEFAULT_FUNCS = REPO / "ghidra" / "scripts" / "funcs"
+DEFAULT_EXTRACTED = REPO / "extracted"
+FUNCS_DIR = DEFAULT_FUNCS
+EXTRACTED = DEFAULT_EXTRACTED
 
 # ---------------------------------------------------------------------------
 # Tuning. Every threshold here is a precision/recall dial; the defaults were
@@ -1091,6 +1108,15 @@ BODY_SPAN_MAX = 0x4000
 # only buys coincidental 32-bit matches.
 TABLE_WORDS_MAX = 16
 
+# How many words before a `jal` an argument-setup citation may sit. A row that
+# pins *which value* a call is handed cites the instruction that forms the
+# argument, not the call word: `0x801F1D0C` is the `lbu a2, 0x20(v0)` feeding
+# the `jal 0x80055468` one word later. The whole argument block of a four-
+# argument R3000 call fits in this window, and the match is additionally
+# confined to the citation's own `jr ra`-delimited body, so a coincidence has
+# to be a call to the exact subject a handful of instructions away.
+ARG_SETUP_WORDS_MAX = 4
+
 # Every citation this test rescued, for the report's own accounting: a
 # silent acceptance is indistinguishable from a signal that stopped
 # working, which is the failure mode a checker in this repo has already
@@ -1250,6 +1276,22 @@ def site_relation(cited: int, subject: int, co_cited: set[int]) -> str | None:
             return (
                 f"0x{cited:08x} is the return address of the jal to "
                 f"0x{subject:08x} at 0x{cited - 8:08x} in {img.label}"
+            )
+        # A row that pins *which value* a call is handed cites the instruction
+        # that forms the argument, not the call word. Without this the citation
+        # misses the site test by one instruction and reads as unsupported,
+        # which is how the record-`+0x20` wide-flag row surfaced as a finding.
+        for k in range(1, ARG_SETUP_WORDS_MAX + 1):
+            wa = img.word(cited + 4 * k)
+            if wa is None or (wa >> 26) != 3:
+                continue
+            if _branch_target(cited + 4 * k, wa) != subject:
+                continue
+            if _body(img, cited) != _body(img, cited + 4 * k):
+                continue
+            return (
+                f"0x{cited:08x} forms an argument for the jal to "
+                f"0x{subject:08x} at 0x{cited + 4 * k:08x} in {img.label}"
             )
     for img in images():
         bc, bs = _body(img, cited), _body(img, subject)
@@ -1613,17 +1655,41 @@ def main() -> int:
         action="store_true",
         help="print a TOML waiver stub for every current unwaived finding",
     )
+    ap.add_argument(
+        "--funcs",
+        default=str(DEFAULT_FUNCS),
+        help="dump corpus directory (a worktree has none - point at a checkout "
+        "that does)",
+    )
+    ap.add_argument(
+        "--extracted",
+        default=str(DEFAULT_EXTRACTED),
+        help="extracted disc directory, for the caller/branch-site test",
+    )
+    ap.add_argument(
+        "--allow-vacuous",
+        action="store_true",
+        help="exit 0 instead of 2 when the dump corpus is missing",
+    )
     args = ap.parse_args()
+
+    global FUNCS_DIR, EXTRACTED
+    FUNCS_DIR = Path(args.funcs).expanduser()
+    EXTRACTED = Path(args.extracted).expanduser()
 
     if not FUNCS_DIR.exists() or not any(FUNCS_DIR.glob("*.txt")):
         # An empty corpus makes every port look unimpeachable. Say so instead of
         # printing a clean run - a vacuous pass is the failure mode this repo
         # has hit before (check-port-tags.py's "0 warnings across 0 files").
+        # A git worktree is the ordinary way to land here: the corpus is
+        # gitignored, so it exists only in the checkout that dumped it.
         print(
-            "check-port-provenance: no dumps under ghidra/scripts/funcs/ - "
-            "nothing to check. This is a vacuous pass, not a clean one."
+            f"check-port-provenance: no dumps under {FUNCS_DIR} - nothing to "
+            "check. This is a vacuous pass, not a clean one. Re-run with "
+            "`--funcs <dir>` pointing at a checkout that has the corpus, or "
+            "pass --allow-vacuous to accept exit 0."
         )
-        return 0
+        return 0 if args.allow_vacuous else 2
 
     by_addr, df, cdf = load_corpus()
     tags = collect_tags()
@@ -1690,9 +1756,10 @@ def main() -> int:
     imgs = images()
     if not imgs:
         print(
-            "  no extracted images under extracted/ - the caller/branch-site "
+            f"  no extracted images under {EXTRACTED} - the caller/branch-site "
             "test is OFF, so rows citing a caller's jal site read as "
-            "unsupported. Run legaia-extract, or read this run as partial."
+            "unsupported. Run legaia-extract, pass --extracted <dir>, or read "
+            "this run as partial."
         )
     else:
         print(
