@@ -2231,17 +2231,40 @@ fn walk_slot_b_module(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
             format!("spawn record {i} (model_sel {})", r.model_sel),
         );
     }
+    // Records above the highest consumer-credited one. Their starts come from
+    // the move-VM program walk rather than from a pointer, so the reason line
+    // says which evidence the claim rests on.
+    for (i, r) in layout.chained_records.iter().enumerate() {
+        sink.claim(
+            r.start,
+            r.end,
+            OWNER_RECORD,
+            format!(
+                "spawn record {} (model_sel {}, chained from the record below by \
+                 its program's terminator)",
+                layout.records.len() + i,
+                r.model_sel
+            ),
+        );
+    }
     sink.note(format!(
         "slot-B module: {} framed functions, code ends at {:#x}; {} spawn sites, \
-         {} records claimed ({} bytes){}",
+         {} records claimed ({} bytes) + {} chained ({} bytes){}",
         layout.functions.len(),
         layout.code_end(),
         layout.spawn_sites,
         layout.records.len(),
         layout.record_bytes(),
+        layout.chained_records.len(),
+        layout
+            .chained_records
+            .iter()
+            .map(crate::slot_b_module::RecordSpan::len)
+            .sum::<usize>(),
         match layout.unbounded_record {
             Some(o) => format!(
-                "; the highest record at {o:#x} has no boundary above it and stays residue"
+                "; the highest record at {o:#x} has no boundary above it and \
+                 its program does not terminate, so it stays residue"
             ),
             None => String::new(),
         }

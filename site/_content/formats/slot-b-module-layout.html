@@ -29,6 +29,14 @@
       <tr><td>inherited tail</td><td>a byte-identical copy of another extracted image's bytes at the same file offset</td><td>mastering residue: the build buffer still held the previous image</td></tr>
     </tbody>
   </table>
+  <p><strong>Frame matching finds where a body ENDS, not where every body starts.</strong> A frameless leaf has
+  no prologue for the scan to catch, and the jump table is what names it. PROT 0949 is the case: its stager forms
+  a table base with <code>lui 0x801F; addiu 0x69F0</code> and bounds it with <code>sltiu a1, 0x8</code>, so it owns
+  eight arms six words into the image's leading address run - and seven of them are 20-byte frameless leaves that
+  the frame partition misses. They are one eight-step ramp on the victim actor (tint blend 0x200..0x1000 against
+  anim rate 7..0), and the 140-byte run they occupy read as "the module's own data region" until the dispatcher's
+  own table base was read. Read the consumer's pointer-forming instruction before counting table words.</p>
+
   <p><strong>They are not laid out head-to-tail.</strong> PROT 0943 (Curse) and PROT 0961 (Dead End Crisis) both
   carry framed code <em>above their record band</em>, so "everything past the last function is data" swallows five
   bodies. Those five are real routines but not those images' own: they sit above each image's own-content cut
@@ -51,8 +59,13 @@
   The remaining two - a target inside a framed function, and a <code>model_sel</code> the spawn helper would not
   dispatch - never fire on this disc, and saying so is the point: they are guards, not findings. With all five, no
   claim in the band overlaps a routine the dump corpus places in the same image.</p>
-  <p>One span the band cannot bound: the image's <strong>highest</strong> record has nothing above it computing an
-  address, so its end is not derivable and it stays unclaimed.</p>
+  <p>The image's <strong>highest</strong> record has nothing above it computing an address, so the band cannot
+  bound it - its own move-VM program does. Walk the opcode widths to a terminator (<code>0x08</code> HALT, or an
+  armed <code>0x19</code> / <code>0x1B</code> idle loop that no HALT immediately follows) and round the end up to
+  4, because the records are word-aligned. That alignment step is the whole difference between reproducing a
+  record's measured extent and missing it by exactly 4 bytes, which is what an earlier reading recorded as
+  evidence that no static bound existed. It bounds the top record on 58 of the 62 images that have one; the rest
+  end on a non-terminating instruction and stay unclaimed.</p>
 </section>
 
 <section class="doc-section" id="why">

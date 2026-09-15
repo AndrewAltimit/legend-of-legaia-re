@@ -36,8 +36,13 @@
 # inside another image's bytes and print convincing garbage.
 #
 #   docker compose exec ghidra /ghidra/support/analyzeHeadless \
-#       /projects legaia -process overlay_summon_ozma_0934.bin -noanalysis \
-#       -postScript /scripts/dump_static_overlay.py
+#       /projects legaia -process overlay_summon_ozma_0934.bin -recursive \
+#       -noanalysis -postScript /scripts/dump_static_overlay.py
+#
+# `-recursive` is required, not optional: the band imported into the project
+# folder `/imp_slotb/`, and `-process` without it looks in the project ROOT and
+# reports "Requested project program file(s) not found" for a program that is
+# plainly there.
 
 import os
 
@@ -206,9 +211,28 @@ RANGES = {
     "overlay_cast_cross_beam_0948": [
         ("801f69f0", "801f726c"), ("801f726c", "801f8504"), ("801f8504", "801f8564")
     ],  # 3 fn, 7028/8192 B code
+    # Seven 20-byte frameless leaves at 0x801F7630 + i*0x14. They are arms
+    # 1..7 of the eight-arm table this image's stager 0x801F75BC dispatches
+    # through: it forms the base with `lui 0x801F; addiu 0x69F0` and bounds it
+    # with `sltiu a1, 0x8`, so the table is 0x801F69F0..0x801F6A10 - six words
+    # into the image's leading VA run, NOT at the image head. Arm 0 is the
+    # fall-through at 0x801F761C inside the stager's own extent. The eight are
+    # one ramp: `actor[+0x0C]` (tint blend) 0x200 .. 0x1000 against
+    # `actor[+0x21D]` (anim rate) 7 .. 0. The frame scan cannot see a frameless
+    # leaf, so the seven were previously filed under "the module's own data
+    # region"; the table word makes each an entry.
+    # 0x801F8504 is NOT this image's. Its own content ends at file `+0x1828`
+    # (VA 0x801F8200) and 0x801F8504 is PROT 0948's stager sitting in this
+    # image's inherited tail - the frame scan matches it there, which is why a
+    # RANGES row once named it here. The attribution sweep now resolves it to
+    # `cast_cross_beam(948)` alone.
     "overlay_cast_water_crystals_0949": [
-        ("801f6a10", "801f75bc"), ("801f75bc", "801f7630"), ("801f8504", "801f8564")
-    ],  # 3 fn, 3200/8192 B code
+        ("801f6a10", "801f75bc"), ("801f75bc", "801f7630"),
+        ("801f7630", "801f7644"), ("801f7644", "801f7658"),
+        ("801f7658", "801f766c"), ("801f766c", "801f7680"),
+        ("801f7680", "801f7694"), ("801f7694", "801f76a8"),
+        ("801f76a8", "801f76bc")
+    ],  # 9 fn, 3244/8192 B code
     "overlay_cast_rolling_flare_0950": [
         ("801f6a24", "801f79f8"), ("801f79f8", "801f8190"), ("801f8190", "801f8208"),
         ("801f8208", "801f8240")
@@ -440,8 +464,13 @@ WALK_RANGES = {
 #   SCUS_942.54           0x80074F80, 0x80075380, 0x80076880, 0x80076E80,
 #                         0x80077480, 0x80078B80, 0x8007A880  (static tables)
 #
-# The slot-B module band (base 0x801F69D8) contributes SEVENTEEN more, and they
-# are all one of two shapes - neither of them a function this image owns.
+# The slot-B module band (base 0x801F69D8) contributes SEVENTEEN more. SIXTEEN
+# of them are one of the two shapes below - neither a function this image owns.
+# The seventeenth, `cast_water_crystals(949)` 0x801F7630, was misfiled under
+# shape 1: it is seven 20-byte frameless leaves, each named by a word of the
+# image's own head jump table, and it is now a RANGES row. A frameless leaf has
+# no prologue for the "every body opens with `addiu sp, sp, -F`" reading to
+# catch, so shape 1 must be read off the TABLE words, not off the frame scan.
 #
 # 1. THE MODULE'S OWN DATA REGION. Every module is code first, then a payload of
 #    4-byte records read as two little-endian halfwords: GTE-shaped constants
@@ -469,7 +498,9 @@ WALK_RANGES = {
 #   summon_viguro(909)         0x801F8318  (data + dup of zenoir)
 #   summon_gizam(906)          0x801F7EE4  (data + dup of stager_x83(905))
 #   cast_dead_end_crisis(961)  0x801F7AB4  (data + dup of plasma_strike(960))
-#   cast_water_crystals(949)   0x801F7630, 0x801F8130  (data + dup of 948)
+#   cast_water_crystals(949)   0x801F8130  (dup of 948). The 0x801F7630 run
+#                              that used to be listed here is NOT data - it is
+#                              seven frameless jump-table arms, now in RANGES.
 #   cast_spore_gas(939)        0x801F74BC  (data + dup of chaos_breath(938))
 #   cast_curse(943)            0x801F7770  (data + dup of power_up(942))
 #   cast_bloody_horns(952)     0x801F7BA8  (24 B + 1452 B == chaos_flare(951))

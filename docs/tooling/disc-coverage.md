@@ -190,35 +190,50 @@ module left behind - inside `content_bytes`, at the file offsets that module
 occupies. Counting the residue puts one module's code in another module's
 denominator, and no dump of the shorter module can ever close it.
 
-The run is found by byte equality rather than inferred. Two images at the same
-link base are compared at the **same file offset**: where a *strictly longer*
-sibling reproduces this image's bytes from some offset through the end of its
-content, everything from that offset is the shorter image's **inherited tail**.
-Both the coverage denominator and the
+The run is found by byte equality rather than inferred. Images are compared at
+the **same file offset**: where another image reproduces this image's bytes from
+some offset through the end of its content, everything from that offset is this
+image's **inherited tail**. Both the coverage denominator and the
 [attribution sweep](#byte-level-attribution) take the cut, so a row is measured
 against its own code and the sweep asks its at-VA question of its own code.
-The rule and its two guards live in
+The rule lives in
 [`scripts/ghidra-analysis/inherited_tail.py`](../../scripts/ghidra-analysis/inherited_tail.py).
 
-Two guards keep it from cutting an image short:
+Three guards, and one of them used to be two restrictions that lost real
+residue:
 
-- **Strictly longer.** A longer sibling is a candidate *writer* for the bytes.
-  Two images of equal length that share a suffix are both carrying somebody
-  else's residue and neither can be named as its owner, so the run stays in both
-  denominators rather than silently leaving both.
 - **A minimum length.** At `MIN_TAIL_BYTES` the match is sixteen instructions
   long *and* runs to the end of the file, which no shared library routine does
   unless it is the last thing linked.
-- **Same link base.** Only images that load at the same `base_va` are compared,
-  so a run inherited across bases is not cut.
+- **A donor long enough to have written those offsets.** A *strictly longer*
+  image is one unconditionally. An **equal-extent** image can be one too -
+  `content_bytes` is the PROT entry's sector extent, so two modules that round
+  to the same number of sectors read as equal length while one really does hold
+  more content - and it is admitted only where the bytes settle which of the
+  two owns the shared suffix: the donor's structural own-content end must lie
+  **above** the shared start and the recipient's must not.
+- **No link-base restriction.** The mastering buffer is indexed by file offset,
+  so the donor's load address is irrelevant, and the loudest cases in the whole
+  set are cross-base: PROT 0904 / 0912 / 0917 / 0918 / 0922 end in PROT 0899's
+  menu code, and `gameover` in `world_map_render`'s.
 
-Quote a tail figure with the rule it was measured under. Under all three
-restrictions, 66 of the 83 mapped images carry a tail (61,597 B). Drop the
-same-base and strictly-longer restrictions and the same suffix test reports 79
-of 83 (104,700 B): 8 more images whose donor is the same length, and 5 whose
-donor loads at a different base - PROT 0904 / 0912 / 0922 end in PROT 0899's
-menu code, and `gameover` in `world_map_render`'s. Only the first figure is the
-one this gate's denominator uses.
+The "structural own-content end" is a parser's answer, not a statistic: for a
+slot-B module it is the top of the spawn-record chain, otherwise the end of the
+frame-matched code partition
+([`slot_b_band.content_end`](../../scripts/ghidra-analysis/slot_b_band.py), the
+host-side mirror of `legaia_asset::slot_b_module::content_end`). It is
+deliberately *not* the frame partition alone, because a donor's whole function
+can sit in the tail and frame-match there: PROT 0949's code partition reaches
+file `0x1B8C` while its own content stops at `0x1828`, and the body at
+`0x801F8504` in between is PROT 0948's stager.
+
+Quote a tail figure with the rule it was measured under. Same base + strictly
+longer reports 66 of the 83 mapped images and 61,597 B; any base + strictly
+longer reports 79 and 76,916 B; adding the gated equal-extent leg - what this
+gate uses - reports 79 and 88,150 B. An unguarded "any base, any length `>=`"
+variant reports 79 and 104,700 B and is not this rule: it names a donor wherever
+a suffix matches, including the pairs where neither image can be shown to own
+the bytes.
 
 What it moves, and why the moves go both ways: the tail is subtracted from the
 denominator, which raises a row, while an extent that used to be credited to
@@ -274,16 +289,50 @@ shape is work:
 | `mostly_padding` | at least half the words are zero | no |
 | `data_segment` | at or above the image's last `jr ra`, and holding no `lui $rt, 0x80xx` | no |
 | `spawn_record_band` | one bounded spawn record of a slot-B module image | no |
-| `no_exit` | 1024 bytes or more with no `jr ra` in them | if the statistic passes it |
-| `no_boundary` | neither delimiter word: no `addiu $sp, $sp, -F` and no `jr ra`, at any length | if the statistic passes it |
-| `return_tail` | a `jr ra` (+ `nop`) the preceding routine's analysed body stops short of | if the statistic passes it |
-| `bios_thunk_slot` | the delay slot of a `jr $t2` PSX BIOS-call thunk | yes (tiny-gap fiat) |
-| `psyq_lib_stamp` | an 8-byte `Ps` + id + word record: the PSY-Q librarian's version stamp between link modules | yes (tiny-gap fiat) |
-| `constant_table` | every word one repeated non-`nop` constant: a data table resident in the text segment | yes (tiny-gap fiat) |
+| `no_exit` | 1024 bytes or more with no `jr ra` in them | no |
+| `no_boundary` | neither delimiter word: no `addiu $sp, $sp, -F` and no `jr ra`, at any length | no |
+| `return_tail` | a `jr ra` (+ `nop`) the preceding routine's analysed body stops short of | no |
+| `bios_thunk_slot` | the delay slot of a `jr $t2` PSX BIOS-call thunk | no |
+| `psyq_lib_stamp` | an 8-byte `Ps` + id + word record: the PSY-Q librarian's version stamp between link modules | no |
+| `constant_table` | every word one repeated non-`nop` constant: a data table resident in the text segment | no |
+| `inherited_tail` | from the offset at which another image reproduces this one's bytes through the end of its content | no (and out of the span) |
 
 The census covers **every** gap, so the table is a breakdown of the image's
 un-dumped bytes and not of the `code gap` column. The third column says which
 rows the denominator counts.
+
+#### One classification, two cuts of it
+
+`code gap` counts a gap only where the shape census *also* calls it `code`.
+That sounds obvious and was not true for a long time: the column summed every
+gap the opcode statistic passed, while the census beside it named several of
+those gaps `no_exit`, `no_boundary`, `return_tail`, `constant_table` or
+`psyq_lib_stamp` - shapes that exist precisely because the statistic cannot see
+them. The same shapes had already been taken out of the worklist, so the two
+instruments generated by one script disagreed about the same bytes, and the
+disagreement read as "the table knows about code the worklist is hiding". It was
+the other way round: `summon_effect_table`'s 2444-byte "code gap" was three
+`no_exit` runs and a `data` run, and the worklist was right to list nothing.
+
+The two numbers still differ, for two stated reasons rather than none:
+
+| | `code gap` (table) | `dump-worklist.md` |
+|---|---|---|
+| gap set | the image's **upper bound** - gaps of every extent credited to it, ambiguous ones included | the byte-attributed **floor** - a wider gap set, so its runs are a superset |
+| granularity | whole gap | 256-byte windows, re-shaped per window |
+| length filter | none | runs under 64 bytes dropped (they are in `undumped-runs.csv`) |
+
+So the worklist total is neither an upper nor a lower bound on the column.
+Read `code gap` as a denominator term - what an image's coverage percentage is
+measured against - and the worklist as the work.
+
+One consequence worth stating before it is discovered by surprise. On a row
+whose `code gap` is zero, the denominator *is* the numerator and the percentage
+is 100% however many dumps the row has - so the figure cannot fall by losing a
+dump of something that is not code. It can still fall by losing a dump of
+something that **is**: a real body carries a prologue and a `jr ra`, so the gap
+it leaves behind is shaped `code`, re-enters the denominator, and drops the row.
+The ratchet guards the question it is for, and is silent about the other one.
 
 The first three non-`code` shapes are properties of **where a function body
 ends**, not of what has been analysed, so they persist however much is dumped.
@@ -304,12 +353,15 @@ band (ten exist image-wide; the other seven sit in the data segment) and one
 documented per-window in
 [`runtime-libs.md`](../reference/functions/runtime-libs.md#what-is-left-of-the-scus_94254-code-gap-is-not-code).
 
-Together they are why the figure asymptotes short of 100%, and saying so on the
-report is what stops the last fraction of a percent reading as a worklist. Most
-of the shapes are **reported, not subtracted** - the denominator keeps them, so
-the ratcheted figure stays comparable across changes to this classifier. The two
-padding shapes are the exception, and they are excluded by a structural rule
-rather than by a statistical one: see below.
+Together they are why an image's un-dumped remainder does not asymptote to
+zero, and saying so on the report is what stops the last fraction of a percent
+reading as a worklist. Every one of these shapes is **reported and subtracted**:
+the census keeps its bytes visible, and the denominator does not count them,
+because each names a fact about MIPS or a region a parser claims rather than a
+verdict about what has been analysed. A row reading `100.0%` therefore means
+"every byte of this image outside a dump carries a shape that says it is not
+code", not "every byte is dumped" - the `data gap` column beside it is where
+those bytes went.
 
 #### The two shapes that exist because the opcode statistic is blind to them
 
@@ -437,7 +489,11 @@ here is the evidence and the seam.
 `0x801F69D8`) materialises each of its spawn records' addresses with a
 `lui` / `addiu` pair and hands it to `FUN_80021B04` or `FUN_80050ED4` in `$a2`.
 The next record's pointer is the current one's end, so both ends of a claim are
-addresses the module's own code computes. Four filters keep a spurious pointer
+addresses the module's own code computes. The image's **highest** record has no
+pointer above it and is bounded by its own move-VM program's terminator instead
+(`slot_b_band.move_program_end`, mirroring
+`legaia_asset::slot_b_module::move_program_end`); where that walk does not
+terminate the record is left unclaimed. Four filters keep a spurious pointer
 out, and the load-bearing one is that the **call site** must lie inside a framed
 body of this image: a band image's tail is a byte-identical, same-offset copy of
 another image's bytes, so an inherited fragment's own spawn calls name the
@@ -452,13 +508,12 @@ image.
 rejects any run holding a `lui $rt, 0x8001..0x801F`. A record's body is move-VM
 bytecode, i.e. arbitrary bytes, so a long enough band contains that word by
 accident - 33 of them in PROT 0923's, 38 in PROT 0917's. The shape therefore
-never fired on the band, `no_exit` and `no_boundary` fired but do not enter
-`classify_gap`, and the opcode statistic scored the records as code. Several
-images' whole record bands ranked as dump work on the strength of that.
+never fired on the band, and the opcode statistic scored the records as code.
+Several images' whole record bands ranked as dump work on the strength of that.
 
-**The seam.** Unlike `no_boundary`, this shape *does* enter the denominator -
-that is the point of it - so the change has to leave every other byte where it
-was. It does, by never re-cutting a gap: the records inside a gap leave the
+**The seam.** This shape leaves the denominator through `classify_gap` rather
+than only through the census, so the change has to leave every other byte where
+it was. It does, by never re-cutting a gap: the records inside a gap leave the
 denominator with their own shape and the rest of the gap keeps the verdict the
 whole gap earned. Cutting the gap at the record edges and re-classifying the
 pieces instead moves bytes that have nothing to do with the band, because both

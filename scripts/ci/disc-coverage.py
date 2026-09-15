@@ -79,6 +79,15 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(REPO, "scripts", "ghidra-analysis"))
 import dump_header  # noqa: E402
 import inherited_tail  # noqa: E402
+import slot_b_band  # noqa: E402
+
+# The band's structure has ONE implementation on the host side
+# (`scripts/ghidra-analysis/slot_b_band.py`), mirroring the authority
+# `legaia_asset::slot_b_module`. This file used to carry its own copy of the
+# frame scan and the record walk, which is how the shape and the attribution
+# sweep came to answer differently about the same image.
+spawn_record_band = slot_b_band.spawn_record_band
+SLOT_B_LINK_BASE = slot_b_band.SLOT_B_LINK_BASE
 
 DEFAULT_FUNCS = os.path.join(REPO, "ghidra", "scripts", "funcs")
 DEFAULT_EXTRACTED = os.path.join(REPO, "extracted")
@@ -233,133 +242,8 @@ RAM_PAGE_LO, RAM_PAGE_HI = 0x8001, 0x801F
 # spawn helpers, so the record's start is an address the module computes and
 # its end is the address the module computes for the next one. That is the
 # `spawn_record_band` shape, and `legaia_asset::slot_b_module` is the parser
-# that names it - see docs/formats/slot-b-module-layout.md.
-SLOT_B_LINK_BASE = 0x801F69D8
-# `FUN_80021B04` (the SCUS actor-spawn helper) and `FUN_80050ED4` (its
-# pool-tracked wrapper). Both take the record pointer in `$a2`.
-SPAWN_HELPERS = (0x80021B04, 0x80050ED4)
-# Instructions of `$a2` context scanned back from a spawn call - the window
-# `legaia_asset::summon_overlay::parse` uses.
-A2_WINDOW_INSNS = 22
-# `FUN_80021B04` dispatches `model_sel` as: < 0 transform node, `0x4000` /
-# `0x4001` render-mode nodes, otherwise an effect-model-library index. A first
-# word outside that set is not a record the helper would seat.
-_LIBRARY_MESH_SEL_MAX = 0x100
-_RENDER_NODE_SELS = (0x4000, 0x4001)
-
-
-def _jal_word(addr):
-    return 0x0C000000 | ((addr >> 2) & 0x03FFFFFF)
-
-
-def framed_functions(image):
-    """Frame-matched function partition: `addiu sp, sp, -F` through the first
-    `jr ra` whose delay slot restores the same `F`.
-
-    Mirrors `ghidra/scripts/dump_static_overlay.py`, whose committed `RANGES`
-    rows this reproduces. Unlike a count-and-interleave rule it survives a
-    frameless leaf, an early `jr ra` inside a body, and a `jr ra` word that is
-    data in the image's tail.
-    """
-    n = len(image) // 4
-    w = struct.unpack_from("<%dI" % n, image, 0)
-    out = []
-    i = 0
-    while i < n:
-        x = w[i]
-        if (x & 0xFFFF0000) == _ADDIU_SP_NEG and (x & 0x8000):
-            want = _ADDIU_SP_NEG | (0x10000 - (x & 0xFFFF))
-            j = i + 1
-            while j + 1 < n:
-                if w[j] == MIPS_JR_RA and w[j + 1] == want:
-                    out.append((i * 4, (j + 2) * 4))
-                    i = j + 1
-                    break
-                j += 1
-        i += 1
-    return out
-
-
-def _resolve_a2(w, site):
-    """`$a2` at word index `site`, from the `lui`/`addiu` writes before it.
-
-    `None` when the last write is one the static window cannot follow, or when
-    another `jal` intervenes: `$a2` is caller-saved, so a value formed across a
-    call is not the one the consumer reads.
-    """
-    a2 = None
-    for j in range(max(0, site - A2_WINDOW_INSNS), site):
-        y = w[j]
-        op, rs, rt, imm = y >> 26, (y >> 21) & 31, (y >> 16) & 31, y & 0xFFFF
-        if op == 3:
-            a2 = None
-            continue
-        if rt != 6:
-            continue
-        if op == 0x0F:
-            a2 = imm << 16
-        elif op == 0x09 and rs == 6 and a2 is not None:
-            a2 = (a2 + (imm - 0x10000 if imm & 0x8000 else imm)) & 0xFFFFFFFF
-        elif op == 0x09 and rs == 0:
-            a2 = (imm - 0x10000 if imm & 0x8000 else imm) & 0xFFFFFFFF
-        else:
-            a2 = None
-    return a2
-
-
-@functools.lru_cache(maxsize=None)
-def spawn_record_band(image, base_va):
-    """`[(lo_va, hi_va)]` - the image's bounded spawn records.
-
-    Empty for anything but a slot-B module image. Four filters keep a spurious
-    pointer out: the CALL SITE must be inside a framed body of this image (an
-    image's tail is a same-offset copy of a sibling's bytes, and an inherited
-    fragment's calls name the sibling's records), the resolved address must land
-    in the image, an intervening `jal` voids the value (above), and the
-    `model_sel` must be one the spawn helper dispatches. The first two fire on
-    retail; the last two are guards that do not.
-
-    The image's HIGHEST record is deliberately not bounded: nothing above it
-    computes an address, and the module carries no length field, so its end is
-    not derivable from the band. It stays residue.
-    """
-    if base_va != SLOT_B_LINK_BASE or len(image) < 8:
-        return ()
-    n = len(image) // 4
-    w = struct.unpack_from("<%dI" % n, image, 0)
-    fns = framed_functions(image)
-    calls = {_jal_word(a) for a in SPAWN_HELPERS}
-    offs = set()
-    for i, x in enumerate(w):
-        if x not in calls:
-            continue
-        # The call must be one this image's own code issues: a call word
-        # outside every framed body here is an inherited fragment of a sibling
-        # module's routine, whose record pointer belongs to that sibling's load.
-        if not any(s <= i * 4 < e for s, e in fns):
-            continue
-        a2 = _resolve_a2(w, i)
-        if a2 is None:
-            continue
-        f = (a2 - base_va) & 0xFFFFFFFF
-        if f + 4 > len(image):
-            continue
-        if any(s <= f < e for s, e in fns):
-            continue
-        sel = struct.unpack_from("<h", image, f)[0]
-        if not (sel == -1 or 0 <= sel < _LIBRARY_MESH_SEL_MAX
-                or sel in _RENDER_NODE_SELS):
-            continue
-        offs.add(f)
-    offs = sorted(offs)
-    if len(offs) < 2:
-        return ()
-    bounds = sorted(set(offs) | {s for s, _ in fns} | {len(image)})
-    out = []
-    for f in offs[:-1]:
-        end = min(x for x in bounds if x > f)
-        out.append((base_va + f, base_va + end))
-    return tuple(out)
+# that names it - see docs/formats/slot-b-module-layout.md. The walk itself
+# lives in `scripts/ghidra-analysis/slot_b_band.py`.
 
 
 def _band(image, base_va):
@@ -814,10 +698,18 @@ def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()
         if rest:
             n, nb = shapes.get(shape, (0, 0))
             shapes[shape] = (n + 1, nb + rest)
-        if is_code:
+        # The denominator counts a gap as un-dumped CODE only where the shape
+        # census also calls it code. Both verdicts are already computed per
+        # gap; counting `is_code` alone let every shape the statistic cannot
+        # see - `no_exit`, `no_boundary`, `constant_table`, `return_tail`,
+        # `psyq_lib_stamp`, `bios_thunk_slot` - into the code denominator under
+        # a name that says it is not code, which is what made the table and the
+        # worklist disagree about the same bytes. `classify_gap` had already
+        # been taught two of the shapes (`padding`, `mostly_padding`); this is
+        # the rest of that move, made once rather than shape by shape.
+        if is_code and shape == "code":
             code_gap += rest
-            if shape == "code":
-                code_gaps.append((a, b))
+            code_gaps.append((a, b))
         else:
             data_gap += rest
     if tail_bytes:
@@ -947,7 +839,14 @@ def overlay_reports(extracted, extents, attrib=None):
             continue
         with open(candidates[0], "rb") as fh:
             tail_inputs.append((label, base, fh.read()[:span]))
-    tails = inherited_tail.tail_starts(tail_inputs)
+    # An equal-extent sibling can be the donor too - `content_bytes` is the
+    # sector extent, not the module's content - but only where the bytes say
+    # which of the two owns the shared suffix. `own_ends` is that measurement:
+    # for a slot-B module the top of its spawn-record chain, otherwise the end
+    # of its frame-matched code partition.
+    own_ends = {label: slot_b_band.content_end(data, base)
+                for label, base, data in tail_inputs}
+    tails = inherited_tail.tail_starts(tail_inputs, own_ends=own_ends)
 
     spans = []
     for row in rows:
@@ -1211,9 +1110,9 @@ GAP_SHAPE_TEXT = {
                "in one and known code carries one per ~500-750 bytes, so a run "
                "this long without one is a data table the opcode statistic "
                "scored as code",
-    "inherited_tail": "the run from the offset at which a STRICTLY LONGER "
-                      "sibling image at the same link base reproduces this "
-                      "image's bytes through the end of its content - the "
+    "inherited_tail": "the run from the offset at which ANOTHER image - at any "
+                      "link base - reproduces this image's bytes through the "
+                      "end of its content - the "
                       "residue the packer left in an uncleared buffer. It is "
                       "the sibling's code at the sibling's own file offset, so "
                       "no dump of THIS module can close it. Named by byte "
@@ -1274,6 +1173,18 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
         "as data - a zero word decodes to `nop`, so the statistic scores it as "
         "perfect code.")
     add("")
+    add("**`code gap` counts only the bytes the shape census below also calls "
+        "`code`.** Every other shape is a structural fact about MIPS or a "
+        "region a parser names, so a gap carrying one is not un-dumped code "
+        "however the statistic scores it - and counting it here while naming it "
+        "`no_exit` there is what made this table and `dump-worklist.md` "
+        "disagree about the same bytes. The two still differ, for two stated "
+        "reasons rather than none: the worklist is cut against the byte-"
+        "attributed FLOOR (a wider gap set than this table's upper bound), and "
+        f"it drops runs under {WORKLIST_MIN_BYTES} bytes and re-shapes each gap "
+        "in windows. So its total is neither an upper nor a lower bound on this "
+        "column; they are two cuts of one classification.")
+    add("")
     add("| image | base | span | dumps | in a dump | code gap | data gap | code denom | covered | at least | VA-ambiguous | by extent |")
     add("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     rows = ([scus] if scus else []) + overlays
@@ -1315,10 +1226,11 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
             "it did not clear, so a module shorter than the buffer flushes its "
             "own bytes and then the previous, longer module's residue, inside "
             "`content_bytes` and at the file offsets that module occupies. The "
-            "run is found by exact byte equality with a strictly longer sibling "
-            "at the same link base, from some offset through the end of this "
-            "image's content (`scripts/ghidra-analysis/inherited_tail.py`); it "
-            "is that sibling's code, so no dump of this module can ever close "
+            "run is found by exact byte equality with another image - at any "
+            "link base, since the buffer is indexed by file offset - from some "
+            "offset through the end of this image's content "
+            "(`scripts/ghidra-analysis/inherited_tail.py`); it "
+            "is that image's code, so no dump of this module can ever close "
             "it and it belongs in neither this row's numerator nor its "
             "denominator. The extreme case is PROT 0926, whose own content is "
             "the eight bytes of a `jr ra; nop` stub."
@@ -1375,17 +1287,13 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
             add("")
             add("Not every gap is an un-analysed routine, and reading the total "
                 "as a worklist overstates what dumping can close. This census "
-                "covers **every** gap, whether or not the whole-gap test counts "
-                "it as code, so the `code gap` column is the `code` row plus "
-                "whichever structural shapes still pass that test - never the "
-                "whole table. The other shapes are properties of where a "
-                "function *body* ends, or of data records the linker left "
-                "between bodies, rather than of what has been analysed, so "
-                "they persist however much is dumped. `padding` and "
-                "`mostly_padding` are outside the denominator entirely: a word "
-                "of zeros decodes to `nop`, which the opcode statistic scores "
-                "as perfect code, so a zero-dominated run has to be excluded "
-                "structurally rather than statistically.")
+                "covers **every** gap; the `code gap` column is the `code` row "
+                "of it and nothing else. Every other shape is a property of "
+                "where a function *body* ends, or of data a parser or the "
+                "linker names, rather than of what has been analysed, so each "
+                "persists however much is dumped and none of them is in the "
+                "denominator. The largest here is `no_exit`, the static-table "
+                "band above `0x8006F180`.")
             add("")
             add("| shape | gaps | bytes | what it is |")
             add("|---|---:|---:|---|")
