@@ -1420,8 +1420,7 @@ impl LegaiaRuntime {
                 }
             } else {
                 for entry in &scene.entries {
-                    let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes)
-                    else {
+                    let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
                         continue;
                     };
                     for s in legaia_asset::clut_walk::scene_park_strips(&entry.bytes) {
