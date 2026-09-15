@@ -2256,12 +2256,23 @@ impl World {
     /// disc-free host) or the victim carries no monster id, which keeps a
     /// synthetic battle from inventing a steal and from drawing the roll.
     ///
-    /// **Party seat**: the bag draw plus the consume. The bag's *shape*
-    /// differs from retail's: retail draws over the physical 256-slot array at
-    /// `0x80085958` including its gaps, and the engine's bag is a map with no
-    /// slot index, so the draw here is over the occupied slots in id order.
-    /// The rejection rule (`id != 0 && count != 0 && the item table knows the
-    /// id`, up to `0x400` draws, one RNG draw per rejection) is the module's.
+    /// **Party seat**: the bag draw plus the consume. The rejection rule
+    /// (`id != 0 && count != 0 && the item table knows the id`, up to `0x400`
+    /// draws, one RNG draw per rejection so the shared cursor advances the way
+    /// retail's does) is the module's, byte for byte.
+    ///
+    /// The **array** it draws over is not. Retail samples the physical
+    /// 256-slot bag at `0x80085958` including its holes; the engine's bag is a
+    /// `HashMap<u8, u8>` with no slot coordinate, so this projects the
+    /// occupied ids into slots `0 ..= n-1` in id order. Two effects, both
+    /// disclosed in `docs/subsystems/inventory.md` ("What the port does, and
+    /// the one place the shape shows"): every draw hits an occupied slot, so
+    /// the first accepted draw wins where retail would reject its way past
+    /// holes; and the module's low-half floor (`ctx[+0x11] == 4` re-draws
+    /// while `slot < *(0x8007B5EA)`) is not applied, because a floor over slot
+    /// numbers means nothing over a projection with no holes - which is why no
+    /// `min_slot` is passed here. Closing it is a `PartyState` change, not a
+    /// change to this function.
     fn roll_cast_steal(&mut self, victim_slot: u8) -> Option<vm::cast_arm_ticks::StealOutcome> {
         use vm::cast_arm_ticks::StealOutcome;
         use vm::cast_module_ticks::FIRST_MONSTER_SEAT;

@@ -1711,10 +1711,15 @@ impl World {
     /// here; the last is carried but not consumed, and says so:
     ///
     /// - [`AmbientEffect::ModelSwap`] needs a per-placement mesh re-bind.
-    ///   Neither host has one - the native window resolves an NPC's mesh
-    ///   once at scene load (`field_npc_draws`) and the browser play page
-    ///   bakes the same list - so a stream that swaps a villager's model
-    ///   still draws the spawn mesh.
+    ///   Neither host has one: the native window resolves an NPC's mesh once
+    ///   at scene load (`field_npc_draws`) and the play page builds catalog
+    ///   entry `i`'s from the same `placement.model_index`, so a stream that
+    ///   swaps a villager's model still draws the spawn mesh. This is not a
+    ///   call that needs inserting - `ambient_motion_op_census_disc` measures
+    ///   215 authored sites over four scenes and **zero** of them names a
+    ///   model some placement in the same scene binds, so there is nothing
+    ///   resident to re-bind to. Disclosed, with the blocking capability, in
+    ///   `docs/tooling/host-drift.md` under "Scripted mesh re-bind".
     /// - [`AmbientEffect::MoveImage`] is applied: it is the same libgpu blit
     ///   the field VM's `4C 60` emitter queues, so it goes on the same
     ///   [`crate::world::AmbientFxState::script_vram_moves`] queue, which
@@ -1770,6 +1775,9 @@ impl World {
                         dy,
                     ]);
                 }
+                // See the doc comment: no host can materialise the target
+                // mesh, so recording the swap on the world would be an inert
+                // mechanism wearing the look of a wired one.
                 Fx::ModelSwap { .. } => {}
                 Fx::BitTargetFault => {}
             }

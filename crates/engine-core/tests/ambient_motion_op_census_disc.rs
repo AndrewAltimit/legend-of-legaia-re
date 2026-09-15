@@ -95,6 +95,122 @@ fn census() -> Option<(Census, WalkStats)> {
     Some((out, stats))
 }
 
+/// What op `0x0E`'s operands actually name, per scene, against the set of
+/// models that scene's **placements** already bind.
+///
+/// The count above says how much op `0x0E` is authored; this says what
+/// implementing it would cost. Both hosts resolve an NPC's mesh from
+/// `placement.model_index` at spawn - the native window uploads one GPU mesh
+/// per placement in `upload_assets`, the play page builds catalog entry `i`'s
+/// mesh in `play_npc_mesh` - so a swap target that is *also* some placement's
+/// spawn model is already resident and a swap target that is not has no mesh
+/// anywhere on either host. That split is the denominator for the
+/// "per-placement mesh re-bind" gap in `docs/tooling/host-drift.md`.
+#[test]
+fn model_swap_operands_against_the_placement_model_set_or_skip() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let mut total_sites = 0usize;
+    let mut total_resident = 0usize;
+    for name in index.cdname_scene_names() {
+        let Ok(scene) = Scene::load(&index, &name) else {
+            continue;
+        };
+        // Every model id some placement in this scene binds at spawn. Kept
+        // as the RAW id on both sides - `PlacementRecord::special_model` is
+        // `model_index >= 0xF0` and leaves `model_index` raw, so folding the
+        // swap operand's `- 0xF0` in here would compare two different
+        // numbers and report a spurious zero overlap.
+        let mut spawn_models: BTreeSet<i16> = BTreeSet::new();
+        let mut swaps: BTreeMap<i16, usize> = BTreeMap::new();
+        let mut carriers: BTreeSet<(u32, Option<usize>)> = BTreeSet::new();
+        for carrier in scene_man_carriers(&index, &scene) {
+            let man = &carrier.payload;
+            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+                continue;
+            };
+            for (p, _kind) in
+                legaia_engine_core::man_field_scripts::classify_placements(&man_file, man)
+            {
+                spawn_models.insert(i16::from(p.model_index));
+            }
+            for rec in legaia_asset::man_motion::motion_records(man, &man_file) {
+                for var in legaia_asset::man_motion::stream_variants(man, &rec) {
+                    let mut pc = var.code_offset;
+                    while pc < var.code_end && pc < man.len() {
+                        let op = man[pc];
+                        let Some(w) = legaia_asset::man_motion::op_width(op) else {
+                            break;
+                        };
+                        if op == 0x0E {
+                            carriers.insert((carrier.entry_idx, carrier.chunk_offset));
+                        }
+                        if op == 0x0E && pc + 2 < man.len() {
+                            let id = i16::from_le_bytes([man[pc + 1], man[pc + 2]]);
+                            *swaps.entry(id).or_default() += 1;
+                        }
+                        pc += w;
+                    }
+                }
+            }
+        }
+        if swaps.is_empty() {
+            continue;
+        }
+        let sites: usize = swaps.values().sum();
+        let resident: usize = swaps
+            .iter()
+            .filter(|(k, _)| spawn_models.contains(k))
+            .map(|(_, n)| *n)
+            .sum();
+        let targets: Vec<i16> = swaps.keys().copied().collect();
+        // Is the target even *in* the scene's TMD pack? That is the second
+        // half of the cost: a target the pack does not hold cannot be
+        // resolved at all by the index both hosts use for a placement.
+        let pack = legaia_engine_core::scene_resources::SceneResources::build(&scene)
+            .map(|r| r.tmds.len())
+            .unwrap_or(0);
+        let in_pack = targets
+            .iter()
+            .filter(|&&id| id >= 0 && (id as usize) < pack)
+            .count();
+        total_sites += sites;
+        total_resident += resident;
+        eprintln!(
+            "[model swap] {name}: {sites} sites, {} targets {targets:?}; \
+             {resident} hit a spawn model ({} of {} placement models); \
+             scene TMD pack {pack}, {in_pack} targets index it; \
+             carriers {carriers:?}",
+            swaps.len(),
+            swaps.keys().filter(|k| spawn_models.contains(k)).count(),
+            spawn_models.len(),
+        );
+    }
+    eprintln!(
+        "[model swap] total {total_sites} sites, {total_resident} already-resident,          {} needing a model no placement binds",
+        total_sites - total_resident
+    );
+    // Non-vacuous: the sibling census counts the same sites, so a zero here
+    // means this walk is broken rather than that the disc authors no swap.
+    assert!(total_sites > 0, "no op 0x0E operand decoded");
+    // The finding the disclosure rests on, pinned so it cannot rot silently:
+    // NO swap target is a model some placement in the same scene binds at
+    // spawn, so the mechanism both hosts use to get an NPC a mesh reaches
+    // none of these. If this ever goes non-zero, re-measure the gap in
+    // `docs/tooling/host-drift.md` before quoting it again.
+    assert_eq!(
+        total_resident, 0,
+        "a swap target is now a spawn model - re-measure the host-drift gap"
+    );
+}
+
 #[test]
 fn scripted_motion_op_census_or_skip() {
     let Some((c, stats)) = census() else { return };

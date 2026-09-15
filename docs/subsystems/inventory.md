@@ -219,6 +219,44 @@ one nobody has measured.
 | `FUN_800423E0` | normalize (merge + squeeze) | calls window setup first; merges duplicate stacks (cap 99); pulls occupied slots down into holes; occupancy = `id != 0` alone |
 | `FUN_80034A6C` | new-game seed | writes exactly slot 0 = `(0x77 Healing Leaf, x5)`; both callers pre-zero the whole range first |
 
+## What the port does, and the one place the shape shows
+
+The engine keeps the bag as `PartyState::inventory`, a `HashMap<u8, u8>` of
+`item id -> count`. That is a different **shape** from retail's array, not just
+a different container: a map has no slot coordinate at all, so it cannot
+express a hole, cannot express two slots holding the same id before a
+normalize merges them, and cannot be indexed by a number. For every consumer
+the engine has - the pause menu's filtered pages, `GIVE_ITEM`, buy / sell, the
+battle Item arm - that is invisible, because all of them address the bag by id.
+
+One consumer addresses it by **slot**, and it is the reason this section
+exists: PROT 0941's enemy Steal (`docs/subsystems/cast-module.md`) is a
+rejection sampler over the physical array. It draws `rand() % 0x100`, rejects
+the slot unless the id is non-zero, the count is non-zero and the item table
+knows the id, and gives up after `0x400` draws. The rejection rule and the RNG
+cadence are retail's in the port (one draw per rejected slot, so the shared
+cursor advances the way retail's does - `World::roll_cast_steal`), but the
+array it draws over is fabricated: the occupied ids are sorted and projected
+into slots `0 ..= n-1`. Two consequences, neither of which any test can hide:
+
+- **Which** item a given draw picks differs from retail. A dense projection
+  makes every draw hit an occupied slot, so the first accepted draw wins;
+  retail rejects its way past the holes a played-through bag has.
+- The module's low-half floor is not applied at all. Retail's inner loop
+  re-draws while `ctx[+0x11] == 4` and `slot < *(0x8007B5EA)`, which is how a
+  scripted fight is kept from stealing out of the low half of the array. A
+  floor over slot numbers means nothing over a projection that has no holes,
+  so `World::roll_cast_steal` passes no `min_slot` to
+  `cast_arm_ticks::steal_pick_bag_slot`.
+
+The fix is a real 256-slot array on `PartyState`, with retail's own occupancy
+rule (`id != 0`, counts allowed to reach zero) and `FUN_800423E0`'s merge /
+squeeze as the only compaction. It is not a local change: `party.inventory` is
+named at 201 sites across `engine-core`, `engine-shell` and `web-viewer`
+(their tests included), and the slot order would then have to be seeded from a save and
+round-tripped through `legaia_save`, which the map form does not carry either.
+Until that lands the bag stays a map and this is what it costs.
+
 ## Provenance
 
 Ghidra-traced disassembly of `SCUS_942.54` plus live emulator cross-checks: a
