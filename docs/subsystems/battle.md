@@ -2106,14 +2106,18 @@ the shared battle SM poses them (`pose_frame`, read back per frame through
 `play_battle_actor_pose`). Actor draws compose the same enemy half-turn and
 retail 4× world scale as the native window.
 
-Host differences, disclosed rather than approximated silently: the camera is
-the retail far "menu" framing (`FUN_801D5854` case 9, formation-sized depth,
-idle orbit) mapped onto the page's orbit projection - the native
-phase-scripted dialogue / submenu close-ups and measured glides are not
-ported; the ground grid draws without its per-draw GTE depth cue (the page
-renderer's cue uniform is global); and the per-tick facial-animation VRAM
-re-stamps, mid-battle summon-creature spawn and battle-intro screen-prim
-emitter remain native-only.
+Host differences that remain, disclosed rather than approximated silently:
+the floating damage numerals and the `N HIT` / `TOTAL` counter draw from the
+font atlas on the page where the native window samples the retail 24x24 art
+cells out of VRAM (the layout is the shared builder's on both; only the
+glyph source differs), and the field move-VM stager parts are not resolved
+while a battle is up. Everything else in this branch runs on both hosts
+from one kernel: the phase-scripted camera (`battle_cam_script`), the
+ground grid's per-draw depth cue, the battle-intro screen-prim emitter, the
+mid-battle summon-creature spawn, and the per-tick VRAM re-stamps (facial
+animation, the Stone CLUT recolour, the effect CLUT stage) - the page runs
+the same three drains against its battle VRAM copy and re-uploads on
+`play_battle_vram_take_dirty`.
 
 ### Weapon-trail afterimage streak
 

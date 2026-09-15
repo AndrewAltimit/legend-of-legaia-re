@@ -146,9 +146,27 @@ cutscene camera decode (`play_cutscene_camera_json`, mapped onto the page's
 orbit projection - an approximation of the native PSX GTE camera), the
 narration input lock, and the retail intro-skip
 (`play_take_prologue_handoff` - Cross skips the whole remaining opening to
-`town01`). One browser deviation, deliberate: FMV beats are auto-finished (no STR/MDEC
-playback on the play path). The `town01` establishing-sweep timeline **does**
-run, through to the name-entry overlay it opens (`play_name_entry` below).
+`town01`). FMV beats play through `play_fmv` (below); the `town01`
+establishing-sweep timeline runs through to the name-entry overlay it opens
+(`play_name_entry` below).
+
+## FMV beats (`play_fmv`)
+
+An FMV the field VM triggers (or the title's attract countdown, `fmv_id 0`)
+holds the world in `SceneMode::Cutscene` until the movie finishes, as the
+native window does. The runtime names the segment
+(`play_fmv_wanted_json`: the STR file plus the `fmv_segment_window` narrowing
+shared with the native `cutscene_av` - `MV3.STR` carries several ids), the
+page slices those raw sectors out of the disc bytes it still holds
+(`window.__playDiscBytes` + `disc_file_extent_json`, so the runtime never
+keeps a second copy of the image), `play_fmv_install` demuxes the video and
+decodes the XA track through the media page's existing decoders, and
+`site/js/play-fmv.js` draws the frames over the GL view clocked off the audio
+context, then `play_fmv_finish` applies the same post-movie scene hand-off.
+The retail skip rule is engine-side (`fmv_id 0` only, on the packed
+face-button mask). A page that never declares support still auto-finishes the
+beat with the hand-off applied, which is what a cached bundle does. Disc-gated
+oracle: `tests/play_fmv_real.rs`.
 
 Two things the browser host has to do that the native one gets for free:
 
@@ -274,10 +292,14 @@ the world so the engine's own battle SM poses every actor; the page reads
 camera runs the **shared** phase script (`engine-vm::battle_cam_script`) that
 the native window runs - dialogue / menu-with-orbit / submenu close-up /
 action framing - and the page consumes a ready view-projection built by the
-retail GTE model rather than re-deriving one. Facial-animation VRAM stamps
-and the battle-intro emitter remain native-only (disclosed in
-`docs/subsystems/battle.md`). Battle exit drops the state and the page
-restores the untouched field VRAM.
+retail GTE model rather than re-deriving one. The per-tick VRAM re-stamps
+(facial animation, the Stone CLUT recolour, the effect CLUT stage) run
+through `play_battle_vram` against the page's battle VRAM copy - the same
+three drains the native window runs - and the page re-uploads the texture on
+`play_battle_vram_take_dirty` (a VRAM serial doubles as the residency
+guard). Battle exit drops the state and the page restores the untouched
+field VRAM. Still native-only: the damage numerals and combo counter in the
+retail 24x24 art cells (the page draws the same layout from the font atlas).
 
 ## Battle effects (`play_battle_fx`)
 
@@ -322,10 +344,10 @@ screen therefore does not merely lack a screen - it parks the script at the
 first merchant. Before both landed, the page had no catalog at all, so the
 priced-record validation failed and every merchant was silently inert.
 
-Two deliberate divergences from the native window: input is **edge**-triggered
+One deliberate divergence from the native window: input is **edge**-triggered
 (`menu_runtime::step` does no edge detection, and the native window feeds it the
-held pad), and the buy/sell rows carry **real item names** off the SCUS table
-the page already parses, where the native rows are placeholder labels.
+held pad). Both hosts label the buy/sell rows with the real item names off the
+SCUS table.
 
 ## Developer menu (`play_dev_menu`)
 
@@ -453,8 +475,9 @@ gate:
 | Seru-trade shop screens | Closed. Config + name table install at `load_disc`, and `play_shop::shop_trade_draws` is the twin of the native `draw_shop_trade`. |
 | Options screen | Half closed. Edits persist for the session; a page reload still starts from defaults, where the native window reloads `legaia-options.toml`. |
 | Inn prompt | Open, and host-symmetric in the sense that matters least: neither host opens an inn session, but only the native window would draw one if something did. |
-| Load / Save rows | Deliberate. This host browses the console's two memory-card ports; the native window writes LGSF files to `saves/`. A browser has no filesystem to be the other thing. |
-| Dance / Baka / Muscle | Deliberate. The native window starts them from developer keybinds; here they are their own site pages driven by `LegaiaMinigames`. Neither host reaches them from a field trigger yet. |
+| Load / Save rows | Closed at the model. This host browses the console's two memory-card ports; the native window writes LGSF files to `saves/` - but both build the slot from one `legaia_save` summary (leader name, level, HP/MP, resume scene + location), and the card block carries the engine ext (play clock, saved chains) in the tail retail never reads. |
+| Dance / Baka / Muscle / slots | Closed in-world. Both hosts enter them from the scene's own door warps; this host draws them through `play_minigames` (below) with the standalone page's renderers, and the standalone page stays as the free-play surface. |
+| Field BGM / SFX / XA | Closed. `play_bgm` carries the native director's guard and volume policy, `play_sfx` the full u16 cue space with the duck and the reward bank, `play_xa` the shout and clip banks. What remains is host-identical: cast-voice cues are declined on both hosts. |
 
 The Options row deserves the sharpest statement, because it is the shape that
 recurs: the screen was *drawn* on both hosts and the gate was green, while one
@@ -473,8 +496,38 @@ NEW GAME / CONTINUE, copyright) as sprite quads off `title_screen_atlas`
 black. `site/js/play-app.js` exposes the `AtlasBlitter`; the page's small boot
 controller runs before any scene exists, feeds the title edge-triggered pad
 words, and on the New Game outcome seeds the retail defaults + enters the
-opening prologue chain (`play_cutscene` above). Publisher logos and the
-Continue save-slot grid are not yet wired.
+opening prologue chain (`play_cutscene` above) - after `begin_new_game`
+establishes the fresh slate the native `BootSession` does. The title theme
+starts with the card and the attract countdown plays `MV1.STR` through
+`play_fmv`. Publisher logos are not yet wired on this host.
+
+## In-world minigames (`play_minigames`)
+
+The casino slots, Muscle Dome, Baka Fighter and dance-hall sessions install
+themselves on every host (the field-VM op-`0x3E` arm and the world-map
+`MinigameDoor` walk-on both publish `World::minigames.pending_warp`, and the
+shared scene host drains it). This module is their presentation: the runtime
+synthesises a compact PROT image of just the minigame entries so the
+standalone minigames page's decoders and renderers serve the in-world
+session, live state reads off the world's own sessions, the text HUD rides
+`minigame_overlay_draws`, input is the pad word through the engine's own
+tick, and Start exits back to the field with coins and prizes settled.
+`site/js/play-minigames.js` also carries the fishing prize-exchange panel
+over `play_fishing_prizes_json` / `play_fishing_prize_buy`. Disc-gated oracle:
+`tests/play_minigames_host.rs`. Open: the overlays' own BGM tracks are not
+started in-world, and the dance count-in / how-to are not shown.
+
+## Field effects and script-spawned actors
+
+Field frames draw the effect-pool billboards, `etmd` models, summon / move-FX
+parts and the scene's own move-VM stager parts (`play_field_fx_sync`, built
+against the page's field view-projection in page space), and actors a scene
+script spawns with a TMD (`FieldEvent::ActorSpawned`) get their rest-pose
+mesh uploaded and drawn from the live actor transform. The field party HUD
+reads the lead's projected stage-Y off the same view-projection. The page
+also drains every remaining field-VM event each tick, the twin of the native
+`drain_and_route_field_events` - `World::pending_field_events` is only ever
+emptied by a consumer.
 
 The menu rows have the same two sources the native window has, and exactly one
 draws at a time: with PROT 0888 resolved the title TIM's own NEW GAME /
