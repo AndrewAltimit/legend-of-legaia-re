@@ -1031,6 +1031,27 @@ pub(crate) enum Cmd {
         /// morphs retail itself arms (rikuroa) are unaffected either way.
         #[arg(long, default_value_t = false)]
         no_entry_pulse: bool,
+        /// DEBUG affordance, not a player surface: teach the lead party
+        /// member a spell id (at level 1) before the first world tick, so a
+        /// capture run can open the battle Magic arm without playing to the
+        /// Seru that grants it. Repeatable; decimal or `0x` hex. Retail's
+        /// player Seru-magic block is `0x81..=0x8B`
+        /// (`docs/formats/spell-table.md`). Pair with `--seed-party`: with no
+        /// roster there is no record to write, and the flag warns and does
+        /// nothing. The older `LEGAIA_LEARN_SPELLS=0x81,0x9e` env var still
+        /// works and is applied after these.
+        #[arg(long, value_name = "ID")]
+        learn_spell: Vec<String>,
+        /// DEBUG affordance, not a player surface: raise a system/story flag
+        /// (retail's `DAT_80085758` bank, the one op `0x07` writes and
+        /// `FUN_8003CE64` reads) before the scene is entered, and again after
+        /// `--seed-party` resets the bank. Repeatable; decimal or `0x` hex.
+        /// This is how a capture run reaches state a save would otherwise
+        /// have to carry - e.g. `--set-flag 0x538` unlocks the Muscle Dome's
+        /// Master course, which seeds the arena's special-battle word to
+        /// `0x321` and crosses the Ra-Seru chip out of the command ring.
+        #[arg(long, value_name = "N")]
+        set_flag: Vec<String>,
         /// Disable the camera-occlusion fade ENHANCEMENT (see-through
         /// walls). By default, field scene geometry between the camera and
         /// the player dissolves to a screen-door dither in a circle around

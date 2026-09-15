@@ -125,11 +125,52 @@ The list is in battle order (`vahn`/`noa`/`gala`/`terra`, or roster indices)
 and caps at the three on-screen positions. A member whose record already
 carries stats - a loaded save - is never overwritten.
 
+### Debug affordances: `--learn-spell` and `--set-flag`
+
+Two screens a parity sweep needs are gated on state no other flag reaches, so
+there are two flags that write that state directly. Both are **debug
+affordances, not player surfaces**: they put the world into a configuration a
+save would otherwise have to carry, and neither changes anything when absent.
+
+`--learn-spell <ID>` (repeatable, decimal or `0x` hex) prepends a spell id at
+level 1 to the lead party member's learned list. The battle Magic arm
+validates a queued action against that list and parks on an unlearned id, so
+without this the cast band cannot be reached at all on a fresh roster. The
+player Seru-magic block is `0x81..=0x8B`
+([`spell-table.md`](../formats/spell-table.md)). It needs a roster to write
+to, so pair it with `--seed-party`:
+
+```bash
+./legaia-engine play-window --disc "$DISC" --scene rikuroa --battle 17 \
+    --seed-party --learn-spell 0x85 --learn-spell 0x88
+```
+
+`--set-flag <N>` (repeatable, same number formats) raises a bit in the shared
+system/story-flag bank - retail's `DAT_80085758`, the one the field VM's op
+`0x07` writes and `FUN_8003CE64` reads - before the scene is entered, and
+again after `--seed-party` resets the bank. A raised bit is indistinguishable
+from one a script raised. The Muscle Dome's course unlocks are the worked
+example: the arena seeds its special-battle word from flags `0x536` / `0x537`
+/ `0x538`, last one set winning, and `0x538` seeds `0x321` - course 2 plus the
+bit that crosses the Ra-Seru chip out of the command ring
+([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md)).
+
+```bash
+# `M` opens the dome from any field scene; the ring is drawn with the
+# Ra-Seru chip crossed out because flag 0x538 seeded the word to 0x321.
+./legaia-engine play-window --disc "$DISC" --scene town01 --seed-party \
+    --set-flag 0x538 --key-script "60:M" \
+    --screenshot /tmp/dome-ban.png --screenshot-tick 200
+```
+
+The older `LEGAIA_LEARN_SPELLS=0x81,0x9e` environment variable still works and
+is applied after any `--learn-spell`.
+
 ## 2. Pick a scene
 
 ```bash
 ./legaia-engine list-scenes --disc "/path/to/disc.bin"
-./legaia-engine play-window --disc "/path/to/disc.bin" --scene town04
+./legaia-engine play-window --disc "/path/to/disc.bin" --scene town01
 ```
 
 `list-scenes` prints every scene name the game's file map exposes with the

@@ -109,6 +109,7 @@ pub(crate) fn cmd_play_window(
     dyn_shadows: bool,
     entry_pulse: bool,
     occlusion_fade: bool,
+    debug_seeds: super::DebugSeeds,
 ) -> Result<()> {
     cmd_play_window_with_record(
         scene,
@@ -139,8 +140,30 @@ pub(crate) fn cmd_play_window(
         dyn_shadows,
         entry_pulse,
         occlusion_fade,
+        debug_seeds,
         None,
     )
+}
+
+/// Raise every `--set-flag` index in the world's shared system-flag bank.
+///
+/// The bank is retail's `DAT_80085758`, the same one the field VM's op `0x07`
+/// writes and `FUN_8003CE64` reads, so a raised bit is indistinguishable from
+/// one a script raised. Called twice - once before scene entry and once after
+/// the `--seed-party` reset - and idempotent, because setting a bit twice is
+/// setting a bit.
+fn seed_debug_story_flags(session: &mut BootSession, seeds: &super::DebugSeeds) {
+    if seeds.story_flags.is_empty() {
+        return;
+    }
+    for &flag in &seeds.story_flags {
+        session.host.world.system_flag_set(flag);
+    }
+    log::info!(
+        "play-window: --set-flag raised {} story flag(s): {:?}",
+        seeds.story_flags.len(),
+        seeds.story_flags
+    );
 }
 
 /// A `--battle` operand: a scene MAN formation-row index, or "the first row
@@ -351,6 +374,7 @@ pub(super) fn cmd_play_window_with_record(
     dyn_shadows: bool,
     entry_pulse: bool,
     occlusion_fade: bool,
+    debug_seeds: super::DebugSeeds,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
     // Resolve the cutscene map (explicit `--cutscene-map` override or the
@@ -432,6 +456,12 @@ pub(super) fn cmd_play_window_with_record(
         player_battle,
         battle_bgm,
     };
+    // `--set-flag`: raise the named system-flag bits BEFORE the scene is
+    // entered, so a MAN entry script that branches on one takes the raised
+    // arm. They are raised a second time after `--seed-party` below, because
+    // `begin_new_game` resets the bank - dropping them there would make the
+    // two flags silently exclusive.
+    seed_debug_story_flags(&mut session, &debug_seeds);
     if world_map {
         // Load the scene's resources, route its region-keyed encounter table
         // onto the overworld, install the player, and enter world-map mode
@@ -478,26 +508,43 @@ pub(super) fn cmd_play_window_with_record(
         log::info!("play-window: --seed-party seeded {seeded} roster member(s)");
     }
 
-    // Debug learn path: `LEGAIA_LEARN_SPELLS=0x81,0x9e` prepends those spell
-    // ids (level 1) onto the lead character's record, so a seeded New Game
-    // party can reach the Magic arm and cast - the cast-presentation
-    // screenshot harness. An env var rather than a flag: a development aid
-    // for the parity sweeps, not a player surface.
-    if let Ok(list) = std::env::var("LEGAIA_LEARN_SPELLS") {
+    // `--seed-party` calls `begin_new_game`, which clears the flag bank, so
+    // the `--set-flag` bits are raised again here. The dome reads them at
+    // arena entry, long after this, so this is the pass that matters for a
+    // seeded ban.
+    seed_debug_story_flags(&mut session, &debug_seeds);
+
+    // Debug learn path: `--learn-spell 0x81` (repeatable) or the older
+    // `LEGAIA_LEARN_SPELLS=0x81,0x9e` prepends those spell ids (level 1) onto
+    // the lead character's record, so a seeded New Game party can reach the
+    // Magic arm and cast - the cast-presentation screenshot harness. A
+    // development aid for the parity sweeps, not a player surface.
+    {
         let parse = |s: &str| {
             let s = s.trim();
             s.strip_prefix("0x")
                 .or_else(|| s.strip_prefix("0X"))
                 .map_or_else(|| s.parse::<u8>().ok(), |h| u8::from_str_radix(h, 16).ok())
         };
+        let from_env: Vec<u8> = std::env::var("LEGAIA_LEARN_SPELLS")
+            .ok()
+            .map(|list| list.split(',').filter_map(parse).collect())
+            .unwrap_or_default();
         let mut learned = 0usize;
-        for id in list.split(',').filter_map(parse) {
+        for id in debug_seeds.learn_spells.iter().copied().chain(from_env) {
             if let Some(lead) = session.host.world.party.roster.members.first_mut() {
                 legaia_engine_core::magic_xp::learn_spell_prepend(lead, id);
                 learned += 1;
             }
         }
-        log::info!("play-window: LEGAIA_LEARN_SPELLS taught the lead {learned} spell(s)");
+        if learned > 0 {
+            log::info!("play-window: taught the lead {learned} debug spell(s)");
+        } else if !debug_seeds.learn_spells.is_empty() {
+            log::warn!(
+                "play-window: --learn-spell had no lead party member to teach \
+                 (pass --seed-party, or --boot-ui and start a game, first)"
+            );
+        }
     }
 
     // Debug RNG seed override: `LEGAIA_RNG_SEED=<u32>` (decimal or `0x` hex)
