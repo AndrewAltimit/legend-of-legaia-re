@@ -1242,6 +1242,28 @@ seeds `0x204` (516), `0x801F70CC` drains it by `8` per frame across 64 writes,
 that floor the budget never reaches zero on its own - the module's own clear is
 what closes the arm, 1039 VSyncs after it opened.
 
+#### One capture-class body, for contrast
+
+The same instrument run on PROT 0959 (Megaton Press, action `0x7A`) from the
+Nivora duel - a real retail cast, no injection needed beyond re-queuing the
+action already staged - separates the band's two halves on three counts.
+
+- **The attacker seat is not a literal.** Its three wrapper sites set
+  `a1` from `lbu a1, 0x13(...)` (`0x801F71E4`, `0x801F7A8C`, `0x801F7EB8`), and
+  the capture reads `a1 = 3`, the enemy caster's own seat. The player-Seru
+  bodies bake `addiu a1, zero, 7` instead.
+- **`ctx[+0x6D8]` is not its clock.** The byte holds `20` at every one of the
+  333 tick entries, where a player-Seru cast seeds `120` and drains it.
+- **Its tick is not reached through a PROT 0898 trampoline.** Every entry
+  returns to `0x801F8838`, inside slot B itself.
+
+Its arms, in ticks from phase `0`: 1, 3, 16, 32, 16, 22, 30, 22, 2, 56, 32, 24,
+24, 8, 16, 29 - and the last of those was still running when the capture window
+closed, so `15` is a floor. Damage goes through `FUN_801DD6B4`, the
+resist-bypass wrapper, with baked powers `0x80` at `0x801F71E8` and
+`0x801F7A90` and `0x30` at `0x801F7EBC`, the last site firing four times inside
+arm `15`. The returns `67 / 71 / 26 / 25 / 30 / 25` are applied unscaled.
+
 ### The fourteen trampoline arms that are the band's other tick bodies
 
 <a id="the-fourteen-trampoline-arms-that-are-unported-tick-bodies"></a>
