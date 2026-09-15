@@ -575,9 +575,33 @@ pub fn roll_module_hit(
 /// `docs/subsystems/cast-module.md` grades this **PORT** for the `+0x0C`
 /// write and does not mention `+0x21D`; both stores are here.
 ///
+/// The eight arms are eight distinct entry addresses, not one body with a
+/// computed constant, so the catalog tracks each one. Arm 0 is the
+/// fall-through inside this routine's own extent; arms 1..7 are frameless
+/// leaves the jump table reaches and nothing else references:
+///
+/// | table slot | entry | `+0x0C` | `+0x21D` |
+/// |---:|---|---:|---:|
+/// | 0 | `0x801F761C` (interior of `0x801F75BC`) | `0x200` | 7 |
+/// | 1 | `0x801F7630` | `0x400` | 6 |
+/// | 2 | `0x801F7644` | `0x600` | 5 |
+/// | 3 | `0x801F7658` | `0x800` | 4 |
+/// | 4 | `0x801F766C` | `0xA00` | 3 |
+/// | 5 | `0x801F7680` | `0xC00` | 2 |
+/// | 6 | `0x801F7694` | `0xE00` | 1 |
+/// | 7 | `0x801F76A8` | `0x1000` | 0 |
+///
+/// Arms 1..6 are 20 bytes each - five instructions, the `sb` in the `jr ra`
+/// delay slot. Arm 7 is 12 bytes and has no `jr ra` of its own: it stores
+/// `0x1000` and `sb $zero` and falls into the routine's shared epilogue at
+/// `0x801F76B4`, which is also where the out-of-range `beqz` lands. The table
+/// itself is eight words at `0x801F69F0`, six words into the image's leading
+/// VA run, and `0x801F7644` is one of the VAs PROT 0901 also uses for a
+/// world-map draw leaf - different image, different bytes.
+///
 /// Wired: `World::run_cast_module_code`, at the cast band's staging seam.
 ///
-/// PORT: FUN_801F75BC
+/// PORT: FUN_801F75BC, FUN_801F7630, FUN_801F7644, FUN_801F7658, FUN_801F766C, FUN_801F7680, FUN_801F7694, FUN_801F76A8 (PROT 0949; the stager and its seven ramp arms)
 pub fn water_crystals_stager(victim: &mut CastActorState, arm: u8) {
     if arm >= 8 {
         return;
@@ -3067,11 +3091,25 @@ mod tests {
 
     #[test]
     fn the_water_crystals_ramp_pairs_speed_with_rate() {
-        for arm in 0..8u8 {
+        // The literal arms as disassembled, not the implementation's own
+        // formula restated: `(slot, +0x0C, +0x21D)` for table slots 0..7 at
+        // `0x801F761C` / `7630` / `7644` / `7658` / `766C` / `7680` / `7694` /
+        // `76A8`.
+        const ARMS: [(u8, i32, u8); 8] = [
+            (0, 0x200, 7),
+            (1, 0x400, 6),
+            (2, 0x600, 5),
+            (3, 0x800, 4),
+            (4, 0xA00, 3),
+            (5, 0xC00, 2),
+            (6, 0xE00, 1),
+            (7, 0x1000, 0),
+        ];
+        for (arm, speed, rate) in ARMS {
             let mut v = actor(100);
             water_crystals_stager(&mut v, arm);
-            assert_eq!(v.root_speed, (i32::from(arm) + 1) * 0x200);
-            assert_eq!(v.anim_rate, 7 - arm);
+            assert_eq!(v.root_speed, speed, "arm {arm} +0x0C");
+            assert_eq!(v.anim_rate, rate, "arm {arm} +0x21D");
         }
         // Arm 8 is past `sltiu a1, 8` and writes nothing.
         let mut v = actor(100);
