@@ -353,10 +353,6 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        // Drain world battle events. **Observation only** - the live battle
-        // loop owns the gameplay fold and re-publishes the stream, so folding
-        // again here would apply an art strike's HP twice.
-        let _events = host.world.drain_battle_events();
         // Floating damage / heal numbers: the live loop resolves HP itself
         // and queues a presentation-only FX per strike.
         let fx = host.world.drain_battle_hit_fx();
@@ -375,20 +371,6 @@ impl LegaiaRuntime {
         // Drained so the world never accumulates it; nothing on this host
         // consumes it yet (the popups above already carry each hit's number).
         let _hits = host.world.drain_battle_hit_events();
-        // Battle strike SFX cues route into the page's existing delay
-        // scheduler (`crate::play_sfx`); the arts-voice shouts are CD-XA
-        // clips this host has no demuxed channel bank for yet, so they are
-        // drained (the world must not accumulate them) and dropped.
-        let cues = host.world.drain_battle_sfx_cues();
-        let _ = host.world.drain_battle_shout_cues();
-        // NOT WIRED (browser): the melee grunt / attack sting are CD-XA clip
-        // requests (`drain_battle_xa_cues`), and the play page has no XA
-        // lane at all - the same gap that drops the arts shouts above. The
-        // prerequisite is an in-browser demux of `XA27` / `XA30` off the
-        // user's disc bytes into an `XaClipBank` and a `WebAudioOut` XA
-        // mixing path; until then the requests are consumed here so they
-        // cannot pile up across frames.
-        let _ = host.world.drain_battle_xa_cues();
         // Battle effect-script spawn requests (one per effect record the
         // per-actor effect-script walk consumed this tick). Routed into the
         // world's own spawn paths so the FX render layers
@@ -416,12 +398,14 @@ impl LegaiaRuntime {
                 self.encounter_banner = None;
             }
         }
-        // `enqueue_sfx` needs `&mut self`, so fire after the host borrow ends.
-        for cue in cues {
-            if let Ok(id) = u8::try_from(cue.kind) {
-                self.enqueue_sfx(id, cue.timing_frames);
-            }
-        }
+        // Audio side of the battle tick: typed battle events (audio duck),
+        // strike / cast SFX cues, arts-voice shouts, XA clip requests. Lives
+        // in [`crate::play_battle_audio`]; every queue is drained there so
+        // the world never accumulates one.
+        self.drain_battle_audio_cues();
+        // Mid-battle VRAM re-stamps (facial animation, status-effect actor
+        // recolour, effect CLUT stage) - [`crate::play_battle_vram`].
+        self.tick_battle_vram_channel();
     }
 
     /// Out-of-battle battle presentation, in **surface pixels**: the

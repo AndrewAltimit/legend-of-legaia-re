@@ -2336,6 +2336,14 @@ void main() {
       if (!this._battle || this._battle.gen !== gen) this._uploadBattleScene(rt, gen);
       const b = this._battle;
       if (!b) return false;
+      /* Mid-battle VRAM re-stamps (facial animation, status-effect actor
+       * recolour, effect CLUT stage): the engine mutated the battle VRAM
+       * this tick; re-upload only when texels really changed. Guarded so a
+       * cached bundle predating the export still runs. */
+      if (typeof rt.play_battle_vram_take_dirty === 'function' && rt.play_battle_vram_take_dirty()) {
+        const vram = rt.play_battle_vram_bytes();
+        if (vram.length) this.renderer.uploadVram(vram);
+      }
 
       const draws = [];
       /* Backdrop (both copies pre-appended engine-side) + ground grid draw

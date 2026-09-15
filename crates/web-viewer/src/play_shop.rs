@@ -1378,6 +1378,10 @@ impl LegaiaRuntime {
         // `battle`, and empty whenever anything else owns the screen
         // ([`crate::play_field_hud`]).
         let (field_hud_sprites, field_hud_texts) = self.field_party_hud_draws(surface_w, surface_h);
+        // In-world minigame screens (casino / dance / arena), surface
+        // pixels ([`crate::play_minigames`]). Empty outside one.
+        let (minigame_sprites, minigame_texts) =
+            self.minigame_overlay_draws(font, surface_w, surface_h);
         if shop.is_none()
             && windows.is_empty()
             && banners.is_empty()
@@ -1385,6 +1389,8 @@ impl LegaiaRuntime {
             && tutorial.is_empty()
             && field_hud_sprites.is_empty()
             && field_hud_texts.is_empty()
+            && minigame_sprites.is_empty()
+            && minigame_texts.is_empty()
         {
             return CLOSED.to_string();
         }
@@ -1444,6 +1450,8 @@ impl LegaiaRuntime {
         texts.extend(battle);
         // The field HUD's names, likewise already in surface pixels.
         texts.extend(field_hud_texts);
+        sprites.extend(minigame_sprites);
+        texts.extend(minigame_texts);
 
         serde_json::json!({
             "open": true,
