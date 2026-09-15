@@ -51,6 +51,14 @@ pub struct CastFxState {
     /// The resident slot-B module's `ctx+0x278` scratch byte, written by
     /// three of the band's stagers.
     pub module_ctx_278: u8,
+    /// PROT 0904's ring-sweep angle, retail's `ctx+0x6D8`.
+    ///
+    /// Arm 12 grows it by the frame delta times `8` every tick
+    /// (`0x801F7ADC..0x801F7AF0`) and gates each seat on lying inside a
+    /// `+-0x30` cone about it, so it is a **rotating ray**, not a radius: the
+    /// arm advances once it has passed `0x1000`, a full 12-bit turn. Reset
+    /// when a cast is armed.
+    pub module_ring_angle: u16,
     /// PROT 0907 (Nighto)'s kill / confuse / resist verdict for the resident
     /// cast, decided **once**.
     ///
@@ -139,6 +147,7 @@ impl CastFxState {
             pending_cast: None,
             module_phase: 0,
             module_ctx_278: 0,
+            module_ring_angle: 0,
             module_nighto_outcome: None,
             // --- W1-D ---
             module_split_saved_target: None,

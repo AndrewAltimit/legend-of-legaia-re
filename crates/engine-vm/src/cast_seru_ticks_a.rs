@@ -667,6 +667,11 @@ pub fn theeder_tick(
                 };
                 let applied = site.apply(v, roll);
                 v.render_flag = 0;
+                // The two mirrors the arm stamps beside the HP write
+                // (`0x801F7D9C` / `0x801F7DB4`): the presentation word `+0x04`
+                // and the render byte `+0x21F`.
+                v.present_04 = THEEDER_HIT_PRESENT_WORD;
+                v.render_21f = THEEDER_HIT_RENDER_21F;
                 stage_reaction_bits(v);
                 hits.push(SweepHit { seat, applied });
             }
@@ -678,6 +683,26 @@ pub fn theeder_tick(
     });
     (step, hits)
 }
+
+/// The `+0x04` mesh-tint word PROT 0904's ring sweep stamps on every seat it
+/// hits.
+pub const THEEDER_HIT_PRESENT_WORD: u32 = 0x03FF_0000;
+/// The `+0x21F` render byte the same hit writes.
+pub const THEEDER_HIT_RENDER_21F: u8 = 2;
+
+/// Half-width of PROT 0904's ring-sweep **cone**, in 12-bit angle units
+/// (`addiu v0, v0, -0x30` at `0x801F7D0C`).
+///
+/// A seat is hit when the bearing difference between it and the ring's rim is
+/// within this of zero **modulo a turn**: retail subtracts `0x30` from the
+/// absolute difference and compares the result **unsigned** against `0xFB1`,
+/// so a difference under `0x30` underflows past that bound and a difference at
+/// or above `0xFE1` exceeds it. Both ends of the cone are in.
+///
+/// The host supplies the membership ([`crate::cast_module_ticks`] consumers
+/// call `World::seats_in_cone`); this constant is here so the two sides quote
+/// one number.
+pub const THEEDER_CONE_HALF_WIDTH: u16 = 0x30;
 
 /// One past the last monster seat both row sweeps in this set walk
 /// (`sltiu rX, 0x7` at `0x801F7E84` in PROT 0904, `0x801F74A8` in PROT 0906
@@ -1199,7 +1224,9 @@ pub fn nighto_tick(
             match outcome {
                 NightoOutcome::Kill => {
                     v.hp = 0;
+                    // One `li v0, 0x2` feeds both stores at `0x801F7E54`.
                     v.render_flag = NIGHTO_KILL_RENDER_FLAG;
+                    v.render_225 = NIGHTO_KILL_RENDER_FLAG;
                     v.flags = 0;
                     CastArmStep::Advance
                 }

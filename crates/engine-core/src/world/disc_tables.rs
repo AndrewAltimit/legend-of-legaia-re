@@ -110,6 +110,18 @@ pub struct DiscTables {
     /// (`World::summon_attacker_element`) answers `None` there. Empty on a
     /// disc-free host.
     pub summon_elements: std::collections::HashMap<u8, u8>,
+    /// Static `SCUS_942.54` per-monster **steal** table
+    /// ([`legaia_asset::steal_table`], `DAT_80077828 + monster_id * 2`, fields
+    /// `[chance, item]`). Install via
+    /// [`crate::world::World::set_steal_table`]; `None` on a disc-free host,
+    /// which is what keeps a synthetic battle from granting a steal.
+    ///
+    /// Two consumers: [`crate::world::World::apply_steal`]'s no-argument
+    /// sibling, and PROT 0941's `0x51` Steal body, whose **monster-seat** leg
+    /// resolves off this table rather than off the bag
+    /// (`docs/formats/steal-table.md`; the table is NOT in the PROT 867
+    /// monster record).
+    pub steal_table: Option<legaia_asset::steal_table::StealTable>,
     /// Per-item battle-stat modifier table (weapon / armor / accessory
     /// bonuses). Empty by default; install via [`crate::world::World::set_equipment_table`]
     /// so [`crate::world::World::seed_party_battle_stats`] folds equipped gear onto each
@@ -164,6 +176,7 @@ impl DiscTables {
             battle_camera_heights: None,
             seru_side_effects: None,
             summon_elements: std::collections::HashMap::new(),
+            steal_table: None,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             accessory_passives: Default::default(),
             scene_toc_names: legaia_prot::cdname::IndexMap::new(),

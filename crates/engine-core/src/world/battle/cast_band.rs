@@ -399,8 +399,10 @@ impl World {
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
         // A new cast re-arms the Nighto verdict; the roll happens on the first
-        // tick of the module, the way retail's arm 0 draws it.
+        // tick of the module, the way retail's arm 0 draws it. The ring sweep
+        // starts from zero for the same reason.
         self.casting.module_nighto_outcome = None;
+        self.casting.module_ring_angle = 0;
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
@@ -809,6 +811,13 @@ impl World {
             // at `+0x1DF`.
             knockdown_anim: a.battle.params.get(0x1F1 - 0x1DF).copied().unwrap_or(0),
             render_flag: a.battle.render_flag,
+            // The three mirrors the band's hit arms stamp beside the HP write
+            // all have a home on the battle actor already, so they are seeded
+            // and written back like every other view field rather than being
+            // dropped at the seam.
+            present_04: a.battle.render_color,
+            render_21f: a.battle.impact_state,
+            render_225: a.battle.capture_state,
             anim_rate: a.battle.anim_rate.get(),
             // The whole `+0x158..+0x16A` stat block, five `(working, base)`
             // pairs, now has a home on the battle actor - so every one of
@@ -944,6 +953,9 @@ impl World {
         a.battle.queued_anim = st.staged_anim;
         a.battle.active_target = st.target_code;
         a.battle.render_flag = st.render_flag;
+        a.battle.render_color = st.present_04;
+        a.battle.impact_state = st.render_21f;
+        a.battle.capture_state = st.render_225;
         a.battle.anim_rate = AnimRate(st.anim_rate);
         a.battle.agl = st.agl;
         a.battle.agl_base = st.agl_base;
@@ -969,6 +981,60 @@ impl World {
         {
             *s = Some((st.udf, st.ldf));
         }
+    }
+
+    /// The `(x, z)` pair a battle seat occupies - its anchor when the battle
+    /// loader seeded one, else its live position.
+    fn cast_seat_xz(&self, slot: u8) -> (i16, i16) {
+        self.actors
+            .get(slot as usize)
+            .map(|a| {
+                a.battle
+                    .seat
+                    .unwrap_or((a.move_state.world_x, a.move_state.world_z))
+            })
+            .unwrap_or((0, 0))
+    }
+
+    /// Which of `seats` lie inside a `+-half_width` cone about `bearing`, as
+    /// seen from `centre` - the geometry PROT 0904's expanding-ring sweep
+    /// gates each hit on, and the one thing the module's arm 12 needs from its
+    /// host.
+    ///
+    /// Retail's shape, read off `0x801F7CA0..0x801F7D14`: two calls to the
+    /// 12-bit atan2 `FUN_80019B28` against the **same** second point (the ring
+    /// centre) - one from the ring's rim point at angle `ctx+0x6D8`, one from
+    /// the seat - each `+0x800` and masked to `0xFFF`, then
+    /// `|ref - seat| - 0x30` compared **unsigned** against `0xFB1`. That
+    /// comparison is the wrap: a difference below `0x30` underflows past
+    /// `0xFB1` and a difference at or above `0xFE1` exceeds it, so both ends
+    /// of the cone are in and everything between is out. The `+0x800` cancels
+    /// in the difference and the bearings are measured toward the centre in
+    /// both calls, so measuring outward from the centre gives the same
+    /// difference.
+    ///
+    /// The atan2 is the ported `FUN_80019B28`
+    /// ([`vm::battle_action::bearing_12bit_approx`]) over the
+    /// approximated arctan LUT, the same one the enemy target cursor uses.
+    ///
+    /// REF: FUN_801F69D8 (PROT 0904 arm 12 cone gate), FUN_80019B28
+    pub fn seats_in_cone(
+        &self,
+        centre: (i16, i16),
+        bearing: u16,
+        half_width: u16,
+        seats: std::ops::Range<u8>,
+    ) -> Vec<u8> {
+        use vm::battle_action::bearing_12bit_approx;
+        const FULL_TURN: u16 = 0x1000;
+        seats
+            .filter(|&seat| {
+                let (sx, sz) = self.cast_seat_xz(seat);
+                let to_seat = bearing_12bit_approx(centre.1, centre.0, sz, sx);
+                let d = (to_seat.wrapping_sub(bearing)) & (FULL_TURN - 1);
+                d <= half_width || d >= FULL_TURN - half_width
+            })
+            .collect()
     }
 
     /// PROT 0907 (Nighto)'s kill / confuse / resist verdict for the resident
@@ -1575,6 +1641,24 @@ impl World {
                 // every later frame, mirroring retail's arm-0 draw into the
                 // module words `0x801F8534` / `0x801F853C`.
                 903..=908 => {
+                    // PROT 0904's ring sweep: advance the ray, then resolve
+                    // the cone once for this tick (both borrow `self`, which
+                    // the seat row below does not allow).
+                    let cone_seats: Vec<u8> = if entry == 904 {
+                        use vm::cast_seru_ticks_a::{MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH};
+                        let step = u16::from(self.clock.frame_step.max(1)) << 3;
+                        self.casting.module_ring_angle =
+                            self.casting.module_ring_angle.wrapping_add(step);
+                        let centre = self.cast_seat_xz(seat_slot);
+                        self.seats_in_cone(
+                            centre,
+                            self.casting.module_ring_angle & 0x0FFF,
+                            THEEDER_CONE_HALF_WIDTH,
+                            ticks::FIRST_MONSTER_SEAT..MONSTER_ROW_END,
+                        )
+                    } else {
+                        Vec::new()
+                    };
                     let nighto_outcome = if entry == 907 {
                         self.nighto_verdict(caster_slot, victim_slot, spell_id)
                     } else {
@@ -1601,7 +1685,18 @@ impl World {
                     }
                     let (step, hits) = match entry {
                         903 => ticks_a::gimard_tick(&mut ctx, &mut seats, who, None),
-                        904 => ticks_a::theeder_tick(&mut ctx, &mut seats, who, |_| None),
+                        904 => {
+                            // Arm 12's cone gate is the host's: retail reads
+                            // the ring's rim bearing and every seat's, and the
+                            // module only ever sees "in" or "out". The damage
+                            // magnitude stays the fold's, so an in-cone seat
+                            // gets a zero roll and the arm's presentation half
+                            // (render flag, reaction bits) runs.
+                            let in_cone = cone_seats.clone();
+                            ticks_a::theeder_tick(&mut ctx, &mut seats, who, |seat| {
+                                in_cone.contains(&seat).then_some(0)
+                            })
+                        }
                         905 => {
                             let (step, _) = ticks_a::vera_tick(&mut ctx, &mut seats, who, None);
                             (step, Vec::new())
@@ -2134,23 +2229,38 @@ impl World {
         )
     }
 
-    /// PROT 0941's Steal resolution for a **party-seat** victim: the bag draw
-    /// plus the consume.
+    /// PROT 0941's Steal resolution, both legs.
     ///
-    /// Retail's other leg - a monster-seat victim, resolved off the static
-    /// steal table `0x80077828` - is not staged here, because the engine
-    /// installs no steal table on the world (`World::apply_steal` takes one as
-    /// an argument) and a capture-class cast is an enemy move aimed at the
-    /// party row. The bag itself differs in shape: retail draws over the
-    /// physical 256-slot array at `0x80085958` including its gaps, and the
-    /// engine's bag is a map, so the draw here is over the occupied slots in
-    /// id order. The rejection rule (`id != 0 && count != 0 && the item table
-    /// knows the id`, up to `0x400` draws) is the module's.
+    /// **Monster seat** (`victim_slot >= FIRST_MONSTER_SEAT`): the static
+    /// `SCUS_942.54` steal table `0x80077828 + monster_id * 2`, fields
+    /// `[chance, item]` - the same table the player-side steal reads, and NOT
+    /// a field of the PROT 867 monster record (`docs/formats/steal-table.md`).
+    /// `rand() % 100 < chance` decides. `None` when no table is installed (a
+    /// disc-free host) or the victim carries no monster id, which keeps a
+    /// synthetic battle from inventing a steal and from drawing the roll.
+    ///
+    /// **Party seat**: the bag draw plus the consume. The bag's *shape*
+    /// differs from retail's: retail draws over the physical 256-slot array at
+    /// `0x80085958` including its gaps, and the engine's bag is a map with no
+    /// slot index, so the draw here is over the occupied slots in id order.
+    /// The rejection rule (`id != 0 && count != 0 && the item table knows the
+    /// id`, up to `0x400` draws, one RNG draw per rejection) is the module's.
     fn roll_cast_steal(&mut self, victim_slot: u8) -> Option<vm::cast_arm_ticks::StealOutcome> {
         use vm::cast_arm_ticks::StealOutcome;
         use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
         if victim_slot >= FIRST_MONSTER_SEAT {
-            return None;
+            let entry = self
+                .actors
+                .get(victim_slot as usize)
+                .and_then(|a| a.battle_monster_id)
+                .and_then(|id| self.tables.steal_table.as_ref()?.entry(id))?;
+            let roll = (self.next_rng() % 100) as u8;
+            return Some(StealOutcome::FromMonster {
+                chance: entry.chance_pct,
+                item: entry.item_id,
+                roll,
+                hit: roll < entry.chance_pct,
+            });
         }
         let mut bag: Vec<(u8, u8)> = vec![(0, 0); 256];
         let mut ids: Vec<(u8, u8)> = self

@@ -232,6 +232,17 @@ impl World {
         self.tables.monster_catalog = catalog;
     }
 
+    /// Install the static `SCUS_942.54` per-monster steal table
+    /// (`DAT_80077828`). Boot wires this once per host, from the same
+    /// executable the item / equipment / spell tables come from.
+    ///
+    /// Without it [`Self::apply_steal_from_table`] grants nothing and PROT
+    /// 0941's Steal cannot resolve a monster-seat victim at all - the leg
+    /// retail decides off this table.
+    pub fn set_steal_table(&mut self, table: legaia_asset::steal_table::StealTable) {
+        self.tables.steal_table = Some(table);
+    }
+
     /// Install the per-item battle-stat modifier table (weapon / armor /
     /// accessory bonuses). Boot wires this once; [`Self::seed_party_battle_stats`]
     /// folds the equipped items onto each party combatant at battle entry.

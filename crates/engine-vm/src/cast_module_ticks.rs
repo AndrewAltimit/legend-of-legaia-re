@@ -190,6 +190,23 @@ pub struct CastActorState {
     pub reaction_alt: u8,
     /// See [`CastActorState::reaction_alt`].
     pub reaction_alt2: u8,
+    /// `+0x04` - the per-actor **mesh tint word** the band's hit sites stamp
+    /// alongside the HP write (PROT 0904's ring sweep stores `0x3FF0000`
+    /// there per hit). It is the same word
+    /// [`BattleActor::render_color`](crate::battle_action::BattleActor::render_color)
+    /// already models, so a store here reaches the renderer's tint pass
+    /// rather than stopping at this view.
+    pub present_04: u32,
+    /// `+0x21F` - the **impact-effect selector** a hit arm sets beside
+    /// [`Self::render_flag`] (`2` on PROT 0904's ring-sweep victims): which
+    /// entry of the impact-config table owns [`Self::present_04`]. Mirrors
+    /// [`BattleActor::impact_state`](crate::battle_action::BattleActor::impact_state).
+    pub render_21f: u8,
+    /// `+0x225` - the capture-state byte PROT 0907's kill arm writes together
+    /// with `+0x21C` (one `li v0,0x2` at `0x801F7E54` feeds both stores).
+    /// Mirrors
+    /// [`BattleActor::capture_state`](crate::battle_action::BattleActor::capture_state).
+    pub render_225: u8,
     /// `+0x1F2` - the gate that picks [`CastActorState::knockdown_anim`]
     /// over [`CastActorState::reaction_alt`].
     pub reaction_gate: u8,
