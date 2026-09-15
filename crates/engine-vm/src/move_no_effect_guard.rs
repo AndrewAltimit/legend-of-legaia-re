@@ -115,7 +115,7 @@ pub const NO_EFFECT_TEXT_VA: u32 = 0x801C_FA20;
 /// PORT: FUN_801f3c34 (`0x801F3C9C..0x801F3CDC`)
 ///
 /// Live from the action SM's state `0x36` through [`queued_magic_message`];
-/// the stager ([`crate::seru_side_effect::stage`]) shares the same scan.
+/// the stager ([`crate::seru_side_effect::stage_side_effect`]) shares the same scan.
 pub fn spell_index_of(spell_ids: &[u8], action: u8) -> usize {
     for i in 0..SCAN_LIMIT {
         if spell_ids.get(i).copied() == Some(action) {
@@ -152,7 +152,7 @@ pub fn spell_index_of(spell_ids: &[u8], action: u8) -> usize {
 /// 3. the pending latch `0x801F6960` is
 ///    [`BattleActionCtx::follow_up_pending`](crate::battle_action::BattleActionCtx::follow_up_pending).
 ///
-/// The latch's **writer** is the stager ([`crate::seru_side_effect::stage`]),
+/// The latch's **writer** is the stager ([`crate::seru_side_effect::stage_side_effect`]),
 /// which the live loop does not yet run (see that module's wiring note), so
 /// in the port the latch is only ever read as clear: every levelled cast
 /// prints "No effect." where retail would print the effect banner instead.

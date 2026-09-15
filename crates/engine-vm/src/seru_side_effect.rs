@@ -164,8 +164,16 @@ pub enum StagerOutcome {
 /// single `FUN_80056798` call on that path; pass the shared BIOS-rand
 /// mirror so the stream stays in step.
 ///
+/// Named for what it stages rather than `stage`: three *methods* in this
+/// workspace carry that name, and the reachability pass is not
+/// receiver-gated, so a bare `stage` free function collects a `.stage()`
+/// call site's edge and reads as live while nothing calls it. That is
+/// exactly what happened here - the audit's "tagged NOT WIRED but analysed
+/// live" row was this collision, not a wire. See
+/// `docs/tooling/stale-not-wired-triage.md`.
+///
 /// PORT: FUN_801f3d3c
-pub fn stage(
+pub fn stage_side_effect(
     table: &SeruSideEffectTable,
     inp: &StagerInputs,
     rand: impl FnOnce() -> i32,
@@ -331,7 +339,10 @@ mod tests {
         let t = table();
         for lvl in 0..MIN_LEVEL {
             let inp = inputs(lvl, 2, true, StagerTarget::Enemy(gaza_boosted()));
-            assert_eq!(stage(&t, &inp, no_rand), StagerOutcome::LevelTooLow);
+            assert_eq!(
+                stage_side_effect(&t, &inp, no_rand),
+                StagerOutcome::LevelTooLow
+            );
             assert!(!no_effect_banner_fires(lvl, StagerOutcome::LevelTooLow));
         }
     }
@@ -349,7 +360,7 @@ mod tests {
         ] {
             let inp = inputs(5, el, false, StagerTarget::Enemy(cmp));
             assert_eq!(
-                stage(&t, &inp, no_rand),
+                stage_side_effect(&t, &inp, no_rand),
                 StagerOutcome::Staged {
                     kind,
                     amount: 10,
@@ -365,12 +376,15 @@ mod tests {
         let mut cmp = gaza_boosted();
         let inp = inputs(3, 1, false, StagerTarget::Enemy(cmp));
         assert!(matches!(
-            stage(&t, &inp, no_rand),
+            stage_side_effect(&t, &inp, no_rand),
             StagerOutcome::Staged { .. }
         ));
         cmp.agl.base = 121;
         let inp = inputs(3, 1, false, StagerTarget::Enemy(cmp));
-        assert_eq!(stage(&t, &inp, no_rand), StagerOutcome::AlreadyMoved);
+        assert_eq!(
+            stage_side_effect(&t, &inp, no_rand),
+            StagerOutcome::AlreadyMoved
+        );
     }
 
     #[test]
@@ -380,14 +394,23 @@ mod tests {
         // Weak-to affinity so the suppression roll is bypassed after its draw.
         let mut inp = inputs(9, 2, true, StagerTarget::Enemy(cmp));
         inp.affinity_pct = 104;
-        assert_eq!(stage(&t, &inp, || 1), StagerOutcome::AlreadyMoved);
+        assert_eq!(
+            stage_side_effect(&t, &inp, || 1),
+            StagerOutcome::AlreadyMoved
+        );
         inp.summon_element = 0;
-        assert_eq!(stage(&t, &inp, || 1), StagerOutcome::AlreadyMoved);
+        assert_eq!(
+            stage_side_effect(&t, &inp, || 1),
+            StagerOutcome::AlreadyMoved
+        );
         inp.summon_element = 4;
-        assert_eq!(stage(&t, &inp, || 1), StagerOutcome::AlreadyMoved);
+        assert_eq!(
+            stage_side_effect(&t, &inp, || 1),
+            StagerOutcome::AlreadyMoved
+        );
         inp.summon_element = 3;
         assert_eq!(
-            stage(&t, &inp, || 1),
+            stage_side_effect(&t, &inp, || 1),
             StagerOutcome::Staged {
                 kind: SideEffectKind::SpdDown,
                 amount: 20,
@@ -396,7 +419,7 @@ mod tests {
         );
         inp.summon_element = 6;
         assert_eq!(
-            stage(&t, &inp, || 1),
+            stage_side_effect(&t, &inp, || 1),
             StagerOutcome::Staged {
                 kind: SideEffectKind::MpDown,
                 amount: 20,
@@ -409,21 +432,24 @@ mod tests {
     fn the_scripted_roll_suppresses_four_in_five_unless_weak_or_light() {
         let t = table();
         let inp = inputs(5, 3, true, StagerTarget::Enemy(gaza_boosted()));
-        assert_eq!(stage(&t, &inp, || 11), StagerOutcome::Suppressed);
+        assert_eq!(
+            stage_side_effect(&t, &inp, || 11),
+            StagerOutcome::Suppressed
+        );
         assert!(matches!(
-            stage(&t, &inp, || 10),
+            stage_side_effect(&t, &inp, || 10),
             StagerOutcome::Staged { .. }
         ));
         let mut weak = inp;
         weak.affinity_pct = RESIST_BYPASS_MIN_PCT;
         assert!(matches!(
-            stage(&t, &weak, || 11),
+            stage_side_effect(&t, &weak, || 11),
             StagerOutcome::Staged { .. }
         ));
         // Light skips the roll entirely - no draw.
         let light = inputs(5, 5, true, StagerTarget::Party);
         assert_eq!(
-            stage(&t, &light, no_rand),
+            stage_side_effect(&t, &light, no_rand),
             StagerOutcome::Staged {
                 kind: SideEffectKind::Cure,
                 amount: 2,
@@ -439,7 +465,7 @@ mod tests {
         let mut weak = inp;
         weak.affinity_pct = 104;
         assert!(matches!(
-            stage(&t, &weak, || 1),
+            stage_side_effect(&t, &weak, || 1),
             StagerOutcome::Staged { .. }
         ));
     }

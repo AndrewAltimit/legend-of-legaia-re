@@ -1388,3 +1388,30 @@ the same slot-B VA. Each row names its entry, each has its own per-image dump,
 and battle.md's row already lists the VA-aliasing hosts. The signal keys on
 the VA and cannot see the image.
 """
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/seru_side_effect.rs:801f3d3c"
+reason = """
+The corroboration exists; the distinctiveness filter hides it. Read against
+the disassembly, `FUN_801F3D3C` and its module sibling `FUN_801F3C34` form two
+of the same globals: the banner-string pointer `0x800775B4` (stager
+`lui v0,0x8007; sw a0,0x75b4(v0)` at 0x801F4448/0x801F444C, banner pass
+`lui v1,0x8007; sw v0,0x75b4(v1)` at 0x801F3D04/0x801F3D1C) and the
+side-effect latch `0x801F6960` (stager `lui v0,0x801f; sw v1,0x6960(v0)` at
+0x801F4470/0x801F4480, banner pass `lui v0,0x801f; lw v0,0x6960(v0)` at
+0x801F3CF4/0x801F3CF8). Both are formed by more routines than the signal's
+"at most 8 dumped routines" cut, so they drop out of the distinctive set and
+the pair reads as unrelated.
+
+The rest of the stager's distinctive set is this routine's own and matches
+what the Rust implements: `0x801F6870` is the `[element][band]` percent table
+`legaia_asset::seru_side_effect` parses, `0x801F6964` takes the literal `0xB4`
+hold (`li v0,0xb4; sw v0,0x6964(a0)` at 0x801F4468/0x801F446C), and the tail
+fires banner id `0x66` through `jal 0x801d8de8` at 0x801F447C. The port's
+`StagerOutcome::Staged { kind, amount, band }` is exactly that install set
+handed to the caller rather than written to fixed globals.
+
+`0x800775B4` also being formed by `FUN_801E295C` is not a rival claim: that is
+the battle-action state machine writing the same follow-up/banner pointer
+slot, which `docs/subsystems/battle-action.md` already records.
+"""
