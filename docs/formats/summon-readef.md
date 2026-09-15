@@ -165,8 +165,94 @@ The applier reads the byte back signed (`lb`) precisely to test that bit:
 ```
 
 (`FUN_801F12D0`, from `overlay_muscle_dome_801f12d0.txt` - see the dump warning
-in [Tooling](#tooling).) The `base+2` and `base+3` arms at `801f1678` /
-`801f179c` both `jal 0x80055b4c`, the staging arm.
+in [Tooling](#tooling).) The `base+2` and `base+3` arms start at `801f1664` and
+`801f1788`; `801f1678` / `801f179c` are their `addiu a0,a0,2` / `addiu a0,a0,3`
+index adjusts. All four arms funnel into **one** `jal 0x80055b4c`, at
+`0x801F17A0`, which is why an address sweep for the staging call returns a
+single hit inside this routine rather than one per arm.
+
+## The low-band aux-slot consumer
+
+The slot the `base+1` arm streams is an **indexed keyframe-stream archive**,
+and it is bound to the art record's `+0x88`, not uploaded as a texture.
+
+### The loader
+
+`FUN_801F17F8` (PROT 0898 file `+0x22FE0`) opens the file through the raw CD
+API rather than the `FUN_8001FC00` / `FUN_8001E54C` streaming pair, and seeks
+by slot index:
+
+```text
+801F1928  addiu a0,a0,0x64cc      ; "\data\battle\readef.DAT"
+801F1928  jal   0x800558fc
+801F192C  _addiu a3,zero,0x380    ; raw TOC index (= extraction 894)
+801F1948  sll   a1,v0,5           ; slot = ctx[+0x26B] - 1
+801F194C  addu  a1,a1,v0          ; a1 = slot * 33
+801F1950  jal   0x80055a5c        ; seek
+801F1954  _sll  a1,a1,0xb         ; a1 = slot * 33 * 0x800 = slot * 0x10800
+801F1964  lw    a1,-0x428c(v0)    ; destination = *0x8007BD74
+801F196C  jal   0x800559ec        ; read 0x10800 bytes
+```
+
+`addiu/ori rt,zero,0x37F|0x380` adjacent to a `jal` occurs in exactly one
+image disc-wide - PROT 0898, file `+0x230DC` and `+0x23114`, the two arms
+above. `FUN_801F17F8` has two call sites, both SCUS (`0x8004E62C` inside
+`FUN_8004E568`, and `0x80052750` inside the battle scene loader
+`FUN_800520F0`).
+
+### The consumer, and why the set is closed
+
+`*0x8007BD74` has **twelve** references disc-wide (`find-gp-relative-refs.py
+--va 0x8007bd74 --prot`, 1234 images): the writer + its sibling derivation in
+`FUN_800513F0`, three `FUN_80017B94` free calls, five applier-side texture /
+raw uploads in `FUN_801F12D0` + the DMA destination in `FUN_801F17F8`, the
+actor-record install at `0x801F19F8` - and exactly **one** content read outside
+the applier, at `0x8004BCA8` inside `FUN_8004AD80`:
+
+```text
+8004BC8C  lw   a1,0xa24(gp)        ; decode scratch = 0x8007BD3C
+8004BC9C  sw   a1,0x88(v0)         ; art entry's +0x88 stream pointer
+8004BCA0  lbu  v1,0x1da(s1)        ; staged anim id
+8004BCA8  lw   a0,-0x428c(a0)      ; the streamed slot
+8004BCC4  lbu  a2,-0xcf6(v0)       ; the art record's stream-source byte
+8004BCC8  jal  0x8002b28c
+```
+
+`FUN_8002B28C` has one `jal` disc-wide, that one, and its own body gives the
+format: `'M'`, `'E'`, a count byte, then `count` `u16` sizes whose low 15 bits
+sum to the body offsets, with bit 15 selecting channel-delta decompression
+(`jal 0x8002A9CC`) over a verbatim copy. So the aux slot is an **ME archive**
+whose selected entry is expanded into the scratch at `gp[0xA24]`
+(`0x8007BD3C`), and that scratch pointer becomes the art entry's `+0x88`
+keyframe-stream pointer - the same field a monster archive fills from its own
+inline `+0x8C` stream.
+
+The applier confirms the negative half: stage 4 refuses to upload the low band
+as a texture, because bases `0x00/0x03/0x06/0x09` (groups 0..3) fail both of
+its range tests (`sltiu v0,v1,0x42` at `0x801F1500`, `addiu v0,v1,-0xc` /
+`sltiu v0,v0,0x2b` at `0x801F1508`).
+
+### The cast band requests no slot
+
+The slot-B modules `0903..0966` originate no request: zero `jal 0x80055b4c`,
+zero references to `*0x8007BD74`, and zero stores with immediate `0x26B`,
+`0x26C`, `0x276` or `0x277` anywhere in the band. Their only contact with the
+streaming machine is one `lbu v0,0x276(<ctx>)` **read** per image in
+`0903..0934` - a poll for completion before `jal 0x801F19EC` installs the
+actor record. (Positive control for that negative: the same sweep finds 34
+`jal 0x801F19EC` from those images, so it does reach the band.) The base slot
+byte is written only by `FUN_801E295C` case `0x32` (`0x801E49E4`) and by
+`FUN_801DABA4`.
+
+### Narrowing that remains
+
+The ME read is gated to party seats `0..2`: `sltiu v0,s3,0x3` /
+`beq v0,zero` at `0x8004B6F0`/`0x8004B6F4` skips the whole block for seat
+`>= 3`, and the block containing `0x8004BCC8` has a single predecessor chain
+from there. So `FUN_801DABA4` can seed `ctx+0x277 = 3*(char - 1)` for char 4
+and stream slots 10/11 that nothing decodes unless char 4 can occupy a seat
+below 3. One observation decides it: whether `DAT_8007BD10[seat]` ever maps a
+seat `< 3` to char 4 in a reachable battle.
 
 ## Slot formats
 
