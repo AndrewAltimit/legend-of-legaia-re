@@ -1946,21 +1946,26 @@ Battle entry also seeds **both defence facets** into `World::battle.defense_spli
 
 #### No boost on the PAL executables
 
-The boost is specific to `SCUS_942.54`. In all three PAL executables
-(`SCES_019.44` / `.45` / `.46`) the record copy into the actor (`+0x14C..+0x16A`,
+The boost is specific to `SCUS_942.54`. In the JP original (`SCPS_100.59`) and
+all three PAL executables (`SCES_019.44` / `.45` / `.46`) the record copy into the actor (`+0x14C..+0x16A`,
 the same store sequence as `0x8005516C..0x8005520C`) is followed **directly** by
 the `+0x4A` spell-list loop - no `ctx[+0x287]` test, no shift-add block for
 either profile; a byte search for the boss-profile arm (`lhu 0x12(s4); lhu
 0x15A(a0); srl 2`) and for the switch load (`lbu 0x287`) finds neither in any
-PAL image. `SCES_019.45`: copy at `0x80055FC0..0x80056060`, spell loop from
-`0x8005607C`. The monster records themselves are byte-identical across the four
-discs, so a PAL fight uses the raw record: Zeto meets the party at
+PAL or JP image. `SCES_019.45`: copy at `0x80055FC0..0x80056060`, spell loop
+from `0x8005607C`; `SCPS_100.59`: copy at `0x80056EE0..0x80056FF8` (each stat
+loaded twice - older codegen), byte clears at `0x80057004`, spell loop from
+`0x80057014`. The monster records' stat and reward columns are byte-identical
+across the five discs, so a JP or PAL fight uses the raw record: Zeto meets the party at
 `ATK 108 / UDF 95 / LDF 76 / INT 117` on PAL and at `135 / 190 / 152 / 131` on
 the USA disc. Walkthrough bestiaries that print `108 / 165 / 133 / 146` for the
 same boss are showing the NTSC-U **random-encounter** profile (A) applied to
 the record - not a profile any Zeto fight installs, since his formation row
-carries the boss switch. The JP disc is unmeasured. The reward side of the same
-regional split is in
+carries the boss switch. Note for the JP archive: `MonsterRecord::decode_all`
+reports zero populated slots because the name field is not ASCII, while
+`--dump-block --id N` decodes the slot and shows the same stat / reward head as
+USA (only the mesh offset at `+0x04` moves with the name length). The reward
+side of the same regional split is in
 [battle-formulas.md](battle-formulas.md#regional-difference---the-pal-executables-pay-more).
 
 ### The instant-death / status-resist gate (record `+0x20`)

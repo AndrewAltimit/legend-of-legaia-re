@@ -258,7 +258,7 @@ is the tie-breaker when the two disagree:
   view of every enemy - for a random native it overstates the in-battle defence
   by 8/7 and ATK by 5/4; the test pins all nine fields across 120+ enemies. This
   cross-region difficulty difference (NTSC-U retail vs. the raw record, which the
-  PAL executables install unboosted) was first surfaced by **Zetopheonix**. See
+  JP and PAL executables install unboosted) was first surfaced by **Zetopheonix**. See
   [`battle.md`](../subsystems/battle.md#monster-record-source-layout) (the
   *Battle-load stat boost* note),
   [`battle-formulas.md`](../subsystems/battle-formulas.md) and

@@ -87,7 +87,8 @@ executable is not code-identical, and two of the differences change play:
   [battle-formulas.md](../subsystems/battle-formulas.md#regional-difference---the-pal-executables-pay-more).
 
 Both are code-only: the monster archive (`PROT 0867`) reads the same stats and
-rewards on all four discs. Anything that fingerprints a disc by its executable
+rewards on all four discs. The JP original (`SCPS_100.59`) behaves like PAL on
+both counts, so both are NTSC-U additions rather than PAL removals. Anything that fingerprints a disc by its executable
 bytes (`scus-pokes`, the static-overlay map, the port-catalog denominators) is
 USA-only by construction; a PAL image needs its own bases.
 

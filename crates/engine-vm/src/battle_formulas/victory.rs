@@ -20,8 +20,8 @@
 // 60) credited exactly +15 (`60>>1 = 30`, `30 - (30>>1) = 15`) via a
 // write-watchpoint on the party purse `0x8008459C`.
 //
-// Region note: this is the NTSC-U (`SCUS_942.54`) chain. The three PAL
-// executables (`SCES_019.44/.45/.46`) run the same accumulate + Golden Book
+// Region note: this is the NTSC-U (`SCUS_942.54`) chain. The JP original
+// (`SCPS_100.59`) and the three PAL executables (`SCES_019.44/.45/.46`) run the same accumulate + Golden Book
 // steps but have neither the second halving nor the 3/4 EXP cut - a lone enemy
 // pays `gold >> 1` and the party splits the whole EXP. The monster records are
 // byte-identical across discs, so the difference is code-only. See

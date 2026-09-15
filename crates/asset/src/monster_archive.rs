@@ -194,7 +194,7 @@
 //!   (Gimard `60` -> `15`, runtime-confirmed).
 //! - `+0x46` (u16) - base EXP. Summed `* 3/4` across dead enemies, then split
 //!   evenly among living party members.
-//!   Both scalings are NTSC-U executable behaviour; the PAL executables skip
+//!   Both scalings are NTSC-U executable behaviour; the JP and PAL executables skip
 //!   the second gold halving and the 3/4 EXP cut while reading the same record
 //!   bytes (`docs/subsystems/battle-formulas.md`, Regional difference).
 //! - `+0x48` (u8) - drop item id (`0` = no drop).
