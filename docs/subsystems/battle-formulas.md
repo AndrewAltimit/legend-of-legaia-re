@@ -1434,10 +1434,17 @@ the summon creature's element**: a stat debuff on the target for the six
 damaging elements, a cure class for light. It is the mechanism behind two
 things players report as per-enemy immunities - "this boss shrugs off
 ATK-down but SPD-down works", and "the effect sometimes just doesn't happen" -
-and **neither is a per-monster property**: the monster record carries no
-immunity field (its `+0x24..+0x43` tail is zero across the whole roster), and
-no overlay reads one. Both come out of one gate function and the fight's
-scripted flag.
+and **neither is a per-monster property**: the record carries no immunity
+field *for these debuffs* (its `+0x24..+0x43` tail is zero across the whole
+roster), and no overlay reads one. Both come out of one gate function and the
+fight's scripted flag.
+
+Scope that negative to the debuffs. The record does carry one byte three
+**summon** ticks read as a resist gate - `+0x20`, under the same scripted-fight
+flag, in PROT 0907 / 0908 / 0916 - but that byte is the monster's
+double-width texture-page flag, which those ticks reuse as a "big model"
+proxy; see [`battle.md`](battle.md#the-instant-death--status-resist-gate-record-0x20).
+It plays no part in the stat-debuff path here.
 
 Two halves, one table:
 

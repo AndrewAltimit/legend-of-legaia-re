@@ -259,7 +259,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     </tbody>
   </table>
   <p class="hint">Nighto, Aluru and the Ra-Seru spells have no side-effect at all. A level-1 or level-2 spell has none either, and shows no banner.</p>
-  <p>There is <strong>no per-enemy immunity table</strong>: the monster record has no such field, and no battle code reads one. What plays as immunity comes from one check the game makes before applying the effect, and from the kind of fight you are in.</p>
+  <p>There is <strong>no per-enemy immunity table for these stat debuffs</strong>: the monster record has no such field, and no battle code reads one. What plays as immunity comes from one check the game makes before applying the effect, and from the kind of fight you are in. (One byte in the record <em>is</em> read as a resist gate, but by three summons rather than by the debuff path &mdash; Nighto, Zenoir and Aluru abandon their instant-death / status outcome against any enemy whose model uses a double-width texture page, which in practice means every named boss. That byte records the texture width, not an immunity.)</p>
   <dl class="kv">
     <dt><strong>The check</strong></dt>
     <dd>Before applying a debuff, the game compares the target's current base stat with the value on its disc record. Equal: the effect goes through. Different: it prints <strong>"No effect."</strong> A debuff that lands changes that base stat, so the same debuff cannot pass the check a second time. That is what <em>once</em> means in the table: the first cast works, and every later cast of that element says "No effect." for the rest of the battle.</dd>
@@ -557,7 +557,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       <div class="mesh-anim-label">Seru-magic side-effects</div>
       <div class="mesh-met">${fmtFight(r)}${metLine}</div>
       <table><thead><tr><th>Effect</th><th>Spell element</th><th${metCls(false)}>Random encounter</th><th${metCls(true)}>Boss fight</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="why"><b>once</b>: the first cast lands, every later cast of that element prints "No effect.". <b>stacks</b>: every cast lands and lowers the stat again. Size 5% at magic level 3-4, 10% at 5-6, 15% at 7-8, 20% at 9. In a boss fight four casts in five are thrown away first unless the spell is <b>${escapeHtml(bypass)}</b> (${escapeHtml(r.element_name || 'neutral')} enemy). No per-enemy immunity exists on the disc - see <a href="subsystems/battle-formulas.html#seru-side-effects">battle formulas</a>.</p>
+      <p class="why"><b>once</b>: the first cast lands, every later cast of that element prints "No effect.". <b>stacks</b>: every cast lands and lowers the stat again. Size 5% at magic level 3-4, 10% at 5-6, 15% at 7-8, 20% at 9. In a boss fight four casts in five are thrown away first unless the spell is <b>${escapeHtml(bypass)}</b> (${escapeHtml(r.element_name || 'neutral')} enemy). No per-enemy immunity to these debuffs exists on the disc - see <a href="subsystems/battle-formulas.html#seru-side-effects">battle formulas</a>.</p>
     </div>`;
   }
 
