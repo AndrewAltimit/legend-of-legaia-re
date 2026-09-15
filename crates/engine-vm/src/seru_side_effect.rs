@@ -212,7 +212,14 @@ pub fn stage_side_effect(
 /// "No effect." banner: the spell was levelled enough to carry an effect and
 /// nothing is pending.
 ///
-/// PORT: FUN_801f3c34 (the level gate + latch read; the message emit is
+/// PORT: FUN_801f3c34
+// NOT WIRED: nothing produces a [`StagerOutcome`] to test. The stager in this
+// module is itself unreached - the host keeps no per-stat base halfword for
+// its compare gate - and the banner emit this predicate gates,
+// [`crate::move_no_effect_guard::queued_magic_message`], has no live caller
+// either, so there is neither an input to test nor a message path to suppress.
+// Stated here rather than left to the module blanket, whose two bullets name
+// the stager's blockers and are true of this one only at second hand. (the level gate + latch read; the message emit is
 /// `crate::move_no_effect_guard::queued_magic_message`)
 pub fn no_effect_banner_fires(level: u8, outcome: StagerOutcome) -> bool {
     level >= MIN_LEVEL && !matches!(outcome, StagerOutcome::Staged { .. })

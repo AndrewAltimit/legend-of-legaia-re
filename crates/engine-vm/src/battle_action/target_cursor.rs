@@ -28,22 +28,22 @@
 //! different colour and skips that shared store. This module reproduces that
 //! exactly.
 //!
-//! # NOT WIRED
+//! REPLACED-BY: `engine_core::world::battle::command_flow::World::apply_target_cursor_tint`,
+//! which stamps the same render-flag / colour / blend triple over the engine's
+//! **compacted** monster window and is called every command tick from the
+//! battle loop both hosts drive.
 //!
-//! Its one prerequisite is the **fixed** slot window above. Retail seats
-//! monsters at actor-table entries `3..=6` whatever the party size; the engine
-//! seats them compactly from `party_count..`, so with a one- or two-member
-//! party this kernel's stamps land on empty slots and no monster is ever
-//! tinted. The live cursor is therefore applied by
-//! `engine_core::world::battle::command_flow::apply_target_cursor_tint`, which
-//! runs the same three-word law (the constants below) over the engine's own
-//! monster window, and the renderer reads `render_flag` / `render_color` /
-//! `render_blend` off the actor.
+//! The fixed slot window above is what settles this as a replacement rather
+//! than a gap. Retail seats monsters at actor-table entries `3..=6` whatever
+//! the party size; the engine seats them from `party_count..`, so run against
+//! the port's seating this kernel can only tint empty slots. There is no
+//! correct work left for it to do and no host is owed a call - and the port's
+//! own output is not wrong, which is the test that keeps this out of a
+//! disclosure.
 //!
-//! This module stays as the retail-numbering reference: it is what pins the
+//! The module stays as the retail-numbering reference: it is what pins the
 //! slot window, the flag/colour/blend words and the shared-store fall-through
-//! against the disassembly. Wiring it means parameterising the window so one
-//! kernel can serve both seatings.
+//! against the disassembly, and the live pass imports its constants.
 
 use super::*;
 

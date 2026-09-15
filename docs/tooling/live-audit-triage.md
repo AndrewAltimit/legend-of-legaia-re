@@ -1993,32 +1993,34 @@ read at all: thirty-one files whose name appears nowhere above, carrying
 fifty-one anchors. They are settled here, and the split is worth stating before
 the rows, because it is not the split the page's earlier sections have.
 
-Two thirds of them are **accurate as they stand**. The disclosures written
-alongside the ports they describe are, on the whole, precise: they name a
-missing state shape, a missing parser column, a missing device layer, and they
-say what would have to exist first. That is the form this page asks for, and
-these rows need nothing but the record that they were checked.
+Most are **accurate as they stand**, and the last section below lists them.
+The disclosures written alongside the ports they describe are, on the whole,
+precise: they name a missing state shape, a missing parser column, a missing
+device layer, and they say what would have to exist first. That is the form
+this page asks for, and those rows need nothing but the record that they were
+checked.
 
-The other third divides into three shapes, and only one of them is a wiring
-gap:
+The rest divide into three shapes, one section each, and only one of the three
+is a wiring gap:
 
 * **Misclassified.** The reason argues replacement - "the port does this
   differently, and correctly" - while wearing a `NOT WIRED:` marker, which
-  leaves the row on the wiring worklist forever. Six rows.
+  leaves the row on the wiring worklist forever.
 * **Stale.** The reason states something about the tree that is no longer true,
   or was never true: a caller that does not exist, a table that is a different
   table, a blocker that has since been built, a host that does stage the thing
-  the tag says nothing stages. Ten rows over eight distinct defects.
+  the tag says nothing stages. Several of these defects span more than one
+  anchor, because a module blanket is read by every anchor under it.
 * **Genuinely open with a sharper reason.** The row is inert for the reason
   given, but the reason names the weakest of several blockers and reads as a
-  closed door. Four rows.
+  closed door.
 
 No row in the set is a `WIRE`. That is itself the finding: the un-triaged tail
 of the wiring worklist is not a backlog of missing call sites, it is a backlog
 of *classification* - ports the engine has already replaced, and disclosures
 that drifted away from the code under them.
 
-### What "stale" meant here, eight times
+### What "stale" meant here
 
 Each of these had a false sentence in a shipped tag. They are listed with what
 the sentence asserted and what the bytes or the tree say instead, because a
@@ -2036,7 +2038,7 @@ withdrawn claim is only useful with its refutation attached.
 | `801e2524` | Named `resolve_arts_input_entry` in the battle command flow as the raiser's engine-side home. No such function exists. The live chain matchers are in `World::build_battle_arts_rows`. |
 | `801d32bc` / `801d57e8` / `801d5778` / `801d9ae8` | One sentence of the shared module blanket said `engine-vm::battle_chrome`'s own functions have no caller outside test blocks. `engine-ui::ui_overlay::party_panel_stage_x` calls `battle_chrome::panel_seats` and reads `PANEL_TEXT_INSET` in production. The blanket's load-bearing claim - that no live path reads a *parsed* record, so the disc table reaches no pixel - is unaffected. |
 
-### The six that were replacements wearing the wrong marker
+### The ones that were replacements wearing the wrong marker
 
 A `REPLACE` is not a softer `DISCLOSE`. It removes the row from the wiring
 worklist *and its denominator*, and each of these was already arguing the
@@ -2069,7 +2071,7 @@ anywhere, and two committed pages already record that. And `80029724`'s row
 declines a plausible `REPLACE` on purpose - hardware clipping is not retail's
 affine clip arithmetic, so the conservative reading is the accurate one.
 
-### Four whose reason led with the wrong blocker
+### The ones whose reason led with the wrong blocker
 
 Inert for real, but the sentence a reader met first named the least actionable
 of several causes. Rewritten to lead with the one that can move.

@@ -8,10 +8,11 @@
 //! list cannot see one nobody wrote a row for.
 //!
 //! So this ladder takes its denominator from the **sources**, not from its own
-//! table: [`TAGGED_BODIES`] is scraped out of the three modules at compile
-//! time with [`include_str!`], and the row table below has to account for every
-//! `(file, address)` pair in it. Adding a body without adding a row fails
-//! [`the_row_table_accounts_for_every_ported_body`] with no disc present.
+//! table: `tagged_bodies` scrapes every `// PORT:` address out of the three
+//! modules, which `include_str!` pulls in at compile time, and the row table
+//! below has to account for every `(file, address)` pair it finds. Adding a
+//! body without adding a row fails `the_row_table_accounts_for_every_ported_body`
+//! with no disc present.
 //!
 //! The walk itself is disc-gated: it seats the real module pool out of
 //! `PROT.DAT` and drives each row through `World::run_cast_module_code` until
@@ -159,10 +160,11 @@ fn the_row_table_accounts_for_every_ported_body() {
     );
     eprintln!(
         "[ok] cast-band ladder denominator: {} ported bodies across {} modules, \
-         {} driven rows",
+         {} rows ({} of them driven)",
         tagged.len(),
         MODULE_SOURCES.len(),
-        ROWS.len()
+        ROWS.len(),
+        ROWS.iter().filter(|(.., r)| *r == Reach::Dispatch).count()
     );
 }
 
@@ -309,21 +311,14 @@ fn every_ported_cast_band_body_is_entered_once() {
         let mut saw_port = false;
         let mut saw_done = false;
         for _ in 0..MAX_FRAMES {
-            // PROT 0909 parks on two phases until its move-VM stager bumps
-            // them; every other arm only hands spawn records to the pool, so
-            // the band's own ladders drive `2` there and `0` on the
-            // rendezvous. The capture-class arms take `0` throughout.
-            let arm = if !seru {
-                0
-            } else if module == "cast_seru_ticks_a" {
-                0
-            } else if legaia_engine_vm::cast_seru_ticks_b::VIGURO_RENDEZVOUS_PHASES
-                .contains(&w.casting.module_phase)
-            {
-                0
-            } else {
-                2
-            };
+            // Only the second player-Seru band takes a non-zero stager arm,
+            // and only off its rendezvous phases: PROT 0909 parks on two
+            // phases until its move-VM stager bumps them, and every other arm
+            // of that band's stagers only hands spawn records to the pool.
+            // The first band and the capture-class arms take `0` throughout.
+            let rendezvous = legaia_engine_vm::cast_seru_ticks_b::VIGURO_RENDEZVOUS_PHASES
+                .contains(&w.casting.module_phase);
+            let arm = u8::from(module == "cast_seru_ticks_b" && !rendezvous) * 2;
             let Some(run) = w.run_cast_module_code(id, arm) else {
                 break;
             };

@@ -486,6 +486,180 @@ mod tests {
         assert_eq!(cue_volume(boot as u32), 100);
     }
 
+    fn armed() -> (ScoreTallyRamp, crate::muscle_dome::LegScoreRows) {
+        let rows = crate::muscle_dome::LegScoreRows {
+            round_lane: 40,
+            turns_lane: 25,
+            outcome_lane: 12,
+            score_cell: 300,
+        };
+        (ScoreTallyRamp::arm(rows), rows)
+    }
+
+    /// Run the roll to a stop, returning `(frames, cues, tally gained)`.
+    fn roll_out(ramp: &mut ScoreTallyRamp) -> (usize, usize, i32) {
+        let (mut frames, mut cues, mut gain) = (0usize, 0usize, 0i32);
+        for _ in 0..4000 {
+            let step = ramp.tick(1, false, 200);
+            frames += 1;
+            cues += step.cues.len();
+            gain += step.tally_gain;
+            if !step.rolling {
+                return (frames, cues, gain);
+            }
+        }
+        panic!("the roll never reported done");
+    }
+
+    #[test]
+    fn a_lane_waits_for_the_one_before_it() {
+        let (mut r, _) = armed();
+        // Lane 1's counter must not move on any frame that opened with lane 0
+        // still owing - which is the chain, and is what makes the screen roll
+        // one row at a time rather than four at once.
+        let mut drained_while_lane1_dark = false;
+        for _ in 0..400 {
+            let owed = r.pending[0];
+            r.tick(1, false, 200);
+            if owed > 0 {
+                assert_eq!(
+                    r.fade[1], 0,
+                    "lane 1's counter moved while lane 0 still owed {owed}"
+                );
+                if r.pending[0] < owed {
+                    drained_while_lane1_dark = true;
+                }
+            }
+            if r.fade[1] > 0 {
+                break;
+            }
+        }
+        assert!(
+            drained_while_lane1_dark,
+            "lane 0 never drained, so the wait proved nothing"
+        );
+        assert_eq!(r.pending[0], 0, "lane 1 started before lane 0 emptied");
+        assert!(r.fade[1] > 0, "lane 1 never started at all");
+    }
+
+    #[test]
+    fn the_lead_in_is_seventeen_ticks_and_the_counter_reseeds() {
+        let (mut r, _) = armed();
+        for i in 1..=LANE_FADE_FULL {
+            r.tick(1, false, 200);
+            assert_eq!(r.fade[0], i, "the counter climbs one per frame");
+            assert_eq!(r.pending[0], 40, "nothing drains below the threshold");
+        }
+        // The frame that takes it past the clamp is the first draining one,
+        // and the counter is put back to the clamp.
+        r.tick(1, false, 200);
+        assert_eq!(r.fade[0], LANE_FADE_FULL);
+        assert!(r.pending[0] < 40);
+    }
+
+    #[test]
+    fn the_roll_conserves_every_lane_into_its_own_sink() {
+        let (mut r, rows) = armed();
+        let (frames, cues, gain) = roll_out(&mut r);
+        assert_eq!(r.pending, [0; TALLY_LANES], "every lane emptied");
+        assert_eq!(
+            r.hp_accum,
+            rows.round_lane + rows.turns_lane + rows.outcome_lane,
+            "the first three lanes are the HP restore"
+        );
+        assert_eq!(
+            gain, rows.score_cell,
+            "only the score lane reaches the tally"
+        );
+        assert_eq!(
+            r.hp_accum + gain,
+            rows.round_lane + rows.turns_lane + rows.outcome_lane + rows.score_cell,
+        );
+        // One cue per counted step, and the counter is free-running.
+        assert_eq!(r.cue_counter as usize, cues);
+        assert!(
+            cues > 0 && frames > cues,
+            "the lead-ins cost frames with no step"
+        );
+    }
+
+    #[test]
+    fn an_armed_roll_with_nothing_in_it_still_reports_done() {
+        let mut r = ScoreTallyRamp::arm(crate::muscle_dome::LegScoreRows::default());
+        let (frames, cues, gain) = roll_out(&mut r);
+        assert_eq!((cues, gain), (0, 0));
+        // The first lane costs a whole lead-in plus the frame that carries it
+        // past the clamp; every later lane costs one frame less, because the
+        // frame that clamps its predecessor is also the frame that hands it
+        // its first tick.
+        assert_eq!(
+            frames,
+            LANE_FADE_FULL as usize + 1 + (TALLY_LANES - 1) * LANE_FADE_FULL as usize
+        );
+        assert!(r.settled());
+    }
+
+    #[test]
+    fn the_six_rows_read_their_own_sources() {
+        let (mut r, rows) = armed();
+        // Before any frame: three lanes pending, nothing accumulated.
+        assert_eq!(
+            r.row_values(7),
+            [
+                rows.round_lane,
+                rows.turns_lane,
+                rows.outcome_lane,
+                0,
+                rows.score_cell,
+                7
+            ]
+        );
+        roll_out(&mut r);
+        assert_eq!(
+            r.row_values(7 + rows.score_cell),
+            [0, 0, 0, rows.hp_restore(), 0, 7 + rows.score_cell],
+            "a settled roll reads the totals the contest already holds"
+        );
+    }
+
+    #[test]
+    fn brightness_is_per_lane_and_doubles_the_screen_fade_at_the_clamp() {
+        let mut r = ScoreTallyRamp::arm(crate::muscle_dome::LegScoreRows::default());
+        assert_eq!(
+            r.row_brightness(0x80),
+            [0; TALLY_ROWS],
+            "an unlit lane is black"
+        );
+        r.fade = [LANE_FADE_FULL; TALLY_LANES];
+        assert_eq!(
+            r.row_brightness(0x80),
+            [0x100; TALLY_ROWS],
+            "the emitter caps this at 0xFF; it is not the 0x80 the other hub screens pass"
+        );
+        // The HP total shares lane 0 and both money rows share lane 3, which
+        // is why the screen lights in four steps and not six.
+        r.fade = [4, 0, 0, 8];
+        let b = r.row_brightness(0x80);
+        assert_eq!(b[3], b[0]);
+        assert_eq!(b[5], b[4]);
+        assert_ne!(b[0], b[4]);
+    }
+
+    #[test]
+    fn the_boost_flag_reaches_the_ramp() {
+        let (mut r, rows) = armed();
+        let (slow, _, _) = roll_out(&mut r);
+        let mut fast = ScoreTallyRamp::arm(rows);
+        let mut frames = 0usize;
+        for _ in 0..4000 {
+            frames += 1;
+            if !fast.tick(1, true, 200).rolling {
+                break;
+            }
+        }
+        assert!(frames < slow, "the bypass flag has to shorten the roll");
+    }
+
     #[test]
     fn the_cue_carries_the_hard_coded_argument_slots() {
         let mut c = 7;
