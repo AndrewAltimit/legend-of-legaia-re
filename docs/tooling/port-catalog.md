@@ -387,7 +387,7 @@ meaning and gains two lines under it, `of which infra-replaced` and
 by; `scripts/ci/update-progress-metrics.py` feeds it, not the raw inert count,
 into the site's wiring track.
 
-A row in the first section has one of four causes, and only the first is a
+A row in the first section has one of five causes, and only the first is a
 stale tag:
 
 1. **The port got wired** and nobody removed the tag.
@@ -399,9 +399,31 @@ stale tag:
 4. **Anchor granularity.** A `//! PORT:` block claims the file while the
    `NOT WIRED:` note next to it disclaims one specific function; one wired
    function elsewhere in the file reports the whole block live.
+5. **The block quotes the marker instead of carrying one.** The per-item search
+   is unanchored, so a wiring note that recounts the disclosure it replaced -
+   *the audit's "tagged NOT WIRED but analysed live" row was this collision* -
+   discloses the item all over again. The row then says a port is inert while
+   the paragraph raising it explains that it is wired.
 
-Causes 2-4 are properties of the analysis or the tag's granularity, not defects
+Causes 2-5 are properties of the analysis or the tag's granularity, not defects
 in the tree. Read the section as a queue of questions, not a defect list.
+
+Cause 5 is the one the report now names for you. When **every** `NOT WIRED` in
+an anchor's block sits inside backticks or quotes, the section's note says how
+many of its rows are that shape, because the fix is in the prose rather than in
+the wiring: **rewrite, never quote the marker text**.
+
+That stays a diagnostic and not a classification. The spellings a real per-item
+disclosure is written in are far looser than the module-blanket ones - `//! ##
+NOT WIRED`, `// NOT WIRED, AND UNWIREABLE`, `/// NOT WIRED. "No caller" would
+be the wrong reason` - so anchoring the search the way `MODULE_NOT_WIRED_RE` is
+anchored would silently un-disclose real inert ports. Of the 240 comment lines
+in `crates/` that match the marker, 75 are mentions of one kind or another; of
+the anchors those disclose, exactly one is disclosed *only* by a quotation. The
+diagnostic's own precision matters here too, and its first version failed it: a
+backtick span allowed to cross newlines mis-paired across a whole module doc and
+reported `gameover_banner.rs`'s genuine `# NOT WIRED` heading as a quotation, so
+backtick spans stop at the newline and only quoted ones wrap.
 
 Causes 2 and 4 are still usually closable, and in source rather than in the tool:
 a colliding symbol can be renamed and a coarse anchor can be moved onto the item
