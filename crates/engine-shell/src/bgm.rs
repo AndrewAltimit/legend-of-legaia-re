@@ -352,6 +352,30 @@ impl AudioBgmDirector {
         self.sfx_vabs.get(&self.sfx_slot_for_cue(id))
     }
 
+    /// Key one voice from an explicit
+    /// [`VoiceAttr`](legaia_engine_audio::VoiceAttr) set - the shape retail's
+    /// `FUN_80065034` takes, and the one a caller that already holds the
+    /// program / tone / note / volume needs. The catalog path
+    /// ([`Self::enqueue_sfx`]) is for a cue that names itself by id.
+    ///
+    /// The Muscle Dome's between-leg tally roll is the live caller: its per-
+    /// lane cue (`FUN_801D1288`) resolves a full attr set rather than a cue
+    /// id, so nothing in the id-keyed path could sound it.
+    ///
+    /// `vab_id` picks the bank the way retail's does - it is a **VAB id**, and
+    /// this director resolves it as an SFX slot, falling back to the active
+    /// scene BGM bank when that slot has nothing staged (the same fallback
+    /// [`Self::tick_sfx_frame`] uses on a disc-free boot). Returns whether a
+    /// voice keyed on.
+    pub fn key_on_voice_attr(&mut self, attr: legaia_engine_audio::VoiceAttr) -> bool {
+        let slot = u8::try_from(attr.vab_id).unwrap_or(0);
+        let Some(vab) = self.sfx_vabs.get(&slot).or(self.bank.as_ref()) else {
+            return false;
+        };
+        self.audio
+            .with_spu(|spu| legaia_engine_audio::key_on_voice_attr(&attr, spu, vab))
+    }
+
     /// Queue a one-shot sound cue to fire `frames` after this call (the
     /// strike's `timing_frames`). `id` is the [`SfxBank`] descriptor id
     /// directly (the art-record `HitCue::kind`), played without

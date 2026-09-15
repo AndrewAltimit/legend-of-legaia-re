@@ -537,6 +537,44 @@ about these is contested.
 | shared camera on web | The browser page runs its own orbit projection beside the engine's camera controller instead of consuming it. |
 | MDEC on web | `crates/mdec` decodes STR video for the native `play-str` path; the play page has no video decode, so an FMV beat has nothing to show. |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
+| one-shot SPU voices on the minigames page | The page renders BGM to PCM and hands it to an `AudioBufferSourceNode`; it holds no live `Spu`, so no cue - id-keyed or explicit - can sound there. See [below](#one-shot-voices-on-the-minigames-page). |
+| per-actor pitch / roll on web | The page's NPC draw carries one rotation axis (`rotY`); a second and third would need the draw record and its model build to take the full Euler triple. See [below](#per-actor-pitch-and-roll-on-the-play-page). |
+
+### One-shot voices on the minigames page
+
+The Muscle Dome's between-leg tally keys a voice per drained lane, and it names
+no cue id: `FUN_801D1288` resolves a whole `(voice, VAB id, program, tone, note,
+fine, vol_l, vol_r)` set, which is why the catalog path
+(`SfxBank::play_one_shot`) could never sound it. `legaia_engine_audio::VoiceAttr`
++ `key_on_voice_attr` are that shape, and the native window drives them from the
+tally ramp through `AudioBgmDirector::key_on_voice_attr`.
+
+The browser minigames page cannot: it has no resident `Spu` at all. Its audio is
+a whole track rendered offline to interleaved PCM (`render_music01_bgm` /
+`render_music01_loop`) and handed to the page as a buffer, so there is no voice
+to key and no mixer running to key it into. The blocking capability is a live
+SPU on that page - a `WebAudioOut` the minigames entry point owns, the way the
+play page's `play_sfx` owns one - not a call insertion.
+
+The page's own tally screen is unaffected in every other respect: the row values
+and the four-step brightness ramp come from the same `ScoreTallyRamp` kernel on
+both hosts.
+
+### Per-actor pitch and roll on the play page
+
+The scripted-motion VM's ops `0x15` and `0x16` tween the actor's X and Z Euler
+angles (`+0x24` / `+0x28`), which retail composes through `RotMatrix`
+(`FUN_80026988`, whose stores decode to `Rx * Ry * Rz`) in the per-actor render
+dispatcher `FUN_8001ADA4`. Both hosts draw a field NPC with a single
+`Ry(heading)`, so neither shows a tilt.
+
+The disc-wide carrier census
+(`crates/engine-core/tests/ambient_motion_op_census_disc.rs`) bounds what that
+costs: over every scene MAN's tail-section-1 streams, op `0x15` has **zero**
+authored sites and op `0x16` has 45, all in one scene. So this is one scene's
+worth of presentation, and the blocking capability on the browser side is a
+`rotX` / `rotZ` pair on the page's NPC draw record plus a switch from
+`placementModelScaledY` to `placementModelEuler` in its model build.
 
 ### Screen-space PSX primitives across the two hosts
 

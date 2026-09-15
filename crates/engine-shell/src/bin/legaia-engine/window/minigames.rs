@@ -623,6 +623,24 @@ impl PlayWindowApp {
             if let Some((ramp, tally)) = self.muscle_tally.as_mut() {
                 let step = ramp.tick(1, false, volume_word);
                 *tally += step.tally_gain;
+                // Each drained lane keys a voice directly, with no cue id in
+                // sight (`FUN_801D1288` builds the whole attr set). The
+                // director's explicit key-on is the only path that takes it.
+                let cues = step.cues.clone();
+                if let Some(bgm) = self.session.bgm.as_mut() {
+                    for cue in cues {
+                        bgm.key_on_voice_attr(legaia_engine_audio::VoiceAttr {
+                            voice: cue.voice.min(23) as u8,
+                            vab_id: cue.level_program_tone.0 as i16,
+                            program: cue.level_program_tone.1 as u8,
+                            tone: cue.level_program_tone.2 as u8,
+                            note: cue.note_and_arg6.0 as u8,
+                            fine: cue.note_and_arg6.1 as i16,
+                            vol_l: cue.volume.0 as i16,
+                            vol_r: cue.volume.1 as i16,
+                        });
+                    }
+                }
             }
             if interval.done() {
                 self.muscle_interval = None;
