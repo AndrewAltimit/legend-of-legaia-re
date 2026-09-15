@@ -2372,26 +2372,31 @@ impl LegaiaMinigames {
             1 => hud::hub_screen_quads(&mut table, hud::HUB_TITLE_ART, hud::TITLE_ART_BRIGHTNESS),
             2 => hud::hub_screen_quads(&mut table, hud::HUB_INTERVAL_HEADING, brightness),
             3 => hud::hub_screen_quads(&mut table, &hud::round_banner_draws(round), brightness),
-            // The six rows are the contest's, not placeholders: the four
-            // lanes `FUN_801D1184` computes, then the running tally and the
-            // coin bank they drain into. With no contest open the screen
-            // still draws, showing the bank alone.
+            // The six rows are the roll's, not the settled totals: the three
+            // recovery lanes counting down, the HP they count into, the score
+            // lane counting down and the coin tally counting up. On this arm
+            // `round` is the screen's own tick, and the roll is replayed from
+            // it the way the envelope is - the kernel is
+            // `other_game_overlay::ScoreTallyRamp`, which the native window
+            // steps one frame at a time off the same armed state.
             _ => {
-                let (rows, tally) = self
-                    .muscle_run
-                    .as_ref()
-                    .map_or((Default::default(), 0), |run| (run.rows(), run.tally()));
+                let Some(run) = self.muscle_run.as_ref() else {
+                    return r#"{"ok":false}"#.to_string();
+                };
+                let volume_word =
+                    legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
+                let (mut ramp, mut tally) = run.tally_roll();
+                for _ in 0..round.max(0) {
+                    let step = ramp.tick(1, false, volume_word);
+                    tally += step.tally_gain;
+                    if !step.rolling {
+                        break;
+                    }
+                }
                 hud::score_tally_quads(
                     &mut table,
-                    [
-                        rows.round_lane,
-                        rows.turns_lane,
-                        rows.outcome_lane,
-                        rows.score_cell,
-                        tally,
-                        self.muscle_coins as i32,
-                    ],
-                    [brightness; hud::SCORE_TALLY_ROWS],
+                    ramp.row_values(tally),
+                    ramp.row_brightness(brightness),
                 )
             }
         };

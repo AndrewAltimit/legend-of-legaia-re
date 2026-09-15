@@ -2103,7 +2103,10 @@ window.MgMuscle = (function () {
     function drawInterval(state) {
       const env = hubEnv(3, intervalT);
       const heading = hudOk() && hubQuads(2, 0, env.brightness);
-      const rows = hudOk() && hubQuads(4, 0, env.brightness);
+      /* Screen 4 takes the interval tick as its argument: the six rows are
+       * the score roll `other_game_overlay::ScoreTallyRamp` replays to that
+       * tick, the same kernel the native window steps per frame. */
+      const rows = hudOk() && hubQuads(4, intervalT, env.brightness);
       if (heading && rows) {
         if (legCaption) text(legCaption, 160, 200, 7, '#e8ecf2', 'center', '');
         text('SPACE: next round', 160, 214, 8, '#2dcca7', 'center');

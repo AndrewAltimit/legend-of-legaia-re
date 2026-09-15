@@ -553,6 +553,10 @@ impl PlayWindowApp {
         // The pad edges the skippable holds read (retail's `DAT_801D1A9C`
         // snapshot of `_DAT_8007B874 | _DAT_8007B938`).
         let pad = self.session.host.world.input.retail_pad().pressed as u16;
+        // `_DAT_80084580`, the voice/SFX volume setting each tally cue halves.
+        // The engine holds no live mirror of that word, so this is its cold
+        // reset - the value a freshly booted game keys the cue at.
+        let volume_word = legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
         let world = &self.session.host.world;
         let leg_open = world.minigames.muscle_dome.is_some();
         let contest_open = world.minigames.muscle_contest.is_some();
@@ -583,6 +587,18 @@ impl PlayWindowApp {
                     .last()
                     .unwrap_or(&0) as i32;
             self.muscle_interval = raises.then(|| HubScreen::interval(roll));
+            // Arm the tally roll with the screen: the contest is already
+            // settled, so the roll only decides what the six rows read while
+            // the screen is up, and it ends on the settled values.
+            self.muscle_tally = raises
+                .then(|| {
+                    world
+                        .minigames
+                        .muscle_contest
+                        .as_ref()
+                        .map(|c| c.tally_roll())
+                })
+                .flatten();
             self.muscle_intro_card = None;
             self.muscle_round_banner = None;
         }
@@ -601,8 +617,16 @@ impl PlayWindowApp {
         }
         if let Some(interval) = self.muscle_interval.as_mut() {
             interval.tick(1, pad);
+            // The tally rolls on the same clock. `boost` is retail's bypass
+            // flag `DAT_801D1AB4`, which this host never raises, and the
+            // volume word is the voice-volume setting the cue halves.
+            if let Some((ramp, tally)) = self.muscle_tally.as_mut() {
+                let step = ramp.tick(1, false, volume_word);
+                *tally += step.tally_gain;
+            }
             if interval.done() {
                 self.muscle_interval = None;
+                self.muscle_tally = None;
             }
         }
         self.muscle_prev_leg_open = leg_open;
@@ -789,26 +813,23 @@ impl PlayWindowApp {
                 hud::HUB_INTERVAL_HEADING,
                 bright,
             ));
-            // With the contest already settled the rows read zero and the
-            // tally screen shows the coin bank alone - the browser page's
-            // no-run arm does exactly the same.
-            let (rows, tally) = world
-                .minigames
-                .muscle_contest
-                .as_ref()
-                .map_or((Default::default(), 0), |c| (c.rows(), c.tally()));
-            quads.extend(hud::score_tally_quads(
-                &mut table,
-                [
-                    rows.round_lane,
-                    rows.turns_lane,
-                    rows.outcome_lane,
-                    rows.score_cell,
-                    tally,
-                    world.minigames.casino_coins as i32,
-                ],
-                [bright; hud::SCORE_TALLY_ROWS],
-            ));
+            // The six rows are the roll's own, not the settled totals: three
+            // recovery lanes counting down, the HP they count into, the score
+            // lane counting down and the coin tally counting up. With no roll
+            // armed the screen draws the settled values, which is where the
+            // roll ends anyway.
+            let (values, row_bright) = match self.muscle_tally.as_ref() {
+                Some((ramp, tally)) => (ramp.row_values(*tally), ramp.row_brightness(bright)),
+                None => {
+                    let (rows, tally) = world
+                        .minigames
+                        .muscle_contest
+                        .as_ref()
+                        .map_or((Default::default(), 0), |c| (c.rows(), c.tally()));
+                    ([0, 0, 0, rows.hp_restore(), 0, tally], [bright; 6])
+                }
+            };
+            quads.extend(hud::score_tally_quads(&mut table, values, row_bright));
         }
         if quads.is_empty() {
             return Vec::new();

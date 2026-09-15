@@ -2441,6 +2441,24 @@ impl DomeContest {
         self.hp_restore
     }
 
+    /// Arm the between-leg tally screen's roll-up, with the coin tally as it
+    /// stood *before* the leg's score cell landed in it.
+    ///
+    /// The hub settles a leg in one step ([`Self::advance`]) because the
+    /// totals do not depend on the roll; what the roll decides is what the
+    /// screen shows while it is up. So the ramp is handed out armed and the
+    /// host drives it a frame at a time, ending on exactly the values the
+    /// settled contest already holds.
+    ///
+    /// PORT: FUN_801cf074 (the arming half; the per-frame step is
+    /// `crate::other_game_overlay::ScoreTallyRamp::tick`)
+    pub fn tally_roll(&self) -> (crate::other_game_overlay::ScoreTallyRamp, i32) {
+        (
+            crate::other_game_overlay::ScoreTallyRamp::arm(self.rows),
+            self.tally - self.rows.score_cell,
+        )
+    }
+
     /// How long the staged course runs under the current flags.
     pub fn staged_course_length(&self, flags: &ContestFlags) -> u32 {
         course_length(

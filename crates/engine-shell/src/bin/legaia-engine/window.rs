@@ -834,6 +834,10 @@ struct PlayWindowApp {
     /// The between-legs INTERVAL + score-tally screen's envelope, armed when
     /// a leg closes while its contest is (or just was) open.
     muscle_interval: Option<legaia_engine_core::muscle_dome::HubScreen>,
+    /// The score tally's roll-up state and the coin tally it counts up from,
+    /// armed with the INTERVAL screen and stepped once per frame while it is
+    /// up (`legaia_engine_core::other_game_overlay::ScoreTallyRamp`).
+    muscle_tally: Option<(legaia_engine_core::other_game_overlay::ScoreTallyRamp, i32)>,
     /// Last frame's `world.minigames.muscle_dome.is_some()`, for the leg edges above.
     muscle_prev_leg_open: bool,
     /// Last frame's `world.minigames.muscle_contest.is_some()`, distinguishing a fresh
