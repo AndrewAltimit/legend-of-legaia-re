@@ -565,6 +565,22 @@ SIM_PAIRS: list[dict[str, object]] = [
         "pattern": r"SaveRack::(\w+)",
     },
     {
+        "what": "enemy Steal table - PROT 0941's `0x51` arm resolves a MONSTER "
+        "victim against the static `DAT_80077828` table, so a host that boots "
+        "a world without installing it draws nothing where the other host "
+        "draws an item, and the two RNG cursors diverge from that battle on. "
+        "Neither install is inside `World::arm_live_loop` (they are disc-table "
+        "installs, which each host does for itself from its own disc source), "
+        "so the live-loop pairing below cannot see them; they sit in different "
+        "crates' boot paths and neither is reached by the other's tests",
+        "sites": {
+            "native": (NATIVE_BOOT, "enter_field_live"),
+            "web": (WEB_RUNTIME, "load_disc"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["set_steal_table"],
+    },
+    {
         "what": "live-loop arming - the browser twin of `enter_field_live`. "
         "Every `World::set_*` one host installs before running the live "
         "gameplay loop and the other does not is a table the two simulations "
