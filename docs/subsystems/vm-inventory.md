@@ -39,11 +39,31 @@ disassembly (`sltiu` immediate before the `jr`), not off the port.
 | [Battle-action SM](battle-action.md) | `FUN_801E295C` | 256-slot JT `0x801CED44`, sparse handled bands, no default arm | partial | yes - `battle_action` | yes |
 | [World-map entity SM](world-map.md) | `FUN_801DA51C` | 5 states | resolved | yes - `world_map` | yes |
 | [Tile-board walk SM](tile-board.md) | `overlay_0897_801EF2B0` | 15 states, JT at `0x801CF65C` | resolved | yes - `legaia_engine_core::tile_board` | yes |
+| [Cast-module phase machine](cast-module.md#the-module-phase-byte-ctx--0x279) | one tick body per PROT 0903..0966 image, named by 0898's `0x801CF4EC` / `0x801CF56C` | per-image: the `ctx+0x279` phase byte through a word table or a `beq`/`slti` chain | resolved | yes - `cast_module_ticks` + `cast_arm_ticks` + `cast_seru_ticks_a` / `_b` | yes - `World::run_cast_module_code` |
 | Per-actor anim dispatch | `FUN_80021DF4` | 7 dispatch bytes `0x01..=0x07` at `actor[+0x5A]` | resolved | yes - `anim_vm` / `actor_tick` | yes |
 | Ambient facing channel | `FUN_80038158` ops `0x04` / `0x0D` | 2 of the 32-slot table | resolved | yes - `ambient_motion` (the same interpreter as the row above) | yes |
 | [Title-screen tick](#one-function-two-ports) | `FUN_801DD35C` | 25-slot JT `0x801CF244`, sub-mode word `+0x204` | resolved | yes - `title_overlay` | menu law only - see [below](#one-function-two-ports) |
 | Per-prim render dispatch | `FUN_80043390` | 20 kind slots × 4 alpha banks | resolved | yes - `prim_dispatch` | yes |
 | Status-effect ticker | `FUN_801E752C` | per-actor condition set | resolved | yes - `status_effects` | yes |
+
+## The cast band is 64 dispatchers, and one row
+
+The [cast-module band](cast-module.md) is the one entry above whose "op space"
+column cannot name a single table, because there is no single dispatcher: each
+of the 64 slot-B images carries its own tick body, and each body switches on
+the same battle-ctx byte `+0x279` through whichever shape its module was
+compiled with - a word table at the image head for some, a `beq` / `slti`
+chain for others, and per-module bounds running from five arms to
+thirty-two. What makes it one row rather than 64 is that the **phase byte is
+shared**: one battle context, one byte, re-entered every frame by the action SM until the
+resident body reports done.
+
+Two properties follow, and both are why the band belongs in this census rather
+than under "battle". A module phase whose exit gate can never pass is a
+softlock, because the drive loop has no timer. And a body is only meaningful
+as an `(entry, VA)` pair - `0x801F69D8` alone is the tick body of six modules -
+so a dispatcher keyed on the address runs the wrong choreography for five of
+them.
 
 ## The effect VM has no opcode space
 

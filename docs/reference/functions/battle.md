@@ -1058,7 +1058,7 @@ three cosine divides.
 #### The two records, and how the burst is reached
 
 `0x801F5DA4` and `0x801F5D0C` are **move-VM stager records**, not tables:
-`[i16 model_sel][u16 flags][move-VM bytecode]`, the format
+`[i16 model_sel][u16 reserved][move-VM bytecode]`, the format
 [`move-vm.md`](../../subsystems/move-vm.md#move-buffer-record-sources) documents
 for every move-buffer source. Both are transform-node records terminating at op
 `0x08` HALT, both run the same instruction sequence - a render-mode-2 child spawn
