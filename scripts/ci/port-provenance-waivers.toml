@@ -1363,3 +1363,28 @@ frame countdown every arm decrements. Its two damage sites bake `0xD0` into
 inside the frame-matched extent `0x801F7298..0x801F7E4C`, and PROT 0956's
 trampoline `0x801F7E4C` names `0x801F7298` for action `0x71`.
 """
+
+[[waiver]]
+key = "dual-label:801f69d8"
+reason = """
+One VA, many images. docs/reference/functions/renderer.md's row is the world-map
+top-view tile-visibility dispatcher in PROT 0901 at the slot-B load base;
+docs/reference/functions/cast-modules.md's rows are the player-Seru tick bodies
+that PROT 0903 / 0904 / 0905 / 0908 / 0911 / 0912 each place at that same load
+base, and the page's own text says four of the six wear the base for that
+reason. Every row names its PROT entry and the dumps are per-image
+(overlay_<label>_<entry>_801f69d8), so the descriptions describe different
+bytes. The signal keys on the VA and cannot see the image.
+"""
+
+[[waiver]]
+key = "dual-label:801f69f4"
+reason = """
+One VA, three images. docs/reference/functions/battle.md's row is the PROT
+0968 evolved-Cort stage-module tick entry (jal from SCUS 0x80056498);
+docs/reference/functions/cast-modules.md's rows are the PROT 0906 Gizam and
+PROT 0909 Viguro tick bodies, which sit seven words into their own images at
+the same slot-B VA. Each row names its entry, each has its own per-image dump,
+and battle.md's row already lists the VA-aliasing hosts. The signal keys on
+the VA and cannot see the image.
+"""
