@@ -1816,6 +1816,16 @@ void main() {
         catch (e) { this._cut = null; }
       }
 
+      /* FMV beats (STR / MDEC): the engine holds the world in
+       * `SceneMode::Cutscene` while a movie is open; the movie lane slices
+       * the segment out of the page's disc bytes, installs it, draws the
+       * frames over the GL view and finishes the beat. The sim keeps
+       * ticking - the hold is engine-side. */
+      if (window.LegaiaPlayFmv) {
+        try { window.LegaiaPlayFmv.service(rt, this.canvas.parentNode); }
+        catch (e) { console.warn('play fmv', e); }
+      }
+
       /* Field pause menu (Start): consumes this frame's edges and, while up,
        * freezes the field. Must run before the tick reads the pad. */
       const menuOpen = this._updateFieldMenu();

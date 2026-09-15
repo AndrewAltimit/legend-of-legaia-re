@@ -547,6 +547,8 @@
 <script src="js/field-scene-view.js"></script>
 <script src="js/pad-bindings.js"></script>
 <script src="js/play-app.js"></script>
+<script src="js/play-fmv.js"></script>
+<script src="js/play-minigames.js"></script>
 <script>
 (function () {
   'use strict';
@@ -987,6 +989,14 @@
       bootTitleRAF = requestAnimationFrame(frame);
       const edge = padMaskOf(pulse);
       pulse.clear();
+      /* Attract-mode movie (fmv 0, MV1.STR): the title session arms it on
+       * the idle countdown and stays frozen until the page's movie lane
+       * finishes it or the retail skip edge fires - the same lane the
+       * in-game story movies ride. Must run every title frame. */
+      if (window.LegaiaPlayFmv) {
+        try { window.LegaiaPlayFmv.service(runtime, document.querySelector('.play-canvas-wrap')); }
+        catch (e) { console.warn('title fmv', e); }
+      }
       if (handoff) {
         /* Continue / Options: the retail save-select and options screens,
          * reached through the shared pause-menu rows rather than a second

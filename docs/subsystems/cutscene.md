@@ -128,8 +128,9 @@ playback and parks the finished id; `SceneHost::apply_pending_fmv_handoff` reads
 `fmv_post_play_handoff` and enters the named scene, returning an `FmvHandoffOutcome` the host only
 has to format. The source is a drained edge (`World::take_finished_fmv`), which is what lets every
 host - and the windowed host twice in one frame - poll it without transferring control twice.
-Skipping the *movie* is not skipping the *hand-off*: a cut slot, an undecodable STR and the
-browser page's no-MDEC auto-skip all still transfer, because retail's dispatch writes the scene
+Skipping the *movie* is not skipping the *hand-off*: a cut slot, an undecodable STR and a
+browser page that never installed the segment (the play page's `play_fmv` lane auto-finishes
+after its install timeout) all still transfer, because retail's dispatch writes the scene
 globals whether or not the picture played. Note the four pre-play `ClearImage` rects
 bracket the tops and bottoms of **both** decode buffers rather than forming a letterbox - the
 middle pair straddles the seam between the two frame rects and overlaps by four scanlines.
