@@ -631,11 +631,11 @@ impl PlayWindowApp {
                     for cue in cues {
                         bgm.key_on_voice_attr(legaia_engine_audio::VoiceAttr {
                             voice: cue.voice.min(23) as u8,
-                            vab_id: cue.level_program_tone.0 as i16,
-                            program: cue.level_program_tone.1 as u8,
-                            tone: cue.level_program_tone.2 as u8,
-                            note: cue.note_and_arg6.0 as u8,
-                            fine: cue.note_and_arg6.1 as i16,
+                            vab_id: cue.vab_program_tone.0 as i16,
+                            program: cue.vab_program_tone.1 as u8,
+                            tone: cue.vab_program_tone.2 as u8,
+                            note: cue.note_and_fine.0 as u8,
+                            fine: cue.note_and_fine.1 as i16,
                             vol_l: cue.volume.0 as i16,
                             vol_r: cue.volume.1 as i16,
                         });

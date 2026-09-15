@@ -108,9 +108,15 @@ pub const CUE_VOICE_SLOTS: u32 = 4;
 /// Base of the rotating voice-slot range (`0x10 ..= 0x13`).
 pub const CUE_VOICE_BASE: u32 = 0x10;
 
-/// Channel mixer level the cue passes (argument 2). Literal `0` here; the
-/// SCUS cue drainer sources the same argument from its cue record.
-pub const CUE_LEVEL: i32 = 0;
+/// **VAB id** the cue keys against (argument 2). Literal `0` here; the SCUS
+/// cue drainer sources the same argument from its cue record.
+///
+/// Named `CUE_LEVEL` ("channel mixer level") until `FUN_80065034`'s own
+/// prologue was read: `a1` is sign-extended straight into the program-attr
+/// lookup `jal 0x80068B98` at `0x80065034..0x80065120`, which is
+/// `SsUtKeyOnV(voice, vabid, prog, tone, note, fine, voll, volr)`'s bank
+/// argument. Nothing in that routine mixes anything.
+pub const CUE_VAB_ID: i32 = 0;
 
 /// VAB program the cue keys (argument 3). Literal `0` here.
 pub const CUE_PROGRAM: i32 = 0;
@@ -121,25 +127,27 @@ pub const CUE_TONE: i32 = 1;
 /// Note the voice is keyed at (argument 5).
 pub const CUE_NOTE: i32 = 0x3C;
 
-/// Argument 6, `0x40` at every retail call site of the voice-attr primitive -
-/// including the SCUS cue drainer `FUN_80016B6C`.
-pub const CUE_ARG6: i32 = 0x40;
+/// The pitch **fine-tune** argument (argument 6, `sp+0x54`), `0x40` at every
+/// retail call site of the voice-attr primitive - including the SCUS cue
+/// drainer `FUN_80016B6C`. Carried; the port's pitch math is the tone's.
+pub const CUE_FINE: i32 = 0x40;
 
 /// One resolved voice-attr call, as handed to `FUN_80065034`.
 ///
-/// The retail signature the port follows is
-/// `FUN_80065034(voice, level, program, tone, note, 0x40, vol_l, vol_r)`,
-/// read off the SCUS cue drainer `FUN_80016B6C`, whose own call fills the
-/// same eight slots from a cue descriptor. This overlay's call hard-codes
-/// every slot but the voice and the volume pair.
+/// The retail signature is
+/// `FUN_80065034(voice, vab_id, program, tone, note, fine, vol_l, vol_r)` -
+/// libsnd's `SsUtKeyOnV`, read off `0x80065034..0x80065120` and confirmed
+/// against the SCUS cue drainer `FUN_80016B6C`, whose own call fills the same
+/// eight slots from a cue descriptor. This overlay's call hard-codes every
+/// slot but the voice and the volume pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VoiceAttrCue {
     /// Voice slot, `CUE_VOICE_BASE + (counter % 4)`.
     pub voice: u32,
-    /// [`CUE_LEVEL`] / [`CUE_PROGRAM`] / [`CUE_TONE`].
-    pub level_program_tone: (i32, i32, i32),
-    /// [`CUE_NOTE`] and [`CUE_ARG6`].
-    pub note_and_arg6: (i32, i32),
+    /// [`CUE_VAB_ID`] / [`CUE_PROGRAM`] / [`CUE_TONE`].
+    pub vab_program_tone: (i32, i32, i32),
+    /// [`CUE_NOTE`] and [`CUE_FINE`].
+    pub note_and_fine: (i32, i32),
     /// Left / right volume; both entries carry the same value, halved out of
     /// the voice-volume config word ([`cue_volume`]).
     pub volume: (i32, i32),
@@ -186,11 +194,13 @@ pub fn cue_volume(word: u32) -> i32 {
 // native window steps the ramp a frame at a time while the INTERVAL screen is
 // up, and the dome page replays it to the screen's own tick.
 //
-// What the cue reaches is a struct, not a voice. `legaia-engine-audio` has no
-// entry point that keys an SPU voice from an explicit
-// `(program, tone, note, volume)` set - it plays cue ids through the BGM
-// director, pre-decoded XA clips and sequences - so the resolved call is
-// carried out on [`ScoreTallyStep::cues`] and both hosts currently drop it.
+// What the cue reaches is a struct, not a voice; the struct is carried on
+// [`ScoreTallyStep::cues`]. `legaia-engine-audio` grew the explicit key-on
+// that takes it (`VoiceAttr` / `key_on_voice_attr`, the port of
+// `FUN_80065034`), and the native window drains the queue into it through
+// `AudioBgmDirector::key_on_voice_attr`. The browser minigames page has no
+// resident `Spu` to key at all and drops the queue - disclosed under
+// "One-shot voices on the minigames page" in `docs/tooling/host-drift.md`.
 // The tally screen's audible per-lane "ka-ching" is a different mechanism
 // anyway: the hub's INTERVAL arm pre-schedules four cue ids on the staggered
 // vsync countdown ([`crate::muscle_dome::HUB_TALLY_CUE_STAGGER`]).
@@ -200,8 +210,8 @@ pub fn arena_voice_cue(counter: &mut u32, volume_word: u32) -> VoiceAttrCue {
     *counter = counter.wrapping_add(1);
     VoiceAttrCue {
         voice,
-        level_program_tone: (CUE_LEVEL, CUE_PROGRAM, CUE_TONE),
-        note_and_arg6: (CUE_NOTE, CUE_ARG6),
+        vab_program_tone: (CUE_VAB_ID, CUE_PROGRAM, CUE_TONE),
+        note_and_fine: (CUE_NOTE, CUE_FINE),
         volume: (v, v),
     }
 }
@@ -665,8 +675,8 @@ mod tests {
         let mut c = 7;
         let cue = arena_voice_cue(&mut c, 8);
         assert_eq!(cue.voice, 0x13);
-        assert_eq!(cue.level_program_tone, (CUE_LEVEL, CUE_PROGRAM, CUE_TONE));
-        assert_eq!(cue.note_and_arg6, (CUE_NOTE, CUE_ARG6));
+        assert_eq!(cue.vab_program_tone, (CUE_VAB_ID, CUE_PROGRAM, CUE_TONE));
+        assert_eq!(cue.note_and_fine, (CUE_NOTE, CUE_FINE));
         assert_eq!(cue.volume, (4, 4));
     }
 }
