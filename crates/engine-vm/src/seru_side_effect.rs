@@ -181,9 +181,8 @@ pub enum StagerOutcome {
 /// workspace carry that name, and the reachability pass is not
 /// receiver-gated, so a bare `stage` free function collects a `.stage()`
 /// call site's edge and reads as live while nothing calls it. That is
-/// exactly what happened here - the audit's "tagged NOT WIRED but analysed
-/// live" row was this collision, not a wire. See
-/// `docs/tooling/stale-not-wired-triage.md`.
+/// exactly what happened here - the audit's stale-tag row was this
+/// collision, not a wire. See `docs/tooling/stale-not-wired-triage.md`.
 ///
 /// Reached live from `engine-core`'s `World::stage_seru_side_effect`, which
 /// the cast fold `World::cast_spell_on_slots_prepaid` calls once per player
