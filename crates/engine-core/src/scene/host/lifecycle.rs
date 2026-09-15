@@ -27,6 +27,7 @@ impl SceneHost {
             battle_tutorial_loaded: false,
             cast_effect_pool_loaded: false,
             last_minigame_warp: None,
+            pending_entry_seat: None,
             scene_destinations: Vec::new(),
             field_triggers: (Vec::new(), Vec::new()),
             field_intra_teleports: (Vec::new(), Vec::new()),

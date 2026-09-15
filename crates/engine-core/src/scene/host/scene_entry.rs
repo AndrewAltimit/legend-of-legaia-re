@@ -284,6 +284,26 @@ impl SceneHost {
     /// and load the requested event-script record (default 0) into the
     /// field-VM bytecode buffer. Returns `Err` if the scene has no event
     /// scripts or the record index is out of range.
+    /// Arm the **destination-entry operand** the next [`Self::enter_field_scene`]
+    /// seats the player from, in world coordinates.
+    ///
+    /// This is the port's `_DAT_80073EF4` / `_DAT_80073EF8` write: every retail
+    /// path into a field scene performs it before the initialiser runs (the
+    /// door's `0x3F` arm, the world-map arrival kernel `FUN_801EE328`, the New
+    /// Game seed). A host that enters a scene without calling this gets the
+    /// engine's own picker seat instead - see [`Self::pending_entry_seat`].
+    pub fn set_entry_seat(&mut self, x: i16, z: i16) {
+        self.pending_entry_seat = Some((x, z));
+    }
+
+    /// Arm the entry operand from a **tile** pair, the form the field VM's
+    /// `0x3F` and the world-map arrival kernel carry: `(tile << 7) + 0x40`,
+    /// retail's tile-centre conversion.
+    pub fn set_entry_seat_tile(&mut self, tile_x: u8, tile_z: u8) {
+        let centre = |t: u8| ((i32::from(t) << 7) + 0x40) as i16;
+        self.set_entry_seat(centre(tile_x), centre(tile_z));
+    }
+
     pub fn enter_field_scene(&mut self, name: &str, record_index: usize) -> Result<()> {
         self.load_scene(name)?;
         // Sparring-tutorial prompt corpus (PROT 0967). Unconditional and
@@ -416,32 +436,37 @@ impl SceneHost {
         // (This also clears the collision grid; we repopulate it below.)
         // Mirrors the retail scene-entry player setup in `FUN_8003aeb0`.
         self.world.install_field_player(0);
-        // Cold field entry: seed the player at the retail cold-boot spawn,
-        // resolved through the field initialiser's own placement kernel
-        // (`crate::mode_entry_init::field_spawn`, PORT: FUN_801D6704). A cold
-        // entry (`_DAT_8007B8B8 == 0`) puts the actor at the camera-window
-        // centre `(0xA40, 0, 0xA40)`; for the New Game opening (town01) this is
-        // Vahn's authored Rim Elm spawn, and it also seeds the follow camera
-        // onto the right region. Engines that arrive via a warp override X/Z
-        // from the saved transition coords before the first tick.
-        // This is provisional: once the scene's collision grid + object cells
-        // load (just below) the spawn is resolved to an in-bounds, standable
-        // tile via `World::resolve_cold_field_spawn` - which keeps this exact
-        // seat for town01 (and any scene where `0xA40` is standable, reachable,
-        // and not a teleport-door tile) and relocates every other scene onto a
-        // door-arrival anchor or the centroid of its largest connected walkable
-        // region. See [`crate::world::FIELD_COLD_SPAWN_XZ`].
-        // PORT: FUN_801D6704 (the cold-entry seat)
+        // Field entry seat, through the field initialiser's own placement
+        // kernel (`crate::mode_entry_init::field_spawn`, PORT: FUN_801D6704).
+        //
+        // Retail's seat is the **destination-entry operand** `_DAT_80073EF4` /
+        // `_DAT_80073EF8`, written by whatever requested the scene change (a
+        // door's `0x3F`, the world-map arrival kernel, the New Game seed's
+        // `0xE40` / `0x2DC0`) and read back on BOTH arms of the initialiser.
+        // That is what `field_spawn`'s `anchor` is, and what
+        // `FieldSpawn::player` returns; `FieldSpawn::extra_actor` is the
+        // ambient emitter's spawn (template `0x801F271C`), which the port used
+        // to read as the player's.
+        //
+        // With no operand - only the engine's scene picker, which enters
+        // scenes nobody walked into - the seat is the engine's own synthesis:
+        // the camera-window centre `FIELD_COLD_SPAWN_XZ`, then relocated by
+        // `World::resolve_cold_field_spawn` onto a standable, reachable tile
+        // in the scene's main region (it keeps `0xA40` wherever that already
+        // qualifies, so town01's New Game opening is unchanged).
+        // PORT: FUN_801D6704 (the entry seat)
+        let operand = self.pending_entry_seat.take();
         let cold = crate::mode_entry_init::field_spawn(
             crate::mode_entry_init::FieldEntryMode::Cold,
-            (0, 0),
+            operand.unwrap_or((0, 0)),
             (0, 0),
             false,
             (0, 0),
         );
-        let (seat_x, seat_y, seat_z) = cold
-            .extra_actor
-            .unwrap_or(crate::mode_entry_init::FIELD_COLD_SPAWN);
+        let (seat_x, seat_y, seat_z) = match operand {
+            Some(_) => (cold.player.0, 0, cold.player.1),
+            None => crate::mode_entry_init::FIELD_COLD_SPAWN,
+        };
         if let Some(player) = self.world.actors.get_mut(0) {
             player.move_state.world_x = seat_x;
             player.move_state.world_y = seat_y;
@@ -507,7 +532,10 @@ impl SceneHost {
             }
         }
         // Resolve the provisional cold spawn against the just-loaded collision
-        // grid + object cells. `resolve_cold_field_spawn` returns the retail
+        // grid + object cells - but ONLY when this entry carried no
+        // destination-entry operand. An operand is a retail-authored arrival
+        // spot; second-guessing it with the picker's own heuristic would move
+        // a door arrival off the door. `resolve_cold_field_spawn` returns the
         // seat unchanged when it is standable, inside the scene's largest
         // connected open-floor region, AND not on a kind-0 intra-scene
         // teleport tile (a door pad - spawning on one warps the player on the
@@ -532,18 +560,22 @@ impl SceneHost {
             .chain(self.field_intra_teleports.1.iter())
             .map(|t| t.dest_world())
             .collect();
-        let resolved = self
-            .world
-            .resolve_cold_field_spawn(&teleport_tiles, &anchors);
+        let resolved = match operand {
+            Some(seat) => seat,
+            None => self
+                .world
+                .resolve_cold_field_spawn(&teleport_tiles, &anchors),
+        };
         // Remembered for the helper-context teardown rescue: a spawned
         // record that ends with the player inside a wall re-seats them here
         // (see `World::step_helper_contexts`).
         self.world.props.resolved_cold_spawn = Some(resolved);
-        if resolved
-            != (
-                crate::world::FIELD_COLD_SPAWN_XZ,
-                crate::world::FIELD_COLD_SPAWN_XZ,
-            )
+        if operand.is_none()
+            && resolved
+                != (
+                    crate::world::FIELD_COLD_SPAWN_XZ,
+                    crate::world::FIELD_COLD_SPAWN_XZ,
+                )
         {
             let floor_y = self
                 .world
@@ -1800,16 +1832,21 @@ impl SceneHost {
             // Drop a stale map-id request from the same frame; the named target
             // is unambiguous.
             self.world.pending_scene_transition = None;
+            // The op's entry tile IS retail's destination-entry operand, so it
+            // is armed *before* the initialiser rather than applied after it:
+            // the seat then reaches every scene-entry consumer (camera window,
+            // region refresh, arrival trigger) instead of arriving one step
+            // late, and the picker's cold-spawn relocation stands down for a
+            // scene somebody actually walked into.
+            self.set_entry_seat_tile(entry_x, entry_z);
             if is_world_map_scene(&name) {
                 self.enter_world_map_scene(&name)?;
             } else {
                 self.enter_field_scene(&name, 0)?;
             }
-            // A warp arrival seats the player at the op-0x3F entry tile
-            // (overriding the cold-boot spawn / stale overworld position), so
-            // the player stands at the destination door - a town exit onto
-            // the overworld arrives on the continent beside that town (e.g.
-            // Rim Elm -> map01 tile (0x60, 0x19)), not at the map origin.
+            // Re-seat through the wall-aware tile helper: the operand above put
+            // the player there already, and this adds the floor-height snap and
+            // the bounded rescue a door tile that reads as wall needs.
             self.world.seat_player_at_tile(entry_x, entry_z);
             // ...facing the op's trailing `dir` compass sector (retail
             // resolves it through the SCUS 0x80073F04 table into the
@@ -1853,6 +1890,7 @@ impl SceneHost {
             {
                 let name = scene_name.clone();
                 let (entry_x, entry_z, dir) = (*entry_x, *entry_z, *dir);
+                self.set_entry_seat_tile(entry_x, entry_z);
                 if is_world_map_scene(&name) {
                     self.enter_world_map_scene(&name)?;
                 } else {

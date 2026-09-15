@@ -157,6 +157,26 @@ pub struct SceneHost {
     /// [`SceneHost::tick`]; one that does not is unaffected. See
     /// [`crate::minigame_entry`].
     pub last_minigame_warp: Option<MinigameWarpOutcome>,
+    /// The **destination-entry operand** the next field entry seats the player
+    /// from, in world coordinates - the engine's mirror of retail's
+    /// `_DAT_80073EF4` / `_DAT_80073EF8` pair.
+    ///
+    /// Retail's field initialiser `FUN_801D6704` seats the player from that
+    /// pair on **both** its arms (`0x801D6F64` / `0x801D6F7C`, the anchor
+    /// `FUN_8003AEB0` filled); the cold arm's other write, the one at
+    /// [`crate::mode_entry_init::FIELD_COLD_SPAWN`], is the **ambient
+    /// emitter's** spawn, not the player's. A retail scene change always has
+    /// an operand, because the door / warp / new-game path that requested it
+    /// wrote the pair first.
+    ///
+    /// The engine's scene picker can enter a scene nobody walked into, and
+    /// that is the only case with no operand;
+    /// [`crate::world::FIELD_COLD_SPAWN_XZ`] plus
+    /// [`crate::world::World::resolve_cold_field_spawn`] is the engine
+    /// synthesis for it, not a retail seat. Set by
+    /// [`SceneHost::set_entry_seat`]; consumed (and cleared) by the next
+    /// [`SceneHost::enter_field_scene`].
+    pub(crate) pending_entry_seat: Option<(i16, i16)>,
     /// The current scene's disc-sourced **named scene-change destinations**
     /// (`0x3F` ops), decoded from its MAN on entry via
     /// [`crate::man_field_scripts::scene_destinations`]. Empty for scenes with
