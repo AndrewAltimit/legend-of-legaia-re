@@ -535,8 +535,17 @@ port's single `spirit_gauge_fill` kernel is the correct shape for the engine
 (one function, two call sites); it is only the retail image that inlines it
 twice.
 
-Recovery summons skip the roll entirely and heal `(magic_power_byte << 5) + 0xE0`,
-clamped to `maxHP - curHP`.
+Recovery summons skip the roll entirely, and there are **two** of them with
+two different closed forms - both reading the caster record's `+0x729` byte
+for the cast spell (the per-magic **level**, `1..9`, found by the 32-slot scan
+of the `+0x705` id list; the same byte the magic-power tail above scales by).
+**Vera** (PROT 0905) heals `level * 0x20 + 0xE0`, clamped to `maxHP - curHP`
+with a signed compare, and stores the amount negated into the popup word
+`+0x10`. **Orb** (PROT 0911) heals `(level << 6) + 0x1C0` across the party row
+with an unsigned clamp. The single `(magic_power_byte << 5) + 0xE0` this
+section used to give for "recovery summons" is Vera's alone; the port's
+`heal_summon_amount` is that one formula, and Orb's lives with its tick body
+([cast-module.md](cast-module.md#the-player-seru-bands-tick-bodies-are-code-not-data)).
 
 #### Arts / physical branch (`attacker_slot != 7`)
 
@@ -1692,7 +1701,7 @@ The from-scratch Rust module `crates/engine-vm/src/battle_formulas.rs` ports the
 | `arms_weapon_atk_fold` / `arms_command_equip_slots` / `arms_resolver_admits` | this doc, [base offense value](#base-offense-value-base-atk-plus-half-of-one-equipment-slot) (`FUN_801EC3E4`, the `PTR_801CF4B4` equipment fold) |
 | `damage_finish` / `spirit_gauge_fill` (+ `DamageFinish` / `DefenderResist`) | this doc, finisher closed-form stages (`FUN_801ddb30`) |
 | `summon_spell_xp_gain` / `summon_magic_levels_up` (+ `summon_magic_level_threshold`) | this doc, [summon spell XP + magic level-up](#summon-spell-xp--magic-level-up) (`FUN_801ddb30` tail / `FUN_801E70BC`) |
-| `heal_summon_amount` | this doc, recovery-summon closed form |
+| `heal_summon_amount` | this doc, Vera's recovery closed form (PROT 0905; Orb's is its own) |
 | `victory_gold_per_monster` / `victory_gold_finalize` / `victory_exp_per_member` | this doc, victory-spoils gold/EXP scaling (`FUN_8004E568`) |
 | `escape_roll` / `escape_party_score` / `escape_enemy_score` (+ `EscapeFlags`) | this doc, [run / escape roll](#run--escape-roll---fun_801e791c) (`FUN_801E791C`) |
 | `status_effects::toxic_tick_damage` / `venom_tick_damage` (module `engine-vm::status_effects`) | this doc, [per-round status DoT ticker](#per-round-status-dot-ticker---fun_801e752c) (`FUN_801E752C`) |
