@@ -110,8 +110,8 @@ entropy test.
 
 ### `+0x02` is reserved, not a flags word
 
-The wider docs quote this record as `[i16 model_sel][u16 flags][bytecode]`, and
-the `flags` half of that name is not a measurement. Nothing reads `+0x02`:
+A record header of the shape `[i16 model_sel][u16 ?]` reads as a flags word by
+default, and that default is not a measurement. Nothing reads `+0x02`:
 `FUN_80021B04` loads only `($a2)` (`lh` at `0x80021B2C`, `lhu` at
 `0x80021B30`, and again at `0x80021BD0` / `0x80021C98` / `0x80021CB4`), and the
 move VM starts the program at halfword index 2 (`actor[+0x70] = 2`, `sll v0,1`
@@ -123,11 +123,11 @@ loading only `($a2)`, and the move VM starting at halfword index 2 - are
 properties of the *record shape*, not of the band, so the rename covers every
 carrier of it: the summon stagers, the cast band, the PROT 0898 effect
 prototypes, the per-scene prescript stagers and the battle-overlay burst
-records. The Rust structs that still expose the halfword as `flags`
+records. The four Rust structs that carry the halfword
 (`legaia_asset::summon_overlay::SummonPart`,
 `legaia_engine_core::summon::SummonPartRuntime`,
 `legaia_engine_core::world::ambient::AmbientPart`,
-`legaia_engine_vm::battle_burst::BurstRecord`) have not been renamed.
+`legaia_engine_vm::battle_burst::BurstRecord`) name it `reserved` too.
 
 ### The filters, and which of them retail exercises
 

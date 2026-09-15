@@ -244,15 +244,16 @@ actor record. (Positive control for that negative: the same sweep finds 34
 byte is written only by `FUN_801E295C` case `0x32` (`0x801E49E4`) and by
 `FUN_801DABA4`.
 
-### Narrowing that remains
+### Group 3 is decoded, and the seat gate is what decides it
 
 The ME read is gated to party seats `0..2`: `sltiu v0,s3,0x3` /
 `beq v0,zero` at `0x8004B6F0`/`0x8004B6F4` skips the whole block for seat
 `>= 3`, and the block containing `0x8004BCC8` has a single predecessor chain
 from there. So `FUN_801DABA4` can seed `ctx+0x277 = 3*(char - 1)` for char 4
-and stream slots 10/11 that nothing decodes unless char 4 can occupy a seat
-below 3. One observation decides it: whether `DAT_8007BD10[seat]` ever maps a
-seat `< 3` to char 4 in a reachable battle.
+and stream slots 10/11 that nothing decodes - unless char 4 occupies a seat
+below 3. It does: sweeping `DAT_8007BD10[seat]` over the save-state corpus
+finds char 4 at seat 1 in one state (a Terra-in-party battle), so readef group
+3's archives are decoded there and the group is not a dead lane.
 
 ## Slot formats
 
