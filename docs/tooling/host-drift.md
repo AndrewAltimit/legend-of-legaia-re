@@ -754,7 +754,6 @@ about these is contested.
 
 | Gap | Shape |
 |---|---|
-| the cast-voice leg on **both** hosts | Every host classifies the Seru-cast dispatch cue and declines it, because no host stages the clip files it names. Not a drift - the two hosts decline symmetrically. See [below](#the-cast-voice-leg). |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 
 ### One-shot voices on the minigames page
@@ -857,13 +856,20 @@ host wants it. No authored site on the disc takes that arm.
 
 ### The cast-voice leg
 
-A Seru-magic cast fires a dispatch cue (`FUN_801F3990`, ported as
-`engine-vm::battle_cast_cue::cast_audio_cue`): the player leg emits
-`char_kind * 0x10 + 0xF8 ..`, the enemy leg `0x20C..0x20E`. Both hosts push it
-into the same frame-timed SFX scheduler, and at fire time both classify it the
-same way and drop it - `bgm.rs` logs and `continue`s, `play_sfx.rs` counts it
-on `voice_cues_dropped`. So this is **not** a drift: the two hosts decline
-identically, and the decline is deliberate ("silent rather than wrong").
+A Seru cast speaks on **both** hosts, through one engine channel and one
+staging kernel. The section used to sit under "known gaps" as a symmetric
+decline; what follows records what was wrong about the reading that kept it
+there and what carries the voice now.
+
+The cast-audio dispatcher `FUN_801F3990` (ported as
+`engine-vm::battle_cast_cue::cast_audio_cue`) still emits its cue band - the
+player leg `char_kind * 0x10 + 0xF8 ..`, the enemy leg `0x20C..0x20E` - and
+both hosts still classify it at fire time and decline it (`bgm.rs` logs and
+`continue`s, `play_sfx.rs` counts it on `voice_cues_dropped`). That band was
+not raised on either measured retail cast (`capture`, N = 2, exec
+breakpoints on all three routines - [`../subsystems/cast-module.md`](../subsystems/cast-module.md#the-casts-own-cd-xa-voice)),
+so voicing it would add a sound retail does not make. Its decline is the
+same on both hosts and is not the cast's voice.
 
 #### The bank is per-module, not per-character
 
@@ -903,29 +909,57 @@ The span half of the problem was also wrong in the same direction:
 `XA_CUE_DURATION_ENTRIES` capped `DAT_800788B8` at `0x40` entries, which drops
 every cue from `0x140` up - that is, most of this table. It is `0x110` now.
 
-#### What is actually blocking
+#### What carries the voice
 
-Two things, and neither is a staging list.
+The producer is the engine's, so both hosts get it for free. At the two
+arming seams (`World::arm_summon_stager`, `World::arm_capture_cast_module`)
+the cast band scans the paged module's own bytes for its head cue
+(`engine-vm::battle_cast_cue::module_head_cue` - the first dispatcher call
+inside the image's content, its `a0` valued from the delay slot or the most
+recent write, the two coin-flip modules resolved through the world's `rand`)
+and runs it through the dispatcher's CD-XA arm (`admit_voice_cue`). What
+comes out is a `FUN_8003D53C` triple on `AudioState::battle_xa_cues`, the
+`(clip, channel, dur)` channel the melee kernel's `XA27` / `XA30` requests
+already ride into each host's `play_xa_clip`.
 
-**No host models the module's own decline gates.** Before a module reaches its
-CD-XA arm it tests `ctx[+0x276]` and the drive-idle poll `FUN_8003DE7C(1)`, and
-returns without a cue when either is non-zero. A host that staged the bank and
-routed the cue would play a voice on casts where retail plays none, which is a
-louder error than the silence it replaces (see
-[`../subsystems/cast-module.md`](../subsystems/cast-module.md)).
+Staging is **lazy, per cast, one channel span**. Neither host decodes the
+seventeen files: a request for a `(slot, channel)` the clip bank does not hold
+reads that file from its first sector to the starter's stop point
+(`read_span_sectors(dur)` = `(dur * 150 + 149) / 60`) and decodes that one
+channel (`XaClipBank::decode_channel_span`), kept under `LAZY_CLIP_CAP`,
+oldest out. The native window reads the sectors off the disc image
+(`AudioBgmDirector::set_xa_lazy_source`, armed at boot); the play page owns the
+disc bytes, so the engine lists the span it wants
+(`play_xa_stage_requests_json`) and `play-app.js` slices it and hands it back
+(`play_xa_install_span`) one request per frame, after which the request
+replays. Both then play through the same XA mixing path as the arts shout,
+with the same modelled CD-response delay.
 
-**No streamed-voice output.** The clip starter is a `CdlSetfilter` /
-`CdlReadS` state machine over the physical disc; the engine's two XA consumers
-both read whole files up front. Seventeen banks of channels is also a different
-proposition in a browser tab from the three-file arts-shout bank
-(`XA34.XA` alone is 8.7 MB).
+**The two gates were mis-read, and one of them was fabricated in the port.**
+`ctx[+0x276]` is not "the module's decline gate": it is the battle context's
+side-band applier stage - the per-turn `summon.dat` / `readef.DAT` streaming
+machine's phase byte ([`../formats/summon-readef.md`](../formats/summon-readef.md)),
+seeded `1` by `FUN_801DABA4` each turn and stepped to `0` by `FUN_801F12D0` -
+and a summon module polls it itself before installing its actor record, only
+then raising its head cue (PROT 0903: `lbu 0x276` at `0x801F6CC0`, `jal
+0x801F19EC` at `0x801F6D3C`, the cue at `0x801F6E50`). For the cast's own
+voice the gate is open by construction; the port's side-band is resident, so
+its window is zero frames wide and the engine passes `0`. The engine had been
+feeding that byte from `battle.tutorial.is_some()`, which no retail writer
+supports - the melee sting was silenced in tutorial battles where retail plays
+it; it is `side_band_streaming` now. `FUN_8003DE7C(1)` is the read-span
+countdown `gp+0x91C` (stepped by the frame-speed byte), not a bare
+drive-idle test: a cast inside the previous clip's span plays nothing, and
+that decline the engine reproduces through `battle_xa_busy_frames`.
 
-Both hosts are equally short of both, so this stays a disclosed **gap on both
-hosts** rather than a drift. What is no longer missing is the map: the
-per-module cue id, the file it lands in and the channel within it are all
-recoverable from the disc without an emulator.
+Oracles: `engine-core/tests/cast_voice_head_cue_disc.rs` (the scan reproduces
+the doc census on all 64 images; arming PROT 0903 / 0905 raises the captured
+`(6, 4, 686)` / `(6, 1, 568)`, a cast inside the span raises nothing),
+`engine-shell/tests/cast_voice_lazy_stage.rs` (the native span read yields
+each clip's own share of sectors - `XA7.XA` is a stereo 37.8 kHz eight-channel
+interleave), and the `play_xa` unit tests for the page's deferred request.
 
-Two neighbours that are **not** this gap, so a reader does not merge them:
+Two neighbours that are **not** this path, so a reader does not merge them:
 
 - The **arts shout** (`FUN_8004C140`, `XA2` / `XA4` / `XA6`) plays on both
   hosts.
