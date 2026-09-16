@@ -442,6 +442,7 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
 # injection is a call made from a place the pairing should not pin.
 NATIVE_BOOT = "crates/engine-shell/src/boot.rs"
 NATIVE_SAVE_HELPERS = "crates/engine-shell/src/bin/legaia-engine/window/save_select_helpers.rs"
+NATIVE_ASSETS = "crates/engine-shell/src/bin/legaia-engine/window/assets.rs"
 NATIVE_FRAME_TICK = "crates/engine-core/src/world/frame_tick.rs"
 NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/bin/legaia-engine/window/boot_cutscene.rs"
 NATIVE_REDRAW = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw.rs"
@@ -575,6 +576,41 @@ SIM_PAIRS: list[dict[str, object]] = [
         "pattern": r"(resolve_turn\w*)",
     },
     {
+        "what": "pause-menu open through the mode seat - retail opens the menu "
+        "by writing the mode word (`CARD INIT` stages the menu overlay and "
+        "hands the word to `CARD MODE` at `0x80025974`), not by calling the "
+        "menu, and going through `ModeSeat::enter` is what runs the "
+        "mode-change edge with it. A host that only lets `adopt_world_mode` "
+        "follow the world's scene mode reaches the same word by a different "
+        "road: the chain of mode words is identical, the edge count is not, "
+        "so no trace comparison catches it and only the paired call sites do",
+        "sites": {
+            "native": (NATIVE_BOOT, "open_field_menu"),
+            # The browser's open calls the seat through one helper, so the
+            # helper is the site: naming `play_menu_open` would pin the call
+            # to `seat_open_card_menu` and not the seat call underneath it.
+            "web": (WEB_RUNTIME, "seat_open_card_menu"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["request_card_mode"],
+    },
+    {
+        "what": "scripted mesh re-bind (motion-VM op `0x0E`) - the world holds "
+        "the actor's new model id per placement slot and each host resolves it "
+        "to bytes through the scene's model bank. A host that resolves it "
+        "anywhere else is resolving against `SceneResources::tmds`, which is a "
+        "magic scan blind to a TMD inside an LZS bundle descriptor - which is "
+        "where the four scenes that script a re-bind keep all of their models",
+        "sites": {
+            "native": (NATIVE_ASSETS, "upload_assets"),
+            # The page asks through its own export, which is the body that
+            # reads the world field; `play_npc_mesh` calls that export.
+            "web": (WEB_PLAY, "play_npc_live_model"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["field_npc_live_model"],
+    },
+    {
         "what": "save-select model - which rack a host declares decides how "
         "many pills the screen shows and what each one addresses, so the two "
         "hosts must declare the same kind. No host sets the card-slots flag "
@@ -584,7 +620,11 @@ SIM_PAIRS: list[dict[str, object]] = [
         "rack kind each host builds, which is the one thing left that a host "
         "still chooses",
         "sites": {
-            "native": (NATIVE_SAVE_HELPERS, "disk_save_rack"),
+            # The rack builder takes an optional mounted card image now
+            # (`play-window --card`, port 2); `disk_save_rack` is the
+            # test-only unmounted wrapper over it, so the row follows the
+            # body that still declares the kind.
+            "native": (NATIVE_SAVE_HELPERS, "disk_save_rack_with_card"),
             "web": (WEB_PLAY_MENU, None),
         },
         "mode": "pattern_same",
