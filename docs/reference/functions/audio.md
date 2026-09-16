@@ -35,12 +35,12 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `8003D53C` | CD-XA streaming-clip start - [details ↓](#8003d53c) |
 | `8003ED04` | **CD-XA streaming-clip stop.** `(mode)`. Stop / teardown counterpart of the clip-start `FUN_8003D53C`. Calls `FUN_8003EE7C(0)`, resets the play-state window (`gp+0x908 = 0`, `gp+0x910 = 0`, `gp+0x974 = 1000000`), and when a clip is armed (`gp+0x928 != 0`) clears the libcd completion callback (`FUN_8005BECC(0)`) then issues the drive command by `mode`: `mode == 0` → `FUN_8005C160(9,0,0)` + `FUN_8003F2B8(0)` (pause), else → `FUN_8005C034(9,0)` + `FUN_8003DE7C(0)` (stop), finally clearing the armed flag `gp+0x928`. Like the start path, the CD-drive half is outside the port boundary (the engine plays decoded XA buffers through the mixer, not a CD transport). `see ghidra/scripts/funcs/8003ed04.txt`. |
 | `8003EAE4` | **CD-XA streaming-clip start (by table index).** `(unused, clip_index)`. The simpler sibling of `FUN_8003D53C`: when no clip is armed (`gp+0x928 == 0`) it stops any in-flight read (`FUN_8003DE7C` if reading, then `FUN_8003ED04` / `FUN_8003EE7C`), looks up the 8-byte XA-clip-table entry at `0x801C6ED8 + clip_index*8` (skips when the `+0x4` length word is 0), sets the CD read location via `FUN_8005C160(2, entry, 0x8007BC10)` (logging `pos Set loc err` on failure), issues the read with `FUN_8005C034(0x15, entry)`, and marks the play state (`gp+0x908 = 1`, `gp+0x890 = clip_index`, `gp+0x910 = 1`). Like `FUN_8003D53C`, the CD-drive half is outside the port boundary (the engine plays decoded XA through its mixer). `see ghidra/scripts/funcs/8003eae4.txt`. |
-| `8004FCC8` | **Menu cue dispatch + voice trigger.** `(id)`. For `id < 0x100` enqueues a UI cue into the 4-entry ring at `&DAT_8007B6D8` (write index at `*(gp+0xA0C)+9`, wraps at 4): `id < 0x40` stores `id-1`, `0x40..0x100` stores `id`, both skipping the currently-selected cue `DAT_8007B724`. For `id >= 0x100` (gated on `*(gp+0xA0C)+0x276 == 0`) triggers a streamed voice via `FUN_8003D53C`: slot `= (id-0x100)>>3` (remapped 1→0x1A, 3→0x1B, 5→0x1C), sub-mode `id & 7`, pitch `= (DAT_800788B8[idx]*0x3C + 99)/100`. Dispatch decode ported as `legaia_engine_audio::classify_cue` (→ `CueDispatch::Ring`/`Voice`) + `voice_pitch`; the ring is `SfxScheduler` (`FUN_80035B50`), the voice gates + note-on stay with the caller. `see ghidra/scripts/funcs/8004fcc8.txt`. |
+| `8004FCC8` | **Menu cue dispatch + voice trigger.** `(id)`. Splits on `sltiu v0,s0,0x100` at `0x8004FCD4`: below the threshold a UI cue goes into the 4-entry ring at `&DAT_8007B6D8`, above it a streamed voice goes to `FUN_8003D53C` behind two decline gates - [details ↓](#8004fcc8) |
 | `8003E104` | Monster-sound bank loader: `(monster_idx, slot, dst_buf)`. Reads `h:\mpack\monster.snd` for the given monster. Bank index based at `0x801C8980`: entry count at `0x801C8984`, offsets array at `0x801C8988` (4-byte stride, monster `i` spans `[tbl[i], tbl[i+1])`). Those are **sector offsets relative to the bank base**, not absolute LBAs - the base is PROT entry `0x37D`'s start LBA (`*0x801C7EEC` → `gp+0x8F0`) plus the LBA of the MSF at `0x8007BC50`. The gate is `beq` at `0x8003E1FC`: the dev path (`_DAT_8007B8C2 == 0`) uses `FUN_800608F0`/`_920`/`_944`/`_910` (host trap / fseek / fread / fclose); the retail path (`!= 0`) stages `gp+0x97c` / `gp+0x894` and kicks `FUN_8003F128` (async CD read). Called twice from the battle scene loader `FUN_800520F0` (slots 7 and 8). |
 | `80062340` | `SsSeqOpen` --allocates a sequencer slot from the 16-slot bitmap at `_DAT_801CD2B8`; emits `s_Can_t_Open_Sequence_data_any_mor_80015D34` on full. See [`subsystems/audio.md`](../../subsystems/audio.md) → "SsAPI sequencer". |
 | `80061D18` | `SsSeqClose` - clears bitmap bit, memsets all 16 channel records (`0xB0` each) to defaults. |
 | `8006275C` / `8006282C` | -SsSeqPlay` (ramped + 1-arg shim). |
-| `800628F0` | `_SsSeqCtrl` --Stop / Pause / Resume internal. |
+| `800628F0` | `_SsSeqCtrl` - Stop / Pause / Resume internal. `(seq, slot, mode, arg)`. The mode select is two compares, so **mode `0` is the fall-through**: `bne a2,v0(=1)` at `0x80062988` leaves the Resume arm, `bne a2,zero` at `0x800629D8` leaves the Stop arm, and what is left does `ori v0,v0,0x2` / `sw v0,0x98(v1)` - raising slot flag `0x2` and nothing else. The notes are not stopped here; the per-tick `FUN_80062F98` sees the flag and calls `FUN_800638D8`. `see ghidra/scripts/funcs/800628f0.txt`. |
 | `800641EC` | `SsSeqRewind`-- full slot reset to start of sequence. |
 | `80062410` | `_SsSeqInit` - -EQ-header parser (`'Sp'` magic + version `0x01`). |
 | `80061C68` | `_SsSeqGetVar` - MIDI-style varint delta-time decode. |
@@ -122,7 +122,7 @@ are checkable against the dumps rather than against a C rendering.
 | `80063AA8` | **Track-end / loop-repeat handler.** Bumps the repeat counter `+0x21` against the target `+0x20` (`0` = loop forever) and rewinds the cursor to `+0xC` or `+0x4` (selected by flag `0x400`), zeroing `+0x88` / `+0x1C` / `+0x90`. On the last repeat it clears flags `0x1`/`0x2`/`0x8`, sets `0x200` + `0x4`, clears `+0x14`, kills the channel's notes via `FUN_800684CC(slot \| channel << 8)`, reloads `+0x90 = +0x54`, and - when `+0x22 != 0xFF` - starts the chained `(slot, channel)` at `+0x22` / `+0x23` through `FUN_80064090`. Its third argument is dead: the prologue overwrites `a2` with the channel byte offset. `see ghidra/scripts/funcs/80063aa8.txt`. |
 | `80064090` | **Channel restart from the top.** `(slot, channel)`. Sets `+0x20 = 1` / `+0x21 = 0`, clears flags `0x100`/`0x8`/`0x2`/`0x4`/`0x200`, rewinds the cursor `+0x0 = +0x4`, sets `+0x14 = 1` and raises the play bit `0x1`. The chain target of `FUN_80063AA8`. `see ghidra/scripts/funcs/80064090.txt`. |
 | `8006418C` | Sets the channel's `+0x14` byte to `1` and clears flag `0x8`. Four-word leaf, no callees. `see ghidra/scripts/funcs/8006418c.txt`. |
-| `800638D8` | Kills the channel's sounding notes (`FUN_800684CC(slot \| channel << 8)`), clears `+0x14` and flag `0x2`. The inverse of `8006418C`. `see ghidra/scripts/funcs/800638d8.txt`. |
+| `800638D8` | Kills the channel's sounding notes (`FUN_800684CC(slot \| channel << 8)`), clears `+0x14` and flag `0x2` (`li v1,-0x3` / `and` at `0x8006394C`). The inverse of `8006418C`. This is what makes a sequencer **pause** a key-off rather than a freeze: the play cursor is untouched, so a resume continues from it into silence. `see ghidra/scripts/funcs/800638d8.txt`. |
 | `8006320C` / `8006352C` | **The two volume-slide ticks** - ascending (flag `0x10`, saturates at `0x7F,0x7F`) and descending (flag `0x20`, saturates at `0,0`). Same field set and same structure; see [details ↓](#8006320c--8006352c). `see ghidra/scripts/funcs/8006320c.txt`, `8006352c.txt`. |
 | `800649B0` | **Tempo-slide tick** (flags `0x40` + `0x80`, both dispatched here). Steps the tempo `+0x94` toward the target `+0xAC` by `+0x4E` while the countdown `+0xA8` lasts, then recomputes the per-frame tick step - see [details ↓](#800649b0). `see ghidra/scripts/funcs/800649b0.txt`. |
 | `800648F0` | **Per-channel volume set.** `(slot, channel, vol_l, vol_r)`. Commits straight through `FUN_80067E9C(packed, l, r, 1)` when the flag word is exactly `1`; otherwise only stages `+0x58` / `+0x5A`, which the note-on mixer folds in later. `see ghidra/scripts/funcs/800648f0.txt`. |
@@ -215,6 +215,36 @@ value is compared against a tick count, and the three call sites pass `0x91`
 (link open), `0x3C` and `0x05` (per-byte waits, chosen on the driver state).
 
 `see ghidra/scripts/funcs/8006ed50.txt` and `.../8006ed34.txt`.
+
+### `8004FCC8`
+
+**Menu cue dispatch + voice trigger.** `(id)`. One comparison separates the two
+legs, `sltiu v0,s0,0x100` at `0x8004FCD4`.
+
+**Below `0x100` - the UI ring.** Enqueues into the 4-entry ring at
+`&DAT_8007B6D8` (write index at `*(gp+0xA0C)+9`, wrapping at 4): `id < 0x40`
+stores `id-1`, `0x40..0x100` stores `id`, both skipping the currently-selected
+cue `DAT_8007B724`. Dispatch decode is ported as
+`legaia_engine_audio::classify_cue` (to `CueDispatch::Ring` / `Voice`); the ring
+itself is `SfxScheduler` (`FUN_80035B50`).
+
+**At or above `0x100` - the streamed voice.** Two gates decline before anything
+is armed: the context byte `*(gp+0xA0C)+0x276` being non-zero (`lbu` at
+`0x8004FCE8`) and the drive-idle poll `FUN_8003DE7C(1)` returning non-zero
+(`jal` at `0x8004FCF8`). Past them the call is `FUN_8003D53C(slot, mode, span)`
+with slot `= (id-0x100)>>3` remapped `1 -> 0x1A`, `3 -> 0x1B`, `5 -> 0x1C`,
+mode `= id & 7`, and span `= (DAT_800788B8[id-0x100]*0x3C + 99)/100`.
+
+**Nothing bounds the table index.** The threshold test is the function's only
+comparison on `id`; the `lhu` at `0x8004FD44` then reads
+`DAT_800788B8 + (id-0x100)*2` unchecked. The table is `0x110` entries with live
+rows to `0x10F`, so a consumer that models a shorter table drops the high cues
+silently rather than erroring - which is what happened to every Seru cast voice
+while a `0x40`-entry mirror stood. The gates and the table are the cast-voice
+leg's whole retail contract; see
+[`cast-module.md`](../../subsystems/cast-module.md).
+
+`see ghidra/scripts/funcs/8004fcc8.txt`.
 
 ### `8001E54C`
 

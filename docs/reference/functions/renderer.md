@@ -304,6 +304,26 @@ resolve into; parser `legaia_asset::character_pack::field_locomotion_anm`, see
 [`docs/formats/anm.md`](../../formats/anm.md#disc-source---the-party-locomotion-bundle-prot-0874-1).
 And **§2 → an asset `pack` whose entries are each uploaded to VRAM via `FUN_800198e0` - the field-character texture atlas** (3 pages at texpage `(832,256)` + per-character CLUTs on row 478; see [`docs/formats/character-mesh.md` § Textures (field form)](../../formats/character-mesh.md#textures-field-form) and the parser `legaia_asset::field_char_textures`). It then applies the post-install group-count cap (`entry[+0x08] = 10`) to `DAT_8007C018[0..2]` and dispatches the equipment-conditional patch into `FUN_8001EBEC`.
 
+#### The model-pack registrar at `0x8001EAFC` is unclamped
+
+The block at `0x8001EAFC` re-seeds the scene model-bank base and installs the
+pack's TMDs. It reads the pack pointer with `lw a0,0x6BC(gp)`, takes the member
+count straight off `+0x00` (`lw v0,0x0(a0)` at `0x8001EB10`), and loops
+`jal 0x80026B4C` at `0x8001EB4C` with `a0 = pack + pack[1+i]*4` while
+`i < count` - no comparison against the pointer table's capacity anywhere.
+
+Two facts make that worth naming. The block sits on the **un-gated** side of
+the `bne v1,v0(=2)` at `0x8001EA54`, so nothing in the function's own frame
+keeps it away from a stale pointer; and `*(gp+0x6BC)` is garbage in every
+catalogued battle state, because the battle load reuses the block. Whether the
+two ever meet is the open half of the rebuilt-container thread
+([`open-rev-eng-threads.md`](../open-rev-eng-threads.md#what-breaks-a-rebuilt-prot-0874-container)).
+
+`FUN_8001ED60` is the other half of the pair: it sizes the section-0 / section-1
+buffers from the container header words it leaves at `gp+0x6C8` / `gp+0x69C`, so
+a rebuilt container whose decoded size differs gets a truncated pack rather than
+a bigger one.
+
 ### `800195A8`
 
 **Billboard / screen-space textured-quad projector.** `(center_vec, half_w: i16, half_h: i16, angle12, sxy0_out..sxy3_out)`. Projects a sprite quad about a center point: `FUN_8003D344` runs one `MVMVA` (rotation × V0 + TR, sf=1) taking the center vector to **view space** (the caller reads MAC1..3 back with `lhu`, so the position wraps to i16); four corners are built in view space as `center ± half_w` (X) / `center ± half_h` (Y), all sharing the view Z.
