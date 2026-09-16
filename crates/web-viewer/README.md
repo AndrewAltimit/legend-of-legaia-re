@@ -141,9 +141,7 @@ presentation layer from per-frame reads: the narration crawl + title card
 Ys), the "It was the Seru." caption (`cutscene_caption_*`, faded by the
 engine's alpha), the prologue sepia grade + gold depth-cue ramp
 (`play_cutscene_state_json` mirrors `World::scene_color_grade` /
-`scene_depth_cue`; the page stages them as WebGL uniforms), the op-`0x45`
-cutscene camera decode (`play_cutscene_camera_json`, mapped onto the page's
-orbit projection - an approximation of the native PSX GTE camera), the
+`scene_depth_cue`; the page stages them as WebGL uniforms), the
 narration input lock, and the retail intro-skip
 (`play_take_prologue_handoff` - Cross skips the whole remaining opening to
 `town01`). FMV beats play through `play_fmv` (below); the `town01`
@@ -180,9 +178,30 @@ Two things the browser host has to do that the native one gets for free:
   under it and otherwise seats the player on the walk-ground heightfield, never
   on a walk-on trigger tile (which would fire on the first tick and warp the
   scene out from under them).
-- **Framing.** Retail authors a camera per scene. The page has one follow camera,
-  so `site/js/play-app.js` culls any mesh straddling the camera-to-player line -
-  without it a cave roof or a house's upper storey fills the screen.
+- **Framing.** The page frames every field / overworld / cutscene shot with the
+  ENGINE camera (`play_camera`, below), so the vantage is retail's rather than
+  the page's own. The camera-occlusion fade dissolves whatever geometry sits
+  between that lens and the character; nothing is culled.
+
+## The camera (`play_camera`)
+
+The engine's, not the page's. `play_camera_vp(w, h)` resolves which camera owns
+the frame through the shared `engine-core::camera_view::resolve_field_camera` -
+the retail field follow view, an op-`0x45` cutscene shot with its between-beat
+glide, the overworld walk view, or the world map's top-view debug camera - and
+returns the column-major view-projection `site/js/play-app.js` uploads.
+`play_camera_eye` is the same frame's world-space lens, which is what the
+occlusion fade ray-casts from; `play_camera_set_orbit` writes the user's
+drag-orbit into `Camera::manual_orbit`, the same field the native window's
+left-mouse drag writes, so the movement compass tracks the view on both hosts.
+
+This host held **no** `engine_core::camera::Camera` at all before: it framed
+the field with a spherical orbit projection of its own and re-mapped the
+cutscene params onto it, so nothing here routed the Camera Configure beats
+into a controller, advanced the mover, wrote the follow focus back into the
+retail globals, or reset them on scene entry. The page keeps exactly one
+camera of its own now - the debug orbit vantage on `F3`, which the native
+window has too, and which is an explicit override rather than the default.
 
 ## Retail pause menu (`play_menu`)
 

@@ -38,7 +38,7 @@ The port draws a hard line between the retail-faithful mode and everything layer
 | `World::toggles.entry_pulse_enabled` (`--no-entry-pulse` disables) | on | Scene-entry VDF pulse: a rolling vertex-morph envelope over packs retail never arms at entry (jou's flesh ground; [field-ambient-fx](field-ambient-fx.md#mechanism-3---strip-cycling-and-vertex-morphs)). Retail-armed morph scenes are unaffected either way. |
 | `Renderer::set_psx_mode` (`LEGAIA_PSX_RENDER=1`) | off | Strict-PS1 rasterisation artefacts - see below. |
 | `Renderer::set_semi_blend` | **on** | Retail ABE semi-transparency blending. On because it *is* retail. |
-| `CameraDistance` (`T`) / debug orbit camera (`C`) | `Far` / off | Framing only; never feeds the simulation. |
+| `CameraDistance` (`T`) / debug orbit camera (`F3`) | `Far` / off | Framing only; never feeds the simulation. Both hosts carry both knobs: the default camera on each is the engine's ([`camera_view`](../../crates/engine-core/src/camera_view.rs)), and `F3` swaps in that host's own wide vantage. |
 | WebXR [VR mode](vr-mode.md) | off | Stereo presentation on the site's WebGL pages, not the wgpu path. |
 | `World::poll_minigame_escape` (Start inside a minigame) | **on**, not a knob | Leaves any of the five mode-24 minigames. Retail quits each through its own overlay's SM - a different control in a different overlay per game - and the port has none of those arms wired to a control a player can find, so without this an entered minigame is a softlock ([below](#every-minigame-must-be-leavable)). Each game's own `exit_*` runs, so the cash-out / leg report / point bank match a deliberate exit. |
 

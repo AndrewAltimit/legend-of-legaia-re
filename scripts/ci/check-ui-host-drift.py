@@ -451,9 +451,32 @@ WEB_BOOT_TITLE = "crates/web-viewer/src/boot_title.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle.rs"
 WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
 WEB_PLAY = "crates/web-viewer/src/play.rs"
+NATIVE_REDRAW_PASSES = (
+    "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw_passes.rs"
+)
+WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
 WEB_FIELD_SCENE = "crates/web-viewer/src/field_scene.rs"
 
 SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "field / overworld / cutscene camera, native vs play page - "
+        "which camera owns a frame and what its retail GTE inputs are is one "
+        "engine question (`camera_view::resolve_field_camera`), and the "
+        "matrix each host uploads is that resolution projected "
+        "(`camera_view::frame_vp`). The play page shipped the opposite: it "
+        "held no `engine_core::camera::Camera` at all, framed the field with "
+        "its own spherical orbit projection and re-mapped the op-0x45 "
+        "cutscene params onto it - so the two hosts' cameras, their cutscene "
+        "shots and the azimuth each fed the locomotion compass all diverged "
+        "with no shared symbol to notice it. Both sites must reach the "
+        "resolver, not a camera of their own",
+        "sites": {
+            "native": (NATIVE_REDRAW_PASSES, "compute_scene_camera"),
+            "web": (WEB_PLAY_CAMERA, "resolve_camera_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["resolve_field_camera"],
+    },
     {
         "what": "coplanar draw lifts, native vs play page - every host that "
         "assembles a field scene from EnvDraws must run the cross-draw "

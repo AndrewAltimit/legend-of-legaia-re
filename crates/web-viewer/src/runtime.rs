@@ -97,6 +97,26 @@ pub struct LegaiaRuntime {
     /// `Some` only while the encounter session sits in its `Transition`
     /// phase; owns the captured-field VRAM clone the style bodies sample.
     pub(crate) battle_intro: Option<legaia_engine_ui::battle_intro::BattleIntro>,
+    /// The engine camera controller ([`crate::play_camera`]) - the same
+    /// `legaia_engine_core::camera::Camera` the native window's session owns.
+    /// This host had none at all, so nothing here routed the op-`0x45`
+    /// Configure beats, advanced the mover, wrote the follow focus back into
+    /// the retail globals, or reset them on scene entry; the page framed a
+    /// separate orbit camera beside a world whose camera state never moved.
+    pub(crate) camera: legaia_engine_core::camera::Camera,
+    /// The between-beat cutscene glide, the native window's twin. Without it
+    /// every `apply > 0` Camera Configure beat snapped on this host.
+    pub(crate) cutscene_cam: legaia_engine_vm::psx_camera::CutsceneCameraInterp,
+    /// Display-frame high-water mark the glide was last advanced to.
+    pub(crate) cutscene_cam_frames: u64,
+    /// This tick's explicit camera-azimuth override (the VR first-person
+    /// gaze), drained by the camera tick. `None` = the engine camera's own
+    /// compass azimuth drives the d-pad remap, exactly as it does natively.
+    pub(crate) camera_azimuth_override: Option<u16>,
+    /// Lazily-built scene AABB (the union of the built meshes' local extents,
+    /// the native `scene_aabb` definition), used only by the world map's
+    /// top-view debug camera. Cleared on every scene rebuild.
+    pub(crate) scene_aabb: Option<([f32; 3], [f32; 3])>,
     /// FMV (STR / MDEC) playback state ([`crate::play_fmv`]).
     pub(crate) fmv: crate::play_fmv::FmvState,
     /// In-world minigame presentation state ([`crate::play_minigames`]):
@@ -349,6 +369,18 @@ impl LegaiaRuntime {
             field_vram_anim: None,
             field_vram_dirty: false,
             battle_intro: None,
+            // The host framing bias the retail follow view is rendered with,
+            // pushed in exactly where the native window pushes it
+            // (`window/run.rs`), through the one shared expression.
+            camera: {
+                let mut c = legaia_engine_core::camera::Camera::new();
+                c.render_yaw_bias = legaia_engine_core::camera_view::retail_field_render_yaw_bias();
+                c
+            },
+            cutscene_cam: Default::default(),
+            cutscene_cam_frames: 0,
+            camera_azimuth_override: None,
+            scene_aabb: None,
             fmv: Default::default(),
             minigame_ui: Default::default(),
             battle_vram: Default::default(),
@@ -658,6 +690,16 @@ impl LegaiaRuntime {
         if legaia_engine_core::scene::is_world_map_scene(name) {
             host.enter_world_map_scene(name)
                 .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
+            // Start in walk mode with the retail top-view debug camera
+            // reachable through its own chord (`_DAT_8007B98C`), exactly as
+            // the native window arms it on world-map entry
+            // (`window/run.rs`). The controller, the chord and the camera are
+            // all engine-side, so arming the same flag is the whole of what
+            // this host needed to gain the top-view vantage.
+            if let Some(ctrl) = host.world.world_map.ctrl.as_mut() {
+                ctrl.debug_enabled = true;
+                ctrl.view_mode = 0;
+            }
         } else {
             host.enter_field_scene(name, 0)
                 .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
@@ -784,11 +826,21 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Tell the engine where the camera is looking, so the free-movement
-    /// controller remaps the d-pad camera-relative ("up" walks away from the
-    /// camera). PSX 12-bit angle units (`4096` = a full turn); the field
-    /// controller quantises it to the nearest quarter-turn, as retail does.
+    /// Override where the engine thinks the camera is looking for the next
+    /// tick, so the free-movement controller remaps the d-pad
+    /// camera-relative ("up" walks away from the camera). PSX 12-bit angle
+    /// units (`4096` = a full turn); the field controller quantises it to the
+    /// nearest quarter-turn, as retail does.
+    ///
+    /// An **override**, not the normal path: the engine camera publishes its
+    /// own compass azimuth every tick
+    /// ([`legaia_engine_core::camera::Camera::compass_azimuth_units`], which
+    /// sums the scripted yaw, the drag-orbit and the host framing bias), and
+    /// the native window has nothing that needs to speak over it. The page's
+    /// VR first-person mode does: there the headset gaze *is* the heading, so
+    /// it sets the azimuth outright for that tick.
     pub fn set_camera_azimuth(&mut self, units: u16) {
+        self.camera_azimuth_override = Some(units % 4096);
         if let Some(h) = self.scene_host.as_mut() {
             h.world.locomotion.camera_azimuth = units % 4096;
         }
@@ -812,6 +864,10 @@ impl LegaiaRuntime {
         // delta-against-a-high-water-mark the native window runs. The `host`
         // borrow is dead from here, so this can re-borrow.
         self.tick_play_clock();
+        // The engine camera, ticked in the native session's order
+        // (`BootSession::tick`): free-roam reset, compass azimuth into the
+        // world, op-`0x45` event routing, then the per-frame globals advance.
+        self.tick_camera(matches!(event, SceneTickEvent::SceneEntered { .. }));
         // Effect scene-graphs, ticked exactly where the native window ticks
         // them: drain the two production spawn requests (a player Seru-magic
         // cast, and a non-summon move whose power record carries a spawnable
@@ -1305,6 +1361,7 @@ impl LegaiaRuntime {
         // whatever the new scene spawns.
         self.pending_dynamic_mesh_slots.clear();
         self.dynamic_mesh_slots.clear();
+        self.scene_aabb = None;
         self.dynamic_mesh_cur = None;
         self.field = None;
         self.player = None;

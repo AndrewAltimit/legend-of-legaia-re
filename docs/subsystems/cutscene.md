@@ -1057,10 +1057,14 @@ decode of the corpus could not establish this, are on
 the executing oracle is
 `crates/engine-core/tests/thread_camera_roll_execution.rs`.
 
-Engine side: `engine-core`'s `Camera::roll`, the play window's
-`cutscene_view` / `psx_camera_mvp`, `CutsceneCameraInterp`'s tenth packed
-component (so a roll glides on the beat's own curve like every other axis),
-and the browser play page's orbit `cam.roll`.
+Engine side: `engine-core`'s `Camera::roll`, the shared op-`0x45` decode
+`camera_view::cutscene_view`, the shared projection
+`psx_camera::psx_camera_vp` (whose rotation is `Rx * Ry * Rz`), and
+`CutsceneCameraInterp`'s tenth packed component, so a roll glides on the
+beat's own curve like every other axis. Both hosts frame the shot from that
+one decode and that one matrix; the browser play page used to map the decoded
+angles onto an orbit camera of its own, which reversed the on-screen sense of
+the yaw and the roll and needed both negated to compensate.
 
 ### Record pacing - the 60 Hz sub-clock
 

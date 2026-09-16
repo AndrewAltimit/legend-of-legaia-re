@@ -546,6 +546,29 @@ by a `try_from` that looked like ordinary defensive code. The native
 scheduler is `u16` and classifies. Width mismatches on a shared event type
 are a diff-visible shape once named, and nothing had named it.
 
+**A host with no controller at all.** The browser play page framed the field
+with its own spherical orbit projection while the native window consumed
+`engine_core::camera::Camera`. Read as "two projections" that is a rendering
+difference; it was not. The page held **no `Camera`**, so nothing on that host
+routed the op-`0x45` Configure beats into a controller, advanced the mover,
+wrote the follow focus back into the retail camera globals
+(`_DAT_80089118/20`), or reset them on scene entry - and the azimuth the page
+fed the locomotion compass came from its own orbit yaw rather than from
+`compass_azimuth_units`. The page also had no cutscene glide (that type sat in
+the wgpu-linked renderer crate), so every `apply > 0` beat snapped, and no
+overworld top-view camera. One controller-shaped absence produced a
+projection difference, a simulation difference and two missing screens at
+once; the shape to look for is a host that *reaches* an engine type's outputs
+without ever *owning* the type.
+
+The camera lives in two shared leaves now:
+`legaia_engine_vm::psx_camera` (the retail GTE projection, the cutscene glide
+and the frame convention) and `legaia_engine_core::camera_view` (which camera
+owns this frame, and what its inputs are). Both hosts call
+`resolve_field_camera` and upload `frame_vp`. The page keeps exactly one
+camera of its own - the debug orbit vantage on `F3`, which the native window
+has too - and it is an explicit override, not the default projection.
+
 **Simulated and never drawn.** The page ticked the field move-VM effects
 every frame and drew none of them, because its only FX draw call sat inside
 the battle branch. Tier 7 asks whether a render surface names a kernel; it
@@ -582,7 +605,6 @@ about these is contested.
 
 | Gap | Shape |
 |---|---|
-| shared camera on web | The browser page runs its own orbit projection beside the engine's camera controller instead of consuming it - in the field, on the overworld (where the native window has a top-view debug camera the page does not) and for the op-`0x45` cutscene shots, which the page maps onto that orbit. |
 | retail numeral art on web | The battle's damage numerals and `N HIT` / `TOTAL` counter draw the shared layout from the font atlas; the native window samples the retail 24x24 cells out of VRAM through a screen-space sink the page has not grown. |
 | publisher logos on web | `engine_core::publisher_logos` + its atlas builder are in the shared crate; only the native `--boot-ui` chain plays them. |
 | key rebinding on **both** hosts | `KeyRebindSession` is complete and orphaned; native rebinds through `legaia-input.toml`, the page reads the engine's table and cannot rebind at all. See the waiver. |
