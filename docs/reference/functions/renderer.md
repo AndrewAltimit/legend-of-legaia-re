@@ -330,17 +330,28 @@ count straight off `+0x00` (`lw v0,0x0(a0)` at `0x8001EB10`), and loops
 `jal 0x80026B4C` at `0x8001EB4C` with `a0 = pack + pack[1+i]*4` while
 `i < count` - no comparison against the pointer table's capacity anywhere.
 
-Two facts make that worth naming. The block sits on the **un-gated** side of
-the `bne v1,v0(=2)` at `0x8001EA54`, so nothing in the function's own frame
-keeps it away from a stale pointer; and `*(gp+0x6BC)` is garbage in every
-catalogued battle state, because the battle load reuses the block. Whether the
-two ever meet is the open half of the rebuilt-container thread
-([`open-rev-eng-threads.md`](../open-rev-eng-threads.md#what-breaks-a-rebuilt-prot-0874-container)).
+Two facts make that worth naming. The block is reached on **all three** arms of
+the fork at `0x8001E900` / `0x8001EA54`, so nothing in the function's own frame
+keeps it away from a stale pointer; and `*(gp+0x6BC)` reads as another
+allocation in every catalogued battle state, because the battle load reuses the
+block.
 
-`FUN_8001ED60` is the other half of the pair: it sizes the section-0 / section-1
-buffers from the container header words it leaves at `gp+0x6C8` / `gp+0x69C`, so
-a rebuilt container whose decoded size differs gets a truncated pack rather than
-a bigger one.
+The two never meet, and what keeps them apart is outside this frame. The fork's
+word is the load-state `gp+0x6AC`: `0` read the entry, decompress and register;
+`2` re-sum, decompress and register; `1` register only. Its writers reset it
+before every route that could offer a reused buffer - the mode-transition pass
+zeroes it on each mode step outside 2/3, and PROT 0978's post-battle restore
+writes `0` then `2` - so the register-only arm runs solely with the field pack
+intact. Six driven entry routes give five entries, all over the same block,
+with the registrar reading count 5 every time
+([settled](../re-settled-threads.md#battle--arts--level-up)). Sole caller
+`FUN_80020118` at `0x8002017C`.
+
+`FUN_8001ED60` is the other half of the pair: it masks the container header's
+`+0x08` and `+0x10` words to 24 bits, rounds each up to a word and leaves them
+at `gp+0x69C` (section 0) and `gp+0x6C8` (section 1), which is what the per-stage
+init `FUN_8001E1B4` allocates the two buffers at. A rebuilt container whose
+decoded size differs therefore gets a truncated pack rather than a bigger one.
 
 ### `800195A8`
 
