@@ -198,9 +198,11 @@ pub fn cue_volume(word: u32) -> i32 {
 // [`ScoreTallyStep::cues`]. `legaia-engine-audio` grew the explicit key-on
 // that takes it (`VoiceAttr` / `key_on_voice_attr`, the port of
 // `FUN_80065034`), and the native window drains the queue into it through
-// `AudioBgmDirector::key_on_voice_attr`. The browser minigames page has no
-// resident `Spu` to key at all and drops the queue - disclosed under
-// "One-shot voices on the minigames page" in `docs/tooling/host-drift.md`.
+// `AudioBgmDirector::key_on_voice_attr`. The browser minigames page owns a
+// live `WebAudioOut` of its own now and keys the same set through
+// `LegaiaMinigames::muscle_tally_voice`, driven off the INTERVAL screen's tick
+// because that page replays the ramp from the screen rather than stepping it
+// per frame.
 // The tally screen's audible per-lane "ka-ching" is a different mechanism
 // anyway: the hub's INTERVAL arm pre-schedules four cue ids on the staggered
 // vsync countdown ([`crate::muscle_dome::HUB_TALLY_CUE_STAGGER`]).

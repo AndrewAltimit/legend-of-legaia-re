@@ -1353,6 +1353,10 @@ window.MgMuscle = (function () {
              * as a short beat over the KO and expires into the hub screen. */
             mode = 'interval';
             intervalT = 0;
+            /* A fresh INTERVAL screen rolls its lanes again, so the engine's
+             * "already voiced up to step N" high-water mark has to drop with
+             * the tick it counts. */
+            if (window.MgSpu) MgSpu.tallyVoiceReset(api);
             banner = null;
             legCaption = sub;
             playCue('confirm', 0.5);
@@ -2107,6 +2111,12 @@ window.MgMuscle = (function () {
        * the score roll `other_game_overlay::ScoreTallyRamp` replays to that
        * tick, the same kernel the native window steps per frame. */
       const rows = hudOk() && hubQuads(4, intervalT, env.brightness);
+      /* The tally's own voice. It names no cue id - `FUN_801D1288` resolves a
+       * whole voice-attr set per drained lane - so it cannot come out of the
+       * offline per-cue PCM path above; it needs the live SPU the engine owns
+       * for this page (js/minigame-bgm.js `MgSpu`). Driven off the same screen
+       * tick the rows are, and the engine keys only the steps it has not. */
+      if (window.MgSpu) MgSpu.tallyVoice(api, intervalT);
       if (heading && rows) {
         if (legCaption) text(legCaption, 160, 200, 7, '#e8ecf2', 'center', '');
         text('SPACE: next round', 160, 214, 8, '#2dcca7', 'center');

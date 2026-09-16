@@ -608,7 +608,6 @@ about these is contested.
 | retail numeral art on web | The battle's damage numerals and `N HIT` / `TOTAL` counter draw the shared layout from the font atlas; the native window samples the retail 24x24 cells out of VRAM through a screen-space sink the page has not grown. |
 | publisher logos on web | `engine_core::publisher_logos` + its atlas builder are in the shared crate; only the native `--boot-ui` chain plays them. |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
-| one-shot SPU voices on the minigames page | The page renders BGM to PCM and hands it to an `AudioBufferSourceNode`; it holds no live `Spu`, so no cue - id-keyed or explicit - can sound there. See [below](#one-shot-voices-on-the-minigames-page). |
 | scripted mesh re-bind on **both** hosts | Motion-VM op `0x0E` swaps an actor's model mid-scene; both hosts bind an NPC's mesh once, from its spawn model. Not a drift - neither host has it. See [below](#scripted-mesh-re-bind-op-0x0e). |
 
 ### One-shot voices on the minigames page
@@ -616,22 +615,39 @@ about these is contested.
 The Muscle Dome's between-leg tally keys a voice per drained lane, and it names
 no cue id: `FUN_801D1288` resolves a whole `(voice, VAB id, program, tone, note,
 fine, vol_l, vol_r)` set, which is why the catalog path
-(`SfxBank::play_one_shot`) could never sound it. `legaia_engine_audio::VoiceAttr`
-+ `key_on_voice_attr` are that shape, and the native window drives them from the
-tally ramp through `AudioBgmDirector::key_on_voice_attr`.
+(`SfxBank::play_one_shot`) could never sound it.
+`legaia_engine_audio::VoiceAttr` + `key_on_voice_attr` are that shape.
 
-The browser minigames page cannot: it has no resident `Spu` at all. Its audio is
-a whole track rendered offline to interleaved PCM (`render_music01_bgm` /
-`render_music01_loop`) and handed to the page as a buffer, so there is no voice
-to key and no mixer running to key it into. The blocking capability is a live
-SPU on that page - a `WebAudioOut` the minigames entry point owns, the way the
-play page's `play_sfx` owns one - not a call insertion.
+The standalone minigames page used to have no `Spu` at all to key into. Its
+whole audio surface was offline: a track rendered to interleaved PCM
+(`music01_bgm_render`) and per-cue PCM decoded out of a VAB (`muscle_sfx_pcm`,
+`slot_sfx_pcm`), each handed to an `AudioBufferSourceNode`. That covers a cue
+that names itself by id and nothing else.
 
-The page's own tally screen is unaffected in every other respect: the row values
-and the four-step brightness ramp come from the same `ScoreTallyRamp` kernel on
-both hosts. The in-world dome on the **play** page sits beside a live SPU
-(`play_sfx`), so the voice is one call away there; the standalone page is
-the host this gap names.
+It owns one now - `LegaiaMinigames::minigame_audio_open` builds a `WebAudioOut`
+from a user gesture and stages SFX program banks per descriptor slot out of one
+allocator at the top of SPU RAM, the way the play page's `play_sfx` does - and
+both of the native window's firing paths reach it: `minigame_sfx_cue` for an
+id-keyed catalog cue and `muscle_tally_voice` for the explicit attr set, the
+latter driven from the INTERVAL screen's own tick because the page replays
+`ScoreTallyRamp` from that tick rather than stepping it per frame. The page
+side is `MgSpu` in `site/js/minigame-bgm.js`, gated on the same site sound
+toggle the offline path checks.
+
+Two things the port keeps deliberately unshared, and they are not drift:
+
+- **The music stays offline.** A rendered track on an `AudioBufferSourceNode`
+  mixes with the SPU at the device rather than inside it. Moving it onto the
+  mixer would be a second BGM path, not a shared one.
+- **A runtime-bank cue id still answers `false`.** The static descriptor table
+  is byte-indexed (`DAT_8006F198 + id*8`); ids at `0x200 +` come from the
+  per-battle `bse.dat` bank ([`bse-dat.md`](../formats/bse-dat.md)), which this
+  page stages nothing for. The dance's `COUNTIN_INTRO_CUE` is one of those, and
+  the export reports the miss rather than keying static row `0` by truncation -
+  the width trap the play page's `u8` scheduler was caught by once already.
+
+The in-world dome on the **play** page was never the host this gap named: it
+sits beside a live SPU (`play_sfx`) already.
 
 ### Scripted mesh re-bind (op `0x0E`)
 
