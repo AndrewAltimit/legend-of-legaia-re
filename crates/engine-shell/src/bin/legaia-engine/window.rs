@@ -1327,13 +1327,6 @@ impl PlayWindowApp {
 /// PSX Y-down local vertices ride the same world negation). Battle and
 /// world-map keep the older pairing (per-model `scale(1,-1,1)` + a camera
 /// with no world negation), so this must not leak into those arms.
-/// The follow camera's fixed base yaw (PSX 12-bit units, savestate-pinned
-/// `_DAT_8007B792 = -160` on the town01 anchor). Shared between the render
-/// camera (`field_follow_camera_mvp`) and the movement-compass bias pushed
-/// into the engine-core camera at startup (`render_yaw_bias` - the compass
-/// sense is the negation: `alpha = -psi` for the PSX GTE camera).
-const FIELD_FOLLOW_YAW_UNITS: f32 = -160.0;
-
 const FIELD_WORLD_FLIP: Mat4 = Mat4::from_cols_array(&[
     1.0, 0.0, 0.0, 0.0, //
     0.0, -1.0, 0.0, 0.0, //
@@ -1346,11 +1339,6 @@ const FIELD_WORLD_FLIP: Mat4 = Mat4::from_cols_array(&[
 /// **4.0x uniform scale** composed under the camera rotation. See
 /// [`PlayWindowApp::battle_dome_camera_mvp`].
 const BATTLE_WORLD_SCALE: f32 = 4.0;
-
-/// The retail overworld (walk-view) world scale: the same base matrix holds
-/// `24576 * I` = **6.0x** in the world-map resident savestates
-/// (`sebucus_overworld_resident` / `karisto_overworld_resident`).
-const WORLD_MAP_WORLD_SCALE: f32 = 6.0;
 
 /// World-map ocean CLUT animation state. Holds the 13 BGR555 frames (32 bytes
 /// each) decoded from the kingdom bundle and the current frame cursor + tick

@@ -1228,7 +1228,8 @@ pub(super) fn cmd_play_window_with_record(
     // render yaw), so `BootSession::tick`'s d-pad remap feed tracks the
     // on-screen view exactly - including after a left-mouse drag-orbit.
     app.session.camera.distance = app.options_state.camera_distance;
-    app.session.camera.render_yaw_bias = -FIELD_FOLLOW_YAW_UNITS / 4096.0 * std::f32::consts::TAU;
+    app.session.camera.render_yaw_bias =
+        legaia_engine_core::camera_view::retail_field_render_yaw_bias();
     app.session.host.world.locomotion.precise_movement = app.options_state.precise_movement;
     // Field Move (pause menu Walk / Run, retail config word 0x800846CC). The
     // run BUTTON inverts this per frame - see `World::field_run_active` - and
