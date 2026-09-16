@@ -1873,6 +1873,35 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::MenuRefresh);
     }
 
+    // The five camera-zone arms of op `0x4C` outer-nibble 3 / C. They queue
+    // on the world because the camera globals live on the host-owned
+    // `Camera`; `Camera::tick` drains the queue for both hosts. See
+    // `crate::world::camera_hooks`.
+    fn camera_zone_query_at_player(&mut self) {
+        self.world
+            .push_camera_zone_request(CameraZoneRequest::QueryAtPlayer);
+    }
+
+    fn camera_zone_query_at_tile(&mut self, x: u8, z: u8) {
+        self.world
+            .push_camera_zone_request(CameraZoneRequest::QueryAtTile { x, z });
+    }
+
+    fn camera_zone_query_conform_and_snap(&mut self, _ctx: &mut FieldCtx) {
+        self.world
+            .push_camera_zone_request(CameraZoneRequest::QueryConformAndSnap);
+    }
+
+    fn camera_snap_and_clamp(&mut self) {
+        self.world
+            .push_camera_zone_request(CameraZoneRequest::SnapAndClamp);
+    }
+
+    fn region_attributes_refresh_at_player(&mut self) {
+        self.world
+            .push_camera_zone_request(CameraZoneRequest::RefreshAttributes);
+    }
+
     // Op `0x4C` outer-nibble-3 sub-0 / sub-1: the ambient-particle master
     // gate `_DAT_8007B854`. Retail keeps it in one word that the emitter
     // re-reads every frame; the port keeps a copy on each live emitter
