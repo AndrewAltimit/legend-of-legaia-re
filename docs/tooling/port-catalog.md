@@ -891,6 +891,7 @@ attributable references, through the same `item_reference_patterns` /
 | **disclosed-entered** | an anchor carrying a `NOT WIRED:` disclosure that a **passing** oracle executed. Highest priority: an oracle traversing stub code can certify behaviour nothing implements. |
 | **live-unentered** | statically reachable, never reached. Not a defect - the wiring worklist ordered by what a playthrough actually needs. |
 | **not observable (const)** | item anchors with no executed attributable reference. Deliberately neither entered nor never-entered: no line of coverage can convert the row, only executing a function that references the item. |
+| **not observable in any of these binaries** | no binary in the union carries the anchor's file, so there is no record to read. Also neither entered nor never-entered - and the one bucket a reader can mistake for progress, because an address joined against the never-entered set alone is *absent* from it. Named per address rather than counted, for that reason. |
 
 ### The denominator is a union of ladders, not one binary
 

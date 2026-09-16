@@ -1363,6 +1363,19 @@ def main() -> int:
         "no lines to enter, so its rows live in the bucket below instead.",
     )
     table(
+        "Not observable in any of these binaries",
+        unobservable,
+        "No coverage binary in the union carries the anchor's file at all, so "
+        "the join has nothing to read for these and they are outside both the "
+        "entered and the never-entered counts above. **They are not "
+        "never-entered rows**, and the distinction is the whole reason this "
+        "table exists: a reader joining a page's address list against the "
+        "never-entered set alone reads an absent address as converted, which "
+        "is the one direction that turns a missing measurement into a claim of "
+        "progress. Converting a row here means running a ladder that links the "
+        "crate, not wiring anything.",
+    )
+    table(
         "Not observable (const anchors)",
         not_observable_const,
         "Item anchors whose executed verdict is reference-based (see the "

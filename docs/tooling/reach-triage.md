@@ -155,6 +155,30 @@ the routine should carry the marker because part of it is unfinished, makes the
 report's highest-priority category fire on exactly the routines a ladder
 proves are live.
 
+### A row can also be neither entered nor never-entered
+
+The report has a third answer, and reading a page row against the
+never-entered set **alone** turns it into the wrong one. An anchor whose file
+no binary in the union carries has no coverage record at all: it is outside
+both counts, and an address list joined against "never" finds it absent and
+reads that as converted. A missing measurement becomes a claim of progress,
+which is the one direction an instrument must never fail in.
+
+Measured over this page's own citations: of the addresses it names, a set the
+size of a small table is in that bucket, and **every one of them is in
+`engine-vm`** - module anchors on `scus_core_helpers.rs`, `overlay_rng.rs`,
+`world_map_clut_fade.rs`, and function anchors in `battle_stream_slot.rs`,
+`battle_helpers.rs`, `code_lock_actor.rs`. The shape is consistent with
+link-time dead-code removal: a function nothing in the linked binary
+references is not emitted, so no counter for it exists to be zero.
+
+`replay-port-coverage.py` names that set in the report (*Not observable in any
+of these binaries*) rather than only counting it, for the same reason the
+host-drift gate names its orphans: a count cannot tell "the ladders reached
+it" from "nothing looked". Converting such a row means linking the crate from
+a ladder, not wiring anything - and until one does, the row's reach verdict is
+**unmeasured**, which is a third word this page needs and did not have.
+
 ## What a pad-only ladder structurally cannot execute
 
 The *headless* ladders drive `BootSession`, which constructs no renderer, no
@@ -618,7 +642,7 @@ listed so the bucket count is the whole of what no host reaches.
 
 | group | n | addresses | why |
 |---|---|---|---|
-| `save_subscreen.rs` | 8 | `801e4f40` `801dd12c` `801dd26c` `801d98f0` `801dae24` `801daef4` `801dafd4` `801dbc5c` | Closed: `save_screen::SaveScreenFlow` constructs a `SaveScreenMachine` on its first card-rack frame and ticks it around the session, so both hosts run the graph - the flow is the kernel they share. |
+| `save_subscreen.rs` | 8 | `801e4f40` `801dd12c` `801dd26c` `801d98f0` `801dae24` `801daef4` `801dafd4` `801dbc5c` | Wired, and entered in part: `save_screen::SaveScreenFlow` constructs a `SaveScreenMachine` on its first card-rack frame and ticks it around the session, so both hosts run the graph and the union enters three of the eight. The other five are sub-screen bodies (`tick_final_exit`, `tick_pad_release_wait`, `tick_party_picker`, `tick_shop_mode_select`, `tick_quantity_spinner`) that no ladder opens - a wiring closure is not a reach closure. |
 | `card_bu_io.rs` | 4 | `801e0598` `801e3d68` `801e380c` `801e435c` | **`REPLACED-BY`** `legaia_save::emu::CardView` + `legaia_save::card` - out of the wiring denominator, not owed a host. |
 | `cutscene_script_elements.rs` | 3 | `801d5d60` `801d6058` `801d27e0` | The seat exists now - `World::tick_cutscene_elements` runs the channel from the frame tick on both hosts - but nothing in production **spawns** an element into the pool, so a replay still enters none of the three `step` bodies. |
 | `shop.rs` | 2 | `801db7f4` `801dbd94` | The retail menu-overlay quantity sub-screens, distinct from the engine's own shop session. |
@@ -741,8 +765,8 @@ about the cells that outlived their own fixtures.
 | group | n | addresses | what reaches it |
 |---|---|---|---|
 | `screen_fx.rs` | 10 | `801de4c8` `801f8d4c` `801f811c` `801f8004` `801f7a9c` `801f88fc` `801f8e6c` `801f849c` `801f8f28` `801f8a34` | Closed: `chapter1_frontier_ladder` enters all ten - a scene whose script spawns an iris mask, letterbox or image panel is exactly what its scene walk drives. |
-| `fishing.rs` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | Closed: `w1f1_fishing_pond_ladder` seats the venue-0 band-4 preconditions (Normal lure, third rod), casts, matches the reel cadence and lands a catch, so the point credit, the band roll, the species spawn and the cadence all run |
-| `muscle_dome.rs` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | `w1b_dome_leg_ladder` - built; `801d9bbc` has no producer and stays |
+| `fishing.rs` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | Four of six: `w1f1_fishing_pond_ladder` seats the venue-0 band-4 preconditions (Normal lure, third rod), casts, matches the reel cadence and lands a catch, so the point credit, the band roll, the species spawn and the cadence run. `801d0474` / `801d0f5c` (`FishingMenu`, `RodLureSelect`) do not - the ladder **sets** the rod and lure rather than picking them through the menu, which is the difference between a precondition and a screen |
+| `muscle_dome.rs` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | Closed, and `801d9bbc` closed **elsewhere**: the export enters it through its second anchor, `engine-vm::battle_value_readout`'s per-handle step, which the battle numerals now run on both hosts. Its `muscle_dome.rs` anchor still has no producer, and an address-level verdict cannot say so - see the anchor note above |
 | `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | Closed: `w1b_baka_duel_ladder` plays the duel from its intro card to a player **win** and drains the tally. The door entry is a separate rung and still arms neither |
 | `pause_screens.rs` (special Use) | 4 | `801d7e50` `801d8a58` `801d8b90` `801d8d94` | Closed: `w1f1_pause_special_use_ladder` seeds the bag (no `debug_` helper grants `0x88` / `0x89` / `0x8A`) and drives Door of Light's confirm and Door of Wind's destination pick to their commits |
 | `other_game_overlay.rs` | 1 | `801d14b0` | Closed by delegation: `baka_fighter::tally_drain_step` (`801d6710`) **is** `other_game_overlay::step_scale`, one routine linked twice, so the duel ladder's tally drain enters the anchor. The arena's own driver is still one call away |
@@ -755,7 +779,10 @@ about the cells that outlived their own fixtures.
 
 Nine of those eleven rows were converted by ladders that already existed and
 were already canonical, and the table went on naming the fixture each one
-needed. That is worth more than the row count, because it is the failure mode
+needed. A coverage export over the full canonical union confirms it at the
+level the rows are written at - **35 of the table's 37 addresses are entered** -
+and the two it does not confirm are the fishing menu pair above, where the cell
+claimed a screen the ladder never opens. That is worth more than the row count, because it is the failure mode
 this page is most exposed to: **a row's `reach` cell is a claim with no
 instrument behind it.** `--page-audit` checks the address column against the
 catalog and says nothing about the prose; nothing checks that a cell still
