@@ -1003,6 +1003,16 @@ struct PlayWindowApp {
     /// Save directory the save-select session reads / writes against - the
     /// card mounted in port 1 of the shell's rack (`disk_save_rack`).
     save_dir: std::path::PathBuf,
+    /// A real PSX memory-card image mounted in **port 2** (`--card`), or
+    /// `None` for the empty port.
+    ///
+    /// Owned here because the rack and the block grid are rebuilt from it
+    /// every time the save screen asks, and because a Load off that port
+    /// reads the block out of these bytes. The browser play page's rack is
+    /// the same model with two mountable ports (`web-viewer`'s `cards.rs`);
+    /// this host mounts the engine's own save directory in port 1 and an
+    /// image in port 2.
+    card: Option<MountedCard>,
     /// The save screen's shared driver: block-grid cursor + the card read
     /// behind it. Lives in `engine-core` so this window and the browser play
     /// page step the same cursor and gate the same confirms.
@@ -1233,9 +1243,10 @@ pub(crate) use run::cmd_play_window;
 // that `use super::*` still resolve them unqualified.
 pub(in crate::window) use run::{build_window_scene_resources, cmd_play_window_with_record};
 pub(crate) use save_select_helpers::{
-    build_slot_info_view, confirm_dialog_slide_y, disk_port_blocks, disk_save_rack,
-    info_panel_slide_offset, read_slot_save, save_select_phase_text_draws, save_select_title_word,
-    scan_save_dir, slot_leader_char_id, write_slot_save,
+    MountedCard, build_slot_info_view, confirm_dialog_slide_y, disk_port_blocks_with_card,
+    disk_save_rack_with_card, info_panel_slide_offset, read_slot_save,
+    save_select_phase_text_draws, save_select_title_word, scan_save_dir, slot_leader_char_id,
+    write_slot_save,
 };
 pub(crate) use str_player::{cmd_play_str, resolve_iso_file};
 
@@ -1388,6 +1399,14 @@ struct FieldNpcDraw {
     color_idx: Option<usize>,
     /// Spawn world position (fallback when the world has no live position).
     spawn: (i16, i16),
+    /// The **raw model id** this draw's mesh was built from, in the operand
+    /// space the model pool indexes (`< 0xF0` scene bank, `>= 0xF0` player
+    /// bank). Normally the placement's own `model_index`; a scripted mesh
+    /// re-bind (motion-VM op `0x0E`) makes it the id
+    /// `World::field_npc_live_model` reports, and comparing the two is how
+    /// `rebind_live_npc_models` notices a swap the world made after the
+    /// upload ran.
+    bound_model: i16,
 }
 
 /// World-map water/CLUT-cell animation state: the disc-derived kingdom

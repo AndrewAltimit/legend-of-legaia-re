@@ -632,7 +632,6 @@ about these is contested.
 |---|---|
 | the cast-voice leg on **both** hosts | Every host classifies the Seru-cast dispatch cue and declines it, because no host stages the clip files it names. Not a drift - the two hosts decline symmetrically. See [below](#the-cast-voice-leg). |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
-| scripted mesh re-bind on **both** hosts | Motion-VM op `0x0E` swaps an actor's model mid-scene; both hosts bind an NPC's mesh once, from its spawn model. Not a drift - neither host has it. See [below](#scripted-mesh-re-bind-op-0x0e). |
 
 ### One-shot voices on the minigames page
 
@@ -673,27 +672,31 @@ Two things the port keeps deliberately unshared, and they are not drift:
 The in-world dome on the **play** page was never the host this gap named: it
 sits beside a live SPU (`play_sfx`) already.
 
-### Scripted mesh re-bind (op `0x0E`)
+### Scripted mesh re-bind (op `0x0E`), and what it took
 
 The scripted-motion VM's op `0x0E` re-binds the actor's mesh: the operand is
 compared **unsigned** against `0xF0`, below which it resolves against the
 scene's model-bank base `*(u16*)0x8007B6F8` and at or above which it resolves
 `operand - 0xF0` against `*(u16*)0x8007B824` and raises the translucent draw
 bit; either way `FUN_80024E08` zeroes the anim cursor `+0x5C`, stores the id at
-`+0x64` and reloads the mesh. The port decodes it
+`+0x64` and reloads the mesh.
+
+**It is wired on both hosts.** The port decodes the op
 (`ambient_motion_ops::step_op_model_swap` -> `AmbientEffect::ModelSwap`) and
-`World::apply_ambient_motion_effects` drops it, which is the only one of that
-enum's six variants with no engine mechanism behind it.
+`World::apply_ambient_motion_effects` records the id on
+`FieldNpcState::models`, keyed by placement slot - the port's stand-in for
+retail's `actor[+0x64]` store, because the port's hosts hold the uploaded mesh
+rather than the actor. Each host reads it back through
+`World::field_npc_live_model` and resolves the bytes through the loaded
+scene's own model bank (`SceneHost::model_bank`,
+[`model_bank::SceneModelBank::tmd_bytes`]): the native window in
+`upload_assets`, with a per-frame `rebind_live_npc_models` for a swap the
+script makes after the upload ran, and the browser through the
+`play_npc_live_model` export its NPC draw consults each frame. One world
+field, one resolver, two upload paths.
 
-Both hosts bind an NPC's mesh **once, from `placement.model_index`**: the
-native window uploads one GPU mesh per placement in `upload_assets` and holds
-the index on `FieldNpcDraw`, and the play page builds catalog entry `i`'s mesh
-in `play_npc_mesh` from the same field. Nothing on `World` carries a live
-per-slot model - `FieldNpcState` has `positions`, `headings`, `motions` and
-`glide_speeds`, and no `models`.
-
-What makes this a project rather than a wiring job is the measurement, which
-is why it is here and not in a waiver
+This was a project rather than a wiring job because of the measurement, which
+is what the resolver had to satisfy
 (`crates/engine-core/tests/ambient_motion_op_census_disc.rs`, disc-gated):
 
 | scene | sites | distinct targets | targets that are some placement's spawn model | scene model bank | targets that resolve in it |
@@ -704,11 +707,12 @@ is why it is here and not in a waiver
 | `other7` | 100 | 10 | 0 | 65 | 10 |
 
 **Zero of 215 sites** names a model that some placement in the same scene
-already binds, so the obvious cheap implementation - keep a
+already binds, so the obvious cheap implementation - a
 `(bank, model id) -> uploaded mesh` map built from the placements a host
-already uploads - covers nothing at all.
+already uploads - covers nothing at all, and that is why the bytes come out of
+the bank instead.
 
-**All 215 resolve**, though, which is the half that was measured wrongly. The
+**All 215 resolve**, which is the half that was measured wrongly first. The
 earlier version of this table compared the operand against
 `SceneResources::tmds.len()` and reported banks of `1` and `0` for `koin3` and
 `other7`, from which "op `0x0E`'s bank is a different pool" read as the likely
@@ -717,19 +721,15 @@ raw entries**, blind to a TMD inside an LZS-compressed bundle descriptor, and
 both scenes carry their models in exactly that - a type-`0x02` descriptor of 77
 and 65 members. The bank op `0x0E` indexes is `DAT_8007C018`, the global
 registered-TMD array, whose per-scene window is the loader's own registration
-order; `legaia_engine_core::model_bank::SceneModelBank` reconstructs it from
-the disc and `crates/engine-core/tests/model_bank_disc.rs` pins it against the
-`DAT_8007B774` counter three field save states measured. See
-[`motion-vm.md`](../subsystems/motion-vm.md#the-model-pool-both-bases-index).
+order. `crates/engine-core/tests/model_rebind_live_disc.rs` is the wiring's
+own oracle: over `koin3` it decodes every authored operand and asserts each
+one resolves to bytes that parse as a TMD with objects.
 
-The blocking capability is therefore one thing, not two: a live per-slot model
-override on `World` plus, on each host, a mesh upload keyed by the resolved
-source - an upload path on native, a `play_npc_live_model` export the page
-consults before `play_npc_mesh` on web. The bytes to upload are now
-addressable: `SceneModelBank::tmd_bytes` for the scene half, and for the
-`0xF0` half `legaia_asset::character_pack` over PROT 0874, which is not one of
-the scene's entries - `source_for_model_id` returns `None` there rather than
-pretending otherwise.
+The `>= 0xF0` half stays unresolved on purpose. Those five meshes live in
+PROT 0874, which is not one of the scene's entries, so `tmd_bytes` returns
+`None` there and each host keeps the placement's spawn mesh rather than
+drawing nothing; `legaia_asset::character_pack` is that half's reader when a
+host wants it. No authored site on the disc takes that arm.
 
 ### The cast-voice leg
 

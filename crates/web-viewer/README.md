@@ -40,13 +40,25 @@ The split is deliberate:
   `set_camera_azimuth(units)` (so the d-pad remaps camera-relative),
   `tick_frame()` (returns the label of the scene a door just walked into, so the
   page rebuilds around a transition), and `state_json()` (frame / mode / player
-  transform / live dialogue box).
+  transform / live dialogue box). It also holds the port's seat at retail's
+  **mode table** (`engine-core::mode::ModeSeat`) and drives it through the same
+  entry points `BootSession` uses - reconciled once per frame, plus the two
+  INIT modes a host enters by hand (`MAIN INIT` at field entry, `CARD INIT` on
+  the pause-menu open). `mode_state_json()` reports the word, its table name,
+  the front-end entry word and the seat's edge count; the cross-host oracle is
+  `engine-shell/tests/mode_seat_host_parity.rs`, which drives **both** hosts
+  over one ladder and compares the chains and the edge counts.
 - **`play`** - what the page draws, resolved against the **same**
   `SceneResources` the host already built at scene entry (nothing is decoded
   twice): the assembled map (`field_*` accessors), the lead's field mesh posed
   each frame from the world's live `pose_frame` (`player_mesh_*`,
   `player_transform`), and the scene's MAN-placed NPCs at their live world
-  positions (`play_npc_*`).
+  positions (`play_npc_*`). `play_npc_live_model(i)` is the scripted mesh
+  re-bind (motion-VM op `0x0E`): it reports the model id the world recorded
+  for that NPC, or `-1` while it still draws its spawn mesh, and the page
+  re-uploads the mesh when the answer moves. The native window's twin reads
+  the same world field and resolves through the same
+  `SceneModelBank::tmd_bytes`.
 
 The map + NPC layers make the **native play-window's exact resolver calls**,
 pinned by the disc-gated parity test `tests/play_parity.rs`:

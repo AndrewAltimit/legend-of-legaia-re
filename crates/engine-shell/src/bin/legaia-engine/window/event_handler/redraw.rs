@@ -293,6 +293,10 @@ impl PlayWindowApp {
                 Ok(_) => {}
                 Err(e) => log::error!("session tick: {e:#}"),
             }
+            // A scripted mesh re-bind this tick (motion-VM op `0x0E`) needs
+            // the swapped mesh uploaded; the world holds the new id and the
+            // draw holds the old one.
+            self.rebind_live_npc_models();
             // Placed-prop animation: advance every posed prop's clip and post
             // the player's contact edges, so walking into a Rim Elm house door
             // resumes its bind script and swings it open (retail's per-actor

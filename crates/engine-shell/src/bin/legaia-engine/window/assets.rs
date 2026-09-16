@@ -27,6 +27,42 @@ impl PlayWindowApp {
         })
     }
 
+    /// Materialise one **scene-bank** model's mesh out of the loaded scene,
+    /// for a scripted mesh re-bind (motion-VM op `0x0E`).
+    ///
+    /// `None` for an id the scene's bank does not carry and for the
+    /// `>= 0xF0` player-bank arm, whose five meshes live in PROT 0874 rather
+    /// than in any scene entry - the caller then keeps the placement's spawn
+    /// mesh instead of drawing nothing.
+    fn live_npc_mesh(&self, id: i16) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
+        let scene = self.session.host.scene.as_ref()?;
+        let raw = self.session.host.model_bank.tmd_bytes(scene, id)?;
+        let tmd = legaia_tmd::parse(&raw).ok()?;
+        Some((tmd, raw))
+    }
+
+    /// Re-upload the scene's NPC meshes when a script re-bound one since the
+    /// last upload (motion-VM op `0x0E`, recorded on
+    /// `World::npcs.models`).
+    ///
+    /// `upload_assets` runs once per scene, so an id the world installs
+    /// mid-scene would otherwise never reach the GPU. The comparison is
+    /// against the id each draw was built from, so a stream that re-issues
+    /// the same swap every frame uploads once.
+    pub(super) fn rebind_live_npc_models(&mut self) {
+        let changed = {
+            let world = &self.session.host.world;
+            self.field_npc_draws.iter().any(|d| {
+                world
+                    .field_npc_live_model(d.slot)
+                    .is_some_and(|id| id != d.bound_model)
+            })
+        };
+        if changed {
+            self.upload_assets();
+        }
+    }
+
     pub(super) fn upload_assets(&mut self) {
         let Some(res) = self.scene_res.take() else {
             return;
@@ -795,6 +831,19 @@ impl PlayWindowApp {
         // idle animation (record 0) when the scene carries an ANM pack for
         // that actor. Registration order: actor K → TMD slot K, mirroring
         // the retail `0x8007C018` table written by `FUN_8001E890`.
+        // Scripted mesh re-binds (motion-VM op `0x0E`): resolve each live
+        // override's bytes here, ahead of the mutable world borrow the rest
+        // of this function holds. Empty until a script swaps a model, which
+        // is every scene until one does.
+        let live_npc_meshes: std::collections::BTreeMap<u8, (legaia_tmd::Tmd, Vec<u8>)> = self
+            .session
+            .host
+            .world
+            .npcs
+            .models
+            .iter()
+            .filter_map(|(&slot, &id)| self.live_npc_mesh(id).map(|m| (slot, m)))
+            .collect();
         let world = &mut self.session.host.world;
         for i in 0..self.scene_tmd_data.len() {
             world.set_actor_tmd_binding(i, i);
@@ -1047,7 +1096,18 @@ impl PlayWindowApp {
                 // filtering them out HERE instead left a timeline-seated NPC
                 // permanently meshless (invisible while the world said it
                 // stood on stage).
-                let src = if p.special_model {
+                // A scripted mesh re-bind (motion-VM op `0x0E`) wins over the
+                // placement's spawn model. The bytes come from the scene's
+                // model bank rather than `res.tmds`: that list is a magic
+                // scan over the raw entries and cannot see a TMD inside an
+                // LZS bundle descriptor, which is where the scenes that
+                // script a re-bind keep their models.
+                let live_model = world.field_npc_live_model(p.index as u8);
+                let live_src = live_npc_meshes.get(&(p.index as u8)).cloned();
+                let bound_model = live_model.unwrap_or(i16::from(p.model_index));
+                let src = if live_src.is_some() {
+                    live_src
+                } else if p.special_model {
                     world
                         .global_tmd_pool
                         .get((p.model_index - 0xF0) as usize)
@@ -1210,6 +1270,7 @@ impl PlayWindowApp {
                     mesh_idx,
                     color_idx,
                     spawn: (p.world_x, p.world_z),
+                    bound_model,
                 });
             }
             // Retain the bundles for runtime clip re-targeting (op-0x4B

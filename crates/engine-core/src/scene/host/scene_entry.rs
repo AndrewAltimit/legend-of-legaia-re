@@ -1111,6 +1111,13 @@ impl SceneHost {
                 self.resources = Some(res);
             }
         }
+        // The scene's window of the global model pool, rebuilt with the
+        // resources: it is what resolves a scripted mesh re-bind's operand
+        // (motion-VM op `0x0E`) to bytes on either host.
+        self.model_bank = match self.scene.as_ref() {
+            Some(sc) => crate::model_bank::SceneModelBank::build(sc),
+            None => crate::model_bank::SceneModelBank::default(),
+        };
         // Opening-prologue hand-off arm. When entering the cutscene scene
         // `opdeene`, derive the `town01` hand-off arm from the scene's own MAN
         // bytecode instead of a blind constant: walk the cutscene-timeline

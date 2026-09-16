@@ -139,6 +139,12 @@ pub struct LegaiaRuntime {
     /// same two seat entry points the native session calls, so neither host
     /// owns a copy of the rule.
     pub(crate) mode_seat: legaia_engine_core::mode::ModeSeat,
+    /// The model id [`crate::play`]'s cached NPC mesh was built from, as
+    /// `play_npc_live_model` reports it (`-1` = the placement's spawn model).
+    /// Half of that cache's key: a scripted mesh re-bind leaves the catalog
+    /// entry index where it was, so the entry alone cannot tell a swapped
+    /// actor from an unswapped one.
+    pub(crate) npc_bound_model: Option<i32>,
     /// Field party-status HUD driver (`FUN_801D0D38`): the idle countdown and
     /// the cached player position its decision kernel reads. The same state
     /// the native window holds - retail keeps it in overlay globals, so every
@@ -395,6 +401,7 @@ impl LegaiaRuntime {
             battle_vram: Default::default(),
             disc_files: Vec::new(),
             mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
+            npc_bound_model: None,
             battle_intro_geom: None,
             field_party_hud: Default::default(),
             field_party_hud_scene: None,

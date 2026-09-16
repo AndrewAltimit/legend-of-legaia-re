@@ -146,6 +146,19 @@ pub struct FieldNpcState {
     /// position. Script-started legs (interaction-prologue `0x4C 0x51`, actor
     /// VM `start_motion`) run regardless of [`crate::world::FieldNpcState::animate`].
     pub motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
+    /// **Live per-slot model id**, keyed by placement `slot`: what the
+    /// scripted-motion VM's op `0x0E` re-bound this actor's mesh to, in the
+    /// raw operand space both model-pool consumers share (`< 0xF0` = the
+    /// scene bank, `>= 0xF0` = the player bank at `operand - 0xF0`; see
+    /// [`crate::model_bank::resolve_model_id`]).
+    ///
+    /// Absent = the actor still draws the mesh its placement's
+    /// `model_index` named, which is every actor until a script swaps one.
+    /// Retail has no such map: `FUN_80024E08` writes the new id straight into
+    /// `actor[+0x64]` and reloads the mesh, and the port's hosts hold the
+    /// uploaded mesh instead of the actor, so the id has to live where both
+    /// of them can see it.
+    pub models: std::collections::BTreeMap<u8, i16>,
     /// Per-NPC **ambient facing** channels, keyed by placement `slot`: the
     /// second motion VM's idle turn-in-place behaviour (`FUN_80038158` ops
     /// `0x04` / `0x0D`, ported at
@@ -182,6 +195,7 @@ impl FieldNpcState {
             glide_speeds: std::collections::BTreeMap::new(),
             default_moves: std::collections::BTreeMap::new(),
             motions: std::collections::BTreeMap::new(),
+            models: std::collections::BTreeMap::new(),
             ambient: std::collections::BTreeMap::new(),
             animate: false,
             anim_cues: std::collections::HashMap::new(),

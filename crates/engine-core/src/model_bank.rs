@@ -193,10 +193,15 @@ impl SceneModelBank {
     /// the bundle's descriptors in table order, then every streaming entry's
     /// DATA_FIELD chunks in entry order.
     ///
-    /// PORT: FUN_80026B4C NOT WIRED: the hosts still bind an NPC's mesh once
-    /// from `placement.model_index`; wiring this needs a live per-slot model
-    /// override on `World` plus an upload path on each host, which is the
-    /// gap `docs/tooling/host-drift.md` tracks.
+    /// PORT: FUN_80026B4C
+    ///
+    /// `SceneHost::model_bank` holds one per loaded scene, rebuilt on every
+    /// field entry; both hosts resolve a scripted mesh re-bind's operand
+    /// through it ([`World::field_npc_live_model`] then [`Self::tmd_bytes`]) -
+    /// the native window in `upload_assets`, the browser through the
+    /// `play_npc_live_model` export its NPC draw consults.
+    ///
+    /// [`World::field_npc_live_model`]: crate::world::World::field_npc_live_model
     pub fn build(scene: &Scene) -> Self {
         let mut sources = Vec::new();
         let bundle_entry = if let Some(bundle) = find_bundle(scene) {

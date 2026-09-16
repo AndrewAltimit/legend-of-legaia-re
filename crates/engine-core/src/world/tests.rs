@@ -282,6 +282,7 @@ mod item_bag_steal;
 mod live_battle;
 mod locomotion;
 mod minigames;
+mod model_rebind;
 mod move_vm_ext;
 mod move_vm_flags;
 mod party_composition;

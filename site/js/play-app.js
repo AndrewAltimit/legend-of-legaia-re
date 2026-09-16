@@ -1855,6 +1855,39 @@ void main() {
       this._floorWaveLive = true;
     }
 
+    /* Scripted mesh re-bind (the scripted-motion VM's op `0x0E`): the engine
+     * records the actor's new model id per placement slot, and
+     * `play_npc_live_model` reports it per catalog entry (`-1` = still the
+     * spawn model). An NPC's mesh is uploaded once at scene build, so a swap
+     * the script makes later needs this re-upload; the engine's own cache key
+     * carries the bound id, so asking for an unswapped NPC costs one call and
+     * hands back the same mesh. The native window's twin is
+     * `rebind_live_npc_models` in its asset uploader - same world field, same
+     * `SceneModelBank` resolve. */
+    _rebindLiveNpcModels(rt) {
+      if (!rt.play_npc_live_model || !this.npcs) return;
+      for (const rec of this.npcs) {
+        const id = rt.play_npc_live_model(rec.i);
+        if (id < 0 || id === rec.liveModel) continue;
+        rec.liveModel = id;
+        let ok = true;
+        try { rt.play_npc_mesh(rec.i); } catch (e) { ok = false; }
+        if (!ok) continue;
+        const base = rt.play_npc_mesh_positions();
+        const idx = rt.play_npc_mesh_indices();
+        if (!base.length || !idx.length) continue;
+        const flat = rt.play_npc_mesh_flat_rgba();
+        this.renderer.uploadSceneMesh(rec.meshId, base, rt.play_npc_mesh_uvs(),
+          rt.play_npc_mesh_cba_tsb(), idx, flat.length ? flat : null);
+        /* The pose buffers are sized by the mesh, so they go with it. */
+        rec.base = base;
+        rec.objectIds = rt.play_npc_mesh_object_ids();
+        rec.out = new Float32Array(base.length);
+        rec.lastFrame = -1;
+        rec.lastGen = -1;
+      }
+    }
+
     _frame(skipDraw) {
       const rt = this.rt;
       const stepping = this.stepOnce;
@@ -2037,6 +2070,9 @@ void main() {
        * ground undulates with the walk heightfield. Costs one WASM call per
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
+
+      /* A script may have re-bound an NPC's mesh this frame. */
+      this._rebindLiveNpcModels(rt);
 
       /* The per-frame READ of the engine's live pose + NPC transforms runs the
        * WASM engine too, so a trap here poisons the instance exactly like the

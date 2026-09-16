@@ -260,6 +260,21 @@ pub fn build_field_render(
 }
 
 impl LegaiaRuntime {
+    /// Materialise one **scene-bank** model's mesh for a scripted mesh
+    /// re-bind (motion-VM op `0x0E`), through the loaded scene's model bank.
+    ///
+    /// `None` for an id the bank does not carry and for the `>= 0xF0`
+    /// player-bank arm, whose meshes live in PROT 0874 rather than in a scene
+    /// entry; the caller then keeps the placement's spawn mesh. Twin of the
+    /// native window's `live_npc_mesh`.
+    fn live_npc_mesh_bytes(&self, id: i16) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
+        let host = self.scene_host.as_ref()?;
+        let scene = host.scene.as_ref()?;
+        let raw = host.model_bank.tmd_bytes(scene, id)?;
+        let tmd = legaia_tmd::parse(&raw).ok()?;
+        Some((tmd, raw))
+    }
+
     /// The host's scene resources (built by `enter_field_scene`).
     pub(crate) fn res(&self) -> Option<&SceneResources> {
         self.scene_host.as_ref()?.resources.as_ref()
@@ -912,12 +927,23 @@ impl LegaiaRuntime {
     /// litter the actor's feet with raw parts).
     pub fn play_npc_mesh(&mut self, i: u32) -> Result<u32, JsValue> {
         let idx = i as usize;
+        // A scripted mesh re-bind (motion-VM op `0x0E`) replaces the source
+        // for this catalog entry. Resolved before the catalog borrow because
+        // it reads the scene host; `None` = the placement's own model, which
+        // is every entry until a script swaps one.
+        let live = self.play_npc_live_model(i);
+        let live_src = (live >= 0)
+            .then(|| self.live_npc_mesh_bytes(live as i16))
+            .flatten();
         let (mut tmd, raw, anim_id, special) = {
             let n = self
                 .npcs
                 .as_ref()
                 .ok_or_else(|| JsValue::from_str("play_npc_mesh: no catalog"))?;
-            if n.pack.cur.as_ref().map(|c| c.0) == Some(idx) {
+            // The cache key is `(entry, bound model)`, not the entry alone:
+            // a re-bind leaves the entry index where it was, so keying on it
+            // would hand back the spawn mesh forever.
+            if n.pack.cur.as_ref().map(|c| c.0) == Some(idx) && self.npc_bound_model == Some(live) {
                 return Ok(i);
             }
             let e = n
@@ -925,7 +951,9 @@ impl LegaiaRuntime {
                 .entries
                 .get(idx)
                 .ok_or_else(|| JsValue::from_str(&format!("play_npc_mesh: no entry {idx}")))?;
-            let (tmd, raw) = if e.special {
+            let (tmd, raw) = if let Some(m) = live_src {
+                m
+            } else if e.special {
                 let slot = (e.placement.model_index - 0xF0) as usize;
                 let g = self
                     .scene_host
@@ -956,7 +984,34 @@ impl LegaiaRuntime {
         if let Some(n) = self.npcs.as_mut() {
             n.pack.cur = Some((idx, mesh, object_ids, flat));
         }
+        self.npc_bound_model = Some(live);
         Ok(i)
+    }
+
+    /// The live model id the scripted-motion VM's op `0x0E` re-bound catalog
+    /// entry `i`'s actor to, or `-1` while it still draws its spawn mesh.
+    ///
+    /// The browser twin of the native window's `upload_assets` consulting
+    /// `World::field_npc_live_model`: the page asks this once per NPC per
+    /// frame and re-uploads the mesh when the answer moves. Both hosts read
+    /// the same world field and resolve through the same
+    /// `SceneModelBank::tmd_bytes`.
+    pub fn play_npc_live_model(&self, i: u32) -> i32 {
+        let Some(n) = self.npcs.as_ref() else {
+            return -1;
+        };
+        let Some(e) = n.pack.entries.get(i as usize) else {
+            return -1;
+        };
+        let slot = e.placement.index as u8;
+        match self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.field_npc_live_model(slot))
+        {
+            Some(id) => i32::from(id),
+            None => -1,
+        }
     }
 
     pub fn play_npc_mesh_positions(&self) -> Vec<f32> {

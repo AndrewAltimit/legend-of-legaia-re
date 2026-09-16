@@ -1737,19 +1737,19 @@ impl World {
     /// Drain one ambient channel's per-tick side effects, in the order the
     /// VM queued them.
     ///
-    /// Five of the six variants have an engine mechanism and are applied
-    /// here; the last is carried but not consumed, and says so:
+    /// Every variant with an engine mechanism is applied here:
     ///
-    /// - [`AmbientEffect::ModelSwap`] needs a per-placement mesh re-bind.
-    ///   Neither host has one: the native window resolves an NPC's mesh once
-    ///   at scene load (`field_npc_draws`) and the play page builds catalog
-    ///   entry `i`'s from the same `placement.model_index`, so a stream that
-    ///   swaps a villager's model still draws the spawn mesh. This is not a
-    ///   call that needs inserting - `ambient_motion_op_census_disc` measures
-    ///   215 authored sites over four scenes and **zero** of them names a
-    ///   model some placement in the same scene binds, so there is nothing
-    ///   resident to re-bind to. Disclosed, with the blocking capability, in
-    ///   `docs/tooling/host-drift.md` under "Scripted mesh re-bind".
+    /// - [`AmbientEffect::ModelSwap`] records the new id on
+    ///   [`crate::world::FieldNpcState::models`], which is the port's stand-in
+    ///   for retail's `actor[+0x64]` store: retail's `FUN_80024E08` writes the
+    ///   id onto the actor and reloads the mesh, while the port's hosts hold
+    ///   the uploaded mesh themselves and read the id back through
+    ///   [`World::field_npc_live_model`]. Nothing is resident to re-bind *to*
+    ///   in the placements a host already uploaded - the disc census
+    ///   (`ambient_motion_op_census_disc`) measures 215 authored sites over
+    ///   four scenes and zero of them names a model some placement in the same
+    ///   scene binds - so the bytes come from the scene's own model bank
+    ///   ([`crate::model_bank::SceneModelBank`]) instead.
     /// - [`AmbientEffect::MoveImage`] is applied: it is the same libgpu blit
     ///   the field VM's `4C 60` emitter queues, so it goes on the same
     ///   [`crate::world::AmbientFxState::script_vram_moves`] queue, which
@@ -1805,13 +1805,45 @@ impl World {
                         dy,
                     ]);
                 }
-                // See the doc comment: no host can materialise the target
-                // mesh, so recording the swap on the world would be an inert
-                // mechanism wearing the look of a wired one.
-                Fx::ModelSwap { .. } => {}
+                Fx::ModelSwap { bank, offset } => {
+                    // Back to the raw operand space both pool consumers
+                    // index, which is what a host resolves through
+                    // `model_bank::resolve_model_id`. The VM already applied
+                    // the `0xF0` split; re-adding the threshold on the
+                    // special arm is its inverse, not a second decode.
+                    use legaia_engine_vm::ambient_motion_ops::ModelBank as VmBank;
+                    let id = match bank {
+                        VmBank::Scene => offset,
+                        VmBank::Special => {
+                            offset.wrapping_add(crate::model_bank::SPECIAL_MODEL_THRESHOLD as i16)
+                        }
+                    };
+                    self.npcs.models.insert(slot, id);
+                }
                 Fx::BitTargetFault => {}
             }
         }
+    }
+
+    /// The live model id the scripted-motion VM's op `0x0E` re-bound this
+    /// placement slot to, or `None` while the actor still draws its spawn
+    /// mesh.
+    ///
+    /// The **one** question a host asks per slot per scene load. Both hosts
+    /// ask it: the native window's `upload_assets` and the browser's
+    /// `play_npc_live_model` export, each feeding the id to
+    /// [`crate::model_bank::SceneModelBank::tmd_bytes`] to materialise the
+    /// mesh. Retail needs no equivalent - it reloads the mesh inside
+    /// `FUN_80024E08` - but the port's mesh lives on the host, so the id has
+    /// to cross that boundary.
+    pub fn field_npc_live_model(&self, slot: u8) -> Option<i16> {
+        self.npcs.models.get(&slot).copied()
+    }
+
+    /// Install a live model id on a slot, as op `0x0E` does. For a host or a
+    /// test that drives the re-bind directly.
+    pub fn set_field_npc_live_model(&mut self, slot: u8, id: i16) {
+        self.npcs.models.insert(slot, id);
     }
 
     /// The player actor's live field position, or `None` when no player

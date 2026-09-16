@@ -976,8 +976,14 @@ DATA_FIELD chunk instead (`bubu1` 173 members, `edbubu` 160).
 
 Parser: `legaia_engine_core::model_bank` (`SceneModelBank::build` walks a
 scene the way the loader registers it; `resolve_model_id` applies the `0xF0`
-split). Disc-gated oracle:
-[`crates/engine-core/tests/model_bank_disc.rs`](../../crates/engine-core/tests/model_bank_disc.rs).
+split). `SceneHost` holds one per loaded scene, rebuilt on every field entry,
+and it is what both hosts resolve a live op-`0x0E` re-bind through -
+`World::field_npc_live_model` for the id, `SceneModelBank::tmd_bytes` for the
+bytes. Disc-gated oracles:
+[`model_bank_disc.rs`](../../crates/engine-core/tests/model_bank_disc.rs) for
+the bank against the `DAT_8007B774` counter, and
+[`model_rebind_live_disc.rs`](../../crates/engine-core/tests/model_rebind_live_disc.rs)
+for every authored operand in `koin3` resolving to a parseable mesh.
 
 ### Op `0x0F` - the tile teleport
 
@@ -1072,7 +1078,7 @@ channel - but it is the thing to check before filing "op X does nothing".
 | `0x02` / `0x0A` / `0x0B` | the requested-move pair reaches `carry_npc_run_anim`; the translucency bit has no consumer |
 | `0x09` | runs the same enqueue the field VM's op `0x36` sub-`0` runs - `World::audio.sfx_cue_cursor` / `sfx_parked_slot` / `sfx_cue_delays` - so a following delay write lands on the slot this op parked; the cue **id** is kept on the channel's ring copy and no host plays a field SFX cue yet |
 | `0x0C` | tint and draw-mode ramp on the channel; no NPC tint reaches either host's draw list |
-| `0x0E` | no per-placement mesh re-bind exists - both hosts resolve an NPC's mesh once at scene load. The **id** resolves (`model_bank::SceneModelBank`, all 215 authored sites); what is missing is a live per-slot model on `World` and an upload path per host |
+| `0x0E` | `World::npcs.models`, keyed by placement slot, read back through `World::field_npc_live_model`; each host resolves the bytes through `SceneHost::model_bank` (`model_bank::SceneModelBank::tmd_bytes`, all 215 authored sites) and re-uploads that slot's mesh |
 | `0x13` | no VRAM blit is reachable from a field-actor tick; `engine-render` owns the only VRAM |
 | `0x15` / `0x16` | `World::field_npc_tilt`, published per slot beside the heading; both hosts compose the full `Rx * Ry * Rz` when it is non-zero ([`host-drift.md`](../tooling/host-drift.md#per-actor-pitch-and-roll)) |
 
