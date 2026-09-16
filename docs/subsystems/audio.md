@@ -230,6 +230,17 @@ satisfied on arrival (the same reasoning as sub-op 9's barrier) and
 still set, then clear the latch unconditionally. `see
 ghidra/scripts/funcs/800243f0.txt`, `800266e0.txt`, `80026520.txt`.
 
+**A pause is a key-off, not a freeze.** The sub-op 2 arm reaches
+`FUN_800628F0` in mode `0`, which only raises the slot's flag `0x2`; the next
+per-tick service `FUN_80062F98` routes a flagged slot through `FUN_800638D8`,
+which kills the channel's sounding notes and clears the flag, while the
+sequence cursor stays where it was for the resume. `AudioOut::set_sequencer_paused(true)`
+(and its browser twin) keys off the attached sequencer's active notes as it
+closes the gate. A gate that only stopped the clock held whatever was sounding
+for as long as it stayed shut - the title theme's last note sustaining under
+the whole attract movie, on both hosts. `see ghidra/scripts/funcs/800628f0.txt`,
+`80062f98.txt`, `800638d8.txt`.
+
 ### Entry-script pauses and free-roam picker staging
 
 A scene's entry script can start its track and immediately pause it for a

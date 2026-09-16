@@ -321,8 +321,9 @@ struct StreamResampler {
     /// Optional active sequencer. Ticked once per SPU sample so timing is
     /// locked to the audio clock instead of frame timing.
     sequencer: Option<Sequencer>,
-    /// When `true` the sequencer is not ticked; SPU voices keep playing
-    /// so in-progress notes decay naturally. Set via
+    /// When `true` the sequencer is not ticked. Closing the gate keys off
+    /// the notes it had sounding ([`Sequencer::pause`]); opening it resumes
+    /// the clock from where it stopped. Set via
     /// [`AudioOut::set_sequencer_paused`].
     sequencer_paused: bool,
     /// Optional pending sequencer to install once the current fade-out
@@ -519,6 +520,21 @@ impl StreamResampler {
         self.fade_target = 1.0;
         self.fade_step = 0.0;
         self.sequencer = Some(seq);
+    }
+
+    /// Close or open the sequencer gate. Closing it keys off the attached
+    /// sequencer's sounding notes and freezes its clock; opening it lets the
+    /// clock run again from the playhead it stopped at. Re-closing an
+    /// already-closed gate is a no-op, so a host that re-asserts the pause
+    /// every frame does not touch the voices again.
+    fn set_sequencer_paused(&mut self, paused: bool) {
+        if paused
+            && !self.sequencer_paused
+            && let Some(seq) = self.sequencer.as_mut()
+        {
+            seq.pause(&mut self.spu);
+        }
+        self.sequencer_paused = paused;
     }
 
     /// Drop the active sequencer and key-off its notes.
@@ -996,11 +1012,11 @@ impl AudioOut {
     }
 
     /// Gate the sequencer tick without detaching it. When `paused` is
-    /// `true` the sequencer clock stops (SPU voices already sounding will
-    /// continue to decay via their ADSR envelopes). Call with `false` to
-    /// resume from where the sequencer left off.
+    /// `true` the sequencer clock stops and the notes it had sounding are
+    /// keyed off, as retail's paused-slot service does (`FUN_800638D8`);
+    /// call with `false` to resume from where the sequencer left off.
     pub fn set_sequencer_paused(&self, paused: bool) {
-        self.lock().sequencer_paused = paused;
+        self.lock().set_sequencer_paused(paused);
     }
 
     /// Set the attached sequencer's master volume (`SsSeqSetVol`-shaped,

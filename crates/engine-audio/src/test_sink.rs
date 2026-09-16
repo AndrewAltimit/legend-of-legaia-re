@@ -136,10 +136,10 @@ impl TestAudioSink {
     }
 
     /// Gate the sequencer clock without detaching it (mirror of
-    /// [`crate::AudioOut::set_sequencer_paused`]). Sounding voices keep
-    /// decaying through their ADSR envelopes, exactly as under the device.
+    /// [`crate::AudioOut::set_sequencer_paused`]): closing the gate keys off
+    /// the sounding notes, exactly as under the device.
     pub fn set_sequencer_paused(&mut self, paused: bool) {
-        self.state.sequencer_paused = paused;
+        self.state.set_sequencer_paused(paused);
     }
 
     /// Whether the sequencer clock is currently gated.
@@ -195,6 +195,132 @@ impl TestAudioSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spu::ram::TransferDirection;
+    use crate::vab_bind::{UploadedVag, VabBank, VabProgram};
+
+    /// One 16-byte ADPCM block that loops onto itself (`loop start` +
+    /// `end` + `repeat`), decoding to a full-scale square wave, uploaded at
+    /// `SPU_ADDR`; and a bank whose program 0 keys it with an envelope that
+    /// attacks instantly, sustains at full level and releases instantly.
+    /// The shape of a held organ note: it sounds for exactly as long as the
+    /// voice is keyed on.
+    const SPU_ADDR: u32 = 0x1000;
+
+    fn held_tone_bank(spu: &mut crate::Spu) -> VabBank {
+        let mut block = [0x79u8; 16];
+        block[0] = 0x04; // shift 4, filter 0: nibble 7 -> +1792, 9 -> -1792
+        block[1] = 0x07; // loop start | repeat | end
+        spu.ram.set_direction(TransferDirection::CpuToSpu);
+        assert_eq!(spu.ram.write_at(SPU_ADDR, &block), block.len());
+        let tone = legaia_vab::VagAtr {
+            prior: 0,
+            mode: 0,
+            vol: 127,
+            pan: 64,
+            center: 60,
+            shift: 0,
+            min: 0,
+            max: 127,
+            vibw: 0,
+            vibt: 0,
+            porw: 0,
+            port: 0,
+            pbmin: 0,
+            pbmax: 0,
+            reserved1: 0,
+            reserved2: 0,
+            // Attack shift 0 / step 0, decay shift 0 onto sustain level
+            // 0x8000; sustain increase at the slowest shift (holds); linear
+            // release at shift 0 (drops within a handful of samples).
+            adsr1: 0x000F,
+            adsr2: 0x1F00,
+            prog: 0,
+            vag: 1,
+            reserved3: [0; 4],
+        };
+        VabBank {
+            master_vol: 127,
+            samples: vec![Some(UploadedVag {
+                addr: SPU_ADDR,
+                size: block.len() as u32,
+            })],
+            programs: vec![VabProgram {
+                mvol: 127,
+                mpan: 64,
+                tones: vec![tone],
+            }],
+        }
+    }
+
+    /// A SEQ (ppqn 480, 120 BPM) holding one note for 2400 ticks = 2.5 s.
+    fn held_note_seq() -> legaia_seq::Seq {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&legaia_seq::SEQ_MAGIC);
+        buf.extend_from_slice(&[0x00, 0x01]); // version
+        buf.extend_from_slice(&[0x01, 0xE0]); // ppqn 480
+        buf.extend_from_slice(&[0x07, 0xA1, 0x20]); // tempo 500000 us/qn
+        buf.push(0x04);
+        buf.push(0x02);
+        buf.extend_from_slice(&[0x00, 0xC0, 0x00]); // prog change 0
+        buf.extend_from_slice(&[0x00, 0x90, 60, 100]); // note on
+        buf.extend_from_slice(&[0x92, 0x60, 60, 0]); // +2400: note off
+        buf.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]); // end of track
+        legaia_seq::Seq::parse(&buf).unwrap()
+    }
+
+    /// Closing the sequencer gate keys off what is sounding - retail's
+    /// paused-slot service (`FUN_800638D8`) - rather than freezing the
+    /// clock over a held voice. Measured at the output: a gate that only
+    /// stopped the clock left this fixture's note ringing at full level for
+    /// as long as it stayed shut, which is the title theme's last note
+    /// sustaining under the whole attract movie.
+    #[test]
+    fn closing_the_pause_gate_keys_off_the_sounding_notes() {
+        let mut sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+        let bank = sink.with_spu(held_tone_bank);
+        sink.attach_sequencer(Sequencer::new(held_note_seq(), bank));
+        let live = sink.render_frames(4_410);
+        assert!(
+            live.peak > 64 && live.nonzero * 2 > live.frames,
+            "the fixture must sound before the pause: {live:?}"
+        );
+        assert_eq!(sink.sequencer_progress().expect("attached").active_notes, 1);
+
+        sink.set_sequencer_paused(true);
+        assert_eq!(
+            sink.sequencer_progress().expect("attached").active_notes,
+            0,
+            "closing the gate keys off the sounding note"
+        );
+        // The release drains over the next couple of seconds; a voice never
+        // keyed off holds the live level in every window forever.
+        let _release = sink.render_frames(crate::SPU_INTERNAL_RATE as usize * 2);
+        let held = sink.render_frames(4_410);
+        assert!(
+            held.mean_abs() < live.mean_abs() * 0.05,
+            "a paused score must fall quiet, not hold its last note: live {:.1} -> \
+             2 s into the pause {:.1} (mean abs)",
+            live.mean_abs(),
+            held.mean_abs()
+        );
+        let paused_tick = sink.sequencer_progress().expect("attached").tick;
+        // Re-asserting the pause is a no-op; opening the gate resumes the
+        // clock from the playhead, so the note-off at +2400 still fires.
+        sink.set_sequencer_paused(true);
+        sink.set_sequencer_paused(false);
+        let _ = sink.render_frames(crate::SPU_INTERNAL_RATE as usize * 3);
+        let p = sink.sequencer_progress().expect("attached");
+        assert!(
+            p.tick > paused_tick,
+            "the clock must run again after the gate opens ({paused_tick} -> {})",
+            p.tick
+        );
+        assert!(
+            p.finished,
+            "the held note's off event and the end of track were still \
+             reachable after the resume"
+        );
+    }
 
     #[test]
     fn an_idle_sink_emits_silence_and_says_so() {
