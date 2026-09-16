@@ -1603,11 +1603,40 @@ impl PlayWindowApp {
                         // seeded into `field_npc_headings` (facing-0
                         // / prologue-less records render at
                         // identity).
-                        let rot = match w.npcs.headings.get(&d.slot) {
-                            Some(&h) => Mat4::from_rotation_y(
-                                std::f32::consts::PI + (h as f32) / 4096.0 * std::f32::consts::TAU,
-                            ),
-                            None => Mat4::IDENTITY,
+                        //
+                        // The heading is only one of the actor's three
+                        // authored angles: retail's dispatcher hands
+                        // `actor+0x24` whole to the composer
+                        // (`addiu a0,s0,0x24` / `jal 0x80026988` at
+                        // `0x8001af04`), which reads X at `+0`, Y at `+2`,
+                        // Z at `+4`. A slot whose scripted-motion channel
+                        // tweened `0x15` / `0x16` therefore draws tilted,
+                        // through the same `placement_rotation` kernel the
+                        // placed-object pass uses - and the browser play page
+                        // composes the identical triple off
+                        // `World::field_npc_tilt`. A slot with no tilt keeps
+                        // the yaw-only matrix bit-for-bit.
+                        let heading = w.npcs.headings.get(&d.slot).copied();
+                        let rot = match w.field_npc_tilt(d.slot) {
+                            Some((pitch, roll)) => {
+                                let u = |v: i32| v.rem_euclid(4096) as u16;
+                                legaia_engine_render::battle_intro::placement_rotation(
+                                    u(i32::from(pitch)),
+                                    // No seeded heading is the identity yaw
+                                    // the `None` arm below draws, i.e. zero
+                                    // units - not the half-turn a seeded
+                                    // heading of `0` composes to.
+                                    u(heading.map_or(0, |h| i32::from(h) + 2048)),
+                                    u(i32::from(roll)),
+                                )
+                            }
+                            None => match heading {
+                                Some(h) => Mat4::from_rotation_y(
+                                    std::f32::consts::PI
+                                        + (h as f32) / 4096.0 * std::f32::consts::TAU,
+                                ),
+                                None => Mat4::IDENTITY,
+                            },
                         };
                         let model = Mat4::from_translation(Vec3::new(x as f32, y, z as f32)) * rot;
                         let posed = npc_posed.get(&d.slot);

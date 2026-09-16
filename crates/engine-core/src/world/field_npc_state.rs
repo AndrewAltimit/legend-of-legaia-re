@@ -73,6 +73,27 @@ pub struct FieldNpcState {
     /// initial facings are the per-actor field-VM channels, not yet
     /// executed).
     pub headings: std::collections::HashMap<u8, i16>,
+    /// Live per-NPC **pitch / roll** - retail `actor+0x24` and `actor+0x28`,
+    /// the X and Z Euler angles the scripted-motion VM's `0x15` / `0x16`
+    /// tween ([`legaia_engine_vm::ambient_motion::AmbientMotion::pitch`] /
+    /// [`roll`](legaia_engine_vm::ambient_motion::AmbientMotion::roll)),
+    /// keyed by placement slot in the same 12-bit angle space as
+    /// [`crate::world::FieldNpcState::headings`].
+    ///
+    /// Published by `Self::tick_field_npc_motions` alongside the heading, and
+    /// read by both hosts through
+    /// [`crate::world::World::field_npc_tilt`]. Absent for a slot whose
+    /// channel never tweened either angle, which is the overwhelming majority:
+    /// the disc-wide census finds `0x15` authored nowhere and `0x16` only in
+    /// `juui1`, so a host's yaw-only fast path stays the common case.
+    ///
+    /// The angles are an actor draw's, not a placement's: the per-actor render
+    /// dispatcher hands `actor+0x24` straight to the three-angle composer
+    /// (`addiu a0,s0,0x24` / `jal 0x80026988` at `0x8001af04` in
+    /// `FUN_8001ADA4`), which reads X at `+0`, Y at `+2` and Z at `+4`.
+    ///
+    /// REF: FUN_8001ADA4, FUN_80026988
+    pub tilts: std::collections::HashMap<u8, (i16, i16)>,
     /// The talk-time facing save: `(placement slot, the heading the NPC stood
     /// with before the player addressed it)`.
     ///
@@ -155,6 +176,7 @@ impl FieldNpcState {
             positions: std::collections::HashMap::new(),
             entry_positions: std::collections::HashMap::new(),
             headings: std::collections::HashMap::new(),
+            tilts: std::collections::HashMap::new(),
             facing_save: None,
             routes: std::collections::BTreeMap::new(),
             glide_speeds: std::collections::BTreeMap::new(),

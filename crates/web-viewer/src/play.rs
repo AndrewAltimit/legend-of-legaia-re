@@ -1163,6 +1163,35 @@ impl LegaiaRuntime {
         }
         out
     }
+
+    /// Live `(pitch, roll)` of every catalogued NPC, flattened
+    /// `[pitch, roll, ...]` in catalog order - retail `actor+0x24` /
+    /// `actor+0x28`, the two angles the scripted-motion VM's `0x15` / `0x16`
+    /// tween, in the same 12-bit space as
+    /// [`Self::play_npc_transforms`]' facing.
+    ///
+    /// A separate accessor rather than two more lanes on the transform
+    /// stride: the pair is zero for every actor on all but one retail scene
+    /// (`juui1`), so the page tests this array once per frame and keeps the
+    /// cheap yaw-only model build for the rest. `World::field_npc_tilt`
+    /// answering `None` comes back as `(0, 0)`.
+    ///
+    /// Empty when no scene is loaded, exactly as
+    /// [`Self::play_npc_transforms`].
+    pub fn play_npc_tilts(&self) -> Vec<f32> {
+        let (Some(n), Some(h)) = (self.npcs.as_ref(), self.scene_host.as_ref()) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(n.pack.entries.len() * 2);
+        for e in &n.pack.entries {
+            let (pitch, roll) = h
+                .world
+                .field_npc_tilt(e.placement.index as u8)
+                .unwrap_or((0, 0));
+            out.extend_from_slice(&[pitch as f32, roll as f32]);
+        }
+        out
+    }
 }
 
 /// Decode ANM bundle record `rec_idx` into the flat pose stream the JS

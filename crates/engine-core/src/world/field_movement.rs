@@ -1649,6 +1649,7 @@ impl World {
             let anim = vm.requested_move;
             let globals_out = vm.globals;
             let scale_out = vm.scale;
+            let tilt_out = (vm.pitch, vm.roll);
             let effects: Vec<_> = vm.effects.drain(..).collect();
             // A walk op's heading write is walk-direction-implied facing: it
             // only means anything alongside the step it accompanies. With the
@@ -1672,6 +1673,19 @@ impl World {
             if turned {
                 self.npcs.headings.insert(slot, engine_heading as i16);
             }
+            // The other two of the actor's three authored angles. Retail's
+            // per-actor render dispatcher hands `actor+0x24` whole to the
+            // three-angle composer (`addiu a0,s0,0x24` / `jal 0x80026988` at
+            // `0x8001af04` in `FUN_8001ADA4`), so the `0x15` / `0x16` tweens
+            // are a draw input exactly as the `+0x26` heading is. Only a
+            // non-zero pair is published: a slot that never tweened keeps no
+            // entry, which is what lets both hosts' yaw-only fast path stay
+            // the common case.
+            if tilt_out != (0, 0) {
+                self.npcs.tilts.insert(slot, tilt_out);
+            } else {
+                self.npcs.tilts.remove(&slot);
+            }
             self.apply_ambient_motion_effects(slot, &effects);
             if globals_out != globals_in {
                 self.flags.story_flags = globals_out;
@@ -1687,6 +1701,22 @@ impl World {
                 self.publish_ambient_render_scale(slot, scale);
             }
         }
+    }
+
+    /// The live `(pitch, roll)` of a field NPC's actor draw - retail
+    /// `actor+0x24` / `actor+0x28`, in the same 12-bit angle space as
+    /// [`crate::world::FieldNpcState::headings`].
+    ///
+    /// `None` when the slot's scripted-motion channel has never tweened
+    /// either angle, which is the ordinary case: the disc-wide census
+    /// (`crates/engine-core/tests/ambient_motion_op_census_disc.rs`) finds op
+    /// `0x15` authored at zero sites and op `0x16` at 45, all in `juui1`. A
+    /// host may therefore keep its cheap yaw-only model build for `None` and
+    /// compose the full `Rx * Ry * Rz` (`FUN_80026988`) only here.
+    ///
+    /// REF: FUN_8001ADA4, FUN_80026988
+    pub fn field_npc_tilt(&self, slot: u8) -> Option<(i16, i16)> {
+        self.npcs.tilts.get(&slot).copied()
     }
 
     /// Publish an ambient channel's `actor+0x72` write into the field-VM

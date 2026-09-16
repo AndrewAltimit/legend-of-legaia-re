@@ -1074,7 +1074,7 @@ channel - but it is the thing to check before filing "op X does nothing".
 | `0x0C` | tint and draw-mode ramp on the channel; no NPC tint reaches either host's draw list |
 | `0x0E` | no per-placement mesh re-bind exists - both hosts resolve an NPC's mesh once at scene load. The **id** resolves (`model_bank::SceneModelBank`, all 215 authored sites); what is missing is a live per-slot model on `World` and an upload path per host |
 | `0x13` | no VRAM blit is reachable from a field-actor tick; `engine-render` owns the only VRAM |
-| `0x15` / `0x16` | no host applies pitch or roll to an NPC - both compose a Y rotation only |
+| `0x15` / `0x16` | `World::field_npc_tilt`, published per slot beside the heading; both hosts compose the full `Rx * Ry * Rz` when it is non-zero ([`host-drift.md`](../tooling/host-drift.md#per-actor-pitch-and-roll)) |
 
 ### Flag census
 

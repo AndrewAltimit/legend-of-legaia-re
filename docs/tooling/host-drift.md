@@ -610,7 +610,6 @@ about these is contested.
 | key rebinding on **both** hosts | `KeyRebindSession` is complete and orphaned; native rebinds through `legaia-input.toml`, the page reads the engine's table and cannot rebind at all. See the waiver. |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | one-shot SPU voices on the minigames page | The page renders BGM to PCM and hands it to an `AudioBufferSourceNode`; it holds no live `Spu`, so no cue - id-keyed or explicit - can sound there. See [below](#one-shot-voices-on-the-minigames-page). |
-| per-actor pitch / roll on web | The page's NPC draw carries one rotation axis (`rotY`); a second and third would need the draw record and its model build to take the full Euler triple. See [below](#per-actor-pitch-and-roll-on-the-play-page). |
 | scripted mesh re-bind on **both** hosts | Motion-VM op `0x0E` swaps an actor's model mid-scene; both hosts bind an NPC's mesh once, from its spawn model. Not a drift - neither host has it. See [below](#scripted-mesh-re-bind-op-0x0e). |
 
 ### One-shot voices on the minigames page
@@ -693,28 +692,36 @@ addressable: `SceneModelBank::tmd_bytes` for the scene half, and for the
 the scene's entries - `source_for_model_id` returns `None` there rather than
 pretending otherwise.
 
-### Per-actor pitch and roll on the play page
+### Per-actor pitch and roll
 
 The scripted-motion VM's ops `0x15` and `0x16` tween the actor's X and Z Euler
-angles (`+0x24` / `+0x28`), which retail composes through `RotMatrix`
-(`FUN_80026988`, whose stores decode to `Rx * Ry * Rz`) in the per-actor render
-dispatcher `FUN_8001ADA4`. Both hosts draw a field NPC with a single
-`Ry(heading)`, so neither shows a tilt.
+angles (`+0x24` / `+0x28`), and retail composes all three through `RotMatrix`
+(`FUN_80026988`) in the per-actor render dispatcher `FUN_8001ADA4` - which
+hands the composer `actor+0x24` whole (`addiu a0,s0,0x24` / `jal 0x80026988`
+at `0x8001af04`), so the heading at `+0x26` is simply the middle angle of the
+triple. **Both** hosts used to draw a field NPC with a single `Ry(heading)`,
+so neither showed a tilt; the gap was recorded here as a browser one, which
+was half right at best.
+
+What was missing was not a draw call on either host but the *data*: `World`
+published a per-slot heading and nothing else. It publishes the pair now
+(`FieldNpcState::tilts`, written by `tick_field_npc_motions` from the
+channel's `AmbientMotion::pitch` / `roll`, read through
+`World::field_npc_tilt`), and each host composes the triple through a builder
+it already had - `engine-ui`'s `battle_intro::placement_rotation` natively,
+`placementModelEuler` on the page, the same pair the **placement** tilt kernel
+row already ties together. A slot with no tilt keeps the cheaper yaw-only
+matrix on both hosts, which is almost every slot.
 
 The disc-wide carrier census
-(`crates/engine-core/tests/ambient_motion_op_census_disc.rs`) bounds what that
-costs: over every scene MAN's tail-section-1 streams, op `0x15` has **zero**
+(`crates/engine-core/tests/ambient_motion_op_census_disc.rs`) bounds the whole
+class: over every scene MAN's tail-section-1 streams, op `0x15` has **zero**
 authored sites and op `0x16` has 45, all in one scene - `juui1`, which is the
-same scene the placement-tilt kernel row above names for tilting all nine of
-its static placements about X. So the whole class is one scene's worth of
-presentation.
-
-Note the two are different surfaces: the **placement** tilt composition is
-wired on both hosts (that kernel row is what holds it there, and the page
-already has `placementModelEuler`), and it is the **actor** draw that reads
-yaw only. The blocking capability on the browser side is therefore a
-`rotX` / `rotZ` pair on the page's NPC draw record plus a switch from
-`placementModelScaledY` to the Euler build it already carries.
+same scene the placement-tilt kernel row names for tilting all nine of its
+static placements about X. So this is one scene's worth of presentation, and
+`crates/web-viewer/tests/play_npc_tilt_parity.rs` (disc-gated) pins it there:
+the tilt reaches the page's accessor, the pitch stays zero, `town01` reports
+an all-zero array, and the two hosts' compositions agree entry for entry.
 
 ### Screen-space PSX primitives across the two hosts
 

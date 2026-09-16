@@ -2169,6 +2169,12 @@ void main() {
        * is exactly one frame of ghosted tiles per board install. */
       if (typeof rt.play_tile_actor_slots === 'function') this._syncTileBoard(rt);
       const nt = rt.play_npc_transforms();
+      /* Pitch / roll per catalogued actor (retail `actor+0x24` / `+0x28`, the
+       * `0x15` / `0x16` tweens). Almost always all-zero - the disc-wide census
+       * finds `0x15` authored nowhere and `0x16` only in `juui1` - so the draw
+       * below keeps the cheap yaw-only record unless this pair is non-zero. */
+      const ntilt = (typeof rt.play_npc_tilts === 'function')
+        ? rt.play_npc_tilts() : null;
       const clipStates = (typeof rt.play_npc_clip_states === 'function')
         ? rt.play_npc_clip_states() : null;
       const clipFrame = Math.floor(performance.now() / 1000 * NPC_CLIP_FPS);
@@ -2204,14 +2210,33 @@ void main() {
             n.lastFrame = f;
           }
         }
-        draws.push({
+        const actorDraw = {
           meshId: n.meshId,
           x: nt[base], y: -nt[base + 1], z: nt[base + 2],
           rotY: -(nt[base + 3] + 2048) * A2R,
           scale: 1.0,
           /* Actor draw: exempt from the occlusion fade, like the player. */
           noOccl: true,
-        });
+        };
+        /* An actor the scripted-motion VM tilted carries all three of retail's
+         * authored angles, and the dispatcher composes them together
+         * (`addiu a0,s0,0x24` / `jal 0x80026988` in `FUN_8001ADA4`, which reads
+         * X at `+0`, Y at `+2`, Z at `+4`). The yaw-only builder cannot express
+         * that - its negated yaw is a cancellation specific to Ry (see
+         * webgl-math.js) - so a tilted actor takes the whole `Rx * Ry * Rz`
+         * model, the same composition the native window's NPC pass applies
+         * through `battle_intro::placement_rotation`. */
+        const tb = n.i * 2;
+        const rotX = (ntilt && tb + 1 < ntilt.length) ? ntilt[tb] : 0;
+        const rotZ = (ntilt && tb + 1 < ntilt.length) ? ntilt[tb + 1] : 0;
+        if (rotX || rotZ) {
+          actorDraw.rotX = rotX * A2R;
+          actorDraw.rotZ = rotZ * A2R;
+          actorDraw.model = placementModelEuler(
+            actorDraw.x, actorDraw.y, actorDraw.z,
+            actorDraw.rotX, (nt[base + 3] + 2048) * A2R, actorDraw.rotZ, 1.0);
+        }
+        draws.push(actorDraw);
       }
 
       /* Tile board (field-VM op 0x49). A board is installed at RUNTIME by the
