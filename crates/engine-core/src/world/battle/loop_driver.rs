@@ -1652,7 +1652,11 @@ impl World {
         let src = crate::sfx_cue::SfxCueSources {
             element_of: &element_of,
             xa_duration_raw: &xa_duration_raw,
-            tutorial_active: self.battle.tutorial.is_some(),
+            // `ctx+0x276` is the side-band applier stage, and the engine's
+            // side-band is resident rather than streamed: the window is
+            // zero frames wide. (It was read as a tutorial flag before, which
+            // silenced the sting in tutorial battles where retail plays it.)
+            side_band_streaming: false,
             cd_read_busy: self.audio.battle_xa_busy_frames > 0,
         };
         let mut ring = crate::sfx_cue::SfxCueRing::default();

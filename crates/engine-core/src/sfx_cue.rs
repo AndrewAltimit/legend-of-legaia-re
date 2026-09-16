@@ -75,8 +75,15 @@ pub struct SfxCueSources<'a> {
     /// Per-clip raw duration (`u16` table at `0x800788B8`, index
     /// `id - 0x100`).
     pub xa_duration_raw: &'a dyn Fn(u32) -> u16,
-    /// Battle-tutorial byte (`ctx+0x276`): non-zero suppresses voice clips.
-    pub tutorial_active: bool,
+    /// `ctx+0x276`, the battle context's **side-band applier stage** - the
+    /// per-turn `summon.dat` / `readef.DAT` streaming machine's phase byte
+    /// (seeded `1` by `FUN_801DABA4` each turn, stepped and zeroed by
+    /// `FUN_801F12D0`; `docs/formats/summon-readef.md`). Non-zero suppresses
+    /// voice clips: retail plays no CD-XA clip while an ME archive is
+    /// streaming. It is not a tutorial flag - no tutorial routine writes the
+    /// byte, and the engine's side-band is resident rather than streamed, so
+    /// a host passes `false` (a zero-frame window).
+    pub side_band_streaming: bool,
     /// `FUN_8003DE7C(1) != 0`: a CD read is in flight, voice clip skipped.
     pub cd_read_busy: bool,
 }
@@ -117,7 +124,7 @@ pub fn route_sfx_cue(
     let mut out = SfxCueOutcome::default();
     if id >= 0x100 && category < 3 {
         // Arts-voice XA clip leg. No ring write, no wrap.
-        if !src.tutorial_active && !src.cd_read_busy {
+        if !src.side_band_streaming && !src.cd_read_busy {
             let v = id - 0x100;
             let clip = match v >> 3 {
                 1 => 26,
@@ -185,7 +192,7 @@ mod tests {
         SfxCueSources {
             element_of: &|cat| 0x10 + cat,
             xa_duration_raw: &|v| (v as u16) * 10 + 5,
-            tutorial_active: false,
+            side_band_streaming: false,
             cd_read_busy: false,
         }
     }
@@ -268,10 +275,10 @@ mod tests {
     }
 
     #[test]
-    fn xa_leg_gates_on_tutorial_and_cd_busy() {
+    fn xa_leg_gates_on_side_band_stream_and_cd_busy() {
         let mut r = SfxCueRing::default();
         let mut s = srcs();
-        s.tutorial_active = true;
+        s.side_band_streaming = true;
         assert_eq!(route_sfx_cue(&mut r, 0x108, 0, &s).xa, None);
         let mut s = srcs();
         s.cd_read_busy = true;
