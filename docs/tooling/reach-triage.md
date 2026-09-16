@@ -714,25 +714,54 @@ screenshot cannot tell the two apart.
 ### NO-LADDER, content not driven
 
 Wired through `engine-core` and reachable by a headless ladder in principle -
-these are the rows a new or deeper fixture would actually convert. (The
-composition ladder converted the battle-HUD row bake, the dialog-atlas bake, a
-`4C 60` stamp, a scripted CLUT-cell arm and the effect-script reader; the
-rows below are what it did not reach.)
+these were the rows a new or deeper fixture would convert. (The composition
+ladder converted the battle-HUD row bake, the dialog-atlas bake, a `4C 60`
+stamp, a scripted CLUT-cell arm and the effect-script reader; the rows below
+are what it did not reach.)
 
-| group | n | addresses | what would reach it |
+All but one are closed now, and the `reach` column is kept rather than deleted
+because what closed each one is the useful part - the note under the table is
+about the cells that outlived their own fixtures.
+
+| group | n | addresses | what reaches it |
 |---|---|---|---|
 | `screen_fx.rs` | 10 | `801de4c8` `801f8d4c` `801f811c` `801f8004` `801f7a9c` `801f88fc` `801f8e6c` `801f849c` `801f8f28` `801f8a34` | Closed: `chapter1_frontier_ladder` enters all ten - a scene whose script spawns an iris mask, letterbox or image panel is exactly what its scene walk drives. |
-| `fishing.rs` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | a fishing rung past rung 4: rod select, a full cast, a landed catch |
+| `fishing.rs` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | Closed: `w1f1_fishing_pond_ladder` seats the venue-0 band-4 preconditions (Normal lure, third rod), casts, matches the reel cadence and lands a catch, so the point credit, the band roll, the species spawn and the cadence all run |
 | `muscle_dome.rs` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | `w1b_dome_leg_ladder` - built; `801d9bbc` has no producer and stays |
-| `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | `w1b_baka_duel_ladder` - built; the door entry still arms neither |
-| `pause_screens.rs` (special Use) | 4 | `801d7e50` `801d8a58` `801d8b90` `801d8d94` | a Use confirm on Door of Light / Door of Wind / Incense |
-| `other_game_overlay.rs` | 1 | `801d14b0` | one call deeper into the arena's tally drain |
-| `battle_tutorial.rs` | 2 | `801f6b70` `801f747c` | promoting the existing `training_battle` test to a ladder export |
-| `world_map.rs` | 2 | `800196a4` `801d8258` | entering a kingdom overworld through its own transition |
-| `cutscene_narration.rs` | 1 | `80037174` | an opening-prologue ladder (`opdeene` / `opstati` / `opurud`) |
-| `world/narration.rs` | 1 | `8003cf7c` | an inline field-VM conversation rather than the dialog panel |
-| `world/battle/stats.rs` + `battle_formulas/escape.rs` | 1 | `801e791c` | a canonical ladder pressing **Run**. Wired at `world/battle/command_flow.rs`'s `Resolution::RunAway` arm and driven end to end by `battle_flee_ladder`, which is outside `CANONICAL_LADDERS` - promote it, or flee in the composition ladder's fight |
-| `fade.rs` | 1 | `80020b00` | the same flee, one beat later: `FadeState::load` stages the state-`0x66` white-out from `fold_battle_event`'s `BattleEnd { Escaped }` arm, so it needs the escape to *succeed* and reach teardown |
+| `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | Closed: `w1b_baka_duel_ladder` plays the duel from its intro card to a player **win** and drains the tally. The door entry is a separate rung and still arms neither |
+| `pause_screens.rs` (special Use) | 4 | `801d7e50` `801d8a58` `801d8b90` `801d8d94` | Closed: `w1f1_pause_special_use_ladder` seeds the bag (no `debug_` helper grants `0x88` / `0x89` / `0x8A`) and drives Door of Light's confirm and Door of Wind's destination pick to their commits |
+| `other_game_overlay.rs` | 1 | `801d14b0` | Closed by delegation: `baka_fighter::tally_drain_step` (`801d6710`) **is** `other_game_overlay::step_scale`, one routine linked twice, so the duel ladder's tally drain enters the anchor. The arena's own driver is still one call away |
+| `battle_tutorial.rs` | 2 | `801f6b70` `801f747c` | Closed: `w1f1_battle_tutorial_ladder` primes the script, walks into a real encounter and drives the box; `training_battle` was never the only route |
+| `world_map.rs` | 2 | `800196a4` `801d8258` | Closed by `w1d_world_map_render_ladder` - rung 2 taps L1 on the overworld and runs the fade ramp to its mode-12 hand-off, and the horizon-gate rung arms the emitter through `World::tick`. Read the second with its own caveat (see below) |
+| `cutscene_narration.rs` | 1 | `80037174` | Closed: `w1a_narration_ladder` drives the opening-prologue subtitle roller |
+| `world/narration.rs` | 1 | `8003cf7c` | Closed: the same ladder drives the inline field-VM conversation path, as opposed to the pre-decoded dialog panel every other ladder drives |
+| `world/battle/stats.rs` + `battle_formulas/escape.rs` | 1 | `801e791c` | Closed: `battle_flee_ladder` is a canonical member now, and its first rung is an **assured** escape that leaves the battle |
+| `fade.rs` | 1 | `80020b00` | Closed with it: `victory.rs`'s `BattleEndCause::Escaped` arm loads `escape_fade_template()` on the teardown that same rung reaches |
+
+Nine of those eleven rows were converted by ladders that already existed and
+were already canonical, and the table went on naming the fixture each one
+needed. That is worth more than the row count, because it is the failure mode
+this page is most exposed to: **a row's `reach` cell is a claim with no
+instrument behind it.** `--page-audit` checks the address column against the
+catalog and says nothing about the prose; nothing checks that a cell still
+names work. The cheap guard is to re-read a cell against
+`CANONICAL_LADDERS` before quoting it - membership is one grep - and the
+expensive one is the coverage export, which is what actually moves a row.
+
+Two of the nine also close *differently* from the way their cell predicted, and
+both distinctions survive the row:
+
+- `801d14b0` is not a second routine. `FUN_801D6710` (the Baka tally drain) and
+  `FUN_801D14B0` (the PROT 0977 hub overlay's copy) are twenty-four
+  instructions each and agree opcode for opcode, differing only in the
+  `lui`/`lw` pair that loads the bypass flag and in the relocated branch
+  targets, so the port holds one implementation and the Baka entry delegates
+  to it. A ladder that drives either drives the anchor.
+- `801d8258`'s horizon params are the *ladder's*, not the disc's. What its
+  coverage proves is the chain `World::tick` -> `tick_world_map` -> the arm ->
+  the emitter body; whether any shipped scene sets those globals is a separate
+  question the ladder deliberately does not answer, and its own test name says
+  so.
 
 Five rows left this table through the scene-session ladder
 (`crates/engine-core/tests/w1e_scene_bgm_transition_ladder.rs`): the four BGM
