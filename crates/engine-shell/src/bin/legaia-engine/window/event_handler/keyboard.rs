@@ -33,6 +33,24 @@ impl PlayWindowApp {
     /// picker - is therefore scriptable, which `--pad-script` alone cannot do
     /// (it writes the pad word and this function never runs).
     pub(super) fn handle_key(&mut self, code: KeyCode, state: ElementState) {
+        // One latched key name per physical press, for the pause menu's Key
+        // Config screen. Held keys repeat as a stream of `Pressed` events, so
+        // the set below collapses each stream to its leading edge - without
+        // it, holding the confirm key would rebind the highlighted row to
+        // that key the moment the screen opened.
+        match state {
+            ElementState::Pressed => {
+                if self.keys_down.insert(code) {
+                    let name = keycode_to_name(code);
+                    if !name.is_empty() {
+                        self.pending_key_name = Some(name);
+                    }
+                }
+            }
+            ElementState::Released => {
+                self.keys_down.remove(&code);
+            }
+        }
         // Dev affordance: spawn a debug effect marker at the player so
         // the effect-pool render bridge can be exercised by hand
         // before the runtime effect catalog is wired into battle-enter.

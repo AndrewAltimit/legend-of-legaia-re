@@ -607,7 +607,6 @@ about these is contested.
 |---|---|
 | retail numeral art on web | The battle's damage numerals and `N HIT` / `TOTAL` counter draw the shared layout from the font atlas; the native window samples the retail 24x24 cells out of VRAM through a screen-space sink the page has not grown. |
 | publisher logos on web | `engine_core::publisher_logos` + its atlas builder are in the shared crate; only the native `--boot-ui` chain plays them. |
-| key rebinding on **both** hosts | `KeyRebindSession` is complete and orphaned; native rebinds through `legaia-input.toml`, the page reads the engine's table and cannot rebind at all. See the waiver. |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | one-shot SPU voices on the minigames page | The page renders BGM to PCM and hands it to an `AudioBufferSourceNode`; it holds no live `Spu`, so no cue - id-keyed or explicit - can sound there. See [below](#one-shot-voices-on-the-minigames-page). |
 | scripted mesh re-bind on **both** hosts | Motion-VM op `0x0E` swaps an actor's model mid-scene; both hosts bind an NPC's mesh once, from its spawn model. Not a drift - neither host has it. See [below](#scripted-mesh-re-bind-op-0x0e). |

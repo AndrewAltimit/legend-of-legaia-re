@@ -471,6 +471,21 @@ pub fn dom_code_for_key_name(key_name: &str) -> Option<&'static str> {
         .map(|(_, code)| *code)
 }
 
+/// The inverse: a [`Mapping`] key name for a browser `KeyboardEvent.code`.
+///
+/// What a browser host needs to *edit* a binding rather than read one - the
+/// key-rebind screen is handed a `code` by the DOM and has to store the name
+/// the table is keyed by. A code outside [`KEY_NAME_DOM_CODES`] answers
+/// `None`, which is the honest answer and the same bound the native window's
+/// `keycode_to_name` filter imposes: neither host can bind a key the shared
+/// vocabulary has no name for.
+pub fn key_name_for_dom_code(code: &str) -> Option<&'static str> {
+    KEY_NAME_DOM_CODES
+        .iter()
+        .find(|(_, c)| *c == code)
+        .map(|(name, _)| *name)
+}
+
 impl Mapping {
     /// The browser play page's keyboard layout.
     ///

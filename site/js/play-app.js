@@ -1078,6 +1078,17 @@ void main() {
     _attachInput() {
       const onKey = (e, down) => {
         if (!this.canvas.matches(':focus-within') && document.activeElement !== this.canvas) return;
+        /* Key Config (the pause menu's Options > Key Config row) needs the
+         * PHYSICAL key, not the pad bit it currently carries: the whole point
+         * is binding a key that is not in the table yet, and the guard below
+         * drops exactly those. `repeat` is skipped so holding the confirm key
+         * does not bind it to the highlighted row the instant the screen
+         * opens - the native window collapses the same stream in
+         * `handle_key`. */
+        if (down && !e.repeat && typeof this.rt.play_menu_key === 'function'
+            && this.rt.play_menu_key(e.code)) {
+          e.preventDefault();
+        }
         const table = padTable();
         if (!table || table[e.code] === undefined) return;
         if (window.legaiaPadSwallows(e.code)) e.preventDefault();
@@ -1313,6 +1324,14 @@ void main() {
         /* Always at least one tick, so an edge is never dropped. */
         for (let i = 0, n = Math.max(1, ticks); i < n; i++) {
           try { rt.play_menu_input(i === 0 ? edge : 0); } catch (e) {}
+        }
+        /* A rebind committed inside Options > Key Config. The page folded the
+         * engine's table into one JS object at load, so without this the new
+         * binding would be live in the engine and invisible here. One integer
+         * compare per menu frame. */
+        if (window.legaiaSyncPadBindings && window.legaiaSyncPadBindings(rt)) {
+          this.held.clear();
+          this._repack();
         }
         /* An in-canvas Load off a memory card lands the save's party in the
          * world, but the scene it was written in is the page's to enter

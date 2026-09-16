@@ -24,7 +24,7 @@
 use crate::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
 use crate::equip_session::{EquipInput, EquipOutcome, EquipSession};
 use crate::field_menu::FieldMenuRow;
-use crate::input::PadButton;
+use crate::input::{Mapping, PadButton};
 use crate::inventory_use::{InventoryContext, InventoryUseSession, TargetRow as InvTargetRow};
 use crate::magic_xp::SpellLevelNotice;
 use crate::options::{OptionsInput, OptionsSession, OptionsState};
@@ -126,10 +126,51 @@ impl FieldMenuSubsession {
         }
     }
 
+    /// Arm the Options sub-session's engine-only **Key Config** row against
+    /// the host's live keyboard binding table. No-op on every other variant.
+    ///
+    /// A post-construction hook rather than a [`Self::build`] argument: the
+    /// binding table is a host concern (the native binary's
+    /// `legaia-input.toml`, the page's `localStorage` entry) and every
+    /// headless caller of `build` - replay drivers, oracles, the disc-gated
+    /// menu tests - has no table to offer and should keep the retail ten
+    /// rows.
+    pub fn arm_key_rebind(&mut self, mapping: Mapping) {
+        if let Self::Config(s) = self {
+            s.arm_key_rebind(mapping);
+        }
+    }
+
+    /// The Options sub-session's live binding table once a rebind committed,
+    /// paired with "it changed since you last asked". `None` on every other
+    /// variant, and on an Options session whose Key Config row was never
+    /// armed.
+    ///
+    /// The host's persist cue: native writes `legaia-input.toml`, the page
+    /// writes the binding key it restores from on load.
+    pub fn take_rebound_mapping(&mut self) -> Option<Mapping> {
+        let Self::Config(s) = self else {
+            return None;
+        };
+        if !s.take_bindings_dirty() {
+            return None;
+        }
+        s.mapping().cloned()
+    }
+
     /// Drive one frame using a PSX-encoded edge-triggered "newly pressed"
     /// pad bitmask. Each variant's tick method receives the matching
     /// per-button input bundle.
     pub fn tick_pad_edge(&mut self, pressed: u16) {
+        self.tick_pad_edge_with_key(pressed, None);
+    }
+
+    /// [`Self::tick_pad_edge`] carrying the host's most-recent keyboard key
+    /// name, in the engine's own key vocabulary
+    /// ([`crate::input::KEY_NAME_DOM_CODES`]). Consumed only by the Options
+    /// sub-session's key-rebind screen while it awaits a key; every other
+    /// variant ignores it.
+    pub fn tick_pad_edge_with_key(&mut self, pressed: u16, key_pressed: Option<&str>) {
         match self {
             Self::Items(s) => s.input_pad_edge(pressed),
             Self::Equip { session, .. } => {
@@ -178,7 +219,7 @@ impl FieldMenuSubsession {
                 });
             }
             Self::Config(s) => {
-                let _ = s.tick(OptionsInput::from_pad_edge(pressed));
+                let _ = s.tick_with_key(OptionsInput::from_pad_edge(pressed), key_pressed);
             }
         }
     }

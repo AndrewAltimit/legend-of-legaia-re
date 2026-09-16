@@ -234,6 +234,15 @@ impl PlayWindowApp {
         // Read before the match: it borrows `self.boot_ui`, so the title
         // arm cannot call back into `self`.
         let cutscene_live = self.cutscene.is_some();
+        // Same reason: the Key Config screen consumes one key name per
+        // physical press, and the match holds `self.boot_ui` for the rest of
+        // the tick. Taken unconditionally - a key latched while no rebind
+        // screen is open is stale by the next frame and must not survive to
+        // be bound later.
+        let pending_key = self.pending_key_name.take();
+        // A binding table a Key Config screen committed this tick, applied
+        // and persisted after the match releases `self.boot_ui`.
+        let mut rebound: Option<legaia_engine_core::input::Mapping> = None;
         let mut start_attract: Option<i16> = None;
         // The pause menu's blips, off the raw edges before any screen
         // consumes them - the browser page keys the same three the same way
@@ -405,9 +414,14 @@ impl PlayWindowApp {
                             );
                         }
                         TitleOutcome::Options => {
+                            // Armed with the live binding table, so the boot
+                            // options screen carries the same Key Config row
+                            // the pause menu's does - one screen, both
+                            // entries.
                             self.boot_ui = BootUiState::Options(
-                                legaia_engine_core::options::OptionsSession::new(
+                                legaia_engine_core::options::OptionsSession::with_key_rebind(
                                     self.options_state.clone(),
+                                    self.mapping.clone(),
                                 ),
                             );
                         }
@@ -470,7 +484,12 @@ impl PlayWindowApp {
                     circle,
                     start,
                 };
-                let _ = session.tick(input);
+                let _ = session.tick_with_key(input, pending_key);
+                if session.take_bindings_dirty()
+                    && let Some(m) = session.mapping().cloned()
+                {
+                    rebound = Some(m);
+                }
                 if let Some(OptionsOutcome::Closed) = session.outcome() {
                     // Value edits commit inside the session's popup (retail
                     // writes the config word at popup confirm and never
@@ -508,6 +527,12 @@ impl PlayWindowApp {
                 {
                     return true;
                 }
+                // A bind committed inside the Options sub-session's Key
+                // Config screen this tick. Held in a local because this arm
+                // returns before the post-match apply the boot options screen
+                // uses, and because `self.mapping` cannot be written while
+                // `sub` borrows `self.boot_ui`.
+                let rebound_in_menu;
                 if let Some(active_sub) = sub.as_mut() {
                     // Engine extension: Triangle on the Status screen swaps
                     // it for the Tactical Arts chain editor (retail's seven
@@ -520,8 +545,9 @@ impl PlayWindowApp {
                     );
                     // A sub-session is open - route input + check for done.
                     if !opened_arts {
-                        active_sub.tick_pad_edge(pressed);
+                        active_sub.tick_pad_edge_with_key(pressed, pending_key);
                     }
+                    rebound_in_menu = active_sub.take_rebound_mapping();
                     if active_sub.is_done() {
                         // Drain into world side-effects + handle save.
                         let finished = sub.take().expect("sub was Some");
@@ -590,6 +616,14 @@ impl PlayWindowApp {
                             let _ = menu.resume(false);
                         }
                     }
+                    // Adopt + persist the rebind now that the `self.boot_ui`
+                    // borrow is dead: the live table is what the very next
+                    // key event resolves through, and the file is the same
+                    // `legaia-input.toml` the CLI editor writes.
+                    if let Some(mapping) = rebound_in_menu {
+                        self.mapping = mapping;
+                        self.persist_bindings();
+                    }
                     return true;
                 }
                 let input = FieldMenuInput {
@@ -630,7 +664,7 @@ impl PlayWindowApp {
                     // any randomizer/disc data and dropped Arts edits.
                     let world = &self.session.host.world;
                     let chain_library = world.chain_library();
-                    *sub = Some(FieldMenuSubsession::build(
+                    let mut built = FieldMenuSubsession::build(
                         row,
                         world,
                         &self.options_state,
@@ -638,7 +672,13 @@ impl PlayWindowApp {
                         &chain_library,
                         &world.tables.spell_catalog,
                         &world.tables.equipment_table,
-                    ));
+                    );
+                    // The Options row grows its engine-only Key Config row
+                    // only where a host has a binding table to edit; the
+                    // browser play page arms the same row off its own stored
+                    // table.
+                    built.arm_key_rebind(self.mapping.clone());
+                    *sub = Some(built);
                 }
                 let outcome = self.session.field_menu.as_ref().and_then(|m| m.outcome());
                 if let Some(outcome) = outcome {
@@ -688,7 +728,27 @@ impl PlayWindowApp {
         if let Some(fmv_id) = start_attract {
             self.start_title_attract(fmv_id);
         }
+        // Same for a committed rebind: adopt it as the live table (so the
+        // very next key event resolves through it) and persist it to the
+        // same `legaia-input.toml` that `legaia-engine config set --binding`
+        // writes - one file, whichever way the player edited it.
+        if let Some(mapping) = rebound {
+            self.mapping = mapping;
+            self.persist_bindings();
+        }
         boot_ui_active
+    }
+
+    /// Write the live binding table back to `legaia-input.toml` - the file
+    /// [`legaia_engine_core::input::Mapping::load_or_default`] reads at
+    /// startup and `legaia-engine config set --binding` edits from the
+    /// command line. The pause menu's Key Config screen is a third editor of
+    /// the same file, not a second store.
+    pub(super) fn persist_bindings(&self) {
+        let path = std::path::PathBuf::from(INPUT_CONFIG_FILE);
+        if let Err(e) = self.mapping.save(&path) {
+            log::warn!("bindings: save to {} failed: {e:#}", path.display());
+        }
     }
 
     /// Play the title screen's attract movie in-window.
@@ -853,7 +913,32 @@ impl PlayWindowApp {
                 out
             }
             BootUiState::Options(s) => {
-                let rows = s.state().rows();
+                // The boot options screen's Key Config sub-screen. Same
+                // shared builder the pause menu's composition uses - the
+                // rebind layout is written once, for both entries and both
+                // hosts.
+                if let Some(k) = s.key_rebind() {
+                    let pairs: Vec<(String, String)> = k
+                        .rows()
+                        .iter()
+                        .map(|r| (r.button.name().to_string(), r.key.clone()))
+                        .collect();
+                    let borrowed: Vec<(&str, &str)> = pairs
+                        .iter()
+                        .map(|(b, v)| (b.as_str(), v.as_str()))
+                        .collect();
+                    return legaia_engine_render::key_rebind_draws_for(
+                        &self.font,
+                        &borrowed,
+                        k.cursor(),
+                        matches!(
+                            k.phase(),
+                            legaia_engine_core::key_rebind::KeyRebindPhase::AwaitingKey { .. }
+                        ),
+                        (96, 80),
+                    );
+                }
+                let rows = s.state().rows_for(s.key_config_armed());
                 let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = rows
                     .iter()
                     .map(|r| legaia_engine_render::OptionsRowView {

@@ -927,6 +927,25 @@ struct PlayWindowApp {
     pad: u16,
     /// Input binding loaded from file (or default).
     mapping: legaia_engine_core::input::Mapping,
+    /// Physical keys currently held.
+    ///
+    /// Only the **Key Config** sub-screen needs this: winit delivers a stream
+    /// of `Pressed` events while a key is held, and a rebind that consumed
+    /// every one of them would bind the confirm key to the row the instant
+    /// the screen opened. The set turns that stream back into one edge per
+    /// key. The pad word cannot serve: it only holds keys that are *already*
+    /// bound to a button, and the whole point of the screen is to bind ones
+    /// that are not.
+    keys_down: std::collections::HashSet<KeyCode>,
+    /// The most recent fresh key-down's engine key **name**
+    /// (`keycode_to_name`), consumed once by the pause menu's Key Config
+    /// screen. `None` when nothing new was pressed since the last tick.
+    ///
+    /// The vocabulary is the binding table's own
+    /// ([`legaia_engine_core::input::KEY_NAME_DOM_CODES`]), so the two hosts
+    /// bind out of the same key set - a key the table has no name for is not
+    /// bindable on either.
+    pending_key_name: Option<&'static str>,
     /// Menu runtime - drives shop / inn / status screens. Ticked per frame
     /// when `is_open()`; renders shop overlay via `shop_draws_for`.
     menu_runtime: legaia_engine_core::menu_runtime::MenuRuntime,
@@ -1246,6 +1265,13 @@ impl PlayWindowApp {
 /// the retail settings plus the engine-only knobs (BGM / SFX volume,
 /// message speed) that the pause-menu options screen doesn't show.
 const OPTIONS_CONFIG_FILE: &str = "legaia-options.toml";
+
+/// Keyboard binding round-trip file - the same one
+/// `legaia-engine config set --binding` edits and `window/run.rs` loads at
+/// startup. The pause menu's Key Config screen writes here too, so the
+/// in-game editor and the CLI editor share one store rather than each
+/// keeping its own.
+pub(super) const INPUT_CONFIG_FILE: &str = "legaia-input.toml";
 
 impl PlayWindowApp {
     /// Content rect for a menu window id: the disc-parsed descriptor when

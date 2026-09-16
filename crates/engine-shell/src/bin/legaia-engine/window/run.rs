@@ -1153,6 +1153,8 @@ pub(super) fn cmd_play_window_with_record(
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,
         mapping,
+        keys_down: std::collections::HashSet::new(),
+        pending_key_name: None,
         menu_runtime: MenuRuntime::new(save_dir.to_path_buf()),
         prev_pad: 0,
         tick_no: 0,

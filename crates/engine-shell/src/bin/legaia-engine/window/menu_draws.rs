@@ -12,7 +12,7 @@
 
 use super::*;
 use legaia_engine_render::pause_menu::{
-    EquipComposeInput, GenericContent, ItemsScreenView, MagicScreenView, MenuRects,
+    EquipComposeInput, GenericContent, ItemsScreenView, KeyRebindView, MagicScreenView, MenuRects,
     OptionsScreenView, PauseMenuCtx, PauseMenuDraws, PauseScreen, SpecialConfirmView,
     StatusScreenView, TopLevelView, equip_screen_compose, pause_screen_draws,
     spell_level_notice_draws,
@@ -213,7 +213,7 @@ impl PlayWindowApp {
                 )
             }
             FieldMenuSubsession::Config(s) => {
-                let rows = s.state().rows();
+                let rows = s.state().rows_for(s.key_config_armed());
                 let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = rows
                     .iter()
                     .map(|r| legaia_engine_render::OptionsRowView {
@@ -236,6 +236,31 @@ impl PlayWindowApp {
                     .take(s.cursor() as usize)
                     .map(|r| r.advance)
                     .sum();
+                // Key Config sub-screen model, when it is open. The pairs
+                // are the shared session's rows, so the native window and the
+                // play page print the same button order and the same bound
+                // keys.
+                let rebind_rows: Vec<(String, String)> = s
+                    .key_rebind()
+                    .map(|k| {
+                        k.rows()
+                            .iter()
+                            .map(|r| (r.button.name().to_string(), r.key.clone()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let rebind_pairs: Vec<(&str, &str)> = rebind_rows
+                    .iter()
+                    .map(|(b, k)| (b.as_str(), k.as_str()))
+                    .collect();
+                let rebind = s.key_rebind().map(|k| KeyRebindView {
+                    rows: &rebind_pairs,
+                    cursor: k.cursor(),
+                    awaiting: matches!(
+                        k.phase(),
+                        legaia_engine_core::key_rebind::KeyRebindPhase::AwaitingKey { .. }
+                    ),
+                });
                 pause_screen_draws(
                     &ctx,
                     PauseScreen::Options(OptionsScreenView {
@@ -243,6 +268,7 @@ impl PlayWindowApp {
                         cursor: s.cursor(),
                         popup,
                         row_y_off,
+                        rebind,
                     }),
                 )
             }

@@ -302,6 +302,7 @@ fn compose_options(ctx: &PauseMenuCtx<'_>, popup: bool) -> PauseMenuDraws {
                 cursor: 0,
             }),
             row_y_off: 14,
+            rebind: None,
         }),
     )
 }
