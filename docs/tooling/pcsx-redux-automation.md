@@ -899,6 +899,8 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_w3a_slippery_call_frame.lua`](../../scripts/pcsx-redux/autorun_w3a_slippery_call_frame.lua) | Same injection aimed at action id `0x92`, so PROT 0920 is resident and its drain budget `_DAT_8007BDC0` is non-zero, with the gate read `0x8004818C`, the `jal` at `0x800481A0` and the callee `0x801F7B88` all breakpointed. Catches SCUS's one fixed-VA call into slot B actually firing - the state the corpus could not supply, because the only Slippery mid-cast backup is a mednafen one. |
 
 | [`autorun_field_camera_tr.lua`](../../scripts/pcsx-redux/autorun_field_camera_tr.lua) | What composes the field camera's GTE `TR` from the live camera words, on one frame. &rarr; [detail](#autorun_field_camera_trlua) |
+| [`autorun_cast_cue_band_sweep.lua`](../../scripts/pcsx-redux/autorun_cast_cue_band_sweep.lua) | Whether the cast-audio dispatcher's character-banded cue band ever fires on a player cast. &rarr; [detail](#autorun_cast_cue_band_sweeplua) |
+| [`autorun_throw_out_cursor.lua`](../../scripts/pcsx-redux/autorun_throw_out_cursor.lua) | Whether the pause-menu item cursor `_DAT_8007BB88` is a bag slot or a list row. &rarr; [detail](#autorun_throw_out_cursorlua) |
 #### Runtime probe details
 
 ##### `autorun_w4d_cort_flow_writer.lua`
@@ -1114,6 +1116,42 @@ the longer ones (`Probes` + `What it answered`) are written out as
   `FUN_80026F50` (which fires zero times in a field frame), and on a scripted
   shot the ease never runs at all while the view builder runs every frame.
   See [`formats/encounter.md`](../formats/encounter.md#from-the-block-to-the-live-camera-compose-ease-snap).
+
+##### `autorun_cast_cue_band_sweep.lua`
+
+- **Probes:** the cast-audio dispatcher `FUN_801F3990`'s entry, the single
+  `jal 0x8004FCC8` at `0x801F3C18` that every one of its cue arms converges on
+  (so a hit *is* the band firing, and `a0` is the id it resolved), the
+  `actor[+0x1DF] == 0xFE` arm's own `jal 0x8003D53C` at `0x801F3A7C`, the cue
+  dispatcher and the CD-XA clip starter. It also taps the dispatcher's **only**
+  caller - `jal 0x801F3990` at `0x801E3E04`, one arm of the battle-action SM in
+  PROT 0898 - at the arm body and at the store the arm's
+  `actor[+0x1DA] == actor[+0x1D9]` queue-cursor guard gates, so a zero at the
+  dispatcher separates "the arm never ran" from "the arm ran and declined".
+  Casts are driven rather than resumed into: a plan of `seat:spell` pairs is
+  written into the acting seat's queued action one per window while CROSS is
+  tapped, several casts per run. Four byte fingerprints guard the aliasing VAs.
+- **What it answered:** see the cast-voice section of
+  [`cast-module.md`](../subsystems/cast-module.md#the-casts-own-cd-xa-voice).
+  The reference scan behind the caller tap is the load-bearing part: the
+  dispatcher has exactly one reference disc-wide in any of the five forms
+  (`find-address-word-refs.py 0x801F3990`), so the band's reachability is that
+  one SM arm's reachability and nothing else's.
+
+##### `autorun_throw_out_cursor.lua`
+
+- **Probes:** the two `sb zero` stores the Throw Out confirm makes itself
+  (`0x801D88FC` / `0x801D8910` in PROT 0899, both over
+  `0x80084140 + 0x1818 + _DAT_8007BB88 * 2`), the bag normalizer `FUN_800423E0`
+  and the active-window setter `FUN_8004313C`. The experiment does not need the
+  confirm: it punches holes into the 256-slot bag, walks into the pause Items
+  screen, steps the cursor with DOWN and logs the cursor word beside the id the
+  bag holds at that index every vsync. A cursor that is a slot index never rests
+  on a hole; one that is a list row does as soon as the renderer skips one. The
+  normalizer tap is what tells a null result apart from a compacted bag - if it
+  runs on menu open, retail's rows and slots cannot diverge in the first place.
+- **What it answered:** the cursor's role for the port's remove-by-row
+  divergence; see [`inventory.md`](../subsystems/inventory.md#accessors).
 
 ### Save-state to Python (offline analysis)
 
