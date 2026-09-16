@@ -153,6 +153,10 @@ pub struct ModelRef {
 /// PORT: FUN_80024E08 - the model re-bind's id resolve (`+0x5C = 0`,
 /// `+0x64 = id`, reload); the `+0x60` mirror it writes when `_DAT_8007B83C`
 /// is `0xF` is a game-mode branch the engine has no seat for.
+/// REF: FUN_8003A1E4 - the `0xF0` split this function performs is not in
+/// `FUN_80024E08` at all: it is in the two callers, `0x8003A2CC..0x8003A328`
+/// inside the placement spawner and the scripted-motion VM's op-`0x0E` arm at
+/// `0x800393B8`, each choosing a bank base before the resolve.
 pub fn resolve_model_id(id: i16) -> ModelRef {
     let raw = id as u16;
     if raw < SPECIAL_MODEL_THRESHOLD {
