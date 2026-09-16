@@ -95,6 +95,47 @@ const BATTLE_BUFF_ITEMS: &[(u8, &str)] = &[
 /// ([`ItemCatalog::apply_action_gauge_items`]).
 const ACTION_GAUGE_ITEMS: &[(u8, &str)] = &[(0x81, "Fury Boost")];
 
+/// The nine Hyper-Art books (effect classes `11`/`12`/`13`) by their real
+/// retail ids + names. The class picks the **character record** the art id
+/// lands on - `11` = roster slot 0, `12` = slot 1, `13` = slot 2 - and the
+/// descriptor's `tier` byte *is* the art id inserted, which is why the three
+/// lines do not share a tier space (Wind I/II are `5`/`4`, Fire and Thunder
+/// I/II are `3`/`2`, and all three line IIIs are `1`).
+///
+/// Seeded only when the on-disc effect table is installed
+/// ([`ItemCatalog::apply_arts_book_items`]); the insert itself runs in
+/// [`crate::World::use_item`].
+const ARTS_BOOK_ITEMS: &[(u8, &str)] = &[
+    (0x8F, "Fire Book I"),
+    (0x90, "Fire Book II"),
+    (0x91, "Fire Book III"),
+    (0x92, "Wind Book I"),
+    (0x93, "Wind Book II"),
+    (0x94, "Wind Book III"),
+    (0x95, "Thunder Book I"),
+    (0x96, "Thunder Book II"),
+    (0x97, "Thunder Book III"),
+];
+
+/// Effect class of a Hyper-Art book that targets roster slot 0.
+/// [`ARTS_BOOK_CLASSES`] spans `11..=13`; the applier's own slot arithmetic is
+/// `selector - 0x0B` (`addiu v1,v1,-0xb` at `0x80041FC0`).
+pub const ARTS_BOOK_CLASS_BASE: u8 = 11;
+/// The three Hyper-Art book effect classes.
+pub const ARTS_BOOK_CLASSES: std::ops::RangeInclusive<u8> = 11..=13;
+/// The Point-Card-strike effect class (applier selector `0x0E`).
+///
+/// **No retail item record resolves to it**: decoding all 256 rows of the
+/// static item table through the effect descriptors finds zero class-`14`
+/// rows, so the arm is reachable code over unreachable data on the shipped
+/// disc. A patched effect table can still open it, which is why the seeder
+/// sweeps the id space instead of naming ids.
+pub const POINT_CARD_STRIKE_CLASS: u8 = 14;
+
+/// Catalog label for a swept class-`14` row whose id the catalog does not
+/// already name.
+const POINT_CARD_STRIKE_NAME: &str = "Point Card";
+
 /// Which stat an [`ItemEffect::StatBoost`] modifies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatBoostTarget {
@@ -165,6 +206,18 @@ pub enum ItemEffect {
     Damage {
         amount: u16,
     },
+    /// A Hyper-Art **book** (classes `11`/`12`/`13`). A marker: the roster
+    /// slot and the art id are resolved from the on-disc descriptor at use
+    /// time ([`crate::World::use_item`]), which runs the applier's ordered
+    /// insert into that character's displayed-skill list. Only ever installed
+    /// when a real table is present (see [`ItemCatalog::apply_arts_book_items`]).
+    ArtsBook,
+    /// The **Point Card strike** (class `14`). A marker: the discharge reads
+    /// the Point Card bank and applies it as damage at use time
+    /// ([`crate::World::use_item`]). Only ever installed when a real table is
+    /// present, and no retail row carries the class (see
+    /// [`ItemCatalog::apply_point_card_items`]).
+    PointCardStrike,
     /// Item exists in inventory but has no battle effect (key items).
     KeyItem,
 }
@@ -451,6 +504,67 @@ impl ItemCatalog {
         }
     }
 
+    /// Seed the nine Hyper-Art books (classes `11`/`12`/`13`) into the catalog
+    /// from the real on-disc item-effect table, each as an
+    /// [`ItemEffect::ArtsBook`] marker. The roster slot and the art id are
+    /// read back off the same table in [`crate::World::use_item`].
+    ///
+    /// The shipped descriptors carry flag byte `0x83` - field-usable, not
+    /// battle-usable, not discardable - so the books never appear in the
+    /// battle item list; the usability gates come from the table rather than
+    /// from this seeder's own opinion.
+    ///
+    /// Like the sibling seeders, installed **only** when the disc table is
+    /// present and only for ids the table actually classifies as a book.
+    pub fn apply_arts_book_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
+        for &(id, name) in ARTS_BOOK_ITEMS {
+            let Some(eff) = table.effect(id) else {
+                continue;
+            };
+            if !ARTS_BOOK_CLASSES.contains(&eff.class) {
+                continue;
+            }
+            self.insert(ItemEntry {
+                id,
+                name,
+                effect: ItemEffect::ArtsBook,
+                usable_in_battle: eff.battle_usable(),
+                usable_in_field: eff.field_usable(),
+            });
+        }
+    }
+
+    /// Seed every id whose descriptor carries [`POINT_CARD_STRIKE_CLASS`] as an
+    /// [`ItemEffect::PointCardStrike`] marker.
+    ///
+    /// This one **sweeps the id space** rather than naming ids, because the
+    /// retail item table carries no class-`14` row at all: the arm exists with
+    /// no data pointing at it, and only an edited effect table (a randomizer
+    /// seed, a translation-adjacent patch) puts an item in front of it. An id
+    /// the catalog already names keeps its name.
+    pub fn apply_point_card_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
+        for id in 0..=u8::MAX {
+            let Some(eff) = table.effect(id) else {
+                continue;
+            };
+            if eff.class != POINT_CARD_STRIKE_CLASS {
+                continue;
+            }
+            let name = self
+                .by_id
+                .get(&id)
+                .map(|e| e.name)
+                .unwrap_or(POINT_CARD_STRIKE_NAME);
+            self.insert(ItemEntry {
+                id,
+                name,
+                effect: ItemEffect::PointCardStrike,
+                usable_in_battle: eff.battle_usable(),
+                usable_in_field: eff.field_usable(),
+            });
+        }
+    }
+
     /// `true` if the item's effect applies to the whole party (the descriptor's
     /// `0x20` all-party flag). The item-use session fans a flagged item out
     /// across every valid ally instead of asking for a single target.
@@ -532,6 +646,21 @@ pub enum ItemOutcome {
     EscapeRequested,
     DamageDealt {
         amount: u16,
+    },
+    /// A Hyper-Art book ([`ItemEffect::ArtsBook`]) inserted `art_id` into the
+    /// displayed-skill list of roster slot `character`, at list index
+    /// `position`. The applier keeps that list sorted ascending by id, so
+    /// `position` is not always `0`.
+    ArtLearned {
+        character: u8,
+        art_id: u8,
+        position: u8,
+    },
+    /// The Point Card strike ([`ItemEffect::PointCardStrike`]) took `spent`
+    /// off the bank (leaving `remaining`) and dealt it as damage.
+    PointCardSpent {
+        spent: u32,
+        remaining: u32,
     },
     NoEffect,
 }
@@ -623,9 +752,11 @@ pub fn apply_effect(effect: ItemEffect, target: &TargetSnapshot) -> ItemOutcome 
         // The multi-stat permanent boost, the one-battle buff, and the
         // action-gauge extension are all resolved against live battle state in
         // `World::use_item`, so the pure, table-less path is a no-op.
-        ItemEffect::StatUp | ItemEffect::BattleBuff | ItemEffect::ActionGauge => {
-            ItemOutcome::NoEffect
-        }
+        ItemEffect::StatUp
+        | ItemEffect::BattleBuff
+        | ItemEffect::ActionGauge
+        | ItemEffect::ArtsBook
+        | ItemEffect::PointCardStrike => ItemOutcome::NoEffect,
         ItemEffect::Spirit { amount } => ItemOutcome::SpiritGained { amount },
         ItemEffect::Capture { strength } => ItemOutcome::CaptureRolled { strength },
         ItemEffect::Escape => ItemOutcome::EscapeRequested,

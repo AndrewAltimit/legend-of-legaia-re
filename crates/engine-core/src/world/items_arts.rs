@@ -20,6 +20,8 @@ impl World {
             catalog.apply_stat_items(table);
             catalog.apply_buff_items(table);
             catalog.apply_action_gauge_items(table);
+            catalog.apply_arts_book_items(table);
+            catalog.apply_point_card_items(table);
         }
         self.tables.item_catalog = catalog;
     }
@@ -32,6 +34,8 @@ impl World {
         self.tables.item_catalog.apply_stat_items(&table);
         self.tables.item_catalog.apply_buff_items(&table);
         self.tables.item_catalog.apply_action_gauge_items(&table);
+        self.tables.item_catalog.apply_arts_book_items(&table);
+        self.tables.item_catalog.apply_point_card_items(&table);
         self.tables.item_effects = Some(table);
     }
 
@@ -391,6 +395,16 @@ impl World {
         if let crate::items::ItemEffect::ActionGauge = entry.effect {
             return self.apply_fury_boost_item(target_slot);
         }
+        // Hyper-Art book (class 11/12/13): the applier's ordered insert into a
+        // fixed character's displayed-skill list. The target the player picked
+        // is not read at all - the class picks the record.
+        if let crate::items::ItemEffect::ArtsBook = entry.effect {
+            return self.apply_arts_book_item(item_id);
+        }
+        // Point Card strike (class 14): discharge the bank onto the target.
+        if let crate::items::ItemEffect::PointCardStrike = entry.effect {
+            return self.apply_point_card_strike(target_slot);
+        }
         let idx = target_slot as usize;
         // Which record is authoritative depends on where the use happens
         // (retail: the 0x414-byte roster record at `0x80084708 + n*0x414` is
@@ -589,6 +603,117 @@ impl World {
             self.battle.fury_boost[idx] = Some(delta);
         }
         crate::items::ItemOutcome::ActionGaugeExtended
+    }
+
+    /// Apply a Hyper-Art **book** ([`crate::items::ItemEffect::ArtsBook`], the
+    /// class-`11`/`12`/`13` consumables Fire / Wind / Thunder Book I..III).
+    ///
+    /// The engine's stand-in for applier selectors `0x0B`..`0x0D`
+    /// (`FUN_800402F4`, arm `0x80041FB4`). Two shapes of that arm the port
+    /// keeps exactly:
+    ///
+    /// * **The target the player picked is ignored.** The record written is
+    ///   `class - 11`, i.e. roster slot 0 / 1 / 2, computed from the descriptor
+    ///   alone (`addiu v1,v1,-0xb` at `0x80041FC0`). Using Fire Book I on Noa
+    ///   still teaches Vahn.
+    /// * **The art id is the descriptor's `tier` byte**, which is why the three
+    ///   book lines do not share a tier space.
+    ///
+    /// The insert itself is
+    /// [`legaia_engine_vm::battle_action::selector_insert_displayed_skill`] -
+    /// the ordered (ascending-by-id) insert into the record's `+0x185` count /
+    /// `+0x186` id list, which `WorldFieldHost::learned_arts` already reads
+    /// back for the battle AI's auto-fill queue.
+    ///
+    /// Retail's out-of-battle leg also raises the "learned" notification
+    /// (`jal 0x80035C00` at `0x8004208C`, skipped when the mode word
+    /// `0x8007B83C` is `0x15`); the engine surfaces that as the returned
+    /// [`crate::items::ItemOutcome::ArtLearned`] instead of a side channel, so
+    /// a host can bannerise it on the field and stay quiet in battle.
+    ///
+    /// Returns [`crate::items::ItemOutcome::NoEffect`] when no effect table is
+    /// installed, when the id is not a book, when the class names a roster slot
+    /// the party does not have, or when the list is already full.
+    fn apply_arts_book_item(&mut self, item_id: u8) -> crate::items::ItemOutcome {
+        let Some(eff) = self
+            .tables
+            .item_effects
+            .as_ref()
+            .and_then(|t| t.effect(item_id))
+        else {
+            return crate::items::ItemOutcome::NoEffect;
+        };
+        if !crate::items::ARTS_BOOK_CLASSES.contains(&eff.class) {
+            return crate::items::ItemOutcome::NoEffect;
+        }
+        let rslot = usize::from(eff.class - crate::items::ARTS_BOOK_CLASS_BASE);
+        let Some(rec) = self.party.roster.members.get_mut(rslot) else {
+            return crate::items::ItemOutcome::NoEffect;
+        };
+        let mut list = rec.displayed_skills();
+        let mut count = list.count;
+        let Some(position) = legaia_engine_vm::battle_action::selector_insert_displayed_skill(
+            &mut list.ids,
+            &mut count,
+            eff.tier,
+        ) else {
+            return crate::items::ItemOutcome::NoEffect;
+        };
+        list.count = count;
+        rec.set_displayed_skills(list);
+        crate::items::ItemOutcome::ArtLearned {
+            character: rslot as u8,
+            art_id: eff.tier,
+            position: position as u8,
+        }
+    }
+
+    /// Discharge the **Point Card** bank onto `target_slot` - the engine's
+    /// stand-in for applier selector `0x0E` (`FUN_800402F4`, arm `0x8004209C`).
+    ///
+    /// The arm spends `min(bank, 0x270F)` of the counter retail keeps at
+    /// `0x800845B4` (the engine's [`crate::world::MinigameState::point_card`],
+    /// the same purse a shop buy credits), writes the remainder back, applies
+    /// the amount as HP damage with the band's kill-capable clamp, and stages
+    /// the victim's reaction clip through the cast band's three-leg pick. The
+    /// arithmetic is
+    /// [`legaia_engine_vm::battle_action::selector_point_card`]; this is the
+    /// seat that gives it a bank and a victim.
+    ///
+    /// **No shipped item reaches it.** Decoding all 256 static item rows
+    /// through the effect descriptors finds no class-`14` row, so on the retail
+    /// disc this is reachable code over unreachable data; an edited effect
+    /// table opens it. The catalog seeder
+    /// ([`crate::items::ItemCatalog::apply_point_card_items`]) therefore sweeps
+    /// the id space rather than naming ids.
+    fn apply_point_card_strike(&mut self, target_slot: u8) -> crate::items::ItemOutcome {
+        use legaia_engine_vm::battle_action::{PointCardVictim, selector_point_card};
+        let counter = self.minigames.point_card.max(0) as u32;
+        let idx = target_slot as usize;
+        let Some(a) = self.actors.get_mut(idx) else {
+            return crate::items::ItemOutcome::NoEffect;
+        };
+        let p = |i: usize| a.battle.params.get(i - 0x1DF).copied().unwrap_or(0);
+        let victim = PointCardVictim {
+            hp: a.battle.hp,
+            flinch_anim: p(0x1EF),
+            knockdown_anim: p(0x1F1),
+            reaction_gate: p(0x1F2),
+            restage: 0,
+        };
+        let Some(d) = selector_point_card(counter, victim) else {
+            return crate::items::ItemOutcome::NoEffect;
+        };
+        a.battle.hp = d.hp;
+        a.battle.queued_anim = d.staged_anim;
+        if a.battle.max_hp > 0 && a.battle.hp == 0 {
+            a.battle.liveness = 0;
+        }
+        self.minigames.point_card = d.remaining as i32;
+        crate::items::ItemOutcome::PointCardSpent {
+            spent: d.spent,
+            remaining: d.remaining,
+        }
     }
 
     /// Apply a one-battle stat buff ([`crate::items::ItemEffect::BattleBuff`],

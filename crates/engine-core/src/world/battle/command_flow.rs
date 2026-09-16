@@ -1475,7 +1475,14 @@ impl World {
             ItemOutcome::HealedHp { amount } | ItemOutcome::HealedMp { amount } => (amount, true),
             ItemOutcome::Revived { hp_after } => (hp_after, true),
             ItemOutcome::DamageDealt { amount } => (amount, false),
-            // Cures / capture / escape / stat boosts / no-effect: no number.
+            // The Point Card strike pops its spent amount as a damage number,
+            // which is what retail's `FUN_801F44A0(amount, slot)` call in the
+            // selector-`0x0E` arm does.
+            ItemOutcome::PointCardSpent { spent, .. } => {
+                (spent.min(u32::from(u16::MAX)) as u16, false)
+            }
+            // Cures / capture / escape / stat boosts / art learns / no-effect:
+            // no number.
             _ => return,
         };
         if amount == 0 {

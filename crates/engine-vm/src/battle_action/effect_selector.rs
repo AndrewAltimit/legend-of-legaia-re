@@ -155,12 +155,16 @@ pub const DISPLAYED_SKILL_CAP: usize = 16;
 /// the mode word at `0x80042084`). That call is the caller's.
 ///
 /// PORT: FUN_800402F4 (selectors `0x0B`..`0x0D`, `0x80041FB4..0x80042098`)
-/// NOT WIRED: the host is the item-use spell-learn leg of `World::use_item`.
-/// The engine commits a learn to the **spell list** at `+0x13D`
-/// (`engine-core::magic_xp::learn_spell_prepend`, `FUN_801E92DC`) and does
-/// not maintain the separate **displayed** list at `+0x185`/`+0x186` this arm
-/// writes; nothing reads that list in the port yet, because the menu page it
-/// feeds sources its rows from the spell list instead.
+///
+/// Wired: `World::use_item` runs this for a Hyper-Art **book**
+/// (`engine-core::items::ItemEffect::ArtsBook`, the class-`11`/`12`/`13`
+/// descriptors on item ids `0x8F..=0x97`), writing the `+0x185`/`+0x186` list
+/// of roster slot `class - 11`. That list is not inert on the engine side
+/// either: `WorldFieldHost::learned_arts` reads it back for the battle AI's
+/// auto-fill queue. The separate **spell** list at `+0x13D`
+/// (`engine-core::magic_xp::learn_spell_prepend`, `FUN_801E92DC`) is a
+/// different list with a different writer, which is what the earlier reading
+/// of this row conflated.
 pub fn selector_insert_displayed_skill(list: &mut [u8], count: &mut u8, id: u8) -> Option<usize> {
     let cap = list.len().min(DISPLAYED_SKILL_CAP);
     let mut at = usize::from(*count).min(cap);
@@ -229,10 +233,17 @@ pub struct PointCardDischarge {
 /// (`beq v1, zero, epilogue` at `0x800420AC`).
 ///
 /// PORT: FUN_800402F4 (selector `0x0E`, `0x8004209C..0x8004219C`)
-/// NOT WIRED: the host is `World::use_item` for the Point Card. The engine
-/// carries no counter at `0x800845B4` - the accumulator is a game-state
-/// window word with no `engine-core` field - so there is nothing for the arm
-/// to discharge until that word has a home.
+///
+/// Wired: `World::use_item` discharges it for a class-`14` item, against
+/// `engine-core::MinigameState::point_card` - which *is* the `0x800845B4`
+/// accumulator, the purse a shop buy credits and the pause Items page prints.
+/// An earlier reading of this row held that the engine carried no such field;
+/// it has carried one since the shop's Point Card accrual landed.
+///
+/// What is genuinely absent is the **data**, not the host: no row of the
+/// static item table resolves to class `14`, so on the retail disc the arm is
+/// reachable code over unreachable data (`docs/formats/item-effect-table.md`).
+/// The catalog seeder sweeps the id space so an edited effect table opens it.
 pub fn selector_point_card(counter: u32, victim: PointCardVictim) -> Option<PointCardDischarge> {
     if counter == 0 {
         return None;

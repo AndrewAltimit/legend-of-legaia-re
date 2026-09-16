@@ -289,6 +289,46 @@ lifts the **whole** `0x200`-byte span rather than the 72-slot consumable page:
 a played-through bag runs well past slot 71 (a three-member mid-game card
 reads 160 occupied slots), and the page-wide lift dropped every one of them.
 
+### Two use legs that are not a heal
+
+The item-use applier `FUN_800402F4` dispatches on the descriptor's **class**
+byte, and two of its arms are not target-effects at all. The engine runs both
+through `World::use_item`.
+
+**The Hyper-Art books** (classes `11` / `12` / `13`, item ids `0x8F..=0x97` -
+Fire / Wind / Thunder Book I..III) write the character record's displayed-skill
+list at `+0x185` (count) / `+0x186` (ids), not any live battle field. Two shapes
+of the arm at `0x80041FB4` are easy to get wrong:
+
+- **The picked target is never read.** The record written is `class - 11`, i.e.
+  roster slot 0 / 1 / 2, derived from the descriptor alone
+  (`addiu v1,v1,-0xb` at `0x80041FC0`), so a Fire Book used on Noa still teaches
+  Vahn.
+- **The descriptor's `tier` byte is the art id**, so the three lines do not
+  share a tier space: Fire and Thunder I/II carry `3`/`2` while Wind I/II carry
+  `5`/`4`, and all three line IIIs carry `1`. Reading `tier` as a book *level*
+  inverts the numbering.
+
+The insert is ordered ascending by id (the loop at `0x80041FFC..0x8004202C`
+moves an entry up only while the new id compares lower), and the shipped
+descriptors carry flag byte `0x83` - field-usable, **not** battle-usable. The
+out-of-battle leg also raises a "learned" notification (`jal 0x80035C00`),
+skipped when the mode word `0x8007B83C` reads `0x15`; the engine surfaces that
+as the `ItemOutcome::ArtLearned` it returns. Ports:
+`legaia_engine_vm::battle_action::selector_insert_displayed_skill` for the
+insert, `World::use_item` for the seat.
+
+**The Point Card strike** (class `14`, arm `0x8004209C`) spends
+`min(bank, 0x270F)` of the Point Card counter `_DAT_800845B4` and applies it as
+HP damage with the cast band's usual kill-capable clamp. No retail item row
+resolves to the class - decoding all 256 static item rows through the effect
+descriptors finds zero class-`14` descriptors - so on the shipped disc it is
+reachable code over unreachable data, and only an edited effect table opens it.
+The engine's catalog seeder therefore *sweeps* the id space for the class rather
+than naming ids. Port: `legaia_engine_vm::battle_action::selector_point_card`
+against `World::minigames.point_card`, the same purse a shop buy credits
+([`shop.md`](shop.md)).
+
 ## Provenance
 
 Ghidra-traced disassembly of `SCUS_942.54` plus live emulator cross-checks: a
