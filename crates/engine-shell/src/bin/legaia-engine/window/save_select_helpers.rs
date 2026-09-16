@@ -231,93 +231,13 @@ impl SlotInfoOwned {
 /// draw fifteen text rows under two pills.
 pub(crate) const CARD_PORTS: u8 = 2;
 
-/// Party records a retail SC block carries - the four contiguous
-/// `0x80084708 + n * 0x414` records of `docs/formats/save-record.md`, and so
-/// the cap a block lift reads under. The browser's card grid passes the same
-/// number, which is what makes one card print the same on both hosts.
-pub(crate) const CARD_PARTY_RECORDS: usize = 4;
-
-/// A memory-card image mounted in one of the shell's card ports.
+/// The mounted-card type, shared with the browser rack.
 ///
-/// The container bytes are held **verbatim**, in whatever container they
-/// arrived in - a raw `.mcr` / `.mcd`, a DexDrive `.gme`, a single-save
-/// `.mcs` - and every block address goes through the
-/// [`legaia_save::emu::CardView`] detected for them, so a wrapper header
-/// costs no code here. That is the browser rack's model
-/// (`legaia-web-viewer`'s `InsertedCard`); holding the same shape is what
-/// lets one card image read the same on both hosts.
-pub(crate) struct MountedCard {
-    /// The container bytes exactly as read.
-    pub(crate) bytes: Vec<u8>,
-    /// Pill-row label: the image's own file name.
-    pub(crate) label: String,
-    /// Detected container view - block and directory-frame addressing.
-    pub(crate) view: legaia_save::emu::CardView,
-}
-
-impl MountedCard {
-    /// Mount the container at `path`.
-    ///
-    /// Errors when the bytes are not a container [`legaia_save::emu::detect`]
-    /// recognises, and that failure is the point: an *unmounted* port reads
-    /// empty, so a wrong file mounted quietly would present as a card with
-    /// nothing on it rather than as the mistake it is.
-    pub(crate) fn open(path: &Path) -> anyhow::Result<Self> {
-        use anyhow::Context;
-        let bytes = std::fs::read(path)
-            .with_context(|| format!("read memory-card image {}", path.display()))?;
-        let view = legaia_save::emu::detect(&bytes)
-            .with_context(|| format!("mount memory-card image {}", path.display()))?;
-        let label = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("MEMORY CARD")
-            .to_string();
-        Ok(Self { bytes, label, view })
-    }
-
-    /// The save in grid `cell`, or `None` when the block holds none.
-    ///
-    /// Grid cell `i` is card block `i + 1`: block 0 is the card directory and
-    /// is never a save. A block whose frame does not mark it as a chain
-    /// *start* holds nothing of its own - a mid-chain continuation belongs to
-    /// the save that opened the chain.
-    pub(crate) fn save_at(
-        &self,
-        cell: u8,
-    ) -> Option<(legaia_save::SaveFile, legaia_save::SaveResume)> {
-        let block = cell.checked_add(1)?;
-        if !self.view.block_is_save_start(&self.bytes, block) {
-            return None;
-        }
-        let sc = self.view.sc_block(&self.bytes, block)?;
-        let sf = legaia_save::SaveFile::from_retail_sc_block(sc, CARD_PARTY_RECORDS).ok()?;
-        Some((sf, legaia_save::SaveResume::from_retail_sc_block(sc)))
-    }
-
-    /// The card's fifteen blocks as the 5x3 preview grid reads them.
-    ///
-    /// A present block goes through [`snapshot_for_save`] - the derivation
-    /// the save-directory scan uses too - so a card save and a slot file
-    /// print the same name / level / HP / MP / location rows.
-    ///
-    /// A block the directory *claims* but which will not lift is someone
-    /// else's save, not a free block: retail captions the two differently,
-    /// and folding them invites a Save to overwrite what it never read.
-    pub(crate) fn block_snapshots(&self) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
-        use legaia_engine_core::save_screen::SLOT_GRID_CELLS;
-        use legaia_engine_core::save_select::SlotSnapshot;
-        (0..SLOT_GRID_CELLS)
-            .map(|cell| match self.save_at(cell) {
-                Some((sf, resume)) => snapshot_for_save(cell, &sf, &resume),
-                None if self.view.block_is_save_start(&self.bytes, cell + 1) => {
-                    SlotSnapshot::foreign(cell)
-                }
-                None => SlotSnapshot::empty(cell),
-            })
-            .collect()
-    }
-}
+/// Both hosts hold the same struct now: it caches the detected
+/// [`legaia_save::emu::CardView`], carries the dirty bit a host that writes
+/// needs, and answers `save_at` / `block_is_save_start` / `dir_frame` off its
+/// own bytes. The two hosts used to carry near-identical copies that drifted.
+pub(crate) use legaia_save::emu::MountedCard;
 
 /// The native shell's save rack: retail's two console ports, with the
 /// engine's own save directory standing in for the card in **port 1**.
@@ -384,7 +304,7 @@ pub(crate) fn disk_port_blocks_with_card(
     use legaia_engine_core::save_select::SlotSnapshot;
     match (port, card) {
         (0, _) => scan_save_dir(save_dir),
-        (1, Some(card)) => card.block_snapshots(),
+        (1, Some(card)) => legaia_engine_core::save_select::card_block_snapshots(card),
         _ => (0..SLOT_GRID_CELLS).map(SlotSnapshot::empty).collect(),
     }
 }
@@ -1002,8 +922,12 @@ mod mounted_card_tests {
         std::fs::write(&raw_path, &raw).unwrap();
         std::fs::write(&gme_path, &gme).unwrap();
 
-        let from_raw = MountedCard::open(&raw_path).unwrap().block_snapshots();
-        let from_gme = MountedCard::open(&gme_path).unwrap().block_snapshots();
+        let from_raw = legaia_engine_core::save_select::card_block_snapshots(
+            &MountedCard::open(&raw_path).unwrap(),
+        );
+        let from_gme = legaia_engine_core::save_select::card_block_snapshots(
+            &MountedCard::open(&gme_path).unwrap(),
+        );
         assert_eq!(from_raw, from_gme);
         assert!(from_gme[2].present);
     }

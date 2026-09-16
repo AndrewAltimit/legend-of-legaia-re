@@ -218,7 +218,7 @@ pub struct LegaiaRuntime {
     /// The **memory-card rack**: the player's own card images occupying the
     /// console's two ports ([`crate::cards`]). The in-canvas Load / Save
     /// screens read and write these, and the page exports them back out.
-    pub(crate) cards: [Option<crate::cards::InsertedCard>; crate::cards::CARD_SLOTS],
+    pub(crate) cards: [Option<crate::cards::MountedCard>; crate::cards::CARD_SLOTS],
     /// Fishing HUD one-shot banner timers (hook / reel-in / miss / auxiliary /
     /// strike splash), serviced once per sim tick by
     /// [`Self::tick_fishing_banners`] - the browser twin of the native window's

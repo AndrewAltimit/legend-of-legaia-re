@@ -339,10 +339,11 @@ impl PlayWindowApp {
                             // the one thing `--card` exists for.
                             let snapshots = scan_save_dir(&self.save_dir);
                             let any_present = snapshots.iter().any(|s| s.present)
-                                || self
-                                    .card
-                                    .as_ref()
-                                    .is_some_and(|c| c.block_snapshots().iter().any(|s| s.present));
+                                || self.card.as_ref().is_some_and(|c| {
+                                    legaia_engine_core::save_select::card_block_snapshots(c)
+                                        .iter()
+                                        .any(|s| s.present)
+                                });
                             self.boot_ui = BootUiState::Title(title_session(any_present));
                             self.start_title_bgm();
                         }

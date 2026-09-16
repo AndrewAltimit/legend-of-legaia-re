@@ -73,7 +73,7 @@ fn sc_ascii(block: &[u8], offset: usize, max: usize) -> String {
 
 /// Per-save JSON for one SC block inside a card container.
 fn card_save_summary(block: &[u8], save: &emu::SaveRef) -> serde_json::Value {
-    let parsed = SaveFile::from_retail_sc_block(block, 4).ok();
+    let parsed = SaveFile::from_retail_sc_block(block, legaia_save::RETAIL_SC_PARTY_RECORDS).ok();
     let names: Vec<String> = parsed
         .as_ref()
         .map(|sf| sf.party.members.iter().map(|m| m.name()).collect())
@@ -300,7 +300,7 @@ impl LegaiaRuntime {
         let sc = view
             .sc_block(bytes, block)
             .ok_or_else(|| "import_card_save: block out of range".to_string())?;
-        let sf = SaveFile::from_retail_sc_block(sc, 4)
+        let sf = SaveFile::from_retail_sc_block(sc, legaia_save::RETAIL_SC_PARTY_RECORDS)
             .map_err(|e| format!("import_card_save: not a valid retail save: {e}"))?;
         if sf.party.members.is_empty() {
             return Err("import_card_save: save block holds no character records".to_string());

@@ -611,6 +611,17 @@ pub fn rename_retail_character(sc_block: &mut [u8], from: &str, to: &str) -> Res
 /// Callers that want a strictly non-overlapping record walk cap at 3.
 pub const RETAIL_MAX_CHAR_RECORDS: usize = 3;
 
+/// Party records a retail SC block actually carries - the four contiguous
+/// `0x80084708 + n * 0x414` records of `docs/formats/save-record.md`, and so
+/// the `max_records` cap a block lift reads under.
+///
+/// This is the number every caller in the workspace passes, and it is **not**
+/// [`RETAIL_MAX_CHAR_RECORDS`]: that one is the strictly non-overlapping walk
+/// (3), capped one short because the fourth record's tail aliases the global
+/// region. A lift wants all four - Terra's meaningful fields are all in
+/// exclusive space - so passing the non-overlapping cap silently drops her.
+pub const RETAIL_SC_PARTY_RECORDS: usize = 4;
+
 /// Byte offset from the SC block start to the story-flag bitmap.
 ///
 /// The story-flag bitmap occupies 512 bytes (`0x200`) and mirrors the

@@ -29,10 +29,10 @@
 //! Nothing here is uploaded; the bytes live in the tab for the session.
 
 use legaia_engine_core::save_select::{
-    CARD_DIRENTRY_NAME_LEN, CARD_SLOT_CLASSES, CardDirEntry, SlotContent, SlotSnapshot,
-    card_dir_slot_of, card_directory_scan, card_free_blocks, classify_card_directory,
+    CARD_SLOT_CLASSES, CardDirEntry, SlotContent, SlotSnapshot, card_dir_slot_of,
+    card_directory_scan, card_free_blocks, classify_card_directory,
 };
-use legaia_save::emu::{self, CardView};
+use legaia_save::emu;
 use legaia_save::{SaveFile, SaveResume, card};
 use wasm_bindgen::prelude::*;
 
@@ -64,27 +64,17 @@ fn preferred_slot_for_block(block: u8) -> u32 {
     u32::from(block.saturating_sub(1))
 }
 
-/// One inserted card.
-pub struct InsertedCard {
-    /// The container bytes, exactly as imported plus any in-place SC-block
-    /// writes. Never re-encoded.
-    pub bytes: Vec<u8>,
-    /// Display label the page gave it (its file / save name).
-    pub label: String,
-    /// `true` once an in-game save has written into this card and the page
-    /// has not exported it since.
-    pub dirty: bool,
-}
-
-impl InsertedCard {
-    fn view(&self) -> Option<CardView> {
-        emu::detect(&self.bytes).ok()
-    }
-}
+/// The mounted-card type, shared with the native window's card port.
+///
+/// Both hosts hold the same struct now: it caches the detected [`CardView`]
+/// rather than re-detecting on every access, carries the dirty bit, and
+/// answers `save_at` / `block_is_save_start` / `dir_frame` off its own bytes.
+/// The two hosts used to carry near-identical copies that drifted.
+pub use legaia_save::emu::MountedCard;
 
 impl LegaiaRuntime {
     /// The card in rack slot `slot`, if one is inserted.
-    pub(crate) fn card(&self, slot: usize) -> Option<&InsertedCard> {
+    pub(crate) fn card(&self, slot: usize) -> Option<&MountedCard> {
         self.cards.get(slot).and_then(|c| c.as_ref())
     }
 
@@ -124,25 +114,10 @@ impl LegaiaRuntime {
     /// `DIRENTRY` from the raw 128-byte frame: the 20-byte filename at
     /// `+0x0A`, the byte size at `+0x04`.
     fn card_dir_entries(&self, slot: usize) -> Vec<CardDirEntry> {
-        let Some(cardslot) = self.card(slot) else {
-            return Vec::new();
-        };
-        let Some(view) = cardslot.view() else {
-            return Vec::new();
-        };
-        (1..=CARD_BLOCKS)
-            .filter(|&b| view.block_is_save_start(&cardslot.bytes, b))
-            .filter_map(|b| view.dir_frame(&cardslot.bytes, b))
-            .filter_map(|f| {
-                let mut name = [0u8; CARD_DIRENTRY_NAME_LEN];
-                name.copy_from_slice(f.get(0x0A..0x0A + CARD_DIRENTRY_NAME_LEN)?);
-                let s = f.get(4..8)?;
-                Some(CardDirEntry {
-                    name,
-                    size: u32::from_le_bytes([s[0], s[1], s[2], s[3]]),
-                })
-            })
-            .collect()
+        match self.card(slot) {
+            Some(card) => legaia_engine_core::save_select::card_dir_entries(card),
+            None => Vec::new(),
+        }
     }
 
     /// The save number to stamp into `block` of the card in rack `slot`.
@@ -170,9 +145,8 @@ impl LegaiaRuntime {
     fn card_save_index(&self, slot: usize, block: u8) -> u32 {
         let existing = self
             .card(slot)
-            .and_then(|c| Some((c, c.view()?)))
-            .filter(|(c, v)| v.block_is_save_start(&c.bytes, block))
-            .and_then(|(c, v)| v.dir_frame(&c.bytes, block).map(|f| f.to_vec()))
+            .filter(|c| c.block_is_save_start(block))
+            .and_then(|c| c.dir_frame(block).map(|f| f.to_vec()))
             .and_then(|f| card_dir_slot_of(f.get(0x0A..)?));
         if let Some(index) = existing {
             return index as u32;
@@ -207,76 +181,14 @@ impl LegaiaRuntime {
         entries.iter().map(|e| e.name.as_slice()).collect()
     }
 
+    /// The card's fifteen blocks as the 5x3 preview grid reads them, through
+    /// the shared `engine_core::save_select::card_block_snapshots` kernel the
+    /// native window calls too.
     pub(crate) fn card_block_snapshots(&self, slot: usize) -> Vec<SlotSnapshot> {
-        let Some(cardslot) = self.card(slot) else {
-            return (0..CARD_BLOCKS).map(SlotSnapshot::empty).collect();
-        };
-        let Some(view) = cardslot.view() else {
-            return (0..CARD_BLOCKS).map(SlotSnapshot::empty).collect();
-        };
-        // The retail free-block budget (`FUN_801E3AF0` -> `FUN_801E3BA0`):
-        // enumerate the card's files off the live directory frames, fill the
-        // fixed 15-entry table, and price how many blocks the card itself
-        // says are free. Retail only captions a cell "free" while that
-        // budget pays for it - absence of a claim is not evidence a block is
-        // free, so an unclaimed cell past the budget captions as foreign
-        // rather than inviting an overwrite.
-        let entries = self.card_dir_entries(slot);
-        let (dir_table, dir_count) = card_directory_scan(&entries);
-        let mut free_budget = card_free_blocks(&dir_table, dir_count).max(0);
-        (0..CARD_BLOCKS)
-            .map(|cell| {
-                let block = cell + 1;
-                // A block nothing claims is free while the card's own
-                // free-block count affords it (the retail budget loop).
-                if !view.block_is_save_start(&cardslot.bytes, block) {
-                    if free_budget > 0 {
-                        free_budget -= 1;
-                        return SlotSnapshot::empty(cell);
-                    }
-                    return SlotSnapshot::foreign(cell);
-                }
-                // Past here the block IS claimed, so every way of failing to
-                // read it is someone else's save rather than a free block -
-                // a distinction retail captions differently.
-                let Some(sc) = view.sc_block(&cardslot.bytes, block) else {
-                    return SlotSnapshot::foreign(cell);
-                };
-                let Ok(sf) = SaveFile::from_retail_sc_block(sc, 4) else {
-                    return SlotSnapshot::foreign(cell);
-                };
-                // The lead record's name / level / HP / MP through the one
-                // derivation the native window's slot scanner uses too
-                // (`SaveFile::leader_summary`), so a save prints the same on
-                // both hosts. The location row is retail's own field
-                // (`game+0x000`, the scene banner name), which the engine's
-                // card Save now composes as well.
-                let Some(leader) = sf.leader_summary() else {
-                    return SlotSnapshot::foreign(cell);
-                };
-                let resume = SaveResume::from_retail_sc_block(sc);
-                SlotSnapshot {
-                    slot: cell,
-                    present: true,
-                    content: SlotContent::LegaiaSave,
-                    label: if leader.name.is_empty() {
-                        format!("Block {block}")
-                    } else {
-                        leader.name.clone()
-                    },
-                    party_lv: leader.level,
-                    location: resume.location,
-                    money: sf.ext.money.max(0) as u32,
-                    leader_char_id: leader.char_id,
-                    leader_name: leader.name,
-                    leader_hp: leader.hp,
-                    leader_mp: leader.mp,
-                    // Off the `LGXE` blob in the block's unread tail when this
-                    // engine wrote the block; 0 for a retail save.
-                    play_time_seconds: sf.ext_v2.play_time_seconds,
-                }
-            })
-            .collect()
+        match self.card(slot) {
+            Some(card) => legaia_engine_core::save_select::card_block_snapshots(card),
+            None => (0..CARD_BLOCKS).map(SlotSnapshot::empty).collect(),
+        }
     }
 
     /// The memory-card portrait for save slot `slot`, read off the disc's
@@ -386,11 +298,8 @@ impl LegaiaRuntime {
         // Reject up front rather than at first Load: a card that can't be
         // parsed must never occupy a port.
         emu::detect(&bytes).map_err(|e| format!("insert_card: {e}"))?;
-        self.cards[slot] = Some(InsertedCard {
-            bytes,
-            label,
-            dirty: false,
-        });
+        self.cards[slot] =
+            Some(MountedCard::from_bytes(bytes, label).map_err(|e| format!("insert_card: {e}"))?);
         Ok(self.card_slot_json(slot))
     }
 
@@ -407,7 +316,7 @@ impl LegaiaRuntime {
         let sc = view
             .sc_block(&card_slot.bytes, block)
             .ok_or_else(|| format!("card has no block {block}"))?;
-        let sf = SaveFile::from_retail_sc_block(sc, 4)
+        let sf = SaveFile::from_retail_sc_block(sc, legaia_save::RETAIL_SC_PARTY_RECORDS)
             .map_err(|e| format!("not a valid retail save: {e}"))?;
         if sf.party.members.is_empty() {
             return Err("that block holds no character records".to_string());
@@ -523,7 +432,7 @@ impl LegaiaRuntime {
             })
             .to_string();
         };
-        let format = c.view().map(|v| v.format.label()).unwrap_or("?");
+        let format = c.view.format.label();
         let blocks: Vec<serde_json::Value> = self
             .card_block_snapshots(slot)
             .iter()

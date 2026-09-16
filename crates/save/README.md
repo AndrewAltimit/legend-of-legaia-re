@@ -51,10 +51,11 @@ record offset `+0x2A7`, so slot 0's name surfaces at SC `+0x86F` -
 through both directions:
 
 ```rust
-use legaia_save::{SaveFile, RETAIL_MAX_CHAR_RECORDS};
+use legaia_save::{RETAIL_SC_PARTY_RECORDS, SaveFile};
 
-// Disc → engine state
-let parsed = SaveFile::from_retail_sc_block(&sc_block, RETAIL_MAX_CHAR_RECORDS)?;
+// Disc → engine state (all four records; `RETAIL_MAX_CHAR_RECORDS` is the
+// strictly non-overlapping walk and would drop the fourth)
+let parsed = SaveFile::from_retail_sc_block(&sc_block, RETAIL_SC_PARTY_RECORDS)?;
 
 // Engine state → disc
 let mut sc_block = vec![0u8; legaia_save::BLOCK_SIZE];

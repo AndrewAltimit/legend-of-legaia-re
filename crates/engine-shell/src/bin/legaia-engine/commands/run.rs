@@ -194,16 +194,6 @@ pub(crate) fn cmd_save(
     Ok(())
 }
 
-/// Party records a retail SC block carries - the four contiguous
-/// `0x80084708 + n * 0x414` records of `docs/formats/save-record.md`. The
-/// browser's card grid and the windowed rack's `MountedCard` read a block
-/// under the same cap, so one card lifts to the same party everywhere.
-///
-/// Not [`legaia_save::card::RETAIL_MAX_CHAR_RECORDS`]: that constant is the
-/// *strictly non-overlapping* walk (three), and the fourth slot's meaningful
-/// fields all sit before the global region that begins partway through it.
-const CARD_PARTY_RECORDS: usize = 4;
-
 /// Seed `world` from one block of a PSX memory-card image, and name what was
 /// loaded for the summary line.
 ///
@@ -245,7 +235,7 @@ fn load_card_block(
     let Some(sc) = view.sc_block(&bytes, block) else {
         anyhow::bail!("card block {block} is out of range (1..=15; block 0 is the directory)");
     };
-    let sf = legaia_save::SaveFile::from_retail_sc_block(sc, CARD_PARTY_RECORDS)
+    let sf = legaia_save::SaveFile::from_retail_sc_block(sc, legaia_save::RETAIL_SC_PARTY_RECORDS)
         .with_context(|| format!("lift card block {block} as a save"))?;
     // A claimed block with no character records is someone else's save, not a
     // Legaia one - the load screen captions that cell rather than offering it,
