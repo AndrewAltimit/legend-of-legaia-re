@@ -2,11 +2,29 @@
 //! the Disco King how-to tutorial's captions.
 //!
 //! Both are placeholder letterforms on retail's own seats. The count-in's
-//! banner halves are sprites out of the dance overlay's hub emitter and the
-//! tutorial's caption strings are overlay rodata (Sony text the port does not
-//! read), so what is pinned here is the *geometry* - the sliding x offsets and
-//! brightness ramp of `dance_countin_banner_envelope` (`FUN_801d2d98`), and
-//! the caption / option / cursor seats of the tutorial actor (`FUN_801D0750`).
+//! banner is **not text at all** in retail: it is record `0` of the 20-byte
+//! sprite table at `0x801D46CC`, a `320 x 64` quad (half-extents `0xa0` /
+//! `0x20` at the record's unit scale) that `FUN_801D2F38` seats by its centre.
+//! The `a2 = 0` all three call sites pass is that record index. The tutorial's
+//! caption strings are overlay rodata (Sony text the port does not read).
+//!
+//! So what is pinned here is the *geometry*: retail's own banner centre
+//! ([`COUNTIN_CENTRE_X`], [`COUNTIN_SLIDE_CENTRE_Y`] /
+//! [`COUNTIN_HOLD_CENTRE_Y`] - the `a1` immediates at the three calls), the
+//! record's extents and texel seat ([`COUNTIN_SPRITE_HALF`],
+//! [`COUNTIN_SPRITE_UV`]), the sliding x offsets and the brightness ramp of
+//! `dance_countin_banner_envelope` (`FUN_801d2d98`), and the caption / option
+//! / cursor seats of the tutorial actor (`FUN_801D0750`).
+//!
+//! **Disclosed, both hosts**: the banner draws as placeholder text rather than
+//! that sprite. What is missing is not a draw call but the art - no host
+//! stages the dance overlay's own VRAM page, so there is nothing for a
+//! textured quad to sample. Retail also varies the record's `+0x0F` blend
+//! byte per arm (`sb $v0, 0xf($t0)` = `1` for the sliding halves at
+//! `0x801D2ED8`, `sb $zero, 0xf($t0)` = `0` for the hold at `0x801D2F0C`), so
+//! the halves are semi-transparent and the merged banner is opaque; the
+//! placeholder carries that as the halved brightness the envelope already
+//! reports, not as a blend mode.
 //!
 //! # Why the views are mirrors rather than imports
 //!
@@ -21,13 +39,51 @@
 use crate::{TextDraw, scale_stage_text_draws, text_draws_for};
 
 /// Stage column the count-in banner is centred on (retail's `0xa0`, the
-/// 320-wide stage's midpoint).
+/// 320-wide stage's midpoint) - `addiu $s3, $zero, 0xa0` at `0x801D2EB0`,
+/// then `s2 + s3` for the right half and `s3 - s2` for the left.
 pub const COUNTIN_CENTRE_X: i32 = 0xA0;
-/// Stage row the banner sits on.
-pub const COUNTIN_Y: i32 = 0x40;
+
+/// Stage row the two **sliding** halves are centred on: `a1 = 0x77`
+/// (`0x801D2EB8` and `0x801D2EE8`, the two `FUN_801D2F38` calls the slide arm
+/// makes).
+pub const COUNTIN_SLIDE_CENTRE_Y: i32 = 0x77;
+
+/// Stage row the single **held** banner is centred on: `a1 = 0x78`
+/// (`0x801D2F00`, the hold arm's one call). Retail moves the banner down a
+/// pixel when the halves merge; the split is real, not a rounding artifact.
+pub const COUNTIN_HOLD_CENTRE_Y: i32 = 0x78;
+
+/// This frame's banner centre row.
+pub fn countin_centre_y(hold: bool) -> i32 {
+    match hold {
+        true => COUNTIN_HOLD_CENTRE_Y,
+        false => COUNTIN_SLIDE_CENTRE_Y,
+    }
+}
+
+/// The banner's half-extents in stage pixels at unit scale, from **record 0**
+/// of the dance overlay's 20-byte sprite table at `0x801D46CC` - bytes
+/// `+0x0A` / `+0x0B` = `0xa0` / `0x20`.
+///
+/// `FUN_801D2F38` builds the quad as `centre -+ half` on each axis
+/// (`0x801D31E0..0x801D3214`: `t4 - a0` / `t4 + a0`, `t5 - v0` / `t5 + v0`),
+/// so the record covers `320 x 64` around its seat. The `a2 = 0` every call
+/// site passes is this **record index**, not a coordinate.
+pub const COUNTIN_SPRITE_HALF: (i32, i32) = (0xA0, 0x20);
+
+/// Texel origin of that record's art (`+0x08` = `0x9048`) and its CBA
+/// (`+0x06` = `0x7d0a`). Recorded so a host that stages the dance overlay's
+/// VRAM page can draw the real banner instead of the placeholder below.
+pub const COUNTIN_SPRITE_UV: (u8, u8) = (0x48, 0x90);
+/// See [`COUNTIN_SPRITE_UV`].
+pub const COUNTIN_SPRITE_CBA: u16 = 0x7D0A;
+
 /// Width the left half's placeholder text is nudged left by so its run ends
 /// at the centre.
 const COUNTIN_LEFT_INSET: i32 = 40;
+/// Rough placeholder glyph height, so the stand-in text's own centre can be
+/// put where retail centres the sprite.
+const COUNTIN_TEXT_HALF_H: i32 = 6;
 
 /// One frame of the count-in banner, as `World::minigames.dance_countin_banner`
 /// carries it.
@@ -54,24 +110,25 @@ pub fn dance_countin_draws_for(
     let alpha = (view.brightness.clamp(0, 0xFF) as f32) / 255.0;
     let color = [1.0f32, 1.0, 1.0, alpha];
     let mut out: Vec<TextDraw> = Vec::new();
+    // Retail seats the sprite by its CENTRE; the placeholder is text, whose
+    // seat is a top-left, so it is lifted by its own half-height to land on
+    // the same row.
+    let top = countin_centre_y(view.hold) - COUNTIN_TEXT_HALF_H;
     if view.hold {
         out.extend(text_draws_for(
             &font.layout_ascii("READY... GO!"),
-            (COUNTIN_CENTRE_X - COUNTIN_LEFT_INSET, COUNTIN_Y),
+            (COUNTIN_CENTRE_X - COUNTIN_LEFT_INSET, top),
             color,
         ));
     } else {
         out.extend(text_draws_for(
             &font.layout_ascii("READY"),
-            (
-                COUNTIN_CENTRE_X - view.x_offset - COUNTIN_LEFT_INSET,
-                COUNTIN_Y,
-            ),
+            (COUNTIN_CENTRE_X - view.x_offset - COUNTIN_LEFT_INSET, top),
             color,
         ));
         out.extend(text_draws_for(
             &font.layout_ascii("GO!"),
-            (COUNTIN_CENTRE_X + view.x_offset, COUNTIN_Y),
+            (COUNTIN_CENTRE_X + view.x_offset, top),
             color,
         ));
     }
@@ -193,6 +250,36 @@ mod tests {
             rightmost >= COUNTIN_CENTRE_X + 0xB4,
             "the right half did not fly out: {rightmost}"
         );
+    }
+
+    /// Retail seats the banner at its own two rows - `a1 = 0x77` sliding,
+    /// `a1 = 0x78` held - not at a chosen `0x40`, and it seats the sprite by
+    /// its CENTRE.
+    #[test]
+    fn the_banner_sits_on_retails_own_rows() {
+        let font = legaia_font::synthetic_for_tests();
+        let row = |hold: bool| {
+            dance_countin_draws_for(
+                &font,
+                DanceCountInView {
+                    x_offset: 0,
+                    brightness: 0xFF,
+                    hold,
+                },
+                (0, 0),
+                1,
+            )
+            .iter()
+            .map(|d| d.dst.1)
+            .min()
+            .unwrap()
+        };
+        assert_eq!(row(false), COUNTIN_SLIDE_CENTRE_Y - COUNTIN_TEXT_HALF_H);
+        assert_eq!(row(true), COUNTIN_HOLD_CENTRE_Y - COUNTIN_TEXT_HALF_H);
+        assert_eq!(countin_centre_y(false), 0x77);
+        assert_eq!(countin_centre_y(true), 0x78);
+        // The record's own extents - 320 x 64 around the seat.
+        assert_eq!(COUNTIN_SPRITE_HALF, (0xA0, 0x20));
     }
 
     /// Brightness reaches the tint alpha, so the fade is visible rather than

@@ -35,6 +35,18 @@
 //! `ArtsVoiceTable`, driven by `AudioBgmDirector::play_art_shout`), not by the
 //! `(id - 0x100)` arithmetic below, and the two are separate retail paths - see
 //! the note on `legaia_art::arts_voice::StaticXaCue`.
+//!
+//! The largest producer that *does* live in this space is the cast band, and
+//! it is worth naming because it was mis-mapped for a while. Each of the
+//! sixty-four slot-B cast modules (PROT `0903..0966`) calls the dispatcher
+//! `FUN_8004FCC8` with its **own** cue id - a literal in 62 of them - so the
+//! voice belongs to the spell's module, not to the caster. Those ids resolve
+//! through [`voice_clip_slot`] into seventeen files (`XA7`, `XA9..XA15`,
+//! `XA18..XA20`, `XA22`, `XA23`, `XA25`, `XA34`), which is neither the four a
+//! `char_kind`-derived reading produced nor a per-character bank.
+//! `docs/tooling/host-drift.md` carries the table and the two module-side
+//! decline gates (`ctx[+0x276]`, `FUN_8003DE7C(1)`) a host would also have to
+//! model before routing any of it.
 //! `legaia_engine_audio::classify_cue` ports the same dispatcher's *routing*
 //! decision and is on the frame path, but the hosts log its `Voice` result
 //! rather than playing it - see `window/event_handler/redraw.rs`. Wiring this

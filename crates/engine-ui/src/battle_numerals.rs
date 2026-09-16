@@ -64,10 +64,22 @@ fn stage_i16(v: i32) -> i16 {
 
 /// One opaque textured quad on the glyph page: a stage rect `(x, y, w, h)`
 /// and an **inclusive** texel rect `(u0, v0, u1, v1)`.
+///
+/// The stage rect is inclusive on the same terms as the texel rect, because
+/// that is what every caller hands it: a label's `size()` is `u1 - u0 + 1`
+/// and a digit cell's `w` tops out at the cell's own [`vr::DIGIT_CELL`]
+/// texels. So the far corner is `x + w - 1`, not `x + w` - retail's own
+/// readout quads name it that way (31/31, 47/47 and 55/55 blits across three
+/// captured battle states), and the exclusive form drew every glyph a pixel
+/// wider and a pixel taller than the art it sampled.
+///
+/// The digit **pitch** is the other half of the same fact: retail's pitch is
+/// the inclusive drawn width, which is why [`vr::DIGIT_GAP`] is `0`. Changing
+/// one without the other moves the run.
 pub fn readout_quad(rect: (i32, i32, u32, u32), uv: (u8, u8, u8, u8), ot_index: u32) -> ScreenPrim {
     let (x0, y0) = (stage_i16(rect.0), stage_i16(rect.1));
-    let x1 = stage_i16(rect.0 + rect.2 as i32);
-    let y1 = stage_i16(rect.1 + rect.3 as i32);
+    let x1 = stage_i16(rect.0 + rect.2.max(1) as i32 - 1);
+    let y1 = stage_i16(rect.1 + rect.3.max(1) as i32 - 1);
     ScreenPrim::Textured(ScreenQuad {
         xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
         uv: [(uv.0, uv.1), (uv.2, uv.1), (uv.0, uv.3), (uv.2, uv.3)],
@@ -182,13 +194,16 @@ mod tests {
     }
 
     /// The four corners are in the `v0..v3` order `build_geometry` expects:
-    /// top-left, top-right, bottom-left, bottom-right, with the screen rect
-    /// exactly the cell's `(x, y, w, h)`.
+    /// top-left, top-right, bottom-left, bottom-right, and the screen rect
+    /// spans the cell's `(x, y, w, h)` **inclusively**, the way retail's own
+    /// readout quads name their far corner.
     #[test]
     fn corner_order_matches_the_shared_quad_convention() {
         let p = readout_quad((10, 20, 24, 24), (0, 64, 23, 87), 0);
         let q = quad(&p);
-        assert_eq!(q.xy, [(10, 20), (34, 20), (10, 44), (34, 44)]);
+        // Inclusive far corner: a 24-wide cell at x=10 ends at 33, not 34 -
+        // the same convention the texel rect uses (0..=23).
+        assert_eq!(q.xy, [(10, 20), (33, 20), (10, 43), (33, 43)]);
         assert_eq!(q.uv, [(0, 64), (23, 64), (0, 87), (23, 87)]);
     }
 

@@ -865,39 +865,65 @@ same way and drop it - `bgm.rs` logs and `continue`s, `play_sfx.rs` counts it
 on `voice_cues_dropped`. So this is **not** a drift: the two hosts decline
 identically, and the decline is deliberate ("silent rather than wrong").
 
-What the decline is actually waiting on is smaller than the prose around it
-suggested, and worth writing down precisely.
+#### The bank is per-module, not per-character
 
-`classify_cue` resolves an id at or above `0x100` into a *clip slot* (`(id -
-0x100) >> 3`, remapped `1 -> 0x1A`, `3 -> 0x1B`, `5 -> 0x1C`) plus a channel
-(`id & 7`) - and, through `DAT_800788B8`, the clip starter's read span. The
-slot values the cast leg reaches are therefore:
+An earlier reading of this section named `XA27` / `XA28` / `XA29` / `XA34` as
+the staging list, derived by running `char_kind` through
+`classify_cue`'s slot arithmetic. That is the wrong producer, and so the
+wrong bank.
 
-| cue | `(id - 0x100) >> 3` | clip slot | file |
-|---|---|---|---|
-| `char_kind 0` (`0xF8..`) | - | - | below `0x100`, so it is a **ring** cue, not a voice one |
-| `char_kind 1` (`0x108..`) | 1 | `0x1A` | `XA27.XA` - **already staged on both hosts** |
-| `char_kind 2` (`0x118..`) | 3 | `0x1B` | `XA28.XA` |
-| `char_kind 3` (`0x128..`) | 5 | `0x1C` | `XA29.XA` |
-| enemy (`0x20C..0x20E`) | `0x21` | `0x21` | `XA34.XA` |
+The cast's voice is **not** raised by the dispatch cue at all. Every one of the
+sixty-four slot-B cast modules (PROT `0903..0966`) calls the cue dispatcher
+`FUN_8004FCC8` itself, with its **own** cue id: a literal in 62 of the 64
+(the other two, PROT `0936` and `0937`, form the id at runtime), reproducible
+straight off the extracted entries by decoding the `jal` and its argument. So
+a cast's voice is a property of the spell's module, not of who cast it.
 
-All four files exist on the retail USA disc (`XA27` 1.3 MB, `XA28` 1.4 MB,
-`XA29` 1.3 MB, `XA34` 8.7 MB). The **span** is not missing either:
-`legaia_asset::xa_cue_table` parses `DAT_800788B8` off the user's own
-`SCUS_942.54` and the boot path installs it on `World::audio.xa_cue_durations`
-for the melee leg, which already plays through `play_xa_clip(clip_slot,
-channel, duration_sectors)` on both hosts.
+Worked examples, each confirmable against `DAT_800788B8`: PROT `0903` names
+cue `0x134`, which `classify_cue` resolves to `FUN_8003D53C(6, 4, 686)`; PROT
+`0905` names `0x131` -> `(6, 1, 568)`; PROT `0911` names `0x161`.
 
-The blocking capability is therefore one line of staging and one routing arm,
-per host: add `(0x1B, "XA28.XA")` / `(0x1C, "XA29.XA")` / `(0x21, "XA34.XA")`
-to each host's battle clip-slot set (`engine-shell`'s
-`read_battle_xa_clip_bank`, `web-viewer`'s `BATTLE_XA_CLIP_SLOTS`) and route
-the `Voice` arm to `play_xa_clip` with the span instead of counting it. It is
-recorded here rather than done because `XA34.XA` is 8.7 MB of channels to
-decode up front in a browser tab, and because nothing has yet measured which
-channel of which file a given cast id actually lands on - staging a bank and
-routing to it would make the port play *something* on every cast, and a
-confidently wrong voice is worse than the silence it replaces.
+The real bank is what those ids resolve to, and it is much wider than four
+files - `clip_slot + 1` is the `XA<n>.XA` number:
+
+| clip slot | file |
+|---|---|
+| `6` | `XA7.XA` |
+| `8`..`0xE` | `XA9.XA`..`XA15.XA` |
+| `0x11`..`0x13` | `XA18.XA`..`XA20.XA` |
+| `0x15`, `0x16` | `XA22.XA`, `XA23.XA` |
+| `0x18` | `XA25.XA` |
+| `0x21` | `XA34.XA` |
+
+Seventeen files, not four, and `XA27`..`XA29` are not among them. Three of the
+ninety literal ids (`0x21`, `0x22`, `0x56`) sit below the dispatcher's `0x100` XA threshold and take
+the dispatcher's SFX-queue path instead, so they are not voice clips at all.
+
+The span half of the problem was also wrong in the same direction:
+`XA_CUE_DURATION_ENTRIES` capped `DAT_800788B8` at `0x40` entries, which drops
+every cue from `0x140` up - that is, most of this table. It is `0x110` now.
+
+#### What is actually blocking
+
+Two things, and neither is a staging list.
+
+**No host models the module's own decline gates.** Before a module reaches its
+CD-XA arm it tests `ctx[+0x276]` and the drive-idle poll `FUN_8003DE7C(1)`, and
+returns without a cue when either is non-zero. A host that staged the bank and
+routed the cue would play a voice on casts where retail plays none, which is a
+louder error than the silence it replaces (see
+[`../subsystems/cast-module.md`](../subsystems/cast-module.md)).
+
+**No streamed-voice output.** The clip starter is a `CdlSetfilter` /
+`CdlReadS` state machine over the physical disc; the engine's two XA consumers
+both read whole files up front. Seventeen banks of channels is also a different
+proposition in a browser tab from the three-file arts-shout bank
+(`XA34.XA` alone is 8.7 MB).
+
+Both hosts are equally short of both, so this stays a disclosed **gap on both
+hosts** rather than a drift. What is no longer missing is the map: the
+per-module cue id, the file it lands in and the channel within it are all
+recoverable from the disc without an emulator.
 
 Two neighbours that are **not** this gap, so a reader does not merge them:
 

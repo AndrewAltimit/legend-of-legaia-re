@@ -29,17 +29,41 @@ use crate::camera::Camera;
 use crate::world::{SceneMode, World};
 use legaia_engine_vm::psx_camera::{self, FieldCameraView};
 
-/// Field follow-camera pitch (`_DAT_8007B790`), PSX 12-bit units - the
-/// town01 anchor savestate's value (~39.6 deg down-tilt).
+/// Field follow-camera pitch (`_DAT_8007B790`), PSX 12-bit units - the town01
+/// anchor savestate's value (~39.6 deg down-tilt).
+///
+/// **A seed, not an invariant.** Retail's field pitch is per-scene: the
+/// camera-region record the zone query hits
+/// ([`crate::field_regions::zone_query`], `FUN_801DBA20`) is decoded into the
+/// camera globals by `FUN_801DBC20`, and a scene with no covering record gets
+/// [`crate::camera::CAMERA_ZONE_DEFAULTS`] instead. Across eighteen town
+/// savestates this value holds in 8 of 19 - so more than half of them frame at
+/// some other tilt. Widening it needs that 18-byte record decoded; until then
+/// this is what a scene with nothing staged starts from.
 pub const FIELD_PITCH_UNITS: f32 = 450.0;
 
 /// Field follow-camera base yaw (`_DAT_8007B792`), PSX 12-bit units, from the
 /// same anchor. The movement compass reads its negation (`alpha = -psi` for
 /// the PSX GTE camera), which is what [`Camera::render_yaw_bias`] carries.
+///
+/// **The weakest of the three.** Retail's field yaw is a per-frame *output* -
+/// the follow camera recomputes it every frame - and across the same eighteen
+/// town states it spans `-1589..+333`, matching this value in exactly 1 of 19.
+/// It is the anchor state's own reading and nothing more. The engine's own
+/// per-frame yaw terms ([`Camera::manual_orbit`], and a scripted beat's yaw
+/// through [`cutscene_view`]) compose on top of it; what is missing is the
+/// retail recomputation itself.
 pub const FIELD_FOLLOW_YAW_UNITS: f32 = -160.0;
 
-/// Field GTE `H` (`_DAT_8007B6F4`). `512` in the field, `256` in battle -
-/// written per phase, unlike `OFX` / `OFY`.
+/// Field GTE `H` (`_DAT_8007B6F4`) fallback. `512` in the field, `256` in
+/// battle - written per phase, unlike `OFX` / `OFY`.
+///
+/// The steadiest of the three (12 of 19 town states), but still per-scene, and
+/// still not a constant: [`field_follow_view`] prefers the live
+/// [`crate::camera::RetailCamGlobals::h`] whenever the camera carries one, so
+/// an op-`0x45` slot-`9` beat now reaches the follow view. Retail's scene-entry
+/// reset leaves `H` at `0` ("as the scene establishes it"), which is what makes
+/// this the fallback rather than dead code.
 pub const FIELD_H: f32 = 512.0;
 
 /// Field follow-camera eye-back depth, in the engine's 1x world frame.
@@ -104,7 +128,11 @@ fn lead_actor_xz(world: &World) -> Option<(f32, f32)> {
 
 /// The **retail field follow camera**'s inputs for this frame.
 ///
-/// Pitch / yaw / `H` are the savestate-pinned anchors above; the look-at
+/// `H` is the camera's live global when it carries one and [`FIELD_H`]
+/// otherwise; pitch and yaw are the savestate-pinned anchors above, each of
+/// which is one state's value rather than a scene invariant - see their own
+/// docs for how often they hold and what decoding the per-scene camera-region
+/// record would take. The look-at
 /// target is the player anchor with its floor height sampled (retail's
 /// follow-cam `FUN_801DBE9C` folds `-(anchor X/Z)` into the focus globals each
 /// frame, and the port's `sample_field_floor_height` supplies the Y a raw
@@ -129,8 +157,16 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
         yaw: to_rad(FIELD_FOLLOW_YAW_UNITS) - cam.manual_orbit,
         // The field follow camera never rolls: `FUN_80025C24` seeds the roll
         // global to `0` on scene entry and only an op-`0x45` beat writes it.
+        // Measured `0` in 51 of 51 field states.
         roll: 0.0,
-        h: FIELD_H,
+        // The live GTE `H` when the camera carries one - retail's scene-entry
+        // reset leaves it `0`, so a scene that never staged an `H` falls back
+        // to the field default. Reading the pin unconditionally dropped an
+        // op-`0x45` slot-`9` beat on the floor.
+        h: match cam.globals.h() {
+            0 => FIELD_H,
+            v => v as f32,
+        },
         tr_eye: [0.0, 0.0, FIELD_CAM_DEPTH * cam.distance.scale()],
     })
 }
