@@ -898,6 +898,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_model_pack_registrar.lua`](../../scripts/pcsx-redux/autorun_model_pack_registrar.lua) | Entry rows for the party-model registrar at `0x8001EAFC`, each carrying the mode word the three decompress calls above it are gated on, the pack pointer `gp+0x6BC`, its count word and its first member offsets. Written to answer whether the registrar is ever entered over a buffer nothing filled that pass: it is the target of the very branch that skips the decompresses, and its count is unclamped. A run that crosses a random encounter and one that crosses a door warp both record **zero** entries, so the routine is not re-entered by either - a cold boot is the remaining ladder. |
 | [`autorun_w3a_slippery_call_frame.lua`](../../scripts/pcsx-redux/autorun_w3a_slippery_call_frame.lua) | Same injection aimed at action id `0x92`, so PROT 0920 is resident and its drain budget `_DAT_8007BDC0` is non-zero, with the gate read `0x8004818C`, the `jal` at `0x800481A0` and the callee `0x801F7B88` all breakpointed. Catches SCUS's one fixed-VA call into slot B actually firing - the state the corpus could not supply, because the only Slippery mid-cast backup is a mednafen one. |
 
+| [`autorun_field_camera_tr.lua`](../../scripts/pcsx-redux/autorun_field_camera_tr.lua) | What composes the field camera's GTE `TR` from the live camera words, on one frame. &rarr; [detail](#autorun_field_camera_trlua) |
 #### Runtime probe details
 
 ##### `autorun_w4d_cort_flow_writer.lua`
@@ -1087,6 +1088,32 @@ the longer ones (`Probes` + `What it answered`) are written out as
 - **Why it exists:** the shared EVENT SOURCE for the two delivery PRDs - the VRChat live battle diorama (a MIDI register stream) and the wgpu/OpenXR spectator viewport (UDP `BattleState` packets). The extraction layer is deliberately transport-free so neither target forks the probe; a MIDI/UDP encoder consumes `battle_state.read()` directly. It doubles as the reusable capture harness for the open battle RE threads (F-RAGE delegated-pick variability, F-RENDERMODE enemy summon, F-PAL) - point it at a mid-cast save and read the stream. Extraction logic is validated offline against a synthetic battle RAM image (stub `probe.mem`, assert `read`/`signature`/`to_json`); the offsets themselves are live-pinned in `battle.md`.
 - **Live validation:** confirmed on the `party_basic_attack_vs_gobu_gobu` library save - the first record reads `in_battle=true mode=0x15`, enemy slot 3 = monster id 4 (Gobu Gobu) at 76/76, party slot 0 at 128/128, all sane. A multi-frame run on `rim_elm_queen_bee_battle` emitted the periodic full sweeps (v0, v30) and exposed the field-mode gate: that save resumes at mode `0x03` (field), where the actor table holds stale field pointers - `read()` now gates slot `present` on `in_battle` so it reports `battle=false` with no bogus enemies.
 - **Caveat (save-state resume):** PCSX-Redux on the current build often segfaults a few vsyncs into a *resumed* battle save (seen across distinct saves AND a known-good control probe, at different points - it is emulator save-resume instability, not the probe; flushed-per-line output means the records captured before the crash survive). The PRODUCTION path is attaching to a *live* play session (the diorama/spectator use case), where there is no save-resume divergence; the save-state path is only for the RE-capture harness use and is best driven with a short frame budget.
+
+##### `autorun_field_camera_tr.lua`
+
+- **Probes:** three groups on one sampled frame. The ease `FUN_801DB510`'s single
+  exit (`0x801DB8E4`) snapshots the staging descriptor `0x801F3580`, the live eye
+  trio `0x800840B8/BC/C0`, pitch / yaw / roll / `H`, the camera parameter block,
+  the player's `(x, y, z)` and CP2C 0..31. A census group arms every `ctc2`
+  triple in `SCUS_942.54` that writes CP2C 5/6/7 - seventeen sites, found by
+  scanning the image for `(word & 0xFFE007FF) == 0x48C00000` - enabled only
+  inside the sample window, so the first `TR` write after the ease is measured
+  rather than assumed. Named taps then read `TR` after each GTE upload inside the
+  field view builder `FUN_800172C0`. Aliasing VAs are fingerprinted against their
+  expected first word before anything rests on them, and `FUN_80026F50` (the same
+  view-build shape for the other game modes) is armed as a liveness control.
+- **What it answered:** `TR` is `live_eye_trio + (R * focus_trio) >> 12`. The eye
+  trio reaches the matrix translation verbatim as 32-bit words (`FUN_8005B4B8` at
+  `0x80017334`) and is uploaded as `TR` by `FUN_8003D1A4`; the focus trio is the
+  low signed halfwords of `0x80089118 / 1C / 20`, read by three `lhu`; and both
+  the add and the `>> 12` are the single `MVMVA` inside `FUN_8003D344`, whose
+  `MAC1..3` go back over the translation for the final upload by `FUN_8005B6A8`.
+  Held exactly on all sixty sampled frames over `town01`, `uru` and `jouind`,
+  thirty-seven of them with the staging trio different from the live one. Also
+  falsified two premises: the field view builder is `FUN_800172C0`, not
+  `FUN_80026F50` (which fires zero times in a field frame), and on a scripted
+  shot the ease never runs at all while the view builder runs every frame.
+  See [`formats/encounter.md`](../formats/encounter.md#from-the-block-to-the-live-camera-compose-ease-snap).
 
 ### Save-state to Python (offline analysis)
 
