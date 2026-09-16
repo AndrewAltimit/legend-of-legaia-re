@@ -1318,6 +1318,10 @@ impl World {
             let mut rng = crate::world::WorldRng::new(self.rng_state);
             self.tick_cutscene_elements(delta, || rng.step());
             self.rng_state = rng.state();
+            // The fog pool's render step (`FUN_8003F348`, run from the field
+            // render pass) sees `DAT_1F800393` as its `dt`; the hosts call
+            // it from their draw path, so the ticks accumulate until then.
+            self.fog.pending_dt = self.fog.pending_dt.saturating_add(u32::from(delta));
         }
         // The three-actor-talk controller's per-frame flag poll: when the
         // scene script drops the talk lock (system flag 0xD), the controller

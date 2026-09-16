@@ -468,30 +468,44 @@ impl AmbientEmitter {
     /// plain-template families ride, and
     /// [`crate::world::World::install_field_scene_elements`] installs the one
     /// element it runs on at every cold field entry (descriptor `0x801F271C`,
-    /// spawn site `0x801D6FD8`). The remaining leg is downstream of this
-    /// routine: the particles it returns reach
-    /// [`crate::world::ElementFrame::particles`] and no renderer draws them
-    /// yet, on either host.
+    /// spawn site `0x801D6FD8`). Each particle it names goes to the fog
+    /// spawner [`crate::fog_particles::FogPool::spawn`] (`FUN_801D629C`),
+    /// which is what retail's `jal 0x801d629c` at `0x801D6148` /
+    /// `0x801D6248` reach.
     pub fn step(
         &self,
         scene: &AmbientScene,
         mut rand: impl FnMut() -> u32,
     ) -> Vec<AmbientParticle> {
         let mut out = Vec::new();
+        self.step_with(scene, &mut rand, |p, _| out.push(p));
+        out
+    }
+
+    /// [`Self::step`] with the spawn call in place: `sink` runs where retail
+    /// calls `FUN_801D629C`, **between** the emitter's own random draws, and
+    /// is handed the same `rand` so the two routines interleave on one
+    /// stream the way retail's single `FUN_80056798` does.
+    pub fn step_with(
+        &self,
+        scene: &AmbientScene,
+        rand: &mut dyn FnMut() -> u32,
+        mut sink: impl FnMut(AmbientParticle, &mut dyn FnMut() -> u32),
+    ) {
         if !scene.enabled {
-            return out;
+            return;
         }
         let profile = AmbientProfile::select(scene.dense);
 
         if self.state == 0 {
             if rand() & 0xF != 0 {
-                return out;
+                return;
             }
             let (x, y) = self.point_origin();
             let vx = ((rand() & 0xF) as i32 - 8) * 2;
             let vy = ((rand() & 0xF) as i32 - 8) * 2;
-            out.push(AmbientParticle { x, y, vx, vy });
-            return out;
+            sink(AmbientParticle { x, y, vx, vy }, rand);
+            return;
         }
 
         // 0x801D6158: the two spans, each clamped to a positive modulus. The
@@ -523,10 +537,9 @@ impl AmbientEmitter {
             for _ in 0..count {
                 let vx = (rand() & 0x1F) as i32 - 0xF;
                 let vy = (rand() & 0x1F) as i32 - 0xF;
-                out.push(AmbientParticle { x, y, vx, vy });
+                sink(AmbientParticle { x, y, vx, vy }, rand);
             }
         }
-        out
     }
 }
 

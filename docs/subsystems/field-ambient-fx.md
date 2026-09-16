@@ -581,20 +581,71 @@ battle, a minigame or an FMV) skips it.
 
 The scene arm takes twenty-four independent draws per frame, each with a one
 in sixteen chance of bursting `(rand & 3) + 1` particles at one point sampled
-inside the camera's visible-tile span `DAT_1F8003E8..EB`. What decides whether
-any of that happens is the master gate `_DAT_8007B854`, read by the handler's
-first instruction (`0x801D605C`). The gate is **script-driven**, not
-per-scene data: field-VM op `0x4C`, outer nibble `3`, sub-`0` sets it
+inside the camera's visible-tile span `DAT_1F8003E8..EB`, centred on the
+negated player X/Z that `_DAT_80089118` / `_DAT_80089120` hold. What decides
+whether any of that happens is the master gate `_DAT_8007B854`, read by the
+handler's first instruction (`0x801D605C`). The gate is **script-driven**,
+not per-scene data: field-VM op `0x4C`, outer nibble `3`, sub-`0` sets it
 (`0x801E0F38`) and sub-`1` clears it (`0x801E0F44`), off the 16-entry jump
 table at `0x801CEEB8`. Its only other reader is the field render pass at
-`0x80026EBC`, which stages a 16-byte-stride table from `0x8007322C` into
-scratchpad `0x1F8002D0` when the game mode is `3` and the gate is set.
+`0x80026EBC`, which stages the four 16-byte UV rows at `0x8007322C` into
+scratchpad `0x1F8002D0` when the game mode is `3` and the gate is set - and
+then draws the pool (below).
+
+The emitter names tiles; it draws nothing. Each burst point goes to
+`FUN_801D629C(tile_x, tile_z)` (the `a2` / `a3` velocity it also loads are
+never read), and everything from there on is the **fog pool** - retail's
+own name for the system is the dev trace `fog_set %d %d` the emitter can
+print, whose two numbers are the pool's live count and its cap.
+
+### The fog pool: spawner, records, render pass
+
+Three routines, one pool at `_DAT_8007B7E0` (see
+[`fog_particles`](../../crates/engine-core/src/fog_particles.rs) for the
+byte layout):
+
+| Routine | Image | Role |
+|---|---|---|
+| `FUN_801D629C` | field overlay (0897, file `0x7A84`) | **Spawner.** Rejects a tile outside the walk-region box `0x1F800384..87`; finds the first MAN section-4 region whose open box holds the tile and stops if it is disabled; requires `_DAT_8007BCA8 < _DAT_8007BCB0` (live count under the cap, `0x18` from the field reset); pops a slot off the pool's free stack (`FUN_8001FA34`); fills the record - drift from the region's angle base + random spread through the sin/cos LUTs times its speed, height `-(rand & 0x7F)`, grey `rand & 0x7F`, age rate `(rand & 7) + 8`. |
+| `FUN_8003F348` | SCUS | **Walk.** Called only from the render pass's gated site (`0x80026F24`); pushes the matrix stack, folds `RotMatrixX(0x400)` into the camera rotation, then runs the update on every one of the 80 records whose alive byte is set. |
+| `FUN_8003F3FC` | SCUS | **Per-particle update + draw.** Kills a record outside the walk box; brightness ramps `0..0xFF` over age `0..0x400`, holds to `0xC00`, then fades and kills; colour is `grey * tint * brightness >> 15` per channel with the tint the op `0x4C 0x12` global multiply (`_DAT_8007BCB8..BA`, `0x80` neutral); drift and age advance by `DAT_1F800393`; the player's `+-0x180 / +-0x80 / +-0x80` box ages it again, three times more with a d-pad bit held; then two halves through `FUN_8003F86C`, and a record whose two halves both cull is freed (`FUN_8001FA68`). |
+| `FUN_8003F86C` | SCUS | **Half-sheet emitter.** One `POLY_FT4` (tag `0x09` words, command `0x2E`: textured, semi-transparent, texture-blended) between two projected points - the particle, and the point `2 * half_width` to one side and `0x80` above it - axis-aligned in screen space; culled when both points are off the `[-8, 0x148)` columns, both above row `0`, or both below row `0x190`; kept but not drawn between rows `0xF0` and `0x190`; NCLIP-culled at a signed area past `0x1F40` quarter-pixels; linked at OT bucket `view_z >> 5`. |
+
+The half-width is `(0x180 + (age >> 4)) >> 1`. Retail adds a byte from
+`FUN_8003F838` here, but it seeds that PRNG's state with the record's age
+rate first, and the step `v = state * 12 + 2; state = (v << 16) + (v >> 16)`
+leaves a zero low byte for every rate the spawner can write - the random
+term is dead code. The art is the effect atlas: texture page `0x27` (VRAM
+`(448, 256)`, 4bpp, ABR `1` additive) through CLUT `0x7640` (`(0, 473)`);
+the left half samples staged row 1 (`v 0x58..0x6F`), the right half row 0
+(`v 0x40..0x57`), each `u 0..0x3F`. Rows 2 and 3 are staged and unread.
+
+The region table is MAN section 4 (`DAT_80073ED8`, count `DAT_80073EDC`):
+`0xB`-byte records of `[enable][x0][z0][x1][z1][angle base][angle
+spread][speed][unread][flag index u16]`; op `0x4C` nibble-C sub-1 rewrites
+each record's enable byte from the inverse of its story flag.
+
+Two earlier readings this replaces: `FUN_801D629C` is not "a per-particle
+actor" of a separate template family - it allocates no actor and returns at
+once - and the pass draws textured sheets, not line packets; the `0x09` in
+the packet's first word is the `POLY_FT4` tag length, and the command byte is
+`0x2E`. The `overlay_0896_801d629c.txt` dump at the spawner's VA is a
+71-instruction fragment of another routine (no prologue, `v0` read before
+any write) and is not this function.
 
 Engine: the handler is `engine-core::cutscene_script_elements::AmbientEmitter`
 on the element channel `engine-core::world::cutscene_elements`; the producer is
 `World::install_field_scene_elements` and the gate sink is
-`World::set_ambient_particles_enabled`. Fuller spawn-site provenance is in
-[`cutscene.md`](cutscene.md).
+`World::set_ambient_particles_enabled`. The pool is
+`engine-core::fog_particles::FogPool` (spawn, walk, update, emit), installed
+from section 4 at scene entry (`World::install_fog_regions`) and rendered by
+`World::fog_render_step` - which both hosts call from their draw path with
+the follow camera, wrapping the quads through
+`engine-ui::screen_prim::fog_puff_prim` into their screen-primitive pass.
+Fuller spawn-site provenance is in [`cutscene.md`](cutscene.md); the
+disc-wide census of the gate-raising scripts and the two oracles are
+`crates/engine-shell/tests/w1h_fog_gate_census.rs` and
+`crates/web-viewer/tests/w1h_fog_page_prims.rs`.
 
 ## Related
 

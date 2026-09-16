@@ -135,6 +135,7 @@ pub use world_toggles::WorldToggles;
 mod actors;
 pub mod ambient;
 mod cutscene_elements;
+mod fog_render;
 pub use cutscene_elements::{
     AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, CutsceneElement, ElementFrame,
     ElementKind, ElementLink, WorldRng,
