@@ -540,9 +540,12 @@ every type as owned by everybody.
 Declared rather than derived, for the same reason tiers 2 and 3 are: "which
 engine types must a host own" is a judgement about the architecture. The
 derived version of the question - every `engine-core` type one host constructs
-and the other only names - reports 21 rows over this tree, nearly all of them
-enums a host matches on rather than state a host keeps. A row here is a pinned
-juncture and does not claim to be a census.
+and the other only names - reports 26 rows over this tree, and reading them is
+what settles it: they are types **both** hosts use, where one happens to name a
+constructor (`PadButton::from_name`) or to hold a session the other reaches
+through its runtime. None is a Camera-shaped absence, and a tier that failed on
+all 26 would be asserting 26 architectural claims nobody made. A row here is a
+pinned juncture and does not claim to be a census.
 
 Scope: it proves each named type is constructed or held by both hosts, and that
 the type still exists. It proves nothing about how either host drives it.

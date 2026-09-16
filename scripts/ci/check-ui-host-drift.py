@@ -2339,11 +2339,12 @@ def _selftest_render_case(rule: dict, src: str) -> bool:
 #
 # Declared rather than derived, for the same reason [`CONSTANT_PAIRS`] and
 # [`SIM_PAIRS`] are: "which engine types must a host own" is a judgement about
-# the architecture, and the derived version of the question (every
-# `engine-core` type one host constructs and the other only names) reports 21
-# rows over this tree, almost all of them enums a host matches on rather than
-# state a host keeps. A declared row is a pinned juncture; it does not claim
-# to be a census.
+# the architecture. The derived version of the question (every `engine-core`
+# type one host constructs and the other only names) reports 26 rows over this
+# tree, and every one is a type BOTH hosts use where one names a constructor
+# (`PadButton::from_name`) or holds a session the other reaches through its
+# runtime - noise, not a Camera-shaped absence. A declared row is a pinned
+# juncture; it does not claim to be a census.
 #
 # Scope, as narrowly as the tiers above:
 #
