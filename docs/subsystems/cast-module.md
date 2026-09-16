@@ -455,6 +455,142 @@ It is **not** a band-wide rule, though, and the sweeps above are the
 counter-example: both index the actor table by their own loop counter and pass
 that seat to the wrapper as `a2`.
 
+## The cast's own CD-XA voice
+
+**A cast's voice is the module's own hardcoded cue, not a character-banded
+one.** Near its head every module in `0903..=0966` calls the cue dispatcher
+`FUN_8004FCC8` (a few reach the battle sound funnel `FUN_8004FE5C` instead)
+with a **literal** id in `$a0`, and that id is what selects the `XA*.XA` file,
+the sector-filter channel and the read span the CD-XA clip starter
+`FUN_8003D53C` runs with. Nothing about the caster enters the choice: the same
+module raises the same cue whichever character cast it.
+
+That matters because the cast-audio dispatcher `FUN_801F3990` also emits a cue
+band, and that band *is* character-split (`char_kind * 0x10 + 0xF8..0xFC`, plus
+`0x20C..0x20E` on the enemy leg). The two are different cues on different
+paths, and the module's own is the one a cast is heard through - the
+`FUN_801F3990` band did not fire at all on either measured cast (`capture`,
+N = 2 casts, exec breakpoints on all three routines).
+
+### How a cue id becomes a file, a channel and a span
+
+Straight off `FUN_8004FCC8` (`0x8004FCC8..0x8004FD7C` in `SCUS_942.54`):
+
+* `sltiu v0, s0, 0x100` - ids below `0x100` leave on the SFX-queue path and
+  never reach CD-XA. There is **no upper bound**.
+* two decline gates sit ahead of the XA arm, so a cue can resolve and still
+  play nothing: `ctx[+0x276] != 0` (the pointer is `gp+0xA0C`, which at the
+  live `gp` is the battle context `0x8007BD24`), and `FUN_8003DE7C(1) != 0`.
+* `a1 = id - 0x100`; the clip slot is `a1 >> 3` with three remaps applied in
+  sequence off that one value (`1 -> 0x1A`, `3 -> 0x1B`, `5 -> 0x1C`), and the
+  runtime clip table names slot `n` as `XA<n + 1>.XA`.
+* the channel is `andi a1, a1, 7`.
+* the span is `(raw * 60 + 99) / 100` - written as `(raw << 4) - raw << 2`
+  plus `0x63`, then the reciprocal `0x51EB851F` with `sra 5` - where `raw` is
+  the `u16` at `0x800788B8 + (id - 0x100) * 2`. The pointer is formed
+  `lui v1, 0x8008; addiu v1, v1, -0x7748; sll v0, a1, 1; addu v0, v0, v1`,
+  with **no range check**, so the table is exactly as long as the ids reach.
+
+Its real extent is `0x110` entries: index `0x110` is where ASCII text begins,
+and the ids the cast band uses run to `0x20F`, i.e. index `0x10F`. A reader
+that stops at `0x40` entries covers the menu/jingle band only and drops every
+cast cue, the enemy leg's `0x20C..0x20E` included.
+
+The resolved spans reproduce the demuxed per-channel clip lengths: `XA7.XA`
+channels 0..6 carry the first seven summons' beds and their table spans match
+the decoded audio to within 0.05 s on all seven (`capture`, N = 7 channels,
+`extracted/XA_WAV`). Two live casts confirm the whole chain end to end - Vera
+(`0905`) started `FUN_8003D53C(6, 1, 568)` and Gimard (`0903`)
+`FUN_8003D53C(6, 4, 686)`, exactly the census rows below.
+
+### Two modules pick their take at random
+
+`0936` and `0937` are the only two that do not carry a constant: both call the
+BIOS RNG (`jal 0x80056798`), reduce it to `v0 % 2`, and add the remainder to a
+base - `addiu a0, v0, 0x1b0` in `0936` and `addiu a0, v0, 0x1b2` in `0937`. So
+Hyper Crush speaks on `XA23.XA` channel 0 or 1 and Hyper Lightning on channel
+2 or 3, one coin flip per cast. A backward scan for `addiu a0, zero, imm`
+reports "no literal" on both, which is the shape to expect when the id rides a
+reused register instead.
+
+### Per-module cue census
+
+The **head** cue of each image - the first dispatcher call inside the image's
+own `content_bytes`, never its inherited tail. Several modules raise further
+cues later (`0955` has six sites, `0962` four, `0941` seven counting the
+funnel); those are the per-phase beds, not the cast's voice.
+
+| PROT | image | site | cue | file | channel | span (vsyncs) |
+|---|---|---|---|---|---|---|
+| 903 | `summon_gimard` | `0x801F6E50` | `0x134` | `XA7.XA` | 4 | 686 (11.43s) |
+| 904 | `summon_theeder` | `0x801F6CA8` | `0x136` | `XA7.XA` | 6 | 807 (13.45s) |
+| 905 | `summon_stager_x83` | `0x801F6E70` | `0x131` | `XA7.XA` | 1 | 568 (9.47s) |
+| 906 | `summon_gizam` | `0x801F6D08` | `0x133` | `XA7.XA` | 3 | 1141 (19.02s) |
+| 907 | `summon_nighto` | `0x801F71F4` | `0x135` | `XA7.XA` | 5 | 960 (16.00s) |
+| 908 | `summon_zenoir` | `0x801F6E30` | `0x132` | `XA7.XA` | 2 | 903 (15.05s) |
+| 909 | `summon_viguro` | `0x801F6C20` | `0x130` | `XA7.XA` | 0 | 1278 (21.30s) |
+| 910 | `summon_swordie` | `0x801F6CEC` | `0x160` | `XA13.XA` | 0 | 898 (14.97s) |
+| 911 | `summon_orb` | `0x801F6BC8` | `0x161` | `XA13.XA` | 1 | 935 (15.58s) |
+| 912 | `summon_freed` | `0x801F6C2C` | `0x162` | `XA13.XA` | 2 | 1392 (23.20s) |
+| 913 | `summon_nova` | `0x801F6D1C` | `0x163` | `XA13.XA` | 3 | 1630 (27.17s) |
+| 914 | `summon_gola_gola` | `0x801F6CA0` | `0x164` | `XA13.XA` | 4 | 1281 (21.35s) |
+| 915 | `summon_mushura` | `0x801F6D10` | `0x165` | `XA13.XA` | 5 | 1137 (18.95s) |
+| 916 | `summon_aluru` | `0x801F6F34` | `0x166` | `XA13.XA` | 6 | 1400 (23.33s) |
+| 917 | `summon_barra` | `0x801F6DE8` | `0x168` | `XA14.XA` | 0 | 1578 (26.30s) |
+| 918 | `summon_kemaro` | `0x801F6F80` | `0x169` | `XA14.XA` | 1 | 1953 (32.55s) |
+| 919 | `summon_spoon` | `0x801F6DA0` | `0x16a` | `XA14.XA` | 2 | 941 (15.68s) |
+| 920 | `summon_slippery` | `0x801F6CF4` | `0x16b` | `XA14.XA` | 3 | 1152 (19.20s) |
+| 921 | `summon_iota` | `0x801F6D70` | `0x16c` | `XA14.XA` | 4 | 1233 (20.55s) |
+| 922 | `summon_puera` | `0x801F6D5C` | `0x16d` | `XA14.XA` | 5 | 1438 (23.97s) |
+| 923 | `summon_gilium` | `0x801F6CC4` | `0x16e` | `XA14.XA` | 6 | 2208 (36.80s) |
+| 924 | `stager_ultimate_rave` | `0x801F6D10` | `0x189` | `XA18.XA` | 1 | 1713 (28.55s) |
+| 925 | `summon_spikefish` | `0x801F6D5C` | `0x188` | `XA18.XA` | 0 | 1487 (24.78s) |
+| 926 | `summon_stager_x98` | `0x801F6D5C` | `0x188` | `XA18.XA` | 0 | 1487 (24.78s) |
+| 927 | `summon_juggernaut` | `0x801F6D94` | `0x177` | `XA15.XA` | 7 | 2590 (43.17s) |
+| 928 | `summon_palma` | `0x801F6D9C` | `0x171` | `XA15.XA` | 1 | 2771 (46.18s) |
+| 929 | `summon_mule` | `0x801F6E34` | `0x170` | `XA15.XA` | 0 | 2706 (45.10s) |
+| 930 | `summon_horn` | `0x801F6DA0` | `0x173` | `XA15.XA` | 3 | 1857 (30.95s) |
+| 931 | `summon_jedo` | `0x801F6D5C` | `0x175` | `XA15.XA` | 5 | 2890 (48.17s) |
+| 932 | `summon_meta` | `0x801F6DF8` | `0x172` | `XA15.XA` | 2 | 2789 (46.48s) |
+| 933 | `summon_terra` | `0x801F6D60` | `0x174` | `XA15.XA` | 4 | 2844 (47.40s) |
+| 934 | `summon_ozma` | `0x801F6D60` | `0x176` | `XA15.XA` | 6 | 2532 (42.20s) |
+| 935 | `cast_earthquake` | `0x801F6C10` | `0x19c` | `XA20.XA` | 4 | 583 (9.72s) |
+| 936 | `cast_hyper_crush` | `0x801F6B30` | `0x1b0/0x1b1` | `XA23.XA` | 0/1 | 705/839 (11.75/13.98s) |
+| 937 | `cast_hyper_lightning` | `0x801F6AFC` | `0x1b2/0x1b3` | `XA23.XA` | 2/3 | 735/696 (12.25/11.60s) |
+| 938 | `cast_chaos_breath` | `0x801F6AA4` | `0x1ac` | `XA22.XA` | 4 | 792 (13.20s) |
+| 939 | `cast_spore_gas` | `0x801F6BB8` | `0x152` | `XA11.XA` | 2 | 522 (8.70s) |
+| 940 | `cast_glare_divide` | `0x801F6AEC` | `0x1b7` | `XA23.XA` | 7 | 539 (8.98s) |
+| 941 | `cast_steal` | `0x801F6AB0` | `0x155` | `XA11.XA` | 5 | 783 (13.05s) |
+| 942 | `cast_power_up` | `0x801F6A9C` | `0x1b6` | `XA23.XA` | 6 | 1355 (22.58s) |
+| 943 | `cast_curse` | `0x801F6A9C` | `0x1c3` | `XA25.XA` | 3 | 1061 (17.68s) |
+| 944 | `cast_guilty_cross` | `0x801F6B3C` | `0x1ad` | `XA22.XA` | 5 | 879 (14.65s) |
+| 945 | `cast_water_column` | `0x801F6AA8` | `0x19d` | `XA20.XA` | 5 | 441 (7.35s) |
+| 946 | `cast_call_wave` | `0x801F6C28` | `0x151` | `XA11.XA` | 1 | 604 (10.07s) |
+| 947 | `cast_v_windhash` | `0x801F6AEC` | `0x19e` | `XA20.XA` | 6 | 375 (6.25s) |
+| 948 | `cast_cross_beam` | `0x801F6CB0` | `0x148` | `XA10.XA` | 0 | 411 (6.85s) |
+| 949 | `cast_water_crystals` | `0x801F6E20` | `0x145` | `XA9.XA` | 5 | 597 (9.95s) |
+| 950 | `cast_rolling_flare` | `0x801F6AC8` | `0x1a8` | `XA22.XA` | 0 | 1388 (23.13s) |
+| 951 | `cast_chaos_flare` | `0x801F6C60` | `0x1b5` | `XA23.XA` | 5 | 1288 (21.47s) |
+| 952 | `cast_bloody_horns` | `0x801F6E88` | `0x15f` | `XA12.XA` | 7 | 392 (6.53s) |
+| 953 | `cast_terio_punch` | `0x801F6CDC` | `0x15a` | `XA12.XA` | 2 | 602 (10.03s) |
+| 954 | `cast_fatal_decision` | `0x801F6D74` | `0x149` | `XA10.XA` | 1 | 540 (9.00s) |
+| 955 | `cast_white_shield` | `0x801F6B0C` | `0x157` | `XA11.XA` | 7 | 359 (5.98s) |
+| 956 | `cast_water_hazard` | `0x801F6AB4` | `0x15b` | `XA12.XA` | 3 | 783 (13.05s) |
+| 957 | `summon_effect_table` | `0x801F6AF8` | `0x15c` | `XA12.XA` | 4 | 1012 (16.87s) |
+| 958 | `cast_blazing_slash` | `0x801F6E9C` | `0x198` | `XA20.XA` | 0 | 1192 (19.87s) |
+| 959 | `cast_megaton_press` | `0x801F6B80` | `0x199` | `XA20.XA` | 1 | 1437 (23.95s) |
+| 960 | `cast_plasma_strike` | `0x801F6AC4` | `0x15d` | `XA12.XA` | 5 | 849 (14.15s) |
+| 961 | `cast_dead_end_crisis` | `0x801F6AD4` | `0x1c1` | `XA25.XA` | 1 | 1224 (20.40s) |
+| 962 | `cast_blade_breath` | `0x801F6A90` | `0x1c0` | `XA25.XA` | 0 | 767 (12.78s) |
+| 963 | `cast_genocidal_cannon` | `0x801F6AD4` | `0x1b4` | `XA23.XA` | 4 | 1828 (30.47s) |
+| 964 | `cast_element_change` | `0x801F6C1C` | `0x1c4` | `XA25.XA` | 4 | 1202 (20.03s) |
+| 965 | `cast_doomsday` | `0x801F6B0C` | `0x1c2` | `XA25.XA` | 2 | 1910 (31.83s) |
+| 966 | `cast_evil_seru_magic` | `0x801F6B1C` | `0x1ae` | `XA22.XA` | 6 | 3269 (54.48s) |
+`0925` and `0926` share a cue because `0926` is the null-stager sibling of
+`0925` (see [Six of the 64 stagers are a null
+routine](#six-of-the-64-stagers-are-a-null-routine)); `0936` / `0937` show both
+arms of their coin flip.
+
 ## What of the choreography is data, and what is code
 
 A signature cast is **half data**. Its particle layer is a record in exactly the
