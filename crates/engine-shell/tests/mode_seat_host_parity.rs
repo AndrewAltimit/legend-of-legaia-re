@@ -59,7 +59,7 @@ fn native_chain(disc: &str) -> (Vec<(u8, String)>, u64) {
     };
     let mut s = BootSession::open_disc(std::path::Path::new(disc), &cfg).expect("open disc");
     let mut words = Vec::new();
-    let mut sample = |s: &BootSession, words: &mut Vec<(u8, String)>| {
+    let sample = |s: &BootSession, words: &mut Vec<(u8, String)>| {
         let gm = s.mode_seat.game_mode();
         words.push((gm.as_index() as u8, s.mode_seat.mode_name().to_string()));
     };
@@ -99,7 +99,7 @@ fn web_chain(disc_bytes: Vec<u8>) -> (Vec<(u8, String)>, u64) {
     let mut rt = LegaiaRuntime::new();
     rt.load_disc(disc_bytes, String::new()).expect("load_disc");
     let mut words = Vec::new();
-    let mut sample = |rt: &LegaiaRuntime, words: &mut Vec<(u8, String)>| {
+    let sample = |rt: &LegaiaRuntime, words: &mut Vec<(u8, String)>| {
         let v: serde_json::Value =
             serde_json::from_str(&rt.mode_state_json()).expect("mode_state_json");
         words.push((
