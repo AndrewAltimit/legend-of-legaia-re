@@ -159,7 +159,7 @@ load-bearing.
 | `zero_pad` | Every byte is `0x00`. Sector or record padding. |
 | `alignment` | Shorter than 16 bytes and not all zero. Inter-record alignment, not a finding. |
 | `repeated_fill` | The run is one short pattern (period 1, 2, 4, 8 or 16) repeated. Dev fill. |
-| `ascii_text` | At least 80 % printable ASCII or NUL. A string pool. |
+| `ascii_text` | At least 80 % printable ASCII **or NUL**. A string pool - or a mostly-empty region with strings in it; see the note below. |
 | `pointer_dense` | At least 20 % of words land in `0x80000000..0x80200000`. A pointer or jump table. |
 | `bgr555` | Nearly every halfword is below `0x8000`, over a wide high-entropy spread. PSX 15-bit colour with the STP bit clear: a CLUT block, a 16bpp page, raw VRAM. |
 | `plausible_mips` | Plausible primary opcodes, spread over at least four of them, almost no pointers, and no SPECIAL landslide. Un-dumped code. |
@@ -184,6 +184,19 @@ naive classifier walks straight into.
   distinct-opcode floor as well. `bgr555` is therefore tested first, and it is discriminating in the
   other direction: real MIPS puts a halfword at or above `0x8000` in every load, store and
   `lui`-pair word, so code never passes the STP-clear test.
+
+There is a fourth asymmetry, and it inflates `work_bytes` rather than misnaming
+a run. `ascii_text` counts NUL as printable, because a string pool is mostly
+short strings separated by terminators - but so is a mostly-empty region with a
+handful of strings in it, and `zero_pad` will not take it because a single
+non-zero byte disqualifies the run. The gap between the two tests is real
+residue that is almost all padding: of the overlay entry `0899`'s `ascii_text`
+residue, the runs that are at least 90 % NUL are the large majority by bytes,
+and the one dense string pool is a small minority. So read an `ascii_text` run
+by its zero fraction (`asset account --json` reports it per run) before treating
+it as a format nobody walked - and do not "fix" it by widening `zero_pad`, which
+would move bytes out of `work_bytes` by redefining the instrument rather than by
+understanding them.
 
 ## Overlay code images
 
@@ -214,6 +227,87 @@ silence must never read as a refutation.
 A code image's non-code regions - string pools, jump tables, data segments - fall to the residue
 classifier, which is the right answer for them. `ascii_text` and `pointer_dense` runs in an overlay
 entry are the segments the dump corpus is not about.
+
+### An entry can be an overlay *and* a container
+
+The overlay selection above is an override: with a dump directory and a row in
+the map, the code walker replaces whatever walker the entry's class would have
+chosen. That is right for an image that is only code, and wrong for one that is
+also a container - the class walker's claims simply vanish, and precisely when a
+sweep runs, because a sweep is when `--funcs` is given.
+
+`init.pak` (PROT `0895`) is the case on this disc. It is a boot overlay with a
+map row *and* the four-TIM publisher-logo pack `legaia_asset::init_pak` already
+parses at fixed offsets. Under the override its logo claims were dropped and
+its TIM pixel data - over half the entry - read as unwalked `ascii_text`, which
+is the shape indexed pixel data takes (see the NUL note above). The walker now
+owns the entry and calls the code walker itself, the way the slot-B module
+walker does, and the entry accounts nearly whole.
+
+Two smaller corrections came out of the same read. The pack has **four** logo
+TIMs, not five: the fifth offset that had been recorded is a `10 00 00 00` word
+inside the fourth logo's pixel block, which is the magic-sweep false positive
+this tiering exists to keep visible. And the residue that is left is the head
+pointer table, the executable-name string, and the tail past the last logo.
+
+### A pinned offset is not a magic sweep
+
+The dump corpus says nothing about a code image's data segment, so a sub-asset
+that lives there falls to the magic sweep - which finds it, tags the claim
+`scan`, and thereby reports "found by guessing" for something a module in this
+workspace already reads at a named constant.
+
+The menu overlay (PROT `0899`) carried both of the disc's two largest remaining
+sweep-found claims, and both are pinned: the save-menu UI atlas at
+`legaia_asset::title_pak::OVERLAY_SAVE_MENU_TIM_OFFSET` and the
+[save-slot icon sheet](../formats/save-icon.md) at
+`legaia_asset::save_icon::PROT_ENTRY_OFFSET`. The overlay walker now claims
+both from those constants, with the extent taken from each TIM's own header
+rather than from a table here, so the entry's `scan` share goes to zero and its
+structural share carries the two atlases.
+
+The general rule this instrument wants: when the sweep finds something, check
+whether a constant for it already exists. A `scan` claim beside a named offset
+is a missing binding, not a discovery.
+
+One instance is left on the whole disc, and it is the same shape: entry `1062`
+is classed `overlay_data_blob`, walks as `generic`, and is in fact a
+single-chunk DATA_FIELD stream carrying a SEQ - one `(0x02 << 24) | len` header,
+the sequence, a zero terminator, sector padding. Of the six entries the
+`generic` fallback handles, it is the only one whose bytes walk to a terminator
+as a chunk stream, so the fallback could test for that shape and hand off to the
+stream walker rather than leaving the entry to the sweep.
+
+### When no load base fits, the image stays residue
+
+PROT `0896` is the class's largest single unwalked run and it is not a walker
+gap: no load base makes the image self-consistent. The measurement is the
+image's own operands - every `lui`+`addiu` pair and every `j`/`jal` target in
+the overlay band - slid against a window the width of the file. The best window
+holds a bit over four fifths of them, where a pinned control (the menu overlay
+`0899` at the slot-A base) holds all but two of more than twelve hundred. The
+image also carries no printable string long enough to anchor, because its label
+table is Shift-JIS. So its references are mostly external, there is no base to
+extract it at, and its bytes stay `plausible_mips` residue until a capture shows
+it resident. The map's own note says the same thing from the loader side.
+
+### The multi-bank VAB
+
+PROT `0891` is selected on its class, and every claim it makes comes out of a
+length the container states: the `count + 1` sector bounds its reader indexes,
+then per bank the two DATA_FIELD chunk headers, the header part, the VAG bodies,
+the stream terminator and the sector slack. `scan_bytes` is zero across the
+entry. The `pBAV` magic gates the class and is never a claim boundary - the
+distinction matters here because the previous account of this entry *was* the
+magic sweep, at 96 % accounted and 0 % structural. Walker `vab_multi_bank`;
+parser [`legaia_asset::vab_multi_bank`](../formats/vab.md#the-multi-bank-archive-monstersnd).
+
+The sector slack is claimed as `pad` rather than left as residue, and the reason
+is the same one the filler slots use: the bank's extent is declared (by the next
+index entry) and its content length is declared (by `fsize`), so nothing reads
+between them. It is not zero fill - the builder left its previous sector
+buffer's contents there, and two banks carry a third bank's bytes at the same
+buffer offset.
 
 ### The slot-B module band
 
@@ -287,29 +381,29 @@ Read the classes in three groups; only the first is work.
 The `entries` and `bytes` columns are the disc; the `non-slack residue` column is
 a **snapshot of the instrument** and moves with every parser that binds - re-derive
 it rather than quoting it. Its denominator is the whole TOC: 1233 entries,
-121006080 bytes. At the state below, 7.19% of that is residue, and 6.40 of those
-7.19 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 0.79%
-non-slack. Of the accounted 92.81%, 4.88 points came from the magic sweep rather
-than from a walked layout, so the *structural* share of the disc is 87.92%. Of
-those 4.88 sweep-found points, 4.79 are one entry: `0891`, whose whole accounted
-share is `scan` claims.
+121006080 bytes. At the state below, 6.95% of that is residue, and 6.40 of those
+6.95 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 0.55%
+non-slack. Of the accounted 93.05%, 0.02 points came from the magic sweep rather
+than from a walked layout, so the *structural* share of the disc is 93.03%. The
+whole of that remainder is one entry, `1062`, whose SEQ the sweep finds in a
+buffer no walker claims.
 
 | Class | entries | bytes | non-slack residue |
 |---|---:|---:|---:|
-| `vab_multi_bank` | 1 | 6002688 | 210704 |
 | `scene_vab_stream` | 218 | 22450176 | 199440 |
 | `overlay_data_blob` | 25 | 17164288 | 157530 |
 | `scene_tmd_stream` | 182 | 14632960 | 141832 |
-| `init_pak` | 1 | 153600 | 80864 |
 | `scene_asset_table` | 90 | 22577152 | 77420 |
 | `overlay_ptr_table` | 42 | 407552 | 46788 |
 | `mips_overlay` | 22 | 194560 | 21836 |
-| `lzs_container` | 18 | 4098048 | 13213 |
+| `lzs_container` | 18 | 4098048 | 12889 |
+| `init_pak` | 1 | 153600 | 2940 |
 | `scene_event_scripts` | 101 | 329728 | 2048 |
 | `bse_bank` | 2 | 6144 | 1716 |
 | `data_field_streaming` | 49 | 9052160 | 1536 |
 | `pack` | 7 | 1634304 | 948 |
 | `summon_readef` | 2 | 12232704 | 20 |
+| `vab_multi_bank` | 1 | 6002688 | 0 |
 | `battle_data_pack` | 4 | 1863680 | 0 |
 | `efect_pack` | 1 | 8192 | 0 |
 | `scene_v12_table` | 97 | 198656 | 0 |
@@ -319,10 +413,10 @@ share is `scan` claims.
 
 | Class | What its unclaimed bytes are | Verdict |
 |---|---|---|
-| `vab_multi_bank` (`0891`) | `mixed` and `ascii_text` runs between VAG bodies the magic sweep found. Every claim on this entry is a `scan` claim. | The bank's own layout is unwalked; see the split below. |
+| `vab_multi_bank` (`0891`) | Nothing: the bank index, each bank's two chunks and each bank's sector slack are claimed from lengths the container states. | Closed. Layout in [`vab.md`](../formats/vab.md#the-multi-bank-archive-monstersnd). |
 | `overlay_data_blob` | Almost all `zero_pad`. What is left is entry `0896`, whose whole extent reads `plausible_mips` although its head is a length-prefixed Shift-JIS label table, plus per-image runs beside code the dump corpus reached. | `0896` is the JP-build menu image, resident in no USA state. |
 | `overlay_ptr_table`, `mips_overlay` | `low_entropy` runs with a `plausible_mips` minority - the tables beside code the dump corpus has not reached. | Dump worklist; agrees with [`disc-coverage.md`](disc-coverage.md)'s gap list. |
-| `init_pak` (`0895`) | `ascii_text`: a string pool no walker claims. | Small, and a string pool is not a format. |
+| `init_pak` (`0895`) | The head pointer table, the SCUS-name string, and a tail past the last logo. | Closed but for those three; see the composition rule below. |
 | `lzs_container` | Per-entry tails of a few hundred bytes past the last descriptor's stream, plus `0981` entire - the one class member that is a code image rather than a container. | Walker tails plus one mis-classed entry. |
 | `scene_vab_stream`, `scene_tmd_stream`, `scene_asset_table`, `pack` | Short `mixed` / `low_entropy` runs at the tail of records the walker did reach, plus one `high_entropy` minority in `scene_asset_table`. | Walker tails, not unwalked format. |
 | `data_field_streaming`, `battle_data_pack` | Almost entirely `zero_pad` now; `battle_data_pack`'s residue is slack outright and `data_field_streaming` keeps one `ascii_text` sector. | Closed but for that sector. |
@@ -344,6 +438,8 @@ read the per-class verdict column before starting work on a row.
 | `lzs_container`, 18 entries | The descriptor bundle [`scene-bundles.md`](../formats/scene-bundles.md) specifies, at counts the *detector's* window excludes - retail bounds the count nowhere. | A walker bound to the class. |
 | `pochi_filler`, 266 entries | One 1927-byte dev fill file plus 121 bytes of the mastering buffer's previous contents ([`pochi.md`](../formats/pochi.md)). | A shape rule. The fill is text-shaped and its line is 52 bytes long, so `repeated_fill`'s period-1/2/4/8/16 test never fires and 266 sectors of filler ranked as work. |
 | `other5` / `other6`, 2 entries | Four `320x64` 16bpp band uploads to VRAM `(384, 0)` ([`ringside-still.md`](../formats/ringside-still.md)). | A walker. The rectangle was already recovered from the consumer's immediates. |
+| `vab_multi_bank`, 1 entry | 206 VAB banks on a sector index the entry's own head carries, each a two-chunk stream ([`vab.md`](../formats/vab.md#the-multi-bank-archive-monstersnd)). | A walker. The detector already read the count and the sector table - it just never claimed anything with them. |
+| `init_pak`, 1 entry | The boot overlay's four publisher-logo TIMs, at offsets `legaia_asset::init_pak` already knew. | Nothing about the format: a **dispatch** rule dropped the walker. See below. |
 
 ### Two ways the headline number lies, both visible in the sweep
 
@@ -354,12 +450,15 @@ whose rest is padding the format declares. Nothing is owed there, and ranking a 
 accounted share alone would put all 97 of them near the top. Rank by *non-slack* residue instead,
 which is what the rollup's own ordering does.
 
-**A high percentage that walked nothing.** Entry `0891` (`vab_multi_bank`) accounts for almost all
-of its bytes and structurally for none of them: every claim came from the magic sweep over the
-residue. The `scan` tier exists so that reads as a warning rather than as a result, and this is its
-largest instance on the disc - the bank's own layout is unwalked, and the figure beside it is
-evidence that VAG bodies are *there*, nothing more. `0895` carries a smaller version of the same
-split. Quote `structural`, or carry `scan_bytes` beside the accounted share.
+**A high percentage that walked nothing.** Entry `0891` (`vab_multi_bank`) used to account for
+almost all of its bytes and structurally for none of them: every claim came from the magic sweep over
+the residue, which is evidence that VAG bodies are *there* and nothing more. That is the shape the
+`scan` tier exists to expose, and it was the largest instance on the disc - 206 banks' worth of VAG
+bodies found by magic while the container's own index table went unread. The entry is walked now
+(the index is 206 sector spans; [`vab.md`](../formats/vab.md#the-multi-bank-archive-monstersnd)), so
+the lesson has to be read off the tier rather than off that entry: quote `structural`, or carry
+`scan_bytes` beside the accounted share, because the two numbers can differ by five points of the
+whole disc without the headline saying so.
 
 ### The pochi corroboration
 

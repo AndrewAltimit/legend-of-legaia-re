@@ -314,6 +314,7 @@ pub enum Walker {
     Tim,
     Tmd,
     Vab,
+    VabMultiBank,
     Seq,
     Anm,
     Man,
@@ -351,6 +352,7 @@ impl Walker {
             Walker::Tim => "tim",
             Walker::Tmd => "tmd",
             Walker::Vab => "vab",
+            Walker::VabMultiBank => "vab_multi_bank",
             Walker::Seq => "seq",
             Walker::Anm => "anm",
             Walker::Man => "man",
@@ -1804,11 +1806,18 @@ fn walk_init_pak(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth: u8) 
         }
         Err(e) => sink.note(format!("init_pak::parse: {e}")),
     }
-    // The rest of init.pak is the boot overlay's code + string pool; the only
-    // parser this workspace has over it is the MIPS-shape detector, so leave
-    // it to the residue classifier and say so.
-    sink.note("non-TIM region is the boot overlay's code + debug-string pool");
-    let _ = (opts, depth);
+    // `init.pak` is BOTH: a boot overlay with a static-overlay row and a
+    // five-TIM logo pack. The dump corpus is the parser for the code half, so
+    // run it here rather than letting the overlay-row override in
+    // `pick_walker` replace this walker - that override used to drop every
+    // logo claim whenever `--funcs` was given, which is exactly when the
+    // sweep runs, so the pack's own bytes read as unwalked format.
+    if opts.funcs_dir.is_some() {
+        walk_overlay_code(buf, sink, opts);
+    } else {
+        sink.note("non-TIM region is the boot overlay's code; pass --funcs to credit it");
+    }
+    let _ = depth;
 }
 
 fn walk_field_map(buf: &[u8], sink: &mut Sink) {
@@ -2316,6 +2325,102 @@ pub fn seq_extent(buf: &[u8], off: usize) -> Option<usize> {
     }
 }
 
+/// Walk the multi-bank VAB archive (`monster.snd`, extraction 891).
+///
+/// Every claim comes out of a length the container states: the bank count and
+/// the `count + 1` start sectors `FUN_8003E104` indexes, then each bank's two
+/// DATA_FIELD chunk headers. Nothing here rests on a magic sweep - the `pBAV`
+/// magic is only a gate on the class, never a claim boundary.
+/// See [`crate::vab_multi_bank`].
+fn walk_vab_multi_bank(buf: &[u8], sink: &mut Sink) {
+    use crate::vab_multi_bank::{self, SECTOR};
+    let Some(r) = vab_multi_bank::detect(buf) else {
+        sink.note("vab_multi_bank::detect declined");
+        return;
+    };
+    sink.claim(0, 8, OWNER_HEADER, "reserved word + bank count");
+    sink.claim(
+        8,
+        r.table_end().min(buf.len()),
+        OWNER_TOC,
+        format!(
+            "bank start-sector table, {} words (one per bank plus the end sentinel)",
+            r.count + 1
+        ),
+    );
+    if r.banks.len() != r.count {
+        sink.note(format!(
+            "bank walk resolved {} of the {} banks the head declares",
+            r.banks.len(),
+            r.count
+        ));
+    }
+    // The archive's first sector holds the index table; the reader stages
+    // 0x400 bytes of it, so the rest of that sector is slack by construction.
+    if r.banks.first().is_some_and(|b| b.offset() >= SECTOR) {
+        sink.claim(r.table_end(), SECTOR, OWNER_PAD, "index-sector slack");
+    }
+    let mut vag_total = 0usize;
+    for b in &r.banks {
+        let i = b.index;
+        sink.claim(
+            b.offset(),
+            b.offset() + 4,
+            OWNER_HEADER,
+            format!("bank {i} chunk 0 header"),
+        );
+        sink.claim(
+            b.vab_offset(),
+            b.body_chunk_offset(),
+            OWNER_TOC,
+            format!(
+                "bank {i} VAB header + {} program slot(s), tone rows, VAG size table",
+                b.programs
+            ),
+        );
+        sink.claim(
+            b.body_chunk_offset(),
+            b.body_offset(),
+            OWNER_HEADER,
+            format!("bank {i} chunk 1 header"),
+        );
+        sink.claim(
+            b.body_offset(),
+            b.content_end(),
+            OWNER_VAB,
+            format!("bank {i} VAG bodies, {} samples", b.vags),
+        );
+        vag_total += b.vags as usize;
+        // The stream terminator, then the sector slack the index table's next
+        // entry declares. Not zero fill: the builder left its sector buffer's
+        // previous contents behind it, which nothing reads - both chunk
+        // lengths and `fsize` end before it.
+        let end = b.offset() + b.span();
+        if legaia_bytes::u32_le(buf, b.content_end()) == Some(0) {
+            sink.claim(
+                b.content_end(),
+                b.content_end() + 4,
+                OWNER_HEADER,
+                format!("bank {i} stream terminator"),
+            );
+            sink.claim(
+                b.content_end() + 4,
+                end.min(buf.len()),
+                OWNER_PAD,
+                format!("bank {i} sector slack past the declared stream"),
+            );
+        } else {
+            sink.claim(
+                b.content_end(),
+                end.min(buf.len()),
+                OWNER_PAD,
+                format!("bank {i} sector slack past the declared stream"),
+            );
+        }
+    }
+    sink.note(format!("{} banks, {vag_total} VAG bodies", r.banks.len()));
+}
+
 fn walk_seq(buf: &[u8], sink: &mut Sink) {
     match seq_extent(buf, 0) {
         Some(n) => {
@@ -2474,6 +2579,39 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
          {refuted} refuted (aliased sibling)",
         base, rec.label
     ));
+    claim_pinned_overlay_assets(buf, sink, idx);
+}
+
+/// Sub-assets an overlay image carries at an offset this workspace has pinned.
+///
+/// The dump corpus is the parser for a code image's code and says nothing about
+/// its data segment, so an asset sitting in that segment falls to the magic
+/// sweep - which finds it, tags the claim `scan`, and thereby reports "found by
+/// guessing" for something a module here already reads at a named constant.
+/// That gap is a binding, not a format: the offsets below are the constants,
+/// and the extents come from the TIM headers rather than from this table.
+fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_index: u32) {
+    const MENU_OVERLAY: u32 = 899;
+    if prot_index != MENU_OVERLAY {
+        return;
+    }
+    for (off, what) in [
+        (
+            crate::title_pak::OVERLAY_SAVE_MENU_TIM_OFFSET,
+            "save-menu UI atlas",
+        ),
+        (crate::save_icon::PROT_ENTRY_OFFSET, "save-slot icon sheet"),
+    ] {
+        match crate::tim_scan::parse_at(buf, off) {
+            Some(h) => sink.claim(
+                off,
+                (off + h.byte_len).min(buf.len()),
+                OWNER_TIM,
+                format!("{what}, {}x{} {}bpp", h.width, h.height, h.bpp),
+            ),
+            None => sink.note(format!("no TIM at the pinned {what} offset {off:#x}")),
+        }
+    }
 }
 
 /// A slot-B module image: the dump corpus for its code, plus the image's own
@@ -2607,7 +2745,13 @@ pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
     {
         return Walker::SlotBModule;
     }
-    if let (Some(idx), Some(_)) = (opts.prot_index, opts.funcs_dir.as_ref()) {
+    // An entry can be a runtime overlay AND a container. Where the class
+    // walker has structural claims of its own, it owns the entry and
+    // delegates to the code walker itself (`walk_init_pak`, `walk_slot_b_module`).
+    let composes_code_walk = class == Class::InitPak;
+    if let (Some(idx), Some(_), false) =
+        (opts.prot_index, opts.funcs_dir.as_ref(), composes_code_walk)
+    {
         let is_overlay = crate::static_overlay::overlay_map()
             .overlays
             .iter()
@@ -2637,6 +2781,7 @@ pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
         Class::TimPack => Walker::TimPack,
         Class::Pack => Walker::Pack,
         Class::TimPassthrough => Walker::Tim,
+        Class::VabMultiBank => Walker::VabMultiBank,
         Class::SeqContainer => Walker::Seq,
         Class::AnmContainer => Walker::Anm,
         Class::MipsOverlay | Class::OverlayPtrTable => Walker::OverlayCode,
@@ -2674,6 +2819,7 @@ fn dispatch(buf: &[u8], walker: Walker, sink: &mut Sink, opts: &AccountOptions, 
         Walker::Tim => walk_tim(buf, sink),
         Walker::Tmd => walk_tmd(buf, sink),
         Walker::Vab => walk_vab(buf, sink),
+        Walker::VabMultiBank => walk_vab_multi_bank(buf, sink),
         Walker::Seq => walk_seq(buf, sink),
         Walker::Anm => walk_anm(buf, sink),
         Walker::Man => walk_man(buf, sink),

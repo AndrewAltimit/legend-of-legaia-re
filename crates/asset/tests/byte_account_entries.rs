@@ -113,8 +113,12 @@ const CASES: &[(u32, f64, &str)] = &[
     // `bse.dat` master bank + its untraced sibling.
     (888, 40.0, "bse_bank"),
     (1195, 2.0, "bse_bank"),
-    // Boot `init.pak`.
-    (895, 85.0, "init_pak"),
+    // Boot `init.pak` - four publisher-logo TIMs. The floor is for the
+    // no-dump-corpus run this harness makes: with `--funcs` the walker also
+    // credits the overlay's code and the entry accounts nearly whole.
+    (895, 92.0, "init_pak"),
+    // The multi-bank VAB: 206 banks on the sector index its own head carries.
+    (891, 100.0, "vab_multi_bank"),
     // Kingdom bundles (world map) - the three `scene_asset_table` carriers.
     (86, 95.0, "scene_asset_table"),
     (245, 95.0, "scene_asset_table"),
@@ -193,6 +197,68 @@ fn named_entries_account_above_their_floor_or_skip() {
 /// after the walker claims each slot's compressed stream - and the trailing
 /// slots' raw TIMs, which carry the TIM magic where a block would carry a
 /// `dec_size` - the residue is padding and nothing else.
+/// The multi-bank VAB accounts entirely from lengths the container states.
+///
+/// The claim worth guarding is not the percentage - it is that **none** of it
+/// comes from the magic sweep. This entry was the disc's largest `scan`-tier
+/// figure: 96 % accounted, 0 % structural, every byte found by hunting `pBAV`
+/// rather than by reading the 206-entry sector index in the head.
+#[test]
+fn the_multi_bank_vab_is_walked_not_swept() {
+    let Some(dir) = extracted_root() else {
+        eprintln!("[skip] extracted/PROT missing - run `legaia-extract` first");
+        return;
+    };
+    let Some(acc) = account_entry(&dir, 891, 1) else {
+        eprintln!("[skip] entry 891 not extracted");
+        return;
+    };
+    assert_invariants(&acc);
+    assert_eq!(acc.walker.name(), "vab_multi_bank");
+    assert_eq!(
+        acc.accounted, acc.structural,
+        "every claim on this entry must be structural, not a magic-sweep hit"
+    );
+    assert_eq!(acc.residue_bytes, 0, "the index table bounds every byte");
+
+    let path = entry_path(&dir, 891).expect("entry 891");
+    let bytes = std::fs::read(&path).expect("read entry 891");
+    let bank = legaia_asset::vab_multi_bank::detect(&bytes).expect("detects");
+    assert_eq!(bank.count, 206);
+    assert_eq!(
+        bank.banks.len(),
+        206,
+        "every bank resolves inside the buffer"
+    );
+    // The end sentinel is the archive's own sector count, the way a PROT TOC
+    // entry's size is the gap to the next entry.
+    let last = bank.banks.last().unwrap();
+    assert_eq!(
+        last.end_sector as usize * legaia_asset::vab_multi_bank::SECTOR,
+        bytes.len(),
+        "table[count] is the archive's sector count"
+    );
+    for b in &bank.banks {
+        assert_eq!(
+            &bytes[b.vab_offset()..b.vab_offset() + 4],
+            b"pBAV",
+            "bank {} does not start with a VAB",
+            b.index
+        );
+        assert_eq!(
+            b.header_len + b.body_len,
+            b.fsize as usize,
+            "bank {}: the two chunk payloads must sum to fsize",
+            b.index
+        );
+        assert!(b.content_end() <= b.offset() + b.span());
+    }
+    eprintln!(
+        "[ok]    891: {} banks, all claims structural",
+        bank.banks.len()
+    );
+}
+
 #[test]
 fn monster_archive_residue_is_all_padding() {
     let Some(dir) = extracted_root() else {
