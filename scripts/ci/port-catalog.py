@@ -2752,12 +2752,23 @@ def main() -> int:
         reach = reachable_fns(fns, edges, roots)
         # Second, receiver-gated pass. Only the stale-`NOT WIRED` test reads it;
         # every `live` / `--not-live` verdict stays on the permissive graph so
-        # the not-live list keeps its hard-floor property. Built only for the
-        # audit, which is the sole consumer.
-        reach_strict = None
-        if args.live_audit:
-            _, edges_s = build_rust_graph(srcs, strict=True)
-            reach_strict = reachable_fns(fns, edges_s, roots)
+        # the not-live list keeps its hard-floor property.
+        #
+        # Built whenever the live pass runs, NOT only for `--live-audit`. It
+        # used to be audit-only, and `compute_live` falls back to
+        # `live_strict = live` without it - so the summary's last line, which
+        # is labelled as the receiver-gated answer, silently printed the
+        # permissive one in every run that did not pass the audit flag. On one
+        # tree that read `42` under `--live` and `0` under `--live-audit
+        # --live`: same tree, same question, two answers, and the larger one
+        # accuses 42 correct disclosures of being stale. A number that moves
+        # with an output flag is not a measurement.
+        #
+        # The second graph costs nothing worth saving: both invocations above
+        # were dominated by parsing every crate source, and the difference
+        # between them was inside the run-to-run spread on a loaded machine.
+        _, edges_s = build_rust_graph(srcs, strict=True)
+        reach_strict = reachable_fns(fns, edges_s, roots)
         live_map = compute_live(
             collect_port_anchors(srcs), srcs, fns, reach, reach_strict
         )
