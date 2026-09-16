@@ -2017,17 +2017,24 @@ void main() {
            * (`Camera::compass_azimuth_units`: scripted yaw + the drag-orbit +
            * the host framing bias), so the page only speaks over it where it
            * has something the engine cannot know. Two cases: VR first-person,
-           * where the headset gaze IS the heading, and the debug orbit, whose
-           * vantage is a page-local yaw the engine camera never sees.
-           * The page used to set the azimuth unconditionally from its own
-           * orbit yaw, which is why the engine's own camera state and the
-           * controls it drove could not agree. */
+           * where the headset gaze IS the heading, and the page's own orbit
+           * vantage, whose yaw the engine camera never sees. That vantage
+           * draws the frame not only under the `F3` debug toggle but whenever
+           * the engine handed back no matrix (`cam.vp` null: a cached bundle
+           * without `play_camera_vp`, or a frame with no engine camera) - and
+           * in both the compass must follow the camera on screen, or a drag
+           * turns the picture and leaves the controls behind. The page used
+           * to set the azimuth unconditionally from its own orbit yaw, which
+           * is why the engine's own camera state and the controls it drove
+           * could not agree. */
           const lockedPad = this._cut && this._cut.locked;
           if (this._vrDrive) {
             rt.set_camera_azimuth(this._vrDrive.azimuth);
             rt.set_pad(lockedPad ? 0 : (this.pad | this._vrDrive.pad));
           } else {
-            if (this.debugCamera) rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
+            if (this.debugCamera || !this.cam.vp) {
+              rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
+            }
             rt.set_pad(lockedPad ? 0 : this.pad);
           }
           /* A tap's just-pressed edge fires on the first tick of this frame
