@@ -468,15 +468,17 @@ fn the_vera_restore_arm_leaves_hp_to_the_fold_and_still_cures() {
     world.actors[0].battle.hp = 40;
     world.actors[0].battle.max_hp = 1000;
     world.actors[0].battle.field_flags = 0x0003;
-    // A cure tier the arm will act on, and a magic level past the cure floor.
+    // A cure tier the arm will act on, and a caster whose record carries the
+    // spell at a level past the cure floor (the arm reads the record, not the
+    // actor).
     world.battle_ctx.follow_up_pending = 1;
-    for m in world.party.roster.members.iter_mut() {
-        let mut list = m.spell_list();
-        list.count = 1;
-        list.ids[0] = 0x83;
-        list.levels[0] = VERA_CURE_MIN_LEVEL;
-        m.set_spell_list(list);
-    }
+    let mut member = legaia_save::CharacterRecord::parse(&[0u8; 0x414]).expect("blank record");
+    let mut list = member.spell_list();
+    list.count = 1;
+    list.ids[0] = 0x83;
+    list.levels[0] = VERA_CURE_MIN_LEVEL;
+    member.set_spell_list(list);
+    world.party.roster.members = vec![member];
 
     let mut ran_restore = false;
     for arm in 0..=VERA_RESTORE_ARM {
