@@ -71,6 +71,7 @@ use vm_hosts::{
 mod ambient_fx_state;
 mod audio_state;
 mod battle_state;
+mod camera_hooks;
 mod camera_rig;
 mod cast_fx_state;
 mod config;
@@ -103,6 +104,7 @@ mod world_toggles;
 pub use ambient_fx_state::AmbientFxState;
 pub use audio_state::AudioState;
 pub use battle_state::BattleState;
+pub use camera_hooks::CameraZoneRequest;
 pub use camera_rig::CameraRig;
 pub use cast_fx_state::CastFxState;
 pub use config::*;

@@ -566,6 +566,25 @@ pub const PROLOGUE_HANDOFF_FLAG: u32 = 1 << PROLOGUE_HANDOFF_BIT;
 /// `GFLAG_SET` against this bit.
 pub const PROLOGUE_HANDOFF_BIT: u32 = 26;
 
+/// Scratchpad flag-word bit (`_DAT_1F800394 & 0x0040_0000`, bit `22`) that
+/// enables the field camera's **per-frame zone re-query**.
+///
+/// The field per-frame update tests it at `0x801D17F0` before running
+/// `FUN_801DE234` + `FUN_801DE3E0` at the player's tile; with the bit clear
+/// it only eases (`FUN_801DB510`) and clamps the focus (`FUN_801DAA50`), so
+/// the camera parameter block stays whatever the last script arm or player
+/// seat loaded. The per-mode seed of the flag word copies a `u16`
+/// (`_DAT_1F800394 = *(u16 *)(DAT_800707A0 + mode * 0x18)`), so bit `22`
+/// can only be raised by a field script - op `0x2E` / `0x2F` with operand
+/// `0x16`. Fifteen of the disc's CDNAME scenes carry such a site.
+///
+/// REF: FUN_801D1780
+pub const ZONE_REQUERY_FLAG: u32 = 1 << ZONE_REQUERY_BIT;
+
+/// Scratchpad flag-bit index (`22`) of [`ZONE_REQUERY_FLAG`] - the operand
+/// of the `GFLAG_SET` / `GFLAG_CLR` ops that drive it.
+pub const ZONE_REQUERY_BIT: u32 = 22;
+
 /// Per-frame field-VM step budget for the opening-cutscene timeline
 /// ([`World::step_cutscene_timeline`]). Bounds a non-yielding stretch of real
 /// disc bytecode so it can't hang the tick; the timeline normally yields or
