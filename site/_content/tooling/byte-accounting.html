@@ -122,6 +122,21 @@ asset account 0086 --depth 2 --json &gt; kingdom.json</code></pre>
   </table>
 </section>
 
+<section class="doc-section" id="ratchet" data-doc="ratcheting-the-figure">
+  <h2>Ratcheting the figure</h2>
+  <p>A sweep nobody compares is a number in a terminal. A checker reads the sweep's CSV and ratchets it against a committed baseline, the way the <a href="disc-coverage.html">disc-coverage</a> gate ratchets the code figure. It is the third denominator, and it exists because the other two cannot ask this question: the port catalog measures the addresses this project has cited, and disc coverage's data half measures format <em>recognition</em> - a claim an entry satisfies fully while most of its bytes have never been walked.</p>
+  <table>
+    <thead><tr><th>Figure</th><th>Direction</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>structural share</td><td>up only</td><td>bytes a parser walked to, from a header or a table</td></tr>
+      <tr><td>accounted share</td><td>up only</td><td>structural plus magic-sweep hits - always the larger number, and never the headline</td></tr>
+      <tr><td>non-slack residue</td><td>down only</td><td>unconsumed runs whose shape is not padding</td></tr>
+    </tbody>
+  </table>
+  <p>Every figure is re-weighted by <em>bytes</em> rather than averaged over entries, and each is carried per format class as well as whole-disc. The per-class row is what makes a regression attributable: one class losing its walker moves the whole-disc figure by a rounding error, and a falling total does not say which parser to open.</p>
+  <p>The gate consumes the sweep's CSV rather than running it, so it skips where the disc is not - and a CSV swept on an older tree reports that tree's parsers through a passing gate, which is why re-running the sweep is part of taking a baseline rather than a separate habit.</p>
+</section>
+
 <section class="doc-section" id="tests" data-doc="tests">
   <h2>Tests</h2>
   <p>A fixed set of entries is accounted off <code>extracted/PROT</code> with a floor asserted on each one's accounted share, plus the invariants that make the figure mean anything: claims stay inside the buffer, residue plus accounted equals the size, and <code>structural</code> never exceeds <code>accounted</code>. It skips and passes without disc data, like every other disc-dependent test here. The range algebra and the residue classifier are unit-tested on synthetic buffers, including the ordering traps above.</p>

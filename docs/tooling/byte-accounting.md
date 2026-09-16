@@ -377,6 +377,52 @@ walker claims both as `pad` with a detail apiece, which is the difference
 between "the instrument knows what these bytes are" and "the instrument's
 shape tests do not object to them".
 
+## Ratcheting the figure
+
+A sweep that nobody compares is a number in a terminal. `scripts/ci/byte-account-coverage.py`
+reads the sweep's CSV and ratchets it the way [`disc-coverage.py`](disc-coverage.md) ratchets the
+code figure, against a committed baseline at `scripts/ci/byte-account-baseline.json`.
+
+```bash
+scripts/ci/byte-account-coverage.py                  # report
+scripts/ci/byte-account-coverage.py --check          # ratchet (hook + CI)
+scripts/ci/byte-account-coverage.py --update-baseline
+```
+
+It is the third denominator, and the reason it exists beside the other two is that they cannot ask
+this question. `port-catalog.py` measures the addresses this project has cited. `disc-coverage.py`
+measures the disc, but its DATA half is format **recognition** - "this entry is a
+`scene_vab_stream`" - which an entry satisfies fully while most of its bytes have never been walked.
+That gap is exactly what `asset account` reports, and the ratchet is what keeps it from sliding.
+
+### What ratchets, in which direction
+
+| figure | direction | why |
+|---|---|---|
+| `structural_pct` | up only | bytes a parser walked to, from a header or a table |
+| `accounted_pct` | up only | structural plus magic-sweep hits - always the larger number, never the headline |
+| `work_bytes` | down only | unconsumed runs whose shape is not slack |
+
+Every figure is re-weighted by **bytes**, not averaged over entries: a mean over 1233 entries makes
+one 15 MB archive weigh the same as one 2 KB filler sector, which is a statement about entries and
+not about the disc.
+
+Each is carried per class as well as whole-disc, for every class holding at least 1 MB. A per-class
+row is what makes a regression attributable - one class losing its walker moves the whole-disc
+figure by a rounding error, and "the total fell 0.3 points" does not say which parser to open.
+
+Slack shapes stay out of `work_bytes` for the reason the rollup keeps them apart: `zero_pad`,
+`alignment` and `repeated_fill` are the disc's own padding, most of the residue by bytes, and
+counting them as work produces a worklist nobody can act on.
+
+### The input is a cache, and a stale one passes
+
+The sweep needs the disc, the `asset` binary and the dump corpus, so the gate does not run it - it
+consumes the CSV, and with no CSV it SKIPS and exits 0, which is what keeps CI green without disc
+data. The failure mode that leaves is the one the categorize cache has: a CSV swept on an older
+tree reports *that* tree's parsers through a passing gate. Re-run the sweep after a parser change
+and before taking a baseline; `--max-age-days` is the guard for any automated use.
+
 ## Tests
 
 `crates/asset/tests/byte_account_entries.rs` accounts a fixed set of entries off `extracted/PROT`

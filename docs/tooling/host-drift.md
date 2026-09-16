@@ -423,6 +423,7 @@ naming `coplanar_draw_offsets` is prose, not a wiring, and under-counting
 | walk-ground heightfield sink | emitting the heightfield's vertices requires `GROUND_SINK` |
 | packet-colour stream fill | a packet-colour stream may not be filled with white |
 | placement tilt composition | reading `placement_rot_y` requires `rot_x` + `rot_z` |
+| shared value layout -> shared quad emitter | resolving `battle_value_readout` requires `battle_numerals` + one of its prim builders |
 
 **The heightfield rule triggers on the emitter, not the type.** An early draft
 keyed on `WalkHeightfield` / `walk_heightfield` and reported four files that
@@ -445,6 +446,16 @@ emission - fade included - is single-assembler now (`engine-ui`'s
 `battle_intro`, ticked by both hosts), so the question the rule asked can no
 longer be posed and the rule is deleted rather than left matching nothing.
 See [the section below](#the-version-of-this-tier-that-needs-no-rule).
+
+**A shared layout is not a shared draw.** The battle damage numerals and the
+`N HIT` / `TOTAL` counter resolved through one kernel
+(`engine-vm::battle_value_readout`) on both hosts - and the native window
+sampled retail's 24x24 cells out of VRAM while the browser restyled the same
+digits in the dialog font. Every tier saw one model, because both hosts named
+the kernel; what differed was the record family the resolved cells became. The
+rule closes the gap the layout kernel left: a surface that resolves the layout
+must also reach `engine-ui::battle_numerals` and one of its prim builders, so a
+font path is an explicit before-the-atlas fallback rather than the draw.
 
 **The tilt rule earns its place on measured data, not on plausibility.** The
 comment it replaced said "the handful of disc placements carrying a real X/Z
@@ -502,11 +513,121 @@ the same screen with the same model. The five *render* surfaces above are not
 - the dance hall and the fishing venue bake venue-specific geometry - so there
 the rule is the instrument, and this is not a plan to replace it.
 
+## Tier 8 - ownership: does the host hold the engine type, or only read it?
+
+`OWNED_TYPES` in
+[`check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py).
+
+Every tier above asks whether a host **reaches** something: a builder, a
+constant, a kernel, a gate, a hook. None can see a host that reaches an engine
+type's *outputs* while holding none of the type - there is no builder to miss,
+no constant to pair, and an injection site that does not exist cannot diverge
+from one that does.
+
+The camera is the worked case and it is
+[below](#gaps-the-tiers-were-blind-to-closed-by-reading-the-two-hosts-side-by-side):
+one absence produced a projection difference, a simulation difference and two
+missing screens at once, with all seven tiers green.
+
+Ownership is a **field declaration or a construction** in that host's own
+shipped source. The three things that are not ownership are the three the page
+had: a `use` line, a match arm, and a borrowed parameter. Two shapes look like
+constructions and are not - `-> Camera {` is a return type and
+`impl Trait for Camera {` is an impl block - and the control suite pins every
+one of these directions, because a detector that accepts a `use` line reports
+every type as owned by everybody.
+
+Declared rather than derived, for the same reason tiers 2 and 3 are: "which
+engine types must a host own" is a judgement about the architecture. The
+derived version of the question - every `engine-core` type one host constructs
+and the other only names - reports 21 rows over this tree, nearly all of them
+enums a host matches on rather than state a host keeps. A row here is a pinned
+juncture and does not claim to be a census.
+
+Scope: it proves each named type is constructed or held by both hosts, and that
+the type still exists. It proves nothing about how either host drives it.
+
+## Tier 9 - variant coverage: does each host answer every variant?
+
+`ENUM_COVERAGE` in the same file.
+
+A shared enum's variant can be **entered on both hosts and answered on one**.
+Four minigame `SceneMode`s shipped that way: the shared scene host drains the
+mode-24 door warp for either host, and the browser landed in each with a frozen
+field and no screen, because their native presentation is text lines and a
+hand-rolled 3D scene rather than an `engine-ui` builder tier 1 enumerates.
+
+The variant list is **derived from the enum's own source**, so a variant added
+tomorrow is measured; what is declared is the enum and the per-(variant, host)
+waivers. Both waiver directions are validated: a waiver for a variant the host
+now names fails, and so does one naming a variant or host that does not exist.
+
+A host "answers" a variant by naming it **qualified** (`SceneMode::Fishing`).
+The qualification is the whole rule - an unqualified `Fishing` matches a
+session type, a module name and half the fishing HUD, and a detector that
+accepted it would report every host as covering everything.
+
+Scope: it proves each host's shipped code mentions the variant. It does not
+prove the arm draws anything, that two arms agree, or that the variant is
+reachable at runtime.
+
+## Tier 10 - entry symmetry: is the phase armed only from a debug key?
+
+`HOTKEY_SOURCES` / `HOTKEY_ONLY_WAIVERS` in the same file.
+
+A gap that reads as "one host has it" can turn out to be "one host's *debug
+path* has it", and no tier above can tell those apart because both end at a
+live call site. The dance count-in is the case: a complete shared kernel the
+native window drove from a count-in driver of its own, reached only by the `K`
+/ `U` hotkeys, so **neither** host counted in when a player walked into the
+hall.
+
+For every `world.<method>()` the native key arms call, this asks whether any
+call site exists outside `crates/engine-shell/src/bin/` - in the shared engine
+crates, or on the browser hosts. Derived over the hotkey sources, so a new
+hotkey arm joins the measurement by existing.
+
+The call test matches `.method(` / `::method(` rather than a bare name, because
+a bare match counts the method's own `pub fn` as its caller and makes the tier
+vacuous. `#[cfg(test)]` bodies and `tests/` files are out of the scan for the
+same reason they are out of tier 1: a unit test is not a host.
+
+### What a hotkey waiver may say, and the distinction it has to keep
+
+Two different answers put a row here, and only one of them is work:
+
+- **a debug probe**, with no retail counterpart and no business on a
+  player-reachable entry. The effect-pool marker spawners are this: they exist
+  so the pool's ageing can be watched.
+- **a superseded stand-in**, where the production route moved to another
+  mechanism. `World::spawn_field_stager` stages an ambient record into the
+  older `SummonScene` pool while the op-`0x34` sub-3 route runs
+  `World::spawn_ambient_record_at` (the full `FUN_80021B04` port) on both
+  hosts; `World::spawn_summon` parses a stager overlay while the battle cast
+  band produces `casting.active_summon` through `SummonScene::spawn_parts`.
+
+Both take a waiver naming the ARM or the mechanism. What neither may say is
+"not wired yet" - that is the third answer, a phase whose shared caller is
+genuinely **missing**, and it belongs in `HOTKEY_ONLY_BLOCKED`, which is
+validated like every other pending marker here: an entry that goes clean fails.
+The dict ships empty, because both rows drafted for it turned out to have a
+live replacement. "The shared caller is elsewhere" is not "the shared caller is
+missing", and collapsing the two is how a superseded probe acquires a wiring
+task nobody owes.
+
 ## Gaps the tiers were blind to, closed by reading the two hosts side by side
 
 One pass over both hosts, domain by domain, with every tier above green,
 found the classes below. Each is recorded for the shape it has, because the
 shape is what the next sweep should look for.
+
+Four of them are now tiers rather than only prose: the missing controller is
+tier 8, the unanswered `SceneMode` is tier 9, the phase only a debug launcher
+ran is tier 10, and one layout kernel feeding two letterform families is the
+fifth render rule. The rest below are still read-and-look shapes - "a queue only
+a consumer empties" and "a typed channel narrowed at one host" are decidable
+per instance and not from a source pattern, which is why they are written up
+here and not gated.
 
 **Same override set, different bodies (tier 4's declared blind spot, now
 a worked example).** `WebBgmDirector` and `AudioBgmDirector` overrode the

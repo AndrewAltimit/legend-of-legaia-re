@@ -32,10 +32,16 @@ This is the one thing to carry away before quoting a figure.
 | **Data** | format recognition | an entry's format class is known; its bytes are not individually accounted for |
 
 The data figure is an **upper bound**. Knowing an entry is a `scene_vab_stream`
-is not the same as consuming every byte inside it, and no parser in the tree
-reports consumed-versus-unconsumed bytes. Closing that gap - having each parser
-return its consumed extent - is what would put the data half on the same footing
-as the code half.
+is not the same as consuming every byte inside it.
+
+That gap has its own measurement now, and it is a third denominator rather than
+a refinement of this one: [`byte-accounting.md`](byte-accounting.md) reports,
+per entry, which bytes a parser here actually claims, and
+`scripts/ci/byte-account-coverage.py --check` ratchets the whole-disc and
+per-class figures the way this page's gate ratchets the code figure. Read the
+two together: an entry can be recognised here and ratcheted there at a
+structural share far below 100%, and the second number is the one that says how
+much of it anything has walked.
 
 ### The data denominator counts some disc bytes more than once
 

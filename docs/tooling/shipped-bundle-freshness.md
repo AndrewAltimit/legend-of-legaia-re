@@ -59,13 +59,32 @@ recorded at build time and recomputed on demand.
 
 ## What is hashed
 
-Tracked files only, so the answer is reproducible across clones and `target/`
-never enters it. The crate list comes from `cargo metadata`'s own resolve graph
-rather than a hand-kept list - a hand-kept list's failure mode is a checker that
-reports fresh while the bundle is stale, which is worse than no checker.
+Every file the index knows about, **plus every untracked file `.gitignore` does
+not exclude**. That is narrower than "everything on disk" and wider than
+"everything committed": build output, editor scratch and `target/` stay out
+because they are ignored, and a module that has not been `git add`ed stays in,
+because the compiler reads it either way.
+
+The crate list comes from `cargo metadata`'s own resolve graph rather than a
+hand-kept list - a hand-kept list's failure mode is a checker that reports fresh
+while the bundle is stale, which is worse than no checker.
 
 Excluded on purpose: `*.md`, `tests/`, `benches/`. Retargeting a test must not
 read as a stale bundle.
+
+### "Tracked files only" was a third way of guessing wrong
+
+The enumeration was a plain `git ls-files`, which is the index and nothing else.
+A wave that added three modules to `web-viewer` and built the bundle out of them
+therefore produced a stamp identical to the one from before those modules
+existed - two different bundles, one hash, and the gate answering *in sync*.
+
+It belongs beside the two guesses above because it fails the same way and from
+the opposite direction: mtime and `git log` both answer about *when*, and this
+answered about *what*, and all three said fresh about a bundle that was not. A
+stamp that cannot see a file the build compiles is worse than no stamp, because
+it is believed. The stamp version was bumped with the fix, so every stamp
+computed under the old set is treated as unreliable rather than merely old.
 
 ## Running it
 
