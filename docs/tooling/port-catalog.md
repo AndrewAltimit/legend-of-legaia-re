@@ -705,6 +705,30 @@ or shelving it. It has three useful outcomes:
   not an entry - a `classify-worklist.py` `INTERIOR` row that the scan
   confirms from the bytes.
 
+### A module-scope tag inherits its neighbour's verdict
+
+The scraper reads a `// PORT:` tag's addresses off the marker's opening line and
+binds them to whatever item follows. A tag written at **module** scope - above
+the `use` block, or between two items rather than on one - therefore attaches to
+the next item the file happens to define, and the address then carries that
+item's reachability verdict instead of its own. Nothing flags this: the tag is
+well-formed, the address is real, and the row reports a live port.
+
+Two tags in this tree sit that way. `FUN_8004FE5C`'s belongs on
+`sfx_cue::route_sfx_cue` and `FUN_801D5854`'s on
+`battle_cam_script::apply_death_reframe`; each currently sits at module scope
+and reads whichever neighbour the file lists first. Moving a tag changes what
+the catalog reports for the address, so it is a change to make with the catalog
+gate in hand rather than in passing - the point of recording it here is that a
+reader auditing either address should not take the neighbour's verdict as the
+address's own.
+
+The general check is [`port-provenance.md`](port-provenance.md): it asks whether
+a tagged address names the routine the Rust item implements. A module-scope tag
+is the shape that check was built to find, and it is the shape a `grep` for the
+address will not.
+
+
 ## Open-work dashboard
 
 `--dashboard` emits `target/port-catalog/open-work.md`, a single regenerable
