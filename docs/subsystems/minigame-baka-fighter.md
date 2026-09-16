@@ -1272,10 +1272,30 @@ No open items.
 
 `FUN_801D14B0` (PROT 0977, the contest hub) and `FUN_801D6710` (this overlay)
 are **the same routine linked into two overlays**, not two implementations of a
-shared idea. The dumps agree opcode for opcode and register for register across
-all 24 instructions; they differ only in the `lui`/`lw` pair that loads the
-bypass flag - `DAT_801D1AB4` in the hub image, `DAT_801DBF00` here - and in
-branch targets relocated by the load-base delta.
+shared idea. Word for word over the 96-byte body, **22 of the 24 words are
+byte-identical**; the two that differ are the `lui`/`lw` pair that loads the
+bypass flag - `lui v0,0x801d` + `lw v0,0x1ab4(v0)` = `DAT_801D1AB4` in the hub
+image against `lui v0,0x801e` + `lw v0,-0x4100(v0)` = `DAT_801DBF00` here. It
+is one relocation across two instructions, because a MIPS absolute is split
+over the pair - reading "only the `lui` differs" loses the displacement half.
+The three internal branches are **not** relocated: they are PC-relative, so
+their encoded words match and only their printed targets move. There is no
+`jal` in the body, so nothing else could relocate. Each flag lives in its own
+image's `.bss` (hub file `+0x329C` of `0x32D0` own content; this image's at
+file `+0xD6E8`), which is what makes the pair a data relocation rather than a
+shared global.
+
+The body is 96 bytes and no more: the word before the entry and the word after
+the `jr ra` delay slot differ between the two images.
+
+A **third** copy of those 96 bytes sits at `0x801D6710` in
+`overlay_dance_0980.bin`, with jal sites at the same file offsets in
+`overlay_field_battle_intro_0979.bin`, and neither is a link site. Both images'
+own content stops below them - PROT 0980 at file `0x787C`, PROT 0979 at
+`0x3C68`, donor PROT 0976 in both cases - so the bytes are
+[inherited tail](../tooling/disc-coverage.md), this overlay's residue at the
+same file offset. The dance copy even reads `DAT_801DBF00`, an address past the
+end of the dance image.
 
 The routine is the step scaler the tally drain runs per row: it picks the
 per-frame decrement band, so a large pot drains in a visibly faster sweep than a

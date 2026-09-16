@@ -61,14 +61,25 @@ pub fn countin_centre_y(hold: bool) -> i32 {
     }
 }
 
-/// The banner's half-extents in stage pixels at unit scale, from **record 0**
-/// of the dance overlay's 20-byte sprite table at `0x801D46CC` - bytes
-/// `+0x0A` / `+0x0B` = `0xa0` / `0x20`.
+/// The banner cell's **texel** extents, from **record 0** of the dance
+/// overlay's 20-byte sprite table at `0x801D46CC` - bytes `+0x0A` / `+0x0B`
+/// = `0xa0` / `0x20`, i.e. a 160 x 32 cell at texel seat
+/// [`COUNTIN_SPRITE_UV`].
 ///
-/// `FUN_801D2F38` builds the quad as `centre -+ half` on each axis
+/// These are *not* the screen half-extents, despite the name.
+/// `FUN_801D2F38` scales each one by the record's own `+0x00` word and then by
+/// the caller's scale before seating the quad: `(extent * record[+0x00]) >> 13`
+/// at `0x801D3188..0x801D319C`, then `* t3 >> 12` at `0x801D31A0..0x801D31C8`.
+/// Record 0 carries `+0x00 = 0x1000` and `FUN_801D2D98` passes `t3 = 0x1000`
+/// (`0x801D2ED4` / `0x801D2F08`), so both folds are a halving followed by
+/// unity: the half-extents are `(80, 16)`.
+///
+/// The quad is then built as `centre -+ half` on each axis
 /// (`0x801D31E0..0x801D3214`: `t4 - a0` / `t4 + a0`, `t5 - v0` / `t5 + v0`),
-/// so the record covers `320 x 64` around its seat. The `a2 = 0` every call
-/// site passes is this **record index**, not a coordinate.
+/// so the banner covers `160 x 32` stage pixels around its seat - the cell
+/// drawn 1:1, not the `320 x 64` an earlier reading of this constant recorded.
+/// The `a2 = 0` every call site passes is this **record index**, not a
+/// coordinate.
 pub const COUNTIN_SPRITE_HALF: (i32, i32) = (0xA0, 0x20);
 
 /// Texel origin of that record's art (`+0x08` = `0x9048`) and its CBA

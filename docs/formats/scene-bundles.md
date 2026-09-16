@@ -273,11 +273,21 @@ them - see [`byte-accounting.md`](../tooling/byte-accounting.md#the-lzs_containe
 
 #### The `FLAG` slot is the pochi fill file
 
-Every count-4 and count-5 bundle closes its descriptor list with a
-type-`0x14` `FLAG` descriptor whose declared size is `1927` bytes, and the
-LZS stream behind it decompresses to the **pochi fill file** - byte-identical
-to the first `0x787` bytes of all 266 [pochi filler](pochi.md) PROT slots, and
-identical across all eleven bundles that carry one.
+A type-`0x14` `FLAG` descriptor declares size `1927`, and the 239-byte LZS
+stream behind it decompresses to the **pochi fill file** - byte-identical to
+the first `0x787` bytes of all 266 [pochi filler](pochi.md) PROT slots.
+
+The slot is **not** a `count`-4/5 marker, and the count of bundles carrying one
+is not eleven. Of the 105 count-prefixed tables on the disc, **28** carry a
+type-`0x14` descriptor, and in all 28 it is the table's *last* descriptor: 9 of
+the 10 `count`-4 tables (the tenth, `1203_other5`, is the battle-form character
+pack, not a scene), 4 of 4 `count`-5, 3 of 8 `count`-6 and 12 of 80 `count`-7.
+All 28 payloads decompress to those same 1927 bytes. So the `count`-6/7
+bundles hold the majority of the slots, 15 of 28.
+
+Three of the four leading `Flag(0x0A)` descriptors - `town0c` / `town0d` /
+`town0e`, descriptor 0 - are the same fill file again, same declared size and
+same 239-byte stream. The fourth is the exception below.
 
 Nothing reads those bytes. The dispatcher's `0x14` arm returns `type << 8`
 without touching the payload ([`asset-type.md`](asset-type.md)), so the slot's
@@ -285,6 +295,14 @@ on-disc stream is never decompressed at runtime; what the descriptor *does* is
 carry its mode out in the return word, which is the streaming request the next
 section describes. The payload is what the authoring tool put in a reserved
 descriptor - the same filler it puts in a reserved PROT slot.
+
+**One `FLAG` descriptor is data-bearing.** `0455_urudre1`'s descriptor 0 is
+typed `0x0A` but declares 343,480 bytes, and its stream really does unpack to
+that length: the result opens with an [`asset::pack`](pack.md) header (count
+`85`, first word-offset `86` = the header end), sitting in the slot its
+sibling `count`-7 bundles give their `TimList`. The dispatcher answers `0x0A`
+the same way it answers the fill, so the descriptor walk never unpacks it -
+where that scene's textures reach VRAM is open.
 
 Read this as the format's own idiom rather than as a curiosity: a `1927`-byte
 payload in a bundle is fill, and a walker that decodes it is decoding the

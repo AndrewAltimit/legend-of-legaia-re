@@ -46,7 +46,7 @@
     </tbody>
   </table>
   <p>Detection is two checks: <code>buf.starts_with(b"pochi") &amp;&amp; buf[0x786] == 0x1A</code>.</p>
-  <p>The same 1927 bytes appear once more on the disc, LZS-compressed: as the type-<code>0x14</code> descriptor slot of every count-4 and count-5 <a href="scene-bundles.html">scene bundle</a>. The asset dispatcher answers that type without reading the payload, so those bytes are never decompressed at runtime - the authoring tool filled a reserved descriptor with the same file it fills a reserved archive slot with.</p>
+  <p>The same 1927 bytes appear again on the disc, LZS-compressed to 239 bytes: as the trailing type-<code>0x14</code> descriptor of 28 of the 105 count-prefixed <a href="scene-bundles.html">scene bundles</a> - not only the count-4/5 ones, but 9 of 10 count-4, 4 of 4 count-5, 3 of 8 count-6 and 12 of 80 count-7 - and as the leading type-<code>0x0A</code> descriptor of three more. The asset dispatcher answers those types without reading the payload, so those bytes are never decompressed at runtime - the authoring tool filled a reserved descriptor with the same file it fills a reserved archive slot with.</p>
 </section>
 
 <section class="doc-section" id="why-so-many">
