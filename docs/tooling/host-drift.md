@@ -1085,6 +1085,34 @@ transition state machine on both hosts, so the clock, the BGM swap and the
 battle that opens were always identical. What differed - how much of the
 window got drawn - no longer does.
 
+#### The field fog sheets ride the same pass
+
+The field fog pool ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-fog-pool-spawner-records-render-pass))
+is the one draw list retail runs *inside* its field render pass rather than
+from an actor: `FUN_8003F348` ages, moves and emits every live record in the
+same routine, so the port's render step has to be a draw-path call. It is
+one on both hosts - `World::fog_render_step(&view)` - and the two call sites
+are the two things a reader should compare:
+
+| host | call | camera |
+|---|---|---|
+| native window | `take_field_fog_prims` in `window/event_handler/redraw_passes.rs`, before the renderer borrow, composited with the rest of `screen_prims` | `resolve_field_camera(world, camera, None, aabb centre)` |
+| play page | `tick_field_fog_prims` in `play_field_fx.rs`, from `tick_battle_intro`'s prim assembly | `resolve_field_camera(world, camera, None, [0, 0])` |
+
+Both wrap the quads through `screen_prim::fog_puff_prim`, so the blend class
+(semi-transparent, the record's ABR `1`) and the `POLY_FT4` vertex order come
+from one function. Two shared simplifications, deliberately identical rather
+than per-host: the camera resolves **without** the cutscene view, so a
+scripted camera beat projects the fog through the follow pose on both hosts;
+and the screen-primitive pass composites over the finished 3D frame at the
+near plane, so the sheets never depth-sort against scene geometry the way
+retail's one ordering table sorts them (`view_z >> 5` is carried on the quad
+for the day the pass can honour it). The gate the pass tests is the same
+script word on both hosts (`World::fog.gate`, written by
+`set_ambient_particles_enabled`), and the oracles are
+`crates/engine-shell/tests/w1h_fog_gate_census.rs` (native) and
+`crates/web-viewer/tests/w1h_fog_page_prims.rs` (page).
+
 ### The two hosts do not share a shading law
 
 The 3D geometry is shared - the same TMD, the same mesh builders in
