@@ -97,7 +97,7 @@ struct TestHost {
     emitter_split_calls: Vec<Vec<crate::vram_rect_copy::RectCopyCall>>,
     emitter_func13_payloads: Vec<[u8; 13]>,
     emitter_4_words: Vec<[i16; 4]>,
-    // 0x4C sub-3 sub-9 / sub-E / sub-F.
+    // 0x4C sub-3 sub-9 (camera query+conform+snap) / sub-E (snap+clamp) / sub-F.
     player_pos_refresh_calls: u32,
     player_render_resync_calls: u32,
     field_io_resync_calls: u32,
@@ -368,8 +368,11 @@ impl FieldHost for TestHost {
     fn copy_dialog_depth_to_player(&mut self) {
         self.depth_copy_calls += 1;
     }
-    fn player_subtile_refresh(&mut self, sub_op: u8) {
-        self.subtile_refresh_calls.push(sub_op);
+    fn camera_zone_query_at_player(&mut self) {
+        self.subtile_refresh_calls.push(0x8);
+    }
+    fn region_attributes_refresh_at_player(&mut self) {
+        self.subtile_refresh_calls.push(0xD);
     }
     fn fetch_player_coords(&self, _ctx: &FieldCtx) -> Option<PlayerCoords> {
         self.player_coords
@@ -430,10 +433,10 @@ impl FieldHost for TestHost {
     fn op43_widget_panel_move(&mut self, words: [i16; 4]) {
         self.emitter_4_words.push(words);
     }
-    fn player_position_refresh_with_collision_y(&mut self, _ctx: &mut FieldCtx) {
+    fn camera_zone_query_conform_and_snap(&mut self, _ctx: &mut FieldCtx) {
         self.player_pos_refresh_calls += 1;
     }
-    fn player_render_resync(&mut self) {
+    fn camera_snap_and_clamp(&mut self) {
         self.player_render_resync_calls += 1;
     }
     fn field_io_resync(&mut self) {
@@ -609,7 +612,7 @@ impl FieldHost for TestHost {
     fn slot_table_read(&self, slot: u8) -> i16 {
         self.slot_table_values.get(&slot).copied().unwrap_or(0)
     }
-    fn op4c_n_c_sub4_subtile_broadcast(&mut self, x: u8, z: u8) {
+    fn camera_zone_query_at_tile(&mut self, x: u8, z: u8) {
         self.n_c_subtile_broadcasts.push((x, z));
     }
     fn op4c_n_c_sub7_sound_trigger(&mut self, b1: u8, b2: u8) {

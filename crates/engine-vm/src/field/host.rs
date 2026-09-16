@@ -502,19 +502,23 @@ pub trait FieldHost {
     /// PC += 2.
     fn copy_dialog_depth_to_player(&mut self) {}
 
-    /// Op 0x4C sub-3 sub-8 / sub-D (sub-tile-coord helpers).
+    /// Op 0x4C sub-3 sub-D - **walk-region attribute refresh** at the
+    /// player's tile.
     ///
-    /// Both sub-ops compute `(player.world - 0x40) >> 7` for X and Z, then
-    /// invoke a SCUS helper:
-    /// - sub-8: `FUN_801de3e0(x_tile, z_tile)` - overlay-resident sub-tile
-    ///   refresh.
-    /// - sub-D: `func_0x800180EC(x_tile, z_tile)` - SCUS sub-tile refresh.
+    /// 2-byte instruction `[4C, 0x3D]`; arm at `0x801E10F8`. Computes the
+    /// same `(player.world - 0x40) >> 7` tile pair as sub-`8` but calls
+    /// `FUN_800180EC` instead of `FUN_801DE3E0`: that walks the `.MAP`
+    /// region table at the tile, rebuilds the region-type mask
+    /// `_DAT_8007B8F4` and latches the covering type-0/1 region's box into
+    /// scratchpad `0x1F800384..87` plus its type byte at `0x1F80037C`
+    /// (falling back to the full-map fill when nothing covers the tile).
+    /// That box is what the camera composer's sweeps span and what the
+    /// zone query's kind-0 arm tests against, so this is an attribute
+    /// refresh, not a camera load. PC += 2.
     ///
-    /// The VM passes the sub-op id (8 or 0xD) so the host can pick the right
-    /// helper. PC += 2.
-    fn player_subtile_refresh(&mut self, sub_op: u8) {
-        let _ = sub_op;
-    }
+    /// The sub-`8` arm is [`Self::camera_zone_query_at_player`]: the two
+    /// share only the tile arithmetic.
+    fn region_attributes_refresh_at_player(&mut self) {}
 
     /// Op 0x4C sub-3 sub-7 (player-coord copy onto a non-player ctx).
     ///
@@ -772,30 +776,53 @@ pub trait FieldHost {
         let _ = words;
     }
 
-    /// Op 0x4C sub-3 sub-9 (player position refresh + collision Y + render
-    /// resync).
+    /// Op 0x4C sub-3 sub-9 - **camera-zone re-query, footing conform, snap**.
     ///
-    /// 2-byte instruction `[4C, 0x39]`. The original chains three SCUS calls:
-    /// 1. `FUN_801de3e0((player.world_x - 0x40) >> 7, (player.world_z - 0x40) >> 7)`
-    ///    - re-broadcast the player's tile coords to the field grid.
-    /// 2. `func_0x80019278(player_ctx)` → write result to `player.world_y`
-    ///    - refresh collision Y at the new tile.
-    /// 3. Falls through to sub-0xE: `FUN_801db8ec(player_ctx)` + `FUN_801daa50()`
-    ///    - re-render / re-rasterize the player on the framebuffer.
+    /// 2-byte instruction `[4C, 0x39]`; arm at `0x801E1078` off the
+    /// nibble-3 jump table `0x801CEEB8`. Three calls against the global
+    /// player context `_DAT_8007C364`:
+    /// 1. `FUN_801DE3E0((player.world_x - 0x40) >> 7, (player.world_z - 0x40) >> 7)`
+    ///    - the **camera-region tile query + load**: `FUN_801DBA20` picks the
+    ///      MAN section-3 record covering the tile and `FUN_801DBC20` splits
+    ///      it into the camera parameter block, or the fixed zone-miss set
+    ///      when nothing covers it.
+    /// 2. `FUN_80019278(player)` → `player.world_y` - re-conform the footing
+    ///    to the floor under the (possibly script-moved) tile.
+    /// 3. Falls into sub-`0xE` at `0x801E10BC`: `FUN_801DB8EC(player)`
+    ///    (compose + snap the camera globals) then `FUN_801DAA50()` (clamp
+    ///    the focus into the walk region).
     ///
-    /// The host owns the player ctx, so the VM passes `ctx` (the active
-    /// script's context) for hosts that want to correlate, but the calls
-    /// themselves operate on the global player ctx. PC += 2.
-    fn player_position_refresh_with_collision_y(&mut self, ctx: &mut FieldCtx) {
+    /// The host owns the player context, so the VM passes `ctx` (the active
+    /// script's context) for hosts that want to correlate; the calls operate
+    /// on the global player context. PC += 2.
+    fn camera_zone_query_conform_and_snap(&mut self, ctx: &mut FieldCtx) {
         let _ = ctx;
     }
 
-    /// Op 0x4C sub-3 sub-E (player render resync).
+    /// Op 0x4C sub-3 sub-8 - **camera-zone re-query at the player's tile**.
     ///
-    /// 2-byte instruction `[4C, 0x3E]`. Calls `FUN_801db8ec(player_ctx)` then
-    /// `FUN_801daa50()` - the second half of sub-9's chain, without the
-    /// position / collision-Y refresh. PC += 2.
-    fn player_render_resync(&mut self) {}
+    /// 2-byte instruction `[4C, 0x38]`; arm at `0x801E1048`. The bare
+    /// `FUN_801DE3E0((player.world_x - 0x40) >> 7, (player.world_z - 0x40) >> 7)`
+    /// half of sub-`9`: load the camera parameter block from the record
+    /// covering the player's tile, without conforming the footing and
+    /// without snapping (the per-frame ease walks the globals to the new
+    /// block's pose). PC += 2.
+    ///
+    /// This and sub-`9`, sub-`0xE` and nibble-C sub-`4` are retail's **only**
+    /// camera-zone re-query sites outside the player-seat path: retail's
+    /// field camera does not re-query on a tile crossing.
+    fn camera_zone_query_at_player(&mut self) {}
+
+    /// Op 0x4C sub-3 sub-E - **camera snap + focus clamp**.
+    ///
+    /// 2-byte instruction `[4C, 0x3E]`; the jump table sends it to
+    /// `0x801E10BC`, which is inside sub-`9`'s arm - the tail after the
+    /// query and the footing conform. `FUN_801DB8EC(player)` then
+    /// `FUN_801DAA50()`: compose the resident block into the staging
+    /// descriptor, copy it straight into the live camera globals instead of
+    /// easing, and clamp the focus into the walk region. The block is not
+    /// re-queried. PC += 2.
+    fn camera_snap_and_clamp(&mut self) {}
 
     /// Op 0x4C sub-3 sub-F (per-character TMD-pose copy).
     ///
@@ -1612,12 +1639,17 @@ pub trait FieldHost {
         }
     }
 
-    /// Op 0x4C outer-nibble-C sub-4 - sub-tile broadcast.
+    /// Op 0x4C outer-nibble-C sub-4 - **camera-zone query at an explicit
+    /// tile**.
     ///
-    /// 4-byte instruction `[4C, 0xC4, x_byte, z_byte]`. Calls
-    /// `FUN_801DE3E0(x_byte & 0x7F, z_byte & 0x7F)` (an overlay-resident
-    /// per-tile broadcast helper). PC += 4.
-    fn op4c_n_c_sub4_subtile_broadcast(&mut self, x: u8, z: u8) {
+    /// 4-byte instruction `[4C, 0xC4, x_byte, z_byte]`; arm at `0x801E2878`
+    /// off the nibble-C jump table `0x801CEF88`. Calls
+    /// `FUN_801DE3E0(x_byte & 0x7F, z_byte & 0x7F)` - the same
+    /// camera-region query + load as sub-3 sub-`8`
+    /// ([`Self::camera_zone_query_at_player`]) but at a tile the script
+    /// names rather than the player's, so a scene can frame a shot from a
+    /// record the player is not standing in. PC += 4.
+    fn camera_zone_query_at_tile(&mut self, x: u8, z: u8) {
         let _ = (x, z);
     }
 
