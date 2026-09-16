@@ -568,11 +568,13 @@ The message strings live contiguously at `0x801CF3B4..`
 The machine **is** ported - `engine-core::card_flow::CardWriteMachine`,
 state-for-state over `DAT_801F329C` - and it is classed `REPLACED-BY:` rather
 than `NOT WIRED`, naming `legaia_save`'s synchronous card writer as the
-mechanism. The distinction matters: no host is *owed* here. The one card-image
-backend the port has (the browser card rack) patches the container bytes
-synchronously, so there is no asynchronous BIOS beat for an issue-then-poll
-machine to sequence; wiring one would re-host the device layer rather than add
-behaviour. The `bu` layer below it is likewise ported, as
+mechanism. The distinction matters: no host is *owed* here. Both card-image backends the
+port has are synchronous - the browser card rack patches the container bytes
+through `legaia_save`, and the native window mounts a real `.mcr` in
+save-select port 2 (`play-window --card`) but only **reads** it, refusing a
+Save into a mounted card. Neither leaves an asynchronous BIOS beat for an
+issue-then-poll machine to sequence; wiring one would re-host the device layer
+rather than add behaviour. The `bu` layer below it is likewise ported, as
 [`engine-core::card_bu_io`](../../crates/engine-core/src/card_bu_io.rs).
 
 ### The `bu` file-I/O layer under the sequencer
