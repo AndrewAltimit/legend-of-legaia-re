@@ -332,9 +332,17 @@ impl PlayWindowApp {
                     let next = self.session.mode_seat.boot_handoff();
                     match next {
                         GameMode::CardInit => {
-                            // Continue-enabled per save-slot scan.
+                            // Continue-enabled per save scan - over **both**
+                            // ports. Scanning the save directory alone greys
+                            // the row out for a player whose only save is on
+                            // the memory-card image they mounted, which is
+                            // the one thing `--card` exists for.
                             let snapshots = scan_save_dir(&self.save_dir);
-                            let any_present = snapshots.iter().any(|s| s.present);
+                            let any_present = snapshots.iter().any(|s| s.present)
+                                || self
+                                    .card
+                                    .as_ref()
+                                    .is_some_and(|c| c.block_snapshots().iter().any(|s| s.present));
                             self.boot_ui = BootUiState::Title(title_session(any_present));
                             self.start_title_bgm();
                         }
