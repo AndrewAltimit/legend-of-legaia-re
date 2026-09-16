@@ -148,7 +148,7 @@
       <tr><td>ink + panels</td><td><code>shop_stock_row_ink</code>, <code>shop_root_command_rows</code>, <code>shop_buy_quantity_panel</code>, <code>shop_sell_detail_panel</code> &rarr; <code>engine-ui::shop_draws_for</code></td></tr>
     </tbody>
   </table>
-  <p>Gaps: the two retail quantity sessions are ported but the hosts&rsquo; quantity screen still drives <code>ShopSession::set_quantity</code>; the sell-list scroll fix-up needs paged lists the engine does not run; literal item restore amounts stay curated (they are overlay-resident, not in the descriptor table).</p>
+  <p>Gaps: the two retail quantity sessions are ported but the hosts&rsquo; quantity screen still drives <code>ShopSession::set_quantity</code> &mdash; retail&rsquo;s pickers are pad <em>steppers</em> on one scalar, not lists, and they commit with no Yes/No screen, so adopting them replaces the menu runtime&rsquo;s input handling for that screen rather than adding a call; the bound is already shared (<code>ShopSession::quantity_rows</code>), so the list offers every copy retail would allow; the sell-list scroll fix-up needs paged lists the engine does not run; literal item restore amounts stay curated (they are overlay-resident, not in the descriptor table).</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

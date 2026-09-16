@@ -838,6 +838,24 @@ impl MenuRuntimeHost<'_> {
         ))
     }
 
+    /// How many quantities the `ShopQuantity` screen offers for the staged
+    /// item (cursor `n` = quantity `n + 1`).
+    ///
+    /// The bound is retail's own - `min(gold / price, 99, 99 - held)` buying,
+    /// the staged bag count selling - through
+    /// [`crate::shop::quantity_row_count`]. The screen used to offer a flat
+    /// nine rows, which capped a purchase at nine copies however much gold or
+    /// stack room the player had.
+    fn shop_quantity_row_count(&self) -> u8 {
+        let Some(session) = self.shop_session.as_ref() else {
+            return 1;
+        };
+        let held = session
+            .pending_item_id
+            .and_then(|id| self.world.party.inventory.get(&id).copied());
+        session.quantity_rows(self.world.party.money, held)
+    }
+
     /// The recipient picker needs both the opt-in and the disc mask table.
     fn recipient_enabled(&self) -> bool {
         self.retail_equipment_buy && self.equip_info.is_some()
@@ -1071,7 +1089,7 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                 .filter(|c| **c > 0)
                 .count()
                 .min(u8::MAX as usize) as u8,
-            MenuState::ShopQuantity => 9, // quantities 1..=9 (cursor + 1)
+            MenuState::ShopQuantity => self.shop_quantity_row_count(),
             MenuState::ShopConfirm | MenuState::InnConfirm => 2, // slot 0 = yes, 1 = no/cancel
             MenuState::ShopMenu => self.shop_menu_rows().len() as u8,
             MenuState::ShopTrade => self

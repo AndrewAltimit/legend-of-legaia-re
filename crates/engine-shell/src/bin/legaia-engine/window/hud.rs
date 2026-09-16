@@ -1107,7 +1107,15 @@ impl PlayWindowApp {
                             (label, rows, Some(gold))
                         }
                         Some(MenuState::ShopQuantity) => {
-                            let rows = (1u32..=9)
+                            // The bound is retail's, not a flat nine: buying,
+                            // `min(gold / price, 99, 99 - held)`; selling, the
+                            // staged bag count. Twin of the browser page's arm
+                            // in `web-viewer::play_shop`.
+                            let held = shop
+                                .pending_item_id
+                                .and_then(|id| bag.iter().find(|(i, _)| *i == id).map(|(_, q)| *q));
+                            let n = shop.quantity_rows(gold, held);
+                            let rows = (1u32..=u32::from(n))
                                 .map(|n| {
                                     (n.to_string(), None, legaia_engine_render::SHOP_INK_NORMAL)
                                 })
