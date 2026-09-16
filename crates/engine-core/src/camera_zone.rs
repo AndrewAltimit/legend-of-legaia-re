@@ -603,6 +603,69 @@ pub fn snap(target: &CameraTarget) -> (i32, i32, [i32; 3], i32) {
     )
 }
 
+/// The **focus edge clamp** - the port of `FUN_801DAA50`, the routine every
+/// caller of the ease and the snap runs immediately after them (the field
+/// per-frame update at `0x801D183C` / `0x801D22C0`, the player seat at
+/// `0x801D2010`, and the `[4C 39]` / `[4C 3E]` arms at `0x801E10CC`).
+///
+/// It keeps the camera's focus point inside the walk region the attribute
+/// refresh latched, widened by the camera's own visible-tile window, so the
+/// lens never pans far enough past a room's edge to show the void behind it.
+/// Operates on the focus globals **as retail stores them** -
+/// `_DAT_80089118` = `-X`, `_DAT_80089120` = `-Z` - which is why the "min"
+/// clamps are the far edges and the "max" clamps the near ones.
+///
+/// ```text
+/// if mode_nibble == 5: unchanged            // a fixed shot frames itself
+/// pad = half_eye ? -0x14 : 1                // _DAT_8007B6A8
+/// if attribute type byte != 0 {             // 0x1F80037C
+///   fx = min(fx, (2   - (box[0] - win[0])) * 0x80)
+///   fz = min(fz, (4   - (box[1] - win[1])) * 0x80)
+///   fx = max(fx, (      win[2] - box[2])   * 0x80)
+///   fz = max(fz, (pad - (box[3] - win[3])) * 0x80)
+/// }
+/// if script_focus.x != 0 { fx = -script_focus.x }   // _DAT_8007B628
+/// if script_focus.z != 0 { fz = -script_focus.z }   // _DAT_8007B62A
+/// ```
+///
+/// `box` is the scratchpad attribute box `0x1F800384..87` in the retail
+/// store order (`[rec[0], rec[3], rec[2], rec[1]]`, unsigned bytes);
+/// `window` is `0x1F8003E8..EB` read as **signed** bytes, whose field
+/// default is [`crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW`] and
+/// whose per-record override is the mask-kind side-write
+/// [`CameraZoneConfig::load_record`] returns.
+// PORT: FUN_801DAA50
+pub fn clamp_focus(
+    focus_stored: [i32; 2],
+    mode_nibble: u8,
+    attr_kind_latched: bool,
+    attr_box: [u8; 4],
+    window: [i8; 4],
+    half_eye: bool,
+    script_focus: [i16; 2],
+) -> [i32; 2] {
+    let [mut fx, mut fz] = focus_stored;
+    if mode_nibble == 5 {
+        return [fx, fz];
+    }
+    let pad = if half_eye { -0x14 } else { 1 };
+    let b = attr_box.map(i32::from);
+    let w = window.map(i32::from);
+    if attr_kind_latched {
+        fx = fx.min((2 - (b[0] - w[0])) * 0x80);
+        fz = fz.min((4 - (b[1] - w[1])) * 0x80);
+        fx = fx.max((w[2] - b[2]) * 0x80);
+        fz = fz.max((pad - (b[3] - w[3])) * 0x80);
+    }
+    if script_focus[0] != 0 {
+        fx = -i32::from(script_focus[0]);
+    }
+    if script_focus[1] != 0 {
+        fz = -i32::from(script_focus[1]);
+    }
+    [fx, fz]
+}
+
 /// The retail arctangent table at `0x8006F4C8`: 2049 entries over the ratio
 /// `i / 2048` (`0 <= i <= 2048`), each `trunc(atan(i/2048) * 4096 / 2pi)` -
 /// the disc-gated oracle pins every entry.

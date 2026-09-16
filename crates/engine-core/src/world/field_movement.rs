@@ -311,6 +311,34 @@ impl World {
     ///
     /// PORT: FUN_80019278
     pub fn sample_field_floor_height(&self, world_x: i32, world_z: i32) -> i32 {
+        self.sample_field_floor_height_with(world_x, world_z, &self.terrain.floor_height_lut)
+    }
+
+    /// The same sample taken through the scene's **pristine** ladder
+    /// ([`crate::world::FieldTerrain::floor_height_lut_static`]) instead of
+    /// the live one.
+    ///
+    /// This is the reading the **camera composer** takes.
+    /// `FUN_801DAB90` saves the sixteen live rungs at scratchpad
+    /// `0x1F80035C`, writes the MAN header's own ladder over them
+    /// (`*(_DAT_8007B898) + 2`, sixteen negated `short`s - the same source
+    /// `FUN_8003AEB0` installs at scene entry), calls `FUN_80019278`, and
+    /// restores the live rungs (`0x801DAC40..0x801DACA0`). So a floor-tier
+    /// oscillator raised by op `0x4C` nibble-9 sub-`0..2`, or a whole ladder
+    /// replaced by sub-`E`, moves the terrain and the actors standing on it
+    /// but never the camera.
+    ///
+    /// REF: FUN_801DAB90
+    pub fn sample_field_floor_height_static(&self, world_x: i32, world_z: i32) -> i32 {
+        self.sample_field_floor_height_with(world_x, world_z, &self.terrain.floor_height_lut_static)
+    }
+
+    fn sample_field_floor_height_with(
+        &self,
+        world_x: i32,
+        world_z: i32,
+        lut: &[i16; 16],
+    ) -> i32 {
         if self.terrain.collision_grid.len() < FIELD_GRID_LEN {
             return 0;
         }
@@ -326,7 +354,6 @@ impl World {
         }
         let base = tile_z as usize * FIELD_GRID_STRIDE + tile_x as usize;
         let g = &self.terrain.collision_grid;
-        let lut = &self.terrain.floor_height_lut;
         // Low nibble = elevation tier; LUT-index it for each of the 4 corners.
         let c00 = (g[base] & 0x0F) as usize;
         let c01 = (g[base + 1] & 0x0F) as usize;

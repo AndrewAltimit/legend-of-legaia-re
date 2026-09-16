@@ -660,6 +660,9 @@ impl SceneHost {
         {
             Some(Ok(Some(lut))) => {
                 self.world.terrain.floor_height_lut = lut.map(|v| v.wrapping_neg());
+                // The camera composer reads this pristine copy, never the
+                // live rungs the floor-tier oscillators write.
+                self.world.terrain.floor_height_lut_static = self.world.terrain.floor_height_lut;
             }
             Some(Err(err)) => eprintln!("[scene] field floor-height LUT load skipped: {err:#}"),
             _ => {}

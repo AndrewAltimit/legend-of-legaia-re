@@ -50,6 +50,16 @@ pub struct FieldTerrain {
     /// [`crate::world::World::sample_field_floor_height`] (the port of `FUN_80019278`). All
     /// zero until a field scene supplies it.
     pub floor_height_lut: [i16; 16],
+    /// The **pristine** copy of the same ladder, as the scene's MAN header
+    /// carries it (`*(_DAT_8007B898) + 2`, sixteen negated `short`s). The
+    /// live rungs above are what op `0x4C` nibble-9 sub-`0..2` oscillators
+    /// and sub-`E`'s whole-ladder install write; this copy is never
+    /// rewritten after scene entry, and it is what the camera composer
+    /// samples the floor through - `FUN_801DAB90` swaps it into scratchpad
+    /// `0x1F80035C` around its `FUN_80019278` call and restores the live
+    /// rungs afterwards, so a scripted floor bob never shakes the camera.
+    /// See [`crate::world::World::sample_field_floor_height_static`].
+    pub floor_height_lut_static: [i16; 16],
     /// The `.MAP` **object-grid** cell words (`+0x8000`, one `u16` per tile,
     /// `0x80 x 0x80`). [`crate::world::World::sample_field_floor_height`] tests each tile's
     /// [`crate::world::CELL_ELEVATION_OVERRIDE`] (`0x800`) bit to pick the
@@ -125,6 +135,7 @@ impl FieldTerrain {
             region_attributes: crate::field_regions::RegionAttributes::DEFAULT_FILL,
             zone_record: None,
             floor_height_lut: [0i16; 16],
+            floor_height_lut_static: [0i16; 16],
             object_cells: Vec::new(),
             floor_cell_bit: legaia_asset::field_objects::CELL_WALK_VISIBLE,
             elevation_overrides: Vec::new(),
