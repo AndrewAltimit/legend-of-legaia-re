@@ -181,6 +181,18 @@ impl LegaiaRuntime {
         }
     }
 
+    /// The GTE `H` the engine camera is projecting through this frame - the
+    /// live camera global with `camera_view`'s field fallback applied. The
+    /// parity test compares the page's resolved frame against this rather
+    /// than against a pinned constant: a scene's entry beat may glide slot
+    /// `9` (town01's names `500`), so the value is a per-frame output.
+    pub fn play_camera_gte_h(&self) -> f32 {
+        match self.camera.globals.h() {
+            0 => camera_view::FIELD_H,
+            v => v as f32,
+        }
+    }
+
     /// The user's drag-orbit around the follow target, radians, compass sense
     /// - [`legaia_engine_core::camera::Camera::manual_orbit`], the same field
     /// the native window's left-mouse drag writes. Feeding it here rather

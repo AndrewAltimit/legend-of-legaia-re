@@ -53,10 +53,18 @@ impl RetailCamGlobals {
     /// The field-entry reset values written by `FUN_80025C24` (caller
     /// `FUN_801D6704`, field init): angles `(0x1B8, 0x64, 0)` and
     /// `tr_eye = (0, -256, 16420)`. Focus and `H` are left as the scene
-    /// establishes them.
+    /// establishes them - the routine is six stores and none of them is the
+    /// focus trio or `_DAT_8007B6F4`, so [`Camera::reset_globals_for_scene_entry`]
+    /// rewrites only those six axes and this constant's `H` is the field value
+    /// the register otherwise holds (`512`), not `0`. A glide beat that names
+    /// slot `9` starts from that value; seeding `0` made the first frames of
+    /// town01's entry glide project through an `H` no retail frame ever had.
     ///
     /// PORT: FUN_80025C24
-    pub const FIELD_RESET: Self = Self([0x1B8, 0x64, 0, 0, -256, 16420, 0, 0, 0, 0]);
+    pub const FIELD_RESET: Self = Self([0x1B8, 0x64, 0, 0, -256, 16420, 0, 0, 0, 512]);
+
+    /// The axes `FUN_80025C24` writes: pitch, yaw, roll and the eye trio.
+    pub const FIELD_RESET_AXES: [usize; 6] = [0, 1, 2, 3, 4, 5];
 
     /// Pitch / yaw / roll, 12-bit units.
     pub fn angles(&self) -> [i32; 3] {
@@ -554,7 +562,17 @@ impl Camera {
     ///
     /// PORT: FUN_80025C24
     pub fn reset_globals_for_scene_entry(&mut self) {
-        self.globals = RetailCamGlobals::FIELD_RESET;
+        // Six stores in retail: the three angles and the eye trio. The focus
+        // trio is re-pinned to the player by the follow camera on the next
+        // frame and `H` keeps the register's live value, so a scene whose
+        // entry beat glides slot `9` starts that glide from the `H` the
+        // player was just looking through, as retail does.
+        for axis in RetailCamGlobals::FIELD_RESET_AXES {
+            self.globals.0[axis] = RetailCamGlobals::FIELD_RESET.0[axis];
+        }
+        if self.globals.0[9] == 0 {
+            self.globals.0[9] = RetailCamGlobals::FIELD_RESET.0[9];
+        }
         self.mover = None;
         self.script_owns_focus = false;
     }
@@ -1041,7 +1059,8 @@ mod tests {
     }
 
     /// Scene entry restores the `FUN_80025C24` field defaults so a departing
-    /// scene's shot cannot leak into the next one.
+    /// scene's shot cannot leak into the next one - the six axes retail
+    /// writes. Focus and `H` are the scene's to establish, so they survive.
     #[test]
     fn scene_entry_resets_globals_to_field_defaults() {
         let mut c = Camera {
@@ -1049,9 +1068,28 @@ mod tests {
             ..Default::default()
         };
         c.reset_globals_for_scene_entry();
-        assert_eq!(c.globals, RetailCamGlobals::FIELD_RESET);
         assert_eq!(c.globals.angles(), [0x1B8, 0x64, 0]);
         assert_eq!(c.globals.tr_eye(), [0, -256, 16420]);
+        assert_eq!(c.globals.0[6..=8], [7, 8, 9], "focus is not a reset axis");
+        assert_eq!(c.globals.h(), 10, "H keeps the register's live value");
+    }
+
+    /// A camera that never carried an `H` (the boot default, or a headless
+    /// host) gets the field register value, never `0`: a glide beat naming
+    /// slot `9` must start from the `H` retail was projecting through.
+    #[test]
+    fn scene_entry_seeds_a_missing_h_with_the_field_value() {
+        let mut c = Camera {
+            globals: RetailCamGlobals([0; AXIS_COUNT]),
+            ..Default::default()
+        };
+        c.reset_globals_for_scene_entry();
+        assert_eq!(c.globals.h(), 512);
+        assert_eq!(
+            Camera::new().globals.h(),
+            512,
+            "the boot default carries it too"
+        );
     }
 
     #[test]

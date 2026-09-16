@@ -123,7 +123,20 @@ fn the_play_page_frames_the_field_with_the_engine_camera() {
         f("yaw"),
         to_rad(FIELD_FOLLOW_YAW_UNITS)
     );
-    assert!((f("h") - FIELD_H).abs() < 1e-4, "H {} != {FIELD_H}", f("h"));
+    // `H` is a per-frame output, not a pin: town01's entry beat glides slot 9
+    // toward `500` from the field register's `512`, so the page must report
+    // whatever the engine camera is projecting through on this very tick.
+    let live_h = rt.play_camera_gte_h();
+    assert!(
+        (f("h") - live_h).abs() < 1e-4,
+        "H {} != the engine camera's live {live_h}",
+        f("h")
+    );
+    assert!(
+        (FIELD_H - 12.0..=FIELD_H).contains(&f("h")),
+        "town01's entry glide runs {FIELD_H} -> 500; a frame outside that band is not retail's: {}",
+        f("h")
+    );
     assert_eq!(f("roll"), 0.0, "the field follow camera never rolls");
 
     // ---- rung 3: the focus is the live player anchor (X/Z), so the camera
