@@ -1436,10 +1436,10 @@ it agrees with the table this page already carries in all twelve cases.
 | 940 | `0xAE` | `0x801F78B8` | `0..3`, `0xFF` | 1, 4, 64, 16, 1 |
 | 941 | `0x51` | `0x801F730C` | `0..3`, `0xFF` | 1, 21, 16, 32, 1 |
 | 941 | `0xB9` | `0x801F6A04` | `0..4` | 1, 65, 32, 64, 25 |
-| 943 | `0x40` | - | - | faulted, see below |
+| 943 | `0x40` | `0x801F6EF4` | `0..4` | 1, 9, 40, 8, 32 (Che Delilas' turn, see below) |
 | 943 | `0xB5` | `0x801F6A04` | `0..4` | 1, 65, 32, 64, 32 |
 | 944 | `0x37` | `0x801F6A04` | `0..5` | 1, 33, 32, 32, 64, 82 |
-| 944 | `0x53` | - | - | faulted, see below |
+| 944 | `0x53` | `0x801F7470` | `0..4` | 1, 9, 40, 8, 32 (Che Delilas' turn, see below) |
 | 950 | `0x5A` | `0x801F79F8` | `0..4` | 1, 13, 1, 32, 13 |
 | 950 | `0xAB` | `0x801F6A24` | `0..6` of 14 | 1, 65, 21, 64, 8, 40, 15+ |
 | 956 | `0x71` | `0x801F7298` | `0..3`, `0xFF` | 1, 33, 32, 32, 1 |
@@ -1459,10 +1459,12 @@ windows of 300 and 600 seconds, it returned the **same** six dwells
 `1, 65, 21, 64, 8, 40` for arms `0..5` and parked in arm `6` both times - so
 those six are the module's own countdowns rather than a wait on the scene.
 
-Every row comes from one fight, `party_basic_attack_vs_gobu_gobu` - one party
-seat, one monster seat - so the same caveat the player half carries applies: an
-arm that reproduces across fights is the module's own countdown, and an arm
-that moves waits on the scene.
+Twelve rows come from one fight, `party_basic_attack_vs_gobu_gobu` - one party
+seat, one monster seat - and the two Curse rows from `nivora_duel_pre_megaton_press`
+(Gala against Che Delilas, one seat each; why that fight is
+[below](#the-two-curse-arms-fault-on-a-caster-with-too-few-spell-entries)).
+The same caveat the player half carries applies: an arm that reproduces across
+fights is the module's own countdown, and an arm that moves waits on the scene.
 
 The arm **sets** are a stronger result than the dwells, because they are the
 dispatch bound walked rather than read. Each table-dispatched body walks
@@ -1513,16 +1515,51 @@ all three of its bodies' walks, and PROT 0950's `0x801F86B0` goes **negative**
 (`0xFFFFFF80`) inside `0x5A`'s last arm, so whatever ends those arms is a
 different word or a different test.
 
-##### Two of the fourteen fault before their first tick
+##### The two Curse arms fault on a caster with too few spell entries
 
-Driving PROT 0943's `0x40` (Curse) or PROT 0944's `0x53` (Curse All) from this
-fight reaches battle phase `0x70` with the module paged - the loader-B tracker
-reads `48` and `49`, and slot-B word `0` changes to the module's - and then
-the emulator reports an 8-bit read at the **same** garbage address for both,
-after which no module tick ever runs and the battle does not advance. Their
-siblings in the same two images (`0xB5` in PROT 0943, `0x37` in PROT 0944)
-complete normally from the same state, so this is a property of those two
-bodies plus this fight's scene, not of paging the module.
+Driving PROT 0943's `0x40` (Curse) or PROT 0944's `0x53` (Curse All) from the
+Gobu Gobu fight reaches battle phase `0x70` with the module paged - the
+loader-B tracker reads `48` and `49`, and slot-B word `0` changes to the
+module's - and the emulator then reports an 8-bit read at the **same** garbage
+address for both, `0x626F4797`. Under `-debugger` that read pauses the whole
+emulator with no PC, which is why the first runs read as "faulted before the
+first tick". Installing the emulator's `UnknownMemoryRead` hook instead
+(`autorun_capture_arm_gating.lua`, `LEGAIA_TRAP_UNMAPPED=1`) names the
+instruction and shows the body **was** entered: `0x801F6EF4` ticks once, arm
+`0` runs, and the 57 unmapped reads that follow are all in SCUS - the anim
+commit `FUN_8004AD80` (`pc 0x8004AF24`), the actor tick and the keyframe
+decoders (`FUN_80047430`, `FUN_80048A08`, `FUN_800495C8`) - dereferencing one
+pointer, `0x626F4720`.
+
+The pointer is the monster's **name**. Arm `0` of the Curse body stages clip
+`0x0B` on the caster (`sb 0x0B, 0x1DA(s1)` at `0x801F6FBC`; Curse All's arm
+`0` stages the same literal `0x0B` at `0x801F758C`), and the
+anim commit resolves a
+staged clip by indexing the monster record's spell-entry offset array with
+it: `lw v0, 0x4C(block + clip*4)` at `0x8004AF08..0x8004AF18`, then
+`lbu 0x77(v0)`. Gobu Gobu's record has **ten** entries (`+0x4C..+0x74`), so
+index `0x0B` reads word `+0x78`, which is the name text `" Gob"` -
+`0x626F4720` byte for byte. Their siblings in the same two images (`0xB5`,
+`0x37`) stage clips inside the ten, which is why they complete from the same
+state.
+
+Twenty-seven records carry twelve or more entries, and on one of them the
+same two casts run clean: forced on Che Delilas' turn
+(`nivora_duel_pre_megaton_press`, twelve entries), `0x40` enters
+`0x801F6EF4` and `0x53` enters `0x801F7470`, each walks arms `0..4` in
+`1, 9, 40, 8, 32` ticks with `ctx[+0x6D8]` holding `20` throughout and
+**zero** unmapped accesses, and the battle phase runs `0x51 -> 0x5A -> 0xFF`.
+The two bodies seed the same countdown (`0x100`, `0x500`, `0x100`, `0x400`
+against a step of 32) so the identical dwells are the modules' own, not a
+coincidence of the fight. Those are the two rows in the table above.
+
+What the measurement cannot claim is a retail timing. **Neither id has a
+retail caster**: no monster record's `+0x21..+0x23` magic slots name `0x40`
+or `0x53` (disc-gated assertion in
+`crates/engine-core/tests/cast_arm_retail_gating.rs`, with Cort's `0x37` as
+the positive control), and the AI picker's formation switch queues neither
+([`spell-table.md`](../formats/spell-table.md)). The gating is measured; the
+cast is one retail never performs.
 
 #### What actually stops PROT 0950 at arm 6
 

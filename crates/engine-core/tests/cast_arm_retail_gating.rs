@@ -21,12 +21,25 @@
 //! dwell is an input to a future timing layer rather than a current invariant.
 //! The arm *set* is asserted, because that is the dispatch bound walked.
 //!
-//! Two of the fourteen arms are absent: PROT 0943's `0x40` and PROT 0944's
-//! `0x53` reach battle phase `0x70` with their module paged and then fault
-//! before the first tick in the fight this corpus drives, so no walk exists to
-//! record. Their siblings in the same two images complete from the same state.
+//! Twelve rows come from `party_basic_attack_vs_gobu_gobu` (Gobu Gobu at the
+//! monster seat). The two Curse arms - PROT 0943's `0x40` and PROT 0944's
+//! `0x53` - cannot be driven there: both stage clip `0x0B` on the caster
+//! (`sb 0x0B, 0x1DA(s1)` at `0x801F6FBC`), and the anim commit `FUN_8004AD80`
+//! indexes the monster record's spell-entry offset array by that clip
+//! (`lw v0, 0x4C(block + clip*4)` at `0x8004AF08..0x8004AF18`). Gobu Gobu's
+//! array has ten entries, so word `+0x78` is the name text `" Gob"`, read as
+//! the pointer `0x626F4720` - the unmapped read the earlier runs stopped on.
+//! Those two rows are driven from `nivora_duel_pre_megaton_press` instead
+//! (Che Delilas, twelve entries), where both complete with no unmapped access.
+//!
+//! Neither Curse id has a retail caster: no monster record's `+0x21..+0x23`
+//! magic slots name `0x40` or `0x53` (asserted below, disc-gated), and the
+//! formation switch in the AI picker queues neither
+//! (`docs/formats/spell-table.md`). The two dwells are therefore the modules'
+//! own countdowns measured on a forced cast, not a retail timing anyone sees.
 //!
 //! REF: FUN_801F2160
+//! REF: FUN_8004AD80
 
 use legaia_engine_vm::cast_arm_ticks as arms;
 
@@ -62,7 +75,8 @@ const fn cast(
 }
 
 /// Driven from `party_basic_attack_vs_gobu_gobu` (one party seat, one monster
-/// seat), one cast per row.
+/// seat), one cast per row - except the two Curse rows, driven from
+/// `nivora_duel_pre_megaton_press` (Gala vs Che Delilas, one seat each).
 const MEASURED: &[MeasuredCast] = &[
     cast(
         0xAC,
@@ -104,6 +118,15 @@ const MEASURED: &[MeasuredCast] = &[
         &[1, 65, 32, 64, 25],
         true,
     ),
+    // Curse, single target - Che Delilas' turn (see the module docs above).
+    cast(
+        0x40,
+        943,
+        0x801F_6EF4,
+        &[0, 1, 2, 3, 4],
+        &[1, 9, 40, 8, 32],
+        true,
+    ),
     cast(
         0xB5,
         943,
@@ -118,6 +141,15 @@ const MEASURED: &[MeasuredCast] = &[
         0x801F_6A04,
         &[0, 1, 2, 3, 4, 5],
         &[1, 33, 32, 32, 64, 82],
+        true,
+    ),
+    // Curse All - Che Delilas' turn; the same five seeds as its 0943 sibling.
+    cast(
+        0x53,
+        944,
+        0x801F_7470,
+        &[0, 1, 2, 3, 4],
+        &[1, 9, 40, 8, 32],
         true,
     ),
     cast(
@@ -269,4 +301,69 @@ fn measured_arm_walks_are_well_formed() {
             );
         }
     }
+}
+
+/// Every one of the fourteen trampoline-reached arms now has a measured row
+/// (fifteen action ids: 0xA4 is the third body of PROT 0962's cell).
+#[test]
+fn all_fourteen_arms_are_measured() {
+    const ARMS: [u8; 15] = [
+        0xAC, 0x50, 0xAE, 0x51, 0xB9, 0x40, 0xB5, 0x37, 0x53, 0x5A, 0xAB, 0x71, 0xA2, 0xA3, 0xA4,
+    ];
+    let mut measured: Vec<u8> = MEASURED.iter().map(|m| m.action).collect();
+    measured.sort_unstable();
+    measured.dedup();
+    for a in ARMS {
+        assert!(
+            measured.contains(&a),
+            "action 0x{a:02X} has no measured row"
+        );
+    }
+    assert_eq!(measured.len(), ARMS.len());
+}
+
+/// The two Curse ids have no retail caster: no monster record's `+0x21..+0x23`
+/// magic slots name them. Their measured rows above are forced casts on a
+/// caster with enough spell entries for the staged clip, and this is the
+/// disc-side half of why no retail state could have produced them (the other
+/// half, the AI picker's formation switch, is a static read on
+/// `docs/formats/spell-table.md`).
+#[test]
+fn no_monster_record_names_either_curse_id() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let recs = legaia_asset::monster_archive::records(&entry).expect("archive walk");
+    assert!(
+        recs.len() > 150,
+        "expected the full roster, got {}",
+        recs.len()
+    );
+    let casters: Vec<String> = recs
+        .iter()
+        .filter(|r| r.magic_attacks.iter().any(|&id| id == 0x40 || id == 0x53))
+        .map(|r| format!("{} (id {})", r.name, r.id))
+        .collect();
+    assert!(
+        casters.is_empty(),
+        "a monster record names Curse / Curse All: {casters:?}"
+    );
+    // Positive control: the slot reading is live - Cort's Guilty Cross is there.
+    assert!(
+        recs.iter().any(|r| r.magic_attacks.contains(&0x37)),
+        "no record names Guilty Cross 0x37 - the slot reading is off"
+    );
+    eprintln!("[ok] {} records, none names 0x40 / 0x53", recs.len());
+}
+
+fn entry_867() -> Option<Vec<u8>> {
+    std::env::var_os("LEGAIA_DISC_BIN")?;
+    for p in ["extracted/PROT", "../../extracted/PROT"] {
+        let f = std::path::PathBuf::from(p).join("0867_battle_data.BIN");
+        if f.is_file() {
+            return std::fs::read(f).ok();
+        }
+    }
+    None
 }
