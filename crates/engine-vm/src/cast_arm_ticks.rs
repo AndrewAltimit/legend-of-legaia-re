@@ -85,9 +85,13 @@
 //!
 //! | form | example | instructions |
 //! |---|---|---|
-//! | `byte * *(0x1F80037D)` | PROT 0940 `0x50` arm 1 | `lbu 0x69`/`lbu 0x7f` off `0x1F800314`, `mult`, `subu` at `0x801F7A94` |
-//! | `byte << 1` | PROT 0940 `0x50` arm 2 | `lbu 0x393`, `sll v1,v1,1`, `subu` at `0x801F7B78` |
+//! | `byte * *(0x1F80037D)` | PROT 0940 `0x50` arm 1 | `lbu 0x69`/`lbu 0x7f` off `0x1F800314`, `mult` at `0x801F7A94`, `subu` at `0x801F7AA4` |
+//! | `byte << 1` | PROT 0940 `0x50` arm 2 | `lbu 0x393`, `sll v1,v1,1` at `0x801F7B78`, `subu` at `0x801F7B7C` |
 //! | `byte` | PROT 0943 `0xB5` | `lbu 0x7f` off `0x1F800314`, `subu` at `0x801F6B94` |
+//!
+//! PROT 0941's `0x51` last arm takes the same product form at
+//! `0x801F7CCC..0x801F7CE8` against its own word `0x801F83EC`, with
+//! the two `lbu`s in the opposite order - the product is the same.
 //!
 //! So a capture that sees one arm draw its word down by `4` while the
 //! `*(0x1F80037D) * *(0x1F800393)` product reads `16..32` is not seeing a

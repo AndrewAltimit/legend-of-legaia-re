@@ -758,6 +758,18 @@ sits on that floor and is near-flat against the defender's defence, while a
 respecting hit - whose `>> 4` fold keeps it clear of the arm - drops as defence
 rises. Mirrored in `engine-vm::battle_damage_wrappers`.
 
+The fold is also not the only place the two differ, and the other place is on
+the attacker side: `FUN_801DD6B4` reads **no** `+0x168` anywhere. Its attacker
+roll mixes in the ATK halfword `+0x158` (`lhu v0,0x158(s0)` at `0x801DD738`)
+under a single `rand()` draw, where the shared kernel and `FUN_801DD4B0` mix in
+INT `+0x168` twice over - `rand % ((INT >> 1) + 1)` plus `INT * 2` - under two
+draws; and its defender modulus is `rand % (((UDF + LDF) >> 3) + 1)`
+(`0x801DD74C..0x801DD764`) rather than one taken on INT. So the bypass arm is a
+**physical-stat** kernel wearing the same call shape, not the INT-driven one
+with a flag flipped, and an enemy's INT column moves a respecting cast's damage
+while leaving a bypassing one alone. Both stat sets are modelled in
+`engine-vm::battle_damage_wrappers`.
+
 The full wrapper census over every capture-class module (module anatomy -
 paging, phase machine, and the seat-0-hardcoded apply sites these wrapper
 calls feed - is on [cast-module.md](cast-module.md); byte-scan of the
@@ -795,10 +807,16 @@ summons, move-power specials) all reach the finisher with `param_5 = 0`.
 
 The respecting arm of the census is `FUN_801DD4B0`, and a capture-class cast
 never reaches `FUN_801DD0AC` at all - the `0x63` arm pages the module, and the
-module's tick calls a wrapper. `FUN_801DD4B0`'s attacker and defender rolls are
-instruction-identical to the shared kernel's, so the two agree exactly on any
-hit that clears the defender's mitigation; the whole divergence is the bonus
-arm:
+module's tick calls a wrapper. `FUN_801DD4B0`'s attacker and defender rolls
+are term-for-term the shared kernel's **non-summon** arm (`FUN_801DD0AC` with
+`attacker_slot != 7`, `0x801DD18C..0x801DD2E4`) - same stat fields, same two
+draws, same order. They are not *instruction*-identical, and the two places
+they differ change no output: the power scalar arrives in `a0` instead of
+being read out of the move-power row, and the first modulus is `divu`
+(`0x801DD518`) where the shared kernel's is `div` (`0x801DD1D4`), which agree
+because `FUN_80056798` is the BIOS `rand()` thunk and never returns a negative.
+So the two agree exactly on any hit that clears the defender's mitigation; the
+whole divergence is the bonus arm:
 
 | | `FUN_801DD0AC` | `FUN_801DD4B0` |
 |---|---|---|

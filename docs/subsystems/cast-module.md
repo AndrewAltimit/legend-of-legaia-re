@@ -491,6 +491,13 @@ Straight off `FUN_8004FCC8` (`0x8004FCC8..0x8004FD7C` in `SCUS_942.54`):
   `lui v1, 0x8008; addiu v1, v1, -0x7748; sll v0, a1, 1; addu v0, v0, v1`,
   with **no range check**, so the table is exactly as long as the ids reach.
 
+Four of the band's own `FUN_8004FCC8` sites pass an id **below** that `0x100`
+threshold and so raise an SFX cue rather than a voice: `0x22` at `0x801F88FC`
+and `0x801F894C` and `0x21` at `0x801F8B54` in PROT 0957, and `0x56` at
+`0x801F87BC` in PROT 0958. None of them is a head cue - every one of the 64 head
+cues is `>= 0x130` - so a census that reads any dispatcher call in the band as a
+voice cue counts these four wrongly.
+
 Its real extent is `0x110` entries: index `0x110` is where ASCII text begins,
 and the ids the cast band uses run to `0x20F`, i.e. index `0x10F`. A reader
 that stops at `0x40` entries covers the menu/jingle band only and drops every
