@@ -41,8 +41,8 @@ and wider than "everything committed". Build output, editor scratch and
 been `git add`ed stays in, because the compiler reads it either way.
 
 That second half was missing and it is the whole defect this paragraph now
-records: the enumeration was a plain `git ls-files`, so a wave that added three
-new modules to `web-viewer` and built the bundle from them got a stamp
+records: the enumeration was a plain `git ls-files`, so a branch that added
+three new modules to `web-viewer` and built the bundle from them got a stamp
 identical to the one before the modules existed. Two different bundles, one
 hash, and the gate's answer was "in sync" - the same false green that
 mtime-based reasoning gives, arrived at from the other direction. A stamp that

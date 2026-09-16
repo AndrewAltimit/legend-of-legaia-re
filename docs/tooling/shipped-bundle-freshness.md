@@ -75,7 +75,7 @@ read as a stale bundle.
 ### "Tracked files only" was a third way of guessing wrong
 
 The enumeration was a plain `git ls-files`, which is the index and nothing else.
-A wave that added three modules to `web-viewer` and built the bundle out of them
+A branch that added three modules to `web-viewer` and built the bundle from them
 therefore produced a stamp identical to the one from before those modules
 existed - two different bundles, one hash, and the gate answering *in sync*.
 
