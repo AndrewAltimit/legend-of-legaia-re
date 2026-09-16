@@ -281,10 +281,14 @@ pub enum CueDispatch {
     /// (`DAT_8007B724`) to suppress an immediate repeat - see
     /// [`CueDispatch::ring_suppressed_by`].
     Ring { ring_value: u16, dedup_key: i32 },
-    /// A streamed voice trigger (`FUN_8003D53C`). `channel` is the voice channel
-    /// after the `1 → 0x1A`, `3 → 0x1B`, `5 → 0x1C` remap; `submode = id & 7`;
-    /// `pitch_index` indexes the pitch table (`DAT_800788B8`) - feed its `u16`
-    /// entry through [`voice_pitch`] to get the playback pitch.
+    /// A streamed voice trigger (`FUN_8003D53C`). `channel` is the **clip
+    /// slot** after the `1 → 0x1A`, `3 → 0x1B`, `5 → 0x1C` remap;
+    /// `submode = id & 7` is the channel inside that file.
+    ///
+    /// `pitch_index` is a misnomer this field keeps because two committed
+    /// pages cite it by name: it indexes `DAT_800788B8`, and what comes back
+    /// is the clip starter's **read span**, not a playback pitch. See
+    /// [`voice_pitch`], which carries the same wrong name and the evidence.
     Voice {
         channel: u8,
         submode: u8,
@@ -344,10 +348,23 @@ pub fn classify_cue(id: u32) -> CueDispatch {
     }
 }
 
-/// The voice playback pitch `FUN_8004fcc8` computes for a [`CueDispatch::Voice`]:
-/// `(pitch_table_value * 0x3C + 99) / 100` (the integer round-up of
-/// `pitch_table_value * 0.6`). `pitch_table_value` is the `u16` at
+/// `(table_value * 0x3C + 99) / 100` - the integer round-up of
+/// `table_value * 0.6` - where `table_value` is the `u16` at
 /// `DAT_800788B8[pitch_index]`.
+///
+/// **The result is not a pitch.** `FUN_8004FCC8` passes it as the third
+/// argument of the CD-XA clip starter (`jal 0x8003d53c` at `0x8004fd74`,
+/// value in `a2`), and that argument is a **read span**: `FUN_8003D53C`
+/// copies it to `s0` and range-checks it against `0x2A31`
+/// (`slti v0,s0,0x2a31` at `0x8003d5c8`). Neither routine touches a pitch
+/// register. `legaia_asset::xa_cue_table` reads the same table and says so -
+/// the span is denominated in vsyncs - and
+/// `legaia_engine_shell::xa_clip::voice_clip_duration_sectors` is this same
+/// arithmetic under the right name.
+///
+/// The name survives here only because `docs/reference/functions/audio.md`
+/// and `docs/reference/re-settled-threads.md` cite it; a caller wanting the
+/// span should prefer the `xa_clip` spelling.
 pub fn voice_pitch(pitch_table_value: u16) -> u16 {
     // Retail: `(value * 0x3C + 99) / 100`; the `+ 99` over `/ 100` is the
     // round-up of `value * 0.6`, i.e. `(value * 0x3C).div_ceil(100)`.

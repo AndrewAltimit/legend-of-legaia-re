@@ -607,6 +607,7 @@ about these is contested.
 |---|---|
 | retail numeral art on web | The battle's damage numerals and `N HIT` / `TOTAL` counter draw the shared layout from the font atlas; the native window samples the retail 24x24 cells out of VRAM through a screen-space sink the page has not grown. |
 | publisher logos on web | `engine_core::publisher_logos` + its atlas builder are in the shared crate; only the native `--boot-ui` chain plays them. |
+| the cast-voice leg on **both** hosts | Every host classifies the Seru-cast dispatch cue and declines it, because no host stages the clip files it names. Not a drift - the two hosts decline symmetrically. See [below](#the-cast-voice-leg). |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | scripted mesh re-bind on **both** hosts | Motion-VM op `0x0E` swaps an actor's model mid-scene; both hosts bind an NPC's mesh once, from its spawn model. Not a drift - neither host has it. See [below](#scripted-mesh-re-bind-op-0x0e). |
 
@@ -706,6 +707,58 @@ addressable: `SceneModelBank::tmd_bytes` for the scene half, and for the
 `0xF0` half `legaia_asset::character_pack` over PROT 0874, which is not one of
 the scene's entries - `source_for_model_id` returns `None` there rather than
 pretending otherwise.
+
+### The cast-voice leg
+
+A Seru-magic cast fires a dispatch cue (`FUN_801F3990`, ported as
+`engine-vm::battle_cast_cue::cast_audio_cue`): the player leg emits
+`char_kind * 0x10 + 0xF8 ..`, the enemy leg `0x20C..0x20E`. Both hosts push it
+into the same frame-timed SFX scheduler, and at fire time both classify it the
+same way and drop it - `bgm.rs` logs and `continue`s, `play_sfx.rs` counts it
+on `voice_cues_dropped`. So this is **not** a drift: the two hosts decline
+identically, and the decline is deliberate ("silent rather than wrong").
+
+What the decline is actually waiting on is smaller than the prose around it
+suggested, and worth writing down precisely.
+
+`classify_cue` resolves an id at or above `0x100` into a *clip slot* (`(id -
+0x100) >> 3`, remapped `1 -> 0x1A`, `3 -> 0x1B`, `5 -> 0x1C`) plus a channel
+(`id & 7`) - and, through `DAT_800788B8`, the clip starter's read span. The
+slot values the cast leg reaches are therefore:
+
+| cue | `(id - 0x100) >> 3` | clip slot | file |
+|---|---|---|---|
+| `char_kind 0` (`0xF8..`) | - | - | below `0x100`, so it is a **ring** cue, not a voice one |
+| `char_kind 1` (`0x108..`) | 1 | `0x1A` | `XA27.XA` - **already staged on both hosts** |
+| `char_kind 2` (`0x118..`) | 3 | `0x1B` | `XA28.XA` |
+| `char_kind 3` (`0x128..`) | 5 | `0x1C` | `XA29.XA` |
+| enemy (`0x20C..0x20E`) | `0x21` | `0x21` | `XA34.XA` |
+
+All four files exist on the retail USA disc (`XA27` 1.3 MB, `XA28` 1.4 MB,
+`XA29` 1.3 MB, `XA34` 8.7 MB). The **span** is not missing either:
+`legaia_asset::xa_cue_table` parses `DAT_800788B8` off the user's own
+`SCUS_942.54` and the boot path installs it on `World::audio.xa_cue_durations`
+for the melee leg, which already plays through `play_xa_clip(clip_slot,
+channel, duration_sectors)` on both hosts.
+
+The blocking capability is therefore one line of staging and one routing arm,
+per host: add `(0x1B, "XA28.XA")` / `(0x1C, "XA29.XA")` / `(0x21, "XA34.XA")`
+to each host's battle clip-slot set (`engine-shell`'s
+`read_battle_xa_clip_bank`, `web-viewer`'s `BATTLE_XA_CLIP_SLOTS`) and route
+the `Voice` arm to `play_xa_clip` with the span instead of counting it. It is
+recorded here rather than done because `XA34.XA` is 8.7 MB of channels to
+decode up front in a browser tab, and because nothing has yet measured which
+channel of which file a given cast id actually lands on - staging a bank and
+routing to it would make the port play *something* on every cast, and a
+confidently wrong voice is worse than the silence it replaces.
+
+Two neighbours that are **not** this gap, so a reader does not merge them:
+
+- The **arts shout** (`FUN_8004C140`, `XA2` / `XA4` / `XA6`) plays on both
+  hosts.
+- `cast_item_give` (`FUN_8003D53C(char_kind + 0x19, 0, 0x5A)`) is dropped
+  earlier still, at the `BattleActionHost` trait default - no host overrides
+  it, so that cue never reaches audio at all.
 
 ### Per-actor pitch and roll
 

@@ -1293,10 +1293,15 @@ playback: boot
 demuxes `XA27` / `XA30` into a `legaia_engine_audio::XaClipBank`
 (`read_battle_xa_clip_bank`) and `AudioBgmDirector::play_xa_clip` mixes the
 requested `(slot, channel)` PCM, cut at the retail read span, through the
-same XA path as the arts shouts. Two gaps remain: the browser play page has
-no XA lane (the requests are consumed, as the arts shouts already are), and
-the monster leg's `0x2A8` is a runtime-bank id no engine bank models (the
-per-scene record-0 descriptor bank plus the `monster.snd` slots 7 / 8).
+same XA path as the arts shouts. The browser play page has the same lane:
+`web-viewer`'s `play_xa` demuxes the raw sectors the page slices out of the
+visitor's own disc bytes into the same two banks and plays them through
+`WebAudioOut::play_xa_shout`, so both hosts sound the melee cue and the arts
+shout. One gap remains here - the monster leg's `0x2A8` is a runtime-bank id
+no engine bank models (the per-scene record-0 descriptor bank plus the
+`monster.snd` slots 7 / 8) - and one more sits beside it: the **cast** voice
+leg, declined on both hosts for want of a staged clip file
+([`host-drift.md`](../tooling/host-drift.md#the-cast-voice-leg)).
 
 `FUN_8004DA00`, the resident per-frame selector `battle_voice` ports, hands
 its clip to `FUN_8003EAE4`, which seeks the drive to the clip file (`CdlSeekL`,
