@@ -179,15 +179,38 @@ in hand, and from `slot_b_module::content_end` when only this one is.
 
 The image's highest record has no next pointer above it, so the *band* cannot
 bound it - but its **program** can. A record's payload is a move-VM program,
-and a program ends where nothing above it can execute. Two words do that:
+and a program ends where nothing above it can execute. Three words do that,
+and the third is a fallback the first two outrank:
 
 | terminator | why nothing above it runs |
 |---|---|
 | `0x08` HALT | sets `flags \| 8` and drops out of the tick loop |
 | an armed `0x19` / `0x1B` | its paired `0x18` / `0x1A` loaded a counter carrying bit `0x4000`, which makes the branch back to the saved PC unconditional |
+| `0x09` WAIT with operand `0x0FFF` | 4095 frames is over a minute, which no cast or summon part is on screen for - the actor is gone before the counter runs out |
 
-Three details decide whether this reproduces the measured extents or misses
-them, and all three were needed:
+### The maximal WAIT is a fallback, not a terminator
+
+The third row is weaker than the other two and is treated as such. `WAIT`
+retires like any other instruction once its counter expires, so nothing in the
+VM stops there; the evidence is the band's layout, and the band emits the
+maximal operand mid-program as well as at the end. Ending the walk at the
+*first* one costs 48 of the extents the HALT rule reproduces exactly.
+
+So the walk remembers the last maximal `WAIT` it stepped over and returns it
+only where it would otherwise have no bound at all - where it runs off the
+buffer or meets a halfword that is no opcode. That ordering cannot lose a HALT
+or an armed loop, because those return immediately.
+
+What it does is settle the four images the band used to leave open. Their
+highest records are byte-identical in two cases (PROT 0927 and 0966 carry the
+same record), all four open `model_sel = -1`, and in all four the last
+cleanly-decoded instruction is `0x09 0x0FFF`; above it sits either a word that
+is no opcode or a zero run that does not tile at any opcode width. All four sit
+**below** the image's measured inherited tail, so they are the image's own
+bytes and not a donor's.
+
+Four details decide whether this reproduces the measured extents or misses
+them, and all four were needed:
 
 1. **Round the end up to 4.** The records are word-aligned, so a program whose
    last halfword lands mid-word is followed by one halfword of padding. Without
@@ -203,21 +226,22 @@ them, and all three were needed:
    record the bytes often keep reading as `[header][program]`, and those are
    records the consumer reaches by some other route. The parser keeps them in
    `chained_records`, apart from the pointer-credited ones.
+4. **Fall back to the last maximal WAIT.** The section above: where the walk
+   dies with no terminator, the last `0x09 0x0FFF` it stepped over bounds the
+   record.
 
-Under those three, chaining `[header][program]` from every record start
-reproduces 991 of the band's 1027 bounded record extents exactly (the band's
+Under those four, chaining `[header][program]` from every record start
+reproduces 1021 of the band's 1027 bounded record extents exactly (the band's
 own highest records are excluded from that count - their ends come from this
-very walk), and bounds the highest record on 58 of the 62 images that have one.
-The four that stay unbounded are where the walk meets a halfword that is no
-opcode before it meets a terminator; those records are reported, not claimed.
+very walk), no chain overruns a measured end, and every one of the 62 images
+that has a highest record bounds it. The six that miss stall below the measured
+end and are a stated residue, not a rounding tolerance.
 
-The residue is a real one rather than a tolerance, and it has exactly one
-direction - but the direction is a property of the **claim**, not of the walk's
-program counter, and the two are easy to confuse. What holds without exception
-is that no miss ever *terminates* above the measured end: every one of them
-returns `Unterminated`, and only a `HALT` or an armed idle loop produces a
-claim. So the rule never claims bytes the band does not bound; it declines to
-claim bytes the band does.
+The residue has exactly one direction, and the direction is a property of the
+**claim**, not of the walk's program counter - the two are easy to confuse.
+What holds without exception is that no miss ever *terminates* above the
+measured end, so the rule never claims bytes the band does not bound; it
+declines to claim bytes the band does.
 
 The walk's PC is a different matter, and it does run past the end. Re-measured
 over the band's pointer-credited extents, the misses split three ways: the PC
@@ -227,10 +251,7 @@ for - stops **below** it on a handful, and steps **past** it on fourteen,
 before dying on a halfword that is no opcode. On those fourteen the widths
 mis-step somewhere inside the record, so by the time the walk fails it is
 reading the next record's bytes as operands. A page that says "every miss
-stalls below the end" is describing the first two groups only, and the `0x09`
-WAIT shape it names is one cause among several rather than the mechanism. For
-the highest record there is no next header, which is why a miss there leaves no
-static bound at all and those records are disclosed rather than claimed.
+stalls below the end" is describing the first two groups only.
 
 That asymmetry is what makes the figure usable by the two consumers below. An
 over-claim would retire real code from the dump worklist; a stall only leaves
