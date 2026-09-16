@@ -349,7 +349,9 @@ surfaced the first time a coverage source contained their files:
 ## `engine-core`
 
 `engine-core` carries the largest crate share of the never-entered set. Every
-address in it is accounted for below.
+address in it has a row below **except the ones a refresh has just added** -
+see [the unverdicted rows](#rows-a-refresh-added-and-nobody-has-bucketed-yet),
+which is where an address goes the day the export first reports it.
 
 **Per-bucket totals are deliberately not written here.** They are a count of
 project state, which this page keeps out on the same grounds as the rest of
@@ -1539,6 +1541,41 @@ resolution per id and can **never** be a union member, because it is a
 `screen_fx.rs`'s ten rows had the same shape and are closed: the scene-frontier
 ladder enters them, which is the reading the table below predicted - they were
 gated on a scene whose script spawns the effect, not on anything a pad does.
+
+## Rows a refresh added, and nobody has bucketed yet
+
+A coverage refresh does two things at once: it converts rows, and it *adds*
+them - every port that landed since the last export arrives with a reach
+verdict nobody has written. The added ones have no home in the tables above
+until someone reads them, and the failure mode to avoid is the silent one:
+leaving them out entirely, so the page reads as complete while the instrument
+knows otherwise.
+
+So they are listed here, with the only thing the refresh establishes - that no
+ladder in the canonical union entered them - and **no bucket**. Assigning one
+means reading the port: (a) if a fixture would drive it, (b) if a game gate
+stands in front, (c) if nothing on any host reaches it, (d) if it is not
+playthrough-shaped. A row leaves this section when it gains that verdict, not
+when someone guesses.
+
+| address | crate | anchor |
+|---|---|---|
+| `8003c7ec` | engine-core | `op4c_n_e_sub_a_call_c7ec` (`world/vm_hosts.rs`) |
+| `800430ac` | engine-core | `party_unequip_accessory_by_id` (`equipment.rs`) |
+| `8004fe5c` | engine-core | module anchor on `sfx_cue.rs` |
+| `801cefd4` | engine-core | `PublisherLogosSession` (`publisher_logos.rs`) |
+| `801d1288` | engine-core | `cue_volume` (`other_game_overlay.rs`) |
+| `800485bc` | engine-ui | module anchor on `battle_trail.rs` |
+| `80065034` | engine-audio | `key_on_voice_attr` (`sfx.rs`) |
+| `801d32bc` `801d57e8` `801d5778` `801d9ae8` | engine-vm | module anchors on `battle_cursor_pose.rs` |
+| `801d5854` | engine-vm | module anchor on `battle_action.rs` |
+| `801dd4c4` `801dd784` | engine-vm | `step` bodies in `field_actor_timers.rs` |
+
+Two of these are worth reading together rather than one at a time, because the
+pairing is the verdict-shaped part: `801d1288` is the Muscle Dome tally's
+per-lane voice resolve and `80065034` is the audio side it would key, and the
+minigames page has a live SPU that keys voices by attribute. A row set that
+spans a producer and its consumer usually has one gate, not two.
 
 ## Gates behind the (b) rows
 
