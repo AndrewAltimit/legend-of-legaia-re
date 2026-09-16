@@ -481,6 +481,21 @@ Straight off `FUN_8004FCC8` (`0x8004FCC8..0x8004FD7C` in `SCUS_942.54`):
 * two decline gates sit ahead of the XA arm, so a cue can resolve and still
   play nothing: `ctx[+0x276] != 0` (the pointer is `gp+0xA0C`, which at the
   live `gp` is the battle context `0x8007BD24`), and `FUN_8003DE7C(1) != 0`.
+  The battle sound funnel `FUN_8004FE5C` runs the same pair on its voice leg
+  (`0x8004FE84..0x8004FEA4`). Neither is the module's own: `ctx[+0x276]` is
+  the **side-band applier stage** - the per-turn `summon.dat` / `readef.DAT`
+  streaming phase byte `FUN_801DABA4` seeds `1` every turn and `FUN_801F12D0`
+  steps back to `0` ([`summon-readef.md`](../formats/summon-readef.md)), so
+  no CD-XA clip starts while an ME archive is streaming; a summon module polls
+  that byte itself before installing its actor record and raises its head cue
+  only after (PROT 0903: `lbu v0,0x276(s1)` at `0x801F6CC0`, `jal 0x801F19EC`
+  at `0x801F6D3C`, the cue at `0x801F6E50`). `FUN_8003DE7C(1)` is the read-span
+  countdown `gp+0x91C` the starter arms with `dur` and each poll steps down by
+  the frame-speed byte, plus the read-in-flight cells - a cast inside the
+  previous clip's span plays no voice. The engine models the second gate
+  (`AudioState::battle_xa_busy_frames`) and passes the first as `0`, its
+  side-band being resident rather than streamed
+  (`engine-vm::battle_cast_cue::admit_voice_cue`).
 * `a1 = id - 0x100`; the clip slot is `a1 >> 3` with three remaps applied in
   sequence off that one value (`1 -> 0x1A`, `3 -> 0x1B`, `5 -> 0x1C`), and the
   runtime clip table names slot `n` as `XA<n + 1>.XA`.

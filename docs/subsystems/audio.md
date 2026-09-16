@@ -1103,6 +1103,25 @@ descriptor word copied into the CD-read staging window):
   while in progress, 0 when the stream is running. The field overlay is its
   only caller (both sites below).
 
+#### The cast voice in the engine
+
+A Seru cast's voice is the paged slot-B module's own `FUN_8004FCC8` head cue
+([`cast-module.md`](cast-module.md#the-casts-own-cd-xa-voice)). The engine
+scans it off the module's bytes at the arming seam
+(`legaia_engine_vm::battle_cast_cue::module_head_cue`), runs the dispatcher's
+CD-XA arm with its two gates (`admit_voice_cue`; the `ctx[+0x276]` side-band
+stage is `0` on a resident side-band, the `FUN_8003DE7C(1)` span countdown is
+`AudioState::battle_xa_busy_frames`) and raises the starter triple on
+`battle_xa_cues`. Neither host decodes the seventeen voice files up front: a
+`(slot, channel)` the clip bank lacks is read from the file's first sector to
+the starter's stop point and that one channel decoded
+(`XaClipBank::decode_channel_span`, `read_span_sectors`), kept under
+`LAZY_CLIP_CAP` - the native director off the disc image
+(`AudioBgmDirector::set_xa_lazy_source`), the play page through a
+`play_xa_stage_requests_json` / `play_xa_install_span` round trip over the disc
+bytes it holds. The per-host wiring is on
+[`host-drift.md`](../tooling/host-drift.md#the-cast-voice-leg).
+
 #### The clip-table writer - `FUN_801CFA78` (PROT 0895 `init.pak`)
 
 The filler is not in `SCUS_942.54` and not baked into any disc file - it lives
