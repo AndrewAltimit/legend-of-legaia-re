@@ -75,10 +75,25 @@
 //! the **per-arm frame gating**. That last one is the module-resident
 //! countdown each body keeps in its own image (`0x801F864C` in PROT 0940,
 //! `0x801F83EC` in 0941, `0x801F7A04` in 0943, `0x801F8360` in 0944,
-//! `0x801F86B0` in 0950, `0x801F86A0` in 0956, `0x801F89AC` in 0962),
-//! decremented by the scratchpad frame step `*(0x1F80037D) * *(0x1F800393)`;
-//! it decides *when* an arm completes, not what it does, and it is pinned by
-//! capture, not by the static window.
+//! `0x801F86B0` in 0950, `0x801F86A0` in 0956, `0x801F89AC` in 0962). It
+//! decides *when* an arm completes, not what it does.
+//!
+//! The drain is **per arm, not per module**, and the arms differ in the
+//! multiplier rather than in the quantity: every counted arm subtracts a
+//! multiple of the frame-delta byte `*(0x1F800393)`, and which multiple is
+//! baked into the arm. Three forms appear, two of them inside one body:
+//!
+//! | form | example | instructions |
+//! |---|---|---|
+//! | `byte * *(0x1F80037D)` | PROT 0940 `0x50` arm 1 | `lbu 0x69`/`lbu 0x7f` off `0x1F800314`, `mult`, `subu` at `0x801F7A94` |
+//! | `byte << 1` | PROT 0940 `0x50` arm 2 | `lbu 0x393`, `sll v1,v1,1`, `subu` at `0x801F7B78` |
+//! | `byte` | PROT 0943 `0xB5` | `lbu 0x7f` off `0x1F800314`, `subu` at `0x801F6B94` |
+//!
+//! So a capture that sees one arm draw its word down by `4` while the
+//! `*(0x1F80037D) * *(0x1F800393)` product reads `16..32` is not seeing a
+//! baked constant `4`: it is seeing the bare byte on a frame where the byte
+//! read `4`. Reading the product as the universal step - what this list said
+//! before - predicts the wrong dwell for every arm that does not use it.
 //!
 //! Provenance: disassembly of each owning image at slot-B base `0x801F69D8`
 //! (`see ghidra/scripts/funcs/overlay_cast_<label>_<entry>_<va>.txt`, the

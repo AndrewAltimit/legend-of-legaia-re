@@ -1336,16 +1336,26 @@ down by per tick. PROT 0941's `0x51` is the clearest - arm `2` seeds `0x100`
 and arm `3` seeds `0x200`, both drain `16` per tick, and the arms run `16` and
 `32` ticks.
 
-What is **not** uniform is that per-tick amount. The disclosure list in
-`legaia_engine_vm::cast_arm_ticks` describes the word as decremented by the
-scratchpad frame step `*(0x1F80037D) * *(0x1F800393)`, and on some arms that is
-exactly right: the summed per-tick step equals the drain on all seven counted
-arms of PROT 0940's `0xAC`, on both counted arms of PROT 0941's `0x51`, on all
-four of its `0xB9`, and on all five of PROT 0944's `0x37`. On others it is a
-constant the step does not explain - PROT 0943's `0xB5` draws its word down by
-`4` per tick while the step reads `16..32`, and PROT 0940's `0x50` drains by
-`8` per tick on arm `2` while draining by the step on arms `1` and `3`. So the
-frame step is one arm's decrement, not the word's.
+What is **not** uniform is that per-tick amount, and the disassembly says why:
+the arms differ in a baked **multiplier**, not in the quantity. Every counted
+arm subtracts a multiple of the frame-delta byte `*(0x1F800393)`, and the
+multiplier is part of the arm's own code. Three forms appear, two of them
+inside a single body:
+
+| form | arm | the instructions |
+|---|---|---|
+| `*(0x1F800393) * *(0x1F80037D)` | PROT 0940 `0x50` arm 1; PROT 0941 `0x51`'s last arm | `lbu 0x69(v0)` / `lbu 0x7f(v0)` off `0x1F800314`, `mult`, `mflo`, `subu` - `0x801F7A88..0x801F7AA4`, `0x801F7CCC..0x801F7CE8` |
+| `*(0x1F800393) << 1` | PROT 0940 `0x50` arm 2 | `lbu 0x393(v1)`, `sll v1,v1,1`, `subu a0,a0,v1` - `0x801F7B6C..0x801F7B7C` |
+| `*(0x1F800393)` | PROT 0943 `0xB5` | `lbu 0x7f(a1)` off `0x1F800314`, `subu a2,v0,v1` - `0x801F6B88..0x801F6B94` |
+
+That resolves the two arms the capture reported as unexplained constants.
+PROT 0943's `0xB5` draws `4` per tick against a product of `16..32` because it
+subtracts the bare byte and the byte read `4`; PROT 0940's `0x50` draws `8` on
+arm `2` for the same reason, doubled - the same word, `0x801F864C`, drained by
+two different expressions in two arms of one body. So "a constant the step does
+not explain" is a measurement of the multiplier, not of a literal: the frame
+step is one arm's decrement, not the word's, and none of the three forms is a
+constant.
 
 The step itself is adaptive and changes **inside** a single cast - the audio
 frame driver rewrites `DAT_1F800393` per frame

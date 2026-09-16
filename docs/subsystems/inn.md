@@ -30,12 +30,15 @@ Op `0x4E` **sub-op 3** (operand byte 1, high nibble) loads the party gold
 nibble `0` = jump when gold < literal - the can't-afford branch); sub-op 10 is
 the 32-bit sibling (literal lo16 at `+2` / hi16 at `+6`, 9 bytes) used where a
 price can exceed 65535 (the casino gold-to-coin counter). Provenance: the
-op-`0x4E` inner jump table at field-overlay VA `0x801CEE30` (12 entries) -
-the sub-3 arm at `0x801E0AEC` loads `_DAT_8008459C`, sub-2 at `0x801E0AC0`
-loads a per-character level byte (`+0x130`), sub-9 at `0x801E0B34` loads the
-casino coin bank `_DAT_800845A4` (see
-`ghidra/scripts/funcs/overlay_0897_801de840.txt`; the decompiled-C case labels
-collapse these arms - the disassembly + jump-table words are ground truth).
+op-`0x4E` inner jump table at field-overlay VA `0x801CEE30`, 12 words read out
+of PROT 0897's own bytes. Arm `3` is `0x801E0AEC` = `lw s1,0x459c(0x8008)` -
+`_DAT_8008459C`, the party gold. Arm `2` is `0x801E0AC0`, which multiplies the
+slot by `0x414` through the `sll`/`addu` chain at `0x801E0AC8..0x801E0AD8` and
+reads `0x6f8` off `0x80084140` - i.e. `record + 0x130`, the level byte. Arm `9`
+is `0x801E0B34` = `lw s1,0x45a4(0x8008)` - `_DAT_800845A4`, the casino coin
+bank. Read the disassembly rather than
+`ghidra/scripts/funcs/overlay_0897_801de840.txt`'s C: its case labels collapse
+these arms, and arms `5`..`8` share one body (`0x801E0B0C`).
 Op `0x3A` (`ADD_MONEY`, `docs/subsystems/script-vm.md`) applies the signed
 24-bit delta.
 

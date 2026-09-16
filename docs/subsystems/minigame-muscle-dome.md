@@ -418,8 +418,9 @@ The overlay that reads them is PROT **0978** (`field_back_read`, slot-B base
 `0x801F69D8`), whose own string pool names both files by their dev paths -
 `h:\prot\field\other6\tim\int.tim` at file `+0x20` and
 `…\int2.tim` at `+0x44` - putting them in this bundle's directory. Its
-streamer `FUN_801F6B24` (file `+0x14C`) is a 12-arm phase machine on a jump
-table at `0x801F6AA8`, counter `_DAT_8007B6C8`.
+streamer `FUN_801F6B24` (file `+0x14C`) is a phase machine on the counter
+`_DAT_8007B6C8` with **two** jump tables, one per family
+([below](#one-counter-two-tables-and-the-word-that-picks-one)).
 
 Nothing materialises the raw TOC index as a literal, which is why a
 literal-only sweep finds no loader. The index is **computed**:
@@ -537,9 +538,10 @@ actor-list tick iterator the settled `FUN_80047430` caller finding names.
 
 #### The teardown streams the *other* family - `0x36C`, not `0x4C7`
 
-PROT 0978 carries **two** streaming families behind its 12-arm phase machine,
-and they differ in every field that matters. Each has its own rect
-initialiser writing the same `RECT` at `0x801F735C`:
+PROT 0978 carries **two** streaming families, each behind its own jump table
+([below](#one-counter-two-tables-and-the-word-that-picks-one)), and they
+differ in every field that matters. Each has its own rect initialiser writing
+the same `RECT` at `0x801F735C`:
 
 | | panel-still family | field-restore family |
 |---|---|---|
@@ -571,6 +573,43 @@ This corrects the upload geometry recorded above for the teardown: the four
 passes are vertical `64 x 256` strips stepping `x`, not horizontal `320 x 64`
 bands stepping `y`. The `320 x 64` reading is the *panel-still* family's, and
 it stands for that family.
+
+#### One counter, two tables, and the word that picks one
+
+`FUN_801F6B24` is not one phase machine with the two families interleaved in
+it. It is two, sharing one counter, and the branch that picks between them is
+three instructions into the body:
+
+```text
+801f6b9c  lui   a0,0x8008
+801f6ba0  lw    a0,-0x4540(a0)      ; _DAT_8007BAC0, the special-battle word
+801f6ba8  beqz  a0,0x801f6ed0       ; zero -> the field-restore dispatcher
+...
+801f6bbc  sltiu v0,v1,0xc           ; panel-still family: 12 arms
+801f6bd0  lw    v0,0x6aa8(at)       ;   table 0x801F6AA8
+...
+801f6edc  sltiu v0,v1,0x13          ; field-restore family: 19 arms
+801f6ef0  lw    v0,0x6ad8(at)       ;   table 0x801F6AD8
+```
+
+`_DAT_8007BAC0` is the special-battle / arena word
+([`re-settled-threads.md`](../reference/re-settled-threads.md)) - non-zero for
+the length of a contest, zeroed by the mode-24 door-warp arm of field-VM op
+`0x3E`. So the panel stills are not "a different arm" of one machine that an
+ordinary teardown happens to skip: an ordinary teardown reads a **different
+table** and cannot reach them at all. That is why an exec census over a
+self-resolving fight finds the field-restore family four times and the
+`int.tim` family zero, and it is why the bracket that reaches the stills has
+to be a live dome match rather than a load transition.
+
+Both tables send indices `0` and `1` to their terminal arm (`0x801F6EC8` /
+`0x801F7304`), because those two counts belong to the **caller**: SCUS
+`FUN_80025358` advances the same `_DAT_8007B6C8` through its own states `0`
+and `1` while the overlay pages in, and only calls this tick at state `2`.
+The module's own phases therefore run `2` upward - `2..=11` on the panel-still
+table and `2..=18` on the field-restore one, which is the walk a capture sees
+reaching `18`. Neither bound is the other's: "a 12-arm phase machine" is the
+panel-still half named as the whole.
 
 #### The `INTERVAL` screen is a live render, not the still
 

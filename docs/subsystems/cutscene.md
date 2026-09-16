@@ -1800,10 +1800,17 @@ dispatcher's `0x80043520..0x80043540` decode), without which the x-mirrored half
 reversed winding would cull; `a2 = 0` keeps the opaque bank, and the `0x808080` low bytes
 multiply nothing because the descriptor's `+0xC` word is zero. From `0x5A` on the submit
 swaps to `FUN_80029888(desc, 0x8180_8080, 0, (clock - 0x3C) * 4)` - the light-source TMD
-renderer - which stages a mid-grey far colour (`param_2` bytes `<< 4`) and builds an
-extra Euler rotation from the fourth argument (`<< 4` into the angle lanes; the roll that
-gives the style its name - this axis detail is graded decompiled-C), zeroing the GTE
-light block first; the tick also washes the screen `0x101010` once the *previous* frame's
+renderer - which stages a mid-grey far colour (`param_2`'s three bytes each `<< 4` into
+GTE control registers `21`/`22`/`23` at `0x800299EC..0x800299F4`) and builds an extra
+Euler rotation from the fourth argument. That rotation is **two axes, not one**: `a3 << 4`
+goes into the X and Z angle halfwords and Y is zeroed (`sh v0,0x58(sp)` /
+`sh zero,0x5a(sp)` / `sh v0,0x5c(sp)` at `0x80029930..0x80029940`, the triple
+`FUN_80026988` then reads as X/Y/Z), and bit `0x10000` of `a3` suppresses it by zeroing
+all three. Before that it calls `FUN_8003D20C` to save GTE control regs `0..7` to
+`0x1F800334` and `FUN_8003D190`, whose three instructions are `ctc2 zero, cr5/cr6/cr7` -
+the **translation vector**, not the light block. The "zeroing the GTE light block"
+reading was wrong: nothing in the routine writes a light register (`cr8..cr20`), and the
+zeroed translation is what makes the extra rotation act about the origin; the tick also washes the screen `0x101010` once the *previous* frame's
 clock has passed the bound. The two texture pages also pin the trig tables' phase: the
 primary half's `u = (x >> 4) + 0x20` and the mirrored half's `-0x61 - (x >> 4)` stay
 inside their capture halves only when x is non-negative over the sampled half turn, so
