@@ -317,6 +317,31 @@ impl PlayWindowApp {
         offs
     }
 
+    /// The scene's **world-space** bounding box, for the world map's top-view
+    /// debug camera.
+    ///
+    /// Built off the same static draw list the occluder set and the coplanar
+    /// pass use, through the shared kernel
+    /// `engine_core::field_env::env_draws_world_aabb` the browser play page
+    /// also calls. It used to be the union of the uploaded meshes' *local*
+    /// vertex extents: every env-pack mesh is authored about its own origin,
+    /// so that box sat near `(0,0,0)` while the geometry it was meant to
+    /// frame sits at placement coordinates, and the top view framed the origin
+    /// corner with the map off to one side.
+    ///
+    /// `None` leaves the previous box in place - a scene with no static env
+    /// geometry has nothing to frame.
+    pub(super) fn scene_world_aabb(&self, res: &SceneResources) -> Option<([f32; 3], [f32; 3])> {
+        let draws = self.static_env_draws(res);
+        let ground = self
+            .session
+            .host
+            .scene
+            .as_ref()
+            .and_then(|sc| sc.walk_heightfield(&self.session.host.index).ok().flatten());
+        legaia_engine_core::field_env::env_draws_world_aabb(&[&draws], res, ground.as_ref())
+    }
+
     /// Build the occlusion-fade visibility gate's world-space occluder set
     /// from the same static draw list the render layers use (see
     /// `legaia_engine_core::field_occlusion`). Rebuilt per scene load.

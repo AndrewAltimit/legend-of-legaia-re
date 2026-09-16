@@ -79,8 +79,6 @@ impl PlayWindowApp {
             color_tmd_src_index,
             posed_placement_meshes,
             posed_tmds,
-            lo,
-            hi,
             world_map_hf,
             tmd_vram_emitters,
             tmd_color_emitters,
@@ -117,8 +115,6 @@ impl PlayWindowApp {
             let mut tmd_color_emitters: Vec<
                 Vec<legaia_engine_render::scene_lights::EmitterSample>,
             > = vec![Vec::new(); res.tmds.len()];
-            let mut lo = [f32::INFINITY; 3];
-            let mut hi = [f32::NEG_INFINITY; 3];
             for (src_i, rtmd) in res.tmds.iter().enumerate() {
                 // Build this mesh's untextured (F*/G*) vertex-colour primitives
                 // and upload them to the colour pipeline. `tmd_to_color_mesh`
@@ -183,16 +179,6 @@ impl PlayWindowApp {
                     }
                 }
                 if !cmesh.is_empty() {
-                    for p in &cmesh.positions {
-                        for ax in 0..3 {
-                            if p[ax] < lo[ax] {
-                                lo[ax] = p[ax];
-                            }
-                            if p[ax] > hi[ax] {
-                                hi[ax] = p[ax];
-                            }
-                        }
-                    }
                     tmd_color_emitters[src_i] =
                         legaia_engine_render::scene_lights::color_mesh_emitters(
                             &cmesh.positions,
@@ -254,15 +240,6 @@ impl PlayWindowApp {
                     // (if any) were already uploaded above.
                     continue;
                 }
-                let (mlo, mhi) = vmesh.aabb();
-                for ax in 0..3 {
-                    if mlo[ax] < lo[ax] {
-                        lo[ax] = mlo[ax];
-                    }
-                    if mhi[ax] > hi[ax] {
-                        hi[ax] = mhi[ax];
-                    }
-                }
                 // Diag: `LEGAIA_DIAG_MESHTEX=<res index>` dumps a KEPT mesh's
                 // surviving texture references (distinct CBA/TSB pairs) + AABB,
                 // for chasing a mesh that renders flat / mis-textured.
@@ -292,6 +269,7 @@ impl PlayWindowApp {
                     for c in &vmesh.colors {
                         *color_hist.entry(*c).or_insert(0usize) += 1;
                     }
+                    let (mlo, mhi) = vmesh.aabb();
                     log::info!(
                         "DIAG mesh tex: res {} (entry {} off {:#x}) verts {} tris {} \
                          aabb {mlo:?}..{mhi:?} refs: {} colors: {:?}",
@@ -482,8 +460,6 @@ impl PlayWindowApp {
                 color_tmd_src_index,
                 posed_placement_meshes,
                 posed_tmds,
-                lo,
-                hi,
                 world_map_hf,
                 tmd_vram_emitters,
                 tmd_color_emitters,
@@ -824,8 +800,12 @@ impl PlayWindowApp {
         // (the ocean texture + base CLUT are already uploaded by the slot-0 TIM
         // pass). `None` off the world map, so the per-tick advance self-gates.
         self.ocean_anim = self.resolve_ocean_anim();
-        if lo[0].is_finite() {
-            self.scene_aabb = (lo, hi);
+        // The top-view debug camera's framing box. World-space, through the
+        // shared `field_env::env_draws_world_aabb` kernel the browser play
+        // page calls: the placement transform is what turns an env-pack mesh's
+        // origin-centred extent into the box that actually contains the map.
+        if let Some(b) = self.scene_world_aabb(&res) {
+            self.scene_aabb = b;
         }
         // Bind each uploaded mesh slot to the matching actor and wire up the
         // idle animation (record 0) when the scene carries an ANM pack for

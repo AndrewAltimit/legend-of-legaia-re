@@ -317,7 +317,8 @@ pub fn perspective_rh(fov_y: f32, aspect: f32, near: f32, far: f32) -> [f32; 16]
 /// four values is `legaia_engine_core::world_map::WorldMapController`, live on
 /// every host, so both hosts pass the same four numbers here.
 ///
-/// - `aabb_lo` / `aabb_hi` - the loaded meshes' bounding box (mesh-local).
+/// - `aabb_lo` / `aabb_hi` - the scene's **world-space** bounding box (the
+///   union of the static env draws under their placement transforms).
 /// - `azimuth` - PSX angle units (`4096` = full turn).
 /// - `zoom` - positive pulls the camera in, negative pushes it out.
 /// - `pan_x` / `pan_z` - the top-view scroll, in world units.

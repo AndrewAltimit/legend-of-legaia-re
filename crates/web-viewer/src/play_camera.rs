@@ -51,35 +51,31 @@ impl LegaiaRuntime {
         }
     }
 
-    /// The scene AABB the world map's top-view debug camera frames: the union
-    /// of the built meshes' local extents, the native window's `scene_aabb`
-    /// definition. Built on first use and cached until the next scene
-    /// rebuild - no other camera reads it, so a field session never pays for
-    /// it.
+    /// The scene AABB the world map's top-view debug camera frames: the
+    /// **world-space** union of the scene's static env draws, through the
+    /// shared kernel `engine_core::field_env::env_draws_world_aabb` the
+    /// native window also calls. Built on first use and cached until the next
+    /// scene rebuild - no other camera reads it, so a field session never pays
+    /// for it.
+    ///
+    /// It used to be the union of the built meshes' *local* extents, which
+    /// boxes the authoring origin rather than the map: every env-pack mesh is
+    /// authored about its own origin while the geometry that draws sits at
+    /// placement coordinates. The top view framed the origin corner and the
+    /// map sat off-centre.
     fn scene_aabb(&mut self) -> ([f32; 3], [f32; 3]) {
         if let Some(b) = self.scene_aabb {
             return b;
         }
-        let mut lo = [f32::INFINITY; 3];
-        let mut hi = [f32::NEG_INFINITY; 3];
-        if let (Some(field), Some(res)) = (self.field.as_ref(), self.res()) {
-            for &idx in &field.env_tmds {
-                let Some(rtmd) = res.tmds.get(idx) else {
-                    continue;
-                };
-                let (mesh, _) = crate::field_scene::build_hybrid_env_mesh(rtmd, &res.vram);
-                for p in &mesh.positions {
-                    for ax in 0..3 {
-                        lo[ax] = lo[ax].min(p[ax]);
-                        hi[ax] = hi[ax].max(p[ax]);
-                    }
-                }
-            }
-        }
-        let out = if lo[0].is_finite() {
-            (lo, hi)
-        } else {
-            ([-1.0; 3], [1.0; 3])
+        const EMPTY: ([f32; 3], [f32; 3]) = ([-1.0; 3], [1.0; 3]);
+        let out = match (self.field.as_ref(), self.res()) {
+            (Some(f), Some(res)) => legaia_engine_core::field_env::env_draws_world_aabb(
+                &[&f.terrain, &f.placements],
+                res,
+                f.ground.as_ref(),
+            )
+            .unwrap_or(EMPTY),
+            _ => EMPTY,
         };
         self.scene_aabb = Some(out);
         out

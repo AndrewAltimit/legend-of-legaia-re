@@ -113,9 +113,11 @@ pub struct LegaiaRuntime {
     /// gaze), drained by the camera tick. `None` = the engine camera's own
     /// compass azimuth drives the d-pad remap, exactly as it does natively.
     pub(crate) camera_azimuth_override: Option<u16>,
-    /// Lazily-built scene AABB (the union of the built meshes' local extents,
-    /// the native `scene_aabb` definition), used only by the world map's
-    /// top-view debug camera. Cleared on every scene rebuild.
+    /// Lazily-built scene AABB - the **world-space** union of the scene's
+    /// static env draws, through the same
+    /// `engine_core::field_env::env_draws_world_aabb` kernel the native window
+    /// calls. Used only by the world map's top-view debug camera. Cleared on
+    /// every scene rebuild.
     pub(crate) scene_aabb: Option<([f32; 3], [f32; 3])>,
     /// FMV (STR / MDEC) playback state ([`crate::play_fmv`]).
     pub(crate) fmv: crate::play_fmv::FmvState,

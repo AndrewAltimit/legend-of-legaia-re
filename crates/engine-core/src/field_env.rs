@@ -1387,6 +1387,106 @@ fn partition0_record<'a>(
     Some((body, pc0))
 }
 
+/// World-space bounding box of a scene's static environment draws.
+///
+/// Each mesh's object-local vertex extent is carried through its own
+/// placement transform - `T(world_xyz) . Ry(rot_y)`, the yaw-only form
+/// [`crate::field_occlusion::FieldOccluders::add_instanced_mesh`] already
+/// instances with - and the boxes are unioned. `ground`, when present, is
+/// already world-space (`WalkHeightfield::positions` are
+/// `(col*128, -lut[nibble], row*128)`) and joins the union directly.
+///
+/// The frame is retail **Y-down**, the same frame [`EnvDraw`] and the
+/// heightfield are authored in; a host applies its own flip afterwards.
+///
+/// Why this exists: framing a scene off the meshes' *local* extents boxes the
+/// authoring origin rather than the map, because every env-pack mesh is
+/// authored about its own origin while the geometry that draws sits at
+/// placement coordinates up to `0x8000`. A top-view camera handed the local
+/// union frames the origin corner and the map sits off-centre.
+///
+/// Returns `None` when no draw resolves a mesh and no ground is supplied.
+pub fn env_draws_world_aabb(
+    draw_lists: &[&[EnvDraw]],
+    res: &crate::scene_resources::SceneResources,
+    ground: Option<&legaia_asset::field_objects::WalkHeightfield>,
+) -> Option<([f32; 3], [f32; 3])> {
+    let mut lo = [f32::INFINITY; 3];
+    let mut hi = [f32::NEG_INFINITY; 3];
+    let mut any = false;
+
+    // One local extent per distinct mesh - the same mesh is instanced dozens
+    // of times across a terrain list, and the extent does not depend on the
+    // instance.
+    let mut local: std::collections::HashMap<usize, ([f32; 3], [f32; 3])> =
+        std::collections::HashMap::new();
+
+    for list in draw_lists {
+        for d in list.iter() {
+            let ext = match local.get(&d.res_tmd) {
+                Some(e) => *e,
+                None => {
+                    let Some(rtmd) = res.tmds.get(d.res_tmd) else {
+                        continue;
+                    };
+                    let mut mlo = [f32::INFINITY; 3];
+                    let mut mhi = [f32::NEG_INFINITY; 3];
+                    for obj in &rtmd.tmd.objects {
+                        for v in &obj.vertices {
+                            let p = [f32::from(v.x), f32::from(v.y), f32::from(v.z)];
+                            for ax in 0..3 {
+                                mlo[ax] = mlo[ax].min(p[ax]);
+                                mhi[ax] = mhi[ax].max(p[ax]);
+                            }
+                        }
+                    }
+                    if !mlo[0].is_finite() {
+                        continue;
+                    }
+                    let e = (mlo, mhi);
+                    local.insert(d.res_tmd, e);
+                    e
+                }
+            };
+            // Rotate the local box's eight corners, then translate. Rotating
+            // the box rather than the vertices is conservative by at most the
+            // box's own slack and costs one pass per placement instead of one
+            // per vertex.
+            let ang = f32::from(d.rot_y & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
+            let (sn, cs) = ang.sin_cos();
+            let t = [d.world_x as f32, d.world_y as f32, d.world_z as f32];
+            for cx in [ext.0[0], ext.1[0]] {
+                for cy in [ext.0[1], ext.1[1]] {
+                    for cz in [ext.0[2], ext.1[2]] {
+                        let w = [
+                            cs * cx + sn * cz + t[0],
+                            cy + t[1],
+                            -sn * cx + cs * cz + t[2],
+                        ];
+                        for ax in 0..3 {
+                            lo[ax] = lo[ax].min(w[ax]);
+                            hi[ax] = hi[ax].max(w[ax]);
+                        }
+                        any = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(g) = ground {
+        for p in &g.positions {
+            for ax in 0..3 {
+                lo[ax] = lo[ax].min(p[ax]);
+                hi[ax] = hi[ax].max(p[ax]);
+            }
+            any = true;
+        }
+    }
+
+    any.then_some((lo, hi))
+}
+
 #[cfg(test)]
 mod anim_tests {
     use super::*;
