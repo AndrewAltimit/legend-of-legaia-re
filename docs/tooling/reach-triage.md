@@ -644,7 +644,7 @@ listed so the bucket count is the whole of what no host reaches.
 
 | group | n | addresses | why |
 |---|---|---|---|
-| `save_subscreen.rs` | 8 | `801e4f40` `801dd12c` `801dd26c` `801d98f0` `801dae24` `801daef4` `801dafd4` `801dbc5c` | Wired, and entered in part: `save_screen::SaveScreenFlow` constructs a `SaveScreenMachine` on its first card-rack frame and ticks it around the session, so both hosts run the graph and the union enters three of the eight. The other five are sub-screen bodies (`tick_final_exit`, `tick_pad_release_wait`, `tick_party_picker`, `tick_shop_mode_select`, `tick_quantity_spinner`) that no ladder opens - a wiring closure is not a reach closure. |
+| `save_subscreen.rs` | 8 | `801e4f40` `801dd12c` `801dd26c` `801d98f0` `801dae24` `801daef4` `801dafd4` `801dbc5c` | All eight entered. `save_screen::SaveScreenFlow` constructs a `SaveScreenMachine` on its first card-rack frame and ticks it around the session, which reaches three; `w1g_save_subscreen_ladder` opens the other five, and its gate was the **entry context** rather than a pad stream - see [below](#the-five-sub-screens-were-behind-an-entry-context-no-host-constructs). The wiring claim underneath is unchanged: no host opens a shop through this machine. |
 | `card_bu_io.rs` | 4 | `801e0598` `801e3d68` `801e380c` `801e435c` | **`REPLACED-BY`** `legaia_save::emu::CardView` + `legaia_save::card` - out of the wiring denominator, not owed a host. |
 | `cutscene_script_elements.rs` | 3 | `801d5d60` `801d6058` `801d27e0` | The seat exists now - `World::tick_cutscene_elements` runs the channel from the frame tick on both hosts - but nothing in production **spawns** an element into the pool, so a replay still enters none of the three `step` bodies. |
 | `shop.rs` | 2 | `801db7f4` `801dbd94` | Retail's quantity **steppers** - not a list, and not the engine's list screen. |
@@ -670,6 +670,29 @@ a missing call. Recorded per row so the decision is not re-derived:
 | `effect_ribbon.rs` `801cfa48` | keep `NOT WIRED` | a producer emitting actor render-mode-4 primitives; the module has no entry point until one exists |
 | `scene_transition_actor.rs` `80021934` | keep `NOT WIRED` | a staged-bundle scene loader - a host that parks a raw `.LZS` bundle where the descriptor walker reads it. The engine's `Scene` resource load is not a replacement for the *sequencing*, which is visible (the fade-out / countdown / MAIN INIT order) |
 | `field_save_screen_actor.rs` `80024190` | **`REPLACED-BY`**, taken | see [the verdict below](#the-save-screen-actor-is-a-replacement-not-a-wire) |
+
+#### The five sub-screens were behind an entry context no host constructs
+
+`SaveScreenMachine::new` takes a `SaveEntryContext`, and the context decides
+which sub-screen the flow opens on. `SaveScreenFlow` - the only production
+constructor in the workspace - passes the **card** context and nothing else, so
+four of retail's five contexts have no host at all, and every sub-screen behind
+them is unreachable however a pad is driven.
+
+`w1g_save_subscreen_ladder` takes the chain that is a real retail entry:
+`SaveEntryContext::ShopEntry` is the op-`0x49` record's own kind byte
+(`0x00`, `0x801DC89C`) and opens on the mode select, whose Sell row walks to the
+quantity spinner and back and whose Quit row walks to the terminal screen and
+exits the flow. Three bodies, by pad, through the dispatcher. The other two
+(`tick_pad_release_wait`, `tick_party_picker`) have no predecessor this module
+ports, so the ladder writes the screen id - which is what retail's own
+transition is, a store - and then drives each body by pad to both of its exits.
+
+Each rung asserts the body's observable product: the screen it moves to, the
+exit code it writes, or the effect it asks the host to perform. What the
+conversion does **not** establish is the wiring: no host constructs
+`ShopEntry`, `PostSave`, `CasinoPrizeCounter` or `DebugParamEditor`, and that
+gap is unchanged.
 
 #### The save-screen actor is a replacement, not a wire
 
@@ -815,9 +838,9 @@ about the cells that outlived their own fixtures.
 Nine of those eleven rows were converted by ladders that already existed and
 were already canonical, and the table went on naming the fixture each one
 needed. A coverage export over the full canonical union confirms it at the
-level the rows are written at - **35 of the table's 37 addresses are entered** -
-and the two it does not confirm are the fishing menu pair above, where the cell
-claimed a screen the ladder never opens. That is worth more than the row count, because it is the failure mode
+level the rows are written at - **every one of the table's 37 addresses is
+entered**, the last two being the fishing menu pair, where the cell claimed a
+screen the ladder never opened until one was written for it. That is worth more than the row count, because it is the failure mode
 this page is most exposed to: **a row's `reach` cell is a claim with no
 instrument behind it.** `--page-audit` checks the address column against the
 catalog and says nothing about the prose; nothing checks that a cell still
@@ -1285,7 +1308,7 @@ exists a release call would hand back resources nothing holds.
 | `boot_overlay.rs` | 4 | (d) | cli | `8001eef0` `8002574c` `80025ba0` `8003e360` |
 | `character_pack.rs` | 1 | (a) | field-render | `8001ebec` |
 | `face_anim.rs` | 1 | (a) | battle-render | `8004c7b4` |
-| `minigame_slot_scene.rs` | 5 | (b) | slot-bonus | `801cec94` `801cfff0` `801d069c` `801d0fa8` `801d3230` |
+| `minigame_slot_scene.rs` | 5 | - | Closed, and the row was stale rather than open: `w1l4_slot_bonus_marquee` and `w1l4_slot_bonus_marquee_ladder` are both canonical and a full-union export enters all five. See [the gates table](#gates-behind-the-b-rows) | `801cec94` `801cfff0` `801d069c` `801d0fa8` `801d3230` |
 | `save_icon.rs` | 1 | (a) | menu-render | `801e1934` |
 | `summon_readef.rs` | 2 | (a) | battle-render | `801f12d0` `801f19ec` |
 
@@ -1704,8 +1727,21 @@ anchor.
 
 | gate | rows | what has to happen |
 |---|---|---|
-| slot-bonus | 5 | the casino slot machine's bonus round and its marquee |
-| Seru capture | 1 | a fight that seats a monster carrying a `seru_id` and lands the capture roll |
+| *(none)* | | |
+
+Both rows this table last held are gone, and they went different ways.
+
+**slot-bonus was stale, not open.** Its five `legaia_asset::minigame_slot_scene`
+kernels (`801cec94` `801cfff0` `801d069c` `801d0fa8` `801d3230`) are entered -
+a coverage export over the full union measures every one of them - and the pair
+of ladders that does it, `w1l4_slot_bonus_marquee` (the disc-data half, which
+also spawns `asset slot-scene`) and `w1l4_slot_bonus_marquee_ladder` (a played
+bonus round), have both been canonical for some time. A gate row outlives its
+gate silently, because nothing joins this table against an export; re-read a
+gate against `CANONICAL_LADDERS` before quoting it, the same guard the
+`reach`-cell note above asks for.
+
+**Seru capture closed with a ladder, and the coverage number could not tell.**
 
 The former spirit-cast (5 rows) and summon-cast (3 rows) gates opened with
 the item-band wiring and the summon-spawn ladder; the "battle-escape" gate
@@ -1713,16 +1749,30 @@ was a misnomer for the timed-flags scene countdown. Two more closed with the
 ladders above: the **cast-module id** gate (11 rows) and the **capture-class
 cast** gate (2 rows).
 
-The Seru-capture row (`801e92dc`, `magic_xp::learn_spell_prepend`) is the one
-left, and its own row needs a correction rather than a fixture: the coverage
-side of it is already satisfied, because `battle_depth_replay` - a canonical
-member - calls `learn_spell_prepend` from its own test body to seat a caster.
-That executes the function, so the *reach* row converts, while the production
-route (`World::resolve_captures`, reached from battle teardown) stays undriven.
-A row whose only executor is a ladder's own setup code is entered and unwired
-at the same time, which is the one shape this page's buckets cannot express -
-read it as reach work still owed even when the coverage number stops naming
-it.
+The Seru-capture row (`801e92dc`, `magic_xp::learn_spell_prepend`) never needed
+a fixture to make its *number* move: the coverage side was already satisfied,
+because `battle_depth_replay` - a canonical member - calls
+`learn_spell_prepend` from its own test body to seat a caster. That executes
+the function, so the reach row read converted while the production route
+(`World::resolve_captures`, reached from battle teardown) ran in no ladder at
+all. A row whose only executor is a ladder's setup code is entered and undriven
+at the same time, which is the one shape this page's buckets cannot express.
+
+`w1g_seru_capture_ladder` drives the route: a capture spell cast in a live
+fight, the roll landed on a weakened monster, `World::finish_battle` ->
+`World::resolve_captures` -> `seru_learning::record_capture` -> the record-side
+prepend, asserted on the record rather than on the call. Its two seeds are both
+preconditions and neither is the gate's behaviour - the monsters sit at 1 HP
+because retail's roll scales with the missing-HP fraction, and the
+capture-points total is seeded just under the Seru's learn threshold the way a
+resumed save carries it, because one fight banks one capture's worth and the
+learn edge is otherwise unreachable from a cold start.
+
+**The instrument cannot see that this happened.** The ladder's own export
+reports `0 unique` - every address it enters, some other member enters too -
+so the closure is invisible to the number and visible only here. That is the
+honest cost of the shape: when a row's executor was setup code, the fixture
+that fixes it converts nothing.
 
 Four more gates closed the same way, and the pattern is worth naming: **a
 gate closes by seeding the one piece of state it is, not by waiting for a pad
