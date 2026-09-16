@@ -147,9 +147,10 @@ cheapest place to look for a claim that is still wrong.
   ids 2055 / 2060 / 2066; a flat `990 + slot` base gave 2053 / 2058 / 2064
   ([settled](re-settled-threads.md#audio)).
 - **The dance count-in banner is a sprite record, not text.** Record 0 of the
-  20-byte table at `0x801D46CC` - half-extents `0xA0` x `0x20`, texel seat
-  `(0x48, 0x90)`, CBA `0x7D0A` - seated by `FUN_801D2F38`, and its animator
-  samples once per three vsyncs.
+  20-byte table at `0x801D46CC` - texel cell `0xA0` x `0x20`, texel seat
+  `(0x48, 0x90)`, CBA `0x7D0A` - seated by `FUN_801D2F38`, which halves the cell
+  at the caller's unit scale, so it draws 160 x 32. Its animator samples once
+  per three vsyncs.
 - **The field follow camera's three "constants" were one state's values.** Over
   the walkable state population the pinned `H` holds in 12 of 19, the pitch in 8
   of 19 and the yaw in 1 of 19; retail derives all three per scene and per

@@ -70,10 +70,11 @@ holds**. The dwell is a module-resident countdown, and its drain is a per-arm
 multiplier of the scratchpad frame byte at `0x1F800393` - the product with
 `0x1F80037D`, twice that byte, or once it. So a drain measured on one arm
 describes that arm, and a run that stops short of expiry is indistinguishable
-from a gate firing. Measured per arm for the player-Seru half and for twelve of
-the fourteen trampoline-reached arms; two arms, PROT 0943's `0x40` and PROT
-0944's `0x53`, fault before their first tick in every post-turn state the
-capture corpus holds. Tables in
+from a gate firing. Measured per arm for the player-Seru half and for all
+fourteen trampoline-reached arms. Two of them, PROT 0943's `0x40` and PROT
+0944's `0x53`, read as faulting before their first tick until the caster was
+changed: the body does tick, and the unmapped read is SCUS walking a caster
+whose spell-entry array is shorter than the clip the arm stages. Tables in
 [`cast-module.md`](cast-module.md#frame-gating-measured).
 
 ## The effect VM has no opcode space
