@@ -447,6 +447,21 @@ impl Sequencer {
         self.finished = true;
     }
 
+    /// Pause: key-off every sounding note and hold the playhead where it is,
+    /// so the next tick after a resume fires the next event rather than
+    /// replaying the intro.
+    ///
+    /// Retail's pause arm (`FUN_800628F0`, mode `0`) only raises the slot's
+    /// flag `0x2`; the next per-tick service (`FUN_80062F98`) routes a
+    /// flagged slot through `FUN_800638D8`, which kills the channel's notes
+    /// and clears the flag. A gate that froze the clock but left the voices
+    /// keyed on held whatever was sounding for as long as it stayed shut -
+    /// the title theme's last note ringing under the whole attract movie.
+    // REF: FUN_800638D8
+    pub fn pause(&mut self, spu: &mut Spu) {
+        self.silence_all(spu);
+    }
+
     fn silence_all(&mut self, spu: &mut Spu) {
         for note in self.active.drain(..) {
             if (note.voice as usize) < spu.voices.len() {

@@ -6,8 +6,12 @@
 -- section 0's pack into the model pool. The two halves are gated differently:
 --
 --   0x8001EA54  bne v1, 2 -> 0x8001EAFC    the three `FUN_8001A55C` calls run
---                                          only when the mode word
---                                          `0x8007B83C` is 2 ...
+--                                          only when the load-state word
+--                                          gp+0x6AC (0x8007B9C4) is 0 or 2 ...
+--                                          (0x8007B83C, logged as `mode`, is
+--                                          gp+0x524 - the game mode, not the
+--                                          gate; autorun_registrar_routes.lua
+--                                          logs the gate word itself)
 --   0x8001EAFC  lw a0, 0x6bc(gp)           ... and this is the branch TARGET,
 --   0x8001EB34  lw a0, 0x6bc(gp)           so the registrar loop runs on every
 --   0x8001EB40  lw v0, 4(v0)               path, over whatever the buffer holds,
@@ -45,7 +49,7 @@ local LABEL      = probe.getenv("LEGAIA_LABEL", "registrar")
 local REGISTRAR = 0x8001EAFC
 local DECOMP    = 0x8001EA64      -- the section-0 decompress call site
 local PACK_PTR  = 0x8007B9D4      -- gp+0x6BC
-local MODE_W    = 0x8007B83C      -- the `== 2` gate
+local MODE_W    = 0x8007B83C      -- gp+0x524, the game mode (NOT the gate)
 local BANK      = 0x8007B6F8      -- scene model-bank base the registrar writes
 
 local function u8(a)  return probe.read_u8(a)  or 0 end

@@ -40,9 +40,12 @@ The two bytes before the EOF marker are that empty line, not the truncated
 All 266 slots carry **byte-identical** bytes through `+0x786` - one 1927-byte
 file, written 266 times.
 
-The same 1927 bytes appear once more, LZS-compressed, as the type-`0x14`
-descriptor slot of every count-4 and count-5
-[scene bundle](scene-bundles.md#the-flag-slot-is-the-pochi-fill-file). The
+The same 1927 bytes appear again, LZS-compressed to 239 bytes, as the trailing
+type-`0x14` `FLAG` descriptor of 28 of the disc's 105 count-prefixed
+[scene bundles](scene-bundles.md#the-flag-slot-is-the-pochi-fill-file) - not
+only the count-4/5 ones: 9 of 10 count-4, 4 of 4 count-5, 3 of 8 count-6 and
+12 of 80 count-7 - and as the *leading* type-`0x0A` descriptor of three more
+(`town0c` / `town0d` / `town0e`). The
 dispatcher answers a `0x14` with `type << 8` without reading the payload
 ([`asset-type.md`](asset-type.md)), so those bytes are never decompressed at
 runtime: the authoring tool filled a reserved descriptor rather than dropping

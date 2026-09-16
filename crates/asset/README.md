@@ -118,7 +118,7 @@ The dispatcher `categorize` runs every detector below and tags each entry's
 | `data_field_truncated` | Retired class (produced by nothing): its one hit, 0892, is an `asset::pack` of two TIMs whose header words the streaming reader took for chunk headers, and the three entries once named as members are ordinary four-chunk bundles. Pinned at zero in the validation suite. |
 | `tmd_size_prefix` | Sister of `scene_tmd_stream`: `[u32 prefix][TMD]` with no trailing stream. |
 | `anm_detect` | On-disc ANM (asset type 0x06) shape check wrapping `legaia_anm::parse`. |
-| `vab_multi_bank` | Multi-bank VAB archive: `[u32 reserved][u32 count][u32 sector_nums[N]]` (PROT 0889-0891). |
+| `vab_multi_bank` | The disc's one multi-bank VAB archive, extraction 0891 (`monster.snd`): `[u32 reserved][u32 count][u32 start_sector[count + 1]]`, then one two-chunk VAB per bank on its own sectors. Reader `FUN_8003E104`; layout in [`vab.md`](../../docs/formats/vab.md#the-multi-bank-archive-monstersnd). |
 | `field_objects` | Per-scene static-object placement table (terrain segments / buildings / props in world space). |
 
 ### `static_overlay`

@@ -209,8 +209,11 @@ gap sweeps stop re-flagging them; all are dumped under `ghidra/scripts/funcs/<ad
 | `8003D300` / `8003D320` | `AVSZ3` / `AVSZ4` | Second link copy of the AVSZ pair in the billboard/OT module band (`0x8003Dxxx`); the `8003D320` AVSZ4 variant additionally takes the `ZSF4` scale factor as a fifth argument (`ctc2` cr30). |
 | `8003D368` | `RTPS` (`0x0180001`) | Single-vertex projector: `(vec3*, sxy_out*) -> IR3`. Loads V0, projects, stores packed SXY2, returns the depth. The projector the dev line emitters (`FUN_8001CE34`) call. |
 | `8003D388` | `RTPT` (`0x0280030`) | `RotTransPers3`-shaped triangle projector: three SVECTOR pointers in, three packed-SXY out-pointers, returns IR3 (last vertex depth). Ghidra's auto-analysis splits this entry as `8003d388`/`8003d38c`; the body is one function at `0x8003D388`. |
+| `8003D1A4` / `8003D20C` | none (`ctc2` / `cfc2` cr0..cr7) | **GTE control-word save / restore pair.** `8003D20C` reads control registers 0..7 - the rotation matrix plus the translation vector `TR` - into a 32-byte block at `a0`; `8003D1A4` writes the same eight words back. Every routine that installs its own matrix brackets itself with the pair, which is why a scratchpad block address next to one of them is a saved GTE state rather than a transform. |
+| `8003D1EC` | none (`ctc2` cr5..cr7) | Loads the translation vector `TR` alone, from three words at `a0`. The `TR`-only half of the pair above. |
+| `8003D254` | none (`ctc2` cr26) | Sets the GTE projection distance `H`: `ctc2 a0,0xd000`, then `jr ra` - three instructions, no frame. The camera snap and the world-map top view both commit `_DAT_8007B6F4` through it. |
 | `80046190` | none | Far-colour read-back: `cfc2` cr21 (RFC) returned. Sits just before the `RotMatrixX` trio. |
-| `8003FABC` | none | Not a standalone primitive: the out-of-line tail of the `FUN_8003F86C` line-emitter module - restores `s0..s7` from the scratchpad save slots (`0x1F800000..0x1C`, the same convention `FUN_8003F86C`'s prologue writes), installs a `diag(0x6000)` RT and stages a vector into data regs 5..7. Reached only from the hand-scheduled emitter code. |
+| `8003FABC` | none | Not a standalone primitive: the out-of-line tail of the `FUN_8003F86C` fog-sheet emitter module - restores `s0..s7` from the scratchpad save slots (`0x1F800000..0x1C`, the same convention `FUN_8003F86C`'s prologue writes), installs a `diag(0x6000)` RT and stages a vector into data regs 5..7. Reached only from the hand-scheduled emitter code. |
 
 ### libapi interrupt-callback core (`0x8005FF20..0x800608E0`)
 

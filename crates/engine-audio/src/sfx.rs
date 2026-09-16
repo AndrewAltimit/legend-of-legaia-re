@@ -285,14 +285,14 @@ pub enum CueDispatch {
     /// slot** after the `1 → 0x1A`, `3 → 0x1B`, `5 → 0x1C` remap;
     /// `submode = id & 7` is the channel inside that file.
     ///
-    /// `pitch_index` is a misnomer this field keeps because two committed
-    /// pages cite it by name: it indexes `DAT_800788B8`, and what comes back
-    /// is the clip starter's **read span**, not a playback pitch. See
-    /// [`voice_pitch`], which carries the same wrong name and the evidence.
+    /// `span_index = id - 0x100` indexes the read-span table `DAT_800788B8`;
+    /// what comes back is the clip starter's **read span** in vsyncs
+    /// ([`voice_clip_span`]), not a playback pitch - the field used to be
+    /// called `pitch_index`, which nothing in either routine supports.
     Voice {
         channel: u8,
         submode: u8,
-        pitch_index: u16,
+        span_index: u16,
     },
 }
 
@@ -314,7 +314,7 @@ impl CueDispatch {
 ///   `id + 0x19C` (the retail `param_1 + 0x19c` compare).
 /// - `id >= 0x100` → [`CueDispatch::Voice`]: `channel = remap((id - 0x100) >> 3)`
 ///   (`1 → 0x1A`, `3 → 0x1B`, `5 → 0x1C`), `submode = (id - 0x100) & 7`,
-///   `pitch_index = id - 0x100`.
+///   `span_index = id - 0x100`.
 ///
 /// PORT: FUN_8004FCC8 (cue dispatch decode; the ring write / voice gate / SPU
 /// note-on stay with the caller - the ring is [`SfxScheduler`] / `FUN_80035B50`).
@@ -343,32 +343,29 @@ pub fn classify_cue(id: u32) -> CueDispatch {
         CueDispatch::Voice {
             channel,
             submode: (v & 7) as u8,
-            pitch_index: v as u16,
+            span_index: v as u16,
         }
     }
 }
 
-/// `(table_value * 0x3C + 99) / 100` - the integer round-up of
-/// `table_value * 0.6` - where `table_value` is the `u16` at
-/// `DAT_800788B8[pitch_index]`.
+/// The clip starter's **read span** for a voice cue: `(raw * 0x3C + 99) / 100`,
+/// the integer round-up of `raw * 0.6`, where `raw` is the `u16` at
+/// `DAT_800788B8[span_index]`.
 ///
-/// **The result is not a pitch.** `FUN_8004FCC8` passes it as the third
-/// argument of the CD-XA clip starter (`jal 0x8003d53c` at `0x8004fd74`,
-/// value in `a2`), and that argument is a **read span**: `FUN_8003D53C`
-/// copies it to `s0` and range-checks it against `0x2A31`
-/// (`slti v0,s0,0x2a31` at `0x8003d5c8`). Neither routine touches a pitch
-/// register. `legaia_asset::xa_cue_table` reads the same table and says so -
-/// the span is denominated in vsyncs - and
-/// `legaia_engine_shell::xa_clip::voice_clip_duration_sectors` is this same
-/// arithmetic under the right name.
-///
-/// The name survives here only because `docs/reference/functions/audio.md`
-/// and `docs/reference/re-settled-threads.md` cite it; a caller wanting the
-/// span should prefer the `xa_clip` spelling.
-pub fn voice_pitch(pitch_table_value: u16) -> u16 {
+/// It is not a pitch, and it used to be named `voice_pitch`. `FUN_8004FCC8`
+/// passes it as the third argument of the CD-XA clip starter (`jal
+/// 0x8003d53c` at `0x8004fd74`, value in `a2`), and `FUN_8003D53C` copies
+/// that argument to `s0`, range-checks it against `0x2A31` (`slti
+/// v0,s0,0x2a31` at `0x8003d5c8`) and stops the drive `(span * 150 + 149) /
+/// 60` sectors past the clip's start. Neither routine touches a pitch
+/// register. The span is denominated in vsyncs (`legaia_asset::xa_cue_table`);
+/// `legaia_engine_shell::xa_clip::voice_clip_duration_sectors` and
+/// `legaia_engine_vm::battle_cast_cue::admit_voice_cue` carry the same
+/// arithmetic.
+pub fn voice_clip_span(raw_span: u16) -> u16 {
     // Retail: `(value * 0x3C + 99) / 100`; the `+ 99` over `/ 100` is the
     // round-up of `value * 0.6`, i.e. `(value * 0x3C).div_ceil(100)`.
-    (pitch_table_value as u32 * 0x3C).div_ceil(100) as u16
+    (raw_span as u32 * 0x3C).div_ceil(100) as u16
 }
 
 /// One queued cue waiting for its firing frame.
@@ -854,17 +851,17 @@ mod tests {
     #[test]
     fn classify_cue_voice_range_remaps_channel() {
         // id >= 0x100: voice. v = id - 0x100; channel = remap(v >> 3),
-        // submode = v & 7, pitch_index = v.
-        // v = 8 -> v>>3 = 1 -> channel 0x1A; submode 0; pitch_index 8.
+        // submode = v & 7, span_index = v.
+        // v = 8 -> v>>3 = 1 -> channel 0x1A; submode 0; span_index 8.
         match classify_cue(0x108) {
             CueDispatch::Voice {
                 channel,
                 submode,
-                pitch_index,
+                span_index,
             } => {
                 assert_eq!(channel, 0x1A);
                 assert_eq!(submode, 0);
-                assert_eq!(pitch_index, 8);
+                assert_eq!(span_index, 8);
             }
             _ => panic!("expected Voice"),
         }
@@ -900,14 +897,17 @@ mod tests {
     }
 
     #[test]
-    fn voice_pitch_rounds_up_times_point_six() {
+    fn voice_clip_span_rounds_up_times_point_six() {
         // (100 * 0x3C + 99) / 100 = (6000 + 99)/100 = 60.
-        assert_eq!(voice_pitch(100), 60);
+        assert_eq!(voice_clip_span(100), 60);
         // (1 * 60 + 99)/100 = 159/100 = 1 (round-up of 0.6).
-        assert_eq!(voice_pitch(1), 1);
-        assert_eq!(voice_pitch(0), 0);
+        assert_eq!(voice_clip_span(1), 1);
+        assert_eq!(voice_clip_span(0), 0);
         // (200*60+99)/100 = 12099/100 = 120.
-        assert_eq!(voice_pitch(200), 120);
+        assert_eq!(voice_clip_span(200), 120);
+        // The two captured casts: raw 1143 -> 686 vsyncs, raw 946 -> 568.
+        assert_eq!(voice_clip_span(1143), 686);
+        assert_eq!(voice_clip_span(946), 568);
     }
 
     #[test]

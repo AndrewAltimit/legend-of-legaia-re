@@ -1906,6 +1906,10 @@ impl LegaiaRuntime {
         // bands and the move-FX afterimage streak. Mutually exclusive with
         // the intro in practice (transition vs. live battle).
         prims.extend(self.battle_fx_screen_prims());
+        // The field fog sheets (`legaia_engine_core::fog_particles`): the
+        // pool's render step through the follow camera, the native window's
+        // `take_field_fog_prims` twin ([`crate::play_field_fx`]).
+        prims.extend(self.tick_field_fog_prims());
         // The battle value readout - retail's 24x24 numeral cells and the
         // `N HIT` / `TOTAL` counter cluster - off the resident effect atlas,
         // through the same `battle_numerals` builder the native window emits.

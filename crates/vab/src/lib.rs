@@ -41,6 +41,24 @@
 //! bytes 2..16: 14 nibble pairs, low nibble first = 28 4-bit samples
 //! ```
 //!
+//! ## On disc a VAB is two chunks, not one blob
+//!
+//! Every VAB on this disc is carried inside a DATA_FIELD chunk stream, and the
+//! two halves above are **separate chunks**:
+//!
+//! ```text
+//! [u32 (0x00 << 24) | header_part_len]   chunk 0 header
+//! [VabHdr .. VAG size table]             chunk 0 payload = the header part
+//! [u32 (type << 24) | body_len]          chunk 1 header  <-- 4 bytes, in the middle of the VAB
+//! [VAG bodies]                           chunk 1 payload
+//! ```
+//!
+//! `header_part_len + body_len == fsize`, and `header_part_len` is exactly
+//! `0x20 + 0x800 + 0x200 * ps + 0x200` in all 424 retail VABs. The layout
+//! matters because [`parse`] walks straight on from the size table, so the
+//! spans it reports for VAG bodies are off by that intervening chunk header -
+//! see [`vag_body_origin`], which reads the real origin off the stream.
+//!
 //! Shares the F0/F1 filter constants with [`legaia_xa`] - the algorithm is
 //! identical to XA-ADPCM, only the block packaging differs.
 
@@ -341,6 +359,82 @@ pub fn parse(buf: &[u8], offset: usize) -> Result<VabReport> {
     })
 }
 
+/// Byte length of the VAB's header part: `VabHdr`, the 128-slot program
+/// table, `ps` rows of tone attributes, and the 256-slot VAG size table.
+///
+/// This is the number the DATA_FIELD chunk header in front of every retail VAB
+/// carries as its payload length, in all 424 VABs on the disc.
+pub fn header_part_size(ps: usize) -> usize {
+    VAB_HEADER_SIZE
+        + PROGRAMS_TABLE_SIZE
+        + TONE_SIZE * TONES_PER_PROGRAM * ps
+        + 2 * VAG_TABLE_ENTRIES
+}
+
+/// Where the first VAG body really starts, for a VAB carried in a DATA_FIELD
+/// chunk stream that begins at `stream_start`.
+///
+/// **Why this is not `offset + header_part_size(ps)`.** A retail VAB is stored
+/// as two chunks of the same stream, not as one contiguous blob: chunk 0's
+/// payload is the header part and a *later* chunk's payload is the VAG bodies,
+/// with that chunk's own 4-byte header in between. `parse`'s
+/// [`VagSampleSpan::byte_offset`] walks straight on from the size table, so it
+/// lands on the intervening chunk header - four bytes early where the body
+/// chunk comes next, and further when another chunk intervenes.
+///
+/// The body chunk is identified by a length the container states rather than
+/// by a magic: its payload is exactly `fsize - header_part_size(ps)` bytes,
+/// because the two payloads sum to the VAB's declared `fsize`.
+///
+/// Six retail entries (`0886`, `1058`, `1059`, `1063`, `1064`, `1065`) put the
+/// SEQ chunk *before* the body chunk, so for them the skew is thousands of
+/// bytes and an alignment probe over `{0, 4}` cannot recover it. Everything
+/// that indexes a VAG body out of a stream entry should come through here.
+pub fn vag_body_origin(buf: &[u8], stream_start: usize) -> Result<usize> {
+    let head = read_u32(buf, stream_start).context("stream head word")?;
+    if head >> 24 != 0 {
+        bail!(
+            "chunk 0 at {stream_start:#x} is type {:#x}, not the VAB header part",
+            head >> 24
+        );
+    }
+    let header_len = (head & 0x00FF_FFFF) as usize;
+    let vab = stream_start + 4;
+    let header = parse_header(buf, vab)?;
+    if header_len != header_part_size(header.ps as usize) {
+        bail!(
+            "chunk 0 payload {header_len} != the header part for {} program(s)",
+            header.ps
+        );
+    }
+    let want = (header.fsize as usize)
+        .checked_sub(header_len)
+        .context("VAB fsize is shorter than its own header part")?;
+    let mut p = vab + header_len;
+    for _ in 0..8 {
+        let h = read_u32(buf, p).with_context(|| format!("chunk header at {p:#x}"))?;
+        if h == 0 {
+            break;
+        }
+        let len = (h & 0x00FF_FFFF) as usize;
+        if len == want {
+            return Ok(p + 4);
+        }
+        p = p
+            .checked_add(4 + ((len + 3) & !3))
+            .context("chunk walk overflowed")?;
+        if p >= buf.len() {
+            break;
+        }
+    }
+    bail!("no chunk in this stream carries the {want}-byte VAG body")
+}
+
+fn read_u32(buf: &[u8], at: usize) -> Option<u32> {
+    let b = buf.get(at..at + 4)?;
+    Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+}
+
 /// Find every standalone VAB header in `buf`. Walks for the magic byte
 /// pattern and validates each candidate by trying [`parse_header`].
 pub fn find_vabs(buf: &[u8]) -> Vec<usize> {
@@ -377,12 +471,17 @@ fn legal_filter_blocks(buf: &[u8], align: usize) -> (usize, usize) {
 /// Decode a VAG body whose ADPCM block grid may not start at byte 0.
 ///
 /// **Why this exists.** The sample spans [`parse`] reports start **4 bytes
-/// before** the real ADPCM grid on every VAB in the retail corpus: the declared
-/// section sizes (header + ProgAtr + VagAtr + VAG size table) sum to a body
-/// origin 4 bytes below where the blocks actually begin, so a span's first four
-/// bytes are the tail of the previous sample. Feeding such a body straight to
+/// before** the real ADPCM grid on most VABs in the retail corpus, and the four
+/// bytes are a DATA_FIELD chunk header: the bodies are a chunk of their own, so
+/// its header sits between the VAG size table and the first block (see the
+/// module docs and [`vag_body_origin`]). Feeding such a body straight to
 /// [`decode_vag`] decodes nothing at all - the misaligned first block reads as a
 /// filter index of 8 (or an end flag), and the decoder stops on the sentinel.
+///
+/// The probe below is therefore a fallback, not the rule, and it is one-sided:
+/// six retail entries put another chunk between the two halves, so their skew is
+/// thousands of bytes and no `{0, 4}` probe recovers it. Prefer
+/// [`vag_body_origin`] wherever the containing stream is in hand.
 ///
 /// The skew is not a guess. An SPU-ADPCM block header's high nibble is the
 /// filter index and only `0..=4` are legal, which makes the alignment
@@ -394,8 +493,9 @@ fn legal_filter_blocks(buf: &[u8], align: usize) -> (usize, usize) {
 ///
 /// [`decode_vag`] and [`parse`] are left alone: their `byte_offset` is what
 /// every existing consumer (including the SPU upload path) already indexes with.
-/// Correcting the origin belongs in `parse`, but that shifts a value other
-/// subsystems depend on and wants its own change.
+/// Correcting the origin belongs in `parse` - now that the cause is known it is
+/// a mechanical change - but it shifts a value other subsystems depend on and
+/// wants its own change.
 pub fn decode_vag_aligned(buf: &[u8]) -> Result<Vec<i16>> {
     // Only 0 and 4 are plausible origins (a block is 16 bytes and the skew is a
     // whole number of words); probe both and demand a clean winner.

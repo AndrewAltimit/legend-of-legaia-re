@@ -873,6 +873,25 @@ only the readback that lands the captured field frame the styles sample -
 [`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-across-the-two-hosts)
 for how the capture reaches each host's VRAM.
 
+#### Field fog sheets (`FUN_8003F348`)
+
+The one draw list retail emits from *inside* the field render pass rather
+than from an actor: when the game mode is `3` and the script gate
+`_DAT_8007B854` is set, `FUN_80026CE4` stages the four UV rows at
+`0x8007322C` into scratchpad `0x1F8002D0` and calls `FUN_8003F348`, which
+walks the 80-record fog pool at `_DAT_8007B7E0` and, per live record, ages,
+drifts, colours and emits two `POLY_FT4` halves (command `0x2E`, page
+`0x27`, CLUT `0x7640`, OT bucket `view_z >> 5`) through `FUN_8003F86C`. The
+records come from the ambient emitter's spawner `FUN_801D629C`
+([`field-ambient-fx.md`](field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)).
+The port keeps that shape: `engine-core::fog_particles` is the pool and the
+pass's arithmetic, `World::fog_render_step` is the draw-path call each host
+makes with its follow camera, and the quads join this ordering-table pass
+through `screen_prim::fog_puff_prim` - which is also where the port differs:
+the pass composites over the finished 3D frame, so the sheets do not
+depth-sort against scene geometry the way retail's single ordering table
+sorts them.
+
 ### The field-to-battle transition emitter
 
 The two capabilities above exist for one consumer, and

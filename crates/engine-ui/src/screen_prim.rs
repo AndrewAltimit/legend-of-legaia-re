@@ -263,6 +263,34 @@ pub fn fade_prim(rgb: u32, abr_mode: u8, ot_index: u32) -> ScreenPrim {
     )
 }
 
+/// One half of a field fog sheet as the `POLY_FT4` retail's `FUN_8003F86C`
+/// links: textured, semi-transparent, texture-blended (command `0x2E`),
+/// the flat `rgb` in the command word, at the OT bucket of the sheet's
+/// bottom-right depth. The fields are exactly the engine-core
+/// `fog_particles::FogQuad` the pool's render step emits; both hosts wrap
+/// through this so the blend class and the vertex order cannot differ.
+///
+/// REF: FUN_8003F86C
+pub fn fog_puff_prim(
+    xy: [(i16, i16); 4],
+    uv: [(u8, u8); 4],
+    clut: u16,
+    tpage: u16,
+    rgb: [u8; 3],
+    ot_index: u32,
+) -> ScreenPrim {
+    ScreenPrim::Textured(ScreenQuad {
+        xy,
+        uv,
+        clut,
+        tpage,
+        color: (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]),
+        gouraud: None,
+        semi_transparent: true,
+        ot_index,
+    })
+}
+
 /// OT bucket the cinematic bar emitter links its two quads at - retail's
 /// literal `*(0x1F8003F4) + 8`, i.e. eight buckets in front of the scene's
 /// own base, which is what puts the bars over everything.

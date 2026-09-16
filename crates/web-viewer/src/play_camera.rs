@@ -159,7 +159,9 @@ impl LegaiaRuntime {
     /// { "arm": "follow" | "cutscene" | "worldmap_walk" | "worldmap_topview"
     ///          | "host_debug_orbit",
     ///   "focus": [x, y, z], "pitch": rad, "yaw": rad, "roll": rad,
-    ///   "h": f, "tr": [x, y, z] }        // absent on the two orbit arms
+    ///   "h": f, "tr": [x, y, z],         // absent on the two orbit arms
+    ///   "zone": true | false }           // follow arm composed from the
+    ///                                    // scene's camera-region record
     /// ```
     pub fn play_camera_view_json(&mut self) -> String {
         let frame = self.resolve_camera_frame();
@@ -175,9 +177,41 @@ impl LegaiaRuntime {
                 "arm": arm,
                 "focus": v.focus, "pitch": v.pitch, "yaw": v.yaw, "roll": v.roll,
                 "h": v.h, "tr": v.tr_eye,
+                "zone": self.camera.zone.active,
             })
             .to_string(),
             None => serde_json::json!({ "arm": arm }).to_string(),
+        }
+    }
+
+    /// The GTE `H` the engine camera is projecting through this frame - the
+    /// live camera global with `camera_view`'s field fallback applied. The
+    /// parity test compares the page's resolved frame against this rather
+    /// than against a pinned constant: a scene's entry beat may glide slot
+    /// `9` (town01's names `500`), so the value is a per-frame output.
+    pub fn play_camera_gte_h(&self) -> f32 {
+        match self.camera.globals.h() {
+            0 => camera_view::FIELD_H,
+            v => v as f32,
+        }
+    }
+
+    /// The compass azimuth the engine camera is publishing this tick
+    /// (`Camera::compass_azimuth_units`), for the page's diagnostics and the
+    /// compass oracle.
+    pub fn debug_compass_azimuth(&self) -> u16 {
+        self.camera.compass_azimuth_units()
+    }
+
+    /// The zone-driven follow camera's live `(pitch, yaw)` in PSX 12-bit units
+    /// - the composed `_DAT_8007B790/92` the engine eases per frame - or
+    /// empty while no scene terrain drives it. What the parity oracle
+    /// compares the page's follow view against: the value is per scene and
+    /// per tile, not a pin.
+    pub fn play_camera_follow_angles(&self) -> Vec<i32> {
+        match self.camera.zone_follow_yaw_units() {
+            Some(yaw) => vec![i32::from(self.camera.globals.0[0] as i16), yaw],
+            None => Vec::new(),
         }
     }
 

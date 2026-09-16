@@ -328,6 +328,9 @@ impl World {
                 scene.enabled = on;
             }
         }
+        // The same word gates the render pass's pool walk (`0x80026EBC`), so
+        // the pool keeps its own copy for `World::fog_render_step`.
+        self.fog.gate = on;
     }
 
     /// Is the object `link` names finished (`linked[+0x10] & 8`)?
@@ -367,6 +370,16 @@ impl World {
         }
         let mut frame = ElementFrame::default();
         let mut live = std::mem::take(&mut self.cutscene.elements);
+        // The fog pool the ambient emitter spawns into (`FUN_801D629C`):
+        // taken out for the pass so the spawn closure can hold it beside the
+        // element list. Its inputs are the walk-region box the spawner
+        // clips against (`0x1F800384..87`) and the player position the
+        // emitter's scene arm centres its bursts on (`_DAT_80089118/20`
+        // hold the negated player X/Z; the follow camera's focus).
+        let mut fog = std::mem::take(&mut self.fog);
+        let window = self.terrain.region_attributes.box_bytes;
+        let [player_x, _, player_z] = self.fog_player_world_pos();
+        let trig = crate::action_effect_script::retail_rotation_lut();
         for el in live.iter_mut() {
             let linked_done = self.element_link_done(el.link);
             match &mut el.kind {
@@ -388,10 +401,16 @@ impl World {
                     el.done = t.done;
                 }
                 ElementKind::AmbientEmitter { emitter, scene } => {
-                    frame.particles.extend(emitter.step(scene, &mut rand));
+                    scene.camera_x = -player_x;
+                    scene.camera_y = -player_z;
+                    emitter.step_with(scene, &mut rand, |p, rand| {
+                        fog.spawn(p.x, p.y, window, trig, rand);
+                        frame.particles.push(p);
+                    });
                 }
             }
         }
+        self.fog = fog;
         let before = live.len();
         live.retain(|el| !el.done);
         frame.retired = before - live.len();

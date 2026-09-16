@@ -97,6 +97,49 @@ Moral: when an entry's footprint over-reads a KNOWN overlay, subtract the
 aliased region before trusting a recovered base. See
 [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).)
 
+### One prologue is not a landslide
+
+The tally degenerates when an image has only a few function prologues. Every
+internal call target `T` votes for `B = T - prologue_offset`, so with a single
+prologue every target votes for a *different* base and nothing can win by more
+than one vote - and the winner is then decided by whichever target happens to be
+**external**, because an external target is the one that lands on that prologue
+at an implausible base.
+
+PROT `0981` (the dev monster-test harness) is the case on this disc. The image
+carries one prologue, at file `+0x38`, and one call out of the slot-A band; the
+recovery reports a base that puts that external target on the prologue, with a
+single vote. Three things from the image's own operands contradict it, and all
+three point at the shared slot-A base:
+
+- `lui`+`addiu` pointer resolution is 21 of 23 there and 0 of 23 at the
+  recovered base.
+- Eight of the nine in-image `j` / `jal` targets land inside the file there; the
+  ninth is the external call.
+- The 324-byte routine at file `+0x1AC` is byte-identical to the one printed at
+  `0x801CE9C4` in a world-map RAM capture, and those bytes occur in no other
+  PROT entry on the disc - so the image really is resident at `0x801CE818`, and
+  `0x801CE9C4 - 0x1AC` gives the base directly.
+
+The row is therefore `base_source = "cross_ref"`, which is what stops the
+reproducibility test from asserting a recovery that is known to be wrong. A
+one-vote recovery is not evidence of a base; below the map's `--min-votes`
+floor, read the operands instead.
+
+### When no base fits at all
+
+There is a second failure mode, and it is a *result* rather than a gap. Take
+every address the image's own `lui`+`addiu` pairs and `j` / `jal` targets form
+inside the overlay band, and slide a window the width of the file across them:
+the best window position is the best any base could do. A pinned control - the
+menu overlay at the slot-A base - holds all but two of more than twelve hundred
+such addresses. PROT `0896` tops out a little above four fifths, at every
+position, and it has no printable string long enough to anchor because its
+label table is Shift-JIS. So its references are mostly external, no base makes
+it self-consistent, and it stays out of the map until a capture shows it
+resident - which is the same conclusion the cautionary tale above reaches from
+the loader side, reached without an emulator.
+
 ## The committed map
 
 [`crates/asset/data/static-overlays.toml`](../../crates/asset/data/static-overlays.toml)

@@ -39,13 +39,24 @@ After the 32-byte header:
 0x820            VagAtr[16][ps]  32 bytes per tone, 16 tones per program slot
                                  -> tones section size = 512 * ps
 +(2048+512*ps)   u16 vag_table[256]
-                   first entry is master shift (often 0 in v7)
-                   entries 1..=vs hold cumulative VAG sizes / 8 (8-byte units)
+                   entry 0 is a reserved spacer, 0 in every retail bank
+                   entries 1..=vs hold per-sample VAG sizes / 8 (8-byte units)
 +0x200 (after table)  VAG bodies (raw SPU ADPCM, 16-byte blocks)
 ```
 
-`vag_table[i+1]` is the *size* of sample `i` in 8-byte units. Samples are
-concatenated immediately after the table.
+`vag_table[i+1]` is the *size* of sample `i` in 8-byte units, and the samples
+are concatenated - but **not immediately after the table on disc**. Every retail
+bank is carried in a DATA_FIELD chunk stream with its header part and its bodies
+in *separate chunks*, so a 4-byte chunk header sits between the size table and
+the first ADPCM block (more where another chunk intervenes). `parse` walks
+straight on, so its `byte_offset` spans are that header's address; use
+[`vag_body_origin`] for the real one, or `decode_vag_aligned` when only the body
+is in hand. Layout + the six entries with a larger skew:
+[`docs/formats/vab.md`](../../docs/formats/vab.md#a-vab-is-carried-as-two-chunks-and-the-bodies-are-the-second).
+
+Exactly one entry holds more than one bank: extraction 0891 (`monster.snd`),
+206 banks addressed by a sector index in its own first sector
+([`legaia_asset::vab_multi_bank`](../asset/README.md)).
 
 ## VAG body (SPU ADPCM)
 

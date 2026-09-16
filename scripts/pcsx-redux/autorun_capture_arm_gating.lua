@@ -46,6 +46,15 @@
 --   LEGAIA_TAIL          vsyncs to keep logging after the band ends (60)
 --   LEGAIA_IDLE_QUIT     quit after this many tickless vsyncs post-cast (240)
 --   LEGAIA_LABEL         free-text label written into manifest.txt
+--   LEGAIA_TRAP_UNMAPPED 1 = install the emulator's `UnknownMemoryRead` /
+--                        `UnknownMemoryWrite` Lua hooks and log every
+--                        unmapped access (pc, ra, address, width, phase) to
+--                        faults.csv instead of letting the debugger PAUSE the
+--                        emulator on it. Under `-debugger` an unmapped read
+--                        stops the whole run with "8-bit read from unknown
+--                        address" as the last log line and no PC - which is
+--                        the shape the two faulting arms took. The hook
+--                        answers 0 so the walk continues past the read.
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
 
@@ -70,6 +79,7 @@ local PARTY_HP    = probe.getenv_num("LEGAIA_PARTY_HP", 9999)
 local TAIL        = probe.getenv_num("LEGAIA_TAIL", 60)
 local IDLE_QUIT   = probe.getenv_num("LEGAIA_IDLE_QUIT", 240)
 local LABEL       = probe.getenv("LEGAIA_LABEL", "capture-arm")
+local TRAP        = probe.getenv("LEGAIA_TRAP_UNMAPPED", "") == "1"
 
 local ACTOR_TABLE = 0x801C9370
 local CTX_PTR     = 0x8007BD24
@@ -137,7 +147,8 @@ local function regs()
     return (r.GPR and r.GPR.n) or {}
 end
 
-local ticks_csv, wrap_csv, flow_csv
+local ticks_csv, wrap_csv, flow_csv, faults_csv
+local n_faults = 0
 local injected, band_seen = false, false
 local tick_n, wrapper_n = 0, 0
 local elapsed_now = 0
@@ -176,6 +187,38 @@ probe.run({
             "tick,vsync,kind,which,a0,a1,a2,a3,ra,v0,phase")
         flow_csv = probe.csv_open(probe.out_path("flow.csv"),
             "vsync,ctx6,ctx7,acting,phase,mon_cat,mon_id,mon_tgt,loader,arm,slotb0")
+
+        if TRAP then
+            -- The emulator calls these globals for any access to an address
+            -- no device backs. Logging the CPU state here names the
+            -- instruction that formed the pointer - the one thing the paused
+            -- run could not say.
+            faults_csv = probe.csv_open(probe.out_path("faults.csv"),
+                "n,vsync,tick,kind,width,addr,value,pc,ra,st7,phase,loader,slotb0")
+            local function fault_row(kind, addr, size, value)
+                n_faults = n_faults + 1
+                if n_faults > 500 then return end
+                local n = regs()
+                local r = PCSX.getRegisters()
+                local cx = ctxp()
+                faults_csv:row("%d,%d,%d,%s,%d,0x%08X,0x%08X,0x%08X,0x%08X,0x%02X,%d,%d,0x%08X",
+                    n_faults, elapsed_now, tick_n, kind, size, tou32(addr), tou32(value),
+                    tou32(r.pc), tou32(n.ra), cx and u8(cx + 7) or 0,
+                    cx and u8(cx + 0x279) or 0, u8(LOADER_ID), u32(SLOTB))
+                if n_faults <= 8 then
+                    PCSX.log(string.format("[unmapped %s%d] t%d addr=0x%08X pc=0x%08X ra=0x%08X",
+                        kind, size, elapsed_now, tou32(addr), tou32(r.pc), tou32(n.ra)))
+                end
+            end
+            _G.UnknownMemoryRead = function(addr, size)
+                fault_row("read", addr, size, 0)
+                return 0
+            end
+            _G.UnknownMemoryWrite = function(addr, size, value)
+                fault_row("write", addr, size, value)
+                return true
+            end
+        end
 
         -- One hit per capture-class module tick.
         probe.arm_breakpoint(CAP_DISPATCH, "Exec", 4, "cap_dispatch", function()
@@ -329,8 +372,12 @@ probe.run({
                 PCSX.log(string.format("[capture-arm] body 0x%08X entered %d times", va, body_hits[va]))
             end
         end
+        if TRAP then
+            PCSX.log(string.format("[capture-arm] unmapped accesses trapped: %d", n_faults))
+        end
         if ticks_csv then ticks_csv:close() end
         if wrap_csv then wrap_csv:close() end
         if flow_csv then flow_csv:close() end
+        if faults_csv then faults_csv:close() end
     end,
 })

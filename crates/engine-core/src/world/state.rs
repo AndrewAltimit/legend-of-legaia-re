@@ -57,6 +57,10 @@ pub struct World {
     pub presentation: ScreenFxState,
     /// Story / system flag words: the retail flag arrays and the story-flag bit image the scripts test and set.
     pub flags: StoryFlagState,
+    /// The field fog-particle pool (`_DAT_8007B7E0`) the ambient emitter
+    /// spawns into and the render pass draws from - see
+    /// [`crate::fog_particles`].
+    pub fog: crate::fog_particles::FogPool,
     /// Field-VM `screen_mode` register read by op 0x42 mode 1 - packed mode
     /// bits (bits 4 / 5 / 6 / 7 individually testable; bits 12..15 indexed
     /// against `screen_mode_table`).
@@ -289,6 +293,7 @@ impl World {
             party: PartyState::new(),
             presentation: ScreenFxState::new(),
             flags: StoryFlagState::new(),
+            fog: crate::fog_particles::FogPool::new(),
             screen_mode: 0,
             rng_state: 0x1234_5678,
             casting: CastFxState::new(),

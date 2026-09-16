@@ -102,6 +102,13 @@ pub struct AudioBgmDirector {
     /// requests the melee kernel makes). Same staging caveat as the shout
     /// bank: disc image only.
     xa_clip_bank: Option<XaClipBank>,
+    /// Where a clip the bank does not hold is staged **from at cast time**:
+    /// the disc image and the `XA<n>.XA` files' `(lba, sectors)`, resolved
+    /// once at boot ([`Self::set_xa_lazy_source`]). The cast band names
+    /// seventeen files (`docs/subsystems/cast-module.md`); none is decoded
+    /// until a cast names its channel, and then only the read span the
+    /// starter would have covered. `None` on a disc-free boot.
+    xa_lazy: Option<XaLazySource>,
     /// The battle audio duck, in retail's own units: `_DAT_8007B910` is the
     /// live level (seeded `0xD7` = [`DUCK_LEVEL_REF`] by the cold reset
     /// `FUN_8001FFA4`), ramped one unit per vsync toward a target the action
@@ -122,6 +129,89 @@ pub const DUCK_LEVEL_REF: u8 = 0xD7;
 /// way ([`AudioBgmDirector::stage_transient_sfx_vab`]).
 pub const TRANSIENT_REWARD_SLOT: u8 = 11;
 
+/// The disc side of lazy CD-XA staging: the image path and every
+/// `XA<n>.XA`'s `(lba, sectors)` keyed by clip slot `n - 1`.
+struct XaLazySource {
+    disc: std::path::PathBuf,
+    files: BTreeMap<u8, (u32, u32)>,
+}
+
+impl XaLazySource {
+    /// Walk the disc's ISO once for the `XA<n>.XA` files. `None` when the
+    /// image does not open or carries none.
+    fn open(disc: &std::path::Path) -> Option<Self> {
+        let mut raw = legaia_iso::raw::RawDisc::open(disc).ok()?;
+        let volume = legaia_iso::iso9660::read_volume(&mut raw).ok()?;
+        let files = legaia_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
+        let mut map = BTreeMap::new();
+        for (path, rec) in &files {
+            let base = path.rsplit('/').next().unwrap_or(path);
+            let base = base.split(';').next().unwrap_or(base).to_ascii_uppercase();
+            let Some(n) = base
+                .strip_prefix("XA")
+                .and_then(|s| s.strip_suffix(".XA"))
+                .and_then(|s| s.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            let Ok(slot) = u8::try_from(n.checked_sub(1)?) else {
+                continue;
+            };
+            let sectors = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
+            map.insert(slot, (rec.lba, sectors));
+        }
+        (!map.is_empty()).then_some(Self {
+            disc: disc.to_path_buf(),
+            files: map,
+        })
+    }
+
+    /// `count` raw 2352-byte sectors from `lba`, concatenated.
+    fn read_sectors(&self, lba: u32, count: u32) -> Option<Vec<u8>> {
+        let mut raw = legaia_iso::raw::RawDisc::open(&self.disc).ok()?;
+        let mut out = Vec::with_capacity(
+            count as usize * legaia_engine_audio::xa_clip_bank::RAW_SECTOR_BYTES,
+        );
+        for s in 0..count {
+            let sector = raw.read_raw_sector(lba + s).ok()?;
+            out.extend_from_slice(&sector[..]);
+        }
+        Some(out)
+    }
+
+    /// One channel of `XA<slot + 1>.XA` over the starter's read span for
+    /// `duration_sectors`, decoded: `(clip, interleave width)`.
+    fn channel_span(
+        &self,
+        slot: u8,
+        channel: u8,
+        duration_sectors: u32,
+    ) -> Option<(legaia_engine_audio::XaClip, u8)> {
+        let &(lba, file_sectors) = self.files.get(&slot)?;
+        let span = legaia_engine_audio::xa_clip_bank::read_span_sectors(duration_sectors)
+            .min(file_sectors);
+        let raw = self.read_sectors(lba, span)?;
+        legaia_engine_audio::xa_clip_bank::decode_channel_span(&raw, channel)
+    }
+}
+
+/// Read one cast-voice clip straight off a disc image: channel `channel` of
+/// `XA<clip_slot + 1>.XA`, from the file's first sector to the clip
+/// starter's stop point for `duration_sectors`
+/// (`legaia_engine_audio::xa_clip_bank::read_span_sectors`). This is the
+/// read the director performs the first time a cast names a clip; exposed
+/// so the disc-gated oracle can pin it without an audio device. `None` when
+/// the disc, the file or the channel is absent.
+// REF: FUN_8003D53C
+pub fn read_xa_channel_span(
+    disc: &std::path::Path,
+    clip_slot: u8,
+    channel: u8,
+    duration_sectors: u32,
+) -> Option<(legaia_engine_audio::XaClip, u8)> {
+    XaLazySource::open(disc)?.channel_span(clip_slot, channel, duration_sectors)
+}
+
 impl AudioBgmDirector {
     pub fn new(audio: Arc<AudioOut>) -> Self {
         Self {
@@ -137,6 +227,7 @@ impl AudioBgmDirector {
             sfx_sched: SfxScheduler::new(),
             shout_bank: None,
             xa_clip_bank: None,
+            xa_lazy: None,
             duck_level: DUCK_LEVEL_REF,
             duck_target: DUCK_LEVEL_REF,
         }
@@ -186,19 +277,71 @@ impl AudioBgmDirector {
         self.xa_clip_bank.is_some()
     }
 
+    /// Point lazy staging at the disc image: walk its ISO once for every
+    /// `XA<n>.XA` and keep `(slot, lba, sectors)`, the way the boot filler
+    /// `FUN_801CFA78` builds the clip table at `0x801C6ED8` (slot `n - 1`
+    /// for `XA<n>.XA`; `docs/subsystems/audio.md`). Returns how many files
+    /// resolved; `0` leaves lazy staging off.
+    pub fn set_xa_lazy_source(&mut self, disc: &std::path::Path) -> usize {
+        let Some(src) = XaLazySource::open(disc) else {
+            return 0;
+        };
+        let n = src.files.len();
+        self.xa_lazy = Some(src);
+        n
+    }
+
+    /// `true` once lazy staging has a disc to read from.
+    pub fn has_xa_lazy_source(&self) -> bool {
+        self.xa_lazy.is_some()
+    }
+
+    /// Stage `(slot, channel)` from the disc for a request the bank does
+    /// not hold: read the file's sectors from its start to the starter's
+    /// stop point (`read_span_sectors(dur)`, capped at the file), decode that
+    /// one channel and stage it lazily. Returns whether the clip is staged
+    /// afterwards.
+    fn stage_xa_channel_lazily(&mut self, slot: u8, channel: u8, duration_sectors: u32) -> bool {
+        let Some(src) = self.xa_lazy.as_ref() else {
+            return false;
+        };
+        let Some((clip, width)) = src.channel_span(slot, channel, duration_sectors) else {
+            return false;
+        };
+        log::debug!(
+            "XA lazy stage: XA{}.XA channel {channel} over {} sectors -> {} frames",
+            u32::from(slot) + 1,
+            legaia_engine_audio::xa_clip_bank::read_span_sectors(duration_sectors),
+            clip.frames()
+        );
+        self.xa_clip_bank
+            .get_or_insert_with(XaClipBank::new)
+            .insert_lazy(slot, channel, clip, width);
+        true
+    }
+
     /// Play one CD-XA clip request - the engine's `FUN_8003D53C(clip,
     /// channel, dur)`: the staged `(slot, channel)` PCM, cut at the retail
     /// read span (`XaClipBank::cut_frames`), through the same XA mixing
     /// path the arts shouts take, with the same modelled CD-response start
     /// delay. A request while a clip is sounding queues behind it (the
-    /// mixer's back-to-back path). Returns `false` when no bank is staged
-    /// or the `(slot, channel)` is not in it.
+    /// mixer's back-to-back path). A `(slot, channel)` the bank does not
+    /// hold is staged from the disc first when a lazy source is set
+    /// ([`Self::set_xa_lazy_source`]) - the cast voices' path. Returns
+    /// `false` when nothing is staged for the request.
     // REF: FUN_8003D53C
     pub fn play_xa_clip(&mut self, clip_slot: u32, channel: u32, duration_sectors: u32) -> bool {
-        let Some(bank) = self.xa_clip_bank.as_ref() else {
+        let (Ok(slot), Ok(ch)) = (u8::try_from(clip_slot), u8::try_from(channel)) else {
             return false;
         };
-        let (Ok(slot), Ok(ch)) = (u8::try_from(clip_slot), u8::try_from(channel)) else {
+        let staged = self
+            .xa_clip_bank
+            .as_ref()
+            .is_some_and(|b| b.is_staged(slot, ch));
+        if !staged && !self.stage_xa_channel_lazily(slot, ch, duration_sectors) {
+            return false;
+        }
+        let Some(bank) = self.xa_clip_bank.as_ref() else {
             return false;
         };
         let Some(clip) = bank.clip(slot, ch) else {
@@ -440,12 +583,16 @@ impl AudioBgmDirector {
                     channel, submode, ..
                 } = legaia_engine_audio::classify_cue(u32::from(cue.id))
                 {
-                    // A streamed CD-XA voice, not an SPU descriptor. The port
-                    // stages no bank for the voice clip files, so it stays
-                    // silent rather than wrong - see `docs/subsystems/audio.md`.
+                    // A streamed CD-XA voice, not an SPU descriptor. The one
+                    // producer feeding this queue such ids is the
+                    // `FUN_801F3990` band, which the two measured retail casts
+                    // never raised (`docs/subsystems/cast-module.md`), so it is
+                    // declined rather than voiced. The cast's own voice - the
+                    // module head cue - does not come through here: it rides
+                    // the `(clip, channel, dur)` channel into `play_xa_clip`.
                     log::debug!(
                         "battle cue {:#06x} is a CD-XA voice (clip channel {channel:#04x} \
-                         submode {submode}); no voice bank staged",
+                         submode {submode}); the FUN_801F3990 band is declined",
                         cue.id
                     );
                     continue;

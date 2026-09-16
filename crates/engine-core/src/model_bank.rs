@@ -4,9 +4,14 @@
 //!
 //! # The pool
 //!
-//! `FUN_80026B4C` (`tmd_register`) is the only writer: it validates the TMD
-//! magic `0x80000002`, stores the pointer at `DAT_8007C018 + n*4`, publishes
-//! `n` to `0x8007BB38` and returns `n` as the model's id. `n` lives at
+//! `FUN_80026B4C` (`tmd_register`) is the only *registrar*: it validates the
+//! TMD magic `0x80000002`, stores the pointer at `DAT_8007C018 + n*4`
+//! (`sw a0,0x0(v1)` at `0x80026BA8`), publishes `n` to `0x8007BB38` and
+//! returns `n` as the model's id. It is not the only *writer* - both
+//! reference scanners agree on ten base-forming sites for `0x8007C018` across
+//! SCUS and every extracted overlay, and the one other store is
+//! `sw zero,0x0(v0)` at `0x801CF1E0` in PROT 0976 (Baka Fighter), blanking the
+//! slot at the current counter. `n` lives at
 //! `DAT_8007B774` and is **reset to `*(u32*)0x8007B824` on every stage init**
 //! (`FUN_8001E1B4` epilogue, `sw v1,-0x488c(at)` at `0x8001E3AC`), so ids below
 //! that watermark survive a scene change and ids at or above it are reissued
@@ -20,8 +25,8 @@
 //! | `[0x8007B824, 0x8007B6F8)` | the five PROT 0874 §0 player meshes | `FUN_8001E890` loop at `0x8001EB4C` |
 //! | `[0x8007B6F8, ...)` | the scene's own models | `FUN_8001F05C` type `0x02` / `0x09` arms |
 //!
-//! `FUN_8001E890` sets `*(u16*)0x8007B6F8 = pack_count + *(u32*)0x8007B824`
-//! (`0x8001EB10..0x8001EB20`), i.e. one past the player pack it just
+//! `FUN_8001E890` sets `0x8007B6F8 = pack_count + *(u32*)0x8007B824`
+//! (`0x8001EB10..0x8001EB20`, a word store), i.e. one past the player pack it just
 //! registered. Measured on three field save states (`town01`, `koin1`,
 //! `izumi`): `0x8007B824 = 0`, `0x8007B6F8 = 5`, `DAT_8007C018[0..=4]`
 //! identical across all three and equal to `*(gp+0x6BC) + 0x18` - the PROT
@@ -39,7 +44,12 @@
 //!
 //! Below `0xF0` the id resolves against `*(u16*)0x8007B6F8` - the scene bank.
 //! At or above `0xF0` it resolves `id - 0xF0` against `*(u16*)0x8007B824` -
-//! the player bank - and raises the translucent-draw bit. So `0xF0` is Vahn,
+//! the player bank - and raises the translucent-draw bit. What the compare
+//! gives is that `0xF0` is *party slot 0*: `FUN_8001E890`'s epilogue walks
+//! three entries from the base (`slti v0,s0,0x3` at `0x8001EBA8`) and
+//! `FUN_8001EBEC` indexes `pool[*(0x8007B824) + i]` with the same `i` it uses
+//! for the per-character equipment bytes (`0x8001EC54`). Naming that slot is
+//! the §0 pack's order, not the compare: `0xF0` Vahn,
 //! `0xF1` Noa, `0xF2` Gala and `0xF3` / `0xF4` the two auxiliary slots
 //! ([`legaia_asset::character_pack`]). The field overlay's own MAIN INIT binds
 //! the player actor the same way (`lhu v0,-0x47dc(v0)` into `actor+0x64` at
@@ -91,7 +101,9 @@ pub const PLAYER_BANK_BASE: u16 = 0;
 pub const PLAYER_BANK_LEN: u16 = legaia_asset::character_pack::SLOT_COUNT as u16;
 
 /// `*(u16*)0x8007B6F8` - the first pool id the current scene's own models
-/// occupy. `FUN_8001E890` computes it as `player_pack_count + 0x8007B824`.
+/// occupy. `FUN_8001E890` computes it as `player_pack_count + 0x8007B824`
+/// and stores it as a **word** (`sw v0,-0x4908(at)` at `0x8001EB20`); every
+/// consumer reads the low halfword back with `lhu`.
 pub const SCENE_BANK_BASE: u16 = PLAYER_BANK_BASE + PLAYER_BANK_LEN;
 
 /// The unsigned split both consumers apply to a model id.
@@ -129,9 +141,22 @@ pub struct ModelRef {
 /// arm; retail's `operand - 0xF0` then wraps in 16 bits, which is reproduced
 /// here with `wrapping_sub`.
 ///
+/// The split itself is **caller-side**. `FUN_80024E08` receives an already
+/// resolved pool index in `a1` and only re-binds with it (`sh zero,0x5c(s0)`,
+/// `sh a1,0x64(s0)`, reload); its body holds no `sltiu ...,0xf0`. The compare
+/// and the two `lhu` bank bases live in the two callers - `0x800393B8` /
+/// `0x800393D0` / `0x80039418` in the scripted-motion VM's op `0x0E`, and
+/// `0x8003A2DC` / `0x8003A2F0` / `0x8003A314` in the placement spawner
+/// `FUN_8003A1E4`. Op `0x0E` sign-extends a halfword operand; the spawner
+/// reads a plain `lbu` byte, so only the former can present an id `>= 0x8000`.
+///
 /// PORT: FUN_80024E08 - the model re-bind's id resolve (`+0x5C = 0`,
 /// `+0x64 = id`, reload); the `+0x60` mirror it writes when `_DAT_8007B83C`
 /// is `0xF` is a game-mode branch the engine has no seat for.
+/// REF: FUN_8003A1E4 - the `0xF0` split this function performs is not in
+/// `FUN_80024E08` at all: it is in the two callers, `0x8003A2CC..0x8003A328`
+/// inside the placement spawner and the scripted-motion VM's op-`0x0E` arm at
+/// `0x800393B8`, each choosing a bank base before the resolve.
 pub fn resolve_model_id(id: i16) -> ModelRef {
     let raw = id as u16;
     if raw < SPECIAL_MODEL_THRESHOLD {

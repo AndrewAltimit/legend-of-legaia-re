@@ -205,7 +205,7 @@
           <tr><td><code>FUN_80066E50</code> / <code>FUN_8006C6E4</code></td><td><code>_SsPitchFromKey</code> / <code>_SsKey2Pitch</code></td><td>12-entry key table at <code>_DAT_8007A940</code>; two-octave table</td></tr>
           <tr><td><code>FUN_80068B98</code></td><td>VAB program-change</td><td>Installs the current-bank globals, reads the packed tone-page index</td></tr>
           <tr><td><code>FUN_80068D94</code></td><td><code>SsVabOpenHead</code></td><td>Bank open (see above)</td></tr>
-          <tr><td><code>FUN_800684CC</code></td><td><code>SsVabClose</code></td><td>By-id search over the <code>0x36</code>-stride records at <code>0x801CDB60</code></td></tr>
+          <tr><td><code>FUN_800684CC</code></td><td>Key-off by owner</td><td>Keys off every <code>0x36</code>-stride voice record at <code>0x801CDB60</code> whose <code>+0x0</code> owner key equals the argument (<code>seq | track &lt;&lt; 8</code>, as <code>FUN_800638D8</code> passes it) - not a VAB-id search</td></tr>
           <tr><td><code>FUN_8006CA7C</code> / <code>FUN_8006CDB0</code> / <code>FUN_8006DDC8</code></td><td><code>SsSeqGetStatus</code> / <code>SetCallback</code> / <code>SetMarkCallback</code></td><td>Resolve the context through the Legaia hook <code>_DAT_801CE564</code></td></tr>
           <tr><td><code>FUN_80062AA0</code> / <code>FUN_80065440</code></td><td>SPU command shims</td><td><code>&times;0x81</code> scaling, 0..127 to 0..16383</td></tr>
         </tbody>

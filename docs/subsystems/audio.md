@@ -230,6 +230,17 @@ satisfied on arrival (the same reasoning as sub-op 9's barrier) and
 still set, then clear the latch unconditionally. `see
 ghidra/scripts/funcs/800243f0.txt`, `800266e0.txt`, `80026520.txt`.
 
+**A pause is a key-off, not a freeze.** The sub-op 2 arm reaches
+`FUN_800628F0` in mode `0`, which only raises the slot's flag `0x2`; the next
+per-tick service `FUN_80062F98` routes a flagged slot through `FUN_800638D8`,
+which kills the channel's sounding notes and clears the flag, while the
+sequence cursor stays where it was for the resume. `AudioOut::set_sequencer_paused(true)`
+(and its browser twin) keys off the attached sequencer's active notes as it
+closes the gate. A gate that only stopped the clock held whatever was sounding
+for as long as it stayed shut - the title theme's last note sustaining under
+the whole attract movie, on both hosts. `see ghidra/scripts/funcs/800628f0.txt`,
+`80062f98.txt`, `800638d8.txt`.
+
 ### Entry-script pauses and free-roam picker staging
 
 A scene's entry script can start its track and immediately pause it for a
@@ -753,7 +764,7 @@ history that survives ADPCM block boundaries. The pitch step clamps at
 | Function | Role |
 |---|---|
 | `FUN_800683D8(vab, prog)` | `SsVabTransfer`-shaped - VAB program-attr lookup at `DAT_801CD2C0[vab&0xFF] + (prog>>8)*0xB0 + 0x58/0x5A`. |
-| `FUN_800684CC(vab_id)` | `SsVabClose` (by VAB-ID search) - iterates `0x801CDB60 + i*0x36`, matches `+0x0`, calls `FUN_80067480(0)`. |
+| `FUN_800684CC(owner_key)` | Key-off by owner - iterates the `0x36`-stride voice records at `0x801CDB60`, publishes the index at `0x801CE362` and calls `FUN_80067480(0)` for every voice whose `+0x0` halfword equals the argument. The key is `seq \| track << 8` - what `FUN_800638D8` and `FUN_80061D18` pass, and what the key-on `FUN_80066308` stamps at `+0x0` from its first argument (`0x8006661C`); `0xFF` / `-1` mark a free voice. Not a VAB id: the earlier `SsVabClose` label read the search key wrong. |
 | `FUN_80068B98(vab_id, program)` | **VAB program-change.** Bounds-checks `vab_id < 0x10` + open-state, `program < _DAT_801CE332` (the bank's program-slot count), then installs the current-bank globals (`_DAT_801CE334` prog base / `_DAT_801CE33C` header / `_DAT_801CE340` tone base) and `DAT_801CE34F` = the `ProgAtr[program]+8` **packed tone-page index** the open wrote (below). Earlier "SsSeqOpen / track count" label corrected from the disassembly. |
 | `FUN_80068C5C` / `FUN_80068C70` | `SsSetMono` / `SsSetStereo` - `_DAT_801CE330 = 1 / 0`, the mono-fold flag `FUN_80067550` reads. (Earlier "auto-poll" label corrected.) |
 | `FUN_80068C80(vab_id)` | VAB close (per-vab tables) - if the open-state byte at `0x801CE368+vab` is set, `SpuFree`s the bank's allocation from the addr table `0x801CE3C8+vab*4`, clears the state, decrements the open-bank count `_DAT_801CE3C0`. |
@@ -1091,6 +1102,25 @@ descriptor word copied into the CD-read staging window):
   `FUN_8003EAE4(0, clip_id)` and finishes via `FUN_8003F2B8(1)`. Returns 1
   while in progress, 0 when the stream is running. The field overlay is its
   only caller (both sites below).
+
+#### The cast voice in the engine
+
+A Seru cast's voice is the paged slot-B module's own `FUN_8004FCC8` head cue
+([`cast-module.md`](cast-module.md#the-casts-own-cd-xa-voice)). The engine
+scans it off the module's bytes at the arming seam
+(`legaia_engine_vm::battle_cast_cue::module_head_cue`), runs the dispatcher's
+CD-XA arm with its two gates (`admit_voice_cue`; the `ctx[+0x276]` side-band
+stage is `0` on a resident side-band, the `FUN_8003DE7C(1)` span countdown is
+`AudioState::battle_xa_busy_frames`) and raises the starter triple on
+`battle_xa_cues`. Neither host decodes the seventeen voice files up front: a
+`(slot, channel)` the clip bank lacks is read from the file's first sector to
+the starter's stop point and that one channel decoded
+(`XaClipBank::decode_channel_span`, `read_span_sectors`), kept under
+`LAZY_CLIP_CAP` - the native director off the disc image
+(`AudioBgmDirector::set_xa_lazy_source`), the play page through a
+`play_xa_stage_requests_json` / `play_xa_install_span` round trip over the disc
+bytes it holds. The per-host wiring is on
+[`host-drift.md`](../tooling/host-drift.md#the-cast-voice-leg).
 
 #### The clip-table writer - `FUN_801CFA78` (PROT 0895 `init.pak`)
 

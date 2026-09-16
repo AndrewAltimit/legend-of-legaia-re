@@ -374,7 +374,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <tr><td><code>0x8007B450</code></td><td>u16</td><td>Menu-request register the menu overlay polls each frame; also the field-VM <code>STATE_RESUME</code> (op <code>0x49</code>) tristate register.</td></tr>
       <tr><td><code>0x8007B5FC</code></td><td>u16</td><td>Encounter step counter ("No Random Battles" writes <code>0x0377</code>).</td></tr>
       <tr><td><code>0x8007B6A8</code></td><td>u16</td><td>Save-anywhere allow flag.</td></tr>
-      <tr><td><code>0x8007B6F4</code> / <code>0x8007B790</code></td><td>u16</td><td>Camera mode word / camera zoom-state register.</td></tr>
+      <tr><td><code>0x8007B6F4</code> / <code>0x8007B790</code></td><td>u16</td><td>GTE <code>H</code> projection register (focal length / zoom; the "camera mode word" and "small maps" labels come from a cheat database reading the same word outside world-map mode) / camera pitch, the first of the angle trio.</td></tr>
       <tr><td><code>0x8007BB80..0x8007BBA0</code></td><td>u32 / i32</td><td>Menu list-kernel state cluster: window-slide latch, pad-edge word, selected-row payload, scroll top, mode/result, selected row, class nibble, row count (<a href="../subsystems/field-menu.html">field menu</a>).</td></tr>
       <tr><td><code>0x8007BB04</code> / <code>0x8007BB08</code></td><td>ptr</td><td>Two <code>0x8000</code>-byte render scratch buffers; the second holds a <code>u16</code> depth ramp feeding the GTE / primitive-buffer reset.</td></tr>
     </tbody>
@@ -481,7 +481,8 @@ document.addEventListener('DOMContentLoaded', () => {
       <tr><td><code>0x8007BB20..0x8007BB34</code></td><td>Timed sound-source auto-release: armed flag, latched level, caller tag, deadline, elapsed (advanced by the tick byte, so the deadline is cadence-invariant).</td></tr>
       <tr><td><code>0x8007BAC8</code> / <code>0x8007BC64</code></td><td>BGM id written by field-VM op <code>0x35</code> sub-1 / global BGM pool base for ids &ge; 2000 (<a href="music-tracks.html">music tracks</a>).</td></tr>
       <tr><td><code>0x80070536</code></td><td>Bound voice id of the field-BGM sound source, written at track attach.</td></tr>
-      <tr><td><code>0x800788B8</code></td><td>Per-arts-voice XA clip duration table (index = cue id &minus; <code>0x100</code>).</td></tr>
+      <tr><td><code>0x800788B8</code></td><td>Streamed-<strong>voice</strong> clip duration table, <code>0x110</code> entries (index = cue id &minus; <code>0x100</code>), read by the arts shout and the Seru cast voice alike. Live rows run to <code>0x10F</code> with interior zero runs; <strong>neither reader bounds the index</strong>, so a consumer modelling a shorter table drops the high cues in silence.</td></tr>
+      <tr><td><code>0x8007B854</code></td><td>Ambient-particle master gate. One field-VM opcode raises it and its neighbour clears it, both stores in a jump delay slot; of its six references disc-wide none is pad state, so a field script decides per scene whether ambience emits at all.</td></tr>
       <tr><td><code>0x801CD2B8</code> / <code>0x801CD2C0</code></td><td>SsAPI slot-allocation bitmap / 16-entry per-slot sequence-state pointer table.</td></tr>
       <tr><td><code>0x8007BD30</code> / <code>0x8007BD5C</code></td><td>Effect-runtime pool (16-byte head + 128 child + 32 master slots) / effect 2-pack wrapper buffer pointer - <a href="../subsystems/effect-vm.html">effect VM</a>.</td></tr>
       <tr><td><code>0x8007B7F8</code> / <code>0x8007B81C</code></td><td>Cosine / sine views of the shared trig LUT (<code>4096 * sin</code> over 5120 <code>i16</code> entries at <code>0x80070A2C</code> - one revolution plus the quarter turn cosine needs, which is why consumers mask the angle with <code>0xFFF</code>).</td></tr>

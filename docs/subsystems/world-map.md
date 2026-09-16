@@ -72,8 +72,8 @@ reading it as one has consequences well outside this page - see
    calls `FUN_80035C10`.
 
 2. **Top-view camera controls** (active when `DAT_801F2B94 != 0`):
-   - `_DAT_8007B850 & 0x1000` / `0x4000` → `_DAT_80089120 -= 8` / `+= 8` (X scroll)
-   - `_DAT_8007B850 & 0x2000` / `0x8000` → `_DAT_80089118 -= 8` / `+= 8` (Z scroll)
+   - `_DAT_8007B850 & 0x1000` / `0x4000` (Up / Down) → `_DAT_80089120 -= 8` / `+= 8` (**Z** scroll)
+   - `_DAT_8007B850 & 0x2000` / `0x8000` (Right / Left) → `_DAT_80089118 -= 8` / `+= 8` (**X** scroll)
    - `_DAT_8007B850 & 0x20` / `0x80` → `_DAT_8007B794 += 0x14` / `-= 0x14` (azimuth)
    - `_DAT_8007B850 & 8` / `2` → `_DAT_8007B6F4 -= 4` / `+= 4` (zoom/height)
    - Bit `DAT_801F2B95 & 1`: enables `FUN_801E75DC`, the [screen-dim pass](#fun_801e75dc---top-view-screen-dim-pass-248-bytes)
@@ -2883,8 +2883,8 @@ overlay's `FUN_801D7EA0` and the 0897 field overlay's
 |---|---|
 | `DAT_801F2B94` | View-mode flag: `0` = walk, `1` = top-view debug. Outside 192 KB extraction window. |
 | `DAT_801F2B95` | Top-view animation bitfield (`& 1` = anim-A enable, `& 2` = anim-B). |
-| `_DAT_80089120` | Top-view camera X scroll (adjusted ±8 per D-pad frame). Stored as the **negated map-origin X** (`_DAT_80089120 = -(int)*(short *)(actor + 0x18)` in `overlay_dance_801cf470.txt:1143`; identical in `overlay_slot_machine_801db8ec.txt:115`). The world camera target is `-_DAT_80089120`. |
-| `_DAT_80089118` | Top-view camera Z scroll (adjusted ±8 per D-pad frame). Stored as the **negated map-origin Z** (`_DAT_80089118 = -(int)*(short *)(actor + 0x14)` in `overlay_dance_801cf470.txt:1142` / `overlay_slot_machine_801db8ec.txt:114,118`). The world camera target is `-_DAT_80089118`. |
+| `_DAT_80089120` | Top-view camera **Z** scroll (Up / Down, ±8 per D-pad frame). Stored as the **negated map-origin Z** (`_DAT_80089120 = -(int)*(short *)(actor + 0x18)` - actor `+0x18` is Z, which is what settles the axis; `overlay_dance_801cf470.txt:1143`; identical in `overlay_slot_machine_801db8ec.txt:115`). The world camera target is `-_DAT_80089120`. |
+| `_DAT_80089118` | Top-view camera **X** scroll (Right / Left, ±8 per D-pad frame). Stored as the **negated map-origin X** (`_DAT_80089118 = -(int)*(short *)(actor + 0x14)` - actor `+0x14` is X; `overlay_dance_801cf470.txt:1142` / `overlay_slot_machine_801db8ec.txt:114,118`). The world camera target is `-_DAT_80089118`. |
 | `_DAT_8007B794` | Top-view azimuth (adjusted ±0x14 per frame). |
 | `_DAT_8007B6F4` | Shared word: in world-map mode this is the top-view zoom/height (adjusted ±4 per D-pad frame, retail walk-view loads `0x0170`); outside world-map mode it doubles as a camera-mode flag (the "Small Maps" debug toggle in `docs/reference/builds.md` / `docs/reference/cheats.md`; retail walk-in-field saves load `0x0002`). |
 | `_DAT_8007B868` | Door/portal open flag: `0` = open (MAP_CHANGE/CARD_OPTION visible), `1` = CLOSED. |

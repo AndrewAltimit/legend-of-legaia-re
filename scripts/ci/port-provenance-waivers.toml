@@ -1359,3 +1359,12 @@ gate global relocated - `lui v0,0x801d; lw v0,0x1ab4(v0)` here against
 link's global, and it structurally cannot appear in a dump of this VA. The row
 names it to stop the two addresses being re-derived as two behaviours.
 """
+
+# ---------------------------------------------------------------------------
+# Field camera: the zone-driven follow camera shares `camera.rs` with the
+# op-0x45 camera mover.
+# ---------------------------------------------------------------------------
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/camera.rs:801dc0bc"
+reason = "`FUN_801DC0BC` is the op-0x45 camera-mover actor's tick (the node on `_DAT_8007C34C` whose tick fn `FUN_801DD310` installs; body `0x801DC104..0x801DD220`, docs/subsystems/cutscene.md) and `Camera::tick_globals` ports its glide law. The module's other tags (`FUN_801DBE9C`, `FUN_801DE3E0`) are the follow camera's arrival snap and script-driven zone re-query, which never touch the mover's `(start, end)` pair block or its progress word, so no shared data address or callee is expected. The dump file named `801dc0bc` carries a mid-function fragment (`entry=801dc098`), which is why nothing distinctive can be matched from it either."

@@ -35,6 +35,7 @@ pub mod play_camera;
 pub mod play_cutscene;
 pub mod play_dev_menu;
 pub mod play_dialog;
+pub mod play_field_fx;
 pub mod play_field_hud;
 pub mod play_fishing;
 pub mod play_fmv;

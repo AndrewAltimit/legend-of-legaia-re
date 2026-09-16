@@ -336,31 +336,29 @@ pub const FMV_STATE_SLOT_STRIDE: u32 = 0x20;
 /// PORT: FUN_8001FA34
 /// REF: FUN_801D629C
 ///
-/// The sprite-list "current entry" stack the cutscene sprite emitter
-/// `FUN_801D629C` draws from. `count` is a signed halfword holding the
-/// **1-based top index**, and the body is the halfword array starting at
-/// `table + 2` - which is why the load carries a `+2` displacement
-/// (`lh v0,2(v0)` at `0x8001FA54`) on top of an index already scaled from
-/// `count - 1`. Net effect: the routine reads `table[count]`, decrements
+/// The free-slot stack of the field fog-particle pool
+/// ([`crate::fog_particles::FogPool`]): the fog spawner `FUN_801D629C` pops
+/// a record index off it (`0x801D648C`), and the per-frame particle update
+/// `FUN_8003F3FC` pushes a dead record's index back (`0x8003F800`). `count`
+/// is the signed halfword at the pool's `+0` - the index of the top entry -
+/// and `table` is the halfword array at the pool's `+4`. The load carries a
+/// `+2` displacement (`lh v0,2(v0)` at `0x8001FA54`) on top of an index
+/// scaled from `count - 1`, so the routine reads `table[count]`, decrements
 /// `count`, and returns the value.
 ///
-/// The paired **push** sits immediately after it at `0x8001FA68` - `count++`
-/// then `sh a3,(table + count*2)`, writing exactly the halfword this pop
-/// reads back. The two share the convention, not code.
+/// The paired **push** is [`sprite_stack_push`] at `0x8001FA68`. The two
+/// share the convention, not code.
 ///
 /// Underflow is a *signed* test on the pre-decrement count
 /// (`bltz v0, 0x8001FA60`), and the target is two instructions past this
-/// function's own `jr ra`: a separate `jr ra; li v0,-1` tail. So an empty
-/// stack (`count == 0`) still pops - it reads `table[0]`, the header
-/// halfword, and leaves `count` at `-1`; only the *next* call returns `-1`.
+/// function's own `jr ra`: a separate `jr ra; li v0,-1` tail. So a stack
+/// whose top index is `0` still pops - it reads `table[0]` and leaves `count`
+/// at `-1`; only the *next* call returns `-1`.
 ///
 /// Returns `None` for the retail `-1`.
 ///
-/// NOT WIRED: the stack's owner is the cutscene sprite emitter
-/// `FUN_801D629C`, which is not ported. The engine draws cutscene sprites as
-/// `screen_fx` widgets built from the decoded scripts, so no
-/// `[count][halfword entries]` buffer is ever allocated for this pop (or its
-/// paired push at `0x8001FA68`) to walk. Wiring it needs that emitter.
+/// WIRED: [`crate::fog_particles::FogPool::spawn`] on both hosts, through
+/// `World::tick_cutscene_elements`.
 pub fn sprite_stack_pop(count: &mut i16, table: &[i16]) -> Option<i16> {
     if *count < 0 {
         return None;
@@ -368,6 +366,25 @@ pub fn sprite_stack_pop(count: &mut i16, table: &[i16]) -> Option<i16> {
     let idx = *count as usize;
     *count = count.wrapping_sub(1);
     table.get(idx).copied()
+}
+
+/// Push one halfword onto the stack [`sprite_stack_pop`] pops from.
+///
+/// PORT: FUN_8001FA68
+///
+/// `count += 1`, then `table[count] = value` (`sh a3,(a1 + count*2)` at
+/// `0x8001FA84`). No bound check in retail; the port drops a push past the
+/// table's end.
+///
+/// WIRED: [`crate::fog_particles::FogPool::render_step`] returns a dead
+/// record's slot through this, on both hosts.
+pub fn sprite_stack_push(count: &mut i16, table: &mut [i16], value: i16) {
+    *count = count.wrapping_add(1);
+    if *count >= 0
+        && let Some(slot) = table.get_mut(*count as usize)
+    {
+        *slot = value;
+    }
 }
 
 #[cfg(test)]

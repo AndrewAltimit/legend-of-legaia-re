@@ -377,7 +377,7 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d231c` | Score / gauge HUD render driver: per-mode score-box → dancer-slot layout, then draws each box (`FUN_801d32f8`), the gauge level (`FUN_801d3e28`) and the beat track (`FUN_801d2524`). See [HUD render driver](#hud-render-driver-fun_801d231c). `overlay_dance_801d231c.txt` |
 | `FUN_801d32f8` | Multi-digit number renderer: 8-place decimal split (leading-zero suppressed) → per-digit widget-U patch + emit. `overlay_dance_801d32f8.txt` |
 | `FUN_801d2524` | Beat-track HUD: combo-window CLUT flash, the scrolling-note screen-x, the caps / body / stock-marker draws. `overlay_dance_801d2524.txt` |
-| `FUN_801d2d98` | Count-in banner animator (`1 2 3 READY... GO!`): slide-in / hold / fade envelope + fires the intro cue `0x200` on frame `0x1e`. Envelope ported as [`dance_countin_banner_envelope`]. `overlay_dance_801d2d98.txt` |
+| `FUN_801d2d98` | Count-in banner animator (`1 2 3 READY... GO!`): slide-in / hold / fade envelope + fires the intro cue `0x200` on frame `0x1e`. It draws **widget 0** (`a2 = 0` at every call) through `FUN_801d2f38` - two *whole* copies of the 160x32 cell at `(0xA0 +- s2, 0x77)` each at half brightness while sliding, then one at `(0xA0 - s2, 0x78)` while held - and pokes the widget's `+0x0F` translucency byte in place first: `sb v0,0xf(t0)` with `v0 = 1` at `0x801D2ED8`, `sb zero,0xf(t0)` at `0x801D2F0C`, `t0 = 0x801D46CC`. The "halves" are that pair of full copies, not half-width art. Envelope ported as [`dance_countin_banner_envelope`]. `overlay_dance_801d2d98.txt` |
 | `FUN_801d3d78` | On-beat "good step" sting: keys two SPU voices (`0x12` / `0x13`) at tones `2r` / `2r+1`, note `0x3c+r`. Its caller passes `rand() % 3` on the chain-closed tier and a literal `5` on the three groovy-move tiers. `overlay_dance_801d3d78.txt` |
 | `FUN_801d40dc` | Sequence-clear ("Good!") banner + two flanking stars carrying the accuracy weight (`+0x72`). `overlay_dance_801d40dc.txt` |
 | `FUN_801d4098` | Actor clip-driver gate: runs the shared clip driver `FUN_800204f8` only when the actor's bound clip id `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. Predicate ported as [`dance_clip_driver_gate`]; see [The dancer actor record](#the-dancer-actor-record). `overlay_dance_801d4098.txt` |
@@ -693,7 +693,12 @@ indexes a **34-record x 20-byte widget table** at `0x801D46CC`: `i32 scale`
 (12.12; all rows `0x1000`), `u16 texpage` (all HUD rows `0x0008` = the 4bpp
 page at `(512,0)`), `u16 CLUT id`, `u8 u0/v0/w/h` cell rect, top/bottom RGB
 tints, semi-transparency code. Quads draw **centred** on the emitter's
-`(x, y)`. Callers patch records in place: the score-digit renderer
+`(x, y)`, and the `w`/`h` bytes are *texel* extents that become **half**-extents
+on the way: `(extent * record_scale) >> 13` (`sra ...,0xd` at `0x801D319C` /
+`0x801D31D0`) then `(that * caller_scale) >> 12`. With both scales `0x1000`
+the two folds are a halving and a unity, so a cell draws 1:1 - widget 0's
+`0xA0 x 0x20` covers 160x32 stage pixels, not 320x64. Callers patch records in
+place: the score-digit renderer
 (`FUN_801d32f8`) rewrites widget 1's `u0 = digit * 0x10`, the gauge
 (`FUN_801d3e28`) rewrites widget 7's `u0 = 0xD0 + level * 8`, and the beat
 track (`FUN_801d2524`) swaps CLUTs - `0x7D08` idle / `0x7D0D` on the

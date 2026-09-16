@@ -45,7 +45,7 @@
 
 <section class="doc-section" id="storage">
   <h2>Storage and access</h2>
-  <p>Nothing indexes the array directly. The pause menu, chests and scripts (the field VM&rsquo;s <code>GIVE_ITEM</code> op), battle rewards, shops and the equip swap-back all go through the same small helper family, passing item ids or helper-returned slot numbers. There is no raw-index sort or swap primitive anywhere in retail. The reference census is closed rather than sampled: the array sits <code>0xA640</code> above <code>gp</code>, so no <code>gp</code>-relative instruction can reach it; neither its base nor the block base appears as a literal word anywhere on the disc; and every one of the 125 accesses materialises the block base inline. Two capture-class cast modules are the exception to the window - PROT 0941 (Steal) clamps its random slot against a live count, PROT 0954 (Fatal Decision) samples all 256 slots unclamped.</p>
+  <p>Every access materialises the block base inline and indexes by slot. Chests and scripts (the field VM&rsquo;s <code>GIVE_ITEM</code> op), battle rewards, shops and the equip swap-back all mutate through the same small helper family, passing item ids or helper-returned slot numbers, and so does the pause menu with one exception: its Throw Out confirm (<code>FUN_801D8734</code> in PROT 0899) zeroes the selected slot&rsquo;s id and count with two <code>sb</code> of its own at <code>0x801D88FC</code> / <code>0x801D8910</code>. The field, battle and menu overlays also read slots directly. There is no raw-index sort or swap primitive anywhere in retail. The reference census is closed rather than sampled: the array sits <code>0xA640</code> above <code>gp</code>, so no <code>gp</code>-relative instruction can reach it; neither its base nor the block base appears as a literal word anywhere on the disc; and every one of the 125 accesses materialises the block base inline. Two capture-class cast modules are the exception to the window - PROT 0941 (Steal) clamps its random slot against a live count, PROT 0954 (Fatal Decision) samples all 256 slots unclamped.</p>
   <table class="data-table">
     <thead><tr><th>Helper</th><th>What it does</th></tr></thead>
     <tbody>
@@ -118,7 +118,7 @@
       <tr><td>normalize</td><td><code>FUN_800423E0</code></td><td>calls window setup first; occupancy = <code>id &ne; 0</code></td></tr>
       <tr><td>new-game seed</td><td><code>FUN_80034A6C</code></td><td>writes slot 0 = (<code>0x77</code> Healing Leaf, &times;5)</td></tr>
       <tr><td>battle rewards</td><td><code>FUN_8004E568</code></td><td>loot grants go through the add helper</td></tr>
-      <tr><td>menu overlay sweep</td><td>PROT 0899, all 129 functions</td><td>zero direct array writes; 17 inventory operations, all via the helpers</td></tr>
+      <tr><td>menu overlay sweep</td><td>PROT 0899, every function</td><td>one direct array write, the Throw Out confirm&rsquo;s <code>sb zero</code> pair (<code>FUN_801D8734</code>); every other inventory operation goes via the helpers</td></tr>
       <tr><td>live read</td><td>three-member mid-game state</td><td>window <code>(0, 256, 256)</code>, 160 contiguous occupied slots - more than any 72-slot model allows</td></tr>
     </tbody>
   </table>

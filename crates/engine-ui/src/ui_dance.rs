@@ -3,10 +3,13 @@
 //!
 //! Both are placeholder letterforms on retail's own seats. The count-in's
 //! banner is **not text at all** in retail: it is record `0` of the 20-byte
-//! sprite table at `0x801D46CC`, a `320 x 64` quad (half-extents `0xa0` /
-//! `0x20` at the record's unit scale) that `FUN_801D2F38` seats by its centre.
-//! The `a2 = 0` all three call sites pass is that record index. The tutorial's
-//! caption strings are overlay rodata (Sony text the port does not read).
+//! sprite table at `0x801D46CC`, a `160 x 32` quad (its `+0x0A` / `+0x0B`
+//! bytes `0xa0` / `0x20` are the texel cell's **full** width and height;
+//! `FUN_801D2F38` halves them at the record's unit scale and the three calls
+//! all pass scale `0x1000`, so the half-extents are `0x50` / `0x10`) that
+//! the emitter seats by its centre. The `a2 = 0` all three call sites pass
+//! is that record index. The tutorial's caption strings are overlay rodata
+//! (Sony text the port does not read).
 //!
 //! So what is pinned here is the *geometry*: retail's own banner centre
 //! ([`COUNTIN_CENTRE_X`], [`COUNTIN_SLIDE_CENTRE_Y`] /
@@ -61,15 +64,23 @@ pub fn countin_centre_y(hold: bool) -> i32 {
     }
 }
 
-/// The banner's half-extents in stage pixels at unit scale, from **record 0**
-/// of the dance overlay's 20-byte sprite table at `0x801D46CC` - bytes
-/// `+0x0A` / `+0x0B` = `0xa0` / `0x20`.
-///
-/// `FUN_801D2F38` builds the quad as `centre -+ half` on each axis
-/// (`0x801D31E0..0x801D3214`: `t4 - a0` / `t4 + a0`, `t5 - v0` / `t5 + v0`),
-/// so the record covers `320 x 64` around its seat. The `a2 = 0` every call
-/// site passes is this **record index**, not a coordinate.
-pub const COUNTIN_SPRITE_HALF: (i32, i32) = (0xA0, 0x20);
+/// The banner's half-extents in stage pixels, from **record 0** of the dance
+/// overlay's 20-byte sprite table at `0x801D46CC`: bytes `+0x0A` / `+0x0B`
+/// = `0xa0` / `0x20` are the texel cell's full width and height
+/// ([`COUNTIN_SPRITE_CELL`]), and `FUN_801D2F38` halves them -
+/// `(w * scale) >> 13` at `0x801D3180..0x801D319C` with the record's own
+/// `scale = 0x1000`, then `* arg_scale >> 12` with the `0x1000` every
+/// count-in call stores at `sp + 0x10` (`0x801D2EE0`, `0x801D2EF8`,
+/// `0x801D2F10`) - before building `centre -+ half` on each axis
+/// (`0x801D31E0..0x801D3214`). So the record covers `160 x 32` around its
+/// seat, not the `320 x 64` the bytes read as when taken for half-extents.
+/// The `a2 = 0` every call site passes is this **record index**, not a
+/// coordinate.
+pub const COUNTIN_SPRITE_HALF: (i32, i32) = (0x50, 0x10);
+
+/// The texel cell of that record - `+0x0A` / `+0x0B` - which is also the
+/// quad's full extent at unit scale.
+pub const COUNTIN_SPRITE_CELL: (i32, i32) = (0xA0, 0x20);
 
 /// Texel origin of that record's art (`+0x08` = `0x9048`) and its CBA
 /// (`+0x06` = `0x7d0a`). Recorded so a host that stages the dance overlay's
@@ -278,8 +289,10 @@ mod tests {
         assert_eq!(row(true), COUNTIN_HOLD_CENTRE_Y - COUNTIN_TEXT_HALF_H);
         assert_eq!(countin_centre_y(false), 0x77);
         assert_eq!(countin_centre_y(true), 0x78);
-        // The record's own extents - 320 x 64 around the seat.
-        assert_eq!(COUNTIN_SPRITE_HALF, (0xA0, 0x20));
+        // The record's own extents - the 160 x 32 cell, halved about the seat.
+        assert_eq!(COUNTIN_SPRITE_CELL, (0xA0, 0x20));
+        assert_eq!(COUNTIN_SPRITE_HALF.0 * 2, COUNTIN_SPRITE_CELL.0);
+        assert_eq!(COUNTIN_SPRITE_HALF.1 * 2, COUNTIN_SPRITE_CELL.1);
     }
 
     /// Brightness reaches the tint alpha, so the fade is visible rather than

@@ -1805,6 +1805,27 @@ void main() {
       } catch (e) { console.warn('play audio enable', e); }
     }
 
+    /* Serve one lazy CD-XA staging request per frame: the engine names a
+     * file's read span (`play_xa_stage_requests_json`), the page slices those
+     * raw 2352-byte sectors out of the disc bytes it holds and hands them
+     * back (`play_xa_install_span`), which decodes that one channel and
+     * replays the clip request. No disc bytes on the page means no request
+     * can be served; the engine keeps listing it, silently. */
+    _serveXaStage(rt) {
+      if (typeof rt.play_xa_stage_requests_json !== 'function') return;
+      const bytes = window.__playDiscBytes;
+      if (!bytes) return;
+      let reqs = [];
+      try { reqs = JSON.parse(rt.play_xa_stage_requests_json()) || []; } catch (e) { return; }
+      const req = reqs[0];
+      if (!req) return;
+      const RAW = 2352;
+      const start = req.lba * RAW, end = Math.min(bytes.length, start + req.sectors * RAW);
+      if (start >= end) return;
+      try { rt.play_xa_install_span(req.path, bytes.subarray(start, end), req.channel); }
+      catch (e) { console.warn('xa stage', req.path, e); }
+    }
+
     /* A WASM trap (or any throw from an engine call) during the frame poisons
      * the engine instance. Stop the dead loop and hand the message to the page,
      * whose `onError` rebuilds a fresh runtime from cached disc bytes and
@@ -2017,17 +2038,24 @@ void main() {
            * (`Camera::compass_azimuth_units`: scripted yaw + the drag-orbit +
            * the host framing bias), so the page only speaks over it where it
            * has something the engine cannot know. Two cases: VR first-person,
-           * where the headset gaze IS the heading, and the debug orbit, whose
-           * vantage is a page-local yaw the engine camera never sees.
-           * The page used to set the azimuth unconditionally from its own
-           * orbit yaw, which is why the engine's own camera state and the
-           * controls it drove could not agree. */
+           * where the headset gaze IS the heading, and the page's own orbit
+           * vantage, whose yaw the engine camera never sees. That vantage
+           * draws the frame not only under the `F3` debug toggle but whenever
+           * the engine handed back no matrix (`cam.vp` null: a cached bundle
+           * without `play_camera_vp`, or a frame with no engine camera) - and
+           * in both the compass must follow the camera on screen, or a drag
+           * turns the picture and leaves the controls behind. The page used
+           * to set the azimuth unconditionally from its own orbit yaw, which
+           * is why the engine's own camera state and the controls it drove
+           * could not agree. */
           const lockedPad = this._cut && this._cut.locked;
           if (this._vrDrive) {
             rt.set_camera_azimuth(this._vrDrive.azimuth);
             rt.set_pad(lockedPad ? 0 : (this.pad | this._vrDrive.pad));
           } else {
-            if (this.debugCamera) rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
+            if (this.debugCamera || !this.cam.vp) {
+              rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
+            }
             rt.set_pad(lockedPad ? 0 : this.pad);
           }
           /* A tap's just-pressed edge fires on the first tick of this frame
@@ -2040,6 +2068,13 @@ void main() {
             this._onEngineTrap('engine tick', e);
             return;
           }
+          /* The CD-XA lane's lazy tier: a cast names a clip the bank does
+           * not hold and the engine asks for that file's read span. The
+           * page owns the disc bytes, so it slices the span (one request
+           * per frame - a decode is tens of ms) and hands it back; the
+           * engine decodes that one channel and replays the request. The
+           * native window does the same read off the disc image. */
+          this._serveXaStage(rt);
           if (entered) {
             /* The engine walked through a door: its scene swapped under us, so
              * the geometry has to swap too. A trap while rebuilding the new

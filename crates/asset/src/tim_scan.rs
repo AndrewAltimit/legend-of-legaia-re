@@ -65,6 +65,15 @@ pub fn scan_buffer(buf: &[u8]) -> Vec<Hit> {
     hits
 }
 
+/// Parse the TIM that starts at `offset` in `buf`, without searching.
+///
+/// The searching entry points above are how a TIM is *found*; this is how one
+/// whose offset is already known is measured, so a caller with a pinned offset
+/// does not have to sweep for a magic it already knows the address of.
+pub fn parse_at(buf: &[u8], offset: usize) -> Option<Hit> {
+    try_parse_at(buf.get(offset..)?, offset)
+}
+
 fn try_parse_at(slice: &[u8], source_off: usize) -> Option<Hit> {
     let parsed = tim::parse(slice).ok()?;
     let width = parsed.pixel_width() as u32;

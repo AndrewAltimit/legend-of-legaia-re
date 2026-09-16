@@ -317,6 +317,27 @@ The over-read is not visible in the dump: the dance overlay is small enough
 that the previously-resident fishing overlay is still live above it in RAM, so
 a capture-derived dump reads as one continuous image.
 
+### `0x801D6058` and `0x801D629C` - a bare dump and a headless fragment
+
+Two field-overlay routines whose most obvious dump is not of them.
+
+**`801d6058.txt` is a different routine.** Its own header names the entry as
+`0x801D603C`, not `0x801D6058`: printed `0x801D6058` is that body's ninth
+instruction (`sw s1,0x1c(sp)`), so the file is the **menu** overlay's
+`FUN_801D603C` - the window-46 toggle-state renderer - printed from an interior
+address. The field overlay's real `FUN_801D6058`, the ambient-effect emitter, is
+in the 0897-family images, where the entry's first two instructions load the
+ambient master gate `_DAT_8007B854`. The two bodies differ in length by a factor
+of more than one and a half, so nothing about the printed extent flags the swap.
+
+**`overlay_0896_801d629c.txt` is a fragment.** It opens mid-body: the first
+instructions read `v0`, `s0`, `a3` and `t0` without setting any of them, which
+is the `unaff_*` shape a dump taken at a non-entry address produces. The
+0897-family dumps of `FUN_801D629C` - the fog spawner - carry a proper prologue
+and are more than twice as long. Neither the 0896 filename nor the printed
+address is evidence about which routine the bytes belong to; the prologue is.
+
+
 ### One VA, two real routines: `0x801DDA90` and `0x801D0ED8`
 
 Not every alias is a phantom. Two addresses host **real, referenced** entries in

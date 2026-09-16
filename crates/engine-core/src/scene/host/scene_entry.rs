@@ -789,6 +789,10 @@ impl SceneHost {
         // the derived carrier set live (and is the counterpart to the MAN
         // encounter-table install above). Soft-fail: a scene without a MAN, or
         // with no interactable placements, just installs an empty set.
+        // The fog pool: MAIN INIT re-allocates it on every field entry and
+        // the MAN installer clears its gate, so both happen here before the
+        // section-4 region table (below) is handed over.
+        self.world.reset_fog_for_scene_entry();
         match self
             .scene
             .as_ref()
@@ -798,6 +802,9 @@ impl SceneHost {
                 Ok(man_file) => {
                     self.world
                         .install_field_carriers_from_man(&man_file, &man_bytes);
+                    // Section 4 -> `DAT_80073ED8`: the fog-region table the
+                    // spawner `FUN_801D629C` looks every named tile up in.
+                    self.world.install_fog_regions(&man_file, &man_bytes);
                     // Initial NPC facings: retail's placement installer
                     // (`FUN_8003A1E4`) pre-runs each record's spawn prologue
                     // at scene load, and the prologue's `0x4C 0x51` / `0x38`

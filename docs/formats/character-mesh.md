@@ -152,8 +152,14 @@ arithmetically reachable, so the arithmetic alone never discriminated - the
 `FUN_8001ED60` runs once at boot: it loads raw `0x36C` into scratch, takes the
 container's descriptor-`0` and descriptor-`1` size fields (`+0x08` / `+0x10`,
 low 24 bits), rounds each up to a word and stores them to `gp+0x69C` and
-`gp+0x6C8` (`0x8001EE2C` / `0x8001EE30`; measured `0xB49C` and `0x41E0`, i.e.
-§0's and §1's decoded sizes). `FUN_8001E1B4` mallocs exactly those. So a
+`gp+0x6C8` (`0x8001EE2C` / `0x8001EE30`; `0xB49C` and `0x41E0`, i.e. §0's and
+§1's decoded sizes). Those two figures need no capture to read: they are the
+**disc's** bytes, PROT 0874 `+0x08 = 0x0100B49C` and `+0x10 = 0x020041E0`
+under the `& 0x00FFFFFF` the routine applies (the high byte is the descriptor
+type). `FUN_8001E1B4` mallocs exactly those - `lw a1,0x6c8(gp)` at
+`0x8001E2C8` for §1 into `0x8007B75C`, `lw a1,0x69c(gp)` at `0x8001E2D4` for
+§0 into `gp+0x6BC` - and `FUN_8001E890` decompresses into them in that order
+(`0x8001EA64` / `0x8001EA80`). So a
 rebuild that grows §0 **and** its header size word gets a matching buffer; a
 rebuild that keeps the first four words byte-exact while the LZS stream decodes
 to a different length gets a pack truncated at `0xB49C` instead, and a
@@ -177,10 +183,46 @@ save states read `*0x8007B824 = 0` - the word that same arm is the only writer
 of - which confirms from the other side that the `s7 != 0` path never runs in
 retail.
 
-**What would close it**: a write-watch on `*(gp+0x6BC)` across a
-rebuilt-container cold boot, plus `$a0` at `0x8001EB4C`. A mid-game state
-replays the RAM of the disc that booted it, so the patched bytes stay masked
-until the game re-loads them.
+**The registrar never walks a stale buffer - measured.** `FUN_8001E890` has
+one load-state word, `gp+0x6AC` (`0x8007B9C4`): `0` reads the file,
+decompresses and registers; `2` re-sums the raw file and decompresses again;
+`1` skips straight to the registrar at `0x8001EAFC` over whatever the buffer
+holds, and the registrar itself is what writes `1` (`0x8001EB0C`). So a walk
+over battle-clobbered bytes needs the routine entered with the word at `1`
+after a battle - and every writer of the word forbids that. The
+mode-transition pass `FUN_80016230` zeroes it at `0x800163B4` on every step
+into a mode other than `2`/`3` (`gp+0x524` is the game mode), the post-battle
+field restore PROT 0978 writes `0` in its phase `0` (`0x801F6F04`) and `2`
+once the file is re-read (`0x801F723C`), and the core reset `FUN_80025CB4`,
+the minigame warp `FUN_80025980`, the field overlay (`0x801D15A8`,
+`0x801E34C8`) and `FUN_80026018` all write `0`
+(`scripts/ghidra-analysis/find-gp-relative-refs.py 0x6ac --prot`: twelve
+sites, no other writer).
+
+`scripts/pcsx-redux/autorun_registrar_routes.lua` breakpoints the routine's
+entry, the gate, the registrar and every `tmd_register` call, write-watches
+the word and the buffer pointer, and logs the buffer's count word at each.
+Over six routes - a door warp (`dolk` -> `map01`), a boss fight resolving
+back to the field, a field walk into a random encounter, a cold boot into
+NEW GAME, a cold boot through CONTINUE into a memory-card load, and the
+battle entry itself - the routine is entered five times, always over the
+same block `0x8014D53C`, and the registrar reads count `5` every time. The
+three shapes seen: state `1` with the field pack intact (door warp); state
+`0` over uninitialised heap (cold boot, card load: the entry reads
+`169387156` as its count, then the file read and decompress run before the
+registrar); and state `2` over the battle clobber (the boss fight: count `0`
+at entry, the three decompress calls between the gate and the registrar, `5`
+at the registrar). The field-to-battle route enters the routine zero times
+and shows the word already `0` from the `0x08` mode step, before the loader
+touches the block. The registrar's count is unclamped, but the buffer under
+it is decoded fresh on every path that could have dirtied it.
+
+**What that leaves for the wild read**: not this walk over a clobbered
+buffer. A rebuild that keeps the header's size words while the LZS stream
+decodes to a different length still truncates the pack at `gp+0x69C` bytes,
+and a truncated pack's offset table reads mesh payload as offsets - the
+bracket is the decoded length against the header, on a cold boot of the
+rebuilt disc, which no shipped patcher path produces.
 
 The editing contract is unchanged: `legaia_asset::party_swap::fieldize`
 keeps the first four words (`meta[0]`, `meta[1]`, `type<<24|size0`,
@@ -205,6 +247,17 @@ is asserted by retail's `FUN_8001EBEC` patch loop: those three slots are
 the only ones with `nobj=12` and the equipment-conditional group templates
 the player-equipment swap pass needs. Slots 3 / 4 carry the small
 auxiliary-actor meshes (no equipment swap).
+
+Two halves of that sentence carry different weight. "Pack slot `i` is *party
+slot* `i`" is a byte fact: `FUN_8001E890`'s epilogue walks exactly the first
+three entries from the player-bank base (`slti v0,s0,0x3` at `0x8001EBA8`),
+and `FUN_8001EBEC` forms `pool[*(0x8007B824) + i]` with the same `i` it uses
+to index the per-character equipment bytes in the live save window
+(`lw v0,-0x47dc(v0)` then `addu v0,v0,a2` at `0x8001EC50..0x8001EC5C`,
+`lbu v0,0x75e(v1)` at `0x8001EC74`). *Which* character party slot `0` holds is
+the inference on top - it is the party order, not anything the loader
+encodes - and it is what makes the render id `0xF0` "Vahn"
+([`motion-vm.md`](../subsystems/motion-vm.md#op-0x0e---the-model-swap)).
 
 ## TMD shape (per slot)
 

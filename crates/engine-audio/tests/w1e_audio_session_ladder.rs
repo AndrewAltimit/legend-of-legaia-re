@@ -216,7 +216,7 @@ fn pause_freezes_the_playhead_and_resume_continues_it() {
 
     let mut sink = TestAudioSink::new(SPU_INTERNAL_RATE);
     stage_bgm(&mut sink, &entry);
-    run_frames(&mut sink, 60);
+    let (live, _) = run_frames(&mut sink, 60);
     let running = sink.sequencer_progress().expect("attached").tick;
     assert!(running > 0, "playhead must be moving before the pause");
 
@@ -226,12 +226,31 @@ fn pause_freezes_the_playhead_and_resume_continues_it() {
     // assertion only in the paused direction; the resumed direction has to
     // poll until the next event is due.
     sink.set_sequencer_paused(true);
-    run_frames(&mut sink, 120);
+    // Retail's paused-slot service (`FUN_800638D8`) kills the channel's
+    // notes: the gate closing keys off, and after the releases drain the
+    // output is quiet. A gate that only froze the clock held the last
+    // chord at full level for as long as it stayed shut.
+    assert_eq!(
+        sink.sequencer_progress().expect("attached").active_notes,
+        0,
+        "closing the gate must key off every sounding note"
+    );
+    run_frames(&mut sink, 90);
+    let (tail, _) = run_frames(&mut sink, 30);
     let paused = sink.sequencer_progress().expect("still attached").tick;
     assert_eq!(
         paused, running,
         "a paused sequencer must not advance its playhead"
     );
+    if !live.is_silent() {
+        assert!(
+            tail.mean_abs() < live.mean_abs() * 0.05,
+            "1.5 s into the pause the output still carries the score \
+             (live {:.1} -> paused {:.1} mean abs): the notes were not keyed off",
+            live.mean_abs(),
+            tail.mean_abs()
+        );
+    }
     assert!(
         sink.sequencer_paused(),
         "the pause latch must survive the frames it gates"

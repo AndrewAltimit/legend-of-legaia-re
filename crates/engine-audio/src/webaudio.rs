@@ -220,10 +220,12 @@ impl WebAudioOut {
         s.fade_step = 0.0;
     }
 
-    /// Gate the sequencer tick. When `paused`, the sequencer clock stops
-    /// while SPU voices already sounding continue to decay via their ADSR.
+    /// Gate the sequencer tick - the twin of
+    /// [`crate::AudioOut::set_sequencer_paused`]. When `paused`, the
+    /// sequencer clock stops and the notes it had sounding are keyed off;
+    /// `false` resumes from the playhead.
     pub fn set_sequencer_paused(&self, paused: bool) {
-        self.state.borrow_mut().sequencer_paused = paused;
+        self.state.borrow_mut().set_sequencer_paused(paused);
     }
 
     /// Whether the sequencer gate is currently closed

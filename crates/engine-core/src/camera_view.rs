@@ -32,39 +32,44 @@ use legaia_engine_vm::psx_camera::{self, FieldCameraView};
 /// Field follow-camera pitch (`_DAT_8007B790`), PSX 12-bit units - the town01
 /// anchor savestate's value (~39.6 deg down-tilt).
 ///
-/// **A seed, not an invariant.** Retail's field pitch is per-scene: the
-/// camera-region record the zone query hits
-/// ([`crate::field_regions::zone_query`], `FUN_801DBA20`) is decoded into the
-/// camera globals by `FUN_801DBC20`, and a scene with no covering record gets
-/// [`crate::camera::CAMERA_ZONE_DEFAULTS`] instead. Across eighteen town
-/// savestates this value holds in 8 of 19 - so more than half of them frame at
-/// some other tilt. Widening it needs that 18-byte record decoded; until then
-/// this is what a scene with nothing staged starts from.
+/// **A fallback, not the field camera.** Retail derives the pitch per scene
+/// and per tile: the camera-region record the tile query hits is split into
+/// the camera parameter block (`FUN_801DBC20`, [`crate::camera_zone`]), the
+/// composer `FUN_801DAB90` turns the block plus the player's position into a
+/// target and the per-frame ease walks `_DAT_8007B790` toward it. That path
+/// is [`crate::camera::Camera::zone`], live whenever the world carries field
+/// terrain, and [`field_follow_view`] reads its output. This constant is what
+/// a world with **no** terrain loaded (a unit world, a bare test scene)
+/// frames with - the anchor state's own reading, which the zone camera
+/// reproduces there from `town01`'s record.
 pub const FIELD_PITCH_UNITS: f32 = 450.0;
 
 /// Field follow-camera base yaw (`_DAT_8007B792`), PSX 12-bit units, from the
 /// same anchor. The movement compass reads its negation (`alpha = -psi` for
-/// the PSX GTE camera), which is what [`Camera::render_yaw_bias`] carries.
+/// the PSX GTE camera), which is what [`Camera::render_yaw_bias`] declares -
+/// and, while the zone camera drives the frame, what
+/// [`Camera::compass_azimuth_units`] recomputes from the live yaw.
 ///
-/// **The weakest of the three.** Retail's field yaw is a per-frame *output* -
-/// the follow camera recomputes it every frame - and across the same eighteen
-/// town states it spans `-1589..+333`, matching this value in exactly 1 of 19.
-/// It is the anchor state's own reading and nothing more. The engine's own
-/// per-frame yaw terms ([`Camera::manual_orbit`], and a scripted beat's yaw
-/// through [`cutscene_view`]) compose on top of it; what is missing is the
-/// retail recomputation itself.
+/// The same fallback rule as [`FIELD_PITCH_UNITS`]: retail's field yaw is a
+/// per-frame *output* of the composer (a position-proportional sweep across
+/// the walk-region box in modes 1 / 2, a bearing in modes 3 / 4), and the
+/// zone camera produces it; this value frames only a terrain-less world.
 pub const FIELD_FOLLOW_YAW_UNITS: f32 = -160.0;
 
 /// Field GTE `H` (`_DAT_8007B6F4`) fallback. `512` in the field, `256` in
 /// battle - written per phase, unlike `OFX` / `OFY`.
 ///
-/// The steadiest of the three (12 of 19 town states), but still per-scene, and
-/// still not a constant: [`field_follow_view`] prefers the live
-/// [`crate::camera::RetailCamGlobals::h`] whenever the camera carries one, so
-/// an op-`0x45` slot-`9` beat now reaches the follow view. Retail's scene-entry
-/// reset leaves `H` at `0` ("as the scene establishes it"), which is what makes
-/// this the fallback rather than dead code.
+/// [`field_follow_view`] prefers the live
+/// [`crate::camera::RetailCamGlobals::h`] whenever the camera carries one -
+/// the zone camera's composed `B618`, or an op-`0x45` slot-`9` beat. Retail's
+/// scene-entry reset leaves `H` at `0` ("as the scene establishes it"), which
+/// is what makes this the fallback rather than dead code.
 pub const FIELD_H: f32 = 512.0;
+
+/// The retail eye-depth the follow calibration [`FIELD_CAM_DEPTH`] stands
+/// for: the zone-miss / default block's `B614 = 0x4000`. A composed depth
+/// scales the calibrated eye-back distance by its ratio to this.
+pub const RETAIL_FIELD_DEPTH_UNITS: f32 = 16384.0;
 
 /// Field follow-camera eye-back depth, in the engine's 1x world frame.
 ///
@@ -128,36 +133,58 @@ fn lead_actor_xz(world: &World) -> Option<(f32, f32)> {
 
 /// The **retail field follow camera**'s inputs for this frame.
 ///
-/// `H` is the camera's live global when it carries one and [`FIELD_H`]
-/// otherwise; pitch and yaw are the savestate-pinned anchors above, each of
-/// which is one state's value rather than a scene invariant - see their own
-/// docs for how often they hold and what decoding the per-scene camera-region
-/// record would take. The look-at
+/// While the zone camera is live ([`Camera::zone`] has composed from this
+/// scene's terrain), pitch, yaw, `H` and the eye-back depth are the live
+/// globals it eases - retail's per-scene / per-tile camera. Otherwise (a
+/// world with no field terrain) pitch and yaw are the savestate-pinned
+/// fallbacks above and `H` the live global or [`FIELD_H`]. The look-at
 /// target is the player anchor with its floor height sampled (retail's
 /// follow-cam `FUN_801DBE9C` folds `-(anchor X/Z)` into the focus globals each
 /// frame, and the port's `sample_field_floor_height` supplies the Y a raw
 /// `world_y` of `0` would put under an elevated town tier). Two user knobs
-/// compose onto the pinned base and are both retail-identical at their
+/// compose onto the base and are both retail-identical at their
 /// defaults: [`Camera::distance`] scales the eye-back depth, and
 /// [`Camera::manual_orbit`] swings the yaw around the player in the compass
 /// sense - the PSX render yaw is its negation.
 ///
+/// The eye trio is the one place the retail model is not applied verbatim:
+/// the composed depth scales [`FIELD_CAM_DEPTH`] by its ratio to the default
+/// `0x4000`, and the composed eye X / Y (the `-(depth >> 7)` / `0x200 +
+/// depth >> 8` terms and the floor-height compensation) are carried in the
+/// globals but not fed to the view, because the field `TR` composition
+/// behind [`FIELD_CAM_DEPTH`]'s calibration is not pinned (the retail eye
+/// trio divided by the 6x world scale does not reproduce the retail frame).
+///
 /// `None` when no player actor exists to follow; a host falls back to its own
 /// debug vantage there.
 ///
-/// REF: FUN_801DBE9C
+/// REF: FUN_801DBE9C, FUN_801DAB90
 pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView> {
     let (wx, wz) = lead_actor_xz(world)?;
     let floor_y = world.sample_field_floor_height(wx as i32, wz as i32) as f32;
+    let (pitch_units, yaw_units, depth_scale) = if cam.zone.active {
+        let g = &cam.globals.0;
+        (
+            f32::from(g[0] as i16),
+            f32::from(g[1] as i16),
+            // Mode 4 flips a negative depth into the yaw; every other arm
+            // composes a positive one, so the magnitude is the distance and
+            // a degenerate shot never puts the lens inside the player.
+            (g[5] as f32 / RETAIL_FIELD_DEPTH_UNITS).abs().max(0.1),
+        )
+    } else {
+        (FIELD_PITCH_UNITS, FIELD_FOLLOW_YAW_UNITS, 1.0)
+    };
     Some(FieldCameraView {
         focus: [wx, floor_y, wz],
-        pitch: to_rad(FIELD_PITCH_UNITS),
+        pitch: to_rad(pitch_units),
         // PSX camera yaw is the compass negation, so a positive manual orbit
         // subtracts from the render yaw.
-        yaw: to_rad(FIELD_FOLLOW_YAW_UNITS) - cam.manual_orbit,
+        yaw: to_rad(yaw_units) - cam.manual_orbit,
         // The field follow camera never rolls: `FUN_80025C24` seeds the roll
-        // global to `0` on scene entry and only an op-`0x45` beat writes it.
-        // Measured `0` in 51 of 51 field states.
+        // global to `0` on scene entry and only an op-`0x45` beat writes it,
+        // and the follow ease's descriptor list has no roll entry. Measured
+        // `0` in 51 of 51 field states.
         roll: 0.0,
         // The live GTE `H` when the camera carries one - retail's scene-entry
         // reset leaves it `0`, so a scene that never staged an `H` falls back
@@ -167,7 +194,11 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
             0 => FIELD_H,
             v => v as f32,
         },
-        tr_eye: [0.0, 0.0, FIELD_CAM_DEPTH * cam.distance.scale()],
+        tr_eye: [
+            0.0,
+            0.0,
+            FIELD_CAM_DEPTH * depth_scale * cam.distance.scale(),
+        ],
     })
 }
 

@@ -4,11 +4,79 @@ Sony's standard `VABp`-magic instrument bank format. Programs (up to 128) × ton
 
 The format itself is documented externally; the Legaia-specific notes are:
 
-- The dominant on-disc carrier is the [scene-VAB-prefixed streaming](scene-bundles.md) shape - the VAB body is preceded by a 4-byte chunk0 header. `crates/vab::parse_header(buf, offset)` accepts a starting offset so callers can skip the wrapper.
+- The dominant on-disc carrier is the [scene-VAB-prefixed streaming](scene-bundles.md) shape - the VAB is preceded by a 4-byte chunk-0 header, and it is **split across two chunks** rather than stored whole (see [below](#a-vab-is-carried-as-two-chunks-and-the-bodies-are-the-second)). `crates/vab::parse_header(buf, offset)` accepts a starting offset so callers can skip the wrapper.
 - A bulk scan of each entry's own sectors finds 424 `VABp` headers across 219 PROT entries. Exactly **one** is a multi-bank archive - `0891_level_up`, holding 206 banks; every other carrier holds exactly one. The `vab_01` cluster (1072..1194) is the standard distributed-bank layout: 119 of its 123 entries, one bank each.
 - **The "three multi-bank archives" reading was an over-read.** `0889_sound_data2` (207 banks) and `0890_sound_data2` (203) were counted through the superseded `toc[p+5] - toc[p+3] + 4` window ([`prot.md`](prot.md#tocp5---tocp3--4-is-not-an-entrys-size)), which spans both of those small entries into `0891`'s 6 MB archive; on their own sectors they hold 1 and 0. The whole-corpus figures from that window (1191 headers, 239 entries, 120 `vab_01` carriers) are artefacts of the same window.
 - Block names from CDNAME can be misleading; trust the `VABp` magic rather than the surrounding cluster name.
 - The trailing VAG size table (256 × `u16`) is **1-indexed**: `vag_table[1..=vs]` hold each sample's size in 8-byte units, so `vag_table[0]` is a reserved leading spacer. It is universally `0` across the retail corpus (424 / 424 VABs, asserted by the disc-gated `corpus_vag_spacer` test) - it is **not** a master pitch / sample-rate shift, so no pitch offset is derived from it (`VabReport::vag_table_spacer` surfaces the raw byte only).
+
+### A VAB is carried as two chunks, and the bodies are the second
+
+The 4-byte word in front of `pBAV` is a [DATA_FIELD](data-field.md) chunk header
+`(type << 24) | payload_len` with type `0x00`, and its payload length is the
+VAB's **header part** only - `VabHdr` + the 128-slot program table + `ps` tone
+pages + the 256-slot VAG size table, i.e. `0x20 + 0x800 + 0x200 * ps + 0x200`.
+The VAG bodies are a *different chunk* of the same stream, so a second chunk
+header sits between the size table and the first ADPCM block:
+
+```text
+[u32 (0x00 << 24) | header_part_len]   chunk 0 header
+[VabHdr .. VAG size table]             chunk 0 payload
+[u32 (type << 24) | body_len]          chunk N header   <- inside the VAB
+[VAG bodies]                           chunk N payload
+```
+
+`header_part_len + body_len == VabHdr.fsize`, which is what identifies the body
+chunk: it is the one whose payload length is `fsize - header_part_len`, a
+length the container states rather than a magic to hunt for.
+
+The law holds on all 424 retail VABs for the leading header, and the two-chunk
+carriage is asserted over every top-level VAB by the disc-gated
+`crates/vab/tests/corpus_chunk_carriage.rs`. The body chunk's type byte is
+`0x01` in almost every case and `0x03` in ten.
+
+**Why this matters to a reader.** `legaia_vab::parse` walks straight on from the
+size table, so the `byte_offset` it reports for each VAG body is that chunk
+header's address, not the body's - four bytes early wherever the body chunk
+comes next. That skew was first measured from the other side: an SPU-ADPCM
+block's high nibble is a filter index and only `0..=4` is legal, and the grid at
+`+4` scores 100 % legal filters where the reported origin scores about chance.
+`legaia_vab::vag_body_origin` reads the real origin off the stream instead, and
+`decode_vag_aligned`'s `{0, 4}` probe is the fallback for callers that hold only
+the body.
+
+Six entries - `0886`, `1058`, `1059`, `1063`, `1064`, `1065` - put the SEQ chunk
+**before** the body chunk, so their skew is thousands of bytes and no
+small-alignment probe recovers it. Anything that indexes a VAG body out of a
+stream entry has to walk the chunks.
+
+### The multi-bank archive (`monster.snd`)
+
+PROT extraction `0891` is the disc's one multi-bank VAB: 206 independent banks,
+one per monster SE set, streamed a bank at a time because the whole archive is
+5.7 MB. Its head is the bank index:
+
+| Offset | Field |
+|---|---|
+| `+0x00` | `u32` reserved, zero |
+| `+0x04` | `u32 count` - 206 |
+| `+0x08` | `u32 start_sector[count + 1]` - each bank's first sector relative to the entry start; the last word is the archive's own sector count |
+
+Bank `i` occupies `[start_sector[i] << 11, start_sector[i + 1] << 11)`, so the
+table is bounded the way a [PROT TOC](prot.md) entry is - by its successor. Each
+bank is itself a two-chunk stream in exactly the shape above, then a zero
+terminator, then sector slack the builder left its previous buffer contents in
+(banks 61 and 62 carry bank 60's bytes from the same buffer offset). Nothing
+reads past `fsize`.
+
+The reader is `FUN_8003E104(bank, slot, dest)`, which bounds `bank` against the
+count word, forms `start` and `end` from `table[bank]` / `table[bank + 1]`, and
+shifts both left by 11 (`see ghidra/scripts/funcs/8003e104.txt`). Its three
+callers pass `monster_id - 1`. The table is resident at `0x801C8980` because
+the boot image stages it: PROT `0895` reads one sector of raw TOC `0x37D`
+(= extraction 891) and `memcpy`s `0x400` bytes of it there. Parser
+`legaia_asset::vab_multi_bank`; the whole entry accounts structurally in
+[`byte-accounting.md`](../tooling/byte-accounting.md).
 
 ### Program slots vs packed tone pages
 

@@ -885,6 +885,18 @@ into `actor+0x24/+0x26/+0x28` - the **rotation triple**. The per-actor render di
 `[c 0 s; 0 1 0; -s 0 c]`, mapping local `+Z` to `(sin, 0, cos)` - the same forward
 vector the locomotion integrator walks along.
 
+The hand-off is `addiu a0,s0,0x24` at `0x8001AF04` **then** `jal 0x80026988` at
+`0x8001AF08`, whose delay slot `0x8001AF0C` is `move a1,s8` (the destination
+matrix) - `a0` carries the whole triple, not one angle, which is the reason
+`+0x26` is "the middle" of anything. `FUN_80026988`'s own nine stores resolve
+the order without a capture: it reads three angles at `a0+0x00`/`+0x02`/`+0x04`
+(`lhu` at `0x80026998`, `0x800269A4`, `0x800269F8`, each `& 0xFFF`, `<< 1`,
+indexed into the same two LUTs) and the matrix it writes to `a1+0x00..+0x10` is
+exactly `Rx(a0+0x00) · Ry(a0+0x02) · Rz(a0+0x04)` - `m[0][2] = LUT_B[a0+0x02]`
+alone at `0x80026AC0`, which only the `Y` slot of that product can be. So
+`+0x26` is the yaw by construction, and `+0x24`/`+0x28` are the pitch and roll
+the same matrix consumes.
+
 **This table is the static environment placement** - the visible terrain
 segments, buildings, and props, *not* (only) NPC spawns. Each placed tile
 allocates a static-object actor (shared tick fn `0x8003BC08`); the actor draws
@@ -1793,7 +1805,11 @@ Modelling note (reconcile outcome): the raw `4C 51` handler pins its byte +3 as 
 
 ## Engine port: movement compass + opt-in precise movement
 
-The engine mirrors retail's camera-remapped pad in `World::step_field_locomotion` (`decode_field_direction`): the held d-pad is rotated by `World::locomotion.camera_azimuth` **quantised to the nearest 90°** - the same job `func_0x800467e8` does - and stepped through the per-axis collision above. The azimuth feed is `Camera::compass_azimuth_units()` (engine-core): scripted yaw + the user's `manual_orbit` (the play-window's left-mouse drag-orbit) + the host renderer's `render_yaw_bias` (the follow camera's fixed base yaw, compass sense = the negated PSX render yaw), pushed into the world each `BootSession::tick`. All three terms default to 0, so headless hosts keep the identity remap.
+The engine mirrors retail's camera-remapped pad in `World::step_field_locomotion` (`decode_field_direction`): the held d-pad is rotated by `World::locomotion.camera_azimuth` **quantised to the nearest 90°** - the same job `func_0x800467e8` does - and stepped through the per-axis collision above. The azimuth feed is `Camera::compass_azimuth_units()` (engine-core): scripted yaw + the user's `manual_orbit` (the play-window's left-mouse drag-orbit) + the follow camera's base yaw in the compass sense (the negated PSX render yaw), pushed into the world each `BootSession::tick`. All three terms default to 0, so headless hosts keep the identity remap.
+
+A host declares that it renders the retail follow view by setting `render_yaw_bias`; while the zone-driven follow camera composes that view the base term is the negation of the **live** yaw it eased (`Camera::zone_follow_yaw_units`), so the compass turns with the scene's authored camera, and the pinned constant stands in only for a world with no field terrain.
+
+The follow camera itself - the per-scene pitch / yaw / `H` / depth each MAN section-3 camera-region record authors, the composer and the per-frame ease - is documented with the record format in [`encounter.md`](../formats/encounter.md#man-section-3-the-camera-region-table) and ported in `legaia_engine_core::camera_zone`.
 
 Two non-retail, opt-in knobs layer on top (play-window keybinds, persisted in `legaia-options.toml`):
 
