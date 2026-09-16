@@ -225,22 +225,32 @@ impl ExtractedDescriptor {
     }
 }
 
-/// Walk the bundle's 7 descriptors. Descriptor 0 carries an authoritative
-/// file-relative `data_offset` (always `0x40` past the table header); the
-/// other six carry runtime-buffer offsets that don't address bytes within
-/// the on-disc file.
+/// Walk the bundle's descriptors. **Every** descriptor's `data_offset` is
+/// file-relative against the carrying PROT entry, descriptor 0's included
+/// (its offset is always the header end, `8 + count * 8`). A sweep of the
+/// disc's count-4..7 tables resolves `table_offset + data_offset` inside the
+/// entry for every descriptor, none outside it.
+///
+/// The "descriptors 1.. hold runtime-buffer offsets that do not address
+/// on-disc bytes" reading this comment used to carry was an artifact of the
+/// superseded entry-size expression: offsets do run past what that
+/// expression claimed an entry was, which read as "outside the file".
+/// [`extract_man_payload`] has always resolved the MAN descriptor this way,
+/// and [`crate::model_bank`] resolves the type-`0x02` model pack the same
+/// way.
 ///
 /// The result is the descriptor metadata for all seven plus, for descriptor
 /// 0 only, a file-relative byte range pointing at its LZS-compressed
 /// payload. Decompress with [`extract_descriptor_0_lzs`] to materialise the
 /// bytes.
 ///
-/// Descriptors 1..6 are surfaced for completeness but `payload_start` /
-/// `payload_end` are zeroed - the retail loader resolves them inside its
-/// per-scene working buffer that the on-disc bytes don't fully populate
-/// (see the asset-loader subsystem doc). Engines that need those payloads
-/// drive the streaming loader chain (`tim.dat` / `move.mdt`) instead of
-/// reading them from this entry.
+/// `payload_start` / `payload_end` are zeroed for descriptors 1.. because
+/// this function does not size a compressed payload, not because the offset
+/// is unusable: `size` is the *decompressed* length, so the on-disc extent
+/// is only known once the stream is decoded. Callers that want those bytes
+/// resolve `bundle.table_offset() + d.data_offset` themselves and hand the
+/// slice to [`legaia_lzs::decompress_tracked`], which is what
+/// [`extract_man_payload`] does.
 pub fn walk_descriptors(bundle: &BundleSource) -> Vec<ExtractedDescriptor> {
     let descriptors = bundle.descriptors();
     let table_offset = bundle.table_offset();

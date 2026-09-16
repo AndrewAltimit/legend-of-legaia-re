@@ -28,6 +28,7 @@ scene's MAN - use `legaia-engine man-scripts` instead.
 - [`scus_core_helpers`](#scus_core_helpers)
 - [`battle_action` - `FUN_801E295C`](#battle_action---fun_801e295c)
 - [`battle_cam_script` - `FUN_801D5854`](#battle_cam_script---fun_801d5854)
+- [`psx_camera` - the shared retail GTE camera](#psx_camera---the-shared-retail-gte-camera)
 - [Battle-overlay leaves outside the action SM](#battle-overlay-leaves-outside-the-action-sm)
 - [`field_party_cursor` - `FUN_801F1278`](#field_party_cursor---fun_801f1278)
 - [`battle_formulas`](#battle_formulas)
@@ -287,6 +288,33 @@ re-derived every pass, so a depth frozen while the formation was collapsed
 mid-approach never re-opens; and the resting yaw is the free-running orbit a
 fight *inherits* from the field camera, not a constant - five retail states at
 one framing read five different yaws.
+
+## `psx_camera` - the shared retail GTE camera
+
+The projection every camera in the port runs through, held once below both
+hosts. `psx_camera_vp` is retail's
+`screen = H * (R * (v - focus) + tr_eye) / Ez` with `R = Rx * Ry * Rz`
+(`FUN_8001CF50`'s composition order) and the GTE control file's `(OFX, OFY)`,
+written as one column-major 4x4; `psx_camera_eye` is its analytic inverse, the
+world-space lens. `battle_vp` above is this kernel with the battle pose's
+constants, so the field camera and the battle camera cannot diverge in their
+arithmetic.
+
+The frame convention is the part worth reading before using it: **every matrix
+this module returns is for the Y-up render frame** - the caller's model
+matrices carry the PSX `scale(1,-1,1)` and the projection's trailing flip
+cancels it. A host that instead keeps raw retail Y-down world state (the
+native window's field frame) post-multiplies one more `scale(1,-1,1)` and
+lands on the same net transform.
+
+`CutsceneCameraInterp` - the between-beat glide for op-`0x45` Camera Configure
+(`PORT: FUN_801DC0BC`, the `f32` rendition of `camera_mover`'s integer law) -
+lives here rather than in the wgpu-linked renderer crate, which is what lets
+the browser play page ease a scripted shot instead of snapping every
+`apply > 0` beat. `engine-render::window` re-exports it at its old path.
+
+Which camera owns a given frame, and what its inputs are, is one layer up:
+`engine-core::camera_view`.
 
 ## Battle-overlay leaves outside the action SM
 

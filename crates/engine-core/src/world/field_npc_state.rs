@@ -73,6 +73,27 @@ pub struct FieldNpcState {
     /// initial facings are the per-actor field-VM channels, not yet
     /// executed).
     pub headings: std::collections::HashMap<u8, i16>,
+    /// Live per-NPC **pitch / roll** - retail `actor+0x24` and `actor+0x28`,
+    /// the X and Z Euler angles the scripted-motion VM's `0x15` / `0x16`
+    /// tween ([`legaia_engine_vm::ambient_motion::AmbientMotion::pitch`] /
+    /// [`roll`](legaia_engine_vm::ambient_motion::AmbientMotion::roll)),
+    /// keyed by placement slot in the same 12-bit angle space as
+    /// [`crate::world::FieldNpcState::headings`].
+    ///
+    /// Published by `Self::tick_field_npc_motions` alongside the heading, and
+    /// read by both hosts through
+    /// [`crate::world::World::field_npc_tilt`]. Absent for a slot whose
+    /// channel never tweened either angle, which is the overwhelming majority:
+    /// the disc-wide census finds `0x15` authored nowhere and `0x16` only in
+    /// `juui1`, so a host's yaw-only fast path stays the common case.
+    ///
+    /// The angles are an actor draw's, not a placement's: the per-actor render
+    /// dispatcher hands `actor+0x24` straight to the three-angle composer
+    /// (`addiu a0,s0,0x24` / `jal 0x80026988` at `0x8001af04` in
+    /// `FUN_8001ADA4`), which reads X at `+0`, Y at `+2` and Z at `+4`.
+    ///
+    /// REF: FUN_8001ADA4, FUN_80026988
+    pub tilts: std::collections::HashMap<u8, (i16, i16)>,
     /// The talk-time facing save: `(placement slot, the heading the NPC stood
     /// with before the player addressed it)`.
     ///
@@ -125,6 +146,19 @@ pub struct FieldNpcState {
     /// position. Script-started legs (interaction-prologue `0x4C 0x51`, actor
     /// VM `start_motion`) run regardless of [`crate::world::FieldNpcState::animate`].
     pub motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
+    /// **Live per-slot model id**, keyed by placement `slot`: what the
+    /// scripted-motion VM's op `0x0E` re-bound this actor's mesh to, in the
+    /// raw operand space both model-pool consumers share (`< 0xF0` = the
+    /// scene bank, `>= 0xF0` = the player bank at `operand - 0xF0`; see
+    /// [`crate::model_bank::resolve_model_id`]).
+    ///
+    /// Absent = the actor still draws the mesh its placement's
+    /// `model_index` named, which is every actor until a script swaps one.
+    /// Retail has no such map: `FUN_80024E08` writes the new id straight into
+    /// `actor[+0x64]` and reloads the mesh, and the port's hosts hold the
+    /// uploaded mesh instead of the actor, so the id has to live where both
+    /// of them can see it.
+    pub models: std::collections::BTreeMap<u8, i16>,
     /// Per-NPC **ambient facing** channels, keyed by placement `slot`: the
     /// second motion VM's idle turn-in-place behaviour (`FUN_80038158` ops
     /// `0x04` / `0x0D`, ported at
@@ -155,11 +189,13 @@ impl FieldNpcState {
             positions: std::collections::HashMap::new(),
             entry_positions: std::collections::HashMap::new(),
             headings: std::collections::HashMap::new(),
+            tilts: std::collections::HashMap::new(),
             facing_save: None,
             routes: std::collections::BTreeMap::new(),
             glide_speeds: std::collections::BTreeMap::new(),
             default_moves: std::collections::BTreeMap::new(),
             motions: std::collections::BTreeMap::new(),
+            models: std::collections::BTreeMap::new(),
             ambient: std::collections::BTreeMap::new(),
             animate: false,
             anim_cues: std::collections::HashMap::new(),

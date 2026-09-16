@@ -21,6 +21,12 @@
  * a page file is the thing that drifted last time. The face buttons live on
  * Z / X / C / V and the shoulders on Q / E.
  *
+ * That layout is now the DEFAULT rather than the whole story: the pause
+ * menu's Options > Key Config row rebinds keys, and the engine persists the
+ * edited table to localStorage. A page that folded this table into `PAD` at
+ * load therefore has to re-read it - `legaiaSyncPadBindings(rt)` does that off
+ * the engine's own revision counter. Still no table in this file.
+ *
  * Loaded before play-app.js and before each page's own script. */
 (function () {
   'use strict';
@@ -41,9 +47,9 @@
 
   /* Adopt the engine's binding table. `src` is a LegaiaRuntime, a
    * LegaiaMinigames or the wasm module namespace - all three export the same
-   * two calls. Idempotent. */
-  function adoptPadBindings(src) {
-    if (PAD) return PAD;
+   * two calls. Idempotent unless `force` is set. */
+  function adoptPadBindings(src, force) {
+    if (PAD && !force) return PAD;
     let table = null, buttons = null;
     try {
       if (src && typeof src.pad_bindings_json === 'function') {
@@ -84,6 +90,25 @@
   }
 
   window.legaiaAdoptPadBindings = adoptPadBindings;
+  /* Re-read the engine's table after the options screen's Key Config row
+   * rebound something. The table above is folded into `PAD` once at load, so
+   * nothing about the engine serving new bindings would reach a running page;
+   * `pad_bindings_revision` is the engine's own change counter and this is the
+   * only thing that acts on it.
+   *
+   * Cheap enough to call once a frame: it compares one integer and returns. */
+  let padRev = -1;
+  window.legaiaSyncPadBindings = (src) => {
+    if (!src || typeof src.pad_bindings_revision !== 'function') return false;
+    let rev;
+    try { rev = src.pad_bindings_revision() | 0; } catch (e) { return false; }
+    if (rev === padRev) return false;
+    const first = padRev < 0;
+    padRev = rev;
+    if (first) return false;       /* the load-time read is not a rebind */
+    adoptPadBindings(src, true);
+    return true;
+  };
   window.legaiaPadTable = () => PAD;
   window.legaiaPadMaskOf = padMaskOf;
   window.legaiaPadButton = (name) => (PAD_BTN && PAD_BTN[name]) || PAD_BITS[name] || 0;

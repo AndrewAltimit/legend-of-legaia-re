@@ -20,6 +20,7 @@ impl SceneHost {
             scene: None,
             assets: None,
             resources: None,
+            model_bank: crate::model_bank::SceneModelBank::default(),
             frame_time: crate::FrameTime::new(),
             map_resolver: Box::new(NullMapIdResolver),
             monster_archive_cache: None,

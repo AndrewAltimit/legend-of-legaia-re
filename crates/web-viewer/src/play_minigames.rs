@@ -225,8 +225,24 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Fire the minigame sessions' queued SFX cue ids (the dance count-in's
+    /// intro cue, the how-to tutorial's cursor / confirm cues) through the
+    /// page's scheduler - the browser twin of the native window's
+    /// `drain_minigame_sfx_cues`. Drained every frame, audio up or not, so
+    /// the queue cannot grow on a muted page.
+    pub(crate) fn drain_minigame_sfx_cues_web(&mut self) {
+        let cues = match self.scene_host.as_mut() {
+            Some(h) => h.world.drain_minigame_sfx_cues(),
+            None => return,
+        };
+        for cue in cues {
+            self.minigame_sfx(cue);
+        }
+    }
+
     /// Per-tick presentation step. Cheap no-op outside a minigame mode.
     pub(crate) fn tick_minigame_ui(&mut self) {
+        self.drain_minigame_sfx_cues_web();
         let now = self
             .scene_host
             .as_ref()
@@ -291,15 +307,71 @@ impl LegaiaRuntime {
         let Some(game) = self.minigame_ui.game else {
             return (Vec::new(), Vec::new());
         };
+        // The dance's status rows are withheld while the pre-song count-in
+        // banner is up, off the same shared phase predicate the native HUD
+        // reads - the rule lives with the phase, not with either draw list.
+        let dance_status = self
+            .scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.minigames.dance_status_visible());
         let mut texts = match game {
             ActiveGame::Slot => self.slot_status_draws(font),
             ActiveGame::Baka => self.baka_status_draws(font),
             ActiveGame::Muscle => self.muscle_status_draws(font),
+            ActiveGame::Dance if !dance_status => Vec::new(),
             ActiveGame::Dance => self.dance_status_draws(font),
         };
+        if game == ActiveGame::Dance {
+            texts.extend(self.dance_countin_and_tutorial_draws(font));
+        }
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
         ui::scale_stage_text_draws(&mut texts, origin, scale);
         (Vec::new(), texts)
+    }
+
+    /// The dance's pre-song count-in banner and the Disco King how-to
+    /// tutorial's captions, in **stage** space (the caller applies the
+    /// transform with the rest of the minigame chrome).
+    ///
+    /// Both come out of `legaia_engine_ui::ui_dance`, the builders the native
+    /// window's HUD draws them with, off the world state
+    /// `World::tick_dance` produces - so the banner slides on the same frames
+    /// on both hosts. Neither existed on this page, and the count-in did not
+    /// exist on *either* host for a door-warp entry: the native window ran
+    /// one only from its own debug launcher.
+    fn dance_countin_and_tutorial_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+        use legaia_engine_ui::ui_dance;
+        let Some(host) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        let mg = &host.world.minigames;
+        let mut out = Vec::new();
+        if let Some(env) = mg.dance_countin_banner.as_ref() {
+            out.extend(ui_dance::dance_countin_draws_for(
+                font,
+                ui_dance::DanceCountInView {
+                    x_offset: env.x_offset,
+                    brightness: env.brightness,
+                    hold: env.hold,
+                },
+                (0, 0),
+                1,
+            ));
+        }
+        if let Some(tf) = mg.dance_tutorial_frame.as_ref() {
+            out.extend(ui_dance::dance_tutorial_draws_for(
+                font,
+                ui_dance::DanceTutorialView {
+                    captions: &tf.captions,
+                    options: tf.options,
+                    cursor_pos: tf.cursor_pos,
+                    feedback: tf.feedback,
+                },
+                (0, 0),
+                1,
+            ));
+        }
+        out
     }
 }
 

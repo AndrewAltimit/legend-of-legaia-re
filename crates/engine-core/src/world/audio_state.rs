@@ -63,6 +63,17 @@ pub struct AudioState {
     /// `World::restore_field_bgm`). Guards against double-swap / spurious
     /// restore.
     pub battle_bgm_active: bool,
+    /// Field track stashed when an in-world minigame's overlay init took the
+    /// score over with its own global-pool track
+    /// ([`crate::world::World::swap_to_minigame_bgm`]), resumed by
+    /// [`crate::world::World::restore_minigame_bgm`] on the mode-24 return
+    /// warp. Managed by that pair; not meant to be set directly.
+    pub minigame_bgm_resume: Option<u16>,
+    /// `true` while a minigame's own track owns the director. Guards the
+    /// restore so a minigame that started no track of its own (the slot
+    /// machine, fishing - both inherit the host scene's BGM) does not
+    /// re-emit the field track on exit.
+    pub minigame_bgm_active: bool,
     /// Retail's timed sound-source auto-release (`gp+0x808`/`0x814`/`0x81C`),
     /// serviced by the frame-begin driver. Advanced by [`crate::world::World::tick`] on the
     /// sim ticks that map to a retail vsync, by [`crate::world::FrameClock::frame_step`] - the
@@ -126,6 +137,8 @@ impl AudioState {
             battle_bgm: None,
             field_bgm_resume: None,
             battle_bgm_active: false,
+            minigame_bgm_resume: None,
+            minigame_bgm_active: false,
             sound_release: crate::sound_state::SoundReleaseTimer::default(),
             pending_sound_release: false,
             sound_arm: None,

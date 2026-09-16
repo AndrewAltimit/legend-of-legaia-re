@@ -40,13 +40,25 @@ The split is deliberate:
   `set_camera_azimuth(units)` (so the d-pad remaps camera-relative),
   `tick_frame()` (returns the label of the scene a door just walked into, so the
   page rebuilds around a transition), and `state_json()` (frame / mode / player
-  transform / live dialogue box).
+  transform / live dialogue box). It also holds the port's seat at retail's
+  **mode table** (`engine-core::mode::ModeSeat`) and drives it through the same
+  entry points `BootSession` uses - reconciled once per frame, plus the two
+  INIT modes a host enters by hand (`MAIN INIT` at field entry, `CARD INIT` on
+  the pause-menu open). `mode_state_json()` reports the word, its table name,
+  the front-end entry word and the seat's edge count; the cross-host oracle is
+  `engine-shell/tests/mode_seat_host_parity.rs`, which drives **both** hosts
+  over one ladder and compares the chains and the edge counts.
 - **`play`** - what the page draws, resolved against the **same**
   `SceneResources` the host already built at scene entry (nothing is decoded
   twice): the assembled map (`field_*` accessors), the lead's field mesh posed
   each frame from the world's live `pose_frame` (`player_mesh_*`,
   `player_transform`), and the scene's MAN-placed NPCs at their live world
-  positions (`play_npc_*`).
+  positions (`play_npc_*`). `play_npc_live_model(i)` is the scripted mesh
+  re-bind (motion-VM op `0x0E`): it reports the model id the world recorded
+  for that NPC, or `-1` while it still draws its spawn mesh, and the page
+  re-uploads the mesh when the answer moves. The native window's twin reads
+  the same world field and resolves through the same
+  `SceneModelBank::tmd_bytes`.
 
 The map + NPC layers make the **native play-window's exact resolver calls**,
 pinned by the disc-gated parity test `tests/play_parity.rs`:
@@ -141,9 +153,7 @@ presentation layer from per-frame reads: the narration crawl + title card
 Ys), the "It was the Seru." caption (`cutscene_caption_*`, faded by the
 engine's alpha), the prologue sepia grade + gold depth-cue ramp
 (`play_cutscene_state_json` mirrors `World::scene_color_grade` /
-`scene_depth_cue`; the page stages them as WebGL uniforms), the op-`0x45`
-cutscene camera decode (`play_cutscene_camera_json`, mapped onto the page's
-orbit projection - an approximation of the native PSX GTE camera), the
+`scene_depth_cue`; the page stages them as WebGL uniforms), the
 narration input lock, and the retail intro-skip
 (`play_take_prologue_handoff` - Cross skips the whole remaining opening to
 `town01`). FMV beats play through `play_fmv` (below); the `town01`
@@ -180,9 +190,30 @@ Two things the browser host has to do that the native one gets for free:
   under it and otherwise seats the player on the walk-ground heightfield, never
   on a walk-on trigger tile (which would fire on the first tick and warp the
   scene out from under them).
-- **Framing.** Retail authors a camera per scene. The page has one follow camera,
-  so `site/js/play-app.js` culls any mesh straddling the camera-to-player line -
-  without it a cave roof or a house's upper storey fills the screen.
+- **Framing.** The page frames every field / overworld / cutscene shot with the
+  ENGINE camera (`play_camera`, below), so the vantage is retail's rather than
+  the page's own. The camera-occlusion fade dissolves whatever geometry sits
+  between that lens and the character; nothing is culled.
+
+## The camera (`play_camera`)
+
+The engine's, not the page's. `play_camera_vp(w, h)` resolves which camera owns
+the frame through the shared `engine-core::camera_view::resolve_field_camera` -
+the retail field follow view, an op-`0x45` cutscene shot with its between-beat
+glide, the overworld walk view, or the world map's top-view debug camera - and
+returns the column-major view-projection `site/js/play-app.js` uploads.
+`play_camera_eye` is the same frame's world-space lens, which is what the
+occlusion fade ray-casts from; `play_camera_set_orbit` writes the user's
+drag-orbit into `Camera::manual_orbit`, the same field the native window's
+left-mouse drag writes, so the movement compass tracks the view on both hosts.
+
+This host held **no** `engine_core::camera::Camera` at all before: it framed
+the field with a spherical orbit projection of its own and re-mapped the
+cutscene params onto it, so nothing here routed the Camera Configure beats
+into a controller, advanced the mover, wrote the follow focus back into the
+retail globals, or reset them on scene entry. The page keeps exactly one
+camera of its own now - the debug orbit vantage on `F3`, which the native
+window has too, and which is an explicit override rather than the default.
 
 ## Retail pause menu (`play_menu`)
 
@@ -503,7 +534,15 @@ opening prologue chain (`play_cutscene` above) - after `begin_new_game`
 establishes the fresh slate the native `BootSession` does. The title theme
 starts with the card and the attract countdown - which runs at the Press
 Start prompt as well as on the menu, since retail has no prompt phase to
-wait behind - plays `MV1.STR` through `play_fmv`. Publisher logos are not yet wired on this host.
+wait behind - plays `MV1.STR` through `play_fmv`.
+
+The **publisher logos** run ahead of the card on this host too
+(`boot_logos_start` / `_step` / `_draws_json`): `PublisherLogosSession` walks
+retail's SCEA -> Contrail -> PROKION order off the PROT 0895 atlas, Start or
+Cross skips, and the quads come out of the shared
+`legaia_engine_ui::ui_boot_logos::publisher_logo_sprite_draws` the native
+window draws through, so the 640x480 boot stage letterboxes identically on
+both. The title theme starts when the card comes up, not under the logos.
 
 ## In-world minigames (`play_minigames`)
 

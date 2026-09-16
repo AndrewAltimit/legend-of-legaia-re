@@ -130,6 +130,17 @@ pub struct SceneHost {
     /// `None` until the first `enter_field_scene` call. Use for rendering
     /// and for driving `World::init_scene_animations`.
     pub resources: Option<crate::scene_resources::SceneResources>,
+    /// The loaded scene's **model bank** - the window of the global
+    /// registered-TMD pool (`DAT_8007C018`) this scene's loader fills, in
+    /// registration order ([`crate::model_bank::SceneModelBank`]).
+    ///
+    /// Rebuilt on every field-scene entry, beside [`Self::resources`]. It is
+    /// not the same set as `SceneResources::tmds`: that is a magic scan over
+    /// the scene's raw entries and is blind to a TMD inside an LZS-compressed
+    /// bundle descriptor, which is where two of the four scenes that script a
+    /// mesh re-bind keep all of their models. Empty until the first field
+    /// entry, and for a scene whose bundle registers nothing.
+    pub model_bank: crate::model_bank::SceneModelBank,
     pub frame_time: crate::FrameTime,
     /// Map-id → scene-name resolver for `scene_transition(map_id)`.
     /// Default is [`NullMapIdResolver`] so transitions are silently

@@ -831,12 +831,32 @@ than a guess. The cost lands on the audit's first section, in three shapes:
   routine reports every tagged address in that file live, including the ones the
   module doc marks `NOT WIRED` by name.
 
-**The first two are corrected, in a second graph.** `--live-audit` builds
+**The first two are corrected, in a second graph.** The live pass builds
 `build_rust_graph(strict=True)` alongside the permissive one and reads *only*
 the stale-`NOT WIRED` test off it; `live`, `--not-live` and `--live-only` are
 unchanged and still come from the permissive graph. Sharpening the shared graph
 instead would trade the hard floor away for a fix to the opposite error, which
 is why it is two graphs and not one.
+
+### The second graph has to be built whenever its answer is printed
+
+It used to be built only under `--live-audit`, and `compute_live` falls back to
+`live_strict = live` without it. The summary's last line -
+`tagged NOT WIRED / REPLACED-BY but live` - is labelled as the receiver-gated
+answer, so in every run that did not pass the audit flag it printed the
+permissive one under the strict one's name. Measured on one tree: **42** under
+`--live`, **0** under `--live-audit --live`. Same tree, same question, two
+answers, and the larger one accuses that many correct disclosures of being
+stale - the precise failure this whole two-graph split exists to avoid,
+reintroduced by where the graph was built rather than by how.
+
+The generalisation is worth more than the fix: **a number that moves with an
+output flag is not a measurement.** An `--audit` / `--report` / `--verbose`
+switch may choose what is shown and may not choose what is computed, and the
+cheapest way to hold that line is to compute the smaller input unconditionally
+when the pass runs at all. Here the second graph costs nothing worth saving -
+both invocations above are dominated by parsing every crate source, and the
+difference between them sits inside the run-to-run spread on a loaded machine.
 
 The third shape - anchor granularity - is open, and is now most of what the
 audit's first section reports. A module anchor cannot distinguish the tagged
@@ -871,6 +891,7 @@ attributable references, through the same `item_reference_patterns` /
 | **disclosed-entered** | an anchor carrying a `NOT WIRED:` disclosure that a **passing** oracle executed. Highest priority: an oracle traversing stub code can certify behaviour nothing implements. |
 | **live-unentered** | statically reachable, never reached. Not a defect - the wiring worklist ordered by what a playthrough actually needs. |
 | **not observable (const)** | item anchors with no executed attributable reference. Deliberately neither entered nor never-entered: no line of coverage can convert the row, only executing a function that references the item. |
+| **not observable in any of these binaries** | no binary in the union carries the anchor's file, so there is no record to read. Also neither entered nor never-entered - and the one bucket a reader can mistake for progress, because an address joined against the never-entered set alone is *absent* from it. Named per address rather than counted, for that reason. |
 
 ### The denominator is a union of ladders, not one binary
 

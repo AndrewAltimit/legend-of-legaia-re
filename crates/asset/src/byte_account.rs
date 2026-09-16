@@ -289,6 +289,9 @@ pub struct Residue {
 #[serde(rename_all = "snake_case")]
 pub enum Walker {
     SceneAssetTable,
+    DescriptorBundle,
+    PochiFiller,
+    RingsideStill,
     Stream,
     MonsterArchive,
     MonsterBlock,
@@ -323,6 +326,9 @@ impl Walker {
     pub fn name(&self) -> &'static str {
         match self {
             Walker::SceneAssetTable => "scene_asset_table",
+            Walker::DescriptorBundle => "descriptor_bundle",
+            Walker::PochiFiller => "pochi_filler",
+            Walker::RingsideStill => "ringside_still",
             Walker::Stream => "stream",
             Walker::MonsterArchive => "monster_archive",
             Walker::MonsterBlock => "monster_block",
@@ -1093,6 +1099,205 @@ fn walk_scene_asset_table(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, de
     }
 }
 
+/// The same bundle, walked the way `FUN_80020224` walks it.
+///
+/// [`walk_scene_asset_table`] goes through the *detector*, whose count
+/// allow-list is `4..=7` plus a MAN requirement below 6 - a classifier
+/// heuristic, not a runtime rule. Retail reads the count word and loops
+/// (`lw s3,0x0(s4)` / `blez s3`), so the count-1 and count-3 bundles this disc
+/// also ships walk identically at runtime and had no walker here at all. Their
+/// class is [`Class::LzsContainer`], whose own descriptor count is *fitted*
+/// from a fixed list `{1,2,3,4,8,16}` that cannot even express the two count-5
+/// entries - so the class figure was never the header's own count.
+///
+/// The claims are the same three kinds the scene-bundle walker makes, and the
+/// payload extents are **measured** rather than inferred: a descriptor states
+/// only the decompressed size, so the compressed span's end comes from what
+/// `legaia_lzs::decompress_tracked` consumed.
+fn walk_descriptor_bundle(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth: u8) {
+    let Some(descriptors) = crate::scene_asset_table::descriptor_bundle_walk(buf) else {
+        walk_lzs_container_orphan(buf, sink, opts, depth);
+        return;
+    };
+    let count = descriptors.len();
+    sink.claim(0, 8, OWNER_HEADER, "count + decompressed-size total");
+    sink.claim(8, 8 + count * 8, OWNER_TOC, format!("{count} descriptors"));
+    for (i, d) in descriptors.iter().enumerate() {
+        let start = d.data_offset as usize;
+        let ty = AssetType::from_byte(d.type_byte);
+        let detail = format!(
+            "slot {i} type {:#04x} ({}) decoded {} B",
+            d.type_byte,
+            ty.name(),
+            d.size
+        );
+        let Some(out) = take_lzs(sink, buf, start, d.size as usize, &detail) else {
+            sink.note(format!("{detail}: LZS decode failed"));
+            continue;
+        };
+        // A `FLAG` slot is one the dispatcher answers with `type << 8` without
+        // reading a byte (`docs/formats/asset-type.md`), and on this disc every
+        // one of them decodes to the pochi fill file - the authoring tool wrote
+        // its filler into the reserved descriptor. Account it as the filler it
+        // is rather than sending 1927 bytes of ASCII to the generic walker.
+        let walker = if crate::categorize::is_pochi_filler(&out) {
+            Walker::PochiFiller
+        } else {
+            walker_for_section(d.type_byte, &out)
+        };
+        sink.nest(opts, depth, format!("slot {i} {}", ty.name()), &out, walker);
+    }
+}
+
+/// Does this buffer open with an [offset pack](walk_offset_pack)?
+///
+/// The discriminating word is the **first offset**, not the count: a table of
+/// `count` byte offsets puts member 0 immediately after itself, at
+/// `4 + 4 * count`. A word-offset [`crate::pack`] would put it four times
+/// further on, and an arbitrary pair of small integers almost never lands on
+/// the identity exactly. That equality is the whole test, and it is why the
+/// predicate can be used as a fallback without guessing.
+fn has_offset_pack_anchor(buf: &[u8]) -> bool {
+    let Some(count) = legaia_bytes::u32_le(buf, 0).map(|c| c as usize) else {
+        return false;
+    };
+    if count == 0 || 4 + count * 4 > buf.len() {
+        return false;
+    }
+    legaia_bytes::u32_le(buf, 4).is_some_and(|off| off as usize == 4 + count * 4)
+}
+
+/// Three `lzs_container` entries are not descriptor bundles at all, because
+/// that class never reads the header's count word - it *fits* a descriptor
+/// count out of a fixed list, so any buffer whose first words happen to pass
+/// the per-descriptor checks joins the class. This is where they land.
+///
+/// Two of the three are offset packs, one bare and one behind a DATA_FIELD
+/// chunk header, and both are recovered from the anchor rather than from the
+/// class ([`has_offset_pack_anchor`]). The third is a code image with a
+/// leading string pool, which has no structural walker here and stays residue.
+fn walk_lzs_container_orphan(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth: u8) {
+    if has_offset_pack_anchor(buf) {
+        sink.note("not a descriptor bundle - a bare offset pack");
+        let members = walk_offset_pack(buf, sink, OWNER_RECORD, "member");
+        nest_pack_members(buf, sink, opts, depth, &members);
+        return;
+    }
+    // `[u32 (type << 24) | payload_len]` then the pack, the same wrapper
+    // `prot::timpack` reads past for a `TIM_LIST` chunk
+    // (`docs/formats/tim-pack.md`). The header's own length word has to agree
+    // with the entry for the offset to mean anything.
+    let header = legaia_bytes::u32_le(buf, 0).unwrap_or(0);
+    let payload_len = (header & 0x00FF_FFFF) as usize;
+    if payload_len >= 8
+        && 4 + payload_len <= buf.len()
+        && buf.len() >= 4
+        && has_offset_pack_anchor(&buf[4..])
+    {
+        let ty = (header >> 24) as u8;
+        sink.claim(
+            0,
+            4,
+            OWNER_HEADER,
+            format!(
+                "chunk header type {:#04x} ({}), payload {payload_len} B",
+                ty,
+                AssetType::from_byte(ty).name()
+            ),
+        );
+        let mut inner = Sink::new();
+        let members = walk_offset_pack(&buf[4..], &mut inner, OWNER_RECORD, "member");
+        for c in inner.claims {
+            sink.claim(c.start + 4, c.end + 4, c.owner, c.detail);
+        }
+        for n in inner.notes {
+            sink.note(n);
+        }
+        let shifted: Vec<_> = members.iter().map(|r| r.start + 4..r.end + 4).collect();
+        nest_pack_members(buf, sink, opts, depth, &shifted);
+        return;
+    }
+    sink.note("not a descriptor bundle and not an offset pack");
+}
+
+/// Account each member of a pack in its own right, picking the walker from the
+/// member's own bytes.
+fn nest_pack_members(
+    buf: &[u8],
+    sink: &mut Sink,
+    opts: &AccountOptions,
+    depth: u8,
+    members: &[std::ops::Range<usize>],
+) {
+    for (i, r) in members.iter().enumerate() {
+        let Some(bytes) = buf.get(r.clone()) else {
+            continue;
+        };
+        let walker = walker_for_payload(bytes);
+        if walker != Walker::Generic {
+            sink.nest(opts, depth, format!("member {i}"), bytes, walker);
+        }
+    }
+}
+
+/// A pochi filler slot: the fill file, then the mastering buffer's leftovers.
+///
+/// Both claims are `pad` - a filler slot carries no content by construction -
+/// but they are separate claims because they are two different things, and the
+/// residue classifier would otherwise rank 266 sectors of dev fill as work: the
+/// fill is text-shaped, and `repeated_fill` only tests periods 1/2/4/8/16 while
+/// the pochi line is 52 bytes long.
+///
+/// See [`docs/formats/pochi.md`](../../../docs/formats/pochi.md) for what pins
+/// the tail: it is byte-identical to some other entry's bytes at the same file
+/// offset, in all 266 slots.
+fn walk_pochi_filler(buf: &[u8], sink: &mut Sink) {
+    let fill_end = crate::categorize::POCHI_FILL_LEN.min(buf.len());
+    sink.claim(
+        0,
+        fill_end,
+        OWNER_PAD,
+        "pochi fill file, through the EOF byte",
+    );
+    if buf.len() > fill_end {
+        sink.claim(
+            fill_end,
+            buf.len(),
+            OWNER_PAD,
+            "sector tail - the mastering buffer's prior contents, not fill",
+        );
+    }
+}
+
+/// One of the two headerless 16bpp stills, claimed as the four bands the
+/// consumer uploads ([`crate::ringside_still`]).
+///
+/// Claiming four bands rather than one buffer is the point: the band size is
+/// what the seek stride and the `LoadImage` rectangle independently agree on,
+/// so a still that is the wrong length leaves the shortfall in the residue
+/// instead of being absorbed by a whole-file claim.
+fn walk_ringside_still(buf: &[u8], sink: &mut Sink) {
+    use crate::ringside_still as still;
+    if !still::has_still_shape(buf) {
+        sink.note(format!(
+            "not {} bytes - the four {}-byte band uploads do not tile this buffer",
+            still::ENTRY_BYTES,
+            still::BAND_BYTES
+        ));
+        return;
+    }
+    for i in 0..still::BAND_COUNT {
+        let span = still::band_span(i).expect("band index inside BAND_COUNT");
+        let (x, y, w, h) = still::band_rect(i).expect("band index inside BAND_COUNT");
+        sink.claim(
+            span.start,
+            span.end,
+            OWNER_TEXTURE,
+            format!("band {i} -> LoadImage rect ({x},{y}) {w}x{h}"),
+        );
+    }
+}
+
 // --- DATA_FIELD / streaming variants --------------------------------------
 
 fn walk_stream(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth: u8) {
@@ -1671,6 +1876,71 @@ fn walk_scene_event_scripts(buf: &[u8], sink: &mut Sink) {
     sink.claim(0, 2 + n * 2, OWNER_TOC, format!("{n} record offsets"));
     for (i, (a, b)) in ranges.iter().enumerate() {
         sink.claim(*a, *b, OWNER_SCRIPT, format!("stager record {i}"));
+    }
+}
+
+/// The runtime `efect.dat` 2-pack (PROT `0873`).
+///
+/// Not the magic-prefixed [effect bundle](crate::effect_bundle) - a headerless
+/// file whose first two words are its two packs' offsets, with the sprite
+/// atlas inline between the header and pack 0
+/// ([`crate::efect_pack`]). The class had a walker slot and no walker behind
+/// it, so the whole 8 KB read as unwalked format.
+///
+/// Both packs address their members by **absolute file offset**, so a member
+/// runs to the next offset in its own table and the last to its pack's extent -
+/// pack 0's being pack 1's start, not the file's end.
+fn walk_efect_dat(buf: &[u8], sink: &mut Sink) {
+    let Some(p) = crate::efect_pack::detect(buf) else {
+        sink.note("efect_pack::detect returned None");
+        return;
+    };
+    sink.claim(0, 8, OWNER_HEADER, "pack0 + pack1 offsets");
+    if p.atlas_entries > 0 {
+        sink.claim(
+            8,
+            p.pack0_offset,
+            OWNER_RECORD,
+            format!("{} sprite-atlas entries", p.atlas_entries),
+        );
+    }
+    for (pack, at, count, limit, owner, what) in [
+        (
+            0usize,
+            p.pack0_offset,
+            p.pack0_count,
+            p.pack1_offset,
+            OWNER_ANM,
+            "frame batch",
+        ),
+        (
+            1,
+            p.pack1_offset,
+            p.pack1_count,
+            buf.len(),
+            OWNER_SCRIPT,
+            "spawn script",
+        ),
+    ] {
+        sink.claim(
+            at,
+            at + 4 + 4 * count,
+            OWNER_TOC,
+            format!("pack {pack}: {count} absolute offsets"),
+        );
+        for i in 0..count {
+            let Some(start) = legaia_bytes::u32_le(buf, at + 4 + 4 * i).map(|v| v as usize) else {
+                break;
+            };
+            let end = legaia_bytes::u32_le(buf, at + 8 + 4 * i)
+                .map(|v| v as usize)
+                .filter(|_| i + 1 < count)
+                .unwrap_or(limit)
+                .min(buf.len());
+            if end > start {
+                sink.claim(start, end, owner, format!("pack {pack} {what} {i}"));
+            }
+        }
     }
 }
 
@@ -2318,6 +2588,16 @@ pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
     if opts.prot_index == Some(CARD_FONT_PROT_INDEX) {
         return Walker::CardFontPack;
     }
+    // The two stills carry no magic - only a length and an index. Selecting
+    // them on the index is not a shortcut: nothing in the bytes distinguishes
+    // a still from any other 16bpp region, and the rectangle that gives them
+    // their shape lives in the consumer's code.
+    if opts
+        .prot_index
+        .is_some_and(crate::ringside_still::is_ringside_still)
+    {
+        return Walker::RingsideStill;
+    }
     // The module band is selected on the index alone: its structural regions
     // are recovered from the image, so the walker runs with or without a dump
     // directory (it delegates to the code walker when one is given).
@@ -2338,6 +2618,8 @@ pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
     }
     match class {
         Class::SceneAssetTable | Class::SceneScriptedAssetTable => Walker::SceneAssetTable,
+        Class::LzsContainer => Walker::DescriptorBundle,
+        Class::PochiFiller => Walker::PochiFiller,
         Class::DataFieldStreaming
         | Class::DataFieldTruncated
         | Class::SceneVabStream
@@ -2351,6 +2633,7 @@ pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
         Class::SceneV12Table => Walker::SceneV12,
         Class::SceneEventScripts => Walker::SceneEventScripts,
         Class::EffectBundle => Walker::EffectBundle,
+        Class::EfectPack => Walker::EfectPack,
         Class::TimPack => Walker::TimPack,
         Class::Pack => Walker::Pack,
         Class::TimPassthrough => Walker::Tim,
@@ -2364,6 +2647,9 @@ pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
 fn dispatch(buf: &[u8], walker: Walker, sink: &mut Sink, opts: &AccountOptions, depth: u8) {
     match walker {
         Walker::SceneAssetTable => walk_scene_asset_table(buf, sink, opts, depth),
+        Walker::DescriptorBundle => walk_descriptor_bundle(buf, sink, opts, depth),
+        Walker::PochiFiller => walk_pochi_filler(buf, sink),
+        Walker::RingsideStill => walk_ringside_still(buf, sink),
         Walker::Stream => walk_stream(buf, sink, opts, depth),
         Walker::MonsterArchive => walk_monster_archive(buf, sink, opts, depth),
         Walker::MonsterBlock => walk_monster_block(buf, sink),
@@ -2376,7 +2662,8 @@ fn dispatch(buf: &[u8], walker: Walker, sink: &mut Sink, opts: &AccountOptions, 
         Walker::SceneV12 => walk_scene_v12(buf, sink),
         Walker::SceneEventScripts => walk_scene_event_scripts(buf, sink),
         Walker::EffectBundle => walk_effect_bundle(buf, sink),
-        Walker::EfectPack | Walker::Pack => walk_pack(buf, sink),
+        Walker::EfectPack => walk_efect_dat(buf, sink),
+        Walker::Pack => walk_pack(buf, sink),
         Walker::CardFontPack => walk_card_font_pack(buf, sink),
         Walker::TimPack => walk_tim_pack(buf, sink),
         Walker::ClipBank => walk_clip_bank(buf, sink),

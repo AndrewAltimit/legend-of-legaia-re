@@ -455,6 +455,142 @@ It is **not** a band-wide rule, though, and the sweeps above are the
 counter-example: both index the actor table by their own loop counter and pass
 that seat to the wrapper as `a2`.
 
+## The cast's own CD-XA voice
+
+**A cast's voice is the module's own hardcoded cue, not a character-banded
+one.** Near its head every module in `0903..=0966` calls the cue dispatcher
+`FUN_8004FCC8` (a few reach the battle sound funnel `FUN_8004FE5C` instead)
+with a **literal** id in `$a0`, and that id is what selects the `XA*.XA` file,
+the sector-filter channel and the read span the CD-XA clip starter
+`FUN_8003D53C` runs with. Nothing about the caster enters the choice: the same
+module raises the same cue whichever character cast it.
+
+That matters because the cast-audio dispatcher `FUN_801F3990` also emits a cue
+band, and that band *is* character-split (`char_kind * 0x10 + 0xF8..0xFC`, plus
+`0x20C..0x20E` on the enemy leg). The two are different cues on different
+paths, and the module's own is the one a cast is heard through - the
+`FUN_801F3990` band did not fire at all on either measured cast (`capture`,
+N = 2 casts, exec breakpoints on all three routines).
+
+### How a cue id becomes a file, a channel and a span
+
+Straight off `FUN_8004FCC8` (`0x8004FCC8..0x8004FD7C` in `SCUS_942.54`):
+
+* `sltiu v0, s0, 0x100` - ids below `0x100` leave on the SFX-queue path and
+  never reach CD-XA. There is **no upper bound**.
+* two decline gates sit ahead of the XA arm, so a cue can resolve and still
+  play nothing: `ctx[+0x276] != 0` (the pointer is `gp+0xA0C`, which at the
+  live `gp` is the battle context `0x8007BD24`), and `FUN_8003DE7C(1) != 0`.
+* `a1 = id - 0x100`; the clip slot is `a1 >> 3` with three remaps applied in
+  sequence off that one value (`1 -> 0x1A`, `3 -> 0x1B`, `5 -> 0x1C`), and the
+  runtime clip table names slot `n` as `XA<n + 1>.XA`.
+* the channel is `andi a1, a1, 7`.
+* the span is `(raw * 60 + 99) / 100` - written as `(raw << 4) - raw << 2`
+  plus `0x63`, then the reciprocal `0x51EB851F` with `sra 5` - where `raw` is
+  the `u16` at `0x800788B8 + (id - 0x100) * 2`. The pointer is formed
+  `lui v1, 0x8008; addiu v1, v1, -0x7748; sll v0, a1, 1; addu v0, v0, v1`,
+  with **no range check**, so the table is exactly as long as the ids reach.
+
+Its real extent is `0x110` entries: index `0x110` is where ASCII text begins,
+and the ids the cast band uses run to `0x20F`, i.e. index `0x10F`. A reader
+that stops at `0x40` entries covers the menu/jingle band only and drops every
+cast cue, the enemy leg's `0x20C..0x20E` included.
+
+The resolved spans reproduce the demuxed per-channel clip lengths: `XA7.XA`
+channels 0..6 carry the first seven summons' beds and their table spans match
+the decoded audio to within 0.05 s on all seven (`capture`, N = 7 channels,
+`extracted/XA_WAV`). Two live casts confirm the whole chain end to end - Vera
+(`0905`) started `FUN_8003D53C(6, 1, 568)` and Gimard (`0903`)
+`FUN_8003D53C(6, 4, 686)`, exactly the census rows below.
+
+### Two modules pick their take at random
+
+`0936` and `0937` are the only two that do not carry a constant: both call the
+BIOS RNG (`jal 0x80056798`), reduce it to `v0 % 2`, and add the remainder to a
+base - `addiu a0, v0, 0x1b0` in `0936` and `addiu a0, v0, 0x1b2` in `0937`. So
+Hyper Crush speaks on `XA23.XA` channel 0 or 1 and Hyper Lightning on channel
+2 or 3, one coin flip per cast. A backward scan for `addiu a0, zero, imm`
+reports "no literal" on both, which is the shape to expect when the id rides a
+reused register instead.
+
+### Per-module cue census
+
+The **head** cue of each image - the first dispatcher call inside the image's
+own `content_bytes`, never its inherited tail. Several modules raise further
+cues later (`0955` has six sites, `0962` four, `0941` seven counting the
+funnel); those are the per-phase beds, not the cast's voice.
+
+| PROT | image | site | cue | file | channel | span (vsyncs) |
+|---|---|---|---|---|---|---|
+| 903 | `summon_gimard` | `0x801F6E50` | `0x134` | `XA7.XA` | 4 | 686 (11.43s) |
+| 904 | `summon_theeder` | `0x801F6CA8` | `0x136` | `XA7.XA` | 6 | 807 (13.45s) |
+| 905 | `summon_stager_x83` | `0x801F6E70` | `0x131` | `XA7.XA` | 1 | 568 (9.47s) |
+| 906 | `summon_gizam` | `0x801F6D08` | `0x133` | `XA7.XA` | 3 | 1141 (19.02s) |
+| 907 | `summon_nighto` | `0x801F71F4` | `0x135` | `XA7.XA` | 5 | 960 (16.00s) |
+| 908 | `summon_zenoir` | `0x801F6E30` | `0x132` | `XA7.XA` | 2 | 903 (15.05s) |
+| 909 | `summon_viguro` | `0x801F6C20` | `0x130` | `XA7.XA` | 0 | 1278 (21.30s) |
+| 910 | `summon_swordie` | `0x801F6CEC` | `0x160` | `XA13.XA` | 0 | 898 (14.97s) |
+| 911 | `summon_orb` | `0x801F6BC8` | `0x161` | `XA13.XA` | 1 | 935 (15.58s) |
+| 912 | `summon_freed` | `0x801F6C2C` | `0x162` | `XA13.XA` | 2 | 1392 (23.20s) |
+| 913 | `summon_nova` | `0x801F6D1C` | `0x163` | `XA13.XA` | 3 | 1630 (27.17s) |
+| 914 | `summon_gola_gola` | `0x801F6CA0` | `0x164` | `XA13.XA` | 4 | 1281 (21.35s) |
+| 915 | `summon_mushura` | `0x801F6D10` | `0x165` | `XA13.XA` | 5 | 1137 (18.95s) |
+| 916 | `summon_aluru` | `0x801F6F34` | `0x166` | `XA13.XA` | 6 | 1400 (23.33s) |
+| 917 | `summon_barra` | `0x801F6DE8` | `0x168` | `XA14.XA` | 0 | 1578 (26.30s) |
+| 918 | `summon_kemaro` | `0x801F6F80` | `0x169` | `XA14.XA` | 1 | 1953 (32.55s) |
+| 919 | `summon_spoon` | `0x801F6DA0` | `0x16a` | `XA14.XA` | 2 | 941 (15.68s) |
+| 920 | `summon_slippery` | `0x801F6CF4` | `0x16b` | `XA14.XA` | 3 | 1152 (19.20s) |
+| 921 | `summon_iota` | `0x801F6D70` | `0x16c` | `XA14.XA` | 4 | 1233 (20.55s) |
+| 922 | `summon_puera` | `0x801F6D5C` | `0x16d` | `XA14.XA` | 5 | 1438 (23.97s) |
+| 923 | `summon_gilium` | `0x801F6CC4` | `0x16e` | `XA14.XA` | 6 | 2208 (36.80s) |
+| 924 | `stager_ultimate_rave` | `0x801F6D10` | `0x189` | `XA18.XA` | 1 | 1713 (28.55s) |
+| 925 | `summon_spikefish` | `0x801F6D5C` | `0x188` | `XA18.XA` | 0 | 1487 (24.78s) |
+| 926 | `summon_stager_x98` | `0x801F6D5C` | `0x188` | `XA18.XA` | 0 | 1487 (24.78s) |
+| 927 | `summon_juggernaut` | `0x801F6D94` | `0x177` | `XA15.XA` | 7 | 2590 (43.17s) |
+| 928 | `summon_palma` | `0x801F6D9C` | `0x171` | `XA15.XA` | 1 | 2771 (46.18s) |
+| 929 | `summon_mule` | `0x801F6E34` | `0x170` | `XA15.XA` | 0 | 2706 (45.10s) |
+| 930 | `summon_horn` | `0x801F6DA0` | `0x173` | `XA15.XA` | 3 | 1857 (30.95s) |
+| 931 | `summon_jedo` | `0x801F6D5C` | `0x175` | `XA15.XA` | 5 | 2890 (48.17s) |
+| 932 | `summon_meta` | `0x801F6DF8` | `0x172` | `XA15.XA` | 2 | 2789 (46.48s) |
+| 933 | `summon_terra` | `0x801F6D60` | `0x174` | `XA15.XA` | 4 | 2844 (47.40s) |
+| 934 | `summon_ozma` | `0x801F6D60` | `0x176` | `XA15.XA` | 6 | 2532 (42.20s) |
+| 935 | `cast_earthquake` | `0x801F6C10` | `0x19c` | `XA20.XA` | 4 | 583 (9.72s) |
+| 936 | `cast_hyper_crush` | `0x801F6B30` | `0x1b0/0x1b1` | `XA23.XA` | 0/1 | 705/839 (11.75/13.98s) |
+| 937 | `cast_hyper_lightning` | `0x801F6AFC` | `0x1b2/0x1b3` | `XA23.XA` | 2/3 | 735/696 (12.25/11.60s) |
+| 938 | `cast_chaos_breath` | `0x801F6AA4` | `0x1ac` | `XA22.XA` | 4 | 792 (13.20s) |
+| 939 | `cast_spore_gas` | `0x801F6BB8` | `0x152` | `XA11.XA` | 2 | 522 (8.70s) |
+| 940 | `cast_glare_divide` | `0x801F6AEC` | `0x1b7` | `XA23.XA` | 7 | 539 (8.98s) |
+| 941 | `cast_steal` | `0x801F6AB0` | `0x155` | `XA11.XA` | 5 | 783 (13.05s) |
+| 942 | `cast_power_up` | `0x801F6A9C` | `0x1b6` | `XA23.XA` | 6 | 1355 (22.58s) |
+| 943 | `cast_curse` | `0x801F6A9C` | `0x1c3` | `XA25.XA` | 3 | 1061 (17.68s) |
+| 944 | `cast_guilty_cross` | `0x801F6B3C` | `0x1ad` | `XA22.XA` | 5 | 879 (14.65s) |
+| 945 | `cast_water_column` | `0x801F6AA8` | `0x19d` | `XA20.XA` | 5 | 441 (7.35s) |
+| 946 | `cast_call_wave` | `0x801F6C28` | `0x151` | `XA11.XA` | 1 | 604 (10.07s) |
+| 947 | `cast_v_windhash` | `0x801F6AEC` | `0x19e` | `XA20.XA` | 6 | 375 (6.25s) |
+| 948 | `cast_cross_beam` | `0x801F6CB0` | `0x148` | `XA10.XA` | 0 | 411 (6.85s) |
+| 949 | `cast_water_crystals` | `0x801F6E20` | `0x145` | `XA9.XA` | 5 | 597 (9.95s) |
+| 950 | `cast_rolling_flare` | `0x801F6AC8` | `0x1a8` | `XA22.XA` | 0 | 1388 (23.13s) |
+| 951 | `cast_chaos_flare` | `0x801F6C60` | `0x1b5` | `XA23.XA` | 5 | 1288 (21.47s) |
+| 952 | `cast_bloody_horns` | `0x801F6E88` | `0x15f` | `XA12.XA` | 7 | 392 (6.53s) |
+| 953 | `cast_terio_punch` | `0x801F6CDC` | `0x15a` | `XA12.XA` | 2 | 602 (10.03s) |
+| 954 | `cast_fatal_decision` | `0x801F6D74` | `0x149` | `XA10.XA` | 1 | 540 (9.00s) |
+| 955 | `cast_white_shield` | `0x801F6B0C` | `0x157` | `XA11.XA` | 7 | 359 (5.98s) |
+| 956 | `cast_water_hazard` | `0x801F6AB4` | `0x15b` | `XA12.XA` | 3 | 783 (13.05s) |
+| 957 | `summon_effect_table` | `0x801F6AF8` | `0x15c` | `XA12.XA` | 4 | 1012 (16.87s) |
+| 958 | `cast_blazing_slash` | `0x801F6E9C` | `0x198` | `XA20.XA` | 0 | 1192 (19.87s) |
+| 959 | `cast_megaton_press` | `0x801F6B80` | `0x199` | `XA20.XA` | 1 | 1437 (23.95s) |
+| 960 | `cast_plasma_strike` | `0x801F6AC4` | `0x15d` | `XA12.XA` | 5 | 849 (14.15s) |
+| 961 | `cast_dead_end_crisis` | `0x801F6AD4` | `0x1c1` | `XA25.XA` | 1 | 1224 (20.40s) |
+| 962 | `cast_blade_breath` | `0x801F6A90` | `0x1c0` | `XA25.XA` | 0 | 767 (12.78s) |
+| 963 | `cast_genocidal_cannon` | `0x801F6AD4` | `0x1b4` | `XA23.XA` | 4 | 1828 (30.47s) |
+| 964 | `cast_element_change` | `0x801F6C1C` | `0x1c4` | `XA25.XA` | 4 | 1202 (20.03s) |
+| 965 | `cast_doomsday` | `0x801F6B0C` | `0x1c2` | `XA25.XA` | 2 | 1910 (31.83s) |
+| 966 | `cast_evil_seru_magic` | `0x801F6B1C` | `0x1ae` | `XA22.XA` | 6 | 3269 (54.48s) |
+`0925` and `0926` share a cue because `0926` is the null-stager sibling of
+`0925` (see [Six of the 64 stagers are a null
+routine](#six-of-the-64-stagers-are-a-null-routine)); `0936` / `0937` show both
+arms of their coin flip.
+
 ## What of the choreography is data, and what is code
 
 A signature cast is **half data**. Its particle layer is a record in exactly the
@@ -1267,6 +1403,149 @@ resist-bypass wrapper, with baked powers `0x80` at `0x801F71E8` and
 `0x801F7A90` and `0x30` at `0x801F7EBC`, the last site firing four times inside
 arm `15`. The returns `67 / 71 / 26 / 25 / 30 / 25` are applied unscaled.
 
+#### The fourteen, measured
+
+These bodies need an **enemy** caster, so the drive differs from the player
+half. `scripts/pcsx-redux/autorun_capture_arm_gating.lua` converts the monster
+seat's already-rolled action on a pre-turn battle state - `actor[+0x1DE] = 2`,
+`+0x1DF = <action id>`, `+0x1DD = <target>` - instead of rewriting a party
+seat's queued one; retail then resolves the module through the spell record's
+`+1` sub-id, pages it, and ticks it with its own caster kind.
+
+The tick clock is firmer here, and it needs no guess about which prologue VA is
+the entry. The capture-class band has exactly one tick dispatcher:
+`jal 0x801F2160` occurs **once** in PROT 0898's bytes, at `0x801E50C8`, so an
+Exec breakpoint on the dispatcher is one hit per module tick by construction,
+and the phase byte read at that entry is the arm about to run. The twelve
+distinct body VAs are armed alongside it, and in every run that ticked at all,
+exactly one of them was entered exactly once per dispatcher hit - so the body
+column below is read off **execution**, not off a dump's printed address, and
+it agrees with the table this page already carries in all twelve cases.
+
+| PROT | action | body entered | arms walked | dwell, ticks per arm |
+|---|---|---|---|---|
+| 940 | `0xAC` | `0x801F7240` | `0..7` | 1, 30, 64, 16, 16, 48, 18, 27 |
+| 940 | `0x50` | `0x801F78B8` | `0..3`, `0xFF` | 1, 3, 64, 19, 1 |
+| 940 | `0xAE` | `0x801F78B8` | `0..3`, `0xFF` | 1, 4, 64, 16, 1 |
+| 941 | `0x51` | `0x801F730C` | `0..3`, `0xFF` | 1, 21, 16, 32, 1 |
+| 941 | `0xB9` | `0x801F6A04` | `0..4` | 1, 65, 32, 64, 25 |
+| 943 | `0x40` | - | - | faulted, see below |
+| 943 | `0xB5` | `0x801F6A04` | `0..4` | 1, 65, 32, 64, 32 |
+| 944 | `0x37` | `0x801F6A04` | `0..5` | 1, 33, 32, 32, 64, 82 |
+| 944 | `0x53` | - | - | faulted, see below |
+| 950 | `0x5A` | `0x801F79F8` | `0..4` | 1, 13, 1, 32, 13 |
+| 950 | `0xAB` | `0x801F6A24` | `0..6` of 14 | 1, 65, 21, 64, 8, 40, 15+ |
+| 956 | `0x71` | `0x801F7298` | `0..3`, `0xFF` | 1, 33, 32, 32, 1 |
+| 962 | `0xA2` | `0x801F7AE4` | `0..3` | 1, 21, 1, 1862+ |
+| 962 | `0xA3` | `0x801F74A0` | `0..4` | 1, 21, 1, 42, 684+ |
+| 962 | `0xA4` | `0x801F6D54` | `0..4`, `0xFF` | 1, 21, 1, 18, 42, 1 |
+
+A `+` marks a floor: the arm was still running when the capture window closed.
+Three of the fourteen **park** rather than finish in this fight. PROT 0950's
+`0xAB` is the band's fourteen-arm body and stops at arm `6`; PROT 0962's `0xA2`
+and `0xA3` each sit in their last listed arm for hundreds of ticks without
+advancing. So those arms have an exit gate the fight does not satisfy, not a
+long countdown.
+
+`0xAB` also carries the reproducibility evidence. Driven twice, with capture
+windows of 300 and 600 seconds, it returned the **same** six dwells
+`1, 65, 21, 64, 8, 40` for arms `0..5` and parked in arm `6` both times - so
+those six are the module's own countdowns rather than a wait on the scene.
+
+Every row comes from one fight, `party_basic_attack_vs_gobu_gobu` - one party
+seat, one monster seat - so the same caveat the player half carries applies: an
+arm that reproduces across fights is the module's own countdown, and an arm
+that moves waits on the scene.
+
+The arm **sets** are a stronger result than the dwells, because they are the
+dispatch bound walked rather than read. Each table-dispatched body walks
+exactly the arms its `sltiu` bound allows and stops on the terminal arm with no
+`0xFF` - `0..7` for PROT 0940's `0xAC`, `0..4` for the three `sltiu 5` bodies,
+`0..5` for PROT 0944's `0x37`. Each chain-dispatched body walks `0..3` (`0..4`
+for PROT 0962's) and then latches `0xFF` for exactly one tick.
+
+##### The countdown gates most arms, and its drain is per-arm
+
+Each of these modules keeps its own countdown word, and for most arms it is the
+gate: the dwell in ticks is the seed divided by what the arm draws the word
+down by per tick. PROT 0941's `0x51` is the clearest - arm `2` seeds `0x100`
+and arm `3` seeds `0x200`, both drain `16` per tick, and the arms run `16` and
+`32` ticks.
+
+What is **not** uniform is that per-tick amount, and the disassembly says why:
+the arms differ in a baked **multiplier**, not in the quantity. Every counted
+arm subtracts a multiple of the frame-delta byte `*(0x1F800393)`, and the
+multiplier is part of the arm's own code. Three forms appear, two of them
+inside a single body:
+
+| form | arm | the instructions |
+|---|---|---|
+| `*(0x1F800393) * *(0x1F80037D)` | PROT 0940 `0x50` arm 1; PROT 0941 `0x51`'s last arm | `lbu 0x69(v0)` / `lbu 0x7f(v0)` off `0x1F800314`, `mult`, `mflo`, `subu` - `0x801F7A88..0x801F7AA4`, `0x801F7CCC..0x801F7CE8` |
+| `*(0x1F800393) << 1` | PROT 0940 `0x50` arm 2 | `lbu 0x393(v1)`, `sll v1,v1,1`, `subu a0,a0,v1` - `0x801F7B6C..0x801F7B7C` |
+| `*(0x1F800393)` | PROT 0943 `0xB5` | `lbu 0x7f(a1)` off `0x1F800314`, `subu a2,v0,v1` - `0x801F6B88..0x801F6B94` |
+
+That resolves the two arms the capture reported as unexplained constants.
+PROT 0943's `0xB5` draws `4` per tick against a product of `16..32` because it
+subtracts the bare byte and the byte read `4`; PROT 0940's `0x50` draws `8` on
+arm `2` for the same reason, doubled - the same word, `0x801F864C`, drained by
+two different expressions in two arms of one body. So "a constant the step does
+not explain" is a measurement of the multiplier, not of a literal: the frame
+step is one arm's decrement, not the word's, and none of the three forms is a
+constant.
+
+The step itself is adaptive and changes **inside** a single cast - the audio
+frame driver rewrites `DAT_1F800393` per frame
+([`audio.md`](audio.md)) - so a dwell predicted from an arm's first observed
+step reports a countdown-gated arm as ungated. The reducer
+`scripts/pcsx-redux/analyze_capture_arm_gating.py` sums the per-tick steps
+instead of scaling the first one.
+
+Two of the module-resident words that list names are not the gate for the
+bodies measured here. PROT 0962's `0x801F89AC` holds a constant `1024` across
+all three of its bodies' walks, and PROT 0950's `0x801F86B0` goes **negative**
+(`0xFFFFFF80`) inside `0x5A`'s last arm, so whatever ends those arms is a
+different word or a different test.
+
+##### Two of the fourteen fault before their first tick
+
+Driving PROT 0943's `0x40` (Curse) or PROT 0944's `0x53` (Curse All) from this
+fight reaches battle phase `0x70` with the module paged - the loader-B tracker
+reads `48` and `49`, and slot-B word `0` changes to the module's - and then
+the emulator reports an 8-bit read at the **same** garbage address for both,
+after which no module tick ever runs and the battle does not advance. Their
+siblings in the same two images (`0xB5` in PROT 0943, `0x37` in PROT 0944)
+complete normally from the same state, so this is a property of those two
+bodies plus this fight's scene, not of paging the module.
+
+#### What actually stops PROT 0950 at arm 6
+
+Arm 6 has no exit condition of its own to satisfy. Its tail is the band's
+ordinary countdown expiry - `lw` the module countdown `0x801F86B0`, subtract
+the scratchpad frame-step product, `bgtz` back to the return, and on the
+fall-through reseed it (`stepA << 5`) and bump `ctx[+0x279]` through the shared
+tail at `0x801F7928`. The `0xAB` capture's last logged tick leaves the
+countdown at `48` against a step of `32`, so the arm was two ticks from
+advancing; what ends the run is the emulator reporting an unmapped 8-bit read,
+not a gate that never opens.
+
+The address is not arm 6's and not arm 7's: arm 7 reads only the target record
+`s4` and the globals, and both arms form every pointer from a register the
+prologue loaded. The shape that matches an unmapped read is arm **10**, which
+materialises the actor pointer table (`addiu s2, v0, -0x6c90`) and walks it
+with `lw ($s2)` / `addiu s2, s2, 4` - an AoE sweep whose loop bound is the
+seat count, over a table a forced enemy cast on a one-monster fight does not
+fill. So the ladder these arms need is a fight with the seat count the sweep
+expects, not a state whose arm-6 gate passes.
+
+The dwell itself does **not** reduce to one law across the arms. Each arm's
+fall-through reseeds a per-arm multiple of the scratchpad step byte alone -
+`<< 8` at arm 0, `<< 6` at arms 1 and 5 and 8..12, `<< 5` at arms 3 and 6,
+`* 24` at arm 7, `* 160` at arm 4 - but predicting a dwell from those
+multipliers and one step product reproduces arm 6's measured 16 ticks and
+misses arm 1's measured 65 by a factor of two, because several arms subtract a
+*multiple* of the product rather than the product. The per-arm drain has to be
+read per arm, which is the same conclusion the band's other module reached.
+
 ### The fourteen trampoline arms that are the band's other tick bodies
 
 <a id="the-fourteen-trampoline-arms-that-are-unported-tick-bodies"></a>
@@ -1364,6 +1643,40 @@ kept for filename stability; `summon_stager_x83` is Vera
 ([spell-table.md](../formats/spell-table.md)), and its tick restores HP and
 cures status rather than dealing damage, which is why its wrapper column is
 zero.
+
+### Where a cure tier comes from
+
+Three ticks in the band switch on a **cure tier** `1..=4` and `and` a keep-mask
+into the target's `+0x16E`: PROT 0905 (Vera) at `0x801F7D68`, PROT 0911 (Orb)
+at `0x801F7BE4` and PROT 0919 (Spoon) at `0x801F8168`. The masks are
+`0xFFFC` / `0xFF84` / `0xFB84` / `0xFB84`, and tier `4` additionally doubles
+`+0x170` under a `0x64` clamp (`0x801F7F24..0x801F7F48`).
+
+The tier is **not** module data. All three read the same battle-overlay word
+`0x801F6960`, which sits below the slot-B base and is the Seru side-effect
+stager's output latch: `FUN_801F3D3C` selects an 8-byte record out of the
+`[element][level band]` table at `0x801F6870`
+(`0x801F6870 + ((level - 3) >> 1) * 8 + element * 0x20`, built at
+`0x801F4420..0x801F4440`) and stores its first byte there
+(`sw v1,0x6960(v0)` at `0x801F4480`). On the **light** row that byte is the
+cure class `1, 2, 3, 4` by magic-level band; on the six damaging rows it is a
+percent `5 / 10 / 15 / 20`, which matches none of the four arms. So the
+element gate is the latch's own value - a non-light summon leaves a percent
+there and cures nothing, with no second test. Below magic level `3` the stager
+returns before staging anything, the latch holds `0`, and each module's own
+`sltiu v0,v0,0x3` skips the ladder as well.
+
+The table itself, including the light row's `1 / 2 / 3 / 4` ladder, is
+tabulated in
+[`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch).
+What this section adds is the consumer side: which three ticks read the latch,
+what each tier does to `+0x16E`, and that the element gate is the latch's
+value rather than a test.
+
+Parser: [`legaia_asset::seru_side_effect`](../../crates/asset/src/seru_side_effect.rs);
+masks and constants at `legaia_engine_vm::cast_seru_ticks_a`; the latch is
+`BattleActionCtx::follow_up_pending` and `World::cure_selector` is what feeds
+the two ported ticks.
 
 **The phase column counts two store forms, and it used to count one.** Every
 one of the eleven materialises a pointer to `ctx + 0x279` in its prologue -

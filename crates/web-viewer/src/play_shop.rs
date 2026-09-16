@@ -281,10 +281,18 @@ impl LegaiaRuntime {
                     .collect(),
                 Some(gold),
             ),
+            // The bound is retail's, not a flat nine: buying,
+            // `min(gold / price, 99, 99 - held)`; selling, the staged bag
+            // count. Twin of the native window's arm in `window::hud`.
             Some(MenuState::ShopQuantity) => (
-                (1u32..=9)
-                    .map(|n| (n.to_string(), None, ui::SHOP_INK_NORMAL))
-                    .collect(),
+                {
+                    let held = shop
+                        .pending_item_id
+                        .and_then(|id| bag.iter().find(|(i, _)| *i == id).map(|(_, q)| *q));
+                    (1u32..=u32::from(shop.quantity_rows(gold, held)))
+                        .map(|n| (n.to_string(), None, ui::SHOP_INK_NORMAL))
+                        .collect()
+                },
                 None,
             ),
             Some(MenuState::ShopConfirm) => (

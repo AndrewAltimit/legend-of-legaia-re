@@ -60,10 +60,13 @@
 //!
 //! **The state machines.** No host owns a [`CardIoMachine`] to produce the
 //! poll results [`CardWriteMachine`] and [`CardHealth::fold_poll`] sequence,
-//! and none is owed. The one card-image backend - the browser card rack
-//! (`web-viewer::cards`), which does write real `0x2000`-byte blocks -
-//! patches the container bytes synchronously through `legaia_save`, so there
-//! is no asynchronous BIOS beat to sequence; the native saves are LGSF files.
+//! and none is owed. Both card-image backends are synchronous. The browser
+//! card rack (`web-viewer::cards`) does write real `0x2000`-byte blocks, and
+//! it patches the container bytes synchronously through `legaia_save`; the
+//! native window mounts a real `.mcr` in save-select port 2 (`MountedCard`,
+//! `play-window --card`) but **reads** it only - a Save into a mounted card
+//! is refused. Neither leaves an asynchronous BIOS beat to sequence, and the
+//! native disk saves are LGSF files.
 //! `SaveSelectSession` runs its own `NowChecking` beat straight off
 //! `card_status_poll`. Adding an issue-then-poll machine around a byte edit
 //! that already succeeds would re-host the device layer, not add behaviour -

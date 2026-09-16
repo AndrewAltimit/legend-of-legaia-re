@@ -97,6 +97,28 @@ pub struct LegaiaRuntime {
     /// `Some` only while the encounter session sits in its `Transition`
     /// phase; owns the captured-field VRAM clone the style bodies sample.
     pub(crate) battle_intro: Option<legaia_engine_ui::battle_intro::BattleIntro>,
+    /// The engine camera controller ([`crate::play_camera`]) - the same
+    /// `legaia_engine_core::camera::Camera` the native window's session owns.
+    /// This host had none at all, so nothing here routed the op-`0x45`
+    /// Configure beats, advanced the mover, wrote the follow focus back into
+    /// the retail globals, or reset them on scene entry; the page framed a
+    /// separate orbit camera beside a world whose camera state never moved.
+    pub(crate) camera: legaia_engine_core::camera::Camera,
+    /// The between-beat cutscene glide, the native window's twin. Without it
+    /// every `apply > 0` Camera Configure beat snapped on this host.
+    pub(crate) cutscene_cam: legaia_engine_vm::psx_camera::CutsceneCameraInterp,
+    /// Display-frame high-water mark the glide was last advanced to.
+    pub(crate) cutscene_cam_frames: u64,
+    /// This tick's explicit camera-azimuth override (the VR first-person
+    /// gaze), drained by the camera tick. `None` = the engine camera's own
+    /// compass azimuth drives the d-pad remap, exactly as it does natively.
+    pub(crate) camera_azimuth_override: Option<u16>,
+    /// Lazily-built scene AABB - the **world-space** union of the scene's
+    /// static env draws, through the same
+    /// `engine_core::field_env::env_draws_world_aabb` kernel the native window
+    /// calls. Used only by the world map's top-view debug camera. Cleared on
+    /// every scene rebuild.
+    pub(crate) scene_aabb: Option<([f32; 3], [f32; 3])>,
     /// FMV (STR / MDEC) playback state ([`crate::play_fmv`]).
     pub(crate) fmv: crate::play_fmv::FmvState,
     /// In-world minigame presentation state ([`crate::play_minigames`]):
@@ -119,6 +141,12 @@ pub struct LegaiaRuntime {
     /// same two seat entry points the native session calls, so neither host
     /// owns a copy of the rule.
     pub(crate) mode_seat: legaia_engine_core::mode::ModeSeat,
+    /// The model id [`crate::play`]'s cached NPC mesh was built from, as
+    /// `play_npc_live_model` reports it (`-1` = the placement's spawn model).
+    /// Half of that cache's key: a scripted mesh re-bind leaves the catalog
+    /// entry index where it was, so the entry alone cannot tell a swapped
+    /// actor from an unswapped one.
+    pub(crate) npc_bound_model: Option<i32>,
     /// Field party-status HUD driver (`FUN_801D0D38`): the idle countdown and
     /// the cached player position its decision kernel reads. The same state
     /// the native window holds - retail keeps it in overlay globals, so every
@@ -174,6 +202,15 @@ pub struct LegaiaRuntime {
     pub(crate) boot_title_attract_skips: u32,
     /// Disc-sourced title-screen art (PROT 0888), built with the title flow.
     pub(crate) title_atlas: Option<legaia_engine_core::title_screen_atlas::TitleScreenAtlas>,
+    /// Publisher-logo boot phase, the stage **ahead** of the title card
+    /// ([`crate::boot_title`]). `Some` while the logos play.
+    pub(crate) boot_logos: Option<legaia_engine_core::publisher_logos::PublisherLogosSession>,
+    /// Disc-sourced publisher-logo atlas (PROT 0895 `init.pak`), built on the
+    /// first logo run and kept for the page load.
+    pub(crate) boot_logos_atlas: Option<legaia_engine_core::publisher_logos::LogosAtlas>,
+    /// The atlas build was attempted and failed (no disc, or `init.pak` did
+    /// not parse), so it is not retried every frame.
+    pub(crate) boot_logos_failed: bool,
     /// Disc-sourced **menu-glyph** atlas (`legaia_asset::menu_glyph_atlas`) -
     /// the small-caps sheet the title menu's NEW GAME / CONTINUE rows sample
     /// when the title art is absent, exactly as the native window does.
@@ -181,7 +218,7 @@ pub struct LegaiaRuntime {
     /// The **memory-card rack**: the player's own card images occupying the
     /// console's two ports ([`crate::cards`]). The in-canvas Load / Save
     /// screens read and write these, and the page exports them back out.
-    pub(crate) cards: [Option<crate::cards::InsertedCard>; crate::cards::CARD_SLOTS],
+    pub(crate) cards: [Option<crate::cards::MountedCard>; crate::cards::CARD_SLOTS],
     /// Fishing HUD one-shot banner timers (hook / reel-in / miss / auxiliary /
     /// strike splash), serviced once per sim tick by
     /// [`Self::tick_fishing_banners`] - the browser twin of the native window's
@@ -349,11 +386,24 @@ impl LegaiaRuntime {
             field_vram_anim: None,
             field_vram_dirty: false,
             battle_intro: None,
+            // The host framing bias the retail follow view is rendered with,
+            // pushed in exactly where the native window pushes it
+            // (`window/run.rs`), through the one shared expression.
+            camera: {
+                let mut c = legaia_engine_core::camera::Camera::new();
+                c.render_yaw_bias = legaia_engine_core::camera_view::retail_field_render_yaw_bias();
+                c
+            },
+            cutscene_cam: Default::default(),
+            cutscene_cam_frames: 0,
+            camera_azimuth_override: None,
+            scene_aabb: None,
             fmv: Default::default(),
             minigame_ui: Default::default(),
             battle_vram: Default::default(),
             disc_files: Vec::new(),
             mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
+            npc_bound_model: None,
             battle_intro_geom: None,
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
@@ -368,6 +418,9 @@ impl LegaiaRuntime {
             boot_title: None,
             boot_title_attract_skips: 0,
             title_atlas: None,
+            boot_logos: None,
+            boot_logos_atlas: None,
+            boot_logos_failed: false,
             menu_glyph_atlas: None,
             cards: [const { None }; crate::cards::CARD_SLOTS],
             fishing_banners: Default::default(),
@@ -601,6 +654,9 @@ impl LegaiaRuntime {
         self.play_menu = None;
         self.boot_title = None;
         self.title_atlas = None;
+        self.boot_logos = None;
+        self.boot_logos_atlas = None;
+        self.boot_logos_failed = false;
         self.menu_glyph_atlas = None;
         Ok(count)
     }
@@ -655,12 +711,41 @@ impl LegaiaRuntime {
         if !host.world.cutscene.opening_chain_active && !host.world.cutscene_timeline_active() {
             host.world.seed_free_roam_story_baseline(name);
         }
-        if legaia_engine_core::scene::is_world_map_scene(name) {
+        let world_map = legaia_engine_core::scene::is_world_map_scene(name);
+        if world_map {
             host.enter_world_map_scene(name)
                 .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
+            // Start in walk mode with the retail top-view debug camera
+            // reachable through its own chord (`_DAT_8007B98C`), exactly as
+            // the native window arms it on world-map entry
+            // (`window/run.rs`). The controller, the chord and the camera are
+            // all engine-side, so arming the same flag is the whole of what
+            // this host needed to gain the top-view vantage.
+            if let Some(ctrl) = host.world.world_map.ctrl.as_mut() {
+                ctrl.debug_enabled = true;
+                ctrl.view_mode = 0;
+            }
         } else {
             host.enter_field_scene(name, 0)
                 .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
+        }
+        if !world_map {
+            // Retail reaches the field through the mode table, not through a
+            // call: whoever wants the field stores `MAIN INIT` (2) and mode
+            // 2's handler stages the field overlay, calls the per-scene
+            // initializer and hands the word to `MAIN MODE` at `0x80025E50`.
+            // `BootSession::enter_field_live` performs exactly this pair, and
+            // the overworld's entry (`enter_world_map_live`) performs
+            // neither - so the branch above is the same branch the native
+            // host takes. Without it this page's word arrived at `MAIN MODE`
+            // through `adopt_world_mode` alone, one frame late and with no
+            // INIT frame in the trace at all.
+            let plan = self.seat_enter(legaia_engine_core::mode::GameMode::MainInit);
+            debug_assert!(
+                matches!(plan, Some(legaia_engine_core::mode::ModeInitPlan::Stage(st))
+                    if st.overlay_entry == legaia_engine_vm::title_overlay::FIELD_SCENE_INIT_PC),
+                "MAIN INIT's plan should name the per-scene initializer"
+            );
         }
         if self.live_battles {
             self.arm_live_battles(name);
@@ -784,11 +869,21 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Tell the engine where the camera is looking, so the free-movement
-    /// controller remaps the d-pad camera-relative ("up" walks away from the
-    /// camera). PSX 12-bit angle units (`4096` = a full turn); the field
-    /// controller quantises it to the nearest quarter-turn, as retail does.
+    /// Override where the engine thinks the camera is looking for the next
+    /// tick, so the free-movement controller remaps the d-pad
+    /// camera-relative ("up" walks away from the camera). PSX 12-bit angle
+    /// units (`4096` = a full turn); the field controller quantises it to the
+    /// nearest quarter-turn, as retail does.
+    ///
+    /// An **override**, not the normal path: the engine camera publishes its
+    /// own compass azimuth every tick
+    /// ([`legaia_engine_core::camera::Camera::compass_azimuth_units`], which
+    /// sums the scripted yaw, the drag-orbit and the host framing bias), and
+    /// the native window has nothing that needs to speak over it. The page's
+    /// VR first-person mode does: there the headset gaze *is* the heading, so
+    /// it sets the azimuth outright for that tick.
     pub fn set_camera_azimuth(&mut self, units: u16) {
+        self.camera_azimuth_override = Some(units % 4096);
         if let Some(h) = self.scene_host.as_mut() {
             h.world.locomotion.camera_azimuth = units % 4096;
         }
@@ -812,6 +907,10 @@ impl LegaiaRuntime {
         // delta-against-a-high-water-mark the native window runs. The `host`
         // borrow is dead from here, so this can re-borrow.
         self.tick_play_clock();
+        // The engine camera, ticked in the native session's order
+        // (`BootSession::tick`): free-roam reset, compass azimuth into the
+        // world, op-`0x45` event routing, then the per-frame globals advance.
+        self.tick_camera(matches!(event, SceneTickEvent::SceneEntered { .. }));
         // Effect scene-graphs, ticked exactly where the native window ticks
         // them: drain the two production spawn requests (a player Seru-magic
         // cast, and a non-summon move whose power record carries a spawnable
@@ -1194,17 +1293,37 @@ impl LegaiaRuntime {
         JsValue::from_str(&format!("{event:?}"))
     }
 
-    /// The live retail mode word (`_DAT_8007B83C`) and its table name, as
-    /// `{"word": <u32>, "name": "<MODE>"}`.
+    /// The live retail mode word (`_DAT_8007B83C`), its table name, and the
+    /// front-end entry word beside it, as
+    /// `{"word": <u32>, "name": "<MODE>", "entry_word": <u32>}`.
     ///
-    /// The page's own read of the seat this host now holds - which is what
-    /// makes a browser mode trace possible at all. Before the seat existed
-    /// the front end ran with no mode word, so the two hosts could not be
+    /// The page's own read of the seat this host holds - which is what makes
+    /// a browser mode trace possible at all. Before the seat existed the
+    /// front end ran with no mode word, so the two hosts could not be
     /// compared on the one register retail's whole dispatch keys off.
+    ///
+    /// `word` is the **mode table index** the native oracle samples
+    /// (`ModeSeat::game_mode`). It used to be the seat's `entry_word`
+    /// (`_DAT_8007BB00`, the front-end flag `init.pak`'s hand-off reads),
+    /// which is a different global: the JSON paired that flag's value with
+    /// the mode's *name*, so a reader comparing the two hosts' words was
+    /// comparing two different registers and could not see a divergence.
+    ///
+    /// `edges` is the count of mode changes the seat has taken, and it is
+    /// the field that makes the two hosts comparable at the **INIT** modes.
+    /// An INIT mode lasts one frame *inside* `ModeSeat::enter` - the call
+    /// resolves the staging plan and hands the word to the mode's RUN
+    /// sibling before returning - so no sampler outside the call ever
+    /// observes the word sitting on one. What it leaves behind is the extra
+    /// edge, so a host that reaches `MAIN MODE` by entering `MAIN INIT` and
+    /// one that reaches it by adopting the world's scene mode walk the same
+    /// words and differ here.
     pub fn mode_state_json(&self) -> String {
         serde_json::json!({
             "word": self.mode_word(),
             "name": self.mode_seat.mode_name(),
+            "entry_word": self.mode_seat.entry_word(),
+            "edges": self.mode_seat.edges(),
         })
         .to_string()
     }
@@ -1250,10 +1369,56 @@ impl LegaiaRuntime {
         self.mode_seat = seat;
     }
 
-    /// The live retail mode word (`_DAT_8007B83C`), for the page's
-    /// diagnostics and for a mode trace this host can now emit.
+    /// The live retail mode word (`_DAT_8007B83C`) - the 28-entry mode
+    /// table's index, which is what the native mode-trace oracle samples off
+    /// its own seat (`ModeSeat::game_mode`).
     pub(crate) fn mode_word(&self) -> u32 {
-        self.mode_seat.entry_word()
+        self.mode_seat.game_mode().as_index() as u32
+    }
+
+    /// Enter an INIT mode **now**, against the active world - the browser's
+    /// call of [`legaia_engine_core::mode::ModeSeat::enter`], the entry point
+    /// `BootSession` calls at the same two junctures (field entry through
+    /// `MAIN INIT`, the pause menu through `CARD INIT`).
+    ///
+    /// The per-frame [`Self::tick_mode_seat`] is not a substitute for it.
+    /// `adopt_world_mode` writes the RUN word a scene mode maps to and never
+    /// the INIT one, so a host that only adopts skips the INIT frame
+    /// altogether **and** skips the mode-change edge's pad swallow - which is
+    /// what previously delivered the Start press that opened the pause menu to
+    /// the menu as its own first input on this host and not on the native one.
+    ///
+    /// The seat is moved out for the duration because [`Self::world_mut`] and
+    /// the seat are two `&mut` borrows off `self`.
+    pub(crate) fn seat_enter(
+        &mut self,
+        mode: legaia_engine_core::mode::GameMode,
+    ) -> Option<legaia_engine_core::mode::ModeInitPlan> {
+        let mut seat = std::mem::replace(
+            &mut self.mode_seat,
+            legaia_engine_core::mode::ModeSeat::new_at_boot(),
+        );
+        let plan = {
+            let world = self.world_mut();
+            seat.enter(mode, world)
+        };
+        self.mode_seat = seat;
+        plan
+    }
+
+    /// The pause menu's open juncture: retail opens the menu by writing the
+    /// mode word, not by calling the menu (`CARD INIT` stages the menu overlay
+    /// and hands the word to `CARD MODE` at `0x80025974`). Both stores of
+    /// `request_card_mode` land on the seat, then the INIT frame runs.
+    ///
+    /// Twin of `BootSession::open_field_menu`'s own pair of calls.
+    pub(crate) fn seat_open_card_menu(&mut self) {
+        self.mode_seat.request_card_mode();
+        let plan = self.seat_enter(legaia_engine_core::mode::GameMode::CardInit);
+        debug_assert!(
+            plan.is_none(),
+            "CARD INIT stages no overlay-A request in the port's model"
+        );
     }
 
     /// Decode the live dialogue box (the field VM's inline-script runner) into
@@ -1305,6 +1470,7 @@ impl LegaiaRuntime {
         // whatever the new scene spawns.
         self.pending_dynamic_mesh_slots.clear();
         self.dynamic_mesh_slots.clear();
+        self.scene_aabb = None;
         self.dynamic_mesh_cur = None;
         self.field = None;
         self.player = None;

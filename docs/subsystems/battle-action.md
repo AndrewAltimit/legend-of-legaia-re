@@ -2257,8 +2257,9 @@ dims the screen *and* ducks the music. Port: `BattleActionHost::duck_audio_level
 on the `0x50 -> 0x51` transition); the native window's `AudioBgmDirector`
 mirrors the cell (`duck_level`, seeded `0xD7`), ramps it one unit per frame
 toward the target (`tick_duck`) and re-applies it through
-`AudioOut::set_sequencer_master_vol`. The browser play page has no consumer
-for the event yet.
+`AudioOut::set_sequencer_master_vol`. The browser play page consumes the same
+event through `play_battle_audio::drain_battle_audio_cues`, which is the one
+typed battle event a host's audio reads (the live loop owns the gameplay fold).
 
 ### Battle voice cues - the XA30 grunt vs the XA2/XA4/XA6 arts shout
 
@@ -3174,10 +3175,11 @@ enemy-defender halve): the grunt goes out as a `(clip, channel, dur)` request on
 drive-busy flag (`dur` vsyncs after any clip start: `dur * 2.5` sectors at 150/s is `dur / 60`
 s) and the `0x800788B8` duration table parsed off the user's SCUS (`legaia_asset::xa_cue_table`). The native window plays the requests off a boot-staged
 `XaClipBank` (`XA27` / `XA30` demuxed + decoded, `crate::boot::read_battle_xa_clip_bank`)
-through the same XA mixing path as the arts shouts; the browser play page has no XA lane and
-consumes them (`NOT WIRED` there, prerequisite: an in-browser demux + a `WebAudioOut` XA path -
-the same gap that drops the arts shouts). The monster leg's `0x2A8` is still a runtime-bank id
-no engine bank models, so it reaches the hosts' scheduler and resolves nothing.
+through the same XA mixing path as the arts shouts. The browser play page reaches the same
+banks: `web-viewer`'s `play_xa` demuxes the raw sectors the page slices out of the visitor's
+own disc bytes and plays the cut clip through `WebAudioOut::play_xa_shout`, so the requests
+sound on both hosts. The monster leg's `0x2A8` is still a runtime-bank id no engine bank
+models, so it reaches the hosts' scheduler and resolves nothing.
 
 ### Three readings the port already satisfied
 

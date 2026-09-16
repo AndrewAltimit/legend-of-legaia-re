@@ -1057,10 +1057,14 @@ decode of the corpus could not establish this, are on
 the executing oracle is
 `crates/engine-core/tests/thread_camera_roll_execution.rs`.
 
-Engine side: `engine-core`'s `Camera::roll`, the play window's
-`cutscene_view` / `psx_camera_mvp`, `CutsceneCameraInterp`'s tenth packed
-component (so a roll glides on the beat's own curve like every other axis),
-and the browser play page's orbit `cam.roll`.
+Engine side: `engine-core`'s `Camera::roll`, the shared op-`0x45` decode
+`camera_view::cutscene_view`, the shared projection
+`psx_camera::psx_camera_vp` (whose rotation is `Rx * Ry * Rz`), and
+`CutsceneCameraInterp`'s tenth packed component, so a roll glides on the
+beat's own curve like every other axis. Both hosts frame the shot from that
+one decode and that one matrix; the browser play page used to map the decoded
+angles onto an orbit camera of its own, which reversed the on-screen sense of
+the yaw and the roll and needed both negated to compensate.
 
 ### Record pacing - the 60 Hz sub-clock
 
@@ -1796,10 +1800,17 @@ dispatcher's `0x80043520..0x80043540` decode), without which the x-mirrored half
 reversed winding would cull; `a2 = 0` keeps the opaque bank, and the `0x808080` low bytes
 multiply nothing because the descriptor's `+0xC` word is zero. From `0x5A` on the submit
 swaps to `FUN_80029888(desc, 0x8180_8080, 0, (clock - 0x3C) * 4)` - the light-source TMD
-renderer - which stages a mid-grey far colour (`param_2` bytes `<< 4`) and builds an
-extra Euler rotation from the fourth argument (`<< 4` into the angle lanes; the roll that
-gives the style its name - this axis detail is graded decompiled-C), zeroing the GTE
-light block first; the tick also washes the screen `0x101010` once the *previous* frame's
+renderer - which stages a mid-grey far colour (`param_2`'s three bytes each `<< 4` into
+GTE control registers `21`/`22`/`23` at `0x800299EC..0x800299F4`) and builds an extra
+Euler rotation from the fourth argument. That rotation is **two axes, not one**: `a3 << 4`
+goes into the X and Z angle halfwords and Y is zeroed (`sh v0,0x58(sp)` /
+`sh zero,0x5a(sp)` / `sh v0,0x5c(sp)` at `0x80029930..0x80029940`, the triple
+`FUN_80026988` then reads as X/Y/Z), and bit `0x10000` of `a3` suppresses it by zeroing
+all three. Before that it calls `FUN_8003D20C` to save GTE control regs `0..7` to
+`0x1F800334` and `FUN_8003D190`, whose three instructions are `ctc2 zero, cr5/cr6/cr7` -
+the **translation vector**, not the light block. The "zeroing the GTE light block"
+reading was wrong: nothing in the routine writes a light register (`cr8..cr20`), and the
+zeroed translation is what makes the extra rotation act about the origin; the tick also washes the screen `0x101010` once the *previous* frame's
 clock has passed the bound. The two texture pages also pin the trig tables' phase: the
 primary half's `u = (x >> 4) + 0x20` and the mirrored half's `-0x61 - (x >> 4)` stay
 inside their capture halves only when x is non-negative over the sampled half turn, so
@@ -1833,10 +1844,31 @@ oscillator (`0x801F27EC`), the eased move (`0x801F2840`) and the shutter bars
 followed by `sh $s0,0x1a($v0)` - `+0x1A = 1`, the emitter's **scene** arm - and
 the whole site sits behind a `bnez` on `_DAT_8007B8B8` at `0x801D6FB0`, so it
 runs once per scene entry while that global is clear. The port hosts it as an
-element channel (`engine-core::world::cutscene_elements`). Its two table
-neighbours here, `FUN_801D5C08` and `FUN_801D5D60`, are referenced by nothing
-across the 84 overlay images in any of the five reference forms - what spawns
-*those* elements is open.
+element channel (`engine-core::world::cutscene_elements`), whose producer is
+`World::install_field_scene_elements`.
+
+The emitter's own first instruction reads its master gate `_DAT_8007B854`
+(`lw v0,-0x47ac(v0)` at `0x801D605C`), and the gate is **script-driven**: it
+has six references disc-wide - two SCUS clears (`0x800259AC`, `0x8003B690`),
+one SCUS reader in the field render pass (`0x80026EBC`, which stages a
+16-byte-stride table into scratchpad `0x1F8002D0` only when the game mode is
+`3` and the gate is set), the emitter's read, and two field-VM writers.
+Those two are `0x801E0F38` (set) and `0x801E0F44` (clear), the sub-`0` and
+sub-`1` arms of the op-`0x4C` outer-nibble-`3` jump table at `0x801CEEB8`
+([`script-vm-menuctrl.md`](script-vm-menuctrl.md)). So the emitter exists for
+the whole scene and the script decides when it emits.
+
+Its two table neighbours, `FUN_801D5C08` and `FUN_801D5D60`, **are** spawned -
+the earlier "referenced by nothing across the 84 overlay images" reading was a
+scanner artifact. Nothing names those handler VAs; what the field overlay names
+is their `0x18`-byte templates `0x801F227C` and `0x801F22AC`, as `lui 0x801F` +
+`addiu` pairs feeding `FUN_80020DE0(descriptor, *(0x8007C34C))`: the tween at
+`0x801D245C` (`addiu $a0,$a0,0x227c` in the delay slot), `0x801D2634` and
+`0x801D57C0`, the teardown at `0x801D2760` (`addiu $a0,$a0,0x22ac`). Both sites
+store the driven object into the returned actor's `+0x90` immediately
+afterwards, which is the linked-object back-link the handlers gate on. The
+word-form scan does find those two templates and classifies the hits as
+`incidental-code`, which is how the negative was reached.
 
 ### `FUN_801D27E0` swaps the party leader
 

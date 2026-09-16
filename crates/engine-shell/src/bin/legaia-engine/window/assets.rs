@@ -27,6 +27,42 @@ impl PlayWindowApp {
         })
     }
 
+    /// Materialise one **scene-bank** model's mesh out of the loaded scene,
+    /// for a scripted mesh re-bind (motion-VM op `0x0E`).
+    ///
+    /// `None` for an id the scene's bank does not carry and for the
+    /// `>= 0xF0` player-bank arm, whose five meshes live in PROT 0874 rather
+    /// than in any scene entry - the caller then keeps the placement's spawn
+    /// mesh instead of drawing nothing.
+    fn live_npc_mesh(&self, id: i16) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
+        let scene = self.session.host.scene.as_ref()?;
+        let raw = self.session.host.model_bank.tmd_bytes(scene, id)?;
+        let tmd = legaia_tmd::parse(&raw).ok()?;
+        Some((tmd, raw))
+    }
+
+    /// Re-upload the scene's NPC meshes when a script re-bound one since the
+    /// last upload (motion-VM op `0x0E`, recorded on
+    /// `World::npcs.models`).
+    ///
+    /// `upload_assets` runs once per scene, so an id the world installs
+    /// mid-scene would otherwise never reach the GPU. The comparison is
+    /// against the id each draw was built from, so a stream that re-issues
+    /// the same swap every frame uploads once.
+    pub(super) fn rebind_live_npc_models(&mut self) {
+        let changed = {
+            let world = &self.session.host.world;
+            self.field_npc_draws.iter().any(|d| {
+                world
+                    .field_npc_live_model(d.slot)
+                    .is_some_and(|id| id != d.bound_model)
+            })
+        };
+        if changed {
+            self.upload_assets();
+        }
+    }
+
     pub(super) fn upload_assets(&mut self) {
         let Some(res) = self.scene_res.take() else {
             return;
@@ -43,8 +79,6 @@ impl PlayWindowApp {
             color_tmd_src_index,
             posed_placement_meshes,
             posed_tmds,
-            lo,
-            hi,
             world_map_hf,
             tmd_vram_emitters,
             tmd_color_emitters,
@@ -81,8 +115,6 @@ impl PlayWindowApp {
             let mut tmd_color_emitters: Vec<
                 Vec<legaia_engine_render::scene_lights::EmitterSample>,
             > = vec![Vec::new(); res.tmds.len()];
-            let mut lo = [f32::INFINITY; 3];
-            let mut hi = [f32::NEG_INFINITY; 3];
             for (src_i, rtmd) in res.tmds.iter().enumerate() {
                 // Build this mesh's untextured (F*/G*) vertex-colour primitives
                 // and upload them to the colour pipeline. `tmd_to_color_mesh`
@@ -147,16 +179,6 @@ impl PlayWindowApp {
                     }
                 }
                 if !cmesh.is_empty() {
-                    for p in &cmesh.positions {
-                        for ax in 0..3 {
-                            if p[ax] < lo[ax] {
-                                lo[ax] = p[ax];
-                            }
-                            if p[ax] > hi[ax] {
-                                hi[ax] = p[ax];
-                            }
-                        }
-                    }
                     tmd_color_emitters[src_i] =
                         legaia_engine_render::scene_lights::color_mesh_emitters(
                             &cmesh.positions,
@@ -218,15 +240,6 @@ impl PlayWindowApp {
                     // (if any) were already uploaded above.
                     continue;
                 }
-                let (mlo, mhi) = vmesh.aabb();
-                for ax in 0..3 {
-                    if mlo[ax] < lo[ax] {
-                        lo[ax] = mlo[ax];
-                    }
-                    if mhi[ax] > hi[ax] {
-                        hi[ax] = mhi[ax];
-                    }
-                }
                 // Diag: `LEGAIA_DIAG_MESHTEX=<res index>` dumps a KEPT mesh's
                 // surviving texture references (distinct CBA/TSB pairs) + AABB,
                 // for chasing a mesh that renders flat / mis-textured.
@@ -256,6 +269,7 @@ impl PlayWindowApp {
                     for c in &vmesh.colors {
                         *color_hist.entry(*c).or_insert(0usize) += 1;
                     }
+                    let (mlo, mhi) = vmesh.aabb();
                     log::info!(
                         "DIAG mesh tex: res {} (entry {} off {:#x}) verts {} tris {} \
                          aabb {mlo:?}..{mhi:?} refs: {} colors: {:?}",
@@ -446,8 +460,6 @@ impl PlayWindowApp {
                 color_tmd_src_index,
                 posed_placement_meshes,
                 posed_tmds,
-                lo,
-                hi,
                 world_map_hf,
                 tmd_vram_emitters,
                 tmd_color_emitters,
@@ -788,13 +800,30 @@ impl PlayWindowApp {
         // (the ocean texture + base CLUT are already uploaded by the slot-0 TIM
         // pass). `None` off the world map, so the per-tick advance self-gates.
         self.ocean_anim = self.resolve_ocean_anim();
-        if lo[0].is_finite() {
-            self.scene_aabb = (lo, hi);
+        // The top-view debug camera's framing box. World-space, through the
+        // shared `field_env::env_draws_world_aabb` kernel the browser play
+        // page calls: the placement transform is what turns an env-pack mesh's
+        // origin-centred extent into the box that actually contains the map.
+        if let Some(b) = self.scene_world_aabb(&res) {
+            self.scene_aabb = b;
         }
         // Bind each uploaded mesh slot to the matching actor and wire up the
         // idle animation (record 0) when the scene carries an ANM pack for
         // that actor. Registration order: actor K → TMD slot K, mirroring
         // the retail `0x8007C018` table written by `FUN_8001E890`.
+        // Scripted mesh re-binds (motion-VM op `0x0E`): resolve each live
+        // override's bytes here, ahead of the mutable world borrow the rest
+        // of this function holds. Empty until a script swaps a model, which
+        // is every scene until one does.
+        let live_npc_meshes: std::collections::BTreeMap<u8, (legaia_tmd::Tmd, Vec<u8>)> = self
+            .session
+            .host
+            .world
+            .npcs
+            .models
+            .iter()
+            .filter_map(|(&slot, &id)| self.live_npc_mesh(id).map(|m| (slot, m)))
+            .collect();
         let world = &mut self.session.host.world;
         for i in 0..self.scene_tmd_data.len() {
             world.set_actor_tmd_binding(i, i);
@@ -1047,7 +1076,18 @@ impl PlayWindowApp {
                 // filtering them out HERE instead left a timeline-seated NPC
                 // permanently meshless (invisible while the world said it
                 // stood on stage).
-                let src = if p.special_model {
+                // A scripted mesh re-bind (motion-VM op `0x0E`) wins over the
+                // placement's spawn model. The bytes come from the scene's
+                // model bank rather than `res.tmds`: that list is a magic
+                // scan over the raw entries and cannot see a TMD inside an
+                // LZS bundle descriptor, which is where the scenes that
+                // script a re-bind keep their models.
+                let live_model = world.field_npc_live_model(p.index as u8);
+                let live_src = live_npc_meshes.get(&(p.index as u8)).cloned();
+                let bound_model = live_model.unwrap_or(i16::from(p.model_index));
+                let src = if live_src.is_some() {
+                    live_src
+                } else if p.special_model {
                     world
                         .global_tmd_pool
                         .get((p.model_index - 0xF0) as usize)
@@ -1210,6 +1250,7 @@ impl PlayWindowApp {
                     mesh_idx,
                     color_idx,
                     spawn: (p.world_x, p.world_z),
+                    bound_model,
                 });
             }
             // Retain the bundles for runtime clip re-targeting (op-0x4B

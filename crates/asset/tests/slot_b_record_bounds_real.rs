@@ -155,7 +155,7 @@ fn dispatchable(sel: i16) -> bool {
 /// the parser checked against itself at the same entry point.
 fn program_end(bytes: &[u8], record: usize) -> Option<usize> {
     match slot_b_module::move_program_end(bytes, record + 4) {
-        ProgramEnd::Halt(e) | ProgramEnd::IdleLoop(e) => Some(e),
+        ProgramEnd::Halt(e) | ProgramEnd::IdleLoop(e) | ProgramEnd::WaitForever(e) => Some(e),
         ProgramEnd::Unterminated(_) => None,
     }
 }

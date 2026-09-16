@@ -62,6 +62,12 @@
 //!   / `0x1A` loaded a counter with bit `0x4000` set. That bit makes the branch
 //!   back to the saved PC unconditional, so the VM never advances past it.
 //!
+//! A third word bounds a record only where neither of those turns up: a `0x09`
+//! `WAIT` carrying [`MOVE_WAIT_FOREVER`]. That is a layout argument rather than
+//! a VM one - `WAIT` retires like any other instruction - and the band emits
+//! the operand mid-program too, so the walk remembers the last one and returns
+//! it only when it would otherwise have no bound at all.
+//!
 //! The end is then rounded up to a 4-byte boundary, because the records are
 //! word-aligned: a program whose last halfword lands mid-word is followed by one
 //! halfword of padding before the next record's header. That alignment step is
@@ -70,11 +76,13 @@
 //!
 //! The rule is checked against the records the band *does* bound: chaining
 //! `[header][program]` from each bounded record's start lands exactly on that
-//! record's measured end for 991 of the band's 1027 bounded extents. The 36
-//! that miss are a stated residue, not a rounding tolerance - see
+//! record's measured end for 1021 of the band's 1027 bounded extents, and none
+//! of the chains overruns a measured end. The six that miss stall below it and
+//! are a stated residue, not a rounding tolerance - see
 //! [`slot-b-module-layout.md`](https://andrewaltimit.github.io/legend-of-legaia-re/formats/slot-b-module-layout.html).
 //! Where the walk does **not** terminate, the record stays
-//! [`SlotBLayout::unbounded_record`] and is claimed by nothing.
+//! [`SlotBLayout::unbounded_record`] and is claimed by nothing; on retail no
+//! image is in that state.
 //!
 //! ## Inherited call sites
 //!
@@ -357,6 +365,16 @@ const MOVE_EXT_HALFWORDS: [u8; 0x3D] = [
 
 /// `HALT`.
 const MOVE_OP_HALT: u16 = 0x08;
+/// `WAIT` - stall the actor for the operand's frame count.
+const MOVE_OP_WAIT: u16 = 0x09;
+/// The `WAIT` operand the band's authoring tool emits where a part is finished.
+///
+/// 4095 frames is a little over a minute, which no cast or summon part is on
+/// screen for, so a part that reaches it never advances again in practice. It
+/// is not a terminator the dispatcher knows about - `WAIT` retires like any
+/// other instruction once its counter runs out - which is why the evidence for
+/// reading it as one is the band's own layout rather than the VM.
+const MOVE_WAIT_FOREVER: u16 = 0x0FFF;
 /// `LOOP_SET` / `LOOP_SET_B` - arm a counter the matching `0x19` / `0x1B` tests.
 const MOVE_OP_LOOP_SET_A: u16 = 0x18;
 const MOVE_OP_LOOP_SET_B: u16 = 0x1A;
@@ -380,6 +398,8 @@ pub enum ProgramEnd {
     Halt(usize),
     /// An armed `0x19` / `0x1B` idle loop. Same payload.
     IdleLoop(usize),
+    /// A `0x09` `WAIT` carrying [`MOVE_WAIT_FOREVER`]. Same payload.
+    WaitForever(usize),
     /// The walk ran into a halfword that is not a dispatchable opcode, or off
     /// the end of the buffer, without meeting a terminator. The payload is the
     /// offset it stopped at, which bounds nothing.
@@ -390,7 +410,7 @@ impl ProgramEnd {
     /// The word-aligned end offset, for the two terminating outcomes.
     pub fn bounded(self) -> Option<usize> {
         match self {
-            ProgramEnd::Halt(e) | ProgramEnd::IdleLoop(e) => Some(e),
+            ProgramEnd::Halt(e) | ProgramEnd::IdleLoop(e) | ProgramEnd::WaitForever(e) => Some(e),
             ProgramEnd::Unterminated(_) => None,
         }
     }
@@ -412,12 +432,17 @@ pub fn move_program_end(bytes: &[u8], start: usize) -> ProgramEnd {
     let mut pc = start;
     let mut loop_a = 0u16;
     let mut loop_b = 0u16;
+    let mut last_forever_wait: Option<usize> = None;
+    let stalled = |pc: usize, wait: Option<usize>| match wait {
+        Some(w) => ProgramEnd::WaitForever(align4(w + 4)),
+        None => ProgramEnd::Unterminated(pc),
+    };
     for _ in 0..MOVE_WALK_MAX_STEPS {
         let Some(op) = rd_u16(bytes, pc) else {
-            return ProgramEnd::Unterminated(pc);
+            return stalled(pc, last_forever_wait);
         };
         if op > MOVE_OP_MAX {
-            return ProgramEnd::Unterminated(pc);
+            return stalled(pc, last_forever_wait);
         }
         let arg = |i: usize| rd_u16(bytes, pc + i * 2).unwrap_or(0);
         match op {
@@ -434,6 +459,11 @@ pub fn move_program_end(bytes: &[u8], start: usize) -> ProgramEnd {
             {
                 return ProgramEnd::IdleLoop(align4(pc + 2));
             }
+            // A `WAIT` long enough that nothing runs after it. Remembered, not
+            // returned: the band emits this operand mid-program too, and
+            // ending there costs 48 of the extents the `HALT` rule reproduces
+            // exactly. It is only a bound where the walk has no other one.
+            MOVE_OP_WAIT if arg(1) == MOVE_WAIT_FOREVER => last_forever_wait = Some(pc),
             _ => {}
         }
         let halfwords = match op {
@@ -444,7 +474,7 @@ pub fn move_program_end(bytes: &[u8], start: usize) -> ProgramEnd {
             0x2F => {
                 let sub = arg(1);
                 if sub >= MOVE_EXT_MAX {
-                    return ProgramEnd::Unterminated(pc);
+                    return stalled(pc, last_forever_wait);
                 }
                 usize::from(MOVE_EXT_HALFWORDS[sub as usize])
             }
@@ -456,11 +486,11 @@ pub fn move_program_end(bytes: &[u8], start: usize) -> ProgramEnd {
         if halfwords == 0 {
             // `0x0B` - the dispatcher's default break sets no width, so the PC
             // does not move. Statically that is a stall, not an end.
-            return ProgramEnd::Unterminated(pc);
+            return stalled(pc, last_forever_wait);
         }
         pc += halfwords * 2;
     }
-    ProgramEnd::Unterminated(pc)
+    stalled(pc, last_forever_wait)
 }
 
 fn align4(x: usize) -> usize {

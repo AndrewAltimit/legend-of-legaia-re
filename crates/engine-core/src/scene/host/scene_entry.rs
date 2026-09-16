@@ -472,6 +472,24 @@ impl SceneHost {
             player.move_state.world_y = seat_y;
             player.move_state.world_z = seat_z;
         }
+        // The same initialiser's OTHER spawn: `FieldSpawn::extra_actor` is the
+        // ambient particle emitter (`FUN_80024C88(&pos, 0x801F271C, pool)` at
+        // `0x801D6FD8`, then `+0x1A = 1` for the scene arm). It is a cold-entry
+        // spawn only - a warp back from a battle, a minigame or an FMV skips
+        // it - and it lands with its master gate `_DAT_8007B854` clear, so it
+        // emits nothing until a script raises the gate through op `0x4C`
+        // nibble 3 sub-0. The span is the field draw context's own window; op
+        // `0x46` retunes it per scene.
+        let (wx0, wz0, wx1, wz1) = crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
+        self.world.install_field_scene_elements(
+            crate::mode_entry_init::FieldEntryMode::Cold,
+            crate::cutscene_script_elements::SceneSpan {
+                x_min: wx0,
+                y_min: wz0,
+                x_max: wx1,
+                y_max: wz1,
+            },
+        );
         // Load the per-scene base collision/floor grid from the field map
         // file (retail `DATA\FIELD\<scene>.MAP`, the unique 0x12000-byte block
         // entry). The grid is the file's `+0x4000..+0x8000` region; the
@@ -1111,6 +1129,13 @@ impl SceneHost {
                 self.resources = Some(res);
             }
         }
+        // The scene's window of the global model pool, rebuilt with the
+        // resources: it is what resolves a scripted mesh re-bind's operand
+        // (motion-VM op `0x0E`) to bytes on either host.
+        self.model_bank = match self.scene.as_ref() {
+            Some(sc) => crate::model_bank::SceneModelBank::build(sc),
+            None => crate::model_bank::SceneModelBank::default(),
+        };
         // Opening-prologue hand-off arm. When entering the cutscene scene
         // `opdeene`, derive the `town01` hand-off arm from the scene's own MAN
         // bytecode instead of a blind constant: walk the cutscene-timeline

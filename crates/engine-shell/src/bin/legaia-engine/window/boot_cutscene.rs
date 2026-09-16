@@ -56,7 +56,8 @@ impl PlayWindowApp {
         };
         let Some(session) = session else { return edge };
         let pending = self.save_flow.pending_read(session);
-        let blocks = pending.map(|port| disk_port_blocks(&self.save_dir, port));
+        let blocks = pending
+            .map(|port| disk_port_blocks_with_card(&self.save_dir, self.card.as_ref(), port));
         // Re-borrow: `disk_port_blocks` needed `&self.save_dir` while the
         // session above borrowed `self.boot_ui`.
         let session = match &self.boot_ui {
@@ -97,6 +98,13 @@ impl PlayWindowApp {
     /// onto the current scene as before.
     fn apply_save_commit(&mut self, commit: legaia_engine_core::save_screen::SaveCommit) -> bool {
         use legaia_engine_core::save_screen::SaveCommitKind;
+        // Port 2 is a mounted memory-card image. Its Load reads the block's
+        // SC bytes; a Save into it is the one half this host still lacks
+        // (writing a block needs the card's own free-block budget, which the
+        // browser rack owns and this one does not).
+        if commit.port == 1 {
+            return self.apply_card_save_commit(commit);
+        }
         if commit.port != 0 {
             log::warn!(
                 "save screen: port {} holds no card; nothing written",
@@ -152,6 +160,54 @@ impl PlayWindowApp {
                 }
             }
         }
+        false
+    }
+
+    /// The port-2 half of [`Self::apply_save_commit`]: a Load out of the
+    /// mounted memory-card image, resumed into the save's own scene the same
+    /// way a port-1 Load is.
+    ///
+    /// A Save is refused rather than half-performed: writing a block means
+    /// claiming directory frames against the card's own free-block budget,
+    /// and this host has no writer for that.
+    fn apply_card_save_commit(
+        &mut self,
+        commit: legaia_engine_core::save_screen::SaveCommit,
+    ) -> bool {
+        use legaia_engine_core::save_screen::SaveCommitKind;
+        let cell = commit.cell;
+        let Some(card) = self.card.as_ref() else {
+            log::warn!("save screen: port 2 holds no card; nothing read");
+            return false;
+        };
+        if matches!(commit.kind, SaveCommitKind::Save) {
+            log::warn!("save screen: writing into a mounted card image is not supported");
+            return false;
+        }
+        let Some((sf, resume)) = card.save_at(cell) else {
+            log::warn!("save screen: card block {} holds no save", cell + 1);
+            return false;
+        };
+        if !resume.scene.is_empty()
+            && let Ok(mode) = self.session.enter_field_live_from_save(
+                &resume.scene,
+                &self.field_live_opts,
+                sf.clone(),
+            )
+        {
+            log::info!(
+                "save screen: loaded card block {}, resumed in '{}' (mode={mode:?})",
+                cell + 1,
+                resume.scene
+            );
+            self.rebuild_scene_render_state();
+            return true;
+        }
+        self.session.host.world.load_full(sf);
+        log::info!(
+            "save screen: loaded card block {} onto the current scene",
+            cell + 1
+        );
         false
     }
 
@@ -234,6 +290,15 @@ impl PlayWindowApp {
         // Read before the match: it borrows `self.boot_ui`, so the title
         // arm cannot call back into `self`.
         let cutscene_live = self.cutscene.is_some();
+        // Same reason: the Key Config screen consumes one key name per
+        // physical press, and the match holds `self.boot_ui` for the rest of
+        // the tick. Taken unconditionally - a key latched while no rebind
+        // screen is open is stale by the next frame and must not survive to
+        // be bound later.
+        let pending_key = self.pending_key_name.take();
+        // A binding table a Key Config screen committed this tick, applied
+        // and persisted after the match releases `self.boot_ui`.
+        let mut rebound: Option<legaia_engine_core::input::Mapping> = None;
         let mut start_attract: Option<i16> = None;
         // The pause menu's blips, off the raw edges before any screen
         // consumes them - the browser page keys the same three the same way
@@ -267,9 +332,18 @@ impl PlayWindowApp {
                     let next = self.session.mode_seat.boot_handoff();
                     match next {
                         GameMode::CardInit => {
-                            // Continue-enabled per save-slot scan.
+                            // Continue-enabled per save scan - over **both**
+                            // ports. Scanning the save directory alone greys
+                            // the row out for a player whose only save is on
+                            // the memory-card image they mounted, which is
+                            // the one thing `--card` exists for.
                             let snapshots = scan_save_dir(&self.save_dir);
-                            let any_present = snapshots.iter().any(|s| s.present);
+                            let any_present = snapshots.iter().any(|s| s.present)
+                                || self.card.as_ref().is_some_and(|c| {
+                                    legaia_engine_core::save_select::card_block_snapshots(c)
+                                        .iter()
+                                        .any(|s| s.present)
+                                });
                             self.boot_ui = BootUiState::Title(title_session(any_present));
                             self.start_title_bgm();
                         }
@@ -400,14 +474,19 @@ impl PlayWindowApp {
                             self.boot_ui = BootUiState::SaveSelect(
                                 legaia_engine_core::save_select::SaveSelectSession::for_rack(
                                     legaia_engine_core::save_select::SaveSelectMode::Load,
-                                    &disk_save_rack(&self.save_dir),
+                                    &disk_save_rack_with_card(&self.save_dir, self.card.as_ref()),
                                 ),
                             );
                         }
                         TitleOutcome::Options => {
+                            // Armed with the live binding table, so the boot
+                            // options screen carries the same Key Config row
+                            // the pause menu's does - one screen, both
+                            // entries.
                             self.boot_ui = BootUiState::Options(
-                                legaia_engine_core::options::OptionsSession::new(
+                                legaia_engine_core::options::OptionsSession::with_key_rebind(
                                     self.options_state.clone(),
+                                    self.mapping.clone(),
                                 ),
                             );
                         }
@@ -470,7 +549,12 @@ impl PlayWindowApp {
                     circle,
                     start,
                 };
-                let _ = session.tick(input);
+                let _ = session.tick_with_key(input, pending_key);
+                if session.take_bindings_dirty()
+                    && let Some(m) = session.mapping().cloned()
+                {
+                    rebound = Some(m);
+                }
                 if let Some(OptionsOutcome::Closed) = session.outcome() {
                     // Value edits commit inside the session's popup (retail
                     // writes the config word at popup confirm and never
@@ -508,6 +592,12 @@ impl PlayWindowApp {
                 {
                     return true;
                 }
+                // A bind committed inside the Options sub-session's Key
+                // Config screen this tick. Held in a local because this arm
+                // returns before the post-match apply the boot options screen
+                // uses, and because `self.mapping` cannot be written while
+                // `sub` borrows `self.boot_ui`.
+                let rebound_in_menu;
                 if let Some(active_sub) = sub.as_mut() {
                     // Engine extension: Triangle on the Status screen swaps
                     // it for the Tactical Arts chain editor (retail's seven
@@ -520,8 +610,9 @@ impl PlayWindowApp {
                     );
                     // A sub-session is open - route input + check for done.
                     if !opened_arts {
-                        active_sub.tick_pad_edge(pressed);
+                        active_sub.tick_pad_edge_with_key(pressed, pending_key);
                     }
+                    rebound_in_menu = active_sub.take_rebound_mapping();
                     if active_sub.is_done() {
                         // Drain into world side-effects + handle save.
                         let finished = sub.take().expect("sub was Some");
@@ -590,6 +681,14 @@ impl PlayWindowApp {
                             let _ = menu.resume(false);
                         }
                     }
+                    // Adopt + persist the rebind now that the `self.boot_ui`
+                    // borrow is dead: the live table is what the very next
+                    // key event resolves through, and the file is the same
+                    // `legaia-input.toml` the CLI editor writes.
+                    if let Some(mapping) = rebound_in_menu {
+                        self.mapping = mapping;
+                        self.persist_bindings();
+                    }
                     return true;
                 }
                 let input = FieldMenuInput {
@@ -621,7 +720,7 @@ impl PlayWindowApp {
                     // The shell's save rack: retail's two card ports, port 1
                     // mounted with `save_dir`. Its kind is what puts a Load /
                     // Save sub-session in the two-stage flow.
-                    let rack = disk_save_rack(&self.save_dir);
+                    let rack = disk_save_rack_with_card(&self.save_dir, self.card.as_ref());
                     self.save_flow.reset();
                     // Build sub-sessions from the DISC tables the boot path
                     // already installed on the world (spell table, equipment
@@ -630,7 +729,7 @@ impl PlayWindowApp {
                     // any randomizer/disc data and dropped Arts edits.
                     let world = &self.session.host.world;
                     let chain_library = world.chain_library();
-                    *sub = Some(FieldMenuSubsession::build(
+                    let mut built = FieldMenuSubsession::build(
                         row,
                         world,
                         &self.options_state,
@@ -638,7 +737,13 @@ impl PlayWindowApp {
                         &chain_library,
                         &world.tables.spell_catalog,
                         &world.tables.equipment_table,
-                    ));
+                    );
+                    // The Options row grows its engine-only Key Config row
+                    // only where a host has a binding table to edit; the
+                    // browser play page arms the same row off its own stored
+                    // table.
+                    built.arm_key_rebind(self.mapping.clone());
+                    *sub = Some(built);
                 }
                 let outcome = self.session.field_menu.as_ref().and_then(|m| m.outcome());
                 if let Some(outcome) = outcome {
@@ -688,7 +793,27 @@ impl PlayWindowApp {
         if let Some(fmv_id) = start_attract {
             self.start_title_attract(fmv_id);
         }
+        // Same for a committed rebind: adopt it as the live table (so the
+        // very next key event resolves through it) and persist it to the
+        // same `legaia-input.toml` that `legaia-engine config set --binding`
+        // writes - one file, whichever way the player edited it.
+        if let Some(mapping) = rebound {
+            self.mapping = mapping;
+            self.persist_bindings();
+        }
         boot_ui_active
+    }
+
+    /// Write the live binding table back to `legaia-input.toml` - the file
+    /// [`legaia_engine_core::input::Mapping::load_or_default`] reads at
+    /// startup and `legaia-engine config set --binding` edits from the
+    /// command line. The pause menu's Key Config screen is a third editor of
+    /// the same file, not a second store.
+    pub(super) fn persist_bindings(&self) {
+        let path = std::path::PathBuf::from(INPUT_CONFIG_FILE);
+        if let Err(e) = self.mapping.save(&path) {
+            log::warn!("bindings: save to {} failed: {e:#}", path.display());
+        }
     }
 
     /// Play the title screen's attract movie in-window.
@@ -853,7 +978,32 @@ impl PlayWindowApp {
                 out
             }
             BootUiState::Options(s) => {
-                let rows = s.state().rows();
+                // The boot options screen's Key Config sub-screen. Same
+                // shared builder the pause menu's composition uses - the
+                // rebind layout is written once, for both entries and both
+                // hosts.
+                if let Some(k) = s.key_rebind() {
+                    let pairs: Vec<(String, String)> = k
+                        .rows()
+                        .iter()
+                        .map(|r| (r.button.name().to_string(), r.key.clone()))
+                        .collect();
+                    let borrowed: Vec<(&str, &str)> = pairs
+                        .iter()
+                        .map(|(b, v)| (b.as_str(), v.as_str()))
+                        .collect();
+                    return legaia_engine_render::key_rebind_draws_for(
+                        &self.font,
+                        &borrowed,
+                        k.cursor(),
+                        matches!(
+                            k.phase(),
+                            legaia_engine_core::key_rebind::KeyRebindPhase::AwaitingKey { .. }
+                        ),
+                        (96, 80),
+                    );
+                }
+                let rows = s.state().rows_for(s.key_config_armed());
                 let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = rows
                     .iter()
                     .map(|r| legaia_engine_render::OptionsRowView {

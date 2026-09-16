@@ -74,6 +74,7 @@ fn build_synthetic_save() -> SaveFile {
             story_flag_bits,
             money: 1234,
             inventory: vec![(0x05, 9), (0x10, 1), (0x33, 64)],
+            ..Default::default()
         },
         ext_v2: SaveExtV2 {
             play_time_seconds: 7200,

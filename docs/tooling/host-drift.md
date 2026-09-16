@@ -423,6 +423,7 @@ naming `coplanar_draw_offsets` is prose, not a wiring, and under-counting
 | walk-ground heightfield sink | emitting the heightfield's vertices requires `GROUND_SINK` |
 | packet-colour stream fill | a packet-colour stream may not be filled with white |
 | placement tilt composition | reading `placement_rot_y` requires `rot_x` + `rot_z` |
+| shared value layout -> shared quad emitter | resolving `battle_value_readout` requires `battle_numerals` + one of its prim builders |
 
 **The heightfield rule triggers on the emitter, not the type.** An early draft
 keyed on `WalkHeightfield` / `walk_heightfield` and reported four files that
@@ -445,6 +446,16 @@ emission - fade included - is single-assembler now (`engine-ui`'s
 `battle_intro`, ticked by both hosts), so the question the rule asked can no
 longer be posed and the rule is deleted rather than left matching nothing.
 See [the section below](#the-version-of-this-tier-that-needs-no-rule).
+
+**A shared layout is not a shared draw.** The battle damage numerals and the
+`N HIT` / `TOTAL` counter resolved through one kernel
+(`engine-vm::battle_value_readout`) on both hosts - and the native window
+sampled retail's 24x24 cells out of VRAM while the browser restyled the same
+digits in the dialog font. Every tier saw one model, because both hosts named
+the kernel; what differed was the record family the resolved cells became. The
+rule closes the gap the layout kernel left: a surface that resolves the layout
+must also reach `engine-ui::battle_numerals` and one of its prim builders, so a
+font path is an explicit before-the-atlas fallback rather than the draw.
 
 **The tilt rule earns its place on measured data, not on plausibility.** The
 comment it replaced said "the handful of disc placements carrying a real X/Z
@@ -502,11 +513,124 @@ the same screen with the same model. The five *render* surfaces above are not
 - the dance hall and the fishing venue bake venue-specific geometry - so there
 the rule is the instrument, and this is not a plan to replace it.
 
+## Tier 8 - ownership: does the host hold the engine type, or only read it?
+
+`OWNED_TYPES` in
+[`check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py).
+
+Every tier above asks whether a host **reaches** something: a builder, a
+constant, a kernel, a gate, a hook. None can see a host that reaches an engine
+type's *outputs* while holding none of the type - there is no builder to miss,
+no constant to pair, and an injection site that does not exist cannot diverge
+from one that does.
+
+The camera is the worked case and it is
+[below](#gaps-the-tiers-were-blind-to-closed-by-reading-the-two-hosts-side-by-side):
+one absence produced a projection difference, a simulation difference and two
+missing screens at once, with all seven tiers green.
+
+Ownership is a **field declaration or a construction** in that host's own
+shipped source. The three things that are not ownership are the three the page
+had: a `use` line, a match arm, and a borrowed parameter. Two shapes look like
+constructions and are not - `-> Camera {` is a return type and
+`impl Trait for Camera {` is an impl block - and the control suite pins every
+one of these directions, because a detector that accepts a `use` line reports
+every type as owned by everybody.
+
+Declared rather than derived, for the same reason tiers 2 and 3 are: "which
+engine types must a host own" is a judgement about the architecture. The
+derived version of the question - every `engine-core` type one host constructs
+and the other only names - reports 26 rows over this tree, and reading them is
+what settles it: they are types **both** hosts use, where one happens to name a
+constructor (`PadButton::from_name`) or to hold a session the other reaches
+through its runtime. None is a Camera-shaped absence, and a tier that failed on
+all 26 would be asserting 26 architectural claims nobody made. A row here is a
+pinned juncture and does not claim to be a census.
+
+Scope: it proves each named type is constructed or held by both hosts, and that
+the type still exists. It proves nothing about how either host drives it.
+
+## Tier 9 - variant coverage: does each host answer every variant?
+
+`ENUM_COVERAGE` in the same file.
+
+A shared enum's variant can be **entered on both hosts and answered on one**.
+Four minigame `SceneMode`s shipped that way: the shared scene host drains the
+mode-24 door warp for either host, and the browser landed in each with a frozen
+field and no screen, because their native presentation is text lines and a
+hand-rolled 3D scene rather than an `engine-ui` builder tier 1 enumerates.
+
+The variant list is **derived from the enum's own source**, so a variant added
+tomorrow is measured; what is declared is the enum and the per-(variant, host)
+waivers. Both waiver directions are validated: a waiver for a variant the host
+now names fails, and so does one naming a variant or host that does not exist.
+
+A host "answers" a variant by naming it **qualified** (`SceneMode::Fishing`).
+The qualification is the whole rule - an unqualified `Fishing` matches a
+session type, a module name and half the fishing HUD, and a detector that
+accepted it would report every host as covering everything.
+
+Scope: it proves each host's shipped code mentions the variant. It does not
+prove the arm draws anything, that two arms agree, or that the variant is
+reachable at runtime.
+
+## Tier 10 - entry symmetry: is the phase armed only from a debug key?
+
+`HOTKEY_SOURCES` / `HOTKEY_ONLY_WAIVERS` in the same file.
+
+A gap that reads as "one host has it" can turn out to be "one host's *debug
+path* has it", and no tier above can tell those apart because both end at a
+live call site. The dance count-in is the case: a complete shared kernel the
+native window drove from a count-in driver of its own, reached only by the `K`
+/ `U` hotkeys, so **neither** host counted in when a player walked into the
+hall.
+
+For every `world.<method>()` the native key arms call, this asks whether any
+call site exists outside `crates/engine-shell/src/bin/` - in the shared engine
+crates, or on the browser hosts. Derived over the hotkey sources, so a new
+hotkey arm joins the measurement by existing.
+
+The call test matches `.method(` / `::method(` rather than a bare name, because
+a bare match counts the method's own `pub fn` as its caller and makes the tier
+vacuous. `#[cfg(test)]` bodies and `tests/` files are out of the scan for the
+same reason they are out of tier 1: a unit test is not a host.
+
+### What a hotkey waiver may say, and the distinction it has to keep
+
+Two different answers put a row here, and only one of them is work:
+
+- **a debug probe**, with no retail counterpart and no business on a
+  player-reachable entry. The effect-pool marker spawners are this: they exist
+  so the pool's ageing can be watched.
+- **a superseded stand-in**, where the production route moved to another
+  mechanism. `World::spawn_field_stager` stages an ambient record into the
+  older `SummonScene` pool while the op-`0x34` sub-3 route runs
+  `World::spawn_ambient_record_at` (the full `FUN_80021B04` port) on both
+  hosts; `World::spawn_summon` parses a stager overlay while the battle cast
+  band produces `casting.active_summon` through `SummonScene::spawn_parts`.
+
+Both take a waiver naming the ARM or the mechanism. What neither may say is
+"not wired yet" - that is the third answer, a phase whose shared caller is
+genuinely **missing**, and it belongs in `HOTKEY_ONLY_BLOCKED`, which is
+validated like every other pending marker here: an entry that goes clean fails.
+The dict ships empty, because both rows drafted for it turned out to have a
+live replacement. "The shared caller is elsewhere" is not "the shared caller is
+missing", and collapsing the two is how a superseded probe acquires a wiring
+task nobody owes.
+
 ## Gaps the tiers were blind to, closed by reading the two hosts side by side
 
 One pass over both hosts, domain by domain, with every tier above green,
 found the classes below. Each is recorded for the shape it has, because the
 shape is what the next sweep should look for.
+
+Four of them are now tiers rather than only prose: the missing controller is
+tier 8, the unanswered `SceneMode` is tier 9, the phase only a debug launcher
+ran is tier 10, and one layout kernel feeding two letterform families is the
+fifth render rule. The rest below are still read-and-look shapes - "a queue only
+a consumer empties" and "a typed channel narrowed at one host" are decidable
+per instance and not from a source pattern, which is why they are written up
+here and not gated.
 
 **Same override set, different bodies (tier 4's declared blind spot, now
 a worked example).** `WebBgmDirector` and `AudioBgmDirector` overrode the
@@ -546,10 +670,58 @@ by a `try_from` that looked like ordinary defensive code. The native
 scheduler is `u16` and classifies. Width mismatches on a shared event type
 are a diff-visible shape once named, and nothing had named it.
 
+**A host with no controller at all.** The browser play page framed the field
+with its own spherical orbit projection while the native window consumed
+`engine_core::camera::Camera`. Read as "two projections" that is a rendering
+difference; it was not. The page held **no `Camera`**, so nothing on that host
+routed the op-`0x45` Configure beats into a controller, advanced the mover,
+wrote the follow focus back into the retail camera globals
+(`_DAT_80089118/20`), or reset them on scene entry - and the azimuth the page
+fed the locomotion compass came from its own orbit yaw rather than from
+`compass_azimuth_units`. The page also had no cutscene glide (that type sat in
+the wgpu-linked renderer crate), so every `apply > 0` beat snapped, and no
+overworld top-view camera. One controller-shaped absence produced a
+projection difference, a simulation difference and two missing screens at
+once; the shape to look for is a host that *reaches* an engine type's outputs
+without ever *owning* the type.
+
+The camera lives in two shared leaves now:
+`legaia_engine_vm::psx_camera` (the retail GTE projection, the cutscene glide
+and the frame convention) and `legaia_engine_core::camera_view` (which camera
+owns this frame, and what its inputs are). Both hosts call
+`resolve_field_camera` and upload `frame_vp`. The page keeps exactly one
+camera of its own - the debug orbit vantage on `F3`, which the native window
+has too - and it is an explicit override, not the default projection.
+
 **Simulated and never drawn.** The page ticked the field move-VM effects
 every frame and drew none of them, because its only FX draw call sat inside
 the battle branch. Tier 7 asks whether a render surface names a kernel; it
 does not ask whether a simulated layer has a draw site at all.
+
+**A phase only a debug launcher ran.** The dance minigame's pre-song count-in
+(`FUN_801cf470`'s below-10 states) and the Disco King how-to tutorial actor
+were both complete shared kernels, and the native window drove them - from a
+count-in *driver of its own*, reached only by the `K` / `U` hotkeys. The
+player-reachable entry is the mode-24 door warp, which the shared scene host
+drains straight into `World::enter_dance`, so **neither** host counted in when
+a player walked into the hall. A gap that reads as "one host has it" can turn
+out to be "one host's debug path has it", and the tiers cannot tell those
+apart because both end at a live call site. The cure was to move the phase
+into the world tick, where the entry point is shared: `World::enter_dance`
+arms `minigames.dance_countin` and the dance tick holds `DanceGame::advance`
+off until it clears. The same reading applies to the three in-world minigames
+that load a track of their own (`MinigameSubId::bgm_id`) - the native window
+started them from its hotkey launchers, and the door warp started none on
+either host until the warp drain began queueing an op-`0x35` start.
+
+**Same layout, different letterforms.** The battle's damage numerals and the
+`N HIT` / `TOTAL` counter shared a layout kernel
+(`engine-vm::battle_value_readout`) and every gate saw one model - while the
+native window sampled retail's 24x24 cells out of VRAM and the page restyled
+the same digits in the dialog font. A shared *layout* is not a shared *draw*:
+the quads now come out of `engine-ui::battle_numerals` as `ScreenPrim`s and
+both hosts push them through their own `screen_prim` pass, with the font
+builders left as the explicit before-the-atlas fallback on each.
 
 ## What a waiver may say
 
@@ -582,107 +754,215 @@ about these is contested.
 
 | Gap | Shape |
 |---|---|
-| shared camera on web | The browser page runs its own orbit projection beside the engine's camera controller instead of consuming it - in the field, on the overworld (where the native window has a top-view debug camera the page does not) and for the op-`0x45` cutscene shots, which the page maps onto that orbit. |
-| retail numeral art on web | The battle's damage numerals and `N HIT` / `TOTAL` counter draw the shared layout from the font atlas; the native window samples the retail 24x24 cells out of VRAM through a screen-space sink the page has not grown. |
-| publisher logos on web | `engine_core::publisher_logos` + its atlas builder are in the shared crate; only the native `--boot-ui` chain plays them. |
-| key rebinding on **both** hosts | `KeyRebindSession` is complete and orphaned; native rebinds through `legaia-input.toml`, the page reads the engine's table and cannot rebind at all. See the waiver. |
+| the cast-voice leg on **both** hosts | Every host classifies the Seru-cast dispatch cue and declines it, because no host stages the clip files it names. Not a drift - the two hosts decline symmetrically. See [below](#the-cast-voice-leg). |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
-| one-shot SPU voices on the minigames page | The page renders BGM to PCM and hands it to an `AudioBufferSourceNode`; it holds no live `Spu`, so no cue - id-keyed or explicit - can sound there. See [below](#one-shot-voices-on-the-minigames-page). |
-| per-actor pitch / roll on web | The page's NPC draw carries one rotation axis (`rotY`); a second and third would need the draw record and its model build to take the full Euler triple. See [below](#per-actor-pitch-and-roll-on-the-play-page). |
-| scripted mesh re-bind on **both** hosts | Motion-VM op `0x0E` swaps an actor's model mid-scene; both hosts bind an NPC's mesh once, from its spawn model. Not a drift - neither host has it. See [below](#scripted-mesh-re-bind-op-0x0e). |
 
 ### One-shot voices on the minigames page
 
 The Muscle Dome's between-leg tally keys a voice per drained lane, and it names
 no cue id: `FUN_801D1288` resolves a whole `(voice, VAB id, program, tone, note,
 fine, vol_l, vol_r)` set, which is why the catalog path
-(`SfxBank::play_one_shot`) could never sound it. `legaia_engine_audio::VoiceAttr`
-+ `key_on_voice_attr` are that shape, and the native window drives them from the
-tally ramp through `AudioBgmDirector::key_on_voice_attr`.
+(`SfxBank::play_one_shot`) could never sound it.
+`legaia_engine_audio::VoiceAttr` + `key_on_voice_attr` are that shape.
 
-The browser minigames page cannot: it has no resident `Spu` at all. Its audio is
-a whole track rendered offline to interleaved PCM (`render_music01_bgm` /
-`render_music01_loop`) and handed to the page as a buffer, so there is no voice
-to key and no mixer running to key it into. The blocking capability is a live
-SPU on that page - a `WebAudioOut` the minigames entry point owns, the way the
-play page's `play_sfx` owns one - not a call insertion.
+The standalone minigames page used to have no `Spu` at all to key into. Its
+whole audio surface was offline: a track rendered to interleaved PCM
+(`music01_bgm_render`) and per-cue PCM decoded out of a VAB (`muscle_sfx_pcm`,
+`slot_sfx_pcm`), each handed to an `AudioBufferSourceNode`. That covers a cue
+that names itself by id and nothing else.
 
-The page's own tally screen is unaffected in every other respect: the row values
-and the four-step brightness ramp come from the same `ScoreTallyRamp` kernel on
-both hosts. The in-world dome on the **play** page sits beside a live SPU
-(`play_sfx`), so the voice is one call away there; the standalone page is
-the host this gap names.
+It owns one now - `LegaiaMinigames::minigame_audio_open` builds a `WebAudioOut`
+from a user gesture and stages SFX program banks per descriptor slot out of one
+allocator at the top of SPU RAM, the way the play page's `play_sfx` does - and
+both of the native window's firing paths reach it: `minigame_sfx_cue` for an
+id-keyed catalog cue and `muscle_tally_voice` for the explicit attr set, the
+latter driven from the INTERVAL screen's own tick because the page replays
+`ScoreTallyRamp` from that tick rather than stepping it per frame. The page
+side is `MgSpu` in `site/js/minigame-bgm.js`, gated on the same site sound
+toggle the offline path checks.
 
-### Scripted mesh re-bind (op `0x0E`)
+Two things the port keeps deliberately unshared, and they are not drift:
+
+- **The music stays offline.** A rendered track on an `AudioBufferSourceNode`
+  mixes with the SPU at the device rather than inside it. Moving it onto the
+  mixer would be a second BGM path, not a shared one.
+- **A runtime-bank cue id still answers `false`.** The static descriptor table
+  is byte-indexed (`DAT_8006F198 + id*8`); ids at `0x200 +` come from the
+  per-battle `bse.dat` bank ([`bse-dat.md`](../formats/bse-dat.md)), which this
+  page stages nothing for. The dance's `COUNTIN_INTRO_CUE` is one of those, and
+  the export reports the miss rather than keying static row `0` by truncation -
+  the width trap the play page's `u8` scheduler was caught by once already.
+
+The in-world dome on the **play** page was never the host this gap named: it
+sits beside a live SPU (`play_sfx`) already.
+
+### Scripted mesh re-bind (op `0x0E`), and what it took
 
 The scripted-motion VM's op `0x0E` re-binds the actor's mesh: the operand is
 compared **unsigned** against `0xF0`, below which it resolves against the
 scene's model-bank base `*(u16*)0x8007B6F8` and at or above which it resolves
 `operand - 0xF0` against `*(u16*)0x8007B824` and raises the translucent draw
 bit; either way `FUN_80024E08` zeroes the anim cursor `+0x5C`, stores the id at
-`+0x64` and reloads the mesh. The port decodes it
+`+0x64` and reloads the mesh.
+
+**It is wired on both hosts.** The port decodes the op
 (`ambient_motion_ops::step_op_model_swap` -> `AmbientEffect::ModelSwap`) and
-`World::apply_ambient_motion_effects` drops it, which is the only one of that
-enum's six variants with no engine mechanism behind it.
+`World::apply_ambient_motion_effects` records the id on
+`FieldNpcState::models`, keyed by placement slot - the port's stand-in for
+retail's `actor[+0x64]` store, because the port's hosts hold the uploaded mesh
+rather than the actor. Each host reads it back through
+`World::field_npc_live_model` and resolves the bytes through the loaded
+scene's own model bank (`SceneHost::model_bank`,
+[`model_bank::SceneModelBank::tmd_bytes`]): the native window in
+`upload_assets`, with a per-frame `rebind_live_npc_models` for a swap the
+script makes after the upload ran, and the browser through the
+`play_npc_live_model` export its NPC draw consults each frame. One world
+field, one resolver, two upload paths.
 
-Both hosts bind an NPC's mesh **once, from `placement.model_index`**: the
-native window uploads one GPU mesh per placement in `upload_assets` and holds
-the index on `FieldNpcDraw`, and the play page builds catalog entry `i`'s mesh
-in `play_npc_mesh` from the same field. Nothing on `World` carries a live
-per-slot model - `FieldNpcState` has `positions`, `headings`, `motions` and
-`glide_speeds`, and no `models`.
-
-What makes this a project rather than a wiring job is the measurement, which
-is why it is here and not in a waiver
+This was a project rather than a wiring job because of the measurement, which
+is what the resolver had to satisfy
 (`crates/engine-core/tests/ambient_motion_op_census_disc.rs`, disc-gated):
 
-| scene | sites | distinct targets | targets that are some placement's spawn model | scene TMD pack | targets that index the pack |
+| scene | sites | distinct targets | targets that are some placement's spawn model | scene model bank | targets that resolve in it |
 |---|---|---|---|---|---|
-| `bubu1` | 9 | 9 | 0 | 174 | 9 |
-| `koin3` | 100 | 10 | 0 | 1 | 0 |
-| `edbubu` | 6 | 6 | 0 | 115 | 1 |
-| `other7` | 100 | 10 | 0 | 0 | 0 |
+| `bubu1` | 9 | 9 | 0 | 173 | 9 |
+| `koin3` | 100 | 10 | 0 | 77 | 10 |
+| `edbubu` | 6 | 6 | 0 | 160 | 6 |
+| `other7` | 100 | 10 | 0 | 65 | 10 |
 
 **Zero of 215 sites** names a model that some placement in the same scene
-already binds, so the obvious cheap implementation - keep a
+already binds, so the obvious cheap implementation - a
 `(bank, model id) -> uploaded mesh` map built from the placements a host
-already uploads - covers nothing at all. And the two scenes carrying 100 sites
-each resolve to scene TMD packs of 1 and 0 entries, so for 200 of the 215 the
-operand is not an index into the pack both hosts resolve a placement with.
-That last row is a reverse-engineering question, not an engineering one: either
-`SceneResources` resolves those two scenes' packs wrongly, or op `0x0E`'s Scene
-bank is a different pool from the placement spawner's.
+already uploads - covers nothing at all, and that is why the bytes come out of
+the bank instead.
 
-The blocking capability is therefore two things, in order: an answer to what
-`*(u16*)0x8007B6F8` indexes for `koin3` / `other7`, and then a live per-slot
-model override on `World` plus, on each host, a mesh resolver keyed by
-`(bank, id)` that can materialise a model **no placement spawns** - an upload
-path on native, a `play_npc_live_model` export the page consults before
-`play_npc_mesh` on web. Until the first is answered the second has nothing to
-fetch.
+**All 215 resolve**, which is the half that was measured wrongly first. The
+earlier version of this table compared the operand against
+`SceneResources::tmds.len()` and reported banks of `1` and `0` for `koin3` and
+`other7`, from which "op `0x0E`'s bank is a different pool" read as the likely
+answer. It is not: `SceneResources::tmds` is a **magic scan over the scene's
+raw entries**, blind to a TMD inside an LZS-compressed bundle descriptor, and
+both scenes carry their models in exactly that - a type-`0x02` descriptor of 77
+and 65 members. The bank op `0x0E` indexes is `DAT_8007C018`, the global
+registered-TMD array, whose per-scene window is the loader's own registration
+order. `crates/engine-core/tests/model_rebind_live_disc.rs` is the wiring's
+own oracle: over `koin3` it decodes every authored operand and asserts each
+one resolves to bytes that parse as a TMD with objects.
 
-### Per-actor pitch and roll on the play page
+The `>= 0xF0` half stays unresolved on purpose. Those five meshes live in
+PROT 0874, which is not one of the scene's entries, so `tmd_bytes` returns
+`None` there and each host keeps the placement's spawn mesh rather than
+drawing nothing; `legaia_asset::character_pack` is that half's reader when a
+host wants it. No authored site on the disc takes that arm.
+
+### The cast-voice leg
+
+A Seru-magic cast fires a dispatch cue (`FUN_801F3990`, ported as
+`engine-vm::battle_cast_cue::cast_audio_cue`): the player leg emits
+`char_kind * 0x10 + 0xF8 ..`, the enemy leg `0x20C..0x20E`. Both hosts push it
+into the same frame-timed SFX scheduler, and at fire time both classify it the
+same way and drop it - `bgm.rs` logs and `continue`s, `play_sfx.rs` counts it
+on `voice_cues_dropped`. So this is **not** a drift: the two hosts decline
+identically, and the decline is deliberate ("silent rather than wrong").
+
+#### The bank is per-module, not per-character
+
+An earlier reading of this section named `XA27` / `XA28` / `XA29` / `XA34` as
+the staging list, derived by running `char_kind` through
+`classify_cue`'s slot arithmetic. That is the wrong producer, and so the
+wrong bank.
+
+The cast's voice is **not** raised by the dispatch cue at all. Every one of the
+sixty-four slot-B cast modules (PROT `0903..0966`) calls the cue dispatcher
+`FUN_8004FCC8` itself, with its **own** cue id: a literal in 62 of the 64
+(the other two, PROT `0936` and `0937`, form the id at runtime), reproducible
+straight off the extracted entries by decoding the `jal` and its argument. So
+a cast's voice is a property of the spell's module, not of who cast it.
+
+Worked examples, each confirmable against `DAT_800788B8`: PROT `0903` names
+cue `0x134`, which `classify_cue` resolves to `FUN_8003D53C(6, 4, 686)`; PROT
+`0905` names `0x131` -> `(6, 1, 568)`; PROT `0911` names `0x161`.
+
+The real bank is what those ids resolve to, and it is much wider than four
+files - `clip_slot + 1` is the `XA<n>.XA` number:
+
+| clip slot | file |
+|---|---|
+| `6` | `XA7.XA` |
+| `8`..`0xE` | `XA9.XA`..`XA15.XA` |
+| `0x11`..`0x13` | `XA18.XA`..`XA20.XA` |
+| `0x15`, `0x16` | `XA22.XA`, `XA23.XA` |
+| `0x18` | `XA25.XA` |
+| `0x21` | `XA34.XA` |
+
+Seventeen files, not four, and `XA27`..`XA29` are not among them. Three of the
+ninety literal ids (`0x21`, `0x22`, `0x56`) sit below the dispatcher's `0x100` XA threshold and take
+the dispatcher's SFX-queue path instead, so they are not voice clips at all.
+
+The span half of the problem was also wrong in the same direction:
+`XA_CUE_DURATION_ENTRIES` capped `DAT_800788B8` at `0x40` entries, which drops
+every cue from `0x140` up - that is, most of this table. It is `0x110` now.
+
+#### What is actually blocking
+
+Two things, and neither is a staging list.
+
+**No host models the module's own decline gates.** Before a module reaches its
+CD-XA arm it tests `ctx[+0x276]` and the drive-idle poll `FUN_8003DE7C(1)`, and
+returns without a cue when either is non-zero. A host that staged the bank and
+routed the cue would play a voice on casts where retail plays none, which is a
+louder error than the silence it replaces (see
+[`../subsystems/cast-module.md`](../subsystems/cast-module.md)).
+
+**No streamed-voice output.** The clip starter is a `CdlSetfilter` /
+`CdlReadS` state machine over the physical disc; the engine's two XA consumers
+both read whole files up front. Seventeen banks of channels is also a different
+proposition in a browser tab from the three-file arts-shout bank
+(`XA34.XA` alone is 8.7 MB).
+
+Both hosts are equally short of both, so this stays a disclosed **gap on both
+hosts** rather than a drift. What is no longer missing is the map: the
+per-module cue id, the file it lands in and the channel within it are all
+recoverable from the disc without an emulator.
+
+Two neighbours that are **not** this gap, so a reader does not merge them:
+
+- The **arts shout** (`FUN_8004C140`, `XA2` / `XA4` / `XA6`) plays on both
+  hosts.
+- `cast_item_give` (`FUN_8003D53C(char_kind + 0x19, 0, 0x5A)`) is dropped
+  earlier still, at the `BattleActionHost` trait default - no host overrides
+  it, so that cue never reaches audio at all.
+
+### Per-actor pitch and roll
 
 The scripted-motion VM's ops `0x15` and `0x16` tween the actor's X and Z Euler
-angles (`+0x24` / `+0x28`), which retail composes through `RotMatrix`
-(`FUN_80026988`, whose stores decode to `Rx * Ry * Rz`) in the per-actor render
-dispatcher `FUN_8001ADA4`. Both hosts draw a field NPC with a single
-`Ry(heading)`, so neither shows a tilt.
+angles (`+0x24` / `+0x28`), and retail composes all three through `RotMatrix`
+(`FUN_80026988`) in the per-actor render dispatcher `FUN_8001ADA4` - which
+hands the composer `actor+0x24` whole (`addiu a0,s0,0x24` / `jal 0x80026988`
+at `0x8001af04`), so the heading at `+0x26` is simply the middle angle of the
+triple. **Both** hosts used to draw a field NPC with a single `Ry(heading)`,
+so neither showed a tilt; the gap was recorded here as a browser one, which
+was half right at best.
+
+What was missing was not a draw call on either host but the *data*: `World`
+published a per-slot heading and nothing else. It publishes the pair now
+(`FieldNpcState::tilts`, written by `tick_field_npc_motions` from the
+channel's `AmbientMotion::pitch` / `roll`, read through
+`World::field_npc_tilt`), and each host composes the triple through a builder
+it already had - `engine-ui`'s `battle_intro::placement_rotation` natively,
+`placementModelEuler` on the page, the same pair the **placement** tilt kernel
+row already ties together. A slot with no tilt keeps the cheaper yaw-only
+matrix on both hosts, which is almost every slot.
 
 The disc-wide carrier census
-(`crates/engine-core/tests/ambient_motion_op_census_disc.rs`) bounds what that
-costs: over every scene MAN's tail-section-1 streams, op `0x15` has **zero**
+(`crates/engine-core/tests/ambient_motion_op_census_disc.rs`) bounds the whole
+class: over every scene MAN's tail-section-1 streams, op `0x15` has **zero**
 authored sites and op `0x16` has 45, all in one scene - `juui1`, which is the
-same scene the placement-tilt kernel row above names for tilting all nine of
-its static placements about X. So the whole class is one scene's worth of
-presentation.
-
-Note the two are different surfaces: the **placement** tilt composition is
-wired on both hosts (that kernel row is what holds it there, and the page
-already has `placementModelEuler`), and it is the **actor** draw that reads
-yaw only. The blocking capability on the browser side is therefore a
-`rotX` / `rotZ` pair on the page's NPC draw record plus a switch from
-`placementModelScaledY` to the Euler build it already carries.
+same scene the placement-tilt kernel row names for tilting all nine of its
+static placements about X. So this is one scene's worth of presentation, and
+`crates/web-viewer/tests/play_npc_tilt_parity.rs` (disc-gated) pins it there:
+the tilt reaches the page's accessor, the pitch stays zero, `town01` reports
+an all-zero array, and the two hosts' compositions agree entry for entry.
 
 ### Screen-space PSX primitives across the two hosts
 

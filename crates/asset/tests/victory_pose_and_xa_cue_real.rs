@@ -58,7 +58,29 @@ fn the_melee_cue_duration_entry_covers_the_whole_sting() {
     // read span the sound funnel's voice leg requests (docs/subsystems/audio.md).
     let dur = (u32::from(t[0x0C]) * 60).div_ceil(100);
     assert_eq!(dur, 224);
-    // Every clip-slot band has a populated duration; the tail is unused.
+    // The first band is contiguous; `0x37..0x40` is a hole, NOT the end of
+    // the table. Reading it as the end capped the table at `0x40` and dropped
+    // every entry a slot-B cast module names.
     assert!(t[..0x37].iter().all(|&d| d > 0));
-    assert!(t[0x37..].iter().all(|&d| d == 0));
+    assert!(t[0x37..0x40].iter().all(|&d| d == 0));
+    assert!(
+        t[0x40..0x67].iter().all(|&d| d > 0),
+        "the band past the hole is live data, not padding"
+    );
+    // The cast band's own cues. Two named by slot-B modules, and the top of
+    // the id space the dispatcher can form - all four inside the table.
+    for (cue, want) in [
+        (0x131usize, 568u32),
+        (0x134, 686),
+        (0x20E, 245),
+        (0x20F, 163),
+    ] {
+        let raw = t[cue - 0x100];
+        assert!(raw > 0, "cue {cue:#05X} must have a duration entry");
+        assert_eq!(
+            (u32::from(raw) * 60).div_ceil(100),
+            want,
+            "cue {cue:#05X} duration"
+        );
+    }
 }

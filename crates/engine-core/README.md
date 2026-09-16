@@ -76,7 +76,7 @@ each a plain data struct in its own `world/*.rs` file. Access is
 
 | Field | Type | Holds |
 |---|---|---|
-| `party` | `PartyState` | Roster, active party + leader, money, inventory, ability masks, tactical arts, level-up tracking, banners, save extensions, name entry. |
+| `party` | `PartyState` | Roster, active party + leader, money, the `ItemBag` (retail's 256-slot array + its active window; map-shaped adapter over it), ability masks, tactical arts, level-up tracking, banners, save extensions, name entry. |
 | `battle` | `BattleState` | Per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues, end-of-battle latches. |
 | `encounters` / `seru` / `casting` | `EncounterState` / `SeruState` / `CastFxState` | Encounter session + scripted arms; capture log, registry, shiny rolls; summon / cast-module / move-FX scene graph. |
 | `terrain` / `locomotion` / `props` / `npcs` | `FieldTerrain` / `FieldLocomotion` / `FieldPropState` / `FieldNpcState` | Walkability + zones + floor LUT; player movement gates and deltas; prop colliders, walk-touch, stagers; NPC positions, routes, motions, dialog bindings. |
@@ -524,6 +524,14 @@ presentation left to the host:
   (`FUN_801D7518`, which the field initialiser runs once per actor list on a
   warp entry) and the per-actor **colour tween** (`FUN_801DDC20`) whose actors
   the sweep retires by handler address.
+- `camera_view` - the layer above `camera`: which camera owns this frame
+  (`resolve_field_camera` - retail follow / op-`0x45` cutscene shot /
+  overworld walk / world-map top-view debug) and what its retail GTE inputs
+  are, plus the matrix each host uploads (`frame_vp`) and the world-space lens
+  the occlusion gate ray-casts from (`frame_eye`). The pinned follow constants
+  live here, so a host never spells an angle, a depth or a focal length out
+  again; the projection itself is `legaia_engine_vm::psx_camera`. See
+  [`docs/tooling/host-drift.md`](../../docs/tooling/host-drift.md#gaps-the-tiers-were-blind-to-closed-by-reading-the-two-hosts-side-by-side).
 - `camera_ease` - the field camera's smoothed **vertical-offset** step
   (`FUN_801DA390`; `player[+0x16]` is the middle slot of the `+0x14/+0x16/+0x18`
   position triple, and the eased result lands in the Y halfword of a vector):

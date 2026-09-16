@@ -101,8 +101,8 @@ struct TestHost {
     player_pos_refresh_calls: u32,
     player_render_resync_calls: u32,
     field_io_resync_calls: u32,
-    // 0x4C sub-3 sub-0 / sub-1 (field input lock).
-    field_input_lock_writes: Vec<bool>,
+    // 0x4C sub-3 sub-0 / sub-1 (ambient-particle master gate).
+    ambient_particle_gate_writes: Vec<bool>,
     // 0x4C outer-nibble-4 (ctx-slot ramp + global write).
     n4_ctx_ramps: Vec<(u8, i16, u16)>,
     n4_global_writes: Vec<(u8, i32, u16)>,
@@ -439,8 +439,8 @@ impl FieldHost for TestHost {
     fn field_io_resync(&mut self) {
         self.field_io_resync_calls += 1;
     }
-    fn set_field_input_lock(&mut self, locked: bool) {
-        self.field_input_lock_writes.push(locked);
+    fn set_ambient_particle_gate(&mut self, enabled: bool) {
+        self.ambient_particle_gate_writes.push(enabled);
     }
     fn op4c_nibble4_ctx_ramp(&mut self, _ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
         self.n4_ctx_ramps.push((sub, target, ticks));

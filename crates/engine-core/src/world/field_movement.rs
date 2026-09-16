@@ -1649,6 +1649,7 @@ impl World {
             let anim = vm.requested_move;
             let globals_out = vm.globals;
             let scale_out = vm.scale;
+            let tilt_out = (vm.pitch, vm.roll);
             let effects: Vec<_> = vm.effects.drain(..).collect();
             // A walk op's heading write is walk-direction-implied facing: it
             // only means anything alongside the step it accompanies. With the
@@ -1672,6 +1673,19 @@ impl World {
             if turned {
                 self.npcs.headings.insert(slot, engine_heading as i16);
             }
+            // The other two of the actor's three authored angles. Retail's
+            // per-actor render dispatcher hands `actor+0x24` whole to the
+            // three-angle composer (`addiu a0,s0,0x24` / `jal 0x80026988` at
+            // `0x8001af04` in `FUN_8001ADA4`), so the `0x15` / `0x16` tweens
+            // are a draw input exactly as the `+0x26` heading is. Only a
+            // non-zero pair is published: a slot that never tweened keeps no
+            // entry, which is what lets both hosts' yaw-only fast path stay
+            // the common case.
+            if tilt_out != (0, 0) {
+                self.npcs.tilts.insert(slot, tilt_out);
+            } else {
+                self.npcs.tilts.remove(&slot);
+            }
             self.apply_ambient_motion_effects(slot, &effects);
             if globals_out != globals_in {
                 self.flags.story_flags = globals_out;
@@ -1687,6 +1701,22 @@ impl World {
                 self.publish_ambient_render_scale(slot, scale);
             }
         }
+    }
+
+    /// The live `(pitch, roll)` of a field NPC's actor draw - retail
+    /// `actor+0x24` / `actor+0x28`, in the same 12-bit angle space as
+    /// [`crate::world::FieldNpcState::headings`].
+    ///
+    /// `None` when the slot's scripted-motion channel has never tweened
+    /// either angle, which is the ordinary case: the disc-wide census
+    /// (`crates/engine-core/tests/ambient_motion_op_census_disc.rs`) finds op
+    /// `0x15` authored at zero sites and op `0x16` at 45, all in `juui1`. A
+    /// host may therefore keep its cheap yaw-only model build for `None` and
+    /// compose the full `Rx * Ry * Rz` (`FUN_80026988`) only here.
+    ///
+    /// REF: FUN_8001ADA4, FUN_80026988
+    pub fn field_npc_tilt(&self, slot: u8) -> Option<(i16, i16)> {
+        self.npcs.tilts.get(&slot).copied()
     }
 
     /// Publish an ambient channel's `actor+0x72` write into the field-VM
@@ -1707,19 +1737,19 @@ impl World {
     /// Drain one ambient channel's per-tick side effects, in the order the
     /// VM queued them.
     ///
-    /// Five of the six variants have an engine mechanism and are applied
-    /// here; the last is carried but not consumed, and says so:
+    /// Every variant with an engine mechanism is applied here:
     ///
-    /// - [`AmbientEffect::ModelSwap`] needs a per-placement mesh re-bind.
-    ///   Neither host has one: the native window resolves an NPC's mesh once
-    ///   at scene load (`field_npc_draws`) and the play page builds catalog
-    ///   entry `i`'s from the same `placement.model_index`, so a stream that
-    ///   swaps a villager's model still draws the spawn mesh. This is not a
-    ///   call that needs inserting - `ambient_motion_op_census_disc` measures
-    ///   215 authored sites over four scenes and **zero** of them names a
-    ///   model some placement in the same scene binds, so there is nothing
-    ///   resident to re-bind to. Disclosed, with the blocking capability, in
-    ///   `docs/tooling/host-drift.md` under "Scripted mesh re-bind".
+    /// - [`AmbientEffect::ModelSwap`] records the new id on
+    ///   [`crate::world::FieldNpcState::models`], which is the port's stand-in
+    ///   for retail's `actor[+0x64]` store: retail's `FUN_80024E08` writes the
+    ///   id onto the actor and reloads the mesh, while the port's hosts hold
+    ///   the uploaded mesh themselves and read the id back through
+    ///   [`World::field_npc_live_model`]. Nothing is resident to re-bind *to*
+    ///   in the placements a host already uploaded - the disc census
+    ///   (`ambient_motion_op_census_disc`) measures 215 authored sites over
+    ///   four scenes and zero of them names a model some placement in the same
+    ///   scene binds - so the bytes come from the scene's own model bank
+    ///   ([`crate::model_bank::SceneModelBank`]) instead.
     /// - [`AmbientEffect::MoveImage`] is applied: it is the same libgpu blit
     ///   the field VM's `4C 60` emitter queues, so it goes on the same
     ///   [`crate::world::AmbientFxState::script_vram_moves`] queue, which
@@ -1775,13 +1805,45 @@ impl World {
                         dy,
                     ]);
                 }
-                // See the doc comment: no host can materialise the target
-                // mesh, so recording the swap on the world would be an inert
-                // mechanism wearing the look of a wired one.
-                Fx::ModelSwap { .. } => {}
+                Fx::ModelSwap { bank, offset } => {
+                    // Back to the raw operand space both pool consumers
+                    // index, which is what a host resolves through
+                    // `model_bank::resolve_model_id`. The VM already applied
+                    // the `0xF0` split; re-adding the threshold on the
+                    // special arm is its inverse, not a second decode.
+                    use legaia_engine_vm::ambient_motion_ops::ModelBank as VmBank;
+                    let id = match bank {
+                        VmBank::Scene => offset,
+                        VmBank::Special => {
+                            offset.wrapping_add(crate::model_bank::SPECIAL_MODEL_THRESHOLD as i16)
+                        }
+                    };
+                    self.npcs.models.insert(slot, id);
+                }
                 Fx::BitTargetFault => {}
             }
         }
+    }
+
+    /// The live model id the scripted-motion VM's op `0x0E` re-bound this
+    /// placement slot to, or `None` while the actor still draws its spawn
+    /// mesh.
+    ///
+    /// The **one** question a host asks per slot per scene load. Both hosts
+    /// ask it: the native window's `upload_assets` and the browser's
+    /// `play_npc_live_model` export, each feeding the id to
+    /// [`crate::model_bank::SceneModelBank::tmd_bytes`] to materialise the
+    /// mesh. Retail needs no equivalent - it reloads the mesh inside
+    /// `FUN_80024E08` - but the port's mesh lives on the host, so the id has
+    /// to cross that boundary.
+    pub fn field_npc_live_model(&self, slot: u8) -> Option<i16> {
+        self.npcs.models.get(&slot).copied()
+    }
+
+    /// Install a live model id on a slot, as op `0x0E` does. For a host or a
+    /// test that drives the re-bind directly.
+    pub fn set_field_npc_live_model(&mut self, slot: u8, id: i16) {
+        self.npcs.models.insert(slot, id);
     }
 
     /// The player actor's live field position, or `None` when no player

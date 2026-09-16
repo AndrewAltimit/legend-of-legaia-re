@@ -1346,3 +1346,16 @@ handed to the caller rather than written to fixed globals.
 the battle-action state machine writing the same follow-up/banner pointer
 slot, which `docs/subsystems/battle-action.md` already records.
 """
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/minigames-debug.md:801d14b0:801dbf00"
+reason = """
+The cited address belongs to a different image on purpose, which is the whole
+point of the row. `0x801D14B0` (PROT 0977) and `0x801D6710` (PROT 0976) are one
+24-instruction source routine linked into two overlays; disassembling both from
+their own extracted images shows 23 instructions matching one for one and the
+gate global relocated - `lui v0,0x801d; lw v0,0x1ab4(v0)` here against
+`lui v0,0x801e; lw v0,-0x4100(v0)` there. So `_DAT_801DBF00` is the sibling
+link's global, and it structurally cannot appear in a dump of this VA. The row
+names it to stop the two addresses being re-derived as two behaviours.
+"""

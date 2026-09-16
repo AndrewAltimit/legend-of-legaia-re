@@ -602,6 +602,16 @@ void main() {
         halfWidth: 520, halfHeight: 520,
         yaw: 0, pitch: 0.62,
       };
+      /* Debug orbit vantage, the browser twin of the native window's `F3`
+       * (`PlayWindowApp::field_debug_camera`): off by default, so the page's
+       * default projection is the ENGINE camera - the retail follow view, the
+       * op-0x45 cutscene shot, the overworld walk view or the world map's
+       * top-view debug camera, whichever `camera_view::resolve_field_camera`
+       * says owns the frame. On, the page frames the scene with the orbit
+       * above instead, which is the wide vantage for eyeballing scene
+       * completeness. `cam.vp` is what selects between them: the shared
+       * projection sets it, the debug orbit clears it. */
+      this.debugCamera = false;
       this.fps = 0;
       this._fpsAccum = 0;
       this._fpsFrames = 0;
@@ -1025,7 +1035,7 @@ void main() {
 
       /* Frame the camera on the player straight away so the first painted frame
        * is already looking at them. */
-      this._followCamera();
+      this._stageEngineCamera();
     }
 
     /* Upload a scene mesh for every board-owned actor slot the engine reports,
@@ -1068,6 +1078,17 @@ void main() {
     _attachInput() {
       const onKey = (e, down) => {
         if (!this.canvas.matches(':focus-within') && document.activeElement !== this.canvas) return;
+        /* Key Config (the pause menu's Options > Key Config row) needs the
+         * PHYSICAL key, not the pad bit it currently carries: the whole point
+         * is binding a key that is not in the table yet, and the guard below
+         * drops exactly those. `repeat` is skipped so holding the confirm key
+         * does not bind it to the highlighted row the instant the screen
+         * opens - the native window collapses the same stream in
+         * `handle_key`. */
+        if (down && !e.repeat && typeof this.rt.play_menu_key === 'function'
+            && this.rt.play_menu_key(e.code)) {
+          e.preventDefault();
+        }
         const table = padTable();
         if (!table || table[e.code] === undefined) return;
         if (window.legaiaPadSwallows(e.code)) e.preventDefault();
@@ -1079,6 +1100,23 @@ void main() {
       this._onUp = (e) => onKey(e, false);
       window.addEventListener('keydown', this._onDown);
       window.addEventListener('keyup', this._onUp);
+      /* `F3` toggles the debug orbit vantage, the native window's own key for
+       * the same knob (`PlayWindowApp::field_debug_camera`). Off is the
+       * default on both hosts, which is the ENGINE camera - the retail follow
+       * view and the scripted shots. A function key is not a PSX pad button,
+       * so this cannot contradict a rebindable binding. */
+      this._onDebugCam = (e) => {
+        if (e.code !== 'F3') return;
+        if (!this.canvas.matches(':focus-within') && document.activeElement !== this.canvas) return;
+        e.preventDefault();
+        this.debugCamera = !this.debugCamera;
+        if (!this.debugCamera && typeof this.rt.play_camera_set_orbit === 'function') {
+          /* Hand the engine camera back the vantage the debug orbit was left
+           * at, so flipping the toggle does not snap the view a half turn. */
+          try { this.rt.play_camera_set_orbit(-this.cam.yaw); } catch (_) {}
+        }
+      };
+      window.addEventListener('keydown', this._onDebugCam);
       /* Blur drops every held key - otherwise tabbing away mid-walk leaves the
        * player marching into a wall forever. */
       this._onBlur = () => { this.held.clear(); this.pulse.clear(); this.pad = 0; };
@@ -1105,9 +1143,18 @@ void main() {
       });
       this.canvas.addEventListener('pointermove', (e) => {
         if (!dragging) return;
-        this.cam.yaw += (e.clientX - lastX) * 0.006;
+        /* Horizontal drag swings `Camera::manual_orbit` - the SAME engine
+         * field the native window's left-mouse drag writes, so the retail
+         * follow camera and the movement compass both track it. The local
+         * yaw/pitch below only steer the page's debug-orbit vantage (`F3`),
+         * which is the one camera this page still owns. */
+        const dx = (e.clientX - lastX) * 0.006;
+        this.cam.yaw += dx;
         this.cam.pitch = Math.max(0.12, Math.min(1.35,
           this.cam.pitch + (e.clientY - lastY) * 0.004));
+        if (!this.debugCamera && typeof this.rt.play_camera_set_orbit === 'function') {
+          try { this.rt.play_camera_set_orbit(this.rt.play_camera_orbit() + dx); } catch (_) {}
+        }
         lastX = e.clientX; lastY = e.clientY;
       });
       this.canvas.addEventListener('wheel', (e) => {
@@ -1277,6 +1324,14 @@ void main() {
         /* Always at least one tick, so an edge is never dropped. */
         for (let i = 0, n = Math.max(1, ticks); i < n; i++) {
           try { rt.play_menu_input(i === 0 ? edge : 0); } catch (e) {}
+        }
+        /* A rebind committed inside Options > Key Config. The page folded the
+         * engine's table into one JS object at load, so without this the new
+         * binding would be live in the engine and invisible here. One integer
+         * compare per menu frame. */
+        if (window.legaiaSyncPadBindings && window.legaiaSyncPadBindings(rt)) {
+          this.held.clear();
+          this._repack();
         }
         /* An in-canvas Load off a memory card lands the save's party in the
          * world, but the scene it was written in is the page's to enter
@@ -1800,6 +1855,39 @@ void main() {
       this._floorWaveLive = true;
     }
 
+    /* Scripted mesh re-bind (the scripted-motion VM's op `0x0E`): the engine
+     * records the actor's new model id per placement slot, and
+     * `play_npc_live_model` reports it per catalog entry (`-1` = still the
+     * spawn model). An NPC's mesh is uploaded once at scene build, so a swap
+     * the script makes later needs this re-upload; the engine's own cache key
+     * carries the bound id, so asking for an unswapped NPC costs one call and
+     * hands back the same mesh. The native window's twin is
+     * `rebind_live_npc_models` in its asset uploader - same world field, same
+     * `SceneModelBank` resolve. */
+    _rebindLiveNpcModels(rt) {
+      if (!rt.play_npc_live_model || !this.npcs) return;
+      for (const rec of this.npcs) {
+        const id = rt.play_npc_live_model(rec.i);
+        if (id < 0 || id === rec.liveModel) continue;
+        rec.liveModel = id;
+        let ok = true;
+        try { rt.play_npc_mesh(rec.i); } catch (e) { ok = false; }
+        if (!ok) continue;
+        const base = rt.play_npc_mesh_positions();
+        const idx = rt.play_npc_mesh_indices();
+        if (!base.length || !idx.length) continue;
+        const flat = rt.play_npc_mesh_flat_rgba();
+        this.renderer.uploadSceneMesh(rec.meshId, base, rt.play_npc_mesh_uvs(),
+          rt.play_npc_mesh_cba_tsb(), idx, flat.length ? flat : null);
+        /* The pose buffers are sized by the mesh, so they go with it. */
+        rec.base = base;
+        rec.objectIds = rt.play_npc_mesh_object_ids();
+        rec.out = new Float32Array(base.length);
+        rec.lastFrame = -1;
+        rec.lastGen = -1;
+      }
+    }
+
     _frame(skipDraw) {
       const rt = this.rt;
       const stepping = this.stepOnce;
@@ -1925,14 +2013,21 @@ void main() {
             }
             break;
           }
-          /* VR first-person owns the azimuth (the gaze) and merges its stick
-           * pad word over the keyboard's; otherwise the follow camera rules. */
+          /* The engine camera publishes its own compass azimuth every tick
+           * (`Camera::compass_azimuth_units`: scripted yaw + the drag-orbit +
+           * the host framing bias), so the page only speaks over it where it
+           * has something the engine cannot know. Two cases: VR first-person,
+           * where the headset gaze IS the heading, and the debug orbit, whose
+           * vantage is a page-local yaw the engine camera never sees.
+           * The page used to set the azimuth unconditionally from its own
+           * orbit yaw, which is why the engine's own camera state and the
+           * controls it drove could not agree. */
           const lockedPad = this._cut && this._cut.locked;
           if (this._vrDrive) {
             rt.set_camera_azimuth(this._vrDrive.azimuth);
             rt.set_pad(lockedPad ? 0 : (this.pad | this._vrDrive.pad));
           } else {
-            rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
+            if (this.debugCamera) rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
             rt.set_pad(lockedPad ? 0 : this.pad);
           }
           /* A tap's just-pressed edge fires on the first tick of this frame
@@ -1975,6 +2070,9 @@ void main() {
        * ground undulates with the walk heightfield. Costs one WASM call per
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
+
+      /* A script may have re-bound an NPC's mesh this frame. */
+      this._rebindLiveNpcModels(rt);
 
       /* The per-frame READ of the engine's live pose + NPC transforms runs the
        * WASM engine too, so a trap here poisons the instance exactly like the
@@ -2126,6 +2224,12 @@ void main() {
        * is exactly one frame of ghosted tiles per board install. */
       if (typeof rt.play_tile_actor_slots === 'function') this._syncTileBoard(rt);
       const nt = rt.play_npc_transforms();
+      /* Pitch / roll per catalogued actor (retail `actor+0x24` / `+0x28`, the
+       * `0x15` / `0x16` tweens). Almost always all-zero - the disc-wide census
+       * finds `0x15` authored nowhere and `0x16` only in `juui1` - so the draw
+       * below keeps the cheap yaw-only record unless this pair is non-zero. */
+      const ntilt = (typeof rt.play_npc_tilts === 'function')
+        ? rt.play_npc_tilts() : null;
       const clipStates = (typeof rt.play_npc_clip_states === 'function')
         ? rt.play_npc_clip_states() : null;
       const clipFrame = Math.floor(performance.now() / 1000 * NPC_CLIP_FPS);
@@ -2161,14 +2265,33 @@ void main() {
             n.lastFrame = f;
           }
         }
-        draws.push({
+        const actorDraw = {
           meshId: n.meshId,
           x: nt[base], y: -nt[base + 1], z: nt[base + 2],
           rotY: -(nt[base + 3] + 2048) * A2R,
           scale: 1.0,
           /* Actor draw: exempt from the occlusion fade, like the player. */
           noOccl: true,
-        });
+        };
+        /* An actor the scripted-motion VM tilted carries all three of retail's
+         * authored angles, and the dispatcher composes them together
+         * (`addiu a0,s0,0x24` / `jal 0x80026988` in `FUN_8001ADA4`, which reads
+         * X at `+0`, Y at `+2`, Z at `+4`). The yaw-only builder cannot express
+         * that - its negated yaw is a cancellation specific to Ry (see
+         * webgl-math.js) - so a tilted actor takes the whole `Rx * Ry * Rz`
+         * model, the same composition the native window's NPC pass applies
+         * through `battle_intro::placement_rotation`. */
+        const tb = n.i * 2;
+        const rotX = (ntilt && tb + 1 < ntilt.length) ? ntilt[tb] : 0;
+        const rotZ = (ntilt && tb + 1 < ntilt.length) ? ntilt[tb + 1] : 0;
+        if (rotX || rotZ) {
+          actorDraw.rotX = rotX * A2R;
+          actorDraw.rotZ = rotZ * A2R;
+          actorDraw.model = placementModelEuler(
+            actorDraw.x, actorDraw.y, actorDraw.z,
+            actorDraw.rotX, (nt[base + 3] + 2048) * A2R, actorDraw.rotZ, 1.0);
+        }
+        draws.push(actorDraw);
       }
 
       /* Tile board (field-VM op 0x49). A board is installed at RUNTIME by the
@@ -2195,35 +2318,13 @@ void main() {
         }
       }
 
-      /* Cutscene camera: while a timeline runs, aim the orbit camera from
-       * the engine's staged op-0x45 params (the native `cutscene_view`
-       * decode) instead of following the player. Mapped onto the page's
-       * orbit projection: focus -> target, pitch/yaw -> orbit angles, and
-       * the framing half-height from the eye depth x the PSX projection
-       * (half-screen 120 px over the staged H focal length). */
-      let cutsceneCam = false;
-      if (this._cut && typeof rt.play_cutscene_camera_json === 'function') {
-        try {
-          const cc = JSON.parse(rt.play_cutscene_camera_json());
-          if (cc && cc.active) {
-            cutsceneCam = true;
-            this.cam.centerX = cc.focus[0];
-            this.cam.centerY = -cc.focus[1] + 60;
-            this.cam.centerZ = cc.focus[2];
-            this.cam.yaw = -cc.yaw;
-            this.cam.pitch = Math.max(0.12, Math.min(1.35, cc.pitch));
-            /* Roll (op-0x45 slot 2) tilts the frame about the view ray.
-             * Negated for the same reason the yaw above is: the orbit
-             * projection mirrors screen X (`buildWorldOrbitVp` negates P[0]),
-             * which reverses the on-screen sense of both angles. */
-            this.cam.roll = -(cc.roll || 0);
-            const half = Math.abs(cc.tr[2]) * 120 / Math.max(cc.h, 1);
-            this.cam.halfWidth = Math.max(220, Math.min(6000, half));
-            this.cam.halfHeight = this.cam.halfWidth;
-          }
-        } catch (e) { /* keep the follow camera */ }
-      }
-      if (!cutsceneCam) { this.cam.roll = 0; this._followCamera(pt); }
+      /* This frame's camera. The engine resolves WHICH camera owns the frame
+       * and what its retail GTE inputs are (`camera_view::resolve_field_camera`
+       * - follow / op-0x45 cutscene shot / overworld walk / world-map
+       * top-view), and hands back the matrix; the page uploads it. The page
+       * used to run its own orbit projection here and re-map the cutscene
+       * params onto it, which is a second camera model beside the engine's. */
+      this._stageEngineCamera(pt);
 
       /* This frame's field view-projection, built exactly as the renderer
        * will build it (`buildWorldOrbitVp`, or the VR/battle override). Two
@@ -2410,9 +2511,10 @@ void main() {
       let active = false;
       try { active = !!rt.play_battle_active(); } catch (e) { return false; }
       if (!active) {
-        /* Drop the battle VP override whenever battle isn't drawing, so the
-         * field frame is back on the orbit projection even if the battle
-         * state was torn down elsewhere (scene swap, trap recovery). */
+        /* Drop the battle VP override whenever battle isn't drawing, even if
+         * the battle state was torn down elsewhere (scene swap, trap
+         * recovery). The field branch re-stages its own `cam.vp` from the
+         * engine camera the same frame. */
         if (this.cam.vp) this.cam.vp = null;
         if (this._battle) {
           /* Battle just ended: drop the battle scene and restore the field
@@ -2797,10 +2899,20 @@ void main() {
       this._battle = b;
     }
 
-    /* Where the shared orbit projection puts the eye for the current camera
-     * (`buildWorldOrbitVp`'s own formula, minus the aspect letterbox, which only
-     * matters for framing). The occluder cull needs the eye in world space. */
+    /* This frame's world-space lens, in the page's Y-UP draw frame.
+     *
+     * The engine answers it analytically for every retail-model camera
+     * (`camera_view::frame_eye` - the inverse of the same view composition
+     * `play_camera_vp` uploads), in raw retail Y-down world, so the Y flips
+     * on the way out. Only the page's own debug orbit falls through to the
+     * orbit formula below. */
     _eye() {
+      if (!this.debugCamera && typeof this.rt.play_camera_eye === 'function') {
+        try {
+          const e = this.rt.play_camera_eye();
+          if (e && e.length === 3) return [e[0], -e[1], e[2]];
+        } catch (_) { /* fall through to the orbit eye */ }
+      }
       const FOV_Y = 0.9;
       const dist = Math.max(this.cam.halfHeight / Math.tan(FOV_Y / 2), 1);
       const sy = Math.sin(this.cam.yaw), cy = Math.cos(this.cam.yaw);
@@ -2823,14 +2935,37 @@ void main() {
       }
     }
 
-    /* Keep the camera on the player: same target, user-controlled orbit. */
-    _followCamera(pt) {
+    /* Stage this frame's camera.
+     *
+     * Default: the ENGINE's. `play_camera_vp` resolves which camera owns the
+     * frame and returns the retail view-projection for it, which goes on
+     * `cam.vp` - the explicit override `buildWorldOrbitVp` checks first, the
+     * same channel the battle frame already used for `battle_cam_script`.
+     * The orbit fields are kept in step underneath it so the debug vantage,
+     * the VR spawn and the FX billboards read a sane camera basis if the
+     * engine ever hands back nothing.
+     *
+     * Debug orbit (`F3`): clear `cam.vp` and let the page's own vantage frame
+     * the scene, mirroring the native window's `field_debug_camera`. */
+    _stageEngineCamera(pt) {
       const t = pt || this.rt.player_transform();
       this.cam.centerX = t[0];
       /* Retail Y is down-positive, and the draw frame flips it; target a little
        * above the floor so the camera looks at the character, not their feet. */
       this.cam.centerY = -t[1] + 60;
       this.cam.centerZ = t[2];
+      this.cam.roll = 0;
+      if (this.debugCamera || typeof this.rt.play_camera_vp !== 'function') {
+        this.cam.vp = null;
+        return;
+      }
+      let vp = null;
+      try {
+        const c = this.renderer.canvas;
+        const m = this.rt.play_camera_vp(c.width, Math.max(c.height, 1));
+        if (m && m.length === 16) vp = Float32Array.from(m);
+      } catch (e) { vp = null; }
+      this.cam.vp = vp;
     }
 
     dispose() {
@@ -2838,6 +2973,7 @@ void main() {
       if (this.vr) { this.vr.destroy(); this.vr = null; }
       window.removeEventListener('keydown', this._onDown);
       window.removeEventListener('keyup', this._onUp);
+      window.removeEventListener('keydown', this._onDebugCam);
       window.removeEventListener('blur', this._onBlur);
       if (this._screenPrims) { this._screenPrims.dispose(); this._screenPrims = null; }
       if (this.renderer) { this.renderer.dispose(); this.renderer = null; }

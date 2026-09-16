@@ -573,6 +573,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/sfx-table.html",     "SFX descriptor table",          "formats/sfx-table",          "formats/sfx-table.html"),
     ("formats/sound-driver.html",  "Sound-driver paths",            "formats/sound-driver",       "formats/sound-driver.html"),
     ("formats/pochi.html",         "Pochi-filler placeholders",     "formats/pochi",              "formats/pochi.html"),
+    ("formats/ringside-still.html","Headerless 16bpp stills",       "formats/ringside-still",     "formats/ringside-still.html"),
     ("formats/mips-overlay.html",  "MIPS overlay code",             "formats/mips-overlay",       "formats/mips-overlay.html"),
     ("formats/overlay-ptr-table.html","Overlay pointer-table code", "formats/overlay-ptr-table",  "formats/overlay-ptr-table.html"),
     ("formats/navmesh.html",       "Per-scene primitive scratch buffer", "formats/navmesh",       "formats/navmesh.html"),

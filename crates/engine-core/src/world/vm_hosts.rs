@@ -1873,6 +1873,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::MenuRefresh);
     }
 
+    // Op `0x4C` outer-nibble-3 sub-0 / sub-1: the ambient-particle master
+    // gate `_DAT_8007B854`. Retail keeps it in one word that the emitter
+    // re-reads every frame; the port keeps a copy on each live emitter
+    // element, so the single write fans out over the channel here. Both hosts
+    // run the channel off `World::tick_cutscene_elements`, so this one sink
+    // serves native and browser alike.
+    fn set_ambient_particle_gate(&mut self, enabled: bool) {
+        self.world.set_ambient_particles_enabled(enabled);
+    }
+
     fn move_to(&mut self, ctx: &mut FieldCtx, world_x: u16, world_z: u16, is_player: bool) {
         // Scene-entry spawn-prologue pre-run: the record seats ITS OWN actor
         // (the VM already wrote the channel ctx position; the pre-run's

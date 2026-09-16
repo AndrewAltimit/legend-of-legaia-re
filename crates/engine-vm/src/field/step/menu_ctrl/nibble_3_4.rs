@@ -14,15 +14,16 @@ pub(super) fn op_4c_n3<H: FieldHost>(
 ) -> StepResult {
     match op0 & 0x0F {
         0 => {
-            // sub-0: lock field input, exit via STATE_RESUME.
-            host.set_field_input_lock(true);
+            // sub-0 (0x801E0F38): raise the ambient-particle master gate
+            // `_DAT_8007B854`, exit via STATE_RESUME.
+            host.set_ambient_particle_gate(true);
             StepResult::Yield {
                 resume_pc: pc + header_size + 1,
             }
         }
         1 => {
-            // sub-1: unlock field input, exit via STATE_RESUME.
-            host.set_field_input_lock(false);
+            // sub-1 (0x801E0F44): clear the same gate.
+            host.set_ambient_particle_gate(false);
             StepResult::Yield {
                 resume_pc: pc + header_size + 1,
             }

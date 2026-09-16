@@ -1065,7 +1065,7 @@ The script censuses cover script-op operand spaces only. The bank's helpers are 
 **`0x50A` is the "won the last minigame session" result toggle of the Sol game-hall venues.** Its writers:
 
 - **Muscle Dome** (PROT 0977, dev module `other6`; the file carries the mastering path `h:\prot\field\koin1\efect.dat`, pinning `koin1` as its host scene). The post-match settle routine CLEARs `0x50A` (`jal` at `0x801CE818`-based VA `0x801D0FF8`, file `0977+0x27E8`) and re-SETs it (`0x801D101C`) iff the win global `0x801D1ADC` is set - the overlay's `WIn on` / `WIn off` debug strings label exactly this pair. The same routine mirrors the battle-victory low flag `0x35`, SETs the per-class victory latches `0x130`/`0x131`/`0x132`, pays prize gold from the table at `0x801D1860`, and past round 13 grants item `0xCD` once, gated on flag `0x6CB`.
-- **The dance overlays** (PROT 0978/0979/0980 - the three dance-song variants sharing one code image; canonical static-overlay row is 0980). Session setup SETs `0x50A` unconditionally (`0x801CF968`, file `0980+0x1150`) after decoding the song select from flags `0x133`/`0x134`/`0x135` (alt `0x428`) and clearing the three; the result path CLEARs it (`0x801CFF10`) when the performance misses its score goal.
+- **The dance overlay** (PROT 0980 - one image, not three. The "0978/0979/0980 dance variants" reading came from the superseded entry-size expression: 0978's `0xE000` footprint over-read into 0979 from `+0x1000` and into 0980 from `+0x5000`, so the same dance code printed under three labels. The three entries are three different overlays - 0978 `field_back_read` at slot-B base `0x801F69D8`, 0979 `field_battle_intro` and 0980 `dance` at the slot-A base - each with its own row in `crates/asset/data/static-overlays.toml`). Session setup SETs `0x50A` unconditionally (`0x801CF968`, file `0980+0x1150`) after decoding the song select from flags `0x133`/`0x134`/`0x135` (alt `0x428`) and clearing the three; the result path CLEARs it (`0x801CFF10`) when the performance misses its score goal.
 
 The venue linkage closes the loop. `koin1` is the whole coin-games venue, not
 one game's antechamber - its scripts carry three distinct mode-24 door-warps,
@@ -1585,9 +1585,15 @@ painter is `FUN_801F1890` (the three-line panel), and the sub-menu's idle and
 confirm both install `FUN_801F1B64` (the single label). Port:
 `legaia_engine_vm::baka_hub_actors::{PANEL_WINDOW_TABLE, window, panel_windows}`.
 
-Both dumps are decompiled-C only (no disassembly) for the dispatcher bodies
-themselves, so store order there is unverified; the two tables above are read
-from disassembly and from the entry's own bytes.
+Both install sites are read from the dispatchers' own instructions, not from
+their decompiled C: the coin counter builds `a0 = 0x801F3360` and calls
+`FUN_801E9B3C` at `0x801F0CC0` (its other two installs, at `0x801F0BC8` and
+`0x801F0FF0`, both take `0x801F3340`), and the sub-menu installs `0x801F3294`
+at `0x801F1E98` and `0x801F32A4` at `0x801F1EF8`. Walking those descriptors as
+`[i16 op][i16 window][u32]` gives window `11` for the coin counter's confirm
+and window `16` for both sub-menu entries - records whose `+0x18` painters are
+`0x801F1890` and `0x801F1B64`. The tables themselves are read the same way,
+from the entry's own bytes.
 
 ### The actor-band command loops (`FUN_801F71E0` / `FUN_801F5748`)
 

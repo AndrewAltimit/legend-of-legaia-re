@@ -99,6 +99,25 @@ impl ShopSession {
         }
     }
 
+    /// How many quantities the `ShopQuantity` screen offers for whatever this
+    /// session has staged (cursor `n` = quantity `n + 1`).
+    ///
+    /// `held` is the bag's count of the staged item - the buy side's
+    /// `99 - held` clamp and the sell side's whole bound. One kernel so the
+    /// menu runtime's row count and both hosts' row lists cannot disagree
+    /// about how many copies retail would let the player take.
+    pub fn quantity_rows(&self, gold: i32, held: Option<u8>) -> u8 {
+        let Some(id) = self.pending_item_id else {
+            return 1;
+        };
+        let price = self
+            .inventory
+            .find(id)
+            .map(|i| u16::try_from(i.price).unwrap_or(u16::MAX))
+            .unwrap_or(0);
+        quantity_row_count(self.pending_is_buying, gold, price, held, held)
+    }
+
     /// Called when the player confirms an item row in the buy list.
     /// `cursor` indexes into `inventory.items`.
     pub fn select_buy_item(&mut self, cursor: usize) {
@@ -481,6 +500,37 @@ pub fn buy_qty_max(gold: i32, price: u16, held: Option<u8>) -> i32 {
         max = max.min(BUY_QTY_CAP - held as i32);
     }
     max
+}
+
+/// How many quantities the `ShopQuantity` screen may offer for the staged
+/// item - the shared row count both hosts draw and the menu VM navigates.
+///
+/// Retail does not pick a quantity off a list at all: `FUN_801DB7F4` and
+/// `FUN_801DBD94` are **steppers** on a scalar at `DAT_801E46B4`
+/// (`andi 0x2000` +1, `andi 0x8000` -1, `andi 0x4000` +10, `andi 0x1000` -10,
+/// each clamped), and neither calls the cursor-nav primitive `FUN_801D688C`
+/// the recipient picker uses. What retail *does* own is the **bound**, and
+/// that is what this returns: the buy side's
+/// `min(gold / price, 99, 99 - held)` ([`buy_qty_max`],
+/// `0x801db868..0x801db8ec`) and the sell side's staged bag count.
+///
+/// The screen used to offer a flat nine rows, which capped every purchase at
+/// nine copies no matter what the purse or the stack allowed.
+///
+/// Always at least `1`: a zero-row list has no confirmable row, and retail's
+/// own steppers clamp their low end to `1`.
+pub fn quantity_row_count(
+    is_buying: bool,
+    gold: i32,
+    price: u16,
+    held: Option<u8>,
+    staged_count: Option<u8>,
+) -> u8 {
+    let n = match is_buying {
+        true => buy_qty_max(gold, price, held),
+        false => i32::from(staged_count.unwrap_or(1)),
+    };
+    n.clamp(1, BUY_QTY_CAP) as u8
 }
 
 /// What a [`BuyQuantitySession`] frame produced.

@@ -65,14 +65,20 @@
 //!
 //! ## NOT WIRED
 //!
-//! Same gap as the spawner's, and for the same reason: nothing in the engine
-//! produces the 20-halfword spawn record. The camera half is fully available
-//! ([`crate::camera::Camera::globals`] is the ten axes this tick drives, and
-//! `RetailCamGlobals::camera_snapshot` is what the spawner normalizes
-//! against), but the record itself comes from the battle overlay's callers
-//! of `FUN_80021248`, and the engine has no port of that family's spawn
-//! sites. Standing this on a synthetic record would only re-run the unit
-//! tests below under a different name.
+//! Same gap as the spawner's, and now stated the same way. The record's
+//! retail producer is `FUN_801D829C`, ported as
+//! `legaia_engine_vm::battle_camera::build_camera_angle_tween` and laid out
+//! by `legaia_engine_vm::camera_rel_actor::glide_spawn_record`, and the camera
+//! half is fully available ([`crate::camera::Camera::globals`] is the ten axes
+//! this tick drives). What is missing is the **actor**: the family's
+//! `DAT_8007071C` / `_DAT_8007C34C` seat has no engine counterpart, so nothing
+//! holds a glide between frames, and the native battle camera runs its own
+//! `Glide` off the tween slots directly instead.
+//!
+//! That producer is also battle-only - 525 `jal` sites over 67 images, all
+//! PROT 0898, a slot-B cast module or one SCUS site, with the normalizer's own
+//! three `jal` sites split between PROT 0898 and PROT 0976 - so no field scene
+//! walk reaches this family at all.
 
 use crate::camera::RetailCamGlobals;
 use legaia_engine_vm::camera_mover::AXIS_COUNT;
@@ -146,10 +152,11 @@ impl CameraRelGlide {
     ///
     /// PORT: FUN_8002149C
     ///
-    /// NOT WIRED: the engine has no producer for this family's 20-halfword
-    /// spawn record. `FUN_80021248`'s callers are battle-overlay spawn sites
-    /// that have no engine counterpart, so there is nothing to seat a
-    /// [`CameraRelGlide`] from in a live session; see the module docs.
+    /// NOT WIRED: the record's producer is ported
+    /// (`FUN_801D829C` -> `battle_camera::build_camera_angle_tween` ->
+    /// `camera_rel_actor::glide_spawn_record`), but this family's actor seat
+    /// (`DAT_8007071C` / `_DAT_8007C34C`) has none, so nothing holds a
+    /// [`CameraRelGlide`] across frames in a live session; see the module docs.
     pub fn tick(&mut self, cam: &mut RetailCamGlobals, dt: u8) -> GlideTick {
         let dt = i32::from(dt);
         let mut arrived = 0u32;

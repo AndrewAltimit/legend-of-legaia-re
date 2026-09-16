@@ -2,14 +2,13 @@
 
 use super::*;
 
-/// Retail field follow-camera parameters (see `field_follow_camera_mvp`):
-/// pitch `_DAT_8007B790 = 450` units (~39.6 deg down-tilt), GTE
-/// `H = _DAT_8007B6F4 = 512`, and the engine-calibrated eye-back depth.
-/// Module-scope so `field_follow_camera_eye` (the occlusion-fade gate's
-/// analytic eye) stays in lockstep with the matrix builder.
-const FIELD_PITCH_UNITS: f32 = 450.0;
-const FIELD_H: f32 = 512.0;
-const FIELD_CAM_DEPTH: f32 = 1200.0;
+/// Retail field follow-camera parameters: pitch `_DAT_8007B790 = 450` units
+/// (~39.6 deg down-tilt), GTE `H = _DAT_8007B6F4 = 512`, and the
+/// engine-calibrated eye-back depth. They live in the shared camera resolver
+/// (`legaia_engine_core::camera_view`) because the browser play page frames
+/// the same shot from the same numbers; re-declaring them here is how the two
+/// hosts' field cameras used to drift apart without a diff.
+use legaia_engine_core::camera_view;
 
 impl PlayWindowApp {
     pub(super) fn camera_mvp(&self, aspect: f32) -> Mat4 {
@@ -93,73 +92,20 @@ impl PlayWindowApp {
     /// `Camera::compass_azimuth_units` tracks the on-screen view exactly).
     /// Both default to the retail-identical values.
     pub(super) fn field_follow_camera_mvp(&self, aspect: f32) -> Option<Mat4> {
-        let cam = &self.session.camera;
-        let depth = FIELD_CAM_DEPTH * cam.distance.scale();
-        let world = &self.session.host.world;
-        let p = world
-            .actors
-            .first()
-            .filter(|p| p.active || p.tmd_binding.is_some())?;
-        let (wx, wz) = (p.move_state.world_x, p.move_state.world_z);
-        // Anchor the look-at to the floor under the player, not the actor's
-        // raw Y: `follow_terrain_height` is opt-in, so `world_y` is usually 0
-        // while the town ground sits at a LUT-elevated tier - targeting y=0
-        // there points the camera under the ground. The sampler returns the
-        // retail-convention tier (up = negative, matching the placement world
-        // Y); the caller composes `FIELD_WORLD_FLIP` onto this camera, which
-        // cancels `psx_camera_mvp`'s internal pre-flip, so the whole
-        // composition (including this target) runs on RAW retail Y-down
-        // world coordinates - exactly the retail GTE model.
-        let floor_y = world.sample_field_floor_height(wx as i32, wz as i32);
-        let target = Vec3::new(wx as f32, floor_y as f32, wz as f32);
-        let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
-        // PSX camera yaw is the compass negation (`alpha = -psi`): a
-        // positive manual orbit (compass sense) subtracts from the render
-        // yaw. Base yaw is the pinned FIELD_FOLLOW_YAW_UNITS.
-        let yaw = to_rad(FIELD_FOLLOW_YAW_UNITS) - cam.manual_orbit;
-        Some(Self::psx_camera_mvp(
-            to_rad(FIELD_PITCH_UNITS),
-            yaw,
-            // The field follow camera never rolls (`FUN_80025C24` seeds the
-            // roll global to `0` on scene entry and only an op-`0x45` beat
-            // writes it).
-            0.0,
-            FIELD_H,
-            Vec3::new(0.0, 0.0, depth),
-            target,
-            aspect,
-        ))
+        let view = camera_view::field_follow_view(&self.session.camera, &self.session.host.world)?;
+        Some(Mat4::from_cols_array(&view.vp(aspect)))
     }
 
     /// World-space **eye position** of the retail field follow camera, in
-    /// RAW retail Y-down world coordinates (the frame the field draws use).
-    /// The analytic inverse of `field_follow_camera_mvp`'s view composition:
-    /// the effective view on raw world coords is `R * (v - target) + tr`
-    /// with `R = Rx(pitch) * Ry(yaw)` and `tr = (0, 0, depth)` (the caller's
-    /// `FIELD_WORLD_FLIP` cancels `psx_camera_mvp`'s internal pre-flip), so
-    /// `eye = target - R^T * (0, 0, depth)`. Consumed by the
-    /// camera-occlusion fade's visibility gate, which ray-casts eye->player
-    /// against the static scene geometry in this same frame. `None` on the
-    /// same no-player guard as the follow camera.
+    /// RAW retail Y-down world coordinates (the frame the field draws use) -
+    /// the analytic inverse of the view composition
+    /// `field_follow_camera_mvp` uploads. Consumed by the camera-occlusion
+    /// fade's visibility gate, which ray-casts eye->player against the static
+    /// scene geometry in this same frame. `None` on the same no-player guard
+    /// as the follow camera.
     pub(super) fn field_follow_camera_eye(&self) -> Option<Vec3> {
-        let cam = &self.session.camera;
-        let depth = FIELD_CAM_DEPTH * cam.distance.scale();
-        let world = &self.session.host.world;
-        let p = world
-            .actors
-            .first()
-            .filter(|p| p.active || p.tmd_binding.is_some())?;
-        let (wx, wz) = (p.move_state.world_x, p.move_state.world_z);
-        let floor_y = world.sample_field_floor_height(wx as i32, wz as i32);
-        let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
-        let pitch = to_rad(FIELD_PITCH_UNITS);
-        let yaw = to_rad(FIELD_FOLLOW_YAW_UNITS) - cam.manual_orbit;
-        Some(Vec3::new(
-            wx as f32 + depth * pitch.cos() * yaw.sin(),
-            // Y-down world: minus = above the floor.
-            floor_y as f32 - depth * pitch.sin(),
-            wz as f32 - depth * pitch.cos() * yaw.cos(),
-        ))
+        let view = camera_view::field_follow_view(&self.session.camera, &self.session.host.world)?;
+        Some(Vec3::from(view.eye()))
     }
 
     /// Battle camera: frame the **monster** actors (the ones carrying a bound
@@ -565,61 +511,12 @@ impl PlayWindowApp {
     ///   opdeene supplies all three per beat; the Z component is the eye-back
     ///   depth (raw ~16k-21k across beats).
     pub(super) fn cutscene_view(&self) -> ([f32; 3], f32, f32, f32, f32, [f32; 3]) {
-        use std::f32::consts::TAU;
-        // Retail folds a 6x uniform world scale into the camera rotation
-        // (base matrix `DAT_8007BF10` = `24576*I`); the engine renders at 1x.
-        const CUTSCENE_WORLD_SCALE: f32 = 6.0;
-        let world = &self.session.host.world;
-        let params = &world.camera.state.params;
-        let param = |slot: u8| {
-            params
-                .iter()
-                .find(|p| p.slot == slot)
-                .map(|p| p.value as i16 as f32)
-        };
         let scene_center = [
             (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
             (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
         ];
-        let (px, pz) = world
-            .actors
-            .first()
-            .filter(|a| a.active || a.tmd_binding.is_some())
-            .map(|a| (a.move_state.world_x as f32, a.move_state.world_z as f32))
-            .unwrap_or((scene_center[0], scene_center[1]));
-        // Focus X/Z fall back to the lead actor (the cutscene anchor) if a beat
-        // hasn't staged them; focus Y follows retail's `0` (the vertical framing
-        // rides the eye-space Y offset in `tr_eye`, not the focus).
-        let focus = [
-            param(6).map(|v| -v).unwrap_or(px),
-            param(7).unwrap_or(0.0),
-            param(8).map(|v| -v).unwrap_or(pz),
-        ];
-        let yaw = param(1).map(|v| v / 4096.0 * TAU).unwrap_or(0.0);
-        // Slot 0 = op-0x45 camera pitch (`_DAT_8007B790`, GTE RotMatrixX angle,
-        // 12-bit / 4096 = 360 deg). Beats that omit it default to the prior
-        // fixed ~24 deg downward framing so absent-pitch shots are unchanged.
-        let pitch = param(0)
-            .map(|v| v / 4096.0 * TAU)
-            .unwrap_or_else(|| 0.45f32.atan());
-        // Slot 2 = roll (`_DAT_8007B794`, the GTE `RotMatrixZ` angle). Retail
-        // authors it: an executing census of the whole MAN corpus finds
-        // reachable beats staging a non-zero roll in eight scenes, from a
-        // 0.9 deg tilt to -58 deg. A beat that omits the slot holds the
-        // scene-entry reset `0` (`FUN_80025C24`).
-        let roll = param(2).map(|v| v / 4096.0 * TAU).unwrap_or(0.0);
-        // H (focal length) passed straight through; fall back to the field H.
-        let h = param(9).filter(|&h| h > 1.0).unwrap_or(512.0);
-        // Eye-space translation trio (offset slots 3/4/5), reduced into the
-        // engine's 1x frame. Fall back to a mid cutscene depth if a beat omits
-        // it (opdeene always supplies all three).
-        let s = CUTSCENE_WORLD_SCALE;
-        let tr_eye = [
-            param(3).unwrap_or(0.0) / s,
-            param(4).unwrap_or(1200.0) / s,
-            param(5).filter(|&z| z.abs() > 1.0).unwrap_or(17000.0) / s,
-        ];
-        (focus, pitch, yaw, roll, h, tr_eye)
+        let v = camera_view::cutscene_view(&self.session.host.world, scene_center);
+        (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye)
     }
 
     /// Replay this frame's drained `apply == 0` Camera Configure beats as
@@ -629,8 +526,8 @@ impl PlayWindowApp {
     /// degenerate-value filters - so a snapped component's value equals the
     /// glide target `cutscene_view` computes for it (no spurious re-arm).
     pub(super) fn replay_camera_snap_beats(&mut self) {
+        use legaia_engine_core::camera_view::CUTSCENE_WORLD_SCALE;
         use std::f32::consts::TAU;
-        const CUTSCENE_WORLD_SCALE: f32 = 6.0;
         let beats = std::mem::take(&mut self.pending_camera_snaps);
         for params in beats {
             let mut comps: Vec<(usize, f32)> = Vec::with_capacity(params.len());
@@ -1043,6 +940,12 @@ pub(super) fn battle_action_framing(
 #[cfg(test)]
 mod follow_compass_tests {
     use super::*;
+    // The follow camera's fixed base yaw (PSX 12-bit units, savestate-pinned
+    // `_DAT_8007B792 = -160` on the town01 anchor). One constant, in the
+    // shared camera resolver, because the browser play page frames the same
+    // shot from it; the movement-compass bias is its negation
+    // (`camera_view::retail_field_render_yaw_bias`).
+    use legaia_engine_core::camera_view::FIELD_FOLLOW_YAW_UNITS;
     use std::f32::consts::TAU;
 
     /// The movement compass must agree with the rendered follow camera at

@@ -406,7 +406,7 @@ impl DevMenuSession {
 /// its own index here.
 pub struct WorldEquipHost<'a> {
     /// The engine bag.
-    pub inventory: &'a mut std::collections::HashMap<u8, u8>,
+    pub inventory: &'a mut crate::world::ItemBag,
     /// Cues the commit raised.
     pub sfx: Vec<u8>,
 }
@@ -551,7 +551,8 @@ mod tests {
     fn the_equip_row_commits_through_the_engine_bag() {
         let mut s = DevMenuSession::new();
         s.equip_item = 0x30;
-        let mut bag = std::collections::HashMap::from([(0x30u8, 1u8)]);
+        let mut bag = crate::world::ItemBag::new();
+        bag.insert(0x30, 1);
         let mut host = WorldEquipHost {
             inventory: &mut bag,
             sfx: Vec::new(),
@@ -570,7 +571,7 @@ mod tests {
     fn a_missing_item_commits_nothing() {
         let mut s = DevMenuSession::new();
         s.equip_item = 0x77;
-        let mut bag = std::collections::HashMap::new();
+        let mut bag = crate::world::ItemBag::new();
         let mut host = WorldEquipHost {
             inventory: &mut bag,
             sfx: Vec::new(),

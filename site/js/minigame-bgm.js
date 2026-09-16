@@ -62,6 +62,66 @@
     return src;
   }
 
+  /* ---- the page's LIVE SPU -------------------------------------------
+   *
+   * Everything above renders audio OFFLINE: a whole track (or a whole cue)
+   * decoded to PCM and handed to an `AudioBufferSourceNode`. That works for
+   * anything that names itself by id, and it cannot work for a cue that names
+   * a voice: the Muscle Dome's between-leg tally resolves a whole
+   * `(voice, VAB id, program, tone, note, fine, vol_l, vol_r)` set per drained
+   * lane (`FUN_801D1288`) and there was no SPU on this page to key it into.
+   *
+   * So the engine now owns one here too (`LegaiaMinigames::minigame_audio_*`),
+   * the way the play page's `play_sfx` does. This is the page-side gate: open
+   * it inside a user gesture, mirror the site sound toggle onto it, and let
+   * every minigame page reach the same two firing paths.
+   *
+   * `api` is the `LegaiaMinigames` instance. Idempotent. */
+  var spuOpen = false;
+
+  function spuReady(api) {
+    if (!api || typeof api.minigame_audio_open !== 'function') return false;
+    /* Page-level sound gate (js/audio-toggle.js) - same gate the offline cue
+     * path above checks, so one toggle silences both. */
+    var on = !window.LegaiaSound || LegaiaSound.isSoundOn();
+    if (!spuOpen) {
+      if (!on) return false;           /* never open a context while muted */
+      if (!api.minigame_audio_open()) return false;
+      spuOpen = true;
+      if (typeof api.minigame_audio_resume === 'function') {
+        try { api.minigame_audio_resume(); } catch (e) {}
+      }
+    }
+    if (typeof api.minigame_audio_set_muted === 'function') {
+      try { api.minigame_audio_set_muted(!on); } catch (e) {}
+    }
+    return on;
+  }
+
+  window.MgSpu = {
+    ready: spuReady,
+    /* One catalog cue by descriptor id. Returns whether a voice keyed - the
+     * engine answers false for an id it cannot resolve rather than keying a
+     * truncated one, so a false here is information, not a failure. */
+    cue: function (api, id) {
+      if (!spuReady(api)) return false;
+      try { return !!api.minigame_sfx_cue(id); } catch (e) { return false; }
+    },
+    /* The dome tally's voice-attr cues for one INTERVAL-screen tick. The
+     * engine replays the ramp to `t` and keys only the steps it has not keyed
+     * yet, which is what lets the page drive it off the same screen tick it
+     * draws the rows from. */
+    tallyVoice: function (api, t) {
+      if (!spuReady(api)) return 0;
+      if (typeof api.muscle_tally_voice !== 'function') return 0;
+      try { return api.muscle_tally_voice(t) | 0; } catch (e) { return 0; }
+    },
+    tallyVoiceReset: function (api) {
+      if (!api || typeof api.muscle_tally_voice_reset !== 'function') return;
+      try { api.muscle_tally_voice_reset(); } catch (e) {}
+    },
+  };
+
   window.MgBgm2 = {
     render: render,
     start: start,

@@ -89,6 +89,7 @@ pub(crate) fn cmd_play_window(
     str_file: Option<&Path>,
     boot_ui: bool,
     save_dir: &Path,
+    card: Option<&Path>,
     cutscene_map_path: Option<&Path>,
     cheat_file: Option<&Path>,
     cheat_strict: bool,
@@ -120,6 +121,7 @@ pub(crate) fn cmd_play_window(
         str_file,
         boot_ui,
         save_dir,
+        card,
         cutscene_map_path,
         cheat_file,
         cheat_strict,
@@ -354,6 +356,7 @@ pub(super) fn cmd_play_window_with_record(
     str_file: Option<&Path>,
     boot_ui: bool,
     save_dir: &Path,
+    card: Option<&Path>,
     cutscene_map_path: Option<&Path>,
     cheat_file: Option<&Path>,
     cheat_strict: bool,
@@ -1121,10 +1124,6 @@ pub(super) fn cmd_play_window_with_record(
         fishing_banner_draws: Vec::new(),
         fishing_prev_phase: None,
         minigame_fx: Default::default(),
-        dance_countin: None,
-        dance_countin_draw: None,
-        dance_tutorial: None,
-        dance_tutorial_frame: None,
         dance_fx_score: 0,
         fish_wander: None,
         fish_line: None,
@@ -1153,6 +1152,8 @@ pub(super) fn cmd_play_window_with_record(
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,
         mapping,
+        keys_down: std::collections::HashSet::new(),
+        pending_key_name: None,
         menu_runtime: MenuRuntime::new(save_dir.to_path_buf()),
         prev_pad: 0,
         tick_no: 0,
@@ -1174,6 +1175,16 @@ pub(super) fn cmd_play_window_with_record(
         npc_bundle_special: std::collections::HashMap::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
+        // Port 2 of the save screen's rack. A container the detector does
+        // not recognise is a mistake worth naming, not an empty port, so the
+        // mount failure logs instead of silently leaving `None`.
+        card: card.and_then(|p| match super::MountedCard::open(p) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                log::warn!("play-window: --card not mounted: {e:#}");
+                None
+            }
+        }),
         save_flow: legaia_engine_core::save_screen::SaveScreenFlow::new(),
         options_state: legaia_engine_core::options::OptionsState::load_or_default(
             &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
@@ -1228,7 +1239,8 @@ pub(super) fn cmd_play_window_with_record(
     // render yaw), so `BootSession::tick`'s d-pad remap feed tracks the
     // on-screen view exactly - including after a left-mouse drag-orbit.
     app.session.camera.distance = app.options_state.camera_distance;
-    app.session.camera.render_yaw_bias = -FIELD_FOLLOW_YAW_UNITS / 4096.0 * std::f32::consts::TAU;
+    app.session.camera.render_yaw_bias =
+        legaia_engine_core::camera_view::retail_field_render_yaw_bias();
     app.session.host.world.locomotion.precise_movement = app.options_state.precise_movement;
     // Field Move (pause menu Walk / Run, retail config word 0x800846CC). The
     // run BUTTON inverts this per frame - see `World::field_run_active` - and

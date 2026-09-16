@@ -33,6 +33,24 @@ impl PlayWindowApp {
     /// picker - is therefore scriptable, which `--pad-script` alone cannot do
     /// (it writes the pad word and this function never runs).
     pub(super) fn handle_key(&mut self, code: KeyCode, state: ElementState) {
+        // One latched key name per physical press, for the pause menu's Key
+        // Config screen. Held keys repeat as a stream of `Pressed` events, so
+        // the set below collapses each stream to its leading edge - without
+        // it, holding the confirm key would rebind the highlighted row to
+        // that key the moment the screen opened.
+        match state {
+            ElementState::Pressed => {
+                if self.keys_down.insert(code) {
+                    let name = keycode_to_name(code);
+                    if !name.is_empty() {
+                        self.pending_key_name = Some(name);
+                    }
+                }
+            }
+            ElementState::Released => {
+                self.keys_down.remove(&code);
+            }
+        }
         // Dev affordance: spawn a debug effect marker at the player so
         // the effect-pool render bridge can be exercised by hand
         // before the runtime effect catalog is wired into battle-enter.
@@ -339,19 +357,16 @@ impl PlayWindowApp {
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {
-            if self.dance_countin.is_some() {
-                // Abort during the pre-song count-in: nothing entered yet.
-                self.dance_countin = None;
-                self.dance_countin_draw = None;
-                log::info!("dance: count-in aborted");
-            } else if self.session.host.world.mode == SceneMode::Dance {
+            if self.session.host.world.mode == SceneMode::Dance {
+                // Covers the pre-song count-in too: the world holds it, so
+                // leaving the mode drops it (and re-queues the hall's own
+                // track through `World::restore_minigame_bgm`).
                 if let Some(g) = self.session.host.world.exit_dance() {
                     log::info!(
                         "dance: aborted at score {} (pass={})",
                         g.score(),
                         g.passed()
                     );
-                    self.session.restore_field_bgm();
                 }
             } else if self.start_dance_minigame(false) {
                 log::info!(
@@ -367,12 +382,12 @@ impl PlayWindowApp {
         if matches!(code, KeyCode::KeyU)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
-            && self.dance_countin.is_none()
             && self.session.host.world.mode != SceneMode::Dance
         {
+            // The tutorial actor is installed by `World::enter_dance` when the
+            // parsed run is a how-to one, so it reaches the browser play page
+            // from the same call.
             if self.start_dance_minigame_mode(legaia_engine_core::dance::DanceMode::HowTo, false) {
-                self.dance_tutorial =
-                    Some(legaia_engine_core::dance_tutorial::DanceTutorial::new());
                 log::info!("dance: how-to started - face buttons advance the tutorial");
             }
             return;

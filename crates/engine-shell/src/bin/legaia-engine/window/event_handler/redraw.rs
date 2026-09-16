@@ -293,6 +293,10 @@ impl PlayWindowApp {
                 Ok(_) => {}
                 Err(e) => log::error!("session tick: {e:#}"),
             }
+            // A scripted mesh re-bind this tick (motion-VM op `0x0E`) needs
+            // the swapped mesh uploaded; the world holds the new id and the
+            // draw holds the old one.
+            self.rebind_live_npc_models();
             // Placed-prop animation: advance every posed prop's clip and post
             // the player's contact edges, so walking into a Rim Elm house door
             // resumes its bind script and swings it open (retail's per-actor
@@ -1603,11 +1607,40 @@ impl PlayWindowApp {
                         // seeded into `field_npc_headings` (facing-0
                         // / prologue-less records render at
                         // identity).
-                        let rot = match w.npcs.headings.get(&d.slot) {
-                            Some(&h) => Mat4::from_rotation_y(
-                                std::f32::consts::PI + (h as f32) / 4096.0 * std::f32::consts::TAU,
-                            ),
-                            None => Mat4::IDENTITY,
+                        //
+                        // The heading is only one of the actor's three
+                        // authored angles: retail's dispatcher hands
+                        // `actor+0x24` whole to the composer
+                        // (`addiu a0,s0,0x24` / `jal 0x80026988` at
+                        // `0x8001af04`), which reads X at `+0`, Y at `+2`,
+                        // Z at `+4`. A slot whose scripted-motion channel
+                        // tweened `0x15` / `0x16` therefore draws tilted,
+                        // through the same `placement_rotation` kernel the
+                        // placed-object pass uses - and the browser play page
+                        // composes the identical triple off
+                        // `World::field_npc_tilt`. A slot with no tilt keeps
+                        // the yaw-only matrix bit-for-bit.
+                        let heading = w.npcs.headings.get(&d.slot).copied();
+                        let rot = match w.field_npc_tilt(d.slot) {
+                            Some((pitch, roll)) => {
+                                let u = |v: i32| v.rem_euclid(4096) as u16;
+                                legaia_engine_render::battle_intro::placement_rotation(
+                                    u(i32::from(pitch)),
+                                    // No seeded heading is the identity yaw
+                                    // the `None` arm below draws, i.e. zero
+                                    // units - not the half-turn a seeded
+                                    // heading of `0` composes to.
+                                    u(heading.map_or(0, |h| i32::from(h) + 2048)),
+                                    u(i32::from(roll)),
+                                )
+                            }
+                            None => match heading {
+                                Some(h) => Mat4::from_rotation_y(
+                                    std::f32::consts::PI
+                                        + (h as f32) / 4096.0 * std::f32::consts::TAU,
+                                ),
+                                None => Mat4::IDENTITY,
+                            },
                         };
                         let model = Mat4::from_translation(Vec3::new(x as f32, y, z as f32)) * rot;
                         let posed = npc_posed.get(&d.slot);
@@ -2256,26 +2289,9 @@ impl PlayWindowApp {
                     mvp: screen_fx_mvp,
                 });
             }
-            // Floating value readout: the numeral a landed hit throws.
-            //
-            // Retail's own art and geometry - 24x24 cells off the battle
-            // effect atlas (texture page `0x27`, CLUT `0x7703`), thrown over
-            // the STRUCK actor, growing about a fixed horizontal centre and
-            // rising to screen row 32. Laid out by
-            // `engine-vm::battle_value_readout::value_cells`, whose module
-            // header carries the packet + VRAM provenance. Drawn here rather
-            // than in the HUD builder because the seat needs the target's
-            // projected screen position, which only a host holding the camera
-            // has; it rides the same screen-space ortho MVP as the widget
-            // overlays above, so the numerals sit in front of the fight.
-            let value_readout = self.battle_value_readout_mesh(r, fx_cam);
-            if let Some(m) = &value_readout {
-                draws.push(SceneDraw {
-                    mesh: m,
-                    mvp: screen_fx_mvp,
-                    cue: None,
-                });
-            }
+            // The floating value readout is a screen-space primitive run, not
+            // a scene mesh: see `screen_prims` below, where both hosts build
+            // it from `legaia_engine_ui::battle_numerals`.
             // The scripted screen fade (op 0x4C 0x12) is NOT drawn as a wash
             // mesh here: it is a multiply tint staged into the colour grade +
             // depth-cue far colour (see the grade staging above), matching
@@ -2346,6 +2362,18 @@ impl PlayWindowApp {
                 self.session.host.world.presentation.cinematic_bar,
                 legaia_engine_render::screen_overlay::PSX_DISPLAY_H,
             ));
+            // Floating value readout: the numeral a landed hit throws, plus
+            // the `N HIT` / `TOTAL` counter cluster. Retail's own art and
+            // geometry - 24x24 cells off the battle effect atlas (texture page
+            // `0x27`, CLUT `0x7703`), thrown over the STRUCK actor, growing
+            // about a fixed horizontal centre and rising to screen row 32.
+            // The quads come out of `legaia_engine_ui::battle_numerals`, which
+            // the browser play page emits through too, so the two hosts draw
+            // the same pixels off the same VRAM page instead of one sampling
+            // the sheet and the other restyling the number in the dialog font.
+            // Only the seat is per-host: it needs the struck actor's projected
+            // screen position, which only a host holding the camera has.
+            screen_prims.extend(self.battle_value_readout_prims(fx_cam));
             let target = |scene| present_target(scene, &screen_prims);
             // Periodic sweep (`--screenshot-every`): capture a frame every N
             // ticks into the sweep dir (named for the tick), keep running,
@@ -2550,80 +2578,41 @@ impl PlayWindowApp {
         }
     }
 
-    /// The frame's floating value readout, as one screen-space VRAM-textured
-    /// mesh in stage coordinates.
+    /// The frame's floating value readout, as screen-space PSX primitives in
+    /// stage coordinates.
     ///
     /// One run of digit cells per live popup, seated over the struck actor
     /// (`actor_stage_point`) and laid out by
-    /// `legaia_engine_vm::battle_value_readout::value_cells`. Returns `None`
-    /// outside battle, with no popups, or before the battle VRAM (which is
-    /// what makes the effect atlas's digit page resident) has been uploaded.
-    pub(super) fn battle_value_readout_mesh(
+    /// `legaia_engine_vm::battle_value_readout::value_cells`, plus the combo
+    /// counter cluster. The quads themselves come from the shared
+    /// `legaia_engine_ui::battle_numerals` builder the browser play page also
+    /// emits through - this host only supplies the camera-dependent seat.
+    ///
+    /// Empty outside battle, with no popups, or before the battle VRAM (which
+    /// is what makes the effect atlas's digit page resident) has been
+    /// uploaded.
+    pub(super) fn battle_value_readout_prims(
         &self,
-        r: &legaia_engine_render::Renderer,
         cam: Mat4,
-    ) -> Option<legaia_engine_render::UploadedVramMesh> {
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_render::battle_numerals as bn;
         use legaia_engine_vm::battle_value_readout as vr;
         if self.session.host.world.mode != SceneMode::Battle {
-            return None;
+            return Vec::new();
         }
         if self.battle_vram.is_none()
             || (self.battle_hud.popups.is_empty() && self.battle_hud.combo.is_none())
         {
-            return None;
+            return Vec::new();
         }
-        let mut pos: Vec<[f32; 3]> = Vec::new();
-        let mut uvs: Vec<[u8; 2]> = Vec::new();
-        let mut cba_tsb: Vec<[u16; 2]> = Vec::new();
-        let mut idx: Vec<u32> = Vec::new();
-        // One textured quad on the effect atlas's glyph page: `(x, y, w, h)`
-        // in stage pixels, `(u0, v0, u1, v1)` inclusive texels.
-        let quad = |pos: &mut Vec<[f32; 3]>,
-                    uvs: &mut Vec<[u8; 2]>,
-                    cba_tsb: &mut Vec<[u16; 2]>,
-                    idx: &mut Vec<u32>,
-                    rect: (i32, i32, u32, u32),
-                    uv: (u8, u8, u8, u8)| {
-            let base = pos.len() as u32;
-            let (x0, y0) = (rect.0 as f32, rect.1 as f32);
-            let (x1, y1) = (x0 + rect.2 as f32, y0 + rect.3 as f32);
-            pos.push([x0, y0, 0.0]);
-            pos.push([x1, y0, 0.0]);
-            pos.push([x0, y1, 0.0]);
-            pos.push([x1, y1, 0.0]);
-            uvs.extend_from_slice(&[[uv.0, uv.1], [uv.2, uv.1], [uv.0, uv.3], [uv.2, uv.3]]);
-            cba_tsb.extend(std::iter::repeat_n([vr::GLYPH_CLUT, vr::GLYPH_TPAGE], 4));
-            idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
-        };
+        let mut out = Vec::new();
         // The combo counter cluster: the `HIT` / `TOTAL` / `DAMAGE` word
         // cells and the value digits, off the same sheet, on the seats the
         // steal-banner and tail-fire display lists pin, sliding in with
         // placement record 80's glide (`vr::combo_slide`).
         if let Some(c) = self.battle_hud.combo.as_ref() {
             let cluster = vr::combo_cluster(c.style, c.hits, c.total, c.slide());
-            for l in &cluster.labels {
-                let (w, h) = l.size();
-                quad(
-                    &mut pos,
-                    &mut uvs,
-                    &mut cba_tsb,
-                    &mut idx,
-                    (l.x, l.y, w, h),
-                    l.uv,
-                );
-            }
-            for k in &cluster.cells {
-                let u1 = k.u.saturating_add(k.cell - 1);
-                let v1 = k.v.saturating_add(k.cell - 1);
-                quad(
-                    &mut pos,
-                    &mut uvs,
-                    &mut cba_tsb,
-                    &mut idx,
-                    (k.x, k.y, k.w, k.h),
-                    (k.u, k.v, u1, v1),
-                );
-            }
+            out.extend(bn::combo_cluster_prims(&cluster, bn::VALUE_READOUT_OT));
         }
         // One numeral per actor, the newest. Retail's readout is a per-slot
         // **value window** (`_DAT_801F6980`, four halfwords, one per slot), so
@@ -2649,34 +2638,8 @@ impl PlayWindowApp {
             };
             let age = p.frames_total.saturating_sub(p.frames_remaining);
             let cells = vr::value_cells(p.amount, ax, ay - VALUE_READOUT_ACTOR_LIFT, age);
-            for c in &cells {
-                let base = pos.len() as u32;
-                let (x0, y0) = (c.x as f32, c.y as f32);
-                let (x1, y1) = (x0 + c.w as f32, y0 + c.h as f32);
-                pos.push([x0, y0, 0.0]);
-                pos.push([x1, y0, 0.0]);
-                pos.push([x0, y1, 0.0]);
-                pos.push([x1, y1, 0.0]);
-                let u1 = c.u.saturating_add(c.cell - 1);
-                let v1 = c.v.saturating_add(c.cell - 1);
-                uvs.extend_from_slice(&[[c.u, c.v], [u1, c.v], [c.u, v1], [u1, v1]]);
-                cba_tsb.extend(std::iter::repeat_n([vr::GLYPH_CLUT, vr::GLYPH_TPAGE], 4));
-                idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
-            }
+            out.extend(bn::digit_run_prims(&cells, bn::VALUE_READOUT_OT));
         }
-        if idx.is_empty() {
-            return None;
-        }
-        let normals = vec![[0.0f32; 3]; pos.len()];
-        // Retail's quads carry the neutral colour word `0x808080`: the sheet
-        // is already the gold ramp, so a tint here would double-apply it.
-        let colors = vec![[legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3]; pos.len()];
-        match r.upload_vram_mesh(&pos, &uvs, &cba_tsb, &normals, &colors, &idx) {
-            Ok(m) => Some(m),
-            Err(e) => {
-                log::warn!("battle value readout mesh upload: {e:#}");
-                None
-            }
-        }
+        out
     }
 }

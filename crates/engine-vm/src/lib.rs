@@ -171,6 +171,7 @@ pub mod move_vm;
 pub mod move_vm_overlay_ext;
 pub mod panel_backread_loader;
 pub mod prim_dispatch;
+pub mod psx_camera;
 pub mod scus_battle_helpers;
 pub mod scus_core_helpers;
 pub mod seru_side_effect;

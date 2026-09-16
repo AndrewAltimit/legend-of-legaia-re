@@ -70,17 +70,32 @@
 //! `ot_size - 1` (the deepest bucket) inverts the depth the cover is drawn
 //! at. [`cover_fill_ot_index`] is the arithmetic.
 //!
-//! ## NOT WIRED
+//! ## REPLACED-BY: the save screen as host screen state
 //!
-//! The engine has the save UI ([`crate::save_select`], [`crate::card_flow`])
-//! but reaches it as host screen state, not by swapping a code overlay under
-//! a running field session - [`crate::overlay_loader`] models the retail
-//! loader's bookkeeping without there being separate overlay images to page.
-//! So the five queue waits and the two `LoadOverlaySlot` steps have nothing
-//! to wait on, and the sequencing this actor exists to provide is exactly the
-//! part the engine does not need. What has to exist first is a
-//! host that actually pages overlay code (or a deliberate decision to model
-//! the swap latency), not a caller.
+//! `legaia_engine_shell::BootSession::open_field_menu` writes
+//! `SceneMode::Menu` and enters `GameMode::CardInit` through the mode seat -
+//! which stages no overlay request in the port's model - then
+//! [`crate::field_menu_dispatch::FieldMenuSubsession::build`] opens the Save /
+//! Load row as a [`crate::save_select::SaveSelectSession`] on the same running
+//! field session, and [`crate::save_screen::SaveScreenFlow`] runs the card
+//! half around it. Both shipped hosts own that flow, and `field_menu_resume`
+//! hands the mode back when the session ends.
+//!
+//! That is the whole of what the eleven states order. States 2 and 6 call
+//! `FUN_8003EBE4`, which [`crate::overlay_loader`] already carries as a
+//! replacement (on-demand PROT resolution through
+//! [`crate::scene::ProtIndex`]); states 1, 3, 5, 7 and 9 only wait on those
+//! loads; state 8 picks which MIPS image to DMA into slot B. The engine
+//! resolves a PROT entry when it needs the bytes and has no RAM window to page
+//! into, so there is no swap to sequence and no mid-swap frame for the cover
+//! fill to hide. State 4, the one observable beat, is the save UI - and that
+//! is `SaveScreenFlow`.
+//!
+//! Adopting screen state as the representation is the substitution; hosting
+//! this sequencer would re-host retail's overlay residency rather than add
+//! anything a player or a test could see. The decoded state walk, the cover
+//! fill and [`cover_fill_ot_index`] stay as the measured spec of the retail
+//! beat.
 
 /// States the machine dispatches (`sltiu v0, v1, 0xb` at `0x800241AC`).
 pub const STATE_COUNT: u16 = 11;
@@ -195,10 +210,15 @@ impl FieldSaveScreenActor {
     ///
     /// PORT: FUN_80024190
     ///
-    /// NOT WIRED: the engine reaches the save UI as host screen state, so
-    /// there is no code-overlay swap for the five queue waits and the two
-    /// `LoadOverlaySlot` steps to sequence. A host that actually pages
-    /// overlay images is the prerequisite; see the module docs.
+    /// REPLACED-BY: the save screen as host screen state -
+    /// `legaia_engine_shell::BootSession::open_field_menu` performs the mode
+    /// bounce (`SceneMode::Menu` plus `ModeSeat::enter(GameMode::CardInit)`,
+    /// which stages no overlay request),
+    /// [`crate::field_menu_dispatch::FieldMenuSubsession::build`] opens the
+    /// Save / Load row onto the running field session, and
+    /// [`crate::save_screen::SaveScreenFlow`] runs the card half. No code
+    /// overlay is paged, so there is nothing for the eleven states to
+    /// sequence. See the module docs.
     pub fn tick(&mut self, input: SaveScreenInput) -> Vec<SaveScreenEffect> {
         use SaveScreenEffect as E;
         let mut out = Vec::new();

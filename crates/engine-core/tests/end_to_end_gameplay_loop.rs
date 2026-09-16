@@ -116,6 +116,7 @@ fn synthetic_save_file() -> SaveFile {
             story_flag_bits,
             money: 1234,
             inventory: vec![(0x0A, 5), (0x14, 1), (0x20, 99)],
+            ..Default::default()
         },
         ext_v2: SaveExtV2 {
             play_time_seconds: 4500,
@@ -331,7 +332,7 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
 
     let pre_money = world.party.money;
     let pre_story_flags = world.flags.story_flags;
-    let pre_inventory: std::collections::HashMap<u8, u8> = world.party.inventory.clone();
+    let pre_inventory = world.party.inventory.clone();
     let pre_levels: Vec<u8> = world.party.level_up_tracker.level[..3].to_vec();
 
     // 2. Walk the field - install encounter, step until trigger.
@@ -1140,6 +1141,7 @@ fn real_psx_memory_card_save_drives_full_loop() {
             } else {
                 retail_save.ext.inventory.clone()
             },
+            ..Default::default()
         },
         ext_v2: SaveExtV2 {
             play_time_seconds: 7200,
@@ -1214,6 +1216,7 @@ fn save_file_round_trips_through_retail_sc_block_layout() {
             story_flag_bits: bits.clone(),
             money: 0,
             inventory: vec![(0x07, 3), (0x10, 1), (0x42, 64)],
+            ..Default::default()
         },
         ext_v2: SaveExtV2::default(),
     };

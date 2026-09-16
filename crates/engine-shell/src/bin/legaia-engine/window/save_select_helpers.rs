@@ -231,6 +231,14 @@ impl SlotInfoOwned {
 /// draw fifteen text rows under two pills.
 pub(crate) const CARD_PORTS: u8 = 2;
 
+/// The mounted-card type, shared with the browser rack.
+///
+/// Both hosts hold the same struct now: it caches the detected
+/// [`legaia_save::emu::CardView`], carries the dirty bit a host that writes
+/// needs, and answers `save_at` / `block_is_save_start` / `dir_frame` off its
+/// own bytes. The two hosts used to carry near-identical copies that drifted.
+pub(crate) use legaia_save::emu::MountedCard;
+
 /// The native shell's save rack: retail's two console ports, with the
 /// engine's own save directory standing in for the card in **port 1**.
 ///
@@ -240,16 +248,34 @@ pub(crate) const CARD_PORTS: u8 = 2;
 /// mounted card is what lets that screen be the same screen the browser
 /// draws - one [`SaveRack`] kind, one
 /// [`legaia_engine_core::save_screen::SaveScreenFlow`], no per-host flag.
-/// Port 2 is the empty port; a mounted card image is what would fill it.
+/// Port 2 is empty here; [`disk_save_rack_with_card`] is the same rack with a
+/// real card image in it.
+/// The windowed host mounts a card in port 2 whenever `--card` names one, so
+/// this unmounted form is what the unit tests below stand on.
+#[cfg(test)]
 pub(crate) fn disk_save_rack(save_dir: &Path) -> legaia_engine_core::save_select::SaveRack {
+    disk_save_rack_with_card(save_dir, None)
+}
+
+/// [`disk_save_rack`] with a [`MountedCard`] in **port 2**.
+///
+/// Both pills are built through
+/// [`legaia_engine_core::save_screen::card_port_snapshot`], the one place a
+/// port's pill fields are decided, so a mounted card carries its own name
+/// into the row exactly as the browser's imported `.mcr` does.
+pub(crate) fn disk_save_rack_with_card(
+    save_dir: &Path,
+    card: Option<&MountedCard>,
+) -> legaia_engine_core::save_select::SaveRack {
     use legaia_engine_core::save_screen::card_port_snapshot;
-    let label = save_dir
+    let dir_label = save_dir
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("SAVE DATA");
+    let mounted = [Some(dir_label), card.map(|c| c.label.as_str())];
     legaia_engine_core::save_select::SaveRack::CardPorts(
         (0..CARD_PORTS)
-            .map(|port| card_port_snapshot(port, (port == 0).then_some(label)))
+            .map(|port| card_port_snapshot(port, mounted.get(port as usize).copied().flatten()))
             .collect(),
     )
 }
@@ -257,16 +283,29 @@ pub(crate) fn disk_save_rack(save_dir: &Path) -> legaia_engine_core::save_select
 /// The fifteen blocks behind a port of [`disk_save_rack`] - the answer to
 /// [`legaia_engine_core::save_screen::SaveScreenFlow::pending_read`]. Port 1
 /// is the save directory; every other port is unmounted and reads empty.
+#[cfg(test)]
 pub(crate) fn disk_port_blocks(
     save_dir: &Path,
     port: u8,
 ) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
+    disk_port_blocks_with_card(save_dir, None, port)
+}
+
+/// [`disk_port_blocks`] for a rack built by [`disk_save_rack_with_card`]:
+/// port 1 is the save directory, port 2 the mounted card's own fifteen
+/// blocks. A port with nothing in it still reads fifteen free cells rather
+/// than the other port's - the grid previews the port the player picked.
+pub(crate) fn disk_port_blocks_with_card(
+    save_dir: &Path,
+    card: Option<&MountedCard>,
+    port: u8,
+) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
     use legaia_engine_core::save_screen::SLOT_GRID_CELLS;
     use legaia_engine_core::save_select::SlotSnapshot;
-    if port == 0 {
-        scan_save_dir(save_dir)
-    } else {
-        (0..SLOT_GRID_CELLS).map(SlotSnapshot::empty).collect()
+    match (port, card) {
+        (0, _) => scan_save_dir(save_dir),
+        (1, Some(card)) => legaia_engine_core::save_select::card_block_snapshots(card),
+        _ => (0..SLOT_GRID_CELLS).map(SlotSnapshot::empty).collect(),
     }
 }
 
@@ -724,5 +763,172 @@ mod slot_model_tests {
         let slots = scan_save_dir(dir.path());
         assert_eq!(slots[0].party_lv, 1);
         assert_eq!(slots[1].content, SlotContent::Foreign);
+    }
+}
+
+#[cfg(test)]
+mod mounted_card_tests {
+    use super::{CARD_PORTS, MountedCard, disk_port_blocks_with_card, disk_save_rack_with_card};
+    use legaia_engine_core::save_screen::SLOT_GRID_CELLS;
+    use legaia_engine_core::save_select::SlotContent;
+    use legaia_save::{CharacterRecord, HpMpSp, Party, SaveFile, SaveResume};
+
+    /// A card image built in memory: the `MC` header, one block claimed for a
+    /// Legaia save, and that block composed by the writer the engine's own
+    /// card Save uses. Every other frame is left zero, so no other block
+    /// reads as a chain start. Nothing here is disc- or card-sourced.
+    fn synthetic_card_for_tests(block: u8, sf: &SaveFile, resume: &SaveResume) -> Vec<u8> {
+        let mut card = vec![0u8; legaia_save::card::CARD_SIZE];
+        card[..2].copy_from_slice(&legaia_save::card::CARD_MAGIC);
+        let view = legaia_save::emu::detect(&card).expect("MC header makes it a raw card");
+        view.claim_block(&mut card, block, "BASCUS-94254PRO-00")
+            .expect("block is addressable");
+        let sc = view
+            .sc_block_mut(&mut card, block)
+            .expect("block is addressable");
+        sf.write_into_retail_sc_block(sc)
+            .expect("compose the block");
+        resume
+            .write_into_retail_sc_block(sc)
+            .expect("stamp the resume point");
+        card
+    }
+
+    /// The save a synthetic card's block carries. Nothing here comes off a
+    /// disc or a real card - the block is composed by the same writer the
+    /// engine's own card Save uses.
+    fn a_save() -> SaveFile {
+        let mut r = CharacterRecord::zeroed();
+        r.set_name("Noa");
+        r.set_magic_rank(23);
+        r.set_hp_mp_sp(HpMpSp {
+            hp_cur: 210,
+            hp_max: 240,
+            mp_cur: 11,
+            mp_max: 30,
+            sp_cur: 0,
+            sp_max: 0,
+        });
+        SaveFile {
+            party: Party { members: vec![r] },
+            ..SaveFile::default()
+        }
+    }
+
+    fn a_resume() -> SaveResume {
+        SaveResume {
+            scene: "town01".into(),
+            location: "Rim Elm".into(),
+        }
+    }
+
+    fn mount(name: &str, block: u8) -> (tempfile::TempDir, MountedCard) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(name);
+        std::fs::write(
+            &path,
+            synthetic_card_for_tests(block, &a_save(), &a_resume()),
+        )
+        .unwrap();
+        let card = MountedCard::open(&path).unwrap();
+        (dir, card)
+    }
+
+    /// Port 2 is the mounted card, and its pill carries the image's own name:
+    /// the row has to say *which* card is in the port, the same way the
+    /// browser's does.
+    #[test]
+    fn a_mounted_card_fills_port_two_with_its_own_name() {
+        let (dir, card) = mount("player.mcr", 3);
+        let rack = disk_save_rack_with_card(dir.path(), Some(&card));
+        assert!(rack.is_card_ports());
+        assert_eq!(rack.slots().len(), CARD_PORTS as usize);
+        assert!(rack.slots()[1].present, "port 2 holds the mounted card");
+        assert_eq!(rack.slots()[1].label, "player.mcr");
+    }
+
+    /// The grid behind port 2 is the card's own fifteen blocks: grid cell `i`
+    /// is card block `i + 1`, and only the claimed block reads as a save.
+    #[test]
+    fn the_card_grid_reads_the_claimed_block_and_nothing_else() {
+        let (dir, card) = mount("player.mcr", 3);
+        let blocks = disk_port_blocks_with_card(dir.path(), Some(&card), 1);
+        assert_eq!(blocks.len(), SLOT_GRID_CELLS as usize);
+        // Block 3 is grid cell 2 - the off-by-one that makes the directory
+        // block addressable would put this on cell 3.
+        let cell = &blocks[2];
+        assert!(cell.present);
+        assert_eq!(cell.content, SlotContent::LegaiaSave);
+        assert_eq!(cell.leader_name, "Noa");
+        assert_eq!(cell.party_lv, 23);
+        assert_eq!(cell.leader_hp, (210, 240));
+        assert_eq!(cell.leader_mp, (11, 30));
+        assert_eq!(cell.location, "Rim Elm");
+        for (i, b) in blocks.iter().enumerate() {
+            if i != 2 {
+                assert!(!b.present, "cell {i} claims a save the card does not hold");
+                assert_eq!(b.content, SlotContent::Free);
+            }
+        }
+    }
+
+    /// A file that is not a container `legaia_save::emu` recognises must
+    /// **fail to mount** rather than mount as a blank card: an empty port and
+    /// a wrong file are different mistakes and only one of them is silent.
+    #[test]
+    fn an_unrecognised_container_refuses_to_mount() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("not-a-card.bin");
+        std::fs::write(&path, b"this is not a memory card").unwrap();
+        // Not `unwrap_err`: a mounted card owns the container bytes, so the
+        // `Debug` that would print would be the whole card image.
+        let Err(err) = MountedCard::open(&path) else {
+            panic!("a non-container file must not mount");
+        };
+        assert!(
+            format!("{err:#}").contains("unrecognised save container"),
+            "the mount failure must name the container problem: {err:#}"
+        );
+        assert!(MountedCard::open(&dir.path().join("absent.mcr")).is_err());
+    }
+
+    /// With nothing mounted, port 2 is exactly what it was before the port
+    /// existed - an empty port previewing fifteen free cells, never port 1's.
+    #[test]
+    fn port_two_reads_empty_with_no_card_mounted() {
+        let dir = tempfile::tempdir().unwrap();
+        let rack = disk_save_rack_with_card(dir.path(), None);
+        assert!(!rack.slots()[1].present);
+        let blocks = disk_port_blocks_with_card(dir.path(), None, 1);
+        assert_eq!(blocks.len(), SLOT_GRID_CELLS as usize);
+        assert!(blocks.iter().all(|b| !b.present));
+    }
+
+    /// The container kinds `legaia_save::emu` normalises all address through
+    /// the same view, so a DexDrive wrapper must read the same blocks as the
+    /// raw card inside it - the wrapper offset is the thing a re-derived
+    /// layout would miss.
+    #[test]
+    fn a_dexdrive_wrapper_reads_the_same_blocks_as_the_raw_card() {
+        let raw = synthetic_card_for_tests(3, &a_save(), &a_resume());
+        let mut gme = vec![0u8; legaia_save::emu::DEXDRIVE_HEADER_SIZE];
+        gme[..legaia_save::emu::DEXDRIVE_MAGIC.len()]
+            .copy_from_slice(legaia_save::emu::DEXDRIVE_MAGIC);
+        gme.extend_from_slice(&raw);
+
+        let dir = tempfile::tempdir().unwrap();
+        let raw_path = dir.path().join("player.mcr");
+        let gme_path = dir.path().join("player.gme");
+        std::fs::write(&raw_path, &raw).unwrap();
+        std::fs::write(&gme_path, &gme).unwrap();
+
+        let from_raw = legaia_engine_core::save_select::card_block_snapshots(
+            &MountedCard::open(&raw_path).unwrap(),
+        );
+        let from_gme = legaia_engine_core::save_select::card_block_snapshots(
+            &MountedCard::open(&gme_path).unwrap(),
+        );
+        assert_eq!(from_raw, from_gme);
+        assert!(from_gme[2].present);
     }
 }

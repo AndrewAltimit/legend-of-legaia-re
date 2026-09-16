@@ -95,8 +95,11 @@ fn census() -> Option<(Census, WalkStats)> {
     Some((out, stats))
 }
 
-/// What op `0x0E`'s operands actually name, per scene, against the set of
-/// models that scene's **placements** already bind.
+/// What op `0x0E`'s operands actually name, per scene, against **the scene's
+/// model bank** - the pool ids `DAT_8007C018[5..]` that
+/// [`legaia_engine_core::model_bank::SceneModelBank`] reconstructs in retail's
+/// own registration order - and against the set of models that scene's
+/// placements already bind.
 ///
 /// The count above says how much op `0x0E` is authored; this says what
 /// implementing it would cost. Both hosts resolve an NPC's mesh from
@@ -106,6 +109,13 @@ fn census() -> Option<(Census, WalkStats)> {
 /// spawn model is already resident and a swap target that is not has no mesh
 /// anywhere on either host. That split is the denominator for the
 /// "per-placement mesh re-bind" gap in `docs/tooling/host-drift.md`.
+///
+/// The **resolvability** half is settled: every operand resolves. An earlier
+/// version of this test measured the operand against
+/// `SceneResources::tmds.len()`, which is a magic scan over the scene's raw
+/// entries and so is blind to a TMD inside an LZS-compressed bundle
+/// descriptor - it reported banks of 1 and 0 for `koin3` / `other7`, where the
+/// registration order holds 77 and 65.
 #[test]
 fn model_swap_operands_against_the_placement_model_set_or_skip() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -119,6 +129,7 @@ fn model_swap_operands_against_the_placement_model_set_or_skip() {
     let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
     let mut total_sites = 0usize;
     let mut total_resident = 0usize;
+    let mut total_unresolved = 0usize;
     for name in index.cdname_scene_names() {
         let Ok(scene) = Scene::load(&index, &name) else {
             continue;
@@ -171,30 +182,47 @@ fn model_swap_operands_against_the_placement_model_set_or_skip() {
             .map(|(_, n)| *n)
             .sum();
         let targets: Vec<i16> = swaps.keys().copied().collect();
-        // Is the target even *in* the scene's TMD pack? That is the second
-        // half of the cost: a target the pack does not hold cannot be
-        // resolved at all by the index both hosts use for a placement.
-        let pack = legaia_engine_core::scene_resources::SceneResources::build(&scene)
-            .map(|r| r.tmds.len())
-            .unwrap_or(0);
-        let in_pack = targets
+        // Does the target resolve in the scene's model bank? That is the
+        // second half of the cost: a target the bank does not hold could not
+        // be materialised at all.
+        let bank = legaia_engine_core::model_bank::SceneModelBank::build(&scene);
+        let resolved = targets
             .iter()
-            .filter(|&&id| id >= 0 && (id as usize) < pack)
+            .filter(|&&id| bank.source_for_model_id(id).is_some())
+            .count();
+        let player_bank = targets
+            .iter()
+            .filter(|&&id| {
+                legaia_engine_core::model_bank::resolve_model_id(id).bank
+                    == legaia_engine_core::model_bank::ModelBank::Player
+            })
             .count();
         total_sites += sites;
         total_resident += resident;
+        total_unresolved += targets
+            .iter()
+            .filter(|&&id| {
+                bank.source_for_model_id(id).is_none()
+                    && legaia_engine_core::model_bank::resolve_model_id(id).bank
+                        != legaia_engine_core::model_bank::ModelBank::Player
+            })
+            .map(|id| swaps.get(id).copied().unwrap_or(0))
+            .sum::<usize>();
         eprintln!(
             "[model swap] {name}: {sites} sites, {} targets {targets:?}; \
              {resident} hit a spawn model ({} of {} placement models); \
-             scene TMD pack {pack}, {in_pack} targets index it; \
+             scene model bank {}, {resolved} targets resolve in it, \
+             {player_bank} name the player bank; \
              carriers {carriers:?}",
             swaps.len(),
             swaps.keys().filter(|k| spawn_models.contains(k)).count(),
             spawn_models.len(),
+            bank.len(),
         );
     }
     eprintln!(
-        "[model swap] total {total_sites} sites, {total_resident} already-resident,          {} needing a model no placement binds",
+        "[model swap] total {total_sites} sites, {total_resident} already-resident, \
+         {} needing a model no placement binds, {total_unresolved} unresolved",
         total_sites - total_resident
     );
     // Non-vacuous: the sibling census counts the same sites, so a zero here
@@ -208,6 +236,13 @@ fn model_swap_operands_against_the_placement_model_set_or_skip() {
     assert_eq!(
         total_resident, 0,
         "a swap target is now a spawn model - re-measure the host-drift gap"
+    );
+    // The other half, and the one that was measured wrongly before: every
+    // authored operand resolves to a model source. If this goes non-zero the
+    // bank walk has lost a carrier, not the disc gained an unresolvable id.
+    assert_eq!(
+        total_unresolved, 0,
+        "an op 0x0E operand no longer resolves in its scene's model bank"
     );
 }
 

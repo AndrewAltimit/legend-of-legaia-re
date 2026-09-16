@@ -21,20 +21,125 @@
 //! rebind lands on every host at once and a disagreement can no longer be
 //! written down.
 //!
-//! The layout served here is `Mapping::web_default`, not `Mapping::default`.
-//! The browser page binds `WASD` to the d-pad and the desktop layout spends
-//! those keys on Triangle / Circle / R1, so the two cannot be one table - a
-//! `HashMap<key, button>` holds either `S -> Down` or `S -> Circle`, never
-//! both. They are two *named layouts in the engine* rather than one layout
-//! plus a page-side override, which keeps the single-source-of-truth property
-//! that made the tables above deletable.
+//! The layout served here *starts* at `Mapping::web_default`, not
+//! `Mapping::default`. The browser page binds `WASD` to the d-pad and the
+//! desktop layout spends those keys on Triangle / Circle / R1, so the two
+//! cannot be one table - a `HashMap<key, button>` holds either `S -> Down` or
+//! `S -> Circle`, never both. They are two *named layouts in the engine*
+//! rather than one layout plus a page-side override, which keeps the
+//! single-source-of-truth property that made the tables above deletable.
+//!
+//! "Starts at", because the table is now **editable**: the options screen's
+//! Key Config row ([`legaia_engine_core::key_rebind::KeyRebindSession`],
+//! reached through [`legaia_engine_core::options::OptionsSession`]) commits
+//! binds into it, and [`store_mapping`] round-trips the result through
+//! `localStorage` under [`BINDINGS_STORAGE_KEY`] - the browser twin of the
+//! native window's `legaia-input.toml`. A page that folded
+//! [`pad_bindings_json`] into a JS object at load notices a rebind through
+//! [`pad_bindings_revision`].
 //!
 //! A free function rather than a [`crate::runtime::LegaiaRuntime`] method
 //! because the title screen's key loop runs before a runtime exists, and it
 //! needs the same table.
 
 use crate::runtime::LegaiaRuntime;
+use legaia_engine_core::input::Mapping;
+use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
+
+/// `localStorage` key the page's edited binding table round-trips through -
+/// the browser twin of the native window's `legaia-input.toml`.
+///
+/// Same store, same shape and the same "absent or unparseable falls back to
+/// the default layout" rule as `legaia.options` beside it, so the two
+/// persisted settings behave identically.
+pub const BINDINGS_STORAGE_KEY: &str = "legaia.bindings";
+
+thread_local! {
+    /// The page's **live** binding table, plus a revision counter.
+    ///
+    /// A module-level cell rather than a [`LegaiaRuntime`] field because the
+    /// title screen's key loop runs before a runtime exists and reads the same
+    /// table (which is why [`pad_bindings_json`] is a free function), and
+    /// because the minigames page has no `LegaiaRuntime` at all. wasm32 is
+    /// single-threaded, so there is exactly one of these per page.
+    ///
+    /// The revision is what lets a page notice a rebind: a page folds this
+    /// table into a JS object once at load, and nothing about
+    /// [`pad_bindings_json`] returning something new would reach it otherwise.
+    static LIVE_BINDINGS: RefCell<(Option<Mapping>, u32)> = const { RefCell::new((None, 0)) };
+}
+
+/// The live table, loading the persisted one (or the default layout) on first
+/// use.
+pub fn live_mapping() -> Mapping {
+    LIVE_BINDINGS.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.0.is_none() {
+            c.0 = Some(load_persisted_mapping());
+        }
+        c.0.clone().expect("just seeded")
+    })
+}
+
+/// Adopt `mapping` as the live table and persist it - the browser twin of the
+/// native window writing `legaia-input.toml` when the options screen's Key
+/// Config row commits a bind.
+pub fn store_mapping(mapping: &Mapping) {
+    LIVE_BINDINGS.with(|c| {
+        let mut c = c.borrow_mut();
+        c.0 = Some(mapping.clone());
+        c.1 = c.1.wrapping_add(1);
+    });
+    #[cfg(target_arch = "wasm32")]
+    if let Some(store) = bindings_storage()
+        && let Ok(json) = serde_json::to_string(mapping)
+        && store.set_item(BINDINGS_STORAGE_KEY, &json).is_err()
+    {
+        crate::console_log("bindings: localStorage write failed");
+    }
+}
+
+/// Read the persisted table, falling back to [`Mapping::web_default`] when
+/// nothing is stored, the store is unreachable (private mode, non-browser
+/// target) or the stored JSON no longer parses.
+fn load_persisted_mapping() -> Mapping {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(store) = bindings_storage()
+            && let Ok(Some(raw)) = store.get_item(BINDINGS_STORAGE_KEY)
+            && let Ok(m) = serde_json::from_str::<Mapping>(&raw)
+            && !m.bindings.is_empty()
+        {
+            return m;
+        }
+    }
+    Mapping::web_default()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn bindings_storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.local_storage().ok().flatten()
+}
+
+/// How many times the live table has changed since the page loaded. A page
+/// polls this and re-reads [`pad_bindings_json`] when it moves.
+#[wasm_bindgen]
+pub fn pad_bindings_revision() -> u32 {
+    LIVE_BINDINGS.with(|c| c.borrow().1)
+}
+
+/// Forget the persisted table and go back to [`Mapping::web_default`] - the
+/// escape hatch for a player who bound themselves out of the menu.
+#[wasm_bindgen]
+pub fn pad_bindings_reset() {
+    let d = Mapping::web_default();
+    store_mapping(&d);
+    #[cfg(target_arch = "wasm32")]
+    if let Some(store) = bindings_storage() {
+        let _ = store.remove_item(BINDINGS_STORAGE_KEY);
+    }
+}
 
 /// The engine's default keyboard layout as `{ "<KeyboardEvent.code>": <bit> }`.
 ///
@@ -47,7 +152,7 @@ use wasm_bindgen::prelude::*;
 /// `Mapping::dom_code_bindings`. Ordering is stable across calls.
 #[wasm_bindgen]
 pub fn pad_bindings_json() -> String {
-    let mapping = legaia_engine_core::input::Mapping::web_default();
+    let mapping = live_mapping();
     let mut out = String::from("{");
     for (i, (code, bit)) in mapping.dom_code_bindings().into_iter().enumerate() {
         if i > 0 {
@@ -98,6 +203,24 @@ impl LegaiaRuntime {
     /// See [`pad_buttons_json`].
     pub fn pad_buttons_json(&self) -> String {
         pad_buttons_json()
+    }
+
+    /// See [`pad_bindings_revision`].
+    ///
+    /// A forwarder for the same reason the two above are, and it earns its
+    /// keep: the page's `legaiaSyncPadBindings(src)` is handed a
+    /// `LegaiaRuntime`, and a free function on the module namespace is not
+    /// reachable through it. Without this the sync call answered
+    /// `typeof !== 'function'` and silently did nothing, so a rebind stayed
+    /// invisible to the running page - which is exactly the shape a browser
+    /// check catches and a green cargo test cannot.
+    pub fn pad_bindings_revision(&self) -> u32 {
+        pad_bindings_revision()
+    }
+
+    /// See [`pad_bindings_reset`].
+    pub fn pad_bindings_reset(&self) {
+        pad_bindings_reset();
     }
 }
 

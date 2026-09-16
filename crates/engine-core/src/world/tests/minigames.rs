@@ -15,6 +15,72 @@ fn dance_test_chart() -> legaia_asset::dance_chart::DanceChart {
     DanceChart { rows }
 }
 
+/// Play the pre-song **count-in** out on neutral pad frames, so a judging
+/// test starts on the first frame the beat clock actually runs.
+///
+/// `World::enter_dance` arms `minigames.dance_countin` (retail's
+/// `FUN_801cf470` below-10 states) and the dance tick holds
+/// `DanceGame::advance` off until it clears, so a test that pressed on the
+/// entry frame would be pressing into the banner.
+fn run_dance_countin(world: &mut World) {
+    for _ in 0..crate::dance::COUNTIN_END_FRAME {
+        world.set_pad(0);
+        let _ = world.tick();
+    }
+    assert!(
+        world.minigames.dance_countin.is_none(),
+        "the count-in did not clear in its own frame budget"
+    );
+}
+
+/// The count-in owns the frames before the song: the beat clock does not
+/// advance, no press is judged, and the banner envelope is published for the
+/// host to draw. Both hosts read this one phase, which is what gives the
+/// **door-warp** entry a count-in at all.
+#[test]
+fn enter_dance_counts_in_before_the_beat_clock_runs() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    assert!(world.minigames.dance_countin.is_some());
+    // A judged button during the count-in scores nothing.
+    world.set_pad(0);
+    world.set_pad(input::PadButton::Square.mask());
+    let _ = world.tick();
+    assert_eq!(world.minigames.dance_last_judge, None);
+    assert_eq!(world.minigames.dance.as_ref().unwrap().song_timer(), 0);
+    assert!(world.minigames.dance_countin_banner.is_some());
+    // The banner and the status readout are mutually exclusive, and one
+    // predicate says so for every host.
+    assert!(!world.minigames.dance_status_visible());
+    // The intro cue fires once, on the hold-segment entry.
+    let mut cues = world.drain_minigame_sfx_cues();
+    for _ in 0..crate::dance::COUNTIN_END_FRAME {
+        world.set_pad(0);
+        let _ = world.tick();
+        cues.extend(world.drain_minigame_sfx_cues());
+    }
+    assert_eq!(
+        cues.iter()
+            .filter(|c| **c == crate::dance::COUNTIN_INTRO_CUE)
+            .count(),
+        1,
+        "the count-in intro cue is once-only"
+    );
+    assert!(world.minigames.dance_countin.is_none());
+    assert!(world.minigames.dance_countin_banner.is_none());
+    assert!(world.minigames.dance_status_visible());
+    // And the song started: the chart loop is queued as an op-0x35 start, the
+    // same event both hosts' BGM directors consume.
+    assert!(world.audio.minigame_bgm_active);
+    assert!(
+        world
+            .pending_field_events
+            .iter()
+            .any(|e| matches!(e, crate::field_events::FieldEvent::Bgm { sub_op: 1, .. }))
+    );
+}
+
 #[test]
 fn enter_dance_suspends_mode_and_exit_restores_it() {
     let mut world = World::new();
@@ -35,6 +101,7 @@ fn dance_tick_judges_a_correct_press() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    run_dance_countin(&mut world);
     // Rising edge on Square (DanceDir::A) - beat 0 of lane 0 wants symbol 1.
     world.set_pad(0);
     world.set_pad(input::PadButton::Square.mask());
@@ -54,6 +121,7 @@ fn dance_tick_judges_a_correct_press() {
 fn dance_wrong_direction_misses() {
     let mut world = World::new();
     world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    run_dance_countin(&mut world);
     // Beat 0 wants Square; press Circle instead -> miss.
     world.set_pad(0);
     world.set_pad(input::PadButton::Circle.mask());
@@ -77,6 +145,7 @@ fn dance_judges_the_retail_pad_bits_not_the_dpad() {
     assert_eq!(DanceDir::C.pad_bit(), 0x10);
     let mut world = World::new();
     world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    run_dance_countin(&mut world);
     // Dpad Left used to be direction A; it is not a judged bit.
     world.set_pad(0);
     world.set_pad(input::PadButton::Left.mask());
@@ -447,7 +516,10 @@ fn entering_the_dance_drops_the_confirm_press_edge() {
         world.minigames.dance_last_judge, None,
         "the opening press was consumed as a note"
     );
-    // The button is still *held*, so releasing and pressing it again scores.
+    // Past the count-in the button is still *held*, so releasing and pressing
+    // it again scores. (The latch clear is what this pins; the count-in in
+    // between is `enter_dance_counts_in_before_the_beat_clock_runs`.)
+    run_dance_countin(&mut world);
     world.set_pad(0);
     world.set_pad(input::PadButton::Square.mask());
     let _ = world.tick();

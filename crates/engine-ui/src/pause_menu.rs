@@ -375,6 +375,21 @@ pub struct OptionsScreenView<'a> {
     pub popup: Option<OptionsPopupDraw<'a>>,
     /// Sum of the row advances above the cursor - where the hand sits.
     pub row_y_off: i32,
+    /// The engine-only key-rebind sub-screen, when the Key Config row opened
+    /// it. It *replaces* the settings rows inside the same window - one
+    /// screen at a time, the way the value popup is the only thing drawn over
+    /// them - so a host passes the row list and this, and the composition
+    /// picks.
+    pub rebind: Option<KeyRebindView<'a>>,
+}
+
+/// The key-rebind sub-screen's model: one `(button label, bound key)` pair
+/// per row, plus which row the cursor is on and whether it is waiting for a
+/// keypress ([`legaia_engine_core::key_rebind::KeyRebindSession`]).
+pub struct KeyRebindView<'a> {
+    pub rows: &'a [(&'a str, &'a str)],
+    pub cursor: u8,
+    pub awaiting: bool,
 }
 
 /// Items sub-screen in its browsing form (the target-select beat is
@@ -514,13 +529,28 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             }
         }
         PauseScreen::Options(v) => {
-            texts.extend(crate::options_draws_for(
-                ctx.font,
-                v.rows,
-                v.cursor,
-                v.popup.as_ref(),
-                ctx.rects.pen(window_ids::OPTIONS_MAIN),
-            ));
+            let pen = ctx.rects.pen(window_ids::OPTIONS_MAIN);
+            match v.rebind.as_ref() {
+                // Key Config sub-screen: the same window and tab, different
+                // content. Drawn through the shared `key_rebind_draws_for`
+                // so neither host owns a rebind layout of its own - which is
+                // exactly how the three keyboard tables this screen edits
+                // came to disagree in the first place.
+                Some(r) => {
+                    texts.extend(crate::key_rebind_draws_for(
+                        ctx.font, r.rows, r.cursor, r.awaiting, pen,
+                    ));
+                }
+                None => {
+                    texts.extend(crate::options_draws_for(
+                        ctx.font,
+                        v.rows,
+                        v.cursor,
+                        v.popup.as_ref(),
+                        pen,
+                    ));
+                }
+            }
             texts.extend(ctx.tab_title(window_ids::TAB_OPTIONS, "Options"));
             sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::OPTIONS_SCREEN_WINDOWS));
             if let Some(rects) = ctx.chrome {
@@ -533,13 +563,18 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                         ctx.scale,
                     ));
                 }
-                sprites.push(crate::options_hand_cursor_sprite(
-                    rects,
-                    ctx.rects.pen(window_ids::OPTIONS_MAIN),
-                    v.row_y_off,
-                    ctx.origin,
-                    ctx.scale,
-                ));
+                // The settings screen's pointing hand marks the browse row;
+                // the rebind sub-screen draws its own `>` marker beside the
+                // row it is editing, so the hand would be a second cursor.
+                if v.rebind.is_none() {
+                    sprites.push(crate::options_hand_cursor_sprite(
+                        rects,
+                        pen,
+                        v.row_y_off,
+                        ctx.origin,
+                        ctx.scale,
+                    ));
+                }
             }
         }
         PauseScreen::Items(v) => {

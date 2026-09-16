@@ -135,7 +135,7 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
     let owned = |i: usize| {
         use legaia_save::card::{
             RETAIL_CHAR_RECORD_HEADER_SIZE, RETAIL_CHAR_RECORD_STRIDE, RETAIL_GAME_DATA_OFFSET,
-            RETAIL_GOLD_OFFSET, RETAIL_INVENTORY_OFFSET, RETAIL_INVENTORY_SIZE,
+            RETAIL_GOLD_OFFSET, RETAIL_INVENTORY_OFFSET, RETAIL_ITEM_WINDOW_SIZE,
             RETAIL_STORY_FLAGS_OFFSET, RETAIL_STORY_FLAGS_SIZE,
         };
         let records = RETAIL_GAME_DATA_OFFSET + RETAIL_CHAR_RECORD_HEADER_SIZE;
@@ -145,7 +145,11 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
             || (records..records + 4 * RETAIL_CHAR_RECORD_STRIDE).contains(&i)
             || (RETAIL_STORY_FLAGS_OFFSET..RETAIL_STORY_FLAGS_OFFSET + RETAIL_STORY_FLAGS_SIZE)
                 .contains(&i)
-            || (RETAIL_INVENTORY_OFFSET..RETAIL_INVENTORY_OFFSET + RETAIL_INVENTORY_SIZE)
+            // The whole `0x200`-byte item array, not the 72-slot consumable
+            // display page: the composer lays out every slot the accessors
+            // can reach, so a claimed block cannot keep a previous save's
+            // items above slot 71.
+            || (RETAIL_INVENTORY_OFFSET..RETAIL_INVENTORY_OFFSET + RETAIL_ITEM_WINDOW_SIZE)
                 .contains(&i)
             || (RETAIL_GOLD_OFFSET..RETAIL_GOLD_OFFSET + 4).contains(&i)
             || (RETAIL_BLOCK_CHECKSUM_OFFSET..RETAIL_BLOCK_CHECKSUM_OFFSET + 4).contains(&i)

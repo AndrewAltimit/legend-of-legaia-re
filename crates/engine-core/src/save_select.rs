@@ -854,6 +854,110 @@ impl CardIoMachine {
     }
 }
 
+/// A mounted card's directory entries, as the [`CardDirEntry`] list the
+/// retail scan / budget pair consumes.
+///
+/// The BIOS `firstfile` walk retail's table fill rides builds each `DIRENTRY`
+/// from the raw 128-byte frame: the 20-byte filename at `+0x0A`, the byte
+/// size at `+0x04`.
+pub fn card_dir_entries(card: &legaia_save::emu::MountedCard) -> Vec<CardDirEntry> {
+    (1..=crate::save_screen::SLOT_GRID_CELLS)
+        .filter(|&b| card.block_is_save_start(b))
+        .filter_map(|b| card.dir_frame(b))
+        .filter_map(|f| {
+            let mut name = [0u8; CARD_DIRENTRY_NAME_LEN];
+            name.copy_from_slice(f.get(0x0A..0x0A + CARD_DIRENTRY_NAME_LEN)?);
+            let s = f.get(4..8)?;
+            Some(CardDirEntry {
+                name,
+                size: u32::from_le_bytes([s[0], s[1], s[2], s[3]]),
+            })
+        })
+        .collect()
+}
+
+/// One save block, rendered as the grid cell that prints it.
+///
+/// The lead record's name / level / HP / MP through one derivation, so a card
+/// save and a slot file print the same rows. The location row is retail's own
+/// field (the scene banner name); a save written before the resume trailer
+/// existed falls back to the scene label, then to nothing - never to an
+/// invented kingdom.
+pub fn snapshot_for_save(
+    slot: u8,
+    sf: &legaia_save::SaveFile,
+    resume: &legaia_save::SaveResume,
+) -> SlotSnapshot {
+    let Some(leader) = sf.leader_summary() else {
+        return SlotSnapshot::foreign(slot);
+    };
+    let location = if resume.location.is_empty() {
+        resume.scene.clone()
+    } else {
+        resume.location.clone()
+    };
+    SlotSnapshot {
+        slot,
+        present: true,
+        content: SlotContent::LegaiaSave,
+        label: if leader.name.is_empty() {
+            format!("Slot {}", slot + 1)
+        } else {
+            leader.name.clone()
+        },
+        play_time_seconds: sf.ext_v2.play_time_seconds,
+        party_lv: leader.level,
+        location,
+        money: sf.ext.money.max(0) as u32,
+        leader_char_id: leader.char_id,
+        leader_name: leader.name,
+        leader_hp: leader.hp,
+        leader_mp: leader.mp,
+    }
+}
+
+/// A mounted card's fifteen blocks as the 5x3 preview grid reads them - one
+/// derivation, both hosts.
+///
+/// The free-cell captions are priced by the retail free-block budget
+/// (`FUN_801E3AF0` -> `FUN_801E3BA0`): enumerate the card's files off its live
+/// directory frames, fill the fixed table, and ask the card how many blocks it
+/// itself says are free. Retail only captions a cell "free" while that budget
+/// pays for it - absence of a claim is not evidence a block is free, so an
+/// unclaimed cell past the budget captions as foreign rather than inviting an
+/// overwrite.
+///
+/// A block the directory *claims* but which will not lift is someone else's
+/// save, not a free block: retail captions the two differently, and folding
+/// them invites a Save to overwrite what it never read.
+///
+/// The native window used to skip the budget entirely and caption every
+/// unclaimed cell free, so the same card image printed differently on the two
+/// hosts past the budget.
+pub fn card_block_snapshots(card: &legaia_save::emu::MountedCard) -> Vec<SlotSnapshot> {
+    let entries = card_dir_entries(card);
+    let (dir_table, dir_count) = card_directory_scan(&entries);
+    let mut free_budget = card_free_blocks(&dir_table, dir_count).max(0);
+    (0..crate::save_screen::SLOT_GRID_CELLS)
+        .map(|cell| {
+            let block = cell + 1;
+            if !card.block_is_save_start(block) {
+                if free_budget > 0 {
+                    free_budget -= 1;
+                    return SlotSnapshot::empty(cell);
+                }
+                return SlotSnapshot::foreign(cell);
+            }
+            // Past here the block IS claimed, so every way of failing to read
+            // it is someone else's save rather than a free block.
+            match card.save_at(cell) {
+                Some((sf, resume)) => snapshot_for_save(cell, &sf, &resume),
+                None => SlotSnapshot::foreign(cell),
+            }
+        })
+        .collect()
+}
+
 /// One frame of the save-commit ticker: advance the card I/O machine and,
 /// on the save-commit beat, run the directory rebuild chain.
 ///

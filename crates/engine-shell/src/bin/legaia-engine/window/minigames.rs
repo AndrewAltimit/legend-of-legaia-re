@@ -159,11 +159,10 @@ impl PlayWindowApp {
         self.start_dance_minigame_mode(legaia_engine_core::dance::DanceMode::Qualifier, long_song)
     }
 
-    /// Load the dance overlay and arm a run on `mode`'s floor, holding the
-    /// parsed game pending behind the pre-song **count-in** phase (retail
-    /// `FUN_801cf470` runs its below-10 states - the `1 2 3 READY... GO!`
-    /// banner - before the beat clock starts; `tick_dance_countin` plays that
-    /// envelope out and only then enters the dance + starts the song).
+    /// Load the dance overlay and arm a run on `mode`'s floor. The world
+    /// stages the pre-song **count-in** (retail `FUN_801cf470` runs its
+    /// below-10 states - the `1 2 3 READY... GO!` banner - before the beat
+    /// clock starts) and starts the song when it clears.
     ///
     /// Mirrors the disc-gated `dance_minigame_real` test's overlay path: read
     /// the raw PROT entry, lift it to its statically-recovered loaded form via
@@ -198,7 +197,13 @@ impl PlayWindowApp {
         match legaia_engine_core::dance::DanceGame::from_overlay_for_mode(&loaded, mode, long_song)
         {
             Some(game) => {
-                self.dance_countin = Some((game, 0, false));
+                // `World::enter_dance` arms the count-in, the how-to tutorial
+                // actor and the pending song id; the world's dance tick holds
+                // the beat clock off until the banner clears. This window used
+                // to hold the parsed game pending behind a count-in driver of
+                // its own, which is why the door-warp entry - the one a player
+                // reaches - had no count-in on either host.
+                self.session.host.world.enter_dance(game);
                 self.dance_fx_score = 0;
                 true
             }
@@ -209,39 +214,24 @@ impl PlayWindowApp {
         }
     }
 
-    /// Advance the pre-song count-in banner one frame
-    /// ([`legaia_engine_core::dance::dance_countin_banner_envelope`]): fire
-    /// the once-only intro cue on the hold-segment entry, cache the envelope
-    /// for the HUD, and enter the pending dance (+ start the song) when the
-    /// slide-out finishes.
-    pub(super) fn tick_dance_countin(&mut self) {
-        use legaia_engine_core::dance;
-        // The banner's whole timeline: slide-in (0x1e) + hold (to 0x5a) +
-        // slide-out (0x1e more).
-        const COUNTIN_END: i32 = 0x5a + 0x1e;
-        let Some((_, t, cue_fired)) = self.dance_countin.as_mut() else {
-            self.dance_countin_draw = None;
+    /// Fire the minigame sessions' queued SFX cues (the dance count-in's
+    /// intro cue, the how-to tutorial's cursor / confirm cues) into the BGM
+    /// director's scheduler.
+    ///
+    /// The count-in itself is no longer driven here: `World::tick_dance`
+    /// plays the banner envelope out and starts the song, so the browser play
+    /// page gets the same phase from the same kernel. This host only sounds
+    /// what that phase queued.
+    pub(super) fn drain_minigame_sfx_cues(&mut self) {
+        let cues = self.session.host.world.drain_minigame_sfx_cues();
+        if cues.is_empty() {
+            return;
+        }
+        let Some(bgm) = self.session.bgm.as_mut() else {
             return;
         };
-        let env = dance::dance_countin_banner_envelope(*t);
-        if env.hold && !*cue_fired {
-            *cue_fired = true;
-            if let Some(bgm) = self.session.bgm.as_mut() {
-                bgm.enqueue_sfx(dance::COUNTIN_INTRO_CUE, 0, 0, 0);
-            }
-        }
-        self.dance_countin_draw = Some(env);
-        *t += 1;
-        if *t >= COUNTIN_END {
-            let (game, _, _) = self.dance_countin.take().expect("count-in armed");
-            self.dance_countin_draw = None;
-            let long = game.song_len() == dance::SONG_LEN_LONG;
-            self.session.host.world.enter_dance(game);
-            // The dance overlay loads one of two mode-selected chart loops
-            // (global BGM 2058/2064 = extraction 1048/1054). The exact
-            // mode->song arm is unpinned; approximate it by song length.
-            self.session
-                .start_global_bgm(if long { 2064 } else { 2058 });
+        for cue in cues {
+            bgm.enqueue_sfx(cue, 0, 0, 0);
         }
     }
 
@@ -252,27 +242,19 @@ impl PlayWindowApp {
     pub(super) fn tick_dance_side(&mut self) {
         use legaia_engine_core::dance::{self, Judge};
         let in_dance = self.session.host.world.mode == SceneMode::Dance;
-        if !in_dance && self.dance_countin.is_none() {
-            self.dance_tutorial = None;
-            self.dance_tutorial_frame = None;
+        if !in_dance {
             self.dance_fx_score = 0;
             return;
         }
-        let (score, feedback_frames, combo_hit) = self
+        let score = self
             .session
             .host
             .world
             .minigames
             .dance
             .as_ref()
-            .map(|g| {
-                (
-                    g.score(),
-                    g.feedback_frames() as i32,
-                    matches!(g.triangle_feedback(), Some(true)),
-                )
-            })
-            .unwrap_or((0, 0, false));
+            .map(|g| g.score())
+            .unwrap_or(0);
         // Sequence-clear banner on the score edge of a scoring judge.
         if in_dance && score > self.dance_fx_score {
             if let Some(Judge::Sequence { weight }) =
@@ -283,23 +265,9 @@ impl PlayWindowApp {
             }
             self.dance_fx_score = score;
         }
-        // The tutorial actor runs one handler call per frame, on the retail
-        // pad-word layout (the same rotate `World::tick_dance` applies).
-        if let Some(tut) = self.dance_tutorial.as_mut() {
-            let pressed = (self.pad & !self.prev_pad).rotate_right(8);
-            let frame = tut.step(pressed, score as i32, feedback_frames, combo_hit, 1);
-            if let Some(cue) = frame.cue
-                && let Some(bgm) = self.session.bgm.as_mut()
-            {
-                bgm.enqueue_sfx(cue, 0, 0, 0);
-            }
-            if frame.done {
-                self.dance_tutorial = None;
-                self.dance_tutorial_frame = None;
-            } else {
-                self.dance_tutorial_frame = Some(frame);
-            }
-        }
+        // The Disco King tutorial actor runs inside `World::tick_dance` now,
+        // beside the session, so both hosts step it from one kernel; its
+        // cues come out through `drain_minigame_sfx_cues`.
     }
 
     /// The venue scene's `.MAP` extended footprint - the engine's
@@ -510,11 +478,11 @@ impl PlayWindowApp {
     }
 
     /// Per-frame driver for every minigame side-channel this window hosts:
-    /// the dance count-in + tutorial + effect spawns, the fishing venue
+    /// the minigame cue queue, the dance effect spawns, the fishing venue
     /// actors, the Baka round chrome, the Muscle Dome hub-screen timers, and
     /// the shared effect pool's ageing.
     pub(super) fn tick_minigame_extras(&mut self) {
-        self.tick_dance_countin();
+        self.drain_minigame_sfx_cues();
         self.tick_dance_side();
         self.tick_fishing_actors();
         self.tick_baka_chrome();
@@ -1121,9 +1089,11 @@ impl PlayWindowApp {
             fight.gold_reward()
         );
         self.session.host.world.enter_baka_fighter(fight);
-        // The duel overlay init (FUN_801CF00C) loads its own track: global
-        // BGM 2053 = music_01 slot 53, the boss overture.
-        self.session.start_global_bgm(2053);
+        // The duel overlay init (FUN_801CF00C) loads its own track, through
+        // the same constant the door-warp entry uses - the piecewise bank map
+        // makes a hand-written id easy to get two slots wrong.
+        self.session
+            .start_global_bgm(legaia_engine_core::minigame_entry::BAKA_FIGHTER_BGM_ID);
         true
     }
 
@@ -1370,10 +1340,11 @@ impl PlayWindowApp {
         // drawn through the shared `other_game_hud` emitters.
         self.load_muscle_hub_assets();
         // The arena loads no track of its own - it reuses the battle engine,
-        // so it plays a battle theme. Use the standard random-battle theme
-        // (global BGM 2026 = music_01 slot 26, M26B1); see
+        // so it plays a battle theme. Same constant the door-warp entry uses
+        // (`MinigameSubId::bgm_id`); see
         // docs/subsystems/minigame-muscle-dome.md.
-        self.session.start_global_bgm(2026);
+        self.session
+            .start_global_bgm(legaia_engine_core::music_labels::BATTLE_THEME_1_BGM_ID);
         true
     }
 }

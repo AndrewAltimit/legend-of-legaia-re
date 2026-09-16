@@ -737,10 +737,29 @@ pub const VERA_CURE_MIN_LEVEL: u8 = 3;
 /// The `+0x16E` keep-masks PROT 0905's four cure tiers `and` with
 /// (`0x801F7DB4`, `0x801F7E30`, `0x801F7EAC`, `0x801F7F28`).
 ///
-/// The tier is chosen by the battle-overlay word `0x801F6960`, which sits
-/// below the slot-B base and so is not the module's own data; a tier outside
-/// `1..=4` cures nothing.
+/// The tier is the battle-overlay word `0x801F6960`, which sits below the
+/// slot-B base and so is not the module's own data. It is the **Seru
+/// side-effect stager's** output latch: `FUN_801F3D3C` reads an 8-byte record
+/// out of the `[element][level band]` table at `0x801F6870`
+/// (`0x801F6870 + ((level - 3) >> 1) * 8 + element * 0x20`, built at
+/// `0x801F4420..0x801F4440`) and stores its first byte there
+/// (`sw v1,0x6960(v0)` at `0x801F4480`). On the light row - element `5`, the
+/// row a cure-class summon selects - that byte is
+/// [`legaia_asset::seru_side_effect::RETAIL_CURE_CLASS_BY_BAND`], i.e. `1..=4`
+/// by magic-level band. On the six damaging rows it is a percent
+/// (`5 / 10 / 15 / 20`), which matches none of the four arms, so a non-light
+/// summon's cast cures nothing without needing a second element test.
 pub const VERA_CURE_MASKS: [u16; 4] = [0xFFFC, 0xFF84, 0xFB84, 0xFB84];
+
+/// The cure ladder's own element row in the side-effect table - light.
+pub const CURE_ELEMENT: u8 = 5;
+
+/// Tier `4` also **doubles** the target's `+0x170` and clamps it to `0x64`
+/// (`0x801F7F24..0x801F7F48`: `+0x170 <<= 1`, stored, then `0x64` when the
+/// stored value is `>= 0x65`). The mirror carries no `+0x170`, so the port
+/// reports the doubling in [`VeraOutcome::doubled_resist`] rather than
+/// applying it.
+pub const VERA_TIER4_RESIST_CAP: u16 = 0x64;
 /// The `+0x16E` bits whose presence makes PROT 0905's tiers `2..=4` play the
 /// cure cue and light the target's `+0x220..+0x223` markers
 /// (`andi v0, v0, 0x3c`).
@@ -757,8 +776,23 @@ pub struct VeraRestore {
     /// `target[+0x14E]` - max HP, which the clamp needs and the mirror has no
     /// field for.
     pub max_hp: u16,
-    /// The cure tier the battle-overlay word `0x801F6960` selects, `1..=4`.
+    /// The cure tier the battle-overlay word `0x801F6960` carries - the Seru
+    /// side-effect stager's light-row class `1..=4`. Anything else (a damaging
+    /// row's percent, or `0` when nothing staged) cures nothing.
     pub cure_tier: u8,
+    /// Does this arm **apply** the HP it computes?
+    ///
+    /// Retail has one owner for the restore and it is this arm, so a faithful
+    /// replay sets this. The engine has a second owner - it folds a cast's HP
+    /// outcome exactly once at `World::cast_spell_on_slots_prepaid`, which
+    /// routes this module's own magnitude in through
+    /// `World::seru_tick_heal_amount` - and the driven seam re-enters this
+    /// body every frame, so a driven Vera with this set restores twice.
+    /// Clearing it keeps the arm's phase machine, its cure sweep and its
+    /// presentation writes while the fold stays the single applier, which is
+    /// the posture every other body in the band already takes (they are handed
+    /// a neutral magnitude outright).
+    pub apply_hp: bool,
 }
 
 /// What PROT 0905's restore arm did this frame.
@@ -771,6 +805,10 @@ pub struct VeraOutcome {
     /// `true` when the target was carrying one of [`VERA_CURE_CUE_BITS`], so
     /// retail played the cure cue and set `+0x220..+0x223`.
     pub cure_cue: bool,
+    /// `true` on tier `4`, where retail also doubles the target's `+0x170`
+    /// under [`VERA_TIER4_RESIST_CAP`]. The mirror has no such field, so the
+    /// write is reported, not applied.
+    pub doubled_resist: bool,
 }
 
 /// PROT 0905's restore amount, clamped exactly the way the bytes clamp it.
@@ -870,7 +908,12 @@ pub fn vera_tick(
                 && let Some(t) = seats.get_mut(who.victim as usize)
             {
                 let mut out = VeraOutcome::default();
-                let heal = vera_heal_amount(r.magic_level, t.hp, r.max_hp);
+                // The arm's own arithmetic always runs; `apply_hp` decides
+                // whether this body is the one that stores it.
+                let heal = match r.apply_hp {
+                    true => vera_heal_amount(r.magic_level, t.hp, r.max_hp),
+                    false => 0,
+                };
                 if t.hp != 0 && (t.flags & FLAG_NON_TARGETABLE) == 0 {
                     t.hp = t.hp.wrapping_add(heal);
                     // Retail stores, it does not accumulate: `sw -heal`.
@@ -883,6 +926,7 @@ pub fn vera_tick(
                     out.cure_cue = r.cure_tier >= 2 && (t.flags & VERA_CURE_CUE_BITS) != 0;
                     t.flags &= mask;
                     out.cured = true;
+                    out.doubled_resist = r.cure_tier == 4;
                 }
                 outcome = Some(out);
             }
@@ -1759,6 +1803,7 @@ mod tests {
                 magic_level: 1,
                 max_hp: 1000,
                 cure_tier: 1,
+                apply_hp: true,
             }),
         );
         let out = out.unwrap();
@@ -1766,6 +1811,76 @@ mod tests {
         assert_eq!(seats[3].hp, 200 + 0x100);
         // Stored, not accumulated - the 77 is gone.
         assert_eq!(seats[3].hp_bar_delta, -0x100);
+    }
+
+    /// The four tiers are the **light row** of the Seru side-effect table,
+    /// band by band - so a cure tier is a function of the caster's magic
+    /// level, and a damaging row's percent selects nothing.
+    #[test]
+    fn the_cure_tiers_are_the_light_rows_level_bands() {
+        use legaia_asset::seru_side_effect::{
+            RETAIL_CURE_CLASS_BY_BAND, RETAIL_PERCENT_BY_BAND, SideEffectKind, level_band,
+        };
+        assert_eq!(
+            SideEffectKind::for_element(CURE_ELEMENT),
+            SideEffectKind::Cure
+        );
+        // Level -> band -> tier -> mask, end to end. Levels 3..=9, the only
+        // ones the stager services.
+        let want: [(u8, usize, u8, u16); 7] = [
+            (3, 0, 1, 0xFFFC),
+            (4, 0, 1, 0xFFFC),
+            (5, 1, 2, 0xFF84),
+            (6, 1, 2, 0xFF84),
+            (7, 2, 3, 0xFB84),
+            (8, 2, 3, 0xFB84),
+            (9, 3, 4, 0xFB84),
+        ];
+        for (level, band, tier, mask) in want {
+            assert_eq!(level_band(level), Some(band), "level {level}");
+            assert_eq!(RETAIL_CURE_CLASS_BY_BAND[band], tier, "level {level}");
+            assert_eq!(VERA_CURE_MASKS[usize::from(tier - 1)], mask, "tier {tier}");
+        }
+        // Below the stager's own floor nothing stages at all, so the latch
+        // holds `0` and `0 - 1` indexes nothing.
+        assert_eq!(level_band(2), None);
+        assert!(VERA_CURE_MASKS.get(0u8.wrapping_sub(1) as usize).is_none());
+        // A damaging row leaves a percent in the same latch; none of the four
+        // arms matches it, which is the element gate.
+        for pct in RETAIL_PERCENT_BY_BAND {
+            assert!(
+                VERA_CURE_MASKS.get(pct.wrapping_sub(1) as usize).is_none(),
+                "percent {pct} must not select a cure tier"
+            );
+        }
+    }
+
+    /// Tier 4 is the only arm that also doubles `+0x170`.
+    #[test]
+    fn tier_four_reports_the_resist_doubling() {
+        for (tier, want) in [(1u8, false), (2, false), (3, false), (4, true)] {
+            let mut seats = row();
+            seats[3].flags = 0x0003;
+            let mut ctx = CastModuleCtx {
+                phase: VERA_RESTORE_ARM,
+                ..Default::default()
+            };
+            let (_, out) = vera_tick(
+                &mut ctx,
+                &mut seats,
+                WHO,
+                Some(VeraRestore {
+                    magic_level: 9,
+                    max_hp: 1000,
+                    cure_tier: tier,
+                    apply_hp: true,
+                }),
+            );
+            let out = out.unwrap();
+            assert!(out.cured, "tier {tier}");
+            assert_eq!(out.doubled_resist, want, "tier {tier}");
+        }
+        assert_eq!(VERA_TIER4_RESIST_CAP, 0x64);
     }
 
     #[test]
@@ -1784,6 +1899,7 @@ mod tests {
                 magic_level: 2,
                 max_hp: 1000,
                 cure_tier: 1,
+                apply_hp: true,
             }),
         );
         assert!(!out.unwrap().cured);
@@ -1801,6 +1917,7 @@ mod tests {
                 magic_level: VERA_CURE_MIN_LEVEL,
                 max_hp: 1000,
                 cure_tier: 1,
+                apply_hp: true,
             }),
         );
         assert!(out.unwrap().cured);

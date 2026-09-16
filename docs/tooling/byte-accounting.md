@@ -82,8 +82,37 @@ An owner says what kind of thing consumes the bytes, not which module claimed th
 | `texture` | A raw texture page - indices with no TIM header. |
 | `clut` | A palette region. |
 | `string` | A NUL-terminated string a parser resolves a pointer to. |
-| `pad` | Declared slack inside a fixed-stride slot that the container's own size math covers. |
+| `pad` | Declared slack inside a fixed-stride slot that the container's own size math covers, and dev fill a slot is entirely made of. |
 | `scan` | Found by a magic sweep over the residue, not by a structural walk. |
+
+### The `lzs_container` class fits a count it never reads
+
+The class name says descriptor bundle and the class membership does not mean
+that. Its detector never consults the header's `count` word: it tries a fixed
+list of descriptor counts and accepts the first that passes the per-descriptor
+checks, so a buffer whose leading words merely *look* like descriptors joins
+the class with a count nothing on the disc states.
+
+Two consequences, both measured over the 18 retail members.
+
+- **The reported count was wrong on eleven of them.** The fitted list's
+  per-descriptor floor of 32 bytes rejects the 4-byte ANM slot that the
+  count-4 bundles carry, so every one of them fitted at `n = 1` - validating
+  one descriptor is vacuously easy. Reading the count word first, and
+  validating it the way `FUN_80020224` walks it, reports 4 / 5 / 3 / 1 as the
+  headers state. Nothing on the disc changes class either way.
+- **Three members are not bundles at all.** `0485` is an offset pack behind a
+  DATA_FIELD chunk header, `0872` is a bare offset pack, and `0981` is a code
+  image that opens with a string pool. The first two are recovered from the
+  offset-pack anchor `offsets[0] == 4 + 4 * count`, which is a layout law
+  rather than a guess; the third has no structural walker and stays residue.
+
+So read `lzs_container` as "nothing earlier claimed it and the first words fit
+a descriptor shape". The walker behind it, `descriptor_bundle`, is the one that
+transcribes the runtime walk - `count` off `+0x00`, descriptor `i` at
+`+0x08 + 8i`, payload at `base + data_offset`, no count bound - and every
+payload extent it claims is **measured** by what the LZS decoder consumed, not
+inferred from the next descriptor's offset.
 
 ### Walking a bundle's sections
 
@@ -205,17 +234,17 @@ The first two rest on addresses the module's own code computes and hands to
 `FUN_80021B04` / `FUN_80050ED4` in `$a2`, which is why they are structural claims
 and not `scan` ones. The third rests on the move-VM width walk instead - the
 reason line says so per claim, so the two kinds of evidence never blur. The
-image's **highest** record is bounded by its own program's terminator; on the
-four images where that walk does not terminate it stays residue and the walker's
-note names the offset.
+image's **highest** record is bounded by its own program's terminator, and on
+retail every image that has one is bounded; where a walk does not terminate the
+record stays residue and the walker's note names the offset.
 
 What the band measures, and why it is the cleanest class on the disc: all 64
 entries select this walker, over 616448 bytes, and every claim is structural -
 `scan_bytes` is **zero** across the band, so nothing in the figure rests on a
-magic guess. Residue is 67680 bytes (10.98%), of which only 440 bytes are
+magic guess. Residue is 65836 bytes (10.68%), of which only 440 bytes are
 `zero_pad`: the unaccounted share is almost entirely each image's inherited
 tail, not slack. Per entry the accounted share runs 71.2% to 100.0% with a
-median of 89.2%. The three classes the entries carry (`overlay_ptr_table` 39,
+median of 89.3%. The three classes the entries carry (`overlay_ptr_table` 39,
 `mips_overlay` 20, `overlay_data_blob` 5) are a statistic over the bytes and do
 **not** select the walker - the index does.
 
@@ -258,46 +287,63 @@ Read the classes in three groups; only the first is work.
 The `entries` and `bytes` columns are the disc; the `non-slack residue` column is
 a **snapshot of the instrument** and moves with every parser that binds - re-derive
 it rather than quoting it. Its denominator is the whole TOC: 1233 entries,
-121006080 bytes. At the state below, 11.31% of that is residue, and 6.40 of those
-11.31 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 4.91%
-non-slack. Of the accounted 88.69%, 5.51 points came from the magic sweep rather
-than from a walked layout, so the *structural* share of the disc is 83.81%.
+121006080 bytes. At the state below, 7.19% of that is residue, and 6.40 of those
+7.19 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 0.79%
+non-slack. Of the accounted 92.81%, 4.88 points came from the magic sweep rather
+than from a walked layout, so the *structural* share of the disc is 87.92%. Of
+those 4.88 sweep-found points, 4.79 are one entry: `0891`, whose whole accounted
+share is `scan` claims.
 
 | Class | entries | bytes | non-slack residue |
 |---|---:|---:|---:|
-| `lzs_container` | 18 | 4098048 | 4098048 |
-| `pochi_filler` | 266 | 544768 | 544768 |
-| `overlay_data_blob` | 25 | 17164288 | 486042 |
 | `vab_multi_bank` | 1 | 6002688 | 210704 |
 | `scene_vab_stream` | 218 | 22450176 | 199440 |
+| `overlay_data_blob` | 25 | 17164288 | 157530 |
 | `scene_tmd_stream` | 182 | 14632960 | 141832 |
 | `init_pak` | 1 | 153600 | 80864 |
 | `scene_asset_table` | 90 | 22577152 | 77420 |
-| `overlay_ptr_table` | 42 | 407552 | 55312 |
-| `mips_overlay` | 22 | 194560 | 27188 |
-| `efect_pack` | 1 | 8192 | 8192 |
+| `overlay_ptr_table` | 42 | 407552 | 46788 |
+| `mips_overlay` | 22 | 194560 | 21836 |
+| `lzs_container` | 18 | 4098048 | 13213 |
 | `scene_event_scripts` | 101 | 329728 | 2048 |
 | `bse_bank` | 2 | 6144 | 1716 |
 | `data_field_streaming` | 49 | 9052160 | 1536 |
 | `pack` | 7 | 1634304 | 948 |
 | `summon_readef` | 2 | 12232704 | 20 |
 | `battle_data_pack` | 4 | 1863680 | 0 |
+| `efect_pack` | 1 | 8192 | 0 |
 | `scene_v12_table` | 97 | 198656 | 0 |
+| `pochi_filler` | 266 | 544768 | 0 |
 | `all_zeros` | 4 | 8192 | 0 |
 | `field_map` | 101 | 7446528 | 0 |
 
 | Class | What its unclaimed bytes are | Verdict |
 |---|---|---|
-| `lzs_container` | The whole entry, `high_entropy`, in one run: no walker binds to the class, so every one of these entries accounts to zero. The decoder exists (`legaia_lzs`) - what is missing is the binding, not the format. | Instrument gap, and the largest non-slack residue on the disc. |
-| `overlay_data_blob` | Almost all `zero_pad`. What is left is the `other5` / `other6` pair, `0x28000` bytes each of raw `bgr555`, and entry `0896`, whose whole extent reads `plausible_mips`. | Two raw 16bpp pages with no walker; `0896` is code with no recovered link base. |
+| `vab_multi_bank` (`0891`) | `mixed` and `ascii_text` runs between VAG bodies the magic sweep found. Every claim on this entry is a `scan` claim. | The bank's own layout is unwalked; see the split below. |
+| `overlay_data_blob` | Almost all `zero_pad`. What is left is entry `0896`, whose whole extent reads `plausible_mips` although its head is a length-prefixed Shift-JIS label table, plus per-image runs beside code the dump corpus reached. | `0896` is the JP-build menu image, resident in no USA state. |
 | `overlay_ptr_table`, `mips_overlay` | `low_entropy` runs with a `plausible_mips` minority - the tables beside code the dump corpus has not reached. | Dump worklist; agrees with [`disc-coverage.md`](disc-coverage.md)'s gap list. |
 | `init_pak` (`0895`) | `ascii_text`: a string pool no walker claims. | Small, and a string pool is not a format. |
-| `efect_pack` (`0873`) | One sector-sized entry, `low_entropy`, walker `generic`. | The [effect bundle](../formats/effect.md) has a parser; the account walker does not select it. |
+| `lzs_container` | Per-entry tails of a few hundred bytes past the last descriptor's stream, plus `0981` entire - the one class member that is a code image rather than a container. | Walker tails plus one mis-classed entry. |
 | `scene_vab_stream`, `scene_tmd_stream`, `scene_asset_table`, `pack` | Short `mixed` / `low_entropy` runs at the tail of records the walker did reach, plus one `high_entropy` minority in `scene_asset_table`. | Walker tails, not unwalked format. |
 | `data_field_streaming`, `battle_data_pack` | Almost entirely `zero_pad` now; `battle_data_pack`'s residue is slack outright and `data_field_streaming` keeps one `ascii_text` sector. | Closed but for that sector. |
 | `bse_bank`, `scene_event_scripts` | Kilobyte-scale `low_entropy` / `ascii_text` tails behind a walker that reached the records. | Walker tails. |
-| `pochi_filler`, `all_zeros`, `scene_v12_table`, `summon_readef` | `ascii_text` and `zero_pad` fill. | The disc's own slack. Not work. |
+| `efect_pack` (`0873`) | Nothing: the header, the inline sprite atlas, and both packs' members account fully. | Closed. |
+| `pochi_filler`, `all_zeros`, `scene_v12_table`, `summon_readef` | Nothing, or `zero_pad`. | The disc's own slack. Not work. |
 | `field_map` | Nothing: all 101 entries account fully. | Closed. |
+
+### Three families that read as unwalked format and were not
+
+Each of these headed the ranking at some point and none of them turned out to
+be an unrecognised format. All three were bindings: the bytes were already
+understood somewhere, and nothing connected that understanding to the walker.
+That is the shape to expect at the top of this ranking, and it is the reason to
+read the per-class verdict column before starting work on a row.
+
+| Family | What the bytes are | What was missing |
+|---|---|---|
+| `lzs_container`, 18 entries | The descriptor bundle [`scene-bundles.md`](../formats/scene-bundles.md) specifies, at counts the *detector's* window excludes - retail bounds the count nowhere. | A walker bound to the class. |
+| `pochi_filler`, 266 entries | One 1927-byte dev fill file plus 121 bytes of the mastering buffer's previous contents ([`pochi.md`](../formats/pochi.md)). | A shape rule. The fill is text-shaped and its line is 52 bytes long, so `repeated_fill`'s period-1/2/4/8/16 test never fires and 266 sectors of filler ranked as work. |
+| `other5` / `other6`, 2 entries | Four `320x64` 16bpp band uploads to VRAM `(384, 0)` ([`ringside-still.md`](../formats/ringside-still.md)). | A walker. The rectangle was already recovered from the consumer's immediates. |
 
 ### Two ways the headline number lies, both visible in the sweep
 
@@ -323,6 +369,60 @@ the fill classifies as `ascii_text`, and `repeated_fill` is tested *first*, so t
 pattern of period 1, 2, 4, 8 or 16 - it is text-shaped. That is a second, independent reason none of
 these slots carries a parseable asset.
 
+It is also why the class had to be claimed rather than left to the classifier.
+A shape vocabulary tests the *statistics* of a run, and the two things a filler
+slot is made of - a 52-byte-period fill file and a sector tail that is another
+entry's bytes - are indistinguishable from content by any statistic. The
+walker claims both as `pad` with a detail apiece, which is the difference
+between "the instrument knows what these bytes are" and "the instrument's
+shape tests do not object to them".
+
+## Ratcheting the figure
+
+A sweep that nobody compares is a number in a terminal. `scripts/ci/byte-account-coverage.py`
+reads the sweep's CSV and ratchets it the way [`disc-coverage.py`](disc-coverage.md) ratchets the
+code figure, against a committed baseline at `scripts/ci/byte-account-baseline.json`.
+
+```bash
+scripts/ci/byte-account-coverage.py                  # report
+scripts/ci/byte-account-coverage.py --check          # ratchet (hook + CI)
+scripts/ci/byte-account-coverage.py --update-baseline
+```
+
+It is the third denominator, and the reason it exists beside the other two is that they cannot ask
+this question. `port-catalog.py` measures the addresses this project has cited. `disc-coverage.py`
+measures the disc, but its DATA half is format **recognition** - "this entry is a
+`scene_vab_stream`" - which an entry satisfies fully while most of its bytes have never been walked.
+That gap is exactly what `asset account` reports, and the ratchet is what keeps it from sliding.
+
+### What ratchets, in which direction
+
+| figure | direction | why |
+|---|---|---|
+| `structural_pct` | up only | bytes a parser walked to, from a header or a table |
+| `accounted_pct` | up only | structural plus magic-sweep hits - always the larger number, never the headline |
+| `work_bytes` | down only | unconsumed runs whose shape is not slack |
+
+Every figure is re-weighted by **bytes**, not averaged over entries: a mean over 1233 entries makes
+one 15 MB archive weigh the same as one 2 KB filler sector, which is a statement about entries and
+not about the disc.
+
+Each is carried per class as well as whole-disc, for every class holding at least 1 MB. A per-class
+row is what makes a regression attributable - one class losing its walker moves the whole-disc
+figure by a rounding error, and "the total fell 0.3 points" does not say which parser to open.
+
+Slack shapes stay out of `work_bytes` for the reason the rollup keeps them apart: `zero_pad`,
+`alignment` and `repeated_fill` are the disc's own padding, most of the residue by bytes, and
+counting them as work produces a worklist nobody can act on.
+
+### The input is a cache, and a stale one passes
+
+The sweep needs the disc, the `asset` binary and the dump corpus, so the gate does not run it - it
+consumes the CSV, and with no CSV it SKIPS and exits 0, which is what keeps CI green without disc
+data. The failure mode that leaves is the one the categorize cache has: a CSV swept on an older
+tree reports *that* tree's parsers through a passing gate. Re-run the sweep after a parser change
+and before taking a baseline; `--max-age-days` is the guard for any automated use.
+
 ## Tests
 
 `crates/asset/tests/byte_account_entries.rs` accounts a fixed set of entries off `extracted/PROT`
@@ -331,6 +431,16 @@ meaningful (claims stay inside the buffer, residue plus accounted equals the siz
 never exceeds `accounted`). It skips and passes without extracted data, like every other
 disc-dependent test. The range algebra and the residue classifier are unit-tested on synthetic
 buffers inside the module, including the two ordering traps above.
+
+Three of its cases are corpus-wide rather than per-entry, because the claim they guard is about a
+family: every filler slot carries the same fill file and a tail that appears in some other entry at
+the same offset, every count-4 / 5 bundle's `FLAG` slot decompresses to that fill file, and both
+stills are covered entirely by their four band claims.
+
+One of those replaced a test that **asserted the defect**: it required entries `1221` / `1222` to
+report walker `generic`, which was a true statement about the instrument and a false one about the
+disc, and it would have failed the moment a walker landed. Pin the absence of a binding only where
+the absence is itself the finding.
 
 `crates/asset/tests/slot_b_module_layout_real.rs` covers the module band over all 64 entries: no
 claimed record overlaps a framed function, every claimed record's start is an address some spawn

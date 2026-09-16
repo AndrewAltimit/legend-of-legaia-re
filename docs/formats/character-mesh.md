@@ -115,11 +115,9 @@ relocate `record[0]`'s `+0x58` / `+0x5C` in place
 double-relocation shape - but re-running it on an already-absolute word lands
 near `0x803xxxxx`, not `0x808xxxxx`, and the routine runs once per character.
 
-That leaves the two pack walks in the battle loader `FUN_800520F0`, which
-differ only in *which buffer* they walk. Both hand an unbounded
-`base + word-from-the-container` to a sub-asset consumer, so a container whose
-members no longer sit where its header says produces an arbitrary pointer from
-either:
+**Not either battle-loader pack walk.** The two walks in `FUN_800520F0` were
+the standing candidates, and neither reads PROT 0874's bytes at all. Both
+buffers are identified from a battle save state's RAM:
 
 | | byte-offset walk | word-offset walk |
 |---|---|---|
@@ -127,39 +125,73 @@ either:
 | base | `*0x8007B878` | `*(gp+0xA8C)`, the battle arena at `FUN_8005133C`'s `block + 0x1800` (`0x8005177C`) |
 | address | `base + [base + 4 + 4*i]` | `base + ([base + 4 + 4*i] << 2)` |
 | consumer | `FUN_8001FBCC` | `FUN_80026B4C` |
+| what the buffer holds | the `vdf` pack, raw TOC `0x36A` = extraction 872 | the `etmd` pack, raw TOC `0x369` = extraction 871 |
 
-The `<< 2` on the second makes it the easier of the two to put in the observed
-band: a ~21-bit garbage word off a `0x801xxxxx` base reaches `0x808425F8`
-directly.
+Phase `0x0A` is where both get there: it streams raw `0x369` to the arena
+head, sets `0x8007B878 = arena + sectors*2048` (`0x80052538`) and streams raw
+`0x36A` from that cursor. In a mid-battle state `*0x8007B878` opens with
+`count = 0x20` followed by `0x84, 0xE4, 0x274, ...` - the `vdf` header this
+page already quotes - and the arena opens with `count = 0x1E` whose member `0`
+(`base + 0x1F*4`) carries the TMD magic and **is** `DAT_8007C018[3]`. So the
+byte-offset walk post-processes `vdf` sub-entries and the word-offset walk
+registers `etmd`'s meshes. Neither touches `player_data`.
 
-`0x8007B878` is the one pointer in the chain whose value is a **decoded
-size**, and it is worth naming because of what its census says. It has exactly
+**The walk that does read PROT 0874** is `0x8001EB4C`, inside `FUN_8001E890`:
+`tmd_register(*(gp+0x6BC) + word*4)` over §0's decoded pack, where
+`*(gp+0x6BC)` is the §0 buffer `FUN_8001E1B4` allocates. That is the only
+`base + word-from-the-container` in the chain whose container is the one being
+rebuilt, and the arithmetic reaches the observed address exactly: with the
+measured buffer base, `0x808425F8 - base` is `0x006F50BC`, which is
+`4 * 0x1BD42F` - a whole word offset, no remainder. For completeness, the two
+battle-loader walks would each need a word of their own (`0x0076939C` raw for
+the byte-offset walk, `0x001DE0E7` pre-shift for the word-offset one); both are
+arithmetically reachable, so the arithmetic alone never discriminated - the
+**provenance of the bytes** does.
+
+**The allocation is not a fixed constant, and that matters for the rule.**
+`FUN_8001ED60` runs once at boot: it loads raw `0x36C` into scratch, takes the
+container's descriptor-`0` and descriptor-`1` size fields (`+0x08` / `+0x10`,
+low 24 bits), rounds each up to a word and stores them to `gp+0x69C` and
+`gp+0x6C8` (`0x8001EE2C` / `0x8001EE30`; measured `0xB49C` and `0x41E0`, i.e.
+§0's and §1's decoded sizes). `FUN_8001E1B4` mallocs exactly those. So a
+rebuild that grows §0 **and** its header size word gets a matching buffer; a
+rebuild that keeps the first four words byte-exact while the LZS stream decodes
+to a different length gets a pack truncated at `0xB49C` instead, and a
+truncated pack is precisely how an offset word past the table becomes mesh
+payload read as an offset.
+
+`FUN_8001ED60` also sums the whole raw entry into `gp+0x6B8`, and
+`FUN_8001E890` re-sums after each load and compares (`0x8001E9F8`). Both read
+the same file, so it is a CD read-error retry, not an integrity gate a rebuild
+trips.
+
+`0x8007B878` remains worth naming for what its census says. It has exactly
 four references on the disc, under both reference scanners: three writers -
-`0x8001F268` (in the sub-asset install dispatcher `FUN_8001F05C`'s **type-2**
-arm, `*0x8007B8CC + ((size + 3) & ~3)`, where `size` is the descriptor's low
-24 bits), `0x8005250C` and `0x80052538` (both `arena + streamed bytes`) - and
-one reader, the phase-`0x0C` walk above. And `0x8007B8CC`, that arm's
-destination, has exactly **one** reference on the whole disc: the `lw` at
-`0x8001F258`. Nothing writes it, and it is above SCUS's loaded extent
-(`0x80010000 + 0x6B800 = 0x8007B800`), i.e. `.bss`. So the type-2 arm's
-`s7 != 0` path is itself broken-or-dead in retail, and whichever of the two
-walks produces the wild read, it is reading a buffer nobody re-based.
+`0x8001F268` (in the sub-asset install dispatcher `FUN_8001F05C`'s `s7 != 0`
+arm, `*0x8007B8CC + ((size + 3) & ~3)`), `0x8005250C` and `0x80052538` (both
+`arena + streamed bytes`) - and one reader, the phase-`0x0C` walk above. And
+`0x8007B8CC`, that arm's destination, has exactly **one** reference on the
+whole disc: the `lw` at `0x8001F258`. Nothing writes it, and it is above SCUS's
+loaded extent (`0x80010000 + 0x6B800 = 0x8007B800`), i.e. `.bss`. Three field
+save states read `*0x8007B824 = 0` - the word that same arm is the only writer
+of - which confirms from the other side that the `s7 != 0` path never runs in
+retail.
 
-**The deciding observation** (for the emulator lane): a write-watch on
-`0x8007B878` across a rebuilt-container battle load, plus `$s2` at
-`0x8005255C` and `$a0` at `0x800525D8`. If `$s2` is the arena plus a streamed
-byte count the fault is the byte-offset walk; if `$a0` alone is out of range
-it is the word-offset walk.
+**What would close it**: a write-watch on `*(gp+0x6BC)` across a
+rebuilt-container cold boot, plus `$a0` at `0x8001EB4C`. A mid-game state
+replays the RAM of the disc that booted it, so the patched bytes stay masked
+until the game re-loads them.
 
 The editing contract is unchanged: `legaia_asset::party_swap::fieldize`
 keeps the first four words (`meta[0]`, `meta[1]`, `type<<24|size0`,
 `offset0`) byte-exact, which pins §0's decoded size at retail's 46 236
 bytes (pad the pack tail - retail itself pads ~19 KB in slot 4). A rebuild
 that changed §0's decoded size was observed to hang the next battle load
-(a wild read at `0x808425F8` under PCSX-Redux); with the VDF-pointer
-mechanism falsified, the address form is narrowed to the two pack walks
-[above](#what-can-reach-0x808425f8-and-what-cannot) and the conservative rule
-stands until a watchpoint picks between them.
+(a wild read at `0x808425F8` under PCSX-Redux). The two battle-loader pack
+walks are now excluded by the bytes their buffers hold, and the one walk over
+this container's own pack reaches the observed address on a whole word offset
+[above](#what-can-reach-0x808425f8-and-what-cannot), so the rule now has a
+mechanism behind it rather than only a symptom.
 
 Byte-equality verified against a settled field-scene RAM snapshot at
 `DAT_8007C018[0..=4]` - see

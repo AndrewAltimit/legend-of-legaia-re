@@ -51,130 +51,41 @@ impl PlayWindowApp {
                 aspect,
             ) * FIELD_WORLD_FLIP
         } else if in_world_map {
-            let world = &self.session.host.world;
-            let (az, zoom, px, pz, walk_mode) = world
-                .world_map
-                .ctrl
-                .as_ref()
-                .map(|c| (c.azimuth, c.zoom, c.camera_x, c.camera_z, !c.is_top_view()))
-                .unwrap_or((0, 0, 0, 0, true));
-            // In walk mode the camera follows the player: pan so the
-            // framing centre tracks the player's world position
-            // (the AABB-relative offset world_map_camera_mvp adds to
-            // its centre). Top-view debug keeps the controller scroll.
-            let (pan_x, pan_z) = if walk_mode {
-                let center = [
+            // The overworld's two cameras are the shared resolver's two
+            // world-map arms, so the browser play page frames the same
+            // vantage from the same controller values:
+            //
+            // - **walk mode**: the RETAIL player-follow camera, pinned from
+            //   the two overworld resident savestates (sebucus / karisto) -
+            //   `screen = H * (R*(6*(v - player)) + TR) / Ez` with `H = 368`,
+            //   a 6x uniform world scale (base matrix `0x8007BF10` =
+            //   `24576 * I`), `R` from the `0x8007B790` trio and the
+            //   controller azimuth, focus = the player's world X/Z
+            //   (`0x80089118/20` hold its negation), `TR` from `0x800840B8`.
+            //   The controller zoom slides along the axis between the two
+            //   pinned states.
+            // - **top-view debug**: the synthetic survey vantage the retail
+            //   R1+R2+Cross chord toggles, framed on the loaded pack.
+            //
+            // `FIELD_WORLD_FLIP` cancels the resolver's Y-up frame, so the
+            // whole composition runs on raw retail Y-down world coordinates
+            // and the overworld elevation renders retail-correct.
+            let frame = legaia_engine_core::camera_view::resolve_field_camera(
+                &self.session.host.world,
+                &self.session.camera,
+                None,
+                [
                     (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
                     (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-                ];
-                world
-                    .player_actor_slot
-                    .and_then(|s| world.actors.get(s as usize))
-                    .map(|a| {
-                        (
-                            (a.move_state.world_x as f32 - center[0]) as i32,
-                            (a.move_state.world_z as f32 - center[1]) as i32,
-                        )
-                    })
-                    .unwrap_or((px, pz))
-            } else {
-                (px, pz)
-            };
-            // Walk view frames a fixed WORLD-space radius around the
-            // player rather than the (small, object-local) kingdom-
-            // pack AABB - the continent terrain now draws at world
-            // tile coordinates (`field_placement_draws`), so the
-            // pack-AABB radius would frame only the one tile under
-            // the player. Keep the box centred at the pack-AABB
-            // centre (the pan re-centres it on the player) and widen
-            // it; top-view keeps the full-pack framing for the
-            // overhead continent sweep.
-            let (cam_lo, cam_hi) = if walk_mode {
-                // Frame a wide world-space radius around the player so
-                // the overworld reads at retail's overhead scale (the
-                // walk camera also sits steeper - see
-                // `walk_view_camera_mvp`).
-                const WALK_HALF: f32 = 4200.0;
-                let cx = (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5;
-                let cz = (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5;
-                (
-                    [cx - WALK_HALF, self.scene_aabb.0[1], cz - WALK_HALF],
-                    [cx + WALK_HALF, self.scene_aabb.1[1], cz + WALK_HALF],
-                )
-            } else {
-                (self.scene_aabb.0, self.scene_aabb.1)
-            };
-            if walk_mode {
-                // The RETAIL walk-view camera, pinned from the two
-                // overworld resident savestates' RAM (sebucus /
-                // karisto): `screen = H * (R*(6*(v - player)) + TR)
-                // / Ez` with `H = 368` (`0x8007B6F4`), a **6.0x
-                // uniform world scale** (base matrix `0x8007BF10` =
-                // `24576 * I`), R from the `0x8007B790` trio
-                // (pitch-only at azimuth 0; the controller azimuth
-                // feeds ry), focus = the player's world X/Z
-                // (`0x80089118/20` hold its negation, Y = 0), and
-                // TR from `0x800840B8`. The two saves pin two zoom
-                // states - (pitch 360, TR (0,536,9139)) and
-                // (pitch 476, TR (0,406,11041)); the controller
-                // zoom slides along that pinned axis (negative =
-                // pull back), anchored at the closer state.
-                // `FIELD_WORLD_FLIP` cancels `psx_camera_mvp`'s
-                // internal pre-flip, so the whole composition runs
-                // on raw retail Y-down world coordinates and the
-                // overworld elevation renders retail-correct.
-                let world = &self.session.host.world;
-                let player = world
-                    .player_actor_slot
-                    .and_then(|s| world.actors.get(s as usize))
-                    .map(|a| {
-                        Vec3::new(
-                            a.move_state.world_x as f32,
-                            0.0,
-                            a.move_state.world_z as f32,
-                        )
-                    })
-                    .unwrap_or_else(|| {
-                        Vec3::new(
-                            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-                            0.0,
-                            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-                        )
-                    });
-                // Zoom: t=0 -> the sebucus pin, t=1 -> the karisto
-                // pin. Controller zoom is positive-in, so negative
-                // values pull back along the pinned axis.
-                let t = ((-zoom) as f32 / 64.0).clamp(0.0, 1.0);
-                let pitch_units = 360.0 + t * (476.0 - 360.0);
-                let tr = Vec3::new(
-                    0.0,
-                    536.0 + t * (406.0 - 536.0),
-                    9139.0 + t * (11041.0 - 9139.0),
-                );
-                let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
-                Self::psx_camera_mvp(
-                    to_rad(pitch_units),
-                    to_rad(az as f32),
-                    // The world-map camera carries no roll: `_DAT_8007B794`
-                    // is the top-view AZIMUTH there, and it is already the
-                    // `az` argument above.
-                    0.0,
-                    368.0,
-                    tr,
-                    Vec3::ZERO,
-                    aspect,
-                ) * FIELD_WORLD_FLIP
-                    * Mat4::from_scale(Vec3::splat(WORLD_MAP_WORLD_SCALE))
-                    * Mat4::from_translation(-player)
-            } else {
-                // Top-view debug camera keeps its synthetic framing
-                // but composes the same single world Y-negation so
-                // the (now unflipped) world-map draws render
-                // upright under it.
-                legaia_engine_render::window::world_map_camera_mvp(
-                    cam_lo, cam_hi, az, zoom, pan_x, pan_z, aspect,
-                ) * FIELD_WORLD_FLIP
-            }
+                ],
+            );
+            let vp = legaia_engine_core::camera_view::frame_vp(
+                &frame,
+                (self.scene_aabb.0, self.scene_aabb.1),
+                aspect,
+            )
+            .unwrap_or_else(|| self.camera_mvp(aspect).to_cols_array());
+            Mat4::from_cols_array(&vp) * FIELD_WORLD_FLIP
         } else if self.session.host.world.mode == SceneMode::Battle {
             if self.battle_stage_mesh.is_some() {
                 // Stage-dome battle: low front-facing shot into the

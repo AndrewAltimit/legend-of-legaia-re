@@ -752,13 +752,19 @@ pub const SWIRL_WALL_RGB: u32 = 0x0040_4040;
 /// signs make alternating bands fly toward and away from the camera.
 ///
 /// Past the late-phase frame the submit goes through `FUN_80029888` instead,
-/// which stages a mid-grey far colour and builds an extra Euler rotation from
-/// its fourth argument (`(clock - 0x3C) * 4`, `<< 4` into the angle lanes) -
-/// the roll that gives the style its name. The port carries the rotation
-/// ([`SwirlBandDraw::late_arg`]); the far-colour haze has no screen-overlay
-/// channel and is left un-carried, like the tile shatter's depth-cue note.
-/// (The rotation-axis detail is graded decompiled-C: the Euler vector build
-/// in `FUN_80029888` is read off the C rendering, not the disassembly.)
+/// which stages a mid-grey far colour (`param_2`'s bytes `<< 4` into GTE
+/// control regs `21`/`22`/`23`) and builds an extra Euler rotation from its
+/// fourth argument `(clock - 0x3C) * 4` - the roll that gives the style its
+/// name. The port carries the rotation ([`SwirlBandDraw::late_arg`]); the
+/// far-colour haze has no screen-overlay channel and is left un-carried, like
+/// the tile shatter's depth-cue note.
+///
+/// The rotation axis is read from the instructions now, and it is **two axes**:
+/// `a3 << 4` lands in the X and Z angle halfwords with Y zeroed
+/// (`0x80029930..0x80029940`), and bit `0x10000` of `a3` zeroes all three. The
+/// routine also zeroes the GTE **translation vector** first (`FUN_8003D190` =
+/// `ctc2 zero, cr5/cr6/cr7`), which is what makes that rotation act about the
+/// origin; it writes no light register.
 ///
 /// PORT: FUN_801D1A20
 /// REF: FUN_80029888 (the late-phase dispatcher; far colour + roll staging)

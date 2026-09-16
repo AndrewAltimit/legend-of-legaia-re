@@ -701,8 +701,8 @@ fn integration_yield_then_resume_then_advance() {
     // After two Yields the host log should show [true, false]; after
     // the NOP advances we hit the LFLAG_TST and halt.
     let bytecode = [
-        0x4C, 0x30, // lock + Yield
-        0x4C, 0x31, // unlock + Yield
+        0x4C, 0x30, // gate raise + Yield
+        0x4C, 0x31, // gate clear + Yield
         0x21, // NOP
         0x2D, 0x05, // TEST bit 5 (clear → Halt)
     ];
@@ -711,8 +711,8 @@ fn integration_yield_then_resume_then_advance() {
     let mut ctx = FieldCtx::default();
     let trace = run_until_halt(&mut host, &mut ctx, &bytecode, 0, 16);
 
-    // Lock log must be exactly [true, false].
-    assert_eq!(host.field_input_lock_writes, vec![true, false]);
+    // Gate log must be exactly [true, false].
+    assert_eq!(host.ambient_particle_gate_writes, vec![true, false]);
 
     // Trace shape: Yield, Yield, Advance, Halt.
     assert!(matches!(trace[0].1, StepResult::Yield { resume_pc: 2 }));

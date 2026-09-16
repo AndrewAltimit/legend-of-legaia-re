@@ -91,6 +91,7 @@ pub mod party_swap;
 pub mod place_names;
 pub mod player_anm;
 pub mod player_file_annex;
+pub mod ringside_still;
 pub mod save_icon;
 pub mod scene_asset_table;
 pub mod scene_event_scripts;

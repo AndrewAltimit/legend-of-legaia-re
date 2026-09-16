@@ -931,6 +931,60 @@ at `+0x64` and reloads. The operand is compared **unsigned** against `0xF0`
 - `0xF0` and above, a negative operand included: raise that bit and resolve
   `operand - 0xF0` against the second base `*(u16*)0x8007B824`.
 
+Both bases index one array, and it is not a per-scene pack - see the next
+section.
+
+### The model pool both bases index
+
+`DAT_8007C018` is a flat array of registered TMD pointers, and `FUN_80026B4C`
+(`tmd_register`) is its only writer: it validates the magic `0x80000002`,
+stores the pointer at `DAT_8007C018 + n*4`, publishes `n` to `0x8007BB38` and
+returns `n` as the model's id. `n` lives at `DAT_8007B774`, and the stage
+initialiser `FUN_8001E1B4` resets it to `*(u32*)0x8007B824` in its epilogue
+(`sw v1,-0x488c(at)` at `0x8001E3AC`), so ids below that watermark survive a
+scene change and ids at or above it are reissued per stage.
+
+| pool range | content | registrar |
+|---|---|---|
+| `[0, *0x8007B824)` | nothing in retail - the watermark is `0` | `FUN_8001F05C`'s `s7 != 0` arm, which never runs |
+| `[*0x8007B824, *0x8007B6F8)` | the five PROT 0874 §0 player meshes | `FUN_8001E890`'s pack loop at `0x8001EB4C` |
+| `[*0x8007B6F8, ...)` | the scene's own models | `FUN_8001F05C`'s type-`0x02` / type-`0x09` arms |
+
+`FUN_8001E890` sets `*(u16*)0x8007B6F8 = pack_count + *(u32*)0x8007B824`
+(`0x8001EB10..0x8001EB20`) - one past the player pack it has just registered.
+The scene bank is then registration order and nothing else: the bundle's
+descriptors in table order (each type-`0x02` contributing its whole pack, each
+type-`0x09` one model), then any type-`0x02` / type-`0x09` DATA_FIELD chunk in
+the block's streaming entries. `scene_tmd_stream` entries contribute nothing.
+
+Measured on three field save states: `*0x8007B824 = 0`, `*0x8007B6F8 = 5`, and
+`DAT_8007C018[0..=4]` identical across all three and equal to
+`*(gp+0x6BC) + 0x18` - the PROT 0874 §0 pack's five members past its
+`4 + 5*4` header. `DAT_8007B774 - 5` is then the scene's own model count, and
+it equals its bundle pack's member count exactly in every case
+(`town01` 114, `koin1` 159, `izumi` 50). The same three states show the field
+MAIN INIT binding the player actor from the same base
+(`lhu v0,-0x47dc(v0)` into `actor+0x64` at `0x801D6F88..0x801D6F90`), which is
+the cross-check that `0x8007B824` is a player quantity.
+
+Over the 90 `scene_asset_table` bundles on the disc (618 descriptors), **no**
+descriptor's `data_offset` falls outside its own PROT entry, 80 carry a
+type-`0x02` pack, none carries a type-`0x09` single, every one of those 80
+packs LZS-decodes and every member's first word is `0x80000002`. The ten
+bundles with no type-`0x02` descriptor take their models from a type-`0x02`
+DATA_FIELD chunk instead (`bubu1` 173 members, `edbubu` 160).
+
+Parser: `legaia_engine_core::model_bank` (`SceneModelBank::build` walks a
+scene the way the loader registers it; `resolve_model_id` applies the `0xF0`
+split). `SceneHost` holds one per loaded scene, rebuilt on every field entry,
+and it is what both hosts resolve a live op-`0x0E` re-bind through -
+`World::field_npc_live_model` for the id, `SceneModelBank::tmd_bytes` for the
+bytes. Disc-gated oracles:
+[`model_bank_disc.rs`](../../crates/engine-core/tests/model_bank_disc.rs) for
+the bank against the `DAT_8007B774` counter, and
+[`model_rebind_live_disc.rs`](../../crates/engine-core/tests/model_rebind_live_disc.rs)
+for every authored operand in `koin3` resolving to a parseable mesh.
+
 ### Op `0x0F` - the tile teleport
 
 `[0F, b1, b2]`, case body `0x8003944C`. The grid decode is the field VM's
@@ -1024,9 +1078,9 @@ channel - but it is the thing to check before filing "op X does nothing".
 | `0x02` / `0x0A` / `0x0B` | the requested-move pair reaches `carry_npc_run_anim`; the translucency bit has no consumer |
 | `0x09` | runs the same enqueue the field VM's op `0x36` sub-`0` runs - `World::audio.sfx_cue_cursor` / `sfx_parked_slot` / `sfx_cue_delays` - so a following delay write lands on the slot this op parked; the cue **id** is kept on the channel's ring copy and no host plays a field SFX cue yet |
 | `0x0C` | tint and draw-mode ramp on the channel; no NPC tint reaches either host's draw list |
-| `0x0E` | no per-placement mesh re-bind exists - both hosts resolve an NPC's mesh once at scene load |
+| `0x0E` | `World::npcs.models`, keyed by placement slot, read back through `World::field_npc_live_model`; each host resolves the bytes through `SceneHost::model_bank` (`model_bank::SceneModelBank::tmd_bytes`, all 215 authored sites) and re-uploads that slot's mesh |
 | `0x13` | no VRAM blit is reachable from a field-actor tick; `engine-render` owns the only VRAM |
-| `0x15` / `0x16` | no host applies pitch or roll to an NPC - both compose a Y rotation only |
+| `0x15` / `0x16` | `World::field_npc_tilt`, published per slot beside the heading; both hosts compose the full `Rx * Ry * Rz` when it is non-zero ([`host-drift.md`](../tooling/host-drift.md#per-actor-pitch-and-roll)) |
 
 ### Flag census
 
@@ -1059,6 +1113,15 @@ Disc-gated anchor test: `crates/engine-core/tests/motion_flag_census_disc.rs`.
   wander's three-point fan over the same test.
 - `ghidra/scripts/funcs/80035b50.txt` - op `0x09`'s SFX-cue enqueue.
 - `ghidra/scripts/funcs/80024e08.txt` - op `0x0E`'s model re-bind.
+- `ghidra/scripts/funcs/80026b4c.txt` - `tmd_register`, the pool's only writer.
+- `ghidra/scripts/funcs/8001e890.txt` - the PROT 0874 player-pack load that
+  sets `0x8007B6F8`.
+- `ghidra/scripts/funcs/8001e1b4.txt` - the stage init that resets the
+  registration counter to `0x8007B824`.
+- `ghidra/scripts/funcs/8001f05c.txt` - the asset dispatcher whose type-`0x02`
+  and type-`0x09` arms register a scene's models.
+- `ghidra/scripts/funcs/80020f88.txt` - the mesh reload, and the bound check
+  against `0x8007BB38` that proves the id is a pool index.
 - `ghidra/scripts/funcs/80058490.txt` - op `0x13`'s `MoveImage`.
 - `ghidra/scripts/funcs/80019278.txt` - op `0x0F`'s ground resample.
 - `ghidra/scripts/funcs/8001698c.txt` - the per-frame sweep that ages the

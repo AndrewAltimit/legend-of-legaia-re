@@ -194,6 +194,26 @@ if command -v python3 >/dev/null 2>&1 \
     fi
 fi
 
+# Byte-accounting ratchet: the sibling of the ratchet above, one level finer.
+# disc-coverage's DATA figure is format RECOGNITION ("this entry is a
+# scene_vab_stream"), which says nothing about how many of that entry's bytes
+# any parser consumed - an entry can sit at 100% recognised with most of its
+# bytes never walked. This ratchets the structural share and the non-slack
+# residue from `asset account`'s own numbers.
+#
+# Its input is a sweep CSV under target/ that nothing here regenerates, so it
+# reports SKIPPED on a clone (and on a tree where the sweep was never run).
+# Re-run scripts/asset-investigation/byte-account-sweep.py after a parser
+# change, or the figure it compares is the one from the tree you swept.
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/byte-account-coverage.py" ]]; then
+    printf '[pre-commit] byte-accounting ratchet\n'
+    if ! python3 scripts/ci/byte-account-coverage.py --check --quiet; then
+        printf '[pre-commit] a parser stopped consuming bytes it used to -- if a walker was deliberately narrowed, re-run with --update-baseline and say why in the commit message (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 # Ghidra dump-corpus integrity. Three axes of one failure: a dump that reads
 # as authoritative and is wrong about where its bytes live, or a committed
 # sentence that is wrong about the dump.

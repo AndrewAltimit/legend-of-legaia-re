@@ -156,6 +156,13 @@ pub const SAVE_FILE_EXT3_MAGIC: [u8; 4] = *b"LGX3";
 pub const SAVE_FILE_EXT4_MAGIC: [u8; 4] = *b"LGX4";
 /// Magic of the optional resume-point trailer ([`SaveResume`]).
 pub const SAVE_FILE_EXT5_MAGIC: [u8; 4] = *b"LGX5";
+/// Magic of the optional **item-slot** block ([`SaveExt::item_slots`]).
+///
+/// Optional like the resume trailer rather than versioned like `LGX2`..`LGX4`:
+/// a save whose bag carries no slot-level data emits nothing, so a file
+/// written before the block existed and one written without it are the same
+/// bytes.
+pub const SAVE_FILE_EXT6_MAGIC: [u8; 4] = *b"LGX6";
 /// Magic of the engine-ext blob a retail SC block carries in its unread tail
 /// ([`SaveFile::write_engine_ext_into_retail_sc_block`]).
 pub const RETAIL_ENGINE_EXT_MAGIC: [u8; 4] = *b"LGXE";
@@ -209,7 +216,22 @@ pub struct SaveExt {
     /// mutates this; clamped to `[0, 9_999_999]` at runtime.
     pub money: i32,
     /// Per-item-ID inventory counts. Pairs are sorted by `item_id`.
+    ///
+    /// This is the **compact** view - one entry per held id, no slot
+    /// coordinate - and it is what the v1 prelude carries, so a file written
+    /// by any version reads back here. [`Self::item_slots`] is the physical
+    /// array beside it.
     pub inventory: Vec<(u8, u8)>,
+    /// The bag's **physical slot array** (SC `+0x1818`): 256 `(id, count)`
+    /// pairs in slot order, holes included.
+    ///
+    /// Empty means "this file carries no slot-level data" - a pre-`LGX6`
+    /// engine save, or an importer that only had the compact list - and a
+    /// consumer then seeds slots densely from [`Self::inventory`], which is
+    /// what every save did before the block existed. Slot order matters
+    /// because one retail consumer indexes the bag by slot (PROT 0941's
+    /// Steal); every other one addresses it by id and cannot tell.
+    pub item_slots: Vec<(u8, u8)>,
 }
 
 /// Per-character v2 extension data. Engines populate this from
@@ -509,6 +531,22 @@ impl SaveFile {
         out.extend_from_slice(&ext4_total_size.to_le_bytes());
         out.extend_from_slice(&ext4_block);
 
+        // Optional LGX6 block: the bag's physical slot array, `(id, count)`
+        // in slot order. Emitted only when there is one, so a save without
+        // slot-level data is byte-identical to a pre-block file.
+        if !self.ext.item_slots.is_empty() {
+            let mut ext6_block = Vec::with_capacity(self.ext.item_slots.len() * 2 + 2);
+            let slot_count = self.ext.item_slots.len().min(u16::MAX as usize) as u16;
+            ext6_block.extend_from_slice(&slot_count.to_le_bytes());
+            for &(id, count) in self.ext.item_slots.iter().take(slot_count as usize) {
+                ext6_block.push(id);
+                ext6_block.push(count);
+            }
+            out.extend_from_slice(&SAVE_FILE_EXT6_MAGIC);
+            out.extend_from_slice(&(ext6_block.len() as u32).to_le_bytes());
+            out.extend_from_slice(&ext6_block);
+        }
+
         out
     }
 
@@ -583,6 +621,7 @@ impl SaveFile {
             money,
             inventory,
             story_flag_bits: Vec::new(),
+            ..Default::default()
         };
 
         // V1 reads stop at party_end. V2/V3 may have one or two extension blocks.
@@ -670,6 +709,21 @@ impl SaveFile {
             cursor = ext4_end;
         }
 
+        // Optional LGX6 item-slot block: the bag's physical slot array.
+        if cursor + 8 <= buf.len() && buf[cursor..cursor + 4] == SAVE_FILE_EXT6_MAGIC {
+            cursor += 4;
+            let ext6_total_size =
+                u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            let ext6_end = cursor
+                .checked_add(ext6_total_size)
+                .filter(|&e| e <= buf.len())
+                .ok_or_else(|| anyhow::anyhow!("LGSF: LGX6 item-slot block truncated"))?;
+            ext.item_slots =
+                parse_ext_v6(&buf[cursor..ext6_end]).context("parse LGSF LGX6 item-slot block")?;
+            cursor = ext6_end;
+        }
+
         // Optional LGX5 resume trailer: present only when the writer had a
         // scene / location to record. Absent = empty, never an error, so a
         // pre-trailer v4 file and a trailer-less v4 file read the same.
@@ -693,11 +747,20 @@ impl SaveFile {
     /// Build a [`SaveFile`] from a retail SC save block (8 KiB block whose
     /// first two bytes are [`crate::SAVE_BLOCK_MAGIC`]).
     ///
-    /// Reads party records, the 512-byte story-flag bitmap, the 72-slot
-    /// inventory, and the party gold
+    /// Reads party records, the 512-byte story-flag bitmap, the **whole
+    /// 256-slot** item array, and the party gold
     /// ([`crate::card::RETAIL_GOLD_OFFSET`], mirrors RAM `0x8008459C`) at
-    /// their pinned offsets. Empty inventory slots (`(0, 0)`) are
-    /// dropped so the returned [`SaveExt::inventory`] is compact.
+    /// their pinned offsets. [`SaveExt::item_slots`] keeps the array verbatim,
+    /// slot order and holes intact; [`SaveExt::inventory`] is the compact view
+    /// of the same bytes, with the `(0, 0)` slots dropped.
+    ///
+    /// The walk is the full `0x200`-byte span
+    /// ([`crate::card::read_retail_item_window`]) and not the 72-slot
+    /// consumable **page** - 72 is the size of a cheat device's display page,
+    /// not an engine bound, and the accessors bound on `gp[+0x2D4]`, which is
+    /// only ever 128 or 256 (`docs/subsystems/inventory.md`). Lifting only the
+    /// page silently dropped every item a played-through save holds above slot
+    /// 71.
     ///
     /// `max_records` caps the party walk - retail saves never hold more
     /// than 4 active records (Vahn / Noa / Gala / Terra).
@@ -707,14 +770,14 @@ impl SaveFile {
         let story_flag_bits = crate::card::read_retail_story_flags(sc_block)
             .map(<[u8]>::to_vec)
             .unwrap_or_default();
-        let inventory: Vec<(u8, u8)> = crate::card::read_retail_inventory(sc_block)
-            .map(|raw| {
-                raw.chunks_exact(2)
-                    .filter(|p| !(p[0] == 0 && p[1] == 0))
-                    .map(|p| (p[0], p[1]))
-                    .collect()
-            })
+        let item_slots: Vec<(u8, u8)> = crate::card::read_retail_item_window(sc_block)
+            .map(|raw| raw.chunks_exact(2).map(|p| (p[0], p[1])).collect())
             .unwrap_or_default();
+        let inventory: Vec<(u8, u8)> = item_slots
+            .iter()
+            .copied()
+            .filter(|&(id, count)| !(id == 0 && count == 0))
+            .collect();
         let story_flags = story_flag_bits
             .get(..4)
             .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
@@ -730,6 +793,7 @@ impl SaveFile {
                 story_flag_bits,
                 money,
                 inventory,
+                item_slots,
             },
             ext_v2,
         })
@@ -826,7 +890,15 @@ impl SaveFile {
         let records: Vec<Vec<u8>> = self.party.members.iter().map(|m| m.raw.to_vec()).collect();
         crate::card::write_retail_char_records(sc_block, &records)?;
         crate::card::write_retail_story_flags(sc_block, &self.ext.story_flag_bits)?;
-        crate::card::write_retail_inventory(sc_block, &self.ext.inventory)?;
+        // The array wins when this save carries one: it is retail's own slot
+        // layout and must land verbatim, holes included. A save with only the
+        // compact list goes through retail's add path instead, which is what
+        // makes a list representable as a block at all.
+        if self.ext.item_slots.is_empty() {
+            crate::card::write_retail_inventory(sc_block, &self.ext.inventory)?;
+        } else {
+            crate::card::write_retail_item_window(sc_block, &self.ext.item_slots)?;
+        }
         crate::card::write_retail_gold(sc_block, self.ext.money)?;
         Ok(())
     }
@@ -911,6 +983,23 @@ fn apply_ext_v4(buf: &[u8], ext_v2: &mut SaveExtV2) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Decode the `LGX6` item-slot block: `u16 slot_count` then that many
+/// `(id, count)` pairs, in slot order with holes intact.
+fn parse_ext_v6(buf: &[u8]) -> Result<Vec<(u8, u8)>> {
+    if buf.len() < 2 {
+        bail!("LGX6: block too short ({} bytes)", buf.len());
+    }
+    let count = u16::from_le_bytes(buf[0..2].try_into().unwrap()) as usize;
+    let end = 2 + count * 2;
+    if buf.len() < end {
+        bail!(
+            "LGX6: truncated slot array (need {end} bytes, got {})",
+            buf.len()
+        );
+    }
+    Ok(buf[2..end].chunks_exact(2).map(|c| (c[0], c[1])).collect())
 }
 
 fn parse_ext_v3(buf: &[u8]) -> Result<Vec<u8>> {
@@ -1061,6 +1150,7 @@ mod tests {
                 money: 12345,
                 inventory: vec![(1, 5), (7, 2), (255, 1)],
                 story_flag_bits: Vec::new(),
+                ..Default::default()
             },
             ext_v2: SaveExtV2::default(),
         }
@@ -1085,6 +1175,7 @@ mod tests {
                 money: 0,
                 inventory: vec![],
                 story_flag_bits: Vec::new(),
+                ..Default::default()
             },
             ext_v2: SaveExtV2::default(),
         };
@@ -1119,6 +1210,7 @@ mod tests {
                 money: 999,
                 inventory: vec![(0, 3)],
                 story_flag_bits: Vec::new(),
+                ..Default::default()
             },
             ext_v2: SaveExtV2::default(),
         };
@@ -1242,6 +1334,7 @@ mod tests {
                 money: 42,
                 inventory: vec![(0x10, 7)],
                 story_flag_bits: bits.clone(),
+                ..Default::default()
             },
             ext_v2: SaveExtV2::default(),
         };
@@ -1270,6 +1363,7 @@ mod tests {
                 money: 99,
                 inventory,
                 story_flag_bits: vec![],
+                ..Default::default()
             },
             ext_v2: SaveExtV2::default(),
         };
@@ -1317,6 +1411,7 @@ mod tests {
                 money: 0,
                 inventory: vec![],
                 story_flag_bits: bits,
+                ..Default::default()
             },
             ext_v2: SaveExtV2::default(),
         };
@@ -1353,6 +1448,7 @@ mod tests {
                 money: 0,
                 inventory: vec![(0x05, 9), (0x10, 1), (0x33, 64)],
                 story_flag_bits: bits.clone(),
+                ..Default::default()
             },
             ext_v2: SaveExtV2::default(),
         };
@@ -1386,6 +1482,7 @@ mod tests {
                 money: 0,
                 inventory: vec![],
                 story_flag_bits: Vec::new(),
+                ..Default::default()
             },
             ext_v2: SaveExtV2 {
                 play_time_seconds: 42,

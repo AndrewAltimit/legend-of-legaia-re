@@ -100,9 +100,9 @@ use legaia_engine_ui::{
 /// mirrored: `legaia_engine_ui::pause_menu::stage_transform`.
 pub(crate) use legaia_engine_ui::pause_menu::stage_transform;
 use legaia_engine_ui::pause_menu::{
-    GenericContent, ItemsScreenView, MagicScreenView, MenuRects, OptionsScreenView, PauseMenuCtx,
-    PauseScreen, SpecialConfirmView, StatusScreenView, TopLevelView, equip_screen_compose,
-    pause_screen_draws, spell_level_notice_draws,
+    GenericContent, ItemsScreenView, KeyRebindView, MagicScreenView, MenuRects, OptionsScreenView,
+    PauseMenuCtx, PauseScreen, SpecialConfirmView, StatusScreenView, TopLevelView,
+    equip_screen_compose, pause_screen_draws, spell_level_notice_draws,
 };
 
 /// The disc-sourced menu chrome (assembled atlas + its band rects) plus the
@@ -222,6 +222,14 @@ pub struct PlayMenu {
     /// Retail resumes the save in the scene it was written in; the page owns
     /// scene entry, so the menu parks the label here.
     pending_load_scene: Option<String>,
+    /// Engine key **name** of the page's most recent physical key-down
+    /// ([`LegaiaRuntime::play_menu_key`]), consumed once by the Options
+    /// sub-session's Key Config screen.
+    ///
+    /// The pad word cannot carry this: the screen exists to bind keys that
+    /// are *not* in the table yet, and an unbound key has no bit. The native
+    /// window latches the same thing in its `pending_key_name`.
+    pending_key: Option<String>,
 }
 
 /// The open sub-screen. Every row runs the real [`FieldMenuSubsession`] the
@@ -237,6 +245,7 @@ impl PlayMenu {
         PlayMenu {
             session,
             resume_mode,
+            pending_key: None,
             sub: None,
             save_flow: SaveScreenFlow::new(),
             pending_load_scene: None,
@@ -491,6 +500,13 @@ impl LegaiaRuntime {
             None => SceneMode::Field,
         };
         self.play_menu = Some(PlayMenu::new(session, resume_mode));
+        // Retail opens the menu by writing the mode word (`CARD INIT` stages
+        // the menu overlay and hands the word to `CARD MODE`), so the open
+        // goes through the seat here exactly as it does in
+        // `BootSession::open_field_menu` - which is what runs the mode-change
+        // edge, and with it the pad swallow that keeps the Start press that
+        // opened the menu from also being the menu's first input.
+        self.seat_open_card_menu();
     }
 
     /// Open the pause menu directly on one row's sub-screen, named the way
@@ -544,6 +560,11 @@ impl LegaiaRuntime {
             // See `World::release_menu_entry_context_park`.
             host.world.release_menu_entry_context_park();
         }
+        // The word follows the world back out of `CARD MODE` at the close,
+        // not at the next tick's reconcile - the same call
+        // `BootSession::close_field_menu` makes, so the two hosts hold the
+        // same word in the frames between the close and the next tick.
+        self.mode_seat.adopt_scene_mode(menu.resume_mode);
     }
 
     /// Whether a Start edge would open the pause menu right now:
@@ -576,6 +597,39 @@ impl LegaiaRuntime {
         self.scene_host
             .as_ref()
             .is_some_and(|h| h.world.party.scene_save_allowed)
+    }
+
+    /// Hand the menu one physical key-down, as a browser
+    /// `KeyboardEvent.code` (`"KeyZ"`, `"ShiftRight"`, ...).
+    ///
+    /// Only the Options screen's **Key Config** row consumes it, and only
+    /// while it is awaiting a key. Everything else the menu does runs off the
+    /// pad word, which is why this is a second entry point rather than a
+    /// widened `play_menu_input`: a rebind has to see a key that is *not*
+    /// bound to any button yet, and such a key contributes no pad bit at all.
+    ///
+    /// Returns `true` when the key was latched - i.e. the code is one the
+    /// engine's shared vocabulary has a name for
+    /// ([`legaia_engine_core::input::key_name_for_dom_code`]) and a menu is
+    /// open. A page uses that to decide whether to swallow the event. Codes
+    /// outside the vocabulary answer `false` rather than being stored under a
+    /// guessed name, which is the same bound the native window's
+    /// `keycode_to_name` filter imposes: neither host binds a key the table
+    /// cannot spell.
+    ///
+    /// The page must skip auto-repeat (`KeyboardEvent.repeat`); the native
+    /// window collapses its own repeat stream in `handle_key`.
+    pub fn play_menu_key(&mut self, code: &str) -> bool {
+        let Some(name) = legaia_engine_core::input::key_name_for_dom_code(code) else {
+            return false;
+        };
+        match self.play_menu.as_mut() {
+            Some(m) => {
+                m.pending_key = Some(name.to_string());
+                true
+            }
+            None => false,
+        }
     }
 
     /// Take the CDNAME scene label an in-canvas card **Load** landed in, if
@@ -672,6 +726,12 @@ impl LegaiaRuntime {
 
             let mut session_done = false;
             let mut edge = edge;
+            // Consumed once per tick whether or not a rebind screen is open:
+            // a key latched while none is would be stale by the next frame
+            // and must not survive to be bound later. Same rule as the native
+            // window's `pending_key_name`.
+            let key = self.play_menu.as_mut().and_then(|m| m.pending_key.take());
+            let mut rebound = None;
             if let Some(m) = self.play_menu.as_mut()
                 && let Some(PlaySub::Session(session)) = m.sub.as_mut()
             {
@@ -694,9 +754,18 @@ impl LegaiaRuntime {
                     None => false,
                 };
                 if !opened_arts {
-                    session.tick_pad_edge(edge);
+                    session.tick_pad_edge_with_key(edge, key.as_deref());
                 }
+                rebound = session.take_rebound_mapping();
                 session_done = session.is_done();
+            }
+            // A bind committed inside the Options sub-session's Key Config
+            // screen. Adopting it here is what makes the very next keydown
+            // resolve through the new table, and `store_mapping` persists it
+            // to `localStorage` - the browser twin of the native window
+            // rewriting `legaia-input.toml`.
+            if let Some(mapping) = rebound.as_ref() {
+                crate::pad_bindings::store_mapping(mapping);
             }
             if session_done {
                 // Fold the finished session's result into the live world
@@ -821,7 +890,7 @@ impl LegaiaRuntime {
             let sub = self.scene_host.as_ref().map(|host| {
                 let world = &host.world;
                 let chain = world.chain_library();
-                PlaySub::Session(Box::new(FieldMenuSubsession::build(
+                let mut built = FieldMenuSubsession::build(
                     row,
                     world,
                     &self.options_state,
@@ -829,7 +898,12 @@ impl LegaiaRuntime {
                     &chain,
                     &world.tables.spell_catalog,
                     &world.tables.equipment_table,
-                )))
+                );
+                // The Options row's engine-only Key Config row, armed off the
+                // page's live (persisted) binding table - the browser twin of
+                // the native window arming it off `legaia-input.toml`.
+                built.arm_key_rebind(crate::pad_bindings::live_mapping());
+                PlaySub::Session(Box::new(built))
             });
             if let Some(sub) = sub
                 && let Some(m) = self.play_menu.as_mut()
@@ -1137,7 +1211,7 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) {
-        let rows = s.state().rows();
+        let rows = s.state().rows_for(s.key_config_armed());
         let row_views: Vec<ui::OptionsRowView<'_>> = rows
             .iter()
             .map(|r| ui::OptionsRowView {
@@ -1157,6 +1231,29 @@ impl LegaiaRuntime {
             .take(s.cursor() as usize)
             .map(|r| r.advance)
             .sum();
+        // Key Config sub-screen model, when it is open - the same session
+        // rows the native window prints.
+        let rebind_rows: Vec<(String, String)> = s
+            .key_rebind()
+            .map(|k| {
+                k.rows()
+                    .iter()
+                    .map(|r| (r.button.name().to_string(), r.key.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let rebind_pairs: Vec<(&str, &str)> = rebind_rows
+            .iter()
+            .map(|(b, k)| (b.as_str(), k.as_str()))
+            .collect();
+        let rebind = s.key_rebind().map(|k| KeyRebindView {
+            rows: &rebind_pairs,
+            cursor: k.cursor(),
+            awaiting: matches!(
+                k.phase(),
+                legaia_engine_core::key_rebind::KeyRebindPhase::AwaitingKey { .. }
+            ),
+        });
         let out = pause_screen_draws(
             &assets.menu_ctx(origin, scale),
             PauseScreen::Options(OptionsScreenView {
@@ -1164,6 +1261,7 @@ impl LegaiaRuntime {
                 cursor: s.cursor(),
                 popup,
                 row_y_off,
+                rebind,
             }),
         );
         sprites.extend(out.sprites);

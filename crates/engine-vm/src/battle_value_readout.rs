@@ -215,7 +215,14 @@ pub const DIGIT_ROW_V: u8 = 64;
 /// One digit cell is square, this many texels on a side.
 pub const DIGIT_CELL: u8 = 24;
 /// Screen pitch between adjacent cells is the drawn cell width plus this.
-pub const DIGIT_GAP: i32 = 1;
+///
+/// Zero: retail's pitch **is** the drawn width, because the drawn width is
+/// inclusive. A readout quad's far corner sits at `x + w - 1`
+/// (`engine-ui::battle_numerals::readout_quad`), so consecutive cells laid
+/// `w` apart abut exactly. The two constants are one fact - a one-pixel gap
+/// here with an exclusive far corner there overlapped every pair of digits by
+/// a column and then spaced the run a column too wide.
+pub const DIGIT_GAP: i32 = 0;
 
 /// Screen row the floating numeral rises to and rests on.
 pub const RESTING_TOP_Y: i32 = 32;
@@ -779,7 +786,8 @@ mod tests {
             "centre holds while the cells grow"
         );
         assert!(wide[0].w > narrow[0].w);
-        // Pitch is the drawn width plus one.
+        // Pitch IS the drawn width: the far corner is inclusive, so cells laid
+        // this far apart abut without a gap column.
         assert_eq!(wide[1].x - wide[0].x, wide[0].w as i32 + DIGIT_GAP);
     }
 

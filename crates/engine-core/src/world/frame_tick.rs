@@ -1961,12 +1961,42 @@ impl World {
         if self.mode != SceneMode::Dance {
             self.minigames.dance_return_mode = self.mode;
         }
+        // The pre-song count-in, and the how-to run's tutorial actor, are
+        // staged here rather than in a host: retail runs `FUN_801cf470`'s
+        // below-10 states before the beat clock, and owning that phase in the
+        // world is what gives the **door-warp** entry a count-in on both
+        // hosts. Previously only the native debug launcher ran one, from a
+        // driver of its own.
+        let long_song = game.song_len() == crate::dance::SONG_LEN_LONG;
+        let how_to = game.mode() == crate::dance::DanceMode::HowTo;
         self.minigames.dance = Some(game);
         self.minigames.dance_last_judge = None;
+        self.minigames.dance_countin = Some(crate::dance::CountIn::new());
+        self.minigames.dance_countin_banner = None;
+        // The dance overlay loads one of two mode-selected chart loops; the
+        // exact mode -> song arm is unpinned, so it is approximated by song
+        // length. Held until the count-in clears, which is when retail's
+        // beat clock starts.
+        self.minigames.dance_pending_bgm = Some(if long_song {
+            crate::minigame_entry::DANCE_LONG_SONG_BGM_ID
+        } else {
+            crate::minigame_entry::DANCE_SHORT_SONG_BGM_ID
+        });
+        self.minigames.dance_tutorial = how_to.then(crate::dance_tutorial::DanceTutorial::new);
+        self.minigames.dance_tutorial_frame = None;
         self.mode = SceneMode::Dance;
         if crate::dance::dance_scene_stage().clear_pad_latch {
             self.input.clear_edges();
         }
+    }
+
+    /// Drain the minigame SFX cue ids queued this frame (the dance count-in's
+    /// intro cue, the how-to tutorial's cursor / confirm cues). Cosmetic - a
+    /// host with no audio drops them, exactly as an unheard retail cue would
+    /// be. Both hosts drain this queue, which is what keeps the two from
+    /// growing separate cue paths.
+    pub fn drain_minigame_sfx_cues(&mut self) -> Vec<u16> {
+        std::mem::take(&mut self.minigames.pending_sfx)
     }
 
     /// Clear the dance minigame and return the final [`DanceGame`] so the host
@@ -1979,6 +2009,13 @@ impl World {
             self.mode = self.minigames.dance_return_mode;
         }
         self.minigames.dance_last_judge = None;
+        self.minigames.dance_countin = None;
+        self.minigames.dance_countin_banner = None;
+        self.minigames.dance_pending_bgm = None;
+        self.minigames.dance_tutorial = None;
+        self.minigames.dance_tutorial_frame = None;
+        // Give the hall its own music back when the chart loop displaced it.
+        self.restore_minigame_bgm();
         // The stager runs on teardown as well as on entry, so the press that
         // leaves the hall does not carry into the restored field mode.
         if crate::dance::dance_scene_stage().clear_pad_latch {
@@ -2001,9 +2038,32 @@ impl World {
     /// PORT: the dance overlay's per-frame driver (`FUN_801cf470` beat clock ->
     /// `FUN_801d1960` hit judge), one advance + one judged press pass per frame.
     fn tick_dance(&mut self) {
-        let Some(game) = self.minigames.dance.as_mut() else {
+        if self.minigames.dance.is_none() {
             // Mode is Dance but no game installed - drop back to a sane mode.
             self.mode = self.minigames.dance_return_mode;
+            return;
+        }
+        // The pre-song count-in owns the frame while it runs: the beat clock
+        // does not advance and no press is judged, which is retail's
+        // below-10 state band. The song starts on the frame it clears.
+        if let Some(mut ci) = self.minigames.dance_countin.take() {
+            let step = ci.step();
+            self.minigames.dance_countin_banner = Some(step.banner);
+            if let Some(cue) = step.cue {
+                self.minigames.pending_sfx.push(cue);
+            }
+            if step.done {
+                self.minigames.dance_countin_banner = None;
+                if let Some(bgm) = self.minigames.dance_pending_bgm.take() {
+                    self.swap_to_minigame_bgm(bgm);
+                }
+            } else {
+                self.minigames.dance_countin = Some(ci);
+            }
+            self.step_dance_tutorial();
+            return;
+        }
+        let Some(game) = self.minigames.dance.as_mut() else {
             return;
         };
         game.advance(1);
@@ -2028,6 +2088,50 @@ impl World {
             // Song finished: restore the interrupted mode, leaving `dance`
             // in place so the host can read the final score before clearing.
             self.mode = self.minigames.dance_return_mode;
+        }
+        self.step_dance_tutorial();
+    }
+
+    /// Run the Disco King how-to tutorial actor for one frame beside the live
+    /// session, on the retail pad-word layout (the same rotate the judge
+    /// applies). No-op unless the installed run is a
+    /// [`crate::dance::DanceMode::HowTo`] one.
+    ///
+    /// The handler runs during the count-in too - retail's actor ticks
+    /// independently of the dance states, and its opening prompt is what the
+    /// player answers before the song.
+    // REF: FUN_801D0750 (the actor handler; the per-state kernels are
+    //      `crate::dance_tutorial`)
+    fn step_dance_tutorial(&mut self) {
+        if self.minigames.dance_tutorial.is_none() {
+            self.minigames.dance_tutorial_frame = None;
+            return;
+        }
+        let (score, feedback_frames, combo_hit) = self
+            .minigames
+            .dance
+            .as_ref()
+            .map(|g| {
+                (
+                    g.score() as i32,
+                    g.feedback_frames() as i32,
+                    matches!(g.triangle_feedback(), Some(true)),
+                )
+            })
+            .unwrap_or((0, 0, false));
+        let pressed = (self.input.pad() & !self.input.pad_prev()).rotate_right(8);
+        let Some(tut) = self.minigames.dance_tutorial.as_mut() else {
+            return;
+        };
+        let frame = tut.step(pressed, score, feedback_frames, combo_hit, 1);
+        if let Some(cue) = frame.cue {
+            self.minigames.pending_sfx.push(cue);
+        }
+        if frame.done {
+            self.minigames.dance_tutorial = None;
+            self.minigames.dance_tutorial_frame = None;
+        } else {
+            self.minigames.dance_tutorial_frame = Some(frame);
         }
     }
 
@@ -2312,6 +2416,10 @@ impl World {
         if let Some(name) = self.minigames.scene_backup.take() {
             self.active_scene_label = name;
         }
+        // Give the departure scene its own track back when the minigame's
+        // overlay init took the score over (dance / Baka / dome). No-op for
+        // the two slots that never displaced it.
+        self.restore_minigame_bgm();
         self.mode = SceneMode::Field;
     }
 
@@ -2538,6 +2646,9 @@ impl World {
         if self.mode == SceneMode::MuscleDome {
             self.mode = self.minigames.muscle_return_mode;
         }
+        // Give the venue its own music back when the arena's battle theme
+        // displaced it (no-op when it did not).
+        self.restore_minigame_bgm();
         self.minigames.muscle_dome.take()
     }
 

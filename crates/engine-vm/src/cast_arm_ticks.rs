@@ -75,10 +75,25 @@
 //! the **per-arm frame gating**. That last one is the module-resident
 //! countdown each body keeps in its own image (`0x801F864C` in PROT 0940,
 //! `0x801F83EC` in 0941, `0x801F7A04` in 0943, `0x801F8360` in 0944,
-//! `0x801F86B0` in 0950, `0x801F86A0` in 0956, `0x801F89AC` in 0962),
-//! decremented by the scratchpad frame step `*(0x1F80037D) * *(0x1F800393)`;
-//! it decides *when* an arm completes, not what it does, and it is pinned by
-//! capture, not by the static window.
+//! `0x801F86B0` in 0950, `0x801F86A0` in 0956, `0x801F89AC` in 0962). It
+//! decides *when* an arm completes, not what it does.
+//!
+//! The drain is **per arm, not per module**, and the arms differ in the
+//! multiplier rather than in the quantity: every counted arm subtracts a
+//! multiple of the frame-delta byte `*(0x1F800393)`, and which multiple is
+//! baked into the arm. Three forms appear, two of them inside one body:
+//!
+//! | form | example | instructions |
+//! |---|---|---|
+//! | `byte * *(0x1F80037D)` | PROT 0940 `0x50` arm 1 | `lbu 0x69`/`lbu 0x7f` off `0x1F800314`, `mult`, `subu` at `0x801F7A94` |
+//! | `byte << 1` | PROT 0940 `0x50` arm 2 | `lbu 0x393`, `sll v1,v1,1`, `subu` at `0x801F7B78` |
+//! | `byte` | PROT 0943 `0xB5` | `lbu 0x7f` off `0x1F800314`, `subu` at `0x801F6B94` |
+//!
+//! So a capture that sees one arm draw its word down by `4` while the
+//! `*(0x1F80037D) * *(0x1F800393)` product reads `16..32` is not seeing a
+//! baked constant `4`: it is seeing the bare byte on a frame where the byte
+//! read `4`. Reading the product as the universal step - what this list said
+//! before - predicts the wrong dwell for every arm that does not use it.
 //!
 //! Provenance: disassembly of each owning image at slot-B base `0x801F69D8`
 //! (`see ghidra/scripts/funcs/overlay_cast_<label>_<entry>_<va>.txt`, the
@@ -653,7 +668,8 @@ pub enum StealOutcome {
     /// (`jal 0x80042310` with `(id, 1)`, the inventory consume-by-id helper).
     FromBag { item: u8 },
     /// The victim is a party seat but `0x400` draws found no bag slot whose
-    /// id, count and item-table record are all non-zero, so nothing is taken.
+    /// id, count and item-record shop price are all non-zero, so nothing is
+    /// taken.
     BagEmpty,
     /// The victim is a monster seat: the static steal table
     /// `0x80077828 + monster_id * 2` decided, fields `[chance, item]`.
@@ -688,8 +704,9 @@ pub enum StealOutcome {
 /// on `DAT_8007BD10[1] == 4` - the per-seat **character id** table, so the
 /// test is "battle seat 1 holds roster character 4", not a battle-context
 /// field. PROT 0941 makes no access at `+0x11` at all. That is the split-bag
-/// condition (`docs/subsystems/inventory.md`): it keeps the steal out of the
-/// half of the bag the other character's active window owns.
+/// condition (`docs/subsystems/inventory.md`): the floor halfword `0x8007B5EA`
+/// is `gp[+0x2D2]` (`gp = 0x8007B318`) - the active window's **start** - so
+/// the arm confines the draw to the window's own half.
 ///
 /// Returns the chosen slot, or `None` when the `0x400` budget ran out.
 ///
@@ -727,9 +744,11 @@ pub const STEAL_DRAW_BUDGET: u32 = 0x400;
 /// landed on acceptable?
 ///
 /// The test is `bag[slot].id != 0 && bag[slot].count != 0 && item_valid(id)`,
-/// where retail's third leg is a non-zero halfword in the static item table at
-/// `id * 0xC`. Split out so a host whose RNG cannot be borrowed into a closure
-/// still spends exactly the draws retail spends.
+/// where retail's third leg is the item record's **shop price** - the halfword
+/// at `0x80074368 + id*0xC + 2`, read at `0x801F789C` - so an item with no
+/// price (a quest or found-only one) is unstealable. Split out so a host whose
+/// RNG cannot be borrowed into a closure still spends exactly the draws retail
+/// spends.
 pub fn steal_bag_slot_from_draw(
     bag: &[StealBagSlot],
     slot: u8,

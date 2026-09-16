@@ -144,6 +144,15 @@ jobs:
       - name: Disc coverage ratchet (skips without disc data)
         run: python3 scripts/ci/disc-coverage.py --check
 
+      # One level finer than the step above: that one ratchets format
+      # RECOGNITION, this one ratchets how many of an entry's BYTES a parser
+      # here consumed. Its input is a sweep CSV under target/, so it reports
+      # SKIPPED on the runner for the same reason and is listed for the same
+      # reason - a hard gate that lives in one hook is one skip flag away from
+      # being fiction.
+      - name: Byte-accounting ratchet (skips without a sweep)
+        run: python3 scripts/ci/byte-account-coverage.py --check
+
       # The catalog's numbers reach the site's landing page, so a silently
       # widening worklist is a published figure moving with nothing to say so.
       # Its `dumped` column reads the gitignored Ghidra corpus, so this reports

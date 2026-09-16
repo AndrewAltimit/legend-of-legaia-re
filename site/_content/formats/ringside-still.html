@@ -1,0 +1,116 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; headerless 16bpp stills</div>
+  <h1>Headerless 16bpp stills <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">Two archive entries hold a picture with nothing in the file that says so - no header, no magic, no width. They are raw 15-bit pixels and a length. The rectangle that makes them an image lives in the code that uploads them, as four immediates, and this page writes those immediates down. They are the Muscle Dome's ringside panel, <code>int.tim</code> and <code>int2.tim</code>, and which of the two you see depends on the party leader's health.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>What it is</dt><dd>Extraction PROT <code>1221</code> / <code>1222</code>, each exactly <code>0x28000</code> bytes of raw BGR555 with no TIM header</dd>
+    <dt>Shape</dt><dd>One 320 &times; 256 image, uploaded as four 320 &times; 64 bands to VRAM <code>(384, 0)</code></dd>
+    <dt>Who reads it</dt><dd><code>FUN_801F6B24</code> in the PROT <code>0978</code> <code>field_back_read</code> overlay, at slot-B base <code>0x801F69D8</code></dd>
+    <dt>Which entry</dt><dd>Chosen at load time from the party leader's live HP - <a href="#which-entry">below</a></dd>
+    <dt>Parser</dt><dd><code>legaia_asset::ringside_still</code></dd>
+  </dl>
+  <p>The behavioural side - what the stills are for, which module owns them and what else is in that bundle - is on the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md"><code>minigame-muscle-dome.md</code></a>.</p>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>Layout: four bands, no remainder</h2>
+  <p>A band is <code>320 &times; 64 &times; 2 = 0xA000</code> bytes, which is also 20 sectors exactly. Those are two independent statements of the same size and they agree, which is most of the reason to believe the shape at all. Four bands tile the entry with nothing left over, and pixels run row-major inside a band, so the entry is one continuous 320 &times; 256 picture cut into four horizontal strips.</p>
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 860 220" width="100%" style="max-width:860px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The 0x28000-byte entry split into four 0xA000 bands, each uploaded to a different VRAM y">
+      <style>
+        .rs-lbl { font: 12px 'Inter', sans-serif; fill: currentColor; text-anchor: middle; }
+        .rs-note { font: 11px 'Inter', sans-serif; fill: var(--text-muted); text-anchor: middle; }
+        .rs-addr { font: 10px 'JetBrains Mono', monospace; fill: var(--accent); text-anchor: middle; }
+        .rs-box { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.2; }
+        .rs-vram { fill: var(--bg-raised); stroke: var(--accent); stroke-width: 1.4; }
+        .rs-arrow { stroke: currentColor; stroke-width: 1.2; fill: none; }
+      </style>
+      <text x="150" y="26" class="rs-lbl">entry file (0x28000 B)</text>
+      <rect x="40" y="40" width="220" height="34" class="rs-box"/>
+      <text x="150" y="62" class="rs-addr">+0x00000  band 0</text>
+      <rect x="40" y="80" width="220" height="34" class="rs-box"/>
+      <text x="150" y="102" class="rs-addr">+0x0A000  band 1</text>
+      <rect x="40" y="120" width="220" height="34" class="rs-box"/>
+      <text x="150" y="142" class="rs-addr">+0x14000  band 2</text>
+      <rect x="40" y="160" width="220" height="34" class="rs-box"/>
+      <text x="150" y="182" class="rs-addr">+0x1E000  band 3</text>
+      <path d="M 270 57 L 560 57" class="rs-arrow"/>
+      <path d="M 552 53 L 560 57 L 552 61" class="rs-arrow"/>
+      <path d="M 270 97 L 560 97" class="rs-arrow"/>
+      <path d="M 552 93 L 560 97 L 552 101" class="rs-arrow"/>
+      <path d="M 270 137 L 560 137" class="rs-arrow"/>
+      <path d="M 552 133 L 560 137 L 552 141" class="rs-arrow"/>
+      <path d="M 270 177 L 560 177" class="rs-arrow"/>
+      <path d="M 552 173 L 560 177 L 552 181" class="rs-arrow"/>
+      <text x="415" y="50" class="rs-note">LoadImage, 20 sectors each</text>
+      <text x="700" y="26" class="rs-lbl">VRAM, x = 384</text>
+      <rect x="570" y="40" width="260" height="34" class="rs-vram"/>
+      <text x="700" y="62" class="rs-addr">y = 0</text>
+      <rect x="570" y="80" width="260" height="34" class="rs-vram"/>
+      <text x="700" y="102" class="rs-addr">y = 64</text>
+      <rect x="570" y="120" width="260" height="34" class="rs-vram"/>
+      <text x="700" y="142" class="rs-addr">y = 128</text>
+      <rect x="570" y="160" width="260" height="34" class="rs-vram"/>
+      <text x="700" y="182" class="rs-addr">y = 192</text>
+    </svg>
+    <figcaption>Only <code>rect.y</code> changes between the four uploads; <code>x</code>, <code>w</code> and <code>h</code> are written once.</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>Field</th><th>Value</th><th>Where it comes from</th></tr></thead>
+    <tbody>
+      <tr><td>width</td><td>320 (<code>0x140</code>)</td><td><code>rect.w</code> immediate</td></tr>
+      <tr><td>height</td><td>256 = 4 &times; 64</td><td>four uploads of <code>rect.h</code> = <code>0x40</code></td></tr>
+      <tr><td>VRAM x</td><td>384 (<code>0x180</code>)</td><td><code>rect.x</code> immediate</td></tr>
+      <tr><td>VRAM y</td><td>0, 64, 128, 192</td><td>the per-band <code>rect.y</code> store</td></tr>
+      <tr><td>pixel</td><td>BGR555, STP clear</td><td>the residue classifier's <code>bgr555</code> test</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="what-names-the-rectangle">
+  <h2>What names the rectangle</h2>
+  <p>The rect lives at <code>0x801F735C</code> and is built by one arm of <code>FUN_801F6B24</code>. Three of its four halfwords are written once and never touched again:</p>
+<pre><code>801f6be4  li   v0,0x180         ; rect.x = 384
+801f6bec  sh   v0,0x735c(at)
+801f6bf0  li   v0,0x140         ; rect.w = 320
+801f6bf8  sh   v0,0x7360(at)
+801f6bfc  li   v0,0x40          ; rect.h = 64
+801f6c04  sh   v0,0x7362(at)
+801f6c20  sh   zero,0x735e(at)  ; rect.y = 0, then 0x40 / 0x80 / 0xC0</code></pre>
+  <p>The read is <code>FUN_8003E964(sector, 0)</code> seeking <code>0 / 0x14 / 0x28 / 0x3C</code>, then <code>FUN_8003E800(dst, 0x14, 1)</code> for 20 sectors; the upload is <code>FUN_800583C8</code>, which is <code>LoadImage</code> - it hands the literal at <code>0x800156D4</code> to the debug hook before the libgpu vtable call.</p>
+  <p>Those arms are one of <strong>two</strong> jump tables in the same routine. A <code>beqz</code> on the special-battle word <code>_DAT_8007BAC0</code> at <code>0x801F6BA8</code> picks between them: non-zero takes the 12-arm panel-still table at <code>0x801F6AA8</code> (these stills), zero takes the 19-arm field-restore table at <code>0x801F6AD8</code>, which uploads the field party's texture pages instead. So an ordinary battle teardown never reaches this rectangle - it reads a different table.</p>
+</section>
+
+<section class="doc-section" id="which-entry">
+  <h2>Which entry is which</h2>
+  <p>The PROT index is <strong>computed</strong>, not a literal, which is why a sweep for literal references finds no loader for either entry:</p>
+<pre><code>801f6b90  lhu  v0,0x4824(v0)    ; party slot 0 hp_max_record  (record +0x11C)
+801f6b98  lhu  v1,0x480e(v1)    ; party slot 0 hp_curr_live   (record +0x106)
+801f6ba4  srl  v0,v0,0x1
+801f6bac  sltu s0,v1,v0         ; s0 = current HP &lt; max / 2
+801f6c3c  addiu a0,s0,0x4c7     ; raw TOC 0x4C7 + s0
+801f6c40  jal  0x8003e8a8       ; the LBA resolver</code></pre>
+  <p>Raw TOC <code>0x4C7</code> / <code>0x4C8</code> are extraction <code>1221</code> / <code>1222</code> under the <a href="cdname.html">+2 correction</a>, and the same <code>s0</code> picks between the two dev-path strings on the dev-file branch - which is what ties each index to a filename. <code>1221</code> is <code>int.tim</code>, <code>1222</code> is <code>int2.tim</code>, and <code>int2.tim</code> is the <strong>below-half-HP</strong> variant. The record offsets are the live ones from the <a href="save-record.html">per-character save record</a>.</p>
+  <p>Two details there are the kind a backward-only or literal-only scan loses: the index is formed by <code>addiu</code> <em>in the <code>jal</code>'s delay slot</em>, and the comparison reads the character record through <code>lhu</code> at a <code>gp</code>-free absolute pair rather than through any table.</p>
+</section>
+
+<section class="doc-section" id="why-no-magic">
+  <h2>Why it has no magic</h2>
+  <p>Nothing in the entry identifies it. Length is the only structural statement it makes, and <code>0x28000</code> is not distinctive on its own, so <code>legaia_asset::ringside_still::has_still_shape</code> is a length test and the selection is by PROT index. That is not a shortcut around a detector - there is nothing to detect. A still and any other raw 16bpp VRAM region are the same bytes, and the only thing that distinguishes them is which code uploads them where.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="tim.html">PSX TIM</a>
+    <a href="../minigames.html">Minigames</a>
+    <a href="save-record.html">Per-character save record</a>
+    <a href="cdname.html">CDNAME numbering</a>
+    <a href="../tooling/byte-accounting.html">Byte accounting</a>
+  </div>
+</section>

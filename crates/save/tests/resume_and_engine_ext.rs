@@ -49,6 +49,7 @@ fn a_save() -> SaveFile {
             story_flag_bits: vec![0xAB; 512],
             money: 4321,
             inventory: vec![(3, 2), (9, 1)],
+            ..Default::default()
         },
         ext_v2: SaveExtV2 {
             play_time_seconds: 3661,

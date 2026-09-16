@@ -122,6 +122,27 @@ const CASES: &[(u32, f64, &str)] = &[
     // Two ordinary town scene bundles.
     (4, 95.0, "scene_asset_table"),
     (13, 95.0, "scene_asset_table"),
+    // The same bundle shape below the scene-bundle detector's count window:
+    // `dolk2` is count-4, `balden2` count-5, `other4` count-3, `other5`
+    // count-1. Retail bounds the count nowhere, so all four walk identically.
+    (69, 99.0, "descriptor_bundle"),
+    (319, 99.0, "descriptor_bundle"),
+    (1200, 99.0, "descriptor_bundle"),
+    (1220, 99.0, "descriptor_bundle"),
+    // The party pack `data\field\player.lzs`, count 3.
+    (874, 99.0, "descriptor_bundle"),
+    // Two entries in the same class that are NOT bundles - the class fits a
+    // descriptor count instead of reading one. Both are offset packs, one
+    // bare and one behind a DATA_FIELD chunk header.
+    (872, 99.0, "descriptor_bundle"),
+    (485, 99.0, "descriptor_bundle"),
+    // The runtime `efect.dat` 2-pack: header, inline sprite atlas, and two
+    // packs whose members are addressed by absolute file offset.
+    (873, 100.0, "efect_pack"),
+    // The two headerless 16bpp stills, claimed as the four bands their
+    // consumer uploads.
+    (1221, 100.0, "ringside_still"),
+    (1222, 100.0, "ringside_still"),
 ];
 
 #[test]
@@ -205,33 +226,156 @@ fn monster_archive_residue_is_all_padding() {
     );
 }
 
-/// The two entries the brief names as unexplained blobs stay unexplained -
-/// and the instrument says so in a shape rather than in a percentage.
+/// The two stills are claimed as the four uploads their consumer performs, and
+/// the arithmetic that makes that a claim rather than a guess holds on disc.
+///
+/// This used to assert the opposite - that both entries had no walker and
+/// reported only a residue shape. That was a fair statement of the instrument
+/// and a false one about the disc: the rectangle was already recovered from
+/// `FUN_801F6B24`'s immediates, so what the entries lacked was a binding.
 #[test]
-fn unwalked_blobs_report_a_shape_not_a_walker() {
+fn the_stills_are_claimed_as_four_band_uploads() {
+    use legaia_asset::ringside_still as still;
     let Some(dir) = extracted_root() else {
         eprintln!("extracted/PROT not present - skipping");
         return;
     };
-    for idx in [1221u32, 1222] {
+    let mut seen = 0usize;
+    for idx in [still::PROT_INDEX_DEFAULT, still::PROT_INDEX_LOW_HP] {
         let Some(acc) = account_entry(&dir, idx, 1) else {
             continue;
         };
+        seen += 1;
         assert_invariants(&acc);
-        assert_eq!(acc.walker.name(), "generic", "PROT {idx:04} has no walker");
-        assert!(
-            !acc.by_shape.is_empty(),
-            "PROT {idx:04}: residue must be classified"
+        assert_eq!(acc.walker.name(), "ringside_still");
+        assert_eq!(
+            acc.size,
+            still::ENTRY_BYTES,
+            "PROT {idx:04}: the still is exactly 320 x 256 x 2 bytes"
         );
-        eprintln!(
-            "[ok] PROT {idx:04} {} residue shapes: {:?}",
-            acc.label,
-            acc.by_shape
-                .iter()
-                .map(|s| (s.shape.as_str(), s.bytes))
-                .collect::<Vec<_>>()
+        let texture: usize = acc
+            .by_owner
+            .iter()
+            .filter(|o| o.owner == "texture")
+            .map(|o| o.bytes)
+            .sum();
+        assert_eq!(
+            texture,
+            still::ENTRY_BYTES,
+            "PROT {idx:04}: every byte belongs to one of the four uploads"
         );
+        assert_eq!(acc.residue_bytes, 0, "PROT {idx:04}: no residue");
+        eprintln!("[ok] PROT {idx:04} {} = 4 band uploads", acc.label);
     }
+    assert!(seen > 0, "neither still resolved");
+}
+
+/// Every pochi slot is the same 1927-byte fill file, and the 121 bytes above it
+/// are not fill at all: each is byte-identical to some *other* entry's bytes at
+/// the same file offset, which is the mastering buffer showing through.
+///
+/// The second half is what makes the filler's own accounting honest. Claiming
+/// the whole sector as one thing would hide it; leaving the tail in the residue
+/// would rank 266 slots of dev fill as work.
+#[test]
+fn pochi_slots_are_one_fill_file_plus_an_inherited_tail() {
+    use legaia_asset::categorize::{POCHI_FILL_LEN, is_pochi_filler};
+    let Some(dir) = extracted_root() else {
+        eprintln!("extracted/PROT not present - skipping");
+        return;
+    };
+    let mut entries: Vec<(u32, Vec<u8>)> = Vec::new();
+    for e in std::fs::read_dir(&dir).expect("read extracted/PROT") {
+        let p = e.expect("dir entry").path();
+        let Some(name) = p.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".BIN") {
+            continue;
+        }
+        let Some(idx) = prot_index_from_name(name) else {
+            continue;
+        };
+        entries.push((idx, std::fs::read(&p).expect("read entry")));
+    }
+    assert!(entries.len() > 1000, "extracted PROT looks truncated");
+
+    let fillers: Vec<&(u32, Vec<u8>)> =
+        entries.iter().filter(|(_, b)| is_pochi_filler(b)).collect();
+    assert!(fillers.len() > 200, "pochi slots: {}", fillers.len());
+
+    let reference = &fillers[0].1[..POCHI_FILL_LEN];
+    let mut tail_donors = 0usize;
+    for (idx, bytes) in &fillers {
+        assert_eq!(bytes.len(), 2048, "PROT {idx:04}: a filler is one sector");
+        assert_eq!(
+            &bytes[..POCHI_FILL_LEN],
+            reference,
+            "PROT {idx:04}: the fill file differs from the others"
+        );
+        // The tail is another entry's bytes at the same offset. Any entry at
+        // all, not a neighbour: the buffer is indexed by file offset and the
+        // packer wrote whatever it last held.
+        let tail = &bytes[POCHI_FILL_LEN..];
+        if entries.iter().any(|(other, b)| {
+            other != idx
+                && b.len() >= 2048
+                && !is_pochi_filler(b)
+                && &b[POCHI_FILL_LEN..2048] == tail
+        }) {
+            tail_donors += 1;
+        }
+    }
+    assert_eq!(
+        tail_donors,
+        fillers.len(),
+        "every filler's tail must appear at the same offset in a non-filler entry"
+    );
+    eprintln!(
+        "[ok] {} pochi slots: identical {POCHI_FILL_LEN}-byte fill file, \
+         {tail_donors} inherited tails",
+        fillers.len()
+    );
+}
+
+/// A bundle's type-`0x14` `FLAG` descriptor holds the pochi fill file.
+///
+/// The dispatcher answers a `0x14` with `type << 8` and never touches the
+/// payload (`docs/formats/asset-type.md`), so this slot's bytes are never read
+/// at runtime - and every one of them on the disc is an LZS-compressed copy of
+/// the same dev filler the 266 placeholder slots carry. That is what the slot
+/// is: a reserved descriptor the authoring tool filled rather than dropped.
+#[test]
+fn the_flag_descriptor_slot_carries_the_pochi_fill_file() {
+    use legaia_asset::categorize::{POCHI_FILL_LEN, is_pochi_filler};
+    use legaia_asset::scene_asset_table::descriptor_bundle_walk;
+    const FLAG_TYPE: u8 = 0x14;
+    let Some(dir) = extracted_root() else {
+        eprintln!("extracted/PROT not present - skipping");
+        return;
+    };
+    let mut checked = 0usize;
+    for idx in [69u32, 121, 156, 200, 227, 319, 338, 372, 400, 647, 816] {
+        let Some(path) = entry_path(&dir, idx) else {
+            continue;
+        };
+        let bytes = std::fs::read(&path).expect("read entry");
+        let descriptors = descriptor_bundle_walk(&bytes).expect("a descriptor bundle");
+        let flag = descriptors
+            .iter()
+            .find(|d| d.type_byte == FLAG_TYPE)
+            .unwrap_or_else(|| panic!("PROT {idx:04} has no FLAG descriptor"));
+        assert_eq!(flag.size as usize, POCHI_FILL_LEN);
+        let out = legaia_lzs::decompress(&bytes[flag.data_offset as usize..], flag.size as usize)
+            .expect("the FLAG slot decodes");
+        assert!(
+            is_pochi_filler(&out),
+            "PROT {idx:04}: the FLAG slot is not the pochi fill file"
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no count-4/5 bundle resolved");
+    eprintln!("[ok] {checked} FLAG descriptor slots carry the pochi fill file");
 }
 
 /// The overlay walker credits an extent only when the image's own bytes agree

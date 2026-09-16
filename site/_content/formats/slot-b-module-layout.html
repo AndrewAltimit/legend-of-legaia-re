@@ -64,19 +64,22 @@
   armed <code>0x19</code> / <code>0x1B</code> idle loop that no HALT immediately follows) and round the end up to
   4, because the records are word-aligned. That alignment step is the whole difference between reproducing a
   record's measured extent and missing it by exactly 4 bytes, which is what an earlier reading recorded as
-  evidence that no static bound existed. It bounds the top record on 58 of the 62 images that have one; the rest
-  end on a non-terminating instruction and stay unclaimed.</p>
+  evidence that no static bound existed.</p>
+  <p>A third word bounds a record only where neither of those turns up: a <code>0x09</code> WAIT carrying the
+  maximal operand <code>0x0FFF</code>. 4095 frames is over a minute, which no cast or summon part is on screen
+  for, so nothing above it ever runs - but that is a layout argument rather than a VM one, and the band emits the
+  same operand mid-program too. Ending the walk at the first one costs 48 of the extents the HALT rule reproduces
+  exactly, so the walk remembers the last one it stepped over and returns it only where it would otherwise have
+  no bound at all. Under that ordering every image on the disc that has a highest record bounds it.</p>
   <p>The residue has one direction, which is what makes the rule safe to consume - but the direction belongs to
   the <em>claim</em>, not to the walk's program counter. Of the 1027 extents the band itself bounds, the chain
-  reproduces 991 exactly, and <strong>not one of the misses terminates above the measured end</strong>: they all
-  return unterminated, and only a <code>HALT</code> or an armed idle loop produces a claim. So the rule never
-  claims bytes the band does not bound and cannot retire real code from the dump worklist.</p>
+  reproduces 1021 exactly, <strong>not one chain overruns a measured end</strong>, and the six that miss stall
+  below it. So the rule never claims bytes the band does not bound and cannot retire real code from the dump
+  worklist.</p>
   <p>The program counter does run past the end, though. Most misses stop exactly on the measured end - the record
   whose last instruction is non-terminating, the shape the rule was written for - a handful stop below it, and
   fourteen step past it before dying on a halfword that is no opcode, having mis-stepped a width somewhere inside
-  the record. "Every miss stalls below the end" describes the first two groups only, and the <code>0x09</code>
-  WAIT it names is one cause among several. For the highest record, where no next header exists, a miss simply
-  leaves no static bound.</p>
+  the record. "Every miss stalls below the end" describes the first two groups only.</p>
 </section>
 
 <section class="doc-section" id="why">

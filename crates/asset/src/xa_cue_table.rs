@@ -19,10 +19,20 @@
 /// `DAT_800788B8`.
 pub const XA_CUE_DURATION_TABLE_VA: u32 = 0x8007_88B8;
 
-/// Entries read: cue ids `0x100..=0x13F` cover every clip slot the two
-/// dispatchers can name (`(id - 0x100) >> 3` reaches slot 7 at `0x13F`),
-/// and the table's trailing entries past `0x37` are zero in retail.
-pub const XA_CUE_DURATION_ENTRIES: usize = 0x40;
+/// Entries read: cue ids `0x100..=0x20F`.
+///
+/// The table really is this wide. `FUN_8004FCC8` forms its index at
+/// `0x8004FD34..0x8004FD44` with **no range test**, so the bound is the data's
+/// own, and the data ends where the executable's string pool begins: the two
+/// bytes of every entry from `0x110` on are printable ASCII, and entries run
+/// non-zero up to `0x10F` (211 non-zero of the first `0x120`, the last at
+/// `0x10F`). The cast band names cues up to `0x20F`, which is exactly the last
+/// entry.
+///
+/// The earlier `0x40` bound rested on the claim that everything past `0x37`
+/// was zero. It is not - 208 live entries sat past it, and every cue a
+/// slot-B cast module names read off the end.
+pub const XA_CUE_DURATION_ENTRIES: usize = 0x110;
 
 /// Parse the raw `u16` entries out of a `SCUS_942.54` image. `None` when the
 /// image is not a PS-X EXE or the table falls outside its text segment.
@@ -61,9 +71,13 @@ mod tests {
         exe[0x1C..0x20].copy_from_slice(&t_size.to_le_bytes());
         let off = (XA_CUE_DURATION_TABLE_VA - t_addr) as usize + 0x800;
         exe[off + 0x18..off + 0x1A].copy_from_slice(&373u16.to_le_bytes());
+        // The cast band's highest cue, `0x20F` - index `0x10F`, the table's
+        // last entry. A `0x40`-wide table cannot hold it.
+        exe[off + 0x21E..off + 0x220].copy_from_slice(&41u16.to_le_bytes());
         let t = xa_cue_durations_from_scus(&exe).unwrap();
         assert_eq!(t.len(), XA_CUE_DURATION_ENTRIES);
         assert_eq!(t[0x0C], 373);
+        assert_eq!(t[0x10F], 41, "the cast band's top cue must be in range");
         assert_eq!(xa_cue_durations_from_scus(&[0u8; 0x1000]), None);
     }
 }

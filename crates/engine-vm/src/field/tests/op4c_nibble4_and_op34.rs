@@ -744,21 +744,21 @@ fn op_4c_n4_negative_value_sign_extends() {
 }
 
 #[test]
-fn op_4c_sub_3_sub_0_locks_input_and_yields() {
+fn op_4c_sub_3_sub_0_raises_ambient_particle_gate_and_yields() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x4C, 0x30], 0);
     assert_eq!(r, StepResult::Yield { resume_pc: 2 });
-    assert_eq!(host.field_input_lock_writes, vec![true]);
+    assert_eq!(host.ambient_particle_gate_writes, vec![true]);
 }
 
 #[test]
-fn op_4c_sub_3_sub_1_unlocks_input_and_yields() {
+fn op_4c_sub_3_sub_1_clears_ambient_particle_gate_and_yields() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x4C, 0x31], 0);
     assert_eq!(r, StepResult::Yield { resume_pc: 2 });
-    assert_eq!(host.field_input_lock_writes, vec![false]);
+    assert_eq!(host.ambient_particle_gate_writes, vec![false]);
 }
 
 #[test]
@@ -778,7 +778,7 @@ fn op_4c_sub_3_sub_4_b_c_advance_two_no_host_call() {
         );
         // None of the side-effect counters should fire for this no-op
         // group.
-        assert_eq!(host.field_input_lock_writes, Vec::<bool>::new());
+        assert_eq!(host.ambient_particle_gate_writes, Vec::<bool>::new());
         assert_eq!(host.party_state_clears, 0);
         assert_eq!(host.menu_refresh_calls, 0);
     }

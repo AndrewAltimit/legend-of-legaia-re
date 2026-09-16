@@ -1346,6 +1346,7 @@ dependencies = [
  "legaia-tim",
  "legaia-tmd",
  "legaia-vab",
+ "legaia-web-viewer",
  "legaia-xa",
  "libc",
  "log",

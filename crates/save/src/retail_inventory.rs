@@ -1,26 +1,26 @@
-//! Faithful, memory-safe model of the retail consumable-item inventory window.
+//! Faithful, memory-safe model of the retail consumable-item inventory array.
 //!
-//! Nothing on the **engine's frame path** constructs a [`RetailInventory`], and
-//! that is deliberate: the engine's gameplay inventory is
-//! `legaia_engine_core`'s typed item list, which is what the grant / consume /
-//! shop kernels operate on. Wiring this model there would trade a safe growable
-//! list for a bug-compatible fixed window; the ACE analysis below is the reason
-//! to keep the model, not a reason to run it.
+//! This is **the engine's bag**, not a model beside it.
+//! `legaia_engine_core`'s `ItemBag` holds a [`RetailInventory`] of
+//! [`ITEM_SLOTS_TOTAL`] slots and exposes a map-shaped adapter over it, so the
+//! grant / consume / shop kernels read as they always did while the slot
+//! order, the holes and the active window underneath them are retail's. One
+//! consumer indexes the bag by slot - PROT 0941's Steal is a rejection sampler
+//! over the physical array - and that is what a growable list could not
+//! express at all.
 //!
-//! What it does have is a *preservation* host: `save-tool items` reads the item
+//! The earlier reading, that wiring this model into the engine would "trade a
+//! safe growable list for a bug-compatible fixed window", had the trade
+//! backwards: the window is *behaviour*, not a defect, and the model performs
+//! no unsafe write in any case - the out-of-bounds add arm is surfaced as the
+//! [`AddOutcome::OobIdWrite`] data variant and stores nothing.
+//!
+//! It keeps its *preservation* host too: `save-tool items` reads the item
 //! window straight out of a real SC block and runs the accessor family over it
 //! without writing anything back - which window the selector installs for that
-//! party, which slot a consume empties, and whether it leaves a hole. That is
-//! the question this module exists to answer, asked against real save data
-//! rather than against a fixture. Two of its accessors stay inert even there
-//! and say so at their own tags.
-//!
-//! This is a *reverse-engineering / preservation* model of the fixed-window
-//! item inventory used by `SCUS_942.54`, not the engine's gameplay inventory.
-//! It reproduces the retail accessor family's exact slot order and stack-cap
-//! arithmetic so the behaviour (including the well-known out-of-bounds add
-//! primitive) can be reasoned about as data without ever performing an unsafe
-//! write.
+//! party, which slot a consume empties, and whether it leaves a hole - asked
+//! against real save data rather than against a fixture. One accessor stays
+//! inert even there and says so at its own tag.
 //!
 //! ## Retail layout
 //!
@@ -133,6 +133,14 @@
 
 /// Base address of the consumable-item window (`= SC+0x1818`).
 pub const ITEM_WINDOW_BASE: u32 = 0x8008_5958;
+
+/// The value the consume-by-id helper returns when the id is not in the
+/// active window (`li a2,0x100` at `0x80042374`).
+///
+/// It is deliberately one past the widest window, so the guard that follows
+/// it (`slot < gp[+0x2D4]`, `0x80042384`) fails for every window retail
+/// installs and the helper returns without a store.
+pub const NOT_IN_WINDOW: u16 = 0x100;
 
 /// Slot span of the general-item **page** the `Have 99 Items` cheat writes
 /// (`0x80085958..0x800859E8`).
@@ -412,12 +420,24 @@ impl AddHelperCaller {
 
 /// A faithful, memory-safe model of the retail fixed-window item inventory.
 ///
-/// `slots.len()` is always the window length; each slot is a `(id, count)`
-/// pair. An `id == 0` slot is empty (the retail empty sentinel).
+/// Each slot is a `(id, count)` pair; an `id == 0` slot is empty (the retail
+/// empty sentinel).
+///
+/// **Storage and window are two different lengths.** `slots.len()` is the
+/// physical array - [`ITEM_SLOTS_TOTAL`] for the retail bag - and the
+/// accessors below scan only `[start, end)`, the active window
+/// `gp[+0x2D2] / gp[+0x2D4]` that [`ItemWindow`] installs. A model built for
+/// one window's worth of slots gets the two lengths in one number, which is
+/// correct only while the window is the whole array; [`Self::set_window`]
+/// is what makes a solo character's half-bag expressible. Constructors
+/// default the window to the whole array, so a caller that never sets one
+/// behaves exactly as before.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetailInventory {
     slots: Vec<(u8, u8)>,
     base: u32,
+    /// `(gp[+0x2D2], gp[+0x2D4])` - the active window, in slot indices.
+    window: (usize, usize),
 }
 
 impl RetailInventory {
@@ -427,6 +447,7 @@ impl RetailInventory {
         Self {
             slots: vec![(0, 0); window_slots],
             base,
+            window: (0, window_slots),
         }
     }
 
@@ -435,7 +456,45 @@ impl RetailInventory {
     /// The window length becomes `slots.len()`.
     #[must_use]
     pub fn from_slots(base: u32, slots: Vec<(u8, u8)>) -> Self {
-        Self { slots, base }
+        let window = (0, slots.len());
+        Self {
+            slots,
+            base,
+            window,
+        }
+    }
+
+    /// Install the active window every accessor below is bounded by - the
+    /// three `gp`-relative halfwords `FUN_8004313C` writes
+    /// ([`ItemWindow::select`] picks which).
+    ///
+    /// Clamped to the physical array, so a [`ItemWindow::Full`] window over a
+    /// short model window stays in bounds.
+    pub fn set_window(&mut self, window: ItemWindow) {
+        let (s, e) = window.bounds();
+        let len = self.slots.len();
+        self.window = (s.min(len), e.min(len));
+    }
+
+    /// The installed window as `(start, end)` slot indices.
+    #[must_use]
+    pub fn window_bounds(&self) -> (usize, usize) {
+        self.window
+    }
+
+    /// The whole array, mutably - for a host that owns the bag and assigns a
+    /// slot outright (the engine's map-shaped adapter does, where retail's own
+    /// helpers have no equivalent call).
+    pub fn slots_mut(&mut self) -> &mut [(u8, u8)] {
+        &mut self.slots
+    }
+
+    /// The window's slots - what the pause menu's pages and every accessor
+    /// see, as against [`Self::slots`], which is the whole array.
+    #[must_use]
+    pub fn window_slots_view(&self) -> &[(u8, u8)] {
+        let (s, e) = self.window;
+        &self.slots[s.min(self.slots.len())..e.min(self.slots.len())]
     }
 
     /// Base address of the window.
@@ -457,21 +516,33 @@ impl RetailInventory {
     }
 
     /// The address one slot past this window (the full-bag OOB id target).
+    ///
+    /// Keyed on the window's `end`, which is the halfword the add helper's
+    /// failed bound check reads (`0x800422C0`), not on the physical array.
     #[must_use]
     pub fn oob_target(&self) -> u32 {
-        oob_target(self.base, self.slots.len())
+        oob_target(self.base, self.window.1)
     }
 
-    /// Find the slot holding `id`, scanning `[0, window)`.
+    /// Find the slot holding `id`, scanning the active window
+    /// `[gp[+0x2D2], gp[+0x2D4])` (`0x80042EE0`/`0x80042EE4` load both bounds
+    /// before the scan).
     ///
-    /// `id == 0` is the empty sentinel and is never matched.
+    /// `id == 0` is the empty sentinel and is never matched. An id held in a
+    /// slot **outside** the window is not found - that is the split bag, not a
+    /// miss.
     // PORT: FUN_80042EE0
     #[must_use]
     pub fn find_slot(&self, id: u8) -> Option<usize> {
         if id == 0 {
             return None;
         }
-        self.slots.iter().position(|&(sid, _)| sid == id)
+        let (s, e) = self.window;
+        self.slots
+            .get(s..e.min(self.slots.len()))?
+            .iter()
+            .position(|&(sid, _)| sid == id)
+            .map(|i| i + s)
     }
 
     /// Return the count of `id`, or 0 if it is absent.
@@ -495,16 +566,37 @@ impl RetailInventory {
     /// silently renumbered every following slot.)
     // PORT: FUN_80042310
     pub fn consume(&mut self, id: u8, qty: u8) -> bool {
+        self.consume_returning_slot(id, qty) != NOT_IN_WINDOW
+    }
+
+    /// [`consume`](Self::consume) with retail's own return value: the slot the
+    /// id was found in, or [`NOT_IN_WINDOW`] (`0x100`).
+    ///
+    /// The sentinel is the whole reason a caller would want this. The search
+    /// is window-bounded (`0x80042310`/`0x80042314` load `gp[+0x2D2]` and
+    /// `gp[+0x2D4]`) and the miss arm at `0x80042374` loads `0x100`, which the
+    /// guard at `0x80042384` (`slot < gp[+0x2D4]`) then fails - so the
+    /// function returns having touched no memory at all. A consumer that
+    /// picked its id from **outside** the window therefore removes nothing,
+    /// and retail's Steal is exactly such a consumer: its draw is over the
+    /// whole 256-slot array while its removal is window-bounded.
+    pub fn consume_returning_slot(&mut self, id: u8, qty: u8) -> u16 {
         let Some(i) = self.find_slot(id) else {
-            return false;
+            return NOT_IN_WINDOW;
         };
+        // Retail re-checks the found slot against `end` before it dereferences
+        // (the same guard the sentinel fails), and reads the id byte again: an
+        // empty slot returns the index without a store.
+        if i >= self.window.1 || self.slots[i].0 == 0 {
+            return i as u16;
+        }
         let count = self.slots[i].1;
         let new_count = count.saturating_sub(qty);
         self.slots[i].1 = new_count;
         if new_count == 0 {
             self.slots[i].0 = 0;
         }
-        true
+        i as u16
     }
 
     /// [`consume`](Self::consume) followed by [`normalize`](Self::normalize) -
@@ -525,12 +617,17 @@ impl RetailInventory {
     /// slot (`id != 0`), clamps the new count at 0, and zeroes the id byte
     /// **in place** when the count reaches 0 - it does **not** compact the
     /// window (the freed slot stays as a hole, distinguishing it from the
-    /// id-keyed [`consume`](Self::consume), which compacts). On the no-op paths
-    /// (slot out of range, or already empty) retail echoes back its third
-    /// argument unchanged; `echo` models that register.
+    /// id-keyed [`consume`](Self::consume), which leaves one too). On the
+    /// no-op paths (slot out of range, or already empty) retail echoes back its
+    /// third argument unchanged; `echo` models that register.
+    ///
+    /// The bound is the window's `end` alone (`lh v0,0x2d4(gp)` at
+    /// `0x8004304C`, with no `start` test): this entry point trusts its
+    /// caller's index below the window and only refuses one past it.
     // PORT: FUN_80043048
     pub fn consume_slot(&mut self, slot: i16, amount: u8, echo: u8) -> u8 {
-        if (slot as i32) >= self.slots.len() as i32 || slot < 0 {
+        let end = self.window.1.min(self.slots.len());
+        if (slot as i32) >= end as i32 || slot < 0 {
             return echo;
         }
         let i = slot as usize;
@@ -561,11 +658,20 @@ impl RetailInventory {
     /// occupancy is keyed on `id != 0` **alone** (a live id with a zero count
     /// survives rather than being dropped), and duplicate ids are merged rather
     /// than left as two stacks.
+    /// The pass runs over the **active window** only (`0x800423F0` /
+    /// `0x800423F4` load both bounds first): slots outside it keep their
+    /// contents and their order, so normalizing a half-bag never renumbers the
+    /// other character's half.
     // PORT: FUN_800423E0
     pub fn normalize(&mut self) {
-        let window = self.slots.len();
+        let (s, e) = self.window;
+        let e = e.min(self.slots.len());
+        if s >= e {
+            return;
+        }
+        let window = e - s;
         let mut survivors: Vec<(u8, u8)> = Vec::with_capacity(window);
-        for &(id, count) in &self.slots {
+        for &(id, count) in &self.slots[s..e] {
             if id == 0 {
                 continue;
             }
@@ -577,7 +683,7 @@ impl RetailInventory {
             }
         }
         survivors.resize(window, (0, 0));
-        self.slots = survivors;
+        self.slots[s..e].copy_from_slice(&survivors);
     }
 
     /// Deprecated name for [`normalize`](Self::normalize). Retail's
@@ -598,10 +704,15 @@ impl RetailInventory {
             self.slots[i].1 = new_count;
             return AddOutcome::Merged { slot: i, new_count };
         }
-        // (2) FREE-SLOT pass: first empty slot (id == 0).
-        if let Some(i) = self.slots.iter().position(|&(sid, _)| sid == 0) {
-            self.slots[i] = (id, qty.min(STACK_CAP));
-            return AddOutcome::Placed { slot: i };
+        // (2) FREE-SLOT pass: first empty slot (id == 0) **in the window** -
+        // `0x80042254` / `0x80042258` reload both bounds for this second scan.
+        let (s, e) = self.window;
+        let e = e.min(self.slots.len());
+        if s < e
+            && let Some(i) = self.slots[s..e].iter().position(|&(sid, _)| sid == 0)
+        {
+            self.slots[s + i] = (id, qty.min(STACK_CAP));
+            return AddOutcome::Placed { slot: s + i };
         }
         // (3) FULL bag: retail would store the id one slot past the window
         // before its (failing) bound check. Surface as data; perform no write.
@@ -1079,5 +1190,90 @@ mod tests {
                 "id {id:#04x} must never reach the OOB in a 256-window built from real ids: {outcome:?}",
             );
         }
+    }
+
+    // ---------------------------------------------------------------
+    // The active window
+    // ---------------------------------------------------------------
+
+    /// A 256-slot array with one item in each half, so every window arm has
+    /// something to find and something to miss.
+    fn split_bag() -> RetailInventory {
+        let mut slots = vec![(0u8, 0u8); ITEM_SLOTS_TOTAL];
+        slots[3] = (0x77, 5);
+        slots[200] = (0x78, 4);
+        RetailInventory::from_slots(ITEM_WINDOW_BASE, slots)
+    }
+
+    #[test]
+    fn find_is_bounded_by_the_installed_window() {
+        let mut inv = split_bag();
+        assert_eq!(inv.find_slot(0x77), Some(3));
+        assert_eq!(inv.find_slot(0x78), Some(200));
+
+        inv.set_window(ItemWindow::Low);
+        assert_eq!(inv.find_slot(0x77), Some(3));
+        assert_eq!(inv.find_slot(0x78), None, "the high half is out of bounds");
+        assert_eq!(inv.find_count(0x78), 0);
+
+        inv.set_window(ItemWindow::High);
+        assert_eq!(inv.find_slot(0x77), None, "the low half is out of bounds");
+        assert_eq!(inv.find_slot(0x78), Some(200));
+    }
+
+    #[test]
+    fn consume_outside_the_window_returns_the_sentinel_and_stores_nothing() {
+        let mut inv = split_bag();
+        inv.set_window(ItemWindow::Low);
+        assert_eq!(inv.consume_returning_slot(0x78, 1), NOT_IN_WINDOW);
+        assert_eq!(
+            inv.slots()[200],
+            (0x78, 4),
+            "the out-of-window slot is untouched"
+        );
+        // In window: the slot index comes back and the count drops.
+        assert_eq!(inv.consume_returning_slot(0x77, 1), 3);
+        assert_eq!(inv.slots()[3], (0x77, 4));
+    }
+
+    #[test]
+    fn add_places_into_the_windows_own_free_slots() {
+        let mut inv = split_bag();
+        inv.set_window(ItemWindow::High);
+        // Slot 0 is free, but it is not in this window.
+        assert_eq!(inv.add(0x79, 1), AddOutcome::Placed { slot: 128 });
+        assert_eq!(inv.slots()[0], (0, 0));
+        assert_eq!(inv.slots()[128], (0x79, 1));
+    }
+
+    #[test]
+    fn normalize_leaves_the_other_half_alone() {
+        let mut inv = split_bag();
+        // Two stacks of the same id in the low half, plus the high-half item.
+        inv.set_window(ItemWindow::Full);
+        assert_eq!(
+            inv.add(0x77, 3),
+            AddOutcome::Merged {
+                slot: 3,
+                new_count: 8
+            }
+        );
+        inv.set_window(ItemWindow::Low);
+        inv.normalize();
+        assert_eq!(inv.slots()[0], (0x77, 8), "the low half squeezed to slot 0");
+        assert_eq!(
+            inv.slots()[200],
+            (0x78, 4),
+            "the high half kept its slot through a low-half normalize"
+        );
+    }
+
+    #[test]
+    fn the_oob_target_follows_the_window_not_the_array() {
+        let mut inv = split_bag();
+        inv.set_window(ItemWindow::Low);
+        assert_eq!(inv.oob_target(), 0x8008_5A58);
+        inv.set_window(ItemWindow::Full);
+        assert_eq!(inv.oob_target(), 0x8008_5B58);
     }
 }

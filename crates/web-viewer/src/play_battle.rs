@@ -63,6 +63,12 @@ const ENCOUNTER_BANNER_FRAMES: u16 = 90;
 /// private to that module) - the actor stage the battle view-projection is
 /// built for, so an actor origin has to be scaled before it is projected.
 const BATTLE_WORLD_SCALE_LOCAL: f32 = 4.0;
+
+/// Stage rows the floating numeral's pop-in seat sits **above** the struck
+/// actor's projected origin, so the run starts over the body rather than at
+/// its feet. The native window's `VALUE_READOUT_ACTOR_LIFT`; paired here so
+/// the two hosts throw the numeral from the same height.
+const VALUE_READOUT_ACTOR_LIFT: i32 = 26;
 /// Left margin of the battle command / arts / magic submenus.
 const MENU_X: i32 = 8;
 /// First row Y of the battle command / arts / magic submenus.
@@ -817,11 +823,10 @@ impl LegaiaRuntime {
         );
 
         // Floating value readout: the numeral a landed hit throws, over the
-        // struck actor. Layout is the packet-pinned
-        // `engine-vm::battle_value_readout`; this page draws it through the
-        // font fallback rather than the retail 24x24 cells, because its
-        // overlay list is font-atlas quads (the native window has a
-        // screen-space VRAM sink and draws the real art).
+        // struck actor. With a battle render up, the page draws retail's own
+        // 24x24 cells off the resident effect atlas through the screen-prim
+        // pass (`battle_value_readout_prims`) and this font fallback stays
+        // empty; it only draws before the battle VRAM exists.
         out.extend(self.battle_value_readout_draws(font, surface_w, surface_h));
 
         // Encounter-transition banner: centred "ENCOUNTER!" over the
@@ -1077,43 +1082,43 @@ impl LegaiaRuntime {
     /// sizing arithmetic (`FUN_801F747C`). Shared by the text and chrome
     /// layers so the frame and the rows cannot disagree - the native window's
     /// `battle_tutorial_stage_rect` twin.
-    /// The frame's floating value readout, as font-fallback draws in surface
-    /// pixels.
+    /// This frame's value readout, laid out in 320x240 **stage** pixels: the
+    /// combo counter cluster and one run of digit cells per live damage
+    /// popup, seated over the struck actor.
     ///
-    /// One run of digit cells per live damage popup, seated over the struck
-    /// actor's projected screen position and laid out by
-    /// `legaia_engine_vm::battle_value_readout::value_cells` - the same model
-    /// the native window draws with retail's own 24x24 cells. Only the
-    /// newest popup per actor draws: retail's readout is a per-slot value
-    /// window, and two runs centred on one point interleave unreadably.
-    pub(crate) fn battle_value_readout_draws(
+    /// Shared by the retail-art path (`battle_value_readout_prims`) and the
+    /// font fallback below so the two cannot seat the same number
+    /// differently. Layout is `legaia_engine_vm::battle_value_readout`, the
+    /// same kernel the native window runs.
+    ///
+    /// Only the newest popup per actor contributes: retail's readout is a
+    /// per-slot value window, and two runs centred on one point interleave
+    /// unreadably.
+    ///
+    /// The projection uses the **stage** aspect (`4:3`), not the canvas
+    /// aspect: the cells are authored in the 320x240 stage the host then
+    /// letterboxes, which is the aspect `battle_fx_screen_prims` already
+    /// projects its trail and streak packets with.
+    fn battle_value_readout_layout(
         &self,
-        font: &legaia_font::Font,
-        surface_w: u32,
-        surface_h: u32,
-    ) -> Vec<TextDraw> {
+    ) -> Option<(
+        Option<legaia_engine_vm::battle_value_readout::ComboCluster>,
+        Vec<legaia_engine_vm::battle_value_readout::ValueCell>,
+    )> {
         use legaia_engine_vm::battle_value_readout as vr;
-        if surface_w == 0
-            || surface_h == 0
-            || (self.battle_hud.popups.is_empty() && self.battle_hud.combo.is_none())
-        {
-            return Vec::new();
+        if self.battle_hud.popups.is_empty() && self.battle_hud.combo.is_none() {
+            return None;
         }
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
-            return Vec::new();
-        };
-        // The FX camera: the page's battle view-projection with the retail 4x
-        // world scale composed on, i.e. the native `fx_cam`.
-        let vp = self.play_battle_camera_vp(surface_w as f32 / surface_h as f32);
+        let world = &self.scene_host.as_ref()?.world;
+        let vp = self.play_battle_camera_vp(4.0 / 3.0);
         if vp.len() != 16 {
-            return Vec::new();
+            return None;
         }
-        // The stage transform the rest of the battle chrome uses.
-        let scale = (surface_w / 320).min(surface_h / 240).clamp(1, 4);
-        let origin = (
-            (surface_w as i32 - 320 * scale as i32) / 2,
-            (surface_h as i32 - 240 * scale as i32) / 2,
-        );
+        let cluster = self
+            .battle_hud
+            .combo
+            .as_ref()
+            .map(|c| vr::combo_cluster(c.style, c.hits, c.total, c.slide()));
         let mut newest: Vec<&legaia_engine_core::battle_hud::DamagePopup> = Vec::new();
         for p in &self.battle_hud.popups {
             if p.status.is_some() {
@@ -1125,38 +1130,7 @@ impl LegaiaRuntime {
                 None => newest.push(p),
             }
         }
-        let mut out = Vec::new();
-        // The combo counter cluster - `N HIT` / `TOTAL x` or `DAMAGE x` -
-        // on the seats the steal-banner and tail-fire display lists pin,
-        // sliding in with placement record 80's glide. The native window
-        // draws the sheet's own word cells; this page keeps the layout and
-        // falls back to font glyphs, the same bargain as the digits below.
-        if let Some(c) = self.battle_hud.combo.as_ref() {
-            let cluster = vr::combo_cluster(c.style, c.hits, c.total, c.slide());
-            let labels: Vec<ui::ComboLabelView<'_>> = cluster
-                .labels
-                .iter()
-                .map(|l| ui::ComboLabelView {
-                    word: l.word,
-                    x: l.x,
-                    y: l.y,
-                })
-                .collect();
-            let cells: Vec<ui::ValueCellView> = cluster
-                .cells
-                .iter()
-                .map(|k| ui::ValueCellView {
-                    digit: k.digit,
-                    x: k.x,
-                    y: k.y,
-                    w: k.w,
-                    h: k.h,
-                })
-                .collect();
-            out.extend(ui::battle_combo_cluster_draws_for(
-                font, &labels, &cells, origin, scale,
-            ));
-        }
+        let mut cells = Vec::new();
         for p in newest {
             let Some(a) = world.actors.get(usize::from(p.slot)) else {
                 continue;
@@ -1178,24 +1152,115 @@ impl LegaiaRuntime {
             let ax = ((clip[0] / clip[3] * 0.5 + 0.5) * 320.0) as i32;
             let ay = ((0.5 - clip[1] / clip[3] * 0.5) * 240.0) as i32;
             let age = p.frames_total.saturating_sub(p.frames_remaining);
-            let cells: Vec<ui::ValueCellView> = vr::value_cells(p.amount, ax, ay - 26, age)
-                .into_iter()
-                .map(|c| ui::ValueCellView {
-                    digit: c.digit,
-                    x: c.x,
-                    y: c.y,
-                    w: c.w,
-                    h: c.h,
+            cells.extend(vr::value_cells(
+                p.amount,
+                ax,
+                ay - VALUE_READOUT_ACTOR_LIFT,
+                age,
+            ));
+        }
+        Some((cluster, cells))
+    }
+
+    /// Is the battle effect atlas's glyph page resident in the VRAM texture
+    /// this page samples? The browser twin of the native window's
+    /// `battle_vram.is_some()` gate: the page uploads the atlas into its
+    /// battle VRAM copy on the battle-render generation edge, so the render
+    /// being live in battle mode *is* the residency.
+    fn battle_value_readout_has_atlas(&self) -> bool {
+        self.battle_render.is_some()
+            && self
+                .scene_host
+                .as_ref()
+                .is_some_and(|h| h.world.mode == legaia_engine_core::world::SceneMode::Battle)
+    }
+
+    /// The frame's value readout as screen-space PSX primitives - retail's
+    /// own 24x24 numeral cells off the resident battle effect atlas.
+    ///
+    /// The quads come out of `legaia_engine_ui::battle_numerals`, the same
+    /// builder the native window emits through, so both hosts sample the same
+    /// texels off the same page through the same ordering-table pass. Empty
+    /// outside battle and before the battle VRAM exists, which is what leaves
+    /// the font fallback in charge for those frames.
+    pub(crate) fn battle_value_readout_prims(
+        &self,
+    ) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+        use legaia_engine_ui::battle_numerals as bn;
+        if !self.battle_value_readout_has_atlas() {
+            return Vec::new();
+        }
+        let Some((cluster, cells)) = self.battle_value_readout_layout() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        if let Some(c) = cluster.as_ref() {
+            out.extend(bn::combo_cluster_prims(c, bn::VALUE_READOUT_OT));
+        }
+        out.extend(bn::digit_run_prims(&cells, bn::VALUE_READOUT_OT));
+        out
+    }
+
+    /// Font-fallback draw list for the value readout, in surface pixels.
+    ///
+    /// Empty whenever the retail cells are drawable
+    /// (`battle_value_readout_prims`) - the two must never both draw, or
+    /// every number renders twice. This covers the frames before the battle
+    /// VRAM exists, the same bargain `ui::battle_value_readout_draws_for`
+    /// documents.
+    pub(crate) fn battle_value_readout_draws(
+        &self,
+        font: &legaia_font::Font,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<TextDraw> {
+        if surface_w == 0 || surface_h == 0 || self.battle_value_readout_has_atlas() {
+            return Vec::new();
+        }
+        let Some((cluster, cells)) = self.battle_value_readout_layout() else {
+            return Vec::new();
+        };
+        // The stage transform the rest of the battle chrome uses.
+        let scale = (surface_w / 320).min(surface_h / 240).clamp(1, 4);
+        let origin = (
+            (surface_w as i32 - 320 * scale as i32) / 2,
+            (surface_h as i32 - 240 * scale as i32) / 2,
+        );
+        let view = |k: &legaia_engine_vm::battle_value_readout::ValueCell| ui::ValueCellView {
+            digit: k.digit,
+            x: k.x,
+            y: k.y,
+            w: k.w,
+            h: k.h,
+        };
+        let mut out = Vec::new();
+        if let Some(c) = cluster.as_ref() {
+            let labels: Vec<ui::ComboLabelView<'_>> = c
+                .labels
+                .iter()
+                .map(|l| ui::ComboLabelView {
+                    word: l.word,
+                    x: l.x,
+                    y: l.y,
                 })
                 .collect();
-            out.extend(ui::battle_value_readout_draws_for(
+            let cluster_cells: Vec<ui::ValueCellView> = c.cells.iter().map(view).collect();
+            out.extend(ui::battle_combo_cluster_draws_for(
                 font,
-                &cells,
-                ui::VALUE_READOUT_FALLBACK_COLOR,
+                &labels,
+                &cluster_cells,
                 origin,
                 scale,
             ));
         }
+        let popup_cells: Vec<ui::ValueCellView> = cells.iter().map(view).collect();
+        out.extend(ui::battle_value_readout_draws_for(
+            font,
+            &popup_cells,
+            ui::VALUE_READOUT_FALLBACK_COLOR,
+            origin,
+            scale,
+        ));
         out
     }
 
@@ -1841,6 +1906,10 @@ impl LegaiaRuntime {
         // bands and the move-FX afterimage streak. Mutually exclusive with
         // the intro in practice (transition vs. live battle).
         prims.extend(self.battle_fx_screen_prims());
+        // The battle value readout - retail's 24x24 numeral cells and the
+        // `N HIT` / `TOTAL` counter cluster - off the resident effect atlas,
+        // through the same `battle_numerals` builder the native window emits.
+        prims.extend(self.battle_value_readout_prims());
         // The world's one live full-screen fade (the summon band's two
         // flashes, the escape white-out) through the same `fade_prim` kernel
         // the native window composites it with.

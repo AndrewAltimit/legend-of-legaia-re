@@ -34,8 +34,20 @@ hook and from CI, because there is no committed artifact to gate and the stamp
 it reads is itself untracked local state. It answers a question about your
 working copy, and answering it wrong is a warning rather than a refusal.
 
-Hashing only tracked files keeps the answer reproducible across clones: build
-output, editor scratch and `target/` never enter the stamp.
+The hashed set is every file the index knows about **plus every untracked file
+`.gitignore` does not exclude**, which is narrower than "everything on disk"
+and wider than "everything committed". Build output, editor scratch and
+`target/` stay out because they are ignored; a brand-new module that has not
+been `git add`ed stays in, because the compiler reads it either way.
+
+That second half was missing and it is the whole defect this paragraph now
+records: the enumeration was a plain `git ls-files`, so a branch that added
+three new modules to `web-viewer` and built the bundle from them got a stamp
+identical to the one before the modules existed. Two different bundles, one
+hash, and the gate's answer was "in sync" - the same false green that
+mtime-based reasoning gives, arrived at from the other direction. A stamp that
+cannot see a file the build compiles is worse than no stamp, because it is
+believed.
 """
 
 from __future__ import annotations
@@ -66,8 +78,11 @@ BUNDLE_ARTIFACTS = [
 EXTRA_INPUTS = ["Cargo.lock", "scripts/ci/build-wasm.sh"]
 
 # Stamp format version. Bump when the hashed set changes in a way that should
-# invalidate every existing stamp rather than read as a source edit.
-STAMP_VERSION = 1
+# invalidate every existing stamp rather than read as a source edit. Version 2
+# added un-ignored untracked files to the set: every version-1 stamp was
+# computed over a set that could not see a new module, so they are all
+# unreliable rather than merely old.
+STAMP_VERSION = 2
 
 
 def run(cmd: list[str]) -> str:
@@ -113,9 +128,17 @@ def source_closure() -> list[str]:
 
 
 def tracked_files(paths: list[str]) -> list[str]:
-    """Tracked files under `paths`, excluding what cannot affect the build."""
-    listing = run(["git", "ls-files", "-z", "--", *paths])
-    out = []
+    """Build inputs under `paths`: indexed files plus un-ignored untracked ones.
+
+    `--others --exclude-standard` is what makes a not-yet-added module count.
+    It is the difference between hashing what the repository has recorded and
+    hashing what the compiler will read, and only the second is a statement
+    about the bundle.
+    """
+    listing = run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *paths]
+    )
+    out = set()
     for name in listing.split("\0"):
         if not name:
             continue
@@ -124,7 +147,7 @@ def tracked_files(paths: list[str]) -> list[str]:
         # bundle, or the gate cries wolf on test-only commits.
         if name.endswith(".md") or "/tests/" in name or "/benches/" in name:
             continue
-        out.append(name)
+        out.add(name)
     return sorted(out)
 
 
@@ -133,7 +156,11 @@ def stamp_for(files: list[str]) -> str:
     digest = hashlib.sha256()
     digest.update(f"v{STAMP_VERSION}\n".encode())
     for name in files:
-        blob = (REPO / name).read_bytes()
+        path = REPO / name
+        # A staged-then-deleted file is still in the index, and its absence is
+        # a source change like any other - hashing a sentinel keeps the stamp
+        # defined instead of crashing the gate mid-comparison.
+        blob = path.read_bytes() if path.is_file() else b"\0<missing>"
         digest.update(name.encode())
         digest.update(b"\0")
         digest.update(hashlib.sha256(blob).hexdigest().encode())

@@ -68,7 +68,6 @@ fn disc_equip_restrictions_gate_equip_session_item_list() {
     use legaia_engine_core::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
     use legaia_engine_core::equip_session::EquipSession;
     use legaia_engine_core::equipment::DiscEquipInfo;
-    use std::collections::HashMap;
 
     let Some(path) = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -105,7 +104,7 @@ fn disc_equip_restrictions_gate_equip_session_item_list() {
 
     // End-to-end through the equip session item filter. A weapon-slot picker
     // (UI slot 0) shows only weapons the active character may equip.
-    let mut inv = HashMap::new();
+    let mut inv = legaia_engine_core::world::ItemBag::new();
     inv.insert(0x25, 1); // Force Blade (Vahn only)
     inv.insert(0x22, 1); // Survival Knife (anyone)
 

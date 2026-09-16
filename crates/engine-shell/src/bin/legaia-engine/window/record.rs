@@ -30,6 +30,7 @@ pub(crate) fn cmd_record(
         save_dir,
         None,
         None,
+        None,
         false,
         false,
         false,

@@ -1061,6 +1061,69 @@ impl World {
     ///   that list is [`crate::world::World::party_roster_slot`], so the id is
     ///   its roster slot plus one.
     ///
+    /// The **cure selector** three cast modules read out of `0x801F6960`.
+    ///
+    /// That word is not a module constant and not a per-spell field: it is the
+    /// Seru side-effect stager's own output latch. `FUN_801F3D3C` picks an
+    /// 8-byte record out of the `[element][level band]` table at `0x801F6870`
+    /// (`0x801F4420..0x801F4480`: `0x801F6870 + ((level - 3) >> 1) * 8 +
+    /// element * 0x20`) and stores the record's **first byte** to `0x801F6960`.
+    /// On the six damaging rows that byte is a percent (`5 / 10 / 15 / 20`);
+    /// on the **light** row it is a cure class `1..=4`, and `1..=4` is exactly
+    /// the switch PROT 0905 (`0x801F7D68`), 0911 (`0x801F7BE4`) and 0919
+    /// (`0x801F8168`) compare against. So a non-light summon's cast leaves a
+    /// percent in the latch, matches none of the four arms and cures nothing -
+    /// the element gate is the latch's own value, not a second test.
+    ///
+    /// The port's copy of that latch is
+    /// [`legaia_engine_vm::battle_action::BattleActionCtx::follow_up_pending`],
+    /// written on every player Seru cast by
+    /// [`Self::stage_seru_side_effect`]. `min_level` is the module's own
+    /// `sltiu v0,v0,0x3` gate, below which its ladder is skipped entirely.
+    ///
+    /// REF: FUN_801F3D3C (the stager), FUN_801F69D8 (the three readers)
+    fn cure_selector(&self, caster_slot: u8, spell_id: u8, min_level: u8) -> Option<u8> {
+        if self.caster_magic_power_byte(caster_slot, spell_id) < min_level {
+            return None;
+        }
+        Some(self.battle_ctx.follow_up_pending)
+    }
+
+    /// What PROT 0905's restore arm needs: the caster's per-spell magic level,
+    /// the ally target's max HP and the cure selector above.
+    ///
+    /// `apply_hp` is **clear**. The arm's cure sweep and its phase machine are
+    /// this body's, but its HP store is not: the engine folds a cast's HP
+    /// outcome exactly once at [`Self::cast_spell_on_slots_prepaid`], and that
+    /// fold already routes this module's own magnitude in through
+    /// `seru_tick_heal_amount`. Since [`Self::summon_stager_tick`] re-enters
+    /// the module every frame, leaving the store here would restore twice -
+    /// once in the arm, once in the fold. This is the same neutral-magnitude
+    /// posture the rest of the band takes.
+    ///
+    /// REF: FUN_801F69D8 (PROT 0905 arm 9, `0x801F7C28..0x801F7F4C`)
+    fn vera_restore(
+        &self,
+        caster_slot: u8,
+        victim_slot: u8,
+        spell_id: u8,
+    ) -> Option<vm::cast_seru_ticks_a::VeraRestore> {
+        let magic_level = self.caster_magic_power_byte(caster_slot, spell_id);
+        let max_hp = self.actors.get(victim_slot as usize)?.battle.max_hp;
+        Some(vm::cast_seru_ticks_a::VeraRestore {
+            magic_level,
+            max_hp,
+            cure_tier: self
+                .cure_selector(
+                    caster_slot,
+                    spell_id,
+                    vm::cast_seru_ticks_a::VERA_CURE_MIN_LEVEL,
+                )
+                .unwrap_or(0),
+            apply_hp: false,
+        })
+    }
+
     /// REF: FUN_801F69E8 (`0x801F6B50..0x801F6D28`, PROT 0907 arm 0)
     fn nighto_verdict(
         &mut self,
@@ -1441,7 +1504,7 @@ impl World {
                     let (step, taken) =
                         arms::steal_tick(&mut ctx, &mut caster, CAST_STEAL_RUN_CLIP, outcome);
                     if let Some(arms::StealOutcome::FromBag { item }) = taken {
-                        self.take_one_from_bag(item);
+                        let _removed = self.take_one_from_bag(item);
                     }
                     Some(step)
                 }
@@ -1715,7 +1778,8 @@ impl World {
                             })
                         }
                         905 => {
-                            let (step, _) = ticks_a::vera_tick(&mut ctx, &mut seats, who, None);
+                            let restore = self.vera_restore(caster_slot, victim_slot, spell_id);
+                            let (step, _) = ticks_a::vera_tick(&mut ctx, &mut seats, who, restore);
                             (step, Vec::new())
                         }
                         906 => ticks_a::gizam_tick(&mut ctx, &mut seats, who, |_| None),
@@ -1854,9 +1918,16 @@ impl World {
     /// render writes; the damage step itself stays a tested kernel rather
     /// than becoming a second application. That is the same posture every
     /// other non-sweep tick body in the band takes, and it is why PROT 0911's
-    /// heal amount is passed as `0` - its real magnitude
-    /// (`cast_seru_ticks_b::orb_heal_amount` of the caster's per-magic level,
-    /// a character-record field) has no seam here yet.
+    /// heal amount is passed as `0`.
+    ///
+    /// The magnitude is not lost by that: `seru_tick_heal_amount` computes
+    /// `cast_seru_ticks_b::orb_heal_amount` of the caster's per-spell magic
+    /// level (the character record's `+0x161` byte, found by scanning the
+    /// learned-id list at `+0x13D`) and overrides the spell catalog's
+    /// placeholder inside the fold, so the amount a live Orb restores is
+    /// retail's `(level << 6) + 0x1C0` clamped to the seat's missing HP.
+    /// Passing it here as well would restore twice, once per owner - which is
+    /// exactly what PROT 0905 used to do.
     fn run_seru_b_tick(
         &mut self,
         entry: u32,
@@ -1895,7 +1966,12 @@ impl World {
             ),
             911 => {
                 let maxes: Vec<u16> = self.actors.iter().map(|a| a.battle.max_hp).collect();
-                let (step, _healed) = seru::orb_tick(ctx, seats, summon_slot, 0, None, |s| {
+                // Spell id for a `cast_seru_ticks_b` entry: the player
+                // Seru-magic block is linear, `entry = 903 + (id - 0x81)`.
+                let spell_id = (entry - 903 + 0x81) as u8;
+                let cleanse =
+                    self.cure_selector(caster_slot, spell_id, seru::ORB_CLEANSE_MIN_LEVEL);
+                let (step, _healed) = seru::orb_tick(ctx, seats, summon_slot, 0, cleanse, |s| {
                     maxes.get(s as usize).copied().unwrap_or(0)
                 });
                 (step, Vec::new())
@@ -2261,19 +2337,29 @@ impl World {
     /// draws, one RNG draw per rejection so the shared cursor advances the way
     /// retail's does) is the module's, byte for byte.
     ///
-    /// The **array** it draws over is not. Retail samples the physical
-    /// 256-slot bag at `0x80085958` including its holes; the engine's bag is a
-    /// `HashMap<u8, u8>` with no slot coordinate, so this projects the
-    /// occupied ids into slots `0 ..= n-1` in id order. Two effects, both
-    /// disclosed in `docs/subsystems/inventory.md` ("What the port does, and
-    /// the one place the shape shows"): every draw hits an occupied slot, so
-    /// the first accepted draw wins where retail would reject its way past
-    /// holes; and the module's low-half floor (`ctx[+0x11] == 4` re-draws
-    /// while `slot < *(0x8007B5EA)`) is not applied, because a floor over slot
-    /// numbers means nothing over a projection with no holes - which is why no
-    /// `min_slot` is passed here. Closing it is a `PartyState` change, not a
-    /// change to this function.
-    fn roll_cast_steal(&mut self, victim_slot: u8) -> Option<vm::cast_arm_ticks::StealOutcome> {
+    /// The **array** is retail's own: [`crate::world::ItemBag`] holds the
+    /// physical 256 slots, so the draw rejects its way past a played-through
+    /// bag's holes exactly as retail's does, and the third acceptance leg is
+    /// the item record's **shop price** halfword (`0x80074368 + id*0xC + 2`,
+    /// `0x801F789C`) rather than a tautology over the ids the bag already
+    /// holds - the quest and found-only items carry a zero price and are
+    /// unstealable.
+    ///
+    /// The re-roll floor is applied too. `0x801F77E8` arms it on
+    /// `DAT_8007BD10[1] == 4` (the second present-party member's character id)
+    /// and re-draws while `slot < *(i16*)0x8007B5EA`, which is `gp[+0x2D2]` -
+    /// the active window's **start** (`gp = 0x8007B318`), so the arm confines
+    /// the draw to the window's own half.
+    ///
+    /// The removal is asymmetric with the draw, and deliberately so: the draw
+    /// is over the whole array while `FUN_80042310` scans only
+    /// `[gp[+0x2D2], gp[+0x2D4])` and returns `0x100` for an id outside it,
+    /// touching nothing. A steal that lands on the other half's slot therefore
+    /// announces an item the party keeps.
+    pub(in crate::world) fn roll_cast_steal(
+        &mut self,
+        victim_slot: u8,
+    ) -> Option<vm::cast_arm_ticks::StealOutcome> {
         use vm::cast_arm_ticks::StealOutcome;
         use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
         if victim_slot >= FIRST_MONSTER_SEAT {
@@ -2290,47 +2376,50 @@ impl World {
                 hit: roll < entry.chance_pct,
             });
         }
-        let mut bag: Vec<(u8, u8)> = vec![(0, 0); 256];
-        let mut ids: Vec<(u8, u8)> = self
-            .party
-            .inventory
-            .iter()
-            .map(|(id, n)| (*id, *n))
-            .collect();
-        ids.sort_unstable();
-        for (i, (id, n)) in ids.iter().enumerate() {
-            if i < bag.len() {
-                bag[i] = (*id, *n);
+        let bag: Vec<(u8, u8)> = self.party.inventory.slots().to_vec();
+        // The price leg, precomputed so the draw closure can borrow `self`
+        // for the RNG. Without a disc image there is no item table to read a
+        // price from, so the leg cannot be evaluated and every id passes -
+        // a disc-free host still spends retail's draws and rejects on the
+        // two legs it can see.
+        let mut priced = [true; 256];
+        if let Some(data) = self.shops.item_shop_data.as_ref() {
+            for (id, cell) in priced.iter_mut().enumerate() {
+                *cell = data.price(id as u8) != 0;
             }
         }
-        let known: Vec<u8> = ids.iter().map(|(id, _)| *id).collect();
+        // `DAT_8007BD10[1] == 4`: the second present-party member's character
+        // id, which the engine mirrors as `party_roster_slot(1) + 1`. A party
+        // of one has no second member, and the port's identity mapping would
+        // fabricate one, so the arm needs both.
+        let floor = (self.party.party_count > 1 && self.party_roster_slot(1) as u8 + 1 == 4)
+            .then(|| self.party.inventory.window_bounds().0.min(0xFF) as u8);
         // One `next_rng` per rejected slot, not a pre-drawn batch: retail
         // advances the shared cursor once per draw, so over-drawing would
         // desynchronise every later roll in the battle.
-        let mut slot = None;
-        for _ in 0..vm::cast_arm_ticks::STEAL_DRAW_BUDGET {
-            let draw = (self.next_rng() % 0x100) as u8;
-            if let Some(hit) =
-                vm::cast_arm_ticks::steal_bag_slot_from_draw(&bag, draw, |id| known.contains(&id))
-            {
-                slot = Some(hit);
-                break;
-            }
-        }
+        let slot = vm::cast_arm_ticks::steal_pick_bag_slot(
+            &bag,
+            floor,
+            || self.next_rng(),
+            |id| priced[id as usize],
+        );
         match slot.and_then(|s| bag.get(s as usize).copied()) {
             Some((item, _)) => Some(StealOutcome::FromBag { item }),
             None => Some(StealOutcome::BagEmpty),
         }
     }
 
-    /// The inventory consume PROT 0941's Steal performs (`FUN_80042310`).
-    fn take_one_from_bag(&mut self, item: u8) {
-        if let Some(n) = self.party.inventory.get_mut(&item) {
-            *n = n.saturating_sub(1);
-            if *n == 0 {
-                self.party.inventory.remove(&item);
-            }
-        }
+    /// The inventory consume PROT 0941's Steal performs (`FUN_80042310`),
+    /// through the window-bounded helper.
+    ///
+    /// Returns whether a slot was actually emptied: the helper's `0x100`
+    /// sentinel says the id is outside the active window, and retail's own
+    /// steal ignores the return, so the message has already been staged by the
+    /// time the removal declines. The engine keeps the same order and reports
+    /// the difference instead of hiding it.
+    pub(in crate::world) fn take_one_from_bag(&mut self, item: u8) -> bool {
+        self.party.inventory.consume_returning_slot(item, 1)
+            != legaia_save::retail_inventory::NOT_IN_WINDOW
     }
 
     /// Materialise the seat PROT 0940's split allocated.

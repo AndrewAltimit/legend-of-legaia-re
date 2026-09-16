@@ -283,6 +283,96 @@ impl CardView {
     }
 }
 
+/// A memory-card image **mounted** in a host's card port.
+///
+/// One type, both hosts. The native window mounts a file into port 2 and the
+/// browser page holds imported images in its rack; they used to carry two
+/// near-identical structs that drifted - only one cached the detected view,
+/// only the other tracked a dirty bit, and each derived the preview grid its
+/// own way.
+///
+/// The container bytes are held **verbatim**, in whatever container they
+/// arrived in - a raw `.mcr` / `.mcd`, a DexDrive `.gme`, a single-save
+/// `.mcs` - and every block address goes through the [`CardView`] detected
+/// for them, so a wrapper header costs the hosts no code.
+#[derive(Debug, Clone)]
+pub struct MountedCard {
+    /// The container bytes exactly as they arrived, plus any in-place SC-block
+    /// writes. Never re-encoded.
+    pub bytes: Vec<u8>,
+    /// Display label: the image's own file or save name.
+    pub label: String,
+    /// Detected container view - block and directory-frame addressing.
+    pub view: CardView,
+    /// `true` once a save has written into this card and the host has not
+    /// exported it since.
+    pub dirty: bool,
+}
+
+impl MountedCard {
+    /// Mount bytes a host already holds (an upload, a fetch, a test fixture).
+    ///
+    /// Errors when the bytes are not a container [`detect`] recognises, and
+    /// that failure is the point: an *unmounted* port reads empty, so a wrong
+    /// file mounted quietly would present as a card with nothing on it rather
+    /// than as the mistake it is.
+    pub fn from_bytes(bytes: Vec<u8>, label: impl Into<String>) -> Result<Self> {
+        let view = detect(&bytes)?;
+        Ok(Self {
+            bytes,
+            label: label.into(),
+            view,
+            dirty: false,
+        })
+    }
+
+    /// Mount the container at `path`, labelled with its file name.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn open(path: &std::path::Path) -> Result<Self> {
+        use anyhow::Context;
+        let bytes = std::fs::read(path)
+            .with_context(|| format!("read memory-card image {}", path.display()))?;
+        let label = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("MEMORY CARD")
+            .to_string();
+        Self::from_bytes(bytes, label)
+            .with_context(|| format!("mount memory-card image {}", path.display()))
+    }
+
+    /// The save in grid `cell`, or `None` when the block holds none.
+    ///
+    /// Grid cell `i` is card block `i + 1`: block 0 is the card directory and
+    /// is never a save. A block whose frame does not mark it as a chain
+    /// *start* holds nothing of its own - a mid-chain continuation belongs to
+    /// the save that opened the chain.
+    pub fn save_at(&self, cell: u8) -> Option<(crate::SaveFile, crate::SaveResume)> {
+        let block = cell.checked_add(1)?;
+        let sc = self.sc_block(block)?;
+        let sf = crate::SaveFile::from_retail_sc_block(sc, card::RETAIL_SC_PARTY_RECORDS).ok()?;
+        Some((sf, crate::SaveResume::from_retail_sc_block(sc)))
+    }
+
+    /// This card's SC block `block`, when the block opens a save chain.
+    pub fn sc_block(&self, block: u8) -> Option<&[u8]> {
+        self.view
+            .block_is_save_start(&self.bytes, block)
+            .then(|| self.view.sc_block(&self.bytes, block))
+            .flatten()
+    }
+
+    /// Does `block` open a save chain?
+    pub fn block_is_save_start(&self, block: u8) -> bool {
+        self.view.block_is_save_start(&self.bytes, block)
+    }
+
+    /// This card's directory frame for `block`.
+    pub fn dir_frame(&self, block: u8) -> Option<&[u8]> {
+        self.view.dir_frame(&self.bytes, block)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

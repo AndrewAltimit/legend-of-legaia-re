@@ -21,7 +21,7 @@ same table used by the save screen). The shop sub-screens handle:
 |---|---|---|
 | Buy list | `ShopBuy` | Shows available items + prices. Cursor selects an item. |
 | Sell list | `ShopSell` | Shows player inventory. Cursor selects an item to sell. |
-| Quantity | `ShopQuantity` | Numeric selector (1..9). Confirms how many to buy/sell. |
+| Quantity | `ShopQuantity` | The **engine's** numeric selector: a list whose cursor is the quantity, bounded by retail's own maximum. Retail picks the quantity a different way - see [the pickers below](#retail-quantity-pickers-menu-overlay-sub-screens). |
 | Confirm | `ShopConfirm` | Yes / No prompt. Yes commits the transaction. |
 | Exit | `ShopExit` | Clears session, returns to field. |
 
@@ -104,9 +104,14 @@ against the obvious reading:
 ### Retail quantity pickers (menu-overlay sub-screens)
 
 The pause-shop's quantity screens are two sibling state machines in the
-menu overlay, both sharing one pad decode - Right/Left step the quantity
-by 1, Down/Up by 10, clamped to `[1, max]`, every step gated so walking
-off either end is a silent no-op:
+menu overlay, and **neither is a list**. Both share one pad decode on a
+scalar at `DAT_801E46B4` - Right (`andi 0x2000`) `+1`, Left (`andi 0x8000`)
+`-1`, Down (`andi 0x4000`) `+10`, Up (`andi 0x1000`) `-10`, clamped to
+`[1, max]`, every step gated so walking off either end is a silent no-op.
+Neither calls `FUN_801D688C`, the cursor-nav primitive the recipient picker
+on the same screen does call, and neither reads a row table or a stride.
+Confirm commits straight out of the stepper; there is no Yes / No
+sub-screen between them and the transaction.
 
 - **Buy** (`FUN_801DB7F4`): `max = min(gold / price, 99, 99 - held)`;
   the commit runs Point Card accrual, bag add, gold debit
@@ -154,8 +159,16 @@ affordability refusal beat plus the item-record `+0` kind switch), and
 an equipment row opens `BuyRecipientSession` behind the
 `MenuRuntime::retail_equipment_buy` opt-in - the browser play page
 enables it and draws windows 36 / 25 / 41 over the parked buy list.
-The two quantity **sessions** are not yet the hosts' quantity screen
-(the `ShopQuantity` list still drives `ShopSession::set_quantity`).
+The two quantity **sessions** are not yet the hosts' quantity screen: the
+`ShopQuantity` list still drives `ShopSession::set_quantity`, and the
+switch that would change that is named in
+[the verdict below](#why-the-quantity-screen-is-still-a-list). What the
+hosts no longer have is retail's **bound** wrong - the screen used to offer
+a flat nine rows, capping a purchase at nine copies whatever the purse and
+the stack allowed; the row count is now
+`shop::quantity_row_count` off the same `min(gold / price, 99, 99 - held)`
+the retail stepper derives, through `ShopSession::quantity_rows` so the menu
+runtime and both host row lists read one kernel.
 The Point Card accrual and its window-31 toast *are* live on both the
 `ShopConfirm` commit and the recipient picker - `MenuRuntime` owns the
 gate and the beat, `World::minigames.point_card` the bank. It stays out of
@@ -567,6 +580,27 @@ see `ghidra/scripts/funcs/overlay_menu_801db7f4.txt`). The port mirrors the
 gate in the grant kernel (`World::buy_from_shop` refuses a buy that would
 push the held count past `shop::SHOP_HELD_CAP` = 99; the picker side is
 `shop::buy_qty_max`).
+
+### Why the quantity screen is still a list
+
+The two sessions are ported, unit-tested and inert, and the switch that would
+make them the hosts' screen is a **menu-runtime** change, not a call: the
+engine routes `ShopBuy` -> `ShopQuantity` -> `ShopConfirm` through the menu
+VM's list graph, while the retail stepper owns its own phases, cues and (on the
+buy side) a Point Card toast that waits for a press, and commits with no
+confirm screen at all. Adopting them replaces `MenuRuntime`'s input handling
+for that screen, retires `ShopConfirm` from the shop flow, and changes the row
+model both hosts draw from - `MenuRuntime::recipient_session` is the shape it
+would take, opened behind a host opt-in the way `retail_equipment_buy` is.
+
+What is *not* a reason to do it is the bound, which is the part that was
+actually wrong on screen and is fixed: the row count is retail's own maximum
+now, so a rich player can buy the 99 copies retail allows.
+
+An earlier reading had this backwards and is worth recording so it is not
+re-derived: the "nine-row list whose cursor is the quantity" was taken for
+retail's shape and the stepper for the engine's. It is the other way round -
+the nine-row list was the port's, and the nine was not retail's number at all.
 
 ## Open items
 

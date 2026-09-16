@@ -841,18 +841,13 @@ struct PlayWindowApp {
     /// splash, wander ripples, catch-celebration bursts. Ticked per frame in
     /// `tick_minigame_extras`; drawn by the HUD builder.
     minigame_fx: minigame_fx::MinigameFxPool,
-    /// The dance pre-song count-in phase (the `FUN_801cf470` below-10 states
-    /// as a host phase): the parsed game held pending, the banner's own frame
-    /// counter, and the once-only intro-cue latch. The dance enters when the
-    /// envelope finishes.
-    dance_countin: Option<(legaia_engine_core::dance::DanceGame, i32, bool)>,
-    /// This frame's count-in banner envelope, for the HUD builder.
-    dance_countin_draw: Option<legaia_engine_core::dance::CountInBanner>,
-    /// The Disco King tutorial actor running beside a how-to dance run
-    /// (`J` starts one).
-    dance_tutorial: Option<legaia_engine_core::dance_tutorial::DanceTutorial>,
-    /// This frame's tutorial captions / cursor, for the HUD builder.
-    dance_tutorial_frame: Option<legaia_engine_core::dance_tutorial::TutorialFrame>,
+    // The dance pre-song count-in and the Disco King how-to tutorial used to
+    // live here, as a host phase holding the parsed game pending. They are
+    // `World::minigames.dance_countin` / `dance_tutorial` now, stepped by the
+    // world's own dance tick, so the browser play page counts in on the same
+    // frames and the **door-warp** entry gets a count-in at all. The HUD
+    // builder reads `dance_countin_banner` / `dance_tutorial_frame` off the
+    // world.
     /// Score high-water mark the sequence-banner spawn edges against.
     dance_fx_score: u32,
     /// The fishing venue's free-swimming fish actor (idle/cast phases).
@@ -927,6 +922,25 @@ struct PlayWindowApp {
     pad: u16,
     /// Input binding loaded from file (or default).
     mapping: legaia_engine_core::input::Mapping,
+    /// Physical keys currently held.
+    ///
+    /// Only the **Key Config** sub-screen needs this: winit delivers a stream
+    /// of `Pressed` events while a key is held, and a rebind that consumed
+    /// every one of them would bind the confirm key to the row the instant
+    /// the screen opened. The set turns that stream back into one edge per
+    /// key. The pad word cannot serve: it only holds keys that are *already*
+    /// bound to a button, and the whole point of the screen is to bind ones
+    /// that are not.
+    keys_down: std::collections::HashSet<KeyCode>,
+    /// The most recent fresh key-down's engine key **name**
+    /// (`keycode_to_name`), consumed once by the pause menu's Key Config
+    /// screen. `None` when nothing new was pressed since the last tick.
+    ///
+    /// The vocabulary is the binding table's own
+    /// ([`legaia_engine_core::input::KEY_NAME_DOM_CODES`]), so the two hosts
+    /// bind out of the same key set - a key the table has no name for is not
+    /// bindable on either.
+    pending_key_name: Option<&'static str>,
     /// Menu runtime - drives shop / inn / status screens. Ticked per frame
     /// when `is_open()`; renders shop overlay via `shop_draws_for`.
     menu_runtime: legaia_engine_core::menu_runtime::MenuRuntime,
@@ -989,6 +1003,16 @@ struct PlayWindowApp {
     /// Save directory the save-select session reads / writes against - the
     /// card mounted in port 1 of the shell's rack (`disk_save_rack`).
     save_dir: std::path::PathBuf,
+    /// A real PSX memory-card image mounted in **port 2** (`--card`), or
+    /// `None` for the empty port.
+    ///
+    /// Owned here because the rack and the block grid are rebuilt from it
+    /// every time the save screen asks, and because a Load off that port
+    /// reads the block out of these bytes. The browser play page's rack is
+    /// the same model with two mountable ports (`web-viewer`'s `cards.rs`);
+    /// this host mounts the engine's own save directory in port 1 and an
+    /// image in port 2.
+    card: Option<MountedCard>,
     /// The save screen's shared driver: block-grid cursor + the card read
     /// behind it. Lives in `engine-core` so this window and the browser play
     /// page step the same cursor and gate the same confirms.
@@ -1219,9 +1243,10 @@ pub(crate) use run::cmd_play_window;
 // that `use super::*` still resolve them unqualified.
 pub(in crate::window) use run::{build_window_scene_resources, cmd_play_window_with_record};
 pub(crate) use save_select_helpers::{
-    build_slot_info_view, confirm_dialog_slide_y, disk_port_blocks, disk_save_rack,
-    info_panel_slide_offset, read_slot_save, save_select_phase_text_draws, save_select_title_word,
-    scan_save_dir, slot_leader_char_id, write_slot_save,
+    MountedCard, build_slot_info_view, confirm_dialog_slide_y, disk_port_blocks_with_card,
+    disk_save_rack_with_card, info_panel_slide_offset, read_slot_save,
+    save_select_phase_text_draws, save_select_title_word, scan_save_dir, slot_leader_char_id,
+    write_slot_save,
 };
 pub(crate) use str_player::{cmd_play_str, resolve_iso_file};
 
@@ -1246,6 +1271,13 @@ impl PlayWindowApp {
 /// the retail settings plus the engine-only knobs (BGM / SFX volume,
 /// message speed) that the pause-menu options screen doesn't show.
 const OPTIONS_CONFIG_FILE: &str = "legaia-options.toml";
+
+/// Keyboard binding round-trip file - the same one
+/// `legaia-engine config set --binding` edits and `window/run.rs` loads at
+/// startup. The pause menu's Key Config screen writes here too, so the
+/// in-game editor and the CLI editor share one store rather than each
+/// keeping its own.
+pub(super) const INPUT_CONFIG_FILE: &str = "legaia-input.toml";
 
 impl PlayWindowApp {
     /// Content rect for a menu window id: the disc-parsed descriptor when
@@ -1327,13 +1359,6 @@ impl PlayWindowApp {
 /// PSX Y-down local vertices ride the same world negation). Battle and
 /// world-map keep the older pairing (per-model `scale(1,-1,1)` + a camera
 /// with no world negation), so this must not leak into those arms.
-/// The follow camera's fixed base yaw (PSX 12-bit units, savestate-pinned
-/// `_DAT_8007B792 = -160` on the town01 anchor). Shared between the render
-/// camera (`field_follow_camera_mvp`) and the movement-compass bias pushed
-/// into the engine-core camera at startup (`render_yaw_bias` - the compass
-/// sense is the negation: `alpha = -psi` for the PSX GTE camera).
-const FIELD_FOLLOW_YAW_UNITS: f32 = -160.0;
-
 const FIELD_WORLD_FLIP: Mat4 = Mat4::from_cols_array(&[
     1.0, 0.0, 0.0, 0.0, //
     0.0, -1.0, 0.0, 0.0, //
@@ -1346,11 +1371,6 @@ const FIELD_WORLD_FLIP: Mat4 = Mat4::from_cols_array(&[
 /// **4.0x uniform scale** composed under the camera rotation. See
 /// [`PlayWindowApp::battle_dome_camera_mvp`].
 const BATTLE_WORLD_SCALE: f32 = 4.0;
-
-/// The retail overworld (walk-view) world scale: the same base matrix holds
-/// `24576 * I` = **6.0x** in the world-map resident savestates
-/// (`sebucus_overworld_resident` / `karisto_overworld_resident`).
-const WORLD_MAP_WORLD_SCALE: f32 = 6.0;
 
 /// World-map ocean CLUT animation state. Holds the 13 BGR555 frames (32 bytes
 /// each) decoded from the kingdom bundle and the current frame cursor + tick
@@ -1379,6 +1399,14 @@ struct FieldNpcDraw {
     color_idx: Option<usize>,
     /// Spawn world position (fallback when the world has no live position).
     spawn: (i16, i16),
+    /// The **raw model id** this draw's mesh was built from, in the operand
+    /// space the model pool indexes (`< 0xF0` scene bank, `>= 0xF0` player
+    /// bank). Normally the placement's own `model_index`; a scripted mesh
+    /// re-bind (motion-VM op `0x0E`) makes it the id
+    /// `World::field_npc_live_model` reports, and comparing the two is how
+    /// `rebind_live_npc_models` notices a swap the world made after the
+    /// upload ran.
+    bound_model: i16,
 }
 
 /// World-map water/CLUT-cell animation state: the disc-derived kingdom

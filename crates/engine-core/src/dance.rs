@@ -1640,6 +1640,97 @@ pub fn good_banner_spawn(weight: u16) -> GoodBannerSpawns {
     }
 }
 
+/// One past the last frame of the count-in banner's timeline: slide-in
+/// (`0x1e`) + hold (to `0x5a`) + slide-out (`0x1e` more).
+pub const COUNTIN_END_FRAME: i32 = 0x5a + 0x1e;
+
+/// The pre-song count-in as an advancing object - the frame counter and the
+/// once-only [`COUNTIN_INTRO_CUE`] latch (`DAT_801D5134`) that
+/// [`dance_countin_banner_envelope`] leaves to its caller.
+///
+/// Retail runs the below-10 states of `FUN_801cf470` before the beat clock
+/// starts; the port stages one of these on [`crate::world::World::enter_dance`]
+/// and the world's dance tick plays it out, holding `DanceGame::advance` off
+/// until it finishes. Owning the counter here rather than in a host is what
+/// makes the native window and the browser play page count in identically -
+/// and what gives the **door-warp** entry a count-in at all, which neither
+/// host had (only the native debug launcher ran one).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CountIn {
+    frame: i32,
+    /// Vsyncs since the animator last ran, `0..COUNTIN_ANIM_PERIOD_VSYNCS`.
+    phase: u8,
+    cue_fired: bool,
+}
+
+/// Vsyncs between two runs of the count-in banner animator.
+///
+/// Retail does not step the banner every frame: it calls the animator once per
+/// **three** vsyncs, and the counter it hands in advances by
+/// [`COUNTIN_ANIM_STEP`] each time. Same wall-clock duration, coarser
+/// sampling - the sliding halves jump 18 px per visible step where a
+/// per-vsync port slides them 6.
+pub const COUNTIN_ANIM_PERIOD_VSYNCS: u8 = 3;
+
+/// How far the animator's own counter advances per run - the same 3, which is
+/// what keeps [`COUNTIN_END_FRAME`] the same number of vsyncs away.
+pub const COUNTIN_ANIM_STEP: i32 = 3;
+
+/// What one [`CountIn::step`] produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CountInStep {
+    /// This frame's banner envelope, for the host's draw list.
+    pub banner: CountInBanner,
+    /// The intro cue, on the single frame the hold segment is entered.
+    pub cue: Option<u16>,
+    /// The slide-out finished: the caller starts the song this frame.
+    pub done: bool,
+}
+
+impl CountIn {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Frames elapsed (the banner animator's own counter).
+    pub fn frame(&self) -> i32 {
+        self.frame
+    }
+
+    /// This frame's envelope without advancing - what a `&self` draw builder
+    /// reads.
+    pub fn banner(&self) -> CountInBanner {
+        dance_countin_banner_envelope(self.frame)
+    }
+
+    /// Advance one **vsync**.
+    ///
+    /// The animator itself runs once every [`COUNTIN_ANIM_PERIOD_VSYNCS`],
+    /// with its counter advancing [`COUNTIN_ANIM_STEP`] - so this returns the
+    /// same envelope three vsyncs running and then jumps. The count-in still
+    /// lasts exactly [`COUNTIN_END_FRAME`] vsyncs; only the sampling is
+    /// retail's.
+    pub fn step(&mut self) -> CountInStep {
+        let banner = dance_countin_banner_envelope(self.frame);
+        let cue = if banner.hold && !self.cue_fired {
+            self.cue_fired = true;
+            Some(COUNTIN_INTRO_CUE)
+        } else {
+            None
+        };
+        self.phase += 1;
+        if self.phase >= COUNTIN_ANIM_PERIOD_VSYNCS {
+            self.phase = 0;
+            self.frame += COUNTIN_ANIM_STEP;
+        }
+        CountInStep {
+            banner,
+            cue,
+            done: self.frame >= COUNTIN_END_FRAME,
+        }
+    }
+}
+
 /// The intro-cue id the count-in banner fires once, when it crosses into its
 /// hold segment (`FUN_801d2d98`, into the runtime SFX bank; see `sfx-table.md`).
 pub const COUNTIN_INTRO_CUE: u16 = 0x200;
@@ -3042,6 +3133,37 @@ mod tests {
         let o_late = dance_countin_banner_envelope(0x5a + 30);
         assert!(o_late.x_offset > o.x_offset);
         assert!(o_late.brightness < o.brightness);
+    }
+
+    /// Retail runs the banner animator once every three vsyncs with its own
+    /// counter advancing by three, so the halves jump 18 px per visible step.
+    /// A per-vsync port slid them 6 - same destination, three times the
+    /// sampling rate, and a visibly smoother slide than retail's.
+    #[test]
+    fn the_countin_animator_runs_once_every_three_vsyncs() {
+        let mut ci = CountIn::new();
+        let first = ci.step().banner;
+        // Two more vsyncs return the SAME envelope - the animator has not run.
+        assert_eq!(ci.step().banner, first);
+        assert_eq!(ci.step().banner, first);
+        // The fourth vsync is the animator's next run, three counter units on.
+        let second = ci.step().banner;
+        assert_ne!(second, first);
+        assert_eq!(
+            first.x_offset - second.x_offset,
+            6 * COUNTIN_ANIM_STEP,
+            "one visible step is 18 px"
+        );
+
+        // The count-in still lasts exactly COUNTIN_END_FRAME vsyncs: the
+        // coarser sampling must not shorten or stretch it.
+        let mut ci = CountIn::new();
+        let mut vsyncs = 1;
+        while !ci.step().done {
+            vsyncs += 1;
+            assert!(vsyncs < 1000, "count-in never finished");
+        }
+        assert_eq!(vsyncs, COUNTIN_END_FRAME);
     }
 
     #[test]

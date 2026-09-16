@@ -55,7 +55,6 @@
 //! flips it Done, exactly the gold shop's shape.
 
 use crate::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
-use std::collections::HashMap;
 
 /// File offset of the prize table inside the menu overlay's PROT entry
 /// (899): retail VA `0x801E4518`, the base `FUN_801D5DE0` indexes with
@@ -322,7 +321,7 @@ impl PrizeExchangeSession {
 /// here marks a host driving the session with stale inputs.
 pub fn apply_redeem(
     coins: &mut u32,
-    inventory: &mut HashMap<u8, u8>,
+    inventory: &mut crate::world::ItemBag,
     flags: &mut impl FnMut(u16),
     item_id: u8,
     price: u32,
@@ -447,7 +446,7 @@ mod tests {
         // Host applies + rebuilds: coins debited, item granted, one-shot
         // row gone from the rebuilt list.
         let mut coins = 9000u32;
-        let mut inv = HashMap::new();
+        let mut inv = crate::world::ItemBag::new();
         let mut set = std::collections::HashSet::new();
         assert!(apply_redeem(
             &mut coins,
@@ -487,7 +486,7 @@ mod tests {
     #[test]
     fn apply_redeem_refuses_on_stale_inputs() {
         let mut coins = 10u32;
-        let mut inv = HashMap::new();
+        let mut inv = crate::world::ItemBag::new();
         assert!(!apply_redeem(
             &mut coins,
             &mut inv,

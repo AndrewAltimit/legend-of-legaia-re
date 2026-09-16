@@ -76,8 +76,8 @@ asset account 0086 --depth 2 --json &gt; kingdom.json</code></pre>
   <p>The hard part is not the header. Every slot-A overlay loads at <code>0x801CE818</code>, so a printed address cannot say which image a dump belongs to. This instrument resolves it <strong>from the bytes</strong>: it re-encodes the dump's first printed instructions and compares them against the image at the mapped offset. A printed instruction that re-encodes to the image's word is <em>confirmed</em> and credited; one that re-encodes to a different word is <em>refuted</em> and dropped; a dump whose head is outside the small encodable grammar is <em>unverifiable</em> and is credited only when its filename label names this entry. The grammar is deliberately small, so the instrument's silence never reads as a refutation.</p>
   <h3>The slot-B module band</h3>
   <p>The 64 entries <code>0903..0966</code> - the per-spell summon stagers and capture-class cast modules that timeshare the second overlay window - are picked on their <em>index</em> rather than on a class, and they walk with or without a dump directory, because their structural regions come out of the image itself. The walker claims the head jump table as <code>toc</code> and each spawn record as <code>record</code>.</p>
-  <p>A record's extent is named by an <strong>instruction</strong>, not by a statistic: the module materialises the address with a <code>lui</code>/<code>addiu</code> pair and hands it to <code>FUN_80021B04</code> / <code>FUN_80050ED4</code> in <code>$a2</code>, and the next record's pointer is the current one's end. The image's highest record has nothing above it to bound it, so its own move-VM program's terminator does; where that walk does not terminate it stays residue and the walker's note names its offset. Full layout: <a href="../formats/slot-b-module-layout.html">slot-B module layout</a>.</p>
-  <p>That makes the band the cleanest class on the disc, and the numbers say why in a way no other class can match. All 64 entries select this walker over 616448 bytes, and <em>every</em> claim is structural - not one byte of the accounted share comes from a magic guess. The residue is 67680 bytes, and <strong>almost none of it is slack</strong>: only 440 bytes are zero padding, so the unaccounted share is each image's inherited tail and little else. Per entry the accounted share runs 71.2% to 100.0% with a median of 89.2%.</p>
+  <p>A record's extent is named by an <strong>instruction</strong>, not by a statistic: the module materialises the address with a <code>lui</code>/<code>addiu</code> pair and hands it to <code>FUN_80021B04</code> / <code>FUN_80050ED4</code> in <code>$a2</code>, and the next record's pointer is the current one's end. The image's highest record has nothing above it to bound it, so its own move-VM program's terminator does - a <code>HALT</code>, an armed idle loop, or, only where neither turns up, the last maximal <code>WAIT</code> the walk stepped over. On retail every image that has a highest record bounds it; where a walk does not terminate the record stays residue and the walker's note names its offset. Full layout: <a href="../formats/slot-b-module-layout.html">slot-B module layout</a>.</p>
+  <p>That makes the band the cleanest class on the disc, and the numbers say why in a way no other class can match. All 64 entries select this walker over 616448 bytes, and <em>every</em> claim is structural - not one byte of the accounted share comes from a magic guess. The residue is 65836 bytes, and <strong>almost none of it is slack</strong>: only 440 bytes are zero padding, so the unaccounted share is each image's inherited tail and little else. Per entry the accounted share runs 71.2% to 100.0% with a median of 89.3%.</p>
 </section>
 
 <section class="doc-section" id="reading" data-doc="interpreting-a-report">
@@ -97,8 +97,9 @@ asset account 0086 --depth 2 --json &gt; kingdom.json</code></pre>
   <table>
     <thead><tr><th>Class</th><th>What its unclaimed bytes are</th><th>Verdict</th></tr></thead>
     <tbody>
-      <tr><td><code>lzs_container</code></td><td>the whole entry, <code>high_entropy</code>, in one run - no walker binds to the class</td><td>instrument gap, and the largest non-slack residue on the disc; the decoder exists, the binding does not</td></tr>
-      <tr><td><code>overlay_data_blob</code></td><td>almost all <code>zero_pad</code>; the rest is a pair of raw <code>bgr555</code> pages and one entry whose whole extent reads <code>plausible_mips</code></td><td>two 16bpp pages with no walker; one code image with no recovered link base</td></tr>
+      <tr><td>the multi-bank VAB</td><td><code>mixed</code> and <code>ascii_text</code> runs between VAG bodies the magic sweep found</td><td>the largest non-slack residue on the disc, and every claim on the entry is a <code>scan</code> claim</td></tr>
+      <tr><td><code>overlay_data_blob</code></td><td>almost all <code>zero_pad</code>; the rest is one entry whose whole extent reads <code>plausible_mips</code> although its head is a length-prefixed Japanese label table</td><td>a Japanese-build menu image the USA disc never loads</td></tr>
+      <tr><td><code>lzs_container</code></td><td>per-entry tails past the last descriptor's stream, plus one member that is a code image rather than a container</td><td>walker tails and one mis-classed entry</td></tr>
       <tr><td><code>overlay_ptr_table</code>, <code>mips_overlay</code></td><td><code>low_entropy</code> with a <code>plausible_mips</code> minority</td><td>dump worklist - and it agrees with <a href="disc-coverage.html">disc coverage</a>'s gap list</td></tr>
       <tr><td>scene streams, packs, battle data</td><td>short <code>mixed</code> / <code>low_entropy</code> runs at the tail of records the walker did reach</td><td>walker tails, not unwalked format</td></tr>
       <tr><td>filler, zero entries, trigger sidecars</td><td><code>ascii_text</code> and <code>zero_pad</code></td><td>the disc's own slack</td></tr>
@@ -109,6 +110,31 @@ asset account 0086 --depth 2 --json &gt; kingdom.json</code></pre>
   <p><strong>A low percentage that is finished.</strong> Every walk-on trigger sidecar accounts in the single digits and every unclaimed byte in all of them is <code>zero_pad</code>: the format is one sector whose records occupy a small head and whose rest is padding it declares. Ranking a worklist by accounted share alone would put all of them near the top. Rank by <em>non-slack</em> residue instead.</p>
   <p><strong>A high percentage that walked nothing.</strong> The multi-bank VAB accounts for almost all of its bytes and structurally for none of them - every claim came from the magic sweep. The <code>scan</code> tier exists so that reads as a warning; the bank's own layout is unwalked, and the figure beside it says only that VAG bodies are there.</p>
   <p>The sweep also corroborates a format page from the other direction: every <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/pochi.md">pochi filler</a> slot is exactly one 2048-byte sector, and the fill classifies as <code>ascii_text</code> while <code>repeated_fill</code> is tested first - so the sector is text-shaped rather than one short pattern repeated. A second, independent reason none of those slots carries a parseable asset.</p>
+  <h3>Three families that read as unwalked format and were not</h3>
+  <p>Each of these headed the ranking at some point and none of them was an unrecognised format. All three were <em>bindings</em>: the bytes were already understood somewhere and nothing connected that understanding to the walker. That is the shape to expect at the top of this ranking.</p>
+  <table>
+    <thead><tr><th>Family</th><th>What the bytes are</th><th>What was missing</th></tr></thead>
+    <tbody>
+      <tr><td>18 <code>lzs_container</code> entries</td><td>the ordinary scene-bundle descriptor table, at descriptor counts the <em>detector's</em> window excludes - retail bounds the count nowhere</td><td>a walker bound to the class</td></tr>
+      <tr><td>266 filler slots</td><td>one 1927-byte dev fill file plus 121 bytes of the mastering buffer's previous contents</td><td>a shape rule - the fill's line is 52 bytes long, so the period-1/2/4/8/16 test never fires and 266 sectors of filler ranked as work</td></tr>
+      <tr><td>2 headerless stills</td><td>four <code>320x64</code> 16bpp band uploads to VRAM <code>(384, 0)</code></td><td>a walker - the rectangle was already recovered from the consumer's immediates</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="ratchet" data-doc="ratcheting-the-figure">
+  <h2>Ratcheting the figure</h2>
+  <p>A sweep nobody compares is a number in a terminal. A checker reads the sweep's CSV and ratchets it against a committed baseline, the way the <a href="disc-coverage.html">disc-coverage</a> gate ratchets the code figure. It is the third denominator, and it exists because the other two cannot ask this question: the port catalog measures the addresses this project has cited, and disc coverage's data half measures format <em>recognition</em> - a claim an entry satisfies fully while most of its bytes have never been walked.</p>
+  <table>
+    <thead><tr><th>Figure</th><th>Direction</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>structural share</td><td>up only</td><td>bytes a parser walked to, from a header or a table</td></tr>
+      <tr><td>accounted share</td><td>up only</td><td>structural plus magic-sweep hits - always the larger number, and never the headline</td></tr>
+      <tr><td>non-slack residue</td><td>down only</td><td>unconsumed runs whose shape is not padding</td></tr>
+    </tbody>
+  </table>
+  <p>Every figure is re-weighted by <em>bytes</em> rather than averaged over entries, and each is carried per format class as well as whole-disc. The per-class row is what makes a regression attributable: one class losing its walker moves the whole-disc figure by a rounding error, and a falling total does not say which parser to open.</p>
+  <p>The gate consumes the sweep's CSV rather than running it, so it skips where the disc is not - and a CSV swept on an older tree reports that tree's parsers through a passing gate, which is why re-running the sweep is part of taking a baseline rather than a separate habit.</p>
 </section>
 
 <section class="doc-section" id="tests" data-doc="tests">

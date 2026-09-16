@@ -49,36 +49,35 @@
 # `docs/subsystems/battle.md` - what changed is that a wiped party is no
 # longer a silent no-op that hands the player back a full-HP field.
 
-[[waiver]]
-builder = "key_rebind_draws_for"
-kind = "orphan"
-reason = """
-Unreached on BOTH hosts. This waiver used to open by calling the browser
-"web-exempt by design", on the premise that "the browser page's bindings are
-JS keycode tables owned by the page, not the engine - `PAD` in
-`site/js/play-app.js` ... and `BOOT_PAD` in `site/_content/play.html`". That
-premise is gone, and its being true was itself the bug: three hand-maintained
-tables drifted key-for-key (`X` was Square natively and Circle in both page
-tables, `S` was Circle natively and Down on the page, and Select / L1 / R1 /
-L2 / R2 were bound on neither page). Both pages now READ the engine's own
-table through `legaia_web_viewer::pad_bindings::pad_bindings_json`, so the
-bindings are engine-owned on every host and there is no page-side layout left
-to exempt.
-
-What still blocks the screen is the half that was always true: a **menu
-route**. The options screen both hosts draw (`options_draws_for`) has no row
-that opens a sub-screen, and `engine-core`'s `OptionsSession` carries no
-binding-edit state for one to drive. `engine-core::key_rebind::KeyRebindSession`
-is complete - rows in canonical order, await-key state, eviction so two keys
-cannot report one button - and its only caller is
-`engine-core/tests/menu_suite_e2e.rs`. Native rebinding today happens through
-`legaia-input.toml` and `legaia-engine config set --binding`; the browser has
-no equivalent yet, but persistence is no longer the obstacle it was claimed to
-be (the page already persists saves).
-
-Closing it means growing that options row and that session state on both
-hosts, plus a wasm binding for `KeyRebindSession` - not adding a draw call.
-"""
+# `key_rebind_draws_for` was waived here as unreached on BOTH hosts. The
+# waiver named its blocking capability precisely - "a **menu route**": the
+# options screen had no row that opened a sub-screen, `OptionsSession` carried
+# no binding-edit state for one to drive, and the only caller of
+# `engine-core::key_rebind::KeyRebindSession` was a test. All three exist now.
+# `OPTIONS_KEY_CONFIG_ROW` is an engine-only eleventh display row carrying an
+# `OptionsRowAction` rather than a config word (so the retail ten stay the
+# default set, and a headless host that arms no binding table never sees it);
+# `OptionsSession::with_key_rebind` / `arm_key_rebind` own the sub-session and
+# publish the edited table through `take_bindings_dirty`; and the shared
+# composition draws the builder for both hosts off one `KeyRebindView`.
+#
+# Each host supplies only the store and the key events. Native arms the row
+# off the live `legaia-input.toml` table and writes the same file back - the
+# one `legaia-engine config set --binding` edits, not a second store - and
+# latches one key name per physical press in `handle_key` (winit repeats a
+# held key, and consuming that stream would bind the confirm key to whatever
+# row was highlighted). The browser page arms it off
+# `web-viewer::pad_bindings::live_mapping`, persists through `store_mapping`
+# into `localStorage`, and feeds `KeyboardEvent.code` through
+# `play_menu_key` - which has to be a second entry point, because the screen
+# exists to bind keys that carry no pad bit yet and the page's pad path drops
+# exactly those.
+#
+# One thing both hosts bound the same way, deliberately: the bindable key set
+# is `input::KEY_NAME_DOM_CODES`, the vocabulary the table is keyed by. The
+# native `keycode_to_name` filter and the browser `key_name_for_dom_code`
+# lookup are the two ends of it, so neither host can bind a key the other
+# cannot spell.
 
 # `sprite_draws_for` used to be waived here as "a generic anchor-translate
 # helper ... not a screen". That prose was the right reading and the wrong
