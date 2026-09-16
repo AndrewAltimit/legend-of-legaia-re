@@ -45,8 +45,11 @@ fn locate_card() -> Option<PathBuf> {
     })
 }
 
+/// An SC block's bytes beside its item region decoded to `(id, count)` pairs.
+type BlockWithSlots = (Vec<u8>, Vec<(u8, u8)>);
+
 /// The first SC block on the card, with its raw item region beside it.
-fn card_block() -> Option<(Vec<u8>, Vec<(u8, u8)>)> {
+fn card_block() -> Option<BlockWithSlots> {
     let path = locate_card()?;
     let bytes = std::fs::read(&path).ok()?;
     let blocks = legaia_save::card::parse_card(&bytes).ok()?;
