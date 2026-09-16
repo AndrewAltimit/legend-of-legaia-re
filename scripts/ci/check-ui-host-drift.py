@@ -191,6 +191,43 @@ Scope, stated as narrowly as the tiers above:
 * it does NOT prove the two gates suppress the *same* draw, that the twin is
   wired to anything, or that no un-gated debug draw exists under another name.
 
+## Three more questions the tiers above were blind to
+
+Each of the three closes a shape that a side-by-side reading of the two hosts
+found with every tier green, and each is written up in
+`docs/tooling/host-drift.md` with the bug that motivated it.
+
+**Ownership** ([`OWNED_TYPES`]). A host can reach an engine type's outputs
+without ever holding the type. The play page framed the field with a spherical
+orbit of its own and held no `engine_core::camera::Camera`, so nothing there
+routed the op-`0x45` beats into a controller, advanced the mover or wrote the
+retail camera globals back - one absence producing a projection difference, a
+simulation difference and two missing screens. No tier above can see a type
+that is *absent*: there is no builder to miss, no constant to pair and no
+injection site to diverge from. Ownership is a field declaration or a
+construction in that host's own shipped source; a `use` line, a match arm and
+a borrowed parameter are not.
+
+**Variant coverage** ([`ENUM_COVERAGE`]). A shared enum's variant can be
+entered on both hosts and answered on one - four minigame `SceneMode`s shipped
+that way, reached through the shared scene host's door-warp drain and drawn
+only natively, because their presentation is text lines and a hand-rolled 3D
+scene rather than an `engine-ui` builder tier 1 enumerates. The variant list is
+derived from the enum's own source, so a variant added tomorrow is measured;
+what is declared is the enum and the per-(variant, host) waivers. A host
+"answers" a variant by naming it *qualified* - an unqualified match would count
+a same-named session type and report everything covered.
+
+**Entry symmetry** ([`HOTKEY_SOURCES`]). The dance count-in and the how-to
+actor were complete shared kernels that only the native window drove, from a
+driver of its own reached by the `K` / `U` hotkeys - so *neither* host counted
+in when a player walked into the hall. A gap that reads as "one host has it"
+can be "one host's debug path has it", and the tiers cannot tell those apart
+because both end at a live call site. For every `world.<method>()` the native
+key arms call, this asks whether any call site exists outside the native
+`bin/` tree. A debug probe is a legitimate answer and takes a waiver; the
+waiver names the ARM (or the mechanism that superseded it), never a schedule.
+
 Usage:
 
     python3 scripts/ci/check-ui-host-drift.py            # check, exit 1 on drift
@@ -1596,6 +1633,25 @@ def run_selftest() -> int:
             verdict = "stayed silent" if want else "fired"
             print(f"  FAIL  render kernel: {label} - detector {verdict}")
             failures += 1
+    for label, src, name, want in SELFTEST_OWNERSHIP:
+        if owns_type(src, name) == want:
+            print(f"  ok    ownership: {label}")
+        else:
+            verdict = "claimed ownership" if not want else "saw none"
+            print(f"  FAIL  ownership: {label} - detector {verdict}")
+            failures += 1
+    for label, src, enum_name, variant, want in SELFTEST_VARIANT_USE:
+        if bool(re.search(rf"\b{enum_name}::{variant}\b", src)) == want:
+            print(f"  ok    variant use: {label}")
+        else:
+            failures += 1
+            print(f"  FAIL  variant use: {label}")
+    for label, src, name, want in SELFTEST_CALL_FORM:
+        if bool(re.search(rf"[.:]\s*{name}\s*\(", src)) == want:
+            print(f"  ok    call form: {label}")
+        else:
+            failures += 1
+            print(f"  FAIL  call form: {label}")
     total = (
         len(SELFTEST_WORDS)
         + len(SELFTEST_SCREENS)
@@ -1606,6 +1662,9 @@ def run_selftest() -> int:
         + len(SELFTEST_PAGE_KEYS)
         + len(SELFTEST_DIAG)
         + len(SELFTEST_RENDER)
+        + len(SELFTEST_OWNERSHIP)
+        + len(SELFTEST_VARIANT_USE)
+        + len(SELFTEST_CALL_FORM)
     )
     if failures:
         print(
@@ -2049,6 +2108,23 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
                 "consumer of the same walk-placement accessors; see above",
         },
     },
+    {
+        "kernel": "shared value layout -> shared quad emitter",
+        "why": "a shared LAYOUT is not a shared DRAW. The battle damage "
+        "numerals and the `N HIT` / `TOTAL` counter resolved through one "
+        "kernel (`engine-vm::battle_value_readout`) while the native window "
+        "sampled retail's 24x24 cells out of VRAM and the browser restyled "
+        "the same digits in the dialog font - one model, two letterforms, "
+        "and every tier green because both hosts named the kernel. A surface "
+        "that resolves the layout must emit through the shared quad builder "
+        "(`engine-ui::battle_numerals`), leaving a font path as an explicit "
+        "before-the-atlas fallback rather than as the draw",
+        "trigger": r"\bbattle_value_readout\b",
+        "requires": [
+            r"\bbattle_numerals\b",
+            r"\b(?:digit_run_prims|combo_cluster_prims|digit_quad|readout_quad)\b",
+        ],
+    },
     # RETIRED: "screen-space fade quad" (resolving `intro_fade(...)` requires
     # `fade_prim`). The whole transition emission - fade included - became
     # single-assembler when the `battle_intro` emitter moved to `engine-ui`
@@ -2237,6 +2313,485 @@ def _selftest_render_case(rule: dict, src: str) -> bool:
     return bool(rule_findings(rule, strip_all_comments(src)))
 
 
+# --------------------------------------------------------------------------
+# Tier 8 - ownership: does each host OWN the engine type, or only read it?
+# --------------------------------------------------------------------------
+#
+# Every tier above asks whether a host *reaches* something - a builder, a
+# constant, a kernel, a gate. None of them can see the shape where a host
+# reaches an engine type's outputs without ever holding the type.
+#
+# That shipped, and it produced four different-looking symptoms at once. The
+# browser play page framed the field with a spherical orbit of its own while
+# the native window consumed `engine_core::camera::Camera`; read as "two
+# projections" it is a rendering difference, and it was not. The page held no
+# `Camera`, so nothing on that host routed the op-`0x45` Configure beats into
+# a controller, advanced the mover, wrote the follow focus back into the
+# retail camera globals or reset them on scene entry - and the azimuth it fed
+# the locomotion compass came from its own orbit yaw. One absence, a
+# projection difference, a simulation difference and two missing screens.
+#
+# Tier 1 cannot see it (no builder is missing), tier 2 cannot (no constant is
+# paired), tier 3 cannot (an injection site that does not exist cannot
+# diverge from one that does), tier 7 cannot (both surfaces name their own
+# kernels). What distinguishes the state is **ownership**: a field declaration
+# or a construction, in that host's own shipped sources.
+#
+# Declared rather than derived, for the same reason [`CONSTANT_PAIRS`] and
+# [`SIM_PAIRS`] are: "which engine types must a host own" is a judgement about
+# the architecture, and the derived version of the question (every
+# `engine-core` type one host constructs and the other only names) reports 21
+# rows over this tree, almost all of them enums a host matches on rather than
+# state a host keeps. A declared row is a pinned juncture; it does not claim
+# to be a census.
+#
+# Scope, as narrowly as the tiers above:
+#
+# * it DOES prove each named type is constructed or held as a field by both
+#   hosts' shipped code, and that the type still exists in `engine-core`;
+# * it does NOT prove the two hosts drive it the same way, tick it at all, or
+#   read the same outputs off it.
+
+OWNED_TYPES: list[dict[str, object]] = [
+    {
+        "type": "Camera",
+        "defined_in": "crates/engine-core/src/camera.rs",
+        "why": "which camera owns a frame and what its retail GTE inputs are "
+        "is one engine question; a host that renders a field without holding "
+        "the type re-implements the mover, the compass azimuth and the "
+        "op-0x45 cutscene beats in its own projection, and every other tier "
+        "stays green while it does",
+    },
+    {
+        "type": "SceneHost",
+        "defined_in": "crates/engine-core/src/scene/host.rs",
+        "why": "the scene host is what drains the per-frame queues the field "
+        "VM fills - the minigame door warp, the staged menu warp, the BGM "
+        "route. A host that keeps a bare `World` instead reaches the same "
+        "world state and none of the drains",
+    },
+    {
+        "type": "MenuRuntime",
+        "defined_in": "crates/engine-core/src/menu_runtime.rs",
+        "why": "the save/load menu's disk-facing runtime. A host that opens "
+        "the pause menu without one has the screens and no slot state behind "
+        "them",
+    },
+]
+
+# Ownership evidence, in the host's own comment-stripped source: a field
+# declaration whose type mentions the name, or a construction of it. A bare
+# mention is deliberately NOT ownership - `use` lines, match arms and doc
+# links are exactly what the page had for `Camera` while owning nothing.
+def owns_type(text: str, name: str) -> bool:
+    field = re.search(
+        # A field DECLARATION on its own line, and never through a `&`: a
+        # borrowed parameter is the shape this must not accept, and a
+        # multi-line signature puts one on its own line too.
+        rf"^\s*(?:pub(?:\([^)]*\))?\s+)?[a-z_][a-z_0-9]*\s*:\s*[^,;=()&]*\b{name}\b",
+        text,
+        re.MULTILINE,
+    )
+    if field:
+        return True
+    if re.search(rf"\b{name}\s*::\s*(?:new|default|from_\w+|with_\w+)\s*\(", text):
+        return True
+    # A struct literal is a construction - but `-> Camera {` is a return type
+    # and `impl Trait for Camera {` is an impl block, and both put the same
+    # two tokens next to each other. The control suite pins all three.
+    for hit in re.finditer(rf"\b{name}\s*\{{", text):
+        prefix = text[max(0, hit.start() - 40):hit.start()]
+        if re.search(r"->\s*$", prefix) or re.search(r"\b(?:impl|struct|enum|for)\b[^\n]*$", prefix):
+            continue
+        return True
+    return False
+
+
+def host_shipped_sources() -> dict[str, list[tuple[str, str]]]:
+    """Per host label, every shipped (non-test) source as `(rel path, text)`."""
+    out: dict[str, list[tuple[str, str]]] = {}
+    for host, roots in HOSTS.items():
+        rows: list[tuple[str, str]] = []
+        for root in roots:
+            if not root.is_dir():
+                continue
+            for path in sorted(root.rglob("*.rs")):
+                if is_test_source(path):
+                    continue
+                rel = path.relative_to(REPO).as_posix()
+                rows.append((rel, strip_comments(path.read_text(encoding="utf-8"))))
+        out[host] = rows
+    return out
+
+
+def check_owned_types(shipped: dict[str, list[tuple[str, str]]]) -> tuple[list[str], list[str]]:
+    """Every [`OWNED_TYPES`] row: both hosts must own the type.
+
+    Returns `(problems, pending)`; a row carrying `blocked_on` reports instead
+    of failing, and a `blocked_on` row that has gone clean fails.
+    """
+    problems: list[str] = []
+    pending: list[str] = []
+    for row in OWNED_TYPES:
+        name = str(row["type"])
+        defined_in = REPO / str(row["defined_in"])
+        if not defined_in.is_file() or not re.search(
+            rf"pub (?:struct|enum) {name}\b", defined_in.read_text(encoding="utf-8")
+        ):
+            problems.append(
+                f"STALE OWNED TYPE {name}: {row['defined_in']} no longer defines it "
+                f"(renamed or moved?). Re-point or drop the row."
+            )
+            continue
+        missing: list[str] = []
+        for host, rows in shipped.items():
+            if not any(owns_type(text, name) for _rel, text in rows):
+                missing.append(host)
+        blocked = row.get("blocked_on")
+        if missing and not blocked:
+            problems.append(
+                f"UNOWNED TYPE {name}: {', '.join(missing)} reaches this type's "
+                f"outputs without holding one ({row['why']}). Give that host the "
+                f"type, or record why not with `blocked_on`."
+            )
+        elif missing:
+            pending.append(f"{name}: not owned by {', '.join(missing)} - {blocked}")
+        elif blocked:
+            problems.append(
+                f"STALE blocked_on ({name}): both hosts own the type now, so the "
+                f"marker describes a gap that is closed. Drop `blocked_on`."
+            )
+    return problems, pending
+
+
+# --------------------------------------------------------------------------
+# Tier 9 - enum coverage: does each host answer every variant of a shared enum?
+# --------------------------------------------------------------------------
+#
+# The mode word is the case that motivated this. A `SceneMode` variant can be
+# entered on both hosts - the shared scene host installs it from the scene's
+# own door warp - and drawn on one, because the presentation of four of them
+# is a text panel and a hand-rolled 3D scene rather than an `engine-ui`
+# builder tier 1 enumerates. The browser landed in each with a frozen field
+# and no screen, with every tier green.
+#
+# The variant list is **derived** from the enum's own source, so a variant
+# added tomorrow joins the measurement by existing - which is the property
+# tier 3's hand-named site pairs cannot have. What is declared is the enum and
+# the per-variant waivers.
+#
+# A host "answers" a variant when its shipped sources name it *qualified*
+# (`SceneMode::Fishing`). The qualified form is the point: an unqualified
+# `Fishing` matches a session type, a module name and half the fishing HUD,
+# and a rule that accepted it would report every host as covering everything.
+#
+# Scope:
+#
+# * it DOES prove each host's shipped code mentions every variant of the named
+#   enum by its qualified name, and that no waiver names a variant that is
+#   gone or now covered;
+# * it does NOT prove the host's arm draws anything, that the two arms agree,
+#   or that the variant is reachable at runtime.
+
+ENUM_COVERAGE: list[dict[str, object]] = [
+    {
+        "enum": "SceneMode",
+        "source": "crates/engine-core/src/world/types.rs",
+        "why": "a mode both hosts can ENTER (the shared scene host drains the "
+        "mode-24 door warp for either) and only one can DRAW leaves the other "
+        "host's player in a frozen field with no screen - the shape four "
+        "minigame modes shipped in",
+        "waivers": {
+            # (variant, host) -> reason
+            ("Fishing", "web"): {
+                "blocked_on": "the play page's minigame screen dispatch "
+                "(`ActiveGame::of_mode`, play_minigames.rs) maps the four "
+                "door-warp games and returns None for Fishing; the page's "
+                "fishing host keys on the installed FishingSession instead, "
+                "so the mode word reaches no page-side arm",
+            },
+        },
+    },
+]
+
+
+def enum_variants(rel: str, name: str) -> list[str] | None:
+    """Top-level variant names of `pub enum <name>` in `rel`, or None."""
+    path = REPO / rel
+    if not path.is_file():
+        return None
+    text = path.read_text(encoding="utf-8")
+    m = re.search(rf"pub enum {name}\s*\{{", text)
+    if not m:
+        return None
+    depth, i, body = 1, m.end(), []
+    while i < len(text) and depth:
+        c = text[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        body.append(c)
+        i += 1
+    src = strip_comments(BLOCK_COMMENT_RE.sub("", "".join(body)))
+    out: list[str] = []
+    nest = 0
+    for line in src.splitlines():
+        stripped = line.strip()
+        if nest == 0:
+            hit = re.match(r"^([A-Z][A-Za-z0-9]*)\s*(?:\{|\(|,|=|$)", stripped)
+            if hit:
+                out.append(hit.group(1))
+        nest += line.count("{") + line.count("(") - line.count("}") - line.count(")")
+    return out
+
+
+def check_enum_coverage(
+    shipped: dict[str, list[tuple[str, str]]],
+) -> tuple[list[str], list[str], int]:
+    """Every [`ENUM_COVERAGE`] row against both hosts. `(problems, pending, n)`."""
+    problems: list[str] = []
+    pending: list[str] = []
+    checked = 0
+    for row in ENUM_COVERAGE:
+        name = str(row["enum"])
+        variants = enum_variants(str(row["source"]), name)
+        if not variants:
+            problems.append(
+                f"STALE ENUM ROW {name}: {row['source']} defines no such enum "
+                f"(renamed or moved?). Re-point or drop the row."
+            )
+            continue
+        waivers: dict = row.get("waivers", {})  # type: ignore[assignment]
+        seen: set[tuple[str, str]] = set()
+        for host, rows in shipped.items():
+            blob = "\n".join(text for _rel, text in rows)
+            for variant in variants:
+                checked += 1
+                if re.search(rf"\b{name}::{variant}\b", blob):
+                    if (variant, host) in waivers:
+                        problems.append(
+                            f"STALE ENUM WAIVER {name}::{variant} ({host}): the host "
+                            f"names the variant now. Drop the waiver."
+                        )
+                        seen.add((variant, host))
+                    continue
+                entry = waivers.get((variant, host))
+                if entry is None:
+                    problems.append(
+                        f"UNANSWERED VARIANT {name}::{variant} ({host}): no shipped "
+                        f"source on this host names it ({row['why']}). Answer it, or "
+                        f"waive the pair with a reason."
+                    )
+                    continue
+                seen.add((variant, host))
+                pending.append(
+                    f"{name}::{variant} ({host}) - {entry.get('blocked_on') or entry.get('reason')}"
+                )
+        for key in waivers:
+            if key not in seen:
+                problems.append(
+                    f"STALE ENUM WAIVER {name}::{key[0]} ({key[1]}): no such variant "
+                    f"or host. Drop the waiver."
+                )
+    return problems, pending, checked
+
+
+# --------------------------------------------------------------------------
+# Tier 10 - entry symmetry: is a World phase armed only from a debug hotkey?
+# --------------------------------------------------------------------------
+#
+# The dance minigame's pre-song count-in and the Disco King how-to actor were
+# both complete shared kernels, and the native window drove them - from a
+# count-in driver of its own, reached only by the `K` / `U` hotkeys. The
+# player-reachable entry is the mode-24 door warp, which the shared scene host
+# drains into `World::enter_dance`, so NEITHER host counted in when a player
+# walked into the hall.
+#
+# A gap that reads as "one host has it" can turn out to be "one host's debug
+# path has it", and no tier above can tell those apart, because both end at a
+# live call site. This one asks a different question: for every `World`
+# method the native window's keyboard arms call, is there a call site anywhere
+# outside the native `bin/` tree - the shared engine, or the browser hosts?
+# If not, the phase exists in the engine and only a key press reaches it.
+#
+# Derived over the hotkey sources, so a new hotkey arm joins the measurement
+# by existing. A debug-only spawner is a legitimate answer and takes a waiver;
+# what the waiver may not say is "not wired yet".
+#
+# Scope:
+#
+# * it DOES prove every `world.<method>()` the hotkey arms call has (or does
+#   not have) a call site outside `crates/engine-shell/src/bin/`;
+# * it does NOT prove that site is player-reachable, that it passes the same
+#   arguments, or that a phase with no hotkey arm at all is wired.
+
+# The native window's key-driven arms. `--key-script` delivers scripted keys
+# through these same handlers, which is why they are the tier's denominator.
+HOTKEY_SOURCES = [
+    "crates/engine-shell/src/bin/legaia-engine/window/event_handler/keyboard.rs",
+    "crates/engine-shell/src/bin/legaia-engine/window/minigames.rs",
+]
+
+# Where a shared (i.e. not hotkey-only) caller may live: the engine crates the
+# browser hosts share, and the browser hosts themselves.
+SHARED_CALLER_ROOTS = [
+    REPO / "crates" / "engine-core" / "src",
+    REPO / "crates" / "engine-vm" / "src",
+    REPO / "crates" / "engine-ui" / "src",
+    REPO / "crates" / "web-viewer" / "src",
+]
+
+# A hotkey-only `World` method, with the reason it is one. Each entry is
+# validated in both directions: a name that is no longer hotkey-called, or has
+# gained a shared caller, fails as stale.
+HOTKEY_ONLY_WAIVERS: dict[str, str] = {
+    "spawn_debug_effect": "an effect-pool probe with no retail counterpart - "
+    "it seats a marker billboard at the player so the pool's ageing can be "
+    "watched. Retail spawns effects from the move VM; nothing about this arm "
+    "belongs on a player-reachable entry, on either host.",
+    "spawn_debug_effect_model": "the model-emitting twin of the probe above, "
+    "same reasoning: it exists to prove the pool emits a model rather than a "
+    "billboard for a chosen TMD index.",
+    "active_field_fx_render_nodes": "a read accessor the hotkey uses for its "
+    "own on-screen readout of what the pool currently holds; it arms no phase "
+    "and changes no world state.",
+    "spawn_field_stager": "superseded, not unwired: the production op-0x34 "
+    "sub-3 route is `World::spawn_ambient_record_at` (the full `FUN_80021B04` "
+    "port with the op-0x25 fan-out, the CLUT-cell integrator and the VDF "
+    "morph envelope), reached from `vm_hosts::effect_anim_trigger` on both "
+    "hosts. This entry stages the same record id into the older "
+    "`SummonScene` pool and is kept as the native window's probe over it.",
+    "spawn_summon": "superseded, not unwired: the production producer of "
+    "`World::casting.active_summon` is the battle cast band "
+    "(`world/battle/cast_band.rs`, `SummonScene::spawn_parts`), and the "
+    "faithful player-summon render is the battle-actor TRS-keyframe path in "
+    "`legaia_engine_vm::anim_vm`. This entry parses a chosen stager overlay "
+    "instead and exists for the native window's summon probe.",
+}
+
+# The other half: a phase that SHOULD have a shared entry and does not yet.
+# Validated exactly as `blocked_on` is elsewhere - an entry that goes clean
+# FAILS, demanding the marker be deleted - so a pending wire cannot rot into a
+# permanent exemption. What an entry may not say is "not wired yet": it names
+# the shared caller that is missing.
+HOTKEY_ONLY_BLOCKED: dict[str, str] = {
+    # Empty today. Two rows were drafted here and moved to the waivers above
+    # once their production route was read: both entries are superseded
+    # stand-ins with a live replacement, not phases awaiting a wire. That is
+    # the distinction this dict exists to keep - "the shared caller is
+    # missing" is a different claim from "the shared caller is elsewhere",
+    # and only the first one is pending work.
+}
+
+
+def check_entry_symmetry() -> tuple[list[str], list[str], int]:
+    """Tier 10 over the hotkey sources. `(problems, pending, methods_scanned)`."""
+    problems: list[str] = []
+    pending: list[str] = []
+    hot_parts: list[str] = []
+    for rel in HOTKEY_SOURCES:
+        path = REPO / rel
+        if not path.is_file():
+            problems.append(
+                f"STALE HOTKEY SOURCE {rel}: no such file (moved?). Re-point the row."
+            )
+            continue
+        hot_parts.append(strip_comments(BLOCK_COMMENT_RE.sub("", path.read_text(encoding="utf-8"))))
+    hot = "\n".join(hot_parts)
+    methods = sorted(set(re.findall(r"\bworld\s*\.\s*([a-z_][a-z_0-9]*)\s*\(", hot)))
+
+    shared_parts: list[str] = []
+    for root in SHARED_CALLER_ROOTS:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*.rs")):
+            if is_test_source(path):
+                continue
+            shared_parts.append(
+                strip_comments(BLOCK_COMMENT_RE.sub("", path.read_text(encoding="utf-8")))
+            )
+    shared = "\n".join(shared_parts)
+
+    hotkey_only: list[str] = []
+    for name in methods:
+        # A CALL, not a definition: `.name(` or `::name(`. Matching a bare
+        # `name(` would count the method's own `pub fn` as its caller, which
+        # makes every row satisfied and the tier vacuous.
+        if not re.search(rf"[.:]\s*{name}\s*\(", shared):
+            hotkey_only.append(name)
+
+    declared = {**HOTKEY_ONLY_WAIVERS, **HOTKEY_ONLY_BLOCKED}
+    for name in hotkey_only:
+        reason = declared.get(name)
+        if reason is None:
+            problems.append(
+                f"HOTKEY-ONLY PHASE world.{name}(): the native window's key arms are "
+                f"its only caller outside tests - no shared-engine or browser-host "
+                f"call site exists, so a player reaches this on neither host. Arm it "
+                f"where the entry is shared, or waive it in "
+                f"`HOTKEY_ONLY_WAIVERS` with a reason about the ARM."
+            )
+        elif name in HOTKEY_ONLY_BLOCKED:
+            pending.append(f"BLOCKED world.{name}() - {reason}")
+        else:
+            pending.append(f"waived world.{name}() - {reason}")
+    for name, reason in sorted(declared.items()):
+        if name not in methods:
+            problems.append(
+                f"STALE HOTKEY WAIVER world.{name}(): the hotkey arms no longer call "
+                f"it. Drop the waiver."
+            )
+        elif name not in hotkey_only:
+            problems.append(
+                f"STALE HOTKEY WAIVER world.{name}(): a shared caller exists now, so "
+                f"this is not a hotkey-only phase. Drop the waiver."
+            )
+        if not reason.strip():
+            problems.append(f"HOTKEY WAIVER world.{name}(): needs a non-empty reason.")
+    return problems, pending, len(methods)
+
+
+# Control suites for the three tiers above. Each is `(label, ..., want)`, and
+# each runs on every invocation for the reason the suites above it do: a
+# detector that matches nothing reports every surface clean, which is exactly
+# the silence these tiers exist to break.
+SELFTEST_OWNERSHIP: list[tuple[str, str, str, bool]] = [
+    ("a struct field is ownership",
+     "struct App {\n    camera: Camera,\n    n: u8,\n}", "Camera", True),
+    ("an Option field is ownership",
+     "pub(crate) struct R {\n    pub scene_host: Option<SceneHost>,\n}", "SceneHost", True),
+    ("a borrowed parameter on its own line is not ownership",
+     "fn frame(\n    cam: &Camera,\n) -> u8 {\n    0\n}", "Camera", False),
+    ("a construction is ownership", "let c = Camera::new();", "Camera", True),
+    ("a `::default()` construction is ownership",
+     "Self { camera: Camera::default() }", "Camera", True),
+    ("a `use` line is not ownership", "use legaia_engine_core::camera::Camera;", "Camera", False),
+    ("a match arm is not ownership", "match m { Camera => 1, _ => 0 }", "Camera", False),
+    ("a by-reference parameter is not ownership",
+     "fn frame(cam: &Camera) -> u8 { 0 }", "Camera", False),
+    ("a return type is not ownership", "fn make() -> Camera { todo!() }", "Camera", False),
+]
+
+SELFTEST_VARIANT_USE: list[tuple[str, str, str, str, bool]] = [
+    ("a qualified match arm answers the variant",
+     "match m { SceneMode::Fishing => hud(), _ => () }", "SceneMode", "Fishing", True),
+    ("an unqualified mention does not",
+     "let s: FishingSession = fishing_session();", "SceneMode", "Fishing", False),
+    ("a different enum's variant does not",
+     "MinigameSubId::Fishing => 972,", "SceneMode", "Fishing", False),
+]
+
+SELFTEST_CALL_FORM: list[tuple[str, str, str, bool]] = [
+    ("a method call is a caller", "host.world.enter_dance(g);", "enter_dance", True),
+    ("a path call is a caller", "World::enter_dance(&mut w, g);", "enter_dance", True),
+    ("the definition is not a caller", "pub fn enter_dance(&mut self, g: DanceGame) {", "enter_dance", False),
+    ("a same-named free fn is not a method caller", "enter_dance(g);", "enter_dance", False),
+]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--quiet", action="store_true", help="findings only")
@@ -2332,6 +2887,33 @@ def main() -> int:
                 "ERROR: built-in render-kernel control failed; a rule engine "
                 "that matches nothing reports every surface clean, which is "
                 "exactly the silence this tier exists to break. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+    for _label, src, name, want in SELFTEST_OWNERSHIP:
+        if owns_type(src, name) != want:
+            print(
+                "ERROR: built-in ownership control failed; a detector that "
+                "cannot tell holding a type from naming it would have passed "
+                "the play page's Camera-shaped absence. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+    for _label, src, enum_name, variant, want in SELFTEST_VARIANT_USE:
+        if bool(re.search(rf"\b{enum_name}::{variant}\b", src)) != want:
+            print(
+                "ERROR: built-in variant-use control failed; a rule that "
+                "accepts an unqualified mention reports every host as "
+                "answering every variant. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+    for _label, src, name, want in SELFTEST_CALL_FORM:
+        if bool(re.search(rf"[.:]\s*{name}\s*\(", src)) != want:
+            print(
+                "ERROR: built-in call-form control failed; a scan that counts "
+                "a `pub fn` as its own caller makes the entry-symmetry tier "
+                "vacuous. Run --selftest.",
                 file=sys.stderr,
             )
             return 2
@@ -2442,6 +3024,20 @@ def main() -> int:
     rk_problems, rk_pending, rk_counts = check_render_kernels()
     problems.extend(rk_problems)
 
+    # The ownership half: a host that reaches an engine type's outputs without
+    # holding the type re-implements it, invisibly to every tier above.
+    shipped = host_shipped_sources()
+    own_problems, own_pending = check_owned_types(shipped)
+    problems.extend(own_problems)
+
+    # The enum half: a variant both hosts can enter and one can answer.
+    enum_problems, enum_pending, enum_checked = check_enum_coverage(shipped)
+    problems.extend(enum_problems)
+
+    # The entry half: a World phase whose only caller is a debug key press.
+    entry_problems, entry_pending, entry_methods = check_entry_symmetry()
+    problems.extend(entry_problems)
+
     if not args.quiet:
         print(
             f"[ui-drift] engine-ui draw builders: {len(builders)} "
@@ -2482,6 +3078,26 @@ def main() -> int:
             )
         for note in rk_pending:
             print(f"[ui-drift] render kernel blocked: {note}")
+        print(
+            f"[ui-drift] engine types both hosts must own: {len(OWNED_TYPES)} "
+            f"({len(own_pending)} disclosed as blocked)"
+        )
+        for note in own_pending:
+            print(f"[ui-drift] unowned type blocked: {note}")
+        print(
+            f"[ui-drift] shared-enum variant answers checked: {enum_checked} "
+            f"across {len(ENUM_COVERAGE)} enum(s) x {len(HOSTS)} hosts "
+            f"({len(enum_pending)} waived)"
+        )
+        for note in enum_pending:
+            print(f"[ui-drift] variant waived: {note}")
+        print(
+            f"[ui-drift] World methods reached from the native hotkey arms: "
+            f"{entry_methods} ({len(entry_pending)} reached from nowhere else, "
+            f"each disclosed)"
+        )
+        for note in entry_pending:
+            print(f"[ui-drift] hotkey-only: {note}")
         if web_ahead:
             print(f"[ui-drift] web-ahead (informational): {', '.join(web_ahead)}")
         # Name every native-only builder, waived or not, for the same reason
