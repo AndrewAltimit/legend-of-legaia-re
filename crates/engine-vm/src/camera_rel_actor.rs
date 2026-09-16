@@ -31,25 +31,74 @@
 //! (`+0x10`) ORed with `8`; then bit `0x100` is set and `gp+0x750` points
 //! at the new actor - see [`SpawnHandshake`].
 //!
+//! ## Where the record comes from
+//!
+//! The 20-halfword record is **not** script data and has no field-scene
+//! source. Its one producer is `FUN_801D829C`, a battle-overlay routine that
+//! builds nine `(step, endpoint)` pairs at battle-context `+0x118C` -
+//! `step = ceil(|current - target| / duration)` over those same nine globals
+//! in the same order - and then tails straight into `FUN_80021248` on that
+//! buffer (`jal 0x80021248` at `0x801D84A8`, argument
+//! `*(0x8007BD24) + 0x118C`). That routine is already ported as
+//! [`crate::battle_camera::build_camera_angle_tween`]; [`glide_spawn_record`]
+//! is the lay-out step between the two.
+//!
+//! Its callers are a **battle-only** population: 525 `jal` sites over 67
+//! images, every one PROT 0898, a slot-B cast module (`0903..=0966`) or one
+//! SCUS site at `0x80056360`; the normalizer itself has three `jal` sites in
+//! two images - PROT 0898 (`0x801D84A8`) and PROT 0976, the Baka Fighter duel.
+//! No field or world-map image calls either, so "a from-boot scene walk spawns a
+//! camera-relative glide" is false by construction - the family is reached
+//! from a battle or a duel, never from a scene load.
+//!
 //! ## NOT WIRED
 //!
-//! The camera half is wired: `legaia_engine_core::camera::RetailCamGlobals`
-//! carries exactly the ten axes [`CameraSnapshot`] wants and converts to one
-//! via `RetailCamGlobals::camera_snapshot`, so a caller can always hand the
-//! normalizer the live camera.
-//!
-//! What is missing is the **record**. This normalizer takes a 20-halfword
-//! spawn parameter block, and the engine has nowhere to get one: the only
-//! effect-spawn path in `legaia_engine_core` is `World::try_spawn_effect`,
-//! which is the *other* family - the PROT 0873 `efect.dat` catalog spawned
-//! by `(ui_id, world_pos, angle)` through `FUN_801D8DE8` /
-//! `FUN_801DFDF8`. The camera-anchored family this normalizer belongs to
-//! (spawn descriptor `DAT_8007071C`, actor list `_DAT_8007C34C`) has no
-//! engine counterpart at all, so there is no record to normalize and no
-//! honest way to stand a host up - a synthetic record would only exercise
-//! the arithmetic the unit tests already cover. Porting that family's
-//! allocator (`FUN_80020DE0` and its battle-overlay callers) is the
-//! prerequisite, not more plumbing here.
+//! The camera half is available
+//! (`legaia_engine_core::camera::RetailCamGlobals::camera_snapshot` is the ten
+//! axes [`CameraSnapshot`] wants) and the record can now be laid out by
+//! [`glide_spawn_record`]. What is still missing is the **actor**: the
+//! camera-anchored family (spawn descriptor `DAT_8007071C`, actor list
+//! `_DAT_8007C34C`) has no engine counterpart, so nothing holds a spawned
+//! glide between frames. `engine-shell`'s `window/battle_cam.rs` drives its
+//! own `Glide` off `build_camera_angle_tween`'s slots directly instead, which
+//! is why the chain stops at the actor rather than at a missing kernel.
+
+/// Halfword pairs in a spawn record - nine tweened globals plus the GTE `H`
+/// channel, `20` halfwords in all.
+pub const GLIDE_RECORD_PAIRS: usize = 10;
+
+/// Lay a built tween table out as the 20-halfword record
+/// [`normalize_camera_relative_params`] consumes.
+///
+/// `slots` are [`crate::battle_camera::build_camera_angle_tween`]'s nine
+/// `(step, endpoint)` pairs in its own order - rotation, shake, focus - which
+/// is exactly the order the normalizer's reference list walks
+/// (`0x8007B790/92/94`, `0x800840B8/BC/C0`, `0x80089118/1C/20`). `gte_h` is
+/// the tenth pair.
+///
+/// Retail's builder writes only the nine (`sltiu v0,a3,0x12` over a pair loop
+/// advancing `a3` by `2`), while `FUN_80021248` copies twenty halfwords, so
+/// the tenth pair is whatever the battle context already holds at `+0x11B0`;
+/// **which site writes it is not pinned**. A `(0, 0)` pair parks the channel -
+/// the glide tick counts a zero-step channel as arrived every frame - which is
+/// the safe default for a caller with no zoom to tween.
+///
+/// PORT: FUN_801D829C NOT WIRED: the producer's arithmetic is
+/// `crate::battle_camera::build_camera_angle_tween`, which the native battle
+/// camera consumes directly as rate slots; nothing in the engine spawns the
+/// camera-relative glide **actor** this layout feeds, so no host reaches this
+/// function outside tests.
+pub fn glide_spawn_record(
+    slots: &[crate::battle_camera::TweenSlot; crate::battle_camera::TWEEN_SLOTS],
+    gte_h: crate::battle_camera::TweenSlot,
+) -> [i16; GLIDE_RECORD_PAIRS * 2] {
+    let mut out = [0i16; GLIDE_RECORD_PAIRS * 2];
+    for (i, slot) in slots.iter().chain(std::iter::once(&gte_h)).enumerate() {
+        out[i * 2] = slot.step as i16;
+        out[i * 2 + 1] = slot.target as i16;
+    }
+    out
+}
 
 /// The camera state the normalizer reads.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -79,13 +128,12 @@ pub struct NormalizedParams {
 /// PORT: FUN_80021248
 ///
 /// NOT WIRED: the camera half is available
-/// (`legaia_engine_core::camera::RetailCamGlobals::camera_snapshot`), but
-/// nothing produces the 20-halfword spawn record. The engine's only
-/// effect-spawn path is the *other* family (PROT 0873 `efect.dat` via
-/// `World::try_spawn_effect`); this normalizer's family - spawn descriptor
-/// `DAT_8007071C`, actor list `_DAT_8007C34C` - has no engine counterpart,
-/// so porting its allocator `FUN_80020DE0` is the prerequisite. See the
-/// module docs.
+/// (`legaia_engine_core::camera::RetailCamGlobals::camera_snapshot`) and the
+/// record's producer is ported (`FUN_801D829C` ->
+/// [`crate::battle_camera::build_camera_angle_tween`] -> [`glide_spawn_record`]),
+/// but this normalizer's actor family - spawn descriptor `DAT_8007071C`,
+/// actor list `_DAT_8007C34C` - has no engine counterpart, so no host holds
+/// the spawned glide. See the module docs.
 pub fn normalize_camera_relative_params(
     record: &[i16; 20],
     cam: &CameraSnapshot,
@@ -158,6 +206,50 @@ pub fn spawn_handshake(scratch: u32) -> SpawnHandshake {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The producer's nine slots land in the record in the order the
+    /// normalizer's reference list walks, and the tenth pair is the caller's.
+    #[test]
+    fn the_builder_lays_out_a_normalizable_record() {
+        use crate::battle_camera::{
+            CameraAngles, TWEEN_SLOTS, TweenSlot, build_camera_angle_tween,
+        };
+        let mut cur = CameraAngles {
+            rotation: [0x100, 0x200, 0x300],
+            shake: [10, 20, 30],
+            focus: [-40, -50, -60],
+        };
+        let mut tgt = CameraAngles {
+            rotation: [0x180, 0x200, 0x280],
+            shake: [30, 20, 10],
+            focus: [-20, -50, -80],
+        };
+        let slots = build_camera_angle_tween(&mut cur, &mut tgt, 8);
+        assert_eq!(slots.len(), TWEEN_SLOTS);
+        let record = glide_spawn_record(&slots, TweenSlot::default());
+        // Every pair is (step, endpoint) in the builder's own order.
+        for (i, slot) in slots.iter().enumerate() {
+            assert_eq!(record[i * 2], slot.step as i16, "pair {i} step");
+            assert_eq!(record[i * 2 + 1], slot.target as i16, "pair {i} endpoint");
+        }
+        // The tenth pair is the parked GTE-H channel.
+        assert_eq!(record[18], 0);
+        assert_eq!(record[19], 0);
+        // And the normalizer accepts it: a parked channel keeps its zero
+        // magnitude, so nothing is invented by the hand-off.
+        let cam = CameraSnapshot {
+            angles: [0x100, 0x200, 0x300],
+            offsets: [10, 20, 30],
+            focus: [-40, -50, -60],
+            gte_h: 0,
+        };
+        let out = normalize_camera_relative_params(&record, &cam);
+        assert_eq!(out.params[18], 0);
+        // The middle rotation channel had no distance to cover, so its step is
+        // zero on both sides of the hand-off.
+        assert_eq!(slots[1].step, 0);
+        assert_eq!(out.params[2], 0);
+    }
 
     fn rec(pairs: [(i16, i16); 10]) -> [i16; 20] {
         let mut r = [0i16; 20];
