@@ -248,6 +248,85 @@ impl World {
         });
     }
 
+    /// The **producer**: retail's one element spawn on a field entry.
+    ///
+    /// `FUN_801D6704` (field MAIN INIT) reaches `0x801D6FB8..0x801D6FE0` only
+    /// when the field-entry mode word `_DAT_8007B8B8` is zero
+    /// ([`crate::mode_entry_init::FieldEntryMode::Cold`], which is every
+    /// ordinary scene change), and there it runs
+    /// `FUN_80024C88(&pos, 0x801F271C, pool)` and stores `1` into the returned
+    /// actor's `+0x1A` - the emitter's **scene** arm. `pos` is
+    /// `(s7 + 0xA40, 0, fp + 0xA40)`, which the scene arm never reads: it
+    /// samples points across the `DAT_1F8003E8..EB` span instead. So the
+    /// spawn is one per field entry, positionless, and there is exactly one
+    /// of it - which is what [`Self::install_field_scene_elements`] enforces
+    /// by clearing any previous emitter first.
+    ///
+    /// The emitter is spawned with its master gate **clear**. That gate is
+    /// `_DAT_8007B854`, and it has exactly six references disc-wide: two SCUS
+    /// clears (`0x800259AC`, `0x8003B690`), one SCUS reader in the field
+    /// render pass (`0x80026EBC`, gated on game mode `3`), the emitter's own
+    /// first instruction (`0x801D605C`) and **two field-VM writers** -
+    /// `0x801E0F38` sets it, `0x801E0F44` clears it, the sub-`0` and sub-`1`
+    /// arms of the op-`0x4C` outer-nibble-`3` jump table at `0x801CEEB8`. So
+    /// ambient particles are script-driven per scene, and an emitter spawned
+    /// with the gate clear emits nothing until a script raises it - which is
+    /// what [`Self::set_ambient_particles_enabled`] is for.
+    ///
+    /// PORT: FUN_801D6704 NOT WIRED: the host that should call this is the
+    /// field arm of `Scene::enter_field_scene` (`scene/host/scene_entry.rs`),
+    /// beside the `crate::mode_entry_init::field_spawn` call that already
+    /// computes the same `FieldSpawn::extra_actor` this reproduces; that file
+    /// is outside this change's scope.
+    ///
+    /// REF: FUN_80024C88 (the positioned spawn), FUN_801D6058 (the handler)
+    pub fn install_field_scene_elements(
+        &mut self,
+        entry_mode: crate::mode_entry_init::FieldEntryMode,
+        span: crate::cutscene_script_elements::SceneSpan,
+    ) {
+        if entry_mode != crate::mode_entry_init::FieldEntryMode::Cold {
+            return;
+        }
+        self.cutscene
+            .elements
+            .retain(|el| !matches!(el.kind, ElementKind::AmbientEmitter { .. }));
+        self.spawn_ambient_emitter(AmbientScene {
+            // `_DAT_8007B854`: cleared by SCUS, raised only by the field VM.
+            enabled: false,
+            // `_DAT_1F800394 & 1` - the world-map render-policy bit, clear in
+            // an ordinary field scene.
+            dense: false,
+            span,
+            camera_x: 0,
+            camera_y: 0,
+        });
+    }
+
+    /// Raise or clear the ambient-particle master gate `_DAT_8007B854` on
+    /// every live emitter.
+    ///
+    /// This is the sink for op `0x4C` outer nibble `3`, sub-ops `0` and `1`
+    /// (`0x801E0F2C` / `0x801E0F3C` off the jump table at `0x801CEEB8`).
+    /// Retail keeps the gate in one word and the emitter re-reads it every
+    /// frame; the port keeps a copy per element, so the write fans out here.
+    ///
+    /// NB the port's `FieldHost::set_field_input_lock` receives those two
+    /// sub-ops today. It has the right **address** and an inferred name: the
+    /// global's only readers are the emitter and the field render pass's
+    /// particle-table stage at `0x80026EBC`, neither of which touches pad
+    /// state. Nothing misbehaves, because the trait method's default body is a
+    /// no-op and `World` does not override it - the gate simply has no sink
+    /// until this one. Renaming that hook is a change to `engine-vm`'s
+    /// nibble-3 arm, outside this change's scope.
+    pub fn set_ambient_particles_enabled(&mut self, on: bool) {
+        for el in self.cutscene.elements.iter_mut() {
+            if let ElementKind::AmbientEmitter { scene, .. } = &mut el.kind {
+                scene.enabled = on;
+            }
+        }
+    }
+
     /// Is the object `link` names finished (`linked[+0x10] & 8`)?
     ///
     /// The engine has no per-object flag word on a placement, so a link's done
@@ -438,6 +517,50 @@ mod tests {
         let a = w.cutscene.element_frame.teardowns[0];
         assert!(a.clear_target_flags && a.clear_camera_flags);
         assert!(w.cutscene.elements.is_empty(), "one-shot");
+    }
+
+    #[test]
+    fn a_cold_field_entry_installs_exactly_one_emitter_with_the_gate_clear() {
+        use crate::cutscene_script_elements::SceneSpan;
+        use crate::mode_entry_init::{FIELD_DEFAULT_VIEW_WINDOW, FieldEntryMode};
+        let (x_min, y_min, x_max, y_max) = FIELD_DEFAULT_VIEW_WINDOW;
+        let span = SceneSpan {
+            x_min,
+            y_min,
+            x_max,
+            y_max,
+        };
+        let mut w = world();
+        // A warp entry (`_DAT_8007B8B8 == 2`) reaches no spawn at all.
+        w.install_field_scene_elements(FieldEntryMode::Warp, span);
+        assert!(w.cutscene.elements.is_empty());
+
+        // A cold entry installs one, gate clear, so it emits nothing.
+        w.install_field_scene_elements(FieldEntryMode::Cold, span);
+        assert_eq!(w.cutscene.elements.len(), 1);
+        let mut seed = 0x1234_5678u32;
+        let mut rand = || {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            seed >> 8
+        };
+        let mut total = 0;
+        for _ in 0..64 {
+            w.tick_cutscene_elements(1, &mut rand);
+            total += w.cutscene.element_frame.particles.len();
+        }
+        assert_eq!(total, 0, "the gate is clear until a script raises it");
+
+        // The script raises it and the same element starts emitting.
+        w.set_ambient_particles_enabled(true);
+        for _ in 0..64 {
+            w.tick_cutscene_elements(1, &mut rand);
+            total += w.cutscene.element_frame.particles.len();
+        }
+        assert!(total > 0, "the gate must let the scene arm emit");
+
+        // A second cold entry replaces rather than stacks.
+        w.install_field_scene_elements(FieldEntryMode::Cold, span);
+        assert_eq!(w.cutscene.elements.len(), 1);
     }
 
     #[test]

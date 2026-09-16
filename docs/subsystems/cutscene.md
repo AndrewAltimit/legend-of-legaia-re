@@ -1833,10 +1833,31 @@ oscillator (`0x801F27EC`), the eased move (`0x801F2840`) and the shutter bars
 followed by `sh $s0,0x1a($v0)` - `+0x1A = 1`, the emitter's **scene** arm - and
 the whole site sits behind a `bnez` on `_DAT_8007B8B8` at `0x801D6FB0`, so it
 runs once per scene entry while that global is clear. The port hosts it as an
-element channel (`engine-core::world::cutscene_elements`). Its two table
-neighbours here, `FUN_801D5C08` and `FUN_801D5D60`, are referenced by nothing
-across the 84 overlay images in any of the five reference forms - what spawns
-*those* elements is open.
+element channel (`engine-core::world::cutscene_elements`), whose producer is
+`World::install_field_scene_elements`.
+
+The emitter's own first instruction reads its master gate `_DAT_8007B854`
+(`lw v0,-0x47ac(v0)` at `0x801D605C`), and the gate is **script-driven**: it
+has six references disc-wide - two SCUS clears (`0x800259AC`, `0x8003B690`),
+one SCUS reader in the field render pass (`0x80026EBC`, which stages a
+16-byte-stride table into scratchpad `0x1F8002D0` only when the game mode is
+`3` and the gate is set), the emitter's read, and two field-VM writers.
+Those two are `0x801E0F38` (set) and `0x801E0F44` (clear), the sub-`0` and
+sub-`1` arms of the op-`0x4C` outer-nibble-`3` jump table at `0x801CEEB8`
+([`script-vm-menuctrl.md`](script-vm-menuctrl.md)). So the emitter exists for
+the whole scene and the script decides when it emits.
+
+Its two table neighbours, `FUN_801D5C08` and `FUN_801D5D60`, **are** spawned -
+the earlier "referenced by nothing across the 84 overlay images" reading was a
+scanner artifact. Nothing names those handler VAs; what the field overlay names
+is their `0x18`-byte templates `0x801F227C` and `0x801F22AC`, as `lui 0x801F` +
+`addiu` pairs feeding `FUN_80020DE0(descriptor, *(0x8007C34C))`: the tween at
+`0x801D245C` (`addiu $a0,$a0,0x227c` in the delay slot), `0x801D2634` and
+`0x801D57C0`, the teardown at `0x801D2760` (`addiu $a0,$a0,0x22ac`). Both sites
+store the driven object into the returned actor's `+0x90` immediately
+afterwards, which is the linked-object back-link the handlers gate on. The
+word-form scan does find those two templates and classifies the hits as
+`incidental-code`, which is how the negative was reached.
 
 ### `FUN_801D27E0` swaps the party leader
 

@@ -569,8 +569,37 @@ The scripted `4C 61` CLUT family (`World::step_clut_fx`) needs no guard:
 its fades are already ramps (`ClutFade`) and its one-shots are singular
 event stamps, not oscillators.
 
+## Mechanism 4 - the ambient particle emitter
+
+A fourth carrier, and the one that is neither a bundle slot nor a move-VM
+record: `FUN_801D6058`, the `+0x08` handler of the `0x18`-byte plain template
+at `0x801F271C` in the field overlay's own template table. Field MAIN INIT
+`FUN_801D6704` spawns exactly one per field entry - `jal 0x80024c88` at
+`0x801D6FD8`, then `+0x1A = 1` to select its **scene** arm - behind a `bnez`
+on the field-entry mode word `_DAT_8007B8B8`, so a warp entry (a return from
+battle, a minigame or an FMV) skips it.
+
+The scene arm takes twenty-four independent draws per frame, each with a one
+in sixteen chance of bursting `(rand & 3) + 1` particles at one point sampled
+inside the camera's visible-tile span `DAT_1F8003E8..EB`. What decides whether
+any of that happens is the master gate `_DAT_8007B854`, read by the handler's
+first instruction (`0x801D605C`). The gate is **script-driven**, not
+per-scene data: field-VM op `0x4C`, outer nibble `3`, sub-`0` sets it
+(`0x801E0F38`) and sub-`1` clears it (`0x801E0F44`), off the 16-entry jump
+table at `0x801CEEB8`. Its only other reader is the field render pass at
+`0x80026EBC`, which stages a 16-byte-stride table from `0x8007322C` into
+scratchpad `0x1F8002D0` when the game mode is `3` and the gate is set.
+
+Engine: the handler is `engine-core::cutscene_script_elements::AmbientEmitter`
+on the element channel `engine-core::world::cutscene_elements`; the producer is
+`World::install_field_scene_elements` and the gate sink is
+`World::set_ambient_particles_enabled`. Fuller spawn-site provenance is in
+[`cutscene.md`](cutscene.md).
+
 ## Related
 
+- [`cutscene.md`](cutscene.md) - the element channel the particle emitter
+  shares with the position tween and the teardown.
 - [`world-map.md`](world-map.md) - the kingdom walker table (ocean).
 - [`move-vm.md`](move-vm.md) / [`move-vm-overlay-ext.md`](move-vm-overlay-ext.md) -
   the opcode set the ambient records run on.
