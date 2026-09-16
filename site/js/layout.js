@@ -177,6 +177,7 @@ const NAV = [
       { href: 'formats/sfx-table.html',              text: 'SFX table',                key: 'formats/sfx-table' },
       { href: 'formats/sound-driver.html',           text: 'Sound-driver paths',       key: 'formats/sound-driver' },
       { href: 'formats/pochi.html',                  text: 'Pochi-filler',             key: 'formats/pochi' },
+      { href: 'formats/ringside-still.html',         text: 'Headerless stills',        key: 'formats/ringside-still' },
       { href: 'formats/mips-overlay.html',           text: 'MIPS overlay code',        key: 'formats/mips-overlay' },
       { href: 'formats/overlay-ptr-table.html',      text: 'Overlay ptr-table code',   key: 'formats/overlay-ptr-table' },
       { href: 'formats/navmesh.html',                text: 'Per-scene scratch buffer', key: 'formats/navmesh' },

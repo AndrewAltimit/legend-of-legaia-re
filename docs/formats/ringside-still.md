@@ -36,8 +36,11 @@ so the whole entry is one 320 x 256 image.
 
 `FUN_801F6B24` in the PROT `0978` `field_back_read` image (slot-B base
 `0x801F69D8`) is a phase machine on a jump table at `0x801F6AA8`; four of its
-arms read one band each. The rect lives at `0x801F735C` and only its `y` is
-rewritten between bands:
+arms read one band each. That table is one of **two** in the routine, and the
+`beqz` on the special-battle word `_DAT_8007BAC0` at `0x801F6BA8` is what picks
+between them - a zero word takes the other table (`0x801F6AD8`, the field
+texture-page restore), so these arms only run inside a dome or special battle.
+The rect lives at `0x801F735C` and only its `y` is rewritten between bands:
 
 ```text
 801f6be4  li   v0,0x180         ; rect.x = 384
