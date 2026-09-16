@@ -12,13 +12,17 @@ folklore "72-slot" bound.
   Id `0` marks a free slot; stacks cap at 99. The array is SC block
   `+0x1818` inside the `0x1A18`-byte live game-state block at `0x80084140`,
   so it rides verbatim into every memory-card save.
-- **Access.** Nothing indexes the array raw. Every producer and consumer
-  (pause menu, field VM `GIVE_ITEM`, battle rewards, shops, equip swap-back)
-  goes through the `SCUS_942.54` helpers that scan and bound-check only
-  inside the active window - five of them carry the add / consume / capacity /
-  reserve / normalize contract, but thirteen SCUS functions touch the array in
-  all (see [the reference census](#every-reference-to-the-array)), and two
-  capture-class cast modules reach it without the window at all.
+- **Access.** Every access materialises the block base inline and indexes by
+  slot. The producers and consumers (pause menu, field VM `GIVE_ITEM`, battle
+  rewards, shops, equip swap-back) mutate through the `SCUS_942.54` helpers
+  that scan and bound-check only inside the active window - five of them carry
+  the add / consume / capacity / reserve / normalize contract - but the helpers
+  are not the only road in: thirteen SCUS functions touch the array in all
+  (see [the reference census](#every-reference-to-the-array)), the field /
+  battle / menu overlays read slots directly, the pause menu's Throw Out
+  confirm zeroes a slot with two `sb` of its own (`FUN_801D8734` in PROT
+  0899), and two capture-class cast modules reach it without the window at
+  all.
 - **Window.** Three `gp`-relative halfwords - `gp[+0x2D2]` start,
   `gp[+0x2D4]` end, `gp[+0x2D6]` span - written by exactly one function,
   `FUN_8004313C`, from the party roster: `[0, 256)` with two or more members,
@@ -60,13 +64,20 @@ not an engine bound (see [the folklore check](#the-active-window)).
 
 ## Accessors
 
-A sweep of all 129 functions in the pause-menu overlay finds **zero** direct
-array writes: its 17 inventory operations all call into a small SCUS helper
-family, passing item ids or helper-returned slot numbers. The field VM's
+The pause-menu overlay's inventory operations call into a small SCUS helper
+family for every add, consume and normalize, passing item ids or
+helper-returned slot numbers - with one exception the bytes show. The Throw
+Out confirm (`FUN_801D8734` in PROT 0899, state `3`) zeroes the selected
+slot's id and count itself: `sb zero,0x1818(v0)` / `sb zero,0x1819(v0)` at
+`0x801D88FC` / `0x801D8910` over `0x80084140 + _DAT_8007BB88 * 2`, after cue
+`0x37` and before it walks `[gp[+0x2D2], gp[+0x2D4])` for any slot still
+occupied. An earlier sweep of that overlay reported zero direct writes; the
+pair sits inside PROT 0899's clean-copy prefix and a linear decode finds it
+(`see ghidra/scripts/funcs/overlay_menu_801d8734.txt`). The field VM's
 `GIVE_ITEM` op (`0x39`, chests and scripts), battle rewards
 (`FUN_8004E568`), shops, and the equip swap-back (refunding displaced gear)
-take the same road. There is no raw-index sort or swap primitive anywhere in
-retail.
+go through the helpers. There is no raw-index sort or swap primitive anywhere
+in retail.
 
 | Helper | Role |
 |---|---|
@@ -218,6 +229,7 @@ one nobody has measured.
 | `FUN_80043048` | reserve | second half of the capacity / reserve pair |
 | `FUN_800423E0` | normalize (merge + squeeze) | calls window setup first; merges duplicate stacks (cap 99); pulls occupied slots down into holes; occupancy = `id != 0` alone |
 | `FUN_80034A6C` | new-game seed | writes exactly slot 0 = `(0x77 Healing Leaf, x5)`; both callers pre-zero the whole range first |
+| `FUN_801D8734` (PROT 0899) | Throw Out confirm | the one non-SCUS writer: zeroes slot `_DAT_8007BB88`'s id and count in place (`0x801D88FC` / `0x801D8910`), then scans the active window for a surviving occupied slot |
 
 ## What the port does
 
