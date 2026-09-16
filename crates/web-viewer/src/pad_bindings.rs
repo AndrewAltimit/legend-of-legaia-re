@@ -106,7 +106,8 @@ pub fn store_mapping(mapping: &Mapping) {
 fn load_persisted_mapping() -> Mapping {
     #[cfg(target_arch = "wasm32")]
     {
-        if let Some(Some(raw)) = bindings_storage().map(|s| s.get_item(BINDINGS_STORAGE_KEY).ok())
+        if let Some(store) = bindings_storage()
+            && let Ok(Some(raw)) = store.get_item(BINDINGS_STORAGE_KEY)
             && let Ok(m) = serde_json::from_str::<Mapping>(&raw)
             && !m.bindings.is_empty()
         {
@@ -202,6 +203,24 @@ impl LegaiaRuntime {
     /// See [`pad_buttons_json`].
     pub fn pad_buttons_json(&self) -> String {
         pad_buttons_json()
+    }
+
+    /// See [`pad_bindings_revision`].
+    ///
+    /// A forwarder for the same reason the two above are, and it earns its
+    /// keep: the page's `legaiaSyncPadBindings(src)` is handed a
+    /// `LegaiaRuntime`, and a free function on the module namespace is not
+    /// reachable through it. Without this the sync call answered
+    /// `typeof !== 'function'` and silently did nothing, so a rebind stayed
+    /// invisible to the running page - which is exactly the shape a browser
+    /// check catches and a green cargo test cannot.
+    pub fn pad_bindings_revision(&self) -> u32 {
+        pad_bindings_revision()
+    }
+
+    /// See [`pad_bindings_reset`].
+    pub fn pad_bindings_reset(&self) {
+        pad_bindings_reset();
     }
 }
 
