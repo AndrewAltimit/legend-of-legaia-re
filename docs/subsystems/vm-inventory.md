@@ -65,6 +65,17 @@ as an `(entry, VA)` pair - `0x801F69D8` alone is the tick body of six modules -
 so a dispatcher keyed on the address runs the wrong choreography for five of
 them.
 
+A third property is the one a disassembly cannot supply: **how long an arm
+holds**. The dwell is a module-resident countdown, and its drain is a per-arm
+multiplier of the scratchpad frame byte at `0x1F800393` - the product with
+`0x1F80037D`, twice that byte, or once it. So a drain measured on one arm
+describes that arm, and a run that stops short of expiry is indistinguishable
+from a gate firing. Measured per arm for the player-Seru half and for twelve of
+the fourteen trampoline-reached arms; two arms, PROT 0943's `0x40` and PROT
+0944's `0x53`, fault before their first tick in every post-turn state the
+capture corpus holds. Tables in
+[`cast-module.md`](cast-module.md#frame-gating-measured).
+
 ## The effect VM has no opcode space
 
 A low opcode count is not evidence of incomplete RE, and here the count is

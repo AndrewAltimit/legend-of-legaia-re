@@ -126,6 +126,31 @@ a missing export degrades a feature instead of throwing. That is a property of
 the current call sites, not a guarantee: an unguarded call to a newly added
 export would turn the same window into a hard failure.
 
+## A play-page report that contradicts a green oracle
+
+When a runtime oracle over the page is green and a person watching the page
+reports the opposite, suspect the bundle **first**. The oracle links the engine
+out of the tree; the page runs whatever `site/wasm/` was built from. The two
+answer different questions, and only one of them moves when you edit the engine.
+
+The case that named this section: the play page's d-pad was reported as not
+camera-relative while `play_camera_parity_disc` passed. The page's compass was
+in fact fed by the debug-orbit camera only while F3 was held, so the engine was
+right and the page was a version behind on the half that mattered. Two things
+made the stale bundle easy to miss:
+
+- **Every other freshness signal says "in sync".** The bundle's mtime is newer
+  than the last engine edit if you rebuilt at any point since, and the revision
+  history has nothing to say about an untracked build artifact at all.
+- **The checker itself can be the stale party.** When the stamp format changes,
+  a stale bundle reports `stamp is format v1, checker v2 - rebuild` rather than
+  naming drifted files. That line is the answer, not a tooling complaint: it
+  means the stamp predates the fix to what the stamp hashes.
+
+So the order is: run the checker, read its own exit line, rebuild if it says
+anything at all, reload past the cache window in the table above, and only then
+treat the report as a claim about the engine.
+
 ## Why the bundle is no longer committed
 
 It was, for 87 commits. A 4.6 MB binary rebuilt that often came to roughly
