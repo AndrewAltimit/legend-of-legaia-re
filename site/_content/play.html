@@ -904,19 +904,41 @@
     });
     try { runtime.boot_title_start(); } catch (e) { console.warn('boot title', e); then('new_game'); return; }
     if (!runtime.boot_title_is_active()) { then('new_game'); return; }   /* no disc art path */
-    /* Title theme: the native window starts it on every entry to the title
-     * card (`start_title_bgm`); the click that opened this flow is the user
-     * gesture the browser's autoplay policy wants, so audio can come up here. */
-    try {
-      if (typeof runtime.audio_init === 'function') {
-        if (typeof runtime.audio_ready !== 'function' || !runtime.audio_ready()) runtime.audio_init();
-        if (typeof runtime.audio_resume === 'function') runtime.audio_resume();
-        if (typeof window.__playApplyVolume === 'function') window.__playApplyVolume();
-        if (typeof runtime.play_title_bgm === 'function') runtime.play_title_bgm();
-      }
-    } catch (e) { console.warn('title bgm', e); }
+    /* Publisher logos: the boot stage AHEAD of the title card (PROT 0895's own
+     * sequencer - SCEA, Contrail, PROKION, each with its own fade). The engine
+     * has carried the session and the atlas builder all along; only the native
+     * `--boot-ui` chain played them, so this page used to enter the boot chain
+     * one stage late. `false` when the disc has no readable init.pak, which is
+     * the same fallback the native window takes. */
+    let logos = false;
+    try { logos = (typeof runtime.boot_logos_start === 'function') && runtime.boot_logos_start(); }
+    catch (e) { console.warn('boot logos', e); logos = false; }
+    let logoBlit = null;
+    if (logos) {
+      try {
+        const ld = runtime.boot_logos_atlas_dims();
+        if (ld[0] > 0) logoBlit = new window.LegaiaAtlasBlitter(runtime.boot_logos_atlas_rgba(), ld[0], ld[1]);
+      } catch (e) { console.warn('boot logos atlas', e); }
+      if (!logoBlit) logos = false;   /* nothing to draw - skip straight to the card */
+    }
+    /* Title theme: the native window starts it on entry to the title card
+     * (`start_title_bgm`), not under the logos; the click that opened this flow
+     * is the user gesture the browser's autoplay policy wants, so audio can
+     * come up here. */
+    const startTitleBgm = () => {
+      try {
+        if (typeof runtime.audio_init === 'function') {
+          if (typeof runtime.audio_ready !== 'function' || !runtime.audio_ready()) runtime.audio_init();
+          if (typeof runtime.audio_resume === 'function') runtime.audio_resume();
+          if (typeof window.__playApplyVolume === 'function') window.__playApplyVolume();
+          if (typeof runtime.play_title_bgm === 'function') runtime.play_title_bgm();
+        }
+      } catch (e) { console.warn('title bgm', e); }
+    };
+    const TITLE_PROMPT = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
+    if (!logos) startTitleBgm();
     showStage();
-    statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
+    statusEl.textContent = logos ? 'Publisher logos - Enter or Z skips.' : TITLE_PROMPT;
     const ctx = menuCanvas.getContext('2d');
     /* Blitters, in the engine's own fallback order: the title art carries the
      * card + menu bands; without it the menu rows come off the menu-glyph
@@ -993,6 +1015,35 @@
       bootTitleRAF = requestAnimationFrame(frame);
       const edge = padMaskOf(pulse);
       pulse.clear();
+      /* Publisher-logo stage: owns the frame until the sequencer finishes or
+       * a Start / Cross edge skips it, then the title card opens. Same fixed
+       * 60 Hz catch-up as the branches below - the fade ramps are counted in
+       * retail frames, so a throttled tab must not stretch them. */
+      if (logos) {
+        let ticks = 1;
+        const now = performance.now();
+        if (!frame._logoClock) frame._logoClock = now;
+        ticks = Math.max(1, Math.min(30, Math.floor((now - frame._logoClock) / 16.667)));
+        frame._logoClock += ticks * 16.667;
+        let done = false;
+        try {
+          for (let i = 0; i < ticks && !done; i++) done = runtime.boot_logos_step(i === 0 ? edge : 0);
+        } catch (e) { done = true; }
+        let ld = null;
+        try { ld = JSON.parse(runtime.boot_logos_draws_json(menuCanvas.width, menuCanvas.height)); }
+        catch (e) { ld = null; }
+        ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
+        if (ld && ld.sprites && logoBlit) logoBlit.blit(ctx, ld.sprites);
+        if (done) {
+          logos = false;
+          frame._titleClock = 0;
+          startTitleBgm();
+          statusEl.textContent = TITLE_PROMPT;
+        }
+        return;
+      }
       /* Attract-mode movie (fmv 0, MV1.STR): the title session arms it on
        * the idle countdown and stays frozen until the page's movie lane
        * finishes it or the retail skip edge fires - the same lane the

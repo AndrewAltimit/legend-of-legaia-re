@@ -89,7 +89,7 @@ HUD helpers are ports in their own right (`FUN_801d13f0`, `FUN_801d1580`,
 rather than simulation state, so they sit beside their consumer here instead
 of in `engine-core`, which keeps the minigame's numeric kernels.
 
-Three modules are not UI at all but live here for the same structural reason -
+Several modules are not UI at all but live here for the same structural reason -
 they are wgpu-free draw kernels both hosts must share, and this crate is the
 shared leaf:
 
@@ -107,6 +107,16 @@ shared leaf:
   composition, and the `land_capture_rgba` / `refresh_captured_page` seam a
   host feeds its own frame readback through (native: `capture_rgba`; browser:
   `gl.readPixels`).
+- `battle_numerals` - the battle value readout's quads: retail's 24x24 numeral
+  cells and the `N HIT` / `TOTAL` / `DAMAGE` word cells as `ScreenPrim`s on
+  the effect atlas's glyph page. The layout is `engine-vm`'s; this is the draw
+  both hosts had written separately, one sampling VRAM and one restyling the
+  digits in the dialog font.
+- `ui_boot_logos` - the publisher-logo boot pass's stage-into-surface fit, so
+  the native `--boot-ui` chain and the play page's own logo stage letterbox
+  retail's 640x480 quads identically.
+- `ui_dance` - the dance count-in banner and the how-to tutorial's captions,
+  projected from the phase `World::tick_dance` publishes.
 
 ## Composition
 

@@ -1640,6 +1640,72 @@ pub fn good_banner_spawn(weight: u16) -> GoodBannerSpawns {
     }
 }
 
+/// One past the last frame of the count-in banner's timeline: slide-in
+/// (`0x1e`) + hold (to `0x5a`) + slide-out (`0x1e` more).
+pub const COUNTIN_END_FRAME: i32 = 0x5a + 0x1e;
+
+/// The pre-song count-in as an advancing object - the frame counter and the
+/// once-only [`COUNTIN_INTRO_CUE`] latch (`DAT_801D5134`) that
+/// [`dance_countin_banner_envelope`] leaves to its caller.
+///
+/// Retail runs the below-10 states of `FUN_801cf470` before the beat clock
+/// starts; the port stages one of these on [`crate::world::World::enter_dance`]
+/// and the world's dance tick plays it out, holding `DanceGame::advance` off
+/// until it finishes. Owning the counter here rather than in a host is what
+/// makes the native window and the browser play page count in identically -
+/// and what gives the **door-warp** entry a count-in at all, which neither
+/// host had (only the native debug launcher ran one).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CountIn {
+    frame: i32,
+    cue_fired: bool,
+}
+
+/// What one [`CountIn::step`] produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CountInStep {
+    /// This frame's banner envelope, for the host's draw list.
+    pub banner: CountInBanner,
+    /// The intro cue, on the single frame the hold segment is entered.
+    pub cue: Option<u16>,
+    /// The slide-out finished: the caller starts the song this frame.
+    pub done: bool,
+}
+
+impl CountIn {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Frames elapsed (the banner animator's own counter).
+    pub fn frame(&self) -> i32 {
+        self.frame
+    }
+
+    /// This frame's envelope without advancing - what a `&self` draw builder
+    /// reads.
+    pub fn banner(&self) -> CountInBanner {
+        dance_countin_banner_envelope(self.frame)
+    }
+
+    /// Advance one frame.
+    pub fn step(&mut self) -> CountInStep {
+        let banner = dance_countin_banner_envelope(self.frame);
+        let cue = if banner.hold && !self.cue_fired {
+            self.cue_fired = true;
+            Some(COUNTIN_INTRO_CUE)
+        } else {
+            None
+        };
+        self.frame += 1;
+        CountInStep {
+            banner,
+            cue,
+            done: self.frame >= COUNTIN_END_FRAME,
+        }
+    }
+}
+
 /// The intro-cue id the count-in banner fires once, when it crosses into its
 /// hold segment (`FUN_801d2d98`, into the runtime SFX bank; see `sfx-table.md`).
 pub const COUNTIN_INTRO_CUE: u16 = 0x200;

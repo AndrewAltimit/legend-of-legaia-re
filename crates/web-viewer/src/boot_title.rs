@@ -96,6 +96,34 @@ impl LegaiaRuntime {
         self.title_atlas = atlas;
     }
 
+    /// Build the publisher-logo atlas off PROT 0895 (`init.pak`),
+    /// best-effort. The browser twin of the native `play-window` boot, which
+    /// decodes the same entry through the same
+    /// `publisher_logos::build_atlas_from_init_pak`.
+    fn ensure_publisher_logos_atlas(&mut self) {
+        if self.boot_logos_atlas.is_some() || self.boot_logos_failed {
+            return;
+        }
+        self.boot_logos_failed = true;
+        let Some(host) = self.scene_host.as_ref() else {
+            return;
+        };
+        let Ok(bytes) = host
+            .index
+            .entry_bytes(legaia_asset::init_pak::PROT_INDEX as u32)
+        else {
+            crate::console_log("boot logos: PROT 0895 (init.pak) unavailable");
+            return;
+        };
+        match legaia_engine_core::publisher_logos::build_atlas_from_init_pak(&bytes) {
+            Ok(a) => {
+                self.boot_logos_failed = false;
+                self.boot_logos_atlas = Some(a);
+            }
+            Err(e) => crate::console_log(&format!("boot logos: atlas build failed: {e:#}")),
+        }
+    }
+
     /// Build the menu-glyph atlas (the small-caps sheet at
     /// [`legaia_asset::menu_glyph_atlas`]) off the loaded PROT, best-effort.
     /// Only the no-title-art path needs it, but it is cheap and stable, so it
@@ -296,6 +324,119 @@ impl LegaiaRuntime {
     /// Abort the title flow (page navigated away / cancelled).
     pub fn boot_title_close(&mut self) {
         self.boot_title = None;
+    }
+
+    /// Start the **publisher-logo** boot phase - the stage retail plays
+    /// before the title card (PROT 0895's own sequencer, `FUN_801CEFD4`:
+    /// SCEA, then Contrail, then PROKION, each with its own fade-in / hold /
+    /// fade-out). `false` when the disc carries no readable `init.pak`, in
+    /// which case the caller goes straight to the title, exactly as the
+    /// native `--boot-ui` chain does with an unbuildable atlas.
+    ///
+    /// Only the native window used to play these: `engine_core::publisher_logos`
+    /// and its atlas builder were shared, and the browser play page entered
+    /// the boot chain one stage late, at the title.
+    pub fn boot_logos_start(&mut self) -> bool {
+        if self.scene_host.is_none() {
+            return false;
+        }
+        self.ensure_publisher_logos_atlas();
+        if self.boot_logos_atlas.is_none() {
+            return false;
+        }
+        self.boot_logos = Some(legaia_engine_core::publisher_logos::PublisherLogosSession::new());
+        true
+    }
+
+    /// `true` while the logo phase owns the screen.
+    pub fn boot_logos_is_active(&self) -> bool {
+        self.boot_logos.is_some()
+    }
+
+    /// Advance the logo sequencer one frame with an edge-triggered PSX pad
+    /// word. Returns `true` once the phase is over (the caller then opens the
+    /// title card). Start / Cross skip the rest of the sequence, which is the
+    /// same request the native boot chain honours.
+    pub fn boot_logos_step(&mut self, edge: u16) -> bool {
+        let Some(session) = self.boot_logos.as_mut() else {
+            return true;
+        };
+        if hit(edge, 0x0008) || hit(edge, 0x4000) {
+            session.request_skip();
+        }
+        session.tick();
+        if session.is_done() {
+            self.boot_logos = None;
+            return true;
+        }
+        false
+    }
+
+    /// The publisher-logo atlas (RGBA8) the logo quads sample. Empty when it
+    /// did not resolve.
+    pub fn boot_logos_atlas_rgba(&self) -> Vec<u8> {
+        self.boot_logos_atlas
+            .as_ref()
+            .map(|a| a.rgba.clone())
+            .unwrap_or_default()
+    }
+
+    /// `[width, height]` of the publisher-logo atlas; `[0, 0]` when none.
+    pub fn boot_logos_atlas_dims(&self) -> Vec<u32> {
+        self.boot_logos_atlas
+            .as_ref()
+            .map(|a| vec![a.width, a.height])
+            .unwrap_or_else(|| vec![0, 0])
+    }
+
+    /// Draw list for the current logo frame, in surface pixels:
+    /// `{ "active": true, "sprites": [...atlas quads...] }`, rendered over
+    /// black by the page.
+    ///
+    /// The quads come out of the shared
+    /// `legaia_engine_ui::ui_boot_logos::publisher_logo_sprite_draws` the
+    /// native window draws through, against retail's own 640x480 boot stage -
+    /// so the two hosts letterbox the logos identically and a fade level is
+    /// the same alpha in both.
+    pub fn boot_logos_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
+        use legaia_engine_core::publisher_logos::{LOGO_COUNT, STAGE};
+        use legaia_engine_ui::ui_boot_logos::{LogoQuadView, publisher_logo_sprite_draws};
+        let (Some(session), Some(atlas)) =
+            (self.boot_logos.as_ref(), self.boot_logos_atlas.as_ref())
+        else {
+            return r#"{"active":false,"sprites":[]}"#.to_string();
+        };
+        let idx = session.current_logo();
+        if idx >= LOGO_COUNT {
+            return r#"{"active":true,"sprites":[]}"#.to_string();
+        }
+        let quads: Vec<LogoQuadView> = session
+            .current_quads()
+            .iter()
+            .map(|q| LogoQuadView {
+                src: q.src,
+                dst: q.dst,
+            })
+            .collect();
+        let draws = publisher_logo_sprite_draws(
+            &quads,
+            atlas.rects[idx],
+            STAGE,
+            session.alpha(),
+            surface_w.max(1),
+            surface_h.max(1),
+        );
+        let sprites: Vec<serde_json::Value> = draws
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "dst": [d.dst.0, d.dst.1, d.dst.2, d.dst.3],
+                    "src": [d.src.0, d.src.1, d.src.2, d.src.3],
+                    "color": [d.color[0], d.color[1], d.color[2], d.color[3]],
+                })
+            })
+            .collect();
+        serde_json::json!({ "active": true, "sprites": sprites }).to_string()
     }
 
     /// The title art atlas (RGBA8) the sprite bands sample. Empty when none.

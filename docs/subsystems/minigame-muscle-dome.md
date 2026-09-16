@@ -1405,7 +1405,13 @@ gate: the `0x4000` arm is skipped when `ctx+0x275 < 4` and the `0x1000` arm when
 `ctx+0x275 < 3`, so a panel with fewer than four slots takes fewer directions
 and plays no blip for the missing ones.
 
-**BGM.** The arena loads **no BGM track of its own** - a full sweep of the muscle-dome function dumps finds no streaming-loader call (`8001fc00`) and no BGM-id write. It inherits the **battle theme** its entry set, exactly as it reuses the battle engine wholesale: the music is whichever `music_01` battle track the mode-24 sub-id-5 arena setup (the `0977` door/init slot) had playing when the contest starts. There is no dedicated muscle-dome cue to pin; this is the same "host-scene-inherited BGM" shape as the [slot machine](minigame-slot-machine.md), one class up (battle rather than field). The engine/site can represent it with the standard battle theme (`M26B1`, global BGM `2026`).
+**BGM.** The arena loads **no BGM track of its own** - a full sweep of the muscle-dome function dumps finds no streaming-loader call (`8001fc00`) and no BGM-id write. It inherits the **battle theme** its entry set, exactly as it reuses the battle engine wholesale: the music is whichever `music_01` battle track the mode-24 sub-id-5 arena setup (the `0977` door/init slot) had playing when the contest starts. There is no dedicated muscle-dome cue to pin; this is the same "host-scene-inherited BGM" shape as the [slot machine](minigame-slot-machine.md), one class up (battle rather than field).
+
+The engine and the site represent that with the standard battle theme
+(`M26B1`, global BGM `2026`). `MinigameSubId::bgm_id` names it, and the shared
+door-warp drain queues it as an op-`0x35` start, so both hosts swap to it on
+entry through their own BGM director and `World::restore_minigame_bgm` puts
+the venue's own track back on the way out.
 
 The *field* track the player hears on the way in is the host scene's, and that
 scene is now named: the arena's three door-warps (`0x3E`, `op0 = 105`) all sit

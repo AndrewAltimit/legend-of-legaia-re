@@ -194,6 +194,15 @@ pub struct LegaiaRuntime {
     pub(crate) boot_title_attract_skips: u32,
     /// Disc-sourced title-screen art (PROT 0888), built with the title flow.
     pub(crate) title_atlas: Option<legaia_engine_core::title_screen_atlas::TitleScreenAtlas>,
+    /// Publisher-logo boot phase, the stage **ahead** of the title card
+    /// ([`crate::boot_title`]). `Some` while the logos play.
+    pub(crate) boot_logos: Option<legaia_engine_core::publisher_logos::PublisherLogosSession>,
+    /// Disc-sourced publisher-logo atlas (PROT 0895 `init.pak`), built on the
+    /// first logo run and kept for the page load.
+    pub(crate) boot_logos_atlas: Option<legaia_engine_core::publisher_logos::LogosAtlas>,
+    /// The atlas build was attempted and failed (no disc, or `init.pak` did
+    /// not parse), so it is not retried every frame.
+    pub(crate) boot_logos_failed: bool,
     /// Disc-sourced **menu-glyph** atlas (`legaia_asset::menu_glyph_atlas`) -
     /// the small-caps sheet the title menu's NEW GAME / CONTINUE rows sample
     /// when the title art is absent, exactly as the native window does.
@@ -400,6 +409,9 @@ impl LegaiaRuntime {
             boot_title: None,
             boot_title_attract_skips: 0,
             title_atlas: None,
+            boot_logos: None,
+            boot_logos_atlas: None,
+            boot_logos_failed: false,
             menu_glyph_atlas: None,
             cards: [const { None }; crate::cards::CARD_SLOTS],
             fishing_banners: Default::default(),
@@ -633,6 +645,9 @@ impl LegaiaRuntime {
         self.play_menu = None;
         self.boot_title = None;
         self.title_atlas = None;
+        self.boot_logos = None;
+        self.boot_logos_atlas = None;
+        self.boot_logos_failed = false;
         self.menu_glyph_atlas = None;
         Ok(count)
     }

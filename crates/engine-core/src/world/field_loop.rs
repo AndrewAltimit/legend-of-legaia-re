@@ -175,6 +175,62 @@ impl World {
         }
     }
 
+    /// Hand the score to an in-world minigame's own global-pool track.
+    ///
+    /// The three minigames whose overlay init loads a track of its own - the
+    /// dance chart loops, the Baka Fighter overture, the Muscle Dome battle
+    /// theme - call this from the shared door-warp entry
+    /// ([`crate::scene::SceneHost::drain_minigame_warp`]), so **both** hosts
+    /// start the same music on the same frame. The slot machine and fishing
+    /// pass `None` and inherit the host scene's BGM, which is retail's own
+    /// behaviour for those two.
+    ///
+    /// Queued as an ordinary `FieldEvent::Bgm` start (sub-op 1) rather than
+    /// played here: the host's BGM director is the only layer that can resolve
+    /// a `music_01` entry, and routing it as an op-`0x35` start is what makes
+    /// the native window and the browser play page reach the same code.
+    /// `current_bgm` is deliberately **not** overwritten - it names the
+    /// *scene's* track, which [`Self::restore_minigame_bgm`] resumes.
+    pub(crate) fn swap_to_minigame_bgm(&mut self, bgm_id: u16) {
+        if self.audio.minigame_bgm_active {
+            return;
+        }
+        self.audio.minigame_bgm_resume = self.audio.current_bgm;
+        self.audio.minigame_bgm_active = true;
+        self.pending_field_events.push(FieldEvent::Bgm {
+            text_id: bgm_id,
+            sub_op: 1,
+        });
+    }
+
+    /// Resume the field track a minigame's own music displaced, on the
+    /// mode-24 return warp. No-op unless [`Self::swap_to_minigame_bgm`] armed
+    /// the swap. A scene that had no track at entry gets a stop (sub-op 4)
+    /// rather than being left with the minigame's music running under the
+    /// field.
+    pub(crate) fn restore_minigame_bgm(&mut self) {
+        if !self.audio.minigame_bgm_active {
+            return;
+        }
+        self.audio.minigame_bgm_active = false;
+        match self.audio.minigame_bgm_resume.take() {
+            Some(track) => {
+                self.audio.current_bgm = Some(track);
+                self.pending_field_events.push(FieldEvent::Bgm {
+                    text_id: track,
+                    sub_op: 1,
+                });
+            }
+            None => {
+                self.audio.current_bgm = None;
+                self.pending_field_events.push(FieldEvent::Bgm {
+                    text_id: 0,
+                    sub_op: 4,
+                });
+            }
+        }
+    }
+
     pub(crate) fn enter_battle_from_formation(
         &mut self,
         formation: &crate::monster_catalog::FormationDef,

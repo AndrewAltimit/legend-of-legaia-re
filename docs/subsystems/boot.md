@@ -1094,7 +1094,7 @@ The sequencer is a 13-arm switch on the actor's `+0x1A` state halfword (jump tab
 
 State 10's blend quad is `FUN_801D0460(ot_slot, abr, rgb)`, a full-screen semi-transparent flat quad (GP0 `0x2B`) sized from the scratchpad draw-context extents and given its blend mode by `FUN_80059010`. The tail of the sequencer leaves game mode `0x16` (CARD INIT) when `_DAT_8007BB00` is set and `0` otherwise.
 
-The port carries all of this in [`legaia_engine_core::publisher_logos`](../../crates/engine-core/src/publisher_logos.rs): `LOGO_QUADS` holds the table above, `RETAIL_SEQUENCE` the order and the frame counts, and `LEVEL_FULL` the `0x80` neutral point. It models state 10 as a fade-down of the logo over the same 65 frames rather than compositing the white blend quad.
+The port carries all of this in [`legaia_engine_core::publisher_logos`](../../crates/engine-core/src/publisher_logos.rs): `LOGO_QUADS` holds the table above, `RETAIL_SEQUENCE` the order and the frame counts, and `LEVEL_FULL` the `0x80` neutral point. It models state 10 as a fade-down of the logo over the same 65 frames rather than compositing the white blend quad. Both hosts play the pass: the native `play-window --boot-ui` chain and the browser play page, which opens its own logo stage ahead of the title card off the same session and the shared quad builder `legaia_engine_ui::ui_boot_logos::publisher_logo_sprite_draws`.
 
 ### The code region, and where it ends
 

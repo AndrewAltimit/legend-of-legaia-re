@@ -522,7 +522,15 @@ opening prologue chain (`play_cutscene` above) - after `begin_new_game`
 establishes the fresh slate the native `BootSession` does. The title theme
 starts with the card and the attract countdown - which runs at the Press
 Start prompt as well as on the menu, since retail has no prompt phase to
-wait behind - plays `MV1.STR` through `play_fmv`. Publisher logos are not yet wired on this host.
+wait behind - plays `MV1.STR` through `play_fmv`.
+
+The **publisher logos** run ahead of the card on this host too
+(`boot_logos_start` / `_step` / `_draws_json`): `PublisherLogosSession` walks
+retail's SCEA -> Contrail -> PROKION order off the PROT 0895 atlas, Start or
+Cross skips, and the quads come out of the shared
+`legaia_engine_ui::ui_boot_logos::publisher_logo_sprite_draws` the native
+window draws through, so the 640x480 boot stage letterboxes identically on
+both. The title theme starts when the card comes up, not under the logos.
 
 ## In-world minigames (`play_minigames`)
 

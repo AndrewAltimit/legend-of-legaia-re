@@ -841,18 +841,13 @@ struct PlayWindowApp {
     /// splash, wander ripples, catch-celebration bursts. Ticked per frame in
     /// `tick_minigame_extras`; drawn by the HUD builder.
     minigame_fx: minigame_fx::MinigameFxPool,
-    /// The dance pre-song count-in phase (the `FUN_801cf470` below-10 states
-    /// as a host phase): the parsed game held pending, the banner's own frame
-    /// counter, and the once-only intro-cue latch. The dance enters when the
-    /// envelope finishes.
-    dance_countin: Option<(legaia_engine_core::dance::DanceGame, i32, bool)>,
-    /// This frame's count-in banner envelope, for the HUD builder.
-    dance_countin_draw: Option<legaia_engine_core::dance::CountInBanner>,
-    /// The Disco King tutorial actor running beside a how-to dance run
-    /// (`J` starts one).
-    dance_tutorial: Option<legaia_engine_core::dance_tutorial::DanceTutorial>,
-    /// This frame's tutorial captions / cursor, for the HUD builder.
-    dance_tutorial_frame: Option<legaia_engine_core::dance_tutorial::TutorialFrame>,
+    // The dance pre-song count-in and the Disco King how-to tutorial used to
+    // live here, as a host phase holding the parsed game pending. They are
+    // `World::minigames.dance_countin` / `dance_tutorial` now, stepped by the
+    // world's own dance tick, so the browser play page counts in on the same
+    // frames and the **door-warp** entry gets a count-in at all. The HUD
+    // builder reads `dance_countin_banner` / `dance_tutorial_frame` off the
+    // world.
     /// Score high-water mark the sequence-banner spawn edges against.
     dance_fx_score: u32,
     /// The fishing venue's free-swimming fish actor (idle/cast phases).

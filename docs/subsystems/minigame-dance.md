@@ -419,16 +419,27 @@ competitive modes. `DanceMode` carries that mapping, and the how-to mode also
 forces the short song. `DanceGame::from_overlay` stays the qualifier entry
 point.
 
-Runtime wiring: the engine host installs the rules engine as a suspending scene mode (`SceneMode::Dance`; `World::enter_dance` / `tick_dance` / `exit_dance`). The `play-window` viewer starts it from the `K` key (loads the dance overlay PROT 0980, `DanceGame::from_overlay`), judges the three retail pad bits directly (Square/Circle/Triangle = symbols `1`/`2`/`3`), and draws the score / groove-gauge / active-lane HUD; the song timer ends the run and restores the interrupted scene.
+Runtime wiring: the engine host installs the rules engine as a suspending scene mode (`SceneMode::Dance`; `World::enter_dance` / `tick_dance` / `exit_dance`), reached either by the mode-24 door warp or by a debug launcher. The `play-window` viewer starts it from the `K` key (loads the dance overlay PROT 0980, `DanceGame::from_overlay`), judges the three retail pad bits directly (Square/Circle/Triangle = symbols `1`/`2`/`3`), and draws the score / groove-gauge / active-lane HUD; the song timer ends the run and restores the interrupted scene.
 
 Three further pieces of the retail frame run in the same host
 (`window/minigames.rs` + `window/hud.rs`):
 
-- **Count-in**: the parsed game is held pending while the
-  `dance_countin_banner_envelope` timeline (`FUN_801d2d98`) plays out - the
-  host owns the banner's frame counter and the once-only intro-cue latch, and
-  only enters the dance (and starts the song) when the slide-out finishes.
-  This is the `FUN_801cf470` below-10 pre-song band as a host phase.
+- **Count-in**: `World::enter_dance` arms `minigames.dance_countin`
+  (`dance::CountIn`, which owns the banner's frame counter and the once-only
+  intro-cue latch) and the world's dance tick plays the
+  `dance_countin_banner_envelope` timeline (`FUN_801d2d98`) out, holding
+  `DanceGame::advance` off and starting the song when the slide-out finishes.
+  This is the `FUN_801cf470` below-10 pre-song band, and it is in the **world**
+  rather than in a host precisely because the player-reachable entry is the
+  mode-24 door warp, which both hosts drain through the shared scene host - a
+  host-side phase reached only a debug launcher. Hosts draw the published
+  envelope through `engine-ui::ui_dance::dance_countin_draws_for`.
+- **How-to tutorial**: a `DanceMode::HowTo` run installs
+  `minigames.dance_tutorial` (the Disco King actor, `FUN_801D0750`) in the same
+  call, and the dance tick steps it beside the session, publishing
+  `dance_tutorial_frame` for `engine-ui::ui_dance::dance_tutorial_draws_for`.
+  Both the count-in's intro cue and the tutorial's cursor / confirm cues leave
+  through `World::drain_minigame_sfx_cues`, which both hosts drain.
 - **Retail-coordinate HUD**: each frame the host lays the HUD out from
   `DanceGame::hud_draws` at its 320x240 stage positions (all three score
   boxes, the rivals' rows included), with the rival gate raised in the two

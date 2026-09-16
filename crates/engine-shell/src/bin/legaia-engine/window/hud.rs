@@ -513,68 +513,56 @@ impl PlayWindowApp {
                 ));
             }
 
-            // Disco King tutorial captions (the how-to run): placeholder
-            // text at the retail caption / option / cursor positions - the
-            // line strings themselves are overlay rodata the port does not
-            // read.
-            if let Some(tf) = &self.dance_tutorial_frame {
+            // Disco King tutorial captions (the how-to run) and the
+            // pre-song count-in banner, both through the shared
+            // `legaia_engine_ui::ui_dance` builders the browser play page
+            // draws them with - the caption strings are overlay rodata the
+            // port does not read, so the seats are retail's and the
+            // letterforms are placeholders.
+            if let Some(tf) = self
+                .session
+                .host
+                .world
+                .minigames
+                .dance_tutorial_frame
+                .as_ref()
+            {
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-                let mut tut_draws: Vec<TextDraw> = Vec::new();
-                for (i, &(cx, cy)) in tf.captions.iter().enumerate() {
-                    let ly = self
-                        .font
-                        .layout_ascii(&format!("(Disco King, line {})", i + 1));
-                    tut_draws.extend(text_draws_for(&ly, (cx as i32, cy as i32), white));
-                }
-                if let Some(opts) = &tf.options {
-                    for (label, &(ox, oy)) in ["Yes", "No thanks"].iter().zip(opts.iter()) {
-                        let ly = self.font.layout_ascii(label);
-                        tut_draws.extend(text_draws_for(&ly, (ox as i32, oy as i32), white));
-                    }
-                }
-                if let Some((cx, cy)) = tf.cursor_pos {
-                    let ly = self.font.layout_ascii(">");
-                    tut_draws.extend(text_draws_for(&ly, (cx as i32, cy as i32), white));
-                }
-                if let Some(praise) = tf.feedback {
-                    let ly = self.font.layout_ascii(if praise {
-                        "(praise - right on the beat)"
-                    } else {
-                        "(scold - watch the timing)"
-                    });
-                    tut_draws.extend(text_draws_for(&ly, (8, 0x68), dim));
-                }
-                legaia_engine_render::scale_stage_text_draws(
-                    &mut tut_draws,
+                out.extend(legaia_engine_render::ui_dance::dance_tutorial_draws_for(
+                    &self.font,
+                    legaia_engine_render::ui_dance::DanceTutorialView {
+                        captions: &tf.captions,
+                        options: tf.options,
+                        cursor_pos: tf.cursor_pos,
+                        feedback: tf.feedback,
+                    },
                     stage_origin,
                     stage_scale,
-                );
-                out.extend(tut_draws);
+                ));
             }
         }
         // Dance pre-song count-in banner (`1 2 3 READY... GO!`): the
-        // envelope's two sliding halves / held centre drawn as placeholder
-        // text at the retail x offsets, faded by its brightness ramp.
-        if let Some(env) = &self.dance_countin_draw {
+        // envelope's two sliding halves / held centre, faded by its
+        // brightness ramp. The world owns the phase; this only projects it.
+        if let Some(env) = self
+            .session
+            .host
+            .world
+            .minigames
+            .dance_countin_banner
+            .as_ref()
+        {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            let alpha = (env.brightness.clamp(0, 0xFF) as f32) / 255.0;
-            let color = [1.0f32, 1.0, 1.0, alpha];
-            let mut cd: Vec<TextDraw> = Vec::new();
-            if env.hold {
-                let ly = self.font.layout_ascii("READY... GO!");
-                cd.extend(text_draws_for(&ly, (0xA0 - 40, 0x40), color));
-            } else {
-                let left = self.font.layout_ascii("READY");
-                cd.extend(text_draws_for(
-                    &left,
-                    (0xA0 - env.x_offset - 40, 0x40),
-                    color,
-                ));
-                let right = self.font.layout_ascii("GO!");
-                cd.extend(text_draws_for(&right, (0xA0 + env.x_offset, 0x40), color));
-            }
-            legaia_engine_render::scale_stage_text_draws(&mut cd, stage_origin, stage_scale);
-            out.extend(cd);
+            out.extend(legaia_engine_render::ui_dance::dance_countin_draws_for(
+                &self.font,
+                legaia_engine_render::ui_dance::DanceCountInView {
+                    x_offset: env.x_offset,
+                    brightness: env.brightness,
+                    hold: env.hold,
+                },
+                stage_origin,
+                stage_scale,
+            ));
         }
         // The minigame effect pool's live parts (dance banner / stars,
         // fishing splash / ripples / celebration bursts), in stage space.
@@ -3187,7 +3175,7 @@ mod battle_hud_wiring_tests {
     /// on a party row. The default surface no longer draws them at all:
     /// retail's landed-hit numeral is seated over the struck actor, which
     /// only a host holding the camera can place, so it is the window's own
-    /// `battle_value_readout_mesh` (see `engine-vm::battle_value_readout`).
+    /// `battle_value_readout_prims` (see `engine-ui::battle_numerals`).
     #[test]
     fn popup_anchors_track_absolute_actor_slot() {
         let mut hud = hud_with_party_row(100, 100, 0, 0);

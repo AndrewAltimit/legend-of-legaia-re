@@ -111,6 +111,29 @@ pub struct MinigameState {
     /// somewhere unrelated instead of into the minigame. See
     /// [`crate::minigame_entry`] for the arm's disassembly.
     pub pending_warp: Option<u8>,
+    /// The dance's **pre-song count-in** (`FUN_801cf470`'s below-10 states),
+    /// armed by [`crate::world::World::enter_dance`] and played out by the
+    /// world's dance tick, which holds the beat clock off until it finishes.
+    /// `None` once the song is running.
+    pub dance_countin: Option<crate::dance::CountIn>,
+    /// The count-in banner envelope the last dance tick produced, for a
+    /// host's draw list. `None` outside the count-in.
+    pub dance_countin_banner: Option<crate::dance::CountInBanner>,
+    /// The global `music_01` track the dance's own overlay loads, held until
+    /// the count-in ends (retail starts the song when the banner clears).
+    /// Chosen by song length in [`crate::world::World::enter_dance`].
+    pub dance_pending_bgm: Option<u16>,
+    /// The Disco King **how-to** tutorial actor, installed by
+    /// [`crate::world::World::enter_dance`] when the parsed game is a
+    /// [`crate::dance::DanceMode::HowTo`] run and stepped beside the session.
+    pub dance_tutorial: Option<crate::dance_tutorial::DanceTutorial>,
+    /// The tutorial frame the last dance tick produced (captions / options /
+    /// cursor seats), for a host's draw list.
+    pub dance_tutorial_frame: Option<crate::dance_tutorial::TutorialFrame>,
+    /// SFX cue ids the minigame sessions queued this frame (the count-in
+    /// intro cue, the tutorial's cursor / confirm cues). Drained by
+    /// [`crate::world::World::drain_minigame_sfx_cues`]; cosmetic.
+    pub pending_sfx: Vec<u16>,
 }
 
 impl MinigameState {
@@ -137,6 +160,12 @@ impl MinigameState {
             scene_backup: None,
             winnings: 0,
             pending_warp: None,
+            dance_countin: None,
+            dance_countin_banner: None,
+            dance_pending_bgm: None,
+            dance_tutorial: None,
+            dance_tutorial_frame: None,
+            pending_sfx: Vec::new(),
         }
     }
 }

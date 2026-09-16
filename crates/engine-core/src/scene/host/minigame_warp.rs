@@ -85,6 +85,17 @@ impl SceneHost {
             MinigameSubId::Other2 | MinigameSubId::Other3 => false,
         };
         if entered {
+            // Hand the score to the slot's own track, when it has one. Three
+            // of the five overlay inits load a `music_01` entry of their own
+            // and two inherit the scene's music ([`MinigameSubId::bgm_id`]);
+            // queuing it as an op-`0x35` start is what makes both hosts reach
+            // the same BGM director from one call. The native window's debug
+            // launchers call `BootSession::start_global_bgm` directly, which
+            // is the same track through the same director - this is the
+            // *player-reachable* caller that was missing on both hosts.
+            if let Some(bgm) = slot.bgm_id() {
+                self.world.swap_to_minigame_bgm(bgm);
+            }
             Some(MinigameWarpOutcome::Entered(slot))
         } else {
             self.world.minigame_return_warp();

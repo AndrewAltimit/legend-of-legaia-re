@@ -574,6 +574,31 @@ every frame and drew none of them, because its only FX draw call sat inside
 the battle branch. Tier 7 asks whether a render surface names a kernel; it
 does not ask whether a simulated layer has a draw site at all.
 
+**A phase only a debug launcher ran.** The dance minigame's pre-song count-in
+(`FUN_801cf470`'s below-10 states) and the Disco King how-to tutorial actor
+were both complete shared kernels, and the native window drove them - from a
+count-in *driver of its own*, reached only by the `K` / `U` hotkeys. The
+player-reachable entry is the mode-24 door warp, which the shared scene host
+drains straight into `World::enter_dance`, so **neither** host counted in when
+a player walked into the hall. A gap that reads as "one host has it" can turn
+out to be "one host's debug path has it", and the tiers cannot tell those
+apart because both end at a live call site. The cure was to move the phase
+into the world tick, where the entry point is shared: `World::enter_dance`
+arms `minigames.dance_countin` and the dance tick holds `DanceGame::advance`
+off until it clears. The same reading applies to the three in-world minigames
+that load a track of their own (`MinigameSubId::bgm_id`) - the native window
+started them from its hotkey launchers, and the door warp started none on
+either host until the warp drain began queueing an op-`0x35` start.
+
+**Same layout, different letterforms.** The battle's damage numerals and the
+`N HIT` / `TOTAL` counter shared a layout kernel
+(`engine-vm::battle_value_readout`) and every gate saw one model - while the
+native window sampled retail's 24x24 cells out of VRAM and the page restyled
+the same digits in the dialog font. A shared *layout* is not a shared *draw*:
+the quads now come out of `engine-ui::battle_numerals` as `ScreenPrim`s and
+both hosts push them through their own `screen_prim` pass, with the font
+builders left as the explicit before-the-atlas fallback on each.
+
 ## What a waiver may say
 
 Both waiver files are validated for staleness on every run, so they cannot
@@ -605,8 +630,6 @@ about these is contested.
 
 | Gap | Shape |
 |---|---|
-| retail numeral art on web | The battle's damage numerals and `N HIT` / `TOTAL` counter draw the shared layout from the font atlas; the native window samples the retail 24x24 cells out of VRAM through a screen-space sink the page has not grown. |
-| publisher logos on web | `engine_core::publisher_logos` + its atlas builder are in the shared crate; only the native `--boot-ui` chain plays them. |
 | the cast-voice leg on **both** hosts | Every host classifies the Seru-cast dispatch cue and declines it, because no host stages the clip files it names. Not a drift - the two hosts decline symmetrically. See [below](#the-cast-voice-leg). |
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | scripted mesh re-bind on **both** hosts | Motion-VM op `0x0E` swaps an actor's model mid-scene; both hosts bind an NPC's mesh once, from its spawn model. Not a drift - neither host has it. See [below](#scripted-mesh-re-bind-op-0x0e). |

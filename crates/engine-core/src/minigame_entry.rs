@@ -97,6 +97,30 @@ pub enum MinigameSubId {
     Dance,
 }
 
+/// Global `music_01` track the Baka Fighter duel overlay's init loads:
+/// sound-test **55** (`M112` "Sol disco fever"), i.e. extraction PROT entry
+/// `1043`, the entry the init's own `FUN_8001FC00(0x415, ...)` names (see
+/// [`minigame-baka-fighter.md`](../../docs/subsystems/minigame-baka-fighter.md)).
+///
+/// The bank map is **piecewise** - `988 + index` below sound-test 68 and
+/// `990 + index` at or above it - so an extraction entry converts to a global
+/// id through [`crate::music_labels::sound_test_index_for_prot_entry`] and not
+/// by subtracting a single base. Reading `1043` as `990 + 53` is what put
+/// `2053` here, two slots off, and the same slip cost both dance tracks below;
+/// the round-trip is pinned by this module's tests.
+pub const BAKA_FIGHTER_BGM_ID: u16 = 2055;
+
+/// Global `music_01` track the dance overlay loads for the **short** song:
+/// sound-test **60** (`M116` "Sol disco final 1"), extraction PROT `1048` -
+/// the entry the overlay's `0x41A` loader index names.
+pub const DANCE_SHORT_SONG_BGM_ID: u16 = 2060;
+
+/// Global `music_01` track the dance overlay loads for the **long** song:
+/// sound-test **66** (`M120` "Sol disco final 2"), extraction PROT `1054`
+/// (loader index `0x420`). Which of the two a heat plays is the overlay's own
+/// mode arm (`DAT_801D514C`) and is unpinned; the engine picks by song length.
+pub const DANCE_LONG_SONG_BGM_ID: u16 = 2066;
+
 impl MinigameSubId {
     /// All seven slots in `sub_id` order.
     pub const ALL: [MinigameSubId; 7] = [
@@ -167,6 +191,36 @@ impl MinigameSubId {
         }
     }
 
+    /// The **global-pool `music_01` track** this slot's overlay init loads,
+    /// or `None` for the two slots that inherit the host scene's BGM.
+    ///
+    /// Three of the five playable slots bring their own music and two do not,
+    /// and the split is retail's: the duel overlay's init (`FUN_801CF00C`)
+    /// loads a Sol-disco track, the dance overlay loads one of two chart
+    /// loops, and the Muscle Dome arena reuses the **battle** engine wholesale
+    /// and therefore plays a battle theme
+    /// ([`crate::music_labels::BATTLE_THEME_1_BGM_ID`]). The slot machine and
+    /// the fishing venue load no track at all - the casino / lake scene's own
+    /// music keeps playing under them.
+    ///
+    /// The dance is `None` here even though it has two tracks of its own
+    /// ([`DANCE_SHORT_SONG_BGM_ID`] / [`DANCE_LONG_SONG_BGM_ID`]): its song
+    /// starts when the pre-song count-in clears, not at entry, so
+    /// [`crate::world::World::enter_dance`] holds the id and the world's
+    /// dance tick starts it. Which of the two plays is the overlay's own
+    /// mode arm, which is unpinned - the engine picks by song length.
+    pub fn bgm_id(self) -> Option<u16> {
+        match self {
+            MinigameSubId::BakaFighter => Some(BAKA_FIGHTER_BGM_ID),
+            MinigameSubId::MuscleDome => Some(crate::music_labels::BATTLE_THEME_1_BGM_ID),
+            MinigameSubId::Dance
+            | MinigameSubId::Fishing
+            | MinigameSubId::SlotMachine
+            | MinigameSubId::Other2
+            | MinigameSubId::Other3 => None,
+        }
+    }
+
     /// Does the engine implement this slot as a playable minigame?
     ///
     /// The two dev modules do not resolve to a [`SceneMode`]; a warp naming
@@ -220,6 +274,50 @@ mod tests {
         assert_eq!(MinigameSubId::from_sub_id(7), None);
         // Below the warp threshold is the INTERACT arm, not a warp.
         assert_eq!(MinigameSubId::from_op0(99), None);
+    }
+
+    /// Each minigame BGM constant resolves to the **extraction PROT entry**
+    /// its overlay's own loader call names.
+    ///
+    /// The bank map is piecewise, so this is the one arithmetic that has to
+    /// hold: entry `1043` is sound-test `55`, not `53`. Three constants here
+    /// were written by subtracting the high base from a documented extraction
+    /// entry, which pointed every one of them two slots low.
+    #[test]
+    fn the_minigame_tracks_resolve_to_their_documented_prot_entries() {
+        use crate::music_labels::prot_entry_for_bgm_id;
+        assert_eq!(prot_entry_for_bgm_id(BAKA_FIGHTER_BGM_ID), Some(1043));
+        assert_eq!(prot_entry_for_bgm_id(DANCE_SHORT_SONG_BGM_ID), Some(1048));
+        assert_eq!(prot_entry_for_bgm_id(DANCE_LONG_SONG_BGM_ID), Some(1054));
+        // The dome reuses the battle engine, so it plays a battle theme.
+        assert_eq!(
+            MinigameSubId::MuscleDome.bgm_id(),
+            Some(crate::music_labels::BATTLE_THEME_1_BGM_ID)
+        );
+    }
+
+    /// Two slots hand the door-warp drain a track to start; the dance's own
+    /// pair is deferred to the end of its count-in, and the remaining two
+    /// inherit the host scene's music.
+    #[test]
+    fn only_the_entry_started_tracks_are_named_here() {
+        let carried: Vec<_> = MinigameSubId::ALL
+            .into_iter()
+            .filter(|s| s.bgm_id().is_some())
+            .collect();
+        assert_eq!(
+            carried,
+            vec![MinigameSubId::BakaFighter, MinigameSubId::MuscleDome]
+        );
+        // The slot machine and fishing inherit the host scene's BGM; the
+        // dance holds its own until the count-in clears.
+        for slot in [
+            MinigameSubId::Fishing,
+            MinigameSubId::SlotMachine,
+            MinigameSubId::Dance,
+        ] {
+            assert_eq!(slot.bgm_id(), None, "{slot:?}");
+        }
     }
 
     /// Exactly five of the seven slots are playable minigames; the two dev

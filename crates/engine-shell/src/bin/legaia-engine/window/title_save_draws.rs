@@ -6,20 +6,21 @@ impl PlayWindowApp {
     /// Build the per-quad [`legaia_engine_render::SpriteDraw`] list for
     /// the active publisher logo.
     ///
-    /// The layout is not computed here: `LOGO_QUADS` carries retail's
-    /// own per-logo source rects and destinations in the 640×480 stage
-    /// the boot pass runs in (`FUN_801CE9C0` selects it with
-    /// `FUN_8001DAF8(0x400)`). This routine only letterboxes that stage
-    /// into the surface. PROKION and SCEA are vertically packed in their
-    /// TIMs and come back as two quads each; WARNING comes back empty,
-    /// because no site in PROT 0895 draws it. Returns an empty vec when
-    /// boot-UI isn't `PublisherLogos` or the atlas wasn't uploaded.
+    /// Neither the layout nor the letterboxing is computed here: `LOGO_QUADS`
+    /// carries retail's own per-logo rects in the 640x480 stage the boot pass
+    /// runs in (`FUN_801CE9C0` selects it with `FUN_8001DAF8(0x400)`), and the
+    /// stage-into-surface fit is the shared
+    /// `legaia_engine_ui::ui_boot_logos::publisher_logo_sprite_draws` the
+    /// browser play page's own logo stage draws through. This only resolves
+    /// which logo is up. Returns an empty vec when boot-UI isn't
+    /// `PublisherLogos` or the atlas wasn't uploaded.
     pub(super) fn publisher_logo_sprite_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
         use legaia_engine_core::publisher_logos::STAGE;
+        use legaia_engine_render::ui_boot_logos::{LogoQuadView, publisher_logo_sprite_draws};
 
         let BootUiState::PublisherLogos(session) = &self.boot_ui else {
             return Vec::new();
@@ -31,46 +32,22 @@ impl PlayWindowApp {
         if idx >= legaia_engine_core::publisher_logos::LOGO_COUNT {
             return Vec::new();
         }
-        let quads = session.current_quads();
-        if quads.is_empty() {
-            return Vec::new();
-        }
-        // Where this logo's TIM sits inside the stacked boot atlas.
-        let (atlas_x, atlas_y, atlas_w, atlas_h) = assets.rects[idx];
-        if atlas_w == 0 || atlas_h == 0 {
-            return Vec::new();
-        }
-        // Fit the whole retail stage into the surface, integer-scaled so
-        // the logos stay crisp, then centre it. `max(1)` keeps a
-        // surface smaller than the stage rendering at native size.
-        let scale = (surface_w / STAGE.0).min(surface_h / STAGE.1).max(1);
-        let stage_x0 = (surface_w as i32 - (STAGE.0 * scale) as i32) / 2;
-        let stage_y0 = (surface_h as i32 - (STAGE.1 * scale) as i32) / 2;
-        let alpha = session.alpha().clamp(0.0, 1.0);
-        let color = [1.0, 1.0, 1.0, alpha];
-        let mut out = Vec::with_capacity(quads.len());
-        for q in quads {
-            let (sx, sy, sw, sh) = q.src;
-            // Clip the source rect to the decoded TIM - a descriptor's
-            // w/h can name the last row of a strip that is not there.
-            let sw = sw.min(atlas_w.saturating_sub(sx));
-            let sh = sh.min(atlas_h.saturating_sub(sy));
-            if sw == 0 || sh == 0 {
-                continue;
-            }
-            let (dx, dy, dw, dh) = q.dst;
-            out.push(legaia_engine_render::SpriteDraw {
-                dst: (
-                    stage_x0 + dx * scale as i32,
-                    stage_y0 + dy * scale as i32,
-                    dw * scale,
-                    dh * scale,
-                ),
-                src: (atlas_x + sx, atlas_y + sy, sw, sh),
-                color,
-            });
-        }
-        out
+        let quads: Vec<LogoQuadView> = session
+            .current_quads()
+            .iter()
+            .map(|q| LogoQuadView {
+                src: q.src,
+                dst: q.dst,
+            })
+            .collect();
+        publisher_logo_sprite_draws(
+            &quads,
+            assets.rects[idx],
+            STAGE,
+            session.alpha(),
+            surface_w,
+            surface_h,
+        )
     }
 
     /// Canonical PSX-framebuffer (320×240) stage origin + scale, shared
