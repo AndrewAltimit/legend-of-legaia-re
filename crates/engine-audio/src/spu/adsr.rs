@@ -456,6 +456,84 @@ mod tests {
         }
     }
 
+    /// Tick-exact linear release at shift 0 (nocash: `AdsrCycles = 1`,
+    /// `AdsrStep = -8 << 11 = -0x4000`): a full-level voice reaches zero on
+    /// the **second** sample and is `Off` there. `adsr2 = 0x1F00` (linear
+    /// release, shift 0) is exactly this rate.
+    #[test]
+    fn linear_release_shift_zero_drains_in_two_ticks() {
+        let cfg = AdsrConfig::from_words(0x000F, 0x1F00);
+        assert!(!cfg.release_exp);
+        assert_eq!(cfg.release_shift, 0);
+        let mut s = AdsrState {
+            phase: Phase::Release,
+            level: 0x7FFF,
+            wait: 0,
+        };
+        assert_eq!(s.tick(&cfg), 0x3FFF);
+        assert_eq!(s.phase, Phase::Release);
+        assert_eq!(s.tick(&cfg), 0);
+        assert_eq!(s.phase, Phase::Off);
+        assert_eq!(s.tick(&cfg), 0, "off stays off");
+    }
+
+    /// Tick-exact linear release at shift 15 (nocash: `AdsrCycles = 1 << 4
+    /// = 16`, `AdsrStep = -8`): the level drops by 8 once every 16 samples -
+    /// a long **wait**, never a zero step - so the full-scale drain is
+    /// 4096 steps, the first on the first tick and fifteen ticks of wait
+    /// between each pair: `1 + 4095 x 16 = 65521` samples, 1.49 s at
+    /// 44.1 kHz.
+    #[test]
+    fn linear_release_shift_fifteen_steps_eight_every_sixteen_ticks() {
+        let cfg = AdsrConfig {
+            release_exp: false,
+            release_shift: 15,
+            ..AdsrConfig::default()
+        };
+        let mut s = AdsrState {
+            phase: Phase::Release,
+            level: 0x7FFF,
+            wait: 0,
+        };
+        assert_eq!(s.tick(&cfg), 0x7FF7, "the step lands on the first tick");
+        for _ in 0..15 {
+            assert_eq!(s.tick(&cfg), 0x7FF7, "then fifteen ticks of wait");
+        }
+        assert_eq!(s.tick(&cfg), 0x7FEF);
+        let mut ticks = 17u32;
+        while s.phase != Phase::Off {
+            s.tick(&cfg);
+            ticks += 1;
+        }
+        assert_eq!(ticks, 1 + 4095 * 16);
+    }
+
+    /// Tick-exact exponential release at shift 0: the signed step
+    /// `(-0x4000 * level) >> 15` halves the level every sample (floor toward
+    /// minus infinity, so `1 -> 0`), and a full-level voice is `Off` after
+    /// fifteen samples.
+    #[test]
+    fn exponential_release_shift_zero_halves_each_tick() {
+        let cfg = AdsrConfig {
+            release_exp: true,
+            release_shift: 0,
+            ..AdsrConfig::default()
+        };
+        let mut s = AdsrState {
+            phase: Phase::Release,
+            level: 0x7FFF,
+            wait: 0,
+        };
+        let mut expect = 0x7FFFu16;
+        let mut ticks = 0;
+        while s.phase != Phase::Off {
+            expect >>= 1;
+            assert_eq!(s.tick(&cfg), expect);
+            ticks += 1;
+        }
+        assert_eq!(ticks, 15);
+    }
+
     /// AdsrConfig::from_words round-trips the bit layout we care about.
     #[test]
     fn adsr_config_decode_layout() {

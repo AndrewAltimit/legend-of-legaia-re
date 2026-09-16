@@ -61,7 +61,7 @@ pub use seq_slots::{SeqResourceSlot, SeqResourceTable};
 pub use sequencer::Sequencer;
 pub use sfx::{
     CueDispatch, PendingCue, SfxBank, SfxEntry, SfxFireBatch, SfxScheduler, VoiceAttr,
-    classify_cue, key_on_voice_attr, voice_pitch,
+    classify_cue, key_on_voice_attr, voice_clip_span,
 };
 pub use sfx_ring::{CueDrainState, CueSlot, CueVoice, CueVoicePlan, SfxCueRing, plan_cue_voices};
 pub use shout::{ArtsShoutBank, SHOUT_CD_RESPONSE_DELAY, ShoutClip};

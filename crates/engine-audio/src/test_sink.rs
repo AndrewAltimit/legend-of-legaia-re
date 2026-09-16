@@ -322,6 +322,50 @@ mod tests {
         );
     }
 
+    /// The drain after the gate closes is the **reverb tail**, not the
+    /// envelope. The fixture's release is `adsr2 = 0x1F00` - linear, shift 0,
+    /// two samples to zero (`spu::adsr`) - yet the default sink keeps
+    /// signal for a good part of a second after the key-off, because every
+    /// `StreamResampler` boots with retail's Studio C reverb and every voice
+    /// routed into it. Render the same key-off through a **dry** SPU and the
+    /// output is exactly silent within a few frames. A reading that charged
+    /// the second-long decay to the ADSR would have "fixed" a release that
+    /// is already tick-exact.
+    #[test]
+    fn the_post_key_off_decay_is_the_reverb_tail_not_the_envelope() {
+        let key_off_and_measure = |dry: bool| -> (SinkMeasure, SinkMeasure) {
+            let mut sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+            if dry {
+                sink.with_spu(|spu| {
+                    spu.set_reverb_mode(crate::spu::ReverbMode::Off);
+                    for v in &mut spu.voices {
+                        v.set_reverb_send(false);
+                    }
+                });
+            }
+            let bank = sink.with_spu(held_tone_bank);
+            sink.attach_sequencer(Sequencer::new(held_note_seq(), bank));
+            let _ = sink.render_frames(4_410);
+            sink.set_sequencer_paused(true);
+            // The envelope's two samples plus the resampler's one-frame
+            // interpolation history: everything after that is the mixer.
+            let _ = sink.render_frames(4);
+            let first_100ms = sink.render_frames(4_410);
+            let next_100ms = sink.render_frames(4_410);
+            (first_100ms, next_100ms)
+        };
+        let (dry_a, dry_b) = key_off_and_measure(true);
+        assert!(
+            dry_a.is_silent() && dry_b.is_silent(),
+            "a dry SPU is silent four samples after the key-off: {dry_a:?} {dry_b:?}"
+        );
+        let (wet_a, _) = key_off_and_measure(false);
+        assert!(
+            !wet_a.is_silent(),
+            "the retail Studio C tail is what rings on after the key-off"
+        );
+    }
+
     #[test]
     fn an_idle_sink_emits_silence_and_says_so() {
         let mut sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
