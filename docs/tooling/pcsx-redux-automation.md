@@ -1131,12 +1131,16 @@ the longer ones (`Probes` + `What it answered`) are written out as
   Casts are driven rather than resumed into: a plan of `seat:spell` pairs is
   written into the acting seat's queued action one per window while CROSS is
   tapped, several casts per run. Four byte fingerprints guard the aliasing VAs.
-- **What it answered:** see the cast-voice section of
+- **What it answered:** the band's silence is its caller's. Over two driven
+  battles the SM arm does not run, the dispatcher is not entered and the band
+  does not fire, while the same runs record CD-XA clips started by the cast
+  modules' own hardcoded cues - the liveness control that keeps the zero from
+  being a dead instrument. The reference scan behind the caller tap is the
+  load-bearing part: the dispatcher has exactly one reference disc-wide in any
+  of the five forms (`find-address-word-refs.py 0x801F3990`), so the band's
+  reachability is that one arm's reachability and nothing else's. See the
+  cast-voice section of
   [`cast-module.md`](../subsystems/cast-module.md#the-casts-own-cd-xa-voice).
-  The reference scan behind the caller tap is the load-bearing part: the
-  dispatcher has exactly one reference disc-wide in any of the five forms
-  (`find-address-word-refs.py 0x801F3990`), so the band's reachability is that
-  one SM arm's reachability and nothing else's.
 
 ##### `autorun_throw_out_cursor.lua`
 
@@ -1150,8 +1154,16 @@ the longer ones (`Probes` + `What it answered`) are written out as
   on a hole; one that is a list row does as soon as the renderer skips one. The
   normalizer tap is what tells a null result apart from a compacted bag - if it
   runs on menu open, retail's rows and slots cannot diverge in the first place.
-- **What it answered:** the cursor's role for the port's remove-by-row
-  divergence; see [`inventory.md`](../subsystems/inventory.md#accessors).
+- **What it answered:** the cursor is a **bag slot**, and the displayed list
+  hides empty slots. Over a bag holed at slots 1 / 3 / 6, the cursor stepped
+  `0, 2, 4, 5, 7, 8` across six displayed rows and never rested on a zero-id
+  slot, so a row index and the cursor diverge as soon as a hole exists below the
+  selection - and holes do reach the menu, because the compaction helper ran
+  zero times (its one reference disc-wide is a field-VM arm, not the menu-open
+  path). The residency gate is load-bearing: PROT 0899 arrives in slot A only
+  after SELECT, and an ungated breakpoint at a 0899 VA counts the field
+  overlay's code until then. See
+  [`inventory.md`](../subsystems/inventory.md#accessors).
 
 ### Save-state to Python (offline analysis)
 

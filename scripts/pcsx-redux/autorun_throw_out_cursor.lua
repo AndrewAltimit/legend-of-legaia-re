@@ -32,7 +32,8 @@
 --   LEGAIA_POKE_AT     vsync to write the bag pattern (default 12)
 --   LEGAIA_MENU_AT     vsync of the SELECT press (default 60)
 --   LEGAIA_ITEMS_AT    vsync of the CROSS press on Items (default 200)
---   LEGAIA_STEP_FROM   first vsync of the DOWN walk (default 300)
+--   LEGAIA_ENTER_AT    vsync of the CROSS press that enters the list (default 320)
+--   LEGAIA_STEP_FROM   first vsync of the DOWN walk (default 440)
 --   LEGAIA_STEP_EVERY  vsyncs between DOWN presses (default 24)
 --   LEGAIA_STEPS       number of DOWN presses (default 12)
 --   LEGAIA_OUT_DIR     output directory
@@ -50,7 +51,8 @@ local FILL_S     = probe.getenv("LEGAIA_FILL",
 local POKE_AT    = probe.getenv_num("LEGAIA_POKE_AT", 12)
 local MENU_AT    = probe.getenv_num("LEGAIA_MENU_AT", 60)
 local ITEMS_AT   = probe.getenv_num("LEGAIA_ITEMS_AT", 200)
-local STEP_FROM  = probe.getenv_num("LEGAIA_STEP_FROM", 300)
+local ENTER_AT   = probe.getenv_num("LEGAIA_ENTER_AT", 320)
+local STEP_FROM  = probe.getenv_num("LEGAIA_STEP_FROM", 440)
 local STEP_EVERY = probe.getenv_num("LEGAIA_STEP_EVERY", 24)
 local STEPS      = probe.getenv_num("LEGAIA_STEPS", 12)
 
@@ -109,6 +111,13 @@ end
 local csv
 local g_elapsed = 0
 local n_norm, n_winset, n_throw, n_throw_fn = 0, 0, 0, 0
+-- PROT 0899 is paged into slot A only while the pause menu is up. Until then
+-- the field overlay owns these VAs, so every 0899 tap is gated on the confirm's
+-- own first store reading its expected word (`sb zero,0x1818(v0)`).
+local MENU_RESIDENT_WORD = 0xA0401818
+local menu_resident = false
+local resident_since = -1
+local phantom_throw_fn = 0
 local cursor_on_hole, cursor_samples = 0, 0
 local seen_cursor = {}
 local holes_at_list = nil
@@ -153,6 +162,10 @@ probe.run({
             row("window_set")
         end)
         tap(THROW_FN, "throw_fn", "FUN_801D8734 entry", function()
+            if not menu_resident then
+                phantom_throw_fn = phantom_throw_fn + 1
+                return
+            end
             n_throw_fn = n_throw_fn + 1
             row("throw_fn")
         end)
@@ -175,16 +188,23 @@ probe.run({
     on_capture = function(ctx, elapsed)
         g_elapsed = elapsed
 
-        if elapsed == 2 then
-            -- PROT 0899's VAs alias other overlays, so fingerprint the two
-            -- stores this whole measurement rests on: `sb zero,0x1818(v0)` and
-            -- `sb zero,0x1819(v0)`.
-            local w1 = u32(THROW_ID)
-            local w2 = u32(THROW_CNT)
-            logf("fingerprint [0x%08X]=0x%s (want A0401818) [0x%08X]=0x%s " ..
-                 "(want A0401819) mode=0x%02X",
-                 THROW_ID, string.upper(bit.tohex(w1)),
-                 THROW_CNT, string.upper(bit.tohex(w2)), u8(GAME_MODE))
+        -- Residency tracking. The fingerprint is checked every vsync rather than
+        -- once, because PROT 0899 arrives only when the menu opens.
+        local now_resident = (u32(THROW_ID) == MENU_RESIDENT_WORD)
+        if now_resident ~= menu_resident then
+            menu_resident = now_resident
+            if now_resident then
+                resident_since = elapsed
+                logf("PROT 0899 resident from vsync %d (mode 0x%02X): " ..
+                     "[0x%08X]=0x%s [0x%08X]=0x%s",
+                     elapsed, u8(GAME_MODE), THROW_ID,
+                     string.upper(bit.tohex(u32(THROW_ID))), THROW_CNT,
+                     string.upper(bit.tohex(u32(THROW_CNT))))
+            else
+                logf("PROT 0899 left slot A at vsync %d (mode 0x%02X)",
+                     elapsed, u8(GAME_MODE))
+            end
+            row(now_resident and "menu_overlay_in" or "menu_overlay_out")
         end
 
         if elapsed == POKE_AT then
@@ -211,6 +231,7 @@ probe.run({
         end
         press(MENU_AT, probe.BTN.SELECT, "SELECT")
         press(ITEMS_AT, probe.BTN.CROSS, "CROSS (Items)")
+        press(ENTER_AT, probe.BTN.CROSS, "CROSS (enter the list)")
 
         for i = 0, STEPS - 1 do
             press(STEP_FROM + i * STEP_EVERY, probe.BTN.DOWN,
@@ -242,8 +263,11 @@ probe.run({
 
     on_summary = function()
         probe.pad_release(probe.BTN.DOWN)
-        logf("normalize=%d window_set=%d throw_fn=%d throw_zero_id=%d",
-             n_norm, n_winset, n_throw_fn, n_throw)
+        logf("normalize=%d window_set=%d throw_fn=%d (plus %d phantom hits " ..
+             "while PROT 0899 was NOT resident) throw_zero_id=%d; " ..
+             "0899 first resident at vsync %d",
+             n_norm, n_winset, n_throw_fn, phantom_throw_fn, n_throw,
+             resident_since)
         local cs = {}
         for c in pairs(seen_cursor) do cs[#cs + 1] = c end
         table.sort(cs)
