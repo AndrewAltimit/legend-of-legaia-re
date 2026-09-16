@@ -85,12 +85,20 @@ fn assert_invariants(acc: &Account) {
 /// Every one of these is an entry the brief for this instrument named, plus
 /// the two towns that stand in for the ordinary scene bundle.
 const CASES: &[(u32, f64, &str)] = &[
-    // The 15.9 MB monster archive: one LZS stream per monster id. The rest is
-    // the unused slack inside each fixed 0x14000 slot plus an unpopulated tail.
-    (867, 50.0, "monster_archive"),
-    // `summon.dat` / `readef.DAT` - fixed 0x10800 slots.
-    (893, 90.0, "summon_readef"),
-    (894, 85.0, "summon_readef"),
+    // The 15.9 MB monster archive: one LZS stream per monster id, in a fixed
+    // 0x14000-byte slot the battle loader transfers whole. Every slot is
+    // populated (186 blocks + 8 raw TIMs) and the file is an exact multiple of
+    // the stride, so the rest of each slot is declared fill - an earlier note
+    // here calling it "an unpopulated tail" was wrong on both counts.
+    (867, 99.9, "monster_archive"),
+    // `summon.dat` / `readef.DAT` - fixed 0x10800 slots, same treatment.
+    (893, 99.9, "summon_readef"),
+    (894, 99.9, "summon_readef"),
+    // A standalone BGM SEQ behind one DATA_FIELD chunk header. Its class is
+    // the generic overlay blob, so the walker comes from the bytes walking to
+    // a terminator - the last entry on the disc whose sub-asset was found by
+    // the magic sweep instead.
+    (1062, 99.9, "stream"),
     // The entry the retired `data_field_truncated` detector used to match. It
     // is not a stream: the runtime walks it as an `asset::pack` of two whole
     // TIMs (it now classifies as `pack`), so the walker is selected by index
@@ -283,6 +291,12 @@ fn monster_archive_residue_is_all_padding() {
         acc.by_owner.iter().any(|o| o.owner == "tim"),
         "PROT 0867: the trailing raw-TIM slots must be claimed as TIMs"
     );
+    // The shape loop above goes vacuous the moment the archive accounts whole,
+    // so state that outcome rather than leaving a test that asserts nothing.
+    assert_eq!(
+        acc.residue_bytes, 0,
+        "PROT 0867: every byte is either a slot's block or that slot's fill"
+    );
     eprintln!(
         "[ok] PROT 0867 residue is padding only: {:?}",
         acc.by_shape
@@ -290,6 +304,78 @@ fn monster_archive_residue_is_all_padding() {
             .map(|s| (s.shape.as_str(), s.bytes))
             .collect::<Vec<_>>()
     );
+}
+
+/// The fixed-stride streaming slots: each slot's `pad` claim must be bounded by
+/// the **stride** and made of fill.
+///
+/// This is the assertion that keeps `claim_slot_fill` from being a way to buy
+/// percentage points. The loader transfers a whole slot, so the bytes past a
+/// slot's content are declared slack - but only if the claim really does stop
+/// at the declared boundary and really is fill. A walker that stopped early
+/// inside live content would put a non-zero byte inside one of these claims,
+/// and an off-by-one in the stride would end one somewhere other than a slot
+/// edge. Both are checked against the raw file rather than against the parser.
+#[test]
+fn streaming_slot_fill_claims_are_bounded_fill() {
+    let Some(dir) = extracted_root() else {
+        eprintln!("extracted/PROT not present - skipping");
+        return;
+    };
+    // (entry, slot stride) - the monster archive and the two battle side-band
+    // streaming files.
+    for (idx, stride) in [(867u32, 0x14000usize), (893, 0x10800), (894, 0x10800)] {
+        let Some(path) = entry_path(&dir, idx) else {
+            eprintln!("PROT {idx:04} not extracted - skipping");
+            continue;
+        };
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(
+            bytes.len() % stride,
+            0,
+            "PROT {idx:04}: the extent must be an exact multiple of the stride, \
+             or the slot boundary is not a declared bound"
+        );
+        // Re-derive the fill from the file: per slot, the maximal all-zero
+        // suffix. Nothing here consults the parser.
+        let slots = bytes.len() / stride;
+        let mut fill_bytes = 0usize;
+        for i in 0..slots {
+            let slot = &bytes[i * stride..(i + 1) * stride];
+            let mut j = slot.len();
+            while j > 0 && slot[j - 1] == 0 {
+                j -= 1;
+            }
+            assert!(j > 0, "PROT {idx:04}: slot {i} is entirely fill");
+            fill_bytes += slot.len() - j;
+        }
+        let acc = account_entry(&dir, idx, 0).unwrap();
+        assert_invariants(&acc);
+        let claimed_pad = acc
+            .by_owner
+            .iter()
+            .find(|o| o.owner == "pad")
+            .map_or(0, |o| o.bytes);
+        assert_eq!(
+            claimed_pad, fill_bytes,
+            "PROT {idx:04}: the `pad` owner must hold exactly the per-slot fill \
+             re-derived from the file"
+        );
+        for r in &acc.residue {
+            let slot_end = r.start.div_ceil(stride) * stride;
+            assert!(
+                r.end <= slot_end,
+                "PROT {idx:04}: residue {:#x}..{:#x} straddles a slot boundary",
+                r.start,
+                r.end
+            );
+        }
+        eprintln!(
+            "[ok] PROT {idx:04}: {slots} slots, {fill_bytes} B fill, {:.2}% accounted, \
+             {} B residue",
+            acc.accounted_pct, acc.residue_bytes
+        );
+    }
 }
 
 /// The two stills are claimed as the four uploads their consumer performs, and

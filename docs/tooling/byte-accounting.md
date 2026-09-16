@@ -270,13 +270,20 @@ The general rule this instrument wants: when the sweep finds something, check
 whether a constant for it already exists. A `scan` claim beside a named offset
 is a missing binding, not a discovery.
 
-One instance is left on the whole disc, and it is the same shape: entry `1062`
-is classed `overlay_data_blob`, walks as `generic`, and is in fact a
+The last instance on the disc was entry `1062`, and it was the same shape: a
 single-chunk DATA_FIELD stream carrying a SEQ - one `(0x02 << 24) | len` header,
-the sequence, a zero terminator, sector padding. Of the six entries the
-`generic` fallback handles, it is the only one whose bytes walk to a terminator
-as a chunk stream, so the fallback could test for that shape and hand off to the
-stream walker rather than leaving the entry to the sweep.
+the sequence, a zero terminator, sector padding - classed `overlay_data_blob`
+and walked as `generic`, so its sequence was found by magic. The `generic`
+fallback now tests the shape instead: a buffer whose own bytes walk to a
+stream terminator, every chunk payload in bounds and at least one chunk
+consumed, goes to the stream walker. `1062` is the only entry that reaches that
+arm - the rest of the `generic` population is all-zero filler plus the un-based
+`0896` - and with it the disc's `scan` share is zero.
+
+The chunk's type byte is `0x02`, which the asset dispatcher reads as TMD while
+the payload's magic is `pQES`. The owner comes from the **magic** where the two
+disagree: a type byte selects the runtime's handler, and an owner names what the
+bytes are.
 
 ### When no load base fits, the image stays residue
 
@@ -308,6 +315,50 @@ index entry) and its content length is declared (by `fsize`), so nothing reads
 between them. It is not zero fill - the builder left its previous sector
 buffer's contents there, and two banks carry a third bank's bytes at the same
 buffer offset.
+
+### A fixed-stride streaming slot is transferred whole
+
+Three entries are a flat array of fixed-size slots, and each one's residue used
+to be the largest of its class: the monster archive (`0867`, `0x14000` per
+slot - four fifths of the whole disc's residue on its own) and the two battle
+side-band streaming files (`0893` / `0894`, `0x10800` per slot). In all three
+the unclaimed bytes were zero, in one run per slot, ending exactly on a slot
+boundary.
+
+They are declared slack, and the evidence is the consumer's transfer length
+rather than the shape of the bytes. Both loaders seek by a stride and then read
+a **literal** span: `li a1,0x28` (40 sectors) at `0x80054608` in
+`FUN_800542C8` for the archive, `0x10800` bytes at `0x801F1958`/`0x801F1970` in
+`FUN_801F17F8` for the streaming files. Only afterwards does either hand the
+slot's head to a reader that stops at the content's own end - an LZS terminator,
+a declared texture width. So the tail is transferred and never interpreted, and
+each file's extent is an exact multiple of its stride, which makes the slot
+boundary a bound the container states.
+
+The claims are therefore `pad`, with the boundary as their end. Two guard rails
+keep that from being a way to buy percentage points, and both are asserted by
+`crates/asset/tests/byte_account_entries.rs` against the raw file rather than
+against the parser: a claim covers only the slot's maximal all-zero **suffix**,
+so a walker that stopped early inside live content leaves that content as
+residue; and every claim ends on a multiple of the stride. The same rule, one
+sector wide, covers what is left of a PROT entry's last sector past a stream
+terminator - past one sector it is a second region, not slack, and stays
+residue.
+
+Read the resulting figure with the tiering in mind: `work_bytes` does not move
+(`zero_pad` was already slack), the *structural* share does. The disc's largest
+remaining unwalked region was never a format - it was the disc's own padding,
+and the instrument now says so instead of ranking it.
+
+### The residue run **count** was capped, and read as a measurement
+
+Three entries reported "64 runs" in the sweep, which is not a coincidence: the
+report keeps only the 64 longest runs, and the sweep was reading the length of
+that kept list. The real counts are one run per slot (194 / 92 / 84), and the
+figure that was never capped is `largest`, because the list is sorted longest
+first before it is truncated. The report has always carried the true count in
+its own `residue_runs` field; the sweep reads that field now. A capped list is
+a reporting bound - never derive a statistic from its length.
 
 ### The slot-B module band
 

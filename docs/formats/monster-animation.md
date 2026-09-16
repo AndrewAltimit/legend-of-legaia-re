@@ -30,6 +30,30 @@ cycle played while the monster advances on a target (a walk for grounded
 enemies, a flight cycle for fliers), and the rest correspond to the
 monster's spell / special actions.
 
+### The slot is transferred whole; the block only fills part of it
+
+The archive is a flat array of fixed `0x14000`-byte slots, `slot = (id-1) *
+0x14000`, and a slot's **whole** footprint moves at load whatever the block
+costs. The loader `FUN_800542C8` computes the slot offset as `(id-1) * 5 << 14`
+(`sll v0,v1,0x2; addu v0,v0,v1; sll v0,v0,0xe` at `0x80054524`), turns it into a
+sector seek, and then reads a literal `0x28` sectors - `li a1,0x28` at
+`0x80054608`, immediately before `jal 0x8003E800`; the host-file branch at
+`0x800545F0` passes the same span as a byte count (`lui a2,0x1; ori a2,a2,0x4000`).
+Only then does it hand `slot + 4` to the LZS decoder (`jal 0x8001A55C` at
+`0x8005465C`), which stops at the stream's own terminator.
+
+So the bytes between a block's compressed stream and the end of its slot are
+transferred and never interpreted. On retail every one of the archive's slots
+ends in such a run and the entry's extent is an exact multiple of the stride,
+so the slot boundary is a **declared** bound, not an inferred one - which is why
+[byte accounting](../tooling/byte-accounting.md) claims those runs as `pad`
+rather than leaving them as residue. They are the single largest run of declared
+slack on the disc, and no format is hiding in them.
+
+Slots whose head word is `0x10` are not blocks at all: they carry a raw PSX TIM
+at the slot head, zero-filled to the same stride. See
+`ghidra/scripts/funcs/800542c8.txt`.
+
 ## Action tags and the `+0x1EF` reaction map
 
 The entry's first byte (`+0x00`) is a semantic **tag**, not just an index:
