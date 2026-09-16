@@ -2219,20 +2219,9 @@ pub const PSX_NEAR: f32 = 4.0;
 pub const SCENE_FAR: f32 = 1_000_000.0;
 
 /// Column-major 4x4 multiply: `out = a * b` (same layout as WebGL `mat4`
-/// and `glam::Mat4::to_cols_array`).
-fn mat_mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
-    let mut out = [0.0f32; 16];
-    for c in 0..4 {
-        for r in 0..4 {
-            let mut s = 0.0;
-            for k in 0..4 {
-                s += a[k * 4 + r] * b[c * 4 + k];
-            }
-            out[c * 4 + r] = s;
-        }
-    }
-    out
-}
+/// and `glam::Mat4::to_cols_array`). One implementation, in the shared camera
+/// kernel.
+pub use crate::psx_camera::mat4_mul as mat_mul;
 
 /// The full battle view-projection for one [`BattleCamPose`], column-major -
 /// the shared rendition of the native window's `psx_camera_mvp` composition
@@ -2260,79 +2249,23 @@ fn mat_mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
 /// composition).
 pub fn battle_vp(pose: &BattleCamPose, world_scale: f32, aspect: f32) -> [f32; 16] {
     let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
-    let (pitch, yaw) = (to_rad(pose.pitch), to_rad(pose.yaw));
-    let (sp, cp) = pitch.sin_cos();
-    let (sy, cy) = yaw.sin_cos();
-    // R = Rx(pitch) * Ry(yaw), the same right-handed factors glam's
-    // from_rotation_x/y build (and the q3.12 GTE port's).
-    let rx: [f32; 16] = [
-        1.0, 0.0, 0.0, 0.0, //
-        0.0, cp, sp, 0.0, //
-        0.0, -sp, cp, 0.0, //
-        0.0, 0.0, 0.0, 1.0,
-    ];
-    let ry: [f32; 16] = [
-        cy, 0.0, -sy, 0.0, //
-        0.0, 1.0, 0.0, 0.0, //
-        sy, 0.0, cy, 0.0, //
-        0.0, 0.0, 0.0, 1.0,
-    ];
-    let r = mat_mul(&rx, &ry);
-    let t: [f32; 16] = [
-        1.0, 0.0, 0.0, 0.0, //
-        0.0, 1.0, 0.0, 0.0, //
-        0.0, 0.0, 1.0, 0.0, //
-        pose.tr[0], pose.tr[1], pose.tr[2], 1.0,
-    ];
-    // The focus targets the world-scaled actor stage (see the doc above).
-    let f = [
-        pose.focus[0] * world_scale,
-        pose.focus[1] * world_scale,
-        pose.focus[2] * world_scale,
-    ];
-    let neg_focus: [f32; 16] = [
-        1.0, 0.0, 0.0, 0.0, //
-        0.0, 1.0, 0.0, 0.0, //
-        0.0, 0.0, 1.0, 0.0, //
-        -f[0], -f[1], -f[2], 1.0,
-    ];
-    let flip: [f32; 16] = [
-        1.0, 0.0, 0.0, 0.0, //
-        0.0, -1.0, 0.0, 0.0, //
-        0.0, 0.0, 1.0, 0.0, //
-        0.0, 0.0, 0.0, 1.0,
-    ];
-    // PSX perspective onto a 320x240 frame: ndc.x = H*Ex/(160*Ez),
-    // ndc.y = -H*Ey/(120*Ez) + GTE_OFY_NDC_BIAS (PSX +Y down -> NDC up),
-    // clip.w = Ez. The bias term is retail's screen centre [`GTE_OFY`]: it
-    // rides `w`, so it survives the perspective divide as the constant
-    // six-pixel lift the GTE control file carries, and the composition stays
-    // one matrix.
-    let (near, far) = (PSX_NEAR, SCENE_FAR);
-    let a = far / (far - near);
-    let b = -near * far / (far - near);
-    let aspect_fix = (4.0 / 3.0) / aspect.max(0.01);
-    let proj: [f32; 16] = [
-        GTE_H / 160.0 * aspect_fix,
+    // The focus targets the world-scaled actor stage (see the doc above), and
+    // the battle phase script never stages a roll. Everything else - the
+    // `Rx*Ry*Rz` build, the eye-space translation, the PSX projection with its
+    // `GTE_OFY` bias, and the trailing `scale(1,-1,1)` that cancels the
+    // per-model Y-flip - is the one shared retail camera kernel.
+    crate::psx_camera::psx_camera_vp(
+        to_rad(pose.pitch),
+        to_rad(pose.yaw),
         0.0,
-        0.0,
-        0.0, //
-        0.0,
-        -GTE_H / 120.0,
-        0.0,
-        0.0, //
-        0.0,
-        GTE_OFY_NDC_BIAS,
-        a,
-        1.0, //
-        0.0,
-        0.0,
-        b,
-        0.0,
-    ];
-    mat_mul(
-        &proj,
-        &mat_mul(&t, &mat_mul(&r, &mat_mul(&neg_focus, &flip))),
+        GTE_H,
+        pose.tr,
+        [
+            pose.focus[0] * world_scale,
+            pose.focus[1] * world_scale,
+            pose.focus[2] * world_scale,
+        ],
+        aspect,
     )
 }
 
