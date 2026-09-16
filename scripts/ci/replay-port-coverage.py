@@ -530,6 +530,33 @@ CANONICAL_LADDERS = [
     # `capture_bypass_predamage` / `capture_respect_predamage` rather than a
     # kernel test. Disc-gated; export WITHOUT `--release`.
     ("w1c_capture_class_cast_ladder", "legaia-engine-core"),
+    # --- lane W1-G: the three gates behind the (b) rows --------------------
+    #
+    # `w1g_seru_capture_ladder` is the Seru-capture gate's *production* route.
+    # Its address (`801e92dc`, `magic_xp::learn_spell_prepend`) already read as
+    # entered because `battle_depth_replay` calls the function from its own
+    # test body to seat a caster - the shape this page warns about, where the
+    # only executor is a ladder's setup code. This one casts the capture spell
+    # in a live fight, lands the roll on a weakened monster, and lets
+    # `World::finish_battle` -> `World::resolve_captures` reach the learn
+    # commit. Disc-free: the vanilla formation / monster / Seru / spell tables.
+    #
+    # `w1g_save_subscreen_ladder` opens the five save-UI sub-screen bodies no
+    # other ladder does. The gate is the machine's **entry context**: the card
+    # rack constructs only the card contexts, so the shop chain
+    # (mode select -> quantity spinner -> terminal screen) is reached here from
+    # `SaveEntryContext::ShopEntry`, which is the op-`0x49` record's own kind
+    # byte, and the two orphan screens from the screen-id write that is retail's
+    # own transition. Disc-free.
+    #
+    # `w1g_fishing_tackle_pick_ladder` is denominated in the player's PICKS.
+    # `w1f1_fishing_pond_ladder` sets the lure and rod as constructor arguments
+    # and therefore cannot enter either picker screen; this one drives both by
+    # pad over a tackle bag and opens the pond on what they returned, so the
+    # band-4 preconditions arrive rather than being seeded. Disc-free.
+    ("w1g_seru_capture_ladder", "legaia-engine-core"),
+    ("w1g_save_subscreen_ladder", "legaia-engine-core"),
+    ("w1g_fishing_tackle_pick_ladder", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
