@@ -194,17 +194,92 @@ pub(crate) fn cmd_save(
     Ok(())
 }
 
-pub(crate) fn cmd_load(save_dir: &std::path::Path, slot: u8) -> Result<()> {
+/// Party records a retail SC block carries - the four contiguous
+/// `0x80084708 + n * 0x414` records of `docs/formats/save-record.md`. The
+/// browser's card grid and the windowed rack's `MountedCard` read a block
+/// under the same cap, so one card lifts to the same party everywhere.
+///
+/// Not [`legaia_save::card::RETAIL_MAX_CHAR_RECORDS`]: that constant is the
+/// *strictly non-overlapping* walk (three), and the fourth slot's meaningful
+/// fields all sit before the global region that begins partway through it.
+const CARD_PARTY_RECORDS: usize = 4;
+
+/// Seed `world` from one block of a PSX memory-card image, and name what was
+/// loaded for the summary line.
+///
+/// The container is whatever [`legaia_save::emu::detect`] recognises - a raw
+/// `.mcr` / `.mcd`, a DexDrive `.gme`, a single-save `.mcs` - and every block
+/// address goes through the [`legaia_save::emu::CardView`] it returns, so a
+/// wrapper header is not this path's problem. `block` is the card's own block
+/// number (block 0 is the directory); with none given the lowest block the
+/// card files a save in is taken, which is the only block a `.mcs` has.
+///
+/// The windowed save screen mounts the same containers through the same
+/// detection (its `MountedCard`); the window tree is module-private to this
+/// binary so the two cannot share the type, but both address blocks through
+/// the view rather than re-deriving a layout.
+fn load_card_block(
+    world: &mut legaia_engine_core::world::World,
+    card_path: &std::path::Path,
+    block: Option<u8>,
+) -> Result<String> {
+    let bytes = std::fs::read(card_path)
+        .with_context(|| format!("read memory-card image {}", card_path.display()))?;
+    let view = legaia_save::emu::detect(&bytes)
+        .with_context(|| format!("mount memory-card image {}", card_path.display()))?;
+    let block = match block {
+        Some(block) => block,
+        None => view
+            .saves(&bytes)
+            .with_context(|| format!("walk the directory of {}", card_path.display()))?
+            .into_iter()
+            .find(|s| s.has_sc_magic)
+            .map(|s| s.block)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{} files no save block; pass --block to read one anyway",
+                    card_path.display()
+                )
+            })?,
+    };
+    let Some(sc) = view.sc_block(&bytes, block) else {
+        anyhow::bail!("card block {block} is out of range (1..=15; block 0 is the directory)");
+    };
+    let sf = legaia_save::SaveFile::from_retail_sc_block(sc, CARD_PARTY_RECORDS)
+        .with_context(|| format!("lift card block {block} as a save"))?;
+    // A claimed block with no character records is someone else's save, not a
+    // Legaia one - the load screen captions that cell rather than offering it,
+    // and loading it here would seed an empty world under a success line.
+    if sf.party.members.is_empty() {
+        anyhow::bail!("card block {block} carries no character records");
+    }
+    world.load_full(sf);
+    Ok(format!("block {block} from {}", card_path.display()))
+}
+
+pub(crate) fn cmd_load(
+    save_dir: &std::path::Path,
+    slot: u8,
+    card: Option<&std::path::Path>,
+    block: Option<u8>,
+) -> Result<()> {
     use legaia_engine_core::menu_runtime::MenuRuntime;
     use legaia_engine_core::world::World;
 
-    let runtime = MenuRuntime::new(save_dir.to_path_buf());
     let mut world = World::default();
-    let path = runtime.load_from_slot(&mut world, slot)?;
+    // One summary line whichever carrier the save came out of: the save
+    // directory's LGSF slot file, or a block on a real memory card.
+    let source = match card {
+        Some(card) => load_card_block(&mut world, card, block)?,
+        None => {
+            let runtime = MenuRuntime::new(save_dir.to_path_buf());
+            let path = runtime.load_from_slot(&mut world, slot)?;
+            format!("slot {slot} from {}", path.display())
+        }
+    };
     println!(
-        "loaded slot {} from {} (party={}, story_flags={:#010X}, money={}, inventory={}, actors={})",
-        slot,
-        path.display(),
+        "loaded {} (party={}, story_flags={:#010X}, money={}, inventory={}, actors={})",
+        source,
         world.party.roster.members.len(),
         world.flags.story_flags,
         world.party.money,

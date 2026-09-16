@@ -730,6 +730,11 @@ pub(crate) enum Cmd {
     },
     /// Load a slot file into a fresh world and print the resulting roster
     /// shape. Mirror of `save` for round-trip testing.
+    ///
+    /// With `--card` the save comes out of a real PSX memory-card image
+    /// instead of the engine's save directory - a raw `.mcr` / `.mcd`, a
+    /// DexDrive `.gme` or a single-save `.mcs`, the same containers the
+    /// browser play page imports. `--save-dir` / `--slot` are then unused.
     #[command(display_order = 7)]
     Load {
         /// Save directory (default resolves against the current directory).
@@ -737,6 +742,14 @@ pub(crate) enum Cmd {
         save_dir: PathBuf,
         #[arg(long, default_value_t = 0)]
         slot: u8,
+        /// Memory-card image to read the save out of, instead of `--save-dir`.
+        /// The file is only read - nothing is written back.
+        #[arg(long)]
+        card: Option<PathBuf>,
+        /// Card block to load (`1..=15`; block 0 is the card directory).
+        /// Defaults to the lowest block the card files a save in.
+        #[arg(long, requires = "card")]
+        block: Option<u8>,
     },
     /// Boot the engine into a scene and tick it for `frames` frames.
     /// Drives the field VM, camera, BGM director, and per-actor move VMs;
@@ -847,6 +860,12 @@ pub(crate) enum Cmd {
         /// (default resolves against the current directory).
         #[arg(long, default_value = "saves")]
         save_dir: PathBuf,
+        /// Optional PSX memory-card image (`.mcr` / `.mcd` / `.gme` /
+        /// `.mcs`) mounted in the save screen's **second** card port, the
+        /// one the save directory does not occupy. Its fifteen blocks fill
+        /// that port's preview grid and a Load reads the block's save.
+        #[arg(long)]
+        card: Option<PathBuf>,
         /// Optional TOML CDNAME→STR map; same format as `play --cutscene-map`.
         #[arg(long)]
         cutscene_map: Option<PathBuf>,

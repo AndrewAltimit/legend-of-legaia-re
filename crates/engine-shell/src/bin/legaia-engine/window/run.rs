@@ -89,6 +89,7 @@ pub(crate) fn cmd_play_window(
     str_file: Option<&Path>,
     boot_ui: bool,
     save_dir: &Path,
+    card: Option<&Path>,
     cutscene_map_path: Option<&Path>,
     cheat_file: Option<&Path>,
     cheat_strict: bool,
@@ -120,6 +121,7 @@ pub(crate) fn cmd_play_window(
         str_file,
         boot_ui,
         save_dir,
+        card,
         cutscene_map_path,
         cheat_file,
         cheat_strict,
@@ -354,6 +356,7 @@ pub(super) fn cmd_play_window_with_record(
     str_file: Option<&Path>,
     boot_ui: bool,
     save_dir: &Path,
+    card: Option<&Path>,
     cutscene_map_path: Option<&Path>,
     cheat_file: Option<&Path>,
     cheat_strict: bool,
@@ -1172,6 +1175,16 @@ pub(super) fn cmd_play_window_with_record(
         npc_bundle_special: std::collections::HashMap::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
+        // Port 2 of the save screen's rack. A container the detector does
+        // not recognise is a mistake worth naming, not an empty port, so the
+        // mount failure logs instead of silently leaving `None`.
+        card: card.and_then(|p| match super::MountedCard::open(p) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                log::warn!("play-window: --card not mounted: {e:#}");
+                None
+            }
+        }),
         save_flow: legaia_engine_core::save_screen::SaveScreenFlow::new(),
         options_state: legaia_engine_core::options::OptionsState::load_or_default(
             &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),

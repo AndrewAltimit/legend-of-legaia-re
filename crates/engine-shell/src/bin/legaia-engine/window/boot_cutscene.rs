@@ -56,7 +56,8 @@ impl PlayWindowApp {
         };
         let Some(session) = session else { return edge };
         let pending = self.save_flow.pending_read(session);
-        let blocks = pending.map(|port| disk_port_blocks(&self.save_dir, port));
+        let blocks = pending
+            .map(|port| disk_port_blocks_with_card(&self.save_dir, self.card.as_ref(), port));
         // Re-borrow: `disk_port_blocks` needed `&self.save_dir` while the
         // session above borrowed `self.boot_ui`.
         let session = match &self.boot_ui {
@@ -97,6 +98,13 @@ impl PlayWindowApp {
     /// onto the current scene as before.
     fn apply_save_commit(&mut self, commit: legaia_engine_core::save_screen::SaveCommit) -> bool {
         use legaia_engine_core::save_screen::SaveCommitKind;
+        // Port 2 is a mounted memory-card image. Its Load reads the block's
+        // SC bytes; a Save into it is the one half this host still lacks
+        // (writing a block needs the card's own free-block budget, which the
+        // browser rack owns and this one does not).
+        if commit.port == 1 {
+            return self.apply_card_save_commit(commit);
+        }
         if commit.port != 0 {
             log::warn!(
                 "save screen: port {} holds no card; nothing written",
@@ -152,6 +160,54 @@ impl PlayWindowApp {
                 }
             }
         }
+        false
+    }
+
+    /// The port-2 half of [`Self::apply_save_commit`]: a Load out of the
+    /// mounted memory-card image, resumed into the save's own scene the same
+    /// way a port-1 Load is.
+    ///
+    /// A Save is refused rather than half-performed: writing a block means
+    /// claiming directory frames against the card's own free-block budget,
+    /// and this host has no writer for that.
+    fn apply_card_save_commit(
+        &mut self,
+        commit: legaia_engine_core::save_screen::SaveCommit,
+    ) -> bool {
+        use legaia_engine_core::save_screen::SaveCommitKind;
+        let cell = commit.cell;
+        let Some(card) = self.card.as_ref() else {
+            log::warn!("save screen: port 2 holds no card; nothing read");
+            return false;
+        };
+        if matches!(commit.kind, SaveCommitKind::Save) {
+            log::warn!("save screen: writing into a mounted card image is not supported");
+            return false;
+        }
+        let Some((sf, resume)) = card.save_at(cell) else {
+            log::warn!("save screen: card block {} holds no save", cell + 1);
+            return false;
+        };
+        if !resume.scene.is_empty()
+            && let Ok(mode) = self.session.enter_field_live_from_save(
+                &resume.scene,
+                &self.field_live_opts,
+                sf.clone(),
+            )
+        {
+            log::info!(
+                "save screen: loaded card block {}, resumed in '{}' (mode={mode:?})",
+                cell + 1,
+                resume.scene
+            );
+            self.rebuild_scene_render_state();
+            return true;
+        }
+        self.session.host.world.load_full(sf);
+        log::info!(
+            "save screen: loaded card block {} onto the current scene",
+            cell + 1
+        );
         false
     }
 
@@ -409,7 +465,7 @@ impl PlayWindowApp {
                             self.boot_ui = BootUiState::SaveSelect(
                                 legaia_engine_core::save_select::SaveSelectSession::for_rack(
                                     legaia_engine_core::save_select::SaveSelectMode::Load,
-                                    &disk_save_rack(&self.save_dir),
+                                    &disk_save_rack_with_card(&self.save_dir, self.card.as_ref()),
                                 ),
                             );
                         }
@@ -655,7 +711,7 @@ impl PlayWindowApp {
                     // The shell's save rack: retail's two card ports, port 1
                     // mounted with `save_dir`. Its kind is what puts a Load /
                     // Save sub-session in the two-stage flow.
-                    let rack = disk_save_rack(&self.save_dir);
+                    let rack = disk_save_rack_with_card(&self.save_dir, self.card.as_ref());
                     self.save_flow.reset();
                     // Build sub-sessions from the DISC tables the boot path
                     // already installed on the world (spell table, equipment

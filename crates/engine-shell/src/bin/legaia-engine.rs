@@ -300,6 +300,7 @@ fn main() -> Result<()> {
             str_file,
             boot_ui,
             save_dir,
+            card,
             cutscene_map,
             cheat_file,
             cheat_strict,
@@ -337,6 +338,7 @@ fn main() -> Result<()> {
             str_file.as_deref(),
             boot_ui,
             &save_dir,
+            card.as_deref(),
             cutscene_map.as_deref(),
             cheat_file.as_deref(),
             cheat_strict,
@@ -380,7 +382,12 @@ fn main() -> Result<()> {
             slot,
             party_size,
         ),
-        Cmd::Load { save_dir, slot } => cmd_load(&save_dir, slot),
+        Cmd::Load {
+            save_dir,
+            slot,
+            card,
+            block,
+        } => cmd_load(&save_dir, slot, card.as_deref(), block),
         Cmd::XaCue { ids, len, xa_dir } => {
             let parse = |t: &String| -> u32 {
                 let t = t.trim();
