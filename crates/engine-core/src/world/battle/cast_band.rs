@@ -1494,7 +1494,7 @@ impl World {
                     let (step, taken) =
                         arms::steal_tick(&mut ctx, &mut caster, CAST_STEAL_RUN_CLIP, outcome);
                     if let Some(arms::StealOutcome::FromBag { item }) = taken {
-                        self.take_one_from_bag(item);
+                        let _removed = self.take_one_from_bag(item);
                     }
                     Some(step)
                 }
@@ -2320,19 +2320,29 @@ impl World {
     /// draws, one RNG draw per rejection so the shared cursor advances the way
     /// retail's does) is the module's, byte for byte.
     ///
-    /// The **array** it draws over is not. Retail samples the physical
-    /// 256-slot bag at `0x80085958` including its holes; the engine's bag is a
-    /// `HashMap<u8, u8>` with no slot coordinate, so this projects the
-    /// occupied ids into slots `0 ..= n-1` in id order. Two effects, both
-    /// disclosed in `docs/subsystems/inventory.md` ("What the port does, and
-    /// the one place the shape shows"): every draw hits an occupied slot, so
-    /// the first accepted draw wins where retail would reject its way past
-    /// holes; and the module's low-half floor (`ctx[+0x11] == 4` re-draws
-    /// while `slot < *(0x8007B5EA)`) is not applied, because a floor over slot
-    /// numbers means nothing over a projection with no holes - which is why no
-    /// `min_slot` is passed here. Closing it is a `PartyState` change, not a
-    /// change to this function.
-    fn roll_cast_steal(&mut self, victim_slot: u8) -> Option<vm::cast_arm_ticks::StealOutcome> {
+    /// The **array** is retail's own: [`crate::world::ItemBag`] holds the
+    /// physical 256 slots, so the draw rejects its way past a played-through
+    /// bag's holes exactly as retail's does, and the third acceptance leg is
+    /// the item record's **shop price** halfword (`0x80074368 + id*0xC + 2`,
+    /// `0x801F789C`) rather than a tautology over the ids the bag already
+    /// holds - the quest and found-only items carry a zero price and are
+    /// unstealable.
+    ///
+    /// The re-roll floor is applied too. `0x801F77E8` arms it on
+    /// `DAT_8007BD10[1] == 4` (the second present-party member's character id)
+    /// and re-draws while `slot < *(i16*)0x8007B5EA`, which is `gp[+0x2D2]` -
+    /// the active window's **start** (`gp = 0x8007B318`), so the arm confines
+    /// the draw to the window's own half.
+    ///
+    /// The removal is asymmetric with the draw, and deliberately so: the draw
+    /// is over the whole array while `FUN_80042310` scans only
+    /// `[gp[+0x2D2], gp[+0x2D4])` and returns `0x100` for an id outside it,
+    /// touching nothing. A steal that lands on the other half's slot therefore
+    /// announces an item the party keeps.
+    pub(in crate::world) fn roll_cast_steal(
+        &mut self,
+        victim_slot: u8,
+    ) -> Option<vm::cast_arm_ticks::StealOutcome> {
         use vm::cast_arm_ticks::StealOutcome;
         use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
         if victim_slot >= FIRST_MONSTER_SEAT {
@@ -2349,47 +2359,50 @@ impl World {
                 hit: roll < entry.chance_pct,
             });
         }
-        let mut bag: Vec<(u8, u8)> = vec![(0, 0); 256];
-        let mut ids: Vec<(u8, u8)> = self
-            .party
-            .inventory
-            .iter()
-            .map(|(id, n)| (*id, *n))
-            .collect();
-        ids.sort_unstable();
-        for (i, (id, n)) in ids.iter().enumerate() {
-            if i < bag.len() {
-                bag[i] = (*id, *n);
+        let bag: Vec<(u8, u8)> = self.party.inventory.slots().to_vec();
+        // The price leg, precomputed so the draw closure can borrow `self`
+        // for the RNG. Without a disc image there is no item table to read a
+        // price from, so the leg cannot be evaluated and every id passes -
+        // a disc-free host still spends retail's draws and rejects on the
+        // two legs it can see.
+        let mut priced = [true; 256];
+        if let Some(data) = self.shops.item_shop_data.as_ref() {
+            for (id, cell) in priced.iter_mut().enumerate() {
+                *cell = data.price(id as u8) != 0;
             }
         }
-        let known: Vec<u8> = ids.iter().map(|(id, _)| *id).collect();
+        // `DAT_8007BD10[1] == 4`: the second present-party member's character
+        // id, which the engine mirrors as `party_roster_slot(1) + 1`. A party
+        // of one has no second member, and the port's identity mapping would
+        // fabricate one, so the arm needs both.
+        let floor = (self.party.party_count > 1 && self.party_roster_slot(1) as u8 + 1 == 4)
+            .then(|| self.party.inventory.window_bounds().0.min(0xFF) as u8);
         // One `next_rng` per rejected slot, not a pre-drawn batch: retail
         // advances the shared cursor once per draw, so over-drawing would
         // desynchronise every later roll in the battle.
-        let mut slot = None;
-        for _ in 0..vm::cast_arm_ticks::STEAL_DRAW_BUDGET {
-            let draw = (self.next_rng() % 0x100) as u8;
-            if let Some(hit) =
-                vm::cast_arm_ticks::steal_bag_slot_from_draw(&bag, draw, |id| known.contains(&id))
-            {
-                slot = Some(hit);
-                break;
-            }
-        }
+        let slot = vm::cast_arm_ticks::steal_pick_bag_slot(
+            &bag,
+            floor,
+            || self.next_rng(),
+            |id| priced[id as usize],
+        );
         match slot.and_then(|s| bag.get(s as usize).copied()) {
             Some((item, _)) => Some(StealOutcome::FromBag { item }),
             None => Some(StealOutcome::BagEmpty),
         }
     }
 
-    /// The inventory consume PROT 0941's Steal performs (`FUN_80042310`).
-    fn take_one_from_bag(&mut self, item: u8) {
-        if let Some(n) = self.party.inventory.get_mut(&item) {
-            *n = n.saturating_sub(1);
-            if *n == 0 {
-                self.party.inventory.remove(&item);
-            }
-        }
+    /// The inventory consume PROT 0941's Steal performs (`FUN_80042310`),
+    /// through the window-bounded helper.
+    ///
+    /// Returns whether a slot was actually emptied: the helper's `0x100`
+    /// sentinel says the id is outside the active window, and retail's own
+    /// steal ignores the return, so the message has already been staged by the
+    /// time the removal declines. The engine keeps the same order and reports
+    /// the difference instead of hiding it.
+    pub(in crate::world) fn take_one_from_bag(&mut self, item: u8) -> bool {
+        self.party.inventory.consume_returning_slot(item, 1)
+            != legaia_save::retail_inventory::NOT_IN_WINDOW
     }
 
     /// Materialise the seat PROT 0940's split allocated.

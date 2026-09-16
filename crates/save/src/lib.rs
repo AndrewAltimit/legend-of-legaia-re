@@ -61,7 +61,8 @@ pub use card::{
     read_retail_story_flags, restamp_sc_block_checksum, save_title_digits, sc_block_checksum,
     sc_block_checksum_valid, sc_block_checksum_words, walk_directory, write_block,
     write_retail_block_identity, write_retail_char_records, write_retail_coins, write_retail_gold,
-    write_retail_inventory, write_retail_resume, write_retail_story_flags,
+    write_retail_inventory, write_retail_item_window, write_retail_resume,
+    write_retail_story_flags,
 };
 pub use character::{
     ABILITY_BITS_LEN, CHARACTER_RECORD_SIZE, CharacterRecord, EquipmentSlots, HpMpSp, MAX_SPELLS,

@@ -6,8 +6,7 @@
 //! questions of the same data; this ladder is the `#[test]`-shaped copy of
 //! that session so the replay-coverage union can see it run. The model is
 //! read-only over the card - every mutation happens to the in-memory
-//! [`RetailInventory`], never to the `.mcr` - which is exactly the read-only
-//! stance the `normalize` / `add` tags disclose.
+//! [`RetailInventory`], never to the `.mcr`.
 //!
 //! Keys on `~/.mednafen/sav` like `real_card_roundtrip` (a memory card is
 //! not disc data, so no `LEGAIA_DISC_BIN` gate); skips and passes when no

@@ -113,6 +113,7 @@ fn load_full_clears_old_inventory() {
             story_flag_bits: Vec::new(),
             money: 0,
             inventory: vec![(5, 3)],
+            ..Default::default()
         },
         ext_v2: legaia_save::SaveExtV2::default(),
     };

@@ -184,7 +184,6 @@ pub(crate) fn cmd_equip(slot: u8, item: u8) -> Result<()> {
         EquipmentTable, ItemModifier, StatRecord, StatusModifiers,
     };
     use legaia_engine_core::equip_session::{EquipInput, EquipOutcome, EquipSession};
-    use std::collections::HashMap;
 
     let record = StatRecord {
         base_attack: 50,
@@ -196,7 +195,7 @@ pub(crate) fn cmd_equip(slot: u8, item: u8) -> Result<()> {
         base_int: 18,
         equip: [0; 8],
     };
-    let mut inv = HashMap::new();
+    let mut inv = legaia_engine_core::world::ItemBag::new();
     // Re-encode the item id so its implied slot matches the requested
     // slot - the synthetic test catalog uses `id >> 5` as the slot bits.
     let encoded_id = (slot << 5) | (item & 0x1F);

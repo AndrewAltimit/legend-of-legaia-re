@@ -756,7 +756,6 @@ impl DevMenuRowCount {
 #[test]
 fn w1d_dev_menu_equip_commit_swaps_bag_and_slot() {
     use legaia_engine_core::dev_menu_host::{DevMenuSession, WorldEquipHost};
-    use std::collections::HashMap;
 
     // Slot bits `0x00` -> destination slot 0 (`(bits & 0x60) >> 5 == 0`).
     let mut s = DevMenuSession::new();
@@ -768,7 +767,8 @@ fn w1d_dev_menu_equip_commit_swaps_bag_and_slot() {
         // Seat a different item in the destination slot so the give-back is
         // observable rather than a no-op zero.
         let mut probe = record.clone();
-        let mut bag: HashMap<u8, u8> = HashMap::from([(0x20, 1)]);
+        let mut bag = legaia_engine_core::world::ItemBag::new();
+        bag.insert(0x20, 1);
         let mut host = WorldEquipHost {
             inventory: &mut bag,
             sfx: Vec::new(),
@@ -787,7 +787,8 @@ fn w1d_dev_menu_equip_commit_swaps_bag_and_slot() {
         at
     };
 
-    let mut bag: HashMap<u8, u8> = HashMap::from([(0x20, 1)]);
+    let mut bag = legaia_engine_core::world::ItemBag::new();
+    bag.insert(0x20, 1);
     record[equip_base] = 0x11; // the outgoing item
     let mut host = WorldEquipHost {
         inventory: &mut bag,
@@ -806,7 +807,7 @@ fn w1d_dev_menu_equip_commit_swaps_bag_and_slot() {
     );
 
     // A bag miss must change nothing at all.
-    let mut empty: HashMap<u8, u8> = HashMap::new();
+    let mut empty = legaia_engine_core::world::ItemBag::new();
     let before = record.clone();
     let mut host = WorldEquipHost {
         inventory: &mut empty,

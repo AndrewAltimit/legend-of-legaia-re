@@ -76,7 +76,7 @@ each a plain data struct in its own `world/*.rs` file. Access is
 
 | Field | Type | Holds |
 |---|---|---|
-| `party` | `PartyState` | Roster, active party + leader, money, inventory, ability masks, tactical arts, level-up tracking, banners, save extensions, name entry. |
+| `party` | `PartyState` | Roster, active party + leader, money, the `ItemBag` (retail's 256-slot array + its active window; map-shaped adapter over it), ability masks, tactical arts, level-up tracking, banners, save extensions, name entry. |
 | `battle` | `BattleState` | Per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues, end-of-battle latches. |
 | `encounters` / `seru` / `casting` | `EncounterState` / `SeruState` / `CastFxState` | Encounter session + scripted arms; capture log, registry, shiny rolls; summon / cast-module / move-FX scene graph. |
 | `terrain` / `locomotion` / `props` / `npcs` | `FieldTerrain` / `FieldLocomotion` / `FieldPropState` / `FieldNpcState` | Walkability + zones + floor LUT; player movement gates and deltas; prop colliders, walk-touch, stagers; NPC positions, routes, motions, dialog bindings. |

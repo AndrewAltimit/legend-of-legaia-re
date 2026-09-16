@@ -638,11 +638,23 @@ pub const RETAIL_STORY_FLAGS_SIZE: usize = 0x200;
 /// against retail Drake and Sebucus MCR save blocks.
 pub const RETAIL_INVENTORY_OFFSET: usize = 0x1818;
 
-/// Number of inventory slots in the retail save (and in live RAM).
+/// Slots in the general-consumable **display page** - what a cheat device's
+/// *Have 99 Items* code covers, and not an engine bound.
+///
+/// The array is [`crate::retail_inventory::ITEM_SLOTS_TOTAL`] slots long and
+/// the accessors bound on `gp[+0x2D4]`, which is only ever 128 or 256
+/// (`docs/subsystems/inventory.md`). Reading or writing only this page drops
+/// every item a played-through save holds above slot 71, which is why the
+/// block lift and the block composer both walk
+/// [`read_retail_item_window`]'s full span.
 pub const RETAIL_INVENTORY_SLOTS: usize = 72;
 
-/// Size in bytes of the retail inventory array (`RETAIL_INVENTORY_SLOTS × 2`).
+/// Size in bytes of the consumable display page (`RETAIL_INVENTORY_SLOTS × 2`).
 pub const RETAIL_INVENTORY_SIZE: usize = RETAIL_INVENTORY_SLOTS * 2; // 0x90
+
+/// Size in bytes of the whole item array at `RETAIL_INVENTORY_OFFSET`
+/// (`0x200` - 256 slots of `(id, count)`).
+pub const RETAIL_ITEM_WINDOW_SIZE: usize = crate::retail_inventory::ITEM_SLOTS_TOTAL * 2;
 
 /// Byte offset from the SC block start to the party **gold** (i32 LE).
 ///
@@ -1083,7 +1095,7 @@ pub fn write_retail_story_flags(sc_block: &mut [u8], bits: &[u8]) -> Result<usiz
 /// [`RefusedGrant`](crate::retail_inventory::RefusedGrant) list. Returns `Err`
 /// if the SC block is too small to hold the inventory region.
 pub fn write_retail_inventory(sc_block: &mut [u8], pairs: &[(u8, u8)]) -> Result<usize> {
-    let end = RETAIL_INVENTORY_OFFSET + RETAIL_INVENTORY_SIZE;
+    let end = RETAIL_INVENTORY_OFFSET + RETAIL_ITEM_WINDOW_SIZE;
     if sc_block.len() < end {
         bail!(
             "sc_block too small for retail inventory region (need >= {}, got {})",
@@ -1093,13 +1105,53 @@ pub fn write_retail_inventory(sc_block: &mut [u8], pairs: &[(u8, u8)]) -> Result
     }
     let (inv, _refused) = crate::retail_inventory::compose_window(
         crate::retail_inventory::ITEM_WINDOW_BASE,
-        RETAIL_INVENTORY_SLOTS,
+        crate::retail_inventory::ITEM_SLOTS_TOTAL,
         pairs,
     );
     let dst = &mut sc_block[RETAIL_INVENTORY_OFFSET..end];
     dst.fill(0);
     let mut occupied = 0usize;
     for (i, &(id, count)) in inv.slots().iter().enumerate() {
+        dst[i * 2] = id;
+        dst[i * 2 + 1] = count;
+        if id != 0 {
+            occupied = i + 1;
+        }
+    }
+    restamp_sc_block_checksum(sc_block);
+    Ok(occupied)
+}
+
+/// Write a **pre-laid slot array** into the SC block's item region, verbatim.
+///
+/// The sibling of [`write_retail_inventory`], for a caller that already holds
+/// retail's own array - slot order, holes, duplicate stacks and all - and must
+/// not have it re-composed. `slots` shorter than the array zero-fills the
+/// tail; longer is truncated. Returns the highest occupied slot index plus
+/// one, and restamps the block checksum.
+///
+/// Keeping both is the point: a caller with a *list* has no slot coordinate
+/// and must go through retail's add path to produce a representable block,
+/// while a caller with the array would have its holes squeezed out by that
+/// same path - and a hole is exactly what the one slot-addressed consumer
+/// (PROT 0941's Steal) draws over.
+pub fn write_retail_item_window(sc_block: &mut [u8], slots: &[(u8, u8)]) -> Result<usize> {
+    let end = RETAIL_INVENTORY_OFFSET + RETAIL_ITEM_WINDOW_SIZE;
+    if sc_block.len() < end {
+        bail!(
+            "sc_block too small for retail inventory region (need >= {}, got {})",
+            end,
+            sc_block.len()
+        );
+    }
+    let dst = &mut sc_block[RETAIL_INVENTORY_OFFSET..end];
+    dst.fill(0);
+    let mut occupied = 0usize;
+    for (i, &(id, count)) in slots
+        .iter()
+        .take(crate::retail_inventory::ITEM_SLOTS_TOTAL)
+        .enumerate()
+    {
         dst[i * 2] = id;
         dst[i * 2 + 1] = count;
         if id != 0 {
@@ -1402,12 +1454,36 @@ mod tests {
         assert_ne!(&raw[..8], &positional[..]);
     }
 
+    /// The composer's bound is the **array**, not the 72-slot display page:
+    /// 200 distinct ids all land (id `0` is the empty sentinel and is
+    /// skipped), where the page-wide window used to drop everything past slot
+    /// 71.
     #[test]
-    fn write_retail_inventory_truncates_overflow() {
+    fn write_retail_inventory_fills_the_whole_array_not_the_display_page() {
         let mut block = fresh_sc_block();
         let pairs: Vec<(u8, u8)> = (0..200u32).map(|i| ((i & 0xFF) as u8, 1)).collect();
         let n = write_retail_inventory(&mut block, &pairs).unwrap();
-        assert_eq!(n, RETAIL_INVENTORY_SLOTS);
+        assert_eq!(n, 199, "199 non-zero ids, squeezed to slots 0..=198");
+        assert!(n > RETAIL_INVENTORY_SLOTS, "past the display page");
+        let raw = read_retail_item_window(&block).expect("full window");
+        assert_eq!(raw.len(), RETAIL_ITEM_WINDOW_SIZE);
+        assert_ne!(raw[72 * 2], 0, "slot 72 is occupied");
+    }
+
+    /// The array writer lands its slots verbatim - holes included - where the
+    /// list writer would have squeezed them out.
+    #[test]
+    fn write_retail_item_window_keeps_holes_and_slot_order() {
+        let mut block = fresh_sc_block();
+        let mut slots = vec![(0u8, 0u8); crate::retail_inventory::ITEM_SLOTS_TOTAL];
+        slots[3] = (0x77, 5);
+        slots[200] = (0x78, 4);
+        let n = write_retail_item_window(&mut block, &slots).unwrap();
+        assert_eq!(n, 201, "the highest occupied slot plus one");
+        let raw = read_retail_item_window(&block).expect("full window");
+        assert_eq!((raw[3 * 2], raw[3 * 2 + 1]), (0x77, 5));
+        assert_eq!((raw[200 * 2], raw[200 * 2 + 1]), (0x78, 4));
+        assert_eq!(raw[0], 0, "slot 0 stays a hole");
     }
 
     #[test]

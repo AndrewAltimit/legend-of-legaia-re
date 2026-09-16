@@ -653,7 +653,8 @@ pub enum StealOutcome {
     /// (`jal 0x80042310` with `(id, 1)`, the inventory consume-by-id helper).
     FromBag { item: u8 },
     /// The victim is a party seat but `0x400` draws found no bag slot whose
-    /// id, count and item-table record are all non-zero, so nothing is taken.
+    /// id, count and item-record shop price are all non-zero, so nothing is
+    /// taken.
     BagEmpty,
     /// The victim is a monster seat: the static steal table
     /// `0x80077828 + monster_id * 2` decided, fields `[chance, item]`.
@@ -688,8 +689,9 @@ pub enum StealOutcome {
 /// on `DAT_8007BD10[1] == 4` - the per-seat **character id** table, so the
 /// test is "battle seat 1 holds roster character 4", not a battle-context
 /// field. PROT 0941 makes no access at `+0x11` at all. That is the split-bag
-/// condition (`docs/subsystems/inventory.md`): it keeps the steal out of the
-/// half of the bag the other character's active window owns.
+/// condition (`docs/subsystems/inventory.md`): the floor halfword `0x8007B5EA`
+/// is `gp[+0x2D2]` (`gp = 0x8007B318`) - the active window's **start** - so
+/// the arm confines the draw to the window's own half.
 ///
 /// Returns the chosen slot, or `None` when the `0x400` budget ran out.
 ///
@@ -727,9 +729,11 @@ pub const STEAL_DRAW_BUDGET: u32 = 0x400;
 /// landed on acceptable?
 ///
 /// The test is `bag[slot].id != 0 && bag[slot].count != 0 && item_valid(id)`,
-/// where retail's third leg is a non-zero halfword in the static item table at
-/// `id * 0xC`. Split out so a host whose RNG cannot be borrowed into a closure
-/// still spends exactly the draws retail spends.
+/// where retail's third leg is the item record's **shop price** - the halfword
+/// at `0x80074368 + id*0xC + 2`, read at `0x801F789C` - so an item with no
+/// price (a quest or found-only one) is unstealable. Split out so a host whose
+/// RNG cannot be borrowed into a closure still spends exactly the draws retail
+/// spends.
 pub fn steal_bag_slot_from_draw(
     bag: &[StealBagSlot],
     slot: u8,

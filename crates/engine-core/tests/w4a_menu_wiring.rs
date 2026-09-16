@@ -6,7 +6,6 @@
 
 use legaia_engine_core::battle_stats::{EquipmentTable, ItemModifier, StatRecord, StatusModifiers};
 use legaia_engine_core::equip_session::{EquipInput, EquipSession};
-use std::collections::HashMap;
 
 fn press(cross: bool, down: bool) -> EquipInput {
     EquipInput {
@@ -29,7 +28,7 @@ fn session() -> EquipSession {
         base_int: 10,
         equip: [0; 8],
     };
-    let mut inv = HashMap::new();
+    let mut inv = legaia_engine_core::world::ItemBag::new();
     // The legacy placeholder slot rule is `id >> 5`, so 0x20 / 0x21 are
     // both slot-1 candidates.
     inv.insert(0x20u8, 1u8);

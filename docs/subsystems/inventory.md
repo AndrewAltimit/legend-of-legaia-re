@@ -219,43 +219,63 @@ one nobody has measured.
 | `FUN_800423E0` | normalize (merge + squeeze) | calls window setup first; merges duplicate stacks (cap 99); pulls occupied slots down into holes; occupancy = `id != 0` alone |
 | `FUN_80034A6C` | new-game seed | writes exactly slot 0 = `(0x77 Healing Leaf, x5)`; both callers pre-zero the whole range first |
 
-## What the port does, and the one place the shape shows
+## What the port does
 
-The engine keeps the bag as `PartyState::inventory`, a `HashMap<u8, u8>` of
-`item id -> count`. That is a different **shape** from retail's array, not just
-a different container: a map has no slot coordinate at all, so it cannot
-express a hole, cannot express two slots holding the same id before a
-normalize merges them, and cannot be indexed by a number. For every consumer
-the engine has - the pause menu's filtered pages, `GIVE_ITEM`, buy / sell, the
-battle Item arm - that is invisible, because all of them address the bag by id.
+The engine keeps the bag as `PartyState::inventory`, an `ItemBag`
+(`engine-core::world::item_bag`) over retail's own **256-slot array**:
+`(id, count)` pairs in slot order, holes included, with an active
+[window](#the-active-window) installed over them. The slot arithmetic is not
+re-implemented there - it is `legaia_save::retail_inventory`, where the
+accessor family above is ported once, so the preservation model
+(`save-tool items`) and the running engine share one copy of each routine.
 
-One consumer addresses it by **slot**, and it is the reason this section
-exists: PROT 0941's enemy Steal (`docs/subsystems/cast-module.md`) is a
-rejection sampler over the physical array. It draws `rand() % 0x100`, rejects
-the slot unless the id is non-zero, the count is non-zero and the item table
-knows the id, and gives up after `0x400` draws. The rejection rule and the RNG
-cadence are retail's in the port (one draw per rejected slot, so the shared
-cursor advances the way retail's does - `World::roll_cast_steal`), but the
-array it draws over is fabricated: the occupied ids are sorted and projected
-into slots `0 ..= n-1`. Two consequences, neither of which any test can hide:
+Most consumers address the bag by **id** - the pause menu's filtered pages,
+`GIVE_ITEM`, buy / sell, the battle Item arm - so `ItemBag` keeps a map-shaped
+adapter (`get` / `insert` / `entry` / `remove` / `len`) over the array and
+those call sites read as they always did. What the array adds under them:
 
-- **Which** item a given draw picks differs from retail. A dense projection
-  makes every draw hit an occupied slot, so the first accepted draw wins;
-  retail rejects its way past the holes a played-through bag has.
-- The module's low-half floor is not applied at all. Retail's inner loop
-  re-draws while `ctx[+0x11] == 4` and `slot < *(0x8007B5EA)`, which is how a
-  scripted fight is kept from stealing out of the low half of the array. A
-  floor over slot numbers means nothing over a projection that has no holes,
-  so `World::roll_cast_steal` passes no `min_slot` to
-  `cast_arm_ticks::steal_pick_bag_slot`.
+- **Iteration is slot order**, which is the order the menu pages and the sell
+  list walk. A map had no order at all.
+- **A hole is expressible.** `id == 0` is the free sentinel and a live id with
+  a zero count survives, which is retail's occupancy rule exactly.
+- **The window is expressible.** `find` / `add` / `consume` / `normalize` all
+  scan `[gp[+0x2D2], gp[+0x2D4])`, so a solo character's half-bag behaves the
+  way the selector makes it behave rather than being a whole-bag alias.
 
-The fix is a real 256-slot array on `PartyState`, with retail's own occupancy
-rule (`id != 0`, counts allowed to reach zero) and `FUN_800423E0`'s merge /
-squeeze as the only compaction. It is not a local change: `party.inventory` is
-named at 201 sites across `engine-core`, `engine-shell` and `web-viewer`
-(their tests included), and the slot order would then have to be seeded from a save and
-round-tripped through `legaia_save`, which the map form does not carry either.
-Until that lands the bag stays a map and this is what it costs.
+### The consumer that indexes by slot
+
+PROT 0941's enemy Steal (`docs/subsystems/cast-module.md`) is a rejection
+sampler over the physical array, and it is the reason the shape matters.
+`World::roll_cast_steal` reproduces all four of its rules:
+
+| rule | retail | where |
+|---|---|---|
+| uniform draw over **256 slots**, budget `0x400`, one `rand()` per rejection | `0x801F77C4` loop | `cast_arm_ticks::steal_pick_bag_slot` |
+| accept only `id != 0 && count != 0 && shop price != 0` | `0x801F7884..0x801F78A4` | the price mask `roll_cast_steal` builds from `ShopItemData` |
+| re-draw while `slot < window start` when the second party member is character `4` | `0x801F77E8` arms on `DAT_8007BD10[1]`, floor `*(i16*)0x8007B5EA` | the `min_slot` the port now passes |
+| the removal scans only the **window** and returns `0x100` outside it | `FUN_80042310`, miss arm `0x80042374` | `ItemBag::consume_returning_slot` |
+
+The third leg is a **shop price**, not a "the item table knows this id" test:
+the halfword at `0x80074368 + id*0xC + 2` is the same field the shop prices a
+purchase from, so a quest or found-only item - one with no price - cannot be
+stolen at all. Over the 256 ids the table carries, **96 are priced `0`**, so
+more than a third of the id space is unstealable by construction. An earlier port passed a predicate built from the ids the bag
+already held, which accepts every occupied slot by construction.
+
+The fourth is an asymmetry, and it is retail's: the draw is over the whole
+array while the removal is window-bounded, so a steal that lands in the half
+the active window does not cover **announces an item the party keeps**.
+
+### Slot order in a save
+
+`SaveExt::item_slots` carries the array itself - 256 `(id, count)` pairs, slot
+order, holes intact - beside the compact `inventory` list the v1 prelude
+carries. The engine save format writes it as the optional `LGX6` block and a
+file without one seeds densely from the list, which is what every save did
+before the block existed. On the retail side `SaveFile::from_retail_sc_block`
+lifts the **whole** `0x200`-byte span rather than the 72-slot consumable page:
+a played-through bag runs well past slot 71 (a three-member mid-game card
+reads 160 occupied slots), and the page-wide lift dropped every one of them.
 
 ## Provenance
 

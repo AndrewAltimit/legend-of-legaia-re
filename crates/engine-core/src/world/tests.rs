@@ -278,6 +278,7 @@ mod field_timer_actors;
 mod flash_limiter;
 mod game_over_hold;
 mod inline_dialogue;
+mod item_bag_steal;
 mod live_battle;
 mod locomotion;
 mod minigames;

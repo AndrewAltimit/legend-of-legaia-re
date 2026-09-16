@@ -173,6 +173,12 @@ impl World {
     /// you need `story_flags`, `money`, and `inventory` to survive a save/load cycle.
     pub fn save_full(&mut self) -> legaia_save::SaveFile {
         let party = self.save_party();
+        // Both views of the bag. `item_slots` is retail's physical array -
+        // slot order, holes intact - and is what a reload restores from;
+        // `inventory` is the id-sorted compact list the v1 prelude carries,
+        // so a file written here still reads on a consumer that only knows
+        // the list.
+        let item_slots: Vec<(u8, u8)> = self.party.inventory.slots().to_vec();
         let mut inventory: Vec<(u8, u8)> = self
             .party
             .inventory
@@ -253,6 +259,7 @@ impl World {
                 story_flag_bits,
                 money: self.party.money,
                 inventory,
+                item_slots,
             },
             ext_v2: legaia_save::SaveExtV2 {
                 play_time_seconds: self.clock.play_time_seconds,
@@ -294,11 +301,22 @@ impl World {
             self.flags.system_flags = window;
         }
         self.party.money = sf.ext.money;
-        self.party.inventory.clear();
-        for (id, count) in sf.ext.inventory {
-            if count > 0 {
-                self.party.inventory.insert(id, count);
+        // Prefer the physical array: it is the only form that carries slot
+        // order and the holes a played-through bag has, and PROT 0941's Steal
+        // samples both. A file written before the `LGX6` block - or an
+        // importer that only had the compact list - seeds densely from the
+        // list instead, which is what every load did before.
+        if sf.ext.item_slots.is_empty() {
+            self.party.inventory.clear();
+            for (id, count) in sf.ext.inventory {
+                if count > 0 {
+                    self.party.inventory.insert(id, count);
+                }
             }
+        } else {
+            let window = self.party.inventory.window();
+            self.party.inventory = crate::world::ItemBag::from_slots(&sf.ext.item_slots);
+            self.party.inventory.set_window(window);
         }
         // (The level-up tracker's per-slot XP + level are hydrated from the
         // records inside `load_party`.)

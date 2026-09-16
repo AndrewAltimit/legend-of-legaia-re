@@ -55,10 +55,16 @@ pub struct PartyState {
     /// Running money total (gold). Modified by op 0x3A `add_money`,
     /// clamped to `[0, 9_999_999]` per the original retail formula.
     pub money: i32,
-    /// Per-slot inventory counts. Indexed by raw `slot_byte` operand of
-    /// op 0x3B (`(slot >> 4) * 0x414 + (slot & 0xF)` in retail). Engines
-    /// can re-key this to their own inventory model.
-    pub inventory: std::collections::HashMap<u8, u8>,
+    /// The party's bag: retail's 256-slot `[id][count]` array at `0x80085958`
+    /// with the active window `gp[+0x2D2..+0x2D6]` installed over it
+    /// ([`crate::world::ItemBag`], `docs/subsystems/inventory.md`).
+    ///
+    /// The map-shaped calls (`get` / `insert` / `entry` / ...) are an adapter
+    /// over that array, so an id-addressed consumer reads as it always did;
+    /// what the array adds is a slot coordinate, holes, and the window - the
+    /// three things PROT 0941's Steal sampler draws over and a
+    /// `HashMap<u8, u8>` cannot express.
+    pub inventory: crate::world::ItemBag,
     /// Per-character Tactical Arts use-counter tracker. Engines call
     /// [`crate::world::World::notify_art_used`] from the battle side-effects handler when
     /// a Tactical Arts strike lands; the tracker emits
@@ -148,7 +154,7 @@ impl PartyState {
             roster: legaia_save::Party::zeroed(0),
             party_leader_slot: None,
             money: 0,
-            inventory: std::collections::HashMap::new(),
+            inventory: crate::world::ItemBag::new(),
             tactical_arts: TacticalArtsTracker::new(),
             current_art_banner: None,
             level_up_tracker: LevelUpTracker::new(),

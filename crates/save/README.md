@@ -40,7 +40,10 @@ assert_eq!(r.hp_mp_sp(), r2.hp_mp_sp());
 ## Retail SC-block bridges
 
 The retail save block stores party records, the 512-byte story-flag
-bitmap, and the 72-slot inventory at fixed offsets. The character-record
+bitmap, and the whole 256-slot item array (`+0x1818`, `0x200` bytes) at fixed
+offsets. 72 is the size of the consumable **display page** a cheat device
+targets, not a bound - a played-through bag runs past it, and lifting only the
+page dropped every item above slot 71. The character-record
 array anchors at **SC block offset `0x5C8`** with the `0x414` stride
 (record `n` at `block + 0x5C8 + n*0x414`); the display name sits at
 record offset `+0x2A7`, so slot 0's name surfaces at SC `+0x86F` -
@@ -124,21 +127,30 @@ bitmap mirroring RAM `0x80085600..0x80085800` - the engine carries it in
 [`SaveExt::story_flag_bits`] alongside the narrower 32-bit scratchpad
 word at `_DAT_1F800394`.
 
-The [`retail_inventory`](src/retail_inventory.rs) module is a separate,
-memory-safe RE model of the retail fixed-window item-inventory accessors
-(find / consume / normalize / add), faithfully reproducing the full-bag
-out-of-bounds add primitive (`FUN_800421D4`) as data without performing
-any unsafe write.
+The [`retail_inventory`](src/retail_inventory.rs) module is the memory-safe
+model of the retail item-inventory accessors (find / consume / normalize /
+add) over the physical slot array, bounded by the **active window**
+`[gp[+0x2D2], gp[+0x2D4])` that [`ItemWindow::select`] installs. It
+reproduces the full-bag out-of-bounds add primitive (`FUN_800421D4`) as data
+without performing any unsafe write, and `consume_returning_slot` carries
+retail's own return value - the `0x100` sentinel an id outside the window
+gets, having touched nothing.
 
-It is also the **composer for the card write**. The engine keeps its bag as
-a map and hands out a compact list, while a retail block holds a fixed slot
-array with rules the map does not have, so `write_retail_inventory` lays the
-list in through `compose_window` - retail's own add + normalize - rather
-than positionally. Copying positionally is how a block retail cannot
-represent reaches a real memory card: the engine's battle-drop and steal
-grants are uncapped `saturating_add`s, so a long session can bank more than
-the 99 retail clamps at, and nothing else folds two stacks of one id or
-drops an `id == 0` phantom.
+It is the engine's bag, not a model beside it: `engine-core`'s `ItemBag`
+holds one of these and exposes a map-shaped adapter over it, so the two share
+one copy of each accessor. `save-tool items` is the same model asked the same
+questions against a real card, read-only.
+
+**Two writers, because there are two shapes.** A caller holding a *list* has
+no slot coordinate, so `write_retail_inventory` lays it in through
+`compose_window` - retail's own add + normalize - which is what makes it
+representable: the engine's uncapped grants can bank more than the 99 retail
+clamps at, and nothing else folds two stacks of one id or drops an `id == 0`
+phantom. A caller holding the *array* has the slot order already, and
+`write_retail_item_window` writes it verbatim, holes included; running it
+through the composer would squeeze out exactly the holes PROT 0941's Steal
+samples over. `SaveFile` picks the second whenever [`SaveExt::item_slots`] is
+populated.
 
 ## `save-tool` CLI
 

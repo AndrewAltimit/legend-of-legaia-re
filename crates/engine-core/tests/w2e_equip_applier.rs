@@ -56,7 +56,7 @@ fn record() -> StatRecord {
 }
 
 fn session(party_slot: u8) -> EquipSession {
-    let mut inv: HashMap<u8, u8> = HashMap::new();
+    let mut inv = legaia_engine_core::world::ItemBag::new();
     for id in [HEAD_ITEM, BODY_ITEM, WEAPON_ITEM, FOOT_ITEM] {
         inv.insert(id, 1);
     }
