@@ -1267,6 +1267,110 @@ resist-bypass wrapper, with baked powers `0x80` at `0x801F71E8` and
 `0x801F7A90` and `0x30` at `0x801F7EBC`, the last site firing four times inside
 arm `15`. The returns `67 / 71 / 26 / 25 / 30 / 25` are applied unscaled.
 
+#### The fourteen, measured
+
+These bodies need an **enemy** caster, so the drive differs from the player
+half. `scripts/pcsx-redux/autorun_capture_arm_gating.lua` converts the monster
+seat's already-rolled action on a pre-turn battle state - `actor[+0x1DE] = 2`,
+`+0x1DF = <action id>`, `+0x1DD = <target>` - instead of rewriting a party
+seat's queued one; retail then resolves the module through the spell record's
+`+1` sub-id, pages it, and ticks it with its own caster kind.
+
+The tick clock is firmer here, and it needs no guess about which prologue VA is
+the entry. The capture-class band has exactly one tick dispatcher:
+`jal 0x801F2160` occurs **once** in PROT 0898's bytes, at `0x801E50C8`, so an
+Exec breakpoint on the dispatcher is one hit per module tick by construction,
+and the phase byte read at that entry is the arm about to run. The twelve
+distinct body VAs are armed alongside it, and in every run that ticked at all,
+exactly one of them was entered exactly once per dispatcher hit - so the body
+column below is read off **execution**, not off a dump's printed address, and
+it agrees with the table this page already carries in all twelve cases.
+
+| PROT | action | body entered | arms walked | dwell, ticks per arm |
+|---|---|---|---|---|
+| 940 | `0xAC` | `0x801F7240` | `0..7` | 1, 30, 64, 16, 16, 48, 18, 27 |
+| 940 | `0x50` | `0x801F78B8` | `0..3`, `0xFF` | 1, 3, 64, 19, 1 |
+| 940 | `0xAE` | `0x801F78B8` | `0..3`, `0xFF` | 1, 4, 64, 16, 1 |
+| 941 | `0x51` | `0x801F730C` | `0..3`, `0xFF` | 1, 21, 16, 32, 1 |
+| 941 | `0xB9` | `0x801F6A04` | `0..4` | 1, 65, 32, 64, 25 |
+| 943 | `0x40` | - | - | faulted, see below |
+| 943 | `0xB5` | `0x801F6A04` | `0..4` | 1, 65, 32, 64, 32 |
+| 944 | `0x37` | `0x801F6A04` | `0..5` | 1, 33, 32, 32, 64, 82 |
+| 944 | `0x53` | - | - | faulted, see below |
+| 950 | `0x5A` | `0x801F79F8` | `0..4` | 1, 13, 1, 32, 13 |
+| 950 | `0xAB` | `0x801F6A24` | `0..6` of 14 | 1, 65, 21, 64, 8, 40, 15+ |
+| 956 | `0x71` | `0x801F7298` | `0..3`, `0xFF` | 1, 33, 32, 32, 1 |
+| 962 | `0xA2` | `0x801F7AE4` | `0..3` | 1, 21, 1, 1862+ |
+| 962 | `0xA3` | `0x801F74A0` | `0..4` | 1, 21, 1, 42, 684+ |
+| 962 | `0xA4` | `0x801F6D54` | `0..4`, `0xFF` | 1, 21, 1, 18, 42, 1 |
+
+A `+` marks a floor: the arm was still running when the capture window closed.
+Three of the fourteen **park** rather than finish in this fight. PROT 0950's
+`0xAB` is the band's fourteen-arm body and stops at arm `6`; PROT 0962's `0xA2`
+and `0xA3` each sit in their last listed arm for hundreds of ticks without
+advancing. So those arms have an exit gate the fight does not satisfy, not a
+long countdown.
+
+`0xAB` also carries the reproducibility evidence. Driven twice, with capture
+windows of 300 and 600 seconds, it returned the **same** six dwells
+`1, 65, 21, 64, 8, 40` for arms `0..5` and parked in arm `6` both times - so
+those six are the module's own countdowns rather than a wait on the scene.
+
+Every row comes from one fight, `party_basic_attack_vs_gobu_gobu` - one party
+seat, one monster seat - so the same caveat the player half carries applies: an
+arm that reproduces across fights is the module's own countdown, and an arm
+that moves waits on the scene.
+
+The arm **sets** are a stronger result than the dwells, because they are the
+dispatch bound walked rather than read. Each table-dispatched body walks
+exactly the arms its `sltiu` bound allows and stops on the terminal arm with no
+`0xFF` - `0..7` for PROT 0940's `0xAC`, `0..4` for the three `sltiu 5` bodies,
+`0..5` for PROT 0944's `0x37`. Each chain-dispatched body walks `0..3` (`0..4`
+for PROT 0962's) and then latches `0xFF` for exactly one tick.
+
+##### The countdown gates most arms, and its drain is per-arm
+
+Each of these modules keeps its own countdown word, and for most arms it is the
+gate: the dwell in ticks is the seed divided by what the arm draws the word
+down by per tick. PROT 0941's `0x51` is the clearest - arm `2` seeds `0x100`
+and arm `3` seeds `0x200`, both drain `16` per tick, and the arms run `16` and
+`32` ticks.
+
+What is **not** uniform is that per-tick amount. The disclosure list in
+`legaia_engine_vm::cast_arm_ticks` describes the word as decremented by the
+scratchpad frame step `*(0x1F80037D) * *(0x1F800393)`, and on some arms that is
+exactly right: the summed per-tick step equals the drain on all seven counted
+arms of PROT 0940's `0xAC`, on both counted arms of PROT 0941's `0x51`, on all
+four of its `0xB9`, and on all five of PROT 0944's `0x37`. On others it is a
+constant the step does not explain - PROT 0943's `0xB5` draws its word down by
+`4` per tick while the step reads `16..32`, and PROT 0940's `0x50` drains by
+`8` per tick on arm `2` while draining by the step on arms `1` and `3`. So the
+frame step is one arm's decrement, not the word's.
+
+The step itself is adaptive and changes **inside** a single cast - the audio
+frame driver rewrites `DAT_1F800393` per frame
+([`audio.md`](audio.md)) - so a dwell predicted from an arm's first observed
+step reports a countdown-gated arm as ungated. The reducer
+`scripts/pcsx-redux/analyze_capture_arm_gating.py` sums the per-tick steps
+instead of scaling the first one.
+
+Two of the module-resident words that list names are not the gate for the
+bodies measured here. PROT 0962's `0x801F89AC` holds a constant `1024` across
+all three of its bodies' walks, and PROT 0950's `0x801F86B0` goes **negative**
+(`0xFFFFFF80`) inside `0x5A`'s last arm, so whatever ends those arms is a
+different word or a different test.
+
+##### Two of the fourteen fault before their first tick
+
+Driving PROT 0943's `0x40` (Curse) or PROT 0944's `0x53` (Curse All) from this
+fight reaches battle phase `0x70` with the module paged - the loader-B tracker
+reads `48` and `49`, and slot-B word `0` changes to the module's - and then
+the emulator reports an 8-bit read at the **same** garbage address for both,
+after which no module tick ever runs and the battle does not advance. Their
+siblings in the same two images (`0xB5` in PROT 0943, `0x37` in PROT 0944)
+complete normally from the same state, so this is a property of those two
+bodies plus this fight's scene, not of paging the module.
+
 ### The fourteen trampoline arms that are the band's other tick bodies
 
 <a id="the-fourteen-trampoline-arms-that-are-unported-tick-bodies"></a>

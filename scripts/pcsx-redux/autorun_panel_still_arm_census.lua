@@ -28,9 +28,19 @@
 -- `y_base = ((w >> 4) & 1) * 256`). Pages 6..9 at `y = 0` are the `(384, 0)`
 -- band both families upload into.
 --
+-- That tally is COARSE and its silence is not evidence: retail carries the
+-- page in most textured primitives' own words rather than in a separate
+-- `DR_TPAGE`, so a frame whose geometry samples a page can contribute no
+-- `0xE1` word at all, and the walk stops at `LEGAIA_OT_MAX_NODES`. For a
+-- per-primitive answer decode the ordering table with `mednafen-state
+-- display-list` over a RAM dump instead.
+--
 -- Outputs (probe.out_path):
---   arms.csv     one row per 0978 site hit: which site, the phase counter,
---                the arm VA the jump table holds, the `RECT` and `ra`.
+--   arms.csv     one row per 0978 site hit WHILE 0978 is resident: which
+--                site, the phase counter, the arm VA the jump table holds, the
+--                `RECT` as it stands at that breakpoint (before the site's own
+--                step, so `images.csv` is the authority on what was uploaded)
+--                and `ra`.
 --   images.csv   every LoadImage / StoreImage / MoveImage call's rect + ra.
 --   tpages.csv   per sampled frame, the tally of selected texture pages.
 --   teardown.csv ctx[+0xB] / ctx[+0xC] / loader tracker on every change.
@@ -77,6 +87,13 @@ local IMAGE_SITES = {
 local DRAW_OTAG = 0x80058704
 
 local RECT_VA = 0x801F735C          -- the RECT both families share
+-- Slot B is a shared buffer: the moment another image is paged in, these VAs
+-- hold that image's code and the breakpoints fire on it. An ungated census
+-- therefore reports hundreds of thousands of "still" hits from routines that
+-- have nothing to do with PROT 0978 - the shape a slot-B breakpoint takes
+-- when residency is not part of the test. The loader-B tracker holds
+-- `extraction - 895`, so 0978 is resident exactly while it reads 83.
+local PROT_0978_TRACKER = 978 - 895
 
 local function u8(a)  return probe.read_u8(a)  or 0 end
 local function u16(a) return probe.read_u16(a) or 0 end
@@ -95,6 +112,7 @@ end
 
 local arms_csv, images_csv, tpages_csv, teardown_csv
 local site_hits = {}
+local foreign_hits = {}   -- same VA, a DIFFERENT slot-B image resident
 local image_hits = {}
 local vsync = 0
 local otag_calls = 0
@@ -150,6 +168,10 @@ probe.run({
             site_hits[s.name] = 0
             local nm = s.name
             probe.arm_breakpoint(s.addr, "Exec", 4, nm, function()
+                if u8(TRACKER) ~= PROT_0978_TRACKER then
+                    foreign_hits[nm] = (foreign_hits[nm] or 0) + 1
+                    return
+                end
                 site_hits[nm] = site_hits[nm] + 1
                 if site_hits[nm] > 64 then return end
                 local n = regs()
@@ -161,6 +183,10 @@ probe.run({
             end)
         end
         probe.arm_breakpoint(MACHINE, "Exec", 4, "machine", function()
+            if u8(TRACKER) ~= PROT_0978_TRACKER then
+                foreign_hits.machine = (foreign_hits.machine or 0) + 1
+                return
+            end
             site_hits.machine = (site_hits.machine or 0) + 1
             if site_hits.machine > 256 then return end
             local ctr = u8(PHASE_CTR)
@@ -220,7 +246,8 @@ probe.run({
 
     on_done = function()
         for _, s in ipairs(SITES) do
-            PCSX.log(string.format("[census] %-14s %d", s.name, site_hits[s.name] or 0))
+            PCSX.log(string.format("[census] %-14s %d  (foreign slot-B image: %d)",
+                s.name, site_hits[s.name] or 0, foreign_hits[s.name] or 0))
         end
         PCSX.log(string.format("[census] machine=%d scus_drv=%d arm_site=%d otag=%d",
             site_hits.machine or 0, site_hits.scus_drv or 0,

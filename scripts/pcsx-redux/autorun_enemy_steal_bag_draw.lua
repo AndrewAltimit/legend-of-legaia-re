@@ -64,7 +64,15 @@ local BAG         = 0x80085958        -- 256 slots x [id:u8][count:u8]
 local ITEM_TABLE  = 0x80074368        -- the body's own base; +4 == 0x8007436C
 local LOADER_ID   = 0x8007BC4C
 
-local DRAW_TEST1  = 0x801F7864        -- lbu bag[slot].id, v1 = &bag[slot]
+local DRAW_TEST1  = 0x801F7864        -- lbu v0, 0x1818(v1): v1 = 0x80084140 + slot*2
+-- `0x801F7864`'s base register is the live game-state window `0x80084140`,
+-- not the bag: the body indexes `s4 + slot*2` and the `lbu` carries the
+-- `+0x1818` that lands it on `0x80085958`. Filtering the breakpoint on the
+-- raw base register therefore matches nothing and the draw log comes out
+-- empty while the cast is plainly drawing - the shape a zero takes when the
+-- instrument is looking at the wrong operand.
+local DRAW_BASE   = 0x80084140
+local DRAW_LBU_OFF = 0x1818
 local CONSUME     = 0x80042310
 local CONSUME_RET = 0x801F79CC        -- the instruction after the jal's slot
 
@@ -135,7 +143,9 @@ probe.run({
 
         probe.arm_breakpoint(DRAW_TEST1, "Exec", 4, "draw", function()
             local n = regs()
-            local ptr = tou32(n.v1)
+            local base = tou32(n.v1)
+            if base < DRAW_BASE or base >= DRAW_BASE + 512 then return end
+            local ptr = base + DRAW_LBU_OFF
             if ptr < BAG or ptr >= BAG + 512 then return end
             local slot = (ptr - BAG) / 2
             local id = u8(ptr)
