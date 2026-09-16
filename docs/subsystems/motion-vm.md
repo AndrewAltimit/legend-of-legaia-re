@@ -931,27 +931,66 @@ at `+0x64` and reloads. The operand is compared **unsigned** against `0xF0`
 - `0xF0` and above, a negative operand included: raise that bit and resolve
   `operand - 0xF0` against the second base `*(u16*)0x8007B824`.
 
+The two `sltiu ...,0xf0` are at `0x800393B8` (this op, on the sign-extended
+halfword the arm assembles from operand bytes `+1`/`+2`) and `0x8003A2DC` (the
+placement spawner, on a plain `lbu` of the record's model byte). Neither
+`sltiu` is inside `FUN_80024E08`: that routine only receives the already
+resolved pool index in `a1`.
+
+`0xF0` naming **Vahn** is one step further out than the split is. What the
+bytes give is that player-bank index `0` is *party slot* `0`: `FUN_8001E890`'s
+epilogue walks exactly three entries from the base
+(`slti v0,s0,0x3` at `0x8001EBA8`) capping each TMD's `+0x08`, and
+`FUN_8001EBEC` indexes `pool[*(0x8007B824) + i]` with the same `i` it uses to
+reach the per-character equipment bytes off the live save window
+(`lw v0,-0x47dc(v0)` / `addu v0,v0,a2` at `0x8001EC54`, `lbu v0,0x75e(v1)`).
+Which character *is* party slot `0` comes from the §0 pack's slot order
+([`character-mesh.md`](../formats/character-mesh.md#on-disc-layout)), not from
+the compare.
+
 Both bases index one array, and it is not a per-scene pack - see the next
 section.
 
 ### The model pool both bases index
 
 `DAT_8007C018` is a flat array of registered TMD pointers, and `FUN_80026B4C`
-(`tmd_register`) is its only writer: it validates the magic `0x80000002`,
-stores the pointer at `DAT_8007C018 + n*4`, publishes `n` to `0x8007BB38` and
-returns `n` as the model's id. `n` lives at `DAT_8007B774`, and the stage
+(`tmd_register`) is its only **registrar**: it validates the magic
+`0x80000002`, stores the pointer at `DAT_8007C018 + n*4` (`sw a0,0x0(v1)` at
+`0x80026BA8`), publishes `n` to `0x8007BB38` and returns `n` as the model's
+id. `n` lives at `DAT_8007B774`, and the stage
 initialiser `FUN_8001E1B4` resets it to `*(u32*)0x8007B824` in its epilogue
 (`sw v1,-0x488c(at)` at `0x8001E3AC`), so ids below that watermark survive a
 scene change and ids at or above it are reissued per stage.
 
+"Only registrar" is not "only writer". Both reference scanners
+(`find-address-word-refs.py`, `find-gp-relative-refs.py`) return ten
+base-forming sites for `0x8007C018` across `SCUS_942.54` and every extracted
+overlay, and exactly two of them store: `0x80026BA8` above, and
+`0x801CF1E0` in PROT 0976 (Baka Fighter), which reads the counter
+(`lw v1,-0x488c(v0)` at `0x801CF1B8`), mirrors it into two of its own globals
+and then does `sw zero,0x0(v0)` into `DAT_8007C018 + n*4` - it blanks the slot
+at the current top of the pool rather than registering anything. Every other
+site loads.
+
 | pool range | content | registrar |
 |---|---|---|
 | `[0, *0x8007B824)` | nothing in retail - the watermark is `0` | `FUN_8001F05C`'s `s7 != 0` arm, which never runs |
-| `[*0x8007B824, *0x8007B6F8)` | the five PROT 0874 §0 player meshes | `FUN_8001E890`'s pack loop at `0x8001EB4C` |
+| `[*0x8007B824, *0x8007B6F8)` | the five PROT 0874 §0 player meshes | `FUN_8001E890`'s pack loop `0x8001EB34..0x8001EB70` (its `jal 0x80026B4C` is at `0x8001EB4C`) |
 | `[*0x8007B6F8, ...)` | the scene's own models | `FUN_8001F05C`'s type-`0x02` / type-`0x09` arms |
 
-`FUN_8001E890` sets `*(u16*)0x8007B6F8 = pack_count + *(u32*)0x8007B824`
+`FUN_8001E890` sets `0x8007B6F8 = pack_count + *(u32*)0x8007B824`
 (`0x8001EB10..0x8001EB20`) - one past the player pack it has just registered.
+The store is a **word** (`sw v0,-0x4908(at)` at `0x8001EB20`); every consumer
+reads only the low halfword back, with `lhu`, which is why the base is written
+`*(u16*)0x8007B6F8` everywhere it is read. `pack_count` is the pack's own
+`+0x00` word (`lw v0,0x0(a0)` at `0x8001EB10`, `a0 = *(gp+0x6BC)`), and the
+registration loop re-reads it every iteration (`0x8001EB5C..0x8001EB6C`)
+against no clamp at all - a `beq v0,zero` skip and an `sltu` bound, nothing
+else. That whole tail is also **un-gated**: the container-reload block above it
+runs only for `*(gp+0x6AC) in {0, 2}` (`beq v1,zero` / `bne v1,v0` at
+`0x8001EA4C`/`0x8001EA54`), and `0x8001EAFC` - where the bank base and the
+registration loop begin - is that `bne`'s own target, so it is reached on both
+sides of the test.
 The scene bank is then registration order and nothing else: the bundle's
 descriptors in table order (each type-`0x02` contributing its whole pack, each
 type-`0x09` one model), then any type-`0x02` / type-`0x09` DATA_FIELD chunk in

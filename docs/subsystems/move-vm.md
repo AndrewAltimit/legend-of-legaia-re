@@ -148,10 +148,19 @@ Absolute `actor[+0x14..+0x18] = v1..v3` (Y mirror in `+0x2A` matches `v2`).
 | `actor[+0xB8 + i*2] = (op[4+3*i] * DAT_1F80037D) >> 3` | 2 bytes | the lane's **up**-ramp velocity |
 | `actor[+0xC8 + i*2] = (op[5+3*i] * DAT_1F80037D) >> 3` | 2 bytes | the lane's **down**-ramp velocity |
 
-The scale byte is `DAT_1F80037D`, the per-frame speed scalar (the same one the
-render-mode table below reads), verified in the disassembly at case `0x0A`'s
-multiply: `lui 0x1f80; ori 0x314; lbu 0x69(t0)` resolves to `0x1F800314 + 0x69 =
-0x1F80037D`. The `0x0B` jump-table slot has **no distinct handler** - control
+The scale byte is `DAT_1F80037D`, the game-speed **rate** scalar (the same one
+the render-mode table below reads), verified in the disassembly at case
+`0x0A`'s multiply: `lui 0x1f80; ori 0x314; lbu 0x69(t0)` resolves to
+`0x1F800314 + 0x69 = 0x1F80037D`. It is not the per-frame byte: sweeping every
+image for both addressing forms (`0x37d(lui 0x1f80)` and `0x69(0x1F800314)`)
+finds it written only by `FUN_80025CB4`'s core-state reset
+(`sb a2,0x69(v1)` at `0x80025D70`), by one SCUS init that plants the literal
+`8` (`addiu v0,zero,8` / `sb v0,0x37d(at)` at `0x80055FB4`/`0x80055FBC`), and
+by the Baka Fighter and DEBUG MODE overlays. The byte that actually moves every
+frame is `DAT_1F800393` (`= 0x7f(0x1F800314)`), rewritten by the frame pacer at
+`0x80017068` and clamped to `1..4` against the elapsed-time thresholds
+`0xF1`/`0x1FF`/`0x2D1` at `0x80017120..0x8001715C`. Anything of the shape
+"countdown `-= DAT_1F800393 * DAT_1F80037D`" is therefore frames × rate. The `0x0B` jump-table slot has **no distinct handler** - control
 falls straight to the continue-epilogue (the same shape as `0x22`), so a lane
 record only ever uses `0x0A`.
 

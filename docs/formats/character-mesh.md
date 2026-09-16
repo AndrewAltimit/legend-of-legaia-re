@@ -152,8 +152,14 @@ arithmetically reachable, so the arithmetic alone never discriminated - the
 `FUN_8001ED60` runs once at boot: it loads raw `0x36C` into scratch, takes the
 container's descriptor-`0` and descriptor-`1` size fields (`+0x08` / `+0x10`,
 low 24 bits), rounds each up to a word and stores them to `gp+0x69C` and
-`gp+0x6C8` (`0x8001EE2C` / `0x8001EE30`; measured `0xB49C` and `0x41E0`, i.e.
-§0's and §1's decoded sizes). `FUN_8001E1B4` mallocs exactly those. So a
+`gp+0x6C8` (`0x8001EE2C` / `0x8001EE30`; `0xB49C` and `0x41E0`, i.e. §0's and
+§1's decoded sizes). Those two figures need no capture to read: they are the
+**disc's** bytes, PROT 0874 `+0x08 = 0x0100B49C` and `+0x10 = 0x020041E0`
+under the `& 0x00FFFFFF` the routine applies (the high byte is the descriptor
+type). `FUN_8001E1B4` mallocs exactly those - `lw a1,0x6c8(gp)` at
+`0x8001E2C8` for §1 into `0x8007B75C`, `lw a1,0x69c(gp)` at `0x8001E2D4` for
+§0 into `gp+0x6BC` - and `FUN_8001E890` decompresses into them in that order
+(`0x8001EA64` / `0x8001EA80`). So a
 rebuild that grows §0 **and** its header size word gets a matching buffer; a
 rebuild that keeps the first four words byte-exact while the LZS stream decodes
 to a different length gets a pack truncated at `0xB49C` instead, and a
@@ -205,6 +211,17 @@ is asserted by retail's `FUN_8001EBEC` patch loop: those three slots are
 the only ones with `nobj=12` and the equipment-conditional group templates
 the player-equipment swap pass needs. Slots 3 / 4 carry the small
 auxiliary-actor meshes (no equipment swap).
+
+Two halves of that sentence carry different weight. "Pack slot `i` is *party
+slot* `i`" is a byte fact: `FUN_8001E890`'s epilogue walks exactly the first
+three entries from the player-bank base (`slti v0,s0,0x3` at `0x8001EBA8`),
+and `FUN_8001EBEC` forms `pool[*(0x8007B824) + i]` with the same `i` it uses
+to index the per-character equipment bytes in the live save window
+(`lw v0,-0x47dc(v0)` then `addu v0,v0,a2` at `0x8001EC50..0x8001EC5C`,
+`lbu v0,0x75e(v1)` at `0x8001EC74`). *Which* character party slot `0` holds is
+the inference on top - it is the party order, not anything the loader
+encodes - and it is what makes the render id `0xF0` "Vahn"
+([`motion-vm.md`](../subsystems/motion-vm.md#op-0x0e---the-model-swap)).
 
 ## TMD shape (per slot)
 

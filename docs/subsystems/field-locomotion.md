@@ -885,6 +885,18 @@ into `actor+0x24/+0x26/+0x28` - the **rotation triple**. The per-actor render di
 `[c 0 s; 0 1 0; -s 0 c]`, mapping local `+Z` to `(sin, 0, cos)` - the same forward
 vector the locomotion integrator walks along.
 
+The hand-off is `addiu a0,s0,0x24` at `0x8001AF04` **then** `jal 0x80026988` at
+`0x8001AF08`, whose delay slot `0x8001AF0C` is `move a1,s8` (the destination
+matrix) - `a0` carries the whole triple, not one angle, which is the reason
+`+0x26` is "the middle" of anything. `FUN_80026988`'s own nine stores resolve
+the order without a capture: it reads three angles at `a0+0x00`/`+0x02`/`+0x04`
+(`lhu` at `0x80026998`, `0x800269A4`, `0x800269F8`, each `& 0xFFF`, `<< 1`,
+indexed into the same two LUTs) and the matrix it writes to `a1+0x00..+0x10` is
+exactly `Rx(a0+0x00) · Ry(a0+0x02) · Rz(a0+0x04)` - `m[0][2] = LUT_B[a0+0x02]`
+alone at `0x80026AC0`, which only the `Y` slot of that product can be. So
+`+0x26` is the yaw by construction, and `+0x24`/`+0x28` are the pitch and roll
+the same matrix consumes.
+
 **This table is the static environment placement** - the visible terrain
 segments, buildings, and props, *not* (only) NPC spawns. Each placed tile
 allocates a static-object actor (shared tick fn `0x8003BC08`); the actor draws
