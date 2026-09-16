@@ -51,3 +51,8 @@ legaia-mes = { path = "../mes" }
 # chapter1_spine_oracle Part A reads pcsx-redux .sstate anchors (scene / mode /
 # player position) off the save library.
 legaia-pcsxr = { path = "../pcsxr" }
+# `mode_seat_host_parity` drives the BROWSER host beside this one, so the two
+# mode traces are compared by running both rather than by transcribing one.
+# `legaia-web-viewer` never depends on this crate, so the edge is acyclic, and
+# it is dev-only: the shipped `legaia-engine` binary links none of it.
+legaia-web-viewer = { path = "../web-viewer" }

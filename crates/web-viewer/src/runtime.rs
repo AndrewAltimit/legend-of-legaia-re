@@ -702,7 +702,8 @@ impl LegaiaRuntime {
         if !host.world.cutscene.opening_chain_active && !host.world.cutscene_timeline_active() {
             host.world.seed_free_roam_story_baseline(name);
         }
-        if legaia_engine_core::scene::is_world_map_scene(name) {
+        let world_map = legaia_engine_core::scene::is_world_map_scene(name);
+        if world_map {
             host.enter_world_map_scene(name)
                 .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
             // Start in walk mode with the retail top-view debug camera
@@ -718,6 +719,24 @@ impl LegaiaRuntime {
         } else {
             host.enter_field_scene(name, 0)
                 .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
+        }
+        if !world_map {
+            // Retail reaches the field through the mode table, not through a
+            // call: whoever wants the field stores `MAIN INIT` (2) and mode
+            // 2's handler stages the field overlay, calls the per-scene
+            // initializer and hands the word to `MAIN MODE` at `0x80025E50`.
+            // `BootSession::enter_field_live` performs exactly this pair, and
+            // the overworld's entry (`enter_world_map_live`) performs
+            // neither - so the branch above is the same branch the native
+            // host takes. Without it this page's word arrived at `MAIN MODE`
+            // through `adopt_world_mode` alone, one frame late and with no
+            // INIT frame in the trace at all.
+            let plan = self.seat_enter(legaia_engine_core::mode::GameMode::MainInit);
+            debug_assert!(
+                matches!(plan, Some(legaia_engine_core::mode::ModeInitPlan::Stage(st))
+                    if st.overlay_entry == legaia_engine_vm::title_overlay::FIELD_SCENE_INIT_PC),
+                "MAIN INIT's plan should name the per-scene initializer"
+            );
         }
         if self.live_battles {
             self.arm_live_battles(name);
@@ -1265,17 +1284,37 @@ impl LegaiaRuntime {
         JsValue::from_str(&format!("{event:?}"))
     }
 
-    /// The live retail mode word (`_DAT_8007B83C`) and its table name, as
-    /// `{"word": <u32>, "name": "<MODE>"}`.
+    /// The live retail mode word (`_DAT_8007B83C`), its table name, and the
+    /// front-end entry word beside it, as
+    /// `{"word": <u32>, "name": "<MODE>", "entry_word": <u32>}`.
     ///
-    /// The page's own read of the seat this host now holds - which is what
-    /// makes a browser mode trace possible at all. Before the seat existed
-    /// the front end ran with no mode word, so the two hosts could not be
+    /// The page's own read of the seat this host holds - which is what makes
+    /// a browser mode trace possible at all. Before the seat existed the
+    /// front end ran with no mode word, so the two hosts could not be
     /// compared on the one register retail's whole dispatch keys off.
+    ///
+    /// `word` is the **mode table index** the native oracle samples
+    /// (`ModeSeat::game_mode`). It used to be the seat's `entry_word`
+    /// (`_DAT_8007BB00`, the front-end flag `init.pak`'s hand-off reads),
+    /// which is a different global: the JSON paired that flag's value with
+    /// the mode's *name*, so a reader comparing the two hosts' words was
+    /// comparing two different registers and could not see a divergence.
+    ///
+    /// `edges` is the count of mode changes the seat has taken, and it is
+    /// the field that makes the two hosts comparable at the **INIT** modes.
+    /// An INIT mode lasts one frame *inside* `ModeSeat::enter` - the call
+    /// resolves the staging plan and hands the word to the mode's RUN
+    /// sibling before returning - so no sampler outside the call ever
+    /// observes the word sitting on one. What it leaves behind is the extra
+    /// edge, so a host that reaches `MAIN MODE` by entering `MAIN INIT` and
+    /// one that reaches it by adopting the world's scene mode walk the same
+    /// words and differ here.
     pub fn mode_state_json(&self) -> String {
         serde_json::json!({
             "word": self.mode_word(),
             "name": self.mode_seat.mode_name(),
+            "entry_word": self.mode_seat.entry_word(),
+            "edges": self.mode_seat.edges(),
         })
         .to_string()
     }
@@ -1321,10 +1360,56 @@ impl LegaiaRuntime {
         self.mode_seat = seat;
     }
 
-    /// The live retail mode word (`_DAT_8007B83C`), for the page's
-    /// diagnostics and for a mode trace this host can now emit.
+    /// The live retail mode word (`_DAT_8007B83C`) - the 28-entry mode
+    /// table's index, which is what the native mode-trace oracle samples off
+    /// its own seat (`ModeSeat::game_mode`).
     pub(crate) fn mode_word(&self) -> u32 {
-        self.mode_seat.entry_word()
+        self.mode_seat.game_mode().as_index() as u32
+    }
+
+    /// Enter an INIT mode **now**, against the active world - the browser's
+    /// call of [`legaia_engine_core::mode::ModeSeat::enter`], the entry point
+    /// `BootSession` calls at the same two junctures (field entry through
+    /// `MAIN INIT`, the pause menu through `CARD INIT`).
+    ///
+    /// The per-frame [`Self::tick_mode_seat`] is not a substitute for it.
+    /// `adopt_world_mode` writes the RUN word a scene mode maps to and never
+    /// the INIT one, so a host that only adopts skips the INIT frame
+    /// altogether **and** skips the mode-change edge's pad swallow - which is
+    /// what previously delivered the Start press that opened the pause menu to
+    /// the menu as its own first input on this host and not on the native one.
+    ///
+    /// The seat is moved out for the duration because [`Self::world_mut`] and
+    /// the seat are two `&mut` borrows off `self`.
+    pub(crate) fn seat_enter(
+        &mut self,
+        mode: legaia_engine_core::mode::GameMode,
+    ) -> Option<legaia_engine_core::mode::ModeInitPlan> {
+        let mut seat = std::mem::replace(
+            &mut self.mode_seat,
+            legaia_engine_core::mode::ModeSeat::new_at_boot(),
+        );
+        let plan = {
+            let world = self.world_mut();
+            seat.enter(mode, world)
+        };
+        self.mode_seat = seat;
+        plan
+    }
+
+    /// The pause menu's open juncture: retail opens the menu by writing the
+    /// mode word, not by calling the menu (`CARD INIT` stages the menu overlay
+    /// and hands the word to `CARD MODE` at `0x80025974`). Both stores of
+    /// `request_card_mode` land on the seat, then the INIT frame runs.
+    ///
+    /// Twin of `BootSession::open_field_menu`'s own pair of calls.
+    pub(crate) fn seat_open_card_menu(&mut self) {
+        self.mode_seat.request_card_mode();
+        let plan = self.seat_enter(legaia_engine_core::mode::GameMode::CardInit);
+        debug_assert!(
+            plan.is_none(),
+            "CARD INIT stages no overlay-A request in the port's model"
+        );
     }
 
     /// Decode the live dialogue box (the field VM's inline-script runner) into

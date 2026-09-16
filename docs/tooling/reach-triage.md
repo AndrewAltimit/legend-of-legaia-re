@@ -516,9 +516,11 @@ in `per_frame_stage` and the inner level wired to every host as `World::tick`
 (tagged `FUN_80016444`, with the split spelled out at its own site). The outer
 level is what has no seat.
 
-**The seat is taken, and two of the three blockers this page named were gone
-before it was.** `engine-shell`'s `BootSession` owns a `mode::ModeSeat` and
-drives it once per frame from `tick`; `docs/subsystems/boot.md`
+**The seat is taken on both hosts, and two of the three blockers this page
+named were gone before it was.** `engine-shell`'s `BootSession` owns a
+`mode::ModeSeat` and drives it once per frame from `tick`; the browser play
+page's `LegaiaRuntime` owns one too and reconciles it from its own frame path.
+`docs/subsystems/boot.md`
 ([the port's seat](../subsystems/boot.md#the-ports-seat-at-the-mode-table))
 carries the shape. What made it takeable:
 
@@ -562,6 +564,19 @@ Two readings of that block are corrected while it is being cited: it holds
 `gp+0x538` and `gp+0x55C`), and the `gp+0x564` / `gp+0x494` stores that close it
 are *copies of the new mode word*, not clears - `gp+0x494` being the
 previous-mode cell the loop's own `bne` compares against.
+
+**Holding a seat is not the same as driving it**, and the difference is
+invisible in the word. Both hosts also **enter** two INIT modes by hand -
+`MAIN INIT` at field entry and `CARD INIT` on the pause-menu open - through
+`ModeSeat::enter`, which resolves the INIT column's plan and hands the word to
+the mode's RUN sibling before it returns. So an INIT mode never appears in a
+sample taken after the call, on either host, and a host that reached
+`MAIN MODE` by letting `adopt_world_mode` follow the world's scene mode walks
+the **same chain of words** as one that entered `MAIN INIT` first. What it
+does not do is take the extra mode-change edge, which is what
+`engine-shell/tests/mode_seat_host_parity.rs` compares: it drives both hosts
+over one ladder (field entry, menu open, menu close) and asserts the chains
+**and** the edge counts match.
 
 **What is still owed**, now that the seat exists:
 
@@ -624,7 +639,7 @@ a missing call. Recorded per row so the decision is not re-derived:
 | rows | verdict | the capability that is missing |
 |---|---|---|
 | `card_bu_io.rs` x4, `card_flow.rs` | already `REPLACED-BY` | nothing - the tree re-verdicted these; a drain pass that re-opens them is counting work that will never be done |
-| `shop.rs` `801db7f4` `801dbd94` | keep `NOT WIRED` | a menu-runtime switch from `ShopSession::set_quantity` onto the retail-shaped `BuyQuantitySession` / `SellQuantitySession`, on **both** rendering hosts. The sessions are the replacement; nothing is missing but the switch, and the switch is a host change |
+| `shop.rs` `801db7f4` `801dbd94` | keep `NOT WIRED` | a menu-runtime switch from `ShopSession::set_quantity` onto the retail-shaped `BuyQuantitySession` / `SellQuantitySession`. Not a hook: the `ShopQuantity` screen is a nine-row list whose cursor **is** the quantity, and the sessions are left/right steppers with their own phases, cues and (buying) a Point Card toast that waits for a press - so the switch replaces that screen's input handling in `MenuRuntime` and the row model both hosts draw from it |
 | `morph_weight_apply.rs` `8002174c` | keep `NOT WIRED` | a spawn site allocating a morph actor from descriptor `0x8007068C`, so something carries `actor+0x4C` / `actor+0x90` |
 | `effect_ribbon.rs` `801cfa48` | keep `NOT WIRED` | a producer emitting actor render-mode-4 primitives; the module has no entry point until one exists |
 | `scene_transition_actor.rs` `80021934` | keep `NOT WIRED` | a staged-bundle scene loader - a host that parks a raw `.LZS` bundle where the descriptor walker reads it. The engine's `Scene` resource load is not a replacement for the *sequencing*, which is visible (the fade-out / countdown / MAIN INIT order) |

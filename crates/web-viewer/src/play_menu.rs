@@ -500,6 +500,13 @@ impl LegaiaRuntime {
             None => SceneMode::Field,
         };
         self.play_menu = Some(PlayMenu::new(session, resume_mode));
+        // Retail opens the menu by writing the mode word (`CARD INIT` stages
+        // the menu overlay and hands the word to `CARD MODE`), so the open
+        // goes through the seat here exactly as it does in
+        // `BootSession::open_field_menu` - which is what runs the mode-change
+        // edge, and with it the pad swallow that keeps the Start press that
+        // opened the menu from also being the menu's first input.
+        self.seat_open_card_menu();
     }
 
     /// Open the pause menu directly on one row's sub-screen, named the way
@@ -553,6 +560,11 @@ impl LegaiaRuntime {
             // See `World::release_menu_entry_context_park`.
             host.world.release_menu_entry_context_park();
         }
+        // The word follows the world back out of `CARD MODE` at the close,
+        // not at the next tick's reconcile - the same call
+        // `BootSession::close_field_menu` makes, so the two hosts hold the
+        // same word in the frames between the close and the next tick.
+        self.mode_seat.adopt_scene_mode(menu.resume_mode);
     }
 
     /// Whether a Start edge would open the pause menu right now:
