@@ -1517,6 +1517,35 @@ siblings in the same two images (`0xB5` in PROT 0943, `0x37` in PROT 0944)
 complete normally from the same state, so this is a property of those two
 bodies plus this fight's scene, not of paging the module.
 
+#### What actually stops PROT 0950 at arm 6
+
+Arm 6 has no exit condition of its own to satisfy. Its tail is the band's
+ordinary countdown expiry - `lw` the module countdown `0x801F86B0`, subtract
+the scratchpad frame-step product, `bgtz` back to the return, and on the
+fall-through reseed it (`stepA << 5`) and bump `ctx[+0x279]` through the shared
+tail at `0x801F7928`. The `0xAB` capture's last logged tick leaves the
+countdown at `48` against a step of `32`, so the arm was two ticks from
+advancing; what ends the run is the emulator reporting an unmapped 8-bit read,
+not a gate that never opens.
+
+The address is not arm 6's and not arm 7's: arm 7 reads only the target record
+`s4` and the globals, and both arms form every pointer from a register the
+prologue loaded. The shape that matches an unmapped read is arm **10**, which
+materialises the actor pointer table (`addiu s2, v0, -0x6c90`) and walks it
+with `lw ($s2)` / `addiu s2, s2, 4` - an AoE sweep whose loop bound is the
+seat count, over a table a forced enemy cast on a one-monster fight does not
+fill. So the ladder these arms need is a fight with the seat count the sweep
+expects, not a state whose arm-6 gate passes.
+
+The dwell itself does **not** reduce to one law across the arms. Each arm's
+fall-through reseeds a per-arm multiple of the scratchpad step byte alone -
+`<< 8` at arm 0, `<< 6` at arms 1 and 5 and 8..12, `<< 5` at arms 3 and 6,
+`* 24` at arm 7, `* 160` at arm 4 - but predicting a dwell from those
+multipliers and one step product reproduces arm 6's measured 16 ticks and
+misses arm 1's measured 65 by a factor of two, because several arms subtract a
+*multiple* of the product rather than the product. The per-arm drain has to be
+read per arm, which is the same conclusion the band's other module reached.
+
 ### The fourteen trampoline arms that are the band's other tick bodies
 
 <a id="the-fourteen-trampoline-arms-that-are-unported-tick-bodies"></a>
