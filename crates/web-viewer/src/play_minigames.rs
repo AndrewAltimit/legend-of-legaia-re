@@ -307,10 +307,18 @@ impl LegaiaRuntime {
         let Some(game) = self.minigame_ui.game else {
             return (Vec::new(), Vec::new());
         };
+        // The dance's status rows are withheld while the pre-song count-in
+        // banner is up, off the same shared phase predicate the native HUD
+        // reads - the rule lives with the phase, not with either draw list.
+        let dance_status = self
+            .scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.minigames.dance_status_visible());
         let mut texts = match game {
             ActiveGame::Slot => self.slot_status_draws(font),
             ActiveGame::Baka => self.baka_status_draws(font),
             ActiveGame::Muscle => self.muscle_status_draws(font),
+            ActiveGame::Dance if !dance_status => Vec::new(),
             ActiveGame::Dance => self.dance_status_draws(font),
         };
         if game == ActiveGame::Dance {

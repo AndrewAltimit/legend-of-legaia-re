@@ -341,7 +341,11 @@ impl PlayWindowApp {
         // Dance minigame HUD: the running score / groove gauge / active lane,
         // the arrow the current beat calls for, and the last press judgement.
         // The three arrows are the retail pad bits (Square/Circle/Triangle).
+        //
+        // Withheld while the pre-song count-in is up - the shared phase
+        // predicate answers that for both hosts.
         if self.session.host.world.mode == SceneMode::Dance
+            && self.session.host.world.minigames.dance_status_visible()
             && let Some(g) = &self.session.host.world.minigames.dance
         {
             let arrow = match g.required_symbol() {

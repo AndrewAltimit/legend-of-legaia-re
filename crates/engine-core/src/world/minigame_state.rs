@@ -137,6 +137,23 @@ pub struct MinigameState {
 }
 
 impl MinigameState {
+    /// Whether the dance's **status readout** (score / groove gauge / lane,
+    /// the called arrow, the last judgement, the scrolling beat track) is on
+    /// screen this frame.
+    ///
+    /// False while the pre-song count-in banner is up. The banner is centred
+    /// on stage row `0x40` and the status pen sits just below it, so the two
+    /// overprint - and there is nothing for the readout to say yet: the beat
+    /// clock is held, the score is zero, and the "current beat" is beat zero
+    /// of a song that has not started. Retail never shows both, because its
+    /// count-in runs before the dance screen's readout is armed at all.
+    ///
+    /// One predicate for every host: the rule belongs to the phase, not to a
+    /// draw list.
+    pub fn dance_status_visible(&self) -> bool {
+        self.dance.is_some() && self.dance_countin_banner.is_none()
+    }
+
     pub fn new() -> Self {
         Self {
             dance: None,

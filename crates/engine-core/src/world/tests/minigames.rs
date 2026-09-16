@@ -50,6 +50,9 @@ fn enter_dance_counts_in_before_the_beat_clock_runs() {
     assert_eq!(world.minigames.dance_last_judge, None);
     assert_eq!(world.minigames.dance.as_ref().unwrap().song_timer(), 0);
     assert!(world.minigames.dance_countin_banner.is_some());
+    // The banner and the status readout are mutually exclusive, and one
+    // predicate says so for every host.
+    assert!(!world.minigames.dance_status_visible());
     // The intro cue fires once, on the hold-segment entry.
     let mut cues = world.drain_minigame_sfx_cues();
     for _ in 0..crate::dance::COUNTIN_END_FRAME {
@@ -66,6 +69,7 @@ fn enter_dance_counts_in_before_the_beat_clock_runs() {
     );
     assert!(world.minigames.dance_countin.is_none());
     assert!(world.minigames.dance_countin_banner.is_none());
+    assert!(world.minigames.dance_status_visible());
     // And the song started: the chart loop is queued as an op-0x35 start, the
     // same event both hosts' BGM directors consume.
     assert!(world.audio.minigame_bgm_active);
