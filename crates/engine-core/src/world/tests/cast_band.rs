@@ -448,6 +448,56 @@ fn arming_the_stager_zeroes_the_module_phase() {
     );
 }
 
+/// PROT 0905's restore arm must not be a **second** HP owner.
+///
+/// The engine folds a cast's HP outcome exactly once, and that fold already
+/// routes this module's own magnitude in (`World::seru_tick_heal_amount`).
+/// The driven seam re-enters the module every frame, so an arm that also
+/// stored would restore twice per cast and more if the phase lingered. The
+/// arm keeps its cure sweep - that half has no second owner.
+#[test]
+fn the_vera_restore_arm_leaves_hp_to_the_fold_and_still_cures() {
+    use legaia_engine_vm::cast_seru_ticks_a::{
+        VERA_CURE_MASKS, VERA_CURE_MIN_LEVEL, VERA_RESTORE_ARM,
+    };
+    let mut world = module_code_world();
+    assert_eq!(world.cast_module_for(0x83), Some(905));
+    world.casting.summon_actor_slot = Some(7);
+    // A hurt, status-carrying ally in the victim seat.
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.hp = 40;
+    world.actors[0].battle.max_hp = 1000;
+    world.actors[0].battle.field_flags = 0x0003;
+    // A cure tier the arm will act on, and a magic level past the cure floor.
+    world.battle_ctx.follow_up_pending = 1;
+    for m in world.party.roster.members.iter_mut() {
+        let mut list = m.spell_list();
+        list.count = 1;
+        list.ids[0] = 0x83;
+        list.levels[0] = VERA_CURE_MIN_LEVEL;
+        m.set_spell_list(list);
+    }
+
+    let mut ran_restore = false;
+    for arm in 0..=VERA_RESTORE_ARM {
+        world.casting.module_phase = arm;
+        if world.run_cast_module_code(0x83, arm).is_none() {
+            break;
+        }
+        ran_restore |= arm == VERA_RESTORE_ARM;
+    }
+    assert!(ran_restore, "the restore arm has to have executed");
+    assert_eq!(
+        world.actors[0].battle.hp, 40,
+        "the module tick is not an HP owner - the fold is"
+    );
+    assert_eq!(
+        world.actors[0].battle.field_flags,
+        0x0003 & VERA_CURE_MASKS[0],
+        "the cure half still runs"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // PROT 0907 (Nighto): the kill / confuse fork, driven at the band
 // ---------------------------------------------------------------------------

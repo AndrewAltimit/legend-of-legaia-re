@@ -780,6 +780,19 @@ pub struct VeraRestore {
     /// side-effect stager's light-row class `1..=4`. Anything else (a damaging
     /// row's percent, or `0` when nothing staged) cures nothing.
     pub cure_tier: u8,
+    /// Does this arm **apply** the HP it computes?
+    ///
+    /// Retail has one owner for the restore and it is this arm, so a faithful
+    /// replay sets this. The engine has a second owner - it folds a cast's HP
+    /// outcome exactly once at `World::cast_spell_on_slots_prepaid`, which
+    /// routes this module's own magnitude in through
+    /// `World::seru_tick_heal_amount` - and the driven seam re-enters this
+    /// body every frame, so a driven Vera with this set restores twice.
+    /// Clearing it keeps the arm's phase machine, its cure sweep and its
+    /// presentation writes while the fold stays the single applier, which is
+    /// the posture every other body in the band already takes (they are handed
+    /// a neutral magnitude outright).
+    pub apply_hp: bool,
 }
 
 /// What PROT 0905's restore arm did this frame.
@@ -895,7 +908,12 @@ pub fn vera_tick(
                 && let Some(t) = seats.get_mut(who.victim as usize)
             {
                 let mut out = VeraOutcome::default();
-                let heal = vera_heal_amount(r.magic_level, t.hp, r.max_hp);
+                // The arm's own arithmetic always runs; `apply_hp` decides
+                // whether this body is the one that stores it.
+                let heal = match r.apply_hp {
+                    true => vera_heal_amount(r.magic_level, t.hp, r.max_hp),
+                    false => 0,
+                };
                 if t.hp != 0 && (t.flags & FLAG_NON_TARGETABLE) == 0 {
                     t.hp = t.hp.wrapping_add(heal);
                     // Retail stores, it does not accumulate: `sw -heal`.
@@ -1785,6 +1803,7 @@ mod tests {
                 magic_level: 1,
                 max_hp: 1000,
                 cure_tier: 1,
+                apply_hp: true,
             }),
         );
         let out = out.unwrap();
@@ -1854,6 +1873,7 @@ mod tests {
                     magic_level: 9,
                     max_hp: 1000,
                     cure_tier: tier,
+                    apply_hp: true,
                 }),
             );
             let out = out.unwrap();
@@ -1879,6 +1899,7 @@ mod tests {
                 magic_level: 2,
                 max_hp: 1000,
                 cure_tier: 1,
+                apply_hp: true,
             }),
         );
         assert!(!out.unwrap().cured);
@@ -1896,6 +1917,7 @@ mod tests {
                 magic_level: VERA_CURE_MIN_LEVEL,
                 max_hp: 1000,
                 cure_tier: 1,
+                apply_hp: true,
             }),
         );
         assert!(out.unwrap().cured);

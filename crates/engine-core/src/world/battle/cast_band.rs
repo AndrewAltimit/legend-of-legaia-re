@@ -1092,6 +1092,15 @@ impl World {
     /// What PROT 0905's restore arm needs: the caster's per-spell magic level,
     /// the ally target's max HP and the cure selector above.
     ///
+    /// `apply_hp` is **clear**. The arm's cure sweep and its phase machine are
+    /// this body's, but its HP store is not: the engine folds a cast's HP
+    /// outcome exactly once at [`Self::cast_spell_on_slots_prepaid`], and that
+    /// fold already routes this module's own magnitude in through
+    /// `seru_tick_heal_amount`. Since [`Self::summon_stager_tick`] re-enters
+    /// the module every frame, leaving the store here would restore twice -
+    /// once in the arm, once in the fold. This is the same neutral-magnitude
+    /// posture the rest of the band takes.
+    ///
     /// REF: FUN_801F69D8 (PROT 0905 arm 9, `0x801F7C28..0x801F7F4C`)
     fn vera_restore(
         &self,
@@ -1111,6 +1120,7 @@ impl World {
                     vm::cast_seru_ticks_a::VERA_CURE_MIN_LEVEL,
                 )
                 .unwrap_or(0),
+            apply_hp: false,
         })
     }
 
@@ -1908,9 +1918,16 @@ impl World {
     /// render writes; the damage step itself stays a tested kernel rather
     /// than becoming a second application. That is the same posture every
     /// other non-sweep tick body in the band takes, and it is why PROT 0911's
-    /// heal amount is passed as `0` - its real magnitude
-    /// (`cast_seru_ticks_b::orb_heal_amount` of the caster's per-magic level,
-    /// a character-record field) has no seam here yet.
+    /// heal amount is passed as `0`.
+    ///
+    /// The magnitude is not lost by that: `seru_tick_heal_amount` computes
+    /// `cast_seru_ticks_b::orb_heal_amount` of the caster's per-spell magic
+    /// level (the character record's `+0x161` byte, found by scanning the
+    /// learned-id list at `+0x13D`) and overrides the spell catalog's
+    /// placeholder inside the fold, so the amount a live Orb restores is
+    /// retail's `(level << 6) + 0x1C0` clamped to the seat's missing HP.
+    /// Passing it here as well would restore twice, once per owner - which is
+    /// exactly what PROT 0905 used to do.
     fn run_seru_b_tick(
         &mut self,
         entry: u32,
