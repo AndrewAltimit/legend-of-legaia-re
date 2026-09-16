@@ -96,6 +96,7 @@ pub mod minigame_actor;
 pub mod minigame_entry;
 pub mod minigame_floor;
 pub mod mode;
+pub mod model_bank;
 pub mod monster_ai;
 pub mod monster_catalog;
 pub mod move_buffer_host;

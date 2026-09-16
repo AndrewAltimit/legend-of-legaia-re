@@ -3,7 +3,15 @@
 //! the legacy `tim_scan/<entry>/` filesystem intermediate the asset-viewer
 //! used.
 //!
-//! PORT: FUN_8001FE70, FUN_80026B4C
+//! PORT: FUN_8001FE70
+//!
+//! NB this module's TMD pool is a **magic scan** over the scene's raw entry
+//! bytes, not retail's registration order: it cannot see a TMD inside an
+//! LZS-compressed bundle descriptor, so for a scene whose models ship that way
+//! it under-reports the pool (`koin3` 1 vs 77, `other7` 0 vs 65). The id space
+//! a placement's `model_index` and the scripted-motion VM's op `0x0E` operand
+//! index is [`crate::model_bank`], which walks the loader's own order and
+//! carries the `FUN_80026B4C` tag this module used to claim.
 //!
 //! This is the engine-side mirror of the retail field-loader chain
 //! ([`docs/subsystems/asset-loader.md`]): the runtime DMAs every TIM in the

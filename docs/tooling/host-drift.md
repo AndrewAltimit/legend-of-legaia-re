@@ -636,30 +636,40 @@ What makes this a project rather than a wiring job is the measurement, which
 is why it is here and not in a waiver
 (`crates/engine-core/tests/ambient_motion_op_census_disc.rs`, disc-gated):
 
-| scene | sites | distinct targets | targets that are some placement's spawn model | scene TMD pack | targets that index the pack |
+| scene | sites | distinct targets | targets that are some placement's spawn model | scene model bank | targets that resolve in it |
 |---|---|---|---|---|---|
-| `bubu1` | 9 | 9 | 0 | 174 | 9 |
-| `koin3` | 100 | 10 | 0 | 1 | 0 |
-| `edbubu` | 6 | 6 | 0 | 115 | 1 |
-| `other7` | 100 | 10 | 0 | 0 | 0 |
+| `bubu1` | 9 | 9 | 0 | 173 | 9 |
+| `koin3` | 100 | 10 | 0 | 77 | 10 |
+| `edbubu` | 6 | 6 | 0 | 160 | 6 |
+| `other7` | 100 | 10 | 0 | 65 | 10 |
 
 **Zero of 215 sites** names a model that some placement in the same scene
 already binds, so the obvious cheap implementation - keep a
 `(bank, model id) -> uploaded mesh` map built from the placements a host
-already uploads - covers nothing at all. And the two scenes carrying 100 sites
-each resolve to scene TMD packs of 1 and 0 entries, so for 200 of the 215 the
-operand is not an index into the pack both hosts resolve a placement with.
-That last row is a reverse-engineering question, not an engineering one: either
-`SceneResources` resolves those two scenes' packs wrongly, or op `0x0E`'s Scene
-bank is a different pool from the placement spawner's.
+already uploads - covers nothing at all.
 
-The blocking capability is therefore two things, in order: an answer to what
-`*(u16*)0x8007B6F8` indexes for `koin3` / `other7`, and then a live per-slot
-model override on `World` plus, on each host, a mesh resolver keyed by
-`(bank, id)` that can materialise a model **no placement spawns** - an upload
-path on native, a `play_npc_live_model` export the page consults before
-`play_npc_mesh` on web. Until the first is answered the second has nothing to
-fetch.
+**All 215 resolve**, though, which is the half that was measured wrongly. The
+earlier version of this table compared the operand against
+`SceneResources::tmds.len()` and reported banks of `1` and `0` for `koin3` and
+`other7`, from which "op `0x0E`'s bank is a different pool" read as the likely
+answer. It is not: `SceneResources::tmds` is a **magic scan over the scene's
+raw entries**, blind to a TMD inside an LZS-compressed bundle descriptor, and
+both scenes carry their models in exactly that - a type-`0x02` descriptor of 77
+and 65 members. The bank op `0x0E` indexes is `DAT_8007C018`, the global
+registered-TMD array, whose per-scene window is the loader's own registration
+order; `legaia_engine_core::model_bank::SceneModelBank` reconstructs it from
+the disc and `crates/engine-core/tests/model_bank_disc.rs` pins it against the
+`DAT_8007B774` counter three field save states measured. See
+[`motion-vm.md`](../subsystems/motion-vm.md#the-model-pool-both-bases-index).
+
+The blocking capability is therefore one thing, not two: a live per-slot model
+override on `World` plus, on each host, a mesh upload keyed by the resolved
+source - an upload path on native, a `play_npc_live_model` export the page
+consults before `play_npc_mesh` on web. The bytes to upload are now
+addressable: `SceneModelBank::tmd_bytes` for the scene half, and for the
+`0xF0` half `legaia_asset::character_pack` over PROT 0874, which is not one of
+the scene's entries - `source_for_model_id` returns `None` there rather than
+pretending otherwise.
 
 ### Per-actor pitch and roll on the play page
 
