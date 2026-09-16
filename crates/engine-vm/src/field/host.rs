@@ -1038,19 +1038,31 @@ pub trait FieldHost {
     /// [`op4c_nibble4_global_pair_gate`]: FieldHost::op4c_nibble4_global_pair_gate
     fn op4c_nibble4_global_pair_clear(&mut self) {}
 
-    /// Op 0x4C sub-3 sub-0 / sub-1 (field input lock toggle).
+    /// Op 0x4C outer-nibble 3, sub-0 / sub-1 - the **ambient-particle master
+    /// gate**.
     ///
-    /// 2-byte instruction `[4C, 0x30]` (lock) / `[4C, 0x31]` (unlock). The
-    /// original sets `_DAT_8007B854 = 1` (sub-0) or `_DAT_8007B854 = 0`
-    /// (sub-1), then exits via `caseD_4()` - the STATE_RESUME path. The flag
-    /// is reset to 0 by the field reset routine `FUN_8003AEB0`, suggesting
-    /// it gates field-input handling during a scripted scene.
+    /// 2-byte instruction `[4C, 0x30]` (raise) / `[4C, 0x31]` (clear). Both
+    /// arms write `_DAT_8007B854` from a jump delay slot and exit via
+    /// `caseD_4()` - the STATE_RESUME path: `0x801E0F38` is
+    /// `sw v0,-0x47ac(v1)` with `v0 = 1`, `0x801E0F44` is
+    /// `sw zero,-0x47ac(v0)`, both off the 16-entry jump table at
+    /// `0x801CEEB8`.
+    ///
+    /// The global has six references disc-wide and **none of them is pad
+    /// state**: two SCUS clears (`0x800259AC`, `0x8003B690`), the field
+    /// render pass's particle-table stage (`0x80026EBC`, gated on game mode
+    /// `3`), the ambient particle emitter's own first load
+    /// (`0x801D605C` - `lui v0,0x8008` / `lw v0,-0x47ac(v0)`, the two opening
+    /// instructions of `FUN_801D6058` in the field overlay), and these two
+    /// writers. So this hook raises or clears scene ambience, not input.
     ///
     /// PC advances to `pc + header_size + 1` on resume; the VM surfaces this
     /// as a `Yield` so the host's state-resume layer decides when to advance
     /// (mirrors the existing sub-7 inverted-Y branch).
-    fn set_field_input_lock(&mut self, locked: bool) {
-        let _ = locked;
+    ///
+    /// REF: FUN_801D6058 (the gated emitter), FUN_801D6704 (spawns it)
+    fn set_ambient_particle_gate(&mut self, enabled: bool) {
+        let _ = enabled;
     }
 
     /// Set a bit in the **system flag bank** (the 4th of the four flag banks

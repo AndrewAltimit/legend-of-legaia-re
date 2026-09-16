@@ -273,11 +273,16 @@ impl World {
     /// with the gate clear emits nothing until a script raises it - which is
     /// what [`Self::set_ambient_particles_enabled`] is for.
     ///
-    /// PORT: FUN_801D6704 NOT WIRED: the host that should call this is the
-    /// field arm of `Scene::enter_field_scene` (`scene/host/scene_entry.rs`),
-    /// beside the `crate::mode_entry_init::field_spawn` call that already
-    /// computes the same `FieldSpawn::extra_actor` this reproduces; that file
-    /// is outside this change's scope.
+    /// PORT: FUN_801D6704
+    ///
+    /// WIRED: the field arm of `Scene::enter_field_scene`
+    /// (`scene/host/scene_entry.rs`) calls this beside the
+    /// `crate::mode_entry_init::field_spawn` that seats the player, so every
+    /// cold field entry on both hosts installs exactly one emitter. What no
+    /// host yet DRAWS is the particles themselves: the channel fills
+    /// `ElementFrame::particles` every frame and no renderer consumes them,
+    /// because retail's per-particle actor (`FUN_801D629C`) is a separate
+    /// template family the port has no producer for.
     ///
     /// REF: FUN_80024C88 (the positioned spawn), FUN_801D6058 (the handler)
     pub fn install_field_scene_elements(
@@ -311,14 +316,12 @@ impl World {
     /// Retail keeps the gate in one word and the emitter re-reads it every
     /// frame; the port keeps a copy per element, so the write fans out here.
     ///
-    /// NB the port's `FieldHost::set_field_input_lock` receives those two
-    /// sub-ops today. It has the right **address** and an inferred name: the
-    /// global's only readers are the emitter and the field render pass's
-    /// particle-table stage at `0x80026EBC`, neither of which touches pad
-    /// state. Nothing misbehaves, because the trait method's default body is a
-    /// no-op and `World` does not override it - the gate simply has no sink
-    /// until this one. Renaming that hook is a change to `engine-vm`'s
-    /// nibble-3 arm, outside this change's scope.
+    /// The VM side of this is `FieldHost::set_ambient_particle_gate`, and
+    /// `FieldHostImpl` (`crate::world::vm_hosts`) forwards it straight here,
+    /// so a script that raises the gate reaches every live emitter on both
+    /// hosts. The global's only readers are that emitter and the field render
+    /// pass's particle-table stage at `0x80026EBC`; neither touches pad state,
+    /// which is why the hook is named for ambience rather than for input.
     pub fn set_ambient_particles_enabled(&mut self, on: bool) {
         for el in self.cutscene.elements.iter_mut() {
             if let ElementKind::AmbientEmitter { scene, .. } = &mut el.kind {

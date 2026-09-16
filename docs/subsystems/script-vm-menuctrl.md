@@ -16,7 +16,7 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 | 0 | 0x00..0x0F | Party-leader change |
 | 1 | 0x10..0x1F | Complex sub-switch on whole byte (menu sub-dispatcher) |
 | 2 | 0x20..0x2F | Party-view-swap |
-| 3 | 0x30..0x3F | Sub-3 cluster (input lock, no-op cluster, player-resync chain, party-state-clear, etc.) |
+| 3 | 0x30..0x3F | Sub-3 cluster (the [ambient-particle master gate](#0x4c-nibble-0x300x3f---the-ambient-particle-master-gate), no-op cluster, player-resync chain, party-state-clear, etc.) |
 | 4 | 0x40..0x4F | Immediate-or-ramp cluster (write or ramp ctx slots / globals) |
 | 5 | 0x50..0x5F | Five sub-ops off a 5-entry table: model select, NPC move-to-tile, **TAKE_ITEM**, and the two dialog polls. Full body: [nibble-5 sub-op table](#0x4c-nibble-0x500x5f---the-five-sub-op-table). |
 | 6 | 0x60..0x6F | 6-word emitter (`func_0x80058490`) + 16-byte halt-acquire |
@@ -30,6 +30,40 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 | F | 0xF0..0xFF | Only `op0 == 0xFF` valid (pass-through); other sub-ops print `"SUB_CMD_0F_ERROR"` |
 
 The full per-sub-op table is in the field-VM dump (`overlay_0897_801de840.txt`). The from-scratch port mirrors the dispatcher shape with host hooks per sub-cluster - see [`crates/engine-vm/src/field.rs`](../../crates/engine-vm/src/field.rs). The side-effect-free disassembler (`legaia_asset::field_disasm`) carries the same per-sub widths for **all sixteen outer nibbles** so linear census walks stay in sync (nibble `B` is genuinely undefined in retail - no `case 0xb` exists - and decodes as an error).
+
+#### 0x4C nibble 0x30..0x3F - the ambient-particle master gate
+
+Sub-`0` and sub-`1` are a 2-byte pair that raise and clear one word,
+`_DAT_8007B854`, then exit via the STATE_RESUME path. Both stores sit in a
+jump delay slot: `0x801E0F38` is `sw v0,-0x47ac(v1)` with `v0 = 1`,
+`0x801E0F44` is `sw zero,-0x47ac(v0)`, reached off the 16-entry jump table at
+`0x801CEEB8`.
+
+The word is **not an input lock**. It has six references disc-wide and none of
+them is pad state:
+
+| Site | Form | Role |
+|---|---|---|
+| `0x800259AC` | `sw zero` | SCUS clear |
+| `0x8003B690` | `sw zero` | SCUS clear (field reset `FUN_8003AEB0`) |
+| `0x80026EBC` | `lw` | field render pass - stages the `0x8007322C` particle table into scratchpad `0x1F8002D0` when the game mode is `3` and the word is set |
+| `0x801D605C` | `lw` | the ambient particle emitter `FUN_801D6058`, its opening `lui`/`lw` pair |
+| `0x801E0F38` | `sw` | this sub-`0` |
+| `0x801E0F44` | `sw` | this sub-`1` |
+
+So a field script decides, per scene, whether ambience emits at all. The
+emitter itself and its spawn are in
+[`field-ambient-fx.md`](field-ambient-fx.md#mechanism-4---the-ambient-particle-emitter).
+
+Port: `FieldHost::set_ambient_particle_gate`, forwarded by `FieldHostImpl` to
+`World::set_ambient_particles_enabled`, which fans the single word out over the
+per-element copies the cutscene element channel carries.
+
+NB the emitter at `0x801D6058` is a **phantom-VA case** in the dump corpus: a
+second, unrelated 93-instruction routine occupies that address in another
+image and reads nothing at `-0x47ac`. Confirm the 145-instruction field body
+(`overlay_cutscene_dialogue_801d6058.txt` /
+`overlay_cutscene_mapview_801d6058.txt`) before citing it.
 
 #### 0x4C nibble 0x70..0x7F - collision-grid rectangular wall paint
 

@@ -465,9 +465,13 @@ impl AmbientEmitter {
     ///
     /// WIRED: [`crate::world::World::tick_cutscene_elements`] runs this every
     /// frame on both hosts, off the same master-driver gate the other
-    /// plain-template families ride. What no host yet does is **install** an
-    /// element for it to run on: its descriptor `0x801F271C` and spawn site `0x801D6FD8` are pinned, but the field MAIN INIT that spawns it is not ported, so nothing on the engine side installs one. That is a content-driven gap (nothing
-    /// reaches the spawner), not an unreached port.
+    /// plain-template families ride, and
+    /// [`crate::world::World::install_field_scene_elements`] installs the one
+    /// element it runs on at every cold field entry (descriptor `0x801F271C`,
+    /// spawn site `0x801D6FD8`). The remaining leg is downstream of this
+    /// routine: the particles it returns reach
+    /// [`crate::world::ElementFrame::particles`] and no renderer draws them
+    /// yet, on either host.
     pub fn step(
         &self,
         scene: &AmbientScene,
