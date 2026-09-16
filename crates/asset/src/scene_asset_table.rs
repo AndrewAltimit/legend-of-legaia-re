@@ -435,6 +435,114 @@ pub fn lenient_descriptor_walk(entry: &[u8]) -> Option<Vec<DescriptorRecord>> {
     Some(out)
 }
 
+/// The **retail** descriptor walk: `count` from `+0x00`, `count` 8-byte pairs
+/// from `+0x08`, no count bound at all.
+///
+/// [`lenient_descriptor_walk`] exists to answer "is this buffer plausibly a
+/// bundle" for a caller that will confirm downstream, and its `2..=7` count
+/// window is a detector heuristic. This function is the other thing: a
+/// transcription of what `FUN_80020224` does, for a caller that already knows
+/// the entry is a bundle and wants the same descriptors retail gets.
+///
+/// ```text
+/// 80020288  lw   s3,0x0(s4)       ; count, straight off the table base
+/// 80020290  blez s3,0x800202cc    ; a non-positive count skips the loop
+/// 80020298  move s0,s4            ; cursor starts AT the base ...
+/// 8002029c  lw   a0,0xc(s0)       ; ... so pair i is (base+8+8i, base+0xC+8i)
+/// 800202a0  lw   a1,0x8(s0)
+/// 800202a4  addiu s0,s0,0x8
+/// 800202b4  jal  0x8001f05c
+/// 800202b8  _addu a0,s4,a0        ; payload pointer = base + data_offset
+/// ```
+///
+/// The payload pointer is formed in the `jal`'s **delay slot**, which is where
+/// a backward-only scan for the addition loses it.
+///
+/// What this adds over reading the words yourself is the anchor law and the
+/// type bound the dispatcher itself imposes (`sltiu v1,v1,0x15` at
+/// `0x8001F0B4`): descriptor 0's `data_offset` must be the header end
+/// `8 + 8*count`, every type byte must be one the dispatch table has an arm
+/// for, and the offsets must ascend inside the buffer. Retail checks none of
+/// those - it is reading a file its own tool wrote - so they are this
+/// function's way of refusing a buffer that is not a bundle, not a claim about
+/// the runtime. See `ghidra/scripts/funcs/80020224.txt` and
+/// [`docs/formats/scene-bundles.md`](../../../docs/formats/scene-bundles.md).
+pub fn descriptor_bundle_walk(entry: &[u8]) -> Option<Vec<DescriptorRecord>> {
+    let count = legaia_bytes::u32_le(entry, 0)? as usize;
+    if count == 0 || count > MAX_BUNDLE_DESCRIPTORS {
+        return None;
+    }
+    let header_end = 8 + count * 8;
+    if entry.len() < header_end {
+        return None;
+    }
+    let mut out = Vec::with_capacity(count);
+    let mut prev_offset = 0u32;
+    for i in 0..count {
+        let p = 8 + i * 8;
+        let type_size = legaia_bytes::u32_le(entry, p)?;
+        let data_offset = legaia_bytes::u32_le(entry, p + 4)?;
+        let type_byte = ((type_size >> 24) & 0xFF) as u8;
+        let size = type_size & 0x00FF_FFFF;
+        if !is_known_type(type_byte) || size > MAX_ASSET_SIZE {
+            return None;
+        }
+        if data_offset as usize >= entry.len() {
+            return None;
+        }
+        if i == 0 {
+            if data_offset as usize != header_end {
+                return None;
+            }
+        } else if data_offset <= prev_offset {
+            return None;
+        }
+        prev_offset = data_offset;
+        out.push(DescriptorRecord {
+            type_byte,
+            size,
+            data_offset,
+        });
+    }
+    Some(out)
+}
+
+/// Upper bound [`descriptor_bundle_walk`] puts on the count word. Retail has
+/// none; this one only has to be above the corpus maximum (7) by enough that a
+/// buffer whose first word is a small integer cannot walk 1000 descriptors
+/// before failing.
+const MAX_BUNDLE_DESCRIPTORS: usize = 32;
+
+/// Byte span each descriptor's payload occupies **on disc**, given the entry
+/// length: descriptor `i` runs from its own `data_offset` to the next
+/// descriptor's, and the last one to the end of the entry.
+///
+/// This is layout, not a field: `size` is the *decompressed* byte count, so
+/// nothing in the header states where a compressed stream stops. Retail never
+/// needs to know - it hands the stream's start to the dispatcher and the LZS
+/// decoder stops when it has produced `size` bytes. A consumer that wants the
+/// compressed extent should decode and take the input the decoder consumed;
+/// these spans are the outer bound that walk sits inside.
+pub fn descriptor_disc_spans(
+    descriptors: &[DescriptorRecord],
+    entry_len: usize,
+) -> Vec<core::ops::Range<usize>> {
+    descriptors
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let start = d.data_offset as usize;
+            let end = descriptors
+                .get(i + 1)
+                .map(|n| n.data_offset as usize)
+                .unwrap_or(entry_len)
+                .min(entry_len)
+                .max(start);
+            start..end
+        })
+        .collect()
+}
+
 /// Encode a descriptor `(type<<24)|size` word from its parts. Companion to the
 /// decode in [`detect`]; used to rewrite a descriptor's decompressed size after
 /// a variable-length asset edit (`size` is masked to 24 bits).

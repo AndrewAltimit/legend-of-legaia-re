@@ -35,17 +35,18 @@
       <text x="614" y="72" class="po-off">+0x786</text>
       <text x="750" y="72" class="po-off" text-anchor="end">0x800</text>
     </svg>
-    <figcaption>One sector, nothing else: 1926 bytes of fill, a DOS EOF byte <code>0x1A</code>, scratch to the sector end.</figcaption>
+    <figcaption>One sector: a 1927-byte fill file ending in the DOS EOF byte <code>0x1A</code>, then 121 bytes that belong to the file written before it.</figcaption>
   </figure>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>+0x000</code></td><td>1926</td><td>fill</td><td>ASCII <code>pochipochi...</code> - 37 lines x 52 bytes + a trailing <code>po</code></td></tr>
+      <tr><td><code>+0x000</code></td><td>1926</td><td>fill</td><td>37 lines of <code>pochi</code> x 10 (50 ASCII bytes) each closed by CRLF, then one empty CRLF line - not a trailing <code>po</code>, which is the same arithmetic split the other way</td></tr>
       <tr><td><code>+0x786</code></td><td>1</td><td>EOF</td><td><code>0x1A</code>, the DOS end-of-file marker</td></tr>
-      <tr><td><code>+0x787</code></td><td>to <code>0x800</code></td><td>tail</td><td>Scratch / leftover fill to the end of the single sector - no format, no second sector</td></tr>
+      <tr><td><code>+0x787</code></td><td>121</td><td>inherited</td><td><strong>Not fill.</strong> For all 266 slots it is byte-identical to the bytes some other, non-filler entry carries at the same file offset - usually the previous entry in archive order. The mastering buffer is indexed by file offset and is not cleared between writes, so a 1927-byte file in a 2048-byte sector leaves 121 bytes of the previous write showing through. It says nothing about this slot.</td></tr>
     </tbody>
   </table>
   <p>Detection is two checks: <code>buf.starts_with(b"pochi") &amp;&amp; buf[0x786] == 0x1A</code>.</p>
+  <p>The same 1927 bytes appear once more on the disc, LZS-compressed: as the type-<code>0x14</code> descriptor slot of every count-4 and count-5 <a href="scene-bundles.html">scene bundle</a>. The asset dispatcher answers that type without reading the payload, so those bytes are never decompressed at runtime - the authoring tool filled a reserved descriptor with the same file it fills a reserved archive slot with.</p>
 </section>
 
 <section class="doc-section" id="why-so-many">

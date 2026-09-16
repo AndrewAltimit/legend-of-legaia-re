@@ -258,6 +258,39 @@ existing class, and they are the shapes this page already describes - the
 
 Sizes ~60 KB to ~452 KB.
 
+The thirteen sub-6 tables walk exactly the way the count-6/7 ones do, so
+`legaia_asset::scene_asset_table::descriptor_bundle_walk` transcribes the
+runtime walk with no count window at all: `count` off `+0x00`, descriptor `i`
+at `+0x08 + 8i`, payload at `base + data_offset`. Use it where the entry is
+already known to be a bundle; use `detect` where the question is whether it
+is one. One detail of the walker is easy to lose by reading the C: the
+payload pointer is formed in the `jal`'s **delay slot**
+(`800202b8 addu a0,s4,a0`), so a backward-only scan for the addition misses it.
+
+`asset account` selects that walker for the whole `lzs_container` class, which
+is where those thirteen sit. The class itself is not a reliable statement about
+them - see [`byte-accounting.md`](../tooling/byte-accounting.md#the-lzs_container-class-fits-a-count-it-never-reads).
+
+#### The `FLAG` slot is the pochi fill file
+
+Every count-4 and count-5 bundle closes its descriptor list with a
+type-`0x14` `FLAG` descriptor whose declared size is `1927` bytes, and the
+LZS stream behind it decompresses to the **pochi fill file** - byte-identical
+to the first `0x787` bytes of all 266 [pochi filler](pochi.md) PROT slots, and
+identical across all eleven bundles that carry one.
+
+Nothing reads those bytes. The dispatcher's `0x14` arm returns `type << 8`
+without touching the payload ([`asset-type.md`](asset-type.md)), so the slot's
+on-disc stream is never decompressed at runtime; what the descriptor *does* is
+carry its mode out in the return word, which is the streaming request the next
+section describes. The payload is what the authoring tool put in a reserved
+descriptor - the same filler it puts in a reserved PROT slot.
+
+Read this as the format's own idiom rather than as a curiosity: a `1927`-byte
+payload in a bundle is fill, and a walker that decodes it is decoding the
+filler, not an asset. `crates/asset/tests/byte_account_entries.rs` pins both
+halves.
+
 #### A `Flag` descriptor streams an extra file
 
 Types `0x0A` / `0x0F` / `0x14` allocate nothing and parse nothing: the

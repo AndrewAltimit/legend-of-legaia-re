@@ -42,6 +42,7 @@ There is **one** pack format and two readers for it. `pack.md` reads it at offse
 | Page | Confidence | What it covers |
 |---|---|---|
 | [PSX TIM](tim.md) | Confirmed | Texture format. 4/8/16/24bpp. CLUT-aware. PNG export round-trips. |
+| [Headerless 16bpp stills](ringside-still.md) | Confirmed | Extraction 1221 / 1222: `0x28000` bytes of raw BGR555 with no header, uploaded as four 320x64 bands to VRAM `(384, 0)`. The rectangle is four immediates in the consumer, not a field; the index is computed from the lead character's live HP. |
 | [Legaia TMD](tmd.md) | Confirmed | Custom PSX TMD variant (magic `0x80000002`). 8-byte group header, `count × ilen*4` stride. Renderer at `FUN_8002735C`. |
 | [VAB sound bank](vab.md) | Confirmed | Sony's standard SPU instrument bank - `VABp` magic, 128 program × 16 tone slots, SPU-ADPCM bodies. |
 | [PsyQ SEQ](seq.md) | Confirmed | PsyQ's MIDI-derived sequence format (`pQES` magic). 13-byte header, delta-time + MIDI events with running status. Drives `SsSeqOpen` / `SsSeqPlay`. |

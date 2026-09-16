@@ -842,9 +842,30 @@ pub fn classify(buf: &[u8]) -> FileReport {
         return report;
     }
 
-    // player.lzs-style container: try a handful of descriptor counts. We accept
-    // it only if EVERY descriptor decodes via LZS (some by raw is fine too) AND
-    // at least one decodes (no zero-descriptor fits).
+    // player.lzs-style container. The count retail uses is the header's own
+    // word (`FUN_80020224`: `lw s3,0x0(s4)`), so that is tried first and is
+    // what the report carries when it fits. The fitted list behind it is a
+    // 1990s-vintage fallback that predates reading the walker, and it is the
+    // reason this class cannot be taken at face value: it never consults the
+    // count word, so a buffer whose first words merely *pass* the
+    // per-descriptor checks joins the class with a count nothing on the disc
+    // states. Three retail entries are in it for exactly that reason - see
+    // `docs/tooling/byte-accounting.md`. The fallback stays because dropping
+    // it would strand those three in `unknown_*` without making them any less
+    // recognised than they are now.
+    if let Some(n) = retail_descriptor_count(buf) {
+        let mut report = mk(
+            Class::LzsContainer,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.lzs_descriptor_count = Some(n);
+        return report;
+    }
     for &n in &[1usize, 2, 3, 4, 8, 16] {
         if let Some(_count) = try_lzs_container(buf, n) {
             let mut report = mk(
@@ -974,18 +995,6 @@ pub fn classify(buf: &[u8]) -> FileReport {
     )
 }
 
-/// Detects the "pochi-fill" placeholder pattern used in unused PROT slots.
-///
-/// Layout:
-/// - Bytes 0..0x786: ASCII `"pochi"` repeating (lines of 50 chars + CRLF
-///   terminator), where 0x786 = 1926 = 37 lines × 52 bytes + 2 bytes ("po").
-/// - Byte 0x786: `0x1A` (DOS EOF marker).
-/// - Bytes 0x787..end: scratch / leftover data (sometimes non-zero).
-///
-/// We don't validate the full prefix byte-by-byte - checking the first 5
-/// bytes for `"pochi"` plus the magic at 0x786 is enough to be specific
-/// (no real format starts with 5 ASCII letters and then has 0x1A at exactly
-/// that offset).
 /// Minimum overlay-window pointer words a run must have to count as a table.
 const OVERLAY_PTR_RUN_MIN: usize = 8;
 
@@ -1036,8 +1045,58 @@ fn is_overlay_data_image(buf: &[u8]) -> bool {
         .any(|p| crate::mips_overlay::detect(&buf[p..]).is_some())
 }
 
-fn is_pochi_filler(buf: &[u8]) -> bool {
+/// Length of the pochi fill **file** - every byte a filler slot declares.
+///
+/// 37 lines of `"pochi"` x 10 (50 ASCII bytes) each closed by CRLF, then one
+/// empty CRLF line, then the `0x1A` DOS EOF byte at `+0x786`: `0x787` bytes,
+/// byte-identical in all 266 filler slots and in the type-`0x14` descriptor
+/// slot of the count-4 / count-5 scene bundles (`docs/formats/pochi.md`).
+///
+/// The two bytes before the EOF marker are that empty line, not a truncated
+/// `"po"` - the earlier reading split `0x786 = 37 * 52 + 2` the other way and
+/// attributed the remainder to the fill word rather than to a line break.
+pub const POCHI_FILL_LEN: usize = 0x787;
+
+/// Detects the "pochi-fill" placeholder pattern used in unused PROT slots.
+///
+/// Layout:
+/// - `0x000..0x784`: 37 lines of `"pochi"` x 10 (50 ASCII bytes) + CRLF.
+/// - `0x784..0x786`: one empty line (CRLF).
+/// - `0x786`: `0x1A`, the DOS EOF marker. [`POCHI_FILL_LEN`] is one past it.
+/// - `0x787..end`: **not** fill - the mastering buffer's previous contents at
+///   the same file offset, which is why it differs from slot to slot.
+///
+/// The prefix is not validated byte by byte: the first five bytes plus the
+/// marker at `0x786` are already specific (no real format starts with five
+/// ASCII letters and puts `0x1A` at exactly that offset), and the whole-file
+/// identity is a corpus property the format page carries rather than a thing
+/// each call re-measures.
+pub fn is_pochi_filler(buf: &[u8]) -> bool {
     buf.len() > 0x786 && buf.starts_with(b"pochi") && buf[0x786] == 0x1A
+}
+
+/// The descriptor count the **runtime walker** would use, when the buffer is a
+/// descriptor bundle by the walker's own rules
+/// ([`crate::scene_asset_table::descriptor_bundle_walk`]) and at least one
+/// descriptor's stream really decodes.
+///
+/// [`try_lzs_container`] cannot answer this. It never reads the count word -
+/// it fits one from a fixed list - and its per-descriptor floor of 32 bytes
+/// rejects the 4-byte ANM slot that eleven retail count-4 bundles carry, so
+/// every one of them used to be reported as `n = 1`: a count no descriptor
+/// table on this disc states, arrived at because validating only the first
+/// descriptor is vacuously easy.
+fn retail_descriptor_count(buf: &[u8]) -> Option<usize> {
+    let descriptors = crate::scene_asset_table::descriptor_bundle_walk(buf)?;
+    let decodes = descriptors.iter().any(|d| {
+        let desc = crate::Descriptor {
+            type_byte: d.type_byte,
+            size: d.size,
+            data_offset: d.data_offset,
+        };
+        crate::decode(buf, &desc, crate::DecodeMode::Lzs).is_ok()
+    });
+    decodes.then_some(descriptors.len())
 }
 
 fn try_lzs_container(buf: &[u8], count: usize) -> Option<usize> {

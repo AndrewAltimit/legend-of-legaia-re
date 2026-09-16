@@ -169,7 +169,7 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
       <tr><td><code>(1, 3, 5, 6, 0x14)</code></td><td>count-5 (<code>bubu1</code>, <code>edbubu</code>): the canonical seven minus Tmd and Vdf, MAN at index 1</td></tr>
     </tbody>
   </table>
-  <p>The <code>count</code> word is not always 6 or 7, and retail bounds it nowhere - the walker reads it and loops that many descriptors, so any bound in a reader is a heuristic. The strong signal is the anchor: descriptor 0's offset equals <code>8 + count &times; 8</code>. Two scenes ship a count-5 table and both carry a MAN, so a 6-or-7-only bound made <code>bubu1</code> and <code>edbubu</code> resolve no MAN and read as unloadable while every structural check on them passed. The detector now admits <code>count</code> down to 4, but a short table only when it carries a MAN descriptor - which disc-wide is exactly those two, leaving the thirteen MAN-less short tables in the class they already had.</p>
+  <p>The <code>count</code> word is not always 6 or 7, and retail bounds it nowhere - the walker reads it and loops that many descriptors, so any bound in a reader is a heuristic. The strong signal is the anchor: descriptor 0's offset equals <code>8 + count &times; 8</code>. Two scenes ship a count-5 table and both carry a MAN, so a 6-or-7-only bound made <code>bubu1</code> and <code>edbubu</code> resolve no MAN and read as unloadable while every structural check on them passed. The detector now admits <code>count</code> down to 4, but a short table only when it carries a MAN descriptor - which disc-wide is exactly those two, leaving the thirteen MAN-less short tables in the class they already had. Those thirteen walk exactly the way the count-6/7 ones do, so <code>scene_asset_table::descriptor_bundle_walk</code> transcribes the runtime walk with no count window at all - and one detail of it is easy to lose by reading the decompiled C, because the payload pointer is formed in the <code>jal</code>'s delay slot.</p>
   <h3 id="header-total-decompressed-size">+0x04 is the bundle's total decompressed size</h3>
   <p>The header's second word equals <code>sum(descriptor[i].size)</code> exactly - each size being that descriptor's
   <em>decompressed</em> byte count - so it records how many bytes the bundle unpacks to. The identity holds in every
@@ -180,6 +180,14 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
   <code>+0x08</code>, and a sweep of every dumped function for a load off the table base finds reads at offset
   <code>0x0</code> only. So it is an authoring total - a consistency check an editor must maintain
   (<code>SceneAssetTable::total_size_is_consistent</code>), not something the game enforces.</p>
+  <h3 id="flag-slot-is-the-pochi-fill-file">The FLAG slot is the pochi fill file</h3>
+  <p>Every count-4 and count-5 bundle closes its descriptor list with a type-<code>0x14</code> <code>FLAG</code>
+  descriptor whose declared size is 1927 bytes, and the stream behind it decompresses to the
+  <a href="pochi.html">pochi fill file</a> - byte-identical to the fill in all 266 filler slots and identical
+  across all eleven bundles that carry one. Nothing reads those bytes: the dispatcher answers a
+  <code>0x14</code> without touching the payload, so the slot is never decompressed at runtime. It is what the
+  authoring tool put in a reserved descriptor. A 1927-byte payload in a bundle is fill, and a walker that
+  decodes it is decoding the filler rather than an asset.</p>
   <h3 id="flag-descriptor-streams-a-file">A Flag descriptor streams an extra file</h3>
   <p>Types <code>0x0A</code> / <code>0x0F</code> / <code>0x14</code> allocate nothing: the
   <a href="asset-type.html">dispatcher</a> returns <code>(case &lt;&lt; 8)</code> and exits. The walker ORs every
