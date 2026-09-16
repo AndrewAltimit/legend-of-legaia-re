@@ -759,15 +759,24 @@ region rows.
 Section 3 (installed at `_DAT_801C6EA4[+0x04]`) is the per-scene **camera-region table**:
 `[u8 count]` then `count × 18-byte` records. The per-tile query `FUN_801DBA20` walks it
 (`tile = (player_pos - 0x40) >> 7`, first match wins; kind dispatch on `byte[0]` - see
-[`reference/functions.md`](../reference/functions.md)). The field camera arrival handler
-`FUN_801DBE9C` hands the hit to the config loader **`FUN_801DBC20`**, which splits
-`bytes[5..17]` into the resident camera-parameter globals at `0x8007B607..0x8007B627`
-(a query miss loads fixed defaults instead - see below). The camera-param builder
-`FUN_801DAB90` then folds those globals into the same staging-struct slots the script-VM
-Camera Configure op `0x45` writes (pitch `+0x02`, yaw `+0x06`, eye-space `(dx, dy, depth)`
-`+0x0E/+0x12/+0x16`, GTE H `+0x26`; see [`subsystems/cutscene.md`](../subsystems/cutscene.md#timeline-execution-model-ghidra-traced)
+[`reference/functions.md`](../reference/functions.md)). The tile re-query helper
+`FUN_801DE3E0(tile_x, tile_z)` runs that query and hands the hit to the config loader
+**`FUN_801DBC20`**, which splits `bytes[5..17]` into the resident camera-parameter block at
+`0x8007B607..0x8007B627` (a query miss loads fixed defaults instead - see below). The
+re-query is **script-driven**: `FUN_801DE3E0` is reached from three field-VM arms -
+`[4C 38]` (query at the player's tile), `[4C 39]` (query, re-conform the footing, snap) and
+`[4C C4 x z]` (query at an explicit tile) - and op `0x45` LOAD hands the loader an inline
+record. The field camera arrival actor `FUN_801DBE9C` queries only on its
+`_DAT_8007B868 != 0` leg; that word is the dev/dual-mode gate and retail boots with it `0`,
+so the retail leg re-pins the focus and snaps (`FUN_801DB8EC`) without touching the block
+(an earlier reading here had the arrival handler doing the query). The camera-param
+builder `FUN_801DAB90` then composes the block into the same staging-struct slots the
+script-VM Camera Configure op `0x45` writes (pitch `+0x02`, yaw `+0x06`, eye-space
+`(dx, dy, depth)` `+0x0E/+0x12/+0x16`, GTE H `+0x26`; see
+[`subsystems/cutscene.md`](../subsystems/cutscene.md#timeline-execution-model-ghidra-traced)
 § "Camera Configure op `0x45`") - so a zone record is a per-region camera preset in the
-op-`0x45` parameter space.
+op-`0x45` parameter space. How the staging pose then reaches the live camera globals is
+[below](#from-the-block-to-the-live-camera-compose-ease-snap).
 
 Provenance: loader `see ghidra/scripts/funcs/overlay_fishing_801dbc20.txt` (byte-identical
 across the fishing / dance / debug_menu / slot_machine captures; the cutscene_dialogue /
@@ -801,7 +810,7 @@ sign-extended at the call sites).
 | `+5` | u8 → `B607` mode byte | same | same |
 | `+6` | u8 → `B608` pitch sweep | s16 `+6..7` → `B61C` anchor tile X | u8 → `B61C` focus tile X |
 | `+7` | u8 → `B609` depth sweep | (high byte of anchor X) | u8 → `B624` focus tile Z |
-| `+8` | u8 → `B60A` heading-pitch coupling | u8 → `B60A` | s8 → `B620` height offset |
+| `+8` | u8 → `B60A` floor-height pitch coupling | u8 → `B60A` | s8 → `B620` height offset |
 | `+9` | u8 → `B60B` dy + ease damping | u8 → `B60B` | u8 → `B60B` |
 | `+10..11` | s16 → `B610` base yaw | s16 → `B620` anchor height | s16 → `B610` yaw |
 | `+12..13` | s16 → `B60C` base pitch | s16 → `B624` anchor tile Z | s16 → `B60C` pitch |
@@ -822,14 +831,18 @@ positions in world units, one tile = `0x80`):
   (`pitch = B60C ± (B608 & 0xF) · lerp(player Z)`); other values pin pitch to `0x1B8`.
 - `B609` - depth sweep: high nibble `n ∈ 1..=5` anchors the sweep `(n−1)/4` of the Z span
   from the box max (`depth = B614 + (B609 & 0xF) · lerp(player Z)`); else depth = `B614`.
-- `B60A` - heading-coupled pitch adjust: high nibble `1..=4` → `pitch += (B60A & 0xF) ·
-  heading / 4`; `5` → `/ 8` plus sin/cos-LUT `(dy, depth)` compensation from the player
-  facing `+0x16` (LUT bases `_DAT_8007B7F8` / `_DAT_8007B81C`). Heading =
-  `func_0x80019278(anchor)`.
-- `B60B` - high nibble `1..=0xB`: eye-space `dy = 0x200 − heading · (B60B & 0xF)`; else
-  `dy = 0x200`. The same high nibble is the per-frame **ease-damping shift** in the
-  follow-ease `FUN_801DB510` (`srav` by `B60B >> 4` - see
-  [`subsystems/cutscene.md`](../subsystems/cutscene.md)).
+- `B60A` - **floor-height**-coupled pitch adjust: high nibble `1..=4` → `pitch += (B60A & 0xF) ·
+  floor / 4`; `5` → `/ 8`, then the player's footing `+0x16` rotated by the new pitch out of
+  the eye height and depth: `dy -= cos(pitch) · footing · 6 >> 12` (halved when the scene's
+  `DAT_8007B6A8` bit is set), `depth -= sin(pitch) · footing >> 12`. `floor` is
+  `FUN_80019278(player)` - the floor-height sampler, run with the MAN's own elevation LUT
+  swapped into scratchpad `0x1F80035C` so a scripted floor-tier bob never moves the camera.
+  (An earlier reading here called this value a "heading"; it is the sampled floor
+  height. The LUT pointers: `_DAT_8007B81C` is the sine table, `_DAT_8007B7F8` the same
+  table a quarter turn on, i.e. cosine.)
+- `B60B` - high nibble `1..=0xB`: eye-space `dy = 0x200 − floor · (B60B & 0xF)`; else
+  `dy = 0x200`. The same high nibble indexes the per-frame **ease shift table** in the
+  follow-ease `FUN_801DB510` - see [below](#from-the-block-to-the-live-camera-compose-ease-snap).
 - `B610` / `B60C` - base yaw / base pitch (staging struct `+0x06` / `+0x02`).
 - `B614` - eye-space depth (`tr_eye.z`, staging struct `+0x16`). Mode 3 treats it as a
   bias: `depth = (dist3D(anchor, player) · ((B607 & 0xF) + 1) · 6 >> 10) + B614 − 0x4000`.
@@ -842,7 +855,8 @@ positions in world units, one tile = `0x80`):
 - `B620` - mode 3: anchor height (`× 0x20` world units). Mode 5: s8 height offset rotated
   by pitch into `(dy, depth)` via the sin/cos LUTs.
 
-**Query-miss defaults** (`FUN_801DBE9C`, loaded when no record contains the player tile):
+**Query-miss defaults** (`FUN_801DE3E0`'s miss arm at `0x801DE408..0x801DE464`, loaded when
+no record contains the player tile; the same nine stores sit in `FUN_801DBE9C`'s dev-only leg):
 `B607 = 0x10` (anchor-follow, sweep strength 0), `B608 = 0x10`, `B609 = 0x30`,
 `B60A = 0x51`, `B60B = 0x20`, `B610 = 0`, `B60C = 0x1B8`, `B614 = 0x4000`,
 `B618 = 0x300`.
@@ -850,6 +864,85 @@ positions in world units, one tile = `0x80`):
 Confidence: the three byte splits and the global routing are **Confirmed** (direct
 disassembly + the builder's consumption), as is the mask-kind scratchpad side-write and
 its four consumers.
+
+### From the block to the live camera: compose, ease, snap
+
+The block never reaches the GTE directly. Three routines in the field overlay (PROT 0897)
+stand between it and the live camera globals; all three are disassembly-traced
+(`see ghidra/scripts/funcs/overlay_cutscene_dialogue_801dab90.txt`, `overlay_0897_801db510.txt`,
+`overlay_0897_801db8ec.txt`) and ported in `legaia_engine_core::camera_zone`.
+
+**Compose - `FUN_801DAB90(player, staging)`.** Seeds the staging pose from the live globals
+(pitch `_DAT_8007B790`, yaw `_DAT_8007B792`, the eye trio `_DAT_800840B8/BC/C0`, `H`
+`_DAT_8007B6F4`), stores the negated player X/Z and the footing as the focus, forces roll
+`0`, samples the floor under the player as described under `B60A`, then overwrites pitch /
+yaw / eye / `H` per the mode arms above. Every store is a halfword (`sh`), so each target
+field wraps at 16 bits; the `mult`/`div` steps are 32-bit wrapping / truncating. Two details
+the per-global bullets do not carry: mode 4 aims the yaw from the **centre of the walk-region
+box** `((x_lo + x_hi) << 6, (z_lo + z_hi) << 6)` at the player (`FUN_80019B28` bearing,
+`0` = +X, `0x400` = +Z) and, before returning, masks both the live yaw and the target to
+one turn and adds `0x1000` to whichever is below `0x400` while the other is above `0xC00`,
+so the ease takes the short way round - the only place the composer writes a live global.
+Mode 3's depth is `sqrt0(dx² + dz² + (anchor_h·0x20 + footing)²) · (strength + 1) · 6 >> 10 +
+B614 − 0x4000`, where `sqrt0` is the PsyQ-shaped `FUN_8005B0B8` (`√a · 64`, from a
+192-entry mantissa table at `0x80078E84` = `trunc(√((64+i)/64) · 4096)`); the bearing's
+2049-entry arctangent table at `0x8006F4C8` is `trunc(atan(i/2048) · 4096/2π)`. Both tables
+are reproduced trigonometrically and pinned entry-for-entry by the disc-gated oracle.
+
+**Ease - `FUN_801DB510(player)`**, from the player actor's per-frame handler (`FUN_801D2298`).
+Gated on `DAT_8007B606` (retail boots it to `1`: `FUN_80034A6C` stores `_DAT_8007B868 == 0`)
+and on the scratch lock `_DAT_1F800394 & 0x400` being clear; then **only on a frame the
+player's `(X, footing, Z)` changed** (or `_DAT_1F800394 & 0x40000` is set) it composes and
+walks a six-entry descriptor list at `0x801F2798` - `[live ptr][staging ptr][u16][u16 width]`,
+12 bytes each, terminated by a zero pointer:
+
+| live global | staging field | width |
+|---|---|---|
+| `_DAT_8007B790` pitch | `+0x02` | 2 |
+| `_DAT_8007B792` yaw | `+0x06` | 2 |
+| `_DAT_800840B8` eye X | `+0x0E` | 4 |
+| `_DAT_800840BC` eye Y | `+0x12` | 4 |
+| `_DAT_800840C0` eye Z | `+0x16` | 4 |
+| `_DAT_8007B6F4` GTE `H` | `+0x26` | 2 |
+
+Roll has no entry - the follow camera never rolls. Each live value steps by
+`delta >> s` plus `sign(delta)`, where `delta = target − live` and `s` comes from the 16-byte
+table at `0x801F2804` indexed by `B60B >> 4`: `[0, 5, 4, 3, 2, 6, 7, 8, 0, 0x45, 0x44, 0x43, 0,
+0, 0, 0]`. A code `>= 0x40` selects the two-shift form `delta >> (s − 0x40)` +
+`delta >> (s − 0x40 + 1)`; code `0` is a one-frame snap. The default block's `B60B = 0x20`
+therefore eases at `>> 4`. A mode-5 block additionally eases the focus X/Z
+(`_DAT_80089118/20`) toward `−(anchor_tile << 7) − 0x40` with the same step. Because the
+walk is gated on movement, a player who stops mid-glide leaves the live camera wherever
+the ease had reached - retail finishes the glide only when he moves again, which is what a
+walkable save state can capture.
+
+**Snap - `FUN_801DB8EC(player)`.** The same compose and list walk with a plain copy (a
+halfword target sign-extends into the word eye globals), then `FUN_8003D254(H)`; mode 5
+sets the focus to the anchor tile outright, every other mode to the negated player
+position. Called by the arrival actor's retail leg, by `[4C 39]` / `[4C 3E]`, and by the
+leader-swap flow.
+
+### Engine port
+
+`legaia_engine_core::camera_zone` carries the loader (`CameraZoneConfig::load_record`),
+the composer (`compose`), the ease step and the snap; `Camera::zone` owns the block and
+runs them from the per-frame camera tick, and both hosts read the result through
+`camera_view::field_follow_view`, so the native window and the browser play page frame
+each scene from the same record. Three deliberate divergences: the port re-queries the zone
+table whenever the player crosses a tile, and re-queries **and snaps** when a scripted shot
+hands the camera back (retail's query is script-driven, above, and its scripts end a
+scripted move with the `[4C 39]` / `[4C 3E]` snap arms - every walkable post-opening state
+in the save library holds a settled follow pose; the port has no host hook for those arms),
+and the
+composer reads the world's live elevation LUT rather than the MAN's static copy (a
+scripted floor-tier bob moves the port's camera by `strength · bob / 8` pitch units where
+retail's holds). The composed eye X / Y terms are carried in the camera globals but not
+fed to the view - the field `TR` composition behind the engine's calibrated eye-back
+distance is not pinned - while the composed depth scales that calibration by its ratio to
+the default `0x4000`. The disc-gated oracle
+`crates/engine-shell/tests/field_camera_zone_oracle.rs` grades the port per walkable save
+state in three tiers (zone selection, compose against retail's own staging descriptor,
+live pose with mid-glide states classified separately).
 
 ### The scratchpad window `0x1F8003E8..EB`
 

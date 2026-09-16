@@ -1805,7 +1805,11 @@ Modelling note (reconcile outcome): the raw `4C 51` handler pins its byte +3 as 
 
 ## Engine port: movement compass + opt-in precise movement
 
-The engine mirrors retail's camera-remapped pad in `World::step_field_locomotion` (`decode_field_direction`): the held d-pad is rotated by `World::locomotion.camera_azimuth` **quantised to the nearest 90°** - the same job `func_0x800467e8` does - and stepped through the per-axis collision above. The azimuth feed is `Camera::compass_azimuth_units()` (engine-core): scripted yaw + the user's `manual_orbit` (the play-window's left-mouse drag-orbit) + the host renderer's `render_yaw_bias` (the follow camera's fixed base yaw, compass sense = the negated PSX render yaw), pushed into the world each `BootSession::tick`. All three terms default to 0, so headless hosts keep the identity remap.
+The engine mirrors retail's camera-remapped pad in `World::step_field_locomotion` (`decode_field_direction`): the held d-pad is rotated by `World::locomotion.camera_azimuth` **quantised to the nearest 90°** - the same job `func_0x800467e8` does - and stepped through the per-axis collision above. The azimuth feed is `Camera::compass_azimuth_units()` (engine-core): scripted yaw + the user's `manual_orbit` (the play-window's left-mouse drag-orbit) + the follow camera's base yaw in the compass sense (the negated PSX render yaw), pushed into the world each `BootSession::tick`. All three terms default to 0, so headless hosts keep the identity remap.
+
+A host declares that it renders the retail follow view by setting `render_yaw_bias`; while the zone-driven follow camera composes that view the base term is the negation of the **live** yaw it eased (`Camera::zone_follow_yaw_units`), so the compass turns with the scene's authored camera, and the pinned constant stands in only for a world with no field terrain.
+
+The follow camera itself - the per-scene pitch / yaw / `H` / depth each MAN section-3 camera-region record authors, the composer and the per-frame ease - is documented with the record format in [`encounter.md`](../formats/encounter.md#man-section-3-the-camera-region-table) and ported in `legaia_engine_core::camera_zone`.
 
 Two non-retail, opt-in knobs layer on top (play-window keybinds, persisted in `legaia-options.toml`):
 

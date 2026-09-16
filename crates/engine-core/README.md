@@ -532,6 +532,16 @@ presentation left to the host:
   live here, so a host never spells an angle, a depth or a focal length out
   again; the projection itself is `legaia_engine_vm::psx_camera`. See
   [`docs/tooling/host-drift.md`](../../docs/tooling/host-drift.md#gaps-the-tiers-were-blind-to-closed-by-reading-the-two-hosts-side-by-side).
+- `camera_zone` - the **zone-driven follow camera**: the camera parameter
+  block retail keeps at `0x8007B606..` (`CameraZoneConfig`, loaded from a MAN
+  section-3 camera-region record by the port of `FUN_801DBC20`), the composer
+  that turns it plus the player's position into a target pose (`FUN_801DAB90`:
+  position-proportional sweeps, look-at anchors, fixed shots, the floor-height
+  pitch coupling) and the per-frame ease / snap that walk the ten camera
+  globals toward it (`FUN_801DB510` / `FUN_801DB8EC`), with the bearing and
+  square-root LUT helpers they lean on. `Camera::zone` runs it; the pinned
+  constants in `camera_view` are only the terrain-less fallback. Format +
+  arithmetic: [`docs/formats/encounter.md`](../../docs/formats/encounter.md#man-section-3-the-camera-region-table).
 - `camera_ease` - the field camera's smoothed **vertical-offset** step
   (`FUN_801DA390`; `player[+0x16]` is the middle slot of the `+0x14/+0x16/+0x18`
   position triple, and the eased result lands in the Y halfword of a vector):

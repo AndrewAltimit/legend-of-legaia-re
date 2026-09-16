@@ -26,7 +26,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::camera_view::{FIELD_FOLLOW_YAW_UNITS, FIELD_H, FIELD_PITCH_UNITS};
+use legaia_engine_core::camera_view::FIELD_H;
 use legaia_engine_vm::psx_camera;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 use std::env;
@@ -109,19 +109,38 @@ fn the_play_page_frames_the_field_with_the_engine_camera() {
         "a free-roam field frame must resolve to the retail follow camera: {json}"
     );
 
-    // ---- rung 2: its inputs are the native window's pinned constants.
+    // ---- rung 2: its inputs are the engine camera's own live angles - the
+    // zone-driven follow camera composed from town01's camera-region record
+    // (`engine-core::camera_zone`), which is what the native window frames
+    // with. The pinned constants are only the terrain-less fallback: at this
+    // entry seat the record's floor-height coupling tilts the pitch off the
+    // anchor value (the seat stands on an elevated tier) and the yaw is the
+    // record's position-proportional sweep, so the test reads both off the
+    // engine rather than asserting either constant.
     let f = |k: &str| v[k].as_f64().expect(k) as f32;
+    assert_eq!(
+        v["zone"].as_bool(),
+        Some(true),
+        "town01 has terrain: {json}"
+    );
+    let angles = rt.play_camera_follow_angles();
+    assert_eq!(angles.len(), 2, "the zone camera must publish its angles");
     assert!(
-        (f("pitch") - to_rad(FIELD_PITCH_UNITS)).abs() < 1e-4,
-        "pitch {} != pinned {}",
+        (f("pitch") - to_rad(angles[0] as f32)).abs() < 1e-4,
+        "pitch {} != the engine's live {} units",
         f("pitch"),
-        to_rad(FIELD_PITCH_UNITS)
+        angles[0]
     );
     assert!(
-        (f("yaw") - to_rad(FIELD_FOLLOW_YAW_UNITS)).abs() < 1e-4,
-        "yaw {} != pinned {}",
+        (f("yaw") - to_rad(angles[1] as f32)).abs() < 1e-4,
+        "yaw {} != the engine's live {} units",
         f("yaw"),
-        to_rad(FIELD_FOLLOW_YAW_UNITS)
+        angles[1]
+    );
+    assert!(
+        (0x100..=0x400).contains(&angles[0]),
+        "a field follow pitch is a down-tilt in the first quadrant: {}",
+        angles[0]
     );
     // `H` is a per-frame output, not a pin: town01's entry beat glides slot 9
     // toward `500` from the field register's `512`, so the page must report

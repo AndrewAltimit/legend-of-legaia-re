@@ -31,9 +31,11 @@
 //! **`retail_field_camera_is_not_three_constants`** - the walkable states'
 //! `_DAT_8007B6F4` (GTE `H`) and `_DAT_8007B790` rotation trio. Two of the
 //! port's pins reproduce across the whole corpus (`roll = 0`, world-map
-//! `H = 368`); the three field-follow pins (`FIELD_H`, `FIELD_PITCH_UNITS`,
-//! `FIELD_FOLLOW_YAW_UNITS`) do not, and the test asserts the spread that
-//! makes a scene-invariant follow camera impossible.
+//! `H = 368`); the three field-follow fallbacks (`FIELD_H`,
+//! `FIELD_PITCH_UNITS`, `FIELD_FOLLOW_YAW_UNITS`) do not, and the test asserts
+//! the spread that makes a scene-invariant follow camera impossible. The
+//! per-scene camera the spread demands is `engine-core::camera_zone`; its
+//! per-state oracle is `field_camera_zone_oracle.rs` beside this file.
 //!
 //! Skips (passes) unless `scripts/scenarios.toml` and `saves/library` are both
 //! present. CI runs without Sony bytes.

@@ -32,6 +32,7 @@ pub mod battle_status_clut;
 pub mod battle_tutorial;
 pub mod camera;
 pub mod camera_view;
+pub mod camera_zone;
 pub mod capture_observations;
 pub mod card_bu_io;
 pub mod card_flow;
