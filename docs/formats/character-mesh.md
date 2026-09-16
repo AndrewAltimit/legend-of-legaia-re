@@ -183,10 +183,46 @@ save states read `*0x8007B824 = 0` - the word that same arm is the only writer
 of - which confirms from the other side that the `s7 != 0` path never runs in
 retail.
 
-**What would close it**: a write-watch on `*(gp+0x6BC)` across a
-rebuilt-container cold boot, plus `$a0` at `0x8001EB4C`. A mid-game state
-replays the RAM of the disc that booted it, so the patched bytes stay masked
-until the game re-loads them.
+**The registrar never walks a stale buffer - measured.** `FUN_8001E890` has
+one load-state word, `gp+0x6AC` (`0x8007B9C4`): `0` reads the file,
+decompresses and registers; `2` re-sums the raw file and decompresses again;
+`1` skips straight to the registrar at `0x8001EAFC` over whatever the buffer
+holds, and the registrar itself is what writes `1` (`0x8001EB0C`). So a walk
+over battle-clobbered bytes needs the routine entered with the word at `1`
+after a battle - and every writer of the word forbids that. The
+mode-transition pass `FUN_80016230` zeroes it at `0x800163B4` on every step
+into a mode other than `2`/`3` (`gp+0x524` is the game mode), the post-battle
+field restore PROT 0978 writes `0` in its phase `0` (`0x801F6F04`) and `2`
+once the file is re-read (`0x801F723C`), and the core reset `FUN_80025CB4`,
+the minigame warp `FUN_80025980`, the field overlay (`0x801D15A8`,
+`0x801E34C8`) and `FUN_80026018` all write `0`
+(`scripts/ghidra-analysis/find-gp-relative-refs.py 0x6ac --prot`: twelve
+sites, no other writer).
+
+`scripts/pcsx-redux/autorun_registrar_routes.lua` breakpoints the routine's
+entry, the gate, the registrar and every `tmd_register` call, write-watches
+the word and the buffer pointer, and logs the buffer's count word at each.
+Over six routes - a door warp (`dolk` -> `map01`), a boss fight resolving
+back to the field, a field walk into a random encounter, a cold boot into
+NEW GAME, a cold boot through CONTINUE into a memory-card load, and the
+battle entry itself - the routine is entered five times, always over the
+same block `0x8014D53C`, and the registrar reads count `5` every time. The
+three shapes seen: state `1` with the field pack intact (door warp); state
+`0` over uninitialised heap (cold boot, card load: the entry reads
+`169387156` as its count, then the file read and decompress run before the
+registrar); and state `2` over the battle clobber (the boss fight: count `0`
+at entry, the three decompress calls between the gate and the registrar, `5`
+at the registrar). The field-to-battle route enters the routine zero times
+and shows the word already `0` from the `0x08` mode step, before the loader
+touches the block. The registrar's count is unclamped, but the buffer under
+it is decoded fresh on every path that could have dirtied it.
+
+**What that leaves for the wild read**: not this walk over a clobbered
+buffer. A rebuild that keeps the header's size words while the LZS stream
+decodes to a different length still truncates the pack at `gp+0x69C` bytes,
+and a truncated pack's offset table reads mesh payload as offsets - the
+bracket is the decoded length against the header, on a cold boot of the
+rebuilt disc, which no shipped patcher path produces.
 
 The editing contract is unchanged: `legaia_asset::party_swap::fieldize`
 keeps the first four words (`meta[0]`, `meta[1]`, `type<<24|size0`,
