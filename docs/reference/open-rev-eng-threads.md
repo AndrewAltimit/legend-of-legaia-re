@@ -72,98 +72,57 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
-- **`FUN_80029888` does not zero the GTE light block.** Its three `ctc2` at
-  `0x800299EC..0x800299F4` write cr21/22/23 - the far-colour trio - from
-  registers, not zero. The routine that zeroes anything is `FUN_8003D190`, and
-  its three `ctc2 zero` target cr5/6/7, the **translation** vector. The
-  battle-intro swirl rolls about X *and* Z
+- **The field fog draw is one textured quad per sheet, not two line packets.**
+  `0x09000000` in the packet's first word is the ordering-table tag's word
+  count - nine, a `POLY_FT4` body - and the command byte is `0x2E`, written by
+  the caller. `FUN_801D629C` is the spawner that pops a record from the pool at
+  `_DAT_8007B7E0`, not a per-particle actor
   ([falsified](re-do-not-re-walk.md#rendering--camera)).
-- **The cast-voice bank was named from the wrong end.** Each slot-B module
-  hardcodes its own literal cue id near its head - 62 of the 64 images, the
-  other two forming it at run time - so the bank is a property of the *module*,
-  not of the caster. It is seventeen files (`XA7`, `XA9..15`, `XA18..20`,
-  `XA22`, `XA23`, `XA25`, `XA34`), not the `XA27`/`XA28`/`XA29` trio the
-  host-drift page listed
-  ([settled](re-settled-threads.md#audio)).
-- **The XA cue table is `0x110` entries and its reader bounds nothing.**
-  `FUN_8004FCC8` tests only `id >= 0x100`, then indexes `DAT_800788B8` at
-  `id - 0x100` with no upper bound (`sltiu v0,s0,0x100` at `0x8004FCD4`, the
-  `lhu` at `0x8004FD44`). The table runs to index `0x10F` with several interior
-  zero runs; a port constant of `0x40` truncated it and silently dropped every
-  cast cue.
-- **The port's shop screen was read back as retail's.** `FUN_801DB7F4` /
-  `FUN_801DBD94` are pad steppers on `DAT_801E46B4` (+1 / -1 / +10 / -10,
-  clamped) whose bound is `min(gold/price, 99, 99 - held)`. The "nine-row list
-  whose cursor *is* the quantity" describes the port's own screen, and while it
-  stood the port capped every purchase at 9
-  ([falsified](re-do-not-re-walk.md#menus--ui)).
-- **`RETAIL_INVENTORY_SLOTS = 72` was a cheat page's display bound.** The bag is
-  one 256-slot array at `0x80085958` reached only through an **active window**
-  (`gp[+0x2D2..+0x2D6]`, written solely by `FUN_8004313C`). A real three-member
-  card holds items up to index 159, so 88 of them were dropped on every lift
-  ([settled](re-settled-threads.md#battle--arts--level-up)).
-- **Enemy Steal has a third acceptance test nothing modelled, and its consume
-  is window-bounded.** The test is the item's `+2` shop price being non-zero, so
-  the quest/found-only ids are unstealable; and `FUN_80042310` scans only
-  `[gp+0x2D2, gp+0x2D4)` and returns the `0x100` sentinel, so a steal outside
-  the window banners a success and removes nothing
-  ([settled](re-settled-threads.md#battle--arts--level-up)).
-- **An actor's heading is the middle of a triple.** `FUN_8001ADA4` hands
-  `actor+0x24` whole to `FUN_80026988` (`addiu a0,s0,0x24` / `jal 0x80026988` at
-  `0x8001AF04`), so pitch at `+0x24` and roll at `+0x28` ride beside the yaw a
-  reader taking the halfword alone sees
+- **The field follow camera is a four-stage chain, and the loader writes none
+  of it.** `FUN_801DBC20` fills the parameter block, a composer turns it into a
+  staging descriptor and only the ease and the snap write the live globals; and
+  the zone query retail runs is the field VM's, not the arrival actor's, whose
+  query sits behind the dev gate
   ([settled](re-settled-threads.md#field--locomotion)).
-- **`_DAT_8007B854` is the ambient-particle master gate, not an input lock.**
-  Field-VM op `0x4C` outer nibble 3 raises it at `0x801E0F38` and clears it at
-  `0x801E0F44`, both stores in a `j` delay slot off the 16-entry table at
-  `0x801CEEB8`. Six references exist disc-wide and none is pad state
-  ([settled](re-settled-threads.md#field--locomotion)).
-- **`FUN_801F6B24` is two dispatchers, not one walk.** `_DAT_8007BAC0` picks
-  between a 19-arm field-restore table at `0x801F6AD8` and a 12-arm `int.tim`
-  panel-still table at `0x801F6AA8`; both run from phase 2 because SCUS's
-  `FUN_80025358` owns states 0 and 1. That is why a teardown census recorded
-  zero panel stills while recording four field-restore uploads.
-- **The cast-arm countdown drain is per arm.** It is a per-arm multiplier of the
-  scratchpad frame byte at `0x1F800393` - a product with `0x1F80037D`, twice it,
-  or once it - so "the `scratch[0x37D] * scratch[0x393]` product" held for one
-  family only, and the constants 4 and 8 measured on two arms were `1x` and `2x`
-  a byte that read 4
+- **Battle context `+0x276` is the side-band applier's stage, not a module
+  gate.** The summon modules poll it before their own head cue, so it is open by
+  construction; feeding a port's copy from a tutorial flag - which nothing
+  writes it from - silenced the melee sting
   ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
-- **`DAT_8007BB38` is the id just issued.** `FUN_80026B4C` publishes it through
-  `gp[+0x820]` *before* the increment, so a walker bound taking it as the next
-  free index reads one entry long.
-- **"0978 / 0979 / 0980 are dance variants" named one of the three.** Only 0980
-  is the dance overlay; 0978 is `field_back_read` and 0979 the battle-intro
-  ([falsified](re-do-not-re-walk.md#title--boot--overlays)).
-- **Every scene-bundle descriptor offset is inside its entry.** All 668 of them
-  over 102 tables - the "offsets fall outside the file" reading was the
-  over-reading entry-size expression, not the bundles
-  ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
-- **The type-`0x14` FLAG descriptor of every count-4/5 bundle is the pochi fill
-  file**, and the dispatcher answers `0x14` without reading the payload - so a
-  descriptor that resolves to filler is the format working, not a corrupt table.
-- **Two in-world minigames started the wrong track.** Their loader indices are
-  PROT 1043 / 1048 / 1054, which the **piecewise** `music_01` map sends to global
-  ids 2055 / 2060 / 2066; a flat `990 + slot` base gave 2053 / 2058 / 2064
+- **A retail VAB is two chunks of its stream.** The chunk in front of `pBAV`
+  carries the header part only; the VAG bodies are the next chunk, and its
+  4-byte header is the "+4 skew" a decoder had recorded as a format property.
+  Six entries put the SEQ chunk first, where a fixed alignment probe cannot
+  recover the origin at all
   ([settled](re-settled-threads.md#audio)).
-- **The dance count-in banner is a sprite record, not text.** Record 0 of the
-  20-byte table at `0x801D46CC` - texel cell `0xA0` x `0x20`, texel seat
-  `(0x48, 0x90)`, CBA `0x7D0A` - seated by `FUN_801D2F38`, which halves the cell
-  at the caller's unit scale, so it draws 160 x 32. Its animator samples once
-  per three vsyncs.
-- **The field follow camera's three "constants" were one state's values.** Over
-  the walkable state population the pinned `H` holds in 12 of 19, the pitch in 8
-  of 19 and the yaw in 1 of 19; retail derives all three per scene and per
-  player tile from the MAN section-3 camera-region record.
-- **A rebuilt PROT 0874 with a different section-0 size is not constructible.**
-  LZS decode is length-driven by the descriptor, so the container cannot be
-  hand-built into the shape the wild-read hypothesis wanted, and no shipped
-  patcher path changes that size
-  ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
-- **Ghidra's own decompiler stops early, and a CSV-only extent edit orphans the
-  body.** `FUN_801DD9D4` is 588 bytes and every dump of it stopped at 276, at the
-  `jr v0` jump table the preceding `beq` branches past
+- **PROT 0981 is a slot-A image.** Its own `lui`+`addiu` pairs resolve 21 of 23
+  at `0x801CE818` against 0 of 23 at the base a prologue vote had answered -
+  a vote the instrument was casting with one voter
   ([falsified](re-do-not-re-walk.md#measurement-readings)).
+- **The two Curse arms do tick.** The unmapped read that looked like a fault
+  before the first tick is SCUS walking the *caster*: both arms stage clip
+  `0x0B` and the anim commit indexes the caster's spell-entry array with it, so
+  a ten-entry monster reads its own name text as a pointer
+  ([settled](re-settled-threads.md#battle--arts--level-up)).
+- **The model-pack registrar is never entered over a reused buffer.** Six
+  driven routes give five entries, all over the same block, with count 5 every
+  time. Its gate is the load-state word `gp+0x6AC`, not the game-mode halfword
+  an earlier probe named
+  ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
+- **Vera's heal is `(level << 5) + 0xE0`.** `(level << 6) + 0x1C0` is Orb's.
+  The two modules are the band's only healers and each carries its own closed
+  form, so quoting one module's formula under the other's name doubles or halves
+  every number downstream of it.
+- **`0x1F80037D` is the game-speed rate scalar and `0x1F800393` the per-frame
+  byte.** Elapsed time is their product; a countdown read against either alone
+  reads as a constant multiple of the other
+  ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
+- **The dance count-in banner draws 160 x 32.** The record's `0xA0` / `0x20` is
+  the texel cell, which the emitter halves at the caller's unit scale before
+  centring - reading the pair as half-extents doubles the banner.
+- **A gates row can be stale rather than open.** The slot-bonus gate's five rows
+  were already entered by two canonical ladders; nothing joined the gates table
+  against an export, so a row stayed open long after the work that closed it.
 
 ---
 
@@ -172,6 +131,10 @@ cheapest place to look for a claim that is still wrong.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
+| Is `juui1` dark in retail outside its `ColorIntensity` tint beats? | open - needs one retail capture of the scene | The scene holds **no** library state (177 identified), so nothing in the corpus shows what it looks like. Its P2 records carry `ColorIntensity` beats of rgb `0` at intensity `30` placed *after* the camera beats, so the mid-cutscene shots are script-tinted black by design. Whether the rest of the scene is also dark is the part a capture has to answer; the port currently renders it near-black throughout. |
+| What does `edbylon` select when the tile query misses? | open - one zone-selection state disagrees | Over the nineteen walkable states the camera-zone block matches retail in eighteen. The one miss is `edbylon`'s ending vignette, which holds MAN section-3 record `#0` while the per-tile query finds no record covering the player's tile - so retail is selecting it by something other than the tile test the other eighteen agree on. |
+| What composes the field camera's `TR`, and what calibrates `FIELD_CAM_DEPTH`? | open - the composed eye X/Y is not yet fed to the view | The composer writes an eye-space translation trio into the staging descriptor and the ease walks the three live words, but the port still feeds only part of it to the view matrix, with the eye-back depth carried by an uncalibrated constant. Closing it needs the retail `TR` read alongside the composed trio on the same frame, on a state where the two disagree. |
+| Is the Throw Out cursor a bag slot or a list row? | open - the two disagree whenever the list is filtered | `_DAT_8007BB88` is the list kernel's selected-row **payload**, and the pause menu's Throw Out confirm `FUN_801D8734` zeroes bag slots with it directly (`0x801D88FC` / `0x801D8910`) - i.e. retail treats it as a raw slot index. The port removes by row instead. The two agree while the displayed list is the bag in order; what would close it is a retail throw-away from a list whose rows and slots have diverged. |
 
 Recently closed here: **what arms `_DAT_8007B8B8`**, the gate on the field
 overlay's one ambient template. It is a one-shot entry-mode *argument* rather
@@ -255,7 +218,7 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which frames gate each **capture-class** tick body's arms? | mostly resolved - twelve of the fourteen trampoline arms measured | [details ↓](#which-frames-gate-a-tick-bodys-arms) |
+| Who reads the GTE light matrix `FUN_8001ADA4` writes inline? | open - the write is pinned, the consumer is not | The per-actor render dispatcher stages control registers 8..12 - the light matrix - inline at `0x8001B34C..0x8001B368`, and no routine has been found that reads the result back. Either a downstream leaf uses it without the write being visible as a setup call, or the block is vestigial. A `cop2` read census over the frame that follows the write answers it. |
 
 Closed here: **where a slot-B module image's highest spawn record ends**. Its
 own move-VM program bounds it, under four rules the page states - round the end
@@ -300,7 +263,7 @@ side-face shade page closed by capture. All in
 
 ### Which frames gate a tick body's arms
 
-*Status:* mostly resolved - twelve of the fourteen trampoline arms are measured; two fault before their first tick
+*Status:* resolved - all fourteen trampoline arms are measured; kept here because the shape of the answer is what the next such question needs
 
 Every arm of the band's tick bodies is decoded and ported, and the per-arm
 **frame gating** is the leg that a disassembly cannot give: the dwell is a
@@ -323,16 +286,23 @@ readable. Three arms park rather than gate, and PROT 0950's arm 6 has no gate at
 all - it ends on countdown expiry. Tables in
 [`cast-module.md`](../subsystems/cast-module.md#frame-gating-measured).
 
-**What is still owed** is two arms: PROT 0943 arm `0x40` and PROT 0944 arm
-`0x53`. Both trip an 8-bit read at the same garbage address before their first
-tick in every post-turn state the corpus holds, so measuring them needs a state
-where the enemy owns the turn and picks that action - a pre-turn or boss-turn
-state, or a pad ladder from one that casts the spell.
+The last two arms - PROT 0943's `0x40` and PROT 0944's `0x53` - needed a
+different **caster**, not a different state. Both stage clip `0x0B`, and SCUS's
+anim commit resolves a staged clip by indexing the caster's own spell-entry
+offset array with it, so a ten-entry monster reads its record's name text as a
+pointer. Logging the unmapped access rather than pausing on it, and forcing the
+cast on a twelve-entry caster, walks both bodies through arms 0..4 in 1, 9, 40,
+8 and 32 ticks. No monster record's magic slots name either id, so retail never
+performs either cast ([settled](re-settled-threads.md#battle--arts--level-up)).
 
 
 ## Audio / BGM
 
-No open threads. The last one - a supposed second `bse.dat` record family -
+| Thread | Status | What would close it |
+|---|---|---|
+| Does `FUN_801F3990`'s cue band ever reach `FUN_8003D53C` on a non-summon cast? | open - never observed firing | The band maps a set of ids onto the high `XA27..XA29` clips, and the dispatcher's two gates admit it, but no driven cast has been seen taking it (N = 2). Either a non-summon cast reaches it on a path the two states did not cover, or the band is summon-only and the id range is vestigial. An exec breakpoint on the band's own site across a spread of player casts answers it. |
+
+The last thread here - a supposed second `bse.dat` record family -
 resolved as a neighbouring file's tone rows left in the sector
 ([falsified](re-do-not-re-walk.md#bsedat-carries-a-second-record-family-with-a-resident-consumer)).
 
@@ -380,15 +350,17 @@ PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 
 | Thread | Status | What would close it |
 |---|---|---|
-| What actually breaks a rebuilt PROT 0874 container at battle load? | open (narrowed to one entry question about one block) | [details ↓](#what-breaks-a-rebuilt-prot-0874-container) |
+| What actually breaks a rebuilt PROT 0874 container at battle load? | mostly resolved - the entry question is answered; one leg is untested | [details ↓](#what-breaks-a-rebuilt-prot-0874-container) |
 | What draws VRAM `(384, 0)` 320x256 (the dome panel still)? | open (emit only; arming, staging and the upload all resolved) | [details ↓](#what-draws-the-dome-panel-still) |
+| Who reads `0455_urudre1`'s descriptor 0? | open - a data-bearing pack with no consumer | Descriptor 0 of that bundle is type `0x0A` and carries a real 85-member pack, and the descriptor walk never reads it. Every other bundle's descriptor 0 is consumed. Either a scene-specific caller reaches it outside the walk, or the slot is authoring residue that happens to hold a valid pack. A load-time read watch over the entry while the scene enters separates the two. |
+| Where does PROT 0896 link? | mostly resolved - no base fits, and a residency capture is owed | Scoring the image's own `lui`+`addiu` operands against every candidate base gives a best of 398 resolvable out of 466, where a control image scores 1251 of 1253 - so the head is not a slot-A or slot-B image at either window, and it holds no Shift-JIS and no strings to anchor it another way. What is left is a residency capture: a state with 0896's bytes in RAM would give the base by subtraction, and the identity work says the USA build never loads it. |
 
 ### What breaks a rebuilt PROT 0874 container
 
-*Status:* open (narrowed) - the symptom is measured, four explanations of it are dead, and one entry question is left
+*Status:* mostly resolved - the symptom is measured, five explanations of it are dead, and the remaining bracket is a leg no route has exercised
 
 Changing section 0's decoded size produces a measured wild read at
-`0x808425F8`, and that observation stands. Four readings of it do not.
+`0x808425F8`, and that observation stands. Five readings of it do not.
 
 The first put the cause in the container header: `meta[1]` was read as a tail
 offset inside the entry, and it is the descriptors' decompressed-size sum,
@@ -413,21 +385,33 @@ nothing to build.
 
 The fourth was that the read needed a patched disc at all. Retail's own
 `*(gp+0x6BC)` is the same heap block in 97 of 98 catalogued states, sane in
-37 of 37 field states and **garbage in 61 of 61 battle states**, because the
-battle load reuses the block. The model-pack registrar inside `FUN_8001E890`
-reads that pointer at `0x8001EAFC`, takes its count off `+0x00` at `0x8001EB10`
-with no clamp, and loops `jal 0x80026B4C` at `0x8001EB4C` once per entry - and
-it sits on the **un-gated** side of the `bne v1,2` at `0x8001EA54`, so nothing
-in its own frame keeps it away from a garbage block.
+37 of 37 field states and reads as another allocation in 61 of 61 battle
+states, because the battle load reuses the block. The model-pack registrar
+inside `FUN_8001E890` reads that pointer at `0x8001EAFC`, takes its count off
+`+0x00` at `0x8001EB10` with no clamp, and loops `jal 0x80026B4C` at
+`0x8001EB4C` once per entry - and it is reached on all three arms of the fork
+above it, so nothing in its **own frame** keeps it away from such a block.
 
-**What is left** is one entry question: is `0x8001EAFC` ever entered while
-`*(gp+0x6BC)` holds that battle-load garbage? An exec breakpoint on it and on
-`0x8001EB4C`, logging `$a0`, the count and the `gp+0x6BC` word per hit, answers
-it. A random encounter and a door warp over 900 vsyncs record zero entries; the
-routes not yet covered are a cold boot into New Game and the first scripted
-fight, a memory-card load, and a scene change that re-streams the party pack. If
-it is never entered over garbage, the wild read has a different producer and the
-bracket moves to the two pack walks at `0x8005255C` and `0x800525A0`.
+The fifth was the conclusion drawn from that. **The registrar is never entered
+over one.** Breakpointing the entry, the gate, the registrar and every
+`tmd_register`, and write-watching both words, over six routes - a door warp, a
+boss fight resolving to the field, a field walk into an encounter, a cold boot
+into NEW GAME, a cold boot through CONTINUE into a card load, and a
+field-to-battle transition - gives five entries, always over `0x8014D53C`, with
+the registrar reading count 5 every time. What keeps it safe is the gate's
+writers rather than its own frame: the fork is on `gp+0x6AC`, `FUN_80016230`
+zeroes that word on every mode step outside 2/3, and PROT 0978's post-battle
+restore writes `0` and then `2` - so a post-battle entry always decompresses
+first, and the register-only arm only ever runs with the field pack intact. The
+field-to-battle route enters the routine zero times, with the word already zero
+from its own mode step
+([settled](re-settled-threads.md#battle--arts--level-up)).
+
+**What is left** is the one leg no route exercises: a cold boot of a *rebuilt*
+disc whose section-0 decoded length and header size word disagree. The third
+reading above says such a container cannot be built through any shipped patcher
+path, so closing this needs the container written by hand and booted cold,
+rather than a probe on retail.
 
 
 ### What draws the dome panel still
@@ -466,7 +450,11 @@ needs a match driven far enough to reach a teardown with `_DAT_8007BAC0` set.
 
 ## Measurement + tooling
 
-No open threads. The last one - **eleven cast-band tick addresses statically
+| Thread | Status | What would close it |
+|---|---|---|
+| Which shipped scenes carry field-VM ops `4C EA` and `4C 52`? | open - no instrument answers it | Both arms were bucketed as "no ladder drives it" without a disc-wide opcode census, because none exists: nothing walks every scene MAN's field-VM stream counting opcode occurrences. Building that census is the closing step, and it would retire the same question for every other rarely-taken arm at once. |
+
+The last thread here - **eleven cast-band tick addresses statically
 live and never entered by any ladder** - closed the way its own row predicted,
 by seating a cast per PROT `0903..0966` id. Two of the eleven turned out not to
 be cast bodies at all but AoE sweep stagers reached only through the AoE entry,
