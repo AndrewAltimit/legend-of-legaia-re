@@ -12,8 +12,8 @@
 //! |---|---|---|
 //! | `view_mode` | `DAT_801F2B94` | `0` = normal walk, `1` = top-view debug |
 //! | `anim_flags` | `DAT_801F2B95` | bit 0 = anim-A enable, bit 1 = anim-B |
-//! | `camera_x` | `_DAT_80089120` | top-view X scroll; ±8 per D-pad frame |
-//! | `camera_z` | `_DAT_80089118` | top-view Z scroll; ±8 per D-pad frame |
+//! | `camera_x` | `_DAT_80089118` | top-view X scroll; ±8 per D-pad frame |
+//! | `camera_z` | `_DAT_80089120` | top-view Z scroll; ±8 per D-pad frame |
 //! | `azimuth` | `_DAT_8007B794` | top-view rotation; ±0x14 per frame |
 //! | `zoom` | `_DAT_8007B6F4` | top-view height; ±4 per frame |
 //!
@@ -155,9 +155,9 @@ pub struct WorldMapController {
     /// Top-view animation enable bits: bit 0 = anim-A, bit 1 = anim-B
     /// (`DAT_801F2B95`).
     pub anim_flags: u8,
-    /// Top-view camera X scroll (`_DAT_80089120`).
+    /// Top-view camera X scroll (`_DAT_80089118`).
     pub camera_x: i32,
-    /// Top-view camera Z scroll (`_DAT_80089118`).
+    /// Top-view camera Z scroll (`_DAT_80089120`).
     pub camera_z: i32,
     /// Top-view camera azimuth (`_DAT_8007B794`).
     pub azimuth: i32,
