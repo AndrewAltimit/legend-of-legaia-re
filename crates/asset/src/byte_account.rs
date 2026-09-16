@@ -1879,6 +1879,71 @@ fn walk_scene_event_scripts(buf: &[u8], sink: &mut Sink) {
     }
 }
 
+/// The runtime `efect.dat` 2-pack (PROT `0873`).
+///
+/// Not the magic-prefixed [effect bundle](crate::effect_bundle) - a headerless
+/// file whose first two words are its two packs' offsets, with the sprite
+/// atlas inline between the header and pack 0
+/// ([`crate::efect_pack`]). The class had a walker slot and no walker behind
+/// it, so the whole 8 KB read as unwalked format.
+///
+/// Both packs address their members by **absolute file offset**, so a member
+/// runs to the next offset in its own table and the last to its pack's extent -
+/// pack 0's being pack 1's start, not the file's end.
+fn walk_efect_dat(buf: &[u8], sink: &mut Sink) {
+    let Some(p) = crate::efect_pack::detect(buf) else {
+        sink.note("efect_pack::detect returned None");
+        return;
+    };
+    sink.claim(0, 8, OWNER_HEADER, "pack0 + pack1 offsets");
+    if p.atlas_entries > 0 {
+        sink.claim(
+            8,
+            p.pack0_offset,
+            OWNER_RECORD,
+            format!("{} sprite-atlas entries", p.atlas_entries),
+        );
+    }
+    for (pack, at, count, limit, owner, what) in [
+        (
+            0usize,
+            p.pack0_offset,
+            p.pack0_count,
+            p.pack1_offset,
+            OWNER_ANM,
+            "frame batch",
+        ),
+        (
+            1,
+            p.pack1_offset,
+            p.pack1_count,
+            buf.len(),
+            OWNER_SCRIPT,
+            "spawn script",
+        ),
+    ] {
+        sink.claim(
+            at,
+            at + 4 + 4 * count,
+            OWNER_TOC,
+            format!("pack {pack}: {count} absolute offsets"),
+        );
+        for i in 0..count {
+            let Some(start) = legaia_bytes::u32_le(buf, at + 4 + 4 * i).map(|v| v as usize) else {
+                break;
+            };
+            let end = legaia_bytes::u32_le(buf, at + 8 + 4 * i)
+                .map(|v| v as usize)
+                .filter(|_| i + 1 < count)
+                .unwrap_or(limit)
+                .min(buf.len());
+            if end > start {
+                sink.claim(start, end, owner, format!("pack {pack} {what} {i}"));
+            }
+        }
+    }
+}
+
 fn walk_effect_bundle(buf: &[u8], sink: &mut Sink) {
     let Some(e) = crate::effect_bundle::detect(buf) else {
         sink.note("effect_bundle::detect returned None");
@@ -2568,6 +2633,7 @@ pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
         Class::SceneV12Table => Walker::SceneV12,
         Class::SceneEventScripts => Walker::SceneEventScripts,
         Class::EffectBundle => Walker::EffectBundle,
+        Class::EfectPack => Walker::EfectPack,
         Class::TimPack => Walker::TimPack,
         Class::Pack => Walker::Pack,
         Class::TimPassthrough => Walker::Tim,
@@ -2596,7 +2662,8 @@ fn dispatch(buf: &[u8], walker: Walker, sink: &mut Sink, opts: &AccountOptions, 
         Walker::SceneV12 => walk_scene_v12(buf, sink),
         Walker::SceneEventScripts => walk_scene_event_scripts(buf, sink),
         Walker::EffectBundle => walk_effect_bundle(buf, sink),
-        Walker::EfectPack | Walker::Pack => walk_pack(buf, sink),
+        Walker::EfectPack => walk_efect_dat(buf, sink),
+        Walker::Pack => walk_pack(buf, sink),
         Walker::CardFontPack => walk_card_font_pack(buf, sink),
         Walker::TimPack => walk_tim_pack(buf, sink),
         Walker::ClipBank => walk_clip_bank(buf, sink),

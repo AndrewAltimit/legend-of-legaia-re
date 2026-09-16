@@ -287,7 +287,12 @@ Read the classes in three groups; only the first is work.
 The `entries` and `bytes` columns are the disc; the `non-slack residue` column is
 a **snapshot of the instrument** and moves with every parser that binds - re-derive
 it rather than quoting it. Its denominator is the whole TOC: 1233 entries,
-121006080 bytes.
+121006080 bytes. At the state below, 7.19% of that is residue, and 6.40 of those
+7.19 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 0.79%
+non-slack. Of the accounted 92.81%, 4.88 points came from the magic sweep rather
+than from a walked layout, so the *structural* share of the disc is 87.92%. Of
+those 4.88 sweep-found points, 4.79 are one entry: `0891`, whose whole accounted
+share is `scan` claims.
 
 | Class | entries | bytes | non-slack residue |
 |---|---:|---:|---:|
@@ -300,13 +305,13 @@ it rather than quoting it. Its denominator is the whole TOC: 1233 entries,
 | `overlay_ptr_table` | 42 | 407552 | 46788 |
 | `mips_overlay` | 22 | 194560 | 21836 |
 | `lzs_container` | 18 | 4098048 | 13213 |
-| `efect_pack` | 1 | 8192 | 8192 |
 | `scene_event_scripts` | 101 | 329728 | 2048 |
 | `bse_bank` | 2 | 6144 | 1716 |
 | `data_field_streaming` | 49 | 9052160 | 1536 |
 | `pack` | 7 | 1634304 | 948 |
 | `summon_readef` | 2 | 12232704 | 20 |
 | `battle_data_pack` | 4 | 1863680 | 0 |
+| `efect_pack` | 1 | 8192 | 0 |
 | `scene_v12_table` | 97 | 198656 | 0 |
 | `pochi_filler` | 266 | 544768 | 0 |
 | `all_zeros` | 4 | 8192 | 0 |
@@ -318,11 +323,11 @@ it rather than quoting it. Its denominator is the whole TOC: 1233 entries,
 | `overlay_data_blob` | Almost all `zero_pad`. What is left is entry `0896`, whose whole extent reads `plausible_mips` although its head is a length-prefixed Shift-JIS label table, plus per-image runs beside code the dump corpus reached. | `0896` is the JP-build menu image, resident in no USA state. |
 | `overlay_ptr_table`, `mips_overlay` | `low_entropy` runs with a `plausible_mips` minority - the tables beside code the dump corpus has not reached. | Dump worklist; agrees with [`disc-coverage.md`](disc-coverage.md)'s gap list. |
 | `init_pak` (`0895`) | `ascii_text`: a string pool no walker claims. | Small, and a string pool is not a format. |
-| `efect_pack` (`0873`) | One sector-sized entry, `low_entropy`, walker `generic`. | The [effect bundle](../formats/effect.md) has a parser; the account walker does not select it. |
 | `lzs_container` | Per-entry tails of a few hundred bytes past the last descriptor's stream, plus `0981` entire - the one class member that is a code image rather than a container. | Walker tails plus one mis-classed entry. |
 | `scene_vab_stream`, `scene_tmd_stream`, `scene_asset_table`, `pack` | Short `mixed` / `low_entropy` runs at the tail of records the walker did reach, plus one `high_entropy` minority in `scene_asset_table`. | Walker tails, not unwalked format. |
 | `data_field_streaming`, `battle_data_pack` | Almost entirely `zero_pad` now; `battle_data_pack`'s residue is slack outright and `data_field_streaming` keeps one `ascii_text` sector. | Closed but for that sector. |
 | `bse_bank`, `scene_event_scripts` | Kilobyte-scale `low_entropy` / `ascii_text` tails behind a walker that reached the records. | Walker tails. |
+| `efect_pack` (`0873`) | Nothing: the header, the inline sprite atlas, and both packs' members account fully. | Closed. |
 | `pochi_filler`, `all_zeros`, `scene_v12_table`, `summon_readef` | Nothing, or `zero_pad`. | The disc's own slack. Not work. |
 | `field_map` | Nothing: all 101 entries account fully. | Closed. |
 

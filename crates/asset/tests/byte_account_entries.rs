@@ -136,6 +136,9 @@ const CASES: &[(u32, f64, &str)] = &[
     // bare and one behind a DATA_FIELD chunk header.
     (872, 99.0, "descriptor_bundle"),
     (485, 99.0, "descriptor_bundle"),
+    // The runtime `efect.dat` 2-pack: header, inline sprite atlas, and two
+    // packs whose members are addressed by absolute file offset.
+    (873, 100.0, "efect_pack"),
     // The two headerless 16bpp stills, claimed as the four bands their
     // consumer uploads.
     (1221, 100.0, "ringside_still"),
