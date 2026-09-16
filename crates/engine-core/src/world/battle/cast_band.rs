@@ -1061,6 +1061,59 @@ impl World {
     ///   that list is [`crate::world::World::party_roster_slot`], so the id is
     ///   its roster slot plus one.
     ///
+    /// The **cure selector** three cast modules read out of `0x801F6960`.
+    ///
+    /// That word is not a module constant and not a per-spell field: it is the
+    /// Seru side-effect stager's own output latch. `FUN_801F3D3C` picks an
+    /// 8-byte record out of the `[element][level band]` table at `0x801F6870`
+    /// (`0x801F4420..0x801F4480`: `0x801F6870 + ((level - 3) >> 1) * 8 +
+    /// element * 0x20`) and stores the record's **first byte** to `0x801F6960`.
+    /// On the six damaging rows that byte is a percent (`5 / 10 / 15 / 20`);
+    /// on the **light** row it is a cure class `1..=4`, and `1..=4` is exactly
+    /// the switch PROT 0905 (`0x801F7D68`), 0911 (`0x801F7BE4`) and 0919
+    /// (`0x801F8168`) compare against. So a non-light summon's cast leaves a
+    /// percent in the latch, matches none of the four arms and cures nothing -
+    /// the element gate is the latch's own value, not a second test.
+    ///
+    /// The port's copy of that latch is
+    /// [`legaia_engine_vm::battle_action::BattleActionCtx::follow_up_pending`],
+    /// written on every player Seru cast by
+    /// [`Self::stage_seru_side_effect`]. `min_level` is the module's own
+    /// `sltiu v0,v0,0x3` gate, below which its ladder is skipped entirely.
+    ///
+    /// REF: FUN_801F3D3C (the stager), FUN_801F69D8 (the three readers)
+    fn cure_selector(&self, caster_slot: u8, spell_id: u8, min_level: u8) -> Option<u8> {
+        if self.caster_magic_power_byte(caster_slot, spell_id) < min_level {
+            return None;
+        }
+        Some(self.battle_ctx.follow_up_pending)
+    }
+
+    /// What PROT 0905's restore arm needs: the caster's per-spell magic level,
+    /// the ally target's max HP and the cure selector above.
+    ///
+    /// REF: FUN_801F69D8 (PROT 0905 arm 9, `0x801F7C28..0x801F7F4C`)
+    fn vera_restore(
+        &self,
+        caster_slot: u8,
+        victim_slot: u8,
+        spell_id: u8,
+    ) -> Option<vm::cast_seru_ticks_a::VeraRestore> {
+        let magic_level = self.caster_magic_power_byte(caster_slot, spell_id);
+        let max_hp = self.actors.get(victim_slot as usize)?.battle.max_hp;
+        Some(vm::cast_seru_ticks_a::VeraRestore {
+            magic_level,
+            max_hp,
+            cure_tier: self
+                .cure_selector(
+                    caster_slot,
+                    spell_id,
+                    vm::cast_seru_ticks_a::VERA_CURE_MIN_LEVEL,
+                )
+                .unwrap_or(0),
+        })
+    }
+
     /// REF: FUN_801F69E8 (`0x801F6B50..0x801F6D28`, PROT 0907 arm 0)
     fn nighto_verdict(
         &mut self,
@@ -1715,7 +1768,8 @@ impl World {
                             })
                         }
                         905 => {
-                            let (step, _) = ticks_a::vera_tick(&mut ctx, &mut seats, who, None);
+                            let restore = self.vera_restore(caster_slot, victim_slot, spell_id);
+                            let (step, _) = ticks_a::vera_tick(&mut ctx, &mut seats, who, restore);
                             (step, Vec::new())
                         }
                         906 => ticks_a::gizam_tick(&mut ctx, &mut seats, who, |_| None),
@@ -1895,7 +1949,12 @@ impl World {
             ),
             911 => {
                 let maxes: Vec<u16> = self.actors.iter().map(|a| a.battle.max_hp).collect();
-                let (step, _healed) = seru::orb_tick(ctx, seats, summon_slot, 0, None, |s| {
+                // Spell id for a `cast_seru_ticks_b` entry: the player
+                // Seru-magic block is linear, `entry = 903 + (id - 0x81)`.
+                let spell_id = (entry - 903 + 0x81) as u8;
+                let cleanse =
+                    self.cure_selector(caster_slot, spell_id, seru::ORB_CLEANSE_MIN_LEVEL);
+                let (step, _healed) = seru::orb_tick(ctx, seats, summon_slot, 0, cleanse, |s| {
                     maxes.get(s as usize).copied().unwrap_or(0)
                 });
                 (step, Vec::new())

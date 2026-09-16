@@ -1365,6 +1365,40 @@ kept for filename stability; `summon_stager_x83` is Vera
 cures status rather than dealing damage, which is why its wrapper column is
 zero.
 
+### Where a cure tier comes from
+
+Three ticks in the band switch on a **cure tier** `1..=4` and `and` a keep-mask
+into the target's `+0x16E`: PROT 0905 (Vera) at `0x801F7D68`, PROT 0911 (Orb)
+at `0x801F7BE4` and PROT 0919 (Spoon) at `0x801F8168`. The masks are
+`0xFFFC` / `0xFF84` / `0xFB84` / `0xFB84`, and tier `4` additionally doubles
+`+0x170` under a `0x64` clamp (`0x801F7F24..0x801F7F48`).
+
+The tier is **not** module data. All three read the same battle-overlay word
+`0x801F6960`, which sits below the slot-B base and is the Seru side-effect
+stager's output latch: `FUN_801F3D3C` selects an 8-byte record out of the
+`[element][level band]` table at `0x801F6870`
+(`0x801F6870 + ((level - 3) >> 1) * 8 + element * 0x20`, built at
+`0x801F4420..0x801F4440`) and stores its first byte there
+(`sw v1,0x6960(v0)` at `0x801F4480`). On the **light** row that byte is the
+cure class `1, 2, 3, 4` by magic-level band; on the six damaging rows it is a
+percent `5 / 10 / 15 / 20`, which matches none of the four arms. So the
+element gate is the latch's own value - a non-light summon leaves a percent
+there and cures nothing, with no second test. Below magic level `3` the stager
+returns before staging anything, the latch holds `0`, and each module's own
+`sltiu v0,v0,0x3` skips the ladder as well.
+
+The table itself, including the light row's `1 / 2 / 3 / 4` ladder, is
+tabulated in
+[`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch).
+What this section adds is the consumer side: which three ticks read the latch,
+what each tier does to `+0x16E`, and that the element gate is the latch's
+value rather than a test.
+
+Parser: [`legaia_asset::seru_side_effect`](../../crates/asset/src/seru_side_effect.rs);
+masks and constants at `legaia_engine_vm::cast_seru_ticks_a`; the latch is
+`BattleActionCtx::follow_up_pending` and `World::cure_selector` is what feeds
+the two ported ticks.
+
 **The phase column counts two store forms, and it used to count one.** Every
 one of the eleven materialises a pointer to `ctx + 0x279` in its prologue -
 `addiu s6, s1, 0x279` at `0x801F6A78` in PROT 0903, `addiu s5, v1, 0x279` at
