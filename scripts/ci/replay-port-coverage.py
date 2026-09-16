@@ -504,6 +504,32 @@ CANONICAL_LADDERS = [
     ("w1c_seru_ticks_ladder", "legaia-engine-core"),
     ("w1d_trampoline_arms_ladder", "legaia-engine-core"),
     ("w2c_cast_band_body_ladder", "legaia-engine-core"),
+    # `w2c_cast_band_body_ladder` above scrapes its denominator out of THREE
+    # band modules and `cast_module_ticks.rs` is not one of them, so the
+    # module holding the band's largest never-entered cluster had no
+    # source-denominated ladder at all. `w1c_cast_module_bodies_ladder` is
+    # that ladder: it scrapes every `// PORT:` address out of
+    # `cast_module_ticks.rs` and drives each dispatch site through the seam
+    # its own dispatch uses - the trampoline (keyed on `(entry, action id)`,
+    # which is what `w4d_cast_band_ladder`'s one-representative-id-per-entry
+    # walk is blind to), the no-trampoline band arm, the inline staging call,
+    # and `World::run_cast_module_aoe` for the two modules whose damage lands
+    # in their own sweep stager.
+    #
+    # Disc-gated on `PROT.DAT` + `SCUS_942.54` (the capture half of the band
+    # is keyed on the spell record's class byte); export WITHOUT `--release`.
+    ("w1c_cast_module_bodies_ladder", "legaia-engine-core"),
+    # The capture-class boss cast, driven through the ordinary live battle
+    # loop. Its gate had a seeded oracle already
+    # (`world/tests/battle_capture_class_disc.rs`) that can never be a union
+    # member - a `#[cfg(test)]` module is not a `--test` binary - and the
+    # oracle also calls `World::cast_spell_on_slots` directly, while every
+    # seam from a host to the fold is `pub(in crate::world)`. So this ladder
+    # seeds one disc monster record's magic list and lets the monster AI pick
+    # the cast, which makes it a reach measurement of
+    # `capture_bypass_predamage` / `capture_respect_predamage` rather than a
+    # kernel test. Disc-gated; export WITHOUT `--release`.
+    ("w1c_capture_class_cast_ladder", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
