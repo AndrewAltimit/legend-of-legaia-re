@@ -607,7 +607,14 @@ last of them is what pins the field `TR`:
    (`0x1F8003C8 + 0x14 == 0x1F8003DC`). The focus is read as the **low
    signed halfwords** of `_DAT_80089118/1C/20` (three `lhu` at
    `0x80017358..0x80017360` into a stack `SVECTOR`), and those globals
-   already hold the **negated** anchor.
+   already hold the **negated** anchor. Only X and Z are ever written in
+   the field - `FUN_801DBE9C`'s retail leg and the focus clamp
+   `FUN_801DAA50` write that pair and nothing else - and the Y global
+   measures `0` on every sampled field frame while the player's footing on
+   those frames is not `0`, so the camera's vertical framing rides the
+   composed eye Y rather than the focus. The composer's **staging** focus
+   at `+0x1A/+0x1E/+0x22` does carry the footing, but the view build never
+   reads the staging descriptor.
 5. `FUN_8005B6A8(0x1F8003C8)` (`SetTransMatrix`) uploads that `t` as the
    final GTE `TR`.
 
