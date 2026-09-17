@@ -581,6 +581,69 @@ cursor `_DAT_1F8003A0`, advancing it by the packet size and linking through
 word is the packet-length code (`0x05000000` / `0x08000000`). See
 `ghidra/scripts/funcs/8003c510.txt`, `8003c43c.txt`, `80036c4c.txt`.
 
+## The field view matrix: where `TR` comes from
+
+The field camera's ten globals are turned into GTE control registers once a
+frame by **`FUN_800172C0`** - the routine the field per-frame update tail
+(`0x801D1854`) ends on, and the one every minigame overlay and the world-map
+renderer call too (15 `jal` sites disc-wide). It is five calls long, and the
+last of them is what pins the field `TR`:
+
+1. `FUN_80026988(gp+0x468, 0x1F8003A8)` builds a rotation from the *light*
+   angle trio `0x8007B780..84` (with a half-turn added on X) and
+   `FUN_8005B648` uploads it - this half is the light matrix, not the view.
+2. `FUN_80026988(0x8007B790, 0x1F8003C8)` builds `Rot(pitch, yaw, roll)` from
+   the camera angle trio into a scratch `MATRIX`.
+3. `FUN_8005B3A8(0x8007BF10, 0x1F8003C8)` (`MulMatrix0`) folds the **base
+   matrix** into it. `_DAT_8007BF10` is a per-mode uniform scale - a live
+   `town01` field state holds `24576 * I`, i.e. **6x** (GTE `4096` = 1.0).
+4. `FUN_8005B4B8(0x1F8003C8, 0x800840B8)` (`TransMatrix`) copies the
+   eye-space translation trio `_DAT_800840B8/BC/C0` - the trio the camera
+   composer stages and the ease walks - into that matrix's `t` at `+0x14`
+   as three **32-bit words**, and `FUN_8003D1A4` uploads all eight control
+   words, so `TR` is briefly the raw trio. `FUN_8003D344(sp+0x18,
+   0x1F8003DC)` then MVMVAs the focus trio through the scaled rotation with
+   `cv = TR` and writes `MAC1..3` back into the same `t`
+   (`0x1F8003C8 + 0x14 == 0x1F8003DC`). The focus is read as the **low
+   signed halfwords** of `_DAT_80089118/1C/20` (three `lhu` at
+   `0x80017358..0x80017360` into a stack `SVECTOR`), and those globals
+   already hold the **negated** anchor.
+5. `FUN_8005B6A8(0x1F8003C8)` (`SetTransMatrix`) uploads that `t` as the
+   final GTE `TR`.
+
+So the field transform is `screen = proj(H) * (S * Rot * (v - focus) +
+tr_eye)`, with `S` the base-matrix scale and `tr_eye` **unscaled** GTE units.
+There is no eye-back depth constant anywhere in the chain: the live trio *is*
+the eye-space offset. A renderer that draws geometry at `1x` reproduces the
+frame pixel-for-pixel by dividing the trio by `S` - the perspective divide is
+invariant under a uniform scale of the whole eye-space vector. That is the
+rule `engine-core::camera_view::FIELD_CAM_DEPTH` is derived from, and the
+same one an op-`0x45` beat's offset trio goes through
+([`cutscene.md`](cutscene.md)).
+
+The **staging descriptor** at `0x801F3580` is not in this chain at all - the
+view build reads the live globals, never the composer's staging fields.
+
+The sibling `FUN_80026F50` (one caller, `0x80026DE0`) builds the same shape
+from the ROM-constant base matrix at `0x80010B84` (`16384 * I`, a 4x scale)
+and copies the trio's **low halfwords** sign-extended, with no focus MVMVA.
+It is a different mode's view build, not the field's.
+
+See `ghidra/scripts/funcs/800172c0.txt`, `80026988.txt`, `8005b3a8.txt`,
+`8005b4b8.txt`, `8005b6a8.txt`, `8003d344.txt`, `8003d1a4.txt`.
+
+Confirmed live by the field-camera `TR` probe
+(`scripts/pcsx-redux/autorun_field_camera_tr.lua`): the formula holds on
+every sampled frame across three field states, including the frames where
+the staging trio differs from the live one, `FUN_80026F50` never fires in a
+field run, and `0x8007BF10` reads `0x6000` throughout.
+
+`FUN_80025C24`, the field-entry reset, is the other writer of the trio - and
+it writes three different values, not zero: `0x800840B8 = 0`,
+`0x800840BC = -0x100`, `0x800840C0 = 0x4024`, plus the angle trio
+`(0x1B8, 0x64, 0)`. Reading only its first store (`sw zero` at `0x80025C28`)
+misses the `addiu v0, v0, 0x40b8` that re-bases the next two.
+
 ## Frame setup + present
 
 - **`FUN_800271A8`** - graphics-scratch init. Allocates two `0x8000`-byte buffers

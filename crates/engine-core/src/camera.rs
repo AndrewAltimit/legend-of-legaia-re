@@ -803,9 +803,7 @@ impl Camera {
             use crate::world::CameraZoneRequest as R;
             match req {
                 R::QueryAtPlayer => load_at(zone, tile.0, tile.1),
-                R::QueryAtTile { x: tx, z: tz } => {
-                    load_at(zone, i32::from(tx), i32::from(tz))
-                }
+                R::QueryAtTile { x: tx, z: tz } => load_at(zone, i32::from(tx), i32::from(tz)),
                 R::QueryConformAndSnap => {
                     load_at(zone, tile.0, tile.1);
                     zone.snap_pending = true;

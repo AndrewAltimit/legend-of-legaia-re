@@ -333,12 +333,7 @@ impl World {
         self.sample_field_floor_height_with(world_x, world_z, &self.terrain.floor_height_lut_static)
     }
 
-    fn sample_field_floor_height_with(
-        &self,
-        world_x: i32,
-        world_z: i32,
-        lut: &[i16; 16],
-    ) -> i32 {
+    fn sample_field_floor_height_with(&self, world_x: i32, world_z: i32, lut: &[i16; 16]) -> i32 {
         if self.terrain.collision_grid.len() < FIELD_GRID_LEN {
             return 0;
         }

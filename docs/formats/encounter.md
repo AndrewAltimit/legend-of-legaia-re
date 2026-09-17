@@ -928,21 +928,32 @@ leader-swap flow.
 the composer (`compose`), the ease step and the snap; `Camera::zone` owns the block and
 runs them from the per-frame camera tick, and both hosts read the result through
 `camera_view::field_follow_view`, so the native window and the browser play page frame
-each scene from the same record. Three deliberate divergences: the port re-queries the zone
-table whenever the player crosses a tile, and re-queries **and snaps** when a scripted shot
-hands the camera back (retail's query is script-driven, above, and its scripts end a
-scripted move with the `[4C 39]` / `[4C 3E]` snap arms - every walkable post-opening state
-in the save library holds a settled follow pose; the port has no host hook for those arms),
-and the
-composer reads the world's live elevation LUT rather than the MAN's static copy (a
-scripted floor-tier bob moves the port's camera by `strength · bob / 8` pitch units where
-retail's holds). The composed eye X / Y terms are carried in the camera globals but not
-fed to the view - the field `TR` composition behind the engine's calibrated eye-back
-distance is not pinned - while the composed depth scales that calibration by its ratio to
-the default `0x4000`. The disc-gated oracle
+each scene from the same record.
+
+The query sites are retail's. The four `0x4C` arms queue a `CameraZoneRequest` on the
+world (`engine-core::world::camera_hooks`) which the camera tick drains, the player seat
+arms the same query-conform-snap the retail seat path runs in code, and the per-frame
+re-query honours scratchpad flag bit `22`
+([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#0x4c-nibble-0x380x3e---the-camera-zone-arms)).
+Nothing re-queries on a bare tile crossing. The composer samples the floor through the
+MAN's pristine ladder, as `FUN_801DAB90` does, so a scripted floor-tier bob never shakes
+the camera; the composed eye trio is fed to the view divided by the base matrix's `6x`
+world scale ([`renderer.md`](../subsystems/renderer.md#the-field-view-matrix-where-tr-comes-from));
+and the focus edge clamp `FUN_801DAA50` runs after the ease or snap, with its script
+override `_DAT_8007B628` / `_DAT_8007B62A` still unwired (no port-side writer).
+
+Two divergences remain. A scripted shot handing the camera back snaps, as a backstop for a
+script that ends a shot without a `[4C 39]` / `[4C 3E]` arm; and the visible-tile window
+the clamp widens the walk region by is seeded from
+`mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW` and updated only by a camera-region record's
+mask-kind side-write, not by field-VM op `0x46`.
+
+The disc-gated oracle
 `crates/engine-shell/tests/field_camera_zone_oracle.rs` grades the port per walkable save
 state in three tiers (zone selection, compose against retail's own staging descriptor,
-live pose with mid-glide states classified separately).
+live pose with mid-glide states classified separately);
+`crates/engine-core/tests/field_camera_zone_arms_disc.rs` censuses the arms disc-wide and
+asserts the hold-across-a-walk rule on `edbylon`.
 
 ### The scratchpad window `0x1F8003E8..EB`
 

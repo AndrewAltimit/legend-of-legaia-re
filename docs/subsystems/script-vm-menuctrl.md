@@ -65,6 +65,52 @@ image and reads nothing at `-0x47ac`. Confirm the 145-instruction field body
 (`overlay_cutscene_dialogue_801d6058.txt` /
 `overlay_cutscene_mapview_801d6058.txt`) before citing it.
 
+#### 0x4C nibble 0x38..0x3E - the camera-zone arms
+
+Four of outer-nibble 3's arms are the field camera's **only** script-side
+grip on the camera parameter block (`0x8007B607..0x8007B627`, see
+[`encounter.md`](../formats/encounter.md#man-section-3-the-camera-region-table)).
+The arm addresses come from the disc's own nibble-3 jump table at
+`0x801CEEB8` in PROT entry `0897`:
+
+| Op | Arm | Body | Width |
+|---|---|---|---|
+| `[4C 38]` | `0x801E1048` | `FUN_801DE3E0((X - 0x40) >> 7, (Z - 0x40) >> 7)` - query + load at the player's tile. | 2 |
+| `[4C 39]` | `0x801E1078` | the same query, then `FUN_80019278(player)` into `player[+0x16]`, then falls into the sub-`E` arm. | 2 |
+| `[4C 3D]` | `0x801E10F8` | `FUN_800180EC` at the player's tile - the walk-region **attribute** refresh, not a camera load. | 2 |
+| `[4C 3E]` | `0x801E10BC` | `FUN_801DB8EC(player)` snap + `FUN_801DAA50()` focus clamp. | 2 |
+
+`[4C 3E]`'s table entry points **inside** `[4C 39]`'s arm - the two share one
+tail - so a snap arm is a query arm minus its first six instructions.
+`FUN_801DE3E0` is query-and-load in one: `FUN_801DBA20` picks the record
+covering the tile, `FUN_801DBC20` splits it into the block, and a miss
+installs the fixed zone-miss set instead.
+
+### Who else loads the block
+
+Nothing re-queries on a bare tile crossing. Disc-wide, `FUN_801DE3E0` has
+seven `jal` sites: the three arms above plus `[4C C4]`, the player
+**seat / warp** path at `0x801D1FE8..0x801D2014` (which runs the `[4C 39]`
+sequence in code - query, `FUN_80019278`, `FUN_801DB8EC`, `FUN_801DAA50`),
+its sibling at `0x801D2BCC`, and the SCUS field-init call at `0x8003B800`.
+The field **per-frame** update has one more, at `0x801D17FC..0x801D1830`,
+and it is gated: `_DAT_1F800394 & 0x400000` (scratchpad flag bit `22`) must
+be set, or the frame only eases (`FUN_801DB510`) and clamps
+(`FUN_801DAA50`). That bit is not in the per-mode seed of the flag word - the
+seed copies a `u16` - so it starts clear every time the game mode changes and
+only a script raises it, with op `0x2E` / `0x2F` operand `0x16`. Fifteen of
+the disc's CDNAME scenes carry such a site.
+
+The per-frame arm also uses the **other** tile convention: `(coord + 0x40)
+>> 7` where the seat path and every arm above use `(coord - 0x40) >> 7`, one
+tile apart on the same position.
+
+Engine port: the arms queue a `CameraZoneRequest` on `World`
+(`engine-core::world::camera_hooks`) which `Camera::tick` drains, because the
+camera globals live on the host-owned `Camera` while the VM's host is
+`World`. The census + behaviour oracle is
+`crates/engine-core/tests/field_camera_zone_arms_disc.rs`.
+
 #### 0x4C nibble 0x70..0x7F - collision-grid rectangular wall paint
 
 **Collision-grid rectangular wall paint** (`[4C, 0x7s, col0, row0, col1, row1 (, mask)]`; handler `0x801e1c64`). Writes the walkability grid at `_DAT_1f8003ec + 0x4000` (the per-scene field buffer; one byte per 128-unit tile, **high nibble = 4 sub-cell wall bits**), the same grid the locomotion collision check `FUN_801cfe4c` reads.
@@ -96,7 +142,8 @@ Large multi-purpose dispatcher (party-slot full heal, conditional jump on `+0x68
 
 #### 0x4C nibble 0xC0..0xCF - small per-actor / per-scene writes
 
-Small per-actor / per-scene writes (slot table, sub-tile broadcast, sound trigger, `field_74` XOR). **All 16 sub-ops are now ported.** Sub-0 is a 2-byte move-table cancel via `func_0x800204F8`; the host gates on whether a move is currently active.
+Small per-actor / per-scene writes (slot table, camera-zone query, sound trigger, `field_74` XOR). **All 16 sub-ops are now ported.** Sub-0 is a 2-byte move-table cancel via `func_0x800204F8`; the host gates on whether a move is currently active.
+- **Sub-4** is the **camera-zone query at an explicit tile**: 4-byte `[4C, 0xC4, x, z]`, arm at `0x801E2878`, `FUN_801DE3E0(x & 0x7F, z & 0x7F)`. Same load as nibble-3 sub-8 but at a tile the script names, so a scene can frame a shot from a camera-region record the player is not standing in. (The earlier "sub-tile broadcast" label named the caller's shape, not the callee.) See [the camera-zone arms](#0x4c-nibble-0x380x3e---the-camera-zone-arms).
 - **Sub-1** is a 1-byte trigger-flag record-array reset: walks `_DAT_80073ED8[..count]` (stride `0xB`), tests each record's 16-bit index via [`party_flag_test`](script-vm.md#helper-functions), writes the inverted bit to `record[0]`; PC always += 2.
 - **Sub-3** is a 2-byte script-table teleport (resolves `func_0x8003C8F0(field_50, 0)` then writes `world_x/z` via the standard tile-center `b * 0x80 + 0x40` formula).
 - **Sub-5/6** are 4-byte conditional-jump pair (jump-if-zero / jump-if-nonzero): both read a 16-bit flag index via [`load_u16_le`](script-vm.md#helper-functions), query the host's trigger-flag bank, and advance PC += 4 in both branches (the original's "joined" tail at `LAB_801E28C4` returns `param_2 + 4` either way).
@@ -190,7 +237,7 @@ The 0x4C cluster is the longest-tail opcode in the field VM - most outer nibbles
 All 16x16 cells are now either fully ported (`✓`) or fall through to the dispatcher's default arm (`-`). The previously-`P` cells resolved as follows:
 
 - **`n3 sub-4` / `sub-B` / `sub-C`**: the original at `0x801df208` (in `overlay_0897_801de840.txt`) jumps with delay slot `_addiu s8, s8, 0x2` to `LAB_801df09c switchD_801e00f4::default()` - a 2-byte advance with no side effect (the inline `_DAT_8007b5f0 = uVar31` write is a no-op because `uVar31` was read from the same slot). The Rust port matches: `next_pc = pc + header_size + 1`, no host hook fires.
-- **`n3 sub-D`**: routed alongside `sub-8` through [`FieldHost::player_subtile_refresh`], a host hook that distinguishes the two via the inner sub-op byte.
+- **`n3 sub-D`**: the walk-region **attribute refresh** `FUN_800180EC`, hooked as [`FieldHost::region_attributes_refresh_at_player`]. It shares only the tile arithmetic with `sub-8`, which is a camera-zone query ([below](#0x4c-nibble-0x380x3e---the-camera-zone-arms)); routing both through one hook keyed on the sub-op byte hid that they call different routines.
 - **`n4 sub-5`**: 11-byte instruction `[4C, 0x45, b1, w94_lo, w94_hi, w96_lo, w96_hi, w98_lo, w98_hi, ticks_lo, ticks_hi]`. The dispatcher splits on `ticks == 0` between [`FieldHost::op4c_n4_sub5_write_immediate`] (direct write) and [`FieldHost::op4c_n4_sub5_ramp`] (STATE_RESUME ramp).
 - **`n4 sub-E` / `sub-F`**: no `case` arm in the original inner switch - the `default:` arm prints `"SUB_40_ERROR"` and routes via `switchD_801e00f4::default()`, which for opcode `0x4C` halts at PC. The Rust port returns `StepResult::Halt { final_pc: pc }`.
 - **`n8 sub-3`**: 7-byte rectangular tile fill `[4C, 0x83, col_start, row_start, col_end, row_end, value]`. The original at dispatcher lines 6447-6493 walks the inclusive rectangle `[col_start..=col_end] × [row_start..=row_end]`, calling `FUN_801D5630(col, row, ...)` per tile to resolve a tile-record pointer; on hit it writes `tile[+0x3] = 0; tile[+0x2] = value`. The loop exits on `j 0x801e3624` with `_addiu s8,s8,0x7` in its delay slot (`0x801E212C`) and writes nothing else - an earlier reading of a post-loop `_DAT_8007B630 = col_start` trailer named the bytes of the **next** arm (sub-4 at `0x801E2134`), which that unconditional jump never reaches. The Rust port surfaces the rectangle through [`FieldHost::op4c_n_8_sub_3_rect_tile_fill`] and lets the engine implement its tile pool.
