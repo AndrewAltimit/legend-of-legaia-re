@@ -1901,6 +1901,34 @@ pub struct EquipScreenModel {
     /// engine's 8th slot row stays navigable but icon-less so the column
     /// matches the retail capture.
     pub pictogram_rows: usize,
+    /// Window 24's item-info panel content for the hovered candidate, or
+    /// `None` outside the candidate step.
+    ///
+    /// Retail's Equip screen opens **five** windows, not four: sub-screen
+    /// `0x12` picks the character and `0x13` browses the slot rows over the
+    /// capture-pinned set `2 / 21 / 22 / 23`, and `0x14` - the candidate
+    /// list - adds windows `24` and `25` on top through open script
+    /// `0x801E4DC8` (`docs/subsystems/field-menu.md`). Window 24's renderer
+    /// `FUN_801DCC20` calls the **shared item-info panel** `FUN_801D0F1C`,
+    /// the same one window 17 draws on the Items screen - which is why the
+    /// two descriptors carry byte-identical rects `(14, 108, 144, 40)`.
+    ///
+    /// That makes this panel an *addition* to the port's screen rather than
+    /// a different layout for it - the reading that had window 24 waived as
+    /// needing "the whole screen moved onto the descriptor-table layout".
+    pub info: Option<EquipItemInfoModel>,
+}
+
+/// Window 24's item-info content - the hovered candidate's own row of the
+/// shared panel.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EquipItemInfoModel {
+    pub name: String,
+    /// Bag count, echoed beside the name exactly as window 17 echoes it.
+    pub count: u16,
+    pub desc: String,
+    /// An accessory's two passive lines.
+    pub passive: Option<(String, String)>,
 }
 
 /// Project a live [`crate::equip_session::EquipSession`] into
@@ -1909,15 +1937,26 @@ pub struct EquipScreenModel {
 /// `party_names` is the world's roster snapshot, which the session does not
 /// carry. The stat preview uses the neutral status set: this is the field
 /// menu, and the session recomputes with live status modifiers on commit.
+///
+/// `text` resolves an item id's display name / description / passive lines -
+/// [`crate::field_menu_dispatch::item_display_text`] against the live world.
+/// Passing `None` leaves every item spelled as its raw id, which is what a
+/// disc-free test wants and what the screen showed on both hosts for as long
+/// as the resolver lived inside the Items screen's own session builder.
 pub fn equip_screen_model(
     session: &crate::equip_session::EquipSession,
     char_slot: u8,
     party_names: &[String],
+    text: Option<&dyn Fn(u8) -> crate::field_menu_dispatch::ItemDisplayText>,
 ) -> EquipScreenModel {
     use crate::equip_session::EquipState;
     use crate::equipment::EquipSlot;
 
     let record = session.record();
+    let name_of = |id: u8| match text {
+        Some(f) => f(id).name,
+        None => format!("Item {id:02X}"),
+    };
     let slot_labels: Vec<String> = (0..8u8)
         .map(|i| {
             EquipSlot::from_index(i)
@@ -1928,13 +1967,7 @@ pub fn equip_screen_model(
     let slot_items: Vec<String> = record
         .equip
         .iter()
-        .map(|&id| {
-            if id == 0 {
-                String::new()
-            } else {
-                format!("Item {id:02X}")
-            }
-        })
+        .map(|&id| if id == 0 { String::new() } else { name_of(id) })
         .collect();
 
     let (phase, cursor, active_slot, confirm_label) = match session.state() {
@@ -1952,7 +1985,7 @@ pub fn equip_screen_model(
             EquipScreenPhase::Confirm,
             cursor as u16,
             slot,
-            Some(format!("Equip Item {item_id:02X}?")),
+            Some(format!("Equip {}?", name_of(item_id))),
         ),
         EquipState::Done(_) => (EquipScreenPhase::SlotPicker, 0, 0, None),
     };
@@ -1963,10 +1996,7 @@ pub fn equip_screen_model(
             (Vec::new(), Vec::new(), None)
         } else {
             let items = session.items_for_slot(active_slot);
-            let names: Vec<String> = items
-                .iter()
-                .map(|it| format!("Item {:02X}", it.id))
-                .collect();
+            let names: Vec<String> = items.iter().map(|it| name_of(it.id)).collect();
             let counts: Vec<u8> = items
                 .iter()
                 .map(|it| session.inventory().get(&it.id).copied().unwrap_or(0))
@@ -2006,7 +2036,26 @@ pub fn equip_screen_model(
         None => Vec::new(),
     };
 
+    // Window 24's panel: the hovered candidate's own info row, resolved
+    // through the same text tables the Items screen's window 17 uses. Retail
+    // gates the panel on the staged id, so the Remove row (`id == 0`) leaves
+    // it empty rather than describing nothing.
+    let info = considered_id.filter(|&id| id != 0).map(|id| {
+        let t = text.map(|f| f(id)).unwrap_or_default();
+        EquipItemInfoModel {
+            name: if t.name.is_empty() {
+                format!("Item {id:02X}")
+            } else {
+                t.name
+            },
+            count: u16::from(session.inventory().get(&id).copied().unwrap_or(0)),
+            desc: t.desc,
+            passive: t.passive,
+        }
+    });
+
     EquipScreenModel {
+        info,
         party_names: party_names.to_vec(),
         slot_labels,
         slot_items,

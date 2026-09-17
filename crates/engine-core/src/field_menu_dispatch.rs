@@ -892,42 +892,70 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
     .with_bag_slots(bag_slots)
 }
 
+/// One item id's display text, as every screen that shows an item needs it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ItemDisplayText {
+    /// Display name. Falls back to the curated catalog, then to a raw id,
+    /// so a screen never shows nothing.
+    pub name: String,
+    /// Info-panel description. Empty when the disc text is unavailable.
+    pub desc: String,
+    /// An accessory's two passive lines (`(name, description)`).
+    pub passive: Option<(String, String)>,
+}
+
+/// Resolve one item id's name / description / passive lines through the
+/// world's disc text tables, with the curated catalog and a raw-id spelling
+/// as fallbacks.
+///
+/// Lifted out of the Items-screen session builder because it is not the
+/// Items screen's: retail's item-info panel (`FUN_801D0F1C`) is opened by
+/// window 17 on the Items screen **and** by window 24 on the Equip screen's
+/// candidate step, off the same table. Keeping the resolution inside one
+/// screen's builder is why the Equip screen showed raw ids where retail
+/// shows names.
+pub fn item_display_text(world: &World, id: u8) -> ItemDisplayText {
+    let text = world.menu.text.as_ref();
+    ItemDisplayText {
+        name: text
+            .and_then(|t| t.item_name(id))
+            .map(str::to_string)
+            .or_else(|| {
+                world
+                    .tables
+                    .item_catalog
+                    .get(id)
+                    .map(|e| e.name.to_string())
+            })
+            .unwrap_or_else(|| format!("Item {id:02X}")),
+        desc: text
+            .and_then(|t| t.item_desc(id))
+            .unwrap_or_default()
+            .to_string(),
+        passive: text.and_then(|t| t.item_passive_lines(id)),
+    }
+}
+
 /// Build the retail Items screen session: the item-use flow plus the
 /// per-row display data (real bag counts; names / descriptions /
 /// accessory passive lines resolved through the world's disc text tables
 /// with catalog + raw-id fallbacks).
 pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
     let inner = build_inventory_session(world);
-    let text = world.menu.text.as_ref();
     let slots = inner.bag_slots.clone();
     let rows: Vec<PauseItemRow> = inner
         .items
         .iter()
         .enumerate()
         .map(|(i, &id)| {
-            let name = text
-                .and_then(|t| t.item_name(id))
-                .map(str::to_string)
-                .or_else(|| {
-                    world
-                        .tables
-                        .item_catalog
-                        .get(id)
-                        .map(|e| e.name.to_string())
-                })
-                .unwrap_or_else(|| format!("Item {id:02X}"));
-            let desc = text
-                .and_then(|t| t.item_desc(id))
-                .unwrap_or_default()
-                .to_string();
-            let passive = text.and_then(|t| t.item_passive_lines(id));
+            let t = item_display_text(world, id);
             PauseItemRow {
                 id,
                 slot: slots.get(i).copied().unwrap_or(0),
-                name,
+                name: t.name,
                 count: world.party.inventory.get(&id).copied().unwrap_or(0),
-                desc,
-                passive,
+                desc: t.desc,
+                passive: t.passive,
             }
         })
         .collect();

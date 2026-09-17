@@ -481,21 +481,13 @@ pub fn amount_prompt_draws_for(
 /// active-character stat compare, so window 24 is the Equip screen's
 /// item panel, not a second Items screen.
 ///
+// Wired: the Equip screen's candidate step draws it, on both hosts, through
+// the shared `pause_menu::pause_screen_draws` - window 24's frame, the shared
+// item-info panel ([`crate::item_info_panel_draws_for`]) into the same rect,
+// then this count over it.
 /// PORT: FUN_801DCC20
 /// REF: FUN_801d0f1c - the shared item-info panel this painter is the delta
 /// over. Ported in `crate::ui_menu::pause_lists`, not here.
-/// NOT WIRED: what must exist first is the **Equip screen's item panel**,
-/// NOT WIRED: and this painter is only its delta: the gated body opens with
-/// NOT WIRED: `jal 0x801D0F1C`, the shared item-info panel window 17 also
-/// NOT WIRED: draws, so a host adopting window 24 draws that panel into the
-/// NOT WIRED: same rect first and adds this count on top. The engine's equip
-/// NOT WIRED: screen (`engine-ui::ui_menu::equipment`) is a slot list with no
-/// NOT WIRED: item-info panel at all, so there is no rect to add a count to
-/// NOT WIRED: yet. Note the count itself is not what is missing: that screen
-/// NOT WIRED: already draws each candidate's owned count inline on its list
-/// NOT WIRED: row (`EquipCandidateRow::count`, drawn at the row pen + 104), so
-/// NOT WIRED: adopting window 24 *relocates* a count into a panel rather than
-/// NOT WIRED: adding one. Waived in scripts/ci/ui-host-drift-waivers.toml
 pub fn count_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
