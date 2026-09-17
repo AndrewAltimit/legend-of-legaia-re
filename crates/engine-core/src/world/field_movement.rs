@@ -2458,10 +2458,13 @@ impl World {
     /// X-) and `heading` is a PSX 12-bit angle (`4096` = full turn).
     /// `dir_bits == 0` means no direction is held.
     ///
-    /// The raw screen direction (up / down / left / right) is remapped by
-    /// [`crate::world::FieldLocomotion::camera_azimuth`] quantised to the nearest 90° so
-    /// "screen up" always walks away from the camera, the same job
-    /// `func_0x800467e8` does in retail.
+    /// The raw screen direction (up / down / left / right) is remapped through
+    /// retail's eighth-turn ring ([`Self::remap_pad_direction`], the port of
+    /// `func_0x800467e8`) with the octant derived from
+    /// [`crate::world::FieldLocomotion::camera_azimuth`] - retail reads a
+    /// scene-authored octant instead - so "screen up" always walks away from
+    /// the camera, including on the diagonal cameras a quadrant decode cannot
+    /// express.
     fn decode_field_direction(&self) -> (u16, i16) {
         let up = self.input.pressed(input::PadButton::Up);
         let down = self.input.pressed(input::PadButton::Down);
