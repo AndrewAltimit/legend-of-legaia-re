@@ -203,14 +203,24 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
     Some(FieldCameraView {
         // Retail's focus trio is `_DAT_80089118/1C/20`, and only X and Z are
         // ever written in the field (`FUN_801DBE9C`'s retail leg and the
-        // focus clamp `FUN_801DAA50` both write those two). The view build
-        // reads all three as low signed halfwords and Y measures `0` on
-        // every sampled field frame across three scenes, while the player's
-        // footing on those frames is not `0` - the camera's vertical
-        // framing rides the composed eye Y, not the focus. A world with no
-        // terrain has no composed trio to ride, so the sampled floor stands
-        // in for it there.
-        focus: [wx, if cam.zone.active { 0.0 } else { floor_y }, wz],
+        // focus clamp `FUN_801DAA50` both write those two). Its Y global
+        // measures `0` on every sampled field frame while the player's
+        // footing on those frames is not, so **retail's** focus sits at
+        // world Y `0` and the vertical framing rides the composed eye Y
+        // alone - see docs/subsystems/renderer.md.
+        //
+        // The port still anchors on the player's floor here, deliberately.
+        // Zeroing it is a 128-unit vertical move of the focus in `town01`,
+        // and that is enough to push the finite-displacement cross-term in
+        // `crates/web-viewer/tests/play_compass_disc.rs` past its
+        // `|dx| < 0.5 * |dy|` threshold: "Up" still walks away from the
+        // camera, but the screen path tilts. The residual X component is
+        // the port's 90-degree d-pad quantisation (retail's 45-degree ring,
+        // `func_0x800467E8`, is ported as `World::remap_pad_direction` and
+        // unwired), which the zeroed focus makes visible rather than
+        // causes. Closing the quantisation gap is what lets this follow
+        // retail; until then the sampled floor keeps the control law true.
+        focus: [wx, floor_y, wz],
         pitch: to_rad(pitch_units),
         // PSX camera yaw is the compass negation, so a positive manual orbit
         // subtracts from the render yaw.

@@ -614,7 +614,14 @@ last of them is what pins the field `TR`:
    those frames is not `0`, so the camera's vertical framing rides the
    composed eye Y rather than the focus. The composer's **staging** focus
    at `+0x1A/+0x1E/+0x22` does carry the footing, but the view build never
-   reads the staging descriptor.
+   reads the staging descriptor. The port still anchors its focus on the
+   player's sampled floor instead of `0`: the 128-unit move that zeroing it
+   makes in `town01` tilts the screen path of a held `Up` past the
+   `|dx| < 0.5 * |dy|` threshold of the page's compass law, because the
+   port's d-pad heading is quantised to four cardinals where retail rings
+   it at 45 degrees (`func_0x800467E8`, ported as
+   `World::remap_pad_direction` and unwired). The zeroed focus exposes that
+   gap rather than causing it.
 5. `FUN_8005B6A8(0x1F8003C8)` (`SetTransMatrix`) uploads that `t` as the
    final GTE `TR`.
 
