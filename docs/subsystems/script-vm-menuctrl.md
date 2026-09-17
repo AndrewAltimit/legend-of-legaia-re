@@ -99,8 +99,18 @@ The field **per-frame** controller `FUN_801D1344` has one more, at
 be set, or the frame only eases (`FUN_801DB510`) and clamps
 (`FUN_801DAA50`). That bit is not in the per-mode seed of the flag word - the
 seed copies a `u16` - so it starts clear every time the game mode changes and
-only a script raises it, with op `0x2E` / `0x2F` operand `0x16`. Fifteen of
-the disc's CDNAME scenes carry such a site.
+only a script raises it, with op `0x2E` / `0x2F` operand `0x16`. **Eight** of
+the disc's CDNAME scenes carry such a site: `ropeway`, `station`, `tunnela`,
+`tunnelb`, `tunnelc`, `nilboa`, `nilboa2`, `noaru` (PROT `208`, `228`, `236`,
+`273`, `310`, `638`, `648`, `717`), every one of them a `0x2E` SET.
+
+An earlier count of fifteen came from a filter that tested the flag **bank and
+bit** rather than the literal operand. The decoder masks (`bit = operand &
+0x1F`), so several other operand bytes also reduce to bit 22; every site
+carrying one of those sits inside an already-desynced record, and the fifteenth
+needs op `0x30` (GFlag TEST) counted too, which raises nothing. Measured with
+`asset field-op-census extracted/PROT --only 2E --context` over all 203
+carriers, cross-checked against an independent walker.
 
 The per-frame arm also uses the **other** tile convention: `(coord + 0x40)
 >> 7` where the seat path and every arm above use `(coord - 0x40) >> 7`, one

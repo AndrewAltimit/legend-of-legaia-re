@@ -89,7 +89,10 @@ impl World {
     /// (`FUN_801DB510`) and clamps (`FUN_801DAA50`). The bit is not in the
     /// per-mode seed (that copies a `u16`), so it starts clear on every mode
     /// entry and only a field script raises it - op `0x2E` / `0x2F` with
-    /// operand `0x16`. Fifteen of the disc's 124 CDNAME scenes touch it.
+    /// operand `0x16`. **Eight** of the disc's CDNAME scenes touch it -
+    /// `ropeway`, `station`, `tunnela`, `tunnelb`, `tunnelc`, `nilboa`,
+    /// `nilboa2`, `noaru`. A count of fifteen matched the masked flag bit
+    /// (`bit = operand & 0x1F`) rather than the literal operand byte.
     ///
     /// REF: FUN_801D1344
     pub fn camera_zone_requery_per_frame(&self) -> bool {

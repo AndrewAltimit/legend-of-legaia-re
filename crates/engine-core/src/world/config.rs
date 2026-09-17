@@ -576,7 +576,10 @@ pub const PROLOGUE_HANDOFF_BIT: u32 = 26;
 /// seat loaded. The per-mode seed of the flag word copies a `u16`
 /// (`_DAT_1F800394 = *(u16 *)(DAT_800707A0 + mode * 0x18)`), so bit `22`
 /// can only be raised by a field script - op `0x2E` / `0x2F` with operand
-/// `0x16`. Fifteen of the disc's CDNAME scenes carry such a site.
+/// `0x16`. **Eight** of the disc's CDNAME scenes carry such a site
+/// (`ropeway`, `station`, `tunnela`, `tunnelb`, `tunnelc`, `nilboa`,
+/// `nilboa2`, `noaru`), all of them `0x2E` SET; a count of fifteen comes from
+/// matching the masked flag bit instead of the literal operand.
 ///
 /// REF: FUN_801D1344
 pub const ZONE_REQUERY_FLAG: u32 = 1 << ZONE_REQUERY_BIT;
