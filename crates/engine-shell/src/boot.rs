@@ -1537,10 +1537,13 @@ fn stage_scene_vab(
     audio: &AudioOut,
     host: &SceneHost,
 ) -> Result<()> {
-    let Some(bytes) = host.scene_vab_bytes()? else {
+    let Some((bytes, vab_off)) = host.scene_vab_bytes()? else {
         return Ok(());
     };
-    let report = legaia_vab::parse(&bytes, 0).context("parse scene VAB header")?;
+    // The entry is a chunk stream, so the bank starts at the offset the
+    // stream reports (`+4` in retail), never at 0 - parsing at 0 errors out
+    // and the scene runs silent.
+    let report = legaia_vab::parse(&bytes, vab_off).context("parse scene VAB header")?;
     let bank = audio.with_spu(|spu: &mut Spu| {
         // Cap the BGM region below the resident class-2 SFX bank at the top of
         // SPU RAM, so a scene-BGM upload never stomps the SFX samples.

@@ -441,8 +441,13 @@ fn sibling_victory_voice(
         .vag_samples
         .get(pick - 1)
         .ok_or_else(|| anyhow::anyhow!("{sibling:?}: bank has no vag {pick}"))?;
-    // +4: the parser's spans sit one word before the real block grid
-    // (documented in `decode_vag_aligned`).
+    // +4: the parser's spans sit one word before the real block grid - the
+    // body chunk's own 4-byte header (`docs/formats/vab.md`). Not migrated to
+    // `legaia_vab::vag_body_origin_at`, because the general resolver only pays
+    // off where a SEQ chunk sits between the header part and the bodies, and
+    // no bank here is that shape: in all 206 banks of `monster.snd` the chunk
+    // immediately after the header part is the body chunk (its payload is
+    // exactly `fsize - header part`), so `+4` is the resolver's own answer.
     let body = snd
         .get(span.byte_offset + 4..span.byte_offset + 4 + span.size)
         .ok_or_else(|| anyhow::anyhow!("{sibling:?}: vag {pick} span escapes monster.snd"))?
@@ -488,10 +493,13 @@ fn write_victory_body(dst: &mut [u8], src: &[u8]) {
 /// [VAG bodies]`) that the results sequencer REGISTERS at victory time,
 /// so the header and every table byte stay retail - only the VAG voice
 /// bodies swap. NB `legaia_vab::parse` spans are the documented **4
-/// bytes before the real ADPCM grid** (see `decode_vag_aligned`'s doc);
-/// both source and destination shift `+4` here - writing at the raw
-/// span misaligns every block, which reads as random loop/end flags on
-/// real SPU hardware and hangs the victory sequence.
+/// bytes before the real ADPCM grid** (the body chunk's own header,
+/// `docs/formats/vab.md`); both source and destination shift `+4` here -
+/// writing at the raw span misaligns every block, which reads as random
+/// loop/end flags on real SPU hardware and hangs the victory sequence.
+/// The constant is exact for this archive: every one of `monster.snd`'s
+/// banks puts the body chunk immediately after the header part, so
+/// `legaia_vab::vag_body_origin_at` would return this same `+4`.
 pub fn fill_hero_victory_clips(
     patcher: &mut DiscPatcher,
     mapping: &PartyMapping,

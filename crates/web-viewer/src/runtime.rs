@@ -1986,10 +1986,10 @@ impl LegaiaRuntime {
 
     /// Stage the current scene's first VAB entry
     /// ([`SceneHost::scene_vab_bytes`]) into the SPU as the active scene-local
-    /// BGM bank, mirroring the native boot's `stage_scene_vab` (parse at
-    /// offset 0, SPU RAM allocator from `0x1000`). No-op when audio isn't up or
-    /// the scene has no VAB. A subsequent global-pool track replaces this bank
-    /// with its own on start.
+    /// BGM bank, mirroring the native boot's `stage_scene_vab` (parse at the
+    /// stream's own VAB offset, SPU RAM allocator from `0x1000`). No-op when
+    /// audio isn't up or the scene has no VAB. A subsequent global-pool track
+    /// replaces this bank with its own on start.
     #[cfg(target_arch = "wasm32")]
     fn stage_scene_bgm_bank(&mut self) {
         let out = match self.audio_out.as_ref() {
@@ -2000,11 +2000,11 @@ impl LegaiaRuntime {
             Some(h) => h,
             None => return,
         };
-        let vab_bytes = match host.scene_vab_bytes() {
+        let (vab_bytes, vab_off) = match host.scene_vab_bytes() {
             Ok(Some(b)) => b,
             _ => return,
         };
-        let report = match legaia_vab::parse(&vab_bytes, 0) {
+        let report = match legaia_vab::parse(&vab_bytes, vab_off) {
             Ok(r) => r,
             Err(e) => {
                 crate::console_log(&format!("play BGM: scene VAB parse failed: {e}"));

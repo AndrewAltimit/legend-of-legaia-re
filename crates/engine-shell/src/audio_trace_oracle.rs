@@ -302,13 +302,15 @@ pub fn build_engine_audio_trace(
     // but without an AudioOut handle.
     let mut spu = Spu::new();
     let mut director = TraceBgmDirector::new();
-    if let Some(vab_bytes) = session
+    if let Some((vab_bytes, vab_off)) = session
         .host
         .scene_vab_bytes()
         .context("resolve scene VAB bytes")?
     {
-        let report =
-            legaia_vab::parse(&vab_bytes, 0).context("parse scene VAB header for audio trace")?;
+        // The stream's own chunk-0 header puts the bank at `+4`; offset 0 is
+        // the header word, and parsing there fails outright.
+        let report = legaia_vab::parse(&vab_bytes, vab_off)
+            .context("parse scene VAB header for audio trace")?;
         // SPU RAM allocator: voice-0 / scratch reserved at 0x1000, the
         // bank uploads above. Matches `BootSession::stage_scene_vab`.
         const SPU_RAM_BYTES: u32 = 512 * 1024;
