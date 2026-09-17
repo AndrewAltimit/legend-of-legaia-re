@@ -102,7 +102,8 @@ asset account 0086 --depth 2 --json &gt; kingdom.json</code></pre>
       <tr><td><code>overlay_data_blob</code></td><td>almost all <code>zero_pad</code>; the rest is one entry whose whole extent reads <code>plausible_mips</code> although its head is a length-prefixed Japanese label table</td><td>a Japanese-build menu image the USA disc never loads</td></tr>
       <tr><td><code>lzs_container</code></td><td>per-entry tails past the last descriptor's stream, plus one member that is a code image rather than a container</td><td>walker tails and one mis-classed entry</td></tr>
       <tr><td><code>overlay_ptr_table</code>, <code>mips_overlay</code></td><td><code>low_entropy</code> with a <code>plausible_mips</code> minority</td><td>dump worklist - and it agrees with <a href="disc-coverage.html">disc coverage</a>'s gap list</td></tr>
-      <tr><td>scene streams, packs, battle data</td><td>short <code>mixed</code> / <code>low_entropy</code> runs at the tail of records the walker did reach</td><td>walker tails, not unwalked format</td></tr>
+      <tr><td>scene streams, battle data</td><td>nothing - the chunk walk reaches the terminator and what is left of the entry's last sector is claimed as slack, the same thing the multi-bank VAB's per-bank slack is</td><td>closed; this used to be the largest single figure in the ranking, under the verdict "walker tails"</td></tr>
+      <tr><td>scene asset tables, packs</td><td>short <code>mixed</code> / <code>low_entropy</code> runs at the tail of records the walker did reach</td><td>walker tails, not unwalked format</td></tr>
       <tr><td>filler, zero entries, trigger sidecars</td><td><code>ascii_text</code> and <code>zero_pad</code></td><td>the disc's own slack</td></tr>
       <tr><td>field maps</td><td>nothing - every entry accounts fully</td><td>closed</td></tr>
     </tbody>

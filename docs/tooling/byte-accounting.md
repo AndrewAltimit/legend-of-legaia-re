@@ -345,10 +345,25 @@ sector wide, covers what is left of a PROT entry's last sector past a stream
 terminator - past one sector it is a second region, not slack, and stays
 residue.
 
-Read the resulting figure with the tiering in mind: `work_bytes` does not move
-(`zero_pad` was already slack), the *structural* share does. The disc's largest
-remaining unwalked region was never a format - it was the disc's own padding,
-and the instrument now says so instead of ranking it.
+Read the resulting figure with the tiering in mind, because the two rules move
+different numbers and one of them moves the worklist.
+
+The slot fill moves only the *structural* share: its bytes were already
+`zero_pad`, which `work_bytes` never counted. The disc's largest remaining
+unwalked region turns out to have been the disc's own padding, and the
+instrument now says so instead of ranking it.
+
+The last-sector rule does move `work_bytes`, and by a lot - the three streaming
+classes' non-slack residue goes to zero. Those bytes were **not** zero: they are
+the builder's sector buffer, the same thing the multi-bank VAB's per-bank slack
+is, and they had been ranking as the largest `mixed` / `low_entropy` figure on
+the disc under the verdict "walker tails". They were not walker tails; every one
+of them sat past a terminator the walk reached. That is a claim about where they
+sit, not about what shape they take, which is the distinction the `ascii_text`
+note below insists on - widening a *shape* test to absorb residue redefines the
+instrument, while bracketing a run between two declared bounds reads the
+container. Anything a sector or more past the terminator stays residue, so the
+rule cannot swallow a region.
 
 ### The residue run **count** was capped, and read as a measurement
 
@@ -432,30 +447,28 @@ Read the classes in three groups; only the first is work.
 The `entries` and `bytes` columns are the disc; the `non-slack residue` column is
 a **snapshot of the instrument** and moves with every parser that binds - re-derive
 it rather than quoting it. Its denominator is the whole TOC: 1233 entries,
-121006080 bytes. At the state below, 6.95% of that is residue, and 6.40 of those
-6.95 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 0.55%
-non-slack. Of the accounted 93.05%, 0.02 points came from the magic sweep rather
-than from a walked layout, so the *structural* share of the disc is 93.03%. The
-whole of that remainder is one entry, `1062`, whose SEQ the sweep finds in a
-buffer no walker claims.
+121006080 bytes. At the state below, 0.53% of that is residue, and 0.27 of those
+0.53 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 0.27%
+non-slack. The magic sweep contributes nothing: `accounted` and `structural` are
+the same figure, so no part of the accounted share rests on a guessed magic.
 
 | Class | entries | bytes | non-slack residue |
 |---|---:|---:|---:|
-| `scene_vab_stream` | 218 | 22450176 | 199440 |
-| `overlay_data_blob` | 25 | 17164288 | 157530 |
-| `scene_tmd_stream` | 182 | 14632960 | 141832 |
+| `overlay_data_blob` | 25 | 17164288 | 155911 |
 | `scene_asset_table` | 90 | 22577152 | 77420 |
-| `overlay_ptr_table` | 42 | 407552 | 46788 |
+| `overlay_ptr_table` | 42 | 407552 | 46360 |
 | `mips_overlay` | 22 | 194560 | 21836 |
 | `lzs_container` | 18 | 4098048 | 12889 |
 | `init_pak` | 1 | 153600 | 2940 |
 | `scene_event_scripts` | 101 | 329728 | 2048 |
 | `bse_bank` | 2 | 6144 | 1716 |
-| `data_field_streaming` | 49 | 9052160 | 1536 |
 | `pack` | 7 | 1634304 | 948 |
 | `summon_readef` | 2 | 12232704 | 20 |
-| `vab_multi_bank` | 1 | 6002688 | 0 |
+| `data_field_streaming` | 49 | 9052160 | 0 |
+| `scene_vab_stream` | 218 | 22450176 | 0 |
+| `scene_tmd_stream` | 182 | 14632960 | 0 |
 | `battle_data_pack` | 4 | 1863680 | 0 |
+| `vab_multi_bank` | 1 | 6002688 | 0 |
 | `efect_pack` | 1 | 8192 | 0 |
 | `scene_v12_table` | 97 | 198656 | 0 |
 | `pochi_filler` | 266 | 544768 | 0 |
@@ -465,15 +478,17 @@ buffer no walker claims.
 | Class | What its unclaimed bytes are | Verdict |
 |---|---|---|
 | `vab_multi_bank` (`0891`) | Nothing: the bank index, each bank's two chunks and each bank's sector slack are claimed from lengths the container states. | Closed. Layout in [`vab.md`](../formats/vab.md#the-multi-bank-archive-monstersnd). |
-| `overlay_data_blob` | Almost all `zero_pad`. What is left is entry `0896`, whose whole extent reads `plausible_mips` although its head is a length-prefixed Shift-JIS label table, plus per-image runs beside code the dump corpus reached. | `0896` is the JP-build menu image, resident in no USA state. |
+| `overlay_data_blob` | The whole class's remaining work, and most of it is entry `0896`, whose extent reads `plausible_mips` although its head is a length-prefixed Shift-JIS label table. The rest is per-image data segments beside code the dump corpus reached. | `0896` is the JP-build menu image, resident in no USA state. |
 | `overlay_ptr_table`, `mips_overlay` | `low_entropy` runs with a `plausible_mips` minority - the tables beside code the dump corpus has not reached. | Dump worklist; agrees with [`disc-coverage.md`](disc-coverage.md)'s gap list. |
 | `init_pak` (`0895`) | The head pointer table, the SCUS-name string, and a tail past the last logo. | Closed but for those three; see the composition rule below. |
 | `lzs_container` | Per-entry tails of a few hundred bytes past the last descriptor's stream, plus `0981` entire - the one class member that is a code image rather than a container. | Walker tails plus one mis-classed entry. |
-| `scene_vab_stream`, `scene_tmd_stream`, `scene_asset_table`, `pack` | Short `mixed` / `low_entropy` runs at the tail of records the walker did reach, plus one `high_entropy` minority in `scene_asset_table`. | Walker tails, not unwalked format. |
-| `data_field_streaming`, `battle_data_pack` | Almost entirely `zero_pad` now; `battle_data_pack`'s residue is slack outright and `data_field_streaming` keeps one `ascii_text` sector. | Closed but for that sector. |
+| `scene_asset_table`, `pack` | Short `mixed` / `low_entropy` runs at the tail of records the walker did reach, plus one `high_entropy` minority in `scene_asset_table`. | Walker tails, not unwalked format. |
+| `scene_vab_stream`, `scene_tmd_stream`, `data_field_streaming` | Nothing: the chunk walk reaches the terminator and what is left of the entry's last sector is claimed as slack. This class's residue used to be its single largest figure and read as "walker tails". | Closed; see the fixed-stride section above. |
+| `battle_data_pack` | Nothing but `zero_pad`. | The disc's own slack. |
 | `bse_bank`, `scene_event_scripts` | Kilobyte-scale `low_entropy` / `ascii_text` tails behind a walker that reached the records. | Walker tails. |
 | `efect_pack` (`0873`) | Nothing: the header, the inline sprite atlas, and both packs' members account fully. | Closed. |
-| `pochi_filler`, `all_zeros`, `scene_v12_table`, `summon_readef` | Nothing, or `zero_pad`. | The disc's own slack. Not work. |
+| `pochi_filler`, `all_zeros`, `scene_v12_table` | Nothing, or `zero_pad`. | The disc's own slack. Not work. |
+| `summon_readef` | Tens of bytes of inter-record alignment. Each slot's fill is claimed out to the stride the stream SM transfers. | Closed. |
 | `field_map` | Nothing: all 101 entries account fully. | Closed. |
 
 ### Three families that read as unwalked format and were not

@@ -1,33 +1,33 @@
 {
   "class_structural_pct": {
     "battle_data_pack": 98.85,
-    "data_field_streaming": 99.46,
+    "data_field_streaming": 100.0,
     "field_map": 100.0,
     "lzs_container": 99.69,
-    "overlay_data_blob": 59.09,
+    "overlay_data_blob": 98.46,
     "pack": 99.94,
     "scene_asset_table": 99.64,
-    "scene_tmd_stream": 98.76,
-    "scene_vab_stream": 99.06,
-    "summon_readef": 95.16,
+    "scene_tmd_stream": 100.0,
+    "scene_vab_stream": 100.0,
+    "summon_readef": 100.0,
     "vab_multi_bank": 100.0
   },
   "class_work_bytes": {
     "battle_data_pack": 0,
-    "data_field_streaming": 1536,
+    "data_field_streaming": 0,
     "field_map": 0,
     "lzs_container": 12889,
-    "overlay_data_blob": 157530,
+    "overlay_data_blob": 155911,
     "pack": 948,
     "scene_asset_table": 77420,
-    "scene_tmd_stream": 141832,
-    "scene_vab_stream": 199440,
+    "scene_tmd_stream": 0,
+    "scene_vab_stream": 0,
     "summon_readef": 20,
     "vab_multi_bank": 0
   },
   "disc": {
-    "accounted_pct": 93.05,
-    "structural_pct": 93.03,
-    "work_bytes": 666943
+    "accounted_pct": 99.47,
+    "structural_pct": 99.47,
+    "work_bytes": 322088
   }
 }
