@@ -1403,7 +1403,12 @@ impl LegaiaRuntime {
         // member over a translucent plate). Already in surface pixels, like
         // `battle`, and empty whenever anything else owns the screen
         // ([`crate::play_field_hud`]).
-        let (field_hud_sprites, field_hud_texts) = self.field_party_hud_draws(surface_w, surface_h);
+        let (field_hud_sprites, mut field_hud_texts) =
+            self.field_party_hud_draws(surface_w, surface_h);
+        // The passive-ability badge column rides the same font layer; it is
+        // independent of the party readout's idle gate, so it is appended
+        // rather than folded into the builder above.
+        field_hud_texts.extend(self.passive_hud_draws(surface_w, surface_h));
         // In-world minigame screens (casino / dance / arena), surface
         // pixels ([`crate::play_minigames`]). Empty outside one.
         let (minigame_sprites, minigame_texts) =

@@ -115,10 +115,9 @@ pub struct HudIcon {
 /// the third is **arithmetic** (`sra`), which only diverges for a height past
 /// `0x8000 / 43`; retail heights are far below that, so the port keeps the
 /// widths honest rather than pretending the three agree.
-// NOT WIRED: same blocker as [`passive_hud_icons`] - the lifts feed a GTE
-// three-point transform, and while the transform itself is ported and live
-// (`engine-render`'s `Camera::transform`), no host issues it for a party
-// member's head anchor.
+// Wired through `engine-core`'s `World::passive_hud_points`, which lifts the
+// player's world Y by each of the three fractions; each host then projects
+// points 0 and 2 and mixes their screen X / Y into the anchor.
 pub fn hud_anchor_offsets(height: u16) -> [i32; 3] {
     let h = i64::from(height);
     [
@@ -135,18 +134,16 @@ pub fn hud_anchor_offsets(height: u16) -> [i32; 3] {
 /// `FUN_800431D0`.
 ///
 /// PORT: FUN_801d095c
-// NOT WIRED: what is missing is the **glue**, not a subsystem - the earlier
-// reading of this row blamed a projection host that already exists. Every
-// piece is present: the bit source is `engine-core::accessory_passives`, the
-// world-to-screen projector is `engine-render`'s `Camera::transform` (the
-// GTE RTPS/RTPT path, already used to place effect billboards from
-// `World::active_effect_sprites`), and the icon primitive is `engine-ui`'s
-// `PainterPictogram` - the port of `FUN_8002C488`, this module's own draw
-// leaf. What nobody has written is the pass that projects a party member's
-// head anchor and feeds the result into `sprite_draws_for`: `engine-ui`'s
-// builders all take an already-screen pen, so the caller has to do the
-// projection, and no host does. It lands in the shell's redraw pass beside
-// the effect-billboard build, not in `engine-vm`.
+// Wired through `engine-core`'s `World::passive_hud_icons`, whose bit source
+// is `World::party_has_ability` - the engine's `FUN_800431D0`, the passive
+// bitfield rebuilt from equipment, and the same source the encounter-rate
+// scaler reads for bits `0x3B` / `0x3C`. The projection between the lifts and
+// this call is each host's, because the camera is: the native window's
+// `passive_hud_draws` (redraw pass) and the browser play page's
+// `tick_passive_hud` (`play_field_hud`). Both draw the icon ids through a
+// stand-in glyph - the field pictogram bank `FUN_8002C488` indexes is a VRAM
+// resource neither host has an atlas for, which is a missing sprite sheet
+// rather than a missing call.
 pub fn passive_hud_icons<F: Fn(u8) -> bool>(anchor: (i32, i32), has_bit: F) -> Vec<HudIcon> {
     let (ax, ay) = anchor;
     let mut out = Vec::new();

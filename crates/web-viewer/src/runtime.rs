@@ -156,6 +156,11 @@ pub struct LegaiaRuntime {
     /// retail's rearm arm rather than comparing the new scene's player
     /// position against the old one's.
     pub(crate) field_party_hud_scene: Option<String>,
+    /// This frame's passive-ability badge icons, already anchored in 320x240
+    /// stage space. Resolved in `tick_field_party_hud` because the anchor
+    /// needs the frame's view-projection (a `&mut self` read) and the draw
+    /// pass does not have one; see [`crate::play_field_hud`].
+    pub(crate) passive_hud_icons: Vec<legaia_engine_vm::field_passive_hud::HudIcon>,
     /// The lead's projected stage-Y (240-line PSX space) the page reports
     /// each frame off its own view-projection ([`Self::set_field_player_screen_y`]),
     /// the twin of the native window's `field_hud_projected_player_y`. `None`
@@ -407,6 +412,7 @@ impl LegaiaRuntime {
             battle_intro_geom: None,
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
+            passive_hud_icons: Vec::new(),
             field_hud_projected_y: None,
             pending_dynamic_mesh_slots: Vec::new(),
             dynamic_mesh_slots: Vec::new(),
@@ -952,6 +958,7 @@ impl LegaiaRuntime {
         // Field party-status HUD countdown, ticked where the native window
         // ticks it (`FUN_801D0D38`); the draw pass reads the decision back.
         self.tick_field_party_hud();
+        self.tick_passive_hud();
         // Developer menu (the visitor's explicit opt-in): ticked exactly
         // where the native window's redraw loop ticks its own, off the same
         // world pad words. A no-op while the opt-in is off.

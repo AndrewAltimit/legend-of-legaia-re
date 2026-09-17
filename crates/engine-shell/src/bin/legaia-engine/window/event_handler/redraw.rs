@@ -1987,6 +1987,11 @@ impl PlayWindowApp {
             if !self.boot_ui.is_active() {
                 hud.extend(self.battle_spoils_draws(w, h));
                 hud.extend(self.encounter_hint_draws(w, h));
+                // The field overlay's passive-ability badge column, floated
+                // over the player's head (`FUN_801d095c`). Shares the scene
+                // camera with everything else this frame; the browser play
+                // page draws the same list off the same World seat.
+                hud.extend(self.passive_hud_draws(cam, w, h));
             }
             let overlay = TextOverlay { atlas, draws: &hud };
 

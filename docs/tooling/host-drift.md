@@ -756,6 +756,35 @@ about these is contested.
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 
+### A `web-ahead` builder is not by itself a gap
+
+Tier 1 prints a `web-ahead (informational)` line for every `engine-ui` builder
+the browser play page calls and the native window does not. The line answers
+"which host calls this function", which is not the same question as "which host
+draws this screen" - and for the battle value readout the two answers differ.
+
+`battle_combo_cluster_draws_for` and `battle_value_readout_draws_for` are the
+readout's **font fallback**: they restyle retail's `N HIT` / `TOTAL` cluster and
+its damage numerals in the dialog font, for a host that cannot sample the battle
+effect atlas. Their own doc comments say a host that can sample VRAM should skip
+them and draw the real 24x24 cells off texture page `0x27` / CLUT `0x7703`.
+
+Both hosts do exactly that whenever the atlas is resident, through one shared
+kernel: `engine-vm::battle_value_readout` fixes the layout,
+`engine-ui::battle_numerals` turns it into quads, and each host supplies only the
+seat (the struck actor's projected position, which needs that host's camera).
+The native chain is `redraw::battle_value_readout_prims`; the page's is
+`play_battle::battle_value_readout_prims`. So the *screen* reaches both hosts,
+drawn from retail's own art, and the `web-ahead` pair is the page's extra arm for
+the frames before its VRAM exists.
+
+What the native window genuinely lacks is that extra arm: with no battle VRAM
+uploaded it draws no readout at all where the page draws fallback text. That is a
+narrow window, not a missing feature, and wiring the fallback natively would have
+to keep the two mutually exclusive - both drawing at once renders every number
+twice, which is the trap the page's own gate (`battle_value_readout_has_atlas`)
+exists to avoid.
+
 ### One-shot voices on the minigames page
 
 The Muscle Dome's between-leg tally keys a voice per drained lane, and it names

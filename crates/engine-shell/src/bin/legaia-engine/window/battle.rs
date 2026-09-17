@@ -2166,6 +2166,62 @@ impl PlayWindowApp {
     /// earlier rate-0 row, so walking them forever produces nothing. That is
     /// scene data the port keeps faithfully; without a hint it reads as the
     /// engine being broken, which is exactly how it was reported.
+    /// The field overlay's **passive-ability badge column** - the icons
+    /// retail floats over the player's head while an accessory passive is
+    /// active (`FUN_801d095c`).
+    ///
+    /// The engine's half is `World::passive_hud_points` (three head-relative
+    /// world points, lifted by fractions of the player's `+0x72`) and
+    /// `World::passive_hud_icons` (the icon list for a resolved anchor); the
+    /// projection between them is this host's, because the camera is. Retail
+    /// takes the **X of the first** projected point and the **Y of the
+    /// third** - a mixed pair, not one point's.
+    ///
+    /// The icon ids `0x47..=0x4D` name cells of the field pictogram bank
+    /// (`FUN_8002C488`), which this host has no sprite atlas for, so each
+    /// draws as the same ASCII stand-in the menu painters' pictograms use.
+    /// The browser play page draws the same list off the same World seat.
+    pub(super) fn passive_hud_draws(
+        &self,
+        cam: glam::Mat4,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<TextDraw> {
+        let world = &self.session.host.world;
+        if !world.passive_hud_active() {
+            return Vec::new();
+        }
+        let Some(points) = world.passive_hud_points() else {
+            return Vec::new();
+        };
+        let project = |p: [f32; 3]| -> Option<(i32, i32)> {
+            let clip = cam * glam::Vec4::new(p[0], p[1], p[2], 1.0);
+            if clip.w <= 0.01 {
+                return None;
+            }
+            let ndc = clip.truncate() / clip.w;
+            Some((
+                ((ndc.x * 0.5 + 0.5) * 320.0) as i32,
+                ((0.5 - ndc.y * 0.5) * 240.0) as i32,
+            ))
+        };
+        let (Some(first), Some(third)) = (project(points[0]), project(points[2])) else {
+            return Vec::new();
+        };
+        let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+        let mut out = Vec::new();
+        for i in world.passive_hud_icons((first.0, third.1)) {
+            let mut draws = text_draws_for(
+                &self.font.layout_ascii("*"),
+                (i.x, i.y),
+                legaia_engine_render::MENU_TEXT_GOLD,
+            );
+            legaia_engine_render::scale_stage_text_draws(&mut draws, origin, scale);
+            out.extend(draws);
+        }
+        out
+    }
+
     pub(super) fn encounter_hint_draws(&self, _w: u32, surface_h: u32) -> Vec<TextDraw> {
         // A diagnostic row like the shell's others, so it takes the same
         // toggle: retail prints nothing here, and a permanent caption over

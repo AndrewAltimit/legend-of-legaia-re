@@ -86,6 +86,88 @@ impl LegaiaRuntime {
             .tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
     }
 
+    /// Resolve this frame's **passive-ability badge column** into
+    /// [`LegaiaRuntime::passive_hud_icons`] - the field overlay's
+    /// `FUN_801d095c`, the icons floated over the player's head while an
+    /// accessory passive is active.
+    ///
+    /// Split the way the native window's `passive_hud_draws` is: `World`
+    /// answers the three head-relative world points and the icon list, and
+    /// this host projects between them. Unlike the party readout above, the
+    /// projection **is** available here - `LegaiaRuntime::play_camera_vp` is
+    /// this frame's view-projection off the engine's own camera frame - it
+    /// just needs a `&mut self`, which the draw pass does not have, so the
+    /// answer is resolved on the tick and cached.
+    ///
+    /// Retail takes the anchor's X from the **first** projected point and its
+    /// Y from the **third**; a single point's pair is not the same thing.
+    pub(crate) fn tick_passive_hud(&mut self) {
+        self.passive_hud_icons.clear();
+        if self.field_party_hud_suppressed() {
+            return;
+        }
+        let Some(points) = self
+            .scene_host
+            .as_ref()
+            .map(|h| &h.world)
+            .filter(|w| w.passive_hud_active())
+            .and_then(|w| w.passive_hud_points())
+        else {
+            return;
+        };
+        // The retail stage, so the projected pair lands in the same
+        // 320x240 space the icon seats are authored in.
+        let vp = self.play_camera_vp(320.0, 240.0);
+        if vp.len() != 16 {
+            return;
+        }
+        let project = |p: [f32; 3]| -> Option<(i32, i32)> {
+            let v = [p[0], p[1], p[2], 1.0];
+            let mut clip = [0.0f32; 4];
+            for (i, c) in clip.iter_mut().enumerate() {
+                *c = (0..4).map(|j| vp[j * 4 + i] * v[j]).sum();
+            }
+            if clip[3] <= 0.01 {
+                return None;
+            }
+            Some((
+                ((clip[0] / clip[3] * 0.5 + 0.5) * 320.0) as i32,
+                ((0.5 - clip[1] / clip[3] * 0.5) * 240.0) as i32,
+            ))
+        };
+        let (Some(first), Some(third)) = (project(points[0]), project(points[2])) else {
+            return;
+        };
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return;
+        };
+        self.passive_hud_icons = world.passive_hud_icons((first.0, third.1));
+    }
+
+    /// The cached passive-ability badges as surface-pixel text draws.
+    ///
+    /// The icon ids `0x47..=0x4D` name cells of the field pictogram bank
+    /// (`FUN_8002C488`), which this host has no atlas for, so each draws as
+    /// the same stand-in glyph the native window uses.
+    pub(crate) fn passive_hud_draws(&self, surface_w: u32, surface_h: u32) -> Vec<TextDraw> {
+        if self.passive_hud_icons.is_empty() {
+            return Vec::new();
+        }
+        let Some(assets) = self.menu_assets.as_ref() else {
+            return Vec::new();
+        };
+        let font = assets.font_ref();
+        let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+        let mut out = Vec::new();
+        for i in &self.passive_hud_icons {
+            let mut draws =
+                ui::text_draws_for(&font.layout_ascii("*"), (i.x, i.y), ui::MENU_TEXT_GOLD);
+            ui::scale_stage_text_draws(&mut draws, origin, scale);
+            out.extend(draws);
+        }
+        out
+    }
+
     /// This frame's HUD, split the way the page's overlay JSON wants it:
     /// atlas sprites (the translucent plate, then the `LV`/`HP`/`MP` label
     /// cells, the `/` and the numerals) and font-atlas text (the names),
