@@ -1093,14 +1093,25 @@ impl PlayWindowApp {
                                 .collect();
                             (label, rows, Some(gold))
                         }
+                        // Retail's sell list is the price-gated slot walk,
+                        // not the id-sorted bag: an unsellable row dims and
+                        // sorts last (`MenuRuntime::sell_list_rows`). Twin of
+                        // the browser page's arm in `web-viewer::play_shop`.
                         Some(MenuState::ShopSell) => {
-                            let rows = bag
+                            let rows =
+                                legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows(
+                                    &self.session.host.world,
+                                )
                                 .iter()
-                                .map(|(id, qty)| {
+                                .map(|r| {
                                     (
-                                        format!("{} x{qty}", item_label(*id)),
+                                        format!("{} x{}", item_label(r.id), r.count),
                                         None,
-                                        legaia_engine_render::SHOP_INK_NORMAL,
+                                        if r.dim {
+                                            legaia_engine_render::SHOP_INK_GREY
+                                        } else {
+                                            legaia_engine_render::SHOP_INK_NORMAL
+                                        },
                                     )
                                 })
                                 .collect();

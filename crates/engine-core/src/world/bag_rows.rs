@@ -18,7 +18,8 @@
 
 use crate::menu_list_rows::{
     EFFECT_FLAG_BATTLE_USABLE, ITEM_DOOR_OF_LIGHT, ITEM_DOOR_OF_WIND, ItemRowTables, ROW_ALT_INK,
-    ROW_DISABLED, ROW_NAME_PAYLOAD_MASK, UseListCtx, build_price_gated_rows, build_use_list_rows,
+    ROW_DISABLED, ROW_NAME_PAYLOAD_MASK, UseListCtx, build_price_gated_rows, build_throw_out_rows,
+    build_use_list_rows,
 };
 use crate::world::World;
 
@@ -40,14 +41,17 @@ pub struct BagRow {
 
 /// [`ItemRowTables`] over the world's disc tables.
 ///
-/// `price` is the one field the effect table cannot answer (it is the item
-/// record's `+2` halfword, not a descriptor field), so the caller supplies it;
-/// the sell list is the only builder that reads it. `equip_flags` answers `0`,
-/// because the equipment record's `+7` byte has no engine table - which is what
-/// keeps the Throw Out builder disclosed.
+/// Three tables, three sources, all disc-parsed at boot. `kind` / `subtype` /
+/// `effect_flags` come from the item-effect table; `price` is the item
+/// record's `+2` halfword, which `ShopItemData` already carries for every id
+/// (it is the buy-price table the merchant scan validates records against, not
+/// an open shop's stock list); `equip_flags` is the equipment record's `+7`
+/// byte, read off the raw stat-bonus table by **bonus row**, because that is
+/// the index retail's own readers form (`0x80074F68 + subtype * 8`).
 struct WorldRowTables<'a> {
     effects: &'a legaia_asset::item_effect::ItemEffectTable,
-    price: &'a dyn Fn(u8) -> u16,
+    prices: Option<&'a crate::shop_catalog::ShopItemData>,
+    equip: Option<&'a legaia_asset::equip_stats::EquipStatTable>,
 }
 
 impl ItemRowTables for WorldRowTables<'_> {
@@ -58,7 +62,7 @@ impl ItemRowTables for WorldRowTables<'_> {
         self.effects.subtype(id)
     }
     fn price(&self, id: u8) -> u16 {
-        (self.price)(id)
+        self.prices.map(|p| p.price(id)).unwrap_or(0)
     }
     fn effect_flags(&self, subtype: u8) -> u8 {
         self.effects
@@ -66,8 +70,22 @@ impl ItemRowTables for WorldRowTables<'_> {
             .map(|d| d.flags)
             .unwrap_or(0)
     }
-    fn equip_flags(&self, _subtype: u8) -> u8 {
-        0
+    fn equip_flags(&self, subtype: u8) -> u8 {
+        self.equip
+            .and_then(|t| t.rows().get(subtype as usize))
+            .map(|b| b.raw[7])
+            .unwrap_or(0)
+    }
+}
+
+impl World {
+    /// The row tables every builder in [`crate::menu_list_rows`] reads.
+    fn row_tables(&self) -> Option<WorldRowTables<'_>> {
+        Some(WorldRowTables {
+            effects: self.tables.item_effects.as_ref()?,
+            prices: self.shops.item_shop_data.as_ref(),
+            equip: self.tables.equip_stats.as_ref(),
+        })
     }
 }
 
@@ -173,13 +191,8 @@ impl World {
     /// REF: FUN_80030628 (content id 3; the builder itself is
     /// `crate::menu_list_rows::build_use_list_rows`)
     pub fn bag_use_rows(&self, battle: bool) -> Option<Vec<BagRow>> {
-        let effects = self.tables.item_effects.as_ref()?;
+        let tables = self.row_tables()?;
         let (ids, slot_base) = self.bag_window_ids();
-        let price = |_: u8| 0u16;
-        let tables = WorldRowTables {
-            effects,
-            price: &price,
-        };
         let applicable = |id: u8| self.item_applies_to_anyone(id);
         let ctx = UseListCtx {
             battle,
@@ -199,21 +212,44 @@ impl World {
     /// The shop **sell** list, in retail's row order: sellable rows in place,
     /// zero-price rows dimmed and sorted last.
     ///
-    /// `price_of` is the item record's `+2` halfword - what the shop session's
-    /// own price lookup answers.
+    /// The gate is the item record's `+2` halfword for **every** id, which is
+    /// the table `ShopItemData` holds - not an open shop's stock list, whose
+    /// answer for an id it does not sell is a floor of `1` that can never dim
+    /// a row. `None` when either disc table is absent, and the caller then
+    /// keeps its own ordering.
     ///
     /// REF: FUN_80030628 (content id 2; the builder itself is
     /// `crate::menu_list_rows::build_price_gated_rows`)
-    pub fn bag_sell_rows(&self, price_of: &dyn Fn(u8) -> u16) -> Option<Vec<BagRow>> {
-        let effects = self.tables.item_effects.as_ref()?;
+    pub fn bag_sell_rows(&self) -> Option<Vec<BagRow>> {
+        self.shops.item_shop_data.as_ref()?;
+        let tables = self.row_tables()?;
         let (ids, slot_base) = self.bag_window_ids();
-        let tables = WorldRowTables {
-            effects,
-            price: price_of,
-        };
         Some(decode(
             self,
             &build_price_gated_rows(&ids, slot_base, &tables),
+        ))
+    }
+
+    /// The Items screen's **Throw Out** list, in retail's row order.
+    ///
+    /// The same three-buffer walk as the Use list with a discardability gate:
+    /// a key item (effect flag `0x1`) dims in place, an equipment piece sorts
+    /// to the tail and dims when its record's `+7` bit `0x01` is set, and the
+    /// effect-flag-`0x8` group goes last in the alt ink.
+    ///
+    /// `None` when the item-effect table is absent. The equipment table may be
+    /// absent on its own: no record then reports the no-discard bit and the
+    /// equipment rows all stay confirmable, which is the disc-free default
+    /// rather than a claim about the disc.
+    ///
+    /// REF: FUN_80030628 (content id `0x22`; the builder itself is
+    /// `crate::menu_list_rows::build_throw_out_rows`)
+    pub fn bag_throw_out_rows(&self) -> Option<Vec<BagRow>> {
+        let tables = self.row_tables()?;
+        let (ids, slot_base) = self.bag_window_ids();
+        Some(decode(
+            self,
+            &build_throw_out_rows(&ids, slot_base, &tables),
         ))
     }
 

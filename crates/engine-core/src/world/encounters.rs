@@ -243,6 +243,14 @@ impl World {
         self.tables.steal_table = Some(table);
     }
 
+    /// Install the raw equipment stat-bonus table (`DAT_80074F68`). The
+    /// derived modifier table is a separate install
+    /// ([`Self::set_equipment_table`]); this one keeps the record bytes the
+    /// menu's list builders index by bonus row.
+    pub fn set_equip_stats(&mut self, table: legaia_asset::equip_stats::EquipStatTable) {
+        self.tables.equip_stats = Some(table);
+    }
+
     /// Install the per-item battle-stat modifier table (weapon / armor /
     /// accessory bonuses). Boot wires this once; [`Self::seed_party_battle_stats`]
     /// folds the equipped items onto each party combatant at battle entry.

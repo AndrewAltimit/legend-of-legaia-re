@@ -580,6 +580,13 @@ impl LegaiaRuntime {
                     legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
                 }),
         );
+        // The raw stat-bonus records as well: the Items screen's Throw Out
+        // list reads each record's `+7` flags byte, which the derived modifier
+        // table does not keep. Twin of the native boot's install in
+        // `BootSession::open_with_source`.
+        if let Some(table) = self.equip_stats.clone() {
+            host.world.set_equip_stats(table);
+        }
         // Retail-shaped equipment buy: this page draws the recipient picker
         // (window 36) and the stat-compare windows (25 / 41) over the parked
         // buy list ([`crate::play_shop`]), so opt into the flow and install

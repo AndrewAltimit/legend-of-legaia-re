@@ -157,6 +157,11 @@ pub struct BootSession {
     /// ([`legaia_engine_core::equip_session::EquipSession::new_with_restrictions`]);
     /// `None` on disc-free builds.
     pub equip_restrictions: Option<legaia_engine_core::equipment::DiscEquipInfo>,
+    /// The **raw** equipment stat-bonus records (`DAT_80074F68`) behind the two
+    /// derived tables above. The Items screen's Throw Out list reads each
+    /// record's `+7` flags byte, which neither derived form keeps; `None` on
+    /// disc-free builds, where no row reports the no-discard bit.
+    pub equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
     /// Player Seru-magic catalog with MP cost + target shape read from the
     /// boot source's `SCUS_942.54` spell table ([`legaia_asset::spell_names`]).
     /// Preferred over the pinned `retail_seru_magic_catalog` when installing the
@@ -637,6 +642,7 @@ fn read_retail_equip_tables(
 ) -> Option<(
     legaia_engine_core::battle_stats::EquipmentTable,
     legaia_engine_core::equipment::DiscEquipInfo,
+    legaia_asset::equip_stats::EquipStatTable,
 )> {
     use legaia_engine_core::Vfs;
     let scus = match source {
@@ -653,7 +659,9 @@ fn read_retail_equip_tables(
     let table = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus)?;
     let modifiers = legaia_engine_core::equipment::equip_modifier_table_from_disc(&table);
     let restrictions = legaia_engine_core::equipment::DiscEquipInfo::from_disc(&table);
-    Some((modifiers, restrictions))
+    // The raw records travel too: the Throw Out list builder reads each
+    // record's `+7` flags byte, which neither derived table keeps.
+    Some((modifiers, restrictions, table))
 }
 
 /// Read the player Seru-magic catalog (MP cost + target shape from the spell
@@ -699,10 +707,11 @@ impl BootSession {
         // (best-effort; never fails the boot).
         let starting_party = read_starting_party(&source);
         let starting_inventory = read_starting_inventory(&source);
-        let (equip_modifier_table, equip_restrictions) = match read_retail_equip_tables(&source) {
-            Some((m, r)) => (Some(m), Some(r)),
-            None => (None, None),
-        };
+        let (equip_modifier_table, equip_restrictions, equip_stats) =
+            match read_retail_equip_tables(&source) {
+                Some((m, r, s)) => (Some(m), Some(r), Some(s)),
+                None => (None, None, None),
+            };
         let spell_catalog = read_retail_spell_catalog(&source);
         let steal_table = read_scus(&source)
             .and_then(|scus| legaia_asset::steal_table::StealTable::from_scus(&scus));
@@ -899,6 +908,7 @@ impl BootSession {
             starting_inventory,
             equip_modifier_table,
             equip_restrictions,
+            equip_stats,
             spell_catalog,
             steal_table,
             dialog_font,
@@ -1379,6 +1389,9 @@ impl BootSession {
         world.set_equipment_table(self.equip_modifier_table.clone().unwrap_or_else(|| {
             legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
         }));
+        if let Some(stats) = self.equip_stats.clone() {
+            world.set_equip_stats(stats);
+        }
         world.set_spell_catalog(
             self.spell_catalog
                 .clone()

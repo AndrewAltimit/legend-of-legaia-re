@@ -713,6 +713,40 @@ impl MenuRuntime {
             .map(|r| r.equipment())
     }
 
+    /// The shop **sell** list's rows, in retail's order: the bag's active
+    /// window walked by slot, sellable rows in place, unsellable (price `0`)
+    /// rows dimmed and sorted last (`FUN_80030628` content id 2, ported as
+    /// [`crate::menu_list_rows::build_price_gated_rows`]).
+    ///
+    /// Both the list draw and the sell commit go through here, which is the
+    /// point: the two used to build the rows separately - the draw
+    /// id-sorted, the commit by slot - so on any bag whose slot order is not
+    /// ascending by id the player sold a different stack than the one the hand
+    /// was on. The row carries its bag slot, so the sale comes off the stack
+    /// that was highlighted even when one id sits in two slots.
+    ///
+    /// Falls back to the plain occupied-slot walk when the disc tables are
+    /// absent (no price table means nothing to gate on).
+    pub fn sell_list_rows(world: &World) -> Vec<crate::world::BagRow> {
+        if let Some(rows) = world.bag_sell_rows() {
+            return rows;
+        }
+        let (start, end) = world.party.inventory.window_bounds();
+        let slots = world.party.inventory.slots();
+        slots[start.min(slots.len())..end.min(slots.len())]
+            .iter()
+            .enumerate()
+            .filter(|(_, (id, count))| *id != 0 && *count > 0)
+            .map(|(i, (id, count))| crate::world::BagRow {
+                slot: (start + i) as u8,
+                id: *id,
+                count: *count,
+                dim: false,
+                alt_ink: false,
+            })
+            .collect()
+    }
+
     /// Sorted `(item_id, count)` pairs from the world's global inventory,
     /// ascending by item ID, filtering out zero-count entries.  Engines
     /// call this to populate the `StatusInventory` screen rows.
@@ -945,19 +979,13 @@ impl MenuRuntimeHost<'_> {
     /// `ShopSell` commit: select the picked bag item for sale against the
     /// id-sorted inventory snapshot.
     fn commit_shop_sell(&mut self, slot: u8) {
-        // The drawn rows, in the bag's own slot order with holes skipped -
-        // retail's sell list is a slot walk, and the row payload it confirms
-        // with is that slot.
-        let rows: Vec<(u8, u8)> = {
-            let (start, end) = self.world.party.inventory.window_bounds();
-            let slots = self.world.party.inventory.slots();
-            slots[start.min(slots.len())..end.min(slots.len())]
-                .iter()
-                .enumerate()
-                .filter(|(_, (id, count))| *id != 0 && *count > 0)
-                .map(|(i, (id, _))| ((start + i) as u8, *id))
-                .collect()
-        };
+        // The drawn rows, from the one seat the draw also reads
+        // ([`MenuRuntime::sell_list_rows`]), so the hand's row and the
+        // committed row are the same row.
+        let rows: Vec<(u8, u8)> = MenuRuntime::sell_list_rows(self.world)
+            .iter()
+            .map(|r| (r.slot, r.id))
+            .collect();
         if let Some(session) = self.shop_session.as_mut() {
             session.select_sell_row(slot as usize, &rows);
         }

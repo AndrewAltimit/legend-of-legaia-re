@@ -201,6 +201,15 @@ pub struct PauseItemsSession {
     /// Boxed to keep the session (and the `FieldMenuSubsession` enum
     /// carrying it) small.
     arrange_rank: Option<Box<crate::menu_arrange::ArrangeRankTable>>,
+    /// Bag slots in the **Use** list's order (`FUN_80030628` content id 3) -
+    /// the order the screen opens in and returns to. Empty on a disc-free
+    /// load, where no reorder happens at all.
+    use_order_slots: Vec<u8>,
+    /// Bag slots in the **Throw Out** list's order (content id `0x22`), which
+    /// is a different build of the same bag: an equipment piece sorts to the
+    /// tail whether or not its record refuses discard, and the key-item /
+    /// no-discard gates only change the ink. Empty on a disc-free load.
+    throw_out_slots: Vec<u8>,
     /// Flat hand position over [`Self::rows`] (all bag rows).
     cursor: usize,
     /// Set when the player backs out of the command window (Circle /
@@ -222,9 +231,25 @@ impl PauseItemsSession {
             staged_warp: None,
             exit_code: None,
             arrange_rank: None,
+            use_order_slots: Vec::new(),
+            throw_out_slots: Vec::new(),
             cursor: 0,
             closed: false,
         }
+    }
+
+    /// Attach the two per-command row orders the retail Items screen builds
+    /// (`FUN_80030628` content ids 3 and `0x22`), as bag-slot sequences. The
+    /// screen opens on the Use order and swaps to the Throw Out order when the
+    /// command window dispatches row 1.
+    pub fn with_command_row_orders(
+        mut self,
+        use_order_slots: Vec<u8>,
+        throw_out_slots: Vec<u8>,
+    ) -> Self {
+        self.use_order_slots = use_order_slots;
+        self.throw_out_slots = throw_out_slots;
+        self
     }
 
     /// Attach the Door of Wind destination rows (the visible placement
@@ -365,8 +390,19 @@ impl PauseItemsSession {
                 // and buzzes (SFX 0x23) on an empty bag.
                 if cross && !self.bag_empty() {
                     match self.command_cursor {
-                        0 => self.focus = PauseItemsFocus::List,
-                        1 => self.focus = PauseItemsFocus::ThrowOutList,
+                        0 => {
+                            self.reorder_rows_by_slot(&self.use_order_slots.clone());
+                            self.focus = PauseItemsFocus::List;
+                        }
+                        // Retail opens a *different* list window here (content
+                        // id `0x22`, window 16) with its own build, not the
+                        // Use list re-pointed: a key item dims in place, an
+                        // equipment piece sorts to the tail, and the
+                        // effect-flag-`0x8` group goes last.
+                        1 => {
+                            self.reorder_rows_by_slot(&self.throw_out_slots.clone());
+                            self.focus = PauseItemsFocus::ThrowOutList;
+                        }
                         _ => self.arrange(),
                     }
                 }
@@ -426,7 +462,9 @@ impl PauseItemsSession {
             PauseItemsFocus::ThrowOutList => {
                 if circle {
                     // Retail: list result 3 -> restore the id-15 list
-                    // window and return to submenu 5.
+                    // window and return to submenu 5. The window it restores
+                    // carries the Use build, so the order goes back too.
+                    self.reorder_rows_by_slot(&self.use_order_slots.clone());
                     self.focus = PauseItemsFocus::Command;
                     return;
                 }
@@ -545,6 +583,30 @@ impl PauseItemsSession {
         let mut remaining: Vec<PauseItemRow> = std::mem::take(&mut self.rows);
         for (id, _) in pairs {
             if let Some(at) = remaining.iter().position(|r| r.id == id) {
+                reordered.push(remaining.remove(at));
+            }
+        }
+        reordered.extend(remaining);
+        self.rows = reordered;
+        self.inner.items = self.rows.iter().map(|r| r.id).collect();
+        self.inner.refresh_filter();
+        self.cursor = 0;
+    }
+
+    /// Permute the visible rows into the order `slots` names, keeping the
+    /// inner session's parallel id list in lockstep (the same pairing
+    /// [`Self::arrange`] maintains). Slots the current row set does not hold
+    /// are skipped, and any row the order does not name keeps its relative
+    /// position at the tail - so a stale order degrades to "no reorder"
+    /// rather than to a lost row.
+    fn reorder_rows_by_slot(&mut self, slots: &[u8]) {
+        if slots.is_empty() {
+            return;
+        }
+        let mut remaining: Vec<PauseItemRow> = std::mem::take(&mut self.rows);
+        let mut reordered = Vec::with_capacity(remaining.len());
+        for &slot in slots {
+            if let Some(at) = remaining.iter().position(|r| r.slot == slot) {
                 reordered.push(remaining.remove(at));
             }
         }

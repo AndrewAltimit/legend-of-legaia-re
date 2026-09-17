@@ -71,14 +71,21 @@
 //!    hole sits above the selection or one id occupies two slots
 //!    ([`docs/subsystems/inventory.md`](../../../docs/subsystems/inventory.md)).
 //!
-//!    The two siblings stay unwired on a narrower blocker than the bag: each
-//!    reads a **table the engine does not carry**. [`build_throw_out_rows`]
-//!    needs the equipment record's `+7` flags byte
-//!    (`0x80074F68[subtype*8 + 7]`, [`legaia_asset::equip_stats`]), which no
-//!    engine table exposes; [`build_price_gated_rows`] needs the item
-//!    record's `+2` price halfword for **every** id, and the only price
-//!    source the shop session has is its own stock list, whose fallback for
-//!    an id it does not sell is `1` - a gate that can never dim a row.
+//!    The two siblings are wired too, on the tables the "no engine table
+//!    carries this" note was wrong about. [`build_price_gated_rows`] wants the
+//!    item record's `+2` price halfword for **every** id, which is exactly
+//!    what [`crate::shop_catalog::ShopItemData`] holds - both hosts install it
+//!    at boot for the merchant-record scan - not the open shop's stock list,
+//!    whose answer for an unstocked id is a floor of `1`.
+//!    [`build_throw_out_rows`] wants the equipment record's `+7` flags byte
+//!    (`0x80074F68[subtype*8 + 7]`), and `World::tables.equip_stats` now keeps
+//!    the raw records the derived modifier table drops.
+//!
+//!    Wiring the sell list closed a divergence as well: the drawn rows were
+//!    id-sorted and the committed row was a slot walk, so on a bag whose slot
+//!    order is not ascending by id the player sold a different stack than the
+//!    hand was on. Both sides read one seat now
+//!    ([`crate::menu_runtime::MenuRuntime::sell_list_rows`]).
 //!
 //! Which window each builder fills is not a guess: the menu-overlay
 //! descriptor table ([`legaia_asset::menu_windows`]) carries the content id
@@ -456,12 +463,13 @@ pub fn build_use_list_rows(
 /// the Items **Throw Out** list row build; `see
 /// ghidra/scripts/funcs/80030628.txt`).
 ///
-/// NOT WIRED: the bag is slot-indexed now, so the blocker is narrower than it
-/// was - this builder reads the equipment record's `+7` flags byte through
-/// [`ItemRowTables::equip_flags`], and no engine table carries it. The
-/// world's row-table adapter answers `0` there, which would draw every
-/// no-discard piece as discardable; wiring it on that answer would claim a
-/// gate the port cannot evaluate. See family 3 in the module heading.
+/// Wired through `World::bag_throw_out_rows`. The Items screen takes the
+/// resulting bag-slot order and permutes its rows into it when the command
+/// window dispatches Throw Out, restoring the Use order on the way back -
+/// which is what retail does by opening a different list window (content id
+/// `0x22`, window 16) with its own build. The `+7` flags byte the gate reads
+/// now has a carrier: `World::tables.equip_stats` holds the raw stat-bonus
+/// records, installed at boot by both hosts.
 ///
 /// Same three-buffer shape as the Use list with a discardability gate
 /// instead of the usability chain:
@@ -512,12 +520,13 @@ pub fn build_throw_out_rows(
 /// PORT: FUN_80030628 (content-id-2 case, `0x80030694..0x80030824` - the
 /// price-gated bag list; `see ghidra/scripts/funcs/80030628.txt`).
 ///
-/// NOT WIRED: the owner is the shop session's sell list, and the blocker is
-/// the price source, not the bag. The gate is the **item record's** `+2`
-/// halfword for every id; `crate::shop::ShopInventory::sell_price` answers
-/// `1` for any id the open shop does not stock, so a gate driven by it can
-/// never dim a row. `World::bag_sell_rows` is the seat, waiting on a
-/// per-id price table. See family 3 in the module heading.
+/// Wired through `World::bag_sell_rows` and
+/// `crate::menu_runtime::MenuRuntime::sell_list_rows`, which both the shop's
+/// sell-list draw and its sell commit read on both hosts. The price source is
+/// `crate::shop_catalog::ShopItemData` - the item record's `+2` halfword for
+/// every id, already installed at boot - and **not** an open shop's stock
+/// list, whose answer for an id it does not sell is a floor of `1` that can
+/// never dim a row.
 ///
 /// The shop-sell shape: rows with a non-zero item price stay white in
 /// place; zero-price rows (unsellable) dim and sort last. No third
