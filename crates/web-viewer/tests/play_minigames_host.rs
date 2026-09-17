@@ -269,6 +269,31 @@ fn dance_door_warp_draws_the_hall_and_start_leaves() {
         return;
     };
     warp_into(&mut rt, SUB_DANCE, "Dance", "dance");
+    // The dance opens on its pre-song count-in, and the count-in banner is
+    // NOT a font row: with the hall's HUD page resident it is retail's own
+    // `READY...` sprite, emitted into the screen-prim pass. So the frame's
+    // content is asserted where it actually is - a text-row assertion here
+    // would be asserting the placeholder the sprite replaced.
+    assert!(
+        rt.play_screen_prim_count() >= 1,
+        "the count-in banner draws as screen-space primitives"
+    );
+    // Run the count-in out; the status readout (and its font rows) arm
+    // behind it.
+    let mut armed = false;
+    for _ in 0..16 {
+        tick(&mut rt, 20);
+        let ov: serde_json::Value =
+            serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json");
+        if ov["open"].as_bool() == Some(true) {
+            armed = true;
+            break;
+        }
+    }
+    assert!(
+        armed,
+        "the dance status readout arms once the count-in clears"
+    );
     assert_hud_rows(&mut rt, "dance");
     assert!(
         rt.play_mg_dance_body_ready(),
