@@ -150,13 +150,18 @@ pub struct ModelRef {
 /// `FUN_8003A1E4`. Op `0x0E` sign-extends a halfword operand; the spawner
 /// reads a plain `lbu` byte, so only the former can present an id `>= 0x8000`.
 ///
-/// PORT: FUN_80024E08 - the model re-bind's id resolve (`+0x5C = 0`,
-/// `+0x64 = id`, reload); the `+0x60` mirror it writes when `_DAT_8007B83C`
-/// is `0xF` is a game-mode branch the engine has no seat for.
-/// REF: FUN_8003A1E4 - the `0xF0` split this function performs is not in
-/// `FUN_80024E08` at all: it is in the two callers, `0x8003A2CC..0x8003A328`
-/// inside the placement spawner and the scripted-motion VM's op-`0x0E` arm at
-/// `0x800393B8`, each choosing a bank base before the resolve.
+/// PORT: FUN_8003A1E4 - the placement spawner's bank select at
+/// `0x8003A2CC..0x8003A328`: `sltiu ...,0xF0` at `0x8003A2DC`, then either the
+/// scene base `lhu` at `0x8003A2F0` or, on the other arm, `+0xFF10` (`-0xF0`)
+/// with the player base `lhu` at `0x8003A314` and the translucent bit
+/// materialised at `0x8003A304`. The scripted-motion VM's op-`0x0E` arm at
+/// `0x800393B8..0x8003942C` is the same select instruction for instruction,
+/// over a sign-extended halfword instead of the spawner's `lbu` byte.
+/// REF: FUN_80024E08 - what both arms then *call*, with the resolved pool
+/// index already in `a1`. That body holds no `0xF0` compare and no bank base;
+/// it re-binds the actor (`+0x5C = 0`, `+0x64 = id`, reload), and the `+0x60`
+/// mirror it writes under `_DAT_8007B83C == 0xF` is a game-mode branch the
+/// engine has no seat for.
 pub fn resolve_model_id(id: i16) -> ModelRef {
     let raw = id as u16;
     if raw < SPECIAL_MODEL_THRESHOLD {
