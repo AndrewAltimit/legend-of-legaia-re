@@ -15,6 +15,8 @@ mod catalogs;
 mod common;
 #[path = "asset/dispatch.rs"]
 mod dispatch;
+#[path = "asset/field_census.rs"]
+mod field_census;
 #[path = "asset/minigame.rs"]
 mod minigame;
 #[path = "asset/overlay.rs"]
@@ -39,6 +41,7 @@ mod worldmap;
 use actors::*;
 use catalogs::*;
 use dispatch::*;
+use field_census::*;
 use minigame::*;
 use overlay::*;
 use packs::*;
@@ -1041,6 +1044,28 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Disc-wide field-VM **opcode census**: walk every scene MAN (the
+    /// bundle's and every streaming variant's) plus every raw event-script
+    /// carrier, decode the bytecode, and count occurrences per opcode - with
+    /// `0x4C` / `0x43` / `0x45` / `0x49` / `0x34` broken out by sub-arm.
+    /// Answers "does any shipped scene carry op X" for an arbitrary op, which
+    /// no byte scan can (every opcode value occurs inside message text).
+    FieldOpCensus {
+        /// Directory of extracted PROT entries (e.g. `extracted/PROT`).
+        dir: PathBuf,
+        /// CDNAME.TXT, for the scene-name column.
+        #[arg(long)]
+        cdname: Option<PathBuf>,
+        /// Write the per-carrier x per-op table here as CSV.
+        #[arg(long)]
+        csv: Option<PathBuf>,
+        /// Report only this op (`4C CF`, `4CCF`, `39`), listing its carriers.
+        #[arg(long)]
+        only: Option<String>,
+        /// With `--only`: print the decoded neighbourhood of every clean hit.
+        #[arg(long, default_value_t = false)]
+        context: bool,
+    },
     /// Targeted validation: walk PROT entries that correspond to the first
     /// entry of each named CDNAME block. Each is tested with strict layout
     /// and (when applicable) magic checks.
@@ -1498,6 +1523,19 @@ fn main() -> Result<()> {
             max_regions,
         } => man_one(&input, with_encounter, max_formations, max_regions),
         Cmd::ManScan { dir, cdname, json } => man_scan(&dir, cdname.as_deref(), json),
+        Cmd::FieldOpCensus {
+            dir,
+            cdname,
+            csv,
+            only,
+            context,
+        } => field_op_census(
+            &dir,
+            cdname.as_deref(),
+            csv.as_deref(),
+            only.as_deref(),
+            context,
+        ),
         Cmd::MonsterArchive {
             input,
             id,

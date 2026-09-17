@@ -42,6 +42,7 @@
 //! (`legaia_asset::field_disasm::<Item>`, and the `legaia-engine-vm`
 //! re-export) keep resolving.
 
+mod census;
 mod decode;
 mod decode_subops;
 mod packet;
@@ -49,6 +50,7 @@ mod render;
 mod types;
 mod walker;
 
+pub use census::*;
 pub use decode::*;
 pub use packet::*;
 pub use render::*;
