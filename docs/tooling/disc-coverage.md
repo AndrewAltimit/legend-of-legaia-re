@@ -868,6 +868,16 @@ counted under the reject class `zero_window_head`. That is the
 base is corroborated by the bytes at the entry reproducing in one image, and
 when those bytes are zeros every image reproduces them.
 
+The two tests are deliberately not the same test, and the difference is where
+each sits. This one demands an *unbroken* run of `nop`s from the entry, because
+it withdraws a whole extent - real code further in is real coverage, and the
+only question is whether the entry corroborates the base. The attribution
+sweep's is the weaker `< 3 non-nop` one, because it only decides which of
+several candidate images gets credited, and one stray word cannot decide that.
+One dump sits between them: the longest extent at the corpus's zero-hole VA has
+a single non-`nop` word inside its head, so it clears this test and the
+attribution sweep is what strips its credit.
+
 Removing the false credit moves floors in **both** directions, which is the tell
 that it was an attribution error rather than lost coverage: most images gain,
 because extents the zero windows had made ambiguous for several images stop
