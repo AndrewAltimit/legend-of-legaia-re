@@ -458,8 +458,8 @@ a tile some *other* site queried.
 
 The bit cannot arrive by accident. The word's per-mode reseed copies a `u16` out
 of the mode table, so the whole upper half starts clear on every mode change, and
-only a script raises it - ops `0x2E` / `0x2F` with operand `0x16`. Fifteen of the
-disc's scenes carry such a site. That makes "does this scene follow the camera
+only a script raises it - ops `0x2E` / `0x2F` with operand `0x16`. Eight of the
+disc's scenes carry such a site (`ropeway`, `station`, `tunnela`, `tunnelb`, `tunnelc`, `nilboa`, `nilboa2`, `noaru`; a count of fifteen once matched the masked bit in desynced records). That makes "does this scene follow the camera
 per frame" a property of the scene's own data rather than of the engine, which is
 why a port must read it rather than pick a policy. The arms and the other seven
 query sites are in
