@@ -414,11 +414,9 @@ descriptor drops.
 
 | group | n | addresses | why |
 |---|---|---|---|
-| `cd_dma.rs` | 7 | `8003de7c` `8003e800` `8003e8a8` `8003eb98` `8003f128` `8005ea84` `8003dda0` | **Re-verdicted `REPLACED-BY`** - see below. `ProtCdDmaHost` is constructed only inside `#[cfg(test)]` and the disc-gated `cd_dma_real_prot` test; no crate outside `engine-core` names `cd_dma`, and `overlay_loader`'s only non-test implementor is that same test-only host. |
-| `stream_file.rs` | 5 | `800558fc` `80055a5c` `800559ec` `80055ac8` `8003e964` | **Re-verdicted `REPLACED-BY`** - see below. `StreamFileHost` has exactly one production mention - its own `impl` line. Every construction is a unit test or the disc-gated `stream_file_real` oracle. |
+| `cd_dma.rs` | 1 | `8003dda0` | **Re-verdicted `REPLACED-BY`** - see below. `ProtCdDmaHost` is constructed only inside `#[cfg(test)]` and the disc-gated `cd_dma_real_prot` test; no crate outside `engine-core` names `cd_dma`, and `overlay_loader`'s only non-test implementor is that same test-only host. Six sibling addresses have left this page - see below. |
+| `stream_file.rs` | 2 | `800559ec` `80055ac8` | **Re-verdicted `REPLACED-BY`** - see below. `StreamFileHost` has exactly one production mention - its own `impl` line. Every construction is a unit test or the disc-gated `stream_file_real` oracle. Three sibling addresses have left this page - see below. |
 | `mode.rs` | 4 | `80017978` `80025eec` `80025f2c` `80025f74` | Closed: `mode::ModeSeat` wraps `ModeDriver` and `engine-shell`'s `BootSession` owns one, driving it every frame; `World::tick` resolves `runs_master_frame_driver` (and so `per_frame_stage`) on every host. |
-| `sound_state.rs` | 1 | `80020038` | `DRAW_ENV_INIT` is read at three sites, all inside that file's `#[cfg(test)]` block. |
-| `scene_bundle.rs` | 1 | `80020118` | `field_load_entry_plan` is called at three sites, all in that file's `#[cfg(test)]` block. |
 | `prize_exchange.rs` | 1 | `801dc1cc` | Closed: `World::try_arm_prize_exchange` (op-`0x49` sub-op 7) stages the session and `MenuRuntime::tick` drives it on both hosts; the koin1 interaction oracle `prize_exchange_disc.rs` reaches it from a real record. |
 | `scene_name_sync.rs` | 1 | `8001d7f8` | `sync_scene_name` is called only from that file's tests. Two anchors share the address - the `fn` and a `//! PORT:` module tag - and it is the module tag that carries the liveness verdict, so both need the disclosure. |
 | `save_select.rs` | 1 | `801e3294` | Closed: the same flow keeps a `CardIoMachine` for as long as a card screen is up and advances it through `card_frame_tick` each frame, with the poll status taken from the host's own block backend. |
@@ -436,24 +434,35 @@ is the odd-indexed per-frame modes the port's own tag claims.
 `replay-port-coverage.py --page-audit` joins every address this page cites
 against the catalog, and reports the ones that are ported but no longer live -
 because such a row belongs to `--live-audit`, not to a page about what a
-playthrough executes. It names **14**, and the split is the interesting half:
+playthrough executes. It found fourteen, and the split is the interesting half:
 
-- **Ten carry `REPLACED-BY:`** - `8003de7c` `8003e800` `8003e8a8` `8003e964`
-  `8003eb98` `8003f128` `800558fc` `80055a5c` `8005ea84` `801dbb8c`. The whole
-  `cd_dma.rs` / `stream_file.rs` cluster above is now exempt: a synchronous
-  read through `crate::scene::ProtIndex` has nothing left to wait for, so
-  `FUN_8003DE7C`'s 127 `jal` sites are a heavily-used *retail* routine whose
-  job the port does by construction, not a port nobody calls. `801dbb8c` is the
-  same shape one layer up - it registers a retained-mode SCUS text actor, and
+- **Ten carry `REPLACED-BY:`** - most of the `cd_dma.rs` / `stream_file.rs`
+  cluster above, plus the battle party panel's label-actor lifecycle. That
+  cluster is now exempt: a synchronous read through `crate::scene::ProtIndex`
+  has nothing left to wait for, so the CD-DMA read's 127 `jal` sites are a
+  heavily-used *retail* routine whose job the port does by construction, not a
+  port nobody calls. The panel row is the same shape one layer up - retail
+  registers a retained-mode SCUS text actor, and
   `legaia_engine_ui::battle_hud_draws_for` rebuilds every `TextDraw` from the
   live model each frame, so there is no handle to hold.
-- **Four carry `NOT WIRED:`** - `80020038` `80020118` `801d84c0` `801dbc30`.
-  These are still the declared wiring worklist and stay here.
+- **Four carry `NOT WIRED:`** - the `DRAW_ENV_INIT` values, the field
+  load-entry plan, and the battle party panel's label build and cross-out
+  mark. These are still the declared wiring worklist.
 
 The distinction is not bookkeeping: a `REPLACED-BY` row is out of the wiring
 denominator entirely, so counting it as a gap states work that will never be
-done. Re-run `--page-audit` before quoting any row in this section - it needs
-no coverage export and answers in seconds.
+done.
+
+All fourteen addresses have since been **removed from this page**, which is
+what the audit was asking for and not what it originally got: the first pass
+wrote the finding up here and left the citations in place, so the next
+`--page-audit` run reported the same fourteen and the section explaining them
+was itself the reason they were still cited. A disclosed `NOT WIRED:` row is
+`--live-audit`'s and
+[`live-audit-triage.md`](live-audit-triage.md)'s; the addresses live in
+`target/port-catalog/catalog.csv`, which is where a verdict should be read
+from anyway. Re-run `--page-audit` before quoting any row in this section - it
+needs no coverage export and answers in seconds.
 
 One rename fell out of the re-key pass and is worth knowing about, because it
 is a graph property rather than a style choice. `StreamFileHost::seek` was the
@@ -831,8 +840,8 @@ about the cells that outlived their own fixtures.
 | `world/narration.rs` | 1 | `8003cf7c` | Closed: the same ladder drives the inline field-VM conversation path, as opposed to the pre-decoded dialog panel every other ladder drives |
 | `world/battle/stats.rs` + `battle_formulas/escape.rs` | 1 | `801e791c` | Closed: `battle_flee_ladder` is a canonical member now, and its first rung is an **assured** escape that leaves the battle |
 | `fade.rs` | 1 | `80020b00` | Closed with it: `victory.rs`'s `BattleEndCause::Escaped` arm loads `escape_fade_template()` on the teardown that same rung reaches |
-| `world/vm_hosts.rs` (op `4C EA`) | 1 | `8003c7ec` | A scene script that issues the **scripted game-over** op. The handler is on the live dispatch path of both hosts (`engine-vm`'s `nibble_e` arm calls it unconditionally at the op); what no ladder drives is a carrier. The fixture shape exists - `w2b_fmv_handoff_ladder` slices a record at its op and runs it - and the missing instrument is named [below](#no-op-census-stands-behind-these-two-rows) |
-| `equipment.rs` + `world/vm_hosts.rs` (op `4C 52`) | 1 | `800430ac` | The TAKE_ITEM op's **fallback**: `party_unequip_accessory_by_id`'s only production caller is the op arm, and the op reaches it only when the bag misses, so the row is gated twice over - a script that confiscates, on a party wearing rather than carrying. Same missing instrument |
+| `world/vm_hosts.rs` (op `4C EA`) | 1 | `8003c7ec` | A scene script that issues the **scripted game-over** op. The handler is on the live dispatch path of both hosts (`engine-vm`'s `nibble_e` arm calls it unconditionally at the op); what no ladder drives is a carrier. The [op census](#the-op-census-names-both-carriers) now names it: one record of one world-map scene. The fixture shape exists - `w2b_fmv_handoff_ladder` slices a record at its op and runs it |
+| `equipment.rs` + `world/vm_hosts.rs` (op `4C 52`) | 1 | `800430ac` | The TAKE_ITEM op's **fallback**: `party_unequip_accessory_by_id`'s only production caller is the op arm, and the op reaches it only when the bag misses, so the row is gated twice over - a script that confiscates, on a party wearing rather than carrying. The [op census](#the-op-census-names-both-carriers) names three carriers; the second gate is what is left |
 | `publisher_logos.rs` | 1 | `801cefd4` | The **boot chain**. `PublisherLogosSession` is constructed on both hosts (`window/run.rs`; `web-viewer::boot_title::boot_logos_start`), and every union ladder starts at a scene or a battle rather than at boot. One rung would do it: open the logo phase and step the sequencer to its end |
 
 Nine of those eleven rows were converted by ladders that already existed and
@@ -863,22 +872,37 @@ both distinctions survive the row:
   question the ladder deliberately does not answer, and its own test name says
   so.
 
-#### No op census stands behind these two rows
+#### The op census names both carriers
 
 `8003c7ec` and `800430ac` are the first rows on this page whose bucket turns on
 a question about the **disc's own bytecode** - does any shipped scene carry op
-`4C EA` / `4C 52` at a decoded opcode boundary - and nothing here can answer it.
+`4C EA` / `4C 52` at a decoded opcode boundary. Nothing here could answer it:
 `legaia-engine man-scripts` has a disc-wide walk with the field-VM
 disassembler behind `--system-flag-census`, `--motion-flag-census` and
-`--op49-window-census`, but each reports one *family* of ops; there is no
-census keyed on an arbitrary opcode. A byte scan is not a substitute - that is
-the false-positive trap the scripted-encounter hunt already records, where
-every `0x37` / `0x41` byte in dialog text reads as a hit.
+`--op49-window-census`, but each reports one *family* of ops. A byte scan is
+not a substitute - that is the false-positive trap the scripted-encounter hunt
+already records, where every `0x37` / `0x41` byte in dialog text reads as a hit.
 
-So both rows are filed `(a)` on the strength of the handler being on the live
-dispatch path, and the ladder that would convert them cannot be written until
-the carrier is known. Generalising one of the three existing censuses to an
-arbitrary op is the cheap version, and it would settle both rows at once.
+[`field-op-census.md`](field-op-census.md) is the missing instrument, keyed on
+an arbitrary opcode and broken out by sub-arm, and it answers both rows:
+
+- **`4C EA`** has exactly **one** coherent occurrence disc-wide, in the
+  world-map bundle `map03`, partition 2 record 9 - a named scene change, a
+  self-looping jump, the op, then a wait and another self-loop. A scripted
+  hand-off that never returns.
+- **`4C 52`** has **three**, in `geremi` and in the two variants of the
+  `ropeway` scene, which carry the same confiscating script.
+
+Both stay `(a)`, and the reason has changed: it is no longer "no instrument
+says whether a carrier exists" but "the carrier is known and reaching it is a
+story-state fixture". The `4C 52` row keeps its second gate as well - the op
+only falls through to the unequip leg when the bag misses, so the fixture has
+to put the item on a character rather than in the bag.
+
+The general rule the census adds to this page: **a clean count of zero means
+no shipped scene reaches that arm through the field VM's own bytecode**, which
+moves a row out of `(a)` NO-LADDER and into `(d)` NOT-PLAYTHROUGH - there is no
+fixture to write. A non-zero count names the scene to write one against.
 
 #### The fishing pair: a precondition is not a screen, and the row was owed both
 
@@ -1099,7 +1123,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `battle_intro_styles.rs` | 1 | (a) | battle-render | `801d11d0` |
 | `battle_intro_swirl.rs` | 2 | (a) | battle-render | `801d1564` `801d1888` |
 | `battle_intro_transition.rs` | 1 | (a) | battle-render | `801cf1b0` |
-| `battle_party_panel.rs` | 3 | (c) | `801d84c0` / `801dbc30` disclosed (`panel_labels`, the cross-out mark) - see the [anchor note](#the-address-is-wired-and-its-anchor-is-not); `801dbb8c`, the label-actor lifecycle, is `REPLACED-BY` the immediate-mode HUD and owes no host | `801d84c0` `801dbb8c` `801dbc30` |
+| `battle_party_panel.rs` | 0 | (c) | Left this page: `panel_labels` and the cross-out mark are disclosed `NOT WIRED` and the label-actor lifecycle is `REPLACED-BY` the immediate-mode HUD, so all three addresses read inert and belong to `--live-audit`. The reason they are worth knowing about is the [anchor note](#the-address-is-wired-and-its-anchor-is-not) | - |
 | `battle_stream_slot.rs` | 2 | (c) | disclosed | `80055b4c` `801f17f8` |
 | `battle_target_group.rs` | 1 | (a) | battle-target | `801dceac` |
 | `camera_mover.rs` | 1 | (a) | field-render | `801dd310` |
@@ -1516,7 +1540,7 @@ gates:
 | address | why it stayed |
 |---|---|
 | `801f44a0` | resolved: `engine-core`'s `BattleHud::push_popup` delegates every popup push to `DamagePopupRing::push`, so simultaneous popups are ring-bounded on both battle-HUD hosts |
-| `801d84c0` `801dbb8c` `801dbc30` | `panel_anchors` is production-called (`engine-ui`'s `party_panel_stage_x` reads it for the roster name pens); the rest of `battle_party_panel.rs` (`panel_labels`, the label-actor lifecycle, `cross_out_mark`) stays disclosed `NOT WIRED` - and the address follows the *anchor*, see below |
+| the battle party panel's three | `panel_anchors` is production-called (`engine-ui`'s `party_panel_stage_x` reads it for the roster name pens); the rest of `battle_party_panel.rs` (`panel_labels`, the label-actor lifecycle, `cross_out_mark`) stays disclosed `NOT WIRED` - and the address follows the *anchor*, see below |
 | `801e1ab0` | content-gated: the streak needs a move-FX scene whose move-power record carries a non-zero trail texture page (`+0x0b`) |
 
 The party-panel row was the sharper finding: `engine-ui` reproduced
@@ -1539,7 +1563,7 @@ a bank would have read as "the arts-voice selector ran".
 
 ### The address is wired and its anchor is not
 
-`801d84c0` sat in the per-crate table as an `(a)` row reading *wired -
+The panel build's address sat in the per-crate table as an `(a)` row reading *wired -
 `party_panel_stage_x` reads `panel_anchors` on every battle-HUD frame*. The
 sentence is true and the row was wrong, because a bucket is a property of the
 **anchor**, not of the retail routine. `FUN_801D84C0` is retail's panel build +
@@ -1553,14 +1577,15 @@ verdicts:
   model the four label buffers at all).
 
 The third address of the trio has since parted company with the other two.
-`801dbb8c` registers a **retained-mode** SCUS text actor and stashes its handle;
+The label-actor lifecycle registers a **retained-mode** SCUS text actor and
+stashes its handle;
 the port's battle HUD rebuilds every `TextDraw` from the live model each frame
 on both hosts, so there is no handle to hold and no host is owed one. It carries
-`REPLACED-BY:` and is out of the wiring denominator, while `801d84c0` and
-`801dbc30` remain declared gaps.
+`REPLACED-BY:` and is out of the wiring denominator, while the panel build
+and the cross-out mark remain declared gaps.
 
 So every instrument that keys on the address answers for `panel_labels`, and
-the catalog reads `801d84c0` inert with a disclosure. Crediting the row as
+the catalog reads it inert with a disclosure. Crediting the row as
 wired credited the *unported* half. The row is filed `(c) disclosed` with its
 two siblings.
 

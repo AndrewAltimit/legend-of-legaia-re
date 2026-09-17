@@ -148,8 +148,40 @@ Small per-actor / per-scene writes (slot table, camera-zone query, sound trigger
 - **Sub-3** is a 2-byte script-table teleport (resolves `func_0x8003C8F0(field_50, 0)` then writes `world_x/z` via the standard tile-center `b * 0x80 + 0x40` formula).
 - **Sub-5/6** are 4-byte conditional-jump pair (jump-if-zero / jump-if-nonzero): both read a 16-bit flag index via [`load_u16_le`](script-vm.md#helper-functions), query the host's trigger-flag bank, and advance PC += 4 in both branches (the original's "joined" tail at `LAB_801E28C4` returns `param_2 + 4` either way).
 - **Sub-0xA/0xB/0xC** are the 5-byte slot-table writes `[4C, 0xCN, slot, lo, hi]` on the u16 array at `0x801C6460`: sub-A sets, sub-B adds, sub-C subtracts (B/C substitute the per-frame tick `_DAT_1F800393` when the literal is `0xFFFF`). The read side is op `0x4E` sub-ops 5..8 (`slot = sub - 5`; [script-vm.md](script-vm.md) op table) - together they form script-visible counters/timers (e.g. cave01's interact counter gating the `0x15D` beat-key spawn).
-- **Sub-0xF** is a position broadcast: 4-byte `[4C, 0xCF, b1, b2]` resolves each byte to either the actor's world coord (`0xFF`), the tile-center conversion (non-zero), or 0; advances by 4.
+- **Sub-0xF** is the **script camera-focus override**, not a "position broadcast": 4-byte `[4C, 0xCF, x, z]`, arm at `0x801E2A34`. See [below](#4c-cf-is-the-script-camera-focus-override) for where the two values go and who reads them.
 - **Sub-9** is a 2-byte global-pair compare gate: PC += 2 unless `_DAT_8007BAB8 != _DAT_8007BA9C`, then halts.
+
+##### `4C CF` is the script camera-focus override
+
+The arm at `0x801E2A34` zeroes two halfwords and then conditionally rewrites
+each from its own operand byte: `0xFF` takes the subject actor's live world
+coordinate (`+0x14` for X at `0x801E2A54`, `+0x18` for Z at `0x801E2A8C`), a
+zero byte leaves the halfword cleared, and any other byte is the tile-centre
+conversion `(b << 7) + 0x40`. The PC advances by 4 through the dispatcher's
+`+4` epilogue at `0x801E3620`.
+
+The destinations are `_DAT_8007B628` (X) and `_DAT_8007B62A` (Z), and naming
+them is what makes the arm legible, because **the write is not the point - the
+reader is.** The focus clamp `FUN_801DAA50` ends by testing each of the two
+halfwords and, when non-zero, storing its **negation** into the field camera's
+focus point: `0x80089118` for X at `0x801DAB68`, `0x80089120` for Z at
+`0x801DAB84`. Those are the two words the field view builder reads as the
+MVMVA's translation input, so the op moves the camera's look-at target - and a
+zero halfword is not a coordinate of zero, it is "no override", which is why
+the arm clears both before writing either.
+
+All eight references to the pair disc-wide are in the field overlay: the two
+`lh` reads in the clamp, and the six stores of this one arm
+(`find-gp-relative-refs.py 0x310 0x312`, `$gp = 0x8007B318`). An absolute-word
+scan sees none of them - both forms here are `lui`+`sh` pairs, which is the
+shape that scan is structurally blind to.
+
+**One scene uses it.** The [op census](../tooling/field-op-census.md) puts 46
+coherent occurrences in `uru` (PROT 0435) and none anywhere else, with the hits
+sitting beside `0x45 C0` camera applies and `CamCfg` writes - a single scene's
+hand-framed shots. So the override is live disc data rather than vestigial
+code, and it is also not a mechanism the port needs for ninety-odd other
+scenes.
 
 #### 0x4C nibble 0xD0..0xDF - party state + inverted-Y mirror cluster
 

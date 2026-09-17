@@ -88,6 +88,33 @@ kind-8..11 `NccMode` in [`prim_dispatch`](../../crates/engine-vm/src/prim_dispat
 is a static data model with no runtime consumer (wire it only if a lit mesh path -
 e.g. a 3D world-map renderer - is ever built).
 
+**A disc-wide `cop2` census closes the static half of that question.** The light
+matrix is consumed *implicitly* - by the GTE's own normal-colour commands, which
+multiply an input normal by `L` before anything else - so "who reads what
+`FUN_8001ADA4` stages at `0x8001B34C..0x8001B368`" is a census of opcodes, not
+an xref query. `scripts/ghidra-analysis/find-gte-light-consumers.py` sweeps
+`SCUS_942.54` plus every statically based overlay image for GTE command words
+and reports **five** light-matrix consumer sites disc-wide, every one of them in
+SCUS, inside those same four handlers: `NCCS` at `0x800441C8`, `0x800443C8` and
+`0x80044750`, `NCCT` at `0x80044540` and `0x80044724`. No overlay image contains
+one at all, and `NCS` / `NCT` / `NCDS` / `NCDT` occur nowhere.
+
+Two numbers make that a bounded answer rather than an absence. `MVMVA` can also
+select the light matrix, through its `mx` field - the one consumer a normal-
+colour census would miss - and disc-wide **no** `MVMVA` does: 29 select the
+rotation matrix, one the colour matrix, none the light matrix. And the sweep's
+denominator is non-empty by its own count, 257 GTE command words in code across
+84 images. So the consumer set is exactly the four handlers, and the capture
+evidence above says no observed field frame enters them.
+
+The sweep's own trap is worth carrying: a GTE command word is four bytes with no
+relocation, so it occurs in data at the rate any four-byte pattern does. Raw
+hits included `"ATK "` inside a menu string and two words of PROT 0899's data
+segment. The discriminator is structural rather than statistical - the GTE takes
+no memory operands, so a real command is packed among the `lwc2` / `mtc2` /
+`mfc2` / `swc2` moves that feed and drain it, and the two data hits had **zero**
+distinct COP2 neighbours where every real one had five to eight.
+
 Why the earlier evidence looked open, and two instrument caveats. A lone prior
 `town01` capture (~31 K interp hits) showed the kind-11 NCC body and the fog bodies
 hot in roughly equal measure; against the cold-boot sweep's ~46 M hits with exactly
