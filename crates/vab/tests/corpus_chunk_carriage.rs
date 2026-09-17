@@ -29,6 +29,11 @@ fn extracted_prot_dir() -> Option<PathBuf> {
     None
 }
 
+/// Length of the VAG-body chunk: the VAB's declared size less its header part.
+fn report_body_len(fsize: usize, ps: usize) -> usize {
+    fsize - header_part_size(ps)
+}
+
 /// Share of 16-byte blocks at `off` whose filter nibble is legal (`0..=4`).
 fn legal_filter_share(buf: &[u8], off: usize, blocks_max: usize) -> f64 {
     let blocks = ((buf.len().saturating_sub(off)) / 16).min(blocks_max);
@@ -123,5 +128,92 @@ fn every_corpus_vab_is_carried_as_two_chunks() {
     );
     eprintln!(
         "[ok]    {checked} top-level VABs carried as two chunks; {displaced} with a chunk between the halves"
+    );
+}
+
+/// The spans a stream-aware parse reports are the real sample bodies, and the
+/// VAB-anchored resolution agrees with the stream-anchored one.
+///
+/// [`legaia_vab::vag_body_origin_at`] exists because a caller that has sliced a
+/// bank out of its entry no longer has chunk 0's header in front of it. Nothing
+/// about the resolution needs that header - the body chunk is found by walking
+/// forward - so the two must return the same offset on every retail carrier,
+/// and each of `parse_in_stream`'s spans must sit on a legal ADPCM grid.
+#[test]
+fn stream_aware_spans_land_on_real_bodies() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(prot) = extracted_prot_dir() else {
+        eprintln!("[skip] extracted/PROT missing - run `legaia-extract` first");
+        return;
+    };
+
+    let (mut checked, mut spans, mut moved) = (0usize, 0usize, 0usize);
+    for entry in std::fs::read_dir(&prot).expect("read extracted/PROT") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("BIN") {
+            continue;
+        }
+        let data = std::fs::read(&path).expect("read PROT entry");
+        if data.len() < 0x40 || &data[4..8] != b"pBAV" {
+            continue;
+        }
+        let Ok(plain) = parse(&data, 4) else {
+            continue;
+        };
+        let staged = legaia_vab::parse_in_stream(&data, 0).expect("stream-aware parse");
+        assert_eq!(
+            legaia_vab::vag_body_origin_at(&data, 4).expect("VAB-anchored origin"),
+            vag_body_origin(&data, 0).expect("stream-anchored origin"),
+            "{}: the two body-origin resolutions disagree",
+            path.display()
+        );
+        // The size table tiles the body chunk exactly - an independent check on
+        // the origin, since a wrong one would not end where the chunk does.
+        let body_len = report_body_len(staged.header.fsize as usize, staged.header.ps as usize);
+        let sized: usize = staged.vag_samples.iter().map(|s| s.size).sum();
+        assert_eq!(
+            sized,
+            body_len,
+            "{}: the VAG sizes do not tile the body chunk",
+            path.display()
+        );
+        for (a, b) in plain.vag_samples.iter().zip(&staged.vag_samples) {
+            assert_eq!(a.size, b.size, "{}: sizes must not move", path.display());
+            // A declared `vs` can exceed the populated table (a trailing slot
+            // whose size word is zero). Nothing is uploaded for one.
+            if b.size == 0 {
+                continue;
+            }
+            assert!(
+                b.byte_offset > a.byte_offset,
+                "{}: the real body cannot precede the walked one",
+                path.display()
+            );
+            if b.byte_offset != a.byte_offset + 4 {
+                moved += 1;
+            }
+            // Each body is its own grid: every 16-byte block's filter nibble
+            // is legal where the span is right and is a coin flip where it is
+            // not, so this is a measurement of the offset, not of the codec.
+            assert!(
+                legal_filter_share(&data[..b.byte_offset + b.size], b.byte_offset, b.size / 16)
+                    > 0.99,
+                "{}: sample {} at {:#x} is not an ADPCM grid",
+                path.display(),
+                b.index,
+                b.byte_offset
+            );
+            spans += 1;
+        }
+        checked += 1;
+    }
+    assert!(checked > 100, "expected many carriers, found {checked}");
+    assert!(spans > 0, "expected sample spans to check");
+    eprintln!(
+        "[ok]    {checked} carriers, {spans} sample spans on a legal grid; \
+         {moved} spans move by more than the body chunk's own header"
     );
 }

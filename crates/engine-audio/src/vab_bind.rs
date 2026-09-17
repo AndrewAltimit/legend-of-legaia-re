@@ -92,17 +92,65 @@ pub struct VabBank {
     pub programs: Vec<VabProgram>,
 }
 
+/// Where a VAB's first VAG body really is, in `bank_buf`'s coordinates.
+///
+/// Two things have to be resolved here and they used to cancel out, which is
+/// why neither was visible.
+///
+/// **The base.** Callers pass `bank_buf` in one of two conventions: the whole
+/// buffer the report was parsed against (so `VagSampleSpan::byte_offset` is a
+/// valid index straight away), or that buffer re-sliced at the VAB, in which
+/// case every index is `report.header_offset` too large. The `pBAV` magic is
+/// the landmark that says which: it is at `header_offset` in the first
+/// convention and at 0 in the second.
+///
+/// **The origin.** A retail VAB is two chunks of a DATA_FIELD stream, and
+/// `legaia_vab::parse` walks straight on from the VAG size table onto the body
+/// chunk's own 4-byte header - so its spans are four bytes early where the
+/// body chunk comes next, and thousands of bytes early where a SEQ chunk
+/// intervenes. `legaia_vab::vag_body_origin_at` reads the real origin by
+/// walking forward for the chunk whose payload is `fsize - header part`.
+///
+/// Over the 218 retail stream-carried VABs the two errors cancel exactly on
+/// 212: a caller re-slicing at `vab_off = 4` shifts the index forward by the
+/// same four bytes the origin is short. On the other six the SEQ chunk sits
+/// between the halves, the shifts do not match, and the upload put a slice of
+/// the sequence into SPU RAM as a sample body. Resolving both together keeps
+/// the 212 byte-identical and fixes the six.
+///
+/// Returns `(base, delta)`: subtract `base` from a span offset to index
+/// `bank_buf`, then add `delta` to reach the real ADPCM grid.
+fn body_frame(report: &VabReport, bank_buf: &[u8]) -> (usize, usize) {
+    const MAGIC: &[u8; 4] = b"pBAV";
+    let at = |o: usize| bank_buf.get(o..o + 4) == Some(&MAGIC[..]);
+    let vab_at = if at(report.header_offset) {
+        report.header_offset
+    } else if at(0) {
+        0
+    } else {
+        // Neither landmark: leave the caller's indexes alone.
+        return (0, 0);
+    };
+    let walked = vab_at + legaia_vab::header_part_size(report.header.ps as usize);
+    let delta = legaia_vab::vag_body_origin_at(bank_buf, vab_at)
+        .ok()
+        .and_then(|o| o.checked_sub(walked))
+        .unwrap_or(0);
+    (report.header_offset - vab_at, delta)
+}
+
 impl VabBank {
     /// Upload every VAG body in `report` into `spu`'s RAM, allocating
-    /// through `alloc`. The raw `bank_buf` is the same byte slice that
-    /// was passed to `legaia_vab::parse` so `VagSampleSpan::byte_offset`
-    /// indexes are valid.
+    /// through `alloc`. `bank_buf` is either the buffer `legaia_vab::parse`
+    /// was given or that buffer re-sliced at the VAB; [`body_frame`] resolves
+    /// which, and where the bodies really begin.
     pub fn upload(
         spu: &mut Spu,
         alloc: &mut SpuAllocator,
         report: &VabReport,
         bank_buf: &[u8],
     ) -> Self {
+        let (base, delta) = body_frame(report, bank_buf);
         let mut samples: Vec<Option<UploadedVag>> = Vec::with_capacity(report.vag_samples.len());
         spu.ram.set_direction(TransferDirection::CpuToSpu);
         for span in &report.vag_samples {
@@ -110,7 +158,17 @@ impl VabBank {
                 samples.push(None);
                 continue;
             }
-            let body = &bank_buf[span.byte_offset..span.byte_offset + span.size];
+            let start = span.byte_offset - base + delta;
+            let Some(body) = bank_buf.get(start..start + span.size) else {
+                log::warn!(
+                    "vab_bind: VAG body {} ({} B at {start:#x}) escapes the {} B bank buffer",
+                    span.index,
+                    span.size,
+                    bank_buf.len()
+                );
+                samples.push(None);
+                continue;
+            };
             // Allocate aligned to 16 (one ADPCM block).
             match alloc.alloc(span.size as u32) {
                 Some(addr) => {
@@ -789,5 +847,64 @@ mod tests {
         // The trailing unused slot is past the last used page -> empty ->
         // trimmed off the tail, so the bank ends at the last used slot.
         assert_eq!(bank.programs.len(), 3, "trailing empty slot trimmed");
+    }
+
+    /// Build a synthetic `[chunk0 hdr][VAB header part][mid chunks][bodies]`
+    /// stream. `mid` is an extra chunk between the halves, as six retail
+    /// entries carry (their SEQ); its payload is `0xEE` so a mis-resolved
+    /// origin shows up as the wrong byte.
+    fn stream_with(ps: usize, body: &[u8], mid: usize) -> Vec<u8> {
+        let hps = legaia_vab::header_part_size(ps);
+        let mut v = Vec::new();
+        v.extend_from_slice(&((hps as u32).to_le_bytes()));
+        // VAB header part: magic, version, id, fsize, then ps / vs.
+        let mut head = vec![0u8; hps];
+        head[0..4].copy_from_slice(b"pBAV");
+        head[4..8].copy_from_slice(&7u32.to_le_bytes());
+        head[12..16].copy_from_slice(&((hps + body.len()) as u32).to_le_bytes());
+        head[0x12..0x14].copy_from_slice(&(ps as u16).to_le_bytes());
+        head[0x16..0x18].copy_from_slice(&1u16.to_le_bytes());
+        // VAG size table entry 1 = the one sample, in 8-byte units.
+        let table = 0x20 + 0x800 + 0x200 * ps;
+        head[table + 2..table + 4].copy_from_slice(&((body.len() / 8) as u16).to_le_bytes());
+        v.extend_from_slice(&head);
+        if mid > 0 {
+            v.extend_from_slice(&(0x0200_0000u32 | mid as u32).to_le_bytes());
+            v.extend(std::iter::repeat_n(0xEEu8, mid));
+        }
+        v.extend_from_slice(&(0x0100_0000u32 | body.len() as u32).to_le_bytes());
+        v.extend_from_slice(body);
+        v
+    }
+
+    /// The upload finds the same bytes whichever buffer convention it is
+    /// handed, and finds them past an intervening chunk.
+    ///
+    /// Both halves of the old arithmetic were wrong and cancelled: a caller
+    /// re-slicing at the VAB indexed four bytes too far on, which is exactly
+    /// what the parsed origin was short. This pins the resolution instead of
+    /// the cancellation - the same body bytes reach SPU RAM from the whole
+    /// buffer and from the re-sliced one, and the intervening-chunk case (the
+    /// six retail entries) lands on the body rather than on the chunk.
+    #[test]
+    fn body_origin_resolves_in_both_buffer_conventions() {
+        let body: Vec<u8> = (0..64u8).map(|i| i.wrapping_mul(3) & 0x4F).collect();
+        // The intervening chunk must not be the body's own length: the walk
+        // recognises the body chunk BY that length, so a collision is
+        // ambiguous by construction (no retail carrier has one).
+        for mid in [0usize, 0x50] {
+            let stream = stream_with(1, &body, mid);
+            let whole = legaia_vab::parse(&stream, 4).expect("parse at the VAB");
+            let mut out = Vec::new();
+            for buf in [stream.clone(), stream[4..].to_vec()] {
+                let mut spu = Spu::new();
+                let mut alloc = crate::spu::ram::SpuAllocator::new(0x1000, 0x1_0000);
+                let bank = VabBank::upload(&mut spu, &mut alloc, &whole, &buf);
+                let s = bank.samples[0].expect("the one sample uploaded");
+                out.push(spu.ram.slice(s.addr, s.size).to_vec());
+            }
+            assert_eq!(out[0], body, "mid={mid}: whole-buffer convention");
+            assert_eq!(out[1], body, "mid={mid}: re-sliced-at-the-VAB convention");
+        }
     }
 }

@@ -59,6 +59,18 @@
 //! spans it reports for VAG bodies are off by that intervening chunk header -
 //! see [`vag_body_origin`], which reads the real origin off the stream.
 //!
+//! Three entry points, and which one to reach for:
+//!
+//! | Function | Spans it reports | Use it when |
+//! |---|---|---|
+//! | [`parse`] | walked straight on from the size table | the VAB is standalone, or the caller compensates itself |
+//! | [`parse_in_stream`] | resolved through the body chunk | the containing stream is in hand |
+//! | [`vag_body_origin_at`] | (an offset, not a report) | only the bank is in hand, starting at `pBAV` |
+//!
+//! [`parse`]'s spans are deliberately left alone: several consumers index them
+//! with a hard-coded `+4` of their own, so moving them would move those
+//! compensations too.
+//!
 //! Shares the F0/F1 filter constants with [`legaia_xa`] - the algorithm is
 //! identical to XA-ADPCM, only the block packaging differs.
 
@@ -407,10 +419,38 @@ pub fn vag_body_origin(buf: &[u8], stream_start: usize) -> Result<usize> {
             header.ps
         );
     }
+    vag_body_origin_at(buf, vab)
+}
+
+/// The same resolution anchored on the **VAB** instead of on the stream head.
+///
+/// [`vag_body_origin`] needs chunk 0's header, which sits four bytes *before*
+/// the VAB - so a caller holding a buffer that begins at the `pBAV` magic
+/// cannot use it, and that is the common shape (a bank sliced out of its entry
+/// and handed on for upload). Nothing about the resolution actually needs
+/// chunk 0: the body chunk is found by walking **forward** from the end of the
+/// header part, and the length it is recognised by comes from the VAB's own
+/// `fsize`.
+///
+/// Returns the offset, in `buf`, of the first VAG body. Errors when no chunk
+/// within the next eight carries a payload of `fsize - header_part_size(ps)` -
+/// which is the standalone case (no chunk stream at all), and the signal to
+/// keep using the straight-on walk.
+///
+/// The length is what identifies the chunk, so an intervening chunk of exactly
+/// the body's length would be taken for it. No retail carrier has one (the
+/// six that put a SEQ between the halves are asserted by
+/// `crates/vab/tests/corpus_chunk_carriage.rs` to resolve onto a clean ADPCM
+/// grid), but the ambiguity is in the method, not in the disc.
+pub fn vag_body_origin_at(buf: &[u8], vab_offset: usize) -> Result<usize> {
+    let header = parse_header(buf, vab_offset)?;
+    let header_len = header_part_size(header.ps as usize);
     let want = (header.fsize as usize)
         .checked_sub(header_len)
         .context("VAB fsize is shorter than its own header part")?;
-    let mut p = vab + header_len;
+    let mut p = vab_offset
+        .checked_add(header_len)
+        .context("VAB header part overflows usize")?;
     for _ in 0..8 {
         let h = read_u32(buf, p).with_context(|| format!("chunk header at {p:#x}"))?;
         if h == 0 {
@@ -428,6 +468,33 @@ pub fn vag_body_origin(buf: &[u8], stream_start: usize) -> Result<usize> {
         }
     }
     bail!("no chunk in this stream carries the {want}-byte VAG body")
+}
+
+/// Parse a VAB that is carried in a DATA_FIELD chunk stream beginning at
+/// `stream_start`, with every [`VagSampleSpan::byte_offset`] resolved through
+/// [`vag_body_origin`] instead of walked straight on from the size table.
+///
+/// [`parse`] is left as it is on purpose: its spans are what every existing
+/// consumer indexes with, several of them compensating with a hard-coded `+4`
+/// (`crates/patcher`), so moving them would move those compensations too. Use
+/// this entry point wherever the containing stream is in hand and the spans are
+/// meant to name real ADPCM.
+pub fn parse_in_stream(buf: &[u8], stream_start: usize) -> Result<VabReport> {
+    let origin = vag_body_origin(buf, stream_start)?;
+    let mut report = parse(buf, stream_start + 4)?;
+    relocate_bodies(&mut report, origin);
+    Ok(report)
+}
+
+/// Move a report's VAG spans so the first body starts at `origin`, keeping the
+/// sizes and their order. The bodies are contiguous, so one delta covers them.
+fn relocate_bodies(report: &mut VabReport, origin: usize) {
+    let Some(first) = report.vag_samples.first().map(|s| s.byte_offset) else {
+        return;
+    };
+    for s in &mut report.vag_samples {
+        s.byte_offset = s.byte_offset + origin - first;
+    }
 }
 
 fn read_u32(buf: &[u8], at: usize) -> Option<u32> {
@@ -492,10 +559,11 @@ fn legal_filter_blocks(buf: &[u8], align: usize) -> (usize, usize) {
 /// fails loudly instead of returning plausible noise.
 ///
 /// [`decode_vag`] and [`parse`] are left alone: their `byte_offset` is what
-/// every existing consumer (including the SPU upload path) already indexes with.
-/// Correcting the origin belongs in `parse` - now that the cause is known it is
-/// a mechanical change - but it shifts a value other subsystems depend on and
-/// wants its own change.
+/// every existing consumer already indexes with, several of them with a
+/// hard-coded `+4` of their own, so moving it would move those compensations
+/// too. The corrected origin lives beside them instead - [`parse_in_stream`]
+/// where the containing stream is in hand and [`vag_body_origin_at`] where only
+/// the bank is - and the SPU upload path resolves it there.
 pub fn decode_vag_aligned(buf: &[u8]) -> Result<Vec<i16>> {
     // Only 0 and 4 are plausible origins (a block is 16 bytes and the skew is a
     // whole number of words); probe both and demand a clean winner.
