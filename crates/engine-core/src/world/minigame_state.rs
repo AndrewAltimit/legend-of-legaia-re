@@ -134,6 +134,22 @@ pub struct MinigameState {
     /// intro cue, the tutorial's cursor / confirm cues). Drained by
     /// [`crate::world::World::drain_minigame_sfx_cues`]; cosmetic.
     pub pending_sfx: Vec<u16>,
+    /// Is the dance HUD's own texture page resident in the VRAM this host is
+    /// drawing with?
+    ///
+    /// The dance samples one 4bpp page and one CLUT strip that belong to the
+    /// hall scene (`crate::dance::DANCE_HUD_ART_PROT_ENTRY`), and retail has
+    /// them because the dance **is** that scene. The port suspends whichever
+    /// scene the player entered from, so each host has to stage those rects
+    /// itself and says so here.
+    ///
+    /// It is a host-written flag on purpose. Whether the page is resident is
+    /// the one fact about the dance frame that only the host holding the VRAM
+    /// knows, and the *choice it drives* - retail's textured sprite, or the
+    /// placeholder letterforms - must be the same choice on both hosts. Left
+    /// per-host it would be two predicates over two spellings of "did the
+    /// upload work", which is the shape a silent one-host regression hides in.
+    pub dance_hud_art_staged: bool,
 }
 
 impl MinigameState {
@@ -183,6 +199,7 @@ impl MinigameState {
             dance_tutorial: None,
             dance_tutorial_frame: None,
             pending_sfx: Vec::new(),
+            dance_hud_art_staged: false,
         }
     }
 }

@@ -263,6 +263,10 @@ impl LegaiaRuntime {
             Some(ActiveGame::Muscle) => self.tick_muscle_ui(),
             Some(ActiveGame::Dance) | None => {}
         }
+        // Publish the dance's VRAM residency claim (see `play_dance_art`), so
+        // the count-in banner's sprite-or-placeholder choice is the same
+        // world-side predicate the native window reads.
+        self.sync_dance_hud_residency();
         // The dome's between-leg hub screens (INTERVAL + tally) run after
         // the leg has closed, i.e. back in the field mode - so the hub tick
         // runs every frame, not only inside the dome.
@@ -346,7 +350,16 @@ impl LegaiaRuntime {
         };
         let mg = &host.world.minigames;
         let mut out = Vec::new();
-        if let Some(env) = mg.dance_countin_banner.as_ref() {
+        // The banner's placeholder letterforms, drawn ONLY while the hall's
+        // HUD texture page is not resident. With it staged the banner is
+        // retail's own sprite, emitted as screen-space primitives through
+        // `play_dance_art` - the same either/or, off the same world flag, as
+        // the native window's HUD builder.
+        if let Some(env) = mg
+            .dance_countin_banner
+            .as_ref()
+            .filter(|_| !mg.dance_hud_art_staged)
+        {
             out.extend(ui_dance::dance_countin_draws_for(
                 font,
                 ui_dance::DanceCountInView {

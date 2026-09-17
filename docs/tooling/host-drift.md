@@ -723,6 +723,31 @@ the quads now come out of `engine-ui::battle_numerals` as `ScreenPrim`s and
 both hosts push them through their own `screen_prim` pass, with the font
 builders left as the explicit before-the-atlas fallback on each.
 
+**One gap stated for "both hosts" was two different gaps.** The dance
+count-in banner drew as placeholder letterforms on both hosts with its
+geometry pinned to the instruction, and the shared statement - "no host stages
+the dance page, so there is nothing for a textured quad to sample" - was true
+of one host. The native window hosts the dance over the scene the player
+walked in from and keeps drawing that scene behind the HUD, so it had neither
+the page nor a quad emit. The browser play page already replaced its whole
+VRAM texture with the hall's for the dance, and already drew the hall, so it
+had the texels the whole time and lacked only the emit. A single sentence
+covering both hosts hid a two-to-one difference in what each needed, and
+fixing the expensive host fixed the cheap one on the way past without anybody
+having to notice which was which. When a gap is phrased "neither host does
+X", check what each host would need *separately* before believing the
+symmetry.
+
+The cure keeps the asymmetry where it is real and shares the rest: the
+staging kernel is one function (`engine-core::dance::stage_dance_hud_vram`,
+fed by the run's own widget table), the emit is one builder
+(`engine-ui::ui_dance::dance_countin_prims`), and the **predicate** that picks
+between retail's sprite and the placeholder is one world field
+(`World::minigames.dance_hud_art_staged`) written by whichever host owns the
+VRAM. Left per-host that predicate would have been two spellings of "did the
+upload work", which is the shape a silent one-host regression hides in - and
+the tiers cannot see it, because both spellings end at a live call site.
+
 ## What a waiver may say
 
 Both waiver files are validated for staleness on every run, so they cannot

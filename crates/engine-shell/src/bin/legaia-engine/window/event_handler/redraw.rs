@@ -2387,6 +2387,13 @@ impl PlayWindowApp {
             // Only the seat is per-host: it needs the struck actor's projected
             // screen position, which only a host holding the camera has.
             screen_prims.extend(self.battle_value_readout_prims(fx_cam));
+            // The dance count-in banner, as retail's own 160x32 sprite off the
+            // hall's HUD page rather than placeholder text. Same shared
+            // builder the browser play page emits through
+            // (`legaia_engine_ui::ui_dance::dance_countin_prims`), and the
+            // same residency predicate decides for both hosts whether the
+            // sprite or the letterforms draw.
+            screen_prims.extend(self.dance_countin_prims());
             let target = |scene| present_target(scene, &screen_prims);
             // Periodic sweep (`--screenshot-every`): capture a frame every N
             // ticks into the sweep dir (named for the tick), keep running,
@@ -2589,6 +2596,40 @@ impl PlayWindowApp {
                 texels,
             );
         }
+    }
+
+    /// The dance count-in banner as screen-space PSX primitives.
+    ///
+    /// Empty outside the count-in and empty while the hall's HUD page is not
+    /// resident - in which case `hud.rs` draws the placeholder letterforms
+    /// instead. The art comes off the run's own widget table when it has one,
+    /// so the cell, page and palette are the disc's rather than this host's.
+    pub(super) fn dance_countin_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_render::ui_dance as ud;
+        let mg = &self.session.host.world.minigames;
+        if !mg.dance_hud_art_staged {
+            return Vec::new();
+        }
+        let Some(env) = mg.dance_countin_banner.as_ref() else {
+            return Vec::new();
+        };
+        let art = mg
+            .dance
+            .as_ref()
+            .and_then(|g| g.widget(0))
+            .map(|(w, abr)| ud::DanceCountInArt::from_widget(&w, abr))
+            .unwrap_or_default();
+        ud::dance_countin_prims(
+            ud::DanceCountInView {
+                x_offset: env.x_offset,
+                brightness: env.brightness,
+                hold: env.hold,
+            },
+            art,
+            ud::COUNTIN_OT,
+        )
     }
 
     /// The frame's floating value readout, as screen-space PSX primitives in

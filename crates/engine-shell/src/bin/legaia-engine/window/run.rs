@@ -1106,6 +1106,7 @@ pub(super) fn cmd_play_window_with_record(
         world_map_slot4_lines: None,
         ocean_anim: None,
         cpu_vram_base: None,
+        dance_vram_restore: None,
         battle_vram: None,
         battle_intro: None,
         battle_intro_vram: None,

@@ -745,6 +745,11 @@ struct PlayWindowApp {
     /// re-uploads; leaving battle restores this base so the field renders
     /// with clean VRAM. `None` until the first scene loads.
     cpu_vram_base: Option<legaia_tim::Vram>,
+    /// The scene VRAM as it was before a dance staged its own HUD texture
+    /// page over it (`stage_dance_hud_art`). `Some` exactly while a dance
+    /// owns those rects; restoring from it is what makes the field's texels
+    /// byte-exact on exit instead of re-derived.
+    dance_vram_restore: Option<legaia_tim::Vram>,
     /// Scene-mode from the previous frame, used to detect Field<->Battle
     /// transitions so monster meshes are uploaded / dropped exactly once.
     prev_scene_mode: Option<SceneMode>,

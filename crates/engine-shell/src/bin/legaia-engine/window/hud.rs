@@ -548,13 +548,22 @@ impl PlayWindowApp {
         // Dance pre-song count-in banner (`1 2 3 READY... GO!`): the
         // envelope's two sliding halves / held centre, faded by its
         // brightness ramp. The world owns the phase; this only projects it.
-        if let Some(env) = self
-            .session
-            .host
-            .world
-            .minigames
-            .dance_countin_banner
-            .as_ref()
+        //
+        // Placeholder letterforms ONLY while the hall's own HUD page is not
+        // resident. With it staged the banner is retail's textured sprite,
+        // emitted as screen-space primitives in `redraw`'s prim list through
+        // the same `ui_dance::dance_countin_prims` the browser play page
+        // calls - so the two hosts cannot end up drawing different halves of
+        // this one banner, which is exactly what happened to the battle
+        // numerals.
+        if !self.session.host.world.minigames.dance_hud_art_staged
+            && let Some(env) = self
+                .session
+                .host
+                .world
+                .minigames
+                .dance_countin_banner
+                .as_ref()
         {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             out.extend(legaia_engine_render::ui_dance::dance_countin_draws_for(

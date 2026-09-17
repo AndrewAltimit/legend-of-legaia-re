@@ -308,6 +308,11 @@ pub(crate) struct DanceBodies {
     /// The floor's step-marker tiles and their flipbooks (empty when the
     /// venue's `.MAP` carries no clip-`6..=9` cell).
     markers: DanceMarkers,
+    /// Did the HUD's own texture page land in [`Self::vram`]? The page states
+    /// this through `LegaiaRuntime::play_mg_dance_hud_art_staged`, and it is
+    /// what decides - on both hosts, from one predicate - whether the
+    /// count-in banner draws as retail's sprite or as placeholder text.
+    hud_staged: bool,
 }
 
 /// Number of clip slots exposed per dancer: idle, the dance loop, and the
@@ -676,6 +681,31 @@ impl LegaiaMinigames {
         {
             pack.upload_to_vram(&mut vram, false);
         }
+        // ...and the HUD's own page, through the shared staging kernel the
+        // native window uses. The scene build above already walks this
+        // entry, so on a whole-hall load this is a no-op re-upload of the
+        // same rects - which is the point: residency stops being "the scene
+        // build probably covered it" and becomes a call whose return value
+        // the page can state. The rects come from the run's own widget
+        // table, so a page that could not parse the overlay stages nothing
+        // and keeps the placeholder.
+        let hud_rects: Vec<legaia_engine_core::dance::DanceHudRect> =
+            legaia_engine_core::dance::dance_widgets_with_abr(&overlay)
+                .iter()
+                .map(|(w, _)| {
+                    (
+                        w.tpage_xy(),
+                        (((w.clut & 0x3F) * 16), (w.clut >> 6) & 0x1FF),
+                    )
+                })
+                .fold(Vec::new(), |mut acc, r| {
+                    if !acc.contains(&r) {
+                        acc.push(r);
+                    }
+                    acc
+                });
+        let hud_staged =
+            legaia_engine_core::dance::stage_dance_hud_vram(&index, &hud_rects, &mut vram) > 0;
 
         // The floor cast: the qualifier (yosenn) spawn table, left..right by
         // spawn x - `[kind 2, Noa, kind 3]` on the retail floor.
@@ -726,6 +756,7 @@ impl LegaiaMinigames {
             vram: vram.as_bytes().to_vec(),
             env,
             markers,
+            hud_staged,
         })
     }
 
@@ -1019,6 +1050,13 @@ impl LegaiaMinigames {
             .as_ref()
             .map(|b| b.vram.clone())
             .unwrap_or_default()
+    }
+
+    /// Does [`Self::dance_body_vram`] carry the HUD's own texture page and
+    /// CLUT strip? `false` means every HUD quad would sample texels that
+    /// belong to something else, so a host draws the placeholder instead.
+    pub fn dance_hud_art_staged(&self) -> bool {
+        self.dance_bodies.as_ref().is_some_and(|b| b.hud_staged)
     }
 
     // ------------------------------------------------------ the dance hall

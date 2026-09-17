@@ -838,6 +838,39 @@ impl DanceGame {
         out
     }
 
+    /// One record of the run's own widget table, with its `+0x13` ABR byte.
+    ///
+    /// The table is disc data parsed from the user's image
+    /// ([`dance_widgets_with_abr`]), so a chart-only run started without a
+    /// real overlay returns `None` and a host falls back to its placeholder.
+    /// Both hosts reach the count-in banner's record (index `0`) through this
+    /// rather than baking its cell, CLUT and page in twice.
+    pub fn widget(&self, index: usize) -> Option<(legaia_asset::dance_art::DanceWidget, u8)> {
+        self.widgets.get(index).map(|(w, a)| (*w, *a))
+    }
+
+    /// The VRAM rects the run's HUD samples: one `(image_origin, clut_origin)`
+    /// pair per distinct widget texture page, in halfword framebuffer
+    /// coordinates.
+    ///
+    /// This is what a host stages the dance's own texture page from. Retail
+    /// never has to ask, because the dance **is** `other7`'s scene and the
+    /// page is resident the moment the hall loads; a port that hosts the
+    /// session over the scene the player walked in from has to name the rects
+    /// it needs, and naming them off the live table is what keeps the answer
+    /// disc-derived. See [`DANCE_HUD_ART_PROT_ENTRY`].
+    pub fn hud_vram_rects(&self) -> Vec<DanceHudRect> {
+        let mut out: Vec<DanceHudRect> = Vec::new();
+        for (w, _) in &self.widgets {
+            let page = w.tpage_xy();
+            let clut = (((w.clut & 0x3F) * 16), (w.clut >> 6) & 0x1FF);
+            if !out.iter().any(|&(p, c)| p == page && c == clut) {
+                out.push((page, clut));
+            }
+        }
+        out
+    }
+
     /// The triangle feedback window's remaining frames (`DAT_801d5144`) - the
     /// raw counter behind [`DanceGame::triangle_feedback`], which the tutorial
     /// actor's practice step reads directly.
@@ -2242,6 +2275,74 @@ pub fn dance_widgets_with_abr(overlay: &[u8]) -> Vec<(legaia_asset::dance_art::D
             (w, abr)
         })
         .collect()
+}
+
+/// PROT entry carrying the dance hall's own TIM set - the last slot of the
+/// `other7` scene block, an `asset::pack` of 31 TIMs behind a `TIM_LIST` chunk
+/// header.
+///
+/// The HUD's texture page is one of them: the widget table's `tpage` resolves
+/// to the 4bpp page at `(512, 0)`, and exactly one member of this pack targets
+/// that origin, carrying the CLUT strip at `(0, 500)` the widget CLUT ids
+/// index. So the sprite the count-in banner, the score digits, the gauge and
+/// the beat track all sample is disc data in this entry, not overlay rodata.
+///
+/// Retail never has to think about it: the dance **is** `other7`, so the whole
+/// pack is resident before the minigame starts. The port suspends whichever
+/// scene the player walked in from and runs the dance over it, so the pages
+/// this pack would have supplied are the interrupted scene's. Staging is
+/// therefore selective - see [`stage_dance_hud_vram`].
+pub const DANCE_HUD_ART_PROT_ENTRY: u32 = 1230;
+
+/// One VRAM rect pair the dance HUD samples: `(texture page origin, CLUT
+/// origin)`, both in halfword framebuffer coordinates.
+///
+/// The pair travels together because a widget id names a palette **column**
+/// of a strip some other TIM owns whole - staging the page without the strip
+/// draws the right shapes in the wrong colours, and there is no error to
+/// notice.
+pub type DanceHudRect = ((u16, u16), (u16, u16));
+
+/// Upload the dance HUD's own texture page and CLUT row into `vram`, leaving
+/// every other rect of the resident scene alone. Returns how many TIMs were
+/// uploaded.
+///
+/// `rects` comes from [`DanceGame::hud_vram_rects`], i.e. from the run's own
+/// parsed widget table, so the pages staged are the pages the frame's quads
+/// actually name. A member of the pack is uploaded when its image origin is
+/// one of those pages; its CLUT block rides along, because a widget id names
+/// a palette **column** of a strip that one member owns whole.
+///
+/// Why not the whole pack: the eleven other 256x256 members target `(576, 0)`
+/// through `(768, 256)` - the columns a field scene's own texture pack
+/// occupies - so uploading them would repaint the suspended town the port is
+/// still drawing behind the HUD. That is a divergence retail cannot exhibit
+/// and the port can, which is exactly the kind of difference worth spending a
+/// rect filter on. Soft-fails to `0` when the entry is absent or carries no
+/// member at a named page, which leaves a host on its placeholder text.
+pub fn stage_dance_hud_vram(
+    index: &crate::scene::ProtIndex,
+    rects: &[DanceHudRect],
+    vram: &mut legaia_tim::Vram,
+) -> usize {
+    if rects.is_empty() {
+        return 0;
+    }
+    let Ok(raw) = index.entry_bytes_extended(DANCE_HUD_ART_PROT_ENTRY) else {
+        return 0;
+    };
+    let mut uploaded = 0;
+    for member in legaia_prot::timpack::unpack(&raw) {
+        let Ok(tim) = legaia_tim::parse(&member) else {
+            continue;
+        };
+        let origin = (tim.image.fb_x, tim.image.fb_y);
+        if rects.iter().any(|&(page, _)| page == origin) {
+            vram.upload_tim_partial(&tim, true, true);
+            uploaded += 1;
+        }
+    }
+    uploaded
 }
 
 /// Widget id bits the emitter takes as the widget **index** (`id & 0x3FF`).
