@@ -72,12 +72,18 @@ impl ApplicationHandler for PlayWindowApp {
             } => {
                 self.handle_keyboard(evl, code, state);
             }
-            // Left-mouse drag-orbit: horizontal drag rotates the field
-            // camera around the player (`Camera::manual_orbit`). The
-            // movement compass reads the same field, so the d-pad remap
-            // tracks the orbited view (see `field_follow_camera_mvp`).
-            // Field free-roam only - world map / battle / menus keep their
-            // own cameras.
+            // Left-mouse drag-orbit. Horizontal drag rotates the field camera
+            // around the player (`Camera::manual_orbit`); the movement
+            // compass reads the same field, so the d-pad remap tracks the
+            // orbited view (see `field_follow_camera_mvp`). Field free-roam
+            // only - world map / battle / menus keep their own cameras.
+            //
+            // Vertical drag pitches the `F3` debug orbit vantage, which is
+            // the one camera this window owns. Both rates and both clamps are
+            // the browser play page's (`window::camera::debug_orbit`), so a
+            // given gesture moves the camera by the same amount on either
+            // host - the yaw rate used to differ by a third, on a field the
+            // *simulation* reads.
             WindowEvent::CursorMoved { position, .. } => {
                 if let Some(last) = self.orbit_drag_last_x {
                     let dx = (position.x - last) as f32;
@@ -85,21 +91,53 @@ impl ApplicationHandler for PlayWindowApp {
                         && !self.boot_ui.is_active()
                         && self.session.host.world.mode == SceneMode::Field
                     {
-                        const ORBIT_RAD_PER_PX: f32 = 0.008;
                         self.session.camera.manual_orbit = (self.session.camera.manual_orbit
-                            + dx * ORBIT_RAD_PER_PX)
+                            + dx * camera::debug_orbit::YAW_RAD_PER_PX)
                             .rem_euclid(std::f32::consts::TAU);
                     }
                     self.orbit_drag_last_x = Some(position.x);
                 }
+                if let Some(last) = self.orbit_drag_last_y {
+                    let dy = (position.y - last) as f32;
+                    if dy != 0.0 && !self.boot_ui.is_active() {
+                        self.debug_orbit_pitch = (self.debug_orbit_pitch
+                            + dy * camera::debug_orbit::PITCH_RAD_PER_PX)
+                            .clamp(
+                                camera::debug_orbit::PITCH_MIN,
+                                camera::debug_orbit::PITCH_MAX,
+                            );
+                    }
+                    self.orbit_drag_last_y = Some(position.y);
+                }
                 self.cursor_x = position.x;
+                self.cursor_y = position.y;
             }
             WindowEvent::MouseInput {
                 state,
                 button: winit::event::MouseButton::Left,
                 ..
             } => {
-                self.orbit_drag_last_x = (state == ElementState::Pressed).then_some(self.cursor_x);
+                let held = state == ElementState::Pressed;
+                self.orbit_drag_last_x = held.then_some(self.cursor_x);
+                self.orbit_drag_last_y = held.then_some(self.cursor_y);
+            }
+            // Wheel: the debug orbit's continuous zoom, the page's `halfWidth`
+            // knob. A notch out widens the framing box and a notch in narrows
+            // it, by the page's own factors; the `T` distance preset stays a
+            // separate coarse multiplier under it, as it is on both hosts.
+            WindowEvent::MouseWheel { delta, .. } => {
+                let notches = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, y) => y,
+                    winit::event::MouseScrollDelta::PixelDelta(p) => (p.y as f32) / 120.0,
+                };
+                if notches != 0.0 && !self.boot_ui.is_active() {
+                    let f = if notches < 0.0 {
+                        camera::debug_orbit::ZOOM_OUT
+                    } else {
+                        camera::debug_orbit::ZOOM_IN
+                    };
+                    self.debug_orbit_zoom = (self.debug_orbit_zoom * f).clamp(0.05, 20.0);
+                }
             }
             WindowEvent::RedrawRequested => {
                 self.handle_redraw();

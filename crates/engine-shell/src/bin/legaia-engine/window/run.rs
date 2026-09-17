@@ -1211,7 +1211,13 @@ pub(super) fn cmd_play_window_with_record(
         occl_fade_strength: std::cell::Cell::new(0.0),
         scene_point_lights: Vec::new(),
         orbit_drag_last_x: None,
+        orbit_drag_last_y: None,
+        // `atan(0.85)`: the angle the window's long-standing eye-height
+        // ratio encoded, so an untouched debug vantage is unchanged.
+        debug_orbit_pitch: 0.85f32.atan(),
+        debug_orbit_zoom: 1.0,
         cursor_x: 0.0,
+        cursor_y: 0.0,
         field_party_hud: Default::default(),
         field_party_hud_scene: None,
         diag_rows: legaia_engine_render::diag_hud_enabled(),
