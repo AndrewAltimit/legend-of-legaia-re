@@ -137,11 +137,16 @@ impl PlayWindowApp {
         shop: &ShopSession,
         state: Option<MenuState>,
         cursor: usize,
-        bag: &[(u8, u8)],
     ) -> Option<u8> {
         match state {
             Some(MenuState::ShopBuy) => shop.inventory.items.get(cursor).map(|i| i.item_id),
-            Some(MenuState::ShopSell) => bag.get(cursor).map(|(id, _)| *id),
+            Some(MenuState::ShopSell) => {
+                legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows(
+                    &self.session.host.world,
+                )
+                .get(cursor)
+                .map(|r| r.id)
+            }
             Some(MenuState::ShopQuantity) | Some(MenuState::ShopConfirm) => shop.pending_item_id,
             _ => None,
         }
@@ -205,7 +210,7 @@ impl PlayWindowApp {
         // window 39 instead: `FUN_801D5AE8` is the sell-family renderer, and
         // the two windows print the same name/description head at overlapping
         // rects, so drawing both would double the text.
-        let staged = self.shop_staged_item(shop, state, cursor, &bag);
+        let staged = self.shop_staged_item(shop, state, cursor);
         let selling_list = matches!(state, Some(MenuState::ShopSell));
         if !selling_list
             && let Some((d, _)) = legaia_engine_render::painter_at(

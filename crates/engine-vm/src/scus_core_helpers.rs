@@ -36,10 +36,12 @@
 //! feeds actor iteration order, which the recomp differential oracle
 //! compares per frame.
 //!
-//! NOT WIRED: [`list_append_u16`] is a real wiring gap, and the owner is
-//! named - its retail caller `FUN_8003F3FC` (the sprite placement/clip
-//! routine) is not ported, so the append has no producer to be called from.
-//! It closes when that routine is ported, not by a representation change.
+//! REPLACED-BY: `legaia_engine_core::cutscene::sprite_stack_push`. That covers
+//! [`list_append_u16`], which is the same address ported a second time and is
+//! live on both hosts through the fog-particle pool. This section used to read
+//! it as a wiring gap owed by an unported producer; the producer
+//! (`FUN_8003F3FC`, the per-particle update) is ported, and the `jal` at
+//! `0x8003F800` that names this routine is that port's free-slot return.
 //!
 //! REPLACED-BY: the borrow-in-place chunk walk in
 //! `legaia_asset::parse_streaming_with`. That covers [`copy_blocks_32`], and
@@ -323,11 +325,17 @@ impl ActorNodePool {
 ///
 /// PORT: FUN_8001FA68
 ///
-/// NOT WIRED: the owner is the sprite placement/clip routine `FUN_8003F3FC`,
-/// which is not ported - so the append has no producer to be called from.
-/// This one closes by porting that routine, not by a representation change,
-/// which is why it keeps `NOT WIRED:` where its file-mates carry
-/// `REPLACED-BY:`.
+/// REPLACED-BY: `legaia_engine_core::cutscene::sprite_stack_push`, which is
+/// this same address ported a second time and reached on both hosts.
+/// `FUN_8003F3FC` - named here as the missing producer - is ported: it is the
+/// per-particle half of `legaia_engine_core::fog_particles::FogPool::render_step`,
+/// and the `jal` at `0x8003F800` this routine is the callee of is that port's
+/// `free_slot`, which returns a dead record's index through
+/// `sprite_stack_push`. So the producer exists, has a host, and already calls
+/// an equivalent - what is left here is a duplicate, not a gap. It stays
+/// because it is written against the `u16` element type of the sprite list and
+/// documents the unchecked-store edge the halfword port does not state; no
+/// host is owed a second call site.
 ///
 /// The eight-instruction body is:
 ///

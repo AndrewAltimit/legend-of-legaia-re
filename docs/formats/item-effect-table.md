@@ -121,7 +121,7 @@ record `+8` pointer):
 | `6` | permanent stat-up (tier = which stat) | Miracle Water - "All stats +4. Ally." |
 | `7` | temporary stat buff (one battle) | Power Elixir - "Increase attacking power for one battle." |
 | `8` | cure single status | Antidote - "Cure Venom. Ally." |
-| `11`/`12`/`13` | arts book (Fire/Wind/Thunder; tier = book level) | Fire Book I - "Book of Hyper Arts. For Meta." |
+| `11`/`12`/`13` | arts book (Fire/Wind/Thunder; tier = the art id it grants, [below](#arts-books-class-111213-the-tier-is-an-art-id)) | Fire Book I - "Book of Hyper Arts. For Meta." |
 | `14` | Point Card strike - **no item on the disc reaches it** (see below) | - |
 | `126`/`127` | summon flute | Lippian Flute - "Flute that calls the Lippian monster." |
 | `128` | field escape (dungeon) | Door of Light - "Teleport out of dungeons." |
@@ -131,6 +131,35 @@ record `+8` pointer):
 Note that the class byte is meaningful **only together with the usability
 flags**: many key items funnel to class `0` with no usability bit set, so
 "class 0" is not by itself "an HP potion" - gate on the field/battle bits.
+
+### Arts books (class `11`/`12`/`13`): the tier is an art id
+
+The arts-book tier is **not** a book level. The apply handler takes the class as
+argument 0 and the tier as argument 1 (`move $t4, $a0` at `0x800402F4 + 4`,
+`move $s6, $a1` at `0x80040300`), and the `0x0B`..`0x0D` arm writes the **tier
+byte verbatim** into a per-character displayed-skill list - `sb $s6, 0x74e($a0)`
+at `0x80042064`. The list holds skill-table ids, so the tier is the art id the
+book grants.
+
+The same arm picks the character from the class alone: `andi $v1, $t4, 0xff;
+addiu $v1, $v1, -0xb` at `0x80041FC0`, scaled by the `0x414` per-character
+record stride (`sll 6; addu; sll 2; addu; sll 2`) onto `0x80084140`. Class `11`
+is roster slot 0, `12` is slot 1, `13` is slot 2 - **the picked target is never
+read**, so a Fire Book always lands on the same roster slot whoever the menu
+highlights.
+
+The field VM confirms the encoding from the other side. Its own grant arm
+`[4C C7]` (`0x801E28D4`) reads two operand bytes and calls the same applier
+with `addiu $a0, $a0, 0xb` in the `jal` delay slot at `0x801E28E8` - a script
+names the roster **slot** and the arm adds the `0xb` the applier subtracts
+back. The `-0xb` is a class-to-slot rebase, not an offset into anything. The insert itself is ordered, not a head insert: the loop at
+`0x80041FFC`..`0x8004202C` walks down from the count shifting entries up only
+while the new id compares smaller (`sltu $v0, $a3, $v1`), so the list stays
+sorted ascending by id.
+
+On disc the nine rows are `(class, tier)` = Fire `3/2/1`, Wind `5/4/1`, Thunder
+`3/2/1` for books I/II/III, all with flag byte `0x83` (base + field-use only,
+no battle bit). Books III all share tier `1`.
 
 **Class 14 is reachable code with no reachable data.** Arm `14` (`0x8004209C`)
 takes `min(_DAT_800845B4, 9999)` off the Point Card bank and applies it as

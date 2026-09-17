@@ -72,7 +72,7 @@ fn synthetic_table() -> MenuWindowTable {
             d.h = h as i16;
         }
     }
-    let renderers: [(usize, u32); 8] = [
+    let renderers: [(usize, u32); 9] = [
         (window_ids::TAB_ITEMS, dispatch::RENDERER_TAB_ITEMS),
         (window_ids::TAB_MAGIC, dispatch::RENDERER_TAB_MAGIC),
         (window_ids::TAB_EQUIP, dispatch::RENDERER_TAB_EQUIP),
@@ -81,6 +81,12 @@ fn synthetic_table() -> MenuWindowTable {
         (7, dispatch::RENDERER_CHAR_PROMPT),
         (6, dispatch::RENDERER_LABEL_LIST),
         (5, dispatch::RENDERER_TWO_LINE_CHOICE_PANEL),
+        // The Equip screen's candidate step adds window 24 - the shared
+        // item-info panel plus its count delta.
+        (
+            legaia_engine_ui::pause_menu::WIN_EQUIP_ITEM_INFO,
+            dispatch::RENDERER_COUNT_PANEL,
+        ),
     ];
     for (id, va) in renderers {
         if let Some(d) = windows.get_mut(id) {
@@ -461,6 +467,16 @@ fn compose_equip(ctx: &PauseMenuCtx<'_>, phase: EquipDrawPhase) -> PauseMenuDraw
             slot_cursor: matches!(phase, EquipDrawPhase::SlotPicker).then_some(1),
             pictogram_rows: 5,
             text_cursor: ctx.chrome.is_none(),
+            // The candidate step opens window 24's shared item-info panel;
+            // the slot browse step does not.
+            info: (!matches!(phase, EquipDrawPhase::SlotPicker)).then_some(
+                legaia_engine_ui::pause_menu::EquipInfoInput {
+                    name: "Item 21",
+                    count: 2,
+                    desc: "A sturdy vest.",
+                    passive: None,
+                },
+            ),
         },
     )
 }

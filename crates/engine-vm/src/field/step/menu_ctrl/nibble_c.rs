@@ -108,7 +108,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
             let Some(&zb) = bytecode.get(operand + 2) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.op4c_n_c_sub4_subtile_broadcast(xb & 0x7F, zb & 0x7F);
+            host.camera_zone_query_at_tile(xb & 0x7F, zb & 0x7F);
             StepResult::Advance {
                 next_pc: pc + header_size + 3,
             }

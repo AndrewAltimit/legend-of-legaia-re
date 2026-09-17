@@ -548,13 +548,22 @@ impl PlayWindowApp {
         // Dance pre-song count-in banner (`1 2 3 READY... GO!`): the
         // envelope's two sliding halves / held centre, faded by its
         // brightness ramp. The world owns the phase; this only projects it.
-        if let Some(env) = self
-            .session
-            .host
-            .world
-            .minigames
-            .dance_countin_banner
-            .as_ref()
+        //
+        // Placeholder letterforms ONLY while the hall's own HUD page is not
+        // resident. With it staged the banner is retail's textured sprite,
+        // emitted as screen-space primitives in `redraw`'s prim list through
+        // the same `ui_dance::dance_countin_prims` the browser play page
+        // calls - so the two hosts cannot end up drawing different halves of
+        // this one banner, which is exactly what happened to the battle
+        // numerals.
+        if !self.session.host.world.minigames.dance_hud_art_staged
+            && let Some(env) = self
+                .session
+                .host
+                .world
+                .minigames
+                .dance_countin_banner
+                .as_ref()
         {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             out.extend(legaia_engine_render::ui_dance::dance_countin_draws_for(
@@ -1093,14 +1102,25 @@ impl PlayWindowApp {
                                 .collect();
                             (label, rows, Some(gold))
                         }
+                        // Retail's sell list is the price-gated slot walk,
+                        // not the id-sorted bag: an unsellable row dims and
+                        // sorts last (`MenuRuntime::sell_list_rows`). Twin of
+                        // the browser page's arm in `web-viewer::play_shop`.
                         Some(MenuState::ShopSell) => {
-                            let rows = bag
+                            let rows =
+                                legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows(
+                                    &self.session.host.world,
+                                )
                                 .iter()
-                                .map(|(id, qty)| {
+                                .map(|r| {
                                     (
-                                        format!("{} x{qty}", item_label(*id)),
+                                        format!("{} x{}", item_label(r.id), r.count),
                                         None,
-                                        legaia_engine_render::SHOP_INK_NORMAL,
+                                        if r.dim {
+                                            legaia_engine_render::SHOP_INK_GREY
+                                        } else {
+                                            legaia_engine_render::SHOP_INK_NORMAL
+                                        },
                                     )
                                 })
                                 .collect();

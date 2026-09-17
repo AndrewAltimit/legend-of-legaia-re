@@ -56,18 +56,36 @@
 //!    word because the typed rows already carry the resolved name and
 //!    description, so a resolver over them would re-derive what the caller
 //!    holds.
-//! 3. NOT WIRED - and this one is a real gap with a visible consequence. The
-//!    three `FUN_80030628` builders want an **ordered bag-slot array** and a
-//!    per-row ink bit, and the engine has neither. `World::party.inventory` is a
-//!    `HashMap<u8, u8>` keyed by item id with no slot space at all, so the
-//!    `slot | ink` payload the builders emit has no index to carry;
-//!    `crate::field_menu_dispatch::build_pause_items_session` sorts the
-//!    held ids and [`crate::pause_screens::PauseItemRow`] has no ink field,
-//!    so retail's three-buffer order (in place, then equipment, then the
-//!    flag-8 tail) and its dim gates have nowhere to land. Until they do,
-//!    the port lists a player's items in an order retail would not, and dims
-//!    none of them. The owner is `build_pause_items_session`, once the bag is
-//!    slot-indexed.
+//! 3. The three `FUN_80030628` bag builders. They want an **ordered bag-slot
+//!    array** and a per-row ink bit; the array exists now
+//!    ([`crate::world::ItemBag`] is retail's 256-slot physical array, indexed
+//!    by slot, bounded by the same active window), so
+//!    [`build_use_list_rows`] is **wired**: `World::bag_use_rows` walks the
+//!    window and `crate::field_menu_dispatch::build_pause_items_session`
+//!    takes its row order, which is what both hosts' Items screen draws.
+//!    [`crate::pause_screens::PauseItemRow`] still carries no ink field, so
+//!    the dim bit is computed and dropped at the draw - the *order* is
+//!    retail's, the greying is not yet. The row's **payload** does survive:
+//!    it is a bag slot, and Use / Throw Out / Sell remove from that slot
+//!    rather than by row ordinal or by item id, which diverge as soon as a
+//!    hole sits above the selection or one id occupies two slots
+//!    ([`docs/subsystems/inventory.md`](../../../docs/subsystems/inventory.md)).
+//!
+//!    The two siblings are wired too, on the tables the "no engine table
+//!    carries this" note was wrong about. [`build_price_gated_rows`] wants the
+//!    item record's `+2` price halfword for **every** id, which is exactly
+//!    what [`crate::shop_catalog::ShopItemData`] holds - both hosts install it
+//!    at boot for the merchant-record scan - not the open shop's stock list,
+//!    whose answer for an unstocked id is a floor of `1`.
+//!    [`build_throw_out_rows`] wants the equipment record's `+7` flags byte
+//!    (`0x80074F68[subtype*8 + 7]`), and `World::tables.equip_stats` now keeps
+//!    the raw records the derived modifier table drops.
+//!
+//!    Wiring the sell list closed a divergence as well: the drawn rows were
+//!    id-sorted and the committed row was a slot walk, so on a bag whose slot
+//!    order is not ascending by id the player sold a different stack than the
+//!    hand was on. Both sides read one seat now
+//!    ([`crate::menu_runtime::MenuRuntime::sell_list_rows`]).
 //!
 //! Which window each builder fills is not a guess: the menu-overlay
 //! descriptor table ([`legaia_asset::menu_windows`]) carries the content id
@@ -364,10 +382,12 @@ pub struct UseListCtx<'a> {
 /// Items **Use** list row build; `see ghidra/scripts/funcs/80030628.txt`
 /// and `docs/subsystems/field-menu.md#use-list-row-build-content-id-3-fun_80030628`).
 ///
-/// NOT WIRED: the owner is
-/// `crate::field_menu_dispatch::build_pause_items_session`, and it cannot
-/// call this until `World::party.inventory` is slot-indexed - see family 3 in the
-/// module heading.
+/// Wired through `World::bag_use_rows`, which supplies the window's slot
+/// array and the applicability probe;
+/// `crate::field_menu_dispatch::build_pause_items_session` takes the
+/// resulting row order for the Items screen on both hosts. The dim bit
+/// survives as far as `crate::world::BagRow` and is dropped at the draw -
+/// see family 3 in the module heading.
 ///
 /// Walks the bag slots (`bag_ids[i]` = the item-id byte at
 /// `0x80085958 + (slot_base + i)*2`; retail bounds the walk with the
@@ -443,8 +463,15 @@ pub fn build_use_list_rows(
 /// the Items **Throw Out** list row build; `see
 /// ghidra/scripts/funcs/80030628.txt`).
 ///
-/// NOT WIRED: same owner and same blocker as [`build_use_list_rows`] - see
-/// family 3 in the module heading.
+/// Wired through `World::bag_throw_out_rows`. The Items screen takes the
+/// resulting bag-slot order and permutes its rows into it when the command
+/// window dispatches Throw Out, restoring on the way back the order it found -
+/// which is the Use build unless the player ran Arrange first, and is why the
+/// restore is captured at dispatch rather than at session build. Retail gets
+/// the same effect by opening a different list window (content id `0x22`,
+/// window 16) with its own build. The `+7` flags byte the gate reads now has a
+/// carrier: `World::tables.equip_stats` holds the raw stat-bonus records,
+/// installed at boot by both hosts.
 ///
 /// Same three-buffer shape as the Use list with a discardability gate
 /// instead of the usability chain:
@@ -495,8 +522,13 @@ pub fn build_throw_out_rows(
 /// PORT: FUN_80030628 (content-id-2 case, `0x80030694..0x80030824` - the
 /// price-gated bag list; `see ghidra/scripts/funcs/80030628.txt`).
 ///
-/// NOT WIRED: the owner is the shop session's sell list; same slot-indexing
-/// blocker as [`build_use_list_rows`] - see family 3 in the module heading.
+/// Wired through `World::bag_sell_rows` and
+/// `crate::menu_runtime::MenuRuntime::sell_list_rows`, which both the shop's
+/// sell-list draw and its sell commit read on both hosts. The price source is
+/// `crate::shop_catalog::ShopItemData` - the item record's `+2` halfword for
+/// every id, already installed at boot - and **not** an open shop's stock
+/// list, whose answer for an id it does not sell is a floor of `1` that can
+/// never dim a row.
 ///
 /// The shop-sell shape: rows with a non-zero item price stay white in
 /// place; zero-price rows (unsellable) dim and sort last. No third

@@ -257,6 +257,26 @@ finds char 4 at seat 1 in one state (a Terra-in-party battle), so readef group
 
 ## Slot formats
 
+### Every slot is transferred whole, and most end in fill
+
+The stream SM reads a slot as a fixed `0x10800`-byte span, never as "the content
+length". `FUN_801F17F8` stage 1 turns the slot index into a byte seek with
+`sll a1,v0,0x5; addu a1,a1,v0; sll a1,a1,0xb` (`0x801F1948` - `index * 33 *
+0x800`), then passes `0x10800` as a byte count to `FUN_800559EC` (`lui a2,0x1`
+at `0x801F1958`, `ori a2,a2,0x800` in the `jal`'s delay slot at `0x801F1970`),
+which divides it by `0x800` for the sector count (`srl a1,a2,0xb`). Both files'
+extents are exact multiples of the stride.
+
+So a slot's content ends where its own format says - a texture page's declared
+width times 256 rows, an actor record's part pool, an "ME" archive's last entry -
+and the rest of the slot is fill that arrives in the stream buffer and is never
+read. Every slot in both files ends in such a run.
+[Byte accounting](../tooling/byte-accounting.md) claims those runs as `pad`
+bounded by the stride, which is what takes both entries to whole: the residue
+that is left over is inter-record alignment measured in tens of bytes, and no
+format is hiding in the fill. See `ghidra/scripts/funcs/overlay_battle_action_801f17f8.txt`
+and `ghidra/scripts/funcs/800559ec.txt`.
+
 ### Texture slot (`u32 mode` ∈ {0, 1, 2})
 
 ```text

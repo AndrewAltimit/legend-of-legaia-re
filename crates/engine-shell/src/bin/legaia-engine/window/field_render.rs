@@ -940,6 +940,7 @@ impl PlayWindowApp {
         }
         if self.session.host.world.ambient.clut_fx.is_empty()
             && self.session.host.world.ambient.script_vram_moves.is_empty()
+            && self.session.host.world.ambient.vram_rect_copies.is_empty()
             && self.session.host.world.ambient.fx.is_empty()
         {
             return;
@@ -948,10 +949,14 @@ impl PlayWindowApp {
             return;
         };
         let moved = self.session.host.world.apply_script_vram_moves(base);
+        // Field-VM op `0x43` sub-`0x12` rect copies: the same software VRAM,
+        // the same frame. `back_buffer` is `false` - the window presents one
+        // page, so there is no second framebuffer to bias a source into.
+        let copied = self.session.host.world.apply_vram_rect_copies(base, false);
         // The ambient move-VM effect parts (jou's flesh-palette cyclers /
         // lightning) run on the same game-tick bank and write the same VRAM.
         let ambient = self.session.host.world.step_ambient_fx(base);
-        if !self.session.host.world.step_clut_fx(base) && !moved && !ambient {
+        if !self.session.host.world.step_clut_fx(base) && !moved && !copied && !ambient {
             return;
         }
         if let Some(r) = self.win.renderer.as_ref() {

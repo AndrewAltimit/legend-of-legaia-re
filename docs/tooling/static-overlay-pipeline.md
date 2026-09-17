@@ -298,6 +298,32 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
   in `static-overlays.toml`. See
   [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
+### A slot-B image is based by its own operands, not by `scan`
+
+Slot-B images carry no internal `jal`, so `asset overlay scan` recovers nothing
+for any of them and reports a blank base - which reads as "no base" and is only
+"no votes in the form this sweep counts". Two other forms in the image's own
+operands do decide it, and both are properties of the bytes rather than of the
+load base, which is what makes them evidence.
+
+- **A head jump table.** The leading words of a module are in-image VAs
+  ([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md)). Their being
+  in-window is a per-word test that a wrong base fails for all of them at once,
+  and the word after the run is the first body's prologue. PROT `0968` has seven
+  such words followed by `addiu sp,sp,-0x50`.
+- **`j` targets and spawn-record pointers.** A `j` encodes its destination, and
+  a spawn record's address is materialised by a `lui`/`addiu` pair and handed to
+  `FUN_80050ED4` in `$a2`. PROT `0969` has no head table at all, and every one
+  of its three internal `j` targets and both of its spawn records lands inside
+  its own `0x800`-byte window at the slot-B base.
+
+Both entries are battle modules that read the battle context's phase byte at
+`+0x289` and cue `FUN_8004FCC8` with a [`bse.dat`](../formats/bse-dat.md)
+runtime-bank id (`0x20A` / `0x20B`). Neither is in the `0903..0966` band the
+three PROT `0898` entry tables reach
+([`cast-module.md`](../subsystems/cast-module.md)), and neither's game-facing
+identity is pinned.
+
 ### A small overlay does not clear the slot
 
 Slot A is a buffer, not a container: a load DMAs `size` bytes to `0x801CE818`

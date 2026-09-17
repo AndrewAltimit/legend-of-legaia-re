@@ -66,19 +66,34 @@ pub const FIELD_FOLLOW_YAW_UNITS: f32 = -160.0;
 /// is what makes this the fallback rather than dead code.
 pub const FIELD_H: f32 = 512.0;
 
-/// The retail eye-depth the follow calibration [`FIELD_CAM_DEPTH`] stands
-/// for: the zone-miss / default block's `B614 = 0x4000`. A composed depth
-/// scales the calibrated eye-back distance by its ratio to this.
+/// The retail eye-depth the terrain-less fallback frames with: the
+/// zone-miss / default block's `B614 = 0x4000`, in retail GTE units.
+/// [`FIELD_CAM_DEPTH`] is this divided by [`CUTSCENE_WORLD_SCALE`].
 pub const RETAIL_FIELD_DEPTH_UNITS: f32 = 16384.0;
 
-/// Field follow-camera eye-back depth, in the engine's 1x world frame.
+/// Field follow-camera eye-back depth for a world with **no field terrain**,
+/// in the engine's 1x world frame: the zone-miss block's `B614 = 0x4000`
+/// reduced by the 6x world scale retail folds into its camera rotation
+/// (`RETAIL_FIELD_DEPTH_UNITS / CUTSCENE_WORLD_SCALE`).
 ///
-/// An engine calibration rather than a savestate read: retail's exact field
-/// `TR` composition is not pinned (the anchor's offset trio does not project
-/// to the observed framing), so this is fitted so the player's on-screen
-/// height matches the retail frame - ~55 px of 240 for the ~130-unit mesh at
-/// `H = 512`.
-pub const FIELD_CAM_DEPTH: f32 = 1200.0;
+/// Derived, not fitted. The field `TR` composition is pinned: the once-per-
+/// frame view builder `FUN_800172C0` copies the eye-space translation trio
+/// `_DAT_800840B8/BC/C0` into the working matrix's `t`
+/// (`FUN_8005B4B8` at `0x80017334`), MVMVAs the negated focus
+/// `_DAT_80089118/1C/20` through the scaled rotation into that same `t`
+/// (`FUN_8003D344` at `0x80017370`, writing `0x1F8003DC` = the matrix's
+/// `+0x14`), and uploads it as GTE `TR` (`FUN_8005B6A8` at `0x8001737C`).
+/// The rotation is `_DAT_8007BF10 * Rot(_DAT_8007B790..94)`
+/// (`FUN_80026988` + `FUN_8005B3A8` at `0x80017320`), and a live `town01`
+/// field state holds `_DAT_8007BF10 = 24576 * I` - a 6x uniform scale. So
+/// retail's transform is `screen = proj(H) * (S * Rot * (v - focus) +
+/// tr_eye)`, and a 1x renderer reproduces it pixel-for-pixel with
+/// `tr_eye / S` - the same reduction [`cutscene_view`] applies to an
+/// op-`0x45` beat's offset trio.
+///
+/// While the zone camera is live, [`field_follow_view`] feeds the whole
+/// composed trio instead of this constant.
+pub const FIELD_CAM_DEPTH: f32 = RETAIL_FIELD_DEPTH_UNITS / CUTSCENE_WORLD_SCALE;
 
 /// Retail folds a 6x uniform world scale into the camera rotation (base
 /// matrix `DAT_8007BF10` = `24576 * I`, GTE `4096` = 1.0); the engine renders
@@ -147,13 +162,11 @@ fn lead_actor_xz(world: &World) -> Option<(f32, f32)> {
 /// [`Camera::manual_orbit`] swings the yaw around the player in the compass
 /// sense - the PSX render yaw is its negation.
 ///
-/// The eye trio is the one place the retail model is not applied verbatim:
-/// the composed depth scales [`FIELD_CAM_DEPTH`] by its ratio to the default
-/// `0x4000`, and the composed eye X / Y (the `-(depth >> 7)` / `0x200 +
-/// depth >> 8` terms and the floor-height compensation) are carried in the
-/// globals but not fed to the view, because the field `TR` composition
-/// behind [`FIELD_CAM_DEPTH`]'s calibration is not pinned (the retail eye
-/// trio divided by the 6x world scale does not reproduce the retail frame).
+/// The eye trio is the live `_DAT_800840B8/BC/C0` the ease walks, divided by
+/// the 6x world scale retail folds into its camera rotation - eye X
+/// (`-(depth >> 7)`), eye Y (`0x200 + depth >> 8` plus the floor-height
+/// compensation) and the depth, all of them. See [`FIELD_CAM_DEPTH`] for the
+/// `FUN_800172C0` chain that pins the composition.
 ///
 /// `None` when no player actor exists to follow; a host falls back to its own
 /// debug vantage there.
@@ -162,21 +175,52 @@ fn lead_actor_xz(world: &World) -> Option<(f32, f32)> {
 pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView> {
     let (wx, wz) = lead_actor_xz(world)?;
     let floor_y = world.sample_field_floor_height(wx as i32, wz as i32) as f32;
-    let (pitch_units, yaw_units, depth_scale) = if cam.zone.active {
+    let s = CUTSCENE_WORLD_SCALE;
+    let (pitch_units, yaw_units, tr_eye) = if cam.zone.active {
         let g = &cam.globals.0;
         (
             f32::from(g[0] as i16),
             f32::from(g[1] as i16),
-            // Mode 4 flips a negative depth into the yaw; every other arm
-            // composes a positive one, so the magnitude is the distance and
-            // a degenerate shot never puts the lens inside the player.
-            (g[5] as f32 / RETAIL_FIELD_DEPTH_UNITS).abs().max(0.1),
+            // The live eye-space translation trio, reduced by the 6x world
+            // scale retail folds into its rotation. Mode 4 flips a negative
+            // depth into the yaw, so the depth axis takes the magnitude and
+            // a degenerate shot never puts the lens inside the player; the
+            // floor is `FIELD_CAM_DEPTH / 8`, which is closer than any
+            // composed shot and still in front of the mesh.
+            [
+                g[3] as f32 / s,
+                g[4] as f32 / s,
+                ((g[5] as f32 / s).abs()).max(FIELD_CAM_DEPTH / 8.0) * cam.distance.scale(),
+            ],
         )
     } else {
-        (FIELD_PITCH_UNITS, FIELD_FOLLOW_YAW_UNITS, 1.0)
+        (
+            FIELD_PITCH_UNITS,
+            FIELD_FOLLOW_YAW_UNITS,
+            [0.0, 0.0, FIELD_CAM_DEPTH * cam.distance.scale()],
+        )
     };
     Some(FieldCameraView {
-        focus: [wx, floor_y, wz],
+        // Retail's focus trio is `_DAT_80089118/1C/20`, and only X and Z are
+        // ever written in the field (`FUN_801DBE9C`'s retail leg and the
+        // focus clamp `FUN_801DAA50` both write those two). Its Y global
+        // measures `0` on every sampled field frame while the player's
+        // footing on those frames is not, so **retail's** focus sits at
+        // world Y `0` and the vertical framing rides the composed eye Y
+        // alone - see docs/subsystems/renderer.md.
+        //
+        // Zeroing it moves the focus 128 units vertically in `town01`, which
+        // is enough to show any tilt in the walk direction: the page's
+        // compass oracle measures a *finite* displacement through the frame's
+        // own projection, so a heading that is off by up to 45 degrees prints
+        // a cross-term that a floor-anchored focus had been flattening. The
+        // heading is now rung at 45 degrees like retail's
+        // (`World::decode_field_direction` -> `remap_pad_direction`), which
+        // halves that worst case, so the measured framing ships.
+        //
+        // A world with no terrain has no composed eye trio to ride, so the
+        // sampled floor still stands in for it there.
+        focus: [wx, if cam.zone.active { 0.0 } else { floor_y }, wz],
         pitch: to_rad(pitch_units),
         // PSX camera yaw is the compass negation, so a positive manual orbit
         // subtracts from the render yaw.
@@ -194,11 +238,7 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
             0 => FIELD_H,
             v => v as f32,
         },
-        tr_eye: [
-            0.0,
-            0.0,
-            FIELD_CAM_DEPTH * depth_scale * cam.distance.scale(),
-        ],
+        tr_eye,
     })
 }
 
@@ -467,6 +507,37 @@ mod tests {
         assert!((v.pitch - to_rad(FIELD_PITCH_UNITS)).abs() < 1e-6);
         assert!((v.yaw - to_rad(FIELD_FOLLOW_YAW_UNITS)).abs() < 1e-6);
         assert_eq!(v.tr_eye[2], FIELD_CAM_DEPTH);
+    }
+
+    /// While the zone camera drives the frame the whole composed eye trio
+    /// reaches the view, divided by the base matrix's 6x world scale -
+    /// `FUN_800172C0` uploads that trio as GTE `TR` with no depth constant
+    /// anywhere in the chain.
+    #[test]
+    fn follow_view_feeds_the_whole_composed_trio_reduced_by_the_world_scale() {
+        let w = world_with_player(0, 0);
+        let mut cam = Camera::default();
+        cam.zone.active = true;
+        cam.globals.0[0] = 0x1C0;
+        cam.globals.0[1] = -0x50;
+        cam.globals.0[3] = -84;
+        cam.globals.0[4] = 553;
+        cam.globals.0[5] = 10712;
+        let v = field_follow_view(&cam, &w).expect("player actor");
+        let s = CUTSCENE_WORLD_SCALE;
+        assert!((v.tr_eye[0] - -84.0 / s).abs() < 1e-3);
+        assert!((v.tr_eye[1] - 553.0 / s).abs() < 1e-3);
+        assert!((v.tr_eye[2] - 10712.0 / s).abs() < 1e-3);
+        assert!((v.pitch - to_rad(448.0)).abs() < 1e-6);
+        // A mode-4 shot stores a negative depth and folds the side into the
+        // yaw, so the depth axis takes the magnitude.
+        cam.globals.0[5] = -10712;
+        let f = field_follow_view(&cam, &w).unwrap();
+        assert!((f.tr_eye[2] - 10712.0 / s).abs() < 1e-3);
+        // A degenerate shot never puts the lens inside the player.
+        cam.globals.0[5] = 0;
+        let z = field_follow_view(&cam, &w).unwrap();
+        assert!((z.tr_eye[2] - FIELD_CAM_DEPTH / 8.0).abs() < 1e-3);
     }
 
     /// The manual orbit is the PSX yaw's negation, and the distance preset

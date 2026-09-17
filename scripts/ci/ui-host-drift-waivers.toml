@@ -154,117 +154,28 @@
 # `engine-ui` rather than once per host, so the two cannot drift on the content
 # without the shared builder changing under both at once.
 
-[[waiver]]
-builder = "count_panel_draws_for"
-kind = "orphan"
-reason = """
-Window id 24 (`FUN_801DCC20`): a two-digit count in the accent pen over a
-reserved sub-rect, guarded on the staged item id. This was waived on "window
-24's rect is byte-identical to window 17's, so which screen opens 24 rather
-than 17 is unknown". The geometry could not answer it; the open scripts can.
-Exactly one command in the menu overlay opens window `0x18` - script
-`0x801E4DC8`, run by sub-screen `0x14` (`FUN_801D9C14`) - and the same script
-opens windows `2` and `0x19` beside it, the **Equip** title tab and the
-active-character stat compare. Window 24 is the Equip screen's item panel.
-(The sub-screen id read `0x13` here until it was checked against the pointer
-table: the script is loaded at `0x801d9d00`, inside the routine the table
-lists at index `0x14`; index `0x13` is `0x801D99F0`.)
-
-What still blocks it is the other half of the old reason, which stands: the
-painter is only the **delta**. The renderer's gated body opens with
-`jal 0x801D0F1C`, the shared item-info panel window 17 also draws, so a host
-adopting window 24 draws that panel into the same rect and adds this count on
-top. The engine's equip screen is a slot list with no item-info panel at all,
-so there is no rect to add a count to yet.
-"""
-
-# `two_line_choice_panel_draws_for` (window 5) and `label_list_draws_for`
-# (window 6) were waived here as orphans blocked on "the entry-context kind
-# reaching `0x0D`", because the port tagged each op-`0x49` park by its owning
-# context instead of recording the armed sub-op. Both waivers said in as many
-# words: close it by making the arm record its sub-op, not by adding a draw
-# call. That is what happened. `FieldHost::op49_arm` now carries the sub-op -
-# which is what retail's park holds, since `_DAT_8007B450` is the *operand
-# pointer* (`sw s6,-0x4bb0(s0)` at `0x801e09a8`) and every consumer reads its
-# first byte (`lbu v0,0x0(s6)` at `0x801e0984`) - so
-# `World::menu_entry_context_kind` answers with any of the fourteen sub-ops
-# rather than with the two the port could previously infer.
+# `count_panel_draws_for` (window 24) was waived here as an orphan blocked on
+# "the engine's equip screen is a slot list with no item-info panel at all, so
+# there is no rect to add a count to". Both halves of that are now false, and
+# the doc the waiver leaned on had already settled the second: the Equip
+# screen's candidate step is sub-screen `0x14`, whose open script `0x801E4DC8`
+# opens windows 24 and 25 **on top of** the browse step's four - so window 24
+# is an addition to the port's screen, not a different layout for it. Window
+# 24's renderer calls the shared item-info panel `FUN_801D0F1C`, which window
+# 17 also calls, which is why the two descriptors carry byte-identical rects.
 #
-# Both screens then followed, on both hosts. `FieldMenuSession` grew the two
-# phases retail's own dispatcher selects for this kind - `Notice` (sub-screen
-# `4`, `FUN_801DD1B8`) as the *entry* screen and `ReadyConfirm` (sub-screen
-# `3`, `FUN_801D6D38`) as the cancel destination - and each host draws them
-# off the disc-parsed rect through `painter_at`
-# (`window/menu_draws.rs::context_locked_screen_draws` and
-# `web-viewer/src/play_menu.rs::build_context_locked`). The labels are read
-# out of the caller's own PROT 0899 image at the VAs the two renderers load
-# (`pause_screens::ContextLockedLabels`), installed by the one
-# `install_menu_overlay_tables` call both hosts already made - so neither host
-# can ship the panels text-less while the other draws them, and no string is
-# committed.
+# So the panel was extracted from the one screen that had it
+# (`items_screen_draws_for` -> `item_info_panel_draws_for`), the Equip model
+# grew the hovered candidate's info row, and the compose draws window 24's
+# frame, that panel, and this painter's count delta over it whenever the
+# candidate step is up. Both hosts reach it through the shared
+# `equip_screen_compose`.
 #
-# Two things the old prose had wrong, both now corrected where they were
-# written down:
-#
-#   * Window 5 is **not** a "really leave?" gate. `FUN_801D61B0`'s own string
-#     pointers are `0x801CEC78` / `0x801CEC94`, a battle-start ready check;
-#     its Yes exits the menu *into the fight*.
-#   * Window 6's six labels are **not** "content that record owns". They are
-#     six static VAs in the menu overlay's own pool, loaded by
-#     `lui a0,0x801d` + `addiu` pairs at `0x801d636c..0x801d6448` - a
-#     multi-line battle briefing plus a one-byte control string. So the text
-#     was never the obstacle; only the trigger was.
-#
-# Reachability was measured rather than assumed, because a screen that hangs
-# off a kind byte no script ever arms is not worth a host:
-# `crates/engine-core/tests/op49_sub_op_census.rs` walks every scene MAN's
-# field-VM script and tallies the op-`0x49` sub-op operands. Kind `0x0D` is
-# armed on the real disc; so is kind `7` below.
-#
-# One half of this is still short of retail, and it is disclosed on
-# `FieldMenuSession::open_entry_screen` rather than hidden by the deletion.
-# Retail's op-`0x49` arm spawns a driver actor that **opens the menu itself**
-# and keeps the park armed until that screen hands back; the port has no path
-# from a parked field script to opening a host-owned pause menu, so the close
-# tick retires the park within a few frames. The decode runs on both hosts and
-# the screens draw - but a player reaches them only if the menu opens while
-# the park is still armed. Closing that is the inline gold shop's shape (a
-# `take_pending_field_menu` channel plus a host-called finish), not a draw
-# call, and it is a different gap from the one these waivers described.
-
-
-# `equip_target_list_draws_for` (window 36) and `compare_panel_draws_for`
-# (windows 25 / 41) were waived here as orphans blocked on "the flow that
-# opens them" - the shop's equipment-buy recipient picker (`FUN_801DB380`) -
-# and then read as web-ahead once the browser page grew that surface and the
-# native window had not. Both gaps are closed: `engine-ui`'s
-# `recipient_picker_draws_for` is now the whole sub-screen as one shared
-# composition, and each host only resolves the three rects off the disc
-# window table and builds the model - `web-viewer/src/play_shop.rs` and
-# `window/shop_windows.rs`, both named `recipient_window_draws`. The native
-# window arms the flow in `window/run.rs` off `BootSession::equip_restrictions`,
-# the twin of the page's `load_disc` arming. Nothing to waive, and a future
-# divergence would have to be written into the shared builder, where it would
-# show up on both hosts at once.
-
-# --- Widened surface: engine-ui's intermediate draw records ------------------
-#
-# The checker's builder surface used to stop at `TextDraw` / `SpriteDraw`. It
-# now also counts the crate's intermediate records - `HudDraw`, `HudQuad`,
-# `DigitCell`, `BarFrame`, `ComparePanelField` - because a screen that stops at
-# one of those is still a screen, and leaving them off made two whole chains
-# (the fishing HUD, window 25's compare panel) invisible while every other
-# pause screen was covered. Thirteen builders arrived with the widening. Ten
-# were already reached on both hosts through methods the call graph now walks.
-# Of the remaining three gaps, the PROT 0977 arena-hub quad emitters
-# (`hud_quad_centred` / `hud_quad_corner` / `decimal_quads`) are now wired on
-# BOTH hosts - `minigames_muscle::muscle_hub_quads_json` runs them over the
-# draw lists recovered from that entry's own call sites for the dome page,
-# and the native play-window draws the same screens through the same
-# builders (`window/minigames.rs::muscle_hub_sprite_draws`: intro card +
-# ROUND banner over an open leg, INTERVAL + score tally between legs, the
-# tally fed the same DomeContest rows/tally + coin-bank model) - so only the
-# one below is left.
+# The same change fixed what the waiver's own closing note called out as *not*
+# the gap: the screen had been spelling every candidate `Item 3A`, because the
+# item name / description resolver lived inside the Items screen's session
+# builder. It is `field_menu_dispatch::item_display_text` now, and both hosts
+# pass it.
 
 [[waiver]]
 builder = "equip_compare_panel_fields"
@@ -284,15 +195,26 @@ pass, through `equip_screen_draws_for`'s `stat_compare` rows. So this is not a
 screen the player is missing - it is a second, descriptor-driven renderer of
 the same readout.
 
-The blocking capability is the **equip window set**, the same one that blocks
-window 24 (`count_panel_draws_for` above). Retail opens windows 2 / 24 / 25
-from one script (`0x801E4DC8`, sub-screen `0x13` / `FUN_801D9C14`); the port's
-equip flow (`legaia_engine_core::equip_session`) is built on the
-capture-pinned set 2 / 21 / 22 / 23, and window 25's rect `(14, 40, 144, 52)`
-overlaps the party window 21 it would have to replace. Closing it means
-moving the whole screen onto the descriptor-table layout - which is also what
-would give window 24 the item-info rect it needs - not adding a draw call to
-the screen as it stands.
+The blocking capability this waiver used to name was **wrong**, and its twin
+proved it. It read: "retail opens windows 2 / 24 / 25 from one script, the
+port's equip flow is built on 2 / 21 / 22 / 23, and window 25's rect overlaps
+the party window 21 it would have to replace - closing it means moving the
+whole screen onto the descriptor-table layout". Script `0x801E4DC8` belongs to
+sub-screen `0x14`, the **candidate step**, which runs after `0x12` has picked
+the character and `0x13` has browsed the slots; it opens 24 and 25 *on top of*
+the four windows already up. Overlapping window 21 is what it is for. Window
+24 has since been adopted on exactly those terms, on both hosts, and nothing
+about the screen's layout had to move.
+
+What actually blocks this one is narrower and is a real missing input:
+`EquipComparePanelView` wants the live and trial-equip **stat blocks**
+(`0x801EF080` / `0x801EF0A0` - eight words each, plus the record's own HP/MP
+maxima and the compare **category** that picks which three rows print), and
+the equip model publishes three `(label, current, preview)` triples instead,
+which is all window 22's own Best-Equipment pass needs. Closing it means
+`equip_session` publishing the two blocks and the category, not a draw call:
+the field list already materialises through `compare_panel_draws_for`, which
+the shop's window 41 reaches.
 """
 
 [[waiver]]

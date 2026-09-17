@@ -49,6 +49,11 @@ const RAM_BASE: u32 = 0x8000_0000;
 const GTE_H: u32 = 0x8007_B6F4;
 /// Camera rotation trio `(pitch, yaw, roll)`.
 const CAM_ROT: u32 = 0x8007_B790;
+/// The live eye-space translation trio `_DAT_800840B8/BC/C0`. The field
+/// view builder `FUN_800172C0` copies these three words verbatim into the
+/// working matrix's translation (`FUN_8005B4B8` at `0x80017334`) before the
+/// focus MVMVA, so they are the eye half of retail's GTE `TR`.
+const CAM_EYE: u32 = 0x8008_40B8;
 /// The camera parameter block (`0x8007B600 + 0x28`).
 const PARAM_BLOCK: u32 = 0x8007_B600;
 /// The follow composer's staging descriptor (field overlay 0897).
@@ -94,6 +99,11 @@ fn off(va: u32) -> usize {
 fn rs16(ram: &[u8], va: u32) -> i16 {
     let o = off(va);
     i16::from_le_bytes([ram[o], ram[o + 1]])
+}
+
+fn rs32(ram: &[u8], va: u32) -> i32 {
+    let o = off(va);
+    i32::from_le_bytes([ram[o], ram[o + 1], ram[o + 2], ram[o + 3]])
 }
 
 /// PS-X EXE VA -> file offset (header is 0x800 bytes, text base at +0x18).
@@ -144,6 +154,12 @@ struct RetailSide {
     /// at (its focus fields, X / Z negated back).
     staging_player: [i32; 3],
     live: (i16, i16, i16),
+    /// The live eye-space translation trio `_DAT_800840B8/BC/C0`, read as
+    /// the 32-bit words the view builder copies verbatim into the working
+    /// matrix's `t`.
+    live_eye: [i32; 3],
+    /// Live camera roll (`_DAT_8007B794`).
+    live_roll: i16,
     /// The op-`0x45` struct's `(pitch, yaw, H)`.
     script_cam: (i16, i16, i16),
     half_eye: bool,
@@ -210,6 +226,12 @@ fn walkable_states(manifest: &ScenarioManifest, lib: &Path) -> Vec<RetailSide> {
                 -i32::from(rs16(ram, STAGING + 0x22)),
             ],
             live: (rs16(ram, CAM_ROT), rs16(ram, CAM_ROT + 2), rs16(ram, GTE_H)),
+            live_eye: [
+                rs32(ram, CAM_EYE),
+                rs32(ram, CAM_EYE + 4),
+                rs32(ram, CAM_EYE + 8),
+            ],
+            live_roll: rs16(ram, CAM_ROT + 4),
             script_cam: (
                 rs16(ram, SCRIPT_CAM + 0x02),
                 rs16(ram, SCRIPT_CAM + 0x06),
@@ -260,6 +282,9 @@ fn every_walkable_state_frames_through_the_zone_camera() {
     let mut box_ok = 0usize;
     let mut compose_ok = 0usize;
     let mut live_ok = 0usize;
+    let mut eye_ok = 0usize;
+    let mut eye_depth_ok = 0usize;
+    let mut settled_eye_ok = 0usize;
     let mut mid_glide = 0usize;
     let mut scripted = 0usize;
     let mut stale_staging = 0usize;
@@ -270,6 +295,7 @@ fn every_walkable_state_frames_through_the_zone_camera() {
     let mut settled_free_roam_ok = 0usize;
     let mut unseated = 0usize;
     let mut unexplained = 0usize;
+    let mut stale_block = 0usize;
     let mut misses: Vec<String> = Vec::new();
 
     for s in &states {
@@ -381,10 +407,26 @@ fn every_walkable_state_frames_through_the_zone_camera() {
                     hits.push(format!("#{i} kind {}", rec[0]));
                 }
             }
+            // A zone miss the port cannot reproduce by querying, because
+            // retail did not query here either. Retail's block is loaded by a
+            // script arm, the player seat, or the flag-gated per-frame path
+            // (see `crates/engine-core/tests/field_camera_zone_arms_disc.rs`);
+            // a state whose block decodes from a record in this scene's own
+            // table, while the query at the state's own tile does not select
+            // it, is a block retail loaded at some earlier tile and never
+            // refreshed. This oracle seats the player and ticks once, so it
+            // has no way to reach that earlier tile.
+            let held = !hits.is_empty();
+            stale_block += usize::from(held);
             misses.push(format!(
                 "{tag}: zone table has {count} records; retail's block decodes from {hits:?} \
-                 (engine loaded {:?})",
-                cam.zone.loaded_record.map(|r| r[0])
+                 (engine loaded {:?}){}",
+                cam.zone.loaded_record.map(|r| r[0]),
+                if held {
+                    " [block held from an earlier tile - retail does not re-query on a crossing]"
+                } else {
+                    ""
+                }
             ));
         }
 
@@ -404,11 +446,98 @@ fn every_walkable_state_frames_through_the_zone_camera() {
         scripted += usize::from(script);
         mid_glide += usize::from(glide);
         unexplained += usize::from(!(l_ok || script || glide || !z_ok));
+        // Per-state parameter dump for an off-line framing comparison (the
+        // six numbers `psx_camera_vp` reads, both sides, plus the player
+        // anchor). Off by default; `LEGAIA_CAMERA_ORACLE_DUMP=1` turns it on.
+        if std::env::var_os("LEGAIA_CAMERA_ORACLE_DUMP").is_some() {
+            let floor_here = host
+                .world
+                .sample_field_floor_height(s.player[0], s.player[2]);
+            println!(
+                "[params] {}\t{}\tplayer={},{},{}\tfloor={floor_here}\t\
+                 retail=pitch:{},yaw:{},roll:{},h:{},eye:{},{},{},focusy:0\t\
+                 port=pitch:{},yaw:{},roll:{},h:{},eye:{},{},{}",
+                s.label,
+                s.scene,
+                s.player[0],
+                s.player[1],
+                s.player[2],
+                s.live.0,
+                s.live.1,
+                s.live_roll,
+                s.live.2,
+                s.live_eye[0],
+                s.live_eye[1],
+                s.live_eye[2],
+                g[0],
+                g[1],
+                g[2],
+                g[9],
+                g[3],
+                g[4],
+                g[5],
+            );
+            // The composed view the hosts actually render with, from the one
+            // kernel both of them call. The `[params]` line above carries the
+            // raw camera words; between those words and the frame sit the
+            // focus rule, the 6x world-scale reduction, the depth floor and
+            // the distance knob, so a framing measurement that re-derives the
+            // view from `[params]` is measuring its own arithmetic. This line
+            // is `psx_camera_vp`'s six inputs verbatim.
+            if let Some(v) = legaia_engine_core::camera_view::field_follow_view(&cam, &host.world) {
+                println!(
+                    "[view] {}\tfocus={:.3},{:.3},{:.3}\tpitch={:.6}\tyaw={:.6}\t\
+                     roll={:.6}\th={:.3}\ttr_eye={:.3},{:.3},{:.3}",
+                    s.label,
+                    v.focus[0],
+                    v.focus[1],
+                    v.focus[2],
+                    v.pitch,
+                    v.yaw,
+                    v.roll,
+                    v.h,
+                    v.tr_eye[0],
+                    v.tr_eye[1],
+                    v.tr_eye[2],
+                );
+            }
+        }
+
+        // ---- tier 3b: the live EYE trio.
+        //
+        // Tier 3 grades `(pitch, yaw, H)`; those three say where the lens
+        // points, and nothing about how far back it sits. The eye-back
+        // distance lives in `_DAT_800840B8/BC/C0`, which the view builder
+        // copies verbatim into `TR`, so a port that matches tier 3 exactly
+        // can still frame the scene from a different distance. Graded here
+        // separately, and only where retail itself is settled - a scripted
+        // shot or a mid-glide state has an eye retail is still walking.
+        let engine_eye = [g[3], g[4], g[5]];
+        let e_ok = engine_eye == s.live_eye;
+        // The depth axis on its own: the one that sets how much of the
+        // scene is on screen.
+        let e_depth_ok = engine_eye[2].abs() == s.live_eye[2].abs();
+        eye_ok += usize::from(e_ok);
+        eye_depth_ok += usize::from(e_depth_ok);
         // A settled free-roam state: retail's own live trio IS its composed
         // target and no script owns the camera. Here the port must be exact.
         if staged_matches_live && !script && !stale {
             settled_free_roam += 1;
             settled_free_roam_ok += usize::from(l_ok);
+            settled_eye_ok += usize::from(e_ok);
+            if !e_ok {
+                misses.push(format!(
+                    "{tag}: settled free-roam EYE miss: engine {engine_eye:?} retail \
+                     {:?} (delta {:?}); staged eye {:?}",
+                    s.live_eye,
+                    [
+                        engine_eye[0] - s.live_eye[0],
+                        engine_eye[1] - s.live_eye[1],
+                        engine_eye[2] - s.live_eye[2],
+                    ],
+                    want.2,
+                ));
+            }
         }
 
         if !(z_ok && b_ok && c_ok && l_ok) {
@@ -454,7 +583,10 @@ fn every_walkable_state_frames_through_the_zone_camera() {
          {current_compose_ok}/{current_staging} where the staging is current ({stale_staging} \
          stale, {foreign_staging} from a replaced block), live (H,pitch,yaw) exact {live_ok}/{n}, \
          scripted shot {scripted}/{n}, mid-glide {mid_glide}/{n}, settled free-roam exact \
-         {settled_free_roam_ok}/{settled_free_roam}, unseated {unseated}/{n}"
+         {settled_free_roam_ok}/{settled_free_roam}, held-from-an-earlier-tile \
+         {stale_block}/{n}, unseated {unseated}/{n}; live EYE trio exact {eye_ok}/{n} \
+         (depth axis alone {eye_depth_ok}/{n}, settled free-roam \
+         {settled_eye_ok}/{settled_free_roam})"
     );
     assert_eq!(unseated, 0, "every walkable state's scene must seat");
     assert_eq!(
@@ -479,6 +611,14 @@ fn every_walkable_state_frames_through_the_zone_camera() {
     assert_eq!(
         unexplained, 0,
         "every live miss must be a scripted shot, a mid-glide or a zone-selection miss"
+    );
+    // Every zone-selection miss must be one of those held blocks. A miss
+    // whose block decodes from no record in the scene's own table would be a
+    // loader or query defect, which is a different thing entirely.
+    assert_eq!(
+        zone_ok + stale_block,
+        n,
+        "a zone miss whose block matches no record in the scene's own table"
     );
     assert!(
         settled_free_roam > 0,

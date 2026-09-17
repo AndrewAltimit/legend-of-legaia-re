@@ -33,6 +33,7 @@ pub mod play_battle_vram;
 pub mod play_bgm;
 pub mod play_camera;
 pub mod play_cutscene;
+pub mod play_dance_art;
 pub mod play_dev_menu;
 pub mod play_dialog;
 pub mod play_field_fx;

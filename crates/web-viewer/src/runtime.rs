@@ -156,6 +156,11 @@ pub struct LegaiaRuntime {
     /// retail's rearm arm rather than comparing the new scene's player
     /// position against the old one's.
     pub(crate) field_party_hud_scene: Option<String>,
+    /// This frame's passive-ability badge icons, already anchored in 320x240
+    /// stage space. Resolved in `tick_field_party_hud` because the anchor
+    /// needs the frame's view-projection (a `&mut self` read) and the draw
+    /// pass does not have one; see [`crate::play_field_hud`].
+    pub(crate) passive_hud_icons: Vec<legaia_engine_vm::field_passive_hud::HudIcon>,
     /// The lead's projected stage-Y (240-line PSX space) the page reports
     /// each frame off its own view-projection ([`Self::set_field_player_screen_y`]),
     /// the twin of the native window's `field_hud_projected_player_y`. `None`
@@ -407,6 +412,7 @@ impl LegaiaRuntime {
             battle_intro_geom: None,
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
+            passive_hud_icons: Vec::new(),
             field_hud_projected_y: None,
             pending_dynamic_mesh_slots: Vec::new(),
             dynamic_mesh_slots: Vec::new(),
@@ -574,6 +580,13 @@ impl LegaiaRuntime {
                     legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
                 }),
         );
+        // The raw stat-bonus records as well: the Items screen's Throw Out
+        // list reads each record's `+7` flags byte, which the derived modifier
+        // table does not keep. Twin of the native boot's install in
+        // `BootSession::open_with_source`.
+        if let Some(table) = self.equip_stats.clone() {
+            host.world.set_equip_stats(table);
+        }
         // Retail-shaped equipment buy: this page draws the recipient picker
         // (window 36) and the stat-compare windows (25 / 41) over the parked
         // buy list ([`crate::play_shop`]), so opt into the flow and install
@@ -952,6 +965,7 @@ impl LegaiaRuntime {
         // Field party-status HUD countdown, ticked where the native window
         // ticks it (`FUN_801D0D38`); the draw pass reads the decision back.
         self.tick_field_party_hud();
+        self.tick_passive_hud();
         // Developer menu (the visitor's explicit opt-in): ticked exactly
         // where the native window's redraw loop ticks its own, off the same
         // world pad words. A no-op while the opt-in is off.
@@ -1625,6 +1639,10 @@ impl LegaiaRuntime {
             dirty |= anim.tick(1, &mut res.vram);
         }
         dirty |= host.world.apply_script_vram_moves(&mut res.vram);
+        // Field-VM op `0x43` sub-`0x12` rect copies, drained where the native
+        // window drains them (`field_render::apply_world_clut_fx`); the page
+        // presents one framebuffer page, so the back-buffer bias is off.
+        dirty |= host.world.apply_vram_rect_copies(&mut res.vram, false);
         dirty |= host.world.step_ambient_fx(&mut res.vram);
         dirty |= host.world.step_clut_fx(&mut res.vram);
         self.field_vram_dirty |= dirty;
@@ -1975,10 +1993,10 @@ impl LegaiaRuntime {
 
     /// Stage the current scene's first VAB entry
     /// ([`SceneHost::scene_vab_bytes`]) into the SPU as the active scene-local
-    /// BGM bank, mirroring the native boot's `stage_scene_vab` (parse at
-    /// offset 0, SPU RAM allocator from `0x1000`). No-op when audio isn't up or
-    /// the scene has no VAB. A subsequent global-pool track replaces this bank
-    /// with its own on start.
+    /// BGM bank, mirroring the native boot's `stage_scene_vab` (parse at the
+    /// stream's own VAB offset, SPU RAM allocator from `0x1000`). No-op when
+    /// audio isn't up or the scene has no VAB. A subsequent global-pool track
+    /// replaces this bank with its own on start.
     #[cfg(target_arch = "wasm32")]
     fn stage_scene_bgm_bank(&mut self) {
         let out = match self.audio_out.as_ref() {
@@ -1989,11 +2007,11 @@ impl LegaiaRuntime {
             Some(h) => h,
             None => return,
         };
-        let vab_bytes = match host.scene_vab_bytes() {
+        let (vab_bytes, vab_off) = match host.scene_vab_bytes() {
             Ok(Some(b)) => b,
             _ => return,
         };
-        let report = match legaia_vab::parse(&vab_bytes, 0) {
+        let report = match legaia_vab::parse(&vab_bytes, vab_off) {
             Ok(r) => r,
             Err(e) => {
                 crate::console_log(&format!("play BGM: scene VAB parse failed: {e}"));

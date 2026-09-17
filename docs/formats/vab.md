@@ -50,6 +50,26 @@ Six entries - `0886`, `1058`, `1059`, `1063`, `1064`, `1065` - put the SEQ chunk
 small-alignment probe recovers it. Anything that indexes a VAG body out of a
 stream entry has to walk the chunks.
 
+#### Two wrongs that cancel, and the six entries where they do not
+
+The skew has a twin on the consumer side, and the pair is why neither was
+visible. A caller that parses at the VAB (`parse(entry, 4)`) gets spans that are
+absolute in `entry`, and then hands the upload a buffer **re-sliced at the VAB**
+- so every span is indexed four bytes too far on. That is exactly the four bytes
+the parsed origin is short, and on 212 of the 218 stream-carried VABs the two
+errors land on the same byte. They do not on the six above: there the upload
+reads inside the SEQ chunk and puts a slice of the sequence into SPU RAM as a
+sample body, which measures as a legal-filter share of roughly a coin flip
+against 100 % at the resolved origin.
+
+Both halves are resolved together, which is the only safe way to move either:
+`legaia_vab::vag_body_origin_at` finds the body chunk by walking **forward**
+from the end of the header part (no chunk-0 header needed, so it works on a
+buffer that starts at `pBAV`), and `legaia_vab::parse_in_stream` returns a
+report whose spans are already resolved. The `pBAV` magic tells a consumer which
+buffer convention it was handed. `parse`'s own spans stay where they are -
+several callers compensate with a hard-coded `+4` of their own.
+
 ### The multi-bank archive (`monster.snd`)
 
 PROT extraction `0891` is the disc's one multi-bank VAB: 206 independent banks,

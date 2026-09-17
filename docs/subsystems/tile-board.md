@@ -75,11 +75,50 @@ Cells are indexed `board[row * width + col]`. Confirmed value classes:
 | Value | Meaning |
 |---|---|
 | `2` | **wall** - destination cell `== 2` rejects the move |
-| `3`..`6` | walkable terrain types; sets `_DAT_8007b5f0 = (v - 3) * 2` (step variant) |
+| `3`..`6` | walkable terrain types; sets `_DAT_8007b5f0 = (v - 3) * 2` (step variant) - [the walker's octant store](#the-walkers-octant-store) |
 | `7` | trigger; routes the walk SM to its event sub-state |
 | `8`..`10` | event / transition tile; consumes header `+7`/`+9` as flag **bases** into the system-flag bank `DAT_80085758` (reader `func_0x8003ce9c`; SET `func_0x8003ce08` / TEST `func_0x8003ce64`), and applies a half-tile world offset. Handled in walk SM `overlay_0897_801ef2b0.txt` case 8. |
-| `0xb`..`0xe` | animated tiles; the arrival sub-state cycles the value `0xb → 0xe → 0xb` each visit |
+| `0xb`..`0xe` | animated tiles; the arrival sub-state cycles the value `0xb → 0xe → 0xb` each visit, **and** writes the same `(v - 3) * 2` octant as `3`..`6` - [below](#the-walkers-octant-store) |
 | other | plain walkable floor |
+
+### The walker's octant store
+
+The step-variant write is two bands, not one, and the clear in front of them is
+unconditional. The whole cluster is six instructions at `0x801EF8A4`..`0x801EF8CC`
+in the walk SM (field overlay 0897):
+
+```text
+801ef89c  lbu   s3, (v0)          ; the cell byte
+801ef8a4  addiu v1, s3, -3        ; v1 = cell - 3, and it is NOT recomputed below
+801ef8a8  sltiu v0, v1, 4         ; band 1: cells 3..6
+801ef8ac  beqz  v0, 801ef8bc
+801ef8b0  sw    zero, -0x4a10(a0) ; DELAY SLOT - always runs, taken or not
+801ef8b4  sll   v0, v1, 1
+801ef8b8  sw    v0, -0x4a10(a0)   ; gp+0x2D8 = (cell - 3) * 2
+801ef8bc  addiu v0, s3, -0xb      ; band 2: cells 0x0B..0x0E
+801ef8c0  sltiu v0, v0, 4
+801ef8c4  beqz  v0, 801ef8d0
+801ef8c8  sll   v0, v1, 1         ; DELAY SLOT - still (cell - 3) * 2
+801ef8cc  sw    v0, -0x4a10(a0)
+```
+
+Two things a backward-only read of the second band gets wrong. The `sw zero` at
+`0x801EF8B0` sits in a branch **delay slot**, so every walkable cell clears the
+octant first and only the two banded ranges then write one - a cell outside both
+bands leaves the octant at 0, it does not leave it alone. And the second band's
+shift in the `beqz` delay slot at `0x801EF8C8` re-uses `v1`, which is still
+`cell - 3` from the first band's `addiu` - not `cell - 0xB`. So the animated
+tiles `0x0B`..`0x0E` store `16`, `18`, `20`, `22`, which the pad remapper's
+`& 7` folds back onto octants `0`, `2`, `4`, `6`: the animated band aliases onto
+the even half of the `3`..`6` band.
+
+`0x801EFE7C` is not a third write of a fresh octant - it is the **restore** half
+of a save/restore pair around the board mode: `0x801EF320` saves the incoming
+`gp+0x2D8` into `0x801F35C4` on entry and `0x801EFE7C` puts it back on exit.
+
+The octant is a plain scene-authored word, not a camera reading - see
+[script-vm-menuctrl.md](script-vm-menuctrl.md#0x4c-nibble-2---the-camera-octant--pad-rotation-setter)
+for its complete writer/reader census.
 
 **Event-flag bases.** For an event cell whose event index is `evt`, base **A** (header `+7`, `u16` LE) is the **SET** base and base **B** (header `+9`, `u16` LE) is the **TEST/gate** base, both into the system-flag bank `DAT_80085758`: landing sets slot `A + evt + 1` (with `A` itself the first-visit master flag), while `B + evt` is the already-done guard tested before re-firing the event. (`overlay_0897_801ef2b0.txt` case 8.)
 
@@ -159,7 +198,7 @@ The board controller is a small state machine keyed on the controller actor's `+
 ### State 4 - input, collision, commit
 
 1. If the menu-button edge (`_DAT_8007b874 & 0x10`) is set, go to state `5`.
-2. Read the pad `_DAT_8007b850` and remap it by camera facing via `func_0x800467e8` (so "screen up" maps to the correct world direction regardless of camera azimuth). The remap is a **quantized 45° (1/8-turn) rotation**, not a fixed 90° snap and not a continuous rotation: `FUN_800467e8` isolates the direction bits (`mask & 0xf000`), finds their index in the 8-entry ring `DAT_800766fc` (the 8 compass octants incl. diagonals), and re-emits `ring[(index + gp[0x2d8]) & 7]`, where `gp[0x2d8]` is the camera-facing octant. So the rotation amount is one of eight octants. (`800467e8.txt`.)
+2. Read the pad `_DAT_8007b850` and remap it through `func_0x800467e8`, so "screen up" maps to the world direction the current octant names. The remap is a **quantized 45° (1/8-turn) rotation**, not a fixed 90° snap and not a continuous rotation: `FUN_800467e8` isolates the direction bits (`mask & 0xf000`), finds their index in the 8-entry ring `DAT_800766fc` (the 8 compass octants incl. diagonals), and re-emits `ring[(index + gp[0x2d8]) & 7]`. So the rotation amount is one of eight octants. (`800467e8.txt`.) `gp[0x2d8]` is a **scene-authored** word - the board's own cell bands and the field VM's `[4C 2x]` write it, nothing derives it from the camera - see [the walker's octant store](#the-walkers-octant-store).
 3. Decode one direction from the remapped mask into a candidate `(col, row)`:
 
    | mask bit | delta |

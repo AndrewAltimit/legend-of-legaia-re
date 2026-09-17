@@ -110,6 +110,10 @@ impl MenuTextTables {
 #[derive(Debug, Clone, Default)]
 pub struct PauseItemRow {
     pub id: u8,
+    /// Physical **bag slot** this row's payload names (retail
+    /// `_DAT_8007BB88`). `0` when the host built the session without a
+    /// slot-indexed bag - see [`crate::inventory_use::InventoryUseSession::bag_slots`].
+    pub slot: u8,
     pub name: String,
     /// Real bag count (the world inventory count, not the session's
     /// one-entry-per-id item list length).
@@ -197,6 +201,16 @@ pub struct PauseItemsSession {
     /// Boxed to keep the session (and the `FieldMenuSubsession` enum
     /// carrying it) small.
     arrange_rank: Option<Box<crate::menu_arrange::ArrangeRankTable>>,
+    /// Bag slots in whatever order the rows were in when the command window
+    /// dispatched Throw Out - restored on the way back. Captured live rather
+    /// than taken from the build, because Arrange reorders the rows in place
+    /// and restoring a build-time order would silently undo it.
+    restore_slots: Vec<u8>,
+    /// Bag slots in the **Throw Out** list's order (content id `0x22`), which
+    /// is a different build of the same bag: an equipment piece sorts to the
+    /// tail whether or not its record refuses discard, and the key-item /
+    /// no-discard gates only change the ink. Empty on a disc-free load.
+    throw_out_slots: Vec<u8>,
     /// Flat hand position over [`Self::rows`] (all bag rows).
     cursor: usize,
     /// Set when the player backs out of the command window (Circle /
@@ -218,9 +232,20 @@ impl PauseItemsSession {
             staged_warp: None,
             exit_code: None,
             arrange_rank: None,
+            restore_slots: Vec::new(),
+            throw_out_slots: Vec::new(),
             cursor: 0,
             closed: false,
         }
+    }
+
+    /// Attach the **Throw Out** row order (`FUN_80030628` content id `0x22`)
+    /// as a bag-slot sequence. The screen is built in the Use order (content
+    /// id 3) and swaps to this one when the command window dispatches row 1,
+    /// swapping back on the way out.
+    pub fn with_throw_out_row_order(mut self, throw_out_slots: Vec<u8>) -> Self {
+        self.throw_out_slots = throw_out_slots;
+        self
     }
 
     /// Attach the Door of Wind destination rows (the visible placement
@@ -362,7 +387,18 @@ impl PauseItemsSession {
                 if cross && !self.bag_empty() {
                     match self.command_cursor {
                         0 => self.focus = PauseItemsFocus::List,
-                        1 => self.focus = PauseItemsFocus::ThrowOutList,
+                        // Retail opens a *different* list window here (content
+                        // id `0x22`, window 16) with its own build, not the
+                        // Use list re-pointed: a key item dims in place, an
+                        // equipment piece sorts to the tail, and the
+                        // effect-flag-`0x8` group goes last. The order the
+                        // rows are in right now is what the back-out restores,
+                        // so an Arrange the player just ran survives the trip.
+                        1 => {
+                            self.restore_slots = self.rows.iter().map(|r| r.slot).collect();
+                            self.reorder_rows_by_slot(&self.throw_out_slots.clone());
+                            self.focus = PauseItemsFocus::ThrowOutList;
+                        }
                         _ => self.arrange(),
                     }
                 }
@@ -422,7 +458,10 @@ impl PauseItemsSession {
             PauseItemsFocus::ThrowOutList => {
                 if circle {
                     // Retail: list result 3 -> restore the id-15 list
-                    // window and return to submenu 5.
+                    // window and return to submenu 5. That window carries the
+                    // other build, so the order the screen arrived in goes
+                    // back with it.
+                    self.reorder_rows_by_slot(&self.restore_slots.clone());
                     self.focus = PauseItemsFocus::Command;
                     return;
                 }
@@ -551,6 +590,30 @@ impl PauseItemsSession {
         self.cursor = 0;
     }
 
+    /// Permute the visible rows into the order `slots` names, keeping the
+    /// inner session's parallel id list in lockstep (the same pairing
+    /// [`Self::arrange`] maintains). Slots the current row set does not hold
+    /// are skipped, and any row the order does not name keeps its relative
+    /// position at the tail - so a stale order degrades to "no reorder"
+    /// rather than to a lost row.
+    fn reorder_rows_by_slot(&mut self, slots: &[u8]) {
+        if slots.is_empty() {
+            return;
+        }
+        let mut remaining: Vec<PauseItemRow> = std::mem::take(&mut self.rows);
+        let mut reordered = Vec::with_capacity(remaining.len());
+        for &slot in slots {
+            if let Some(at) = remaining.iter().position(|r| r.slot == slot) {
+                reordered.push(remaining.remove(at));
+            }
+        }
+        reordered.extend(remaining);
+        self.rows = reordered;
+        self.inner.items = self.rows.iter().map(|r| r.id).collect();
+        self.inner.refresh_filter();
+        self.cursor = 0;
+    }
+
     /// The throw-out delete: discard the selected row's whole stack
     /// (retail zeroes both bytes of the bag slot pair), step the hand
     /// back when it sat on the last row, and drop back to the command
@@ -562,6 +625,9 @@ impl PauseItemsSession {
         }
         let row = self.rows.remove(self.cursor);
         self.inner.thrown_items.push(row.id);
+        // Retail's confirm zeroes `bag[cursor*2]` - the slot the row's payload
+        // named, not the first slot holding that id.
+        self.inner.thrown_slots.push(row.slot);
         self.inner.remove_item_at(self.cursor);
         // Retail scroll fix-up: deleting the last list entry steps the
         // selection (and scroll) back one row.
@@ -1835,6 +1901,34 @@ pub struct EquipScreenModel {
     /// engine's 8th slot row stays navigable but icon-less so the column
     /// matches the retail capture.
     pub pictogram_rows: usize,
+    /// Window 24's item-info panel content for the hovered candidate, or
+    /// `None` outside the candidate step.
+    ///
+    /// Retail's Equip screen opens **five** windows, not four: sub-screen
+    /// `0x12` picks the character and `0x13` browses the slot rows over the
+    /// capture-pinned set `2 / 21 / 22 / 23`, and `0x14` - the candidate
+    /// list - adds windows `24` and `25` on top through open script
+    /// `0x801E4DC8` (`docs/subsystems/field-menu.md`). Window 24's renderer
+    /// `FUN_801DCC20` calls the **shared item-info panel** `FUN_801D0F1C`,
+    /// the same one window 17 draws on the Items screen - which is why the
+    /// two descriptors carry byte-identical rects `(14, 108, 144, 40)`.
+    ///
+    /// That makes this panel an *addition* to the port's screen rather than
+    /// a different layout for it - the reading that had window 24 waived as
+    /// needing "the whole screen moved onto the descriptor-table layout".
+    pub info: Option<EquipItemInfoModel>,
+}
+
+/// Window 24's item-info content - the hovered candidate's own row of the
+/// shared panel.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EquipItemInfoModel {
+    pub name: String,
+    /// Bag count, echoed beside the name exactly as window 17 echoes it.
+    pub count: u16,
+    pub desc: String,
+    /// An accessory's two passive lines.
+    pub passive: Option<(String, String)>,
 }
 
 /// Project a live [`crate::equip_session::EquipSession`] into
@@ -1843,15 +1937,26 @@ pub struct EquipScreenModel {
 /// `party_names` is the world's roster snapshot, which the session does not
 /// carry. The stat preview uses the neutral status set: this is the field
 /// menu, and the session recomputes with live status modifiers on commit.
+///
+/// `text` resolves an item id's display name / description / passive lines -
+/// [`crate::field_menu_dispatch::item_display_text`] against the live world.
+/// Passing `None` leaves every item spelled as its raw id, which is what a
+/// disc-free test wants and what the screen showed on both hosts for as long
+/// as the resolver lived inside the Items screen's own session builder.
 pub fn equip_screen_model(
     session: &crate::equip_session::EquipSession,
     char_slot: u8,
     party_names: &[String],
+    text: Option<&dyn Fn(u8) -> crate::field_menu_dispatch::ItemDisplayText>,
 ) -> EquipScreenModel {
     use crate::equip_session::EquipState;
     use crate::equipment::EquipSlot;
 
     let record = session.record();
+    let name_of = |id: u8| match text {
+        Some(f) => f(id).name,
+        None => format!("Item {id:02X}"),
+    };
     let slot_labels: Vec<String> = (0..8u8)
         .map(|i| {
             EquipSlot::from_index(i)
@@ -1862,13 +1967,7 @@ pub fn equip_screen_model(
     let slot_items: Vec<String> = record
         .equip
         .iter()
-        .map(|&id| {
-            if id == 0 {
-                String::new()
-            } else {
-                format!("Item {id:02X}")
-            }
-        })
+        .map(|&id| if id == 0 { String::new() } else { name_of(id) })
         .collect();
 
     let (phase, cursor, active_slot, confirm_label) = match session.state() {
@@ -1886,7 +1985,7 @@ pub fn equip_screen_model(
             EquipScreenPhase::Confirm,
             cursor as u16,
             slot,
-            Some(format!("Equip Item {item_id:02X}?")),
+            Some(format!("Equip {}?", name_of(item_id))),
         ),
         EquipState::Done(_) => (EquipScreenPhase::SlotPicker, 0, 0, None),
     };
@@ -1897,10 +1996,7 @@ pub fn equip_screen_model(
             (Vec::new(), Vec::new(), None)
         } else {
             let items = session.items_for_slot(active_slot);
-            let names: Vec<String> = items
-                .iter()
-                .map(|it| format!("Item {:02X}", it.id))
-                .collect();
+            let names: Vec<String> = items.iter().map(|it| name_of(it.id)).collect();
             let counts: Vec<u8> = items
                 .iter()
                 .map(|it| session.inventory().get(&it.id).copied().unwrap_or(0))
@@ -1940,7 +2036,26 @@ pub fn equip_screen_model(
         None => Vec::new(),
     };
 
+    // Window 24's panel: the hovered candidate's own info row, resolved
+    // through the same text tables the Items screen's window 17 uses. Retail
+    // gates the panel on the staged id, so the Remove row (`id == 0`) leaves
+    // it empty rather than describing nothing.
+    let info = considered_id.filter(|&id| id != 0).map(|id| {
+        let t = text.map(|f| f(id)).unwrap_or_default();
+        EquipItemInfoModel {
+            name: if t.name.is_empty() {
+                format!("Item {id:02X}")
+            } else {
+                t.name
+            },
+            count: u16::from(session.inventory().get(&id).copied().unwrap_or(0)),
+            desc: t.desc,
+            passive: t.passive,
+        }
+    });
+
     EquipScreenModel {
+        info,
         party_names: party_names.to_vec(),
         slot_labels,
         slot_items,
@@ -1972,8 +2087,12 @@ mod tests {
         let items: Vec<u8> = ids_counts.iter().map(|(id, _)| *id).collect();
         let rows: Vec<PauseItemRow> = ids_counts
             .iter()
-            .map(|(id, count)| PauseItemRow {
+            .enumerate()
+            .map(|(i, (id, count))| PauseItemRow {
                 id: *id,
+                // Test rows come from a dense list, so the row ordinal IS the
+                // slot; a holed bag is exercised in `bag_row_payload_is_a_slot`.
+                slot: i as u8,
                 name: format!("Item {id:02X}"),
                 count: *count,
                 desc: format!("Desc {id:02X}"),
@@ -2008,6 +2127,43 @@ mod tests {
         assert!(!s.is_done());
         s.input_pad_edge(edge(PadButton::Circle));
         assert!(s.is_done());
+    }
+
+    /// Throw Out draws its own row order (`FUN_80030628` content id `0x22`),
+    /// and the trip back restores whatever order the screen was in - not the
+    /// order it was built in. The distinction is the Arrange command: a player
+    /// who arranges, opens Throw Out and backs out must still see the arranged
+    /// list.
+    #[test]
+    fn throw_out_swaps_the_row_order_and_the_back_out_restores_what_it_found() {
+        let mut s = items_session(&[(0x11, 1), (0x22, 1), (0x33, 1)]);
+        // A Throw Out build that reverses the rows, so the swap is visible.
+        s = s.with_throw_out_row_order(vec![2, 1, 0]);
+        let opened: Vec<u8> = s.rows.iter().map(|r| r.slot).collect();
+        assert_eq!(opened, vec![0, 1, 2]);
+
+        // Arrange (command row 2) reorders in place; capture what it left.
+        s.command_cursor = 2;
+        s.input_pad_edge(edge(PadButton::Cross));
+        let arranged: Vec<u8> = s.rows.iter().map(|r| r.slot).collect();
+
+        // Throw Out (command row 1) swaps to the builder's order...
+        s.command_cursor = 1;
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.focus, PauseItemsFocus::ThrowOutList);
+        assert_eq!(
+            s.rows.iter().map(|r| r.slot).collect::<Vec<_>>(),
+            vec![2, 1, 0],
+            "the Throw Out list draws content id 0x22's order"
+        );
+        // ...and backing out restores the order it found, Arrange included.
+        s.input_pad_edge(edge(PadButton::Circle));
+        assert_eq!(s.focus, PauseItemsFocus::Command);
+        assert_eq!(
+            s.rows.iter().map(|r| r.slot).collect::<Vec<_>>(),
+            arranged,
+            "the back-out must not undo an Arrange"
+        );
     }
 
     /// An empty bag keeps the hand on the command window ("Use" refuses).

@@ -311,6 +311,29 @@ impl World {
     ///
     /// PORT: FUN_80019278
     pub fn sample_field_floor_height(&self, world_x: i32, world_z: i32) -> i32 {
+        self.sample_field_floor_height_with(world_x, world_z, &self.terrain.floor_height_lut)
+    }
+
+    /// The same sample taken through the scene's **pristine** ladder
+    /// ([`crate::world::FieldTerrain::floor_height_lut_static`]) instead of
+    /// the live one.
+    ///
+    /// This is the reading the **camera composer** takes.
+    /// `FUN_801DAB90` saves the sixteen live rungs at scratchpad
+    /// `0x1F80035C`, writes the MAN header's own ladder over them
+    /// (`*(_DAT_8007B898) + 2`, sixteen negated `short`s - the same source
+    /// `FUN_8003AEB0` installs at scene entry), calls `FUN_80019278`, and
+    /// restores the live rungs (`0x801DAC40..0x801DACA0`). So a floor-tier
+    /// oscillator raised by op `0x4C` nibble-9 sub-`0..2`, or a whole ladder
+    /// replaced by sub-`E`, moves the terrain and the actors standing on it
+    /// but never the camera.
+    ///
+    /// REF: FUN_801DAB90
+    pub fn sample_field_floor_height_static(&self, world_x: i32, world_z: i32) -> i32 {
+        self.sample_field_floor_height_with(world_x, world_z, &self.terrain.floor_height_lut_static)
+    }
+
+    fn sample_field_floor_height_with(&self, world_x: i32, world_z: i32, lut: &[i16; 16]) -> i32 {
         if self.terrain.collision_grid.len() < FIELD_GRID_LEN {
             return 0;
         }
@@ -326,7 +349,6 @@ impl World {
         }
         let base = tile_z as usize * FIELD_GRID_STRIDE + tile_x as usize;
         let g = &self.terrain.collision_grid;
-        let lut = &self.terrain.floor_height_lut;
         // Low nibble = elevation tier; LUT-index it for each of the 4 corners.
         let c00 = (g[base] & 0x0F) as usize;
         let c01 = (g[base + 1] & 0x0F) as usize;
@@ -852,15 +874,23 @@ impl World {
     /// screen-vector rotation, which the two agree on for even `rot` (the
     /// axis-aligned cameras every retail field scene actually uses).
     ///
-    /// NOT WIRED: the live pad path remaps through
-    /// [`Self::decode_field_direction`] instead, because the engine's camera
-    /// publishes a 12-bit azimuth ([`crate::world::FieldLocomotion::camera_azimuth`]) rather
-    /// than retail's eighth-turn ring step `gp+0x2d8`, and because the same
-    /// azimuth has to serve the continuous `precise_movement` decode, which
-    /// a ring index cannot express. The two agree on every even `rot` - i.e.
-    /// on every camera a retail field scene installs - so routing the live
-    /// path here would need the eighth-turn index published by a camera that
-    /// actually orbits in 45 degree steps, which none does.
+    /// The live pad path calls this every frame through
+    /// [`Self::decode_field_direction`], with the rotation index
+    /// [`Self::field_pad_ring_rotation`] derives from the port's own camera
+    /// azimuth. `precise_movement` keeps its continuous decode, which no ring
+    /// index can express.
+    ///
+    /// **Where retail's `gp+0x2D8` comes from.** Not from the camera. Its
+    /// disc-wide writers are a field-VM arm and the tile-board walker: the
+    /// `0x4C` outer-nibble-`2` arm at `0x801E0EB8` stores `sub_op & 7` there
+    /// (and, when `0x8007B6B0` reads `-1000`, turns the player with it -
+    /// `actor[+0x26] += (new - old) * 0x200`), and the tile-board walker
+    /// derives it from the terrain type. So the index is **authored**, per
+    /// scene, to match the camera the same script installed; there is no
+    /// azimuth-to-octant arithmetic anywhere in retail. A port whose camera
+    /// free-orbits has no authored index to read, so it derives one from the
+    /// azimuth instead - which is a port decision, not a retail one, and is
+    /// why `field_pad_ring_rotation` is separate from this routine.
     pub fn remap_pad_direction(held: u16, rot: u32) -> u16 {
         if rot == 0 {
             return held;
@@ -876,6 +906,28 @@ impl World {
         // Retail rewrites the 0xf000 direction nibble in place (32-bit
         // `held & 0xffff0fff`); on the 16-bit mask that clears the top nibble.
         (held & 0x0FFF) | rotated
+    }
+
+    /// The eighth-turn index [`Self::decode_field_direction`] rotates the held
+    /// d-pad mask by: the camera azimuth
+    /// ([`crate::world::FieldLocomotion::camera_azimuth`], 12-bit, `0` = the
+    /// follow default) rounded to the nearest of eight compass steps.
+    ///
+    /// This stands in for retail's `gp+0x2D8`, which is authored per scene by
+    /// a field-VM arm rather than computed (see
+    /// [`Self::remap_pad_direction`]). The port's camera free-orbits, so the
+    /// authored index would be stale the moment the player drags the view;
+    /// deriving it from the live azimuth keeps "screen up walks away from the
+    /// camera" true at every orbit, which is the law the hosts' compass
+    /// oracles measure.
+    ///
+    /// It is a strict refinement of the 90-degree quantisation it replaced:
+    /// `rot` is even exactly where the old `quadrant` was defined, and
+    /// `rot == 2 * quadrant` there, so every axis-aligned camera - which is
+    /// every camera a retail field scene installs - decodes bit-identically.
+    /// The odd steps are the ones that used to snap up to 45 degrees away.
+    pub(crate) fn field_pad_ring_rotation(&self) -> u32 {
+        ((self.locomotion.camera_azimuth as u32).wrapping_add(0x100) >> 9) & 7
     }
 
     /// Retail's wall-slide direction resolver: given the post-remap held mask
@@ -2406,59 +2458,54 @@ impl World {
     /// X-) and `heading` is a PSX 12-bit angle (`4096` = full turn).
     /// `dir_bits == 0` means no direction is held.
     ///
-    /// The raw screen direction (up / down / left / right) is remapped by
-    /// [`crate::world::FieldLocomotion::camera_azimuth`] quantised to the nearest 90° so
-    /// "screen up" always walks away from the camera, the same job
-    /// `func_0x800467e8` does in retail.
+    /// The raw screen direction (up / down / left / right) is remapped through
+    /// retail's eighth-turn ring ([`Self::remap_pad_direction`], the port of
+    /// `func_0x800467e8`) with the octant derived from
+    /// [`crate::world::FieldLocomotion::camera_azimuth`] - retail reads a
+    /// scene-authored octant instead - so "screen up" always walks away from
+    /// the camera, including on the diagonal cameras a quadrant decode cannot
+    /// express.
     fn decode_field_direction(&self) -> (u16, i16) {
         let up = self.input.pressed(input::PadButton::Up);
         let down = self.input.pressed(input::PadButton::Down);
         let left = self.input.pressed(input::PadButton::Left);
         let right = self.input.pressed(input::PadButton::Right);
 
-        // Screen-space delta: +Y forward (away from camera), +X right.
-        let mut sx: i32 = 0;
-        let mut sy: i32 = 0;
-        if up {
-            sy += 1;
+        // Retail's raw d-pad direction nibble, the mask `FUN_800467E8` takes.
+        // Opposite keys cancel: a d-pad cannot press both, but a keyboard can,
+        // and retail's linear ring scan would fall out at index 8 and walk the
+        // camera's own forward direction for such a mask.
+        let mut held = 0u16;
+        if up != down {
+            held |= if up { 0x1000 } else { 0x4000 };
         }
-        if down {
-            sy -= 1;
+        if right != left {
+            held |= if right { 0x2000 } else { 0x8000 };
         }
-        if right {
-            sx += 1;
-        }
-        if left {
-            sx -= 1;
-        }
-        if sx == 0 && sy == 0 {
+        if held == 0 {
             return (0, 0);
         }
 
-        // Quantise the camera azimuth to one of four cardinal rotations and
-        // rotate the screen delta into world space. quadrant 0 = identity
-        // (screen-up -> +Z, screen-right -> +X).
-        let quadrant = (((self.locomotion.camera_azimuth as u32) + 512) / 1024) & 3;
-        let (mut wx, mut wz) = match quadrant {
-            0 => (sx, sy),
-            1 => (sy, -sx),
-            2 => (-sx, -sy),
-            _ => (-sy, sx),
-        };
-        wx = wx.clamp(-1, 1);
-        wz = wz.clamp(-1, 1);
+        // Rotate the held mask around the eight-direction compass ring, the
+        // way retail does ([`Self::remap_pad_direction`]). Rotation `0` is the
+        // identity: screen-up walks world `Z+`, screen-right walks `X+`.
+        let dir = Self::remap_pad_direction(held, self.field_pad_ring_rotation()) & 0xF000;
 
-        let mut bits = 0u16;
-        if wz > 0 {
-            bits |= 0x1000; // Z+
-        } else if wz < 0 {
-            bits |= 0x4000; // Z-
-        }
-        if wx > 0 {
-            bits |= 0x2000; // X+
-        } else if wx < 0 {
-            bits |= 0x8000; // X-
-        }
+        let wx = if dir & 0x2000 != 0 {
+            1
+        } else if dir & 0x8000 != 0 {
+            -1
+        } else {
+            0
+        };
+        let wz = if dir & 0x1000 != 0 {
+            1
+        } else if dir & 0x4000 != 0 {
+            -1
+        } else {
+            0
+        };
+        let bits = dir;
 
         // Heading: atan2(wx, wz) in 12-bit units. Z+ = 0, X+ = quarter turn.
         let heading = (((wx as f32).atan2(wz as f32) / std::f32::consts::TAU * 4096.0).round()

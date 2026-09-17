@@ -235,6 +235,88 @@ impl PlayWindowApp {
         }
     }
 
+    /// Put the dance hall's own HUD texture page into the VRAM this window is
+    /// drawing with for as long as a dance runs, and take it back on the way
+    /// out.
+    ///
+    /// Retail has the page because the dance **is** the hall scene: its whole
+    /// texture set is resident before the minigame starts. The port hosts the
+    /// session over whichever scene the player walked in from, so the 4bpp
+    /// page the widget table names holds that scene's texels and every HUD
+    /// quad sampled nothing. The fix is residency, not a draw call - which is
+    /// why the count-in banner had been text on both hosts with its geometry
+    /// fully pinned.
+    ///
+    /// Only the rects the run's own widget table names are staged
+    /// ([`DanceGame::hud_vram_rects`](legaia_engine_core::dance::DanceGame::hud_vram_rects)),
+    /// because the suspended scene keeps rendering behind the HUD and the rest
+    /// of that pack targets the columns a field texture pack occupies. The
+    /// pristine copy is kept so the field VRAM is exact on exit rather than
+    /// re-derived - the same shape the battle path uses for its own throwaway
+    /// injection.
+    fn stage_dance_hud_art(&mut self) {
+        let in_dance = self.session.host.world.mode == SceneMode::Dance;
+        if !in_dance {
+            // Leaving edge: the field VRAM goes back byte for byte.
+            if let Some(clean) = self.dance_vram_restore.take() {
+                self.cpu_vram_base = Some(clean);
+                self.upload_cpu_vram();
+            }
+            self.session.host.world.minigames.dance_hud_art_staged = false;
+            return;
+        }
+        if self.dance_vram_restore.is_some() {
+            return;
+        }
+        let Some(rects) = self
+            .session
+            .host
+            .world
+            .minigames
+            .dance
+            .as_ref()
+            .map(|g| g.hud_vram_rects())
+        else {
+            return;
+        };
+        let Some(base) = self.cpu_vram_base.as_ref() else {
+            return;
+        };
+        let clean = base.clone();
+        let mut staged = base.clone();
+        let n = legaia_engine_core::dance::stage_dance_hud_vram(
+            &self.session.host.index,
+            &rects,
+            &mut staged,
+        );
+        if n == 0 {
+            // No page, no residency claim: the hosts fall back to the
+            // placeholder letterforms together.
+            log::warn!("play-window: dance HUD page not staged (PROT entry absent or unpacked 0)");
+            return;
+        }
+        log::info!(
+            "play-window: dance HUD page staged ({n} TIM(s), {} rect(s))",
+            rects.len()
+        );
+        self.cpu_vram_base = Some(staged);
+        self.upload_cpu_vram();
+        self.dance_vram_restore = Some(clean);
+        self.session.host.world.minigames.dance_hud_art_staged = true;
+    }
+
+    /// Re-upload `cpu_vram_base` to the GPU. Silent when the renderer is not
+    /// up yet (a headless tick), which is the same guard every other VRAM
+    /// mutation in this window carries.
+    fn upload_cpu_vram(&mut self) {
+        if let (Some(r), Some(base)) = (self.win.renderer.as_ref(), self.cpu_vram_base.as_ref()) {
+            match r.upload_vram(base) {
+                Ok(v) => self.uploaded_vram = Some(v),
+                Err(e) => log::error!("play-window: dance VRAM upload: {e:#}"),
+            }
+        }
+    }
+
     /// The dance side-channel frame: spawn the sequence-clear banner + stars
     /// into the effect pool on the human's scoring judge
     /// ([`legaia_engine_core::dance::good_banner_spawn`]), and run the Disco
@@ -483,6 +565,7 @@ impl PlayWindowApp {
     /// the shared effect pool's ageing.
     pub(super) fn tick_minigame_extras(&mut self) {
         self.drain_minigame_sfx_cues();
+        self.stage_dance_hud_art();
         self.tick_dance_side();
         self.tick_fishing_actors();
         self.tick_baka_chrome();

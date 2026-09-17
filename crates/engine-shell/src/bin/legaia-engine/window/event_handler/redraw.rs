@@ -124,6 +124,13 @@ impl PlayWindowApp {
                 // The scene tick (and its SFX drain) is skipped below, so
                 // the menu cues queued this frame fire here.
                 self.tick_menu_sfx();
+                // The field party HUD's decision kernel is stepped in the
+                // scene tick too, and its suppression predicate names this
+                // very state - so step it here as well, or the kernel keeps
+                // its last pre-menu `Draw` and the readout stays painted
+                // under the pause menu (the browser page has no early-out
+                // and never showed it).
+                self.tick_field_party_hud();
                 self.prev_pad = self.pad;
                 continue;
             }
@@ -1987,6 +1994,20 @@ impl PlayWindowApp {
             if !self.boot_ui.is_active() {
                 hud.extend(self.battle_spoils_draws(w, h));
                 hud.extend(self.encounter_hint_draws(w, h));
+                // The field overlay's passive-ability badge column, floated
+                // over the player's head (`FUN_801d095c`). Shares the scene
+                // camera with everything else this frame; the browser play
+                // page draws the same list off the same World seat.
+                hud.extend(self.passive_hud_draws(cam, w, h));
+                // The battle value readout's **font fallback**, for the
+                // frames before the battle VRAM makes retail's numeral sheet
+                // resident. The browser play page has had one since its own
+                // prim pass landed; this host drew nothing at all in that
+                // window, so the same fight opened with numbers in the tab
+                // and none in the window. Mutually exclusive with
+                // `battle_value_readout_prims` by construction - each checks
+                // the same `battle_vram` residency, opposite ways.
+                hud.extend(self.battle_value_readout_draws(cam, w, h));
             }
             let overlay = TextOverlay { atlas, draws: &hud };
 
@@ -2382,6 +2403,13 @@ impl PlayWindowApp {
             // Only the seat is per-host: it needs the struck actor's projected
             // screen position, which only a host holding the camera has.
             screen_prims.extend(self.battle_value_readout_prims(fx_cam));
+            // The dance count-in banner, as retail's own 160x32 sprite off the
+            // hall's HUD page rather than placeholder text. Same shared
+            // builder the browser play page emits through
+            // (`legaia_engine_ui::ui_dance::dance_countin_prims`), and the
+            // same residency predicate decides for both hosts whether the
+            // sprite or the letterforms draw.
+            screen_prims.extend(self.dance_countin_prims());
             let target = |scene| present_target(scene, &screen_prims);
             // Periodic sweep (`--screenshot-every`): capture a frame every N
             // ticks into the sweep dir (named for the tick), keep running,
@@ -2586,6 +2614,40 @@ impl PlayWindowApp {
         }
     }
 
+    /// The dance count-in banner as screen-space PSX primitives.
+    ///
+    /// Empty outside the count-in and empty while the hall's HUD page is not
+    /// resident - in which case `hud.rs` draws the placeholder letterforms
+    /// instead. The art comes off the run's own widget table when it has one,
+    /// so the cell, page and palette are the disc's rather than this host's.
+    pub(super) fn dance_countin_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_render::ui_dance as ud;
+        let mg = &self.session.host.world.minigames;
+        if !mg.dance_hud_art_staged {
+            return Vec::new();
+        }
+        let Some(env) = mg.dance_countin_banner.as_ref() else {
+            return Vec::new();
+        };
+        let art = mg
+            .dance
+            .as_ref()
+            .and_then(|g| g.widget(0))
+            .map(|(w, abr)| ud::DanceCountInArt::from_widget(&w, abr))
+            .unwrap_or_default();
+        ud::dance_countin_prims(
+            ud::DanceCountInView {
+                x_offset: env.x_offset,
+                brightness: env.brightness,
+                hold: env.hold,
+            },
+            art,
+            ud::COUNTIN_OT,
+        )
+    }
+
     /// The frame's floating value readout, as screen-space PSX primitives in
     /// stage coordinates.
     ///
@@ -2604,24 +2666,113 @@ impl PlayWindowApp {
         cam: Mat4,
     ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
         use legaia_engine_render::battle_numerals as bn;
+        // The retail-art half: only while the sheet the quads sample is
+        // resident. Before that the frame takes the font fallback instead
+        // ([`Self::battle_value_readout_draws`]); the two are mutually
+        // exclusive on this host exactly as they are on the play page,
+        // because a frame that ran both would print every number twice.
+        if self.battle_vram.is_none() {
+            return Vec::new();
+        }
+        let Some((cluster, runs)) = self.battle_value_readout_layout(cam) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        if let Some(c) = cluster.as_ref() {
+            out.extend(bn::combo_cluster_prims(c, bn::VALUE_READOUT_OT));
+        }
+        for cells in &runs {
+            out.extend(bn::digit_run_prims(cells, bn::VALUE_READOUT_OT));
+        }
+        out
+    }
+
+    /// The battle value readout as **font text**, for the frames before the
+    /// battle VRAM exists.
+    ///
+    /// Empty whenever the retail cells are drawable
+    /// ([`Self::battle_value_readout_prims`]) - the two must never both draw,
+    /// or every number renders twice. The browser play page's
+    /// `battle_value_readout_draws` is the same bargain on the same layout;
+    /// this host had the prim half and no fallback, which is a gap only a
+    /// side-by-side of the first frames of a fight shows.
+    pub(super) fn battle_value_readout_draws(&self, cam: Mat4, w: u32, h: u32) -> Vec<TextDraw> {
+        use legaia_engine_render as ui;
+        if self.battle_vram.is_some() || w == 0 || h == 0 {
+            return Vec::new();
+        }
+        let Some((cluster, runs)) = self.battle_value_readout_layout(cam) else {
+            return Vec::new();
+        };
+        let (origin, scale) = self.save_select_stage(w, h);
+        let view = |k: &legaia_engine_vm::battle_value_readout::ValueCell| ui::ValueCellView {
+            digit: k.digit,
+            x: k.x,
+            y: k.y,
+            w: k.w,
+            h: k.h,
+        };
+        let mut out = Vec::new();
+        if let Some(c) = cluster.as_ref() {
+            let labels: Vec<ui::ComboLabelView<'_>> = c
+                .labels
+                .iter()
+                .map(|l| ui::ComboLabelView {
+                    word: l.word,
+                    x: l.x,
+                    y: l.y,
+                })
+                .collect();
+            let cells: Vec<ui::ValueCellView> = c.cells.iter().map(view).collect();
+            out.extend(ui::battle_combo_cluster_draws_for(
+                &self.font, &labels, &cells, origin, scale,
+            ));
+        }
+        for run in &runs {
+            let cells: Vec<ui::ValueCellView> = run.iter().map(view).collect();
+            out.extend(ui::battle_value_readout_draws_for(
+                &self.font,
+                &cells,
+                ui::VALUE_READOUT_FALLBACK_COLOR,
+                origin,
+                scale,
+            ));
+        }
+        out
+    }
+
+    /// The readout's **layout**, shared by the retail-art emit above and the
+    /// font fallback above it: the combo cluster and one run of digit
+    /// cells per struck actor, seated through this host's camera.
+    ///
+    /// `None` outside battle and with nothing to say. Splitting it out is
+    /// what lets the window fall back the way the browser play page already
+    /// did - the page had a font path for the frames before its VRAM existed
+    /// and this host drew nothing at all, so the same fight opened with
+    /// numbers in the tab and none in the window.
+    pub(super) fn battle_value_readout_layout(
+        &self,
+        cam: Mat4,
+    ) -> Option<(
+        Option<legaia_engine_vm::battle_value_readout::ComboCluster>,
+        Vec<Vec<legaia_engine_vm::battle_value_readout::ValueCell>>,
+    )> {
         use legaia_engine_vm::battle_value_readout as vr;
         if self.session.host.world.mode != SceneMode::Battle {
-            return Vec::new();
+            return None;
         }
-        if self.battle_vram.is_none()
-            || (self.battle_hud.popups.is_empty() && self.battle_hud.combo.is_none())
-        {
-            return Vec::new();
+        if self.battle_hud.popups.is_empty() && self.battle_hud.combo.is_none() {
+            return None;
         }
-        let mut out = Vec::new();
         // The combo counter cluster: the `HIT` / `TOTAL` / `DAMAGE` word
         // cells and the value digits, off the same sheet, on the seats the
         // steal-banner and tail-fire display lists pin, sliding in with
         // placement record 80's glide (`vr::combo_slide`).
-        if let Some(c) = self.battle_hud.combo.as_ref() {
-            let cluster = vr::combo_cluster(c.style, c.hits, c.total, c.slide());
-            out.extend(bn::combo_cluster_prims(&cluster, bn::VALUE_READOUT_OT));
-        }
+        let cluster = self
+            .battle_hud
+            .combo
+            .as_ref()
+            .map(|c| vr::combo_cluster(c.style, c.hits, c.total, c.slide()));
         // One numeral per actor, the newest. Retail's readout is a per-slot
         // **value window** (`_DAT_801F6980`, four halfwords, one per slot), so
         // a second hit on the same actor replaces the figure rather than
@@ -2640,14 +2791,19 @@ impl PlayWindowApp {
                 None => newest.push(p),
             }
         }
+        let mut runs = Vec::new();
         for p in newest {
             let Some((ax, ay)) = self.actor_stage_point(usize::from(p.slot), cam) else {
                 continue;
             };
             let age = p.frames_total.saturating_sub(p.frames_remaining);
-            let cells = vr::value_cells(p.amount, ax, ay - VALUE_READOUT_ACTOR_LIFT, age);
-            out.extend(bn::digit_run_prims(&cells, bn::VALUE_READOUT_OT));
+            runs.push(vr::value_cells(
+                p.amount,
+                ax,
+                ay - VALUE_READOUT_ACTOR_LIFT,
+                age,
+            ));
         }
-        out
+        Some((cluster, runs))
     }
 }

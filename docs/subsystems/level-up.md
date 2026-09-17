@@ -506,10 +506,10 @@ A pre/post save pair (battle command menu parked on Fire Book I → Fire Book I 
 | Offset | Pre-event | Post-event | Read |
 |---|---|---|---|
 | `+0x185` | `0x01` | `0x02` | length-prefix byte (+1) |
-| `+0x186` | `0x0C` | `0x03` | first list entry - new entry inserted at front |
+| `+0x186` | `0x0C` | `0x03` | first list entry - the new id |
 | `+0x187` | `0x00` | `0x0C` | second list entry - pre-event entry shifted right |
 
-Pattern: a length-prefixed list at `+0x185` grew by one entry. The new entry landed at position 0 and the existing entry moved to position 1 - which a head insert and an **ordered** insert both produce, because `0x03 < 0x0C`. The writer settles it: the applier's `0x0B`..`0x0D` arm (`0x80041FB4`, `legaia_engine_vm::battle_action::selector_insert_displayed_skill`) walks down from the count moving entries up only while the new id is smaller, so the list is kept sorted **ascending by id**. This one sample cannot tell the two apart.
+Pattern: a length-prefixed list at `+0x185` grew by one entry. The new entry landed at position 0 and the existing entry moved to position 1 - which a head insert and an **ordered** insert both produce, because `0x03 < 0x0C`, so the sample alone cannot tell them apart. The writer settles it: the applier's `0x0B`..`0x0D` arm (`0x80041FB4`, `legaia_engine_vm::battle_action::selector_insert_displayed_skill`) walks down from the count shifting entries up only while the new id compares smaller (`sltu` at `0x8004200C`, loop `0x80041FFC`..`0x8004202C`), so the list is kept sorted **ascending by id**. It is an ordered insert, not a head insert.
 
 ### Reader resolved
 
@@ -527,9 +527,28 @@ A grep across the captured menu overlays (`overlay_menu_801d33d8.txt` and the id
 
 The structure is `[u8 count at +0x185][u8 ids[N] at +0x186..]`. The menu's spell-table at `0x801E472C` is indexed by these IDs (stride `0x14`; `record[+0]` = sort key, `record[+1]` = ID, `record[+0xC]` = name pointer). Display is capped at 7 by `slti v0,t2,0x7` later in the loop, but the on-record array fits 16 bytes (the gap to the equipment-slot field at `+0x196`).
 
-The pre/post Fire Book I capture is a head-insert into this list: the menu's displayed-skill roster grew by one new entry. The values are skill-table indices, not action-queue constants - so the earlier "0x03 = Attack" reading is moot. Engines now read this through a typed accessor `legaia_save::character::CharacterRecord::displayed_skills` (`DisplayedSkillList { count: u8, ids: [u8; MAX_DISPLAYED_SKILLS = 16] }`); `engine_core::capture_observations::vahn_fire_book_use` gains `MENU_READER_ADDR` (`0x801D4440`) + `MENU_OVERLAY_FN` (`0x801D33D8`) constants pointing at the resolved reader.
+The pre/post Fire Book I capture is an ordered insert into this list: the menu's displayed-skill roster grew by one new entry, which sorts ahead of the entry already there. The values are skill-table indices, not action-queue constants - so the earlier "0x03 = Attack" reading is moot. Engines now read this through a typed accessor `legaia_save::character::CharacterRecord::displayed_skills` (`DisplayedSkillList { count: u8, ids: [u8; MAX_DISPLAYED_SKILLS = 16] }`); `engine_core::capture_observations::vahn_fire_book_use` gains `MENU_READER_ADDR` (`0x801D4440`) + `MENU_OVERLAY_FN` (`0x801D33D8`) constants pointing at the resolved reader.
 
-No `sb` / `sh` writers to `+0x185` exist in any captured overlay. The learn-write path lives in an overlay we haven't dumped (likely the item-use battle event, accessed via the menu rather than the action SM); when that overlay lands, the writer is the next thing to pin.
+### Writer resolved
+
+No `sb` / `sh` writers to `+0x185` exist in any captured overlay, and the search
+for one in an un-dumped overlay was looking in the wrong image: the writer is in
+`SCUS_942.54`, in the item-effect applier `FUN_800402F4`'s arts-book arm at
+`0x80041FB4`. It addresses the record through the field base `0x80084140` rather
+than through `0x80084708`, which is why an `+0x185(reg)` grep over the overlays
+never reaches it - `0x80084140 + 0x74D` **is** record `+0x185`, and `+0x74E` is
+`+0x186`. The two stores are `sb $s6, 0x74e($a0)` at `0x80042064` (the id) and
+`sb $v0, 0x74d($v1)` at `0x80042074` (count + 1).
+
+This is an item-use path, not a battle event: the arm is entered from the pause
+menu's Item command (`jal 0x800402F4` at `0x801D8538` in the **menu** overlay
+PROT 0899 - not field code, despite the VA band - passing the descriptor's
+`(class, tier)` byte pair as arguments 0 and 1). `FUN_800402F4` has ten `jal`
+sites disc-wide: four in 0899 (this one and `0x801D818C` / `0x801D8EAC` /
+`0x801D9438`), five in the battle overlay 0898, and exactly one in the field
+overlay 0897 - the field-VM arm at `0x801E28E4`. Which character it writes comes from the class alone - see
+[item-effect-table.md](../formats/item-effect-table.md#arts-books-class-111213-the-tier-is-an-art-id)
+for the roster-slot derivation and for why the picked target is ignored.
 
 A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`fire_book_use_diff_pins_vahn_record_write`) asserts exactly one record-internal region at the documented offset against the real save pair. Three new unit tests in `legaia_save::character::displayed_skills_*` exercise the typed accessor's BEFORE/AFTER round-trip + the `MAX_DISPLAYED_SKILLS` clamp.
 

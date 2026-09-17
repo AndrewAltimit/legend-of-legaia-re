@@ -93,15 +93,29 @@ pub(super) fn op_4c_n3<H: FieldHost>(
                 next_pc: pc + header_size + 1,
             }
         }
-        8 | 0xD => {
-            host.player_subtile_refresh(op0 & 0x0F);
+        8 => {
+            // sub-8 (0x801E1048): camera-zone query + load at the player's
+            // tile (`FUN_801DE3E0`). The ease walks the globals to the new
+            // block; nothing snaps.
+            host.camera_zone_query_at_player();
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        0xD => {
+            // sub-D (0x801E10F8): the walk-region attribute refresh
+            // (`FUN_800180EC`) - the same tile arithmetic as sub-8 but a
+            // different helper, so it is a separate hook.
+            host.region_attributes_refresh_at_player();
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
         }
         9 => {
-            host.player_position_refresh_with_collision_y(ctx);
-            host.player_render_resync();
+            // sub-9 (0x801E1078): query + footing conform, then fall into
+            // sub-E's snap + focus clamp at 0x801E10BC.
+            host.camera_zone_query_conform_and_snap(ctx);
+            host.camera_snap_and_clamp();
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -113,7 +127,9 @@ pub(super) fn op_4c_n3<H: FieldHost>(
             }
         }
         0xE => {
-            host.player_render_resync();
+            // sub-E (0x801E10BC): the snap + focus-clamp tail of sub-9,
+            // reached directly by the jump table - no query.
+            host.camera_snap_and_clamp();
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }

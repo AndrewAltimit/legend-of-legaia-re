@@ -21,6 +21,14 @@ their own tables, and they are missing from any count that stops at five.
 facts, tracked in separate columns for a reason: several faithful ports have no
 non-test caller. See [Ported but inert](#ported-but-inert).
 
+**A third fact is independent of both: whether the disc uses the op at all.**
+A ported, live handler can still have no carrier - no shipped scene issuing
+that opcode - and neither column above says so, because both are properties of
+the port rather than of the data. For the field VM's own op space the
+[opcode census](../tooling/field-op-census.md) answers it per arm, over every
+scene MAN and event-script carrier, and its zeros are what separate "no
+fixture drives this yet" from "there is nothing to drive".
+
 ## The inventory
 
 Op/state spaces are structural invariants read off the dispatcher bound in the
@@ -34,7 +42,7 @@ disassembly (`sltiu` immediate before the `jr`), not off the port.
 | [Motion VM - pursue / patrol](motion-vm.md) | `FUN_8003774C` | 22-slot JT `0x80010EE0`, index `(op & 0x7F) - 0x37` | resolved | yes - `motion_vm` | yes |
 | [Motion VM - scripted](motion-vm.md#the-second-motion-vm---fun_80038158) | `FUN_80038158` | 32-slot JT `0x80010FE8`, ops `0x01..=0x20` | resolved | yes - `ambient_motion` + `ambient_motion_ops` | yes |
 | [Field / event VM](script-vm.md) | `FUN_801DE840` | 43 opcodes `0x21..0x4F` with gaps | resolved | yes - `field` | yes |
-| [Field VM `0x4C` MENU_CTRL](script-vm-menuctrl.md) | inline in `FUN_801DE840` | 16 outer nibbles, nibble `B` undefined in retail | resolved | yes - `field::step::menu_ctrl` | yes |
+| [Field VM `0x4C` MENU_CTRL](script-vm-menuctrl.md) | inline in `FUN_801DE840` | 16 outer nibbles; `B` and `F` reach retail's error printer, `F` sub-`F` excepted | resolved | yes - `field::step::menu_ctrl` | yes |
 | [Effect VM](effect-vm.md) | `FUN_801E0088` | **none** - see [No opcode space](#the-effect-vm-has-no-opcode-space) | resolved | yes - `effect_vm` | yes |
 | [Battle-action SM](battle-action.md) | `FUN_801E295C` | 256-slot JT `0x801CED44`, sparse handled bands, no default arm | partial | yes - `battle_action` | yes |
 | [World-map entity SM](world-map.md) | `FUN_801DA51C` | 5 states | resolved | yes - `world_map` | yes |

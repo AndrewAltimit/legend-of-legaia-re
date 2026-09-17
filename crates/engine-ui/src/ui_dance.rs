@@ -19,15 +19,23 @@
 //! `dance_countin_banner_envelope` (`FUN_801d2d98`), and the caption / option
 //! / cursor seats of the tutorial actor (`FUN_801D0750`).
 //!
-//! **Disclosed, both hosts**: the banner draws as placeholder text rather than
-//! that sprite. What is missing is not a draw call but the art - no host
-//! stages the dance overlay's own VRAM page, so there is nothing for a
-//! textured quad to sample. Retail also varies the record's `+0x0F` blend
-//! byte per arm (`sb $v0, 0xf($t0)` = `1` for the sliding halves at
-//! `0x801D2ED8`, `sb $zero, 0xf($t0)` = `0` for the hold at `0x801D2F0C`), so
-//! the halves are semi-transparent and the merged banner is opaque; the
-//! placeholder carries that as the halved brightness the envelope already
-//! reports, not as a blend mode.
+//! The sprite draws for real now, on both hosts:
+//! [`dance_countin_prims`] emits retail's own quads against the dance page,
+//! and what unlocked it was the **art**, not a draw call. Neither host staged
+//! the page, because the port runs the dance over whichever scene the player
+//! walked in from rather than inside the hall the way retail does, so the
+//! page's texels were the interrupted town's; the entry path now stages the
+//! rects the run's own widget table names
+//! (`legaia_engine_core::dance::stage_dance_hud_vram`). The text below stays
+//! as the fallback for a run with no page - a chart-only session, or a host
+//! whose staging soft-failed.
+//!
+//! Retail varies the record's `+0x0F` blend byte per arm (`sb $v0, 0xf($t0)`
+//! = `1` for the sliding halves at `0x801D2ED8`, `sb $zero, 0xf($t0)` = `0`
+//! for the hold at `0x801D2F0C`), so the halves are semi-transparent and the
+//! merged banner is opaque. The quad path carries that as the blend mode it
+//! is; the placeholder can only carry it as the halved brightness the
+//! envelope already reports.
 //!
 //! # Why the views are mirrors rather than imports
 //!
@@ -145,6 +153,148 @@ pub fn dance_countin_draws_for(
     }
     scale_stage_text_draws(&mut out, origin, scale);
     out
+}
+
+// -------------------------------------------------------- the real banner
+//
+// The retail art path. Everything above this line is the placeholder a host
+// falls back to when the dance overlay's texture page is not resident.
+
+/// The banner record's texture page (`+0x04` = `0x0008`, the 4bpp page at
+/// halfword `(512, 0)`) - every HUD row of the table carries it, and PROT
+/// 1230's own TIM set is where the page's texels come from
+/// (`legaia_engine_core::dance::DANCE_HUD_ART_PROT_ENTRY`).
+pub const COUNTIN_SPRITE_TPAGE: u16 = 0x0008;
+
+/// The record's `+0x13` semi-transparency **rate**, which the emitter folds
+/// into the texpage attribute as `tpage + abr * 0x20`. All 34 rows carry `1`,
+/// i.e. the additive `B + F` equation, so the HUD composites additively over
+/// whatever it is drawn on.
+pub const COUNTIN_SPRITE_ABR: u8 = 1;
+
+/// Ordering-table bucket the count-in banner links at.
+///
+/// Retail links every HUD emit into one bucket and forces that slot to `3`
+/// (`DAT_801D5154`), so the whole dance HUD shares a depth. Keeping the
+/// number here rather than at two call sites is what stops the native window
+/// and the play page from stacking the banner differently against the other
+/// screen-space primitives a frame carries.
+pub const COUNTIN_OT: u32 = 3;
+
+/// The count-in banner's art, as the run's own widget table carries it.
+///
+/// Mirrors `legaia_asset::dance_art::DanceWidget` record `0` plus its `+0x13`
+/// ABR byte, in the same "views are mirrors rather than imports" seam the
+/// [`DanceCountInView`] above uses. [`Default`] is the published record - the
+/// immediates this module documents - so a host with no parsed table still
+/// draws the right cell of the right page, and a host with one passes the
+/// disc's own values through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DanceCountInArt {
+    /// Texel origin of the cell inside the page.
+    pub uv: (u8, u8),
+    /// Cell extent in texels; the emitter's rect is **half-open**, so the far
+    /// corner is `uv + cell`, not `uv + cell - 1`.
+    pub cell: (u8, u8),
+    /// CLUT id (CBA) - a palette column of the row-500 strip.
+    pub clut: u16,
+    /// Texpage attribute (TSB) before the ABR fold.
+    pub tpage: u16,
+    /// Semi-transparency rate, folded in as `tpage + abr * 0x20`.
+    pub abr: u8,
+}
+
+impl Default for DanceCountInArt {
+    fn default() -> Self {
+        Self {
+            uv: COUNTIN_SPRITE_UV,
+            cell: (COUNTIN_SPRITE_CELL.0 as u8, COUNTIN_SPRITE_CELL.1 as u8),
+            clut: COUNTIN_SPRITE_CBA,
+            tpage: COUNTIN_SPRITE_TPAGE,
+            abr: COUNTIN_SPRITE_ABR,
+        }
+    }
+}
+
+impl DanceCountInArt {
+    /// Lift the art out of a parsed widget record and its ABR byte - what a
+    /// host holding a real overlay image passes instead of [`Default`].
+    pub fn from_widget(w: &legaia_asset::dance_art::DanceWidget, abr: u8) -> Self {
+        Self {
+            uv: (w.u, w.v),
+            cell: (w.w, w.h),
+            clut: w.clut,
+            tpage: w.tpage,
+            abr,
+        }
+    }
+}
+
+/// The count-in banner as screen-space PSX primitives - retail's own `160 x 32`
+/// sprite off the dance page, rather than the placeholder text above.
+///
+/// PORT: FUN_801d2d98 (`0x801D2EAC`..`0x801D2F18`) - the animator's **emit**
+/// half. The envelope half is
+/// `legaia_engine_core::dance::dance_countin_banner_envelope`; this is the
+/// three `FUN_801D2F38` calls it feeds, which the disassembly pins exactly:
+///
+/// - the sliding arm (`a0 == 0`) emits **two whole copies** of the cell, at
+///   `(0xa0 + s2, 0x77)` and `(0xa0 - s2, 0x77)`, after poking the record's
+///   `+0x0F` translucency byte to `1` (`sb $v0, 0xf($t0)` at `0x801D2ED8`) and
+///   halving the brightness with the `bgez`-biased shift at
+///   `0x801D2EC0`..`0x801D2EC8`. The "halves" are that pair of full copies,
+///   not half-width art;
+/// - the hold arm (`a0 != 0`) emits **one** copy at `(0xa0 - s2, 0x78)` with
+///   `+0x0F` cleared (`sb $zero, 0xf($t0)` at `0x801D2F0C`) and the brightness
+///   unhalved. `s2` is zero throughout the hold, so the seat is the centre -
+///   but the instruction is a subtract, and reproducing it is what keeps the
+///   two arms one formula;
+/// - every call passes `a2 = 0` (`clear a2`), the record **index**, and
+///   stores `0x1000` at `sp + 0x10`, the caller scale. With the record's own
+///   `0x1000` that makes the half-extent exactly `cell / 2`
+///   ([`COUNTIN_SPRITE_HALF`]).
+///
+/// The brightness arrives already halved for the sliding arm, because
+/// [`DanceCountInView`] carries the envelope's output rather than its input.
+/// Colour is the record's white top and bottom edges scaled by it
+/// (`channel * brightness >> 8`), which lands on the PSX blend's passthrough
+/// level `0x80` at the envelope's own flat `0x80`.
+pub fn dance_countin_prims(
+    view: DanceCountInView,
+    art: DanceCountInArt,
+    ot_index: u32,
+) -> Vec<crate::screen_prim::ScreenPrim> {
+    let level = |c: u8| (u32::from(c) * view.brightness.clamp(0, 0xFF) as u32) >> 8;
+    let colour = (level(0xFF) << 16) | (level(0xFF) << 8) | level(0xFF);
+    let (u0, v0) = art.uv;
+    let (u1, v1) = (u0.wrapping_add(art.cell.0), v0.wrapping_add(art.cell.1));
+    let (hw, hh) = (
+        (i32::from(art.cell.0) / 2) as i16,
+        (i32::from(art.cell.1) / 2) as i16,
+    );
+    let quad = |cx: i32, cy: i32, semi: bool| {
+        let (x0, x1) = ((cx as i16) - hw, (cx as i16) + hw);
+        let (y0, y1) = ((cy as i16) - hh, (cy as i16) + hh);
+        crate::screen_prim::ScreenPrim::Textured(crate::screen_prim::ScreenQuad {
+            xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+            uv: [(u0, v0), (u1, v0), (u0, v1), (u1, v1)],
+            clut: art.clut,
+            tpage: art.tpage + u16::from(art.abr) * 0x20,
+            color: colour,
+            gouraud: None,
+            semi_transparent: semi,
+            ot_index,
+        })
+    };
+    let y = countin_centre_y(view.hold);
+    if view.hold {
+        vec![quad(COUNTIN_CENTRE_X - view.x_offset, y, false)]
+    } else {
+        vec![
+            quad(COUNTIN_CENTRE_X + view.x_offset, y, true),
+            quad(COUNTIN_CENTRE_X - view.x_offset, y, true),
+        ]
+    }
 }
 
 /// Stage row the practice feedback caption sits on.
@@ -360,5 +510,133 @@ mod tests {
         assert_eq!(one.len(), three.len());
         assert_eq!(three[0].dst.0, 10 + one[0].dst.0 * 3);
         assert_eq!(three[0].dst.2, one[0].dst.2 * 3);
+    }
+
+    fn quad(p: &crate::screen_prim::ScreenPrim) -> crate::screen_prim::ScreenQuad {
+        match p {
+            crate::screen_prim::ScreenPrim::Textured(q) => *q,
+            crate::screen_prim::ScreenPrim::Flat(_) => {
+                panic!("the banner emits textured quads only")
+            }
+        }
+    }
+
+    /// The sliding arm emits **two whole copies** of the cell - the "halves"
+    /// are that pair, not half-width art - and the hold arm emits one. A
+    /// reading that halves the art instead draws a 80-px banner twice.
+    #[test]
+    fn the_sliding_arm_emits_two_whole_copies() {
+        let art = DanceCountInArt::default();
+        let slide = dance_countin_prims(
+            DanceCountInView {
+                x_offset: 0x30,
+                brightness: 0x40,
+                hold: false,
+            },
+            art,
+            COUNTIN_OT,
+        );
+        assert_eq!(slide.len(), 2);
+        for p in &slide {
+            let q = quad(p);
+            let w = i32::from(q.xy[1].0 - q.xy[0].0);
+            let h = i32::from(q.xy[2].1 - q.xy[0].1);
+            assert_eq!((w, h), COUNTIN_SPRITE_CELL, "each copy is the whole cell");
+            assert_eq!(i32::from(q.xy[0].1), COUNTIN_SLIDE_CENTRE_Y - 0x10);
+            assert!(q.semi_transparent, "the halves poke +0x0F to 1");
+        }
+        let centres: Vec<i32> = slide
+            .iter()
+            .map(|p| i32::from(quad(p).xy[0].0) + COUNTIN_SPRITE_HALF.0)
+            .collect();
+        assert!(centres.contains(&(COUNTIN_CENTRE_X + 0x30)));
+        assert!(centres.contains(&(COUNTIN_CENTRE_X - 0x30)));
+
+        let hold = dance_countin_prims(
+            DanceCountInView {
+                x_offset: 0,
+                brightness: 0xFF,
+                hold: true,
+            },
+            art,
+            COUNTIN_OT,
+        );
+        assert_eq!(hold.len(), 1);
+        let q = quad(&hold[0]);
+        assert_eq!(i32::from(q.xy[0].1), COUNTIN_HOLD_CENTRE_Y - 0x10);
+        assert!(!q.semi_transparent, "the merged banner clears +0x0F");
+    }
+
+    /// The texel rect is retail's **half-open** one (`u + w`, not
+    /// `u + w - 1`): the dance emitter writes the sum straight out, unlike
+    /// the battle numerals' inclusive cells, and picking the wrong
+    /// convention shifts every column of a 160-texel banner.
+    #[test]
+    fn the_texel_rect_is_half_open_and_the_page_is_additive() {
+        let art = DanceCountInArt::default();
+        let q = quad(
+            &dance_countin_prims(
+                DanceCountInView {
+                    x_offset: 0,
+                    brightness: 0x80,
+                    hold: true,
+                },
+                art,
+                COUNTIN_OT,
+            )[0],
+        );
+        assert_eq!(q.uv[0], COUNTIN_SPRITE_UV);
+        assert_eq!(
+            q.uv[3],
+            (
+                COUNTIN_SPRITE_UV
+                    .0
+                    .wrapping_add(COUNTIN_SPRITE_CELL.0 as u8),
+                COUNTIN_SPRITE_UV
+                    .1
+                    .wrapping_add(COUNTIN_SPRITE_CELL.1 as u8),
+            )
+        );
+        assert_eq!(q.clut, COUNTIN_SPRITE_CBA);
+        // `tpage + abr * 0x20`, so the quad reports the additive equation.
+        assert_eq!(q.tpage, COUNTIN_SPRITE_TPAGE + 0x20);
+        assert_eq!(q.abr_mode(), 1, "B + F");
+        // Brightness 0x80 on the record's white edges is the blend's
+        // passthrough level.
+        assert_eq!(q.color, 0x007F_7F7F);
+    }
+
+    /// A parsed record overrides the published immediates - the art is disc
+    /// data, and a host that holds the table must be able to pass it.
+    #[test]
+    fn a_parsed_record_overrides_the_defaults() {
+        let w = legaia_asset::dance_art::DanceWidget {
+            scale: 0x1000,
+            tpage: 0x0009,
+            clut: 0x7D01,
+            u: 0x10,
+            v: 0x20,
+            w: 0x40,
+            h: 0x10,
+            rgb_top: [0xFF, 0xFF, 0xFF],
+            rgb_bottom: [0xFF, 0xFF, 0xFF],
+            semi: 1,
+        };
+        let art = DanceCountInArt::from_widget(&w, 3);
+        let q = quad(
+            &dance_countin_prims(
+                DanceCountInView {
+                    x_offset: 0,
+                    brightness: 0xFF,
+                    hold: true,
+                },
+                art,
+                COUNTIN_OT,
+            )[0],
+        );
+        assert_eq!(q.uv[0], (0x10, 0x20));
+        assert_eq!(q.clut, 0x7D01);
+        assert_eq!(q.tpage, 0x0009 + 3 * 0x20);
+        assert_eq!(i32::from(q.xy[1].0 - q.xy[0].0), 0x40);
     }
 }

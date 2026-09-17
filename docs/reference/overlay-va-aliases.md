@@ -352,8 +352,35 @@ image:
 |---|---|---|
 | `0x801D0ED8` | The dome contest-start restore **entry** `FUN_801D0ED8` - refills party slot 0's HP / MP / SP to their maxima, called once per contest from `0x801CEBF0` ([`minigames-debug.md`](functions/minigames-debug.md#801d0ed8)). | The **call site** `jal 0x801DA780` in the battle-flow SM, which [`battle-formulas.md`](../subsystems/battle-formulas.md#initiative-key-seeding-fun_801da780) cites for initiative-key seeding. |
 
+Two more of the same shape, both of which have already sent work down the wrong
+path:
+
+| VA | In PROT 0897 (field) | In PROT 0899 (menu) |
+|---|---|---|
+| `0x801DBA20` | The camera-region record **picker** the zone query `FUN_801DE3E0` calls to find the record covering a tile. | The shop **quantity** state machine reached from `FUN_801DB7F4`. |
+| `0x801D8538` | Not a function entry - interior bytes with no prologue. | One of the menu's five item-**use** call sites into the SCUS apply handler `FUN_800402F4`. |
+
+The first is also a dump-naming trap rather than only an address one: the plainly
+named `ghidra/scripts/funcs/801dba20.txt` holds the **menu** routine, and the
+field picker is in the image-qualified `overlay_*_801dba20.txt` dumps. A filename
+without an image in it is not evidence of which image a body came from.
+
 When two pages cite the same address for different work, check the image before
 assuming one of them is wrong.
+
+### A dump filename is not an image claim: `0x801F3990`
+
+`ghidra/scripts/funcs/overlay_muscle_dome_801f3990.txt` reads as a muscle-dome
+routine because of its prefix. The bytes at that VA belong to **PROT 0898**, at
+file `+0x25400` under the slot-A base `0x801CE818`, and so does the neighbouring
+`0x801F3C18` the same investigation cited. Nothing about the dome is involved.
+
+The distinction matters when the question is reachability rather than behaviour:
+the band has exactly one reference on the disc, a `jal` inside a battle-action
+arm in 0898, which is a coherent story only once the body is 0898's too. Read the
+prefix as the label of the *program the dump was taken from*, never as the image
+the bytes live in - `scripts/ghidra-analysis/locate-entry-image.py` answers the
+second question and the filename never does.
 
 ## See also
 

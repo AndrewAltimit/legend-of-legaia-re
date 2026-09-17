@@ -71,6 +71,7 @@ use vm_hosts::{
 mod ambient_fx_state;
 mod audio_state;
 mod battle_state;
+mod camera_hooks;
 mod camera_rig;
 mod cast_fx_state;
 mod config;
@@ -103,6 +104,7 @@ mod world_toggles;
 pub use ambient_fx_state::AmbientFxState;
 pub use audio_state::AudioState;
 pub use battle_state::BattleState;
+pub use camera_hooks::CameraZoneRequest;
 pub use camera_rig::CameraRig;
 pub use cast_fx_state::CastFxState;
 pub use config::*;
@@ -141,6 +143,8 @@ pub use cutscene_elements::{
     ElementKind, ElementLink, WorldRng,
 };
 mod assets_events;
+mod bag_rows;
+pub use bag_rows::BagRow;
 mod battle;
 pub use battle::{
     BattleSpoilsBanner, LEVEL_UP_CUE, PendingCast, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND,
@@ -156,7 +160,9 @@ mod encounters;
 pub use encounters::FieldBossStager;
 mod field_carriers;
 pub mod field_elevation;
+mod field_hud;
 pub use field_elevation::{CELL_ELEVATION_OVERRIDE, ElevationOverride};
+pub use field_hud::PassiveHudPoints;
 mod field_loop;
 mod field_movement;
 mod frame_tick;
@@ -167,6 +173,8 @@ mod narration;
 mod prop_interact;
 mod save;
 mod vm_hosts;
+mod vram_rect_fx;
+pub use vram_rect_fx::OT_LEN_UNBOUNDED;
 mod worldmap;
 
 #[cfg(test)]

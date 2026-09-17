@@ -88,6 +88,38 @@ kind-8..11 `NccMode` in [`prim_dispatch`](../../crates/engine-vm/src/prim_dispat
 is a static data model with no runtime consumer (wire it only if a lit mesh path -
 e.g. a 3D world-map renderer - is ever built).
 
+**A disc-wide `cop2` census closes the static half of that question.** The light
+matrix is consumed *implicitly* - by the GTE's own normal-colour commands, which
+multiply an input normal by `L` before anything else - so "who reads what
+`FUN_8001ADA4` stages at `0x8001B34C..0x8001B368`" is a census of opcodes, not
+an xref query. `scripts/ghidra-analysis/find-gte-light-consumers.py` sweeps
+`SCUS_942.54` plus every statically based overlay image for GTE command words
+and reports **five** light-matrix consumer sites disc-wide, every one of them in
+SCUS, inside those same four handlers: `NCCS` at `0x800441C8`, `0x800443C8` and
+`0x80044750`, `NCCT` at `0x80044540` and `0x80044724`. No overlay image contains
+one at all, and `NCS` / `NCT` / `NCDS` / `NCDT` occur nowhere.
+
+Two numbers make that a bounded answer rather than an absence. `MVMVA` can also
+select the light matrix, through its `mx` field - the one consumer a normal-
+colour census would miss - and disc-wide **no** `MVMVA` does: 29 select the
+rotation matrix, one the colour matrix, none the light matrix. And the sweep's
+denominator is non-empty by its own count, 238 GTE command words in code across
+84 based images (2,074,624 bytes). So the consumer set is exactly the four
+handlers, and the capture evidence above says no observed field frame enters
+them.
+
+The sweep's own trap is worth carrying: a GTE command word is four bytes with no
+relocation, so it occurs in data at the rate any four-byte pattern does. Raw
+hits included `"ATK "` inside a menu string and two words of PROT 0899's data
+segment. The discriminator is structural rather than statistical - the GTE takes
+no memory operands, so a real command is packed among the `lwc2` / `mtc2` /
+`mfc2` / `swc2` moves that feed and drain it, and the data hits had **zero or
+one** distinct COP2 neighbour where every real one had five to eight. A run of
+one repeated word is the other shape that fakes company, so the count is of
+*distinct* encodings: PROT 0895's data segment carries five identical
+`cfc2`-shaped words in a row, each of which would otherwise vouch for the next.
+Thirty-seven GTE-shaped words fail one of the two filters.
+
 Why the earlier evidence looked open, and two instrument caveats. A lone prior
 `town01` capture (~31 K interp hits) showed the kind-11 NCC body and the fog bodies
 hot in roughly equal measure; against the cold-boot sweep's ~46 M hits with exactly
@@ -580,6 +612,87 @@ cursor `_DAT_1F8003A0`, advancing it by the packet size and linking through
 `(a2 << 1) | a3` forms the semi-transparent-bit + command byte; the leading tag
 word is the packet-length code (`0x05000000` / `0x08000000`). See
 `ghidra/scripts/funcs/8003c510.txt`, `8003c43c.txt`, `80036c4c.txt`.
+
+## The field view matrix: where `TR` comes from
+
+The field camera's ten globals are turned into GTE control registers once a
+frame by **`FUN_800172C0`** - the routine the field per-frame controller
+`FUN_801D1344` ends its tail on (`0x801D1854`), and the one every minigame overlay and the world-map
+renderer call too (15 `jal` sites disc-wide). It is five calls long, and the
+last of them is what pins the field `TR`:
+
+1. `FUN_80026988(gp+0x468, 0x1F8003A8)` builds a rotation from the *light*
+   angle trio `0x8007B780..84` (with a half-turn added on X) and
+   `FUN_8005B648` uploads it - this half is the light matrix, not the view.
+2. `FUN_80026988(0x8007B790, 0x1F8003C8)` builds `Rot(pitch, yaw, roll)` from
+   the camera angle trio into a scratch `MATRIX`.
+3. `FUN_8005B3A8(0x8007BF10, 0x1F8003C8)` (`MulMatrix0`) folds the **base
+   matrix** into it. `_DAT_8007BF10` is a per-mode uniform scale - a live
+   `town01` field state holds `24576 * I`, i.e. **6x** (GTE `4096` = 1.0).
+4. `FUN_8005B4B8(0x1F8003C8, 0x800840B8)` (`TransMatrix`) copies the
+   eye-space translation trio `_DAT_800840B8/BC/C0` - the trio the camera
+   composer stages and the ease walks - into that matrix's `t` at `+0x14`
+   as three **32-bit words**, and `FUN_8003D1A4` uploads all eight control
+   words, so `TR` is briefly the raw trio. `FUN_8003D344(sp+0x18,
+   0x1F8003DC)` then MVMVAs the focus trio through the scaled rotation with
+   `cv = TR` and writes `MAC1..3` back into the same `t`
+   (`0x1F8003C8 + 0x14 == 0x1F8003DC`). The focus is read as the **low
+   signed halfwords** of `_DAT_80089118/1C/20` (three `lhu` at
+   `0x80017358..0x80017360` into a stack `SVECTOR`), and those globals
+   already hold the **negated** anchor. Only X and Z are ever written in
+   the field - `FUN_801DBE9C`'s retail leg and the focus clamp
+   `FUN_801DAA50` write that pair and nothing else - and the Y global
+   measures `0` on every sampled field frame while the player's footing on
+   those frames is not `0`, so the camera's vertical framing rides the
+   composed eye Y rather than the focus. The composer's **staging** focus
+   at `+0x1A/+0x1E/+0x22` does carry the footing, but the view build never
+   reads the staging descriptor. The port ships the zeroed focus wherever a
+   zone camera is active (`engine-core::camera_view`), and falls back to the
+   player's sampled floor only in a world with no terrain to compose an eye
+   trio from. That order matters: zeroing the focus first, on its own, moved
+   the focus 128 units vertically in `town01` and tilted the screen path of a
+   held `Up` past the `|dx| < 0.5 * |dy|` threshold of the page's compass law -
+   not because the focus was wrong but because the port's d-pad heading was
+   still quantised to four cardinals where retail rings it at 45 degrees
+   (`func_0x800467E8`). The zeroed focus exposed that gap rather than causing
+   it. With the ring wired (`World::remap_pad_direction`, driven by
+   `World::field_pad_ring_rotation`) the worst-case heading error halves and
+   the measured framing ships.
+5. `FUN_8005B6A8(0x1F8003C8)` (`SetTransMatrix`) uploads that `t` as the
+   final GTE `TR`.
+
+So the field transform is `screen = proj(H) * (S * Rot * (v - focus) +
+tr_eye)`, with `S` the base-matrix scale and `tr_eye` **unscaled** GTE units.
+There is no eye-back depth constant anywhere in the chain: the live trio *is*
+the eye-space offset. A renderer that draws geometry at `1x` reproduces the
+frame pixel-for-pixel by dividing the trio by `S` - the perspective divide is
+invariant under a uniform scale of the whole eye-space vector. That is the
+rule `engine-core::camera_view::FIELD_CAM_DEPTH` is derived from, and the
+same one an op-`0x45` beat's offset trio goes through
+([`cutscene.md`](cutscene.md)).
+
+The **staging descriptor** at `0x801F3580` is not in this chain at all - the
+view build reads the live globals, never the composer's staging fields.
+
+The sibling `FUN_80026F50` (one caller, `0x80026DE0`) builds the same shape
+from the ROM-constant base matrix at `0x80010B84` (`16384 * I`, a 4x scale)
+and copies the trio's **low halfwords** sign-extended, with no focus MVMVA.
+It is a different mode's view build, not the field's.
+
+See `ghidra/scripts/funcs/800172c0.txt`, `80026988.txt`, `8005b3a8.txt`,
+`8005b4b8.txt`, `8005b6a8.txt`, `8003d344.txt`, `8003d1a4.txt`.
+
+Confirmed live by the field-camera `TR` probe
+(`scripts/pcsx-redux/autorun_field_camera_tr.lua`): the formula holds on
+every sampled frame across three field states, including the frames where
+the staging trio differs from the live one, `FUN_80026F50` never fires in a
+field run, and `0x8007BF10` reads `0x6000` throughout.
+
+`FUN_80025C24`, the field-entry reset, is the other writer of the trio - and
+it writes three different values, not zero: `0x800840B8 = 0`,
+`0x800840BC = -0x100`, `0x800840C0 = 0x4024`, plus the angle trio
+`(0x1B8, 0x64, 0)`. Reading only its first store (`sw zero` at `0x80025C28`)
+misses the `addiu v0, v0, 0x40b8` that re-bases the next two.
 
 ## Frame setup + present
 

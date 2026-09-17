@@ -269,13 +269,22 @@ impl LegaiaRuntime {
                     .collect(),
                 Some(gold),
             ),
+            // Retail's sell list is the price-gated slot walk, not the
+            // id-sorted bag: an unsellable row dims and sorts last
+            // (`MenuRuntime::sell_list_rows`). Twin of the native window's
+            // arm in `window::hud`.
             Some(MenuState::ShopSell) => (
-                bag.iter()
-                    .map(|(id, qty)| {
+                legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows(world)
+                    .iter()
+                    .map(|r| {
                         (
-                            format!("{} x{}", self.shop_item_label(*id), qty),
+                            format!("{} x{}", self.shop_item_label(r.id), r.count),
                             None,
-                            ui::SHOP_INK_NORMAL,
+                            if r.dim {
+                                ui::SHOP_INK_GREY
+                            } else {
+                                ui::SHOP_INK_NORMAL
+                            },
                         )
                     })
                     .collect(),
@@ -497,11 +506,15 @@ impl LegaiaRuntime {
         shop: &ShopSession,
         state: Option<MenuState>,
         cursor: usize,
-        bag: &[(u8, u8)],
     ) -> Option<u8> {
         match state {
             Some(MenuState::ShopBuy) => shop.inventory.items.get(cursor).map(|i| i.item_id),
-            Some(MenuState::ShopSell) => bag.get(cursor).map(|(id, _)| *id),
+            Some(MenuState::ShopSell) => {
+                let world = &self.scene_host.as_ref()?.world;
+                legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows(world)
+                    .get(cursor)
+                    .map(|r| r.id)
+            }
             Some(MenuState::ShopQuantity) | Some(MenuState::ShopConfirm) => shop.pending_item_id,
             _ => None,
         }
@@ -681,7 +694,7 @@ impl LegaiaRuntime {
         // window 39 (the price + passive detail panel) instead - retail's
         // `FUN_801D5AE8` is the sell-family renderer, and the two windows
         // print the same name/description head at overlapping rects.
-        let staged = self.shop_staged_item(shop, state, cursor, &bag);
+        let staged = self.shop_staged_item(shop, state, cursor);
         let selling_list = matches!(state, Some(MenuState::ShopSell));
         if !selling_list
             && let Some((d, _)) =
@@ -1403,7 +1416,12 @@ impl LegaiaRuntime {
         // member over a translucent plate). Already in surface pixels, like
         // `battle`, and empty whenever anything else owns the screen
         // ([`crate::play_field_hud`]).
-        let (field_hud_sprites, field_hud_texts) = self.field_party_hud_draws(surface_w, surface_h);
+        let (field_hud_sprites, mut field_hud_texts) =
+            self.field_party_hud_draws(surface_w, surface_h);
+        // The passive-ability badge column rides the same font layer; it is
+        // independent of the party readout's idle gate, so it is appended
+        // rather than folded into the builder above.
+        field_hud_texts.extend(self.passive_hud_draws(surface_w, surface_h));
         // In-world minigame screens (casino / dance / arena), surface
         // pixels ([`crate::play_minigames`]). Empty outside one.
         let (minigame_sprites, minigame_texts) =

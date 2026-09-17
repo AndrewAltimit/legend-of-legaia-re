@@ -226,13 +226,15 @@ pub fn build_engine_pcm_trace(
 
     let mut spu = Spu::new();
     let mut director = TraceBgmDirector::new();
-    if let Some(vab_bytes) = session
+    if let Some((vab_bytes, vab_off)) = session
         .host
         .scene_vab_bytes()
         .context("resolve scene VAB bytes")?
     {
-        let report =
-            legaia_vab::parse(&vab_bytes, 0).context("parse scene VAB header for PCM trace")?;
+        // Same stream shape as the boot path: the bank is at the stream's
+        // reported offset, not at 0.
+        let report = legaia_vab::parse(&vab_bytes, vab_off)
+            .context("parse scene VAB header for PCM trace")?;
         const SPU_RAM_BYTES: u32 = 512 * 1024;
         const SPU_RESERVED_BYTES: u32 = 0x1000;
         let mut alloc = SpuAllocator::new(SPU_RESERVED_BYTES, SPU_RAM_BYTES - SPU_RESERVED_BYTES);

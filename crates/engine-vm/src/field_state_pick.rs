@@ -63,12 +63,42 @@
 //! `PTR_FUN_801F33B4`, whose port is `World::tick_submode_screen`'s `run_slot`
 //! over [`crate::baka_hub_actors::slot`].
 //!
-//! What is missing is anything that puts `7` in an actor's `+0x50`. The engine
-//! grounds only slot `0`: `field_submode_screen::slot_for_op49_sub_op` returns
-//! the close tick for every sub-op it cannot name, because retail picks the
-//! slot from the op-`0x49` operand payload it reads through `_DAT_8007B450`,
-//! and the engine carries no such payload. Adding a dispatch arm ahead of that
-//! would be an arm nothing selects.
+//! What is missing is anything that puts `7` in an actor's `+0x50`, and the
+//! reason is not the one this note used to give. The op-`0x49` payload **is**
+//! carried: `slot_for_op49_sub_op` indexes retail's own sub-op table
+//! ([`crate::baka_hub_actors::OP49_SUBOP_SLOTS`] at `0x801F33A4`) with the
+//! parked operand's first byte, exactly as the enter half does at
+//! `0x801F145C`. The route cannot come from there for a stronger reason: that
+//! table's fourteen entries name slots `0x21`..`0x33` and `-1`, and **none of
+//! them is `7`**, so no `49 <sub_op>` reaches this handler in retail either.
+//!
+//! Slot `7` is a **return** state, and the writer is the submode enter half
+//! itself - the routine whose table read at `0x801F145C` the port already
+//! cites. Scanning every based overlay image for a store of the immediate `7`
+//! into `+0x50` finds exactly one site, at `0x801F140C`, and its surroundings
+//! are the same four writes this handler makes:
+//!
+//! ```text
+//! 801f13f4  sh   v0,0x2e(v1)     ; scene[+0x2E] = -1
+//! 801f1400  sh   v0,0x40(v1)     ; scene[+0x40] = actor[+0x50]  (outgoing)
+//! 801f1404  addiu v0,zero,7
+//! 801f140c  sh   v0,0x50(s4)     ; actor[+0x50] = 7
+//! 801f141c  sh   zero,0x54(s4)
+//! ```
+//!
+//! Then, when `_DAT_8007B450` names a sub-op the `0x801F33A4` table gives a
+//! handler for, the same routine immediately does it **again** at
+//! `0x801F1474..0x801F14AC` - saving the `7` it just installed into
+//! `scene[+0x40]` and overwriting `+0x50` with the table's slot. So `7` is what
+//! the screen returns to: the hand-back restores `+0x50` from `scene[+0x40]`,
+//! this handler runs once, and installs `0x30` (or `0x13` on the debug
+//! shortcut).
+//!
+//! That is what the port has no room for. `field_submode_screen` installs the
+//! table's slot directly, collapsing a two-step chain into one, and carries no
+//! `scene[+0x40]` return slot for the intermediate state to be parked in. The
+//! remaining work is the return slot and the debug-mode word, not a dispatch
+//! arm.
 //!
 //! Two smaller gaps sit behind it, and they are the ones with no engine home
 //! at all: the scene record's `+0x2E` / `+0x40` save-slot pair, which is where
@@ -126,12 +156,13 @@ pub fn picked_state(inputs: StatePickInputs) -> u16 {
 /// Run the handler. `current_state` is the actor's `+0x50` on entry.
 ///
 /// PORT: FUN_801f1f4c
-// NOT WIRED: nothing routes an actor to slot `7` of `PTR_FUN_801F33B4` - the
-// engine grounds only slot `0` because retail picks the slot from the
-// op-`0x49` operand payload behind `_DAT_8007B450`, which it does not carry.
-// The actor pair `+0x50`/`+0x54` DOES exist (`Actor::state_50` /
-// `Actor::state_54`); what has no engine home is the scene record's
-// `+0x2E`/`+0x40` and the debug-mode word. See the module's `Not wired`.
+// NOT WIRED: nothing routes an actor to slot `7` of `PTR_FUN_801F33B4`, on
+// either side - retail's op-`0x49` sub-op table names no slot `7`, so the
+// predecessor that writes `7` into an actor's `+0x50` is unidentified (see the
+// module's `Not wired`). The actor pair `+0x50`/`+0x54` DOES exist
+// (`Actor::state_50` / `Actor::state_54`) and so does the op-`0x49` payload;
+// what has no engine home is the scene record's `+0x2E`/`+0x40` and the
+// debug-mode word.
 pub fn state_pick(inputs: StatePickInputs, current_state: u16) -> StatePickWrites {
     StatePickWrites {
         scene_slot_2e: -1,

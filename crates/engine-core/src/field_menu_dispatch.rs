@@ -310,14 +310,29 @@ pub fn apply_equip_outcome(
 // REF: FUN_80042310 (the one-copy bag decrement all three routes call)
 pub fn apply_inventory_outcome(session: &InventoryUseSession, world: &mut World) {
     use crate::inventory_use::InventoryUseState;
-    for id in &session.thrown_items {
-        world.party.inventory.remove(id);
+    // Throw Out discards the **slot** the row named, which is what retail's
+    // confirm zeroes. Only a session built without a slot-indexed bag falls
+    // back to the id, and that removal cannot tell two stacks of one id apart.
+    for (i, id) in session.thrown_items.iter().enumerate() {
+        match session.thrown_slots.get(i) {
+            Some(&slot) => {
+                world.discard_bag_slot(slot);
+            }
+            None => {
+                world.party.inventory.remove(id);
+            }
+        }
     }
     for &id in &session.consumed_items {
         world.consume_item(id);
     }
     if let Some(id) = session.used_item {
-        world.consume_item(id);
+        match session.used_slot {
+            Some(slot) => {
+                world.consume_bag_slot(slot);
+            }
+            None => world.consume_item(id),
+        }
         if matches!(session.state, InventoryUseState::Done(_)) {
             // `used_slots` names every slot the completed use applied to
             // (one for a single-target item, every healed ally for an
@@ -821,15 +836,28 @@ fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSessio
 
 fn build_inventory_session(world: &World) -> InventoryUseSession {
     let names = roster_names(world);
-    // Id-sorted, one entry per distinct held id (the paired PauseItemRow
-    // list is built in the same order - keep these in lockstep).
-    let mut items: Vec<u8> = world
-        .party
-        .inventory
-        .iter()
-        .filter_map(|(id, qty)| if *qty > 0 { Some(*id) } else { None })
-        .collect();
-    items.sort_unstable();
+    // Retail's Use-list row order when the on-disc effect table is installed
+    // (`World::bag_use_rows`, the SCUS content-id-3 builder over the bag's
+    // active window): slot walk, three-buffer grouping, field context. The
+    // id-sorted fallback is what a disc-free host gets - with no descriptors
+    // there is nothing to group by. The paired PauseItemRow list is built in
+    // the same order; keep these in lockstep.
+    let (items, bag_slots): (Vec<u8>, Vec<u8>) = match world.bag_use_rows(false) {
+        Some(rows) => (
+            rows.iter().map(|r| r.id).collect(),
+            rows.iter().map(|r| r.slot).collect(),
+        ),
+        None => {
+            let mut v: Vec<u8> = world
+                .party
+                .inventory
+                .iter()
+                .filter_map(|(id, qty)| if *qty > 0 { Some(*id) } else { None })
+                .collect();
+            v.sort_unstable();
+            (v, Vec::new())
+        }
+    };
     let targets: Vec<InvTargetRow> = world
         .party
         .roster
@@ -859,6 +887,53 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
         targets,
         InventoryContext::Field,
     )
+    // The row payloads: retail's list entries carry a bag slot, and Use /
+    // Throw Out remove from the slot the row named.
+    .with_bag_slots(bag_slots)
+}
+
+/// One item id's display text, as every screen that shows an item needs it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ItemDisplayText {
+    /// Display name. Falls back to the curated catalog, then to a raw id,
+    /// so a screen never shows nothing.
+    pub name: String,
+    /// Info-panel description. Empty when the disc text is unavailable.
+    pub desc: String,
+    /// An accessory's two passive lines (`(name, description)`).
+    pub passive: Option<(String, String)>,
+}
+
+/// Resolve one item id's name / description / passive lines through the
+/// world's disc text tables, with the curated catalog and a raw-id spelling
+/// as fallbacks.
+///
+/// Lifted out of the Items-screen session builder because it is not the
+/// Items screen's: retail's item-info panel (`FUN_801D0F1C`) is opened by
+/// window 17 on the Items screen **and** by window 24 on the Equip screen's
+/// candidate step, off the same table. Keeping the resolution inside one
+/// screen's builder is why the Equip screen showed raw ids where retail
+/// shows names.
+pub fn item_display_text(world: &World, id: u8) -> ItemDisplayText {
+    let text = world.menu.text.as_ref();
+    ItemDisplayText {
+        name: text
+            .and_then(|t| t.item_name(id))
+            .map(str::to_string)
+            .or_else(|| {
+                world
+                    .tables
+                    .item_catalog
+                    .get(id)
+                    .map(|e| e.name.to_string())
+            })
+            .unwrap_or_else(|| format!("Item {id:02X}")),
+        desc: text
+            .and_then(|t| t.item_desc(id))
+            .unwrap_or_default()
+            .to_string(),
+        passive: text.and_then(|t| t.item_passive_lines(id)),
+    }
 }
 
 /// Build the retail Items screen session: the item-use flow plus the
@@ -867,39 +942,34 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
 /// with catalog + raw-id fallbacks).
 pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
     let inner = build_inventory_session(world);
-    let text = world.menu.text.as_ref();
+    let slots = inner.bag_slots.clone();
     let rows: Vec<PauseItemRow> = inner
         .items
         .iter()
-        .map(|&id| {
-            let name = text
-                .and_then(|t| t.item_name(id))
-                .map(str::to_string)
-                .or_else(|| {
-                    world
-                        .tables
-                        .item_catalog
-                        .get(id)
-                        .map(|e| e.name.to_string())
-                })
-                .unwrap_or_else(|| format!("Item {id:02X}"));
-            let desc = text
-                .and_then(|t| t.item_desc(id))
-                .unwrap_or_default()
-                .to_string();
-            let passive = text.and_then(|t| t.item_passive_lines(id));
+        .enumerate()
+        .map(|(i, &id)| {
+            let t = item_display_text(world, id);
             PauseItemRow {
                 id,
-                name,
+                slot: slots.get(i).copied().unwrap_or(0),
+                name: t.name,
                 count: world.party.inventory.get(&id).copied().unwrap_or(0),
-                desc,
-                passive,
+                desc: t.desc,
+                passive: t.passive,
             }
         })
         .collect();
+    // The Throw Out command's own row order (content id 0x22). The screen is
+    // built in the Use order (content id 3), and this is a bag-slot sequence,
+    // so the command window can permute the rows it already holds.
+    let throw_out_slots: Vec<u8> = world
+        .bag_throw_out_rows()
+        .map(|rows| rows.iter().map(|r| r.slot).collect())
+        .unwrap_or_default();
     PauseItemsSession::new(inner, rows)
         .with_arrange_rank(world.menu.arrange_rank.clone())
         .with_warp_destinations(warp_destinations(world))
+        .with_throw_out_row_order(throw_out_slots)
 }
 
 /// The visible rows of the quick-travel landmark list - the Door of Wind

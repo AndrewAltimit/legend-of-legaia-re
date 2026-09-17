@@ -52,6 +52,13 @@ pub struct CameraRig {
     /// [`crate::camera::CAMERA_ZONE_DEFAULTS`] on scene entry; consumed by
     /// [`crate::camera::Camera::tick`].
     pub registers: crate::register_ramp::CameraRegisterFile,
+    /// Camera-zone arms the field VM ran this frame
+    /// ([`crate::world::CameraZoneRequest`]), drained by
+    /// [`crate::camera::Camera::tick`]. The VM's host is `World` while the
+    /// camera globals live on the host-owned `Camera`, so the arms queue
+    /// here instead of writing the globals directly - see
+    /// [`crate::world::camera_hooks`].
+    pub zone_requests: Vec<crate::world::CameraZoneRequest>,
 }
 
 impl CameraRig {
@@ -64,6 +71,7 @@ impl CameraRig {
             state: CameraState::default(),
             register_ramps: Vec::new(),
             registers: Default::default(),
+            zone_requests: Vec::new(),
         }
     }
 }

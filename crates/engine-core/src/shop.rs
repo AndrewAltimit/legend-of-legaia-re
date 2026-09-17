@@ -74,6 +74,15 @@ pub struct ShopSession {
     pub pending_quantity: u8,
     /// `true` = buy (from shop), `false` = sell (from player inventory).
     pub pending_is_buying: bool,
+    /// Physical **bag slot** the staged sell row named, when the host built the
+    /// row list from the bag's slots.
+    ///
+    /// Retail's list rows carry a slot, not an id (`_DAT_8007BB88` is a bag
+    /// slot index), and the bag is not compacted when a menu opens, so the row
+    /// ordinal and the slot diverge as soon as a hole sits above the selection.
+    /// `None` for a host that staged the row by id alone, which then removes
+    /// from whichever slot the window scan reaches first.
+    pub pending_bag_slot: Option<u8>,
     /// Stable identity of the vendor running this shop. Derived from
     /// the shop record at field-shop arm time via
     /// [`legaia_asset::seru_trade::vendor_id_from_shop`]; `0` for sessions built
@@ -94,6 +103,7 @@ impl ShopSession {
             pending_item_id: None,
             pending_quantity: 1,
             pending_is_buying: true,
+            pending_bag_slot: None,
             vendor_id: 0,
             vendor_bucket_offset: 0,
         }
@@ -129,12 +139,30 @@ impl ShopSession {
     }
 
     /// Called when the player confirms an item row in the sell list.
-    /// `sell_items` is the sorted `(item_id, count)` slice the menu rendered.
+    /// `sell_items` is the `(item_id, count)` slice the menu rendered, in the
+    /// order it drew.
     pub fn select_sell_item(&mut self, cursor: usize, sell_items: &[(u8, u8)]) {
         if let Some(&(item_id, _)) = sell_items.get(cursor) {
             self.pending_item_id = Some(item_id);
             self.pending_quantity = 1;
             self.pending_is_buying = false;
+            self.pending_bag_slot = None;
+        }
+    }
+
+    /// [`Self::select_sell_item`] for a host whose rows carry their bag slot -
+    /// `rows` is the drawn list as `(bag slot, item id)`.
+    ///
+    /// Staging the slot is what makes the sale take the stack the player
+    /// pointed at. Without it the commit removes by id, which is the same slot
+    /// only while no hole sits above the selection and no second stack of that
+    /// id exists.
+    pub fn select_sell_row(&mut self, cursor: usize, rows: &[(u8, u8)]) {
+        if let Some(&(slot, item_id)) = rows.get(cursor) {
+            self.pending_item_id = Some(item_id);
+            self.pending_quantity = 1;
+            self.pending_is_buying = false;
+            self.pending_bag_slot = Some(slot);
         }
     }
 
@@ -315,9 +343,17 @@ enum SellQtyPhase {
 /// empty, runs the ~17-unit exit delay (phase 2) before returning to
 /// the shop root instead of the sell list.
 ///
-/// NOT WIRED: the menu runtime's quantity flow
-/// ([`ShopSession::set_quantity`]) still drives the hosts; this session
-/// is the retail-shaped replacement.
+/// NOT WIRED: the hosts' quantity screen is a **different interaction**, not a
+/// different implementation of this one, so this cannot be retagged
+/// `REPLACED-BY` - the mechanism that would be named does something else.
+/// Retail steps one number in place (`Up`/`Down` on `DAT_801E46B4`, bounded by
+/// the staged bag count, with the exit delay this session carries); the port
+/// draws `1..=max` as list **rows** and the list cursor picks one
+/// ([`ShopSession::set_quantity`] over `quantity_rows`, drawn by
+/// `window::hud` and `web-viewer::play_shop`). Wiring is a screen change on
+/// both hosts - one row that re-renders as the stepper moves - plus the
+/// session install; the bound is already retail's, which is why the numbers
+/// agree even though the interaction does not.
 #[derive(Debug, Clone)]
 pub struct SellQuantitySession {
     pub item_id: u8,
@@ -584,9 +620,11 @@ enum BuyQtyPhase {
 /// was shown - waits for a button press (SFX `0x20`) before dropping
 /// back to the buy list.
 ///
-/// NOT WIRED: the menu runtime's quantity flow
-/// ([`ShopSession::set_quantity`] + `World::buy_from_shop`) still
-/// drives the hosts; this session is the retail-shaped replacement.
+/// NOT WIRED: same shape as [`SellQuantitySession`]'s note - the hosts' screen
+/// is a row list over `1..=max` and this is retail's in-place stepper, so the
+/// gap is a screen, not a call. The grant half
+/// ([`ShopSession::set_quantity`] + `World::buy_from_shop`) is live and the
+/// bound is retail's, so only the interaction differs.
 #[derive(Debug, Clone)]
 pub struct BuyQuantitySession {
     pub item_id: u8,

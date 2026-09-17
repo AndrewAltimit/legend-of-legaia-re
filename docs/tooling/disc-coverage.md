@@ -787,6 +787,45 @@ The middle row is the one with a route forward, and it is the
 [static overlay pipeline](static-overlay-pipeline.md)'s job rather than this
 page's.
 
+#### An un-imaged overlay is charged to every sibling that maps its bytes
+
+That middle row is worth more than one image's coverage, and the arithmetic is
+why. An overlay with no extracted image is outside this measurement entirely -
+it has no row, so nothing here is short on its account. Its bytes are not
+outside it: a dump of them prints a VA that lands inside **every** sibling span
+mapping the same address, and with no image to reproduce the window the extent
+resolves to nobody. It stays residue, and residue is ambiguous for all of them
+at once. Every image `static-overlays.toml` maps onto `0x801CE818` carries such
+an extent in its ambiguous set, so one of them holds down the whole slot-A
+band's floors together.
+
+Extracting the missing image resolves it in one step and every one of those
+floors rises together. The worked case is the 324-byte extent at
+`0x801CE9C4`: `unresolved` - "no extracted image holds these bytes at this VA
+or anywhere" - until PROT 0981 (`monster_test`) has an image, and `unique` to
+that image afterwards, which lifts the slot-A band from the field and menu
+overlays down to the minigame images, several of them by more than a point.
+
+The **upper** bound moves the other way, and that is not a loss:
+
+- an extent the bytes assign to another image leaves this row's numerator
+  *and* its denominator - it was never this image's, so it is neither covered
+  here nor counted against it;
+- removing equal byte counts from both sides of a ratio already at 1.0 leaves
+  it at 1.0, and lowers any ratio below it. A row at `100.0%` does not move; a
+  row with a code gap of its own gives back a fraction of a point.
+
+So the same extraction that raises a floor can print a hundredth of a point off
+the upper bound beside it. That is the ambiguity being spent, not coverage
+being lost - the mirror of the attribution-lag case below, where a floor falls
+because a *dump* landed with no row yet. Both are one piece of arithmetic seen
+from opposite ends, and neither is a regression to chase.
+
+One consequence for the bytes-derived worklist: while an overlay has no image,
+its own un-dumped code runs are not on it either. "No un-dumped code run
+reaches 64 bytes" is a statement about the imaged set, and an extraction is
+what converts it into a statement about the disc - usually by adding rows.
+
 There was a fourth shape, and it was a **defect in the comparison, not a fact
 about the corpus**: a dump whose opening window contains GTE (COP2) ops landed
 in that middle row no matter which image it came from. The canonicaliser both
@@ -836,6 +875,52 @@ instrument.** Sharing one across two questions makes it simultaneously too loose
 for the sensitive one and too strict for the robust one, and only the second
 failure is invisible, because it shows up as missing data rather than as a wrong
 answer.
+
+### A `nop` is not evidence, so a window of them is not a signature
+
+The floor above counts *instructions*, and one instruction encoding defeats
+that count: `nop` is `0x00000000`. A window of `nop`s therefore reproduces
+inside **any** image's zero fill, at any base, at any VA - the at-VA test
+returns true and has learned nothing. The window's real length is its
+**non-`nop`** instruction count, and the same three-instruction floor applies
+to that instead (`zero_padded` in the sweep; class `zero_window`, which
+`disc-coverage.py` credits to nobody).
+
+The failure is not theoretical and it is not confined to all-zero windows:
+
+- a 24-instruction window whose only non-`nop` word was a lone `0x00000004`
+  inside a run of zeros resolved as a **`unique`** attribution, crediting one
+  image with a 20 KB extent that is over nine-tenths zero fill;
+- an all-`nop` window resolved as `identical` across two images that agreed
+  about nothing except being empty.
+
+The guard sits *below* the link-time-table check on purpose. That check is
+evidence from outside the window - PROT 0898 naming a VA as one image's entry -
+so it survives a window with no signal of its own; everything after it rests on
+the window.
+
+`disc-coverage.py` applies the same rule one level up, to the dump itself. A
+dump whose head is a run of `nop`s has nothing at its entry corroborating its
+printed base, so its extent is withdrawn from the numerator entirely and
+counted under the reject class `zero_window_head`. That is the
+[`dump-corpus-integrity.md`](dump-corpus-integrity.md) law applied to zeros: a
+base is corroborated by the bytes at the entry reproducing in one image, and
+when those bytes are zeros every image reproduces them.
+
+The two tests are deliberately not the same test, and the difference is where
+each sits. This one demands an *unbroken* run of `nop`s from the entry, because
+it withdraws a whole extent - real code further in is real coverage, and the
+only question is whether the entry corroborates the base. The attribution
+sweep's is the weaker `< 3 non-nop` one, because it only decides which of
+several candidate images gets credited, and one stray word cannot decide that.
+One dump sits between them: the longest extent at the corpus's zero-hole VA has
+a single non-`nop` word inside its head, so it clears this test and the
+attribution sweep is what strips its credit.
+
+Removing the false credit moves floors in **both** directions, which is the tell
+that it was an attribution error rather than lost coverage: most images gain,
+because extents the zero windows had made ambiguous for several images stop
+being ambiguous at all; the images the zero fill was being credited to lose.
 
 See [`dump-corpus-integrity.md`](dump-corpus-integrity.md) and
 [`phantom-print-index.md`](phantom-print-index.md).
@@ -972,10 +1057,15 @@ band's parameter tails: a cast module's spawn records sit above its last
 function and hold neither delimiter word, and they were ranked as work across
 27 of the band's images.
 
-**Do not sum the worklist across images.** Nineteen overlays load at
-`0x801CE818` and thirteen at `0x801F69D8`, so the same VA appears under several
-headings holding *different* bytes each time. Each is real work; the total is not
-a total.
+**Do not sum the worklist across images.** Both overlay slots are shared by
+many images - `0x801CE818` by the slot-A band, `0x801F69D8` by the whole slot-B
+cast band - so the same VA appears under several headings holding *different*
+bytes each time. Each is real work; the total is not a total. The per-base
+tallies live in the report's own base column and in `undumped-runs.csv`'s
+`spans_at_start`, which are recomputed per run; the same sentence in
+`disc-coverage.py`'s emitted worklist carries them as literal words instead,
+and an extraction that adds an image moves the real figure and not that
+sentence.
 
 ## Running it
 
@@ -1038,8 +1128,8 @@ That is not a worktree artifact and it is not rare. Both files are committed and
 the corpus is not, so the CSV lags the corpus in the main checkout too - nobody
 regenerates the attribution per dump - and any tree whose dumps have moved ahead
 of its CSV shows the same thing across every image the new dumps' VAs land in.
-A slot-A dump lands in nineteen spans at once, so one dump can push nine rows
-below their baselines together.
+A slot-A dump lands in every slot-A span at once, so one dump can push most of
+the band below its baselines together.
 
 So `--check` triages a floor drop before it fails it. For each regressed
 `code_floor` key it re-measures that image over the corpus the CSV *does* know

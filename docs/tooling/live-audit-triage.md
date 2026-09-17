@@ -338,11 +338,11 @@ blocker is a table is the same error this page records for the panel painters.
 
 | addr | symbol | site | verdict |
 |---|---|---|---|
-| `8001fa68` | `list_append_u16` | `crates/engine-vm/src/scus_core_helpers.rs:307` | DISCLOSE |
+| `8001fa68` | `list_append_u16` | `crates/engine-vm/src/scus_core_helpers.rs:307` | REPLACE |
 | `80020424` | `alloc_list_head` | `crates/engine-vm/src/scus_core_helpers.rs:174` | DISCLOSE |
 | `80020454` | `alloc_and_append` | `crates/engine-vm/src/scus_core_helpers.rs:204` | DISCLOSE |
 | `800204a4` | `free` | `crates/engine-vm/src/scus_core_helpers.rs:236` | DISCLOSE |
-| `80021b04` | `spawn_move_actor` | `crates/engine-vm/src/move_vm/spawn.rs:136` | DISCLOSE |
+| `80021b04` | `spawn_move_actor` | `crates/engine-vm/src/move_vm/spawn.rs:136` | REPLACE |
 | `80024e08` | `op4c_n5_sub0_set_actor_model` | `crates/engine-vm/src/field/host.rs:1226` | FALSE INERT |
 | `8003c9ac` | `(module)` | `crates/engine-vm/src/motion_pause.rs:3` | DISCLOSE |
 | `8003c9ac` | `motion_pause_kick` | `crates/engine-vm/src/motion_pause.rs:77` | DISCLOSE |
@@ -597,12 +597,17 @@ anchor. Wrap to the file's comment width.
   [below](#the-index-space-mismatch-was-the-wire-not-the-blocker) - which
   is the second time this bullet's reason has been outgrown rather than
   found wrong. Read the tags in `save_select.rs`, not this bullet.
-- **`list_append_u16` / `alloc_list_head` / `alloc_and_append` / `free`** - the
-  module doc already carries the full reason under its `# NOT WIRED` heading;
-  the audit compares per anchor, so each function needs its own line. Short
-  form: the engine's actor storage is a generational `Vec` pool, not a retail
-  free-stack, and `list_append_u16`'s retail caller `FUN_8003F3FC` is not
-  ported.
+- **`alloc_list_head` / `alloc_and_append` / `free`** - the module doc carries
+  the full reason under its `REPLACED-BY` headings; the audit compares per
+  anchor, so each function needs its own line. Short form: the engine's actor
+  storage is a generational `Vec` pool, not a retail free-stack.
+- **`list_append_u16`** was in that bullet as a `DISCLOSE` waiting on its
+  retail caller `FUN_8003F3FC`. Both halves of that were wrong. The caller is
+  ported - it is the per-particle half of
+  `engine-core::fog_particles::FogPool::render_step` - and the `jal` at
+  `0x8003F800` that names the append is that port's own free-slot return, which
+  goes through `engine-core::cutscene::sprite_stack_push`. That is the same
+  address `list_append_u16` carries, ported twice, so the row is `REPLACE`.
 - **`spawn_move_actor`** - the host side is ready (`impl MoveSpawnHost for
   World` in `crates/engine-core/src/actor_alloc_host.rs`), but nothing in the
   engine spawns move-VM actors: the field and battle paths construct actors
@@ -1106,7 +1111,7 @@ old reason got wrong.
 | `field_actor_plan` (`8003bc08`) | the engine has no `+0x10` flag word | `move_vm::ActorState::flags` is that word, tested in production on pool actors |
 | `tick_reflection` (`801e5154`) | the actor carries none of the fields this reads | `ActorState` carries all but `+0x64`, at retail offsets |
 | `refresh_object_grid_marks` (`80017bec`) | the engine keeps no `.MAP` image | three of four regions are resident, and the collision grid is mutated live |
-| `passive_hud_icons` (`801d095c`) | the projection host does not exist | `Camera::transform`, already placing effect billboards |
+| `passive_hud_icons` (`801d095c`) | the projection host does not exist | `Camera::transform`, already placing effect billboards; the glue is now written, per host, over `World::passive_hud_points` |
 | `step_scene_program` (`801d4a60`) | `_DAT_8007BC20` has no counterpart | modelled by four ports; live source `AudioOut::xa_active()` |
 
 Each reason is now rewritten to name the prerequisite that does hold. The
@@ -1362,7 +1367,7 @@ audit. They are listed with what the scan or a catalog lookup found instead.
 | `801d841c` `save_screen_spawn` | nothing wants a flash element at all | it is not a flash element - descriptor `0x800706BC` names the save/load screen driver; and `FUN_801ED308` calls it, ported and live |
 | `801d5e20` `shift_primitive_colours` | no caller | the field VM's op `0x4C` nibble-E sub-6 arm, whose host hook has an empty body |
 | `801e5b4c` `aggregate_slot_stats` | the engine's equip screen has its own aggregator | the retail consumer is the hub entry list's sub-draw; the marker its live port emitted is now the sub-draw itself |
-| `800468a4` `enqueue` | the field-VM hook has no renderer | that is one route; the actor tick's kind-7 draw arm is the other, and it is live |
+| `800468a4` `enqueue` | the field-VM hook has no renderer | that is one route; the actor tick's kind-7 draw arm is the other, and it is live. The hook has a body now - `World::apply_vram_rect_copies` over the software VRAM - so only the kind-7 arm is still open |
 | `8001fa00` `init_identity_index_list` | the emitter that pops the list is unported | true, but the *seeder* is MAIN_INIT, which is ported |
 | `80035c00` `set_pair` | writing it from the menu host would invent state | the writers are three sites in the battle action resolver, not a menu |
 
@@ -1614,14 +1619,15 @@ their blocker and wrong only about what *kind* of thing that blocker is.
 Two files carry both classes, and a file-level reading gets each of them
 backwards in one direction:
 
-- `engine-vm::scus_core_helpers` - the actor node pool and `copy_blocks_32` are
-  `REPLACE` (`Vec`-backed generational pool; borrow-in-place chunk walk in
-  `legaia_asset::parse_streaming_with`), but `list_append_u16` is `DISCLOSE`:
-  its retail producer `FUN_8003F3FC` is simply not ported, and porting it is
-  what closes the row.
-- `engine-core::menu_list_rows` - three families, two `REPLACE` and one
-  `DISCLOSE`. The module doc already split them three ways; what it did not do
-  was say that the split is a split of *class*.
+- `engine-vm::scus_core_helpers` - all three classes are `REPLACE` now: the
+  actor node pool (`Vec`-backed generational pool), `copy_blocks_32`
+  (borrow-in-place chunk walk in `legaia_asset::parse_streaming_with`), and
+  `list_append_u16`, which is `engine-core::cutscene::sprite_stack_push`'s
+  address ported a second time. This file once read as the clean example of a
+  mixed-class module, and the mixture was an error in one of the readings.
+- `engine-core::menu_list_rows` - three families. The module doc already split
+  them three ways; what it did not do was say that the split is a split of
+  *class*.
 
 ### What each file settled on
 
@@ -1879,10 +1885,10 @@ not have to re-derive it.
 | Anchors | Waiting on |
 |---|---|
 | `effect_ribbon` x3 (`801CFA48`) | an actor render-mode channel carrying the `+0x9E` flag word, and a GPU packet chain for the geometry to fill. `engine-render` has no battle effect pass that asks a kernel for per-frame geometry, so the emitter is pure by design and the consumer does not exist on either host. |
-| `menu_list_rows` x4 (`80030628`) | `World::party.inventory` becoming slot-indexed (families 3 and `0x22`), and the shop session adopting the class-tagged `[class][dim][id]` row word (families 2 and `0x0B`). The order kernel `shop_buy_row_order` beside them is already live. |
+| `menu_list_rows` x2 (`80030628`) | nothing any more - and the tables they were said to be waiting on were both already installed. See [the two tables that were there all along](#the-two-tables-that-were-there-all-along). |
 | `fade::spawn_fade` / `fade_ramp` x3 | the fade's *lifetime*, not a call: `World::presentation.fade` drops a ramp when `step()` reports it complete, and the retail escape template never reports complete (hold word `-1`). Substituting moves the clear from the world tick to the battle teardown. |
-| `move_vm::spawn` x3 (`80021B04`, `80050E74`) | a producer, not a host impl. `impl MoveSpawnHost for World` exists, but no engine path *starts from a move buffer*; and the part-pool pair needs retail's `DAT_801C90F0` seat table, which the world's generational actor vec replaced. |
-| `vram_rect_copy::build_packet` / `enqueue` | an actor kind that draws by VRAM rect copy. The field-VM sub-op `0x12` route fires on no on-disc script, so the honest prerequisite is the actor tick's kind-7 arm, not a renderer hook. |
+| `move_vm::spawn` x2 (`80050E74`) | the part-pool pair needs retail's `DAT_801C90F0` seat table. Its engine counterpart is **not** the field-FX list an earlier reading named - the 89 `jal` sites are summon / special-attack stagers, so the population is `World::casting.active_summon`, dropped whole at the end of a cast rather than emptied seat by seat. `spawn_move_actor` left this set: its address already has a live port in `engine-core::world::ambient`. |
+| `vram_rect_copy::build_packet` / `enqueue` | nothing any more - both run under `World::apply_vram_rect_copies`, drained by each host beside the sibling `4C 60` `MoveImage` stamps. The actor tick's kind-7 draw arm is still the busier retail route and still has no engine actor kind. |
 | `scus_leaf_kernels` x3, `scene_name_sync` x3, `chunk_install`, `morph_weight_apply` x2 | a retail-shaped producer in each case - the sprite index buffer, an `initmap.txt` boot override, the `[type, size, data]` side band, an actor whose morph set is a block. Each reason already names it. |
 | `save::add_to_slot` (`80042FE8`) | nothing. No reference of any form reaches it in any image, so retail never calls it either - the retail-unreachable bucket above, not a wiring gap. |
 | `battle_party_panel::cross_out_mark` / `panel_labels`, `monster_archive::find_action_by_tag`, `move_vm::flush_part_actor_pool` | unchanged verdicts; their lead sentences opened with "no caller", which restates the audit, and now open with the blocker instead. |
@@ -1914,7 +1920,7 @@ for it would have to build first.
 
 | Blocker class | Closes when | Representative members |
 |---|---|---|
-| **The caller above it is unported** | that one routine is ported; the row then goes live transitively and must never be given a call site of its own. | `panel_backread_loader` (whole file, behind `FUN_80025358`), `scus_core_helpers::list_append_u16` (behind `FUN_8003F3FC`), `field_actor_program`'s three (behind `step_scene_program`), `field_ledge_hop_arc::spawn_arc_helper`. |
+| **The caller above it is unported** | that one routine is ported; the row then goes live transitively and must never be given a call site of its own. | `panel_backread_loader` (whole file, behind `FUN_80025358`), `field_actor_program`'s three (behind `step_scene_program`), `field_ledge_hop_arc::spawn_arc_helper`. |
 | **No host produces the retail input shape** | a backend or a channel that does not exist yet exists. | `input::set_pad_reports` (raw two-port libpad reports), `frame_tick::resolve_frame_step` (an hblank sampler), `effect_ribbon` x3 (an actor render-mode-4 flag word plus a packet chain). |
 | **The record or table has no parser** | `legaia_asset` grows one. | `move_no_effect_guard` x3 - the `[element][band]` follow-up table at `0x801F6870` is the only input still missing; its sibling input, the affinity matrix, is already disc-parsed and live. |
 | **Retail-unreachable** | never. Not a wiring gap; the routine is linked and unreferenced on the whole disc. | `menu_open_sequence::menu_open_step`, `save::add_to_slot`, `fishing_actors::project_segment`, `baka_fighter_chrome::editor_tick` (linked as an actor prototype's callback word, but its band is a phase no shipping path enters). |
@@ -2089,3 +2095,36 @@ of several causes. Rewritten to lead with the one that can move.
   audit that produces the input to this page.
 - [`worklist-classification.md`](worklist-classification.md) - the sibling
   classification for the `--missing-ports` worklist.
+
+## The two tables that were there all along
+
+Two rows of this page named a missing table as the blocker, and in both cases
+the table was parsed, installed at boot and reachable from the world. The
+lesson is narrower than "check the claim": both readings looked for the table
+where the *screen* would naturally ask for it, rather than asking what the
+gate's value actually is.
+
+**The sell list** (`build_price_gated_rows`, `FUN_80030628` content id 2) dims
+on the item record's `+2` price halfword, for every id. The reading reached for
+the open shop's stock list through `ShopInventory::sell_price`, whose answer
+for an id the merchant does not sell is a floor of `1`, and concluded from that
+floor that no gate could exist. The per-id table is
+`shop_catalog::ShopItemData` - 256 entries read straight off `+2` - which both
+hosts install at boot because the field-VM merchant-record scan needs it as a
+sellable mask.
+
+**The Throw Out list** (content id `0x22`) dims on the equipment record's `+7`
+flags byte. Both hosts parse `legaia_asset::equip_stats::EquipStatTable` at
+boot and then keep only two *derived* views of it - the battle-stat modifier
+table and the equip restrictions - neither of which carries `+7`. The raw
+records now ride along on `World::tables.equip_stats`.
+
+Neither gate is decorative on the retail disc: 96 of 256 item ids carry price
+`0`, so a real bag's sell list has rows to sink; 12 of the 105 equipment bonus
+rows set `+7` bit `0`, and 48 kind-2 ids set the item-effect record's
+not-discardable flag.
+
+Wiring the sell list also closed a divergence the row had hidden: the drawn
+rows were built id-sorted and the sell commit rebuilt them as a slot walk, so
+on any bag whose slot order is not ascending by id the hand and the sale were
+on different rows. Both sides read `MenuRuntime::sell_list_rows` now.

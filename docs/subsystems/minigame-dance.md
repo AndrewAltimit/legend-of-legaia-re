@@ -377,7 +377,7 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d231c` | Score / gauge HUD render driver: per-mode score-box → dancer-slot layout, then draws each box (`FUN_801d32f8`), the gauge level (`FUN_801d3e28`) and the beat track (`FUN_801d2524`). See [HUD render driver](#hud-render-driver-fun_801d231c). `overlay_dance_801d231c.txt` |
 | `FUN_801d32f8` | Multi-digit number renderer: 8-place decimal split (leading-zero suppressed) → per-digit widget-U patch + emit. `overlay_dance_801d32f8.txt` |
 | `FUN_801d2524` | Beat-track HUD: combo-window CLUT flash, the scrolling-note screen-x, the caps / body / stock-marker draws. `overlay_dance_801d2524.txt` |
-| `FUN_801d2d98` | Count-in banner animator (`1 2 3 READY... GO!`): slide-in / hold / fade envelope + fires the intro cue `0x200` on frame `0x1e`. It draws **widget 0** (`a2 = 0` at every call) through `FUN_801d2f38` - two *whole* copies of the 160x32 cell at `(0xA0 +- s2, 0x77)` each at half brightness while sliding, then one at `(0xA0 - s2, 0x78)` while held - and pokes the widget's `+0x0F` translucency byte in place first: `sb v0,0xf(t0)` with `v0 = 1` at `0x801D2ED8`, `sb zero,0xf(t0)` at `0x801D2F0C`, `t0 = 0x801D46CC`. The "halves" are that pair of full copies, not half-width art. Envelope ported as [`dance_countin_banner_envelope`]. `overlay_dance_801d2d98.txt` |
+| `FUN_801d2d98` | Pre-song banner animator: slide-in / hold / fade envelope + the intro cue `0x200`. Draws **widget 0** three ways - see [the count-in banner](#the-count-in-banner). Ported as [`dance_countin_banner_envelope`] + `engine-ui::ui_dance::dance_countin_prims`. `overlay_dance_801d2d98.txt` |
 | `FUN_801d3d78` | On-beat "good step" sting: keys two SPU voices (`0x12` / `0x13`) at tones `2r` / `2r+1`, note `0x3c+r`. Its caller passes `rand() % 3` on the chain-closed tier and a literal `5` on the three groovy-move tiers. `overlay_dance_801d3d78.txt` |
 | `FUN_801d40dc` | Sequence-clear ("Good!") banner + two flanking stars carrying the accuracy weight (`+0x72`). `overlay_dance_801d40dc.txt` |
 | `FUN_801d4098` | Actor clip-driver gate: runs the shared clip driver `FUN_800204f8` only when the actor's bound clip id `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. Predicate ported as [`dance_clip_driver_gate`]; see [The dancer actor record](#the-dancer-actor-record). `overlay_dance_801d4098.txt` |
@@ -432,8 +432,12 @@ Three further pieces of the retail frame run in the same host
   This is the `FUN_801cf470` below-10 pre-song band, and it is in the **world**
   rather than in a host precisely because the player-reachable entry is the
   mode-24 door warp, which both hosts drain through the shared scene host - a
-  host-side phase reached only a debug launcher. Hosts draw the published
-  envelope through `engine-ui::ui_dance::dance_countin_draws_for`.
+  host-side phase reached only a debug launcher. Hosts draw retail's own
+  `READY...` sprite through `engine-ui::ui_dance::dance_countin_prims`, as
+  screen-space PSX primitives on the staged HUD page, and fall back to
+  `dance_countin_draws_for`'s placeholder letterforms only when that page is
+  absent. Which of the two runs is decided once, in
+  `World::minigames.dance_hud_art_staged`.
 - **How-to tutorial**: a `DanceMode::HowTo` run installs
   `minigames.dance_tutorial` (the Disco King actor, `FUN_801D0750`) in the same
   call, and the dance tick steps it beside the session, publishing
@@ -446,8 +450,11 @@ Three further pieces of the retail frame run in the same host
   versus modes as the `_DAT_8007B6D0` stand-in, and builds the full
   textured-quad frame (`DanceGame::hud_draw_quads` - the `FUN_801d2f38`
   emits with the `FUN_801d32f8` / `FUN_801d3e28` glyph-U patches applied).
-  The dance sprite page is not uploaded, so the quad sink materialises draws
-  only against a solid atlas source; the values render as font text.
+  The sprite page is staged on entry (see [where the HUD's texels come
+  from](#where-the-huds-texels-come-from)), so the quads have a texel source;
+  the native window's own score / gauge / track quads still materialise
+  through its flat sink and render as font text, which is the remaining half
+  of this frame.
 - **Effect spawns**: the human's scoring judge spawns the sequence-clear
   banner + stars (`good_banner_spawn` -> `step_mark_effect_spawn`) into the
   window's minigame effect pool (`window/minigame_fx.rs`), which ages the
@@ -690,9 +697,11 @@ additive second pass.
 
 Every HUD element goes through the textured-quad emitter `FUN_801d2f38`, which
 indexes a **34-record x 20-byte widget table** at `0x801D46CC`: `i32 scale`
-(12.12; all rows `0x1000`), `u16 texpage` (all HUD rows `0x0008` = the 4bpp
-page at `(512,0)`), `u16 CLUT id`, `u8 u0/v0/w/h` cell rect, top/bottom RGB
-tints, semi-transparency code. Quads draw **centred** on the emitter's
+(12.12; all rows `0x1000`), `u16 texpage`, `u16 CLUT id`, `u8 u0/v0/w/h` cell
+rect, top/bottom RGB tints, semi-transparency code. The table is **not**
+uniform in its page - see [the two pages](#the-widget-tables-two-pages) below;
+thirty-one of the rows carry `0x0008` (the 4bpp page at `(512,0)`, CLUT strip
+row 500) and three carry `0x001F`. Quads draw **centred** on the emitter's
 `(x, y)`, and the `w`/`h` bytes are *texel* extents that become **half**-extents
 on the way: `(extent * record_scale) >> 13` (`sra ...,0xd` at `0x801D319C` /
 `0x801D31D0`) then `(that * caller_scale) >> 12`. With both scales `0x1000`
@@ -732,6 +741,71 @@ Traced layout (retail 320x240): score boxes (widget 8) centred at
 stores `x << 3`) at centre `(160, 120)` for the count-in / `READY...` / `GO!`
 / `FINISH!`, `(160, 128)` for `Miss!`, `(160, 144)` for the rating banners
 with star sparkles flanking at `±0x38` / `±0x50`. **Confirmed.**
+
+### The widget table's two pages
+
+The table names **two** texture pages, not one. Thirty-one rows carry
+`tpage = 0x0008` - the 4bpp page at halfword `(512, 0)` under the 256-entry
+CLUT strip at `(0, 500)`, which every widget CLUT id `0x7D00 + n` indexes a
+16-colour column of. Records `27` / `28` / `29` carry `tpage = 0x001F`
+instead: the 4bpp page at `(960, 256)`, with CLUT ids `0x443D` / `0x447D` /
+`0x44BD` - column `61` of the strips at rows `272` / `273` / `274` - and
+`0x10 x 0x10` cells at `u = 0x40` / `0x50` / `0x60`. Those three are drawn,
+not dead rows: the GPU control-register snapshot of a parked dance state reads
+`tex_page = (960, 256)`, i.e. the last primitive submitted before the state
+was written was on that page.
+
+The distinction matters because the two pages have different **suppliers**.
+The `(512, 0)` page and its strip come from the hall scene's own TIM set -
+PROT `1230`, the last slot of the `other7` block, an `asset::pack` of 31 TIMs
+behind a `TIM_LIST` chunk header, of which exactly one member targets that
+origin and carries the strip as its CLUT block. The `(960, 256)` page is
+**not** in that pack, so whatever stages it is a separate question; nothing in
+this port stages it and the three rows would sample whatever the frame's
+previous occupant left there.
+
+### The count-in banner
+
+`FUN_801d2d98` is the pre-song banner's animator, and its emit half is three
+`FUN_801d2f38` calls on **widget 0** (`clear a2` at every call - the record
+index, not a coordinate), each storing `0x1000` at `sp + 0x10` as the caller
+scale. The sliding arm (`a0 == 0`) emits two *whole* copies of the cell at
+`(0xa0 + s2, 0x77)` and `(0xa0 - s2, 0x77)`, having first poked the record's
+`+0x0F` translucency byte to `1` (`sb $v0, 0xf($t0)` at `0x801D2ED8`,
+`$t0 = 0x801D46CC`) and halved the brightness with a `bgez`-biased shift; the
+hold arm emits one at `(0xa0 - s2, 0x78)` with `+0x0F` cleared
+(`sb $zero, 0xf($t0)` at `0x801D2F0C`) and the brightness unhalved. The
+"halves" are that pair of full copies, not half-width art, and `s2` is zero
+throughout the hold - the seat is still written as a subtract.
+
+Widget 0's cell is the word **`READY...`** alone: `u = 0x48`, `v = 0x90`,
+`0xA0 x 0x20` on the `(512, 0)` page, decoded through palette column `0x0A` of
+the row-500 strip. The `1 2 3`, `GO!` and `FINISH!` that sit beside it on the
+sheet belong to the **sprite spawner** (`FUN_801d3fd0`, the `(160, 120)`
+banner seats above), not to this animator - so an emit that draws
+"READY... GO!" as one banner is drawing a cell the table does not hold.
+
+### Where the HUD's texels come from
+
+PROT `1230`'s member at `(512, 0)` is the HUD sheet, and it is byte-identical
+to a retail dance state's live VRAM at that rect: 16384 of 16384 halfwords,
+plus 256 of 256 CLUT entries at `(0, 500)`. So the widget table's `tpage` /
+`clut` pair resolves to disc data with no runtime edit in between, and a host
+that uploads that one member has retail's page exactly.
+
+Retail never has to arrange this: the dance **is** the `other7` scene, so the
+whole pack is resident before the minigame starts. The port hosts the session
+over whichever scene the player walked in from and keeps drawing that scene
+behind the HUD, so the page held the interrupted scene's texels and every HUD
+quad sampled the wrong art - which is why the count-in banner drew as
+placeholder text on both hosts long after its geometry was pinned to the
+instruction. Staging is therefore **selective**: only the rects the run's own
+widget table names, because the pack's eleven other 256x256 members target
+`(576, 0)` through `(768, 256)`, the columns a field scene's texture pack
+occupies. Port: `engine-core::dance::stage_dance_hud_vram`, driven from
+`DanceGame::hud_vram_rects`; the residency claim it produces is
+`World::minigames.dance_hud_art_staged`, and both hosts read that one flag to
+choose between the sprite and the placeholder.
 
 ### HUD render driver (`FUN_801d231c`)
 

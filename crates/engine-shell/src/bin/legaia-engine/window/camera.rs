@@ -10,6 +10,48 @@ use super::*;
 /// hosts' field cameras used to drift apart without a diff.
 use legaia_engine_core::camera_view;
 
+/// The debug orbit vantage's **input vocabulary**, shared with the browser
+/// play page's own orbit (`site/js/play-app.js`, its `pointermove` and
+/// `wheel` handlers on the canvas).
+///
+/// The two hosts each keep exactly one camera of their own - the `F3` debug
+/// orbit - and the toggle was at parity long before the controls were. The
+/// page steered it with three knobs (drag yaw, drag pitch, wheel zoom) while
+/// this window had only yaw, at a different rate: a horizontal drag turned
+/// the view a third faster here, on the *same* `Camera::manual_orbit` field,
+/// so the movement compass the field remaps the d-pad through also answered
+/// differently to the same gesture. Pitch and zoom had no native input at
+/// all, which is why the window's vantage could only be steepened by editing
+/// a constant.
+///
+/// These are the page's numbers, so the same drag moves the same camera by
+/// the same amount on either host. They are JS literals on that side, so no
+/// paired-constant check can bind them - the pairing is this comment and the
+/// two tests below.
+pub(super) mod debug_orbit {
+    /// Radians of yaw per pixel of horizontal drag. Feeds
+    /// `Camera::manual_orbit`, which the retail follow camera and the
+    /// movement compass both read, so this rate is not debug-only.
+    pub const YAW_RAD_PER_PX: f32 = 0.006;
+    /// Radians of pitch per pixel of vertical drag.
+    pub const PITCH_RAD_PER_PX: f32 = 0.004;
+    /// Pitch clamp. The lower bound keeps the eye above the floor plane; the
+    /// upper stops the vantage going fully top-down, where the follow
+    /// camera's own framing has no horizon to compose against.
+    pub const PITCH_MIN: f32 = 0.12;
+    /// See [`PITCH_MIN`].
+    pub const PITCH_MAX: f32 = 1.35;
+    /// Framing half-extent multiplier per wheel notch, out and in.
+    pub const ZOOM_OUT: f32 = 1.12;
+    /// See [`ZOOM_OUT`].
+    pub const ZOOM_IN: f32 = 0.89;
+    /// Framing half-extent clamp, in world units - the same quantity the
+    /// page calls `halfWidth`.
+    pub const HALF_MIN: f32 = 220.0;
+    /// See [`HALF_MIN`].
+    pub const HALF_MAX: f32 = 6000.0;
+}
+
 impl PlayWindowApp {
     pub(super) fn camera_mvp(&self, aspect: f32) -> Mat4 {
         // Frame the player's vicinity, not the whole scene. Loading the full
@@ -22,8 +64,12 @@ impl PlayWindowApp {
         const FIELD_VIEW_HALF: f32 = 700.0;
         // The camera-distance preset (T cycles) widens the framing box, and
         // a mouse drag-orbit swings the vantage - same knobs as the follow
-        // camera, so the debug view composes with both.
-        let view_half = FIELD_VIEW_HALF * self.session.camera.distance.scale();
+        // camera, so the debug view composes with both. The wheel then scales
+        // the box continuously on top, which is the browser page's `halfWidth`
+        // knob: the two hosts' one own camera takes the same three inputs.
+        let view_half =
+            (FIELD_VIEW_HALF * self.session.camera.distance.scale() * self.debug_orbit_zoom)
+                .clamp(debug_orbit::HALF_MIN, debug_orbit::HALF_MAX);
         let (lo, hi) = self
             .session
             .host
@@ -56,30 +102,43 @@ impl PlayWindowApp {
         // (`atan(height) ≈ 40deg`), matching Rim Elm's overhead framing.
         const FIELD_ORBIT_SPEED: f32 = 0.25;
         const FIELD_ORBIT_ANGLE: f32 = 0.75;
-        const FIELD_EYE_HEIGHT: f32 = 0.85;
         let angle = FIELD_ORBIT_ANGLE + self.session.camera.manual_orbit;
         let fixed_time = angle / FIELD_ORBIT_SPEED;
+        // `orbit_camera_mvp` takes the eye *height ratio*, not an angle, so
+        // the pitch the drag steers converts through `tan` - which is the
+        // same relation the default `0.85` encoded (`atan(0.85)` rad). The
+        // page steers an angle directly; keeping the angle as the stored
+        // knob is what lets both hosts clamp the same two numbers.
         orbit_camera_mvp(
             lo,
             hi,
             FIELD_ORBIT_SPEED,
-            FIELD_EYE_HEIGHT,
+            self.debug_orbit_pitch().tan(),
             fixed_time,
             aspect,
         )
     }
 
-    /// The retail **field follow camera**, parametrized from the town01
-    /// anchor savestate's camera globals (see docs/subsystems/cutscene.md for
-    /// the global map): pitch `_DAT_8007B790 = 450` (~39.6 deg down-tilt),
-    /// yaw `_DAT_8007B792 = -160`, roll 0, GTE `H = _DAT_8007B6F4 = 512`.
-    /// The look-at target is the player anchor - retail's follow-cam
-    /// (`FUN_801DBE9C`) folds `-(anchor X/Z)` into the focus globals each
-    /// frame. The eye-space depth is an engine calibration (retail's exact
-    /// field TR composition isn't pinned yet - the offset trio in the
-    /// savestate doesn't project to the observed framing); `FIELD_CAM_DEPTH`
-    /// is fitted so the player's on-screen height matches the retail frame
-    /// (~55 px of 240 for the ~130-unit mesh at H = 512).
+    /// The debug orbit's pitch this frame, in radians, clamped to the range
+    /// the browser page clamps its own to. The default is the angle the
+    /// window's long-standing `0.85` eye-height ratio encoded, so the
+    /// untouched vantage is unchanged.
+    pub(super) fn debug_orbit_pitch(&self) -> f32 {
+        self.debug_orbit_pitch
+            .clamp(debug_orbit::PITCH_MIN, debug_orbit::PITCH_MAX)
+    }
+
+    /// The retail **field follow camera**. While the zone camera drives the
+    /// frame, every input is a live global the engine composes per scene and
+    /// per tile: pitch `_DAT_8007B790`, yaw `_DAT_8007B792`, GTE `H`
+    /// `_DAT_8007B6F4` and the eye-space translation trio
+    /// `_DAT_800840B8/BC/C0`, the last divided by the 6x world scale retail
+    /// folds into its camera rotation (`FUN_800172C0` builds `TR` from that
+    /// trio directly - see docs/subsystems/renderer.md). The savestate-pinned
+    /// pitch / yaw and `FIELD_CAM_DEPTH` frame only a world with no field
+    /// terrain loaded. The look-at target is the player anchor - retail's
+    /// follow-cam (`FUN_801DBE9C`) folds `-(anchor X/Z)` into the focus
+    /// globals each frame.
     ///
     /// Falls back to the fixed orbit vantage (`camera_mvp`) when no player
     /// actor exists to follow.
@@ -507,7 +566,7 @@ impl PlayWindowApp {
     ///   scene geometry at native 1x, so the trio is divided by that scale to
     ///   frame identically (the perspective divide makes 6x-geometry-at-`z`
     ///   and 1x-geometry-at-`z/6` project to the same pixels - the same trick
-    ///   `field_follow_camera_mvp`'s `FIELD_CAM_DEPTH = 1200 = 7200/6` uses).
+    ///   the field follow view applies to its own composed trio).
     ///   opdeene supplies all three per beat; the Z component is the eye-back
     ///   depth (raw ~16k-21k across beats).
     pub(super) fn cutscene_view(&self) -> ([f32; 3], f32, f32, f32, f32, [f32; 3]) {
@@ -759,6 +818,46 @@ pub(super) fn battle_entry_yaw(world: &legaia_engine_core::world::World) -> f32 
         BATTLE_ENTRY_YAW_SAMPLE
     } else {
         f32::from(live)
+    }
+}
+
+#[cfg(test)]
+mod debug_orbit_tests {
+    use super::debug_orbit as d;
+
+    /// The debug orbit's three input rates and two clamps are the browser
+    /// play page's, so the same gesture moves the same camera by the same
+    /// amount on either host.
+    ///
+    /// The yaw rate is the one that matters beyond framing: it writes
+    /// `Camera::manual_orbit`, which the retail follow camera and the
+    /// movement compass both read, so a host-local rate is a host-local
+    /// *control* feel on a field the simulation consumes. It was `0.008`
+    /// here against the page's `0.006`.
+    ///
+    /// These are JS literals on the other side, so no paired-constant gate
+    /// can bind them; this test is the pairing, and its numbers are quoted
+    /// from `site/js/play-app.js`'s `pointermove` / `wheel` handlers.
+    #[test]
+    fn the_input_vocabulary_matches_the_play_pages() {
+        assert_eq!(d::YAW_RAD_PER_PX, 0.006);
+        assert_eq!(d::PITCH_RAD_PER_PX, 0.004);
+        assert_eq!((d::PITCH_MIN, d::PITCH_MAX), (0.12, 1.35));
+        assert_eq!((d::ZOOM_OUT, d::ZOOM_IN), (1.12, 0.89));
+        assert_eq!((d::HALF_MIN, d::HALF_MAX), (220.0, 6000.0));
+    }
+
+    /// The untouched vantage is unchanged: the default pitch is the angle the
+    /// window's long-standing `0.85` eye-height ratio encoded, so adding a
+    /// steerable pitch does not silently re-frame every existing capture.
+    #[test]
+    fn the_default_pitch_is_the_old_eye_height() {
+        let pitch = 0.85f32.atan();
+        assert!(
+            (pitch.tan() - 0.85).abs() < 1e-5,
+            "the stored angle round-trips to the ratio orbit_camera_mvp takes"
+        );
+        assert!(pitch > d::PITCH_MIN && pitch < d::PITCH_MAX);
     }
 }
 

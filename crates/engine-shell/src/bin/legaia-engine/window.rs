@@ -745,6 +745,11 @@ struct PlayWindowApp {
     /// re-uploads; leaving battle restores this base so the field renders
     /// with clean VRAM. `None` until the first scene loads.
     cpu_vram_base: Option<legaia_tim::Vram>,
+    /// The scene VRAM as it was before a dance staged its own HUD texture
+    /// page over it (`stage_dance_hud_art`). `Some` exactly while a dance
+    /// owns those rects; restoring from it is what makes the field's texels
+    /// byte-exact on exit instead of re-derived.
+    dance_vram_restore: Option<legaia_tim::Vram>,
     /// Scene-mode from the previous frame, used to detect Field<->Battle
     /// transitions so monster meshes are uploaded / dropped exactly once.
     prev_scene_mode: Option<SceneMode>,
@@ -1072,9 +1077,25 @@ struct PlayWindowApp {
     /// ([`legaia_engine_core::camera::Camera::compass_azimuth_units`]) read
     /// - so orbiting the view keeps "screen up walks away from the camera".
     orbit_drag_last_x: Option<f64>,
+    /// Mouse drag-orbit state: the last cursor Y, paired with
+    /// [`Self::orbit_drag_last_x`]. Vertical drag steers
+    /// [`Self::debug_orbit_pitch`].
+    orbit_drag_last_y: Option<f64>,
+    /// The debug orbit vantage's pitch in radians. Default
+    /// `atan(0.85)` - the angle the window's long-standing eye-height ratio
+    /// encoded, so an untouched vantage frames exactly as before. Steered by
+    /// a vertical left-drag at the browser play page's own rate and clamp
+    /// (`window::camera::debug_orbit`).
+    debug_orbit_pitch: f32,
+    /// The debug orbit vantage's continuous zoom, a multiplier on the framing
+    /// half-extent the `T` distance preset already scales. Steered by the
+    /// wheel at the page's own factors; `1.0` is the preset's own framing.
+    debug_orbit_zoom: f32,
     /// Latest cursor X (window pixels), fed by `CursorMoved` so a drag that
     /// starts before any motion has an anchor.
     cursor_x: f64,
+    /// Latest cursor Y, the pitch half of [`Self::cursor_x`]'s anchor.
+    cursor_y: f64,
     /// Field party-status HUD driver (`FUN_801D0D38`): the idle countdown and
     /// the cached player position the kernel decides from. Retail keeps them
     /// in overlay globals; every host owning a screen keeps its own copy.

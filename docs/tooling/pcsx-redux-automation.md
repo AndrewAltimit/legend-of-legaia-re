@@ -862,7 +862,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_s3_pc.lua`](../../scripts/pcsx-redux/autorun_s3_pc.lua) | Field-VM "what is the game parked on?" probe. Breakpoints the field-VM dispatcher `FUN_801DE840` (`a0=record_base, a1=pc, a2=ctx`) and histograms the `(base, pc)` pairs over a frame window at a stall; the parked context re-enters at one constant `(base, pc)`, so the dominant entry + the opcode byte at `base+pc` is the exact instruction the script waits on. `a1` maps directly to the `man-scripts --disasm-partition N` (+offset) column. Pinned the [S3 deadlock](playthrough-coverage.md#s3-captured-the-town01-opening-is-the-name-entry-screen) to `STATE_RESUME` (op 0x49) in town01 P2[3] `+0x02C6`. |
 | [`autorun_s3_capture.lua`](../../scripts/pcsx-redux/autorun_s3_capture.lua) | Completes the town01 **name-entry** screen and captures the [S3 free-roam anchor](playthrough-coverage.md#s3-captured-the-town01-opening-is-the-name-entry-screen) (`s3_rimelm_freeroam`). Resumes S2; selects `End` with CROSS (confirm mask `0x44` at `0x800846D0`); holds the Yes/No toggle `_DAT_8007B458 = 0` (the option whose confirm advances `actor+0x50` `0x22 -> 0x1A` out of name entry, vs the looping default); accepts the default name "Vahn"; waits for `0x80000` to clear and checkpoints free-roam in `town01`. Recon companions: `autorun_s3_namegrid.lua` (grid + cursor + name buffer), `autorun_s3_btnmask.lua` (button masks), `autorun_s3_substate.lua` (parked sub-state). |
 | [`autorun_s4_recon.lua`](../../scripts/pcsx-redux/autorun_s4_recon.lua) | Free-roam navigation recon: resumes a field anchor and sweeps the d-pad (each direction held for a window), logging the active scene name, game_mode, and player position (`player+0x14`/`+0x18`), flagging any scene-name change. Used to confirm the s3_rimelm_freeroam anchor is walkable and to characterise the camera-relative pad mapping. |
-| [`autorun_s4_gridrecon.lua`](../../scripts/pcsx-redux/autorun_s4_gridrecon.lua) | Grid-BFS groundwork recon. Pins the three things the door-nav needs: (1) the player position field WIDTH - reads `player+0x14`/`+0x18` as **16-bit signed** (NOT u32; `+0x16` facing sits between them and a u32 read folds it into the X high half - the bug that sank the earlier nav); (2) the walkability grid at `*(_DAT_1f8003ec)+0x4000`, dumping a nibble census + an ASCII map around the player tile; (3) the real pad->world mapping (holds each dir, logs the clean `(dX,dZ)` + facing). Doubles as the S4-state validator (point it at a checkpoint to confirm scene/mode/tile). |
+| [`autorun_s4_gridrecon.lua`](../../scripts/pcsx-redux/autorun_s4_gridrecon.lua) | Grid-BFS groundwork recon. Pins the three things the door-nav needs: (1) the player position field WIDTH - reads `player+0x14`/`+0x18` as **16-bit signed** (NOT u32; the actor's **footing** `+0x16` sits between them and a u32 read folds it into the X high half - the bug that sank the earlier nav; `+0x16` is a floor height, not a heading - [`field-locomotion.md`](../subsystems/field-locomotion.md)); (2) the walkability grid at `*(_DAT_1f8003ec)+0x4000`, dumping a nibble census + an ASCII map around the player tile; (3) the real pad->world mapping (holds each dir, logs the clean `(dX,dZ)` + facing). Doubles as the S4-state validator (point it at a checkpoint to confirm scene/mode/tile). |
 | [`autorun_s4_doornav.lua`](../../scripts/pcsx-redux/autorun_s4_doornav.lua) | **The grid-BFS door-nav controller** that captures `s4_rimelm_door_transition`. BFS's the reachable walkable tiles from the player tile over the `+0x4000` grid, walks the boundary tiles nearest-first with online-adaptive pad input (per-button `(dX,dZ)` EMA, clean 16-bit reads) pulsing CROSS, and nudges into adjacent walls at each boundary tile. A transition = scene-name change OR a `>300`-unit single-tick position jump (the walk-touch warp). Walks the player out of Vahn's house into Rim Elm's exterior, then checkpoints. See the [S4 capture](playthrough-coverage.md#s4-captured-the-grid-bfs-door-nav-walks-out-of-vahns-house). |
 | [`autorun_s4_recon.lua`](../../scripts/pcsx-redux/autorun_s4_recon.lua) / [`autorun_s4_capture.lua`](../../scripts/pcsx-redux/autorun_s4_capture.lua) / [`autorun_s4_padmap.lua`](../../scripts/pcsx-redux/autorun_s4_padmap.lua) / [`autorun_s4_navsweep.lua`](../../scripts/pcsx-redux/autorun_s4_navsweep.lua) | Superseded S4 exploration probes (d-pad sweep / bump-and-turn wander / pad->world measurement / self-calibrating coverage sweep). Their "dynamic camera-remap" + "16.16 fixed positions" conclusions were **artifacts of reading `player+0x14`/`+0x18` as u32** (folding in the `+0x16` facing word); see the [S4 capture](playthrough-coverage.md#s4-captured-the-grid-bfs-door-nav-walks-out-of-vahns-house) for the retraction. Kept for provenance; use `autorun_s4_doornav.lua`. |
 | [`autorun_s5_encounter.lua`](../../scripts/pcsx-redux/autorun_s5_encounter.lua) | S5 recon: wanders the town01 exterior (grid-BFS to the farthest reachable tile, re-BFS + recalibrate on each door warp) pulsing CROSS, watching for a battle (`game_mode 0x8007B83C == 0x15` OR battle-ctx `0x8007BD24 != 0`). **Answered: Rim Elm has no random encounters at this story point** - 148 steps, mode stayed `0x03` (the town's encounters are story-gated: on briefly after a later beat, then peaceful, then again near endgame). See the [S5 finding](playthrough-coverage.md#s5-the-first-battle-is-the-scripted-tetsu-spar-not-a-random-encounter). |
@@ -898,6 +898,12 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_model_pack_registrar.lua`](../../scripts/pcsx-redux/autorun_model_pack_registrar.lua) | Entry rows for the party-model registrar at `0x8001EAFC`, each carrying the mode word the three decompress calls above it are gated on, the pack pointer `gp+0x6BC`, its count word and its first member offsets. Written to answer whether the registrar is ever entered over a buffer nothing filled that pass: it is the target of the very branch that skips the decompresses, and its count is unclamped. A run that crosses a random encounter and one that crosses a door warp both record **zero** entries, so the routine is not re-entered by either - a cold boot is the remaining ladder. |
 | [`autorun_w3a_slippery_call_frame.lua`](../../scripts/pcsx-redux/autorun_w3a_slippery_call_frame.lua) | Same injection aimed at action id `0x92`, so PROT 0920 is resident and its drain budget `_DAT_8007BDC0` is non-zero, with the gate read `0x8004818C`, the `jal` at `0x800481A0` and the callee `0x801F7B88` all breakpointed. Catches SCUS's one fixed-VA call into slot B actually firing - the state the corpus could not supply, because the only Slippery mid-cast backup is a mednafen one. |
 
+| [`autorun_field_camera_tr.lua`](../../scripts/pcsx-redux/autorun_field_camera_tr.lua) | What composes the field camera's GTE `TR` from the live camera words, on one frame. &rarr; [detail](#autorun_field_camera_trlua) |
+| [`autorun_cast_cue_band_sweep.lua`](../../scripts/pcsx-redux/autorun_cast_cue_band_sweep.lua) | Whether the cast-audio dispatcher's character-banded cue band ever fires on a player cast. &rarr; [detail](#autorun_cast_cue_band_sweeplua) |
+| [`autorun_throw_out_cursor.lua`](../../scripts/pcsx-redux/autorun_throw_out_cursor.lua) | Whether the pause-menu item cursor `_DAT_8007BB88` is a bag slot or a list row. &rarr; [detail](#autorun_throw_out_cursorlua) |
+| [`autorun_scene_entry_eye_seed.lua`](../../scripts/pcsx-redux/autorun_scene_entry_eye_seed.lua) | Which of the two scene-entry camera-eye seeds runs last, and what the first field view reads. &rarr; [detail](#autorun_scene_entry_eye_seedlua) |
+| [`autorun_field_pad_ring.lua`](../../scripts/pcsx-redux/autorun_field_pad_ring.lua) | What retail's camera-relative pad remap turns each held direction into, at every rotation index. &rarr; [detail](#autorun_field_pad_ringlua) |
+| [`autorun_scene_name_hijack.lua`](../../scripts/pcsx-redux/autorun_scene_name_hijack.lua) | Loads a scene no save state reaches by rewriting a door's inline destination name. &rarr; [detail](#autorun_scene_name_hijacklua) |
 #### Runtime probe details
 
 ##### `autorun_w4d_cort_flow_writer.lua`
@@ -1087,6 +1093,214 @@ the longer ones (`Probes` + `What it answered`) are written out as
 - **Why it exists:** the shared EVENT SOURCE for the two delivery PRDs - the VRChat live battle diorama (a MIDI register stream) and the wgpu/OpenXR spectator viewport (UDP `BattleState` packets). The extraction layer is deliberately transport-free so neither target forks the probe; a MIDI/UDP encoder consumes `battle_state.read()` directly. It doubles as the reusable capture harness for the open battle RE threads (F-RAGE delegated-pick variability, F-RENDERMODE enemy summon, F-PAL) - point it at a mid-cast save and read the stream. Extraction logic is validated offline against a synthetic battle RAM image (stub `probe.mem`, assert `read`/`signature`/`to_json`); the offsets themselves are live-pinned in `battle.md`.
 - **Live validation:** confirmed on the `party_basic_attack_vs_gobu_gobu` library save - the first record reads `in_battle=true mode=0x15`, enemy slot 3 = monster id 4 (Gobu Gobu) at 76/76, party slot 0 at 128/128, all sane. A multi-frame run on `rim_elm_queen_bee_battle` emitted the periodic full sweeps (v0, v30) and exposed the field-mode gate: that save resumes at mode `0x03` (field), where the actor table holds stale field pointers - `read()` now gates slot `present` on `in_battle` so it reports `battle=false` with no bogus enemies.
 - **Caveat (save-state resume):** PCSX-Redux on the current build often segfaults a few vsyncs into a *resumed* battle save (seen across distinct saves AND a known-good control probe, at different points - it is emulator save-resume instability, not the probe; flushed-per-line output means the records captured before the crash survive). The PRODUCTION path is attaching to a *live* play session (the diorama/spectator use case), where there is no save-resume divergence; the save-state path is only for the RE-capture harness use and is best driven with a short frame budget.
+
+##### `autorun_field_camera_tr.lua`
+
+- **Probes:** three groups on one sampled frame. The ease `FUN_801DB510`'s single
+  exit (`0x801DB8E4`) snapshots the staging descriptor `0x801F3580`, the live eye
+  trio `0x800840B8/BC/C0`, pitch / yaw / roll / `H`, the camera parameter block,
+  the player's `(x, y, z)` and CP2C 0..31. A census group arms every `ctc2`
+  triple in `SCUS_942.54` that writes CP2C 5/6/7 - seventeen sites, found by
+  scanning the image for `(word & 0xFFE007FF) == 0x48C00000` - enabled only
+  inside the sample window, so the first `TR` write after the ease is measured
+  rather than assumed. Named taps then read `TR` after each GTE upload inside the
+  field view builder `FUN_800172C0`. Aliasing VAs are fingerprinted against their
+  expected first word before anything rests on them, and `FUN_80026F50` (the same
+  view-build shape for the other game modes) is armed as a liveness control.
+- **What it answered:** `TR` is `live_eye_trio + (R * focus_trio) >> 12`. The eye
+  trio reaches the matrix translation verbatim as 32-bit words (`FUN_8005B4B8` at
+  `0x80017334`) and is uploaded as `TR` by `FUN_8003D1A4`; the focus trio is the
+  low signed halfwords of `0x80089118 / 1C / 20`, read by three `lhu`; and both
+  the add and the `>> 12` are the single `MVMVA` inside `FUN_8003D344`, whose
+  `MAC1..3` go back over the translation for the final upload by `FUN_8005B6A8`.
+  Held exactly on all sixty sampled frames over `town01`, `uru` and `jouind`,
+  thirty-seven of them with the staging trio different from the live one. Also
+  falsified two premises: the field view builder is `FUN_800172C0`, not
+  `FUN_80026F50` (which fires zero times in a field frame), and on a scripted
+  shot the ease never runs at all while the view builder runs every frame.
+  See [`formats/encounter.md`](../formats/encounter.md#from-the-block-to-the-live-camera-compose-ease-snap).
+
+##### `autorun_cast_cue_band_sweep.lua`
+
+- **Probes:** the cast-audio dispatcher `FUN_801F3990`'s entry, the single
+  `jal 0x8004FCC8` at `0x801F3C18` that every one of its cue arms converges on
+  (so a hit *is* the band firing, and `a0` is the id it resolved), the
+  `actor[+0x1DF] == 0xFE` arm's own `jal 0x8003D53C` at `0x801F3A7C`, the cue
+  dispatcher and the CD-XA clip starter. It also taps the dispatcher's **only**
+  caller - `jal 0x801F3990` at `0x801E3E04`, one arm of the battle-action SM in
+  PROT 0898 - at the arm body and at the store the arm's
+  `actor[+0x1DA] == actor[+0x1D9]` queue-cursor guard gates, so a zero at the
+  dispatcher separates "the arm never ran" from "the arm ran and declined".
+  Casts are driven rather than resumed into: a plan of `seat:spell` pairs is
+  written into the acting seat's queued action one per window while CROSS is
+  tapped, several casts per run. Four byte fingerprints guard the aliasing VAs.
+- **What it answered:** the band's silence is its caller's. Over two driven
+  battles the SM arm does not run, the dispatcher is not entered and the band
+  does not fire, while the same runs record CD-XA clips started by the cast
+  modules' own hardcoded cues - the liveness control that keeps the zero from
+  being a dead instrument. The reference scan behind the caller tap is the
+  load-bearing part: the dispatcher has exactly one reference disc-wide in any
+  of the five forms (`find-address-word-refs.py 0x801F3990`), so the band's
+  reachability is that one arm's reachability and nothing else's. See the
+  cast-voice section of
+  [`cast-module.md`](../subsystems/cast-module.md#the-casts-own-cd-xa-voice).
+
+##### `autorun_throw_out_cursor.lua`
+
+- **Probes:** the two `sb zero` stores the Throw Out confirm makes itself
+  (`0x801D88FC` / `0x801D8910` in PROT 0899, both over
+  `0x80084140 + 0x1818 + _DAT_8007BB88 * 2`), the bag normalizer `FUN_800423E0`
+  and the active-window setter `FUN_8004313C`. The experiment does not need the
+  confirm: it punches holes into the 256-slot bag, walks into the pause Items
+  screen, steps the cursor with DOWN and logs the cursor word beside the id the
+  bag holds at that index every vsync. A cursor that is a slot index never rests
+  on a hole; one that is a list row does as soon as the renderer skips one. The
+  normalizer tap is what tells a null result apart from a compacted bag - if it
+  runs on menu open, retail's rows and slots cannot diverge in the first place.
+- **What it answered:** the cursor is a **bag slot**, and the displayed list
+  hides empty slots. Over a bag holed at slots 1 / 3 / 6, the cursor stepped
+  `0, 2, 4, 5, 7, 8` across six displayed rows and never rested on a zero-id
+  slot, so a row index and the cursor diverge as soon as a hole exists below the
+  selection - and holes do reach the menu, because the compaction helper ran
+  zero times (its one reference disc-wide is a field-VM arm, not the menu-open
+  path). The residency gate is load-bearing: PROT 0899 arrives in slot A only
+  after SELECT, and an ungated breakpoint at a 0899 VA counts the field
+  overlay's code until then. See
+  [`inventory.md`](../subsystems/inventory.md#accessors).
+
+##### `autorun_scene_entry_eye_seed.lua`
+
+- **Probes:** eight exec taps, each gated on the instruction word the
+  extracted image carries at that VA so a slot-A alias is reported instead
+  of counted. Two seed writers - `FUN_80025C24` in `SCUS_942.54` and
+  `FUN_801DE37C` in the field overlay - are tapped at their entry and at
+  their `jr ra`, so the row carries the eye trio `0x800840B8/BC/C0` both
+  before and after each writes it. Their three call sites are tapped too
+  (`0x801D698C` and `0x801D6DA8` inside the field MAIN INIT `FUN_801D6704`,
+  `0x8003B01C` inside `FUN_8003AEB0`), so the ordering is measured at the
+  callers and not only at the callees. The field view builder
+  `FUN_800172C0` and the tap right after it uploads the trio verbatim as GTE
+  `TR` complete the chain. A held direction repeats on a period so a
+  pre-transition state that misses its walk-on band gets several attempts in
+  one capture.
+- **What it answered:** the two writers do **not** race - they run in a
+  fixed order inside one routine, `FUN_80025C24` first and `FUN_801DE37C`
+  second, on all three scene entries captured (`dolk` -> `map01`,
+  `map01` -> `town0c`, `uru` -> `map03`), exactly as the two `jal` offsets
+  in `FUN_801D6704` predict. So `FUN_801DE37C`'s `(0, 0x200, 0x4000)` is the
+  seed that stands. What the first field frame's view reads, though, is
+  **neither**: by the next vsync the follow composer has already replaced
+  the trio, and the `TR` upload carries the composed value. The two writers
+  also agree on the angle trio - both write `(0x1B8, 0x64, 0)` - so the only
+  thing the ordering decides is the eye.
+- **It also falsifies "once per frame".** Run on a settled field state with
+  the budget opened up (`LEGAIA_VIEW_BUDGET=400`, no pad), the view builder
+  is entered **three times per vsync**, once from each of three distinct
+  return addresses - `0x801D0F98` and `0x801D185C` in the field overlay and
+  `0x80016678` in `SCUS_942.54`. Over the 134 vsyncs the budget covered,
+  133 carry exactly three and the 134th is the one the budget cut short.
+  On a scene-entry frame the live camera words can differ *between* two of
+  those builds. `cutscene.md` calls `FUN_800172c0` the "once-per-frame view
+  builder": the composition it describes is unaffected, but the frequency
+  is not a property anything had measured.
+- **Two traps it walked into, both worth reusing:** the visible-tile window
+  `FUN_801DE37C` seeds is **scratchpad** (`0x1F8003E8..EB`), and the
+  main-RAM reader returns zeros there - it has to go through
+  `probe.read_scratch_u32`. And a breakpoint on a `jr ra` fires **before**
+  the delay slot, which for this routine is the fourth window store, so that
+  byte still reads its previous value on the `seed_b` row.
+- **What the seeded window is worth:** `FUN_801DE37C` writes
+  `(-8, -6, 6, 10)` into `0x1F8003E8..EB` on every entry and the scene then
+  replaces it - `map03` runs at `(-18, -12, 18, 32)`, `uru` at
+  `(-21, -6, 19, 31)`. The seed is a floor, not a frame's value.
+
+##### `autorun_field_pad_ring.lua`
+
+- **Probes:** two exec taps on the camera-relative pad remap
+  `FUN_800467E8` in `SCUS_942.54` - its entry and the join its two
+  early-outs and its write-back all reach - each gated on the instruction
+  word the extracted image carries there. The pair is latched, so the `in`
+  row (the pad word `0x8007B850` the routine was handed) and the `out` row
+  (the word it wrote back) come from the **same** call; taking the two taps
+  independently pairs an `in` with some other call's `out`, which is how the
+  first run recorded an `out` whose direction nibble was zero. A third row
+  per cell is taken at the cell's last held vsync, for the settled actor
+  heading.
+- **How the input space is covered.** The rotation index `gp+0x2D8` is
+  scene content - its disc-wide writers are a field-VM `0x4C` arm and the
+  tile-board walker - so a free-roam save sits at whatever its own scene
+  authored, which for a `town01` state is `0`. The probe writes the index
+  itself, one value per cell, and holds each of the eight d-pad directions
+  in turn: eight rotations x eight directions in one capture. That makes
+  the rotations synthetic and the ring walk, the written mask and the
+  resulting heading real. Cells are ordered in opposite pairs so the sweep's
+  net walk is near zero and the player stays in the open; the scene word and
+  game mode ride every row, so a cell that walked into a transition is
+  visible rather than silently mixed in.
+- **Directions are held with `pad.force`, never by writing the mask.**
+  `FUN_8001822C` rebuilds `0x8007B850` from the real pad every frame, so a
+  RAM write to it does not survive to the call.
+- **What it answered:** the port's `World::remap_pad_direction` reproduces
+  retail's written direction nibble on every one of the 64 cells, and the
+  ring table live in RAM at `DAT_800766FC` is byte-identical to the one the
+  port carries and to `SCUS_942.54`'s own bytes. The settled actor heading
+  at `player+0x26` equals the engine's `render_26` plus the documented
+  half-turn on 61 of the 64; the three that differ are the sweep's three
+  largest turns, each still short of its target at the cell's last held
+  vsync, so they measure the turn rate rather than the remap.
+- **One trap worth reusing:** `bit.band` in LuaJIT yields a **signed**
+  32-bit integer, so a fingerprint word with bit 31 set (this routine's
+  entry is `lw v0,0x2d8(gp)` = `0x8F8202D8`) never compares equal to the Lua
+  number literal. Normalise both sides. A tap that gets this wrong reports
+  every hit as an alias and silently records nothing - and the two taps here
+  differ only in that one has the high bit and the other does not, which is
+  exactly the shape that makes the defect look like a genuine finding about
+  the tap that "aliased".
+
+##### `autorun_scene_name_hijack.lua`
+
+Some scenes are unreachable from every catalogued save - `juui1` has no
+library state at all - so nothing shows what retail draws there. The field
+VM's op `0x3F` (named scene change) carries its destination **inline in the
+bytecode**, `[u16 seat][u8 name_len][name bytes]`, so a probe that breaks on
+the VM's per-op dispatcher `FUN_801DE840` can rewrite the name in the live MAN
+buffer before the op consumes it and let retail's own loader do the rest.
+
+- **The swap lands, and the loader honours it.** From
+  `drake_castle_to_worldmap` the door is `index=85 name='map01'` at
+  `bytecode 0x800F5CE7 pc 0x0014`, two vsyncs into the held press. Rewritten
+  to another five-letter scene, the game's own load trace changes with it -
+  `map01` stages VAB `2035`, BGM `2000`, packet size `178`; the replacement
+  staged VAB `2088`, BGM `2011`, packet size `240`. So the bundle under the
+  new name is what loaded.
+- **The frame it produces is still not evidence about that scene.** The seat
+  index belongs to the door's original destination, and this door's
+  destination is a world map, so the replacement is entered through the
+  world-map path and draws nothing: every frame of a 1000-vsync run is pure
+  black outside the player sprite and the HUD. The **control** is what
+  settles it - a hijack into a scene the game draws brightly renders exactly
+  as black, at the same mean luminance and the same fraction of non-black
+  pixels. Writing the seat index too (`LEGAIA_HIJACK_SEAT`) does not fix it
+  from this donor either; the player lands at the same coordinates with seat
+  `0` as with seat `85`. **A brightness or content question needs a
+  field-to-field donor door**, where the index is a field seat.
+- **Run the control every time.** Without it a black frame reads as a finding
+  about the scene, and the same black frame appears for a scene that is not
+  dark at all.
+- **The scene-name word `0x8007050C` is an output, not an input.**
+  `LEGAIA_HIJACK_SCENE_WORD=1` overwrites it instead of the bytecode; the
+  word then reads the replacement name for the rest of the run and the game
+  loads the original scene anyway - the Drake world map, drawn normally. The
+  word is the label the loader writes, so a capture that reads a scene name
+  out of RAM is reading what the loader said, not what it was asked.
+- **Same-length rule.** The name is inline in the bytecode, so a replacement
+  of a different length would need `name_len` changed and would shift every
+  following instruction. The probe refuses the swap and says so rather than
+  corrupting the script.
+- **`bit.band` is signed in LuaJIT**, so `n32(a0)` on a KSEG0 pointer comes
+  back negative and the usual `a0 < 0x80000000` guard then rejects every hit.
+  The first run of this probe reported zero doors while the dispatcher was
+  entered 1072 times. Use `tonumber` for pointers.
 
 ### Save-state to Python (offline analysis)
 

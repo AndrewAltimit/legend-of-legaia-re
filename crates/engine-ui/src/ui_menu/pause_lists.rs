@@ -358,21 +358,57 @@ pub fn items_screen_draws_for(
 
     // Info window (PORT: FUN_801dcb60 / FUN_801d0f1c).
     if let Some(info) = &view.info {
-        let (ix, iy) = info_pen;
-        str_at(&mut out, info.name, ix, iy, MENU_TEXT_GOLD);
-        out.extend(num_field_draws(
-            font,
-            info.count as u64,
-            ix + 0x7c,
-            iy,
-            2,
-            MENU_TEXT_GOLD,
-        ));
-        str_at(&mut out, info.desc, ix, iy + 0x10, MENU_TEXT_WHITE);
-        if let Some((line1, line2)) = info.passive {
-            str_at(&mut out, line1, ix, iy + 0x38, MENU_TEXT_GREEN);
-            str_at(&mut out, line2, ix, iy + 0x48, MENU_TEXT_WHITE);
-        }
+        out.extend(item_info_panel_draws_for(font, info_pen, info));
+    }
+    out
+}
+
+/// The **shared item-info panel** on its own: item name, bag count, the
+/// description line, and an accessory's two passive lines.
+///
+/// This is `FUN_801D0F1C`, and it is shared in retail exactly as it is here -
+/// window 17's renderer `FUN_801DCB60` calls it on the Items screen, and
+/// window 24's `FUN_801DCC20` calls it on the **Equip** screen's candidate
+/// step, adding a two-digit count over the same rect. The two windows carry
+/// byte-identical rects in the descriptor table (`(14, 108, 144, 40)` on the
+/// disc), which is what makes them one panel opened by two screens rather
+/// than a coincidence.
+///
+/// It lived inline in [`items_screen_draws_for`] while the Items screen was
+/// its only caller, which is why the equip screen had no item panel and why
+/// [`crate::ui_menu_window_painters::count_panel_draws_for`] - the *delta*
+/// over this panel - had nothing to be a delta over.
+///
+/// `pen` is the window's content origin: window 17's on Items, window 24's on
+/// Equip.
+///
+/// PORT: FUN_801d0f1c (name / bag count / description at `+0x10` / passive
+/// name + desc at `+0x38` / `+0x48`; the kind-2 scope pictogram
+/// (ICO `0x84`/`0x85` at `X+0x84`) stays undrawn, and the id-`0xFE` arm is
+/// [`item_points_panel_draws`])
+pub fn item_info_panel_draws_for(
+    font: &legaia_font::Font,
+    pen: (i32, i32),
+    info: &PauseItemInfo<'_>,
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    let str_at = |out: &mut Vec<TextDraw>, s: &str, x: i32, y: i32, c: [f32; 4]| {
+        out.extend(text_draws_for(&font.layout_ascii(s), (x, y), c));
+    };
+    let (ix, iy) = pen;
+    str_at(&mut out, info.name, ix, iy, MENU_TEXT_GOLD);
+    out.extend(num_field_draws(
+        font,
+        info.count as u64,
+        ix + 0x7c,
+        iy,
+        2,
+        MENU_TEXT_GOLD,
+    ));
+    str_at(&mut out, info.desc, ix, iy + 0x10, MENU_TEXT_WHITE);
+    if let Some((line1, line2)) = info.passive {
+        str_at(&mut out, line1, ix, iy + 0x38, MENU_TEXT_GREEN);
+        str_at(&mut out, line2, ix, iy + 0x48, MENU_TEXT_WHITE);
     }
     out
 }

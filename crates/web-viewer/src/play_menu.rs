@@ -344,6 +344,15 @@ fn equip_compose_input(
         slot_cursor: m.slot_cursor,
         pictogram_rows: m.pictogram_rows,
         text_cursor,
+        info: m
+            .info
+            .as_ref()
+            .map(|i| legaia_engine_ui::pause_menu::EquipInfoInput {
+                name: i.name.as_str(),
+                count: i.count,
+                desc: i.desc.as_str(),
+                passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+            }),
     }
 }
 
@@ -1846,7 +1855,21 @@ impl LegaiaRuntime {
             .menu_world()
             .map(field_menu_dispatch::roster_names)
             .unwrap_or_default();
-        let m = legaia_engine_core::pause_screens::equip_screen_model(session, char_slot, &names);
+        // Same resolver the native window passes, so both hosts spell the
+        // candidates and the info panel out of the disc text tables rather
+        // than as raw ids.
+        let world = self.menu_world();
+        let text = |id: u8| {
+            world
+                .map(|w| field_menu_dispatch::item_display_text(w, id))
+                .unwrap_or_default()
+        };
+        let m = legaia_engine_core::pause_screens::equip_screen_model(
+            session,
+            char_slot,
+            &names,
+            Some(&text),
+        );
         let out = equip_screen_compose(&ctx, &equip_compose_input(&m, assets.chrome.is_none()));
         sprites.extend(out.sprites);
         texts.extend(out.texts);

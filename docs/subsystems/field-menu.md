@@ -1841,7 +1841,7 @@ What it settles for the windows whose painters had no screen:
 | 5 | `0x801E4BD4` | `3` (`FUN_801D6D38`) | battle-start ready check, reached only from the pause root's cancel with entry-context byte `0x0D` |
 | 6 | `0x801E4BE0` | `4` (`FUN_801DD1B8`) | notice panel; the menu's entry screen for the same `0x0D` context |
 | 7 | `0x801E4D50` / `0x801E4D78` | `0xF` / `0x10` | spell level-up notice, opened by a magic cast only when the apply raised the sentinel |
-| 24 + 25 | `0x801E4DC8` | `0x14` (`FUN_801D9C14`) | the Equip screen's slot-browse step, with window 2's Equip tab |
+| 24 + 25 | `0x801E4DC8` | `0x14` (`FUN_801D9C14`) | the Equip screen's **candidate-list** step (the one after slot-browse `0x13`), with window 2's Equip tab |
 | 31 | `0x801E4EDC` / `0x801E4EA8` | `0x1D` / `0x1C` | the shop's Point Card toast |
 | 46 | `0x801E4F2C` | `0x20` (`FUN_801DC1CC`) | the casino prize counter's Yes/No confirm |
 

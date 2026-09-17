@@ -334,10 +334,45 @@ deliberately merges them; a section that exists only on the site claims
 is what a *renamed* heading looks like, and it is the half a "did you cover
 everything" check on its own would miss.
 
-What the gate deliberately does not check: prose, tables, row counts, or
-whether the mirror says the same thing as its source. A section can be present
-and wrong. It answers one question - is a whole area of the source missing from
-the public page - because that is the failure that survived review.
+### A section is the wrong unit for a page made of rows
+
+Heading coverage is necessary and not sufficient, and the same mirror proved it
+a second time with every `##` area claimed. `open-rev-eng-threads.md` is a page
+whose *content* is table rows - one row per live hunt - and the mirror was
+showing two of the source's twelve. Three of its area tables were present and
+**empty**, its battle table carried a thread that had closed, and its field
+table carried one row where the source carries five. Nothing was missing at the
+level the gate measured; the live-hunt list a reader saw was a sixth of the
+real one, and one entry of it was an invitation to work that was finished.
+
+So the gate runs a row half as well. A **live row** is a row of a
+`| Thread | Status | ... |` table - identified by the header's own first cell,
+because the three reference pages disagree on every column after it - whose
+status cell opens `open`, `partial` or `mostly resolved`. Each is claimed by a
+`data-row` attribute carrying the slug of its first cell:
+
+```html
+<tr data-row="where-does-prot-0896-link"><td>Where does PROT 0896 link?</td>
+```
+
+The rule scopes itself rather than needing an exemption list: those three
+statuses are `open-rev-eng-threads.md`'s own vocabulary, so the settled and
+falsified registers - several hundred thread rows between them, every one
+`resolved` or `falsified` - contribute nothing, while a live row appearing on
+one of *them* is a finding. As with `data-doc`, a `data-row` naming no live row
+is an error: that is precisely what a closed hunt still advertised as open
+looks like.
+
+The mirror is also where a second copy of the list becomes a liability. A
+"live threads at a glance" digest restating the area tables is another place a
+closed thread can keep looking open, and the gate cannot tell a digest row from
+an area row - both are claims. One place per row; the digest is jump links.
+
+What the gate deliberately does not check: prose, wording, or whether the
+mirror says the same thing about an area or a row it claims. Either can be
+present and wrong. It answers exactly two questions - is a whole area, or a
+live hunt, missing from the public page - because those are the failures that
+survived review.
 
 ## Verifying a shell change
 

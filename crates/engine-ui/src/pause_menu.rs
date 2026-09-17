@@ -56,6 +56,16 @@ pub const WIN_CONTEXT_NOTICE: usize = 6;
 /// `3`'s script `0x801E4BD4`.
 pub const WIN_CONTEXT_READY: usize = 5;
 
+/// Window 24 - the Equip screen's item-info panel, opened by the candidate
+/// step (sub-screen `0x14`, open script `0x801E4DC8`) on top of the browse
+/// step's windows.
+///
+/// Its descriptor carries a rect byte-identical to window 17's
+/// (`(14, 108, 144, 40)` on the disc) because both renderers call the same
+/// shared panel `FUN_801D0F1C`; the dispatch is on the renderer VA, so the
+/// id alone never decides which panel draws.
+pub const WIN_EQUIP_ITEM_INFO: usize = 24;
+
 /// Content rect used for the sub-screens whose retail window sets are not
 /// capture-pinned (the Tactical-Arts editor, the spell target-select
 /// stand-in, the generic inventory overlay) - a near-fullscreen window on the
@@ -89,7 +99,7 @@ pub const TARGET_SELECT_WINDOWS: [usize; 2] = [window_ids::TAB_ITEMS, 14];
 /// the two Use confirms and the party target panel at the near-fullscreen
 /// origin instead of at their own pinned rects.
 #[rustfmt::skip]
-pub const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 27] = [
+pub const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 28] = [
     (window_ids::TAB_ITEMS, (16, 12, 60, 12)),
     (window_ids::TAB_MAGIC, (16, 12, 60, 12)),
     (window_ids::ITEMS_COMMAND, (32, 44, 80, 38)),
@@ -119,6 +129,10 @@ pub const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 27] = [
     (10, crate::ITEMS_USE_CONFIRM_1LINE_RECT),
     (12, crate::ITEMS_USE_CONFIRM_2LINE_RECT),
     (14, crate::TARGET_PANEL_RECT),
+    // Window 24 - the Equip screen's item-info panel. Byte-identical to
+    // window 17's rect on the disc, because both renderers call the same
+    // shared panel.
+    (WIN_EQUIP_ITEM_INFO, (14, 108, 144, 40)),
 ];
 
 /// Descriptor-rect resolver: the disc-parsed menu-overlay window table when
@@ -421,6 +435,9 @@ pub struct EquipComposeView<'a> {
     /// Pictogram rows to draw. Retail draws 7; the engine's 8th slot row
     /// stays navigable but icon-less.
     pub pictogram_rows: usize,
+    /// Window 24's item-info panel content for the hovered candidate, or
+    /// `None` outside the candidate step. See [`WIN_EQUIP_ITEM_INFO`].
+    pub info: Option<crate::PauseItemInfo<'a>>,
 }
 
 /// One pause-menu screen, as the composition sees it.
@@ -704,6 +721,33 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             ));
             texts.extend(ctx.tab_title(window_ids::TAB_EQUIP, "Equip"));
             sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::EQUIP_SCREEN_WINDOWS));
+            // Window 24 - the candidate step's item-info panel. It is not a
+            // fifth window of the *screen*: retail's sub-screen `0x14` opens
+            // it (with window 25) on top of the browse step's four, through
+            // open script `0x801E4DC8`, and its renderer `FUN_801DCC20` calls
+            // the same shared panel `FUN_801D0F1C` that window 17 draws on
+            // the Items screen. So it appears with the candidate list and
+            // goes with it.
+            if let Some(info) = v.info.as_ref()
+                && let Some((d, _)) = ctx
+                    .rects
+                    .table()
+                    .and_then(|t| painter_at(t, WIN_EQUIP_ITEM_INFO, MenuWindowPainter::CountPanel))
+            {
+                let r = painter_rect(d);
+                sprites.extend(ctx.frame_around(d.rect()));
+                texts.extend(crate::item_info_panel_draws_for(ctx.font, (r.x, r.y), info));
+                // ...and window 24's own delta over that panel: the
+                // two-digit count in the accent pen, plus the reserved
+                // sub-rect the renderer frames either way.
+                let (count_draws, reserved) = crate::ui_menu_window_painters::count_panel_draws_for(
+                    ctx.font,
+                    r,
+                    Some(u64::from(info.count)),
+                );
+                sprites.extend(ctx.frame_around(reserved));
+                texts.extend(count_draws);
+            }
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::equip_screen_sprites_for(
                     rects,
@@ -779,6 +823,19 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
 /// crate cannot name the model type (it does not depend on `engine-core`),
 /// but it can take its fields as plain slices, which is all the borrow ever
 /// needed.
+/// Window 24's panel content as a host hands it over - the owned-string
+/// model borrowed into `&str`s, the same seam the rest of
+/// [`EquipComposeInput`] uses.
+#[derive(Debug, Clone, Copy)]
+pub struct EquipInfoInput<'a> {
+    pub name: &'a str,
+    /// Bag count, echoed beside the name.
+    pub count: u16,
+    pub desc: &'a str,
+    /// An accessory's two passive lines.
+    pub passive: Option<(&'a str, &'a str)>,
+}
+
 pub struct EquipComposeInput<'a> {
     pub party_names: &'a [String],
     pub slot_labels: &'a [String],
@@ -796,6 +853,9 @@ pub struct EquipComposeInput<'a> {
     pub pictogram_rows: usize,
     /// Emit ASCII `>` cursors (no chrome atlas to draw the hand sprite).
     pub text_cursor: bool,
+    /// The hovered candidate's info-panel row. `None` outside the candidate
+    /// step, which is the phase window 24 is open in.
+    pub info: Option<EquipInfoInput<'a>>,
 }
 
 /// Borrow an [`EquipComposeInput`] into the equip screen's view and compose
@@ -848,6 +908,12 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
             char_slot: input.char_slot,
             slot_cursor: input.slot_cursor,
             pictogram_rows: input.pictogram_rows,
+            info: input.info.map(|i| crate::PauseItemInfo {
+                name: i.name,
+                count: i.count,
+                desc: i.desc,
+                passive: i.passive,
+            }),
         }),
     )
 }

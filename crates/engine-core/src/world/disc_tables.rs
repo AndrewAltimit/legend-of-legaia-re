@@ -127,6 +127,14 @@ pub struct DiscTables {
     /// so [`crate::world::World::seed_party_battle_stats`] folds equipped gear onto each
     /// party combatant's attack / defense at battle entry.
     pub equipment_table: crate::battle_stats::EquipmentTable,
+    /// The **raw** static equipment stat-bonus table (`DAT_80074F68`, stride 8)
+    /// as parsed off `SCUS_942.54`, kept alongside the derived modifier table
+    /// because two retail readers want the record bytes rather than the
+    /// modifiers: the Throw Out list builder reads each record's `+7` flags
+    /// byte, and the item-detail window reads `+5`. Install via
+    /// [`crate::world::World::set_equip_stats`]; `None` on a disc-free load,
+    /// where the Throw Out list simply dims nothing.
+    pub equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
     /// Accessory ("Goods") passive-effect catalog: item id → passive index +
     /// per-index party-wide scope, decoded from the executable. Empty by
     /// default; install via [`crate::world::World::set_accessory_passives`].
@@ -178,6 +186,7 @@ impl DiscTables {
             summon_elements: std::collections::HashMap::new(),
             steal_table: None,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
+            equip_stats: None,
             accessory_passives: Default::default(),
             scene_toc_names: legaia_prot::cdname::IndexMap::new(),
             victory_pose_table: None,

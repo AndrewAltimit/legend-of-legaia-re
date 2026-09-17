@@ -693,6 +693,26 @@ owns this frame, and what its inputs are). Both hosts call
 camera of its own - the debug orbit vantage on `F3`, which the native window
 has too - and it is an explicit override, not the default projection.
 
+**Same camera, different controls.** That parity is about the *type*; the
+**inputs** were a separate question, and nothing asks it. The page steered its
+orbit with three knobs - drag yaw, drag pitch, wheel zoom - and the native
+window had one, so its vantage could only be pitched by editing a constant and
+zoomed in three preset steps. Worse, the knob both hosts *did* have ran at
+different rates: `0.006` rad/px on the page against `0.008` natively, writing
+the same `Camera::manual_orbit`, which the retail follow camera and the
+movement compass both read. So the identical drag turned the view by different
+amounts *and* remapped the d-pad differently, on a field the simulation
+consumes - a control-feel divergence that no tier looks at, because both sides
+are live call sites into the same engine field. The window now takes the
+page's three knobs at the page's rates and clamps
+(`window::camera::debug_orbit`). They are JS literals on the other side, so no
+paired-constant row can bind them; the pairing is a test that quotes the
+page's handlers by name.
+
+The general shape: a tier that pairs *types* or *call sites* says nothing
+about the numbers feeding them, and an input rate is exactly the kind of
+number nobody writes a constant pair for because it "only affects feel".
+
 **Simulated and never drawn.** The page ticked the field move-VM effects
 every frame and drew none of them, because its only FX draw call sat inside
 the battle branch. Tier 7 asks whether a render surface names a kernel; it
@@ -722,6 +742,56 @@ the same digits in the dialog font. A shared *layout* is not a shared *draw*:
 the quads now come out of `engine-ui::battle_numerals` as `ScreenPrim`s and
 both hosts push them through their own `screen_prim` pass, with the font
 builders left as the explicit before-the-atlas fallback on each.
+
+**One gap stated for "both hosts" was two different gaps.** The dance
+count-in banner drew as placeholder letterforms on both hosts with its
+geometry pinned to the instruction, and the shared statement - "no host stages
+the dance page, so there is nothing for a textured quad to sample" - was true
+of one host. The native window hosts the dance over the scene the player
+walked in from and keeps drawing that scene behind the HUD, so it had neither
+the page nor a quad emit. The browser play page already replaced its whole
+VRAM texture with the hall's for the dance, and already drew the hall, so it
+had the texels the whole time and lacked only the emit. A single sentence
+covering both hosts hid a two-to-one difference in what each needed, and
+fixing the expensive host fixed the cheap one on the way past without anybody
+having to notice which was which. When a gap is phrased "neither host does
+X", check what each host would need *separately* before believing the
+symmetry.
+
+The cure keeps the asymmetry where it is real and shares the rest: the
+staging kernel is one function (`engine-core::dance::stage_dance_hud_vram`,
+fed by the run's own widget table), the emit is one builder
+(`engine-ui::ui_dance::dance_countin_prims`), and the **predicate** that picks
+between retail's sprite and the placeholder is one world field
+(`World::minigames.dance_hud_art_staged`) written by whichever host owns the
+VRAM. Left per-host that predicate would have been two spellings of "did the
+upload work", which is the shape a silent one-host regression hides in - and
+the tiers cannot see it, because both spellings end at a live call site.
+
+**A waiver's blocking capability can be falsified by a doc this repo already
+carries.** Two equip-screen painters were waived as orphans on one shared
+premise: retail opens windows `2 / 24 / 25` from one script while the port's
+equip flow is built on `2 / 21 / 22 / 23`, window 25's rect overlaps window
+21, and therefore "closing it means moving the whole screen onto the
+descriptor-table layout, not adding a draw call". That premise reads the
+script as *the* Equip screen's. It is one **step** of it: `field-menu.md`'s own
+window-to-screen map puts script `0x801E4DC8` on sub-screen `0x14`, the
+candidate list, which runs after `0x12` has picked the character and `0x13`
+has browsed the slots - so it opens 24 and 25 *on top of* four windows already
+up, and overlapping window 21 is the point. One of the two is adopted on
+exactly those terms now, on both hosts, with no layout move.
+
+The waiver format did its job here - it named something concrete enough to
+check - and what it could not do was notice that another page in the same repo
+had already answered it. A blocking capability is a claim like any other:
+worth re-deriving before it is inherited, especially when two waivers share
+one, because then a single wrong sentence holds two rows shut.
+
+The same change closed a gap neither waiver named: the equip screen spelled
+every candidate `Item 3A`, because the item name / description resolver lived
+inside the *Items* screen's session builder. Sharing a panel between two
+screens surfaces that immediately - the panel wants a description, and there
+was nowhere to get one.
 
 ## What a waiver may say
 
@@ -755,6 +825,42 @@ about these is contested.
 | Gap | Shape |
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
+
+### A `web-ahead` builder is not by itself a gap
+
+Tier 1 prints a `web-ahead (informational)` line for every `engine-ui` builder
+the browser play page calls and the native window does not. The line answers
+"which host calls this function", which is not the same question as "which host
+draws this screen" - and for the battle value readout the two answers differ.
+
+`battle_combo_cluster_draws_for` and `battle_value_readout_draws_for` are the
+readout's **font fallback**: they restyle retail's `N HIT` / `TOTAL` cluster and
+its damage numerals in the dialog font, for a host that cannot sample the battle
+effect atlas. Their own doc comments say a host that can sample VRAM should skip
+them and draw the real 24x24 cells off texture page `0x27` / CLUT `0x7703`.
+
+Both hosts do exactly that whenever the atlas is resident, through one shared
+kernel: `engine-vm::battle_value_readout` fixes the layout,
+`engine-ui::battle_numerals` turns it into quads, and each host supplies only the
+seat (the struck actor's projected position, which needs that host's camera).
+The native chain is `redraw::battle_value_readout_prims`; the page's is
+`play_battle::battle_value_readout_prims`. So the *screen* reaches both hosts,
+drawn from retail's own art, and the `web-ahead` pair is the page's extra arm for
+the frames before its VRAM exists.
+
+The native window lacked that extra arm, and the `web-ahead` line was the only
+place it showed: with no battle VRAM uploaded it drew no readout at all where
+the page drew fallback text. It has one now - `redraw::battle_value_readout_draws`
+- and the wiring had one requirement, which is why the disclosure named it: the
+two arms must stay mutually exclusive, because both drawing at once renders
+every number twice. Each checks the same `battle_vram` residency, opposite ways,
+the way the page's own `battle_value_readout_has_atlas` gate does.
+
+Doing it needed the layout split out from the emit. The native prim builder had
+the layout inline, so there was nothing for a second emit to consume - which is
+the general shape of a "narrow window" disclosure that stays open: the gap is
+not the missing draw call, it is that the code the draw call would need is
+fused to the arm that already exists.
 
 ### One-shot voices on the minigames page
 

@@ -206,9 +206,14 @@ fix is to write it at item level:
 - Converting a blanket to `//! REPLACED-BY:` has the mirror-image hazard: the
   new blanket covers only anchors whose own block stays silent about its class,
   so an item that is still a genuine wiring gap needs its own `NOT WIRED:` line
-  or it silently leaves the worklist. `scus_core_helpers::list_append_u16` is
-  the worked case - its file-mates are replaced, it is not.
+  or it silently leaves the worklist. `fishing_actors` is the worked case: one
+  wired item made a module blanket assert something false about it, and the
+  file now carries a line per genuinely inert item instead.
   [`port-catalog.md`](port-catalog.md#replaced-by) has the precedence rules.
+  `scus_core_helpers::list_append_u16` used to be the example here, as the one
+  item in a replaced file that was not itself replaced; it is replaced too -
+  `engine-core::cutscene::sprite_stack_push` is the same address, live on both
+  hosts - so it illustrates the hazard's premise rather than the hazard.
 
 A blanket module disclosure is safe while *nothing* in the file has a caller,
 and it can be narrowed the moment one item acquires one: an anchor whose own
@@ -333,7 +338,7 @@ so a recurrence is recognisable rather than re-derived.
 | `80018db0` | `engine-audio/src/footstep.rs` | FALSE-EDGE | `FootstepCadence::tick` renamed `tick_cadence`; the crate's own `lib.rs` re-exports the type and calls `spu.tick()`, so the gate passed. |
 | `801e0080` | `engine-vm/src/battle_scatter.rs` | FALSE-EDGE | `rotate_offset` renamed `scatter_rotate_offset`; the live `rotate_offset` is `engine-core::action_effect_script`'s same-named free function, which gained its first host caller when the effect-script walk was wired into the battle tick. |
 | `800198e0`, `80058298`, `80058490` | `engine-vm/src/title_prim.rs` | FALSE-EDGE | Module tag moved onto `exec_sprite_descriptor` / `exec_clear_image` / `exec_move_image`; the file was live through `Rect12::to_le_bytes`. |
-| `800468a4`, `80057914` | `engine-vm/src/vram_rect_copy.rs` | FALSE-EDGE | Module tag moved onto `enqueue` / `build_packet`, each with its own `NOT WIRED:`; the file is live through `op43_sub12_calls`, which no tag covers. |
+| `800468a4`, `80057914` | `engine-vm/src/vram_rect_copy.rs` | FALSE-EDGE | Module tag moved onto `enqueue` / `build_packet`, each with its own tag; the file was live through `op43_sub12_calls`, which no tag covered. Both helpers have a host now (`World::apply_vram_rect_copies`), so the split no longer hides an unwired half. |
 | `80053cb8` | `engine-vm/src/battle_formulas/stat_init.rs` | STALE-TAG | `LegaiaMinigames::muscle_player_fighter`, under a `#[wasm_bindgen]` root, calls `init_party_battle_stats`, which calls `equip_stat_bonuses`. |
 | `801d0750` | `engine-core/src/dance_tutorial.rs` | FALSE-EDGE | `countdown_frame` renamed `tutorial_countdown_frame`; the live `countdown_frame` is the Baka chrome's same-named free function. |
 | `801e5b4c` | `engine-vm/src/world_map_overlay.rs` | RESOLVED | `resolve_equip_slot` was already reached through `dev_equip_commit::commit_equip`. The rest of the address is now reached too: `equip_stat_panel` is the whole sub-draw and `baka_hub_actors::entry_list` calls it where retail's only `jal` sits. |

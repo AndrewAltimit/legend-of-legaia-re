@@ -377,6 +377,35 @@ A scene's own pack starts past the resident head - the five party / savepoint me
 
 **A byte sweep for TMD magic is not a substitute.** A scene block's bytes carry meshes the walk never registers - `town01`'s `field_pack` sibling, the boot `init_data` stream - so a sweep over-collects, and by an amount that depends on how far each entry is read. That made the sweep agree with the live 119-slot pool while the PROT entry size was over-read ([`prot.md`](prot.md)) and disagree once it was corrected: two errors cancelling, not a measurement. The engine walks the descriptors (`legaia-engine-core::scene_resources`, disc-gated `scene_mesh_pool_walk_disc`) and keeps the sweep only for blocks with no table at all - the v12-family dungeons, whose environment geometry is a standalone `lzs_container`.
 
+### A `type 0x0A` descriptor is a reserved slot, and one of them still has content
+
+Type `0x0A` is the dispatcher's pure-flag arm ([`asset-type.md`](asset-type.md)):
+`FUN_8001F05C` returns the sentinel `0xA00` and allocates nothing, decompresses
+nothing and registers nothing. So a descriptor carrying that type byte is a slot
+the walk **cannot** read, whatever its payload is, and the reason is one byte.
+
+Four bundles disc-wide carry one, always at descriptor 0 - the anchor slot the
+TIM list normally occupies:
+
+| entry | descriptor-0 payload |
+|---|---|
+| `0022_town0c`, `0348_town0d`, `0742_town0e` | 1,927 bytes of [pochi-fill](pochi.md), byte-identical across all three - a reserved-and-empty dev slot, which is what the type byte is for |
+| `0455_urudre1` | 343,480 bytes that decompress to a well-formed 85-member [`asset::pack`](pack.md), every member a PSX TIM |
+
+The odd one out is not authoring residue and not a scene-specific consumer
+outside the walk: it is a **second copy of a live asset**. Decompressing
+`0455`'s descriptor 0 and hashing it against `0456_urudre1.BIN` gives the same
+SHA-256 over all 343,480 bytes - the uncompressed entry is 344,064 bytes, the
+difference being sector padding. The scene's texture pack ships as its own PROT
+entry, which the asset-loader chain streams; the bundle's copy of it is
+switched off by its type byte and nothing ever reads it.
+
+That closes the question of who reads it: **nothing does, by construction.**
+There is no address to reference - the payload is disc data streamed by LBA, and
+the type `0x0A` arm never allocates a buffer for it to live in - so the answer
+had to come from the dispatcher's own arm and the byte identity, not from a
+reference scan.
+
 ## scene_scripted_asset_table - a shape retail does not have
 
 A composite that pairs a `[u16 count][u16 offsets[count]]` script prescript at offset 0 with a canonical 7-asset scene table at the next 0x800 sector boundary. Implementation: `crates/asset/src/scene_scripted_asset_table.rs`.

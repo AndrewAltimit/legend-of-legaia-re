@@ -52,15 +52,17 @@ fn precise_movement_walks_true_diagonals_at_full_speed() {
 
 #[test]
 fn precise_movement_honours_continuous_camera_azimuth() {
-    // Azimuth 512 units = 45 degrees. The quantised remap snaps that to
-    // quadrant 1 (screen-up -> +X only); precise mode rotates the screen
-    // vector continuously, so screen-up walks the true (+X, +Z) diagonal.
-    let drive = |precise: bool| -> (i16, i16) {
+    // The default path rings the held mask by whole eighth-turns (retail's
+    // `func_0x800467e8`); precise mode rotates the screen vector continuously.
+    // The contrast is therefore an azimuth the ring cannot express: 200 units
+    // is ~17.6 degrees, which rounds to ring step 0, so the rung walk is world
+    // `+Z` alone while the continuous walk leans into `+X` without reaching it.
+    let drive = |precise: bool, azimuth: u16| -> (i16, i16) {
         let mut world = World::new();
         world.mode = SceneMode::Field;
         world.install_field_player(0);
         world.locomotion.precise_movement = precise;
-        world.locomotion.camera_azimuth = 512;
+        world.locomotion.camera_azimuth = azimuth;
         world.actors[0].move_state.world_x = 400;
         world.actors[0].move_state.world_z = 400;
         for _ in 0..4 {
@@ -72,17 +74,18 @@ fn precise_movement_honours_continuous_camera_azimuth() {
             world.actors[0].move_state.world_z - 400,
         )
     };
-    let (qx, qz) = drive(false);
-    assert!(
-        qx > 0 && qz == 0,
-        "quantised: quadrant-1 snap walks +X only"
-    );
-    let (px, pz) = drive(true);
-    assert!(
-        px > 0 && pz > 0,
-        "precise: 45-degree azimuth walks +X and +Z"
-    );
-    assert_eq!(px, pz, "the two axes advance equally at 45 degrees");
+    let (qx, qz) = drive(false, 200);
+    assert!(qx == 0 && qz > 0, "rung: step-0 rounding walks +Z only");
+    let (px, pz) = drive(true, 200);
+    assert!(px > 0 && pz > px, "precise: a 17.6-degree lean into +X");
+
+    // 512 units is exactly 45 degrees, which the ring *can* express - and the
+    // rung path walks the same true diagonal precise mode does. That is the
+    // half of the eight-step ring the old 90-degree quantisation dropped: it
+    // snapped this azimuth to a quadrant and walked +X alone.
+    let (qx, qz) = drive(false, 512);
+    assert_eq!(qx, qz, "rung: a 45-degree camera walks the true diagonal");
+    assert!(qx > 0, "and it does move");
 }
 
 #[test]

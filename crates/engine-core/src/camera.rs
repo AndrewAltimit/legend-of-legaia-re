@@ -316,8 +316,24 @@ pub struct ZoneFollow {
     /// so a ramp write is recognised as a change rather than re-applied.
     ramp_seen: [i32; 4],
     /// Whether a script owned the camera on the previous tick - the
-    /// hand-back edge re-queries the tile (see [`Camera::tick_globals`]).
+    /// hand-back edge snaps (see [`Camera::tick_globals`]).
     prev_scripted: bool,
+    /// Camera-zone arms the field VM ran, moved off the world by
+    /// [`Camera::route_camera_events`] and applied by the next
+    /// [`Camera::zone_follow_tick`]. See
+    /// [`crate::world::camera_hooks`].
+    pending: Vec<crate::world::CameraZoneRequest>,
+    /// The camera's **visible tile window** (`0x1F8003E8..EB`, signed
+    /// tiles) as the focus edge clamp reads it. Seeded to the field default
+    /// and overwritten by a camera-region record's mask-kind side-write -
+    /// the four bytes [`crate::camera_zone::CameraZoneConfig::load_record`]
+    /// returns. Seeded per scene entry from
+    /// [`crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW`], replaced by a
+    /// camera-region record's mask-kind side-write
+    /// ([`Self::load_record`]) and by field-VM op `0x46`
+    /// ([`Camera::route_camera_events`]) - retail's order is seed, then
+    /// whichever of those the scene's script runs.
+    pub view_window: [i8; 4],
 }
 
 impl Default for ZoneFollow {
@@ -334,6 +350,11 @@ impl Default for ZoneFollow {
             reload_pending: true,
             ramp_seen: crate::register_ramp::CameraRegisterFile::DEFAULTS,
             prev_scripted: false,
+            pending: Vec::new(),
+            view_window: {
+                let (a, b, c, d) = crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
+                [a, b, c, d]
+            },
         }
     }
 }
@@ -342,7 +363,9 @@ impl ZoneFollow {
     /// Load one 18-byte camera-region record into the block (the op-`0x45`
     /// LOAD arm, `FUN_801DBC20(operand + 1)`).
     pub fn load_record(&mut self, rec: &[u8; crate::field_regions::ZONE_RECORD_STRIDE]) {
-        self.config.load_record(rec);
+        if let Some(w) = self.config.load_record(rec) {
+            self.view_window = w.map(|b| b as i8);
+        }
         self.loaded_record = Some(*rec);
         self.ramp_seen = crate::register_ramp::CameraRegisterFile::DEFAULTS;
     }
@@ -399,6 +422,11 @@ impl Camera {
     ///
     /// REF: FUN_801DE084
     pub fn route_camera_events(&mut self, world: &mut World) -> usize {
+        // The camera-zone arms of op `0x4C` (nibble-3 sub-8/9/D/E and
+        // nibble-C sub-4) queue on the world because the field VM's host is
+        // `World` while these globals live here. Both hosts call this right
+        // before `tick`, so this is the one drain point.
+        self.zone.pending.extend(world.take_camera_zone_requests());
         let mut applied = 0usize;
         let mut leftover = Vec::new();
         for ev in world.drain_field_events() {
@@ -525,6 +553,29 @@ impl Camera {
                     self.mode = CameraMode::Cinematic;
                     applied += 1;
                 }
+                // Op-`0x46` `VIEW_WINDOW`, both forms. Retail writes the same
+                // four scratchpad bytes `0x1F8003E8..EB` from either arm
+                // (`0x801DF2AC..0x801DF350` in the field overlay), and they
+                // are the camera's visible-tile window in `[E8, E9, EA, EB]`
+                // order - see docs/formats/encounter.md. The scene-entry
+                // primer seeds them, the script replaces them, and the focus
+                // edge clamp below widens the walk region by whatever is
+                // there, so the op has to land here rather than only on the
+                // event queue.
+                FieldEvent::ViewWindowLong { b1, b2, b3, b4 } => {
+                    self.zone.view_window = [b1 as i8, b2 as i8, b3 as i8, b4 as i8];
+                    applied += 1;
+                }
+                FieldEvent::ViewWindowShort { r, g, b, packed } => {
+                    // The short form is the same four bytes, already built by
+                    // the VM: a window of half-width `op0 >> 1` in X about
+                    // tile offset `-1` and `op1 >> 1` in Z about `+2`. The
+                    // field's own default window is this form's `(7, 8)` -
+                    // X `[-8, 6]`, Z `[-6, 10]` - which is where
+                    // `FIELD_DEFAULT_VIEW_WINDOW`'s asymmetry comes from.
+                    self.zone.view_window = [r as i8, g as i8, b as i8, packed as i8];
+                    applied += 1;
+                }
                 other => leftover.push(other),
             }
         }
@@ -631,15 +682,19 @@ impl Camera {
         // scripted owns the shot.
         let zone_scene = world.mode == crate::world::SceneMode::Field && has_field_terrain(world);
         if zone_scene {
-            // A scripted shot handing the camera back re-queries the tile
-            // and snaps. Retail's scripts do this themselves through the
-            // `[4C 39]` / `[4C 3E]` arms (query + `FUN_801DB8EC`), which is
-            // how every walkable post-opening state in the library holds a
-            // settled follow pose (live == staging) rather than an ease in
-            // flight from the cinematic shot; the port has no host hook for
-            // those arms, so the hand-back edge stands in for them.
+            // A scripted shot handing the camera back snaps. Retail's
+            // scripts do this themselves through the `[4C 39]` / `[4C 3E]`
+            // arms (`FUN_801DB8EC`), which is how every walkable
+            // post-opening state in the library holds a settled follow pose
+            // (live == staging) rather than an ease in flight from the
+            // cinematic shot. Those arms are wired now
+            // ([`crate::world::CameraZoneRequest`]); the hand-back edge
+            // stays as the port's backstop for a shot the script drops
+            // without one, and it snaps from the resident block rather than
+            // re-querying (retail's hand-back does not re-query either).
             if self.zone.prev_scripted && !scripted {
-                self.zone.arm_arrival();
+                self.zone.snap_pending = true;
+                self.zone.prev_player = None;
             }
             self.zone.prev_scripted = scripted;
             if !scripted && self.mode == CameraMode::Follow {
@@ -687,20 +742,28 @@ impl Camera {
     /// (compose), `FUN_801DB510` (ease) and `FUN_801DB8EC` (snap), all in
     /// [`crate::camera_zone`].
     ///
-    /// Retail's query is script-driven (`[4C 38]` / `[4C 39]` / `[4C C4]`,
-    /// plus the op-`0x45` LOAD record); the port re-queries the MAN
-    /// section-3 table whenever the player crosses a tile, which is where
-    /// those scripts fire in practice, and on scene entry. The four
-    /// op-`0x43` ramp registers are folded into the block as they change,
-    /// exactly the cells retail's ramps write.
+    /// Retail's query is **script-driven**, and so is the port's: the four
+    /// `0x4C` arms ([`crate::world::CameraZoneRequest`], queued by the field
+    /// VM and drained in [`Self::route_camera_events`]), the op-`0x45` LOAD
+    /// record, and the player-seat path - which retail runs in code at
+    /// `0x801D1FE8..0x801D2014` as exactly the `[4C 39]` sequence, and which
+    /// the port arms as [`ZoneFollow::arm_arrival`]. On top of those there
+    /// is retail's **per-frame** re-query at `0x801D17FC..0x801D1830`, gated
+    /// on scratchpad flag bit `22` ([`crate::world::ZONE_REQUERY_FLAG`]);
+    /// with the bit clear - its state on every mode entry, and in 109 of the
+    /// disc's 124 CDNAME scenes - the block simply stays put while the
+    /// player walks. The four op-`0x43` ramp registers are folded into the
+    /// block as they change, exactly the cells retail's ramps write.
     ///
-    /// The composer's floor sample reads the live elevation LUT; retail
-    /// swaps in the MAN's static copy, so a scripted floor-tier bob moves
-    /// the port's camera by `strength * bob / 8` pitch units where retail's
-    /// holds. The static copy is not kept on the world today.
+    /// The composer's floor sample reads the **static** elevation LUT
+    /// ([`World::sample_field_floor_height_static`]): `FUN_801DAB90`
+    /// swaps the MAN's own ladder (`*(_DAT_8007B898) + 2`, 16 negated
+    /// `short`s) into scratchpad `0x1F80035C` around its `FUN_80019278`
+    /// call and restores the live rungs after, so a scripted floor-tier bob
+    /// never shakes the camera.
     ///
     /// PORT: FUN_801DE3E0
-    /// REF: FUN_801DAB90, FUN_801DB510, FUN_801DB8EC, FUN_801DBE9C
+    /// REF: FUN_801DAB90, FUN_801DB510, FUN_801DB8EC, FUN_801DBE9C, FUN_801D1344
     fn zone_follow_tick(&mut self, world: &World, dt: i32) {
         use crate::camera_zone::{ComposeInputs, compose, ease_step, ease_step_i16, snap};
         use crate::field_regions::{RegionTable, refresh_region_attributes, zone_query};
@@ -717,39 +780,71 @@ impl Camera {
             i32::from(a.move_state.world_y),
             i32::from(a.move_state.world_z),
         );
+        // The player's tile in the two conventions retail uses: the seat
+        // path and every `0x4C` arm take `(coord - 0x40) >> 7` (the exact
+        // inverse of the tile-centre seat `tile * 0x80 + 0x40`), while the
+        // per-frame re-query at `0x801D1804..0x801D181C` takes
+        // `(coord + 0x40) >> 7` - one tile further on. Both are reproduced
+        // rather than unified, because they select different records along a
+        // region edge.
         let tile = ((x - 0x40) >> 7, (z - 0x40) >> 7);
+        let frame_tile = ((x + 0x40) >> 7, (z + 0x40) >> 7);
+        let requery_per_frame = world.camera_zone_requery_per_frame();
+        let pending = std::mem::take(&mut self.zone.pending);
         let zone = &mut self.zone;
 
-        // 1. The tile query (`FUN_801DE3E0`): the walk-region attribute box
-        //    plus the first zone record covering the tile, or the miss set.
+        // 1. The attribute box. Retail latches it in `FUN_800180EC`, which
+        //    runs from the sub-area rebuild sweep `FUN_80017DD4` (and from
+        //    the `[4C 3D]` arm); the port refreshes it whenever the player
+        //    changes tile, which is the same box on every library state.
+        let table = RegionTable::parse(&world.terrain.map_region_block);
         if zone.tile != Some(tile) || zone.reload_pending {
-            let table = RegionTable::parse(&world.terrain.map_region_block);
             let (_, attrs) = refresh_region_attributes(table.as_ref(), tile.0, tile.1, false);
             zone.attrs = attrs;
-            let hit = zone_query(
-                &world.terrain.zone_table,
-                table.as_ref(),
-                &attrs,
-                tile.0,
-                tile.1,
-            )
-            .and_then(|r| r.record)
-            .and_then(|r| <[u8; crate::field_regions::ZONE_RECORD_STRIDE]>::try_from(r).ok());
-            if zone.reload_pending || hit != zone.loaded_record {
-                match hit {
-                    Some(rec) => {
-                        zone.config.load_record(&rec);
-                    }
-                    None => zone.config.load_zone_miss(),
-                }
-                zone.loaded_record = hit;
-                zone.ramp_seen = CameraRegisterFile::DEFAULTS;
-            }
             zone.tile = Some(tile);
-            zone.reload_pending = false;
         }
 
-        // 2. Ramp registers (`FUN_80037018` stores through `+0x94`) land in
+        // 2. The zone query + block load (`FUN_801DE3E0`). Never on a bare
+        //    tile crossing: only on the seat / arrival, on a queued script
+        //    arm, or while the per-frame re-query flag is raised.
+        let load_at = |zone: &mut ZoneFollow, tx: i32, tz: i32| {
+            let attrs = zone.attrs;
+            let hit = zone_query(&world.terrain.zone_table, table.as_ref(), &attrs, tx, tz)
+                .and_then(|r| r.record)
+                .and_then(|r| <[u8; crate::field_regions::ZONE_RECORD_STRIDE]>::try_from(r).ok());
+            match hit {
+                Some(rec) => zone.load_record(&rec),
+                None => {
+                    zone.config.load_zone_miss();
+                    zone.loaded_record = None;
+                    zone.ramp_seen = CameraRegisterFile::DEFAULTS;
+                }
+            }
+        };
+        if zone.reload_pending {
+            load_at(zone, tile.0, tile.1);
+            zone.reload_pending = false;
+        } else if requery_per_frame {
+            load_at(zone, frame_tile.0, frame_tile.1);
+        }
+        for req in pending {
+            use crate::world::CameraZoneRequest as R;
+            match req {
+                R::QueryAtPlayer => load_at(zone, tile.0, tile.1),
+                R::QueryAtTile { x: tx, z: tz } => load_at(zone, i32::from(tx), i32::from(tz)),
+                R::QueryConformAndSnap => {
+                    load_at(zone, tile.0, tile.1);
+                    zone.snap_pending = true;
+                }
+                R::SnapAndClamp => zone.snap_pending = true,
+                R::RefreshAttributes => {
+                    let (_, a) = refresh_region_attributes(table.as_ref(), tile.0, tile.1, false);
+                    zone.attrs = a;
+                }
+            }
+        }
+
+        // 3. Ramp registers (`FUN_80037018` stores through `+0x94`) land in
         //    the block's own cells.
         if world.camera.registers.written() {
             for slot in RampSlot::ALL {
@@ -766,10 +861,12 @@ impl Camera {
             }
         }
 
-        // 3. Compose (`FUN_801DAB90`).
+        // 4. Compose (`FUN_801DAB90`).
         let inputs = ComposeInputs {
             player: [x, y, z],
-            floor_y: world.sample_field_floor_height(x, z),
+            // The static ladder, not the live one: the composer swaps the
+            // MAN's own rungs in around its floor sample.
+            floor_y: world.sample_field_floor_height_static(x, z),
             attr_box: zone.attrs.box_bytes,
             live_pitch: self.globals.0[0],
             live_yaw: self.globals.0[1],
@@ -781,7 +878,7 @@ impl Camera {
         }
         zone.target = composed.target;
 
-        // 4. Snap on arrival (`FUN_801DB8EC`), else ease on a frame the
+        // 5. Snap on arrival (`FUN_801DB8EC`), else ease on a frame the
         //    player moved (`FUN_801DB510`'s settle test).
         let moved = zone.prev_player != Some([x, y, z]);
         zone.prev_player = Some([x, y, z]);
@@ -818,6 +915,25 @@ impl Camera {
                 }
             }
         }
+
+        // 6. The focus edge clamp (`FUN_801DAA50`), which every retail
+        //    caller of the ease and the snap runs immediately after them.
+        //    Keeps the focus inside the latched walk region widened by the
+        //    camera's visible-tile window, so the lens never pans past a
+        //    room's edge. The script focus override (`_DAT_8007B628` /
+        //    `_DAT_8007B62A`) has no port-side writer yet, so it is passed
+        //    as "unset".
+        let clamped = crate::camera_zone::clamp_focus(
+            [g[6], g[8]],
+            zone.config.mode_nibble(),
+            zone.attrs.kind != 0,
+            zone.attrs.box_bytes,
+            zone.view_window,
+            world.party.scene_save_allowed,
+            [0, 0],
+        );
+        g[6] = clamped[0];
+        g[8] = clamped[1];
         zone.active = true;
     }
 

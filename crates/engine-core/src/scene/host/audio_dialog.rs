@@ -55,11 +55,22 @@ impl SceneHost {
         Ok(self.index.entry_bytes(entry).ok())
     }
 
-    /// First VAB-bearing entry in the scene, ready for parsing as a sound
-    /// bank. Mirrors the asset chain's "load the scene's bank before the
-    /// first sound plays" pre-pass. Returns `None` when no VAB-tagged
-    /// entries are in the scene.
-    pub fn scene_vab_bytes(&self) -> Result<Option<Arc<Vec<u8>>>> {
+    /// First VAB-bearing entry in the scene, with the byte offset of the
+    /// `pBAV` magic inside it. Mirrors the asset chain's "load the scene's
+    /// bank before the first sound plays" pre-pass. Returns `None` when no
+    /// VAB-tagged entry is in the scene.
+    ///
+    /// **The offset is not optional.** A `vab_entries` member is a
+    /// [`SceneVabStream`](legaia_asset::scene_vab_stream) - a DATA_FIELD
+    /// chunk stream whose chunk 0 carries the VAB's header part - so the
+    /// entry begins with a 4-byte chunk header and the bank begins at `+4`
+    /// (`docs/formats/vab.md`). No retail PROT entry begins with the magic
+    /// itself, so a caller that parses this buffer at offset 0 gets an error,
+    /// not a bank. Returning the pair makes that unmissable; the raw entry is
+    /// still what comes back, because
+    /// [`legaia_engine_audio::VabBank::upload`] resolves both the caller's
+    /// base convention and the real VAG-body origin off this same buffer.
+    pub fn scene_vab_bytes(&self) -> Result<Option<(Arc<Vec<u8>>, usize)>> {
         let Some(assets) = self.assets.as_ref() else {
             return Ok(None);
         };
@@ -67,7 +78,12 @@ impl SceneHost {
             return Ok(None);
         };
         let bytes = self.index.entry_bytes(entry_idx)?;
-        Ok(Some(bytes))
+        let vab_off = legaia_asset::scene_vab_stream::detect(&bytes)
+            .map(|s| s.vab_range().start)
+            .with_context(|| {
+                format!("PROT entry {entry_idx} is classed VAB-bearing but is not a VAB stream")
+            })?;
+        Ok(Some((bytes, vab_off)))
     }
 
     /// If the world has a pending dialog request and no panel is currently

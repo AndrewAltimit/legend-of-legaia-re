@@ -64,14 +64,15 @@ fn free_roam_field_clears_leaked_cinematic_camera_yaw() {
     // follow default before it computes `field_camera_azimuth`.
     session.tick().expect("field tick");
 
-    // Quadrant 0 (identity remap) - screen-up walks world +Z, not inverted.
-    // (`decode_field_direction` quantises `((azimuth + 512) / 1024) & 3`.)
+    // Ring step 0 (identity remap) - screen-up walks world +Z, not inverted.
+    // (`decode_field_direction` rings the held mask by
+    // `((azimuth + 0x100) >> 9) & 7`, retail's eighth-turn compass.)
     let azimuth = session.host.world.locomotion.camera_azimuth;
-    let quadrant = ((azimuth as u32 + 512) / 1024) & 3;
+    let rot = ((azimuth as u32 + 0x100) >> 9) & 7;
     assert_eq!(
-        quadrant, 0,
-        "free-roam field azimuth stays in quadrant 0 (got azimuth={azimuth}); \
-         a leaked cinematic yaw would land in quadrant 2 and invert the d-pad"
+        rot, 0,
+        "free-roam field azimuth stays on ring step 0 (got azimuth={azimuth}); \
+         a leaked cinematic yaw would land on step 4 and invert the d-pad"
     );
     assert_eq!(
         session.camera.yaw, 0.0,

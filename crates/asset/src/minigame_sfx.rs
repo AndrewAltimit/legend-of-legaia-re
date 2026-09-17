@@ -212,6 +212,12 @@ impl SfxCueBank {
             .vag_samples
             .get(atr.vag as usize - 1)
             .context("VAG index past the sample table")?;
+        // `parse`'s spans name the body chunk's 4-byte header rather than the
+        // first ADPCM block (`docs/formats/vab.md`), which is what
+        // `decode_vag_aligned`'s `{0, 4}` probe is for. The general resolver
+        // (`legaia_vab::vag_body_origin_at`) is only needed where another
+        // chunk sits between the header part and the bodies; this entry is not
+        // one of those, so the probe already lands on the real grid.
         let body = self
             .vab_bytes
             .get(span.byte_offset..span.byte_offset + span.size)

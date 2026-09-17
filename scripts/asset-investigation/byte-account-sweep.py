@@ -99,7 +99,12 @@ def account_one(asset_bin, path, prot_dir, funcs, depth):
         # run is an unwalked region; the same byte total spread over hundreds of
         # short runs is inter-record slack.
         "largest_residue": max((r.get("len", 0) for r in residue), default=0),
-        "residue_runs": len(residue),
+        # The report's `residue` LIST is capped (longest first, then truncated),
+        # so `len(residue)` is a ceiling and not a count: three entries read
+        # "64 runs" here for years because 64 is the cap. The report carries the
+        # real count in its own `residue_runs` field - take that, and fall back
+        # to the list length only for a report old enough not to have it.
+        "residue_runs": doc.get("residue_runs", len(residue)),
         "error": "",
     }
     for shape in SHAPES:

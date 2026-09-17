@@ -724,8 +724,17 @@ impl PlayWindowApp {
         ctx: &PauseMenuCtx<'_>,
     ) -> PauseMenuDraws {
         let names = legaia_engine_core::field_menu_dispatch::roster_names(&self.session.host.world);
-        let model =
-            legaia_engine_core::pause_screens::equip_screen_model(session, char_slot, &names);
+        // Item ids resolve through the world's own disc text tables, the
+        // same resolver the Items screen's rows use - without it the screen
+        // spells every candidate as a raw id.
+        let world = &self.session.host.world;
+        let text = |id: u8| legaia_engine_core::field_menu_dispatch::item_display_text(world, id);
+        let model = legaia_engine_core::pause_screens::equip_screen_model(
+            session,
+            char_slot,
+            &names,
+            Some(&text),
+        );
         equip_screen_compose(ctx, &equip_compose_input(&model, !ctx.chrome_present()))
     }
 
@@ -898,6 +907,15 @@ fn equip_compose_input(
         slot_cursor: m.slot_cursor,
         pictogram_rows: m.pictogram_rows,
         text_cursor,
+        info: m
+            .info
+            .as_ref()
+            .map(|i| legaia_engine_render::pause_menu::EquipInfoInput {
+                name: i.name.as_str(),
+                count: i.count,
+                desc: i.desc.as_str(),
+                passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+            }),
     }
 }
 

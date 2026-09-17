@@ -1914,6 +1914,9 @@ impl LegaiaRuntime {
         // `N HIT` / `TOTAL` counter cluster - off the resident effect atlas,
         // through the same `battle_numerals` builder the native window emits.
         prims.extend(self.battle_value_readout_prims());
+        // The dance count-in banner's retail sprite (`crate::play_dance_art`),
+        // off the dance hall's own HUD page while a dance owns the frame.
+        prims.extend(self.dance_countin_prims());
         // The world's one live full-screen fade (the summon band's two
         // flashes, the escape white-out) through the same `fade_prim` kernel
         // the native window composites it with.

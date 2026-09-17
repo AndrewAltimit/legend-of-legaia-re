@@ -1873,6 +1873,51 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::MenuRefresh);
     }
 
+    // The five camera-zone arms of op `0x4C` outer-nibble 3 / C. They queue
+    // on the world because the camera globals live on the host-owned
+    // `Camera`; `Camera::tick` drains the queue for both hosts. See
+    // `crate::world::camera_hooks`.
+    fn camera_zone_query_at_player(&mut self) {
+        self.world
+            .push_camera_zone_request(CameraZoneRequest::QueryAtPlayer);
+    }
+
+    fn camera_zone_query_at_tile(&mut self, x: u8, z: u8) {
+        self.world
+            .push_camera_zone_request(CameraZoneRequest::QueryAtTile { x, z });
+    }
+
+    fn camera_zone_query_conform_and_snap(&mut self, _ctx: &mut FieldCtx) {
+        // The arm's middle call, `FUN_80019278(player)` -> `player[+0x16]`:
+        // re-conform the footing to the floor under the tile the script just
+        // moved the player to, before the camera composes from it. The query
+        // and the snap are the queued half.
+        if let Some(slot) = self.world.player_actor_slot
+            && let Some(a) = self.world.actors.get(slot as usize)
+        {
+            let (x, z) = (
+                i32::from(a.move_state.world_x),
+                i32::from(a.move_state.world_z),
+            );
+            let y = self.world.sample_field_floor_height(x, z) as i16;
+            if let Some(a) = self.world.actors.get_mut(slot as usize) {
+                a.move_state.world_y = y;
+            }
+        }
+        self.world
+            .push_camera_zone_request(CameraZoneRequest::QueryConformAndSnap);
+    }
+
+    fn camera_snap_and_clamp(&mut self) {
+        self.world
+            .push_camera_zone_request(CameraZoneRequest::SnapAndClamp);
+    }
+
+    fn region_attributes_refresh_at_player(&mut self) {
+        self.world
+            .push_camera_zone_request(CameraZoneRequest::RefreshAttributes);
+    }
+
     // Op `0x4C` outer-nibble-3 sub-0 / sub-1: the ambient-particle master
     // gate `_DAT_8007B854`. Retail keeps it in one word that the emitter
     // re-reads every frame; the port keeps a copy on each live emitter
@@ -1977,6 +2022,18 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// FUN_8003CE9C (misaligned-u16 operand reads)
     fn op4c_n6_sub0_emitter6(&mut self, words: [i16; 6]) {
         self.world.queue_script_vram_move(words);
+    }
+
+    /// Op `0x43` sub-`0x12` - the GP0 `0x80` VRAM rectangle copy, after the
+    /// VM has resolved the arm's two-page split into one or two
+    /// `FUN_800468A4` calls. Queued on the world the same way the `4C 60`
+    /// `MoveImage` family is; [`World::apply_vram_rect_copies`] runs each
+    /// call through the retail enqueue and executes the resulting packet
+    /// against the host's software VRAM.
+    ///
+    /// REF: FUN_800468a4 (the enqueue the drain runs each call through)
+    fn op43_vram_rect_copy(&mut self, calls: &[vm::vram_rect_copy::RectCopyCall]) {
+        self.world.queue_vram_rect_copies(calls);
     }
 
     /// Op `0x4C 0x82 <slot>` - full HP/MP restore of one party slot.

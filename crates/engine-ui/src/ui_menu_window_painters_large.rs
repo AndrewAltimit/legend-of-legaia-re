@@ -384,15 +384,22 @@ pub struct EquipComparePanelView<'a> {
 /// the Equip screen's compare block from `FUN_801D21C0` (window 22's own
 /// Best-Equipment pass) rather than from window 25's separate panel.
 ///
-/// NOT WIRED: the blocking capability is the **equip window set**, the same
-/// one that blocks window 24 ([`crate::ui_menu_window_painters::count_panel_draws_for`]).
-/// Retail's Equip screen opens windows 2 / 24 / 25 from one script
-/// (`0x801E4DC8`, sub-screen `0x13` / `FUN_801D9C14`); the port's equip flow
-/// (`legaia_engine_core::equip_session`) is built on the capture-pinned set
-/// 2 / 21 / 22 / 23, and window 25's rect `(14, 40, 144, 52)` overlaps the
-/// party window 21 it would have to replace. Adopting this painter means
-/// moving the whole screen onto the descriptor-table layout, not adding a
-/// draw call. Waived in `scripts/ci/ui-host-drift-waivers.toml`.
+/// NOT WIRED: the blocking capability is the **stat blocks**, not the screen's
+/// NOT WIRED: layout. This view wants the live and trial-equip blocks
+/// NOT WIRED: (`0x801EF080` / `0x801EF0A0`, eight words each), the record's
+/// NOT WIRED: own HP / MP maxima and the compare **category** that picks which
+/// NOT WIRED: three rows print; `equip_screen_model` publishes three
+/// NOT WIRED: `(label, current, preview)` triples instead, which is all
+/// NOT WIRED: window 22's own Best-Equipment pass needs. Closing it means
+/// NOT WIRED: `equip_session` publishing the blocks + category - the field
+/// NOT WIRED: list already materialises through [`compare_panel_draws_for`],
+/// NOT WIRED: which the shop's window 41 reaches. (The previous reason -
+/// NOT WIRED: "the equip screen would have to move onto the descriptor-table
+/// NOT WIRED: layout" - was wrong: script `0x801E4DC8` belongs to sub-screen
+/// NOT WIRED: `0x14`, the candidate step, and opens windows 24 and 25 on top
+/// NOT WIRED: of the browse step's four. Window 24 is drawn on exactly those
+/// NOT WIRED: terms now, on both hosts.) Waived in
+/// NOT WIRED: `scripts/ci/ui-host-drift-waivers.toml`.
 pub fn equip_compare_panel_fields(
     view: &EquipComparePanelView<'_>,
     pen: (i32, i32),

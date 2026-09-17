@@ -903,7 +903,8 @@ pub fn encode_insn(text: &str) -> Option<u32> {
 /// Verdict of comparing a dump's printed instructions to an image's bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Attribution {
-    /// At least one printed instruction re-encodes to the image's word there.
+    /// At least one printed instruction re-encodes to a **non-zero** word that
+    /// the image carries there.
     Confirmed,
     /// A printed instruction re-encodes to a different word: the extent's
     /// bytes are not this image's.
@@ -913,11 +914,24 @@ pub enum Attribution {
 }
 
 /// Compare a dump's head instructions against `image` loaded at `base_va`.
+///
+/// A match on the word `0x00000000` is **not** evidence. `nop` is in the
+/// encodable grammar and encodes to zero, so a dump whose head is `nop` agrees
+/// with any zero fill in any image at any base - and the corpus contains such
+/// dumps, taken over a sibling image's own zero region. One of them
+/// (`FUN_801d84b4`, 4646 printed `nop`s) confirmed a 20060-byte extent inside
+/// entry `0970`'s 131172-byte zero hole and carried most of that entry's
+/// reported code share. A zero match therefore counts for nothing: the verdict
+/// needs one printed instruction that re-encodes to a non-zero word the image
+/// really carries.
+///
+/// A mismatch is still a refutation whatever the word, because a *difference*
+/// is informative where an agreement with fill is not.
 pub fn attribute(dump: &DumpExtent, image: &[u8], base_va: u32) -> Attribution {
     let Some(off) = dump.entry_va.checked_sub(base_va).map(|v| v as usize) else {
         return Attribution::Unverifiable;
     };
-    let mut seen = false;
+    let mut seen_nonzero = false;
     for (i, text) in dump.head_insns.iter().enumerate() {
         let Some(want) = encode_insn(text) else {
             continue;
@@ -929,9 +943,9 @@ pub fn attribute(dump: &DumpExtent, image: &[u8], base_va: u32) -> Attribution {
         if u32::from_le_bytes(w.try_into().unwrap()) != want {
             return Attribution::Refuted;
         }
-        seen = true;
+        seen_nonzero |= want != 0;
     }
-    if seen {
+    if seen_nonzero {
         Attribution::Confirmed
     } else {
         Attribution::Unverifiable
@@ -1334,6 +1348,7 @@ fn walk_stream(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth: u8) {
         }
         if s.tail_terminated {
             sink.claim(s.tail_end - 4, s.tail_end, OWNER_HEADER, "terminator");
+            claim_last_sector_slack(buf, sink, s.tail_end, "slack past the terminator");
         }
         return;
     }
@@ -1350,10 +1365,13 @@ fn walk_stream(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth: u8) {
         let end = start + 4 + ((c.size as usize) & !3);
         sink.claim(start, start + 4, OWNER_HEADER, format!("chunk {i} header"));
         let t = AssetType::from_byte(c.type_byte);
+        let owner = buf
+            .get(start + 4..end.min(buf.len()))
+            .map_or_else(|| payload_owner(t), |p| payload_owner_of(t, p));
         sink.claim(
             start + 4,
             end,
-            payload_owner(t),
+            owner,
             format!("chunk {i} {} ({} B)", c.type_name, c.size),
         );
         if let Some(p) = buf.get(start + 4..end.min(buf.len())) {
@@ -1373,6 +1391,7 @@ fn walk_stream(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth: u8) {
             OWNER_HEADER,
             "terminator",
         );
+        claim_last_sector_slack(buf, sink, rep.bytes_consumed, "slack past the terminator");
     } else {
         sink.note(format!(
             "stream unterminated after {} chunks ({} B consumed)",
@@ -1389,6 +1408,23 @@ fn payload_owner(t: AssetType) -> &'static str {
         AssetType::Anm => OWNER_ANM,
         AssetType::Man => OWNER_SCRIPT,
         _ => OWNER_RECORD,
+    }
+}
+
+/// The owner for a chunk payload, preferring the payload's **own** magic over
+/// the chunk header's type byte.
+///
+/// The two disagree on this disc: the standalone BGM streams carry their SEQ
+/// behind a type-`0x02` header, which [`payload_owner`] would read as a TMD
+/// and label `tmd`. The type byte selects the runtime's handler; the magic
+/// says what the bytes are, and an owner names what the bytes are.
+fn payload_owner_of(t: AssetType, payload: &[u8]) -> &'static str {
+    match legaia_bytes::u32_le(payload, 0) {
+        Some(0x0000_0010) => OWNER_TIM,
+        Some(0x8000_0002) => OWNER_TMD,
+        Some(0x5641_4270) => OWNER_VAB,
+        _ if payload.starts_with(b"pQES") => OWNER_SEQ,
+        _ => payload_owner(t),
     }
 }
 
@@ -1413,6 +1449,119 @@ fn walker_for_payload(buf: &[u8]) -> Walker {
     }
 }
 
+// --- fixed-stride streaming slots -----------------------------------------
+
+/// Claim the trailing fill of one fixed-stride streaming slot as [`OWNER_PAD`].
+///
+/// Three archives on this disc are a flat array of fixed-size slots that the
+/// runtime transfers **whole**, content length or not:
+///
+/// - the monster archive (`0867`), `0x14000` per slot: the battle loader
+///   `FUN_800542C8` seeks `(id-1) * 0x14000` bytes (`sll v0,v1,0x2; addu
+///   v0,v0,v1; sll v0,v0,0xe` at `0x80054524`) and reads `0x28` sectors
+///   (`li a1,0x28` at `0x80054608`, `jal 0x8003E800`), then hands the LZS
+///   decoder `slot + 4` - so the decoder stops at its own terminator and the
+///   rest of the transferred window is never interpreted.
+/// - `summon.dat` / `readef.DAT` (`0893` / `0894`), `0x10800` per slot: the
+///   streaming SM `FUN_801F17F8` seeks `slot * 33 * 0x800` (`sll a1,v0,0x5;
+///   addu a1,a1,v0; sll a1,a1,0xb` at `0x801F1948`) and reads `0x10800` bytes
+///   (`lui a2,0x1; ori a2,a2,0x800` at `0x801F1958`/`0x801F1970` ->
+///   `FUN_800559EC`, which divides by `0x800` for the sector count).
+///
+/// Every one of the three file extents is an exact multiple of its stride, so
+/// the slot boundary is a declared bound rather than an inferred one, and the
+/// bytes between a slot's content and that bound are the [`OWNER_PAD`]
+/// definition verbatim - the same reading the multi-bank VAB's sector slack
+/// gets.
+///
+/// The claim starts where the fill starts, not where the walker stopped: only
+/// the slot's maximal all-zero **suffix** is claimed. That is the guard rail.
+/// Claiming the whole gap unconditionally would absorb a walker that stopped
+/// early inside real content, and the instrument would gain percentage points
+/// by redefining itself instead of by reading the disc.
+fn claim_slot_fill(buf: &[u8], sink: &mut Sink, start: usize, end: usize, detail: String) {
+    let Some(slot) = buf.get(start..end.min(buf.len())) else {
+        return;
+    };
+    let mut fill = slot.len();
+    while fill > 0 && slot[fill - 1] == 0 {
+        fill -= 1;
+    }
+    // An entirely-zero slot is not a tail; leave it visible as residue.
+    if fill == 0 || fill == slot.len() {
+        return;
+    }
+    sink.claim(start + fill, start + slot.len(), OWNER_PAD, detail);
+}
+
+/// Shortest internal all-zero run that gets its own residue entry.
+const FILL_SPLIT_BYTES: usize = 2048;
+
+/// Cut a residue run wherever a sector or more of fill sits inside it.
+///
+/// A residue run's boundaries are drawn by the *claims* around it, so a region
+/// that is one kilobyte of content followed by a hundred kilobytes of fill
+/// arrives as a single run - and the shape vocabulary then has to name the
+/// whole thing with one word. It picks `ascii_text`, because that test counts
+/// NUL as printable and one non-zero byte disqualifies `zero_pad`, so the fill
+/// lands in `work_bytes` as if it were an unwalked string pool. Entry `0970`'s
+/// 131172-byte hole did exactly that.
+///
+/// Splitting is not reclassifying: each piece still gets whatever shape its own
+/// bytes earn, and the total residue is unchanged. It only stops one run from
+/// being two findings glued together. The bound is a sector, so inter-record
+/// zeros stay attached to the run they belong to.
+fn split_off_fill(buf: &[u8], gaps: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
+    let mut out = Vec::with_capacity(gaps.len());
+    for (a, b) in gaps {
+        let Some(s) = buf.get(a..b) else {
+            out.push((a, b));
+            continue;
+        };
+        let mut cut = a;
+        let mut i = 0usize;
+        while i < s.len() {
+            if s[i] != 0 {
+                i += 1;
+                continue;
+            }
+            let mut j = i;
+            while j < s.len() && s[j] == 0 {
+                j += 1;
+            }
+            if j - i >= FILL_SPLIT_BYTES {
+                if a + i > cut {
+                    out.push((cut, a + i));
+                }
+                out.push((a + i, a + j));
+                cut = a + j;
+            }
+            i = j;
+        }
+        if b > cut {
+            out.push((cut, b));
+        }
+    }
+    out
+}
+
+/// Claim what is left of a PROT entry's **last sector** past a declared end.
+///
+/// A PROT entry's extent is sector-granular ([`prot.md`](https://andrewaltimit.github.io/legend-of-legaia-re/formats/prot.html):
+/// `toc[p+3] - toc[p+2]`) while the container inside it declares its own end -
+/// a stream terminator, a length word. What lies between the two is the
+/// builder's sector buffer, and nothing addresses it: the reader stops at the
+/// declared end and the next entry starts at the next sector.
+///
+/// The bound is deliberately one sector. A remainder of a sector or more is a
+/// second region, not slack, and stays residue so it keeps ranking as work.
+fn claim_last_sector_slack(buf: &[u8], sink: &mut Sink, end: usize, detail: &'static str) {
+    const SECTOR: usize = 2048;
+    if end < buf.len() && buf.len() - end < SECTOR {
+        sink.claim(end, buf.len(), OWNER_PAD, detail);
+    }
+}
+
 // --- monster archive (PROT 0867) ------------------------------------------
 
 fn walk_monster_archive(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth: u8) {
@@ -1420,8 +1569,21 @@ fn walk_monster_archive(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, dept
     let slots = buf.len() / SLOT_STRIDE;
     let mut populated = 0usize;
     let mut raw_tims = 0usize;
+    let mut fill_slots = 0usize;
     for id in 1..=slots {
         let slot = (id - 1) * SLOT_STRIDE;
+        // The loader transfers the whole 0x14000-byte slot whatever the block
+        // costs; everything past the LZS stream's own terminator is declared
+        // slack. See `claim_slot_fill`.
+        let before = sink.claims.len();
+        claim_slot_fill(
+            buf,
+            sink,
+            slot,
+            slot + SLOT_STRIDE,
+            format!("slot {id} fill past the block"),
+        );
+        fill_slots += usize::from(sink.claims.len() > before);
         let Some(dec_size) = legaia_bytes::u32_le(buf, slot).map(|v| v as usize) else {
             continue;
         };
@@ -1468,7 +1630,8 @@ fn walk_monster_archive(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, dept
     }
     sink.note(format!(
         "{populated} of {slots} {SLOT_STRIDE:#x}-byte slots carry a decodable block; \
-         {raw_tims} carry a raw TIM at the slot head instead"
+         {raw_tims} carry a raw TIM at the slot head instead; \
+         {fill_slots} end in fill the loader transfers and never reads"
     ));
 }
 
@@ -1570,8 +1733,20 @@ fn walk_summon_readef(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth:
         return;
     };
     let (mut tex, mut actor, mut me, mut raw) = (0, 0, 0, 0);
+    let mut fill_slots = 0usize;
     for s in &f.slots {
         let base = s.index * SLOT_BYTES;
+        // Both files stream in whole `0x10800` slots whatever the slot holds;
+        // the tail fill is declared slack. See `claim_slot_fill`.
+        let before = sink.claims.len();
+        claim_slot_fill(
+            buf,
+            sink,
+            base,
+            base + SLOT_BYTES,
+            format!("slot {} fill past the content", s.index),
+        );
+        fill_slots += usize::from(sink.claims.len() > before);
         match &s.kind {
             SlotKind::Texture(t) => {
                 tex += 1;
@@ -1697,7 +1872,8 @@ fn walk_summon_readef(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth:
         }
     }
     sink.note(format!(
-        "{} slots: {tex} texture, {actor} actor record, {me} ME archive, {raw} unclassified",
+        "{} slots: {tex} texture, {actor} actor record, {me} ME archive, {raw} unclassified; \
+         {fill_slots} end in fill the stream SM transfers and never reads",
         f.slots.len()
     ));
 }
@@ -2544,12 +2720,25 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
         None => false,
     };
     let (mut confirmed, mut refuted, mut ambiguous, mut credited_by_label) = (0, 0, 0, 0);
+    let mut fill_extents = 0usize;
     for d in &dumps {
         if (d.entry_va as u64) < base as u64 || (d.entry_va as u64) >= hi {
             continue;
         }
         let start = (d.entry_va - base) as usize;
         let end = (start + d.bytes as usize).min(buf.len());
+        // A dump over an image's zero region is in the corpus (one is 4646
+        // printed `nop`s) and its extent is fill, not code, in whatever image
+        // it is checked against - including the one its filename names. Never
+        // credit an all-zero extent as `code`: the shape classifier will call
+        // the run `zero_pad`, which is what it is.
+        if buf
+            .get(start..end)
+            .is_some_and(|w| w.iter().all(|&b| b == 0))
+        {
+            fill_extents += 1;
+            continue;
+        }
         match attribute(d, buf, base) {
             Attribution::Confirmed => {
                 confirmed += 1;
@@ -2576,7 +2765,7 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     sink.note(format!(
         "base {:#010x} ({}); {confirmed} extents confirmed by bytes, \
          {credited_by_label} credited by filename label, {ambiguous} unverifiable, \
-         {refuted} refuted (aliased sibling)",
+         {refuted} refuted (aliased sibling), {fill_extents} land on fill",
         base, rec.label
     ));
     claim_pinned_overlay_assets(buf, sink, idx);
@@ -2785,8 +2974,29 @@ pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
         Class::SeqContainer => Walker::Seq,
         Class::AnmContainer => Walker::Anm,
         Class::MipsOverlay | Class::OverlayPtrTable => Walker::OverlayCode,
+        // Last resort before the magic sweep: a buffer whose own bytes walk to
+        // a DATA_FIELD terminator IS a chunk stream, whatever class fired on
+        // it. One retail entry (`1062`, a standalone BGM SEQ behind a single
+        // `(type << 24) | len` header) reaches this arm; the rest of the
+        // `Generic` population is all-zero filler and the un-based `0896`,
+        // neither of which walks.
+        _ if walks_as_chunk_stream(buf) => Walker::Stream,
         _ => Walker::Generic,
     }
+}
+
+/// Does this buffer walk to a DATA_FIELD stream terminator?
+///
+/// The test is the walk itself, not a magic: every chunk header's payload must
+/// fit inside the buffer, the walk must reach a zero-size header, and it must
+/// have consumed at least one chunk (an all-zero buffer terminates on its first
+/// word without consuming anything). Sector padding past the terminator is
+/// allowed - that is what the rest of the last sector always is.
+fn walks_as_chunk_stream(buf: &[u8]) -> bool {
+    let Ok(rep) = parse_streaming(buf, 64) else {
+        return false;
+    };
+    rep.terminated && !rep.chunks.is_empty() && rep.bytes_consumed <= buf.len()
 }
 
 fn dispatch(buf: &[u8], walker: Walker, sink: &mut Sink, opts: &AccountOptions, depth: u8) {
@@ -2920,7 +3130,7 @@ fn run(
         .collect();
     by_owner.sort_by_key(|o| std::cmp::Reverse(o.bytes));
 
-    let gaps = complement(&merged, size);
+    let gaps = split_off_fill(buf, complement(&merged, size));
     let mut runs: Vec<Residue> = gaps
         .iter()
         .map(|&(a, b)| {
@@ -3361,6 +3571,36 @@ mod tests {
         assert_eq!(
             attribute(&quiet, &img, 0x801C_E818),
             Attribution::Unverifiable
+        );
+
+        // A `nop`-headed dump agrees with zero fill in every image at every
+        // base, so agreement carries no information. The corpus has such
+        // dumps, taken over a sibling image's own zero region, and one of them
+        // used to confirm a 20060-byte extent inside a 131172-byte hole.
+        let nops = DumpExtent {
+            head_insns: vec!["nop".into(), "nop".into(), "nop".into()],
+            ..dump.clone()
+        };
+        assert_eq!(
+            attribute(&nops, &[0u8; 0x40], 0x801C_E818),
+            Attribution::Unverifiable,
+            "matching only zero words is not a confirmation"
+        );
+        // A real instruction beside the zeros still decides it.
+        let mixed = DumpExtent {
+            head_insns: vec!["nop".into(), "addiu sp,sp,-0x18".into()],
+            ..dump.clone()
+        };
+        let mut with_code = vec![0u8; 4];
+        with_code.extend_from_slice(&0x27BD_FFE8u32.to_le_bytes());
+        assert_eq!(
+            attribute(&mixed, &with_code, 0x801C_E818),
+            Attribution::Confirmed
+        );
+        // And a mismatch is still a refutation, zero word or not.
+        assert_eq!(
+            attribute(&mixed, &[0u8; 0x40], 0x801C_E818),
+            Attribution::Refuted
         );
     }
 

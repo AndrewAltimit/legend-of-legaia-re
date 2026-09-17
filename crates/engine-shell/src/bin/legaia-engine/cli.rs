@@ -805,8 +805,11 @@ pub(crate) enum Cmd {
     /// Accepts keyboard input (arrows = D-pad, Z = Cross, Esc = quit).
     ///
     /// Camera + movement keys: left-mouse drag orbits the field camera
-    /// around the player (the movement compass follows the orbited view,
-    /// so "up" always walks away from the camera); `T` cycles the camera
+    /// around the player (horizontal) and pitches the debug vantage
+    /// (vertical), and the wheel zooms it - the same three knobs, at the
+    /// same rates, the browser play page's camera takes. The movement
+    /// compass follows the orbited view, so "up" always walks away from the
+    /// camera. `T` cycles the camera
     /// distance preset (retail / far / farther - default `far`, persisted
     /// in `legaia-options.toml`); `R` toggles precise free-angle movement
     /// (non-retail; true key diagonals + continuous analog angles,

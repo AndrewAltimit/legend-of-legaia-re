@@ -261,6 +261,32 @@ zone loader's scratchpad side-write at `0x1F8003E8..EB`
 whose four readers were recorded as "consumer Unknown" for exactly as long as
 the only sweep available could not see a `0xd4(a0)`.
 
+## A third shape: the reader that carries no address at all
+
+Some globals have no reader either sweep can find, because the consumer never
+names them. The GTE's light matrix is the worked case: a render routine stages
+control registers 8..12 with `ctc2`, and the *reader* is the coprocessor
+itself - the `NCS` / `NCT` / `NCDS` / `NCDT` / `NCCS` / `NCCT` commands, and
+`MVMVA` when its `mx` field selects matrix 1, all multiply an input normal by
+that matrix with no operand naming it. Both sweeps on this page report zero
+readers, correctly and uselessly.
+
+The instrument for that shape is a census of **opcodes** rather than of
+references: [`find-gte-light-consumers.py`](../../scripts/ghidra-analysis/find-gte-light-consumers.py)
+sweeps SCUS plus every based overlay image for GTE command words, tallies them
+by function selector, and lists every light-matrix consumer with its image and
+VA. Its caveat is the mirror of the five-form scan's: a GTE command word is
+four bytes with no relocation, so it occurs in data at the rate any four-byte
+pattern does, and the discriminator is structural - the GTE takes no memory
+operands, so a real command sits among the `lwc2` / `mtc2` / `mfc2` / `swc2`
+moves that feed and drain it. Data hits have no distinct COP2 neighbours; real
+ones have several.
+
+The generalisable question to ask before either sweep: **does the consumer of
+this word name it?** A `gp` displacement, a `lui`+load pair and a base plus
+displacement all do, in different encodings. A coprocessor control register
+does not, and neither does anything else the hardware reads implicitly.
+
 ## The retail-unreachable set
 
 Sweeping every anchor the port catalog's audit lists as *disclosed inert* -
