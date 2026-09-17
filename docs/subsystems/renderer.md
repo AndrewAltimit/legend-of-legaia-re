@@ -103,17 +103,22 @@ Two numbers make that a bounded answer rather than an absence. `MVMVA` can also
 select the light matrix, through its `mx` field - the one consumer a normal-
 colour census would miss - and disc-wide **no** `MVMVA` does: 29 select the
 rotation matrix, one the colour matrix, none the light matrix. And the sweep's
-denominator is non-empty by its own count, 257 GTE command words in code across
-84 images. So the consumer set is exactly the four handlers, and the capture
-evidence above says no observed field frame enters them.
+denominator is non-empty by its own count, 238 GTE command words in code across
+84 based images (2,074,624 bytes). So the consumer set is exactly the four
+handlers, and the capture evidence above says no observed field frame enters
+them.
 
 The sweep's own trap is worth carrying: a GTE command word is four bytes with no
 relocation, so it occurs in data at the rate any four-byte pattern does. Raw
 hits included `"ATK "` inside a menu string and two words of PROT 0899's data
 segment. The discriminator is structural rather than statistical - the GTE takes
 no memory operands, so a real command is packed among the `lwc2` / `mtc2` /
-`mfc2` / `swc2` moves that feed and drain it, and the two data hits had **zero**
-distinct COP2 neighbours where every real one had five to eight.
+`mfc2` / `swc2` moves that feed and drain it, and the data hits had **zero or
+one** distinct COP2 neighbour where every real one had five to eight. A run of
+one repeated word is the other shape that fakes company, so the count is of
+*distinct* encodings: PROT 0895's data segment carries five identical
+`cfc2`-shaped words in a row, each of which would otherwise vouch for the next.
+Thirty-seven GTE-shaped words fail one of the two filters.
 
 Why the earlier evidence looked open, and two instrument caveats. A lone prior
 `town01` capture (~31 K interp hits) showed the kind-11 NCC body and the fog bodies
