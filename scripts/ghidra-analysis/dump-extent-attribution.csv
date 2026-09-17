@@ -9,7 +9,7 @@ entry,bytes,image,class,reason
 801ce8ec,620,other2_dev(973),unique,own content of other2_dev(973) reproduces the 24-instruction window at this VA (content_bytes cut)
 801ce97c,2492,debug_menu(971),unique,own content of debug_menu(971) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
 801ce9c0,784,boot_init_pak(895),unique,own content of boot_init_pak(895) reproduces the 24-instruction window at this VA (content_bytes cut)
-801ce9c4,324,-,unresolved,no extracted image holds these bytes at this VA or anywhere - RAM-capture-derived or an un-extracted overlay
+801ce9c4,324,monster_test(981),unique,own content of monster_test(981) reproduces the 24-instruction window at this VA (inherited_tail(dance) cut)
 801cea3c,1520,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
 801cea3c,1628,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
 801ceac4,68,arena_init(977),unique,own content of arena_init(977) reproduces the 17-instruction window at this VA (inherited_tail(baka_fighter) cut)

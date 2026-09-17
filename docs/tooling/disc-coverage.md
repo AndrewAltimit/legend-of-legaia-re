@@ -787,6 +787,45 @@ The middle row is the one with a route forward, and it is the
 [static overlay pipeline](static-overlay-pipeline.md)'s job rather than this
 page's.
 
+#### An un-imaged overlay is charged to every sibling that maps its bytes
+
+That middle row is worth more than one image's coverage, and the arithmetic is
+why. An overlay with no extracted image is outside this measurement entirely -
+it has no row, so nothing here is short on its account. Its bytes are not
+outside it: a dump of them prints a VA that lands inside **every** sibling span
+mapping the same address, and with no image to reproduce the window the extent
+resolves to nobody. It stays residue, and residue is ambiguous for all of them
+at once. Every image `static-overlays.toml` maps onto `0x801CE818` carries such
+an extent in its ambiguous set, so one of them holds down the whole slot-A
+band's floors together.
+
+Extracting the missing image resolves it in one step and every one of those
+floors rises together. The worked case is the 324-byte extent at
+`0x801CE9C4`: `unresolved` - "no extracted image holds these bytes at this VA
+or anywhere" - until PROT 0981 (`monster_test`) has an image, and `unique` to
+that image afterwards, which lifts the slot-A band from the field and menu
+overlays down to the minigame images, several of them by more than a point.
+
+The **upper** bound moves the other way, and that is not a loss:
+
+- an extent the bytes assign to another image leaves this row's numerator
+  *and* its denominator - it was never this image's, so it is neither covered
+  here nor counted against it;
+- removing equal byte counts from both sides of a ratio already at 1.0 leaves
+  it at 1.0, and lowers any ratio below it. A row at `100.0%` does not move; a
+  row with a code gap of its own gives back a fraction of a point.
+
+So the same extraction that raises a floor can print a hundredth of a point off
+the upper bound beside it. That is the ambiguity being spent, not coverage
+being lost - the mirror of the attribution-lag case below, where a floor falls
+because a *dump* landed with no row yet. Both are one piece of arithmetic seen
+from opposite ends, and neither is a regression to chase.
+
+One consequence for the bytes-derived worklist: while an overlay has no image,
+its own un-dumped code runs are not on it either. "No un-dumped code run
+reaches 64 bytes" is a statement about the imaged set, and an extraction is
+what converts it into a statement about the disc - usually by adding rows.
+
 There was a fourth shape, and it was a **defect in the comparison, not a fact
 about the corpus**: a dump whose opening window contains GTE (COP2) ops landed
 in that middle row no matter which image it came from. The canonicaliser both
@@ -1018,10 +1057,15 @@ band's parameter tails: a cast module's spawn records sit above its last
 function and hold neither delimiter word, and they were ranked as work across
 27 of the band's images.
 
-**Do not sum the worklist across images.** Nineteen overlays load at
-`0x801CE818` and thirteen at `0x801F69D8`, so the same VA appears under several
-headings holding *different* bytes each time. Each is real work; the total is not
-a total.
+**Do not sum the worklist across images.** Both overlay slots are shared by
+many images - `0x801CE818` by the slot-A band, `0x801F69D8` by the whole slot-B
+cast band - so the same VA appears under several headings holding *different*
+bytes each time. Each is real work; the total is not a total. The per-base
+tallies live in the report's own base column and in `undumped-runs.csv`'s
+`spans_at_start`, which are recomputed per run; the same sentence in
+`disc-coverage.py`'s emitted worklist carries them as literal words instead,
+and an extraction that adds an image moves the real figure and not that
+sentence.
 
 ## Running it
 
@@ -1084,8 +1128,8 @@ That is not a worktree artifact and it is not rare. Both files are committed and
 the corpus is not, so the CSV lags the corpus in the main checkout too - nobody
 regenerates the attribution per dump - and any tree whose dumps have moved ahead
 of its CSV shows the same thing across every image the new dumps' VAs land in.
-A slot-A dump lands in nineteen spans at once, so one dump can push nine rows
-below their baselines together.
+A slot-A dump lands in every slot-A span at once, so one dump can push most of
+the band below its baselines together.
 
 So `--check` triages a floor drop before it fails it. For each regressed
 `code_floor` key it re-measures that image over the corpus the CSV *does* know
