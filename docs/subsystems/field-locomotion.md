@@ -401,10 +401,39 @@ the live pad path is a separate step.
 
 The camera-relative pad remap that feeds it (`func_0x800467e8`, the
 `gp+0x2d8` eighth-turn rotation over the 8-direction ring `DAT_800766fc`)
-is ported as `World::remap_pad_direction`. It is the faithful **45°**
-remap; `World::decode_field_direction`'s 90°-quantised screen-vector
-rotation agrees with it for the axis-aligned cameras every retail field
-scene uses.
+is ported as `World::remap_pad_direction`, and it is what the port's live
+pad path walks on: `World::decode_field_direction` builds retail's raw
+direction nibble from the held keys and rings it, so the port's remap is
+the faithful **45°** one rather than a 90° screen-vector rotation.
+
+### `gp+0x2D8` is authored, not computed
+
+The rotation index is **not** derived from the camera anywhere in retail.
+Its writers disc-wide are two, and both are content:
+
+| Writer | Form |
+|---|---|
+| Field VM op `0x4C` outer nibble `2`, arm `0x801E0EB8` in PROT entry `0897` | `gp+0x2D8 = sub_op & 7` (`andi a1,s3,7`; `sw a1,-0x4a10(v1)` at `0x801E0ED0`) |
+| The tile-board walker (`0x801EF8B8` / `0x801EF8CC` / `0x801EFE7C`, same image) | derives it from the board cell's terrain type |
+
+Plus one clear at `0x801E5664`. The readers are the two `lw 0x2d8(gp)` in
+`func_0x800467e8` itself and two more in the same overlay. So a scene author
+picks the octant to match the fixed camera the same script installs, and a
+bare tile crossing never changes it.
+
+The `0x4C 2x` arm turns the player with it. When `0x8007B6B0` reads `-1000`
+the arm also rewrites the player's facing by the delta it just applied -
+`actor[+0x26] += (new - old) * 0x200`, an eighth turn per step in the 12-bit
+angle space (`0x801E0EE4..0x801E0EFC`) - so the character keeps facing the
+same way on screen across a camera change.
+
+A port whose camera free-orbits has no authored index to read: the moment the
+player drags the view, the scene's constant is stale. `World::field_pad_ring_rotation`
+therefore rounds the live camera azimuth to the nearest of the eight steps
+instead. That is a port decision, not a retail one; it is a strict refinement
+of the 90° quantisation it replaced, agreeing with it on every even step (so
+every axis-aligned camera decodes identically) and halving the worst-case
+heading error elsewhere.
 
 ## Collision - `FUN_801cfe4c`
 

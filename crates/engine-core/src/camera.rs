@@ -327,7 +327,12 @@ pub struct ZoneFollow {
     /// tiles) as the focus edge clamp reads it. Seeded to the field default
     /// and overwritten by a camera-region record's mask-kind side-write -
     /// the four bytes [`crate::camera_zone::CameraZoneConfig::load_record`]
-    /// returns.
+    /// returns. Seeded per scene entry from
+    /// [`crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW`], replaced by a
+    /// camera-region record's mask-kind side-write
+    /// ([`Self::load_record`]) and by field-VM op `0x46`
+    /// ([`Camera::route_camera_events`]) - retail's order is seed, then
+    /// whichever of those the scene's script runs.
     pub view_window: [i8; 4],
 }
 
@@ -546,6 +551,29 @@ impl Camera {
                     // Apply commits whatever the configure pass staged; engine
                     // can re-derive eye/look-at on the next tick.
                     self.mode = CameraMode::Cinematic;
+                    applied += 1;
+                }
+                // Op-`0x46` `VIEW_WINDOW`, both forms. Retail writes the same
+                // four scratchpad bytes `0x1F8003E8..EB` from either arm
+                // (`0x801DF2AC..0x801DF350` in the field overlay), and they
+                // are the camera's visible-tile window in `[E8, E9, EA, EB]`
+                // order - see docs/formats/encounter.md. The scene-entry
+                // primer seeds them, the script replaces them, and the focus
+                // edge clamp below widens the walk region by whatever is
+                // there, so the op has to land here rather than only on the
+                // event queue.
+                FieldEvent::ViewWindowLong { b1, b2, b3, b4 } => {
+                    self.zone.view_window = [b1 as i8, b2 as i8, b3 as i8, b4 as i8];
+                    applied += 1;
+                }
+                FieldEvent::ViewWindowShort { r, g, b, packed } => {
+                    // The short form is the same four bytes, already built by
+                    // the VM: a window of half-width `op0 >> 1` in X about
+                    // tile offset `-1` and `op1 >> 1` in Z about `+2`. The
+                    // field's own default window is this form's `(7, 8)` -
+                    // X `[-8, 6]`, Z `[-6, 10]` - which is where
+                    // `FIELD_DEFAULT_VIEW_WINDOW`'s asymmetry comes from.
+                    self.zone.view_window = [r as i8, g as i8, b as i8, packed as i8];
                     applied += 1;
                 }
                 other => leftover.push(other),

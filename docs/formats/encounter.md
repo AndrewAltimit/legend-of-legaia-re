@@ -942,11 +942,12 @@ world scale ([`renderer.md`](../subsystems/renderer.md#the-field-view-matrix-whe
 and the focus edge clamp `FUN_801DAA50` runs after the ease or snap, with its script
 override `_DAT_8007B628` / `_DAT_8007B62A` still unwired (no port-side writer).
 
-Two divergences remain. A scripted shot handing the camera back snaps, as a backstop for a
-script that ends a shot without a `[4C 39]` / `[4C 3E]` arm; and the visible-tile window
-the clamp widens the walk region by is seeded from
-`mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW` and updated only by a camera-region record's
-mask-kind side-write, not by field-VM op `0x46`.
+One divergence remains: a scripted shot handing the camera back snaps, as a backstop for a
+script that ends a shot without a `[4C 39]` / `[4C 3E]` arm. The visible-tile window the
+clamp widens the walk region by now follows retail's own order - seeded from
+`mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW` at scene entry, then replaced by whichever of
+a camera-region record's mask-kind side-write or field-VM op `0x46` the scene runs
+(`Camera::route_camera_events` consumes both op-`0x46` forms into `ZoneFollow::view_window`).
 
 The disc-gated oracle
 `crates/engine-shell/tests/field_camera_zone_oracle.rs` grades the port per walkable save

@@ -209,18 +209,18 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
         // world Y `0` and the vertical framing rides the composed eye Y
         // alone - see docs/subsystems/renderer.md.
         //
-        // The port still anchors on the player's floor here, deliberately.
-        // Zeroing it is a 128-unit vertical move of the focus in `town01`,
-        // and that is enough to push the finite-displacement cross-term in
-        // `crates/web-viewer/tests/play_compass_disc.rs` past its
-        // `|dx| < 0.5 * |dy|` threshold: "Up" still walks away from the
-        // camera, but the screen path tilts. The residual X component is
-        // the port's 90-degree d-pad quantisation (retail's 45-degree ring,
-        // `func_0x800467E8`, is ported as `World::remap_pad_direction` and
-        // unwired), which the zeroed focus makes visible rather than
-        // causes. Closing the quantisation gap is what lets this follow
-        // retail; until then the sampled floor keeps the control law true.
-        focus: [wx, floor_y, wz],
+        // Zeroing it moves the focus 128 units vertically in `town01`, which
+        // is enough to show any tilt in the walk direction: the page's
+        // compass oracle measures a *finite* displacement through the frame's
+        // own projection, so a heading that is off by up to 45 degrees prints
+        // a cross-term that a floor-anchored focus had been flattening. The
+        // heading is now rung at 45 degrees like retail's
+        // (`World::decode_field_direction` -> `remap_pad_direction`), which
+        // halves that worst case, so the measured framing ships.
+        //
+        // A world with no terrain has no composed eye trio to ride, so the
+        // sampled floor still stands in for it there.
+        focus: [wx, if cam.zone.active { 0.0 } else { floor_y }, wz],
         pitch: to_rad(pitch_units),
         // PSX camera yaw is the compass negation, so a positive manual orbit
         // subtracts from the render yaw.
