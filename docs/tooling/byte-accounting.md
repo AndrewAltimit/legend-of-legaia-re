@@ -564,6 +564,25 @@ the lesson has to be read off the tier rather than off that entry: quote `struct
 `scan_bytes` beside the accounted share, because the two numbers can differ by five points of the
 whole disc without the headline saying so.
 
+### The figure counts a parser's claims, not a host's reads
+
+A third thing the headline cannot say, and it is the one that makes an
+unchanged number easy to misread. The sweep runs `asset account` per entry, so
+every claim comes from one binary asking the parsers what spans they consume.
+Whether anything in the engine then *slices those bytes at the right origin* is
+outside the question entirely.
+
+The VAB carriers are the worked case. `legaia_vab::parse` claims the same spans
+whichever offset its callers hand it, so correcting a call site - the boot
+stager, the audio and PCM oracles, the browser runtime, the dialogue path, the
+minigame SFX resolver, the patcher - moves nothing here. The figure was right
+before the fix and is the same number after it.
+
+So read an unchanged structural percentage across a wave of wiring work as the
+expected result rather than as evidence the wiring did not land, and reach for a
+different instrument when the question is about a consumer: a disc-gated oracle
+that parses at the offset the host uses answers it, and this sweep cannot.
+
 ### The pochi corroboration
 
 `pochi_filler` is 266 entries and every one is exactly one 2048-byte sector, which is what
