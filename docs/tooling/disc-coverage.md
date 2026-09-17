@@ -837,6 +837,42 @@ for the sensitive one and too strict for the robust one, and only the second
 failure is invisible, because it shows up as missing data rather than as a wrong
 answer.
 
+### A `nop` is not evidence, so a window of them is not a signature
+
+The floor above counts *instructions*, and one instruction encoding defeats
+that count: `nop` is `0x00000000`. A window of `nop`s therefore reproduces
+inside **any** image's zero fill, at any base, at any VA - the at-VA test
+returns true and has learned nothing. The window's real length is its
+**non-`nop`** instruction count, and the same three-instruction floor applies
+to that instead (`zero_padded` in the sweep; class `zero_window`, which
+`disc-coverage.py` credits to nobody).
+
+The failure is not theoretical and it is not confined to all-zero windows:
+
+- a 24-instruction window whose only non-`nop` word was a lone `0x00000004`
+  inside a run of zeros resolved as a **`unique`** attribution, crediting one
+  image with a 20 KB extent that is over nine-tenths zero fill;
+- an all-`nop` window resolved as `identical` across two images that agreed
+  about nothing except being empty.
+
+The guard sits *below* the link-time-table check on purpose. That check is
+evidence from outside the window - PROT 0898 naming a VA as one image's entry -
+so it survives a window with no signal of its own; everything after it rests on
+the window.
+
+`disc-coverage.py` applies the same rule one level up, to the dump itself. A
+dump whose head is a run of `nop`s has nothing at its entry corroborating its
+printed base, so its extent is withdrawn from the numerator entirely and
+counted under the reject class `zero_window_head`. That is the
+[`dump-corpus-integrity.md`](dump-corpus-integrity.md) law applied to zeros: a
+base is corroborated by the bytes at the entry reproducing in one image, and
+when those bytes are zeros every image reproduces them.
+
+Removing the false credit moves floors in **both** directions, which is the tell
+that it was an attribution error rather than lost coverage: most images gain,
+because extents the zero windows had made ambiguous for several images stop
+being ambiguous at all; the images the zero fill was being credited to lose.
+
 See [`dump-corpus-integrity.md`](dump-corpus-integrity.md) and
 [`phantom-print-index.md`](phantom-print-index.md).
 

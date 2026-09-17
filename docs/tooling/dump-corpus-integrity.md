@@ -559,7 +559,32 @@ would.
 | `divergent` | Dumps at this extent resolve to different images. | Genuinely several routines; leave ambiguous. |
 | `misbased` | No image holds these bytes here; they live elsewhere. | Credit no image - the extent is fiction. |
 | `unresolved` | The bytes are in no extracted image at any VA. | Leave ambiguous. |
+| `zero_window` | The window is zero fill - fewer than three non-`nop` instructions. | Credit no image; see below. |
 | `short` / `data` / `gapped` / `no_disassembly` | The window cannot sign. | Leave ambiguous; `data` and `gapped` credit nobody. |
+
+### `nop` encodes zero, so a window of them signs for everybody
+
+The signature test counts instructions, and `nop` is `0x00000000`. A window of
+`nop`s reproduces inside any image's zero fill at any base, so the at-VA test
+returns true and has established nothing - the extent's placement still rests on
+the dump's filename. A window's usable length is therefore its **non-`nop`**
+count, and the `zero_window` class is what falls below the floor on that count.
+
+Two shapes of false credit came out of the corpus when the guard was added, and
+the second is the one to remember, because "the window is all zeros" is the easy
+case to imagine and it was not the expensive one:
+
+- an all-`nop` window read as `identical` across two images that agreed about
+  nothing but being empty;
+- a 24-instruction window carrying **one** non-`nop` word - a lone `0x00000004`
+  in a run of zeros - read as `unique`, crediting one image with a 20 KB extent
+  that is over nine-tenths zero fill.
+
+The guard runs *after* the link-time-table check, which is evidence from
+outside the window and survives a window with no signal.
+[`disc-coverage.py`](disc-coverage.md) applies the same rule to the dump as a
+whole: a body that opens with a run of `nop`s is rejected as
+`zero_window_head`, because nothing at its entry corroborates its printed base.
 
 ### Own content, not the extracted file
 

@@ -322,6 +322,32 @@ def looks_like_data(insns):
     return hits * 2 >= len(insns)
 
 
+def zero_padded(insns):
+    """The window is zero fill with too little in it to name an image.
+
+    `nop` encodes `0x00000000`, so a `nop` reproduces inside **any** image's
+    zero fill, at any base, at any VA: it carries no signal, and a window made
+    of them makes the at-VA test return true while saying nothing. A window's
+    effective length is therefore its **non-`nop`** instruction count, and the
+    floor that applies to it is the same [`SHORT_VA_FLOOR`] the tool already
+    calibrated for naming an image at a VA.
+
+    Both failure shapes this catches are real. An all-`nop` window was read as
+    byte-identical across two images that agreed about nothing but being empty.
+    A 24-instruction window with **one** non-`nop` word in it - a lone
+    `0x00000004` inside a run of zeros - was read as a `unique` attribution,
+    crediting one image with a 20 KB extent that is over nine-tenths zero fill.
+
+    `signal < len(insns)` keeps the guard to zero-padded windows: a genuinely
+    short window of real instructions is the existing `short` verdict's case,
+    and this predicate must not take it over.
+    """
+    if not insns:
+        return False
+    signal = sum(1 for _, mn, _ in insns if mn.lower().lstrip("_") != "nop")
+    return signal < SHORT_VA_FLOOR and signal < len(insns)
+
+
 def gapped(insns):
     """Non-contiguous printed addresses: Ghidra left holes in the body.
 
@@ -500,6 +526,15 @@ def attribute_dump(images, reloc, entry, insns, tables=None):
                         "entry of %s alone, and that image's own content "
                         "reproduces the %d-instruction window here"
                         % (img.name, len(toks)))
+    # Below the table check on purpose. The link-time table is evidence from
+    # OUTSIDE the window - PROT 0898 naming this VA as one image's entry - so it
+    # survives a window that carries no signal of its own. Everything after this
+    # point rests on the window, and a zero-padded window has nothing to rest on.
+    if zero_padded(insns):
+        return ("zero_window", [], "window is zero fill with fewer than %d "
+                                   "non-`nop` instructions in it - it "
+                                   "reproduces inside any image's zero fill "
+                                   "and names none" % SHORT_VA_FLOOR)
     if len(toks) < MIN_SIGNABLE:
         # A short window can still answer the AT-VA question, and that is a
         # different question from the one the floor guards. `MIN_SIGNABLE` is
@@ -564,7 +599,8 @@ def attribute_dump(images, reloc, entry, insns, tables=None):
 # is the one the extent can support.
 CLASS_RANK = {
     "unique": 0, "resolved_by_table": 1, "identical": 2, "misbased": 3,
-    "unresolved": 4, "gapped": 5, "short": 6, "data": 7, "no_disassembly": 8,
+    "unresolved": 4, "gapped": 5, "short": 6, "data": 7, "zero_window": 8,
+    "no_disassembly": 9,
 }
 
 
@@ -789,8 +825,10 @@ def main():
     resolved = hist["unique"]
     print("\nattributed to exactly one image : %d (%.1f%%)"
           % (resolved, 100.0 * resolved / total if total else 0))
-    print("excluded from every image       : %d (misbased + data + gapped)"
-          % (hist["misbased"] + hist["data"] + hist["gapped"]))
+    print("excluded from every image       : %d (misbased + data + gapped + "
+          "zero_window)"
+          % (hist["misbased"] + hist["data"] + hist["gapped"]
+             + hist["zero_window"]))
     print("stays ambiguous                 : %d (identical + divergent + "
           "unresolved + short + no_disassembly)"
           % (hist["identical"] + hist["divergent"] + hist["unresolved"]
@@ -829,7 +867,7 @@ def main():
             if cls == "unique":
                 keep += 1 if img == name else 0
                 other += 0 if img == name else 1
-            elif cls in ("misbased", "data", "gapped"):
+            elif cls in ("misbased", "data", "gapped", "zero_window"):
                 excl += 1
             elif cls == "identical" and name in img.split("|"):
                 keep += 1

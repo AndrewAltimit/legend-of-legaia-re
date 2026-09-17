@@ -63,6 +63,7 @@ import functools
 import glob
 import json
 import os
+import re
 import struct
 import sys
 import tomllib
@@ -126,21 +127,66 @@ UNEXPLAINED_CLASSES = {
 }
 
 
+# How many opening instructions have to be `nop` before a dump's extent is
+# withdrawn. `nop` encodes `0x00000000`, so a head of them is zero fill and
+# nothing about it corroborates the printed base - the same window exists at
+# thousands of VAs in every image. A dump whose head carries no evidence for
+# where it is cannot be credited anywhere, however much real code follows it.
+ZERO_HEAD_INSNS = 24
+_HEAD_INSN_RE = re.compile(r"^\s*([0-9a-fA-F]{8})\s+(\S+)")
+_DISASM_MARKER = "--- DISASSEMBLY ---"
+
+
+def zero_headed(text):
+    """Does the dump open with `ZERO_HEAD_INSNS` consecutive `nop`s?
+
+    This is the byte-level sibling of `dump-corpus-integrity.md`'s rule that a
+    dump's printed addresses are a property of its load base. A base is
+    corroborated by the bytes AT the entry reproducing in one image; when those
+    bytes are zeros, every image reproduces them, so the corroboration is
+    vacuous and the extent's placement rests on the filename.
+    """
+    if _DISASM_MARKER not in text:
+        return False
+    seen = 0
+    for line in text.split(_DISASM_MARKER, 1)[1].split("\n"):
+        m = _HEAD_INSN_RE.match(line)
+        if not m:
+            if seen:
+                break
+            continue
+        if m.group(2).lower().lstrip("_") != "nop":
+            return False
+        seen += 1
+        if seen >= ZERO_HEAD_INSNS:
+            return True
+    return False
+
+
 def read_dump_extents(funcs_dir):
     """Every dump's (entry_va, end_va), plus a census of what was excluded.
 
     Returns `(extents, rejects)` where `rejects` counts `dump_header`'s reject
-    classes. The census is the point: a single "N files had no parseable
-    header" number invites - and previously carried - a wrong explanation of
-    what those files are. Most of them are the corpus storing an ANSWER, and
-    only a handful are defective dumps.
+    classes plus this module's own `zero_window_head`. The census is the point:
+    a single "N files had no parseable header" number invites - and previously
+    carried - a wrong explanation of what those files are. Most of them are the
+    corpus storing an ANSWER, and only a handful are defective dumps.
     """
     out = []
     rejects = {}
     for path in sorted(glob.glob(os.path.join(funcs_dir, "*.txt"))):
-        dump, reject = dump_header.parse_file(path)
+        try:
+            with open(path, errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            rejects["not_a_dump"] = rejects.get("not_a_dump", 0) + 1
+            continue
+        dump, reject = dump_header.parse_text(text, path)
         if dump is None:
             rejects[reject] = rejects.get(reject, 0) + 1
+            continue
+        if zero_headed(text):
+            rejects["zero_window_head"] = rejects.get("zero_window_head", 0) + 1
             continue
         out.append(dump.extent)
     return out, rejects
@@ -150,7 +196,12 @@ def read_dump_extents(funcs_dir):
 # bytes belong to no mapped image at all - a mis-based print, a gapped stream,
 # or a region that does not disassemble. Crediting them to the image whose span
 # happens to contain the printed VA is exactly the fiction this filter removes.
-CREDIT_NOBODY = {"misbased", "data", "gapped"}
+# `zero_window` joins them for a reason of its own: `nop` encodes
+# `0x00000000`, so an all-`nop` window reproduces inside any image's zero fill
+# at any base, at any VA. Such an extent has been credited to an image whose
+# own content is shorter than the extent, and read as byte-identical across two
+# images that agreed about nothing but being empty.
+CREDIT_NOBODY = {"misbased", "data", "gapped", "zero_window"}
 # Classes that name the owning image(s) by bytes. `identical` names several
 # because they hold byte-identical code there, and each of them really does
 # contain those bytes, so each is credited. `divergent` names several for the
@@ -1144,6 +1195,10 @@ REJECT_TEXT = {
                    "wrote its header and then failed"),
     "zero_bytes": ("defect", "states `size=0`"),
     "no_entry": ("defect", "an extent with no recoverable entry address"),
+    "zero_window_head": ("defect", "opens with a run of `nop`, i.e. zero fill: "
+                         "`nop` encodes `0x00000000`, so nothing at the entry "
+                         "corroborates the printed base and the extent's "
+                         "placement rests on the filename"),
 }
 
 
