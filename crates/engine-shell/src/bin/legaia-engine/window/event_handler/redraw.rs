@@ -124,6 +124,13 @@ impl PlayWindowApp {
                 // The scene tick (and its SFX drain) is skipped below, so
                 // the menu cues queued this frame fire here.
                 self.tick_menu_sfx();
+                // The field party HUD's decision kernel is stepped in the
+                // scene tick too, and its suppression predicate names this
+                // very state - so step it here as well, or the kernel keeps
+                // its last pre-menu `Draw` and the readout stays painted
+                // under the pause menu (the browser page has no early-out
+                // and never showed it).
+                self.tick_field_party_hud();
                 self.prev_pad = self.pad;
                 continue;
             }

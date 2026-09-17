@@ -1095,8 +1095,8 @@ def emit_worklist(out_dir, rows):
         "with a `spans_at_start` column saying how many measured images map that "
         "VA." % WORKLIST_MIN_BYTES)
     add("")
-    add("**Do not sum these figures across images.** Nineteen overlays load at "
-        "`0x801CE818` and thirteen at `0x801F69D8`, so the same VA appears under "
+    add("**Do not sum these figures across images.** Many overlays load at "
+        "`0x801CE818` and many more at `0x801F69D8`, so the same VA appears under "
         "several headings - holding *different* bytes each time. Each is real "
         "work; the total is not a total.")
     add("")
