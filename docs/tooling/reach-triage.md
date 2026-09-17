@@ -836,6 +836,7 @@ about the cells that outlived their own fixtures.
 | `other_game_overlay.rs` | 1 | `801d14b0` | Closed by delegation: `baka_fighter::tally_drain_step` (`801d6710`) **is** `other_game_overlay::step_scale`, one routine linked twice, so the duel ladder's tally drain enters the anchor. The arena's own driver is still one call away |
 | `battle_tutorial.rs` | 2 | `801f6b70` `801f747c` | Closed: `w1f1_battle_tutorial_ladder` primes the script, walks into a real encounter and drives the box; `training_battle` was never the only route |
 | `world_map.rs` | 2 | `800196a4` `801d8258` | Closed by `w1d_world_map_render_ladder` - rung 2 taps L1 on the overworld and runs the fade ramp to its mode-12 hand-off, and the horizon-gate rung arms the emitter through `World::tick`. Read the second with its own caveat (see below) |
+| `fog_particles.rs` | 3 | `8003f348` `8003f3fc` `8003f86c` | Open, and the one row here a *headless* fixture cannot convert - see [the composing-host note](#a-render-pass-row-needs-a-composing-ladder-not-a-deeper-one) |
 | `cutscene_narration.rs` | 1 | `80037174` | Closed: `w1a_narration_ladder` drives the opening-prologue subtitle roller |
 | `world/narration.rs` | 1 | `8003cf7c` | Closed: the same ladder drives the inline field-VM conversation path, as opposed to the pre-decoded dialog panel every other ladder drives |
 | `world/battle/stats.rs` + `battle_formulas/escape.rs` | 1 | `801e791c` | Closed: `battle_flee_ladder` is a canonical member now, and its first rung is an **assured** escape that leaves the battle |
@@ -847,9 +848,11 @@ about the cells that outlived their own fixtures.
 Nine of those eleven rows were converted by ladders that already existed and
 were already canonical, and the table went on naming the fixture each one
 needed. A coverage export over the full canonical union confirms it at the
-level the rows are written at - **every one of the table's 37 addresses is
-entered**, the last two being the fishing menu pair, where the cell claimed a
-screen the ladder never opened until one was written for it. That is worth more than the row count, because it is the failure mode
+level the rows are written at - **every address in the table that a headless
+ladder can reach at all is entered**, the last two being the fishing menu pair,
+where the cell claimed a screen the ladder never opened until one was written
+for it. The `fog_particles.rs` row is the exception and is a different shape,
+not a deeper one - see the note below it. That is worth more than the row count, because it is the failure mode
 this page is most exposed to: **a row's `reach` cell is a claim with no
 instrument behind it.** `--page-audit` checks the address column against the
 catalog and says nothing about the prose; nothing checks that a cell still
@@ -871,6 +874,33 @@ both distinctions survive the row:
   the emitter body; whether any shipped scene sets those globals is a separate
   question the ladder deliberately does not answer, and its own test name says
   so.
+
+#### A render-pass row needs a composing ladder, not a deeper one
+
+The fog emitter is the row that separates "no fixture drives this content" from
+"no fixture of this *kind* exists", and the two read identically in the
+never-entered set.
+
+Its three addresses sit under `World::fog_render_step`, which is a **render
+pass** call: the native window makes it in `redraw_passes.rs` and the browser
+page in `play_field_fx.rs`, and nothing else in the workspace does. A headless
+ladder can walk the scene that raises the gate and still never touch them,
+because it composes no frame - so "drive a deeper scene" is the wrong fixture
+however far it goes.
+
+The gate itself is not the gap. `_DAT_8007B854` is raised and cleared by the
+field-VM `0x4C` nibble-3 pair, and the [op census](field-op-census.md) finds
+both arms widely carried - `[4C 30]` and `[4C 31]` each land in dozens of
+scenes, `town01` among them, which is the scene both composing ladders sit in.
+What the pool still needs is a spawn: `FogPool::spawn` (`FUN_801D629C`) runs
+from the cutscene element path, so the frame the row wants is one where the
+gate is up *and* the pool is populated *and* a host is drawing.
+
+So the convert is a rung on a composing ladder - `play_compose_ladder` or a
+`play-window` spawn - parked in such a frame, and the useful generalisation is
+that a row whose only callers are render passes should say so in its cell:
+otherwise it reads as content the next headless fixture will pick up, and no
+headless fixture ever will.
 
 #### The op census names both carriers
 
@@ -1142,9 +1172,11 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `effect_vm/pool.rs` | 1 | (a) | field-actors | `801de914` |
 | `field_actor_timers.rs` | 2 | (a) | a scene script issuing the field-VM op that **spawns** the timer - `0x43 0C` for the cinematic wipe (`op43_alloc_scripted_actor`) and `0x43 09` for the three-axis tween (`op43_sub9_tween`). Both `step` bodies already run from the production world tick (`world/frame_tick.rs`), and the in-crate oracle that drives them (`world/tests/field_timer_actors.rs`) can never be a union member. The [op census](#the-op-census-names-both-carriers) finds **no coherent carrier for either op**, so this row is close to `(d)` - see the note under that section | `801dd4c4` `801dd784` |
 | `field_party_cursor.rs` | 1 | (c) | disclosed | `801f1278` |
+| `field_passive_hud.rs` | 1 | (b) | a party member holding one of the six HUD-badge ability bits. `hud_anchor_offsets` is reached only through `World::passive_hud_points`, itself behind `World::passive_hud_active()`, and a cold-start party holds none of the six - so the badge column never anchors and the offsets never resolve | `801d095c` |
 | `lib.rs` | 7 | (c) | **actor VM** (pseudo-entered - see the attribution note above) | `800319a8` `800326ac` `80035334` `800357fc` `80035978` `80035a4c` `801d6628` |
 | `scus_battle_helpers.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
 | `scus_core_helpers.rs` | 5 | (c) | disclosed | `8001fa68` `800203ec` `80020424` `80020454` `800204a4` |
+| `vram_rect_copy.rs` | 1 | (a) | a scene script issuing op `0x43` sub-`0x12`. `build_packet` is reached from `enqueue`, which `FieldHost::op43_vram_rect_copy` drives on both hosts; the [op census](field-op-census.md) puts a dozen clean carriers across nine scenes, every one of them in the ending band (`edteien`, `edbylon`, `edbalden`, `edretoin`, `edkorout`, `edbubu`, `eddoman`, `edson`, `edstati3`), which no ladder enters | `80057914` |
 | `world_map.rs` | 1 | (a) | world-map | `801e3e00` |
 | `world_map_clut_fade.rs` | 1 | (a) | world-map | `801e4d8c` |
 | `world_map_dim.rs` | 1 | (a) | world-map | `801e75dc` |
@@ -1726,6 +1758,9 @@ worth keeping rather than the fact that it emptied:
 
 | addresses | verdict | where it went |
 |---|---|---|
+| `8003f348` `8003f3fc` `8003f86c` | (a) | [content not driven](#no-ladder-content-not-driven) - the fog emitter, which only a **composing** ladder can enter |
+| `80057914` | (a) | the [`engine-vm` table](#engine-vm), on the op-`0x43` sub-`0x12` carriers the census names |
+| `801d095c` | (b) | the [`engine-vm` table](#engine-vm), on a party that holds a HUD-badge ability |
 | `8003c7ec` `800430ac` `801cefd4` | (a) | [content not driven](#no-ladder-content-not-driven) - two field-VM op carriers and the boot chain |
 | `801d1288` `80065034` | (a) | [harness-blind](#no-ladder-harness-blind), as **one** gate - the producer and its consumer |
 | `800485bc` | (b) | the [`engine-ui` table](#engine-ui), on the weapon-trail content gate `801e1ab0` already names |
