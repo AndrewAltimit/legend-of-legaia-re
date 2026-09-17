@@ -61,6 +61,14 @@ pub struct AmbientFxState {
     /// hook), drained against the host's software VRAM by
     /// [`crate::world::World::apply_script_vram_moves`], cleared on scene entry.
     pub script_vram_moves: Vec<crate::world::ScriptVramMove>,
+    /// Queued field-VM op-`0x43` sub-`0x12` VRAM rectangle copies, in the
+    /// emission order the arm resolved them (one call, or two for a copy
+    /// wider than a VRAM page). Queued by
+    /// [`crate::world::World::queue_vram_rect_copies`] (the
+    /// `FieldHost::op43_vram_rect_copy` host hook), drained against the
+    /// host's software VRAM by
+    /// [`crate::world::World::apply_vram_rect_copies`].
+    pub vram_rect_copies: Vec<legaia_engine_vm::vram_rect_copy::RectCopyCall>,
 }
 
 impl AmbientFxState {
@@ -77,6 +85,7 @@ impl AmbientFxState {
             clut_pending_game_ticks: 0,
             clut_fx: Vec::new(),
             script_vram_moves: Vec::new(),
+            vram_rect_copies: Vec::new(),
         }
     }
 }

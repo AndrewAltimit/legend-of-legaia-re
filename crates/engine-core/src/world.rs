@@ -169,6 +169,8 @@ mod narration;
 mod prop_interact;
 mod save;
 mod vm_hosts;
+mod vram_rect_fx;
+pub use vram_rect_fx::OT_LEN_UNBOUNDED;
 mod worldmap;
 
 #[cfg(test)]

@@ -1979,6 +1979,18 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.queue_script_vram_move(words);
     }
 
+    /// Op `0x43` sub-`0x12` - the GP0 `0x80` VRAM rectangle copy, after the
+    /// VM has resolved the arm's two-page split into one or two
+    /// `FUN_800468A4` calls. Queued on the world the same way the `4C 60`
+    /// `MoveImage` family is; [`World::apply_vram_rect_copies`] runs each
+    /// call through the retail enqueue and executes the resulting packet
+    /// against the host's software VRAM.
+    ///
+    /// REF: FUN_800468a4 (the enqueue the drain runs each call through)
+    fn op43_vram_rect_copy(&mut self, calls: &[vm::vram_rect_copy::RectCopyCall]) {
+        self.world.queue_vram_rect_copies(calls);
+    }
+
     /// Op `0x4C 0x82 <slot>` - full HP/MP restore of one party slot.
     ///
     /// Retail's inn / rest heal. There is no inn opcode and no native inn

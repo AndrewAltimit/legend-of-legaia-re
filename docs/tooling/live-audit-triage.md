@@ -342,7 +342,7 @@ blocker is a table is the same error this page records for the panel painters.
 | `80020424` | `alloc_list_head` | `crates/engine-vm/src/scus_core_helpers.rs:174` | DISCLOSE |
 | `80020454` | `alloc_and_append` | `crates/engine-vm/src/scus_core_helpers.rs:204` | DISCLOSE |
 | `800204a4` | `free` | `crates/engine-vm/src/scus_core_helpers.rs:236` | DISCLOSE |
-| `80021b04` | `spawn_move_actor` | `crates/engine-vm/src/move_vm/spawn.rs:136` | DISCLOSE |
+| `80021b04` | `spawn_move_actor` | `crates/engine-vm/src/move_vm/spawn.rs:136` | REPLACE |
 | `80024e08` | `op4c_n5_sub0_set_actor_model` | `crates/engine-vm/src/field/host.rs:1226` | FALSE INERT |
 | `8003c9ac` | `(module)` | `crates/engine-vm/src/motion_pause.rs:3` | DISCLOSE |
 | `8003c9ac` | `motion_pause_kick` | `crates/engine-vm/src/motion_pause.rs:77` | DISCLOSE |
@@ -1106,7 +1106,7 @@ old reason got wrong.
 | `field_actor_plan` (`8003bc08`) | the engine has no `+0x10` flag word | `move_vm::ActorState::flags` is that word, tested in production on pool actors |
 | `tick_reflection` (`801e5154`) | the actor carries none of the fields this reads | `ActorState` carries all but `+0x64`, at retail offsets |
 | `refresh_object_grid_marks` (`80017bec`) | the engine keeps no `.MAP` image | three of four regions are resident, and the collision grid is mutated live |
-| `passive_hud_icons` (`801d095c`) | the projection host does not exist | `Camera::transform`, already placing effect billboards |
+| `passive_hud_icons` (`801d095c`) | the projection host does not exist | `Camera::transform`, already placing effect billboards; the glue is now written, per host, over `World::passive_hud_points` |
 | `step_scene_program` (`801d4a60`) | `_DAT_8007BC20` has no counterpart | modelled by four ports; live source `AudioOut::xa_active()` |
 
 Each reason is now rewritten to name the prerequisite that does hold. The
@@ -1362,7 +1362,7 @@ audit. They are listed with what the scan or a catalog lookup found instead.
 | `801d841c` `save_screen_spawn` | nothing wants a flash element at all | it is not a flash element - descriptor `0x800706BC` names the save/load screen driver; and `FUN_801ED308` calls it, ported and live |
 | `801d5e20` `shift_primitive_colours` | no caller | the field VM's op `0x4C` nibble-E sub-6 arm, whose host hook has an empty body |
 | `801e5b4c` `aggregate_slot_stats` | the engine's equip screen has its own aggregator | the retail consumer is the hub entry list's sub-draw; the marker its live port emitted is now the sub-draw itself |
-| `800468a4` `enqueue` | the field-VM hook has no renderer | that is one route; the actor tick's kind-7 draw arm is the other, and it is live |
+| `800468a4` `enqueue` | the field-VM hook has no renderer | that is one route; the actor tick's kind-7 draw arm is the other, and it is live. The hook has a body now - `World::apply_vram_rect_copies` over the software VRAM - so only the kind-7 arm is still open |
 | `8001fa00` `init_identity_index_list` | the emitter that pops the list is unported | true, but the *seeder* is MAIN_INIT, which is ported |
 | `80035c00` `set_pair` | writing it from the menu host would invent state | the writers are three sites in the battle action resolver, not a menu |
 
@@ -1879,10 +1879,10 @@ not have to re-derive it.
 | Anchors | Waiting on |
 |---|---|
 | `effect_ribbon` x3 (`801CFA48`) | an actor render-mode channel carrying the `+0x9E` flag word, and a GPU packet chain for the geometry to fill. `engine-render` has no battle effect pass that asks a kernel for per-frame geometry, so the emitter is pure by design and the consumer does not exist on either host. |
-| `menu_list_rows` x4 (`80030628`) | `World::party.inventory` becoming slot-indexed (families 3 and `0x22`), and the shop session adopting the class-tagged `[class][dim][id]` row word (families 2 and `0x0B`). The order kernel `shop_buy_row_order` beside them is already live. |
+| `menu_list_rows` x2 (`80030628`) | a **table**, not the bag: the bag is slot-indexed now (`ItemBag`) and the Use list is wired through `World::bag_use_rows`. Throw Out waits on the equipment record's `+7` flags byte, which no engine table carries; the sell list waits on the item record's `+2` price for every id, where the shop session answers `1` for anything it does not stock. |
 | `fade::spawn_fade` / `fade_ramp` x3 | the fade's *lifetime*, not a call: `World::presentation.fade` drops a ramp when `step()` reports it complete, and the retail escape template never reports complete (hold word `-1`). Substituting moves the clear from the world tick to the battle teardown. |
-| `move_vm::spawn` x3 (`80021B04`, `80050E74`) | a producer, not a host impl. `impl MoveSpawnHost for World` exists, but no engine path *starts from a move buffer*; and the part-pool pair needs retail's `DAT_801C90F0` seat table, which the world's generational actor vec replaced. |
-| `vram_rect_copy::build_packet` / `enqueue` | an actor kind that draws by VRAM rect copy. The field-VM sub-op `0x12` route fires on no on-disc script, so the honest prerequisite is the actor tick's kind-7 arm, not a renderer hook. |
+| `move_vm::spawn` x2 (`80050E74`) | the part-pool pair needs retail's `DAT_801C90F0` seat table. Its engine counterpart is **not** the field-FX list an earlier reading named - the 89 `jal` sites are summon / special-attack stagers, so the population is `World::casting.active_summon`, dropped whole at the end of a cast rather than emptied seat by seat. `spawn_move_actor` left this set: its address already has a live port in `engine-core::world::ambient`. |
+| `vram_rect_copy::build_packet` / `enqueue` | nothing any more - both run under `World::apply_vram_rect_copies`, drained by each host beside the sibling `4C 60` `MoveImage` stamps. The actor tick's kind-7 draw arm is still the busier retail route and still has no engine actor kind. |
 | `scus_leaf_kernels` x3, `scene_name_sync` x3, `chunk_install`, `morph_weight_apply` x2 | a retail-shaped producer in each case - the sprite index buffer, an `initmap.txt` boot override, the `[type, size, data]` side band, an actor whose morph set is a block. Each reason already names it. |
 | `save::add_to_slot` (`80042FE8`) | nothing. No reference of any form reaches it in any image, so retail never calls it either - the retail-unreachable bucket above, not a wiring gap. |
 | `battle_party_panel::cross_out_mark` / `panel_labels`, `monster_archive::find_action_by_tag`, `move_vm::flush_part_actor_pool` | unchanged verdicts; their lead sentences opened with "no caller", which restates the audit, and now open with the blocker instead. |

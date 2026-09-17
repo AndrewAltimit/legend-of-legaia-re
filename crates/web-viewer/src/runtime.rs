@@ -1625,6 +1625,10 @@ impl LegaiaRuntime {
             dirty |= anim.tick(1, &mut res.vram);
         }
         dirty |= host.world.apply_script_vram_moves(&mut res.vram);
+        // Field-VM op `0x43` sub-`0x12` rect copies, drained where the native
+        // window drains them (`field_render::apply_world_clut_fx`); the page
+        // presents one framebuffer page, so the back-buffer bias is off.
+        dirty |= host.world.apply_vram_rect_copies(&mut res.vram, false);
         dirty |= host.world.step_ambient_fx(&mut res.vram);
         dirty |= host.world.step_clut_fx(&mut res.vram);
         self.field_vram_dirty |= dirty;

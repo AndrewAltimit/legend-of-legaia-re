@@ -4,9 +4,9 @@
 //! Both addresses are tagged on the function that ports them - `FUN_80057914`
 //! on [`build_packet`], `FUN_800468A4` on [`enqueue`] - and not on this module.
 //! A module-level `PORT:` tag makes the whole file the anchor, and the file is
-//! read as live whenever *any* function in it is reachable; here the third
-//! routine [`op43_sub12_calls`] **is** reachable, so a module anchor reports
-//! both helpers wired while neither has a host.
+//! read as live whenever *any* function in it is reachable, so a module anchor
+//! would have answered for all three routines at once no matter how many of
+//! them a host actually reached.
 //!
 //! Three layers, matching the retail call chain:
 //!
@@ -30,12 +30,18 @@
 //! [`op43_sub12_calls`] is live: the field VM's sub-op `0x43`/`0x12` arm
 //! calls it and hands the resolved calls to `FieldHost::op43_vram_rect_copy`.
 //!
-//! [`build_packet`] and [`enqueue`] are **NOT WIRED**. The host trait method
-//! that receives the calls has a no-op default body and no renderer
-//! implements it, so no real host runs a `RectCopyCall` through
-//! [`enqueue`] - they are reachable only from this module's unit tests. A
-//! wired caller would be a GP0-level host in `engine-render` that owns an
-//! ordering table and a back-buffer flag to pass in.
+//! [`build_packet`] and [`enqueue`] are wired too: `World` implements the host
+//! trait method (`legaia_engine_core::world::vm_hosts`) by queueing the calls,
+//! and `World::apply_vram_rect_copies` runs each through [`enqueue`] and
+//! executes the resulting packet against the software VRAM - drained by the
+//! native window's `field_render::apply_world_clut_fx` and by the browser play
+//! page's field-VRAM pass, beside the sibling `4C 60` `MoveImage` drain.
+//!
+//! One retail input has no engine counterpart: the ordering-table length
+//! `_DAT_1F8003A6`. Every reference to it disc-wide reads it and no writer is
+//! in the dump corpus, and the port has no ordering table of its own, so the
+//! drain keeps the guard's slot-`0` rejection and leaves the upper bound open
+//! rather than dropping copies against an invented length.
 //!
 //! REF: FUN_80021DF4 - the per-frame actor tick whose kind-7 arm is the
 //! other retail route into the enqueue.
@@ -143,8 +149,6 @@ const fn pack_yx(x: i16, y: i16) -> u32 {
 /// carries well-formed coordinates.
 ///
 /// PORT: FUN_80057914
-/// NOT WIRED: reached only from [`enqueue`], which itself has no host - see the
-/// module doc's wiring-status section.
 pub fn build_packet(src: SrcRect, dst_x: i16, dst_y: i16) -> MoveImagePacket {
     let tag_len = if src.w == 0 || src.h == 0 {
         0
@@ -214,11 +218,11 @@ pub enum EnqueueOutcome {
 /// passed through untouched.
 ///
 /// PORT: FUN_800468a4
-/// NOT WIRED: `FieldHost::op43_vram_rect_copy` has a no-op default body and no
-/// renderer implements it, so no host ever runs a [`RectCopyCall`] through
-/// here. That hook is only one of retail's routes into `FUN_800468A4`; the
-/// other is the actor tick's kind-7 draw arm, which the engine has no actor
-/// kind for. See the module doc's wiring-status section.
+///
+/// Wired through `World::apply_vram_rect_copies`, the drain behind the field
+/// VM's `op43_vram_rect_copy` hook on both hosts. That hook is only one of
+/// retail's two routes here; the other is the actor tick's kind-7 draw arm,
+/// which the engine still has no actor kind for.
 pub fn enqueue(call: RectCopyCall, ot_len: i32, back_buffer: bool) -> EnqueueOutcome {
     if call.ot_slot <= 0 || call.ot_slot >= ot_len {
         return EnqueueOutcome::SlotOutOfRange;

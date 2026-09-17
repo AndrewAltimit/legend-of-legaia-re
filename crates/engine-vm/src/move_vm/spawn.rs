@@ -168,16 +168,22 @@ pub trait MoveSpawnHost: ActorAllocatorHost {
 /// Allocate an actor and launch it on a move buffer.
 ///
 /// PORT: FUN_80021B04
+/// REPLACED-BY: `legaia_engine_core::world::ambient` - `spawn_ambient_record_at`
+/// and the `push_ambient_part` / `tick_ambient_part` pair under it, which carry
+/// this same routine and are live on both hosts.
 ///
-/// NOT WIRED: the host side is ready - `impl MoveSpawnHost for World` lives in
-/// `legaia_engine_core::actor_alloc_host` - but nothing in the engine spawns a
-/// move-VM actor. Both live actor paths construct through the world's own
-/// pool: the field path spawns from MAN placements and the battle path from
-/// the formation, and neither routes a `MoveSpawnRequest` through the retail
-/// allocator. The prerequisite is a spawn site that *starts from a move
-/// buffer* - retail's are the script-VM 3D-anim play arm and the world-map
-/// spawn paths, neither of which is ported - so only tests drive this entry
-/// point today.
+/// The earlier reading of this row looked for a missing *caller*. There is no
+/// missing caller: retail reaches `FUN_80021B04` from one place, the field
+/// VM's op-`0x34` sub-3 arm through the stager `FUN_800252EC`, and the engine
+/// runs that route through the ambient pool - with the op-`0x25` fan-out, the
+/// CLUT-cell integrator and the VDF morph envelope the trait shape here does
+/// not carry. Routing the arm through this entry point instead would replace
+/// a fuller port with a thinner one.
+///
+/// What survives here is the **trait-shaped** statement of the same body,
+/// useful as the documented one-shot composition and as the seat any future
+/// host that really does start from a move buffer would use. No host is owed
+/// it.
 ///
 /// One-shot composition that mirrors the SCUS body at
 /// `ghidra/scripts/funcs/80021b04.txt`:
@@ -247,12 +253,14 @@ pub const PART_ACTOR_HALT_FLAG: u32 = 0x8;
 ///
 /// PORT: FUN_80050e74 (`0x80050E90..0x80050EB8`)
 ///
-/// NOT WIRED: the engine has no `DAT_801C90F0`. Its part actors live in the
-/// world's own generational actor vec and its field-FX list is emptied
-/// wholesale at scene install (`World::install_field_stagers`) rather than by
-/// halting the actors a stager seated, so no engine caller holds the seat set
-/// this walks. Same prerequisite as [`spawn_move_actor`] above: the retail
-/// pool has to exist before either half of its protocol has a caller.
+/// NOT WIRED: the engine has no `DAT_801C90F0`. The counterpart is **not**
+/// the field-FX list an earlier note named - the 89 `jal` sites are all in the
+/// summon / special-attack stager overlays, so the engine list holding the
+/// same population is `World::casting.active_summon`
+/// (`legaia_engine_core::summon::SummonScene::parts`). That scene is replaced
+/// or dropped whole when a cast ends, not emptied seat by seat, so nothing
+/// holds a seat set for this to walk and no actor is left needing the halt
+/// bit raised on it.
 pub fn halt_part_actor(actor: &mut crate::move_vm::ActorState) {
     actor.wait_timer = 0;
     actor.field_8c = 0;
@@ -276,9 +284,9 @@ pub fn halt_part_actor(actor: &mut crate::move_vm::ActorState) {
 /// PORT: FUN_80050e74
 ///
 /// NOT WIRED: the engine has no `DAT_801C90F0` seat table to empty - the same
-/// missing pool as [`halt_part_actor`], one level up. Its field-FX list is
-/// cleared wholesale at scene install, so nothing holds the seat set this
-/// walks.
+/// missing pool as [`halt_part_actor`], one level up. The population lives in
+/// `World::casting.active_summon` and is dropped whole at the end of a cast,
+/// so there is no seat set to walk.
 pub fn flush_part_actor_pool(slots: &mut [Option<&mut crate::move_vm::ActorState>]) -> usize {
     let mut retired = 0;
     for slot in slots.iter_mut().take(PART_POOL_SLOTS) {
