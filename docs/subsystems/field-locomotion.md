@@ -414,9 +414,12 @@ Its writers disc-wide are two, and both are content:
 | Writer | Form |
 |---|---|
 | Field VM op `0x4C` outer nibble `2`, arm `0x801E0EB8` in PROT entry `0897` | `gp+0x2D8 = sub_op & 7` (`andi a1,s3,7`; `sw a1,-0x4a10(v1)` at `0x801E0ED0`) |
-| The tile-board walker (`0x801EF8B8` / `0x801EF8CC` / `0x801EFE7C`, same image) | derives it from the board cell's terrain type |
+| The tile-board walker (`0x801EF8B8` / `0x801EF8CC`, same image) | `(cell - 3) * 2` off the board cell's terrain type, in two bands - [tile-board.md](tile-board.md#the-walkers-octant-store) |
 
-Plus one clear at `0x801E5664`. The readers are the two `lw 0x2d8(gp)` in
+Plus one clear at `0x801E5664`, the walker's own **delay-slot** clear at
+`0x801EF8B0` (which runs on every walkable cell, banded or not), and the
+walker's restore at `0x801EFE7C` - the second half of the save/restore pair it
+opens at `0x801EF320`, not a third derivation. The readers are the two `lw 0x2d8(gp)` in
 `func_0x800467e8` itself and two more in the same overlay. So a scene author
 picks the octant to match the fixed camera the same script installs, and a
 bare tile crossing never changes it.
@@ -1834,7 +1837,11 @@ Modelling note (reconcile outcome): the raw `4C 51` handler pins its byte +3 as 
 
 ## Engine port: movement compass + opt-in precise movement
 
-The engine mirrors retail's camera-remapped pad in `World::step_field_locomotion` (`decode_field_direction`): the held d-pad is rotated by `World::locomotion.camera_azimuth` **quantised to the nearest 90°** - the same job `func_0x800467e8` does - and stepped through the per-axis collision above. The azimuth feed is `Camera::compass_azimuth_units()` (engine-core): scripted yaw + the user's `manual_orbit` (the play-window's left-mouse drag-orbit) + the follow camera's base yaw in the compass sense (the negated PSX render yaw), pushed into the world each `BootSession::tick`. All three terms default to 0, so headless hosts keep the identity remap.
+The engine mirrors retail's camera-remapped pad in `World::step_field_locomotion` (`decode_field_direction`): the held d-pad goes through the same eight-entry compass ring `func_0x800467e8` walks (`World::remap_pad_direction`), rotated by `World::locomotion.camera_azimuth` **rounded to the nearest of the eight 45° steps** (`World::field_pad_ring_rotation`), then stepped through the per-axis collision above.
+
+The rotation index is where the port and retail part: retail reads an **authored** index out of `gp+0x2D8` ([above](#gp0x2d8-is-authored-not-computed)), which a free-orbiting camera has no equivalent of, so the port derives one from its live azimuth and labels that a port decision.
+
+The azimuth feed is `Camera::compass_azimuth_units()` (engine-core): scripted yaw + the user's `manual_orbit` (the play-window's left-mouse drag-orbit) + the follow camera's base yaw in the compass sense (the negated PSX render yaw), pushed into the world each `BootSession::tick`. All three terms default to 0, so headless hosts keep the identity remap.
 
 A host declares that it renders the retail follow view by setting `render_yaw_bias`; while the zone-driven follow camera composes that view the base term is the negation of the **live** yaw it eased (`Camera::zone_follow_yaw_units`), so the compass turns with the scene's authored camera, and the pinned constant stands in only for a world with no field terrain.
 

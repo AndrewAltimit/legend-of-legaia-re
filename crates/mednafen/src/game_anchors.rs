@@ -15,8 +15,9 @@ pub const PLAYER_PTR_VA: u32 = 0x8007_C364;
 pub const SCENE_NAME_VA: u32 = 0x8007_050C;
 /// Next game-mode index (`0x02` field-init, `0x03` field-run, `0x15` battle, ...).
 pub const GAME_MODE_VA: u32 = 0x8007_B83C;
-/// Player position fields (16-bit signed; `+0x16` facing sits between them, so
-/// they MUST be read as `i16`, never `u32`).
+/// Player position fields (16-bit signed; `+0x16` **footing** - the floor
+/// height `FUN_80019278` returns for the tile under the player - sits between
+/// them, so they MUST be read as `i16`, never `u32`).
 pub const PLAYER_X_OFF: u32 = 0x14;
 pub const PLAYER_Z_OFF: u32 = 0x18;
 

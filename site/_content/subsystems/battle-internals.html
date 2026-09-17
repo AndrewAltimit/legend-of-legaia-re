@@ -171,7 +171,7 @@
       <tr><td>+0x11C..+0x122</td><td>Six stat bytes, incremented on level-up</td></tr>
       <tr><td>+0x13C / +0x13D..+0x160</td><td>Spell count / spell ids (up to 36)</td></tr>
       <tr><td>+0x161..+0x184</td><td>Parallel spell-level array</td></tr>
-      <tr><td>+0x185..+0x195</td><td>Displayed-skills list (count-prefixed; an item-use learn inserts in <strong>sorted</strong> position, not at the head)</td></tr>
+      <tr><td>+0x185..+0x195</td><td>Displayed-skills list (count-prefixed; item use does an <strong>ordered</strong> insert, sorted ascending by id)</td></tr>
       <tr><td>+0x196..+0x19D</td><td>Eight equipment slot bytes</td></tr>
       <tr><td>+0x2A7..+0x2B0</td><td>NUL-padded display name (9 bytes)</td></tr>
       <tr><td>+0x2B0..+0x37F</td><td>Active spell-slot array, stride <code>0x14</code></td></tr>
