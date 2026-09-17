@@ -259,8 +259,12 @@ All non-`P` cells in the matrix above are now ported.
 #### Two outer nibbles are the error printer
 
 The `0x4C` outer dispatch is a sixteen-entry jump table at `0x801CEE60`, indexed
-by `op0 >> 4` under a `sltiu ..., 0x10` bound (`FUN_801DE840`, `0x801E0C44`).
-Two of its sixteen arms are not handlers:
+by `op0 >> 4` (`srl v1,s3,4` at `0x801E0C44`) under a `sltiu v0,v1,0x10` bound
+at `0x801E0C48`; the table base is the `lui`+`addiu` pair at
+`0x801E0C50`/`0x801E0C54` (`FUN_801DE840`). The bound cannot actually fail - a
+byte's high nibble is always below `0x10` - and its `beqz` lands on
+`0x801E3550`, which is the nibble-`B` arm below, so even the unreachable exit is
+the error printer. Two of the sixteen arms are not handlers:
 
 - **nibble `B`** (arm `0x801E3550`) materialises a string pointer and falls into
   `jal 0x8001A068`, retail's message printer, then returns the PC unchanged.
@@ -268,8 +272,12 @@ Two of its sixteen arms are not handlers:
   exception: sub-`F` (`4C FF`) branches away to the dispatcher's ordinary
   continue at `0x801DF098` first.
 
-So "nibble `B` is undefined" understates it - `F` is an error arm too, and the
-two share one three-instruction preamble. The disc agrees: the
+So "nibble `B` is undefined" understates it - `F` is an error arm too. What the
+two share is a **tail**, not a preamble: each arm forms its own string pointer
+first (`0x801CEC98` for `F` at `0x801E3538`..`0x801E354C`, `0x801CECAC` for `B`
+at `0x801E3550`..`0x801E3554`), and `F` then jumps into `B`'s last three
+instructions - the `jal 0x8001A068` at `0x801E3558` and the return. The disc
+agrees: the
 [opcode census](../tooling/field-op-census.md) finds **no** coherent
 occurrence of any `4C Bx` or `4C Fx` in any scene (the `4C FF` and `4C FA/FB`
 totals it reports are all inside records that had already desynced, i.e. text).

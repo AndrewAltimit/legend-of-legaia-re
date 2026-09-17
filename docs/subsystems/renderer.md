@@ -646,14 +646,18 @@ last of them is what pins the field `TR`:
    those frames is not `0`, so the camera's vertical framing rides the
    composed eye Y rather than the focus. The composer's **staging** focus
    at `+0x1A/+0x1E/+0x22` does carry the footing, but the view build never
-   reads the staging descriptor. The port still anchors its focus on the
-   player's sampled floor instead of `0`: the 128-unit move that zeroing it
-   makes in `town01` tilts the screen path of a held `Up` past the
-   `|dx| < 0.5 * |dy|` threshold of the page's compass law, because the
-   port's d-pad heading is quantised to four cardinals where retail rings
-   it at 45 degrees (`func_0x800467E8`, ported as
-   `World::remap_pad_direction` and unwired). The zeroed focus exposes that
-   gap rather than causing it.
+   reads the staging descriptor. The port ships the zeroed focus wherever a
+   zone camera is active (`engine-core::camera_view`), and falls back to the
+   player's sampled floor only in a world with no terrain to compose an eye
+   trio from. That order matters: zeroing the focus first, on its own, moved
+   the focus 128 units vertically in `town01` and tilted the screen path of a
+   held `Up` past the `|dx| < 0.5 * |dy|` threshold of the page's compass law -
+   not because the focus was wrong but because the port's d-pad heading was
+   still quantised to four cardinals where retail rings it at 45 degrees
+   (`func_0x800467E8`). The zeroed focus exposed that gap rather than causing
+   it. With the ring wired (`World::remap_pad_direction`, driven by
+   `World::field_pad_ring_rotation`) the worst-case heading error halves and
+   the measured framing ships.
 5. `FUN_8005B6A8(0x1F8003C8)` (`SetTransMatrix`) uploads that `t` as the
    final GTE `TR`.
 
