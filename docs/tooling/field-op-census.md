@@ -120,6 +120,21 @@ them beside `0x45 C0` camera applies and `CamCfg` writes. See
 [`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md) for what the arm
 does; the census is what says one scene uses it and ninety-odd do not.
 
+### A third reach row the census speaks to, and does not close
+
+`field_actor_timers.rs` asks for a scene script issuing `0x43 0C` (the
+cinematic wipe) or `0x43 09` (the three-axis tween). The census finds **zero**
+coherent occurrences of either, and 31 incoherent ones across six carriers -
+every one inside a record that had already desynced. Both sub-ops are sized by
+the decoder (`AllocScripted`, `Sub9Tween`), so the census is not structurally
+blind to them.
+
+What a zero cannot do is rule out an occurrence sitting behind an *earlier*
+desync in its own record, and that is the honest limit of the instrument: it
+under-counts, never over-counts. So the row's premise has no evidence behind it
+and its fixture cannot be specified, but the bucket does not flip until those
+31 are read.
+
 ## Reading the summary table
 
 The default run prints one row per key, `clean`-descending, with the number of

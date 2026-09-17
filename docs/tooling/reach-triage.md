@@ -901,8 +901,18 @@ to put the item on a character rather than in the bag.
 
 The general rule the census adds to this page: **a clean count of zero means
 no shipped scene reaches that arm through the field VM's own bytecode**, which
-moves a row out of `(a)` NO-LADDER and into `(d)` NOT-PLAYTHROUGH - there is no
-fixture to write. A non-zero count names the scene to write one against.
+moves a row out of `(a)` NO-LADDER and towards `(d)` NOT-PLAYTHROUGH - there is
+no fixture to write. A non-zero count names the scene to write one against.
+
+A third row is in that position and is left at `(a)` deliberately. The
+field-actor timers ask for a script issuing `0x43 0C` or `0x43 09`, and the
+census finds **zero** coherent occurrences of either - but 31 incoherent ones
+across six carriers, every one inside a record the walk had already desynced
+in. Both sub-ops are sized by the decoder, so the census is not structurally
+blind to them; what it cannot rule out is an occurrence hidden behind an
+earlier desync in its own record. Reading those 31 is what would settle the
+bucket, and until then the row's premise has no evidence behind it and its
+fixture cannot be specified.
 
 #### The fishing pair: a precondition is not a screen, and the row was owed both
 
@@ -1130,7 +1140,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `code_lock_actor.rs` | 1 | (c) | disclosed | `801eed58` |
 | `dev_equip_commit.rs` | 1 | (a) | dev-menu | `801e5a08` |
 | `effect_vm/pool.rs` | 1 | (a) | field-actors | `801de914` |
-| `field_actor_timers.rs` | 2 | (a) | a scene script issuing the field-VM op that **spawns** the timer - `0x43 0C` for the cinematic wipe (`op43_alloc_scripted_actor`) and `0x43 09` for the three-axis tween (`op43_sub9_tween`). Both `step` bodies already run from the production world tick (`world/frame_tick.rs`), and the in-crate oracle that drives them (`world/tests/field_timer_actors.rs`) can never be a union member | `801dd4c4` `801dd784` |
+| `field_actor_timers.rs` | 2 | (a) | a scene script issuing the field-VM op that **spawns** the timer - `0x43 0C` for the cinematic wipe (`op43_alloc_scripted_actor`) and `0x43 09` for the three-axis tween (`op43_sub9_tween`). Both `step` bodies already run from the production world tick (`world/frame_tick.rs`), and the in-crate oracle that drives them (`world/tests/field_timer_actors.rs`) can never be a union member. The [op census](#the-op-census-names-both-carriers) finds **no coherent carrier for either op**, so this row is close to `(d)` - see the note under that section | `801dd4c4` `801dd784` |
 | `field_party_cursor.rs` | 1 | (c) | disclosed | `801f1278` |
 | `lib.rs` | 7 | (c) | **actor VM** (pseudo-entered - see the attribution note above) | `800319a8` `800326ac` `80035334` `800357fc` `80035978` `80035a4c` `801d6628` |
 | `scus_battle_helpers.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
