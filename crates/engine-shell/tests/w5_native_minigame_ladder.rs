@@ -163,7 +163,15 @@ fn read_png(path: &Path) -> (u32, u32, Vec<u8>) {
 fn pixel_delta(a: &Path, b: &Path) -> f64 {
     let (aw, ah, ap) = read_png(a);
     let (bw, bh, bp) = read_png(b);
-    assert_eq!((aw, ah), (bw, bh), "captures must be the same size");
+    assert_eq!(
+        (aw, ah),
+        (bw, bh),
+        "captures must be the same size: {} is {aw}x{ah}, {} is {bw}x{bh} \
+         (both come from one process, so the window manager resized the \
+         surface between two runs of the same command)",
+        a.display(),
+        b.display()
+    );
     let differing = ap
         .chunks_exact(4)
         .zip(bp.chunks_exact(4))
@@ -173,17 +181,30 @@ fn pixel_delta(a: &Path, b: &Path) -> f64 {
 }
 
 /// The baseline frame: the same scene at the same tick with nothing open.
-/// Captured once and reused, so every rung's delta is against the same frame.
+/// Captured once **per test process** and shared by every rung, so each
+/// rung's delta is against the same frame.
+///
+/// Once per process, never once per scratch directory. The capture is the
+/// window's surface, and the surface is whatever the window manager granted:
+/// on a display too small for a 960x720 window plus its decorations the WM
+/// clamps the height, and a PNG cached from an earlier session on a larger
+/// display then disagrees on size with every fresh rung capture. A baseline
+/// that outlives the process is a baseline from an environment the rungs may
+/// no longer run in, so a stale file is removed rather than reused.
 fn baseline(disc: &Path, out: &Path) -> PathBuf {
-    let path = out.join("baseline.png");
-    if !path.is_file() {
-        let (stdout, _) = run_window(disc, &path, "", None, SHOT_TICK);
-        assert!(
-            stdout.contains("[ok] screenshot"),
-            "baseline capture failed:\n{stdout}"
-        );
-    }
-    path
+    static BASELINE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    BASELINE
+        .get_or_init(|| {
+            let path = out.join("baseline.png");
+            let _ = std::fs::remove_file(&path);
+            let (stdout, stderr) = run_window(disc, &path, "", None, SHOT_TICK);
+            assert!(
+                stdout.contains("[ok] screenshot"),
+                "baseline capture failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+            );
+            path
+        })
+        .clone()
 }
 
 /// Every rung's shared shape: open the surface with `key_script`, optionally
