@@ -201,10 +201,11 @@ pub struct PauseItemsSession {
     /// Boxed to keep the session (and the `FieldMenuSubsession` enum
     /// carrying it) small.
     arrange_rank: Option<Box<crate::menu_arrange::ArrangeRankTable>>,
-    /// Bag slots in the **Use** list's order (`FUN_80030628` content id 3) -
-    /// the order the screen opens in and returns to. Empty on a disc-free
-    /// load, where no reorder happens at all.
-    use_order_slots: Vec<u8>,
+    /// Bag slots in whatever order the rows were in when the command window
+    /// dispatched Throw Out - restored on the way back. Captured live rather
+    /// than taken from the build, because Arrange reorders the rows in place
+    /// and restoring a build-time order would silently undo it.
+    restore_slots: Vec<u8>,
     /// Bag slots in the **Throw Out** list's order (content id `0x22`), which
     /// is a different build of the same bag: an equipment piece sorts to the
     /// tail whether or not its record refuses discard, and the key-item /
@@ -231,23 +232,18 @@ impl PauseItemsSession {
             staged_warp: None,
             exit_code: None,
             arrange_rank: None,
-            use_order_slots: Vec::new(),
+            restore_slots: Vec::new(),
             throw_out_slots: Vec::new(),
             cursor: 0,
             closed: false,
         }
     }
 
-    /// Attach the two per-command row orders the retail Items screen builds
-    /// (`FUN_80030628` content ids 3 and `0x22`), as bag-slot sequences. The
-    /// screen opens on the Use order and swaps to the Throw Out order when the
-    /// command window dispatches row 1.
-    pub fn with_command_row_orders(
-        mut self,
-        use_order_slots: Vec<u8>,
-        throw_out_slots: Vec<u8>,
-    ) -> Self {
-        self.use_order_slots = use_order_slots;
+    /// Attach the **Throw Out** row order (`FUN_80030628` content id `0x22`)
+    /// as a bag-slot sequence. The screen is built in the Use order (content
+    /// id 3) and swaps to this one when the command window dispatches row 1,
+    /// swapping back on the way out.
+    pub fn with_throw_out_row_order(mut self, throw_out_slots: Vec<u8>) -> Self {
         self.throw_out_slots = throw_out_slots;
         self
     }
@@ -390,16 +386,16 @@ impl PauseItemsSession {
                 // and buzzes (SFX 0x23) on an empty bag.
                 if cross && !self.bag_empty() {
                     match self.command_cursor {
-                        0 => {
-                            self.reorder_rows_by_slot(&self.use_order_slots.clone());
-                            self.focus = PauseItemsFocus::List;
-                        }
+                        0 => self.focus = PauseItemsFocus::List,
                         // Retail opens a *different* list window here (content
                         // id `0x22`, window 16) with its own build, not the
                         // Use list re-pointed: a key item dims in place, an
                         // equipment piece sorts to the tail, and the
-                        // effect-flag-`0x8` group goes last.
+                        // effect-flag-`0x8` group goes last. The order the
+                        // rows are in right now is what the back-out restores,
+                        // so an Arrange the player just ran survives the trip.
                         1 => {
+                            self.restore_slots = self.rows.iter().map(|r| r.slot).collect();
                             self.reorder_rows_by_slot(&self.throw_out_slots.clone());
                             self.focus = PauseItemsFocus::ThrowOutList;
                         }
@@ -462,9 +458,10 @@ impl PauseItemsSession {
             PauseItemsFocus::ThrowOutList => {
                 if circle {
                     // Retail: list result 3 -> restore the id-15 list
-                    // window and return to submenu 5. The window it restores
-                    // carries the Use build, so the order goes back too.
-                    self.reorder_rows_by_slot(&self.use_order_slots.clone());
+                    // window and return to submenu 5. That window carries the
+                    // other build, so the order the screen arrived in goes
+                    // back with it.
+                    self.reorder_rows_by_slot(&self.restore_slots.clone());
                     self.focus = PauseItemsFocus::Command;
                     return;
                 }
@@ -2081,6 +2078,43 @@ mod tests {
         assert!(!s.is_done());
         s.input_pad_edge(edge(PadButton::Circle));
         assert!(s.is_done());
+    }
+
+    /// Throw Out draws its own row order (`FUN_80030628` content id `0x22`),
+    /// and the trip back restores whatever order the screen was in - not the
+    /// order it was built in. The distinction is the Arrange command: a player
+    /// who arranges, opens Throw Out and backs out must still see the arranged
+    /// list.
+    #[test]
+    fn throw_out_swaps_the_row_order_and_the_back_out_restores_what_it_found() {
+        let mut s = items_session(&[(0x11, 1), (0x22, 1), (0x33, 1)]);
+        // A Throw Out build that reverses the rows, so the swap is visible.
+        s = s.with_throw_out_row_order(vec![2, 1, 0]);
+        let opened: Vec<u8> = s.rows.iter().map(|r| r.slot).collect();
+        assert_eq!(opened, vec![0, 1, 2]);
+
+        // Arrange (command row 2) reorders in place; capture what it left.
+        s.command_cursor = 2;
+        s.input_pad_edge(edge(PadButton::Cross));
+        let arranged: Vec<u8> = s.rows.iter().map(|r| r.slot).collect();
+
+        // Throw Out (command row 1) swaps to the builder's order...
+        s.command_cursor = 1;
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.focus, PauseItemsFocus::ThrowOutList);
+        assert_eq!(
+            s.rows.iter().map(|r| r.slot).collect::<Vec<_>>(),
+            vec![2, 1, 0],
+            "the Throw Out list draws content id 0x22's order"
+        );
+        // ...and backing out restores the order it found, Arrange included.
+        s.input_pad_edge(edge(PadButton::Circle));
+        assert_eq!(s.focus, PauseItemsFocus::Command);
+        assert_eq!(
+            s.rows.iter().map(|r| r.slot).collect::<Vec<_>>(),
+            arranged,
+            "the back-out must not undo an Arrange"
+        );
     }
 
     /// An empty bag keeps the hand on the command window ("Use" refuses).

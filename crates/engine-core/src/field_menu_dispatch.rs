@@ -931,11 +931,9 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
             }
         })
         .collect();
-    // The two row orders the retail Items screen's command window dispatches
-    // between: content id 3 (Use, the order `inner` was built in) and content
-    // id 0x22 (Throw Out). Both are bag-slot sequences, so the screen can
-    // permute the rows it already holds.
-    let use_order_slots = slots.clone();
+    // The Throw Out command's own row order (content id 0x22). The screen is
+    // built in the Use order (content id 3), and this is a bag-slot sequence,
+    // so the command window can permute the rows it already holds.
     let throw_out_slots: Vec<u8> = world
         .bag_throw_out_rows()
         .map(|rows| rows.iter().map(|r| r.slot).collect())
@@ -943,7 +941,7 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
     PauseItemsSession::new(inner, rows)
         .with_arrange_rank(world.menu.arrange_rank.clone())
         .with_warp_destinations(warp_destinations(world))
-        .with_command_row_orders(use_order_slots, throw_out_slots)
+        .with_throw_out_row_order(throw_out_slots)
 }
 
 /// The visible rows of the quick-travel landmark list - the Door of Wind

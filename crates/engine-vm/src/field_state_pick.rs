@@ -72,11 +72,33 @@
 //! table's fourteen entries name slots `0x21`..`0x33` and `-1`, and **none of
 //! them is `7`**, so no `49 <sub_op>` reaches this handler in retail either.
 //!
-//! Slot `7` is therefore a *successor* state - something writes `7` into an
-//! actor's `+0x50` and the dispatcher runs this handler on the next tick - and
-//! which state does that is the open question. Until it is answered there is no
-//! arm to add: a dispatch arm here would be one nothing selects on either
-//! side.
+//! Slot `7` is a **return** state, and the writer is the submode enter half
+//! itself - the routine whose table read at `0x801F145C` the port already
+//! cites. Scanning every based overlay image for a store of the immediate `7`
+//! into `+0x50` finds exactly one site, at `0x801F140C`, and its surroundings
+//! are the same four writes this handler makes:
+//!
+//! ```text
+//! 801f13f4  sh   v0,0x2e(v1)     ; scene[+0x2E] = -1
+//! 801f1400  sh   v0,0x40(v1)     ; scene[+0x40] = actor[+0x50]  (outgoing)
+//! 801f1404  addiu v0,zero,7
+//! 801f140c  sh   v0,0x50(s4)     ; actor[+0x50] = 7
+//! 801f141c  sh   zero,0x54(s4)
+//! ```
+//!
+//! Then, when `_DAT_8007B450` names a sub-op the `0x801F33A4` table gives a
+//! handler for, the same routine immediately does it **again** at
+//! `0x801F1474..0x801F14AC` - saving the `7` it just installed into
+//! `scene[+0x40]` and overwriting `+0x50` with the table's slot. So `7` is what
+//! the screen returns to: the hand-back restores `+0x50` from `scene[+0x40]`,
+//! this handler runs once, and installs `0x30` (or `0x13` on the debug
+//! shortcut).
+//!
+//! That is what the port has no room for. `field_submode_screen` installs the
+//! table's slot directly, collapsing a two-step chain into one, and carries no
+//! `scene[+0x40]` return slot for the intermediate state to be parked in. The
+//! remaining work is the return slot and the debug-mode word, not a dispatch
+//! arm.
 //!
 //! Two smaller gaps sit behind it, and they are the ones with no engine home
 //! at all: the scene record's `+0x2E` / `+0x40` save-slot pair, which is where
