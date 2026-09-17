@@ -693,6 +693,26 @@ owns this frame, and what its inputs are). Both hosts call
 camera of its own - the debug orbit vantage on `F3`, which the native window
 has too - and it is an explicit override, not the default projection.
 
+**Same camera, different controls.** That parity is about the *type*; the
+**inputs** were a separate question, and nothing asks it. The page steered its
+orbit with three knobs - drag yaw, drag pitch, wheel zoom - and the native
+window had one, so its vantage could only be pitched by editing a constant and
+zoomed in three preset steps. Worse, the knob both hosts *did* have ran at
+different rates: `0.006` rad/px on the page against `0.008` natively, writing
+the same `Camera::manual_orbit`, which the retail follow camera and the
+movement compass both read. So the identical drag turned the view by different
+amounts *and* remapped the d-pad differently, on a field the simulation
+consumes - a control-feel divergence that no tier looks at, because both sides
+are live call sites into the same engine field. The window now takes the
+page's three knobs at the page's rates and clamps
+(`window::camera::debug_orbit`). They are JS literals on the other side, so no
+paired-constant row can bind them; the pairing is a test that quotes the
+page's handlers by name.
+
+The general shape: a tier that pairs *types* or *call sites* says nothing
+about the numbers feeding them, and an input rate is exactly the kind of
+number nobody writes a constant pair for because it "only affects feel".
+
 **Simulated and never drawn.** The page ticked the field move-VM effects
 every frame and drew none of them, because its only FX draw call sat inside
 the battle branch. Tier 7 asks whether a render surface names a kernel; it
@@ -747,6 +767,31 @@ between retail's sprite and the placeholder is one world field
 VRAM. Left per-host that predicate would have been two spellings of "did the
 upload work", which is the shape a silent one-host regression hides in - and
 the tiers cannot see it, because both spellings end at a live call site.
+
+**A waiver's blocking capability can be falsified by a doc this repo already
+carries.** Two equip-screen painters were waived as orphans on one shared
+premise: retail opens windows `2 / 24 / 25` from one script while the port's
+equip flow is built on `2 / 21 / 22 / 23`, window 25's rect overlaps window
+21, and therefore "closing it means moving the whole screen onto the
+descriptor-table layout, not adding a draw call". That premise reads the
+script as *the* Equip screen's. It is one **step** of it: `field-menu.md`'s own
+window-to-screen map puts script `0x801E4DC8` on sub-screen `0x14`, the
+candidate list, which runs after `0x12` has picked the character and `0x13`
+has browsed the slots - so it opens 24 and 25 *on top of* four windows already
+up, and overlapping window 21 is the point. One of the two is adopted on
+exactly those terms now, on both hosts, with no layout move.
+
+The waiver format did its job here - it named something concrete enough to
+check - and what it could not do was notice that another page in the same repo
+had already answered it. A blocking capability is a claim like any other:
+worth re-deriving before it is inherited, especially when two waivers share
+one, because then a single wrong sentence holds two rows shut.
+
+The same change closed a gap neither waiver named: the equip screen spelled
+every candidate `Item 3A`, because the item name / description resolver lived
+inside the *Items* screen's session builder. Sharing a panel between two
+screens surfaces that immediately - the panel wants a description, and there
+was nowhere to get one.
 
 ## What a waiver may say
 
