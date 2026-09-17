@@ -477,6 +477,30 @@ fn every_walkable_state_frames_through_the_zone_camera() {
                 g[4],
                 g[5],
             );
+            // The composed view the hosts actually render with, from the one
+            // kernel both of them call. The `[params]` line above carries the
+            // raw camera words; between those words and the frame sit the
+            // focus rule, the 6x world-scale reduction, the depth floor and
+            // the distance knob, so a framing measurement that re-derives the
+            // view from `[params]` is measuring its own arithmetic. This line
+            // is `psx_camera_vp`'s six inputs verbatim.
+            if let Some(v) = legaia_engine_core::camera_view::field_follow_view(&cam, &host.world) {
+                println!(
+                    "[view] {}\tfocus={:.3},{:.3},{:.3}\tpitch={:.6}\tyaw={:.6}\t\
+                     roll={:.6}\th={:.3}\ttr_eye={:.3},{:.3},{:.3}",
+                    s.label,
+                    v.focus[0],
+                    v.focus[1],
+                    v.focus[2],
+                    v.pitch,
+                    v.yaw,
+                    v.roll,
+                    v.h,
+                    v.tr_eye[0],
+                    v.tr_eye[1],
+                    v.tr_eye[2],
+                );
+            }
         }
 
         // ---- tier 3b: the live EYE trio.
