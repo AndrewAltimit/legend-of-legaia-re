@@ -903,7 +903,8 @@ pub fn encode_insn(text: &str) -> Option<u32> {
 /// Verdict of comparing a dump's printed instructions to an image's bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Attribution {
-    /// At least one printed instruction re-encodes to the image's word there.
+    /// At least one printed instruction re-encodes to a **non-zero** word that
+    /// the image carries there.
     Confirmed,
     /// A printed instruction re-encodes to a different word: the extent's
     /// bytes are not this image's.
@@ -913,11 +914,24 @@ pub enum Attribution {
 }
 
 /// Compare a dump's head instructions against `image` loaded at `base_va`.
+///
+/// A match on the word `0x00000000` is **not** evidence. `nop` is in the
+/// encodable grammar and encodes to zero, so a dump whose head is `nop` agrees
+/// with any zero fill in any image at any base - and the corpus contains such
+/// dumps, taken over a sibling image's own zero region. One of them
+/// (`FUN_801d84b4`, 4646 printed `nop`s) confirmed a 20060-byte extent inside
+/// entry `0970`'s 131172-byte zero hole and carried most of that entry's
+/// reported code share. A zero match therefore counts for nothing: the verdict
+/// needs one printed instruction that re-encodes to a non-zero word the image
+/// really carries.
+///
+/// A mismatch is still a refutation whatever the word, because a *difference*
+/// is informative where an agreement with fill is not.
 pub fn attribute(dump: &DumpExtent, image: &[u8], base_va: u32) -> Attribution {
     let Some(off) = dump.entry_va.checked_sub(base_va).map(|v| v as usize) else {
         return Attribution::Unverifiable;
     };
-    let mut seen = false;
+    let mut seen_nonzero = false;
     for (i, text) in dump.head_insns.iter().enumerate() {
         let Some(want) = encode_insn(text) else {
             continue;
@@ -929,9 +943,9 @@ pub fn attribute(dump: &DumpExtent, image: &[u8], base_va: u32) -> Attribution {
         if u32::from_le_bytes(w.try_into().unwrap()) != want {
             return Attribution::Refuted;
         }
-        seen = true;
+        seen_nonzero |= want != 0;
     }
-    if seen {
+    if seen_nonzero {
         Attribution::Confirmed
     } else {
         Attribution::Unverifiable
@@ -1478,6 +1492,57 @@ fn claim_slot_fill(buf: &[u8], sink: &mut Sink, start: usize, end: usize, detail
         return;
     }
     sink.claim(start + fill, start + slot.len(), OWNER_PAD, detail);
+}
+
+/// Shortest internal all-zero run that gets its own residue entry.
+const FILL_SPLIT_BYTES: usize = 2048;
+
+/// Cut a residue run wherever a sector or more of fill sits inside it.
+///
+/// A residue run's boundaries are drawn by the *claims* around it, so a region
+/// that is one kilobyte of content followed by a hundred kilobytes of fill
+/// arrives as a single run - and the shape vocabulary then has to name the
+/// whole thing with one word. It picks `ascii_text`, because that test counts
+/// NUL as printable and one non-zero byte disqualifies `zero_pad`, so the fill
+/// lands in `work_bytes` as if it were an unwalked string pool. Entry `0970`'s
+/// 131172-byte hole did exactly that.
+///
+/// Splitting is not reclassifying: each piece still gets whatever shape its own
+/// bytes earn, and the total residue is unchanged. It only stops one run from
+/// being two findings glued together. The bound is a sector, so inter-record
+/// zeros stay attached to the run they belong to.
+fn split_off_fill(buf: &[u8], gaps: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
+    let mut out = Vec::with_capacity(gaps.len());
+    for (a, b) in gaps {
+        let Some(s) = buf.get(a..b) else {
+            out.push((a, b));
+            continue;
+        };
+        let mut cut = a;
+        let mut i = 0usize;
+        while i < s.len() {
+            if s[i] != 0 {
+                i += 1;
+                continue;
+            }
+            let mut j = i;
+            while j < s.len() && s[j] == 0 {
+                j += 1;
+            }
+            if j - i >= FILL_SPLIT_BYTES {
+                if a + i > cut {
+                    out.push((cut, a + i));
+                }
+                out.push((a + i, a + j));
+                cut = a + j;
+            }
+            i = j;
+        }
+        if b > cut {
+            out.push((cut, b));
+        }
+    }
+    out
 }
 
 /// Claim what is left of a PROT entry's **last sector** past a declared end.
@@ -2655,12 +2720,25 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
         None => false,
     };
     let (mut confirmed, mut refuted, mut ambiguous, mut credited_by_label) = (0, 0, 0, 0);
+    let mut fill_extents = 0usize;
     for d in &dumps {
         if (d.entry_va as u64) < base as u64 || (d.entry_va as u64) >= hi {
             continue;
         }
         let start = (d.entry_va - base) as usize;
         let end = (start + d.bytes as usize).min(buf.len());
+        // A dump over an image's zero region is in the corpus (one is 4646
+        // printed `nop`s) and its extent is fill, not code, in whatever image
+        // it is checked against - including the one its filename names. Never
+        // credit an all-zero extent as `code`: the shape classifier will call
+        // the run `zero_pad`, which is what it is.
+        if buf
+            .get(start..end)
+            .is_some_and(|w| w.iter().all(|&b| b == 0))
+        {
+            fill_extents += 1;
+            continue;
+        }
         match attribute(d, buf, base) {
             Attribution::Confirmed => {
                 confirmed += 1;
@@ -2687,7 +2765,7 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     sink.note(format!(
         "base {:#010x} ({}); {confirmed} extents confirmed by bytes, \
          {credited_by_label} credited by filename label, {ambiguous} unverifiable, \
-         {refuted} refuted (aliased sibling)",
+         {refuted} refuted (aliased sibling), {fill_extents} land on fill",
         base, rec.label
     ));
     claim_pinned_overlay_assets(buf, sink, idx);
@@ -3052,7 +3130,7 @@ fn run(
         .collect();
     by_owner.sort_by_key(|o| std::cmp::Reverse(o.bytes));
 
-    let gaps = complement(&merged, size);
+    let gaps = split_off_fill(buf, complement(&merged, size));
     let mut runs: Vec<Residue> = gaps
         .iter()
         .map(|&(a, b)| {
@@ -3493,6 +3571,36 @@ mod tests {
         assert_eq!(
             attribute(&quiet, &img, 0x801C_E818),
             Attribution::Unverifiable
+        );
+
+        // A `nop`-headed dump agrees with zero fill in every image at every
+        // base, so agreement carries no information. The corpus has such
+        // dumps, taken over a sibling image's own zero region, and one of them
+        // used to confirm a 20060-byte extent inside a 131172-byte hole.
+        let nops = DumpExtent {
+            head_insns: vec!["nop".into(), "nop".into(), "nop".into()],
+            ..dump.clone()
+        };
+        assert_eq!(
+            attribute(&nops, &[0u8; 0x40], 0x801C_E818),
+            Attribution::Unverifiable,
+            "matching only zero words is not a confirmation"
+        );
+        // A real instruction beside the zeros still decides it.
+        let mixed = DumpExtent {
+            head_insns: vec!["nop".into(), "addiu sp,sp,-0x18".into()],
+            ..dump.clone()
+        };
+        let mut with_code = vec![0u8; 4];
+        with_code.extend_from_slice(&0x27BD_FFE8u32.to_le_bytes());
+        assert_eq!(
+            attribute(&mixed, &with_code, 0x801C_E818),
+            Attribution::Confirmed
+        );
+        // And a mismatch is still a refutation, zero word or not.
+        assert_eq!(
+            attribute(&mixed, &[0u8; 0x40], 0x801C_E818),
+            Attribution::Refuted
         );
     }
 

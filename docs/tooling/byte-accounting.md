@@ -185,6 +185,17 @@ naive classifier walks straight into.
   other direction: real MIPS puts a halfword at or above `0x8000` in every load, store and
   `lui`-pair word, so code never passes the STP-clear test.
 
+A run's **boundaries** are drawn by the claims around it, not by its content, so
+one run can be two findings glued together - and the vocabulary then has to name
+both with one word. A kilobyte of unwalked content followed by a hundred
+kilobytes of fill arrives as a single run and reads as `ascii_text`, because the
+NUL asymmetry below takes it and `zero_pad` will not. A residue run is therefore
+**cut** wherever a sector or more of fill sits inside it. Each piece still earns
+its own shape and the residue total does not move; only the reporting changes,
+and the fill stops being counted as work. Entry `0970` is the case: 3924 bytes
+of unwalked content and a 131172-byte hole came out as one 135096-byte
+`ascii_text` run at 0.23 bits/byte.
+
 There is a fourth asymmetry, and it inflates `work_bytes` rather than misnaming
 a run. `ascii_text` counts NUL as printable, because a string pool is mostly
 short strings separated by terminators - but so is a mostly-empty region with a
@@ -223,6 +234,33 @@ The encodable grammar is small on purpose - `nop`, `jr ra`, `addiu`, `li`, `lui`
 `jal`, and the load/store forms - because a function's first instructions are nearly always drawn
 from it. A mnemonic outside the grammar yields *unverifiable*, never a mismatch: the instrument's
 silence must never read as a refutation.
+
+#### A zero match is not a match
+
+`nop` is in that grammar and it encodes to `0x00000000`, so a dump whose head is
+`nop` **agrees with zero fill** - in any image, at any base. That is not a
+property of the disc; it is the one encoding that carries no information.
+
+The corpus contains such dumps, taken over an image's own zero region rather
+than over a function. One of them, `FUN_801d84b4` at 20060 bytes, confirmed
+against entry `0970` - whose content is a 12676-byte head, a **131172-byte**
+all-zero hole, and a 7413-byte tail. The extent lands wholly inside that hole,
+and it carried most of the entry's reported code share: `0970` read 20.5 %
+accounted where its own non-zero bytes are 12555 of 149504, and reads 5.6 %
+once zero agreement stops counting.
+
+Two rules close it, and the entry's note reports the second: a confirmation
+needs one printed instruction that re-encodes to a **non-zero** word the image
+carries, and an extent whose bytes are entirely zero is never claimed as
+`code` - not even when the dump's filename names this entry, because the
+filename says where the dump was taken and not what is there. A *mismatch*
+still refutes whatever the word: a difference is informative where an agreement
+with fill is not.
+
+The same agreement reaches the committed byte-attribution CSV
+([`disc-coverage.md`](disc-coverage.md)), which places that extent in
+`baka_fighter(0976)` on a 24-instruction window - an image whose own extent
+ends before the run does.
 
 A code image's non-code regions - string pools, jump tables, data segments - fall to the residue
 classifier, which is the right answer for them. `ascii_text` and `pointer_dense` runs in an overlay
@@ -447,16 +485,16 @@ Read the classes in three groups; only the first is work.
 The `entries` and `bytes` columns are the disc; the `non-slack residue` column is
 a **snapshot of the instrument** and moves with every parser that binds - re-derive
 it rather than quoting it. Its denominator is the whole TOC: 1233 entries,
-121006080 bytes. At the state below, 0.53% of that is residue, and 0.27 of those
-0.53 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 0.27%
+121006080 bytes. At the state below, 0.55% of that is residue, and 0.31 of those
+0.55 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 0.24%
 non-slack. The magic sweep contributes nothing: `accounted` and `structural` are
 the same figure, so no part of the accounted share rests on a guessed magic.
 
 | Class | entries | bytes | non-slack residue |
 |---|---:|---:|---:|
-| `overlay_data_blob` | 25 | 17164288 | 155911 |
+| `overlay_data_blob` | 25 | 17164288 | 127022 |
 | `scene_asset_table` | 90 | 22577152 | 77420 |
-| `overlay_ptr_table` | 42 | 407552 | 46360 |
+| `overlay_ptr_table` | 42 | 407552 | 46428 |
 | `mips_overlay` | 22 | 194560 | 21836 |
 | `lzs_container` | 18 | 4098048 | 12889 |
 | `init_pak` | 1 | 153600 | 2940 |
