@@ -465,11 +465,13 @@ pub fn build_use_list_rows(
 ///
 /// Wired through `World::bag_throw_out_rows`. The Items screen takes the
 /// resulting bag-slot order and permutes its rows into it when the command
-/// window dispatches Throw Out, restoring the Use order on the way back -
-/// which is what retail does by opening a different list window (content id
-/// `0x22`, window 16) with its own build. The `+7` flags byte the gate reads
-/// now has a carrier: `World::tables.equip_stats` holds the raw stat-bonus
-/// records, installed at boot by both hosts.
+/// window dispatches Throw Out, restoring on the way back the order it found -
+/// which is the Use build unless the player ran Arrange first, and is why the
+/// restore is captured at dispatch rather than at session build. Retail gets
+/// the same effect by opening a different list window (content id `0x22`,
+/// window 16) with its own build. The `+7` flags byte the gate reads now has a
+/// carrier: `World::tables.equip_stats` holds the raw stat-bonus records,
+/// installed at boot by both hosts.
 ///
 /// Same three-buffer shape as the Use list with a discardability gate
 /// instead of the usability chain:
