@@ -903,6 +903,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_throw_out_cursor.lua`](../../scripts/pcsx-redux/autorun_throw_out_cursor.lua) | Whether the pause-menu item cursor `_DAT_8007BB88` is a bag slot or a list row. &rarr; [detail](#autorun_throw_out_cursorlua) |
 | [`autorun_scene_entry_eye_seed.lua`](../../scripts/pcsx-redux/autorun_scene_entry_eye_seed.lua) | Which of the two scene-entry camera-eye seeds runs last, and what the first field view reads. &rarr; [detail](#autorun_scene_entry_eye_seedlua) |
 | [`autorun_field_pad_ring.lua`](../../scripts/pcsx-redux/autorun_field_pad_ring.lua) | What retail's camera-relative pad remap turns each held direction into, at every rotation index. &rarr; [detail](#autorun_field_pad_ringlua) |
+| [`autorun_scene_name_hijack.lua`](../../scripts/pcsx-redux/autorun_scene_name_hijack.lua) | Loads a scene no save state reaches by rewriting a door's inline destination name. &rarr; [detail](#autorun_scene_name_hijacklua) |
 #### Runtime probe details
 
 ##### `autorun_w4d_cort_flow_writer.lua`
@@ -1255,6 +1256,51 @@ the longer ones (`Probes` + `What it answered`) are written out as
   differ only in that one has the high bit and the other does not, which is
   exactly the shape that makes the defect look like a genuine finding about
   the tap that "aliased".
+
+##### `autorun_scene_name_hijack.lua`
+
+Some scenes are unreachable from every catalogued save - `juui1` has no
+library state at all - so nothing shows what retail draws there. The field
+VM's op `0x3F` (named scene change) carries its destination **inline in the
+bytecode**, `[u16 seat][u8 name_len][name bytes]`, so a probe that breaks on
+the VM's per-op dispatcher `FUN_801DE840` can rewrite the name in the live MAN
+buffer before the op consumes it and let retail's own loader do the rest.
+
+- **The swap lands, and the loader honours it.** From
+  `drake_castle_to_worldmap` the door is `index=85 name='map01'` at
+  `bytecode 0x800F5CE7 pc 0x0014`, two vsyncs into the held press. Rewritten
+  to another five-letter scene, the game's own load trace changes with it -
+  `map01` stages VAB `2035`, BGM `2000`, packet size `178`; the replacement
+  staged VAB `2088`, BGM `2011`, packet size `240`. So the bundle under the
+  new name is what loaded.
+- **The frame it produces is still not evidence about that scene.** The seat
+  index belongs to the door's original destination, and this door's
+  destination is a world map, so the replacement is entered through the
+  world-map path and draws nothing: every frame of a 1000-vsync run is pure
+  black outside the player sprite and the HUD. The **control** is what
+  settles it - a hijack into a scene the game draws brightly renders exactly
+  as black, at the same mean luminance and the same fraction of non-black
+  pixels. Writing the seat index too (`LEGAIA_HIJACK_SEAT`) does not fix it
+  from this donor either; the player lands at the same coordinates with seat
+  `0` as with seat `85`. **A brightness or content question needs a
+  field-to-field donor door**, where the index is a field seat.
+- **Run the control every time.** Without it a black frame reads as a finding
+  about the scene, and the same black frame appears for a scene that is not
+  dark at all.
+- **The scene-name word `0x8007050C` is an output, not an input.**
+  `LEGAIA_HIJACK_SCENE_WORD=1` overwrites it instead of the bytecode; the
+  word then reads the replacement name for the rest of the run and the game
+  loads the original scene anyway - the Drake world map, drawn normally. The
+  word is the label the loader writes, so a capture that reads a scene name
+  out of RAM is reading what the loader said, not what it was asked.
+- **Same-length rule.** The name is inline in the bytecode, so a replacement
+  of a different length would need `name_len` changed and would shift every
+  following instruction. The probe refuses the swap and says so rather than
+  corrupting the script.
+- **`bit.band` is signed in LuaJIT**, so `n32(a0)` on a KSEG0 pointer comes
+  back negative and the usual `a0 < 0x80000000` guard then rejects every hit.
+  The first run of this probe reported zero doors while the dispatcher was
+  entered 1072 times. Use `tonumber` for pointers.
 
 ### Save-state to Python (offline analysis)
 
