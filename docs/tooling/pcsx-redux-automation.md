@@ -902,6 +902,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_cast_cue_band_sweep.lua`](../../scripts/pcsx-redux/autorun_cast_cue_band_sweep.lua) | Whether the cast-audio dispatcher's character-banded cue band ever fires on a player cast. &rarr; [detail](#autorun_cast_cue_band_sweeplua) |
 | [`autorun_throw_out_cursor.lua`](../../scripts/pcsx-redux/autorun_throw_out_cursor.lua) | Whether the pause-menu item cursor `_DAT_8007BB88` is a bag slot or a list row. &rarr; [detail](#autorun_throw_out_cursorlua) |
 | [`autorun_scene_entry_eye_seed.lua`](../../scripts/pcsx-redux/autorun_scene_entry_eye_seed.lua) | Which of the two scene-entry camera-eye seeds runs last, and what the first field view reads. &rarr; [detail](#autorun_scene_entry_eye_seedlua) |
+| [`autorun_field_pad_ring.lua`](../../scripts/pcsx-redux/autorun_field_pad_ring.lua) | What retail's camera-relative pad remap turns each held direction into, at every rotation index. &rarr; [detail](#autorun_field_pad_ringlua) |
 #### Runtime probe details
 
 ##### `autorun_w4d_cort_flow_writer.lua`
@@ -1211,6 +1212,49 @@ the longer ones (`Probes` + `What it answered`) are written out as
   `(-8, -6, 6, 10)` into `0x1F8003E8..EB` on every entry and the scene then
   replaces it - `map03` runs at `(-18, -12, 18, 32)`, `uru` at
   `(-21, -6, 19, 31)`. The seed is a floor, not a frame's value.
+
+##### `autorun_field_pad_ring.lua`
+
+- **Probes:** two exec taps on the camera-relative pad remap
+  `FUN_800467E8` in `SCUS_942.54` - its entry and the join its two
+  early-outs and its write-back all reach - each gated on the instruction
+  word the extracted image carries there. The pair is latched, so the `in`
+  row (the pad word `0x8007B850` the routine was handed) and the `out` row
+  (the word it wrote back) come from the **same** call; taking the two taps
+  independently pairs an `in` with some other call's `out`, which is how the
+  first run recorded an `out` whose direction nibble was zero. A third row
+  per cell is taken at the cell's last held vsync, for the settled actor
+  heading.
+- **How the input space is covered.** The rotation index `gp+0x2D8` is
+  scene content - its disc-wide writers are a field-VM `0x4C` arm and the
+  tile-board walker - so a free-roam save sits at whatever its own scene
+  authored, which for a `town01` state is `0`. The probe writes the index
+  itself, one value per cell, and holds each of the eight d-pad directions
+  in turn: eight rotations x eight directions in one capture. That makes
+  the rotations synthetic and the ring walk, the written mask and the
+  resulting heading real. Cells are ordered in opposite pairs so the sweep's
+  net walk is near zero and the player stays in the open; the scene word and
+  game mode ride every row, so a cell that walked into a transition is
+  visible rather than silently mixed in.
+- **Directions are held with `pad.force`, never by writing the mask.**
+  `FUN_8001822C` rebuilds `0x8007B850` from the real pad every frame, so a
+  RAM write to it does not survive to the call.
+- **What it answered:** the port's `World::remap_pad_direction` reproduces
+  retail's written direction nibble on every one of the 64 cells, and the
+  ring table live in RAM at `DAT_800766FC` is byte-identical to the one the
+  port carries and to `SCUS_942.54`'s own bytes. The settled actor heading
+  at `player+0x26` equals the engine's `render_26` plus the documented
+  half-turn on 61 of the 64; the three that differ are the sweep's three
+  largest turns, each still short of its target at the cell's last held
+  vsync, so they measure the turn rate rather than the remap.
+- **One trap worth reusing:** `bit.band` in LuaJIT yields a **signed**
+  32-bit integer, so a fingerprint word with bit 31 set (this routine's
+  entry is `lw v0,0x2d8(gp)` = `0x8F8202D8`) never compares equal to the Lua
+  number literal. Normalise both sides. A tap that gets this wrong reports
+  every hit as an alias and silently records nothing - and the two taps here
+  differ only in that one has the high bit and the other does not, which is
+  exactly the shape that makes the defect look like a genuine finding about
+  the tap that "aliased".
 
 ### Save-state to Python (offline analysis)
 
