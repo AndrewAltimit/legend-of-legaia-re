@@ -73,13 +73,20 @@
     <tr><td><code>5</code></td><td>extend action gauge (one battle)</td><td>Fury Boost</td></tr>
     <tr><td><code>6</code></td><td>permanent stat-up (tier = which stat)</td><td>Miracle Water, the Water line</td></tr>
     <tr><td><code>7</code></td><td>temporary stat buff (one battle, &times;6/5)</td><td>Power Elixir</td></tr>
-    <tr><td><code>11</code>/<code>12</code>/<code>13</code></td><td>arts book (Fire/Wind/Thunder; tier = book level)</td><td>Fire Book I</td></tr>
+    <tr><td><code>11</code>/<code>12</code>/<code>13</code></td><td>arts book - the class is the character, the tier is the art id (below)</td><td>Fire Book I</td></tr>
     <tr><td><code>14</code></td><td>Point Card strike - reachable code, <strong>no item on the disc reaches it</strong></td><td>-</td></tr>
     <tr><td><code>126</code>/<code>127</code></td><td>summon flute</td><td>Lippian Flute</td></tr>
     <tr><td><code>128</code> / <code>129</code></td><td>field escape (dungeon) / field warp (city)</td><td>Door of Light / Door of Wind</td></tr>
     <tr><td><code>130</code></td><td>reduce encounter rate</td><td>Incense</td></tr>
   </tbody>
   </table>
+  <details class="disclosure">
+    <summary>Classes 11/12/13: the class is the character, the tier is the art</summary>
+    <div class="disclosure-body">
+      <p>The apply handler's arts-book arm takes the character from the <strong>class</strong> byte - it subtracts <code>11</code> to get a roster slot, so the three classes are Vahn, Noa and Gala - and stores the <strong>tier</strong> byte verbatim as the learned art id. The ally the player picked in the item menu is never read, so a Fire Book used on Noa still teaches Vahn.</p>
+      <p>That makes the tier an art id rather than a book level: Fire and Thunder <code>I</code>/<code>II</code>/<code>III</code> carry <code>3</code>/<code>2</code>/<code>1</code> and Wind carries <code>5</code>/<code>4</code>/<code>1</code>, which is the per-character art-id space and not a rank counting down. Every book is flagged field-use only, so none of them appears in the battle item list.</p>
+    </div>
+  </details>
   <details class="disclosure">
     <summary>Class 14: the Point Card strike nothing sells</summary>
     <div class="disclosure-body">

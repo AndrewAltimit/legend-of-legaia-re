@@ -509,7 +509,7 @@ A pre/post save pair (battle command menu parked on Fire Book I → Fire Book I 
 | `+0x186` | `0x0C` | `0x03` | first list entry - new entry inserted at front |
 | `+0x187` | `0x00` | `0x0C` | second list entry - pre-event entry shifted right |
 
-Pattern: a length-prefixed list at `+0x185` grew by one entry. The new entry landed at position 0 and the existing entry moved to position 1 - which a head insert and an **ordered** insert both produce, because `0x03 < 0x0C`. The writer settles it: the applier's `0x0B`..`0x0D` arm (`0x80041FB4`, `legaia_engine_vm::battle_action::selector_insert_displayed_skill`) walks down from the count moving entries up only while the new id is smaller, so the list is kept sorted **ascending by id**. This one sample cannot tell the two apart.
+Pattern: a length-prefixed list at `+0x185` grew by one entry. The new entry landed at position 0 and the existing entry moved to position 1 - which a head insert and an **ordered** insert both produce, because `0x03 < 0x0C`, so this one sample cannot tell the two apart. The writer settles it: the applier's `0x0B`..`0x0D` arm (`0x80041FB4`, `legaia_engine_vm::battle_action::selector_insert_displayed_skill`) walks down from the count moving entries up only while the new id is smaller, so the list is kept sorted **ascending by id**.
 
 ### Reader resolved
 
@@ -527,9 +527,39 @@ A grep across the captured menu overlays (`overlay_menu_801d33d8.txt` and the id
 
 The structure is `[u8 count at +0x185][u8 ids[N] at +0x186..]`. The menu's spell-table at `0x801E472C` is indexed by these IDs (stride `0x14`; `record[+0]` = sort key, `record[+1]` = ID, `record[+0xC]` = name pointer). Display is capped at 7 by `slti v0,t2,0x7` later in the loop, but the on-record array fits 16 bytes (the gap to the equipment-slot field at `+0x196`).
 
-The pre/post Fire Book I capture is a head-insert into this list: the menu's displayed-skill roster grew by one new entry. The values are skill-table indices, not action-queue constants - so the earlier "0x03 = Attack" reading is moot. Engines now read this through a typed accessor `legaia_save::character::CharacterRecord::displayed_skills` (`DisplayedSkillList { count: u8, ids: [u8; MAX_DISPLAYED_SKILLS = 16] }`); `engine_core::capture_observations::vahn_fire_book_use` gains `MENU_READER_ADDR` (`0x801D4440`) + `MENU_OVERLAY_FN` (`0x801D33D8`) constants pointing at the resolved reader.
+The pre/post Fire Book I capture is an ordered insert into this list: the menu's displayed-skill roster grew by one new entry, at the position its id sorts to. The values are skill-table indices, not action-queue constants - so the earlier "0x03 = Attack" reading is moot. Engines now read this through a typed accessor `legaia_save::character::CharacterRecord::displayed_skills` (`DisplayedSkillList { count: u8, ids: [u8; MAX_DISPLAYED_SKILLS = 16] }`); `engine_core::capture_observations::vahn_fire_book_use` gains `MENU_READER_ADDR` (`0x801D4440`) + `MENU_OVERLAY_FN` (`0x801D33D8`) constants pointing at the resolved reader.
 
-No `sb` / `sh` writers to `+0x185` exist in any captured overlay. The learn-write path lives in an overlay we haven't dumped (likely the item-use battle event, accessed via the menu rather than the action SM); when that overlay lands, the writer is the next thing to pin.
+### Writer resolved - and it is not a battle event
+
+No `sb` / `sh` writer to `+0x185` exists in any captured **overlay**, which is
+what once read as "the learn-write path lives in an overlay we haven't dumped".
+It does not: the writer is SCUS-resident, in the generic item-apply handler
+`FUN_800402F4`, and the reason an overlay sweep cannot see it is that the arm
+addresses the record off the block base `0x80084140` with the displacement
+already folded in - `+0x74D` for the count and `+0x74E` for the ids, which for
+roster slot `n` is `0x80084140 + n * 0x414 + 0x74D`, i.e. exactly the
+`+0x185` / `+0x186` of that character's record.
+
+- The arm is at `0x80041FB4`, entered for effect classes `0x0B`..`0x0D`
+  ([`item-effect-table.md`](../formats/item-effect-table.md#classes-111213---the-class-is-the-character-the-tier-is-the-art)).
+- The character is the **class**, not the menu's picked ally
+  (`addiu v1,v1,-0xb` at `0x80041FC0`).
+- The id is the descriptor's **tier**, stored by `sb s6,0x74e(a0)` at
+  `0x80042064` after the shift loop at `0x80041FFC..0x8004202C` has opened its
+  sorted position; the count at `+0x74D` is bumped straight after.
+- The tail at `0x80042078` compares the game-mode word `_DAT_8007B83C` against
+  `0x15` and calls `FUN_80035C00(slot, id)` on every other mode, so the handler
+  is mode-aware rather than battle-only.
+
+Its eleven `jal` sites say the same thing about the caller. Five are in the
+**menu** overlay (PROT 0899: `0x801D818C`, `0x801D8538`, `0x801D8EAC`,
+`0x801D9438`, `0x801D97A4`) - the pause menu's own item-use - one is the field
+VM's op-`0x4C` arm at `0x801E28E4` (PROT 0897), and five are in the battle
+overlay (PROT 0898). So using a book from the pause menu is the ordinary path,
+and none of the three images is privileged. Those VAs are slot-A addresses:
+`0x801D8538` disassembles as something else entirely in the field overlay at the
+same base, which is why an image has to be named beside a VA in this band
+([`overlay-va-aliases.md`](../reference/overlay-va-aliases.md)).
 
 A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`fire_book_use_diff_pins_vahn_record_write`) asserts exactly one record-internal region at the documented offset against the real save pair. Three new unit tests in `legaia_save::character::displayed_skills_*` exercise the typed accessor's BEFORE/AFTER round-trip + the `MAX_DISPLAYED_SKILLS` clamp.
 

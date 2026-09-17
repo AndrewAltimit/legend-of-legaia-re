@@ -9,20 +9,24 @@
 //! three pieces the native window calls, so the two hosts cannot draw
 //! different HUDs.
 //!
-//! # The one thing this host cannot supply
+//! # Where the dodge line's input comes from
 //!
 //! Retail's kernel moves the readout to its low row when the player projects
 //! above stage `y = 0x30`, and it takes that number from a GTE projection of
-//! the player position. The play page's camera lives in the page's own
-//! WebGL code, not in this crate, so there is no view-projection here to
-//! transform against.
+//! the player position. This host has a view-projection to transform against -
+//! [`LegaiaRuntime::play_camera_vp`] builds one off the engine's own camera
+//! frame, and [`Self::tick_passive_hud`] below uses it - but the readout's
+//! number arrives the other way round: the page projects the lead each frame
+//! and pushes the stage `y` in through
+//! [`LegaiaRuntime::set_field_player_screen_y`], so the draw pass never has to
+//! resolve one.
 //!
-//! `None` is **not** the right stand-in: in the kernel `None` is retail's
-//! staged-load arm, which forces the low row - so passing it would park the
-//! browser's readout across the bottom of every frame while the native
-//! window keeps it at the top. This host declares the common case instead
-//! (the player is below the dodge line), which is what the projection
-//! answers on all but a handful of framings.
+//! Until the page has reported one, `None` is **not** the right stand-in: in
+//! the kernel `None` is retail's staged-load arm, which forces the low row - so
+//! passing it would park the browser's readout across the bottom of every frame
+//! while the native window keeps it at the top. The tick declares the common
+//! case instead (the player is below the dodge line), which is what the
+//! projection answers on all but a handful of framings.
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::world::SceneMode;

@@ -121,7 +121,7 @@ record `+8` pointer):
 | `6` | permanent stat-up (tier = which stat) | Miracle Water - "All stats +4. Ally." |
 | `7` | temporary stat buff (one battle) | Power Elixir - "Increase attacking power for one battle." |
 | `8` | cure single status | Antidote - "Cure Venom. Ally." |
-| `11`/`12`/`13` | arts book (Fire/Wind/Thunder; tier = book level) | Fire Book I - "Book of Hyper Arts. For Meta." |
+| `11`/`12`/`13` | arts book - the **class** picks the roster slot, the **tier** is the art id ([below](#classes-111213---the-class-is-the-character-the-tier-is-the-art)) | Fire Book I - "Book of Hyper Arts. For Meta." |
 | `14` | Point Card strike - **no item on the disc reaches it** (see below) | - |
 | `126`/`127` | summon flute | Lippian Flute - "Flute that calls the Lippian monster." |
 | `128` | field escape (dungeon) | Door of Light - "Teleport out of dungeons." |
@@ -138,6 +138,30 @@ battle damage - a Point Card strike scaling with how much the player has shopped
 Decoding all 256 item records against this table finds **no item carrying class
 14**, so retail never opens the arm; the `LEGAIA_POINT_CARD_MAX` probe knob
 reaches it only by forcing the bank. Unused content, not a missing item.
+
+### Classes 11/12/13 - the class is the character, the tier is the art
+
+The apply handler's arts-book arm (`0x80041FB4` inside `FUN_800402F4`) takes the
+character from the **class** byte and the art from the **tier** byte, and reads
+the ally the player picked in the item menu nowhere at all:
+
+- `addiu v1,v1,-0xb` at `0x80041FC0` turns the class into a roster slot, so
+  classes `11` / `12` / `13` are Vahn / Noa / Gala and a Fire Book used on Noa
+  still teaches Vahn;
+- `sb s6,0x74e(a0)` at `0x80042064` stores the tier verbatim as the learned art
+  id (`s6` is the handler's second argument, the descriptor's `+1`), after the
+  loop above it has shifted every larger id one slot up - an ordered insert, not
+  a head insert.
+
+So the tier is not a book level. The nine book records carry Fire and Thunder
+`I`/`II`/`III` = `3`/`2`/`1` and Wind `I`/`II`/`III` = `5`/`4`/`1` - the
+per-character art-id space, where Noa's ids simply sit higher, not a rank that
+happens to count down. Reading it as a level makes the two Wind books name arts
+nobody learns.
+
+Every book also carries usability flag `0x83`: the field bit `0x02` without the
+battle bit `0x04`, so the books are absent from the battle item list. Dump the
+nine rows with `asset item-tables --consumables-only`.
 
 ## Heal-amount table (`0x8007655C`)
 
