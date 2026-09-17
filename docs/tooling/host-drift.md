@@ -848,12 +848,19 @@ The native chain is `redraw::battle_value_readout_prims`; the page's is
 drawn from retail's own art, and the `web-ahead` pair is the page's extra arm for
 the frames before its VRAM exists.
 
-What the native window genuinely lacks is that extra arm: with no battle VRAM
-uploaded it draws no readout at all where the page draws fallback text. That is a
-narrow window, not a missing feature, and wiring the fallback natively would have
-to keep the two mutually exclusive - both drawing at once renders every number
-twice, which is the trap the page's own gate (`battle_value_readout_has_atlas`)
-exists to avoid.
+The native window lacked that extra arm, and the `web-ahead` line was the only
+place it showed: with no battle VRAM uploaded it drew no readout at all where
+the page drew fallback text. It has one now - `redraw::battle_value_readout_draws`
+- and the wiring had one requirement, which is why the disclosure named it: the
+two arms must stay mutually exclusive, because both drawing at once renders
+every number twice. Each checks the same `battle_vram` residency, opposite ways,
+the way the page's own `battle_value_readout_has_atlas` gate does.
+
+Doing it needed the layout split out from the emit. The native prim builder had
+the layout inline, so there was nothing for a second emit to consume - which is
+the general shape of a "narrow window" disclosure that stays open: the gap is
+not the missing draw call, it is that the code the draw call would need is
+fused to the arm that already exists.
 
 ### One-shot voices on the minigames page
 
