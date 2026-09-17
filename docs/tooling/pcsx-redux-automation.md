@@ -1191,16 +1191,16 @@ the longer ones (`Probes` + `What it answered`) are written out as
   the trio, and the `TR` upload carries the composed value. The two writers
   also agree on the angle trio - both write `(0x1B8, 0x64, 0)` - so the only
   thing the ordering decides is the eye.
-- **It also falsifies "once per frame".** On the settled `uru` frame the
-  view builder is entered **three** times inside one vsync, from three
-  distinct return addresses - two in the field overlay (`0x801D0F98`,
-  `0x801D185C`) and one in `SCUS_942.54` (`0x80016678`) - and the recording
-  budget was three, so three is a floor. Two-per-vsync appears on the
-  `map03` and `town0c` frames too, and on one of them the live camera words
-  differ between the frame's own two builds. `cutscene.md` calls
-  `FUN_800172c0` the "once-per-frame view builder"; the composition it
-  describes is unaffected, the frequency is not a property anything had
-  measured.
+- **It also falsifies "once per frame".** Run on a settled field state with
+  the budget opened up (`LEGAIA_VIEW_BUDGET=400`, no pad), the view builder
+  is entered **three times per vsync**, once from each of three distinct
+  return addresses - `0x801D0F98` and `0x801D185C` in the field overlay and
+  `0x80016678` in `SCUS_942.54`. Over the 134 vsyncs the budget covered,
+  133 carry exactly three and the 134th is the one the budget cut short.
+  On a scene-entry frame the live camera words can differ *between* two of
+  those builds. `cutscene.md` calls `FUN_800172c0` the "once-per-frame view
+  builder": the composition it describes is unaffected, but the frequency
+  is not a property anything had measured.
 - **Two traps it walked into, both worth reusing:** the visible-tile window
   `FUN_801DE37C` seeds is **scratchpad** (`0x1F8003E8..EB`), and the
   main-RAM reader returns zeros there - it has to go through
