@@ -206,9 +206,14 @@ fix is to write it at item level:
 - Converting a blanket to `//! REPLACED-BY:` has the mirror-image hazard: the
   new blanket covers only anchors whose own block stays silent about its class,
   so an item that is still a genuine wiring gap needs its own `NOT WIRED:` line
-  or it silently leaves the worklist. `scus_core_helpers::list_append_u16` is
-  the worked case - its file-mates are replaced, it is not.
+  or it silently leaves the worklist. `fishing_actors` is the worked case: one
+  wired item made a module blanket assert something false about it, and the
+  file now carries a line per genuinely inert item instead.
   [`port-catalog.md`](port-catalog.md#replaced-by) has the precedence rules.
+  `scus_core_helpers::list_append_u16` used to be the example here, as the one
+  item in a replaced file that was not itself replaced; it is replaced too -
+  `engine-core::cutscene::sprite_stack_push` is the same address, live on both
+  hosts - so it illustrates the hazard's premise rather than the hazard.
 
 A blanket module disclosure is safe while *nothing* in the file has a caller,
 and it can be narrowed the moment one item acquires one: an anchor whose own
