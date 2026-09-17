@@ -50,7 +50,7 @@ Full 13-function CD-read API stack documented in [`subsystems/boot.md` § CD-rea
 | `8003E8A8` | PROT TOC index resolver. `(prot_index, flag)` → the entry's **sector count**, not its LBA: `0x8003E90C` is `subu s0,v0,s2` over `TOC[idx+3]` and `TOC[idx+2]` and `0x8003E948` returns that difference. The start LBA is a side effect - `sw s2,0x8f0(gp)` - and the index lands at `gp+0x90C`. Matches the [PROT TOC math](../../formats/prot.md) (`size_sectors = toc[p+3] - toc[p+2]`) and the [size-lookup row](renderer.md#renderer--gpu-primitives); the older "→ LBA" reading of this row disagreed with both. |
 | `8003EB98` | By-index sync loader. Wrapper around `FUN_8003E8A8` + `FUN_8003E800(…, 1)`. |
 | `8003EBE4` | **Overlay loader A.** Calls `FUN_8003E8A8(param + 0x381)`; in extraction index space that is **PROT entry `param + 0x37F`** (the resolver indexes the raw in-RAM `PROT.DAT` head, 2 entries above extraction indexing - see [formats/prot.md § In-RAM TOC](../../formats/prot.md#in-ram-toc)). Destination buffer pointer in `*DAT_8001038C`; current-id tracked in `gp+0x924` (= `0x8007BC3C`). |
-| `8003EC70` | **Overlay loader B.** Parallel to `FUN_8003EBE4`; `addiu a0,s1,0x381` indexes the raw TOC, 2 entries above extraction space, so **extraction = `895 + gp[+0x934]`**. Destination buffer in `*DAT_80010390`; current-id tracked in `gp+0x934` (= `0x8007BC4C`). Allows two overlays resident simultaneously. The battle-action SM uses it to page in the **per-summon Seru-magic overlays**: a player Seru-magic cast (spell id `actor[+0x1df]` in `0x81..0x8b`) calls `FUN_8003EC70(id - 0x79)` → extraction **PROT 903..913** (Gimard `0x81` → PROT 903, capture-pinned). These overlays carry the summon's spawn/animation logic over the `DAT_8007C018` small-TMD library. See [`subsystems/battle-action.md`](../../subsystems/battle-action.md#seru-magic-summon-overlay-dispatch). |
+| `8003EC70` | **Overlay loader B.** Parallel to `FUN_8003EBE4`; `addiu a0,s1,0x381` indexes the raw TOC, 2 entries above extraction space, so **extraction = `895 + gp[+0x934]`** ([no ceiling](#8003ec70-has-no-ceiling)). Destination buffer in `*DAT_80010390`; current-id tracked in `gp+0x934` (= `0x8007BC4C`). Two can be resident at once. The battle-action SM uses it to page in the **per-summon Seru-magic overlays**: a player Seru-magic cast (spell id `actor[+0x1df]` in `0x81..0x8b`) calls `FUN_8003EC70(id - 0x79)` → extraction **PROT 903..913** (Gimard `0x81` → PROT 903, capture-pinned). Each carries its summon's spawn / animation logic over the `DAT_8007C018` library. See [`subsystems/battle-action.md`](../../subsystems/battle-action.md#seru-magic-summon-overlay-dispatch). |
 | `8003F128` | Async CD read kickoff. Stages parameters, submits to BIOS-level CD library. |
 | `8003F08C` / `8003EFE8` | Boot-time entry points that call `FUN_8003E4E8("PROT.DAT", 1)` to populate the TOC at `0x801C70F0`. |
 | `8005C328` | LBA → BCD-MSF converter. Inverse of `FUN_8005C42C`. |
@@ -99,6 +99,16 @@ split, the measured values and the pool's composition are in
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### `8003EC70` has no ceiling
+
+Nothing in the loader bounds the top of the band it can page in: the index is
+`a0 + 895` and the only clamp anywhere is whatever a caller applies first. That
+matters for the two highest images, because the one site that reaches them,
+`0x8005269C`, passes `_DAT_8007B64A + 71` - so selector byte `2` and `3` page in
+PROT `0968` and `0969` respectively, while `0` skips the load entirely. Those
+two entries are therefore reachable content rather than orphans; what writes the
+selector is an [open thread](../open-rev-eng-threads.md#containers--data-blobs).
 
 ### `8003EF14`
 
