@@ -243,6 +243,24 @@ Misc scene writes + emitter helpers. Ported sub-ops:
 
 All non-`P` cells in the matrix above are now ported.
 
+#### Two outer nibbles are the error printer
+
+The `0x4C` outer dispatch is a sixteen-entry jump table at `0x801CEE60`, indexed
+by `op0 >> 4` under a `sltiu ..., 0x10` bound (`FUN_801DE840`, `0x801E0C44`).
+Two of its sixteen arms are not handlers:
+
+- **nibble `B`** (arm `0x801E3550`) materialises a string pointer and falls into
+  `jal 0x8001A068`, retail's message printer, then returns the PC unchanged.
+- **nibble `F`** (arm `0x801E3538`) does the same with a second string, with one
+  exception: sub-`F` (`4C FF`) branches away to the dispatcher's ordinary
+  continue at `0x801DF098` first.
+
+So "nibble `B` is undefined" understates it - `F` is an error arm too, and the
+two share one three-instruction preamble. The disc agrees: the
+[opcode census](../tooling/field-op-census.md) finds **no** coherent
+occurrence of any `4C Bx` or `4C Fx` in any scene (the `4C FF` and `4C FA/FB`
+totals it reports are all inside records that had already desynced, i.e. text).
+
 #### 0x4C sub-dispatch coverage matrix
 
 The 0x4C cluster is the longest-tail opcode in the field VM - most outer nibbles fan out into 16 inner sub-ops with their own widths and semantics. The coverage matrix below tracks which sub-ops are fully ported (✓), pending an overlay-helper capture (P), or fall through to the dispatcher's default arm (-). "Default" for outer nibbles 1/5/6 means "halts at PC"; for 0/2/3/4/7/8/9/A/C/D/E/F it means PC advances by `1 + width` per the standard fall-through.
