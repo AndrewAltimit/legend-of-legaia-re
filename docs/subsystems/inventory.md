@@ -289,6 +289,38 @@ lifts the **whole** `0x200`-byte span rather than the 72-slot consumable page:
 a played-through bag runs well past slot 71 (a three-member mid-game card
 reads 160 occupied slots), and the page-wide lift dropped every one of them.
 
+### A list row's payload is a slot, and the bag is not compacted first
+
+The menu's selected payload `_DAT_8007BB88` is a **bag slot index**. The pause
+item list hides empty slots, so the row ordinal and the slot are the same
+number only while nothing above the selection is a hole - and holes really do
+reach the list, because nothing compacts the bag when a menu opens. The
+normalize helper `FUN_800423E0` has exactly one call site in the dump corpus, a
+field-VM arm at `0x801E05D0` in PROT 0897, and it sits behind two equality
+tests on the dispatcher's own context register: the byte at `+0x454` must read
+`2` (`0x801E05B0..0x801E05B8`) and the halfword at `+0x458` must read `0x100`
+(`0x801E05C0..0x801E05C8`). Either mismatch jumps past the call.
+
+Measured on a bag holed at slots 1 / 3 / 6: the cursor stepped `0, 2, 4, 5, 7,
+8` across six displayed rows, rested on a zero-id slot on none of the sampled
+vsyncs, and `FUN_800423E0` ran zero times. The Throw Out confirm
+(`FUN_801D8734` phase 3) then zeroes `bag[cursor*2]` - the pair at the slot the
+row named.
+
+Two consequences for anything reading this list:
+
+- **Removing by row ordinal is wrong** as soon as a hole sits above the
+  selection.
+- **Removing by item id is wrong** as soon as one id occupies two slots: an
+  id-keyed scan finds the first, which is not the stack the player pointed at.
+
+The port carries the slot on the row (`engine-core::world::BagRow::slot`, and
+`PauseItemRow::slot` on the pause screen) and removes through the by-slot
+consume helper `FUN_80043048` (`ItemBag::consume_slot`), which zeroes the id
+byte in place and leaves the hole. Use, Throw Out and the shop's sell list all
+take that path; a host that built its rows without a slot-indexed bag keeps the
+id-addressed fallback.
+
 ### Two use legs that are not a heal
 
 The item-use applier `FUN_800402F4` dispatches on the descriptor's **class**

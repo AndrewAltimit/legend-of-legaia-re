@@ -110,6 +110,10 @@ impl MenuTextTables {
 #[derive(Debug, Clone, Default)]
 pub struct PauseItemRow {
     pub id: u8,
+    /// Physical **bag slot** this row's payload names (retail
+    /// `_DAT_8007BB88`). `0` when the host built the session without a
+    /// slot-indexed bag - see [`crate::inventory_use::InventoryUseSession::bag_slots`].
+    pub slot: u8,
     pub name: String,
     /// Real bag count (the world inventory count, not the session's
     /// one-entry-per-id item list length).
@@ -562,6 +566,9 @@ impl PauseItemsSession {
         }
         let row = self.rows.remove(self.cursor);
         self.inner.thrown_items.push(row.id);
+        // Retail's confirm zeroes `bag[cursor*2]` - the slot the row's payload
+        // named, not the first slot holding that id.
+        self.inner.thrown_slots.push(row.slot);
         self.inner.remove_item_at(self.cursor);
         // Retail scroll fix-up: deleting the last list entry steps the
         // selection (and scroll) back one row.

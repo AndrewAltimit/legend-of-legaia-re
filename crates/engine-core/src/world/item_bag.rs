@@ -134,6 +134,20 @@ impl ItemBag {
             .unwrap_or((0, 0))
     }
 
+    /// Take `amount` off a physical slot through retail's own **by-slot**
+    /// consume helper, returning the count left in it.
+    ///
+    /// This is the accessor a *row payload* needs: retail's list entries carry
+    /// a bag slot, so a Use or a Throw Out acts on the slot the player pointed
+    /// at rather than on whichever slot a window scan finds the id in. The
+    /// helper zeroes the id byte in place when the stack empties and leaves the
+    /// hole - it does not compact.
+    ///
+    /// REF: FUN_80043048 (ported as `RetailInventory::consume_slot`)
+    pub fn consume_slot(&mut self, slot: u8, amount: u8) -> u8 {
+        self.inv.consume_slot(i16::from(slot), amount, 0)
+    }
+
     /// Remove one of `id` through retail's window-bounded consume helper,
     /// returning the slot it came out of or [`legaia_save::retail_inventory::NOT_IN_WINDOW`].
     ///

@@ -249,6 +249,18 @@ pub struct InventoryUseSession {
     /// Per-item filtered indices into `items` (only usable-in-context
     /// items show up).
     pub filtered_items: Vec<usize>,
+    /// Physical **bag slot** of each entry in [`Self::items`], parallel to it.
+    ///
+    /// Retail's list rows carry a slot, not an id: the selected payload
+    /// `_DAT_8007BB88` is a bag slot index, and the Throw Out confirm zeroes
+    /// `bag[cursor*2]` - the slot the row named. A bag holed at slots 1 / 3 / 6
+    /// still shows six rows, so the row ordinal and the slot diverge as soon as
+    /// anything above the selection is empty; removing by the row's id instead
+    /// picks whichever slot the window scan reaches first.
+    ///
+    /// Empty when the host built the session without a slot-indexed bag, which
+    /// is the disc-free case; consumers fall back to the id-addressed removal.
+    pub bag_slots: Vec<u8>,
     pub state: InventoryUseState,
     pub events: Vec<InventoryUseEvent>,
     pub context: InventoryContext,
@@ -264,12 +276,17 @@ pub struct InventoryUseSession {
     /// (or if the session aborts). Set explicitly because [`Self::current_item`]
     /// returns `None` once the session reaches [`InventoryUseState::Done`].
     pub used_item: Option<u8>,
+    /// Physical bag slot [`Self::used_item`] came out of, when known.
+    pub used_slot: Option<u8>,
     /// Item ids the pause-menu Throw Out sub-flow discarded (whole stacks -
     /// the retail confirm zeroes both bytes of the bag slot pair,
     /// `FUN_801D8734`). Applied to the world by
     /// [`crate::field_menu_dispatch::apply_inventory_outcome`] regardless of
     /// whether a use also completed.
     pub thrown_items: Vec<u8>,
+    /// Physical bag slot of each entry in [`Self::thrown_items`], when the
+    /// session was built with [`Self::bag_slots`]. Same length or empty.
+    pub thrown_slots: Vec<u8>,
     /// Item ids a **special Use route** committed one copy of - the fixed
     /// ids `FUN_801D8A58` / `FUN_801D8B90` / `FUN_801D8D94` each hand
     /// `FUN_80042310(id, 1)` on their confirm beat (Door of Light `0x88`,
@@ -310,13 +327,37 @@ impl InventoryUseSession {
             catalog,
             used_slots: Vec::new(),
             used_item: None,
+            used_slot: None,
             thrown_items: Vec::new(),
+            thrown_slots: Vec::new(),
             consumed_items: Vec::new(),
+            bag_slots: Vec::new(),
         }
     }
 
     /// Remove the item at flat index `idx` from the session's list (the
     /// pause-menu Throw Out delete), re-derive the context filter and
+    /// The physical bag slot the item cursor currently sits on, or `None`
+    /// when the session carries no [`Self::bag_slots`].
+    ///
+    /// Works in both list states: browsing, and target select (which preserves
+    /// the item cursor so Cancel returns to the same row).
+    pub fn cursor_bag_slot(&self) -> Option<u8> {
+        let cursor = match self.state {
+            InventoryUseState::Browsing { cursor } => cursor,
+            InventoryUseState::TargetSelect { item_cursor, .. } => item_cursor,
+            _ => return None,
+        };
+        let idx = *self.filtered_items.get(cursor)?;
+        self.bag_slots.get(idx).copied()
+    }
+
+    /// Install the per-entry bag slots (the row payloads).
+    pub fn with_bag_slots(mut self, slots: Vec<u8>) -> Self {
+        self.bag_slots = slots;
+        self
+    }
+
     /// clamp a browsing cursor back into the filtered range. No-op when
     /// `idx` is out of range.
     pub fn remove_item_at(&mut self, idx: usize) {
@@ -586,6 +627,7 @@ impl InventoryUseSession {
                 let outcome = crate::items::apply_effect(entry.effect, &target.snapshot());
                 self.used_slots.push(target.slot);
                 self.used_item = Some(entry.id);
+                self.used_slot = self.cursor_bag_slot();
                 self.state = InventoryUseState::Done(outcome);
                 self.events.push(InventoryUseEvent::Used {
                     slot: target.slot,
@@ -623,6 +665,7 @@ impl InventoryUseSession {
         match first {
             Some(outcome) => {
                 self.used_item = Some(entry.id);
+                self.used_slot = self.cursor_bag_slot();
                 self.state = InventoryUseState::Done(outcome);
             }
             None => self.events.push(InventoryUseEvent::InvalidConfirm),

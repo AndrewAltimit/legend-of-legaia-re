@@ -74,6 +74,15 @@ pub struct ShopSession {
     pub pending_quantity: u8,
     /// `true` = buy (from shop), `false` = sell (from player inventory).
     pub pending_is_buying: bool,
+    /// Physical **bag slot** the staged sell row named, when the host built the
+    /// row list from the bag's slots.
+    ///
+    /// Retail's list rows carry a slot, not an id (`_DAT_8007BB88` is a bag
+    /// slot index), and the bag is not compacted when a menu opens, so the row
+    /// ordinal and the slot diverge as soon as a hole sits above the selection.
+    /// `None` for a host that staged the row by id alone, which then removes
+    /// from whichever slot the window scan reaches first.
+    pub pending_bag_slot: Option<u8>,
     /// Stable identity of the vendor running this shop. Derived from
     /// the shop record at field-shop arm time via
     /// [`legaia_asset::seru_trade::vendor_id_from_shop`]; `0` for sessions built
@@ -94,6 +103,7 @@ impl ShopSession {
             pending_item_id: None,
             pending_quantity: 1,
             pending_is_buying: true,
+            pending_bag_slot: None,
             vendor_id: 0,
             vendor_bucket_offset: 0,
         }
@@ -129,12 +139,30 @@ impl ShopSession {
     }
 
     /// Called when the player confirms an item row in the sell list.
-    /// `sell_items` is the sorted `(item_id, count)` slice the menu rendered.
+    /// `sell_items` is the `(item_id, count)` slice the menu rendered, in the
+    /// order it drew.
     pub fn select_sell_item(&mut self, cursor: usize, sell_items: &[(u8, u8)]) {
         if let Some(&(item_id, _)) = sell_items.get(cursor) {
             self.pending_item_id = Some(item_id);
             self.pending_quantity = 1;
             self.pending_is_buying = false;
+            self.pending_bag_slot = None;
+        }
+    }
+
+    /// [`Self::select_sell_item`] for a host whose rows carry their bag slot -
+    /// `rows` is the drawn list as `(bag slot, item id)`.
+    ///
+    /// Staging the slot is what makes the sale take the stack the player
+    /// pointed at. Without it the commit removes by id, which is the same slot
+    /// only while no hole sits above the selection and no second stack of that
+    /// id exists.
+    pub fn select_sell_row(&mut self, cursor: usize, rows: &[(u8, u8)]) {
+        if let Some(&(slot, item_id)) = rows.get(cursor) {
+            self.pending_item_id = Some(item_id);
+            self.pending_quantity = 1;
+            self.pending_is_buying = false;
+            self.pending_bag_slot = Some(slot);
         }
     }
 

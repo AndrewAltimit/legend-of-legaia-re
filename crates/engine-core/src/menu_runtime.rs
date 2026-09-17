@@ -915,21 +915,21 @@ impl MenuRuntimeHost<'_> {
 
     /// `StatusInventory` commit: decrement (or remove) the picked bag item.
     fn commit_status_inventory(&mut self, slot: u8) {
-        let mut items: Vec<(u8, u8)> = self
-            .world
-            .party
-            .inventory
-            .iter()
-            .filter(|(_, c)| **c > 0)
-            .map(|(id, c)| (*id, *c))
-            .collect();
-        items.sort_by_key(|&(id, _)| id);
-        if let Some(&(item_id, count)) = items.get(slot as usize) {
-            if count > 1 {
-                self.world.party.inventory.insert(item_id, count - 1);
-            } else {
-                self.world.party.inventory.remove(&item_id);
-            }
+        // The drawn rows are the bag's occupied slots in slot order, and the
+        // row payload is the slot - so the unit comes off the stack the player
+        // pointed at, not off whichever slot a scan finds the id in.
+        let rows: Vec<u8> = {
+            let (start, end) = self.world.party.inventory.window_bounds();
+            let slots = self.world.party.inventory.slots();
+            slots[start.min(slots.len())..end.min(slots.len())]
+                .iter()
+                .enumerate()
+                .filter(|(_, (id, count))| *id != 0 && *count > 0)
+                .map(|(i, _)| (start + i) as u8)
+                .collect()
+        };
+        if let Some(&bag_slot) = rows.get(slot as usize) {
+            self.world.party.inventory.consume_slot(bag_slot, 1);
         }
     }
 
@@ -945,20 +945,21 @@ impl MenuRuntimeHost<'_> {
     /// `ShopSell` commit: select the picked bag item for sale against the
     /// id-sorted inventory snapshot.
     fn commit_shop_sell(&mut self, slot: u8) {
-        let sell_items: Vec<(u8, u8)> = {
-            let mut v: Vec<(u8, u8)> = self
-                .world
-                .party
-                .inventory
+        // The drawn rows, in the bag's own slot order with holes skipped -
+        // retail's sell list is a slot walk, and the row payload it confirms
+        // with is that slot.
+        let rows: Vec<(u8, u8)> = {
+            let (start, end) = self.world.party.inventory.window_bounds();
+            let slots = self.world.party.inventory.slots();
+            slots[start.min(slots.len())..end.min(slots.len())]
                 .iter()
-                .filter(|(_, c)| **c > 0)
-                .map(|(id, c)| (*id, *c))
-                .collect();
-            v.sort_by_key(|&(id, _)| id);
-            v
+                .enumerate()
+                .filter(|(_, (id, count))| *id != 0 && *count > 0)
+                .map(|(i, (id, _))| ((start + i) as u8, *id))
+                .collect()
         };
         if let Some(session) = self.shop_session.as_mut() {
-            session.select_sell_item(slot as usize, &sell_items);
+            session.select_sell_row(slot as usize, &rows);
         }
     }
 
@@ -996,10 +997,21 @@ impl MenuRuntimeHost<'_> {
                     .unwrap_or(0);
                 if let Some((item_id, qty, delta)) = session.try_sell(held) {
                     self.world.party.money = (self.world.party.money + delta).clamp(0, 9_999_999);
-                    let entry = self.world.party.inventory.entry(item_id).or_insert(0);
-                    *entry = entry.saturating_sub(qty);
-                    if *entry == 0 {
-                        self.world.party.inventory.remove(&item_id);
+                    // Take the units off the slot the row named where the host
+                    // staged one; the id path is the fallback for a row list
+                    // built without slots.
+                    match session.pending_bag_slot {
+                        Some(bag_slot) => {
+                            self.world.party.inventory.consume_slot(bag_slot, qty);
+                        }
+                        None => {
+                            let entry = self.world.party.inventory.entry(item_id).or_insert(0);
+                            *entry = entry.saturating_sub(qty);
+                            let left = *entry;
+                            if left == 0 {
+                                self.world.party.inventory.remove(&item_id);
+                            }
+                        }
                     }
                 }
             }

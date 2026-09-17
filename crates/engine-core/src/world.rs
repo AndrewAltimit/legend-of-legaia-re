@@ -141,6 +141,8 @@ pub use cutscene_elements::{
     ElementKind, ElementLink, WorldRng,
 };
 mod assets_events;
+mod bag_rows;
+pub use bag_rows::BagRow;
 mod battle;
 pub use battle::{
     BattleSpoilsBanner, LEVEL_UP_CUE, PendingCast, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND,

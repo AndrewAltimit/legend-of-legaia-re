@@ -56,18 +56,29 @@
 //!    word because the typed rows already carry the resolved name and
 //!    description, so a resolver over them would re-derive what the caller
 //!    holds.
-//! 3. NOT WIRED - and this one is a real gap with a visible consequence. The
-//!    three `FUN_80030628` builders want an **ordered bag-slot array** and a
-//!    per-row ink bit, and the engine has neither. `World::party.inventory` is a
-//!    `HashMap<u8, u8>` keyed by item id with no slot space at all, so the
-//!    `slot | ink` payload the builders emit has no index to carry;
-//!    `crate::field_menu_dispatch::build_pause_items_session` sorts the
-//!    held ids and [`crate::pause_screens::PauseItemRow`] has no ink field,
-//!    so retail's three-buffer order (in place, then equipment, then the
-//!    flag-8 tail) and its dim gates have nowhere to land. Until they do,
-//!    the port lists a player's items in an order retail would not, and dims
-//!    none of them. The owner is `build_pause_items_session`, once the bag is
-//!    slot-indexed.
+//! 3. The three `FUN_80030628` bag builders. They want an **ordered bag-slot
+//!    array** and a per-row ink bit; the array exists now
+//!    ([`crate::world::ItemBag`] is retail's 256-slot physical array, indexed
+//!    by slot, bounded by the same active window), so
+//!    [`build_use_list_rows`] is **wired**: `World::bag_use_rows` walks the
+//!    window and `crate::field_menu_dispatch::build_pause_items_session`
+//!    takes its row order, which is what both hosts' Items screen draws.
+//!    [`crate::pause_screens::PauseItemRow`] still carries no ink field, so
+//!    the dim bit is computed and dropped at the draw - the *order* is
+//!    retail's, the greying is not yet. The row's **payload** does survive:
+//!    it is a bag slot, and Use / Throw Out / Sell remove from that slot
+//!    rather than by row ordinal or by item id, which diverge as soon as a
+//!    hole sits above the selection or one id occupies two slots
+//!    ([`docs/subsystems/inventory.md`](../../../docs/subsystems/inventory.md)).
+//!
+//!    The two siblings stay unwired on a narrower blocker than the bag: each
+//!    reads a **table the engine does not carry**. [`build_throw_out_rows`]
+//!    needs the equipment record's `+7` flags byte
+//!    (`0x80074F68[subtype*8 + 7]`, [`legaia_asset::equip_stats`]), which no
+//!    engine table exposes; [`build_price_gated_rows`] needs the item
+//!    record's `+2` price halfword for **every** id, and the only price
+//!    source the shop session has is its own stock list, whose fallback for
+//!    an id it does not sell is `1` - a gate that can never dim a row.
 //!
 //! Which window each builder fills is not a guess: the menu-overlay
 //! descriptor table ([`legaia_asset::menu_windows`]) carries the content id
@@ -364,10 +375,12 @@ pub struct UseListCtx<'a> {
 /// Items **Use** list row build; `see ghidra/scripts/funcs/80030628.txt`
 /// and `docs/subsystems/field-menu.md#use-list-row-build-content-id-3-fun_80030628`).
 ///
-/// NOT WIRED: the owner is
-/// `crate::field_menu_dispatch::build_pause_items_session`, and it cannot
-/// call this until `World::party.inventory` is slot-indexed - see family 3 in the
-/// module heading.
+/// Wired through `World::bag_use_rows`, which supplies the window's slot
+/// array and the applicability probe;
+/// `crate::field_menu_dispatch::build_pause_items_session` takes the
+/// resulting row order for the Items screen on both hosts. The dim bit
+/// survives as far as `crate::world::BagRow` and is dropped at the draw -
+/// see family 3 in the module heading.
 ///
 /// Walks the bag slots (`bag_ids[i]` = the item-id byte at
 /// `0x80085958 + (slot_base + i)*2`; retail bounds the walk with the
@@ -443,8 +456,12 @@ pub fn build_use_list_rows(
 /// the Items **Throw Out** list row build; `see
 /// ghidra/scripts/funcs/80030628.txt`).
 ///
-/// NOT WIRED: same owner and same blocker as [`build_use_list_rows`] - see
-/// family 3 in the module heading.
+/// NOT WIRED: the bag is slot-indexed now, so the blocker is narrower than it
+/// was - this builder reads the equipment record's `+7` flags byte through
+/// [`ItemRowTables::equip_flags`], and no engine table carries it. The
+/// world's row-table adapter answers `0` there, which would draw every
+/// no-discard piece as discardable; wiring it on that answer would claim a
+/// gate the port cannot evaluate. See family 3 in the module heading.
 ///
 /// Same three-buffer shape as the Use list with a discardability gate
 /// instead of the usability chain:
@@ -495,8 +512,12 @@ pub fn build_throw_out_rows(
 /// PORT: FUN_80030628 (content-id-2 case, `0x80030694..0x80030824` - the
 /// price-gated bag list; `see ghidra/scripts/funcs/80030628.txt`).
 ///
-/// NOT WIRED: the owner is the shop session's sell list; same slot-indexing
-/// blocker as [`build_use_list_rows`] - see family 3 in the module heading.
+/// NOT WIRED: the owner is the shop session's sell list, and the blocker is
+/// the price source, not the bag. The gate is the **item record's** `+2`
+/// halfword for every id; `crate::shop::ShopInventory::sell_price` answers
+/// `1` for any id the open shop does not stock, so a gate driven by it can
+/// never dim a row. `World::bag_sell_rows` is the seat, waiting on a
+/// per-id price table. See family 3 in the module heading.
 ///
 /// The shop-sell shape: rows with a non-zero item price stay white in
 /// place; zero-price rows (unsellable) dim and sort last. No third
