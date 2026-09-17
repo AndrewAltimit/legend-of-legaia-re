@@ -63,12 +63,20 @@
 //! `PTR_FUN_801F33B4`, whose port is `World::tick_submode_screen`'s `run_slot`
 //! over [`crate::baka_hub_actors::slot`].
 //!
-//! What is missing is anything that puts `7` in an actor's `+0x50`. The engine
-//! grounds only slot `0`: `field_submode_screen::slot_for_op49_sub_op` returns
-//! the close tick for every sub-op it cannot name, because retail picks the
-//! slot from the op-`0x49` operand payload it reads through `_DAT_8007B450`,
-//! and the engine carries no such payload. Adding a dispatch arm ahead of that
-//! would be an arm nothing selects.
+//! What is missing is anything that puts `7` in an actor's `+0x50`, and the
+//! reason is not the one this note used to give. The op-`0x49` payload **is**
+//! carried: `slot_for_op49_sub_op` indexes retail's own sub-op table
+//! ([`crate::baka_hub_actors::OP49_SUBOP_SLOTS`] at `0x801F33A4`) with the
+//! parked operand's first byte, exactly as the enter half does at
+//! `0x801F145C`. The route cannot come from there for a stronger reason: that
+//! table's fourteen entries name slots `0x21`..`0x33` and `-1`, and **none of
+//! them is `7`**, so no `49 <sub_op>` reaches this handler in retail either.
+//!
+//! Slot `7` is therefore a *successor* state - something writes `7` into an
+//! actor's `+0x50` and the dispatcher runs this handler on the next tick - and
+//! which state does that is the open question. Until it is answered there is no
+//! arm to add: a dispatch arm here would be one nothing selects on either
+//! side.
 //!
 //! Two smaller gaps sit behind it, and they are the ones with no engine home
 //! at all: the scene record's `+0x2E` / `+0x40` save-slot pair, which is where
@@ -126,12 +134,13 @@ pub fn picked_state(inputs: StatePickInputs) -> u16 {
 /// Run the handler. `current_state` is the actor's `+0x50` on entry.
 ///
 /// PORT: FUN_801f1f4c
-// NOT WIRED: nothing routes an actor to slot `7` of `PTR_FUN_801F33B4` - the
-// engine grounds only slot `0` because retail picks the slot from the
-// op-`0x49` operand payload behind `_DAT_8007B450`, which it does not carry.
-// The actor pair `+0x50`/`+0x54` DOES exist (`Actor::state_50` /
-// `Actor::state_54`); what has no engine home is the scene record's
-// `+0x2E`/`+0x40` and the debug-mode word. See the module's `Not wired`.
+// NOT WIRED: nothing routes an actor to slot `7` of `PTR_FUN_801F33B4`, on
+// either side - retail's op-`0x49` sub-op table names no slot `7`, so the
+// predecessor that writes `7` into an actor's `+0x50` is unidentified (see the
+// module's `Not wired`). The actor pair `+0x50`/`+0x54` DOES exist
+// (`Actor::state_50` / `Actor::state_54`) and so does the op-`0x49` payload;
+// what has no engine home is the scene record's `+0x2E`/`+0x40` and the
+// debug-mode word.
 pub fn state_pick(inputs: StatePickInputs, current_state: u16) -> StatePickWrites {
     StatePickWrites {
         scene_slot_2e: -1,

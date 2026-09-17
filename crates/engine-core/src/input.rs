@@ -168,13 +168,22 @@ impl InputState {
     /// ([`crate::world::FrameClock::frame_step`]), not a constant `1`. That is what
     /// keeps the auto-repeat rate wall-clock-constant across a cadence change.
     ///
-    /// NOT WIRED: no host produces [`crate::retail_pad::PadReport`]s. winit
-    /// hands the shell decoded key / gamepad events and the browser hands
-    /// the WASM host a key set, so every host assembles a packed mask and
-    /// enters through [`Self::set_pad`] - which pumps the same retail state
-    /// machine, so the auto-repeat window is populated either way. Wiring
-    /// this needs a backend that surfaces raw two-port libpad report buffers
-    /// (a real PSX pad / an emulator bridge), which no shipped host does.
+    /// REPLACED-BY: [`Self::set_pad`], which runs the same pump's packed half
+    /// (`FUN_8001822C` from `0x800184E0`) and is the entry every shipped host
+    /// takes. The distinction is in the *input shape*, not the behaviour: this
+    /// entry decodes raw two-port libpad report buffers, and no host has one -
+    /// winit hands the shell decoded key / gamepad events and the browser hands
+    /// the WASM host a key set, so both assemble a packed mask upstream and the
+    /// SOCD cancels, analog fold-ins and two-port pack happen there rather than
+    /// here. A producer needs a real PSX pad or an emulator bridge; the routine
+    /// stays as that backend's entry and as the decode's spec.
+    ///
+    /// One retail behaviour does **not** reach the hosts through the packed
+    /// entry, and it is a property of that entry rather than of this one:
+    /// [`Self::set_pad`] pumps with a hard-coded one-vsync step, so menu
+    /// auto-repeat runs at a fixed rate where retail's tracks the adaptive
+    /// frame step `DAT_1F800393`. Closing that means giving the packed entry
+    /// the host's `FrameClock::frame_step`, not producing reports.
     pub fn set_pad_reports(
         &mut self,
         port0: &crate::retail_pad::PadReport,

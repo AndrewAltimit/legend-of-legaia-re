@@ -343,9 +343,17 @@ enum SellQtyPhase {
 /// empty, runs the ~17-unit exit delay (phase 2) before returning to
 /// the shop root instead of the sell list.
 ///
-/// NOT WIRED: the menu runtime's quantity flow
-/// ([`ShopSession::set_quantity`]) still drives the hosts; this session
-/// is the retail-shaped replacement.
+/// NOT WIRED: the hosts' quantity screen is a **different interaction**, not a
+/// different implementation of this one, so this cannot be retagged
+/// `REPLACED-BY` - the mechanism that would be named does something else.
+/// Retail steps one number in place (`Up`/`Down` on `DAT_801E46B4`, bounded by
+/// the staged bag count, with the exit delay this session carries); the port
+/// draws `1..=max` as list **rows** and the list cursor picks one
+/// ([`ShopSession::set_quantity`] over `quantity_rows`, drawn by
+/// `window::hud` and `web-viewer::play_shop`). Wiring is a screen change on
+/// both hosts - one row that re-renders as the stepper moves - plus the
+/// session install; the bound is already retail's, which is why the numbers
+/// agree even though the interaction does not.
 #[derive(Debug, Clone)]
 pub struct SellQuantitySession {
     pub item_id: u8,
@@ -612,9 +620,11 @@ enum BuyQtyPhase {
 /// was shown - waits for a button press (SFX `0x20`) before dropping
 /// back to the buy list.
 ///
-/// NOT WIRED: the menu runtime's quantity flow
-/// ([`ShopSession::set_quantity`] + `World::buy_from_shop`) still
-/// drives the hosts; this session is the retail-shaped replacement.
+/// NOT WIRED: same shape as [`SellQuantitySession`]'s note - the hosts' screen
+/// is a row list over `1..=max` and this is retail's in-place stepper, so the
+/// gap is a screen, not a call. The grant half
+/// ([`ShopSession::set_quantity`] + `World::buy_from_shop`) is live and the
+/// bound is retail's, so only the interaction differs.
 #[derive(Debug, Clone)]
 pub struct BuyQuantitySession {
     pub item_id: u8,
