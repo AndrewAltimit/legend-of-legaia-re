@@ -270,6 +270,7 @@ fn every_walkable_state_frames_through_the_zone_camera() {
     let mut settled_free_roam_ok = 0usize;
     let mut unseated = 0usize;
     let mut unexplained = 0usize;
+    let mut stale_block = 0usize;
     let mut misses: Vec<String> = Vec::new();
 
     for s in &states {
@@ -381,10 +382,26 @@ fn every_walkable_state_frames_through_the_zone_camera() {
                     hits.push(format!("#{i} kind {}", rec[0]));
                 }
             }
+            // A zone miss the port cannot reproduce by querying, because
+            // retail did not query here either. Retail's block is loaded by a
+            // script arm, the player seat, or the flag-gated per-frame path
+            // (see `crates/engine-core/tests/field_camera_zone_arms_disc.rs`);
+            // a state whose block decodes from a record in this scene's own
+            // table, while the query at the state's own tile does not select
+            // it, is a block retail loaded at some earlier tile and never
+            // refreshed. This oracle seats the player and ticks once, so it
+            // has no way to reach that earlier tile.
+            let held = !hits.is_empty();
+            stale_block += usize::from(held);
             misses.push(format!(
                 "{tag}: zone table has {count} records; retail's block decodes from {hits:?} \
-                 (engine loaded {:?})",
-                cam.zone.loaded_record.map(|r| r[0])
+                 (engine loaded {:?}){}",
+                cam.zone.loaded_record.map(|r| r[0]),
+                if held {
+                    " [block held from an earlier tile - retail does not re-query on a crossing]"
+                } else {
+                    ""
+                }
             ));
         }
 
@@ -454,7 +471,8 @@ fn every_walkable_state_frames_through_the_zone_camera() {
          {current_compose_ok}/{current_staging} where the staging is current ({stale_staging} \
          stale, {foreign_staging} from a replaced block), live (H,pitch,yaw) exact {live_ok}/{n}, \
          scripted shot {scripted}/{n}, mid-glide {mid_glide}/{n}, settled free-roam exact \
-         {settled_free_roam_ok}/{settled_free_roam}, unseated {unseated}/{n}"
+         {settled_free_roam_ok}/{settled_free_roam}, held-from-an-earlier-tile \
+         {stale_block}/{n}, unseated {unseated}/{n}"
     );
     assert_eq!(unseated, 0, "every walkable state's scene must seat");
     assert_eq!(
@@ -479,6 +497,14 @@ fn every_walkable_state_frames_through_the_zone_camera() {
     assert_eq!(
         unexplained, 0,
         "every live miss must be a scripted shot, a mid-glide or a zone-selection miss"
+    );
+    // Every zone-selection miss must be one of those held blocks. A miss
+    // whose block decodes from no record in the scene's own table would be a
+    // loader or query defect, which is a different thing entirely.
+    assert_eq!(
+        zone_ok + stale_block,
+        n,
+        "a zone miss whose block matches no record in the scene's own table"
     );
     assert!(
         settled_free_roam > 0,

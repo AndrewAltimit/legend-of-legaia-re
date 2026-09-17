@@ -578,7 +578,7 @@ pub const PROLOGUE_HANDOFF_BIT: u32 = 26;
 /// can only be raised by a field script - op `0x2E` / `0x2F` with operand
 /// `0x16`. Fifteen of the disc's CDNAME scenes carry such a site.
 ///
-/// REF: FUN_801D1780
+/// REF: FUN_801D1344
 pub const ZONE_REQUERY_FLAG: u32 = 1 << ZONE_REQUERY_BIT;
 
 /// Scratchpad flag-bit index (`22`) of [`ZONE_REQUERY_FLAG`] - the operand

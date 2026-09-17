@@ -490,6 +490,37 @@ mod tests {
         assert_eq!(v.tr_eye[2], FIELD_CAM_DEPTH);
     }
 
+    /// While the zone camera drives the frame the whole composed eye trio
+    /// reaches the view, divided by the base matrix's 6x world scale -
+    /// `FUN_800172C0` uploads that trio as GTE `TR` with no depth constant
+    /// anywhere in the chain.
+    #[test]
+    fn follow_view_feeds_the_whole_composed_trio_reduced_by_the_world_scale() {
+        let w = world_with_player(0, 0);
+        let mut cam = Camera::default();
+        cam.zone.active = true;
+        cam.globals.0[0] = 0x1C0;
+        cam.globals.0[1] = -0x50;
+        cam.globals.0[3] = -84;
+        cam.globals.0[4] = 553;
+        cam.globals.0[5] = 10712;
+        let v = field_follow_view(&cam, &w).expect("player actor");
+        let s = CUTSCENE_WORLD_SCALE;
+        assert!((v.tr_eye[0] - -84.0 / s).abs() < 1e-3);
+        assert!((v.tr_eye[1] - 553.0 / s).abs() < 1e-3);
+        assert!((v.tr_eye[2] - 10712.0 / s).abs() < 1e-3);
+        assert!((v.pitch - to_rad(448.0)).abs() < 1e-6);
+        // A mode-4 shot stores a negative depth and folds the side into the
+        // yaw, so the depth axis takes the magnitude.
+        cam.globals.0[5] = -10712;
+        let f = field_follow_view(&cam, &w).unwrap();
+        assert!((f.tr_eye[2] - 10712.0 / s).abs() < 1e-3);
+        // A degenerate shot never puts the lens inside the player.
+        cam.globals.0[5] = 0;
+        let z = field_follow_view(&cam, &w).unwrap();
+        assert!((z.tr_eye[2] - FIELD_CAM_DEPTH / 8.0).abs() < 1e-3);
+    }
+
     /// The manual orbit is the PSX yaw's negation, and the distance preset
     /// scales the eye-back depth only - nothing else in the pose moves.
     #[test]

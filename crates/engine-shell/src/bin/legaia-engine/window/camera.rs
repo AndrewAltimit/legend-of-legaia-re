@@ -69,17 +69,17 @@ impl PlayWindowApp {
         )
     }
 
-    /// The retail **field follow camera**, parametrized from the town01
-    /// anchor savestate's camera globals (see docs/subsystems/cutscene.md for
-    /// the global map): pitch `_DAT_8007B790 = 450` (~39.6 deg down-tilt),
-    /// yaw `_DAT_8007B792 = -160`, roll 0, GTE `H = _DAT_8007B6F4 = 512`.
-    /// The look-at target is the player anchor - retail's follow-cam
-    /// (`FUN_801DBE9C`) folds `-(anchor X/Z)` into the focus globals each
-    /// frame. The eye-space depth is an engine calibration (retail's exact
-    /// field TR composition isn't pinned yet - the offset trio in the
-    /// savestate doesn't project to the observed framing); `FIELD_CAM_DEPTH`
-    /// is fitted so the player's on-screen height matches the retail frame
-    /// (~55 px of 240 for the ~130-unit mesh at H = 512).
+    /// The retail **field follow camera**. While the zone camera drives the
+    /// frame, every input is a live global the engine composes per scene and
+    /// per tile: pitch `_DAT_8007B790`, yaw `_DAT_8007B792`, GTE `H`
+    /// `_DAT_8007B6F4` and the eye-space translation trio
+    /// `_DAT_800840B8/BC/C0`, the last divided by the 6x world scale retail
+    /// folds into its camera rotation (`FUN_800172C0` builds `TR` from that
+    /// trio directly - see docs/subsystems/renderer.md). The savestate-pinned
+    /// pitch / yaw and `FIELD_CAM_DEPTH` frame only a world with no field
+    /// terrain loaded. The look-at target is the player anchor - retail's
+    /// follow-cam (`FUN_801DBE9C`) folds `-(anchor X/Z)` into the focus
+    /// globals each frame.
     ///
     /// Falls back to the fixed orbit vantage (`camera_mvp`) when no player
     /// actor exists to follow.
@@ -507,7 +507,7 @@ impl PlayWindowApp {
     ///   scene geometry at native 1x, so the trio is divided by that scale to
     ///   frame identically (the perspective divide makes 6x-geometry-at-`z`
     ///   and 1x-geometry-at-`z/6` project to the same pixels - the same trick
-    ///   `field_follow_camera_mvp`'s `FIELD_CAM_DEPTH = 1200 = 7200/6` uses).
+    ///   the field follow view applies to its own composed trio).
     ///   opdeene supplies all three per beat; the Z component is the eye-back
     ///   depth (raw ~16k-21k across beats).
     pub(super) fn cutscene_view(&self) -> ([f32; 3], f32, f32, f32, f32, [f32; 3]) {

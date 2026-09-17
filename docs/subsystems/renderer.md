@@ -584,8 +584,8 @@ word is the packet-length code (`0x05000000` / `0x08000000`). See
 ## The field view matrix: where `TR` comes from
 
 The field camera's ten globals are turned into GTE control registers once a
-frame by **`FUN_800172C0`** - the routine the field per-frame update tail
-(`0x801D1854`) ends on, and the one every minigame overlay and the world-map
+frame by **`FUN_800172C0`** - the routine the field per-frame controller
+`FUN_801D1344` ends its tail on (`0x801D1854`), and the one every minigame overlay and the world-map
 renderer call too (15 `jal` sites disc-wide). It is five calls long, and the
 last of them is what pins the field `TR`:
 

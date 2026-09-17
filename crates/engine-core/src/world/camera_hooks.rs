@@ -91,7 +91,7 @@ impl World {
     /// entry and only a field script raises it - op `0x2E` / `0x2F` with
     /// operand `0x16`. Fifteen of the disc's 124 CDNAME scenes touch it.
     ///
-    /// REF: FUN_801D1780
+    /// REF: FUN_801D1344
     pub fn camera_zone_requery_per_frame(&self) -> bool {
         self.flags.story_flags & crate::world::ZONE_REQUERY_FLAG != 0
     }

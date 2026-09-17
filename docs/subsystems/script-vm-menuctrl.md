@@ -93,8 +93,8 @@ seven `jal` sites: the three arms above plus `[4C C4]`, the player
 **seat / warp** path at `0x801D1FE8..0x801D2014` (which runs the `[4C 39]`
 sequence in code - query, `FUN_80019278`, `FUN_801DB8EC`, `FUN_801DAA50`),
 its sibling at `0x801D2BCC`, and the SCUS field-init call at `0x8003B800`.
-The field **per-frame** update has one more, at `0x801D17FC..0x801D1830`,
-and it is gated: `_DAT_1F800394 & 0x400000` (scratchpad flag bit `22`) must
+The field **per-frame** controller `FUN_801D1344` has one more, at
+`0x801D17FC..0x801D1830`, and it is gated: `_DAT_1F800394 & 0x400000` (scratchpad flag bit `22`) must
 be set, or the frame only eases (`FUN_801DB510`) and clamps
 (`FUN_801DAA50`). That bit is not in the per-mode seed of the flag word - the
 seed copies a `u16` - so it starts clear every time the game mode changes and

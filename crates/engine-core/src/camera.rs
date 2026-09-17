@@ -735,7 +735,7 @@ impl Camera {
     /// never shakes the camera.
     ///
     /// PORT: FUN_801DE3E0
-    /// REF: FUN_801DAB90, FUN_801DB510, FUN_801DB8EC, FUN_801DBE9C, FUN_801D1780
+    /// REF: FUN_801DAB90, FUN_801DB510, FUN_801DB8EC, FUN_801DBE9C, FUN_801D1344
     fn zone_follow_tick(&mut self, world: &World, dt: i32) {
         use crate::camera_zone::{ComposeInputs, compose, ease_step, ease_step_i16, snap};
         use crate::field_regions::{RegionTable, refresh_region_attributes, zone_query};

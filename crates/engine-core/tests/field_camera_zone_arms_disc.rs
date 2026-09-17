@@ -165,7 +165,6 @@ fn walking_holds_the_block_while_the_arms_reload_it() {
     let mut host = SceneHost::open_extracted(&ex).expect("scene host");
     host.world.begin_new_game();
     host.enter_field_scene("town01", 0).expect("enter town01");
-    let slot = host.world.player_actor_slot.expect("player actor");
 
     // Every arm queues its request through the VM's host impl.
     for (bytes, want) in [
