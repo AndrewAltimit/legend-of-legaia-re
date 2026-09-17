@@ -146,7 +146,13 @@ addiu $v1, $v1, -0xb` at `0x80041FC0`, scaled by the `0x414` per-character
 record stride (`sll 6; addu; sll 2; addu; sll 2`) onto `0x80084140`. Class `11`
 is roster slot 0, `12` is slot 1, `13` is slot 2 - **the picked target is never
 read**, so a Fire Book always lands on the same roster slot whoever the menu
-highlights. The insert itself is ordered, not a head insert: the loop at
+highlights.
+
+The field VM confirms the encoding from the other side. Its own grant arm
+`[4C C7]` (`0x801E28D4`) reads two operand bytes and calls the same applier
+with `addiu $a0, $a0, 0xb` in the `jal` delay slot at `0x801E28E8` - a script
+names the roster **slot** and the arm adds the `0xb` the applier subtracts
+back. The `-0xb` is a class-to-slot rebase, not an offset into anything. The insert itself is ordered, not a head insert: the loop at
 `0x80041FFC`..`0x8004202C` walks down from the count shifting entries up only
 while the new id compares smaller (`sltu $v0, $a3, $v1`), so the list stays
 sorted ascending by id.
