@@ -201,7 +201,16 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
         )
     };
     Some(FieldCameraView {
-        focus: [wx, floor_y, wz],
+        // Retail's focus trio is `_DAT_80089118/1C/20`, and only X and Z are
+        // ever written in the field (`FUN_801DBE9C`'s retail leg and the
+        // focus clamp `FUN_801DAA50` both write those two). The view build
+        // reads all three as low signed halfwords and Y measures `0` on
+        // every sampled field frame across three scenes, while the player's
+        // footing on those frames is not `0` - the camera's vertical
+        // framing rides the composed eye Y, not the focus. A world with no
+        // terrain has no composed trio to ride, so the sampled floor stands
+        // in for it there.
+        focus: [wx, if cam.zone.active { 0.0 } else { floor_y }, wz],
         pitch: to_rad(pitch_units),
         // PSX camera yaw is the compass negation, so a positive manual orbit
         // subtracts from the render yaw.

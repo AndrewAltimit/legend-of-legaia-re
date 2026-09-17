@@ -1888,6 +1888,22 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn camera_zone_query_conform_and_snap(&mut self, _ctx: &mut FieldCtx) {
+        // The arm's middle call, `FUN_80019278(player)` -> `player[+0x16]`:
+        // re-conform the footing to the floor under the tile the script just
+        // moved the player to, before the camera composes from it. The query
+        // and the snap are the queued half.
+        if let Some(slot) = self.world.player_actor_slot
+            && let Some(a) = self.world.actors.get(slot as usize)
+        {
+            let (x, z) = (
+                i32::from(a.move_state.world_x),
+                i32::from(a.move_state.world_z),
+            );
+            let y = self.world.sample_field_floor_height(x, z) as i16;
+            if let Some(a) = self.world.actors.get_mut(slot as usize) {
+                a.move_state.world_y = y;
+            }
+        }
         self.world
             .push_camera_zone_request(CameraZoneRequest::QueryConformAndSnap);
     }
