@@ -901,6 +901,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_field_camera_tr.lua`](../../scripts/pcsx-redux/autorun_field_camera_tr.lua) | What composes the field camera's GTE `TR` from the live camera words, on one frame. &rarr; [detail](#autorun_field_camera_trlua) |
 | [`autorun_cast_cue_band_sweep.lua`](../../scripts/pcsx-redux/autorun_cast_cue_band_sweep.lua) | Whether the cast-audio dispatcher's character-banded cue band ever fires on a player cast. &rarr; [detail](#autorun_cast_cue_band_sweeplua) |
 | [`autorun_throw_out_cursor.lua`](../../scripts/pcsx-redux/autorun_throw_out_cursor.lua) | Whether the pause-menu item cursor `_DAT_8007BB88` is a bag slot or a list row. &rarr; [detail](#autorun_throw_out_cursorlua) |
+| [`autorun_scene_entry_eye_seed.lua`](../../scripts/pcsx-redux/autorun_scene_entry_eye_seed.lua) | Which of the two scene-entry camera-eye seeds runs last, and what the first field view reads. &rarr; [detail](#autorun_scene_entry_eye_seedlua) |
 #### Runtime probe details
 
 ##### `autorun_w4d_cort_flow_writer.lua`
@@ -1164,6 +1165,52 @@ the longer ones (`Probes` + `What it answered`) are written out as
   after SELECT, and an ungated breakpoint at a 0899 VA counts the field
   overlay's code until then. See
   [`inventory.md`](../subsystems/inventory.md#accessors).
+
+##### `autorun_scene_entry_eye_seed.lua`
+
+- **Probes:** eight exec taps, each gated on the instruction word the
+  extracted image carries at that VA so a slot-A alias is reported instead
+  of counted. Two seed writers - `FUN_80025C24` in `SCUS_942.54` and
+  `FUN_801DE37C` in the field overlay - are tapped at their entry and at
+  their `jr ra`, so the row carries the eye trio `0x800840B8/BC/C0` both
+  before and after each writes it. Their three call sites are tapped too
+  (`0x801D698C` and `0x801D6DA8` inside the field MAIN INIT `FUN_801D6704`,
+  `0x8003B01C` inside `FUN_8003AEB0`), so the ordering is measured at the
+  callers and not only at the callees. The field view builder
+  `FUN_800172C0` and the tap right after it uploads the trio verbatim as GTE
+  `TR` complete the chain. A held direction repeats on a period so a
+  pre-transition state that misses its walk-on band gets several attempts in
+  one capture.
+- **What it answered:** the two writers do **not** race - they run in a
+  fixed order inside one routine, `FUN_80025C24` first and `FUN_801DE37C`
+  second, on all three scene entries captured (`dolk` -> `map01`,
+  `map01` -> `town0c`, `uru` -> `map03`), exactly as the two `jal` offsets
+  in `FUN_801D6704` predict. So `FUN_801DE37C`'s `(0, 0x200, 0x4000)` is the
+  seed that stands. What the first field frame's view reads, though, is
+  **neither**: by the next vsync the follow composer has already replaced
+  the trio, and the `TR` upload carries the composed value. The two writers
+  also agree on the angle trio - both write `(0x1B8, 0x64, 0)` - so the only
+  thing the ordering decides is the eye.
+- **It also falsifies "once per frame".** On the settled `uru` frame the
+  view builder is entered **three** times inside one vsync, from three
+  distinct return addresses - two in the field overlay (`0x801D0F98`,
+  `0x801D185C`) and one in `SCUS_942.54` (`0x80016678`) - and the recording
+  budget was three, so three is a floor. Two-per-vsync appears on the
+  `map03` and `town0c` frames too, and on one of them the live camera words
+  differ between the frame's own two builds. `cutscene.md` calls
+  `FUN_800172c0` the "once-per-frame view builder"; the composition it
+  describes is unaffected, the frequency is not a property anything had
+  measured.
+- **Two traps it walked into, both worth reusing:** the visible-tile window
+  `FUN_801DE37C` seeds is **scratchpad** (`0x1F8003E8..EB`), and the
+  main-RAM reader returns zeros there - it has to go through
+  `probe.read_scratch_u32`. And a breakpoint on a `jr ra` fires **before**
+  the delay slot, which for this routine is the fourth window store, so that
+  byte still reads its previous value on the `seed_b` row.
+- **What the seeded window is worth:** `FUN_801DE37C` writes
+  `(-8, -6, 6, 10)` into `0x1F8003E8..EB` on every entry and the scene then
+  replaces it - `map03` runs at `(-18, -12, 18, 32)`, `uru` at
+  `(-21, -6, 19, 31)`. The seed is a floor, not a frame's value.
 
 ### Save-state to Python (offline analysis)
 
