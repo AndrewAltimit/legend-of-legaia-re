@@ -24,7 +24,7 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 | 8 | 0x80..0x8F | Large multi-purpose dispatcher (party-slot full heal, conditional jump on `+0x68`, actor model/anim set, actor-search jumps, …). Full body: [nibble-8 multi-purpose dispatcher](#0x4c-nibble-0x800x8f---large-multi-purpose-dispatcher). |
 | 9 | 0x90..0x9F | **Floor-height ladder.** Sub-`0xE` installs all sixteen rungs (`-words[i]` into `0x1F80035C + i*2`); sub-`0..2` sets one rung oscillating via `FUN_801DDE34`; sub-`0xF` retires every oscillator (`func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)` then halt at PC - a retire sweep, not a callback registration). See [the detail below](#nibble-9-is-the-floor-height-ladder-not-a-fade). |
 | A | 0xA0..0xAF | Conditional jump on flag bit. Sub-0 reads `ctx.flags`, sub-1 reads `ctx.local_flags`, sub-2 reads the global story flag word. Bit SET → take absolute jump from operand[2..4]; bit CLEAR (or sub-3..=0xF) → skip 5 bytes. (The asm dispatches on sub-op first at 0x801e2568, so sub-3..=0xF skip both the per-bank check and the take-jump path.) |
-| B | 0xB0..0xBF | No valid sub-op: every one falls into retail's error printer (`jal 0x8001A068` at `0x801E3558`, arm `0x801E3550`). No disc carrier. |
+| B | 0xB0..0xBF | No valid sub-op: every one falls into retail's error printer (`jal 0x8001A068` at `0x801E3558`, arm `0x801E3550`). No shipped script carries any `4C Bx` - zero occurrences, clean **or** total, across the whole opcode census. |
 | C | 0xC0..0xCF | Small per-actor / per-scene writes (slot table, camera-zone query at a named tile, sound trigger, `field_74` XOR, [camera-focus override](#4c-cf-is-the-script-camera-focus-override)). **All 16 sub-ops are now ported.** Full body: [nibble-C small per-actor / per-scene writes](#0x4c-nibble-0xc00xcf---small-per-actor--per-scene-writes). |
 | D | 0xD0..0xDF | Party state + inverted-Y mirror cluster (field SE trigger, linked-list lookup gate, synchronous-spawn actor allocator, party-record search). Full body: [nibble-D party state + inverted-Y mirror cluster](#0x4c-nibble-0xd00xdf---party-state--inverted-y-mirror-cluster). |
 | E | 0xE0..0xEF | Misc scene writes + emitter helpers (3-way state write, variable-length text balloon, FMV trigger, camera teleport/animate/zoom, XP add). All non-`P` cells in the matrix above are now ported. Full body: [nibble-E misc scene writes + emitter helpers](#0x4c-nibble-0xe00xef---misc-scene-writes--emitter-helpers). |
@@ -82,7 +82,9 @@ The arm addresses come from the disc's own nibble-3 jump table at
 | `[4C 3E]` | `0x801E10BC` | `FUN_801DB8EC(player)` snap + `FUN_801DAA50()` focus clamp. | 2 |
 
 `[4C 3E]`'s table entry points **inside** `[4C 39]`'s arm - the two share one
-tail - so a snap arm is a query arm minus its first six instructions.
+tail. `0x801E10BC` is seventeen instructions past `0x801E1078`, so the snap arm
+is the query arm with its query-and-footing head cut off; `[4C 39]` does not
+branch to the snap, it falls through into it.
 `FUN_801DE3E0` is query-and-load in one: `FUN_801DBA20` picks the record
 covering the tile, `FUN_801DBC20` splits it into the block, and a miss
 installs the fixed zone-miss set instead.
