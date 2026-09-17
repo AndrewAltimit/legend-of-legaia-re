@@ -389,7 +389,7 @@ TIM list normally occupies:
 
 | entry | descriptor-0 payload |
 |---|---|
-| `0022_town0c`, `0348_town0d`, `0742_town0e` | 1,927 compressed bytes that decompress to [pochi-fill](pochi.md) - a reserved-and-empty dev slot, which is what the type byte is for |
+| `0022_town0c`, `0348_town0d`, `0742_town0e` | 1,927 bytes of [pochi-fill](pochi.md), byte-identical across all three - a reserved-and-empty dev slot, which is what the type byte is for |
 | `0455_urudre1` | 343,480 bytes that decompress to a well-formed 85-member [`asset::pack`](pack.md), every member a PSX TIM |
 
 The odd one out is not authoring residue and not a scene-specific consumer
