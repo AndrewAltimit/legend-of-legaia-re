@@ -42,9 +42,9 @@ pub struct BagRow {
 ///
 /// `price` is the one field the effect table cannot answer (it is the item
 /// record's `+2` halfword, not a descriptor field), so the caller supplies it;
-/// the sell list is the only builder that reads it. `equip_flags` answers `0`
-/// - the equipment record's `+7` byte has no engine table, which is what keeps
-/// the Throw Out builder disclosed.
+/// the sell list is the only builder that reads it. `equip_flags` answers `0`,
+/// because the equipment record's `+7` byte has no engine table - which is what
+/// keeps the Throw Out builder disclosed.
 struct WorldRowTables<'a> {
     effects: &'a legaia_asset::item_effect::ItemEffectTable,
     price: &'a dyn Fn(u8) -> u16,

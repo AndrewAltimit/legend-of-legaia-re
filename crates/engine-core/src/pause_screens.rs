@@ -1979,8 +1979,12 @@ mod tests {
         let items: Vec<u8> = ids_counts.iter().map(|(id, _)| *id).collect();
         let rows: Vec<PauseItemRow> = ids_counts
             .iter()
-            .map(|(id, count)| PauseItemRow {
+            .enumerate()
+            .map(|(i, (id, count))| PauseItemRow {
                 id: *id,
+                // Test rows come from a dense list, so the row ordinal IS the
+                // slot; a holed bag is exercised in `bag_row_payload_is_a_slot`.
+                slot: i as u8,
                 name: format!("Item {id:02X}"),
                 count: *count,
                 desc: format!("Desc {id:02X}"),
