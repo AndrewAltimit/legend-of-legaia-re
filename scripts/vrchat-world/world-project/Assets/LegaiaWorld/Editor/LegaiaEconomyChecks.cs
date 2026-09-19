@@ -77,7 +77,7 @@ namespace LegaiaWorld
             };
             var prefabs = LegaiaCommonPrefabs.Build(
                 "Assets/LegaiaGenerated/" + sceneName, spawn.transform.position,
-                prefabOpts, settings.prefabTransforms, settings.slotMachine);
+                prefabOpts, settings.prefabTransforms, settings.slotMachines);
             if (prefabs == null)
                 Fail("the common prefabs pass built nothing - no wallet, no machine");
 
@@ -386,7 +386,7 @@ namespace LegaiaWorld
             };
             LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
                 spawn.transform.position, prefabOpts, settings.prefabTransforms,
-                settings.slotMachine);
+                settings.slotMachines);
             settings.ApplyNpcOverrides(manifest, manifestDir, rootT.gameObject);
             LegaiaWorldBuilder.ReconcileNpcs(manifest, manifestDir, rootT.gameObject,
                 sceneName, settings);

@@ -599,7 +599,7 @@ namespace LegaiaWorld
             };
             var container = LegaiaCommonPrefabs.Build(
                 "Assets/LegaiaGenerated/" + sceneName, spawn.transform.position, o,
-                settings.prefabTransforms, settings.slotMachine, settings.posters);
+                settings.prefabTransforms, settings.slotMachines, settings.posters);
             if (container == null)
                 Fail("no container built");
 

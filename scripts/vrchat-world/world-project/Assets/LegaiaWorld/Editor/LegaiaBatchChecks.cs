@@ -89,7 +89,7 @@ namespace LegaiaWorld
             var settings = LegaiaSceneSettings.Load(sceneName);
             var container = LegaiaCommonPrefabs.Build(
                 "Assets/LegaiaGenerated/" + sceneName, spawn.transform.position, o,
-                settings.prefabTransforms, settings.slotMachine);
+                settings.prefabTransforms, settings.slotMachines);
             if (container == null)
                 Fail("no container built");
 
@@ -178,12 +178,21 @@ namespace LegaiaWorld
             // Shading: every kit renderer is on a Legaia lit shader except
             // the display surfaces (mirror, video screen) and whatever a
             // spawned SDK prefab brought along.
-            var slotRoot = container.transform.Find(LegaiaCommonPrefabs.SLOT_NAME);
+            // Every cabinet (slot_machine, slot_machine_2, ...) carries a
+            // rig whose marquee slots hold null materials until a message
+            // shows - the slot builder's own rules, not this check's.
+            bool UnderCabinet(Transform t)
+            {
+                for (var p = t; p != null && p != container.transform; p = p.parent)
+                    if (LegaiaCommonPrefabs.SlotIndexOf(p.name) >= 0)
+                        return true;
+                return false;
+            }
             foreach (var r in container.GetComponentsInChildren<Renderer>(true))
             {
                 if (PrefabUtility.IsPartOfPrefabInstance(r.gameObject))
                     continue; // spawned prefabs keep their own materials
-                if (slotRoot != null && r.transform.IsChildOf(slotRoot))
+                if (UnderCabinet(r.transform))
                     continue; // the slot rig follows the slot builder's own rules
                 foreach (var m in r.sharedMaterials)
                 {
@@ -217,31 +226,70 @@ namespace LegaiaWorld
             // (lit) materials, not the Standard originals.
             CheckVar(container, "LegaiaWorld.LegaiaMirror", "idleMaterial");
 
-            // Slot machine: when the cabinet asset exists, the pass must
-            // have placed it as the settings say and built the minigame.
+            // Slot machines: when the cabinet asset exists, the pass must
+            // have placed one cabinet per settings entry (one from the
+            // builder fields when the file places none), each where the
+            // settings say, each with its own minigame rig.
             string slotAsset = settings.slotMachine?.cabinetAsset ?? o.slotCabinetPath;
             if (AssetDatabase.LoadAssetAtPath<GameObject>(slotAsset) != null)
             {
-                var cab = container.transform.Find(LegaiaCommonPrefabs.SLOT_NAME);
-                if (cab == null)
-                    Fail("slot cabinet not placed under " + container.name);
-                Expect("LegaiaWorld.LegaiaSlotMachine", 1, cab.gameObject);
-                Expect("LegaiaWorld.LegaiaSlotButton", 3, cab.gameObject);
-                var sp = settings.slotMachine;
-                if (sp != null && sp.hasPosition &&
-                    (cab.localPosition - sp.position).magnitude > 0.001f)
-                    Fail("slot cabinet at " + cab.localPosition + ", settings say " + sp.position);
-                if (sp != null && sp.hasRotation &&
-                    Quaternion.Angle(cab.localRotation, Quaternion.Euler(sp.rotation)) > 0.01f)
-                    Fail("slot cabinet rotated " + cab.localEulerAngles + ", settings say " + sp.rotation);
-                if (sp != null && sp.hasScale && Mathf.Abs(cab.localScale.x - sp.scale) > 1e-4f)
-                    Fail("slot cabinet scale " + cab.localScale.x + ", settings say " + sp.scale);
+                int expected = Mathf.Max(1, settings.slotMachines.Count);
+                Expect("LegaiaWorld.LegaiaSlotMachine", expected);
+                for (int i = 0; i < expected; i++)
+                {
+                    string name = LegaiaCommonPrefabs.SlotName(i);
+                    var cab = container.transform.Find(name);
+                    if (cab == null)
+                        Fail("slot cabinet " + name + " not placed under " + container.name);
+                    Expect("LegaiaWorld.LegaiaSlotMachine", 1, cab.gameObject);
+                    Expect("LegaiaWorld.LegaiaSlotButton", 3, cab.gameObject);
+                    var sp = i < settings.slotMachines.Count ? settings.slotMachines[i] : null;
+                    if (sp != null && sp.hasPosition &&
+                        (cab.localPosition - sp.position).magnitude > 0.001f)
+                        Fail(name + " at " + cab.localPosition + ", settings say " + sp.position);
+                    if (sp != null && sp.hasRotation &&
+                        Quaternion.Angle(cab.localRotation, Quaternion.Euler(sp.rotation)) > 0.01f)
+                        Fail(name + " rotated " + cab.localEulerAngles + ", settings say " + sp.rotation);
+                    if (sp != null && sp.hasScale && Mathf.Abs(cab.localScale.x - sp.scale) > 1e-4f)
+                        Fail(name + " scale " + cab.localScale.x + ", settings say " + sp.scale);
+                }
+                // A hand-placed cabinet the settings already carry is
+                // retired by the pass - one it does not know is left
+                // standing on purpose, so only rigs count as strays here.
                 int strays = 0;
                 foreach (var t in Object.FindObjectsOfType<Transform>(true))
                     if (t.name == "LegaiaSlotGame" && !t.IsChildOf(container.transform))
                         strays++;
                 if (strays > 0)
                     Fail(strays + " slot rig(s) left outside the container");
+                Debug.Log("[Legaia] CommonPrefabs: " + expected + " slot machine(s) placed.");
+            }
+
+            // object_transforms: every key must name a built object, and
+            // applying the block must leave each one exactly where the
+            // file says (the scene on disk may already be there - the
+            // assert is that the apply resolves and lands, not that it
+            // moved anything).
+            var root = spawn.transform.parent != null ? spawn.transform.parent.gameObject : null;
+            if (root != null && settings.objectTransforms.Count > 0)
+            {
+                settings.ApplyObjectTransforms(root);
+                foreach (var kv in settings.objectTransforms)
+                {
+                    var hits = LegaiaSceneSettings.FindObjects(root, kv.Key);
+                    if (hits.Count == 0)
+                        Fail("object_transforms key '" + kv.Key + "' names nothing under " +
+                             root.name + " or the kit containers");
+                    if ((hits[0].localPosition - kv.Value.position).magnitude > 0.001f)
+                        Fail("object_transforms '" + kv.Key + "' at " + hits[0].localPosition +
+                             ", settings say " + kv.Value.position);
+                    if (kv.Value.hasRotation && Quaternion.Angle(hits[0].localRotation,
+                            Quaternion.Euler(kv.Value.rotation)) > 0.01f)
+                        Fail("object_transforms '" + kv.Key + "' rotated " +
+                             hits[0].localEulerAngles + ", settings say " + kv.Value.rotation);
+                }
+                Debug.Log("[Legaia] CommonPrefabs: " + settings.objectTransforms.Count +
+                    " object transform(s) resolved and applied.");
             }
 
             // Placements from the scene settings file must win over the
@@ -808,7 +856,7 @@ namespace LegaiaWorld
             };
             LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
                 spawn.transform.position, prefabOpts, settings.prefabTransforms,
-                settings.slotMachine);
+                settings.slotMachines);
 
             // Apply TWICE: the pass must refresh, not stack. Every assert
             // below then runs against the second build, so a leaked brain or

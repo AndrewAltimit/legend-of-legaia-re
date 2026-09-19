@@ -70,7 +70,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFlicker.cs` | Firelight flicker for the always-burning night torches: no sync, no interaction - just the two-octave Perlin intensity wobble on the flame's point light. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. Weapon rows carry `weapon` and measure their own swing speed while held. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCommonPrefabs.cs` | The **Common prefabs** foldout: builds the mirror, the TV and the card table from primitives + generated textures + the SDK's own components (the 52 card faces are drawn into one versioned atlas, `cards_atlas_v2.png`, in the standard pip arrangement), spawns the SDK's sample pen system, and drops any prefab assets you list (QvPen, ProTV, a community deck...) near spawn. See "Common prefabs" below. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaSettingsSnapshot.cs` | Menu `Legaia > Snapshot placements to scene settings`: writes the hand-placed Inspector transforms of both top-level containers' children (common prefabs; camp panel, torches and campfires), the card table's seat panel and LegaiaSpawn into `Settings/<scene>.settings.json` (`prefab_transforms` + `spawn_position`). Other keys in the file are preserved, and `prefab_transforms` merges over what is already there rather than replacing it. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaSettingsSnapshot.cs` | Menu `Legaia > Snapshot placements to scene settings`: writes the hand-placed Inspector transforms of both top-level containers' children (common prefabs; camp panel, torches and campfires), the card table's seat panel and LegaiaSpawn into `Settings/<scene>.settings.json` (`prefab_transforms` + `spawn_position`), every cabinet of the slot asset (`slot_machine`, or `slot_machines` past one) and the hand-moved built objects (`object_transforms`: stored keys re-read, world-glb nodes with an override added). Other keys in the file are preserved, and the blocks merge over what is already there rather than replacing it. Sibling menu `Legaia > Pin selected objects to scene settings` adds the selection to `object_transforms`. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSoak.cs` | The PLAY-MODE soak (`LegaiaBatchChecks.Soak`): enters play mode with ClientSim, pins the day/night clock to night or day, samples every brain at 2 Hz into a per-villager timeline, and asserts the night routine ran (in through the door, door swung, out again at dawn) or reports a day's station visits and conversations. The only check here that actually runs a villager. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaBatchChecks.cs` | Headless self-tests (`Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs` builds the common prefabs against the scene's built root and asserts every SDK component and every UdonSharp field wiring reached the backing behaviour; `.LivingTown`, `.Weather`, `.Ambience` likewise; `.RigPose` measures every imported NPC rig and checks the sitting pose's hip turn against the rig's walk clip). Never saves the scene. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaEventButton.cs` | A collider button: Interact sends one named event into a target behaviour. Every common-prefab button uses it (no world-space UI, so no pickup-collider-steals-the-click trap). |
@@ -385,6 +385,20 @@ All keys optional (`town01.settings.json` is the worked example):
 - **`slot_machine`** - the casino cabinet: model asset, `asset slot-art`
   folder, placement + scale. The common-prefabs pass places the cabinet
   and builds the minigame on it. See "Common prefabs".
+- **`slot_machines`** - several cabinets: a list of `slot_machine` blocks
+  built in order as `slot_machine`, `slot_machine_2`, ... each with its
+  own rig, all on the one purse. Later entries inherit the first one's
+  `cabinet` / `art`. The snapshot menu writes this form once the scene
+  holds more than one cabinet of the asset (a hand-dragged copy counts
+  before the slot tool has built it). When both keys exist the list wins.
+- **`object_transforms`** - hand placement for objects the BUILD creates
+  (a world-glb node such as `mesh_39_0`, a placed villager as `npc_150`,
+  an animated prop), keyed like `delete_objects` plus the bare NPC
+  token, valued as the object's Inspector transform under its own
+  parent. Applied after every placement pass and before the realism
+  layer, and again by "Apply enhancements". The snapshot re-captures
+  stored keys and adds every world node moved by hand; a moved villager
+  is added with `Legaia > Pin selected objects to scene settings`.
 - **`ambience`** - user-supplied ambience loops by role:
   `{"day": "Assets/Audio/day.wav", "night": ..., "base": ...,
   "waves": ..., "wind_gust": ..., "tree_birds": ..., "night_wildlife": ...,
@@ -1252,10 +1266,14 @@ The rest are spawned **from prefabs already in your project**:
   it from **Slot art folder** (the `asset slot-art` export - see "The
   casino slot machine"). The scene settings' `slot_machine` block
   overrides asset, art folder, position, rotation and scale, so a
-  hand-placed cabinet comes back on every rebuild; a cabinet of the
-  same asset left at the scene root by the old drag-it-in workflow is
-  retired (logged) so there is never a second machine. The kit ships no
-  cabinet model (ours carries disc-derived art).
+  hand-placed cabinet comes back on every rebuild, and a `slot_machines`
+  list places one machine per entry (`slot_machine`, `slot_machine_2`,
+  ...), each with its own rig on the shared purse. A cabinet of the same
+  asset dragged in by hand outside the container is retired (logged)
+  when the settings already carry its spot, so a rebuild never doubles
+  a machine; one the settings do not know yet is left standing with a
+  warning naming the snapshot menu, so a drag-in is never lost. The kit
+  ships no cabinet model (ours carries disc-derived art).
 - **Extra prefabs** - *+ Add prefab slot*, drag any prefab asset from
   the Project window into it, set its offset from spawn and a yaw. The
   builder instantiates it as a prefab instance (so it keeps its link
@@ -1291,13 +1309,35 @@ already holds instead of being dropped, so snapshotting a half-built
 scene cannot quietly lose hand tuning. The trade is that a key for
 something you retired on purpose has to be deleted by hand; the
 CommonPrefabs check names every key that matches no built object. The slot cabinet
-gets its own block, found through its `LegaiaSlotGame` rig wherever it
-sits, with the asset path, art folder and uniform scale alongside:
+gets its own block, with the asset path, art folder and uniform scale
+alongside - every instance of the cabinet asset in the scene counts, the
+container's own and any copy dragged in by hand (rig or no rig), so a
+second cabinet turns the block into the `slot_machines` list:
 
 ```json
-"slot_machine": { "cabinet": "Assets/Prefabs/legaia slot machine.glb",
-                  "art": "Assets/LegaiaImports/slot-art",
-                  "position": [37, 0.979, 36.416], "rotation": [0, -71.178, 0], "scale": 0.008 }
+"slot_machines": [
+  { "cabinet": "Assets/Prefabs/legaia slot machine.glb",
+    "art": "Assets/LegaiaImports/slot-art",
+    "position": [37, 0.979, 36.416], "rotation": [0, -71.178, 0], "scale": 0.008 },
+  { "position": [114.492, -0.003, 76.531], "rotation": [0, 92.899, 0], "scale": 0.008 }
+]
+```
+
+Objects the build itself creates - a node of the world glb, a placed
+villager, a prop - are pinned through `object_transforms`, keyed by
+name (or `npc_NNN` for a villager) and valued in the object's own
+Inspector numbers under its parent. The snapshot re-captures every key
+already stored and adds every world-glb node that carries a position or
+rotation override (moving one by hand IS such an override); a villager
+the builder positions every time has no such signal, so select it and
+run **Legaia > Pin selected objects to scene settings** once - after
+that the ordinary snapshot keeps it current:
+
+```json
+"object_transforms": {
+  "mesh_39_0": { "position": [-116.551, 0, 73.638], "rotation": [0, 0, 0] },
+  "npc_150":   { "position": [-116.539, 0, 78.304], "rotation": [0, 0, 0] }
+}
 ```
 
 The snapshot

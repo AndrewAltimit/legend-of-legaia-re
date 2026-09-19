@@ -373,7 +373,7 @@ namespace LegaiaWorld
             var settings = LegaiaSceneSettings.Load(sceneName);
             LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
                 spawnT.position, commonPrefabs, settings.prefabTransforms,
-                settings.slotMachine);
+                settings.slotMachines);
             settings.ApplyDeletions(root);
         }
 
@@ -921,6 +921,9 @@ namespace LegaiaWorld
             string dir = Path.GetDirectoryName(manifestPath).Replace('\\', '/');
             settings.ApplyNpcOverrides(m, dir, root);
             ReconcileNpcs(m, dir, root, sceneName, settings);
+            // A re-placed villager lands back on its manifest tile above;
+            // the hand placements go on again before the passes measure.
+            settings.ApplyObjectTransforms(root);
             LegaiaRealism.Apply(root, m, sceneName, realism);
             // The passes above regenerate what per-scene deletions target
             // (interior shells, lamps) - re-apply them, and refresh the
@@ -1288,6 +1291,12 @@ namespace LegaiaWorld
                         Quaternion.LookRotation(dirWorld.normalized, Vector3.up);
             }
 
+            // Hand-moved built objects (a world node, a villager, a prop):
+            // every placement pass is done, and the colliders follow their
+            // meshes, so the camp props' ground raycasts, the navmesh bake
+            // and the living town below all see the moved object.
+            settings.ApplyObjectTransforms(root);
+
             // Per-scene spawn override: the value is what LegaiaSpawn's
             // INSPECTOR shows (root-local - drag the marker, copy, paste),
             // so it round-trips digit for digit. World space would come
@@ -1319,7 +1328,7 @@ namespace LegaiaWorld
             if (commonPrefabs.AnyEnabled)
                 LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
                     spawnGo.transform.position, commonPrefabs, settings.prefabTransforms,
-                    settings.slotMachine);
+                    settings.slotMachines);
             else
                 LegaiaCommonPrefabs.Remove();
 
