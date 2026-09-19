@@ -92,6 +92,7 @@ if let Some(m) = mips_overlay::detect(buf) {
       <tr><td>Mis-recovered base</td><td>The <code>bat_back_dat</code> (PROT 0896) dump family, whose link base is unrecovered</td><td>Field / battle bodies or interior fragments - never a standalone 0896 function at the printed VA</td></tr>
       <tr><td>Relocation duplicate</td><td>Debug-menu (0971), minigame (0977 / 0978) and menu (0899) overlays re-image a shared library at a different base per mode</td><td><code>DUPLICATE</code> of the canonical VA in 0970 / 0972 / 0899</td></tr>
       <tr><td>Inherited CDNAME label</td><td>The <code>other_game</code> block opens at extraction 0972 and its name carries forward to 0977</td><td>Name by extraction index: 0977 is the Muscle Dome door/init slot, not a fishing overlay; 0978 opens <code>monster_test</code></td></tr>
+      <tr><td>Inherited CDNAME label, again</td><td>The <code>monster_test</code> block opens at extraction 0978 and its names carry forward too</td><td>Extraction 0981 wears the label while its code is the world-map top-view debug image at <code>0x801CE818</code> - entry <code>0x801CE850</code>, operands <code>DAT_80073EE0</code> / <code>uRam8007b970</code> / <code>_DAT_80089118</code></td></tr>
     </tbody>
   </table>
   <details class="disclosure">
