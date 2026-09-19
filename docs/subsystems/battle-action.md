@@ -77,7 +77,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x37` | Summon - verify all alive | `FUN_801D5854(actor, 6)`. Iterates the 8-actor table (party + active monsters); checks each is alive (`+0x14C != 0` AND `+0x1D9 != 0`). Sets a 4-byte fade-back-in sentinel at `ctx[+0x890..+0x893]` (`84 10 42 08`). | `0x38`. |
 | `0x38` | Summon - done | OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`. | `0x50`. |
 | `0x3C` | **Spirit / Item - pre-arm** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DA] = actor[+0x1E7]` (queued anim). Sets `ctx[+0x243] = 1` ("action in progress" marker). **Seeds the `(class, tier)` pair `actor[+0x1E8]` / `+0x1E9`** ([below](#the-class-tier-seed-at-state-0x3c)). Item leg also writes HUD via `_DAT_80077332..+0x35C`; `actor[+0x1DF] == 0xFE` (Pomander) → label = `s_Points_returned_801CED34`. Non-Item computes MP cost (with ability-bit half/quarter), subtracts from `actor[+0x150]`; for party_id < 3 fires `FUN_801D8DE8(7, 0)` (UI element). Always fires `FUN_801D8DE8(0x4C, 0)` (HUD label). | `0x3D`. |
-| `0x3D` | Spirit - wait | `FUN_801D5854(actor, 6)`. Holds while `actor[+0x1DA] != actor[+0x1D9]`. When matched, clears `actor[+0x1DA]`, calls `func_0x801F3990` (the [cast audio-cue dispatcher](#battle-helper-functions)). | `0x3E`. |
+| `0x3D` | Spirit - wait | `FUN_801D5854(actor, 6)`. Holds while `actor[+0x1DA] != actor[+0x1D9]`. When matched, clears `actor[+0x1DA]`, calls `func_0x801F3990` (the [cast audio-cue dispatcher](#battle-helper-functions)). This is the **only** state that reaches that dispatcher, and an ordinary item use is the door into it - see [the one caller](#the-one-caller-is-state-0x3d-and-it-is-an-item--spirit-state). | `0x3E`. |
 | `0x3E` | Spirit - fire | `FUN_801D5854(actor, 6)`. Holds while `actor[+0x1D9] != 0`. Calls `func_0x800319A8(0x21)` and `FUN_801D8DE8(0x4C, 1)`. For spirit-type 4 (Originals) on party, fires `FUN_801D8DE8(0x34, 1)`. For type 5 (Spirit-arts variant), invokes the Damage UI: writes `_DAT_80076D7E` (damage value) from target HP+formula, calls `FUN_801D8DE8(0xF, 0)` (damage popup) and `FUN_801D8DE8(0x52, 0)` (damage text); RNG via `func_0x80056798`; computes damage scaling: `((target_HP * 7) / 5) + 8`, capped at 0x120 or 100. Otherwise re-fires UI elements 6/0x4E/0x4F (monster effect) or 7 (party effect) per slot. Sets `ctx[+0x6D8] = 0x20` (post-cast timer). | `0x3F`. |
 | `0x3F` | Spirit - wait & fire damage | Decrements `ctx[+0x6D8]`. On expiration: calls `func_0x800402F4(actor[+0x1E8], actor[+0x1E9], target, party_id-1)` - the **damage application primitive**. Sets `ctx[+0x6D8] = 0x80` (post-damage cooldown). | `0x40`. |
 | `0x40` | Spirit - post-damage | `FUN_801D5854(target, 6)`. Iterates HP-bar widget at `ctx[+0x1080]+0xE`: ramps it toward `ctx[+0x6DC]` (target HP) by `DAT_1F800393` per frame; mirrors damage-popup widget at `_DAT_801F6968+0x10`. When `ctx[+0x6D8] < 0` and target is no longer valid (dead or out of slot), sets `actor[+0x1DE] = 0` and clears HUD. | `0x50`. |
@@ -2481,6 +2481,48 @@ per-class cast sound cues via `FUN_8004FCC8`. The earlier "per-move damage roll 
 move-power table + RNG → damage, with a `FUN_801EC964` decimal-digit formatter" description came
 from that double-shifted dump and is falsified. The spirit damage the state-`0x3D` reading
 attributed here is state `0x3E`'s inline formula, ported as `battle_formulas::spirit_damage`.
+
+#### The one caller is state `0x3D`, and it is an **Item / Spirit** state
+
+`FUN_801F3990` has a single reference disc-wide: the `jal` at `0x801E3E04`.
+That instruction sits in the arm at `0x801E3DD8`, and the arm's owner is
+readable straight off the dispatcher's jump table: the table base is
+`0x801CED44`, the word holding `0x801E3DD8` is at `0x801CEE38`, and
+`(0x801CEE38 - 0x801CED44) / 4` = `0x3D`. So the cue band belongs to the
+Spirit / Item band's wait state, not to the Magic band - and the band is
+entered from exactly one place, state `0x3C`'s unconditional
+`ctx[7] = 0x3D` store at `0x801E3B5C`.
+
+Which actions reach `0x3C` is fixed by the two category arms the
+[category jump table](#inner-dispatch---actor-action-category) at `0x801CF144`
+selects:
+
+* **category 1 (Item)**, arm `0x801E2E30`: stores `ctx[7] = 0x3C` *first* and
+  overrides to `0x28` only for the two summon-item ids. Every ordinary item
+  use therefore walks `0x3C -> 0x3D` and reaches the cue band.
+* **category 2 (Magic)**, arm `0x801E2EB0`: stores `0x28` first and overrides
+  to `0x3C` only when the spell's class byte is `< 0x14` **and** the spell id
+  is `< 0x65` (`sltiu v0, a0, 0x65` at `0x801E2EF4`). The player Seru block
+  `0x81..0x8B` fails the id test outright, so no player Seru cast can route
+  into the band whatever its class byte says. Twenty-four of the ids below
+  `0x65` satisfy both tests.
+
+That bound is the whole reason a cast-driven sweep finds the arm cold: the
+band's door is an item, not a spell. Driving it as an item use reaches it
+immediately (`capture`): the seed state `0x0C` was hijacked to category 1 on
+two battle scenarios, and every driven item action entered `0x3C`, entered
+`0x3D`, passed the `+0x1DA == +0x1D9` guard on the state's first frame, called
+`FUN_801F3990` with `ra = 0x801E3E0C`, fired the band's `jal 0x8004FCC8` at
+`0x801F3C18`, and started a CD-XA clip through `FUN_8003D53C`. The resolved
+cue ids came out on the documented party leg `char_kind * 0x10 + 0xF8..0xFC` -
+`0x0108` / `0x010B` for a `char_kind` of `1`, `0x0128` for a `char_kind` of
+`3`. Probe:
+[`autorun_spirit_item_cue_band.lua`](../../scripts/pcsx-redux/autorun_spirit_item_cue_band.lua).
+
+The guard passing on the state's first frame is what the two halves of the
+band's timing look like from `0x3C`: that state stages `actor[+0x1DA] =
+actor[+0x1E7]`, so when the queued clip byte and the live clip byte already
+agree the wait is zero-length and the cue fires the frame after the pre-arm.
 
 **`0x801F45A4` - end-of-action damage / HP-bar settle.** *Decoded from the aliased
 `overlay_0897_801f45a4.txt` dump (disasm only; the Ghidra decompile times out) - identity, entry
