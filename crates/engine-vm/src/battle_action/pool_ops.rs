@@ -93,12 +93,22 @@ pub struct FormationPos {
 ///    every included slot and add it back onto the focus accumulators.
 ///
 /// NOT WIRED: this is case `0` of the battle **flow** SM `FUN_801D388C`
-/// (`jal` at `0x801D3908`, jump table `0x801CE880`), which is not ported for
-/// the battle image. (The port catalog reports `801d388c` as ported and live;
-/// that row is the Muscle Dome overlay's *different* routine at the same VA -
-/// `engine-core::muscle_dome` cases 9 / `0xb`. An address-keyed catalog cannot
-/// separate the two, so read the crate before reading the flag.) It
-/// also shifts the camera-focus accumulators `_DAT_80089118` /
+/// (`jal` at `0x801D3908`, jump table `0x801CE880`), and the case is the
+/// unported part, not the SM.
+///
+/// The previous note here read the catalog's live `801d388c` row as "the
+/// Muscle Dome overlay's *different* routine at the same VA", and that is
+/// **false on the bytes**: `0x801D388C` lies past the end of the arena
+/// overlay (PROT 0977 is `0x3800` bytes, ending `0x801D2018`), so no arena
+/// copy exists, and `overlay_muscle_dome_801d388c.txt` is the same 1955
+/// instructions as `overlay_battle_action_801d388c.txt`, byte-for-byte from
+/// its `lui v0,0x8008` prologue on - the prefix names the **capture**, not
+/// the image (`docs/tooling/dump-corpus-integrity.md`). There is one routine,
+/// in PROT 0898, and the Muscle Dome drives the same states, which is what
+/// `engine-core::arts_command_input` says where it ports cases `9` and `0xB`.
+///
+/// So the live row is this SM, correctly. What blocks case `0` is its own
+/// second half: it shifts the camera-focus accumulators `_DAT_80089118` /
 /// `_DAT_80089120` to compensate for the squash, and the engine frames the
 /// battle camera by a per-action snap (`camera_height_for_frame` through
 /// `BattleActionHost::camera_bounds`) with no focus accumulator for that
