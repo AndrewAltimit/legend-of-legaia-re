@@ -70,6 +70,12 @@ impl ItemRowTables for WorldRowTables<'_> {
             .map(|d| d.flags)
             .unwrap_or(0)
     }
+    fn effect_marker(&self, subtype: u8) -> u8 {
+        self.effects
+            .descriptor(subtype)
+            .map(|d| d.marker)
+            .unwrap_or(crate::menu_list_rows::GOODS_NO_PASSIVE_MARKER)
+    }
     fn equip_flags(&self, subtype: u8) -> u8 {
         self.equip
             .and_then(|t| t.rows().get(subtype as usize))

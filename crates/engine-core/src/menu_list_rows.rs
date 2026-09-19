@@ -337,6 +337,11 @@ pub trait ItemRowTables {
     fn price(&self, id: u8) -> u16;
     /// Item-effect flags byte (`0x800752C0[subtype*4 + 2]`).
     fn effect_flags(&self, subtype: u8) -> u8;
+    /// Item-effect `+3` byte (`0x800752C0[subtype*4 + 3]`): the
+    /// accessory-passive index, or [`GOODS_NO_PASSIVE_MARKER`] on a row that
+    /// carries none. The Goods candidate builder rejects on exactly this
+    /// byte, so a table that cannot answer it cannot build that list.
+    fn effect_marker(&self, subtype: u8) -> u8;
     /// Equipment-record flags byte (`0x80074F68[subtype*8 + 7]`).
     fn equip_flags(&self, subtype: u8) -> u8;
 }
@@ -553,6 +558,65 @@ pub fn build_price_gated_rows(
     }
     in_place.extend_from_slice(&tail);
     in_place
+}
+
+/// The item-effect `+3` value standing for "this row carries no accessory
+/// passive". The Goods candidate builder compares against it directly
+/// (`li v0,0x41` / `beq` at `0x800317F4..0x800317F8`), which is one past the
+/// 64-slot passive index space and one past the `0x40` sentinel
+/// [`legaia_asset::equip_stats::PASSIVE_NONE`] the equipment side uses; on
+/// retail data the two rules select the same ids, because every class-2 row
+/// carries either an index below `0x40` or exactly this byte.
+pub const GOODS_NO_PASSIVE_MARKER: u8 = 0x41;
+
+/// Whether an item id may appear in a **Goods** (accessory) candidate list,
+/// from the item record's `+0` kind byte and its effect row's `+3` byte.
+///
+/// The gate is `kind == 2 && marker != 0x41` - class **2**, not the class 1
+/// the four armament lists require, and no character-mask term at all.
+///
+/// PORT: FUN_80030628 (Goods candidate filter, `0x800317C4..0x800317F8`)
+pub fn goods_candidate_accepts(kind: u8, marker: u8) -> bool {
+    kind == 2 && marker != GOODS_NO_PASSIVE_MARKER
+}
+
+/// PORT: FUN_80030628 (content-id `0xE`/`0xF`/`0x10` + `0x1C`/`0x1D`/`0x1E`
+/// cases, `0x8003171C..0x80031818` - the equip screen's three **Goods**
+/// candidate lists; `see ghidra/scripts/funcs/80030628.txt`).
+///
+/// The Equip screen's slot-browse step picks the candidate window's content
+/// id out of the per-row byte table `0x801E4DC0`
+/// (`00 17 15 16 18 1C 1D 1E`, stored into the window-23 descriptor's `+0`
+/// at `0x801D9AC4`), so the four armament rows reach the class-1 builders
+/// (`0x15`..`0x18`) and the three Goods rows reach **these** - a separate
+/// family with its own filter.
+///
+/// Row order: the Remove verb ([`CLASS_VERB`], payload 0) always leads; the
+/// currently-equipped id follows as [`CLASS_ITEM_ICON`] when the slot is
+/// occupied; then every qualifying bag slot in slot order, tagged
+/// [`CLASS_PASSIVE`]. The equipped id is skipped in the bag walk so it
+/// cannot appear twice (`0x801DA0B4`-style `0x7000` compare at
+/// `0x800317A4..0x800317BC`).
+pub fn build_goods_candidate_rows(
+    bag_ids: &[u8],
+    slot_base: u16,
+    tables: &impl ItemRowTables,
+    equipped_id: u8,
+) -> Vec<u16> {
+    let mut out = vec![CLASS_VERB];
+    if equipped_id != 0 {
+        out.push(CLASS_ITEM_ICON | u16::from(equipped_id));
+    }
+    for (i, &id) in bag_ids.iter().enumerate() {
+        if id == 0 || (equipped_id != 0 && id == equipped_id) {
+            continue;
+        }
+        if !goods_candidate_accepts(tables.kind(id), tables.effect_marker(tables.subtype(id))) {
+            continue;
+        }
+        out.push((slot_base + i as u16) | CLASS_PASSIVE);
+    }
+    out
 }
 
 /// Lowest item id the shop **buy** list will build a row for.
@@ -913,6 +977,14 @@ mod tests {
                 _ => 0,
             }
         }
+        fn effect_marker(&self, subtype: u8) -> u8 {
+            // Subtypes 0..=3 carry a passive index; everything else reads
+            // as the no-passive row the Goods filter rejects.
+            match subtype {
+                0..=3 => subtype,
+                _ => GOODS_NO_PASSIVE_MARKER,
+            }
+        }
         fn equip_flags(&self, subtype: u8) -> u8 {
             if subtype == 2 {
                 EQUIP_FLAG_NO_DISCARD
@@ -1007,6 +1079,31 @@ mod tests {
         let bag = [0x40, 0x41, 0x00, 0x42];
         let rows = build_price_gated_rows(&bag, 0, &FakeTables);
         assert_eq!(rows, vec![0x1000, 0x1003, 0x1801]);
+    }
+
+    #[test]
+    fn goods_candidates_take_class_2_rows_with_a_passive() {
+        let t = &FakeTables;
+        // 0x40 -> subtype 0 (passive), 0x44 -> subtype 4 (no passive),
+        // 0x30 -> class 1 (an armament, never a Goods candidate).
+        let rows = build_goods_candidate_rows(&[0x40, 0x44, 0x30, 0x41], 0, t, 0);
+        assert_eq!(rows[0], CLASS_VERB, "the Remove verb always leads");
+        let payloads: Vec<u16> = rows[1..]
+            .iter()
+            .map(|w| w & ROW_NAME_PAYLOAD_MASK)
+            .collect();
+        assert_eq!(payloads, vec![0, 3], "only the class-2 rows with a passive");
+        assert!(rows[1..].iter().all(|w| w & 0xF000 == CLASS_PASSIVE));
+    }
+
+    #[test]
+    fn goods_candidates_lead_with_the_equipped_row_and_skip_its_slot() {
+        let t = &FakeTables;
+        let rows = build_goods_candidate_rows(&[0x40, 0x41], 0, t, 0x40);
+        assert_eq!(rows[0], CLASS_VERB);
+        assert_eq!(rows[1], CLASS_ITEM_ICON | 0x40);
+        assert_eq!(rows.len(), 3, "the equipped id is not listed twice");
+        assert_eq!(rows[2] & ROW_NAME_PAYLOAD_MASK, 1);
     }
 
     #[test]

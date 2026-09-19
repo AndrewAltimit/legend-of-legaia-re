@@ -1046,9 +1046,25 @@ fn build_equip_session(world: &World, char_slot: u8, equipment: &EquipmentTable)
     // collapses onto raw ATK - which is the routine's own empty-table arm,
     // but not what a retail disc produces. `World::install_menu_overlay_tables`
     // fills it, so both hosts get it from the boot call they already make.
-    session
+    let session = session
         .with_active_party_slot(char_slot)
-        .with_weapon_category(world.menu.item_category.clone())
+        .with_weapon_category(world.menu.item_category.clone());
+    // Disc restrictions when the boot parsed them: the candidate list is
+    // then the retail one - the `+6` character mask and `+7` category for
+    // the four armament rows, and the class-2 Goods index for the three
+    // Goods rows - instead of the `id >> 5` placeholder rule, which offers
+    // a Goods row the wrong id band entirely. Both hosts reach this one
+    // builder, so the screens cannot disagree.
+    match world.tables.equip_stats.as_ref() {
+        Some(stats) => {
+            let mut info = crate::equipment::DiscEquipInfo::from_disc(stats);
+            if let Some(effects) = world.tables.item_effects.as_ref() {
+                info.install_goods(effects);
+            }
+            session.with_restrictions(info, char_slot)
+        }
+        None => session,
+    }
 }
 
 fn stat_record_from_character(c: &legaia_save::CharacterRecord) -> StatRecord {

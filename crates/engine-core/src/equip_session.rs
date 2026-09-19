@@ -317,6 +317,16 @@ impl EquipSession {
         self
     }
 
+    /// Install the disc-pinned restriction table + active party slot on an
+    /// already-built session (the builder form of
+    /// [`Self::new_with_restrictions`], for callers that compose the session
+    /// through the other `with_*` hooks first).
+    pub fn with_restrictions(mut self, restrictions: DiscEquipInfo, active_party_slot: u8) -> Self {
+        self.restrictions = Some(restrictions);
+        self.active_party_slot = active_party_slot;
+        self
+    }
+
     /// Construct a session that gates the item list on the disc-pinned equip
     /// restrictions for `active_party_slot` (`0` Vahn, `1` Noa, `2` Gala).
     /// Each candidate item must be equippable by that character (the `+6`
@@ -442,6 +452,20 @@ impl EquipSession {
     fn item_fits_slot(&self, id: u8, slot: u8) -> bool {
         match &self.restrictions {
             Some(info) => {
+                // The three Goods rows are a different list family, not a
+                // looser version of the armament one: retail reaches them
+                // through content ids `0x1C`..`0x1E`, whose filter takes
+                // item class 2 and the item-effect `+3` byte and applies
+                // **no** character mask
+                // (`crate::menu_list_rows::build_goods_candidate_rows`).
+                // Asking the armament question here is what left every
+                // Goods row with an empty list.
+                if matches!(
+                    EquipSlot::from_index(slot),
+                    Some(EquipSlot::Ring1 | EquipSlot::Ring2 | EquipSlot::Accessory)
+                ) {
+                    return info.is_goods_candidate(id);
+                }
                 // Must be equippable by the active character (the `+6` mask).
                 if !info.can_equip(id, self.active_party_slot) {
                     return false;
