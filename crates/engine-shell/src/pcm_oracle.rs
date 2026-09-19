@@ -22,9 +22,10 @@
 //!   this snapshot's voice config" - **not** a bit-identical
 //!   resume-from-snapshot, because the engine-audio [`Voice`] doesn't
 //!   expose its mid-stream playback state (current ADPCM block
-//!   pointer, sample fractional position, ADSR runtime phase). Each
-//!   keyed-on voice rewinds to its start address with a fresh Attack
-//!   envelope.
+//!   pointer, sample fractional position, ADSR step countdown). Each
+//!   keyed-on voice rewinds to its start address in the Attack phase,
+//!   carrying the snapshot's envelope LEVEL so the window it renders is
+//!   at the captured amplitude rather than ramping up from silence.
 //! - [`build_engine_pcm_trace`] mirrors
 //!   [`crate::audio_trace_oracle::build_engine_audio_trace`] - it boots a
 //!   [`crate::BootSession`], runs a private headless SPU + sequencer in
@@ -56,7 +57,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use legaia_engine_audio::{Spu, spu::reverb::ReverbMode};
+use legaia_engine_audio::{Spu, spu::adsr::AdsrConfig, spu::reverb::ReverbMode};
 use legaia_mednafen::{PsxSpu, SaveState};
 
 use crate::audio_trace_oracle::{
@@ -86,14 +87,18 @@ const CHANNELS: usize = 2;
 ///   - Reverb mode (low byte of the raw u32 register, mapped via
 ///     [`ReverbMode::from_byte`]).
 ///   - Per-voice: `start_addr`, `loop_addr`, `pitch`, `vol_left`,
-///     `vol_right`. A synthetic [`legaia_engine_audio::spu::voice::Voice::key_on`]
-///     is issued for voices whose retail ADSR phase is non-zero.
+///     `vol_right`, the `adsr_cfg` decoded from the captured ADSR-control
+///     word, and the captured envelope level. A synthetic
+///     [`legaia_engine_audio::spu::voice::Voice::key_on`] is issued for
+///     voices the snapshot reports AUDIBLE (envelope level non-zero -
+///     mednafen has no `Off` phase, so a phase test keys all 24).
 ///
 /// **What does NOT get mirrored** (engine-audio doesn't expose the
 /// state):
 ///   - Voice mid-stream playback position (current ADPCM block, sample
-///     fractional offset, current envelope level).
-///   - ADSR runtime phase (every active voice starts in Attack).
+///     fractional offset) and the envelope's step countdown.
+///   - ADSR runtime phase (every keyed voice starts in Attack, at the
+///     captured envelope level).
 ///   - Voice-on/-off pending masks (snapshot is a freeze frame; the
 ///     translator emits a key_on for everything retail had audible).
 ///   - SPU control register (`SPUCNT`).
@@ -145,11 +150,33 @@ pub fn engine_spu_from_retail(psx_spu: &PsxSpu<'_>) -> Option<Spu> {
         if let Some(vr) = rv.vol_right {
             v.vol_right = vr;
         }
+        // The tone's own envelope shape. Without it every keyed voice runs
+        // the engine `Voice`'s DEFAULT `AdsrConfig`, whose attack is nothing
+        // like the captured one - which is how the retail reference used to
+        // render near-silence out of a snapshot with audible voices.
+        if let Some(raw) = rv.adsr_control {
+            v.adsr_cfg = AdsrConfig::from_words(raw as u16, (raw >> 16) as u16);
+        }
         if rv.is_active() {
             key_on_mask |= 1u32 << i;
         }
     }
     spu.key_on_mask(key_on_mask);
+    // `key_on` rewinds the envelope to Attack at level 0. The snapshot knows
+    // where the envelope actually stood, and a window rendered from level 0
+    // is quiet for as long as the attack ramp lasts - so seed the captured
+    // level back in. The PHASE is still Attack rather than the captured one:
+    // engine-audio's `AdsrState` exposes level and phase but not the
+    // hardware's step countdown, so resuming mid-Release would need state
+    // this snapshot pair cannot carry. This is an amplitude fix, not a
+    // bit-exact resume (see the module header's tolerance section).
+    for (i, rv) in retail_voices.iter().enumerate() {
+        if let Some(level) = rv.adsr_env_level
+            && level != 0
+        {
+            spu.voices[i].adsr.level = level & 0x7FFF;
+        }
+    }
 
     Some(spu)
 }

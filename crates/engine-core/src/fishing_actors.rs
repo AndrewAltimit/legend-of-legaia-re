@@ -948,7 +948,12 @@ pub struct LureActor {
     /// `0x801D9174` - the lure's world `x` in 24.8 fixed point, the form the
     /// drift is applied in.
     pub x_fixed: i32,
-    /// `0x801D918E` - the lure's world `z`.
+    /// `0x801D9190` - the lure's world `z`, the tracked triple's third
+    /// halfword. `0x801D918E`, between it and the `x`, is the lure's
+    /// **height** (`actor + 0x16` less `0x80`, stored by `sh $a0, 2($a2)`
+    /// at `0x801CFCEC`) - the same `+0x14 / +0x16 / +0x18` = x / footing /
+    /// z layout the field player record uses. The 24.8 accumulator for this
+    /// `z` is `0x801D917C`, the third of the `<< 8` triple.
     pub z: i16,
 }
 
