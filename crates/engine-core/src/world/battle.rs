@@ -17,6 +17,7 @@ mod initiative;
 mod locomotion;
 mod loop_driver;
 mod monster_ai;
+mod selectable;
 mod stage;
 mod stats;
 mod teardown;
