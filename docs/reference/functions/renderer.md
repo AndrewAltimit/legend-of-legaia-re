@@ -376,6 +376,8 @@ Does not touch the OT cursor directly (delegated to `FUN_80030628`). `see ghidra
 
 **Menu/HUD content builder + layout dispatcher.** The layout half of the text-actor draw list (producer = `FUN_8003541C`). Switches on the node kind byte (`+0x1C`, cases 2/3/4/6/`0x19`/`0x21`/…) to populate the per-frame element-id scratch arrays at `DAT_801C6020` / `_6220` / `_6420` - party-member rows, item/usability flags resolved against the item table `DAT_8007436A` and spell table `DAT_800754C8`, and the world-map quick-travel landmark menu (case `0x19`, walking the 6-byte `DAT_80073A98` placement records, see [`world-map-overlay.md`](../../formats/world-map-overlay.md) / `legaia_asset::worldmap_menu`) - then emits them via `FUN_80030104`.
 
+The equip screen's candidates come from here in **two** families, and they do not share a rule. Cases `0xE` / `0xF` / `0x10` build the armament rows and read a per-character equip mask of their own from `0x8007B48C` (`lui`/`addiu` at `0x80031538`). Cases `0x1C` / `0x1D` / `0x1E` build the three Goods rows, and their filter is item-record class `2` plus item-effect `+3 != 0x41` (`0x800317C4..0x800317F8`) with **no** character term. Which case a row reaches is set by the browse step, which writes window 23's content id per row out of the eight-byte table `0x801E4DC0`.
+
 Mixed function: the content-selection (item-usability / discovery-flag gating, party/landmark lists) is game logic; the trailing GP0 emission is replaced by the engine's wgpu overlay. `see ghidra/scripts/funcs/80030628.txt`.
 
 ### `80034B78` / `80034E4C`
