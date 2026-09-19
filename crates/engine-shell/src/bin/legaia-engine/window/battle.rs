@@ -2187,6 +2187,17 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<TextDraw> {
+        // The badge column is not a screen of its own: retail reaches
+        // `FUN_801d095c` only through `FUN_801D0D38`'s `jal` at `0x801D130C`,
+        // below the `_DAT_8007B868` gate whose suppress arm jumps past it. So
+        // the badges answer the party readout's suppression, and this host
+        // asks the same shared kernel the readout does. Gating only on "no
+        // boot-UI panel is up" left the badges painted over every dialog box,
+        // every cutscene beat and every fight; the browser play page has
+        // asked the full question since its own column landed.
+        if self.field_party_hud_suppressed() {
+            return Vec::new();
+        }
         let world = &self.session.host.world;
         if !world.passive_hud_active() {
             return Vec::new();

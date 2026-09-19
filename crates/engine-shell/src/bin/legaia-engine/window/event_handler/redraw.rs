@@ -154,6 +154,12 @@ impl PlayWindowApp {
                 self.session.host.world.step_name_entry(input);
                 // Keep the frame counter advancing so the caret blinks.
                 self.session.host.world.frame = self.session.host.world.frame.wrapping_add(1);
+                // Same reason as the boot-UI arm above: the party readout's
+                // decision kernel is stepped in the fall-through path and its
+                // suppression predicate names this state, so an arm that
+                // skips the step paints the readout under the overlay from
+                // the kernel's last pre-overlay answer.
+                self.tick_field_party_hud();
                 self.prev_pad = self.pad;
                 continue;
             }
@@ -188,6 +194,10 @@ impl PlayWindowApp {
                         log::warn!("prologue handoff: enter '{target}' failed ({e:#})")
                     }
                 }
+                // The hand-off swapped the scene under the window, which is
+                // the kernel's own rearm condition - step it here so the
+                // readout rearms on this frame rather than one frame late.
+                self.tick_field_party_hud();
                 self.prev_pad = self.pad;
                 continue;
             }
@@ -207,6 +217,10 @@ impl PlayWindowApp {
                     Ok(_) => {}
                     Err(e) => log::error!("session tick (narration): {e:#}"),
                 }
+                // The world DID tick on this arm, so the readout's kernel has
+                // a fresh frame to read and the crawl is one of the states its
+                // predicate suppresses on.
+                self.tick_field_party_hud();
                 self.prev_pad = self.pad;
                 continue;
             }
@@ -248,6 +262,11 @@ impl PlayWindowApp {
                     self.fire_menu_cue(legaia_engine_shell::bgm::RETAIL_MENU_CONFIRM_CUE);
                     self.tick_menu_sfx();
                     self.boot_ui = BootUiState::FieldMenu { sub: None };
+                    // The boot-UI state is set above, so the readout's
+                    // predicate already answers "suppressed" - step the
+                    // kernel on the opening frame rather than one frame
+                    // later, as every other short-circuit arm here does.
+                    self.tick_field_party_hud();
                     self.prev_pad = self.pad;
                     continue;
                 }

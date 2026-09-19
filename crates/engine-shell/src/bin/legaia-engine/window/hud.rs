@@ -101,22 +101,21 @@ impl PlayWindowApp {
 
     /// Is the field party HUD allowed to be on screen at all this frame?
     ///
-    /// The engine's reading of retail's `_DAT_8007B868` suppress global,
-    /// which the field band raises whenever something else owns the frame.
-    /// The port has no single flag for that, so this is the enumeration:
-    /// only free-roam on the field or the overworld shows a readout, and any
-    /// panel, box, movie or fight that takes the screen hides it.
-    fn field_party_hud_suppressed(&self) -> bool {
-        let w = &self.session.host.world;
-        !matches!(w.mode, SceneMode::Field | SceneMode::WorldMap)
-            || self.boot_ui.is_active()
-            || self.menu_runtime.is_open()
-            || self.cutscene.is_some()
-            || w.cutscene_timeline_active()
-            || w.dialog.current.is_some()
-            || w.dialog.inline.is_some()
-            || w.cutscene.text_balloon.is_some()
-            || self.active_dialog.is_some()
+    /// Retail's `_DAT_8007B868` suppress global, asked of the shared kernel
+    /// [`legaia_engine_core::world_map_panel_host::field_hud_suppressed`].
+    /// This host answers only the term the world cannot: a window-side panel
+    /// with no `World` state behind it. The enumeration used to live here in
+    /// full and a second copy lived on the browser play page, and the copies
+    /// had drifted - the page's lacked all three of the host terms below, and
+    /// this one gated the badge column (`FUN_801d095c`) differently again.
+    pub(super) fn field_party_hud_suppressed(&self) -> bool {
+        legaia_engine_core::world_map_panel_host::field_hud_suppressed(
+            &self.session.host.world,
+            self.boot_ui.is_active()
+                || self.menu_runtime.is_open()
+                || self.cutscene.is_some()
+                || self.active_dialog.is_some(),
+        )
     }
 
     /// Where the player projects on the 240-line stage this frame.
@@ -199,6 +198,16 @@ impl PlayWindowApp {
         h: u32,
     ) -> legaia_engine_render::BattleHudDraws {
         use legaia_engine_render::field_party_hud as fp;
+        // Ask the suppress gate on the DRAW path too, not only on the tick.
+        // Retail evaluates it once because `FUN_801D0D38` is both halves in
+        // one function; the port splits them, and a split decision is only
+        // as fresh as the last frame on which the host reached the tick. Any
+        // arm that short-circuits the frame path without short-circuiting the
+        // draw then paints the kernel's last pre-suppression answer - which
+        // is exactly how this readout came to sit under the pause menu.
+        if self.field_party_hud_suppressed() {
+            return Default::default();
+        }
         let Some(legaia_engine_vm::world_map_panel_actors::HudDecision::Draw { y }) =
             self.field_party_hud.decision()
         else {
