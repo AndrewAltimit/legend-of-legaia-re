@@ -750,6 +750,15 @@ impl LegaiaRuntime {
             host.enter_field_scene(name, 0)
                 .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
         }
+        // The scene host cleared the WORLD's camera state (timeline, op-0x45
+        // params); this is the engine camera's half, which only an in-world
+        // `SceneEntered` tick otherwise runs. Without it a scene picked
+        // mid-cutscene kept the interrupted shot's globals and focus latch
+        // and was framed by the old scene's camera. The native
+        // `BootSession::enter_field_live` is the paired site; the glide
+        // interpolator is this host's own and goes with it.
+        self.camera.reset_for_scene_entry();
+        self.cutscene_cam.reset();
         if !world_map {
             // Retail reaches the field through the mode table, not through a
             // call: whoever wants the field stores `MAIN INIT` (2) and mode

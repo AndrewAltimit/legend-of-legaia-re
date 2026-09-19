@@ -1046,6 +1046,27 @@ impl Camera {
         self.zone.arm_arrival();
     }
 
+    /// The whole camera-side reset a **direct** scene entry owes - a scene
+    /// picker, a dev warp, a load from a save - as opposed to the in-world
+    /// transition a `SceneEntered` tick event reports, which every host
+    /// already answers with [`Self::reset_globals_for_scene_entry`].
+    ///
+    /// `SceneHost::enter_field_scene` clears the *world's* camera state (the
+    /// timeline and the op-`0x45` param set), so the next frame resolves to
+    /// the follow arm; but the follow view composes from THIS camera's
+    /// globals, and without this call an interrupted cutscene left its pitch
+    /// / yaw / eye trio in them and its `script_owns_focus` latch set, so
+    /// the new scene was framed by the old scene's shot and never re-pinned
+    /// to the player. The cinematic mode and angles go too. The user's own
+    /// orbit / tilt / zoom are intent, not scene state, and stay.
+    pub fn reset_for_scene_entry(&mut self) {
+        self.reset_globals_for_scene_entry();
+        self.mode = CameraMode::Follow;
+        self.yaw = 0.0;
+        self.pitch = 0.0;
+        self.roll = 0.0;
+    }
+
     /// The camera azimuth to feed
     /// [`crate::world::FieldLocomotion::camera_azimuth`](crate::world::FieldLocomotion::camera_azimuth)
     /// this frame, in PSX 12-bit units (`4096` = full turn): scripted yaw +
@@ -1984,6 +2005,49 @@ mod tests {
         assert!(
             (composed_pitch(0.69, 0.001) - 0.691).abs() < 1e-6,
             "no snap"
+        );
+    }
+
+    /// A direct scene entry (picker / warp / load) after an interrupted
+    /// cutscene: the shot's globals and the focus latch are gone, the follow
+    /// camera owns the frame again, and the user's knobs survive.
+    #[test]
+    fn reset_for_scene_entry_drops_an_interrupted_shot_and_keeps_the_knobs() {
+        let mut c = Camera {
+            mode: CameraMode::Cinematic,
+            yaw: 1.0,
+            pitch: 0.4,
+            roll: 0.1,
+            manual_orbit: 0.5,
+            manual_tilt: 0.2,
+            manual_zoom: 1.5,
+            ..Default::default()
+        };
+        // The interrupted shot: angles, eye trio, a focus the script owns.
+        c.globals.0[0] = 700;
+        c.globals.0[1] = -900;
+        c.globals.0[2] = 50;
+        c.globals.0[3] = -1234;
+        c.globals.0[4] = 2345;
+        c.globals.0[5] = 20000;
+        c.script_owns_focus = true;
+        c.mover = Some(CameraMover::default());
+        c.reset_for_scene_entry();
+        for axis in RetailCamGlobals::FIELD_RESET_AXES {
+            assert_eq!(
+                c.globals.0[axis],
+                RetailCamGlobals::FIELD_RESET.0[axis],
+                "axis {axis}"
+            );
+        }
+        assert!(!c.script_owns_focus, "the follow camera re-pins the focus");
+        assert!(c.mover.is_none(), "no glide survives");
+        assert_eq!(c.mode, CameraMode::Follow);
+        assert_eq!((c.yaw, c.pitch, c.roll), (0.0, 0.0, 0.0));
+        assert_eq!(
+            (c.manual_orbit, c.manual_tilt, c.manual_zoom),
+            (0.5, 0.2, 1.5),
+            "user framing intent is kept"
         );
     }
 

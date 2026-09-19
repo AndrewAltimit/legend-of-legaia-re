@@ -1388,6 +1388,12 @@ impl BootSession {
                  path (field VM will not tick)"
             ),
         }
+        // A direct entry (dev warp, load from a save) is not a `SceneEntered`
+        // tick event, so the camera-side reset that event drives must run
+        // here: an interrupted cutscene's shot otherwise frames the new scene
+        // (`Camera::reset_for_scene_entry`). The browser play page's
+        // `enter_field` is the paired site.
+        self.camera.reset_for_scene_entry();
 
         let world = &mut self.host.world;
 
@@ -1448,6 +1454,9 @@ impl BootSession {
         // path (`SceneHost::tick` auto-routing an overworld scene) and this
         // explicit `--world-map` entry seed the overworld identically. This
         // wrapper only layers the live-loop / battle options on top.
+        // Same camera-side reset as the field entry above: an overworld
+        // entered from the picker after an interrupted scene keeps no shot.
+        self.camera.reset_for_scene_entry();
         match self.host.enter_world_map_scene(scene) {
             Ok(()) => log::info!("entered world-map scene '{scene}' (overworld seeded)"),
             Err(e) => {

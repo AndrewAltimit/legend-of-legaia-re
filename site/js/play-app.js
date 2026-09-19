@@ -796,6 +796,15 @@ void main() {
     /* Boot a CDNAME scene through the engine and (re)build everything drawn.
      * Throws the engine's error message when the label doesn't resolve. */
     enter(label) {
+      /* A picked scene is that scene's free-roam, never the next leg of an
+       * opening the picker interrupted: abandon a live opening chain first
+       * (the chain's own hand-offs - the intro-skip, the post-movie leg -
+       * bypass this method). `enter_field` itself resets the engine camera
+       * so the interrupted shot cannot frame the new scene. Guarded for a
+       * cached WASM without the export. */
+      if (typeof this.rt.play_abandon_opening_chain === 'function') {
+        try { this.rt.play_abandon_opening_chain(); } catch (_) {}
+      }
       const state = JSON.parse(this.rt.enter_field(label));
       this._rebuild();
       this.scene = state.scene || label;

@@ -55,6 +55,19 @@ impl LegaiaRuntime {
     /// `grade` / `cue` mirror `World::scene_color_grade` /
     /// `World::scene_depth_cue` - the prologue sepia multiply + gold DPCS
     /// depth-cue ramp the native window stages into its renderer each frame.
+    /// Abandon a live opening cutscene chain before a **user-initiated**
+    /// scene entry (the page's scene picker, a card load, the title's
+    /// re-entry) - [`legaia_engine_core::world::World::abandon_opening_chain`].
+    /// The chain's own hand-offs (the intro-skip, the post-movie leg) never
+    /// go through the picker, so they keep their state. Returns whether a
+    /// chain was live. The engine camera's own half of a direct entry is
+    /// `Camera::reset_for_scene_entry`, run inside `enter_field` itself.
+    pub fn play_abandon_opening_chain(&mut self) -> bool {
+        self.scene_host
+            .as_mut()
+            .is_some_and(|h| h.world.abandon_opening_chain())
+    }
+
     pub fn play_cutscene_state_json(&self) -> String {
         let Some(w) = self.world() else {
             return "null".to_string();

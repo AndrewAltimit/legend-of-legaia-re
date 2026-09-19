@@ -516,6 +516,23 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["resolve_field_camera"],
     },
     {
+        "what": "direct scene entry's camera reset, native vs play page - a "
+        "scene picker / dev warp / load-from-save enters a scene by CALL, "
+        "not through the in-world `SceneEntered` tick event both hosts "
+        "already answer with `reset_globals_for_scene_entry`. The scene host "
+        "clears the world's camera state on either path, but the follow view "
+        "composes from the engine `Camera`'s globals, so a scene picked "
+        "mid-cutscene kept the interrupted shot's pitch / yaw / eye trio and "
+        "its focus latch and was framed by the old scene's camera. Both "
+        "direct-entry sites must run `Camera::reset_for_scene_entry`",
+        "sites": {
+            "native": (NATIVE_BOOT, "enter_field_live"),
+            "web": (WEB_RUNTIME, "enter_field"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["reset_for_scene_entry"],
+    },
+    {
         "what": "coplanar draw lifts, native vs play page - every host that "
         "assembles a field scene from EnvDraws must run the cross-draw "
         "coplanar kernel (`draw_plane_summaries` + `coplanar_draw_offsets`) "
