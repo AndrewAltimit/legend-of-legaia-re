@@ -20,8 +20,16 @@
 -- counts is what separates "ran last" from "the frame drew under it".
 --
 -- Caveats the counts carry: prims linked before a vsync's first build inherit
--- the previous vsync's matrix and are bucketed separately, and the link helper
--- does not distinguish 3D scene prims from 2D UI prims.
+-- the previous vsync's matrix and are bucketed separately.
+--
+-- The link helper itself says nothing about what it is linking, but its `$a1`
+-- is the prim, and a linked PsyQ prim is `[OT tag][GPU word 0]...` - so the
+-- byte at `a1 + 7` is the GPU command code. That splits the count the way the
+-- question needs: `0x20..0x3F` are polygons (the TMD renderer's output, i.e.
+-- the 3D scene), `0x40..0x5F` lines, `0x60..0x7F` rects and sprites (the 2D
+-- UI layer), `0xE0..0xE6` attribute packets. A build that only ever precedes
+-- sprite and rect links never framed any geometry, whatever its raw share of
+-- the vsync's links.
 --
 -- Env vars:
 --   LEGAIA_SSTATE       save state (run_probe.sh --scenario <label>)
@@ -122,6 +130,9 @@ local hold_on = false
 local last_build_site = ""
 local n_build, n_draw, n_prim = 0, 0, 0
 local prims_after = {}
+-- Same buckets, split by the linked prim's GPU command class.
+local prims_after_kind = {}
+local prim_class_totals = {}
 local site_counts = {}
 local draw_after = {}       -- site -> draws attributed to it
 local draws_before_any_build = 0
@@ -180,6 +191,19 @@ probe.run({
                     if slot == "" then slot = "before_any_build" end
                     prims_after[slot] = (prims_after[slot] or 0) + 1
                     n_prim = n_prim + 1
+                    -- ...and WHAT was linked: `$a1` is the prim, so `a1 + 7` is
+                    -- the GPU command code of its first packet word.
+                    local prim = n32(r.GPR.n.a1)
+                    local code = probe.read_u8(prim + 7) or 0
+                    local cls
+                    if code >= 0x20 and code <= 0x3F then cls = "poly3d"
+                    elseif code >= 0x40 and code <= 0x5F then cls = "line"
+                    elseif code >= 0x60 and code <= 0x7F then cls = "rect2d"
+                    elseif code >= 0xE0 and code <= 0xE6 then cls = "attr"
+                    else cls = string.format("other_%02X", code) end
+                    local key = slot .. "/" .. cls
+                    prims_after_kind[key] = (prims_after_kind[key] or 0) + 1
+                    prim_class_totals[cls] = (prim_class_totals[cls] or 0) + 1
                 else
                     n_draw = n_draw + 1
                     if last_build_site == "" then
@@ -263,6 +287,18 @@ probe.run({
         table.sort(pa)
         logf("prims linked=%d, by the build whose matrix was live: %s",
              n_prim, table.concat(pa, " "))
+        local pk = {}
+        for k, n in pairs(prims_after_kind) do
+            pk[#pk + 1] = string.format("%s=%d", k, n)
+        end
+        table.sort(pk)
+        logf("prims by build x GPU class: %s", table.concat(pk, " "))
+        local pc = {}
+        for k, n in pairs(prim_class_totals) do
+            pc[#pc + 1] = string.format("%s=%d", k, n)
+        end
+        table.sort(pc)
+        logf("prim class totals: %s", table.concat(pc, " "))
         logf("scene changes seen: %d", entry_count)
         local fh = io.open(OUT_LOG, "w")
         if fh then fh:write(table.concat(lines, "\n") .. "\n"); fh:close() end
