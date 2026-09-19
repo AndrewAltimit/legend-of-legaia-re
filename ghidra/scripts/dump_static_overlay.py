@@ -340,6 +340,27 @@ RANGES = {
     "overlay_slot_machine_0975": [("801cf0d8", "801cfff0")],
     "overlay_field_battle_intro_0979": [("801ce8cc", "801cf1b0")],
     "overlay_battle_tutorial_0967": [("801f747c", "801f7628")],
+    # The two battle-stage modules the slot-B pager reaches through
+    # `FUN_8003EC70(_DAT_8007B64A + 0x47)`. Both are ONE function over the whole
+    # of their own code: the frame scan finds a single prologue each and the
+    # matching `jr ra` at the end of the run, and the arms the phase dispatcher
+    # selects are `jr $v0` targets inside that body, not separate entries.
+    # PROT 0968's head is a SEVEN-word table (`sltiu a0, 7` at 0x801F6A4C) and
+    # its body starts in the eighth word; PROT 0969 has no head table at all and
+    # opens straight on its prologue, branching four ways on the same phase byte.
+    # The rows stop where the module's spawn records begin (0x801F71F0 /
+    # 0x801F7024) - those are `FUN_80050ED4` arguments, not code.
+    "overlay_battle_slot_b_0968_0968": [("801f69f4", "801f71f0")],
+    "overlay_battle_slot_b_0969_0969": [("801f69d8", "801f7024")],
+    # PROT 0981, the world-map top-view debug image (slot A). One framed
+    # function at 0x801CE850 - the six-arm mode dispatcher whose table is the
+    # six words at 0x801CE838, all of them `jr $v0` arms INSIDE that body - then
+    # three frameless leaves below its epilogue. Two of the leaves are the
+    # image's own `jal` targets; the first follows a `jr ra` + delay slot and is
+    # a function head by that rule. The frame scan sees only the one prologue,
+    # which is why the byte worklist reported the whole tail as one run.
+    "overlay_monster_test_0981": [("801ce850", "801cf4ac"), ("801cf4ac", "801cf5e8"),
+                                  ("801cf5e8", "801cf678"), ("801cf678", "801cf6e8")],
     # PROT 0901's middle band is a SHARED-TAIL leaf family, not a sequence of
     # ordinary functions: 0x801F7644..0x801F8EB4 carries frameless draw leaves
     # with NOT ONE `jr ra` and no prologue. Neither a frame partition nor
@@ -526,6 +547,8 @@ NOT_CODE = ()
 # `sltiu` bound, read out of the dispatcher - not a guess about table length.
 JUMPTABLES = {
     "overlay_summon_ozma_0934": ("801f6ad0", "801f69d8", 0x1a),
+    "overlay_battle_slot_b_0968_0968": ("801f6a6c", "801f69d8", 7),
+    "overlay_monster_test_0981": ("801ce8a8", "801ce838", 6),
 }
 
 OUT_DIR = "/scripts/funcs"

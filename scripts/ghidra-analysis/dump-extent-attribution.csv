@@ -1,5 +1,6 @@
 entry,bytes,image,class,reason
 801ce844,772,gameover(902),unique,own content of gameover(902) reproduces the 24-instruction window at this VA (inherited_tail(world_map_render) cut)
+801ce850,3164,monster_test(981),unique,own content of monster_test(981) reproduces the 24-instruction window at this VA (inherited_tail(dance) cut)
 801ce85c,1292,other3_dev(974),unique,own content of other3_dev(974) reproduces the 24-instruction window at this VA (inherited_tail(fishing) cut)
 801ce8a0,76,other2_dev(973),unique,own content of other2_dev(973) reproduces the 19-instruction window at this VA (content_bytes cut)
 801ce8a0,100,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801d40b8 (delta +0x5818)
@@ -44,6 +45,7 @@ entry,bytes,image,class,reason
 801cf3bc,4084,fishing(972),unique,own content of fishing(972) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
 801cf408,456,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801ddc20 (delta +0xe818)
 801cf470,3360,dance(980),unique,own content of dance(980) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
+801cf4ac,316,monster_test(981),unique,own content of monster_test(981) reproduces the 24-instruction window at this VA (inherited_tail(dance) cut)
 801cf540,700,boot_init_pak(895),unique,own content of boot_init_pak(895) reproduces the 24-instruction window at this VA (content_bytes cut)
 801cf56c,468,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
 801cf5bc,1528,field_battle_intro(979),unique,own content of field_battle_intro(979) reproduces the 24-instruction window at this VA (inherited_tail(baka_fighter) cut)
@@ -51,8 +53,10 @@ entry,bytes,image,class,reason
 801cf5d0,104,-,data,opening window is the `$zero`-absolute data signature - a table decoded as opcodes
 801cf5d0,128,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
 801cf5d0,3264,-,data,opening window is the `$zero`-absolute data signature - a table decoded as opcodes
+801cf5e8,144,monster_test(981),unique,own content of monster_test(981) reproduces the 24-instruction window at this VA (inherited_tail(dance) cut)
 801cf650,224,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801dde68 (delta +0xe818)
 801cf650,272,menu(899),unique,own content of menu(899) reproduces the 24-instruction window at this VA (content_bytes cut)
+801cf678,112,monster_test(981),unique,own content of monster_test(981) reproduces the 24-instruction window at this VA (inherited_tail(dance) cut)
 801cf730,204,debug_menu(971),unique,own content of debug_menu(971) reproduces the 24-instruction window at this VA (inherited_tail(cutscene_str) cut)
 801cf740,368,cutscene_str(970),unique,own content of cutscene_str(970) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
 801cf754,120,-,misbased,no image holds these bytes at this VA; they live at field(897) 0x801ddf6c (delta +0xe818)
@@ -1015,6 +1019,7 @@ entry,bytes,image,class,reason
 801f3e80,5136,-,data,opening window is the `$zero`-absolute data signature - a table decoded as opcodes
 801f69d8,8,-,zero_window,window is zero fill with fewer than 3 non-`nop` instructions in it - it reproduces inside any image's zero fill and names none
 801f69d8,892,cast_blade_breath(962),unique,own content of cast_blade_breath(962) reproduces the 24-instruction window at this VA (inherited_tail(cast_plasma_strike) cut)
+801f69d8,1612,battle_slot_b_0969(969),unique,own content of battle_slot_b_0969(969) reproduces the 24-instruction window at this VA (inherited_tail(battle_slot_b_0968) cut)
 801f69d8,2240,cast_water_hazard(956),unique,own content of cast_water_hazard(956) reproduces the 24-instruction window at this VA (inherited_tail(cast_white_shield) cut)
 801f69d8,2572,world_map_render(901),unique,own content of world_map_render(901) reproduces the 24-instruction window at this VA (inherited_tail(menu) cut)
 801f69d8,2780,cast_spore_gas(939),unique,own content of cast_spore_gas(939) reproduces the 24-instruction window at this VA (inherited_tail(cast_chaos_breath) cut)
@@ -1045,6 +1050,7 @@ entry,bytes,image,class,reason
 801f69f0,4240,summon_gola_gola(914),unique,own content of summon_gola_gola(914) reproduces the 24-instruction window at this VA (inherited_tail(summon_nova) cut)
 801f69f0,6240,cast_megaton_press(959),unique,own content of cast_megaton_press(959) reproduces the 24-instruction window at this VA (inherited_tail(summon_effect_table) cut)
 801f69f0,7260,summon_nova(913),unique,own content of summon_nova(913) reproduces the 24-instruction window at this VA (inherited_tail(summon_freed) cut)
+801f69f4,2044,battle_slot_b_0968(968),unique,own content of battle_slot_b_0968(968) reproduces the 24-instruction window at this VA (inherited_tail(battle_tutorial) cut)
 801f69f4,3404,summon_gizam(906),unique,own content of summon_gizam(906) reproduces the 24-instruction window at this VA (inherited_tail(summon_stager_x83) cut)
 801f69f4,3924,summon_viguro(909),unique,own content of summon_viguro(909) reproduces the 24-instruction window at this VA (inherited_tail(summon_zenoir) cut)
 801f69f4,4928,cast_power_up(942),unique,own content of cast_power_up(942) reproduces the 24-instruction window at this VA (inherited_tail(summon_ozma) cut)
