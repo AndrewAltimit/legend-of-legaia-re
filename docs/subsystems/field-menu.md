@@ -2425,10 +2425,11 @@ The two arms split the item space cleanly, and that is what the `slot_row
 >= 4` guard is for. Of the 255 non-zero item ids, 104 are class `1` and
 every equipment bonus row they resolve to carries the `0x40` no-passive
 sentinel at `+5` - so the class-`1` arm can only ever yield the ATK / UDF /
-LDF triple, and on retail data the lookup is a no-op for every equipment item
-there is, whichever row it sits in. The guard itself is a **row** test, not a
-class test, so which rows it silences is a separate question the
-[row table](#two-early-outs-of-fun_801d1290) answers. The remaining 151
+LDF triple, which is why retail does not even run the lookup on the gear
+rows. The guard is a **row** test rather than a class test, and the
+[row map](#two-early-outs-of-fun_801d1290) is what makes the two coincide:
+rows `0..3` are weapon, helmet, body armour and footwear, rows `4..6` the
+three Goods rows. The remaining 151
 ids take the item-effect arm, and 80 of
 them carry a real passive index (`< 0x40`) at `+3`: 9 under `6` (the HP /
 MP pair), 4 in `10..=12` (SPD / INT / AGL) and the rest in the ATK / UDF /
@@ -2455,27 +2456,29 @@ name draw:
   (`slti v0, s5, 3` at `0x801D1340`).
 
 The browsed slot's equip byte, which the "nothing staged" fallback keys on,
-is reached through a row table, and **the table is not the identity**. Row `0`
-of the browse column is the Best-Equipment row and takes a per-character
-halfword from `0x8007B42C` (`lh` at `0x801D1308`, stride `2`, indexed by the
-*roster* slot, not the row). Every other row indexes the byte table at
-`0x801E43E8` (`lbu` at `0x801D131C`), whose first seven bytes are
-`00 01 00 04 05 06 07`. Entry `0` is never read - row `0` took the other path -
-and a sibling consumer of the same table starts its own walk at entry `1`
-(`lbu v0, 1(s0)` at `0x801D3C20`), so rows `1` upward address equip bytes
-`1, 0, 4, 5, 6, 7`: the first two transposed against the array, then a jump
-over bytes `2` and `3`, which no row in that span reaches.
-The byte itself is `record[+0x196 + idx]` - retail forms it
-as `0x80084140 + 0x414*slot + 0x75E + idx`, which is the per-character record
-base `0x80084708 + slot*0x414` plus `0x196`.
+is reached through the **same two-table slot map** the armament writer
+`FUN_801CF760` uses ([Equip screen](#equip-screen)), and `FUN_801D1290` is
+where its two halves sit side by side:
 
-Two things follow that a port has to keep straight. The browse order is not
-the equip-byte order, so a screen that lists the equip array in index order
-shows the first two slots swapped against retail. And the row is what the
-`slti v0, s0, 4` guard above tests, so retail runs the category lookup for
-rows `4..6` - equip bytes `5`, `6` and `7` - and feeds the `0x40` sentinel for
-rows `0..3`, which includes equip byte `4`. The port passes its own slot index
-where retail passes the row, so the two agree only where the map happens to.
+| browse row | how the byte index is formed | index |
+|---|---|---|
+| `0` | `lh` at `0x801D1308` off `0x8007B42C`, stride `2`, indexed by the **roster** slot - the per-character weapon halfword `2, 3, 2` | `2` (Vahn / Gala) or `3` (Noa) |
+| `1` and up | `lbu` at `0x801D131C` off `0x801E43E8`, indexed by the row | `1`, `0`, `4`, `5`, `6`, `7` |
+
+So the browse order is weapon, helmet, body armour, footwear, Goods x3 - the
+same seven rows the record's eight `+0x196` bytes hold minus the unused one -
+and **not** the byte array in index order. The byte itself is
+`record[+0x196 + idx]`; retail forms it as
+`0x80084140 + 0x414*slot + 0x75E + idx`, which is the per-character record base
+`0x80084708 + slot*0x414` plus `0x196`.
+
+That is also what makes the `slti v0, s0, 4` guard above land where it does:
+rows `0..3` are exactly the four gear rows and rows `4..6` exactly the three
+Goods rows, so retail resolves a compare category only for the rows whose
+items can carry a passive. A port whose slot list is its own `EquipSlot`
+order - weapon, helmet, body, **hand guard**, footwear, Goods x3 - passes an
+index one step out from row `3` on, so it asks the category question of
+footwear, which retail silences.
 
 ## Battle readout tint law (the panel's sibling)
 
