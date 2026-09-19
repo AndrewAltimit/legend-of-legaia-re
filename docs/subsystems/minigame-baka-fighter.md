@@ -682,13 +682,18 @@ round runs in - and outside that band it retires both the editor actor and the
 fighter actor and returns. Inside it:
 
 It is **linked, not dead**. Nothing `jal`s it; its address is the callback word
-of a `0x18`-byte actor prototype at `0x801D7670` -
-`[0, 0xFFFF0000, callback, 0x00020080, 0, 1]` - whose immediate sibling at
-`0x801D7688` carries `FUN_801d49e8`, the mirrored sprite pass. So the editor is
-spawnable through the ordinary actor path and it is the *band* that never
-opens, which is a different claim from "unreferenced code" (contrast
-`FUN_801d5c2c` in [`minigame-fishing.md`](minigame-fishing.md#scene-geometry-helpers),
-which really has no reference of any form).
+of a `0x18`-byte actor prototype - `[0, 0xFFFF0000, callback, 0x00020080, 0,
+1]`, the callback at `+0x08`. Five of those records run from `0x801D7618` at
+`0x18` stride, ending immediately before the `Vahn` name pool at `0x801D769C`,
+and they carry `FUN_801d6310` / `FUN_801d3f44` / `FUN_801d6f18` /
+`FUN_801d4fc8` / `FUN_801d49e8` in that order. The editor's own record is at
+`0x801D766C` and the mirrored sprite pass's, its immediate sibling, at
+`0x801D7684`. (Both were previously cited four bytes high, at the records'
+`0xFFFF0000` word.) So the editor is spawnable through the ordinary actor path
+and it is the *band* that never opens, which is a different claim from
+"unreferenced code" (contrast `FUN_801d5c2c` in
+[`minigame-fishing.md`](minigame-fishing.md#scene-geometry-helpers), which
+really has no reference of any form).
 
 - draws the action / frame cursors and their labels
   (`func_0x8002b98c` / `func_0x8002b984` / `func_0x80017d98`);
