@@ -2218,12 +2218,7 @@ pub fn equip_screen_model(
                 .cloned()
                 .unwrap_or_default(),
             current: menu_stat_block(record, session.equipment(), hp_mp.hp_max, hp_mp.mp_max),
-            candidate: menu_stat_block(
-                &trial,
-                session.equipment(),
-                hp_mp.hp_max,
-                hp_mp.mp_max,
-            ),
+            candidate: menu_stat_block(&trial, session.equipment(), hp_mp.hp_max, hp_mp.mp_max),
             hp_max: hp_mp.hp_max,
             mp_max: hp_mp.mp_max,
             // The port's slot list is the equip-byte array in order, so the
@@ -3172,6 +3167,9 @@ mod tests {
             equip_info: None,
             item_effects: None,
         };
-        assert_eq!(compare_category_for_item(0x11, &ctx), COMPARE_CATEGORY_DEFAULT);
+        assert_eq!(
+            compare_category_for_item(0x11, &ctx),
+            COMPARE_CATEGORY_DEFAULT
+        );
     }
 }

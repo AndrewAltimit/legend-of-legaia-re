@@ -733,14 +733,11 @@ impl PlayWindowApp {
         // record (HP / MP maxima) and the two disc tables the compare
         // category is looked up in.
         let record = world.party.roster.members.get(char_slot as usize);
-        let compare =
-            record.map(
-                |r| legaia_engine_core::pause_screens::EquipCompareCtx {
-                    record: r,
-                    equip_info: self.menu_runtime.equip_info.as_ref(),
-                    item_effects: world.tables.item_effects.as_ref(),
-                },
-            );
+        let compare = record.map(|r| legaia_engine_core::pause_screens::EquipCompareCtx {
+            record: r,
+            equip_info: self.menu_runtime.equip_info.as_ref(),
+            item_effects: world.tables.item_effects.as_ref(),
+        });
         let model = legaia_engine_core::pause_screens::equip_screen_model(
             session,
             char_slot,
