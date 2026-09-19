@@ -2490,8 +2490,12 @@ readable straight off the dispatcher's jump table: the table base is
 `0x801CED44`, the word holding `0x801E3DD8` is at `0x801CEE38`, and
 `(0x801CEE38 - 0x801CED44) / 4` = `0x3D`. So the cue band belongs to the
 Spirit / Item band's wait state, not to the Magic band - and the band is
-entered from exactly one place, state `0x3C`'s unconditional
-`ctx[7] = 0x3D` store at `0x801E3B5C`.
+entered from exactly one place, state `0x3C`'s unconditional `ctx[7] = 0x3D`
+store: `addiu v0, zero, 0x3d` at `0x801E3B5C` and the `sb v0, 7(v1)` at
+`0x801E3B60` it feeds. The arm's one branch - `sltiu v0, v0, 3` at
+`0x801E3B28` on the byte at `s5[+2]`, the same byte the state passes to
+`FUN_801D5854` - rejoins at `0x801E3B40`, above both, so no path through
+`0x3C` skips the store.
 
 Which actions reach `0x3C` is fixed by the two category arms the
 [category jump table](#inner-dispatch---actor-action-category) at `0x801CF144`
