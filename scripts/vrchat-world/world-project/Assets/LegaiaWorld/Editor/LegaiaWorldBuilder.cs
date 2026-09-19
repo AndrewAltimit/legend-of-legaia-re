@@ -954,8 +954,13 @@ namespace LegaiaWorld
             settings.ApplyNpcOverrides(m, dir, root);
             ReconcileNpcs(m, dir, root, sceneName, settings);
             // A re-placed villager lands back on its manifest tile above;
-            // the hand placements go on again before the passes measure.
+            // the hand placements go on again before the passes measure,
+            // and the merged world collider follows the moved / deleted
+            // world nodes before the navmesh is baked from it.
             settings.ApplyObjectTransforms(root);
+            settings.ApplyDeletions(root, worldNodesOnly: true);
+            var worldT = root.transform.Find("world");
+            RebuildMergedCollider(worldT != null ? worldT.gameObject : null, sceneName);
             LegaiaRealism.Apply(root, m, sceneName, realism);
             // The passes above regenerate what per-scene deletions target
             // (interior shells, lamps) - re-apply them, and refresh the
@@ -1324,11 +1329,16 @@ namespace LegaiaWorld
                         Quaternion.LookRotation(dirWorld.normalized, Vector3.up);
             }
 
-            // Hand-moved built objects (a world node, a villager, a prop):
-            // every placement pass is done, and the colliders follow their
-            // meshes, so the camp props' ground raycasts, the navmesh bake
-            // and the living town below all see the moved object.
+            // Hand-moved built objects (a world node, a villager, a prop)
+            // and the world nodes the settings delete: every placement
+            // pass is done, and the merged world collider is re-baked over
+            // the result, so the camp props' ground raycasts, the navmesh
+            // bake and the living town below all see the moved object and
+            // walk through the deleted one. (Per-mesh colliders need no
+            // re-bake; the rebuild is a no-op then.)
             settings.ApplyObjectTransforms(root);
+            settings.ApplyDeletions(root, worldNodesOnly: true);
+            RebuildMergedCollider(world, sceneName);
 
             // Per-scene spawn override: the value is what LegaiaSpawn's
             // INSPECTOR shows (root-local - drag the marker, copy, paste),
@@ -1446,6 +1456,32 @@ namespace LegaiaWorld
         /// combined in world-local space, saved as an asset, cooked with
         /// colocated-vertex welding so hairline seams between adjacent
         /// tile meshes close instead of dropping a player capsule through.
+        /// Re-bake the merged world collider from the world AS IT STANDS
+        /// NOW: a node moved by object_transforms contributes at its new
+        /// place, a node delete_objects disabled contributes nothing
+        /// (inactive objects are left out of the sweep). The collider was
+        /// baked at import, before either edit, so without this a moved
+        /// hut kept its old collision and a deleted one stayed solid.
+        /// No-op for a world built with per-mesh colliders (those follow
+        /// their transforms and go inactive with their nodes on their
+        /// own). Returns true when a merged collider was re-baked.
+        internal static bool RebuildMergedCollider(GameObject world, string sceneName)
+        {
+            if (world == null)
+                return false;
+            MeshCollider merged = null;
+            foreach (var mc in world.GetComponents<MeshCollider>())
+                if (mc.sharedMesh != null && mc.sharedMesh.name == "world_collider")
+                    merged = mc;
+            if (merged == null)
+                return false;
+            Undo.DestroyObjectImmediate(merged);
+            AddMergedCollider(world, sceneName);
+            Physics.SyncTransforms();
+            Debug.Log("[Legaia] merged world collider re-baked over the moved / deleted nodes.");
+            return true;
+        }
+
         static void AddMergedCollider(GameObject world, string sceneName)
         {
             var combine = new List<CombineInstance>();

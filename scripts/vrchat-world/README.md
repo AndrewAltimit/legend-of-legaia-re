@@ -400,7 +400,10 @@ All keys optional (`town01.settings.json` is the worked example):
   an animated prop), keyed like `delete_objects` plus the bare NPC
   token, valued as the object's Inspector transform under its own
   parent. Applied after every placement pass and before the realism
-  layer, and again by "Apply enhancements". The snapshot re-captures
+  layer, and again by "Apply enhancements"; the merged world collider
+  is re-baked right after, with the world nodes `delete_objects` names
+  already disabled, so collision follows a moved hut and leaves a
+  deleted one (per-mesh colliders follow on their own). The snapshot re-captures
   stored keys and adds every world node moved by hand; a moved villager
   is added with `Legaia > Pin selected objects to scene settings`.
 - **`world_scale`** - grow the whole built scene about the origin by one

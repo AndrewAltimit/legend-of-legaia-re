@@ -321,6 +321,53 @@ namespace LegaiaWorld
                 }
                 Debug.Log("[Legaia] CommonPrefabs: " + settings.objectTransforms.Count +
                     " object transform(s) resolved and applied.");
+
+                // Collision must follow: after the merged collider is
+                // re-baked, a ray dropped through a moved world node's NEW
+                // bounds hits the world collider, and one dropped through
+                // its ORIGINAL (prefab source) bounds, where nothing stands
+                // now, does not. Scoped to nodes of the world glb that
+                // carry a mesh; a villager or a prop has its own collider.
+                var worldT = root.transform.Find("world");
+                if (worldT != null && LegaiaWorldBuilder.RebuildMergedCollider(
+                        worldT.gameObject, sceneName))
+                {
+                    var worldCol = worldT.GetComponent<MeshCollider>();
+                    int probed = 0;
+                    foreach (var kv in settings.objectTransforms)
+                    {
+                        var hits = LegaiaSceneSettings.FindObjects(root, kv.Key);
+                        if (hits.Count == 0 || !hits[0].IsChildOf(worldT))
+                            continue;
+                        var mf = hits[0].GetComponent<MeshFilter>();
+                        var rend = hits[0].GetComponent<Renderer>();
+                        var src = PrefabUtility.GetCorrespondingObjectFromSource(hits[0]);
+                        if (mf == null || mf.sharedMesh == null || rend == null || src == null)
+                            continue;
+                        var b = rend.bounds;
+                        bool hitNew = false;
+                        foreach (var h in Physics.RaycastAll(b.center + Vector3.up * (b.extents.y + 1f),
+                                     Vector3.down, b.size.y + 2f, ~0, QueryTriggerInteraction.Ignore))
+                            if (h.collider == worldCol)
+                                hitNew = true;
+                        if (!hitNew)
+                            Fail("collision did not follow object_transforms '" + kv.Key +
+                                 "': no world-collider hit through its bounds at " + b.center);
+                        // Where the node WAS: the same bounds, moved by the
+                        // source-to-instance offset in the parent's frame.
+                        Vector3 oldCenter = b.center + hits[0].parent.TransformVector(
+                            src.localPosition - hits[0].localPosition);
+                        foreach (var h in Physics.RaycastAll(oldCenter + Vector3.up * (b.extents.y + 1f),
+                                     Vector3.down, b.size.y + 2f, ~0, QueryTriggerInteraction.Ignore))
+                            if (h.collider == worldCol && Mathf.Abs(h.point.y - oldCenter.y) < b.extents.y * 0.5f)
+                                Fail("collision still stands where object_transforms '" + kv.Key +
+                                     "' used to be (" + oldCenter + "): the merged collider " +
+                                     "was not re-baked over the move");
+                        probed++;
+                    }
+                    Debug.Log("[Legaia] CommonPrefabs: merged collider follows " + probed +
+                        " moved world node(s).");
+                }
             }
 
             // world_scale: applied last, on the root and every top-level

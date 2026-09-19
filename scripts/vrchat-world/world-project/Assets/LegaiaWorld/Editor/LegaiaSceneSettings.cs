@@ -182,9 +182,12 @@
 //       starts with it. The value is the object's Inspector transform
 //       under its own parent (local position, optional local Euler
 //       rotation) - the world root's mirror never enters it. Applied
-//       after every placement pass and before the realism layer, so the
-//       navmesh bake, the colliders and the living town see the moved
-//       object; re-applied by "Apply enhancements". Written by the
+//       after every placement pass and before the realism layer, and the
+//       merged world collider is re-baked right after (with the world
+//       nodes delete_objects names already disabled), so the navmesh
+//       bake, the ground snaps and the living town see the moved object
+//       and walk through the deleted one; re-applied by "Apply
+//       enhancements". Written by the
 //       snapshot menu: it re-captures every key already in the file, adds
 //       every world-glb node carrying a position / rotation override,
 //       and "Legaia > Pin selected objects to scene settings" adds
@@ -1042,7 +1045,15 @@ namespace LegaiaWorld
         /// are destroyed; prefab-instance children (world glb nodes) are
         /// disabled, since destroying them would require unpacking the
         /// prefab instance.
-        public void ApplyDeletions(GameObject root)
+        /// `worldNodesOnly`: touch only prefab-instance children (world /
+        /// prop glb nodes) - the early pass, run before the merged world
+        /// collider is re-baked and before the navmesh and the ground
+        /// snaps, so a deleted hut is gone from collision as well as from
+        /// view. The late pass (default) covers everything, the generated
+        /// objects the realism passes make included; a node the early
+        /// pass already disabled matches again and is simply disabled
+        /// again.
+        public void ApplyDeletions(GameObject root, bool worldNodesOnly = false)
         {
             if (deleteObjects.Count == 0 || root == null)
                 return;
@@ -1053,6 +1064,8 @@ namespace LegaiaWorld
                 foreach (var t in scope.GetComponentsInChildren<Transform>(true))
                 {
                     if (t == null || t.gameObject == scope)
+                        continue;
+                    if (worldNodesOnly && !PrefabUtility.IsPartOfPrefabInstance(t.gameObject))
                         continue;
                     foreach (string token in deleteObjects)
                         if (MatchesPath(t, token))
@@ -1079,8 +1092,11 @@ namespace LegaiaWorld
                     removed++;
                 }
             }
-            Debug.Log("[Legaia] scene settings deletions: " + removed +
+            Debug.Log("[Legaia] scene settings deletions" +
+                (worldNodesOnly ? " (world nodes, early)" : "") + ": " + removed +
                 " destroyed, " + hidden + " disabled (prefab children).");
+            if (worldNodesOnly)
+                return; // the generated names are for the late pass
             foreach (string n in deleteObjects)
                 if (!matched.Contains(n))
                     Debug.LogWarning("[Legaia] delete_objects name not found " +
