@@ -1009,10 +1009,29 @@ whichever build's matrix was live when they were emitted
   313 ran only `B -> C`. A second run over a static town scene split 504 / 396
   the same way. So "three every vsync" holds on neither run, and the order when
   a site runs is fixed.
-* **There are more than three sites.** The town entry also recorded builds
-  returning to `0x801F7428` and `0x801F761C` - the **slot-B** window, i.e. the
-  resident field-render module, which a sweep over `SCUS_942.54` plus the slot-A
-  overlay images cannot see. Those two always run last when present.
+* **There are more than three sites.** The capture also recorded builds
+  returning to `0x801F7428` and `0x801F761C` - the **slot-B** window, which a
+  sweep over `SCUS_942.54` plus the slot-A overlay images cannot see. Those two
+  always run last when present, and they always run together: the capture's run
+  carried 47 of each.
+
+  The image is **PROT 0901**, the world-map render module, not a field-render
+  one. `ra` is the `jal` plus eight, so the sites are `0x801F7420` and
+  `0x801F7614`, and of the eighty-three statically extracted overlay images
+  exactly one holds `jal 0x800172C0` inside the slot-B window - 0901, at those
+  two addresses. The run that recorded them is a world-map one (`scene = map01`,
+  mode `0x03`), which is what has 0901 resident.
+
+  Both sites are in **one** routine, `FUN_801F73E4` (608 bytes,
+  `0x801F73E4..0x801F7644`), and the pair is a bracket rather than two
+  independent builds. It saves the yaw word `_DAT_8007B792`, **zeroes it in the
+  first `jal`'s delay slot**, and rebuilds; draws one screen-fixed band - five
+  clipped quads plus a sprite, linked through `FUN_8003D2C4` off the scratchpad
+  prim cursor `0x1F8003A0`, with the colour chosen by the story flag `0x14C`
+  through `FUN_8003CE64`; then restores the saved yaw and rebuilds again so the
+  rest of the frame draws under the view it expected. So neither slot-B build is
+  a frame's camera: the first enters a rotation-free view for one band, the
+  second puts the shared view back.
 * **The last build is not the one the frame draws under.** Of 31046 prim links,
   16810 were emitted with `A`'s matrix live and 3562 with `B`'s, but only
   **14** with `C`'s. Whatever `C` re-establishes, essentially no geometry
