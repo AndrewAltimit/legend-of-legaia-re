@@ -2421,14 +2421,22 @@ record's `+1` byte:
 | `1` (equipment) | equipment bonus row `0x80074F68 + row*8` | `+5` |
 | anything else | item-effect descriptor `0x800752C0 + row*4` | `+3` |
 
-On the retail USA disc every one of the equipment bonus rows an equippable
-id resolves to carries the `0x40` no-passive sentinel at `+5`, so the
-class-`1` arm always yields the ATK / UDF / LDF triple. The **other** arm
-does not: over the non-class-`1` ids the `+3` byte spans the whole index
-space, with a single-digit count landing under `6` (the HP / MP pair) and a
-handful in `10..=12` (SPD / INT / AGL). So a host that feeds the sentinel
-unconditionally does *not* get the identical screen - it loses two of the
-three row sets. The port resolves the byte through
+The two arms split the item space cleanly, and that is what the `slot_row
+>= 4` guard is for. Of the 255 non-zero item ids, 104 are class `1` and
+every equipment bonus row they resolve to carries the `0x40` no-passive
+sentinel at `+5` - so the class-`1` arm can only ever yield the ATK / UDF /
+LDF triple, which is why retail does not even run the lookup on the weapon
+and armour rows. The remaining 151 ids take the item-effect arm, and 80 of
+them carry a real passive index (`< 0x40`) at `+3`: 9 under `6` (the HP /
+MP pair), 4 in `10..=12` (SPD / INT / AGL) and the rest in the ATK / UDF /
+LDF band.
+
+So the category byte is the **accessory passive index**, and the panel
+shows the three stats that passive moves - the boost families of
+[accessory-passive-table.md](../formats/accessory-passive-table.md) read
+back through the row split. A host that feeds the sentinel unconditionally
+does not get the identical screen: it loses two of the three row sets. The
+port resolves the byte through
 `engine-core::pause_screens::compare_category_for_item` on both hosts.
 
 ### Two early-outs of `FUN_801D1290`
