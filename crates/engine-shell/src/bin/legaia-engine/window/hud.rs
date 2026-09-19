@@ -1136,20 +1136,13 @@ impl PlayWindowApp {
                             (label, rows, Some(gold))
                         }
                         Some(MenuState::ShopQuantity) => {
-                            // The bound is retail's, not a flat nine: buying,
-                            // `min(gold / price, 99, 99 - held)`; selling, the
-                            // staged bag count. Twin of the browser page's arm
-                            // in `web-viewer::play_shop`.
-                            let held = shop
-                                .pending_item_id
-                                .and_then(|id| bag.iter().find(|(i, _)| *i == id).map(|(_, q)| *q));
-                            let n = shop.quantity_rows(gold, held);
-                            let rows = (1u32..=u32::from(n))
-                                .map(|n| {
-                                    (n.to_string(), None, legaia_engine_render::SHOP_INK_NORMAL)
-                                })
-                                .collect();
-                            (label, rows, None)
+                            // Retail's quantity screen has no list: one number
+                            // steps in place inside window 35 / 37 while the
+                            // list it came from stays parked behind it, so this
+                            // screen contributes a title and no rows. The
+                            // window is drawn in `shop_windows`. Twin of the
+                            // browser page's arm in `web-viewer::play_shop`.
+                            (label, Vec::new(), None)
                         }
                         Some(MenuState::ShopConfirm) => {
                             let rows = vec![

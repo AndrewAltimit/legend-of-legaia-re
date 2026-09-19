@@ -343,17 +343,11 @@ enum SellQtyPhase {
 /// empty, runs the ~17-unit exit delay (phase 2) before returning to
 /// the shop root instead of the sell list.
 ///
-/// NOT WIRED: the hosts' quantity screen is a **different interaction**, not a
-/// different implementation of this one, so this cannot be retagged
-/// `REPLACED-BY` - the mechanism that would be named does something else.
-/// Retail steps one number in place (`Up`/`Down` on `DAT_801E46B4`, bounded by
-/// the staged bag count, with the exit delay this session carries); the port
-/// draws `1..=max` as list **rows** and the list cursor picks one
-/// ([`ShopSession::set_quantity`] over `quantity_rows`, drawn by
-/// `window::hud` and `web-viewer::play_shop`). Wiring is a screen change on
-/// both hosts - one row that re-renders as the stepper moves - plus the
-/// session install; the bound is already retail's, which is why the numbers
-/// agree even though the interaction does not.
+/// Wired: [`QuantityPicker`] installs this session the moment the sell list
+/// stages a stack, and [`crate::menu_runtime::MenuRuntime`] hands it the pad
+/// for the whole screen - so both hosts step one number in place and draw
+/// window 37 (`engine-ui`'s `sell_quantity_draws_for`) over the parked list, with no
+/// Yes/No screen between the stepper and the sale.
 #[derive(Debug, Clone)]
 pub struct SellQuantitySession {
     pub item_id: u8,
@@ -366,6 +360,9 @@ pub struct SellQuantitySession {
     phase: SellQtyPhase,
     /// Exit-delay accumulator (`DAT_801E46D0` reuse).
     delay: i32,
+    /// The whole-stack sale emptied the bag, so the exit routes to the shop
+    /// root rather than the sell list.
+    root_exit: bool,
 }
 
 impl SellQuantitySession {
@@ -377,6 +374,7 @@ impl SellQuantitySession {
             max: held_count as i32,
             phase: SellQtyPhase::Init,
             delay: 0,
+            root_exit: false,
         }
     }
 
@@ -440,6 +438,7 @@ impl SellQuantitySession {
     /// non-zero). An empty bag enters the exit-delay phase; otherwise
     /// the next [`Self::tick`] returns to the sell list.
     pub fn finish_whole_stack(&mut self, bag_empty: bool) {
+        self.root_exit = bag_empty;
         if bag_empty {
             self.phase = SellQtyPhase::ExitDelay;
             self.delay = 0;
@@ -451,6 +450,13 @@ impl SellQuantitySession {
     /// Session left the quantity screen.
     pub fn is_done(&self) -> bool {
         self.phase == SellQtyPhase::Done
+    }
+
+    /// `true` while the session is in (or has just left) the exit-delay
+    /// phase a whole-stack sale that emptied the bag enters - the route
+    /// retail takes back to the shop root instead of the sell list.
+    pub fn exits_to_shop_root(&self) -> bool {
+        self.root_exit
     }
 }
 
@@ -620,11 +626,11 @@ enum BuyQtyPhase {
 /// was shown - waits for a button press (SFX `0x20`) before dropping
 /// back to the buy list.
 ///
-/// NOT WIRED: same shape as [`SellQuantitySession`]'s note - the hosts' screen
-/// is a row list over `1..=max` and this is retail's in-place stepper, so the
-/// gap is a screen, not a call. The grant half
-/// ([`ShopSession::set_quantity`] + `World::buy_from_shop`) is live and the
-/// bound is retail's, so only the interaction differs.
+/// Wired through [`QuantityPicker`] on both hosts, the same way as
+/// [`SellQuantitySession`]: the picker owns the pad for the screen, the
+/// commit runs straight out of the stepper (retail has no Yes/No screen
+/// between them), and window 35 (`engine-ui`'s `buy_quantity_draws_for`) draws the
+/// stepped number.
 #[derive(Debug, Clone)]
 pub struct BuyQuantitySession {
     pub item_id: u8,
@@ -758,6 +764,153 @@ pub enum BuyRecipientEvent {
     Cancelled,
     /// Session finished (post-toast) - back to the buy list.
     ExitToBuyList,
+}
+
+/// The live quantity screen: whichever of the two retail steppers the shop
+/// flow entered.
+///
+/// Retail runs them as two sibling menu-overlay sub-screens over a parked
+/// list; the engine runs them as one `Option` on
+/// [`crate::menu_runtime::MenuRuntime`] that takes the pad while it is
+/// `Some`, exactly as the buy-recipient picker does. Both hosts read the
+/// same accessors for the window they draw, so the screen is one
+/// interaction on one bound with one pad decode.
+#[derive(Debug, Clone)]
+pub enum QuantityPicker {
+    Buy(BuyQuantitySession),
+    Sell(SellQuantitySession),
+}
+
+/// What one [`QuantityPicker`] frame produced, folded to the arms a host
+/// cares about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuantityPickerEvent {
+    None,
+    /// The number stepped (retail cues SFX `0x21`).
+    Moved,
+    /// The purchase landed: consume `cost` gold, add `qty` copies, and
+    /// credit the Point Card by `point_credit` when non-zero.
+    Bought {
+        item_id: u8,
+        qty: u8,
+        cost: i32,
+        point_credit: i32,
+    },
+    /// The sale landed: remove `qty` copies of `item_id`, credit `credit`.
+    Sold {
+        item_id: u8,
+        qty: u8,
+        credit: i32,
+    },
+    /// Backed out (SFX `0x37`) - the list takes the pad back.
+    Cancelled,
+    /// The screen is finished and the flow returns to the list it came from.
+    Finished,
+}
+
+impl QuantityPicker {
+    /// `true` while the picker is sizing a purchase.
+    pub fn is_buying(&self) -> bool {
+        matches!(self, Self::Buy(_))
+    }
+
+    /// The staged item id.
+    pub fn item_id(&self) -> u8 {
+        match self {
+            Self::Buy(s) => s.item_id,
+            Self::Sell(s) => s.item_id,
+        }
+    }
+
+    /// The unit price both panels print the running total from.
+    pub fn price(&self) -> u16 {
+        match self {
+            Self::Buy(s) => s.price,
+            Self::Sell(s) => s.price,
+        }
+    }
+
+    /// The stepped number (`DAT_801E46B4`), clamped into the screen's own
+    /// bound for display.
+    pub fn quantity(&self) -> u8 {
+        let (q, m) = match self {
+            Self::Buy(s) => (s.qty, s.max),
+            Self::Sell(s) => (s.qty, s.max),
+        };
+        q.clamp(1, m.max(1)).clamp(0, 255) as u8
+    }
+
+    /// The bound (`DAT_801E46B8`) the second number on the value row prints.
+    pub fn max(&self) -> u8 {
+        let m = match self {
+            Self::Buy(s) => s.max,
+            Self::Sell(s) => s.max,
+        };
+        m.clamp(0, 255) as u8
+    }
+
+    /// `true` once the screen is done and the caller should drop it.
+    pub fn is_done(&self) -> bool {
+        match self {
+            Self::Buy(s) => s.is_done(),
+            Self::Sell(s) => s.is_done(),
+        }
+    }
+
+    /// Drive one frame from the edge-triggered pad word. `frame_delta` feeds
+    /// the sell picker's exit delay (1 per vsync); the buy picker ignores it.
+    pub fn tick(&mut self, pressed: u16, frame_delta: i32) -> QuantityPickerEvent {
+        match self {
+            Self::Buy(s) => match s.tick(pressed) {
+                BuyQtyEvent::None => QuantityPickerEvent::None,
+                BuyQtyEvent::Moved => QuantityPickerEvent::Moved,
+                BuyQtyEvent::Bought {
+                    item_id,
+                    qty,
+                    cost,
+                    point_credit,
+                } => QuantityPickerEvent::Bought {
+                    item_id,
+                    qty,
+                    cost,
+                    point_credit,
+                },
+                BuyQtyEvent::Cancelled => QuantityPickerEvent::Cancelled,
+                BuyQtyEvent::ExitToBuyList => QuantityPickerEvent::Finished,
+            },
+            Self::Sell(s) => match s.tick(pressed, frame_delta) {
+                SellQtyEvent::None => QuantityPickerEvent::None,
+                SellQtyEvent::Moved => QuantityPickerEvent::Moved,
+                SellQtyEvent::Sold {
+                    item_id,
+                    qty,
+                    credit,
+                } => QuantityPickerEvent::Sold {
+                    item_id,
+                    qty,
+                    credit,
+                },
+                SellQtyEvent::Cancelled => QuantityPickerEvent::Cancelled,
+                SellQtyEvent::ExitToSellList | SellQtyEvent::ExitToShopRoot => {
+                    QuantityPickerEvent::Finished
+                }
+            },
+        }
+    }
+
+    /// Route a whole-stack sale by the caller's post-sale bag rescan. No-op
+    /// on the buy side.
+    pub fn finish_whole_stack(&mut self, bag_empty: bool) {
+        if let Self::Sell(s) = self {
+            s.finish_whole_stack(bag_empty);
+        }
+    }
+
+    /// `true` when the finished sell picker ran its exit delay and the flow
+    /// returns to the shop **root** instead of the sell list.
+    pub fn exits_to_shop_root(&self) -> bool {
+        matches!(self, Self::Sell(s) if s.exits_to_shop_root())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1053,96 +1206,13 @@ pub fn shop_stock_row_ink(held: i16, marker: i16, gold: i32, price: i32) -> u8 {
     ink
 }
 
-/// Digit-field width the buy-quantity panel prints the running total
-/// `qty * price` with.
+/// The two quantity windows' **content** - the pens, the digit ladder and
+/// the separator - live with the draw in
+/// `legaia_engine_ui::ui_menu_window_painters`
+/// (`buy_quantity_draws_for` / `sell_quantity_draws_for`), one builder per
+/// window across both hosts. This module owns the two **sessions** that
+/// step the number those windows print and the transaction they commit.
 ///
-/// The width is chosen from the magnitude of the **unit price**, not of the
-/// total, through three cascading compares against `99` / `999` / `9999`, so
-/// the number stays right-aligned in the box as the quantity climbs.
-///
-/// PORT: FUN_801d5510 (total digit-field width, `0x801D5654..0x801D56A4`)
-pub fn shop_total_digit_field(price: u16) -> u8 {
-    let mut n: u8 = if price > 9999 { 5 } else { 4 };
-    if price > 999 {
-        n += 1;
-    }
-    if price > 99 {
-        n += 1;
-    }
-    n
-}
-
-/// The buy-quantity prompt panel's data-derived content.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BuyQuantityPanel {
-    /// `Some(count)` when the party already holds the highlighted item -
-    /// retail prints the "Have" label plus this 2-digit count. `None` is the
-    /// bag-scan sentinel `0x100` (nothing held) and prints the "None" string
-    /// at the window origin instead.
-    pub have: Option<u8>,
-    /// Pen of the held-count digits, `(WX + 0x20, WY)`. Unused when `have`
-    /// is `None`.
-    pub have_count_pen: (i16, i16),
-    /// Pen of the label that follows the count, `(WX + 0x30, WY)` when a
-    /// count printed and `(WX, WY)` when it did not.
-    pub have_tail_pen: (i16, i16),
-    /// Pen of the "How many will you buy?" prompt, `(WX, WY + 0xE)`.
-    pub prompt_pen: (i16, i16),
-    /// Baseline of the quantity row, `WY + 0x22`.
-    pub value_row_y: i16,
-    /// Chosen quantity + its 2-digit pen `(WX + 0x18, value_row_y)`.
-    pub quantity: (u8, (i16, i16)),
-    /// Unit price + its 2-digit pen `(WX + 0x30, value_row_y)`.
-    pub unit: (u16, (i16, i16)),
-    /// Running total `qty * price`, its digit-field width and its pen
-    /// `(WX + 0x62, value_row_y)`.
-    pub total: (u32, u8, (i16, i16)),
-    /// Hand-sprite pen `(WX + 4, value_row_y)`; the mode is always `1`.
-    pub cursor_pen: (i16, i16),
-}
-
-/// Build the **buy-quantity prompt panel** content (menu-overlay window
-/// renderer `FUN_801D5510`).
-///
-/// `held` is the bag-scan result for the highlighted item id: `Some(slot
-/// count)` or `None` for retail's `0x100` "not held" sentinel.
-///
-/// PORT: FUN_801d5510 (menu-overlay buy-quantity prompt window content renderer)
-///
-/// This is **window 35** of the menu-overlay descriptor table (rect
-/// `(138, 100, 168, 50)`; the record at PROT 0899 file `0x15F20 + 35*0x10`
-/// carries `renderer_va = 0x801D5510`). Both rendering hosts lay the pens
-/// out during the buy-quantity phase - the browser page in
-/// `web-viewer::play_shop::buy_quantity_panel_draws`, the native window in
-/// `bin/legaia-engine/window/shop_windows.rs`. It is the shop's only
-/// pens-returning renderer, so neither host can reach it through
-/// `painter_at`; both filter the window id on the descriptor's own
-/// `renderer_va` instead.
-pub fn shop_buy_quantity_panel(
-    window: (i16, i16),
-    held: Option<u8>,
-    quantity: u8,
-    unit_price: u16,
-) -> BuyQuantityPanel {
-    let (wx, wy) = window;
-    let value_row_y = wy + 0x22;
-    BuyQuantityPanel {
-        have: held,
-        have_count_pen: (wx + 0x20, wy),
-        have_tail_pen: (if held.is_some() { wx + 0x30 } else { wx }, wy),
-        prompt_pen: (wx, wy + SHOP_ROW_PITCH),
-        value_row_y,
-        quantity: (quantity, (wx + 0x18, value_row_y)),
-        unit: (unit_price, (wx + 0x30, value_row_y)),
-        total: (
-            quantity as u32 * unit_price as u32,
-            shop_total_digit_field(unit_price),
-            (wx + 0x62, value_row_y),
-        ),
-        cursor_pen: (wx + 4, value_row_y),
-    }
-}
-
 /// The accessory-passive index space is 64 slots; `0x40` is the
 /// no-passive sentinel every non-passive row carries.
 pub const PASSIVE_NONE: u8 = 0x40;
@@ -1749,37 +1819,6 @@ mod tests {
         assert_eq!(shop_stock_row_ink(0, 0, 100, 100), SHOP_INK_NORMAL);
         // 98 held is still under the cap.
         assert_eq!(shop_stock_row_ink(98, 0, 1000, 100), SHOP_INK_NORMAL);
-    }
-
-    #[test]
-    fn total_digit_field_steps_on_the_unit_price() {
-        assert_eq!(shop_total_digit_field(0), 4);
-        assert_eq!(shop_total_digit_field(99), 4);
-        assert_eq!(shop_total_digit_field(100), 5);
-        assert_eq!(shop_total_digit_field(999), 5);
-        assert_eq!(shop_total_digit_field(1000), 6);
-        assert_eq!(shop_total_digit_field(9999), 6);
-        assert_eq!(shop_total_digit_field(10000), 7);
-    }
-
-    #[test]
-    fn buy_quantity_panel_geometry_and_total() {
-        let p = shop_buy_quantity_panel((10, 20), Some(3), 5, 250);
-        assert_eq!(p.have, Some(3));
-        assert_eq!(p.have_count_pen, (10 + 0x20, 20));
-        assert_eq!(p.have_tail_pen, (10 + 0x30, 20));
-        assert_eq!(p.prompt_pen, (10, 20 + 0x0E));
-        assert_eq!(p.value_row_y, 20 + 0x22);
-        assert_eq!(p.quantity, (5, (10 + 0x18, 20 + 0x22)));
-        assert_eq!(p.unit, (250, (10 + 0x30, 20 + 0x22)));
-        assert_eq!(p.total, (1250, 5, (10 + 0x62, 20 + 0x22)));
-        assert_eq!(p.cursor_pen, (10 + 4, 20 + 0x22));
-
-        // Nothing held: the "None" string takes the window origin and no
-        // count row prints.
-        let p = shop_buy_quantity_panel((10, 20), None, 1, 10);
-        assert_eq!(p.have, None);
-        assert_eq!(p.have_tail_pen, (10, 20));
     }
 
     #[test]

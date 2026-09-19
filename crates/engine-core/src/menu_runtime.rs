@@ -105,6 +105,14 @@ pub struct MenuRuntime {
     /// `ShopBuy`, exactly as retail parks list mode 1 under sub-screen
     /// `0x1C`).
     pub recipient_session: Option<BuyRecipientSession>,
+    /// The live **quantity screen** (retail's two sibling steppers,
+    /// `FUN_801DB7F4` buying / `FUN_801DBD94` selling). While `Some`,
+    /// [`MenuRuntime::tick`] drives it instead of the menu VM: one number
+    /// moves in place under the pad, the confirm commits the transaction
+    /// with no Yes/No screen after it, and the list it came from stays
+    /// parked behind the window. Both hosts read
+    /// [`MenuRuntime::quantity_view`] for the window they draw.
+    pub quantity_session: Option<crate::shop::QuantityPicker>,
     /// The live casino **prize-exchange** session (menu-overlay sub-screen
     /// `0x20`, field-VM op-`0x49` sub-op 7). While `Some`,
     /// [`MenuRuntime::tick`] drives it instead of the menu VM - the session
@@ -161,6 +169,49 @@ pub struct MenuRuntime {
     widget_state_seen: u8,
 }
 
+/// The live quantity screen's content, as a host needs it to lay the window
+/// out: which stepper is up, the staged item, the stepped number, its bound
+/// and the unit price the running total comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuantityView {
+    /// `true` for the buy stepper (window 35), `false` for the sell one
+    /// (window 37).
+    pub buying: bool,
+    pub item_id: u8,
+    /// The stepped number (`DAT_801E46B4`).
+    pub quantity: u8,
+    /// The bound (`DAT_801E46B8`) the value row's second number prints.
+    pub max: u8,
+    /// Unit price the running total multiplies (buy) or halves (sell).
+    pub price: u16,
+}
+
+/// Fold a [`MenuInput`] back into the edge-triggered PSX pad word the
+/// retail sub-screen ports decode.
+///
+/// The menu VM takes per-button booleans while the quantity steppers take
+/// the pad word their disassembly tests, so the two models meet here rather
+/// than in either host.
+fn menu_input_pad_word(input: MenuInput) -> u16 {
+    use crate::input::PadButton;
+    let mut w = 0u16;
+    for (on, b) in [
+        (input.cross, PadButton::Cross),
+        (input.circle, PadButton::Circle),
+        (input.triangle, PadButton::Triangle),
+        (input.square, PadButton::Square),
+        (input.up, PadButton::Up),
+        (input.down, PadButton::Down),
+        (input.left, PadButton::Left),
+        (input.right, PadButton::Right),
+    ] {
+        if on {
+            w |= b.mask();
+        }
+    }
+    w
+}
+
 #[derive(Debug, Clone)]
 enum PendingOp {
     Save { slot: u8 },
@@ -181,6 +232,7 @@ impl MenuRuntime {
             equip_info: None,
             retail_equipment_buy: false,
             recipient_session: None,
+            quantity_session: None,
             prize_session: None,
             stay_cursor: None,
             point_card_toast: None,
@@ -386,6 +438,10 @@ impl MenuRuntime {
             self.tick_recipient(world, input);
             return MenuTickEvent::Stepped;
         }
+        if self.quantity_session.is_some() {
+            self.tick_quantity(world, input);
+            return MenuTickEvent::Stepped;
+        }
         if self.point_card_toast.is_some() {
             // `FUN_801DB7F4` case 4: `_DAT_800846D0 | _DAT_800846D4` - the
             // confirm and cancel masks - then SFX `0x20` and sub-screen
@@ -420,6 +476,14 @@ impl MenuRuntime {
         // confirmed row; the VM's transition reset dropped it to 0.
         if let Some(cursor) = self.stay_cursor.take() {
             self.ctx.cursor = cursor;
+        }
+        // The quantity screen is a stepper, not a list: the VM's route into
+        // `ShopQuantity` is the last thing it decides about that screen -
+        // the picker takes the pad from the next frame on.
+        if MenuState::from_byte(self.ctx.state) == Some(MenuState::ShopQuantity)
+            && self.quantity_session.is_none()
+        {
+            self.open_quantity_picker(world);
         }
         // In-menu state transitions (picker → Sell, teardown) drive the
         // window-widget scripts.
@@ -496,6 +560,182 @@ impl MenuRuntime {
             // The picker's own `ToastWait` already consumed the press that
             // dismissed window 31; the paint flag goes with the session.
             self.point_card_toast = None;
+        }
+    }
+
+    /// Open the retail quantity stepper for whatever the list just staged
+    /// (`FUN_801DB7F4` phase 0 buying, `FUN_801DBD94` phase 0 selling).
+    ///
+    /// The bound is the same kernel the row list used to draw
+    /// ([`crate::shop::buy_qty_max`] / the staged stack's count), so the
+    /// screen changed interaction without changing what it allows. A staged
+    /// item the bag cannot supply (a sell row with a zero count) opens no
+    /// picker at all, which leaves the VM on the screen it routed to.
+    fn open_quantity_picker(&mut self, world: &mut World) {
+        let Some(session) = self.shop_session.as_ref() else {
+            return;
+        };
+        let Some(item_id) = session.pending_item_id else {
+            return;
+        };
+        let held = world.party.inventory.get(&item_id).copied();
+        if session.pending_is_buying {
+            let price = session
+                .inventory
+                .find(item_id)
+                .map(|i| u16::try_from(i.price).unwrap_or(u16::MAX))
+                .unwrap_or(0);
+            let max = crate::shop::buy_qty_max(world.party.money, price, held);
+            if max < 1 {
+                return;
+            }
+            self.quantity_session = Some(crate::shop::QuantityPicker::Buy(
+                crate::shop::BuyQuantitySession::new(
+                    item_id,
+                    price,
+                    world.party.money,
+                    held,
+                    world.point_card_held(),
+                ),
+            ));
+        } else {
+            // Selling prices off the static item table, not the merchant's
+            // stock row - the sell side has no per-shop price.
+            let price = world
+                .shops
+                .item_shop_data
+                .as_ref()
+                .map(|d| d.price(item_id))
+                .or_else(|| {
+                    session
+                        .inventory
+                        .find(item_id)
+                        .map(|i| u16::try_from(i.price).unwrap_or(u16::MAX))
+                })
+                .unwrap_or(0);
+            let staged = session
+                .pending_bag_slot
+                .map(|slot| world.party.inventory.slot(slot).1)
+                .or(held)
+                .unwrap_or(0);
+            if staged == 0 {
+                return;
+            }
+            self.quantity_session = Some(crate::shop::QuantityPicker::Sell(
+                crate::shop::SellQuantitySession::new(item_id, price, staged),
+            ));
+        }
+    }
+
+    /// The live quantity screen's content, for the window a host draws over
+    /// the parked list. `None` while no stepper owns the pad.
+    pub fn quantity_view(&self) -> Option<QuantityView> {
+        let picker = self.quantity_session.as_ref()?;
+        Some(QuantityView {
+            buying: picker.is_buying(),
+            item_id: picker.item_id(),
+            quantity: picker.quantity(),
+            max: picker.max(),
+            price: picker.price(),
+        })
+    }
+
+    /// Drive the live quantity stepper one frame (retail's two sibling
+    /// quantity sub-screens).
+    ///
+    /// Confirm commits straight out of the stepper - retail has no Yes/No
+    /// screen between the number and the transaction - so the engine's
+    /// `ShopConfirm` state is never entered from this path. A cancel hands
+    /// the pad back to the list the flow came from.
+    fn tick_quantity(&mut self, world: &mut World, input: MenuInput) {
+        let pressed = menu_input_pad_word(input);
+        let Some(picker) = self.quantity_session.as_mut() else {
+            return;
+        };
+        let buying = picker.is_buying();
+        let event = picker.tick(pressed, 1);
+        match event {
+            crate::shop::QuantityPickerEvent::Bought {
+                item_id,
+                qty,
+                cost,
+                point_credit,
+            } => {
+                let landed = Self::apply_quantity_buy(world, item_id, qty, cost);
+                if landed && point_credit > 0 {
+                    self.arm_point_card_toast(world, point_credit);
+                }
+            }
+            crate::shop::QuantityPickerEvent::Sold {
+                item_id,
+                qty,
+                credit,
+            } => {
+                self.apply_quantity_sell(world, item_id, qty, credit);
+                let empty = world.party.inventory.iter().all(|(_, c)| *c == 0);
+                if let Some(p) = self.quantity_session.as_mut() {
+                    p.finish_whole_stack(empty);
+                }
+            }
+            _ => {}
+        }
+        let cancelled = matches!(event, crate::shop::QuantityPickerEvent::Cancelled);
+        let done = cancelled || self.quantity_session.as_ref().is_some_and(|p| p.is_done());
+        if !done {
+            return;
+        }
+        let to_root = self
+            .quantity_session
+            .as_ref()
+            .is_some_and(|p| p.exits_to_shop_root());
+        self.quantity_session = None;
+        if let Some(session) = self.shop_session.as_mut() {
+            session.pending_item_id = None;
+            session.pending_bag_slot = None;
+        }
+        self.ctx.state = match (to_root, buying) {
+            (true, _) => MenuState::ShopMenu,
+            (false, true) => MenuState::ShopBuy,
+            (false, false) => MenuState::ShopSell,
+        }
+        .as_byte();
+        self.ctx.cursor = 0;
+        self.widget_state_seen = self.ctx.state;
+    }
+
+    /// The quantity screen's **buy** commit: the bag add plus the purse
+    /// debit (retail's bag-add helper plus the case-3 purse store), refused
+    /// past the shared 99-per-id stack cap or on a short purse.
+    fn apply_quantity_buy(world: &mut World, item_id: u8, qty: u8, cost: i32) -> bool {
+        let owned = *world.party.inventory.get(&item_id).unwrap_or(&0);
+        if world.party.money < cost
+            || u32::from(owned) + u32::from(qty) > u32::from(crate::shop::SHOP_HELD_CAP)
+        {
+            return false;
+        }
+        world.party.money = (world.party.money - cost).clamp(0, crate::shop::GOLD_CAP);
+        world.party.inventory.add(item_id, qty);
+        true
+    }
+
+    /// The quantity screen's **sell** commit: take the units off the staged
+    /// bag slot (the id path is the fallback for a row list built without
+    /// slots) and credit the purse, clamped by
+    /// [`crate::shop::apply_sale_gold`].
+    fn apply_quantity_sell(&mut self, world: &mut World, item_id: u8, qty: u8, credit: i32) {
+        world.party.money = crate::shop::apply_sale_gold(world.party.money, credit);
+        let staged_slot = self.shop_session.as_ref().and_then(|s| s.pending_bag_slot);
+        match staged_slot {
+            Some(slot) => {
+                world.party.inventory.consume_slot(slot, qty);
+            }
+            None => {
+                let entry = world.party.inventory.entry(item_id).or_insert(0);
+                *entry = entry.saturating_sub(qty);
+                if *entry == 0 {
+                    world.party.inventory.remove(&item_id);
+                }
+            }
         }
     }
 

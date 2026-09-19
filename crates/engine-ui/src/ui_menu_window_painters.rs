@@ -979,6 +979,122 @@ pub fn sell_total(quantity: u32, unit_price: u32) -> u32 {
     quantity.saturating_mul(unit_price) / 2
 }
 
+/// Heading the sell quantity window prints at its content origin.
+pub const SELL_QUANTITY_HEADING: &str = "How many?";
+/// Label the buy quantity window prints after the held count.
+pub const BUY_QUANTITY_HELD_TAIL: &str = "held";
+/// Label the buy quantity window prints in place of the held line when the
+/// bag scan returned retail's `0x100` "nothing held" sentinel.
+pub const BUY_QUANTITY_NONE_HELD: &str = "None held";
+/// Prompt the buy quantity window prints on its second line.
+pub const BUY_QUANTITY_PROMPT: &str = "How many will you buy?";
+
+/// Window 35: the buy quantity panel, sibling of
+/// [`sell_quantity_draws_for`].
+///
+/// Three lines off the window content origin: the held line at `(WX, WY)`
+/// (the count at `WX + 0x20`, its label at `WX + 0x30`; a `None`-held bag
+/// scan prints one string at the origin instead), the prompt at
+/// `WY + 0xE`, and the value row at `WY + 0x22` carrying the stepped
+/// quantity at `WX + 0x18`, a separator glyph at `WX + 0x28` and the
+/// quantity **bound** at `WX + 0x30`.
+///
+/// The second number on that row is the bound, not the unit price: the
+/// row's second number call loads `DAT_801E46B8`, which the picker's phase
+/// 0 fills with `min(gold / price, 99, 99 - held)`. The running total is
+/// the one place the price appears, right-packed into the same
+/// price-magnitude digit ladder the sell panel uses
+/// ([`sell_total_digits`]) - except that this window's pens are fixed and
+/// the sell window's move left as the field widens.
+///
+/// PORT: FUN_801D5510
+pub fn buy_quantity_draws_for(
+    font: &legaia_font::Font,
+    rect: PainterRect,
+    held: Option<u32>,
+    quantity: u32,
+    max: u32,
+    unit_price: u32,
+) -> (
+    Vec<TextDraw>,
+    Option<PainterPictogram>,
+    Option<PainterSprite>,
+) {
+    let row = rect.y + 0x22;
+    let mut out = Vec::new();
+    match held {
+        Some(count) => {
+            out.extend(digits_draws(
+                font,
+                u64::from(count),
+                rect.x + 0x20,
+                rect.y,
+                2,
+                MENU_TEXT_WHITE,
+            ));
+            out.extend(text_draws_for(
+                &font.layout_ascii(BUY_QUANTITY_HELD_TAIL),
+                (rect.x + 0x30, rect.y),
+                MENU_TEXT_WHITE,
+            ));
+        }
+        None => out.extend(text_draws_for(
+            &font.layout_ascii(BUY_QUANTITY_NONE_HELD),
+            (rect.x, rect.y),
+            MENU_TEXT_WHITE,
+        )),
+    }
+    out.extend(text_draws_for(
+        &font.layout_ascii(BUY_QUANTITY_PROMPT),
+        (rect.x, rect.y + PAINTER_ROW_PITCH),
+        MENU_TEXT_WHITE,
+    ));
+    out.extend(digits_draws(
+        font,
+        u64::from(quantity),
+        rect.x + 0x18,
+        row,
+        2,
+        MENU_TEXT_WHITE,
+    ));
+    out.extend(separator_glyph_draws(
+        font,
+        SEPARATOR_GLYPH_SLASH,
+        (rect.x + 0x28, row),
+        MENU_TEXT_WHITE,
+    ));
+    out.extend(digits_draws(
+        font,
+        u64::from(max),
+        rect.x + 0x30,
+        row,
+        2,
+        MENU_TEXT_WHITE,
+    ));
+    out.extend(digits_draws(
+        font,
+        u64::from(quantity) * u64::from(unit_price),
+        rect.x + 0x62,
+        row,
+        sell_total_digits(unit_price),
+        MENU_TEXT_WHITE,
+    ));
+    (
+        out,
+        Some(PainterPictogram {
+            id: COUNTER_PICTOGRAM_PRIMARY,
+            x: rect.x + 0x58,
+            y: rect.y + 0x24,
+        }),
+        Some(PainterSprite {
+            sprite: 0,
+            variant: 1,
+            x: rect.x + 4,
+            y: row,
+        }),
+    )
+}
+
 /// Window 37: the sell quantity panel.
 ///
 /// `FUN_801D5944` draws nothing when the selected item id
