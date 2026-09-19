@@ -1221,10 +1221,12 @@ pub struct MirrorFrame {
 // NOT WIRED: this is a draw callback over the minigame sprite-actor pool, and
 // that is now byte-evidence rather than a reading - nothing `jal`s it, but its
 // address sits at `+0x08` of the `0x18`-byte actor prototype at `0x801D7684`
-// (`[0, 0xFFFF0000, callback, 0x00020080, 0, 1]`, the last of the five records
-// running from `0x801D7618`, immediately before the `Vahn` name pool at
-// `0x801D769C`). An earlier note gave that record's base as `0x801D7688`,
-// which is its `+0x04` word. It needs the spawned actor's `+0x5A` live mask,
+// (`[0, 0xFFFF0000, callback, 0x00020080, 0, 1]`, the last of the eight
+// records tiling `0x801D75DC..0x801D769C`, which ends at the `Vahn` name pool
+// opening the roster table). Two earlier notes were off: the record's base was
+// first given as `0x801D7688`, its `+0x04` word, and the run was then given as
+// five records from `0x801D7618`, which is the previous record's `+0x0C` word.
+// It needs the spawned actor's `+0x5A` live mask,
 // `+0x5C` clip id and `+0x68` frame cursor plus the runtime sprite archives
 // `_DAT_8007B888` / `_DAT_8007B840` to resolve the clip record. `BakaChrome`'s
 // pool carries banner widgets, not clip records, so there is nothing to hand it.
@@ -1361,10 +1363,12 @@ pub fn editor_band_open(match_timer: i32) -> bool {
 // NOT WIRED: the editor is a leftover development screen, and it is *linked*
 // rather than dead - nothing `jal`s `0x801D4FC8`, but its address is the
 // callback word of the `0x18`-byte actor prototype at `0x801D766C`, the
-// immediate sibling of [`mirrored_sprite_pass`]'s. (An earlier note put that
-// prototype at `0x801D7670`, which is its `+0x04` `0xFFFF0000` word - the
-// band's five records start at `0x801D7618 + n * 0x18` and carry the callback
-// at `+0x08`.) Its band is reachable too:
+// immediate sibling of [`mirrored_sprite_pass`]'s. (Two earlier notes were
+// off: the prototype was put at `0x801D7670`, its `+0x04` `0xFFFF0000` word,
+// and the run at five records from `0x801D7618`; the band is eight records of
+// `0x18` bytes over `0x801D75DC..0x801D769C`, callback at `+0x08`, and
+// `FUN_80020DE0` spawns one record per site - `0x801CF184` names the first,
+// `0x801D01C4` names `0x801D7624`.) Its band is reachable too:
 // the overlay's phase dispatcher writes `400` into `DAT_801DBF44` at
 // `0x801D19DC` (`li v0,0x190; sw v0,-0x40bc(v1)`) on the arm taken when the
 // selection word `0x801DBF90` holds `4` under the pad-bit test at
