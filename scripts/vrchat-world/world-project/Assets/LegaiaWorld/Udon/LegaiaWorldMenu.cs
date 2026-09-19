@@ -8,8 +8,8 @@
 //   joins the loop where the rest of the world is - and the button's
 //   label is read off the source at Start rather than assumed, so it
 //   never opens saying "Music: On" over silence.
-// - SetDay / SetNight - jumps the shared day/night cycle to noon /
-//   midnight for EVERYONE (the cycle itself is derived from the server
+// - SetDay / SetDusk / SetNight - jumps the shared day/night cycle to
+//   noon / just before sunset / midnight for EVERYONE (the cycle itself is derived from the server
 //   clock, so the jump is a synced offset on LegaiaDayNight).
 // - SetClear - the same jump on the shared weather schedule
 //   (LegaiaWeather): the next clear spell, for everyone. Inert until the
@@ -63,6 +63,12 @@ namespace LegaiaWorld
         {
             if (dayNight != null)
                 dayNight.JumpToNight();
+        }
+
+        public void SetDusk()
+        {
+            if (dayNight != null)
+                dayNight.JumpToDusk();
         }
 
         public void SetClear()

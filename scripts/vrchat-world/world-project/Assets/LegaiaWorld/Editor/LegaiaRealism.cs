@@ -20,11 +20,18 @@
 //   and adds a warm directional sun + trilight ambient + soft shadows.
 //
 // - Day/night (part of lighting): wires the LegaiaDayNight Udon behaviour
-//   onto the sun - a server-time-synced sweep, same angle on every client.
+//   onto the sun - a server-time-synced sweep, same angle on every client -
+//   and adds the moon: a second directional light (LegaiaSun/LegaiaMoon)
+//   the behaviour enables while the sun is down, so night keeps one
+//   shadowed directional and the landscape has shape under a cold key.
 //
-// - Sky + fog: a procedural-skybox material (it tracks RenderSettings.sun,
-//   so with day/night on the sky darkens by itself) and linear distance
-//   fog scaled to the built root's bounds.
+// - Sky + fog: the kit's own Legaia/Sky dome (gradient palettes, sun and
+//   moon discs, stars, drifting clouds - every knob a material property
+//   LegaiaDayNight writes each frame, since Udon cannot set shader
+//   globals) and linear distance fog scaled to the built root's bounds.
+//   The material is created once and migrated in place on re-runs (an
+//   older skybox.mat on Unity's Skybox/Procedural is switched to the kit
+//   shader), and the day/night behaviour is handed it as `skyMaterial`.
 //
 // - Foliage (ScatterGrass): scatters vertex-coloured grass-blade triangles
 //   over upward-facing world triangles whose ground colour reads green
@@ -581,6 +588,30 @@ namespace LegaiaWorld
             RenderSettings.ambientEquatorColor = new Color(0.40f, 0.42f, 0.45f);
             RenderSettings.ambientGroundColor = new Color(0.23f, 0.20f, 0.17f);
 
+            // The moon: only meaningful with the cycle (a static sun never
+            // sets), so without it any old moon is removed.
+            var moonT = go.transform.Find(MOON);
+            if (!o.dayNight && moonT != null)
+                Object.DestroyImmediate(moonT.gameObject);
+            Light moon = null;
+            if (o.dayNight)
+            {
+                GameObject mg = moonT != null ? moonT.gameObject : new GameObject(MOON);
+                mg.transform.SetParent(go.transform, false);
+                moon = mg.GetComponent<Light>();
+                if (moon == null)
+                    moon = mg.AddComponent<Light>();
+                moon.type = LightType.Directional;
+                moon.color = new Color(0.62f, 0.72f, 1f);
+                moon.intensity = 0f;
+                moon.shadows = LightShadows.Soft;
+                moon.shadowStrength = Mathf.Min(o.shadowStrength, 0.55f);
+                // Built by day: the cycle enables it after sunset.
+                moon.enabled = false;
+                mg.transform.rotation =
+                    Quaternion.Euler(o.sunElevation + 180f, o.sunAzimuth + 35f, 0f);
+            }
+
             if (o.dayNight)
             {
                 // Re-runs must re-set the fields (the night_lamps container
@@ -596,6 +627,7 @@ namespace LegaiaWorld
                 LegaiaWorldBuilder.SetUdonField(udon, "nightAmbientScale", o.nightAmbient);
                 LegaiaWorldBuilder.SetUdonField(udon, "nightLights", nightLamps);
                 LegaiaWorldBuilder.SetUdonField(udon, "nightTorches", nightTorches);
+                LegaiaWorldBuilder.SetUdonField(udon, "moon", moon);
                 // Ambience: when AddAmbience built a LegaiaAmbienceMixer it
                 // owns every ambient volume, so this behaviour's own two bed
                 // references are cleared - exactly one writer per source -
@@ -1039,9 +1071,40 @@ namespace LegaiaWorld
 
         // --- Sky + fog ------------------------------------------------------
 
+        internal const string MOON = "LegaiaMoon";
+        internal const string SKY_SHADER = "Legaia/Sky";
+
+        /// The sky material properties LegaiaDayNight writes each frame -
+        /// the self-test checks each one exists on the shader, so a rename
+        /// on either side fails the build instead of silently doing nothing.
+        internal static readonly string[] SKY_DRIVEN =
+        {
+            "_ZenithColor", "_HorizonColor", "_GroundColor", "_HorizonGlow",
+            "_SunDir", "_SunColor", "_MoonDir", "_MoonColor", "_MoonPhase",
+            "_MoonGlow", "_StarStrength", "_StarAxis", "_StarAngle",
+            "_CloudCover", "_CloudOffset", "_CloudColor", "_CloudShadeColor",
+        };
+
+        /// Sun + moon + sky + fog only, over an existing root - the sky
+        /// self-test's entry (the lit-material conversion is not re-run).
+        public static void ApplySkyOnly(GameObject root, string sceneName,
+            LegaiaRealismOptions o)
+        {
+            string genDir = "Assets/LegaiaGenerated/" + sceneName + "/realism";
+            Directory.CreateDirectory(genDir);
+            LegaiaWorldBuilder.EnsureUdonProgramAssets();
+            var lamps = root.transform.Find("night_lamps");
+            var torchesGo = GameObject.Find("Legaia_night_torches");
+            ApplySun(root, o, lamps != null ? lamps.gameObject : null, torchesGo);
+            ApplySkyAndFog(root, genDir);
+            AssetDatabase.SaveAssets();
+        }
+
         static void ApplySkyAndFog(GameObject root, string genDir)
         {
-            var shader = Shader.Find("Skybox/Procedural");
+            var shader = Shader.Find(SKY_SHADER);
+            if (shader == null)
+                shader = Shader.Find("Skybox/Procedural");
             if (shader != null)
             {
                 string path = genDir + "/skybox.mat";
@@ -1049,11 +1112,61 @@ namespace LegaiaWorld
                 if (sky == null)
                 {
                     sky = new Material(shader);
-                    sky.SetFloat("_SunSize", 0.045f);
-                    sky.SetFloat("_Exposure", 1.15f);
                     AssetDatabase.CreateAsset(sky, path);
                 }
+                else if (sky.shader != shader)
+                {
+                    // Migrate in place: RenderSettings.skybox keeps
+                    // pointing at this asset.
+                    sky.shader = shader;
+                    EditorUtility.SetDirty(sky);
+                }
+                var sunT = root.transform.Find("LegaiaSun");
+                if (shader.name == SKY_SHADER)
+                {
+                    // A day sky in the editor and in a scene without the
+                    // cycle: the sun disc where the realism sun points.
+                    if (sunT != null)
+                    {
+                        Vector3 toSun = -sunT.forward;
+                        sky.SetVector("_SunDir", new Vector4(toSun.x, toSun.y, toSun.z, 0f));
+                        var moonT = sunT.Find(MOON);
+                        if (moonT != null)
+                        {
+                            Vector3 toMoon = -moonT.forward;
+                            sky.SetVector("_MoonDir",
+                                new Vector4(toMoon.x, toMoon.y, toMoon.z, 0f));
+                        }
+                    }
+                }
+                else
+                {
+                    sky.SetFloat("_SunSize", 0.045f);
+                    sky.SetFloat("_Exposure", 1.15f);
+                }
+                // Write the edited asset and RELOAD it before anything holds
+                // a reference: the write reimports the .mat, and a reimport
+                // replaces the native object - a managed reference taken
+                // before it (a U# proxy field, say) is then a destroyed
+                // object that serializes as null. Scene-side PPtrs
+                // (RenderSettings.skybox) remap by themselves; C# fields do
+                // not. The self-test caught exactly this on the migration.
+                EditorUtility.SetDirty(sky);
+                AssetDatabase.SaveAssets();
+                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+                sky = AssetDatabase.LoadAssetAtPath<Material>(path);
                 RenderSettings.skybox = sky;
+                if (shader.name == SKY_SHADER && sunT != null)
+                {
+                    // The cycle drives every other property per frame.
+                    var dnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaDayNight");
+                    var dn = dnType != null ? sunT.GetComponent(dnType) : null;
+                    if (dn != null)
+                    {
+                        LegaiaWorldBuilder.SetUdonField(dn, "skyMaterial", sky);
+                        LegaiaWorldBuilder.SyncUdonProxy(dn);
+                    }
+                }
             }
             var rs = root.GetComponentsInChildren<Renderer>(true);
             if (rs.Length > 0)

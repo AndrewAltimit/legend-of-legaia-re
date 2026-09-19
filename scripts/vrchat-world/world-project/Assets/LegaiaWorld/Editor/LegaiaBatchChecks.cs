@@ -902,6 +902,122 @@ namespace LegaiaWorld
                       " U# proxies wired (scene " + sceneName + ", not saved).");
         }
 
+        // --- Sky -----------------------------------------------------------
+
+        /// Sun + moon + sky + fog + weather over the scene's built root:
+        /// the Legaia/Sky shader compiles, the skybox material sits on it
+        /// with every property the cycle writes, the moon is a disabled
+        /// soft-shadow directional under the sun pointing the other way,
+        /// and the cycle <-> weather references both reach the backing
+        /// behaviours.
+        public static void Sky()
+        {
+            string scenePath = Arg("-legaiaScene", "Assets/Scenes/VRCDefaultWorldScene.unity");
+            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
+
+            GameObject spawn = null;
+            foreach (var t in Object.FindObjectsOfType<Transform>())
+                if (t.name == "LegaiaSpawn")
+                {
+                    spawn = t.gameObject;
+                    break;
+                }
+            if (spawn == null)
+                Fail("no LegaiaSpawn in " + scenePath + " - build the scene first");
+            var root = spawn.transform.parent != null
+                ? spawn.transform.parent.gameObject : null;
+            if (root == null || !root.name.StartsWith("Legaia_"))
+                Fail("LegaiaSpawn is not under a built Legaia_<scene> root");
+            string sceneName = root.name.Substring("Legaia_".Length);
+
+            LegaiaWorldBuilder.EnsureUdonProgramAssets();
+            var o = new LegaiaRealismOptions();
+            LegaiaRealism.ApplySkyOnly(root, sceneName, o);
+            var weather = LegaiaWeatherBuilder.Apply(root, sceneName, o);
+            if (weather == null)
+                Fail("weather pass built nothing");
+
+            // --- The dome shader + the material on it ----------------------
+            var shader = Shader.Find(LegaiaRealism.SKY_SHADER);
+            if (shader == null)
+                Fail(LegaiaRealism.SKY_SHADER + " shader missing");
+            if (ShaderUtil.ShaderHasError(shader))
+                Fail(LegaiaRealism.SKY_SHADER + " has compile errors (see the console)");
+            var sky = RenderSettings.skybox;
+            if (sky == null)
+                Fail("no skybox material after the sky pass");
+            if (sky.shader != shader)
+                Fail("the skybox is on " + sky.shader.name + ", not " +
+                     LegaiaRealism.SKY_SHADER + " (migration in place failed)");
+            string want = "Assets/LegaiaGenerated/" + sceneName + "/realism/skybox.mat";
+            if (AssetDatabase.GetAssetPath(sky) != want)
+                Fail("the skybox material is " + AssetDatabase.GetAssetPath(sky) +
+                     ", expected " + want);
+            foreach (string prop in LegaiaRealism.SKY_DRIVEN)
+                if (!sky.HasProperty(prop))
+                    Fail(LegaiaRealism.SKY_SHADER + " has no " + prop +
+                         " - LegaiaDayNight writes it every frame");
+            if (!RenderSettings.fog)
+                Fail("distance fog is off after the sky pass");
+
+            // --- Sun + moon ------------------------------------------------
+            var sunT = root.transform.Find("LegaiaSun");
+            if (sunT == null)
+                Fail("no LegaiaSun under " + root.name);
+            var sunLight = sunT.GetComponent<Light>();
+            if (sunLight == null || sunLight.type != LightType.Directional)
+                Fail("LegaiaSun carries no directional Light");
+            if (RenderSettings.sun != sunLight)
+                Fail("RenderSettings.sun is not LegaiaSun");
+            var moonT = sunT.Find(LegaiaRealism.MOON);
+            if (moonT == null)
+                Fail("no " + LegaiaRealism.MOON + " under LegaiaSun");
+            var moonLight = moonT.GetComponent<Light>();
+            if (moonLight == null || moonLight.type != LightType.Directional)
+                Fail(LegaiaRealism.MOON + " carries no directional Light");
+            if (moonLight.enabled)
+                Fail("the moon is enabled at build time - the cycle turns it on after sunset");
+            if (moonLight.shadows == LightShadows.None)
+                Fail("the moon casts no shadows - it is the only shadowed directional at night");
+            if (Vector3.Dot(sunT.forward, moonT.forward) > -0.5f)
+                Fail("the moon does not point the other way from the sun (dot " +
+                     Vector3.Dot(sunT.forward, moonT.forward) + ")");
+            // The build-time sky shows the sun where the realism sun points.
+            Vector4 sd = sky.GetVector("_SunDir");
+            if (Vector3.Dot(new Vector3(sd.x, sd.y, sd.z).normalized, -sunT.forward) < 0.99f)
+                Fail("the skybox's _SunDir does not match LegaiaSun");
+
+            // --- Wiring ----------------------------------------------------
+            var sunGo = sunT.gameObject;
+            foreach (string f in new[] { "sun", "moon", "skyMaterial", "weather" })
+                CheckVar(sunGo, "LegaiaWorld.LegaiaDayNight", f);
+            if (root.transform.Find("night_lamps") != null)
+                CheckVar(sunGo, "LegaiaWorld.LegaiaDayNight", "nightLights");
+            if (GameObject.Find("Legaia_night_torches") != null)
+                CheckVar(sunGo, "LegaiaWorld.LegaiaDayNight", "nightTorches");
+            CheckVar(weather, "LegaiaWorld.LegaiaWeather", "dayNight");
+            var dnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaDayNight");
+            var dn = sunT.GetComponent(dnType);
+            // Unity's operator, not ReferenceEquals: a reference taken
+            // before the material's reimport is a destroyed object - non-null
+            // to C#, null to Unity, and null once the scene is saved.
+            var wiredSky = dnType.GetField("skyMaterial")?.GetValue(dn) as Material;
+            if (wiredSky == null)
+                Fail("LegaiaDayNight.skyMaterial is null or a destroyed object " +
+                     "(a reference taken before the .mat reimport)");
+            if (wiredSky != sky)
+                Fail("LegaiaDayNight.skyMaterial (" + AssetDatabase.GetAssetPath(wiredSky) +
+                     ") is not the RenderSettings skybox");
+            var wiredMoon = dnType.GetField("moon")?.GetValue(dn) as Light;
+            if (wiredMoon == null || wiredMoon != moonLight)
+                Fail("LegaiaDayNight.moon is not the LegaiaMoon light");
+
+            Debug.Log("[Legaia] SELFTEST OK: sky = " + LegaiaRealism.SKY_SHADER + " (" +
+                      LegaiaRealism.SKY_DRIVEN.Length + " driven properties), moon under " +
+                      "the sun, cycle <-> weather wired (scene " + sceneName +
+                      ", not saved).");
+        }
+
         // --- Living town ---------------------------------------------------
 
         /// The PLAY-MODE soak (LegaiaSoak): enters play mode with ClientSim,

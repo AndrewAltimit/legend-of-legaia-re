@@ -28,13 +28,14 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldBuilder.cs` | Editor menu `Legaia > Build Scene From Manifest...`: instantiates the world, adds colliders, places NPCs + animated props, builds doorway-teleport triggers, wires proximity doors + the shoreline morph clip + the BGM loop, drops a spawn marker; also the **Equipment props** rack (the `--items` export placed as grabbable pickups near the spawn) and the camp props (below). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCampProps.cs` | The **Camp props** pass: a carry-able settings panel (world-space buttons - local music mute, synced day/night jumps; grab collider confined to a bottom handle so it can't shadow the UI) plus two carry-able torches and two campfires near spawn, all primitives + generated materials, in a top-level container outside the mirrored root (mirrored UI text would render backwards). Each prop takes its place from `prefab_transforms` under its own name (`torch_1`, `campfire_2`, `menu`) when the settings file pins one, and from a spawn-relative offset snapped to the ground otherwise. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaAudioGen.cs` | Synthesized ambience: the long day / night / base / wind-gust beds, the shore-wave, tree-bird, night-wildlife and windmill emitter clips, and the camp fire crackle - seeded Poisson events under multi-octave value-noise envelopes, seam-crossfaded, no disc audio. Also the `VRC_SpatialAudioSource` compliance helper (the SDK deprecates bare AudioSources; 2D beds get the disabled component its Auto Fix adds, spatial sources a configured one). |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring + night doorway lamps, sky + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring (+ the moon light) + night doorway lamps, the `Legaia/Sky` dome + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSceneSettings.cs` | Per-scene refinements from `Settings/<scene>.settings.json` (see "Per-scene settings" below): delete named objects after the build, keep listed NPCs static (idle clip, no wandering), drop listed NPCs entirely, override the spawn point in Unity world space, and point the VRC Scene Descriptor's `Spawns[0]` at LegaiaSpawn automatically. |
 | `world-project/Assets/LegaiaWorld/Settings/town01.settings.json` | The town01 refinements (kit-authored tuning data, no game content). |
 | `world-project/Assets/LegaiaWorld/Editor/MiniJson.cs` | Dependency-free JSON reader for `manifest.json` (so the builder compiles in any project). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColor.shader` | Lit cutout stand-in for the exports' unlit materials: `COLOR_0` keeps modulating the texture, and lighting is the sign-independent two-sided Lambert `\|N.L\|` (the only stable answer over the mixed PSX winding - the header keeps the failed-flip history). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaLitVertexColorTransparent.shader` | The BLEND (water / light pool) sibling of the lit shader - alpha-blended, depth-write off. |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaVertexColorAdditive.shader` | Unlit additive for the exporter's `legaia_semi_abr1/2/3` materials - PSX additive prims (window light shafts, glows) read grey under plain alpha blend. Two passes approximate the PSX's display-space add in Unity's Linear pipeline: a background multiplier that keeps the scene readable through the prim, plus an additive floor exact over black (the shader header derives the fit). |
+| `world-project/Assets/LegaiaWorld/Shaders/LegaiaSky.shader` | The sky dome: gradient palettes with a sun-side sunset glow, sun disc + glow, a moon with a real crescent phase (earthshine, maria), a twinkling hash-grid star field with a galactic band and a shooting star every ~23 s, and fbm clouds on a dome projection whose cover greys the whole sky as it goes overcast. Every knob is a material property (Udon cannot set shader globals) that `LegaiaDayNight` writes per frame; SPS-I stereo macros. |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaGrassWind.shader` | Vertex-coloured wind sway for the procedural grass blades (sway weight in vertex alpha, world-position phase). |
 | `world-project/Assets/LegaiaWorld/Shaders/LegaiaInteriorShell.shader` | Unlit black, front faces only: the interior-room dome, wound inward so it reads as black space from inside and is invisible (backface-culled) from outside. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaDoorway.cs` | UdonSharp doorway teleport: walking into the trigger repositions the local player at the landing marker with the authored arrival facing - the retail intra-scene door mechanism. |
@@ -48,7 +49,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcCarry.cs` | What a villager is holding: the per-villager item rig at a measured hand point, one child per item, `Show` / `Hide` by `SetActive`, a work sway, and a hard drop deadline so an errand cut short never leaves a bucket welded to somebody's arm. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaNpcHandItem.cs` | The handler behind a kind-5 carry station: hands the arriving villager an item, or takes back the one it is carrying. `keepOnLeave` is what makes a fetch read as one errand instead of two visits. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaVisitSpot.cs` | The handler behind a kind-6 visit station: the fixed resident being called on answers with its own speech bubble, on a beat after the caller's hello, and keeps answering while the caller stands there. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaWeather.cs` | Clock-synced weather schedule (clear / overcast / windy spells): ambient + fog greying multiplied over the day/night cycle, grass gust strength, and the `windLevel` feed into the ambience mixer. `JumpToClear` is the settings panel's button. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaWeather.cs` | Clock-synced weather schedule (clear / overcast / windy spells): ambient + fog greying multiplied over the day/night cycle, grass gust strength, and the `windLevel` feed into the ambience mixer; its `cloudiness` / `windStrength` are what the cycle's sky writer turns into cloud cover and drift. `JumpToClear` is the settings panel's button. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFishingSpot.cs` | Fishing-station handler: while a villager stands on a shoreline station it holds a generated rod over the water, a line to a bobbing float with ripples, and an occasional catch; steps aside when a player stands on the spot. Players fish here too (Interact on the stake): bite, window, catch, coins into the purse. See "Coins" below. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCardTableHost.cs` | Card-table seat handler: the four stools' single NPC-station handler - availability, the seated pose and facing (toward the felt), and the arrival gate that keeps a villager off a stool it has not walked to. A seated player is an invitation, not a shoo; the synced *NPCs: sit / shoo* button is the override. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCardGame.cs` | The card table's dealer: community-card hold'em by day, Cara's five-card night game after dusk, and blackjack, with the 52 real card pickups, villagers summoned to the free stools and held through a hand, AI opponents, betting from the coin purse, a seat panel with a speech line per seat. The object's owner is the master; presses travel as network events. See "Common prefabs" below. |
@@ -63,7 +64,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCarryArt.cs` | The things villagers carry - bucket, broom, firewood bundle, basket, game controller - built from Unity primitives with generated flat materials, sized as fractions of each villager's own measured height. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWeatherBuilder.cs` | The **Weather** pass: builds `<root>/weather` and wires `LegaiaWeather` to the day/night cycle, the grass material, the ambience mixer and the settings panel. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaLivingProps.cs` | The **Living props** pass: finds standable shoreline points from the world mesh alone (water sheet vs land cells, floor ray, clear standing capsule) and plants the fishing stations in `<root>/living_props`. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time; night dims the trilight ambient + fog to a moonlit fraction, enables the night-lamp container, and crossfades the day/night ambience beds. `JumpToDay`/`JumpToNight` apply a synced offset (the settings panel's buttons). |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaDayNight.cs` | Optional UdonSharp day/night cycle: sweeps the realism sun on a fixed cycle, synced across players via server time, with a golden-hour colour stop; hands shadows to the moon light after sunset (phase advances an eighth per cycle); sweeps the trilight ambient to a moonlit fraction with a purple twilight tint, takes the fog colour from the live sky horizon, and writes every `Legaia/Sky` property (palettes, sun / moon, stars wheeling with the sun, cloud cover from the weather layer). Enables the night-lamp container, crossfades the legacy ambience beds. `JumpToDay`/`JumpToDusk`/`JumpToNight` apply a synced offset (the settings panel's buttons). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaAmbienceMixer.cs` | Owns every ambient volume: crossfades the day and night beds on the cycle `LegaiaDayNight` publishes, fades the day-only and night-only spatial emitter groups, and takes `windLevel` from the weather layer to bring the gust bed in. See "Ambient audio". |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaWorldMenu.cs` | The settings panel's behaviour: `ToggleMusic` (mutes the BGM locally - a personal preference), `SetDay`/`SetNight` (jump the shared cycle for everyone). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaTorch.cs` | Torch/campfire pickup: hold + Use toggles the flame container (fire + smoke particles, a Perlin-flickered point light - no glow orb) and a spatial crackle loop; `lit` is synced so a fire someone lights burns for everyone. Spawn-kinematic like the rack pickups. |
@@ -74,7 +75,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSettingsSnapshot.cs` | Menu `Legaia > Snapshot placements to scene settings`: writes the hand-placed Inspector transforms of both top-level containers' children (common prefabs; camp panel, torches and campfires), the card table's seat panel and LegaiaSpawn into `Settings/<scene>.settings.json` (`prefab_transforms` + `spawn_position`), every cabinet of the slot asset (`slot_machine`, or `slot_machines` past one) and the hand-moved built objects (`object_transforms`: stored keys re-read, world-glb nodes with an override added). Other keys in the file are preserved, and the blocks merge over what is already there rather than replacing it. Sibling menu `Legaia > Pin selected objects to scene settings` adds the selection to `object_transforms`. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldScale.cs` | The `world_scale` pass: the finished scene grown about the origin as one transform per top-level object (root + kit containers), applied last so every pass measured the world at 1x; the navmesh data alone is re-baked in the scaled frame (links, stations and loader kept); light / audio / fog / villager-speed values follow the change in scale. Idempotent by target, so the enhancement and container-only paths wrap themselves in take-off / put-back. See "World scale". |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSoak.cs` | The PLAY-MODE soak (`LegaiaBatchChecks.Soak`): enters play mode with ClientSim, pins the day/night clock to night or day, samples every brain at 2 Hz into a per-villager timeline, and asserts the night routine ran (in through the door, door swung, out again at dawn) or reports a day's station visits and conversations. The only check here that actually runs a villager. |
-| `world-project/Assets/LegaiaWorld/Editor/LegaiaBatchChecks.cs` | Headless self-tests (`Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs` builds the common prefabs against the scene's built root and asserts every SDK component and every UdonSharp field wiring reached the backing behaviour; `.LivingTown`, `.Weather`, `.Ambience` likewise; `.RigPose` measures every imported NPC rig and checks the sitting pose's hip turn against the rig's walk clip). Never saves the scene. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaBatchChecks.cs` | Headless self-tests (`Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs` builds the common prefabs against the scene's built root and asserts every SDK component and every UdonSharp field wiring reached the backing behaviour; `.LivingTown`, `.Weather`, `.Ambience`, `.Sky` (the dome shader compiles and carries every property the cycle writes, the moon light, the cycle <-> weather wiring) likewise; `.RigPose` measures every imported NPC rig and checks the sitting pose's hip turn against the rig's walk clip). Never saves the scene. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaEventButton.cs` | A collider button: Interact sends one named event into a target behaviour. Every common-prefab button uses it (no world-space UI, so no pickup-collider-steals-the-click trap). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaMirror.cs` | Mirror controller: Off / full / players-only surfaces, local choice, auto-off when the player walks away. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaVideoTv.cs` | Synced video player over the SDK's AVPro (PC) + Unity (Android) players: owner-synced URL + playhead origin, late-joiner seek, 5-second load rate limit honoured, error retry. Also the house playlist, the villagers' favourite shows and the one rule that arbitrates them (`source`: only the playlist may be interrupted). See "What the TV plays" below. |
@@ -241,10 +242,11 @@ the VCC setup in more detail if this is your first worlds project.
    button's label is read off the source at Start, so it never opens
    saying *Music: On* over silence. **Music On/Off** mutes the BGM for
    you alone,
-   **Daytime**/**Nighttime** jump the shared day/night cycle for
-   everyone (they do nothing until the realism pass builds the cycle),
-   and **Clear sky** jumps the shared weather schedule the same way
-   (inert until the weather pass is built).
+   **Daytime**/**Sunset**/**Nighttime** jump the shared day/night cycle
+   for everyone - noon, twelve degrees before the sun goes down, midnight
+   (they do nothing until the realism pass builds the cycle), and
+   **Clear sky** jumps the shared weather schedule the same way (inert
+   until the weather pass is built).
    The two torches and two campfires
    are pickups too - hold one and press **Use** (left click / trigger)
    to light or snuff it: fire particles, a faint rising smoke plume, a
@@ -1668,10 +1670,20 @@ pass is idempotent (it refreshes rather than stacks).
   compressed (`dayShare`). Every client derives the same angle from the
   shared server clock, so the cycle is synced with no networking events.
   Night genuinely darkens the landscape: the behaviour sweeps the trilight
-  ambient (and fog colour) down to a moonlit, blue-shifted fraction of
-  their daytime values ("Night darkness" slider, default 0.02 - night is
-  nearly black so the lamps and fires carve out the light; sun intensity
-  alone leaves the ambient day-bright after sunset). **Night lamps** places a small
+  ambient down to a moonlit, blue-shifted fraction of the daytime values
+  ("Night darkness" slider, default 0.02 - night is nearly black so the
+  lamps and fires carve out the light; sun intensity alone leaves the
+  ambient day-bright after sunset), with a purple twilight tint through
+  the sunset bell, and the fog colour follows the sky's horizon of the
+  moment - orange haze at sunset, near-black at night. The sun's colour
+  runs deep orange, golden, white through the morning and back. After
+  sunset the sun Light is disabled and the **moon** takes over - a second
+  directional light (`LegaiaSun/LegaiaMoon`), cool and faint, opposite
+  the sun with a 35-degree heading offset, soft shadows - so the night
+  landscape has shape under one shadowed directional instead of two.
+  The moon's phase advances an eighth per cycle (full on the clock's
+  first cycle, new four cycles later), and its light scales with the lit
+  fraction. **Night lamps** places a small
   warm light (no visible bulb mesh - the pool of light on the wall is
   the whole effect) at each village building **window**, anchored on
   the world mesh itself: the retail scene authors semi-transparent glow
@@ -1695,9 +1707,25 @@ pass is idempotent (it refreshes rather than stacks).
   canopy-rejection test, inverted). They live in a top-level
   `Legaia_night_torches` container the day/night behaviour enables
   alongside the lamps.
-- **Sky + distance fog**: a procedural-skybox material (it tracks
-  `RenderSettings.sun`, so with day/night on the sky darkens by itself)
-  and linear fog scaled to the built root's bounds.
+- **Sky + distance fog**: the kit's own `Legaia/Sky` dome and linear
+  fog scaled to the built root's bounds. The dome is layered: a
+  zenith / horizon / ground gradient with a sunset glow on the sun's
+  side of the horizon; a star field (one star per cell of a 3D hash
+  grid, twinkling, with a faint galactic band and a shooting star every
+  ~23 s) that wheels about the sun's own axis so the constellations
+  move with the night; a moon with a real crescent - a second circle
+  offset along the moon's tangent cuts the shadow - plus earthshine and
+  maria; the sun disc and its glow; and fbm clouds on a dome projection,
+  lit and shaded from the cycle's palette with a silver lining toward
+  the sun, whose cover comes from the weather layer's `cloudiness` (a
+  clear spell keeps a few fair-weather clouds; overcast greys the whole
+  dome between them) and whose drift scales with the wind. Every knob is
+  a material property because `Shader.SetGlobal*` is not exposed to
+  Udon; `LegaiaDayNight` writes them all each frame from three palettes
+  (day, dusk, night) blended on the sun's height and the twilight bell,
+  so a scene without the cycle keeps a static day sky with the disc
+  where the realism sun points. A `skybox.mat` from an earlier build
+  (Unity's `Skybox/Procedural`) is switched to the kit shader in place.
 - **Ground foliage**: procedural grass - single-triangle blades in tufts,
   scattered over upward-facing world triangles whose ground colour reads
   green (texel x mean vertex colour at the triangle centre, the same
@@ -1772,7 +1800,10 @@ pass is idempotent (it refreshes rather than stacks).
   cross-fading over ~45 s at each seam. Two effects, each its own toggle
   on the behaviour:
   - **Sky** - the trilight ambient and the fog colour are greyed and
-    dimmed by cloud cover and the fog pulled in. It runs in
+    dimmed by cloud cover and the fog pulled in, and the dome's cloud
+    layer thickens to match (the cycle reads `cloudiness` and
+    `windStrength` off this behaviour - the weather never writes the
+    sky material itself, one writer). It runs in
     `LateUpdate`, multiplying what `LegaiaDayNight` wrote in `Update`
     that same frame, so the two never fight over the same render
     settings; with no cycle in the scene the behaviour multiplies its

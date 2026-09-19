@@ -62,12 +62,20 @@ namespace LegaiaWorld
 
             // The day/night behaviour, when the realism pass built one: its
             // Update writes the ambient colours weather multiplies in
-            // LateUpdate. Absent, weather uses its own captured base.
+            // LateUpdate, and its sky writer reads this schedule's
+            // cloudiness. Absent, weather uses its own captured base.
             var sunT = root.transform.Find("LegaiaSun");
             var dnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaDayNight");
             Component dn = sunT != null && dnType != null
                 ? sunT.GetComponent(dnType) : null;
             LegaiaWorldBuilder.SetUdonField(weather, "dayNight", dn);
+            // And the reverse: the cycle's sky writer takes cloud cover and
+            // wind from this schedule (one writer on the sky material).
+            if (dn != null)
+            {
+                LegaiaWorldBuilder.SetUdonField(dn, "weather", weather);
+                LegaiaWorldBuilder.SyncUdonProxy(dn);
+            }
 
             // The ambience mixer is another agent's behaviour: found by
             // type NAME so this file compiles (and the pass runs) whether
