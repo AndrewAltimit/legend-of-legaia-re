@@ -1653,6 +1653,49 @@ The audio side reached this function independently: [`audio.md`](audio.md#stream
 
 Provenance: the per-handler dumps named above. Not documented here (out of scope): the field-VM opcode dispatcher `FUN_801d0094` (a jump table at `0x801CECC0` indexed by `op - 0x21`) belongs to [`script-vm.md`](script-vm.md), and the `DAT_801f35xx` number-display / wager handlers that share the overlay are a betting-minigame subsystem, not the [tile board](tile-board.md).
 
+## The submode return state - a parked word nothing reads
+
+Opening a field sub-screen parks a state. The op-`0x49` enter does it twice, in
+two copies of one idiom in the field overlay (PROT 0897, base `0x801CE818`),
+both reaching the scene struct through the pointer at `0x801C6EA4`:
+
+| site | what it does |
+|---|---|
+| `0x801F13F4` | `scene[+0x2E] = -1` |
+| `0x801F1400` | `scene[+0x40] = s4[+0x50]` - park the **pre-enter** handler slot |
+| `0x801F140C` | `s4[+0x50] = 7` - install the submode **return** state |
+| `0x801F148C` | `scene[+0x40] = s4[+0x50]` - park again, now the `7` |
+| `0x801F14AC` | `s4[+0x50] = table[b]`, the op-`0x49` sub-op's own slot |
+
+The second copy is taken only when the install pointer `_DAT_8007B450` is live
+and its sub-op's table byte (`0x801F33A4 + b`) is not `-1`, so the word ends up
+holding either the pre-enter slot or the constant `7`.
+
+**Nothing reads it.** That idiom - a `+0x2E` stamp immediately followed by a
+`+0x40` store - appears twenty-six times in the field overlay's own content and
+is the *only* way `+0x40` is touched through that pointer: a sweep of
+`SCUS_942.54` and every extracted overlay image for a load off a register
+holding `*(0x801C6EA4)` finds zero reads of `+0x40`, in any width, anywhere
+(`disassembly`).
+
+A register copy of the struct pointer would hide a reader from that sweep, so
+the same question was put to the hardware: a two-byte **read** watch on the
+live `scene + 0x2E` and `scene + 0x40` across a field-to-minigame transition
+(`capture`). While the pointer still named the scene struct - 212 vsyncs -
+neither word was read once. Every later hit belongs to a different consumer of
+the same address: the field scene buffer is recycled into a GPU working buffer
+at the transition (two writers, `0x8001A664` and `0x8001A8C8`, overwrite both
+words), after which the "reads" are `lw s4, 0x20(a1)` at `0x80043F74` and
+`lw ... 0x20(a1)` at `0x80044054` - a GTE vertex walk indexing its own record -
+plus one hit from the VRAM DMA loop at `0x80059DE4`. Probe:
+[`autorun_field_submode_park.lua`](../../scripts/pcsx-redux/autorun_field_submode_park.lua).
+
+So the parked word is write-only state: the return is carried by the driver's
+own `+0x50` handler slot, not read back out of `scene[+0x40]`. The port
+(`crates/engine-core/src/field_submode.rs`) collapsing enter and return into one
+step and keeping no `scene[+0x40]` therefore drops a store retail also never
+consumes.
+
 ## Open
 
 - The `FUN_801d5b5c` post kernel's touch counters (`+0x2A` / `_DAT_801c6ea4+0xA`), which are what let overlapping touches keep the engaged flag raised until every one is dismissed. The engaged flag, the parked-script resume (`world/prop_interact.rs`) and the facing save/restore (`+0x26` -> `+0x5A` -> `+0x26`, `World::npcs.facing_save` / `World::release_talk_facing`; see [`motion-vm.md`](motion-vm.md#talk-time-facing-is-not-this-vm)) are modelled.
