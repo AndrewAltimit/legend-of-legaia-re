@@ -418,8 +418,12 @@ cycling is `FUN_801E9F64`'s job, the input half. The arm
 cursor `_DAT_801F2E90`, a 10-byte stride whose first halfword is the **global
 BGM id** the rest of the engine uses (`2000 + i` for sound-test track `i`;
 [`music-tracks.md`](../reference/music-tracks.md)) and whose remaining eight
-bytes are the row's ASCII label. A row whose id reads `-1` is the `OFF` row: it
-takes the other arm and raises `_DAT_8007B438` instead of installing an id. So
+bytes are the row's ASCII label. The rows are **not** `2000 + row`: the table
+runs `2000..=2043` and then `2045..=2071` - seventy-one rows for seventy-two
+consecutive ids, with `2044` (sound-test track `44`) carrying no row at all -
+so a cursor position and the id it plays part company above the gap. Row
+seventy-one reads `-1` and is the `OFF` row: it takes the other arm and raises
+`_DAT_8007B438` instead of installing an id. So
 this writer is a developer sound test - not world-map entry and not a region
 change; the writers that install a track for ordinary play are the field-VM
 ones ([`audio.md`](audio.md)).
