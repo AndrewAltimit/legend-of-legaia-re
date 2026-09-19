@@ -1085,9 +1085,14 @@ struct PlayWindowApp {
     /// - so orbiting the view keeps "screen up walks away from the camera".
     orbit_drag_last_x: Option<f64>,
     /// Mouse drag-orbit state: the last cursor Y, paired with
-    /// [`Self::orbit_drag_last_x`]. Vertical drag steers
+    /// [`Self::orbit_drag_last_x`]. Vertical drag tilts the follow camera
+    /// (`Camera::manual_tilt`) or, under `F3`, steers
     /// [`Self::debug_orbit_pitch`].
     orbit_drag_last_y: Option<f64>,
+    /// When the left button was last pressed, for the double-click that
+    /// resets the follow camera's orbit / tilt / zoom to retail framing
+    /// (`Camera::reset_follow_knobs`) - the browser play page's `dblclick`.
+    last_left_press: Option<std::time::Instant>,
     /// The debug orbit vantage's pitch in radians. Default
     /// `atan(0.85)` - the angle the window's long-standing eye-height ratio
     /// encoded, so an untouched vantage frames exactly as before. Steered by

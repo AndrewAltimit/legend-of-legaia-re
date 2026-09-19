@@ -171,6 +171,51 @@ impl CameraDistance {
     }
 }
 
+/// The user's three **follow-camera knobs** - orbit, tilt and zoom - as one
+/// vocabulary both hosts steer from: the play-window's left-mouse drag and
+/// wheel, and the browser play page's `pointermove` / `wheel` handlers on the
+/// canvas. The knobs compose onto the retail zone-driven follow camera
+/// ([`crate::camera_view::field_follow_view`]) and stay centred on the
+/// character; every one is identity at its default, so the untouched camera
+/// is the retail shot bit for bit.
+///
+/// They are live only while the follow camera **owns the frame** - free-roam
+/// field. A running cutscene timeline seizes the camera in retail, and the
+/// port keeps that lock: [`Camera::follow_knobs_live`] answers `false` there
+/// and the gated setters ([`Camera::orbit_by`], [`Camera::tilt_by`],
+/// [`Camera::zoom_by`]) drop the gesture rather than banking an offset that
+/// would snap the view when control returns. The world map's walk camera has
+/// retail's own zoom (`WorldMapController`) and is not steered from here
+/// either.
+pub mod follow_knobs {
+    /// Lower bound on the composed follow pitch, radians: keeps the eye
+    /// above the floor plane. The same number the two hosts' debug orbit
+    /// clamps to, so one drag feels the same on either vantage.
+    pub const PITCH_MIN: f32 = 0.12;
+    /// Upper bound on the composed follow pitch, radians: short of fully
+    /// top-down, where the retail framing has no horizon to compose against.
+    pub const PITCH_MAX: f32 = 1.35;
+    /// Widest tilt offset a host can bank, radians, either sign - the whole
+    /// clamp span, so a drag can always reach both ends from any scene pitch
+    /// and never accumulates unseen beyond them.
+    pub const TILT_LIMIT: f32 = PITCH_MAX - PITCH_MIN;
+    /// Closest zoom (a multiplier on the eye-back depth): well outside the
+    /// character but tight enough to read a face.
+    pub const ZOOM_MIN: f32 = 0.35;
+    /// Widest zoom: three times retail's depth, which under the `Farther`
+    /// preset is still inside the scene clip volume.
+    pub const ZOOM_MAX: f32 = 3.0;
+
+    /// The composed follow pitch for a scene pitch `base` and a user tilt:
+    /// `base + tilt` clamped into the knob range, with the range widened to
+    /// include `base` itself. A scene whose own pitch sits outside the range
+    /// is still framed exactly at a zero tilt, and the clamp is continuous
+    /// in the tilt (no snap at the first pixel of drag).
+    pub fn composed_pitch(base: f32, tilt: f32) -> f32 {
+        (base + tilt).clamp(base.min(PITCH_MIN), base.max(PITCH_MAX))
+    }
+}
+
 /// Camera mode - controls how the camera derives its `eye` from the
 /// world / scene state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -235,6 +280,22 @@ pub struct Camera {
     /// [`Self::reset_for_free_roam`] (it is player intent, not leaked
     /// cutscene state). Default `0.0`.
     pub manual_orbit: f32,
+    /// User-controlled **tilt** on the follow camera (radians), added to the
+    /// pitch the scene composes: positive tips the lens further down toward
+    /// a top-down survey, negative brings it toward the horizon. The
+    /// composed pitch clamps into [`follow_knobs::PITCH_MIN`] ..
+    /// [`follow_knobs::PITCH_MAX`] (widened to include the scene's own pitch
+    /// so an untouched tilt never moves a retail shot). Pure framing: the
+    /// compass reads yaw only, so a tilt never remaps the d-pad. Preserved
+    /// across [`Self::reset_for_free_roam`] like the orbit. Default `0.0`.
+    pub manual_tilt: f32,
+    /// User-controlled **continuous zoom** on the follow camera: a
+    /// multiplier on the eye-back depth, composed under the coarse
+    /// [`Self::distance`] preset. `> 1` pulls the eye back, `< 1` brings
+    /// it in, clamped to [`follow_knobs::ZOOM_MIN`] ..
+    /// [`follow_knobs::ZOOM_MAX`]. Pure framing, never a simulation
+    /// input. Preserved across [`Self::reset_for_free_roam`]. Default `1.0`.
+    pub manual_zoom: f32,
     /// Fixed yaw the HOST's renderer frames the follow view with, in the
     /// compass sense (radians). A renderer that draws the field at a
     /// non-zero base yaw (e.g. the play-window's savestate-pinned
@@ -394,6 +455,8 @@ impl Default for Camera {
             pitch: 0.0,
             roll: 0.0,
             manual_orbit: 0.0,
+            manual_tilt: 0.0,
+            manual_zoom: 1.0,
             render_yaw_bias: 0.0,
             distance: CameraDistance::Retail,
             motion_state: MotionState::default(),
@@ -607,7 +670,7 @@ impl Camera {
                     // Retail) keep this arithmetic bit-identical to the
                     // historical `yaw`/`follow_distance` form.
                     let yaw = self.yaw + self.manual_orbit;
-                    let dist = self.follow_distance * self.distance.scale();
+                    let dist = self.follow_distance * self.distance.scale() * self.manual_zoom;
                     self.eye = [
                         tx - dist * yaw.sin(),
                         ty + self.follow_height,
@@ -1004,6 +1067,54 @@ impl Camera {
         };
         let az = (self.yaw + self.manual_orbit + bias) / std::f32::consts::TAU * 4096.0;
         az.rem_euclid(4096.0) as u16
+    }
+
+    /// Whether the user's follow-camera knobs steer this frame: free-roam
+    /// field, with no cutscene timeline owning the camera. The same gate
+    /// [`Self::reset_for_free_roam`] and the field locomotion step run on,
+    /// so the camera is the player's exactly when the character is.
+    pub fn follow_knobs_live(&self, world: &World) -> bool {
+        matches!(world.mode, crate::world::SceneMode::Field) && !world.cutscene_timeline_active()
+    }
+
+    /// Swing [`Self::manual_orbit`] by `radians` (compass sense), when the
+    /// knobs are live. Returns whether the gesture was taken.
+    pub fn orbit_by(&mut self, world: &World, radians: f32) -> bool {
+        if !self.follow_knobs_live(world) {
+            return false;
+        }
+        self.manual_orbit = (self.manual_orbit + radians).rem_euclid(std::f32::consts::TAU);
+        true
+    }
+
+    /// Tip [`Self::manual_tilt`] by `radians` (positive = further down),
+    /// when the knobs are live. Returns whether the gesture was taken.
+    pub fn tilt_by(&mut self, world: &World, radians: f32) -> bool {
+        if !self.follow_knobs_live(world) {
+            return false;
+        }
+        self.manual_tilt =
+            (self.manual_tilt + radians).clamp(-follow_knobs::TILT_LIMIT, follow_knobs::TILT_LIMIT);
+        true
+    }
+
+    /// Scale [`Self::manual_zoom`] by `factor` (`> 1` pulls the eye back),
+    /// when the knobs are live. Returns whether the gesture was taken.
+    pub fn zoom_by(&mut self, world: &World, factor: f32) -> bool {
+        if !self.follow_knobs_live(world) || !factor.is_finite() || factor <= 0.0 {
+            return false;
+        }
+        self.manual_zoom =
+            (self.manual_zoom * factor).clamp(follow_knobs::ZOOM_MIN, follow_knobs::ZOOM_MAX);
+        true
+    }
+
+    /// Put the three knobs back at their retail-identical defaults (the
+    /// coarse distance preset is a persisted option and stays).
+    pub fn reset_follow_knobs(&mut self) {
+        self.manual_orbit = 0.0;
+        self.manual_tilt = 0.0;
+        self.manual_zoom = 1.0;
     }
 
     /// Drive the cinematic motion script for one tick. Optional layer above
@@ -1758,6 +1869,122 @@ mod tests {
         assert_eq!(c.yaw, 0.0, "scripted yaw resets");
         assert_eq!(c.manual_orbit, 0.5, "player orbit intent is kept");
         assert_eq!(c.distance, CameraDistance::Farther, "preset is kept");
+    }
+
+    #[test]
+    fn reset_for_free_roam_preserves_tilt_and_zoom() {
+        let w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        let mut c = Camera {
+            mode: CameraMode::Cinematic,
+            pitch: 0.5,
+            manual_tilt: 0.3,
+            manual_zoom: 1.7,
+            ..Default::default()
+        };
+        c.reset_for_free_roam(&w);
+        assert_eq!(c.pitch, 0.0, "scripted pitch resets");
+        assert_eq!(c.manual_tilt, 0.3, "player tilt intent is kept");
+        assert_eq!(c.manual_zoom, 1.7, "player zoom intent is kept");
+    }
+
+    /// The three knobs take a gesture only while the follow camera owns the
+    /// frame: a running cutscene keeps the camera where the script put it,
+    /// and the gesture is dropped rather than banked.
+    #[test]
+    fn follow_knobs_are_locked_while_a_cutscene_owns_the_camera() {
+        let mut w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        let mut c = Camera::default();
+        assert!(c.follow_knobs_live(&w));
+        assert!(c.orbit_by(&w, 0.25));
+        assert!(c.tilt_by(&w, 0.1));
+        assert!(c.zoom_by(&w, 1.5));
+        assert!((c.manual_orbit - 0.25).abs() < 1e-6);
+        assert!((c.manual_tilt - 0.1).abs() < 1e-6);
+        assert!((c.manual_zoom - 1.5).abs() < 1e-6);
+
+        w.cutscene.timeline = Some(crate::cutscene_timeline::CutsceneTimeline::new(vec![0], 0));
+        assert!(w.cutscene_timeline_active());
+        assert!(!c.follow_knobs_live(&w));
+        assert!(!c.orbit_by(&w, 1.0));
+        assert!(!c.tilt_by(&w, 1.0));
+        assert!(!c.zoom_by(&w, 2.0));
+        assert!((c.manual_orbit - 0.25).abs() < 1e-6, "orbit untouched");
+        assert!((c.manual_tilt - 0.1).abs() < 1e-6, "tilt untouched");
+        assert!((c.manual_zoom - 1.5).abs() < 1e-6, "zoom untouched");
+
+        // Off the field (world map / battle / menu) the knobs are not live
+        // either - those modes have cameras of their own.
+        for mode in [SceneMode::Menu, SceneMode::Battle, SceneMode::WorldMap] {
+            let w = World {
+                mode,
+                ..World::default()
+            };
+            assert!(!c.follow_knobs_live(&w), "mode {mode:?}");
+            assert!(!c.zoom_by(&w, 2.0), "mode {mode:?}");
+        }
+    }
+
+    /// Tilt and zoom clamp at the knob bounds and never accumulate beyond
+    /// them; orbit wraps.
+    #[test]
+    fn follow_knobs_clamp_and_wrap() {
+        let w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        let mut c = Camera::default();
+        for _ in 0..100 {
+            c.tilt_by(&w, 0.5);
+            c.zoom_by(&w, 1.5);
+        }
+        assert_eq!(c.manual_tilt, follow_knobs::TILT_LIMIT);
+        assert_eq!(c.manual_zoom, follow_knobs::ZOOM_MAX);
+        for _ in 0..100 {
+            c.tilt_by(&w, -0.5);
+            c.zoom_by(&w, 0.5);
+        }
+        assert_eq!(c.manual_tilt, -follow_knobs::TILT_LIMIT);
+        assert_eq!(c.manual_zoom, follow_knobs::ZOOM_MIN);
+        assert!(!c.zoom_by(&w, 0.0), "a non-positive factor is refused");
+        assert!(!c.zoom_by(&w, -1.0));
+        c.orbit_by(&w, -0.5);
+        assert!(c.manual_orbit > 0.0 && c.manual_orbit < std::f32::consts::TAU);
+        c.reset_follow_knobs();
+        assert_eq!(
+            (c.manual_orbit, c.manual_tilt, c.manual_zoom),
+            (0.0, 0.0, 1.0)
+        );
+    }
+
+    /// The composed pitch is continuous in the tilt and exact at zero, even
+    /// for a scene pitch outside the knob range.
+    #[test]
+    fn composed_pitch_is_exact_at_zero_tilt_and_clamps_otherwise() {
+        use follow_knobs::{PITCH_MAX, PITCH_MIN, composed_pitch};
+        assert_eq!(composed_pitch(0.69, 0.0), 0.69);
+        assert_eq!(
+            composed_pitch(0.05, 0.0),
+            0.05,
+            "an out-of-range scene pitch passes"
+        );
+        assert_eq!(composed_pitch(1.5, 0.0), 1.5);
+        assert_eq!(composed_pitch(0.69, 5.0), PITCH_MAX);
+        assert_eq!(composed_pitch(0.69, -5.0), PITCH_MIN);
+        assert_eq!(
+            composed_pitch(1.5, 5.0),
+            1.5,
+            "widened range ends at the scene pitch"
+        );
+        assert!(
+            (composed_pitch(0.69, 0.001) - 0.691).abs() < 1e-6,
+            "no snap"
+        );
     }
 
     #[test]

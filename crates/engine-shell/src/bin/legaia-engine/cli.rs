@@ -805,9 +805,11 @@ pub(crate) enum Cmd {
     /// Accepts keyboard input (arrows = D-pad, Z = Cross, Esc = quit).
     ///
     /// Camera + movement keys: left-mouse drag orbits the field camera
-    /// around the player (horizontal) and pitches the debug vantage
-    /// (vertical), and the wheel zooms it - the same three knobs, at the
-    /// same rates, the browser play page's camera takes. The movement
+    /// around the player (horizontal) and tilts it (vertical), the wheel
+    /// zooms it, and a double-click resets all three to retail framing -
+    /// the same knobs, at the same rates, the browser play page's camera
+    /// takes; under `F3` they steer the debug vantage instead. All three
+    /// are locked while a cutscene owns the camera. The movement
     /// compass follows the orbited view, so "up" always walks away from the
     /// camera. `T` cycles the camera
     /// distance preset (retail / far / farther - default `far`, persisted

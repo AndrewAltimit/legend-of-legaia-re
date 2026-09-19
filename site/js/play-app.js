@@ -1123,10 +1123,19 @@ void main() {
       window.addEventListener('blur', this._onBlur);
       this.canvas.addEventListener('blur', this._onBlur);
 
-      /* Camera orbit: drag to swing around the player, wheel to zoom. The engine
-       * is told the new azimuth each frame, so "up" always walks away from the
-       * camera - turning the camera turns the controls with it. */
+      /* Camera: drag to swing around and tilt over the player, wheel to zoom.
+       * All three steer the ENGINE's follow camera (`Camera::manual_orbit` /
+       * `manual_tilt` / `manual_zoom`), which stays centred on the character
+       * and composes the knobs onto the retail per-scene shot; the engine
+       * is told the new azimuth each frame, so "up" always walks away from
+       * the camera - turning the camera turns the controls with it. The
+       * setters are cutscene-gated engine-side: while a scripted shot owns
+       * the camera the gesture is dropped, so the view stays where the
+       * script put it and never snaps when control returns. Under the `F3`
+       * debug orbit the same gestures steer the page's own vantage instead. */
       let dragging = false, lastX = 0, lastY = 0;
+      const engineKnobs = () => !this.debugCamera
+        && typeof this.rt.play_camera_orbit_by === 'function';
       this.canvas.addEventListener('pointerdown', (e) => {
         dragging = true; lastX = e.clientX; lastY = e.clientY;
         this.canvas.focus();
@@ -1145,24 +1154,47 @@ void main() {
         if (!dragging) return;
         /* Horizontal drag swings `Camera::manual_orbit` - the SAME engine
          * field the native window's left-mouse drag writes, so the retail
-         * follow camera and the movement compass both track it. The local
-         * yaw/pitch below only steer the page's debug-orbit vantage (`F3`),
-         * which is the one camera this page still owns. */
+         * follow camera and the movement compass both track it - and
+         * vertical drag tips `Camera::manual_tilt`, at the rates the native
+         * window's `window::camera::debug_orbit` quotes. The local yaw/pitch
+         * below steer the page's debug-orbit vantage (`F3`), the one camera
+         * this page still owns, and are kept in step so toggling it does
+         * not snap the view. */
         const dx = (e.clientX - lastX) * 0.006;
+        const dy = (e.clientY - lastY) * 0.004;
         this.cam.yaw += dx;
-        this.cam.pitch = Math.max(0.12, Math.min(1.35,
-          this.cam.pitch + (e.clientY - lastY) * 0.004));
-        if (!this.debugCamera && typeof this.rt.play_camera_set_orbit === 'function') {
+        this.cam.pitch = Math.max(0.12, Math.min(1.35, this.cam.pitch + dy));
+        if (engineKnobs()) {
+          try { this.rt.play_camera_orbit_by(dx); this.rt.play_camera_tilt_by(dy); } catch (_) {}
+        } else if (!this.debugCamera && typeof this.rt.play_camera_set_orbit === 'function') {
+          /* A cached WASM that predates the gated setters: orbit only. */
           try { this.rt.play_camera_set_orbit(this.rt.play_camera_orbit() + dx); } catch (_) {}
         }
         lastX = e.clientX; lastY = e.clientY;
       });
       this.canvas.addEventListener('wheel', (e) => {
         e.preventDefault();
+        /* A notch out pulls the eye back, a notch in brings it closer, by
+         * the same factors on both hosts. On the engine camera this is a
+         * continuous multiplier on the retail eye-back depth
+         * (`Camera::manual_zoom`); on the debug orbit it is the page's own
+         * framing half-window. */
         const f = e.deltaY > 0 ? 1.12 : 0.89;
+        if (engineKnobs() && typeof this.rt.play_camera_zoom_by === 'function') {
+          try { this.rt.play_camera_zoom_by(f); } catch (_) {}
+          return;
+        }
         this.cam.halfWidth = Math.max(220, Math.min(6000, this.cam.halfWidth * f));
         this.cam.halfHeight = this.cam.halfWidth;
       }, { passive: false });
+      /* Double-click puts the follow camera back at the retail framing
+       * (orbit, tilt and zoom to their identity defaults). */
+      this.canvas.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        if (!this.debugCamera && typeof this.rt.play_camera_reset_framing === 'function') {
+          try { this.rt.play_camera_reset_framing(); } catch (_) {}
+        }
+      });
     }
 
     /* Held keys OR the not-yet-consumed press edges -> one pad word. */

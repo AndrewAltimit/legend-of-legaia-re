@@ -28,6 +28,13 @@ use legaia_engine_core::camera_view;
 /// the same amount on either host. They are JS literals on that side, so no
 /// paired-constant check can bind them - the pairing is this comment and the
 /// two tests below.
+///
+/// The rates serve two cameras. With the retail follow camera live (no
+/// `F3`) the same gestures steer the engine's follow knobs
+/// (`Camera::orbit_by` / `tilt_by` / `zoom_by`, whose clamps live in
+/// `engine-core::camera::follow_knobs` and which drop a gesture while a
+/// cutscene owns the camera); only under `F3` do they steer this window's
+/// own vantage through the pitch / half-extent clamps below.
 pub(super) mod debug_orbit {
     /// Radians of yaw per pixel of horizontal drag. Feeds
     /// `Camera::manual_orbit`, which the retail follow camera and the
