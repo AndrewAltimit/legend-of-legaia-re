@@ -3231,8 +3231,6 @@ def check_frame_paths() -> tuple[list[str], list[str], dict[str, int]]:
     for (host, name), entry in solo.items():
         mine = native if host == "native" else web
         theirs = web if host == "native" else native
-        if not str(entry.get("reason", "")).strip():
-            continue  # already reported above when it was reached
         if name not in mine:
             problems.append(
                 f"STALE FRAME-KERNEL WAIVER {host} `{name}`: not on that "
