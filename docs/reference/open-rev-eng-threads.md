@@ -80,11 +80,20 @@ cheapest place to look for a claim that is still wrong.
   bracket inside PROT 0901's `FUN_801F73E4`, which zeroes the yaw word in the
   first call's delay slot, draws one screen-fixed band and rebuilds
   ([falsified](re-do-not-re-walk.md#rendering--camera)).
-- **The last build before the draw does not win.** Of 31046 ordering-table
-  links on one capture, 16810 were emitted with the first build's matrix live
-  and 14 with the last one's - and the single measured two-build divergence
-  landed on that last build, i.e. on the build the frame does not draw under
-  ([falsified](re-do-not-re-walk.md#rendering--camera)).
+- **The last build before the draw does not win - it frames no geometry at
+  all.** A link count already put 16810 of 31046 ordering-table links under the
+  first build and 14 under the last; splitting by GPU command code gives the
+  real figure, because that count was mixing attribute packets and 2D rects in
+  with polygons. Of 4289 polygons over three runs, 3861 are under the first
+  build, 428 under the second and none under the last
+  ([settled](re-settled-threads.md#rendering--camera)).
+- **A captured SPU voice is audible by its envelope level, not its phase
+  word.** Mednafen's `ADSR.Phase` has no `Off` member - a key-off parks a voice
+  in Release - so a phase test counts every voice a state has ever keyed. It is
+  why retail snapshots read 20 to 24 of 24 voices live and why an oracle rule
+  looked unsatisfiable; against the level, retail holds 4 to 9 audible voices
+  and the engine 4 to 8
+  ([falsified](re-do-not-re-walk.md#audio--sound-driver)).
 - **The slot-B stage selector `_DAT_8007B64A` does have a writer.** The field
   entity tick `FUN_801DA51C` clears it at `0x801DA69C` and raises `1` at
   `0x801DA6A8` when system flag `0x19` is set; battle latches `3` at
@@ -119,9 +128,11 @@ cheapest place to look for a claim that is still wrong.
 - **Two minigame citations were off by bytes rather than by reading.** The Baka
   Fighter editor's actor prototype and its sibling start four bytes lower than
   cited - the cited words are each record's `0xFFFF0000` field, not its head -
-  and the fishing bite tick's two per-frame map reads are unrelated: the water
-  gate is the cell halfword's `0x4000` bit, while the walk-grid probe drifts
-  the lure ([falsified](re-do-not-re-walk.md#field--locomotion)).
+  the fishing bite tick's two per-frame map reads are unrelated (the water gate
+  is the cell halfword's `0x4000` bit, while the walk-grid probe drifts the
+  lure), and the halfword read as the lure's z is its **height** - the store
+  takes the spawning actor's `+0x16` less `0x80`
+  ([falsified](re-do-not-re-walk.md#field--locomotion)).
 
 ---
 
@@ -131,8 +142,16 @@ cheapest place to look for a claim that is still wrong.
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
 | Is `juui1` dark in retail outside its `ColorIntensity` tint beats? | open - needs a field-to-field `0x3F` donor door | No library state is inside the scene, and the name-hijack probe (`autorun_scene_name_hijack.lua`) cannot answer it from a world-map door: the rewritten name does load the bundle through retail's loader (VAB, BGM and packet count all move with it), but every frame is black, and a control hijack into the brightly-drawn `bylon` is equally black - the entry path makes the frame, not the scene. What would close it: a save state one press from a door into another field scene with a five-letter name; a read-only probe run lists candidate doors by name length. Its P2 tint beats still black the mid-cutscene shots; the port renders it near-black. |
-| Which of a field frame's view builds does the drawn geometry use? | partial - the census is measured; the attribution it would need is not | [details ↓](#which-view-build-the-frame-draws-under) |
 | What consumes the fishing bite tick's per-cell fish **weight**? | open - the value is resolved every probe and its reader is not pinned | The water-class walk installs a `(credit bonus, weight)` pair per cell - `(0x1E, 100)`, `(0x14, 300)`, `(0x14, 500)`, defaulting to `(0, 10)` off water. Only the credit half is traced: it is added into the bite countdown at `addu s1,s1,s2` (`0x801D3434`). The weight half is resolved on the same pass and carried, so "fish weight" is a name rather than a measurement. Reading the register's live uses through the tick's tail, or landing the same species off two classes and comparing what is recorded, says whether it scales the species roll, the recorded catch, or nothing. |
+
+**Which view build the frame draws under** closed here, and the answer is the
+**first**. Splitting each ordering-table link by GPU command code over three
+runs - including the real `map01` -> `town0c` entry the question was asked
+about - gives 4289 polygons: 3861 under the first site, 428 under the second,
+and none under the third or either of PROT 0901's slot-B pair, whose whole
+share is attribute packets and 2D rects. The earlier link-count ranking was
+mixing those in with polygons
+([settled](re-settled-threads.md#rendering--camera)).
 
 **What a field submode returns to** closed here: nothing reads the parked
 word. The op-`0x49` enter stores it twice, neither `SCUS_942.54` nor any of the 86
@@ -232,43 +251,13 @@ process-matching helpers in
 [`shell-observer-traps.md`](../tooling/shell-observer-traps.md) exist because
 `pgrep -f` matches the caller's own command line.
 
-### Which view build the frame draws under
-
-*Status:* partial - the census is measured; the attribution it would need is not
-
-The field view matrix is built by `FUN_800172C0`, and a capture that taps the
-builder's entry, the `TR` it leaves and the ordering-table link helper
-`FUN_8003D2C4` overturned three readings of it at once
-([`cutscene.md`](../subsystems/cutscene.md#what-a-build-census-actually-measures)).
-What is now measured:
-
-- the builds are **per field frame**, not per vsync - 749 of 1800 captured
-  vsyncs carried any build on a world-map-to-town entry, 900 of 1800 on a
-  static town scene;
-- the count is **two or three** in a fixed order, the first site optional - 389
-  full orders against 313 short ones on the first run, 504 against 396 on the
-  second;
-- the builder has **five** call sites, not three. The two that a sweep over
-  `SCUS_942.54` and the slot-A images cannot reach are in PROT 0901's
-  `FUN_801F73E4`, and they are a bracket rather than two builds: the routine
-  saves the yaw word `_DAT_8007B792`, zeroes it in the first call's delay slot,
-  draws one screen-fixed band and rebuilds. Neither is a frame's camera, and a
-  **field** scene entry has at most the three field sites;
-- the **last** build is not the one the frame draws under. Of 31046 links,
-  16810 carried the first build's matrix and 14 the last one's.
-
-**What is left.** The link helper does not separate 3D primitives from 2D UI
-ones, and 10472 of the links preceded the vsync's first build - inheriting the
-previous frame's matrix - so the census ranks the sites without yet attributing
-a frame's geometry to one of them. And the divergence that makes the question
-matter is rare: one of 749 build-carrying vsyncs had two builds read different
-camera words, and the pair was the second against the third. Repeating the
-census over three more scene entries, with the two primitive families
-separated, closes it.
-
 ## Battle / rendering
 
-No open threads here. The last one - **what stages the dance widgets' second
+| Thread | Status | What would close it |
+|---|---|---|
+| Why is the TMD renderer `FUN_8002735C` entered zero times in field and world-map play? | open - the polygons on those frames come from the per-prim path | An exec tap across 4950 vsyncs of three field and world-map captures records **no** entry into the mesh renderer at all, while the frames themselves draw thousands of town polygons - which the per-prim dispatch emits. So either the mesh path belongs to a mode those captures never entered, or something upstream is selecting the per-prim emitters for geometry the renderer page describes it as drawing. What would close it: the same tap across a scene with a known TMD actor - a battle, or a cutscene with a posed model - naming which mode enters it. |
+
+The last one - **what stages the dance widgets' second
 texture page at VRAM `(960, 256)`** - closed on the disc rather than on a
 capture: the page is boot-resident system UI out of `PROT.DAT`'s unindexed head
 gap, so no PROT entry stages it and no per-entry sweep could have found it
@@ -363,8 +352,8 @@ performs either cast ([settled](re-settled-threads.md#battle--arts--level-up)).
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Can a save-state comparand decide BGM fidelity at all? | open - the engine half is closed and the oracle's rule is not satisfiable | [details ↓](#can-a-save-state-comparand-decide-bgm-fidelity) |
-| Is the PCM oracle's retail reference a reference? | open - the retail side is re-keyed before it is rendered | `retail_reference_pcm` keys every voice with a fresh Attack before it renders the retail comparand, so the retail side reads quiet - rms `2..87` against a `256` floor - on every qualifying scenario, and the assertion that the engine sounded something is vacuous on that side. Rendering the reference in the ADSR phase the snapshot actually carries, rather than from a fresh key-on, says whether the oracle has been comparing anything. |
+| Which voices does the engine's score allocate, against retail's? | open - the comparand decides, and the two masks differ in content | [details ↓](#which-voices-the-score-allocates) |
+| Why is the engine's mix quieter than retail's on three scenarios? | open - visible only since the PCM oracle's retail reference stopped being vacuous | The PCM oracle rendered its retail reference by keying every voice afresh and by parsing the captured ADSR control word without using it, so the retail side read `rms 2..87` against a `256` floor and the "the engine sounded something" assertion was vacuous on that side. Seeding the captured control word and envelope level moves the retail reference to `rms 579..16633`, and three scenarios - `menu_equipment_town`, `rimelm_wall_press_left` and `rimelm_wall_press_down` - then show the engine much the quieter of the two. Whether that is a program level, a voice count or an envelope shape is what a per-voice comparison would say. |
 
 The last thread here - a supposed second `bse.dat` record family -
 resolved as a neighbouring file's tone rows left in the sector
@@ -374,32 +363,34 @@ The previous thread here - op-`0x35` sub-op `0xA`, the "unhalt-pause toggle" -
 resolved as the track-swap **commit** and moved to
 [`re-settled-threads.md`](re-settled-threads.md#op-0x35-sub-op-0xa-is-the-track-swap-commit).
 
-### Can a save-state comparand decide BGM fidelity
+### Which voices the score allocates
 
-*Status:* open - the engine half is closed; what is open is the comparand
+*Status:* open - the comparand decides; what it decides is not yet a match
 
-The engine half of the old question ("why does the engine start no BGM inside
-the audio-trace window") is answered, and it was never one bug: a driver that
-drops into a scene from cold owes three separate steps, and skipping any one of
-them reads from outside as silence
+Two questions were tangled here and both have moved. The engine half is closed:
+a driver that drops into a scene from cold owes three separate steps, and
+skipping any one reads from outside as silence
 ([`audio.md`](../subsystems/audio.md#the-cold-scene-entry-sequence-and-what-each-missing-step-sounds-like)).
-With all three taken, the trace reports a voice on every qualifying scenario.
+And the comparand's own half turned out to be an instrument defect rather than a
+property of save states - a phase-keyed audibility test reported every voice a
+state had ever keyed, which is what made the superset rule look unsatisfiable
+([falsified](re-do-not-re-walk.md#audio--sound-driver)).
 
-What is left is the comparand. A mednafen save is a mid-playthrough freeze, and
-an SPU voice leaves ADSR phase `Off` on key-on and returns only when a key-off's
-release runs to zero - so a field state reports the residue of every cue since
-boot rather than the set the current score is sounding: 15 of 19 retail
-snapshots read 24 of 24 voices non-`Off`, the rest 20 to 23. The engine's own
-score holds single-digit concurrent voices, so a rule asking some engine frame's
-mask to be a **superset** of that is unsatisfiable by any faithful playback, and
-a `0 converged` line on this comparand is a statement about the comparand.
+Against the envelope level the comparison is ordinary: retail holds 4 to 9
+audible voices across the 19 audio-trace scenarios and the engine 4 to 8. A
+per-vsync PCSX-Redux retail trace of a `town01` entry, fed back through
+`--retail-jsonl`, puts the engine at 4 voices against retail's 8 on the first
+compared frame - comparable, not converged.
 
-What the `.mc` axis still decides is the floor: with the scene's track playing,
-the engine's mask must be non-empty, and that is exactly what a scene-entry BGM
-regression breaks. Deciding *which* voices belong to the score needs a per-vsync
-PCSX-Redux retail trace of the same scene entry fed back through
-`--retail-jsonl`. What would close this row: that trace for one scenario, plus a
-statement per channel of which comparand grades it.
+So what is left is **which** voices the score allocates, not whether the
+comparand can decide. Two things narrow it. `VoiceStartAddrMismatch` is not a
+fidelity axis on this comparand at all: retail's voices start in
+`0x8008..0xC968` and the engine's staged bank in `0x1000..0x1BD70`, two
+independent SPU-RAM allocators, so the addresses cannot agree and are not
+supposed to. `MasterVolumeMismatch` stays a hard failure. What would close it is
+a per-voice comparison on one scenario - program, pitch and envelope per slot -
+saying whether the engine is short of voices, playing different ones, or
+allocating the same score across fewer slots.
 
 ## Title / boot / overlays
 
