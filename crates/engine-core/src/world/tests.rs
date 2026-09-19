@@ -251,6 +251,7 @@ fn gimard_spell_def() -> crate::spells::SpellDef {
 
 mod actor_cadence;
 mod battle_anim;
+mod battle_auto_command;
 mod battle_capture_bgm;
 mod battle_capture_class_disc;
 mod battle_effects_ai2;

@@ -480,26 +480,23 @@ pub fn apply_super_tail_replace(
 /// PORT: FUN_801DA34C - the round driver's arts-queue preseed (leaf; called
 /// from `FUN_801D0748` at `0x801D15C8` / `0x801D1734`).
 ///
-/// NOT WIRED, and the reason is narrower than it used to read. "The engine
-/// has no per-character saved arts-input string to preseed from" is
-/// **wrong**: it has one. `legaia_save::SavedChainRecord` persists a named
-/// per-character command sequence in the LGSF v2 ext block, `World::party.saved_chains`
-/// carries it live, `tactical_arts_editor` edits it and `battle_arts` reads it
-/// in battle - and shipped non-test code fills it (`--player-battle` in the
-/// native window's `run.rs`).
+/// Wired: `engine-core`'s `World::preseed_auto_command_string` calls it when a
+/// party member's Attack is dispatched, over the record accessors
+/// `legaia_save::CharacterRecord::auto_command_string` and the band selector
+/// `legaia_save::AutoCommandBand::for_gauge`; an empty read falls through to
+/// the engine's own no-input swing roll, which is what retail's zero-fill leg
+/// leaves the queue builder to do. Both playable hosts reach it - the dispatch
+/// is shared world state.
 ///
-/// What is missing is the **mapping**, not the data. Retail's two slots are
-/// char-record `+0x76F` / `+0x77F`, i.e. record-relative `+0x1A7` / `+0x1B7`
-/// off `0x80084140 + (id-1)*0x414`, and `legaia_save`'s retail `0x414` record
-/// model (`crates/save/src/character.rs`) declares no accessor there - it
-/// covers `+0x104..+0x19D` and `+0x2A7` onward. So nothing projects the
-/// engine's chain library onto the slot pair this reads, and the
-/// `u16[+0x156] < u16[+0x154]` predicate has no two slots to choose between.
+/// The slot pair the earlier note called unaddressable is the addition that
+/// closed it: `legaia_save`'s retail `0x414` record model now declares
+/// `+0x1A7` / `+0x1B7`, so the `u16[+0x156] < u16[+0x154]` predicate has two
+/// slots to choose between.
 ///
-/// Retail's caller `FUN_801D0748` is **not** unported (an older note said so):
-/// its state space is `engine-core::battle_flow` and its arts-entry state
-/// `0x50` is the one `engine-core::battle_input` recomposes. It simply has no
-/// per-state body to hang the copy on until the slot pair is addressable.
+/// Not to be confused with `World::party.saved_chains`: that is the engine's
+/// **named** chain library (LGSF v2, edited by `tactical_arts_editor`) and
+/// survives a save file; this is retail's unnamed last-confirmed string, which
+/// every arts commit overwrites.
 ///
 /// Copies one of the character's two saved 16-byte arts-input strings
 /// (char record `+0x76F` = first slot, `+0x77F` = second slot, off
@@ -545,12 +542,10 @@ pub fn preseed_action_queue(
     }
 }
 
-/// NOT WIRED: same prerequisite as [`preseed_action_queue`], and it is a
-/// mapping rather than missing data. The engine holds per-character command
-/// sequences (`World::party.saved_chains` / `legaia_save::SavedChainRecord`),
-/// but `legaia_save`'s retail `0x414` record model declares no accessor at
-/// record-relative `+0x1A7` / `+0x1B7`, so there is no addressable two-slot
-/// pair for the write-back to choose between.
+/// Wired as the twin of [`preseed_action_queue`]:
+/// `engine-core`'s `World::save_auto_command_string` runs it on the arts
+/// commit, which is the moment retail's own call site sits at and the state
+/// its two guards expect - the actor alive and its category already stamped.
 ///
 /// PORT: FUN_801DA59C - the write-back twin of [`preseed_action_queue`]:
 /// saves the actor's executed 16-byte arts-input string back into the
