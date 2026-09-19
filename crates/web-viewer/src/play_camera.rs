@@ -160,8 +160,9 @@ impl LegaiaRuntime {
     ///          | "host_debug_orbit",
     ///   "focus": [x, y, z], "pitch": rad, "yaw": rad, "roll": rad,
     ///   "h": f, "tr": [x, y, z],         // absent on the two orbit arms
-    ///   "zone": true | false }           // follow arm composed from the
+    ///   "zone": true | false,            // follow arm composed from the
     ///                                    // scene's camera-region record
+    ///   "knobs": { "orbit": rad, "tilt": rad, "zoom": f, "live": bool } }
     /// ```
     pub fn play_camera_view_json(&mut self) -> String {
         let frame = self.resolve_camera_frame();
@@ -172,15 +173,22 @@ impl LegaiaRuntime {
             FieldCameraFrame::WorldMapTopView { .. } => ("worldmap_topview", None),
             FieldCameraFrame::HostDebugOrbit => ("host_debug_orbit", None),
         };
+        let knobs = serde_json::json!({
+            "orbit": self.camera.manual_orbit,
+            "tilt": self.camera.manual_tilt,
+            "zoom": self.camera.manual_zoom,
+            "live": self.play_camera_knobs_live(),
+        });
         match view {
             Some(v) => serde_json::json!({
                 "arm": arm,
                 "focus": v.focus, "pitch": v.pitch, "yaw": v.yaw, "roll": v.roll,
                 "h": v.h, "tr": v.tr_eye,
                 "zone": self.camera.zone.active,
+                "knobs": knobs,
             })
             .to_string(),
-            None => serde_json::json!({ "arm": arm }).to_string(),
+            None => serde_json::json!({ "arm": arm, "knobs": knobs }).to_string(),
         }
     }
 
@@ -227,6 +235,65 @@ impl LegaiaRuntime {
     /// Current drag-orbit, radians.
     pub fn play_camera_orbit(&self) -> f32 {
         self.camera.manual_orbit
+    }
+
+    /// Whether the user's follow-camera knobs steer this frame
+    /// ([`legaia_engine_core::camera::Camera::follow_knobs_live`]): free-roam
+    /// field with no cutscene timeline owning the camera. `false` while a
+    /// scripted shot runs - the camera is locked where the script put it -
+    /// and off the field.
+    pub fn play_camera_knobs_live(&self) -> bool {
+        self.scene_host
+            .as_ref()
+            .is_some_and(|h| self.camera.follow_knobs_live(&h.world))
+    }
+
+    /// Swing the follow camera's orbit by `radians` (compass sense) through
+    /// the cutscene-gated engine setter
+    /// ([`legaia_engine_core::camera::Camera::orbit_by`]). Returns whether
+    /// the gesture was taken; a drag during a cutscene is dropped rather
+    /// than banked, so the view never snaps when control returns.
+    pub fn play_camera_orbit_by(&mut self, radians: f32) -> bool {
+        match self.scene_host.as_ref() {
+            Some(h) => self.camera.orbit_by(&h.world, radians),
+            None => false,
+        }
+    }
+
+    /// Tip the follow camera's tilt by `radians` (positive = further down),
+    /// gated like [`Self::play_camera_orbit_by`]
+    /// ([`legaia_engine_core::camera::Camera::tilt_by`]).
+    pub fn play_camera_tilt_by(&mut self, radians: f32) -> bool {
+        match self.scene_host.as_ref() {
+            Some(h) => self.camera.tilt_by(&h.world, radians),
+            None => false,
+        }
+    }
+
+    /// Scale the follow camera's continuous zoom by `factor` (`> 1` pulls
+    /// the eye back), gated like [`Self::play_camera_orbit_by`]
+    /// ([`legaia_engine_core::camera::Camera::zoom_by`]).
+    pub fn play_camera_zoom_by(&mut self, factor: f32) -> bool {
+        match self.scene_host.as_ref() {
+            Some(h) => self.camera.zoom_by(&h.world, factor),
+            None => false,
+        }
+    }
+
+    /// Current follow-camera tilt, radians.
+    pub fn play_camera_tilt(&self) -> f32 {
+        self.camera.manual_tilt
+    }
+
+    /// Current follow-camera zoom multiplier.
+    pub fn play_camera_zoom(&self) -> f32 {
+        self.camera.manual_zoom
+    }
+
+    /// Put orbit, tilt and zoom back at their retail-identical defaults
+    /// ([`legaia_engine_core::camera::Camera::reset_follow_knobs`]).
+    pub fn play_camera_reset_framing(&mut self) {
+        self.camera.reset_follow_knobs();
     }
 
     /// Cycle the camera-distance preset (retail -> far -> farther), the

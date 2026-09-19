@@ -812,6 +812,15 @@ page's three knobs at the page's rates and clamps
 paired-constant row can bind them; the pairing is a test that quotes the
 page's handlers by name.
 
+The three gestures now steer the **engine** follow camera by default on both
+hosts, and only the `F3` debug vantage keeps a host-local knob: horizontal drag
+is `Camera::orbit_by`, vertical drag `Camera::tilt_by`, the wheel
+`Camera::zoom_by`, and a double-click `Camera::reset_follow_knobs`
+(`engine-core::camera::follow_knobs`). The setters carry the cutscene lock
+themselves - a running timeline drops the gesture - so neither host can
+re-derive the gate and get it wrong on one side, and the clamps are engine
+constants rather than a JS literal and a Rust literal that happen to agree.
+
 The general shape: a tier that pairs *types* or *call sites* says nothing
 about the numbers feeding them, and an input rate is exactly the kind of
 number nobody writes a constant pair for because it "only affects feel".

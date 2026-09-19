@@ -257,6 +257,32 @@ impl World {
     /// narration / timeline. Returns `None` otherwise. The host issues the
     /// actual scene change (the engine's equivalent of the scene-change
     /// packet) on a `Some`.
+    /// Abandon the opening cutscene chain wholesale, without arming the
+    /// `town01` opening the intro-skip arms: the narration roller, the title
+    /// card, the running timeline, any scene change it had queued, and the
+    /// chain flag itself. Returns whether a chain was live.
+    ///
+    /// What a **user-initiated** direct scene entry owes - the browser play
+    /// page's scene picker - as distinct from the chain's own hand-offs: a
+    /// picked scene must be that scene's free-roam, not the next leg of an
+    /// opening the picker interrupted. With the flag still set, the picked
+    /// scene's arrival tile spawned its trigger record as a chain leg
+    /// (`spawn_arrival_trigger_record`) and `town01` installed its opening
+    /// sweep, so the "interrupted" cutscene simply continued elsewhere.
+    /// Entering `opdeene` re-arms the chain as ever.
+    pub fn abandon_opening_chain(&mut self) -> bool {
+        let was_live = self.cutscene.opening_chain_active
+            || self.cutscene_timeline_active()
+            || self.cutscene.narration.is_some();
+        self.cutscene.narration = None;
+        self.cutscene.card = None;
+        self.cutscene.timeline = None;
+        self.pending_named_scene_transition = None;
+        self.cutscene.opening_chain_active = false;
+        self.cutscene.entering_town01_opening = false;
+        was_live
+    }
+
     // REF: FUN_801D1344
     // REF: FUN_8001FD44
     pub fn take_prologue_handoff(&mut self, confirm: bool) -> Option<&'static str> {
@@ -267,11 +293,7 @@ impl World {
             self.flags.story_flags &= !PROLOGUE_HANDOFF_FLAG;
             // Tear down whatever leg of the opening is mid-flight - the skip
             // abandons the remaining narration + choreography wholesale.
-            self.cutscene.narration = None;
-            self.cutscene.card = None;
-            self.cutscene.timeline = None;
-            self.pending_named_scene_transition = None;
-            self.cutscene.opening_chain_active = false;
+            self.abandon_opening_chain();
             // Mark the upcoming `town01` entry as the new-game opening so it
             // installs the opening cutscene timeline (which opens name entry at
             // its pinned op-`0x49`); a normal `town01` visit never sets this.
@@ -3220,5 +3242,22 @@ mod tests {
         );
         assert!(w.install_spawned_helper_record(&mf, &man, 7));
         assert_eq!(w.field_vm.helper_contexts.len(), 1);
+    }
+
+    /// A picker entry mid-opening tears the chain down - flag, timeline,
+    /// narration - and reports that something was live; a second call is a
+    /// quiet no-op.
+    #[test]
+    fn abandon_opening_chain_tears_down_and_reports() {
+        let mut w = World::default();
+        w.cutscene.opening_chain_active = true;
+        w.cutscene.timeline = Some(crate::cutscene_timeline::CutsceneTimeline::new(vec![0], 0));
+        assert!(w.cutscene_timeline_active());
+        assert!(w.abandon_opening_chain());
+        assert!(!w.cutscene.opening_chain_active);
+        assert!(!w.cutscene_timeline_active());
+        assert!(w.cutscene.narration.is_none() && w.cutscene.card.is_none());
+        assert!(!w.cutscene.entering_town01_opening);
+        assert!(!w.abandon_opening_chain(), "nothing live the second time");
     }
 }

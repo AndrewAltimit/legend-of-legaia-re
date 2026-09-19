@@ -1214,6 +1214,7 @@ pub(super) fn cmd_play_window_with_record(
         scene_point_lights: Vec::new(),
         orbit_drag_last_x: None,
         orbit_drag_last_y: None,
+        last_left_press: None,
         // `atan(0.85)`: the angle the window's long-standing eye-height
         // ratio encoded, so an untouched debug vantage is unchanged.
         debug_orbit_pitch: 0.85f32.atan(),
