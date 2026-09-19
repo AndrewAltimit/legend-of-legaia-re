@@ -993,7 +993,38 @@ The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as ev
   The **eye-space translation trio has no representation outside that struct and the shell's `cutscene_view`**, which is what made headless consumers (`sim-trace`, the state-trace oracle) frame every scripted shot from the follow orbit while the angles moved correctly around it. In free-roam the follow camera owns the focus globals (`FUN_801DBE9C`, negated anchor XZ); once a scene executes any Configure the script keeps them, matching retail's step-shaped focus across a shot.
 
   **The full transform is `screen = H · (R·(v − focus) + tr_eye) / Ze`; the eye-back depth is `tr_eye.z` (slot 5), not a missing scalar.** The view builder `FUN_800172c0` assembles it: build `R` from the angle globals (`FUN_80026988`), left-multiply the constant base matrix `DAT_8007BF10` (a uniform `24576·I` = **6× world scale**), copy the eye-space translation trio `_DAT_800840B8/BC/C0` into the view struct's `.t`, then MVMVA the negated focus `(_DAT_80089118/1C/20)` through `R` and add `.t` - giving the uploaded GTE translation `TR = R·(−focus) + tr_eye`, so every world vertex maps to `R·(v − focus) + tr_eye`.
-  It is **not** a once-per-frame builder, and a port that assumes one build per vsync is assuming a property retail does not have. `FUN_800172c0` has seventeen `jal` sites across `SCUS_942.54` and the overlay images, and on a field vsync **three** of them run: `0x801D0F90` and `0x801D1854` in the field overlay `0897` plus `0x80016670` in SCUS (measured on 133 of 134 consecutive vsyncs of a field capture). The last build before the draw wins, which is why the trio's inputs, not their count, are what a framing comparison has to match. A probe that reports these sites as `0x801D0F98` / `0x801D185C` / `0x80016678` is printing `ra`, which is the `jal` address plus eight.
+  It is **not** a once-per-frame builder, and a port that assumes one build per vsync is assuming a property retail does not have. `FUN_800172c0` has seventeen `jal` sites across `SCUS_942.54` and the overlay images; `0x801D0F90` and `0x801D1854` in the field overlay `0897` plus `0x80016670` in SCUS are the three a field frame usually runs, and the trio's inputs, not their count, are what a framing comparison has to match. A probe that reports these sites as `0x801D0F98` / `0x801D185C` / `0x80016678` is printing `ra`, which is the `jal` address plus eight. Two things about that count are not as an earlier field capture left them - see [what a build census actually measures](#what-a-build-census-actually-measures).
+
+#### What a build census actually measures
+
+Three corrections, all from one capture that taps the builder's entry, the `TR`
+it leaves, and the OT link helper `FUN_8003D2C4` so prims can be counted against
+whichever build's matrix was live when they were emitted
+([`autorun_view_build_attribution.lua`](../../scripts/pcsx-redux/autorun_view_build_attribution.lua),
+`capture`):
+
+* **The count is per field frame, not per vsync, and the first site is
+  optional.** Over a world-map-to-town entry, 749 of 1800 captured vsyncs
+  carried any build at all; of those, 389 ran the full `A -> B -> C` order and
+  313 ran only `B -> C`. A second run over a static town scene split 504 / 396
+  the same way. So "three every vsync" holds on neither run, and the order when
+  a site runs is fixed.
+* **There are more than three sites.** The town entry also recorded builds
+  returning to `0x801F7428` and `0x801F761C` - the **slot-B** window, i.e. the
+  resident field-render module, which a sweep over `SCUS_942.54` plus the slot-A
+  overlay images cannot see. Those two always run last when present.
+* **The last build is not the one the frame draws under.** Of 31046 prim links,
+  16810 were emitted with `A`'s matrix live and 3562 with `B`'s, but only
+  **14** with `C`'s. Whatever `C` re-establishes, essentially no geometry
+  follows it inside its own vsync. (10472 links landed before that vsync's first
+  build, inheriting the previous one's matrix, and the helper does not separate
+  3D prims from 2D UI prims - so this ranks the sites without yet giving a
+  clean per-frame attribution.)
+
+  The divergence that makes any of this matter is rare and lands on `C`: across
+  749 build-carrying vsyncs of the town entry, exactly one had two builds read
+  different camera words, and the pair was `B` against `C` - the build the frame
+  does not draw under.
   The camera-rotation build is pinned: `FUN_8001CF50` composes `R` by rotating about each axis with the angle globals - `RotMatrixX(pitch=_DAT_8007B790)` at `0x800461A4`, `RotMatrixY(yaw=_DAT_8007B792)` at `0x8004629C`, `RotMatrixZ(roll=_DAT_8007B794)` at `0x8004638C` (each masks the angle to 12 bits and indexes the shared sin/cos LUT at `0x80070A2C`, `4096 = 360°`, `+0x800` = the quarter-wave cosine offset; composed via GTE `mvmva`).
   **So param 0 is the camera PITCH, not a "rot/zoom" word** - the zoom is H (a separate projection register). The eye sits *behind* the focus by `tr_eye` (in the 6×-scaled space); it is NOT at the focus.
   The commit's second argument decides between two behaviours, and the third selects the ease curve: the field VM calls `FUN_801DE084(0x801C6EA8, apply, op0 >> 2 & 0xF)`, reading `apply` as the u16 at operand `+2` (`overlay_0897_801de840.txt`, case `0x45` sub-`0x00`).
