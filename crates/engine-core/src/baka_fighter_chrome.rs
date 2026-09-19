@@ -1144,11 +1144,16 @@ pub const BLIT_SRC_Y_BASE: i16 = 0x80;
 /// Destination `y` the blit always writes to.
 pub const BLIT_DST_Y: i32 = 0x86;
 
-// NOT WIRED: the VRAM-rect table `&DAT_801dbe84` is overlay rodata with no
-// parser in `legaia_asset::baka_opponents`, and its one retail caller is the
-// scripted-arc effect animator `FUN_801d6310`, which the port does not model -
-// `BakaFight` draws the impact sprite through the ordinary chrome pass
-// instead.
+// NOT WIRED: the blocker is now one thing, not two. The table is parsed -
+// `legaia_asset::baka_opponents::parse_blit_rects` reads its two records off
+// the as-loaded overlay, and the disc-gated
+// `crates/asset/tests/baka_presentation_real.rs` pins them - so what is left
+// is the caller. The only retail one is the scripted-arc effect animator
+// `FUN_801d6310`, prototype record 3 of the band at `0x801D75DC`; the port
+// models neither that animator nor the VRAM-to-VRAM move its result feeds,
+// and `BakaFight` draws the impact sprite through the ordinary chrome pass
+// instead. Calling this from the chrome pass would pick an index nothing
+// chose.
 /// PORT: FUN_801d65f8 - the **sprite-blit helper**.
 ///
 /// Builds a VRAM source `RECT` out of the 4-byte record at
@@ -1226,10 +1231,14 @@ pub struct MirrorFrame {
 // opening the roster table). Two earlier notes were off: the record's base was
 // first given as `0x801D7688`, its `+0x04` word, and the run was then given as
 // five records from `0x801D7618`, which is the previous record's `+0x0C` word.
-// It needs the spawned actor's `+0x5A` live mask,
-// `+0x5C` clip id and `+0x68` frame cursor plus the runtime sprite archives
-// `_DAT_8007B888` / `_DAT_8007B840` to resolve the clip record. `BakaChrome`'s
-// pool carries banner widgets, not clip records, so there is nothing to hand it.
+// The band itself is now parsed
+// (`legaia_asset::baka_opponents::parse_actor_prototypes`, eight records,
+// disc-gated), so the reachability claim rests on bytes end to end. What is
+// still missing is the actor: this needs the spawned actor's `+0x5A` live
+// mask, `+0x5C` clip id and `+0x68` frame cursor plus the runtime sprite
+// archives `_DAT_8007B888` / `_DAT_8007B840` to resolve the clip record.
+// `BakaChrome`'s pool carries banner widgets, not clip records, so there is
+// nothing to hand it.
 /// PORT: FUN_801d49e8 - the **mirrored two-pass sprite draw**.
 ///
 /// An empty live mask (`+0x5A == 0`) retires the actor outright and nothing

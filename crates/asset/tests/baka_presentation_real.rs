@@ -194,3 +194,105 @@ fn fighter_packs_reproduce() {
         "entry 1220 is not a fighter pack"
     );
 }
+
+/// The chrome's sprite-blit source table (`DAT_801dbe84`).
+///
+/// Two claims that are only checkable against the disc: the table's records
+/// resolve to VRAM cells inside the framebuffer, and the table is the last
+/// initialised data in the image - every byte above its two records is zero,
+/// which is what bounds it at [`baka::BLIT_RECT_COUNT`].
+#[test]
+fn blit_rect_table_reproduces_and_ends_the_image() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(baka::BAKA_OVERLAY_PROT_INDEX as u32)
+        .expect("baka overlay in static map");
+    let raw = entry_bytes(&mut archive, rec.prot_index);
+    let overlay = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
+
+    let rects = baka::parse_blit_rects(&overlay).expect("blit-rect table parses");
+    assert_eq!(rects.len(), baka::BLIT_RECT_COUNT);
+    for (i, r) in rects.iter().enumerate() {
+        assert_eq!(r.size(), (baka::BLIT_RECT_W, baka::BLIT_RECT_H));
+        // A source cell has to sit inside the 1024x512 framebuffer, and its
+        // 6-halfword row has to fit beside it.
+        assert!(
+            r.src_x + baka::BLIT_RECT_W <= 1024,
+            "rect {i} src_x {} runs past the framebuffer",
+            r.src_x
+        );
+        assert!(
+            r.src_y + baka::BLIT_RECT_H <= 512,
+            "rect {i} src_y {} runs past the framebuffer",
+            r.src_y
+        );
+        // Every record names a *different* cell from the destination, or the
+        // blit would be a no-op.
+        assert_ne!((r.src_x, r.src_y), baka::BLIT_DST, "rect {i} is a no-op");
+    }
+    // The two records differ - a one-entry table would make the helper's
+    // index argument dead.
+    assert_ne!(rects[0].src_y, rects[1].src_y);
+
+    // Nothing initialised follows the table.
+    let tail = baka::BLIT_RECT_TABLE_FILE_OFFSET + baka::BLIT_RECT_COUNT * baka::BLIT_RECT_STRIDE;
+    assert!(
+        overlay[tail..].iter().all(|&b| b == 0),
+        "the image carries initialised bytes above the blit-rect table"
+    );
+}
+
+/// The actor-prototype band (`0x801D75DC`, eight `0x18`-byte records).
+///
+/// The band is the only path to a draw callback with no `jal` site, so what
+/// the disc has to confirm is that it *is* a band: eight uniform records that
+/// tile the gap to the roster pool exactly, each naming a distinct address
+/// below the image's own rodata.
+#[test]
+fn actor_prototype_band_tiles_the_gap_to_the_roster_pool() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(baka::BAKA_OVERLAY_PROT_INDEX as u32)
+        .expect("baka overlay in static map");
+    let raw = entry_bytes(&mut archive, rec.prot_index);
+    let overlay = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
+
+    let protos = baka::parse_actor_prototypes(&overlay).expect("prototype band parses");
+    assert_eq!(protos.len(), 8);
+    assert_eq!(baka::ACTOR_PROTOTYPE_COUNT, 8);
+    // The band ends exactly where the roster table begins.
+    assert_eq!(
+        baka::ACTOR_PROTOTYPE_TABLE_VA
+            + (baka::ACTOR_PROTOTYPE_COUNT * baka::ACTOR_PROTOTYPE_STRIDE) as u32,
+        baka::OPPONENT_TABLE_VA
+    );
+
+    // Each record names a different, word-aligned address below the image's
+    // own rodata - i.e. in its code.
+    let mut seen = std::collections::BTreeSet::new();
+    for p in &protos {
+        assert!(seen.insert(p.callback_va), "duplicate callback in the band");
+        assert_eq!(p.callback_va % 4, 0, "{:#010x} unaligned", p.callback_va);
+        assert!(
+            p.callback_va < baka::ACTOR_PROTOTYPE_TABLE_VA,
+            "callback {:#010x} points into the data band",
+            p.callback_va
+        );
+    }
+
+    // The two draw callbacks the port carries are in the band - which is the
+    // whole reason they are reachable in retail at all.
+    assert!(seen.contains(&0x801D_49E8), "mirrored sprite pass");
+    assert!(seen.contains(&0x801D_4FC8), "keyframe editor tick");
+    // The documented round SM is here too, so the band is not a table of
+    // draw callbacks alone.
+    assert!(seen.contains(&0x801D_3468), "round state machine");
+}
