@@ -2425,8 +2425,11 @@ The two arms split the item space cleanly, and that is what the `slot_row
 >= 4` guard is for. Of the 255 non-zero item ids, 104 are class `1` and
 every equipment bonus row they resolve to carries the `0x40` no-passive
 sentinel at `+5` - so the class-`1` arm can only ever yield the ATK / UDF /
-LDF triple, which is why retail does not even run the lookup on the weapon
-and armour rows. The remaining 151 ids take the item-effect arm, and 80 of
+LDF triple, and on retail data the lookup is a no-op for every equipment item
+there is, whichever row it sits in. The guard itself is a **row** test, not a
+class test, so which rows it silences is a separate question the
+[row table](#two-early-outs-of-fun_801d1290) answers. The remaining 151
+ids take the item-effect arm, and 80 of
 them carry a real passive index (`< 0x40`) at `+3`: 9 under `6` (the HP /
 MP pair), 4 in `10..=12` (SPD / INT / AGL) and the rest in the ATK / UDF /
 LDF band.
