@@ -87,6 +87,10 @@ namespace LegaiaWorld
                     LegaiaCommonPrefabs.SDK_PEN_PREFAB) != null,
             };
             var settings = LegaiaSceneSettings.Load(sceneName);
+            // The scene on disk may already carry the world scale; the
+            // pass places against the 1x world like the builder does.
+            if (spawn.transform.parent != null)
+                LegaiaWorldScale.Unapply(spawn.transform.parent.gameObject);
             var container = LegaiaCommonPrefabs.Build(
                 "Assets/LegaiaGenerated/" + sceneName, spawn.transform.position, o,
                 settings.prefabTransforms, settings.slotMachines);
@@ -252,6 +256,33 @@ namespace LegaiaWorld
                         Fail(name + " rotated " + cab.localEulerAngles + ", settings say " + sp.rotation);
                     if (sp != null && sp.hasScale && Mathf.Abs(cab.localScale.x - sp.scale) > 1e-4f)
                         Fail(name + " scale " + cab.localScale.x + ", settings say " + sp.scale);
+                }
+                // The reel-face materials must be PER CABINET: each
+                // machine's Start writes its own world-space shade origin
+                // into them, so a material two machines share leaves one
+                // of them with a black reel window in-world (the edit-mode
+                // wiring is identical either way - only the asset identity
+                // tells).
+                var machineType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaSlotMachine");
+                var faceOwners = new Dictionary<Object, string>();
+                for (int i = 0; i < expected && machineType != null; i++)
+                {
+                    var cab = container.transform.Find(LegaiaCommonPrefabs.SlotName(i));
+                    var proxy = cab != null ? cab.GetComponentInChildren(machineType, true) : null;
+                    var faces = proxy != null ? ReadVar(proxy, "valueMaterials") as System.Array : null;
+                    if (faces == null || faces.Length == 0)
+                        Fail(LegaiaCommonPrefabs.SlotName(i) + ": valueMaterials not wired");
+                    foreach (object f in faces)
+                    {
+                        var mat = f as Object;
+                        if (mat == null)
+                            continue;
+                        if (faceOwners.TryGetValue(mat, out string other))
+                            Fail(LegaiaCommonPrefabs.SlotName(i) + " shares reel-face material '" +
+                                 mat.name + "' with " + other + " - the shade origin bake " +
+                                 "would fight over it");
+                        faceOwners[mat] = LegaiaCommonPrefabs.SlotName(i);
+                    }
                 }
                 // A hand-placed cabinet the settings already carry is
                 // retired by the pass - one it does not know is left

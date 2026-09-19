@@ -287,13 +287,22 @@ namespace LegaiaWorld
                     "(is Assets/LegaiaWorld/Shaders synced?) - reel faces fall " +
                     "back to unshaded cutout AND will be invisible (backface" +
                     " culled under the mirrored composition).");
+            // PER CABINET, not shared: the machine's Start bakes its own
+            // drum's WORLD-space shade origin and axis into these
+            // (BakeShadeVectors -> _ShadeOrigin / _ShadeAxis), so two
+            // cabinets on one set of materials fight over them and the
+            // loser's faces are depth-cued against a drum tens of metres
+            // away - a black reel window on every machine but the last
+            // to start. Every other rig material is read-only at runtime
+            // and stays shared.
+            string faceSuffix = "_" + RigAssetSuffix();
             var valueMats = new Material[20];
             for (int i = 0; i < 10; i++)
-                valueMats[i] = CutoutMat("symbol_" + i, "symbols/symbol_" + i + ".png",
-                    false, faceShader, Q_REEL_FACE);
+                valueMats[i] = CutoutMat("symbol_" + i + faceSuffix,
+                    "symbols/symbol_" + i + ".png", false, faceShader, Q_REEL_FACE);
             for (int n = 1; n <= 10; n++)
-                valueMats[9 + n] = CutoutMat("numeral_" + n, "symbols/numeral_" + n + ".png",
-                    false, faceShader, Q_REEL_FACE);
+                valueMats[9 + n] = CutoutMat("numeral_" + n + faceSuffix,
+                    "symbols/numeral_" + n + ".png", false, faceShader, Q_REEL_FACE);
             var msgMats = new Material[21];
             for (int i = 0; i < 21; i++)
                 msgMats[i] = CutoutMat("msg_" + i.ToString("00"),

@@ -1529,7 +1529,12 @@ Faithful vs approximated, on top of the engine port's own notes: the
 reel drum is retail's (8 faces re-derived per frame at 22.5 degrees on
 the y=585 / z=512 ellipse, payline row on the peak-shade face, the
 rand%5 sub-row landing nudge applied) and the depth-cue shade is
-retail's formula per pixel in `SlotReelFace.shader`; the dot-matrix
+retail's formula per pixel in `SlotReelFace.shader` (its shade origin
+and axis are the machine's own drum in WORLD space, baked into the
+reel-face materials at Start - so those twenty materials are generated
+PER CABINET, `symbol_i_<cabinet>`; a shared set left every machine but
+the last to start with a black reel window, and the CommonPrefabs check
+asserts the machines' `valueMaterials` are disjoint); the dot-matrix
 marquee is composed at message granularity rather than per-dot (tally /
 pips / payout caption / scrolled attract legend), the cash-out submenu
 is dropped, an unclaimed payout auto-collects after a hold

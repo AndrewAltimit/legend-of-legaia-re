@@ -97,21 +97,31 @@ namespace LegaiaWorld
                 return;
             target = target > 1e-3f ? target : 1f;
             float current = Current(root);
-            if (Mathf.Abs(current - target) < 1e-5f)
-                return;
-            float factor = target / current;
 
+            // Each top-level object is judged by ITS OWN scale, not the
+            // root's: a container rebuilt since the last scale (the
+            // container-only path, a check's rebuild) stands at 1x beside
+            // a root already at the target, and must still be brought up.
+            int changed = 0;
             foreach (var go in TopLevel(root))
             {
-                Undo.RecordObject(go.transform, "Legaia world scale");
                 var s = go.transform.localScale;
+                float own = Mathf.Abs(s.y) > 1e-4f ? Mathf.Abs(s.y) : 1f;
+                if (Mathf.Abs(own - target) < 1e-5f)
+                    continue;
+                Undo.RecordObject(go.transform, "Legaia world scale");
                 float sx = go == root ? Mathf.Sign(s.x == 0f ? 1f : s.x) : 1f;
                 go.transform.localScale = new Vector3(sx * target, target, target);
-                Rescale(go, factor);
+                Rescale(go, target / own);
+                changed++;
             }
+            if (changed == 0)
+                return;
 
-            if (RenderSettings.fog)
+            // Fog is scene-wide: it follows the root's change only.
+            if (RenderSettings.fog && Mathf.Abs(current - target) > 1e-5f)
             {
+                float factor = target / current;
                 RenderSettings.fogStartDistance *= factor;
                 RenderSettings.fogEndDistance *= factor;
                 RenderSettings.fogDensity /= factor;
