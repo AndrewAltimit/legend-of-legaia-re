@@ -2540,6 +2540,40 @@ performs - clears status-word `actor[+0x16E]` bits, resets brightness/screen glo
 per-actor jump-table dispatch keyed on `actor[+0x1D]`. Called at battle-complete (`0xFF`); it is the
 final damage/HP settle + ability-effect application, not a bare teardown.
 
+### The `+0x16E` status word - one bit map, two port representations
+
+Every scan above reads one halfword, so the bit map is worth stating once. The
+bits are pinned individually by the HUD icon selector `FUN_8002C2E4`, whose
+priority ladder tests them in order, and by the appliers that set them.
+
+| bit(s) | condition | where it is set |
+|---|---|---|
+| `0x0001` | Venom | weak-DoT applier, 1/8 |
+| `0x0002` | Toxic | strong-DoT applier, 1/8 |
+| `0x0004` | Stone | petrify applier (`0x80041CEC` `ori 0x4`) |
+| `0x0008` / `0x0010` / `0x0020` | Rot, one rolled limb | `1 << (rand % 3 + 3)` |
+| `0x0040` | inside the Rot group, never set | - |
+| `0x0080` / `0x0100` / `0x0200` | AI delegation, always as the group `0x0380` | `FUN_80047430`, from accessory passive bit 45 |
+| `0x0400` | Numb | status applier |
+| `0x0800` | Sleep | status applier |
+| `0x1000` | Curse | curse applier, 1/4 |
+| `0x2000` / `0x4000` / `0x8000` | unused - no applier in the dumped corpus | - |
+
+Three masks are read as units: `0xF84` gates a slot out of the selectable
+scans (Stone, the delegation group, Numb, Sleep), `0x0F80` is what taking
+damage clears, and `0x0404` is the whole-actor inert test. There is **no KO
+bit** - a dead actor is one whose `+0x14C` is zero, which is why every consumer
+pairs the word with the liveness halfword.
+
+The port holds the same conditions twice: `BattleActor::field_flags` is the raw
+word (the cast band ORs its debuff bits straight in), and the status tracker
+holds a typed instance list the turn loop reads. `World::raw_status_word`
+composes them - the typed list packs through
+`status_effects::pack_display_flags`, whose bit map is this table, and the raw
+word ORs in unchanged - so a consumer that wants retail's word gets every bit
+either half carries, including the delegation group the typed list has no kind
+for.
+
 ### Actor-pool leaf helpers
 
 Small self-contained routines the SM and its round driver call over the
@@ -2604,12 +2638,22 @@ seats at the origin, and the cursor falls back to a plain slot-order scan.
   returns the first with a non-zero `+0x14C` liveness halfword; falls through to
   `7` when none is alive. Port: `first_live_monster_slot`.
 - **`FUN_801DBA04` / `FUN_801DB81C` - selectable-participant scans.** Both walk
-  the pool over `0..ctx[0]` applying the same three predicates - action-state
-  byte `!= 4`, alive (`+0x14C`), and no can't-select ailment (`+0x16E & 0xF84`).
+  the pool over `0..ctx[0]` applying the same three predicates - the slot's
+  **roster character id** `(&DAT_8007BD10)[i] != 4` (`0x801DBA44`), alive
+  (`+0x14C`), and no can't-select ailment (`+0x16E & 0xF84`).
   `FUN_801DBA04` starts at slot 0 (first selectable target); `FUN_801DB81C`
   starts at `ctx[+0x13] + 1` (next participant after the current actor). Each
   returns `ctx[0]` when nothing qualifies. Ports: `first_selectable_target` /
-  `next_selectable_actor`.
+  `next_selectable_actor`, both called by `engine-core`'s
+  `World::next_member_owing_command`.
+
+  The `!= 4` term used to read here as an *action-state* byte with `4` meaning
+  "removed / done". It is neither: `DAT_8007BD10` is the three-byte per-slot
+  roster id (`01 02 03` = Vahn / Noa / Gala) that the arts preseed indexes to
+  reach a character record (`byte - 1` is the record slot, `0x801DA37C`), and
+  `4` is the AI companion seat - the same `== 4` test the auto-fight block in
+  `FUN_801EED1C` uses. The scans exclude a seat the player does not command,
+  not one that has finished commanding.
 - **`FUN_80019B28` - 12-bit bearing (atan2).** Folds the displacement
   `(p2 - p1)` into a quadrant by sign, divides the shorter leg into the longer
   (`(min << 11) / max`), indexes the retail arctan LUT at `0x8006F4C8`, and adds
@@ -3496,6 +3540,15 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    `0x801DA638`/`0x801DA69C`), with no head-byte fallback: exactly one slot is overwritten.
    That is what the next preseed replays. Port:
    `legaia_engine_vm::battle_action::save_action_queue`.
+
+   Both slots are record-relative `+0x1A7` / `+0x1B7`: the character record base
+   `0x80084708 + slot*0x414` sits `0x5C8` bytes into the live-state window these
+   two address off, so `+0x76F - 0x5C8 = +0x1A7`. `legaia_save` exposes them as
+   `CharacterRecord::auto_command_string` over an `AutoCommandBand` the gauge
+   pair selects, and `engine-core` drives both leaves - the write-back on the
+   arts commit and the read at the Attack dispatch, where a replayed string wins
+   over the no-input swing roll and an empty one falls through to it. See
+   [save-record.md](../formats/save-record.md).
 2. **Normalize arrows into art constants.** `FUN_801EED1C`'s player path walks the queue,
    matches each token run against the character's art command table (token compare via
    `addiu v1,v1,-0xb` at `0x801EF3E8` - the queue's `0x0C..0x0F` arrows against the art table's

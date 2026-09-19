@@ -669,6 +669,31 @@ misreading of that routine). The table pointer *and* the rect's
 the first argument's `== 0` arm, so any other value reads the table through an
 uninitialised register; retail's one call site (`FUN_801d6310`) passes `0`.
 
+**The table is two records long, and the image's own bytes say so.**
+`DAT_801dbe84` is the **last initialised data in the overlay**: its eight bytes
+run to `0x801DBE8B` and every byte above that, to the end of the entry's
+`0xE000`, is zero. So the 4-byte stride yields exactly two defined rows, and a
+reader that assumes a longer table gets `(0x340, 0x80)` - the destination's own
+column - for every index past the second.
+
+| index | record bytes `0`/`1` | source rect | destination |
+|---|---|---|---|
+| `0` | `00` / `48` | `(0x340, 0xC8)` `6 x 0x18` | `(0x340, 0x86)` |
+| `1` | `00` / `60` | `(0x340, 0xE0)` `6 x 0x18` | `(0x340, 0x86)` |
+
+Both rows share the destination's x, so the blit moves a cell **up its own
+column**: a 6-halfword-wide, 24-row strip (24 pixels at 4bpp) copied into the
+live cell at `y = 0x86`. The index therefore selects *which* stored cell is
+showing and nothing else. Each record's high half (`+2` / `+3`, `00 70` in
+both) is never read by this routine.
+
+Parsers: `legaia_asset::baka_opponents::parse_blit_rects` for the table and
+`parse_actor_prototypes` for the eight-record band below, both over the
+as-loaded overlay image, both covered by the disc-gated
+`crates/asset/tests/baka_presentation_real.rs`. The prototype parser refuses an
+image whose records break the band's uniform shape, which is what keeps a
+mis-based image from yielding eight plausible-looking pointers.
+
 Ports: `engine-core::baka_fighter_chrome::{impact_effect_pair,
 mirrored_sprite_pass, sprite_blit}`.
 
