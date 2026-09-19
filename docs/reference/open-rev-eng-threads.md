@@ -134,6 +134,12 @@ cheapest place to look for a claim that is still wrong.
 | Which of a field frame's view builds does the drawn geometry use? | partial - the census is measured; the attribution it would need is not | [details ↓](#which-view-build-the-frame-draws-under) |
 | What consumes the fishing bite tick's per-cell fish **weight**? | open - the value is resolved every probe and its reader is not pinned | The water-class walk installs a `(credit bonus, weight)` pair per cell - `(0x1E, 100)`, `(0x14, 300)`, `(0x14, 500)`, defaulting to `(0, 10)` off water. Only the credit half is traced: it is added into the bite countdown at `addu s1,s1,s2` (`0x801D3434`). The weight half is resolved on the same pass and carried, so "fish weight" is a name rather than a measurement. Reading the register's live uses through the tick's tail, or landing the same species off two classes and comparing what is recorded, says whether it scales the species roll, the recorded catch, or nothing. |
 
+**What a field submode returns to** closed here: nothing reads the parked
+word. The op-`0x49` enter stores it twice, no image on the disc loads it at any
+width, and a live read watch across a submode enter records none either - so
+the return rides the driver's own handler slot and the port's collapsed chain
+drops a store retail never consumes ([settled](re-settled-threads.md#field--locomotion)).
+
 Three rows closed here at once, two of them camera. **What composes the field camera's
 `TR`** - the live eye trio is the eye-space translation and the focus is MVMVA'd
 through the scaled rotation into it, so there is no eye-back depth constant to
