@@ -371,10 +371,14 @@ namespace LegaiaWorld
             }
             EnsureUdonProgramAssets();
             var settings = LegaiaSceneSettings.Load(sceneName);
+            // The container is placed against the world at 1x (ground
+            // raycasts, spawn-relative offsets) and scaled with it after.
+            LegaiaWorldScale.Unapply(root);
             LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
                 spawnT.position, commonPrefabs, settings.prefabTransforms,
                 settings.slotMachines);
             settings.ApplyDeletions(root);
+            LegaiaWorldScale.Apply(root, settings.worldScale);
         }
 
         void EquipmentGUI()
@@ -919,6 +923,10 @@ namespace LegaiaWorld
                 EnsureUdonProgramAssets();
             var settings = LegaiaSceneSettings.Load(sceneName);
             string dir = Path.GetDirectoryName(manifestPath).Replace('\\', '/');
+            // The passes measure the world at 1x: take a world scale off
+            // first and put it back (with the living town) at the end,
+            // exactly as the build does.
+            LegaiaWorldScale.Unapply(root);
             settings.ApplyNpcOverrides(m, dir, root);
             ReconcileNpcs(m, dir, root, sceneName, settings);
             // A re-placed villager lands back on its manifest tile above;
@@ -930,6 +938,7 @@ namespace LegaiaWorld
             // descriptor spawn (a VRCWorld prefab added after the build
             // picks up LegaiaSpawn here without a full rebuild).
             settings.ApplyDeletions(root);
+            LegaiaWorldScale.Finish(root, sceneName, settings, realism.livingTown);
             var spawnT = root.transform.Find("LegaiaSpawn");
             if (settings.setDescriptorSpawn && spawnT != null)
                 LegaiaSceneSettings.AssignDescriptorSpawn(spawnT);
@@ -1337,9 +1346,12 @@ namespace LegaiaWorld
             if (realism.AnyEnabled)
                 LegaiaRealism.Apply(root, m, sceneName, realism);
 
-            // Per-scene deletions run LAST - the names usually refer to
-            // objects the passes above generate (interior shells, lamps).
+            // Per-scene deletions run after the passes - the names usually
+            // refer to objects the passes above generate (interior shells,
+            // lamps). The world scale goes on LAST of all, once every
+            // pass has measured the world at 1x (see LegaiaWorldScale).
             settings.ApplyDeletions(root);
+            LegaiaWorldScale.Finish(root, sceneName, settings, realism.livingTown);
             if (settings.setDescriptorSpawn)
                 LegaiaSceneSettings.AssignDescriptorSpawn(spawnGo.transform);
 

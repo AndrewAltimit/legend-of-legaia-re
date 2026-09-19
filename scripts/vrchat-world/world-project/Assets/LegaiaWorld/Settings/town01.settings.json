@@ -24,6 +24,7 @@
   },
   "spawn_position": [-24.85, 1.75, 12.22],
   "set_descriptor_spawn": true,
+  "world_scale": 1.5,
   "living_town": {
     "names": {"npc_14": "Cara"},
     "night_host": {"npc": "npc_14", "station": "Legaia_common_prefabs/card_table/stool_0"},

@@ -71,6 +71,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. Weapon rows carry `weapon` and measure their own swing speed while held. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCommonPrefabs.cs` | The **Common prefabs** foldout: builds the mirror, the TV and the card table from primitives + generated textures + the SDK's own components (the 52 card faces are drawn into one versioned atlas, `cards_atlas_v2.png`, in the standard pip arrangement), spawns the SDK's sample pen system, and drops any prefab assets you list (QvPen, ProTV, a community deck...) near spawn. See "Common prefabs" below. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSettingsSnapshot.cs` | Menu `Legaia > Snapshot placements to scene settings`: writes the hand-placed Inspector transforms of both top-level containers' children (common prefabs; camp panel, torches and campfires), the card table's seat panel and LegaiaSpawn into `Settings/<scene>.settings.json` (`prefab_transforms` + `spawn_position`), every cabinet of the slot asset (`slot_machine`, or `slot_machines` past one) and the hand-moved built objects (`object_transforms`: stored keys re-read, world-glb nodes with an override added). Other keys in the file are preserved, and the blocks merge over what is already there rather than replacing it. Sibling menu `Legaia > Pin selected objects to scene settings` adds the selection to `object_transforms`. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaWorldScale.cs` | The `world_scale` pass: the finished scene grown about the origin as one transform per top-level object (root + kit containers), applied last so every pass measured the world at 1x; the navmesh data alone is re-baked in the scaled frame (links, stations and loader kept); light / audio / fog / villager-speed values follow the change in scale. Idempotent by target, so the enhancement and container-only paths wrap themselves in take-off / put-back. See "World scale". |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSoak.cs` | The PLAY-MODE soak (`LegaiaBatchChecks.Soak`): enters play mode with ClientSim, pins the day/night clock to night or day, samples every brain at 2 Hz into a per-villager timeline, and asserts the night routine ran (in through the door, door swung, out again at dawn) or reports a day's station visits and conversations. The only check here that actually runs a villager. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaBatchChecks.cs` | Headless self-tests (`Unity -batchmode -executeMethod LegaiaWorld.LegaiaBatchChecks.CommonPrefabs` builds the common prefabs against the scene's built root and asserts every SDK component and every UdonSharp field wiring reached the backing behaviour; `.LivingTown`, `.Weather`, `.Ambience` likewise; `.RigPose` measures every imported NPC rig and checks the sitting pose's hip turn against the rig's walk clip). Never saves the scene. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaEventButton.cs` | A collider button: Interact sends one named event into a target behaviour. Every common-prefab button uses it (no world-space UI, so no pickup-collider-steals-the-click trap). |
@@ -399,6 +400,16 @@ All keys optional (`town01.settings.json` is the worked example):
   layer, and again by "Apply enhancements". The snapshot re-captures
   stored keys and adds every world node moved by hand; a moved villager
   is added with `Legaia > Pin selected objects to scene settings`.
+- **`world_scale`** - grow the whole built scene about the origin by one
+  factor (`1.5`: VR avatars stand half again taller than the export's
+  metre assumed). The Legaia root and every kit container scale
+  together, so the village, the villagers, the furniture and the
+  cabinets keep every relationship; every value in this file stays as
+  it is (all local under those objects). Goes on LAST, after every pass
+  has measured the world at 1x; the navmesh data is then re-baked in
+  the scaled frame (links and stations kept), and light ranges, audio
+  distances, fog and the villagers' speeds scale with it. See "World
+  scale".
 - **`ambience`** - user-supplied ambience loops by role:
   `{"day": "Assets/Audio/day.wav", "night": ..., "base": ...,
   "waves": ..., "wind_gust": ..., "tree_birds": ..., "night_wildlife": ...,
@@ -1348,6 +1359,39 @@ common prefabs near spawn (existing root)** rebuilds just this
 container against the built scene, so re-placing the TV never forces a
 full rebuild; unticking everything removes it. `delete_objects` in the
 settings file also searches this container.
+
+### World scale
+
+`"world_scale": 1.5` in the scene settings grows the finished scene
+about the origin: the `Legaia_<scene>` root (keeping its mirror sign)
+and the four kit containers (`Legaia_common_prefabs`, `Legaia_camp_props`,
+`Legaia_night_torches`, `Legaia_equipment`) all take the factor as their
+transform scale, so the village, villagers, furniture and cabinets grow
+as one and nothing inside the scene moves relative to anything else.
+Every number in the settings file is local under one of those objects
+and stays put; the snapshot round-trips unchanged.
+
+Order is the point (`LegaiaWorldScale.cs`). The builder's passes judge
+the world in metres against avatar-sized rules - window-glow spans,
+poster walls within 7 m, grass per square metre, a villager's 0.8 m door
+stand, the living town's 1.2 m navmesh snap - so they ALL run at 1x and
+the scale goes on last. The one thing that cannot ride a transform is
+the navmesh: NavMeshData is world-space geometry, so after the scale the
+data alone is re-baked where the floors now are, with the agent grown by
+the same factor, and the loader re-pointed - the navmesh container, its
+ledge links and the stations are transforms wired into the villagers by
+reference and simply scaled with the root. (Running the whole living
+town in the scaled frame was tried: its metre constants then refuse door
+stands and prop stations.) Values that are distances rather than
+transforms - light ranges, audio min/max, reverb zones, fog, the
+villagers' speeds and radii - are multiplied by the change in scale, and
+particle systems are switched to hierarchy scaling. "Apply
+enhancements" and the container-only rebuild take the scale off first
+and put it back after, so a scaled scene rebuilds exactly like a fresh
+one. The CommonPrefabs check applies, removes and re-applies the scale
+and asserts a pinned prefab's world position is its stored value times
+the factor; the LivingTown check runs its reachability asserts against
+the scaled scene and the re-baked data.
 
 Shading: after the build, every generated material is converted to the
 kit's lit vertex-colour shaders - the same pass the slot-machine cabinet

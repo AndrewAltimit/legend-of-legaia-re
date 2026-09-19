@@ -187,6 +187,16 @@
 //       every world-glb node carrying a position / rotation override,
 //       and "Legaia > Pin selected objects to scene settings" adds
 //       whatever is selected (how a moved villager gets its key).
+//
+//   "world_scale": 1.5
+//       Grow the whole built scene about the origin - the Legaia root
+//       and every kit container (furniture, cabinets, camp props) - by
+//       one factor, for avatars that stand taller than the export's
+//       metre assumed. Every value in this file stays as it is: they are
+//       all local under those objects. Goes on LAST (every pass measures
+//       the world at 1x); the navmesh data is then re-baked in the scaled
+//       frame and the distance-valued fields scale with it. See
+//       LegaiaWorldScale. Default 1.
 
 using System.Collections.Generic;
 using System.IO;
@@ -283,6 +293,9 @@ namespace LegaiaWorld
         /// placement (see the header). Applied by ApplyObjectTransforms.
         public Dictionary<string, LegaiaPrefabTransform> objectTransforms =
             new Dictionary<string, LegaiaPrefabTransform>();
+        /// world_scale: the uniform scale the finished scene is grown to
+        /// (LegaiaWorldScale). 1 = as exported.
+        public float worldScale = 1f;
         /// The "ambience" block: role -> AudioClip asset path (see the
         /// header). Empty when the file has none, and the ambience pass
         /// then generates every role.
@@ -425,6 +438,8 @@ namespace LegaiaWorld
                 if (string.IsNullOrEmpty(s.slotMachines[i].artDir))
                     s.slotMachines[i].artDir = s.slotMachines[0].artDir;
             }
+            if (MiniJson.Get(m, "world_scale") is double ws && ws > 0.001)
+                s.worldScale = (float)ws;
             var ot = MiniJson.AsObj(MiniJson.Get(m, "object_transforms"));
             if (ot != null)
                 foreach (var kv in ot)
@@ -564,6 +579,7 @@ namespace LegaiaWorld
                     : "") +
                 (s.objectTransforms.Count > 0
                     ? ", " + s.objectTransforms.Count + " object transform(s)" : "") +
+                (Mathf.Abs(s.worldScale - 1f) > 1e-5f ? ", world scale " + s.worldScale : "") +
                 (s.ambienceClips.Count > 0
                     ? ", " + s.ambienceClips.Count + " ambience override(s)" : "") + ".");
             return s;

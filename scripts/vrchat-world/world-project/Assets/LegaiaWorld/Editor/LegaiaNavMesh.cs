@@ -60,6 +60,79 @@ namespace LegaiaWorld
             LegaiaLivingTownOptions o, LegaiaSceneSettings settings)
         {
             Remove(root);
+            var data = BakeData(root, o, 1f, out int sourceCount, out var bakeUsed);
+            if (data == null)
+                return null;
+
+            // --- Asset + loader ------------------------------------------------
+            string path = SaveData(sceneName, data);
+
+            var container = new GameObject(CONTAINER);
+            container.transform.SetParent(root.transform, false);
+            var loader = LegaiaWorldBuilder.TryAttachUdon(container, "LegaiaNavMeshLoader");
+            LegaiaWorldBuilder.SetUdonField(loader, "data", data);
+            LegaiaWorldBuilder.SyncUdonProxy(loader);
+
+            BuildLinks(root, container.transform, data, o, settings);
+
+            Debug.Log("[Legaia] navmesh: baked from " + sourceCount +
+                " collider source(s) (agent r " + bakeUsed.agentRadius + " m, h " +
+                bakeUsed.agentHeight + " m, step " + bakeUsed.agentClimb +
+                " m, slope " + bakeUsed.agentSlope + " deg) -> " + path +
+                (loader == null ? " (no loader: UdonSharp missing, the bake is inert)" : ""));
+            return container;
+        }
+
+        /// Re-bake ONLY the data, in the frame the scene is in now, and
+        /// re-point the loader at it - the container, its ledge links and
+        /// everything wired to them stay. The world-scale pass uses this:
+        /// the living town ran at 1x (its stations, links and keep-out
+        /// zones are transforms and scale with the root), but NavMeshData
+        /// is world-space geometry and has to be baked where the floors
+        /// ended up. `o` carries the agent dimensions for THIS frame.
+        /// False when there is no navmesh to re-bake.
+        internal static bool Rebake(GameObject root, string sceneName, LegaiaLivingTownOptions o)
+        {
+            var container = root != null ? root.transform.Find(CONTAINER) : null;
+            if (container == null)
+                return false;
+            float frame = LegaiaWorldScale.Current(root);
+            var data = BakeData(root, o, frame, out int sourceCount, out var bakeUsed);
+            if (data == null)
+                return false;
+            string path = SaveData(sceneName, data);
+            var loaderType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaNavMeshLoader");
+            var loader = loaderType != null ? container.GetComponent(loaderType) : null;
+            LegaiaWorldBuilder.SetUdonField(loader, "data", data);
+            LegaiaWorldBuilder.SyncUdonProxy(loader);
+            Debug.Log("[Legaia] navmesh: re-baked in the current frame from " + sourceCount +
+                " collider source(s) (agent r " + bakeUsed.agentRadius + " m, h " +
+                bakeUsed.agentHeight + " m, step " + bakeUsed.agentClimb + " m) -> " + path +
+                " (links and loader kept).");
+            return true;
+        }
+
+        /// Write `data` as the scene's navmesh asset (replacing the old one).
+        static string SaveData(string sceneName, NavMeshData data)
+        {
+            string path = AssetPath(sceneName);
+            System.IO.Directory.CreateDirectory(
+                System.IO.Path.GetDirectoryName(path).Replace('\\', '/'));
+            if (AssetDatabase.LoadAssetAtPath<NavMeshData>(path) != null)
+                AssetDatabase.DeleteAsset(path);
+            data.name = sceneName + "_navmesh";
+            AssetDatabase.CreateAsset(data, path);
+            return path;
+        }
+
+        /// Collect the walkable colliders under the root and the kit
+        /// containers and bake them with the options' agent. Null (with a
+        /// warning) when nothing walkable exists.
+        static NavMeshData BakeData(GameObject root, LegaiaLivingTownOptions o,
+            float frameScale, out int sourceCount, out NavMeshBuildSettings bake)
+        {
+            sourceCount = 0;
+            bake = NavMesh.GetSettingsByID(0);
 
             // --- Sources ---------------------------------------------------
             var markups = new List<NavMeshBuildMarkup>();
@@ -118,14 +191,15 @@ namespace LegaiaWorld
             }
             if (!any)
                 bounds = new Bounds(root.transform.position, Vector3.one * 200f);
-            bounds.Expand(2f);
+            bounds.Expand(2f * frameScale);
 
             // --- Settings --------------------------------------------------
             // Agent type 0 (Humanoid) is what NavMesh.CalculatePath queries
             // by default; the dimensions are the villager's, not a
             // player's: at the 1 m-per-tile export these models stand
             // well under a metre.
-            NavMeshBuildSettings bake = NavMesh.GetSettingsByID(0);
+            sourceCount = sources.Count;
+            bake = NavMesh.GetSettingsByID(0);
             bake.agentRadius = Mathf.Max(0.05f, o.navAgentRadius);
             bake.agentHeight = Mathf.Max(0.2f, o.navAgentHeight);
             bake.agentClimb = Mathf.Max(0.02f, o.navStepHeight);
@@ -133,7 +207,11 @@ namespace LegaiaWorld
             // Small enough to keep a shore or a porch, big enough that a
             // 0.3 m furniture ledge is not its own walkable island the
             // ledge-link pass then spends a hop on.
-            bake.minRegionArea = 1.5f;
+            // In square metres of the frame being baked: at a world scale
+            // the same sliver is scale-squared bigger, and a sliver that
+            // survives only in the scaled bake is an island the door stand
+            // can snap onto.
+            bake.minRegionArea = 1.5f * frameScale * frameScale;
             bake.overrideVoxelSize = true;
             bake.voxelSize = Mathf.Max(0.03f, bake.agentRadius / 3f);
             bake.overrideTileSize = true;
@@ -142,34 +220,8 @@ namespace LegaiaWorld
             var data = NavMeshBuilder.BuildNavMeshData(bake, sources, bounds,
                 Vector3.zero, Quaternion.identity);
             if (data == null)
-            {
                 Debug.LogWarning("[Legaia] navmesh: bake produced no data.");
-                return null;
-            }
-
-            // --- Asset + loader ------------------------------------------------
-            string path = AssetPath(sceneName);
-            System.IO.Directory.CreateDirectory(
-                System.IO.Path.GetDirectoryName(path).Replace('\\', '/'));
-            if (AssetDatabase.LoadAssetAtPath<NavMeshData>(path) != null)
-                AssetDatabase.DeleteAsset(path);
-            data.name = sceneName + "_navmesh";
-            AssetDatabase.CreateAsset(data, path);
-
-            var container = new GameObject(CONTAINER);
-            container.transform.SetParent(root.transform, false);
-            var loader = LegaiaWorldBuilder.TryAttachUdon(container, "LegaiaNavMeshLoader");
-            LegaiaWorldBuilder.SetUdonField(loader, "data", data);
-            LegaiaWorldBuilder.SyncUdonProxy(loader);
-
-            BuildLinks(root, container.transform, data, o, settings);
-
-            Debug.Log("[Legaia] navmesh: baked from " + sources.Count +
-                " collider source(s) (agent r " + bake.agentRadius + " m, h " +
-                bake.agentHeight + " m, step " + bake.agentClimb +
-                " m, slope " + bake.agentSlope + " deg) -> " + path +
-                (loader == null ? " (no loader: UdonSharp missing, the bake is inert)" : ""));
-            return container;
+            return data;
         }
 
         /// Editor-side registration for the batch checks (and anything else

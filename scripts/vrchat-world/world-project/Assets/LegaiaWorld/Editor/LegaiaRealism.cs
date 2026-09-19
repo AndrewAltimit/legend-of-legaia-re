@@ -509,9 +509,35 @@ namespace LegaiaWorld
                     }
                 m.SetFloat("_Cutoff", cut > 0f ? cut : 0.5f);
             }
-            string path = genDir + "/" + LegaiaWorldBuilder.Sanitize(m.name)
-                + "_" + idx++ + ".mat";
-            AssetDatabase.DeleteAsset(path);
+            // The file is keyed on the SOURCE material's asset identity
+            // (its GUID + local id), so two instances of one prop - two
+            // slot cabinets, say - resolve to the same file, and a second
+            // conversion updates that file in place instead of deleting
+            // and recreating it. Delete-then-create left every renderer
+            // of the first instance pointing at a destroyed asset: the
+            // first cabinet rendered missing-material magenta the moment
+            // the second was built. A material that is not an asset (an
+            // instance made in the scene) has no such identity and keeps
+            // the per-call counter.
+            string key;
+            if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(src, out string guid, out long fid) &&
+                !string.IsNullOrEmpty(guid))
+                key = guid.Substring(0, 8) + "_" + fid.ToString("x");
+            else
+                key = (idx++).ToString();
+            string path = genDir + "/" + LegaiaWorldBuilder.Sanitize(m.name) + "_" + key + ".mat";
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (existing != null)
+            {
+                existing.shader = m.shader;
+                existing.CopyPropertiesFromMaterial(m);
+                existing.renderQueue = m.renderQueue;
+                existing.name = m.name;
+                EditorUtility.SetDirty(existing);
+                Object.DestroyImmediate(m);
+                cache[src] = existing;
+                return existing;
+            }
             AssetDatabase.CreateAsset(m, path);
             cache[src] = m;
             return m;

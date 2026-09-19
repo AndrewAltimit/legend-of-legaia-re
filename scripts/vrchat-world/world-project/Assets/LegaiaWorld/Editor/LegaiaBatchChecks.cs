@@ -292,6 +292,39 @@ namespace LegaiaWorld
                     " object transform(s) resolved and applied.");
             }
 
+            // world_scale: applied last, on the root and every top-level
+            // container, and exact in both directions - a pinned prefab's
+            // world position is its stored (local) value times the scale,
+            // and taking the scale off lands it back on the stored value.
+            if (root != null && Mathf.Abs(settings.worldScale - 1f) > 1e-5f)
+            {
+                float s = settings.worldScale;
+                var tv = container.transform.Find("tv");
+                Vector3 tvLocal = tv != null ? tv.localPosition : Vector3.zero;
+                LegaiaWorldScale.Apply(root, s);
+                if (Mathf.Abs(LegaiaWorldScale.Current(root) - s) > 1e-4f)
+                    Fail("world scale " + LegaiaWorldScale.Current(root) + ", settings say " + s);
+                if (Mathf.Abs(container.transform.localScale.y - s) > 1e-4f)
+                    Fail(container.name + " scale " + container.transform.localScale.y +
+                         ", settings say " + s);
+                if (Mathf.Sign(root.transform.localScale.x) != Mathf.Sign(-1f))
+                    Fail("the root's mirror sign was lost by the world scale");
+                if (tv != null)
+                {
+                    if ((tv.localPosition - tvLocal).magnitude > 1e-4f)
+                        Fail("the world scale moved tv's stored (local) position");
+                    if ((tv.position - tvLocal * s).magnitude > 1e-3f)
+                        Fail("tv world position " + tv.position + ", expected " + tvLocal * s);
+                }
+                LegaiaWorldScale.Unapply(root);
+                if (Mathf.Abs(LegaiaWorldScale.Current(root) - 1f) > 1e-4f ||
+                    Mathf.Abs(container.transform.localScale.y - 1f) > 1e-4f)
+                    Fail("world scale did not come off cleanly");
+                LegaiaWorldScale.Apply(root, s);
+                Debug.Log("[Legaia] CommonPrefabs: world scale " + s + " applied, removed " +
+                    "and re-applied on " + root.name + " + containers.");
+            }
+
             // Placements from the scene settings file must win over the
             // computed offsets (position AND rotation) - for the camp
             // props (torches, campfires, the settings panel) as well, so
@@ -874,6 +907,13 @@ namespace LegaiaWorld
             bool viaRealism = System.Array.IndexOf(
                 System.Environment.GetCommandLineArgs(), "-legaiaViaRealism") >= 0;
             GameObject container;
+            // The passes run at 1x whatever the scene on disk is at; a
+            // world_scale in the settings then goes on last with the
+            // navmesh re-baked in that frame, the way the build does - so
+            // every assert below measures the scaled scene.
+            bool scaled = Mathf.Abs(settings.worldScale - 1f) > 1e-5f;
+            var ltOpts = new LegaiaLivingTownOptions();
+            LegaiaWorldScale.Unapply(root);
             if (viaRealism)
             {
                 Debug.Log("[Legaia] living town: -legaiaViaRealism - applying the whole " +
@@ -886,11 +926,13 @@ namespace LegaiaWorld
             }
             else
             {
-                LegaiaLivingTown.Apply(
-                    root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
-                container = LegaiaLivingTown.Apply(
-                    root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
+                LegaiaLivingTown.Apply(root, manifest, sceneName, ltOpts, settings);
+                container = LegaiaLivingTown.Apply(root, manifest, sceneName, ltOpts, settings);
             }
+            LegaiaWorldScale.Finish(root, sceneName, settings, ltOpts);
+            if (scaled && Mathf.Abs(LegaiaWorldScale.Current(root) - settings.worldScale) > 1e-4f)
+                Fail("world scale " + LegaiaWorldScale.Current(root) + " on " + root.name +
+                     ", settings say " + settings.worldScale);
             if (container == null)
                 Fail("living town built nothing");
             int containers = 0;
@@ -950,6 +992,9 @@ namespace LegaiaWorld
             // tile a player walks through, which is what this asserts away.
             var keepOut = LegaiaLivingTown.LastKeepOutZones();
             float indoorCap = LegaiaLivingTown.LastIndoorKeepOut;
+            // The probes below are metres in a 1x scene; a world_scale
+            // grows every gap they measure by the same factor.
+            float ws = LegaiaWorldScale.Current(root);
             var inZone = new List<string>();
             foreach (var st in container.GetComponentsInChildren(stationType, true))
             {
@@ -958,24 +1003,27 @@ namespace LegaiaWorld
                 if (standPoint == null)
                     Fail(Path(st.transform) + " has no standPoint");
                 Vector3 p = standPoint.position;
-                if (!LegaiaLivingTown.KeepOutOk(keepOut, p,
+                // The zones were recorded by the pass at 1x; the scale is
+                // about the origin, so the point divided by it is the same
+                // point in the zones' frame.
+                if (!LegaiaLivingTown.KeepOutOk(keepOut, p / ws,
                         (bool)stationType.GetField("indoors").GetValue(st), indoorCap))
                     inZone.Add(Path(st.transform));
                 if (kind == 0)
                 {
                     propStations++;
                     RaycastHit hit;
-                    if (!Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down,
-                            out hit, 4f, ~0, QueryTriggerInteraction.Ignore))
+                    if (!Physics.Raycast(p + Vector3.up * 1.5f * ws, Vector3.down,
+                            out hit, 4f * ws, ~0, QueryTriggerInteraction.Ignore))
                         Fail(Path(st.transform) + " floats: no floor under " + p);
-                    if (Mathf.Abs(hit.point.y - p.y) > 0.35f)
+                    if (Mathf.Abs(hit.point.y - p.y) > 0.35f * ws)
                         Fail(Path(st.transform) + " stands " +
                              (p.y - hit.point.y).ToString("0.00") + " m off its floor");
                     if (hit.normal.y < 0.7f)
                         Fail(Path(st.transform) + " stands on a wall (normal " +
                              hit.normal + ")");
-                    foreach (var c in Physics.OverlapSphere(p + Vector3.up * 0.55f,
-                                 0.26f, ~0, QueryTriggerInteraction.Ignore))
+                    foreach (var c in Physics.OverlapSphere(p + Vector3.up * 0.55f * ws,
+                                 0.26f * ws, ~0, QueryTriggerInteraction.Ignore))
                         if (npcRoot == null || !c.transform.IsChildOf(npcRoot))
                             Fail(Path(st.transform) + " has no standing room: " +
                                  c.name + " is in the way");
@@ -1004,17 +1052,17 @@ namespace LegaiaWorld
                     // ray started at chest height finds the eave, not the
                     // floor - which reads as "stands 1.4 m off its floor".
                     RaycastHit sh;
-                    if (!Physics.Raycast(p + Vector3.up * 0.6f, Vector3.down,
-                            out sh, 2.6f, ~0, QueryTriggerInteraction.Ignore))
+                    if (!Physics.Raycast(p + Vector3.up * 0.6f * ws, Vector3.down,
+                            out sh, 2.6f * ws, ~0, QueryTriggerInteraction.Ignore))
                         Fail(Path(st.transform) + " floats: no floor under " + p);
-                    if (Mathf.Abs(sh.point.y - p.y) > 0.35f)
+                    if (Mathf.Abs(sh.point.y - p.y) > 0.35f * ws)
                         Fail(Path(st.transform) + " stands " +
                              (p.y - sh.point.y).ToString("0.00") + " m off its floor");
                     if (sh.normal.y < 0.7f)
                         Fail(Path(st.transform) + " stands on a wall (normal " +
                              sh.normal + ")");
-                    foreach (var c in Physics.OverlapSphere(p + Vector3.up * 0.55f,
-                                 0.26f, ~0, QueryTriggerInteraction.Ignore))
+                    foreach (var c in Physics.OverlapSphere(p + Vector3.up * 0.55f * ws,
+                                 0.26f * ws, ~0, QueryTriggerInteraction.Ignore))
                         if (npcRoot == null || !c.transform.IsChildOf(npcRoot))
                             Fail(Path(st.transform) + " has no standing room: " +
                                  c.name + " is in the way");
@@ -1294,7 +1342,7 @@ namespace LegaiaWorld
                     string reason;
                     for (int i = 0; i < anchors.Count && !reach; i++)
                         reach = LegaiaNavMesh.Reachable(anchors[i], stand.position,
-                            1.2f, out reason);
+                            1.2f * ws, out reason);
                     if (!reach)
                         stranded.Add(Path(stand));
                 }
@@ -1338,7 +1386,7 @@ namespace LegaiaWorld
                     // home at all, and the locomotion controller composes
                     // exactly the same walk -> hop -> walk at runtime.
                     if (!LegaiaNavMesh.ReachableWithLinks(placed.position, door.position,
-                            1.2f, navLinks, out hopped, out why))
+                            1.2f * ws, navLinks, out hopped, out why))
                         routeFailures.Add(placed.name + " -> " + door.parent.name + "/door: " + why);
                     else
                     {
@@ -1346,12 +1394,12 @@ namespace LegaiaWorld
                         if (hopped)
                             hopHomes++;
                     }
-                    if (!LegaiaNavMesh.Reachable(door.position, threshold.position, 1.2f, out why))
+                    if (!LegaiaNavMesh.Reachable(door.position, threshold.position, 1.2f * ws, out why))
                         routeFailures.Add(door.parent.name + " door -> threshold: " + why);
                     var landing = ReadVar(brain, "homeLanding") as Transform;
                     var exit = ReadVar(brain, "homeExit") as Transform;
                     if (landing != null && exit != null &&
-                        !LegaiaNavMesh.Reachable(landing.position, exit.position, 1.2f, out why))
+                        !LegaiaNavMesh.Reachable(landing.position, exit.position, 1.2f * ws, out why))
                         routeFailures.Add(door.parent.name + " landing -> exit: " + why);
                 }
             }
@@ -1368,7 +1416,7 @@ namespace LegaiaWorld
                             string why;
                             bool hopped;
                             if (d != null && LegaiaNavMesh.ReachableWithLinks(npc.position,
-                                    d.position, 1.2f, navLinks, out hopped, out why))
+                                    d.position, 1.2f * ws, navLinks, out hopped, out why))
                                 Fail(npc.name + " is flagged noRoute but " + home.name +
                                      "/door is reachable from its spawn" +
                                      (hopped ? " over a ledge link" : ""));
