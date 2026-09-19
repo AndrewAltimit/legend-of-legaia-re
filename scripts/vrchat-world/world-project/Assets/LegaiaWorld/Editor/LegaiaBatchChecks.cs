@@ -87,9 +87,13 @@ namespace LegaiaWorld
                     LegaiaCommonPrefabs.SDK_PEN_PREFAB) != null,
             };
             var settings = LegaiaSceneSettings.Load(sceneName);
+            // The scene on disk may already carry the world scale; the
+            // pass places against the 1x world like the builder does.
+            if (spawn.transform.parent != null)
+                LegaiaWorldScale.Unapply(spawn.transform.parent.gameObject);
             var container = LegaiaCommonPrefabs.Build(
                 "Assets/LegaiaGenerated/" + sceneName, spawn.transform.position, o,
-                settings.prefabTransforms, settings.slotMachine);
+                settings.prefabTransforms, settings.slotMachines);
             if (container == null)
                 Fail("no container built");
 
@@ -126,6 +130,26 @@ namespace LegaiaWorld
             Expect("VRC.SDK3.Video.Components.AVPro.VRCAVProVideoSpeaker", 2);
             Expect("VRC.SDK3.Components.VRCUrlInputField", 1);
             Expect("VRC.SDK3.Components.VRCStation", 4, table);
+            // The night candle: one behaviour on the table, its flame
+            // (particles + point light) built INACTIVE - the day/night
+            // cycle lights it - and its particle materials left alone by
+            // the lit-material sweep.
+            Expect("LegaiaWorld.LegaiaCandle", 1, table);
+            var candle = table.transform.Find(LegaiaCommonPrefabs.CANDLE_NAME);
+            if (candle == null)
+                Fail("no candle under the card table");
+            var candleFlame = candle.Find("flame");
+            if (candleFlame == null || candleFlame.gameObject.activeSelf)
+                Fail("the candle's flame must exist and start inactive (the cycle lights it)");
+            if (candleFlame.GetComponent<Light>() == null)
+                Fail("the candle's flame carries no point light");
+            foreach (var pr in candle.GetComponentsInChildren<ParticleSystemRenderer>(true))
+                if (pr.sharedMaterial == null || pr.sharedMaterial.shader == null ||
+                    pr.sharedMaterial.shader.name.StartsWith("Legaia/Lit"))
+                    Fail(pr.name + ": the candle's particle material was lit-converted " +
+                         "or lost (" + (pr.sharedMaterial != null ? pr.sharedMaterial.shader.name : "null") + ")");
+            CheckVar(container, "LegaiaWorld.LegaiaCandle", "flame");
+            CheckVar(container, "LegaiaWorld.LegaiaCandle", "fireLight");
             Expect("VRC.SDK3.Components.VRCPickup", 52, table);
             Expect("VRC.SDK3.Components.VRCObjectSync", 52, table);
             Expect("LegaiaWorld.LegaiaCard", 52, table);
@@ -178,13 +202,24 @@ namespace LegaiaWorld
             // Shading: every kit renderer is on a Legaia lit shader except
             // the display surfaces (mirror, video screen) and whatever a
             // spawned SDK prefab brought along.
-            var slotRoot = container.transform.Find(LegaiaCommonPrefabs.SLOT_NAME);
+            // Every cabinet (slot_machine, slot_machine_2, ...) carries a
+            // rig whose marquee slots hold null materials until a message
+            // shows - the slot builder's own rules, not this check's.
+            bool UnderCabinet(Transform t)
+            {
+                for (var p = t; p != null && p != container.transform; p = p.parent)
+                    if (LegaiaCommonPrefabs.SlotIndexOf(p.name) >= 0)
+                        return true;
+                return false;
+            }
             foreach (var r in container.GetComponentsInChildren<Renderer>(true))
             {
                 if (PrefabUtility.IsPartOfPrefabInstance(r.gameObject))
                     continue; // spawned prefabs keep their own materials
-                if (slotRoot != null && r.transform.IsChildOf(slotRoot))
+                if (UnderCabinet(r.transform))
                     continue; // the slot rig follows the slot builder's own rules
+                if (r is ParticleSystemRenderer)
+                    continue; // the candle's flame / smoke keep their additive sprites
                 foreach (var m in r.sharedMaterials)
                 {
                     if (m == null || m.shader == null)
@@ -217,31 +252,177 @@ namespace LegaiaWorld
             // (lit) materials, not the Standard originals.
             CheckVar(container, "LegaiaWorld.LegaiaMirror", "idleMaterial");
 
-            // Slot machine: when the cabinet asset exists, the pass must
-            // have placed it as the settings say and built the minigame.
+            // Slot machines: when the cabinet asset exists, the pass must
+            // have placed one cabinet per settings entry (one from the
+            // builder fields when the file places none), each where the
+            // settings say, each with its own minigame rig.
             string slotAsset = settings.slotMachine?.cabinetAsset ?? o.slotCabinetPath;
             if (AssetDatabase.LoadAssetAtPath<GameObject>(slotAsset) != null)
             {
-                var cab = container.transform.Find(LegaiaCommonPrefabs.SLOT_NAME);
-                if (cab == null)
-                    Fail("slot cabinet not placed under " + container.name);
-                Expect("LegaiaWorld.LegaiaSlotMachine", 1, cab.gameObject);
-                Expect("LegaiaWorld.LegaiaSlotButton", 3, cab.gameObject);
-                var sp = settings.slotMachine;
-                if (sp != null && sp.hasPosition &&
-                    (cab.localPosition - sp.position).magnitude > 0.001f)
-                    Fail("slot cabinet at " + cab.localPosition + ", settings say " + sp.position);
-                if (sp != null && sp.hasRotation &&
-                    Quaternion.Angle(cab.localRotation, Quaternion.Euler(sp.rotation)) > 0.01f)
-                    Fail("slot cabinet rotated " + cab.localEulerAngles + ", settings say " + sp.rotation);
-                if (sp != null && sp.hasScale && Mathf.Abs(cab.localScale.x - sp.scale) > 1e-4f)
-                    Fail("slot cabinet scale " + cab.localScale.x + ", settings say " + sp.scale);
+                int expected = Mathf.Max(1, settings.slotMachines.Count);
+                Expect("LegaiaWorld.LegaiaSlotMachine", expected);
+                for (int i = 0; i < expected; i++)
+                {
+                    string name = LegaiaCommonPrefabs.SlotName(i);
+                    var cab = container.transform.Find(name);
+                    if (cab == null)
+                        Fail("slot cabinet " + name + " not placed under " + container.name);
+                    Expect("LegaiaWorld.LegaiaSlotMachine", 1, cab.gameObject);
+                    Expect("LegaiaWorld.LegaiaSlotButton", 3, cab.gameObject);
+                    var sp = i < settings.slotMachines.Count ? settings.slotMachines[i] : null;
+                    if (sp != null && sp.hasPosition &&
+                        (cab.localPosition - sp.position).magnitude > 0.001f)
+                        Fail(name + " at " + cab.localPosition + ", settings say " + sp.position);
+                    if (sp != null && sp.hasRotation &&
+                        Quaternion.Angle(cab.localRotation, Quaternion.Euler(sp.rotation)) > 0.01f)
+                        Fail(name + " rotated " + cab.localEulerAngles + ", settings say " + sp.rotation);
+                    if (sp != null && sp.hasScale && Mathf.Abs(cab.localScale.x - sp.scale) > 1e-4f)
+                        Fail(name + " scale " + cab.localScale.x + ", settings say " + sp.scale);
+                }
+                // The reel-face materials must be PER CABINET: each
+                // machine's Start writes its own world-space shade origin
+                // into them, so a material two machines share leaves one
+                // of them with a black reel window in-world (the edit-mode
+                // wiring is identical either way - only the asset identity
+                // tells).
+                var machineType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaSlotMachine");
+                var faceOwners = new Dictionary<Object, string>();
+                for (int i = 0; i < expected && machineType != null; i++)
+                {
+                    var cab = container.transform.Find(LegaiaCommonPrefabs.SlotName(i));
+                    var proxy = cab != null ? cab.GetComponentInChildren(machineType, true) : null;
+                    var faces = proxy != null ? ReadVar(proxy, "valueMaterials") as System.Array : null;
+                    if (faces == null || faces.Length == 0)
+                        Fail(LegaiaCommonPrefabs.SlotName(i) + ": valueMaterials not wired");
+                    foreach (object f in faces)
+                    {
+                        var mat = f as Object;
+                        if (mat == null)
+                            continue;
+                        if (faceOwners.TryGetValue(mat, out string other))
+                            Fail(LegaiaCommonPrefabs.SlotName(i) + " shares reel-face material '" +
+                                 mat.name + "' with " + other + " - the shade origin bake " +
+                                 "would fight over it");
+                        faceOwners[mat] = LegaiaCommonPrefabs.SlotName(i);
+                    }
+                }
+                // A hand-placed cabinet the settings already carry is
+                // retired by the pass - one it does not know is left
+                // standing on purpose, so only rigs count as strays here.
                 int strays = 0;
                 foreach (var t in Object.FindObjectsOfType<Transform>(true))
                     if (t.name == "LegaiaSlotGame" && !t.IsChildOf(container.transform))
                         strays++;
                 if (strays > 0)
                     Fail(strays + " slot rig(s) left outside the container");
+                Debug.Log("[Legaia] CommonPrefabs: " + expected + " slot machine(s) placed.");
+            }
+
+            // object_transforms: every key must name a built object, and
+            // applying the block must leave each one exactly where the
+            // file says (the scene on disk may already be there - the
+            // assert is that the apply resolves and lands, not that it
+            // moved anything).
+            var root = spawn.transform.parent != null ? spawn.transform.parent.gameObject : null;
+            if (root != null && settings.objectTransforms.Count > 0)
+            {
+                settings.ApplyObjectTransforms(root);
+                foreach (var kv in settings.objectTransforms)
+                {
+                    var hits = LegaiaSceneSettings.FindObjects(root, kv.Key);
+                    if (hits.Count == 0)
+                        Fail("object_transforms key '" + kv.Key + "' names nothing under " +
+                             root.name + " or the kit containers");
+                    if ((hits[0].localPosition - kv.Value.position).magnitude > 0.001f)
+                        Fail("object_transforms '" + kv.Key + "' at " + hits[0].localPosition +
+                             ", settings say " + kv.Value.position);
+                    if (kv.Value.hasRotation && Quaternion.Angle(hits[0].localRotation,
+                            Quaternion.Euler(kv.Value.rotation)) > 0.01f)
+                        Fail("object_transforms '" + kv.Key + "' rotated " +
+                             hits[0].localEulerAngles + ", settings say " + kv.Value.rotation);
+                }
+                Debug.Log("[Legaia] CommonPrefabs: " + settings.objectTransforms.Count +
+                    " object transform(s) resolved and applied.");
+
+                // Collision must follow: after the merged collider is
+                // re-baked, a ray dropped through a moved world node's NEW
+                // bounds hits the world collider, and one dropped through
+                // its ORIGINAL (prefab source) bounds, where nothing stands
+                // now, does not. Scoped to nodes of the world glb that
+                // carry a mesh; a villager or a prop has its own collider.
+                var worldT = root.transform.Find("world");
+                if (worldT != null && LegaiaWorldBuilder.RebuildMergedCollider(
+                        worldT.gameObject, sceneName))
+                {
+                    var worldCol = worldT.GetComponent<MeshCollider>();
+                    int probed = 0;
+                    foreach (var kv in settings.objectTransforms)
+                    {
+                        var hits = LegaiaSceneSettings.FindObjects(root, kv.Key);
+                        if (hits.Count == 0 || !hits[0].IsChildOf(worldT))
+                            continue;
+                        var mf = hits[0].GetComponent<MeshFilter>();
+                        var rend = hits[0].GetComponent<Renderer>();
+                        var src = PrefabUtility.GetCorrespondingObjectFromSource(hits[0]);
+                        if (mf == null || mf.sharedMesh == null || rend == null || src == null)
+                            continue;
+                        var b = rend.bounds;
+                        bool hitNew = false;
+                        foreach (var h in Physics.RaycastAll(b.center + Vector3.up * (b.extents.y + 1f),
+                                     Vector3.down, b.size.y + 2f, ~0, QueryTriggerInteraction.Ignore))
+                            if (h.collider == worldCol)
+                                hitNew = true;
+                        if (!hitNew)
+                            Fail("collision did not follow object_transforms '" + kv.Key +
+                                 "': no world-collider hit through its bounds at " + b.center);
+                        // Where the node WAS: the same bounds, moved by the
+                        // source-to-instance offset in the parent's frame.
+                        Vector3 oldCenter = b.center + hits[0].parent.TransformVector(
+                            src.localPosition - hits[0].localPosition);
+                        foreach (var h in Physics.RaycastAll(oldCenter + Vector3.up * (b.extents.y + 1f),
+                                     Vector3.down, b.size.y + 2f, ~0, QueryTriggerInteraction.Ignore))
+                            if (h.collider == worldCol && Mathf.Abs(h.point.y - oldCenter.y) < b.extents.y * 0.5f)
+                                Fail("collision still stands where object_transforms '" + kv.Key +
+                                     "' used to be (" + oldCenter + "): the merged collider " +
+                                     "was not re-baked over the move");
+                        probed++;
+                    }
+                    Debug.Log("[Legaia] CommonPrefabs: merged collider follows " + probed +
+                        " moved world node(s).");
+                }
+            }
+
+            // world_scale: applied last, on the root and every top-level
+            // container, and exact in both directions - a pinned prefab's
+            // world position is its stored (local) value times the scale,
+            // and taking the scale off lands it back on the stored value.
+            if (root != null && Mathf.Abs(settings.worldScale - 1f) > 1e-5f)
+            {
+                float s = settings.worldScale;
+                var tv = container.transform.Find("tv");
+                Vector3 tvLocal = tv != null ? tv.localPosition : Vector3.zero;
+                LegaiaWorldScale.Apply(root, s);
+                if (Mathf.Abs(LegaiaWorldScale.Current(root) - s) > 1e-4f)
+                    Fail("world scale " + LegaiaWorldScale.Current(root) + ", settings say " + s);
+                if (Mathf.Abs(container.transform.localScale.y - s) > 1e-4f)
+                    Fail(container.name + " scale " + container.transform.localScale.y +
+                         ", settings say " + s);
+                if (Mathf.Sign(root.transform.localScale.x) != Mathf.Sign(-1f))
+                    Fail("the root's mirror sign was lost by the world scale");
+                if (tv != null)
+                {
+                    if ((tv.localPosition - tvLocal).magnitude > 1e-4f)
+                        Fail("the world scale moved tv's stored (local) position");
+                    if ((tv.position - tvLocal * s).magnitude > 1e-3f)
+                        Fail("tv world position " + tv.position + ", expected " + tvLocal * s);
+                }
+                LegaiaWorldScale.Unapply(root);
+                if (Mathf.Abs(LegaiaWorldScale.Current(root) - 1f) > 1e-4f ||
+                    Mathf.Abs(container.transform.localScale.y - 1f) > 1e-4f)
+                    Fail("world scale did not come off cleanly");
+                LegaiaWorldScale.Apply(root, s);
+                Debug.Log("[Legaia] CommonPrefabs: world scale " + s + " applied, removed " +
+                    "and re-applied on " + root.name + " + containers.");
             }
 
             // Placements from the scene settings file must win over the
@@ -265,6 +446,13 @@ namespace LegaiaWorld
                     child = container.transform.Find("card_table/panel");
                 if (child == null && camp != null)
                     child = camp.transform.Find(kv.Key == "menu" ? "LegaiaMenu" : kv.Key);
+                // A fourth: the equipment rack's own top-level container
+                // (pinned as a group; the scene's, this check builds none).
+                if (child == null && kv.Key == "equipment")
+                {
+                    var rack = GameObject.Find("Legaia_equipment");
+                    child = rack != null ? rack.transform : null;
+                }
                 if (child == null)
                 {
                     // A key for something this build did not make (a
@@ -714,6 +902,122 @@ namespace LegaiaWorld
                       " U# proxies wired (scene " + sceneName + ", not saved).");
         }
 
+        // --- Sky -----------------------------------------------------------
+
+        /// Sun + moon + sky + fog + weather over the scene's built root:
+        /// the Legaia/Sky shader compiles, the skybox material sits on it
+        /// with every property the cycle writes, the moon is a disabled
+        /// soft-shadow directional under the sun pointing the other way,
+        /// and the cycle <-> weather references both reach the backing
+        /// behaviours.
+        public static void Sky()
+        {
+            string scenePath = Arg("-legaiaScene", "Assets/Scenes/VRCDefaultWorldScene.unity");
+            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
+
+            GameObject spawn = null;
+            foreach (var t in Object.FindObjectsOfType<Transform>())
+                if (t.name == "LegaiaSpawn")
+                {
+                    spawn = t.gameObject;
+                    break;
+                }
+            if (spawn == null)
+                Fail("no LegaiaSpawn in " + scenePath + " - build the scene first");
+            var root = spawn.transform.parent != null
+                ? spawn.transform.parent.gameObject : null;
+            if (root == null || !root.name.StartsWith("Legaia_"))
+                Fail("LegaiaSpawn is not under a built Legaia_<scene> root");
+            string sceneName = root.name.Substring("Legaia_".Length);
+
+            LegaiaWorldBuilder.EnsureUdonProgramAssets();
+            var o = new LegaiaRealismOptions();
+            LegaiaRealism.ApplySkyOnly(root, sceneName, o);
+            var weather = LegaiaWeatherBuilder.Apply(root, sceneName, o);
+            if (weather == null)
+                Fail("weather pass built nothing");
+
+            // --- The dome shader + the material on it ----------------------
+            var shader = Shader.Find(LegaiaRealism.SKY_SHADER);
+            if (shader == null)
+                Fail(LegaiaRealism.SKY_SHADER + " shader missing");
+            if (ShaderUtil.ShaderHasError(shader))
+                Fail(LegaiaRealism.SKY_SHADER + " has compile errors (see the console)");
+            var sky = RenderSettings.skybox;
+            if (sky == null)
+                Fail("no skybox material after the sky pass");
+            if (sky.shader != shader)
+                Fail("the skybox is on " + sky.shader.name + ", not " +
+                     LegaiaRealism.SKY_SHADER + " (migration in place failed)");
+            string want = "Assets/LegaiaGenerated/" + sceneName + "/realism/skybox.mat";
+            if (AssetDatabase.GetAssetPath(sky) != want)
+                Fail("the skybox material is " + AssetDatabase.GetAssetPath(sky) +
+                     ", expected " + want);
+            foreach (string prop in LegaiaRealism.SKY_DRIVEN)
+                if (!sky.HasProperty(prop))
+                    Fail(LegaiaRealism.SKY_SHADER + " has no " + prop +
+                         " - LegaiaDayNight writes it every frame");
+            if (!RenderSettings.fog)
+                Fail("distance fog is off after the sky pass");
+
+            // --- Sun + moon ------------------------------------------------
+            var sunT = root.transform.Find("LegaiaSun");
+            if (sunT == null)
+                Fail("no LegaiaSun under " + root.name);
+            var sunLight = sunT.GetComponent<Light>();
+            if (sunLight == null || sunLight.type != LightType.Directional)
+                Fail("LegaiaSun carries no directional Light");
+            if (RenderSettings.sun != sunLight)
+                Fail("RenderSettings.sun is not LegaiaSun");
+            var moonT = sunT.Find(LegaiaRealism.MOON);
+            if (moonT == null)
+                Fail("no " + LegaiaRealism.MOON + " under LegaiaSun");
+            var moonLight = moonT.GetComponent<Light>();
+            if (moonLight == null || moonLight.type != LightType.Directional)
+                Fail(LegaiaRealism.MOON + " carries no directional Light");
+            if (moonLight.enabled)
+                Fail("the moon is enabled at build time - the cycle turns it on after sunset");
+            if (moonLight.shadows == LightShadows.None)
+                Fail("the moon casts no shadows - it is the only shadowed directional at night");
+            if (Vector3.Dot(sunT.forward, moonT.forward) > -0.5f)
+                Fail("the moon does not point the other way from the sun (dot " +
+                     Vector3.Dot(sunT.forward, moonT.forward) + ")");
+            // The build-time sky shows the sun where the realism sun points.
+            Vector4 sd = sky.GetVector("_SunDir");
+            if (Vector3.Dot(new Vector3(sd.x, sd.y, sd.z).normalized, -sunT.forward) < 0.99f)
+                Fail("the skybox's _SunDir does not match LegaiaSun");
+
+            // --- Wiring ----------------------------------------------------
+            var sunGo = sunT.gameObject;
+            foreach (string f in new[] { "sun", "moon", "skyMaterial", "weather" })
+                CheckVar(sunGo, "LegaiaWorld.LegaiaDayNight", f);
+            if (root.transform.Find("night_lamps") != null)
+                CheckVar(sunGo, "LegaiaWorld.LegaiaDayNight", "nightLights");
+            if (GameObject.Find("Legaia_night_torches") != null)
+                CheckVar(sunGo, "LegaiaWorld.LegaiaDayNight", "nightTorches");
+            CheckVar(weather, "LegaiaWorld.LegaiaWeather", "dayNight");
+            var dnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaDayNight");
+            var dn = sunT.GetComponent(dnType);
+            // Unity's operator, not ReferenceEquals: a reference taken
+            // before the material's reimport is a destroyed object - non-null
+            // to C#, null to Unity, and null once the scene is saved.
+            var wiredSky = dnType.GetField("skyMaterial")?.GetValue(dn) as Material;
+            if (wiredSky == null)
+                Fail("LegaiaDayNight.skyMaterial is null or a destroyed object " +
+                     "(a reference taken before the .mat reimport)");
+            if (wiredSky != sky)
+                Fail("LegaiaDayNight.skyMaterial (" + AssetDatabase.GetAssetPath(wiredSky) +
+                     ") is not the RenderSettings skybox");
+            var wiredMoon = dnType.GetField("moon")?.GetValue(dn) as Light;
+            if (wiredMoon == null || wiredMoon != moonLight)
+                Fail("LegaiaDayNight.moon is not the LegaiaMoon light");
+
+            Debug.Log("[Legaia] SELFTEST OK: sky = " + LegaiaRealism.SKY_SHADER + " (" +
+                      LegaiaRealism.SKY_DRIVEN.Length + " driven properties), moon under " +
+                      "the sun, cycle <-> weather wired (scene " + sceneName +
+                      ", not saved).");
+        }
+
         // --- Living town ---------------------------------------------------
 
         /// The PLAY-MODE soak (LegaiaSoak): enters play mode with ClientSim,
@@ -808,7 +1112,7 @@ namespace LegaiaWorld
             };
             LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
                 spawn.transform.position, prefabOpts, settings.prefabTransforms,
-                settings.slotMachine);
+                settings.slotMachines);
 
             // Apply TWICE: the pass must refresh, not stack. Every assert
             // below then runs against the second build, so a leaked brain or
@@ -826,6 +1130,13 @@ namespace LegaiaWorld
             bool viaRealism = System.Array.IndexOf(
                 System.Environment.GetCommandLineArgs(), "-legaiaViaRealism") >= 0;
             GameObject container;
+            // The passes run at 1x whatever the scene on disk is at; a
+            // world_scale in the settings then goes on last with the
+            // navmesh re-baked in that frame, the way the build does - so
+            // every assert below measures the scaled scene.
+            bool scaled = Mathf.Abs(settings.worldScale - 1f) > 1e-5f;
+            var ltOpts = new LegaiaLivingTownOptions();
+            LegaiaWorldScale.Unapply(root);
             if (viaRealism)
             {
                 Debug.Log("[Legaia] living town: -legaiaViaRealism - applying the whole " +
@@ -838,11 +1149,13 @@ namespace LegaiaWorld
             }
             else
             {
-                LegaiaLivingTown.Apply(
-                    root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
-                container = LegaiaLivingTown.Apply(
-                    root, manifest, sceneName, new LegaiaLivingTownOptions(), settings);
+                LegaiaLivingTown.Apply(root, manifest, sceneName, ltOpts, settings);
+                container = LegaiaLivingTown.Apply(root, manifest, sceneName, ltOpts, settings);
             }
+            LegaiaWorldScale.Finish(root, sceneName, settings, ltOpts);
+            if (scaled && Mathf.Abs(LegaiaWorldScale.Current(root) - settings.worldScale) > 1e-4f)
+                Fail("world scale " + LegaiaWorldScale.Current(root) + " on " + root.name +
+                     ", settings say " + settings.worldScale);
             if (container == null)
                 Fail("living town built nothing");
             int containers = 0;
@@ -902,6 +1215,9 @@ namespace LegaiaWorld
             // tile a player walks through, which is what this asserts away.
             var keepOut = LegaiaLivingTown.LastKeepOutZones();
             float indoorCap = LegaiaLivingTown.LastIndoorKeepOut;
+            // The probes below are metres in a 1x scene; a world_scale
+            // grows every gap they measure by the same factor.
+            float ws = LegaiaWorldScale.Current(root);
             var inZone = new List<string>();
             foreach (var st in container.GetComponentsInChildren(stationType, true))
             {
@@ -910,24 +1226,27 @@ namespace LegaiaWorld
                 if (standPoint == null)
                     Fail(Path(st.transform) + " has no standPoint");
                 Vector3 p = standPoint.position;
-                if (!LegaiaLivingTown.KeepOutOk(keepOut, p,
+                // The zones were recorded by the pass at 1x; the scale is
+                // about the origin, so the point divided by it is the same
+                // point in the zones' frame.
+                if (!LegaiaLivingTown.KeepOutOk(keepOut, p / ws,
                         (bool)stationType.GetField("indoors").GetValue(st), indoorCap))
                     inZone.Add(Path(st.transform));
                 if (kind == 0)
                 {
                     propStations++;
                     RaycastHit hit;
-                    if (!Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down,
-                            out hit, 4f, ~0, QueryTriggerInteraction.Ignore))
+                    if (!Physics.Raycast(p + Vector3.up * 1.5f * ws, Vector3.down,
+                            out hit, 4f * ws, ~0, QueryTriggerInteraction.Ignore))
                         Fail(Path(st.transform) + " floats: no floor under " + p);
-                    if (Mathf.Abs(hit.point.y - p.y) > 0.35f)
+                    if (Mathf.Abs(hit.point.y - p.y) > 0.35f * ws)
                         Fail(Path(st.transform) + " stands " +
                              (p.y - hit.point.y).ToString("0.00") + " m off its floor");
                     if (hit.normal.y < 0.7f)
                         Fail(Path(st.transform) + " stands on a wall (normal " +
                              hit.normal + ")");
-                    foreach (var c in Physics.OverlapSphere(p + Vector3.up * 0.55f,
-                                 0.26f, ~0, QueryTriggerInteraction.Ignore))
+                    foreach (var c in Physics.OverlapSphere(p + Vector3.up * 0.55f * ws,
+                                 0.26f * ws, ~0, QueryTriggerInteraction.Ignore))
                         if (npcRoot == null || !c.transform.IsChildOf(npcRoot))
                             Fail(Path(st.transform) + " has no standing room: " +
                                  c.name + " is in the way");
@@ -956,17 +1275,17 @@ namespace LegaiaWorld
                     // ray started at chest height finds the eave, not the
                     // floor - which reads as "stands 1.4 m off its floor".
                     RaycastHit sh;
-                    if (!Physics.Raycast(p + Vector3.up * 0.6f, Vector3.down,
-                            out sh, 2.6f, ~0, QueryTriggerInteraction.Ignore))
+                    if (!Physics.Raycast(p + Vector3.up * 0.6f * ws, Vector3.down,
+                            out sh, 2.6f * ws, ~0, QueryTriggerInteraction.Ignore))
                         Fail(Path(st.transform) + " floats: no floor under " + p);
-                    if (Mathf.Abs(sh.point.y - p.y) > 0.35f)
+                    if (Mathf.Abs(sh.point.y - p.y) > 0.35f * ws)
                         Fail(Path(st.transform) + " stands " +
                              (p.y - sh.point.y).ToString("0.00") + " m off its floor");
                     if (sh.normal.y < 0.7f)
                         Fail(Path(st.transform) + " stands on a wall (normal " +
                              sh.normal + ")");
-                    foreach (var c in Physics.OverlapSphere(p + Vector3.up * 0.55f,
-                                 0.26f, ~0, QueryTriggerInteraction.Ignore))
+                    foreach (var c in Physics.OverlapSphere(p + Vector3.up * 0.55f * ws,
+                                 0.26f * ws, ~0, QueryTriggerInteraction.Ignore))
                         if (npcRoot == null || !c.transform.IsChildOf(npcRoot))
                             Fail(Path(st.transform) + " has no standing room: " +
                                  c.name + " is in the way");
@@ -1246,7 +1565,7 @@ namespace LegaiaWorld
                     string reason;
                     for (int i = 0; i < anchors.Count && !reach; i++)
                         reach = LegaiaNavMesh.Reachable(anchors[i], stand.position,
-                            1.2f, out reason);
+                            1.2f * ws, out reason);
                     if (!reach)
                         stranded.Add(Path(stand));
                 }
@@ -1290,7 +1609,7 @@ namespace LegaiaWorld
                     // home at all, and the locomotion controller composes
                     // exactly the same walk -> hop -> walk at runtime.
                     if (!LegaiaNavMesh.ReachableWithLinks(placed.position, door.position,
-                            1.2f, navLinks, out hopped, out why))
+                            1.2f * ws, navLinks, out hopped, out why))
                         routeFailures.Add(placed.name + " -> " + door.parent.name + "/door: " + why);
                     else
                     {
@@ -1298,12 +1617,12 @@ namespace LegaiaWorld
                         if (hopped)
                             hopHomes++;
                     }
-                    if (!LegaiaNavMesh.Reachable(door.position, threshold.position, 1.2f, out why))
+                    if (!LegaiaNavMesh.Reachable(door.position, threshold.position, 1.2f * ws, out why))
                         routeFailures.Add(door.parent.name + " door -> threshold: " + why);
                     var landing = ReadVar(brain, "homeLanding") as Transform;
                     var exit = ReadVar(brain, "homeExit") as Transform;
                     if (landing != null && exit != null &&
-                        !LegaiaNavMesh.Reachable(landing.position, exit.position, 1.2f, out why))
+                        !LegaiaNavMesh.Reachable(landing.position, exit.position, 1.2f * ws, out why))
                         routeFailures.Add(door.parent.name + " landing -> exit: " + why);
                 }
             }
@@ -1320,7 +1639,7 @@ namespace LegaiaWorld
                             string why;
                             bool hopped;
                             if (d != null && LegaiaNavMesh.ReachableWithLinks(npc.position,
-                                    d.position, 1.2f, navLinks, out hopped, out why))
+                                    d.position, 1.2f * ws, navLinks, out hopped, out why))
                                 Fail(npc.name + " is flagged noRoute but " + home.name +
                                      "/door is reachable from its spawn" +
                                      (hopped ? " over a ledge link" : ""));

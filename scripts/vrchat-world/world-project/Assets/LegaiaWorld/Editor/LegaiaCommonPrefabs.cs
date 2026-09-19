@@ -115,9 +115,12 @@ namespace LegaiaWorld
         /// world colliders must already exist (ground snapping raycasts).
         /// `positions` (from the scene settings file) overrides the
         /// spawn-relative offset per item with an absolute world position.
+        /// `slots` (the settings' slot machines, build order) places one
+        /// cabinet per entry; null / empty places the single builder-field
+        /// cabinet.
         internal static GameObject Build(string genDir, Vector3 spawnW,
             LegaiaCommonPrefabOptions o, Dictionary<string, LegaiaPrefabTransform> placements,
-            LegaiaSlotPlacement slot = null, List<LegaiaPosterRef> posters = null)
+            IList<LegaiaSlotPlacement> slots = null, List<LegaiaPosterRef> posters = null)
         {
             Remove();
             var container = new GameObject(CONTAINER);
@@ -165,6 +168,10 @@ namespace LegaiaWorld
             if (o.miniTv && o.tv && o.cardTable &&
                 BuildMiniTv(container, genDir, placements) != null)
                 built.Add("mini CRT");
+            // A candle on the felt that lights itself at night (its own
+            // behaviour follows the day/night cycle; nothing to wire).
+            if (o.cardTable && BuildCandle(container, genDir, placements) != null)
+                built.Add("night candle");
             if (o.sdkPens)
             {
                 var pens = AssetDatabase.LoadAssetAtPath<GameObject>(SDK_PEN_PREFAB);
@@ -202,9 +209,11 @@ namespace LegaiaWorld
             // must point at the converted variants, not the originals.
             if (o.slotMachine)
             {
-                var cab = BuildSlotMachine(container, spawnW, o, slot);
-                if (cab != null)
+                int cabinets = BuildSlotMachines(container, spawnW, o, slots);
+                if (cabinets == 1)
                     built.Add("slot machine");
+                else if (cabinets > 1)
+                    built.Add(cabinets + " slot machines");
             }
 
             // Posters LAST of the kit-built things: the wall search needs
@@ -221,8 +230,12 @@ namespace LegaiaWorld
 
             // Spawned prefabs (the SDK pens, a QvPen, a ProTV) keep their
             // authored materials - only the kit-built furniture converts.
+            // Particle renderers (the candle's flame and smoke) keep their
+            // additive / soft materials: a lit cutout on a flame sprite is
+            // an opaque orange card.
             LegaiaRealism.ConvertPropToLit(container, genDir,
-                r => !PrefabUtility.IsPartOfPrefabInstance(r.gameObject));
+                r => !PrefabUtility.IsPartOfPrefabInstance(r.gameObject) &&
+                     !(r is ParticleSystemRenderer));
             RewireMirrorMaterials(container);
 
             // Every panel built above, off keyboard navigation: otherwise
@@ -273,43 +286,126 @@ namespace LegaiaWorld
         /// back across the table.
         internal static readonly Vector3 MINI_TV_AT = new Vector3(0f, 0.765f, -0.40f);
 
+        /// The night candle on the felt: the +Z rim, across from the mini
+        /// CRT and clear of the hand anchors on the diagonals (radius 0.5).
+        /// Table-local like MINI_TV_AT; `card_table_candle` in the settings
+        /// pins it.
+        internal const string CANDLE_NAME = "candle";
+        internal static readonly Vector3 CANDLE_AT = new Vector3(0f, 0.764f, 0.45f);
+
+        /// A candle (dish, wax, wick) whose flame - the camp props' fire
+        /// particles + point light, built inactive - LegaiaCandle lights at
+        /// night and flickers. Every part is a primitive under the table,
+        /// so it rides the table's own placement and the snapshot.
+        static GameObject BuildCandle(GameObject container, string genDir,
+            Dictionary<string, LegaiaPrefabTransform> placements)
+        {
+            var tableT = container.transform.Find("card_table");
+            if (tableT == null)
+                return null;
+            var old = tableT.Find(CANDLE_NAME);
+            if (old != null)
+                Object.DestroyImmediate(old.gameObject);
+
+            var root = new GameObject(CANDLE_NAME);
+            root.transform.SetParent(tableT, false);
+            root.transform.localPosition = CANDLE_AT;
+            if (LegaiaSceneSettings.ApplyPlacement(placements, "card_table_candle", root.transform))
+                Debug.Log("[Legaia] candle placed from settings at local " +
+                    root.transform.localPosition + ".");
+
+            var dark = LegaiaCampProps.EnsureMat(genDir, "camp_dark", "Standard",
+                new Color(0.16f, 0.14f, 0.12f));
+            var wax = LegaiaCampProps.EnsureMat(genDir, "candle_wax", "Standard",
+                new Color(0.93f, 0.88f, 0.72f));
+            // Unity's cylinder is 2 units tall at scale 1: y scale = half height.
+            Prim(PrimitiveType.Cylinder, "dish", root.transform,
+                new Vector3(0f, 0.005f, 0f), new Vector3(0.09f, 0.005f, 0.09f), dark);
+            Prim(PrimitiveType.Cylinder, "wax", root.transform,
+                new Vector3(0f, 0.06f, 0f), new Vector3(0.05f, 0.05f, 0.05f), wax);
+            Prim(PrimitiveType.Cylinder, "wick", root.transform,
+                new Vector3(0f, 0.116f, 0f), new Vector3(0.005f, 0.008f, 0.005f), dark);
+
+            var flame = LegaiaCampProps.BuildFlame(root.transform, new Vector3(0f, 0.128f, 0f),
+                0.3f, LegaiaCampProps.EnsureFlameMaterial(genDir),
+                LegaiaCampProps.EnsureSmokeMaterial(genDir));
+            var light = flame.GetComponent<Light>();
+            // A candle's pool, not a campfire's: a warm circle over the felt
+            // and the players' hands.
+            light.range = 2.8f;
+            light.intensity = 0.7f;
+            light.color = new Color(1f, 0.68f, 0.36f);
+
+            var candle = LegaiaWorldBuilder.TryAttachUdon(root, "LegaiaCandle");
+            LegaiaWorldBuilder.SetUdonField(candle, "flame", flame);
+            LegaiaWorldBuilder.SetUdonField(candle, "fireLight", light);
+            LegaiaWorldBuilder.SetUdonField(candle, "fireIntensity", light.intensity);
+            // The cycle exists on a rebuild of this container alone; on a
+            // fresh build the realism pass makes it later and the candle
+            // finds it by name at Start.
+            var dnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaDayNight");
+            var dn = dnType != null ? Object.FindObjectOfType(dnType, true) as Component : null;
+            if (dn != null)
+                LegaiaWorldBuilder.SetUdonField(candle, "dayNight", dn);
+            LegaiaWorldBuilder.SyncUdonProxy(candle);
+            return root;
+        }
+
         const string PENS_NAME = "sdk_pens";
         internal const string SLOT_NAME = "slot_machine";
         const string SLOT_RIG = "LegaiaSlotGame";
 
-        /// Place the casino cabinet (settings block first, builder fields
+        /// The container child name of cabinet `index` (0-based, build
+        /// order): `slot_machine`, `slot_machine_2`, `slot_machine_3`...
+        internal static string SlotName(int index)
+        {
+            return index == 0 ? SLOT_NAME : SLOT_NAME + "_" + (index + 1);
+        }
+
+        /// The 0-based index a container child name encodes, or -1 when
+        /// the name is not a cabinet's.
+        internal static int SlotIndexOf(string name)
+        {
+            if (name == SLOT_NAME)
+                return 0;
+            if (name.StartsWith(SLOT_NAME + "_") &&
+                int.TryParse(name.Substring(SLOT_NAME.Length + 1), out int n) && n >= 2)
+                return n - 1;
+            return -1;
+        }
+
+        /// Place every casino cabinet (one per settings entry; the builder
+        /// fields when the settings place none) and run the slot-machine
+        /// builder on each. Every machine gets its own rig and reaches the
+        /// one purse through the container path. Returns how many stand.
+        static int BuildSlotMachines(GameObject container, Vector3 spawnW,
+            LegaiaCommonPrefabOptions o, IList<LegaiaSlotPlacement> slots)
+        {
+            if (slots == null || slots.Count == 0)
+                slots = new List<LegaiaSlotPlacement> { null };
+            int placed = 0;
+            for (int i = 0; i < slots.Count; i++)
+                if (BuildSlotMachine(container, spawnW, o, slots[i], i, slots) != null)
+                    placed++;
+            return placed;
+        }
+
+        /// Place cabinet `index` (settings entry first, builder fields
         /// otherwise) and run the slot-machine builder on it. A cabinet of
-        /// the same asset left at the scene root by an earlier hand
-        /// placement is retired first - its placement is what the settings
-        /// block now carries - so a rebuild never leaves two machines.
+        /// the same asset left outside the container by a hand placement
+        /// whose spot the settings already carry is retired first - so a
+        /// rebuild never leaves a machine twice - while one the settings
+        /// do not know yet is left standing with a pointer at the snapshot
+        /// menu, so a drag-in placement is never lost to a rebuild.
         static GameObject BuildSlotMachine(GameObject container, Vector3 spawnW,
-            LegaiaCommonPrefabOptions o, LegaiaSlotPlacement slot)
+            LegaiaCommonPrefabOptions o, LegaiaSlotPlacement slot, int index,
+            IList<LegaiaSlotPlacement> all)
         {
             string cabinetPath = slot != null && !string.IsNullOrEmpty(slot.cabinetAsset)
                 ? slot.cabinetAsset : o.slotCabinetPath;
             string art = slot != null && !string.IsNullOrEmpty(slot.artDir)
                 ? slot.artDir : o.slotArtDir;
-            var asset = AssetDatabase.LoadAssetAtPath<GameObject>(cabinetPath);
-            if (asset == null)
-            {
-                // The path moved: find the model by file name anywhere in
-                // the project (a folder rename should not lose the cabinet).
-                string stem = Path.GetFileNameWithoutExtension(cabinetPath);
-                foreach (string guid in AssetDatabase.FindAssets(stem + " t:GameObject"))
-                {
-                    string p = AssetDatabase.GUIDToAssetPath(guid);
-                    if (Path.GetFileNameWithoutExtension(p) == stem)
-                    {
-                        asset = AssetDatabase.LoadAssetAtPath<GameObject>(p);
-                        if (asset != null)
-                        {
-                            Debug.LogWarning("[Legaia] slot cabinet not at " + cabinetPath +
-                                " - using " + p + " (update the settings file).");
-                            break;
-                        }
-                    }
-                }
-            }
+            var asset = LoadCabinetAsset(cabinetPath);
             if (asset == null)
             {
                 Debug.LogWarning("[Legaia] slot cabinet asset not found (" + cabinetPath +
@@ -318,15 +414,16 @@ namespace LegaiaWorld
                 return null;
             }
 
-            RetireStrayCabinet(container, asset);
+            if (index == 0)
+                RetireStrayCabinets(container, asset, all);
 
             Vector3 pos = slot != null && slot.hasPosition
                 ? slot.position
-                : LegaiaCampProps.Ground(spawnW + o.slotOffset);
+                : LegaiaCampProps.Ground(spawnW + o.slotOffset + new Vector3(1.2f * index, 0f, 0f));
             var inst = Spawn(container, asset, pos, spawnW, 0f);
             if (inst == null)
                 return null;
-            inst.name = SLOT_NAME;
+            inst.name = SlotName(index);
             if (slot != null && slot.hasRotation)
                 inst.transform.localRotation = Quaternion.Euler(slot.rotation);
             inst.transform.localScale = Vector3.one *
@@ -345,32 +442,93 @@ namespace LegaiaWorld
             return inst;
         }
 
-        /// A hand-placed cabinet of the same asset outside the container
-        /// (the pre-settings workflow: drag the glb in, run the slot tool)
-        /// is removed, with a log line saying so.
-        static void RetireStrayCabinet(GameObject container, GameObject asset)
+        /// The cabinet model at `cabinetPath`, or the same file name
+        /// anywhere in the project when the path moved (a folder rename
+        /// should not lose the cabinet). Null when neither resolves.
+        internal static GameObject LoadCabinetAsset(string cabinetPath)
+        {
+            if (string.IsNullOrEmpty(cabinetPath))
+                return null;
+            var asset = AssetDatabase.LoadAssetAtPath<GameObject>(cabinetPath);
+            if (asset != null)
+                return asset;
+            string stem = Path.GetFileNameWithoutExtension(cabinetPath);
+            foreach (string guid in AssetDatabase.FindAssets(stem + " t:GameObject"))
+            {
+                string p = AssetDatabase.GUIDToAssetPath(guid);
+                if (Path.GetFileNameWithoutExtension(p) != stem)
+                    continue;
+                asset = AssetDatabase.LoadAssetAtPath<GameObject>(p);
+                if (asset != null)
+                {
+                    Debug.LogWarning("[Legaia] slot cabinet not at " + cabinetPath +
+                        " - using " + p + " (update the settings file).");
+                    return asset;
+                }
+            }
+            return null;
+        }
+
+        /// Every instance of the cabinet asset outside the container: a
+        /// hand-dragged copy, with or without a rig built on it. Prefab
+        /// instance roots only (the container's own cabinets are those
+        /// too, so the test is the same one the snapshot uses).
+        internal static List<GameObject> StrayCabinets(GameObject asset, Transform container)
+        {
+            var strays = new List<GameObject>();
+            if (asset == null)
+                return strays;
+            string assetPath = AssetDatabase.GetAssetPath(asset);
+            foreach (var t in Object.FindObjectsOfType<Transform>(true))
+            {
+                if (t == null || !PrefabUtility.IsOutermostPrefabInstanceRoot(t.gameObject))
+                    continue;
+                if (container != null && t.IsChildOf(container))
+                    continue;
+                var src = PrefabUtility.GetCorrespondingObjectFromOriginalSource(t.gameObject);
+                if (src == null || AssetDatabase.GetAssetPath(src) != assetPath)
+                    continue;
+                strays.Add(t.gameObject);
+            }
+            return strays;
+        }
+
+        /// Retire the hand-placed cabinets the settings already carry (an
+        /// entry within a centimetre of where the stray stands - the
+        /// snapshot has been run); keep the rest and say how to keep them
+        /// for good. A stray is removed only when a settings-driven twin
+        /// is about to replace it, so nothing a rebuild does loses a spot.
+        static void RetireStrayCabinets(GameObject container, GameObject asset,
+            IList<LegaiaSlotPlacement> all)
         {
             // Collect first, destroy after: the FindObjectsOfType array
             // still holds the retired cabinet's children.
-            var stray = new List<GameObject>();
-            foreach (var t in Object.FindObjectsOfType<Transform>(true))
+            foreach (var root in StrayCabinets(asset, container.transform))
             {
-                if (t == null || t.name != SLOT_RIG || t.IsChildOf(container.transform))
-                    continue;
-                var root = CabinetRootOf(t);
-                if (root == null || root == t.gameObject || stray.Contains(root))
-                    continue;
-                var src = PrefabUtility.GetCorrespondingObjectFromOriginalSource(root);
-                if (src == null || AssetDatabase.GetAssetPath(src) != AssetDatabase.GetAssetPath(asset))
-                    continue;
-                stray.Add(root);
-            }
-            foreach (var root in stray)
-            {
-                Debug.Log("[Legaia] retiring the hand-placed slot cabinet '" + root.name +
-                    "' at " + root.transform.position + " - the settings-driven one " +
-                    "under " + CONTAINER + " replaces it.");
-                Undo.DestroyObjectImmediate(root);
+                bool captured = false;
+                if (all != null)
+                    foreach (var s in all)
+                        if (s != null && s.hasPosition &&
+                            (s.position - root.transform.localPosition).magnitude < 0.01f)
+                        {
+                            captured = true;
+                            break;
+                        }
+                if (captured)
+                {
+                    Debug.Log("[Legaia] retiring the hand-placed slot cabinet '" + root.name +
+                        "' at " + root.transform.position + " - the settings-driven one " +
+                        "under " + CONTAINER + " replaces it.");
+                    Undo.DestroyObjectImmediate(root);
+                }
+                else
+                {
+                    Debug.LogWarning("[Legaia] hand-placed slot cabinet '" + root.name +
+                        "' at " + root.transform.position + " is not in the scene " +
+                        "settings - left standing (no rig is built on it). Run " +
+                        "Legaia > Snapshot placements to scene settings to keep it, " +
+                        "then rebuild: it becomes " + SlotName(all?.Count ?? 1) + ".");
+                }
             }
         }
 

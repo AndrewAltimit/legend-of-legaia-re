@@ -542,8 +542,8 @@ namespace LegaiaWorld
             Text musicLabel = MakeButton(canvasGo.transform, font,
                 music != null && music.mute ? "Music: Off" : "Music: On",
                 new Vector2(0f, 55f), backing, "ToggleMusic");
-            // Two columns: the day/night jumps on the left, the weather
-            // jump on the right. Both are inert until the realism passes
+            // Two columns: the noon / midnight jumps on the left, the
+            // weather jump and the sunset jump on the right. Both are inert until the realism passes
             // wire `dayNight` / `weather` on the menu behaviour.
             MakeButton(canvasGo.transform, font, "Daytime",
                 new Vector2(-88f, -35f), backing, "SetDay", 164f);
@@ -551,6 +551,8 @@ namespace LegaiaWorld
                 new Vector2(-88f, -125f), backing, "SetNight", 164f);
             MakeButton(canvasGo.transform, font, "Clear sky",
                 new Vector2(88f, -35f), backing, "SetClear", 164f);
+            MakeButton(canvasGo.transform, font, "Sunset",
+                new Vector2(88f, -125f), backing, "SetDusk", 164f);
 
             LegaiaWorldBuilder.SetUdonField(menu, "music", music);
             LegaiaWorldBuilder.SetUdonField(menu, "musicLabel", musicLabel);

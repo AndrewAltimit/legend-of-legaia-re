@@ -214,7 +214,7 @@ namespace LegaiaWorld
             var settings = LegaiaSceneSettings.Load(s_sceneName);
             var container = LegaiaCommonPrefabs.Build(
                 "Assets/LegaiaGenerated/" + s_sceneName, spawn.transform.position, o,
-                settings.prefabTransforms, settings.slotMachine);
+                settings.prefabTransforms, settings.slotMachines);
             if (container == null)
                 Fail("no container built");
             var tvT = container.transform.Find("tv");

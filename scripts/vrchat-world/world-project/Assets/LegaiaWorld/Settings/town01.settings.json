@@ -12,8 +12,19 @@
     {"scene": "party", "model": 2, "position": [-22.7, 0, 15.3], "yaw": 200, "label": "Gala"}
   ],
   "mesh_npcs": {"mesh_55": {"scene": "balden", "model": 151}},
+  "object_transforms": {
+    "mesh_39_0": {
+      "position": [-116.551, 0, 73.638],
+      "rotation": [0, 0, 0]
+    },
+    "npc_150": {
+      "position": [-116.539, 0, 78.304],
+      "rotation": [0, 0, 0]
+    }
+  },
   "spawn_position": [-24.85, 1.75, 12.22],
   "set_descriptor_spawn": true,
+  "world_scale": 1.5,
   "living_town": {
     "names": {"npc_14": "Cara"},
     "night_host": {"npc": "npc_14", "station": "Legaia_common_prefabs/card_table/stool_0"},
@@ -58,16 +69,27 @@
     "menu": {
       "position": [34.978, 0.801, 19.277],
       "rotation": [0, -0.422, 0]
+    },
+    "equipment": {
+      "position": [-1.88, 0, -4.78],
+      "rotation": [0, 0, 0]
     }
   },
   "posters": [
     {"name": "cara_poker_night", "image": "Assets/LegaiaPosters/cara_poker_night.jpg", "near": "card_table", "width": 0.75}
   ],
-  "slot_machine": {
-    "cabinet": "Assets/Prefabs/legaia slot machine.glb",
-    "art": "Assets/LegaiaImports/slot-art",
-    "position": [37, 0.979, 36.416],
-    "rotation": [0, -71.178, 0],
-    "scale": 0.008
-  }
+  "slot_machines": [
+    {
+      "cabinet": "Assets/Prefabs/legaia slot machine.glb",
+      "art": "Assets/LegaiaImports/slot-art",
+      "position": [37, 0.979, 36.416],
+      "rotation": [0, -71.178, 0],
+      "scale": 0.008
+    },
+    {
+      "position": [114.492, -0.003, 76.531],
+      "rotation": [0, 92.899, 0],
+      "scale": 0.008
+    }
+  ]
 }

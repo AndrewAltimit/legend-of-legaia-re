@@ -77,7 +77,7 @@ namespace LegaiaWorld
             };
             var prefabs = LegaiaCommonPrefabs.Build(
                 "Assets/LegaiaGenerated/" + sceneName, spawn.transform.position,
-                prefabOpts, settings.prefabTransforms, settings.slotMachine);
+                prefabOpts, settings.prefabTransforms, settings.slotMachines);
             if (prefabs == null)
                 Fail("the common prefabs pass built nothing - no wallet, no machine");
 
@@ -386,7 +386,7 @@ namespace LegaiaWorld
             };
             LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
                 spawn.transform.position, prefabOpts, settings.prefabTransforms,
-                settings.slotMachine);
+                settings.slotMachines);
             settings.ApplyNpcOverrides(manifest, manifestDir, rootT.gameObject);
             LegaiaWorldBuilder.ReconcileNpcs(manifest, manifestDir, rootT.gameObject,
                 sceneName, settings);
@@ -615,6 +615,236 @@ namespace LegaiaWorld
                 Debug.LogError("[Legaia] ECONOMY SOAK FAIL: " + why);
             SessionState.SetInt(K_ACTIVE, 0);
             EditorApplication.update -= Drive;
+            if (Application.isBatchMode)
+                EditorApplication.Exit(code);
+            else
+                EditorApplication.isPlaying = false;
+        }
+
+        // --- every cabinet answers its buttons (play mode) --------------------
+        //
+        // Enter play mode with every settings-driven cabinet built, put each
+        // machine on free play, fire button 0 of EVERY cabinet through the
+        // Udon Interact event, and expect every machine to leave IDLE. Built
+        // for the day the first of two cabinets sat dead in-world while the
+        // second spun - the edit-mode wiring check passes on both, so only a
+        // running program can tell them apart.
+        //
+        //   Unity -batchmode -nographics -projectPath <proj> \
+        //       -executeMethod LegaiaWorld.LegaiaEconomyChecks.SlotPress
+        //   (no -quit: it exits itself, 0 pass / 1 fail / 3 no play mode / 4 watchdog)
+
+        const string K_SLOT = "legaia.slot.press.active";
+        const int SLOT_PHASE_IDLE = 1;
+
+        public static void SlotPress()
+        {
+            string scenePath = Arg("-legaiaScene", "Assets/Scenes/VRCDefaultWorldScene.unity");
+            LegaiaWorldBuilder.EnsureUdonProgramAssets();
+            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
+
+            GameObject spawn = FindSpawn(scenePath);
+            var rootT = spawn.transform.parent;
+            if (rootT == null || !rootT.name.StartsWith("Legaia_"))
+                Fail("LegaiaSpawn is not under a Legaia_<scene> root");
+            string sceneName = rootT.name.Substring("Legaia_".Length);
+            var settings = LegaiaSceneSettings.Load(sceneName);
+
+            var prefabOpts = new LegaiaCommonPrefabOptions
+            {
+                mirror = false, tv = false, cardTable = false, seats = 0,
+                sdkPens = false, slotMachine = true,
+            };
+            // Placed against the 1x world like the builder does, then
+            // scaled with it, so the machines stand where they do in-world.
+            // `-legaiaKeepScene` tests the machines the scene was SAVED
+            // with instead (the ones an upload carried), rebuilding nothing.
+            bool keep = System.Array.IndexOf(
+                System.Environment.GetCommandLineArgs(), "-legaiaKeepScene") >= 0;
+            if (keep)
+                Debug.Log("[Legaia] slot press: -legaiaKeepScene - testing the saved rigs as they are.");
+            else
+            {
+                LegaiaWorldScale.Unapply(rootT.gameObject);
+                LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
+                    spawn.transform.position, prefabOpts, settings.prefabTransforms,
+                    settings.slotMachines);
+                LegaiaWorldScale.Apply(rootT.gameObject, settings.worldScale);
+            }
+
+            StripRendering();
+            SessionState.SetInt(K_SLOT, 1);
+            Debug.Log("[Legaia] slot press: entering play mode with " +
+                Mathf.Max(1, settings.slotMachines.Count) + " cabinet(s).");
+            EditorApplication.EnterPlaymode();
+        }
+
+        [InitializeOnLoadMethod]
+        static void HookSlot()
+        {
+            if (SessionState.GetInt(K_SLOT, 0) == 0)
+                return;
+            EditorApplication.update -= DriveSlot;
+            EditorApplication.update += DriveSlot;
+        }
+
+        static bool sp_inited;
+        static float sp_wallStart, sp_t0, sp_pressedAt;
+        static int sp_phase;
+        static readonly List<Component> sp_machines = new List<Component>();
+        static readonly List<string> sp_names = new List<string>();
+        static readonly List<Component> sp_buttons = new List<Component>();
+
+        static void DriveSlot()
+        {
+            if (SessionState.GetInt(K_SLOT, 0) == 0)
+            {
+                EditorApplication.update -= DriveSlot;
+                return;
+            }
+            if (!EditorApplication.isPlaying)
+            {
+                if (sp_wallStart == 0f)
+                    sp_wallStart = Time.realtimeSinceStartup;
+                if (Time.realtimeSinceStartup - sp_wallStart > 300f)
+                    FinishSlot(3, "play mode never started within 300 s");
+                return;
+            }
+            if (EditorApplication.isCompiling)
+                return;
+            if (!sp_inited)
+            {
+                InitSlot();
+                return;
+            }
+            StepSlot();
+        }
+
+        static void InitSlot()
+        {
+            sp_wallStart = Time.realtimeSinceStartup;
+            sp_t0 = Time.time;
+            sp_phase = 0;
+            sp_inited = true;
+            sp_machines.Clear();
+            sp_names.Clear();
+            sp_buttons.Clear();
+
+            var machineType = Type("LegaiaSlotMachine");
+            var buttonType = Type("LegaiaSlotButton");
+            if (machineType == null || buttonType == null)
+                FinishSlot(1, "LegaiaSlotMachine / LegaiaSlotButton are not compiled");
+            foreach (var m in Object.FindObjectsOfType(machineType, true))
+            {
+                var proxy = m as Component;
+                var backing = Backing(proxy);
+                if (backing == null)
+                {
+                    FinishSlot(1, "a slot machine has no backing UdonBehaviour");
+                    return;
+                }
+                sp_machines.Add(backing);
+                string cabName = CabinetNameOf(proxy.transform);
+                sp_names.Add(cabName ?? proxy.name);
+                // Its button 0: the one under the same cabinet (the
+                // cabinet's own button nodes sit beside the rig, not under
+                // it; two cabinets share every name below the cabinet, so
+                // the cabinet's container name is the only safe key).
+                Component button = null;
+                foreach (var b in Object.FindObjectsOfType(buttonType, true))
+                {
+                    var bp = b as Component;
+                    Debug.Log("[Legaia] slot press: button " + LegaiaSceneSettings.ScenePath(bp.transform) +
+                        " index " + ReadVar(bp, "buttonIndex") + " machine " +
+                        ((ReadVar(bp, "machine") as Component)?.transform.parent?.name ?? "null"));
+                    if (CabinetNameOf(bp.transform) != cabName)
+                        continue;
+                    if ((int)(ReadVar(bp, "buttonIndex") ?? 0) != 0)
+                        continue;
+                    button = Backing(bp);
+                    break;
+                }
+                if (button == null)
+                {
+                    FinishSlot(1, sp_names[sp_names.Count - 1] + " has no button 0");
+                    return;
+                }
+                sp_buttons.Add(button);
+            }
+            if (sp_machines.Count == 0)
+                FinishSlot(1, "no slot machine in the running scene");
+            Debug.Log("[Legaia] slot press: " + sp_machines.Count + " machine(s): " +
+                string.Join(", ", sp_names) + ".");
+        }
+
+        static void StepSlot()
+        {
+            float t = Time.time - sp_t0;
+            if (Time.realtimeSinceStartup - sp_wallStart > 240f)
+            {
+                FinishSlot(4, "wall-clock watchdog at t=" + t.ToString("0") + " s");
+                return;
+            }
+            if (sp_phase == 0)
+            {
+                if (t < 4f)
+                    return; // Start() on every machine, ownership settled
+                for (int i = 0; i < sp_machines.Count; i++)
+                {
+                    // Free play: no purse to refuse the spin, so the only
+                    // thing under test is the machine answering its button.
+                    SetVar(sp_machines[i], "wallet", null);
+                    SetVar(sp_machines[i], "freePlayRefill", true);
+                    SetVar(sp_machines[i], "syncBalance", 100);
+                    int before = GetInt(sp_machines[i], "syncPhase", -1);
+                    Debug.Log("[Legaia] slot press: " + sp_names[i] + " phase " + before +
+                        " owner " + GetVar(sp_machines[i], "isLocalOwner") + " - pressing.");
+                    Send(sp_buttons[i], "_interact");
+                }
+                sp_pressedAt = Time.time;
+                sp_phase = 1;
+                return;
+            }
+            if (sp_phase == 1)
+            {
+                if (Time.time - sp_pressedAt < 1.5f)
+                    return;
+                var dead = new List<string>();
+                for (int i = 0; i < sp_machines.Count; i++)
+                {
+                    int phase = GetInt(sp_machines[i], "syncPhase", -1);
+                    Debug.Log("[Legaia] slot press: " + sp_names[i] + " phase " + phase +
+                        " after the press.");
+                    if (phase == SLOT_PHASE_IDLE || phase <= 0)
+                        dead.Add(sp_names[i] + " (phase " + phase + ")");
+                }
+                if (dead.Count > 0)
+                    FinishSlot(1, dead.Count + " of " + sp_machines.Count +
+                        " machine(s) ignored button 0: " + string.Join(", ", dead));
+                else
+                    FinishSlot(0, null);
+            }
+        }
+
+        /// The name of the settings-driven cabinet (`slot_machine`,
+        /// `slot_machine_2`, ...) `t` sits under, or null outside one.
+        static string CabinetNameOf(Transform t)
+        {
+            for (var p = t; p != null; p = p.parent)
+                if (LegaiaCommonPrefabs.SlotIndexOf(p.name) >= 0)
+                    return p.name;
+            return null;
+        }
+
+        static void FinishSlot(int code, string why)
+        {
+            if (code == 0)
+                Debug.Log("[Legaia] SELFTEST OK: every slot machine (" + sp_machines.Count +
+                    ") answered its button.");
+            else
+                Debug.LogError("[Legaia] SLOT PRESS FAIL: " + why);
+            SessionState.SetInt(K_SLOT, 0);
+            EditorApplication.update -= DriveSlot;
             if (Application.isBatchMode)
                 EditorApplication.Exit(code);
             else

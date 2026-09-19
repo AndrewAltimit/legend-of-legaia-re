@@ -192,7 +192,7 @@ namespace LegaiaWorld
             var settings = LegaiaSceneSettings.Load(sceneName);
             var container = LegaiaCommonPrefabs.Build(
                 "Assets/LegaiaGenerated/" + sceneName, spawn.transform.position, o,
-                settings.prefabTransforms, settings.slotMachine);
+                settings.prefabTransforms, settings.slotMachines);
             if (container == null)
                 Fail("no common-prefab container built");
             return container;

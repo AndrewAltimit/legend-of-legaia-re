@@ -371,10 +371,14 @@ namespace LegaiaWorld
             }
             EnsureUdonProgramAssets();
             var settings = LegaiaSceneSettings.Load(sceneName);
+            // The container is placed against the world at 1x (ground
+            // raycasts, spawn-relative offsets) and scaled with it after.
+            LegaiaWorldScale.Unapply(root);
             LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
                 spawnT.position, commonPrefabs, settings.prefabTransforms,
-                settings.slotMachine);
+                settings.slotMachines);
             settings.ApplyDeletions(root);
+            LegaiaWorldScale.Apply(root, settings.worldScale);
         }
 
         void EquipmentGUI()
@@ -439,6 +443,30 @@ namespace LegaiaWorld
                     "collider and stands near its spawn).", "OK");
                 return;
             }
+            // The rack is placed against the 1x world (metre offsets from
+            // the spawn, ground raycasts) and scaled with it after, like
+            // every other container; then the settings may pin the rack
+            // container itself (prefab_transforms "equipment" - the group
+            // dragged to where the town wants it, Inspector numbers).
+            var eqSettings = LegaiaSceneSettings.Load(sceneName);
+            LegaiaWorldScale.Unapply(sceneRoot);
+            try
+            {
+                PlaceEquipmentPropsAt(sm, sceneName, sceneRoot);
+            }
+            finally
+            {
+                LegaiaWorldScale.Apply(sceneRoot, eqSettings.worldScale);
+                var rackGo = GameObject.Find("Legaia_equipment");
+                if (rackGo != null && LegaiaSceneSettings.ApplyPlacement(
+                        eqSettings.prefabTransforms, "equipment", rackGo.transform))
+                    Debug.Log("[Legaia] equipment rack pinned at " + rackGo.transform.position +
+                        " (prefab_transforms.equipment).");
+            }
+        }
+
+        void PlaceEquipmentPropsAt(object sm, string sceneName, GameObject sceneRoot)
+        {
             // Scene export scale x the battle-model size trim (see the
             // field comment on equipSizeMult). Every use below - instance
             // scale, collider bounds, the flat-piece box floor - goes
@@ -919,14 +947,27 @@ namespace LegaiaWorld
                 EnsureUdonProgramAssets();
             var settings = LegaiaSceneSettings.Load(sceneName);
             string dir = Path.GetDirectoryName(manifestPath).Replace('\\', '/');
+            // The passes measure the world at 1x: take a world scale off
+            // first and put it back (with the living town) at the end,
+            // exactly as the build does.
+            LegaiaWorldScale.Unapply(root);
             settings.ApplyNpcOverrides(m, dir, root);
             ReconcileNpcs(m, dir, root, sceneName, settings);
+            // A re-placed villager lands back on its manifest tile above;
+            // the hand placements go on again before the passes measure,
+            // and the merged world collider follows the moved / deleted
+            // world nodes before the navmesh is baked from it.
+            settings.ApplyObjectTransforms(root);
+            settings.ApplyDeletions(root, worldNodesOnly: true);
+            var worldT = root.transform.Find("world");
+            RebuildMergedCollider(worldT != null ? worldT.gameObject : null, sceneName);
             LegaiaRealism.Apply(root, m, sceneName, realism);
             // The passes above regenerate what per-scene deletions target
             // (interior shells, lamps) - re-apply them, and refresh the
             // descriptor spawn (a VRCWorld prefab added after the build
             // picks up LegaiaSpawn here without a full rebuild).
             settings.ApplyDeletions(root);
+            LegaiaWorldScale.Finish(root, sceneName, settings, realism.livingTown);
             var spawnT = root.transform.Find("LegaiaSpawn");
             if (settings.setDescriptorSpawn && spawnT != null)
                 LegaiaSceneSettings.AssignDescriptorSpawn(spawnT);
@@ -1288,6 +1329,17 @@ namespace LegaiaWorld
                         Quaternion.LookRotation(dirWorld.normalized, Vector3.up);
             }
 
+            // Hand-moved built objects (a world node, a villager, a prop)
+            // and the world nodes the settings delete: every placement
+            // pass is done, and the merged world collider is re-baked over
+            // the result, so the camp props' ground raycasts, the navmesh
+            // bake and the living town below all see the moved object and
+            // walk through the deleted one. (Per-mesh colliders need no
+            // re-bake; the rebuild is a no-op then.)
+            settings.ApplyObjectTransforms(root);
+            settings.ApplyDeletions(root, worldNodesOnly: true);
+            RebuildMergedCollider(world, sceneName);
+
             // Per-scene spawn override: the value is what LegaiaSpawn's
             // INSPECTOR shows (root-local - drag the marker, copy, paste),
             // so it round-trips digit for digit. World space would come
@@ -1319,7 +1371,7 @@ namespace LegaiaWorld
             if (commonPrefabs.AnyEnabled)
                 LegaiaCommonPrefabs.Build("Assets/LegaiaGenerated/" + sceneName,
                     spawnGo.transform.position, commonPrefabs, settings.prefabTransforms,
-                    settings.slotMachine);
+                    settings.slotMachines);
             else
                 LegaiaCommonPrefabs.Remove();
 
@@ -1328,9 +1380,12 @@ namespace LegaiaWorld
             if (realism.AnyEnabled)
                 LegaiaRealism.Apply(root, m, sceneName, realism);
 
-            // Per-scene deletions run LAST - the names usually refer to
-            // objects the passes above generate (interior shells, lamps).
+            // Per-scene deletions run after the passes - the names usually
+            // refer to objects the passes above generate (interior shells,
+            // lamps). The world scale goes on LAST of all, once every
+            // pass has measured the world at 1x (see LegaiaWorldScale).
             settings.ApplyDeletions(root);
+            LegaiaWorldScale.Finish(root, sceneName, settings, realism.livingTown);
             if (settings.setDescriptorSpawn)
                 LegaiaSceneSettings.AssignDescriptorSpawn(spawnGo.transform);
 
@@ -1401,6 +1456,32 @@ namespace LegaiaWorld
         /// combined in world-local space, saved as an asset, cooked with
         /// colocated-vertex welding so hairline seams between adjacent
         /// tile meshes close instead of dropping a player capsule through.
+        /// Re-bake the merged world collider from the world AS IT STANDS
+        /// NOW: a node moved by object_transforms contributes at its new
+        /// place, a node delete_objects disabled contributes nothing
+        /// (inactive objects are left out of the sweep). The collider was
+        /// baked at import, before either edit, so without this a moved
+        /// hut kept its old collision and a deleted one stayed solid.
+        /// No-op for a world built with per-mesh colliders (those follow
+        /// their transforms and go inactive with their nodes on their
+        /// own). Returns true when a merged collider was re-baked.
+        internal static bool RebuildMergedCollider(GameObject world, string sceneName)
+        {
+            if (world == null)
+                return false;
+            MeshCollider merged = null;
+            foreach (var mc in world.GetComponents<MeshCollider>())
+                if (mc.sharedMesh != null && mc.sharedMesh.name == "world_collider")
+                    merged = mc;
+            if (merged == null)
+                return false;
+            Undo.DestroyObjectImmediate(merged);
+            AddMergedCollider(world, sceneName);
+            Physics.SyncTransforms();
+            Debug.Log("[Legaia] merged world collider re-baked over the moved / deleted nodes.");
+            return true;
+        }
+
         static void AddMergedCollider(GameObject world, string sceneName)
         {
             var combine = new List<CombineInstance>();

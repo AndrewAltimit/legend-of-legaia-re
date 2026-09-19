@@ -90,9 +90,11 @@
 //       Absolute placement for the builder's common prefabs and the camp
 //       props (keys: mirror, tv, card_table, pens, poster_<name>, the
 //       prefab name of an extra slot; torch_N, campfire_N and menu under
-//       the camp container; card_table_panel, which is table-LOCAL),
-//       replacing the spawn-relative offsets, the ground snap and the
-//       face-the-spawn rotation. These objects live
+//       the camp container; card_table_panel, card_table_mini_tv and
+//       card_table_candle, which are table-LOCAL; equipment, the rack's own top-level container, pinned as a group
+//       after the equipment pass places the rack), replacing the
+//       spawn-relative offsets, the ground snap and the face-the-spawn
+//       rotation. These objects live
 //       under top-level containers at the origin, so the values are
 //       EXACTLY the object's Inspector position and rotation (world ==
 //       local there - no mirror to trip over). "rotation" is optional.
@@ -159,6 +161,47 @@
 //       builder on it, so the minigame comes back on every rebuild. Also
 //       written by the snapshot menu (it finds the cabinet through its
 //       LegaiaSlotGame rig, wherever it sits).
+//
+//   "slot_machines": [{...}, {...}]
+//       Several cabinets: a list of slot_machine blocks, one machine
+//       each, built in list order as `slot_machine`, `slot_machine_2`,
+//       ... under the common container (every one gets its own rig and
+//       shares the one purse). `cabinet` / `art` default to the first
+//       entry's when an entry leaves them out. When both keys are in the
+//       file this list wins. The snapshot menu writes this form whenever
+//       the scene holds more than one cabinet of the asset - a second one
+//       dragged in by hand counts even before the slot tool built it.
+//
+//   "object_transforms": {"mesh_39_0": {"position": [x, y, z], "rotation": [0, yaw, 0]},
+//                         "npc_150":   {"position": [x, y, z]}}
+//       Hand placement for objects the BUILD creates - a world-glb node,
+//       a placed villager, an animated prop - rather than a kit prefab.
+//       The key follows the delete_objects rules (exact name, or a
+//       '/'-joined path suffix) plus one more: a bare NPC token
+//       (`npc_150`, `npc_07`) matches the placed villager whose name
+//       starts with it. The value is the object's Inspector transform
+//       under its own parent (local position, optional local Euler
+//       rotation) - the world root's mirror never enters it. Applied
+//       after every placement pass and before the realism layer, and the
+//       merged world collider is re-baked right after (with the world
+//       nodes delete_objects names already disabled), so the navmesh
+//       bake, the ground snaps and the living town see the moved object
+//       and walk through the deleted one; re-applied by "Apply
+//       enhancements". Written by the
+//       snapshot menu: it re-captures every key already in the file, adds
+//       every world-glb node carrying a position / rotation override,
+//       and "Legaia > Pin selected objects to scene settings" adds
+//       whatever is selected (how a moved villager gets its key).
+//
+//   "world_scale": 1.5
+//       Grow the whole built scene about the origin - the Legaia root
+//       and every kit container (furniture, cabinets, camp props) - by
+//       one factor, for avatars that stand taller than the export's
+//       metre assumed. Every value in this file stays as it is: they are
+//       all local under those objects. Goes on LAST (every pass measures
+//       the world at 1x); the navmesh data is then re-baked in the scaled
+//       frame and the distance-valued fields scale with it. See
+//       LegaiaWorldScale. Default 1.
 
 using System.Collections.Generic;
 using System.IO;
@@ -243,8 +286,21 @@ namespace LegaiaWorld
         /// menu, by key (see the header).
         public Dictionary<string, LegaiaPrefabTransform> prefabTransforms =
             new Dictionary<string, LegaiaPrefabTransform>();
-        /// The slot_machine block, or null when the file has none.
-        public LegaiaSlotPlacement slotMachine;
+        /// Every cabinet the file places, in build order (the
+        /// `slot_machines` list, or the single `slot_machine` block as a
+        /// one-entry list). Empty when the file places none.
+        public List<LegaiaSlotPlacement> slotMachines = new List<LegaiaSlotPlacement>();
+        /// The first cabinet, or null when the file has none - the one
+        /// whose asset / art folder the others default to.
+        public LegaiaSlotPlacement slotMachine =>
+            slotMachines.Count > 0 ? slotMachines[0] : null;
+        /// object_transforms: built-object key -> Inspector-local
+        /// placement (see the header). Applied by ApplyObjectTransforms.
+        public Dictionary<string, LegaiaPrefabTransform> objectTransforms =
+            new Dictionary<string, LegaiaPrefabTransform>();
+        /// world_scale: the uniform scale the finished scene is grown to
+        /// (LegaiaWorldScale). 1 = as exported.
+        public float worldScale = 1f;
         /// The "ambience" block: role -> AudioClip asset path (see the
         /// header). Empty when the file has none, and the ambience pass
         /// then generates every role.
@@ -357,33 +413,53 @@ namespace LegaiaWorld
                             position = ReadVec(l),
                         };
                 }
+            // `slot_machines` (a list) wins over the single `slot_machine`
+            // block; the single block reads as a one-entry list so every
+            // consumer walks the same list.
+            var sms = MiniJson.AsList(MiniJson.Get(m, "slot_machines"));
             var sm = MiniJson.AsObj(MiniJson.Get(m, "slot_machine"));
-            if (sm != null)
+            if (sms != null)
             {
-                var slot = new LegaiaSlotPlacement
+                foreach (object e in sms)
                 {
-                    cabinetAsset = MiniJson.AsStr(MiniJson.Get(sm, "cabinet")),
-                    artDir = MiniJson.AsStr(MiniJson.Get(sm, "art")),
-                };
-                var slotPos = MiniJson.AsList(MiniJson.Get(sm, "position"));
-                if (slotPos != null && slotPos.Count >= 3)
-                {
-                    slot.hasPosition = true;
-                    slot.position = ReadVec(slotPos);
+                    var slot = ReadSlot(MiniJson.AsObj(e));
+                    if (slot != null)
+                        s.slotMachines.Add(slot);
                 }
-                var slotRot = MiniJson.AsList(MiniJson.Get(sm, "rotation"));
-                if (slotRot != null && slotRot.Count >= 3)
-                {
-                    slot.hasRotation = true;
-                    slot.rotation = ReadVec(slotRot);
-                }
-                if (MiniJson.Get(sm, "scale") is double sc)
-                {
-                    slot.hasScale = true;
-                    slot.scale = (float)sc;
-                }
-                s.slotMachine = slot;
+                if (sm != null)
+                    Debug.LogWarning("[Legaia] " + p + " carries both slot_machine and " +
+                        "slot_machines - the list is used, delete the single block.");
             }
+            else if (sm != null)
+            {
+                s.slotMachines.Add(ReadSlot(sm));
+            }
+            // Later entries inherit the first one's asset and art folder,
+            // so a list only has to name them once.
+            for (int i = 1; i < s.slotMachines.Count; i++)
+            {
+                if (string.IsNullOrEmpty(s.slotMachines[i].cabinetAsset))
+                    s.slotMachines[i].cabinetAsset = s.slotMachines[0].cabinetAsset;
+                if (string.IsNullOrEmpty(s.slotMachines[i].artDir))
+                    s.slotMachines[i].artDir = s.slotMachines[0].artDir;
+            }
+            if (MiniJson.Get(m, "world_scale") is double ws && ws > 0.001)
+                s.worldScale = (float)ws;
+            var ot = MiniJson.AsObj(MiniJson.Get(m, "object_transforms"));
+            if (ot != null)
+                foreach (var kv in ot)
+                {
+                    var pos = MiniJson.AsList(MiniJson.Get(kv.Value, "position"));
+                    if (pos == null || pos.Count < 3)
+                        continue;
+                    var rot = MiniJson.AsList(MiniJson.Get(kv.Value, "rotation"));
+                    s.objectTransforms[kv.Key] = new LegaiaPrefabTransform
+                    {
+                        position = ReadVec(pos),
+                        hasRotation = rot != null && rot.Count >= 3,
+                        rotation = rot != null && rot.Count >= 3 ? ReadVec(rot) : Vector3.zero,
+                    };
+                }
             var lt = MiniJson.AsObj(MiniJson.Get(m, "living_town"));
             if (lt != null)
             {
@@ -503,7 +579,12 @@ namespace LegaiaWorld
                 (s.hasSpawn ? ", spawn override " + s.spawnLocal : "") +
                 (s.prefabTransforms.Count > 0
                     ? ", " + s.prefabTransforms.Count + " placement(s)" : "") +
-                (s.slotMachine != null ? ", slot machine" : "") +
+                (s.slotMachines.Count == 1 ? ", slot machine"
+                    : s.slotMachines.Count > 1 ? ", " + s.slotMachines.Count + " slot machines"
+                    : "") +
+                (s.objectTransforms.Count > 0
+                    ? ", " + s.objectTransforms.Count + " object transform(s)" : "") +
+                (Mathf.Abs(s.worldScale - 1f) > 1e-5f ? ", world scale " + s.worldScale : "") +
                 (s.ambienceClips.Count > 0
                     ? ", " + s.ambienceClips.Count + " ambience override(s)" : "") + ".");
             return s;
@@ -533,6 +614,37 @@ namespace LegaiaWorld
                 (float)MiniJson.AsNum(l[0]),
                 (float)MiniJson.AsNum(l[1]),
                 (float)MiniJson.AsNum(l[2]));
+        }
+
+        /// One slot_machine block (or one slot_machines entry); null for
+        /// a non-object entry.
+        static LegaiaSlotPlacement ReadSlot(Dictionary<string, object> sm)
+        {
+            if (sm == null)
+                return null;
+            var slot = new LegaiaSlotPlacement
+            {
+                cabinetAsset = MiniJson.AsStr(MiniJson.Get(sm, "cabinet")),
+                artDir = MiniJson.AsStr(MiniJson.Get(sm, "art")),
+            };
+            var slotPos = MiniJson.AsList(MiniJson.Get(sm, "position"));
+            if (slotPos != null && slotPos.Count >= 3)
+            {
+                slot.hasPosition = true;
+                slot.position = ReadVec(slotPos);
+            }
+            var slotRot = MiniJson.AsList(MiniJson.Get(sm, "rotation"));
+            if (slotRot != null && slotRot.Count >= 3)
+            {
+                slot.hasRotation = true;
+                slot.rotation = ReadVec(slotRot);
+            }
+            if (MiniJson.Get(sm, "scale") is double sc)
+            {
+                slot.hasScale = true;
+                slot.scale = (float)sc;
+            }
+            return slot;
         }
 
         /// Apply a placement override to a built object: position always,
@@ -933,25 +1045,27 @@ namespace LegaiaWorld
         /// are destroyed; prefab-instance children (world glb nodes) are
         /// disabled, since destroying them would require unpacking the
         /// prefab instance.
-        public void ApplyDeletions(GameObject root)
+        /// `worldNodesOnly`: touch only prefab-instance children (world /
+        /// prop glb nodes) - the early pass, run before the merged world
+        /// collider is re-baked and before the navmesh and the ground
+        /// snaps, so a deleted hut is gone from collision as well as from
+        /// view. The late pass (default) covers everything, the generated
+        /// objects the realism passes make included; a node the early
+        /// pass already disabled matches again and is simply disabled
+        /// again.
+        public void ApplyDeletions(GameObject root, bool worldNodesOnly = false)
         {
             if (deleteObjects.Count == 0 || root == null)
                 return;
             var targets = new List<GameObject>();
-            var scopes = new List<GameObject> { root };
-            foreach (string top in new[]
-                     { "Legaia_camp_props", "Legaia_night_torches", "Legaia_equipment",
-                       LegaiaCommonPrefabs.CONTAINER })
-            {
-                var go = GameObject.Find(top);
-                if (go != null)
-                    scopes.Add(go);
-            }
+            var scopes = NameScopes(root);
             var matched = new HashSet<string>();
             foreach (var scope in scopes)
                 foreach (var t in scope.GetComponentsInChildren<Transform>(true))
                 {
                     if (t == null || t.gameObject == scope)
+                        continue;
+                    if (worldNodesOnly && !PrefabUtility.IsPartOfPrefabInstance(t.gameObject))
                         continue;
                     foreach (string token in deleteObjects)
                         if (MatchesPath(t, token))
@@ -978,12 +1092,122 @@ namespace LegaiaWorld
                     removed++;
                 }
             }
-            Debug.Log("[Legaia] scene settings deletions: " + removed +
+            Debug.Log("[Legaia] scene settings deletions" +
+                (worldNodesOnly ? " (world nodes, early)" : "") + ": " + removed +
                 " destroyed, " + hidden + " disabled (prefab children).");
+            if (worldNodesOnly)
+                return; // the generated names are for the late pass
             foreach (string n in deleteObjects)
                 if (!matched.Contains(n))
                     Debug.LogWarning("[Legaia] delete_objects name not found " +
                         "in the built hierarchy: " + n);
+        }
+
+        /// The scopes the object-name rules (delete_objects,
+        /// object_transforms) search: the built root plus the kit's
+        /// top-level containers.
+        static List<GameObject> NameScopes(GameObject root)
+        {
+            var scopes = new List<GameObject> { root };
+            foreach (string top in new[]
+                     { "Legaia_camp_props", "Legaia_night_torches", "Legaia_equipment",
+                       LegaiaCommonPrefabs.CONTAINER })
+            {
+                var go = GameObject.Find(top);
+                if (go != null)
+                    scopes.Add(go);
+            }
+            return scopes;
+        }
+
+        /// Move every object an object_transforms key names to the stored
+        /// Inspector-local placement (rotation when the entry has one).
+        /// Runs after the placement passes and before the realism layer
+        /// (both on a build and on "Apply enhancements"), so a moved world
+        /// node / villager is where the navmesh bake and the stations find
+        /// it. A key that names nothing is a warning; one that names
+        /// several objects moves the first and warns, so the file can be
+        /// made more specific with a path suffix.
+        public void ApplyObjectTransforms(GameObject root)
+        {
+            if (objectTransforms.Count == 0 || root == null)
+                return;
+            int moved = 0;
+            foreach (var kv in objectTransforms)
+            {
+                var hits = FindObjects(root, kv.Key);
+                if (hits.Count == 0)
+                {
+                    Debug.LogWarning("[Legaia] object_transforms key not found " +
+                        "in the built hierarchy: " + kv.Key);
+                    continue;
+                }
+                if (hits.Count > 1)
+                    Debug.LogWarning("[Legaia] object_transforms key '" + kv.Key + "' names " +
+                        hits.Count + " objects - moving the first (" +
+                        ScenePath(hits[0]) + "); use a path suffix to pick one.");
+                Undo.RecordObject(hits[0], "Legaia scene settings");
+                hits[0].localPosition = kv.Value.position;
+                if (kv.Value.hasRotation)
+                    hits[0].localRotation = Quaternion.Euler(kv.Value.rotation);
+                moved++;
+            }
+            Debug.Log("[Legaia] scene settings object transforms: " + moved + " of " +
+                objectTransforms.Count + " applied.");
+        }
+
+        /// Every transform under the name scopes that `key` names, in
+        /// hierarchy order (see MatchesObjectKey).
+        public static List<Transform> FindObjects(GameObject root, string key)
+        {
+            var hits = new List<Transform>();
+            foreach (var scope in NameScopes(root))
+                foreach (var t in scope.GetComponentsInChildren<Transform>(true))
+                    if (t != null && t.gameObject != scope && MatchesObjectKey(t, key))
+                        hits.Add(t);
+            return hits;
+        }
+
+        /// The object_transforms match: the delete_objects path rule, or
+        /// a bare NPC token (`npc_150`) naming the placed villager whose
+        /// object name starts with it - villagers are named after their
+        /// export file plus a model tag and label, which nobody should
+        /// have to type.
+        public static bool MatchesObjectKey(Transform t, string key)
+        {
+            if (MatchesPath(t, key))
+                return true;
+            return key.StartsWith("npc_") && !key.Contains("/") &&
+                   t.name.StartsWith(key + "_");
+        }
+
+        /// The key the snapshot stores an object under: an NPC by its
+        /// `npc_NNN` token, anything else by its name - path-suffixed with
+        /// the parent when the bare name matches more than one object
+        /// under the scopes (two glb instances sharing a node name).
+        public static string ObjectKeyFor(GameObject root, Transform t)
+        {
+            string n = t.name;
+            if (n.StartsWith("npc_"))
+            {
+                int end = 4;
+                while (end < n.Length && char.IsDigit(n[end]))
+                    end++;
+                if (end > 4 && (end == n.Length || n[end] == '_'))
+                    return n.Substring(0, end);
+            }
+            if (FindObjects(root, n).Count > 1 && t.parent != null)
+                return t.parent.name + "/" + n;
+            return n;
+        }
+
+        /// "Legaia_town01/world/town01/mesh_39_0" - for log lines.
+        public static string ScenePath(Transform t)
+        {
+            string p = t.name;
+            for (var cur = t.parent; cur != null; cur = cur.parent)
+                p = cur.name + "/" + p;
+            return p;
         }
 
         /// True when `token` names this transform: a bare name is an
