@@ -685,6 +685,13 @@ last one is tier 3's question, asked of hand-named pairs. It proves only that
 no arm silently drops a step the fall-through path takes, and that neither
 host's per-frame list has grown a member the other's has not.
 
+It also covers two of the three hosts, and for a structural reason rather than
+an oversight: the minigames page has no frame path to walk. It exports one
+tick per minigame (`dance_tick`, `baka_tick`, `slot_tick`, `fishing_pond_tick`,
+`muscle_tick_time_meter`), each called by its own page module, so there is no
+fall-through list for an arm to skip part of. A shared frame path is the thing
+this tier measures; that host does not have one.
+
 Both halves are derived from the sources rather than declared, so a new arm or
 a new kernel joins the measurement by existing. The ratchet is the `skips`
 list on each waiver row: one that no longer matches is stale and fails, and a
