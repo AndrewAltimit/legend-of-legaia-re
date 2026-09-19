@@ -1017,10 +1017,11 @@ whichever build's matrix was live when they were emitted
 
   The image is **PROT 0901**, the world-map render module, not a field-render
   one. `ra` is the `jal` plus eight, so the sites are `0x801F7420` and
-  `0x801F7614`, and of the eighty-three statically extracted overlay images
-  exactly one holds `jal 0x800172C0` inside the slot-B window - 0901, at those
-  two addresses. The run that recorded them is a world-map one (`scene = map01`,
-  mode `0x03`), which is what has 0901 resident.
+  `0x801F7614`, and across every statically extracted overlay image exactly one
+  holds `jal 0x800172C0` inside the slot-B window - 0901, at those two
+  addresses. (Seventeen sites in all: four in `SCUS_942.54`, eleven in slot-A
+  images, those two.) The run that recorded them is a world-map one
+  (`scene = map01`, mode `0x03`), which is what has 0901 resident.
 
   Both sites are in **one** routine, `FUN_801F73E4` (608 bytes,
   `0x801F73E4..0x801F7644`), and the pair is a bracket rather than two
