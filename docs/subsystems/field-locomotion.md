@@ -1672,11 +1672,16 @@ and its sub-op's table byte (`0x801F33A4 + b`) is not `-1`, so the word ends up
 holding either the pre-enter slot or the constant `7`.
 
 **Nothing reads it.** That idiom - a `+0x2E` stamp immediately followed by a
-`+0x40` store - appears twenty-six times in the field overlay's own content and
-is the *only* way `+0x40` is touched through that pointer: a sweep of
-`SCUS_942.54` and every extracted overlay image for a load off a register
-holding `*(0x801C6EA4)` finds zero reads of `+0x40`, in any width, anywhere
-(`disassembly`).
+`+0x40` store on the same base register - appears twenty-two times in the field
+overlay's own content, and is the *only* way `+0x40` is touched through that
+pointer: a sweep of `SCUS_942.54` and every extracted overlay image for a load
+off a register holding `*(0x801C6EA4)` finds zero reads of `+0x40`, in any
+width, anywhere (`disassembly`). Twenty-two is the count under the loosest
+reading - base-register agnostic and stable for any adjacency window from four
+instructions to thirty-two - so it is a ceiling on the idiom, not a sample of
+it; every disp-`0x40` load left in the image is off `$sp` or off an unrelated
+record (a vertex triple at `+0x3C`/`+0x3E`/`+0x40`, a script record at `+0x84`
+upward).
 
 A register copy of the struct pointer would hide a reader from that sweep, so
 the same question was put to the hardware: a two-byte **read** watch on the
@@ -1684,10 +1689,12 @@ live `scene + 0x2E` and `scene + 0x40` across a field-to-minigame transition
 (`capture`). While the pointer still named the scene struct - 212 vsyncs -
 neither word was read once. Every later hit belongs to a different consumer of
 the same address: the field scene buffer is recycled into a GPU working buffer
-at the transition (two writers, `0x8001A664` and `0x8001A8C8`, overwrite both
-words), after which the "reads" are `lw s4, 0x20(a1)` at `0x80043F74` and
+at the transition (two writers, `0x8001A664` and `0x8001A8C8`, overwrite the
+parked word - those are the only writes the watch records after the enter),
+after which the "reads" are `lw s4, 0x20(a1)` at `0x80043F74` and
 `lw ... 0x20(a1)` at `0x80044054` - a GTE vertex walk indexing its own record -
-plus one hit from the VRAM DMA loop at `0x80059DE4`. Probe:
+plus `0x800455E8`, which is that same `lw s4, 0x20(a1)` sequence again in a
+second prim emitter, and one hit from the VRAM DMA loop at `0x80059DE4`. Probe:
 [`autorun_field_submode_park.lua`](../../scripts/pcsx-redux/autorun_field_submode_park.lua).
 
 So the parked word is write-only state: the return is carried by the driver's
