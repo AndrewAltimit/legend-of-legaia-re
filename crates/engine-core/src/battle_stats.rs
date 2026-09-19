@@ -233,8 +233,13 @@ fn mul_clamp(value: u16, mult: f32) -> u16 {
 /// record's `ATK / UDF / LDF / SPD / INT` halfwords (`+0x112/0x114/0x116/0x118/
 /// 0x11A`), so the five equipment bytes target `ATK / UDF / LDF / SPD / INT`
 /// respectively (the `+0` byte is INT, the `+4` byte is SPD). This function is
-/// the port-side equivalent: it consumes the same five equipment ids
-/// (`record.equip`), looks each up in the engine's [`EquipmentTable`] (analogue
+/// the port-side equivalent, with one deliberate difference: it walks all
+/// eight `record.equip` bytes, because the same body is also the battle-side
+/// aggregator `FUN_80042558`, which walks eight. On retail data the tail is
+/// inert here - the three Goods bytes are item-class `2` ids, absent from
+/// [`EquipmentTable`], which indexes class-`1` ids only - and the menu's own
+/// five-slot walk (`slti a2, 5` at `0x801CF744`) is `menu_stat_block` in
+/// `pause_screens`, which zeroes that tail. It looks each id up in [`EquipmentTable`] (analogue
 /// of the `0x80074F68` bonus row), and accumulates the modifiers into
 /// [`BattleStats`]. Accuracy / evasion are derived from AGL upstream and are
 /// not equipment-fed, so the equipment loop leaves them alone. It also folds
