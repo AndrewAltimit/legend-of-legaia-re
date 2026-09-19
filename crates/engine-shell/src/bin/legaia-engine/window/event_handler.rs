@@ -2,6 +2,10 @@
 
 use super::*;
 
+/// Two left presses this close together are the double-click that resets
+/// the follow camera's user framing - the common desktop default.
+const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(400);
+
 #[path = "event_handler/keyboard.rs"]
 mod keyboard;
 #[path = "event_handler/redraw.rs"]
@@ -84,28 +88,43 @@ impl ApplicationHandler for PlayWindowApp {
             // given gesture moves the camera by the same amount on either
             // host - the yaw rate used to differ by a third, on a field the
             // *simulation* reads.
+            //
+            // With the retail follow camera live (no `F3`), all three knobs
+            // steer the ENGINE camera through its cutscene-gated setters
+            // (`Camera::orbit_by` / `tilt_by` / `zoom_by`): the view stays
+            // centred on the character, a running scripted shot keeps the
+            // camera where the script put it, and the browser play page
+            // drives the same three fields from the same gestures.
             WindowEvent::CursorMoved { position, .. } => {
+                let world = &self.session.host.world;
                 if let Some(last) = self.orbit_drag_last_x {
                     let dx = (position.x - last) as f32;
-                    if dx != 0.0
-                        && !self.boot_ui.is_active()
-                        && self.session.host.world.mode == SceneMode::Field
-                    {
-                        self.session.camera.manual_orbit = (self.session.camera.manual_orbit
-                            + dx * camera::debug_orbit::YAW_RAD_PER_PX)
-                            .rem_euclid(std::f32::consts::TAU);
+                    if dx != 0.0 && !self.boot_ui.is_active() {
+                        let rad = dx * camera::debug_orbit::YAW_RAD_PER_PX;
+                        if self.field_debug_camera {
+                            if world.mode == SceneMode::Field {
+                                self.session.camera.manual_orbit =
+                                    (self.session.camera.manual_orbit + rad)
+                                        .rem_euclid(std::f32::consts::TAU);
+                            }
+                        } else {
+                            self.session.camera.orbit_by(world, rad);
+                        }
                     }
                     self.orbit_drag_last_x = Some(position.x);
                 }
                 if let Some(last) = self.orbit_drag_last_y {
                     let dy = (position.y - last) as f32;
                     if dy != 0.0 && !self.boot_ui.is_active() {
-                        self.debug_orbit_pitch = (self.debug_orbit_pitch
-                            + dy * camera::debug_orbit::PITCH_RAD_PER_PX)
-                            .clamp(
+                        let rad = dy * camera::debug_orbit::PITCH_RAD_PER_PX;
+                        if self.field_debug_camera {
+                            self.debug_orbit_pitch = (self.debug_orbit_pitch + rad).clamp(
                                 camera::debug_orbit::PITCH_MIN,
                                 camera::debug_orbit::PITCH_MAX,
                             );
+                        } else {
+                            self.session.camera.tilt_by(world, rad);
+                        }
                     }
                     self.orbit_drag_last_y = Some(position.y);
                 }
@@ -120,11 +139,27 @@ impl ApplicationHandler for PlayWindowApp {
                 let held = state == ElementState::Pressed;
                 self.orbit_drag_last_x = held.then_some(self.cursor_x);
                 self.orbit_drag_last_y = held.then_some(self.cursor_y);
+                // Double-click: the follow camera back to retail framing
+                // (orbit / tilt / zoom to identity), the page's `dblclick`.
+                // The `T` preset is a persisted option and stays.
+                if held {
+                    let now = std::time::Instant::now();
+                    let double = self
+                        .last_left_press
+                        .is_some_and(|t| now.duration_since(t) <= DOUBLE_CLICK_WINDOW);
+                    self.last_left_press = (!double).then_some(now);
+                    if double && !self.field_debug_camera && !self.boot_ui.is_active() {
+                        self.session.camera.reset_follow_knobs();
+                        log::info!("camera: follow framing reset (double-click)");
+                    }
+                }
             }
-            // Wheel: the debug orbit's continuous zoom, the page's `halfWidth`
-            // knob. A notch out widens the framing box and a notch in narrows
-            // it, by the page's own factors; the `T` distance preset stays a
-            // separate coarse multiplier under it, as it is on both hosts.
+            // Wheel: continuous zoom. On the follow camera it scales the
+            // retail eye-back depth (`Camera::manual_zoom`, cutscene-gated);
+            // on the `F3` debug orbit it is the page's `halfWidth` knob. A
+            // notch out pulls back and a notch in closes, by the page's own
+            // factors; the `T` distance preset stays a separate coarse
+            // multiplier under both, as it is on both hosts.
             WindowEvent::MouseWheel { delta, .. } => {
                 let notches = match delta {
                     winit::event::MouseScrollDelta::LineDelta(_, y) => y,
@@ -136,7 +171,11 @@ impl ApplicationHandler for PlayWindowApp {
                     } else {
                         camera::debug_orbit::ZOOM_IN
                     };
-                    self.debug_orbit_zoom = (self.debug_orbit_zoom * f).clamp(0.05, 20.0);
+                    if self.field_debug_camera {
+                        self.debug_orbit_zoom = (self.debug_orbit_zoom * f).clamp(0.05, 20.0);
+                    } else {
+                        self.session.camera.zoom_by(&self.session.host.world, f);
+                    }
                 }
             }
             WindowEvent::RedrawRequested => {

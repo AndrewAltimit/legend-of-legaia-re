@@ -156,11 +156,18 @@ fn lead_actor_xz(world: &World) -> Option<(f32, f32)> {
 /// target is the player anchor with its floor height sampled (retail's
 /// follow-cam `FUN_801DBE9C` folds `-(anchor X/Z)` into the focus globals each
 /// frame, and the port's `sample_field_floor_height` supplies the Y a raw
-/// `world_y` of `0` would put under an elevated town tier). Two user knobs
-/// compose onto the base and are both retail-identical at their
-/// defaults: [`Camera::distance`] scales the eye-back depth, and
+/// `world_y` of `0` would put under an elevated town tier). Four user knobs
+/// compose onto the base and are all retail-identical at their defaults:
+/// [`Camera::distance`] scales the eye-back depth (the coarse preset),
 /// [`Camera::manual_orbit`] swings the yaw around the player in the compass
-/// sense - the PSX render yaw is its negation.
+/// sense - the PSX render yaw is its negation - and [`Camera::manual_zoom`]
+/// (the continuous wheel) and [`Camera::manual_tilt`] (clamped through
+/// [`follow_knobs::composed_pitch`](crate::camera::follow_knobs::composed_pitch))
+/// dolly and pitch the pose **about the character's body**
+/// ([`FOLLOW_PIVOT_LIFT`]), so the character holds its screen point through
+/// both. None of them reaches a cutscene shot -
+/// [`resolve_field_camera`] hands a running timeline the
+/// [`FieldCameraFrame::Cutscene`] arm, which reads none of the four.
 ///
 /// The eye trio is the live `_DAT_800840B8/BC/C0` the ease walks, divided by
 /// the 6x world scale retail folds into its camera rotation - eye X
@@ -176,6 +183,10 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
     let (wx, wz) = lead_actor_xz(world)?;
     let floor_y = world.sample_field_floor_height(wx as i32, wz as i32) as f32;
     let s = CUTSCENE_WORLD_SCALE;
+    // The coarse distance preset scales the eye-back depth alone (its
+    // historical shape, which a `Far` capture baseline pins); the continuous
+    // wheel zoom and the tilt re-pivot the pose about the character below.
+    let depth_scale = cam.distance.scale();
     let (pitch_units, yaw_units, tr_eye) = if cam.zone.active {
         let g = &cam.globals.0;
         (
@@ -190,17 +201,17 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
             [
                 g[3] as f32 / s,
                 g[4] as f32 / s,
-                ((g[5] as f32 / s).abs()).max(FIELD_CAM_DEPTH / 8.0) * cam.distance.scale(),
+                ((g[5] as f32 / s).abs()).max(FIELD_CAM_DEPTH / 8.0) * depth_scale,
             ],
         )
     } else {
         (
             FIELD_PITCH_UNITS,
             FIELD_FOLLOW_YAW_UNITS,
-            [0.0, 0.0, FIELD_CAM_DEPTH * cam.distance.scale()],
+            [0.0, 0.0, FIELD_CAM_DEPTH * depth_scale],
         )
     };
-    Some(FieldCameraView {
+    let retail = FieldCameraView {
         // Retail's focus trio is `_DAT_80089118/1C/20`, and only X and Z are
         // ever written in the field (`FUN_801DBE9C`'s retail leg and the
         // focus clamp `FUN_801DAA50` both write those two). Its Y global
@@ -239,8 +250,38 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
             v => v as f32,
         },
         tr_eye,
+    };
+    if cam.manual_tilt == 0.0 && cam.manual_zoom == 1.0 {
+        // Both knobs at identity: the retail pose, bit for bit.
+        return Some(retail);
+    }
+    // Tilt and zoom pivot about the CHARACTER, not the retail focus. The
+    // focus is retail's look target - a floor-level point that sits a tier
+    // below the feet on an elevated town tier (`town01`) - so a dolly or a
+    // pitch about it walks the character out of frame. Instead the pose is
+    // re-expressed about the body's centre `q` (feet lifted by half a
+    // character height): the rotation takes the user's tilt, the focus
+    // becomes `q`, and `q`'s eye-space position - which alone fixes its
+    // screen point - is kept and scaled by the zoom. At identity this
+    // re-expression is the retail pose (`R (v - q) + (R (q - focus) + tr)`
+    // = `R (v - focus) + tr`), which the early return above keeps exact.
+    let pivot = [wx, floor_y - FOLLOW_PIVOT_LIFT, wz];
+    let q = retail.eye_space(pivot);
+    Some(FieldCameraView {
+        focus: pivot,
+        // The scene's pitch plus the user's tilt, clamped so the lens stays
+        // above the floor and short of top-down.
+        pitch: crate::camera::follow_knobs::composed_pitch(retail.pitch, cam.manual_tilt),
+        tr_eye: q.map(|c| c * cam.manual_zoom),
+        ..retail
     })
 }
+
+/// How far above the feet (raw retail Y-down, so subtracted) the follow
+/// knobs' pivot sits: half a ~130-unit field character, so a tilt or a zoom
+/// turns and dollies about the body's centre and the character holds its
+/// screen point through both.
+pub const FOLLOW_PIVOT_LIFT: f32 = 64.0;
 
 /// The **op-`0x45` cutscene shot**'s inputs, decoded from the camera state the
 /// field VM staged.
@@ -556,6 +597,97 @@ mod tests {
         assert_eq!(v.pitch, base.pitch);
         assert_eq!(v.focus, base.focus);
         assert_eq!(v.h, base.h);
+    }
+
+    /// Tilt and zoom pivot about the character's body: its eye-space
+    /// position (which alone fixes its screen point) is unchanged by a tilt
+    /// and scaled by the zoom, so the character holds its place on screen
+    /// while the scene around it turns and gains or loses perspective.
+    #[test]
+    fn follow_view_tilts_and_zooms_about_the_character() {
+        let w = world_with_player(300, -200);
+        let mut cam = Camera::default();
+        cam.distance = crate::camera::CameraDistance::Far;
+        cam.zone.active = true;
+        cam.globals.0[0] = FIELD_PITCH_UNITS as i32;
+        cam.globals.0[1] = FIELD_FOLLOW_YAW_UNITS as i32;
+        cam.globals.0[3] = -600;
+        cam.globals.0[4] = 1200;
+        cam.globals.0[5] = 4800;
+        let base = field_follow_view(&cam, &w).unwrap();
+        let pivot = [300.0, -FOLLOW_PIVOT_LIFT, -200.0];
+        let q0 = base.eye_space(pivot);
+        let screen = |v: &FieldCameraView| {
+            let q = v.eye_space(pivot);
+            [q[0] / q[2], q[1] / q[2]]
+        };
+
+        cam.manual_tilt = 0.2;
+        let t = field_follow_view(&cam, &w).unwrap();
+        assert!((t.pitch - (base.pitch + 0.2)).abs() < 1e-6);
+        assert_eq!(t.yaw, base.yaw);
+        assert_eq!(t.h, base.h);
+        let (s0, s1) = (screen(&base), screen(&t));
+        assert!(
+            (s0[0] - s1[0]).abs() < 1e-4 && (s0[1] - s1[1]).abs() < 1e-4,
+            "tilt: {s0:?} vs {s1:?}"
+        );
+        // The eye moved: steeper means higher above the pivot.
+        assert!(t.eye()[1] < base.eye()[1], "a downward tilt lifts the eye");
+
+        cam.manual_tilt = 0.0;
+        cam.manual_zoom = 0.5;
+        let z = field_follow_view(&cam, &w).unwrap();
+        assert_eq!(z.pitch, base.pitch);
+        let q1 = z.eye_space(pivot);
+        for k in 0..3 {
+            assert!(
+                (q1[k] - q0[k] * 0.5).abs() < 1e-3,
+                "axis {k}: {q1:?} vs {q0:?}"
+            );
+        }
+        let s2 = screen(&z);
+        assert!(
+            (s0[0] - s2[0]).abs() < 1e-4 && (s0[1] - s2[1]).abs() < 1e-4,
+            "zoom: {s0:?} vs {s2:?}"
+        );
+        let d = |e: [f32; 3]| {
+            ((e[0] - pivot[0]).powi(2) + (e[1] - pivot[1]).powi(2) + (e[2] - pivot[2]).powi(2))
+                .sqrt()
+        };
+        assert!(
+            (d(z.eye()) - d(base.eye()) * 0.5).abs() < 1e-2,
+            "zoom halves the eye distance"
+        );
+    }
+
+    /// Both knobs at identity return the retail pose bit for bit - no
+    /// re-expression about the pivot leaks a rounding into the faithful
+    /// frame.
+    #[test]
+    fn follow_view_is_bit_identical_at_identity_knobs() {
+        let w = world_with_player(300, -200);
+        let mut cam = Camera::default();
+        cam.manual_orbit = 0.3;
+        cam.distance = crate::camera::CameraDistance::Far;
+        let a = field_follow_view(&cam, &w).unwrap();
+        cam.manual_tilt = 0.0;
+        cam.manual_zoom = 1.0;
+        let b = field_follow_view(&cam, &w).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a.focus[1], w.sample_field_floor_height(300, -200) as f32);
+    }
+
+    /// The tilt clamps the composed pitch at both ends of the knob range.
+    #[test]
+    fn follow_view_tilt_clamps_to_the_knob_range() {
+        use crate::camera::follow_knobs::{PITCH_MAX, PITCH_MIN};
+        let w = world_with_player(0, 0);
+        let mut cam = Camera::default();
+        cam.manual_tilt = 5.0;
+        assert_eq!(field_follow_view(&cam, &w).unwrap().pitch, PITCH_MAX);
+        cam.manual_tilt = -5.0;
+        assert_eq!(field_follow_view(&cam, &w).unwrap().pitch, PITCH_MIN);
     }
 
     /// The follow camera's analytic eye is behind and above the player, in

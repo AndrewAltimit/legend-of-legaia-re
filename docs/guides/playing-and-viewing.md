@@ -41,7 +41,10 @@ Circle there, `C` / `V` carry Triangle / Square, and WASD doubles the arrows),
 so a key that works in the tab is not necessarily the same button in the
 window. `config show` prints the desktop table, including any rebinding.
 
-In-window extras: left-mouse drag orbits the camera, `T` cycles the
+In-window extras: left-mouse drag orbits the camera around your character
+(horizontal) and tilts it (vertical), the wheel zooms in and out, and a
+double-click puts the framing back to retail - all three are locked while a
+cutscene has the camera. `T` cycles the coarse
 camera-distance preset, `R` toggles precise free-angle movement (an opt-in
 enhancement - retail-style movement is the default), `I` toggles dynamic
 lighting (also opt-in, `--dynamic-lighting` to start with it on), `F1` shows

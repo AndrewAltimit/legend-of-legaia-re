@@ -203,9 +203,13 @@ the retail field follow view, an op-`0x45` cutscene shot with its between-beat
 glide, the overworld walk view, or the world map's top-view debug camera - and
 returns the column-major view-projection `site/js/play-app.js` uploads.
 `play_camera_eye` is the same frame's world-space lens, which is what the
-occlusion fade ray-casts from; `play_camera_set_orbit` writes the user's
-drag-orbit into `Camera::manual_orbit`, the same field the native window's
-left-mouse drag writes, so the movement compass tracks the view on both hosts.
+occlusion fade ray-casts from; `play_camera_orbit_by` / `play_camera_tilt_by`
+/ `play_camera_zoom_by` steer the user's three follow-camera knobs
+(`Camera::manual_orbit` / `manual_tilt` / `manual_zoom`) through the engine's
+cutscene-gated setters - the same fields the native window's left-mouse drag
+and wheel write, so the movement compass tracks the view on both hosts and a
+scripted shot is locked on both. `play_camera_reset_framing` is the
+double-click; `play_camera_set_orbit` remains for the `F3` hand-off.
 
 This host held **no** `engine_core::camera::Camera` at all before: it framed
 the field with a spherical orbit projection of its own and re-mapped the

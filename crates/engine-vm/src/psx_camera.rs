@@ -228,6 +228,28 @@ impl FieldCameraView {
     pub fn eye(&self) -> [f32; 3] {
         psx_camera_eye(self.pitch, self.yaw, self.roll, self.tr_eye, self.focus)
     }
+
+    /// A raw-world point's **eye-space** position under this pose,
+    /// `R * (p - focus) + tr` - the vector the GTE divides by to place it on
+    /// screen (`H * xy / z`). The screen point of `p` is a function of this
+    /// vector's direction only, which is what lets a user knob re-pivot the
+    /// pose about `p` (the character) without moving `p` on screen.
+    pub fn eye_space(&self, p: [f32; 3]) -> [f32; 3] {
+        let r = camera_rotation(self.pitch, self.yaw, self.roll);
+        let d = [
+            p[0] - self.focus[0],
+            p[1] - self.focus[1],
+            p[2] - self.focus[2],
+        ];
+        let mut out = self.tr_eye;
+        // Column-major `r[c*4 + row]`: `(R d)_row = sum_c R[row][c] d[c]`.
+        for (row, o) in out.iter_mut().enumerate() {
+            for (c, &dc) in d.iter().enumerate() {
+                *o += r[c * 4 + row] * dc;
+            }
+        }
+        out
+    }
 }
 
 /// Near / far planes for the synthetic orbit-family cameras (the debug

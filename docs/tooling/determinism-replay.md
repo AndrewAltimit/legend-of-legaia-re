@@ -111,9 +111,10 @@ captured file replays exactly as long as the human session was.
 
 **Interactive-toggle caveat.** `j-replay-v1` captures the pad stream
 only - the play-window's interactive camera/movement toggles (camera
-distance preset, left-mouse drag-orbit, the precise-movement toggle)
-are not recorded. The defaults are safe: the distance preset and orbit
-are pure render framing (no simulation effect), and replays run with
+distance preset, left-mouse drag-orbit / drag-tilt, wheel zoom, the
+precise-movement toggle) are not recorded. The defaults are safe: the
+distance preset, orbit, tilt and zoom are pure render framing (no
+simulation effect - only the orbit reaches the compass), and replays run with
 `precise_movement` off (the retail-faithful quantised remap), matching
 the engine-core defaults. A session recorded while precise movement was
 ON (or with a non-zero drag-orbit compass) is not replay-stable; keep
