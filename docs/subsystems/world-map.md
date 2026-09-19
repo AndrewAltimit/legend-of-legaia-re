@@ -49,6 +49,33 @@ Both variants share the core field VM (`FUN_801DE840`), move-VM extension (`FUN_
 and all rendering helpers. The top-view variant adds extra rendering code that starts ~0x1400
 bytes earlier in the code window.
 
+### The top-view image on the disc is PROT 0981
+
+The top-view variant is not only a capture: it is a PROT entry of its own,
+**extraction 0981**, a `0x1000`-byte slot-A image at `0x801CE818`
+(`crates/asset/data/static-overlays.toml`). Its `monster_test` label is CDNAME
+inheritance - the block opens at extraction 0978 and names run forward
+([`cdname.md`](../formats/cdname.md#numbering-space)) - and the image's own
+operands are world-map ones throughout: the location table pointer
+`DAT_80073EE0`, the kingdom filter `uRam8007b970`, the camera translation pair
+`_DAT_80089118` / `_DAT_80089120` and the eye-space `TR` trio `0x800840B8`.
+Byte identity pins it to the capture: the arm at `0x801CE9C4` the place-label
+pass above is cited from is this image's bytes, at this VA, and they occur in
+no other PROT entry.
+
+The image holds **one framed function and three frameless leaves**:
+
+| Entry | Bytes | What it is |
+|---|---|---|
+| `0x801CE850` | 3164 | The top-view tick, and the prologue the table above names. A six-arm mode dispatcher: `sltiu a0, 6` against the mode word `0x801CF76C`, table at `0x801CE838`. All six arms are `jr $v0` targets inside this one body - `0x801CE9C4` is an arm, not a function head. |
+| `0x801CF4AC` | 316 | Enter / reset. Zeroes the mode word, sets the record cursor `0x801CF77C` and its neighbour to `-1`, and snapshots the live world-map state - the `0x800840B8` quad, the scroll trio `0x8007B790`, the camera pair `0x80089118`, the projection word `0x8007B6F4` and four scratchpad bytes - into the image's own zeroed block at `0x801CF70C..0x801CF790`. Sets the game-mode word `0x8007B83C = 0x0D`. |
+| `0x801CF5E8` | 144 | The location-record stepper. Walks the `DAT_80073EE0` table (count byte at `[0]`, `0x20` stride) up or down by `a0` until a record's `region` matches `uRam8007b970`, wrapping on the count, and stores the index back. |
+| `0x801CF678` | 112 | The camera clamp: bounds `_DAT_80089118` to `[-0x3380, -0xD00]` and `_DAT_80089120` to `[-0x3580, -0xC00]`. |
+
+Nothing here is ported. Entering the top view needs the debug flag
+`_DAT_8007B98C`, which retail leaves clear (see below), and the engine owns its
+own camera and map browser.
+
 The view-mode toggle flag lives at `DAT_801F2B94`. The world-map overlay
 variants extend past `0x801F0000` - capture them with a wider window
 (`0x801C0000..0x801F9000`, 228 KB) to include the prim-mode dispatch
@@ -772,6 +799,18 @@ world-map overlay data region (`0x801F28F0..0x801F2Fxx`) and the dev context
   records. The two pure-integer bounding kernels are ported as
   `legaia_engine_vm::world_map_dev_menu` (`wrap12_step`, `clamp1_255_step`,
   `pad_step`); the table-cycle and party-record arms stay documented-not-ported.
+- **`FUN_801EA9B0`** (1000 bytes, field overlay PROT 0897, `0x801EA9B0..0x801EAD98`)
+  - the **confirm** half, the sibling that sits immediately below the renderer
+  `FUN_801EAD98` and runs the row's action once the player commits. Its
+  `BGM CALL` arm is the fourth disc-wide writer of the BGM request global
+  `_DAT_8007BAC8`: it indexes the sound-test table at `0x801F2E94` by the
+  cursor `_DAT_801F2E90`, and the row's first halfword is the **global BGM id**
+  ([`music-tracks.md`](../reference/music-tracks.md) - `2000 + i` for sound-test
+  track `i`). The row whose id reads `-1` is the `OFF` row: it takes the other
+  arm and raises `_DAT_8007B438` instead of installing an id. So the writer is
+  a developer sound test, not world-map entry and not a region change - the
+  three writers that install a track for ordinary play are the field-VM ones
+  ([`audio.md`](audio.md)).
 
 ### World-map top-view HUD primitive batch
 
