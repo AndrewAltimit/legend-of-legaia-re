@@ -9,7 +9,7 @@
 //! that a cancel hands the pad back to the list it came from.
 
 use legaia_engine_core::menu_runtime::{MenuInput, MenuRuntime, MenuState};
-use legaia_engine_core::shop::{ShopInventory, ShopItem, ShopSession};
+use legaia_engine_core::shop::{POINT_CARD_ITEM_ID, ShopInventory, ShopItem, ShopSession};
 use legaia_engine_core::world::World;
 use legaia_save::{CharacterRecord, Party};
 
@@ -151,6 +151,37 @@ fn the_confirm_buys_the_stepped_stack_with_no_confirm_screen() {
     );
     assert_eq!(world.party.inventory.get(&POTION).copied(), Some(3));
     assert_eq!(world.party.money, 1_000 - 3 * PRICE as i32);
+}
+
+/// A Point Card buy runs retail's toast beat inside the picker: the session
+/// holds the press itself, so the flag the host paints window 31 from must
+/// go out with the session - otherwise the buy list stalls for a second
+/// press nothing is waiting on.
+#[test]
+fn the_point_card_toast_ends_with_the_picker() {
+    let mut world = world_with_gold(1_000);
+    world.party.inventory.insert(POINT_CARD_ITEM_ID, 1);
+    let mut runtime = MenuRuntime::new("/tmp/legaia-w4a");
+    open_buy_quantity(&mut world, &mut runtime);
+    runtime.tick(&mut world, MenuInput::default());
+    runtime.tick(&mut world, cross());
+    // Commit frame: the accrual lands and the toast arms.
+    runtime.tick(&mut world, MenuInput::default());
+    assert!(runtime.point_card_toast().is_some(), "the toast armed");
+    assert!(world.minigames.point_card > 0, "the bank took the credit");
+    // The picker consumes the dismissing press itself.
+    for _ in 0..4 {
+        if runtime.quantity_view().is_none() {
+            break;
+        }
+        runtime.tick(&mut world, cross());
+    }
+    assert!(runtime.quantity_view().is_none());
+    assert!(
+        runtime.point_card_toast().is_none(),
+        "the toast does not outlive the picker"
+    );
+    assert_eq!(runtime.ctx.state, MenuState::ShopBuy.as_byte());
 }
 
 #[test]

@@ -168,8 +168,9 @@ a whole-stack sale that empties the bag still runs the exit delay back to
 the shop root. `MenuRuntime::quantity_view` is what a host lays the window
 out from, so neither host reads a list cursor for that screen and neither
 builds rows for it.
+
 The Point Card accrual and its window-31 toast *are* live on both the
-`ShopConfirm` commit and the recipient picker - `MenuRuntime` owns the
+quantity picker's own commit and the recipient picker - `MenuRuntime` owns the
 gate and the beat, `World::minigames.point_card` the bank. It stays out of
 `World::buy_from_shop` on purpose: that kernel is also the randomizer
 runtime oracles' entry point, and retail's own kernel-equivalent (the

@@ -689,6 +689,10 @@ impl MenuRuntime {
             .as_ref()
             .is_some_and(|p| p.exits_to_shop_root());
         self.quantity_session = None;
+        // The picker's own `ToastWait` already consumed the press that
+        // dismissed window 31, so the paint flag goes with the session -
+        // leaving it set would stall the buy list for a second press.
+        self.point_card_toast = None;
         if let Some(session) = self.shop_session.as_mut() {
             session.pending_item_id = None;
             session.pending_bag_slot = None;
@@ -1896,14 +1900,20 @@ mod tests {
         )));
         runtime.ctx.state = MenuState::ShopBuy.as_byte();
 
-        // ShopBuy (cursor 0 = item 10) -> ShopQuantity.
+        // ShopBuy (cursor 0 = item 10) -> ShopQuantity, where the retail
+        // stepper takes the pad; confirming it commits with no Yes/No
+        // screen in between, over the phases the picker carries.
         runtime.tick(&mut world, cross());
         assert_eq!(runtime.ctx.state, MenuState::ShopQuantity.as_byte());
-        // ShopQuantity (cursor 0 = qty 1) -> ShopConfirm.
+        runtime.tick(&mut world, MenuInput::default());
+        assert_eq!(runtime.quantity_view().map(|v| v.quantity), Some(1));
         runtime.tick(&mut world, cross());
-        assert_eq!(runtime.ctx.state, MenuState::ShopConfirm.as_byte());
-        // ShopConfirm (cursor 0 = yes) -> back to ShopBuy, purchase applied.
-        runtime.tick(&mut world, cross());
+        for _ in 0..4 {
+            if runtime.quantity_view().is_none() {
+                break;
+            }
+            runtime.tick(&mut world, MenuInput::default());
+        }
         assert_eq!(runtime.ctx.state, MenuState::ShopBuy.as_byte());
 
         assert_eq!(world.party.money, 400, "100 gold deducted");
@@ -1937,8 +1947,9 @@ mod tests {
         runtime.ctx.state = MenuState::ShopBuy.as_byte();
 
         runtime.tick(&mut world, cross()); // ShopBuy -> ShopQuantity
-        runtime.tick(&mut world, cross()); // ShopQuantity -> ShopConfirm
-        runtime.tick(&mut world, cross()); // ShopConfirm (yes): the commit
+        runtime.tick(&mut world, MenuInput::default()); // picker phase 0
+        runtime.tick(&mut world, cross()); // confirm the stepped quantity
+        runtime.tick(&mut world, MenuInput::default()); // the commit frame
 
         assert_eq!(world.party.money, 400, "the gold debit still runs");
         assert_eq!(world.minigames.point_card, 5, "100 / 20 * 1 banked");
@@ -1948,16 +1959,25 @@ mod tests {
             "the toast is up with this purchase's credit"
         );
 
-        // While the toast is up the VM is frozen: a d-pad frame moves
-        // nothing, because retail's case 4 only tests the confirm / cancel
-        // masks.
+        // While the toast is up the screen is frozen: a d-pad frame moves
+        // nothing, because retail's toast phase only tests the confirm /
+        // cancel masks.
         let state_before = runtime.ctx.state;
         runtime.tick(&mut world, down());
         assert!(runtime.point_card_toast().is_some(), "d-pad does not clear");
         assert_eq!(runtime.ctx.state, state_before);
 
+        // The press the picker consumes is the one that dismisses it, and
+        // the flag goes out with the session rather than outliving it.
         runtime.tick(&mut world, cross());
+        for _ in 0..4 {
+            if runtime.quantity_view().is_none() {
+                break;
+            }
+            runtime.tick(&mut world, MenuInput::default());
+        }
         assert_eq!(runtime.point_card_toast(), None, "a press dismisses it");
+        assert_eq!(runtime.ctx.state, MenuState::ShopBuy.as_byte());
     }
 
     /// The window-7 beat: an armed spell level-up notice freezes the menu
@@ -2008,9 +2028,15 @@ mod tests {
             }],
         )));
         runtime.ctx.state = MenuState::ShopBuy.as_byte();
-        runtime.tick(&mut world, cross());
-        runtime.tick(&mut world, cross());
-        runtime.tick(&mut world, cross());
+        runtime.tick(&mut world, cross()); // ShopBuy -> ShopQuantity
+        runtime.tick(&mut world, MenuInput::default()); // picker phase 0
+        runtime.tick(&mut world, cross()); // confirm
+        for _ in 0..4 {
+            if runtime.quantity_view().is_none() {
+                break;
+            }
+            runtime.tick(&mut world, MenuInput::default());
+        }
 
         assert_eq!(
             world.party.inventory.get(&10),
