@@ -8,7 +8,7 @@ from-scratch engine systems. Use the contents below to jump to a section.
 ## Contents
 
 **Retail scene + render**
-- [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) · [the round loop](#the-round-loop---what-re-arms-0x1e) · [`s2` + commit](#s2-is-not-the-pad-and-how-a-command-commits)
+- [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [the two boss-stage modules](#what-the-two-boss-stage-modules-do-overlays-968--969) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) · [the round loop](#the-round-loop---what-re-arms-0x1e) · [`s2` + commit](#s2-is-not-the-pad-and-how-a-command-commits)
 - [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [post-strike two-shot](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8) · [menu vs input framing](#the-command-chooser-is-the-far-framing-the-arts-input-is-the-close-up) · [resting yaw](#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
 
 **Retail battle logic + data**
@@ -412,6 +412,58 @@ holds `begin_battle_round` back on round 0 while the caption is queued, and
 the box tick opens the round when it goes; the pure transition kernel for the
 whole side-band lives in `engine-render::battle_sideband` (the camera ramp
 half of it is not wired). A world with no caption text skips the hold.
+
+### What the two boss-stage modules do (overlays 968 / 969)
+
+Both modules are **one function over the whole of their own code**, and each is
+a phase machine on the battle context's `ctx[+0x289]` byte driving the **first
+monster seat** - the actor the eight-slot table hands back at `0x801C937C`,
+i.e. `DAT_801C9370[3]`. Neither is a cast module: neither is named by any of the
+three PROT 0898 entry tables that reach the `0903..0966` band
+([`cast-module.md`](cast-module.md)), and the pager is the only thing that
+brings them in.
+
+`see ghidra/scripts/funcs/overlay_battle_slot_b_0968_0968_801f69f4.txt` and
+`see ghidra/scripts/funcs/overlay_battle_slot_b_0969_0969_801f69d8.txt`.
+
+**Entry 968 - `FUN_801F69F4`, seven phases.** Its head is a seven-word jump
+table at the image base `0x801F69D8`, bounded by its own `sltiu a0, 7`, and the
+body begins in the eighth word. Every tick re-seeds `ctx[+0x6D6] = 0x100`
+before dispatching. The phases run on one countdown word in the image's own
+data band (`0x801F73F8`, stepped by the scratchpad frame-delta byte
+`0x1F800393`) and a frame counter beside it (`0x801F73FC`):
+
+| Phase | What it does |
+|---|---|
+| `0` | Holds until the eye-space camera word `0x800840BC` passes `0xC00`, walking it and `0x800840C0` there by the frame delta; then raises cue `0x20A` through `FUN_8004FCC8`, spawns three in-image effect records (`0x801F71F0` / `0x7240` / `0x7290`) through `FUN_80050ED4`, stages a fade block at `0x801C9070` and arms the countdown at `0x80`. |
+| `1` | Spawns three more records (`0x72D0` / `0x7320` / `0x7388`), then a `FUN_801D829C` camera move framed on the seat's live `+0x34` / `+0x38` / `+0x46`, and sets the seat's tint blend `+0x0C = 0x1000`, its anim rate `+0x21D = 1` and `+0x36 = 0x600`. |
+| `2`..`4` | Each walks a different camera axis by the frame delta (`0x800840C0`, `0x800840BC`, the scroll trio `0x8007B790` / `0x92`) and spawns record `0x73A4` on every eighth frame, ending in its own `FUN_801D829C` framing. Phase `4` also sets `ctx[+0x243] = 1` and `ctx[+0x278] = 2`. |
+| `5` | Measures a string with `FUN_80035F04` and draws it centred through `FUN_8003541C` at `(0xA0 - width/2, 0x96)` - the boss-name banner - then sets `ctx[+0x278] = 3`. |
+| `6` | The hand-back: clears `ctx[+0x243]`, `ctx[+0x278]`, `ctx[+0x6D6]`, `ctx[+0x289]` **and the stage id `0x8007B64A`** that paged the module in, sets the seat's anim rate `+0x21D = 8`, writes flow state `ctx[+0x06] = 0x0B`, rebinds the two model records at `ctx[+0x106C]` / `ctx[+0x1070]`, runs two move-VM effect trees through `FUN_80021B04`, and pushes one rect through `FUN_80058490`. |
+
+**Entry 969 - `FUN_801F69D8`, four phases.** No head table: the image opens
+straight on its prologue and branches four ways on the same `ctx[+0x289]`.
+Phase `0` raises cue `0x20B`, forces the battle flow byte `ctx[+0x07] = 0xFC`,
+and **writes the first monster seat's HP field `+0x14C = 1`** - the scripted
+"survives the killing blow" beat - while parking the acting actor and the two
+non-acting party seats at fixed `+0x34` / `+0x38` offsets and staging the
+seat's `+0x21C` / `+0x38` / `+0x46` / `+0x1DC`. Phases `1` and `2` alternate
+the camera word `0x800840BC` between `0x780` and `0x800` every other frame - a
+two-position shake, not a ramp - spawn an in-image record every eighth frame at
+an offset drawn from the battle RNG `FUN_80056798`, and run their own
+countdown (`0x801F70DC`) with the fade block at `0x801C9070`; phase `2` then
+blanks all four leading actor slots (`+0x04 = 0`, `+0x21C = 0xFF`) and sets
+both model records' `+0x78 = 0x1000`. Phase `3` waits out the countdown and
+calls `FUN_8003ED04(0)`.
+
+So 968 is the **arrival** staging (camera walk in, cue, banner, hand back to
+flow state `0x0B`) and 969 is the **form transition** (drop the seat to 1 HP,
+shake, blank the field). That is the same split the two writers of the stage id
+imply, and it is why the Cort fight walks both.
+
+Neither module is ported: the engine resolves *which* stage id a battle gets
+(`World::battle_stage_id`) and stages its own presentation, so what is owed
+here is a behaviour, not a MIPS body.
 
 ### The command-flow byte `ctx[+0x06]` - what the hook table indexes
 
