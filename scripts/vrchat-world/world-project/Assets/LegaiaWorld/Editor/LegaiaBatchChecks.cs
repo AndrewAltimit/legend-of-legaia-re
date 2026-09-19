@@ -377,6 +377,13 @@ namespace LegaiaWorld
                     child = container.transform.Find("card_table/panel");
                 if (child == null && camp != null)
                     child = camp.transform.Find(kv.Key == "menu" ? "LegaiaMenu" : kv.Key);
+                // A fourth: the equipment rack's own top-level container
+                // (pinned as a group; the scene's, this check builds none).
+                if (child == null && kv.Key == "equipment")
+                {
+                    var rack = GameObject.Find("Legaia_equipment");
+                    child = rack != null ? rack.transform : null;
+                }
                 if (child == null)
                 {
                     // A key for something this build did not make (a

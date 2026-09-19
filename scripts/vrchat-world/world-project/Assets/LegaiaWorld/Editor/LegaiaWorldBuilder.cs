@@ -443,6 +443,30 @@ namespace LegaiaWorld
                     "collider and stands near its spawn).", "OK");
                 return;
             }
+            // The rack is placed against the 1x world (metre offsets from
+            // the spawn, ground raycasts) and scaled with it after, like
+            // every other container; then the settings may pin the rack
+            // container itself (prefab_transforms "equipment" - the group
+            // dragged to where the town wants it, Inspector numbers).
+            var eqSettings = LegaiaSceneSettings.Load(sceneName);
+            LegaiaWorldScale.Unapply(sceneRoot);
+            try
+            {
+                PlaceEquipmentPropsAt(sm, sceneName, sceneRoot);
+            }
+            finally
+            {
+                LegaiaWorldScale.Apply(sceneRoot, eqSettings.worldScale);
+                var rackGo = GameObject.Find("Legaia_equipment");
+                if (rackGo != null && LegaiaSceneSettings.ApplyPlacement(
+                        eqSettings.prefabTransforms, "equipment", rackGo.transform))
+                    Debug.Log("[Legaia] equipment rack pinned at " + rackGo.transform.position +
+                        " (prefab_transforms.equipment).");
+            }
+        }
+
+        void PlaceEquipmentPropsAt(object sm, string sceneName, GameObject sceneRoot)
+        {
             // Scene export scale x the battle-model size trim (see the
             // field comment on equipSizeMult). Every use below - instance
             // scale, collider bounds, the flat-piece box floor - goes

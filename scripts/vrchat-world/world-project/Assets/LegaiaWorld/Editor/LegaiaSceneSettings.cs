@@ -90,9 +90,11 @@
 //       Absolute placement for the builder's common prefabs and the camp
 //       props (keys: mirror, tv, card_table, pens, poster_<name>, the
 //       prefab name of an extra slot; torch_N, campfire_N and menu under
-//       the camp container; card_table_panel, which is table-LOCAL),
-//       replacing the spawn-relative offsets, the ground snap and the
-//       face-the-spawn rotation. These objects live
+//       the camp container; card_table_panel, which is table-LOCAL;
+//       equipment, the rack's own top-level container, pinned as a group
+//       after the equipment pass places the rack), replacing the
+//       spawn-relative offsets, the ground snap and the face-the-spawn
+//       rotation. These objects live
 //       under top-level containers at the origin, so the values are
 //       EXACTLY the object's Inspector position and rotation (world ==
 //       local there - no mirror to trip over). "rotation" is optional.

@@ -163,6 +163,15 @@ namespace LegaiaWorld
                     transforms[LegaiaCampProps.SettingsKey(t.gameObject)] = Entry(t);
                     captured++;
                 }
+            // The equipment rack is pinned as a GROUP: its container's own
+            // Inspector transform (top-level, so world numbers), which the
+            // equipment pass re-applies after placing the rack.
+            var rack = GameObject.Find("Legaia_equipment");
+            if (rack != null && rack.transform.parent == null)
+            {
+                transforms["equipment"] = Entry(rack.transform);
+                captured++;
+            }
             doc["prefab_transforms"] = transforms;
             doc.Remove("prefab_positions"); // superseded by the entries above
 

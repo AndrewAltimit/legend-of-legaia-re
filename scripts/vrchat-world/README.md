@@ -378,9 +378,12 @@ All keys optional (`town01.settings.json` is the worked example):
   digit. (Not world space: the root is X-mirrored, so a world value
   would come back with its X sign flipped in the Inspector.)
 - **`prefab_transforms`** - hand placements for the common prefabs, the
-  camp props (`torch_N`, `campfire_N`, the settings panel as `menu`) and
-  the card table's seat panel (`card_table_panel`, table-local), position
-  + optional rotation in Inspector numbers; written by the snapshot menu.
+  camp props (`torch_N`, `campfire_N`, the settings panel as `menu`), the
+  card table's seat panel (`card_table_panel`, table-local) and the
+  equipment rack as a group (`equipment`: the `Legaia_equipment`
+  container's own transform, re-applied after the equipment pass places
+  the rack), position + optional rotation in Inspector numbers; written
+  by the snapshot menu.
   A pinned camp prop also skips the ground snap, so a torch left standing
   on a crate stays on it. See "Common prefabs".
 - **`slot_machine`** - the casino cabinet: model asset, `asset slot-art`
