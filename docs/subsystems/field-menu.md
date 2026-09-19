@@ -2452,10 +2452,24 @@ name draw:
   (`slti v0, s5, 3` at `0x801D1340`).
 
 The browsed slot's equip byte, which the "nothing staged" fallback keys on,
-is reached through a row table: row `0` of the browse column is the
-Best-Equipment row and takes a per-character halfword from `0x8007B42C`,
-every other row indexes `0x801E43E8`. The port's slot list is the equip-byte
-array in order, so its row and byte index coincide.
+is reached through a row table, and **the table is not the identity**. Row `0`
+of the browse column is the Best-Equipment row and takes a per-character
+halfword from `0x8007B42C` (`lh` at `0x801D1308`, stride `2`, indexed by the
+*roster* slot, not the row). Every other row indexes the byte table at
+`0x801E43E8` (`lbu` at `0x801D131C`), whose first seven bytes are
+`00 01 00 04 05 06 07`; the six rows the screen browses therefore address
+equip bytes `1, 0, 4, 5, 6, 7` in that order, and bytes `2` / `3` are not
+browsable at all. The byte itself is `record[+0x196 + idx]` - retail forms it
+as `0x80084140 + 0x414*slot + 0x75E + idx`, which is the per-character record
+base `0x80084708 + slot*0x414` plus `0x196`.
+
+Two things follow that a port has to keep straight. The browse order is not
+the equip-byte order, so a screen that lists the equip array in index order
+shows the first two slots swapped against retail. And the row is what the
+`slti v0, s0, 4` guard above tests, so retail runs the category lookup for
+rows `4..6` - equip bytes `5`, `6` and `7` - and feeds the `0x40` sentinel for
+rows `0..3`, which includes equip byte `4`. The port passes its own slot index
+where retail passes the row, so the two agree only where the map happens to.
 
 ## Battle readout tint law (the panel's sibling)
 

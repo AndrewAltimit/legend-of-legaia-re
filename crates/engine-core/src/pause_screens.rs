@@ -2221,10 +2221,19 @@ pub fn equip_screen_model(
             candidate: menu_stat_block(&trial, session.equipment(), hp_mp.hp_max, hp_mp.mp_max),
             hp_max: hp_mp.hp_max,
             mp_max: hp_mp.mp_max,
-            // The port's slot list is the equip-byte array in order, so the
-            // browsed row and the equip-byte index coincide; retail reaches
-            // the byte through its own row table at `0x801E43E8`, whose row
-            // 0 is the screen's Best-Equipment row rather than a slot.
+            // The port's slot list is the equip-byte array in index order, so
+            // this passes an equip-byte index where retail passes a browse
+            // ROW, and the two are not the same number. Retail's row 0 is the
+            // Best-Equipment row (a per-character halfword off `0x8007B42C`,
+            // indexed by the roster slot); rows 1..6 go through the byte
+            // table at `0x801E43E8`, whose first seven bytes are
+            // `00 01 00 04 05 06 07` - so the rows address equip bytes
+            // 1, 0, 4, 5, 6, 7 and never 2 or 3. The row also drives the
+            // `slti v0, s0, 4` guard on the category lookup, so retail
+            // resolves a category for rows 4..6 (equip bytes 5, 6, 7) and
+            // sentinels the rest, equip byte 4 included. Aligning the two is
+            // a screen-order change, not a field rename, so it is left here
+            // as the measurement rather than applied.
             slot_row: i32::from(active_slot),
             staged_id: i32::from(staged),
             staged_category: compare_category_for_item(staged, ctx),
