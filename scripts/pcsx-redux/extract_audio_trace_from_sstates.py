@@ -24,11 +24,18 @@ The SPU sub-message schema is sourced from PCSX-Redux's
             .field 11 stop   Bool
             .field 21 raw_pitch Int32
         Channel.field 3  ADSRInfoEx
-            .field 1  state  Int32  (0=Atk 1=Dcy 2=Sus 3=Rel 4=Stopped)
+            .field 1  state         Int32  (0=Atk 1=Dcy 2=Sus 3=Rel 4=Stopped)
+            .field 11 EnvelopeVol   Int32  (0..0x7FFF, the live envelope)
 
-A voice is "audible" when `on || stop` - `on` means actively keyed,
-`stop` means in the release tail (still producing samples until the
-envelope reaches zero).
+A voice is "audible" when its ADSR **envelope level** is non-zero. The
+envelope is what scales the voice's output, so it is the one field that
+answers the question, and it is the same line the mednafen side draws
+(`legaia_mednafen::SpuVoiceState::is_active`) and the same line the engine
+side draws (`Phase::Off`). Over a town-scene capture the three candidates
+that do NOT use it all over-count badly: `on || stop` reports 18-23 of 24
+voices per frame and `state != Stopped` 13-24, against 3-19 for the
+envelope - and `stop` in particular stays set after the release tail has
+run to zero, so a finished voice keeps reading as audible.
 
 Master volume is read from the SPUPorts blob at offset 0x180/0x182
 (MainVol_L / MainVol_R = registers 0x1F801D80/0x1F801D82, signed i16,
@@ -53,6 +60,11 @@ from typing import Iterator
 MAGIC = b"LEGSPU01"
 
 ADSR_STATE_STOPPED = 4  # PCSX-Redux ADSRState::Stopped
+
+# ADSRInfoEx field carrying the live envelope level (0..0x7FFF). Pinned by
+# range over a capture: it is the only varint field in that sub-message
+# whose values span the envelope range and move on nearly every voice.
+ADSR_EX_ENVELOPE_VOL = 11
 
 # PSX SPU register offsets within the SPUPorts blob (covers
 # 0x1F801C00..0x1F801DFF). The MainVol regs are mednafen's "left/right
@@ -140,20 +152,23 @@ def parse_channel(channel_bytes: bytes) -> dict:
                 raw_pitch = payload
 
     state = ADSR_STATE_STOPPED
+    env_vol = 0
     if adsr_ex_payload is not None:
         for field, wt, payload in iter_fields(adsr_ex_payload):
-            if wt == 0 and field == 1:
+            if wt != 0:
+                continue
+            if field == 1:
                 state = payload
-                break
+            elif field == ADSR_EX_ENVELOPE_VOL:
+                env_vol = payload
 
-    # "Audible" criterion: PCSX-Redux sets `on` while the voice is keyed
-    # and not yet in the release tail; `stop` flips on at KOFF and stays
-    # set while the envelope decays. ADSRInfoEx.state is the *configured*
-    # envelope shape for the next attack and stays at Sustain for unused
-    # voices, so it's not a reliable audibility signal - `on || stop` is
-    # the correct match against mednafen PsxSpu's `voice_state.active`.
-    _ = state  # state retained from the schema walk for future use
-    active = on or stop
+    # "Audible" criterion: the live ADSR envelope level. `on` / `stop` /
+    # `state` are all key-state words - `stop` stays set once the release
+    # tail has drained, `state` sits at a configured value for voices
+    # nothing is driving - so each of them counts finished voices as
+    # audible. Only the envelope goes to zero when the voice does.
+    _ = (state, on, stop)  # retained from the schema walk for future use
+    active = env_vol > 0
 
     voice = {
         "active": active,
