@@ -2382,21 +2382,72 @@ the resolved slot, swap the `0x801EF080` and `0x801EF0A0` blocks, re-run
 re-aggregate. A staged id that is not equipment skips all of that and
 draws the current values with no arrows.
 
-Ports: `engine-ui::equip_compare_panel_fields` /
-`party_compare_panel_fields`. The screen that opens both windows is the
-shop's equipment-buy recipient flow (`FUN_801DB380`; see
-[shop.md](shop.md)), and both hosts draw them beside the recipient list
-(window 36) through the shared `engine-ui::recipient_picker_draws_for`,
-with the candidate blocks derived from the equipment modifier table
-rather than the inline trial-equip swap.
+### Which screen opens which of the two
 
-The category byte window 25 keys its row set on is the equip record's
-`+5`, and on the retail USA disc **every** equipment bonus row carries the
-`0x40` no-passive sentinel there - so the panel always shows the ATK /
-UDF / LDF triple in this flow. A host that cannot resolve the byte may
-pass the sentinel and get the identical screen, which is what lets the
-native window feed a constant where the browser page feeds a table
-lookup.
+The two windows belong to **different screens**, and no script opens both:
+
+- Window 25 is named by exactly one open command in the menu overlay - the
+  Equip screen's candidate step, sub-screen `0x14`, script `0x801E4DC8`,
+  which raises windows 24 and 25 on top of the browse step's four.
+- Window 41 is named by the shop-entry script `0x801E4E64`; the
+  equipment-buy recipient sub-screen (`FUN_801DB380`) adds only window 36
+  over the set already up.
+
+Ports: `engine-ui::equip_compare_panel_fields` (window 25) and
+`party_compare_panel_fields` (window 41). Both hosts draw window 41 beside
+the recipient list through `engine-ui::recipient_picker_draws_for`, and both
+draw window 25 on the Equip screen's candidate step beside window 24, from
+`engine-core::pause_screens::EquipCompareModel`. Neither derives its
+candidate column from the inline trial-equip swap: the port installs the
+staged id in a copy of the record's equip bytes and re-runs the aggregator.
+
+### The five-slot menu walk
+
+`FUN_801CF650`'s loop counter is bounded by `slti a2, 5` at `0x801CF744`, so
+the block behind windows 22 / 25 / 41 sums the first **five** equip bytes
+only. The battle-side aggregator `FUN_80042558` walks all eight. The port
+keeps the two apart: `engine-core::pause_screens::menu_stat_block` zeroes
+the tail before calling the shared `compute_battle_stats`, so the menu block
+matches the menu aggregator rather than the battle one.
+
+### Both category arms are live on retail data
+
+The category lookup reads the item property record's class byte first
+(`0x80074368 + id*0xC + 0`) and then one of two tables, both indexed by that
+record's `+1` byte:
+
+| Item class | Table | Byte |
+|---|---|---|
+| `1` (equipment) | equipment bonus row `0x80074F68 + row*8` | `+5` |
+| anything else | item-effect descriptor `0x800752C0 + row*4` | `+3` |
+
+On the retail USA disc every one of the equipment bonus rows an equippable
+id resolves to carries the `0x40` no-passive sentinel at `+5`, so the
+class-`1` arm always yields the ATK / UDF / LDF triple. The **other** arm
+does not: over the non-class-`1` ids the `+3` byte spans the whole index
+space, with a single-digit count landing under `6` (the HP / MP pair) and a
+handful in `10..=12` (SPD / INT / AGL). So a host that feeds the sentinel
+unconditionally does *not* get the identical screen - it loses two of the
+three row sets. The port resolves the byte through
+`engine-core::pause_screens::compare_category_for_item` on both hosts.
+
+### Two early-outs of `FUN_801D1290`
+
+The renderer returns without drawing anything in two cases, both before the
+name draw:
+
+- the staged id `DAT_801E46B0` is `0` (`0x801D12BC`) - so the panel appears
+  and disappears with the candidate list rather than persisting across the
+  browse step;
+- the record slot the party cursor resolves to (`roster[DAT_801E46C4 &
+  0xFFF]`, the byte at `0x80084598 + cursor`) is not less than `3`
+  (`slti v0, s5, 3` at `0x801D1340`).
+
+The browsed slot's equip byte, which the "nothing staged" fallback keys on,
+is reached through a row table: row `0` of the browse column is the
+Best-Equipment row and takes a per-character halfword from `0x8007B42C`,
+every other row indexes `0x801E43E8`. The port's slot list is the equip-byte
+array in order, so its row and byte index coincide.
 
 ## Battle readout tint law (the panel's sibling)
 
