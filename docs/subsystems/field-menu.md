@@ -687,6 +687,44 @@ The engine's `EquipSlot` enum is its own model, and a record has to be
 re-ordered before a routine that indexes in retail's space walks it
 (`field_submode_screen::hub_panel_slots`).
 
+### Which candidate list a slot row opens
+
+The candidate window (id 23) has no fixed content: the slot-browse step
+writes its descriptor's `+0` **content id** per row, out of an eight-byte
+table at `0x801E4DC0` (`00 17 15 16 18 1C 1D 1E`, stored with the `sb` at
+`0x801D9AC4`). Row 0 is Best Equipment and opens nothing; rows 1..4 take
+content ids `0x17` / `0x15` / `0x16` / `0x18`, and rows 5..7 - the three
+**Goods** rows - take `0x1C` / `0x1D` / `0x1E`.
+
+Those are two different builder families in the SCUS content builder
+`FUN_80030628`, and they do not share a filter.
+
+| Family | Content ids | Reads | Accepts |
+|---|---|---|---|
+| armament | `0x15`..`0x18` (also `7`..`10`) | the row's equip byte | item record `+0` class `1`, the equipment `+7` category matching the row's, and the `+6` character mask against `0x801E43F0[char]` |
+| Goods | `0x1C`..`0x1E` (also `0xE`..`0x10`) | equip bytes `5` / `6` / `7` | item record `+0` class **2**, and the item-effect record's `+3` byte other than `0x41` |
+
+The Goods filter is `lbu` class, `bne` against `2` at `0x800317D8`, then the
+effect record's `+3` compared with `li v0,0x41` / `beq` at
+`0x800317F4..0x800317F8` - **no character-mask term at all**. Its rows are
+tagged `0x9000` (passive) where the armament rows are tagged `0x6000`, and
+both lists lead with the Remove verb (`0x4000`, payload 0) and, when the
+slot is occupied, the equipped id (`0x7000`).
+
+`0x41` is one past the 64-slot passive index space. On retail data the gate
+is exactly "this row carries an accessory passive": of the class-2 ids, the
+ones the filter admits are the ones whose effect row carries an index below
+`0x40`, and every id it rejects carries `0x41`.
+
+Engine side: the filter is
+`legaia_engine_core::menu_list_rows::goods_candidate_accepts` and the row
+build is `build_goods_candidate_rows` beside its three sibling builders;
+`equipment::DiscEquipInfo::install_goods` indexes the accepted ids off the
+item-effect table, because the equipment stat table - which is where every
+other restriction in that struct comes from - contains none of them.
+`EquipSession` asks the Goods question for engine slots `Ring1` / `Ring2` /
+`Accessory` and the armament question for the rest.
+
 ### Best Equipment: how the candidates are picked
 
 `FUN_801CF88C` seeds `DAT_801EF0C0` with the four items the character
@@ -797,10 +835,12 @@ bindings) over `world_map_overlay::resolve_equip_slot` (the class routing).
 `legaia_engine_core::equip_session::EquipSession::commit` runs it for the
 field menu's per-slot confirm on both hosts, staging the record's `+0x196`
 window in retail order around the call, and
-`retail_destination_slot` exposes the class routing on its own. In the live
-flow the two answers coincide: the candidate list is already category-gated
-per slot, so an item that can be picked for a row is an item whose class
-routes to that row's byte.
+`retail_destination_slot` exposes the class routing on its own. For the four
+armament rows the two answers coincide: that half of the candidate list is
+category-gated, so an item that can be picked for such a row is an item
+whose class routes to that row's byte. The three Goods rows are a different
+list family entirely - see below - and the class routing above says nothing
+about them.
 
 #### Why `0x801E5AE8` is not a second function
 

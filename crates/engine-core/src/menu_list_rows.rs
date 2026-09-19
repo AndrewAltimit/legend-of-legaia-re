@@ -591,6 +591,17 @@ pub fn goods_candidate_accepts(kind: u8, marker: u8) -> bool {
 /// (`0x15`..`0x18`) and the three Goods rows reach **these** - a separate
 /// family with its own filter.
 ///
+/// NOT WIRED: the equip screen is owed this, and the blocker is the row
+/// model rather than the filter. `equip_session::EquipSession` carries typed
+/// [`crate::equip_session::EquipItem`] rows sorted by item id with the Remove
+/// row prepended, not class-tagged entry words over **bag slots**, so it
+/// consults [`goods_candidate_accepts`] (which is live for all three Goods
+/// slots on both hosts) and never forms the words. Adopting these would give
+/// the Goods list retail's own order - bag-slot order, equipped row second -
+/// and is the same change family 3 of the module heading names for the three
+/// bag builders: an ordered slot array reaching the screen, not a call
+/// someone forgot.
+///
 /// Row order: the Remove verb ([`CLASS_VERB`], payload 0) always leads; the
 /// currently-equipped id follows as [`CLASS_ITEM_ICON`] when the slot is
 /// occupied; then every qualifying bag slot in slot order, tagged

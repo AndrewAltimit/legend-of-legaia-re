@@ -21,7 +21,7 @@ same table used by the save screen). The shop sub-screens handle:
 |---|---|---|
 | Buy list | `ShopBuy` | Shows available items + prices. Cursor selects an item. |
 | Sell list | `ShopSell` | Shows player inventory. Cursor selects an item to sell. |
-| Quantity | `ShopQuantity` | The **engine's** numeric selector: a list whose cursor is the quantity, bounded by retail's own maximum. Retail picks the quantity a different way - see [the pickers below](#retail-quantity-pickers-menu-overlay-sub-screens). |
+| Quantity | `ShopQuantity` | Retail's in-place **stepper**, on both hosts: one number under the pad, bounded, committing with no confirm screen after it - see [the pickers below](#retail-quantity-pickers-menu-overlay-sub-screens). |
 | Confirm | `ShopConfirm` | Yes / No prompt. Yes commits the transaction. |
 | Exit | `ShopExit` | Clears session, returns to field. |
 
@@ -159,16 +159,15 @@ affordability refusal beat plus the item-record `+0` kind switch), and
 an equipment row opens `BuyRecipientSession` behind the
 `MenuRuntime::retail_equipment_buy` opt-in - the browser play page
 enables it and draws windows 36 / 25 / 41 over the parked buy list.
-The two quantity **sessions** are not yet the hosts' quantity screen: the
-`ShopQuantity` list still drives `ShopSession::set_quantity`, and the
-switch that would change that is named in
-[the verdict below](#why-the-quantity-screen-is-still-a-list). What the
-hosts no longer have is retail's **bound** wrong - the screen used to offer
-a flat nine rows, capping a purchase at nine copies whatever the purse and
-the stack allowed; the row count is now
-`shop::quantity_row_count` off the same `min(gold / price, 99, 99 - held)`
-the retail stepper derives, through `ShopSession::quantity_rows` so the menu
-runtime and both host row lists read one kernel.
+The two quantity **sessions** are the hosts' quantity screen.
+`MenuRuntime::quantity_session` installs one the moment a list stages a
+stack (`shop::QuantityPicker`) and takes the pad for the whole screen, the
+way the recipient picker does; the buy list opens the buy picker, the sell
+list the sell one, a cancel hands the pad back to the list it came from, and
+a whole-stack sale that empties the bag still runs the exit delay back to
+the shop root. `MenuRuntime::quantity_view` is what a host lays the window
+out from, so neither host reads a list cursor for that screen and neither
+builds rows for it.
 The Point Card accrual and its window-31 toast *are* live on both the
 `ShopConfirm` commit and the recipient picker - `MenuRuntime` owns the
 gate and the beat, `World::minigames.point_card` the bank. It stays out of
@@ -362,15 +361,24 @@ the resulting ink into `engine-ui::shop_draws_for` through `ShopRow::ink`.
 The quantity-selector sub-screen (`FUN_801d5510`) is **window 35** of the
 menu-overlay descriptor table (rect `(138, 100, 168, 50)`; the table is the
 52 records at PROT 0899 file offset `0x15F20`, see
-[field-menu.md](field-menu.md)). It uses the same 14 px line
-height, showing "Have N [item]" + "How many will you buy?" + a quantity×price
-line at y+34 (`0x22`) from the panel top. The running total's digit-field
-width is chosen from the magnitude of the **unit price**, not of the total
-(cascading compares against `99` / `999` / `9999` giving 4..7 columns), which
-is what keeps the number right-aligned as the quantity climbs. Ported as
-`engine-core::shop::{shop_buy_quantity_panel, shop_total_digit_field}`; the
-browser play page lays the pens out beside its quantity list
-(`web-viewer::play_shop`).
+[field-menu.md](field-menu.md)). It uses the same 14 px line height, and its
+three lines are the held line at the content origin, the prompt at `+0xE`,
+and a value row at `+0x22`.
+
+The value row reads `quantity / bound`, not `quantity x price`: the row's
+second number call loads `DAT_801E46B8` (`0x801D563C`), which is the word
+phase 0 fills with `min(gold / price, 99, 99 - held)` - the quantity
+maximum - and a separator glyph (`FUN_8003C1F8` code `6`) prints between the
+two. The unit price appears once, in the running total right-packed at
+`WX + 0x62`, whose digit-field width is chosen from the magnitude of the
+**unit price** rather than of the total (cascading compares against `99` /
+`999` / `9999` giving 4..7 columns), so the number stays aligned as the
+quantity climbs. A currency pictogram labels it at `(WX + 0x58, WY + 0x24)`.
+
+Ported as `engine-ui::ui_menu_window_painters::buy_quantity_draws_for`,
+beside its sell-side sibling, so one builder serves both hosts per window.
+Window 37's total packs the other way - its pens move left as the field
+widens, keeping the number's right edge on the box.
 
 ### Item detail / sell panel (`FUN_801D5AE8`)
 
@@ -581,26 +589,25 @@ gate in the grant kernel (`World::buy_from_shop` refuses a buy that would
 push the held count past `shop::SHOP_HELD_CAP` = 99; the picker side is
 `shop::buy_qty_max`).
 
-### Why the quantity screen is still a list
+### The quantity screen is a stepper
 
-The two sessions are ported, unit-tested and inert, and the switch that would
-make them the hosts' screen is a **menu-runtime** change, not a call: the
-engine routes `ShopBuy` -> `ShopQuantity` -> `ShopConfirm` through the menu
-VM's list graph, while the retail stepper owns its own phases, cues and (on the
-buy side) a Point Card toast that waits for a press, and commits with no
-confirm screen at all. Adopting them replaces `MenuRuntime`'s input handling
-for that screen, retires `ShopConfirm` from the shop flow, and changes the row
-model both hosts draw from - `MenuRuntime::recipient_session` is the shape it
-would take, opened behind a host opt-in the way `retail_equipment_buy` is.
+The screen the hosts draw is retail's: one number, bounded, moving under
+Right / Left (by one) and Down / Up (by ten), each step gated so walking off
+either end is a silent no-op, and a confirm that commits straight into the
+transaction. `MenuState::ShopConfirm` is no longer reached from the shop's
+buy or sell flow at all - retail has no Yes/No screen between the number and
+the sale, and the port now has none either. The remaining engine shape is
+the sell-list scroll fix-up, which repairs a **paged** list's persisted
+`(scroll_top, selected)` pair and needs paged lists the engine does not run.
 
-What is *not* a reason to do it is the bound, which is the part that was
-actually wrong on screen and is fixed: the row count is retail's own maximum
-now, so a rich player can buy the 99 copies retail allows.
-
-An earlier reading had this backwards and is worth recording so it is not
-re-derived: the "nine-row list whose cursor is the quantity" was taken for
-retail's shape and the stepper for the engine's. It is the other way round -
-the nine-row list was the port's, and the nine was not retail's number at all.
+Two earlier readings are worth keeping so they are not re-derived. The
+first had the shapes swapped - the "nine-row list whose cursor is the
+quantity" was taken for retail's and the stepper for the engine's; it is the
+other way round, and the nine was not retail's number at all. The second
+survived the bound being fixed: with the row count corrected to retail's own
+maximum the numbers agreed, which made the screen look finished while the
+interaction was still a different one. A shared bound is not a shared
+screen.
 
 ## Open items
 
