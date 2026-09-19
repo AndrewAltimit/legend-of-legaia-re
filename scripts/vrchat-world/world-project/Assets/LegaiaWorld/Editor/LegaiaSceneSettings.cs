@@ -90,8 +90,8 @@
 //       Absolute placement for the builder's common prefabs and the camp
 //       props (keys: mirror, tv, card_table, pens, poster_<name>, the
 //       prefab name of an extra slot; torch_N, campfire_N and menu under
-//       the camp container; card_table_panel, which is table-LOCAL;
-//       equipment, the rack's own top-level container, pinned as a group
+//       the camp container; card_table_panel, card_table_mini_tv and
+//       card_table_candle, which are table-LOCAL; equipment, the rack's own top-level container, pinned as a group
 //       after the equipment pass places the rack), replacing the
 //       spawn-relative offsets, the ground snap and the face-the-spawn
 //       rotation. These objects live

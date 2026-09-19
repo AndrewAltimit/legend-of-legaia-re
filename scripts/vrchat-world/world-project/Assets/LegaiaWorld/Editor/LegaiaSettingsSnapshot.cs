@@ -147,7 +147,7 @@ namespace LegaiaWorld
                 // the loop above never reaches them - and each entry is
                 // the child's LOCAL transform under the table, which is
                 // exactly what Entry() reads and what the builder applies.
-                foreach (var child in new[] { "panel", "mini_tv" })
+                foreach (var child in new[] { "panel", "mini_tv", "candle" })
                 {
                     var t = common.transform.Find("card_table/" + child);
                     if (t == null)

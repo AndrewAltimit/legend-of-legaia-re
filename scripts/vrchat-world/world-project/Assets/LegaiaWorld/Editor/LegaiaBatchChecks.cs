@@ -130,6 +130,26 @@ namespace LegaiaWorld
             Expect("VRC.SDK3.Video.Components.AVPro.VRCAVProVideoSpeaker", 2);
             Expect("VRC.SDK3.Components.VRCUrlInputField", 1);
             Expect("VRC.SDK3.Components.VRCStation", 4, table);
+            // The night candle: one behaviour on the table, its flame
+            // (particles + point light) built INACTIVE - the day/night
+            // cycle lights it - and its particle materials left alone by
+            // the lit-material sweep.
+            Expect("LegaiaWorld.LegaiaCandle", 1, table);
+            var candle = table.transform.Find(LegaiaCommonPrefabs.CANDLE_NAME);
+            if (candle == null)
+                Fail("no candle under the card table");
+            var candleFlame = candle.Find("flame");
+            if (candleFlame == null || candleFlame.gameObject.activeSelf)
+                Fail("the candle's flame must exist and start inactive (the cycle lights it)");
+            if (candleFlame.GetComponent<Light>() == null)
+                Fail("the candle's flame carries no point light");
+            foreach (var pr in candle.GetComponentsInChildren<ParticleSystemRenderer>(true))
+                if (pr.sharedMaterial == null || pr.sharedMaterial.shader == null ||
+                    pr.sharedMaterial.shader.name.StartsWith("Legaia/Lit"))
+                    Fail(pr.name + ": the candle's particle material was lit-converted " +
+                         "or lost (" + (pr.sharedMaterial != null ? pr.sharedMaterial.shader.name : "null") + ")");
+            CheckVar(container, "LegaiaWorld.LegaiaCandle", "flame");
+            CheckVar(container, "LegaiaWorld.LegaiaCandle", "fireLight");
             Expect("VRC.SDK3.Components.VRCPickup", 52, table);
             Expect("VRC.SDK3.Components.VRCObjectSync", 52, table);
             Expect("LegaiaWorld.LegaiaCard", 52, table);
@@ -198,6 +218,8 @@ namespace LegaiaWorld
                     continue; // spawned prefabs keep their own materials
                 if (UnderCabinet(r.transform))
                     continue; // the slot rig follows the slot builder's own rules
+                if (r is ParticleSystemRenderer)
+                    continue; // the candle's flame / smoke keep their additive sprites
                 foreach (var m in r.sharedMaterials)
                 {
                     if (m == null || m.shader == null)

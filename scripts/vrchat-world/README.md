@@ -67,6 +67,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaAmbienceMixer.cs` | Owns every ambient volume: crossfades the day and night beds on the cycle `LegaiaDayNight` publishes, fades the day-only and night-only spatial emitter groups, and takes `windLevel` from the weather layer to bring the gust bed in. See "Ambient audio". |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaWorldMenu.cs` | The settings panel's behaviour: `ToggleMusic` (mutes the BGM locally - a personal preference), `SetDay`/`SetNight` (jump the shared cycle for everyone). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaTorch.cs` | Torch/campfire pickup: hold + Use toggles the flame container (fire + smoke particles, a Perlin-flickered point light - no glow orb) and a spatial crackle loop; `lit` is synced so a fire someone lights burns for everyone. Spawn-kinematic like the rack pickups. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaCandle.cs` | The night candle on the card table: its flame (the camp props' fire particles + a warm 2.8 m point light, built inactive) comes on when `LegaiaDayNight.isNight` and goes out at dawn, with the torches' two-octave flicker while it burns. Finds the cycle by the sun object's name at Start when the builder could not wire it; a scene with no cycle keeps it at `alwaysOn`. Placement `prefab_transforms.card_table_candle` (table-local). |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaFlicker.cs` | Firelight flicker for the always-burning night torches: no sync, no interaction - just the two-octave Perlin intensity wobble on the flame's point light. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaPickupProp.cs` | UdonSharp equipment-rack pickup: the prop spawns kinematic (frozen on the rack) and only becomes a free physics object the first time a player drops it - so a rack of dozens of bodies can't tunnel through the thin ground during world-load hitches. Weapon rows carry `weapon` and measure their own swing speed while held. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCommonPrefabs.cs` | The **Common prefabs** foldout: builds the mirror, the TV and the card table from primitives + generated textures + the SDK's own components (the 52 card faces are drawn into one versioned atlas, `cards_atlas_v2.png`, in the standard pip arrangement), spawns the SDK's sample pen system, and drops any prefab assets you list (QvPen, ProTV, a community deck...) near spawn. See "Common prefabs" below. |
@@ -379,7 +380,8 @@ All keys optional (`town01.settings.json` is the worked example):
   would come back with its X sign flipped in the Inspector.)
 - **`prefab_transforms`** - hand placements for the common prefabs, the
   camp props (`torch_N`, `campfire_N`, the settings panel as `menu`), the
-  card table's seat panel (`card_table_panel`, table-local) and the
+  card table's seat panel, mini CRT and night candle (`card_table_panel`,
+  `card_table_mini_tv`, `card_table_candle`, table-local) and the
   equipment rack as a group (`equipment`: the `Legaia_equipment`
   container's own transform, re-applied after the equipment pass places
   the rack), position + optional rotation in Inspector numbers; written
@@ -1315,9 +1317,10 @@ seat panel and LegaiaSpawn into the scene's settings file:
 
 (keys `mirror`, `tv`, `card_table`, `pens`, `poster_<name>` and an extra
 slot's prefab name from the common container; `torch_N`, `campfire_N` and
-`menu` from the camp container; `card_table_panel` for the seat panel
-and `card_table_mini_tv` for the CRT on the felt, whose numbers are
-local to the table rather than to a container. Values
+`menu` from the camp container; `card_table_panel` for the seat panel,
+`card_table_mini_tv` for the CRT on the felt and `card_table_candle` for
+the night candle, whose numbers are local to the table rather than to a
+container. Values
 are otherwise exactly the Inspector numbers, world == local under the
 origin containers; `rotation` is optional.) The block **merges**: a key
 whose object is not in the scene at snapshot time - a feature switched

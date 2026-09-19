@@ -168,6 +168,10 @@ namespace LegaiaWorld
             if (o.miniTv && o.tv && o.cardTable &&
                 BuildMiniTv(container, genDir, placements) != null)
                 built.Add("mini CRT");
+            // A candle on the felt that lights itself at night (its own
+            // behaviour follows the day/night cycle; nothing to wire).
+            if (o.cardTable && BuildCandle(container, genDir, placements) != null)
+                built.Add("night candle");
             if (o.sdkPens)
             {
                 var pens = AssetDatabase.LoadAssetAtPath<GameObject>(SDK_PEN_PREFAB);
@@ -226,8 +230,12 @@ namespace LegaiaWorld
 
             // Spawned prefabs (the SDK pens, a QvPen, a ProTV) keep their
             // authored materials - only the kit-built furniture converts.
+            // Particle renderers (the candle's flame and smoke) keep their
+            // additive / soft materials: a lit cutout on a flame sprite is
+            // an opaque orange card.
             LegaiaRealism.ConvertPropToLit(container, genDir,
-                r => !PrefabUtility.IsPartOfPrefabInstance(r.gameObject));
+                r => !PrefabUtility.IsPartOfPrefabInstance(r.gameObject) &&
+                     !(r is ParticleSystemRenderer));
             RewireMirrorMaterials(container);
 
             // Every panel built above, off keyboard navigation: otherwise
@@ -277,6 +285,71 @@ namespace LegaiaWorld
         /// screen - which is on the root's -Z, like the big set's - looks
         /// back across the table.
         internal static readonly Vector3 MINI_TV_AT = new Vector3(0f, 0.765f, -0.40f);
+
+        /// The night candle on the felt: the +Z rim, across from the mini
+        /// CRT and clear of the hand anchors on the diagonals (radius 0.5).
+        /// Table-local like MINI_TV_AT; `card_table_candle` in the settings
+        /// pins it.
+        internal const string CANDLE_NAME = "candle";
+        internal static readonly Vector3 CANDLE_AT = new Vector3(0f, 0.764f, 0.45f);
+
+        /// A candle (dish, wax, wick) whose flame - the camp props' fire
+        /// particles + point light, built inactive - LegaiaCandle lights at
+        /// night and flickers. Every part is a primitive under the table,
+        /// so it rides the table's own placement and the snapshot.
+        static GameObject BuildCandle(GameObject container, string genDir,
+            Dictionary<string, LegaiaPrefabTransform> placements)
+        {
+            var tableT = container.transform.Find("card_table");
+            if (tableT == null)
+                return null;
+            var old = tableT.Find(CANDLE_NAME);
+            if (old != null)
+                Object.DestroyImmediate(old.gameObject);
+
+            var root = new GameObject(CANDLE_NAME);
+            root.transform.SetParent(tableT, false);
+            root.transform.localPosition = CANDLE_AT;
+            if (LegaiaSceneSettings.ApplyPlacement(placements, "card_table_candle", root.transform))
+                Debug.Log("[Legaia] candle placed from settings at local " +
+                    root.transform.localPosition + ".");
+
+            var dark = LegaiaCampProps.EnsureMat(genDir, "camp_dark", "Standard",
+                new Color(0.16f, 0.14f, 0.12f));
+            var wax = LegaiaCampProps.EnsureMat(genDir, "candle_wax", "Standard",
+                new Color(0.93f, 0.88f, 0.72f));
+            // Unity's cylinder is 2 units tall at scale 1: y scale = half height.
+            Prim(PrimitiveType.Cylinder, "dish", root.transform,
+                new Vector3(0f, 0.005f, 0f), new Vector3(0.09f, 0.005f, 0.09f), dark);
+            Prim(PrimitiveType.Cylinder, "wax", root.transform,
+                new Vector3(0f, 0.06f, 0f), new Vector3(0.05f, 0.05f, 0.05f), wax);
+            Prim(PrimitiveType.Cylinder, "wick", root.transform,
+                new Vector3(0f, 0.116f, 0f), new Vector3(0.005f, 0.008f, 0.005f), dark);
+
+            var flame = LegaiaCampProps.BuildFlame(root.transform, new Vector3(0f, 0.128f, 0f),
+                0.3f, LegaiaCampProps.EnsureFlameMaterial(genDir),
+                LegaiaCampProps.EnsureSmokeMaterial(genDir));
+            var light = flame.GetComponent<Light>();
+            // A candle's pool, not a campfire's: a warm circle over the felt
+            // and the players' hands.
+            light.range = 2.8f;
+            light.intensity = 0.7f;
+            light.color = new Color(1f, 0.68f, 0.36f);
+
+            var candle = LegaiaWorldBuilder.TryAttachUdon(root, "LegaiaCandle");
+            LegaiaWorldBuilder.SetUdonField(candle, "flame", flame);
+            LegaiaWorldBuilder.SetUdonField(candle, "fireLight", light);
+            LegaiaWorldBuilder.SetUdonField(candle, "fireIntensity", light.intensity);
+            // The cycle exists on a rebuild of this container alone; on a
+            // fresh build the realism pass makes it later and the candle
+            // finds it by name at Start.
+            var dnType = LegaiaWorldBuilder.FindType("LegaiaWorld.LegaiaDayNight");
+            var dn = dnType != null ? Object.FindObjectOfType(dnType, true) as Component : null;
+            if (dn != null)
+                LegaiaWorldBuilder.SetUdonField(candle, "dayNight", dn);
+            LegaiaWorldBuilder.SyncUdonProxy(candle);
+            return root;
+        }
 
         const string PENS_NAME = "sdk_pens";
         internal const string SLOT_NAME = "slot_machine";
