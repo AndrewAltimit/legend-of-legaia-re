@@ -215,6 +215,36 @@ water-class addend as its own argument beside the pad one, because retail adds
 them to the same register from two places (`addu s1,s1,s2` at `0x801D3434` for
 the class, one `addiu s1,s1,1` per held pad bit from `0x801D3450`).
 
+#### What the weight half is for
+
+The credit half rides `$s2`; the weight half rides `$s4`, and `$s4` is
+callee-saved, so it survives the hook sequence untouched from the class walk
+(`li $s4,0xA` default at `0x801D3304`, overwritten to `0x64` / `0x12C` / `0x1F4`
+at `0x801D33B4` / `0x801D33EC` / `0x801D3424`) all the way to its single use.
+That use is `div $s0,$s4` at `0x801D3728`, with the remainder taken at
+`mfhi $a3` (`0x801D3750`): the class is the **modulus of a random draw**, so it
+bounds a random term rather than scaling anything.
+
+The tick calls the RNG (`FUN_80056798`) three times at `0x801D3708`..`0x801D3718`
+and sums four terms into `$a0`:
+
+| Term | Where | Meaning |
+|---|---|---|
+| `rand1 % weight` | `0x801D3728` / `0x801D3750` | the water class's own contribution |
+| `(*0x801D927C >> 5) + 10` | `0x801D3790` / `0x801D3794` | a scaled running value plus a floor |
+| `rand2 % 600` | `0x801D3780`..`0x801D37DC` (magic-multiply reciprocal) | a class-independent spread |
+| `100 * (rand3 % (counter + 1))` + `50 * (counter + 1)` | `0x801D376C`..`0x801D380C`, counter from `$s6+0x314` | a session-progress term |
+
+The sum lands at `DAT_801D91B8` (`sw $a0,-0x6E48($v0)`, `0x801D3814`), and
+`sum + 0x400` goes to `+0x72` of the object the hook just spawned
+(`addiu $a0,$a0,0x400` then `sh $a0,0x72($s1)` at `0x801D3818`/`0x801D381C`;
+`$s1` is the return of `jal 0x80024C88` at `0x801D36A8`, also parked at
+`DAT_801D91D0`) and to `DAT_801D9108`. Actor `+0x72` is the render scale, so the
+class is what makes a better water cell able to produce a visibly larger fish.
+It touches neither the species roll nor the credit - "weight" is the right name,
+and the answer to "does it scale the species roll, the recorded catch, or
+nothing" is: the recorded size, and the hooked model's on-screen size with it.
+
 ### The lure the bite tick probes
 
 Both of `FUN_801D26CC`'s per-frame map reads take the *same* point - the tick's

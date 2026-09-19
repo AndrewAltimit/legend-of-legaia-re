@@ -176,7 +176,7 @@
   <table>
     <thead><tr><th>Function / data</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
     <tbody>
-      <tr><td>TMD renderer</td><td><code>FUN_8002735C</code></td><td>60 GTE ops per group; the only colour op is <code>DPCS</code> (<code>cop2 0x780010</code>)</td><td><code>funcs/8002735c.txt</code></td></tr>
+      <tr><td>TMD renderer</td><td><code>FUN_8002735C</code></td><td>60 GTE ops per group; the only colour op is <code>DPCS</code> (<code>cop2 0x780010</code>). Three <code>jal</code> sites, all behind a test on the drawn actor's <code>+0x42</code> that no sampled mode raises</td><td><code>funcs/8002735c.txt</code></td></tr>
       <tr><td>Light-source sibling</td><td><code>FUN_80029888</code></td><td>Same op set; no <code>NC*</code> either</td><td><code>funcs/80029888.txt</code></td></tr>
       <tr><td>Descriptor table</td><td><code>DAT_8007326C</code></td><td>Six 8-byte rows; byte3 shape, byte4 vertex offset, byte1 colour base</td><td>SCUS data</td></tr>
       <tr><td>Per-prim dispatch</td><td><code>FUN_80043390</code></td><td>Stages far / back colour per object</td><td><code>funcs/80043390.txt</code></td></tr>

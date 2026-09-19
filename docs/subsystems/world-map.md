@@ -226,6 +226,23 @@ menu list for the world map developer menu. String table at `0x801CF344..`:
 Called by `FUN_801ECA08` when the debug menu panel is active
 (`ctx[+0x54]` mod-6 dispatch resolves to cases 1 or 3).
 
+#### The image that holds the row strings is PROT 0897, not 0981
+
+`0x801CF344` is a slot-A address, and slot A is shared - which is why the table
+looked like a phantom print when it was scored against the top-view image above,
+where that VA is code. The strings are in the **field overlay, extraction 0897**,
+an uncompressed entry whose base is `0x801CE818`: the label run sits at file
+offset `0xB2C`, and `$a0` is formed as `0x801CF344` from two `lui`/`addiu` pairs
+inside the renderer's own body, at `0x801EAE44`/`0x801EAE48` and
+`0x801EB320`/`0x801EB324`. Both the renderer and its table are therefore in the
+one image, and no aliasing question remains - `FUN_801EAD98` is field-overlay
+code that the world map runs because the world map is a field scene.
+
+A live check agrees: extracting `0x801CE818..0x801D0000` from a `map03`
+overworld save state gives a window byte-identical to the first `0x17E8` bytes of
+`extracted/overlays/overlay_field_0897.bin`, dev-menu labels included. PROT 0981
+never coexists with it - the two are alternative occupants of the same slot.
+
 ### `FUN_801ECA08` - world map panel sizer / list picker (256 bytes)
 
 Entry: `(ctx_ptr, row_start, row_end, col_idx)`. Sizes the panel, then runs a
@@ -2673,8 +2690,13 @@ The case-5 path of the [per-actor render dispatcher `FUN_8001ADA4`](#per-actor-r
 draws every **landmark** TMD (castle, towers, bridges, gates) - each
 world-map actor's `actor[+0x44]` mesh chain points into Drake's
 40-TMD landmark pack at PROT entry 0086 slot 1, which the dispatcher
-walks once per frame through `FUN_8002735C` (the 60-GTE Legaia TMD
-renderer). That accounts for the landmark prims in the GPU pool.
+walks once per frame. That accounts for the landmark prims in the GPU pool.
+The leaf that walk reaches is `FUN_80043390`, not the table-driven
+`FUN_8002735C`: the case-5 arm that would call the latter is gated on
+`actor[+0x42] != 0`, and on a live `map03` overworld the gate fires hundreds of
+times per second and takes the near arm every time - see
+[renderer.md](renderer.md#which-mesh-leaf-a-frame-actually-enters) for the
+census and the three gate sites.
 
 ### Top-view bulk-terrain render path (overlay-replaced per-prim renderers)
 
@@ -2881,13 +2903,16 @@ runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
 - **case 5** (full TMD). Iterates the mesh chain at `actor[+0x44]`
   (`puVar5[0]` = count, `puVar5[1..n]` = mesh pointers) and per
   entry calls:
-  - `FUN_80043390(mesh, color, tpage)` - textured TMD (default).
-  - `FUN_80029888(...)` - environment-mapped TMD when
-    `actor[+0x7a] != 0`.
-  - `FUN_8002735C(...)` - 60-GTE Legaia TMD renderer (the
-    **landmark emit leaf** - each landmark TMD in Drake's 40-mesh
-    kingdom pack passes through here; the bulk continent ground
-    terrain is *not* drawn from here).
+  - `FUN_8002735C(...)` - the 60-GTE table-driven Legaia TMD renderer, taken
+    when `actor[+0x42] != 0` (`bne $s7` at `0x8001B454`). Measured as the arm
+    retail never takes, landmarks included.
+  - `FUN_80029888(...)` - environment-mapped TMD when `+0x42 == 0` and
+    `actor[+0x7a] != 0`. Also unentered in every sampled state.
+  - `FUN_80043390(mesh, color, tpage)` - textured TMD, the fall-through and the
+    leaf every measured overworld landmark actually draws through.
+
+  The three-way gate and its per-mode census are on
+  [renderer.md](renderer.md#which-mesh-leaf-a-frame-actually-enters).
 - **cases 1, 2, 3, 6, 7, 8, B** - distance-LOD / particle / sprite-billboard
   branches calling per-effect helpers (`FUN_8001B73C`, `FUN_8001B964`,
   `FUN_800480D8`, `FUN_8002B944/94C/954`, `FUN_8001C204`).
