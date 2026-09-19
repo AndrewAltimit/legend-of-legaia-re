@@ -565,7 +565,9 @@ mod tests {
     #[test]
     fn engine_spu_from_retail_translates_voice_state_and_key_on() {
         // Hand-roll a small mednafen save with the SPU section populated
-        // for voice 3: start_addr, pitch, ADSR phase non-zero (active).
+        // for voice 3: start_addr, pitch, ADSR phase Attack and a non-zero
+        // envelope level (the audibility predicate - mednafen's phase word
+        // has no `Off` member, so the level is what says "keyed").
         use legaia_mednafen::container::{MDFN_HEADER_LEN, MDFN_MAGIC, SECTION_NAME_LEN};
         // Studio C reverb register block (public PSX hardware-reference
         // preset; what retail actually installs) laid into the `Regs` shadow
@@ -587,6 +589,7 @@ mod tests {
             ("Voices[3].StartAddr", 0x1000u32.to_le_bytes().to_vec()),
             ("Voices[3].Pitch", 0x1234u16.to_le_bytes().to_vec()),
             ("Voices[3].ADSR.Phase", 1u32.to_le_bytes().to_vec()),
+            ("Voices[3].ADSR.EnvLevel", 0x2000u16.to_le_bytes().to_vec()),
             (
                 "(Voices[3].Sweep[0]).Current",
                 0x3FFFi16.to_le_bytes().to_vec(),
