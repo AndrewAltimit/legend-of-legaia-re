@@ -187,16 +187,33 @@ fn audio_trace_all_scenarios_converge() {
                 }
                 // NoFrameMatched is tolerable: the scene's prescript may
                 // not fire op 0x35 within the trace window or may target a
-                // different track than retail captured. Other divergence
-                // kinds (VoiceStartAddrMismatch / MasterVolumeMismatch)
-                // indicate the engine matched retail's voice indices but
-                // with wrong sample / volume - a real bug.
-                let tolerable = matches!(d.kind, AudioDivergenceKind::NoFrameMatched);
+                // different track than retail captured.
+                //
+                // VoiceStartAddrMismatch is tolerable too, and for a
+                // structural reason rather than a lenient one: a start
+                // address is an offset into SPU RAM, and the two sides fill
+                // SPU RAM from independent allocators. On the town0c door
+                // save retail's audible voices start at 0x8008..0xC968 while
+                // the engine's staged bank puts the same score at
+                // 0x1000..0x1BD70 - the port never set out to reproduce
+                // retail's SPU-RAM layout, so equality there is not a
+                // fidelity claim anyone made. This comparison only became
+                // reachable once "active" stopped meaning "phase != 0"; with
+                // the old predicate retail reported 24 voices and no engine
+                // mask could ever be a superset, so nothing past the mask was
+                // ever compared.
+                //
+                // MasterVolumeMismatch stays hard.
+                let tolerable = matches!(
+                    d.kind,
+                    AudioDivergenceKind::NoFrameMatched
+                        | AudioDivergenceKind::VoiceStartAddrMismatch
+                );
                 if tolerable {
                     expected_drifts += 1;
                     eprintln!(
                         "[drift] {label:<32} scene={scene_name:<10} NoFrameMatched: \
-                         retail mask=0b{:024b} ({} voices non-Off) vs engine union=0b{engine_union:024b} \
+                         retail mask=0b{:024b} ({} voices audible) vs engine union=0b{engine_union:024b} \
                          (peak {engine_peak} concurrent over {FRAMES} frames)",
                         d.retail.active_voice_mask,
                         d.retail.active_voice_mask.count_ones(),
