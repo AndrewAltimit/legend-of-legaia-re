@@ -259,6 +259,21 @@ scene-entry window on picker entries only; the new-game chain keeps the
 authored pause. The same staging seeds story-twin scenery flags (e.g.
 `town0c`'s blown gate). Disc pins: `engine-core/tests/free_roam_staging_disc.rs`.
 
+#### The cold scene-entry sequence, and what each missing step sounds like
+
+Anything that drops the engine into a scene from cold - both playable hosts
+and every headless driver - owes the same three steps in order, because each
+one is separately load-bearing for whether music sounds:
+
+| Step | Kernel | Skipping it |
+|---|---|---|
+| Free-roam story staging | `World::seed_free_roam_story_baseline` | The entry script's authored pause parks the track: a sequencer attaches on the first frame and its playhead never leaves tick 0. |
+| Live field entry | `BootSession::enter_field_live` (browser: the same pair in `runtime.rs`) | `load_scene` alone installs no field record, so the field VM steps nothing and op `0x35` never executes. |
+| Global-pool start hook | `BgmDirector::start_owned_vab` | Every real music cue is a global id, so a director that leaves this on the trait's no-op default plays nothing while looking fully wired. |
+
+All three read identically from outside - silence - which is why a driver
+missing any one of them reports as "the engine starts no BGM on scene entry".
+
 The engine port reuses this same dispatch for the **Battle↔Field music swap**: `World::set_battle_bgm` configures a battle track id, and the live gameplay loop queues an ordinary `FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`) and resumes the stashed field track on battle end (`restore_field_bgm`). Both transitions run through the host's `AudioBgmDirector` `start_inner` path - no separate battle-audio code path.
 
 The battle id resolves like any op-`0x35` id: scene-local (`< 2000`) through the scene's own BGM table, global-pool (`>= 2000`) through the `music_01` bank arm (`music_bank_entry_bytes` → `start_owned_vab`). The shipped default is the global id `2026` (`music_labels::BATTLE_THEME_1_BGM_ID`, retail's `battle_id == 0` bundle `0x36F` = extraction 877 = sound-test #26), installed by `LiveLoopOpts::playable()` so both hosts swap without per-scene configuration.
@@ -1385,7 +1400,13 @@ Entry points:
   - [`audio_trace`](../../crates/engine-shell/tests/audio_trace.rs) - auto-discovers scenarios with both `expected_active_scene` and an on-disk `.mc{slot}` save.
   - [`audio_trace_multi`](../../crates/engine-shell/tests/audio_trace_multi.rs) - same scenario walk but skips unless `LEGAIA_AUDIO_TRACE_JSONL_DIR` points at a directory containing `<label>.jsonl` files from the PCSX-Redux probe.
 
-The engine drives BGM through a private `TraceBgmDirector` that routes field-VM op `0x35` events into a headless `Sequencer` in lock-step with `SceneHost::route_bgm_events`. `NoFrameMatched` is treated as tolerable drift (scene prescript may not emit op `0x35` within the trace window, or may target a different track than retail captured); `VoiceStartAddrMismatch` and `MasterVolumeMismatch` are hard failures.
+The engine drives BGM through a private `TraceBgmDirector` that owns the trace's `Spu` the way `AudioBgmDirector` owns the cpal one, takes the cold scene-entry sequence above, and routes field-VM op `0x35` events into a headless `Sequencer` in lock-step with `SceneHost::route_bgm_events`. `VoiceStartAddrMismatch` and `MasterVolumeMismatch` are hard failures, and so is an engine trace whose voice mask is empty for a scenario where retail had voices - the floor below is what that assertion rests on.
+
+### Why `converged` is not the audio oracle's fidelity measure
+
+A mednafen save is a mid-playthrough freeze, and an SPU voice leaves ADSR phase `Off` on key-on and returns only when a key-off's release runs to zero. Nothing does that wholesale, so a field save state reports nearly every voice non-`Off`: the residue of every cue and every track since boot, not the set the current score is sounding. Against a rule that asks some engine frame's mask to be a **superset** of that, `NoFrameMatched` is the standing answer for a cold scene-entry window no matter how faithful the engine's playback is - the engine's own score holds single-digit concurrent voices. So a `0 converged` line on this comparand is a statement about the comparand.
+
+What the `.mc` axis still decides is the floor: with the scene's track playing, the engine's mask must be non-empty. That is what an actual scene-entry BGM regression looks like - the field VM never reaching op `0x35`, the director declining a global-pool start, an entry-script pause parking the track - and each of those otherwise reads as one more ordinary drift row. Deciding *which* voices belong to the score needs the per-vsync PCSX-Redux trace (`--retail-jsonl`) captured from the same scene entry.
 
 The **Field↔Battle BGM-swap** is *not* yet observable through this
 voice-activity oracle. The audible path itself is no longer blocked: the
