@@ -1037,14 +1037,30 @@ whichever build's matrix was live when they were emitted
   16810 were emitted with `A`'s matrix live and 3562 with `B`'s, but only
   **14** with `C`'s. Whatever `C` re-establishes, essentially no geometry
   follows it inside its own vsync. (10472 links landed before that vsync's first
-  build, inheriting the previous one's matrix, and the helper does not separate
-  3D prims from 2D UI prims - so this ranks the sites without yet giving a
-  clean per-frame attribution.)
+  build, inheriting the previous one's matrix. The helper says nothing about
+  what it is linking, which is what the next bullet fixes.)
 
   The divergence that makes any of this matter is rare and lands on `C`: across
   749 build-carrying vsyncs of the town entry, exactly one had two builds read
   different camera words, and the pair was `B` against `C` - the build the frame
   does not draw under.
+* **`C` frames no geometry at all.** The link helper's `$a1` is the prim, and a
+  linked PsyQ prim's GPU command code is the byte at `a1 + 7`, so the count
+  splits into polygons (`0x20..0x3F` - the scene) and rects / sprites
+  (`0x60..0x7F` - the UI layer). Over three runs - two static town scenes and
+  one world-map-to-town crossing, which entered `town0c` from `map01` - 4289
+  polygons were linked, 3861 of them (90%) with `A`'s matrix live and the
+  other 428 with `B`'s. **Zero** followed `C`, whose whole share is attribute
+  packets and 2D rects, and zero followed either slot-B site, which is the
+  3D-side corroboration of the bracket reading above. The raw link ranking that
+  put `C` at 14 of 31046 was therefore understating the case: it is not that
+  little geometry follows `C`, it is none.
+
+  Two cautions the same runs carry. The TMD renderer `FUN_8002735C` was entered
+  **zero** times in any of them, so whatever emits a town's polygons on these
+  frames is not that routine - the per-prim path, not the mesh path. And links
+  that land before a vsync's first build still inherit the previous vsync's
+  matrix; those are bucketed apart and are 2D in every run but one.
   The camera-rotation build is pinned: `FUN_8001CF50` composes `R` by rotating about each axis with the angle globals - `RotMatrixX(pitch=_DAT_8007B790)` at `0x800461A4`, `RotMatrixY(yaw=_DAT_8007B792)` at `0x8004629C`, `RotMatrixZ(roll=_DAT_8007B794)` at `0x8004638C` (each masks the angle to 12 bits and indexes the shared sin/cos LUT at `0x80070A2C`, `4096 = 360°`, `+0x800` = the quarter-wave cosine offset; composed via GTE `mvmva`).
   **So param 0 is the camera PITCH, not a "rot/zoom" word** - the zoom is H (a separate projection register). The eye sits *behind* the focus by `tr_eye` (in the 6×-scaled space); it is NOT at the focus.
   The commit's second argument decides between two behaviours, and the third selects the ease curve: the field VM calls `FUN_801DE084(0x801C6EA8, apply, op0 >> 2 & 0xF)`, reading `apply` as the u16 at operand `+2` (`overlay_0897_801de840.txt`, case `0x45` sub-`0x00`).
