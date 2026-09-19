@@ -132,16 +132,49 @@ Field offsets are pinned by a fusion of three sources:
 +0x19C  u8       accessory_2_id           ; "Accessory 2 Modifier"
 +0x19D  u8       accessory_3_id           ; "Accessory 3 Modifier"
 +0x19E  u8[9]    post_equipment_unmapped_a
-+0x1A7  u8[16]   auto_command_string_a   ; Muscle Dome / battle Auto command string, one AP band
-+0x1B7  u8[16]   auto_command_string_b   ; the other AP band (slot picked on actor+0x156 < actor+0x154)
++0x1A7  u8[16]   auto_command_string_a   ; the Auto command string, primary AP band
++0x1B7  u8[16]   auto_command_string_b   ; the same, secondary band
 +0x1C7  u8[233]  post_equipment_unmapped_b
-                          ; (+0x1A7 / +0x1B7 loaded by FUN_801DA34C, saved by FUN_801DA59C;
-                          ;  the typed accessor still exposes +0x19E..+0x2B0 as one unmapped block)
 +0x2B0  ...      active_spell_slots[14]   ; 14 × 0x14-byte active-spell
                                            ; runtime slots - covered by the
                                            ; `active_spell_slot()` accessor
 +0x380  u8[148]  tail_unmapped
 ```
+
+## The two auto command strings (`+0x1A7` / `+0x1B7`)
+
+The pair is the battle command menu's **Auto** source: the 16-byte action
+queue the player last confirmed, parked between turns so the next attack can
+replay it without re-entering arrows. `FUN_801DA34C` loads one band into
+battle-actor `+0x1DF..+0x1EF` and `FUN_801DA59C` writes the live window back
+(`see ghidra/scripts/funcs/overlay_battle_action_801da34c.txt`,
+`overlay_battle_action_801da59c.txt`).
+
+Both routines address the strings off the live-state window rather than the
+record - `0x80084140 + slot*0x414 + 0x76F` and `+0x77F`. The record base sits
+`0x5C8` bytes into that window, which is what makes them record-relative
+`+0x1A7` and `+0x1B7`. The same delta puts the performed-Super mask's
+`+0x75D` at record `+0x195`, the sixteenth displayed-skill slot.
+
+Which band is read or written is decided by the acting actor's action gauge,
+not by a slot index: `sltu(+0x156, +0x154)` - base gauge strictly below live
+gauge takes the primary band, everything else the secondary one. So a combo
+recorded while the gauge was topped up is not replayed into a turn that
+cannot pay for it.
+
+The two legs are **asymmetric**, and a port that symmetrises them replays the
+wrong string. The primary leg copies `+0x1A7` when its head byte is non-zero
+and falls back to `+0x1B7` otherwise; the secondary leg reads `+0x1B7` and
+zero-fills on an empty head, with no fallback to `+0x1A7` (the empty-head
+branch at `0x801DA4CC` lands on the zero-fill loop). The write-back has no
+fallback at all: exactly one band is overwritten per call, and only for a live
+actor (`+0x14C != 0`) whose action category is the attack/arts band
+(`+0x1DE == 3`).
+
+`legaia_save` exposes them as `CharacterRecord::auto_command_string` /
+`set_auto_command_string` over an `AutoCommandBand` that `for_gauge` selects,
+and `engine-core` runs both leaves from the live battle flow - see
+[battle-action.md](../subsystems/battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4).
 
 ## Cheat-database citations
 

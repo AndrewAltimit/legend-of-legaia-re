@@ -33,6 +33,18 @@ const MAX_ACTIVE_SPELL_SLOTS: usize = (0x380 - 0x2B0) / ACTIVE_SPELL_SLOT_STRIDE
 /// Equipment slot count at `+0x196..0x19D`.
 const EQUIPMENT_SLOT_COUNT: usize = 8;
 
+/// Length of one auto command string (`FUN_801DA34C`'s `sltiu a0,0x10` copy
+/// bound at `0x801DA408`).
+pub const AUTO_COMMAND_STRING_LEN: usize = 16;
+
+/// Record-relative offset of the primary auto command string
+/// ([`AutoCommandBand::Primary`]).
+pub const AUTO_COMMAND_STRING_A_OFFSET: usize = 0x1A7;
+
+/// Record-relative offset of the secondary auto command string
+/// ([`AutoCommandBand::Secondary`]).
+pub const AUTO_COMMAND_STRING_B_OFFSET: usize = 0x1B7;
+
 /// Maximum entries the displayed-skill list at `+0x185..+0x196` can hold.
 /// The byte at `+0x185` is a count; the 16 bytes at `+0x186..+0x196` are
 /// the parallel ID array. The menu reader at `0x801D4440` (in the menu
@@ -122,6 +134,58 @@ pub struct HpMpSp {
 pub struct EquipmentSlots {
     /// Raw 8 slot bytes; semantic mapping is engine-defined.
     pub slots: [u8; EQUIPMENT_SLOT_COUNT],
+}
+
+/// The two 16-byte **auto command strings** a character record carries at
+/// `+0x1A7` and `+0x1B7`.
+///
+/// These are the battle command menu's "Auto" source: the arts-input string
+/// the player last confirmed, replayed verbatim the next time the character
+/// attacks without entering arrows. Retail addresses them off the live-state
+/// window rather than the record base - `0x80084140 + slot*0x414 + 0x76F` and
+/// `+0x77F` - and the record base sits `0x5C8` bytes into that window, which
+/// is what makes them record-relative `+0x1A7` / `+0x1B7`.
+///
+/// There are two because the string is banded by the character's action
+/// gauge: the reader picks between them on `actor[+0x156] < actor[+0x154]`
+/// (base gauge below live gauge), so a combo recorded with a topped-up gauge
+/// is not replayed into a turn that cannot pay for it.
+///
+/// Loaded by `FUN_801DA34C` and written back by `FUN_801DA59C`
+/// (`see ghidra/scripts/funcs/overlay_battle_action_801da34c.txt`,
+/// `overlay_battle_action_801da59c.txt`); both copy exactly
+/// [`AUTO_COMMAND_STRING_LEN`] bytes into / out of battle-actor `+0x1DF`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoCommandBand {
+    /// Record `+0x1A7` - the slot the reader takes when the base action gauge
+    /// is strictly below the live one.
+    Primary,
+    /// Record `+0x1B7` - the slot the reader takes otherwise. Retail's
+    /// asymmetry lives here: the primary leg falls back to this slot when its
+    /// own head byte is zero, but this leg has **no** fallback to the primary
+    /// one and zero-fills instead.
+    Secondary,
+}
+
+impl AutoCommandBand {
+    /// Record-relative byte offset of this band's string.
+    pub const fn offset(self) -> usize {
+        match self {
+            AutoCommandBand::Primary => AUTO_COMMAND_STRING_A_OFFSET,
+            AutoCommandBand::Secondary => AUTO_COMMAND_STRING_B_OFFSET,
+        }
+    }
+
+    /// The band `FUN_801DA34C` / `FUN_801DA59C` select for an actor whose
+    /// live action gauge is `agl` (`+0x154`) over a base of `agl_base`
+    /// (`+0x156`): `sltu (base, live)` at `0x801DA3A4` / `0x801DA5E0`.
+    pub const fn for_gauge(agl: u16, agl_base: u16) -> Self {
+        if agl_base < agl {
+            AutoCommandBand::Primary
+        } else {
+            AutoCommandBand::Secondary
+        }
+    }
 }
 
 /// Spell list at `+0x13C..0x184`. The first byte at `+0x13C` is the count;
@@ -411,6 +475,31 @@ impl CharacterRecord {
     /// Replace the equipment-slot bytes.
     pub fn set_equipment(&mut self, eq: EquipmentSlots) {
         self.raw[0x196..0x196 + EQUIPMENT_SLOT_COUNT].copy_from_slice(&eq.slots);
+    }
+
+    /// One of the two [`AutoCommandBand`] strings (`+0x1A7` / `+0x1B7`,
+    /// [`AUTO_COMMAND_STRING_LEN`] bytes each).
+    ///
+    /// The bytes are battle-action command constants exactly as the actor's
+    /// `+0x1DF` stream holds them; a leading `0` means the band has never
+    /// been written, which is the condition `FUN_801DA34C` branches on.
+    pub fn auto_command_string(&self, band: AutoCommandBand) -> [u8; AUTO_COMMAND_STRING_LEN] {
+        let base = band.offset();
+        let mut out = [0u8; AUTO_COMMAND_STRING_LEN];
+        out.copy_from_slice(&self.raw[base..base + AUTO_COMMAND_STRING_LEN]);
+        out
+    }
+
+    /// Overwrite one [`AutoCommandBand`] string - the write-back half
+    /// (`FUN_801DA59C`, `sb` loops at `0x801DA638` / `0x801DA69C`). Retail
+    /// overwrites exactly one band per call and never clears the other.
+    pub fn set_auto_command_string(
+        &mut self,
+        band: AutoCommandBand,
+        bytes: [u8; AUTO_COMMAND_STRING_LEN],
+    ) {
+        let base = band.offset();
+        self.raw[base..base + AUTO_COMMAND_STRING_LEN].copy_from_slice(&bytes);
     }
 
     /// Read one active-spell slot at `+0x2B0 + slot * 0x14`. Returns the
@@ -1138,5 +1227,45 @@ mod tests {
         assert_eq!(snap.magic_slot_activator, 0x24);
         assert_eq!(snap.record_stats.cap_constant, RECORD_CAP_CONSTANT);
         assert_eq!(snap.summon_levels.len(), SUMMON_SLOT_COUNT);
+    }
+
+    /// The two auto command strings round-trip through the raw buffer and do
+    /// not overlap each other or the equipment slots that precede them.
+    #[test]
+    fn auto_command_strings_round_trip_and_stay_disjoint() {
+        let mut r = CharacterRecord::zeroed();
+        let a: [u8; AUTO_COMMAND_STRING_LEN] = core::array::from_fn(|i| (i as u8) + 1);
+        let b: [u8; AUTO_COMMAND_STRING_LEN] = core::array::from_fn(|i| 0x80 + i as u8);
+        r.set_equipment(EquipmentSlots { slots: [9; 8] });
+        r.set_auto_command_string(AutoCommandBand::Primary, a);
+        r.set_auto_command_string(AutoCommandBand::Secondary, b);
+        let back = CharacterRecord::parse(&r.write()).expect("round-trip");
+        assert_eq!(back.auto_command_string(AutoCommandBand::Primary), a);
+        assert_eq!(back.auto_command_string(AutoCommandBand::Secondary), b);
+        assert_eq!(back.equipment().slots, [9; 8]);
+        assert_eq!(
+            AUTO_COMMAND_STRING_A_OFFSET + AUTO_COMMAND_STRING_LEN,
+            AUTO_COMMAND_STRING_B_OFFSET
+        );
+        assert!(AUTO_COMMAND_STRING_A_OFFSET >= 0x196 + 8);
+        assert!(AUTO_COMMAND_STRING_B_OFFSET + AUTO_COMMAND_STRING_LEN <= NAME_OFFSET);
+    }
+
+    /// The band selector is the retail `sltu(base, live)` at `0x801DA3A4`:
+    /// strictly-below picks the primary slot, everything else the secondary.
+    #[test]
+    fn auto_command_band_follows_the_gauge_compare() {
+        assert_eq!(
+            AutoCommandBand::for_gauge(100, 80),
+            AutoCommandBand::Primary
+        );
+        assert_eq!(
+            AutoCommandBand::for_gauge(80, 80),
+            AutoCommandBand::Secondary
+        );
+        assert_eq!(
+            AutoCommandBand::for_gauge(60, 80),
+            AutoCommandBand::Secondary
+        );
     }
 }
