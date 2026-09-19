@@ -201,3 +201,422 @@ no port, so the engine's boxes are UI-atlas sprites whose colour comes from the
 atlas rather than from a caller's word. Wiring the guard alone would claim a
 guard over a fill the port does not perform.
 """
+
+# ---------------------------------------------------------------------------
+# Tier 11 - frame-path completeness.
+#
+# `[[frame_arm]]` rows describe one short-circuit arm of one host's frame
+# path: the arm's `skips` list is every fall-through kernel that arm does not
+# run, and the reason says why the frame may draw without them. `arm` is a
+# substring of the arm's header, unique to that arm.
+#
+# `[[frame_kernel]]` rows describe the per-frame kernel LISTS. Both hosts run
+# the same engine, and a step one of them takes every frame and the other
+# never takes is a simulation they do not share. Two forms:
+#
+#   native = "a", web = "b"     the same step under two names
+#   host = "...", kernel = "...", host_only = true
+#                               only that host's frame path runs it; the
+#                               reason must say where the other host does the
+#                               same work, or why it needs none
+#
+# The claim a `host_only` row makes is about the FRAME PATH, which is what the
+# checker measures - not about a capability. Several of these kernels have a
+# counterpart the other host runs somewhere else entirely, and saying where is
+# the whole content of the row.
+#
+# The checker validates every row against the real source, in both directions:
+# an arm that no longer exists, a `skips` entry no longer skipped, an alias
+# whose other half left its host's frame path, a `host_only` kernel both hosts
+# now run - each is a stale row and CI fails on it.
+
+# --- native: the window's redraw tick loop ---------------------------------
+#
+# All five arms skip the same sixteen kernels, and for one reason: the arm
+# exists to keep the world frozen while something else owns the frame. What
+# each arm does NOT skip is the interesting half - every one of them steps the
+# field party HUD's decision kernel, because its answer is read back by a draw
+# pass that runs whatever the tick loop did.
+
+[[frame_arm]]
+host = "native"
+arm = "self.boot_ui.is_active()"
+reason = """
+The boot UI (title, save select, options, pause menu, game over) owns the
+frame and the scene tick is deliberately skipped: the player has not entered
+the world, or has paused out of it. Everything in `skips` advances world or
+scene presentation, which is exactly what freezing means here. The two steps
+the arm DOES take are the ones whose output the frame still draws: the menu
+SFX drain (cues queued by the menu this frame) and the party-HUD kernel.
+"""
+skips = [
+    "advance_ocean_animation",
+    "apply_world_clut_fx",
+    "check_battle_vram_residency",
+    "drain_and_log_battle_events",
+    "drain_and_route_field_events",
+    "drain_baka_sfx_cues",
+    "maybe_install_demo_tile_board",
+    "rebind_live_npc_models",
+    "sync_dialog_panel",
+    "sync_text_balloon",
+    "tick_dev_menu",
+    "tick_field_prop_anims",
+    "tick_fishing_banners",
+    "tick_minigame_extras",
+    "tick_muscle_time_meter",
+    "tick_play_clock",
+]
+
+[[frame_arm]]
+host = "native"
+arm = "world.name_entry_active()"
+reason = """
+The naming prompt is modal: retail suspends the field VM while it is up, so
+the world must not advance under it. The arm advances the world frame counter
+by hand (the caret blinks) and steps the party-HUD kernel; nothing else in the
+list has a reader that changes while the overlay owns the pad.
+"""
+skips = [
+    "advance_ocean_animation",
+    "apply_world_clut_fx",
+    "check_battle_vram_residency",
+    "drain_and_log_battle_events",
+    "drain_and_route_field_events",
+    "drain_baka_sfx_cues",
+    "maybe_install_demo_tile_board",
+    "rebind_live_npc_models",
+    "sync_dialog_panel",
+    "sync_text_balloon",
+    "tick_dev_menu",
+    "tick_field_prop_anims",
+    "tick_fishing_banners",
+    "tick_minigame_extras",
+    "tick_muscle_time_meter",
+    "tick_play_clock",
+]
+
+[[frame_arm]]
+host = "native"
+arm = "take_prologue_handoff"
+reason = """
+One frame, and the scene under the window has just been replaced: the arm
+re-enters a field scene and rebuilds the render state. Stepping the skipped
+kernels here would run them against half-swapped scene state - the prop clips,
+the ocean cycle and the battle VRAM residency all key on a scene that is being
+torn down. The party-HUD kernel is stepped because a scene change is its own
+rearm condition.
+"""
+skips = [
+    "advance_ocean_animation",
+    "apply_world_clut_fx",
+    "check_battle_vram_residency",
+    "drain_and_log_battle_events",
+    "drain_and_route_field_events",
+    "drain_baka_sfx_cues",
+    "maybe_install_demo_tile_board",
+    "rebind_live_npc_models",
+    "sync_dialog_panel",
+    "sync_text_balloon",
+    "tick_dev_menu",
+    "tick_field_prop_anims",
+    "tick_fishing_banners",
+    "tick_minigame_extras",
+    "tick_muscle_time_meter",
+    "tick_play_clock",
+]
+
+[[frame_arm]]
+host = "native"
+arm = "cutscene_narration_active()"
+reason = """
+The opening crawl / title card owns the frame: the pad is frozen and the world
+IS ticked here (the crawl advances and the timeline's terminal scene change
+can fire), so this arm is a pad freeze rather than a world freeze. The skipped
+kernels are field and battle presentation with nothing on screen to present -
+the narration draws over a scene the player does not control.
+"""
+skips = [
+    "advance_ocean_animation",
+    "apply_world_clut_fx",
+    "check_battle_vram_residency",
+    "drain_and_log_battle_events",
+    "drain_and_route_field_events",
+    "drain_baka_sfx_cues",
+    "maybe_install_demo_tile_board",
+    "rebind_live_npc_models",
+    "sync_dialog_panel",
+    "sync_text_balloon",
+    "tick_dev_menu",
+    "tick_field_prop_anims",
+    "tick_fishing_banners",
+    "tick_minigame_extras",
+    "tick_muscle_time_meter",
+    "tick_play_clock",
+]
+
+[[frame_arm]]
+host = "native"
+arm = "self.session.field_menu_is_open()"
+reason = """
+The frame on which a Start edge opened the pause menu: the arm sets the
+boot-UI state and hands the next frame to the arm above, so it is that arm's
+first frame by another name and freezes the same things. It fires the open
+blip and drains it, and steps the party-HUD kernel against the boot-UI state
+it just set.
+"""
+skips = [
+    "advance_ocean_animation",
+    "apply_world_clut_fx",
+    "check_battle_vram_residency",
+    "drain_and_log_battle_events",
+    "drain_and_route_field_events",
+    "drain_baka_sfx_cues",
+    "maybe_install_demo_tile_board",
+    "rebind_live_npc_models",
+    "sync_dialog_panel",
+    "sync_text_balloon",
+    "tick_dev_menu",
+    "tick_field_prop_anims",
+    "tick_fishing_banners",
+    "tick_minigame_extras",
+    "tick_muscle_time_meter",
+    "tick_play_clock",
+]
+
+# --- web: the runtime's `tick_frame` ---------------------------------------
+
+[[frame_arm]]
+host = "web"
+arm = "let Some(host) = self.scene_host.as_mut() else"
+reason = """
+No scene host: no disc has been loaded, or the page is on its boot title. The
+arm ticks the bare `World` and returns. Every kernel in the list reads scene
+state that does not exist yet, and the page's overlay draws the title / disc
+chooser rather than any of their outputs.
+"""
+skips = [
+    "drain_and_route_field_events_web",
+    "drive_npc_clips",
+    "poll_field_shop",
+    "poll_game_over",
+    "route_bgm_wasm",
+    "service_cutscene_fmv",
+    "step_field_vram_fx",
+    "tick_battle_intro",
+    "tick_battle_presentation",
+    "tick_camera",
+    "tick_dev_menu",
+    "tick_field_party_hud",
+    "tick_fishing_banners",
+    "tick_minigame_ui",
+    "tick_mode_seat",
+    "tick_passive_hud",
+    "tick_play_clock",
+    "tick_sfx",
+    "tick_world_effects",
+]
+
+[[frame_arm]]
+host = "web"
+arm = "!fmv_handoff_scene.is_empty()"
+reason = """
+The post-movie hand-off loaded a scene: the arm rebuilds the page's render
+state, restages the scene's audio bank and returns the label so the page
+swaps its geometry. The two skipped steps both key on the scene that is being
+replaced - a merchant armed in the outgoing scene's script is gone with it,
+and the NPC clip players are rebuilt by `build_npc_clips` on the far side of
+the rebuild this arm performs.
+"""
+skips = ["drive_npc_clips", "poll_field_shop"]
+
+[[frame_arm]]
+host = "web"
+arm = "SceneTickEvent::SceneEntered"
+reason = """
+A door swapped the scene this tick, and the arm does the same rebuild + audio
+restage as the FMV hand-off above, for the same two skipped steps and the same
+reason.
+"""
+skips = ["drive_npc_clips", "poll_field_shop"]
+
+# --- page: the browser's OTHER frame path, in JavaScript --------------------
+
+[[frame_arm]]
+host = "page"
+arm = "advance && !menuOpen && !shopOpen && !namingOpen"
+reason = """
+`site/js/play-app.js::_frame` calls `rt.tick_frame()` inside this guard and
+`this._drawOverlay()` outside it, so on a guarded frame the page draws with
+NO kernel having run - all nineteen at once, from whatever answer they last
+held. Three of the four terms are panels that suspend the field on the engine
+side as well (the pause menu, a field merchant's op-`0x49`, the naming
+prompt); the fourth is the page's own pause / step-one-frame control.
+
+This is disclosed rather than closed because the guard is the page's field
+freeze and moving the tick outside it would advance the world under a menu.
+What is closed instead is the consequence: the two kernels whose answers a
+guarded frame still DRAWS - the field party readout and the passive-ability
+badge column - now ask the suppress gate on the draw path as well as on the
+tick, so a stale decision cannot reach the screen. Any kernel added to
+`tick_frame` whose output the page draws on a guarded frame needs the same
+treatment, and this row is where that is recorded.
+"""
+skips = [
+    "drain_and_route_field_events_web",
+    "drive_npc_clips",
+    "poll_field_shop",
+    "poll_game_over",
+    "route_bgm_wasm",
+    "service_cutscene_fmv",
+    "step_field_vram_fx",
+    "tick_battle_intro",
+    "tick_battle_presentation",
+    "tick_camera",
+    "tick_dev_menu",
+    "tick_field_party_hud",
+    "tick_fishing_banners",
+    "tick_minigame_ui",
+    "tick_mode_seat",
+    "tick_passive_hud",
+    "tick_play_clock",
+    "tick_sfx",
+    "tick_world_effects",
+]
+
+# --- kernel pairing: the same step under two names -------------------------
+
+[[frame_kernel]]
+native = "apply_world_clut_fx"
+web = "step_field_vram_fx"
+reason = "Both drain the world's banked CLUT-cell effects and ambient palette cyclers against the host's CPU VRAM through the same four engine calls (`step_ambient_fx`, `step_clut_fx`, `apply_script_vram_moves`, `apply_vram_rect_copies`)."
+
+[[frame_kernel]]
+native = "drain_and_route_field_events"
+web = "drain_and_route_field_events_web"
+reason = "The same drain of `World::pending_field_events`; the `_web` suffix is the browser's copy, not a different step."
+
+[[frame_kernel]]
+native = "drain_and_log_battle_events"
+web = "tick_battle_presentation"
+reason = "Both fold the battle SM's events into world state and refresh the HUD rows through `sync_battle_hud_rows`. They are not equal - the native side also drains the shout / XA / effect-spawn cue lanes - but they are one step in each host's frame path, and the cue-lane difference is tier 3's question, not this tier's."
+
+[[frame_kernel]]
+native = "tick_minigame_extras"
+web = "tick_minigame_ui"
+reason = "Each host's one per-frame minigame step. Their contents differ (the native one also runs the fishing venue actors and the dance count-in spawns), which is a gap recorded in host-drift.md's `Known gaps` rather than here."
+
+[[frame_kernel]]
+native = "tick_field_prop_anims"
+web = "drive_npc_clips"
+reason = "Both advance the scene's posed actors one frame off their clip players. The native step also posts the player's contact edges to resume bind scripts; the page's contact edges are posted from its own walk handler."
+
+# --- kernel pairing: one host's frame path only ----------------------------
+
+[[frame_kernel]]
+host = "native"
+kernel = "advance_ocean_animation"
+host_only = true
+reason = "The world map's 13-frame ocean CLUT cycle. The page reaches the same cycle through `step_field_vram_fx`'s `step_ambient_fx` leg against its own VRAM copy, so it needs no separate step."
+
+[[frame_kernel]]
+host = "native"
+kernel = "check_battle_vram_residency"
+host_only = true
+reason = "A native-only repair: the window uploads battle textures into a wgpu-resident VRAM image, and any path that re-uploads over them has to be caught and undone. The page re-reads `field_vram_bytes` whenever `field_vram_take_dirty` reports a change, so its equivalent is a pull, not a per-frame check."
+
+[[frame_kernel]]
+host = "native"
+kernel = "drain_baka_sfx_cues"
+host_only = true
+reason = "The Baka Fighter exchange-hit cues. The page drains every minigame cue lane in one place (`drain_minigame_sfx_cues_web`, inside `tick_sfx`) rather than one lane per kernel."
+
+[[frame_kernel]]
+host = "native"
+kernel = "maybe_install_demo_tile_board"
+host_only = true
+reason = "The window's `LEGAIA_TILE_BOARD_DEMO=1` env trigger, which a browser cannot set. The page reaches the same `World::try_install_tile_board` bytecode from its own explicit control (`play_tile_board.rs`), so the capability is on both hosts and only the trigger is native."
+
+[[frame_kernel]]
+host = "native"
+kernel = "rebind_live_npc_models"
+host_only = true
+reason = "The window has to upload a re-bound mesh before it can draw it, so the swap is a per-frame step. The page resolves the same `World::field_npc_live_model` at read time, from JS, when it asks for the mesh."
+
+[[frame_kernel]]
+host = "native"
+kernel = "sync_dialog_panel"
+host_only = true
+reason = "The window's own typed-out dialog panel, used only while `World::toggles.use_vm_dialogue` is off - the pre-field-VM fallback. Both hosts draw the production path from the shared `DialogSnapshot`, which needs no per-frame host step."
+
+[[frame_kernel]]
+host = "native"
+kernel = "sync_text_balloon"
+host_only = true
+reason = "Commits the `4C E1` balloon's measured width while `self` is still mutable, because the window's draw passes take `&self`. The page measures in its own draw builder, which has no such split."
+
+[[frame_kernel]]
+host = "native"
+kernel = "tick_muscle_time_meter"
+host_only = true
+reason = "The Muscle Dome round timer. The page runs the same `DomeContest::tick_time_meter` from inside `tick_minigame_ui`."
+
+[[frame_kernel]]
+host = "web"
+kernel = "service_cutscene_fmv"
+host_only = true
+reason = "The page's FMV beat service. The native window runs the same beat above its tick loop, in `handle_redraw` itself (`try_start_windowed_cutscene` + `apply_pending_fmv_handoff`), where it can hold the whole frame for the video."
+
+[[frame_kernel]]
+host = "web"
+kernel = "tick_camera"
+host_only = true
+reason = "The page drives the engine camera itself; the native window gets the same sequence inside `BootSession::tick`, which the page does not use."
+
+[[frame_kernel]]
+host = "web"
+kernel = "tick_world_effects"
+host_only = true
+reason = "One page-side wrapper over the five effect steps the native loop spells out inline (the two spawn-request drains plus `tick_summon` / `tick_move_fx` / `tick_field_fx`)."
+
+[[frame_kernel]]
+host = "web"
+kernel = "tick_sfx"
+host_only = true
+reason = "The page's SFX channel: footstep cadence, delay scheduler, matured cues. The native window's equivalent is split across `tick_menu_sfx` and the `AudioBgmDirector`'s own per-frame `tick_sfx_frame`."
+
+[[frame_kernel]]
+host = "web"
+kernel = "tick_battle_intro"
+host_only = true
+reason = "Caches the field-to-battle transition's screen-prim geometry for the page's pass. The native window builds the same prims in its draw section, after the tick loop, where it already holds the frame's geometry."
+
+[[frame_kernel]]
+host = "web"
+kernel = "poll_game_over"
+host_only = true
+reason = "The party-wipe probe. The native window runs the identical probe inline at the top of its tick loop rather than as a named step."
+
+[[frame_kernel]]
+host = "web"
+kernel = "tick_mode_seat"
+host_only = true
+reason = "Reconciles the retail mode word with the world's scene mode. The native window reaches the same `ModeSeat::adopt_world_mode` through `BootSession::tick`."
+
+[[frame_kernel]]
+host = "web"
+kernel = "tick_passive_hud"
+host_only = true
+reason = "The passive-ability badge column's projection. The page's draw pass has no camera and no `&mut self`, so the anchor is resolved on the tick and cached; the native window projects inside `passive_hud_draws`, which is handed the frame's camera matrix."
+
+[[frame_kernel]]
+host = "web"
+kernel = "route_bgm_wasm"
+host_only = true
+reason = "Routes the field VM's op-`0x35` BGM events into `WebAudioOut`. The native window's `AudioBgmDirector` consumes the same events off its own output."
+
+[[frame_kernel]]
+host = "web"
+kernel = "poll_field_shop"
+host_only = true
+reason = "Hands an op-`0x49` merchant to the menu runtime. The native window does the same `take_pending_field_shop` / `open_shop_menu` pair inline in its tick loop."

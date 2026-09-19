@@ -1652,6 +1652,13 @@ def run_selftest() -> int:
         else:
             failures += 1
             print(f"  FAIL  call form: {label}")
+    for label, src, anchor, word, arm, want in SELFTEST_FRAME:
+        got = _selftest_frame_case(src, anchor, word, arm)
+        if got == want:
+            print(f"  ok    frame path: {label}")
+        else:
+            failures += 1
+            print(f"  FAIL  frame path: {label} - skips {got}, expected {want}")
     total = (
         len(SELFTEST_WORDS)
         + len(SELFTEST_SCREENS)
@@ -1665,6 +1672,7 @@ def run_selftest() -> int:
         + len(SELFTEST_OWNERSHIP)
         + len(SELFTEST_VARIANT_USE)
         + len(SELFTEST_CALL_FORM)
+        + len(SELFTEST_FRAME)
     )
     if failures:
         print(
@@ -2793,6 +2801,571 @@ SELFTEST_CALL_FORM: list[tuple[str, str, str, bool]] = [
 ]
 
 
+# --------------------------------------------------------------------------
+# Tier 11 - frame-path completeness: does an early exit skip a kernel the
+# frame still draws?
+# --------------------------------------------------------------------------
+#
+# Every tier above measures what a host *has*: a builder it reaches, a
+# constant it declares, a kernel it names, a type it owns, a variant it
+# answers, an entry it arms. This one measures what a host *runs this frame*,
+# and the difference is a whole class of defect none of them can see.
+#
+# The shape. Both hosts drive the engine through one frame path - the native
+# window's redraw tick loop, the browser runtime's `tick_frame` - and both
+# paths short-circuit. The native loop `continue`s out of several arms (the
+# boot UI owns the frame, the name-entry overlay is modal, a prologue
+# hand-off swapped scenes, the narration crawl owns the pad, a Start edge
+# just opened the pause menu); the browser `return`s out of its own. The
+# *draw* does not short-circuit with them: the native draw passes run after
+# the loop whatever an iteration did, and `tick_frame` returns to a page that
+# draws either way. So an arm that skips a per-frame kernel does not skip the
+# draw that reads that kernel's answer - the host paints last frame's
+# decision, for as long as the arm is taken.
+#
+# That is not hypothetical. The native field party HUD's decision kernel
+# (`FieldPartyHud::tick`, retail `FUN_801D0D38`) is stepped once per tick in
+# the fall-through path, and its suppression predicate names the boot UI
+# explicitly - but the boot-UI arm `continue`d before the step, so the kernel
+# never saw the state it was written to suppress on and kept its last
+# pre-menu `Draw`. The party readout stayed painted under every pause-menu
+# frame the native window drew. The browser page has no such arm and never
+# showed it, so the two hosts differed on screen with every tier above green:
+# no builder was missing (both hosts call the same one), no constant was
+# paired, no injection site diverged (both hosts *have* the call), no render
+# kernel was absent, no type unowned, no variant unanswered, no entry
+# hotkey-only.
+#
+# Scope, stated as narrowly as the tiers above. This tier reads the two frame
+# paths and asks two questions of them:
+#
+#   1. Completeness. For each early exit, the fall-through kernels that come
+#      after it are the ones that arm skips. Each must either be called
+#      inside the arm's own block, or be listed in that arm's waiver with a
+#      reason - which is how "this arm deliberately freezes the world" gets
+#      written down once instead of being re-derived per reader.
+#   2. Pairing. Each host's frame path is a list of kernels, and a kernel one
+#      host ticks every frame while the other does not is a simulation the
+#      two hosts do not share. Names differ across the two crates
+#      (`tick_minigame_extras` / `tick_minigame_ui`), so an alias row pairs
+#      them and a `host_only` row declares the ones that really are one
+#      host's.
+#
+# What it does not prove: that a kernel an arm runs runs *correctly* there,
+# that the draw pass reads what the kernel wrote, or that two paired kernels
+# do the same thing (that is tier 3's question, asked of hand-named pairs).
+# It proves only that no arm silently drops a step the fall-through path
+# takes, and that neither host's per-frame list has grown a member the
+# other's has not.
+#
+# The ratchet is the `skips` list on each waiver row. One that no longer
+# matches is stale and fails; a kernel added to the fall-through path lands
+# in none of the arms' lists and fails on every arm at once - which is
+# exactly the moment to decide, per arm, whether the new step belongs there.
+
+FRAME_PATHS: dict[str, dict] = {
+    "native": {
+        "path": NATIVE_REDRAW,
+        # The window's per-tick body. `handle_redraw` runs it up to four
+        # times per rendered frame (the catch-up drain) and then draws once,
+        # so every `continue` here returns to a frame that still draws.
+        "anchor": "for _ in 0..run_ticks",
+        "exit": "continue",
+    },
+    "web": {
+        "path": WEB_RUNTIME,
+        # The page's per-animation-frame entry. Its `return`s hand control
+        # back to the JS that reads the draw lists, so they are the same
+        # shape as the native `continue`s.
+        "anchor": "pub fn tick_frame(&mut self)",
+        "exit": "return",
+    },
+}
+
+# `self.<name>(` calls that are not per-frame kernels: input plumbing and
+# render-state rebuilds, which are events rather than steps. A named list
+# rather than a name-prefix rule, because a prefix rule ("tick_", "poll_")
+# silently drops a kernel the moment one is named otherwise - and the
+# fall-through paths already carry `advance_ocean_animation`,
+# `apply_world_clut_fx`, `rebind_live_npc_models`,
+# `check_battle_vram_residency`, `maybe_install_demo_tile_board` and
+# `service_cutscene_fmv`, none of which such a rule would find.
+FRAME_PATH_NON_KERNELS = {
+    "handle_key",
+    "rebuild_scene_render_state",
+    "rebuild_render_state",
+}
+
+SELF_CALL_RE = re.compile(r"self\.([a-z_][a-z_0-9]*)\s*\(")
+EXIT_WORD_RE = re.compile(r"\b(continue|return)\b")
+# An arm's header starts at the line-start keyword that opens it. Scanning
+# back to the nearest `;`/`{`/`}` instead is not enough: `if let
+# SceneTickEvent::SceneEntered { name } = event {` carries braces inside its
+# own pattern, and the nearest-brace rule reports that arm as `= event`.
+ARM_HEAD_RE = re.compile(
+    r"(?m)^[ \t]*\}?\s*"
+    r"((?:else\s+if\s+let|else\s+if|else|if\s+let|if|while\s+let|while|let|match)\b)"
+)
+# How far back an arm header may reasonably start. Past this the nearest-
+# boundary rule is used instead, so a pathological span cannot swallow the
+# statement above it.
+ARM_HEAD_WINDOW = 600
+
+
+def brace_block(text: str, start: int) -> tuple[int, int]:
+    """`(body_start, body_end)` of the brace block opening at/after `start`."""
+    open_at = text.index("{", start)
+    depth = 0
+    for i in range(open_at, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return open_at + 1, i
+    raise ValueError("unbalanced braces")
+
+
+def normalise_condition(src: str) -> str:
+    """Collapse an arm header to one line, for matching and for printing."""
+    return " ".join(src.split())
+
+
+def frame_path_scan(host: str) -> tuple[list[tuple[str, int]], list[dict]]:
+    """`(kernels, arms)` for one host's frame path.
+
+    `kernels` is the fall-through list: every `self.<name>(` call at the
+    body's own nesting depth, in source order. `arms` is one record per early
+    exit nested inside it, carrying the arm's header text, the calls made
+    within the arm's block, and the fall-through kernels it therefore skips.
+    """
+    spec = FRAME_PATHS[host]
+    text = spec.get("_source")
+    if text is None:
+        text = strip_comments((REPO / spec["path"]).read_text(encoding="utf-8"))
+    body_start, body_end = brace_block(text, text.index(spec["anchor"]))
+    body = text[body_start:body_end]
+    base_line = text.count("\n", 0, body_start) + 1
+
+    # One pass: nesting depth, the stack of open-brace offsets, every call
+    # site and every exit word.
+    depth = 0
+    stack: list[int] = []
+    line = base_line
+    kernels: list[tuple[str, int]] = []
+    calls: list[tuple[int, str]] = []  # (offset, name)
+    exits: list[tuple[int, int]] = []  # (enclosing block `{` offset, line)
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch == "\n":
+            line += 1
+            i += 1
+            continue
+        if ch == "{":
+            depth += 1
+            stack.append(i)
+            i += 1
+            continue
+        if ch == "}":
+            depth -= 1
+            if stack:
+                stack.pop()
+            i += 1
+            continue
+        m = SELF_CALL_RE.match(body, i)
+        if m:
+            name = m.group(1)
+            if name not in FRAME_PATH_NON_KERNELS:
+                calls.append((i, name))
+                if depth == 0:
+                    kernels.append((name, line))
+            i = m.end() - 1
+            continue
+        m2 = EXIT_WORD_RE.match(body, i)
+        if m2:
+            prev = body[i - 1] if i else " "
+            if m2.group(1) == spec["exit"] and not (prev.isalnum() or prev == "_"):
+                # Only an exit nested in an arm can skip anything; one at the
+                # body's own depth is the path's end, not a short circuit.
+                if depth >= 1 and stack:
+                    exits.append((stack[-1], line))
+            i = m2.end()
+            continue
+        i += 1
+
+    arms: list[dict] = []
+    seen_blocks: set[int] = set()
+    for block_open, exit_line in exits:
+        if block_open in seen_blocks:
+            continue
+        seen_blocks.add(block_open)
+        # The arm header is the source from the end of the previous statement
+        # or block up to this block's `{` - `if <cond>`, `if let <pat> = <e>`,
+        # `let <pat> = <e> else`, `else`.
+        head_from = max(
+            body.rfind(";", 0, block_open),
+            body.rfind("{", 0, block_open),
+            body.rfind("}", 0, block_open),
+        )
+        window = max(0, block_open - ARM_HEAD_WINDOW)
+        # The last line-start keyword whose span up to the arm's `{` is
+        # brace-balanced. Balance is what separates a pattern's own braces
+        # (`SceneEntered { name }`, balanced) from an enclosing block that
+        # merely happens to start with a keyword (`match m {`, unbalanced).
+        keyword = None
+        for m in ARM_HEAD_RE.finditer(body, window, block_open):
+            # From the KEYWORD, not the match: the optional `}` prefix that
+            # lets `} else {` be found would otherwise unbalance every span.
+            span = body[m.start(1) : block_open]
+            if span.count("{") == span.count("}"):
+                keyword = m.start(1)
+        if keyword is not None:
+            head_from = keyword - 1
+        header = normalise_condition(body[head_from + 1 : block_open])
+        block_end = brace_block(body, block_open)[1]
+        inside = {n for off, n in calls if block_open < off < block_end}
+        # A kernel the fall-through path runs after this arm's exit, and the
+        # arm does not run itself, is skipped for as long as the arm is taken.
+        skipped = [n for n, kline in kernels if kline > exit_line and n not in inside]
+        arms.append(
+            {
+                "header": header,
+                "line": exit_line,
+                "inside": inside,
+                "skips": sorted(dict.fromkeys(skipped)),
+            }
+        )
+    return kernels, arms
+
+
+# The browser host has a SECOND frame path, and it is not Rust. The page's
+# `_frame` calls `rt.tick_frame()` inside a guard and calls the overlay draw
+# outside it, so a guarded frame runs no kernel at all and still paints -
+# every kernel in `tick_frame`, at once, from whatever answer it last held.
+# A Rust-only scan is blind to this: `tick_frame` has no such arm, which is
+# how "the browser page has no early-out" came to be written down.
+WEB_PAGE_FRAME = "site/js/play-app.js"
+WEB_PAGE_FRAME_FN = "_frame(skipDraw)"
+WEB_PAGE_TICK_CALL = "rt.tick_frame()"
+WEB_PAGE_DRAW_CALL = "this._drawOverlay()"
+
+
+def page_frame_gates() -> tuple[list[str], bool]:
+    """`(guards, draw_call_found)` for the page's frame function.
+
+    `guards` is every `if (...)` condition the WASM per-frame call sits
+    inside and the overlay draw does not. An empty list means the page ticks
+    and draws under the same conditions, which is the shape that needs no
+    disclosure.
+    """
+    text = strip_all_comments((REPO / WEB_PAGE_FRAME).read_text(encoding="utf-8"))
+    body_start, body_end = brace_block(text, text.index(WEB_PAGE_FRAME_FN))
+    body = text[body_start:body_end]
+    tick_at = body.index(WEB_PAGE_TICK_CALL)
+    draw_at = body.rfind(WEB_PAGE_DRAW_CALL)
+
+    # The stack of open blocks at a given offset, as (block_open, header).
+    def open_blocks(at: int) -> list[tuple[int, str]]:
+        stack: list[int] = []
+        for i, ch in enumerate(body[:at]):
+            if ch == "{":
+                stack.append(i)
+            elif ch == "}" and stack:
+                stack.pop()
+        out = []
+        for open_at in stack:
+            head_from = max(
+                body.rfind(";", 0, open_at),
+                body.rfind("{", 0, open_at),
+                body.rfind("}", 0, open_at),
+            )
+            out.append((open_at, normalise_condition(body[head_from + 1 : open_at])))
+        return out
+
+    tick_stack = open_blocks(tick_at)
+    draw_stack = {b for b, _ in open_blocks(draw_at)} if draw_at >= 0 else set()
+    guards = [
+        head
+        for block_open, head in tick_stack
+        if block_open not in draw_stack and head.startswith("if")
+    ]
+    return guards, draw_at >= 0
+
+
+def load_frame_waivers() -> tuple[list[dict], list[dict]]:
+    if not WAIVERS.is_file():
+        return [], []
+    data = tomllib.loads(WAIVERS.read_text(encoding="utf-8"))
+    return data.get("frame_arm", []), data.get("frame_kernel", [])
+
+
+def check_frame_paths() -> tuple[list[str], list[str], dict[str, int]]:
+    problems: list[str] = []
+    notes: list[str] = []
+    arm_waivers, kernel_waivers = load_frame_waivers()
+    scans = {host: frame_path_scan(host) for host in FRAME_PATHS}
+    counts = {host: len(scans[host][0]) for host in FRAME_PATHS}
+    # The page's JS gate is an arm of the browser host like any other; it
+    # skips the WHOLE Rust frame path, so its skip list is that path.
+    page_guards, page_draw_found = page_frame_gates()
+    if page_guards:
+        scans["page"] = (
+            [],
+            [
+                {
+                    "header": guard,
+                    "line": 0,
+                    "inside": set(),
+                    "skips": sorted({n for n, _ in scans["web"][0]}),
+                }
+                for guard in page_guards
+            ],
+        )
+        counts["page (guards over the whole web path)"] = len(page_guards)
+    elif not page_draw_found:
+        problems.append(
+            f"FRAME PAGE {WEB_PAGE_FRAME}: could not locate "
+            f"`{WEB_PAGE_DRAW_CALL}` in `{WEB_PAGE_FRAME_FN}` - the gate "
+            f"cannot tell whether the page's tick and draw share a guard, "
+            f"and a detector that finds nothing reports every host clean."
+        )
+
+    # --- half 1: no arm silently drops a fall-through step ----------------
+    used_arm_waivers: set[int] = set()
+    for host, (_kernels, arms) in scans.items():
+        for arm in arms:
+            matched = [
+                (n, w)
+                for n, w in enumerate(arm_waivers)
+                if w.get("host") == host and str(w.get("arm", "")) in arm["header"]
+            ]
+            if len(matched) > 1:
+                problems.append(
+                    f"FRAME ARM {host} `{arm['header']}`: {len(matched)} waivers "
+                    f"match this arm - make each `arm` key name one arm only."
+                )
+                continue
+            waived: set[str] = set()
+            if matched:
+                idx, entry = matched[0]
+                used_arm_waivers.add(idx)
+                if not str(entry.get("reason", "")).strip():
+                    problems.append(
+                        f"FRAME ARM {host} `{arm['header']}`: needs a "
+                        f"non-empty `reason`."
+                    )
+                waived = set(entry.get("skips", []))
+                stale = sorted(waived - set(arm["skips"]))
+                if stale:
+                    problems.append(
+                        f"STALE FRAME-ARM WAIVER {host} `{entry.get('arm')}`: "
+                        f"{', '.join(stale)} - not skipped by this arm any "
+                        f"more (the arm runs it, or it left the frame path). "
+                        f"Drop it from `skips`."
+                    )
+            missing = [k for k in arm["skips"] if k not in waived]
+            if missing:
+                problems.append(
+                    f"FRAME ARM {host} `{arm['header']}` (line {arm['line']}) "
+                    f"skips {len(missing)} fall-through kernel(s) the frame "
+                    f"still draws after: {', '.join(missing)}. Either call "
+                    f"them on this arm, or list them in a `[[frame_arm]]` "
+                    f"waiver with a reason."
+                )
+            else:
+                notes.append(
+                    f"{host} arm `{arm['header']}`: "
+                    f"{len(arm['skips'])} kernel(s) skipped, all disclosed"
+                )
+    for n, entry in enumerate(arm_waivers):
+        if n not in used_arm_waivers:
+            problems.append(
+                f"STALE FRAME-ARM WAIVER {entry.get('host')} "
+                f"`{entry.get('arm')}`: matches no arm of that host's frame "
+                f"path (renamed, merged or deleted?). Drop the waiver."
+            )
+
+    # --- half 2: neither host's per-frame list has an unpaired member -----
+    native = {n for n, _ in scans["native"][0]}
+    web = {n for n, _ in scans["web"][0]}
+    aliases: dict[str, str] = {}
+    solo: dict[tuple[str, str], dict] = {}
+    for entry in kernel_waivers:
+        if entry.get("host_only"):
+            solo[(str(entry.get("host")), str(entry.get("kernel")))] = entry
+        else:
+            aliases[str(entry.get("native"))] = str(entry.get("web"))
+    for host, mine, theirs in (("native", native, web), ("web", web, native)):
+        for name in sorted(mine):
+            if name in theirs:
+                continue
+            if host == "native":
+                twin = aliases.get(name)
+            else:
+                twin = next((n for n, w in aliases.items() if w == name), None)
+            if twin is not None:
+                if twin in theirs:
+                    continue
+                problems.append(
+                    f"STALE FRAME-KERNEL ALIAS `{name}` <-> `{twin}`: the "
+                    f"other host's frame path no longer calls its half."
+                )
+                continue
+            entry = solo.get((host, name))
+            if entry is None:
+                problems.append(
+                    f"FRAME KERNEL {host}-only: `{name}` is ticked every frame "
+                    f"by the {host} host and by no arm of the other host's "
+                    f"frame path. Tick it there too, or declare it with a "
+                    f"`[[frame_kernel]]` row (`host_only`, or an alias for a "
+                    f"differently-named twin)."
+                )
+            elif not str(entry.get("reason", "")).strip():
+                problems.append(
+                    f"FRAME KERNEL {host}-only `{name}`: needs a non-empty "
+                    f"`reason`."
+                )
+            else:
+                notes.append(f"{host}-only kernel: {name} - {entry['reason']}")
+    for (host, name), entry in solo.items():
+        mine = native if host == "native" else web
+        theirs = web if host == "native" else native
+        if not str(entry.get("reason", "")).strip():
+            continue  # already reported above when it was reached
+        if name not in mine:
+            problems.append(
+                f"STALE FRAME-KERNEL WAIVER {host} `{name}`: not on that "
+                f"host's frame path any more. Drop the waiver."
+            )
+        elif name in theirs:
+            problems.append(
+                f"STALE FRAME-KERNEL WAIVER {host} `{name}`: both hosts tick "
+                f"it now - the gap is closed. Drop the waiver."
+            )
+    for a, b in aliases.items():
+        if a not in native or b not in web:
+            problems.append(
+                f"STALE FRAME-KERNEL ALIAS `{a}` <-> `{b}`: one side is no "
+                f"longer on its host's frame path. Drop or re-point the row."
+            )
+    return problems, notes, counts
+
+
+# Control suite for the frame-path scanner, over synthetic frame paths. The
+# first pair is the defect this tier was written for and its fix, in shape: an
+# arm that `continue`s before a kernel the fall-through path runs, and the
+# same arm with the kernel stepped on it. Each case is `(label, source,
+# anchor, exit_word, arm_substring, expected_skips)`.
+SELFTEST_FRAME: list[tuple[str, str, str, str, str, list[str]]] = [
+    (
+        "an arm that continues before a kernel skips it",
+        "for _ in 0..n {\n"
+        "    if self.boot_ui.is_active() {\n"
+        "        self.tick_boot_ui();\n"
+        "        self.prev_pad = self.pad;\n"
+        "        continue;\n"
+        "    }\n"
+        "    self.tick_field_party_hud();\n"
+        "}",
+        "for _ in 0..n",
+        "continue",
+        "self.boot_ui.is_active()",
+        ["tick_field_party_hud"],
+    ),
+    (
+        "the same arm stepping the kernel skips nothing",
+        "for _ in 0..n {\n"
+        "    if self.boot_ui.is_active() {\n"
+        "        self.tick_boot_ui();\n"
+        "        self.tick_field_party_hud();\n"
+        "        continue;\n"
+        "    }\n"
+        "    self.tick_field_party_hud();\n"
+        "}",
+        "for _ in 0..n",
+        "continue",
+        "self.boot_ui.is_active()",
+        [],
+    ),
+    (
+        "a kernel ABOVE the exit has already run this iteration",
+        "for _ in 0..n {\n"
+        "    self.tick_play_clock();\n"
+        "    if self.paused {\n"
+        "        continue;\n"
+        "    }\n"
+        "    self.tick_dev_menu();\n"
+        "}",
+        "for _ in 0..n",
+        "continue",
+        "self.paused",
+        ["tick_dev_menu"],
+    ),
+    (
+        "a `let ... else` return arm is an arm",
+        "fn tick_frame(&mut self) {\n"
+        "    let Some(h) = self.host.as_mut() else {\n"
+        "        return;\n"
+        "    };\n"
+        "    self.tick_camera();\n"
+        "}",
+        "fn tick_frame(&mut self)",
+        "return",
+        "let Some(h) = self.host.as_mut() else",
+        ["tick_camera"],
+    ),
+    (
+        "a nested return still names its own arm",
+        "fn tick_frame(&mut self) {\n"
+        "    self.tick_camera();\n"
+        "    if entered {\n"
+        "        self.on_scene_change();\n"
+        "        return;\n"
+        "    }\n"
+        "    self.poll_field_shop();\n"
+        "    self.drive_npc_clips();\n"
+        "}",
+        "fn tick_frame(&mut self)",
+        "return",
+        "if entered",
+        ["drive_npc_clips", "poll_field_shop"],
+    ),
+    (
+        "an exit at the path's own depth is the end, not an arm",
+        "fn tick_frame(&mut self) {\n"
+        "    self.tick_camera();\n"
+        "    return;\n"
+        "}",
+        "fn tick_frame(&mut self)",
+        "return",
+        "",
+        ["<arm not found>"],
+    ),
+]
+
+
+def _selftest_frame_case(
+    src: str, anchor: str, exit_word: str, arm_sub: str
+) -> list[str]:
+    """Run the arm scanner over one synthetic frame path."""
+    FRAME_PATHS["__selftest__"] = {
+        "path": None,
+        "anchor": anchor,
+        "exit": exit_word,
+        "_source": src,
+    }
+    try:
+        _kernels, arms = frame_path_scan("__selftest__")
+    finally:
+        FRAME_PATHS.pop("__selftest__", None)
+    if not arms:
+        return ["<arm not found>"]
+    for arm in arms:
+        if arm_sub and arm_sub in arm["header"]:
+            return arm["skips"]
+    return ["<arm not found>"]
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--quiet", action="store_true", help="findings only")
@@ -3039,6 +3612,11 @@ def main() -> int:
     entry_problems, entry_pending, entry_methods = check_entry_symmetry()
     problems.extend(entry_problems)
 
+    # The frame half: an arm that short-circuits the frame path without
+    # short-circuiting the draw that reads what it skipped.
+    frame_problems, frame_notes, frame_counts = check_frame_paths()
+    problems.extend(frame_problems)
+
     if not args.quiet:
         print(
             f"[ui-drift] engine-ui draw builders: {len(builders)} "
@@ -3099,6 +3677,15 @@ def main() -> int:
         )
         for note in entry_pending:
             print(f"[ui-drift] hotkey-only: {note}")
+        print(
+            "[ui-drift] per-frame kernels on each host's frame path: "
+            + ", ".join(f"{h} {n}" for h, n in sorted(frame_counts.items()))
+        )
+        # Name every disclosure, for the reason the native-only builders
+        # below are named: a count cannot tell "the same arms as yesterday"
+        # from "an arm gained a skip and another lost one".
+        for note in frame_notes:
+            print(f"[ui-drift] frame path: {note}")
         if web_ahead:
             print(f"[ui-drift] web-ahead (informational): {', '.join(web_ahead)}")
         # Name every native-only builder, waived or not, for the same reason
