@@ -701,7 +701,7 @@ Those are two different builder families in the SCUS content builder
 
 | Family | Content ids | Reads | Accepts |
 |---|---|---|---|
-| armament | `0x15`..`0x18` (also `7`..`10`) | the row's equip byte | item record `+0` class `1`, the equipment `+7` category matching the row's, and the `+6` character mask against `0x801E43F0[char]` |
+| armament | `0x15`..`0x18` (also `7`..`10`) | the row's equip byte | item record `+0` class `1`, the equipment `+7` category matching the row's, and the `+6` character mask against the builder's own `0x8007B48C[char]` byte (`lui 0x8008` / `addiu -0x4b74` at `0x80031538`) |
 | Goods | `0x1C`..`0x1E` (also `0xE`..`0x10`) | equip bytes `5` / `6` / `7` | item record `+0` class **2**, and the item-effect record's `+3` byte other than `0x41` |
 
 The Goods filter is `lbu` class, `bne` against `2` at `0x800317D8`, then the

@@ -129,10 +129,10 @@ fn the_shop_window_ids_resolve_to_the_painters_the_host_expects() {
 }
 
 /// Window 35, the buy-quantity readout, has **no** painter variant: its
-/// content renderer `FUN_801D5510` is ported as a pens-returning kernel
-/// (`engine-core::shop::shop_buy_quantity_panel`), so `painter_at` cannot
-/// resolve it and both hosts guard the id with the descriptor's own
-/// `renderer_va` instead.
+/// content renderer `FUN_801D5510` is ported as an `engine-ui` builder both
+/// hosts call directly (`buy_quantity_draws_for`) rather than through a
+/// `MenuWindowPainter`, so `painter_at` cannot resolve it and both hosts
+/// guard the id with the descriptor's own `renderer_va` instead.
 ///
 /// That guard is only as good as the constant it compares against, and a
 /// unit test on either host would just restate its own literal. This asserts
