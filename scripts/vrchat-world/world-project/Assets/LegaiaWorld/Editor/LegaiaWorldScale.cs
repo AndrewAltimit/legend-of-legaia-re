@@ -161,6 +161,41 @@ namespace LegaiaWorld
                     main.scalingMode = ParticleSystemScalingMode.Hierarchy;
                 }
             }
+            // Interact reach: an UdonBehaviour's `proximity` (and a
+            // pickup's) is metres from the player, not a transform, so a
+            // scaled cabinet's buttons keep their 1x reach until this
+            // grows it - what "the buttons have too short a range" was.
+            foreach (string typeName in new[] { "VRC.Udon.UdonBehaviour",
+                                                "VRC.SDK3.Components.VRCPickup" })
+            {
+                var type = LegaiaWorldBuilder.FindType(typeName);
+                if (type == null)
+                    continue;
+                var field = type.GetField("proximity");
+                var prop = field == null ? type.GetProperty("proximity") : null;
+                if (field == null && (prop == null || !prop.CanWrite))
+                {
+                    Debug.LogWarning("[Legaia] world scale: " + typeName + " has no " +
+                        "proximity member - interact reach left at 1x (SDK drift?).");
+                    continue;
+                }
+                int reached = 0;
+                foreach (var c in go.GetComponentsInChildren(type, true))
+                {
+                    var comp = c as Component;
+                    float v = (float)(field != null ? field.GetValue(comp) : prop.GetValue(comp));
+                    Undo.RecordObject(comp, "Legaia world scale");
+                    if (field != null)
+                        field.SetValue(comp, v * factor);
+                    else
+                        prop.SetValue(comp, v * factor);
+                    EditorUtility.SetDirty(comp);
+                    reached++;
+                }
+                if (reached > 0)
+                    Debug.Log("[Legaia] world scale: interact reach x" + factor.ToString("0.###") +
+                        " on " + reached + " " + typeName + "(s) under " + go.name + ".");
+            }
             foreach (var kv in UDON_METRE_FIELDS)
             {
                 var type = LegaiaWorldBuilder.FindType(kv.Key);
