@@ -684,18 +684,13 @@ pub const POLAR_SHIFT: u32 = 12;
 // callers), FUN_801d0fa8 (the reel renderer, which reads the same tables
 // inline and is NOT a caller)
 
-// NOT WIRED: the earlier reason here - "nothing in the engine decodes either
-// table, so no caller can supply one" - does not hold, and neither does its
-// claim about the callers. Both tables are **static SCUS rodata**, installed
-// once at boot by `FUN_80026be0` (`_DAT_8007B81C = &DAT_80070A2C`,
-// `_DAT_8007B7F8 = &DAT_8007122C`), and `legaia_asset::minigame_slot_scene`
-// already names them ([`SIN_TABLE_VA`] / [`COS_TABLE_VA`]) and synthesises
-// both; the play window materialises one for the fishing sway. The real gap is
-// the **lure point**: every retail call site is a facing-relative offset in the
-// fishing overlay, and the cast that creates the point this helper offsets from
-// is exactly what [`crate::fishing_actors::walk_grid_overhead`] and
-// [`crate::fishing_actors::water_tile_class`] also wait on. Those three rows
-// are one gap, not three.
+// Wired: [`crate::fishing_actors::LureActor::cast`] offsets the cast lure
+// from the angler's facing through this, over the pair [`polar_tables`]
+// materialises, and both fishing hosts reach that. The gap the previous note
+// named - the **lure point** - is what closed; its two companion rows
+// ([`crate::fishing_actors::walk_grid_overhead`] and
+// [`crate::fishing_actors::water_tile_class`]) closed with it, as that note
+// predicted they would.
 //
 // [`SIN_TABLE_VA`]: legaia_asset::minigame_slot_scene::SIN_TABLE_VA
 // [`COS_TABLE_VA`]: legaia_asset::minigame_slot_scene::COS_TABLE_VA
@@ -752,6 +747,35 @@ pub fn polar_offset(
     let b = *table_b.get(i)? as i32;
     let fold = |t: i32| (t.wrapping_mul(radius).wrapping_mul(scale)) >> POLAR_SHIFT;
     Some((fold(a), fold(b)))
+}
+
+/// The quadrature pair [`polar_offset`] reads, materialised once.
+///
+/// Retail reaches the same two tables through `_DAT_8007B81C` /
+/// `_DAT_8007B7F8`, which `FUN_80026be0` points at the SCUS rodata at
+/// [`SIN_TABLE_VA`] / [`COS_TABLE_VA`]. No engine boot path extracts SCUS
+/// rodata, so the entries are recomputed analytically with the retail table's
+/// truncate-toward-zero rounding - the same stand-in
+/// `legaia_asset::minigame_slot_scene` uses, and the disc is its oracle
+/// (`engine-core/tests/minigame_polar_trig_tables_disc.rs`).
+///
+/// [`SIN_TABLE_VA`]: legaia_asset::minigame_slot_scene::SIN_TABLE_VA
+/// [`COS_TABLE_VA`]: legaia_asset::minigame_slot_scene::COS_TABLE_VA
+pub fn polar_tables() -> (&'static [i16], &'static [i16]) {
+    use std::sync::OnceLock;
+    static TABLES: OnceLock<(Vec<i16>, Vec<i16>)> = OnceLock::new();
+    let (s, c) = TABLES.get_or_init(|| {
+        let n = POLAR_ANGLE_MASK as usize + 1;
+        (
+            (0..n)
+                .map(|i| legaia_asset::minigame_slot_scene::sin_4096(i as i32) as i16)
+                .collect(),
+            (0..n)
+                .map(|i| legaia_asset::minigame_slot_scene::cos_4096(i as i32) as i16)
+                .collect(),
+        )
+    });
+    (s.as_slice(), c.as_slice())
 }
 
 #[cfg(test)]

@@ -362,6 +362,16 @@ impl PlayWindowApp {
         self.session.host.index.entry_bytes_extended(idx).ok()
     }
 
+    /// The venue map's `+0x10000` region block - the table the lure's water
+    /// class walks (`FUN_800180EC`'s input).
+    fn venue_region_block(&self) -> Option<Vec<u8>> {
+        let scene = self.session.host.scene.as_ref()?;
+        scene
+            .field_map_region_block(&self.session.host.index)
+            .ok()
+            .flatten()
+    }
+
     /// The fishing venue's actor-side frame: the free-swimming fish wander
     /// (idle/cast), the venue floor solve for its height, the retail camera
     /// publish, the reeling-line actor across hook -> fight -> celebration,
@@ -374,6 +384,8 @@ impl PlayWindowApp {
             self.fish_wander = None;
             self.fish_line = None;
             self.fishing_floor = None;
+            self.fishing_regions = None;
+            self.fish_lure = None;
             self.fishing_sway_offset = (0, 0);
             return;
         }
@@ -395,6 +407,7 @@ impl PlayWindowApp {
         if self.fish_wander.is_none() {
             self.fish_wander = Some(fa::FishWander::new(0x400, 0, 0x400));
             self.fishing_floor = self.venue_floor_bytes();
+            self.fishing_regions = self.venue_region_block();
             let reset = fc::venue_camera_reset();
             let g = &mut self.session.camera.globals.0;
             g[0] = reset.rot[0] as i32;
@@ -463,6 +476,14 @@ impl PlayWindowApp {
                     0x40,
                 ));
                 self.fish_line = Some(fa::LineActorSim::hooked());
+                // The cast lands: the lure spawns a fixed radius ahead of the
+                // venue anchor along the angler's facing, the same
+                // subtraction retail runs in the fishing SM's cast arm.
+                let facing = self.fish_wander.as_ref().map(|w| w.facing).unwrap_or(0);
+                let (ax, az) = fa::VENUE_ANCHOR;
+                self.session.host.world.minigames.fishing_casts += 1;
+                self.fish_lure =
+                    fa::LureActor::cast(ax, az, facing, 1).map(|l| (l, Default::default()));
             }
             (Some(FishingPhase::Fighting), FishingPhase::Done) => {
                 if let (Some(line), Some(FightOutcome::Landed { points })) =
@@ -475,12 +496,27 @@ impl PlayWindowApp {
             }
             _ => {}
         }
+        // The lure's own frame while the line is out: the walk-grid drift and
+        // the water class of the tile it sits over.
+        if let (Some((lure, probe)), Some(buf)) =
+            (self.fish_lure.as_mut(), self.fishing_floor.as_ref())
+        {
+            let region = self
+                .fishing_regions
+                .as_deref()
+                .and_then(legaia_engine_core::field_regions::RegionTable::parse);
+            let casts = self.session.host.world.minigames.fishing_casts;
+            *probe = lure.probe(buf, region.as_ref(), casts, 1);
+        }
         if let Some(mut line) = self.fish_line.take() {
             let f = line.tick(1);
+            // Retail's celebration bursts ride the line actor, which sits on
+            // the lure - not on the free-swimming fish the venue also draws.
             let origin = self
-                .fish_wander
+                .fish_lure
                 .as_ref()
-                .map(|w| (w.x, w.z))
+                .map(|(l, _)| (l.x(), l.z))
+                .or_else(|| self.fish_wander.as_ref().map(|w| (w.x, w.z)))
                 .unwrap_or((0, 0));
             let mut cues: Vec<u8> = Vec::new();
             if let Some(cue) = f.cue {

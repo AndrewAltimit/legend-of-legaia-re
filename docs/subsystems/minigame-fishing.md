@@ -210,7 +210,33 @@ bait-twitching change how often the gate is rolled, never which species
 results.
 
 Port: `engine-core::fishing::BandCheck::tick` runs the ladder through
-`fishing_actors::bite_interval` / `bite_credit_override`.
+`fishing_actors::bite_interval` / `bite_credit_override`, and takes the
+water-class addend as its own argument beside the pad one, because retail adds
+them to the same register from two places (`addu s1,s1,s2` at `0x801D3434` for
+the class, one `addiu s1,s1,1` per held pad bit from `0x801D3450`).
+
+### The lure the bite tick probes
+
+Both of `FUN_801D26CC`'s per-frame map reads take the *same* point - the tick's
+own actor at `+0x14` / `+0x18`, which is the lure the cast arm spawned - and
+they are otherwise unrelated:
+
+- the `+0x8000` cell word's bit `0x4000` is the **water** gate above, and it
+  feeds the credit;
+- `FUN_801D7030`'s `+0x4000` high-nibble probe (`jal` at `0x801D2E10`) feeds
+  nothing of the sort. Its hit **drifts the lure**: the handler adds or
+  subtracts `frame_delta << 11` on the 24.8 `x` accumulator `DAT_801D9174`
+  (`0x801D2E34..0x801D2E58`), and the sign is the low bit of the persistent
+  lifetime cast counter `_DAT_80084460` (`0x801D2E28`).
+
+Port: `engine-core::fishing_actors::LureActor`, whose `cast` is the spawn arm
+and whose `probe` runs both reads in retail's order. The class walk is the
+already-ported region routine - `field_regions::refresh_region_attributes`
+(`FUN_800180EC`, called at `0x801D3384` with the same tile pair) - so the port
+reaches `_DAT_8007B8F4` through the same producer retail does. Both hosts drive
+it: the browser minigames page inside `fishing::PondSession`, the play window
+from its own venue frame, where the lure is also the origin the celebration
+bursts spawn at.
 
 ## Fishing actors and scene render
 
@@ -416,7 +442,8 @@ and **x** the column - and the sub-cell bit is `1 << ((x_cell & 1) + 2 *
 the byte's **high** nibble (`>> 4`), not the low one, so it queries the
 second of the two 4-bit wall masks packed into each grid byte. A leaf
 function: no frame, `jr ra` with the test result in `v0`. Port:
-`engine-core::fishing_actors::walk_grid_overhead`.
+`engine-core::fishing_actors::walk_grid_overhead`, driven from
+[`LureActor::probe`](#the-lure-the-bite-tick-probes).
 
 **`FUN_801d765c()`** takes no arguments. It reads two `(i16 x, i16 y)`
 pairs from the overlay globals at `0x801D9184` and `0x801D918C` (`+0` = x,

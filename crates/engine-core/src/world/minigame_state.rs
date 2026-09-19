@@ -32,6 +32,11 @@ pub struct MinigameState {
     /// ([`crate::world::World::fishing_exchange_buy`]). Hosts seed a new session's
     /// [`crate::fishing::FishingRecord`] from this cell.
     pub fishing_points: i32,
+    /// Persistent lifetime cast counter, mirroring retail's `_DAT_80084460`.
+    /// The band-4 gate reads it, and its low bit picks the sign of the cast
+    /// lure's walk-grid drift
+    /// ([`crate::fishing_actors::LureActor::probe`]).
+    pub fishing_casts: i32,
     /// Persistent one-time prize bitmask, mirroring retail's `_DAT_8008446C`:
     /// bit `row + venue * 8` latches when a `limit == 1` exchange row is
     /// bought (see [`legaia_asset::fishing_exchange`]).
@@ -178,6 +183,7 @@ impl MinigameState {
             fishing: None,
             fishing_return_mode: SceneMode::Field,
             fishing_points: 0,
+            fishing_casts: 0,
             fishing_prizes_purchased: 0,
             fishing_exchange: None,
             slot_machine: None,

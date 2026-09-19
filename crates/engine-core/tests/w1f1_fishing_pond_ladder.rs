@@ -313,7 +313,7 @@ fn a_strike_needs_a_reel_button_held() {
     let mut rng = BiosRand::new(0x2222);
     for _ in 0..4000 {
         assert!(
-            !b.tick(&mut rng, None, 1500, 1200, 999, false, 1),
+            !b.tick(&mut rng, None, 1500, 1200, 999, 0, false, 1),
             "a strike landed with no reel button held"
         );
     }
@@ -325,7 +325,7 @@ fn a_strike_needs_a_reel_button_held() {
         splash: false,
     };
     let mut rng = BiosRand::new(0x2222);
-    let struck = (0..4000).any(|_| b.tick(&mut rng, None, 1500, 1200, 999, true, 1));
+    let struck = (0..4000).any(|_| b.tick(&mut rng, None, 1500, 1200, 999, 0, true, 1));
     assert!(struck, "a held reel never struck in 4000 frames");
 }
 
@@ -346,7 +346,7 @@ fn the_far_band_cannot_strike_however_many_edges_are_fed() {
     for readout in [0, 50, 99, 120, 150, 199] {
         for _ in 0..2000 {
             assert!(
-                !b.tick(&mut rng, None, 1000, readout, 33, true, 1),
+                !b.tick(&mut rng, None, 1000, readout, 33, 0, true, 1),
                 "a strike landed at readout {readout}, inside the far band"
             );
         }
@@ -359,7 +359,7 @@ fn the_far_band_cannot_strike_however_many_edges_are_fed() {
     // check rather than a vacuous one.
     let mut b = BandCheck::default();
     let mut rng = BiosRand::new(0x9999);
-    let struck = (0..2000).any(|_| b.tick(&mut rng, None, 1000, 200, 33, true, 1));
+    let struck = (0..2000).any(|_| b.tick(&mut rng, None, 1000, 200, 33, 0, true, 1));
     assert!(struck, "the pivot readout must still be able to strike");
 }
 
