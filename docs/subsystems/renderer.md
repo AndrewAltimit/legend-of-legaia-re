@@ -604,7 +604,11 @@ modes - a `town01` battle (mode `21`), a `map03` world map (mode `3`), a
 
 The battle state enters none of the three brackets at all - zero gate hits over
 its 180 vsyncs, 1710 `FUN_80043390` entries - so a battle's meshes do not reach
-the GPU through this walk either. That is what earlier field captures were
+the GPU through this walk either. Read that one with its sample in mind: the
+state sits at the command menu, and the third bracket `FUN_80048A08` is what the
+arts after-image renderer `FUN_80049348` draws each motion-trail ghost through,
+so a swing is the frame that would exercise it. Its gate is the same `+0x42`
+test either way. That is what earlier field captures were
 seeing when they recorded zero renderer entries beside thousands of drawn town
 polygons: the per-prim dispatcher below is the leaf, and the two table-driven
 renderers are the arms retail's shipped actor data does not select. The gate is
