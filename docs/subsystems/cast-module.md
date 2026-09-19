@@ -468,9 +468,17 @@ module raises the same cue whichever character cast it.
 That matters because the cast-audio dispatcher `FUN_801F3990` also emits a cue
 band, and that band *is* character-split (`char_kind * 0x10 + 0xF8..0xFC`, plus
 `0x20C..0x20E` on the enemy leg). The two are different cues on different
-paths, and the module's own is the one a cast is heard through - the
-`FUN_801F3990` band did not fire at all on either measured cast (`capture`,
-N = 2 casts, exec breakpoints on all three routines).
+paths, and the module's own is the one a cast is heard through.
+
+**A cast cannot reach the other band at all, and that is structural rather than
+a sampling result.** `FUN_801F3990` has one caller, battle-SM state `0x3D`,
+which is entered only from `0x3C`; the Magic category arm sets `0x3C` only when
+the spell's class byte is `< 0x14` **and** its id is `< 0x65`, so the player
+Seru block `0x81..0x8B` fails the id test outright. The Item arm stores `0x3C`
+unconditionally, so an ordinary item use walks straight into the band - and
+does, on every driven item action measured. The door is an item, not a spell.
+Both halves in
+[`battle-action.md`](battle-action.md#the-one-caller-is-state-0x3d-and-it-is-an-item--spirit-state).
 
 ### How a cue id becomes a file, a channel and a span
 
