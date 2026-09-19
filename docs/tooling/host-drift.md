@@ -618,6 +618,109 @@ live replacement. "The shared caller is elsewhere" is not "the shared caller is
 missing", and collapsing the two is how a superseded probe acquires a wiring
 task nobody owes.
 
+## Tier 11 - frame path: does an early exit skip a kernel the frame still draws?
+
+`FRAME_PATHS` / `WEB_PAGE_FRAME` in the same file, `[[frame_arm]]` and
+`[[frame_kernel]]` rows in `scripts/ci/ui-host-drift-waivers.toml`.
+
+Every tier above measures what a host **has**: a builder it reaches, a
+constant it declares, a kernel it names, a type it owns, a variant it answers,
+an entry it arms. This one measures what a host **runs this frame**, and the
+difference is a failure class none of them can see.
+
+Both hosts drive the engine through one frame path - the native window's
+redraw tick loop, the browser runtime's `tick_frame` - and both paths
+short-circuit. The native loop `continue`s out of five arms; the browser
+runtime `return`s out of three; the page's own `_frame` gates the whole call
+to `tick_frame` behind a fourth kind of arm in JavaScript. The **draw** does
+not short-circuit with them: the native draw passes run after the loop
+whatever an iteration did, and `tick_frame` returns to a page that draws
+either way. So an arm that skips a per-frame kernel does not skip the draw
+that reads that kernel's answer, and the host paints last frame's decision for
+as long as the arm is taken.
+
+The case it was written for is the field party readout. `FUN_801D0D38` reads
+its suppress global at its first instruction and jumps to its epilogue when it
+is set; the port splits that into a decision kernel stepped once per tick and
+a draw pass that reads the decision back. The native window's boot-UI arm
+`continue`d **before** the step, so on every pause-menu frame the kernel never
+saw the state its predicate was written to suppress on, and the readout stayed
+painted under the menu. Tiers 1-10 were green throughout: no builder was
+missing (both hosts call the same one), no constant was paired, no injection
+site diverged (both hosts *have* the call), no render kernel was absent, no
+type unowned, no variant unanswered, no entry hotkey-only.
+
+### The two questions, and the third source the first one needs
+
+1. **Completeness.** For each early exit, the fall-through kernels that come
+   after it are the ones that arm skips. Each must either be called inside the
+   arm's own block, or be listed in that arm's `[[frame_arm]]` waiver with a
+   reason - which is how "this arm deliberately freezes the world" gets
+   written down once instead of re-derived per reader.
+2. **Pairing.** Each host's frame path is a list of per-frame kernels, and a
+   step one host takes every frame while the other never does is a simulation
+   the two hosts do not share. Names differ across the two crates, so a
+   `[[frame_kernel]]` alias row pairs `tick_minigame_extras` with
+   `tick_minigame_ui`, and a `host_only` row declares the ones that really are
+   one host's - with a reason that says *where the other host does the same
+   work*. The claim a `host_only` row makes is about the frame path, which is
+   what the checker measures, not about a capability.
+
+The browser's frame path is **two** files, and the Rust half is the one
+without the interesting arm. `site/js/play-app.js::_frame` calls
+`rt.tick_frame()` inside `if (advance && !menuOpen && !shopOpen &&
+!namingOpen)` and calls `this._drawOverlay()` outside it, so a guarded frame
+runs no kernel at all and still draws - all nineteen at once. A Rust-only scan
+sees none of that, which is how "the browser page has no early-out" came to be
+written down while the page carried the same defect the native window did. The
+tier therefore walks the JS function too, takes the guards `tick_frame` sits
+inside and the draw does not, and treats each as an arm of the browser host
+whose skip list is the whole Rust path.
+
+### What the tier does not prove
+
+That a kernel an arm runs runs *correctly* there, that the draw pass reads
+what the kernel wrote, or that two paired kernels do the same thing - that
+last one is tier 3's question, asked of hand-named pairs. It proves only that
+no arm silently drops a step the fall-through path takes, and that neither
+host's per-frame list has grown a member the other's has not.
+
+It also covers two of the three hosts, and for a structural reason rather than
+an oversight: the minigames page has no frame path to walk. It exports one
+tick per minigame (`dance_tick`, `baka_tick`, `slot_tick`, `fishing_pond_tick`,
+`muscle_tick_time_meter`), each called by its own page module, so there is no
+fall-through list for an arm to skip part of. A shared frame path is the thing
+this tier measures; that host does not have one.
+
+Both halves are derived from the sources rather than declared, so a new arm or
+a new kernel joins the measurement by existing. The ratchet is the `skips`
+list on each waiver row: one that no longer matches is stale and fails, and a
+kernel added to the fall-through path lands in no arm's list and fails on
+every arm at once - which is exactly the moment to decide, per arm, whether
+the new step belongs there.
+
+### The fix a disclosure does not replace
+
+An arm's waiver says the frame may draw without those kernels. It does not
+say the frame may draw their *stale answers*, and for a decision kernel the
+two are different claims. The page's guard is the page's field freeze and
+cannot move; what moved instead is the reader. Both hosts' field-party-readout
+and passive-badge draw builders now ask the suppress gate on the **draw** path
+as well as on the tick, so a decision that went stale on a guarded frame
+cannot reach the screen whichever host skipped the step.
+
+The predicate they ask is one kernel,
+`legaia_engine_core::world_map_panel_host::field_hud_suppressed`. It used to be
+an enumeration spelled out in each host, and the copies had drifted: the page's
+was missing all three of the window-side terms, and the native window gated the
+badge column on a different test again - which put the badges over every dialog
+box, every cutscene beat and every fight. Retail reaches the badge routine
+`FUN_801d095c` from exactly one place, `FUN_801D0D38`'s `jal` at `0x801D130C`,
+eight bytes above the epilogue the suppress arm jumps to, so the badges carry
+the readout's suppression exactly (see `ghidra/scripts/funcs/overlay_0897_801d0d38.txt`).
+Each host now answers only the term the world cannot: whether a host-side panel
+with no `World` state behind it owns the frame.
+
 ## Gaps the tiers were blind to, closed by reading the two hosts side by side
 
 One pass over both hosts, domain by domain, with every tier above green,
@@ -825,6 +928,44 @@ about these is contested.
 | Gap | Shape |
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
+| minigame effect pool | Only the native window owns one, so three side-channel steps have no browser twin. See [below](#the-minigame-side-channel-step-is-paired-its-contents-are-not). |
+
+### The minigame side-channel step is paired; its contents are not
+
+Tier 11 pairs `tick_minigame_extras` (native) with `tick_minigame_ui` (page) as
+one frame kernel, which is true of the *step* and says nothing about the work
+inside it. Taken sub-step by sub-step, most of that work does reach both hosts,
+and the two that do not share one cause.
+
+| Native sub-step | Browser play page | Minigames page |
+|---|---|---|
+| `drain_minigame_sfx_cues` | `drain_minigame_sfx_cues_web` | per-game cue drain |
+| `stage_dance_hud_art` | `sync_dance_hud_residency` + `ensure_minigame_art` | `dance_art_*` exports |
+| `tick_dance_side` | **absent** (see below) | **absent** |
+| `tick_fishing_actors` | pond session only | pond session only |
+| `tick_baka_chrome` | **absent** | **absent** |
+| `tick_muscle_hub` | `tick_muscle_hub` | `muscle_*` exports |
+| `minigame_fx.tick()` | **absent** | **absent** |
+
+The dance **count-in** banner is not one of the gaps, and the waiver row that
+said it was is corrected: it lives in world state
+(`World::minigames.dance_countin_banner`) and both browser surfaces draw it
+through the shared `engine_ui::ui_dance` kernels. The cast **lure** is not one
+either - the venue-attached `PondSession` runs it on every host, so the drift
+that makes the lure move is engine-side.
+
+What is genuinely native-only is the **effect-part pool**
+(`window/minigame_fx.rs`), a host-side sink with no browser counterpart, plus
+the two producers that feed it: the dance sequence-clear banner and stars
+(`tick_dance_side`, via `dance::good_banner_spawn`) and the fishing venue's
+wander / line presentation actors. `tick_baka_chrome` is a third absence of the
+same shape - the chrome frame itself comes from
+`engine_core::baka_fighter_chrome`, so it is portable, but the draws it resolves
+want a pool to age them in.
+
+Closing this is a port of the pool, not a wiring change, which is why it is
+recorded here rather than waived: a waiver names a builder or a hook, and a
+pool is neither.
 
 ### A `web-ahead` builder is not by itself a gap
 

@@ -17,7 +17,8 @@
 //! emitted on the last cycle, not the libspu MVOL write that drives the
 //! sweep target.
 //!
-//! ADSR phase values are mednafen's internal enum (4-byte u32 each); we
+//! ADSR phase values are mednafen's internal enum (4-byte u32 each,
+//! `0 = Attack` .. `3 = Release`, with no `Off` member); we
 //! expose them as raw `u32` rather than re-mapping to the engine-audio
 //! [`crate::engine_audio::spu::adsr::Phase`] - downstream code does the
 //! cross-walk because mednafen and the engine-audio model disagree on the
@@ -53,9 +54,11 @@ pub struct SpuVoiceState {
     /// Fractional sample position within the current 28-sample ADPCM block,
     /// in mednafen's internal `CurPhase` representation (4-byte u32).
     pub cur_phase: Option<u32>,
-    /// ADSR envelope phase enum (mednafen-internal; non-zero typically
-    /// means the voice is audible). Engine-side convergence treats any
-    /// non-zero value as "voice is active".
+    /// ADSR envelope phase enum, mednafen-internal: `0 = Attack`,
+    /// `1 = Decay`, `2 = Sustain`, `3 = Release`. There is **no** `Off`
+    /// member - a drained voice stays in `Release` - so this word does not
+    /// answer "is the voice audible"; [`SpuVoiceState::is_active`] reads
+    /// the envelope level instead.
     pub adsr_phase: Option<u32>,
     /// Current ADSR envelope level (0..=0x7FFF).
     pub adsr_env_level: Option<u16>,
@@ -72,12 +75,21 @@ pub struct SpuVoiceState {
 }
 
 impl SpuVoiceState {
-    /// Cheap "is this voice currently audible" predicate. True when the
-    /// ADSR phase is non-zero (mednafen's `Off` phase is `0`). Used by the
-    /// audio-trace oracle's convergence check: "engine has at least one
-    /// frame where the same voice indices are active as retail".
+    /// Cheap "is this voice currently audible" predicate: the ADSR envelope
+    /// level is non-zero.
+    ///
+    /// **Not** a phase test. Mednafen's `ADSR.Phase` is `0 = Attack`,
+    /// `1 = Decay`, `2 = Sustain`, `3 = Release` and has no `Off` member -
+    /// a key-off parks the voice in `Release` and leaves it there once the
+    /// envelope reaches zero. Over this workspace's whole retail state
+    /// corpus the phase word is `2` or `3` for all but two dozen voice
+    /// slots and never settles on `0`, so a `phase != 0` predicate calls
+    /// every finished voice audible (and every just-keyed-on one silent).
+    /// The envelope level is what actually scales the voice's output, and
+    /// it is the retail analogue of the engine mixer's `Phase::Off`, which
+    /// is exactly where the engine-side trace draws the same line.
     pub fn is_active(&self) -> bool {
-        matches!(self.adsr_phase, Some(p) if p != 0)
+        matches!(self.adsr_env_level, Some(l) if l != 0)
     }
 }
 
@@ -428,12 +440,31 @@ mod tests {
     }
 
     #[test]
-    fn voice_state_phase_zero_is_off() {
-        let payload = build_save_with_spu(&[("Voices[5].ADSR.Phase", 0u32.to_le_bytes().to_vec())]);
+    fn voice_state_drained_envelope_is_inaudible() {
+        // A released voice whose envelope has run to zero: mednafen leaves
+        // it parked in phase 3 forever, so only the level says it is done.
+        let payload = build_save_with_spu(&[
+            ("Voices[5].ADSR.Phase", 3u32.to_le_bytes().to_vec()),
+            ("Voices[5].ADSR.EnvLevel", 0u16.to_le_bytes().to_vec()),
+        ]);
         let save = SaveState::from_decompressed(payload).unwrap();
         let v = PsxSpu::new(&save).voice_state(5).unwrap();
-        assert_eq!(v.adsr_phase, Some(0));
+        assert_eq!(v.adsr_phase, Some(3));
         assert!(!v.is_active());
+    }
+
+    #[test]
+    fn voice_state_attacking_voice_is_audible() {
+        // The mirror case: phase 0 is ATTACK, not "off", so a voice that
+        // just keyed on is audible even though the phase word is zero.
+        let payload = build_save_with_spu(&[
+            ("Voices[6].ADSR.Phase", 0u32.to_le_bytes().to_vec()),
+            ("Voices[6].ADSR.EnvLevel", 0x0200u16.to_le_bytes().to_vec()),
+        ]);
+        let save = SaveState::from_decompressed(payload).unwrap();
+        let v = PsxSpu::new(&save).voice_state(6).unwrap();
+        assert_eq!(v.adsr_phase, Some(0));
+        assert!(v.is_active());
     }
 
     #[test]

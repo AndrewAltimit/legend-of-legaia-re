@@ -210,7 +210,80 @@ bait-twitching change how often the gate is rolled, never which species
 results.
 
 Port: `engine-core::fishing::BandCheck::tick` runs the ladder through
-`fishing_actors::bite_interval` / `bite_credit_override`.
+`fishing_actors::bite_interval` / `bite_credit_override`, and takes the
+water-class addend as its own argument beside the pad one, because retail adds
+them to the same register from two places (`addu s1,s1,s2` at `0x801D3434` for
+the class, one `addiu s1,s1,1` per held pad bit from `0x801D3450`).
+
+#### What the weight half is for
+
+The credit half rides `$s2`; the weight half rides `$s4`, and `$s4` is
+callee-saved, so it survives the hook sequence untouched from the class walk
+(`li $s4,0xA` default at `0x801D3304`, overwritten to `0x64` / `0x12C` / `0x1F4`
+at `0x801D33B4` / `0x801D33EC` / `0x801D3424`) all the way to its single use.
+That use is `div $s0,$s4` at `0x801D3728`, with the remainder taken at
+`mfhi $a3` (`0x801D3750`): the class is the **modulus of a random draw**, so it
+bounds a random term rather than scaling anything.
+
+The tick calls the RNG (`FUN_80056798`) three times at `0x801D3708`..`0x801D3718`
+and sums four terms into `$a0`:
+
+| Term | Where | Meaning |
+|---|---|---|
+| `rand1 % weight` | `0x801D3728` / `0x801D3750` | the water class's own contribution |
+| `(*0x801D927C >> 5) + 10` | `0x801D3790` / `0x801D3794` | a scaled running value plus a floor |
+| `rand2 % 600` | `0x801D3780`..`0x801D37DC` (magic-multiply reciprocal) | a class-independent spread |
+| `100 * (rand3 % (counter + 1))` + `50 * (counter + 1)` | `0x801D376C`..`0x801D380C`, counter from `$s6+0x314` | a session-progress term |
+
+The sum lands at `DAT_801D91B8` (`sw $a0,-0x6E48($v0)`, `0x801D3814`), and
+`sum + 0x400` goes to `+0x72` of the object the hook just spawned
+(`addiu $a0,$a0,0x400` then `sh $a0,0x72($s1)` at `0x801D3818`/`0x801D381C`;
+`$s1` is the return of `jal 0x80024C88` at `0x801D36A8`, also parked at
+`DAT_801D91D0`) and to `DAT_801D9108`. Actor `+0x72` is the render scale, so the
+class is what makes a better water cell able to produce a visibly larger fish.
+It touches neither the species roll nor the credit - "weight" is the right name,
+and the answer to "does it scale the species roll, the recorded catch, or
+nothing" is: the recorded size, and the hooked model's on-screen size with it.
+
+### The lure the bite tick probes
+
+Both of `FUN_801D26CC`'s per-frame map reads take the *same* point - the tick's
+own actor at `+0x14` / `+0x18`, which is the lure the cast arm spawned - and
+they are otherwise unrelated:
+
+- the `+0x8000` cell word's bit `0x4000` is the **water** gate above, and it
+  feeds the credit;
+- `FUN_801D7030`'s `+0x4000` high-nibble probe (`jal` at `0x801D2E10`) feeds
+  nothing of the sort. Its hit **drifts the lure**: the handler adds or
+  subtracts `frame_delta << 11` on the 24.8 `x` accumulator `DAT_801D9174`
+  (`0x801D2E34..0x801D2E58`), and the sign is the low bit of the persistent
+  lifetime cast counter `_DAT_80084460` (`0x801D2E28`).
+
+The sign rule is measured, not only read: an exec tap on each arm
+(`0x801D2E34` add / `0x801D2E48` subtract), carrying the counter it was
+reached with, splits cleanly - every add hit an odd counter, every subtract
+hit an even one, no exceptions - and the accumulator moves by exactly
+`frame_delta << 11` per hit, read back out of `0x801D9174` between frames.
+Probe `scripts/pcsx-redux/autorun_fishing_lure_drift.lua`.
+
+Two things that capture also settles. **The pond never triggers the drift on
+its own**: across a run of two full casts the walk-grid probe returned zero
+every single call, so the arms only execute when the probe forces the verdict.
+And **the counter's writer is in this same bite tick** - it is reached through
+the save-block base (`t0 = 0x80084140`, `lw` / `addiu` / `sw 0x320($t0)` at
+`0x801D2954`..`0x801D296C`) rather than by the `0x4460` displacement the read
+uses, on the arm that also raises cue `0x204` and moves the SM to state `0x19`.
+So the counter advances once per hook, and the drift direction alternates
+between successive casts.
+
+Port: `engine-core::fishing_actors::LureActor`, whose `cast` is the spawn arm
+and whose `probe` runs both reads in retail's order. The class walk is the
+already-ported region routine - `field_regions::refresh_region_attributes`
+(`FUN_800180EC`, called at `0x801D3384` with the same tile pair) - so the port
+reaches `_DAT_8007B8F4` through the same producer retail does. Both hosts drive
+it: the browser minigames page inside `fishing::PondSession`, the play window
+from its own venue frame, where the lure is also the origin the celebration
+bursts spawn at.
 
 ## Fishing actors and scene render
 
@@ -416,7 +489,8 @@ and **x** the column - and the sub-cell bit is `1 << ((x_cell & 1) + 2 *
 the byte's **high** nibble (`>> 4`), not the low one, so it queries the
 second of the two 4-bit wall masks packed into each grid byte. A leaf
 function: no frame, `jr ra` with the test result in `v0`. Port:
-`engine-core::fishing_actors::walk_grid_overhead`.
+`engine-core::fishing_actors::walk_grid_overhead`, driven from
+[`LureActor::probe`](#the-lure-the-bite-tick-probes).
 
 **`FUN_801d765c()`** takes no arguments. It reads two `(i16 x, i16 y)`
 pairs from the overlay globals at `0x801D9184` and `0x801D918C` (`+0` = x,
@@ -525,6 +599,13 @@ world offset for one frame:
 Case `0x14` is where the lure point the walk-grid probe wants comes from: it
 writes `DAT_801D918C` / `DAT_801D9190` and their `<< 8` fixed-point copies
 `DAT_801D9174` / `DAT_801D917C`. **Confirmed.**
+
+The halfword between those two, `DAT_801D918E`, is the lure's **height**, not
+a second horizontal component: the arm stores `actor + 0x16` less `0x80` there
+(`sh $a0, 2($a2)` at `0x801CFCEC`) and its `<< 8` copy is `DAT_801D9178`. So
+the tracked triple is `(x, y, z)` in the same `+0x14 / +0x16 / +0x18` order
+the field player record uses, and a reading that pairs `0x801D918E` with the
+`x` accumulator as the lure's ground position is off by one halfword.
 
 ## VA aliasing in this band
 

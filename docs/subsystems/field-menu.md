@@ -687,6 +687,44 @@ The engine's `EquipSlot` enum is its own model, and a record has to be
 re-ordered before a routine that indexes in retail's space walks it
 (`field_submode_screen::hub_panel_slots`).
 
+### Which candidate list a slot row opens
+
+The candidate window (id 23) has no fixed content: the slot-browse step
+writes its descriptor's `+0` **content id** per row, out of an eight-byte
+table at `0x801E4DC0` (`00 17 15 16 18 1C 1D 1E`, stored with the `sb` at
+`0x801D9AC4`). Row 0 is Best Equipment and opens nothing; rows 1..4 take
+content ids `0x17` / `0x15` / `0x16` / `0x18`, and rows 5..7 - the three
+**Goods** rows - take `0x1C` / `0x1D` / `0x1E`.
+
+Those are two different builder families in the SCUS content builder
+`FUN_80030628`, and they do not share a filter.
+
+| Family | Content ids | Reads | Accepts |
+|---|---|---|---|
+| armament | `0x15`..`0x18` (also `7`..`10`) | the row's equip byte | item record `+0` class `1`, the equipment `+7` category matching the row's, and the `+6` character mask against the builder's own `0x8007B48C[char]` byte (`lui 0x8008` / `addiu -0x4b74` at `0x80031538`) |
+| Goods | `0x1C`..`0x1E` (also `0xE`..`0x10`) | equip bytes `5` / `6` / `7` | item record `+0` class **2**, and the item-effect record's `+3` byte other than `0x41` |
+
+The Goods filter is `lbu` class, `bne` against `2` at `0x800317D8`, then the
+effect record's `+3` compared with `li v0,0x41` / `beq` at
+`0x800317F4..0x800317F8` - **no character-mask term at all**. Its rows are
+tagged `0x9000` (passive) where the armament rows are tagged `0x6000`, and
+both lists lead with the Remove verb (`0x4000`, payload 0) and, when the
+slot is occupied, the equipped id (`0x7000`).
+
+`0x41` is one past the 64-slot passive index space. On retail data the gate
+is exactly "this row carries an accessory passive": of the class-2 ids, the
+ones the filter admits are the ones whose effect row carries an index below
+`0x40`, and every id it rejects carries `0x41`.
+
+Engine side: the filter is
+`legaia_engine_core::menu_list_rows::goods_candidate_accepts` and the row
+build is `build_goods_candidate_rows` beside its three sibling builders;
+`equipment::DiscEquipInfo::install_goods` indexes the accepted ids off the
+item-effect table, because the equipment stat table - which is where every
+other restriction in that struct comes from - contains none of them.
+`EquipSession` asks the Goods question for engine slots `Ring1` / `Ring2` /
+`Accessory` and the armament question for the rest.
+
 ### Best Equipment: how the candidates are picked
 
 `FUN_801CF88C` seeds `DAT_801EF0C0` with the four items the character
@@ -797,10 +835,12 @@ bindings) over `world_map_overlay::resolve_equip_slot` (the class routing).
 `legaia_engine_core::equip_session::EquipSession::commit` runs it for the
 field menu's per-slot confirm on both hosts, staging the record's `+0x196`
 window in retail order around the call, and
-`retail_destination_slot` exposes the class routing on its own. In the live
-flow the two answers coincide: the candidate list is already category-gated
-per slot, so an item that can be picked for a row is an item whose class
-routes to that row's byte.
+`retail_destination_slot` exposes the class routing on its own. For the four
+armament rows the two answers coincide: that half of the candidate list is
+category-gated, so an item that can be picked for such a row is an item
+whose class routes to that row's byte. The three Goods rows are a different
+list family entirely - see below - and the class routing above says nothing
+about them.
 
 #### Why `0x801E5AE8` is not a second function
 
@@ -2382,21 +2422,103 @@ the resolved slot, swap the `0x801EF080` and `0x801EF0A0` blocks, re-run
 re-aggregate. A staged id that is not equipment skips all of that and
 draws the current values with no arrows.
 
-Ports: `engine-ui::equip_compare_panel_fields` /
-`party_compare_panel_fields`. The screen that opens both windows is the
-shop's equipment-buy recipient flow (`FUN_801DB380`; see
-[shop.md](shop.md)), and both hosts draw them beside the recipient list
-(window 36) through the shared `engine-ui::recipient_picker_draws_for`,
-with the candidate blocks derived from the equipment modifier table
-rather than the inline trial-equip swap.
+### Which screen opens which of the two
 
-The category byte window 25 keys its row set on is the equip record's
-`+5`, and on the retail USA disc **every** equipment bonus row carries the
-`0x40` no-passive sentinel there - so the panel always shows the ATK /
-UDF / LDF triple in this flow. A host that cannot resolve the byte may
-pass the sentinel and get the identical screen, which is what lets the
-native window feed a constant where the browser page feeds a table
-lookup.
+The two windows belong to **different screens**, and no script opens both:
+
+- Window 25 is named by exactly one open command in the menu overlay - the
+  Equip screen's candidate step, sub-screen `0x14`, script `0x801E4DC8`,
+  which raises windows 24 and 25 on top of the browse step's four.
+- Window 41 is named by the shop-entry script `0x801E4E64`; the
+  equipment-buy recipient sub-screen (`FUN_801DB380`) adds only window 36
+  over the set already up.
+
+Ports: `engine-ui::equip_compare_panel_fields` (window 25) and
+`party_compare_panel_fields` (window 41). Both hosts draw window 41 beside
+the recipient list through `engine-ui::recipient_picker_draws_for`, and both
+draw window 25 on the Equip screen's candidate step beside window 24, from
+`engine-core::pause_screens::EquipCompareModel`. Neither derives its
+candidate column from the inline trial-equip swap: the port installs the
+staged id in a copy of the record's equip bytes and re-runs the aggregator.
+
+### The five-slot menu walk
+
+`FUN_801CF650`'s loop counter is bounded by `slti a2, 5` at `0x801CF744`, so
+the block behind windows 22 / 25 / 41 sums the first **five** equip bytes
+only. The battle-side aggregator `FUN_80042558` walks all eight. The port
+keeps the two apart: `engine-core::pause_screens::menu_stat_block` zeroes
+the tail before calling the shared `compute_battle_stats`, so the menu block
+matches the menu aggregator rather than the battle one.
+
+### Both category arms are live on retail data
+
+The category lookup reads the item property record's class byte first
+(`0x80074368 + id*0xC + 0`) and then one of two tables, both indexed by that
+record's `+1` byte:
+
+| Item class | Table | Byte |
+|---|---|---|
+| `1` (equipment) | equipment bonus row `0x80074F68 + row*8` | `+5` |
+| anything else | item-effect descriptor `0x800752C0 + row*4` | `+3` |
+
+The two arms split the item space cleanly, and that is what the `slot_row
+>= 4` guard is for. Of the 255 non-zero item ids, 104 are class `1` and
+every equipment bonus row they resolve to carries the `0x40` no-passive
+sentinel at `+5` - so the class-`1` arm can only ever yield the ATK / UDF /
+LDF triple, which is why retail does not even run the lookup on the gear
+rows. The guard is a **row** test rather than a class test, and the
+[row map](#two-early-outs-of-fun_801d1290) is what makes the two coincide:
+rows `0..3` are weapon, helmet, body armour and footwear, rows `4..6` the
+three Goods rows. The remaining 151
+ids take the item-effect arm, and 80 of
+them carry a real passive index (`< 0x40`) at `+3`: 9 under `6` (the HP /
+MP pair), 4 in `10..=12` (SPD / INT / AGL) and the rest in the ATK / UDF /
+LDF band.
+
+So the category byte is the **accessory passive index**, and the panel
+shows the three stats that passive moves - the boost families of
+[accessory-passive-table.md](../formats/accessory-passive-table.md) read
+back through the row split. A host that feeds the sentinel unconditionally
+does not get the identical screen: it loses two of the three row sets. The
+port resolves the byte through
+`engine-core::pause_screens::compare_category_for_item` on both hosts.
+
+### Two early-outs of `FUN_801D1290`
+
+The renderer returns without drawing anything in two cases, both before the
+name draw:
+
+- the staged id `DAT_801E46B0` is `0` (`0x801D12BC`) - so the panel appears
+  and disappears with the candidate list rather than persisting across the
+  browse step;
+- the record slot the party cursor resolves to (`roster[DAT_801E46C4 &
+  0xFFF]`, the byte at `0x80084598 + cursor`) is not less than `3`
+  (`slti v0, s5, 3` at `0x801D1340`).
+
+The browsed slot's equip byte, which the "nothing staged" fallback keys on,
+is reached through the **same two-table slot map** the armament writer
+`FUN_801CF760` uses ([Equip screen](#equip-screen)), and `FUN_801D1290` is
+where its two halves sit side by side:
+
+| browse row | how the byte index is formed | index |
+|---|---|---|
+| `0` | `lh` at `0x801D1308` off `0x8007B42C`, stride `2`, indexed by the **roster** slot - the per-character weapon halfword `2, 3, 2` | `2` (Vahn / Gala) or `3` (Noa) |
+| `1` and up | `lbu` at `0x801D131C` off `0x801E43E8`, indexed by the row | `1`, `0`, `4`, `5`, `6`, `7` |
+
+So the browse order is weapon, helmet, body armour, footwear, Goods x3 - the
+same seven rows the record's eight `+0x196` bytes hold minus the unused one -
+and **not** the byte array in index order. The byte itself is
+`record[+0x196 + idx]`; retail forms it as
+`0x80084140 + 0x414*slot + 0x75E + idx`, which is the per-character record base
+`0x80084708 + slot*0x414` plus `0x196`.
+
+That is also what makes the `slti v0, s0, 4` guard above land where it does:
+rows `0..3` are exactly the four gear rows and rows `4..6` exactly the three
+Goods rows, so retail resolves a compare category only for the rows whose
+items can carry a passive. A port whose slot list is its own `EquipSlot`
+order - weapon, helmet, body, **hand guard**, footwear, Goods x3 - passes an
+index one step out from row `3` on, so it asks the category question of
+footwear, which retail silences.
 
 ## Battle readout tint law (the panel's sibling)
 

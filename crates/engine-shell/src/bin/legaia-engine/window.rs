@@ -862,6 +862,13 @@ struct PlayWindowApp {
     /// The venue scene's `.MAP` extended footprint, read at fishing entry -
     /// the engine's `_DAT_1F8003EC` floor buffer the ground solver reads.
     fishing_floor: Option<Vec<u8>>,
+    /// That map's `+0x10000` region block, for the lure's water-class walk.
+    fishing_regions: Option<Vec<u8>>,
+    /// The cast lure and its last probe (`0x801D9174` / the water class).
+    fish_lure: Option<(
+        legaia_engine_core::fishing_actors::LureActor,
+        legaia_engine_core::fishing_actors::LureProbe,
+    )>,
     /// The fishing sub-screens' idle-sway phase (`0x801D9118`).
     fishing_sway_angle: i32,
     /// This frame's sway offset, applied to the point-exchange panel.

@@ -658,7 +658,13 @@ fn read_retail_equip_tables(
     };
     let table = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus)?;
     let modifiers = legaia_engine_core::equipment::equip_modifier_table_from_disc(&table);
-    let restrictions = legaia_engine_core::equipment::DiscEquipInfo::from_disc(&table);
+    let mut restrictions = legaia_engine_core::equipment::DiscEquipInfo::from_disc(&table);
+    // The Goods candidate lists are class-2 ids the equipment stat table does
+    // not contain, so their index comes from the item-effect table instead -
+    // without it the equip screen's three Goods rows browse an empty list.
+    if let Some(effects) = legaia_asset::item_effect::ItemEffectTable::from_scus(&scus) {
+        restrictions.install_goods(&effects);
+    }
     // The raw records travel too: the Throw Out list builder reads each
     // record's `+7` flags byte, which neither derived table keeps.
     Some((modifiers, restrictions, table))
@@ -1181,6 +1187,12 @@ impl BootSession {
                 if apply_arts_outcome(editor, &mut library).is_ok() {
                     self.host.world.store_chain_library(&library);
                 }
+            }
+            FieldMenuSubsession::ListOrder(s) => {
+                let _ = legaia_engine_core::field_menu_dispatch::apply_list_order_outcome(
+                    &s,
+                    &mut self.host.world,
+                );
             }
             FieldMenuSubsession::Status(_) => {}
             FieldMenuSubsession::Save(s) => {

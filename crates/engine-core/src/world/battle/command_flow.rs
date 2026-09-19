@@ -254,16 +254,19 @@ impl World {
     /// against a [`vm::battle_action::LOW_SWING_TARGET_CLASS`] target. The
     /// engine's Attack command is exactly that situation - it resolves a
     /// target with no direction input - so it is the retail kernel that
-    /// applies. The alternative - the player's own recorded chain, retail
-    /// `FUN_801DA34C` / [`vm::battle_action::preseed_action_queue`] - is
-    /// closer than this note used to say: the chains themselves *are* carried
-    /// live, as `World::party.saved_chains` (LGSF v2, edited by
-    /// `tactical_arts_editor`, read by the battle arts path). What is missing
-    /// is the **record projection** retail preseeds from: the pair of 16-byte
-    /// slots at record-relative `+0x1A7` / `+0x1B7` that its
-    /// `u16[+0x156] < u16[+0x154]` preference predicate chooses between, and
-    /// `legaia_save::CharacterRecord` declares no accessor at either offset.
-    /// So the arm has a source and no addressing, not no source.
+    /// applies. It is also the **second** of two seeds, not the only one:
+    /// retail's command SM first preseeds the same window from the
+    /// character's own saved auto command string (`FUN_801DA34C` /
+    /// [`vm::battle_action::preseed_action_queue`], over record-relative
+    /// `+0x1A7` / `+0x1B7` chosen on `u16[+0x156] < u16[+0x154]`), and this
+    /// roll is what a character with no such string falls through to.
+    /// [`World::preseed_auto_command_string`] runs that read at dispatch and
+    /// this arm runs only when it comes back empty.
+    ///
+    /// Not to be confused with `World::party.saved_chains`, the engine's
+    /// **named** chain library (LGSF v2, edited by `tactical_arts_editor`,
+    /// read by the battle arts path) - a different list with a different
+    /// lifetime.
     ///
     /// **Disclosed stand-in.** Retail picks between the two shapes on the
     /// target monster record's `+0x1E` byte, which
@@ -819,7 +822,7 @@ impl World {
     ///
     /// REF: FUN_801E295C (state `0x0C` ActionSeed, which calls the builder
     /// for the acting party slot and seeds category 3)
-    fn arm_battle_art_action(
+    pub(in crate::world) fn arm_battle_art_action(
         &mut self,
         caster: u8,
         queue: &[u8],
@@ -870,6 +873,11 @@ impl World {
         self.battle_ctx.active_actor = caster;
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+        // Retail's write-back (`FUN_801DA59C` from `0x801D22BC`) runs on the
+        // input confirm, over the window the gauge just filled and with the
+        // category already stamped - which is the state this arm has ended in.
+        // It is what makes the next Attack replay this combo.
+        self.save_auto_command_string(caster);
     }
 
     /// Dispatch the command `actor` committed this round - the engine's
@@ -901,7 +909,18 @@ impl World {
                 }
                 // ... and then seeds it, which is what makes the attack band's
                 // strike loop a loop instead of an immediate exit.
-                self.seed_basic_attack_queue(actor, target);
+                //
+                // Retail seeds it twice over: the command SM preseeds the
+                // window from the character's own saved **auto command
+                // string** at the Attack confirm (`FUN_801DA34C` from
+                // `0x801D15C8`), and the queue builder's no-directional-input
+                // arm rolls a fresh two-swing stream only when that string is
+                // empty. The port keeps the same order - a character that has
+                // confirmed an arts combo replays it, one that has not takes
+                // the roll.
+                if self.preseed_auto_command_string(actor) == 0 {
+                    self.seed_basic_attack_queue(actor, target);
+                }
                 self.battle_ctx.queued_action = 3;
                 self.battle_ctx.action_state = ActionState::Begin.as_byte();
             }

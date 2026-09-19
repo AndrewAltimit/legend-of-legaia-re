@@ -155,7 +155,16 @@ fn audio_trace_multi_frame_scenarios_converge() {
                 );
             }
             Some(d) => {
-                let is_tolerable = matches!(d.kind, AudioDivergenceKind::NoFrameMatched);
+                // Same two tolerable kinds as the single-snapshot test:
+                // NoFrameMatched (the window may not carry the track) and
+                // VoiceStartAddrMismatch (SPU-RAM offsets come from two
+                // independent allocators, so equality there was never a
+                // claim the port made). See the comment in audio_trace.rs.
+                let is_tolerable = matches!(
+                    d.kind,
+                    AudioDivergenceKind::NoFrameMatched
+                        | AudioDivergenceKind::VoiceStartAddrMismatch
+                );
                 if is_tolerable {
                     tolerable += 1;
                     eprintln!(

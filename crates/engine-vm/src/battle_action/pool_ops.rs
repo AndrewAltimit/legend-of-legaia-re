@@ -93,12 +93,22 @@ pub struct FormationPos {
 ///    every included slot and add it back onto the focus accumulators.
 ///
 /// NOT WIRED: this is case `0` of the battle **flow** SM `FUN_801D388C`
-/// (`jal` at `0x801D3908`, jump table `0x801CE880`), which is not ported for
-/// the battle image. (The port catalog reports `801d388c` as ported and live;
-/// that row is the Muscle Dome overlay's *different* routine at the same VA -
-/// `engine-core::muscle_dome` cases 9 / `0xb`. An address-keyed catalog cannot
-/// separate the two, so read the crate before reading the flag.) It
-/// also shifts the camera-focus accumulators `_DAT_80089118` /
+/// (`jal` at `0x801D3908`, jump table `0x801CE880`), and the case is the
+/// unported part, not the SM.
+///
+/// The previous note here read the catalog's live `801d388c` row as "the
+/// Muscle Dome overlay's *different* routine at the same VA", and that is
+/// **false on the bytes**: `0x801D388C` lies past the end of the arena
+/// overlay (PROT 0977 is `0x3800` bytes, ending `0x801D2018`), so no arena
+/// copy exists, and `overlay_muscle_dome_801d388c.txt` is the same 1955
+/// instructions as `overlay_battle_action_801d388c.txt`, byte-for-byte from
+/// its `lui v0,0x8008` prologue on - the prefix names the **capture**, not
+/// the image (`docs/tooling/dump-corpus-integrity.md`). There is one routine,
+/// in PROT 0898, and the Muscle Dome drives the same states, which is what
+/// `engine-core::arts_command_input` says where it ports cases `9` and `0xB`.
+///
+/// So the live row is this SM, correctly. What blocks case `0` is its own
+/// second half: it shifts the camera-focus accumulators `_DAT_80089118` /
 /// `_DAT_80089120` to compensate for the squash, and the engine frames the
 /// battle camera by a per-action snap (`camera_height_for_frame` through
 /// `BattleActionHost::camera_bounds`) with no focus accumulator for that
@@ -498,39 +508,26 @@ pub const AI_COMPANION_CHAR_ID: u8 = 4;
 /// (`+0x16E & 0xF84 == 0`, `0x801DBA64`). Returns `actor_count` when none
 /// qualifies, and `0` when `actor_count == 0` (retail's `uVar1` seed).
 ///
-/// NOT WIRED: a leaf of the battle **command / menu** SM `FUN_801D0748`. That
-/// SM is not "unported" - an earlier note here said so and was wrong: its
-/// state space is `engine-core::battle_flow::BattleFlowState` (the
-/// `ctx[+0x06]` cursor, target select = `0x5A`) and its menu half is split
-/// across `battle_input` / `battle_arts` / `battle_magic` / `target_picker`.
-/// What the split does not carry is any per-state *body* - `battle_flow` is a
-/// state model with no leaf calls.
+/// Wired: `engine-core`'s `World::next_member_owing_command` opens the round's
+/// command ring with this scan and steps it with [`next_selectable_actor`],
+/// on both playable hosts (the ring is shared world state).
 ///
-/// The **data** prerequisite an earlier note claimed here is withdrawn: it
-/// named "an `action_state[i] != 4` array" the engine would have to grow, and
-/// no such array exists in retail either. Both inputs are already modelled -
-/// the ailment word is
-/// [`crate::battle_action::BattleActor::field_flags`] (`+0x16E`) on the world
-/// actors, and the roster id is per-slot character identity, which
-/// `engine-core` carries as its battle seating.
+/// The model question that kept it inert is settled, and the answer was a
+/// **bridge, not a choice**. The port holds an actor's ailments twice - the
+/// raw `+0x16E` word [`crate::battle_action::BattleActor::field_flags`], which
+/// the cast band writes, and a typed `StatusEffect` list, which the turn loop
+/// reads - so adopting one and retiring the other would have lost whatever the
+/// other carried. `World::raw_status_word` instead composes them: the typed
+/// list packs to its retail bits through
+/// [`crate::status_effects::pack_display_flags`] (bit map pinned in
+/// `crate::status_effects::display_flags`) and the raw word ORs in unchanged,
+/// which is bit-exact to the single word retail holds and keeps the `0x380`
+/// delegation group the typed list has no kind for.
 ///
-/// "A per-state body on `battle_flow` to call this from" was the previous
-/// last clause, and on its own it reads as a small piece of glue. It is not,
-/// because **the engine already answers this scan's predicate elsewhere, in a
-/// different representation.** `World::actor_blocked_from_acting` decides the
-/// ailment half over a typed `StatusEffect` list via
-/// [`crate::status_effects::StatusKind::blocks_actions`], and the battle turn
-/// loop enforces it; the liveness half is `battle.liveness`. So writing that
-/// body would put a second copy of one retail decision in the tree, over the
-/// raw `+0x16E` bit word this scan wants and the typed list everything else
-/// reads - the shape `live-audit-triage.md` keeps recording.
-///
-/// The AI-companion arm has no engine analogue at all: retail's
-/// `(&DAT_8007BD10)[i] != 4` excludes a fifth roster seat the port's
-/// three-slot player party never allocates. Adopting this scan therefore
-/// means deciding that the `+0x16E` word is the engine's canonical selectable
-/// predicate and retiring the typed one, which is a model choice rather than
-/// a wiring gap - and not one to make from inside `engine-vm`.
+/// The round-flow half stays outside the kernel, where retail keeps it: a
+/// member that has already committed this round is skipped by re-entering the
+/// scan, because retail walks its cursor on after each commit rather than
+/// testing a committed flag here.
 ///
 /// PORT: FUN_801DBA04
 pub fn first_selectable_target(pool: &[PoolActor], roster_char_ids: &[u8], actor_count: u8) -> u8 {
@@ -557,13 +554,9 @@ pub fn first_selectable_target(pool: &[PoolActor], roster_char_ids: &[u8], actor
 /// actor_count` it returns `current_index + 1` without scanning; otherwise it
 /// returns the first qualifying slot, or `actor_count` when none qualifies.
 ///
-/// NOT WIRED: same prerequisite as [`first_selectable_target`] - both are
-/// leaves of the command / menu SM `FUN_801D0748`, whose engine port is a
-/// state model without per-state bodies, and both want a selectable predicate
-/// the engine already computes over a typed status list. The inputs are not
-/// the blocker: see that function's note for why the "per-slot arrays the
-/// picker does not carry" reading is withdrawn, and for why the remaining
-/// step is a model choice rather than glue.
+/// Wired through the same caller as [`first_selectable_target`]: it opens the
+/// ring, this steps it, and both read the composed `+0x16E` word
+/// `World::raw_status_word` builds.
 ///
 /// Do not reach for this as the engine's turn-advance kernel. The engine's
 /// `World::next_living_combatant` is a **wrapping round-robin over every**

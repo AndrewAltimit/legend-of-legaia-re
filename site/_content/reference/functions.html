@@ -155,7 +155,7 @@
       <tr><td>FUN_8001ADA4</td><td>Per-actor render dispatcher (switch on <code>actor[+0x56]</code>); case 5 walks the mesh chain, case <code>0xB</code> is the ocean CLUT-walk emitter</td></tr>
       <tr><td>FUN_8001D140</td><td>Stack-swap wrapper around the dispatcher; 6&times; per frame from <code>FUN_80016444</code> (render pass)</td></tr>
       <tr><td>FUN_80043390</td><td>Per-prim emit selector: SCUS table <code>0x8007657C</code> or the world-map overlay's fog-enabled table <code>0x801F8968</code></td></tr>
-      <tr><td>FUN_8002735C</td><td>The 60-GTE-op TMD renderer (landmark meshes)</td></tr>
+      <tr><td>FUN_8002735C</td><td>The 60-GTE-op table-driven TMD renderer; gated on actor <code>+0x42</code>, and unentered in every sampled mode</td></tr>
       <tr><td>FUN_8001B964</td><td>Animated-mesh renderer: poses TMD object <em>i</em> with ANM bone <em>i</em> (<code>R&middot;v + T</code>); skips unless object count = bone count</td></tr>
       <tr><td>FUN_8001BE80</td><td>ANM per-(bone, frame) entry decoder (port <code>player_anm::BoneTransform</code>)</td></tr>
       <tr><td>FUN_80024D78</td><td>Actor object-table fill from the pool TMD</td></tr>
@@ -173,7 +173,7 @@
     <summary>Deep dive: dispatch details</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li>Case 5 of <code>FUN_8001ADA4</code> dispatches each TMD to <code>FUN_80043390</code> (textured), <code>FUN_80029888</code> (env-mapped) or <code>FUN_8002735C</code> (landmark). Case <code>0xB</code> banks <code>acc += DAT_1F800393</code> and fires a 16&times;1 <code>MoveImage</code> per kingdom slot-5 table entry when <code>acc &gt;= hold</code>.</li>
+        <li>Case 5 of <code>FUN_8001ADA4</code> dispatches each TMD to <code>FUN_8002735C</code> when actor <code>+0x42</code> is non-zero, <code>FUN_80029888</code> (env-mapped) when only <code>+0x7A</code> is, else <code>FUN_80043390</code> (textured) - the measured leaf. Case <code>0xB</code> banks <code>acc += DAT_1F800393</code> and fires a 16&times;1 <code>MoveImage</code> per kingdom slot-5 table entry when <code>acc &gt;= hold</code>.</li>
         <li><code>FUN_80043390</code> picks its table on <code>_DAT_1F800394 &amp; 1</code>; the overlay variant routes every prim through the fog leaves at <code>0x801F7644..0x801F8690</code> - the bulk continent emit path.</li>
         <li><code>FUN_80024E80(fade_template, mode)</code> allocates from pool <code>&amp;DAT_80070674</code> via <code>FUN_80020DE0</code>, stores <code>mode</code> at <code>actor[+0x18]</code>, loads the ramp via <code>FUN_80020B00</code>. The battle-action SM uses it for the summon backdrop fade (state <code>0x33</code>) and the escape white-out (state <code>0x66</code>).</li>
         <li><code>FUN_80026B4C</code> stores at <code>DAT_8007C018[DAT_8007B774++]</code>; reached from <code>FUN_8001F05C</code> cases 2 and 9. <code>FUN_800268DC</code> builds the <code>+0xC</code> descriptor array (0x1C stride).</li>

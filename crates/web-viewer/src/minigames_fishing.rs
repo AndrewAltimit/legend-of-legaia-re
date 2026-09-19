@@ -427,9 +427,52 @@ impl LegaiaMinigames {
             purchased_mask,
             seed,
         ));
+        // The venue the cast lure lands in: the same `.MAP` buffer + region
+        // block the panel's 3D layer decoded, so the lure's walk-grid drift
+        // and its water class come off the bytes the page is drawing.
+        if let (Some(p), Some(scene)) = (self.fishing_pond.as_mut(), self.fishing_scene.as_ref())
+            && let Some(map) = scene.map.clone()
+        {
+            let (anchor_x, anchor_z) = legaia_engine_core::fishing_actors::VENUE_ANCHOR;
+            p.attach_venue(legaia_engine_core::fishing::PondVenue {
+                map,
+                region_block: scene.region_block.clone(),
+                anchor_x,
+                anchor_z,
+                facing: self.fishing_angler_facing,
+            });
+        }
         self.fishing_banners = Default::default();
         self.fishing_prizes.clear();
         true
+    }
+
+    /// Point the angler (and so the next cast) at `facing`, a 12-bit angle in
+    /// the same space retail keeps in the actor's `+0x26` word. Takes effect
+    /// on the next cast.
+    pub fn fishing_set_angler_facing(&mut self, facing: i32) {
+        self.fishing_angler_facing = facing as i16;
+    }
+
+    /// The live cast lure as `{"x":..,"z":..,"water":bool,"bonus":N,
+    /// "weight":N,"drift":N}`, or `null` while no line is out.
+    pub fn fishing_lure_json(&self) -> String {
+        let Some(p) = self.fishing_pond.as_ref() else {
+            return "null".to_string();
+        };
+        let Some(lure) = p.lure_actor() else {
+            return "null".to_string();
+        };
+        let probe = p.lure_probe();
+        format!(
+            r#"{{"x":{},"z":{},"water":{},"bonus":{},"weight":{},"drift":{}}}"#,
+            lure.x(),
+            lure.z,
+            probe.water,
+            probe.countdown_bonus,
+            probe.weight,
+            probe.drift
+        )
     }
 
     /// Advance the pond one frame. `reel_mask` carries the held pad bits

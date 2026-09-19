@@ -1685,10 +1685,33 @@ companion byte at `+0x161`, and the word at `+0x008`. Permuting only the id
 list would decouple an entry from its companion byte, which is what makes
 the three-array shape the load-bearing part.
 
+The exchange is a **two-press** gesture, and the second cursor word carries
+both halves of its state: a confirm with bit `0x1000` set stores the hovered
+row's index into it (the latch, which clears the bit), and the next confirm
+swaps that row with the hovered one and raises the bit again. Cancel reads
+the same bit - with a row latched it only drops the latch, and only a cancel
+with nothing latched leaves the page for the character picker. Only the
+spell list's running step carries that arm; the other two cue a sound and
+return.
+
+### The page in the port
+
 Ported as `engine-core::save_subscreen::{sub15_list_source, sub15_list_len,
-sub15_frame, sub15_swap_rows}`. The screen's *identity* - which pause-menu
-row opens it - is still open: the root command picker sends its row `3`
-here, but nothing yet pins which of the three lists that row selects.
+sub15_frame, sub15_swap_rows}` (the record arithmetic) plus
+`engine-core::list_order::ListOrderSession` (the page: the clamping row
+picker, the seven-row window with retail's own Left/Right page arithmetic,
+and the latch/exchange confirm). Both hosts reach it with Square over a
+caster's spell list and draw it through one `engine-ui` builder; closing it
+runs `field_menu_dispatch::apply_list_order_outcome`, which re-derives the
+live row count from the record and replays the page's exchanges onto the
+character's own bytes, so a cancelled visit changes nothing and an exchange
+naming a row the record no longer carries is dropped.
+
+The entry is the engine's, not retail's: retail opens the page from this
+screen's own character picker, which the port does not have. The Magic
+screen lists exactly the rows the page permutes, in record order, which is
+why that is the door. Which of the three lists the root command picker's row
+`3` selects is still open.
 
 ## See also
 

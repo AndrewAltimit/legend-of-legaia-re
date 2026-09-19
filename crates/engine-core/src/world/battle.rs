@@ -8,6 +8,7 @@ use crate::battle_events::{BattleEvent, BattleHitFx};
 use legaia_engine_vm as vm;
 use vm::battle_action::{BattleEndCause, StepOutcome};
 
+mod auto_command;
 mod capture;
 mod cast_band;
 mod casting;
@@ -16,6 +17,7 @@ mod initiative;
 mod locomotion;
 mod loop_driver;
 mod monster_ai;
+mod selectable;
 mod stage;
 mod stats;
 mod teardown;

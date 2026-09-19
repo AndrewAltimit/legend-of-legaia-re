@@ -1368,3 +1368,14 @@ names it to stop the two addresses being re-derived as two behaviours.
 [[waiver]]
 key = "module-orphan:crates/engine-core/src/camera.rs:801dc0bc"
 reason = "`FUN_801DC0BC` is the op-0x45 camera-mover actor's tick (the node on `_DAT_8007C34C` whose tick fn `FUN_801DD310` installs; body `0x801DC104..0x801DD220`, docs/subsystems/cutscene.md) and `Camera::tick_globals` ports its glide law. The module's other tags (`FUN_801DBE9C`, `FUN_801DE3E0`) are the follow camera's arrival snap and script-driven zone re-query, which never touch the mover's `(start, end)` pair block or its progress word, so no shared data address or callee is expected. The dump file named `801dc0bc` carries a mid-function fragment (`entry=801dc098`), which is why nothing distinctive can be matched from it either."
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/menus.md:801d1290:801e43e8"
+reason = """
+0x801E43E8 is the browse-row slot table the routine indexes for rows 1 and
+up, reached through a lui/addiu pair the dumps print split, so the literal
+never appears in any 801d1290 dump. Verified by bytes in the audit of the
+equip-browse correction: the run reads 00 01 00 04 05 06 07 (weapon row 0
+comes from the per-character halfword 0x8007B42C instead), which is what
+makes the browse order weapon, helmet, body, footwear, Goods x3.
+"""

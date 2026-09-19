@@ -1364,9 +1364,16 @@ impl BandCheck {
     /// `record` is the line record (`DAT_801d927c`), `readout` the HUD length
     /// term (`DAT_801d9280` = `max(record - 300, 0)`), `cadence` the
     /// recogniser's match this frame, `edge_bonus` the count of fresh input
-    /// edges (D-pad left/right, either reel button), and `reel_held` whether
-    /// a reel button is held (`_DAT_8007b850 & 0xc0`). Returns `true` when a
-    /// strike lands this frame.
+    /// edges (D-pad left/right, either reel button), `water_bonus` the
+    /// water-class addend the tile under the lure contributes
+    /// ([`crate::fishing_actors::water_tile_class`]; `0` off water), and
+    /// `reel_held` whether a reel button is held (`_DAT_8007b850 & 0xc0`).
+    /// Returns `true` when a strike lands this frame.
+    ///
+    /// `edge_bonus` and `water_bonus` stay separate arguments because they
+    /// are separate retail addends onto one register - `addu s1,s1,s2` at
+    /// `0x801D3434` for the water class, then one `addiu s1,s1,1` per held
+    /// pad bit from `0x801D3450` - and not two readings of one quantity.
     ///
     /// Pinned: the every-frame re-entry (countdown clamped at 0), the
     /// cadence-match band store + `0x40` hold + splash, the roll cutoffs, the
@@ -1389,6 +1396,7 @@ impl BandCheck {
         record: i32,
         readout: i32,
         edge_bonus: i32,
+        water_bonus: i32,
         reel_held: bool,
         frame_step: i32,
     ) -> bool {
@@ -1424,6 +1432,7 @@ impl BandCheck {
         let interval = crate::fishing_actors::bite_interval(readout, false);
         let mut credit = crate::fishing_actors::bite_credit_override(readout)
             .unwrap_or(credit_base)
+            + water_bonus.max(0)
             + edge_bonus.max(0);
         if readout < STRIKE_CREDIT_ZERO_READOUT {
             credit = 0;
@@ -1652,6 +1661,34 @@ pub struct PondSession {
     /// Points awarded by the last landed catch.
     last_award: i32,
     events: Vec<PondEvent>,
+    /// The venue the lure is cast into, once a host attaches one.
+    venue_map: Option<PondVenue>,
+    /// The live cast lure (`0x801D9174` / `0x801D918C`), from the cast lock
+    /// until the line is reeled back in.
+    lure_actor: Option<crate::fishing_actors::LureActor>,
+    /// Last frame's lure probe - the water class the strike credit and the
+    /// hooked fish's weight come off.
+    lure_probe: crate::fishing_actors::LureProbe,
+}
+
+/// The venue bytes a host attaches so the cast lure has a world to land in.
+///
+/// Retail reads both regions off the one resident scene buffer
+/// (`*_DAT_1F8003EC`); the port keeps the same buffer and the parsed
+/// `+0x10000` region block beside it, because
+/// [`crate::field_regions::RegionTable`] borrows rather than owns.
+#[derive(Debug, Clone)]
+pub struct PondVenue {
+    /// The venue scene's `.MAP` buffer.
+    pub map: Vec<u8>,
+    /// Its `+0x10000` region block ([`crate::scene::Scene::field_map_region_block`]).
+    pub region_block: Option<Vec<u8>>,
+    /// The angler's world `x` - the point the cast offsets from.
+    pub anchor_x: i16,
+    /// The angler's world `z`.
+    pub anchor_z: i16,
+    /// The angler's facing (`actor[+0x26]`), the polar offset's angle.
+    pub facing: i16,
 }
 
 /// Wind-up frames before the power meter opens (state `0xd`: ~12 frames).
@@ -1702,7 +1739,30 @@ impl PondSession {
             strength: 0,
             last_award: 0,
             events: Vec::new(),
+            venue_map: None,
+            lure_actor: None,
+            lure_probe: Default::default(),
         }
+    }
+
+    /// Attach the venue the lure is cast into.
+    ///
+    /// Without it the session still runs - every cast simply lands nowhere in
+    /// particular and the water-class credit stays at zero, which is what the
+    /// far-band ladder already does for a short cast.
+    pub fn attach_venue(&mut self, venue: PondVenue) {
+        self.venue_map = Some(venue);
+    }
+
+    /// The live cast lure, from the cast lock until the line is reeled in.
+    pub fn lure_actor(&self) -> Option<crate::fishing_actors::LureActor> {
+        self.lure_actor
+    }
+
+    /// Last frame's lure probe: the water flag, the strike-credit addend and
+    /// the class's fish weight (retail's `s4`, `10` off water).
+    pub fn lure_probe(&self) -> crate::fishing_actors::LureProbe {
+        self.lure_probe
     }
 
     /// The live phase.
@@ -1817,6 +1877,10 @@ impl PondSession {
                     self.casts += 1;
                     self.band = BandCheck::default();
                     self.cadence.reset();
+                    self.lure_actor = self.venue_map.as_ref().and_then(|v| {
+                        crate::fishing_actors::LureActor::cast(v.anchor_x, v.anchor_z, v.facing, fs)
+                    });
+                    self.lure_probe = Default::default();
                     self.phase = PondPhase::Waiting;
                 }
             }
@@ -1832,12 +1896,26 @@ impl PondSession {
                 }
                 let reel_held = input.reel_mask & 0xc0 != 0;
                 let readout = self.readout();
+                // The lure's own frame: the walk-grid drift, then the water
+                // class of the tile it now sits over. Both feed the same
+                // strike roll retail runs them into.
+                self.lure_probe = match (self.lure_actor.as_mut(), self.venue_map.as_ref()) {
+                    (Some(lure), Some(venue)) => {
+                        let region = venue
+                            .region_block
+                            .as_deref()
+                            .and_then(crate::field_regions::RegionTable::parse);
+                        lure.probe(&venue.map, region.as_ref(), self.casts, fs)
+                    }
+                    _ => Default::default(),
+                };
                 let struck = self.band.tick(
                     &mut self.rng,
                     matched,
                     self.line_record,
                     readout,
                     input.edge_bonus,
+                    self.lure_probe.countdown_bonus,
                     reel_held,
                     fs,
                 );
@@ -1870,6 +1948,7 @@ impl PondSession {
                     self.line_record -= 4 * fs;
                     if self.line_record <= RECORD_STRIKE_BASE {
                         self.line_record = 0;
+                        self.lure_actor = None;
                         self.phase = PondPhase::Idle;
                     }
                 }
@@ -2411,7 +2490,7 @@ mod tests {
         for readout in [0, 50, 99, 100, 150, 199] {
             for _ in 0..5000 {
                 assert!(
-                    !b.tick(&mut rng, None, readout + 300, readout, 3, true, 1),
+                    !b.tick(&mut rng, None, readout + 300, readout, 3, 0, true, 1),
                     "readout {readout} struck"
                 );
             }
@@ -2431,7 +2510,7 @@ mod tests {
             for _ in 0..4000 {
                 // Re-arm every frame so the hold does not decay away.
                 b.countdown = 0;
-                if b.tick(&mut rng, cadence, readout + 300, readout, 0, true, 1) {
+                if b.tick(&mut rng, cadence, readout + 300, readout, 0, 0, true, 1) {
                     n += 1;
                 }
             }
@@ -2547,12 +2626,12 @@ mod tests {
         let mut rng = BiosRand::new(1);
         // A cadence match stores the template id as the band and arms the
         // countdown + splash.
-        b.tick(&mut rng, Some(0), 1000, 700, 0, false, 1);
+        b.tick(&mut rng, Some(0), 1000, 700, 0, 0, false, 1);
         assert_eq!(b.band, 0);
         assert!(b.splash);
         assert_eq!(b.countdown, BAND_HOLD_FRAMES);
         // While held, unmatched frames keep the band (countdown decays).
-        b.tick(&mut rng, None, 1000, 700, 0, false, 1);
+        b.tick(&mut rng, None, 1000, 700, 0, 0, false, 1);
         assert_eq!(b.band, 0);
         assert!(!b.splash);
         assert_eq!(b.countdown, BAND_HOLD_FRAMES - 1);
@@ -2564,12 +2643,12 @@ mod tests {
         let mut b = BandCheck::default();
         // Readout below the floor: no strike regardless of credit.
         for _ in 0..200 {
-            assert!(!b.tick(&mut rng, Some(0), 1000, 150, 5, true, 1));
+            assert!(!b.tick(&mut rng, Some(0), 1000, 150, 5, 0, true, 1));
         }
         // Reel not held: no strike.
         let mut b = BandCheck::default();
         for _ in 0..200 {
-            assert!(!b.tick(&mut rng, Some(0), 1000, 700, 5, false, 1));
+            assert!(!b.tick(&mut rng, Some(0), 1000, 700, 5, 0, false, 1));
         }
     }
 

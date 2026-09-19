@@ -759,10 +759,29 @@ The distinction matters because the two pages have different **suppliers**.
 The `(512, 0)` page and its strip come from the hall scene's own TIM set -
 PROT `1230`, the last slot of the `other7` block, an `asset::pack` of 31 TIMs
 behind a `TIM_LIST` chunk header, of which exactly one member targets that
-origin and carries the strip as its CLUT block. The `(960, 256)` page is
-**not** in that pack, so whatever stages it is a separate question; nothing in
-this port stages it and the three rows would sample whatever the frame's
-previous occupant left there.
+origin and carries the strip as its CLUT block.
+
+The `(960, 256)` page is not in that pack, and it is not in **any** PROT entry:
+it is boot-resident system UI, uploaded from the pre-`init_data` unindexed head
+gap of `PROT.DAT` that [`boot.md`](boot.md#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors)
+catalogues. Two members of that gap cover what these three records sample, and
+both declare the rect in their own header:
+
+* `PROT.DAT[0x11218]` - the **menu-glyph atlas**, image origin `(960, 256)`,
+  `64 x 256` halfwords. That rect *is* texpage `0x001F`, so the cells at
+  `u = 0x40` / `0x50` / `0x60` are read out of the atlas.
+* `PROT.DAT[0x1AED0]` - image origin `(976, 272)`, `8 x 32` halfwords, one of
+  the four cursor-part TIMs that patch sub-rects of the atlas page after it
+  lands. The three widget CLUT ids decode to `(976, 272)` / `(976, 273)` /
+  `(976, 274)` - column `61` is `61 * 16 = 976` - i.e. the first three rows of
+  that patch, read as palettes rather than as pixels.
+
+So there is no second *staging* step to find: the page is up before the hall
+scene loads, the minigame's own container has no reason to carry it, and a
+per-PROT-entry sweep cannot source it because the bytes sit between the TOC and
+the first indexed entry. Parser + uploader for the atlas half:
+`legaia_asset::interior_page` (see
+[`formats/tim.md`](../formats/tim.md#flat-strip-clut-uploads)).
 
 ### The count-in banner
 

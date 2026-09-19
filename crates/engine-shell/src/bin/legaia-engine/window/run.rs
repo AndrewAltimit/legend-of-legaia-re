@@ -1129,6 +1129,8 @@ pub(super) fn cmd_play_window_with_record(
         fish_wander: None,
         fish_line: None,
         fishing_floor: None,
+        fishing_regions: None,
+        fish_lure: None,
         fishing_sway_angle: 0,
         fishing_sway_offset: (0, 0),
         minigame_rng: 0x1234_5678,

@@ -33,20 +33,19 @@ use legaia_engine_core::world::SceneMode;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 
 impl LegaiaRuntime {
-    /// Retail's `_DAT_8007B868` suppress gate, as this host can see it: only
-    /// free-roam on the field or the overworld shows a readout, and any
-    /// panel, box or fight that owns the screen hides it.
-    fn field_party_hud_suppressed(&self) -> bool {
+    /// Retail's `_DAT_8007B868` suppress gate, asked of the shared kernel
+    /// [`legaia_engine_core::world_map_panel_host::field_hud_suppressed`].
+    /// This host answers only the term the world cannot: whether a page-side
+    /// panel owns the frame. The enumeration used to be spelled out here and
+    /// again in the native window, and the two copies had drifted.
+    pub(crate) fn field_party_hud_suppressed(&self) -> bool {
         let Some(h) = self.scene_host.as_ref() else {
             return true;
         };
-        let w = &h.world;
-        !matches!(w.mode, SceneMode::Field | SceneMode::WorldMap)
-            || self.menu.is_open()
-            || w.dialog.current.is_some()
-            || w.dialog.inline.is_some()
-            || w.cutscene.text_balloon.is_some()
-            || w.cutscene_timeline_active()
+        legaia_engine_core::world_map_panel_host::field_hud_suppressed(
+            &h.world,
+            self.menu.is_open(),
+        )
     }
 
     /// Advance the HUD's idle countdown one frame.
@@ -154,6 +153,12 @@ impl LegaiaRuntime {
     /// (`FUN_8002C488`), which this host has no atlas for, so each draws as
     /// the same stand-in glyph the native window uses.
     pub(crate) fn passive_hud_draws(&self, surface_w: u32, surface_h: u32) -> Vec<TextDraw> {
+        // Same reason as the readout above: the cached icon list is cleared
+        // on the tick, and the page's frame loop skips the tick on the very
+        // frames a panel owns the screen.
+        if self.field_party_hud_suppressed() {
+            return Vec::new();
+        }
         if self.passive_hud_icons.is_empty() {
             return Vec::new();
         }
@@ -183,6 +188,16 @@ impl LegaiaRuntime {
     ) -> (Vec<SpriteDraw>, Vec<TextDraw>) {
         use ui::field_party_hud as fp;
         let empty = (Vec::new(), Vec::new());
+        // Ask the suppress gate on the DRAW path too. The page's frame loop
+        // (`site/js/play-app.js::_frame`) skips `tick_frame` entirely while a
+        // field shop, the naming prompt or the pause menu is up, so the tick
+        // that would have suppressed this readout does not run on those
+        // frames - and the shop arm goes on to call
+        // `play_overlay_draws_json`, which is where this builder sits. The
+        // decision alone is therefore only as fresh as the last ticked frame.
+        if self.field_party_hud_suppressed() {
+            return empty;
+        }
         let Some(legaia_engine_vm::world_map_panel_actors::HudDecision::Draw { y }) =
             self.field_party_hud.decision()
         else {

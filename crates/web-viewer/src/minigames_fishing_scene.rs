@@ -141,6 +141,11 @@ pub(crate) struct FishingScene {
     /// 1 MB PSX VRAM: the scene upload with the PROT 0874 §2 field-character
     /// textures merged on top.
     vram: Vec<u8>,
+    /// The venue's `.MAP` buffer and its `+0x10000` region block - what the
+    /// cast lure probes for the walk-grid drift and the water class.
+    pub(crate) map: Option<Vec<u8>>,
+    /// See [`FishingScene::map`].
+    pub(crate) region_block: Option<Vec<u8>>,
 }
 
 /// Frame-0 rigid transforms of scene-ANM record `anim_id - 1` for a bound
@@ -386,6 +391,11 @@ impl LegaiaMinigames {
                 hybrid_body(&tmd_bytes)
             });
 
+        let map = scene
+            .field_map_index(&index)
+            .and_then(|i| index.entry_bytes_extended(i).ok());
+        let region_block = scene.field_map_region_block(&index).ok().flatten();
+
         Some(FishingScene {
             env,
             aabb: (lo, hi),
@@ -394,6 +404,8 @@ impl LegaiaMinigames {
             idle_dims,
             idle_frames,
             vram: vram.as_bytes().to_vec(),
+            map,
+            region_block,
         })
     }
 }

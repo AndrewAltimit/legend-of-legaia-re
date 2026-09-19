@@ -1086,6 +1086,46 @@ pub struct FieldHudMemberData {
     pub alive: bool,
 }
 
+/// Retail's `_DAT_8007B868` field-HUD suppress global, as the port can see
+/// it - the one answer both hosts ask for, rather than one enumeration each.
+///
+/// `FUN_801D0D38` reads the global at its first instruction and, when it is
+/// non-zero, clears `_DAT_8007B5F4` and jumps straight to its epilogue at
+/// `0x801D1314`. The port has no single flag to mirror it, so this is the
+/// enumeration of the states in which something else owns the frame.
+///
+/// **It gates the badge column too.** The passive-ability badges are
+/// `FUN_801d095c`, and its only caller is `FUN_801D0D38`'s own
+/// `jal 0x801d095c` at `0x801D130C` - eight bytes above the epilogue the
+/// suppress arm jumps to, so a suppressed frame never reaches it. Every
+/// surface that draws the badges therefore answers this question first,
+/// exactly as the party readout does (see
+/// `ghidra/scripts/funcs/overlay_0897_801d0d38.txt`).
+///
+/// `host_panel_owns_frame` is the one term the world cannot answer: a
+/// host-side full-screen panel with no `World` state behind it (the native
+/// window's boot UI, its in-window FMV player and its own typed dialog panel;
+/// either host's menu runtime). Every other term is world state and is asked
+/// here, so the two hosts cannot drift apart on it again.
+///
+/// PORT: FUN_801d0d38 (`0x801D0D38..0x801D0DBC` suppress gate)
+pub fn field_hud_suppressed(world: &crate::world::World, host_panel_owns_frame: bool) -> bool {
+    use crate::world::SceneMode;
+    !matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
+        || host_panel_owns_frame
+        || world.dialog.current.is_some()
+        || world.dialog.inline.is_some()
+        || world.cutscene.text_balloon.is_some()
+        || world.cutscene_timeline_active()
+        // The naming prompt is modal on both hosts and neither had it in its
+        // copy, so the readout sat behind the name-entry overlay wherever the
+        // idle countdown had already expired. Which retail state raises the
+        // global for it is not read off a dump - the term is here because the
+        // overlay owns the frame, and because a term present on one host only
+        // is the drift this kernel exists to end.
+        || world.name_entry_active()
+}
+
 /// Project the **present party** onto the field HUD's rows.
 ///
 /// Retail's draw loop walks the present-party list at `0x80084598` for

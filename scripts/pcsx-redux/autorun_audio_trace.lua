@@ -50,11 +50,24 @@ package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
 local ffi   = require("ffi")
 
-ffi.cdef[[
-    typedef struct { char opaque[64]; } LuaSlice;
-    const void* getSliceData(LuaSlice* slice);
-    uint64_t getSliceSize(LuaSlice* slice);
-]]
+-- The slice `PCSX.createSaveState()` returns is a Lua TABLE whose metatable
+-- exposes the payload directly: `.size` is a number and `.data` a
+-- `const void*` cdata (plus `__len`, so `#slice` also gives the size). It is
+-- NOT reached through exported C entry points - `getSliceSize` /
+-- `getSliceData` are not symbols in the shipped binary, and an `ffi.cdef` for
+-- them makes every capture throw `undefined symbol: getSliceSize`, which the
+-- vsync listener then swallows into an unlabelled "Runtime error" line while
+-- the output file stays at zero frames.
+local function slice_size(w)
+    if type(w.size) == "number" then return w.size end
+    local ok, n = pcall(function() return #w end)
+    if ok and type(n) == "number" then return n end
+    return 0
+end
+
+local function slice_data(w)
+    return w.data
+end
 
 local SSTATE_PATH  = probe.getenv("LEGAIA_SSTATE",
     os.getenv("HOME") .. "/Tools/pcsx-redux/SCUS94254.sstate1")
@@ -119,6 +132,7 @@ out_fh:write("LEGSPU01")
 out_fh:write(string.char(0, 0, 0, 0))  -- placeholder for frame_count
 
 local captured = 0
+local errors = 0
 
 local function u32_le(v)
     return string.char(
@@ -134,11 +148,8 @@ local function capture_frame(vsync_idx)
         PCSX.log("[audio_trace] createSaveState returned nil")
         return false
     end
-    -- The Lua wrapper has `._wrapper` pointing at the raw LuaSlice*.
-    local raw   = wrapper._wrapper
-    local size  = tonumber(ffi.C.getSliceSize(raw))
-    local ptr_v = ffi.C.getSliceData(raw)
-    local ptr   = ffi.cast("const uint8_t*", ptr_v)
+    local size  = tonumber(slice_size(wrapper)) or 0
+    local ptr   = ffi.cast("const uint8_t*", slice_data(wrapper))
     if ptr == nil or size == 0 then
         PCSX.log("[audio_trace] createSaveState returned empty slice")
         return false
@@ -188,7 +199,20 @@ probe.run({
             return
         end
         if elapsed % INTERVAL == 0 then
-            capture_frame(elapsed)
+            -- The vsync listener swallows a Lua error into a bare
+            -- "Runtime error while running LUA code" line with no message,
+            -- so a capture that throws every frame looks identical to one
+            -- that is merely slow - and leaves a zero-byte output. Catch it
+            -- here and say what threw, once.
+            local ok, err = pcall(capture_frame, elapsed)
+            if not ok then
+                errors = errors + 1
+                if errors <= 3 then
+                    PCSX.log(string.format(
+                        "[audio_trace] vsync %d: capture threw: %s",
+                        elapsed, tostring(err)))
+                end
+            end
         end
     end,
 
@@ -198,6 +222,7 @@ probe.run({
         out_fh:write(u32_le(captured))
         out_fh:close()
         PCSX.log(string.format(
-            "[audio_trace] wrote %d frame(s) to %s", captured, OUT_PATH))
+            "[audio_trace] wrote %d frame(s) to %s (%d capture error(s))",
+            captured, OUT_PATH, errors))
     end,
 })

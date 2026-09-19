@@ -22,9 +22,10 @@
 //!   this snapshot's voice config" - **not** a bit-identical
 //!   resume-from-snapshot, because the engine-audio [`Voice`] doesn't
 //!   expose its mid-stream playback state (current ADPCM block
-//!   pointer, sample fractional position, ADSR runtime phase). Each
-//!   keyed-on voice rewinds to its start address with a fresh Attack
-//!   envelope.
+//!   pointer, sample fractional position, ADSR step countdown). Each
+//!   keyed-on voice rewinds to its start address in the Attack phase,
+//!   carrying the snapshot's envelope LEVEL so the window it renders is
+//!   at the captured amplitude rather than ramping up from silence.
 //! - [`build_engine_pcm_trace`] mirrors
 //!   [`crate::audio_trace_oracle::build_engine_audio_trace`] - it boots a
 //!   [`crate::BootSession`], runs a private headless SPU + sequencer in
@@ -56,12 +57,12 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use legaia_engine_audio::{Spu, SpuAllocator, VabBank, spu::reverb::ReverbMode};
-use legaia_engine_core::scene::BgmDirector;
+use legaia_engine_audio::{Spu, spu::adsr::AdsrConfig, spu::reverb::ReverbMode};
 use legaia_mednafen::{PsxSpu, SaveState};
 
 use crate::audio_trace_oracle::{
-    AudioTraceBuildOptions, AudioTraceFrame, TraceBgmDirector, sample_engine_frame_for_pcm,
+    AudioTraceBuildOptions, AudioTraceFrame, TraceBgmDirector, enter_scene_for_trace,
+    sample_engine_frame_for_pcm, start_bgm_id_directly,
 };
 use crate::{BootConfig, BootSession};
 
@@ -86,14 +87,18 @@ const CHANNELS: usize = 2;
 ///   - Reverb mode (low byte of the raw u32 register, mapped via
 ///     [`ReverbMode::from_byte`]).
 ///   - Per-voice: `start_addr`, `loop_addr`, `pitch`, `vol_left`,
-///     `vol_right`. A synthetic [`legaia_engine_audio::spu::voice::Voice::key_on`]
-///     is issued for voices whose retail ADSR phase is non-zero.
+///     `vol_right`, the `adsr_cfg` decoded from the captured ADSR-control
+///     word, and the captured envelope level. A synthetic
+///     [`legaia_engine_audio::spu::voice::Voice::key_on`] is issued for
+///     voices the snapshot reports AUDIBLE (envelope level non-zero -
+///     mednafen has no `Off` phase, so a phase test keys all 24).
 ///
 /// **What does NOT get mirrored** (engine-audio doesn't expose the
 /// state):
 ///   - Voice mid-stream playback position (current ADPCM block, sample
-///     fractional offset, current envelope level).
-///   - ADSR runtime phase (every active voice starts in Attack).
+///     fractional offset) and the envelope's step countdown.
+///   - ADSR runtime phase (every keyed voice starts in Attack, at the
+///     captured envelope level).
 ///   - Voice-on/-off pending masks (snapshot is a freeze frame; the
 ///     translator emits a key_on for everything retail had audible).
 ///   - SPU control register (`SPUCNT`).
@@ -145,11 +150,33 @@ pub fn engine_spu_from_retail(psx_spu: &PsxSpu<'_>) -> Option<Spu> {
         if let Some(vr) = rv.vol_right {
             v.vol_right = vr;
         }
+        // The tone's own envelope shape. Without it every keyed voice runs
+        // the engine `Voice`'s DEFAULT `AdsrConfig`, whose attack is nothing
+        // like the captured one - which is how the retail reference used to
+        // render near-silence out of a snapshot with audible voices.
+        if let Some(raw) = rv.adsr_control {
+            v.adsr_cfg = AdsrConfig::from_words(raw as u16, (raw >> 16) as u16);
+        }
         if rv.is_active() {
             key_on_mask |= 1u32 << i;
         }
     }
     spu.key_on_mask(key_on_mask);
+    // `key_on` rewinds the envelope to Attack at level 0. The snapshot knows
+    // where the envelope actually stood, and a window rendered from level 0
+    // is quiet for as long as the attack ramp lasts - so seed the captured
+    // level back in. The PHASE is still Attack rather than the captured one:
+    // engine-audio's `AdsrState` exposes level and phase but not the
+    // hardware's step countdown, so resuming mid-Release would need state
+    // this snapshot pair cannot carry. This is an amplitude fix, not a
+    // bit-exact resume (see the module header's tolerance section).
+    for (i, rv) in retail_voices.iter().enumerate() {
+        if let Some(level) = rv.adsr_env_level
+            && level != 0
+        {
+            spu.voices[i].adsr.level = level & 0x7FFF;
+        }
+    }
 
     Some(spu)
 }
@@ -223,8 +250,11 @@ pub fn build_engine_pcm_trace(
         Some(p) => BootSession::open_disc(p, &cfg)?,
         None => BootSession::open(extracted_root, &cfg)?,
     };
+    // Same field-live entry the voice-mask trace takes: without it the field
+    // VM steps nothing and no op `0x35` ever reaches the director, so the
+    // rendered window is digital silence by construction.
+    enter_scene_for_trace(&mut session, &opts.scene)?;
 
-    let mut spu = Spu::new();
     let mut director = TraceBgmDirector::new();
     if let Some((vab_bytes, vab_off)) = session
         .host
@@ -233,21 +263,11 @@ pub fn build_engine_pcm_trace(
     {
         // Same stream shape as the boot path: the bank is at the stream's
         // reported offset, not at 0.
-        let report = legaia_vab::parse(&vab_bytes, vab_off)
-            .context("parse scene VAB header for PCM trace")?;
-        const SPU_RAM_BYTES: u32 = 512 * 1024;
-        const SPU_RESERVED_BYTES: u32 = 0x1000;
-        let mut alloc = SpuAllocator::new(SPU_RESERVED_BYTES, SPU_RAM_BYTES - SPU_RESERVED_BYTES);
-        let bank = VabBank::upload(&mut spu, &mut alloc, &report, &vab_bytes);
-        director.set_bank(bank);
+        director.stage_scene_bank(&vab_bytes, vab_off)?;
     }
 
     if let Some(id) = opts.bgm_id {
-        if let Some(seq_bytes) = session.host.bgm_seq_bytes(id)? {
-            director.start(id, &seq_bytes);
-        } else {
-            log::warn!("pcm-trace: bgm_id {id} did not resolve to a SEQ entry");
-        }
+        start_bgm_id_directly(&session, &mut director, id)?;
     }
 
     let samples_per_frame = (SPU_SAMPLE_RATE as f64 * (opts.us_per_frame / 1_000_000.0)) as usize;
@@ -257,23 +277,18 @@ pub fn build_engine_pcm_trace(
 
     frames.push(sample_engine_frame_for_pcm(
         &session,
-        &spu,
+        director.spu(),
         director.sequencer(),
     ));
     let mut sink = vec![0i16; samples_per_frame * CHANNELS];
     for _ in 0..opts.frames {
         let _ = session.tick()?;
         let _ = session.host.route_bgm_events(&mut director)?;
-        if !director.is_paused()
-            && let Some(seq) = director.sequencer_mut()
-        {
-            seq.tick_us(&mut spu, opts.us_per_frame);
-        }
-        spu.render_into(&mut sink);
+        director.advance_frame(opts.us_per_frame, &mut sink);
         pcm.extend_from_slice(&sink);
         frames.push(sample_engine_frame_for_pcm(
             &session,
-            &spu,
+            director.spu(),
             director.sequencer(),
         ));
     }
@@ -550,7 +565,9 @@ mod tests {
     #[test]
     fn engine_spu_from_retail_translates_voice_state_and_key_on() {
         // Hand-roll a small mednafen save with the SPU section populated
-        // for voice 3: start_addr, pitch, ADSR phase non-zero (active).
+        // for voice 3: start_addr, pitch, ADSR phase Attack and a non-zero
+        // envelope level (the audibility predicate - mednafen's phase word
+        // has no `Off` member, so the level is what says "keyed").
         use legaia_mednafen::container::{MDFN_HEADER_LEN, MDFN_MAGIC, SECTION_NAME_LEN};
         // Studio C reverb register block (public PSX hardware-reference
         // preset; what retail actually installs) laid into the `Regs` shadow
@@ -572,6 +589,7 @@ mod tests {
             ("Voices[3].StartAddr", 0x1000u32.to_le_bytes().to_vec()),
             ("Voices[3].Pitch", 0x1234u16.to_le_bytes().to_vec()),
             ("Voices[3].ADSR.Phase", 1u32.to_le_bytes().to_vec()),
+            ("Voices[3].ADSR.EnvLevel", 0x2000u16.to_le_bytes().to_vec()),
             (
                 "(Voices[3].Sweep[0]).Current",
                 0x3FFFi16.to_le_bytes().to_vec(),

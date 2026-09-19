@@ -801,31 +801,6 @@ impl World {
         self.cycle_battle_turn();
     }
 
-    /// The next party member who still owes this round a command, scanning
-    /// forward from `after` (or from slot 0) - retail `FUN_801DB81C` (from
-    /// `ctx[+0x13] + 1`) and its sibling `FUN_801DBA04` (from zero). Both skip
-    /// a member already committed (`_DAT_8007BD10[i] == 4`), one with no HP,
-    /// and one whose status word carries `+0x16E & 0xF84` - the petrified /
-    /// asleep / numbed band and the `0x380` AI-delegated bits, none of which
-    /// hands the pad a ring.
-    ///
-    /// PORT: FUN_801DB81C
-    /// REF: FUN_801DBA04
-    pub(in crate::world) fn next_member_owing_command(&self, after: Option<u8>) -> Option<u8> {
-        let party_count = self.party.party_count.clamp(1, 3);
-        let start = after.map_or(0, |a| a.saturating_add(1));
-        (start..party_count).find(|&slot| {
-            let alive = self
-                .actors
-                .get(usize::from(slot))
-                .is_some_and(|a| a.battle.liveness != 0 && a.battle.hp != 0);
-            alive
-                && !self.battle.round_flow.committed(slot)
-                && !self.actor_blocked_from_acting(slot)
-                && !self.actor_is_confused(slot)
-        })
-    }
-
     /// Commit `action` as `actor`'s command for this round and walk the ring
     /// on - retail's ten-site commit idiom (`0x801D16AC` and siblings):
     /// advance to the next member that still owes a command, or begin the

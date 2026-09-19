@@ -572,7 +572,7 @@ impl PlayWindowApp {
                 use legaia_engine_core::field_menu::{FieldMenuInput, FieldMenuOutcome};
                 use legaia_engine_core::field_menu_dispatch::{
                     FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome,
-                    apply_pause_items_outcome, apply_spell_outcome,
+                    apply_list_order_outcome, apply_pause_items_outcome, apply_spell_outcome,
                 };
                 // The menu session is hosted by the BootSession (so headless
                 // drivers share it); if it vanished out from under the UI
@@ -648,6 +648,12 @@ impl PlayWindowApp {
                                 if apply_arts_outcome(editor, &mut library).is_ok() {
                                     self.session.host.world.store_chain_library(&library);
                                 }
+                            }
+                            FieldMenuSubsession::ListOrder(s) => {
+                                // Replay the page's exchanges onto the live
+                                // record through the ported swap; the page
+                                // itself permuted only its own copy.
+                                let _ = apply_list_order_outcome(&s, &mut self.session.host.world);
                             }
                             FieldMenuSubsession::Status(_) => {}
                             // The retail Load / Save rows, committed through

@@ -49,6 +49,33 @@ Both variants share the core field VM (`FUN_801DE840`), move-VM extension (`FUN_
 and all rendering helpers. The top-view variant adds extra rendering code that starts ~0x1400
 bytes earlier in the code window.
 
+### The top-view image on the disc is PROT 0981
+
+The top-view variant is not only a capture: it is a PROT entry of its own,
+**extraction 0981**, a `0x1000`-byte slot-A image at `0x801CE818`
+(`crates/asset/data/static-overlays.toml`). Its `monster_test` label is CDNAME
+inheritance - the block opens at extraction 0978 and names run forward
+([`cdname.md`](../formats/cdname.md#numbering-space)) - and the image's own
+operands are world-map ones throughout: the location table pointer
+`DAT_80073EE0`, the kingdom filter `uRam8007b970`, the camera translation pair
+`_DAT_80089118` / `_DAT_80089120` and the eye-space `TR` trio `0x800840B8`.
+Byte identity pins it to the capture: the arm at `0x801CE9C4` the place-label
+pass above is cited from is this image's bytes, at this VA, and they occur in
+no other PROT entry.
+
+The image holds **one framed function and three frameless leaves**:
+
+| Entry | Bytes | What it is |
+|---|---|---|
+| `0x801CE850` | 3164 | The top-view tick, and the prologue the table above names. A six-arm mode dispatcher: `sltiu a0, 6` against the mode word `0x801CF76C`, table at `0x801CE838`. All six arms are `jr $v0` targets inside this one body - `0x801CE9C4` is an arm, not a function head. |
+| `0x801CF4AC` | 316 | Enter / reset. Zeroes the mode word, sets the record cursor `0x801CF77C` and its neighbour to `-1`, and snapshots the live world-map state - the `0x800840B8` quad, the scroll trio `0x8007B790`, the camera pair `0x80089118`, the projection word `0x8007B6F4` and four scratchpad bytes - into the image's own zeroed block at `0x801CF70C..0x801CF790`. Sets the game-mode word `0x8007B83C = 0x0D`. |
+| `0x801CF5E8` | 144 | The location-record stepper. Walks the `DAT_80073EE0` table (count byte at `[0]`, `0x20` stride) up or down by `a0` until a record's `region` matches `uRam8007b970`, wrapping on the count, and stores the index back. |
+| `0x801CF678` | 112 | The camera clamp: bounds `_DAT_80089118` to `[-0x3380, -0xD00]` and `_DAT_80089120` to `[-0x3580, -0xC00]`. |
+
+Nothing here is ported. Entering the top view needs the debug flag
+`_DAT_8007B98C`, which retail leaves clear (see below), and the engine owns its
+own camera and map browser.
+
 The view-mode toggle flag lives at `DAT_801F2B94`. The world-map overlay
 variants extend past `0x801F0000` - capture them with a wider window
 (`0x801C0000..0x801F9000`, 228 KB) to include the prim-mode dispatch
@@ -198,6 +225,23 @@ menu list for the world map developer menu. String table at `0x801CF344..`:
 
 Called by `FUN_801ECA08` when the debug menu panel is active
 (`ctx[+0x54]` mod-6 dispatch resolves to cases 1 or 3).
+
+#### The image that holds the row strings is PROT 0897, not 0981
+
+`0x801CF344` is a slot-A address, and slot A is shared - which is why the table
+looked like a phantom print when it was scored against the top-view image above,
+where that VA is code. The strings are in the **field overlay, extraction 0897**,
+an uncompressed entry whose base is `0x801CE818`: the label run sits at file
+offset `0xB2C`, and `$a0` is formed as `0x801CF344` from two `lui`/`addiu` pairs
+inside the renderer's own body, at `0x801EAE44`/`0x801EAE48` and
+`0x801EB320`/`0x801EB324`. Both the renderer and its table are therefore in the
+one image, and no aliasing question remains - `FUN_801EAD98` is field-overlay
+code that the world map runs because the world map is a field scene.
+
+A live check agrees: extracting `0x801CE818..0x801D0000` from a `map03`
+overworld save state gives a window byte-identical to the first `0x17E8` bytes of
+`extracted/overlays/overlay_field_0897.bin`, dev-menu labels included. PROT 0981
+never coexists with it - the two are alternative occupants of the same slot.
 
 ### `FUN_801ECA08` - world map panel sizer / list picker (256 bytes)
 
@@ -382,8 +426,24 @@ Entry `(ctx)`. Bounds `ctx[+0x9E]` against `0x18` and dispatches through the
 The arms are debug cheats - restore the party's HP/MP from their maxima,
 cycle the encounter rate at `_DAT_8007B5F8`, max every stat on the three
 `0x80084140 + n*0x414` records, grant the whole item table through
-`FUN_800421D4`, cycle the BGM index at `_DAT_801F2E90`, toggle
-`_DAT_8007B606`.
+`FUN_800421D4`, play a track, toggle `_DAT_8007B606`.
+
+**The `BGM CALL` arm is the fourth disc-wide writer of the BGM request global
+`_DAT_8007BAC8`**, and it plays a track rather than cycling the cursor -
+cycling is `FUN_801E9F64`'s job, the input half. The arm
+(`0x801EACBC..0x801EAD20`) indexes the sound-test table at `0x801F2E94` by the
+cursor `_DAT_801F2E90`, a 10-byte stride whose first halfword is the **global
+BGM id** the rest of the engine uses (`2000 + i` for sound-test track `i`;
+[`music-tracks.md`](../reference/music-tracks.md)) and whose remaining eight
+bytes are the row's ASCII label. The rows are **not** `2000 + row`: the table
+runs `2000..=2043` and then `2045..=2071` - seventy-one rows for seventy-two
+consecutive ids, with `2044` (sound-test track `44`) carrying no row at all -
+so a cursor position and the id it plays part company above the gap. Row
+seventy-one reads `-1` and is the `OFF` row: it takes the other arm and raises
+`_DAT_8007B438` instead of installing an id. So
+this writer is a developer sound test - not world-map entry and not a region
+change; the writers that install a track for ordinary play are the field-VM
+ones ([`audio.md`](audio.md)).
 
 The routine's return is the constant `1` on every path (see the draw-gate
 correction above). The 25-instruction listing some dumps carry at this VA is
@@ -2630,8 +2690,13 @@ The case-5 path of the [per-actor render dispatcher `FUN_8001ADA4`](#per-actor-r
 draws every **landmark** TMD (castle, towers, bridges, gates) - each
 world-map actor's `actor[+0x44]` mesh chain points into Drake's
 40-TMD landmark pack at PROT entry 0086 slot 1, which the dispatcher
-walks once per frame through `FUN_8002735C` (the 60-GTE Legaia TMD
-renderer). That accounts for the landmark prims in the GPU pool.
+walks once per frame. That accounts for the landmark prims in the GPU pool.
+The leaf that walk reaches is `FUN_80043390`, not the table-driven
+`FUN_8002735C`: the case-5 arm that would call the latter is gated on
+`actor[+0x42] != 0`, and on a live `map03` overworld the gate fires hundreds of
+times per second and takes the near arm every time - see
+[renderer.md](renderer.md#which-mesh-leaf-a-frame-actually-enters) for the
+census and the three gate sites.
 
 ### Top-view bulk-terrain render path (overlay-replaced per-prim renderers)
 
@@ -2838,13 +2903,16 @@ runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
 - **case 5** (full TMD). Iterates the mesh chain at `actor[+0x44]`
   (`puVar5[0]` = count, `puVar5[1..n]` = mesh pointers) and per
   entry calls:
-  - `FUN_80043390(mesh, color, tpage)` - textured TMD (default).
-  - `FUN_80029888(...)` - environment-mapped TMD when
-    `actor[+0x7a] != 0`.
-  - `FUN_8002735C(...)` - 60-GTE Legaia TMD renderer (the
-    **landmark emit leaf** - each landmark TMD in Drake's 40-mesh
-    kingdom pack passes through here; the bulk continent ground
-    terrain is *not* drawn from here).
+  - `FUN_8002735C(...)` - the 60-GTE table-driven Legaia TMD renderer, taken
+    when `actor[+0x42] != 0` (`bne $s7` at `0x8001B454`). Measured as the arm
+    retail never takes, landmarks included.
+  - `FUN_80029888(...)` - environment-mapped TMD when `+0x42 == 0` and
+    `actor[+0x7a] != 0`. Also unentered in every sampled state.
+  - `FUN_80043390(mesh, color, tpage)` - textured TMD, the fall-through and the
+    leaf every measured overworld landmark actually draws through.
+
+  The three-way gate and its per-mode census are on
+  [renderer.md](renderer.md#which-mesh-leaf-a-frame-actually-enters).
 - **cases 1, 2, 3, 6, 7, 8, B** - distance-LOD / particle / sprite-billboard
   branches calling per-effect helpers (`FUN_8001B73C`, `FUN_8001B964`,
   `FUN_800480D8`, `FUN_8002B944/94C/954`, `FUN_8001C204`).

@@ -48,6 +48,17 @@ pub const ARMAMENT_ENGINE_SLOTS: [usize; 4] = [0, 1, 2, 4];
 /// byte `3`.
 pub const RETAIL_WEAPON_EQUIP_BYTE: [i16; 3] = [2, 3, 2];
 
+/// Per-character **Ra-Seru** equip byte, the halfword table at
+/// `0x8007B424` (`3, 2, 3`) - the complement of
+/// [`RETAIL_WEAPON_EQUIP_BYTE`], so each character's weapon and Ra-Seru
+/// occupy the two bytes the other does not.
+///
+/// The screens that gate on "does this character have a Ra-Seru equipped"
+/// read `record[0x196 + table[char]]`, not a fixed slot: the record screen's
+/// spell list does it with a `lui 0x8008` / `addiu -0x4bdc` pair at
+/// `0x801DA5D0..0x801DA600` before it reads the learned-spell count.
+pub const RETAIL_RASERU_EQUIP_BYTE: [i16; 3] = [3, 2, 3];
+
 /// Engine [`EquipSlot`] index each retail `+0x196` equip byte maps to.
 ///
 /// Retail's array is `[body, head, weapon, weapon, footwear, goods x3]`;
@@ -317,6 +328,16 @@ impl EquipSession {
         self
     }
 
+    /// Install the disc-pinned restriction table + active party slot on an
+    /// already-built session (the builder form of
+    /// [`Self::new_with_restrictions`], for callers that compose the session
+    /// through the other `with_*` hooks first).
+    pub fn with_restrictions(mut self, restrictions: DiscEquipInfo, active_party_slot: u8) -> Self {
+        self.restrictions = Some(restrictions);
+        self.active_party_slot = active_party_slot;
+        self
+    }
+
     /// Construct a session that gates the item list on the disc-pinned equip
     /// restrictions for `active_party_slot` (`0` Vahn, `1` Noa, `2` Gala).
     /// Each candidate item must be equippable by that character (the `+6`
@@ -442,6 +463,20 @@ impl EquipSession {
     fn item_fits_slot(&self, id: u8, slot: u8) -> bool {
         match &self.restrictions {
             Some(info) => {
+                // The three Goods rows are a different list family, not a
+                // looser version of the armament one: retail reaches them
+                // through content ids `0x1C`..`0x1E`, whose filter takes
+                // item class 2 and the item-effect `+3` byte and applies
+                // **no** character mask
+                // (`crate::menu_list_rows::build_goods_candidate_rows`).
+                // Asking the armament question here is what left every
+                // Goods row with an empty list.
+                if matches!(
+                    EquipSlot::from_index(slot),
+                    Some(EquipSlot::Ring1 | EquipSlot::Ring2 | EquipSlot::Accessory)
+                ) {
+                    return info.is_goods_candidate(id);
+                }
                 // Must be equippable by the active character (the `+6` mask).
                 if !info.can_equip(id, self.active_party_slot) {
                     return false;

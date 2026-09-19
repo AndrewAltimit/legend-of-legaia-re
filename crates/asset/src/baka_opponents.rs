@@ -503,6 +503,163 @@ pub fn parse_baka_hud(overlay: &[u8]) -> Option<Vec<BakaHudWidget>> {
     )
 }
 
+/// Runtime VA of the minigame's **actor-prototype band** - the eight
+/// `0x18`-byte templates the duel spawns its per-frame tick actors from.
+///
+/// The band is bounded on both sides by data of a different shape: an
+/// 8-byte-stride action-name string table below it, and the roster's own
+/// name pool ([`OPPONENT_TABLE_VA`]) immediately above its last record.
+pub const ACTOR_PROTOTYPE_TABLE_VA: u32 = 0x801D_75DC;
+
+/// File offset of [`ACTOR_PROTOTYPE_TABLE_VA`] within the as-loaded image.
+pub const ACTOR_PROTOTYPE_TABLE_FILE_OFFSET: usize =
+    (ACTOR_PROTOTYPE_TABLE_VA - BAKA_OVERLAY_BASE_VA) as usize;
+
+/// Stride of one actor prototype.
+pub const ACTOR_PROTOTYPE_STRIDE: usize = 0x18;
+
+/// Prototypes in the band - `(OPPONENT_TABLE_VA - ACTOR_PROTOTYPE_TABLE_VA) /
+/// ACTOR_PROTOTYPE_STRIDE`, i.e. the band tiles the gap to the roster pool
+/// exactly.
+pub const ACTOR_PROTOTYPE_COUNT: usize =
+    (OPPONENT_TABLE_VA - ACTOR_PROTOTYPE_TABLE_VA) as usize / ACTOR_PROTOTYPE_STRIDE;
+
+/// The `+0x04` word every prototype in the band carries.
+pub const ACTOR_PROTOTYPE_LIFETIME_WORD: u32 = 0xFFFF_0000;
+/// The `+0x0C` word every prototype in the band carries.
+pub const ACTOR_PROTOTYPE_CLASS_WORD: u32 = 0x0002_0080;
+
+/// One actor prototype: the record the shared spawn API `FUN_80020DE0` is
+/// handed, whose `+0x08` word is the spawned actor's **per-frame tick
+/// callback**.
+///
+/// Every record in the band has the same shape - `+0x00` and `+0x10` zero,
+/// `+0x04` [`ACTOR_PROTOTYPE_LIFETIME_WORD`], `+0x0C`
+/// [`ACTOR_PROTOTYPE_CLASS_WORD`] - so the two fields that vary are the
+/// callback and the `+0x14` flag. This is what makes the band the place a
+/// callback with no `jal` site is *reached from*: nothing calls
+/// `FUN_801D49E8` or `FUN_801D4FC8` directly, and their addresses sit here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BakaActorPrototype {
+    /// `+0x08` - runtime VA of the tick callback.
+    pub callback_va: u32,
+    /// `+0x14` - the one per-record flag (`0` on the first two records, `1`
+    /// on the rest).
+    pub flag: u32,
+}
+
+/// Parse the [`ACTOR_PROTOTYPE_COUNT`] actor prototypes out of the
+/// **as-loaded** Baka Fighter overlay image.
+///
+/// Returns `None` when the image is short, or when any record breaks the
+/// band's uniform shape - which is the check that keeps a mis-based image
+/// from yielding eight plausible-looking pointers.
+pub fn parse_actor_prototypes(overlay: &[u8]) -> Option<Vec<BakaActorPrototype>> {
+    let end = ACTOR_PROTOTYPE_TABLE_FILE_OFFSET + ACTOR_PROTOTYPE_COUNT * ACTOR_PROTOTYPE_STRIDE;
+    if overlay.len() < end {
+        return None;
+    }
+    let rd32 =
+        |o: usize| u32::from_le_bytes([overlay[o], overlay[o + 1], overlay[o + 2], overlay[o + 3]]);
+    let image_end = BAKA_OVERLAY_BASE_VA + overlay.len() as u32;
+    let mut out = Vec::with_capacity(ACTOR_PROTOTYPE_COUNT);
+    for i in 0..ACTOR_PROTOTYPE_COUNT {
+        let o = ACTOR_PROTOTYPE_TABLE_FILE_OFFSET + i * ACTOR_PROTOTYPE_STRIDE;
+        if rd32(o) != 0
+            || rd32(o + 4) != ACTOR_PROTOTYPE_LIFETIME_WORD
+            || rd32(o + 0x0C) != ACTOR_PROTOTYPE_CLASS_WORD
+            || rd32(o + 0x10) != 0
+        {
+            return None;
+        }
+        let callback_va = rd32(o + 8);
+        if !(BAKA_OVERLAY_BASE_VA..image_end).contains(&callback_va) {
+            return None;
+        }
+        out.push(BakaActorPrototype {
+            callback_va,
+            flag: rd32(o + 0x14),
+        });
+    }
+    Some(out)
+}
+
+/// Runtime VA of the sprite-blit source table (`DAT_801dbe84`) the chrome's
+/// VRAM-to-VRAM helper `FUN_801D65F8` indexes.
+///
+/// It is the **last initialised word pair in the whole image**: the overlay's
+/// own bytes end at `0x801DBE8B` and everything above is BSS, which is why a
+/// reader that sizes the table by scanning for a terminator finds one
+/// immediately and a reader that assumes a long table reads zeros.
+pub const BLIT_RECT_TABLE_VA: u32 = 0x801D_BE84;
+
+/// File offset of [`BLIT_RECT_TABLE_VA`] within the as-loaded overlay image.
+pub const BLIT_RECT_TABLE_FILE_OFFSET: usize = (BLIT_RECT_TABLE_VA - BAKA_OVERLAY_BASE_VA) as usize;
+
+/// Stride of one blit-source record (`sll v0,a1,0x2` at `0x801D661C`).
+pub const BLIT_RECT_STRIDE: usize = 4;
+
+/// Initialised records in [`BLIT_RECT_TABLE_VA`].
+pub const BLIT_RECT_COUNT: usize = 2;
+
+/// VRAM x the record's first byte is added to (`addiu v1,v1,0x340`).
+pub const BLIT_SRC_X_BASE: u16 = 0x340;
+/// VRAM y the record's second byte is added to (`addiu v0,v0,0x80`).
+pub const BLIT_SRC_Y_BASE: u16 = 0x80;
+/// Fixed source-rect width in VRAM halfwords (`li v0,0x6`).
+pub const BLIT_RECT_W: u16 = 6;
+/// Fixed source-rect height in VRAM rows (`li v0,0x18`).
+pub const BLIT_RECT_H: u16 = 0x18;
+/// Fixed destination the helper always blits to (`li a1,0x340` / `li a2,0x86`).
+pub const BLIT_DST: (u16, u16) = (0x340, 0x86);
+
+/// One resolved entry of the sprite-blit source table.
+///
+/// `FUN_801D65F8(0, index)` stacks a `RECT { x, y, w, h }` from record
+/// `index` and hands it to `MoveImage` with a fixed destination, so the
+/// record selects **which** source cell is copied into the live cell and
+/// nothing else. The record's high half (`+2` / `+3`) is never read by this
+/// routine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BakaBlitRect {
+    /// Source VRAM x: record byte `0` shifted right two, plus
+    /// [`BLIT_SRC_X_BASE`].
+    pub src_x: u16,
+    /// Source VRAM y: record byte `1` plus [`BLIT_SRC_Y_BASE`].
+    pub src_y: u16,
+    /// The two bytes this routine does not read, kept so a consumer can see
+    /// the record is not two-byte-wide.
+    pub unread: [u8; 2],
+}
+
+impl BakaBlitRect {
+    /// The rect's fixed size - the same `(w, h)` for every record.
+    pub const fn size(&self) -> (u16, u16) {
+        (BLIT_RECT_W, BLIT_RECT_H)
+    }
+}
+
+/// Parse the [`BLIT_RECT_COUNT`] blit-source records out of the **as-loaded**
+/// Baka Fighter overlay image (PROT entry [`BAKA_OVERLAY_PROT_INDEX`]).
+pub fn parse_blit_rects(overlay: &[u8]) -> Option<Vec<BakaBlitRect>> {
+    let end = BLIT_RECT_TABLE_FILE_OFFSET + BLIT_RECT_COUNT * BLIT_RECT_STRIDE;
+    if overlay.len() < end {
+        return None;
+    }
+    Some(
+        (0..BLIT_RECT_COUNT)
+            .map(|i| {
+                let o = BLIT_RECT_TABLE_FILE_OFFSET + i * BLIT_RECT_STRIDE;
+                BakaBlitRect {
+                    src_x: BLIT_SRC_X_BASE + u16::from(overlay[o] >> 2),
+                    src_y: BLIT_SRC_Y_BASE + u16::from(overlay[o + 1]),
+                    unread: [overlay[o + 2], overlay[o + 3]],
+                }
+            })
+            .collect(),
+    )
+}
+
 /// Chunk type byte of the fighter pack's TIM atlas (a standard PSX TIM).
 pub const FIGHTER_CHUNK_TIM: u8 = 0;
 /// Chunk type byte of the fighter pack's Legaia TMD (the `TMD2` streaming

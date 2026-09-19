@@ -137,6 +137,9 @@ pub struct LegaiaMinigames {
     /// The fishing venue's baked 3D scene + angler body
     /// (see `minigames_fishing_scene.rs`).
     fishing_scene: Option<fishing_scene_web::FishingScene>,
+    /// The angler's facing (retail's actor `+0x26`), the angle the next cast
+    /// offsets its lure along.
+    fishing_angler_facing: i16,
     /// SCUS item-name table (present on full-disc loads only), naming the
     /// point-exchange prize rows.
     item_names: Option<legaia_asset::item_names::ItemNameTable>,
@@ -287,6 +290,7 @@ impl LegaiaMinigames {
             fishing_banners: Default::default(),
             fishing_prizes: Default::default(),
             fishing_scene: None,
+            fishing_angler_facing: 0,
             item_names: None,
             muscle: None,
             muscle_run: None,

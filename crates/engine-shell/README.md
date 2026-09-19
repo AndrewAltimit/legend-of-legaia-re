@@ -45,6 +45,16 @@ mode) compares against a snapshot lifted from a mednafen `.mc{slot}` save:
   voices[24], master_volume)` per frame, vs. the SPU section.
 - [`pcm_oracle`](src/pcm_oracle.rs) - rendered stereo PCM windows from both
   sides (the I2 sibling of the audio trace).
+
+Both audio oracles take the same cold scene-entry sequence the playable hosts
+take - free-roam story staging, then `enter_field_live`, then a director that
+implements the global-pool start hook - because each of those three is on its
+own enough to leave the trace silent. What that silence is *not* evidence of,
+and why `converged` on a `.mc` comparand is a statement about the comparand
+rather than about playback, is in
+[`docs/subsystems/audio.md`](../../docs/subsystems/audio.md#why-converged-is-not-the-audio-oracles-fidelity-measure).
+The assertion the `.mc` axis does carry is the floor: where retail had voices,
+the engine's own mask must be non-empty.
 - [`sim_trace`](src/sim_trace.rs) - the engine side of the frame-tagged
   differential against the static recomp: per-frame simulation channels in
   **retail** units (PSX 12-bit angles, retail world units), so

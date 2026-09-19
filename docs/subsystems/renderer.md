@@ -2,10 +2,14 @@
 
 How the game draws its 3D meshes, and how the from-scratch port reproduces that.
 
-**Retail side.** The renderer is `FUN_8002735C` - 60 GTE ops, driven by a
-per-mode descriptor table at `DAT_8007326C` that says how each primitive group
-is laid out and which GP0 packet shape to emit. `SCUS_942.54` also carries a
-light-source sibling, `FUN_80029888`.
+**Retail side.** The table-driven renderer is `FUN_8002735C` - 60 GTE ops, driven
+by a per-mode descriptor table at `DAT_8007326C` that says how each primitive
+group is laid out and which GP0 packet shape to emit. `SCUS_942.54` also carries
+a light-source sibling, `FUN_80029888`, over the same table. Neither is the leaf
+a measured retail frame's geometry comes out of: both sit behind a gate on the
+drawn actor's `+0x42` / `+0x7A` that no sampled mode raises, and the polygons
+come from the [per-prim dispatcher `FUN_80043390`](#which-mesh-leaf-a-frame-actually-enters)
+instead.
 
 **Port side.** `crates/tmd::legaia_prims` walks the primitives;
 `crates/engine-render` draws them, emulating a 1024x512 PSX VRAM page so the
@@ -570,6 +574,52 @@ no `j`, no PC-relative branch, no `lui`+`addiu` materialisation - across
 So "what does retail do with a `0`" has an answer, and it is *nothing*: no pass
 consults this verdict. The port's lack of a cull here is parity, not a gap
 waiting on a caller.
+
+## Which mesh leaf a frame actually enters
+
+The mesh-chain walk is a **three-way** choice, not a renderer with fallbacks, and
+the same two-instruction test opens it at every site. `FUN_8002735C` has exactly
+three `jal` sites in `SCUS_942.54` and one more in the dev image `PROT 0973`;
+each SCUS site is the far arm of a test on the drawn actor's `+0x42` halfword:
+
+| Bracket | Gate | Far arm (`+0x42 != 0`) | Near arm |
+|---|---|---|---|
+| `FUN_8001ADA4` | `lh $s7,0x42($s0)` at `0x8001B220`, `bne` at `0x8001B454` | `jal 0x8002735C` at `0x8001B594` | `+0x7A != 0` &rarr; `FUN_80029888`, else `FUN_80043390` |
+| `FUN_8001B964` | `lhu $s2,0x42($s0)` at `0x8001B9E0` (copied to `$s7` at `0x8001BB00`), `bne` at `0x8001BC64` | `jal 0x8002735C` at `0x8001BD88` | same |
+| `FUN_80048A08` | `lh $v0,0x42($s0)` at `0x80048E9C`, `bne` at `0x80048EA4` | `jal 0x8002735C` at `0x80048FE4` | same |
+
+So "which mode enters the table-driven renderer" is really "which mode draws an
+actor whose `+0x42` is non-zero", and the answer measured so far is none.
+`scripts/pcsx-redux/autorun_w4c_mesh_path_census.lua` taps the three renderer
+entries and the three gates at once. Over four save states covering three game
+modes - a `town01` battle (mode `21`), a `map03` world map (mode `3`), a
+`nilboa` in-engine cutscene (mode `3`) and the casino slot machine
+(mode `3` &rarr; `24`), 180 vsyncs each:
+
+- `FUN_8002735C` entries: **0** of 720 vsyncs.
+- `FUN_80029888` entries: **0**.
+- Gate hits: 5089 actor draws, **every one** with `+0x42 == 0` (and, since the
+  light sibling never ran either, `+0x7A == 0` as well).
+- `FUN_80043390` entries: 10621.
+
+The battle state enters none of the three brackets at all - zero gate hits over
+its 180 vsyncs, 1710 `FUN_80043390` entries - so a battle's meshes do not reach
+the GPU through this walk either. Read that one with its sample in mind: the
+state sits at the command menu, and the third bracket `FUN_80048A08` is what the
+arts after-image renderer `FUN_80049348` draws each motion-trail ghost through,
+so a swing is the frame that would exercise it. Its gate is the same `+0x42`
+test either way. That is what earlier field captures were
+seeing when they recorded zero renderer entries beside thousands of drawn town
+polygons: the per-prim dispatcher below is the leaf, and the two table-driven
+renderers are the arms retail's shipped actor data does not select. The gate is
+a property of the actor, not of the mode, so a state that does raise `+0x42`
+would enter `FUN_8002735C` in any mode; none has been found.
+
+This corrects two readings on [`world-map.md`](world-map.md): that the case-5
+landmark walk passes each landmark TMD "once per frame through `FUN_8002735C`",
+and that `FUN_80029888` is reached whenever `actor[+0x7A] != 0` on the overworld.
+On `map03` the case-5 gate fired 756 times in 180 vsyncs and took the near arm
+every time.
 
 ## Per-primitive TMD render helpers (`FUN_8002735C` family)
 

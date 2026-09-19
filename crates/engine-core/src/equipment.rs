@@ -218,6 +218,10 @@ pub fn equip_modifier_table_from_disc(
 #[derive(Debug, Clone, Default)]
 pub struct DiscEquipInfo {
     entries: std::collections::HashMap<u8, DiscEquipEntry>,
+    /// Item ids the **Goods** (accessory) candidate lists offer. Empty until
+    /// [`Self::install_goods`] runs, because they are not in the equipment
+    /// stat table at all - see that method.
+    goods: std::collections::BTreeSet<u8>,
     /// `+5` of every stride-8 bonus record, in **row** order. Keyed by the
     /// item property table's `+1` bonus index, not by item id, because that is
     /// the index the retail renderer applies - see [`Self::row_passive_index`].
@@ -263,8 +267,49 @@ impl DiscEquipInfo {
         let row_passives = table.rows().iter().map(|b| b.passive_index()).collect();
         Self {
             entries,
+            goods: std::collections::BTreeSet::new(),
             row_passives,
         }
+    }
+
+    /// Index the ids the equip screen's three **Goods** candidate lists
+    /// offer, from the item-effect table.
+    ///
+    /// They are a different id space from everything else this struct holds:
+    /// the four armament lists take item-record class `1` and gate on the
+    /// equipment record's `+7` category and `+6` character mask, while the
+    /// Goods lists take class **2** and gate on the item-effect record's
+    /// `+3` byte alone ([`crate::menu_list_rows::goods_candidate_accepts`]) -
+    /// no category, no character mask. A `DiscEquipInfo` built from the
+    /// equipment stat table alone therefore knows nothing about them, which
+    /// is why a Goods row offered no candidates at all until this ran.
+    pub fn install_goods(&mut self, effects: &legaia_asset::item_effect::ItemEffectTable) {
+        self.goods = (0u8..=u8::MAX)
+            .filter(|&id| {
+                let marker = effects
+                    .descriptor(effects.subtype(id))
+                    .map(|d| d.marker)
+                    .unwrap_or(crate::menu_list_rows::GOODS_NO_PASSIVE_MARKER);
+                crate::menu_list_rows::goods_candidate_accepts(effects.kind(id), marker)
+            })
+            .collect();
+    }
+
+    /// Install the Goods index as `(id)` pairs, for tests and for engines
+    /// that source the item-effect table from somewhere else.
+    pub fn install_goods_ids(&mut self, ids: impl IntoIterator<Item = u8>) {
+        self.goods = ids.into_iter().collect();
+    }
+
+    /// `true` if `id` may appear in a Goods-slot candidate list.
+    pub fn is_goods_candidate(&self, id: u8) -> bool {
+        self.goods.contains(&id)
+    }
+
+    /// Number of ids the Goods candidate lists offer (`0` until
+    /// [`Self::install_goods`] runs).
+    pub fn goods_count(&self) -> usize {
+        self.goods.len()
     }
 
     /// Build from explicit `(id, entry)` pairs. Useful for engines that
@@ -274,6 +319,7 @@ impl DiscEquipInfo {
     pub fn from_entries(entries: impl IntoIterator<Item = (u8, DiscEquipEntry)>) -> Self {
         Self {
             entries: entries.into_iter().collect(),
+            goods: std::collections::BTreeSet::new(),
             row_passives: Vec::new(),
         }
     }

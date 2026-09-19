@@ -83,6 +83,7 @@ pub mod inventory_use;
 pub mod items;
 pub mod key_rebind;
 pub mod levelup;
+pub mod list_order;
 pub mod live_loop;
 pub mod magic_xp;
 pub mod man_field_scripts;

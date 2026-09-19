@@ -39,6 +39,21 @@
 //! engine *did* fire the same voices retail did but with wrong bank
 //! offsets or volume, which is a real port bug.
 //!
+//! ## What a `.mc` comparand can and cannot decide
+//!
+//! A mednafen save is taken mid-playthrough, and an SPU voice only returns
+//! to ADSR phase `Off` when something key-offs it *and* its release runs to
+//! zero. Nothing does that wholesale, so a field save captures essentially
+//! every voice non-`Off` - the accumulated residue of each cue and each
+//! track since boot, not the set the current score is sounding. Against a
+//! superset rule that leaves `NoFrameMatched` the standing answer for a cold
+//! scene-entry window whatever the engine does, so `converged` on this
+//! comparand is not a measure of BGM fidelity. What this file can still hold
+//! is the floor below: with the scene's own track playing, the engine's mask
+//! must be non-empty. Deciding *which* voices belong to the score needs the
+//! per-vsync PCSX-Redux retail trace (`--retail-jsonl`) captured from the
+//! same scene entry, not a save state.
+//!
 //! Auto-discovery: scenarios opt in by populating
 //! `expected_active_scene`. Adding new captures requires no test edits.
 
@@ -136,11 +151,25 @@ fn audio_trace_all_scenarios_converge() {
     let mut hard_failures = Vec::new();
     let mut converged = 0usize;
     let mut expected_drifts = 0usize;
+    let mut silent_engine = Vec::new();
     for (label, scene_name, save_path) in &qualifying {
         let trace = engine_trace_from_paths(scene_name, &extracted, None, FRAMES, None)
             .unwrap_or_else(|e| panic!("scenario {label:?}: build engine audio trace: {e:#}"));
         let retail = load_runtime_audio_trace_from_save(save_path)
             .unwrap_or_else(|e| panic!("scenario {label:?}: load retail SPU snapshot: {e:#}"));
+        // The engine side's own summary, independent of the convergence
+        // rule: which voice indices the trace ever keyed, and the most it
+        // held at once. `engine_union == 0` is the regression this test
+        // exists to catch - the engine sounded nothing at all.
+        let engine_union = trace.iter().fold(0u32, |a, f| a | f.active_voice_mask);
+        let engine_peak = trace
+            .iter()
+            .map(|f| f.active_voice_mask.count_ones())
+            .max()
+            .unwrap_or(0);
+        if retail.active_voice_mask != 0 && engine_union == 0 {
+            silent_engine.push((label.clone(), scene_name.clone()));
+        }
         match first_audio_trace_divergence(&trace, &retail) {
             None => {
                 converged += 1;
@@ -158,16 +187,36 @@ fn audio_trace_all_scenarios_converge() {
                 }
                 // NoFrameMatched is tolerable: the scene's prescript may
                 // not fire op 0x35 within the trace window or may target a
-                // different track than retail captured. Other divergence
-                // kinds (VoiceStartAddrMismatch / MasterVolumeMismatch)
-                // indicate the engine matched retail's voice indices but
-                // with wrong sample / volume - a real bug.
-                let tolerable = matches!(d.kind, AudioDivergenceKind::NoFrameMatched);
+                // different track than retail captured.
+                //
+                // VoiceStartAddrMismatch is tolerable too, and for a
+                // structural reason rather than a lenient one: a start
+                // address is an offset into SPU RAM, and the two sides fill
+                // SPU RAM from independent allocators. On the town0c door
+                // save retail's audible voices start at 0x8008..0xC968 while
+                // the engine's staged bank puts the same score at
+                // 0x1000..0x1BD70 - the port never set out to reproduce
+                // retail's SPU-RAM layout, so equality there is not a
+                // fidelity claim anyone made. This comparison only became
+                // reachable once "active" stopped meaning "phase != 0"; with
+                // the old predicate retail reported 24 voices and no engine
+                // mask could ever be a superset, so nothing past the mask was
+                // ever compared.
+                //
+                // MasterVolumeMismatch stays hard.
+                let tolerable = matches!(
+                    d.kind,
+                    AudioDivergenceKind::NoFrameMatched
+                        | AudioDivergenceKind::VoiceStartAddrMismatch
+                );
                 if tolerable {
                     expected_drifts += 1;
                     eprintln!(
-                        "[drift] {label:<32} scene={scene_name:<10} NoFrameMatched: retail mask=0b{:024b} (engine BGM did not converge in {FRAMES} frames)",
+                        "[drift] {label:<32} scene={scene_name:<10} NoFrameMatched: \
+                         retail mask=0b{:024b} ({} voices audible) vs engine union=0b{engine_union:024b} \
+                         (peak {engine_peak} concurrent over {FRAMES} frames)",
                         d.retail.active_voice_mask,
+                        d.retail.active_voice_mask.count_ones(),
                     );
                 } else {
                     hard_failures.push((label.clone(), d));
@@ -177,11 +226,28 @@ fn audio_trace_all_scenarios_converge() {
     }
 
     eprintln!(
-        "audio-trace oracle: {} qualifying, {} converged, {} tolerable drifts, {} hard failures",
+        "audio-trace oracle: {} qualifying, {} converged, {} tolerable drifts, {} hard failures, \
+         {} scenarios where the engine sounded nothing",
         qualifying.len(),
         converged,
         expected_drifts,
         hard_failures.len(),
+        silent_engine.len(),
+    );
+
+    // The floor the convergence rule cannot state (see the module header):
+    // wherever retail had voices, the engine must have keyed at least one of
+    // its own inside the window. This is what a scene-entry BGM regression
+    // looks like - the field VM not reaching op `0x35`, the director
+    // declining a global-pool start, or an entry-script pause parking the
+    // track - and each of those reads as an ordinary "tolerable" drift row
+    // under the superset rule alone.
+    assert!(
+        silent_engine.is_empty(),
+        "audio-trace oracle: the engine started no BGM at all in {} scenario(s) whose retail \
+         snapshot had active voices: {:?}",
+        silent_engine.len(),
+        silent_engine,
     );
 
     assert!(
