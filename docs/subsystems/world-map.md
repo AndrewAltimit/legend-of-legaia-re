@@ -409,8 +409,20 @@ Entry `(ctx)`. Bounds `ctx[+0x9E]` against `0x18` and dispatches through the
 The arms are debug cheats - restore the party's HP/MP from their maxima,
 cycle the encounter rate at `_DAT_8007B5F8`, max every stat on the three
 `0x80084140 + n*0x414` records, grant the whole item table through
-`FUN_800421D4`, cycle the BGM index at `_DAT_801F2E90`, toggle
-`_DAT_8007B606`.
+`FUN_800421D4`, play a track, toggle `_DAT_8007B606`.
+
+**The `BGM CALL` arm is the fourth disc-wide writer of the BGM request global
+`_DAT_8007BAC8`**, and it plays a track rather than cycling the cursor -
+cycling is `FUN_801E9F64`'s job, the input half. The arm
+(`0x801EACBC..0x801EAD20`) indexes the sound-test table at `0x801F2E94` by the
+cursor `_DAT_801F2E90`, a 10-byte stride whose first halfword is the **global
+BGM id** the rest of the engine uses (`2000 + i` for sound-test track `i`;
+[`music-tracks.md`](../reference/music-tracks.md)) and whose remaining eight
+bytes are the row's ASCII label. A row whose id reads `-1` is the `OFF` row: it
+takes the other arm and raises `_DAT_8007B438` instead of installing an id. So
+this writer is a developer sound test - not world-map entry and not a region
+change; the writers that install a track for ordinary play are the field-VM
+ones ([`audio.md`](audio.md)).
 
 The routine's return is the constant `1` on every path (see the draw-gate
 correction above). The 25-instruction listing some dumps carry at this VA is
@@ -799,18 +811,6 @@ world-map overlay data region (`0x801F28F0..0x801F2Fxx`) and the dev context
   records. The two pure-integer bounding kernels are ported as
   `legaia_engine_vm::world_map_dev_menu` (`wrap12_step`, `clamp1_255_step`,
   `pad_step`); the table-cycle and party-record arms stay documented-not-ported.
-- **`FUN_801EA9B0`** (1000 bytes, field overlay PROT 0897, `0x801EA9B0..0x801EAD98`)
-  - the **confirm** half, the sibling that sits immediately below the renderer
-  `FUN_801EAD98` and runs the row's action once the player commits. Its
-  `BGM CALL` arm is the fourth disc-wide writer of the BGM request global
-  `_DAT_8007BAC8`: it indexes the sound-test table at `0x801F2E94` by the
-  cursor `_DAT_801F2E90`, and the row's first halfword is the **global BGM id**
-  ([`music-tracks.md`](../reference/music-tracks.md) - `2000 + i` for sound-test
-  track `i`). The row whose id reads `-1` is the `OFF` row: it takes the other
-  arm and raises `_DAT_8007B438` instead of installing an id. So the writer is
-  a developer sound test, not world-map entry and not a region change - the
-  three writers that install a track for ordinary play are the field-VM ones
-  ([`audio.md`](audio.md)).
 
 ### World-map top-view HUD primitive batch
 
