@@ -928,6 +928,44 @@ about these is contested.
 | Gap | Shape |
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
+| minigame effect pool | Only the native window owns one, so three side-channel steps have no browser twin. See [below](#the-minigame-side-channel-step-is-paired-its-contents-are-not). |
+
+### The minigame side-channel step is paired; its contents are not
+
+Tier 11 pairs `tick_minigame_extras` (native) with `tick_minigame_ui` (page) as
+one frame kernel, which is true of the *step* and says nothing about the work
+inside it. Taken sub-step by sub-step, most of that work does reach both hosts,
+and the two that do not share one cause.
+
+| Native sub-step | Browser play page | Minigames page |
+|---|---|---|
+| `drain_minigame_sfx_cues` | `drain_minigame_sfx_cues_web` | per-game cue drain |
+| `stage_dance_hud_art` | `sync_dance_hud_residency` + `ensure_minigame_art` | `dance_art_*` exports |
+| `tick_dance_side` | **absent** (see below) | **absent** |
+| `tick_fishing_actors` | pond session only | pond session only |
+| `tick_baka_chrome` | **absent** | **absent** |
+| `tick_muscle_hub` | `tick_muscle_hub` | `muscle_*` exports |
+| `minigame_fx.tick()` | **absent** | **absent** |
+
+The dance **count-in** banner is not one of the gaps, and the waiver row that
+said it was is corrected: it lives in world state
+(`World::minigames.dance_countin_banner`) and both browser surfaces draw it
+through the shared `engine_ui::ui_dance` kernels. The cast **lure** is not one
+either - the venue-attached `PondSession` runs it on every host, so the drift
+that makes the lure move is engine-side.
+
+What is genuinely native-only is the **effect-part pool**
+(`window/minigame_fx.rs`), a host-side sink with no browser counterpart, plus
+the two producers that feed it: the dance sequence-clear banner and stars
+(`tick_dance_side`, via `dance::good_banner_spawn`) and the fishing venue's
+wander / line presentation actors. `tick_baka_chrome` is a third absence of the
+same shape - the chrome frame itself comes from
+`engine_core::baka_fighter_chrome`, so it is portable, but the draws it resolves
+want a pool to age them in.
+
+Closing this is a port of the pool, not a wiring change, which is why it is
+recorded here rather than waived: a waiver names a builder or a hook, and a
+pool is neither.
 
 ### A `web-ahead` builder is not by itself a gap
 

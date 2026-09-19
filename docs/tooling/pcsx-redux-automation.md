@@ -1309,6 +1309,29 @@ buffer before the op consumes it and let retail's own loader do the rest.
   The first run of this probe reported zero doors while the dispatcher was
   entered 1072 times. Use `tonumber` for pointers.
 
+###### Finding a donor door without running the probe
+
+The probe's read-only mode lists the doors **one state's run** happens to
+reach; `legaia-patcher doors --input <disc>` lists every op-`0x3F` door on the
+disc, which is the same question answered once for all scenes. The disc carries
+368 of them. 250 are field-to-field - neither end a world map - and of those, 41
+have a five-letter destination, spread over 17 source scenes, so a donor for a
+five-letter target is not scarce; what is scarce is a save state parked next to
+one.
+
+Two consequences for `juui1` in particular:
+
+- **It has an ordinary field-to-field door of its own.** `conc2` reaches it
+  directly (`index 587`, seat `(0x00,0x00)`, MAN offset `0x7F12`), so the scene
+  needs no hijack at all - a state anywhere in `conc2` would enter it through
+  retail's own field path, which is exactly the entry the black-frame result
+  above says the question needs.
+- **No catalogued PCSX-Redux state is one press from a usable donor.** Of the
+  scenes with such a door, only `teien` has a state (`teien_field_run`), and a
+  900-vsync run there holding the probe's default direction enters the VM
+  dispatcher 600 times and sees **zero** op-`0x3F` doors. The player is not
+  near that exit, so the donor has to come from a new capture either way.
+
 ### Save-state to Python (offline analysis)
 
 | Script | Input | Output |

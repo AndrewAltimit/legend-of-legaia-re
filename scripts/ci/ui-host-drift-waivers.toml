@@ -504,7 +504,7 @@ reason = "Both fold the battle SM's events into world state and refresh the HUD 
 [[frame_kernel]]
 native = "tick_minigame_extras"
 web = "tick_minigame_ui"
-reason = "Each host's one per-frame minigame step. Their contents differ (the native one also runs the fishing venue actors and the dance count-in spawns), which is a gap recorded in host-drift.md's `Known gaps` rather than here."
+reason = "Each host's one per-frame minigame step. Their contents differ in exactly three sub-steps - the dance sequence-clear spawns, the Baka round chrome and the effect-pool ageing they all feed - because only the native window owns a minigame effect pool. Sub-step table + the two contents this row used to misname as gaps (the dance count-in banner and the cast lure, both engine-side and on every host) are in host-drift.md's `Known gaps`."
 
 [[frame_kernel]]
 native = "tick_field_prop_anims"
