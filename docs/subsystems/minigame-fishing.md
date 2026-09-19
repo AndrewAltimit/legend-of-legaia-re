@@ -229,6 +229,23 @@ they are otherwise unrelated:
   (`0x801D2E34..0x801D2E58`), and the sign is the low bit of the persistent
   lifetime cast counter `_DAT_80084460` (`0x801D2E28`).
 
+The sign rule is measured, not only read: an exec tap on each arm
+(`0x801D2E34` add / `0x801D2E48` subtract), carrying the counter it was
+reached with, splits cleanly - every add hit an odd counter, every subtract
+hit an even one, no exceptions - and the accumulator moves by exactly
+`frame_delta << 11` per hit, read back out of `0x801D9174` between frames.
+Probe `scripts/pcsx-redux/autorun_fishing_lure_drift.lua`.
+
+Two things that capture also settles. **The pond never triggers the drift on
+its own**: across a run of two full casts the walk-grid probe returned zero
+every single call, so the arms only execute when the probe forces the verdict.
+And **the counter's writer is in this same bite tick** - it is reached through
+the save-block base (`t0 = 0x80084140`, `lw` / `addiu` / `sw 0x320($t0)` at
+`0x801D2954`..`0x801D296C`) rather than by the `0x4460` displacement the read
+uses, on the arm that also raises cue `0x204` and moves the SM to state `0x19`.
+So the counter advances once per hook, and the drift direction alternates
+between successive casts.
+
 Port: `engine-core::fishing_actors::LureActor`, whose `cast` is the spawn arm
 and whose `probe` runs both reads in retail's order. The class walk is the
 already-ported region routine - `field_regions::refresh_region_attributes`
@@ -552,6 +569,13 @@ world offset for one frame:
 Case `0x14` is where the lure point the walk-grid probe wants comes from: it
 writes `DAT_801D918C` / `DAT_801D9190` and their `<< 8` fixed-point copies
 `DAT_801D9174` / `DAT_801D917C`. **Confirmed.**
+
+The halfword between those two, `DAT_801D918E`, is the lure's **height**, not
+a second horizontal component: the arm stores `actor + 0x16` less `0x80` there
+(`sh $a0, 2($a2)` at `0x801CFCEC`) and its `<< 8` copy is `DAT_801D9178`. So
+the tracked triple is `(x, y, z)` in the same `+0x14 / +0x16 / +0x18` order
+the field player record uses, and a reading that pairs `0x801D918E` with the
+`x` accumulator as the lure's ground position is off by one halfword.
 
 ## VA aliasing in this band
 
