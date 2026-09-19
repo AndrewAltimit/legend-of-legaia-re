@@ -146,6 +146,23 @@ impl EquipStatBlock {
         })
     }
 
+    /// Wrap eight already-resolved block words, in the retail block's own
+    /// order. The seam a host uses when the block was aggregated upstream
+    /// (`engine-core::pause_screens::menu_stat_block`) rather than read off
+    /// a record here.
+    pub fn from_words(w: &[i32; 8]) -> Self {
+        Self {
+            hp: w[0],
+            mp: w[1],
+            agl: w[2],
+            atk: w[3],
+            udf: w[4],
+            ldf: w[5],
+            spd: w[6],
+            int: w[7],
+        }
+    }
+
     /// Word `i` of the block (`0..=7`), matching the retail `0x801EF080 +
     /// i*4` addressing the painters index with. Out-of-range reads `0`.
     ///
@@ -189,10 +206,10 @@ impl CompareRows {
     ///
     /// PORT: FUN_801d1290 (`0x801D1470..0x801D1648`)
     ///
-    /// NOT WIRED: same chain as [`active_compare_category`] - the two feed
-    /// [`equip_compare_panel_fields`] and nothing else reaches them. Window
-    /// 41 has no such switch (it always shows the ATK / UDF / LDF triple),
-    /// so the recipient picker, which is wired on both hosts, never asks.
+    /// Reached from the Equip screen's candidate step on both hosts, through
+    /// [`active_compare_category`] into [`equip_compare_panel_fields`].
+    /// Window 41 has no such switch - it always prints the ATK / UDF / LDF
+    /// triple - so the shop's recipient picker never asks.
     pub fn from_category(category: u8) -> Self {
         if category < 6 {
             CompareRows::HpMp
@@ -250,12 +267,14 @@ pub struct CompareCategoryInputs {
 ///
 /// PORT: FUN_801d1290 (`0x801D137C..0x801D1474`)
 ///
-/// NOT WIRED: reached only from [`equip_compare_panel_fields`], which no host
-/// draws - see that function's note for the covering path and the blocking
-/// capability. Retail's own consumer is window 25 and nothing else: this
-/// chain resolves which row set that panel shows, and the port's Equip screen
-/// prints a fixed ATK / UDF / LDF triple from `FUN_801D21C0` instead, so
-/// there is no caller that needs a category byte.
+/// Both hosts call this from the Equip screen's candidate step, where the
+/// two guards decide the panel's behaviour: a weapon or armour row keeps
+/// [`CATEGORY_DEFAULT`] whatever is hovered, while an empty hover on an
+/// accessory row still keys its rows off what is already worn. The table
+/// lookup the guards gate - item class byte, then the equipment row's `+5`
+/// or the item-effect row's `+3` - is
+/// `engine-core::pause_screens::compare_category_for_item`, because it wants
+/// disc tables this crate deliberately does not depend on.
 pub fn active_compare_category(inp: CompareCategoryInputs) -> u8 {
     let mut category = CATEGORY_DEFAULT;
     if inp.slot_row >= 4 && inp.staged_id > 0 {
@@ -379,27 +398,18 @@ pub struct EquipComparePanelView<'a> {
 ///
 /// PORT: FUN_801d1290
 ///
-/// NOT WIRED: no host reaches this, and the covering path is
-/// [`crate::equip_screen_draws_for`]'s `stat_compare` rows - the port draws
-/// the Equip screen's compare block from `FUN_801D21C0` (window 22's own
-/// Best-Equipment pass) rather than from window 25's separate panel.
+/// Drawn by both hosts on the Equip screen's candidate step, beside window
+/// 24 - the two windows open script `0x801E4DC8` names together, on top of
+/// the browse step's four. The panel is an *addition* to the screen rather
+/// than a replacement for window 22's Best-Equipment compare block, which
+/// keeps its own `(label, current, preview)` triples.
 ///
-/// NOT WIRED: the blocking capability is the **stat blocks**, not the screen's
-/// NOT WIRED: layout. This view wants the live and trial-equip blocks
-/// NOT WIRED: (`0x801EF080` / `0x801EF0A0`, eight words each), the record's
-/// NOT WIRED: own HP / MP maxima and the compare **category** that picks which
-/// NOT WIRED: three rows print; `equip_screen_model` publishes three
-/// NOT WIRED: `(label, current, preview)` triples instead, which is all
-/// NOT WIRED: window 22's own Best-Equipment pass needs. Closing it means
-/// NOT WIRED: `equip_session` publishing the blocks + category - the field
-/// NOT WIRED: list already materialises through [`compare_panel_draws_for`],
-/// NOT WIRED: which the shop's window 41 reaches. (The previous reason -
-/// NOT WIRED: "the equip screen would have to move onto the descriptor-table
-/// NOT WIRED: layout" - was wrong: script `0x801E4DC8` belongs to sub-screen
-/// NOT WIRED: `0x14`, the candidate step, and opens windows 24 and 25 on top
-/// NOT WIRED: of the browse step's four. Window 24 is drawn on exactly those
-/// NOT WIRED: terms now, on both hosts.) Waived in
-/// NOT WIRED: `scripts/ci/ui-host-drift-waivers.toml`.
+/// The three inputs the model has to supply are the ones the screen did not
+/// previously hold: the live and trial-equip blocks (`0x801EF080` /
+/// `0x801EF0A0`), the record's own HP / MP maxima - the HP and MP rows print
+/// the record halfword and leave the block word to the delta column - and
+/// the compare category. `engine-core::pause_screens::EquipCompareModel`
+/// publishes all three.
 pub fn equip_compare_panel_fields(
     view: &EquipComparePanelView<'_>,
     pen: (i32, i32),
@@ -857,14 +867,12 @@ pub fn recipient_picker_draws_for(
     // panel over the picker; retail's script opens only window 36, so that was
     // a panel retail does not show.
     //
-    // Removing that draw left window 25's whole chain -
-    // `equip_compare_panel_fields`, `active_compare_category`,
-    // `CompareRows::from_category` - with no consumer on either host. They
-    // stay exported because they are the ported renderer of a real retail
-    // window, and each now carries a `NOT WIRED:` note naming the covering
-    // path and what would have to exist first. What they are NOT is "the
-    // Equip screen still needs them": the port's Equip screen draws its
-    // compare block from `FUN_801D21C0` and never asks for a category byte.
+    // Window 25's chain - `equip_compare_panel_fields`,
+    // `active_compare_category`, `CompareRows::from_category` - belongs to
+    // the screen that does open the window: the Equip screen's candidate
+    // step, where both hosts draw it (`pause_menu`'s `PauseScreen::Equip`
+    // arm). Removing the draw from this picker did not orphan them; it moved
+    // them to the one screen whose open script names the id.
 
     (out, sprites)
 }

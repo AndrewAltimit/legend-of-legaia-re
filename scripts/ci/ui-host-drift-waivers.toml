@@ -178,46 +178,6 @@
 # pass it.
 
 [[waiver]]
-builder = "equip_compare_panel_fields"
-kind = "orphan"
-reason = """
-`FUN_801D1290`, window 25 - the Equip screen's active-character stat-compare
-panel. It orphaned when the shop's equipment-buy recipient picker stopped
-drawing window 25: retail's picker script opens only window 36, so that draw
-was a panel retail does not show, and removing it was correct. What it left
-behind is this painter plus its category chain (`active_compare_category`,
-`CompareRows::from_category`), which nothing else reaches. The gate was blind
-to that for as long as its surface stopped at `TextDraw`.
-
-The covering path exists and is drawn on both hosts: the port's Equip screen
-prints its stat compare from `FUN_801D21C0`, window 22's own Best-Equipment
-pass, through `equip_screen_draws_for`'s `stat_compare` rows. So this is not a
-screen the player is missing - it is a second, descriptor-driven renderer of
-the same readout.
-
-The blocking capability this waiver used to name was **wrong**, and its twin
-proved it. It read: "retail opens windows 2 / 24 / 25 from one script, the
-port's equip flow is built on 2 / 21 / 22 / 23, and window 25's rect overlaps
-the party window 21 it would have to replace - closing it means moving the
-whole screen onto the descriptor-table layout". Script `0x801E4DC8` belongs to
-sub-screen `0x14`, the **candidate step**, which runs after `0x12` has picked
-the character and `0x13` has browsed the slots; it opens 24 and 25 *on top of*
-the four windows already up. Overlapping window 21 is what it is for. Window
-24 has since been adopted on exactly those terms, on both hosts, and nothing
-about the screen's layout had to move.
-
-What actually blocks this one is narrower and is a real missing input:
-`EquipComparePanelView` wants the live and trial-equip **stat blocks**
-(`0x801EF080` / `0x801EF0A0` - eight words each, plus the record's own HP/MP
-maxima and the compare **category** that picks which three rows print), and
-the equip model publishes three `(label, current, preview)` triples instead,
-which is all window 22's own Best-Equipment pass needs. Closing it means
-`equip_session` publishing the two blocks and the category, not a draw call:
-the field list already materialises through `compare_panel_draws_for`, which
-the shop's window 41 reaches.
-"""
-
-[[waiver]]
 builder = "guarded_box_rect"
 kind = "orphan"
 reason = """

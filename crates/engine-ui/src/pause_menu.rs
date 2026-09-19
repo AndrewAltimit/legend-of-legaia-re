@@ -66,6 +66,14 @@ pub const WIN_CONTEXT_READY: usize = 5;
 /// id alone never decides which panel draws.
 pub const WIN_EQUIP_ITEM_INFO: usize = 24;
 
+/// Window 25 - the Equip screen's own stat-compare panel, the **other**
+/// window the candidate step's open script `0x801E4DC8` names beside 24.
+///
+/// Its renderer `FUN_801D1290` is the one `equip_compare_panel_fields`
+/// ports; it is not the shop's party-wide column (window 41,
+/// `FUN_801D4C28`), and no shop script opens this id.
+pub const WIN_EQUIP_COMPARE: usize = 25;
+
 /// Content rect used for the sub-screens whose retail window sets are not
 /// capture-pinned (the Tactical-Arts editor, the spell target-select
 /// stand-in, the generic inventory overlay) - a near-fullscreen window on the
@@ -99,7 +107,7 @@ pub const TARGET_SELECT_WINDOWS: [usize; 2] = [window_ids::TAB_ITEMS, 14];
 /// the two Use confirms and the party target panel at the near-fullscreen
 /// origin instead of at their own pinned rects.
 #[rustfmt::skip]
-pub const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 28] = [
+pub const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 29] = [
     (window_ids::TAB_ITEMS, (16, 12, 60, 12)),
     (window_ids::TAB_MAGIC, (16, 12, 60, 12)),
     (window_ids::ITEMS_COMMAND, (32, 44, 80, 38)),
@@ -133,6 +141,9 @@ pub const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 28] = [
     // window 17's rect on the disc, because both renderers call the same
     // shared panel.
     (WIN_EQUIP_ITEM_INFO, (14, 108, 144, 40)),
+    // Window 25 - the candidate step's stat-compare panel. It sits over the
+    // browse step's party window, which the step no longer needs.
+    (WIN_EQUIP_COMPARE, (14, 40, 144, 52)),
 ];
 
 /// Descriptor-rect resolver: the disc-parsed menu-overlay window table when
@@ -438,6 +449,9 @@ pub struct EquipComposeView<'a> {
     /// Window 24's item-info panel content for the hovered candidate, or
     /// `None` outside the candidate step. See [`WIN_EQUIP_ITEM_INFO`].
     pub info: Option<crate::PauseItemInfo<'a>>,
+    /// Window 25's stat-compare panel, or `None` outside the candidate step.
+    /// See [`WIN_EQUIP_COMPARE`].
+    pub compare: Option<EquipCompareInput<'a>>,
 }
 
 /// One pause-menu screen, as the composition sees it.
@@ -748,6 +762,42 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 sprites.extend(ctx.frame_around(reserved));
                 texts.extend(count_draws);
             }
+            // Window 25 - the candidate step's own stat-compare panel, the
+            // second window open script `0x801E4DC8` names. Retail resolves
+            // the row set here rather than in the model, because the two
+            // guards that pick it are part of the renderer's control flow:
+            // the staged item's category counts only on slot rows `>= 4`,
+            // and the "nothing staged" fallback is not row-gated at all.
+            if let Some(cmp) = v.compare.as_ref()
+                && let Some((d, _)) = ctx.rects.table().and_then(|t| {
+                    painter_at(t, WIN_EQUIP_COMPARE, MenuWindowPainter::ActiveStatCompare)
+                })
+            {
+                let r = painter_rect(d);
+                let category = crate::active_compare_category(crate::CompareCategoryInputs {
+                    slot_row: cmp.slot_row,
+                    staged_id: cmp.staged_id,
+                    staged_category: cmp.staged_category,
+                    equipped_id: cmp.equipped_id,
+                    equipped_category: cmp.equipped_category,
+                });
+                let rows = crate::CompareRows::from_category(category);
+                let panel = crate::EquipComparePanelView {
+                    name: cmp.name,
+                    current: cmp.current,
+                    candidate: cmp.candidate,
+                    hp_max: cmp.hp_max,
+                    mp_max: cmp.mp_max,
+                    rows,
+                    labels: match rows {
+                        crate::CompareRows::SpdIntAgl => crate::COMPARE_LABELS_SPD,
+                        _ => crate::COMPARE_LABELS_ATK,
+                    },
+                };
+                sprites.extend(ctx.frame_around(d.rect()));
+                let fields = crate::equip_compare_panel_fields(&panel, (r.x, r.y));
+                texts.extend(crate::compare_panel_draws_for(ctx.font, &fields));
+            }
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::equip_screen_sprites_for(
                     rects,
@@ -836,6 +886,28 @@ pub struct EquipInfoInput<'a> {
     pub passive: Option<(&'a str, &'a str)>,
 }
 
+/// Window 25's panel content as a host hands it over: the two eight-word
+/// blocks, the record's HP / MP maxima and the four values the compare
+/// category is resolved from.
+///
+/// It mirrors `engine-core::pause_screens::EquipCompareModel` field for
+/// field. The resolution itself stays here, in
+/// [`crate::active_compare_category`], because the two guards that decide it
+/// are part of the renderer's own control flow rather than of the model.
+#[derive(Debug, Clone, Copy)]
+pub struct EquipCompareInput<'a> {
+    pub name: &'a str,
+    pub current: crate::EquipStatBlock,
+    pub candidate: crate::EquipStatBlock,
+    pub hp_max: u16,
+    pub mp_max: u16,
+    pub slot_row: i32,
+    pub staged_id: i32,
+    pub staged_category: u8,
+    pub equipped_id: u8,
+    pub equipped_category: u8,
+}
+
 pub struct EquipComposeInput<'a> {
     pub party_names: &'a [String],
     pub slot_labels: &'a [String],
@@ -856,6 +928,8 @@ pub struct EquipComposeInput<'a> {
     /// The hovered candidate's info-panel row. `None` outside the candidate
     /// step, which is the phase window 24 is open in.
     pub info: Option<EquipInfoInput<'a>>,
+    /// Window 25's stat-compare panel, open in the same step as window 24.
+    pub compare: Option<EquipCompareInput<'a>>,
 }
 
 /// Borrow an [`EquipComposeInput`] into the equip screen's view and compose
@@ -914,6 +988,7 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
                 desc: i.desc,
                 passive: i.passive,
             }),
+            compare: input.compare,
         }),
     )
 }

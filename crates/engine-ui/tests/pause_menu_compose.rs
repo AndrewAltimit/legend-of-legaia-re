@@ -477,6 +477,26 @@ fn compose_equip(ctx: &PauseMenuCtx<'_>, phase: EquipDrawPhase) -> PauseMenuDraw
                     passive: None,
                 },
             ),
+            // Window 25 rides the same step as window 24 - retail's open
+            // script names the pair.
+            compare: (!matches!(phase, EquipDrawPhase::SlotPicker)).then_some(
+                legaia_engine_ui::pause_menu::EquipCompareInput {
+                    name: "Vahn",
+                    current: legaia_engine_ui::EquipStatBlock::from_words(&[
+                        100, 20, 33, 30, 18, 16, 12, 9,
+                    ]),
+                    candidate: legaia_engine_ui::EquipStatBlock::from_words(&[
+                        100, 20, 33, 34, 18, 15, 12, 9,
+                    ]),
+                    hp_max: 100,
+                    mp_max: 20,
+                    slot_row: 0,
+                    staged_id: 0x21,
+                    staged_category: 0x40,
+                    equipped_id: 0x11,
+                    equipped_category: 0x40,
+                },
+            ),
         },
     )
 }

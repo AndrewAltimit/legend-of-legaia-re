@@ -353,6 +353,26 @@ fn equip_compose_input(
                 desc: i.desc.as_str(),
                 passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
             }),
+        compare: m.compare.as_ref().map(equip_compare_input),
+    }
+}
+
+/// Borrow the shared Equip **compare** model into `engine-ui`'s input. The
+/// native window's twin is `window/menu_draws.rs::equip_compare_input`.
+fn equip_compare_input(
+    c: &legaia_engine_core::pause_screens::EquipCompareModel,
+) -> ui::pause_menu::EquipCompareInput<'_> {
+    ui::pause_menu::EquipCompareInput {
+        name: c.name.as_str(),
+        current: ui::EquipStatBlock::from_words(&c.current),
+        candidate: ui::EquipStatBlock::from_words(&c.candidate),
+        hp_max: c.hp_max,
+        mp_max: c.mp_max,
+        slot_row: c.slot_row,
+        staged_id: c.staged_id,
+        staged_category: c.staged_category,
+        equipped_id: c.equipped_id,
+        equipped_category: c.equipped_category,
     }
 }
 
@@ -1864,11 +1884,21 @@ impl LegaiaRuntime {
                 .map(|w| field_menu_dispatch::item_display_text(w, id))
                 .unwrap_or_default()
         };
+        // Window 25's panel needs the record (HP / MP maxima) and the two
+        // disc tables the compare category is looked up in - the same
+        // sources the native window passes.
+        let record = world.and_then(|w| w.party.roster.members.get(char_slot as usize));
+        let compare = record.map(|r| legaia_engine_core::pause_screens::EquipCompareCtx {
+            record: r,
+            equip_info: self.menu.equip_info.as_ref(),
+            item_effects: world.and_then(|w| w.tables.item_effects.as_ref()),
+        });
         let m = legaia_engine_core::pause_screens::equip_screen_model(
             session,
             char_slot,
             &names,
             Some(&text),
+            compare,
         );
         let out = equip_screen_compose(&ctx, &equip_compose_input(&m, assets.chrome.is_none()));
         sprites.extend(out.sprites);

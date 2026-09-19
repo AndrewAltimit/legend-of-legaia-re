@@ -729,11 +729,24 @@ impl PlayWindowApp {
         // spells every candidate as a raw id.
         let world = &self.session.host.world;
         let text = |id: u8| legaia_engine_core::field_menu_dispatch::item_display_text(world, id);
+        // Window 25's panel needs what the session does not carry: the
+        // record (HP / MP maxima) and the two disc tables the compare
+        // category is looked up in.
+        let record = world.party.roster.members.get(char_slot as usize);
+        let compare =
+            record.map(
+                |r| legaia_engine_core::pause_screens::EquipCompareCtx {
+                    record: r,
+                    equip_info: self.menu_runtime.equip_info.as_ref(),
+                    item_effects: world.tables.item_effects.as_ref(),
+                },
+            );
         let model = legaia_engine_core::pause_screens::equip_screen_model(
             session,
             char_slot,
             &names,
             Some(&text),
+            compare,
         );
         equip_screen_compose(ctx, &equip_compose_input(&model, !ctx.chrome_present()))
     }
@@ -916,6 +929,27 @@ fn equip_compose_input(
                 desc: i.desc.as_str(),
                 passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
             }),
+        compare: m.compare.as_ref().map(equip_compare_input),
+    }
+}
+
+/// Borrow the shared Equip **compare** model into `engine-ui`'s input. The
+/// browser twin is `web-viewer/src/play_menu.rs::equip_compare_input`; the
+/// two exist for the same reason the screen's other borrow does.
+fn equip_compare_input(
+    c: &legaia_engine_core::pause_screens::EquipCompareModel,
+) -> legaia_engine_render::pause_menu::EquipCompareInput<'_> {
+    legaia_engine_render::pause_menu::EquipCompareInput {
+        name: c.name.as_str(),
+        current: legaia_engine_render::EquipStatBlock::from_words(&c.current),
+        candidate: legaia_engine_render::EquipStatBlock::from_words(&c.candidate),
+        hp_max: c.hp_max,
+        mp_max: c.mp_max,
+        slot_row: c.slot_row,
+        staged_id: c.staged_id,
+        staged_category: c.staged_category,
+        equipped_id: c.equipped_id,
+        equipped_category: c.equipped_category,
     }
 }
 
