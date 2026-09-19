@@ -1247,8 +1247,8 @@ mod tests {
             AUTO_COMMAND_STRING_A_OFFSET + AUTO_COMMAND_STRING_LEN,
             AUTO_COMMAND_STRING_B_OFFSET
         );
-        assert!(AUTO_COMMAND_STRING_A_OFFSET >= 0x196 + 8);
-        assert!(AUTO_COMMAND_STRING_B_OFFSET + AUTO_COMMAND_STRING_LEN <= NAME_OFFSET);
+        const { assert!(AUTO_COMMAND_STRING_A_OFFSET >= 0x196 + EQUIPMENT_SLOT_COUNT) };
+        const { assert!(AUTO_COMMAND_STRING_B_OFFSET + AUTO_COMMAND_STRING_LEN <= NAME_OFFSET) };
     }
 
     /// The band selector is the retail `sltu(base, live)` at `0x801DA3A4`:
