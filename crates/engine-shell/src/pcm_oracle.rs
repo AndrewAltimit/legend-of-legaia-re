@@ -56,12 +56,12 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use legaia_engine_audio::{Spu, SpuAllocator, VabBank, spu::reverb::ReverbMode};
-use legaia_engine_core::scene::BgmDirector;
+use legaia_engine_audio::{Spu, spu::reverb::ReverbMode};
 use legaia_mednafen::{PsxSpu, SaveState};
 
 use crate::audio_trace_oracle::{
-    AudioTraceBuildOptions, AudioTraceFrame, TraceBgmDirector, sample_engine_frame_for_pcm,
+    AudioTraceBuildOptions, AudioTraceFrame, TraceBgmDirector, enter_scene_for_trace,
+    sample_engine_frame_for_pcm, start_bgm_id_directly,
 };
 use crate::{BootConfig, BootSession};
 
@@ -223,8 +223,11 @@ pub fn build_engine_pcm_trace(
         Some(p) => BootSession::open_disc(p, &cfg)?,
         None => BootSession::open(extracted_root, &cfg)?,
     };
+    // Same field-live entry the voice-mask trace takes: without it the field
+    // VM steps nothing and no op `0x35` ever reaches the director, so the
+    // rendered window is digital silence by construction.
+    enter_scene_for_trace(&mut session, &opts.scene)?;
 
-    let mut spu = Spu::new();
     let mut director = TraceBgmDirector::new();
     if let Some((vab_bytes, vab_off)) = session
         .host
@@ -233,21 +236,11 @@ pub fn build_engine_pcm_trace(
     {
         // Same stream shape as the boot path: the bank is at the stream's
         // reported offset, not at 0.
-        let report = legaia_vab::parse(&vab_bytes, vab_off)
-            .context("parse scene VAB header for PCM trace")?;
-        const SPU_RAM_BYTES: u32 = 512 * 1024;
-        const SPU_RESERVED_BYTES: u32 = 0x1000;
-        let mut alloc = SpuAllocator::new(SPU_RESERVED_BYTES, SPU_RAM_BYTES - SPU_RESERVED_BYTES);
-        let bank = VabBank::upload(&mut spu, &mut alloc, &report, &vab_bytes);
-        director.set_bank(bank);
+        director.stage_scene_bank(&vab_bytes, vab_off)?;
     }
 
     if let Some(id) = opts.bgm_id {
-        if let Some(seq_bytes) = session.host.bgm_seq_bytes(id)? {
-            director.start(id, &seq_bytes);
-        } else {
-            log::warn!("pcm-trace: bgm_id {id} did not resolve to a SEQ entry");
-        }
+        start_bgm_id_directly(&session, &mut director, id)?;
     }
 
     let samples_per_frame = (SPU_SAMPLE_RATE as f64 * (opts.us_per_frame / 1_000_000.0)) as usize;
@@ -257,23 +250,18 @@ pub fn build_engine_pcm_trace(
 
     frames.push(sample_engine_frame_for_pcm(
         &session,
-        &spu,
+        director.spu(),
         director.sequencer(),
     ));
     let mut sink = vec![0i16; samples_per_frame * CHANNELS];
     for _ in 0..opts.frames {
         let _ = session.tick()?;
         let _ = session.host.route_bgm_events(&mut director)?;
-        if !director.is_paused()
-            && let Some(seq) = director.sequencer_mut()
-        {
-            seq.tick_us(&mut spu, opts.us_per_frame);
-        }
-        spu.render_into(&mut sink);
+        director.advance_frame(opts.us_per_frame, &mut sink);
         pcm.extend_from_slice(&sink);
         frames.push(sample_engine_frame_for_pcm(
             &session,
-            &spu,
+            director.spu(),
             director.sequencer(),
         ));
     }
