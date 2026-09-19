@@ -1410,6 +1410,36 @@ The audible set is the **envelope**: `SpuVoiceState::is_active` reads `ADSR.EnvL
 
 What the `.mc` axis still decides is the floor: with the scene's track playing, the engine's mask must be non-empty. That is what an actual scene-entry BGM regression looks like - the field VM never reaching op `0x35`, the director declining a global-pool start, an entry-script pause parking the track - and each of those otherwise reads as one more ordinary drift row. Deciding *which* voices belong to the score needs the per-vsync PCSX-Redux trace (`--retail-jsonl`) captured from the same scene entry.
 
+### Which channel differs first on the per-vsync comparand
+
+Once the PCM oracle's retail reference stopped being vacuous, three scenarios
+read as "the engine is much the quieter of the two", and the trace answers part
+of that directly. Over one `town01` scene entry - 241 engine frames against the
+90-frame PCSX-Redux retail capture - the three channels the trace format carries
+rank like this:
+
+| Channel | Engine | Retail | Verdict |
+|---|---|---|---|
+| master volume | `(0x3FFF, 0x3FFF)` on every frame | identical | not the difference |
+| reverb | `0` on every frame | `0xC081` on every frame | **first divergence** |
+| concurrent voices | mean 4.83, max 9 | mean 9.78, max 19 | roughly half |
+
+So master volume is exonerated, and the first channel that differs is reverb.
+That field is the SPU's per-voice **reverb-enable mask** (`EON`), not a libspu
+mode byte - the same register whose name misled the PCM oracle's retail side
+into running dry - so `0xC081` means retail routes voices `0`, `7`, `14` and
+`15` through the reverb tank while the engine routes none. The voice-count gap
+sits behind it and is the next thing to attribute.
+
+The trace cannot be pushed further than that on its own: a `voices[]` record
+carries `active` and `pitch` and nothing else, so neither per-voice volume nor
+ADSR level is in the artifact, and "which voices the score allocates" needs the
+record widened before it can be asked. The masks themselves already say the two
+sides allocate differently - the engine's live voices sit in the low slots
+(`0x04`, `0x08`, `0x0E`, `0x12`, `0x24`) while retail's span the file
+(`0x088121`, `0x08A962`) - which is the allocator difference the `.mc`
+comparand's start-address mismatch shows from the other end.
+
 The **Field↔Battle BGM-swap** is *not* yet observable through this
 voice-activity oracle. The audible path itself is no longer blocked: the
 default battle track is the global-pool id `2026`
