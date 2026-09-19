@@ -1188,6 +1188,12 @@ impl BootSession {
                     self.host.world.store_chain_library(&library);
                 }
             }
+            FieldMenuSubsession::ListOrder(s) => {
+                let _ = legaia_engine_core::field_menu_dispatch::apply_list_order_outcome(
+                    &s,
+                    &mut self.host.world,
+                );
+            }
             FieldMenuSubsession::Status(_) => {}
             FieldMenuSubsession::Save(s) => {
                 // The outcome names the card port, the grid names the block.

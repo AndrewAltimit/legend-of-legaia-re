@@ -77,7 +77,7 @@ use legaia_engine_core::field_menu::{
 };
 use legaia_engine_core::field_menu_dispatch::{
     self, ArtsEditorPhaseTag, FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome,
-    apply_pause_items_outcome, apply_spell_outcome, status_snapshots,
+    apply_list_order_outcome, apply_pause_items_outcome, apply_spell_outcome, status_snapshots,
 };
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::inventory_use::{InventoryUseSession, InventoryUseState};
@@ -863,6 +863,13 @@ impl LegaiaRuntime {
                                             world.store_chain_library(&library);
                                         }
                                     }
+                                    // The reorder page permuted its own copy;
+                                    // replay its exchanges onto the record
+                                    // through the ported swap, same as the
+                                    // native window.
+                                    FieldMenuSubsession::ListOrder(s) => {
+                                        let _ = apply_list_order_outcome(&s, world);
+                                    }
                                     // Status carries no world-mutating outcome
                                     // on close (Options is lifted above, on
                                     // the runtime rather than the world).
@@ -1004,6 +1011,9 @@ impl LegaiaRuntime {
                 ),
                 FieldMenuSubsession::Arts(s) => {
                     self.build_arts_editor(assets, s, &mut sprites, &mut texts, origin, scale)
+                }
+                FieldMenuSubsession::ListOrder(s) => {
+                    self.build_list_order(assets, s, &mut sprites, &mut texts, origin, scale)
                 }
             },
         }
@@ -1345,6 +1355,42 @@ impl LegaiaRuntime {
         let out = pause_screen_draws(
             &assets.menu_ctx(origin, scale),
             PauseScreen::Generic(GenericContent::Arts(args)),
+        );
+        sprites.extend(out.sprites);
+        texts.extend(out.texts);
+    }
+
+    /// The record screen's list page, opened over the Magic screen's spell
+    /// rows (Square). Twin of the native window's arm in
+    /// `window::menu_draws`.
+    fn build_list_order(
+        &self,
+        assets: &PlayMenuAssets,
+        session: &legaia_engine_core::list_order::ListOrderSession,
+        sprites: &mut Vec<SpriteDraw>,
+        texts: &mut Vec<TextDraw>,
+        origin: (i32, i32),
+        scale: u32,
+    ) {
+        let rows: Vec<ui::ListOrderRowView<'_>> = session
+            .rows()
+            .iter()
+            .enumerate()
+            .map(|(i, r)| ui::ListOrderRowView {
+                label: r.label.as_str(),
+                latched: session.latched() == Some(i),
+            })
+            .collect();
+        let out = pause_screen_draws(
+            &assets.menu_ctx(origin, scale),
+            PauseScreen::Generic(GenericContent::ListOrder(ui::ListOrderDrawArgs {
+                title: LIST_ORDER_TITLE,
+                rows: &rows,
+                cursor: session.cursor(),
+                scroll_top: session.scroll_top(),
+                page_rows: legaia_engine_core::list_order::LIST_ORDER_PAGE_ROWS,
+                reorderable: session.reorderable(),
+            })),
         );
         sprites.extend(out.sprites);
         texts.extend(out.texts);
@@ -2055,3 +2101,7 @@ fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
         }),
     }
 }
+
+/// Heading the list-reorder page prints, paired with the native window's
+/// constant of the same name.
+const LIST_ORDER_TITLE: &str = "ORDER";

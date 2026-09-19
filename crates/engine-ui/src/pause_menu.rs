@@ -361,6 +361,9 @@ pub enum GenericContent<'a> {
     SpellMenu(SpellMenuDrawArgs<'a>),
     /// The generic inventory item-use overlay.
     Inventory(InventoryUseDrawArgs<'a>),
+    /// The record screen's per-character list page, with the spell list's
+    /// reorder (menu-overlay sub-screen `0x15`).
+    ListOrder(crate::ListOrderDrawArgs<'a>),
     /// Content the host laid out itself, in unscaled stage pixels.
     ///
     /// One caller: the Items screen's target-select stand-in, whose
@@ -822,6 +825,9 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 }
                 GenericContent::Inventory(args) => {
                     crate::inventory_use_draws_for(ctx.font, args, (16, 32))
+                }
+                GenericContent::ListOrder(args) => {
+                    crate::list_order_draws_for(ctx.font, args, (32, 32))
                 }
                 GenericContent::Prebuilt(draws) => draws,
             });

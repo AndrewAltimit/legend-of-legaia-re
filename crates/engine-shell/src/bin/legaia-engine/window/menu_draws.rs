@@ -158,6 +158,33 @@ impl PlayWindowApp {
         use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
         let ctx = self.menu_ctx(surface_w, surface_h);
         match sub {
+            // The record screen's list page, opened over the Magic
+            // screen's spell rows (Square). Twin of the browser page's arm
+            // in `web-viewer::play_menu`.
+            FieldMenuSubsession::ListOrder(s) => {
+                let rows: Vec<legaia_engine_render::ListOrderRowView<'_>> = s
+                    .rows()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| legaia_engine_render::ListOrderRowView {
+                        label: r.label.as_str(),
+                        latched: s.latched() == Some(i),
+                    })
+                    .collect();
+                pause_screen_draws(
+                    &ctx,
+                    PauseScreen::Generic(GenericContent::ListOrder(
+                        legaia_engine_render::ListOrderDrawArgs {
+                            title: LIST_ORDER_TITLE,
+                            rows: &rows,
+                            cursor: s.cursor(),
+                            scroll_top: s.scroll_top(),
+                            page_rows: legaia_engine_core::list_order::LIST_ORDER_PAGE_ROWS,
+                            reorderable: s.reorderable(),
+                        },
+                    )),
+                )
+            }
             FieldMenuSubsession::Status(s) => {
                 let Some(snap) = s.current() else {
                     return PauseMenuDraws::default();
@@ -964,3 +991,9 @@ fn arts_phase_tag(
         Tag::Naming => legaia_engine_render::ArtsEditorPhase::Naming,
     }
 }
+
+/// Heading the list-reorder page prints. Retail's page carries the record
+/// screen's own chrome, which this host does not draw yet; the label names
+/// the page so the screen is not an unheaded list. Paired with the browser
+/// page's constant of the same name.
+const LIST_ORDER_TITLE: &str = "ORDER";

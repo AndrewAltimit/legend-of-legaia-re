@@ -48,6 +48,17 @@ pub const ARMAMENT_ENGINE_SLOTS: [usize; 4] = [0, 1, 2, 4];
 /// byte `3`.
 pub const RETAIL_WEAPON_EQUIP_BYTE: [i16; 3] = [2, 3, 2];
 
+/// Per-character **Ra-Seru** equip byte, the halfword table at
+/// `0x8007B424` (`3, 2, 3`) - the complement of
+/// [`RETAIL_WEAPON_EQUIP_BYTE`], so each character's weapon and Ra-Seru
+/// occupy the two bytes the other does not.
+///
+/// The screens that gate on "does this character have a Ra-Seru equipped"
+/// read `record[0x196 + table[char]]`, not a fixed slot: the record screen's
+/// spell list does it with a `lui 0x8008` / `addiu -0x4bdc` pair at
+/// `0x801DA5D0..0x801DA600` before it reads the learned-spell count.
+pub const RETAIL_RASERU_EQUIP_BYTE: [i16; 3] = [3, 2, 3];
+
 /// Engine [`EquipSlot`] index each retail `+0x196` equip byte maps to.
 ///
 /// Retail's array is `[body, head, weapon, weapon, footwear, goods x3]`;

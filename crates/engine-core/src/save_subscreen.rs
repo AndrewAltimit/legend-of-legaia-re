@@ -1083,21 +1083,11 @@ pub enum Sub15ListSource {
 ///
 /// PORT: FUN_801DA2A0 (see `ghidra/scripts/funcs/overlay_save_ui_801da2a0.txt`)
 ///
-/// NOT WIRED: sub-screen `0x15` has no engine screen. The ability bitfield
-/// is surfaced through [`crate::accessory_passives`] and the spell list
-/// through [`crate::spell_menu`], each with its own typed row model, so
-/// nothing wants a row *count* keyed by a retail step number.
-///
-/// The owner is the pause menu's per-character list page - the rows
-/// `crate::field_menu_dispatch::build_spell_session` already builds - which
-/// would gain a reorder mode and, with it, a use for this step-keyed count.
-/// That is a screen the port does not have, not a call it forgot to make.
-///
-/// The module's "nothing constructs a [`SaveScreenMachine`]" is **not** the
-/// blocker here and this family should not cite it: these four are free
-/// functions, no step machine calls them, and giving the module a host
-/// would leave them exactly as unreached as they are now. A disclosure that
-/// borrows the file's headline reason reads as one gap and is two.
+/// Wired: [`crate::list_order::ListOrderSession`] is the page, opened over
+/// the Magic screen's spell rows on both hosts, and the step it opens at is
+/// what this resolves. The three sources stay one body, as retail has them:
+/// the session asks this which list it is showing and only the spell list's
+/// step carries the exchange arm.
 pub fn sub15_list_source(step: u8) -> Sub15ListSource {
     match step {
         2 | 5 => Sub15ListSource::Abilities,
@@ -1121,7 +1111,10 @@ pub fn sub15_list_source(step: u8) -> Sub15ListSource {
 ///
 /// PORT: FUN_801DA2A0 (`0x801DA550..0x801DA64C`)
 ///
-/// NOT WIRED: see [`sub15_list_source`].
+/// Wired through [`crate::field_menu_dispatch::apply_list_order_outcome`],
+/// which re-derives the live length from the record before it replays the
+/// page's exchanges - the record is the authority on how long the list is,
+/// and the Ra-Seru gate is why a caster with spells can still report none.
 pub fn sub15_list_len(step: u8, record: &[u8], raseru_slot: usize) -> u8 {
     let byte = |off: usize| record.get(off).copied().unwrap_or(0);
     match sub15_list_source(step) {
@@ -1177,7 +1170,9 @@ pub enum Sub15Frame {
 ///
 /// PORT: FUN_801DA2A0 (`0x801DA650..0x801DA6D0`)
 ///
-/// NOT WIRED: see [`sub15_list_source`].
+/// Wired: [`crate::list_order::ListOrderSession::open`] runs this before it
+/// opens the page, so an empty list takes the reject arm and no page opens
+/// rather than a page opening empty.
 pub fn sub15_frame(step: u8, len: u8) -> Sub15Frame {
     if len == 0 {
         return Sub15Frame::Reject;
@@ -1200,19 +1195,18 @@ pub fn sub15_frame(step: u8, len: u8) -> Sub15Frame {
 ///
 /// PORT: FUN_801DA2A0 (`0x801DA768..0x801DA844`)
 ///
-/// NOT WIRED: see [`sub15_list_source`] - the blocker is that no engine
-/// NOT WIRED: screen offers a reorder, and only that.
+/// Wired: the page ([`crate::list_order::ListOrderSession`]) records each
+/// exchange it makes and
+/// [`crate::field_menu_dispatch::apply_list_order_outcome`] replays them
+/// here against the character's own bytes when the page closes. The page
+/// permutes a copy so a cancelled visit changes nothing; this is the only
+/// thing that touches the record.
 ///
-/// This note used to add "the engine's spell list is built per frame from
-/// the catalog rather than stored as a reorderable per-character array, so
-/// there is no backing array for a swap to permute". That is false and it
-/// pointed the next reader at the wrong half of the gap. The backing array
-/// is the record itself: `field_menu_dispatch::build_spell_session` fills
-/// each caster's rows from `member.spell_list()`, which reads exactly the
-/// `+0x13D` / `+0x161` pair this swaps, **in record order**. So a swap here
-/// does permute what the Magic screen lists - `spell_swap_permutes_the_magic
-/// _screen_order` in `field_menu_subsession_e2e` pins that. What is missing
-/// is a screen that offers the exchange, not the data under it.
+/// What the permutation is worth: `build_spell_session` fills each caster's
+/// rows from `member.spell_list()`, which reads exactly the `+0x13D` /
+/// `+0x161` pair this swaps, **in record order**, so an exchange here is an
+/// exchange on the Magic screen - `spell_swap_permutes_the_magic_screen_order`
+/// in `field_menu_subsession_e2e` pins that.
 pub fn sub15_swap_rows(record: &mut [u8], a: usize, b: usize) {
     if a == b {
         return;

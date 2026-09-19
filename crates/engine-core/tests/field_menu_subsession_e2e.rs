@@ -415,13 +415,12 @@ fn the_rack_kind_carries_card_slots_mode_through_the_dispatcher() {
     }
 }
 
-/// `save_subscreen::sub15_swap_rows` used to disclose itself as unreachable
-/// partly because "the engine's spell list is built per frame from the
-/// catalog rather than stored as a reorderable per-character array". That
-/// half was wrong, and this pins the correction: the Magic screen's rows
-/// come off the record's `+0x13D` / `+0x161` pair **in record order**, so
-/// permuting those bytes permutes what the player sees. The real gap is
-/// that no engine screen offers the exchange - not the data under it.
+/// Why permuting the record is worth anything: the Magic screen's rows come
+/// off the record's `+0x13D` / `+0x161` pair **in record order**, so moving
+/// those bytes moves what the player sees. The screen that offers the
+/// exchange is `list_order::ListOrderSession`, pinned end-to-end in
+/// `w4a_list_order_reorder`; this stays the narrower claim about the data
+/// under it.
 #[test]
 fn spell_swap_permutes_the_magic_screen_order() {
     use legaia_engine_core::save_subscreen::sub15_swap_rows;
