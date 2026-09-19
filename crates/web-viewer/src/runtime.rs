@@ -592,10 +592,18 @@ impl LegaiaRuntime {
         // buy list ([`crate::play_shop`]), so opt into the flow and install
         // the disc restrictions the buy-list kind dispatch reads.
         if let Some(table) = self.equip_stats.as_ref() {
-            self.menu
-                .install_equip_info(legaia_engine_core::equipment::DiscEquipInfo::from_disc(
-                    table,
-                ));
+            let mut info = legaia_engine_core::equipment::DiscEquipInfo::from_disc(table);
+            // The three Goods rows browse a class-2 id space the equipment
+            // stat table does not hold; without this index they offer no
+            // candidates at all. Twin of the native boot's install in
+            // `legaia_engine_shell::boot`.
+            if let Some(effects) = scus
+                .as_ref()
+                .and_then(|s| legaia_asset::item_effect::ItemEffectTable::from_scus(s))
+            {
+                info.install_goods(&effects);
+            }
+            self.menu.install_equip_info(info);
             self.menu.retail_equipment_buy = true;
         }
         // Static per-monster steal table (`DAT_80077828`) - the same install the
