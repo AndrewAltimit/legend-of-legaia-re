@@ -2457,9 +2457,12 @@ of the browse column is the Best-Equipment row and takes a per-character
 halfword from `0x8007B42C` (`lh` at `0x801D1308`, stride `2`, indexed by the
 *roster* slot, not the row). Every other row indexes the byte table at
 `0x801E43E8` (`lbu` at `0x801D131C`), whose first seven bytes are
-`00 01 00 04 05 06 07`; the six rows the screen browses therefore address
-equip bytes `1, 0, 4, 5, 6, 7` in that order, and bytes `2` / `3` are not
-browsable at all. The byte itself is `record[+0x196 + idx]` - retail forms it
+`00 01 00 04 05 06 07`. Entry `0` is never read - row `0` took the other path -
+and a sibling consumer of the same table starts its own walk at entry `1`
+(`lbu v0, 1(s0)` at `0x801D3C20`), so rows `1` upward address equip bytes
+`1, 0, 4, 5, 6, 7`: the first two transposed against the array, then a jump
+over bytes `2` and `3`, which no row in that span reaches.
+The byte itself is `record[+0x196 + idx]` - retail forms it
 as `0x80084140 + 0x414*slot + 0x75E + idx`, which is the per-character record
 base `0x80084708 + slot*0x414` plus `0x196`.
 
