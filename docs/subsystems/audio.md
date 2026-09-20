@@ -749,7 +749,7 @@ A pure-Rust sweep of the save-state corpus (`mednafen-state spu <state>`, readin
 
 - **The reverb network is master-enabled in every captured state** (`SPUCNT` bit 7 set) - field, town, battle, summon, title, minigames. There is no scene or cue that toggles it on.
 - **The mode is `Studio C` everywhere.** The 32 reverb coefficient/address registers (`0x1F801DC0..0x1F801DFF`) are byte-identical across all 45 mednafen states and match the `StudioC` libspu preset exactly (`dAPF1=0x00E3`, `dAPF2=0x00A9`, work area `0x6FE0`). [`ReverbMode::identify`](../../crates/engine-audio/src/spu/reverb.rs) resolves the captured block to `StudioC`.
-- **Per-voice reverb-send (`EON`) is broad and always populated** - typically 15–22 of the 24 voices in a mednafen state, including BGM and SFX voices, not a handful of "echo" voices. A per-vsync PCSX-Redux capture of a town scene sharpens that to the whole register: `EON` reads `0x00FFFFFF` - **all 24 voices** - on every one of its frames. So reverb is the *default* routing, applied to every voice the SPU has, not a per-cue effect.
+- **Per-voice reverb-send (`EON`) is broad and always populated** - typically 15–22 of the 24 voices in a mednafen state, including BGM and SFX voices, not a handful of "echo" voices. A per-vsync PCSX-Redux capture of a town scene reads the whole register: `EON` = `0x00FFFFFF`, **all 24 voices**, on every one of its 90 frames. So reverb is the *default* routing - the membership varies with what a given moment has keyed, but the ceiling is the whole voice file, not a handful of "echo" voices.
 - **The output depth is `0x3264` on both sides of the same capture.** `vLOUT` / `vROUT` (SPU `0x1F801D84` / `0x86`) are what libspu's `SpuSetReverbDepth` writes, and they sit *outside* the 32-register preset block, so matching the Studio C coefficients says nothing about them. `mBASE` reads `0xF204`, i.e. a work area at `0x79020` of size `0x6FE0`, which is Studio C's own size - a second, independent confirmation of the preset.
 
 So the C7-REVERB blocker dissolves: there is no per-cue reverb-enable source to trace. The live engine matches retail by calling [`Spu::set_retail_reverb`](../../crates/engine-audio/src/spu/mod.rs) once at SPU init (the `StreamResampler` in [`engine-audio`](../../crates/engine-audio/src/lib.rs) does this) - it selects `ReverbMode::StudioC`, routes every voice into the reverb send, and installs the measured depth `reverb::RETAIL_OUTPUT_VOL`. The earlier "the engine applies a fixed half-scale depth, a faithful approximation of the broad mask" caveat is retired on both halves: the mask is exactly all-voices and the depth is measured, not approximated.
@@ -1430,8 +1430,9 @@ earlier (`0x198`/`0x19A`) reads `0x00FFFFFF` on every frame of the same
 capture. The engine's own `0` was a second, independent defect: the trace and
 PCM oracles built a bare `Spu` where the shipped cpal host builds one through
 `set_retail_reverb`, so the oracle was measuring an engine the port does not
-ship. With both fixed the three reverb channels agree frame for frame -
-`EON = 0x00FFFFFF`, depth `(0x3264, 0x3264)`, work area `0x79020`.
+ship. With both fixed the engine reports `EON = 0x00FFFFFF`, depth
+`(0x3264, 0x3264)` and work area `0x79020` on every frame, which is what that
+capture reports on every frame of its own.
 
 **The voice-count gap was two different pieces of music.** An engine
 `--scene town01` trace plays the id that scene's own prescript selects with op
@@ -1482,7 +1483,11 @@ The one statistic that separates the two sides on a matched track is the
 `(sample, pitch)` pairs. Retail runs `1.158`; the engine runs `1.002`. Retail
 doubles a note across two voices roughly one time in six and the port
 essentially never does, which is the remaining per-voice difference once track
-and window are controlled for.
+and window are controlled for. One caveat the available pairing cannot
+remove: the retail window is a town scene, so some of its voices may be
+scene SFX rather than the score, and only a capture taken where the engine
+side has no SFX either would settle how much of the `0.156` belongs to the
+sequencer.
 
 The trace record carries `env_level`, `vol_left`, `vol_right`, `adsr_control`
 and `reverb_send` per voice, filled by all three emitters - the engine
