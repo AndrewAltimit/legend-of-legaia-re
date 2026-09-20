@@ -806,9 +806,17 @@ The point of the table is to make the cross-cuts cheap to read:
   function is understood (we have a Ghidra dump and at least one doc
   citation), not yet implemented in the engine, and not statically-linked
   PsyQ infra. Sort by citation count to find high-leverage helpers first.
-- **`cited but not dumped`** → dump worklist. Some other dump references this
-  address but no dump exists for it yet. Add to `ghidra/scripts/dump_funcs.py`
-  `TARGETS`.
+- **`cited but not dumped, not ignored`** → dump worklist. Some other dump
+  references this address but no dump exists for it yet. Add to
+  `ghidra/scripts/dump_funcs.py` `TARGETS`. An ignore row retires a row here
+  exactly as it retires a port one, and for a sharper reason: a `worklist_*`
+  section holds the claim "no routine begins at this VA", and an address that
+  begins no routine cannot be dumped at all without fabricating an entry point
+  ([`dump-corpus-integrity.md`](dump-corpus-integrity.md)). The first corpus to
+  need that was PROT 0896's, whose `jal`s name addresses in a *different*
+  build's executable ([`static-overlay-pipeline.md`](static-overlay-pipeline.md)):
+  every one of them is mid-body in this disc's `SCUS_942.54`, so each is an
+  address claim to file rather than a dump to take.
 - **`ported but not documented`** → provenance gap. A `// PORT:` tag was added
   without any doc mentioning the source function. Either backfill the doc or
   remove the tag if the attribution was wrong.

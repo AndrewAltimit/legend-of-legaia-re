@@ -80,7 +80,7 @@
     <thead><tr><th>Cross-cut</th><th>Meaning</th><th>What to do</th></tr></thead>
     <tbody>
       <tr><td><code>dumped + documented, not ported, not ignored</code></td><td><strong>Port worklist.</strong> Understood, not yet implemented, not PsyQ infra.</td><td>Sort by citation count to find high-leverage helpers first.</td></tr>
-      <tr><td><code>cited but not dumped</code></td><td><strong>Dump worklist.</strong> Some dump references this address but no dump exists for it.</td><td>Add to <code>ghidra/scripts/dump_funcs.py</code> <code>TARGETS</code>.</td></tr>
+      <tr><td><code>cited but not dumped, not ignored</code></td><td><strong>Dump worklist.</strong> Some dump references this address but no dump exists for it. An ignore row retires a row here too: a <code>worklist_*</code> section claims "no routine begins at this VA", and such an address cannot be dumped without fabricating an entry point.</td><td>Add to <code>ghidra/scripts/dump_funcs.py</code> <code>TARGETS</code>, or file the address claim.</td></tr>
       <tr><td><code>ported but not documented</code></td><td><strong>Provenance gap.</strong> A tag with no doc mentioning the source function.</td><td>Backfill the doc, or remove a wrong tag.</td></tr>
       <tr><td><code>ported but not dumped</code></td><td><strong>Provenance gap</strong>, opposite axis.</td><td>Dump it, or question the tag.</td></tr>
       <tr><td><code>ported but not live</code></td><td><strong>Inert port.</strong> Implemented, but no host reaches it.</td><td>Wire it, or disclose it with <code>NOT WIRED:</code>.</td></tr>

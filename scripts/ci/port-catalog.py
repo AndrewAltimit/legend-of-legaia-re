@@ -1663,7 +1663,11 @@ def snapshot(rows: list[dict]) -> dict:
         "totals": {"ported": sum(1 for r in rows if r["ported"])},
         "worklist": {
             "port": sum(1 for r in dd_not_p if not r["ignored"]),
-            "dump": sum(1 for r in rows if r["refs"] > 0 and not r["dumped"]),
+            "dump": sum(
+                1
+                for r in rows
+                if r["refs"] > 0 and not r["dumped"] and not r["ignored"]
+            ),
             "ported_not_documented": sum(
                 1 for r in rows if r["ported"] and not r["documented"]
             ),
@@ -1793,7 +1797,16 @@ def summarize(rows: list[dict]) -> str:
         for r in rows
         if r["dumped"] and r["documented"] and not r["ported"] and r["ignored"]
     )
-    cited_not_dumped = sum(1 for r in rows if r["refs"] > 0 and not r["dumped"])
+    # An ignore row retires a dump-worklist row exactly as it retires a port
+    # one. The `worklist_*` sections hold ADDRESS claims - "no routine begins at
+    # this VA" - and an address claim is precisely a reason NOT to dump: an
+    # address that starts no function cannot be dumped without fabricating an
+    # entry point (docs/tooling/dump-corpus-integrity.md). Counting those rows
+    # anyway left the ignore file unable to close the one worklist it is most
+    # directly about, so a newly imported image could only ever raise it.
+    cited_not_dumped = sum(
+        1 for r in rows if r["refs"] > 0 and not r["dumped"] and not r["ignored"]
+    )
     ported_not_documented = sum(
         1 for r in rows if r["ported"] and not r["documented"]
     )
@@ -2241,6 +2254,8 @@ def filter_rows(rows: list[dict], args: argparse.Namespace) -> list[dict]:
         out.sort(key=lambda r: (-r["refs"], r["addr"]))
     if args.missing_dumps:
         out = [r for r in out if r["refs"] > 0 and not r["dumped"]]
+        if not args.include_ignored:
+            out = [r for r in out if not r["ignored"]]
         out.sort(key=lambda r: (-r["refs"], r["addr"]))
     if args.ported_only:
         out = [r for r in out if r["ported"]]
@@ -2621,7 +2636,8 @@ def main() -> int:
     ap.add_argument(
         "--include-ignored",
         action="store_true",
-        help="don't exclude ignore-list entries from --missing-ports (default: exclude)",
+        help="don't exclude ignore-list entries from --missing-ports / "
+             "--missing-dumps (default: exclude)",
     )
     ap.add_argument(
         "--bucket",
