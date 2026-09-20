@@ -1677,6 +1677,15 @@ screen's party window, opened by the Equip slot-browse's own script
 `0x801E4DA0` at `0x801D9ACC`. The window id space and the sub-screen id
 space are not the same space.)
 
+Driving it confirms both halves. Cancelling an Equip-screen state back to
+the root picker, stepping the root cursor to row 3 and confirming lands on
+`DAT_801E46A4 == 0x15` with the step counter at `1`, and the frame is the
+**Status** page - the character column, the derived-stat grid, the
+equipment list, Experience / Next Level, and a `Condition` page selector on
+the left, which is the second cursor's own column. A confirm taken with
+that cursor at `0` moves it to `5` and changes nothing on screen, which is
+the column-hop arm below (`scripts/pcsx-redux/autorun_record_screen_capture.lua`).
+
 Inside the screen, the character picker's confirm arm at
 `0x801DA3C8..0x801DA448` folds the second cursor word
 (`DAT_801E46C0 & 0xFFF`, two columns of four that the Left / Right arms wrap
